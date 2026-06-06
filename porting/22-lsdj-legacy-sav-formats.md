@@ -1,6 +1,12 @@
 # Step 22 — LSDJ legacy sav-format support (semantic decode below fmt 16)
 
-**Status:** Not started.
+**Status:** Done. Old-format `else` branches added to `SongCodec` decode+encode
+(command fmt<8, wave playMode/length/speed/synth/loopPos, synth resonance fmt<5,
+vibrato fmt<4); `retroplug-lsdj-diff-tests` compiles liblsdj and confirms our
+decode matches it across the 12 content fixtures (fmt3..16); 32 KiB early-SRAM
+savs decode as working-song-only. Round-trip stays byte-identical for all 549
+fresh-corpus savs. (fmt<4 vibrato encode is best-effort for illegal authored
+combos; 32 KiB re-encode produces a modern 128 KiB image — both flagged below.)
 
 ## Goal
 

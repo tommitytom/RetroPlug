@@ -135,9 +135,10 @@ framework, then built-in extensions and the LSDJ sav tooling.
 - [21: LSDJ sav inspector](./21-sav-inspector.md) — Expose a parsed `.sav` over
   rpcpp + a React view typed by the generated `SavTypes`/`SavSchema`. Builds on
   the LSDJ sav codec (landed in `src/lsdj/`; not a numbered step).
-- [22: LSDJ legacy sav formats](./22-lsdj-legacy-sav-formats.md) — Semantic
-  decode/encode for format versions below the modern range (so old savs read
-  correctly, not just round-trip), validated against liblsdj. Independent of 21.
+- [22: LSDJ legacy sav formats](./22-lsdj-legacy-sav-formats.md) — **DONE**.
+  Semantic decode/encode for format versions below the modern range (old savs
+  read correctly, not just round-trip), validated against liblsdj via
+  `retroplug-lsdj-diff-tests`. Independent of 21.
 
 ### Phase 5 — Quality + breadth
 
