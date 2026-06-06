@@ -20,6 +20,7 @@ add_executable(retroplug-cli
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/LsdjKitPatchRole.cpp
     ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/MgbPassthroughRole.cpp
     ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenNesSystem.cpp
+    ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenNesDebugSession.cpp
     ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
     ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
     ${PROJECT_SOURCE_DIR}/src/system/mesen/roles/NesN8MidiRole.cpp

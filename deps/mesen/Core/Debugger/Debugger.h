@@ -85,7 +85,11 @@ private:
 	DebugControllerState _inputOverrides[8] = {};
 
 	bool _waitForBreakResume = false;
-	
+
+	// Headless break mode — see SetHeadlessMode().
+	bool _headlessMode = false;
+	BreakEvent _lastBreak = {};
+
 	void Reset();
 
 	__noinline bool ProcessStepBack(IDebugger* debugger);
@@ -147,6 +151,20 @@ public:
 	template<uint8_t accessWidth = 1> void ProcessBreakConditions(CpuType sourceCpu, StepRequest& step, BreakpointManager* bpManager, MemoryOperationInfo& operation, AddressInfo& addressInfo);
 
 	void SleepUntilResume(CpuType sourceCpu, BreakSource source, MemoryOperationInfo* operation = nullptr, int breakpointId = -1);
+
+	// Headless break mode (RetroPlug CLI). When enabled, a break (breakpoint /
+	// step) does NOT block in SleepUntilResume waiting for a UI to resume:
+	// _executionStopped is left set and the break is captured in _lastBreak, so
+	// a single-threaded driver that calls Exec() in a loop can poll
+	// IsExecutionStopped(), read GetLastBreakEvent(), then ResumeFromBreak().
+	// Defaults off — normal UI-driven behaviour is unchanged.
+	void SetHeadlessMode(bool enabled) { _headlessMode = enabled; }
+	BreakEvent GetLastBreakEvent() { return _lastBreak; }
+	void ResumeFromBreak() { _executionStopped = false; _waitForBreakResume = false; }
+	// Just the break flag, WITHOUT IsExecutionStopped()'s IsThreadPaused() term
+	// (which is always true under a headless manual-drive). Poll this after each
+	// Exec() to detect a real breakpoint/step stop.
+	bool IsHeadlessStopped() { return _executionStopped; }
 
 	void GetCpuState(BaseState& dstState, CpuType cpuType);
 	void SetCpuState(BaseState& srcState, CpuType cpuType);

@@ -1,7 +1,29 @@
 #include "pch.h"
+#include <cstring>
 #include "Debugger/Breakpoint.h"
 #include "Debugger/DebugTypes.h"
 #include "Debugger/DebugUtilities.h"
+
+Breakpoint Breakpoint::Create(CpuType cpuType, MemoryType memType, BreakpointTypeFlags type,
+                              int32_t startAddr, int32_t endAddr, const char* condition, bool enabled)
+{
+	Breakpoint bp;
+	bp._id = 0;
+	bp._cpuType = cpuType;
+	bp._memoryType = memType;
+	bp._type = type;
+	bp._startAddr = startAddr;
+	bp._endAddr = endAddr;
+	bp._enabled = enabled;
+	bp._markEvent = false;
+	bp._ignoreDummyOperations = false;
+	bp._condition[0] = 0;
+	if(condition && condition[0]) {
+		strncpy(bp._condition, condition, sizeof(bp._condition) - 1);
+		bp._condition[sizeof(bp._condition) - 1] = 0;
+	}
+	return bp;
+}
 
 template<uint8_t accessWidth>
 bool Breakpoint::Matches(MemoryOperationInfo& operation, AddressInfo &info)

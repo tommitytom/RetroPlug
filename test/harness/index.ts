@@ -22,6 +22,18 @@ interface NativeRp {
   readCpu(sys: number, addr: number): number;
   step(sys: number): number;
   runUntilPc(sys: number, pc: number, maxCycles: number): boolean;
+  beginProfile(sys: number): void;
+  readProfile(sys: number): ProfiledFunction[];
+  loadLabels(sys: number, path: string): boolean;
+  disassemble(sys: number, addr: number, count: number): DisasmLine[];
+  setTrace(sys: number, on: boolean): void;
+  readTrace(sys: number, count: number): TraceLine[];
+  getCallStack(sys: number): CallFrame[];
+  setBreakpoints(sys: number, bps: BreakpointSpec[]): void;
+  runUntilBreak(sys: number, maxCycles: number): BreakInfo;
+  stepInto(sys: number): BreakInfo;
+  stepOver(sys: number): BreakInfo;
+  stepOut(sys: number): BreakInfo;
   beginCase(name: string): void;
   report(name: string, ok: boolean, message: string): void;
   done(): void;
@@ -32,6 +44,45 @@ interface NativeRp {
 // system includes a "pc". SameBoy: af,bc,de,hl,sp,pc. NES: a,x,y,sp,ps,pc.
 // GBA: r0..r15,cpsr,pc. (See src/system/CpuState.hpp.)
 export type CpuRegisters = Record<string, number>;
+
+// One function's profiler sample (emulated cycles). `label` is the symbol name
+// once labels are loaded, else "". Sorted by exclusiveCycles (the bottleneck
+// signal: time spent in the function itself, excluding callees).
+export interface ProfiledFunction {
+  address: number;
+  label: string;
+  exclusiveCycles: number;
+  inclusiveCycles: number;
+  callCount: number;
+  minCycles: number;
+  maxCycles: number;
+}
+
+export interface DisasmLine { address: number; text: string; bytes: string; }
+export interface TraceLine { pc: number; text: string; }
+export interface CallFrame { address: number; label: string; }
+
+export interface BreakpointSpec {
+  type: "execute" | "read" | "write";
+  start: number;
+  end?: number;        // defaults to start (single address)
+  condition?: string;  // optional Mesen expression, e.g. "A == 0x90"
+}
+export interface BreakInfo {
+  broke: boolean;        // false = hit the cycle cap
+  pc: number;            // triggering address (runUntilBreak) / new PC (step)
+  breakpointId: number;  // -1 for a step / the cap
+}
+
+/** Format profiler results as a hot-function table (for console.log). */
+export function printProfile(fns: ProfiledFunction[], top = 20): string {
+  const hex = (a: number) => "$" + (a >>> 0).toString(16).padStart(4, "0");
+  const lines = fns.slice(0, top).map((f) =>
+    `${String(f.exclusiveCycles).padStart(12)}  ${String(f.callCount).padStart(8)}  ` +
+    `${f.label || hex(f.address)}`,
+  );
+  return [`${"exclCycles".padStart(12)}  ${"calls".padStart(8)}  function`, ...lines].join("\n");
+}
 
 const rp: NativeRp = (globalThis as any)[Symbol.for("retroplug")];
 
@@ -94,6 +145,56 @@ export const emu = {
   /** Run until PC === target or maxCycles elapse. False if hit cap / can't step. */
   runUntilPc(sys: number, pc: number, maxCycles: number): boolean {
     return rp.runUntilPc(sys, pc, maxCycles);
+  },
+  /** Start profiling: init the debugger + reset the profiler. Mesen NES only.
+   *  Drive execution with runMs between this and readProfile. */
+  beginProfile(sys: number): void {
+    rp.beginProfile(sys);
+  },
+  /** Read accumulated profiler stats, sorted by exclusive cycles (hottest first). */
+  readProfile(sys: number): ProfiledFunction[] {
+    return rp.readProfile(sys);
+  },
+  /** Load a cc65 .dbg so profiler/disasm/callstack output shows symbol names. */
+  loadLabels(sys: number, path: string): boolean {
+    return rp.loadLabels(sys, path);
+  },
+  /** Disassemble `count` instructions from CPU address `addr`. */
+  disassemble(sys: number, addr: number, count: number): DisasmLine[] {
+    return rp.disassemble(sys, addr, count);
+  },
+  /** Enable/disable the execution trace logger (enable before the run window). */
+  setTrace(sys: number, on: boolean): void {
+    rp.setTrace(sys, on);
+  },
+  /** Most recent `count` executed instructions (row 0 = most recent). */
+  readTrace(sys: number, count: number): TraceLine[] {
+    return rp.readTrace(sys, count);
+  },
+  /** Current call stack (outermost first), each frame named when labels load. */
+  getCallStack(sys: number): CallFrame[] {
+    return rp.getCallStack(sys);
+  },
+  /** Install breakpoints/watchpoints (replaces existing; [] clears). Drive with
+   *  runUntilBreak, not runMs, while breakpoints are active. */
+  setBreakpoints(sys: number, bps: BreakpointSpec[]): void {
+    rp.setBreakpoints(sys, bps);
+  },
+  /** Run until a breakpoint fires or maxCycles elapse. */
+  runUntilBreak(sys: number, maxCycles: number): BreakInfo {
+    return rp.runUntilBreak(sys, maxCycles);
+  },
+  /** Single-step into the next instruction. */
+  stepInto(sys: number): BreakInfo {
+    return rp.stepInto(sys);
+  },
+  /** Single-step, executing a subroutine call as one step. */
+  stepOver(sys: number): BreakInfo {
+    return rp.stepOver(sys);
+  },
+  /** Run until the current subroutine returns. */
+  stepOut(sys: number): BreakInfo {
+    return rp.stepOut(sys);
   },
   /** Current framebuffer: {width,height,published, pixels:Uint8Array XRGB8888}. */
   getFrame(sys: number): Frame {

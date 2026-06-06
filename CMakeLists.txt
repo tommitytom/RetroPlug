@@ -233,6 +233,7 @@ add_executable(rpc-schema-dump
     src/system/sameboy/roles/LsdjKitPatchRole.cpp
     src/system/sameboy/roles/MgbPassthroughRole.cpp
     src/system/mesen/MesenNesSystem.cpp
+    src/system/mesen/MesenNesDebugSession.cpp
     src/system/mesen/MesenVideoDevice.cpp
     src/system/mesen/MesenGbaSystem.cpp
     src/system/mesen/roles/NesN8MidiRole.cpp)
@@ -338,6 +339,7 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/roles/LsdjKitPatchRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
       src/system/mesen/MesenNesSystem.cpp
+      src/system/mesen/MesenNesDebugSession.cpp
       src/system/mesen/MesenVideoDevice.cpp
       src/system/mesen/MesenGbaSystem.cpp
       src/system/mesen/roles/NesN8MidiRole.cpp
@@ -370,6 +372,7 @@ dpf_add_plugin(${NAME}
       src/system/sameboy/roles/LsdjKitPatchRole.cpp
       src/system/sameboy/roles/MgbPassthroughRole.cpp
       src/system/mesen/MesenNesSystem.cpp
+      src/system/mesen/MesenNesDebugSession.cpp
       src/system/mesen/MesenVideoDevice.cpp
       src/system/mesen/MesenGbaSystem.cpp
       src/system/mesen/roles/NesN8MidiRole.cpp

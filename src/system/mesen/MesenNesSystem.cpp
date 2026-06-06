@@ -8,6 +8,7 @@
 
 #include "system/mesen/MesenAudioDevice.hpp"
 #include "system/mesen/MesenVideoDevice.hpp"
+#include "system/mesen/MesenNesDebugSession.hpp"
 #include "system/mesen/NesEverdriveFifo.hpp"
 #include "system/mesen/roles/NesN8MidiRole.hpp"
 
@@ -159,10 +160,18 @@ void MesenNesSystem::onDeactivate() {
     // registered with Mesen's NesMemoryManager. Drop the role (and thus the
     // memory-manager registration) before tearing down the emulator.
     n8Role_.reset();
+    debugSession_.reset();  // holds emu_ (raw); drop before the emulator
     emu_.reset();
     audioDevice_.reset();
     videoDevice_.reset();
     activated_ = false;
+}
+
+rp::IDebugTarget* MesenNesSystem::debugTarget() {
+    if (!activated_ || !emu_) return nullptr;
+    if (!debugSession_)
+        debugSession_ = std::make_unique<MesenNesDebugSession>(emu_.get());
+    return debugSession_.get();
 }
 
 void MesenNesSystem::onSampleRateChanged(double sampleRate) {

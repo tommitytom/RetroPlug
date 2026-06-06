@@ -12,6 +12,7 @@
 class Emulator;
 class MesenAudioDevice;
 class MesenVideoDevice;
+class MesenNesDebugSession;
 class NesN8MidiRole;
 
 // NES system, via the Mesen backend. Mirrors SameBoySystem's shape: per-block
@@ -62,6 +63,10 @@ public:
     std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
     std::uint64_t stepInstruction() override;
 
+    // Mesen debugger / profiler. Lazily created on first call (so non-debug
+    // renders never init Mesen's debugger). nullptr until activated.
+    rp::IDebugTarget* debugTarget() override;
+
     SystemConfig snapshotConfig() const override;
 
     // SystemBase virtuals — see base class for contracts.
@@ -88,6 +93,7 @@ private:
     std::shared_ptr<MesenAudioDevice> audioDevice_;
     std::shared_ptr<MesenVideoDevice> videoDevice_;
     std::unique_ptr<NesN8MidiRole>    n8Role_;
+    std::unique_ptr<MesenNesDebugSession> debugSession_;
     FrameBufferTriple                 frames_{kPixelWidth, kPixelHeight};
     bool                              activated_      = false;
     bool                              threadIdSet_    = false;

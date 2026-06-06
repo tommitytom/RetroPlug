@@ -18,6 +18,8 @@
 #include "transport/MemorySnapshotTriple.hpp"
 #include "transport/MidiTypes.hpp"
 
+namespace rp { class IDebugTarget; }
+
 // Polymorphic runtime representation of one emulator instance. Owned by the
 // DSP thread inside Project. Concrete subclasses: SameBoySystem, MesenNesSystem
 // (NES), MesenGbaSystem.
@@ -165,6 +167,15 @@ public:
     // getProgramCounter(); returns false immediately if the backend can't step
     // or has no program counter. Not virtual — identical for every backend.
     bool runUntilPc(std::uint32_t target, std::uint64_t maxCycles);
+
+    // -- Debugger / profiler ------------------------------------------------
+    //
+    // Optional debug capability (profiler, disassembly, breakpoints, …).
+    // Returns nullptr when the backend has no debugger (SameBoy). The Mesen
+    // backends return a live session. One capability object rather than a
+    // dozen virtuals; callers branch on nullptr (no dynamic_cast). The pointer
+    // is owned by the system and invalidated by reset/deactivation.
+    virtual rp::IDebugTarget* debugTarget() { return nullptr; }
 
     // -- Live memory snapshots ----------------------------------------------
     //

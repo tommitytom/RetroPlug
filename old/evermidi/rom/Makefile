@@ -12,8 +12,11 @@ ASMINC = $(CC65_HOME)/asminc
 # This one comes with VICE
 
 # --static-locals
-CFLAGS		:= -O
-AFLAGS		:= -t $(SYS)
+# -g on cc65 + ca65 emits debug info into the .o files; ld65 --dbgfile (below)
+# collects it into a cc65 .dbg the RetroPlug CLI harness loads via emu.loadLabels
+# for named profiling / debugging.
+CFLAGS		:= -O -g
+AFLAGS		:= -t $(SYS) -g
 BDIR		:=build
 
 # ===== Mapper selection =====
@@ -55,7 +58,7 @@ OFILES = $(OBJ:%.o=$(BDIR)/%.o)
 
 # --------------------------------------------------------------------------
 all: $(OBJ)
-	$(LD) -C nes.cfg -o $(ROM_NAME) $(OFILES) nes.lib -m $(BDIR)/mem.map
+	$(LD) -C nes.cfg -o $(ROM_NAME) $(OFILES) nes.lib -m $(BDIR)/mem.map --dbgfile $(BDIR)/$(ROM_NAME:.nes=.dbg)
 
 # Build all mapper variants
 all-mappers:

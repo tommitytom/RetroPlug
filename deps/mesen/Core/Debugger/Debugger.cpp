@@ -478,7 +478,22 @@ void Debugger::SleepUntilResume(CpuType sourceCpu, BreakSource source, MemoryOpe
 	}
 
 	_executionStopped = true;
-	
+
+	if(_headlessMode) {
+		//Headless single-threaded driver (RetroPlug CLI): capture the break and
+		//return WITHOUT blocking (and without clearing _executionStopped). The
+		//caller's Exec() loop polls IsExecutionStopped(), reads
+		//GetLastBreakEvent(), then calls ResumeFromBreak().
+		_lastBreak = {};
+		_lastBreak.Source = source;
+		_lastBreak.SourceCpu = sourceCpu;
+		_lastBreak.BreakpointId = breakpointId;
+		if(operation) {
+			_lastBreak.Operation = *operation;
+		}
+		return;
+	}
+
 	bool notificationSent = false;
 	if(source != BreakSource::Unspecified || _breakRequestCount == 0) {
 		GetMainDebugger()->OnBeforeBreak(sourceCpu);

@@ -20,6 +20,7 @@ extern "C" {
 
 #include "Screenshot.hpp"
 #include "project/Project.hpp"
+#include "system/DebugTarget.hpp"
 #include "system/InputTypes.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
@@ -163,6 +164,16 @@ struct TestHarness::Impl {
         if (sys->getCpuRegisters().empty())
             throw std::runtime_error("CPU state is not available for this system");
         return sys;
+    }
+
+    // Resolve a system's debugger/profiler (Mesen NES). Throws if unsupported.
+    rp::IDebugTarget* debugTarget(std::uint32_t id) {
+        SystemBase* sys = system(id);
+        if (!sys) throw std::runtime_error("unknown system id");
+        rp::IDebugTarget* d = sys->debugTarget();
+        if (!d) throw std::runtime_error(
+            "no debugger for this system (Mesen NES only)");
+        return d;
     }
 
     void runMs(double ms) {
@@ -422,6 +433,229 @@ JSValue jsRunUntilPc(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv)
     }
 }
 
+JSValue jsBeginProfile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "beginProfile(id)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    try {
+        h->debugTarget(static_cast<std::uint32_t>(id))->beginProfile();
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "beginProfile: %s", e.what());
+    }
+}
+
+JSValue jsReadProfile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "readProfile(id)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    try {
+        const std::vector<rp::ProfiledFunction> fns =
+            h->debugTarget(static_cast<std::uint32_t>(id))->readProfile();
+        JSValue arr = JS_NewArray(ctx);
+        for (std::uint32_t i = 0; i < fns.size(); ++i) {
+            const rp::ProfiledFunction& f = fns[i];
+            JSValue o = JS_NewObject(ctx);
+            JS_SetPropertyStr(ctx, o, "address", JS_NewInt32(ctx, f.address));
+            JS_SetPropertyStr(ctx, o, "label",
+                JS_NewStringLen(ctx, f.label.data(), f.label.size()));
+            JS_SetPropertyStr(ctx, o, "exclusiveCycles", JS_NewInt64(ctx, (int64_t)f.exclusiveCycles));
+            JS_SetPropertyStr(ctx, o, "inclusiveCycles", JS_NewInt64(ctx, (int64_t)f.inclusiveCycles));
+            JS_SetPropertyStr(ctx, o, "callCount",       JS_NewInt64(ctx, (int64_t)f.callCount));
+            JS_SetPropertyStr(ctx, o, "minCycles",       JS_NewInt64(ctx, (int64_t)f.minCycles));
+            JS_SetPropertyStr(ctx, o, "maxCycles",       JS_NewInt64(ctx, (int64_t)f.maxCycles));
+            JS_SetPropertyUint32(ctx, arr, i, o);
+        }
+        return arr;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "readProfile: %s", e.what());
+    }
+}
+
+JSValue jsLoadLabels(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "loadLabels(id, path)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    const char* path = JS_ToCString(ctx, argv[1]);
+    if (!path) return JS_EXCEPTION;
+    try {
+        const bool ok = h->debugTarget(static_cast<std::uint32_t>(id))->loadLabels(path);
+        JS_FreeCString(ctx, path);
+        return JS_NewBool(ctx, ok);
+    } catch (const std::exception& e) {
+        JSValue err = JS_ThrowTypeError(ctx, "loadLabels: %s", e.what());
+        JS_FreeCString(ctx, path);
+        return err;
+    }
+}
+
+JSValue jsDisassemble(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0, addr = 0, count = 1;
+    if (argc < 3) return JS_ThrowTypeError(ctx, "disassemble(id, addr, count)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt32(ctx, &addr, argv[1]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt32(ctx, &count, argv[2]) < 0) return JS_EXCEPTION;
+    try {
+        const auto lines = h->debugTarget(static_cast<std::uint32_t>(id))
+            ->disassemble(static_cast<std::uint32_t>(addr), static_cast<std::uint32_t>(count));
+        JSValue arr = JS_NewArray(ctx);
+        for (std::uint32_t i = 0; i < lines.size(); ++i) {
+            JSValue o = JS_NewObject(ctx);
+            JS_SetPropertyStr(ctx, o, "address", JS_NewInt32(ctx, lines[i].address));
+            JS_SetPropertyStr(ctx, o, "text",  JS_NewStringLen(ctx, lines[i].text.data(), lines[i].text.size()));
+            JS_SetPropertyStr(ctx, o, "bytes", JS_NewStringLen(ctx, lines[i].bytes.data(), lines[i].bytes.size()));
+            JS_SetPropertyUint32(ctx, arr, i, o);
+        }
+        return arr;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "disassemble: %s", e.what());
+    }
+}
+
+JSValue jsSetTrace(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "setTrace(id, on)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    const int on = JS_ToBool(ctx, argv[1]);
+    if (on < 0) return JS_EXCEPTION;
+    try {
+        h->debugTarget(static_cast<std::uint32_t>(id))->setTraceEnabled(on == 1);
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "setTrace: %s", e.what());
+    }
+}
+
+JSValue jsReadTrace(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0, count = 1;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "readTrace(id, count)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt32(ctx, &count, argv[1]) < 0) return JS_EXCEPTION;
+    try {
+        const auto rows = h->debugTarget(static_cast<std::uint32_t>(id))
+            ->readTrace(static_cast<std::uint32_t>(count));
+        JSValue arr = JS_NewArray(ctx);
+        for (std::uint32_t i = 0; i < rows.size(); ++i) {
+            JSValue o = JS_NewObject(ctx);
+            JS_SetPropertyStr(ctx, o, "pc",   JS_NewInt32(ctx, (int32_t)rows[i].pc));
+            JS_SetPropertyStr(ctx, o, "text", JS_NewStringLen(ctx, rows[i].text.data(), rows[i].text.size()));
+            JS_SetPropertyUint32(ctx, arr, i, o);
+        }
+        return arr;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "readTrace: %s", e.what());
+    }
+}
+
+JSValue jsGetCallStack(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "getCallStack(id)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    try {
+        const auto frames = h->debugTarget(static_cast<std::uint32_t>(id))->getCallStack();
+        JSValue arr = JS_NewArray(ctx);
+        for (std::uint32_t i = 0; i < frames.size(); ++i) {
+            JSValue o = JS_NewObject(ctx);
+            JS_SetPropertyStr(ctx, o, "address", JS_NewInt32(ctx, frames[i].address));
+            JS_SetPropertyStr(ctx, o, "label", JS_NewStringLen(ctx, frames[i].label.data(), frames[i].label.size()));
+            JS_SetPropertyUint32(ctx, arr, i, o);
+        }
+        return arr;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "getCallStack: %s", e.what());
+    }
+}
+
+JSValue breakInfoToJs(JSContext* ctx, const rp::BreakInfo& bi) {
+    JSValue o = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, o, "broke",        JS_NewBool(ctx, bi.broke));
+    JS_SetPropertyStr(ctx, o, "pc",           JS_NewInt32(ctx, (int32_t)bi.pc));
+    JS_SetPropertyStr(ctx, o, "breakpointId", JS_NewInt32(ctx, bi.breakpointId));
+    return o;
+}
+
+JSValue jsSetBreakpoints(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "setBreakpoints(id, bps[])");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    if (!JS_IsArray(argv[1])) return JS_ThrowTypeError(ctx, "setBreakpoints: bps must be an array");
+    try {
+        JSValue lenv = JS_GetPropertyStr(ctx, argv[1], "length");
+        int32_t len = 0; JS_ToInt32(ctx, &len, lenv); JS_FreeValue(ctx, lenv);
+        std::vector<rp::BreakpointSpec> specs;
+        for (int32_t i = 0; i < len; ++i) {
+            JSValue o = JS_GetPropertyUint32(ctx, argv[1], (uint32_t)i);
+            rp::BreakpointSpec s;
+            JSValue tv = JS_GetPropertyStr(ctx, o, "type");
+            if (const char* ts = JS_ToCString(ctx, tv)) { s.type = ts; JS_FreeCString(ctx, ts); }
+            JS_FreeValue(ctx, tv);
+            JSValue sv = JS_GetPropertyStr(ctx, o, "start");
+            int32_t sa = 0; JS_ToInt32(ctx, &sa, sv); s.start = (uint32_t)sa; JS_FreeValue(ctx, sv);
+            JSValue ev = JS_GetPropertyStr(ctx, o, "end");
+            int32_t ea = 0; if (!JS_IsUndefined(ev)) JS_ToInt32(ctx, &ea, ev); s.end = (uint32_t)ea; JS_FreeValue(ctx, ev);
+            JSValue cv = JS_GetPropertyStr(ctx, o, "condition");
+            if (JS_IsString(cv)) { if (const char* cs = JS_ToCString(ctx, cv)) { s.condition = cs; JS_FreeCString(ctx, cs); } }
+            JS_FreeValue(ctx, cv);
+            JS_FreeValue(ctx, o);
+            specs.push_back(std::move(s));
+        }
+        h->debugTarget(static_cast<std::uint32_t>(id))->setBreakpoints(specs);
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "setBreakpoints: %s", e.what());
+    }
+}
+
+JSValue jsRunUntilBreak(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0; int64_t maxCycles = 0;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "runUntilBreak(id, maxCycles)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt64(ctx, &maxCycles, argv[1]) < 0) return JS_EXCEPTION;
+    if (maxCycles <= 0) return JS_ThrowRangeError(ctx, "runUntilBreak: maxCycles must be > 0");
+    try {
+        return breakInfoToJs(ctx, h->debugTarget(static_cast<std::uint32_t>(id))
+            ->runUntilBreak(static_cast<std::uint64_t>(maxCycles)));
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "runUntilBreak: %s", e.what());
+    }
+}
+
+// magic: 0=step, 1=stepOver, 2=stepOut
+JSValue jsStepKind(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int magic) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "step(id)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    try {
+        rp::IDebugTarget* d = h->debugTarget(static_cast<std::uint32_t>(id));
+        rp::BreakInfo bi = magic == 1 ? d->stepOver()
+                         : magic == 2 ? d->stepOut()
+                                      : d->step();
+        return breakInfoToJs(ctx, bi);
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "step: %s", e.what());
+    }
+}
+
 JSValue jsGetFrame(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     auto* h = g_activeImpl;
     if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
@@ -578,9 +812,24 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     bind("readCpu",      jsReadCpu,      2);
     bind("step",         jsStep,         1);
     bind("runUntilPc",   jsRunUntilPc,   3);
-    bind("getFrame",     jsGetFrame,     1);
-    bind("screenshot",   jsScreenshot,   2);
-    bind("getAudio",     jsGetAudio,     1);
+    bind("getFrame",      jsGetFrame,      1);
+    bind("screenshot",    jsScreenshot,    2);
+    bind("getAudio",      jsGetAudio,      1);
+    bind("beginProfile",  jsBeginProfile,  1);
+    bind("readProfile",   jsReadProfile,   1);
+    bind("loadLabels",    jsLoadLabels,    2);
+    bind("disassemble",    jsDisassemble,    3);
+    bind("setTrace",       jsSetTrace,       2);
+    bind("readTrace",      jsReadTrace,      2);
+    bind("getCallStack",   jsGetCallStack,   1);
+    bind("setBreakpoints", jsSetBreakpoints, 2);
+    bind("runUntilBreak",  jsRunUntilBreak,  2);
+    JS_SetPropertyStr(ctx, ns, "stepInto",
+        JS_NewCFunctionMagic(ctx, jsStepKind, "stepInto", 1, JS_CFUNC_generic_magic, 0));
+    JS_SetPropertyStr(ctx, ns, "stepOver",
+        JS_NewCFunctionMagic(ctx, jsStepKind, "stepOver", 1, JS_CFUNC_generic_magic, 1));
+    JS_SetPropertyStr(ctx, ns, "stepOut",
+        JS_NewCFunctionMagic(ctx, jsStepKind, "stepOut", 1, JS_CFUNC_generic_magic, 2));
     bind("beginCase",    jsBeginCase,    0);
     bind("report",       jsReport,       3);
     bind("done",         jsDone,         0);
