@@ -76,7 +76,9 @@ hot-reloadable, and the audio-thread boundary stays clean.
 
 ## Migration phases
 
-The 18 steps are grouped into five phases.
+The steps are grouped into five phases. **DONE** marks landed work; unmarked
+steps are pending. Ordering is a guide, not a hard chain — see each file's
+*Depends on*.
 
 ### Phase 1 — Foundation
 
@@ -87,27 +89,26 @@ empty.
   framebuffer, output audio.
 - [02: Keyboard input](./02-keyboard-input.md) — **DONE**. UI→DSP command
   queue with `ButtonPress`; per-system pending-button queue.
-- [03: ROM picker UI](./03-rom-picker.md) — Replace the hardcoded path with a
-  real load flow. Lights up the rpcpp request/response surface.
+- [03: ROM picker UI](./03-rom-picker.md) — **DONE**. Replace the hardcoded path
+  with a real load flow. Lights up the rpcpp request/response surface.
 
 ### Phase 2 — Persistence + multi-instance
 
 Make the work survive across DAW sessions and run more than one ROM at a time.
 
-- [04: Project state](./04-project-state.md) — DPF `getState`/`setState`,
-  `ProjectConfig` round-trip via reflectcpp. Promoted earlier than the old
-  roadmap had it because users will lose work without this.
-- [05: Multi-instance + tile grid](./05-multi-instance.md) — N>1 systems, React
-  tile grid with Tab navigation, audio mixer.
+- [04: Project state](./04-project-state.md) — **DONE**. DPF `getState`/`setState`,
+  `ProjectConfig` round-trip via reflectcpp.
+- [05: Multi-instance + tile grid](./05-multi-instance.md) — **DONE**. N>1 systems,
+  React tile grid with Tab navigation, audio mixer.
 
 ### Phase 3 — MIDI and per-ROM behaviors
 
 The features that actually make this a music plugin.
 
-- [06: MIDI input/output routing](./06-midi-routing.md) — DPF MIDI → systems,
-  routing modes from the old project.
-- [07: MGB passthrough role](./07-mgb-role.md) — First concrete `RomRole`. ROM
-  sniffer registers it. Validates the role abstraction.
+- [06: MIDI input/output routing](./06-midi-routing.md) — **DONE**. DPF MIDI →
+  systems, routing modes from the old project.
+- [07: MGB passthrough role](./07-mgb-role.md) — **DONE**. First concrete
+  `RomRole`. ROM sniffer registers it. Validates the role abstraction.
 - [08: LSDJ sync role](./08-lsdj-sync.md) — **DONE**. Simplest LSDJ MIDI sync
   mode (MidiSync only): host PPQ → 0xF8 → LSDJ serial. Offset table + autoplay
   RAM detection deferred to step 09 where Arduinoboy needs them anyway.
@@ -121,16 +122,22 @@ The features that actually make this a music plugin.
 ### Phase 4 — Custom views + extensibility
 
 The "highly extensible" goal. Memory snapshot APIs, then a TS extension
-framework, then two flagship built-in extensions.
+framework, then built-in extensions and the LSDJ sav tooling.
 
-- [11: Memory snapshot API](./11-memory-snapshots.md) — rpcpp method for
-  fetching RAM/VRAM/SRAM. Foundation for everything in this phase.
+- [11: Memory snapshot API](./11-memory-snapshots.md) — **DONE**. rpcpp method
+  for fetching RAM/VRAM/SRAM. Foundation for everything in this phase.
 - [12: TS extension framework](./12-ts-extensions.md) — Manifest-based
   registration, lifecycle hooks, hot-reload.
 - [13: LSDJ HD player](./13-lsdj-hd.md) — Full-window LSDJ rendering. Built-in
   extension; doubles as the framework's reference implementation.
 - [14: Sample matcher UI](./14-sample-matcher.md) — LSDJ-style sample editor.
   Built-in extension.
+- [21: LSDJ sav inspector](./21-sav-inspector.md) — Expose a parsed `.sav` over
+  rpcpp + a React view typed by the generated `SavTypes`/`SavSchema`. Builds on
+  the LSDJ sav codec (landed in `src/lsdj/`; not a numbered step).
+- [22: LSDJ legacy sav formats](./22-lsdj-legacy-sav-formats.md) — Semantic
+  decode/encode for format versions below the modern range (so old savs read
+  correctly, not just round-trip), validated against liblsdj. Independent of 21.
 
 ### Phase 5 — Quality + breadth
 
@@ -140,8 +147,14 @@ Audio fidelity, mid-session savestates, second emulator backend, web target.
   accuracy at non-44.1 kHz host rates.
 - [16: Savestate slots](./16-savestate-slots.md) — Mid-session save/load
   (distinct from project state which only saves once).
-- [17: Mesen NES support](./17-mesen.md) — `MesenNesSystem`. Validates that
-  `SystemBase` was the right interface.
+- [17: Mesen NES support](./17-mesen.md) — **DONE**. `MesenNesSystem`. Validates
+  that `SystemBase` was the right interface.
+- [19: Mesen CPU introspection + debugger](./19-mesen-debugger.md) — **DONE**.
+  Generic CPU-state interface; headless NES debugger/profiler in the CLI harness
+  (stepping, breakpoints, disassembly, trace, cc65 symbols).
+- [20: Remove Mesen run-loop threading](./20-mesen-single-thread-runloop.md) —
+  **DEFERRED**. The debugger's break model is single-threaded only; ripping out
+  the dead threading is a follow-up.
 - [18: Web/Emscripten port](./18-web-port.md) — DSP+UI to WASM. C++ core
   unchanged because no shared-memory IPC assumption was baked in.
 

@@ -20,6 +20,9 @@ and validated by the generated `SavSchema.ts` (zod).
   `build/ui/generated/SavSchema.ts` + `SavTypes.ts`.
 - [Step 12](./12-ts-extensions.md) is the natural home if this ships as a
   built-in TS extension rather than a core panel.
+- **Independent of [Step 22](./22-lsdj-legacy-sav-formats.md)** — neither blocks
+  the other. This step works on modern savs without 22; doing 22 first just
+  means the inspector also reads pre-fmt-16 savs with correct values.
 
 ## Architecture introduced
 
