@@ -29,22 +29,34 @@ WaveVolume decodeWaveVolume(std::uint8_t raw) {
     }
 }
 
-// fmt>=8 on-disk command byte -> Command.
-Command decodeCommand(std::uint8_t b) {
+// On-disk command byte -> Command. fmt>=8 inserts B at slot 1 and shifts the
+// rest up by one; fmt<8 stores the raw enum (no B).
+Command decodeCommand(std::uint8_t b, FormatVersion fmt) {
+    if (fmt < 8) return b <= 23 ? static_cast<Command>(b) : Command::None;
     if (b == 0) return Command::None;
     if (b == 1) return Command::B;
     const std::uint8_t v = b - 1;
     return v <= 23 ? static_cast<Command>(v) : Command::None;
 }
 
-Vibrato decodeVibrato(const SavView& v, std::size_t base) {
+Vibrato decodeVibrato(const SavView& v, std::size_t base, FormatVersion fmt) {
     Vibrato vib;
     vib.direction = toEnum<VibratoDirection>(v.bits(base + 5, 0, 1), 1);
-    vib.shape     = toEnum<VibratoShape>(v.bits(base + 5, 1, 2), 2);
-    const std::uint8_t b5 = v.u8(base + 5);
-    vib.plvSpeed = (b5 & 0x80) ? PlvSpeed::Step
-                 : (b5 & 0x10) ? PlvSpeed::Tick
-                               : PlvSpeed::Fast;
+    if (fmt >= 4) {
+        vib.shape = toEnum<VibratoShape>(v.bits(base + 5, 1, 2), 2);
+        const std::uint8_t b5 = v.u8(base + 5);
+        vib.plvSpeed = (b5 & 0x80) ? PlvSpeed::Step
+                     : (b5 & 0x10) ? PlvSpeed::Tick
+                                   : PlvSpeed::Fast;
+    } else {
+        // fmt<4: shape and PLV speed share byte5[1,2].
+        switch (v.bits(base + 5, 1, 2)) {
+            case 0:  vib.shape = VibratoShape::Triangle; vib.plvSpeed = PlvSpeed::Fast; break;
+            case 1:  vib.shape = VibratoShape::Sawtooth; vib.plvSpeed = PlvSpeed::Tick; break;
+            case 2:  vib.shape = VibratoShape::Triangle; vib.plvSpeed = PlvSpeed::Tick; break;
+            default: vib.shape = VibratoShape::Square;   vib.plvSpeed = PlvSpeed::Tick; break;
+        }
+    }
     return vib;
 }
 
@@ -81,15 +93,21 @@ Instrument decodeInstrument(const SavView& v, std::size_t base, FormatVersion fm
         case 1: { // WAVE
             WaveInstrument w;
             w.common      = decodeCommon(v, base);
-            w.vibrato     = decodeVibrato(v, base);
+            w.vibrato     = decodeVibrato(v, base, fmt);
             w.transpose   = transpose;
             w.volume      = decodeWaveVolume(v.u8(base + 1));
-            w.synth       = v.bits(base + 3, 4, 4);
+            w.synth       = (fmt >= 16) ? v.bits(base + 3, 4, 4) : v.bits(base + 2, 4, 4);
             w.wave        = v.u8(base + 3);
-            w.playMode    = toEnum<WavePlayMode>((v.bits(base + 9, 0, 2) + 3) & 3, 3); // (raw-1)&3
-            w.length      = static_cast<Byte>(0xF - v.bits(base + 0xA, 0, 4));
-            w.speed       = static_cast<Byte>(v.u8(base + 0xB) + 4);
-            w.loopPos     = v.bits(base + 2, 0, 4);
+            w.playMode    = (fmt >= 10) ? toEnum<WavePlayMode>((v.bits(base + 9, 0, 2) + 3) & 3, 3) // (raw-1)&3
+                                        : toEnum<WavePlayMode>(v.bits(base + 9, 0, 2), 3);
+            w.length      = (fmt >= 7) ? static_cast<Byte>(0xF - v.bits(base + 0xA, 0, 4))
+                          : (fmt == 6) ? static_cast<Byte>(v.bits(base + 0xA, 0, 4))
+                                       : static_cast<Byte>(v.bits(base + 0xE, 4, 4));
+            w.speed       = (fmt >= 7) ? static_cast<Byte>(v.u8(base + 0xB) + 4)
+                          : (fmt == 6) ? static_cast<Byte>(v.u8(base + 0xB) + 1)
+                                       : static_cast<Byte>(v.bits(base + 0xE, 0, 4) + 1);
+            w.loopPos     = (fmt >= 9) ? v.bits(base + 2, 0, 4)
+                                       : static_cast<Byte>(v.bits(base + 2, 0, 4) ^ 0x0F);
             w.commandRate = v.u8(base + 8);
             return w;
         }
@@ -115,7 +133,7 @@ Instrument decodeInstrument(const SavView& v, std::size_t base, FormatVersion fm
             NoiseInstrument n;
             n.common      = decodeCommon(v, base);
             n.adsr        = decodeAdsr(v, base, fmt);
-            n.vibrato     = decodeVibrato(v, base);
+            n.vibrato     = decodeVibrato(v, base, fmt);
             n.stability   = toEnum<NoiseStability>(v.bits(base + 2, 0, 1), 1);
             n.length      = decodeLength(v, base);
             n.shape       = v.u8(base + 4);
@@ -126,7 +144,7 @@ Instrument decodeInstrument(const SavView& v, std::size_t base, FormatVersion fm
             PulseInstrument p;
             p.common      = decodeCommon(v, base);
             p.adsr        = decodeAdsr(v, base, fmt);
-            p.vibrato     = decodeVibrato(v, base);
+            p.vibrato     = decodeVibrato(v, base, fmt);
             p.transpose   = transpose;
             p.pulseWidth  = toEnum<PulseWidth>(v.bits(base + 7, 6, 2), 3);
             p.finetune    = v.bits(base + 7, 2, 4);
@@ -154,17 +172,29 @@ std::uint8_t encodeWaveVolume(WaveVolume v) {
     }
 }
 
-std::uint8_t encodeCommand(Command c) { // fmt>=8
+std::uint8_t encodeCommand(Command c, FormatVersion fmt) {
+    if (fmt < 8) return static_cast<std::uint8_t>(c); // raw enum (B doesn't occur on fmt<8)
     if (c == Command::None) return 0;
     if (c == Command::B)    return 1;
     return static_cast<std::uint8_t>(static_cast<std::uint8_t>(c) + 1);
 }
 
-void encodeVibrato(SavWriter& w, std::size_t base, const Vibrato& vib) {
+void encodeVibrato(SavWriter& w, std::size_t base, const Vibrato& vib, FormatVersion fmt) {
     w.setBits(base + 5, 0, 1, static_cast<std::uint8_t>(vib.direction));
-    w.setBits(base + 5, 1, 2, static_cast<std::uint8_t>(vib.shape));
-    w.setBits(base + 5, 7, 1, vib.plvSpeed == PlvSpeed::Step ? 1 : 0);
-    w.setBits(base + 5, 4, 1, vib.plvSpeed == PlvSpeed::Tick ? 1 : 0);
+    if (fmt >= 4) {
+        w.setBits(base + 5, 1, 2, static_cast<std::uint8_t>(vib.shape));
+        w.setBits(base + 5, 7, 1, vib.plvSpeed == PlvSpeed::Step ? 1 : 0);
+        w.setBits(base + 5, 4, 1, vib.plvSpeed == PlvSpeed::Tick ? 1 : 0);
+    } else {
+        // fmt<4: (shape,plv) pack into byte5[1,2] — exact inverse of decode's
+        // switch for the 4 legal pairs (others fall back to Triangle/Fast).
+        std::uint8_t bits = 0;
+        if (vib.plvSpeed == PlvSpeed::Tick) {
+            bits = (vib.shape == VibratoShape::Sawtooth) ? 1
+                 : (vib.shape == VibratoShape::Triangle) ? 2 : 3;
+        }
+        w.setBits(base + 5, 1, 2, bits);
+    }
 }
 
 void encodeAdsr(SavWriter& w, std::size_t base, const Adsr& a, FormatVersion fmt) {
@@ -202,15 +232,23 @@ void encodeInstrument(SavWriter& w, std::size_t base, const Instrument& inst, Fo
         if constexpr (std::is_same_v<T, WaveInstrument>) {
             w.setU8(base + 0, 1);
             encodeCommon(w, base, v.common.get());
-            encodeVibrato(w, base, v.vibrato);
+            encodeVibrato(w, base, v.vibrato, fmt);
             w.setBits(base + 5, 5, 1, v.transpose ? 0 : 1);
             w.setU8(base + 1, encodeWaveVolume(v.volume));
             w.setU8(base + 3, v.wave);                       // wave = full byte 3
-            w.setBits(base + 3, 4, 4, v.synth.value());      // synth = high nibble of byte 3
-            w.setBits(base + 9, 0, 2, static_cast<std::uint8_t>((static_cast<int>(v.playMode) + 1) & 3));
-            w.setBits(base + 0xA, 0, 4, static_cast<std::uint8_t>(0xF - v.length.value()));
-            w.setU8(base + 0xB, static_cast<std::uint8_t>(v.speed - 4));
-            w.setBits(base + 2, 0, 4, v.loopPos.value());
+            // synth: byte3 hi-nibble (fmt>=16, written after wave) else byte2 hi-nibble.
+            w.setBits((fmt >= 16) ? base + 3 : base + 2, 4, 4, v.synth.value());
+            w.setBits(base + 9, 0, 2, (fmt >= 10)
+                ? static_cast<std::uint8_t>((static_cast<int>(v.playMode) + 1) & 3)
+                : static_cast<std::uint8_t>(v.playMode));
+            if (fmt >= 7)      w.setBits(base + 0xA, 0, 4, static_cast<std::uint8_t>(0xF - v.length.value()));
+            else if (fmt == 6) w.setBits(base + 0xA, 0, 4, v.length.value());
+            else               w.setBits(base + 0xE, 4, 4, v.length.value());
+            if (fmt >= 7)      w.setU8(base + 0xB, static_cast<std::uint8_t>(v.speed - 4));
+            else if (fmt == 6) w.setU8(base + 0xB, static_cast<std::uint8_t>(v.speed - 1));
+            else               w.setBits(base + 0xE, 0, 4, static_cast<std::uint8_t>(v.speed - 1));
+            w.setBits(base + 2, 0, 4, (fmt >= 9) ? v.loopPos.value()
+                                                 : static_cast<std::uint8_t>(v.loopPos.value() ^ 0x0F));
             w.setU8(base + 8, v.commandRate);
         } else if constexpr (std::is_same_v<T, KitInstrument>) {
             w.setU8(base + 0, 2);
@@ -232,7 +270,7 @@ void encodeInstrument(SavWriter& w, std::size_t base, const Instrument& inst, Fo
             w.setU8(base + 0, 3);
             encodeCommon(w, base, v.common.get());
             encodeAdsr(w, base, v.adsr, fmt);
-            encodeVibrato(w, base, v.vibrato);
+            encodeVibrato(w, base, v.vibrato, fmt);
             w.setBits(base + 2, 0, 1, static_cast<std::uint8_t>(v.stability));
             encodeLength(w, base, v.length);
             w.setU8(base + 4, v.shape);
@@ -241,7 +279,7 @@ void encodeInstrument(SavWriter& w, std::size_t base, const Instrument& inst, Fo
             w.setU8(base + 0, 0);
             encodeCommon(w, base, v.common.get());
             encodeAdsr(w, base, v.adsr, fmt);
-            encodeVibrato(w, base, v.vibrato);
+            encodeVibrato(w, base, v.vibrato, fmt);
             w.setBits(base + 5, 5, 1, v.transpose ? 0 : 1);
             w.setBits(base + 7, 6, 2, static_cast<std::uint8_t>(v.pulseWidth));
             w.setBits(base + 7, 2, 4, v.finetune.value());
@@ -310,7 +348,7 @@ rfl::Result<model::Song> decodeSong(std::span<const std::uint8_t> songBytes) {
             p.notes[step] = v.u8(r.phraseNotes + idx);
             const std::uint8_t ins = v.u8(r.phraseInstruments + idx);
             if (ins != 0xFF) p.instruments[step] = ins;
-            p.commands[step]      = decodeCommand(v.u8(r.phraseCommands + idx));
+            p.commands[step]      = decodeCommand(v.u8(r.phraseCommands + idx), fmt);
             p.commandValues[step] = v.u8(r.phraseCommandValues + idx);
         }
         song.phrases[i] = p;
@@ -330,9 +368,9 @@ rfl::Result<model::Song> decodeSong(std::span<const std::uint8_t> songBytes) {
             const std::size_t idx = i * kTableLength + step;
             t.volumes[step]        = v.u8(r.tableEnvelopes + idx);
             t.transpositions[step] = v.u8(r.tableTransposition + idx);
-            t.command1[step]       = decodeCommand(v.u8(r.tableCommand1 + idx));
+            t.command1[step]       = decodeCommand(v.u8(r.tableCommand1 + idx), fmt);
             t.command1Values[step] = v.u8(r.tableCommand1Value + idx);
-            t.command2[step]       = decodeCommand(v.u8(r.tableCommand2 + idx));
+            t.command2[step]       = decodeCommand(v.u8(r.tableCommand2 + idx), fmt);
             t.command2Values[step] = v.u8(r.tableCommand2Value + idx);
         }
         song.tables[i] = t;
@@ -349,7 +387,7 @@ rfl::Result<model::Song> decodeSong(std::span<const std::uint8_t> songBytes) {
         Synth& s = song.synths[i];
         s.waveform         = toEnum<SynthWaveform>(v.u8(b + 0), 2);
         s.filter           = toEnum<SynthFilter>(v.u8(b + 1), 3);
-        s.resonanceStart   = (v.u8(b + 2) & 0xF0) >> 4;
+        s.resonanceStart   = (fmt >= 5) ? ((v.u8(b + 2) & 0xF0) >> 4) : (v.u8(b + 2) & 0x0F);
         s.resonanceEnd     = v.u8(b + 2) & 0x0F;
         s.distortion       = toEnum<SynthDistortion>(v.u8(b + 3), 2);
         s.phaseCompression = toEnum<SynthPhaseCompression>(v.u8(b + 4), 2);
@@ -427,7 +465,7 @@ std::vector<std::uint8_t> encodeSong(const model::Song& song,
             const std::size_t idx = i * kPhraseLength + step;
             w.setU8(r.phraseNotes + idx, p.notes[step]);
             w.setU8(r.phraseInstruments + idx, p.instruments[step] ? *p.instruments[step] : 0xFF);
-            w.setU8(r.phraseCommands + idx, encodeCommand(p.commands[step]));
+            w.setU8(r.phraseCommands + idx, encodeCommand(p.commands[step], fmt));
             w.setU8(r.phraseCommandValues + idx, p.commandValues[step]);
         }
     }
@@ -448,9 +486,9 @@ std::vector<std::uint8_t> encodeSong(const model::Song& song,
             const std::size_t idx = i * kTableLength + step;
             w.setU8(r.tableEnvelopes + idx, t.volumes[step]);
             w.setU8(r.tableTransposition + idx, t.transpositions[step]);
-            w.setU8(r.tableCommand1 + idx, encodeCommand(t.command1[step]));
+            w.setU8(r.tableCommand1 + idx, encodeCommand(t.command1[step], fmt));
             w.setU8(r.tableCommand1Value + idx, t.command1Values[step]);
-            w.setU8(r.tableCommand2 + idx, encodeCommand(t.command2[step]));
+            w.setU8(r.tableCommand2 + idx, encodeCommand(t.command2[step], fmt));
             w.setU8(r.tableCommand2Value + idx, t.command2Values[step]);
         }
     }
@@ -466,8 +504,12 @@ std::vector<std::uint8_t> encodeSong(const model::Song& song,
         const Synth& s = song.synths[i];
         w.setU8(b + 0, static_cast<std::uint8_t>(s.waveform));
         w.setU8(b + 1, static_cast<std::uint8_t>(s.filter));
-        w.setBits(b + 2, 4, 4, s.resonanceStart.value());
-        w.setBits(b + 2, 0, 4, s.resonanceEnd.value());
+        if (fmt >= 5) {
+            w.setBits(b + 2, 4, 4, s.resonanceStart.value());
+            w.setBits(b + 2, 0, 4, s.resonanceEnd.value());
+        } else {
+            w.setU8(b + 2, static_cast<std::uint8_t>(s.resonanceStart.value() & 0x0F)); // whole byte, hi cleared
+        }
         w.setU8(b + 3, static_cast<std::uint8_t>(s.distortion));
         w.setU8(b + 4, static_cast<std::uint8_t>(s.phaseCompression));
         w.setU8(b + 5, s.volumeStart);  w.setU8(b + 6, s.cutoffStart);

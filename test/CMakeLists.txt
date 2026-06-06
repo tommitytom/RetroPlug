@@ -142,3 +142,50 @@ target_link_libraries(retroplug-sameboy-tests PRIVATE
 )
 
 catch_discover_tests(retroplug-sameboy-tests)
+
+# -----------------------------------------------------------------------------
+# retroplug-lsdj-diff-tests — differential oracle for the LSDJ sav codec.
+# Compiles the vendored liblsdj (correct for song format versions <= 16) and
+# decodes the same content-bearing savs with both liblsdj and our codec,
+# asserting the semantic fields match. Isolated binary so retroplug-tests stays
+# free of the legacy C library. (liblsdj's offsets/gates are the ground truth
+# for fmt<=16; this is what proves the old-format `else` branches are correct.)
+# -----------------------------------------------------------------------------
+set(_LIBLSDJ_SRC ${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/liblsdj/src)
+add_executable(retroplug-lsdj-diff-tests
+    LsdjDifferentialTests.cpp
+    ../src/lsdj/codec/SongCodec.cpp
+    ../src/lsdj/codec/Compression.cpp
+    ../src/lsdj/codec/SavCodec.cpp
+    # liblsdj (C), compiled directly into the test binary.
+    ${_LIBLSDJ_SRC}/allocator.c        ${_LIBLSDJ_SRC}/bytes.c
+    ${_LIBLSDJ_SRC}/chain.c            ${_LIBLSDJ_SRC}/compression.c
+    ${_LIBLSDJ_SRC}/error.c            ${_LIBLSDJ_SRC}/groove.c
+    ${_LIBLSDJ_SRC}/instrument.c       ${_LIBLSDJ_SRC}/instrument_kit.c
+    ${_LIBLSDJ_SRC}/instrument_noise.c ${_LIBLSDJ_SRC}/instrument_pulse.c
+    ${_LIBLSDJ_SRC}/instrument_wave.c  ${_LIBLSDJ_SRC}/phrase.c
+    ${_LIBLSDJ_SRC}/project.c          ${_LIBLSDJ_SRC}/sav.c
+    ${_LIBLSDJ_SRC}/song.c             ${_LIBLSDJ_SRC}/song_empty.c
+    ${_LIBLSDJ_SRC}/speech.c           ${_LIBLSDJ_SRC}/synth.c
+    ${_LIBLSDJ_SRC}/table.c            ${_LIBLSDJ_SRC}/vio.c
+    ${_LIBLSDJ_SRC}/wave.c
+)
+
+target_include_directories(retroplug-lsdj-diff-tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/liblsdj/include
+    # liblsdj's .c files include their private headers bare ("speech.h").
+    ${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/liblsdj/include/lsdj
+)
+
+target_compile_definitions(retroplug-lsdj-diff-tests PRIVATE
+    # Content-bearing savs spanning fmt3..fmt16 (liblsdj's own test fixtures).
+    RETROPLUG_LSDJ_DIFF_SAV_DIR="${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/resources/sav"
+)
+
+target_link_libraries(retroplug-lsdj-diff-tests PRIVATE
+    Catch2::Catch2WithMain
+    rpcpp
+)
+
+catch_discover_tests(retroplug-lsdj-diff-tests)
