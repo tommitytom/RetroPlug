@@ -235,16 +235,26 @@ TEST_CASE("MessageManager::Log is thread-safe and bounded at 1000 entries",
 // ---------------------------------------------------------------------------
 // 6. GameDatabase access is lock-protected under contention.
 // ---------------------------------------------------------------------------
-// SetGameInfo / GetiNesHeader acquire `_loadLock` (see
-// deps/mesen/Core/NES/GameDatabase.cpp). The DB is shared across all
-// instances — its `_initialized` flag guarantees the embedded game.db is
-// parsed once per process. Hammering it from multiple threads should be
-// crash-free even if the lookups return "unknown game" because we didn't
-// initialize the DB in this test binary.
+// GetiNesHeader lazily calls InitDatabase() (see
+// deps/mesen/Core/NES/GameDatabase.cpp), which double-checked-locks on
+// `_loadLock` and reads `MesenNesDB.txt` from the home folder exactly once
+// per process (the `_initialized` flag). Hammering it from multiple threads
+// should be crash-free, with the lookups missing (we don't ship a DB file
+// in this dir, so the DB loads empty).
+//
+// InitDatabase() requires a home folder: FolderUtilities::GetHomeFolder()
+// throws "Home folder not specified" when none is set, and that throw inside
+// the worker threads would std::terminate the process. Production sets it in
+// MesenNesSystem::onActivate; set it here too so the test is order-independent
+// rather than relying on an earlier test having seeded the singleton.
 TEST_CASE("GameDatabase concurrent lookups don't crash",
           "[MesenSingleton][GameDatabase]") {
     constexpr int kThreads        = 4;
     constexpr int kLookupsPerThread = 200;
+
+    // No MesenNesDB.txt here → InitDatabase() loads an empty DB; every lookup
+    // below misses. The point is to stress the lazy-init lock + miss path.
+    FolderUtilities::SetHomeFolder("/tmp/retroplug-mesen-gamedb-test");
 
     std::vector<std::thread> readers;
     std::atomic<int> done{0};
