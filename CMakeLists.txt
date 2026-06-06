@@ -638,37 +638,10 @@ if(BUILD_CLI)
 
     # MidiPassthrough is covered by test/ts/gb/lsdj/passthrough.test.ts (cli-ts-test).
 
-    # `make cli-lsdj-aboy-sync-discovery` -> diagnostic that cycles the
-    # PROJECT-screen SYNC value 8 times with a screenshot after each press,
-    # so an agent can empirically map the aboy build's SYNC value order.
-    # Run once whenever the bundled aboy LSDJ ROM changes, then update the
-    # AGENTS.md cycle table. Not part of the normal verification loop.
-    add_custom_target(cli-lsdj-aboy-sync-discovery
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_aboy_sync_discovery.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-aboy-sync-discovery
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the aboy-LSDJ SYNC value cycle discovery (screenshots only)"
-    )
-
-    # `make cli-lsdj-arduinoboy-master` -> the master-out path. LSDJ's MI.OUT
-    # mode emits serial bytes that the role's ArduinoboyMaster decoder
-    # translates to host MIDI events. The per-system MIDI log (enabled via
-    # `--event-logs`) captures the decoded stream (look for 0xF8 clock +
-    # 0xFA/0xFC transport).
-    add_custom_target(cli-lsdj-arduinoboy-master
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_arduinoboy_master.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-arduinoboy-master
-                --event-logs ${CMAKE_BINARY_DIR}/lsdj-arduinoboy-master
-                --per-system-wav
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the LSDJ Arduinoboy-master demo (MI.OUT → host MIDI)"
-    )
+    # The aboy SYNC cycle is no longer discovered via UI navigation — the sav
+    # codec authors the SYNC byte directly. test/ts/gb/lsdj/sync_modes.test.ts
+    # authors every model SyncMode and asserts the byte; arduinoboy_master.test.ts
+    # covers the ArduinoboyMaster serial-out capture path (both cli-ts-test).
 
     # `make cli-lsdj-sync-negative` -> control test (no SYNC=LSDJ set). Used
     # to confirm that LEAD/SYNC indicators only appear when sync is properly
