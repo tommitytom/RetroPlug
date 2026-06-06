@@ -11,8 +11,9 @@
 // Native namespace bound by TestHarness.cpp on Symbol.for("retroplug").
 interface NativeRp {
   // Optional `sav` (an ArrayBuffer of cartridge SRAM, e.g. from savFromJson)
-  // boots the system from that .sav image.
-  loadRom(path: string, sav?: ArrayBuffer): number;
+  // boots the system from that .sav image. Optional `lsdjSyncMode` (e.g.
+  // "MidiMap", "MidiPassthrough", "ArduinoboyMaster") pre-seeds the LSDj role.
+  loadRom(path: string, sav?: ArrayBuffer, lsdjSyncMode?: string): number;
   // Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON fixture.
   savFromJson(json: string): ArrayBuffer;
   runMs(ms: number): void;
@@ -115,9 +116,11 @@ export interface ChordOpts { staggerMs?: number; holdMs?: number; }
 
 export const emu = {
   /** Load a Game Boy ROM; returns the new system id. An optional `sav`
-   *  ArrayBuffer (e.g. from savFromJson) boots the system from that .sav. */
-  loadRom(path: string, sav?: ArrayBuffer): number {
-    return rp.loadRom(path, sav);
+   *  ArrayBuffer (e.g. from savFromJson) boots the system from that .sav.
+   *  Optional `lsdjSyncMode` ("MidiSync"/"MidiMap"/"MidiPassthrough"/
+   *  "ArduinoboyMaster"/...) pre-seeds the LSDj sync role. */
+  loadRom(path: string, sav?: ArrayBuffer, lsdjSyncMode?: string): number {
+    return rp.loadRom(path, sav, lsdjSyncMode);
   },
   /** Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON
    *  fixture — missing fields take model defaults. Feed the result to

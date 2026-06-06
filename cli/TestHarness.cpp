@@ -33,6 +33,7 @@ extern "C" {
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "lsdj/SavSerialization.hpp"
 #include "lsdj/codec/SavCodec.hpp"
 
@@ -89,6 +90,20 @@ std::string oneLine(const std::string& s) {
     return out;
 }
 
+// Parse an LSDj sync-mode name for emu.loadRom's role option. Mirrors the
+// --script runner's parseLsdjSyncMode (cli/main.cpp).
+LsdjSyncMode parseLsdjSyncMode(const std::string& s) {
+    if (s == "Off")                return LsdjSyncMode::Off;
+    if (s == "MidiSync")           return LsdjSyncMode::MidiSync;
+    if (s == "MidiSyncArduinoboy") return LsdjSyncMode::MidiSyncArduinoboy;
+    if (s == "MidiMap")            return LsdjSyncMode::MidiMap;
+    if (s == "Keyboard")           return LsdjSyncMode::Keyboard;
+    if (s == "KeyboardMidi")       return LsdjSyncMode::KeyboardMidi;
+    if (s == "MidiPassthrough")    return LsdjSyncMode::MidiPassthrough;
+    if (s == "ArduinoboyMaster")   return LsdjSyncMode::ArduinoboyMaster;
+    throw std::runtime_error("loadRom: unknown lsdj_sync_mode: " + s);
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -115,7 +130,8 @@ struct TestHarness::Impl {
     // -- emu surface (called from the static JS trampolines) ----------------
 
     std::uint32_t loadRom(const std::string& path,
-                          const std::vector<std::uint8_t>* sram = nullptr) {
+                          const std::vector<std::uint8_t>* sram = nullptr,
+                          const std::string& lsdjSyncMode = "") {
         auto bytes = slurpBytes(path);
         const RomFormat fmt = detectRomFormat(bytes);
 
@@ -130,6 +146,14 @@ struct TestHarness::Impl {
                 // a fixture can boot LSDj from a synthetic sav (skipping the
                 // SRAM self-test) — mirrors the plugin's sibling-.sav load.
                 if (sram) cfg.sram = *sram;
+                // Optional LSDj sync-mode role (MidiSync / MidiMap / Passthrough
+                // / ArduinoboyMaster / ...): pre-seeds the role so onActivate
+                // skips the sniffer fallback. Mirrors the --script runner.
+                if (!lsdjSyncMode.empty()) {
+                    LsdjSyncConfig lsdj;
+                    lsdj.mode = parseLsdjSyncMode(lsdjSyncMode);
+                    cfg.roles.emplace_back(lsdj);
+                }
                 sys = std::make_unique<SameBoySystem>(
                     project->nextSystemId(), cfg, std::move(bytes));
                 break;
@@ -276,8 +300,14 @@ JSValue jsLoadRom(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
         std::uint8_t* buf = JS_GetArrayBuffer(ctx, &len, argv[1]);
         if (buf) { sram.assign(buf, buf + len); hasSram = true; }
     }
+    // Optional 3rd arg: an LSDj sync-mode name (sets the role on the system).
+    std::string syncMode;
+    if (argc >= 3 && JS_IsString(argv[2])) {
+        const char* sm = JS_ToCString(ctx, argv[2]);
+        if (sm) { syncMode = sm; JS_FreeCString(ctx, sm); }
+    }
     try {
-        const std::uint32_t id = h->loadRom(path, hasSram ? &sram : nullptr);
+        const std::uint32_t id = h->loadRom(path, hasSram ? &sram : nullptr, syncMode);
         JS_FreeCString(ctx, path);
         return JS_NewInt32(ctx, static_cast<int32_t>(id));
     } catch (const std::exception& e) {

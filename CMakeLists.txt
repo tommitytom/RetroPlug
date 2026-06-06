@@ -660,18 +660,7 @@ if(BUILD_CLI)
         COMMENT "Running the LSDJ Arduinoboy slave-mode input demo"
     )
 
-    # `make cli-lsdj-midimap` -> exercises MidiMap mode (channel + note → row
-    # index byte + 0xFE NoteOff handshake). Uses the Arduinoboy-build ROM.
-    add_custom_target(cli-lsdj-midimap
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_midimap.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-midimap
-                --per-system-wav
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the LSDJ MidiMap-mode demo"
-    )
+    # MidiMap mode is covered by test/ts/gb/lsdj/midimap.test.ts (cli-ts-test).
 
     # `make cli-lsdj-keyboardmidi` -> exercises KeyboardMidi mode (MIDI notes
     # mapped to PS/2 scancodes via LSDJ's keyboard map).
@@ -686,18 +675,7 @@ if(BUILD_CLI)
         COMMENT "Running the LSDJ KeyboardMidi-mode demo"
     )
 
-    # `make cli-lsdj-passthrough` -> exercises MidiPassthrough mode (raw
-    # 3-byte MIDI bytes forwarded to LSDJ's serial port, MGB-style).
-    add_custom_target(cli-lsdj-passthrough
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_passthrough.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-passthrough
-                --per-system-wav
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the LSDJ MidiPassthrough-mode demo"
-    )
+    # MidiPassthrough is covered by test/ts/gb/lsdj/passthrough.test.ts (cli-ts-test).
 
     # `make cli-lsdj-aboy-sync-discovery` -> diagnostic that cycles the
     # PROJECT-screen SYNC value 8 times with a screenshot after each press,
