@@ -3,6 +3,9 @@
 #include "lsdj/codec/Regions.hpp"
 #include "lsdj/codec/SavView.hpp"
 
+#include <cstring>
+#include <type_traits>
+
 // Faithful port of liblsdj's accessor logic for the modern (fmt22) layout.
 // Each instrument arm reads only its own bytes (the 16-byte record is a
 // type-tagged union of overlapping byte meanings); array regions are flat
@@ -140,6 +143,116 @@ bool allocBit(const SavView& v, std::size_t tableOff, std::size_t index) {
     return (v.u8(tableOff + index / 8) & (1u << (index % 8))) != 0;
 }
 
+// ---- encode helpers (exact inverse of the decode helpers) ----------------
+
+std::uint8_t encodeWaveVolume(WaveVolume v) {
+    switch (v) {
+        case WaveVolume::V1: return 0x60;
+        case WaveVolume::V2: return 0x40;
+        case WaveVolume::V3: return 0xA8;
+        default:             return 0x00;
+    }
+}
+
+std::uint8_t encodeCommand(Command c) { // fmt>=8
+    if (c == Command::None) return 0;
+    if (c == Command::B)    return 1;
+    return static_cast<std::uint8_t>(static_cast<std::uint8_t>(c) + 1);
+}
+
+void encodeVibrato(SavWriter& w, std::size_t base, const Vibrato& vib) {
+    w.setBits(base + 5, 0, 1, static_cast<std::uint8_t>(vib.direction));
+    w.setBits(base + 5, 1, 2, static_cast<std::uint8_t>(vib.shape));
+    w.setBits(base + 5, 7, 1, vib.plvSpeed == PlvSpeed::Step ? 1 : 0);
+    w.setBits(base + 5, 4, 1, vib.plvSpeed == PlvSpeed::Tick ? 1 : 0);
+}
+
+void encodeAdsr(SavWriter& w, std::size_t base, const Adsr& a, FormatVersion fmt) {
+    w.setBits(base + 1, 4, 4, a.initialLevel.value());
+    w.setBits(base + 1, 0, (fmt >= 13) ? 4 : 3, a.attackSpeed.value()); // mirror 4-bit read @fmt>=13
+    w.setBits(base + 9, 4, 4, a.attackLevel.value());
+    w.setBits(base + 9, 0, 3, a.decaySpeed.value());
+    w.setBits(base + 0xA, 4, 4, a.sustainLevel.value());
+    w.setBits(base + 0xA, 0, 3, a.releaseSpeed.value());
+}
+
+void encodeCommon(SavWriter& w, std::size_t base, const InstrCommon& c) {
+    w.setBits(base + 7, 0, 2, static_cast<std::uint8_t>(c.panning));
+    w.setBits(base + 5, 3, 1, c.tableMode == TableMode::Step ? 1 : 0);
+    if (c.table) {
+        w.setBits(base + 6, 5, 1, 1);
+        w.setBits(base + 6, 0, 4, c.table->value());
+    } else {
+        w.setBits(base + 6, 5, 1, 0);
+    }
+}
+
+void encodeLength(SavWriter& w, std::size_t base, const std::optional<Byte>& length) {
+    if (!length) {
+        w.setBits(base + 3, 6, 1, 0); // infinite
+    } else {
+        w.setBits(base + 3, 6, 1, 1);
+        w.setBits(base + 3, 0, 5, static_cast<std::uint8_t>((~*length) & 0x1F));
+    }
+}
+
+void encodeInstrument(SavWriter& w, std::size_t base, const Instrument& inst, FormatVersion fmt) {
+    inst.visit([&](const auto& v) {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, WaveInstrument>) {
+            w.setU8(base + 0, 1);
+            encodeCommon(w, base, v.common.get());
+            encodeVibrato(w, base, v.vibrato);
+            w.setBits(base + 5, 5, 1, v.transpose ? 0 : 1);
+            w.setU8(base + 1, encodeWaveVolume(v.volume));
+            w.setU8(base + 3, v.wave);                       // wave = full byte 3
+            w.setBits(base + 3, 4, 4, v.synth.value());      // synth = high nibble of byte 3
+            w.setBits(base + 9, 0, 2, static_cast<std::uint8_t>((static_cast<int>(v.playMode) + 1) & 3));
+            w.setBits(base + 0xA, 0, 4, static_cast<std::uint8_t>(0xF - v.length.value()));
+            w.setU8(base + 0xB, static_cast<std::uint8_t>(v.speed - 4));
+            w.setBits(base + 2, 0, 4, v.loopPos.value());
+            w.setU8(base + 8, v.commandRate);
+        } else if constexpr (std::is_same_v<T, KitInstrument>) {
+            w.setU8(base + 0, 2);
+            encodeCommon(w, base, v.common.get());
+            w.setU8(base + 1, encodeWaveVolume(v.volume));
+            w.setBits(base + 2, 0, 5, v.kit1.value());
+            w.setBits(base + 9, 0, 5, v.kit2.value());
+            w.setBits(base + 2, 6, 1, v.halfSpeed ? 1 : 0);
+            w.setBits(base + 2, 7, 1, v.loop1 == KitLoopMode::Attack ? 1 : 0);
+            w.setBits(base + 5, 6, 1, v.loop1 == KitLoopMode::On ? 1 : 0);
+            w.setBits(base + 9, 7, 1, v.loop2 == KitLoopMode::Attack ? 1 : 0);
+            w.setBits(base + 5, 5, 1, v.loop2 == KitLoopMode::On ? 1 : 0);
+            w.setBits(base + 0xA, 0, 2, static_cast<std::uint8_t>(v.distortion));
+            w.setU8(base + 8, v.pitch);
+            w.setU8(base + 3, v.length1);
+            w.setU8(base + 0xC, v.offset1);
+            w.setU8(base + 0xD, v.offset2);
+        } else if constexpr (std::is_same_v<T, NoiseInstrument>) {
+            w.setU8(base + 0, 3);
+            encodeCommon(w, base, v.common.get());
+            encodeAdsr(w, base, v.adsr, fmt);
+            encodeVibrato(w, base, v.vibrato);
+            w.setBits(base + 2, 0, 1, static_cast<std::uint8_t>(v.stability));
+            encodeLength(w, base, v.length);
+            w.setU8(base + 4, v.shape);
+            w.setU8(base + 8, v.commandRate);
+        } else { // PulseInstrument
+            w.setU8(base + 0, 0);
+            encodeCommon(w, base, v.common.get());
+            encodeAdsr(w, base, v.adsr, fmt);
+            encodeVibrato(w, base, v.vibrato);
+            w.setBits(base + 5, 5, 1, v.transpose ? 0 : 1);
+            w.setBits(base + 7, 6, 2, static_cast<std::uint8_t>(v.pulseWidth));
+            w.setBits(base + 7, 2, 4, v.finetune.value());
+            w.setU8(base + 2, v.pulse2Tune);
+            w.setU8(base + 4, v.sweep);
+            encodeLength(w, base, v.length);
+            w.setU8(base + 8, v.commandRate);
+        }
+    });
+}
+
 } // namespace
 
 rfl::Result<model::Song> decodeSong(std::span<const std::uint8_t> songBytes) {
@@ -254,6 +367,123 @@ rfl::Result<model::Song> decodeSong(std::span<const std::uint8_t> songBytes) {
             song.waves[i].frames[b] = v.u8(r.waves + i * kWaveBytes + b);
 
     return song;
+}
+
+std::vector<std::uint8_t> encodeSong(const model::Song& song,
+                                     std::span<const std::uint8_t> templateBytes) {
+    std::vector<std::uint8_t> out(kSongByteCount, 0);
+    if (templateBytes.size() >= kSongByteCount)
+        std::memcpy(out.data(), templateBytes.data(), kSongByteCount);
+
+    SavWriter w(out.data(), out.size());
+    const FormatVersion fmt = song.formatVersion;
+    const SongRegions& r = regions(fmt);
+
+    w.setU8(kFormatVersionOff, fmt);
+    for (std::size_t off : {r.rb1, r.rb2, r.rb3}) { w.setU8(off, 'r'); w.setU8(off + 1, 'b'); }
+
+    // --- settings ---
+    {
+        const SongSettings& s = song.settings;
+        w.setU8(r.tempo, static_cast<std::uint8_t>(s.tempo >= 256 ? s.tempo - 256 : s.tempo));
+        w.setU8(r.transposition, s.transposition);
+        w.setU8(r.syncMode, static_cast<std::uint8_t>(s.syncMode));
+        w.setU8(r.cloneMode, static_cast<std::uint8_t>(s.cloneMode));
+        w.setU8(r.font, s.font);
+        w.setU8(r.colorPalette, s.colorPalette);
+        w.setU8(r.keyDelay, s.keyDelay);
+        w.setU8(r.keyRepeat, s.keyRepeat);
+        w.setU8(r.prelisten, s.prelisten ? 1 : 0);
+        w.setU8(r.drumMax, s.drumMax);
+    }
+
+    // --- SONG grid ---
+    for (std::size_t row = 0; row < kSongRowCount; ++row)
+        for (std::size_t ch = 0; ch < kChannelCount; ++ch) {
+            const auto& c = song.rows[row].chains[ch];
+            w.setU8(r.chainAssignments + row * kChannelCount + ch, c ? *c : 0xFF);
+        }
+
+    // --- chains (regenerate 16-byte alloc bitset from optionals) ---
+    for (std::size_t b = 0; b < 16; ++b) w.setU8(r.chainAllocations + b, 0);
+    for (std::size_t i = 0; i < kChainCount; ++i) {
+        if (!song.chains[i]) continue;
+        w.setBits(r.chainAllocations + i / 8, i % 8, 1, 1);
+        const Chain& c = *song.chains[i];
+        for (std::size_t step = 0; step < kChainLength; ++step) {
+            const std::size_t idx = i * kChainLength + step;
+            w.setU8(r.chainPhrases + idx, c.phrases[step] ? *c.phrases[step] : 0xFF);
+            w.setU8(r.chainTranspositions + idx, c.transpositions[step]);
+        }
+    }
+
+    // --- phrases (regenerate 32-byte alloc bitset) ---
+    for (std::size_t b = 0; b < 32; ++b) w.setU8(r.phraseAllocations + b, 0);
+    for (std::size_t i = 0; i < kPhraseCount; ++i) {
+        if (!song.phrases[i]) continue;
+        w.setBits(r.phraseAllocations + i / 8, i % 8, 1, 1);
+        const Phrase& p = *song.phrases[i];
+        for (std::size_t step = 0; step < kPhraseLength; ++step) {
+            const std::size_t idx = i * kPhraseLength + step;
+            w.setU8(r.phraseNotes + idx, p.notes[step]);
+            w.setU8(r.phraseInstruments + idx, p.instruments[step] ? *p.instruments[step] : 0xFF);
+            w.setU8(r.phraseCommands + idx, encodeCommand(p.commands[step]));
+            w.setU8(r.phraseCommandValues + idx, p.commandValues[step]);
+        }
+    }
+
+    // --- instruments (1-byte alloc table) ---
+    for (std::size_t i = 0; i < kInstrumentCount; ++i) {
+        if (!song.instruments[i]) { w.setU8(r.instrumentAllocTable + i, 0); continue; }
+        w.setU8(r.instrumentAllocTable + i, 1);
+        encodeInstrument(w, r.instrumentParams + i * kInstrumentBytes, *song.instruments[i], fmt);
+    }
+
+    // --- tables (1-byte alloc table) ---
+    for (std::size_t i = 0; i < kTableCount; ++i) {
+        if (!song.tables[i]) { w.setU8(r.tableAllocTable + i, 0); continue; }
+        w.setU8(r.tableAllocTable + i, 1);
+        const Table& t = *song.tables[i];
+        for (std::size_t step = 0; step < kTableLength; ++step) {
+            const std::size_t idx = i * kTableLength + step;
+            w.setU8(r.tableEnvelopes + idx, t.volumes[step]);
+            w.setU8(r.tableTransposition + idx, t.transpositions[step]);
+            w.setU8(r.tableCommand1 + idx, encodeCommand(t.command1[step]));
+            w.setU8(r.tableCommand1Value + idx, t.command1Values[step]);
+            w.setU8(r.tableCommand2 + idx, encodeCommand(t.command2[step]));
+            w.setU8(r.tableCommand2Value + idx, t.command2Values[step]);
+        }
+    }
+
+    // --- grooves ---
+    for (std::size_t i = 0; i < kGrooveCount; ++i)
+        for (std::size_t step = 0; step < kGrooveLength; ++step)
+            w.setU8(r.grooves + i * kGrooveLength + step, song.grooves[i].steps[step]);
+
+    // --- synths ---
+    for (std::size_t i = 0; i < kSynthCount; ++i) {
+        const std::size_t b = r.synthParams + i * kSynthBytes;
+        const Synth& s = song.synths[i];
+        w.setU8(b + 0, static_cast<std::uint8_t>(s.waveform));
+        w.setU8(b + 1, static_cast<std::uint8_t>(s.filter));
+        w.setBits(b + 2, 4, 4, s.resonanceStart.value());
+        w.setBits(b + 2, 0, 4, s.resonanceEnd.value());
+        w.setU8(b + 3, static_cast<std::uint8_t>(s.distortion));
+        w.setU8(b + 4, static_cast<std::uint8_t>(s.phaseCompression));
+        w.setU8(b + 5, s.volumeStart);  w.setU8(b + 6, s.cutoffStart);
+        w.setU8(b + 7, s.phaseStart);   w.setU8(b + 8, s.vshiftStart);
+        w.setU8(b + 9, s.volumeEnd);    w.setU8(b + 10, s.cutoffEnd);
+        w.setU8(b + 11, s.phaseEnd);    w.setU8(b + 12, s.vshiftEnd);
+        w.setBits(b + 13, 4, 4, static_cast<std::uint8_t>(0xF - s.limitStart.value()));
+        w.setBits(b + 13, 0, 4, static_cast<std::uint8_t>(0xF - s.limitEnd.value()));
+    }
+
+    // --- waves ---
+    for (std::size_t i = 0; i < kWaveSlotCount; ++i)
+        for (std::size_t b = 0; b < kWaveBytes; ++b)
+            w.setU8(r.waves + i * kWaveBytes + b, song.waves[i].frames[b]);
+
+    return out;
 }
 
 } // namespace rp::lsdj::codec
