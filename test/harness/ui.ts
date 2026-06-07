@@ -63,6 +63,18 @@ export const Key = {
   Enter: 10, Esc: 27, Del: 127, Backspace: 8,
 } as const;
 
+/** Count of differing RGBA pixels between two snapshots (-1 if shapes differ). */
+export function pixelDiff(a: UiSnapshot, b: UiSnapshot): number {
+  if (a.width !== b.width || a.height !== b.height || a.pixels.length !== b.pixels.length)
+    return -1;
+  let n = 0;
+  for (let i = 0; i + 4 <= a.pixels.length; i += 4) {
+    if (a.pixels[i] !== b.pixels[i] || a.pixels[i + 1] !== b.pixels[i + 1] ||
+        a.pixels[i + 2] !== b.pixels[i + 2] || a.pixels[i + 3] !== b.pixels[i + 3]) n++;
+  }
+  return n;
+}
+
 /** True when every pixel is identical (nothing meaningful rendered). */
 export function isFlat(snap: UiSnapshot): boolean {
   const p = snap.pixels;

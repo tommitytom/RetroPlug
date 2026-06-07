@@ -1,10 +1,9 @@
 // Headless UI: loading a ROM mounts an emulator tile showing the live GB frame.
-// (TS port of the C++ PoC's second case.)
 import { test, expect, ui, CompType, isFlat } from "ui-harness";
 
 const MGB = "resources/roms/mGB.gb"; // repo-relative (runner cwd = repo root)
 
-test("loading a ROM mounts an emulator tile", () => {
+test("loading a ROM mounts an emulator tile that renders the GB frame", () => {
   expect(ui.boot()).toBeTruthy();
   ui.pump(40);
   expect(ui.findByTestId("slot-0")).toBe(null); // no tiles before any ROM
@@ -13,9 +12,14 @@ test("loading a ROM mounts an emulator tile", () => {
   ui.pump(60); // mount the SystemGrid + tile, poll a few frames
 
   // The per-system slot wrapper was tagged via the UI ref -> __rp_tagTestId.
-  expect(ui.findByTestId(`slot-${id}`)).toBeTruthy();
+  const slot = ui.findByTestId(`slot-${id}`);
+  expect(slot).toBeTruthy();
+  // The slot sits within the 480x432 window.
+  expect(slot!.width).toBeGreaterThan(0);
+  expect(slot!.height).toBeGreaterThan(0);
   // The EmulatorTile renders its framebuffer through a <Canvas> (lv_image).
   expect(ui.countByType(CompType.Image)).toBeGreaterThan(0);
+  // The rendered screen is non-uniform (the GB frame is showing).
   expect(isFlat(ui.snapshot())).toBeFalsy();
 
   expect(ui.snapshotPng("/tmp/ui-ts-tile.png")).toBeTruthy();
