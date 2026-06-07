@@ -36,6 +36,9 @@ extern "C" {
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 #include "system/sameboy/roles/LsdjSyncRole.hpp"
+#include "system/sameboy/roles/LsdjKitPatchRole.hpp"
+#include "lsdj/KitCompiler.hpp"
+#include "lsdj/KitUtil.hpp"
 #include "lsdj/SavSerialization.hpp"
 #include "lsdj/codec/SavCodec.hpp"
 
@@ -137,6 +140,7 @@ struct TestHarness::Impl {
     std::vector<SystemBase*> sysList; // load order; pointers owned by `project`
     std::unordered_map<SystemId, std::vector<MidiOutRec>> midiOutLog;
     std::unordered_map<SystemId, std::vector<SerialRec>>  serialOutLog;
+    std::unique_ptr<rp::lsdj::KitCompiler> kitCompiler_; // lazy; shared across patches
 
     // TAP state.
     int  testIndex   = 0;
@@ -350,6 +354,37 @@ struct TestHarness::Impl {
                 ppq += (bpm / 60.0) * (static_cast<double>(frames) / sampleRate);
         }
         return out;
+    }
+
+    // Compile a kit from sample files and queue it into the system's
+    // LsdjKitPatchRole (the sniffer auto-attaches it to LSDj ROMs). The role
+    // applies the bank at the top of the next process block, so call runMs after.
+    // Mirrors the patch_kit path in cli/main.cpp.
+    void patchKit(std::uint32_t id, std::uint8_t slot, const std::string& name,
+                  const std::vector<std::pair<std::string, std::string>>& samples) {
+        auto* sb = dynamic_cast<SameBoySystem*>(system(id));
+        if (!sb) throw std::runtime_error("patchKit: system is not SameBoy");
+        if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::lsdj::KitCompiler>();
+        std::vector<rp::lsdj::CompileSampleSpec> specs;
+        specs.reserve(samples.size());
+        for (const auto& s : samples) {
+            rp::lsdj::CompileSampleSpec sp;
+            sp.path = s.first;
+            sp.name = s.second;
+            specs.push_back(std::move(sp));
+        }
+        auto compiled = kitCompiler_->compileKit(name, specs);
+        if (!compiled.ok || compiled.bytes.size() != rp::lsdj::Kit::kSize)
+            throw std::runtime_error("patchKit: compile failed: " + compiled.error);
+        LsdjKitPatchRole* role = nullptr;
+        for (auto& r : sb->roles_) {
+            if (r && r->kind() == "lsdj-kit-patch") {
+                role = static_cast<LsdjKitPatchRole*>(r.get());
+                break;
+            }
+        }
+        if (!role) throw std::runtime_error("patchKit: system has no lsdj-kit-patch role");
+        role->queuePatch(slot, std::move(compiled.bytes));
     }
 
     // Take + clear the accumulated role outputs for a system.
@@ -1019,6 +1054,45 @@ JSValue jsGetAudio(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
 // writeWav(path, interleavedStereoFloat32, sampleRate?): dump audio (e.g. from
 // runMsPerSystem) to a 16-bit stereo WAV so external tools (the reaper MCP audio
 // analysis) can inspect it. Input is interleaved L,R,L,R… float32.
+// patchKit(sys, slot, name, samples): samples = [{path, name}]. Compiles + queues
+// a custom LSDj drum kit into the slot; call runMs afterwards for the role to
+// apply it to the cartridge ROM.
+JSValue jsPatchKit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    if (argc < 4) return JS_ThrowTypeError(ctx, "patchKit(sys, slot, name, samples)");
+    int32_t id = 0, slot = 0;
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt32(ctx, &slot, argv[1]) < 0) return JS_EXCEPTION;
+    const char* name = JS_ToCString(ctx, argv[2]);
+    if (!name) return JS_EXCEPTION;
+    std::string kitName = name; JS_FreeCString(ctx, name);
+    std::vector<std::pair<std::string, std::string>> samples;
+    if (JS_IsArray(argv[3])) {
+        JSValue lenv = JS_GetPropertyStr(ctx, argv[3], "length");
+        int32_t len = 0; JS_ToInt32(ctx, &len, lenv); JS_FreeValue(ctx, lenv);
+        for (int32_t i = 0; i < len; ++i) {
+            JSValue o = JS_GetPropertyUint32(ctx, argv[3], (uint32_t)i);
+            std::string p, n;
+            JSValue pv = JS_GetPropertyStr(ctx, o, "path");
+            if (const char* s = JS_ToCString(ctx, pv)) { p = s; JS_FreeCString(ctx, s); }
+            JS_FreeValue(ctx, pv);
+            JSValue nv = JS_GetPropertyStr(ctx, o, "name");
+            if (const char* s = JS_ToCString(ctx, nv)) { n = s; JS_FreeCString(ctx, s); }
+            JS_FreeValue(ctx, nv);
+            JS_FreeValue(ctx, o);
+            samples.emplace_back(std::move(p), std::move(n));
+        }
+    }
+    try {
+        h->patchKit(static_cast<std::uint32_t>(id), static_cast<std::uint8_t>(slot),
+                    kitName, samples);
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "patchKit: %s", e.what());
+    }
+}
+
 JSValue jsWriteWav(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 2) return JS_ThrowTypeError(ctx, "writeWav(path, samples, sampleRate?)");
     const char* path = JS_ToCString(ctx, argv[0]);
@@ -1163,6 +1237,7 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     bind("getAudio",      jsGetAudio,      1);
     bind("runMsPerSystem", jsRunMsPerSystem, 1);
     bind("writeWav",       jsWriteWav,       3);
+    bind("patchKit",       jsPatchKit,       4);
     bind("beginProfile",  jsBeginProfile,  1);
     bind("readProfile",   jsReadProfile,   1);
     bind("loadLabels",    jsLoadLabels,    2);

@@ -554,46 +554,13 @@ if(BUILD_CLI)
         add_dependencies(cli-ts-test cli-ts-test-${_tgt})
     endforeach()
 
-    # `make cli-nes-smoke` -> boot the n8-midi NES ROM under MesenNesSystem,
-    # render 5 s, capture a final screenshot. End-to-end verification of
-    # the Mesen backend + NES ROM dispatch.
-    add_custom_target(cli-nes-smoke
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/nes_smoke.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/nes-smoke
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Rendering examples/scripts/nes_smoke.json -> /tmp/nes-smoke.wav + boot.png"
-    )
+    # NES backend boot is covered by test/ts/nes/cpu.test.ts + observe.test.ts +
+    # midi_input.test.ts; GBA backend boot by test/ts/gba/cpu.test.ts (all
+    # cli-ts-test). They boot the same ROMs and assert CPU/memory/audio rather
+    # than just screenshotting.
 
-    # `make cli-gba-smoke` -> boot the nanoloop demo GBA ROM under MesenGbaSystem,
-    # render 5 s, capture two screenshots. End-to-end verification of the
-    # Mesen-backed GBA dispatch (audio + video + boot).
-    add_custom_target(cli-gba-smoke
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/gba_smoke.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/gba-smoke
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Rendering examples/scripts/gba_smoke.json -> /tmp/gba-smoke.wav + boot.png"
-    )
-
-    # `make cli-n8-midi` -> end-to-end MIDI-input test for the n8-midi ROM.
-    # Pumps note-ons across the four standard NES channels (pulse1=ch0,
-    # pulse2=ch1, triangle=ch2, noise=ch3) into the FIFO and captures the
-    # WAV. Audio should contain audible notes (the smoke target produces
-    # silence by comparison since n8-midi only emits sound on MIDI input).
-    add_custom_target(cli-n8-midi
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/n8_midi_input.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/n8-midi
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the n8-midi MIDI-input demo (host MIDI -> FIFO -> NES audio)"
-    )
+    # n8-midi MIDI-input (host MIDI -> NES FIFO -> APU audio) is covered by
+    # test/ts/nes/midi_input.test.ts (cli-ts-test).
 
     # Two-instance link-cable sync is covered by cli-ts-test:
     #   test/ts/gb/lsdj/sync_pattern.test.ts  — positive (follower plays, synced)
@@ -617,20 +584,9 @@ if(BUILD_CLI)
     # authors every model SyncMode and asserts the byte; arduinoboy_master.test.ts
     # covers the ArduinoboyMaster serial-out capture path (both cli-ts-test).
 
-    # `make cli-lsdj-kit-patch` -> end-to-end kit-patching smoke. Loads LSDJ,
-    # patches kit slot 0 with the mule drum samples (kick/snare/hat) at +100
-    # ms, then screenshots LSDJ's boot screen and the post-patch state. The
-    # boot screen confirms LSDJ is up; the post_patch screenshot verifies the
-    # patched kit name appears in the kit selector.
-    add_custom_target(cli-lsdj-kit-patch
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_kit_patch_smoke.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-kit-patch
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the LSDJ kit-patching smoke (loads ROM + drum samples; PNGs + WAV)"
-    )
+    # LSDj kit-patching is covered by test/ts/gb/lsdj/kit_patch.test.ts
+    # (cli-ts-test) — it patches slot 0 and asserts the kit bank + sample names
+    # land in cartridge ROM, rather than eyeballing the kit selector.
 
     # `make reaper-analyze-smoke` -> render cli-smoke and stage the WAV in
     # the reaper-mcp-server's projects dir. The MCP server's audio-analysis

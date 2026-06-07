@@ -30,6 +30,7 @@ interface NativeRp {
   getAudio(ms: number): ArrayBuffer;
   runMsPerSystem(ms: number): ArrayBuffer[];
   writeWav(path: string, samples: ArrayBuffer, sampleRate?: number): void;
+  patchKit(sys: number, slot: number, name: string, samples: KitSample[]): void;
   getRegisters(sys: number): CpuRegisters;
   setRegister(sys: number, name: string, value: number): void;
   readCpu(sys: number, addr: number): number;
@@ -80,6 +81,8 @@ export interface CallFrame { address: number; label: string; }
 export interface MidiOutEvent { sample: number; bytes: number[]; }
 // One raw GB serial-out byte captured in Arduinoboy master mode.
 export interface SerialOutByte { sample: number; byte: number; }
+// One sample slot in an LSDj kit patch: a source audio file + 3-char slot name.
+export interface KitSample { path: string; name: string; }
 
 export interface BreakpointSpec {
   type: "execute" | "read" | "write";
@@ -274,6 +277,12 @@ export const emu = {
    *  inspection, e.g. the reaper MCP audio-analysis workflow). */
   writeWav(path: string, samples: Float32Array, sampleRate = 44100): void {
     rp.writeWav(path, samples.buffer as ArrayBuffer, sampleRate);
+  },
+  /** Compile a custom LSDj drum kit from sample files and queue it into `slot`.
+   *  The sniffer auto-attaches the kit-patch role to LSDj ROMs; call runMs after
+   *  so the role writes the bank into the cartridge ROM. */
+  patchKit(sys: number, slot: number, name: string, samples: KitSample[]): void {
+    rp.patchKit(sys, slot, name, samples);
   },
   /**
    * A two-or-more-key chord (e.g. SELECT+UP). The modifier(s) lead the final
