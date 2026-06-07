@@ -102,8 +102,19 @@ order of preference:
    `loadLabels`), disassembly, trace, call stack, and conditional
    breakpoints/watchpoints/stepping — for finding bottlenecks / debugging the
    evermidi NES ROM. See [test/ts/README.md](test/ts/README.md).
-2. **UI change** — `make -C build screenshot` (writes
-   `/tmp/retroplug.png`); read the PNG via the Read tool. Drive input
+2. **UI change** — prefer a **headless UI test**: write a
+   `test/ts/ui/*.test.ts` and run `make -C build ui-ts-test` (TAP, no Xvfb).
+   It boots the REAL React UI bundle on a software LVGL display
+   (`retroplug-ui-test` runner + [test/ui/UiTestHarness.cpp](test/ui/UiTestHarness.cpp))
+   and exposes a `ui` global ([test/harness/ui.ts](test/harness/ui.ts)):
+   `boot` / `loadRom` / `pump`, `snapshot`/`snapshotPng`, `findByText` /
+   `findByTextContaining` / `findByTestId` / `findFirstByType` / `countByType`
+   (→ `WidgetInfo`), and input driving `tapKey` / `clickAt`. Queries walk the
+   live LVGL tree; `testId` comes from a `globalThis.__rp_tagTestId` ref hook
+   (inert in production). Runs in ~0.1–0.5 s/file, asserts on structure not just
+   pixels. See [test/ts/ui/](test/ts/ui/) for examples (chrome, tile, menu).
+   For an eyeball check of the live standalone, `make -C build screenshot`
+   (writes `/tmp/retroplug.png`); read the PNG via the Read tool. Drive input
    mid-run with `tools/standalone-key.sh` (keyboard) or
    `tools/standalone-mouse.sh` (mouse). JS-side `console.log/warn/error`
    calls surface as `[js:<level>] ...` lines on the standalone's stderr
