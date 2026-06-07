@@ -28,6 +28,8 @@ interface NativeRp {
   getFrame(sys: number): { width: number; height: number; published: boolean; data: ArrayBuffer };
   screenshot(sys: number, path: string): boolean;
   getAudio(ms: number): ArrayBuffer;
+  runMsPerSystem(ms: number): ArrayBuffer[];
+  writeWav(path: string, samples: ArrayBuffer, sampleRate?: number): void;
   getRegisters(sys: number): CpuRegisters;
   setRegister(sys: number, name: string, value: number): void;
   readCpu(sys: number, addr: number): number;
@@ -261,6 +263,17 @@ export const emu = {
   /** Advance `ms` and return the mixed stereo output, interleaved L,R,L,R…. */
   getAudio(ms: number): Float32Array {
     return new Float32Array(rp.getAudio(ms));
+  },
+  /** Advance `ms` and return each system's audio in its own interleaved stereo
+   *  buffer (result[i] = system i). SameBoy-only. Use to prove LSDj link-cable
+   *  sync: the follower produces audio only when actually synced to the leader. */
+  runMsPerSystem(ms: number): Float32Array[] {
+    return rp.runMsPerSystem(ms).map((b) => new Float32Array(b));
+  },
+  /** Write interleaved stereo float32 audio to a 16-bit WAV (for external
+   *  inspection, e.g. the reaper MCP audio-analysis workflow). */
+  writeWav(path: string, samples: Float32Array, sampleRate = 44100): void {
+    rp.writeWav(path, samples.buffer as ArrayBuffer, sampleRate);
   },
   /**
    * A two-or-more-key chord (e.g. SELECT+UP). The modifier(s) lead the final

@@ -20,6 +20,7 @@ extern "C" {
 }
 
 #include "Screenshot.hpp"
+#include "Wav.hpp"
 #include "project/Project.hpp"
 #include "system/DebugTarget.hpp"
 #include "system/InputTypes.hpp"
@@ -301,6 +302,53 @@ struct TestHarness::Impl {
         for (std::uint64_t s = 0; s < total; s += blockSize)
             stepBlock(static_cast<std::uint32_t>(
                 std::min<std::uint64_t>(blockSize, total - s)), &out);
+        return out;
+    }
+
+    // Advance `ms` and return each system's audio in its own interleaved buffer
+    // (out[i] = L,R,L,R… for system i). SameBoy-only — mirrors the manual
+    // prepareForBlock → stepIfBelowTarget → finishBlock orchestration in
+    // cli/main.cpp's --per-system-wav path, which interleaves linked systems the
+    // same way LinkGroup does. Used to prove LSDj link-cable sync (the follower
+    // produces audio only when actually synced to the leader).
+    std::vector<std::vector<float>> runMsPerSystem(double ms) {
+        std::vector<std::vector<float>> out(sysList.size());
+        if (ms <= 0.0 || sysList.empty()) return out;
+        std::vector<SameBoySystem*> sb;
+        sb.reserve(sysList.size());
+        for (SystemBase* s : sysList) {
+            auto* p = dynamic_cast<SameBoySystem*>(s);
+            if (!p) throw std::runtime_error("runMsPerSystem is SameBoy-only");
+            sb.push_back(p);
+        }
+        const std::uint64_t total =
+            static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
+        std::vector<float> bl(blockSize), br(blockSize);
+        for (std::uint64_t s = 0; s < total; s += blockSize) {
+            const std::uint32_t frames = static_cast<std::uint32_t>(
+                std::min<std::uint64_t>(blockSize, total - s));
+            AudioBlockInfo info{ frames, sampleRate, bpm, ppq, transportPlaying };
+            for (auto* x : sb) x->prepareForBlock(info);
+            bool any = true;
+            while (any) {
+                any = false;
+                for (auto* x : sb) if (x->stepIfBelowTarget(frames)) any = true;
+            }
+            for (std::size_t i = 0; i < sb.size(); ++i) {
+                std::fill_n(bl.data(), frames, 0.0f);
+                std::fill_n(br.data(), frames, 0.0f);
+                float* o[2] = { bl.data(), br.data() };
+                sb[i]->finishBlock(info, o);
+                for (std::uint32_t f = 0; f < frames; ++f) {
+                    out[i].push_back(bl[f]);
+                    out[i].push_back(br[f]);
+                }
+            }
+            drainCaptures();
+            sampleClock += frames;
+            if (transportPlaying)
+                ppq += (bpm / 60.0) * (static_cast<double>(frames) / sampleRate);
+        }
         return out;
     }
 
@@ -967,6 +1015,57 @@ JSValue jsGetAudio(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     }
 }
 
+// runMsPerSystem(ms) -> [ArrayBuffer]: per-system interleaved stereo float32.
+// writeWav(path, interleavedStereoFloat32, sampleRate?): dump audio (e.g. from
+// runMsPerSystem) to a 16-bit stereo WAV so external tools (the reaper MCP audio
+// analysis) can inspect it. Input is interleaved L,R,L,R… float32.
+JSValue jsWriteWav(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 2) return JS_ThrowTypeError(ctx, "writeWav(path, samples, sampleRate?)");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    std::size_t len = 0;
+    std::uint8_t* buf = JS_GetArrayBuffer(ctx, &len, argv[1]);
+    if (!buf) { JS_FreeCString(ctx, path); return JS_ThrowTypeError(ctx, "writeWav: samples must be an ArrayBuffer"); }
+    std::uint32_t sr = 44100;
+    if (argc >= 3 && !JS_IsUndefined(argv[2])) {
+        int32_t v = 44100; JS_ToInt32(ctx, &v, argv[2]); if (v > 0) sr = static_cast<std::uint32_t>(v);
+    }
+    try {
+        const float* data = reinterpret_cast<const float*>(buf);
+        const std::size_t frames = (len / sizeof(float)) / 2; // interleaved stereo
+        std::vector<float> l(frames), r(frames);
+        for (std::size_t i = 0; i < frames; ++i) { l[i] = data[2 * i]; r[i] = data[2 * i + 1]; }
+        float* outs[2] = { l.data(), r.data() };
+        WavWriter w(path, sr, 2);
+        w.writeBlockFloatPlanar(outs, static_cast<std::uint32_t>(frames));
+        JS_FreeCString(ctx, path);
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) {
+        JSValue err = JS_ThrowTypeError(ctx, "writeWav: %s", e.what());
+        JS_FreeCString(ctx, path);
+        return err;
+    }
+}
+
+JSValue jsRunMsPerSystem(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    double ms = 0.0;
+    if (argc >= 1 && JS_ToFloat64(ctx, &ms, argv[0]) < 0) return JS_EXCEPTION;
+    try {
+        const auto perSys = h->runMsPerSystem(ms);
+        JSValue arr = JS_NewArray(ctx);
+        for (std::uint32_t i = 0; i < perSys.size(); ++i) {
+            JS_SetPropertyUint32(ctx, arr, i, JS_NewArrayBufferCopy(ctx,
+                reinterpret_cast<const std::uint8_t*>(perSys[i].data()),
+                perSys[i].size() * sizeof(float)));
+        }
+        return arr;
+    } catch (const std::exception& e) {
+        return JS_ThrowTypeError(ctx, "runMsPerSystem: %s", e.what());
+    }
+}
+
 JSValue jsBeginCase(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     auto* h = g_activeImpl;
     if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
@@ -1062,6 +1161,8 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     bind("getFrame",      jsGetFrame,      1);
     bind("screenshot",    jsScreenshot,    2);
     bind("getAudio",      jsGetAudio,      1);
+    bind("runMsPerSystem", jsRunMsPerSystem, 1);
+    bind("writeWav",       jsWriteWav,       3);
     bind("beginProfile",  jsBeginProfile,  1);
     bind("readProfile",   jsReadProfile,   1);
     bind("loadLabels",    jsLoadLabels,    2);

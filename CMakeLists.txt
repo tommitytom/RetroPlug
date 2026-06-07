@@ -595,38 +595,12 @@ if(BUILD_CLI)
         COMMENT "Running the n8-midi MIDI-input demo (host MIDI -> FIFO -> NES audio)"
     )
 
-    # `make cli-sync-smoke` -> boot two LSDJ instances on link_group 1 and
-    # write per-instance PNGs + a stereo WAV. Exists so agents can verify the
-    # multi-instance + GB-framebuffer screenshot path end-to-end without
-    # touching the plugin formats.
-    add_custom_target(cli-sync-smoke
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_sync_smoke.json
-                --out ${CMAKE_BINARY_DIR}/lsdj-sync-smoke.wav
-                --screenshot-dir ${CMAKE_BINARY_DIR}
-                --final-screenshot
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Rendering examples/scripts/lsdj_sync_smoke.json -> build/lsdj-sync-smoke.wav + PNGs"
-    )
-
-    # `make cli-lsdj-sync` -> the full LSDJ link-cable sync demo: two
-    # instances, both configured SYNC=LSDJ in the PROJECT screen, a one-note
-    # pattern entered on each, then START on instance 0. Writes per-system
-    # WAVs so audible sync can be cross-correlated. Use this as a regression
-    # test for the LinkGroup serial-bit ferrying and as the reference for
-    # how to drive LSDJ from a script.
-    add_custom_target(cli-lsdj-sync
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_sync_pattern.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-sync
-                --per-system-wav
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the LSDJ two-instance sync demo (PNGs + per-system WAVs)"
-    )
+    # Two-instance link-cable sync is covered by cli-ts-test:
+    #   test/ts/gb/lsdj/sync_pattern.test.ts  — positive (follower plays, synced)
+    #   test/ts/gb/lsdj/sync_negative.test.ts — control (follower silent, no sync)
+    #   test/ts/gb/lsdj/sync_smoke.test.ts    — two-instance boot + audio plumbing
+    # sync_pattern also writes /tmp/lsdj-sync-pattern_sys{0,1}.wav for the
+    # reaper-analyze-lsdj-sync MCP workflow below.
 
     # Host-MIDI-sync (SYNC=MIDI, MidiSync role) is covered by
     # test/ts/gb/lsdj/midi_sync.test.ts; the functional host-clock->playback path
@@ -642,19 +616,6 @@ if(BUILD_CLI)
     # codec authors the SYNC byte directly. test/ts/gb/lsdj/sync_modes.test.ts
     # authors every model SyncMode and asserts the byte; arduinoboy_master.test.ts
     # covers the ArduinoboyMaster serial-out capture path (both cli-ts-test).
-
-    # `make cli-lsdj-sync-negative` -> control test (no SYNC=LSDJ set). Used
-    # to confirm that LEAD/SYNC indicators only appear when sync is properly
-    # configured — pair with cli-lsdj-sync when investigating sync issues.
-    add_custom_target(cli-lsdj-sync-negative
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_sync_negative.json
-                --screenshot-dir ${CMAKE_BINARY_DIR}/lsdj-sync-negative
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Running the LSDJ no-sync control test (PNGs)"
-    )
 
     # `make cli-lsdj-kit-patch` -> end-to-end kit-patching smoke. Loads LSDJ,
     # patches kit slot 0 with the mule drum samples (kick/snare/hat) at +100
@@ -684,15 +645,16 @@ if(BUILD_CLI)
         COMMENT "Staging cli-smoke.wav for reaper-mcp-server analysis"
     )
 
-    # `make reaper-analyze-lsdj-sync` -> render the LSDJ two-instance sync
-    # demo and stage both per-system WAVs. Useful for asking the MCP server
-    # to compare loudness / dynamics across the two synced instances.
+    # `make reaper-analyze-lsdj-sync` -> run the TS link-sync test (which writes
+    # per-system WAVs to /tmp via emu.writeWav) and stage both for analysis.
+    # Useful for asking the MCP server to compare loudness / dynamics across the
+    # two synced instances.
     add_custom_target(reaper-analyze-lsdj-sync
         COMMAND ${CMAKE_SOURCE_DIR}/tools/reaper-stage.sh
-                ${CMAKE_BINARY_DIR}/lsdj-sync/lsdj_sync_pattern_sys0.wav
-                ${CMAKE_BINARY_DIR}/lsdj-sync/lsdj_sync_pattern_sys1.wav
+                /tmp/lsdj-sync-pattern_sys0.wav
+                /tmp/lsdj-sync-pattern_sys1.wav
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS cli-lsdj-sync
+        DEPENDS cli-ts-test-gb-lsdj-sync_pattern
         USES_TERMINAL
         COMMENT "Staging LSDJ-sync per-system WAVs for reaper-mcp-server analysis"
     )
