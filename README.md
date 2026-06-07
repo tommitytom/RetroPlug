@@ -63,40 +63,22 @@ A few make targets exist for testing without a DAW. All of them run cleanly
 inside the devcontainer.
 
 ```bash
-make -C build cli-smoke   # render examples/scripts/lsdj_smoke.json -> build/cli-smoke.wav
+make -C build cli-smoke   # mGB chord smoke (test/ts/gb/mgb.test.ts) -> /tmp/cli-smoke.wav
 make -C build screenshot  # capture standalone UI -> /tmp/retroplug.png
 make -C build validate    # clap-validator + pluginval against the built artifacts
 ```
 
-### `retroplug-cli` — scripted DSP renders
+### `retroplug-cli --test` — TypeScript tests (primary)
 
-`build/bin/retroplug-cli` runs the SameBoy DSP path at full speed (no DPF
-wrapper, no UI thread, no real-time scheduling). Drives input from a JSON
-script and optionally writes a 16-bit PCM stereo WAV. Useful for behavioural
-checks, deterministic regression tests, and high-speed LSDJ track renders.
-
-```bash
-./build/bin/retroplug-cli --script examples/scripts/lsdj_smoke.json
-./build/bin/retroplug-cli --script s.json --rom path.gb --out out.wav --duration 10000
-```
-
-The script schema ([cli/Script.hpp](cli/Script.hpp)) accepts two event forms:
-
-- Explicit: `{"at_ms": 100, "button": "A", "down": true}`
-- Shorthand: `{"at_ms": 100, "tap": "A", "hold_ms": 50}` — expands to a
-  down/up pair.
-
-Button names are case-insensitive: `Right Left Up Down A B Select Start`.
-
-### `retroplug-cli --test` — TypeScript tests
-
-For tests that need to **read emulator state and branch on it** — memory
-regions, SM83 CPU registers, instruction stepping, framebuffer/audio capture —
-beyond the write-once JSON model, write tests in TypeScript. They run in-process
-in the embedded txiki/QuickJS runtime (no Node, no DAW) and emit TAP:
+The headless test path. Tests run in-process in the embedded txiki/QuickJS
+runtime (no Node, no DAW) and emit TAP — they can read emulator state and branch
+on it (memory regions, CPU registers, instruction stepping, framebuffer/audio
+capture, MIDI/serial-out capture, host transport, link groups, kit patching),
+and author LSDj `.sav` state directly via the sav codec (no fragile UI
+navigation):
 
 ```bash
-make -C build cli-ts-test     # transpile + run every test/ts/*.test.ts
+make -C build cli-ts-test     # transpile + run every test/ts/**/*.test.ts
 ```
 
 ```ts
@@ -110,6 +92,11 @@ test("LSDJ boots and writes to WRAM", () => {
 ```
 
 See [test/ts/README.md](test/ts/README.md) for the full `emu` API.
+
+`retroplug-cli` also has a lower-level JSON `--script` mode (schema in
+[cli/Script.hpp](cli/Script.hpp): `{"at_ms":100,"tap":"A","hold_ms":50}` events,
+`--rom`/`--out`/`--duration` overrides) for ad-hoc renders. It has no committed
+example scripts — write tests in TypeScript instead.
 
 ### Standalone screenshot tooling
 
@@ -195,9 +182,9 @@ ui/                                  React/TSX UI source (esbuild-bundled)
   EmulatorTile.tsx                   Canvas widget that renders SameBoy frames
   MenuOverlay.tsx                    LVGL-focused menu (Esc to open)
 runtime/lvgljs/                      typed JS-side bridge into the native runtime
-cli/                                 retroplug-cli source (Wav, Script, main)
-test/                                Catch2 unit tests (transport, project, fb)
-examples/scripts/                    sample retroplug-cli JSON inputs
+cli/                                 retroplug-cli source (Wav, Script, TestHarness, main)
+test/                                Catch2 unit tests + test/ts TypeScript harness tests
+examples/reaper/                     committed Reaper .rpp fixtures (DAW host tests)
 porting/                             ordered migration roadmap from old RetroPlug
 tools/                               build-ui.js, run-standalone.sh, standalone-key.sh, validate-plugins.sh
 deps/                                submodules: dpf, dpf-widgets, sameboy, lv_binding_js, rpcpp, catch2

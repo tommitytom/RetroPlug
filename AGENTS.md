@@ -87,14 +87,16 @@ The headless tooling described in README.md's "Headless workflows" section
 exists for agents to verify their own work without bothering the user. In
 order of preference:
 
-1. **DSP / behaviour change** — `make -C build cli-smoke` or run
-   `retroplug-cli` with a custom script. Bypasses the plugin format
-   entirely; tests the same code path that ends up in every wrapper.
-   For checks that need to **read emulator state and branch on it** —
-   memory regions, CPU registers (SameBoy/NES/GBA), instruction stepping,
-   audio/frame capture — beyond what a write-once JSON script can express,
-   write a TypeScript test and run `make -C build cli-ts-test` (TAP output,
-   nonzero exit on failure). The harness embeds the txiki/QuickJS runtime in
+1. **DSP / behaviour change** — write a TypeScript test and run
+   `make -C build cli-ts-test` (TAP output, nonzero exit on failure). This is
+   the canonical headless path: it bypasses the plugin format entirely, tests
+   the same code path that ends up in every wrapper, and can **read emulator
+   state and branch on it** — memory regions, CPU registers (SameBoy/NES/GBA),
+   instruction stepping, audio/frame capture, MIDI/serial-out capture, host
+   transport, link groups, kit patching, and LSDj sav authoring (see
+   "Authoring LSDj state in TypeScript" below). `make -C build cli-smoke` is a
+   quick one-liner that runs the mGB chord smoke (`test/ts/gb/mgb.test.ts`).
+   The harness embeds the txiki/QuickJS runtime in
    `retroplug-cli --test`. It also exposes Mesen's NES debugger headlessly —
    **profiling** (`emu.beginProfile`/`readProfile` + cc65 `.dbg` symbols via
    `loadLabels`), disassembly, trace, call stack, and conditional
@@ -116,7 +118,9 @@ order of preference:
    build/test/retroplug-tests` (Catch2). Covers transport queues,
    `Project`, framebuffer.
 5. **Audio-quality check on a render** — `make -C build reaper-analyze-smoke`
-   (or `reaper-analyze-lsdj-sync`) stages the WAV into the
+   (runs `test/ts/gb/mgb.test.ts`, which writes `/tmp/cli-smoke.wav`) or
+   `reaper-analyze-lsdj-sync` (runs `test/ts/gb/lsdj/sync_pattern.test.ts`,
+   which writes the per-system WAVs via `emu.writeWav`) stages the WAV into the
    reaper-mcp-server's projects dir; then ask the `reaper` MCP server for
    loudness/LUFS, frequency content, dynamics, stereo imaging. Use this to
    catch regressions that aren't "no audio produced" but "audio is wrong"
@@ -134,8 +138,9 @@ order of preference:
    `tools/run-reaper-render.sh` (Xvfb + openbox + dummy jackd + EULA
    auto-dismiss). The .RPP is self-contained — the plugin chunk embeds
    the mGB ROM via getState() — and is regenerated with
-   `make -C build reaper-mgb-author` when `examples/scripts/mgb_smoke.json`
-   or [tools/reaper-mgb-author.lua](tools/reaper-mgb-author.lua) change.
+   `make -C build reaper-mgb-author` when [test/ts/gb/mgb.test.ts](test/ts/gb/mgb.test.ts)
+   (which emits `/tmp/mgb_smoke_author.rplg` via `emu.saveRplg`) or
+   [tools/reaper-mgb-author.lua](tools/reaper-mgb-author.lua) change.
 7. **Arduinoboy startup-sync latency** —
    `make -C build reaper-lsdj-arduinoboy-metro` renders
    [examples/reaper/lsdj_arduinoboy_metro.rpp](examples/reaper/lsdj_arduinoboy_metro.rpp)
@@ -155,7 +160,8 @@ order of preference:
    subsequent retriggers; envelope-edit nav in the bootstrap script
    would be needed to surface those. Regenerate the fixture with
    `make -C build reaper-lsdj-arduinoboy-author` when
-   [examples/scripts/lsdj_arduinoboy_metro_setup.json](examples/scripts/lsdj_arduinoboy_metro_setup.json)
+   [test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts](test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts)
+   (which emits `/tmp/lsdj_arduinoboy_metro_author.rplg` via `emu.saveRplg`)
    or [tools/reaper-lsdj-arduinoboy-author.lua](tools/reaper-lsdj-arduinoboy-author.lua)
    change.
 
@@ -165,18 +171,21 @@ The plugin honours `RETROPLUG_AUTOLOAD_PROJECT=path/to/foo.rplg` at
 construction: if set, the .rplg (pure PKZIP from `projectConfigToZip` —
 no base64) is loaded as the initial project. Lets a host instantiate the
 plugin with a preconfigured ROM without authoring the DPF state chunk
-by hand. Used by `tools/run-reaper-author.sh` to bake mGB into the
-fixture, and available for any new Reaper-driven test:
+by hand. Used by `tools/run-reaper-author.sh` to bake the configured state
+into the fixture, and available for any new Reaper-driven test.
+
+The canonical way to produce a `.rplg` is now a TS harness test: author the
+state (sav + roles), then `emu.saveRplg("/tmp/foo.rplg")`. Then:
 
 ```sh
-build/bin/retroplug-cli --script examples/scripts/<your>.json \
-    --save-rplg build/<your>.rplg
-RETROPLUG_AUTOLOAD_PROJECT=build/<your>.rplg \
+RETROPLUG_AUTOLOAD_PROJECT=/tmp/foo.rplg \
     tools/run-reaper-render.sh your_project.rpp
 ```
 
-Without the env var, the plugin starts empty (matches normal DAW
-behaviour).
+`tools/run-reaper-author.sh OUTPUT.rpp RENDER_DIR AUTHOR.lua FIXTURE.rplg`
+takes a pre-built `.rplg` directly. (`retroplug-cli --save-rplg` still works as
+the lower-level mechanism, and a legacy `.json` fixture arg is still accepted.)
+Without the env var, the plugin starts empty (matches normal DAW behaviour).
 
 Trust but verify: an agent's claim that "tests pass" should be backed by an
 actual exit-zero from one of these commands.
@@ -206,65 +215,69 @@ screen:
    `lsdj9_4_2.gb` this can take **12–15 s**.
 
 Schedule any screenshot you expect to capture the LSDj song screen at
-`at_ms` ≥ 15000, or pre-load a save state to skip the self-test. The example
-`examples/scripts/lsdj_sync_smoke.json` lands at 15 s and 19 s for this
-reason.
+`at_ms` ≥ 15000 **on a fresh ROM**. The far better option — and what the TS
+tests do — is to boot from an authored sav: `emu.savFromJson(...)` produces a
+valid SRAM image, so LSDj skips the self-test entirely and reaches the song
+screen in ~3–6 s. See "Authoring LSDj state in TypeScript" below.
 
-## Multi-instance / sync scripts
+## Authoring LSDj state in TypeScript (canonical)
 
-For debugging features that touch more than one system (serial link, MIDI
-routing, LSDj link-cable sync), use the `systems: [...]` form:
+The LSDj-driving tests used to navigate the UI with fragile `SELECT/A`+arrow
+chords in JSON `--script` files to build song/sync state. That state is just
+bytes in the `.sav`, so tests now **author it directly** with the sav codec and
+boot LSDj straight into it — fast (a valid sav skips the 12–15 s self-test) and
+robust (no timing-sensitive navigation). Every former JSON test now lives under
+[test/ts/](test/ts/) as a `*.test.ts` (run all with `make -C build cli-ts-test`,
+or one with `make -C build cli-ts-test-<slug>` where `<slug>` is the path under
+`test/ts` with `/`→`-`).
 
-```json
-{
-  "duration_ms": 20000,
-  "systems": [
-    { "rom": "../resources/roms/lsdj/lsdj9_4_2.gb", "link_group": 1 },
-    { "rom": "../resources/roms/lsdj/lsdj9_4_2.gb", "link_group": 1 }
-  ],
-  "midi_routing": "SendToAll",
-  "events": [
-    { "at_ms": 15000, "screenshot": "boot", "system": 0 },
-    { "at_ms": 15000, "screenshot": "boot", "system": 1 }
-  ]
-}
+The pattern (see [test/ts/gb/lsdj/sync_pattern.test.ts](test/ts/gb/lsdj/sync_pattern.test.ts)
+or [lsdj_arduinoboy_metro.test.ts](test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts)):
+
+```ts
+const fill = <T>(n, f) => Array.from({ length: n }, f);
+const sav = emu.savFromJson(JSON.stringify({
+  workingSong: {
+    formatVersion: 22,
+    settings: { syncMode: "Lsdj" },         // PROJECT-screen SYNC (None/Lsdj/Midi/Keyboard/AnalogIn/AnalogOut)
+    rows:    fill(256, () => ({ chains: [null,null,null,null] })),  // rows[0].chains[0]=0 → chain 00
+    chains:  /* chains[0] = { phrases:[0,...], transpositions:[...] } */,
+    phrases: /* phrases[0] = { notes:[1,...], instruments:[0,...], commands:[...], commandValues:[...] } */,
+    instruments: /* instruments[0] = { type:"pulse", ... } */,
+  },
+}));
+const sys = emu.loadRom(rom, sav, /*lsdjSyncMode*/ "MidiSyncArduinoboy", /*linkGroup*/ 1);
 ```
 
-Same nonzero `link_group` puts instances into a shared `LinkGroup` (lockstep
-serial-bit ferrying). `midi_routing` mirrors the plugin: `SendToAll`,
-`FourChannelsPerInstance`, `OneChannelPerInstance`, `MidiChannelToInstance`.
+Fixed-size arrays must be built in full with `fill(...)` — `DefaultIfMissing`
+fills missing struct fields but not missing array elements.
 
-Convenience targets:
+`emu.loadRom(path, sav?, lsdjSyncMode?, linkGroup?)`:
+- `sav` — an `ArrayBuffer` from `savFromJson` (or `readMemory(sys, Mem.Sram)`).
+- `lsdjSyncMode` — the `LsdjSyncRole` config: `"MidiSync"`, `"MidiMap"`,
+  `"KeyboardMidi"`, `"MidiPassthrough"`, `"MidiSyncArduinoboy"`,
+  `"ArduinoboyMaster"`, … (distinct from the in-sav PROJECT `syncMode`).
+- `linkGroup` — same nonzero value on two systems puts them in a shared
+  `LinkGroup` (lockstep serial-bit ferrying) for LSDj link-cable sync.
 
-- `make -C build cli-sync-smoke` — two-instance boot+screenshot smoke (no sync setup; proves the plumbing).
-- `make -C build cli-lsdj-sync` — full LSDj link-cable sync demo (boots + configures SYNC=LSDJ + plays a one-note pattern; writes per-system WAVs).
-- `make -C build cli-lsdj-sync-negative` — control test that omits the SYNC setup; pair with the positive demo when investigating sync.
+Other harness bindings these tests use (see [test/harness/index.ts](test/harness/index.ts)):
+`setTransport(bool)` / `setBpm(n)` (simulated host transport → the role's MIDI
+clock), `drainMidi(sys)` / `drainSerial(sys)` (role MIDI-out / GB serial-out
+capture), `runMsPerSystem(ms)` (per-system audio — proves link sync), `writeWav`
+(dump audio for the reaper MCP), `saveRplg` (snapshot → `.rplg` for the Reaper
+DAW fixtures), `patchKit(sys, slot, name, samples)` (compile + queue a kit).
 
-## Chord input (`SELECT+arrow`, `A+RIGHT`)
+## Driving the LSDj UI (only when authoring can't)
 
-LSDJ relies heavily on two-key chords: `SELECT+CURSOR` to change screen,
-`A+CURSOR` to change a field value, etc. **Do not send both keys at the same
-`at_ms`** — LSDJ frequently misses the chord. Use the `chord` event form,
-which encodes the working timing (modifier held ~200 ms before the key):
+Authoring savs covers song/sync/instrument state. If a test genuinely needs to
+drive the live UI (e.g. exercising a menu interaction), the harness exposes
+`emu.chord(sys, buttons, opts?)` and `emu.tap(sys, button, holdMs?)` (see
+[test/harness/index.ts](test/harness/index.ts); `gb/smoke.test.ts` uses them).
 
-```json
-{ "at_ms": 17000, "chord": ["Select", "Up"],  "system": 0 }
-{ "at_ms": 17600, "chord": ["A", "Right"],    "system": 0 }
-```
-
-Optional `stagger_ms` (default 200) and `hold_ms` (default 200) control the
-gap between modifier and key, and how long the key is held. The form expands
-into four `pressButton` calls internally — see `cli/Script.hpp`.
-
-If you hand-roll chord events with `button`/`down` for some reason, give the
-modifier a 200 ms head start before the key, and release in reverse order.
-Same-`at_ms` chords are the single most common reason an LSDJ-driving script
-silently does nothing.
-
-## LSDJ screen navigation
-
-The screen map (empirically verified — also see `Figure 1.2` on p11 of the
-manual):
+LSDJ relies on two-key chords (`SELECT+CURSOR` to change screen, `A+CURSOR` to
+change a field). `emu.chord` encodes the working timing (modifier held ~200 ms
+before the key, released in reverse) — **never press both keys simultaneously**,
+LSDJ drops the chord. The screen map (empirically verified; manual `Figure 1.2`):
 
 ```
                 PROJECT
@@ -274,111 +287,54 @@ SONG  ◄────────► CHAIN  ◄────────► PHRAS
         SELECT+RIGHT      SELECT+RIGHT
 ```
 
-(`PROJECT` sits above the SONG/CHAIN/PHRASE row. `SELECT+LEFT` from SONG
-enters LIVE mode — not what you usually want.) From SONG, the canonical path
-to set sync mode is:
+`SELECT+LEFT` from SONG enters LIVE mode (the grid wraps). The `LEAD` / `SYNC` /
+`WAIT` indicators in the SONG-screen right margin are the runtime confirmation
+that link-cable sync is flowing once START is pressed (manual §5.1.2 / §5.1.3).
+The `retroplug-cli --script` JSON runner (with the `chord`/`tap` event forms in
+`cli/Script.hpp`) still exists for ad-hoc exploration, but it has no committed
+example scripts — author savs in TS instead.
 
-1. `chord: ["Select", "Up"]` — SONG → PROJECT (cursor lands on TEMPO).
-2. `tap: "Down"` × 2 — move cursor to the SYNC field.
-3. `chord: ["A", "Right"]` — cycle SYNC: `OFF → LSDJ → MIDI → …`. **One**
-   chord with the new form lands on LSDJ; if you see LSDJ then `MIDI` /
-   `KEYBD`, you've overshot.
-4. `chord: ["Select", "Down"]` — PROJECT → SONG.
+## LSDJ link-cable sync
 
-Cycle status by checking `SYNC LSDJ` in the PROJECT screen, or the
-`PRELISTEN` row beside it: `ON` means SYNC OFF, `N/A` means a sync mode is
-selected. The `LEAD` / `SYNC` / `WAIT` indicators in the right margin of the
-SONG screen are the runtime confirmation that link-cable sync is actually
-flowing once START is pressed (manual §5.1.2 / §5.1.3).
+Covered by three TS tests under [test/ts/gb/lsdj/](test/ts/gb/lsdj/):
 
-## LSDJ link-cable sync — full recipe
+- [sync_pattern.test.ts](test/ts/gb/lsdj/sync_pattern.test.ts) — positive: two
+  instances on the same `linkGroup`, both authored SYNC=LSDJ, START on the
+  leader. Verifies sync via **per-system audio** (`emu.runMsPerSystem`): the
+  follower produces audio (and its RMS tracks the leader's) only because it
+  synced. Also writes `/tmp/lsdj-sync-pattern_sys{0,1}.wav` for the reaper MCP.
+- [sync_negative.test.ts](test/ts/gb/lsdj/sync_negative.test.ts) — control:
+  same setup with SYNC=None. The follower stays **silent** (never starts). If it
+  ever produces audio, the positive test isn't measuring real sync.
+- [sync_smoke.test.ts](test/ts/gb/lsdj/sync_smoke.test.ts) — two-instance boot +
+  audio plumbing.
 
-The canonical end-to-end test is at
-[examples/scripts/lsdj_sync_pattern.json](examples/scripts/lsdj_sync_pattern.json)
-(also `make -C build cli-lsdj-sync`). It:
-
-1. Boots two LSDJ instances on the same `link_group: 1`.
-2. Navigates each to PROJECT and sets SYNC=LSDJ.
-3. Builds a minimal song: chain 00 → phrase 00 → C-2 note (the smallest
-   thing that produces audio).
-4. Presses START on instance 0.
-5. Screenshots both instances at +1 s, +4 s, +8 s, +11 s of playback.
-6. With `--per-system-wav`, writes one WAV per instance for sync analysis.
-
-Expected outcome:
-
-- After step 2: both PROJECT screens show `SYNC LSDJ`, `PRELISTEN N/A`.
-- After step 4: instance 0 shows `LEAD` in the SONG-screen right margin;
-  instance 1 shows `SYNC`. The labels persist for the duration of playback.
-- Visual lockstep: every screenshot pair (sys0/sys1 at the same `at_ms`)
-  is identical in cursor position and right-margin indicators.
-- Audio: the per-system WAVs are byte-identical until the moment START is
-  pressed, then diverge only by a small phase offset (the link-cable sync
-  signal has ~ms latency). The follower's audio is the same content as the
-  leader, shifted by N samples.
-
-If sync is genuinely broken, the symptom in this test will be one of:
-
-- `LEAD` / `SYNC` indicators don't appear (LinkGroup serial-bit ferrying not
-  working — see `src/system/sameboy/LinkGroup.cpp` and the `serialStart` /
-  `serialEnd` callbacks in `SameBoySystem.cpp`).
-- Indicators appear but the per-system WAVs diverge in *content* (not just
-  phase) — same pattern would be playing at different song positions.
-- Indicators flicker or only appear on one side — handshake race.
-
-Use [examples/scripts/lsdj_sync_negative.json](examples/scripts/lsdj_sync_negative.json)
-as the control: same flow, but without setting SYNC=LSDJ. The `LEAD`/`SYNC`
-labels must NOT appear there. If they do, your positive test isn't measuring
-what you think.
-
-## Cross-correlating per-system audio
-
-`--per-system-wav` writes one WAV per instance alongside the mix WAV.
-Quick comparison via the `tools/.venv` Python (already installed for the
-manual indexer):
-
-```python
-import wave, struct
-def load(p):
-    w = wave.open(p, 'rb'); n = w.getnframes()
-    raw = w.readframes(n); w.close()
-    s = struct.unpack('<' + 'h' * (n * 2), raw)
-    return [(s[2*i] + s[2*i+1]) / 2 for i in range(n)]  # mono mix
-a, b = load('/tmp/lsdj-sync-pattern_sys0.wav'), load('/tmp/lsdj-sync-pattern_sys1.wav')
-same = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), len(a))
-print(f'leading identical samples: {same} ({same/44100:.3f}s)')
-```
-
-Identical leading samples = number of audio samples both instances rendered
-*exactly* the same content. A clean LSDJ sync test should land somewhere
-around the `at_ms` of the first `Start` press (everything before that is
-lockstep boot + setup; after that, link-cable phase offset starts the
-divergence).
-
-`cmp` works for a quick byte-level check too: `cmp sys0.wav sys1.wav` —
-reports the offset of the first differing byte.
+If link sync is genuinely broken, the follower's per-system RMS stays at 0 in
+the positive test — look at `src/system/sameboy/LinkGroup.cpp` and the
+`serialStart` / `serialEnd` callbacks in `SameBoySystem.cpp`. `runMsPerSystem`
+isolates each instance's audio (the canonical way to tell synced playback from a
+healthy-looking mix of two desynced instances).
 
 ## Pitfalls cheat-sheet
 
-- **Same-`at_ms` chord** — silently dropped by LSDJ. Use the `chord` form.
-- **Screenshot before ~15 s** — captures the GB boot ROM or LSDJ's
-  cartridge self-test, not the song screen. The first usable screenshot is
-  around `at_ms: 15000` on a fresh ROM.
-- **Cursor-moving keys auto-repeat** — LSDJ's default `KEY DEL/REPEAT 7/2`
-  means holding for >7 frames (~117 ms) starts auto-repeating. The `tap`
-  form's default `hold_ms: 50` is below that threshold; longer holds will
-  fire multiple cursor moves.
-- **The first `A+CURSOR` in PROJECT sometimes no-ops** when using hand-rolled
-  chord events with same-`at_ms` timing — using the `chord` form removes the
-  ambiguity and each chord cycles exactly once.
-- **Mix WAV alone can't prove sync** — two desynchronised instances
-  mixed together still produce a WAV, and the peaks may even look healthy.
-  Use `--per-system-wav` and compare files when you need certainty.
-- **`SELECT+LEFT` from SONG enters LIVE mode**, not a "previous screen" —
-  the screen grid wraps. Stick to `SELECT+UP/DOWN/RIGHT` for vanilla nav.
+Most of these only bite when driving the live UI; **authoring a sav sidesteps
+them entirely** (no boot wait, no navigation). They still apply to `emu.chord`/
+`emu.tap` based tests.
+
+- **Boot before ~15 s on a fresh ROM** — `getFrame`/`screenshot` captures the
+  GB boot ROM or LSDJ's cartridge self-test, not the song screen. Boot from an
+  authored sav and ~3–6 s is enough (the self-test is skipped).
+- **Simultaneous chord keys** — pressing both keys at once is silently dropped
+  by LSDJ. Use `emu.chord` (modifier leads ~200 ms).
+- **Cursor-moving keys auto-repeat** — LSDJ's default `KEY DEL/REPEAT 7/2` means
+  holding >7 frames (~117 ms) starts auto-repeating. `emu.tap`'s default
+  `holdMs: 50` is below that threshold; longer holds fire multiple moves.
+- **Mix audio alone can't prove sync** — two desynced instances still mix into
+  a healthy-looking WAV. Use `emu.runMsPerSystem` and check each instance's RMS.
+- **`SELECT+LEFT` from SONG enters LIVE mode**, not a "previous screen" — the
+  screen grid wraps. Stick to `SELECT+UP/DOWN/RIGHT` for vanilla nav.
 - **`A` in PROJECT on items like `HELP` or `LOAD/SAVE SONG` triggers them**
-  rather than cycling a value. Always confirm the cursor is on the field
-  you want before pressing `A+CURSOR`.
+  rather than cycling a value. Confirm the cursor is on the right field first.
 
 ## LSDj manual lookup
 
@@ -463,12 +419,13 @@ contains `aboy` — check the stderr line `[RetroPlug] LSDJ sync role attached
 
 ### PROJECT-screen SYNC cycle (aboy v9.3.3)
 
-Empirically mapped via [examples/scripts/lsdj_aboy_sync_discovery.json](examples/scripts/lsdj_aboy_sync_discovery.json)
-(see `make -C build cli-lsdj-aboy-sync-discovery` — each A+Right with a
-screenshot after). Starting from `OFF`, each `chord: ["A", "Right"]` (on
-the SYNC field in PROJECT) cycles forward:
+The on-screen SYNC value is the working-song byte at `0x3fbd`. The model
+`SyncMode` enum (`src/lsdj/model/Types.hpp`) authors values 0–5 directly via
+`settings.syncMode` — [test/ts/gb/lsdj/sync_modes.test.ts](test/ts/gb/lsdj/sync_modes.test.ts)
+authors each and asserts the byte. The aboy-only MI.MAP / MI.OUT (6 / 7) are
+past the model enum (see "Master mode" below). The full cycle order:
 
-| Cycle # | SYNC value | Extra row visible |
+| Byte | SYNC value | Extra row visible |
 | --- | --- | --- |
 | 0 | OFF       | — |
 | 1 | LSDJ      | — |
@@ -483,28 +440,20 @@ Note: stock LSDJ's manual (v9.2.6) does NOT document MI.OUT / MI.MAP — those a
 aboy-specific. PRELISTEN row reads `ON` for OFF / LSDJ / KEYBD / MI.MAP /
 MI.OUT and `N/A` for MIDI / ANA.IN / AN.OUT — so PRELISTEN is NOT a reliable
 "is a sync mode selected" indicator on the aboy build. Read the SYNC field
-text directly.
+text (or the `0x3fbd` byte) directly.
 
 ### Master mode (MI.OUT) verification
 
-The CLI captures LSDJ's serial-out byte stream when a role opts into it via
-`RomRole::wantsSerialOut()`. The `LsdjSyncRole` enables this when its config
-is `ArduinoboyMaster`. The capture buffers are populated in memory on every
-run that exercises that mode, but the on-disk artifacts are **opt-in**: pass
-`--event-logs DIR` to `retroplug-cli` and the two files below land under
-`DIR` (omit the flag and nothing is written, even when bytes are captured).
-
-- `<scriptStem>_serial_sys<N>.txt` — every completed serial-out byte, one per
-  line as `<absSample> 0x<hex>`. **Ground truth: whatever LSDJ actually wrote
-  to its SB register.** Inspect first.
-- `<scriptStem>_midi_sys<N>.txt` — the `ArduinoboyMaster` decoder's output
-  (one MIDI event per line, raw bytes hex). Empty when the decoder doesn't
-  recognize any of the raw bytes — that's expected to evolve as more of the
-  protocol gets implemented.
-
-The `cli-lsdj-arduinoboy-master` make target passes `--event-logs` pointing
-at `${CMAKE_BINARY_DIR}/lsdj-arduinoboy-master`, so the artifacts always
-appear there for that target.
+A role opts into serial-out capture via `RomRole::wantsSerialOut()`;
+`LsdjSyncRole` enables it when its config is `ArduinoboyMaster`. From a TS test,
+drain the captured bytes with `emu.drainSerial(sys)` (raw GB serial-out — ground
+truth, whatever LSDJ wrote to its SB register) and `emu.drainMidi(sys)` (the
+`ArduinoboyMaster` decoder's MIDI output). See
+[test/ts/gb/lsdj/arduinoboy_master.test.ts](test/ts/gb/lsdj/arduinoboy_master.test.ts),
+which authors SYNC=KEYBD + the `ArduinoboyMaster` role, presses START, and
+asserts thousands of captured bytes (the synthetic-clock + capture path).
+(`retroplug-cli --event-logs DIR` still writes `<stem>_serial_sys<N>.txt` /
+`<stem>_midi_sys<N>.txt` for the `--script` runner, if you need on-disk logs.)
 
 ### Synthetic Arduinoboy clock (subtle but load-bearing)
 
@@ -569,26 +518,24 @@ in the LSDJ song editor):
 
 The decoder is unit-tested in
 [test/ArduinoboyMasterTests.cpp](test/ArduinoboyMasterTests.cpp) (11 cases
-covering each protocol byte). **End-to-end with LSDJ is NOT yet headlessly
-verified** because the master demo can't reliably navigate the aboy ROM to
-MI.OUT (see "Known gotcha" below). The decoder matches the firmware spec,
-which is the closest verification path available.
+covering each protocol byte). **Functional MI.OUT end-to-end with LSDJ is NOT
+yet verified** (see "Known gotcha" below). The decoder matches the firmware
+spec, which is the closest verification path available.
 
-### Known gotcha: cycling SYNC past position 3 (KEYBD) via script
+### Known gotcha: reaching functional MI.OUT mode
 
-Each `A+Right` chord in the SYNC field reliably cycles 0→1, 1→2, 2→3
-(OFF → LSDJ → MIDI → KEYBD), but the 4th and subsequent chord events appear
-to be dropped in scripts that fire the chord pattern straight through (gaps
-of 1000–1500 ms). The same chord sequence DOES advance through all positions
-in [lsdj_aboy_sync_discovery.json](examples/scripts/lsdj_aboy_sync_discovery.json)
-— the only obvious difference is intermediate screenshots between chords.
-The current [lsdj_arduinoboy_master.json](examples/scripts/lsdj_arduinoboy_master.json)
-documents this limitation and lands on KEYBD; a follow-up agent should either:
-1. Reproduce the discovery script's exact pattern (chord + screenshot + 1400 ms
-   gap) inside the master script.
-2. Ship a pre-configured savestate fixture where LSDJ is already in MI.OUT,
-   bypassing UI navigation entirely.
+The aboy MI.OUT SYNC value is byte 7 — past the model `SyncMode` enum (0–5).
+You can *write* byte 7 into the working song (patch `0x3fbd` in the sav
+ArrayBuffer before `loadRom`), and LSDJ boots with it, but it does **not** engage
+the MI.OUT protocol: with byte 7 forced, LSDJ emits only idle `0x00`/`0xFF` on
+the serial port, not the `0x7D`/`0x7F`/note protocol bytes. This was confirmed
+in [test/ts/gb/lsdj/arduinoboy_master.test.ts](test/ts/gb/lsdj/arduinoboy_master.test.ts)
+(the probe is documented in its header). The original UI-navigation approach also
+couldn't reach MI.OUT (the aboy ROM stops accepting `A+Right` past KEYBD).
 
-Until then, **MI.OUT end-to-end is verified via unit tests + the discovery
-script + the serial-out diagnostic log**, not via the master demo's automated
-playback.
+So MI.OUT end-to-end remains future work: it needs a savestate fixture captured
+from LSDJ already *in* MI.OUT mode (e.g. a real-hardware or fully-emulated
+session), not just the SYNC byte set. Until then, **MI.OUT is verified via the
+decoder unit tests + the serial-out capture path** (arduinoboy_master.test.ts
+asserts thousands of captured bytes in KEYBD mode via `emu.drainSerial`), not
+via a functional MI.OUT playback.
