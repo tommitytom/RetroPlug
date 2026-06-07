@@ -463,6 +463,16 @@ if(BUILD_TESTING)
     add_subdirectory(deps/catch2)
     enable_testing()
     add_subdirectory(test)
+
+    # `make ui-test` -> headless UI tests (no Xvfb): boot the real UI bundle,
+    # render to a software buffer, assert on the LVGL tree + snapshot.
+    add_custom_target(ui-test
+        COMMAND $<TARGET_FILE:retroplug-ui-test>
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-ui-test
+        USES_TERMINAL
+        COMMENT "Running headless UI tests (LvglJsEngine + real bundle, no DPF/Xvfb)"
+    )
 endif()
 
 # --- CLI tool ---------------------------------------------------------------

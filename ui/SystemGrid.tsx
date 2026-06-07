@@ -6,6 +6,16 @@ import { Menu } from "./menu/Menu";
 import type { MenuTree } from "./menu/menuDefs";
 import type { SystemEntry } from "./plugin/client";
 
+// Cast around lvgljs-ui's View typings (no `ref` prop), mirroring the Canvas
+// trick in EmulatorTile. The ref lets the headless UI test harness tag each
+// slot by a stable name via `globalThis.__rp_tagTestId`, which the harness
+// installs. In the real plugin that hook is absent, so the optional-chained
+// call is a no-op — this is inert outside tests.
+const SlotView = View as any;
+const tagSlot = (sysId: number) => (c: any) => {
+    if (c) (globalThis as any).__rp_tagTestId?.(String(c.uid), `slot-${sysId}`);
+};
+
 // Tile arrangement options. Mirrors C++ SystemLayout enum
 // (src/project/ProjectConfig.hpp).
 export enum SystemLayout {
@@ -150,8 +160,9 @@ export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto, zoo
                         // insertChildBefore (see Menu.tsx for the full note) —
                         // appendChild lands in the right place when there's
                         // at most one existing child.
-                        <View
+                        <SlotView
                             key={`slot-${sys.id}`}
+                            ref={tagSlot(sys.id)}
                             style={{
                                 width:  tw,
                                 height: th,
@@ -182,7 +193,7 @@ export function SystemGrid({ systems, focusedId, layout = SystemLayout.Auto, zoo
                                     zoom={zoom}
                                 />
                             )}
-                        </View>
+                        </SlotView>
                     ))}
                 </View>
             ))}
