@@ -7,8 +7,8 @@
 --
 -- Track layout: one track named "RetroPlug" with a RetroPlug VST3i FX +
 -- a 4-second MIDI item containing a C-major chord (C4/E4/G4) from 1.5s
--- to 3.0s. Mirrors examples/scripts/mgb_smoke.json so the same content is
--- exercised through both the CLI and the plugin host.
+-- to 3.0s. Mirrors test/ts/gb/mgb.test.ts so the same content is
+-- exercised through both the harness and the plugin host.
 
 local dest = os.getenv("REAPER_AUTHOR_DEST") or "/tmp/mgb_smoke.rpp"
 local render_dir = os.getenv("REAPER_AUTHOR_RENDER_DIR") or ""

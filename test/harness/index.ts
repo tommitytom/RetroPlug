@@ -30,6 +30,7 @@ interface NativeRp {
   getAudio(ms: number): ArrayBuffer;
   runMsPerSystem(ms: number): ArrayBuffer[];
   writeWav(path: string, samples: ArrayBuffer, sampleRate?: number): void;
+  saveRplg(path: string): void;
   patchKit(sys: number, slot: number, name: string, samples: KitSample[]): void;
   getRegisters(sys: number): CpuRegisters;
   setRegister(sys: number, name: string, value: number): void;
@@ -277,6 +278,11 @@ export const emu = {
    *  inspection, e.g. the reaper MCP audio-analysis workflow). */
   writeWav(path: string, samples: Float32Array, sampleRate = 44100): void {
     rp.writeWav(path, samples.buffer as ArrayBuffer, sampleRate);
+  },
+  /** Snapshot the project (config + savestate) to a .rplg fixture — the file a
+   *  Reaper DAW test auto-loads via RETROPLUG_AUTOLOAD_PROJECT. */
+  saveRplg(path: string): void {
+    rp.saveRplg(path);
   },
   /** Compile a custom LSDj drum kit from sample files and queue it into `slot`.
    *  The sniffer auto-attaches the kit-patch role to LSDj ROMs; call runMs after

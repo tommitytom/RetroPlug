@@ -22,6 +22,7 @@ extern "C" {
 #include "Screenshot.hpp"
 #include "Wav.hpp"
 #include "project/Project.hpp"
+#include "project/ProjectSerialization.hpp"
 #include "system/DebugTarget.hpp"
 #include "system/InputTypes.hpp"
 #include "system/RomFormat.hpp"
@@ -385,6 +386,21 @@ struct TestHarness::Impl {
         }
         if (!role) throw std::runtime_error("patchKit: system has no lsdj-kit-patch role");
         role->queuePatch(slot, std::move(compiled.bytes));
+    }
+
+    // Snapshot the project's current config + savestate into a .rplg (pure
+    // PKZIP from projectConfigToZip). Used to author Reaper DAW fixtures: a TS
+    // test builds the LSDj/mGB state, then writes the .rplg the plugin auto-loads
+    // via RETROPLUG_AUTOLOAD_PROJECT. Mirrors cli/main.cpp's --save-rplg.
+    void saveRplg(const std::string& path) {
+        const auto zip = projectConfigToZip(project->snapshotConfig());
+        if (zip.empty())
+            throw std::runtime_error("saveRplg: projectConfigToZip returned empty");
+        std::ofstream f(path, std::ios::binary | std::ios::trunc);
+        if (!f) throw std::runtime_error("saveRplg: cannot open " + path);
+        f.write(reinterpret_cast<const char*>(zip.data()),
+                static_cast<std::streamsize>(zip.size()));
+        if (!f) throw std::runtime_error("saveRplg: write failed: " + path);
     }
 
     // Take + clear the accumulated role outputs for a system.
@@ -1093,6 +1109,24 @@ JSValue jsPatchKit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     }
 }
 
+// saveRplg(path): snapshot the project state into a .rplg fixture.
+JSValue jsSaveRplg(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "saveRplg(path)");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    try {
+        h->saveRplg(path);
+        JS_FreeCString(ctx, path);
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) {
+        JSValue err = JS_ThrowTypeError(ctx, "saveRplg: %s", e.what());
+        JS_FreeCString(ctx, path);
+        return err;
+    }
+}
+
 JSValue jsWriteWav(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 2) return JS_ThrowTypeError(ctx, "writeWav(path, samples, sampleRate?)");
     const char* path = JS_ToCString(ctx, argv[0]);
@@ -1237,6 +1271,7 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     bind("getAudio",      jsGetAudio,      1);
     bind("runMsPerSystem", jsRunMsPerSystem, 1);
     bind("writeWav",       jsWriteWav,       3);
+    bind("saveRplg",       jsSaveRplg,       1);
     bind("patchKit",       jsPatchKit,       4);
     bind("beginProfile",  jsBeginProfile,  1);
     bind("readProfile",   jsReadProfile,   1);

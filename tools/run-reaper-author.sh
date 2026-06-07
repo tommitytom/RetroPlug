@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 #
 # Author a Reaper project from scratch by running a ReaScript inside
-# headless Reaper. Optionally runs retroplug-cli first to produce a
-# .rplg fixture that the plugin auto-loads at construction, so the
-# saved .RPP captures a configured RetroPlug state in its chunk.
+# headless Reaper. Optionally takes a pre-built .rplg fixture (produced by a
+# TS harness test via emu.saveRplg) that the plugin auto-loads at construction,
+# so the saved .RPP captures a configured RetroPlug state in its chunk.
 #
 # Usage:
-#   tools/run-reaper-author.sh OUTPUT.RPP RENDER_DIR AUTHOR.lua [BOOTSTRAP.json]
+#   tools/run-reaper-author.sh OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg|.json]
 #
 # OUTPUT.RPP     where the lua script writes the project (REAPER_AUTHOR_DEST)
 # RENDER_DIR     absolute dir for the project's render output
 #                (REAPER_AUTHOR_RENDER_DIR; the lua passes this to RENDER_FILE)
 # AUTHOR.lua     ReaScript that builds + saves the project
-# BOOTSTRAP.json optional retroplug-cli script; if given, its --save-rplg
-#                output becomes the plugin's RETROPLUG_AUTOLOAD_PROJECT so
-#                the .RPP chunk captures the configured state
+# FIXTURE        optional. A pre-built .rplg becomes the plugin's
+#                RETROPLUG_AUTOLOAD_PROJECT directly (build it from a TS test, e.g.
+#                `make -C build cli-ts-test-gb-mgb` -> /tmp/mgb_smoke_author.rplg).
+#                A legacy .json is still accepted: it is rendered through
+#                retroplug-cli --save-rplg first.
 #
 # Same Xvfb + openbox + dummy-jackd + isolated-config + VST3-symlink
 # setup as tools/run-reaper-render.sh.
@@ -22,14 +24,14 @@
 set -euo pipefail
 
 if [ $# -lt 3 ]; then
-    echo "usage: $0 OUTPUT.RPP RENDER_DIR AUTHOR.lua [BOOTSTRAP.json]" >&2
+    echo "usage: $0 OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg|.json]" >&2
     exit 2
 fi
 
 DEST="$1"
 RENDER_DIR="$2"
 AUTHOR_LUA="$3"
-BOOTSTRAP="${4:-}"
+FIXTURE="${4:-}"
 
 if [ ! -f "$AUTHOR_LUA" ]; then
     echo "error: author lua script not found: $AUTHOR_LUA" >&2
@@ -60,26 +62,34 @@ ln -sfn "$REPO_DIR/build/bin/retroplug.vst3" "$HOME/.vst3/retroplug.vst3"
 export REAPER_AUTHOR_DEST="$DEST"
 export REAPER_AUTHOR_RENDER_DIR="$RENDER_DIR"
 
-# Optional bootstrap: run the CLI to capture a configured project state
-# into a .rplg, then point the plugin at it via the autoload env var.
-# Naming: <bootstrap-stem>_author.rplg under build/ keeps fixtures from
-# different tests separate.
-if [ -n "$BOOTSTRAP" ]; then
-    if [ ! -f "$BOOTSTRAP" ]; then
-        echo "error: bootstrap script not found: $BOOTSTRAP" >&2
+# Optional fixture: point the plugin at a configured project state via the
+# autoload env var so the .RPP chunk captures it. A .rplg is used directly
+# (the modern path: a TS test produced it with emu.saveRplg); a legacy .json
+# is first rendered to a .rplg via retroplug-cli --save-rplg.
+if [ -n "$FIXTURE" ]; then
+    if [ ! -f "$FIXTURE" ]; then
+        echo "error: fixture not found: $FIXTURE" >&2
         exit 1
     fi
-    if [ ! -x "$REPO_DIR/build/bin/retroplug-cli" ]; then
-        echo "error: build/bin/retroplug-cli missing; build it first" >&2
-        exit 1
-    fi
-    STEM=$(basename "$BOOTSTRAP" .json)
-    RPLG="$REPO_DIR/build/${STEM}_author.rplg"
-    echo "bootstrap: $BOOTSTRAP -> $RPLG"
-    "$REPO_DIR/build/bin/retroplug-cli" \
-        --script "$BOOTSTRAP" \
-        --save-rplg "$RPLG" >/dev/null
-    export RETROPLUG_AUTOLOAD_PROJECT="$RPLG"
+    case "$FIXTURE" in
+        *.rplg)
+            echo "fixture (rplg): $FIXTURE"
+            export RETROPLUG_AUTOLOAD_PROJECT="$FIXTURE"
+            ;;
+        *)
+            if [ ! -x "$REPO_DIR/build/bin/retroplug-cli" ]; then
+                echo "error: build/bin/retroplug-cli missing; build it first" >&2
+                exit 1
+            fi
+            STEM=$(basename "$FIXTURE" .json)
+            RPLG="$REPO_DIR/build/${STEM}_author.rplg"
+            echo "fixture (legacy json): $FIXTURE -> $RPLG"
+            "$REPO_DIR/build/bin/retroplug-cli" \
+                --script "$FIXTURE" \
+                --save-rplg "$RPLG" >/dev/null
+            export RETROPLUG_AUTOLOAD_PROJECT="$RPLG"
+            ;;
+    esac
 fi
 
 # Force isolation from any host X11 / Wayland forwarding the devcontainer

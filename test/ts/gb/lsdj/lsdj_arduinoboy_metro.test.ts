@@ -44,7 +44,9 @@ function authoredSav(): ArrayBuffer {
 }
 
 test("author the arduinoboy-metro LSDj state from TS and boot aboy into it", () => {
-  const sys = emu.loadRom(ABOY, authoredSav());
+  // Attach the MidiSyncArduinoboy role so the .rplg fixture below captures it
+  // (the original setup configured the role via the autoload .rplg).
+  const sys = emu.loadRom(ABOY, authoredSav(), "MidiSyncArduinoboy");
   emu.runMs(3000); // GB boot logo only — the valid sav skips the 12-15s self-test
   emu.screenshot(sys, "/tmp/aboy_authored_song.png");
 
@@ -62,4 +64,8 @@ test("author the arduinoboy-metro LSDj state from TS and boot aboy into it", () 
   expect(sram[0x0000]).toBe(1);    // phrase0.step0 note = 1
   expect(sram[0x7000]).toBe(0);    // phrase0.step0 instrument = 0
   expect(sram[0x2040]).toBe(1);    // instrument 0 allocated
+
+  // Emit the Reaper DAW fixture: reaper-lsdj-arduinoboy-author bakes this .rplg
+  // (config + savestate) into examples/reaper/lsdj_arduinoboy_metro.rpp.
+  emu.saveRplg("/tmp/lsdj_arduinoboy_metro_author.rplg");
 });

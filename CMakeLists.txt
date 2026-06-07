@@ -504,16 +504,13 @@ add_custom_target(reaper-headless
     COMMENT "Launching Reaper headless (Xvfb + dummy jackd)"
 )
 
-# `make cli-smoke` -> render the example LSDJ script to ./out.wav.
+# `make cli-smoke` -> boot mGB, play a MIDI chord, render it. Runs the mGB TS
+# harness test, which also writes /tmp/cli-smoke.wav (consumed by
+# reaper-analyze-smoke) and the Reaper mGB fixture .rplg.
 if(BUILD_CLI)
     add_custom_target(cli-smoke
-        COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-cli
-                --script ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_smoke.json
-                --out ${CMAKE_BINARY_DIR}/cli-smoke.wav
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-cli
-        USES_TERMINAL
-        COMMENT "Rendering examples/scripts/lsdj_smoke.json -> build/cli-smoke.wav"
+        DEPENDS cli-ts-test-gb-mgb
+        COMMENT "DSP smoke: mGB chord render via test/ts/gb/mgb.test.ts (-> /tmp/cli-smoke.wav)"
     )
 
     # `make cli-ts-test` -> transpile every test/ts/*.test.ts with esbuild and
@@ -594,7 +591,7 @@ if(BUILD_CLI)
     # against cli-smoke.wav by name.
     add_custom_target(reaper-analyze-smoke
         COMMAND ${CMAKE_SOURCE_DIR}/tools/reaper-stage.sh
-                ${CMAKE_BINARY_DIR}/cli-smoke.wav
+                /tmp/cli-smoke.wav
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         DEPENDS cli-smoke
         USES_TERMINAL
@@ -632,14 +629,16 @@ if(BUILD_CLI)
     # from scratch via a ReaScript that builds the project + bakes the
     # mGB ROM into the plugin chunk. Only re-run when mgb_smoke.json or
     # the author script change.
+    # The mGB fixture .rplg is produced by test/ts/gb/mgb.test.ts (writes
+    # /tmp/mgb_smoke_author.rplg); run-reaper-author.sh autoloads it into the .RPP.
     add_custom_target(reaper-mgb-author
         COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-author.sh
                 ${CMAKE_SOURCE_DIR}/examples/reaper/mgb_smoke.rpp
                 ${CMAKE_BINARY_DIR}
                 ${CMAKE_SOURCE_DIR}/tools/reaper-mgb-author.lua
-                ${CMAKE_SOURCE_DIR}/examples/scripts/mgb_smoke.json
+                /tmp/mgb_smoke_author.rplg
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-vst3 retroplug-cli
+        DEPENDS retroplug-vst3 cli-ts-test-gb-mgb
         USES_TERMINAL
         COMMENT "Re-author examples/reaper/mgb_smoke.rpp via headless Reaper"
     )
@@ -648,14 +647,17 @@ if(BUILD_CLI)
     # LSDj-Arduinoboy fixture. Bootstrap script navigates LSDj into a
     # known SONG/CHAIN/PHRASE state with SYNC=LSDJ; the resulting
     # savestate is baked into the .RPP plugin chunk.
+    # The fixture .rplg is produced by test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts
+    # (writes /tmp/lsdj_arduinoboy_metro_author.rplg — SYNC=LSDj song + the
+    # MidiSyncArduinoboy role); run-reaper-author.sh autoloads it into the .RPP.
     add_custom_target(reaper-lsdj-arduinoboy-author
         COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-author.sh
                 ${CMAKE_SOURCE_DIR}/examples/reaper/lsdj_arduinoboy_metro.rpp
                 ${CMAKE_BINARY_DIR}
                 ${CMAKE_SOURCE_DIR}/tools/reaper-lsdj-arduinoboy-author.lua
-                ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_arduinoboy_metro_setup.json
+                /tmp/lsdj_arduinoboy_metro_author.rplg
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-vst3 retroplug-cli
+        DEPENDS retroplug-vst3 cli-ts-test-gb-lsdj-lsdj_arduinoboy_metro
         USES_TERMINAL
         COMMENT "Re-author examples/reaper/lsdj_arduinoboy_metro.rpp via headless Reaper"
     )
@@ -680,14 +682,17 @@ if(BUILD_CLI)
     # SYNC=MIDI, builds a chain+phrase+note, then presses START to arm
     # LSDj's "WAIT for clock" state — captured in the savestate so the
     # .RPP is self-contained.
+    # The fixture .rplg is produced by test/ts/gb/lsdj/lsdj_midi_metro.test.ts
+    # (writes /tmp/lsdj_midi_metro_author.rplg — SYNC=MIDI song armed via START);
+    # run-reaper-author.sh autoloads it into the .RPP.
     add_custom_target(reaper-lsdj-midi-author
         COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-author.sh
                 ${CMAKE_SOURCE_DIR}/examples/reaper/lsdj_midi_metro.rpp
                 ${CMAKE_BINARY_DIR}
                 ${CMAKE_SOURCE_DIR}/tools/reaper-lsdj-midi-author.lua
-                ${CMAKE_SOURCE_DIR}/examples/scripts/lsdj_midi_metro_setup.json
+                /tmp/lsdj_midi_metro_author.rplg
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-vst3 retroplug-cli
+        DEPENDS retroplug-vst3 cli-ts-test-gb-lsdj-lsdj_midi_metro
         USES_TERMINAL
         COMMENT "Re-author examples/reaper/lsdj_midi_metro.rpp via headless Reaper"
     )
