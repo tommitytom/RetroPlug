@@ -243,6 +243,13 @@ JSValue jsUiFindFirstByType(JSContext* ctx, JSValueConst, int argc, JSValueConst
     } catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.findFirstByType: %s", e.what()); }
 }
 
+JSValue jsUiFocused(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    try {
+        auto* h = harnessOrThrow();
+        return widgetInfoToJs(ctx, h->widgetInfo(h->focusedObject()));
+    } catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.focused: %s", e.what()); }
+}
+
 JSValue jsUiTapKey(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     int key = 0;
     if (argc < 1 || JS_ToInt32(ctx, &key, argv[0]) < 0) return JS_EXCEPTION;
@@ -307,6 +314,7 @@ int runUiTestFile(const std::string& jsPath) {
         { "findByText",           { jsUiFindByText,           1 } },
         { "findByTextContaining", { jsUiFindByTextContaining, 1 } },
         { "findFirstByType",      { jsUiFindFirstByType,      1 } },
+        { "focused",         { jsUiFocused,         0 } },
         { "tapKey",          { jsUiTapKey,          1 } },
         { "clickAt",         { jsUiClickAt,         2 } },
     });

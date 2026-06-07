@@ -365,6 +365,12 @@ lv_obj_t* UiTestHarness::findByTestId(const std::string& name) const {
     return nullptr;
 }
 
+lv_obj_t* UiTestHarness::focusedObject() const {
+    if (!keypad_) return nullptr;
+    lv_group_t* g = lv_indev_get_group(keypad_); // the menu's group once claimed
+    return g ? lv_group_get_focused(g) : nullptr;
+}
+
 WidgetInfo UiTestHarness::widgetInfo(lv_obj_t* obj) const {
     WidgetInfo wi;
     if (!obj) return wi;

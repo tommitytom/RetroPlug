@@ -90,6 +90,11 @@ public:
     // Geometry + text of a widget (absolute coords). `found=false` if obj is null.
     WidgetInfo widgetInfo(lv_obj_t* obj) const;
 
+    // The widget currently focused in the keypad's group (the menu's focus
+    // group, once it claims the keypad via setKeyboardGroup). Lets a test
+    // navigate deterministically: press Down until focused().text is the target.
+    lv_obj_t* focusedObject() const;
+
     lv_obj_t* screen() const { return lv_screen_active(); }
 
     // -- runner plumbing (single-runtime: the test bundle runs in the engine's

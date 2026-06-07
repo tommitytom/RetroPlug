@@ -41,6 +41,7 @@ interface NativeUi {
   findByText(text: string): WidgetInfo | null;
   findByTextContaining(substr: string): WidgetInfo | null;
   findFirstByType(compType: number): WidgetInfo | null;
+  focused(): WidgetInfo | null;
   tapKey(lvKey: number): void;
   clickAt(x: number, y: number): void;
 }
@@ -114,6 +115,9 @@ export const ui = {
   findByTextContaining(substr: string): WidgetInfo | null { return rp.findByTextContaining(substr); },
   /** Find the first widget of a type, or null. */
   findFirstByType(compType: number): WidgetInfo | null { return rp.findFirstByType(compType); },
+  /** The widget currently focused in the menu's keypad group, or null. Use to
+   *  navigate deterministically: tapKey(Down) until focused().text is the target. */
+  focused(): WidgetInfo | null { return rp.focused(); },
   /** Tap an LVGL key (see Key) — drives focus-group nav + activation. */
   tapKey(lvKey: number): void { rp.tapKey(lvKey); },
   /** Click (press+release) at absolute (x,y) -> the widget's onClick. */
