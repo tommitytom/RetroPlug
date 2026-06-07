@@ -4,6 +4,7 @@
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
+#include <unordered_set>
 
 // LVGL is built in custom-global mode (LV_GLOBAL_CUSTOM): the application must
 // provide lv_global_default(). In the plugin DPF's LVGLWidget supplies a
@@ -58,10 +59,37 @@ void flushCb(lv_display_t* disp, const lv_area_t*, uint8_t*) {
     lv_display_flush_ready(disp);
 }
 
-// Headless input devices read nothing (released). Present so the focus group +
-// component creation (which calls lv_group_add_obj) work like in the plugin.
-void keypadReadCb(lv_indev_t*, lv_indev_data_t* data) {
-    data->state = LV_INDEV_STATE_RELEASED;
+// Keypad indev: pop one queued LVGL key code per read (PRESSED while queued,
+// then RELEASED), like dpf-widgets' keyBuffer. Drives menu focus-group nav.
+void keypadReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
+    auto* h = static_cast<UiTestHarness*>(lv_indev_get_driver_data(indev));
+    if (h && !h->keyQueue().empty()) {
+        data->state = LV_INDEV_STATE_PRESSED;
+        data->key   = h->keyQueue().front();
+        h->keyQueue().pop_front();
+        data->continue_reading = !h->keyQueue().empty();
+    } else {
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
+}
+
+// Pointer indev: report the harness's synthetic cursor position + button state.
+void pointerReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
+    auto* h = static_cast<UiTestHarness*>(lv_indev_get_driver_data(indev));
+    if (!h) { data->state = LV_INDEV_STATE_RELEASED; return; }
+    data->point = h->mousePos();
+    data->state = h->mouseDown() ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+}
+
+// Collect every live lv_obj under `o` (depth-first). The QUERIES below walk the
+// live tree rather than the global comp_map: lv_binding_js can leave a freed
+// component in comp_map after an unmount (e.g. the Menu -> AboutPanel swap), and
+// dereferencing its dangling instance crashes. The tree only holds live objects.
+void collectTree(lv_obj_t* o, std::vector<lv_obj_t*>& out) {
+    if (!o) return;
+    out.push_back(o);
+    const std::uint32_t n = lv_obj_get_child_count(o);
+    for (std::uint32_t i = 0; i < n; ++i) collectTree(lv_obj_get_child(o, i), out);
 }
 
 std::vector<std::uint8_t> slurpBytes(const std::string& path) {
@@ -116,6 +144,7 @@ UiTestHarness::~UiTestHarness() {
     if (lv_obj_t* scr = lv_screen_active()) lv_obj_clean(scr);
     engine_.shutdown();
     if (keypad_)  lv_indev_delete(keypad_);
+    if (pointer_) lv_indev_delete(pointer_);
     if (display_) lv_display_delete(display_);
     if (group_)   lv_group_delete(group_);
     if (g_active == this) g_active = nullptr;
@@ -144,7 +173,12 @@ bool UiTestHarness::boot() {
     keypad_ = lv_indev_create();
     lv_indev_set_type(keypad_, LV_INDEV_TYPE_KEYPAD);
     lv_indev_set_read_cb(keypad_, keypadReadCb);
+    lv_indev_set_driver_data(keypad_, this);
     lv_indev_set_group(keypad_, group_);
+    pointer_ = lv_indev_create();
+    lv_indev_set_type(pointer_, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(pointer_, pointerReadCb);
+    lv_indev_set_driver_data(pointer_, this);
 
     // --- JS engine + bridge + UI bundle ------------------------------------
     if (!engine_.init()) return false;
@@ -255,33 +289,144 @@ bool UiTestHarness::snapshotPng(const std::string& path) {
     return lodepng_encode24_file(path.c_str(), rgb.data(), s.width, s.height) == 0;
 }
 
-std::size_t UiTestHarness::widgetCount() const { return comp_map.size(); }
+// Live lv_binding_js components: walk the tree, keep objects whose user_data is a
+// BasicComponent currently in comp_map (so non-component LVGL objects + freed
+// entries are both excluded).
+static std::unordered_set<BasicComponent*> validComponentSet() {
+    std::unordered_set<BasicComponent*> valid;
+    for (const auto& [uid, bc] : comp_map) if (bc) valid.insert(bc);
+    return valid;
+}
+
+std::size_t UiTestHarness::widgetCount() const {
+    const auto valid = validComponentSet();
+    std::vector<lv_obj_t*> objs;
+    collectTree(lv_screen_active(), objs);
+    std::size_t n = 0;
+    for (lv_obj_t* o : objs) {
+        auto* bc = static_cast<BasicComponent*>(lv_obj_get_user_data(o));
+        if (bc && valid.count(bc)) ++n;
+    }
+    return n;
+}
 
 std::size_t UiTestHarness::countByType(int compType) const {
+    const auto valid = validComponentSet();
+    std::vector<lv_obj_t*> objs;
+    collectTree(lv_screen_active(), objs);
     std::size_t n = 0;
-    for (const auto& [uid, bc] : comp_map)
-        if (bc && static_cast<int>(bc->type) == compType) ++n;
+    for (lv_obj_t* o : objs) {
+        auto* bc = static_cast<BasicComponent*>(lv_obj_get_user_data(o));
+        if (bc && valid.count(bc) && static_cast<int>(bc->type) == compType) ++n;
+    }
     return n;
 }
 
 lv_obj_t* UiTestHarness::findFirstByType(int compType) const {
-    for (const auto& [uid, bc] : comp_map)
-        if (bc && static_cast<int>(bc->type) == compType) return bc->instance;
+    const auto valid = validComponentSet();
+    std::vector<lv_obj_t*> objs;
+    collectTree(lv_screen_active(), objs);
+    for (lv_obj_t* o : objs) {
+        auto* bc = static_cast<BasicComponent*>(lv_obj_get_user_data(o));
+        if (bc && valid.count(bc) && static_cast<int>(bc->type) == compType) return o;
+    }
     return nullptr;
 }
 
 lv_obj_t* UiTestHarness::findByText(const std::string& text) const {
-    for (const auto& [uid, bc] : comp_map) {
-        if (!bc || bc->type != COMP_TYPE_TEXT || !bc->instance) continue;
-        const char* t = lv_label_get_text(bc->instance);
-        if (t && text == t) return bc->instance;
+    std::vector<lv_obj_t*> objs;
+    collectTree(lv_screen_active(), objs);
+    for (lv_obj_t* o : objs) {
+        if (!lv_obj_check_type(o, &lv_label_class)) continue; // live label: safe to read
+        const char* t = lv_label_get_text(o);
+        if (t && text == t) return o;
+    }
+    return nullptr;
+}
+
+lv_obj_t* UiTestHarness::findByTextContaining(const std::string& substr) const {
+    std::vector<lv_obj_t*> objs;
+    collectTree(lv_screen_active(), objs);
+    for (lv_obj_t* o : objs) {
+        if (!lv_obj_check_type(o, &lv_label_class)) continue;
+        const char* t = lv_label_get_text(o);
+        if (t && std::string(t).find(substr) != std::string::npos) return o;
     }
     return nullptr;
 }
 
 lv_obj_t* UiTestHarness::findByTestId(const std::string& name) const {
     auto it = testIds_.find(name);
-    return it == testIds_.end() ? nullptr : it->second;
+    if (it == testIds_.end()) return nullptr;
+    // Only return it if still live (its slot may have unmounted).
+    std::vector<lv_obj_t*> objs;
+    collectTree(lv_screen_active(), objs);
+    for (lv_obj_t* o : objs) if (o == it->second) return o;
+    return nullptr;
+}
+
+WidgetInfo UiTestHarness::widgetInfo(lv_obj_t* obj) const {
+    WidgetInfo wi;
+    if (!obj) return wi;
+    wi.found = true;
+    lv_area_t a;
+    lv_obj_get_coords(obj, &a); // absolute (screen) coordinates
+    wi.x = a.x1;
+    wi.y = a.y1;
+    wi.width  = lv_area_get_width(&a);
+    wi.height = lv_area_get_height(&a);
+    wi.childCount = lv_obj_get_child_count(obj);
+    if (lv_obj_check_type(obj, &lv_label_class)) {
+        if (const char* t = lv_label_get_text(obj)) wi.text = t;
+    }
+    return wi;
+}
+
+void UiTestHarness::tapKey(std::uint32_t lvKey) {
+    keyQueue_.push_back(lvKey);
+    // Mirror PluginUI: also fire the JS "key" channel (press then release) for
+    // handlers that live there (prompt/capture/Esc/game input). LVGL key code ->
+    // DPF key code (the value runtime/lvgljs/input.ts expects).
+    std::uint32_t dpf;
+    switch (lvKey) {
+        case LV_KEY_UP:    dpf = 0xE036; break;
+        case LV_KEY_DOWN:  dpf = 0xE038; break;
+        case LV_KEY_RIGHT: dpf = 0xE037; break;
+        case LV_KEY_LEFT:  dpf = 0xE035; break;
+        case LV_KEY_ENTER: dpf = 0x0D;   break;
+        case LV_KEY_ESC:   dpf = 0x1B;   break;
+        default:           dpf = lvKey;  break;
+    }
+    JSContext* ctx = engine_.getContext();
+    auto emitKey = [&](bool press) {
+        if (!ctx) return;
+        JSValue args[2] = { JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press) };
+        engine_.emit("key", 2, args);
+        JS_FreeValue(ctx, args[0]);
+        JS_FreeValue(ctx, args[1]);
+    };
+    emitKey(true);
+    pump(2);  // keypad indev: PRESSED then RELEASED through lv_timer_handler
+    emitKey(false);
+    pump(1);
+}
+
+void UiTestHarness::clickAt(std::int32_t x, std::int32_t y) {
+    JSContext* ctx = engine_.getContext();
+    auto emitMouse = [&](bool press) {
+        if (!ctx) return;
+        JSValue args[4] = { JS_NewUint32(ctx, 0), JS_NewBool(ctx, press),
+                            JS_NewFloat64(ctx, x), JS_NewFloat64(ctx, y) };
+        engine_.emit("mouse", 4, args);
+        for (JSValue& v : args) JS_FreeValue(ctx, v);
+    };
+    mousePos_  = { x, y };
+    mouseDown_ = true;
+    emitMouse(true);
+    pump(2);  // register the press at (x,y)
+    mouseDown_ = false;
+    emitMouse(false);
+    pump(2);  // release -> LVGL fires CLICKED -> onClick
 }
 
 } // namespace rpui

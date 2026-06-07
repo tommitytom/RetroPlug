@@ -191,16 +191,17 @@ target_link_libraries(retroplug-lsdj-diff-tests PRIVATE
 catch_discover_tests(retroplug-lsdj-diff-tests)
 
 # -----------------------------------------------------------------------------
-# retroplug-ui-test — headless LVGL/React UI tests. Boots the REAL UI bundle on
-# LvglJsEngine + PluginJsBridge with no DPF / PUGL / OpenGL / Xvfb (the LVGL
-# render is pure software; ui/UiTestHarness replicates only the non-GL subset of
-# deps/dpf-widgets/generic/LVGL.cpp), then asserts on the rendered tree +
-# lv_snapshot. Links lvgl-js-native (brings LvglJsEngine + lvgl + lv_binding_js
-# native + lodepng) and the UI/bridge/project/system sources — but NOT DPF.
-# Compiles the same generated UI bundle the plugin embeds.
+# retroplug-ui-test — headless LVGL/React UI TEST RUNNER. Boots the REAL UI
+# bundle on LvglJsEngine + PluginJsBridge with no DPF / PUGL / OpenGL / Xvfb (the
+# LVGL render is pure software; ui/UiTestHarness replicates only the non-GL subset
+# of deps/dpf-widgets/generic/LVGL.cpp). UiTsRunner is a txiki/QuickJS TAP runner
+# (`--test <bundle.js>`) exposing a `ui` global, so UI tests are authored in
+# TypeScript (test/ts/ui/*.test.ts) like the emu suite. Links lvgl-js-native
+# (LvglJsEngine + lvgl + lv_binding_js native + lodepng + tjs) and the
+# UI/bridge/project/system sources — but NOT DPF.
 # -----------------------------------------------------------------------------
 add_executable(retroplug-ui-test
-    ui/UiSmokeTests.cpp
+    ui/UiTsRunner.cpp
     ui/UiTestHarness.cpp
     # UI/bridge surface (FILES_UI minus PluginUI.cpp, GamepadManager, and DPF's
     # LVGL widget — the harness supplies the headless display instead).
@@ -249,7 +250,6 @@ target_compile_definitions(retroplug-ui-test PRIVATE
 )
 
 target_link_libraries(retroplug-ui-test PRIVATE
-    Catch2::Catch2WithMain
     lvgl-js-native   # LvglJsEngine + lvgl + lv_binding_js native + lodepng (+ tjs)
     rpcpp
     sameboy
@@ -264,7 +264,7 @@ target_link_libraries(retroplug-ui-test PRIVATE
 set_target_properties(retroplug-ui-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
-
-catch_discover_tests(retroplug-ui-test)
+# Not a Catch2 binary anymore — it's the TS runner, invoked by the ui-ts-test
+# targets in the top-level CMakeLists.txt.

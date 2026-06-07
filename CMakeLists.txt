@@ -464,15 +464,41 @@ if(BUILD_TESTING)
     enable_testing()
     add_subdirectory(test)
 
-    # `make ui-test` -> headless UI tests (no Xvfb): boot the real UI bundle,
-    # render to a software buffer, assert on the LVGL tree + snapshot.
-    add_custom_target(ui-test
-        COMMAND $<TARGET_FILE:retroplug-ui-test>
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        DEPENDS retroplug-ui-test
-        USES_TERMINAL
-        COMMENT "Running headless UI tests (LvglJsEngine + real bundle, no DPF/Xvfb)"
-    )
+    # `make ui-ts-test` -> headless UI TypeScript tests (no Xvfb). Each
+    # test/ts/ui/*.test.ts is bundled (the `ui-harness` alias -> test/harness/ui.ts)
+    # and run as its own `retroplug-ui-test --test` process (TAP). Mirrors the
+    # cli-ts-test loop but uses the UI runner, which boots the real React bundle
+    # in a headless LvglJsEngine. `make ui-test` is an alias.
+    if(TARGET retroplug-ui-test AND NODE_EXECUTABLE)
+        file(GLOB UI_TS_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/test/ts/ui/*.test.ts)
+        add_custom_target(ui-ts-test COMMENT "Running UI TypeScript tests (TAP)")
+        foreach(_ts ${UI_TS_TEST_SOURCES})
+            file(RELATIVE_PATH _rel ${CMAKE_SOURCE_DIR}/test/ts/ui ${_ts})
+            string(REGEX REPLACE "\\.test\\.ts$" "" _slug ${_rel})  # e.g. chrome
+            string(REPLACE "/" "-" _tgt ${_slug})
+            set(_js  ${CMAKE_BINARY_DIR}/test-js/ui/${_slug}.js)
+            set(_dep ${CMAKE_BINARY_DIR}/test-js/ui/${_slug}.js.d)
+            add_custom_command(
+                OUTPUT  ${_js}
+                COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-test.js
+                        ${_ts} ${_js} ${_dep}
+                DEPENDS ${_ts}
+                        ${CMAKE_SOURCE_DIR}/test/harness/ui.ts
+                        ${CMAKE_SOURCE_DIR}/test/harness/index.ts
+                        ${CMAKE_SOURCE_DIR}/tools/build-test.js
+                DEPFILE ${_dep}
+                COMMENT "esbuild ui/${_rel} -> test-js/ui/${_slug}.js"
+                VERBATIM)
+            add_custom_target(ui-ts-test-${_tgt}
+                COMMAND ${CMAKE_BINARY_DIR}/bin/retroplug-ui-test --test ${_js}
+                DEPENDS ${_js} retroplug-ui-test
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                USES_TERMINAL
+                COMMENT "retroplug-ui-test --test test-js/ui/${_slug}.js")
+            add_dependencies(ui-ts-test ui-ts-test-${_tgt})
+        endforeach()
+        add_custom_target(ui-test DEPENDS ui-ts-test)
+    endif()
 endif()
 
 # --- CLI tool ---------------------------------------------------------------
@@ -534,6 +560,9 @@ if(BUILD_CLI)
     # per-test target name (cli-ts-test-gb-lsdj-sav), so same-named tests in
     # different platforms don't collide.
     file(GLOB_RECURSE TS_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/test/ts/*.test.ts)
+    # test/ts/ui/ tests need the UI runtime (retroplug-ui-test), not retroplug-cli
+    # — they're handled by the ui-ts-test block (top-level, under BUILD_TESTING).
+    list(FILTER TS_TEST_SOURCES EXCLUDE REGEX "/test/ts/ui/")
     add_custom_target(cli-ts-test
         COMMENT "Running TypeScript harness tests (TAP)")
     foreach(_ts ${TS_TEST_SOURCES})

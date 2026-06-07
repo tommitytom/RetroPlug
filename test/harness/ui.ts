@@ -1,0 +1,109 @@
+// Front door for headless UI tests. Mirrors test/harness/index.ts (the emu
+// harness) but exposes a `ui` facade over the native Symbol.for("retroplug-ui")
+// namespace installed by the retroplug-ui-test runner (test/ui/UiTsRunner.cpp).
+//
+// Usage:
+//   import { test, expect, ui, CompType, Key } from "ui-harness";
+//
+// test/expect (and the window-'load' -> runAll TAP trigger) are reused verbatim
+// from index.ts — importing it registers the runner. The test runs in this
+// runtime; `ui.boot()` spins up the real React UI bundle in a second runtime and
+// every ui.* call drives it through C++ bindings (black-box: assert on the
+// rendered LVGL tree + snapshot).
+
+export { test, expect } from "./index";
+
+// A located widget's geometry (absolute/screen coords) + content.
+export interface WidgetInfo {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  childCount: number;
+  text: string; // non-empty only for Text widgets
+}
+
+export interface UiSnapshot {
+  width: number;
+  height: number;
+  pixels: Uint8Array; // ARGB8888 (B,G,R,A in memory), width*height*4
+}
+
+interface NativeUi {
+  boot(): boolean;
+  loadRom(path: string): number;
+  pump(iterations?: number): void;
+  snapshot(): { width: number; height: number; pixels: ArrayBuffer };
+  snapshotPng(path: string): boolean;
+  widgetCount(): number;
+  countByType(compType: number): number;
+  findByTestId(name: string): WidgetInfo | null;
+  findByText(text: string): WidgetInfo | null;
+  findByTextContaining(substr: string): WidgetInfo | null;
+  findFirstByType(compType: number): WidgetInfo | null;
+  tapKey(lvKey: number): void;
+  clickAt(x: number, y: number): void;
+}
+
+const rp: NativeUi = (globalThis as any)[Symbol.for("retroplug-ui")];
+
+// lv_binding_js component types (mirror ECOMP_TYPE in
+// deps/lv_binding_js/src/render/native/core/basic/comp.hpp). Canvas piggybacks
+// on lv_image, so the emulator tile's <Canvas> reports as Image.
+export const CompType = {
+  View: 0, Button: 1, Image: 2, Gif: 3, Slider: 4, Arc: 5, Text: 6,
+  Window: 7, Switch: 8, Textarea: 9, Checkbox: 10, Dropdownlist: 11,
+  ProgressBar: 12, Roller: 13, Line: 14, Calendar: 15, List: 16,
+  Tabview: 17, Chart: 18, Mask: 19,
+} as const;
+
+// LVGL key codes for tapKey (drive menu focus-group nav + activation).
+export const Key = {
+  Up: 17, Down: 18, Right: 19, Left: 20,
+  Enter: 10, Esc: 27, Del: 127, Backspace: 8,
+} as const;
+
+/** True when every pixel is identical (nothing meaningful rendered). */
+export function isFlat(snap: UiSnapshot): boolean {
+  const p = snap.pixels;
+  if (p.length < 8) return true;
+  for (let i = 4; i + 4 <= p.length; i += 4) {
+    if (p[i] !== p[0] || p[i + 1] !== p[1] || p[i + 2] !== p[2] || p[i + 3] !== p[3])
+      return false;
+  }
+  return true;
+}
+
+export const ui = {
+  /** Create a headless display + boot the real React UI bundle. Call first in
+   *  each test (beginCase tears down the previous harness). */
+  boot(): boolean { return rp.boot(); },
+  /** Load a (SameBoy) ROM into the project; returns the system id. */
+  loadRom(path: string): number { return rp.loadRom(path); },
+  /** Advance the UI + emulator `iterations` blocks (settles RPC + render). */
+  pump(iterations = 30): void { rp.pump(iterations); },
+  /** Render the active screen to an ARGB snapshot. */
+  snapshot(): UiSnapshot {
+    const s = rp.snapshot();
+    return { width: s.width, height: s.height, pixels: new Uint8Array(s.pixels) };
+  },
+  /** Write the active screen to a PNG (for eyeball parity with `make screenshot`). */
+  snapshotPng(path: string): boolean { return rp.snapshotPng(path); },
+  /** Total live lv_binding_js components in the tree. */
+  widgetCount(): number { return rp.widgetCount(); },
+  /** Count components of an ECOMP_TYPE (see CompType). */
+  countByType(compType: number): number { return rp.countByType(compType); },
+  /** Find a widget tagged via testId (SystemGrid slots), or null. */
+  findByTestId(name: string): WidgetInfo | null { return rp.findByTestId(name); },
+  /** Find the first Text widget whose label equals `text`, or null. */
+  findByText(text: string): WidgetInfo | null { return rp.findByText(text); },
+  /** Find the first Text widget whose label contains `substr` (handles
+   *  multi-line labels), or null. */
+  findByTextContaining(substr: string): WidgetInfo | null { return rp.findByTextContaining(substr); },
+  /** Find the first widget of a type, or null. */
+  findFirstByType(compType: number): WidgetInfo | null { return rp.findFirstByType(compType); },
+  /** Tap an LVGL key (see Key) — drives focus-group nav + activation. */
+  tapKey(lvKey: number): void { rp.tapKey(lvKey); },
+  /** Click (press+release) at absolute (x,y) -> the widget's onClick. */
+  clickAt(x: number, y: number): void { rp.clickAt(x, y); },
+};

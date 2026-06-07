@@ -13,6 +13,7 @@
 // One harness owns one lv_display + one JS runtime; construct one per test case.
 
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -38,6 +39,15 @@ struct Snapshot {
     std::vector<std::uint8_t> argb; // width*height*4
 
     bool isFlat() const;            // every pixel identical (nothing rendered)
+};
+
+// A located widget's geometry + content, for TS assertions. Coordinates are
+// ABSOLUTE (screen-relative, via lv_obj_get_coords) so clickAt can target them.
+struct WidgetInfo {
+    bool          found  = false;
+    std::int32_t  x = 0, y = 0, width = 0, height = 0;
+    std::uint32_t childCount = 0;
+    std::string   text;  // non-empty only for COMP_TYPE_TEXT (lv_label) widgets
 };
 
 class UiTestHarness {
@@ -73,13 +83,43 @@ public:
     std::size_t widgetCount() const;     // total live lv_binding_js components
     std::size_t countByType(int compType) const;   // ECOMP_TYPE
     lv_obj_t* findFirstByType(int compType) const;
-    lv_obj_t* findByText(const std::string& text) const; // first COMP_TYPE_TEXT match
+    lv_obj_t* findByText(const std::string& text) const; // first exact label match
+    lv_obj_t* findByTextContaining(const std::string& substr) const; // first label containing substr
     lv_obj_t* findByTestId(const std::string& name) const; // via the __rp_tagTestId hook
+
+    // Geometry + text of a widget (absolute coords). `found=false` if obj is null.
+    WidgetInfo widgetInfo(lv_obj_t* obj) const;
 
     lv_obj_t* screen() const { return lv_screen_active(); }
 
+    // -- runner plumbing (single-runtime: the test bundle runs in the engine's
+    //    own JS runtime, alongside the UI) ----------------------------------
+    JSContext* engineContext() { return engine_.getContext(); }
+    // Eval the TS test bundle into the engine runtime (is_main -> fires the
+    // window 'load' event the harness front door hooks to run the cases).
+    int evalTestModule(const char* code, std::size_t len, const char* name) {
+        return engine_.evalModuleBuffer(code, len, name);
+    }
+    void drainJs() { engine_.tick(); } // pump the JS event loop (no emulator step)
+
+    // -- input driving ------------------------------------------------------
+    // Mirror what PluginUI does on real input: feed the LVGL indev (focus group
+    // / pointer hit-test) AND emit the JS "key"/"mouse" channels. Both call
+    // pump() internally so the press→release is processed before returning.
+
+    // Tap an LVGL key (LV_KEY_UP/DOWN/LEFT/RIGHT/ENTER/ESC). Drives menu focus
+    // navigation + activation via the keypad indev.
+    void tapKey(std::uint32_t lvKey);
+    // Click (press+release) at absolute (x,y) via the pointer indev -> onClick.
+    void clickAt(std::int32_t x, std::int32_t y);
+
     // Called by the __rp_tagTestId JS trampoline (UI ref hook).
     void recordTestId(const std::string& name, lv_obj_t* obj) { testIds_[name] = obj; }
+
+    // Read callbacks reach these via lv_indev_get_driver_data(indev) == this.
+    std::deque<std::uint32_t>& keyQueue() { return keyQueue_; }
+    lv_point_t mousePos() const { return mousePos_; }
+    bool mouseDown() const { return mouseDown_; }
 
 private:
     void installTestIdHook();            // adds globalThis.__rp_tagTestId
@@ -91,6 +131,12 @@ private:
     std::vector<std::uint8_t> drawBuf_;
     lv_group_t* group_ = nullptr;
     lv_indev_t* keypad_ = nullptr;
+    lv_indev_t* pointer_ = nullptr;
+
+    // Synthetic input state, read by the indev read callbacks.
+    std::deque<std::uint32_t> keyQueue_;       // pending LVGL key codes
+    lv_point_t mousePos_ = { 0, 0 };
+    bool mouseDown_ = false;
 
     Project project_;
     CommandQueue commands_;
