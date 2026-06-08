@@ -31,8 +31,9 @@ export interface UiSnapshot {
 
 interface NativeUi {
   boot(): boolean;
-  loadRom(path: string): number;
+  loadRom(path: string, savPath?: string): number;
   pump(iterations?: number): void;
+  readMemory(sys: number, type: number): ArrayBuffer;
   snapshot(): { width: number; height: number; pixels: ArrayBuffer };
   snapshotPng(path: string): boolean;
   widgetCount(): number;
@@ -58,10 +59,17 @@ export const CompType = {
   Tabview: 17, Chart: 18, Mask: 19,
 } as const;
 
-// LVGL key codes for tapKey (drive menu focus-group nav + activation).
+// LVGL key codes for tapKey (drive menu focus-group nav + activation; the
+// arrows also map to the Game Boy d-pad when a tile is focused).
 export const Key = {
   Up: 17, Down: 18, Right: 19, Left: 20,
   Enter: 10, Esc: 27, Del: 127, Backspace: 8,
+} as const;
+
+// Memory regions (mirror rp::MemoryType / src/system/MemoryType.hpp).
+export const Mem = {
+  Ram: 0, Rom: 1, Sram: 2, Vram: 3, IORegisters: 4,
+  HRam: 5, OAM: 6, NametableRam: 7, ExtWorkRam: 8,
 } as const;
 
 /** Count of differing RGBA pixels between two snapshots (-1 if shapes differ). */
@@ -91,10 +99,14 @@ export const ui = {
   /** Create a headless display + boot the real React UI bundle. Call first in
    *  each test (beginCase tears down the previous harness). */
   boot(): boolean { return rp.boot(); },
-  /** Load a (SameBoy) ROM into the project; returns the system id. */
-  loadRom(path: string): number { return rp.loadRom(path); },
+  /** Load a (SameBoy) ROM into the project and focus it; returns the system id.
+   *  Optional `savPath` is a .sav file (raw cartridge SRAM) seeding battery RAM
+   *  so LSDj boots straight to the song screen. */
+  loadRom(path: string, savPath?: string): number { return rp.loadRom(path, savPath); },
   /** Advance the UI + emulator `iterations` blocks (settles RPC + render). */
   pump(iterations = 30): void { rp.pump(iterations); },
+  /** Read a whole memory region of a system as a copy (see Mem). */
+  readMemory(sys: number, type: number): Uint8Array { return new Uint8Array(rp.readMemory(sys, type)); },
   /** Render the active screen to an ARGB snapshot. */
   snapshot(): UiSnapshot {
     const s = rp.snapshot();

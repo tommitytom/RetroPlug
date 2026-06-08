@@ -62,9 +62,11 @@ public:
     // bundle. Returns false if any stage fails. Call once.
     bool boot();
 
-    // Load a ROM into the project (same path as cli/TestHarness.cpp) and tell the
-    // UI to re-query. Call after boot(); then pump() so the tile mounts/renders.
-    std::uint32_t loadRom(const std::string& path);
+    // Load a ROM into the project, focus it (so UI keyboard input routes to it),
+    // and tell the UI to re-query. Optional `savPath` is a .sav file (raw 128 KiB
+    // cartridge SRAM image) seeding battery RAM so LSDj boots straight to the
+    // song screen. Call after boot(); then pump() so the tile mounts/renders.
+    std::uint32_t loadRom(const std::string& path, const std::string& savPath = "");
 
     // Advance the UI: pump the in-process RPC, emit "frame", run the JS loop and
     // LVGL layout/redraw, `iterations` times (each ~16ms of simulated tick). The
@@ -79,6 +81,11 @@ public:
 
     Snapshot snapshot();                 // render the active screen to ARGB
     bool snapshotPng(const std::string& path); // also write a PNG (RGB)
+
+    // Read a whole memory region (a copy). `memType` is rp::MemoryType
+    // (Ram=0, Rom=1, Sram=2, Vram=3, IORegisters=4, HRam=5, ...). Lets a test
+    // assert on emulator state (e.g. an LSDj cursor moving in response to input).
+    std::vector<std::uint8_t> readMemory(std::uint32_t id, int memType);
 
     std::size_t widgetCount() const;     // total live lv_binding_js components
     std::size_t countByType(int compType) const;   // ECOMP_TYPE

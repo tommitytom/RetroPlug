@@ -126,11 +126,15 @@ JSValue jsUiBoot(JSContext* ctx, JSValueConst, int, JSValueConst*) {
 }
 
 JSValue jsUiLoadRom(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 1) return JS_ThrowTypeError(ctx, "ui.loadRom(path)");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "ui.loadRom(path, savPath?)");
     const char* path = JS_ToCString(ctx, argv[0]);
     if (!path) return JS_EXCEPTION;
+    std::string sav;
+    if (argc >= 2 && JS_IsString(argv[1])) {
+        if (const char* s = JS_ToCString(ctx, argv[1])) { sav = s; JS_FreeCString(ctx, s); }
+    }
     try {
-        const std::uint32_t id = harnessOrThrow()->loadRom(path);
+        const std::uint32_t id = harnessOrThrow()->loadRom(path, sav);
         JS_FreeCString(ctx, path);
         return JS_NewInt32(ctx, static_cast<int32_t>(id));
     } catch (const std::exception& e) {
@@ -172,6 +176,17 @@ JSValue jsUiSnapshotPng(JSContext* ctx, JSValueConst, int argc, JSValueConst* ar
         JS_FreeCString(ctx, path);
         return err;
     }
+}
+
+JSValue jsUiReadMemory(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    int id = 0, type = 0;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "ui.readMemory(sys, type)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    if (JS_ToInt32(ctx, &type, argv[1]) < 0) return JS_EXCEPTION;
+    try {
+        const auto mem = harnessOrThrow()->readMemory(static_cast<std::uint32_t>(id), type);
+        return JS_NewArrayBufferCopy(ctx, mem.data(), mem.size());
+    } catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.readMemory: %s", e.what()); }
 }
 
 JSValue jsUiWidgetCount(JSContext* ctx, JSValueConst, int, JSValueConst*) {
@@ -306,6 +321,7 @@ int runUiTestFile(const std::string& jsPath) {
         { "boot",            { jsUiBoot,            0 } },
         { "loadRom",         { jsUiLoadRom,         1 } },
         { "pump",            { jsUiPump,            1 } },
+        { "readMemory",      { jsUiReadMemory,      2 } },
         { "snapshot",        { jsUiSnapshot,        0 } },
         { "snapshotPng",     { jsUiSnapshotPng,     1 } },
         { "widgetCount",     { jsUiWidgetCount,     0 } },

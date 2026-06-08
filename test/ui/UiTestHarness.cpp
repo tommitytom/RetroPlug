@@ -17,9 +17,11 @@ extern "C" lv_global_t* lv_global_default(void) {
 }
 
 #include "PluginJsBridge.hpp"
+#include "system/MemoryType.hpp"    // rp::MemoryType / AccessType / MemoryAccessor
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo
+#include "transport/CommandQueue.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
 
@@ -217,7 +219,7 @@ void UiTestHarness::installTestIdHook() {
     JS_FreeValue(ctx, g);
 }
 
-std::uint32_t UiTestHarness::loadRom(const std::string& path) {
+std::uint32_t UiTestHarness::loadRom(const std::string& path, const std::string& savPath) {
     auto bytes = slurpBytes(path);
     if (detectRomFormat(bytes) != RomFormat::SameBoy)
         throw std::runtime_error("UiTestHarness::loadRom supports SameBoy ROMs only: " + path);
@@ -226,13 +228,23 @@ std::uint32_t UiTestHarness::loadRom(const std::string& path) {
     cfg.romPath  = path;
     cfg.model    = SameBoyModel::CgbC;
     cfg.fastBoot = true;
+    // Optional cartridge SRAM image (a .sav file): seeds battery RAM so LSDj
+    // boots straight to the song screen (skips the 12-15s self-test). Read as
+    // raw bytes — we deliberately do NOT link the LSDj sav codec into this
+    // binary (its reflect-cpp instantiations clash with the RPC layer's and
+    // break listSystems serialization). A prebuilt .sav (the golden corpus,
+    // ../resources/roms/lsdj/<rom>.sav) is the input instead.
+    if (!savPath.empty()) cfg.sram = slurpBytes(savPath);
     auto sys = std::make_unique<SameBoySystem>(
         project_.nextSystemId(), cfg, std::move(bytes));
     sys->onActivate(sampleRate_.load());
     const SystemId id = sys->id();
     project_.adoptSystem(sys.release());
     project_.rebuildLinkGroups();
-    notifyConfigChanged(); // tell the UI to re-query listSystems
+    // Focus it so the UI routes keyboard input here (PluginUI drops keys when
+    // focus is 0). The DSP does this on the AddSystem command; we load directly.
+    focusedSystemId_.store(id);
+    notifyConfigChanged(); // UI re-queries listSystems + getFocus
     return static_cast<std::uint32_t>(id);
 }
 
@@ -245,6 +257,19 @@ void UiTestHarness::pump(int iterations) {
     if (scratchL_.size() < kFrames) { scratchL_.resize(kFrames); scratchR_.resize(kFrames); }
     float* outs[2] = { scratchL_.data(), scratchR_.data() };
     for (int i = 0; i < iterations; ++i) {
+        // Drain UI->DSP commands before processing, like PluginDSP::run. This is
+        // how RPC button presses (keyboard input routed through the UI) reach the
+        // emulator. We only need ButtonPress headless (ROMs are loaded directly,
+        // not via the LoadRom/AddSystem commands).
+        Command cmd;
+        while (commands_.tryPop(cmd)) {
+            if (cmd.kind == Command::Kind::ButtonPress) {
+                const auto& bp = cmd.payload.buttonPress;
+                if (SystemBase* sys = project_.findSystem(bp.systemId))
+                    sys->pressButton(bp.button, bp.down);
+            }
+        }
+
         // Advance the emulator so framebuffers publish (no DSP thread headless),
         // matching the per-tick emulator advance the plugin's audio thread does.
         std::fill_n(scratchL_.data(), kFrames, 0.0f);
@@ -296,6 +321,15 @@ static std::unordered_set<BasicComponent*> validComponentSet() {
     std::unordered_set<BasicComponent*> valid;
     for (const auto& [uid, bc] : comp_map) if (bc) valid.insert(bc);
     return valid;
+}
+
+std::vector<std::uint8_t> UiTestHarness::readMemory(std::uint32_t id, int memType) {
+    SystemBase* sys = project_.findSystem(static_cast<SystemId>(id));
+    if (!sys) return {};
+    rp::MemoryAccessor acc = sys->getMemory(static_cast<rp::MemoryType>(memType),
+                                            rp::AccessType::Read);
+    if (!acc.valid() || acc.size() == 0) return {};
+    return std::vector<std::uint8_t>(acc.data(), acc.data() + acc.size());
 }
 
 std::size_t UiTestHarness::widgetCount() const {
