@@ -246,22 +246,25 @@ The pattern (see [test/ts/gb/lsdj/sync_pattern.test.ts](test/ts/gb/lsdj/sync_pat
 or [lsdj_arduinoboy_metro.test.ts](test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts)):
 
 ```ts
-const fill = <T>(n, f) => Array.from({ length: n }, f);
 const sav = emu.savFromJson(JSON.stringify({
   workingSong: {
     formatVersion: 22,
-    settings: { syncMode: "Lsdj" },         // PROJECT-screen SYNC (None/Lsdj/Midi/Keyboard/AnalogIn/AnalogOut)
-    rows:    fill(256, () => ({ chains: [null,null,null,null] })),  // rows[0].chains[0]=0 → chain 00
-    chains:  /* chains[0] = { phrases:[0,...], transpositions:[...] } */,
-    phrases: /* phrases[0] = { notes:[1,...], instruments:[0,...], commands:[...], commandValues:[...] } */,
-    instruments: /* instruments[0] = { type:"pulse", ... } */,
+    settings: { syncMode: "Lsdj" },              // PROJECT-screen SYNC (None/Lsdj/Midi/Keyboard/AnalogIn/AnalogOut)
+    rows:    [{ chains: [0] }],                   // rows[0].chains[0]=0 → chain 00
+    chains:  [{ phrases: [0] }],                  // chains[0].phrases[0]=0 → phrase 00
+    phrases: [{ notes: [1], instruments: [0] }],  // phrases[0]: step 0 = note 1 / instrument 0
+    instruments: [{ type: "pulse" }],             // instruments[0]
   },
 }));
 const sys = emu.loadRom(rom, sav, /*lsdjSyncMode*/ "MidiSyncArduinoboy", /*linkGroup*/ 1);
 ```
 
-Fixed-size arrays must be built in full with `fill(...)` — `DefaultIfMissing`
-fills missing struct fields but not missing array elements.
+Fixed arrays may be short or omitted: the sav codec pads each to its full
+on-disk length with default elements (`0` / `null` / `None` / a default struct),
+so a fixture only specifies the cells it sets. Serialization always writes the
+full length, so on-disk encoding and JSON round-trips are unchanged; supplying
+more than the fixed length is an error. (Implemented by `FixedArray<T,N>` in
+[src/lsdj/model/FixedArray.hpp](src/lsdj/model/FixedArray.hpp).)
 
 `emu.loadRom(path, sav?, lsdjSyncMode?, linkGroup?)`:
 - `sav` — an `ArrayBuffer` from `savFromJson` (or `readMemory(sys, Mem.Sram)`).

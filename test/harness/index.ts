@@ -15,7 +15,8 @@ interface NativeRp {
   // "MidiMap", "MidiPassthrough", "ArduinoboyMaster") pre-seeds the LSDj role.
   // Optional `linkGroup` (same nonzero value) links instances for LSDj sync.
   loadRom(path: string, sav?: ArrayBuffer, lsdjSyncMode?: string, linkGroup?: number): number;
-  // Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON fixture.
+  // Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON fixture;
+  // missing fields and short/omitted fixed arrays take model defaults / pad.
   savFromJson(json: string): ArrayBuffer;
   runMs(ms: number): void;
   press(sys: number, button: number, down: boolean): void;
@@ -141,8 +142,9 @@ export const emu = {
     return rp.loadRom(path, sav, lsdjSyncMode, linkGroup);
   },
   /** Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON
-   *  fixture — missing fields take model defaults. Feed the result to
-   *  loadRom(rom, sav) to boot LSDj from an authored song. */
+   *  fixture — missing fields take model defaults, and short or omitted fixed
+   *  arrays pad to their full on-disk length (author only the cells you set).
+   *  Feed the result to loadRom(rom, sav) to boot LSDj from an authored song. */
   savFromJson(json: string): ArrayBuffer {
     return rp.savFromJson(json);
   },
