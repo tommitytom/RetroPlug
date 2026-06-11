@@ -17,23 +17,18 @@
 import { test, expect, emu, Mem } from "harness";
 
 const LSDJ = "../resources/roms/lsdj/lsdj9_4_2.gb";
-const fill = <T>(n: number, f: () => T): T[] => Array.from({ length: n }, f);
-
 function syncedSongSav(): ArrayBuffer {
-  const rows = fill(256, () => ({ chains: [null, null, null, null] as (number | null)[] }));
-  rows[0].chains[0] = 0;
-  const chains = fill(128, () => null as unknown);
-  chains[0] = { phrases: [0, ...fill(15, () => null)], transpositions: fill(16, () => 0) };
-  const phrases = fill(256, () => null as unknown);
-  phrases[0] = {
-    notes: [1, ...fill(15, () => 0)],
-    instruments: [0, ...fill(15, () => null)],
-    commands: fill(16, () => "None"), commandValues: fill(16, () => 0),
-  };
-  const instruments = fill(64, () => null as unknown);
-  instruments[0] = { type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 }, vibrato: { direction: "Up" }, sweep: 127 };
+  // SYNC=MIDI + chain0 -> phrase0 -> C note. The codec pads every fixed array to
+  // full length, so we author just the cells we set.
   return emu.savFromJson(JSON.stringify({
-    workingSong: { formatVersion: 22, settings: { syncMode: "Midi" }, rows, chains, phrases, instruments },
+    workingSong: {
+      formatVersion: 22,
+      settings: { syncMode: "Midi" },
+      rows:    [{ chains: [0] }],
+      chains:  [{ phrases: [0] }],
+      phrases: [{ notes: [1], instruments: [0] }],
+      instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 }, vibrato: { direction: "Up" }, sweep: 127 }],
+    },
   }));
 }
 

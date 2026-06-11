@@ -47,11 +47,14 @@ test("generated zod accepts valid fixtures and rejects bad ones", () => {
   // wrong discriminator tag
   expect(KitInstrumentSchema.safeParse({ ...goodKit, type: "pulse" }).success).toBe(false);
 
-  // fixed-length arrays: exactly 16 steps required
+  // arrays are length-flexible now: the sav codec pads short/omitted arrays to
+  // their on-disk length, so the schema only validates element types.
   const goodPhrase = {
     notes: Array(16).fill(0), instruments: Array(16).fill(null),
     commands: Array(16).fill("None"), commandValues: Array(16).fill(0),
   };
   expect(PhraseSchema.safeParse(goodPhrase).success).toBe(true);
-  expect(PhraseSchema.safeParse({ ...goodPhrase, notes: Array(15).fill(0) }).success).toBe(false);
+  // a short array is accepted (padded on author); a bad element is still rejected
+  expect(PhraseSchema.safeParse({ ...goodPhrase, notes: Array(15).fill(0) }).success).toBe(true);
+  expect(PhraseSchema.safeParse({ ...goodPhrase, commands: Array(16).fill("Bogus") }).success).toBe(false);
 });
