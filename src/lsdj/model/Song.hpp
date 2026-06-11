@@ -1,9 +1,9 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include <optional>
 
+#include "FixedArray.hpp"
 #include "Instrument.hpp"
 #include "Types.hpp"
 
@@ -13,28 +13,28 @@
 namespace rp::lsdj::model {
 
 struct Phrase {
-    std::array<Byte, 16>                notes{};         // 0 = no note
-    std::array<std::optional<Byte>, 16> instruments{};   // 0xFF = none
-    std::array<Command, 16>             commands{};
-    std::array<Byte, 16>                commandValues{};
+    FixedArray<Byte, 16>                notes{};         // 0 = no note
+    FixedArray<std::optional<Byte>, 16> instruments{};   // 0xFF = none
+    FixedArray<Command, 16>             commands{};
+    FixedArray<Byte, 16>                commandValues{};
 };
 
 struct Chain {
-    std::array<std::optional<Byte>, 16> phrases{};        // 0xFF = none
-    std::array<Byte, 16>                transpositions{};
+    FixedArray<std::optional<Byte>, 16> phrases{};        // 0xFF = none
+    FixedArray<Byte, 16>                transpositions{};
 };
 
 struct Table {
-    std::array<Byte, 16>    volumes{};
-    std::array<Byte, 16>    transpositions{};
-    std::array<Command, 16> command1{};
-    std::array<Byte, 16>    command1Values{};
-    std::array<Command, 16> command2{};
-    std::array<Byte, 16>    command2Values{};
+    FixedArray<Byte, 16>    volumes{};
+    FixedArray<Byte, 16>    transpositions{};
+    FixedArray<Command, 16> command1{};
+    FixedArray<Byte, 16>    command1Values{};
+    FixedArray<Command, 16> command2{};
+    FixedArray<Byte, 16>    command2Values{};
 };
 
 struct Groove {
-    std::array<Byte, 16> steps{}; // 0 = no value
+    FixedArray<Byte, 16> steps{}; // 0 = no value
 };
 
 struct Synth {
@@ -50,7 +50,7 @@ struct Synth {
 };
 
 struct Wave {
-    std::array<Byte, 16> frames{}; // 16 bytes = 32 4-bit samples
+    FixedArray<Byte, 16> frames{}; // 16 bytes = 32 4-bit samples
 };
 
 struct SongSettings {
@@ -68,21 +68,21 @@ struct SongSettings {
 
 // One SONG-screen row: a chain index per channel (0xFF = empty).
 struct SongRow {
-    std::array<std::optional<Byte>, 4> chains{};
+    FixedArray<std::optional<Byte>, 4> chains{};
 };
 
 struct Song {
     Byte         formatVersion = 22;
     SongSettings settings;
 
-    std::array<SongRow, 256>                  rows{};
-    std::array<std::optional<Chain>, 128>     chains{};
-    std::array<std::optional<Phrase>, 256>    phrases{};
-    std::array<std::optional<Instrument>, 64> instruments{};
-    std::array<std::optional<Table>, 32>      tables{};
-    std::array<Groove, 31>                    grooves{};
-    std::array<Synth, 16>                     synths{};
-    std::array<Wave, 256>                     waves{};
+    FixedArray<SongRow, 256>                  rows{};
+    FixedArray<std::optional<Chain>, 128>     chains{};
+    FixedArray<std::optional<Phrase>, 256>    phrases{};
+    FixedArray<std::optional<Instrument>, 64> instruments{};
+    FixedArray<std::optional<Table>, 32>      tables{};
+    FixedArray<Groove, 31>                    grooves{};
+    FixedArray<Synth, 16>                     synths{};
+    FixedArray<Wave, 256>                     waves{};
 };
 
 } // namespace rp::lsdj::model

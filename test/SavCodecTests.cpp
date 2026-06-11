@@ -361,3 +361,47 @@ TEST_CASE("DefaultIfMissing enables partial fixtures", "[lsdj-sav]") {
     CHECK(song.value().settings.syncMode == model::SyncMode::Lsdj); // specified
     CHECK(song.value().settings.tempo == 128);                      // default
 }
+
+TEST_CASE("short fixed arrays pad to full length with defaults", "[lsdj-sav]") {
+    using namespace rp::lsdj::model;
+    // A fixture supplies only the cells it cares about; every fixed array is
+    // padded to its on-disk length with default elements (and inner arrays too).
+    auto sav = savFromJsonFixture(R"({"workingSong":{
+        "rows":[{"chains":[0]}],
+        "chains":[{"phrases":[0]}],
+        "phrases":[{"notes":[1],"instruments":[0]}],
+        "instruments":[{"type":"pulse"}]
+    }})");
+    if (!sav) FAIL("savFromJsonFixture failed: " << sav.error().what());
+    const Song& s = sav.value().workingSong;
+
+    // Outer arrays padded to full count.
+    REQUIRE(s.rows.size() == 256);
+    REQUIRE(s.chains.size() == 128);
+    REQUIRE(s.phrases.size() == 256);
+    REQUIRE(s.instruments.size() == 64);
+    // Authored cells survive; padded siblings/tails take defaults.
+    CHECK(s.rows[0].chains[0] == 0);          // authored
+    CHECK(!s.rows[0].chains[1]);              // inner pad -> nullopt
+    CHECK(!s.rows[255].chains[0]);           // outer pad -> default SongRow
+    REQUIRE(s.chains[0]);
+    CHECK(s.chains[0]->phrases[0] == 0);
+    CHECK(!s.chains[1]);                      // unallocated
+    REQUIRE(s.phrases[0]);
+    CHECK(s.phrases[0]->notes[0] == 1);
+    CHECK(s.phrases[0]->notes[1] == 0);                          // inner pad
+    CHECK(s.phrases[0]->commands[0] == Command::None);           // omitted -> default
+    REQUIRE(s.instruments[0]);
+
+    // The padded model is byte-identical to authoring every array in full.
+    Song full;
+    full.rows[0].chains[0] = 0;
+    full.chains[0] = Chain{};   full.chains[0]->phrases[0] = 0;
+    full.phrases[0] = Phrase{}; full.phrases[0]->notes[0] = 1; full.phrases[0]->instruments[0] = 0;
+    full.instruments[0] = PulseInstrument{};
+    CHECK(codec::encodeSong(s) == codec::encodeSong(full));
+
+    // More than the fixed length is an error, not a silent truncation.
+    auto overflow = savFromJsonFixture(R"({"workingSong":{"rows":[{"chains":[0,1,2,3,4]}]}})");
+    CHECK(!overflow);
+}

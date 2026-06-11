@@ -1,10 +1,10 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
 
+#include "FixedArray.hpp"
 #include "Song.hpp"
 #include "Types.hpp"
 
@@ -20,9 +20,9 @@ struct StoredProject {
 
 struct Sav {
     Byte                                          activeProjectIndex = 0xFF; // 0xFF = none
-    std::array<Byte, 30>                          reserved{};                // 0x8120, opaque
+    FixedArray<Byte, 30>                          reserved{};                // 0x8120, opaque
     Song                                          workingSong;
-    std::array<std::optional<StoredProject>, 32>  projects{};
+    FixedArray<std::optional<StoredProject>, 32>  projects{};
 };
 
 } // namespace rp::lsdj::model
