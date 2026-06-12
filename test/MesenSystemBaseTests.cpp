@@ -390,3 +390,35 @@ TEST_CASE("MesenNesSystem state snapshot survives concurrent stepping + loads",
     scratch.onDeactivate();
     live.onDeactivate();
 }
+
+TEST_CASE("MesenNesSystem state snapshot round-trips the savestate",
+          "[MesenSystemBase]") {
+    auto romBytes = loadRom(kRomPath);
+    MesenNesConfig cfg{};
+    cfg.romPath = kRomPath;
+    MesenNesSystem sys{SystemId{1}, cfg, romBytes};
+    sys.onActivate(kSampleRate);
+    runBlocks(sys, 20);
+
+    // Enable arms an immediate publish, so one block lands a snapshot. Mesen's
+    // capture is full-state (no region offsets), variable-size via the streamed
+    // SaveState path.
+    REQUIRE(sys.enableStateSnapshot());
+    runBlocks(sys, 1);
+
+    std::vector<std::uint8_t> snap;
+    REQUIRE(sys.readStateSnapshot(snap));
+    REQUIRE(!snap.empty());
+    const auto ramAtSnap = snapshotRam(sys);
+
+    // The snapshot is a complete, loadable savestate: a fresh system restored
+    // from it reproduces the source's RAM at capture time.
+    MesenNesConfig restoreCfg = cfg;
+    MesenNesSystem restored{SystemId{2}, restoreCfg, romBytes};
+    restored.onActivate(kSampleRate);
+    REQUIRE(restored.loadStateBytes(snap));
+    CHECK(snapshotRam(restored) == ramAtSnap);
+    restored.onDeactivate();
+
+    sys.onDeactivate();
+}

@@ -34,6 +34,24 @@ public:
     SystemConfig snapshotConfig() const override { return MesenNesConfig{}; }
 };
 
+// Reports a small snapshot size but captures MORE than that, to exercise the
+// "capture exceeds the slot — skip, never realloc" guard in publishStateSnapshot.
+class OversizedSnapshotSystem final : public SystemBase {
+public:
+    using SystemBase::SystemBase;
+    SystemKind kind() const override { return SystemKind::MesenNes; }
+    void onActivate(double) override {}
+    void onSampleRateChanged(double) override {}
+    void onProcess(const AudioBlockInfo&, float* const*) override {}
+    SystemConfig snapshotConfig() const override { return MesenNesConfig{}; }
+protected:
+    std::size_t stateSnapshotSize() const override { return 16; }
+    bool captureStateSnapshot(std::vector<std::uint8_t>& dst) override {
+        dst.assign(1000, 0xAB);   // far larger than the 16-byte slot
+        return true;
+    }
+};
+
 } // namespace
 
 TEST_CASE("SystemBase default fastBoot returns nullopt", "[SystemBase][defaults]") {
@@ -94,6 +112,17 @@ TEST_CASE("SystemBase default state snapshot is unsupported",
     // stateSnapshotSize() defaults to 0, so the snapshot can't be enabled and
     // there's nothing to read.
     CHECK_FALSE(sys.enableStateSnapshot());
+    std::vector<std::uint8_t> out;
+    CHECK_FALSE(sys.readStateSnapshot(out));
+}
+
+TEST_CASE("SystemBase state snapshot skips a capture that exceeds the slot",
+          "[SystemBase][defaults]") {
+    OversizedSnapshotSystem sys{1};
+    REQUIRE(sys.enableStateSnapshot());          // sized to 16 bytes (+ prefix)
+    // Enable arms an immediate publish; the 1000-byte capture won't fit, so the
+    // publisher must skip it (never reallocate) and leave nothing to read.
+    sys.publishStateSnapshot(/*frames*/ 4096, /*sampleRate*/ 44100.0);
     std::vector<std::uint8_t> out;
     CHECK_FALSE(sys.readStateSnapshot(out));
 }
