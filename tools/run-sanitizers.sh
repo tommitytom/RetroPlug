@@ -22,7 +22,7 @@ esac
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
 
-targets=(retroplug-tests retroplug-sameboy-tests retroplug-mesen-tests)
+targets=(retroplug-tests retroplug-sameboy-tests retroplug-mesen-tests retroplug-rpc-tests)
 
 echo "==> configuring $builddir (-DRETROPLUG_SANITIZE=$san)"
 cmake -B "$builddir" \
