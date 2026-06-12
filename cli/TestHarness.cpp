@@ -549,6 +549,38 @@ JSValue jsSavFromJson(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     return JS_NewArrayBufferCopy(ctx, bytes.data(), bytes.size());
 }
 
+// loadSram(id, ArrayBuffer): overwrite a running system's cartridge battery RAM
+// (e.g. with a .sav image). Mirrors the plugin's LoadSram command minus the
+// reset — tests pair it with reset(id) to verify the game re-reads SRAM on boot.
+JSValue jsLoadSram(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "loadSram(id, ArrayBuffer)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    std::size_t len = 0;
+    std::uint8_t* buf = JS_GetArrayBuffer(ctx, &len, argv[1]);
+    if (!buf) return JS_ThrowTypeError(ctx, "loadSram: arg 2 must be an ArrayBuffer");
+    SystemBase* sys = h->system(static_cast<std::uint32_t>(id));
+    if (!sys) return JS_ThrowTypeError(ctx, "loadSram: no system with id %d", id);
+    const bool ok = sys->loadSramBytes(std::vector<std::uint8_t>(buf, buf + len));
+    return JS_NewBool(ctx, ok);
+}
+
+// reset(id): soft-reset a system (the GB equivalent of the reset button). After
+// loadSram this makes the game boot into the freshly loaded battery RAM.
+JSValue jsReset(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    int32_t id = 0;
+    if (argc < 1) return JS_ThrowTypeError(ctx, "reset(id)");
+    if (JS_ToInt32(ctx, &id, argv[0]) < 0) return JS_EXCEPTION;
+    SystemBase* sys = h->system(static_cast<std::uint32_t>(id));
+    if (!sys) return JS_ThrowTypeError(ctx, "reset: no system with id %d", id);
+    sys->onReset();
+    return JS_UNDEFINED;
+}
+
 // readFile(path) -> ArrayBuffer: slurp a file's raw bytes (e.g. a source .sav).
 JSValue jsReadFile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 1) return JS_ThrowTypeError(ctx, "readFile(path) requires a path");
@@ -1358,6 +1390,8 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     };
     bind("loadRom",      jsLoadRom,      1);
     bind("savFromJson",  jsSavFromJson,  1);
+    bind("loadSram",     jsLoadSram,     2);
+    bind("reset",        jsReset,        1);
     bind("readFile",     jsReadFile,     1);
     bind("writeFile",    jsWriteFile,    2);
     bind("savRoundtripDiff", jsSavRoundtripDiff, 1);

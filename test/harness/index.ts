@@ -18,6 +18,11 @@ interface NativeRp {
   // Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON fixture;
   // missing fields and short/omitted fixed arrays take model defaults / pad.
   savFromJson(json: string): ArrayBuffer;
+  // Overwrite a running system's cartridge battery RAM (returns false if the
+  // backend has no battery). Pair with reset() to make the game re-read it.
+  loadSram(sys: number, sram: ArrayBuffer): boolean;
+  // Soft-reset a system (GB reset button); the game reboots into current SRAM.
+  reset(sys: number): void;
   // Slurp a file's raw bytes (e.g. a source .sav to feed loadRom).
   readFile(path: string): ArrayBuffer;
   // Dump an ArrayBuffer's raw bytes to a file.
@@ -156,6 +161,17 @@ export const emu = {
    *  Feed the result to loadRom(rom, sav) to boot LSDj from an authored song. */
   savFromJson(json: string): ArrayBuffer {
     return rp.savFromJson(json);
+  },
+  /** Overwrite a running system's cartridge battery RAM (e.g. a .sav image).
+   *  Mirrors the plugin's Load SRAM minus the reset; pair with reset() to make
+   *  the game re-read it on boot. Returns false if the cart has no battery. */
+  loadSram(sys: number, sram: ArrayBuffer): boolean {
+    return rp.loadSram(sys, sram);
+  },
+  /** Soft-reset a system (the GB reset button). After loadSram, the game boots
+   *  into the freshly loaded battery RAM. */
+  reset(sys: number): void {
+    rp.reset(sys);
   },
   /** Slurp a file's raw bytes — e.g. a source .sav to pass to loadRom. */
   readFile(path: string): Uint8Array {
