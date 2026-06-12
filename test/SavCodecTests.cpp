@@ -256,6 +256,64 @@ TEST_CASE("instrument encode/decode are mutual inverses", "[lsdj-sav]") {
     });
 }
 
+// A content-bearing no-template round-trip: author a populated song touching
+// every newly-modeled raw region (bookmarks / words / wordNames / reserved) plus
+// core musical content, encode from the MODEL ALONE (no template), and prove
+// encode/decode are mutual inverses (b1 == b2) with the values surviving the
+// trip. The fmt22 default test proves the EMPTY song reproduces; this proves a
+// FULL one does too, without the template crutch.
+TEST_CASE("populated song round-trips byte-stable with no template", "[lsdj-sav]") {
+    using namespace rp::lsdj::model;
+    Song song;
+    song.settings.tempo    = 175;
+    song.settings.syncMode = SyncMode::Midi;
+
+    // Raw byte regions: non-default content at both ends of each blob.
+    song.bookmarks[0] = 0x0A; song.bookmarks[0x3F] = 0x2B;
+    for (std::size_t i = 0; i < song.wordNames.size(); ++i)
+        song.wordNames[i] = static_cast<Byte>('A' + (i % 26));
+    song.words[0] = 0x10; song.words[song.words.size() - 1] = 0x9C;
+    song.reserved3FC6[0] = 0xFF; song.reserved3FC6[3] = 0xFF;
+
+    // Musical content: a chain -> phrase -> note with an FX, an instrument, a
+    // table, a non-default groove, a synth, and a wave frame.
+    song.rows[0].chains[0] = 0;
+    Chain ch; ch.phrases[0] = 0; ch.transpositions[0] = 12; song.chains[0] = ch;
+    Phrase ph; ph.notes[0] = 40; ph.instruments[0] = 0;
+    ph.commands[0] = Command::G; ph.commandValues[0] = 0x34; song.phrases[0] = ph;
+    PulseInstrument pulse; pulse.adsr.initialLevel = 15; song.instruments[0] = pulse;
+    Table tbl; tbl.volumes[0] = 8; song.tables[0] = tbl;
+    song.grooves[5].steps[0] = 4;
+    song.synths[0].waveform = SynthWaveform::Square;
+    song.waves[10].frames[0] = 0xAB;
+
+    const auto b1 = codec::encodeSong(song);          // no template
+    auto dec = codec::decodeSong(b1);
+    if (!dec) FAIL("decode failed: " << dec.error().what());
+    const auto b2 = codec::encodeSong(dec.value());   // no template
+    CHECK(b1 == b2);                                   // mutual inverse, no crutch
+
+    const Song& m = dec.value();
+    CHECK(m.settings.tempo == 175);
+    CHECK(m.settings.syncMode == SyncMode::Midi);
+    CHECK(m.bookmarks[0] == 0x0A);
+    CHECK(m.bookmarks[0x3F] == 0x2B);
+    CHECK(m.wordNames[5] == static_cast<Byte>('A' + 5));
+    CHECK(m.words[0] == 0x10);
+    CHECK(m.words[m.words.size() - 1] == 0x9C);
+    CHECK(m.reserved3FC6[0] == 0xFF);
+    CHECK(m.reserved3FC6[3] == 0xFF);
+    REQUIRE(m.chains[0]);  CHECK(m.chains[0]->transpositions[0] == 12);
+    REQUIRE(m.phrases[0]); CHECK(m.phrases[0]->notes[0] == 40);
+    CHECK(m.phrases[0]->commands[0] == Command::G);
+    CHECK(m.phrases[0]->commandValues[0] == 0x34);
+    REQUIRE(m.instruments[0]);
+    REQUIRE(m.tables[0]);  CHECK(m.tables[0]->volumes[0] == 8);
+    CHECK(m.grooves[5].steps[0] == 4);
+    CHECK(m.synths[0].waveform == SynthWaveform::Square);
+    CHECK(m.waves[10].frames[0] == 0xAB);
+}
+
 // ---- SavCodec: full 128 KiB image -------------------------------------------
 
 TEST_CASE("full sav round-trip is byte-identical (corpus)", "[lsdj-sav]") {
