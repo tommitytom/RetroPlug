@@ -751,4 +751,39 @@ if(BUILD_CLI)
         USES_TERMINAL
         COMMENT "Reaper timing test: LSDj vs metronome (stock MidiSync)"
     )
+
+    # `make reaper-lsdj-midi-drift-author` -> regenerate the hour-long
+    # MidiSync drift fixture. Unlike the metro fixture (a sustained pulse,
+    # startup-latency only), this song clicks a short noise hit on every
+    # beat so the analyzer can measure per-beat sync drift over a long run.
+    # The fixture .rplg is produced by test/ts/gb/lsdj/lsdj_midi_drift.test.ts
+    # (writes /tmp/lsdj_midi_drift_author.rplg — SYNC=MIDI noise-per-beat song
+    # armed via START); run-reaper-author.sh autoloads it into the .RPP, and the
+    # author lua lays out a 1 h project (7200 reference clicks at 120 BPM).
+    add_custom_target(reaper-lsdj-midi-drift-author
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-author.sh
+                ${CMAKE_SOURCE_DIR}/examples/reaper/lsdj_midi_drift.rpp
+                ${CMAKE_BINARY_DIR}
+                ${CMAKE_SOURCE_DIR}/tools/reaper-lsdj-midi-drift-author.lua
+                /tmp/lsdj_midi_drift_author.rplg
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-vst3 cli-ts-test-gb-lsdj-lsdj_midi_drift
+        USES_TERMINAL
+        COMMENT "Re-author examples/reaper/lsdj_midi_drift.rpp via headless Reaper"
+    )
+
+    # `make reaper-lsdj-midi-drift` -> render the hour-long MidiSync project
+    # and analyze per-beat drift over time. Profiles how accurately LSDj
+    # tracks the host MIDI clock across a long run (drift accumulation),
+    # which the 8 s metro tests can't surface.
+    add_custom_target(reaper-lsdj-midi-drift
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/run-reaper-render.sh
+                ${CMAKE_SOURCE_DIR}/examples/reaper/lsdj_midi_drift.rpp
+        COMMAND ${CMAKE_SOURCE_DIR}/tools/reaper-timing-analyze.py
+                ${CMAKE_BINARY_DIR}/reaper-lsdj-midi-drift.wav --drift
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        DEPENDS retroplug-vst3
+        USES_TERMINAL
+        COMMENT "Reaper timing test: LSDj per-beat MidiSync drift over 1 h"
+    )
 endif()

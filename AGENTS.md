@@ -166,15 +166,39 @@ order of preference:
    120 BPM ≈ 21 ms, plus envelope attack + one plugin block at
    1024/44100 ≈ 23 ms). Surfaces drift in `PpqUtil::eachTick()` and
    in `LsdjSyncRole`'s startup byte sequence (0xFA + first 0xF8).
-   Per-beat sync drift is *not* covered — default LSDj instrument 00
-   sustains the first row's note across the whole phrase, masking
-   subsequent retriggers; envelope-edit nav in the bootstrap script
-   would be needed to surface those. Regenerate the fixture with
+   Per-beat sync drift is *not* covered here — the metro fixtures use a
+   sustained instrument, so the first row's note rings across the whole
+   phrase and masks subsequent retriggers (see the drift test below for
+   per-beat coverage). Regenerate the fixture with
    `make -C build reaper-lsdj-arduinoboy-author` when
    [test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts](test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts)
    (which emits `/tmp/lsdj_arduinoboy_metro_author.rplg` via `emu.saveRplg`)
    or [tools/reaper-lsdj-arduinoboy-author.lua](tools/reaper-lsdj-arduinoboy-author.lua)
-   change.
+   change. (A stock-MidiSync counterpart, `reaper-lsdj-midi-metro`, measures
+   the same startup number through the simpler `LsdjSyncMode::MidiSync` path.)
+
+8. **MidiSync per-beat drift over time** —
+   `make -C build reaper-lsdj-midi-drift` renders
+   [examples/reaper/lsdj_midi_drift.rpp](examples/reaper/lsdj_midi_drift.rpp)
+   — an **hour-long** 2-track project (LSDj hard-L on `LsdjSyncMode::MidiSync`,
+   ReaSynth click hard-R, one note/beat at 120 BPM) — then runs
+   [tools/reaper-timing-analyze.py](tools/reaper-timing-analyze.py)`--drift`.
+   Unlike the metro tests, the LSDj song clicks a **short noise hit on every
+   beat**, so the analyzer pairs each LSDj onset to its reference beat and
+   reports drift over the whole run: mean / median / max-abs / stddev, a
+   per-minute trend table, and a linear accumulation slope (ms/min). It reads
+   the ~635 MB WAV in chunks on a decimated envelope (modest RAM) and **fails**
+   if max-abs drift exceeds ±50 ms or >1 % of beats go unmatched. This is the
+   test that answers "how accurate is MidiSync timing in the DAW, and does it
+   drift over an hour?" Regenerate the fixture with
+   `make -C build reaper-lsdj-midi-drift-author` when
+   [test/ts/gb/lsdj/lsdj_midi_drift.test.ts](test/ts/gb/lsdj/lsdj_midi_drift.test.ts)
+   (emits `/tmp/lsdj_midi_drift_author.rplg`) or
+   [tools/reaper-lsdj-midi-drift-author.lua](tools/reaper-lsdj-midi-drift-author.lua)
+   change. **Caveat:** the one-click-per-beat spacing assumes LSDj's default
+   groove (6 ticks/step → 4 steps/beat at 24 PPQN). The first render is the
+   checkpoint — if the analyzer's matched-beat count isn't ≈ the beat count,
+   adjust the phrase step spacing or author groove 0 explicitly in the test.
 
 ## Reaper headless: env-var autoload
 
@@ -279,7 +303,10 @@ Other harness bindings these tests use (see [test/harness/index.ts](test/harness
 clock), `drainMidi(sys)` / `drainSerial(sys)` (role MIDI-out / GB serial-out
 capture), `runMsPerSystem(ms)` (per-system audio — proves link sync), `writeWav`
 (dump audio for the reaper MCP), `saveRplg` (snapshot → `.rplg` for the Reaper
-DAW fixtures), `patchKit(sys, slot, name, samples)` (compile + queue a kit).
+DAW fixtures), `loadRplg(path)` (inverse of `saveRplg`: rebuild the project from
+a `.rplg`, config + per-system savestate, exactly as the plugin does on load —
+use it to round-trip a fixture in-harness and reproduce what a DAW sees on
+reload), `patchKit(sys, slot, name, samples)` (compile + queue a kit).
 
 ## Driving the LSDj UI (only when authoring can't)
 
