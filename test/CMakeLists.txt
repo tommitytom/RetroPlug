@@ -153,6 +153,62 @@ target_link_libraries(retroplug-sameboy-tests PRIVATE
 catch_discover_tests(retroplug-sameboy-tests)
 
 # -----------------------------------------------------------------------------
+# retroplug-rpc-tests — PluginRpcService's save/load/duplicate/getMemory glue:
+# the snapshot-preferred-vs-direct-read fallback and the command-queue load
+# path. Mirrors retroplug-ui-test's source set minus the UI/bridge/bundle (the
+# service compiles methods that reference Mesen + the zip path, so those link
+# even though the tests don't drive them). Needs a Game Boy ROM (skips if
+# missing), same as retroplug-sameboy-tests.
+# -----------------------------------------------------------------------------
+add_executable(retroplug-rpc-tests
+    PluginRpcServiceTests.cpp
+    ../src/PluginRpcService.cpp
+    ../src/config/UserConfig.cpp
+    ../src/config/UserConfigPaths.cpp
+    ../src/config/RecentFiles.cpp
+    ../src/project/Project.cpp
+    ../src/lsdj/Effects.cpp
+    ../src/lsdj/KitUtil.cpp
+    ../src/lsdj/SampleCache.cpp
+    ../src/lsdj/KitCompiler.cpp
+    ../src/system/SystemBase.cpp
+    ../src/system/sameboy/LinkGroup.cpp
+    ../src/system/sameboy/RomSniffer.cpp
+    ../src/system/sameboy/SameBoySystem.cpp
+    ../src/system/sameboy/roles/ArduinoboyMaster.cpp
+    ../src/system/sameboy/roles/LsdjSyncRole.cpp
+    ../src/system/sameboy/roles/LsdjKitPatchRole.cpp
+    ../src/system/sameboy/roles/MgbPassthroughRole.cpp
+    ../src/system/mesen/MesenNesSystem.cpp
+    ../src/system/mesen/MesenNesDebugSession.cpp
+    ../src/system/mesen/MesenVideoDevice.cpp
+    ../src/system/mesen/MesenGbaSystem.cpp
+    ../src/system/mesen/roles/NesN8MidiRole.cpp
+)
+
+target_include_directories(retroplug-rpc-tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_compile_definitions(retroplug-rpc-tests PRIVATE
+    RETROPLUG_TEST_GB_ROM="${_RETROPLUG_TEST_GB_ROM}"
+)
+
+target_link_libraries(retroplug-rpc-tests PRIVATE
+    Catch2::Catch2WithMain
+    rpcpp
+    sameboy
+    mesen
+    r8brain
+    enkiTS
+    efsw
+    miniz
+    miniaudio   # header-only include path for lsdj/SampleCache.cpp
+)
+
+catch_discover_tests(retroplug-rpc-tests)
+
+# -----------------------------------------------------------------------------
 # retroplug-lsdj-diff-tests — differential oracle for the LSDJ sav codec.
 # Compiles the vendored liblsdj (correct for song format versions <= 16) and
 # decodes the same content-bearing savs with both liblsdj and our codec,
