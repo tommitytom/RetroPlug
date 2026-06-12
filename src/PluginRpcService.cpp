@@ -295,6 +295,7 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
         case PendingFileMode::SaveProject: saveProjectToPath(path);          break;
         case PendingFileMode::LoadSample:  emit("sample-path-selected", path); break;
         case PendingFileMode::SaveSram:    saveSramToPath(pendingFileSystemId_, path);  break;
+        case PendingFileMode::LoadSram:    loadSramFromPath(pendingFileSystemId_, path); break;
         case PendingFileMode::SaveState:   saveStateToPath(pendingFileSystemId_, path); break;
         case PendingFileMode::LoadState:   loadStateFromPath(pendingFileSystemId_, path); break;
         case PendingFileMode::LoadRom:
@@ -943,6 +944,19 @@ bool PluginRpcService::saveSramToPath(std::uint32_t systemId, const std::string&
     return true;
 }
 
+bool PluginRpcService::loadSramFromPath(std::uint32_t systemId, const std::string& path) {
+    if (!project_ || path.empty()) return false;
+    SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
+    if (!sys) return false;
+    auto bytes = slurp(path);
+    if (bytes.empty() || !sys->loadSramBytes(bytes)) {
+        emit("sram-error", path);
+        return false;
+    }
+    emit("sram-loaded", path);
+    return true;
+}
+
 bool PluginRpcService::saveStateToPath(std::uint32_t systemId, const std::string& path) {
     if (!project_ || path.empty()) return false;
     SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
@@ -998,6 +1012,14 @@ bool PluginRpcService::openSaveSramBrowser(std::uint32_t systemId) {
         }
     }
     openFileBrowser_("Save SRAM", true, defaultName.c_str());
+    return true;
+}
+
+bool PluginRpcService::openLoadSramBrowser(std::uint32_t systemId) {
+    if (!openFileBrowser_) return false;
+    pendingFileMode_     = PendingFileMode::LoadSram;
+    pendingFileSystemId_ = systemId;
+    openFileBrowser_("Load SRAM", false, nullptr);
     return true;
 }
 

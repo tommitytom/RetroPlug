@@ -262,11 +262,12 @@ public:
     bool          openSettingsFolder();
 
     // Cartridge battery RAM I/O. saveSram writes to `<romPath>.sav`.
-    // openSaveSramBrowser / openSaveStateBrowser / openLoadStateBrowser
-    // dispatch the chosen path back via onFileBrowserSelected the same
-    // way openSaveProjectBrowser does.
+    // openSaveSramBrowser / openLoadSramBrowser / openSaveStateBrowser /
+    // openLoadStateBrowser dispatch the chosen path back via
+    // onFileBrowserSelected the same way openSaveProjectBrowser does.
     bool saveSram(std::uint32_t systemId);
     bool openSaveSramBrowser(std::uint32_t systemId);
+    bool openLoadSramBrowser(std::uint32_t systemId);
     bool saveState(std::uint32_t systemId);
     bool openSaveStateBrowser(std::uint32_t systemId);
     bool openLoadStateBrowser(std::uint32_t systemId);
@@ -331,7 +332,7 @@ private:
     // File-browser callback target. Open-* methods set this; the DPF host
     // delivers the chosen path back via onFileBrowserSelected.
     enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject, LoadSample,
-                                 SaveSram, SaveState, LoadState };
+                                 SaveSram, LoadSram, SaveState, LoadState };
 
     bool saveProjectToPath(const std::string& path);
 
@@ -354,12 +355,13 @@ private:
     IsWindowSizeControlledFn  isWindowSizeControlled_;
 
     PendingFileMode           pendingFileMode_      = PendingFileMode::LoadRom;
-    // System id remembered for SaveSram / SaveState / LoadState while the
-    // file dialog is up. 0 = none.
+    // System id remembered for SaveSram / LoadSram / SaveState / LoadState
+    // while the file dialog is up. 0 = none.
     std::uint32_t             pendingFileSystemId_  = 0;
 
     // Common helpers used by saveSram / saveState / loadState.
     bool saveSramToPath(std::uint32_t systemId, const std::string& path);
+    bool loadSramFromPath(std::uint32_t systemId, const std::string& path);
     bool saveStateToPath(std::uint32_t systemId, const std::string& path);
     bool loadStateFromPath(std::uint32_t systemId, const std::string& path);
 

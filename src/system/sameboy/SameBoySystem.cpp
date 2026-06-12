@@ -344,6 +344,19 @@ std::vector<std::uint8_t> SameBoySystem::saveSramBytes() const {
     return out;
 }
 
+bool SameBoySystem::loadSramBytes(const std::vector<std::uint8_t>& bytes) {
+    if (!gb_ || bytes.empty()) return false;
+    const int sramSize = GB_save_battery_size(gb_);
+    if (sramSize <= 0) return false;
+    // Pad/truncate to the cartridge's battery size, matching the load path
+    // in onActivate (GB_load_battery_from_buffer wants the exact size).
+    std::vector<std::uint8_t> sram = bytes;
+    sram.resize(static_cast<std::size_t>(sramSize), 0);
+    GB_load_battery_from_buffer(gb_, sram.data(), sram.size());
+    config_.sram = std::move(sram);
+    return true;
+}
+
 std::vector<std::uint8_t> SameBoySystem::saveStateBytes() const {
     if (!gb_) return {};
     const std::size_t size = GB_get_save_state_size(const_cast<GB_gameboy_t*>(gb_));

@@ -93,6 +93,7 @@ public:
     // Cartridge battery RAM. Empty vector when the cartridge has no battery
     // or the backend doesn't yet support snapshotting.
     virtual std::vector<std::uint8_t> saveSramBytes() const { return {}; }
+    virtual bool loadSramBytes(const std::vector<std::uint8_t>& /*bytes*/) { return false; }
     virtual void                       clearSram() {}
 
     // Savestate, byte-for-byte. False on unsupported backends or malformed

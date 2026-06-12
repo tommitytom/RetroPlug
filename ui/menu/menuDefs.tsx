@@ -236,6 +236,8 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
           onSelect: () => { if (sys) void plugin.$notify("saveSram", sys.id); } },
         { id: "saveSramAs", label: "Save SRAM As...",      kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("openSaveSramBrowser", sys.id); } },
+        { id: "loadSram",   label: "Load SRAM...",         kind: "action",
+          onSelect: () => { if (sys) void plugin.$notify("openLoadSramBrowser", sys.id); } },
         { id: "newSram",    label: "New SRAM",             kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("newSram", sys.id); } },
         sep(),

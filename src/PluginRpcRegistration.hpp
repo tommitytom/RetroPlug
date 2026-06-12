@@ -57,6 +57,7 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::openSettingsFolder>();
     server.template addMethod<&PluginRpcService::saveSram>();
     server.template addMethod<&PluginRpcService::openSaveSramBrowser>();
+    server.template addMethod<&PluginRpcService::openLoadSramBrowser>();
     server.template addMethod<&PluginRpcService::saveState>();
     server.template addMethod<&PluginRpcService::openSaveStateBrowser>();
     server.template addMethod<&PluginRpcService::openLoadStateBrowser>();

@@ -114,6 +114,7 @@ public:
     void                      setRomReload(bool on) override    { config_.reloadOnRomChange = on; }
     void                      clearSram() override;
     std::vector<std::uint8_t> saveSramBytes() const override;
+    bool                      loadSramBytes(const std::vector<std::uint8_t>& bytes) override;
     std::vector<std::uint8_t> saveStateBytes() const override;
     bool                      loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
     std::unique_ptr<SystemBase> clone(SystemId newId, double sampleRate) const override;
