@@ -118,6 +118,16 @@ struct NewSramCommand {
     SystemId id;
 };
 
+// Load a .sav into a system's cartridge battery RAM, then reset so the game
+// boots into the loaded save (battery RAM survives GB_reset; the game only
+// re-reads it at boot — LSDJ copies its song out of SRAM on startup). `bytes`
+// is heap-allocated on the UI thread and ownership transfers to the DSP, which
+// applies the load and frees the vector. Same ownership model as PatchKitCommand.
+struct LoadSramCommand {
+    SystemId                   id;
+    std::vector<std::uint8_t>* bytes;
+};
+
 // Toggle SameBoyConfig::fastBoot. Mutation only — applies on the next
 // reset / boot since the boot ROM is only consulted then.
 struct SetFastBootCommand {
@@ -208,6 +218,7 @@ struct Command {
         SetReloadOnRomChange = 19,
         SetAudioRouting   = 20,
         SetHighpass       = 21,
+        LoadSram          = 22,
     };
 
     Kind kind = Kind::None;
@@ -228,6 +239,7 @@ struct Command {
         SetLayoutCommand         setLayout;
         ResetSystemCommand       resetSystem;
         NewSramCommand           newSram;
+        LoadSramCommand          loadSram;
         SetFastBootCommand       setFastBoot;
         SetModelCommand          setModel;
         SetReloadOnRomChangeCommand setReloadOnRomChange;
@@ -350,6 +362,13 @@ struct Command {
         Command c;
         c.kind = Kind::NewSram;
         c.payload.newSram = NewSramCommand{id};
+        return c;
+    }
+
+    static Command makeLoadSram(SystemId id, std::vector<std::uint8_t>* bytes) {
+        Command c;
+        c.kind = Kind::LoadSram;
+        c.payload.loadSram = LoadSramCommand{id, bytes};
         return c;
     }
 

@@ -945,11 +945,18 @@ bool PluginRpcService::saveSramToPath(std::uint32_t systemId, const std::string&
 }
 
 bool PluginRpcService::loadSramFromPath(std::uint32_t systemId, const std::string& path) {
-    if (!project_ || path.empty()) return false;
-    SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
-    if (!sys) return false;
+    if (!commands_ || path.empty()) return false;
     auto bytes = slurp(path);
-    if (bytes.empty() || !sys->loadSramBytes(bytes)) {
+    if (bytes.empty()) {
+        emit("sram-error", path);
+        return false;
+    }
+    // The DSP thread owns the live emulator, so the actual battery-RAM load +
+    // reset happens there. Hand the bytes over on the heap (ownership transfers
+    // to the command consumer, which frees them).
+    auto* owned = new std::vector<std::uint8_t>(std::move(bytes));
+    if (!commands_->tryPush(Command::makeLoadSram(static_cast<SystemId>(systemId), owned))) {
+        delete owned;
         emit("sram-error", path);
         return false;
     }

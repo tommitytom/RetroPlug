@@ -424,6 +424,21 @@ protected:
                     }
                 } break;
 
+                case Command::Kind::LoadSram: {
+                    auto& ls = cmd.payload.loadSram;
+                    // Ownership lands here; free even on early bailout.
+                    std::unique_ptr<std::vector<std::uint8_t>> owned(ls.bytes);
+                    if (!owned) break;
+                    if (SystemBase* sys = project.findSystem(ls.id)) {
+                        // Load battery RAM, then reset so the game boots into
+                        // the loaded save (it only re-reads SRAM at boot).
+                        if (sys->loadSramBytes(*owned)) {
+                            sys->onReset();
+                            projectMutated = true;
+                        }
+                    }
+                } break;
+
                 case Command::Kind::SetFastBoot: {
                     auto& fb = cmd.payload.setFastBoot;
                     if (SystemBase* sys = project.findSystem(fb.id)) {
