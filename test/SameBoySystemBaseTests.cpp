@@ -368,7 +368,99 @@ TEST_CASE("SameBoySystem state snapshot region offsets locate SRAM in the savest
         snap.begin() + region.offset + region.size);
     CHECK(sliced == sram);
 
+    // Same trick for the other GB regions carried in the savestate: WRAM and
+    // VRAM sliced via stateRegions() must equal the live region read.
+    auto sliceEqualsLive = [&](rp::MemoryType type) {
+        const auto& r = sys.stateRegions()[static_cast<std::size_t>(type)];
+        REQUIRE(r.size > 0);
+        REQUIRE(static_cast<std::size_t>(r.offset) + r.size <= snap.size());
+        auto acc = sys.getMemory(type, rp::AccessType::Read);
+        REQUIRE(acc.valid());
+        REQUIRE(acc.size() == r.size);
+        const std::vector<std::uint8_t> regionSlice(
+            snap.begin() + r.offset, snap.begin() + r.offset + r.size);
+        const std::vector<std::uint8_t> live(acc.data(), acc.data() + acc.size());
+        CHECK(regionSlice == live);
+    };
+    sliceEqualsLive(rp::MemoryType::Ram);
+    sliceEqualsLive(rp::MemoryType::Vram);
+
     sys.onDeactivate();
+}
+
+TEST_CASE("SameBoySystem::loadSramBytes overwrites live battery RAM",
+          "[SameBoySystemBase]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    auto romBytes = loadRom();
+    SameBoyConfig cfg{};
+    cfg.romPath = kRomPath;
+    SameBoySystem sys{SystemId{1}, cfg, romBytes};
+    sys.onActivate(kSampleRate);
+
+    auto accessor = sys.getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+    REQUIRE(accessor.valid());
+    REQUIRE(accessor.size() > 0);  // LSDJ carts always carry battery RAM
+    const std::size_t sramSize = accessor.size();
+
+    std::vector<std::uint8_t> pattern(sramSize);
+    for (std::size_t i = 0; i < pattern.size(); ++i) {
+        pattern[i] = static_cast<std::uint8_t>((i * 7 + 3) & 0xFF);
+    }
+
+    REQUIRE(sys.loadSramBytes(pattern));
+
+    // The live battery RAM now reads back the loaded bytes, both via the
+    // save path and the direct region view.
+    CHECK(sys.saveSramBytes() == pattern);
+    auto after = sys.getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+    REQUIRE(after.valid());
+    REQUIRE(after.size() == sramSize);
+    CHECK(std::vector<std::uint8_t>(after.data(), after.data() + after.size()) == pattern);
+
+    sys.onDeactivate();
+}
+
+TEST_CASE("SameBoySystem::cloneFromState seeds a clone from a captured savestate",
+          "[SameBoySystemBase]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    auto romBytes = loadRom();
+    SameBoyConfig cfg{};
+    cfg.romPath     = kRomPath;
+    cfg.linkGroupId = 7;  // exercises the "clone clears linkGroupId" contract
+    SameBoySystem src{SystemId{1}, cfg, romBytes};
+    src.onActivate(kSampleRate);
+    runBlocks(src, 50);  // step out of the idle loop so state is non-trivial
+
+    // Capture the savestate the way the snapshot path hands it to Duplicate,
+    // then build the clone from it (no live read of the source).
+    const auto savestate = src.saveStateBytes();
+    REQUIRE(!savestate.empty());
+    auto cloned = src.cloneFromState(SystemId{42}, kSampleRate, savestate);
+    REQUIRE(cloned);
+    CHECK(cloned->id() == SystemId{42});
+
+    auto* clonedSys = dynamic_cast<SameBoySystem*>(cloned.get());
+    REQUIRE(clonedSys);
+    CHECK(clonedSys->config_.linkGroupId == 0);
+
+    // Same emulator state; SRAM sliced out of the savestate round-trips.
+    auto srcRam = snapshotRam(src);
+    REQUIRE(!srcRam.empty());
+    CHECK(snapshotRam(*clonedSys) == srcRam);
+    CHECK(clonedSys->saveSramBytes() == src.saveSramBytes());
+
+    // Independent + deterministic, like clone().
+    auto cloneRam = snapshotRam(*clonedSys);
+    runBlocks(src, 50);
+    CHECK(snapshotRam(*clonedSys) == cloneRam);   // stepping src doesn't move the clone
+    CHECK(snapshotRam(src) != srcRam);
+    runBlocks(*clonedSys, 50);
+    CHECK(snapshotRam(*clonedSys) == snapshotRam(src));
+
+    // Empty savestate is rejected.
+    CHECK(src.cloneFromState(SystemId{43}, kSampleRate, {}) == nullptr);
+
+    src.onDeactivate();
 }
 
 TEST_CASE("SameBoySystem honours config_.savestate at onActivate",

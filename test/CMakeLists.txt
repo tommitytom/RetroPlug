@@ -22,6 +22,9 @@ add_executable(retroplug-tests
     SavCodecTests.cpp
     SystemBaseDefaultsTests.cpp
     UserConfigTests.cpp
+    # SystemBase.cpp for its out-of-line members (state-snapshot enable/read,
+    # exercised by SystemBaseDefaultsTests). Header-only deps; no new libs.
+    ../src/system/SystemBase.cpp
     ../src/config/RecentFiles.cpp
     ../src/config/UserConfig.cpp
     ../src/config/UserConfigPaths.cpp

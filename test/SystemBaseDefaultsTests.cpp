@@ -80,3 +80,20 @@ TEST_CASE("SystemBase default clone returns nullptr", "[SystemBase][defaults]") 
     auto cloned = sys.clone(SystemId{42}, 44100.0);
     CHECK(cloned == nullptr);
 }
+
+TEST_CASE("SystemBase default cloneFromState returns nullptr",
+          "[SystemBase][defaults]") {
+    DefaultsOnlySystem sys{1};
+    CHECK(sys.cloneFromState(SystemId{42}, 44100.0,
+                             std::vector<std::uint8_t>{1, 2, 3, 4}) == nullptr);
+}
+
+TEST_CASE("SystemBase default state snapshot is unsupported",
+          "[SystemBase][defaults]") {
+    DefaultsOnlySystem sys{1};
+    // stateSnapshotSize() defaults to 0, so the snapshot can't be enabled and
+    // there's nothing to read.
+    CHECK_FALSE(sys.enableStateSnapshot());
+    std::vector<std::uint8_t> out;
+    CHECK_FALSE(sys.readStateSnapshot(out));
+}
