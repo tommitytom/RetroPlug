@@ -34,7 +34,13 @@ struct Table {
 };
 
 struct Groove {
-    FixedArray<Byte, 16> steps{}; // 0 = no value
+    // LSDj's factory default groove is 6/6 (6 ticks per step, the rest "no
+    // value"). A zero groove means zero step-duration, so a song authored
+    // without explicit grooves never advances under playback/sync. Default to
+    // the factory 6/6 so partial fixtures produce a valid, playable sav (matches
+    // every stock LSDj .sav; decode overwrites all 16 bytes, so round-trips are
+    // unchanged). 0 = no value.
+    FixedArray<Byte, 16> steps{ .arr = { 6, 6 } };
 };
 
 struct Synth {
@@ -80,9 +86,16 @@ struct Song {
     FixedArray<std::optional<Phrase>, 256>    phrases{};
     FixedArray<std::optional<Instrument>, 64> instruments{};
     FixedArray<std::optional<Table>, 32>      tables{};
-    FixedArray<Groove, 31>                    grooves{};
+    FixedArray<Groove, 32>                    grooves{};
     FixedArray<Synth, 16>                     synths{};
     FixedArray<Wave, 256>                     waves{};
+
+    // Raw byte regions, modeled as blobs so a no-template encode reproduces them
+    // (their factory defaults are version-specific; values come from the sav).
+    FixedArray<Byte, 0x40>  bookmarks{};  // 0x0FF0  4ch * 16 channel/row slots
+    FixedArray<Byte, 0x540> words{};      // 0x1890  SPEECH instrument allophones
+    FixedArray<Byte, 0xA8>  wordNames{};  // 0x1DD0  42 * 4-char word names
+    FixedArray<Byte, 0x0A>  reserved3FC6{}; // 0x3FC6 reserved ("Empty"); 0xFF*4 + 0 on 9.x
 };
 
 } // namespace rp::lsdj::model

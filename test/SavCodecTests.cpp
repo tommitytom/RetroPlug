@@ -84,6 +84,22 @@ std::size_t firstDiff(std::span<const std::uint8_t> a, std::span<const std::uint
         if (a[i] != b[i]) return i;
     return std::string::npos;
 }
+
+// The work/total-time clock is runtime state LSDj keeps ticking; a fresh sav may
+// carry a nonzero value the model doesn't (and shouldn't) reproduce. These 6
+// song-relative offsets are the only bytes allowed to differ in a no-template
+// encode (workHours/workMinutes + totalDays/Hours/Minutes/checksum).
+bool isVolatileClock(std::size_t off) {
+    return off == 0x3FB2 || off == 0x3FB3 || (off >= 0x3FB6 && off <= 0x3FB9);
+}
+// First non-clock offset where two buffers differ, or npos if identical apart
+// from the volatile clock.
+std::size_t firstDiffExceptClock(std::span<const std::uint8_t> a, std::span<const std::uint8_t> b) {
+    const std::size_t n = std::min(a.size(), b.size());
+    for (std::size_t i = 0; i < n; ++i)
+        if (a[i] != b[i] && !isVolatileClock(i)) return i;
+    return std::string::npos;
+}
 } // namespace
 
 TEST_CASE("working-song round-trip is byte-identical (fmt22)", "[lsdj-sav]") {
@@ -101,6 +117,31 @@ TEST_CASE("working-song round-trip is byte-identical (fmt22)", "[lsdj-sav]") {
     const std::size_t d = firstDiff(orig, out);
     if (d != std::string::npos)
         UNSCOPED_INFO("first diff at song offset 0x" << std::hex << d
+                      << " (orig=0x" << int(orig[d]) << " enc=0x" << int(out[d]) << ")");
+    CHECK(d == std::string::npos);
+}
+
+// No-template byte-identity: re-encode the decoded song from the MODEL ALONE
+// (no source bytes passed as template), so every static byte must come from the
+// model rather than being copied through. This is the stronger guarantee — it
+// proves the model fully covers the fmt22 working song. Only the volatile
+// work/total clock is allowed to differ.
+TEST_CASE("working-song encodes byte-identical with no template (fmt22)", "[lsdj-sav]") {
+    const fs::path sav = kSavDir / "lsdj9_4_2.sav";
+    if (!fs::exists(sav)) { WARN("corpus sav missing"); return; }
+    const auto bytes = slurp(sav);
+    REQUIRE(bytes.size() >= kSongBytes);
+    std::span<const std::uint8_t> orig(bytes.data(), kSongBytes);
+
+    auto res = codec::decodeSong(orig);
+    if (!res) FAIL("decode failed: " << res.error().what());
+    REQUIRE(res.value().formatVersion == 22);
+
+    const auto out = codec::encodeSong(res.value()); // NO template
+    REQUIRE(out.size() == kSongBytes);
+    const std::size_t d = firstDiffExceptClock(orig, out);
+    if (d != std::string::npos)
+        UNSCOPED_INFO("first non-clock diff at song offset 0x" << std::hex << d
                       << " (orig=0x" << int(orig[d]) << " enc=0x" << int(out[d]) << ")");
     CHECK(d == std::string::npos);
 }

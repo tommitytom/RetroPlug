@@ -404,6 +404,12 @@ rfl::Result<model::Song> decodeSong(std::span<const std::uint8_t> songBytes) {
         for (std::size_t b = 0; b < kWaveBytes; ++b)
             song.waves[i].frames[b] = v.u8(r.waves + i * kWaveBytes + b);
 
+    // --- raw byte regions (bookmarks / SPEECH words / word names) ---
+    for (std::size_t b = 0; b < song.bookmarks.size(); ++b) song.bookmarks[b] = v.u8(r.bookmarks + b);
+    for (std::size_t b = 0; b < song.words.size();     ++b) song.words[b]     = v.u8(r.words + b);
+    for (std::size_t b = 0; b < song.wordNames.size(); ++b) song.wordNames[b] = v.u8(r.wordNames + b);
+    for (std::size_t b = 0; b < song.reserved3FC6.size(); ++b) song.reserved3FC6[b] = v.u8(r.reserved3FC6 + b);
+
     return song;
 }
 
@@ -419,6 +425,15 @@ std::vector<std::uint8_t> encodeSong(const model::Song& song,
 
     w.setU8(kFormatVersionOff, fmt);
     for (std::size_t off : {r.rb1, r.rb2, r.rb3}) { w.setU8(off, 'r'); w.setU8(off + 1, 'b'); }
+
+    // Fresh-sav sentinel fill: unallocated chain-phrase and phrase-instrument
+    // slots are 0xFF ("none") in a real LSDj sav. The allocated loops below only
+    // write their own slots, so pre-fill the full regions here (matching LSDj's
+    // own init) — otherwise a no-template encode leaves them 0x00. Offset
+    // arithmetic spans the whole physical region (covers the 128th chain slot
+    // that the addressable count loop skips).
+    std::memset(out.data() + r.chainPhrases,      0xFF, r.chainTranspositions - r.chainPhrases);
+    std::memset(out.data() + r.phraseInstruments, 0xFF, r.rb3 - r.phraseInstruments);
 
     // --- settings ---
     {
@@ -524,6 +539,12 @@ std::vector<std::uint8_t> encodeSong(const model::Song& song,
     for (std::size_t i = 0; i < kWaveSlotCount; ++i)
         for (std::size_t b = 0; b < kWaveBytes; ++b)
             w.setU8(r.waves + i * kWaveBytes + b, song.waves[i].frames[b]);
+
+    // --- raw byte regions (bookmarks / SPEECH words / word names) ---
+    for (std::size_t b = 0; b < song.bookmarks.size(); ++b) w.setU8(r.bookmarks + b, song.bookmarks[b]);
+    for (std::size_t b = 0; b < song.words.size();     ++b) w.setU8(r.words + b,     song.words[b]);
+    for (std::size_t b = 0; b < song.wordNames.size(); ++b) w.setU8(r.wordNames + b, song.wordNames[b]);
+    for (std::size_t b = 0; b < song.reserved3FC6.size(); ++b) w.setU8(r.reserved3FC6 + b, song.reserved3FC6[b]);
 
     return out;
 }

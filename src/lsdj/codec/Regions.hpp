@@ -30,7 +30,7 @@ inline constexpr std::size_t kInstrumentCount  = 0x40; // 64
 inline constexpr std::size_t kInstrumentBytes  = 16;
 inline constexpr std::size_t kTableCount       = 0x20; // 32
 inline constexpr std::size_t kTableLength      = 16;
-inline constexpr std::size_t kGrooveCount      = 0x1F; // 31
+inline constexpr std::size_t kGrooveCount      = 0x20; // 32 physical slots (0x1090..0x1290); liblsdj addresses 0x1F but LSDj inits all 32 to 6/6
 inline constexpr std::size_t kGrooveLength     = 16;
 inline constexpr std::size_t kSynthCount       = 0x10; // 16
 inline constexpr std::size_t kSynthBytes       = 16;
@@ -81,6 +81,7 @@ struct SongRegions {
     std::size_t powerSave;
     std::size_t prelisten;
     std::size_t synthOverwrites;      // 2B bitset, one bit per synth
+    std::size_t reserved3FC6;         // 10B reserved ("Empty" in liblsdj); 0xFF FF FF FF + 0 on 9.x
     std::size_t drumMax;
     std::size_t phraseCommands;
     std::size_t phraseCommandValues;
@@ -132,6 +133,7 @@ inline constexpr SongRegions kModernRegions = {
     /*powerSave*/            0x3FC2,
     /*prelisten*/            0x3FC3,
     /*synthOverwrites*/      0x3FC4,
+    /*reserved3FC6*/         0x3FC6,
     /*drumMax*/              0x3FD0,
     /*phraseCommands*/       0x4000,
     /*phraseCommandValues*/  0x4FF0,
