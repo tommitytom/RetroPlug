@@ -151,7 +151,7 @@ void LsdjSyncRole::onProcessBlock(SameBoySystem& system, const AudioBlockInfo& i
     // divisor=2 → 12 PPQN, etc. (LsdjAudioHooks.cpp:77).
     const std::uint8_t effective = effectiveDivisor_ > 0 ? effectiveDivisor_ : 1;
     const std::uint32_t resolution = 24u / effective;
-    PpqUtil::eachTick(info, resolution, [&system](std::uint32_t, std::uint32_t) {
+    PpqUtil::eachTick(info, resolution, nextClockTick_, [&system](std::uint32_t, std::uint32_t) {
         system.serialIn_.push_back(kMidiClock);
     });
 }

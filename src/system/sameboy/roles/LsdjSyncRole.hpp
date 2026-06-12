@@ -80,6 +80,7 @@ private:
     int           lastRow_           = -1;  // MidiMap NoteOff handshake
     std::uint8_t  keyboardOctave_    = 4;   // KeyboardMidi octave tracking
     bool          aboyBuild_         = false; // ROM detected as Arduinoboy build
+    std::int64_t  nextClockTick_     = 0;   // PpqUtil::eachTick cursor (exact across blocks)
 
     // Owned by unique_ptr so the header doesn't need ArduinoboyMaster's full
     // definition; constructed lazily when ArduinoboyMaster mode activates.
