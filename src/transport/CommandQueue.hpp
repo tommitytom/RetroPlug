@@ -128,6 +128,15 @@ struct LoadSramCommand {
     std::vector<std::uint8_t>* bytes;
 };
 
+// Load a savestate into a system. Unlike LoadSram this restores the full
+// CPU + RAM, so it's visible immediately and needs no reset. `bytes` is
+// heap-allocated on the UI thread; ownership transfers to the DSP, which
+// applies the load and frees the vector. Same ownership model as LoadSram.
+struct LoadStateCommand {
+    SystemId                   id;
+    std::vector<std::uint8_t>* bytes;
+};
+
 // Toggle SameBoyConfig::fastBoot. Mutation only — applies on the next
 // reset / boot since the boot ROM is only consulted then.
 struct SetFastBootCommand {
@@ -219,6 +228,7 @@ struct Command {
         SetAudioRouting   = 20,
         SetHighpass       = 21,
         LoadSram          = 22,
+        LoadState         = 23,
     };
 
     Kind kind = Kind::None;
@@ -240,6 +250,7 @@ struct Command {
         ResetSystemCommand       resetSystem;
         NewSramCommand           newSram;
         LoadSramCommand          loadSram;
+        LoadStateCommand         loadState;
         SetFastBootCommand       setFastBoot;
         SetModelCommand          setModel;
         SetReloadOnRomChangeCommand setReloadOnRomChange;
@@ -369,6 +380,13 @@ struct Command {
         Command c;
         c.kind = Kind::LoadSram;
         c.payload.loadSram = LoadSramCommand{id, bytes};
+        return c;
+    }
+
+    static Command makeLoadState(SystemId id, std::vector<std::uint8_t>* bytes) {
+        Command c;
+        c.kind = Kind::LoadState;
+        c.payload.loadState = LoadStateCommand{id, bytes};
         return c;
     }
 

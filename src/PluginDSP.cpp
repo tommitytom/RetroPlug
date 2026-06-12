@@ -439,6 +439,20 @@ protected:
                     }
                 } break;
 
+                case Command::Kind::LoadState: {
+                    auto& ls = cmd.payload.loadState;
+                    // Ownership lands here; free even on early bailout.
+                    std::unique_ptr<std::vector<std::uint8_t>> owned(ls.bytes);
+                    if (!owned) break;
+                    if (SystemBase* sys = project.findSystem(ls.id)) {
+                        // A savestate restores full CPU + RAM, so it takes
+                        // effect immediately — no reset (unlike LoadSram).
+                        if (sys->loadStateBytes(*owned)) {
+                            projectMutated = true;
+                        }
+                    }
+                } break;
+
                 case Command::Kind::SetFastBoot: {
                     auto& fb = cmd.payload.setFastBoot;
                     if (SystemBase* sys = project.findSystem(fb.id)) {
