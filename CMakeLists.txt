@@ -354,6 +354,7 @@ dpf_add_plugin(${NAME}
   FILES_DSP
       src/PluginDSP.cpp
       src/PluginRpcService.cpp
+      src/transport/CommandApply.cpp
       src/config/UserConfig.cpp
       src/config/UserConfigPaths.cpp
       src/config/RecentFiles.cpp

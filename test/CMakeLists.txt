@@ -80,6 +80,7 @@ add_executable(retroplug-mesen-tests
     MesenMultiInstanceTests.cpp
     MesenSystemBaseTests.cpp
     ../src/system/SystemBase.cpp
+    ../src/transport/CommandApply.cpp   # used by the StateSnapshotStress harness
     ../src/system/mesen/MesenNesSystem.cpp
     ../src/system/mesen/MesenNesDebugSession.cpp
     ../src/system/mesen/MesenVideoDevice.cpp
@@ -116,6 +117,7 @@ catch_discover_tests(retroplug-mesen-tests)
 add_executable(retroplug-sameboy-tests
     SameBoySystemBaseTests.cpp
     ../src/system/SystemBase.cpp
+    ../src/transport/CommandApply.cpp   # applySystemCommand: unit test + stress harness
     ../src/system/sameboy/LinkGroup.cpp
     ../src/system/sameboy/RomSniffer.cpp
     ../src/system/sameboy/SameBoySystem.cpp

@@ -23,6 +23,7 @@
 #include "system/sameboy/SameBoySystem.hpp"
 #include "system/sameboy/roles/LsdjKitPatchRole.hpp"
 #include "system/sameboy/roles/LsdjSyncRole.hpp"
+#include "transport/CommandApply.hpp"
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
 #include "transport/MidiTypes.hpp"
@@ -412,46 +413,25 @@ protected:
                     }
                 } break;
 
-                case Command::Kind::ResetSystem: {
-                    if (SystemBase* sys = project.findSystem(cmd.payload.resetSystem.id))
-                        sys->onReset();
-                } break;
-
-                case Command::Kind::NewSram: {
-                    if (SystemBase* sys = project.findSystem(cmd.payload.newSram.id)) {
-                        sys->clearSram();
-                        projectMutated = true;
-                    }
-                } break;
-
-                case Command::Kind::LoadSram: {
-                    auto& ls = cmd.payload.loadSram;
-                    // Ownership lands here; free even on early bailout.
-                    std::unique_ptr<std::vector<std::uint8_t>> owned(ls.bytes);
-                    if (!owned) break;
-                    if (SystemBase* sys = project.findSystem(ls.id)) {
-                        // Load battery RAM, then reset so the game boots into
-                        // the loaded save (it only re-reads SRAM at boot).
-                        if (sys->loadSramBytes(*owned)) {
-                            sys->onReset();
-                            projectMutated = true;
-                        }
-                    }
-                } break;
-
-                case Command::Kind::LoadState: {
-                    auto& ls = cmd.payload.loadState;
-                    // Ownership lands here; free even on early bailout.
-                    std::unique_ptr<std::vector<std::uint8_t>> owned(ls.bytes);
-                    if (!owned) break;
-                    if (SystemBase* sys = project.findSystem(ls.id)) {
-                        // A savestate restores full CPU + RAM, so it takes
-                        // effect immediately — no reset (unlike LoadSram).
-                        if (sys->loadStateBytes(*owned)) {
-                            projectMutated = true;
-                        }
-                    }
-                } break;
+                // Per-system mutations share one implementation with the stress
+                // harness and unit tests (see transport/CommandApply.hpp). It
+                // resolves to nullptr safely and frees the load payloads itself.
+                case Command::Kind::ResetSystem:
+                    applySystemCommand(project.findSystem(cmd.payload.resetSystem.id),
+                                       cmd, projectMutated);
+                    break;
+                case Command::Kind::NewSram:
+                    applySystemCommand(project.findSystem(cmd.payload.newSram.id),
+                                       cmd, projectMutated);
+                    break;
+                case Command::Kind::LoadSram:
+                    applySystemCommand(project.findSystem(cmd.payload.loadSram.id),
+                                       cmd, projectMutated);
+                    break;
+                case Command::Kind::LoadState:
+                    applySystemCommand(project.findSystem(cmd.payload.loadState.id),
+                                       cmd, projectMutated);
+                    break;
 
                 case Command::Kind::SetFastBoot: {
                     auto& fb = cmd.payload.setFastBoot;

@@ -36,6 +36,7 @@
 #include "system/MemoryType.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"
+#include "transport/CommandApply.hpp"
 #include "transport/CommandQueue.hpp"
 
 namespace rp::test {
@@ -84,18 +85,13 @@ inline void runStateSnapshotStress(
         info.transportPlaying = false;
 
         for (int b = 0; b < kBlocks; ++b) {
-            // Drain the command queue exactly like LVGLPluginDSP::run().
+            // Drain the command queue through the SAME handler the DSP run loop
+            // uses (transport/CommandApply.hpp) — no divergent copy.
             Command cmd;
             while (commands.tryPop(cmd)) {
-                if (cmd.kind == Command::Kind::LoadSram) {
-                    std::unique_ptr<std::vector<std::uint8_t>> owned(cmd.payload.loadSram.bytes);
-                    if (owned && live.loadSramBytes(*owned)) live.onReset();
-                    commandsApplied.fetch_add(1, std::memory_order_relaxed);
-                } else if (cmd.kind == Command::Kind::LoadState) {
-                    std::unique_ptr<std::vector<std::uint8_t>> owned(cmd.payload.loadState.bytes);
-                    if (owned) live.loadStateBytes(*owned);
-                    commandsApplied.fetch_add(1, std::memory_order_relaxed);
-                }
+                bool mutated = false;
+                applySystemCommand(&live, cmd, mutated);
+                commandsApplied.fetch_add(1, std::memory_order_relaxed);
             }
 
             std::fill(l.begin(), l.end(), 0.0f);

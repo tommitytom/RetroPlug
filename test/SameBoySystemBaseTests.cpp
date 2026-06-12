@@ -24,6 +24,7 @@
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "transport/CommandApply.hpp"
 #include "transport/CommandQueue.hpp"
 
 #include "StateSnapshotStress.hpp"
@@ -461,6 +462,74 @@ TEST_CASE("SameBoySystem::cloneFromState seeds a clone from a captured savestate
     CHECK(src.cloneFromState(SystemId{43}, kSampleRate, {}) == nullptr);
 
     src.onDeactivate();
+}
+
+TEST_CASE("applySystemCommand applies the per-system mutation commands",
+          "[SameBoySystemBase]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    auto romBytes = loadRom();
+    SameBoyConfig cfg{};
+    cfg.romPath = kRomPath;
+    SameBoySystem sys{SystemId{1}, cfg, romBytes};
+    sys.onActivate(kSampleRate);
+
+    // This is the exact handler PluginDSP::run and the stress harness use, so
+    // the ownership/free + reset semantics are asserted in one place.
+
+    SECTION("LoadState restores work RAM and reports a mutation") {
+        runBlocks(sys, 2);
+        const auto state = sys.saveStateBytes();
+        const auto ramAtSave = snapshotRam(sys);
+        runBlocks(sys, 50);
+        REQUIRE(snapshotRam(sys) != ramAtSave);
+
+        bool mutated = false;
+        auto* bytes = new std::vector<std::uint8_t>(state);
+        applySystemCommand(&sys, Command::makeLoadState(sys.id(), bytes), mutated);
+        CHECK(mutated);
+        CHECK(snapshotRam(sys) == ramAtSave);
+    }
+
+    SECTION("LoadSram overwrites battery RAM and reports a mutation") {
+        auto acc = sys.getMemory(rp::MemoryType::Sram, rp::AccessType::Read);
+        REQUIRE(acc.valid());
+        std::vector<std::uint8_t> pattern(acc.size());
+        for (std::size_t i = 0; i < pattern.size(); ++i)
+            pattern[i] = static_cast<std::uint8_t>((i * 5 + 1) & 0xFF);
+
+        bool mutated = false;
+        applySystemCommand(&sys, Command::makeLoadSram(sys.id(),
+                           new std::vector<std::uint8_t>(pattern)), mutated);
+        CHECK(mutated);
+        CHECK(sys.saveSramBytes() == pattern);
+    }
+
+    SECTION("NewSram zeroes battery RAM and reports a mutation") {
+        bool mutated = false;
+        applySystemCommand(&sys, Command::makeNewSram(sys.id()), mutated);
+        CHECK(mutated);
+        auto sram = sys.saveSramBytes();
+        REQUIRE(!sram.empty());
+        for (auto b : sram) CHECK(b == 0);
+    }
+
+    SECTION("ResetSystem does NOT report a project mutation") {
+        bool mutated = false;
+        applySystemCommand(&sys, Command::makeResetSystem(sys.id()), mutated);
+        CHECK_FALSE(mutated);  // matches the DSP loop: reset isn't serialized state
+    }
+
+    SECTION("a null system still frees the load payload and reports no mutation") {
+        bool mutated = false;
+        // No leak here is what AddressSanitizer verifies.
+        applySystemCommand(nullptr, Command::makeLoadState(SystemId{99},
+                           new std::vector<std::uint8_t>{1, 2, 3, 4}), mutated);
+        applySystemCommand(nullptr, Command::makeLoadSram(SystemId{99},
+                           new std::vector<std::uint8_t>{5, 6, 7, 8}), mutated);
+        CHECK_FALSE(mutated);
+    }
+
+    sys.onDeactivate();
 }
 
 TEST_CASE("SameBoySystem honours config_.savestate at onActivate",
