@@ -42,6 +42,7 @@ extern "C" {
 #include "lsdj/KitUtil.hpp"
 #include "lsdj/SavSerialization.hpp"
 #include "lsdj/codec/SavCodec.hpp"
+#include "lsdj/codec/SongCodec.hpp"
 
 // Guard the hand-mirrored TypeScript enums in test/harness/index.ts. The wire
 // values are load-bearing; if a C++ renumber drifts from the TS Button/Mem
@@ -403,6 +404,36 @@ struct TestHarness::Impl {
         if (!f) throw std::runtime_error("saveRplg: write failed: " + path);
     }
 
+    // Inverse of saveRplg: parse a .rplg (config + per-system savestate) and
+    // rebuild the project from it — the harness-side mirror of the plugin's
+    // RETROPLUG_AUTOLOAD_PROJECT / setState path (projectConfigFromZip ->
+    // addSystem -> onActivate, restoring each GB savestate). Lets a test
+    // round-trip a fixture (saveRplg then loadRplg) to reproduce exactly what a
+    // DAW sees when it reloads the project. Returns the first restored system id.
+    std::uint32_t loadRplg(const std::string& path) {
+        auto bytes = slurpBytes(path);
+        auto parsed = projectConfigFromZip(bytes);
+        if (!parsed)
+            throw std::runtime_error("loadRplg: failed to parse " + path);
+        // Fresh project, mirroring PluginDSP::applyProjectFromConfig's
+        // clearSystems + rebuild.
+        project = std::make_unique<Project>();
+        sysList.clear();
+        midiOutLog.clear();
+        serialOutLog.clear();
+        std::vector<SystemId> ids;
+        for (const auto& sysConfig : parsed->systems) {
+            const SystemId id = project->addSystem(sysConfig);
+            if (id == 0) throw std::runtime_error("loadRplg: addSystem failed");
+            ids.push_back(id);
+        }
+        project->onActivate(sampleRate); // restores each system's savestate
+        for (SystemId id : ids)
+            if (SystemBase* raw = project->findSystem(id)) sysList.push_back(raw);
+        project->rebuildLinkGroups();
+        return ids.empty() ? 0u : static_cast<std::uint32_t>(ids.front());
+    }
+
     // Take + clear the accumulated role outputs for a system.
     std::vector<MidiOutRec> takeMidi(std::uint32_t id) {
         auto it = midiOutLog.find(static_cast<SystemId>(id));
@@ -516,6 +547,62 @@ JSValue jsSavFromJson(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     if (!sav) return JS_ThrowTypeError(ctx, "savFromJson: %s", sav.error().what().c_str());
     const auto bytes = rp::lsdj::codec::encodeSav(sav.value());
     return JS_NewArrayBufferCopy(ctx, bytes.data(), bytes.size());
+}
+
+// readFile(path) -> ArrayBuffer: slurp a file's raw bytes (e.g. a source .sav).
+JSValue jsReadFile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "readFile(path) requires a path");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    try {
+        const auto bytes = slurpBytes(path);
+        JS_FreeCString(ctx, path);
+        return JS_NewArrayBufferCopy(ctx, bytes.data(), bytes.size());
+    } catch (const std::exception& e) {
+        JSValue err = JS_ThrowTypeError(ctx, "readFile: %s", e.what());
+        JS_FreeCString(ctx, path);
+        return err;
+    }
+}
+
+// writeFile(path, bytes): dump an ArrayBuffer's raw bytes to a file.
+JSValue jsWriteFile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 2) return JS_ThrowTypeError(ctx, "writeFile(path, bytes) requires a path and ArrayBuffer");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    std::size_t len = 0;
+    std::uint8_t* buf = JS_GetArrayBuffer(ctx, &len, argv[1]);
+    if (!buf) { JS_FreeCString(ctx, path); return JS_ThrowTypeError(ctx, "writeFile: bytes must be an ArrayBuffer"); }
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    const bool ok = f.write(reinterpret_cast<const char*>(buf), static_cast<std::streamsize>(len)).good();
+    JS_FreeCString(ctx, path);
+    if (!ok) return JS_ThrowTypeError(ctx, "writeFile: write failed");
+    return JS_UNDEFINED;
+}
+
+// savRoundtripDiff(savBytes) -> number: decode the working song, re-encode it
+// from the model with the input as template, and return the first non-volatile
+// byte offset that differs (or -1 if byte-identical). Skips the volatile clock +
+// fileChanged bytes. Mirrors the C++ content round-trip so a TS test can byte-
+// check a captured sav (e.g. one LSDj upgraded in SRAM) without a fixtures dir.
+JSValue jsSavRoundtripDiff(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "savRoundtripDiff(savBytes) requires an ArrayBuffer");
+    std::size_t len = 0;
+    std::uint8_t* buf = JS_GetArrayBuffer(ctx, &len, argv[0]);
+    if (!buf) return JS_ThrowTypeError(ctx, "savRoundtripDiff: arg must be an ArrayBuffer");
+    constexpr std::size_t kSong = 0x8000;
+    if (len < kSong) return JS_ThrowTypeError(ctx, "savRoundtripDiff: need >= 0x8000 bytes");
+    std::span<const std::uint8_t> orig(buf, kSong);
+    auto res = rp::lsdj::codec::decodeSong(orig);
+    if (!res) return JS_ThrowTypeError(ctx, "savRoundtripDiff: decode: %s", res.error().what().c_str());
+    const auto out = rp::lsdj::codec::encodeSong(res.value(), orig);
+    const auto isVolatile = [](std::size_t off) {
+        return off == 0x3FB2 || off == 0x3FB3 || (off >= 0x3FB6 && off <= 0x3FB9) || off == 0x3FC1;
+    };
+    for (std::size_t i = 0; i < kSong; ++i)
+        if (orig[i] != out[i] && !isVolatile(i))
+            return JS_NewInt32(ctx, static_cast<int32_t>(i));
+    return JS_NewInt32(ctx, -1);
 }
 
 JSValue jsRunMs(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -1127,6 +1214,24 @@ JSValue jsSaveRplg(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     }
 }
 
+// loadRplg(path): rebuild the project from a .rplg (round-trip of saveRplg).
+JSValue jsLoadRplg(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
+    if (argc < 1) return JS_ThrowTypeError(ctx, "loadRplg(path)");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    try {
+        const std::uint32_t id = h->loadRplg(path);
+        JS_FreeCString(ctx, path);
+        return JS_NewUint32(ctx, id);
+    } catch (const std::exception& e) {
+        JSValue err = JS_ThrowTypeError(ctx, "loadRplg: %s", e.what());
+        JS_FreeCString(ctx, path);
+        return err;
+    }
+}
+
 JSValue jsWriteWav(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 2) return JS_ThrowTypeError(ctx, "writeWav(path, samples, sampleRate?)");
     const char* path = JS_ToCString(ctx, argv[0]);
@@ -1253,6 +1358,9 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     };
     bind("loadRom",      jsLoadRom,      1);
     bind("savFromJson",  jsSavFromJson,  1);
+    bind("readFile",     jsReadFile,     1);
+    bind("writeFile",    jsWriteFile,    2);
+    bind("savRoundtripDiff", jsSavRoundtripDiff, 1);
     bind("runMs",        jsRunMs,        1);
     bind("press",        jsPress,        3);
     bind("sendMidi",     jsSendMidi,     2);
@@ -1272,6 +1380,7 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     bind("runMsPerSystem", jsRunMsPerSystem, 1);
     bind("writeWav",       jsWriteWav,       3);
     bind("saveRplg",       jsSaveRplg,       1);
+    bind("loadRplg",       jsLoadRplg,       1);
     bind("patchKit",       jsPatchKit,       4);
     bind("beginProfile",  jsBeginProfile,  1);
     bind("readProfile",   jsReadProfile,   1);

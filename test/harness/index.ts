@@ -18,6 +18,14 @@ interface NativeRp {
   // Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON fixture;
   // missing fields and short/omitted fixed arrays take model defaults / pad.
   savFromJson(json: string): ArrayBuffer;
+  // Slurp a file's raw bytes (e.g. a source .sav to feed loadRom).
+  readFile(path: string): ArrayBuffer;
+  // Dump an ArrayBuffer's raw bytes to a file.
+  writeFile(path: string, bytes: ArrayBuffer): void;
+  // Decode the working song of a .sav, re-encode it from the model with the
+  // input as template, and return the first non-volatile byte that differs (or
+  // -1 if byte-identical). Skips the volatile clock + fileChanged bytes.
+  savRoundtripDiff(savBytes: ArrayBuffer): number;
   runMs(ms: number): void;
   press(sys: number, button: number, down: boolean): void;
   sendMidi(sys: number, bytes: number[]): void;
@@ -32,6 +40,7 @@ interface NativeRp {
   runMsPerSystem(ms: number): ArrayBuffer[];
   writeWav(path: string, samples: ArrayBuffer, sampleRate?: number): void;
   saveRplg(path: string): void;
+  loadRplg(path: string): number;
   patchKit(sys: number, slot: number, name: string, samples: KitSample[]): void;
   getRegisters(sys: number): CpuRegisters;
   setRegister(sys: number, name: string, value: number): void;
@@ -147,6 +156,20 @@ export const emu = {
    *  Feed the result to loadRom(rom, sav) to boot LSDj from an authored song. */
   savFromJson(json: string): ArrayBuffer {
     return rp.savFromJson(json);
+  },
+  /** Slurp a file's raw bytes — e.g. a source .sav to pass to loadRom. */
+  readFile(path: string): Uint8Array {
+    return new Uint8Array(rp.readFile(path));
+  },
+  /** Dump an ArrayBuffer's raw bytes to a file (e.g. an upgraded .sav). */
+  writeFile(path: string, bytes: ArrayBuffer): void {
+    rp.writeFile(path, bytes);
+  },
+  /** Byte-check a captured .sav: decode its working song, re-encode from the
+   *  model with the input as template, and return the first non-volatile diff
+   *  offset (or -1 if byte-identical). Catches modeled-region codec bugs. */
+  savRoundtripDiff(savBytes: ArrayBuffer): number {
+    return rp.savRoundtripDiff(savBytes);
   },
   /** Advance every loaded system by `ms` of emulated time. */
   runMs(ms: number): void {
@@ -285,6 +308,14 @@ export const emu = {
    *  Reaper DAW test auto-loads via RETROPLUG_AUTOLOAD_PROJECT. */
   saveRplg(path: string): void {
     rp.saveRplg(path);
+  },
+  /** Inverse of saveRplg: rebuild the project from a .rplg (config + per-system
+   *  savestate), exactly as the plugin does on load (RETROPLUG_AUTOLOAD_PROJECT
+   *  / setState). Replaces all current systems; returns the first restored
+   *  system id. Use to round-trip a fixture and reproduce what a DAW sees on
+   *  reload (e.g. whether a savestate restores to a playable state). */
+  loadRplg(path: string): number {
+    return rp.loadRplg(path);
   },
   /** Compile a custom LSDj drum kit from sample files and queue it into `slot`.
    *  The sniffer auto-attaches the kit-patch role to LSDj ROMs; call runMs after

@@ -64,8 +64,6 @@ enum class SynthFilter : std::uint8_t { LowPass = 0, HighPass = 1, BandPass = 2,
 
 enum class SynthDistortion : std::uint8_t { Clip = 0, Wrap = 1, Fold = 2 };
 
-enum class SynthPhaseCompression : std::uint8_t { Normal = 0, Resync = 1, Resync2 = 2 };
-
 // --- Commands (phrase/table FX) ------------------------------------------
 // In-memory order matches liblsdj lsdj_command_t. The on-disk byte differs
 // (fmt>=8 inserts B at slot 1 and shifts the rest) — handled entirely by the

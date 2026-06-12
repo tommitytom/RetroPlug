@@ -49,7 +49,7 @@ struct Synth {
     Nibble                resonanceStart   = 0;
     Nibble                resonanceEnd     = 0;
     SynthDistortion       distortion       = SynthDistortion::Clip;
-    SynthPhaseCompression phaseCompression = SynthPhaseCompression::Normal;
+    Byte                  phaseCompression = 0; // raw byte-4 (fmt22 added a 4th mode)
     Byte                  volumeStart = 0, cutoffStart = 0, phaseStart = 0, vshiftStart = 0;
     Byte                  volumeEnd   = 0, cutoffEnd   = 0, phaseEnd   = 0, vshiftEnd   = 0;
     Nibble                limitStart = 0, limitEnd = 0;

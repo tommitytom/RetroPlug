@@ -382,7 +382,7 @@ rfl::Result<model::Song> decodeSong(std::span<const std::uint8_t> songBytes) {
         s.resonanceStart   = (fmt >= 5) ? ((v.u8(b + 2) & 0xF0) >> 4) : (v.u8(b + 2) & 0x0F);
         s.resonanceEnd     = v.u8(b + 2) & 0x0F;
         s.distortion       = toEnum<SynthDistortion>(v.u8(b + 3), 2);
-        s.phaseCompression = toEnum<SynthPhaseCompression>(v.u8(b + 4), 2);
+        s.phaseCompression = v.u8(b + 4); // raw; liblsdj reads byte 4 whole
         s.volumeStart = v.u8(b + 5);  s.cutoffStart = v.u8(b + 6);
         s.phaseStart  = v.u8(b + 7);  s.vshiftStart = v.u8(b + 8);
         s.volumeEnd   = v.u8(b + 9);  s.cutoffEnd   = v.u8(b + 10);
@@ -534,7 +534,7 @@ std::vector<std::uint8_t> encodeSong(const model::Song& song,
             w.setU8(b + 2, static_cast<std::uint8_t>(s.resonanceStart.value() & 0x0F)); // whole byte, hi cleared
         }
         w.setU8(b + 3, static_cast<std::uint8_t>(s.distortion));
-        w.setU8(b + 4, static_cast<std::uint8_t>(s.phaseCompression));
+        w.setU8(b + 4, s.phaseCompression);
         w.setU8(b + 5, s.volumeStart);  w.setU8(b + 6, s.cutoffStart);
         w.setU8(b + 7, s.phaseStart);   w.setU8(b + 8, s.vshiftStart);
         w.setU8(b + 9, s.volumeEnd);    w.setU8(b + 10, s.cutoffEnd);
