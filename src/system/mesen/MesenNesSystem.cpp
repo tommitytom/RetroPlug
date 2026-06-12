@@ -103,7 +103,11 @@ void MesenNesSystem::onActivate(double sampleRate) {
     MessageManager::SetOptions(false, true);
 
     emu_ = std::make_unique<Emulator>();
-    emu_->Initialize();
+    // enableShortcuts=false: the plugin drives input/transport itself and never
+    // uses Mesen's keyboard-shortcut layer. Disabling it avoids a per-instance
+    // background polling thread (ShortcutKeyHandler) that, besides being pure
+    // overhead, races the debugger pointer against LoadRom's ResetDebugger.
+    emu_->Initialize(false);
     configureNes(*emu_);
 
     VirtualFile romFile(rom_.data(), rom_.size(),
