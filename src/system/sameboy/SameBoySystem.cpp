@@ -371,6 +371,42 @@ bool SameBoySystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     return GB_load_state_from_buffer(gb_, bytes.data(), bytes.size()) == 0;
 }
 
+// -- Whole-savestate snapshot ------------------------------------------------
+
+std::size_t SameBoySystem::stateSnapshotSize() const {
+    return gb_ ? GB_get_save_state_size(const_cast<GB_gameboy_t*>(gb_)) : 0;
+}
+
+bool SameBoySystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
+    if (!gb_) return false;
+    const std::size_t size = GB_get_save_state_size(gb_);
+    if (size == 0) return false;
+    dst.resize(size);                            // reused scratch — no alloc once warm
+    GB_save_state_to_buffer(gb_, dst.data());
+    return true;
+}
+
+// MBC-RAM (=SRAM), WRAM and VRAM sit as raw blobs at the tail of the no-BESS
+// region of the savestate, in that order. Their offsets are therefore valid
+// against a full (BESS) savestate too, since BESS data is appended after them.
+// Ported from old/src/sameboy/SectionOffsetCollector.c.
+SystemBase::StateRegionTable SameBoySystem::stateSnapshotRegions() const {
+    StateRegionTable t{};
+    if (!gb_) return t;
+    auto* gb = const_cast<GB_gameboy_t*>(gb_);
+    std::size_t off = GB_get_save_state_size_no_bess(gb);
+    off -= gb->vram_size;
+    t[static_cast<std::size_t>(rp::MemoryType::Vram)] =
+        { static_cast<std::uint32_t>(off), static_cast<std::uint32_t>(gb->vram_size) };
+    off -= gb->ram_size;
+    t[static_cast<std::size_t>(rp::MemoryType::Ram)] =
+        { static_cast<std::uint32_t>(off), static_cast<std::uint32_t>(gb->ram_size) };
+    off -= gb->mbc_ram_size;
+    t[static_cast<std::size_t>(rp::MemoryType::Sram)] =
+        { static_cast<std::uint32_t>(off), static_cast<std::uint32_t>(gb->mbc_ram_size) };
+    return t;
+}
+
 std::unique_ptr<SystemBase> SameBoySystem::clone(SystemId newId, double sampleRate) const {
     SameBoyConfig cfg = config_;
     cfg.linkGroupId   = 0;
@@ -378,6 +414,28 @@ std::unique_ptr<SystemBase> SameBoySystem::clone(SystemId newId, double sampleRa
     if (!sramBytes.empty())  cfg.sram      = std::move(sramBytes);
     auto stateBytes = saveStateBytes();
     if (!stateBytes.empty()) cfg.savestate = std::move(stateBytes);
+    std::vector<std::uint8_t> romCopy = rom_;
+    auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
+    out->onActivate(sampleRate);
+    return out;
+}
+
+std::unique_ptr<SystemBase> SameBoySystem::cloneFromState(
+        SystemId newId, double sampleRate,
+        const std::vector<std::uint8_t>& savestate) const {
+    if (savestate.empty()) return nullptr;
+    SameBoyConfig cfg = config_;       // non-state config copy (the deferred config-race)
+    cfg.linkGroupId   = 0;
+    cfg.savestate     = savestate;
+    // Slice SRAM out of the savestate (same offsets the snapshot uses) so the
+    // clone's battery RAM round-trips, matching clone().
+    const auto regions = stateSnapshotRegions();
+    const auto& sram   = regions[static_cast<std::size_t>(rp::MemoryType::Sram)];
+    if (sram.size > 0 &&
+        static_cast<std::size_t>(sram.offset) + sram.size <= savestate.size()) {
+        cfg.sram.assign(savestate.begin() + sram.offset,
+                        savestate.begin() + sram.offset + sram.size);
+    }
     std::vector<std::uint8_t> romCopy = rom_;
     auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
     out->onActivate(sampleRate);
@@ -618,6 +676,7 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs) 
     // Tear-free memory snapshots for any UI subscriptions. Done AFTER role
     // processing so kit patches applied this block are visible immediately.
     publishMemorySnapshots();
+    publishStateSnapshot(frames, sampleRate_);
 }
 
 void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {

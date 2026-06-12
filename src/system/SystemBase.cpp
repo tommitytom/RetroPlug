@@ -1,6 +1,7 @@
 #include "system/SystemBase.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -78,4 +79,62 @@ void SystemBase::publishMemorySnapshots() {
         std::memcpy(entry.triple->writeSlot(), accessor.data(), n);
         entry.triple->publish();
     }
+}
+
+// The slot layout is [len:4 LE][savestate bytes][unused tail]. The tail is
+// never read (readers honour len), so it's left stale rather than re-zeroed.
+static constexpr std::size_t kStateLenPrefix = 4;
+
+bool SystemBase::enableStateSnapshot() {
+    if (stateSnapshotEnabled_) return true;
+    const std::size_t sz = stateSnapshotSize();
+    if (sz == 0 || sz > kMaxStateSnapshotBytes) return false;  // unsupported / absurd
+    stateSnapshot_ = std::make_unique<MemorySnapshotTriple>(kStateLenPrefix + sz);
+    stateRegions_  = stateSnapshotRegions();
+    // Arm an immediate first publish so a Save right after load works without
+    // waiting a full interval.
+    stateSnapSamples_     = UINT64_MAX / 2;
+    stateSnapshotEnabled_ = true;
+    return true;
+}
+
+void SystemBase::publishStateSnapshot(std::uint32_t frames, double sampleRate) {
+    if (!stateSnapshotEnabled_ || !stateSnapshot_) return;
+    stateSnapSamples_ += frames;
+    const std::uint64_t threshold =
+        static_cast<std::uint64_t>(kStateSnapshotIntervalSec * sampleRate);
+    if (stateSnapSamples_ < threshold) return;
+    stateSnapSamples_ = 0;
+
+    if (!captureStateSnapshot(stateScratch_) || stateScratch_.empty()) return;
+
+    const std::size_t cap = stateSnapshot_->size();
+    if (stateScratch_.size() + kStateLenPrefix > cap) {
+        // Grew beyond the slot — never realloc mid-life (would dangle the
+        // UI-side pointer); skip this publish.
+        std::fprintf(stderr,
+                     "[RetroPlug] state snapshot for system %u too large (%zu > %zu), skipping\n",
+                     id_, stateScratch_.size() + kStateLenPrefix, cap);
+        return;
+    }
+
+    std::uint8_t* slot = stateSnapshot_->writeSlot();
+    const std::uint32_t len = static_cast<std::uint32_t>(stateScratch_.size());
+    std::memcpy(slot, &len, sizeof(len));
+    std::memcpy(slot + kStateLenPrefix, stateScratch_.data(), len);
+    stateSnapshot_->publish();
+}
+
+bool SystemBase::readStateSnapshot(std::vector<std::uint8_t>& out) {
+    if (!stateSnapshot_) return false;
+    const std::size_t cap = stateSnapshot_->size();
+    if (stateReadScratch_.size() < cap) stateReadScratch_.resize(cap);
+    if (!stateSnapshot_->readInto(stateReadScratch_.data(), stateReadScratch_.size()))
+        return false;
+    std::uint32_t len = 0;
+    std::memcpy(&len, stateReadScratch_.data(), sizeof(len));
+    if (len == 0 || static_cast<std::size_t>(len) + kStateLenPrefix > cap) return false;
+    out.assign(stateReadScratch_.begin() + kStateLenPrefix,
+               stateReadScratch_.begin() + kStateLenPrefix + len);
+    return true;
 }

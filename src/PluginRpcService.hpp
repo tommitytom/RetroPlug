@@ -365,6 +365,12 @@ private:
     bool saveStateToPath(std::uint32_t systemId, const std::string& path);
     bool loadStateFromPath(std::uint32_t systemId, const std::string& path);
 
+    // Slice one memory region out of `sys`'s latest DSP-published state
+    // snapshot (race-free). False if no snapshot yet or the region isn't
+    // represented in the savestate (non-GB, or a cart with no battery RAM).
+    bool sliceFromStateSnapshot(SystemBase* sys, rp::MemoryType type,
+                                std::vector<std::uint8_t>& out);
+
     // Path of the most recent load/save. Used as the file-browser default name
     // so subsequent saves target the same file. Cleared when the project
     // becomes empty so a fresh session can't accidentally overwrite it.

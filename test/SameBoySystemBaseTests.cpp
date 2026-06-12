@@ -302,6 +302,72 @@ TEST_CASE("SameBoySystem::restartEmulator preserves SRAM and drops savestate",
     sys.onDeactivate();
 }
 
+TEST_CASE("SameBoySystem state snapshot round-trips the savestate",
+          "[SameBoySystemBase]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    auto romBytes = loadRom();
+    SameBoyConfig cfg{};
+    cfg.romPath = kRomPath;
+    SameBoySystem sys{SystemId{1}, cfg, romBytes};
+    sys.onActivate(kSampleRate);
+    runBlocks(sys, 50);
+
+    // Enable arms an immediate first publish, so a single block after enable
+    // is enough to land a snapshot (no waiting a full interval).
+    REQUIRE(sys.enableStateSnapshot());
+    runBlocks(sys, 1);
+
+    std::vector<std::uint8_t> snap;
+    REQUIRE(sys.readStateSnapshot(snap));
+    REQUIRE(!snap.empty());
+
+    // The snapshot is the full savestate: loading it into a fresh system
+    // reproduces the source's work RAM at capture time (no stepping between
+    // the publish and this read).
+    const auto ramAtSnap = snapshotRam(sys);
+    SameBoyConfig restoreCfg = cfg;
+    SameBoySystem restored{SystemId{2}, restoreCfg, romBytes};
+    restored.onActivate(kSampleRate);
+    REQUIRE(restored.loadStateBytes(snap));
+    CHECK(snapshotRam(restored) == ramAtSnap);
+    restored.onDeactivate();
+
+    sys.onDeactivate();
+}
+
+TEST_CASE("SameBoySystem state snapshot region offsets locate SRAM in the savestate",
+          "[SameBoySystemBase]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    auto romBytes = loadRom();
+    SameBoyConfig cfg{};
+    cfg.romPath = kRomPath;
+    SameBoySystem sys{SystemId{1}, cfg, romBytes};
+    sys.onActivate(kSampleRate);
+    runBlocks(sys, 20);
+
+    REQUIRE(sys.enableStateSnapshot());
+    runBlocks(sys, 1);
+
+    std::vector<std::uint8_t> snap;
+    REQUIRE(sys.readStateSnapshot(snap));
+
+    // SRAM sliced out of the savestate via the region table must equal a
+    // direct battery read taken at the same instant (the v1 "regions live
+    // inside the savestate" trick). Compared with no stepping in between.
+    const auto sram = sys.saveSramBytes();
+    REQUIRE(!sram.empty());
+    const auto& region =
+        sys.stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
+    REQUIRE(region.size == sram.size());
+    REQUIRE(static_cast<std::size_t>(region.offset) + region.size <= snap.size());
+    const std::vector<std::uint8_t> sliced(
+        snap.begin() + region.offset,
+        snap.begin() + region.offset + region.size);
+    CHECK(sliced == sram);
+
+    sys.onDeactivate();
+}
+
 TEST_CASE("SameBoySystem honours config_.savestate at onActivate",
           "[SameBoySystemBase]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);

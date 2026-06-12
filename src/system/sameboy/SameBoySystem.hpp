@@ -117,7 +117,12 @@ public:
     bool                      loadSramBytes(const std::vector<std::uint8_t>& bytes) override;
     std::vector<std::uint8_t> saveStateBytes() const override;
     bool                      loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
+    std::size_t               stateSnapshotSize() const override;
+    bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
+    StateRegionTable          stateSnapshotRegions() const override;
     std::unique_ptr<SystemBase> clone(SystemId newId, double sampleRate) const override;
+    std::unique_ptr<SystemBase> cloneFromState(SystemId newId, double sampleRate,
+                                               const std::vector<std::uint8_t>& savestate) const override;
 
     // Internal hooks invoked from the C callbacks (made public so the
     // free-function trampolines can reach them; not part of the public API).

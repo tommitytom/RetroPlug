@@ -70,6 +70,8 @@ public:
     void                      clearSram() override;
     std::vector<std::uint8_t> saveStateBytes() const override;
     bool                      loadStateBytes(const std::vector<std::uint8_t>& bytes) override;
+    std::size_t               stateSnapshotSize() const override;
+    bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
     std::unique_ptr<SystemBase> clone(SystemId newId, double sampleRate) const override;
 
     void setGainDb(float dB);

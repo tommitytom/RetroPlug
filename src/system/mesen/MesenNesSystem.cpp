@@ -275,6 +275,23 @@ void MesenNesSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     // Tear-free memory snapshots for any UI subscriptions. End-of-block =
     // internally consistent state because the CPU isn't mid-instruction.
     publishMemorySnapshots();
+    publishStateSnapshot(info.frames, sampleRate_);
+}
+
+std::size_t MesenNesSystem::stateSnapshotSize() const {
+    // Mesen savestates are variable-size (SaveStateManager streams them), so
+    // size the triple once with headroom; the publisher skips any capture that
+    // would exceed it rather than reallocating mid-life.
+    const std::size_t measured = saveStateBytes().size();
+    if (measured == 0) return 0;
+    return measured + measured / 2 + 8192;
+}
+
+bool MesenNesSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
+    // Goes through the streaming SaveState path, which allocates internally —
+    // acceptable at the coarse snapshot interval, not per audio block.
+    dst = saveStateBytes();
+    return !dst.empty();
 }
 
 rp::MemoryAccessor MesenNesSystem::getMemory(rp::MemoryType type, rp::AccessType access) {

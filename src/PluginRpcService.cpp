@@ -374,7 +374,14 @@ bool PluginRpcService::duplicateSystem(std::uint32_t id) {
 
     const SystemId newId = project_->nextSystemId();
     const double   sr    = sampleRate_->load(std::memory_order_acquire);
-    auto clone = src->clone(newId, sr);
+    // Prefer cloning from the DSP-published state snapshot (race-free); fall
+    // back to clone() (live read) when no snapshot exists yet or the backend
+    // doesn't support snapshot-based cloning.
+    std::unique_ptr<SystemBase> clone;
+    std::vector<std::uint8_t> state;
+    if (src->readStateSnapshot(state) && !state.empty())
+        clone = src->cloneFromState(newId, sr, state);
+    if (!clone) clone = src->clone(newId, sr);
     if (!clone) return false;
 
     SystemBase* released = clone.release();
@@ -611,8 +618,11 @@ void PluginRpcService::pumpRomWatchers() {
         }
         if (mtime == it->second.mtime) continue;
 
-        // Rebuild from disk via the format-agnostic loader.
-        auto liveSram = sys->saveSramBytes();
+        // Rebuild from disk via the format-agnostic loader. Carry the live
+        // SRAM forward — prefer the race-free state snapshot, fall back direct.
+        std::vector<std::uint8_t> liveSram;
+        if (!sliceFromStateSnapshot(sys.get(), rp::MemoryType::Sram, liveSram))
+            liveSram = sys->saveSramBytes();
         SystemBase* rebuilt = buildSystemFromPath(romPath);
         if (!rebuilt) {
             it->second.mtime = mtime;
@@ -927,11 +937,28 @@ bool spillBytes(const std::string& path, const std::vector<std::uint8_t>& bytes)
 }
 } // namespace
 
+bool PluginRpcService::sliceFromStateSnapshot(SystemBase* sys, rp::MemoryType type,
+                                              std::vector<std::uint8_t>& out) {
+    if (!sys) return false;
+    const auto& region = sys->stateRegions()[static_cast<std::size_t>(type)];
+    if (region.size == 0) return false;            // region not present (non-GB / no battery)
+    std::vector<std::uint8_t> state;
+    if (!sys->readStateSnapshot(state)) return false;
+    if (static_cast<std::size_t>(region.offset) + region.size > state.size()) return false;
+    out.assign(state.begin() + region.offset,
+               state.begin() + region.offset + region.size);
+    return true;
+}
+
 bool PluginRpcService::saveSramToPath(std::uint32_t systemId, const std::string& path) {
     if (!project_ || path.empty()) return false;
     SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
     if (!sys) return false;
-    auto bytes = sys->saveSramBytes();
+    // Prefer slicing SRAM out of the DSP-published state snapshot (race-free);
+    // fall back to a direct read when no snapshot exists yet.
+    std::vector<std::uint8_t> bytes;
+    if (!sliceFromStateSnapshot(sys, rp::MemoryType::Sram, bytes))
+        bytes = sys->saveSramBytes();
     if (bytes.empty()) {
         emit("sram-error", path);
         return false;
@@ -968,7 +995,11 @@ bool PluginRpcService::saveStateToPath(std::uint32_t systemId, const std::string
     if (!project_ || path.empty()) return false;
     SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
     if (!sys) return false;
-    auto bytes = sys->saveStateBytes();
+    // Prefer the DSP-published state snapshot (race-free). Fall back to a
+    // direct read only when no snapshot exists (non-plugin / single-threaded
+    // contexts, or the brief cold-start window before the first publish).
+    std::vector<std::uint8_t> bytes;
+    if (!sys->readStateSnapshot(bytes)) bytes = sys->saveStateBytes();
     if (bytes.empty()) {
         emit("state-error", path);
         return false;
@@ -1110,20 +1141,34 @@ PluginRpcService::getMemory(std::uint32_t systemId,
     SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
     if (!sys) return std::nullopt;
 
-    rp::MemoryAccessor accessor = sys->getMemory(static_cast<rp::MemoryType>(type),
-                                                 rp::AccessType::Read);
-    if (!accessor.valid()) return std::nullopt;
+    // Prefer slicing the region out of the DSP-published state snapshot
+    // (race-free, covers GB SRAM/RAM/VRAM). Fall back to a direct read of the
+    // live region for regions not in the snapshot or before the first publish.
+    // (High-frequency reads should use subscribeMemory, which is already safe.)
+    std::vector<std::uint8_t> region;
+    std::size_t regionSize = 0;
+    const std::uint8_t* data = nullptr;
+    rp::MemoryAccessor accessor;
+    if (sliceFromStateSnapshot(sys, static_cast<rp::MemoryType>(type), region)) {
+        regionSize = region.size();
+        data       = region.data();
+    } else {
+        accessor = sys->getMemory(static_cast<rp::MemoryType>(type), rp::AccessType::Read);
+        if (!accessor.valid()) return std::nullopt;
+        regionSize = accessor.size();
+        data       = accessor.data();
+    }
 
-    if (offset > accessor.size()) return std::nullopt;
-    const std::size_t available = accessor.size() - offset;
+    if (offset > regionSize) return std::nullopt;
+    const std::size_t available = regionSize - offset;
     const std::size_t count = (length == 0 || length > available) ? available : length;
 
     MemorySnapshotResponse out;
-    out.regionSize = static_cast<std::uint32_t>(accessor.size());
+    out.regionSize = static_cast<std::uint32_t>(regionSize);
     out.bytes.resize(count);
     if (count > 0) {
-        std::memcpy(out.bytes.data(), accessor.data() + offset, count);
-        out.hash = rp::hash::fnv1a64(accessor.data() + offset, count);
+        std::memcpy(out.bytes.data(), data + offset, count);
+        out.hash = rp::hash::fnv1a64(data + offset, count);
     }
     return out;
 }

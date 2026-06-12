@@ -110,6 +110,16 @@ public:
         return nullptr;
     }
 
+    // Like clone(), but seeds the copy from a pre-captured savestate (e.g. one
+    // read from the DSP-published state snapshot) instead of the live
+    // emulator. Lets Duplicate stay race-free. SRAM is taken from within the
+    // savestate where the backend can locate it. Default: unsupported.
+    virtual std::unique_ptr<SystemBase> cloneFromState(SystemId /*newId*/,
+                                                       double /*sampleRate*/,
+                                                       const std::vector<std::uint8_t>& /*savestate*/) const {
+        return nullptr;
+    }
+
     // -- Memory access -------------------------------------------------------
 
     // Cross-system memory region view. The default returns an invalid
@@ -213,8 +223,49 @@ public:
     // region into its triple-buffer, publishes. Cheap when no subs.
     void publishMemorySnapshots();
 
+    // -- Whole-savestate snapshot -------------------------------------------
+    //
+    // The DSP thread captures the entire savestate into a triple-buffer on a
+    // coarse interval; the UI thread reads the latest for Save State / Save
+    // SRAM / Duplicate without ever touching the live emulator. Because the
+    // savestate contains SRAM/RAM/VRAM, those regions are sliced out of it via
+    // stateRegions() rather than re-read live. (RetroPlug v1's FetchMemory
+    // type==MAX path.) The slot stores a 4-byte little-endian length prefix
+    // followed by the savestate, so length + bytes stay tear-free in one
+    // publish (Mesen savestates are variable-size).
+
+    // Byte offset/size of a memory region WITHIN the savestate buffer.
+    struct StateRegion { std::uint32_t offset = 0; std::uint32_t size = 0; };
+    using StateRegionTable = std::array<StateRegion, rp::kMemoryTypeCount>;
+
+    // DSP thread: idempotent. Allocates the snapshot triple sized to
+    // stateSnapshotSize() (+ the length prefix) and captures region offsets,
+    // arming an immediate first publish. No-op if already enabled or if the
+    // backend doesn't support savestates (stateSnapshotSize() == 0).
+    bool enableStateSnapshot();
+
+    // DSP thread: accumulate `frames`; once past the interval, capture the
+    // savestate into the triple and publish. Cheap no-op when disabled.
+    void publishStateSnapshot(std::uint32_t frames, double sampleRate);
+
+    // UI thread: copy the latest published savestate into `out` (length-prefix
+    // stripped). False if no snapshot has been published yet.
+    bool readStateSnapshot(std::vector<std::uint8_t>& out);
+
+    // UI thread: region table for slicing SRAM/RAM/VRAM out of a snapshot read
+    // via readStateSnapshot(). A region with size 0 is absent. Stable for the
+    // life of the system (set once at enable).
+    const StateRegionTable& stateRegions() const { return stateRegions_; }
+
 protected:
     std::vector<::MidiEvent> midiOut_;
+
+    // State-snapshot backend hooks (default: unsupported). Overridden by
+    // SameBoySystem (with region offsets) and the Mesen systems (full state,
+    // no offsets). All called on the DSP thread.
+    virtual std::size_t stateSnapshotSize() const { return 0; }
+    virtual bool captureStateSnapshot(std::vector<std::uint8_t>& /*dst*/) { return false; }
+    virtual StateRegionTable stateSnapshotRegions() const { return {}; }
 
 private:
     struct SnapshotEntry {
@@ -222,6 +273,20 @@ private:
         std::uint32_t                         refcount = 0;
     };
     std::array<SnapshotEntry, rp::kMemoryTypeCount> snapshots_;
+
+    // Whole-savestate snapshot. Triple allocated once at enable and freed only
+    // in the destructor (never mid-life), so the UI-side raw pointer can't
+    // dangle. interval ~0.5s.
+    static constexpr double                kStateSnapshotIntervalSec = 0.5;
+    // Sanity bound on a single savestate. Comfortably above any GB/NES/GBA
+    // state; rejects an absurd size rather than allocating wildly.
+    static constexpr std::size_t           kMaxStateSnapshotBytes = 16 * 1024 * 1024;
+    std::unique_ptr<MemorySnapshotTriple>  stateSnapshot_;
+    StateRegionTable                       stateRegions_{};
+    std::vector<std::uint8_t>              stateScratch_;       // DSP-thread capture buffer
+    std::vector<std::uint8_t>              stateReadScratch_;   // UI-thread read buffer
+    std::uint64_t                          stateSnapSamples_ = 0;
+    bool                                   stateSnapshotEnabled_ = false;
 
     SystemId id_;
 };

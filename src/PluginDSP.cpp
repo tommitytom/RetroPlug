@@ -614,6 +614,16 @@ protected:
                 d_stderr("event queue full; UI will miss a ConfigChanged tick");
         }
 
+        // Plugin-only: keep each system's whole-savestate snapshot enabled so
+        // the UI can read state race-free for Save State / SRAM / Duplicate.
+        // Idempotent (a cheap bool check after the first), so running it every
+        // block also covers systems restored via setState. The CLI/test
+        // harness drives Project directly and never reaches here, so it pays
+        // nothing and its snapshotConfig-based saves are unchanged.
+        for (const auto& sys : project.systems()) {
+            if (sys) sys->enableStateSnapshot();
+        }
+
         // Translate DPF MidiEvents to the shell type and dispatch through the
         // current routing rule. Done one event at a time so we never need to
         // allocate a translation buffer; dispatchMidi is internally a simple

@@ -271,6 +271,22 @@ void MesenGbaSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     // Tear-free memory snapshots for any UI subscriptions. End-of-block =
     // internally consistent state because the CPU isn't mid-instruction.
     publishMemorySnapshots();
+    publishStateSnapshot(info.frames, sampleRate_);
+}
+
+std::size_t MesenGbaSystem::stateSnapshotSize() const {
+    // Variable-size streamed savestate; size the triple once with headroom and
+    // skip (don't realloc) any later capture that would exceed it.
+    const std::size_t measured = saveStateBytes().size();
+    if (measured == 0) return 0;
+    return measured + measured / 2 + 8192;
+}
+
+bool MesenGbaSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
+    // Streaming SaveState path allocates internally — acceptable at the coarse
+    // snapshot interval, not per audio block.
+    dst = saveStateBytes();
+    return !dst.empty();
 }
 
 rp::MemoryAccessor MesenGbaSystem::getMemory(rp::MemoryType type, rp::AccessType access) {
