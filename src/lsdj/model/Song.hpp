@@ -92,10 +92,12 @@ struct Song {
 
     // Raw byte regions, modeled as blobs so a no-template encode reproduces them
     // (their factory defaults are version-specific; values come from the sav).
-    FixedArray<Byte, 0x40>  bookmarks{};  // 0x0FF0  4ch * 16 channel/row slots
-    FixedArray<Byte, 0x540> words{};      // 0x1890  SPEECH instrument allophones
-    FixedArray<Byte, 0xA8>  wordNames{};  // 0x1DD0  42 * 4-char word names
-    FixedArray<Byte, 0x0A>  reserved3FC6{}; // 0x3FC6 reserved ("Empty"); 0xFF*4 + 0 on 9.x
+    FixedArray<Byte, 0x40>  bookmarks{};       // 0x0FF0  4ch * 16 channel/row slots
+    FixedArray<Byte, 0x540> words{};           // 0x1890  SPEECH instrument allophones
+    FixedArray<Byte, 0xA8>  wordNames{};       // 0x1DD0  42 * 4-char word names
+    FixedArray<Byte, 0x1A6> instrumentNames{}; // 0x1E7A  64 instrument names + trailing
+    FixedArray<Byte, 0x02>  synthOverwrites{}; // 0x3FC4  2B bitset, one bit per synth
+    FixedArray<Byte, 0x0A>  reserved3FC6{};    // 0x3FC6  reserved ("Empty"); 0xFF*4 + 0 on 9.x
 };
 
 } // namespace rp::lsdj::model

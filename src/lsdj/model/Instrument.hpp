@@ -19,12 +19,15 @@ namespace rp::lsdj::model {
 
 // ADSR envelope — pulse and noise only (meaningful fmt>=11).
 struct Adsr {
+    // Each speed is the full low nibble of its byte: bits 0-2 are the GB envelope
+    // period, bit 3 the direction. Modeled as one 4-bit field so the byte
+    // round-trips exactly (older codecs dropped bit 3, losing the direction).
     Nibble initialLevel = 0;
-    Nibble attackSpeed  = 0; // 4-bit on read at fmt>=13
+    Nibble attackSpeed  = 0;
     Nibble attackLevel  = 0;
-    U3     decaySpeed   = 0;
+    Nibble decaySpeed   = 0;
     Nibble sustainLevel = 0;
-    U3     releaseSpeed = 0;
+    Nibble releaseSpeed = 0;
 };
 
 // Vibrato — pulse, wave, noise.
@@ -62,7 +65,7 @@ struct WaveInstrument {
     rfl::Flatten<InstrCommon> common;
     Vibrato                   vibrato;
     bool                      transpose = true;
-    WaveVolume                volume    = WaveVolume::V3;
+    Byte                      volume    = 0xA8;  // raw byte-1 (8-bit; not a 4-level enum)
     Nibble                    synth     = 0;
     Byte                      wave      = 0;
     WavePlayMode              playMode  = WavePlayMode::Once;
@@ -76,7 +79,7 @@ struct KitInstrument {
     using Tag = rfl::Literal<"kit">;
     std::string               name;
     rfl::Flatten<InstrCommon> common;
-    WaveVolume                volume     = WaveVolume::V3;
+    Byte                      volume     = 0xA8;  // raw byte-1 (8-bit; kits use the full range)
     U5                        kit1       = 0;
     U5                        kit2       = 0;
     bool                      halfSpeed  = false;

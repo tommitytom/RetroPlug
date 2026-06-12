@@ -23,6 +23,9 @@ std::vector<std::uint8_t> slurp(const fs::path& p) {
 }
 constexpr std::size_t kSongBytes = 0x8000;
 const fs::path kSavDir{RETROPLUG_LSDJ_SAV_DIR};
+// liblsdj's real content savs (named songs, fmt3..16) — ground truth for the
+// content-bearing byte-identity tests below.
+const fs::path kContentSavDir{RETROPLUG_LSDJ_DIFF_SAV_DIR};
 
 // One representative default sav per distinct on-disk format version (the newest
 // LSDj release carrying that format byte). `zeroArchive` = the unused project
@@ -105,19 +108,21 @@ std::size_t firstDiff(std::span<const std::uint8_t> a, std::span<const std::uint
     return std::string::npos;
 }
 
-// The work/total-time clock is runtime state LSDj keeps ticking; a fresh sav may
-// carry a nonzero value the model doesn't (and shouldn't) reproduce. These 6
-// song-relative offsets are the only bytes allowed to differ in a no-template
-// encode (workHours/workMinutes + totalDays/Hours/Minutes/checksum).
-bool isVolatileClock(std::size_t off) {
-    return off == 0x3FB2 || off == 0x3FB3 || (off >= 0x3FB6 && off <= 0x3FB9);
+// Transient editor/runtime state the model doesn't (and shouldn't) reproduce, so
+// these song-relative offsets are allowed to differ in a no-template encode:
+//   - work/total-time clock (0x3FB2/3 + 0x3FB6..9): LSDj keeps ticking it.
+//   - fileChanged (0x3FC1): the "unsaved edits" dirty flag (0x20 once a song has
+//     content, 0 on a fresh sav) — UI state, not musical data.
+bool isVolatileByte(std::size_t off) {
+    return off == 0x3FB2 || off == 0x3FB3 || (off >= 0x3FB6 && off <= 0x3FB9)
+        || off == 0x3FC1;
 }
-// First non-clock offset where two buffers differ, or npos if identical apart
-// from the volatile clock.
+// First non-volatile offset where two buffers differ, or npos if identical apart
+// from the volatile editor/runtime bytes.
 std::size_t firstDiffExceptClock(std::span<const std::uint8_t> a, std::span<const std::uint8_t> b) {
     const std::size_t n = std::min(a.size(), b.size());
     for (std::size_t i = 0; i < n; ++i)
-        if (a[i] != b[i] && !isVolatileClock(i)) return i;
+        if (a[i] != b[i] && !isVolatileByte(i)) return i;
     return std::string::npos;
 }
 } // namespace
@@ -201,6 +206,54 @@ TEST_CASE("every format version's working song encodes byte-identical (no templa
     CHECK(identical == total);
 }
 
+// ---- Content-bearing savs (liblsdj fixtures) --------------------------------
+// The corpus tests above use EMPTY default savs, which leave the content codec
+// paths (instrument encoders, fmt-specific command/field remaps, table FX, synth
+// data, names) at zero. liblsdj ships real songs (fmt3..16); these two tests run
+// the same byte round-trips over actual content.
+
+// Template round-trip: decode -> encode WITH the original as template -> exact.
+// Isolates content-path codec bugs in MODELED regions from model-coverage gaps —
+// if a modeled instrument/command/synth field doesn't round-trip, it fails here
+// regardless of the unmodeled regions (which the template carries through).
+TEST_CASE("content fixtures round-trip byte-identical with template", "[lsdj-sav]") {
+    if (!fs::exists(kContentSavDir)) { WARN("content dir missing: " << kContentSavDir.string()); return; }
+    std::size_t total = 0, identical = 0;
+    std::string fails;
+    for (const auto& entry : fs::directory_iterator(kContentSavDir)) {
+        if (entry.path().extension() != ".sav") continue;
+        const auto bytes = slurp(entry.path());
+        if (bytes.size() < kSongBytes) continue;
+        ++total;
+        std::span<const std::uint8_t> orig(bytes.data(), kSongBytes);
+        auto res = codec::decodeSong(orig);
+        if (!res) { fails += " " + entry.path().filename().string() + "(decode)"; continue; }
+        const auto out = codec::encodeSong(res.value(), orig); // template
+        const std::size_t d = firstDiff(orig, out);
+        if (d == std::string::npos) {
+            ++identical;
+        } else {
+            char b[24]; std::snprintf(b, sizeof b, "@0x%zx", d);
+            fails += " " + entry.path().filename().string() + b;
+        }
+    }
+    UNSCOPED_INFO("content template round-trip: " << identical << "/" << total
+                  << (fails.empty() ? "" : ("; fails:" + fails)));
+    CHECK(total >= 8);
+    CHECK(identical == total);
+}
+
+// NOTE: a no-template byte-identity test over content savs is intentionally NOT
+// here. Reaching it surfaced (and this suite drove fixes for) several real codec
+// gaps — kit volume was a lossy enum, chain 0x7F was dropped, the ADSR envelope
+// direction bit and instrument names weren't modeled. What remains is purely
+// non-semantic LSDj leftover: an unallocated instrument's reserved bytes and the
+// remembered length bits of an infinite-length note (per-instrument {0,0x3F}),
+// which LSDj writes but never reads. Reproducing those from the model would mean
+// storing raw leftover bytes; the template round-trip above already proves the
+// codec preserves all *meaningful* content. (No-template byte-identity is fully
+// covered for empty savs across all 21 format versions.)
+
 TEST_CASE("every corpus working-song round-trips byte-identical", "[lsdj-sav]") {
     if (!fs::exists(kSavDir)) { WARN("corpus dir missing"); return; }
     std::size_t total = 0, identical = 0;
@@ -248,7 +301,7 @@ TEST_CASE("instrument encode/decode are mutual inverses", "[lsdj-sav]") {
     song.instruments[0] = pulse;
 
     WaveInstrument wave;
-    wave.volume = WaveVolume::V2;
+    wave.volume = 0x40;
     wave.synth = 0x3;
     wave.wave = 0x07;             // note: low nibble shares with synth's high nibble
     wave.playMode = WavePlayMode::Loop;
@@ -257,7 +310,7 @@ TEST_CASE("instrument encode/decode are mutual inverses", "[lsdj-sav]") {
     song.instruments[1] = wave;
 
     KitInstrument kit;
-    kit.volume = WaveVolume::V3;
+    kit.volume = 0xA8;
     kit.kit1 = 5; kit.kit2 = 10;
     kit.halfSpeed = true;
     kit.loop1 = KitLoopMode::Attack;
@@ -329,6 +382,8 @@ TEST_CASE("populated song round-trips byte-stable with no template", "[lsdj-sav]
         song.wordNames[i] = static_cast<Byte>('A' + (i % 26));
     song.words[0] = 0x10; song.words[song.words.size() - 1] = 0x9C;
     song.reserved3FC6[0] = 0xFF; song.reserved3FC6[3] = 0xFF;
+    song.instrumentNames[0] = 'L'; song.instrumentNames[1] = 'D';   // instrument name
+    song.synthOverwrites[0] = 0x05; song.synthOverwrites[1] = 0x01; // synth bitset
 
     // Musical content: a chain -> phrase -> note with an FX, an instrument, a
     // table, a non-default groove, a synth, and a wave frame.
@@ -336,7 +391,12 @@ TEST_CASE("populated song round-trips byte-stable with no template", "[lsdj-sav]
     Chain ch; ch.phrases[0] = 0; ch.transpositions[0] = 12; song.chains[0] = ch;
     Phrase ph; ph.notes[0] = 40; ph.instruments[0] = 0;
     ph.commands[0] = Command::G; ph.commandValues[0] = 0x34; song.phrases[0] = ph;
-    PulseInstrument pulse; pulse.adsr.initialLevel = 15; song.instruments[0] = pulse;
+    // ADSR speeds with bit 3 set exercise the envelope-direction bit the model
+    // used to drop (a 3-bit field would truncate 0xC/0xA/0x9 to 4/2/1).
+    PulseInstrument pulse;
+    pulse.adsr.initialLevel = 15;
+    pulse.adsr.attackSpeed = 0xC; pulse.adsr.decaySpeed = 0x9; pulse.adsr.releaseSpeed = 0xA;
+    song.instruments[0] = pulse;
     Table tbl; tbl.volumes[0] = 8; song.tables[0] = tbl;
     song.grooves[5].steps[0] = 4;
     song.synths[0].waveform = SynthWaveform::Square;
@@ -358,11 +418,21 @@ TEST_CASE("populated song round-trips byte-stable with no template", "[lsdj-sav]
     CHECK(m.words[m.words.size() - 1] == 0x9C);
     CHECK(m.reserved3FC6[0] == 0xFF);
     CHECK(m.reserved3FC6[3] == 0xFF);
+    CHECK(m.instrumentNames[0] == 'L');
+    CHECK(m.synthOverwrites[0] == 0x05);
     REQUIRE(m.chains[0]);  CHECK(m.chains[0]->transpositions[0] == 12);
     REQUIRE(m.phrases[0]); CHECK(m.phrases[0]->notes[0] == 40);
     CHECK(m.phrases[0]->commands[0] == Command::G);
     CHECK(m.phrases[0]->commandValues[0] == 0x34);
     REQUIRE(m.instruments[0]);
+    m.instruments[0]->visit([](const auto& v) {
+        using T = std::decay_t<decltype(v)>;
+        if constexpr (std::is_same_v<T, PulseInstrument>) {
+            CHECK(v.adsr.attackSpeed.value() == 0xC);   // envelope-direction bit survives
+            CHECK(v.adsr.decaySpeed.value() == 0x9);
+            CHECK(v.adsr.releaseSpeed.value() == 0xA);
+        }
+    });
     REQUIRE(m.tables[0]);  CHECK(m.tables[0]->volumes[0] == 8);
     CHECK(m.grooves[5].steps[0] == 4);
     CHECK(m.synths[0].waveform == SynthWaveform::Square);

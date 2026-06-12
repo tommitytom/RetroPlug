@@ -43,6 +43,7 @@ target_include_directories(retroplug-tests PRIVATE
 # resources tree; see AGENTS.md). SavCodecTests decodes against it.
 target_compile_definitions(retroplug-tests PRIVATE
     RETROPLUG_LSDJ_SAV_DIR="${CMAKE_SOURCE_DIR}/../resources/roms/lsdj"
+    RETROPLUG_LSDJ_DIFF_SAV_DIR="${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/resources/sav"
 )
 
 target_include_directories(retroplug-tests PRIVATE

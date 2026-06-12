@@ -30,15 +30,6 @@ E toEnum(std::uint8_t raw, std::uint8_t maxValid) {
     return static_cast<E>(raw > maxValid ? 0 : raw);
 }
 
-WaveVolume decodeWaveVolume(std::uint8_t raw) {
-    switch (raw) {
-        case 0x60: return WaveVolume::V1;
-        case 0x40: return WaveVolume::V2;
-        case 0xA8: return WaveVolume::V3;
-        default:   return WaveVolume::V0; // includes 0x00
-    }
-}
-
 // On-disk command byte -> Command. fmt>=8 inserts B at slot 1 and shifts the
 // rest up by one; fmt<8 stores the raw enum (no B).
 Command decodeCommand(std::uint8_t b, FormatVersion fmt) {
@@ -70,14 +61,14 @@ Vibrato decodeVibrato(const SavView& v, std::size_t base, FormatVersion fmt) {
     return vib;
 }
 
-Adsr decodeAdsr(const SavView& v, std::size_t base, FormatVersion fmt) {
+Adsr decodeAdsr(const SavView& v, std::size_t base, FormatVersion /*fmt*/) {
     Adsr a;
     a.initialLevel = v.bits(base + 1, 4, 4);
-    a.attackSpeed  = (fmt >= 13) ? v.bits(base + 1, 0, 4) : v.bits(base + 1, 0, 3);
+    a.attackSpeed  = v.bits(base + 1, 0, 4);  // bits 0-2 period + bit 3 direction
     a.attackLevel  = v.bits(base + 9, 4, 4);
-    a.decaySpeed   = v.bits(base + 9, 0, 3);
+    a.decaySpeed   = v.bits(base + 9, 0, 4);
     a.sustainLevel = v.bits(base + 0xA, 4, 4);
-    a.releaseSpeed = v.bits(base + 0xA, 0, 3);
+    a.releaseSpeed = v.bits(base + 0xA, 0, 4);
     return a;
 }
 
@@ -105,7 +96,7 @@ Instrument decodeInstrument(const SavView& v, std::size_t base, FormatVersion fm
             w.common      = decodeCommon(v, base);
             w.vibrato     = decodeVibrato(v, base, fmt);
             w.transpose   = transpose;
-            w.volume      = decodeWaveVolume(v.u8(base + 1));
+            w.volume      = v.u8(base + 1);
             w.synth       = (fmt >= 16) ? v.bits(base + 3, 4, 4) : v.bits(base + 2, 4, 4);
             w.wave        = v.u8(base + 3);
             w.playMode    = (fmt >= 10) ? toEnum<WavePlayMode>((v.bits(base + 9, 0, 2) + 3) & 3, 3) // (raw-1)&3
@@ -124,7 +115,7 @@ Instrument decodeInstrument(const SavView& v, std::size_t base, FormatVersion fm
         case 2: { // KIT
             KitInstrument k;
             k.common     = decodeCommon(v, base);
-            k.volume     = decodeWaveVolume(v.u8(base + 1));
+            k.volume     = v.u8(base + 1);
             k.kit1       = v.bits(base + 2, 0, 5);
             k.kit2       = v.bits(base + 9, 0, 5);
             k.halfSpeed  = v.bits(base + 2, 6, 1) == 1;
@@ -173,15 +164,6 @@ bool allocBit(const SavView& v, std::size_t tableOff, std::size_t index) {
 
 // ---- encode helpers (exact inverse of the decode helpers) ----------------
 
-std::uint8_t encodeWaveVolume(WaveVolume v) {
-    switch (v) {
-        case WaveVolume::V1: return 0x60;
-        case WaveVolume::V2: return 0x40;
-        case WaveVolume::V3: return 0xA8;
-        default:             return 0x00;
-    }
-}
-
 std::uint8_t encodeCommand(Command c, FormatVersion fmt) {
     if (fmt < 8) return static_cast<std::uint8_t>(c); // raw enum (B doesn't occur on fmt<8)
     if (c == Command::None) return 0;
@@ -207,13 +189,13 @@ void encodeVibrato(SavWriter& w, std::size_t base, const Vibrato& vib, FormatVer
     }
 }
 
-void encodeAdsr(SavWriter& w, std::size_t base, const Adsr& a, FormatVersion fmt) {
+void encodeAdsr(SavWriter& w, std::size_t base, const Adsr& a, FormatVersion /*fmt*/) {
     w.setBits(base + 1, 4, 4, a.initialLevel.value());
-    w.setBits(base + 1, 0, (fmt >= 13) ? 4 : 3, a.attackSpeed.value()); // mirror 4-bit read @fmt>=13
+    w.setBits(base + 1, 0, 4, a.attackSpeed.value());
     w.setBits(base + 9, 4, 4, a.attackLevel.value());
-    w.setBits(base + 9, 0, 3, a.decaySpeed.value());
+    w.setBits(base + 9, 0, 4, a.decaySpeed.value());
     w.setBits(base + 0xA, 4, 4, a.sustainLevel.value());
-    w.setBits(base + 0xA, 0, 3, a.releaseSpeed.value());
+    w.setBits(base + 0xA, 0, 4, a.releaseSpeed.value());
 }
 
 void encodeCommon(SavWriter& w, std::size_t base, const InstrCommon& c) {
@@ -244,7 +226,7 @@ void encodeInstrument(SavWriter& w, std::size_t base, const Instrument& inst, Fo
             encodeCommon(w, base, v.common.get());
             encodeVibrato(w, base, v.vibrato, fmt);
             w.setBits(base + 5, 5, 1, v.transpose ? 0 : 1);
-            w.setU8(base + 1, encodeWaveVolume(v.volume));
+            w.setU8(base + 1, v.volume);
             w.setU8(base + 3, v.wave);                       // wave = full byte 3
             // synth: byte3 hi-nibble (fmt>=16, written after wave) else byte2 hi-nibble.
             w.setBits((fmt >= 16) ? base + 3 : base + 2, 4, 4, v.synth.value());
@@ -263,7 +245,7 @@ void encodeInstrument(SavWriter& w, std::size_t base, const Instrument& inst, Fo
         } else if constexpr (std::is_same_v<T, KitInstrument>) {
             w.setU8(base + 0, 2);
             encodeCommon(w, base, v.common.get());
-            w.setU8(base + 1, encodeWaveVolume(v.volume));
+            w.setU8(base + 1, v.volume);
             w.setBits(base + 2, 0, 5, v.kit1.value());
             w.setBits(base + 9, 0, 5, v.kit2.value());
             w.setBits(base + 2, 6, 1, v.halfSpeed ? 1 : 0);
@@ -418,6 +400,8 @@ rfl::Result<model::Song> decodeSong(std::span<const std::uint8_t> songBytes) {
     for (std::size_t b = 0; b < song.bookmarks.size(); ++b) song.bookmarks[b] = v.u8(r.bookmarks + b);
     for (std::size_t b = 0; b < song.words.size();     ++b) song.words[b]     = v.u8(r.words + b);
     for (std::size_t b = 0; b < song.wordNames.size(); ++b) song.wordNames[b] = v.u8(r.wordNames + b);
+    for (std::size_t b = 0; b < song.instrumentNames.size(); ++b) song.instrumentNames[b] = v.u8(r.instrumentNames + b);
+    for (std::size_t b = 0; b < song.synthOverwrites.size(); ++b) song.synthOverwrites[b] = v.u8(r.synthOverwrites + b);
     for (std::size_t b = 0; b < song.reserved3FC6.size(); ++b) song.reserved3FC6[b] = v.u8(r.reserved3FC6 + b);
 
     return song;
@@ -568,6 +552,8 @@ std::vector<std::uint8_t> encodeSong(const model::Song& song,
     for (std::size_t b = 0; b < song.bookmarks.size(); ++b) w.setU8(r.bookmarks + b, song.bookmarks[b]);
     for (std::size_t b = 0; b < song.words.size();     ++b) w.setU8(r.words + b,     song.words[b]);
     for (std::size_t b = 0; b < song.wordNames.size(); ++b) w.setU8(r.wordNames + b, song.wordNames[b]);
+    for (std::size_t b = 0; b < song.instrumentNames.size(); ++b) w.setU8(r.instrumentNames + b, song.instrumentNames[b]);
+    for (std::size_t b = 0; b < song.synthOverwrites.size(); ++b) w.setU8(r.synthOverwrites + b, song.synthOverwrites[b]);
     for (std::size_t b = 0; b < song.reserved3FC6.size(); ++b) w.setU8(r.reserved3FC6 + b, song.reserved3FC6[b]);
 
     return out;

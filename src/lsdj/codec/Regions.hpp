@@ -24,7 +24,7 @@ inline constexpr std::size_t kChannelCount    = 4;
 inline constexpr std::size_t kSongRowCount     = 256;  // CHAIN_ASSIGNMENTS = 1024B = 256*4
 inline constexpr std::size_t kPhraseCount      = 0xFF; // 255 addressable; arrays sized 256
 inline constexpr std::size_t kPhraseLength     = 16;
-inline constexpr std::size_t kChainCount       = 0x7F; // 127; arrays sized 128
+inline constexpr std::size_t kChainCount       = 0x80; // 128 slots (0x2080..0x2880); chain 0x7F is addressable
 inline constexpr std::size_t kChainLength      = 16;
 inline constexpr std::size_t kInstrumentCount  = 0x40; // 64
 inline constexpr std::size_t kInstrumentBytes  = 16;

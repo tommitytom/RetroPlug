@@ -9,7 +9,7 @@
 //
 // Enums are SEMANTIC (logical 0-based order); the codec is responsible for
 // mapping them to/from the raw on-disk bytes (some of which are non-contiguous
-// or version-remapped — e.g. WaveVolume's 0x00/0x60/0x40/0xA8, the fmt>=10
+// or version-remapped — e.g. the fmt>=10
 // WavePlayMode +1 rotation, the fmt>=8 command remap). Keeping the model
 // semantic keeps the JSON/zod shape clean and version-independent.
 //
@@ -31,9 +31,6 @@ enum class InstrumentType : std::uint8_t { Pulse = 0, Wave = 1, Kit = 2, Noise =
 enum class Panning : std::uint8_t { None = 0, Left = 1, Right = 2, LeftRight = 3 };
 
 enum class TableMode : std::uint8_t { Play = 0, Step = 1 };
-
-// On disk: 0x00/0x60/0x40/0xA8 (non-contiguous); codec maps to/from these.
-enum class WaveVolume : std::uint8_t { V0 = 0, V1 = 1, V2 = 2, V3 = 3 };
 
 enum class PulseWidth : std::uint8_t { W125 = 0, W25 = 1, W50 = 2, W75 = 3 };
 
