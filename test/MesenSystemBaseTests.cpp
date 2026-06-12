@@ -21,6 +21,9 @@
 #include "system/SystemTypes.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
+#include "transport/CommandQueue.hpp"
+
+#include "StateSnapshotStress.hpp"
 
 #ifndef RETROPLUG_TEST_ROM_DIR
 #  error "RETROPLUG_TEST_ROM_DIR must be defined by CMake"
@@ -357,4 +360,33 @@ TEST_CASE("MesenNesSystem honours config_.sram and config_.savestate at onActiva
     }
 
     restored.onDeactivate();
+}
+
+TEST_CASE("MesenNesSystem state snapshot survives concurrent stepping + loads",
+          "[MesenSystemBase]") {
+    auto romBytes = loadRom(kRomPath);
+    MesenNesConfig cfg{};
+    cfg.romPath = kRomPath;
+    MesenNesSystem live{SystemId{1}, cfg, romBytes};
+    live.onActivate(kSampleRate);
+    runBlocks(live, 20);  // warm up so captures aren't all-zero state
+    REQUIRE(live.enableStateSnapshot());
+
+    CommandQueue commands;
+
+    // Scratch system the validator loads sampled snapshots into — touched only
+    // post-join on this (main) thread, so Mesen's process globals never see
+    // concurrent access.
+    MesenNesConfig scratchCfg = cfg;
+    MesenNesSystem scratch{SystemId{2}, scratchCfg, romBytes};
+    scratch.onActivate(kSampleRate);
+
+    rp::test::runStateSnapshotStress(
+        live, SystemId{1}, commands, kSampleRate,
+        [&](const std::vector<std::uint8_t>& snap) {
+            return scratch.loadStateBytes(snap);
+        });
+
+    scratch.onDeactivate();
+    live.onDeactivate();
 }

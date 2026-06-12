@@ -85,6 +85,7 @@ add_executable(retroplug-mesen-tests
 
 target_include_directories(retroplug-mesen-tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/test   # shared test headers (StateSnapshotStress.hpp)
 )
 
 target_compile_definitions(retroplug-mesen-tests PRIVATE
@@ -125,6 +126,7 @@ add_executable(retroplug-sameboy-tests
 
 target_include_directories(retroplug-sameboy-tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/test   # shared test headers (StateSnapshotStress.hpp)
 )
 
 set(_RETROPLUG_TEST_GB_ROM

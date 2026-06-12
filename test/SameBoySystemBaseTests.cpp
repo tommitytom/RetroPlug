@@ -24,6 +24,9 @@
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "transport/CommandQueue.hpp"
+
+#include "StateSnapshotStress.hpp"
 
 #ifndef RETROPLUG_TEST_GB_ROM
 #  error "RETROPLUG_TEST_GB_ROM must be defined by CMake"
@@ -430,4 +433,33 @@ TEST_CASE("SameBoySystem honours config_.sram at onActivate (without savestate)"
     CHECK(restoredSram == sramPattern);
 
     sys.onDeactivate();
+}
+
+TEST_CASE("SameBoySystem state snapshot survives concurrent stepping + loads",
+          "[SameBoySystemBase]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    auto romBytes = loadRom();
+    SameBoyConfig cfg{};
+    cfg.romPath = kRomPath;
+    SameBoySystem live{SystemId{1}, cfg, romBytes};
+    live.onActivate(kSampleRate);
+    runBlocks(live, 20);  // warm up so captures aren't all-zero state
+    REQUIRE(live.enableStateSnapshot());
+
+    CommandQueue commands;
+
+    // Scratch system the validator loads sampled snapshots into — touched only
+    // post-join on this (main) thread.
+    SameBoyConfig scratchCfg = cfg;
+    SameBoySystem scratch{SystemId{2}, scratchCfg, romBytes};
+    scratch.onActivate(kSampleRate);
+
+    rp::test::runStateSnapshotStress(
+        live, SystemId{1}, commands, kSampleRate,
+        [&](const std::vector<std::uint8_t>& snap) {
+            return scratch.loadStateBytes(snap);
+        });
+
+    scratch.onDeactivate();
+    live.onDeactivate();
 }
