@@ -30,4 +30,8 @@ core.*
 /resources/manuals/lsdj_manual_images/
 /resources/manuals/lsdj_index.db
 
+# Reaper project fixtures (.rpp) — derived/large; regenerate each from its
+# committed .test.ts + author .lua via the matching `make reaper-*-author` target.
+*.rpp
+
 plans.md
