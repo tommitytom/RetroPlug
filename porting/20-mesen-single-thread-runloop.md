@@ -59,3 +59,40 @@ signatures, just gut the threaded bodies (e.g. `IsRunning()` should stay).
 the render regressions `cli-smoke` / `cli-nes-smoke` / `cli-gba-smoke`. A
 regression here would surface as a hang (a removed wait that was load-bearing)
 or a link error (a kept caller of a removed method).
+
+## Live threads still spawned by `Initialize()` (found via ThreadSanitizer)
+
+The above is about *dead* (unreachable) threading. Running the test binaries
+under TSan (`tools/run-sanitizers.sh thread`) surfaced two *live* Mesen threads
+that `Emulator::Initialize()` starts on **every** instance, independent of the
+run loop:
+
+- **`ShortcutKeyHandler`** (`Emulator.cpp:90`, only when `enableShortcuts=true`).
+  It spawns a thread that polls the host keyboard every 50 ms
+  (`ShortcutKeyHandler.cpp:28`) and reads `Emulator::IsPaused()` →
+  `safe_ptr<Debugger>::lock()` — which **races `InternalLoadRom`'s
+  `ResetDebugger()`** (`Emulator.cpp:412/1061`) during the same instance's
+  `onActivate`. **Fixed:** the wrappers now call `Initialize(false)`
+  ([MesenNesSystem.cpp](../src/system/mesen/MesenNesSystem.cpp),
+  [MesenGbaSystem.cpp](../src/system/mesen/MesenGbaSystem.cpp)) — the plugin
+  drives input itself and never uses Mesen's keyboard-shortcut layer, so this is
+  pure overhead + a load-time race. This removed the only TSan finding in our
+  own integration.
+- **`VideoDecoder` / `VideoRenderer`** (`Emulator.cpp:94-95`, `StartThread()`,
+  unconditional). Still live on every instance. TSan shows they do **not** race
+  our `onProcess` path (the concurrent state-snapshot stress test is clean), but
+  we render frames via `MesenVideoDevice` and don't consume Mesen's video
+  pipeline — so these two threads look like further removable single-thread
+  cleanup. Not yet done; no correctness issue, just overhead.
+
+### Mesen process-global singleton races (out of scope, excluded from the gate)
+
+TSan also flags genuine races in Mesen's process-global singletons —
+`GameDatabase::InitDatabase` (`GameDatabase.cpp:82`), `SimpleLock::Acquire`
+(`SimpleLock.cpp:26`), `FolderUtilities` — but **only** from the
+`[MesenSingleton]` tests, which deliberately hammer those globals from many
+threads to document the limitation (several are already `[!mayfail]`). The
+plugin only ever drives a given instance from one thread and doesn't mutate
+these globals concurrently, so `tools/run-sanitizers.sh` excludes
+`[MesenSingleton]` from the sanitizer gate rather than suppressing each. Making
+those singletons thread-safe would be a separate effort.

@@ -29,6 +29,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_link_options(-Wl,-z,noexecstack)
 endif()
 
+# Optional sanitizer instrumentation for the test binaries. Always use a
+# SEPARATE build dir (build-tsan/, build-asan/) — never the load-bearing
+# build/. e.g. cmake -B build-tsan -DRETROPLUG_SANITIZE=thread. Set here,
+# before the dep subdirectories, so deps + src + test all get instrumented.
+set(RETROPLUG_SANITIZE "" CACHE STRING "Sanitizer for test builds: thread | address | <empty>")
+if(RETROPLUG_SANITIZE)
+    add_compile_options(-fsanitize=${RETROPLUG_SANITIZE} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${RETROPLUG_SANITIZE})
+endif()
+
 # tell LVGL where to find its config file
 set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/src/lv_conf.h" CACHE PATH "")
 

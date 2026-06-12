@@ -128,6 +128,15 @@ order of preference:
 4. **Pure C++ logic change** — `make -C build retroplug-tests &&
    build/test/retroplug-tests` (Catch2). Covers transport queues,
    `Project`, framebuffer.
+   - **Threading / memory checks** — `tools/run-sanitizers.sh thread` and
+     `tools/run-sanitizers.sh address` build the three Catch2 binaries into a
+     separate `build-tsan/` / `build-asan/` dir (the load-bearing `build/` is
+     never touched) with `-DRETROPLUG_SANITIZE=…` and run them under
+     ThreadSanitizer / AddressSanitizer. Use after touching the cross-thread
+     paths (triple-buffers, `CommandQueue`, the state-snapshot publish/read).
+     The triple-buffer seqlock has a documented benign suppression
+     (`test/sanitizer/tsan.supp`); the deliberately-racy `[MesenSingleton]`
+     probes are excluded (see `porting/20-mesen-single-thread-runloop.md`).
 5. **Audio-quality check on a render** — `make -C build reaper-analyze-smoke`
    (runs `test/ts/gb/mgb.test.ts`, which writes `/tmp/cli-smoke.wav`) or
    `reaper-analyze-lsdj-sync` (runs `test/ts/gb/lsdj/sync_pattern.test.ts`,

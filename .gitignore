@@ -1,6 +1,9 @@
 # build target dir
 /bin/
 /build/
+# sanitizer build dirs (tools/run-sanitizers.sh)
+/build-tsan/
+/build-asan/
 
 # cmake temp files that remain around
 CMakeFiles/

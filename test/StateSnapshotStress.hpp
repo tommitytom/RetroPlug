@@ -55,7 +55,13 @@ inline void runStateSnapshotStress(
     // writer signals done. A largish block crosses the ~0.5 s publish interval
     // every few iterations, maximizing read-vs-publish overlap.
     constexpr std::uint32_t kBlockSize = 2048;
+#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
+    // Under TSan/ASan emulation is ~10x slower and a race is found from a
+    // handful of overlapping accesses, not millions — keep the run short.
+    constexpr int           kBlocks    = 150;
+#else
     constexpr int           kBlocks    = 2000;
+#endif
     constexpr std::size_t   kMaxSamples = 32;
 
     std::atomic<bool>          stop{false};

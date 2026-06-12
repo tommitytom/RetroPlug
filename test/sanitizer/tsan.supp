@@ -1,0 +1,16 @@
+# ThreadSanitizer suppressions for the RetroPlug test binaries.
+#
+# Keep this list MINIMAL and documented — each entry must name a known-benign
+# race with a reason. Anything not listed here is treated as a real bug.
+#
+# Referenced via TSAN_OPTIONS=suppressions=... by tools/run-sanitizers.sh.
+# Entries are added below as the actual TSan output requires them.
+
+# Triple-buffer seqlock (MemorySnapshotTriple / FrameBufferTriple). The reader
+# memcpy's a slot that the writer may be concurrently overwriting; the reader
+# then re-reads the seqlock counter and DISCARDS the copy on mismatch (the
+# stress tests assert zero torn reads). This is the standard seqlock pattern —
+# UB on paper, benign in practice — so the non-atomic slot read is expected.
+# Any real race elsewhere still surfaces; these only cover the readInto memcpy.
+race:MemorySnapshotTriple::readInto
+race:FrameBufferTriple::readInto
