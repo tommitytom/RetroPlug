@@ -23,6 +23,26 @@ std::vector<std::uint8_t> slurp(const fs::path& p) {
 }
 constexpr std::size_t kSongBytes = 0x8000;
 const fs::path kSavDir{RETROPLUG_LSDJ_SAV_DIR};
+
+// One representative default sav per distinct on-disk format version (the newest
+// LSDj release carrying that format byte). `zeroArchive` = the unused project
+// archive is all-zero (so a no-template full-sav encode reproduces it); the
+// three oldest formats leave 0xFF power-on SRAM fill there, so only their
+// working song is asserted. fmt bytes 1 and 6 have no corpus sav.
+struct FmtSav { int fmt; const char* file; bool zeroArchive; };
+constexpr FmtSav kFmtSavs[] = {
+    {22, "lsdj9_4_2",          true},  {21, "lsdj9_2_0-develop", true},
+    {20, "lsdj9_1_A-develop",  true},  {19, "lsdj9_1_4-develop", true},
+    {18, "lsdj9_0_1-develop",  true},  {17, "lsdj8_9_6-develop", true},
+    {16, "lsdj8_9_2-develop",  true},  {15, "lsdj8_8_7-develop", true},
+    {14, "lsdj8_8_5-develop",  true},  {13, "lsdj8_8_0-develop", true},
+    {12, "lsdj8_7_7-develop",  true},  {11, "lsdj8_5_1",         true},
+    {10, "lsdj8_0_1-develop",  true},  { 9, "lsdj7_9_7-develop", true},
+    { 8, "lsdj7_4_4-develop",  true},  { 7, "lsdj7_0_8-develop", true},
+    { 5, "lsdj6_6_8-develop",  true},  { 4, "lsdj6_2_0-develop", true},
+    { 3, "lsdj5_6_5-develop",  false}, { 2, "lsdj4_3_9-develop", false},
+    { 0, "lsdj3_5_1_full",     false},
+};
 } // namespace
 
 TEST_CASE("decode fmt22 working song", "[lsdj-sav]") {
@@ -144,6 +164,41 @@ TEST_CASE("working-song encodes byte-identical with no template (fmt22)", "[lsdj
         UNSCOPED_INFO("first non-clock diff at song offset 0x" << std::hex << d
                       << " (orig=0x" << int(orig[d]) << " enc=0x" << int(out[d]) << ")");
     CHECK(d == std::string::npos);
+}
+
+// The same no-template guarantee across EVERY distinct format version (fmt0..22):
+// each representative default sav must re-encode byte-identical from the model
+// alone, save the volatile clock. This is the headline coverage claim — the
+// model reproduces a fresh LSDj song for every on-disk format.
+TEST_CASE("every format version's working song encodes byte-identical (no template)", "[lsdj-sav]") {
+    if (!fs::exists(kSavDir)) { WARN("corpus dir missing"); return; }
+    std::size_t total = 0, identical = 0;
+    std::string fails;
+    for (const auto& fv : kFmtSavs) {
+        const fs::path sav = kSavDir / (std::string(fv.file) + ".sav");
+        if (!fs::exists(sav)) { WARN("missing fmt" << fv.fmt << ": " << fv.file); continue; }
+        const auto bytes = slurp(sav);
+        if (bytes.size() < kSongBytes) continue;
+        ++total;
+        std::span<const std::uint8_t> orig(bytes.data(), kSongBytes);
+        auto res = codec::decodeSong(orig);
+        if (!res) { fails += " fmt" + std::to_string(fv.fmt) + "(decode)"; continue; }
+        if (int(res.value().formatVersion) != fv.fmt)
+            fails += " fmt" + std::to_string(fv.fmt) + "(ver!=" + std::to_string(res.value().formatVersion) + ")";
+        const auto out = codec::encodeSong(res.value()); // no template
+        const std::size_t d = firstDiffExceptClock(orig, out);
+        if (d == std::string::npos) {
+            ++identical;
+        } else {
+            char b[40]; std::snprintf(b, sizeof b, " fmt%d@0x%zx(0x%02x!=0x%02x)",
+                                      fv.fmt, d, int(orig[d]), int(out[d]));
+            fails += b;
+        }
+    }
+    UNSCOPED_INFO("no-template working-song byte-identical: " << identical << "/" << total
+                  << (fails.empty() ? "" : ("; fails:" + fails)));
+    CHECK(total >= 20);
+    CHECK(identical == total);
 }
 
 TEST_CASE("every corpus working-song round-trips byte-identical", "[lsdj-sav]") {
@@ -344,6 +399,41 @@ TEST_CASE("full sav round-trip is byte-identical (corpus)", "[lsdj-sav]") {
     CHECK(total > 100);
     CHECK(identical == decoded);   // everything we can decode round-trips exactly
     CHECK(unreadable <= 5);        // only a couple of non-standard early develop savs
+}
+
+// The full 128 KiB no-template guarantee for the zero-archive formats (fmt4..22):
+// the whole image — working song, header magic, alloc table, and the empty
+// project archive — reproduces from the model alone. (The 3 oldest formats leave
+// 0xFF power-on SRAM fill in the unused archive, which is environment state, not
+// codec content, so they're covered at the working-song level above.)
+TEST_CASE("zero-archive formats encode the full sav byte-identical (no template)", "[lsdj-sav]") {
+    if (!fs::exists(kSavDir)) { WARN("corpus dir missing"); return; }
+    std::size_t total = 0, identical = 0;
+    std::string fails;
+    for (const auto& fv : kFmtSavs) {
+        if (!fv.zeroArchive) continue;
+        const fs::path sav = kSavDir / (std::string(fv.file) + ".sav");
+        if (!fs::exists(sav)) { WARN("missing fmt" << fv.fmt); continue; }
+        const auto bytes = slurp(sav);
+        if (bytes.size() != codec::kSavSize) continue;
+        ++total;
+        std::span<const std::uint8_t> orig(bytes.data(), bytes.size());
+        auto res = codec::decodeSav(orig);
+        if (!res) { fails += " fmt" + std::to_string(fv.fmt) + "(decode)"; continue; }
+        const auto out = codec::encodeSav(res.value()); // no template
+        const std::size_t d = firstDiffExceptClock(orig, out);
+        if (d == std::string::npos) {
+            ++identical;
+        } else {
+            char b[40]; std::snprintf(b, sizeof b, " fmt%d@0x%zx(0x%02x!=0x%02x)",
+                                      fv.fmt, d, int(orig[d]), int(out[d]));
+            fails += b;
+        }
+    }
+    UNSCOPED_INFO("no-template full-sav byte-identical: " << identical << "/" << total
+                  << (fails.empty() ? "" : ("; fails:" + fails)));
+    CHECK(total >= 15);
+    CHECK(identical == total);
 }
 
 TEST_CASE("compression is a mutual inverse", "[lsdj-sav]") {

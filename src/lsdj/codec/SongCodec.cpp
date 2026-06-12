@@ -15,6 +15,16 @@ namespace {
 
 using namespace rp::lsdj::model;
 
+// Working-song factory default for an UNALLOCATED instrument slot. LSDj <= fmt10
+// fills every empty slot with this pattern (a default pulse instrument); fmt>=11
+// zeroes them. The model marks unallocated slots as nullopt, so the encoder must
+// regenerate these bytes for a no-template encode to match. (Distinct from
+// Compression.cpp's DEFAULT_INSTRUMENT, which is the same bytes rotated for the
+// compressed stream's RLE alignment.)
+constexpr std::uint8_t kDefaultInstrumentOld[16] = {
+    0x00, 0xA8, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x03,
+    0x00, 0x00, 0xD0, 0x00, 0x00, 0x00, 0xF3, 0x00};
+
 template <typename E>
 E toEnum(std::uint8_t raw, std::uint8_t maxValid) {
     return static_cast<E>(raw > maxValid ? 0 : raw);
@@ -416,7 +426,8 @@ rfl::Result<model::Song> decodeSong(std::span<const std::uint8_t> songBytes) {
 std::vector<std::uint8_t> encodeSong(const model::Song& song,
                                      std::span<const std::uint8_t> templateBytes) {
     std::vector<std::uint8_t> out(kSongByteCount, 0);
-    if (templateBytes.size() >= kSongByteCount)
+    const bool hasTemplate = templateBytes.size() >= kSongByteCount;
+    if (hasTemplate)
         std::memcpy(out.data(), templateBytes.data(), kSongByteCount);
 
     SavWriter w(out.data(), out.size());
@@ -426,14 +437,17 @@ std::vector<std::uint8_t> encodeSong(const model::Song& song,
     w.setU8(kFormatVersionOff, fmt);
     for (std::size_t off : {r.rb1, r.rb2, r.rb3}) { w.setU8(off, 'r'); w.setU8(off + 1, 'b'); }
 
-    // Fresh-sav sentinel fill: unallocated chain-phrase and phrase-instrument
-    // slots are 0xFF ("none") in a real LSDj sav. The allocated loops below only
-    // write their own slots, so pre-fill the full regions here (matching LSDj's
-    // own init) — otherwise a no-template encode leaves them 0x00. Offset
-    // arithmetic spans the whole physical region (covers the 128th chain slot
-    // that the addressable count loop skips).
-    std::memset(out.data() + r.chainPhrases,      0xFF, r.chainTranspositions - r.chainPhrases);
-    std::memset(out.data() + r.phraseInstruments, 0xFF, r.rb3 - r.phraseInstruments);
+    // Fresh-sav sentinel fill — ONLY when encoding from scratch. With a template,
+    // unallocated bytes pass through untouched (preserving whatever that exact
+    // sav held, including non-canonical develop-snapshot fills). Without one, the
+    // model must regenerate LSDj's canonical empty state: unallocated chain-phrase
+    // and phrase-instrument slots are 0xFF ("none"); the allocated loops below
+    // overwrite their own slots. Offset arithmetic spans the whole physical region
+    // (covers the 128th chain slot the addressable count loop skips).
+    if (!hasTemplate) {
+        std::memset(out.data() + r.chainPhrases,      0xFF, r.chainTranspositions - r.chainPhrases);
+        std::memset(out.data() + r.phraseInstruments, 0xFF, r.rb3 - r.phraseInstruments);
+    }
 
     // --- settings ---
     {
@@ -487,9 +501,19 @@ std::vector<std::uint8_t> encodeSong(const model::Song& song,
 
     // --- instruments (1-byte alloc table) ---
     for (std::size_t i = 0; i < kInstrumentCount; ++i) {
-        if (!song.instruments[i]) { w.setU8(r.instrumentAllocTable + i, 0); continue; }
+        const std::size_t base = r.instrumentParams + i * kInstrumentBytes;
+        if (!song.instruments[i]) {
+            w.setU8(r.instrumentAllocTable + i, 0);
+            // No-template only: unallocated slots carry LSDj's factory default on
+            // fmt<=10 (zeroed on >=11). With a template the slot's actual bytes
+            // pass through (a few develop snapshots leave 0xFF here).
+            if (!hasTemplate)
+                for (std::size_t b = 0; b < kInstrumentBytes; ++b)
+                    w.setU8(base + b, fmt < 11 ? kDefaultInstrumentOld[b] : 0);
+            continue;
+        }
         w.setU8(r.instrumentAllocTable + i, 1);
-        encodeInstrument(w, r.instrumentParams + i * kInstrumentBytes, *song.instruments[i], fmt);
+        encodeInstrument(w, base, *song.instruments[i], fmt);
     }
 
     // --- tables (1-byte alloc table) ---
