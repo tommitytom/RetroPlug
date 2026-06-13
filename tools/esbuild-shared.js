@@ -27,6 +27,9 @@ const RPCPP_TS_DIR   = path.join(REPO_ROOT, "deps/rpcpp/clients/typescript");
 const GENERATED_RPC_TS     = path.join(REPO_ROOT, "build/ui/generated/PluginService.ts");
 const GENERATED_HARNESS_TS = path.join(REPO_ROOT, "build/generated/HarnessService.ts");
 
+// The @retroplug/retroplug workspace package entry (the TS layer over native).
+const RETROPLUG_TS = path.join(REPO_ROOT, "packages/retroplug/src/index.ts");
+
 // react / react-reconciler / scheduler still live in the submodule (they leave
 // for dpf.js at restructure-07), so the UI bundle keeps one nodePath into it.
 const reactNodePath = path.join(LV_BINDING_DIR, "node_modules");
@@ -70,6 +73,7 @@ module.exports = {
     RPCPP_TS_DIR,
     GENERATED_RPC_TS,
     GENERATED_HARNESS_TS,
+    RETROPLUG_TS,
     reactNodePath,
     uiAliases,
     commonDefine,

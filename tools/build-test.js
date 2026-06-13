@@ -14,6 +14,7 @@ const {
     esbuild,
     REPO_ROOT,
     GENERATED_HARNESS_TS,
+    RETROPLUG_TS,
     commonDefine,
     bundleMainFields,
     quickjsTarget,
@@ -49,7 +50,8 @@ esbuild
         alias: {
             harness: HARNESS_TS,
             "ui-harness": UI_HARNESS_TS,
-            "harness-service": GENERATED_HARNESS_TS, // generated; consumed by the harness facade (restructure-04)
+            "harness-service": GENERATED_HARNESS_TS,   // generated; consumed by the harness facade (restructure-04)
+            "@retroplug/retroplug": RETROPLUG_TS,      // workspace TS layer (not linked into root node_modules)
         },
         define: commonDefine,
         metafile: true,

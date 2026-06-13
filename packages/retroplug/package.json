@@ -2,5 +2,10 @@
   "name": "@retroplug/retroplug",
   "version": "0.1.0",
   "private": true,
-  "description": "TypeScript layer over the native core (the generated RPC client + ergonomics). Populated in restructure-04."
+  "description": "TypeScript layer over the native core: the synchronous in-process RPC client used by the CLI test harness (grows to the full client + ergonomics).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
 }
