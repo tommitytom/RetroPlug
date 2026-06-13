@@ -12,21 +12,28 @@ const {
 } = require("./esbuild-shared");
 
 // Args from CMake (or default to writing into ../build/ui/ for ad-hoc runs).
-//   node build-ui.js <bundle.js> [bundle.d]
+//   node build-ui.js <bundle.js> [bundle.d] [ui-entry.tsx]
+// The UI entry is a consumer-owned build input (the framework doesn't hardcode
+// it); CMake passes the RetroPlug entry, ad-hoc runs default to it.
 // Bytecode compilation (bundle.js → bundle_data.c) is a separate step
 // driven by CMake via txiki's `tjsc` binary.
 const bundleArg = process.argv[2];
 const depArg    = process.argv[3];
+const entryArg  = process.argv[4];
 
 const bundlePath = bundleArg
     ? path.resolve(bundleArg)
     : path.resolve(REPO_ROOT, "build/ui/bundle.js");
 
+const entryPath = entryArg
+    ? path.resolve(entryArg)
+    : path.resolve(REPO_ROOT, "packages/ui/src/PluginUI.tsx");
+
 fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
 
 esbuild
     .build({
-        entryPoints: [path.resolve(REPO_ROOT, "packages/ui/src/PluginUI.tsx")],
+        entryPoints: [entryPath],
         bundle: true,
         platform: "neutral",          // default format is ESM, which tjsc consumes
         mainFields: bundleMainFields, // neutral has none by default; see esbuild-shared

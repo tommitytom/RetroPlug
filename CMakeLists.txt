@@ -329,13 +329,17 @@ add_custom_target(ui-regenerate ALL
                ${UI_BUNDLE_DEP}
                ${UI_BUNDLE_C}
                ${UI_BUNDLE_C}.new
+    # Service name + UI entry are consumer-owned build inputs (the framework
+    # tools default to them but RetroPlug passes them explicitly here).
     COMMAND ${NODE_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tools/gen-rpc-ts.js
             $<TARGET_FILE:rpc-schema-dump>
             ${UI_RPC_TS}
+            PluginService
     COMMAND ${NODE_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tools/build-ui.js
             ${UI_BUNDLE_JS} ${UI_BUNDLE_DEP}
+            ${CMAKE_SOURCE_DIR}/packages/ui/src/PluginUI.tsx
     COMMAND ${_TJSC_COMMAND}
             -m -s -p ui_
             -o ${UI_BUNDLE_C}.new
