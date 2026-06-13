@@ -7,68 +7,33 @@
 // run each one, turning any thrown error (from expect() or a native emu call)
 // into a TAP `not ok`. All emulator control is synchronous — press, advance
 // time, read memory, assert, in order.
+//
+// `emu` is a thin facade over the generated, typed HarnessService client
+// (reflect-cpp -> OpenRPC -> TS), dispatched synchronously through the in-process
+// __rpcSend hook (createSyncClient). The facade keeps the historical signatures
+// (ArrayBuffer/Uint8Array/Float32Array shapes) and does the binary reshaping the
+// wire can't express directly. The test-runner plumbing (beginCase/report/done)
+// stays native — it resets the Project and writes TAP, not emulator state.
 
-// Native namespace bound by TestHarness.cpp on Symbol.for("retroplug").
-interface NativeRp {
-  // Optional `sav` (an ArrayBuffer of cartridge SRAM, e.g. from savFromJson)
-  // boots the system from that .sav image. Optional `lsdjSyncMode` (e.g.
-  // "MidiMap", "MidiPassthrough", "ArduinoboyMaster") pre-seeds the LSDj role.
-  // Optional `linkGroup` (same nonzero value) links instances for LSDj sync.
-  loadRom(path: string, sav?: ArrayBuffer, lsdjSyncMode?: string, linkGroup?: number): number;
-  // Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON fixture;
-  // missing fields and short/omitted fixed arrays take model defaults / pad.
-  savFromJson(json: string): ArrayBuffer;
-  // Overwrite a running system's cartridge battery RAM (returns false if the
-  // backend has no battery). Pair with reset() to make the game re-read it.
-  loadSram(sys: number, sram: ArrayBuffer): boolean;
-  // Soft-reset a system (GB reset button); the game reboots into current SRAM.
-  reset(sys: number): void;
-  // Slurp a file's raw bytes (e.g. a source .sav to feed loadRom).
-  readFile(path: string): ArrayBuffer;
-  // Dump an ArrayBuffer's raw bytes to a file.
-  writeFile(path: string, bytes: ArrayBuffer): void;
-  // Decode the working song of a .sav, re-encode it from the model with the
-  // input as template, and return the first non-volatile byte that differs (or
-  // -1 if byte-identical). Skips the volatile clock + fileChanged bytes.
-  savRoundtripDiff(savBytes: ArrayBuffer): number;
-  runMs(ms: number): void;
-  press(sys: number, button: number, down: boolean): void;
-  sendMidi(sys: number, bytes: number[]): void;
-  setTransport(running: boolean): void;
-  setBpm(bpm: number): void;
-  drainMidi(sys: number): MidiOutEvent[];
-  drainSerial(sys: number): SerialOutByte[];
-  readMemory(sys: number, type: number): ArrayBuffer;
-  getFrame(sys: number): { width: number; height: number; published: boolean; data: ArrayBuffer };
-  screenshot(sys: number, path: string): boolean;
-  getAudio(ms: number): ArrayBuffer;
-  runMsPerSystem(ms: number): ArrayBuffer[];
-  writeWav(path: string, samples: ArrayBuffer, sampleRate?: number): void;
-  saveRplg(path: string): void;
-  loadRplg(path: string): number;
-  patchKit(sys: number, slot: number, name: string, samples: KitSample[]): void;
-  getRegisters(sys: number): CpuRegisters;
-  setRegister(sys: number, name: string, value: number): void;
-  readCpu(sys: number, addr: number): number;
-  step(sys: number): number;
-  runUntilPc(sys: number, pc: number, maxCycles: number): boolean;
-  beginProfile(sys: number): void;
-  readProfile(sys: number): ProfiledFunction[];
-  loadLabels(sys: number, path: string): boolean;
-  disassemble(sys: number, addr: number, count: number): DisasmLine[];
-  setTrace(sys: number, on: boolean): void;
-  readTrace(sys: number, count: number): TraceLine[];
-  getCallStack(sys: number): CallFrame[];
-  setBreakpoints(sys: number, bps: BreakpointSpec[]): void;
-  runUntilBreak(sys: number, maxCycles: number): BreakInfo;
-  stepInto(sys: number): BreakInfo;
-  stepOver(sys: number): BreakInfo;
-  stepOut(sys: number): BreakInfo;
+import { createSyncClient, harnessRpcSend, type RpcSend } from "@retroplug/retroplug";
+import type { HarnessService } from "harness-service";
+
+// Native runner plumbing on Symbol.for("retroplug") (bound by TestHarness.cpp).
+interface Runner {
   beginCase(name: string): void;
   report(name: string, ok: boolean, message: string): void;
   done(): void;
-  log(level: number, message: string): void;
 }
+const runner = (globalThis as any)[Symbol.for("retroplug")] as Runner;
+
+// Resolve the __rpcSend hook lazily: merely importing this module (the
+// `ui-harness` re-exports test/expect from here) must not require the harness
+// bridge — only an actual emu.* call does. The UI test runner has no
+// retroplug.__rpcSend, but it never touches emu.
+let resolvedSend: RpcSend | undefined;
+const client = createSyncClient<HarnessService>(
+  (bytes) => (resolvedSend ??= harnessRpcSend())(bytes),
+);
 
 // Name-keyed CPU register file. The set differs per backend — every supported
 // system includes a "pc". SameBoy: af,bc,de,hl,sp,pc. NES: a,x,y,sp,ps,pc.
@@ -112,6 +77,15 @@ export interface BreakInfo {
   breakpointId: number;  // -1 for a step / the cap
 }
 
+export interface Frame {
+  width: number;
+  height: number;
+  published: boolean;
+  pixels: Uint8Array; // XRGB8888, width*height*4 bytes (empty if !published)
+}
+
+export interface ChordOpts { staggerMs?: number; holdMs?: number; }
+
 /** Format profiler results as a hot-function table (for console.log). */
 export function printProfile(fns: ProfiledFunction[], top = 20): string {
   const hex = (a: number) => "$" + (a >>> 0).toString(16).padStart(4, "0");
@@ -121,8 +95,6 @@ export function printProfile(fns: ProfiledFunction[], top = 20): string {
   );
   return [`${"exclCycles".padStart(12)}  ${"calls".padStart(8)}  function`, ...lines].join("\n");
 }
-
-const rp: NativeRp = (globalThis as any)[Symbol.for("retroplug")];
 
 // -- Button / memory-region enums --------------------------------------------
 //
@@ -142,9 +114,38 @@ export const Mem = {
 export type ButtonId = (typeof Button)[keyof typeof Button];
 export type MemType = (typeof Mem)[keyof typeof Mem];
 
-// -- emu facade --------------------------------------------------------------
+// -- binary reshaping helpers ------------------------------------------------
+//
+// rfl::Bytestring decodes from msgpack BIN as a Uint8Array at runtime, but the
+// codegen types struct *fields* (HarnessFrame.data, HarnessPerSystemAudio.systems)
+// as `string` — hence the `as unknown` casts. Binary INPUT params are number[]
+// on the wire (reflect-cpp's reader can't take std::byte), so we widen with
+// Array.from.
 
-export interface ChordOpts { staggerMs?: number; holdMs?: number; }
+function asU8(v: unknown): Uint8Array {
+  if (v instanceof Uint8Array) return v;
+  if (v instanceof ArrayBuffer) return new Uint8Array(v);
+  throw new Error("harness: expected binary value");
+}
+function toNums(buf: ArrayBuffer | Uint8Array): number[] {
+  return Array.from(asU8(buf));
+}
+function toArrayBuffer(v: unknown): ArrayBuffer {
+  const u8 = asU8(v);
+  return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+}
+// Copy into a Uint8Array backed by an exact, zero-offset ArrayBuffer. The
+// msgpack decoder hands back BIN as a *view* into the (larger) message buffer,
+// so callers that reach for `.buffer` (e.g. readMemory(...).buffer) would see
+// the whole frame. The old native facade always returned a fresh copy; match it.
+function copyU8(v: unknown): Uint8Array {
+  return new Uint8Array(toArrayBuffer(v));
+}
+function toFloat32(v: unknown): Float32Array {
+  return new Float32Array(toArrayBuffer(v));
+}
+
+// -- emu facade --------------------------------------------------------------
 
 export const emu = {
   /** Load a Game Boy ROM; returns the new system id. An optional `sav`
@@ -153,177 +154,183 @@ export const emu = {
    *  "ArduinoboyMaster"/...) pre-seeds the LSDj sync role. Optional `linkGroup`
    *  (same nonzero value on two systems) links them for LSDj link-cable sync. */
   loadRom(path: string, sav?: ArrayBuffer, lsdjSyncMode?: string, linkGroup?: number): number {
-    return rp.loadRom(path, sav, lsdjSyncMode, linkGroup);
+    return client.loadRom(path, sav ? toNums(sav) : [], lsdjSyncMode ?? "", linkGroup ?? 0);
   },
   /** Build a 128 KiB .sav image from a (possibly partial) Sav-model JSON
    *  fixture — missing fields take model defaults, and short or omitted fixed
    *  arrays pad to their full on-disk length (author only the cells you set).
    *  Feed the result to loadRom(rom, sav) to boot LSDj from an authored song. */
   savFromJson(json: string): ArrayBuffer {
-    return rp.savFromJson(json);
+    return toArrayBuffer(client.savFromJson(json));
   },
   /** Overwrite a running system's cartridge battery RAM (e.g. a .sav image).
    *  Mirrors the plugin's Load SRAM minus the reset; pair with reset() to make
    *  the game re-read it on boot. Returns false if the cart has no battery. */
   loadSram(sys: number, sram: ArrayBuffer): boolean {
-    return rp.loadSram(sys, sram);
+    return client.loadSram(sys, toNums(sram));
   },
   /** Soft-reset a system (the GB reset button). After loadSram, the game boots
    *  into the freshly loaded battery RAM. */
   reset(sys: number): void {
-    rp.reset(sys);
+    client.reset(sys);
   },
   /** Slurp a file's raw bytes — e.g. a source .sav to pass to loadRom. */
   readFile(path: string): Uint8Array {
-    return new Uint8Array(rp.readFile(path));
+    return copyU8(client.readFile(path));
   },
   /** Dump an ArrayBuffer's raw bytes to a file (e.g. an upgraded .sav). */
   writeFile(path: string, bytes: ArrayBuffer): void {
-    rp.writeFile(path, bytes);
+    client.writeFile(path, toNums(bytes));
   },
   /** Byte-check a captured .sav: decode its working song, re-encode from the
    *  model with the input as template, and return the first non-volatile diff
    *  offset (or -1 if byte-identical). Catches modeled-region codec bugs. */
   savRoundtripDiff(savBytes: ArrayBuffer): number {
-    return rp.savRoundtripDiff(savBytes);
+    return client.savRoundtripDiff(toNums(savBytes));
   },
   /** Advance every loaded system by `ms` of emulated time. */
   runMs(ms: number): void {
-    rp.runMs(ms);
+    client.runMs(ms);
   },
   /** Set a single button's state on a system. */
   press(sys: number, button: number, down: boolean): void {
-    rp.press(sys, button, down);
+    client.press(sys, button, down);
   },
   /** Deliver a MIDI message (1-4 bytes, e.g. [0x90, note, vel]) to a system —
    *  queued for the next runMs. On NES it feeds the N8 MIDI FIFO, so profiling
    *  with sendMidi exercises the ROM's note-handling path, not just the idle loop. */
   sendMidi(sys: number, bytes: number[]): void {
-    rp.sendMidi(sys, bytes);
+    client.sendMidi(sys, bytes);
   },
   /** Start/stop the simulated host transport. While running, ppq advances each
    *  block so an LSDj SYNC=MIDI role emits MIDI clock like a DAW would. */
   setTransport(running: boolean): void {
-    rp.setTransport(running);
+    client.setTransport(running);
   },
   /** Set the simulated host tempo in BPM (default 120). */
   setBpm(bpm: number): void {
-    rp.setBpm(bpm);
+    client.setBpm(bpm);
   },
   /** Take + clear the MIDI a role emitted back to the host since the last drain
    *  (e.g. Arduinoboy MI.OUT clock/notes). Call after runMs. */
   drainMidi(sys: number): MidiOutEvent[] {
-    return rp.drainMidi(sys);
+    return client.drainMidi(sys);
   },
   /** Take + clear the raw GB serial-out bytes captured since the last drain
    *  (Arduinoboy master mode). Call after runMs. */
   drainSerial(sys: number): SerialOutByte[] {
-    return rp.drainSerial(sys);
+    return client.drainSerial(sys);
   },
   /** Read a whole memory region as a copy (never a live view). */
   readMemory(sys: number, type: number): Uint8Array {
-    return new Uint8Array(rp.readMemory(sys, type));
+    return copyU8(client.readMemory(sys, type));
   },
   /** Name-keyed CPU register file (throws if the system has no CPU state). */
   getRegisters(sys: number): CpuRegisters {
-    return rp.getRegisters(sys);
+    const out: CpuRegisters = {};
+    for (const r of client.getRegisters(sys)) out[r.name] = r.value;
+    return out;
   },
   /** Write one CPU register by name, e.g. setRegister(sys, "pc", 0x150). */
   setRegister(sys: number, name: string, value: number): void {
-    rp.setRegister(sys, name, value);
+    client.setRegister(sys, name, value);
   },
   /** Side-effect-free read of one CPU address-space byte (throws if the
    *  backend doesn't support it — use readMemory regions instead). */
   readCpu(sys: number, addr: number): number {
-    return rp.readCpu(sys, addr);
+    return client.readCpu(sys, addr);
   },
   /** Advance one instruction; returns cycles run (0 = backend can't step). */
   step(sys: number): number {
-    return rp.step(sys);
+    return client.step(sys);
   },
   /** Run until PC === target or maxCycles elapse. False if hit cap / can't step. */
   runUntilPc(sys: number, pc: number, maxCycles: number): boolean {
-    return rp.runUntilPc(sys, pc, maxCycles);
+    return client.runUntilPc(sys, pc, maxCycles);
   },
   /** Start profiling: init the debugger + reset the profiler. Mesen NES only.
    *  Drive execution with runMs between this and readProfile. */
   beginProfile(sys: number): void {
-    rp.beginProfile(sys);
+    client.beginProfile(sys);
   },
   /** Read accumulated profiler stats, sorted by exclusive cycles (hottest first). */
   readProfile(sys: number): ProfiledFunction[] {
-    return rp.readProfile(sys);
+    return client.readProfile(sys);
   },
   /** Load a cc65 .dbg so profiler/disasm/callstack output shows symbol names. */
   loadLabels(sys: number, path: string): boolean {
-    return rp.loadLabels(sys, path);
+    return client.loadLabels(sys, path);
   },
   /** Disassemble `count` instructions from CPU address `addr`. */
   disassemble(sys: number, addr: number, count: number): DisasmLine[] {
-    return rp.disassemble(sys, addr, count);
+    return client.disassemble(sys, addr, count);
   },
   /** Enable/disable the execution trace logger (enable before the run window). */
   setTrace(sys: number, on: boolean): void {
-    rp.setTrace(sys, on);
+    client.setTrace(sys, on);
   },
   /** Most recent `count` executed instructions (row 0 = most recent). */
   readTrace(sys: number, count: number): TraceLine[] {
-    return rp.readTrace(sys, count);
+    return client.readTrace(sys, count);
   },
   /** Current call stack (outermost first), each frame named when labels load. */
   getCallStack(sys: number): CallFrame[] {
-    return rp.getCallStack(sys);
+    return client.getCallStack(sys);
   },
   /** Install breakpoints/watchpoints (replaces existing; [] clears). Drive with
    *  runUntilBreak, not runMs, while breakpoints are active. */
   setBreakpoints(sys: number, bps: BreakpointSpec[]): void {
-    rp.setBreakpoints(sys, bps);
+    client.setBreakpoints(sys, bps.map((b) => ({
+      type: b.type, start: b.start, end: b.end ?? 0, condition: b.condition ?? "",
+    })));
   },
   /** Run until a breakpoint fires or maxCycles elapse. */
   runUntilBreak(sys: number, maxCycles: number): BreakInfo {
-    return rp.runUntilBreak(sys, maxCycles);
+    return client.runUntilBreak(sys, maxCycles);
   },
   /** Single-step into the next instruction. */
   stepInto(sys: number): BreakInfo {
-    return rp.stepInto(sys);
+    return client.stepInto(sys);
   },
   /** Single-step, executing a subroutine call as one step. */
   stepOver(sys: number): BreakInfo {
-    return rp.stepOver(sys);
+    return client.stepOver(sys);
   },
   /** Run until the current subroutine returns. */
   stepOut(sys: number): BreakInfo {
-    return rp.stepOut(sys);
+    return client.stepOut(sys);
   },
   /** Current framebuffer: {width,height,published, pixels:Uint8Array XRGB8888}. */
   getFrame(sys: number): Frame {
-    const f = rp.getFrame(sys);
+    const f = client.getFrame(sys);
     return { width: f.width, height: f.height, published: f.published,
-             pixels: new Uint8Array(f.data) };
+             pixels: copyU8(f.data as unknown) };
   },
   /** Write the current framebuffer to a PNG; false if no frame yet. */
   screenshot(sys: number, path: string): boolean {
-    return rp.screenshot(sys, path);
+    return client.screenshot(sys, path);
   },
   /** Advance `ms` and return the mixed stereo output, interleaved L,R,L,R…. */
   getAudio(ms: number): Float32Array {
-    return new Float32Array(rp.getAudio(ms));
+    return toFloat32(client.getAudio(ms));
   },
   /** Advance `ms` and return each system's audio in its own interleaved stereo
    *  buffer (result[i] = system i). SameBoy-only. Use to prove LSDj link-cable
    *  sync: the follower produces audio only when actually synced to the leader. */
   runMsPerSystem(ms: number): Float32Array[] {
-    return rp.runMsPerSystem(ms).map((b) => new Float32Array(b));
+    return (client.runMsPerSystem(ms).systems as unknown as Uint8Array[]).map(toFloat32);
   },
   /** Write interleaved stereo float32 audio to a 16-bit WAV (for external
    *  inspection, e.g. the reaper MCP audio-analysis workflow). */
   writeWav(path: string, samples: Float32Array, sampleRate = 44100): void {
-    rp.writeWav(path, samples.buffer as ArrayBuffer, sampleRate);
+    client.writeWav(path,
+      toNums(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength)),
+      sampleRate);
   },
   /** Snapshot the project (config + savestate) to a .rplg fixture — the file a
    *  Reaper DAW test auto-loads via RETROPLUG_AUTOLOAD_PROJECT. */
   saveRplg(path: string): void {
-    rp.saveRplg(path);
+    client.saveRplg(path);
   },
   /** Inverse of saveRplg: rebuild the project from a .rplg (config + per-system
    *  savestate), exactly as the plugin does on load (RETROPLUG_AUTOLOAD_PROJECT
@@ -331,13 +338,13 @@ export const emu = {
    *  system id. Use to round-trip a fixture and reproduce what a DAW sees on
    *  reload (e.g. whether a savestate restores to a playable state). */
   loadRplg(path: string): number {
-    return rp.loadRplg(path);
+    return client.loadRplg(path);
   },
   /** Compile a custom LSDj drum kit from sample files and queue it into `slot`.
    *  The sniffer auto-attaches the kit-patch role to LSDj ROMs; call runMs after
    *  so the role writes the bank into the cartridge ROM. */
   patchKit(sys: number, slot: number, name: string, samples: KitSample[]): void {
-    rp.patchKit(sys, slot, name, samples);
+    client.patchKit(sys, slot, name, samples);
   },
   /**
    * A two-or-more-key chord (e.g. SELECT+UP). The modifier(s) lead the final
@@ -365,13 +372,6 @@ export const emu = {
     emu.runMs(50);
   },
 };
-
-export interface Frame {
-  width: number;
-  height: number;
-  published: boolean;
-  pixels: Uint8Array; // XRGB8888, width*height*4 bytes (empty if !published)
-}
 
 // -- test() / expect() -------------------------------------------------------
 
@@ -431,15 +431,15 @@ export function expect(actual: any) {
 
 function runAll(): void {
   for (const c of cases) {
-    rp.beginCase(c.name);
+    runner.beginCase(c.name);
     try {
       c.fn();
-      rp.report(c.name, true, "");
+      runner.report(c.name, true, "");
     } catch (e: any) {
-      rp.report(c.name, false, String((e && e.stack) || e));
+      runner.report(c.name, false, String((e && e.stack) || e));
     }
   }
-  rp.done();
+  runner.done();
 }
 
 (globalThis as any).window.addEventListener("load", runAll);
