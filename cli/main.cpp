@@ -56,11 +56,6 @@
 #include "TestHarness.hpp"
 #include "Wav.hpp"
 
-#include "HarnessRpcRegistration.hpp"
-#include "TypedRpcServer.h"
-#include "codecs/MsgpackCodec.h"
-#include "transports/QueueTransport.h"
-
 namespace {
 
 struct CliArgs {
@@ -202,23 +197,6 @@ bool dumpFramebuffer(SystemBase& sys,
 } // namespace
 
 int main(int argc, char** argv) try {
-    // `--dump-harness-schema`: emit the HarnessRpcService OpenRPC schema to
-    // stdout and exit. Reflection inspects the method signatures only, so a
-    // null Impl is safe (no method runs) and the txiki runtime isn't started.
-    // Consumed by the cli-regenerate codegen (tools/gen-rpc-ts.js).
-    for (int i = 1; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--dump-harness-schema") == 0) {
-            HarnessRpcService service(nullptr);
-            rpcpp::QueueTransport<rpcpp::MsgpackCodec> transport;
-            rpcpp::TypedRpcServer<HarnessRpcService, rpcpp::MsgpackCodec> server(service, transport);
-            registerHarnessRpcMethods(server);
-            const std::string schema = server.dumpSchema();
-            std::fputs(schema.c_str(), stdout);
-            std::fputc('\n', stdout);
-            return 0;
-        }
-    }
-
     // TypeScript test harness: `--test <bundle.js>` runs an esbuild-produced JS
     // test module in the embedded QuickJS runtime and emits TAP. Bypasses the
     // JSON --script render path entirely.
