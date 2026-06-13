@@ -24,7 +24,7 @@ fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
 
 esbuild
     .build({
-        entryPoints: [path.resolve(__dirname, "../ui/PluginUI.tsx")],
+        entryPoints: [path.resolve(__dirname, "../packages/ui/src/PluginUI.tsx")],
         bundle: true,
         platform: "neutral",
         external: ["tjs:path"],

@@ -5,7 +5,7 @@ import { createGroup, off, on, setKeyboardGroup } from "lvgljs";
 import type { MenuItem, MenuTree, PromptSpec } from "./menuDefs";
 import {
     KEY_BACKSPACE, KEY_ENTER, KEY_ESCAPE, dpfKeyToName,
-} from "../../runtime/lvgljs/input";
+} from "../../../../runtime/lvgljs/input";
 import { isValidProfileChar } from "../useBindingsEditor";
 
 // Cast around lvgljs-ui's Text type — it doesn't expose ref / onFocus / onKey

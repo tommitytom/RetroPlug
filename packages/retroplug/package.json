@@ -1,0 +1,6 @@
+{
+  "name": "@retroplug/retroplug",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript layer over the native core (the generated RPC client + ergonomics). Populated in restructure-04."
+}

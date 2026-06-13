@@ -1,0 +1,6 @@
+{
+  "name": "@retroplug/native",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RetroPlug native core (C++). Built via the top-level CMake; this manifest only marks it as a workspace member."
+}

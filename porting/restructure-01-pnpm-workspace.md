@@ -1,6 +1,42 @@
 # restructure-01 — pnpm workspace skeleton
 
-**Status:** Pending.
+**Status:** Done (2026-06-13).
+
+## As-built (what actually landed vs. the plan below)
+
+Refined to the **minimal behaviour-preserving relocation** once the live wiring
+was read. The plan below proposed moving the plugin client, the generated
+client, `runtime/lvgljs`, and `test/harness` into `packages/retroplug` in this
+step; that was deferred because those belong with the packages that gain real
+content later, and moving them now would be churn (the client is *unified and
+regenerated* in [restructure-04](./restructure-04-unify-rpc-surface.md), and
+`runtime/lvgljs` is framework that leaves for dpf.js in
+[restructure-07](./restructure-07-dpfjs-extract.md)). What landed:
+
+- **npm → pnpm** at the root: `pnpm-lock.yaml` (imported), `package-lock.json`
+  removed, `pnpm-workspace.yaml` with `packages/*`, `packageManager` pinned to
+  `pnpm@9.15.9` (the 9.x line still supports the container's Node 18). Committed
+  separately as the conversion chunk.
+- **`ui/` → `packages/ui/src/`** wholesale (preserves all intra-`ui` relative
+  imports + git history). `ui/tsconfig.json` lifted to `packages/ui/tsconfig.json`,
+  now extending a new root `tsconfig.base.json` (shared compiler options + the
+  alias `paths`, `./`-prefixed so esbuild accepts them without `baseUrl`).
+- **Stub `package.json`** for `packages/{native,retroplug,cli,ui}` (cli + ui
+  declare a `workspace:*` dep on `@retroplug/retroplug` to express the graph;
+  not yet load-bearing — esbuild still resolves via aliases until restructure-02).
+- **Left in place** (relocate later): `runtime/lvgljs` (root → dpf.js at 07),
+  `test/harness` + `test/ts` (root), the generated client (`build/ui/generated/`,
+  → `packages/retroplug` at 04), and the plugin client (rode along inside
+  `packages/ui/src/plugin/`, → `packages/retroplug` at 04).
+- **Edits required by the move:** `tools/build-ui.js` entry point
+  (`ui/PluginUI.tsx` → `packages/ui/src/PluginUI.tsx`) and the two escaping
+  relative imports of `runtime/lvgljs/input` ([PluginUI.tsx](../packages/ui/src/PluginUI.tsx),
+  [menu/Menu.tsx](../packages/ui/src/menu/Menu.tsx)). **`CMakeLists.txt` needed
+  no changes** — it references only `build/ui/` outputs, never the `ui/` source.
+- **Verified:** full `cmake --build` clean, `ui-ts-test` green (boots the
+  relocated React bundle), `cli-smoke` green (harness toolchain under pnpm).
+
+The original plan follows for reference.
 
 ## Goal
 

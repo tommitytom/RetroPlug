@@ -116,7 +116,8 @@ in-process transport.** Tests become just another consumer of
 
 Each `restructure-NN` file is a self-contained, PR-sized milestone with the same
 structure as the feature steps (Goal / Depends on / Architecture / Tasks /
-Verification / Risks). Status is **Pending** for all of them — none started.
+Verification / Risks). **restructure-01 is Done** (2026-06-13 — see its
+*As-built* note); 02–07 are Pending.
 
 | Step | What lands | Depends on |
 | --- | --- | --- |
@@ -149,6 +150,13 @@ Verification / Risks). Status is **Pending** for all of them — none started.
 - **No format/back-compat shims** ([AGENTS.md](../AGENTS.md) pre-release rule)
   applies to serialized shapes. It does **not** forbid semver-versioning the
   dpf.js npm package itself — that versioning is needed and is separate.
+- **Devcontainer toolchain gap (found at restructure-01):** the image ships
+  **Node v18.19.1** (now EOL) and has **no pnpm/corepack**. pnpm was installed
+  ad-hoc and pinned to the 9.x line (10+/11 require Node ≥22). This is fine for
+  now but should be fixed properly in the devcontainer image — bump Node to a
+  supported LTS and bake in pnpm — ideally before restructure-02's esbuild
+  modernization, which prefers a newer Node. Ad-hoc installs don't survive an
+  image rebuild.
 
 ## Working with this plan
 
