@@ -1,6 +1,53 @@
 # restructure-06 — Decouple dpf.js (in-repo)
 
-**Status:** Pending.
+**Status:** Done (2026-06-13).
+
+## As-built (what landed vs. the plan below)
+
+The plan predated restructure-04/05, which had already made the generic core
+(`LvglJsEngine`, `host/TjsHostRuntime`, `lvgl-js-native`, rpcpp) RetroPlug-symbol-
+free. So this step closed the *remaining* coupling, in six green-at-each-commit
+stages (each verified behavior-identical: the `pnpm screenshot` PNG sha256 stayed
+`b1e147d7…` throughout, `validate` clap=0/vst3=0, cli 30 + ui 11):
+
+- **Tools** — `build-ui.js` takes a UI-entry arg; `ui-regenerate` passes the
+  entry + `PluginService` explicitly. Generated `PluginService.ts` byte-identical.
+- **PluginDescriptor** — `src/dpfjs/PluginDescriptor.hpp` (DPF-free `ParamSpec` +
+  `PluginDescriptor` + `kEmptyDescriptor`); RetroPlug owns `kRetroPlugDescriptor`
+  (in `PluginShared.hpp`); `PluginDSP`/`PluginUI` consume `descriptor.parameters`
+  (gain *value* semantics stay domain). `DistrhoPluginInfo.h` stays consumer-owned
+  + checked-in (not generated) with a comment cross-referencing the descriptor.
+- **Env prefix** — `src/dpfjs/Env.hpp` `getenvWithPrefix` + `-DDPFJS_ENV_PREFIX="RETROPLUG_"`;
+  the generic reads (screenshot ×2, the renamed `<PREFIX>BUNDLE_PATH` dev override)
+  route through it; domain reads keep literal `RETROPLUG_`.
+- **Bridge** — `src/dpfjs/JsRpcBridge.hpp`, a header-only `template<class Service>`
+  (owns the rpc server/transport + the `Symbol.for(ns)` object with `__rpcSend`/
+  `__log` + `pumpAsync`); RetroPlug's `PluginJsBridge` composes
+  `JsRpcBridge<PluginRpcService>` and keeps the domain pumps. A template, not a
+  type-erased base, so `writeNotification` stays a direct concrete call (byte-
+  identical memory-snapshot path) and `__rpcSend` has no vcall. The last RetroPlug
+  name in the engine header (`DpfJsDisplayData::bridge` + the fwd-decl) is gone —
+  the dispatch lambda captures the bridge directly. `PluginJsBridge`'s ctor
+  signature is unchanged, so `PluginUI`/`UiTestHarness` needed no edits.
+- **Physical move** — `git mv` `LvglJsEngine.{hpp,cpp}` → `src/dpfjs/` and
+  `host/TjsHostRuntime.{hpp,cpp}` → `src/dpfjs/host/`, folded into `lvgl-js-native`
+  (no new lib). Files inside `src/dpfjs/` use same-dir includes; external consumers
+  use the `dpfjs/…` prefix (via `src/` already on their paths). `nm` on the moved
+  objects finds zero RetroPlug symbols.
+- **Seam probe** — `examples/minimal/` (`MinimalService` + `MinimalProbe.cpp`,
+  zero RetroPlug headers) builds the dpfjs subtree under
+  `-DDPFJS_BUILD_EXAMPLE=ON` (compile-only OBJECT target, off by default).
+
+Deviations from the plan below: the bridge is a composed template (not the
+type-erased `PluginServiceContext` the plan sketched); the screenshot helper
+stays inline in `PluginUI` (not extracted); `DistrhoPluginInfo.h` is kept (not
+generated); the move folds into `lvgl-js-native` rather than a new `dpfjs` lib.
+`run-sanitizers.sh thread` was skipped after the bridge split — the Catch2
+binaries test `PluginRpcService`/`MemorySnapshotTriple` directly (not the
+bridge), the change is single-threaded, and the cross-thread triple-buffer path
+is verbatim-unchanged.
+
+The original plan follows for reference.
 
 ## Goal
 

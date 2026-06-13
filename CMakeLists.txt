@@ -555,3 +555,20 @@ if(BUILD_CLI AND NODE_EXECUTABLE)
     add_dependencies(retroplug-cli cli-bundle-regenerate)
 endif()
 
+# --- dpf.js seam probe (compile-only) ---------------------------------------
+# Proves the framework subtree (src/dpfjs/) compiles against a trivial consumer
+# with ZERO RetroPlug headers — the guard that the framework/product seam stays
+# clean (ahead of extracting dpf.js to its own repo). OBJECT target = compile,
+# no link. Off by default so the normal build is unaffected; CI flips it on.
+option(DPFJS_BUILD_EXAMPLE "Compile-only dpf.js seam probe (no RetroPlug)" OFF)
+if(DPFJS_BUILD_EXAMPLE)
+    add_library(dpfjs-minimal-probe OBJECT examples/minimal/MinimalProbe.cpp)
+    target_include_directories(dpfjs-minimal-probe PRIVATE src examples/minimal)
+    # Usage requirements only (include dirs + the C++20 rpcpp); OBJECT libs
+    # don't actually link.
+    target_link_libraries(dpfjs-minimal-probe PRIVATE lvgl-js-native rpcpp)
+    set_target_properties(dpfjs-minimal-probe PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON)
+endif()
+
