@@ -6,7 +6,7 @@
 //
 // 1. Spawns <rpc-schema-dump-exe>, captures stdout (the OpenRPC JSON).
 // 2. Bundles deps/rpcpp/clients/typescript/codegen/src/index.ts via the
-//    esbuild that ships with deps/lv_binding_js/node_modules.
+//    workspace esbuild (see tools/esbuild-shared.js).
 // 3. Requires the bundle and calls `writeService(doc, 'ts', 'PluginService',
 //    <out-ts>)`. The codegen's writeService is idempotent — it skips the
 //    write if the output is unchanged.
@@ -16,10 +16,9 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const REPO_ROOT  = path.resolve(__dirname, '..');
-const LV_DIR     = path.join(REPO_ROOT, 'deps/lv_binding_js');
 const CODEGEN_TS = path.join(REPO_ROOT, 'deps/rpcpp/clients/typescript/codegen/src/index.ts');
 
-const esbuild = require(path.join(LV_DIR, 'node_modules/esbuild'));
+const { esbuild } = require('./esbuild-shared');
 
 const [, , exePath, outPath] = process.argv;
 if (!exePath || !outPath) {

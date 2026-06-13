@@ -1,6 +1,50 @@
 # restructure-02 — JS toolchain consolidation
 
-**Status:** Pending.
+**Status:** Done (2026-06-13).
+
+## As-built (what actually landed vs. the plan below)
+
+The build **tooling** moved onto the workspace; the framework deps stay in the
+submodule until dpf.js extraction (restructure-07), so this step does *not* fully
+collapse to a single `node_modules` — that lands at 07. What landed:
+
+- **esbuild hoisted to the workspace** — `esbuild@^0.28` (resolved 0.28.1) is a
+  root `devDependency`; all three scripts now `require("esbuild")` from the
+  workspace. The 2022-era esbuild in `deps/lv_binding_js` is no longer used by the
+  host build.
+- **esbuild-plugin-alias dropped** in favour of esbuild's native `alias` option.
+- **One shared module** [tools/esbuild-shared.js](../tools/esbuild-shared.js):
+  the esbuild instance, the framework/generated alias map, `mainFields`,
+  `target`, `reactNodePath`, and the deduped `writeDepfile`/`escapeMake` helpers.
+  [build-ui.js](../tools/build-ui.js), [build-test.js](../tools/build-test.js),
+  and [gen-rpc-ts.js](../tools/gen-rpc-ts.js) all import it.
+- **@msgpack/msgpack resolves natively** via `mainFields: ["module","main"]`
+  (the real reason for the old hard alias: `platform:"neutral"` has no default
+  mainFields). The `dist.esm` hard alias is gone. react/react-reconciler have no
+  `module` field so they fall to `main` — identical bundling.
+- **Native-alias cwd fix:** every build sets `absWorkingDir: REPO_ROOT` (CMake
+  runs the scripts with cwd=`build/`, and native `alias` resolves values vs the
+  working dir). Alias values are absolute.
+- **`target: "es2020"`** on the UI + test bundles (matches `tsconfig.base.json`)
+  to stay within QuickJS-ng 0.13's syntax ceiling under modern esbuild.
+- **nodePaths trimmed:** build-ui keeps a single nodePath into the submodule for
+  react/react-reconciler/scheduler (framework, → 07); the root-`node_modules`
+  entry is gone (@msgpack resolves by walk-up). build-test dropped nodePaths
+  entirely (self-contained harness).
+- **Kept as native-alias entries** (removed at 07): `lvgljs-ui`, `lvgljs`,
+  `@rpcpp/createClient` / `@rpcpp/MsgpackCodec` / `@rpcpp/transport` (the package
+  index pulls a `node:child_process` Stdio transport), `plugin-service` (the
+  generated client).
+- **Unchanged:** `tsconfig.base.json` / `packages/ui/tsconfig.json` (already
+  consolidated in 01), `.gitignore`, `CMakeLists.txt`. `post-create.sh` keeps the
+  `deps/lv_binding_js` npm install (now only for react et al. until 07; comment
+  reworded). `zod` stays a root dep but isn't bundled (the codegen only emits an
+  `import { z } from "zod"` string).
+- **Verified:** full `cmake --build` clean; `ui-ts-test` (boots the esbuild-0.28
+  bundle in QuickJS), full `cli-ts-test`, `validate` (clap-validator 18/0 +
+  pluginval SUCCESS), and `screenshot` all green.
+
+The original plan follows for reference.
 
 ## Goal
 

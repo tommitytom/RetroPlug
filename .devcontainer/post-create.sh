@@ -78,11 +78,13 @@ if [ ! -d node_modules ]; then
 fi
 
 # deps/lv_binding_js is still installed with npm (it predates the workspace and
-# has its own pnpm-workspace.yaml); restructure-02 folds its toolchain in.
+# has its own pnpm-workspace.yaml).
 echo "==> Installing deps/lv_binding_js npm deps..."
-# tools/gen-rpc-ts.js and tools/build-ui.js resolve esbuild (and
-# esbuild-plugin-alias) from deps/lv_binding_js/node_modules. Without this
-# install the first cmake --build invocation fails with MODULE_NOT_FOUND.
+# The host build now gets esbuild from the root workspace (restructure-02), but
+# the UI bundle still pulls react/react-reconciler/scheduler (and @types/react
+# for IDE) from deps/lv_binding_js/node_modules — the renderer lives in this
+# submodule and moves out to dpf.js at restructure-07. Without this install the
+# first cmake --build invocation fails to resolve react.
 if [ ! -d deps/lv_binding_js/node_modules ]; then
     (cd deps/lv_binding_js && npm install --no-audit --no-fund --silent)
 fi

@@ -2,7 +2,7 @@
   "name": "retroplug2-ui",
   "version": "0.0.0",
   "private": true,
-  "description": "Build-time JS deps for the UI bundle that aren't already provided by deps/lv_binding_js/node_modules.",
+  "description": "RetroPlug workspace root: the JS build toolchain (esbuild) and the runtime deps bundled into the UI.",
   "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=18.12"
@@ -10,5 +10,8 @@
   "dependencies": {
     "@msgpack/msgpack": "^3.0.0",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28"
   }
 }

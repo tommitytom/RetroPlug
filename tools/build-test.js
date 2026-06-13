@@ -3,22 +3,24 @@
 //
 //   node build-test.js <entry.test.ts> <out.js> [out.d]
 //
-// Mirrors tools/build-ui.js (same vendored esbuild + alias plugin). Two aliases:
-// "harness" -> test/harness/index.ts (emu tests: `import { emu } from "harness"`)
-// and "ui-harness" -> test/harness/ui.ts (UI tests: `import { ui } from
-// "ui-harness"`). Both are applied unconditionally; a test imports whichever it
-// needs.
+// Two aliases: "harness" -> test/harness/index.ts (emu tests: `import { emu }
+// from "harness"`) and "ui-harness" -> test/harness/ui.ts (UI tests). Both are
+// applied unconditionally; a test imports whichever it needs. The harness graph
+// is self-contained, so no nodePaths are needed.
 
-const fs = require("fs");
 const path = require("path");
+const fs = require("fs");
+const {
+    esbuild,
+    REPO_ROOT,
+    commonDefine,
+    bundleMainFields,
+    quickjsTarget,
+    writeDepfile,
+} = require("./esbuild-shared");
 
-const REPO_ROOT      = path.resolve(__dirname, "..");
-const LV_BINDING_DIR = path.join(REPO_ROOT, "deps/lv_binding_js");
-const HARNESS_TS     = path.join(REPO_ROOT, "test/harness/index.ts");
-const UI_HARNESS_TS  = path.join(REPO_ROOT, "test/harness/ui.ts");
-
-const esbuild     = require(path.join(LV_BINDING_DIR, "node_modules/esbuild"));
-const aliasPlugin = require(path.join(LV_BINDING_DIR, "node_modules/esbuild-plugin-alias"));
+const HARNESS_TS    = path.join(REPO_ROOT, "test/harness/index.ts");
+const UI_HARNESS_TS = path.join(REPO_ROOT, "test/harness/ui.ts");
 
 const entryArg = process.argv[2];
 const outArg   = process.argv[3];
@@ -39,10 +41,12 @@ esbuild
         bundle: true,
         platform: "neutral",
         format: "esm",
+        mainFields: bundleMainFields,
+        target: quickjsTarget,
+        absWorkingDir: REPO_ROOT,
         outfile: outPath,
-        nodePaths: [path.join(LV_BINDING_DIR, "node_modules")],
-        plugins: [aliasPlugin({ harness: HARNESS_TS, "ui-harness": UI_HARNESS_TS })],
-        define: { "process.env.NODE_ENV": '"production"' },
+        alias: { harness: HARNESS_TS, "ui-harness": UI_HARNESS_TS },
+        define: commonDefine,
         metafile: true,
     })
     .then((result) => {
@@ -57,15 +61,3 @@ esbuild
         console.error(e);
         process.exit(1);
     });
-
-function writeDepfile(depPath, target, metafile) {
-    const inputs = Object.keys(metafile.inputs)
-        .map((p) => path.resolve(p))
-        .map(escapeMake);
-    const body = `${escapeMake(target)}: ${inputs.join(" \\\n  ")}\n`;
-    fs.writeFileSync(depPath, body);
-}
-
-function escapeMake(p) {
-    return p.replace(/\\/g, "\\\\").replace(/ /g, "\\ ");
-}
