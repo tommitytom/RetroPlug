@@ -13,6 +13,7 @@ const fs = require("fs");
 const {
     esbuild,
     REPO_ROOT,
+    GENERATED_HARNESS_TS,
     commonDefine,
     bundleMainFields,
     quickjsTarget,
@@ -45,7 +46,11 @@ esbuild
         target: quickjsTarget,
         absWorkingDir: REPO_ROOT,
         outfile: outPath,
-        alias: { harness: HARNESS_TS, "ui-harness": UI_HARNESS_TS },
+        alias: {
+            harness: HARNESS_TS,
+            "ui-harness": UI_HARNESS_TS,
+            "harness-service": GENERATED_HARNESS_TS, // generated; consumed by the harness facade (restructure-04)
+        },
         define: commonDefine,
         metafile: true,
     })

@@ -44,6 +44,8 @@ extern "C" {
 #include "lsdj/codec/SavCodec.hpp"
 #include "lsdj/codec/SongCodec.hpp"
 
+#include "HarnessRpcService.hpp"
+
 // Guard the hand-mirrored TypeScript enums in test/harness/index.ts. The wire
 // values are load-bearing; if a C++ renumber drifts from the TS Button/Mem
 // objects, fail the build here with a pointed message rather than silently
@@ -491,6 +493,87 @@ struct TestHarness::Impl {
 // means a translation-unit pointer is the correct recovery mechanism for the
 // static JS trampolines.
 namespace { TestHarness::Impl* g_activeImpl = nullptr; }
+
+// ---------------------------------------------------------------------------
+// HarnessRpcService — the rpcpp-exposed emulator surface (restructure-04).
+// A thin wrapper over Impl; bodies live here where Impl is complete. Only the
+// Stage-0 proof subset is implemented (covering every wire shape: optional +
+// Bytestring param, scalar/void, buffer return, new-DTO-vector, DTO-with-buffer,
+// reused-DTO). The rest are ported as the test/harness facade is flipped over.
+// ---------------------------------------------------------------------------
+
+std::uint32_t HarnessRpcService::loadRom(std::string path,
+        std::vector<std::uint8_t> sram,
+        std::string lsdjSyncMode,
+        std::uint32_t linkGroup) {
+    const std::vector<std::uint8_t>* sramPtr = sram.empty() ? nullptr : &sram;
+    return h_->loadRom(path, sramPtr, lsdjSyncMode,
+                       static_cast<std::uint8_t>(linkGroup));
+}
+
+void HarnessRpcService::runMs(double ms) { h_->runMs(ms); }
+
+void HarnessRpcService::press(std::uint32_t systemId, std::int32_t button, bool down) {
+    SystemBase* sys = h_->system(systemId);
+    if (!sys) throw std::runtime_error("unknown system id");
+    sys->pressButton(static_cast<std::uint8_t>(button), down);
+}
+
+std::vector<HarnessMidiEvent> HarnessRpcService::drainMidi(std::uint32_t systemId) {
+    std::vector<HarnessMidiEvent> out;
+    for (const auto& rec : h_->takeMidi(systemId))
+        out.push_back(HarnessMidiEvent{ rec.sample, rec.bytes });
+    return out;
+}
+
+rfl::Bytestring HarnessRpcService::readMemory(std::uint32_t systemId, std::uint32_t type) {
+    SystemBase* sys = h_->system(systemId);
+    if (!sys) throw std::runtime_error("unknown system id");
+    rp::MemoryAccessor acc =
+        sys->getMemory(static_cast<rp::MemoryType>(type), rp::AccessType::Read);
+    rfl::Bytestring out;
+    if (acc.valid()) {
+        const auto* p = reinterpret_cast<const std::byte*>(acc.data());
+        out.assign(p, p + acc.size());
+    }
+    return out;
+}
+
+std::vector<rp::CpuRegister> HarnessRpcService::getRegisters(std::uint32_t systemId) {
+    return h_->cpuSystem(systemId)->getCpuRegisters();
+}
+
+HarnessFrame HarnessRpcService::getFrame(std::uint32_t systemId) {
+    SystemBase* sys = h_->system(systemId);
+    if (!sys) throw std::runtime_error("unknown system id");
+    FrameBufferTriple* fb = sys->framebuffer();
+    if (!fb) throw std::runtime_error("system has no framebuffer");
+    const std::uint32_t fbW = fb->width();
+    const std::uint32_t fbH = fb->height();
+    const std::size_t pixels = static_cast<std::size_t>(fbW) * fbH;
+    std::vector<std::uint32_t> xrgb(pixels);
+    const bool published =
+        fb->readInto(xrgb.data(), static_cast<std::uint32_t>(pixels));
+    HarnessFrame out;
+    out.width = fbW;
+    out.height = fbH;
+    out.published = published;
+    if (published) {
+        const auto* p = reinterpret_cast<const std::byte*>(xrgb.data());
+        out.data.assign(p, p + pixels * 4);
+    }
+    return out;
+}
+
+rfl::Bytestring HarnessRpcService::getAudio(double ms) {
+    const std::vector<float> samples = h_->runMsCapture(ms);
+    const auto* p = reinterpret_cast<const std::byte*>(samples.data());
+    return rfl::Bytestring(p, p + samples.size() * sizeof(float));
+}
+
+rp::BreakInfo HarnessRpcService::runUntilBreak(std::uint32_t systemId, std::uint64_t maxCycles) {
+    return h_->debugTarget(systemId)->runUntilBreak(maxCycles);
+}
 
 // ---------------------------------------------------------------------------
 // JS trampolines. Every body is wrapped so a C++ throw never crosses into

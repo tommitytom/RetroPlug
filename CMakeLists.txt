@@ -485,3 +485,22 @@ if(BUILD_CLI)
     add_subdirectory(cli)
 endif()
 
+# --- cli-regenerate: typed TS client for the harness RPC surface ------------
+# Derived artifact (build/generated/HarnessService.ts); never committed. Kept
+# separate from ui-regenerate so the cli test client doesn't drag in the
+# LVGL/UI build. Always runs (anti-stale, like ui-regenerate). The schema is
+# dumped by `retroplug-cli --dump-harness-schema`.
+if(BUILD_CLI AND NODE_EXECUTABLE)
+    add_custom_target(cli-regenerate ALL
+        BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/HarnessService.ts
+        COMMAND ${NODE_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tools/gen-rpc-ts.js
+                $<TARGET_FILE:retroplug-cli>
+                ${CMAKE_BINARY_DIR}/generated/HarnessService.ts
+                HarnessService
+                --dump-harness-schema
+        DEPENDS retroplug-cli
+        COMMENT "Regenerating harness RPC client (HarnessService.ts)"
+        VERBATIM)
+endif()
+

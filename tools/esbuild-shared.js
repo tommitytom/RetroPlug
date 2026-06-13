@@ -23,8 +23,9 @@ const REPO_ROOT      = path.resolve(__dirname, "..");
 const LV_BINDING_DIR = path.join(REPO_ROOT, "deps/lv_binding_js");
 const RPCPP_TS_DIR   = path.join(REPO_ROOT, "deps/rpcpp/clients/typescript");
 
-// The generated typed RPC client (derived; produced by gen-rpc-ts.js).
-const GENERATED_RPC_TS = path.join(REPO_ROOT, "build/ui/generated/PluginService.ts");
+// The generated typed RPC clients (derived; produced by gen-rpc-ts.js).
+const GENERATED_RPC_TS     = path.join(REPO_ROOT, "build/ui/generated/PluginService.ts");
+const GENERATED_HARNESS_TS = path.join(REPO_ROOT, "build/generated/HarnessService.ts");
 
 // react / react-reconciler / scheduler still live in the submodule (they leave
 // for dpf.js at restructure-07), so the UI bundle keeps one nodePath into it.
@@ -68,6 +69,7 @@ module.exports = {
     LV_BINDING_DIR,
     RPCPP_TS_DIR,
     GENERATED_RPC_TS,
+    GENERATED_HARNESS_TS,
     reactNodePath,
     uiAliases,
     commonDefine,

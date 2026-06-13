@@ -1,10 +1,12 @@
-// Generate the typed TS client for PluginRpcService from its OpenRPC
-// schema.
+// Generate a typed TS client from a service's OpenRPC schema.
 //
 // Usage (called from CMake):
-//   node tools/gen-rpc-ts.js <rpc-schema-dump-exe> <out-ts>
+//   node tools/gen-rpc-ts.js <schema-dump-exe> <out-ts> [serviceName] [...exeArgs]
 //
-// 1. Spawns <rpc-schema-dump-exe>, captures stdout (the OpenRPC JSON).
+// e.g. plugin:  gen-rpc-ts.js <rpc-schema-dump> <out>           (-> PluginService)
+//      harness: gen-rpc-ts.js <retroplug-cli> <out> HarnessService --dump-harness-schema
+//
+// 1. Spawns <schema-dump-exe> [exeArgs], captures stdout (the OpenRPC JSON).
 // 2. Bundles deps/rpcpp/clients/typescript/codegen/src/index.ts via the
 //    workspace esbuild (see tools/esbuild-shared.js).
 // 3. Requires the bundle and calls `writeService(doc, 'ts', 'PluginService',
@@ -20,14 +22,15 @@ const CODEGEN_TS = path.join(REPO_ROOT, 'deps/rpcpp/clients/typescript/codegen/s
 
 const { esbuild } = require('./esbuild-shared');
 
-const [, , exePath, outPath] = process.argv;
+const [, , exePath, outPath, serviceNameArg, ...exeArgs] = process.argv;
 if (!exePath || !outPath) {
-    process.stderr.write('usage: gen-rpc-ts.js <rpc-schema-dump-exe> <out-ts>\n');
+    process.stderr.write('usage: gen-rpc-ts.js <schema-dump-exe> <out-ts> [serviceName] [...exeArgs]\n');
     process.exit(2);
 }
+const serviceName = serviceNameArg || 'PluginService';
 
 // Step 1: invoke the C++ schema dumper.
-const schemaJson = execFileSync(exePath, [], { encoding: 'utf8' });
+const schemaJson = execFileSync(exePath, exeArgs, { encoding: 'utf8' });
 const doc = JSON.parse(schemaJson);
 
 // Step 2: bundle the codegen entry to an ESM .mjs we can dynamic-import.
@@ -59,7 +62,7 @@ esbuild.buildSync({
 // We patch both with regex substitutions on the emitted file.
 (async () => {
     const codegen = await import('file://' + bundleOut);
-    await codegen.writeService(doc, 'ts', 'PluginService', outPath);
+    await codegen.writeService(doc, 'ts', serviceName, outPath);
 
     let src = fs.readFileSync(outPath, 'utf8');
 
@@ -69,6 +72,7 @@ esbuild.buildSync({
     const primMap = {
         'unsigned_int':  'number',
         'unsigned_long': 'number',
+        'unsigned_char': 'number',
         'int':           'number',
         'long':          'number',
         'double':        'number',
@@ -83,15 +87,21 @@ esbuild.buildSync({
         return `${base} | null`;
     });
     src = src.replace(/std__vector_([A-Za-z0-9_]+?)_(?=\b|\W)/g, (_, inner) => {
+        // rfl::Bytestring (std::vector<std::byte>) is a binary buffer — type it
+        // as Uint8Array (it decodes from msgpack BIN), not StdByte[].
+        if (inner === 'std__byte') return 'Uint8Array';
         const prim = primMap[inner];
         const baseRaw = prim || stripMangle(inner);
         const base = baseRaw.includes(' ') ? `(${baseRaw})` : baseRaw;
         return `${base}[]`;
     });
 
-    // Class-name mangles: PluginRpcService__OpenRomOpts → PluginRpcServiceOpenRomOpts.
+    // Class-name mangles: PluginRpcService__OpenRomOpts → PluginRpcServiceOpenRomOpts,
+    // rp__BreakInfo → RpBreakInfo. Uppercase the first char so a method-position
+    // $ref matches its PascalCase interface declaration.
     src = src.replace(/[A-Za-z][A-Za-z0-9]*(?:__[A-Za-z][A-Za-z0-9]*)+/g, (m) => {
-        return m.replace(/__(.)/g, (_, c) => c.toUpperCase());
+        const collapsed = m.replace(/__(.)/g, (_, c) => c.toUpperCase());
+        return collapsed.charAt(0).toUpperCase() + collapsed.slice(1);
     });
 
     // Idempotent write: only touch the file when bytes actually change.
