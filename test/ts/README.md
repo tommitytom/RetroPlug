@@ -14,7 +14,7 @@ evaluates it.
 ## Running
 
 ```sh
-make -C build cli-ts-test          # transpile + run every test/ts/*.test.ts
+pnpm test:cli          # transpile + run every test/ts/*.test.ts
 ```
 
 Each `*.test.ts` runs as its **own** `retroplug-cli` process (one QuickJS
@@ -25,9 +25,9 @@ stops on the first failing file (nonzero exit).
 Run a single test by its target (slug = path under `test/ts/`, `/` → `-`):
 
 ```sh
-make -C build cli-ts-test-gb-smoke        # test/ts/gb/smoke.test.ts
-make -C build cli-ts-test-nes-cpu         # test/ts/nes/cpu.test.ts
-make -C build cli-ts-test-gb-lsdj-sav     # test/ts/gb/lsdj/sav.test.ts
+pnpm test:cli gb-smoke        # test/ts/gb/smoke.test.ts
+pnpm test:cli nes-cpu         # test/ts/nes/cpu.test.ts
+pnpm test:cli gb-lsdj-sav     # test/ts/gb/lsdj/sav.test.ts
 ```
 
 Or by hand (paths relative to the repo root):

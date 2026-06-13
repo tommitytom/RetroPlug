@@ -136,7 +136,7 @@ RUN set -eux; \
 # --- Plugin-format validators -----------------------------------------------
 # Pinned versions; both ship as single-binary releases on GitHub. pluginval
 # covers VST3/AU/LV2/LADSPA; clap-validator covers CLAP. See
-# tools/validate-plugins.sh and the `make validate` target for usage.
+# tools/validate-plugins.sh and the `pnpm validate` script for usage.
 ARG PLUGINVAL_VERSION=v1.0.4
 ARG CLAP_VALIDATOR_VERSION=0.3.2
 RUN set -eux; \

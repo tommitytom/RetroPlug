@@ -14,7 +14,7 @@
 # AUTHOR.lua     ReaScript that builds + saves the project
 # FIXTURE        optional. A pre-built .rplg becomes the plugin's
 #                RETROPLUG_AUTOLOAD_PROJECT directly (build it from a TS test, e.g.
-#                `make -C build cli-ts-test-gb-mgb` -> /tmp/mgb_smoke_author.rplg).
+#                `pnpm test:cli gb/mgb` -> /tmp/mgb_smoke_author.rplg).
 #                A legacy .json is still accepted: it is rendered through
 #                retroplug-cli --save-rplg first.
 #

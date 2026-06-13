@@ -1,7 +1,7 @@
 # Release sanity check
 
 Manual checklist to run before tagging a release. Unit tests + `make -C
-build cli-smoke` + `make -C build validate` are assumed green already —
+build cli-smoke` + `pnpm validate` are assumed green already —
 this list covers things only a human can confirm (audio sounds right, UI
 feels right, DAW round-trips work).
 
@@ -13,7 +13,7 @@ ploughing through.
 - [ ] Clean `build/` and rebuild Release with `-j$(nproc)`. All six
       artifacts present in `build/bin/` (standalone, `.clap`,
       `-vst2.so`, `.vst3/`, `.lv2/`, `retroplug-cli`).
-- [ ] `make -C build validate` passes (clap-validator + pluginval).
+- [ ] `pnpm validate` passes (clap-validator + pluginval).
 - [ ] `git status` clean — no stray `build/ui/bundle.js` or
       `PluginService.ts` staged.
 

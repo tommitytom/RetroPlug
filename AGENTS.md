@@ -88,13 +88,13 @@ exists for agents to verify their own work without bothering the user. In
 order of preference:
 
 1. **DSP / behaviour change** — write a TypeScript test and run
-   `make -C build cli-ts-test` (TAP output, nonzero exit on failure). This is
+   `pnpm test:cli` (TAP output, nonzero exit on failure). This is
    the canonical headless path: it bypasses the plugin format entirely, tests
    the same code path that ends up in every wrapper, and can **read emulator
    state and branch on it** — memory regions, CPU registers (SameBoy/NES/GBA),
    instruction stepping, audio/frame capture, MIDI/serial-out capture, host
    transport, link groups, kit patching, and LSDj sav authoring (see
-   "Authoring LSDj state in TypeScript" below). `make -C build cli-smoke` is a
+   "Authoring LSDj state in TypeScript" below). `pnpm smoke` is a
    quick one-liner that runs the mGB chord smoke (`test/ts/gb/mgb.test.ts`).
    The harness embeds the txiki/QuickJS runtime in
    `retroplug-cli --test`. It also exposes Mesen's NES debugger headlessly —
@@ -103,7 +103,7 @@ order of preference:
    breakpoints/watchpoints/stepping — for finding bottlenecks / debugging the
    evermidi NES ROM. See [test/ts/README.md](test/ts/README.md).
 2. **UI change** — prefer a **headless UI test**: write a
-   `test/ts/ui/*.test.ts` and run `make -C build ui-ts-test` (TAP, no Xvfb).
+   `test/ts/ui/*.test.ts` and run `pnpm test:ui` (TAP, no Xvfb).
    It boots the REAL React UI bundle on a software LVGL display
    (`retroplug-ui-test` runner + [test/ui/UiTestHarness.cpp](test/ui/UiTestHarness.cpp))
    and exposes a `ui` global ([test/harness/ui.ts](test/harness/ui.ts)):
@@ -113,7 +113,7 @@ order of preference:
    live LVGL tree; `testId` comes from a `globalThis.__rp_tagTestId` ref hook
    (inert in production). Runs in ~0.1–0.5 s/file, asserts on structure not just
    pixels. See [test/ts/ui/](test/ts/ui/) for examples (chrome, tile, menu).
-   For an eyeball check of the live standalone, `make -C build screenshot`
+   For an eyeball check of the live standalone, `pnpm screenshot`
    (writes `/tmp/retroplug.png`); read the PNG via the Read tool. Drive input
    mid-run with `tools/standalone-key.sh` (keyboard) or
    `tools/standalone-mouse.sh` (mouse). JS-side `console.log/warn/error`
@@ -122,10 +122,10 @@ order of preference:
    Set `RETROPLUG_DEBUG_OVERLAY=1` in the env to render each tile's
    system id as a red overlay — useful for confirming visual position
    matches `systems[]` order.
-3. **DPF wrapper / format change** — `make -C build validate` (runs
+3. **DPF wrapper / format change** — `pnpm validate` (runs
    `clap-validator` + `pluginval`). Catches ABI / state-restore /
    threading regressions in the format adapters.
-4. **Pure C++ logic change** — `make -C build retroplug-tests &&
+4. **Pure C++ logic change** — `pnpm build retroplug-tests &&
    build/test/retroplug-tests` (Catch2). Covers transport queues,
    `Project`, framebuffer.
    - **Threading / memory checks** — `tools/run-sanitizers.sh thread` and
@@ -137,7 +137,7 @@ order of preference:
      The triple-buffer seqlock has a documented benign suppression
      (`test/sanitizer/tsan.supp`); the deliberately-racy `[MesenSingleton]`
      probes are excluded (see `porting/20-mesen-single-thread-runloop.md`).
-5. **Audio-quality check on a render** — `make -C build reaper-analyze-smoke`
+5. **Audio-quality check on a render** — `pnpm reaper:analyze-smoke`
    (runs `test/ts/gb/mgb.test.ts`, which writes `/tmp/cli-smoke.wav`) or
    `reaper-analyze-lsdj-sync` (runs `test/ts/gb/lsdj/sync_pattern.test.ts`,
    which writes the per-system WAVs via `emu.writeWav`) stages the WAV into the
@@ -149,7 +149,7 @@ order of preference:
    `/opt/reaper-mcp-server`; the projects dir defaults to
    `../resources/reaper/projects/` (override with `RETROPLUG_REAPER_DIR`,
    same convention as `RETROPLUG_RESOURCES_DIR`).
-6. **VST3 plugin host check** — `make -C build reaper-mgb-smoke` renders
+6. **VST3 plugin host check** — `pnpm reaper:mgb-smoke` renders
    [examples/reaper/mgb_smoke.rpp](examples/reaper/mgb_smoke.rpp)
    headlessly through real Reaper 7.x: instantiates retroplug.vst3, plays
    a C-major chord through mGB, writes `build/reaper-mgb-smoke.wav`.
@@ -158,11 +158,11 @@ order of preference:
    `tools/run-reaper-render.sh` (Xvfb + openbox + dummy jackd + EULA
    auto-dismiss). The .RPP is self-contained — the plugin chunk embeds
    the mGB ROM via getState() — and is regenerated with
-   `make -C build reaper-mgb-author` when [test/ts/gb/mgb.test.ts](test/ts/gb/mgb.test.ts)
+   `pnpm reaper:mgb-author` when [test/ts/gb/mgb.test.ts](test/ts/gb/mgb.test.ts)
    (which emits `/tmp/mgb_smoke_author.rplg` via `emu.saveRplg`) or
    [tools/reaper-mgb-author.lua](tools/reaper-mgb-author.lua) change.
 7. **Arduinoboy startup-sync latency** —
-   `make -C build reaper-lsdj-arduinoboy-metro` renders
+   `pnpm reaper:lsdj-arduinoboy-metro` renders
    [examples/reaper/lsdj_arduinoboy_metro.rpp](examples/reaper/lsdj_arduinoboy_metro.rpp)
    — a 2-track project with LSDj (panned hard-L, configured for
    `LsdjSyncMode::MidiSyncArduinoboy` via the autoload .rplg) and a
@@ -179,7 +179,7 @@ order of preference:
    sustained instrument, so the first row's note rings across the whole
    phrase and masks subsequent retriggers (see the drift test below for
    per-beat coverage). Regenerate the fixture with
-   `make -C build reaper-lsdj-arduinoboy-author` when
+   `pnpm reaper:lsdj-arduinoboy-author` when
    [test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts](test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts)
    (which emits `/tmp/lsdj_arduinoboy_metro_author.rplg` via `emu.saveRplg`)
    or [tools/reaper-lsdj-arduinoboy-author.lua](tools/reaper-lsdj-arduinoboy-author.lua)
@@ -187,7 +187,7 @@ order of preference:
    the same startup number through the simpler `LsdjSyncMode::MidiSync` path.)
 
 8. **MidiSync per-beat drift over time** —
-   `make -C build reaper-lsdj-midi-drift` renders
+   `pnpm reaper:lsdj-midi-drift` renders
    [examples/reaper/lsdj_midi_drift.rpp](examples/reaper/lsdj_midi_drift.rpp)
    — an **hour-long** 2-track project (LSDj hard-L on `LsdjSyncMode::MidiSync`,
    ReaSynth click hard-R, one note/beat at 120 BPM) — then runs
@@ -200,7 +200,7 @@ order of preference:
    if max-abs drift exceeds ±50 ms or >1 % of beats go unmatched. This is the
    test that answers "how accurate is MidiSync timing in the DAW, and does it
    drift over an hour?" Regenerate the fixture with
-   `make -C build reaper-lsdj-midi-drift-author` when
+   `pnpm reaper:lsdj-midi-drift-author` when
    [test/ts/gb/lsdj/lsdj_midi_drift.test.ts](test/ts/gb/lsdj/lsdj_midi_drift.test.ts)
    (emits `/tmp/lsdj_midi_drift_author.rplg`) or
    [tools/reaper-lsdj-midi-drift-author.lua](tools/reaper-lsdj-midi-drift-author.lua)
@@ -271,9 +271,10 @@ chords in JSON `--script` files to build song/sync state. That state is just
 bytes in the `.sav`, so tests now **author it directly** with the sav codec and
 boot LSDj straight into it — fast (a valid sav skips the 12–15 s self-test) and
 robust (no timing-sensitive navigation). Every former JSON test now lives under
-[test/ts/](test/ts/) as a `*.test.ts` (run all with `make -C build cli-ts-test`,
-or one with `make -C build cli-ts-test-<slug>` where `<slug>` is the path under
-`test/ts` with `/`→`-`).
+[test/ts/](test/ts/) as a `*.test.ts` (run all with `pnpm test:cli`,
+or one with `pnpm test:cli <slug>` where `<slug>` is the path under
+`test/ts` in slash or dash form — e.g. `gb/lsdj/sav` or `gb-lsdj-sav` — and a
+directory prefix like `gb/lsdj` runs every test under it).
 
 The pattern (see [test/ts/gb/lsdj/sync_pattern.test.ts](test/ts/gb/lsdj/sync_pattern.test.ts)
 or [lsdj_arduinoboy_metro.test.ts](test/ts/gb/lsdj/lsdj_arduinoboy_metro.test.ts)):

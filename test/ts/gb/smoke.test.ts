@@ -1,5 +1,5 @@
 // First TypeScript harness smoke test. Run via:
-//   make -C build cli-ts-test
+//   pnpm test:cli
 // or directly:
 //   node tools/build-test.js test/ts/smoke.test.ts build/test-js/smoke.js
 //   build/bin/retroplug-cli --test build/test-js/smoke.js

@@ -59,13 +59,13 @@ state in a Docker named volume.
 
 ## Headless workflows
 
-A few make targets exist for testing without a DAW. All of them run cleanly
+A few pnpm scripts exist for testing without a DAW. All of them run cleanly
 inside the devcontainer.
 
 ```bash
-make -C build cli-smoke   # mGB chord smoke (test/ts/gb/mgb.test.ts) -> /tmp/cli-smoke.wav
-make -C build screenshot  # capture standalone UI -> /tmp/retroplug.png
-make -C build validate    # clap-validator + pluginval against the built artifacts
+pnpm smoke   # mGB chord smoke (test/ts/gb/mgb.test.ts) -> /tmp/cli-smoke.wav
+pnpm screenshot  # capture standalone UI -> /tmp/retroplug.png
+pnpm validate    # clap-validator + pluginval against the built artifacts
 ```
 
 ### `retroplug-cli --test` — TypeScript tests (primary)
@@ -78,7 +78,7 @@ and author LSDj `.sav` state directly via the sav codec (no fragile UI
 navigation):
 
 ```bash
-make -C build cli-ts-test     # transpile + run every test/ts/**/*.test.ts
+pnpm test:cli     # transpile + run every test/ts/**/*.test.ts
 ```
 
 ```ts
@@ -134,7 +134,7 @@ DISPLAY=:99 tools/standalone-key.sh Escape Down Down Return
 
 ### Plugin-format validation
 
-`make -C build validate` runs format-compliance validators against the built
+`pnpm validate` runs format-compliance validators against the built
 `.clap` and `.vst3` artifacts:
 
 - [clap-validator](https://github.com/free-audio/clap-validator) — CLAP

@@ -4,9 +4,9 @@
 # is left to the user / CMake-tools so this finishes fast (~30s).
 #
 # After this completes the workspace is ready to build:
-#   cd build && make -j$(nproc)             # everything
-#   make -C build cli-smoke                 # render the example LSDJ script
-#   make -C build screenshot                # capture the standalone UI
+#   pnpm build         # full build (all plugin formats + CLI)
+#   pnpm smoke         # mGB chord smoke render
+#   pnpm screenshot    # capture the standalone UI
 
 set -e
 
@@ -98,9 +98,10 @@ cat <<'EOF'
 ==> Devcontainer ready.
 
 Next steps:
-  cd build && make -j$(nproc)             # full build (all plugin formats + CLI)
-  make -C build cli-smoke                 # smoke-test retroplug-cli end-to-end
-  make -C build screenshot                # capture standalone UI -> /tmp/retroplug.png
+  pnpm configure                          # cmake configure (enables tests + CLI)
+  pnpm build                              # full build (all plugin formats + CLI)
+  pnpm smoke                              # smoke-test retroplug-cli end-to-end
+  pnpm screenshot                         # capture standalone UI -> /tmp/retroplug.png
 
 Agent tooling docs: see AGENTS.md ("Agent workflows" section).
 EOF

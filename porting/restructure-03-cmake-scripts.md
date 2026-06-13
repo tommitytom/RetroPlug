@@ -1,6 +1,48 @@
 # restructure-03 — CMake custom targets to package.json scripts
 
-**Status:** Pending.
+**Status:** Done (2026-06-13).
+
+## As-built (what actually landed vs. the plan below)
+
+- **18 workflow `add_custom_target`s removed** from [CMakeLists.txt](../CMakeLists.txt)
+  (the `ui-ts-test`/`cli-ts-test` blocks incl. their per-slug subtargets, the
+  `screenshot`/`validate`/`reaper-headless` convenience targets, `cli-smoke`, and
+  all eight `reaper-*` render/author/analyze targets). **Kept in CMake:**
+  `sav-regenerate`, `ui-regenerate` (the build-time codegen DAG), the Catch2 test
+  build (`add_subdirectory(test)` under `BUILD_TESTING`), and `add_subdirectory(cli)`.
+- **19 pnpm scripts** in the root [package.json](../package.json): `configure`,
+  `build`, `test`, `test:cli`, `test:ui`, `smoke`, `screenshot`, `validate`,
+  and `reaper:*` (headless / analyze-smoke / analyze-lsdj-sync / mgb-smoke /
+  mgb-author / lsdj-arduinoboy-{author,metro} / lsdj-midi-{author,metro} /
+  lsdj-midi-drift{,-author}).
+- **Two Node helpers** in [scripts/](../scripts/): `cmake-build.js` (parallel
+  `cmake --build` of given targets — replaces the CMake `DEPENDS` that built a
+  binary before running a tool) and `run-ts-tests.js` (globs `test/ts` at
+  **runtime** — no more `CONFIGURE_DEPENDS` reconfigure — bundles each via
+  build-test.js and runs it in its own `retroplug-cli`/`retroplug-ui-test --test`
+  process; accepts a slug filter in slash or dash form, exact or dir-prefix).
+- **Build-vs-run split preserved:** each script first builds the exact target it
+  needs (`screenshot` → `retroplug-jack` for `bin/retroplug`, fixing the latent
+  AGENTS.md gotcha where the old target depended on the umbrella `retroplug`),
+  then runs the tool. The codegen DAG stays in CMake.
+- **Command references updated** to `pnpm <script>` across AGENTS.md, README.md,
+  RELEASE_TESTING.md, test/ts/README.md, the test-file comments, the Dockerfile,
+  and post-create.sh (which now also prints `pnpm configure`/`build`/`smoke`).
+  `make -C build retroplug-tests` → `pnpm build retroplug-tests` (a real build
+  target; `pnpm build <target>` forwards args to `cmake-build.js`).
+- **No stub CMake targets** left behind — clean removal, per the "CMake should be
+  clean" goal.
+- **Verified:** `pnpm build` reconfigures + builds clean (codegen DAG intact);
+  `pnpm smoke`, `pnpm test:ui` (11 files), `pnpm test:cli` (29 files),
+  `pnpm validate` (clap 18/0 + pluginval SUCCESS), and `pnpm reaper:mgb-smoke`
+  (real headless Reaper render → `build/reaper-mgb-smoke.wav`) all green. The
+  other `reaper:*` scripts are faithful 1:1 ports of the same render/author
+  patterns.
+
+**Note:** `pnpm test:ui` needs `build/` configured with `-DBUILD_TESTING=ON`
+(`pnpm configure` does this) — same gating as the old `make ui-ts-test` target.
+
+The original plan follows for reference.
 
 ## Goal
 
