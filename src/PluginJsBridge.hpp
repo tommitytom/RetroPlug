@@ -5,7 +5,7 @@
 #include <functional>
 #include <string>
 
-#include "LvglJsEngine.hpp"
+#include "dpfjs/LvglJsEngine.hpp"
 #include "PluginRpcService.hpp"
 #include "dpfjs/JsRpcBridge.hpp"
 #include "system/SystemTypes.hpp"

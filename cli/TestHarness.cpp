@@ -10,7 +10,7 @@
 #include <string>
 #include <string_view>
 
-#include "host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
+#include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
 #include "TestHarnessImpl.hpp"      // TestHarness::Impl (complete) + rpc aliases
 #include "HarnessRpcRegistration.hpp"

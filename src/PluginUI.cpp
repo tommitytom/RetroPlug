@@ -18,7 +18,7 @@
 #include "DistrhoUI.hpp"
 #include "ResizeHandle.hpp"
 #include "GamepadManager.hpp"
-#include "LvglJsEngine.hpp"
+#include "dpfjs/LvglJsEngine.hpp"
 #include "PluginJsBridge.hpp"
 #include "PluginShared.hpp"
 #include "dpfjs/Env.hpp"

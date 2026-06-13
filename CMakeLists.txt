@@ -187,10 +187,10 @@ add_library(lvgl-js-native STATIC
     ${LVGL_JS_NATIVE_DIR}/components/mask/mask_wrap.cpp
     ${LVGL_JS_NATIVE_DIR}/components/window/window.cpp
     ${LVGL_JS_NATIVE_DIR}/bootstrap/render_bootstrap.cpp
-    # Engine wrapper (replaces lv_binding_js/src/engine/engine.cpp)
-    src/LvglJsEngine.cpp
-    # Generic embedded txiki host, shared with retroplug-cli's TestHarness.
-    src/host/TjsHostRuntime.cpp
+    # dpf.js framework: the LVGL+JS engine wrapper (replaces lv_binding_js's
+    # engine.cpp) + the generic embedded txiki host (shared with retroplug-cli).
+    src/dpfjs/LvglJsEngine.cpp
+    src/dpfjs/host/TjsHostRuntime.cpp
 )
 
 target_include_directories(lvgl-js-native PUBLIC

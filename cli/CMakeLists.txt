@@ -68,7 +68,7 @@ set_target_properties(retroplug-cli-core PROPERTIES
 add_executable(retroplug-cli
     main.cpp
     TestHarness.cpp  # embedded QuickJS TypeScript test harness (--test)
-    ${PROJECT_SOURCE_DIR}/src/host/TjsHostRuntime.cpp  # shared txiki host
+    ${PROJECT_SOURCE_DIR}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host
     ${CLI_BUNDLE_C}
 )
 

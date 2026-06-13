@@ -23,7 +23,7 @@ extern "C" {
     #include "lvgl.h"
 }
 
-#include "LvglJsEngine.hpp"
+#include "dpfjs/LvglJsEngine.hpp"
 #include "project/Project.hpp"
 #include "transport/CommandQueue.hpp"
 #include "transport/EventQueue.hpp"
