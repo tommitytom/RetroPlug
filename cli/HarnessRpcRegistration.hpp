@@ -11,6 +11,7 @@ void registerHarnessRpcMethods(Server& server) {
     server.template addMethod<&HarnessRpcService::loadRom>();
     server.template addMethod<&HarnessRpcService::savFromJson>();
     server.template addMethod<&HarnessRpcService::loadSram>();
+    server.template addMethod<&HarnessRpcService::saveSram>();
     server.template addMethod<&HarnessRpcService::reset>();
     server.template addMethod<&HarnessRpcService::readFile>();
     server.template addMethod<&HarnessRpcService::writeFile>();
@@ -18,6 +19,7 @@ void registerHarnessRpcMethods(Server& server) {
     server.template addMethod<&HarnessRpcService::runMs>();
     server.template addMethod<&HarnessRpcService::press>();
     server.template addMethod<&HarnessRpcService::sendMidi>();
+    server.template addMethod<&HarnessRpcService::dispatchMidi>();
     server.template addMethod<&HarnessRpcService::setTransport>();
     server.template addMethod<&HarnessRpcService::setBpm>();
     server.template addMethod<&HarnessRpcService::drainMidi>();
@@ -33,6 +35,8 @@ void registerHarnessRpcMethods(Server& server) {
     server.template addMethod<&HarnessRpcService::getAudio>();
     server.template addMethod<&HarnessRpcService::runMsPerSystem>();
     server.template addMethod<&HarnessRpcService::writeWav>();
+    server.template addMethod<&HarnessRpcService::renderWav>();
+    server.template addMethod<&HarnessRpcService::renderWavPerSystem>();
     server.template addMethod<&HarnessRpcService::saveRplg>();
     server.template addMethod<&HarnessRpcService::loadRplg>();
     server.template addMethod<&HarnessRpcService::patchKit>();

@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -353,6 +354,100 @@ struct TestHarness::Impl {
                 ppq += (bpm / 60.0) * (static_cast<double>(frames) / sampleRate);
         }
         return out;
+    }
+
+    // Route a MIDI message to the loaded systems per `routing` (the channel
+    // nibble decides the target system), unlike a single-system onMidi. Mirrors
+    // cli/main.cpp's project.dispatchMidi(&ev, 1, routing).
+    void dispatchMidi(const std::vector<std::uint8_t>& bytes, std::uint32_t routing) {
+        if (bytes.empty() || bytes.size() > ::MidiEvent::kDataSize)
+            throw std::runtime_error("dispatchMidi: expected 1.." +
+                std::to_string(::MidiEvent::kDataSize) + " bytes");
+        ::MidiEvent ev{};
+        ev.frame = 0;
+        ev.size  = static_cast<std::uint32_t>(bytes.size());
+        for (std::size_t i = 0; i < bytes.size(); ++i) ev.data[i] = bytes[i];
+        project->dispatchMidi(&ev, 1, static_cast<MidiRouting>(routing));
+    }
+
+    // Stream `ms` of the mixed stereo render straight to a WAV, block by block.
+    // stepBlock leaves the block's planar output in scratchL/scratchR, so we
+    // write those directly — the whole song never sits in one buffer (the
+    // getAudio + writeWav path would, and Array.from-boxing it in JS is fatal).
+    void renderWav(const std::string& path, double ms, std::uint32_t wavRate) {
+        if (wavRate == 0) wavRate = static_cast<std::uint32_t>(sampleRate);
+        WavWriter w(path, wavRate, 2);
+        if (ms <= 0.0) return;
+        const std::uint64_t total =
+            static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
+        for (std::uint64_t s = 0; s < total; s += blockSize) {
+            const std::uint32_t frames = static_cast<std::uint32_t>(
+                std::min<std::uint64_t>(blockSize, total - s));
+            stepBlock(frames, nullptr); // fills scratchL/scratchR
+            float* outs[2] = { scratchL.data(), scratchR.data() };
+            w.writeBlockFloatPlanar(outs, frames);
+        }
+    }
+
+    // Per-system streaming render: each system's stereo output to its own path,
+    // and (when mixPath is non-empty) their sum to the mix — ONE pass, so the
+    // mix and per-system WAVs share the same time window. SameBoy-only. Mirrors
+    // cli/main.cpp's --per-system-wav loop (mix = sum of per-system).
+    void renderWavPerSystem(const std::string& mixPath,
+                            const std::vector<std::string>& perSystemPaths,
+                            double ms, std::uint32_t wavRate) {
+        if (wavRate == 0) wavRate = static_cast<std::uint32_t>(sampleRate);
+        if (perSystemPaths.size() != sysList.size())
+            throw std::runtime_error("renderWavPerSystem: expected one path per system");
+        std::vector<SameBoySystem*> sb;
+        sb.reserve(sysList.size());
+        for (SystemBase* s : sysList) {
+            auto* p = dynamic_cast<SameBoySystem*>(s);
+            if (!p) throw std::runtime_error("renderWavPerSystem is SameBoy-only");
+            sb.push_back(p);
+        }
+        std::optional<WavWriter> mix;
+        if (!mixPath.empty()) mix.emplace(mixPath, wavRate, 2);
+        std::vector<WavWriter> per;
+        per.reserve(sb.size());
+        for (const auto& p : perSystemPaths) per.emplace_back(p, wavRate, 2);
+        if (ms <= 0.0) return;
+        const std::uint64_t total =
+            static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
+        std::vector<float> bl(blockSize), br(blockSize), ml(blockSize), mr(blockSize);
+        for (std::uint64_t s = 0; s < total; s += blockSize) {
+            const std::uint32_t frames = static_cast<std::uint32_t>(
+                std::min<std::uint64_t>(blockSize, total - s));
+            AudioBlockInfo info{ frames, sampleRate, bpm, ppq, transportPlaying };
+            for (auto* x : sb) x->prepareForBlock(info);
+            bool any = true;
+            while (any) {
+                any = false;
+                for (auto* x : sb) if (x->stepIfBelowTarget(frames)) any = true;
+            }
+            if (mix) { std::fill_n(ml.data(), frames, 0.0f);
+                       std::fill_n(mr.data(), frames, 0.0f); }
+            for (std::size_t i = 0; i < sb.size(); ++i) {
+                std::fill_n(bl.data(), frames, 0.0f);
+                std::fill_n(br.data(), frames, 0.0f);
+                float* o[2] = { bl.data(), br.data() };
+                sb[i]->finishBlock(info, o);
+                per[i].writeBlockFloatPlanar(o, frames);
+                if (mix)
+                    for (std::uint32_t f = 0; f < frames; ++f) {
+                        ml[f] += bl[f];
+                        mr[f] += br[f];
+                    }
+            }
+            if (mix) {
+                float* mo[2] = { ml.data(), mr.data() };
+                mix->writeBlockFloatPlanar(mo, frames);
+            }
+            drainCaptures();
+            sampleClock += frames;
+            if (transportPlaying)
+                ppq += (bpm / 60.0) * (static_cast<double>(frames) / sampleRate);
+        }
     }
 
     // Compile a kit from sample files and queue it into the system's

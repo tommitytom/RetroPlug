@@ -46,6 +46,9 @@ public:
                           std::uint32_t linkGroup);
     rfl::Bytestring savFromJson(std::string json);
     bool loadSram(std::uint32_t systemId, std::vector<std::uint8_t> sram);
+    // Serialize a system's cartridge battery RAM (e.g. an LSDj .sav) the way the
+    // plugin's Save SRAM does — distinct from readMemory(Sram), the live region.
+    rfl::Bytestring saveSram(std::uint32_t systemId);
     void reset(std::uint32_t systemId);
     rfl::Bytestring readFile(std::string path);
     void writeFile(std::string path, std::vector<std::uint8_t> bytes);
@@ -55,6 +58,9 @@ public:
     void runMs(double ms);
     void press(std::uint32_t systemId, std::int32_t button, bool down);
     void sendMidi(std::uint32_t systemId, std::vector<std::uint8_t> bytes);
+    // Project-level routed MIDI (channel nibble decides the target system per the
+    // MidiRouting mode), distinct from sendMidi's single-system delivery.
+    void dispatchMidi(std::vector<std::uint8_t> bytes, std::uint32_t routing);
     void setTransport(bool running);
     void setBpm(double bpm);
 
@@ -76,6 +82,14 @@ public:
     rfl::Bytestring getAudio(double ms);
     HarnessPerSystemAudio runMsPerSystem(double ms);
     void writeWav(std::string path, std::vector<std::uint8_t> samples, std::uint32_t sampleRate);
+    // Stream a render straight to disk so a long render never materializes the
+    // whole PCM buffer over the wire (getAudio + writeWav would). renderWav is
+    // the mixed stereo output; renderWavPerSystem writes each system's stereo to
+    // its own path and (when mixPath is non-empty) their sum to the mix — one
+    // pass, SameBoy-only. sampleRate 0 = the active rate.
+    void renderWav(std::string path, double ms, std::uint32_t sampleRate);
+    void renderWavPerSystem(std::string mixPath, std::vector<std::string> perSystemPaths,
+                            double ms, std::uint32_t sampleRate);
 
     // project / kits
     void saveRplg(std::string path);

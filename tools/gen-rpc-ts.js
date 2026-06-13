@@ -80,7 +80,15 @@ esbuild.buildSync({
         'bool':          'boolean',
     };
 
+    // std::string mangles differently across stdlibs (libstdc++:
+    // `std____cxx11__basic_string_char__`, libc++: `std____1__basic_string...`),
+    // and reflect-cpp emits a dangling $ref for it inside vector/optional, so
+    // match on the stable `basic_string` substring (plus the plain `std__string`).
+    const isStdString = (inner) =>
+        /basic_string/.test(inner) || inner === 'std__string';
+
     src = src.replace(/std__optional_([A-Za-z0-9_]+?)_(?=\b|\W)/g, (_, inner) => {
+        if (isStdString(inner)) return 'string | null';
         const prim = primMap[inner];
         const baseRaw = prim || stripMangle(inner);
         const base = baseRaw.includes(' ') ? `(${baseRaw})` : baseRaw;
@@ -90,6 +98,7 @@ esbuild.buildSync({
         // rfl::Bytestring (std::vector<std::byte>) is a binary buffer — type it
         // as Uint8Array (it decodes from msgpack BIN), not StdByte[].
         if (inner === 'std__byte') return 'Uint8Array';
+        if (isStdString(inner)) return 'string[]';
         const prim = primMap[inner];
         const baseRaw = prim || stripMangle(inner);
         const base = baseRaw.includes(' ') ? `(${baseRaw})` : baseRaw;

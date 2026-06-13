@@ -106,6 +106,14 @@ bool HarnessRpcService::loadSram(std::uint32_t systemId, std::vector<std::uint8_
     return sys->loadSramBytes(std::move(sram));
 }
 
+rfl::Bytestring HarnessRpcService::saveSram(std::uint32_t systemId) {
+    SystemBase* sys = h_->system(systemId);
+    if (!sys) throw std::runtime_error("saveSram: unknown system id");
+    const auto bytes = sys->saveSramBytes();
+    const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
+    return rfl::Bytestring(p, p + bytes.size());
+}
+
 void HarnessRpcService::reset(std::uint32_t systemId) {
     SystemBase* sys = h_->system(systemId);
     if (!sys) throw std::runtime_error("reset: unknown system id");
@@ -151,6 +159,10 @@ void HarnessRpcService::sendMidi(std::uint32_t systemId, std::vector<std::uint8_
     ev.size  = static_cast<std::uint32_t>(bytes.size());
     for (std::size_t i = 0; i < bytes.size(); ++i) ev.data[i] = bytes[i];
     sys->onMidi(&ev, 1);
+}
+
+void HarnessRpcService::dispatchMidi(std::vector<std::uint8_t> bytes, std::uint32_t routing) {
+    h_->dispatchMidi(bytes, routing);
 }
 
 void HarnessRpcService::setTransport(bool running) { h_->transportPlaying = running; }
@@ -213,6 +225,15 @@ void HarnessRpcService::writeWav(std::string path, std::vector<std::uint8_t> sam
     float* outs[2] = { l.data(), r.data() };
     WavWriter w(path, sampleRate, 2);
     w.writeBlockFloatPlanar(outs, static_cast<std::uint32_t>(frames));
+}
+
+void HarnessRpcService::renderWav(std::string path, double ms, std::uint32_t sampleRate) {
+    h_->renderWav(path, ms, sampleRate);
+}
+
+void HarnessRpcService::renderWavPerSystem(std::string mixPath,
+        std::vector<std::string> perSystemPaths, double ms, std::uint32_t sampleRate) {
+    h_->renderWavPerSystem(mixPath, perSystemPaths, ms, sampleRate);
 }
 
 void HarnessRpcService::saveRplg(std::string path) { h_->saveRplg(path); }

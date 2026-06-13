@@ -40,6 +40,10 @@ static_assert(static_cast<int>(rp::MemoryType::HRam)         == 5, "harness Mem.
 static_assert(static_cast<int>(rp::MemoryType::OAM)          == 6, "harness Mem.OAM out of sync");
 static_assert(static_cast<int>(rp::MemoryType::NametableRam) == 7, "harness Mem.NametableRam out of sync");
 static_assert(static_cast<int>(rp::MemoryType::ExtWorkRam)   == 8, "harness Mem.ExtWorkRam out of sync");
+static_assert(static_cast<int>(MidiRouting::SendToAll)               == 0, "harness Routing.SendToAll out of sync");
+static_assert(static_cast<int>(MidiRouting::FourChannelsPerInstance) == 1, "harness Routing.FourChannelsPerInstance out of sync");
+static_assert(static_cast<int>(MidiRouting::OneChannelPerInstance)   == 2, "harness Routing.OneChannelPerInstance out of sync");
+static_assert(static_cast<int>(MidiRouting::MidiChannelToInstance)   == 3, "harness Routing.MidiChannelToInstance out of sync");
 
 // The active harness for the current process. txiki occupies BOTH the QuickJS
 // context- and runtime-opaque slots (vm.c stores its TJSRuntime* in each), so

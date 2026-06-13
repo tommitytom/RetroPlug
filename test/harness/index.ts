@@ -111,8 +111,16 @@ export const Mem = {
   HRam: 5, OAM: 6, NametableRam: 7, ExtWorkRam: 8,
 } as const;
 
+// Project-level MIDI routing modes (src/project/ProjectConfig.hpp); the wire
+// values are guarded by static_asserts in TestHarness.cpp.
+export const Routing = {
+  SendToAll: 0, FourChannelsPerInstance: 1, OneChannelPerInstance: 2,
+  MidiChannelToInstance: 3,
+} as const;
+
 export type ButtonId = (typeof Button)[keyof typeof Button];
 export type MemType = (typeof Mem)[keyof typeof Mem];
+export type RoutingId = (typeof Routing)[keyof typeof Routing];
 
 // -- binary reshaping helpers ------------------------------------------------
 //
@@ -169,6 +177,12 @@ export const emu = {
   loadSram(sys: number, sram: ArrayBuffer): boolean {
     return client.loadSram(sys, toNums(sram));
   },
+  /** Serialize a system's cartridge battery RAM (e.g. an LSDj .sav) the way the
+   *  plugin's Save SRAM does — distinct from readMemory(Sram), the live region.
+   *  Returns a copy. */
+  saveSram(sys: number): Uint8Array {
+    return copyU8(client.saveSram(sys));
+  },
   /** Soft-reset a system (the GB reset button). After loadSram, the game boots
    *  into the freshly loaded battery RAM. */
   reset(sys: number): void {
@@ -201,6 +215,12 @@ export const emu = {
    *  with sendMidi exercises the ROM's note-handling path, not just the idle loop. */
   sendMidi(sys: number, bytes: number[]): void {
     client.sendMidi(sys, bytes);
+  },
+  /** Route a MIDI message across the loaded systems by `routing` (the channel
+   *  nibble picks the target system), unlike sendMidi which targets one system.
+   *  Default routing is SendToAll. Mirrors the --script `midi_routing` modes. */
+  dispatchMidi(bytes: number[], routing: number = Routing.SendToAll): void {
+    client.dispatchMidi(bytes, routing);
   },
   /** Start/stop the simulated host transport. While running, ppq advances each
    *  block so an LSDj SYNC=MIDI role emits MIDI clock like a DAW would. */
@@ -326,6 +346,19 @@ export const emu = {
     client.writeWav(path,
       toNums(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength)),
       sampleRate);
+  },
+  /** Stream `ms` of the mixed stereo render straight to a WAV file, block by
+   *  block — a long render never buffers the whole song in JS (the getAudio +
+   *  writeWav path would). sampleRate is the WAV header rate. */
+  renderWav(path: string, ms: number, sampleRate = 44100): void {
+    client.renderWav(path, ms, sampleRate);
+  },
+  /** Stream a per-system render in one pass: each system's stereo output to its
+   *  own path in `perSystemPaths` (one per loaded system, in load order), and —
+   *  when `mixPath` is non-empty — their sum to the mix WAV. SameBoy-only. */
+  renderWavPerSystem(mixPath: string, perSystemPaths: string[], ms: number,
+                     sampleRate = 44100): void {
+    client.renderWavPerSystem(mixPath, perSystemPaths, ms, sampleRate);
   },
   /** Snapshot the project (config + savestate) to a .rplg fixture — the file a
    *  Reaper DAW test auto-loads via RETROPLUG_AUTOLOAD_PROJECT. */
