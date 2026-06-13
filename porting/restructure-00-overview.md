@@ -116,8 +116,11 @@ in-process transport.** Tests become just another consumer of
 
 Each `restructure-NN` file is a self-contained, PR-sized milestone with the same
 structure as the feature steps (Goal / Depends on / Architecture / Tasks /
-Verification / Risks). **restructure-01–06 are Done** (2026-06-13 — see each
-file's *As-built* note); 07 is Pending.
+Verification / Risks). **restructure-01–07 are Done** (2026-06-13 — see each
+file's *As-built* note). 07 was done as a **local** extraction (dpf.js is a
+sibling repo at `../dpf.js`, consumed via a pnpm `link:` dep); its remote-only
+deliverables — push, npm publish, the `create-dpfjs-plugin` template, GitHub
+Actions CI — are deferred to the user (no-remote-push rule).
 
 | Step | What lands | Depends on |
 | --- | --- | --- |

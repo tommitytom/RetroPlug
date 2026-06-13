@@ -4,10 +4,16 @@ A pairing of [DPF](https://github.com/DISTRHO/DPF) (DISTRHO Plugin Framework) wi
 [LVGL](https://github.com/lvgl/lvgl) and [lv_binding_js](https://github.com/tommitytom/lv_binding_js)
 to write audio-plugin UIs in **React + TypeScript**.
 
-> This document describes the framework slice of this repo. Plugin-specific
-> details (in this case, RetroPlug2's GameBoy-emulator code) are in
-> [README.md](README.md). Eventually dpfjs will be extracted into its own
-> repo as a plugin template; for now it lives here.
+> This document describes the framework slice. Plugin-specific details (in this
+> case, RetroPlug2's GameBoy-emulator code) are in [README.md](README.md).
+>
+> **The framework has now been extracted to its own repo: `dpf.js`** (a sibling
+> checkout at `../dpf.js`, consumed via `require.resolve` + `add_subdirectory`).
+> The generic C++ (`src/dpfjs/`, lvgl-js-native), the `runtime/lvgljs/` runtime,
+> and the framework submodules (DPF, lv_binding_js → LVGL/txiki, rpcpp, msgpack-c,
+> efsw) all live there now — so paths like `runtime/lvgljs/index.ts` below are
+> under `../dpf.js/`. This copy stays as the canonical prose walkthrough until
+> the docs migrate into the dpf.js repo (a deferred publish step).
 
 ## How it works
 
@@ -178,9 +184,9 @@ they feed silent / synthetic input.
 
 ## Workflow conventions
 
-- Don't commit changes to `deps/lv_binding_js` or `deps/lv_binding_js/deps/txiki`
-  from the parent repo without checking — submodule pointers are managed
-  deliberately.
+- The framework submodules (lv_binding_js → LVGL/txiki, DPF, rpcpp, msgpack-c,
+  efsw) live in the `dpf.js` repo now. Don't commit changes to any submodule
+  pointer — in either repo — without checking; they're managed deliberately.
 - Treat the bundle as derived: never check in `build/ui/bundle.js` or
   `build/ui/bundle_data.c`.
 - The `build/` directory needs to stay configured; don't `rm -rf build`

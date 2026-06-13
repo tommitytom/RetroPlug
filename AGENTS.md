@@ -16,9 +16,12 @@ the parts that don't naturally fit either.
 
 - Don't push to remotes or open PRs without an explicit ask. The user pushes
   their own work.
-- Don't commit changes to `deps/lv_binding_js` or
-  `deps/lv_binding_js/deps/txiki` from the parent repo without checking —
-  the submodule pointers are managed deliberately.
+- The generic framework submodules (DPF, lv_binding_js → LVGL/txiki, rpcpp,
+  msgpack-c, efsw, dpf-widgets) now live in the **dpf.js** repo (`../dpf.js`,
+  consumed via `require.resolve` + `add_subdirectory`), not here. RetroPlug
+  keeps only `deps/sameboy` and `deps/catch2`. Don't commit changes to any
+  submodule pointer — in either repo — without checking; they're managed
+  deliberately.
 - Don't `rm -rf build` to "fix" CMake — investigate first. The configured
   build dir is load-bearing for the development loop.
 - Treat the embedded UI bundle as derived; never check in
@@ -45,7 +48,8 @@ sessions. Search this section before assuming your code is wrong.
 ### `lv_binding_js` ignores `insertChildBefore` (always appends)
 
 React reorders children at LVGL widget level by calling
-`insertChildBefore`, but `deps/lv_binding_js/src/render/native/core/basic/comp.cpp:38`
+`insertChildBefore`, but lv_binding_js's `comp.cpp:38` (now in dpf.js:
+`../dpf.js/deps/lv_binding_js/src/render/native/core/basic/comp.cpp`)
 **ignores the `beforeChild` argument and always appends**. Consequences:
 
 - Swapping a component type at a stable React position (e.g. replacing

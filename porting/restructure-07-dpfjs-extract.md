@@ -1,6 +1,52 @@
 # restructure-07 — Extract & publish dpf.js
 
-**Status:** Pending.
+**Status:** Done (local extraction, 2026-06-13) — see *As-built* below. The
+remote-only deliverables (push, npm publish, the `create-dpfjs-plugin` template,
+and GitHub Actions CI) are intentionally **deferred** to the user (no-remote-push
+rule); they're the only parts of this doc not yet done.
+
+## As-built (2026-06-13)
+
+The generic framework was extracted to a **local sibling repo at `../dpf.js`**
+(its own git repo, not pushed), consumed by RetroPlug via `require.resolve` +
+`add_subdirectory`. Deviations from the doc-as-written, all deliberate:
+
+- **dpf.js is a local repo consumed via a pnpm `link:` devDependency**
+  (`"dpf.js": "link:../dpf.js"`), not a published npm package. `require.resolve`
+  + `add_subdirectory("${DPFJS_PATH}" dpfjs)` is exactly as specified; the
+  difference is only where the package resolves from.
+- **The 6 generic submodules were re-homed into dpf.js at their exact recorded
+  SHAs** (re-added from their real remotes, recursively, *skipping the unused
+  `quickjs/test262` and `reflect-cpp/vcpkg`*), and removed from RetroPlug's
+  `.gitmodules` + `.git/modules`. RetroPlug now keeps only `sameboy` + `catch2`.
+- **The engine headers keep the `dpfjs/` include prefix** (dpf.js exports include
+  dir `dpf.js/src`), so RetroPlug's `.cpp`/`.hpp` were not edited at all —
+  behavior-identical. `dpfjs::core` (INTERFACE) carries the framework includes +
+  links; the plugin links it plus the domain libs.
+- **Build scripts stayed in RetroPlug, repointed** to the resolved dpf.js dir for
+  the generic aliases/paths (lvgljs, lv_binding react, @rpcpp client, codegen);
+  output is byte-identical. lv_binding_js's `node_modules` (react/reconciler) was
+  copied into dpf.js; the relocated rpcpp client's `@msgpack` resolves via a
+  `nodePaths` fallback to the consumer's `node_modules`. The two `packages/ui`
+  files that imported `runtime/lvgljs/input` by relative path now use a
+  `lvgljs/input` alias. `lv_conf.h`: dpf.js ships a default; RetroPlug's
+  `src/lv_conf.h` still wins (CACHE no-FORCE, set before `add_subdirectory`).
+- **`DistrhoPluginInfo.h` stayed consumer-owned**; the miniz force-include was
+  already mesen-side (RetroPlug), so nothing moved there.
+
+**Verification (all green):** dpf.js builds standalone (`-DDPFJS_BUILD_EXAMPLE=ON`
+→ lvgl-js-native + tjs + seam probe); RetroPlug full build of every target; cli
+30 / ui 11; `validate` clap=0/vst3=0 (pluginval SUCCESS); screenshot PNG sha256
+unchanged (`b1e147d7…`); `PluginService.ts` byte-identical (`957c0457…`); `nm`
+symbol-leak on the relocated objects = 0 retroplug symbols; a fresh-cache
+configure + reflectcpp build (no vcpkg) proves the clean-clone path.
+
+**Known residual (deferred-publish):** `npm pack` flattens the deps to source
+(15k files, no pointer submodules, no node_modules) but **7 nested
+`.gitmodules`** leak through `.npmignore` (npm-packlist doesn't apply the root
+ignore into submodule subtrees). A pre-publish strip step (the mitigation already
+noted under *Risks*) handles this when publishing — out of scope for the local
+pass.
 
 ## Goal
 

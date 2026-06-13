@@ -184,13 +184,15 @@ ui/                                  React/TSX UI source (esbuild-bundled)
   PluginUI.tsx                       React entry point
   EmulatorTile.tsx                   Canvas widget that renders SameBoy frames
   MenuOverlay.tsx                    LVGL-focused menu (Esc to open)
-runtime/lvgljs/                      typed JS-side bridge into the native runtime
 cli/                                 retroplug-cli source (Wav, TestHarness, HarnessRpcService, main)
 test/                                Catch2 unit tests + test/ts TypeScript harness tests
 examples/reaper/                     committed Reaper .rpp fixtures (DAW host tests)
 porting/                             ordered migration roadmap from old RetroPlug
 tools/                               build-ui.js, run-standalone.sh, standalone-key.sh, validate-plugins.sh
-deps/                                submodules: dpf, dpf-widgets, sameboy, lv_binding_js, rpcpp, catch2
+deps/                                domain submodules: sameboy, catch2
+../dpf.js/                           the generic framework (DPF, lv_binding_js→LVGL/txiki,
+                                     rpcpp, msgpack-c, efsw, dpf-widgets, lvgl-js-native, the
+                                     lvgljs runtime); consumed via require.resolve + add_subdirectory
 ```
 
 For the React/TSX/QuickJS framework slice (everything that's not Game Boy or
