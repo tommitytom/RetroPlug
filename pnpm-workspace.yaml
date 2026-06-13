@@ -1,0 +1,5 @@
+# Root pnpm workspace. Only packages/* are workspace members; deps/ holds git
+# submodules (e.g. deps/lv_binding_js has its OWN pnpm workspace) and must NOT
+# be swept in here.
+packages:
+  - 'packages/*'
