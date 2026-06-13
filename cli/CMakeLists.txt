@@ -5,7 +5,8 @@
 
 add_executable(retroplug-cli
     main.cpp
-    TestHarness.cpp  # embedded QuickJS TypeScript test harness (--test)
+    TestHarness.cpp        # embedded QuickJS TypeScript test harness (--test)
+    HarnessRpcService.cpp  # rpcpp emu/debug surface (no txiki dependency)
     ${PROJECT_SOURCE_DIR}/src/project/Project.cpp
     ${PROJECT_SOURCE_DIR}/src/lsdj/Effects.cpp
     ${PROJECT_SOURCE_DIR}/src/lsdj/KitUtil.cpp

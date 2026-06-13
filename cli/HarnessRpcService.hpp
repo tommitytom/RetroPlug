@@ -23,16 +23,12 @@ struct HarnessKitSample  { std::string path; std::string name; };
 struct HarnessPerSystemAudio { std::vector<rfl::Bytestring> systems; }; // one interleaved-stereo-f32 buffer per system
 
 // The emulator/debug/fixture surface the cli test harness exposes to TypeScript,
-// via rpcpp (reflect-cpp -> OpenRPC -> generated client) instead of the bespoke
-// Symbol.for("retroplug") trampolines. A thin wrapper over TestHarness::Impl,
-// which drives Project/SystemBase synchronously (it controls time). Compiled
-// into retroplug-cli; the schema is dumped by `retroplug-cli --dump-harness-schema`
-// (constructs the service with a null Impl — reflection never calls a method).
-//
-// NOTE (restructure-04): only a representative subset of methods is implemented
-// in Stage 0 to prove the reflect-cpp -> TS -> sync-dispatch pipeline end to end.
-// The remaining ~28 emu methods are ported (and the old trampolines deleted) as
-// the test/harness/index.ts facade is flipped over to the generated client.
+// via rpcpp (reflect-cpp -> OpenRPC -> generated client). A thin wrapper over
+// TestHarness::Impl, which drives Project/SystemBase synchronously (it controls
+// time). The method bodies live in HarnessRpcService.cpp, deliberately free of
+// the txiki/QuickJS host (which stays in TestHarness.cpp), so the service can be
+// linked on its own to dump its OpenRPC schema — constructed with a null Impl,
+// since reflection only reads the method signatures and never calls a method.
 class HarnessRpcService {
 public:
     explicit HarnessRpcService(TestHarness::Impl* impl) : h_(impl) {}
