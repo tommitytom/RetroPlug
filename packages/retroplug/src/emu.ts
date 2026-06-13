@@ -339,6 +339,21 @@ export function createEmu(rpcSend: RpcSend) {
                        sampleRate = 44100): void {
       client.renderWavPerSystem(mixPath, perSystemPaths, ms, sampleRate);
     },
+    /** Open a render session: subsequent renderChunk(ms) calls append a
+     *  contiguous WAV while you apply scripted input between them, then
+     *  renderEnd() closes the writers. `mixPath` "" = no mix; `perSystemPaths`
+     *  non-empty = per-system mode (one path per loaded system, SameBoy-only). */
+    renderBegin(mixPath: string, perSystemPaths: string[], sampleRate = 44100): void {
+      client.renderBegin(mixPath, perSystemPaths, sampleRate);
+    },
+    /** Render `ms` into the open render session (advances the emulator). */
+    renderChunk(ms: number): void {
+      client.renderChunk(ms);
+    },
+    /** Close the render session, flushing the WAV writers. */
+    renderEnd(): void {
+      client.renderEnd();
+    },
     /** Snapshot the project (config + savestate) to a .rplg fixture — the file a
      *  Reaper DAW test auto-loads via RETROPLUG_AUTOLOAD_PROJECT. */
     saveRplg(path: string): void {

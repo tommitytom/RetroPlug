@@ -4,7 +4,7 @@
 // end-user CLI.
 
 export { createSyncClient, type Unpromisify, type RpcSend } from "./createSyncClient";
-export { harnessRpcSend } from "./syncTransport";
+export { harnessRpcSend, hostArgv, hostExit } from "./syncTransport";
 export {
   createEmu, printProfile, Button, Mem, Routing,
   type Emu,

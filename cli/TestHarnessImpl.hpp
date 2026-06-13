@@ -139,6 +139,11 @@ struct TestHarness::Impl {
     int  failures    = 0;
     bool donePrinted = false;
 
+    // End-user CLI bundle plumbing: argv is exposed to JS via getArgv(); the
+    // bundle reports its process exit code via exit(code).
+    std::vector<std::string> cliArgs;
+    int                      cliExitCode = 0;
+
     Impl() : project(std::make_unique<Project>()),
              scratchL(blockSize), scratchR(blockSize) {}
 
@@ -362,84 +367,115 @@ struct TestHarness::Impl {
         project->dispatchMidi(&ev, 1, static_cast<MidiRouting>(routing));
     }
 
-    // Stream `ms` of the mixed stereo render straight to a WAV, block by block.
-    // stepBlock leaves the block's planar output in scratchL/scratchR, so we
-    // write those directly — the whole song never sits in one buffer (the
+    // -- streaming render (single-shot + session) ---------------------------
+    //
+    // A render writes the mixed stereo output (and, in per-system mode, each
+    // system's stereo to its own WAV plus their sum to the mix) straight to
+    // disk block by block — the whole song never sits in one buffer (the
     // getAudio + writeWav path would, and Array.from-boxing it in JS is fatal).
-    void renderWav(const std::string& path, double ms, std::uint32_t wavRate) {
-        if (wavRate == 0) wavRate = static_cast<std::uint32_t>(sampleRate);
-        WavWriter w(path, wavRate, 2);
-        if (ms <= 0.0) return;
-        const std::uint64_t total =
-            static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
-        for (std::uint64_t s = 0; s < total; s += blockSize) {
-            const std::uint32_t frames = static_cast<std::uint32_t>(
-                std::min<std::uint64_t>(blockSize, total - s));
-            stepBlock(frames, nullptr); // fills scratchL/scratchR
-            float* outs[2] = { scratchL.data(), scratchR.data() };
-            w.writeBlockFloatPlanar(outs, frames);
-        }
-    }
+    // The session form (renderBegin/renderChunk/renderEnd) lets the CLI apply
+    // scripted input between chunks, so events interleave with a contiguous WAV.
 
-    // Per-system streaming render: each system's stereo output to its own path,
-    // and (when mixPath is non-empty) their sum to the mix — ONE pass, so the
-    // mix and per-system WAVs share the same time window. SameBoy-only. Mirrors
-    // cli/main.cpp's --per-system-wav loop (mix = sum of per-system).
-    void renderWavPerSystem(const std::string& mixPath,
-                            const std::vector<std::string>& perSystemPaths,
-                            double ms, std::uint32_t wavRate) {
-        if (wavRate == 0) wavRate = static_cast<std::uint32_t>(sampleRate);
-        if (perSystemPaths.size() != sysList.size())
-            throw std::runtime_error("renderWavPerSystem: expected one path per system");
-        std::vector<SameBoySystem*> sb;
-        sb.reserve(sysList.size());
-        for (SystemBase* s : sysList) {
-            auto* p = dynamic_cast<SameBoySystem*>(s);
-            if (!p) throw std::runtime_error("renderWavPerSystem is SameBoy-only");
-            sb.push_back(p);
+    std::optional<WavWriter>     renderMix_;   // open during a render session
+    std::vector<WavWriter>       renderPer_;   // per-system writers (per-system mode)
+    std::vector<SameBoySystem*>  renderSb_;    // per-system targets (per-system mode)
+
+    // Render `total` samples into the currently-open render writers. mix-only
+    // uses stepBlock (the linked Project::onProcess path); per-system uses the
+    // manual prepareForBlock -> stepIfBelowTarget -> finishBlock orchestration
+    // and sums into the mix (matching cli/main.cpp's --per-system-wav loop).
+    void renderInto(std::uint64_t total) {
+        if (renderPer_.empty()) {
+            for (std::uint64_t s = 0; s < total; s += blockSize) {
+                const std::uint32_t frames = static_cast<std::uint32_t>(
+                    std::min<std::uint64_t>(blockSize, total - s));
+                stepBlock(frames, nullptr); // fills scratchL/scratchR
+                if (renderMix_) {
+                    float* outs[2] = { scratchL.data(), scratchR.data() };
+                    renderMix_->writeBlockFloatPlanar(outs, frames);
+                }
+            }
+            return;
         }
-        std::optional<WavWriter> mix;
-        if (!mixPath.empty()) mix.emplace(mixPath, wavRate, 2);
-        std::vector<WavWriter> per;
-        per.reserve(sb.size());
-        for (const auto& p : perSystemPaths) per.emplace_back(p, wavRate, 2);
-        if (ms <= 0.0) return;
-        const std::uint64_t total =
-            static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
         std::vector<float> bl(blockSize), br(blockSize), ml(blockSize), mr(blockSize);
         for (std::uint64_t s = 0; s < total; s += blockSize) {
             const std::uint32_t frames = static_cast<std::uint32_t>(
                 std::min<std::uint64_t>(blockSize, total - s));
             AudioBlockInfo info{ frames, sampleRate, bpm, ppq, transportPlaying };
-            for (auto* x : sb) x->prepareForBlock(info);
+            for (auto* x : renderSb_) x->prepareForBlock(info);
             bool any = true;
             while (any) {
                 any = false;
-                for (auto* x : sb) if (x->stepIfBelowTarget(frames)) any = true;
+                for (auto* x : renderSb_) if (x->stepIfBelowTarget(frames)) any = true;
             }
-            if (mix) { std::fill_n(ml.data(), frames, 0.0f);
-                       std::fill_n(mr.data(), frames, 0.0f); }
-            for (std::size_t i = 0; i < sb.size(); ++i) {
+            if (renderMix_) { std::fill_n(ml.data(), frames, 0.0f);
+                              std::fill_n(mr.data(), frames, 0.0f); }
+            for (std::size_t i = 0; i < renderSb_.size(); ++i) {
                 std::fill_n(bl.data(), frames, 0.0f);
                 std::fill_n(br.data(), frames, 0.0f);
                 float* o[2] = { bl.data(), br.data() };
-                sb[i]->finishBlock(info, o);
-                per[i].writeBlockFloatPlanar(o, frames);
-                if (mix)
+                renderSb_[i]->finishBlock(info, o);
+                renderPer_[i].writeBlockFloatPlanar(o, frames);
+                if (renderMix_)
                     for (std::uint32_t f = 0; f < frames; ++f) {
                         ml[f] += bl[f];
                         mr[f] += br[f];
                     }
             }
-            if (mix) {
+            if (renderMix_) {
                 float* mo[2] = { ml.data(), mr.data() };
-                mix->writeBlockFloatPlanar(mo, frames);
+                renderMix_->writeBlockFloatPlanar(mo, frames);
             }
             drainCaptures();
             sampleClock += frames;
             if (transportPlaying)
                 ppq += (bpm / 60.0) * (static_cast<double>(frames) / sampleRate);
         }
+    }
+
+    // Open the render writers. Empty mixPath = no mix; non-empty perSystemPaths
+    // = per-system mode (one path per loaded system, in load order; SameBoy-only).
+    void renderBegin(const std::string& mixPath,
+                     const std::vector<std::string>& perSystemPaths,
+                     std::uint32_t wavRate) {
+        if (wavRate == 0) wavRate = static_cast<std::uint32_t>(sampleRate);
+        renderEnd();
+        if (!perSystemPaths.empty()) {
+            if (perSystemPaths.size() != sysList.size())
+                throw std::runtime_error("renderBegin: expected one path per system");
+            for (SystemBase* s : sysList) {
+                auto* p = dynamic_cast<SameBoySystem*>(s);
+                if (!p) throw std::runtime_error("renderBegin per-system is SameBoy-only");
+                renderSb_.push_back(p);
+            }
+            for (const auto& p : perSystemPaths) renderPer_.emplace_back(p, wavRate, 2);
+        }
+        if (!mixPath.empty()) renderMix_.emplace(mixPath, wavRate, 2);
+    }
+
+    void renderChunk(double ms) {
+        if (ms <= 0.0) return;
+        renderInto(static_cast<std::uint64_t>(ms * sampleRate / 1000.0));
+    }
+
+    void renderEnd() {
+        renderMix_.reset();
+        renderPer_.clear();
+        renderSb_.clear();
+    }
+
+    // Single-shot convenience wrappers (no scripted input).
+    void renderWav(const std::string& path, double ms, std::uint32_t wavRate) {
+        renderBegin(path, {}, wavRate);
+        renderChunk(ms);
+        renderEnd();
+    }
+    void renderWavPerSystem(const std::string& mixPath,
+                            const std::vector<std::string>& perSystemPaths,
+                            double ms, std::uint32_t wavRate) {
+        renderBegin(mixPath, perSystemPaths, wavRate);
+        renderChunk(ms);
+        renderEnd();
     }
 
     // Compile a kit from sample files and queue it into the system's

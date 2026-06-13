@@ -236,6 +236,13 @@ void HarnessRpcService::renderWavPerSystem(std::string mixPath,
     h_->renderWavPerSystem(mixPath, perSystemPaths, ms, sampleRate);
 }
 
+void HarnessRpcService::renderBegin(std::string mixPath,
+        std::vector<std::string> perSystemPaths, std::uint32_t sampleRate) {
+    h_->renderBegin(mixPath, perSystemPaths, sampleRate);
+}
+void HarnessRpcService::renderChunk(double ms) { h_->renderChunk(ms); }
+void HarnessRpcService::renderEnd() { h_->renderEnd(); }
+
 void HarnessRpcService::saveRplg(std::string path) { h_->saveRplg(path); }
 std::uint32_t HarnessRpcService::loadRplg(std::string path) { return h_->loadRplg(path); }
 

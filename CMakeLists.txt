@@ -486,6 +486,18 @@ endif()
 # Headless renderer + scripted-input runner. Useful for fast LSDJ renders
 # and agent-driven workflows.
 option(BUILD_CLI "Build the retroplug-cli headless renderer" ON)
+
+# CLI bundle: packages/cli -> esbuild -> tjsc bytecode -> embedded in
+# retroplug-cli, run by default (the no-Node end-user path). Mirrors the UI
+# bundle. The vars must exist before add_subdirectory(cli) so retroplug-cli can
+# list ${CLI_BUNDLE_C} as a (generated) source.
+if(BUILD_CLI AND NODE_EXECUTABLE)
+    set(CLI_BUNDLE_JS  "${CMAKE_BINARY_DIR}/cli/bundle.js")
+    set(CLI_BUNDLE_C   "${CMAKE_BINARY_DIR}/cli/bundle_data.c")
+    set(CLI_BUNDLE_DEP "${CMAKE_BINARY_DIR}/cli/bundle.d")
+    set_source_files_properties(${CLI_BUNDLE_C} PROPERTIES GENERATED TRUE)
+endif()
+
 if(BUILD_CLI)
     add_subdirectory(cli)
 endif()
@@ -507,5 +519,32 @@ if(BUILD_CLI AND NODE_EXECUTABLE)
         DEPENDS harness-schema-dump
         COMMENT "Regenerating harness RPC client (HarnessService.ts)"
         VERBATIM)
+endif()
+
+# --- cli-bundle-regenerate: the embedded end-user CLI app bytecode -----------
+# packages/cli -> esbuild (build-cli.js) -> tjsc bytecode (cli_bundle). Depends
+# on cli-regenerate (HarnessService.ts) but NOT on retroplug-cli, so retroplug-cli
+# can embed the result without a build cycle. Always runs (anti-stale, like
+# ui-regenerate); copy_if_different guards the .o rebuild.
+if(BUILD_CLI AND NODE_EXECUTABLE)
+    add_custom_target(cli-bundle-regenerate ALL
+        BYPRODUCTS ${CLI_BUNDLE_JS}
+                   ${CLI_BUNDLE_DEP}
+                   ${CLI_BUNDLE_C}
+                   ${CLI_BUNDLE_C}.new
+        COMMAND ${NODE_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tools/build-cli.js
+                ${CLI_BUNDLE_JS} ${CLI_BUNDLE_DEP}
+        COMMAND ${_TJSC_COMMAND}
+                -m -s -p cli_
+                -o ${CLI_BUNDLE_C}.new
+                ${CLI_BUNDLE_JS}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CLI_BUNDLE_C}.new ${CLI_BUNDLE_C}
+        COMMENT "Regenerating CLI bundle (esbuild + bytecode)"
+        VERBATIM)
+    add_dependencies(cli-bundle-regenerate cli-regenerate ${_TJSC_DEP})
+    # retroplug-cli compiles ${CLI_BUNDLE_C}; make sure it's generated first.
+    add_dependencies(retroplug-cli cli-bundle-regenerate)
 endif()
 

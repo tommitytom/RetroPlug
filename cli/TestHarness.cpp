@@ -82,6 +82,29 @@ JSValue jsDone(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     return JS_UNDEFINED;
 }
 
+// getArgv() -> string[]: the end-user CLI bundle's argument vector (set by
+// runBundle before eval). Empty under --test.
+JSValue jsGetArgv(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    JSValue arr = JS_NewArray(ctx);
+    auto* h = g_activeImpl;
+    if (!h) return arr;
+    for (std::size_t i = 0; i < h->cliArgs.size(); ++i) {
+        const std::string& a = h->cliArgs[i];
+        JS_SetPropertyUint32(ctx, arr, static_cast<std::uint32_t>(i),
+                             JS_NewStringLen(ctx, a.data(), a.size()));
+    }
+    return arr;
+}
+
+// exit(code): the CLI bundle reports its process exit code (returned by runBundle).
+JSValue jsExit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    int code = 0;
+    if (argc >= 1) JS_ToInt32(ctx, &code, argv[0]);
+    if (h) h->cliExitCode = code;
+    return JS_UNDEFINED;
+}
+
 // Console shim. txiki's built-in console writes to stdout, which would corrupt
 // the TAP stream; route everything to stderr with the project's [js:<level>]
 // convention instead.
@@ -134,6 +157,8 @@ TestHarness::TestHarness()
     bind("report",    jsReport,    3);
     bind("done",      jsDone,      0);
     bind("log",       jsLog,       2);
+    bind("getArgv",   jsGetArgv,   0);
+    bind("exit",      jsExit,      1);
     // The emulator surface: the generated HarnessService client dispatches
     // through the host's single sync RPC entry.
     host_->bindRpcSend(ns,
@@ -201,4 +226,39 @@ int TestHarness::runFile(const std::string& jsPath) {
 
     impl_->done();  // ensure a plan line even if the test forgot
     return impl_->failures > 0 ? 1 : 0;
+}
+
+namespace {
+// Drain async work the bundle scheduled (timers / promises). The CLI bundle is
+// effectively synchronous, so a bounded pump suffices.
+void drainJobs(TjsHostRuntime& host) {
+    for (int i = 0; i < 64; ++i) host.pump();
+}
+} // namespace
+
+int TestHarness::runBundle(const std::uint8_t* bytecode, std::size_t len,
+                           const std::vector<std::string>& argv) {
+    impl_->cliArgs     = argv;
+    impl_->cliExitCode = 0;
+    const int rc = host_->evalModuleBytecode(bytecode, len);
+    drainJobs(*host_);
+    if (rc != 0) return 1;
+    return impl_->cliExitCode;
+}
+
+int TestHarness::runBundleFromFile(const std::string& path,
+                                   const std::vector<std::string>& argv) {
+    std::string code;
+    try {
+        code = rpcli::slurpText(path);
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "error: %s\n", e.what());
+        return 1;
+    }
+    impl_->cliArgs     = argv;
+    impl_->cliExitCode = 0;
+    const int rc = host_->evalModuleBuffer(code.data(), code.size(), path.c_str());
+    drainJobs(*host_);
+    if (rc != 0) return 1;
+    return impl_->cliExitCode;
 }
