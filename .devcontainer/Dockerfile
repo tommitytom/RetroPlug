@@ -78,9 +78,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	libssl-dev \
 	# --- SDL2: gamepad / game controller backend (UI side, all variants) --
 	libsdl2-dev \
-	# --- Node.js for the esbuild UI bundler --------------------------------
-	nodejs \
-	npm \
+	# --- Node.js installed from NodeSource below (not the EOL distro pkg) ---
 	# --- Python for tools/ (LSDj manual indexer + ad-hoc agent scripts) ---
 	python3-pip \
 	python3-venv \
@@ -105,6 +103,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	p7zip-full \
 	ca-certificates \
 	&& rm -rf /var/lib/apt/lists/*
+
+# --- Node.js (NodeSource) -----------------------------------------------------
+# The UI + test toolchain (esbuild, gen-rpc-ts, the txiki bundler,
+# build-ui/build-test) runs under Node. Ubuntu 24.04's distro package is Node 18
+# (EOL); install a current major from NodeSource instead — it replaces
+# /usr/bin/node in place, so CMake's cached NODE_EXECUTABLE stays valid. Node 26
+# unbundled corepack, so install it from npm and enable it; pnpm is then resolved
+# from the repo's "packageManager" field (see package.json), the single source of
+# truth for the pnpm version.
+ARG NODE_MAJOR=26
+RUN set -eux; \
+	curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -; \
+	apt-get install -y --no-install-recommends nodejs; \
+	rm -rf /var/lib/apt/lists/*; \
+	npm install -g corepack@latest; \
+	corepack enable; \
+	node --version; \
+	corepack --version
 
 # --- RGBDS: assembles SameBoy's boot ROMs from BootROMs/*.asm at build time.
 # Pinned single-binary release. See cmake/sameboy_bootroms.cmake.

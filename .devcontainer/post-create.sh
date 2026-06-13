@@ -67,14 +67,18 @@ git lfs pull
 echo "==> Initializing git submodules..."
 git submodule update --init --recursive
 
-echo "==> Installing workspace npm deps..."
-# Top-level package.json holds the few packages used by the UI bundle that
-# aren't already present in deps/lv_binding_js/node_modules — primarily
-# @msgpack/msgpack for the rpcpp client's MsgpackCodec.
+echo "==> Installing workspace deps (pnpm)..."
+# Root is a pnpm workspace (packages/*). Top-level package.json holds the few
+# packages used by the UI bundle that aren't already in
+# deps/lv_binding_js/node_modules — primarily @msgpack/msgpack for the rpcpp
+# client's MsgpackCodec. pnpm is provided by corepack (see Dockerfile) and
+# resolved from the "packageManager" field.
 if [ ! -d node_modules ]; then
-    npm install --no-audit --no-fund --silent
+    pnpm install
 fi
 
+# deps/lv_binding_js is still installed with npm (it predates the workspace and
+# has its own pnpm-workspace.yaml); restructure-02 folds its toolchain in.
 echo "==> Installing deps/lv_binding_js npm deps..."
 # tools/gen-rpc-ts.js and tools/build-ui.js resolve esbuild (and
 # esbuild-plugin-alias) from deps/lv_binding_js/node_modules. Without this

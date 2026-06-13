@@ -150,13 +150,14 @@ Verification / Risks). **restructure-01 is Done** (2026-06-13 — see its
 - **No format/back-compat shims** ([AGENTS.md](../AGENTS.md) pre-release rule)
   applies to serialized shapes. It does **not** forbid semver-versioning the
   dpf.js npm package itself — that versioning is needed and is separate.
-- **Devcontainer toolchain gap (found at restructure-01):** the image ships
-  **Node v18.19.1** (now EOL) and has **no pnpm/corepack**. pnpm was installed
-  ad-hoc and pinned to the 9.x line (10+/11 require Node ≥22). This is fine for
-  now but should be fixed properly in the devcontainer image — bump Node to a
-  supported LTS and bake in pnpm — ideally before restructure-02's esbuild
-  modernization, which prefers a newer Node. Ad-hoc installs don't survive an
-  image rebuild.
+- **Devcontainer toolchain (Node + pnpm):** the base image originally shipped
+  **Node v18.19.1** (EOL) and no pnpm/corepack. Fixed 2026-06-13 — the Dockerfile
+  now installs **Node 26 from NodeSource** (replacing `/usr/bin/node` in place, so
+  the cached `NODE_EXECUTABLE` stays valid) and provisions pnpm via
+  `corepack` (installed from npm, since Node 26 unbundled it) honouring the
+  `packageManager` field. pnpm stays on 9.x to avoid lockfile churn. The 2022-era
+  esbuild in `deps/lv_binding_js` still works under Node 26, so it isn't a
+  blocker for restructure-02 — but modernizing it there is still wanted.
 
 ## Working with this plan
 
