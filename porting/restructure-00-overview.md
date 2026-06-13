@@ -116,8 +116,8 @@ in-process transport.** Tests become just another consumer of
 
 Each `restructure-NN` file is a self-contained, PR-sized milestone with the same
 structure as the feature steps (Goal / Depends on / Architecture / Tasks /
-Verification / Risks). **restructure-01, 02, and 03 are Done** (2026-06-13 — see
-each file's *As-built* note); 04–07 are Pending.
+Verification / Risks). **restructure-01–04 are Done** (2026-06-13 — see each
+file's *As-built* note); 05–07 are Pending.
 
 | Step | What lands | Depends on |
 | --- | --- | --- |

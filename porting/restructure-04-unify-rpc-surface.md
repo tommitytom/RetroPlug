@@ -1,6 +1,58 @@
 # restructure-04 — Unify the native↔TS surface (keystone)
 
-**Status:** Pending.
+**Status:** Done (2026-06-13).
+
+## As-built (what actually landed vs. the plan below)
+
+The plan below assumed one service with `#ifdef`-gated debug methods. Exploration
+showed the harness and `PluginRpcService` are **independent thin bindings with
+different execution models** (the harness is synchronous and *controls time* via
+`Project::onProcess`; the plugin is command-queue/DSP-driven), already in separate
+binaries. So the realization is a **separate `HarnessRpcService`** compiled only
+into `retroplug-cli` — `PluginRpcService` is untouched, and schema separation is
+structural, not preprocessor. What landed (staged, all 29 cli + 11 ui tests green
+at each commit):
+
+- **`cli/HarnessRpcService.{hpp}` + bodies in `TestHarness.cpp`** — a reflect-cpp
+  service (~40 methods) wrapping `TestHarness::Impl`. New DTOs
+  (`HarnessMidiEvent`/`HarnessSerialByte`/`HarnessFrame`/`HarnessKitSample`/
+  `HarnessPerSystemAudio`); reuses `rp::CpuRegister`/`ProfiledFunction`/`DisasmLine`/
+  `TraceLine`/`CallFrame`/`BreakInfo`/`BreakpointSpec`. `cli/HarnessRpcRegistration.hpp`
+  + `retroplug-cli --dump-harness-schema` emit the OpenRPC schema.
+- **Two reflect-cpp constraints handled:** the generic *reader* rejects
+  `std::byte`, so `rfl::Bytestring` is **output-only** — binary INPUT params use
+  `std::vector<std::uint8_t>`; and `std::optional` in param position mangles badly,
+  so params use sentinels (empty/0 = absent).
+- **`cli-regenerate`** CMake target → `build/generated/HarnessService.ts`
+  (gitignored), separate from `ui-regenerate` (no LVGL dependency). `gen-rpc-ts.js`
+  parameterized (service name + exe args) + 3 backward-compatible fixes
+  (`Bytestring`→`Uint8Array`, `unsigned_char`→`number`, PascalCase bare `$ref`s).
+- **`__rpcSend`** wired into the cli runner (mirrors `PluginJsBridge`):
+  `HarnessRpcService` + `QueueTransport` + `TypedRpcServer` on
+  `Symbol.for("retroplug").__rpcSend` → `processMessage` (sync; handler exceptions
+  become `-32603` envelopes).
+- **`packages/retroplug/src`** (committed): `createSyncClient` (a `Proxy` that
+  encodes with `@msgpack/msgpack`, calls `__rpcSend`, decodes, returns/throws) +
+  `Unpromisify` mapped type + `harnessRpcSend`. Same wire format as the UI's
+  `@rpcpp/MsgpackCodec` (raw msgpack, no in-process framing).
+- **`test/harness/index.ts` rebuilt** over the generated client behind a
+  byte-for-byte-identical `emu` facade (zero test-file edits). Binary reshaping
+  lives in the facade: `number[]` inputs, exact-buffer `Uint8Array`/`Float32Array`
+  copies (msgpack BIN decodes as a *view* — `.buffer` must be exact),
+  `getRegisters` vector→`Record`, `setBreakpoints` optional-field defaults.
+  `__rpcSend` resolves **lazily** so the `ui-harness` (which re-exports
+  `test`/`expect` from here) doesn't need the bridge.
+- **Deleted:** the ~37 per-method JS trampolines + the hand-mirrored `NativeRp`
+  interface. Only `__rpcSend` + native runner plumbing
+  (`beginCase`/`report`/`done`/`log`) remain.
+- **Scripts:** the cli-test pnpm scripts build `cli-regenerate` (deps
+  `retroplug-cli`) so the client is fresh on a targeted run.
+
+The drift between two hand-maintained surfaces is gone — one C++ service, one
+generated client. Verified: full build, `cli-ts-test` (29), `ui-ts-test` (11),
+`validate` (clap 18/0 + pluginval SUCCESS).
+
+The original plan follows for reference.
 
 ## Goal
 
