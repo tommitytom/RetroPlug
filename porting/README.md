@@ -5,6 +5,14 @@ codebase to the new DPF + LVGL + TypeScript shell at the repo root. The plan is
 broken into discrete steps; each step is a self-contained PR-sized milestone.
 Progress through the steps in order — earlier steps unblock later ones.
 
+> **Second track:** a separate, parallel plan covers the *repo/build/package
+> restructure* (pnpm workspace, txiki-everywhere, unifying the native↔TS
+> surface, and extracting the framework as a reusable `dpf.js` package). Those
+> files are prefixed `restructure-NN-`; start at
+> [restructure-00-overview.md](./restructure-00-overview.md). The numbered steps
+> below (01–22) are about feature parity; the `restructure-` track is about the
+> shape of the project itself.
+
 ## Why we're doing this
 
 The legacy codebase grew organically over years and accumulated several
