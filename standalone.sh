@@ -1,1 +1,1 @@
-./build/bin/retroplug
+pw-jack ./build/bin/retroplug
