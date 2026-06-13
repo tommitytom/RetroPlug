@@ -7,7 +7,7 @@
 // The CLI app logic lives in packages/cli, bundled to QuickJS bytecode and
 // embedded here (the no-Node end-user path). Set RETROPLUG_CLI_BUNDLE_PATH to a
 // built bundle .js to load it from source for dev iteration (mirrors the
-// plugin's LVGL_PLUGIN_BUNDLE_PATH).
+// plugin's RETROPLUG_BUNDLE_PATH).
 
 #include <cstdint>
 #include <cstdio>

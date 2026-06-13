@@ -21,6 +21,7 @@
 #include "LvglJsEngine.hpp"
 #include "PluginJsBridge.hpp"
 #include "PluginShared.hpp"
+#include "dpfjs/Env.hpp"
 #include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
 
@@ -188,9 +189,10 @@ public:
         if (isResizable())
             fResizeHandle.hide();
 
-        if (const char* p = std::getenv("RETROPLUG_SCREENSHOT_PATH"); p && *p) {
+        // Generic framework feature: prefixed env var (RETROPLUG_SCREENSHOT_PATH).
+        if (const char* p = dpfjs::getenvWithPrefix("SCREENSHOT_PATH"); p && *p) {
             screenshotPath_ = p;
-            if (const char* iv = std::getenv("RETROPLUG_SCREENSHOT_INTERVAL_MS"); iv && *iv) {
+            if (const char* iv = dpfjs::getenvWithPrefix("SCREENSHOT_INTERVAL_MS"); iv && *iv) {
                 if (int ms = std::atoi(iv); ms > 0)
                     screenshotInterval_ = std::chrono::milliseconds(ms);
             }
@@ -306,7 +308,9 @@ public:
                 bridge->loadRomFromPath(p);
             }
 
-            const char* devPath = std::getenv("LVGL_PLUGIN_BUNDLE_PATH");
+            // Generic dev override: <PREFIX>BUNDLE_PATH (RETROPLUG_BUNDLE_PATH)
+            // loads the UI bundle from source instead of the embedded bytecode.
+            const char* devPath = dpfjs::getenvWithPrefix("BUNDLE_PATH");
             if (devPath && *devPath)
             {
                 if (jsEngine.evalModule(devPath) != 0)

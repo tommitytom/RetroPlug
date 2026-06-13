@@ -424,6 +424,9 @@ dpf_add_plugin(${NAME}
 # setup build includes and libraries
 target_include_directories(${NAME} PUBLIC src)
 target_include_directories(${NAME} PUBLIC deps/dpf-widgets/generic)
+# dpf.js framework env-var prefix (PluginUI's screenshot + dev-bundle reads use
+# dpfjs::getenvWithPrefix). The consumer owns the prefix; RetroPlug = RETROPLUG_.
+target_compile_definitions(${NAME} PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 target_link_libraries(${NAME} PUBLIC lvgl::lvgl $<$<BOOL:${WIN32}>:winmm>)
 target_link_libraries(${NAME} PUBLIC lvgl-js-native)
 target_link_libraries(${NAME} PUBLIC rpcpp)
