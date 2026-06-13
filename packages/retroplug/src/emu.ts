@@ -197,7 +197,7 @@ export function createEmu(rpcSend: RpcSend) {
     },
     /** Route a MIDI message across the loaded systems by `routing` (the channel
      *  nibble picks the target system), unlike sendMidi which targets one system.
-     *  Default routing is SendToAll. Mirrors the --script `midi_routing` modes. */
+     *  Default routing is SendToAll (the CLI's `midi_routing` modes). */
     dispatchMidi(bytes: number[], routing: number = Routing.SendToAll): void {
       client.dispatchMidi(bytes, routing);
     },
@@ -376,7 +376,6 @@ export function createEmu(rpcSend: RpcSend) {
     /**
      * A two-or-more-key chord (e.g. SELECT+UP). The modifier(s) lead the final
      * key by `staggerMs` and are released in reverse — the timing LSDJ needs.
-     * Mirrors the JSON `chord` form (cli/Script.hpp).
      */
     chord(sys: number, buttons: number[], opts: ChordOpts = {}): void {
       const stagger = opts.staggerMs ?? 200;

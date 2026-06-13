@@ -341,9 +341,10 @@ SONG  ◄────────► CHAIN  ◄────────► PHRAS
 `SELECT+LEFT` from SONG enters LIVE mode (the grid wraps). The `LEAD` / `SYNC` /
 `WAIT` indicators in the SONG-screen right margin are the runtime confirmation
 that link-cable sync is flowing once START is pressed (manual §5.1.2 / §5.1.3).
-The `retroplug-cli --script` JSON runner (with the `chord`/`tap` event forms in
-`cli/Script.hpp`) still exists for ad-hoc exploration, but it has no committed
-example scripts — author savs in TS instead.
+The `retroplug-cli --script` JSON runner (the embedded TypeScript CLI in
+[packages/cli](packages/cli), with `chord`/`tap`/`midi`/`screenshot` event forms)
+still exists for ad-hoc exploration, but it has no committed example scripts —
+author savs in TS instead.
 
 ## LSDJ link-cable sync
 
@@ -503,8 +504,9 @@ truth, whatever LSDJ wrote to its SB register) and `emu.drainMidi(sys)` (the
 [test/ts/gb/lsdj/arduinoboy_master.test.ts](test/ts/gb/lsdj/arduinoboy_master.test.ts),
 which authors SYNC=KEYBD + the `ArduinoboyMaster` role, presses START, and
 asserts thousands of captured bytes (the synthetic-clock + capture path).
-(`retroplug-cli --event-logs DIR` still writes `<stem>_serial_sys<N>.txt` /
-`<stem>_midi_sys<N>.txt` for the `--script` runner, if you need on-disk logs.)
+(`retroplug-cli --script S.json --event-logs DIR` still writes
+`<stem>_serial_sys<N>.txt` / `<stem>_midi_sys<N>.txt` from a CLI render, if you
+need on-disk logs.)
 
 ### Synthetic Arduinoboy clock (subtle but load-bearing)
 

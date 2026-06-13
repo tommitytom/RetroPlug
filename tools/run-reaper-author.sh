@@ -6,7 +6,7 @@
 # so the saved .RPP captures a configured RetroPlug state in its chunk.
 #
 # Usage:
-#   tools/run-reaper-author.sh OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg|.json]
+#   tools/run-reaper-author.sh OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg]
 #
 # OUTPUT.RPP     where the lua script writes the project (REAPER_AUTHOR_DEST)
 # RENDER_DIR     absolute dir for the project's render output
@@ -15,8 +15,6 @@
 # FIXTURE        optional. A pre-built .rplg becomes the plugin's
 #                RETROPLUG_AUTOLOAD_PROJECT directly (build it from a TS test, e.g.
 #                `pnpm test:cli gb/mgb` -> /tmp/mgb_smoke_author.rplg).
-#                A legacy .json is still accepted: it is rendered through
-#                retroplug-cli --save-rplg first.
 #
 # Same Xvfb + openbox + dummy-jackd + isolated-config + VST3-symlink
 # setup as tools/run-reaper-render.sh.
@@ -24,7 +22,7 @@
 set -euo pipefail
 
 if [ $# -lt 3 ]; then
-    echo "usage: $0 OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg|.json]" >&2
+    echo "usage: $0 OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg]" >&2
     exit 2
 fi
 
@@ -63,9 +61,8 @@ export REAPER_AUTHOR_DEST="$DEST"
 export REAPER_AUTHOR_RENDER_DIR="$RENDER_DIR"
 
 # Optional fixture: point the plugin at a configured project state via the
-# autoload env var so the .RPP chunk captures it. A .rplg is used directly
-# (the modern path: a TS test produced it with emu.saveRplg); a legacy .json
-# is first rendered to a .rplg via retroplug-cli --save-rplg.
+# autoload env var so the .RPP chunk captures it. The .rplg is produced by a
+# TS harness test with emu.saveRplg.
 if [ -n "$FIXTURE" ]; then
     if [ ! -f "$FIXTURE" ]; then
         echo "error: fixture not found: $FIXTURE" >&2
@@ -77,17 +74,8 @@ if [ -n "$FIXTURE" ]; then
             export RETROPLUG_AUTOLOAD_PROJECT="$FIXTURE"
             ;;
         *)
-            if [ ! -x "$REPO_DIR/build/bin/retroplug-cli" ]; then
-                echo "error: build/bin/retroplug-cli missing; build it first" >&2
-                exit 1
-            fi
-            STEM=$(basename "$FIXTURE" .json)
-            RPLG="$REPO_DIR/build/${STEM}_author.rplg"
-            echo "fixture (legacy json): $FIXTURE -> $RPLG"
-            "$REPO_DIR/build/bin/retroplug-cli" \
-                --script "$FIXTURE" \
-                --save-rplg "$RPLG" >/dev/null
-            export RETROPLUG_AUTOLOAD_PROJECT="$RPLG"
+            echo "error: fixture must be a .rplg (author it from a TS test via emu.saveRplg): $FIXTURE" >&2
+            exit 1
             ;;
     esac
 fi

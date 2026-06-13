@@ -93,10 +93,13 @@ test("LSDJ boots and writes to WRAM", () => {
 
 See [test/ts/README.md](test/ts/README.md) for the full `emu` API.
 
-`retroplug-cli` also has a lower-level JSON `--script` mode (schema in
-[cli/Script.hpp](cli/Script.hpp): `{"at_ms":100,"tap":"A","hold_ms":50}` events,
-`--rom`/`--out`/`--duration` overrides) for ad-hoc renders. It has no committed
-example scripts — write tests in TypeScript instead.
+Run with no `--test` and `retroplug-cli` boots the embedded end-user CLI
+([packages/cli](packages/cli)) — a JSON `--script` renderer
+(`{"at_ms":100,"tap":"A","hold_ms":50}` events, `--rom`/`--out`/`--duration`/
+`--save-sav`/`--save-rplg`/`--per-system-wav`/… flags). It's TypeScript over the
+same `emu` client as the tests, bundled to QuickJS bytecode (no Node at runtime);
+`RETROPLUG_CLI_BUNDLE_PATH` loads it from source for dev. For verification,
+prefer writing TypeScript tests.
 
 ### Standalone screenshot tooling
 
@@ -182,7 +185,7 @@ ui/                                  React/TSX UI source (esbuild-bundled)
   EmulatorTile.tsx                   Canvas widget that renders SameBoy frames
   MenuOverlay.tsx                    LVGL-focused menu (Esc to open)
 runtime/lvgljs/                      typed JS-side bridge into the native runtime
-cli/                                 retroplug-cli source (Wav, Script, TestHarness, main)
+cli/                                 retroplug-cli source (Wav, TestHarness, HarnessRpcService, main)
 test/                                Catch2 unit tests + test/ts TypeScript harness tests
 examples/reaper/                     committed Reaper .rpp fixtures (DAW host tests)
 porting/                             ordered migration roadmap from old RetroPlug

@@ -13,8 +13,7 @@ namespace rpcli {
 
 // Write a system's most-recently-published framebuffer to `outPath` as an
 // RGB24 PNG. Returns false when no frame has been published yet or the encode
-// fails. Shared by the --script screenshot events and the --test harness's
-// emu.screenshot().
+// fails. Backs the harness/CLI emu.screenshot() RPC.
 //
 // FrameBufferTriple stores XRGB8888 (little-endian B,G,R,X); transcode to
 // RGB24 to match lodepng_encode24_file (same logic as src/PluginUI.cpp).

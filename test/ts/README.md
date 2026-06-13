@@ -3,8 +3,8 @@
 Tests written in TypeScript that drive the emulator directly — button input,
 time advance, memory + CPU-state inspection, and audio/video capture — with
 `test()`/`expect()` and TAP output. This is the read-check-then-act companion
-to the JSON `--script` runner (`cli/Script.hpp`): a test can read live state and
-branch on it, which the declarative JSON form can't.
+to the embedded CLI's JSON `--script` renderer ([packages/cli](../../packages/cli)):
+a test can read live state and branch on it, which the declarative JSON form can't.
 
 It runs **in-process** inside the embedded txiki.js / QuickJS runtime that
 ships in `retroplug-cli` (no external Node, no DAW, no LVGL). esbuild transpiles

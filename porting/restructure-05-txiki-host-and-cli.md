@@ -1,6 +1,48 @@
 # restructure-05 — Generic txiki host + TypeScript CLI
 
-**Status:** Pending.
+**Status:** Done (2026-06-13).
+
+## As-built (what landed vs. the plan below)
+
+Realized in six green-at-each-step stages:
+
+- **Shared host.** `src/host/TjsHostRuntime` factors the duplicated "embed txiki +
+  pump the libuv job loop + eval a TS bundle + bind `__rpcSend`" boilerplate out
+  of `LvglJsEngine` (plugin) and `TestHarness` (cli); both now build on it. The
+  generic `__rpcSend` trampoline captures its dispatch callable in the JS
+  function's data (`JS_NewCFunctionData`) — no process global, multi-instance
+  safe. Each consumer keeps its own namespace extras (the plugin's lvgljs
+  parameter/event machinery, the harness's TAP runner) and supplies its own
+  dispatch lambda. The host is rpcpp-free; the request is a `std::string_view`
+  (C++17, not C++20 `span`) so the header is includable by the plugin engine —
+  `lvgl-js-native` was bumped 14 → 17.
+- **TS CLI.** `packages/cli/src/main.ts` is the end-user CLI, bundled
+  (`tools/build-cli.js` → tjsc `-p cli_`) and embedded in `retroplug-cli` as
+  `cli_bundle`. `main()` runs it by default (no `--test`), passing argv via the
+  host's `getArgv()`/`exit()` and routing all control + I/O through `createEmu`.
+  `RETROPLUG_CLI_BUNDLE_PATH` loads it from source for dev. Full `--script`
+  parity (multi-system + link groups + sync mode, routed MIDI, button/tap/chord/
+  transport/kit events, screenshots, save-rplg/-sav, event logs). Audio renders
+  via a streaming session (`renderBegin`/`renderChunk`/`renderEnd`) so scripted
+  input interleaves with a contiguous WAV without materializing PCM in JS.
+- **Cycle break.** A standalone `harness-schema-dump` exe (over a new
+  `retroplug-cli-core` static lib — emulator + `HarnessRpcService`, no txiki)
+  feeds `cli-regenerate`, so `cli_bundle` ← `cli-bundle-regenerate` ←
+  `cli-regenerate` ← `harness-schema-dump`, never back to `retroplug-cli`.
+- **Retired.** The C++ JSON render loop (`cli/main.cpp`) + `cli/Script.hpp` are
+  deleted; `run-reaper-author.sh`'s legacy `.json` branch is dropped (rplg-only).
+  `gen-lsdj-savs.ts` drives the new CLI unchanged (`--script`/`--rom`/`--save-sav`).
+
+Deviation from the plan below: the host is a thin shared runtime each consumer
+*holds* (not a launcher that owns the LVGL display / tick loop) — the plugin
+keeps its display setup + tick ownership, the cli keeps its bounded pump. The
+`--test` path stays (tests use it); only the C++ `--script` render path was
+retired. Verified: cli (30) + ui (11) + `validate` (clap 0 / vst3 0, pluginval
+SUCCESS) + `screenshot`; embedded CLI render-to-wav, LSDj boot+save-sav (128 KiB
+/ jk / fmt 22), multi-system per-system-wav + screenshot + event-logs, dev-path
+override, and a full `gen-lsdj-savs` archive run.
+
+The original plan follows for reference.
 
 ## Goal
 

@@ -82,8 +82,7 @@ inline std::string oneLine(const std::string& s) {
     return out;
 }
 
-// Parse an LSDj sync-mode name for emu.loadRom's role option. Mirrors the
-// --script runner's parseLsdjSyncMode (cli/main.cpp).
+// Parse an LSDj sync-mode name for emu.loadRom's role option.
 inline LsdjSyncMode parseLsdjSyncMode(const std::string& s) {
     if (s == "Off")                return LsdjSyncMode::Off;
     if (s == "MidiSync")           return LsdjSyncMode::MidiSync;
@@ -108,9 +107,9 @@ struct TestHarness::Impl {
     std::uint32_t blockSize = 1024;
     std::vector<float> scratchL, scratchR;
 
-    // Simulated host transport, fed into AudioBlockInfo each block (mirrors
-    // cli/main.cpp's cliBpm/cliTransport/cliPpq). LsdjSyncRole and friends read
-    // these to generate MIDI-clock byte streams the same way as in the plugin.
+    // Simulated host transport, fed into AudioBlockInfo each block. LsdjSyncRole
+    // and friends read these to generate MIDI-clock byte streams the same way as
+    // in the plugin.
     double        bpm              = 120.0;
     bool          transportPlaying = false;
     double        ppq              = 0.0;
@@ -169,7 +168,7 @@ struct TestHarness::Impl {
                 if (sram) cfg.sram = *sram;
                 // Optional LSDj sync-mode role (MidiSync / MidiMap / Passthrough
                 // / ArduinoboyMaster / ...): pre-seeds the role so onActivate
-                // skips the sniffer fallback. Mirrors the --script runner.
+                // skips the sniffer fallback.
                 if (!lsdjSyncMode.empty()) {
                     LsdjSyncConfig lsdj;
                     lsdj.mode = rpcli::parseLsdjSyncMode(lsdjSyncMode);
@@ -235,8 +234,7 @@ struct TestHarness::Impl {
     }
 
     // Drain each system's role outputs for the block just processed into the
-    // per-system logs (absolute sample = sampleClock + event frame). Mirrors
-    // the midiOut/serialOut drain in cli/main.cpp's render loop.
+    // per-system logs (absolute sample = sampleClock + event frame).
     void drainCaptures() {
         for (SystemBase* sys : sysList) {
             const SystemId id = sys->id();
@@ -307,11 +305,10 @@ struct TestHarness::Impl {
     }
 
     // Advance `ms` and return each system's audio in its own interleaved buffer
-    // (out[i] = L,R,L,R… for system i). SameBoy-only — mirrors the manual
-    // prepareForBlock → stepIfBelowTarget → finishBlock orchestration in
-    // cli/main.cpp's --per-system-wav path, which interleaves linked systems the
-    // same way LinkGroup does. Used to prove LSDj link-cable sync (the follower
-    // produces audio only when actually synced to the leader).
+    // (out[i] = L,R,L,R… for system i). SameBoy-only — the manual
+    // prepareForBlock → stepIfBelowTarget → finishBlock orchestration interleaves
+    // linked systems the same way LinkGroup does. Used to prove LSDj link-cable
+    // sync (the follower produces audio only when actually synced to the leader).
     std::vector<std::vector<float>> runMsPerSystem(double ms) {
         std::vector<std::vector<float>> out(sysList.size());
         if (ms <= 0.0 || sysList.empty()) return out;
@@ -354,8 +351,7 @@ struct TestHarness::Impl {
     }
 
     // Route a MIDI message to the loaded systems per `routing` (the channel
-    // nibble decides the target system), unlike a single-system onMidi. Mirrors
-    // cli/main.cpp's project.dispatchMidi(&ev, 1, routing).
+    // nibble decides the target system), unlike a single-system onMidi.
     void dispatchMidi(const std::vector<std::uint8_t>& bytes, std::uint32_t routing) {
         if (bytes.empty() || bytes.size() > ::MidiEvent::kDataSize)
             throw std::runtime_error("dispatchMidi: expected 1.." +
@@ -383,7 +379,7 @@ struct TestHarness::Impl {
     // Render `total` samples into the currently-open render writers. mix-only
     // uses stepBlock (the linked Project::onProcess path); per-system uses the
     // manual prepareForBlock -> stepIfBelowTarget -> finishBlock orchestration
-    // and sums into the mix (matching cli/main.cpp's --per-system-wav loop).
+    // and sums into the mix (mix = sum of per-system).
     void renderInto(std::uint64_t total) {
         if (renderPer_.empty()) {
             for (std::uint64_t s = 0; s < total; s += blockSize) {
@@ -512,7 +508,7 @@ struct TestHarness::Impl {
     // Snapshot the project's current config + savestate into a .rplg (pure
     // PKZIP from projectConfigToZip). Used to author Reaper DAW fixtures: a TS
     // test builds the LSDj/mGB state, then writes the .rplg the plugin auto-loads
-    // via RETROPLUG_AUTOLOAD_PROJECT. Mirrors cli/main.cpp's --save-rplg.
+    // via RETROPLUG_AUTOLOAD_PROJECT.
     void saveRplg(const std::string& path) {
         const auto zip = projectConfigToZip(project->snapshotConfig());
         if (zip.empty())
