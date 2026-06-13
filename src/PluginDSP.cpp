@@ -66,7 +66,7 @@ public:
     std::atomic<SystemId> focusedSystemAtomic{0};
 
     LVGLPluginDSP()
-        : Plugin(kPluginParameterCount, 0, /*states=*/1)
+        : Plugin(static_cast<uint32_t>(kRetroPlugDescriptor.parameters.size()), 0, /*states=*/1)
     {
         fSampleRate = getSampleRate();
         sampleRateAtomic.store(fSampleRate, std::memory_order_release);
@@ -167,8 +167,8 @@ protected:
 
     void initParameter(uint32_t index, Parameter& parameter) override
     {
-        if (index >= kPluginParameterCount) return;
-        const ParamSpec& spec = kPluginParameters[index];
+        if (index >= kRetroPlugDescriptor.parameters.size()) return;
+        const dpfjs::ParamSpec& spec = kRetroPlugDescriptor.parameters[index];
         parameter.symbol      = spec.symbol;
         parameter.name        = spec.name;
         parameter.shortName   = spec.shortName;

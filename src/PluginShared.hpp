@@ -2,6 +2,7 @@
 
 #include <atomic>
 
+#include "dpfjs/PluginDescriptor.hpp"
 #include "project/Project.hpp"
 #include "system/SystemTypes.hpp"
 #include "transport/CommandQueue.hpp"
@@ -36,27 +37,19 @@ struct SharedDSPData {
 // Implemented in PluginDSP.cpp — returns the SharedDSPData from the plugin instance.
 SharedDSPData* getSharedDSPData(void* pluginPtr);
 
-// Single source of truth for the plugin's parameters. Consumed by both
-// PluginDSP.cpp (initParameter copies fields onto DPF's Parameter struct)
-// and PluginUI.cpp (registers symbol -> index with the JS engine).
-// The order here defines parameter indices (0, 1, 2, ...).
-struct ParamSpec {
-    const char* symbol;
-    const char* name;
-    const char* shortName;
-    const char* unit;
-    float min;
-    float max;
-    float def;
-    uint32_t hints;
-};
-
-constexpr ParamSpec kPluginParameters[] = {
+// RetroPlug's plugin descriptor: the runtime parameter list + identity the
+// dpf.js framework consumes (PluginDSP's initParameter copies the spec fields
+// onto DPF's Parameter struct; PluginUI registers symbol -> index with the JS
+// engine). The array order defines parameter indices (0, 1, 2, ...). The
+// identity here is the runtime truth; DistrhoPluginInfo.h is the compile-time
+// DPF identity and must agree (name/URI/IO).
+constexpr dpfjs::ParamSpec kRetroPlugParams[] = {
     { "gain", "Master Gain", "Gain", "dB", -90.0f, 12.0f, 0.0f,
       kParameterIsAutomatable },
 };
 
-constexpr uint32_t kPluginParameterCount =
-    sizeof(kPluginParameters) / sizeof(kPluginParameters[0]);
+constexpr dpfjs::PluginDescriptor kRetroPlugDescriptor{
+    "RetroPlug", "urn:distrho:retroplug", 0, 8, kRetroPlugParams,
+};
 
 END_NAMESPACE_DISTRHO

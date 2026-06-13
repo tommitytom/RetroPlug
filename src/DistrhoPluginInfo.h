@@ -5,6 +5,11 @@
  * SPDX-License-Identifier: ISC
  */
 
+// These DPF compile-time macros are the plugin's identity. The runtime
+// counterpart is kRetroPlugDescriptor (src/PluginShared.hpp); keep the shared
+// fields (name / URI / I/O counts) in agreement. DPF requires this header at a
+// fixed include path, so it stays consumer-owned and is not generated.
+
 /**
    The plugin name.@n
    This is used to identify your plugin before a Plugin instance can be created.

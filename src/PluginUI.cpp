@@ -232,8 +232,9 @@ public:
                     setParameterValue(idx, val);
                     editParameter(idx, false);
                 });
-            for (uint32_t i = 0; i < kPluginParameterCount; ++i)
-                jsEngine.registerParameter(i, kPluginParameters[i].symbol);
+            const auto& params = kRetroPlugDescriptor.parameters;
+            for (uint32_t i = 0; i < params.size(); ++i)
+                jsEngine.registerParameter(i, params[i].symbol);
 
             // Spin up the per-user config + bindings watcher BEFORE the
             // bridge so the bridge can hand a non-null pointer to the RPC
