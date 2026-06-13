@@ -5,7 +5,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -93,8 +95,30 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
 
     JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
 
-    JS_SetPropertyStr(ctx, ns, "__rpcSend",
-                      JS_NewCFunction(ctx, js_rpcSend, "__rpcSend", 1));
+    // The generic in-process __rpcSend trampoline lives in the shared host; we
+    // supply the dispatch callable. It recovers the bridge via the LVGL display
+    // (bridgeFromContext) so a torn-down bridge yields no reply rather than a
+    // dangle, and echoes server-side JSON-RPC error envelopes to stderr — the
+    // JS client drops error replies with a null id (every notification reply),
+    // so without this a typed-handler exception in C++ would read as "nothing
+    // happened" on the UI side.
+    engine.host().bindRpcSend(ns,
+        [](std::string_view bytes) -> std::optional<std::vector<char>> {
+            PluginJsBridge* self = bridgeFromContext();
+            if (!self || !self->rpcServer_)
+                return std::nullopt;
+            auto reply = self->rpcServer_->processMessage(
+                std::span<const char>(bytes.data(), bytes.size()));
+            if (reply) {
+                if (auto err = rpcpp::MsgpackCodec::read<rpcpp::RpcError>(
+                        std::span<const char>{reply->data(), reply->size()});
+                    err) {
+                    std::fprintf(stderr, "[rpc] error %d: %s\n",
+                                 err->error.code, err->error.message.c_str());
+                }
+            }
+            return reply;
+        });
     JS_SetPropertyStr(ctx, ns, "__log",
                       JS_NewCFunction(ctx, js_log, "__log", 2));
     JS_SetPropertyStr(ctx, ns, "debugOverlay",
@@ -116,60 +140,6 @@ PluginJsBridge::~PluginJsBridge() {
         if (data->bridge == this)
             data->bridge = nullptr;
     }
-}
-
-JSValue PluginJsBridge::js_rpcSend(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    PluginJsBridge* self = bridgeFromContext();
-    if (!self || !self->rpcServer_)
-        return JS_ThrowInternalError(ctx, "plugin.__rpcSend: bridge unavailable");
-    if (argc < 1)
-        return JS_ThrowTypeError(ctx, "plugin.__rpcSend: expected (bytes: Uint8Array)");
-
-    // Accept either a TypedArray view (Uint8Array, the common case from the
-    // JS client) or a raw ArrayBuffer. JS_GetTypedArrayBuffer returns the
-    // underlying ArrayBuffer plus the view's offset/length so we don't
-    // accidentally read past the slice.
-    size_t byteOffset = 0;
-    size_t byteLength = 0;
-    size_t arrayLen   = 0;
-    JSValue ab = JS_GetTypedArrayBuffer(ctx, argv[0],
-                                        &byteOffset, &byteLength, nullptr);
-    uint8_t* data = nullptr;
-    if (!JS_IsException(ab)) {
-        data = JS_GetArrayBuffer(ctx, &arrayLen, ab);
-    } else {
-        JS_FreeValue(ctx, ab);
-        data = JS_GetArrayBuffer(ctx, &arrayLen, argv[0]);
-        byteOffset = 0;
-        byteLength = arrayLen;
-        ab = JS_DupValue(ctx, argv[0]);
-    }
-    if (!data) {
-        JS_FreeValue(ctx, ab);
-        return JS_ThrowTypeError(ctx, "plugin.__rpcSend: argument is not bytes");
-    }
-
-    std::span<const char> bytes(reinterpret_cast<const char*>(data + byteOffset),
-                                byteLength);
-    auto reply = self->rpcServer_->processMessage(bytes);
-    JS_FreeValue(ctx, ab);
-
-    if (!reply) return JS_NULL;
-
-    // Surface server-side JSON-RPC error envelopes on stderr. The JS
-    // client drops error replies whose id is null/undefined (which is
-    // every notification reply), so without this hook a typed-handler
-    // exception in C++ shows up as "nothing happens" on the UI side.
-    if (auto err = rpcpp::MsgpackCodec::read<rpcpp::RpcError>(
-            std::span<const char>{reply->data(), reply->size()});
-        err) {
-        std::fprintf(stderr, "[rpc] error %d: %s\n",
-                     err->error.code, err->error.message.c_str());
-    }
-
-    return JS_NewArrayBufferCopy(ctx,
-        reinterpret_cast<const uint8_t*>(reply->data()),
-        reply->size());
 }
 
 JSValue PluginJsBridge::js_log(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {

@@ -48,11 +48,6 @@
 #include "codecs/MsgpackCodec.h"
 #include "transports/QueueTransport.h"
 
-// txiki runtime types: opaque here (pointers only). Defined for real by
-// tjs.h/quickjs.h in TestHarness.cpp, the only TU that drives the runtime.
-struct TJSRuntime;
-struct JSContext;
-
 using HarnessRpcTransport = rpcpp::QueueTransport<rpcpp::MsgpackCodec>;
 using HarnessRpcServer    = rpcpp::TypedRpcServer<HarnessRpcService, rpcpp::MsgpackCodec>;
 
@@ -108,9 +103,6 @@ inline LsdjSyncMode parseLsdjSyncMode(const std::string& s) {
 // ---------------------------------------------------------------------------
 
 struct TestHarness::Impl {
-    TJSRuntime* qrt = nullptr;
-    JSContext*  ctx = nullptr;
-
     std::unique_ptr<Project> project;
     double      sampleRate = 44100.0;
     std::uint32_t blockSize = 1024;

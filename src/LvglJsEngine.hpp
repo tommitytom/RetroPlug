@@ -12,6 +12,7 @@ extern "C" {
 #include <string>
 #include <vector>
 
+#include "host/TjsHostRuntime.hpp"
 #include "native/components/window/window.hpp"
 
 class LvglJsEngine;
@@ -51,6 +52,10 @@ public:
     // attach further native methods without the engine knowing about them.
     JSValue lvglJsNamespace() const;
 
+    // The embedded txiki host. PluginJsBridge uses it to bind the generic
+    // __rpcSend trampoline onto its own "plugin" namespace.
+    TjsHostRuntime& host() { return host_; }
+
     // Fire all handlers registered via lvgljs.on(channel, fn).
     // argv values are not consumed; engine handles refcounting internally.
     void emit(const char* channel, int argc, JSValueConst* argv);
@@ -75,8 +80,8 @@ private:
     static JSValue js_lvgljs_getParameterIndex(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
     static JSValue js_lvgljs_getParameterCount(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
 
-    TJSRuntime* qrt = nullptr;
-    JSContext* ctx = nullptr;
+    TjsHostRuntime host_;
+    JSContext* ctx = nullptr;  // cached host_.context()
     DpfJsDisplayData displayData;
     bool initialized = false;
     JSValue lvgljsObj;  // initialized to JS_UNDEFINED in ctor (not a constexpr in C++)

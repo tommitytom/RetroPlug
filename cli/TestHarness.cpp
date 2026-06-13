@@ -4,25 +4,21 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
-#include <vector>
+#include <string_view>
 
-extern "C" {
-    #include "tjs.h"       // TJS_Initialize / TJS_NewRuntime / TJS_GetJSContext
-                           // / TJS_FreeRuntime (+ <quickjs.h>)
-    #include "private.h"   // TJS_EvalModuleContent / TJS_GetLoop /
-                           // tjs__execute_jobs (+ <uv.h>)
-}
+#include "host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
-#include "TestHarnessImpl.hpp"     // TestHarness::Impl (complete) + rpc aliases
+#include "TestHarnessImpl.hpp"      // TestHarness::Impl (complete) + rpc aliases
 #include "HarnessRpcRegistration.hpp"
 
-// Guard the hand-mirrored TypeScript enums in test/harness/index.ts. The wire
-// values are load-bearing; if a C++ renumber drifts from the TS Button/Mem
-// objects, fail the build here with a pointed message rather than silently
-// passing the wrong byte across the bridge.
+// Guard the hand-mirrored TypeScript enums in packages/retroplug/src/emu.ts. The
+// wire values are load-bearing; if a C++ renumber drifts from the TS
+// Button/Mem/Routing objects, fail the build here with a pointed message rather
+// than silently passing the wrong byte across the bridge.
 static_assert(static_cast<int>(GameboyButton::Right)  == 0, "harness Button.Right out of sync");
 static_assert(static_cast<int>(GameboyButton::Left)   == 1, "harness Button.Left out of sync");
 static_assert(static_cast<int>(GameboyButton::Up)     == 2, "harness Button.Up out of sync");
@@ -45,48 +41,18 @@ static_assert(static_cast<int>(MidiRouting::FourChannelsPerInstance) == 1, "harn
 static_assert(static_cast<int>(MidiRouting::OneChannelPerInstance)   == 2, "harness Routing.OneChannelPerInstance out of sync");
 static_assert(static_cast<int>(MidiRouting::MidiChannelToInstance)   == 3, "harness Routing.MidiChannelToInstance out of sync");
 
-// The active harness for the current process. txiki occupies BOTH the QuickJS
-// context- and runtime-opaque slots (vm.c stores its TJSRuntime* in each), so
-// we cannot stash our Impl there. One runtime per process + single-threaded
-// means a translation-unit pointer is the correct recovery mechanism for the
-// static JS trampolines.
+// The active harness for the current process. The __rpcSend dispatch is carried
+// by the host's trampoline (no global needed), but the TAP-runner trampolines
+// below still recover their Impl through this translation-unit pointer — one
+// runtime per process + single-threaded makes that the correct mechanism.
 namespace { TestHarness::Impl* g_activeImpl = nullptr; }
 
 // ---------------------------------------------------------------------------
-// JS trampolines. Every body is wrapped so a C++ throw never crosses into
-// QuickJS (which does not catch C++ exceptions).
+// JS trampolines for the native TAP runner. Every body is wrapped so a C++
+// throw never crosses into QuickJS (which does not catch C++ exceptions).
 // ---------------------------------------------------------------------------
 
 namespace {
-
-// __rpcSend(bytes) -> ArrayBuffer | null: the single sync entry the generated
-// HarnessService client dispatches through (mirrors PluginJsBridge::js_rpcSend).
-// Accepts a Uint8Array view or a raw ArrayBuffer; returns the msgpack reply.
-JSValue jsHarnessRpcSend(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    auto* h = g_activeImpl;
-    if (!h || !h->rpcServer_)
-        return JS_ThrowInternalError(ctx, "__rpcSend: harness unavailable");
-    if (argc < 1)
-        return JS_ThrowTypeError(ctx, "__rpcSend: expected (bytes)");
-    std::size_t byteOffset = 0, byteLength = 0, arrayLen = 0;
-    JSValue ab = JS_GetTypedArrayBuffer(ctx, argv[0], &byteOffset, &byteLength, nullptr);
-    std::uint8_t* data = nullptr;
-    if (!JS_IsException(ab)) {
-        data = JS_GetArrayBuffer(ctx, &arrayLen, ab);
-    } else {
-        JS_FreeValue(ctx, ab);
-        data = JS_GetArrayBuffer(ctx, &arrayLen, argv[0]);
-        byteOffset = 0; byteLength = arrayLen;
-        ab = JS_DupValue(ctx, argv[0]);
-    }
-    if (!data) { JS_FreeValue(ctx, ab); return JS_ThrowTypeError(ctx, "__rpcSend: not bytes"); }
-    std::span<const char> bytes(reinterpret_cast<const char*>(data + byteOffset), byteLength);
-    auto reply = h->rpcServer_->processMessage(bytes);
-    JS_FreeValue(ctx, ab);
-    if (!reply) return JS_NULL;
-    return JS_NewArrayBufferCopy(ctx,
-        reinterpret_cast<const std::uint8_t*>(reply->data()), reply->size());
-}
 
 JSValue jsBeginCase(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     auto* h = g_activeImpl;
@@ -135,22 +101,13 @@ JSValue jsLog(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
 // TestHarness lifecycle.
 // ---------------------------------------------------------------------------
 
-TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
-    // Idempotent global init (mirrors src/LvglJsEngine.cpp:130-136).
-    static bool tjsInitialized = false;
-    if (!tjsInitialized) {
-        static char arg0[] = "retroplug-cli";
-        static char* argv[] = { arg0, nullptr };
-        TJS_Initialize(1, argv);
-        tjsInitialized = true;
-    }
+TestHarness::TestHarness()
+    : impl_(std::make_unique<Impl>()),
+      host_(std::make_unique<TjsHostRuntime>()) {
+    if (!host_->init())
+        throw std::runtime_error("TjsHostRuntime init failed");
 
-    impl_->qrt = TJS_NewRuntime();
-    if (!impl_->qrt) throw std::runtime_error("TJS_NewRuntime() failed");
-    impl_->ctx = TJS_GetJSContext(impl_->qrt);
-
-    // Recover *this Impl inside the static C trampolines. NOT via the context/
-    // runtime opaque slots — txiki owns both for its TJSRuntime*.
+    // Recover *this Impl inside the static TAP trampolines.
     g_activeImpl = impl_.get();
 
     // Stand up the rpcpp server stack. The generated HarnessService client
@@ -161,7 +118,7 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
                                                               *impl_->rpcTransport_);
     registerHarnessRpcMethods(*impl_->rpcServer_);
 
-    JSContext* ctx = impl_->ctx;
+    JSContext* ctx = host_->context();
 
     // Build the Symbol.for("retroplug") namespace and attach the native
     // functions before defining it (DefinePropertyValue consumes the ref).
@@ -173,13 +130,17 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     auto bind = [&](const char* name, JSCFunction* fn, int argc) {
         JS_SetPropertyStr(ctx, ns, name, JS_NewCFunction(ctx, fn, name, argc));
     };
-    bind("beginCase",    jsBeginCase,    0);
-    bind("report",       jsReport,       3);
-    bind("done",         jsDone,         0);
-    bind("log",          jsLog,          2);
+    bind("beginCase", jsBeginCase, 0);
+    bind("report",    jsReport,    3);
+    bind("done",      jsDone,      0);
+    bind("log",       jsLog,       2);
     // The emulator surface: the generated HarnessService client dispatches
-    // through this single sync RPC entry (the per-method trampolines are gone).
-    bind("__rpcSend",    jsHarnessRpcSend, 1);
+    // through the host's single sync RPC entry.
+    host_->bindRpcSend(ns,
+        [impl = impl_.get()](std::string_view bytes) {
+            return impl->rpcServer_->processMessage(
+                std::span<const char>(bytes.data(), bytes.size()));
+        });
 
     JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
     JS_FreeAtom(ctx, atom);
@@ -204,11 +165,10 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
 }
 
 TestHarness::~TestHarness() {
-    if (impl_ && impl_->qrt) {
-        TJS_FreeRuntime(impl_->qrt);
-        impl_->qrt = nullptr;
-        impl_->ctx = nullptr;
-    }
+    // Free the runtime (and the __rpcSend trampoline whose captured lambda
+    // points at impl_) while impl_ is still alive, then drop the recovery
+    // pointer. impl_ outlives host_ either way (declared first).
+    host_.reset();
     g_activeImpl = nullptr;
 }
 
@@ -225,23 +185,15 @@ int TestHarness::runFile(const std::string& jsPath) {
         return 1;
     }
 
-    JSContext* ctx = impl_->ctx;
     // is_main=true fires the synthetic window 'load' event the runner hooks.
-    JSValue res = TJS_EvalModuleContent(ctx, jsPath.c_str(), /*is_main*/ true,
-                                        /*use_realpath*/ false, code.data(),
-                                        code.size());
-    const bool threw = JS_IsException(res);
-    if (threw) tjs_dump_error(ctx);
-    JS_FreeValue(ctx, res);
+    const int rc = host_->evalModuleBuffer(code.data(), code.size(), jsPath.c_str());
 
     // Drain any async work the tests scheduled (timers / promises). v1 tests
     // are synchronous, so a bounded pump is sufficient.
-    for (int i = 0; i < 64; ++i) {
-        uv_run(TJS_GetLoop(impl_->qrt), UV_RUN_NOWAIT);
-        tjs__execute_jobs(ctx);
-    }
+    for (int i = 0; i < 64; ++i)
+        host_->pump();
 
-    if (threw) {
+    if (rc != 0) {
         std::printf("Bail out! test module evaluation failed\n");
         std::fflush(stdout);
         return 1;

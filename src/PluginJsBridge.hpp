@@ -116,10 +116,9 @@ public:
     void pumpRomWatchers() { if (rpcService_) rpcService_->pumpRomWatchers(); }
 
 private:
-    // rpcpp transport — single sync entry point exposed to QuickJS. Body
-    // calls rpcServer_->processMessage and returns either the inline
-    // response (as ArrayBuffer) or null for notifications.
-    static JSValue js_rpcSend(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    // The single sync entry point exposed to QuickJS — `__rpcSend(bytes)` —
+    // is the shared host's generic trampoline (TjsHostRuntime::bindRpcSend),
+    // wired in the ctor to a lambda that calls rpcServer_->processMessage.
 
     // Console-stderr shim. Called by the JS-side polyfill in
     // ui/runtime/console.ts: `__log(level: string, msg: string)`. Writes

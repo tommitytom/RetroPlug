@@ -126,21 +126,12 @@ bool LvglJsEngine::init() {
     if (initialized)
         return true;
 
-    // Initialize txiki.js globals (idempotent if called multiple times)
-    static bool tjs_initialized = false;
-    if (!tjs_initialized) {
-        static char arg0[] = "lvgl-plugin";
-        static char* argv[] = { arg0, nullptr };
-        TJS_Initialize(1, argv);
-        tjs_initialized = true;
-    }
-
-    // Create a new JS runtime with default options
-    qrt = TJS_NewRuntime();
-    if (!qrt)
+    // The embedded txiki/QuickJS runtime is owned by the shared host.
+    if (!host_.init())
         return false;
 
-    ctx = TJS_GetJSContext(qrt);
+    TJSRuntime* qrt = host_.runtime();
+    ctx = host_.context();
 
     // Store per-instance data on the LVGL display. This extends
     // LvBindingJsDisplayData (used by lv_binding_js internally for
@@ -218,8 +209,7 @@ void LvglJsEngine::tick() {
     if (!initialized)
         return;
 
-    uv_run(TJS_GetLoop(qrt), UV_RUN_NOWAIT);
-    tjs__execute_jobs(ctx);
+    host_.pump();
 }
 
 void LvglJsEngine::shutdown() {
@@ -251,78 +241,32 @@ void LvglJsEngine::shutdown() {
     displayData.bridge = nullptr;
     displayData.windowInstance = nullptr;
 
-    TJS_FreeRuntime(qrt);
-    qrt = nullptr;
+    host_.shutdown();
     ctx = nullptr;
 }
 
 int LvglJsEngine::evalModule(const char* filename) {
     if (!initialized)
         return -1;
-
-    JSValue result = TJS_EvalModule(ctx, filename, true);
-    if (JS_IsException(result)) {
-        tjs_dump_error(ctx);
-        JS_FreeValue(ctx, result);
-        return -1;
-    }
-    JS_FreeValue(ctx, result);
-    return 0;
+    return host_.evalModule(filename);
 }
 
 int LvglJsEngine::evalModuleBuffer(const char* code, size_t len, const char* name) {
     if (!initialized)
         return -1;
-
-    // Same path as TJS_EvalModule, but fed from a buffer rather than a file.
-    // Sets up import.meta.url and fires the synthetic 'load' event.
-    JSValue result = TJS_EvalModuleContent(ctx, name, true, false, code, len);
-    if (JS_IsException(result)) {
-        tjs_dump_error(ctx);
-        JS_FreeValue(ctx, result);
-        return -1;
-    }
-    JS_FreeValue(ctx, result);
-    return 0;
+    return host_.evalModuleBuffer(code, len, name);
 }
 
 int LvglJsEngine::evalModuleBytecode(const uint8_t* bytecode, size_t len) {
     if (!initialized)
         return -1;
-
-    // tjs__eval_bytecode does JS_ReadObject(JS_READ_OBJ_BYTECODE) →
-    // JS_ResolveModule → js_module_set_import_meta(false, false) →
-    // JS_EvalFunction. It does NOT fire the 'load' event that
-    // TJS_EvalModuleContent fires when is_main=true, so do it here for
-    // parity with evalModuleBuffer.
-    if (tjs__eval_bytecode(ctx, bytecode, len, true) != 0)
-        return -1;
-
-    static const char kLoadEvent[] = "window.dispatchEvent(new Event('load'));";
-    JSValue result = JS_Eval(ctx, kLoadEvent, sizeof(kLoadEvent) - 1,
-                             "<global>", JS_EVAL_TYPE_GLOBAL);
-    if (JS_IsException(result)) {
-        tjs_dump_error(ctx);
-        JS_FreeValue(ctx, result);
-        return -1;
-    }
-    JS_FreeValue(ctx, result);
-    return 0;
+    return host_.evalModuleBytecode(bytecode, len);
 }
 
 int LvglJsEngine::evalString(const char* code) {
     if (!initialized)
         return -1;
-
-    JSValue result = JS_Eval(ctx, code, strlen(code), "<eval>",
-                             JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_STRICT);
-    if (JS_IsException(result)) {
-        tjs_dump_error(ctx);
-        JS_FreeValue(ctx, result);
-        return -1;
-    }
-    JS_FreeValue(ctx, result);
-    return 0;
+    return host_.evalString(code);
 }
 
 JSContext* LvglJsEngine::getContext() const {

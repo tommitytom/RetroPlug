@@ -15,6 +15,8 @@
 // PIMPL keeps the heavy txiki/quickjs headers (and their libwebsockets/mbedtls/
 // sqlite transitive includes) out of this header — only TestHarness.cpp pulls
 // them in.
+class TjsHostRuntime;
+
 class TestHarness {
 public:
     TestHarness();
@@ -32,4 +34,7 @@ public:
 
 private:
     std::unique_ptr<Impl> impl_;
+    // The embedded txiki/QuickJS host (forward-declared so this header stays
+    // free of the txiki includes — only TestHarness.cpp drives the runtime).
+    std::unique_ptr<TjsHostRuntime> host_;
 };

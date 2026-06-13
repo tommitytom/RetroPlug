@@ -189,6 +189,8 @@ add_library(lvgl-js-native STATIC
     ${LVGL_JS_NATIVE_DIR}/bootstrap/render_bootstrap.cpp
     # Engine wrapper (replaces lv_binding_js/src/engine/engine.cpp)
     src/LvglJsEngine.cpp
+    # Generic embedded txiki host, shared with retroplug-cli's TestHarness.
+    src/host/TjsHostRuntime.cpp
 )
 
 target_include_directories(lvgl-js-native PUBLIC
@@ -199,7 +201,10 @@ target_include_directories(lvgl-js-native PUBLIC
 target_link_libraries(lvgl-js-native PUBLIC tjs lvgl::lvgl)
 set_target_properties(lvgl-js-native PROPERTIES
     POSITION_INDEPENDENT_CODE ON
-    CXX_STANDARD 14
+    # C++17: the shared host (src/host/TjsHostRuntime) uses std::optional /
+    # std::string_view. The lv_binding_js component wrappers compile cleanly
+    # under 17 (low-risk bump from the original 14).
+    CXX_STANDARD 17
 )
 
 # Ensure all static libs that end up in shared plugin binaries have PIC
