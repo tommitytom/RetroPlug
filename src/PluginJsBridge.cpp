@@ -1,20 +1,15 @@
 #include "PluginJsBridge.hpp"
 
 #include <chrono>
-#include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
-#include <optional>
-#include <span>
-#include <string_view>
-#include <utility>
+#include <string>
 #include <vector>
 
 #include <rfl/Bytestring.hpp>
 
 #include "PluginRpcRegistration.hpp"
-#include "RpcEnvelope.h"
 #include "project/Project.hpp"
 #include "system/SystemBase.hpp"
 #include "transport/MemorySnapshotTriple.hpp"
@@ -39,16 +34,6 @@ struct MemoryNotificationPayload {
 
 } // namespace
 
-namespace {
-
-// Resolve the bridge instance bound to the current LVGL display.
-PluginJsBridge* bridgeFromContext() {
-    DpfJsDisplayData* data = DpfJsDisplayData::get();
-    return (data && data->bridge) ? static_cast<PluginJsBridge*>(data->bridge) : nullptr;
-}
-
-} // namespace
-
 PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                                Project* project,
                                CommandQueue* commands,
@@ -58,24 +43,18 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                                UserConfig* userConfig,
                                RecentFiles* recentFiles)
     : engine(eng),
-      project_(project) {
-    if (DpfJsDisplayData* data = DpfJsDisplayData::get())
-        data->bridge = this;
+      project_(project),
+      service_(project, commands, events, sampleRate, focusedSystemId,
+               userConfig, recentFiles),
+      // The generic bridge owns the rpc server/transport + the "plugin"
+      // namespace (__rpcSend / __log). It references service_ — declared first.
+      rpc_(eng, service_, "plugin") {
 
-    // Stand up the rpcpp server stack. The service holds the shared-state
-    // pointers from PluginUI; the transport buffers async/notification frames
-    // for `pumpAsync` to fan out via engine.emit.
-    rpcService_   = std::make_unique<PluginRpcService>(project, commands, events,
-                                                       sampleRate, focusedSystemId,
-                                                       userConfig, recentFiles);
-    rpcTransport_ = std::make_unique<RpcTransport>();
-    rpcServer_    = std::make_unique<RpcServer>(*rpcService_, *rpcTransport_);
+    registerPluginRpcMethods(rpc_.server());
 
-    registerPluginRpcMethods(*rpcServer_);
-
-    // Service emits string-payload JS events through the existing engine
-    // channel mechanism (on/off in runtime/lvgljs/index.ts).
-    rpcService_->setEmitEventCallback(
+    // Service emits string-payload JS events through the engine channel
+    // mechanism (on/off in runtime/lvgljs/index.ts).
+    service_.setEmitEventCallback(
         [this](const std::string& channel, const std::string& payload) {
             JSContext* ctx = engine.getContext();
             if (!ctx) return;
@@ -84,91 +63,18 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
             JS_FreeValue(ctx, v);
         });
 
-    // Expose the JS side's plugin namespace with the single sync RPC entry.
-    JSContext* ctx = engine.getContext();
-    if (!ctx) return;
-
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue sym    = JS_NewSymbol(ctx, "plugin", true);
-    JSAtom atom    = JS_ValueToAtom(ctx, sym);
-    JSValue ns     = JS_NewObjectProto(ctx, JS_NULL);
-
-    JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
-
-    // The generic in-process __rpcSend trampoline lives in the shared host; we
-    // supply the dispatch callable. It recovers the bridge via the LVGL display
-    // (bridgeFromContext) so a torn-down bridge yields no reply rather than a
-    // dangle, and echoes server-side JSON-RPC error envelopes to stderr — the
-    // JS client drops error replies with a null id (every notification reply),
-    // so without this a typed-handler exception in C++ would read as "nothing
-    // happened" on the UI side.
-    engine.host().bindRpcSend(ns,
-        [](std::string_view bytes) -> std::optional<std::vector<char>> {
-            PluginJsBridge* self = bridgeFromContext();
-            if (!self || !self->rpcServer_)
-                return std::nullopt;
-            auto reply = self->rpcServer_->processMessage(
-                std::span<const char>(bytes.data(), bytes.size()));
-            if (reply) {
-                if (auto err = rpcpp::MsgpackCodec::read<rpcpp::RpcError>(
-                        std::span<const char>{reply->data(), reply->size()});
-                    err) {
-                    std::fprintf(stderr, "[rpc] error %d: %s\n",
-                                 err->error.code, err->error.message.c_str());
-                }
-            }
-            return reply;
-        });
-    JS_SetPropertyStr(ctx, ns, "__log",
-                      JS_NewCFunction(ctx, js_log, "__log", 2));
-    JS_SetPropertyStr(ctx, ns, "debugOverlay",
-                      JS_NewBool(ctx, std::getenv("RETROPLUG_DEBUG_OVERLAY") != nullptr));
-
-    pluginNamespace = JS_DupValue(ctx, ns);
-
-    JS_FreeAtom(ctx, atom);
-    JS_FreeValue(ctx, sym);
-    JS_FreeValue(ctx, global);
-}
-
-PluginJsBridge::~PluginJsBridge() {
-    if (JSContext* ctx = engine.getContext(); ctx && !JS_IsUndefined(pluginNamespace)) {
-        JS_FreeValue(ctx, pluginNamespace);
-        pluginNamespace = JS_UNDEFINED;
-    }
-    if (DpfJsDisplayData* data = DpfJsDisplayData::get()) {
-        if (data->bridge == this)
-            data->bridge = nullptr;
-    }
-}
-
-JSValue PluginJsBridge::js_log(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    const char* level = (argc >= 1) ? JS_ToCString(ctx, argv[0]) : nullptr;
-    const char* msg   = (argc >= 2) ? JS_ToCString(ctx, argv[1]) : nullptr;
-    std::fprintf(stderr, "[js:%s] %s\n",
-                 level ? level : "log",
-                 msg   ? msg   : "");
-    if (level) JS_FreeCString(ctx, level);
-    if (msg)   JS_FreeCString(ctx, msg);
-    return JS_UNDEFINED;
-}
-
-void PluginJsBridge::pumpAsync() {
-    if (!rpcTransport_) return;
-    JSContext* ctx = engine.getContext();
-    if (!ctx) return;
-    while (auto frame = rpcTransport_->tryReceive()) {
-        JSValue ab = JS_NewArrayBufferCopy(ctx,
-            reinterpret_cast<const uint8_t*>(frame->data()),
-            frame->size());
-        engine.emit("rpc-message", 1, &ab);
-        JS_FreeValue(ctx, ab);
+    // RetroPlug-specific JS prop on the bridge namespace: a debug-overlay
+    // toggle read from the (domain) RETROPLUG_DEBUG_OVERLAY env var.
+    if (JSContext* ctx = engine.getContext();
+        ctx && !JS_IsUndefined(rpc_.jsNamespace())) {
+        JS_SetPropertyStr(ctx, rpc_.jsNamespace(), "debugOverlay",
+                          JS_NewBool(ctx, std::getenv("RETROPLUG_DEBUG_OVERLAY") != nullptr));
     }
 }
 
 void PluginJsBridge::pumpMemorySnapshots() {
-    if (!rpcService_ || !rpcServer_ || !project_) return;
-    auto& subs = rpcService_->memorySubs();
+    if (!project_) return;
+    auto& subs = service_.memorySubs();
     if (subs.empty()) return;
 
     const auto nowNs = static_cast<std::uint64_t>(
@@ -217,6 +123,6 @@ void PluginJsBridge::pumpMemorySnapshots() {
             std::memcpy(payload.bytes.data(), buf.data(), buf.size());
         }
         payload.version  = state.version;
-        rpcServer_->writeNotification("memory", payload);
+        rpc_.server().writeNotification("memory", payload);
     }
 }

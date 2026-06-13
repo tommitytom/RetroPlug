@@ -238,7 +238,6 @@ void LvglJsEngine::shutdown() {
 
     displayData.runtime = nullptr;
     displayData.engine = nullptr;
-    displayData.bridge = nullptr;
     displayData.windowInstance = nullptr;
 
     host_.shutdown();

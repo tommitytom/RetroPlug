@@ -16,14 +16,12 @@ extern "C" {
 #include "native/components/window/window.hpp"
 
 class LvglJsEngine;
-class PluginJsBridge;
 
 // Extends lv_binding_js display data with the TJS runtime pointer.
 // Stored on each LVGL display via lv_display_set_user_data().
 struct DpfJsDisplayData : LvBindingJsDisplayData {
     TJSRuntime* runtime = nullptr;
     LvglJsEngine* engine = nullptr;
-    PluginJsBridge* bridge = nullptr;
 
     static DpfJsDisplayData* get() {
         lv_display_t* disp = lv_display_get_default();
