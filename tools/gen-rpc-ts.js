@@ -18,9 +18,13 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const REPO_ROOT  = path.resolve(__dirname, '..');
-const CODEGEN_TS = path.join(REPO_ROOT, 'deps/rpcpp/clients/typescript/codegen/src/index.ts');
 
-const { esbuild } = require('./esbuild-shared');
+const { esbuild, DPFJS_DIR } = require('./esbuild-shared');
+
+// rpcpp's codegen lives in the dpf.js package. Its only non-relative,
+// non-builtin import is a type-only `json-schema` (stripped by esbuild), so the
+// codegen bundle needs no extra module resolution beyond node builtins.
+const CODEGEN_TS = path.join(DPFJS_DIR, 'deps/rpcpp/clients/typescript/codegen/src/index.ts');
 
 const [, , exePath, outPath, serviceNameArg, ...exeArgs] = process.argv;
 if (!exePath || !outPath) {

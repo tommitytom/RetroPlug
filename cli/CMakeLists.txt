@@ -31,19 +31,19 @@ add_library(retroplug-cli-core STATIC
     ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
     ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
     ${PROJECT_SOURCE_DIR}/src/system/mesen/roles/NesN8MidiRole.cpp
-    # lodepng (vendored under lv_binding_js). Compiled directly so the CLI
-    # doesn't have to pull in the full lvgl-js-native static lib for one
+    # lodepng (vendored under lv_binding_js, now in dpf.js). Compiled directly so
+    # the CLI doesn't have to pull in the full lvgl-js-native static lib for one
     # PNG encoder.
-    ${LVGL_JS_NATIVE_DIR}/core/img/png/lodepng.cpp
+    ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
 )
 
 target_include_directories(retroplug-cli-core PUBLIC
     ${PROJECT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}
-    # `native/core/img/png/lodepng.h` lives under this root.
-    ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/src/render
+    # `native/core/img/png/lodepng.h` lives under this root (in dpf.js).
+    ${DPFJS_PATH}/deps/lv_binding_js/src/render
     # MinizZip.hpp -> miniz.h (txiki's v3.1.0; matches the linked `miniz` lib)
-    ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/deps/miniz
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz
 )
 
 target_link_libraries(retroplug-cli-core PUBLIC
@@ -68,7 +68,7 @@ set_target_properties(retroplug-cli-core PROPERTIES
 add_executable(retroplug-cli
     main.cpp
     TestHarness.cpp  # embedded QuickJS TypeScript test harness (--test)
-    ${PROJECT_SOURCE_DIR}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host
+    ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
     ${CLI_BUNDLE_C}
 )
 
@@ -77,12 +77,14 @@ if(CLI_BUNDLE_C)
 endif()
 
 target_include_directories(retroplug-cli PRIVATE
+    # dpf.js src root for the shared host header ("dpfjs/host/TjsHostRuntime.hpp").
+    ${DPFJS_PATH}/src
     # txiki.js / QuickJS runtime headers for the embedded JS test harness.
     # `tjs.h` + internal `private.h` (TJS_EvalModuleContent / TJS_GetLoop /
     # tjs__execute_jobs); `quickjs.h` arrives transitively via the `tjs` link
     # but is listed for clarity.
-    ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/src
-    ${PROJECT_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/deps/quickjs
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/src
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs
 )
 
 target_link_libraries(retroplug-cli PRIVATE

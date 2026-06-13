@@ -9,6 +9,7 @@ const {
     bundleMainFields,
     quickjsTarget,
     writeDepfile,
+    WORKSPACE_NODE_MODULES,
 } = require("./esbuild-shared");
 
 // Args from CMake (or default to writing into ../build/ui/ for ad-hoc runs).
@@ -42,10 +43,10 @@ esbuild
         external: ["tjs:path"],
         jsx: "automatic",
         outfile: bundlePath,
-        // react / react-reconciler / scheduler still resolve from the submodule
-        // (framework; leaves for dpf.js at restructure-07). @msgpack/zod resolve
-        // by normal walk-up to the workspace root node_modules.
-        nodePaths: [reactNodePath],
+        // react / react-reconciler / scheduler resolve from the dpf.js
+        // lv_binding_js node_modules; @msgpack (imported by the dpf.js-resident
+        // rpcpp client) and zod resolve from the consumer's node_modules.
+        nodePaths: [reactNodePath, WORKSPACE_NODE_MODULES],
         alias: uiAliases,
         define: commonDefine,
         metafile: true,

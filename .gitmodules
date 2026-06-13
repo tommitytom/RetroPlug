@@ -1,27 +1,7 @@
-[submodule "deps/dpf"]
-	path = deps/dpf
-	url = git@github.com:tommitytom/DPF.git
-[submodule "deps/dpf-widgets"]
-	path = deps/dpf-widgets
-	url = https://github.com/DISTRHO/DPF-Widgets.git
-[submodule "deps/lv_binding_js"]
-	path = deps/lv_binding_js
-	url = git@github.com:tommitytom/lv_binding_js.git
-	branch = lvgl-v9-port
-[submodule "deps/rpcpp"]
-	path = deps/rpcpp
-	url = git@github.com:tommitytom/rpcpp.git
 [submodule "deps/catch2"]
 	path = deps/catch2
 	url = https://github.com/catchorg/Catch2.git
 	branch = devel
-[submodule "deps/msgpack-c"]
-	path = deps/msgpack-c
-	url = https://github.com/msgpack/msgpack-c.git
-	branch = c_master
-[submodule "deps/efsw"]
-	path = deps/efsw
-	url = https://github.com/SpartanJ/efsw.git
 [submodule "deps/sameboy"]
 	path = deps/sameboy
 	url = https://github.com/LIJI32/SameBoy.git

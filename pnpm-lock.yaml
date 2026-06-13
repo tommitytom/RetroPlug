@@ -15,6 +15,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      dpf.js:
+        specifier: link:../dpf.js
+        version: link:../dpf.js
       esbuild:
         specifier: ^0.28
         version: 0.28.1

@@ -39,11 +39,28 @@ if(RETROPLUG_SANITIZE)
     add_link_options(-fsanitize=${RETROPLUG_SANITIZE})
 endif()
 
-# tell LVGL where to find its config file
+# tell LVGL where to find its config file. Set before add_subdirectory(dpf.js)
+# so RetroPlug's lv_conf.h wins over the framework's default (CACHE no-FORCE).
 set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/src/lv_conf.h" CACHE PATH "")
 
-# include DPF
-add_subdirectory(deps/dpf)
+# --- dpf.js: the generic DPF + LVGL + txiki/QuickJS + rpcpp framework, consumed
+# as an npm source package. require.resolve gives its on-disk path; the
+# add_subdirectory pulls in DPF (which defines dpf_add_plugin globally), LVGL,
+# txiki, msgpack-c, rpcpp, efsw, plus the lvgl-js-native + dpfjs::core targets.
+# Requires `pnpm install` before the first configure (node + the dpf.js link).
+find_program(NODE_EXECUTABLE node REQUIRED)
+execute_process(
+    COMMAND ${NODE_EXECUTABLE} -e "console.log(require.resolve('dpf.js/package.json'))"
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE DPFJS_PACKAGE_JSON
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _DPFJS_RESOLVE_RC)
+if(NOT _DPFJS_RESOLVE_RC EQUAL 0)
+    message(FATAL_ERROR "Could not resolve the dpf.js package — run `pnpm install` first.")
+endif()
+get_filename_component(DPFJS_PATH "${DPFJS_PACKAGE_JSON}" DIRECTORY)
+message(STATUS "dpf.js framework: ${DPFJS_PATH}")
+add_subdirectory("${DPFJS_PATH}" dpfjs)
 
 # --- SDL2: used for gamepad/game-controller input across every plugin
 # variant (and the standalone). DPF's own SDL2 detection is gated to the
@@ -65,32 +82,7 @@ else()
     pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 endif()
 
-# Use LVGL from lv_binding_js (single source of truth)
-add_subdirectory(deps/lv_binding_js/deps/lvgl)
-
-# --- txiki.js (QuickJS + libuv + libwebsockets + ffi runtime) ---
-set(BUILD_WITH_MIMALLOC OFF CACHE BOOL "" FORCE)
-add_subdirectory(deps/lv_binding_js/deps/txiki EXCLUDE_FROM_ALL)
-
-# --- msgpack-c: C library for the msgpack codec used by rpcpp/reflect-cpp.
-# Vendored + statically linked so plugin binaries don't depend on a system
-# libmsgpackc.so / msgpack-c.dll the host won't have. Upstream's CMakeLists
-# creates a single `msgpack-c` target whose type follows BUILD_SHARED_LIBS;
-# we're a STATIC build, so this lands as a static archive. Must be added
-# before deps/rpcpp so reflect-cpp's `if (NOT TARGET msgpack-c)` short-
-# circuits its find_package call and links our vendored target instead.
-set(MSGPACK_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(MSGPACK_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(MSGPACK_ENABLE_SHARED  OFF CACHE BOOL "" FORCE)
-set(MSGPACK_ENABLE_STATIC  ON  CACHE BOOL "" FORCE)
-add_subdirectory(deps/msgpack-c EXCLUDE_FROM_ALL)
-# Static lib ends up inside shared plugin .so / .dylib outputs — needs PIC.
-# No-op on Windows (PE format is always position-independent).
-set_target_properties(msgpack-c PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-# --- rpcpp: header-only JSON-RPC 2.0 server, used by PluginJsBridge ---
-set(RPCPP_BUILD_MSGPACK ON CACHE BOOL "" FORCE)
-add_subdirectory(deps/rpcpp)
+# LVGL, txiki.js, msgpack-c, and rpcpp now come from dpf.js (above).
 
 # --- SameBoy: Game Boy emulator core (submodule at deps/sameboy) ---
 include(cmake/sameboy.cmake)
@@ -113,115 +105,9 @@ add_subdirectory(deps/enkiTS)
 add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/miniaudio)
 
-# --- efsw: cross-platform file watcher (inotify / FSEvents / Win32) used by
-# src/config/UserConfig to live-reload key/pad bindings JSON. Built as a single
-# static lib (BUILD_SHARED_LIBS=OFF) and the duplicate efsw-static target is
-# suppressed (BUILD_STATIC_LIBS=OFF). EFSW_INSTALL / BUILD_TEST_APP default to
-# OFF when efsw is added as a subdirectory (not the main project).
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build efsw as static" FORCE)
-set(BUILD_STATIC_LIBS OFF CACHE BOOL "Skip duplicate efsw-static target" FORCE)
-add_subdirectory(deps/efsw EXCLUDE_FROM_ALL)
+# efsw now comes from dpf.js (above).
 
-# --- lvgl-js-native: the native C++ component bridge ---
-set(LVGL_JS_NATIVE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/deps/lv_binding_js/src/render/native)
-add_library(lvgl-js-native STATIC
-    ${LVGL_JS_NATIVE_DIR}/core/basic/comp.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/style/style.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/style/font/font.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/event/event.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/event/click/click.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/event/normal/normal.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/event/select/select.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/event/value_change/value_change.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/event/key/key.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/refresh/refresh.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/utils/utils.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/theme/theme.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/dimensions/dimensions.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/animate/animate.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/group/group.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/img/img.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/img/png/png.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/img/png/lodepng.cpp
-    ${LVGL_JS_NATIVE_DIR}/core/img/gif/gif.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/component.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/view/view.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/view/view_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/text/text.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/text/text_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/button/button.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/button/button_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/image/image.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/image/image_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/canvas/canvas.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/canvas/canvas_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/slider/slider.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/slider/slider_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/switch/switch.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/switch/switch_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/arc/arc.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/arc/arc_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/checkbox/checkbox.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/checkbox/checkbox_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/textarea/textarea.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/textarea/textarea_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/keyboard/keyboard.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/keyboard/keyboard_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/dropdownlist/dropdownlist.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/dropdownlist/dropdownlist_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/progressbar/progressbar.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/progressbar/progressbar_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/roller/roller.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/roller/roller_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/line/line.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/line/line_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/calendar/calendar.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/calendar/calendar_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/chart/chart.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/chart/chart_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/tabview/tabview.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/tabview/tabview_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/gif/gif.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/gif/gif_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/mask/mask.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/mask/mask_wrap.cpp
-    ${LVGL_JS_NATIVE_DIR}/components/window/window.cpp
-    ${LVGL_JS_NATIVE_DIR}/bootstrap/render_bootstrap.cpp
-    # dpf.js framework: the LVGL+JS engine wrapper (replaces lv_binding_js's
-    # engine.cpp) + the generic embedded txiki host (shared with retroplug-cli).
-    src/dpfjs/LvglJsEngine.cpp
-    src/dpfjs/host/TjsHostRuntime.cpp
-)
-
-target_include_directories(lvgl-js-native PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/deps/lv_binding_js/src/render  # for "native/..." includes
-    ${CMAKE_CURRENT_SOURCE_DIR}/deps/lv_binding_js/src/engine  # for "hal/hal.hpp" etc
-    ${CMAKE_CURRENT_SOURCE_DIR}/deps/lv_binding_js/src         # top-level src includes
-)
-target_link_libraries(lvgl-js-native PUBLIC tjs lvgl::lvgl)
-set_target_properties(lvgl-js-native PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-    # C++17: the shared host (src/host/TjsHostRuntime) uses std::optional /
-    # std::string_view. The lv_binding_js component wrappers compile cleanly
-    # under 17 (low-risk bump from the original 14).
-    CXX_STANDARD 17
-)
-
-# Ensure all static libs that end up in shared plugin binaries have PIC
-set_target_properties(lvgl PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(tjs PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(qjs PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(uv_a PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(sqlite3 PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(vmlib PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(websockets PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(mbedtls PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(mbedx509 PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(mbedcrypto PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(ada PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(miniz PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(reflectcpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
-set_target_properties(efsw PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# lvgl-js-native + the framework PIC settings now come from dpf.js (above).
 
 # --- rpc-schema-dump: prints PluginRpcService's OpenRPC schema for codegen ---
 # Standalone executable so the codegen step doesn't need to start the plugin
@@ -253,7 +139,7 @@ add_executable(rpc-schema-dump
     src/system/mesen/MesenGbaSystem.cpp
     src/system/mesen/roles/NesN8MidiRole.cpp)
 target_include_directories(rpc-schema-dump PRIVATE src)
-target_include_directories(rpc-schema-dump PRIVATE deps/lv_binding_js/deps/txiki/deps/miniz)
+target_include_directories(rpc-schema-dump PRIVATE ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz)
 target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw miniz)
 
 # --- sav-schema-dump: prints the LSDj Sav model's JSON Schema for zod/TS gen ---
@@ -419,32 +305,22 @@ dpf_add_plugin(${NAME}
       src/system/mesen/MesenGbaSystem.cpp
       src/system/mesen/roles/NesN8MidiRole.cpp
       ${UI_BUNDLE_C}
-      deps/dpf-widgets/generic/LVGL.cpp)
+      ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)
 
 # setup build includes and libraries
 target_include_directories(${NAME} PUBLIC src)
-target_include_directories(${NAME} PUBLIC deps/dpf-widgets/generic)
+target_include_directories(${NAME} PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
 # dpf.js framework env-var prefix (PluginUI's screenshot + dev-bundle reads use
 # dpfjs::getenvWithPrefix). The consumer owns the prefix; RetroPlug = RETROPLUG_.
 target_compile_definitions(${NAME} PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
-target_link_libraries(${NAME} PUBLIC lvgl::lvgl $<$<BOOL:${WIN32}>:winmm>)
-target_link_libraries(${NAME} PUBLIC lvgl-js-native)
-target_link_libraries(${NAME} PUBLIC rpcpp)
+# dpfjs::core carries the framework links (lvgl-js-native, lvgl, tjs, rpcpp,
+# efsw, miniz) + their include dirs (incl. txiki's miniz for MinizZip.hpp).
+target_link_libraries(${NAME} PUBLIC dpfjs::core $<$<BOOL:${WIN32}>:winmm>)
 target_link_libraries(${NAME} PUBLIC sameboy)
 target_link_libraries(${NAME} PUBLIC mesen)
 target_link_libraries(${NAME} PUBLIC r8brain)
 target_link_libraries(${NAME} PUBLIC enkiTS)
 target_link_libraries(${NAME} PUBLIC miniaudio)
-# efsw lands on the umbrella target so both DSP and UI sub-targets get the
-# static lib. The DSP doesn't actually use the watcher at runtime, but
-# PluginRpcService.cpp (shared between FILES_DSP and FILES_UI) references
-# UserConfig symbols and we don't split the .cpp.
-target_link_libraries(${NAME} PUBLIC efsw)
-# Project files are PKZIP blobs (project.json + raw binary entries); miniz
-# provides the in-memory writer/reader. The target is built as part of txiki
-# but we link + include directly so src/util/MinizZip.hpp can #include "miniz.h".
-target_link_libraries(${NAME} PUBLIC miniz)
-target_include_directories(${NAME} PUBLIC deps/lv_binding_js/deps/txiki/deps/miniz)
 
 # Force UI artifacts to refresh before any consumer of bundle_data.c
 # builds. Wiring only ${NAME}-ui (DPF's static-lib aggregator) is not
@@ -555,20 +431,6 @@ if(BUILD_CLI AND NODE_EXECUTABLE)
     add_dependencies(retroplug-cli cli-bundle-regenerate)
 endif()
 
-# --- dpf.js seam probe (compile-only) ---------------------------------------
-# Proves the framework subtree (src/dpfjs/) compiles against a trivial consumer
-# with ZERO RetroPlug headers — the guard that the framework/product seam stays
-# clean (ahead of extracting dpf.js to its own repo). OBJECT target = compile,
-# no link. Off by default so the normal build is unaffected; CI flips it on.
-option(DPFJS_BUILD_EXAMPLE "Compile-only dpf.js seam probe (no RetroPlug)" OFF)
-if(DPFJS_BUILD_EXAMPLE)
-    add_library(dpfjs-minimal-probe OBJECT examples/minimal/MinimalProbe.cpp)
-    target_include_directories(dpfjs-minimal-probe PRIVATE src examples/minimal)
-    # Usage requirements only (include dirs + the C++20 rpcpp); OBJECT libs
-    # don't actually link.
-    target_link_libraries(dpfjs-minimal-probe PRIVATE lvgl-js-native rpcpp)
-    set_target_properties(dpfjs-minimal-probe PROPERTIES
-        CXX_STANDARD 20
-        CXX_STANDARD_REQUIRED ON)
-endif()
+# The dpf.js seam probe (examples/minimal) now lives in the dpf.js repo and is
+# built there with -DDPFJS_BUILD_EXAMPLE=ON.
 

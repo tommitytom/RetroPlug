@@ -11,13 +11,14 @@
         "forceConsistentCasingInFileNames": true,
         "noEmit": true,
         "paths": {
-            "lvgljs-ui":            ["./deps/lv_binding_js/src/render/react"],
-            "lvgljs":               ["./runtime/lvgljs"],
-            "react":                ["./deps/lv_binding_js/node_modules/@types/react"],
-            "react/jsx-runtime":    ["./deps/lv_binding_js/node_modules/@types/react/jsx-runtime"],
-            "@rpcpp/createClient":  ["./deps/rpcpp/clients/typescript/client/src/createClient"],
-            "@rpcpp/MsgpackCodec":  ["./deps/rpcpp/clients/typescript/client/src/codecs/MsgpackCodec"],
-            "@rpcpp/transport":     ["./deps/rpcpp/clients/typescript/client/src/transport"],
+            "lvgljs-ui":            ["../dpf.js/deps/lv_binding_js/src/render/react"],
+            "lvgljs":               ["../dpf.js/runtime/lvgljs"],
+            "lvgljs/input":         ["../dpf.js/runtime/lvgljs/input"],
+            "react":                ["../dpf.js/deps/lv_binding_js/node_modules/@types/react"],
+            "react/jsx-runtime":    ["../dpf.js/deps/lv_binding_js/node_modules/@types/react/jsx-runtime"],
+            "@rpcpp/createClient":  ["../dpf.js/deps/rpcpp/clients/typescript/client/src/createClient"],
+            "@rpcpp/MsgpackCodec":  ["../dpf.js/deps/rpcpp/clients/typescript/client/src/codecs/MsgpackCodec"],
+            "@rpcpp/transport":     ["../dpf.js/deps/rpcpp/clients/typescript/client/src/transport"],
             "plugin-service":       ["./build/ui/generated/PluginService.ts"]
         }
     }

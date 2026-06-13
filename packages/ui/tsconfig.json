@@ -3,7 +3,7 @@
     "include": [
         "src/**/*.ts",
         "src/**/*.tsx",
-        "../../runtime/**/*.ts"
+        "../../../dpf.js/runtime/**/*.ts"
     ],
     "exclude": ["node_modules"]
 }
