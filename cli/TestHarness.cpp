@@ -45,6 +45,15 @@ extern "C" {
 #include "lsdj/codec/SongCodec.hpp"
 
 #include "HarnessRpcService.hpp"
+#include "HarnessRpcRegistration.hpp"
+#include "TypedRpcServer.h"
+#include "codecs/MsgpackCodec.h"
+#include "transports/QueueTransport.h"
+
+#include <span>
+
+using HarnessRpcTransport = rpcpp::QueueTransport<rpcpp::MsgpackCodec>;
+using HarnessRpcServer    = rpcpp::TypedRpcServer<HarnessRpcService, rpcpp::MsgpackCodec>;
 
 // Guard the hand-mirrored TypeScript enums in test/harness/index.ts. The wire
 // values are load-bearing; if a C++ renumber drifts from the TS Button/Mem
@@ -145,6 +154,14 @@ struct TestHarness::Impl {
     std::unordered_map<SystemId, std::vector<MidiOutRec>> midiOutLog;
     std::unordered_map<SystemId, std::vector<SerialRec>>  serialOutLog;
     std::unique_ptr<rp::lsdj::KitCompiler> kitCompiler_; // lazy; shared across patches
+
+    // rpcpp server stack (restructure-04): the generated TS client dispatches
+    // here via Symbol.for("retroplug").__rpcSend. Declaration order matters —
+    // the server references the service + transport, so it must be destroyed
+    // first (members destruct in reverse order).
+    std::unique_ptr<HarnessRpcService>    rpcService_;
+    std::unique_ptr<HarnessRpcTransport>  rpcTransport_;
+    std::unique_ptr<HarnessRpcServer>     rpcServer_;
 
     // TAP state.
     int  testIndex   = 0;
@@ -1394,6 +1411,35 @@ JSValue jsRunMsPerSystem(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
     }
 }
 
+// __rpcSend(bytes) -> ArrayBuffer | null: the single sync entry the generated
+// HarnessService client dispatches through (mirrors PluginJsBridge::js_rpcSend).
+// Accepts a Uint8Array view or a raw ArrayBuffer; returns the msgpack reply.
+JSValue jsHarnessRpcSend(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* h = g_activeImpl;
+    if (!h || !h->rpcServer_)
+        return JS_ThrowInternalError(ctx, "__rpcSend: harness unavailable");
+    if (argc < 1)
+        return JS_ThrowTypeError(ctx, "__rpcSend: expected (bytes)");
+    std::size_t byteOffset = 0, byteLength = 0, arrayLen = 0;
+    JSValue ab = JS_GetTypedArrayBuffer(ctx, argv[0], &byteOffset, &byteLength, nullptr);
+    std::uint8_t* data = nullptr;
+    if (!JS_IsException(ab)) {
+        data = JS_GetArrayBuffer(ctx, &arrayLen, ab);
+    } else {
+        JS_FreeValue(ctx, ab);
+        data = JS_GetArrayBuffer(ctx, &arrayLen, argv[0]);
+        byteOffset = 0; byteLength = arrayLen;
+        ab = JS_DupValue(ctx, argv[0]);
+    }
+    if (!data) { JS_FreeValue(ctx, ab); return JS_ThrowTypeError(ctx, "__rpcSend: not bytes"); }
+    std::span<const char> bytes(reinterpret_cast<const char*>(data + byteOffset), byteLength);
+    auto reply = h->rpcServer_->processMessage(bytes);
+    JS_FreeValue(ctx, ab);
+    if (!reply) return JS_NULL;
+    return JS_NewArrayBufferCopy(ctx,
+        reinterpret_cast<const std::uint8_t*>(reply->data()), reply->size());
+}
+
 JSValue jsBeginCase(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     auto* h = g_activeImpl;
     if (!h) return JS_ThrowInternalError(ctx, "harness unavailable");
@@ -1459,6 +1505,14 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     // runtime opaque slots — txiki owns both for its TJSRuntime*.
     g_activeImpl = impl_.get();
 
+    // Stand up the rpcpp server stack (restructure-04). The generated
+    // HarnessService client dispatches through __rpcSend -> processMessage.
+    impl_->rpcService_   = std::make_unique<HarnessRpcService>(impl_.get());
+    impl_->rpcTransport_ = std::make_unique<HarnessRpcTransport>();
+    impl_->rpcServer_    = std::make_unique<HarnessRpcServer>(*impl_->rpcService_,
+                                                              *impl_->rpcTransport_);
+    registerHarnessRpcMethods(*impl_->rpcServer_);
+
     JSContext* ctx = impl_->ctx;
 
     // Build the Symbol.for("retroplug") namespace and attach the native
@@ -1518,6 +1572,9 @@ TestHarness::TestHarness() : impl_(std::make_unique<Impl>()) {
     bind("report",       jsReport,       3);
     bind("done",         jsDone,         0);
     bind("log",          jsLog,          2);
+    // Single sync RPC entry for the generated HarnessService client (the emu
+    // facade migrates onto this; the trampolines above are deleted once done).
+    bind("__rpcSend",    jsHarnessRpcSend, 1);
 
     JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
     JS_FreeAtom(ctx, atom);
