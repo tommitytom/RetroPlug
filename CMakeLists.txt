@@ -41,7 +41,7 @@ endif()
 
 # tell LVGL where to find its config file. Set before add_subdirectory(dpf.js)
 # so RetroPlug's lv_conf.h wins over the framework's default (CACHE no-FORCE).
-set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/src/lv_conf.h" CACHE PATH "")
+set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/packages/native/src/lv_conf.h" CACHE PATH "")
 
 # --- dpf.js: the generic DPF + LVGL + txiki/QuickJS + rpcpp framework, consumed
 # as an npm source package. require.resolve gives its on-disk path; the
@@ -66,7 +66,7 @@ add_subdirectory("${DPFJS_PATH}" dpfjs)
 # variant (and the standalone). DPF's own SDL2 detection is gated to the
 # JACK target only (audio backend fallback), so we find SDL2 ourselves at
 # the parent scope and link it into every variant after dpf_add_plugin.
-# Only SDL_INIT_GAMECONTROLLER is initialised — see src/GamepadManager.cpp.
+# Only SDL_INIT_GAMECONTROLLER is initialised — see packages/native/src/GamepadManager.cpp.
 find_package(PkgConfig REQUIRED)
 if(APPLE)
     # SDL2.framework from /Library/Frameworks. find_library picks the right
@@ -106,7 +106,7 @@ add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/miniaudio)
 
 # --- efsw: cross-platform file watcher (inotify / FSEvents / Win32) used by
-# src/config/UserConfig to live-reload bindings + recent-files JSON (and the ROM
+# packages/native/src/config/UserConfig to live-reload bindings + recent-files JSON (and the ROM
 # watcher in PluginUI). RetroPlug-specific — the dpf.js framework doesn't watch
 # files. Built as a single static lib; the duplicate efsw-static target is
 # suppressed.
@@ -123,30 +123,30 @@ set_target_properties(efsw PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # all-null state; the schema generator only inspects reflect-cpp's
 # compile-time type info, no methods are actually called.
 add_executable(rpc-schema-dump
-    src/RpcSchemaDump.cpp
-    src/PluginRpcService.cpp
-    src/config/UserConfig.cpp
-    src/config/UserConfigPaths.cpp
-    src/config/RecentFiles.cpp
-    src/project/Project.cpp
-    src/lsdj/Effects.cpp
-    src/lsdj/KitUtil.cpp
-    src/lsdj/SampleCache.cpp
-    src/lsdj/KitCompiler.cpp
-    src/system/SystemBase.cpp
-    src/system/sameboy/LinkGroup.cpp
-    src/system/sameboy/RomSniffer.cpp
-    src/system/sameboy/SameBoySystem.cpp
-    src/system/sameboy/roles/ArduinoboyMaster.cpp
-    src/system/sameboy/roles/LsdjSyncRole.cpp
-    src/system/sameboy/roles/LsdjKitPatchRole.cpp
-    src/system/sameboy/roles/MgbPassthroughRole.cpp
-    src/system/mesen/MesenNesSystem.cpp
-    src/system/mesen/MesenNesDebugSession.cpp
-    src/system/mesen/MesenVideoDevice.cpp
-    src/system/mesen/MesenGbaSystem.cpp
-    src/system/mesen/roles/NesN8MidiRole.cpp)
-target_include_directories(rpc-schema-dump PRIVATE src)
+    packages/native/src/RpcSchemaDump.cpp
+    packages/native/src/PluginRpcService.cpp
+    packages/native/src/config/UserConfig.cpp
+    packages/native/src/config/UserConfigPaths.cpp
+    packages/native/src/config/RecentFiles.cpp
+    packages/native/src/project/Project.cpp
+    packages/native/src/lsdj/Effects.cpp
+    packages/native/src/lsdj/KitUtil.cpp
+    packages/native/src/lsdj/SampleCache.cpp
+    packages/native/src/lsdj/KitCompiler.cpp
+    packages/native/src/system/SystemBase.cpp
+    packages/native/src/system/sameboy/LinkGroup.cpp
+    packages/native/src/system/sameboy/RomSniffer.cpp
+    packages/native/src/system/sameboy/SameBoySystem.cpp
+    packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
+    packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
+    packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
+    packages/native/src/system/sameboy/roles/MgbPassthroughRole.cpp
+    packages/native/src/system/mesen/MesenNesSystem.cpp
+    packages/native/src/system/mesen/MesenNesDebugSession.cpp
+    packages/native/src/system/mesen/MesenVideoDevice.cpp
+    packages/native/src/system/mesen/MesenGbaSystem.cpp
+    packages/native/src/system/mesen/roles/NesN8MidiRole.cpp)
+target_include_directories(rpc-schema-dump PRIVATE packages/native/src)
 target_include_directories(rpc-schema-dump PRIVATE ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz)
 target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw miniz)
 
@@ -154,7 +154,7 @@ target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS
 # Header-only model + reflect-cpp (via rpcpp); no codec sources needed since
 # to_schema only inspects the struct definitions.
 add_executable(sav-schema-dump tools/SavSchemaDump.cpp)
-target_include_directories(sav-schema-dump PRIVATE src)
+target_include_directories(sav-schema-dump PRIVATE packages/native/src)
 target_link_libraries(sav-schema-dump PRIVATE rpcpp)
 set_target_properties(sav-schema-dump PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
@@ -255,38 +255,38 @@ dpf_add_plugin(${NAME}
   TARGETS au clap jack lv2 vst2 vst3
   USE_FILE_BROWSER
   FILES_DSP
-      src/PluginDSP.cpp
-      src/PluginRpcService.cpp
-      src/transport/CommandApply.cpp
-      src/config/UserConfig.cpp
-      src/config/UserConfigPaths.cpp
-      src/config/RecentFiles.cpp
-      src/project/Project.cpp
-      src/lsdj/Effects.cpp
-      src/lsdj/KitUtil.cpp
-      src/lsdj/SampleCache.cpp
-      src/lsdj/KitCompiler.cpp
-      src/system/SystemBase.cpp
-      src/system/sameboy/LinkGroup.cpp
-      src/system/sameboy/RomSniffer.cpp
-      src/system/sameboy/SameBoySystem.cpp
-      src/system/sameboy/roles/ArduinoboyMaster.cpp
-      src/system/sameboy/roles/LsdjSyncRole.cpp
-      src/system/sameboy/roles/LsdjKitPatchRole.cpp
-      src/system/sameboy/roles/MgbPassthroughRole.cpp
-      src/system/mesen/MesenNesSystem.cpp
-      src/system/mesen/MesenNesDebugSession.cpp
-      src/system/mesen/MesenVideoDevice.cpp
-      src/system/mesen/MesenGbaSystem.cpp
-      src/system/mesen/roles/NesN8MidiRole.cpp
+      packages/native/src/PluginDSP.cpp
+      packages/native/src/PluginRpcService.cpp
+      packages/native/src/transport/CommandApply.cpp
+      packages/native/src/config/UserConfig.cpp
+      packages/native/src/config/UserConfigPaths.cpp
+      packages/native/src/config/RecentFiles.cpp
+      packages/native/src/project/Project.cpp
+      packages/native/src/lsdj/Effects.cpp
+      packages/native/src/lsdj/KitUtil.cpp
+      packages/native/src/lsdj/SampleCache.cpp
+      packages/native/src/lsdj/KitCompiler.cpp
+      packages/native/src/system/SystemBase.cpp
+      packages/native/src/system/sameboy/LinkGroup.cpp
+      packages/native/src/system/sameboy/RomSniffer.cpp
+      packages/native/src/system/sameboy/SameBoySystem.cpp
+      packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
+      packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
+      packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
+      packages/native/src/system/sameboy/roles/MgbPassthroughRole.cpp
+      packages/native/src/system/mesen/MesenNesSystem.cpp
+      packages/native/src/system/mesen/MesenNesDebugSession.cpp
+      packages/native/src/system/mesen/MesenVideoDevice.cpp
+      packages/native/src/system/mesen/MesenGbaSystem.cpp
+      packages/native/src/system/mesen/roles/NesN8MidiRole.cpp
   FILES_UI
-      src/PluginUI.cpp
-      src/PluginJsBridge.cpp
-      src/PluginRpcService.cpp
-      src/config/UserConfig.cpp
-      src/config/UserConfigPaths.cpp
-      src/config/RecentFiles.cpp
-      src/GamepadManager.cpp
+      packages/native/src/PluginUI.cpp
+      packages/native/src/PluginJsBridge.cpp
+      packages/native/src/PluginRpcService.cpp
+      packages/native/src/config/UserConfig.cpp
+      packages/native/src/config/UserConfigPaths.cpp
+      packages/native/src/config/RecentFiles.cpp
+      packages/native/src/GamepadManager.cpp
       # SameBoySystem is constructed on the UI thread (loadRomFromPath) and
       # snapshotConfig is referenced by the bridge's Save project path; the
       # symbols must be linked into the UI binary as well, not just the DSP.
@@ -294,29 +294,29 @@ dpf_add_plugin(${NAME}
       # is a no-op duplicate; for LV2 the UI binary needs its own copy
       # (though at runtime the LV2-UI never actually constructs one because
       # shared DSP state is unreachable).
-      src/project/Project.cpp
-      src/lsdj/Effects.cpp
-      src/lsdj/KitUtil.cpp
-      src/lsdj/SampleCache.cpp
-      src/lsdj/KitCompiler.cpp
-      src/system/SystemBase.cpp
-      src/system/sameboy/LinkGroup.cpp
-      src/system/sameboy/RomSniffer.cpp
-      src/system/sameboy/SameBoySystem.cpp
-      src/system/sameboy/roles/ArduinoboyMaster.cpp
-      src/system/sameboy/roles/LsdjSyncRole.cpp
-      src/system/sameboy/roles/LsdjKitPatchRole.cpp
-      src/system/sameboy/roles/MgbPassthroughRole.cpp
-      src/system/mesen/MesenNesSystem.cpp
-      src/system/mesen/MesenNesDebugSession.cpp
-      src/system/mesen/MesenVideoDevice.cpp
-      src/system/mesen/MesenGbaSystem.cpp
-      src/system/mesen/roles/NesN8MidiRole.cpp
+      packages/native/src/project/Project.cpp
+      packages/native/src/lsdj/Effects.cpp
+      packages/native/src/lsdj/KitUtil.cpp
+      packages/native/src/lsdj/SampleCache.cpp
+      packages/native/src/lsdj/KitCompiler.cpp
+      packages/native/src/system/SystemBase.cpp
+      packages/native/src/system/sameboy/LinkGroup.cpp
+      packages/native/src/system/sameboy/RomSniffer.cpp
+      packages/native/src/system/sameboy/SameBoySystem.cpp
+      packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
+      packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
+      packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
+      packages/native/src/system/sameboy/roles/MgbPassthroughRole.cpp
+      packages/native/src/system/mesen/MesenNesSystem.cpp
+      packages/native/src/system/mesen/MesenNesDebugSession.cpp
+      packages/native/src/system/mesen/MesenVideoDevice.cpp
+      packages/native/src/system/mesen/MesenGbaSystem.cpp
+      packages/native/src/system/mesen/roles/NesN8MidiRole.cpp
       ${UI_BUNDLE_C}
       ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)
 
 # setup build includes and libraries
-target_include_directories(${NAME} PUBLIC src)
+target_include_directories(${NAME} PUBLIC packages/native/src)
 target_include_directories(${NAME} PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
 # dpf.js framework env-var prefix (PluginUI's screenshot + dev-bundle reads use
 # dpfjs::getenvWithPrefix). The consumer owns the prefix; RetroPlug = RETROPLUG_.
@@ -373,7 +373,7 @@ option(BUILD_TESTING "Build the Catch2 unit tests" OFF)
 if(BUILD_TESTING)
     add_subdirectory(deps/catch2)
     enable_testing()
-    add_subdirectory(test)
+    add_subdirectory(packages/native/test test)
 
 endif()
 
@@ -394,7 +394,7 @@ if(BUILD_CLI AND NODE_EXECUTABLE)
 endif()
 
 if(BUILD_CLI)
-    add_subdirectory(cli)
+    add_subdirectory(packages/native/cli cli)
 endif()
 
 # --- cli-regenerate: typed TS client for the harness RPC surface ------------

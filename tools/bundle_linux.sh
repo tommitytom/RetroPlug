@@ -6,7 +6,7 @@
 # Usage: tools/bundle_linux.sh [build-bin-dir]
 # Defaults to build/bin relative to the repo root.
 #
-# Version is read from src/PluginDSP.cpp's d_version(maj, min, pat) line, or
+# Version is read from packages/native/src/PluginDSP.cpp's d_version(maj, min, pat) line, or
 # overridden by the RETROPLUG_VERSION env var.
 
 set -euo pipefail
@@ -22,10 +22,10 @@ fi
 
 VERSION="${RETROPLUG_VERSION:-}"
 if [[ -z "$VERSION" ]]; then
-    VERSION="$(sed -n -E 's/.*d_version\(([0-9]+),[[:space:]]*([0-9]+),[[:space:]]*([0-9]+)\).*/\1.\2.\3/p' "$REPO_ROOT/src/PluginDSP.cpp" | head -n1)"
+    VERSION="$(sed -n -E 's/.*d_version\(([0-9]+),[[:space:]]*([0-9]+),[[:space:]]*([0-9]+)\).*/\1.\2.\3/p' "$REPO_ROOT/packages/native/src/PluginDSP.cpp" | head -n1)"
 fi
 if [[ -z "$VERSION" ]]; then
-    echo "error: could not determine version from src/PluginDSP.cpp" >&2
+    echo "error: could not determine version from packages/native/src/PluginDSP.cpp" >&2
     exit 1
 fi
 

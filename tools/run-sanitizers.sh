@@ -36,10 +36,10 @@ cmake --build "$builddir" -j"$(nproc)" --target "${targets[@]}"
 
 # Sanitizer runtime options. halt/abort on the first real finding.
 if [ "$san" = thread ]; then
-    export TSAN_OPTIONS="suppressions=$repo/test/sanitizer/tsan.supp halt_on_error=1 second_deadlock_stack=1"
+    export TSAN_OPTIONS="suppressions=$repo/packages/native/test/sanitizer/tsan.supp halt_on_error=1 second_deadlock_stack=1"
 else
     export ASAN_OPTIONS="abort_on_error=1 detect_leaks=1"
-    lsan="$repo/test/sanitizer/lsan.supp"
+    lsan="$repo/packages/native/test/sanitizer/lsan.supp"
     [ -f "$lsan" ] && export LSAN_OPTIONS="suppressions=$lsan"
 fi
 

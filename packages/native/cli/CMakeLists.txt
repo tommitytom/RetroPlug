@@ -10,27 +10,27 @@
 # cycle once retroplug-cli embeds a TS bundle compiled from this schema.
 add_library(retroplug-cli-core STATIC
     HarnessRpcService.cpp
-    ${PROJECT_SOURCE_DIR}/src/project/Project.cpp
-    ${PROJECT_SOURCE_DIR}/src/lsdj/Effects.cpp
-    ${PROJECT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
-    ${PROJECT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
-    ${PROJECT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
-    ${PROJECT_SOURCE_DIR}/src/lsdj/codec/SongCodec.cpp
-    ${PROJECT_SOURCE_DIR}/src/lsdj/codec/Compression.cpp
-    ${PROJECT_SOURCE_DIR}/src/lsdj/codec/SavCodec.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/SystemBase.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/sameboy/LinkGroup.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/sameboy/RomSniffer.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/sameboy/SameBoySystem.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/ArduinoboyMaster.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/LsdjSyncRole.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/LsdjKitPatchRole.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/sameboy/roles/MgbPassthroughRole.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenNesSystem.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenNesDebugSession.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
-    ${PROJECT_SOURCE_DIR}/src/system/mesen/roles/NesN8MidiRole.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/project/Project.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/Effects.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/KitUtil.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/SampleCache.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/KitCompiler.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/SongCodec.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/Compression.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/SavCodec.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/SystemBase.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/LinkGroup.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/RomSniffer.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/SameBoySystem.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/MgbPassthroughRole.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesSystem.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesDebugSession.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenVideoDevice.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenGbaSystem.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/roles/NesN8MidiRole.cpp
     # lodepng (vendored under lv_binding_js, now in dpf.js). Compiled directly so
     # the CLI doesn't have to pull in the full lvgl-js-native static lib for one
     # PNG encoder.
@@ -38,7 +38,7 @@ add_library(retroplug-cli-core STATIC
 )
 
 target_include_directories(retroplug-cli-core PUBLIC
-    ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/packages/native/src
     ${CMAKE_CURRENT_SOURCE_DIR}
     # `native/core/img/png/lodepng.h` lives under this root (in dpf.js).
     ${DPFJS_PATH}/deps/lv_binding_js/src/render

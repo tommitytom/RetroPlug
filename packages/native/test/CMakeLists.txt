@@ -40,7 +40,7 @@ add_executable(retroplug-tests
 )
 
 target_include_directories(retroplug-tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
 # Directory holding the generated per-version golden .sav corpus (sibling
@@ -88,8 +88,8 @@ add_executable(retroplug-mesen-tests
 )
 
 target_include_directories(retroplug-mesen-tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/test   # shared test headers (StateSnapshotStress.hpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}   # shared test headers (StateSnapshotStress.hpp)
 )
 
 target_compile_definitions(retroplug-mesen-tests PRIVATE
@@ -130,8 +130,8 @@ add_executable(retroplug-sameboy-tests
 )
 
 target_include_directories(retroplug-sameboy-tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/test   # shared test headers (StateSnapshotStress.hpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}   # shared test headers (StateSnapshotStress.hpp)
 )
 
 set(_RETROPLUG_TEST_GB_ROM
@@ -187,7 +187,7 @@ add_executable(retroplug-rpc-tests
 )
 
 target_include_directories(retroplug-rpc-tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
 target_compile_definitions(retroplug-rpc-tests PRIVATE
@@ -237,7 +237,7 @@ add_executable(retroplug-lsdj-diff-tests
 )
 
 target_include_directories(retroplug-lsdj-diff-tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
     ${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/liblsdj/include
     # liblsdj's .c files include their private headers bare ("speech.h").
     ${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/liblsdj/include/lsdj
@@ -301,7 +301,7 @@ add_executable(retroplug-ui-test
 add_dependencies(retroplug-ui-test ui-regenerate)
 
 target_include_directories(retroplug-ui-test PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
     # txiki.js / QuickJS headers for the JS trampoline in UiTestHarness.cpp.
     # (lvgl-js-native PUBLIC-propagates the lv_binding_js render include dir, so
     # "native/..." headers resolve transitively.)
