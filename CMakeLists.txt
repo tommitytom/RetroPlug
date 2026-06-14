@@ -105,7 +105,15 @@ add_subdirectory(deps/enkiTS)
 add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/miniaudio)
 
-# efsw now comes from dpf.js (above).
+# --- efsw: cross-platform file watcher (inotify / FSEvents / Win32) used by
+# src/config/UserConfig to live-reload bindings + recent-files JSON (and the ROM
+# watcher in PluginUI). RetroPlug-specific — the dpf.js framework doesn't watch
+# files. Built as a single static lib; the duplicate efsw-static target is
+# suppressed.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build efsw as static" FORCE)
+set(BUILD_STATIC_LIBS OFF CACHE BOOL "Skip duplicate efsw-static target" FORCE)
+add_subdirectory(deps/efsw EXCLUDE_FROM_ALL)
+set_target_properties(efsw PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # lvgl-js-native + the framework PIC settings now come from dpf.js (above).
 
@@ -314,13 +322,17 @@ target_include_directories(${NAME} PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic
 # dpfjs::getenvWithPrefix). The consumer owns the prefix; RetroPlug = RETROPLUG_.
 target_compile_definitions(${NAME} PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 # dpfjs::core carries the framework links (lvgl-js-native, lvgl, tjs, rpcpp,
-# efsw, miniz) + their include dirs (incl. txiki's miniz for MinizZip.hpp).
+# miniz) + their include dirs (incl. txiki's miniz for MinizZip.hpp).
 target_link_libraries(${NAME} PUBLIC dpfjs::core $<$<BOOL:${WIN32}>:winmm>)
 target_link_libraries(${NAME} PUBLIC sameboy)
 target_link_libraries(${NAME} PUBLIC mesen)
 target_link_libraries(${NAME} PUBLIC r8brain)
 target_link_libraries(${NAME} PUBLIC enkiTS)
 target_link_libraries(${NAME} PUBLIC miniaudio)
+# efsw lands on the umbrella target so both DSP and UI sub-targets get the static
+# lib (PluginRpcService.cpp, shared between FILES_DSP/FILES_UI, references the
+# UserConfig watcher symbols). RetroPlug-specific; not part of dpfjs::core.
+target_link_libraries(${NAME} PUBLIC efsw)
 
 # Force UI artifacts to refresh before any consumer of bundle_data.c
 # builds. Wiring only ${NAME}-ui (DPF's static-lib aggregator) is not

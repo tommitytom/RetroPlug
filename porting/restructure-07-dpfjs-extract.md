@@ -15,10 +15,12 @@ The generic framework was extracted to a **local sibling repo at `../dpf.js`**
   (`"dpf.js": "link:../dpf.js"`), not a published npm package. `require.resolve`
   + `add_subdirectory("${DPFJS_PATH}" dpfjs)` is exactly as specified; the
   difference is only where the package resolves from.
-- **The 6 generic submodules were re-homed into dpf.js at their exact recorded
+- **The generic submodules were re-homed into dpf.js at their exact recorded
   SHAs** (re-added from their real remotes, recursively, *skipping the unused
   `quickjs/test262` and `reflect-cpp/vcpkg`*), and removed from RetroPlug's
-  `.gitmodules` + `.git/modules`. RetroPlug now keeps only `sameboy` + `catch2`.
+  `.gitmodules` + `.git/modules`. (Originally 6; `efsw` was later moved back —
+  see the follow-up below — leaving DPF, dpf-widgets, lv_binding_js, rpcpp,
+  msgpack-c in dpf.js and `sameboy` + `catch2` + `efsw` in RetroPlug.)
 - **The engine headers keep the `dpfjs/` include prefix** (dpf.js exports include
   dir `dpf.js/src`), so RetroPlug's `.cpp`/`.hpp` were not edited at all —
   behavior-identical. `dpfjs::core` (INTERFACE) carries the framework includes +
@@ -59,6 +61,19 @@ RetroPlug-side, emitting through dpf.js's channel-agnostic `LvglJsEngine::emit`,
 so no C++ moved. Behavior-identical (screenshot `b1e147d7…`, `PluginService.ts`
 `957c0457…`, cli 30 / ui 11, validate clap=0/vst3=0).
 
+**Follow-up (2026-06-14): efsw moved back to the product.** The `efsw` file
+watcher was classified as a generic framework submodule and moved to dpf.js, but
+nothing in dpf.js's framework code uses it — it's RetroPlug-only (`UserConfig`
+live-reloads the bindings/recent-files JSON via `efsw::FileWatchListener`, plus
+the ROM watcher in `PluginUI`). The submodule was re-homed to RetroPlug at the
+same SHA (`347397c…`); dpf.js dropped its `add_subdirectory(deps/efsw)`, the PIC
+line, and `efsw` from `dpfjs::core`; RetroPlug restored the efsw CMake block and
+links `efsw` into the plugin directly (it already linked it explicitly for
+`rpc-schema-dump`). RetroPlug's domain submodules are now `sameboy`, `catch2`,
+`efsw`; dpf.js's are DPF, dpf-widgets, lv_binding_js, rpcpp, msgpack-c.
+Behavior-identical (screenshot `b1e147d7…`, cli 30 / ui 11, validate
+clap=0/vst3=0).
+
 ## Goal
 
 Move the decoupled generic framework (dpf.js) into its own repository, publish it as an npm SOURCE package + template repo, and repoint RetroPlug to consume it via `require.resolve` + `add_subdirectory` — flattening RetroPlug's dependency graph and enabling reuse for other DPF plugins.
@@ -71,7 +86,7 @@ Move the decoupled generic framework (dpf.js) into its own repository, publish i
 ## Architecture introduced
 
 **`dpf.js` npm package** (new repository):
-- **Generic C++ source tree**: DPF ([deps/dpf](../deps/dpf)), DPF-Widgets ([deps/dpf-widgets](../deps/dpf-widgets)), lvgl-js-native (from current `lvgl-js-native` static lib target), reflect-cpp + rpcpp ([deps/rpcpp](../deps/rpcpp)), msgpack-c ([deps/msgpack-c](../deps/msgpack-c)), efsw ([deps/efsw](../deps/efsw)).
+- **Generic C++ source tree**: DPF ([deps/dpf](../deps/dpf)), DPF-Widgets ([deps/dpf-widgets](../deps/dpf-widgets)), lvgl-js-native (from current `lvgl-js-native` static lib target), reflect-cpp + rpcpp ([deps/rpcpp](../deps/rpcpp)), msgpack-c ([deps/msgpack-c](../deps/msgpack-c)). (efsw was initially included here but is RetroPlug-specific — config/ROM file watching — and was moved back; see the follow-up note above.)
 - **Generic TS source**: runtime/lvgljs (index.ts — the LVGL JS API surface: params, focus groups, the on/off event bus, useParameter), esbuild build config + alias plugin (same as restructure-02), tsconfig base extending to consumers. (NOTE: `input.ts` was initially copied here too but is product-specific — Game Boy button mapping + keyboard/gamepad bindings — and was moved back to RetroPlug `packages/ui/src/input.ts`; see the follow-up note below.)
 - **Generic txiki host C++**: the "embed txiki/QuickJS + a native RPC service + run a TS app bundle" launcher (extracted in restructure-05). Used by both the plugin and the CLI to boot the same codebase into different transports.
 - **React reconciler glue** (`runtime/lvgljs/react.ts`, etc.): the adapter layer that lives in the framework, not the product.

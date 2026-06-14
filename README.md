@@ -189,9 +189,9 @@ test/                                Catch2 unit tests + test/ts TypeScript harn
 examples/reaper/                     committed Reaper .rpp fixtures (DAW host tests)
 porting/                             ordered migration roadmap from old RetroPlug
 tools/                               build-ui.js, run-standalone.sh, standalone-key.sh, validate-plugins.sh
-deps/                                domain submodules: sameboy, catch2
+deps/                                domain submodules: sameboy, catch2, efsw (config/ROM file watcher)
 ../dpf.js/                           the generic framework (DPF, lv_binding_js→LVGL/txiki,
-                                     rpcpp, msgpack-c, efsw, dpf-widgets, lvgl-js-native, the
+                                     rpcpp, msgpack-c, dpf-widgets, lvgl-js-native, the
                                      lvgljs runtime); consumed via require.resolve + add_subdirectory
 ```
 

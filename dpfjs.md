@@ -10,10 +10,12 @@ to write audio-plugin UIs in **React + TypeScript**.
 > **The framework has now been extracted to its own repo: `dpf.js`** (a sibling
 > checkout at `../dpf.js`, consumed via `require.resolve` + `add_subdirectory`).
 > The generic C++ (`src/dpfjs/`, lvgl-js-native), the `runtime/lvgljs/` runtime,
-> and the framework submodules (DPF, lv_binding_js → LVGL/txiki, rpcpp, msgpack-c,
-> efsw) all live there now — so paths like `runtime/lvgljs/index.ts` below are
-> under `../dpf.js/`. This copy stays as the canonical prose walkthrough until
-> the docs migrate into the dpf.js repo (a deferred publish step).
+> and the framework submodules (DPF, lv_binding_js → LVGL/txiki, rpcpp, msgpack-c)
+> all live there now — so paths like `runtime/lvgljs/index.ts` below are under
+> `../dpf.js/`. (Product-specific bits that briefly lived in dpf.js — the
+> `input.ts` GB input layer and the `efsw` file watcher — were moved back to
+> RetroPlug.) This copy stays as the canonical prose walkthrough until the docs
+> migrate into the dpf.js repo (a deferred publish step).
 
 ## How it works
 
@@ -184,8 +186,8 @@ they feed silent / synthetic input.
 
 ## Workflow conventions
 
-- The framework submodules (lv_binding_js → LVGL/txiki, DPF, rpcpp, msgpack-c,
-  efsw) live in the `dpf.js` repo now. Don't commit changes to any submodule
+- The framework submodules (lv_binding_js → LVGL/txiki, DPF, rpcpp, msgpack-c)
+  live in the `dpf.js` repo now. Don't commit changes to any submodule
   pointer — in either repo — without checking; they're managed deliberately.
 - Treat the bundle as derived: never check in `build/ui/bundle.js` or
   `build/ui/bundle_data.c`.
