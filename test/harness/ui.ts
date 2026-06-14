@@ -66,7 +66,7 @@ export const Key = {
   Enter: 10, Esc: 27, Del: 127, Backspace: 8,
 } as const;
 
-// Memory regions (mirror rp::MemoryType / src/system/MemoryType.hpp).
+// Memory regions (mirror rp::MemoryType / packages/native/src/system/MemoryType.hpp).
 export const Mem = {
   Ram: 0, Rom: 1, Sram: 2, Vram: 3, IORegisters: 4,
   HRam: 5, OAM: 6, NametableRam: 7, ExtWorkRam: 8,

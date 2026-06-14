@@ -2,7 +2,7 @@
 //
 //   import { test, expect, emu, Button, Mem } from "harness";
 //
-// Runs inside the embedded txiki/QuickJS runtime (see cli/TestHarness.cpp).
+// Runs inside the embedded txiki/QuickJS runtime (see packages/native/cli/TestHarness.cpp).
 // `test()` registers cases; on the runtime's synthetic window 'load' event we
 // run each one, turning any thrown error (from expect() or a native emu call)
 // into a TAP `not ok`. All emulator control is synchronous — press, advance

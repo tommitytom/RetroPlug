@@ -110,7 +110,7 @@ order of preference:
 2. **UI change** — prefer a **headless UI test**: write a
    `test/ts/ui/*.test.ts` and run `pnpm test:ui` (TAP, no Xvfb).
    It boots the REAL React UI bundle on a software LVGL display
-   (`retroplug-ui-test` runner + [test/ui/UiTestHarness.cpp](test/ui/UiTestHarness.cpp))
+   (`retroplug-ui-test` runner + [packages/native/test/ui/UiTestHarness.cpp](packages/native/test/ui/UiTestHarness.cpp))
    and exposes a `ui` global ([test/harness/ui.ts](test/harness/ui.ts)):
    `boot` / `loadRom` / `pump`, `snapshot`/`snapshotPng`, `findByText` /
    `findByTextContaining` / `findByTestId` / `findFirstByType` / `countByType`
@@ -140,7 +140,7 @@ order of preference:
      ThreadSanitizer / AddressSanitizer. Use after touching the cross-thread
      paths (triple-buffers, `CommandQueue`, the state-snapshot publish/read).
      The triple-buffer seqlock has a documented benign suppression
-     (`test/sanitizer/tsan.supp`); the deliberately-racy `[MesenSingleton]`
+     (`packages/native/test/sanitizer/tsan.supp`); the deliberately-racy `[MesenSingleton]`
      probes are excluded (see `porting/20-mesen-single-thread-runloop.md`).
 5. **Audio-quality check on a render** — `pnpm reaper:analyze-smoke`
    (runs `test/ts/gb/mgb.test.ts`, which writes `/tmp/cli-smoke.wav`) or
@@ -303,7 +303,7 @@ on-disk length with default elements (`0` / `null` / `None` / a default struct),
 so a fixture only specifies the cells it sets. Serialization always writes the
 full length, so on-disk encoding and JSON round-trips are unchanged; supplying
 more than the fixed length is an error. (Implemented by `FixedArray<T,N>` in
-[src/lsdj/model/FixedArray.hpp](src/lsdj/model/FixedArray.hpp).)
+[packages/native/src/lsdj/model/FixedArray.hpp](packages/native/src/lsdj/model/FixedArray.hpp).)
 
 `emu.loadRom(path, sav?, lsdjSyncMode?, linkGroup?)`:
 - `sav` — an `ArrayBuffer` from `savFromJson` (or `readMemory(sys, Mem.Sram)`).
@@ -367,7 +367,7 @@ Covered by three TS tests under [test/ts/gb/lsdj/](test/ts/gb/lsdj/):
   audio plumbing.
 
 If link sync is genuinely broken, the follower's per-system RMS stays at 0 in
-the positive test — look at `src/system/sameboy/LinkGroup.cpp` and the
+the positive test — look at `packages/native/src/system/sameboy/LinkGroup.cpp` and the
 `serialStart` / `serialEnd` callbacks in `SameBoySystem.cpp`. `runMsPerSystem`
 isolates each instance's audio (the canonical way to tell synced playback from a
 healthy-looking mix of two desynced instances).
@@ -468,7 +468,7 @@ populates the full archive into the same directory — stable releases as
 snapshots as `lsdj<ver>-develop.gb`. Non-LSDj ROMs (e.g. Nanoloop GBA, mGB,
 n8-midi) live one level up at `../resources/roms/`.
 
-The sniffer ([src/system/sameboy/RomSniffer.cpp](src/system/sameboy/RomSniffer.cpp))
+The sniffer ([packages/native/src/system/sameboy/RomSniffer.cpp](packages/native/src/system/sameboy/RomSniffer.cpp))
 treats both ROMs as `RomKind::Lsdj` (any title starting with `LSDj`). The role's
 `onAttach` logs `build=stock` vs `build=arduinoboy` based on whether the title
 contains `aboy` — check the stderr line `[RetroPlug] LSDJ sync role attached
@@ -477,7 +477,7 @@ contains `aboy` — check the stderr line `[RetroPlug] LSDJ sync role attached
 ### PROJECT-screen SYNC cycle (aboy v9.3.3)
 
 The on-screen SYNC value is the working-song byte at `0x3fbd`. The model
-`SyncMode` enum (`src/lsdj/model/Types.hpp`) authors values 0–5 directly via
+`SyncMode` enum (`packages/native/src/lsdj/model/Types.hpp`) authors values 0–5 directly via
 `settings.syncMode` — [test/ts/gb/lsdj/sync_modes.test.ts](test/ts/gb/lsdj/sync_modes.test.ts)
 authors each and asserts the byte. The aboy-only MI.MAP / MI.OUT (6 / 7) are
 past the model enum (see "Master mode" below). The full cycle order:
@@ -519,7 +519,7 @@ LSDJ in MI.OUT (and KEYBD) uses the GB serial port in **external-clock** mode
 (`SC=0x80`). Real Arduinoboy hardware provides the clock pulses that shift the
 GB's SB register. SameBoy by default does nothing here — the GB just sits
 waiting. To make this verifiable headlessly,
-[src/system/sameboy/SameBoySystem.cpp](src/system/sameboy/SameBoySystem.cpp)
+[packages/native/src/system/sameboy/SameBoySystem.cpp](packages/native/src/system/sameboy/SameBoySystem.cpp)
 drives one bit per audio sample in `writeAudioSample` whenever
 `(SC & 0x81) == 0x80` and serial-out capture is enabled:
 
@@ -569,13 +569,13 @@ in the LSDJ song editor):
 - **Qxx** — sends a NoteOn relative to the channel's current pitch.
 - **Xxx** — sends a CC. (Arduinoboy hardware supports several CC-encoding modes:
   high-nibble CC# + low-nibble value, single CC scaled 0x00..0x6F, seven CCs.
-  The [ArduinoboyMaster](src/system/sameboy/roles/ArduinoboyMaster.cpp)
+  The [ArduinoboyMaster](packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp)
   decoder uses the simplest mapping `CC# = m` for clarity; refine when there's
   a use case.)
 - **Yxx** — sends a Program/Patch change.
 
 The decoder is unit-tested in
-[test/ArduinoboyMasterTests.cpp](test/ArduinoboyMasterTests.cpp) (11 cases
+[packages/native/test/ArduinoboyMasterTests.cpp](packages/native/test/ArduinoboyMasterTests.cpp) (11 cases
 covering each protocol byte). **Functional MI.OUT end-to-end with LSDJ is NOT
 yet verified** (see "Known gotcha" below). The decoder matches the firmware
 spec, which is the closest verification path available.

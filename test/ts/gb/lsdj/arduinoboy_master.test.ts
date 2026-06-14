@@ -12,7 +12,7 @@
 //    while it polls the port (KEYBD / external-clock mode), so bytes flow.
 //  - drainSerial delivers those captured bytes to the test.
 // Out of scope: functional MI.OUT protocol decode. The MI.OUT byte->MIDI decoder
-// is unit-tested in test/ArduinoboyMasterTests.cpp. Reaching MI.OUT mode
+// is unit-tested in packages/native/test/ArduinoboyMasterTests.cpp. Reaching MI.OUT mode
 // end-to-end is still future work: forcing the raw SYNC byte to 7 boots LSDj but
 // does NOT engage the MI.OUT protocol (it emits idle 0x00/0xFF, not 0x7D/0x7F) —
 // a pre-configured MI.OUT savestate fixture is needed.

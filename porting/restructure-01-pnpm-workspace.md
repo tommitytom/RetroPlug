@@ -36,6 +36,25 @@ regenerated* in [restructure-04](./restructure-04-unify-rpc-surface.md), and
 - **Verified:** full `cmake --build` clean, `ui-ts-test` green (boots the
   relocated React bundle), `cli-smoke` green (harness toolchain under pnpm).
 
+### Addendum (2026-06-14): C++ relocated into `packages/native/`
+
+This step stood up `packages/native` as a stub `package.json` and left the C++
+tree at the repo root (above: "C++ stays here"). That deferral was never picked
+up by a later step, so the package stayed hollow. The RetroPlug-specific C++ has
+now been moved to match the [overview](./restructure-00-overview.md)'s target
+layout:
+
+- `src/` → `packages/native/src/`
+- `cli/` → `packages/native/cli/`
+- the Catch2 suites + the headless UI runner → `packages/native/test/`
+  (`test/ts` and `test/harness` stay at the repo root — they're the shared TS
+  suites run through the embedded runtime, not native unit tests).
+
+Both `add_subdirectory` calls pass an explicit binary dir (`test`, `cli`) so the
+`build/test/` and `build/cli/` output paths are unchanged. Behaviour-identical:
+screenshot SHA `b1e147d7` unchanged, `test:cli` 30 / `test:ui` 11 / all Catch2
+green, `validate` clap=0 vst3=0.
+
 The original plan follows for reference.
 
 ## Goal

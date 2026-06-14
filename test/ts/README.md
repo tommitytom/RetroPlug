@@ -154,5 +154,5 @@ test("profile evermidi's MIDI handling", () => {
 - `printProfile(fns, top?)` formats a hot-function table for `console.log`
   (which goes to stderr, keeping the TAP stream clean).
 - The harness shim is `test/harness/index.ts`; the native bridge is
-  `cli/TestHarness.cpp`. The `Button`/`Mem` enum values are guarded by
+  `packages/native/cli/TestHarness.cpp`. The `Button`/`Mem` enum values are guarded by
   `static_assert`s in `TestHarness.cpp` against the C++ headers.

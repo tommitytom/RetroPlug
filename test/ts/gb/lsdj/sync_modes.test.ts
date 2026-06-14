@@ -16,7 +16,7 @@ import { test, expect, emu, Mem } from "harness";
 const ABOY = "../resources/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
 const SYNC_OFF = 0x3fbd; // working-song SYNC byte
 
-// model::SyncMode (src/lsdj/model/Types.hpp): None=0,Lsdj=1,Midi=2,Keyboard=3,
+// model::SyncMode (packages/native/src/lsdj/model/Types.hpp): None=0,Lsdj=1,Midi=2,Keyboard=3,
 // AnalogIn=4,AnalogOut=5 — matches the on-screen SYNC cycle positions 0..5.
 const MODES: { name: string; byte: number }[] = [
   { name: "None", byte: 0 },

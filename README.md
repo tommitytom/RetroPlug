@@ -161,31 +161,32 @@ checks remain the job of `retroplug-cli`.
 ## Project layout
 
 ```
-src/
-  PluginDSP.cpp                      DSP class; runs SameBoy at host sample rate
-  PluginUI.cpp                       UI class; owns JS engine + bridge
-  PluginJsBridge.{hpp,cpp}           plugin.* JS bindings (getFrame, pressButton, …)
-  PluginShared.hpp                   parameter spec + SharedDSPData (in-process)
-  LvglJsEngine.{hpp,cpp}             txiki.js runtime wrapper
-  project/
-    Project.{hpp,cpp}                DSP-thread runtime container; system table + config
-    ProjectConfig.hpp                reflectcpp-serializable settings
-  system/
-    SystemBase.hpp                   polymorphic emulator base class
-    InputTypes.hpp                   GameboyButton enum
-    sameboy/
-      SameBoySystem.{hpp,cpp}        SameBoy lifecycle + audio + framebuffer
-      SameBoyConfig.hpp              per-system config (model, savestate, …)
-  transport/
-    CommandQueue.hpp                 SPSC ring: UI → DSP (button presses, ROM swap)
-    EventQueue.hpp                   SPSC ring: DSP → UI (released SystemBase pointers)
-    FrameBufferTriple.hpp            seqlock-protected triple-buffer for video
-ui/                                  React/TSX UI source (esbuild-bundled)
-  PluginUI.tsx                       React entry point
-  EmulatorTile.tsx                   Canvas widget that renders SameBoy frames
-  MenuOverlay.tsx                    LVGL-focused menu (Esc to open)
-cli/                                 retroplug-cli source (Wav, TestHarness, HarnessRpcService, main)
-test/                                Catch2 unit tests + test/ts TypeScript harness tests
+packages/
+  native/                            RetroPlug C++ core (consumes dpf.js via add_subdirectory)
+    src/
+      PluginDSP.cpp                  DSP class; runs SameBoy at host sample rate
+      PluginUI.cpp                   UI class; owns JS engine + bridge
+      PluginJsBridge.{hpp,cpp}       plugin.* JS bindings (getFrame, pressButton, …)
+      PluginRpcService.{hpp,cpp}     the one rpcpp service; UI/CLI client generated from it
+      PluginShared.hpp               parameter spec + SharedDSPData (in-process)
+      GamepadManager.{hpp,cpp}       SDL game-controller input (RetroPlug-specific)
+      project/Project.{hpp,cpp}      DSP-thread runtime container; system table + config
+      system/
+        SystemBase.{hpp,cpp}         polymorphic emulator base class
+        InputTypes.hpp               GameboyButton enum
+        sameboy/SameBoySystem.{hpp,cpp}  SameBoy lifecycle + audio + framebuffer
+      transport/
+        CommandQueue.hpp             SPSC ring: UI → DSP (button presses, ROM swap)
+        EventQueue.hpp               SPSC ring: DSP → UI (released SystemBase pointers)
+        FrameBufferTriple.hpp        seqlock-protected triple-buffer for video
+    cli/                             retroplug-cli C++ host (Wav, TestHarness, HarnessRpcService, main)
+    test/                            Catch2 unit tests + headless UI runner (test/ui/)
+  ui/src/                            React/TSX UI source (esbuild-bundled): PluginUI, EmulatorTile, menu/…
+  retroplug/src/                     generated typed RPC client + domain ergonomics (txiki-compatible)
+  cli/src/                           TS CLI app, bundled into retroplug-cli
+test/
+  ts/                                TypeScript harness tests (run via retroplug-cli --test)
+  harness/                           the `emu` API glue shared by the TS tests
 examples/reaper/                     committed Reaper .rpp fixtures (DAW host tests)
 porting/                             ordered migration roadmap from old RetroPlug
 tools/                               build-ui.js, run-standalone.sh, standalone-key.sh, validate-plugins.sh
