@@ -6,7 +6,7 @@
 // PluginRpcService's OpenRPC schema on every build.
 
 import { createClient, type ClientControl } from "@rpcpp/createClient";
-import { MsgpackCodec } from "@rpcpp/MsgpackCodec";
+import type { Codec } from "@rpcpp/codec";
 
 import type {
     PluginService,
@@ -17,8 +17,20 @@ import type {
 
 import { createInProcessTransport } from "./transport";
 
-// msgpack-decoded frame buffer: BIN type comes back as Uint8Array, not
-// the `number[]` the JSON-schema-driven codegen infers. Override the
+// The C++ bridge marshals JSON-RPC envelopes as live JS objects (rpcpp's QuickJS
+// codec), so the client codec is a passthrough: encode/decode hand the object
+// straight through __rpcSend, no serialization. The @rpcpp Codec contract is
+// typed for Uint8Array frames, hence the casts. Binary fields (rfl::Bytestring)
+// arrive as JS Uint8Arrays from the qjs codec.
+const objectCodec: Codec = {
+    isBinary: false,
+    framing:  "line",
+    encode:   (value) => value as unknown as Uint8Array,
+    decode:   (frame) => frame,
+};
+
+// The frame buffer (rfl::Bytestring) comes back as a Uint8Array from the qjs
+// codec, not the `number[]` the JSON-schema-driven codegen infers. Override the
 // `buffer` field type so consumers get the actual runtime shape.
 export interface FrameResponse extends Omit<PluginRpcServiceFrameResponse, "buffer"> {
     buffer: Uint8Array;
@@ -41,5 +53,5 @@ export type PluginClient = Omit<PluginService, "getFrame"> & {
 
 export const plugin: PluginClient = createClient<PluginClient>({
     transport: createInProcessTransport(),
-    codec:     new MsgpackCodec(),
+    codec:     objectCodec,
 });

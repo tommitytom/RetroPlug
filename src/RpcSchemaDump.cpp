@@ -10,14 +10,16 @@
 
 #include "PluginRpcRegistration.hpp"
 #include "PluginRpcService.hpp"
+#include "SchemaDumpCodec.hpp"
 #include "TypedRpcServer.h"
-#include "codecs/MsgpackCodec.h"
 #include "transports/QueueTransport.h"
 
 int main() {
+    // Schema-only stub codec (see SchemaDumpCodec.hpp): the schema is
+    // codec-independent, and the runtime QuickJS codec would need a JSContext.
     PluginRpcService service(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr);
-    rpcpp::QueueTransport<rpcpp::MsgpackCodec> transport;
-    rpcpp::TypedRpcServer<PluginRpcService, rpcpp::MsgpackCodec> server(service, transport);
+    rpcpp::QueueTransport<SchemaDumpCodec> transport;
+    rpcpp::TypedRpcServer<PluginRpcService, SchemaDumpCodec> server(service, transport);
 
     registerPluginRpcMethods(server);
 

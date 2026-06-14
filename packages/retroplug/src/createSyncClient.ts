@@ -1,15 +1,11 @@
-// A synchronous JSON-RPC client over an in-process `__rpcSend(bytes) -> bytes`
-// hook. The CLI test harness drives the emulator synchronously (it controls
-// time via runMs), so — unlike the plugin UI's async @rpcpp/client — tests must
-// stay await-free. The native side (TypedRpcServer::processMessage, reached via
-// __rpcSend) is synchronous in-process, so this just encodes the request,
-// calls through, and decodes the reply inline.
-//
-// Wire format matches the UI's @rpcpp/MsgpackCodec exactly: raw @msgpack/msgpack
-// of the JSON-RPC envelope, no length framing (the in-process path is a single
-// request -> reply, not a stream).
-
-import { encode, decode } from "@msgpack/msgpack";
+// A synchronous JSON-RPC client over an in-process `__rpcSend(request) ->
+// response` hook. The CLI test harness drives the emulator synchronously (it
+// controls time via runMs), so — unlike the plugin UI's async @rpcpp/client —
+// tests stay await-free. The native side (TypedRpcServer::processMessage, reached
+// via __rpcSend) marshals JSON-RPC envelopes as live JS objects through rpcpp's
+// QuickJS codec (no serialization), so this just passes the request object
+// through and reads the reply object inline. Binary fields (rfl::Bytestring)
+// arrive as Uint8Arrays.
 
 // Unwrap each `(...args) => Promise<R>` method of a generated async service
 // interface into its synchronous `(...args) => R` form, reusing the generated
@@ -20,7 +16,9 @@ export type Unpromisify<T> = {
         : T[K];
 };
 
-export type RpcSend = (bytes: Uint8Array) => Uint8Array | ArrayBuffer | null;
+// In-process dispatch: a JSON-RPC request object in, the response object out
+// (null/undefined for a notification / no reply).
+export type RpcSend = (request: unknown) => unknown;
 
 interface RpcReplyEnvelope {
     result?: unknown;
@@ -32,16 +30,14 @@ export function createSyncClient<T extends object>(rpcSend: RpcSend): Unpromisif
 
     const call = (method: string, params: unknown[]): unknown => {
         const request = { jsonrpc: "2.0", id: nextId++, method, params };
-        const reply = rpcSend(encode(request));
+        const reply = rpcSend(request) as RpcReplyEnvelope | null | undefined;
         if (reply == null) return undefined; // notification / no reply
-        const bytes = reply instanceof Uint8Array ? reply : new Uint8Array(reply);
-        const env = decode(bytes) as RpcReplyEnvelope;
-        if (env && env.error) {
-            const e = new Error(`rpc ${method}: [${env.error.code}] ${env.error.message}`);
-            (e as { code?: number }).code = env.error.code;
+        if (reply.error) {
+            const e = new Error(`rpc ${method}: [${reply.error.code}] ${reply.error.message}`);
+            (e as { code?: number }).code = reply.error.code;
             throw e;
         }
-        return env ? env.result : undefined;
+        return reply.result;
     };
 
     return new Proxy({}, {

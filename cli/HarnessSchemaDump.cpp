@@ -13,14 +13,16 @@
 
 #include "HarnessRpcRegistration.hpp"
 #include "HarnessRpcService.hpp"
+#include "SchemaDumpCodec.hpp"
 #include "TypedRpcServer.h"
-#include "codecs/MsgpackCodec.h"
 #include "transports/QueueTransport.h"
 
 int main() {
+    // Schema-only stub codec (see src/SchemaDumpCodec.hpp): the schema is
+    // codec-independent, and the runtime QuickJS codec would need a JSContext.
     HarnessRpcService service(nullptr);
-    rpcpp::QueueTransport<rpcpp::MsgpackCodec> transport;
-    rpcpp::TypedRpcServer<HarnessRpcService, rpcpp::MsgpackCodec> server(service, transport);
+    rpcpp::QueueTransport<SchemaDumpCodec> transport;
+    rpcpp::TypedRpcServer<HarnessRpcService, SchemaDumpCodec> server(service, transport);
 
     registerHarnessRpcMethods(server);
 

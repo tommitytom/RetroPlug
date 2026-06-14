@@ -45,11 +45,16 @@
 
 #include "HarnessRpcService.hpp"
 #include "TypedRpcServer.h"
-#include "codecs/MsgpackCodec.h"
-#include "transports/QueueTransport.h"
+#include "codecs/QuickJSCodec.h"
+#include "transports/QuickJSTransport.h"
 
-using HarnessRpcTransport = rpcpp::QueueTransport<rpcpp::MsgpackCodec>;
-using HarnessRpcServer    = rpcpp::TypedRpcServer<HarnessRpcService, rpcpp::MsgpackCodec>;
+// In-process QuickJS object codec (matches the plugin bridge): the generated
+// HarnessService TS client passes a request object to __rpcSend and gets a
+// response object back — no serialization. Binary fields (rfl::Bytestring) ride
+// JS Uint8Arrays. Both need a live JSContext, so the server is built after the
+// host's runtime exists (see TestHarness ctor).
+using HarnessRpcTransport = rpcpp::QuickJSTransport;
+using HarnessRpcServer    = rpcpp::TypedRpcServer<HarnessRpcService, rpcpp::QuickJSCodec>;
 
 namespace rpcli {
 

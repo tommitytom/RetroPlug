@@ -16,7 +16,7 @@
             "react":                ["../dpf.js/deps/lv_binding_js/node_modules/@types/react"],
             "react/jsx-runtime":    ["../dpf.js/deps/lv_binding_js/node_modules/@types/react/jsx-runtime"],
             "@rpcpp/createClient":  ["../dpf.js/deps/rpcpp/clients/typescript/client/src/createClient"],
-            "@rpcpp/MsgpackCodec":  ["../dpf.js/deps/rpcpp/clients/typescript/client/src/codecs/MsgpackCodec"],
+            "@rpcpp/codec":         ["../dpf.js/deps/rpcpp/clients/typescript/client/src/codec"],
             "@rpcpp/transport":     ["../dpf.js/deps/rpcpp/clients/typescript/client/src/transport"],
             "plugin-service":       ["./build/ui/generated/PluginService.ts"]
         }

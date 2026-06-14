@@ -133,15 +133,18 @@ TestHarness::TestHarness()
     // Recover *this Impl inside the static TAP trampolines.
     g_activeImpl = impl_.get();
 
-    // Stand up the rpcpp server stack. The generated HarnessService client
-    // dispatches through __rpcSend -> processMessage.
-    impl_->rpcService_   = std::make_unique<HarnessRpcService>(impl_.get());
-    impl_->rpcTransport_ = std::make_unique<HarnessRpcTransport>();
-    impl_->rpcServer_    = std::make_unique<HarnessRpcServer>(*impl_->rpcService_,
-                                                              *impl_->rpcTransport_);
-    registerHarnessRpcMethods(*impl_->rpcServer_);
-
     JSContext* ctx = host_->context();
+
+    // Stand up the rpcpp server stack on the QuickJS object codec, which
+    // marshals directly against the live context. The transport's async
+    // delivery callback is unused — the harness service is fully synchronous —
+    // so it's a no-op.
+    impl_->rpcService_   = std::make_unique<HarnessRpcService>(impl_.get());
+    impl_->rpcTransport_ = std::make_unique<HarnessRpcTransport>(
+        ctx, [](JSContext*, JSValue) {});
+    impl_->rpcServer_    = std::make_unique<HarnessRpcServer>(
+        *impl_->rpcService_, *impl_->rpcTransport_, rpcpp::QuickJSCodec{ctx});
+    registerHarnessRpcMethods(*impl_->rpcServer_);
 
     // Build the Symbol.for("retroplug") namespace and attach the native
     // functions before defining it (DefinePropertyValue consumes the ref).
@@ -162,9 +165,10 @@ TestHarness::TestHarness()
     // The emulator surface: the generated HarnessService client dispatches
     // through the host's single sync RPC entry.
     host_->bindRpcSend(ns,
-        [impl = impl_.get()](std::string_view bytes) {
-            return impl->rpcServer_->processMessage(
-                std::span<const char>(bytes.data(), bytes.size()));
+        [impl = impl_.get()](JSContext* sctx, JSValueConst req) -> JSValue {
+            auto out = impl->rpcServer_->processMessage(req);
+            if (!out) return JS_NULL;          // notification / no reply
+            return out->materialize(sctx);     // owned; handed back to JS
         });
 
     JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);

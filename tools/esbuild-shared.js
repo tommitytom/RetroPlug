@@ -54,7 +54,7 @@ const uiAliases = {
     "lvgljs-ui":           path.join(LV_BINDING_DIR, "src/render/react/index.ts"),
     "lvgljs":              path.join(DPFJS_DIR, "runtime/lvgljs/index.ts"),
     "@rpcpp/createClient": path.join(RPCPP_TS_DIR, "client/src/createClient.ts"),
-    "@rpcpp/MsgpackCodec": path.join(RPCPP_TS_DIR, "client/src/codecs/MsgpackCodec.ts"),
+    "@rpcpp/codec":        path.join(RPCPP_TS_DIR, "client/src/codec.ts"),
     "@rpcpp/transport":    path.join(RPCPP_TS_DIR, "client/src/transport.ts"),
     "plugin-service":      GENERATED_RPC_TS,
 };
