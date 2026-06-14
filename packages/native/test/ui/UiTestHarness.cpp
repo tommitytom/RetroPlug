@@ -262,13 +262,28 @@ void UiTestHarness::pump(int iterations) {
         // emulator. We only need ButtonPress headless (ROMs are loaded directly,
         // not via the LoadRom/AddSystem commands).
         Command cmd;
+        bool configMutated = false;
         while (commands_.tryPop(cmd)) {
             if (cmd.kind == Command::Kind::ButtonPress) {
                 const auto& bp = cmd.payload.buttonPress;
                 if (SystemBase* sys = project_.findSystem(bp.systemId))
                     sys->pressButton(bp.button, bp.down);
+            } else if (cmd.kind == Command::Kind::SetFastBoot) {
+                // Boolean config toggle. Mirrors PluginDSP's handler so the
+                // cyclable Fast Boot menu row reflects in headless UI tests
+                // (the real round-trip is DSP-thread only; here we apply it
+                // directly and re-notify the UI, as with loadRom above).
+                const auto& fb = cmd.payload.setFastBoot;
+                if (SystemBase* sys = project_.findSystem(fb.id)) {
+                    const auto cur = sys->fastBoot();
+                    if (cur && *cur != fb.enabled) {
+                        sys->setFastBoot(fb.enabled);
+                        configMutated = true;
+                    }
+                }
             }
         }
+        if (configMutated) notifyConfigChanged();
 
         // Advance the emulator so framebuffers publish (no DSP thread headless),
         // matching the per-tick emulator advance the plugin's audio thread does.

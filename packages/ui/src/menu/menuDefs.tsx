@@ -245,6 +245,12 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
           onSelect: () => {
               if (!sys) return;
               void plugin.$notify("setReloadOnRomChange", sys.id, !sys.reloadOnRomChange);
+          },
+          // Boolean toggle: Left/Right both just flip it, matching the
+          // other cyclable rows.
+          onCycle: () => {
+              if (!sys) return;
+              void plugin.$notify("setReloadOnRomChange", sys.id, !sys.reloadOnRomChange);
           } },
     );
 
@@ -285,7 +291,10 @@ function systemChildren(ctx: MenuContext): MenuItem[] {
         const fastBootOn = sys.fastBoot === true;
         items.push({ id: "fastBoot", label: `Fast Boot: ${fastBootOn ? "On" : "Off"}`,
             kind: "action", keepOpen: true,
-            onSelect: () => { void plugin.$notify("setFastBoot", sys.id, !fastBootOn); } });
+            onSelect: () => { void plugin.$notify("setFastBoot", sys.id, !fastBootOn); },
+            // Boolean toggle: Left/Right both just flip it, matching the
+            // other cyclable rows (Model, Highpass, …).
+            onCycle: () => { void plugin.$notify("setFastBoot", sys.id, !fastBootOn); } });
     }
 
     return items;
