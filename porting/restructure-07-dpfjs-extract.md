@@ -27,10 +27,9 @@ The generic framework was extracted to a **local sibling repo at `../dpf.js`**
   the generic aliases/paths (lvgljs, lv_binding react, @rpcpp client, codegen);
   output is byte-identical. lv_binding_js's `node_modules` (react/reconciler) was
   copied into dpf.js; the relocated rpcpp client's `@msgpack` resolves via a
-  `nodePaths` fallback to the consumer's `node_modules`. The two `packages/ui`
-  files that imported `runtime/lvgljs/input` by relative path now use a
-  `lvgljs/input` alias. `lv_conf.h`: dpf.js ships a default; RetroPlug's
-  `src/lv_conf.h` still wins (CACHE no-FORCE, set before `add_subdirectory`).
+  `nodePaths` fallback to the consumer's `node_modules`. `lv_conf.h`: dpf.js
+  ships a default; RetroPlug's `src/lv_conf.h` still wins (CACHE no-FORCE, set
+  before `add_subdirectory`).
 - **`DistrhoPluginInfo.h` stayed consumer-owned**; the miniz force-include was
   already mesen-side (RetroPlug), so nothing moved there.
 
@@ -48,6 +47,18 @@ ignore into submodule subtrees). A pre-publish strip step (the mitigation alread
 noted under *Risks*) handles this when publishing — out of scope for the local
 pass.
 
+**Follow-up (2026-06-14): input layer moved back to the product.** `input.ts` had
+been copied into dpf.js (`runtime/lvgljs/`) but is entirely Game-Boy-specific (the
+`GameboyButton` enum, key/pad→button maps, `installBindings`, the SDL gamepad
+hooks) — it doesn't belong in the generic framework. It was moved to
+`packages/ui/src/input.ts`; its two importers (`PluginUI.tsx`, `menu/Menu.tsx`)
+now import it locally; the `lvgljs/input` esbuild alias + tsconfig path were
+removed. dpf.js's `runtime/lvgljs/` now ships only the generic `index.ts`. The
+gamepad C++ (`src/GamepadManager.cpp`, `PluginUI::pumpGamepad`) was always
+RetroPlug-side, emitting through dpf.js's channel-agnostic `LvglJsEngine::emit`,
+so no C++ moved. Behavior-identical (screenshot `b1e147d7…`, `PluginService.ts`
+`957c0457…`, cli 30 / ui 11, validate clap=0/vst3=0).
+
 ## Goal
 
 Move the decoupled generic framework (dpf.js) into its own repository, publish it as an npm SOURCE package + template repo, and repoint RetroPlug to consume it via `require.resolve` + `add_subdirectory` — flattening RetroPlug's dependency graph and enabling reuse for other DPF plugins.
@@ -61,7 +72,7 @@ Move the decoupled generic framework (dpf.js) into its own repository, publish i
 
 **`dpf.js` npm package** (new repository):
 - **Generic C++ source tree**: DPF ([deps/dpf](../deps/dpf)), DPF-Widgets ([deps/dpf-widgets](../deps/dpf-widgets)), lvgl-js-native (from current `lvgl-js-native` static lib target), reflect-cpp + rpcpp ([deps/rpcpp](../deps/rpcpp)), msgpack-c ([deps/msgpack-c](../deps/msgpack-c)), efsw ([deps/efsw](../deps/efsw)).
-- **Generic TS source**: runtime/lvgljs (index.ts, input.ts — the LVGL JS API surface), esbuild build config + alias plugin (same as restructure-02), tsconfig base extending to consumers.
+- **Generic TS source**: runtime/lvgljs (index.ts — the LVGL JS API surface: params, focus groups, the on/off event bus, useParameter), esbuild build config + alias plugin (same as restructure-02), tsconfig base extending to consumers. (NOTE: `input.ts` was initially copied here too but is product-specific — Game Boy button mapping + keyboard/gamepad bindings — and was moved back to RetroPlug `packages/ui/src/input.ts`; see the follow-up note below.)
 - **Generic txiki host C++**: the "embed txiki/QuickJS + a native RPC service + run a TS app bundle" launcher (extracted in restructure-05). Used by both the plugin and the CLI to boot the same codebase into different transports.
 - **React reconciler glue** (`runtime/lvgljs/react.ts`, etc.): the adapter layer that lives in the framework, not the product.
 - **Submodules as dpf.js's own**: DPF, DPF-Widgets, lv_binding_js (with its nested LVGL + txiki), rpcpp (with nested reflect-cpp + catch2), msgpack-c, efsw. Catch2 is shipped in dpf.js's sources but consumers author their own test suites.

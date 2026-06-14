@@ -24,7 +24,7 @@ import {
     useGamepadButton,
     useKeyboard,
     useMouse,
-} from "lvgljs/input";
+} from "./input";
 
 function PluginUI() {
     // Menu starts open — empty project shows the start menu. The empty-

@@ -53,7 +53,6 @@ const reactNodePath = path.join(LV_BINDING_DIR, "node_modules");
 const uiAliases = {
     "lvgljs-ui":           path.join(LV_BINDING_DIR, "src/render/react/index.ts"),
     "lvgljs":              path.join(DPFJS_DIR, "runtime/lvgljs/index.ts"),
-    "lvgljs/input":        path.join(DPFJS_DIR, "runtime/lvgljs/input.ts"),
     "@rpcpp/createClient": path.join(RPCPP_TS_DIR, "client/src/createClient.ts"),
     "@rpcpp/MsgpackCodec": path.join(RPCPP_TS_DIR, "client/src/codecs/MsgpackCodec.ts"),
     "@rpcpp/transport":    path.join(RPCPP_TS_DIR, "client/src/transport.ts"),

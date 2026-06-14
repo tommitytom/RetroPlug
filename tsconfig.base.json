@@ -13,7 +13,6 @@
         "paths": {
             "lvgljs-ui":            ["../dpf.js/deps/lv_binding_js/src/render/react"],
             "lvgljs":               ["../dpf.js/runtime/lvgljs"],
-            "lvgljs/input":         ["../dpf.js/runtime/lvgljs/input"],
             "react":                ["../dpf.js/deps/lv_binding_js/node_modules/@types/react"],
             "react/jsx-runtime":    ["../dpf.js/deps/lv_binding_js/node_modules/@types/react/jsx-runtime"],
             "@rpcpp/createClient":  ["../dpf.js/deps/rpcpp/clients/typescript/client/src/createClient"],
