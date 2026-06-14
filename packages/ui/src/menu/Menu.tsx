@@ -564,6 +564,13 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
                     "row-spacing": 0,
                     "column-spacing": 0,
                     overflow: "auto",
+                    // Desktop, not touch: kill drag-to-scroll and hide the
+                    // scrollbar by disabling every scroll direction. The View
+                    // stays LV_OBJ_FLAG_SCROLLABLE (so the mouse-wheel handler
+                    // in PluginUI still finds it) and keyboard scroll-follow
+                    // (`scrollToY`) keeps working — both bypass scroll_dir;
+                    // only the pointer-drag gesture and scrollbar draw honour it.
+                    "scroll-dir": "none",
                 }}
             >
                 {flat.map(({ item, depth }) => {
