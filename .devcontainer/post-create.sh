@@ -68,26 +68,18 @@ echo "==> Initializing git submodules..."
 git submodule update --init --recursive
 
 echo "==> Installing workspace deps (pnpm)..."
-# Root is a pnpm workspace (packages/*). Top-level package.json holds the few
-# packages used by the UI bundle that aren't already in
-# deps/lv_binding_js/node_modules — primarily @msgpack/msgpack for the rpcpp
-# client's MsgpackCodec. pnpm is provided by corepack (see Dockerfile) and
-# resolved from the "packageManager" field.
+# Root is a pnpm workspace (packages/*) that consumes the generic dpf.js
+# framework via a `link:` dep to the ../dpf.js sibling repo (resolved at CMake
+# configure time by `require.resolve`). pnpm is provided by corepack (see
+# Dockerfile) and resolved from the "packageManager" field.
 if [ ! -d node_modules ]; then
     pnpm install
 fi
 
-# deps/lv_binding_js is still installed with npm (it predates the workspace and
-# has its own pnpm-workspace.yaml).
-echo "==> Installing deps/lv_binding_js npm deps..."
-# The host build now gets esbuild from the root workspace (restructure-02), but
-# the UI bundle still pulls react/react-reconciler/scheduler (and @types/react
-# for IDE) from deps/lv_binding_js/node_modules — the renderer lives in this
-# submodule and moves out to dpf.js at restructure-07. Without this install the
-# first cmake --build invocation fails to resolve react.
-if [ ! -d deps/lv_binding_js/node_modules ]; then
-    (cd deps/lv_binding_js && npm install --no-audit --no-fund --silent)
-fi
+# The UI bundle's react/react-reconciler/scheduler (and @types/react for IDE)
+# resolve from ../dpf.js/deps/lv_binding_js/node_modules: the lv_binding_js
+# renderer lives in the dpf.js repo since restructure-07, and that repo owns its
+# own dependency install. Nothing to install here.
 
 echo "==> Configuring CMake..."
 mkdir -p build

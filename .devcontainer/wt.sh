@@ -167,21 +167,14 @@ echo "==> Initializing git submodules..."
 git -C "$WT_DIR" submodule update --init --recursive
 
 echo ""
-echo "==> Installing workspace npm deps..."
-# Top-level package.json holds the few packages used by the UI bundle that
-# aren't already present in deps/lv_binding_js/node_modules — primarily
-# @msgpack/msgpack for the rpcpp client's MsgpackCodec.
+echo "==> Installing workspace deps (pnpm)..."
+# Root is a pnpm workspace (packages/*) consuming dpf.js via a `link:` dep to the
+# ../dpf.js sibling repo. Worktrees are created as siblings under /workspaces, so
+# the relative link resolves to the same ../dpf.js checkout. The UI bundle's
+# react/esbuild deps come from ../dpf.js (the lv_binding_js renderer lives there
+# since restructure-07); that repo owns its own install.
 if [ ! -d "$WT_DIR/node_modules" ]; then
-    (cd "$WT_DIR" && npm install --no-audit --no-fund --silent)
-fi
-
-echo ""
-echo "==> Installing deps/lv_binding_js npm deps..."
-# tools/gen-rpc-ts.js and tools/build-ui.js resolve esbuild (and
-# esbuild-plugin-alias) from deps/lv_binding_js/node_modules. Without this
-# install the first cmake --build invocation fails with MODULE_NOT_FOUND.
-if [ ! -d "$WT_DIR/deps/lv_binding_js/node_modules" ]; then
-    (cd "$WT_DIR/deps/lv_binding_js" && npm install --no-audit --no-fund --silent)
+    (cd "$WT_DIR" && pnpm install)
 fi
 
 echo ""
