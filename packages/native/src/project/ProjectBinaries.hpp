@@ -99,7 +99,12 @@ inline void clearBlob(std::vector<std::uint8_t>& blob) {
 inline void clearRoles(std::vector<RoleConfig>& roles) {
     for (auto& rc : roles) {
         if (auto* kitCfg = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant())) {
-            for (auto& kit : kitCfg->kits) clearBlob(kit.compiledBytes);
+            for (auto& kit : kitCfg->kits) {
+                // Drop the derived bytes + their hash; the kit is recompiled from
+                // `samples` on load (see ProjectKitRecompile).
+                clearBlob(kit.compiledBytes);
+                kit.compiledHash = 0;
+            }
         }
     }
 }

@@ -15,6 +15,7 @@
 #include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
 #include "lsdj/KitCompiler.hpp"
+#include "lsdj/ProjectKitRecompile.hpp"
 #include "lsdj/SampleCache.hpp"
 #include "project/Project.hpp"
 #include "project/ProjectSerialization.hpp"
@@ -302,6 +303,13 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
         std::fprintf(stderr, "loadProjectFromPath: failed to parse '%s'\n", path.c_str());
         emit("project-error", path);
         return false;
+    }
+    // Path-only saves carry kit sample metadata but no compiled bytes — rebuild
+    // each kit from its source WAVs here (UI thread) before the DSP applies the
+    // project. Zip exports already carry the bytes, so this is a no-op for them.
+    if (rp::lsdj::projectHasKitsNeedingRecompile(*parsed)) {
+        if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::lsdj::KitCompiler>();
+        rp::lsdj::recompileMissingKits(*parsed, *kitCompiler_);
     }
     // Heap-allocate the parsed config; DSP frees after applying.
     auto* heap = new ProjectConfig(std::move(*parsed));
@@ -759,10 +767,9 @@ PluginRpcService::getKitsConfig(std::uint32_t systemId) {
             e.pitch      = s.pitch;
             e.volume     = s.volume;
             e.sourceHash = s.sourceHash;
-            // Effects don't currently round-trip with the per-sample
-            // metadata — they're applied at compile time and not stored
-            // on the role config. UI re-edit recompiles whatever the
-            // current effect picker shows.
+            e.offset     = s.offset;
+            e.length     = s.length;
+            e.effects    = s.effects;
             entry.samples.push_back(std::move(e));
         }
         out.kits.push_back(std::move(entry));
@@ -799,15 +806,17 @@ PluginRpcService::compileAndPatchKit(std::uint32_t systemId,
     // two are deliberately structurally identical — they differ only in
     // how optional fields are surfaced (rpcpp uses std::optional; the
     // compiler uses defaulted plain values).
+    // Copy (don't move) the per-sample fields: they're stored on the project
+    // config below so the kit can be recompiled from source on the next load.
     std::vector<rp::lsdj::CompileSampleSpec> compileSpecs;
     compileSpecs.reserve(samples.size());
-    for (auto& s : samples) {
+    for (const auto& s : samples) {
         rp::lsdj::CompileSampleSpec c;
-        c.path    = std::move(s.path);
-        c.name    = std::move(s.name);
+        c.path    = s.path;
+        c.name    = s.name;
         c.offset  = s.offset.value_or(0);
         c.length  = s.length.value_or(0);
-        c.effects = std::move(s.effects);
+        c.effects = s.effects;
         compileSpecs.push_back(std::move(c));
     }
 
@@ -845,10 +854,13 @@ PluginRpcService::compileAndPatchKit(std::uint32_t systemId,
         slot->samples.reserve(samples.size());
         for (const auto& s : samples) {
             rp::lsdj::LsdjSampleConfig out;
-            out.path   = s.path;   // moved-from above on the copy used by compileSpecs
-            out.name   = s.name;
-            out.pitch  = s.pitch.value_or(0x7F);
-            out.volume = s.volume.value_or(0xFF);
+            out.path    = s.path;
+            out.name    = s.name;
+            out.pitch   = s.pitch.value_or(0x7F);
+            out.volume  = s.volume.value_or(0xFF);
+            out.offset  = s.offset.value_or(0);
+            out.length  = s.length.value_or(0);
+            out.effects = s.effects;
             slot->samples.push_back(std::move(out));
         }
         break;

@@ -667,6 +667,61 @@ TEST_CASE("SameBoyConfig round-trips an attached LsdjKitPatchConfig role",
     REQUIRE(s0.samples[0].sourceHash == 0xAA55AA55ULL);
 }
 
+TEST_CASE("path-only JSON drops kit bytes but keeps recompile inputs",
+          "[ProjectSerialization][json][kit]") {
+    // The path-only save must drop compiledBytes/hash (kits are recompiled on
+    // load) yet keep every input needed to recompile: sample path/name and the
+    // offset/length/effects.
+    rp::lsdj::LsdjKitConfig slot0;
+    slot0.slot          = 0;
+    slot0.name          = "DRUMS";
+    slot0.compiledBytes = std::vector<std::uint8_t>(0x4000, 0xAB);
+    slot0.compiledHash  = 0xDEADBEEFCAFEBABEULL;
+    rp::lsdj::LsdjSampleConfig kick;
+    kick.path   = "/some/path/kick.wav";
+    kick.name   = "KIK";
+    kick.offset = 128;
+    kick.length = 4096;
+    kick.effects.push_back(rp::lsdj::GainEffect{/*normalize*/ true, /*gain*/ 1.5f});
+    kick.effects.push_back(rp::lsdj::DitherEffect{rp::lsdj::DitherType::ShapedTPDF});
+    slot0.samples.push_back(kick);
+
+    rp::lsdj::LsdjKitPatchConfig kit;
+    kit.kits.push_back(slot0);
+
+    SameBoyConfig sb;
+    sb.romPath = "/some/path/lsdj.gb";
+    sb.roles.emplace_back(std::move(kit));
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+
+    const std::string json = projectConfigToJsonFile(cfg);
+    REQUIRE(!json.empty());
+    CHECK(json.find("\"compiledBytes\":[]") != std::string::npos); // bytes dropped
+    CHECK(json.find("kick.wav") != std::string::npos);             // sample link kept
+
+    auto parsed = projectConfigFromBytes(
+        std::vector<std::uint8_t>(json.begin(), json.end()));
+    REQUIRE(parsed.has_value());
+    const auto* sbOut = rfl::get_if<SameBoyConfig>(&parsed->systems.front().variant());
+    REQUIRE(sbOut != nullptr);
+    const auto* kitOut = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&sbOut->roles.front().variant());
+    REQUIRE(kitOut != nullptr);
+    REQUIRE(kitOut->kits.size() == 1);
+    const auto& s0 = kitOut->kits.front();
+    CHECK(s0.compiledBytes.empty());
+    CHECK(s0.compiledHash == 0);
+    REQUIRE(s0.samples.size() == 1);
+    CHECK(s0.samples[0].path   == "/some/path/kick.wav");
+    CHECK(s0.samples[0].offset == 128);
+    CHECK(s0.samples[0].length == 4096);
+    REQUIRE(s0.samples[0].effects.size() == 2);
+    const auto* gain = rfl::get_if<rp::lsdj::GainEffect>(&s0.samples[0].effects[0].variant());
+    REQUIRE(gain != nullptr);
+    CHECK(gain->normalize == true);
+}
+
 TEST_CASE("LsdjKitPatchConfig coexists with LsdjSyncConfig on the same system",
           "[ProjectSerialization][role][kit]") {
     // The sniffer attaches BOTH roles when an LSDJ ROM is loaded — they're

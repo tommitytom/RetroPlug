@@ -94,6 +94,8 @@ public:
         std::uint8_t                      pitch  = 0x7F;
         std::uint8_t                      volume = 0xFF;
         std::uint64_t                     sourceHash = 0;
+        std::size_t                       offset = 0;
+        std::size_t                       length = 0;
         std::vector<rp::lsdj::LsdjEffect> effects;
     };
     struct KitEntry {

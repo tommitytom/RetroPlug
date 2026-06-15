@@ -8,30 +8,30 @@
 
 #include "rfl/Literal.hpp"
 
+#include "lsdj/Effects.hpp"
 #include "system/RomRole.hpp"
 
 namespace rp::lsdj {
 
-// Per-sample metadata that's part of project state. The compiled bytes
-// live on `LsdjKitConfig` below; this struct carries the source-side
-// info needed to *re-compile* the sample from the UI without a fresh
-// drag-drop. Effects/dither are referenced by name via the LsdjEffect
-// variant rather than embedded here — kept lean so the project JSON
-// stays small.
+// Per-sample metadata that's part of project state. This is the source-side
+// info needed to fully *re-compile* the sample — so a project save doesn't have
+// to carry the baked sample bytes. `path` + `offset`/`length` + `effects`
+// reproduce the exact compiled output (see ProjectKitRecompile + KitCompiler).
 struct LsdjSampleConfig {
     std::string   path;                  // source audio file
     std::string   name;                  // 3-char uppercase
     std::uint8_t  pitch    = 0x7F;       // 0x7F = neutral; honored by future revisions
     std::uint8_t  volume   = 0xFF;       // 0xFF = full; ditto
     std::uint64_t sourceHash = 0;        // FNV-64 of source bytes (UI dirty tracking)
+    std::size_t   offset = 0;            // skip the first N source frames
+    std::size_t   length = 0;            // 0 = use everything from offset
+    std::vector<LsdjEffect> effects;     // gain / filter / dither, applied at compile
 };
 
-// One kit slot's persisted state. The 16 KB `compiledBytes` is the
-// emulator-side truth — what the running LSDJ ROM sees in the bank for
-// `slot`. `compiledHash` matches `compiledBytes` and is what the UI
-// compares against to decide whether a re-patch is needed. The bytes live
-// in the .rplg zip as a raw entry (see ProjectBinaries); the field
-// serializes as `[]` in project.json.
+// One kit slot's persisted state. `compiledBytes` is the emulator-side truth —
+// what the running LSDJ ROM sees in the bank for `slot` — and is what the zip
+// export bundles so it loads without the source WAVs. The path-only JSON save
+// drops it (and `compiledHash`); the kit is recompiled from `samples` on load.
 struct LsdjKitConfig {
     std::uint8_t  slot = 0;                          // 0..15
     std::string   name;                              // 6-char kit name (matches LSDJ UI)

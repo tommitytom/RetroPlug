@@ -42,6 +42,7 @@
 #include "system/sameboy/roles/LsdjKitPatchRole.hpp"
 #include "lsdj/KitCompiler.hpp"
 #include "lsdj/KitUtil.hpp"
+#include "lsdj/ProjectKitRecompile.hpp"
 
 #include "HarnessRpcService.hpp"
 #include "TypedRpcServer.h"
@@ -507,6 +508,37 @@ struct TestHarness::Impl {
             }
         }
         if (!role) throw std::runtime_error("patchKit: system has no lsdj-kit-patch role");
+
+        // Mirror compileAndPatchKit + the DSP PatchKit handler: persist the kit
+        // (sample metadata + compiled bytes) onto the system config so saves
+        // round-trip — saveRplg keeps the bytes, saveProjectFile keeps just the
+        // samples and recompiles on load.
+        for (auto& rc : sb->config_.roles) {
+            auto* kitCfg = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant());
+            if (!kitCfg) continue;
+            rp::lsdj::LsdjKitConfig* dst = nullptr;
+            for (auto& k : kitCfg->kits) {
+                if (k.slot == slot) { dst = &k; break; }
+            }
+            if (!dst) {
+                rp::lsdj::LsdjKitConfig fresh;
+                fresh.slot = slot;
+                kitCfg->kits.push_back(std::move(fresh));
+                dst = &kitCfg->kits.back();
+            }
+            dst->name = name;
+            dst->samples.clear();
+            for (const auto& s : samples) {
+                rp::lsdj::LsdjSampleConfig sc;
+                sc.path = s.first;
+                sc.name = s.second;
+                dst->samples.push_back(std::move(sc));
+            }
+            dst->compiledBytes = compiled.bytes;
+            dst->compiledHash  = compiled.hash;
+            break;
+        }
+
         role->queuePatch(slot, std::move(compiled.bytes));
     }
 
@@ -549,6 +581,12 @@ struct TestHarness::Impl {
         auto parsed = projectConfigFromBytes(bytes);
         if (!parsed)
             throw std::runtime_error("loadRplg: failed to parse " + path);
+        // Path-only JSON saves carry kit samples but no compiled bytes — rebuild
+        // them from source before addSystem, mirroring loadProjectFromPath.
+        if (rp::lsdj::projectHasKitsNeedingRecompile(*parsed)) {
+            if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::lsdj::KitCompiler>();
+            rp::lsdj::recompileMissingKits(*parsed, *kitCompiler_);
+        }
         // Fresh project, mirroring PluginDSP::applyProjectFromConfig's
         // clearSystems + rebuild.
         project = std::make_unique<Project>();
