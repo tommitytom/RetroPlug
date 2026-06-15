@@ -15,6 +15,10 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::openExportZipBrowser>();
     server.template addMethod<&PluginRpcService::openLoadProjectBrowser>();
     server.template addMethod<&PluginRpcService::loadProjectFromPath>();
+    server.template addMethod<&PluginRpcService::getMissingFiles>();
+    server.template addMethod<&PluginRpcService::relinkMissingFile>();
+    server.template addMethod<&PluginRpcService::openRelinkBrowser>();
+    server.template addMethod<&PluginRpcService::cancelMissingFiles>();
     server.template addMethod<&PluginRpcService::loadRomFromPath>();
     server.template addMethod<&PluginRpcService::addRomFromPath>();
     server.template addMethod<&PluginRpcService::replaceRomFromPath>();

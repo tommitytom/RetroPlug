@@ -13,6 +13,7 @@
 
 #include "config/UserConfigSerialization.hpp"
 #include "lsdj/Effects.hpp"
+#include "project/ProjectMissingFiles.hpp"
 #include "system/MemoryType.hpp"
 #include "system/SystemTypes.hpp"
 
@@ -249,6 +250,22 @@ public:
     // Promise around it. Matches the event-style flow openRomBrowser uses.
     bool             openSampleBrowser();
 
+    // Relink-missing-files (a thin JSON project whose ROMs / kit WAVs moved).
+    // After loadProjectFromPath finds missing files it holds the project pending
+    // and emits "missing-files"; the UI walks the list, locating each file.
+    using MissingFilesResponse = rp::MissingFilesResponse;
+    MissingFilesResponse getMissingFiles();
+    // Point one pending item at newPath (+ auto-relink siblings in its folder),
+    // re-scan, and either commit (when nothing's left) or return the remainder.
+    MissingFilesResponse relinkMissingFile(std::uint32_t systemIndex,
+                                           std::int32_t  kitSlot,
+                                           std::int32_t  sampleIndex,
+                                           std::string   newPath);
+    // Open a file browser for a relink; the path returns via "relink-path-selected".
+    bool openRelinkBrowser(bool isRom);
+    // Abandon the pending load, keeping the current project.
+    bool cancelMissingFiles();
+
     // User config / key-pad bindings. See src/config/UserConfig.hpp.
     UserConfigDto getUserConfig();
     bool          setActiveKeyboardBindings(std::string name);
@@ -335,10 +352,13 @@ private:
     // File-browser callback target. Open-* methods set this; the DPF host
     // delivers the chosen path back via onFileBrowserSelected.
     enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject, ExportZip,
-                                 LoadSample, SaveSram, LoadSram, SaveState, LoadState };
+                                 LoadSample, Relink, SaveSram, LoadSram, SaveState, LoadState };
 
     bool saveProjectToPath(const std::string& path);
     bool exportZipToPath(const std::string& path);
+    // Apply pendingProject_ to the DSP (recompiling kits first). Shared by
+    // loadProjectFromPath (no missing files) and relinkMissingFile (all resolved).
+    bool commitPendingProject();
 
     Project*                  project_              = nullptr;
     CommandQueue*             commands_             = nullptr;
@@ -352,6 +372,11 @@ private:
     // that never opens an LSDJ ROM doesn't pay the enkiTS thread-pool
     // spin-up cost.
     std::unique_ptr<rp::lsdj::KitCompiler> kitCompiler_;
+
+    // A parsed project awaiting missing-file relinks before it's applied. Held
+    // on the UI thread between loadProjectFromPath and commit/cancel.
+    std::optional<ProjectConfig> pendingProject_;
+    std::string                  pendingProjectPath_;
 
     EmitEventFn               emitEvent_;
     OpenFileBrowserFn         openFileBrowser_;

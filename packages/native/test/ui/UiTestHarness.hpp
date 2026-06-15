@@ -77,6 +77,19 @@ public:
     // Tell the UI to refetch systems (emits "config-changed"); use after loadRom.
     void notifyConfigChanged();
 
+    // Load a project file through the REAL PluginRpcService path (parses, detects
+    // missing ROMs / kit WAVs, emits "missing-files" or commits). Lets a UI test
+    // exercise the relink flow. pump() applies the committed Command::LoadProject.
+    bool loadProject(const std::string& path);
+    // Inject a file-browser selection — the headless stand-in for the native
+    // dialog. Routes to onFileBrowserSelected, so a Relink browse resolves.
+    void selectFile(const std::string& path);
+    // Write raw bytes to disk (stage a project JSON / ROM for a test).
+    void writeFile(const std::string& path, const std::vector<std::uint8_t>& bytes);
+    // Write a schema-correct thin project JSON with one path-only SameBoy system
+    // pointing at `romPath` (use a non-existent path to exercise relink).
+    void writeProjectJson(const std::string& path, const std::string& romPath);
+
     // -- assertions surface -------------------------------------------------
 
     Snapshot snapshot();                 // render the active screen to ARGB

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <utility>
@@ -8,6 +9,7 @@
 
 #include "project/Project.hpp"
 #include "project/ProjectConfig.hpp"
+#include "project/ProjectMissingFiles.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "util/MinizZip.hpp"
 #include "system/SystemBase.hpp"
@@ -798,4 +800,100 @@ TEST_CASE("LsdjKitPatchConfig coexists with LsdjSyncConfig on the same system",
     }
     REQUIRE(sawSync);
     REQUIRE(sawKit);
+}
+
+// --- Missing-file detection / relink (ProjectMissingFiles.hpp) --------------
+
+namespace {
+std::string touchTemp(const std::string& name) {
+    const auto p = std::filesystem::temp_directory_path() / name;
+    std::ofstream(p, std::ios::binary) << 'x';
+    return p.string();
+}
+const rp::MissingFile* findByKind(const std::vector<rp::MissingFile>& v, const char* kind) {
+    for (const auto& m : v) if (m.itemKind == kind) return &m;
+    return nullptr;
+}
+} // namespace
+
+TEST_CASE("scanMissingFiles flags only absent, needed ROMs", "[MissingFiles]") {
+    const std::string realRom = touchTemp("rp_mf_rom.gb");
+
+    SameBoyConfig embedded; embedded.romPath = "/nope/x.gb"; embedded.romBytes = {1, 2, 3};
+    SameBoyConfig present;  present.romPath  = realRom;       // path-only, exists
+    SameBoyConfig absent;   absent.romPath   = "/nope/c.gb";  // path-only, gone
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(embedded);
+    cfg.systems.push_back(present);
+    cfg.systems.push_back(absent);
+
+    const auto missing = rp::scanMissingFiles(cfg);
+    REQUIRE(missing.size() == 1);
+    CHECK(missing[0].systemIndex == 2);
+    CHECK(missing[0].itemKind == "rom");
+    CHECK(missing[0].path == "/nope/c.gb");
+
+    std::filesystem::remove(realRom);
+}
+
+TEST_CASE("scanMissingFiles checks kit samples only when recompiling", "[MissingFiles]") {
+    auto makeCfg = [](bool withCompiledBytes) {
+        SameBoyConfig sb; sb.romBytes = {1}; // ROM present, not under test
+        rp::lsdj::LsdjKitConfig k; k.slot = 3;
+        if (withCompiledBytes) k.compiledBytes = std::vector<std::uint8_t>(0x4000, 0);
+        rp::lsdj::LsdjSampleConfig s; s.path = "/nope/kick.wav";
+        k.samples.push_back(s);
+        rp::lsdj::LsdjKitPatchConfig kit; kit.kits.push_back(k);
+        sb.roles.emplace_back(kit);
+        ProjectConfig cfg; cfg.systems.push_back(sb);
+        return cfg;
+    };
+
+    // JSON load (no compiled bytes) → the missing WAV is flagged.
+    const auto needs = rp::scanMissingFiles(makeCfg(false));
+    REQUIRE(needs.size() == 1);
+    CHECK(needs[0].itemKind == "sample");
+    CHECK(needs[0].kitSlot == 3);
+    CHECK(needs[0].sampleIndex == 0);
+
+    // Zip kit (compiled bytes present) → self-sufficient, WAV not required.
+    CHECK(rp::scanMissingFiles(makeCfg(true)).empty());
+}
+
+TEST_CASE("relinkInConfig + autoFindSiblings repair a moved folder", "[MissingFiles]") {
+    const auto dir = std::filesystem::temp_directory_path() / "rp_mf_relink";
+    std::filesystem::create_directories(dir);
+    const auto romNew = (dir / "song.gb").string();
+    const auto wavNew = (dir / "kick.wav").string();
+    std::ofstream(romNew, std::ios::binary) << 'r';
+    std::ofstream(wavNew, std::ios::binary) << 'w';
+
+    SameBoyConfig sb; sb.romPath = "/old/song.gb"; // both old paths gone
+    rp::lsdj::LsdjKitConfig k; k.slot = 0;
+    rp::lsdj::LsdjSampleConfig s; s.path = "/old/kick.wav";
+    k.samples.push_back(s);
+    rp::lsdj::LsdjKitPatchConfig kit; kit.kits.push_back(k);
+    sb.roles.emplace_back(kit);
+    ProjectConfig cfg; cfg.systems.push_back(sb);
+
+    auto missing = rp::scanMissingFiles(cfg);
+    REQUIRE(missing.size() == 2); // rom + sample
+
+    // Locate the ROM; auto-find resolves the sibling WAV from the same folder.
+    const rp::MissingFile* romItem = findByKind(missing, "rom");
+    REQUIRE(romItem != nullptr);
+    REQUIRE(rp::relinkInConfig(cfg, *romItem, romNew));
+    CHECK(rp::autoFindSiblings(cfg, dir.string()) == 1);
+    CHECK(rp::scanMissingFiles(cfg).empty());
+
+    const auto* sbOut = rfl::get_if<SameBoyConfig>(&cfg.systems[0].variant());
+    REQUIRE(sbOut != nullptr);
+    CHECK(sbOut->romPath == romNew);
+    CHECK(sbOut->romBytes.empty());
+    const auto* kc = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&sbOut->roles[0].variant());
+    REQUIRE(kc != nullptr);
+    CHECK(kc->kits[0].samples[0].path == wavNew);
+
+    std::filesystem::remove_all(dir);
 }

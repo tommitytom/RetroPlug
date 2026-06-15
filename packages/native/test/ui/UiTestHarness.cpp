@@ -24,6 +24,7 @@ extern "C" lv_global_t* lv_global_default(void) {
 #include "transport/CommandQueue.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "project/ProjectSerialization.hpp"
 
 extern "C" {
     #include <quickjs.h>
@@ -204,6 +205,11 @@ bool UiTestHarness::boot() {
         engine_, &project_, &commands_, &events_, &sampleRate_, &focusedSystemId_,
         /*userConfig*/ nullptr, /*recentFiles*/ nullptr);
 
+    // Stub the file browser so open*Browser RPCs succeed headlessly. The actual
+    // chosen path is injected by the test via selectFile() -> onFileBrowserSelected.
+    bridge_->setOpenFileBrowserCallback(
+        [](const char*, bool, const char*) { /* path injected via selectFile */ });
+
     if (engine_.evalModuleBytecode(ui_bundle, ui_bundle_size) != 0) return false;
 
     booted_ = true;
@@ -252,6 +258,36 @@ void UiTestHarness::notifyConfigChanged() {
     if (engine_.getContext()) engine_.emit("config-changed", 0, nullptr);
 }
 
+bool UiTestHarness::loadProject(const std::string& path) {
+    return bridge_ && bridge_->loadProjectFromPath(path);
+}
+
+void UiTestHarness::selectFile(const std::string& path) {
+    if (bridge_) bridge_->onFileBrowserSelected(path.c_str());
+}
+
+void UiTestHarness::writeFile(const std::string& path,
+                              const std::vector<std::uint8_t>& bytes) {
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (!f.write(reinterpret_cast<const char*>(bytes.data()),
+                 static_cast<std::streamsize>(bytes.size())).good())
+        throw std::runtime_error("UiTestHarness::writeFile failed: " + path);
+}
+
+void UiTestHarness::writeProjectJson(const std::string& path,
+                                     const std::string& romPath) {
+    // Schema-correct thin project (one path-only SameBoy system) via the real
+    // serializer — hand-authored JSON is too brittle against reflect-cpp.
+    SameBoyConfig sb;
+    sb.romPath = romPath;
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+    const std::string json = projectConfigToJsonFile(cfg);
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    if (!f.write(json.data(), static_cast<std::streamsize>(json.size())).good())
+        throw std::runtime_error("UiTestHarness::writeProjectJson failed: " + path);
+}
+
 void UiTestHarness::pump(int iterations) {
     constexpr std::uint32_t kFrames = 1024; // ~23ms at 44.1kHz
     if (scratchL_.size() < kFrames) { scratchL_.resize(kFrames); scratchR_.resize(kFrames); }
@@ -268,6 +304,24 @@ void UiTestHarness::pump(int iterations) {
                 const auto& bp = cmd.payload.buttonPress;
                 if (SystemBase* sys = project_.findSystem(bp.systemId))
                     sys->pressButton(bp.button, bp.down);
+            } else if (cmd.kind == Command::Kind::LoadProject) {
+                // Mirror PluginDSP's LoadProject handler so a project committed
+                // by the RPC service (after relinking) actually applies in-harness.
+                ProjectConfig* config = cmd.payload.loadProject.config;
+                if (config) {
+                    project_.clearSystems();
+                    project_.config() = ProjectConfig{};
+                    SystemId first = 0;
+                    for (const auto& sc : config->systems) {
+                        const SystemId id = project_.addSystem(sc);
+                        if (id != 0 && first == 0) first = id;
+                    }
+                    focusedSystemId_.store(first);
+                    project_.rebuildLinkGroups();
+                    project_.onActivate(sampleRate_.load());
+                    delete config;
+                    configMutated = true;
+                }
             } else if (cmd.kind == Command::Kind::SetFastBoot) {
                 // Boolean config toggle. Mirrors PluginDSP's handler so the
                 // cyclable Fast Boot menu row reflects in headless UI tests

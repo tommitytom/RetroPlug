@@ -32,6 +32,10 @@ export interface UiSnapshot {
 interface NativeUi {
   boot(): boolean;
   loadRom(path: string, savPath?: string): number;
+  loadProject(path: string): boolean;
+  selectFile(path: string): void;
+  writeFile(path: string, bytes: ArrayBuffer): void;
+  writeProjectJson(path: string, romPath: string): void;
   pump(iterations?: number): void;
   readMemory(sys: number, type: number): ArrayBuffer;
   snapshot(): { width: number; height: number; pixels: ArrayBuffer };
@@ -103,6 +107,19 @@ export const ui = {
    *  Optional `savPath` is a .sav file (raw cartridge SRAM) seeding battery RAM
    *  so LSDj boots straight to the song screen. */
   loadRom(path: string, savPath?: string): number { return rp.loadRom(path, savPath); },
+  /** Load a project file via the real PluginRpcService path (detects missing
+   *  ROMs / kit WAVs → "missing-files" event → relink menu, or commits). */
+  loadProject(path: string): boolean { return rp.loadProject(path); },
+  /** Inject a file-browser selection (headless stand-in for the native dialog),
+   *  e.g. to complete a relink "Locate…" browse. */
+  selectFile(path: string): void { rp.selectFile(path); },
+  /** Stage raw bytes on disk (e.g. a project JSON or ROM) before loading. */
+  writeFile(path: string, bytes: Uint8Array): void {
+    rp.writeFile(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+  },
+  /** Write a schema-correct thin project JSON (one path-only SameBoy system at
+   *  `romPath`). Point it at a non-existent path to drive the relink flow. */
+  writeProjectJson(path: string, romPath: string): void { rp.writeProjectJson(path, romPath); },
   /** Advance the UI + emulator `iterations` blocks (settles RPC + render). */
   pump(iterations = 30): void { rp.pump(iterations); },
   /** Read a whole memory region of a system as a copy (see Mem). */

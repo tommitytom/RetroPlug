@@ -144,6 +144,70 @@ JSValue jsUiLoadRom(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
     }
 }
 
+JSValue jsUiLoadProject(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "ui.loadProject(path)");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    try {
+        const bool ok = harnessOrThrow()->loadProject(path);
+        JS_FreeCString(ctx, path);
+        return JS_NewBool(ctx, ok);
+    } catch (const std::exception& e) {
+        JSValue err = JS_ThrowTypeError(ctx, "ui.loadProject: %s", e.what());
+        JS_FreeCString(ctx, path);
+        return err;
+    }
+}
+
+JSValue jsUiSelectFile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "ui.selectFile(path)");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    try {
+        harnessOrThrow()->selectFile(path);
+        JS_FreeCString(ctx, path);
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) {
+        JSValue err = JS_ThrowTypeError(ctx, "ui.selectFile: %s", e.what());
+        JS_FreeCString(ctx, path);
+        return err;
+    }
+}
+
+JSValue jsUiWriteFile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 2) return JS_ThrowTypeError(ctx, "ui.writeFile(path, bytes)");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    size_t len = 0;
+    uint8_t* data = JS_GetArrayBuffer(ctx, &len, argv[1]);
+    if (!data) {
+        JS_FreeCString(ctx, path);
+        return JS_ThrowTypeError(ctx, "ui.writeFile: bytes must be an ArrayBuffer");
+    }
+    try {
+        harnessOrThrow()->writeFile(path, std::vector<std::uint8_t>(data, data + len));
+        JS_FreeCString(ctx, path);
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) {
+        JSValue err = JS_ThrowTypeError(ctx, "ui.writeFile: %s", e.what());
+        JS_FreeCString(ctx, path);
+        return err;
+    }
+}
+
+JSValue jsUiWriteProjectJson(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 2) return JS_ThrowTypeError(ctx, "ui.writeProjectJson(path, romPath)");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    const char* rom  = JS_ToCString(ctx, argv[1]);
+    if (!path || !rom) { if (path) JS_FreeCString(ctx, path); if (rom) JS_FreeCString(ctx, rom); return JS_EXCEPTION; }
+    JSValue ret;
+    try { harnessOrThrow()->writeProjectJson(path, rom); ret = JS_UNDEFINED; }
+    catch (const std::exception& e) { ret = JS_ThrowTypeError(ctx, "ui.writeProjectJson: %s", e.what()); }
+    JS_FreeCString(ctx, path);
+    JS_FreeCString(ctx, rom);
+    return ret;
+}
+
 JSValue jsUiPump(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     int iterations = 30;
     if (argc >= 1 && !JS_IsUndefined(argv[0])) JS_ToInt32(ctx, &iterations, argv[0]);
@@ -320,6 +384,10 @@ int runUiTestFile(const std::string& jsPath) {
     installNamespace(ctx, "retroplug-ui", {
         { "boot",            { jsUiBoot,            0 } },
         { "loadRom",         { jsUiLoadRom,         1 } },
+        { "loadProject",     { jsUiLoadProject,     1 } },
+        { "selectFile",      { jsUiSelectFile,      1 } },
+        { "writeFile",       { jsUiWriteFile,       2 } },
+        { "writeProjectJson",{ jsUiWriteProjectJson, 2 } },
         { "pump",            { jsUiPump,            1 } },
         { "readMemory",      { jsUiReadMemory,      2 } },
         { "snapshot",        { jsUiSnapshot,        0 } },

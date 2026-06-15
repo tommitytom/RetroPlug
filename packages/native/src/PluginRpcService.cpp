@@ -18,6 +18,7 @@
 #include "lsdj/ProjectKitRecompile.hpp"
 #include "lsdj/SampleCache.hpp"
 #include "project/Project.hpp"
+#include "project/ProjectMissingFiles.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/InputTypes.hpp"
 #include "system/MemoryAccessor.hpp"
@@ -304,17 +305,39 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
+
+    // A thin JSON project references ROMs / kit WAVs by path. If any have moved,
+    // hold the parse pending and let the UI relink them before we apply it — a
+    // missing-ROM system would otherwise be dropped with no way to fix it. With
+    // no UI attached (headless / autoload), fall through and load best-effort.
+    pendingProject_     = std::move(*parsed);
+    pendingProjectPath_ = path;
+    if (emitEvent_) {
+        const auto missing = rp::scanMissingFiles(*pendingProject_);
+        if (!missing.empty()) {
+            emit("missing-files", rfl::json::write(rp::MissingFilesResponse{missing}));
+            return true; // wait for relinkMissingFile / cancelMissingFiles
+        }
+    }
+    return commitPendingProject();
+}
+
+bool PluginRpcService::commitPendingProject() {
+    if (!pendingProject_ || !commands_) return false;
+    const std::string path = pendingProjectPath_;
+
     // Path-only saves carry kit sample metadata but no compiled bytes — rebuild
-    // each kit from its source WAVs here (UI thread) before the DSP applies the
+    // each kit from its (now-relinked) source WAVs before the DSP applies the
     // project. Zip exports already carry the bytes, so this is a no-op for them.
-    if (rp::lsdj::projectHasKitsNeedingRecompile(*parsed)) {
+    if (rp::lsdj::projectHasKitsNeedingRecompile(*pendingProject_)) {
         if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::lsdj::KitCompiler>();
-        rp::lsdj::recompileMissingKits(*parsed, *kitCompiler_);
+        rp::lsdj::recompileMissingKits(*pendingProject_, *kitCompiler_);
     }
     // Heap-allocate the parsed config; DSP frees after applying.
-    auto* heap = new ProjectConfig(std::move(*parsed));
+    auto* heap = new ProjectConfig(std::move(*pendingProject_));
+    pendingProject_.reset();
     if (!commands_->tryPush(Command::makeLoadProject(heap))) {
-        std::fprintf(stderr, "loadProjectFromPath: command queue full\n");
+        std::fprintf(stderr, "commitPendingProject: command queue full\n");
         delete heap;
         emit("project-error", path);
         return false;
@@ -322,6 +345,54 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
     if (recentFiles_) recentFiles_->add(path, "project");
     currentProjectPath_ = path;
     emit("project-loaded", path);
+    return true;
+}
+
+PluginRpcService::MissingFilesResponse PluginRpcService::getMissingFiles() {
+    if (!pendingProject_) return {};
+    return rp::MissingFilesResponse{rp::scanMissingFiles(*pendingProject_)};
+}
+
+PluginRpcService::MissingFilesResponse
+PluginRpcService::relinkMissingFile(std::uint32_t systemIndex,
+                                    std::int32_t  kitSlot,
+                                    std::int32_t  sampleIndex,
+                                    std::string   newPath) {
+    if (!pendingProject_ || newPath.empty()) return getMissingFiles();
+
+    rp::MissingFile target;
+    target.systemIndex = systemIndex;
+    target.itemKind    = (kitSlot < 0) ? "rom" : "sample";
+    target.kitSlot     = kitSlot;
+    target.sampleIndex = sampleIndex;
+    rp::relinkInConfig(*pendingProject_, target, newPath);
+
+    // Locating one file fixes its siblings sitting in the same folder.
+    const std::string dir = std::filesystem::path(newPath).parent_path().string();
+    if (!dir.empty()) rp::autoFindSiblings(*pendingProject_, dir);
+
+    auto remaining = rp::scanMissingFiles(*pendingProject_);
+    if (remaining.empty()) {
+        commitPendingProject();          // emits project-loaded
+        return {};
+    }
+    emit("missing-files", rfl::json::write(rp::MissingFilesResponse{remaining}));
+    return rp::MissingFilesResponse{std::move(remaining)};
+}
+
+bool PluginRpcService::cancelMissingFiles() {
+    if (!pendingProject_) return false;
+    pendingProject_.reset();
+    pendingProjectPath_.clear();
+    emit("project-load-cancelled", "");
+    return true;
+}
+
+bool PluginRpcService::openRelinkBrowser(bool isRom) {
+    if (!openFileBrowser_) return false;
+    pendingFileMode_ = PendingFileMode::Relink;
+    openFileBrowser_(isRom ? "Locate ROM" : "Locate sample (WAV / MP3 / FLAC)",
+                     false, nullptr);
     return true;
 }
 
@@ -337,6 +408,7 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
         case PendingFileMode::SaveProject: saveProjectToPath(path);          break;
         case PendingFileMode::ExportZip:   exportZipToPath(path);            break;
         case PendingFileMode::LoadSample:  emit("sample-path-selected", path); break;
+        case PendingFileMode::Relink:      emit("relink-path-selected", path); break;
         case PendingFileMode::SaveSram:    saveSramToPath(pendingFileSystemId_, path);  break;
         case PendingFileMode::LoadSram:    loadSramFromPath(pendingFileSystemId_, path); break;
         case PendingFileMode::SaveState:   saveStateToPath(pendingFileSystemId_, path); break;

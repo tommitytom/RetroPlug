@@ -10,7 +10,9 @@ import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds }
 import { DEFAULT_ZOOM } from "./layout";
 import { StartScreen } from "./menu/StartScreen";
 import { AboutPanel } from "./menu/AboutPanel";
+import { RelinkMenu } from "./menu/RelinkMenu";
 import { buildInstanceMenu, type RecentEntry } from "./menu/menuDefs";
+import type { RpMissingFile } from "plugin-service";
 import { useBindingsEditor } from "./useBindingsEditor";
 import {
     GameboyButton,
@@ -55,6 +57,10 @@ function PluginUI() {
     const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM);
     // Recent ROMs + projects. Fetched on mount and on "recent-files-changed".
     const [recentFiles, setRecentFiles] = useState<RecentEntry[]>([]);
+    // Non-empty while a loaded project references files that have moved. The
+    // relink menu is shown until every entry is located (load commits) or the
+    // user cancels. Populated by the "missing-files" event from C++.
+    const [missingFiles, setMissingFiles] = useState<RpMissingFile[]>([]);
 
     const menuOpenRef = useRef(menuOpen);
     useEffect(() => { menuOpenRef.current = menuOpen; }, [menuOpen]);
@@ -122,6 +128,30 @@ function PluginUI() {
         on("config-changed", handler);
         return () => off("config-changed", handler);
     }, [refreshSystems]);
+
+    // Missing-files relink flow. A thin project whose ROMs / kit WAVs moved is
+    // held pending on the C++ side, which emits "missing-files" with the list;
+    // the relink menu shows until everything's located (load commits, fires
+    // "project-loaded") or the user cancels ("project-load-cancelled").
+    useEffect(() => {
+        const onMissing = (payload: string) => {
+            try {
+                const r = JSON.parse(payload) as { items?: RpMissingFile[] };
+                setMissingFiles(r.items ?? []);
+            } catch (e) {
+                console.warn("[missing-files] bad payload", e);
+            }
+        };
+        const onResolved = () => setMissingFiles([]);
+        on("missing-files", onMissing);
+        on("project-loaded", onResolved);
+        on("project-load-cancelled", onResolved);
+        return () => {
+            off("missing-files", onMissing);
+            off("project-loaded", onResolved);
+            off("project-load-cancelled", onResolved);
+        };
+    }, []);
 
     // User-config / bindings: fetch on mount, rebuild the runtime key+pad
     // maps. The C++ side emits "user-config-changed" whenever the watcher
@@ -217,8 +247,14 @@ function PluginUI() {
     const aboutOpenRef = useRef(aboutOpen);
     useEffect(() => { aboutOpenRef.current = aboutOpen; }, [aboutOpen]);
 
+    const missingFilesRef = useRef(missingFiles);
+    useEffect(() => { missingFilesRef.current = missingFiles; }, [missingFiles]);
+
     useKeyboard(useCallback((key: number, press: boolean) => {
         if (key === KEY_ESCAPE) {
+            // Relink menu is up: let its own Esc handler cancel the pending load
+            // (don't fall through to opening the tile menu underneath).
+            if (missingFilesRef.current.length > 0) return;
             // Esc closes the kit editor before falling through to menu.
             if (press && kitEditorOpenRef.current) {
                 setKitEditorOpen(false);
@@ -244,7 +280,9 @@ function PluginUI() {
             setMenuOpen(true);
             return;
         }
-        // Kit editor / About consume their own key events through their child group.
+        // Relink menu / Kit editor / About consume their own key events through
+        // their child keyboard group.
+        if (missingFilesRef.current.length > 0) return;
         if (kitEditorOpenRef.current) return;
         if (aboutOpenRef.current) return;
         if (menuOpenRef.current) {
@@ -417,7 +455,13 @@ function PluginUI() {
                 overflow: "hidden",
             }}
         >
-            {kitEditorOpen ? (
+            {missingFiles.length > 0 ? (
+                <RelinkMenu
+                    missing={missingFiles}
+                    zoom={zoom}
+                    sinkGroup={sinkGroupRef.current}
+                />
+            ) : kitEditorOpen ? (
                 <KitEditor
                     systemId={focusedId}
                     sinkGroup={sinkGroupRef.current}
