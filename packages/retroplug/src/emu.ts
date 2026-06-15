@@ -175,6 +175,11 @@ export function createEmu(rpcSend: RpcSend) {
     writeFile(path: string, bytes: ArrayBuffer): void {
       client.writeFile(path, toNums(bytes));
     },
+    /** Best-effort delete a file (no error if absent) — e.g. to simulate a
+     *  moved/missing ROM or kit sample WAV before a reload. */
+    removeFile(path: string): void {
+      client.removeFile(path);
+    },
     /** Byte-check a captured .sav: decode its working song, re-encode from the
      *  model with the input as template, and return the first non-volatile diff
      *  offset (or -1 if byte-identical). Catches modeled-region codec bugs. */

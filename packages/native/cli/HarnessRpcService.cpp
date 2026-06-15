@@ -8,6 +8,7 @@
 // the method signatures (reflect-cpp), never the JS host.
 
 #include <cstdint>
+#include <cstdio>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -131,6 +132,12 @@ void HarnessRpcService::writeFile(std::string path, std::vector<std::uint8_t> by
     if (!f.write(reinterpret_cast<const char*>(bytes.data()),
                  static_cast<std::streamsize>(bytes.size())).good())
         throw std::runtime_error("writeFile: write failed: " + path);
+}
+
+void HarnessRpcService::removeFile(std::string path) {
+    // Best-effort delete (no error if absent) — lets tests simulate a moved /
+    // missing ROM or kit sample WAV.
+    std::remove(path.c_str());
 }
 
 std::int32_t HarnessRpcService::savRoundtripDiff(std::vector<std::uint8_t> sav) {

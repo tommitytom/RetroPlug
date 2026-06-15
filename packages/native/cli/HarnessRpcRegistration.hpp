@@ -15,6 +15,7 @@ void registerHarnessRpcMethods(Server& server) {
     server.template addMethod<&HarnessRpcService::reset>();
     server.template addMethod<&HarnessRpcService::readFile>();
     server.template addMethod<&HarnessRpcService::writeFile>();
+    server.template addMethod<&HarnessRpcService::removeFile>();
     server.template addMethod<&HarnessRpcService::savRoundtripDiff>();
     server.template addMethod<&HarnessRpcService::runMs>();
     server.template addMethod<&HarnessRpcService::press>();

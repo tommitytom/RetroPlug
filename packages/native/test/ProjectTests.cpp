@@ -722,6 +722,57 @@ TEST_CASE("path-only JSON drops kit bytes but keeps recompile inputs",
     CHECK(gain->normalize == true);
 }
 
+TEST_CASE("path-only JSON is thin and round-trips idempotently",
+          "[ProjectSerialization][json]") {
+    // A 1 MB ROM + battery RAM must NOT bloat the JSON (binaries are dropped),
+    // and re-serializing a loaded path-only project must reproduce byte-identical
+    // JSON (no lossy / non-deterministic fields).
+    SameBoyConfig a;
+    a.romPath   = "/roms/a.gb";
+    a.romBytes  = std::vector<std::uint8_t>(1024 * 1024, 0xCD); // 1 MB
+    a.sram      = std::vector<std::uint8_t>(0x20000, 0x11);
+    a.savestate = std::vector<std::uint8_t>(0x4000, 0x22);
+    a.gainDb    = -3.5f;
+    a.linkGroupId = 2;
+
+    SameBoyConfig b;
+    b.romPath     = "/roms/b.gb";
+    b.linkGroupId = 2;
+
+    ProjectConfig cfg;
+    cfg.settings.layout       = SystemLayout::Grid;
+    cfg.settings.midiRouting  = MidiRouting::FourChannelsPerInstance;
+    cfg.settings.audioRouting = AudioRouting::TwoPerInstance;
+    cfg.settings.zoom         = 3;
+    cfg.systems.push_back(a);
+    cfg.systems.push_back(b);
+
+    const std::string json = projectConfigToJsonFile(cfg);
+    // Thin: ~2 MB of binaries collapse to well under 4 KB of metadata.
+    INFO("json size: " << json.size());
+    CHECK(json.size() < 4096);
+
+    // Idempotent: load the thin JSON, re-serialize, and the text matches.
+    auto parsed = projectConfigFromBytes(
+        std::vector<std::uint8_t>(json.begin(), json.end()));
+    REQUIRE(parsed.has_value());
+    const std::string json2 = projectConfigToJsonFile(*parsed);
+    CHECK(json == json2);
+
+    // Settings + per-system fields survived the round-trip.
+    CHECK(parsed->settings.layout == SystemLayout::Grid);
+    CHECK(parsed->settings.zoom   == 3);
+    REQUIRE(parsed->systems.size() == 2);
+    const auto* a2 = rfl::get_if<SameBoyConfig>(&parsed->systems[0].variant());
+    REQUIRE(a2 != nullptr);
+    CHECK(a2->romPath     == "/roms/a.gb");
+    CHECK(a2->linkGroupId == 2);
+    CHECK(a2->gainDb      == -3.5f);
+    CHECK(a2->romBytes.empty());
+    CHECK(a2->sram.empty());
+    CHECK(a2->savestate.empty());
+}
+
 TEST_CASE("LsdjKitPatchConfig coexists with LsdjSyncConfig on the same system",
           "[ProjectSerialization][role][kit]") {
     // The sniffer attaches BOTH roles when an LSDJ ROM is loaded — they're

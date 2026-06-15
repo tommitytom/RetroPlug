@@ -52,6 +52,7 @@ public:
     void reset(std::uint32_t systemId);
     rfl::Bytestring readFile(std::string path);
     void writeFile(std::string path, std::vector<std::uint8_t> bytes);
+    void removeFile(std::string path);
     std::int32_t savRoundtripDiff(std::vector<std::uint8_t> sav);
 
     // exec / transport
