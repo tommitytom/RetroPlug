@@ -28,6 +28,10 @@ struct UserConfigJson {
     // Default zoom level for fresh projects (1..6). Per-project zoom set
     // via the menu overrides this; see ProjectSettings::zoom.
     std::uint8_t defaultZoom            = 3;
+    // Auto-save cartridge battery RAM to the sibling `<rom>.sav` while playing
+    // (a global, sticky preference toggled from the Settings menu). Only
+    // affects systems loaded from a path. See system/SramAutoSave.hpp.
+    bool         autoSaveSram           = false;
 };
 
 // Key = GameboyButton name ("Right" "Left" "Up" "Down" "A" "B" "Select" "Start").
@@ -48,6 +52,7 @@ struct UserConfigDto {
     BindingMapJson           bindings;
     std::vector<std::string> availableProfiles;
     std::uint8_t             defaultZoom = 3;
+    bool                     autoSaveSram = false;
 };
 
 inline std::string userConfigToJson(const UserConfigJson& cfg) {

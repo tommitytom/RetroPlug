@@ -65,6 +65,12 @@ public:
     bool setActiveKeyboardBindings(std::string name);
     bool setActiveGamepadBindings(std::string name);
 
+    // Global SRAM auto-save preference. setAutoSaveSram writes config.json and
+    // refreshes the in-memory snapshot; autoSaveSram() is a cheap mutex-guarded
+    // read for the auto-save pump. See system/SramAutoSave.hpp.
+    bool setAutoSaveSram(bool enabled);
+    bool autoSaveSram() const;
+
     // Read a single profile file from disk. Returns nullopt if the file
     // doesn't exist or fails to parse. Used by the in-app bindings editor
     // so it can edit one channel (keyboard or gamepad) of a profile

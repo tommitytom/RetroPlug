@@ -377,6 +377,10 @@ protected:
         // system has the flag enabled.
         if (bridge) bridge->pumpRomWatchers();
 
+        // SRAM auto-save tick: when the global Auto Save preference is on,
+        // flush changed battery RAM to the sibling `<rom>.sav` (throttled).
+        if (bridge) bridge->pumpSramAutoSave();
+
         // Drain the rpcpp transport's outgoing queue — async resolver
         // responses AND notification frames (incl. memory snapshots) land
         // in `engine.emit("rpc-message", ...)` for the JS transport to

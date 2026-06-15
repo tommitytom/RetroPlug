@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -233,6 +234,13 @@ public:
     // it (replacing the slot, preserving SRAM, dropping savestate). Called
     // from PluginUI::uiIdle.
     void pumpRomWatchers();
+    // Global SRAM auto-save preference (UserConfig). When on, every system's
+    // battery RAM is flushed to its sibling `<rom>.sav` on a timer (pumped from
+    // PluginUI::uiIdle via pumpSramAutoSave). See system/SramAutoSave.hpp.
+    bool setAutoSaveSram(bool enabled);
+    // Periodic battery-RAM flush; cheap no-op when the preference is off. Writes
+    // only changed SRAM, creating the sibling .sav on first write. UI thread.
+    void pumpSramAutoSave();
     bool setLsdjSyncConfig(std::uint32_t id, std::uint32_t mode, std::uint32_t divisor);
     bool setWindowSize(std::uint32_t w, std::uint32_t h);
     bool isWindowSizeControlled();
@@ -415,4 +423,10 @@ private:
         std::filesystem::file_time_type mtime{};
     };
     std::map<SystemId, RomWatchEntry> romWatchers_;
+
+    // Per-system last-written SRAM hash for auto-save dedup (nullopt = never
+    // checked). Pruned alongside the systems they track in pumpSramAutoSave.
+    std::map<SystemId, std::optional<std::uint64_t>> sramAutoSaveHashes_;
+    // Throttle: only scan for dirty SRAM every kSramAutoSaveIntervalSec.
+    std::chrono::steady_clock::time_point lastSramAutoSave_{};
 };

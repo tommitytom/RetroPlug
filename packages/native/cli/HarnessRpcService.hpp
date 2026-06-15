@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -49,6 +50,11 @@ public:
     // Serialize a system's cartridge battery RAM (e.g. an LSDj .sav) the way the
     // plugin's Save SRAM does — distinct from readMemory(Sram), the live region.
     rfl::Bytestring saveSram(std::uint32_t systemId);
+    // Run one SRAM auto-save flush for a system (the same helper the plugin's
+    // pumpSramAutoSave drives): write the sibling `<rom>.sav` if the battery
+    // changed since the last call. Returns true if it wrote. Per-system dedup
+    // state is kept here, so a repeat call with unchanged SRAM returns false.
+    bool autoSaveSram(std::uint32_t systemId);
     void reset(std::uint32_t systemId);
     rfl::Bytestring readFile(std::string path);
     void writeFile(std::string path, std::vector<std::uint8_t> bytes);
@@ -122,4 +128,7 @@ public:
 
 private:
     TestHarness::Impl* h_;
+    // Per-system last-written SRAM hash for autoSaveSram() dedup (mirrors the
+    // plugin's sramAutoSaveHashes_; nullopt = never flushed).
+    std::map<std::uint32_t, std::optional<std::uint64_t>> sramAutoSaveHashes_;
 };

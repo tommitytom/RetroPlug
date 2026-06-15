@@ -12,6 +12,7 @@ void registerHarnessRpcMethods(Server& server) {
     server.template addMethod<&HarnessRpcService::savFromJson>();
     server.template addMethod<&HarnessRpcService::loadSram>();
     server.template addMethod<&HarnessRpcService::saveSram>();
+    server.template addMethod<&HarnessRpcService::autoSaveSram>();
     server.template addMethod<&HarnessRpcService::reset>();
     server.template addMethod<&HarnessRpcService::readFile>();
     server.template addMethod<&HarnessRpcService::writeFile>();

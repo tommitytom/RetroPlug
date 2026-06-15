@@ -93,6 +93,8 @@ export interface MenuContext {
     layout:         number;
     // Resolved zoom level 1..6 (project setting or user-config default).
     zoom:           number;
+    // Global SRAM auto-save preference (UserConfig). Toggled in Settings.
+    autoSaveSram:   boolean;
     // Most-recent first. Sourced from C++ via plugin.getRecentFiles().
     recentFiles:    RecentEntry[];
     // Called by Menu when the user picks Kit Editor.
@@ -351,8 +353,6 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
               const next = cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, dir);
               void plugin.$notify("setAudioRouting", next);
           } },
-        sep(),
-        { id: "autoSave",     label: "Auto Save",        kind: "action", onSelect: stub("Auto Save"),     keepOpen: true },
     );
     return items;
 }
@@ -444,6 +444,13 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     return [
         bindingsSubmenu(ctx.keyboardEditor),
         bindingsSubmenu(ctx.gamepadEditor),
+        sep(),
+        // Global, sticky SRAM auto-save (UserConfig). Writes each system's
+        // sibling <rom>.sav while playing. Boolean toggle: Left/Right flip it.
+        { id: "autoSave", label: `Auto Save: ${ctx.autoSaveSram ? "On" : "Off"}`,
+          kind: "action", keepOpen: true,
+          onSelect: () => { void plugin.setAutoSaveSram(!ctx.autoSaveSram); },
+          onCycle:  () => { void plugin.setAutoSaveSram(!ctx.autoSaveSram); } },
         sep(),
         { id: "audioDevice",  label: "Audio Device: -", kind: "action",
           onSelect: stub("Audio Device"), keepOpen: true },

@@ -105,6 +105,10 @@ public:
     // mtime advances.
     void pumpRomWatchers() { service_.pumpRomWatchers(); }
 
+    // Per-uiIdle: when the global Auto Save preference is on, flush each
+    // system's changed battery RAM to its sibling `<rom>.sav` (throttled).
+    void pumpSramAutoSave() { service_.pumpSramAutoSave(); }
+
 private:
     LvglJsEngine&    engine;
     Project*         project_ = nullptr;

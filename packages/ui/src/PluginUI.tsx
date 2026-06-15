@@ -166,6 +166,7 @@ function PluginUI() {
                     setActiveKeyboardBindings(cfg.activeKeyboardBindings ?? "");
                     setActiveGamepadBindings(cfg.activeGamepadBindings ?? "");
                     setAvailableProfiles(cfg.availableProfiles ?? []);
+                    setAutoSaveSram(cfg.autoSaveSram === true);
                 }
             } catch (e) {
                 console.warn("[bindings] getUserConfig failed", e);
@@ -182,6 +183,8 @@ function PluginUI() {
     const [activeKeyboardBindings, setActiveKeyboardBindings] = useState<string>("");
     const [activeGamepadBindings,  setActiveGamepadBindings]  = useState<string>("");
     const [availableProfiles,      setAvailableProfiles]      = useState<string[]>([]);
+    // Global SRAM auto-save preference (UserConfig). Surfaced in the Settings menu.
+    const [autoSaveSram,           setAutoSaveSram]           = useState<boolean>(false);
 
     // Recent files. Same pattern as user-config: fetch on mount, refetch
     // when C++ emits "recent-files-changed" after a successful load/save.
@@ -425,6 +428,7 @@ function PluginUI() {
         audioRouting,
         layout,
         zoom,
+        autoSaveSram,
         recentFiles,
         openKitEditor,
         openAbout,
@@ -482,6 +486,7 @@ function PluginUI() {
                     audioRouting={audioRouting}
                     layout={layout}
                     zoom={zoom}
+                    autoSaveSram={autoSaveSram}
                     recentFiles={recentFiles}
                     openAbout={openAbout}
                     keyboardEditor={keyboardEditor}

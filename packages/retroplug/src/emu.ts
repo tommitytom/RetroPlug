@@ -162,6 +162,13 @@ export function createEmu(rpcSend: RpcSend) {
     saveSram(sys: number): Uint8Array {
       return copyU8(client.saveSram(sys));
     },
+    /** Run one SRAM auto-save flush (the same helper the plugin's idle pump
+     *  drives): write the sibling `<rom>.sav` if the battery changed since the
+     *  last call. Returns true if it wrote; repeat calls with unchanged SRAM
+     *  return false. The system must have been loaded from a path. */
+    autoSaveSram(sys: number): boolean {
+      return client.autoSaveSram(sys);
+    },
     /** Soft-reset a system (the GB reset button). After loadSram, the game boots
      *  into the freshly loaded battery RAM. */
     reset(sys: number): void {

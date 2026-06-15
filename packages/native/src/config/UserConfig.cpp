@@ -112,6 +112,7 @@ bool UserConfig::setActiveKeyboardBindings(std::string name) {
         cfg.activeKeyboardBindings = std::move(name);
         cfg.activeGamepadBindings  = current_.activeGamepadBindings;
         cfg.defaultZoom            = current_.defaultZoom;
+        cfg.autoSaveSram           = current_.autoSaveSram;
     }
     if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
         std::fprintf(stderr, "[user-config] failed to write %s\n",
@@ -132,6 +133,7 @@ bool UserConfig::setActiveGamepadBindings(std::string name) {
         cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
         cfg.activeGamepadBindings  = std::move(name);
         cfg.defaultZoom            = current_.defaultZoom;
+        cfg.autoSaveSram           = current_.autoSaveSram;
     }
     if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
         std::fprintf(stderr, "[user-config] failed to write %s\n",
@@ -141,6 +143,33 @@ bool UserConfig::setActiveGamepadBindings(std::string name) {
     reloadFromDisk();
     if (onReload_) onReload_();
     return true;
+}
+
+bool UserConfig::setAutoSaveSram(bool enabled) {
+    if (!started_.load()) return false;
+    UserConfigJson cfg;
+    cfg.schemaVersion = 1;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (current_.autoSaveSram == enabled) return true; // no-op write
+        cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
+        cfg.activeGamepadBindings  = current_.activeGamepadBindings;
+        cfg.defaultZoom            = current_.defaultZoom;
+        cfg.autoSaveSram           = enabled;
+    }
+    if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
+        std::fprintf(stderr, "[user-config] failed to write %s\n",
+                     configFile_.string().c_str());
+        return false;
+    }
+    reloadFromDisk();
+    if (onReload_) onReload_();
+    return true;
+}
+
+bool UserConfig::autoSaveSram() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return current_.autoSaveSram;
 }
 
 std::optional<BindingMapJson> UserConfig::loadProfile(std::string_view name) const {
@@ -215,6 +244,7 @@ bool UserConfig::renameProfile(std::string oldName, std::string newName) {
         cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
         cfg.activeGamepadBindings  = current_.activeGamepadBindings;
         cfg.defaultZoom            = current_.defaultZoom;
+        cfg.autoSaveSram           = current_.autoSaveSram;
         if (cfg.activeKeyboardBindings == oldName) {
             cfg.activeKeyboardBindings = newName;
             rewrote = true;
@@ -272,6 +302,7 @@ void UserConfig::reloadFromDisk() {
             std::uint8_t z = cfg->defaultZoom;
             if (z < 1 || z > 6) z = 3;
             next.defaultZoom = z;
+            next.autoSaveSram = cfg->autoSaveSram;
         } else {
             std::fprintf(stderr,
                 "[user-config] %s parse failed — keeping previous active profiles\n",

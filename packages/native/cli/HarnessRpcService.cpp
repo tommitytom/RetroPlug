@@ -17,6 +17,7 @@
 #include "TestHarnessImpl.hpp"
 
 #include "lsdj/SavSerialization.hpp"
+#include "system/SramAutoSave.hpp"
 #include "lsdj/codec/SavCodec.hpp"
 #include "lsdj/codec/SongCodec.hpp"
 
@@ -113,6 +114,12 @@ rfl::Bytestring HarnessRpcService::saveSram(std::uint32_t systemId) {
     const auto bytes = sys->saveSramBytes();
     const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
     return rfl::Bytestring(p, p + bytes.size());
+}
+
+bool HarnessRpcService::autoSaveSram(std::uint32_t systemId) {
+    SystemBase* sys = h_->system(systemId);
+    if (!sys) throw std::runtime_error("autoSaveSram: unknown system id");
+    return rp::autoSaveSramToSibling(*sys, sramAutoSaveHashes_[systemId]);
 }
 
 void HarnessRpcService::reset(std::uint32_t systemId) {

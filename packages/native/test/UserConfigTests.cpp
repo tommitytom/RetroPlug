@@ -139,6 +139,36 @@ TEST_CASE("UserConfig::setActiveKeyboardBindings switches profile synchronously"
     fs::remove_all(dir);
 }
 
+TEST_CASE("UserConfig::setAutoSaveSram persists and sticks across reloads", "[user-config]") {
+    auto dir = makeTempDir("autosave");
+
+    {
+        UserConfig cfg(dir);
+        cfg.start();
+        REQUIRE_FALSE(cfg.autoSaveSram());          // default off
+        REQUIRE(cfg.setAutoSaveSram(true));
+        REQUIRE(cfg.autoSaveSram());
+        REQUIRE(cfg.snapshot().autoSaveSram);
+
+        // config.json on disk records the flag.
+        auto cfgText = slurp(dir / "config.json");
+        REQUIRE(cfgText.find("autoSaveSram") != std::string::npos);
+    }
+
+    // A fresh instance over the same dir reads the preference back (sticky).
+    {
+        UserConfig cfg(dir);
+        cfg.start();
+        REQUIRE(cfg.autoSaveSram());
+
+        // Switching a binding profile must NOT clobber the flag.
+        REQUIRE(cfg.setActiveKeyboardBindings("default"));
+        REQUIRE(cfg.autoSaveSram());
+    }
+
+    fs::remove_all(dir);
+}
+
 TEST_CASE("UserConfig live-reloads when bindings file changes on disk", "[user-config]") {
     auto dir = makeTempDir("live-reload");
 

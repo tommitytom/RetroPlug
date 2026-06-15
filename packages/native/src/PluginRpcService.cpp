@@ -1,6 +1,7 @@
 #include "PluginRpcService.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -23,6 +24,7 @@
 #include "system/InputTypes.hpp"
 #include "system/MemoryAccessor.hpp"
 #include "system/RomFormat.hpp"
+#include "system/SramAutoSave.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenGbaConfig.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
@@ -770,6 +772,36 @@ void PluginRpcService::pumpRomWatchers() {
             continue;
         }
         it->second.mtime = mtime;
+    }
+}
+
+bool PluginRpcService::setAutoSaveSram(bool enabled) {
+    if (!userConfig_) return false;
+    return userConfig_->setAutoSaveSram(enabled);
+}
+
+void PluginRpcService::pumpSramAutoSave() {
+    if (!project_ || !userConfig_ || !userConfig_->autoSaveSram()) return;
+
+    // Throttle: battery RAM changes slowly relative to the UI tick, so a few
+    // seconds of granularity is plenty and keeps disk churn low.
+    static constexpr double kSramAutoSaveIntervalSec = 5.0;
+    const auto now = std::chrono::steady_clock::now();
+    if (lastSramAutoSave_.time_since_epoch().count() != 0) {
+        const std::chrono::duration<double> elapsed = now - lastSramAutoSave_;
+        if (elapsed.count() < kSramAutoSaveIntervalSec) return;
+    }
+    lastSramAutoSave_ = now;
+
+    // Prune hash entries whose system has gone away (mirror pumpRomWatchers).
+    std::vector<SystemId> toDrop;
+    for (const auto& [sysId, _] : sramAutoSaveHashes_)
+        if (!project_->findSystem(sysId)) toDrop.push_back(sysId);
+    for (SystemId id : toDrop) sramAutoSaveHashes_.erase(id);
+
+    for (const auto& sys : project_->systems()) {
+        if (!sys || sys->romPath().empty()) continue;
+        rp::autoSaveSramToSibling(*sys, sramAutoSaveHashes_[sys->id()]);
     }
 }
 
