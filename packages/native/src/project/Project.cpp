@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <vector>
 
@@ -32,6 +33,18 @@ std::vector<std::uint8_t> slurpFile(const std::string& path) {
     return buf;
 }
 
+// Read the sibling `<rom>.sav` (cartridge battery RAM) next to a ROM path.
+// Returns empty when there's no path or no sibling file. Used to restore SRAM
+// for a path-only project save, which drops embedded `sram`.
+std::vector<std::uint8_t> slurpSiblingSav(const std::string& romPath) {
+    if (romPath.empty()) return {};
+    std::filesystem::path sav(romPath);
+    sav.replace_extension(".sav");
+    std::error_code ec;
+    if (!std::filesystem::exists(sav, ec)) return {};
+    return slurpFile(sav.string());
+}
+
 } // namespace
 
 SystemId Project::addSystem(const SystemConfig& config) {
@@ -52,9 +65,14 @@ SystemId Project::addSystem(const SystemConfig& config) {
                          id, sb->romPath.c_str());
             return 0;
         }
-        auto sys = std::make_unique<SameBoySystem>(id, *sb, std::move(rom));
+        // Path-only saves drop embedded SRAM; restore it from the sibling
+        // `<rom>.sav` when none is present in the config.
+        SameBoyConfig cfg = *sb;
+        if (cfg.sram.empty())
+            cfg.sram = slurpSiblingSav(cfg.romPath);
+        auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(rom));
         systems_.push_back(std::move(sys));
-        config_.systems.push_back(*sb);
+        config_.systems.push_back(std::move(cfg));
         rebuildLinkGroups();
         return id;
     }
@@ -68,9 +86,12 @@ SystemId Project::addSystem(const SystemConfig& config) {
                          id, mb->romPath.c_str());
             return 0;
         }
-        auto sys = std::make_unique<MesenNesSystem>(id, *mb, std::move(rom));
+        MesenNesConfig cfg = *mb;
+        if (cfg.sram.empty())
+            cfg.sram = slurpSiblingSav(cfg.romPath);
+        auto sys = std::make_unique<MesenNesSystem>(id, cfg, std::move(rom));
         systems_.push_back(std::move(sys));
-        config_.systems.push_back(*mb);
+        config_.systems.push_back(std::move(cfg));
         // Mesen systems don't participate in LinkGroups (no GB serial); the
         // call is still safe — it just leaves any existing GB groups intact.
         rebuildLinkGroups();
@@ -86,9 +107,12 @@ SystemId Project::addSystem(const SystemConfig& config) {
                          id, gb->romPath.c_str());
             return 0;
         }
-        auto sys = std::make_unique<MesenGbaSystem>(id, *gb, std::move(rom));
+        MesenGbaConfig cfg = *gb;
+        if (cfg.sram.empty())
+            cfg.sram = slurpSiblingSav(cfg.romPath);
+        auto sys = std::make_unique<MesenGbaSystem>(id, cfg, std::move(rom));
         systems_.push_back(std::move(sys));
-        config_.systems.push_back(*gb);
+        config_.systems.push_back(std::move(cfg));
         rebuildLinkGroups();
         return id;
     }

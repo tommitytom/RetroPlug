@@ -305,10 +305,16 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     const audioRoutingName = AUDIO_ROUTING_NAMES[ctx.audioRouting] ?? AUDIO_ROUTING_NAMES[0];
     const layoutName       = LAYOUT_NAMES       [ctx.layout]       ?? LAYOUT_NAMES       [0];
     const items: MenuItem[] = [];
-    // Save is meaningless without systems to serialize — hide it on the start screen.
+    // Save / Export are meaningless without systems to serialize — hide them on
+    // the start screen. "Save Project" writes a path-only JSON `.rplg`; "Export
+    // Zip" bundles every binary (ROM/SRAM/savestate/kits) into a self-contained
+    // `.zip`.
     if (ctx.systems.length > 0) {
-        items.push({ id: "saveProject", label: "Save Project", kind: "action",
-                     onSelect: () => { void plugin.$notify("openSaveProjectBrowser"); } });
+        items.push(
+            { id: "saveProject", label: "Save Project", kind: "action",
+              onSelect: () => { void plugin.$notify("openSaveProjectBrowser"); } },
+            { id: "exportZip", label: "Export Zip", kind: "action",
+              onSelect: () => { void plugin.$notify("openExportZipBrowser"); } });
     }
     items.push(
         { id: "loadProject", label: "Load Project", kind: "action",

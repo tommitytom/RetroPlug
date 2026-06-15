@@ -12,6 +12,7 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::getFrame>();
     server.template addMethod<&PluginRpcService::openRomBrowser>();
     server.template addMethod<&PluginRpcService::openSaveProjectBrowser>();
+    server.template addMethod<&PluginRpcService::openExportZipBrowser>();
     server.template addMethod<&PluginRpcService::openLoadProjectBrowser>();
     server.template addMethod<&PluginRpcService::loadProjectFromPath>();
     server.template addMethod<&PluginRpcService::loadRomFromPath>();

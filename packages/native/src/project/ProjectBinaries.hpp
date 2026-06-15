@@ -91,6 +91,19 @@ inline bool restoreRoles(const MinizReader& zip,
     return true;
 }
 
+inline void clearBlob(std::vector<std::uint8_t>& blob) {
+    blob.clear();
+    blob.shrink_to_fit();
+}
+
+inline void clearRoles(std::vector<RoleConfig>& roles) {
+    for (auto& rc : roles) {
+        if (auto* kitCfg = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant())) {
+            for (auto& kit : kitCfg->kits) clearBlob(kit.compiledBytes);
+        }
+    }
+}
+
 } // namespace detail
 
 inline bool strip(MinizWriter& zip, ProjectConfig& cfg) {
@@ -115,6 +128,31 @@ inline bool strip(MinizWriter& zip, ProjectConfig& cfg) {
         }
     }
     return true;
+}
+
+// Empty every binary blob in-place, leaving config + paths intact. This is the
+// path-only on-disk form: ROM is re-read from `romPath`, SRAM from the sibling
+// `<rom>.sav`; savestate and kit bytes are dropped. Mirror of `strip` minus the
+// zip writes. See ProjectSerialization::projectConfigToJsonFile.
+inline void clear(ProjectConfig& cfg) {
+    for (auto& sys : cfg.systems) {
+        if (auto* sb = rfl::get_if<SameBoyConfig>(&sys.variant())) {
+            detail::clearBlob(sb->romBytes);
+            detail::clearBlob(sb->sram);
+            detail::clearBlob(sb->savestate);
+            detail::clearRoles(sb->roles);
+        } else if (auto* mb = rfl::get_if<MesenNesConfig>(&sys.variant())) {
+            detail::clearBlob(mb->romBytes);
+            detail::clearBlob(mb->sram);
+            detail::clearBlob(mb->savestate);
+            detail::clearRoles(mb->roles);
+        } else if (auto* gb = rfl::get_if<MesenGbaConfig>(&sys.variant())) {
+            detail::clearBlob(gb->romBytes);
+            detail::clearBlob(gb->sram);
+            detail::clearBlob(gb->savestate);
+            detail::clearRoles(gb->roles);
+        }
+    }
 }
 
 inline bool restore(const MinizReader& zip, ProjectConfig& cfg) {

@@ -244,6 +244,7 @@ void HarnessRpcService::renderChunk(double ms) { h_->renderChunk(ms); }
 void HarnessRpcService::renderEnd() { h_->renderEnd(); }
 
 void HarnessRpcService::saveRplg(std::string path) { h_->saveRplg(path); }
+void HarnessRpcService::saveProjectFile(std::string path) { h_->saveProjectFile(path); }
 std::uint32_t HarnessRpcService::loadRplg(std::string path) { return h_->loadRplg(path); }
 
 void HarnessRpcService::patchKit(std::uint32_t systemId, std::uint32_t slot, std::string name,

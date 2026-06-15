@@ -525,15 +525,28 @@ struct TestHarness::Impl {
         if (!f) throw std::runtime_error("saveRplg: write failed: " + path);
     }
 
-    // Inverse of saveRplg: parse a .rplg (config + per-system savestate) and
-    // rebuild the project from it — the harness-side mirror of the plugin's
-    // RETROPLUG_AUTOLOAD_PROJECT / setState path (projectConfigFromZip ->
-    // addSystem -> onActivate, restoring each GB savestate). Lets a test
-    // round-trip a fixture (saveRplg then loadRplg) to reproduce exactly what a
+    // Path-only JSON save — the harness mirror of PluginRpcService::saveProjectToPath.
+    // Writes config + romPath (no embedded binaries); a subsequent loadRplg re-reads
+    // the ROM from disk and the sibling `<rom>.sav`. Use saveRplg for the bundled zip.
+    void saveProjectFile(const std::string& path) {
+        const std::string json = projectConfigToJsonFile(project->snapshotConfig());
+        if (json.empty())
+            throw std::runtime_error("saveProjectFile: projectConfigToJsonFile returned empty");
+        std::ofstream f(path, std::ios::binary | std::ios::trunc);
+        if (!f) throw std::runtime_error("saveProjectFile: cannot open " + path);
+        f.write(json.data(), static_cast<std::streamsize>(json.size()));
+        if (!f) throw std::runtime_error("saveProjectFile: write failed: " + path);
+    }
+
+    // Inverse of saveRplg / saveProjectFile: parse a project file (autodetecting
+    // zip vs path-only JSON) and rebuild the project from it — the harness-side
+    // mirror of the plugin's RETROPLUG_AUTOLOAD_PROJECT / setState path
+    // (projectConfigFromBytes -> addSystem -> onActivate, restoring each GB
+    // savestate). Lets a test round-trip a fixture to reproduce exactly what a
     // DAW sees when it reloads the project. Returns the first restored system id.
     std::uint32_t loadRplg(const std::string& path) {
         auto bytes = rpcli::slurpBytes(path);
-        auto parsed = projectConfigFromZip(bytes);
+        auto parsed = projectConfigFromBytes(bytes);
         if (!parsed)
             throw std::runtime_error("loadRplg: failed to parse " + path);
         // Fresh project, mirroring PluginDSP::applyProjectFromConfig's

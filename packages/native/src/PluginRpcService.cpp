@@ -228,20 +228,24 @@ bool PluginRpcService::saveProjectToPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
-    std::vector<std::uint8_t> zip;
+    // Default disk save: path-only JSON (config + romPath, no embedded binaries).
+    // ROM/SRAM are re-read from disk on load; savestate and kit bytes are dropped.
+    // Use Export Zip (exportZipToPath) for a self-contained bundle.
+    std::string json;
     try {
-        zip = projectConfigToZip(project_->snapshotConfig());
+        json = projectConfigToJsonFile(project_->snapshotConfig());
     } catch (const std::exception& e) {
         std::fprintf(stderr, "saveProjectToPath: serialize failed: %s\n", e.what());
         emit("project-error", path);
         return false;
     }
-    if (zip.empty()) {
-        std::fprintf(stderr, "saveProjectToPath: zip serialization produced empty buffer\n");
+    if (json.empty()) {
+        std::fprintf(stderr, "saveProjectToPath: JSON serialization produced empty buffer\n");
         emit("project-error", path);
         return false;
     }
-    if (!spillBytes(path, zip)) {
+    const std::vector<std::uint8_t> bytes(json.begin(), json.end());
+    if (!spillBytes(path, bytes)) {
         std::fprintf(stderr, "saveProjectToPath: write failed for '%s'\n", path.c_str());
         emit("project-error", path);
         return false;
@@ -249,6 +253,35 @@ bool PluginRpcService::saveProjectToPath(const std::string& path) {
     if (recentFiles_) recentFiles_->add(path, "project");
     currentProjectPath_ = path;
     emit("project-saved", path);
+    return true;
+}
+
+bool PluginRpcService::exportZipToPath(const std::string& path) {
+    if (!project_) {
+        emit("project-error", path);
+        return false;
+    }
+    // Self-contained bundle: config + every binary blob (ROM/SRAM/savestate/kits)
+    // packed into a PKZIP. The shareable / archival form (vs the path-only save).
+    std::vector<std::uint8_t> zip;
+    try {
+        zip = projectConfigToZip(project_->snapshotConfig());
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "exportZipToPath: serialize failed: %s\n", e.what());
+        emit("project-error", path);
+        return false;
+    }
+    if (zip.empty()) {
+        std::fprintf(stderr, "exportZipToPath: zip serialization produced empty buffer\n");
+        emit("project-error", path);
+        return false;
+    }
+    if (!spillBytes(path, zip)) {
+        std::fprintf(stderr, "exportZipToPath: write failed for '%s'\n", path.c_str());
+        emit("project-error", path);
+        return false;
+    }
+    emit("project-exported", path);
     return true;
 }
 
@@ -263,9 +296,10 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
-    auto parsed = projectConfigFromZip(bytes);
+    // Accepts both the path-only JSON save and the zip export (autodetected).
+    auto parsed = projectConfigFromBytes(bytes);
     if (!parsed) {
-        std::fprintf(stderr, "loadProjectFromPath: failed to parse zip '%s'\n", path.c_str());
+        std::fprintf(stderr, "loadProjectFromPath: failed to parse '%s'\n", path.c_str());
         emit("project-error", path);
         return false;
     }
@@ -293,6 +327,7 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
         case PendingFileMode::AddRom:      addRomFromPath(path);             break;
         case PendingFileMode::LoadProject: loadProjectFromPath(path);        break;
         case PendingFileMode::SaveProject: saveProjectToPath(path);          break;
+        case PendingFileMode::ExportZip:   exportZipToPath(path);            break;
         case PendingFileMode::LoadSample:  emit("sample-path-selected", path); break;
         case PendingFileMode::SaveSram:    saveSramToPath(pendingFileSystemId_, path);  break;
         case PendingFileMode::LoadSram:    loadSramFromPath(pendingFileSystemId_, path); break;
@@ -352,6 +387,13 @@ bool PluginRpcService::openSaveProjectBrowser() {
         if (!name.empty()) defaultName = name.string();
     }
     openFileBrowser_("Save RetroPlug project", true, defaultName.c_str());
+    return true;
+}
+
+bool PluginRpcService::openExportZipBrowser() {
+    if (!openFileBrowser_) return false;
+    pendingFileMode_ = PendingFileMode::ExportZip;
+    openFileBrowser_("Export RetroPlug zip", true, "project.zip");
     return true;
 }
 

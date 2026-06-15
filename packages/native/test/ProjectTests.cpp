@@ -316,6 +316,66 @@ TEST_CASE("projectConfigToZip writes binaries to per-system zip entries",
     REQUIRE(json.find("\"romBytes\":[]") != std::string::npos);
 }
 
+TEST_CASE("projectConfigToJsonFile drops binaries but keeps romPath",
+          "[ProjectSerialization][json]") {
+    // Path-only disk save: config + romPath only, no embedded blobs. ROM/SRAM
+    // are re-read from disk on load; savestate/kit bytes are dropped.
+    SameBoyConfig sb;
+    sb.romPath   = "/r.gb";
+    sb.romBytes  = {0xAA, 0xBB, 0xCC, 0xDD};
+    sb.sram      = {0x11, 0x22};
+    sb.savestate = {0x33, 0x44};
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+
+    const std::string json = projectConfigToJsonFile(cfg);
+    REQUIRE(!json.empty());
+    // No raw blobs in the JSON — every binary field serializes as `[]`.
+    CHECK(json.find("\"romBytes\":[]")  != std::string::npos);
+    CHECK(json.find("\"sram\":[]")      != std::string::npos);
+    CHECK(json.find("\"savestate\":[]") != std::string::npos);
+    // ...but the path survives so the ROM can be re-read on load.
+    CHECK(json.find("/r.gb") != std::string::npos);
+    // The source config is untouched (clear operates on a copy).
+    CHECK(cfg.systems.size() == 1);
+
+    // Round-trips through the autodetecting loader as JSON (no PK magic).
+    const std::vector<std::uint8_t> bytes(json.begin(), json.end());
+    auto parsed = projectConfigFromBytes(bytes);
+    REQUIRE(parsed.has_value());
+    REQUIRE(parsed->systems.size() == 1);
+    const auto* rt = rfl::get_if<SameBoyConfig>(&parsed->systems.front().variant());
+    REQUIRE(rt != nullptr);
+    CHECK(rt->romPath == "/r.gb");
+    CHECK(rt->romBytes.empty());
+    CHECK(rt->sram.empty());
+    CHECK(rt->savestate.empty());
+}
+
+TEST_CASE("projectConfigFromBytes autodetects zip vs JSON",
+          "[ProjectSerialization][json]") {
+    SameBoyConfig sb;
+    sb.romPath  = "/r.gb";
+    sb.romBytes = {0xAA, 0xBB, 0xCC, 0xDD};
+    sb.sram     = {0x11, 0x22};
+
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+
+    // Zip blob (PK magic) still restores the embedded binaries.
+    const auto zip = projectConfigToZip(cfg);
+    REQUIRE(zip.size() >= 2);
+    REQUIRE(zip[0] == 'P');
+    REQUIRE(zip[1] == 'K');
+    auto fromZip = projectConfigFromBytes(zip);
+    REQUIRE(fromZip.has_value());
+    const auto* z = rfl::get_if<SameBoyConfig>(&fromZip->systems.front().variant());
+    REQUIRE(z != nullptr);
+    CHECK(z->romBytes == std::vector<std::uint8_t>{0xAA, 0xBB, 0xCC, 0xDD});
+    CHECK(z->sram == std::vector<std::uint8_t>{0x11, 0x22});
+}
+
 TEST_CASE("SameBoyConfig round-trips an attached MgbRoleConfig role",
           "[ProjectSerialization][role]") {
     SameBoyConfig sb;

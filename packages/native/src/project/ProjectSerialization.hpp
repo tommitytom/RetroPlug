@@ -34,6 +34,17 @@ inline std::optional<ProjectConfig> projectConfigFromJson(std::string_view json)
     return std::move(result.value());
 }
 
+// Path-only on-disk form: config + paths, no embedded binaries. The default
+// disk save (PluginRpcService::saveProjectToPath). ROM is re-read from
+// `romPath` on load (Project::addSystem), SRAM from the sibling `<rom>.sav`;
+// savestate and LSDj kit bytes are dropped. Use projectConfigToZip / Export Zip
+// for a self-contained bundle.
+inline std::string projectConfigToJsonFile(const ProjectConfig& cfg) {
+    ProjectConfig stripped = cfg;
+    project_binaries::clear(stripped);
+    return projectConfigToJson(stripped);
+}
+
 inline std::vector<std::uint8_t> projectConfigToZip(const ProjectConfig& cfg) {
     MinizWriter zip;
     if (!zip.valid()) return {};
@@ -61,4 +72,16 @@ inline std::optional<ProjectConfig> projectConfigFromZip(std::span<const std::ui
 
     if (!project_binaries::restore(zip, *parsed)) return std::nullopt;
     return parsed;
+}
+
+// Autodetecting loader for a project file: a PKZIP blob (Export Zip / DAW state /
+// legacy .rplg) is recognised by its `PK` magic and routed through the zip path;
+// anything else is treated as path-only JSON. Lets a single load path accept both
+// the JSON `.rplg` disk save and the `.zip` export.
+inline std::optional<ProjectConfig> projectConfigFromBytes(std::span<const std::uint8_t> blob) {
+    if (blob.empty()) return std::nullopt;
+    if (blob.size() >= 2 && blob[0] == 'P' && blob[1] == 'K')
+        return projectConfigFromZip(blob);
+    return projectConfigFromJson(
+        std::string_view(reinterpret_cast<const char*>(blob.data()), blob.size()));
 }

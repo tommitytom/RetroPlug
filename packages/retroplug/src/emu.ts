@@ -359,11 +359,19 @@ export function createEmu(rpcSend: RpcSend) {
     saveRplg(path: string): void {
       client.saveRplg(path);
     },
-    /** Inverse of saveRplg: rebuild the project from a .rplg (config + per-system
-     *  savestate), exactly as the plugin does on load (RETROPLUG_AUTOLOAD_PROJECT
-     *  / setState). Replaces all current systems; returns the first restored
-     *  system id. Use to round-trip a fixture and reproduce what a DAW sees on
-     *  reload (e.g. whether a savestate restores to a playable state). */
+    /** Path-only JSON project save — the harness mirror of the plugin's default
+     *  "Save Project" (config + romPath, no embedded binaries). A subsequent
+     *  loadRplg re-reads the ROM from disk and the sibling `<rom>.sav`. Use
+     *  saveRplg for the self-contained zip bundle. */
+    saveProjectFile(path: string): void {
+      client.saveProjectFile(path);
+    },
+    /** Inverse of saveRplg / saveProjectFile: rebuild the project from a project
+     *  file (autodetecting zip vs path-only JSON), exactly as the plugin does on
+     *  load (RETROPLUG_AUTOLOAD_PROJECT / setState). Replaces all current systems;
+     *  returns the first restored system id. Use to round-trip a fixture and
+     *  reproduce what a DAW sees on reload (e.g. whether a savestate restores to a
+     *  playable state). */
     loadRplg(path: string): number {
       return client.loadRplg(path);
     },

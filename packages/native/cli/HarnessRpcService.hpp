@@ -100,6 +100,7 @@ public:
 
     // project / kits
     void saveRplg(std::string path);
+    void saveProjectFile(std::string path);
     std::uint32_t loadRplg(std::string path);
     void patchKit(std::uint32_t systemId, std::uint32_t slot, std::string name,
                   std::vector<HarnessKitSample> samples);

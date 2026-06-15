@@ -189,6 +189,7 @@ public:
     std::optional<FrameResponse> getFrame(std::uint32_t systemId);
     bool openRomBrowser(OpenRomOpts opts);
     bool openSaveProjectBrowser();
+    bool openExportZipBrowser();
     bool openLoadProjectBrowser();
     bool loadRomFromPath(std::string path);
     bool addRomFromPath(std::string path);
@@ -331,10 +332,11 @@ private:
 
     // File-browser callback target. Open-* methods set this; the DPF host
     // delivers the chosen path back via onFileBrowserSelected.
-    enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject, LoadSample,
-                                 SaveSram, LoadSram, SaveState, LoadState };
+    enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject, ExportZip,
+                                 LoadSample, SaveSram, LoadSram, SaveState, LoadState };
 
     bool saveProjectToPath(const std::string& path);
+    bool exportZipToPath(const std::string& path);
 
     Project*                  project_              = nullptr;
     CommandQueue*             commands_             = nullptr;
