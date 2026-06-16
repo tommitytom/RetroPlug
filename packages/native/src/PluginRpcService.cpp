@@ -785,11 +785,10 @@ void PluginRpcService::pumpSramAutoSave() {
 
     // Throttle: battery RAM changes slowly relative to the UI tick, so a few
     // seconds of granularity is plenty and keeps disk churn low.
-    static constexpr double kSramAutoSaveIntervalSec = 5.0;
     const auto now = std::chrono::steady_clock::now();
     if (lastSramAutoSave_.time_since_epoch().count() != 0) {
         const std::chrono::duration<double> elapsed = now - lastSramAutoSave_;
-        if (elapsed.count() < kSramAutoSaveIntervalSec) return;
+        if (elapsed.count() < sramAutoSaveIntervalSec_) return;
     }
     lastSramAutoSave_ = now;
 

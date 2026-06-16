@@ -241,6 +241,9 @@ public:
     // Periodic battery-RAM flush; cheap no-op when the preference is off. Writes
     // only changed SRAM, creating the sibling .sav on first write. UI thread.
     void pumpSramAutoSave();
+    // Seconds between auto-save scans (default 5). Exposed mainly so tests can
+    // disable the throttle (0) to drive consecutive flushes deterministically.
+    void setSramAutoSaveIntervalSec(double seconds) { sramAutoSaveIntervalSec_ = seconds; }
     bool setLsdjSyncConfig(std::uint32_t id, std::uint32_t mode, std::uint32_t divisor);
     bool setWindowSize(std::uint32_t w, std::uint32_t h);
     bool isWindowSizeControlled();
@@ -427,6 +430,7 @@ private:
     // Per-system last-written SRAM hash for auto-save dedup (nullopt = never
     // checked). Pruned alongside the systems they track in pumpSramAutoSave.
     std::map<SystemId, std::optional<std::uint64_t>> sramAutoSaveHashes_;
-    // Throttle: only scan for dirty SRAM every kSramAutoSaveIntervalSec.
+    // Throttle: only scan for dirty SRAM every sramAutoSaveIntervalSec_ seconds.
     std::chrono::steady_clock::time_point lastSramAutoSave_{};
+    double sramAutoSaveIntervalSec_ = 5.0;
 };

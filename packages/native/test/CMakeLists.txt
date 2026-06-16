@@ -190,8 +190,14 @@ target_include_directories(retroplug-rpc-tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
+set(_RETROPLUG_TEST_MGB_ROM
+    "${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
+    CACHE FILEPATH
+    "Path to a batteryless Game Boy ROM (mGB) used by the SRAM auto-save no-op \
+test. The test skips when the file is missing.")
 target_compile_definitions(retroplug-rpc-tests PRIVATE
     RETROPLUG_TEST_GB_ROM="${_RETROPLUG_TEST_GB_ROM}"
+    RETROPLUG_TEST_MGB_ROM="${_RETROPLUG_TEST_MGB_ROM}"
 )
 
 target_link_libraries(retroplug-rpc-tests PRIVATE
