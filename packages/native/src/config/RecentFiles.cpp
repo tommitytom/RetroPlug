@@ -76,8 +76,7 @@ void RecentFiles::start() {
     next.reserve(parsed->entries.size());
     for (auto& e : parsed->entries) {
         if (e.path.empty()) continue;
-        if (e.kind != "rom" && e.kind != "project") continue;
-        next.push_back(RecentFileEntry{std::move(e.path), std::move(e.kind)});
+        next.push_back(RecentFileEntry{std::move(e.path), std::move(e.name)});
         if (next.size() >= kMaxEntries) break;
     }
 
@@ -90,26 +89,99 @@ std::vector<RecentFileEntry> RecentFiles::snapshot() const {
     return entries_;
 }
 
-bool RecentFiles::add(const std::string& path, const std::string& kind) {
+bool RecentFiles::add(const std::string& path, const std::string& name) {
     if (path.empty()) return false;
-    if (kind != "rom" && kind != "project") return false;
 
     const std::string canon = canonicalize(path);
 
-    std::string contents;
     {
         std::lock_guard<std::mutex> lock(mu_);
+        // Carry an existing alias forward unless the caller supplies a new one,
+        // so a rename survives re-opening the same project.
+        std::string keepName = name;
+        if (keepName.empty()) {
+            auto it = std::find_if(entries_.begin(), entries_.end(),
+                [&](const RecentFileEntry& e) { return e.path == canon; });
+            if (it != entries_.end()) keepName = it->name;
+        }
         entries_.erase(
             std::remove_if(entries_.begin(), entries_.end(),
                 [&](const RecentFileEntry& e) { return e.path == canon; }),
             entries_.end());
-        entries_.insert(entries_.begin(), RecentFileEntry{canon, kind});
+        entries_.insert(entries_.begin(), RecentFileEntry{canon, std::move(keepName)});
         if (entries_.size() > kMaxEntries) entries_.resize(kMaxEntries);
+    }
 
+    return writeAndNotify();
+}
+
+bool RecentFiles::remove(const std::string& path) {
+    if (path.empty()) return false;
+    const std::string canon = canonicalize(path);
+
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        const auto before = entries_.size();
+        entries_.erase(
+            std::remove_if(entries_.begin(), entries_.end(),
+                [&](const RecentFileEntry& e) { return e.path == canon; }),
+            entries_.end());
+        if (entries_.size() == before) return false;   // nothing removed
+    }
+
+    return writeAndNotify();
+}
+
+bool RecentFiles::relink(const std::string& oldPath, const std::string& newPath) {
+    if (oldPath.empty() || newPath.empty()) return false;
+    const std::string oldCanon = canonicalize(oldPath);
+    const std::string newCanon = canonicalize(newPath);
+
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        const auto idx = std::find_if(entries_.begin(), entries_.end(),
+            [&](const RecentFileEntry& e) { return e.path == oldCanon; });
+        if (idx == entries_.end()) return false;
+        idx->path = newCanon;
+        // Repoint done; drop any *other* entry that now collides with newCanon,
+        // keeping the relinked one (the first match in scan order).
+        bool seen = false;
+        entries_.erase(
+            std::remove_if(entries_.begin(), entries_.end(),
+                [&](const RecentFileEntry& e) {
+                    if (e.path != newCanon) return false;
+                    if (!seen) { seen = true; return false; }   // keep first
+                    return true;                                // drop the rest
+                }),
+            entries_.end());
+    }
+
+    return writeAndNotify();
+}
+
+bool RecentFiles::rename(const std::string& path, const std::string& name) {
+    if (path.empty()) return false;
+    const std::string canon = canonicalize(path);
+
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        auto it = std::find_if(entries_.begin(), entries_.end(),
+            [&](const RecentFileEntry& e) { return e.path == canon; });
+        if (it == entries_.end()) return false;
+        it->name = name;
+    }
+
+    return writeAndNotify();
+}
+
+bool RecentFiles::writeAndNotify() {
+    std::string contents;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
         RecentFilesJson out;
         out.entries.reserve(entries_.size());
         for (const auto& e : entries_) {
-            out.entries.push_back(RecentFileJson{e.path, e.kind});
+            out.entries.push_back(RecentFileJson{e.path, e.name});
         }
         contents = recentFilesToJson(out);
     }

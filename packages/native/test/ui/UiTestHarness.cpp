@@ -150,6 +150,11 @@ UiTestHarness::~UiTestHarness() {
     if (pointer_) lv_indev_delete(pointer_);
     if (display_) lv_display_delete(display_);
     if (group_)   lv_group_delete(group_);
+    recentFiles_.reset();
+    if (!recentDir_.empty()) {
+        std::error_code ec;
+        std::filesystem::remove_all(recentDir_, ec);
+    }
     if (g_active == this) g_active = nullptr;
 }
 
@@ -201,9 +206,22 @@ bool UiTestHarness::boot() {
 
     installTestIdHook();
 
+    // Recent-projects list in a per-harness temp dir so it never touches the real
+    // user config. Wired into the bridge so the Recent menu + its RPCs work; the
+    // onChange hook mirrors PluginUI, refetching the list in the UI on every edit.
+    recentDir_ = std::filesystem::temp_directory_path() /
+                 ("rp_ui_recent_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)));
+    std::error_code ec;
+    std::filesystem::create_directories(recentDir_, ec);
+    recentFiles_ = std::make_unique<RecentFiles>(recentDir_);
+    recentFiles_->setOnChange([this] {
+        if (engine_.getContext()) engine_.emit("recent-files-changed", 0, nullptr);
+    });
+    recentFiles_->start();
+
     bridge_ = std::make_unique<PluginJsBridge>(
         engine_, &project_, &commands_, &events_, &sampleRate_, &focusedSystemId_,
-        /*userConfig*/ nullptr, /*recentFiles*/ nullptr);
+        /*userConfig*/ nullptr, recentFiles_.get());
 
     // Stub the file browser so open*Browser RPCs succeed headlessly. The actual
     // chosen path is injected by the test via selectFile() -> onFileBrowserSelected.
@@ -294,6 +312,10 @@ void UiTestHarness::writeProjectJson(const std::string& path,
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     if (!f.write(json.data(), static_cast<std::streamsize>(json.size())).good())
         throw std::runtime_error("UiTestHarness::writeProjectJson failed: " + path);
+}
+
+void UiTestHarness::seedRecent(const std::string& path, const std::string& name) {
+    if (recentFiles_) recentFiles_->add(path, name);   // fires onChange -> refetch
 }
 
 void UiTestHarness::pump(int iterations) {

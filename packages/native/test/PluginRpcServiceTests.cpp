@@ -19,8 +19,10 @@
 #include <vector>
 
 #include "PluginRpcService.hpp"
+#include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
 #include "project/Project.hpp"
+#include "project/ProjectSerialization.hpp"
 #include "system/MemoryType.hpp"
 #include "system/SramAutoSave.hpp"
 #include "system/SystemBase.hpp"
@@ -615,4 +617,210 @@ TEST_CASE("unsaved: quitStandalone fires the quit callback",
     fx.service.setQuitCallback([&]{ quit = true; });
     CHECK(fx.service.quitStandalone());
     CHECK(quit);
+}
+
+// ---------------------------------------------------------------------------
+// Recent-projects list. Loading a ROM writes a thin <rom>.rplg beside it and
+// tracks the PROJECT (not the ROM). All paths live under /tmp so the sibling
+// .rplg never lands next to the real ROM in ../resources.
+// ---------------------------------------------------------------------------
+namespace {
+
+void writeBytes(const std::string& path, const std::vector<std::uint8_t>& bytes) {
+    std::ofstream f(path, std::ios::binary | std::ios::trunc);
+    f.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
+}
+
+std::string siblingRplg(const std::string& romPath) {
+    auto p = std::filesystem::path(romPath);
+    p.replace_extension(".rplg");
+    return p.string();
+}
+
+// A thin (path-only) project referencing `romPath`, as projectConfigToJsonFile
+// produces. Used to pre-seed an existing sibling project on disk.
+void writeThinProject(const std::string& path, const std::string& romPath) {
+    SameBoyConfig sb{};
+    sb.romPath = romPath;
+    ProjectConfig cfg;
+    cfg.systems.push_back(sb);
+    const std::string json = projectConfigToJsonFile(cfg);
+    writeBytes(path, std::vector<std::uint8_t>(json.begin(), json.end()));
+}
+
+// Project + queues + a RecentFiles(tempdir) wired into the service, mirroring
+// how PluginJsBridge wires it. Drains any LoadRom command the service queues so
+// the heap-owned system is freed (no leak under asan).
+struct RecentFixture {
+    std::vector<std::uint8_t>  rom = loadRom();
+    std::filesystem::path      cfgDir = [] {
+        auto d = std::filesystem::temp_directory_path() /
+                 ("rp_recent_cfg_" + std::to_string(g_tmpCounter.fetch_add(1)));
+        std::filesystem::create_directories(d);
+        return d;
+    }();
+    RecentFiles                recent{cfgDir};
+    Project                    project;
+    CommandQueue               commands;
+    EventQueue                 events;
+    std::atomic<double>        sampleRate{kSampleRate};
+    std::atomic<SystemId>      focused{0};
+    std::vector<std::pair<std::string, std::string>> emitted;
+    PluginRpcService           service{&project, &commands, &events, &sampleRate,
+                                       &focused, /*userConfig*/ nullptr, &recent};
+
+    RecentFixture() {
+        recent.start();
+        service.setEmitEventCallback(
+            [this](const std::string& ch, const std::string& p) { emitted.emplace_back(ch, p); });
+        service.setOpenFileBrowserCallback([](const char*, bool, const char*) {});
+    }
+    ~RecentFixture() {
+        drainSystems();
+        std::error_code ec;
+        std::filesystem::remove_all(cfgDir, ec);
+    }
+
+    // Free any heap payloads the service queued onto the command bus (the DSP
+    // would normally own these; here there's no DSP draining the queue).
+    void drainSystems() {
+        Command cmd;
+        while (commands.tryPop(cmd)) {
+            if (cmd.kind == Command::Kind::LoadRom)     delete cmd.payload.loadRom.newSystem;
+            if (cmd.kind == Command::Kind::AddSystem)   delete cmd.payload.addSystem.newSystem;
+            if (cmd.kind == Command::Kind::LoadProject) delete cmd.payload.loadProject.config;
+        }
+    }
+
+    bool sawEvent(const std::string& ch) const {
+        return std::any_of(emitted.begin(), emitted.end(),
+                           [&](const auto& e) { return e.first == ch; });
+    }
+};
+
+} // namespace
+
+TEST_CASE("recent: loading a ROM writes a sibling project and tracks it",
+          "[PluginRpcService][recent]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("load", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string projPath = siblingRplg(romPath);
+    std::error_code ec;
+    std::filesystem::remove(projPath, ec);
+
+    REQUIRE(fx.service.loadRomFromPath(romPath));
+
+    // A thin project was written beside the ROM.
+    REQUIRE(fileExists(projPath));
+    const auto bytes = readFile(projPath);
+    auto cfg = projectConfigFromBytes(std::vector<std::uint8_t>(bytes.begin(), bytes.end()));
+    REQUIRE(cfg.has_value());
+    REQUIRE(cfg->systems.size() == 1);
+
+    // Recent holds the PROJECT (not the ROM), present, and is the current path.
+    auto list = fx.service.getRecentFiles();
+    REQUIRE(list.size() == 1);
+    CHECK(std::filesystem::path(list[0].path).extension() == ".rplg");
+    CHECK_FALSE(list[0].missing);
+    CHECK(fx.service.getCurrentProjectPath() == projPath);
+
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(projPath, ec);
+}
+
+TEST_CASE("recent: getRecentFiles flags a deleted project as missing",
+          "[PluginRpcService][recent]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("missing", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string projPath = siblingRplg(romPath);
+
+    REQUIRE(fx.service.loadRomFromPath(romPath));
+    CHECK_FALSE(fx.service.getRecentFiles().at(0).missing);
+
+    std::error_code ec;
+    std::filesystem::remove(projPath, ec);
+    CHECK(fx.service.getRecentFiles().at(0).missing);
+
+    std::filesystem::remove(romPath, ec);
+}
+
+TEST_CASE("recent: loading a ROM with an existing sibling opens it, no overwrite",
+          "[PluginRpcService][recent]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("existing", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string projPath = siblingRplg(romPath);
+    writeThinProject(projPath, romPath);
+    const auto before = readFile(projPath);
+
+    REQUIRE(fx.service.loadRomFromPath(romPath));
+
+    // Delegated to the project loader (no fresh rom-load) and left the file as-is.
+    CHECK(fx.sawEvent("project-loaded"));
+    CHECK_FALSE(fx.sawEvent("rom-loaded"));
+    CHECK(readFile(projPath) == before);
+    CHECK(fx.service.getRecentFiles().size() == 1);
+
+    std::error_code ec;
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(projPath, ec);
+}
+
+TEST_CASE("recent: rename sets an alias and remove drops the entry",
+          "[PluginRpcService][recent]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("rename", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string projPath = siblingRplg(romPath);
+    REQUIRE(fx.service.loadRomFromPath(romPath));
+
+    REQUIRE(fx.service.renameRecentFile(projPath, "My Song"));
+    CHECK(fx.service.getRecentFiles().at(0).name == "My Song");
+
+    REQUIRE(fx.service.removeRecentFile(projPath));
+    CHECK(fx.service.getRecentFiles().empty());
+
+    std::error_code ec;
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(projPath, ec);
+}
+
+TEST_CASE("recent: openRecentRelinkBrowser + selection relinks the entry",
+          "[PluginRpcService][recent]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("relink", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string projPath = siblingRplg(romPath);
+    REQUIRE(fx.service.loadRomFromPath(romPath));
+
+    // Point the entry at a new project file (the file-browser stand-in).
+    const std::string newProj = uniqueTmpPath("relinked", ".rplg");
+    writeThinProject(newProj, romPath);
+
+    REQUIRE(fx.service.openRecentRelinkBrowser(projPath));
+    fx.service.onFileBrowserSelected(newProj.c_str());
+
+    auto list = fx.service.getRecentFiles();
+    REQUIRE(list.size() == 1);
+    CHECK(std::filesystem::path(list[0].path).filename() ==
+          std::filesystem::path(newProj).filename());
+    CHECK_FALSE(list[0].missing);
+
+    std::error_code ec;
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(projPath, ec);
+    std::filesystem::remove(newProj, ec);
 }

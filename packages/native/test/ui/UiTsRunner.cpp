@@ -208,6 +208,19 @@ JSValue jsUiWriteProjectJson(JSContext* ctx, JSValueConst, int argc, JSValueCons
     return ret;
 }
 
+JSValue jsUiSeedRecent(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "ui.seedRecent(path, name?)");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    const char* name = (argc >= 2 && !JS_IsUndefined(argv[1])) ? JS_ToCString(ctx, argv[1]) : nullptr;
+    JSValue ret;
+    try { harnessOrThrow()->seedRecent(path, name ? name : ""); ret = JS_UNDEFINED; }
+    catch (const std::exception& e) { ret = JS_ThrowTypeError(ctx, "ui.seedRecent: %s", e.what()); }
+    JS_FreeCString(ctx, path);
+    if (name) JS_FreeCString(ctx, name);
+    return ret;
+}
+
 JSValue jsUiRequestCloseConfirm(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     try { harnessOrThrow()->requestCloseConfirm(); return JS_UNDEFINED; }
     catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.requestCloseConfirm: %s", e.what()); }
@@ -398,6 +411,7 @@ int runUiTestFile(const std::string& jsPath) {
         { "selectFile",      { jsUiSelectFile,      1 } },
         { "writeFile",       { jsUiWriteFile,       2 } },
         { "writeProjectJson",{ jsUiWriteProjectJson, 2 } },
+        { "seedRecent",      { jsUiSeedRecent,      2 } },
         { "requestCloseConfirm", { jsUiRequestCloseConfirm, 0 } },
         { "quitRequested",   { jsUiQuitRequested,   0 } },
         { "pump",            { jsUiPump,            1 } },

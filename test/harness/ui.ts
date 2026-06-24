@@ -36,6 +36,7 @@ interface NativeUi {
   selectFile(path: string): void;
   writeFile(path: string, bytes: ArrayBuffer): void;
   writeProjectJson(path: string, romPath: string): void;
+  seedRecent(path: string, name?: string): void;
   requestCloseConfirm(): void;
   quitRequested(): boolean;
   pump(iterations?: number): void;
@@ -122,6 +123,9 @@ export const ui = {
   /** Write a schema-correct thin project JSON (one path-only SameBoy system at
    *  `romPath`). Point it at a non-existent path to drive the relink flow. */
   writeProjectJson(path: string, romPath: string): void { rp.writeProjectJson(path, romPath); },
+  /** Add a project to the recent list (optional display alias) and refresh the
+   *  menu. getRecentFiles() flags `missing` when `path` is absent on disk. */
+  seedRecent(path: string, name?: string): void { rp.seedRecent(path, name); },
   /** Emit "confirm-close" (as PluginUI::onClose does on a vetoed standalone
    *  close) to drive the unsaved-changes modal. */
   requestCloseConfirm(): void { rp.requestCloseConfirm(); },

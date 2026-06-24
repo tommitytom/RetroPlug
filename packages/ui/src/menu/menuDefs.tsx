@@ -80,7 +80,10 @@ export interface MenuTree {
 
 export interface RecentEntry {
     path: string;
-    kind: "rom" | "project";
+    // Display alias; empty => derive a label from the path basename.
+    name: string;
+    // True when the project's `.rplg` no longer exists on disk.
+    missing: boolean;
 }
 
 export interface MenuContext {
@@ -198,6 +201,73 @@ function basename(path: string): string {
     return idx >= 0 ? path.slice(idx + 1) : path;
 }
 
+// Friendly name for a recent project: its alias, else the file basename.
+function recentName(entry: RecentEntry): string {
+    return entry.name.trim() || basename(entry.path);
+}
+
+// Row label for a recent project. A trailing "  (missing)" marker (two spaces,
+// mirroring the "Save  *" dirty marker) flags a project whose file is gone.
+function recentLabel(entry: RecentEntry): string {
+    const name = recentName(entry);
+    return entry.missing ? `${name}  (missing)` : name;
+}
+
+// Each recent project is a submenu: Load / Rename, plus Locate (when missing)
+// and Remove. Mutations are fire-and-forget — the C++ side emits
+// "recent-files-changed", PluginUI refetches, and the tree rebuilds.
+function recentEntryChildren(entry: RecentEntry, idp: string): MenuItem[] {
+    const children: MenuItem[] = [];
+
+    children.push({
+        id:       `${idp}:load`,
+        label:    entry.missing ? "Locate to Load..." : "Load",
+        kind:     "action",
+        keepOpen: entry.missing,   // browsing must not close the menu
+        onSelect: () => {
+            if (entry.missing) { void plugin.$notify("openRecentRelinkBrowser", entry.path); return; }
+            void plugin.$notify("loadProjectFromPath", entry.path);
+        },
+    });
+
+    children.push({
+        id:     `${idp}:rename`, label: "Rename...", kind: "prompt", keepOpen: true,
+        prompt: {
+            title:   `Rename "${recentName(entry)}" to:`,
+            initial: recentName(entry),
+            onConfirm: async (v) => {
+                const name = v.trim();
+                if (!name) return "Name cannot be empty.";
+                try {
+                    return (await plugin.renameRecentFile(entry.path, name)) ? null : "Rename failed.";
+                } catch { return "Rename failed."; }
+            },
+        },
+    });
+
+    if (entry.missing) {
+        children.push({
+            id: `${idp}:locate`, label: "Locate on Disk...", kind: "action", keepOpen: true,
+            onSelect: () => { void plugin.$notify("openRecentRelinkBrowser", entry.path); },
+        });
+    }
+
+    children.push({
+        id:     `${idp}:remove`, label: "Remove from List", kind: "prompt", keepOpen: true,
+        prompt: {
+            title:   `Remove "${recentName(entry)}" from recent files?`,
+            hint:    "Enter to remove  |  Esc to cancel",
+            confirm: true,
+            onConfirm: async () => {
+                try { await plugin.removeRecentFile(entry.path); return null; }
+                catch { return "Could not remove entry."; }
+            },
+        },
+    });
+
+    return children;
+}
+
 function recentChildren(ctx: MenuContext): MenuItem[] {
     if (ctx.recentFiles.length === 0) {
         return [
@@ -205,18 +275,15 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
               onSelect: () => {}, keepOpen: true },
         ];
     }
-    return ctx.recentFiles.map((entry, i) => ({
-        id:    `recent:${i}`,
-        label: basename(entry.path),
-        kind:  "action",
-        onSelect: () => {
-            if (entry.kind === "project") {
-                void plugin.$notify("loadProjectFromPath", entry.path);
-            } else {
-                void plugin.$notify("loadRomFromPath", entry.path);
-            }
-        },
-    }));
+    return ctx.recentFiles.map((entry, i) => {
+        const idp = `recent:${i}`;
+        return {
+            id:       idp,
+            label:    recentLabel(entry),
+            kind:     "submenu",
+            children: recentEntryChildren(entry, idp),
+        };
+    });
 }
 
 function systemChildren(ctx: MenuContext): MenuItem[] {

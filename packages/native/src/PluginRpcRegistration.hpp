@@ -73,6 +73,9 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::openSaveStateBrowser>();
     server.template addMethod<&PluginRpcService::openLoadStateBrowser>();
     server.template addMethod<&PluginRpcService::getRecentFiles>();
+    server.template addMethod<&PluginRpcService::removeRecentFile>();
+    server.template addMethod<&PluginRpcService::renameRecentFile>();
+    server.template addMethod<&PluginRpcService::openRecentRelinkBrowser>();
     server.template addMethod<&PluginRpcService::getMemory>();
     server.template addMethod<&PluginRpcService::subscribeMemory>();
     server.template addMethod<&PluginRpcService::unsubscribeMemory>();

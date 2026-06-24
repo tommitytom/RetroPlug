@@ -14,11 +14,11 @@
 
 struct RecentFileJson {
     std::string path;
-    std::string kind;   // "rom" | "project"
+    std::string name;   // display alias; empty => UI derives from basename(path)
 };
 
 struct RecentFilesJson {
-    int schemaVersion = 1;
+    int schemaVersion = 2;
     // Most-recent first. Capped at RecentFiles::kMaxEntries on every write.
     std::vector<RecentFileJson> entries;
 };

@@ -139,11 +139,14 @@ public:
         std::optional<std::string> mode;  // "add" | "replace" (default replace)
     };
 
-    // One entry of the recent-files list. Surfaced over RPC verbatim — the
-    // UI uses `kind` to dispatch to loadRomFromPath vs loadProjectFromPath.
+    // One entry of the recent-projects list. `name` is an optional display
+    // alias (empty => UI derives a label from the path basename). `missing` is
+    // computed per fetch via std::filesystem::exists so the UI can flag a
+    // project whose `.rplg` has moved / been deleted.
     struct RecentFileDto {
         std::string path;
-        std::string kind;   // "rom" | "project"
+        std::string name;
+        bool        missing = false;
     };
 
     // Construction ----------------------------------------------------------
@@ -327,9 +330,19 @@ public:
     bool openSaveStateBrowser(std::uint32_t systemId);
     bool openLoadStateBrowser(std::uint32_t systemId);
 
-    // Recently-loaded ROMs and projects. Most-recent first; capped at
+    // Recently-opened projects. Most-recent first; capped at
     // RecentFiles::kMaxEntries. See src/config/RecentFiles.hpp.
     std::vector<RecentFileDto> getRecentFiles();
+    // Drop a recent entry. No-op (false) when the path isn't present.
+    bool removeRecentFile(std::string path);
+    // Set a display alias for a recent entry (empty clears it). The `.rplg`
+    // file on disk is untouched. False when the path isn't present.
+    bool renameRecentFile(std::string path, std::string newName);
+    // Open a file browser to point a recent entry at a new `.rplg`. The chosen
+    // path is applied server-side in onFileBrowserSelected (mode RelinkRecent),
+    // which fires "recent-files-changed" so the menu refreshes. False when no
+    // browser callback is wired.
+    bool openRecentRelinkBrowser(std::string path);
 
     // -- Memory snapshot API ----------------------------------------------
     //
@@ -387,9 +400,16 @@ private:
     // File-browser callback target. Open-* methods set this; the DPF host
     // delivers the chosen path back via onFileBrowserSelected.
     enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject, ExportZip,
-                                 LoadSample, Relink, SaveSram, LoadSram, SaveState, LoadState };
+                                 LoadSample, Relink, RelinkRecent,
+                                 SaveSram, LoadSram, SaveState, LoadState };
 
     bool saveProjectToPath(const std::string& path);
+
+    // Write a thin (path-only) `<rom>.rplg` beside `romPath` for a freshly-built
+    // single system, unless one already exists. Returns the sibling path (whether
+    // newly written or pre-existing), or empty on write failure.
+    std::string writeSiblingProject(const SystemConfig& sysCfg,
+                                    const std::string& romPath);
     bool exportZipToPath(const std::string& path);
     // Apply pendingProject_ to the DSP (recompiling kits first). Shared by
     // loadProjectFromPath (no missing files) and relinkMissingFile (all resolved).
@@ -435,6 +455,8 @@ private:
     // System id remembered for SaveSram / LoadSram / SaveState / LoadState
     // while the file dialog is up. 0 = none.
     std::uint32_t             pendingFileSystemId_  = 0;
+    // Old path of the recent entry being relinked while its browser is up.
+    std::string               pendingRelinkRecentPath_;
 
     // Common helpers used by saveSram / saveState / loadState.
     bool saveSramToPath(std::uint32_t systemId, const std::string& path);

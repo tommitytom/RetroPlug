@@ -40,7 +40,9 @@ export interface FrameResponse extends Omit<PluginRpcServiceFrameResponse, "buff
 export type SystemEntry  = PluginRpcServiceSystemEntry;
 export type OpenRomOpts  = PluginRpcServiceOpenRomOpts;
 
-export interface RecentFileDto { path: string; kind: string; }
+// A recent project. `name` is an optional display alias (empty => derive from
+// basename). `missing` flags a project whose `.rplg` has moved / been deleted.
+export interface RecentFileDto { path: string; name: string; missing: boolean; }
 
 // Tighten the generated service interface where the codegen can't infer
 // the actual runtime shape (msgpack BIN → Uint8Array). `getRecentFiles`
@@ -49,6 +51,8 @@ export interface RecentFileDto { path: string; kind: string; }
 export type PluginClient = Omit<PluginService, "getFrame"> & {
     getFrame(systemId: number): Promise<FrameResponse | null>;
     getRecentFiles(): Promise<RecentFileDto[]>;
+    removeRecentFile(path: string): Promise<boolean>;
+    renameRecentFile(path: string, newName: string): Promise<boolean>;
 } & ClientControl;
 
 export const plugin: PluginClient = createClient<PluginClient>({

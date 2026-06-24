@@ -23,6 +23,9 @@ extern "C" {
     #include "lvgl.h"
 }
 
+#include <filesystem>
+
+#include "config/RecentFiles.hpp"
 #include "dpfjs/LvglJsEngine.hpp"
 #include "project/Project.hpp"
 #include "transport/CommandQueue.hpp"
@@ -89,6 +92,11 @@ public:
     // Write a schema-correct thin project JSON with one path-only SameBoy system
     // pointing at `romPath` (use a non-existent path to exercise relink).
     void writeProjectJson(const std::string& path, const std::string& romPath);
+
+    // Add a project to the recent list (with an optional display alias) and tell
+    // the UI to refetch. The headless stand-in for the real load path recording a
+    // recent entry — getRecentFiles() then flags `missing` if `path` is absent.
+    void seedRecent(const std::string& path, const std::string& name = "");
 
     // Emit "confirm-close" (as PluginUI::onClose would on a vetoed standalone
     // close) so a test can drive the unsaved-changes modal.
@@ -174,6 +182,12 @@ private:
     EventQueue events_;
     std::atomic<double> sampleRate_{44100.0};
     std::atomic<SystemId> focusedSystemId_{0};
+
+    // Recent-projects list, persisted to a per-harness temp dir (cleaned on
+    // destruction). Wired into the bridge so the Recent menu + its RPCs work.
+    // Declared before engine_/bridge_ so it outlives the bridge that points at it.
+    std::filesystem::path recentDir_;
+    std::unique_ptr<RecentFiles> recentFiles_;
 
     // Scratch audio buffers: pump() runs project_.onProcess each iteration so
     // the emulator advances and publishes framebuffers (there is no DSP thread

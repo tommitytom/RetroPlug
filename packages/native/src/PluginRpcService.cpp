@@ -170,13 +170,58 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path) {
     return sys.release();
 }
 
+std::string PluginRpcService::writeSiblingProject(const SystemConfig& sysCfg,
+                                                  const std::string& romPath) {
+    std::filesystem::path proj = std::filesystem::path(romPath);
+    proj.replace_extension(".rplg");
+    const std::string projPath = proj.string();
+
+    std::error_code ec;
+    if (std::filesystem::exists(proj, ec) && !ec) {
+        return projPath;   // keep the existing project beside the ROM
+    }
+
+    ProjectConfig cfg;                 // default schemaVersion / settings
+    cfg.systems.push_back(sysCfg);     // single freshly-built system
+    std::string json;
+    try {
+        json = projectConfigToJsonFile(cfg);   // thin, strips embedded binaries
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "writeSiblingProject: serialize failed: %s\n", e.what());
+        return {};
+    }
+    if (json.empty()) return {};
+    const std::vector<std::uint8_t> bytes(json.begin(), json.end());
+    if (!spillBytes(projPath, bytes)) {
+        std::fprintf(stderr, "writeSiblingProject: write failed for '%s'\n", projPath.c_str());
+        return {};
+    }
+    return projPath;
+}
+
 bool PluginRpcService::loadRomFromPath(std::string path) {
     if (!commands_) {
         emit("rom-error", path);
         return false;
     }
+
+    // The recent list tracks projects, not ROMs. If a project already sits
+    // beside this ROM, open it (preserving its saved settings/layout/instances)
+    // rather than building a bare single-system project.
+    {
+        std::filesystem::path proj = std::filesystem::path(path);
+        proj.replace_extension(".rplg");
+        std::error_code ec;
+        if (std::filesystem::exists(proj, ec) && !ec) {
+            return loadProjectFromPath(proj.string());
+        }
+    }
+
     SystemBase* sys = buildSystemFromPath(path);
     if (!sys) return false;
+
+    // Capture the system's config before tryPush transfers ownership to the DSP.
+    SystemConfig sysCfg = sys->snapshotConfig();
 
     if (!commands_->tryPush(Command::makeLoadRom(sys))) {
         std::fprintf(stderr, "loadRomFromPath: command queue full\n");
@@ -185,7 +230,14 @@ bool PluginRpcService::loadRomFromPath(std::string path) {
         return false;
     }
     markProjectDirty();
-    if (recentFiles_) recentFiles_->add(path, "rom");
+
+    // Write a thin project beside the ROM and track *that* in the recent list.
+    const std::string projPath = writeSiblingProject(sysCfg, path);
+    if (!projPath.empty()) {
+        if (recentFiles_) recentFiles_->add(projPath);
+        currentProjectPath_ = projPath;   // subsequent saves are silent
+        projectDirty_       = false;      // the on-disk project matches the load
+    }
     emit("rom-loaded", path);
     return true;
 }
@@ -204,8 +256,9 @@ bool PluginRpcService::addRomFromPath(std::string path) {
         emit("rom-error", path);
         return false;
     }
+    // Adding an instance edits the open project; the recent list tracks the
+    // project itself (already recorded), so don't add a separate entry here.
     markProjectDirty();
-    if (recentFiles_) recentFiles_->add(path, "rom");
     emit("rom-loaded", path);
     return true;
 }
@@ -224,8 +277,9 @@ bool PluginRpcService::replaceRomFromPath(std::uint32_t id, std::string path) {
         emit("rom-error", path);
         return false;
     }
+    // Replacing a system's ROM edits the open project in place — no new recent
+    // entry (the project is what's tracked).
     markProjectDirty();
-    if (recentFiles_) recentFiles_->add(path, "rom");
     emit("rom-loaded", path);
     return true;
 }
@@ -257,7 +311,7 @@ bool PluginRpcService::saveProjectToPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
-    if (recentFiles_) recentFiles_->add(path, "project");
+    if (recentFiles_) recentFiles_->add(path);
     currentProjectPath_ = path;
     projectDirty_ = false;
     emit("project-saved", path);
@@ -349,7 +403,7 @@ bool PluginRpcService::commitPendingProject() {
         emit("project-error", path);
         return false;
     }
-    if (recentFiles_) recentFiles_->add(path, "project");
+    if (recentFiles_) recentFiles_->add(path);
     currentProjectPath_ = path;
     projectDirty_ = false;          // freshly loaded project is clean
     // A fresh project replaces all systems; drop stale per-system SRAM state so
@@ -412,6 +466,7 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
     if (!path || !*path) {
         pendingFileMode_ = PendingFileMode::LoadRom;
         pendingFileSystemId_ = 0;
+        pendingRelinkRecentPath_.clear();
         return;
     }
     switch (pendingFileMode_) {
@@ -421,6 +476,10 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
         case PendingFileMode::ExportZip:   exportZipToPath(path);            break;
         case PendingFileMode::LoadSample:  emit("sample-path-selected", path); break;
         case PendingFileMode::Relink:      emit("relink-path-selected", path); break;
+        case PendingFileMode::RelinkRecent:
+            if (recentFiles_ && !pendingRelinkRecentPath_.empty())
+                recentFiles_->relink(pendingRelinkRecentPath_, path);   // fires onChange
+            break;
         case PendingFileMode::SaveSram:    saveSramToPath(pendingFileSystemId_, path);  break;
         case PendingFileMode::LoadSram:    loadSramFromPath(pendingFileSystemId_, path); break;
         case PendingFileMode::SaveState:   saveStateToPath(pendingFileSystemId_, path); break;
@@ -430,6 +489,7 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
     }
     pendingFileMode_ = PendingFileMode::LoadRom;
     pendingFileSystemId_ = 0;
+    pendingRelinkRecentPath_.clear();
 }
 
 std::optional<PluginRpcService::FrameResponse>
@@ -1391,9 +1451,32 @@ std::vector<PluginRpcService::RecentFileDto> PluginRpcService::getRecentFiles() 
     auto snap = recentFiles_->snapshot();
     out.reserve(snap.size());
     for (auto& e : snap) {
-        out.push_back(RecentFileDto{std::move(e.path), std::move(e.kind)});
+        // Existence is a view concern, recomputed each fetch (the UI re-queries
+        // on "recent-files-changed") — kept out of RecentFiles to keep it pure.
+        std::error_code ec;
+        const bool missing =
+            !std::filesystem::exists(std::filesystem::path(e.path), ec) || ec;
+        out.push_back(RecentFileDto{std::move(e.path), std::move(e.name), missing});
     }
     return out;
+}
+
+bool PluginRpcService::removeRecentFile(std::string path) {
+    if (!recentFiles_) return false;
+    return recentFiles_->remove(path);   // fires onChange -> "recent-files-changed"
+}
+
+bool PluginRpcService::renameRecentFile(std::string path, std::string newName) {
+    if (!recentFiles_) return false;
+    return recentFiles_->rename(path, newName);   // display alias only; file untouched
+}
+
+bool PluginRpcService::openRecentRelinkBrowser(std::string path) {
+    if (!openFileBrowser_ || path.empty()) return false;
+    pendingFileMode_         = PendingFileMode::RelinkRecent;
+    pendingRelinkRecentPath_ = std::move(path);
+    openFileBrowser_("Locate project (.rplg)", /*saving=*/false, nullptr);
+    return true;
 }
 
 // ----- Memory snapshot API --------------------------------------------------
