@@ -184,6 +184,7 @@ bool PluginRpcService::loadRomFromPath(std::string path) {
         emit("rom-error", path);
         return false;
     }
+    markProjectDirty();
     if (recentFiles_) recentFiles_->add(path, "rom");
     emit("rom-loaded", path);
     return true;
@@ -203,6 +204,7 @@ bool PluginRpcService::addRomFromPath(std::string path) {
         emit("rom-error", path);
         return false;
     }
+    markProjectDirty();
     if (recentFiles_) recentFiles_->add(path, "rom");
     emit("rom-loaded", path);
     return true;
@@ -222,6 +224,7 @@ bool PluginRpcService::replaceRomFromPath(std::uint32_t id, std::string path) {
         emit("rom-error", path);
         return false;
     }
+    markProjectDirty();
     if (recentFiles_) recentFiles_->add(path, "rom");
     emit("rom-loaded", path);
     return true;
@@ -256,6 +259,7 @@ bool PluginRpcService::saveProjectToPath(const std::string& path) {
     }
     if (recentFiles_) recentFiles_->add(path, "project");
     currentProjectPath_ = path;
+    projectDirty_ = false;
     emit("project-saved", path);
     return true;
 }
@@ -285,6 +289,7 @@ bool PluginRpcService::exportZipToPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
+    projectDirty_ = false;
     emit("project-exported", path);
     return true;
 }
@@ -346,6 +351,11 @@ bool PluginRpcService::commitPendingProject() {
     }
     if (recentFiles_) recentFiles_->add(path, "project");
     currentProjectPath_ = path;
+    projectDirty_ = false;          // freshly loaded project is clean
+    // A fresh project replaces all systems; drop stale per-system SRAM state so
+    // the new systems re-seed their load baselines.
+    sramLoadBaseline_.clear();
+    sramSavedHashes_.clear();
     emit("project-loaded", path);
     return true;
 }
@@ -488,6 +498,7 @@ bool PluginRpcService::openLoadProjectBrowser() {
 
 bool PluginRpcService::removeSystem(std::uint32_t id) {
     if (!commands_) return false;
+    markProjectDirty();
     return commands_->tryPush(Command::makeRemoveSystem(static_cast<SystemId>(id)));
 }
 
@@ -514,6 +525,7 @@ bool PluginRpcService::duplicateSystem(std::uint32_t id) {
         delete released;
         return false;
     }
+    markProjectDirty();
     return true;
 }
 
@@ -601,6 +613,7 @@ bool PluginRpcService::pressButton(std::int32_t button,
 bool PluginRpcService::setLinkGroupId(std::uint32_t id, std::uint32_t groupId) {
     if (!commands_) return false;
     if (groupId > 255u) return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetLinkGroup(static_cast<SystemId>(id),
                                   static_cast<std::uint8_t>(groupId)));
@@ -617,6 +630,7 @@ bool PluginRpcService::setMidiRouting(std::uint32_t routing) {
     // accident — keep the JS side in sync with the C++ enum.
     if (routing > static_cast<std::uint32_t>(MidiRouting::MidiChannelToInstance))
         return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetMidiRouting(static_cast<MidiRouting>(routing)));
 }
@@ -630,6 +644,7 @@ bool PluginRpcService::setAudioRouting(std::uint32_t routing) {
     if (!commands_) return false;
     if (routing > static_cast<std::uint32_t>(AudioRouting::OnePerInstance))
         return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetAudioRouting(static_cast<AudioRouting>(routing)));
 }
@@ -651,6 +666,7 @@ std::uint32_t PluginRpcService::getZoom() {
 bool PluginRpcService::setZoom(std::uint32_t zoom) {
     if (!commands_) return false;
     if (zoom < 1u || zoom > 6u) return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetZoom(static_cast<std::uint8_t>(zoom)));
 }
@@ -663,6 +679,7 @@ std::uint32_t PluginRpcService::getLayout() {
 bool PluginRpcService::setLayout(std::uint32_t layout) {
     if (!commands_) return false;
     if (layout > static_cast<std::uint32_t>(SystemLayout::Grid)) return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetLayout(static_cast<SystemLayout>(layout)));
 }
@@ -679,6 +696,7 @@ bool PluginRpcService::newSram(std::uint32_t id) {
 
 bool PluginRpcService::setFastBoot(std::uint32_t id, bool enabled) {
     if (!commands_) return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetFastBoot(static_cast<SystemId>(id), enabled));
 }
@@ -686,6 +704,7 @@ bool PluginRpcService::setFastBoot(std::uint32_t id, bool enabled) {
 bool PluginRpcService::setModel(std::uint32_t id, std::uint32_t model) {
     if (!commands_) return false;
     if (model > static_cast<std::uint32_t>(SameBoyModel::Gbp)) return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetModel(static_cast<SystemId>(id),
                               static_cast<SameBoyModel>(model)));
@@ -694,6 +713,7 @@ bool PluginRpcService::setModel(std::uint32_t id, std::uint32_t model) {
 bool PluginRpcService::setHighpass(std::uint32_t id, std::uint32_t mode) {
     if (!commands_) return false;
     if (mode > static_cast<std::uint32_t>(SameBoyHighpass::RemoveDcOffset)) return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetHighpass(static_cast<SystemId>(id),
                                  static_cast<SameBoyHighpass>(mode)));
@@ -701,6 +721,7 @@ bool PluginRpcService::setHighpass(std::uint32_t id, std::uint32_t mode) {
 
 bool PluginRpcService::setReloadOnRomChange(std::uint32_t id, bool enabled) {
     if (!commands_) return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetReloadOnRomChange(static_cast<SystemId>(id), enabled));
 }
@@ -781,10 +802,31 @@ bool PluginRpcService::setAutoSaveSram(bool enabled) {
 }
 
 void PluginRpcService::pumpSramAutoSave() {
-    if (!project_ || !userConfig_ || !userConfig_->autoSaveSram()) return;
+    if (!project_) return;
 
-    // Throttle: battery RAM changes slowly relative to the UI tick, so a few
-    // seconds of granularity is plenty and keeps disk churn low.
+    // Always (regardless of the Auto Save preference): prune dead systems and
+    // seed the per-system load-baseline used by the unsaved-SRAM check, so a
+    // change since load can be detected even with auto-save off.
+    auto prune = [&](auto& map) {
+        std::vector<SystemId> dead;
+        for (const auto& kv : map)
+            if (!project_->findSystem(kv.first)) dead.push_back(kv.first);
+        for (SystemId id : dead) map.erase(id);
+    };
+    prune(sramSavedHashes_);
+    prune(sramLoadBaseline_);
+
+    for (const auto& sys : project_->systems()) {
+        if (!sys || sys->romPath().empty()) continue;
+        if (sramLoadBaseline_.count(sys->id())) continue;          // seeded once
+        const auto bytes = rp::sram_autosave::readSram(*sys);
+        if (!bytes.empty())
+            sramLoadBaseline_[sys->id()] =
+                rp::lsdj::SampleCache::hashBytes(bytes.data(), bytes.size());
+    }
+
+    // Auto-save writes: gated on the preference + throttled.
+    if (!userConfig_ || !userConfig_->autoSaveSram()) return;
     const auto now = std::chrono::steady_clock::now();
     if (lastSramAutoSave_.time_since_epoch().count() != 0) {
         const std::chrono::duration<double> elapsed = now - lastSramAutoSave_;
@@ -792,16 +834,77 @@ void PluginRpcService::pumpSramAutoSave() {
     }
     lastSramAutoSave_ = now;
 
-    // Prune hash entries whose system has gone away (mirror pumpRomWatchers).
-    std::vector<SystemId> toDrop;
-    for (const auto& [sysId, _] : sramAutoSaveHashes_)
-        if (!project_->findSystem(sysId)) toDrop.push_back(sysId);
-    for (SystemId id : toDrop) sramAutoSaveHashes_.erase(id);
-
     for (const auto& sys : project_->systems()) {
         if (!sys || sys->romPath().empty()) continue;
-        rp::autoSaveSramToSibling(*sys, sramAutoSaveHashes_[sys->id()]);
+        rp::autoSaveSramToSibling(*sys, sramSavedHashes_[sys->id()]);
     }
+}
+
+bool PluginRpcService::hasUnsavedChanges() {
+    return projectDirty_ || sramDirtyCount() > 0;
+}
+
+std::uint32_t PluginRpcService::sramDirtyCount() {
+    if (!project_) return 0;
+    std::uint32_t count = 0;
+    for (const auto& sys : project_->systems()) {
+        if (!sys || sys->romPath().empty()) continue;
+        const auto bytes = rp::sram_autosave::readSram(*sys);
+        if (bytes.empty()) continue;                           // no battery
+        const std::uint64_t cur =
+            rp::lsdj::SampleCache::hashBytes(bytes.data(), bytes.size());
+        auto it = sramLoadBaseline_.find(sys->id());
+        if (it == sramLoadBaseline_.end()) {
+            // Not seeded yet (just appeared): adopt as baseline, no evidence of change.
+            sramLoadBaseline_[sys->id()] = cur;
+            continue;
+        }
+        if (cur == it->second) continue;                       // unchanged since load
+        // Changed since load — unsaved unless the sibling already holds it.
+        const std::string sav = rp::sram_autosave::siblingSavPath(sys->romPath());
+        std::error_code ec;
+        if (std::filesystem::exists(sav, ec) &&
+            rp::sram_autosave::hashFile(sav) == cur) continue; // already persisted
+        ++count;
+    }
+    return count;
+}
+
+PluginRpcService::UnsavedSummary PluginRpcService::getUnsavedSummary() {
+    UnsavedSummary s;
+    s.project     = projectDirty_;
+    s.sramSystems = sramDirtyCount();
+    return s;
+}
+
+bool PluginRpcService::saveDirtySram() {
+    if (!project_) return false;
+    bool ok = true;
+    for (const auto& sys : project_->systems()) {
+        if (!sys || sys->romPath().empty()) continue;
+        const auto bytes = rp::sram_autosave::readSram(*sys);
+        if (bytes.empty()) continue;
+        const std::uint64_t cur =
+            rp::lsdj::SampleCache::hashBytes(bytes.data(), bytes.size());
+        const std::string sav = rp::sram_autosave::siblingSavPath(sys->romPath());
+        std::error_code ec;
+        if (std::filesystem::exists(sav, ec) &&
+            rp::sram_autosave::hashFile(sav) == cur) continue;  // already saved
+        if (saveSramToPath(sys->id(), sav)) sramSavedHashes_[sys->id()] = cur;
+        else ok = false;
+    }
+    return ok;
+}
+
+bool PluginRpcService::quitStandalone() {
+    if (!quit_) return false;
+    quit_();
+    return true;
+}
+
+bool PluginRpcService::saveProject() {
+    if (!project_ || currentProjectPath_.empty()) return false;
+    return saveProjectToPath(currentProjectPath_);
 }
 
 bool PluginRpcService::setLsdjSyncConfig(std::uint32_t id,
@@ -812,6 +915,7 @@ bool PluginRpcService::setLsdjSyncConfig(std::uint32_t id,
     if (mode > static_cast<std::uint32_t>(LsdjSyncMode::ArduinoboyMaster))
         return false;
     if (divisor < 1u || divisor > 8u) return false;
+    markProjectDirty();
     return commands_->tryPush(
         Command::makeSetLsdjSyncConfig(static_cast<SystemId>(id),
                                        mode,
@@ -979,6 +1083,7 @@ PluginRpcService::compileAndPatchKit(std::uint32_t systemId,
         return result;
     }
 
+    markProjectDirty();
     result.ok           = true;
     result.compiledHash = compiled.hash;
     // Send a copy back so the UI can hash for dirty tracking + preview the
@@ -1028,6 +1133,7 @@ bool PluginRpcService::eraseKit(std::uint32_t systemId, std::uint8_t kitIndex) {
         delete heapBytes;
         return false;
     }
+    markProjectDirty();
     return true;
 }
 
@@ -1124,6 +1230,11 @@ bool PluginRpcService::saveSramToPath(std::uint32_t systemId, const std::string&
         emit("sram-error", path);
         return false;
     }
+    // Keep the auto-save dedup baseline in sync when writing the sibling, so a
+    // manual Save SRAM doesn't immediately trigger a redundant auto-save write.
+    if (path == rp::sram_autosave::siblingSavPath(sys->romPath()))
+        sramSavedHashes_[static_cast<SystemId>(systemId)] =
+            rp::lsdj::SampleCache::hashBytes(bytes.data(), bytes.size());
     emit("sram-saved", path);
     return true;
 }

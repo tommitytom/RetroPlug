@@ -16,6 +16,7 @@
  */
 
 #include "DistrhoUI.hpp"
+#include "Application.hpp"   // DGL Application (getWindow().getApp().quit() on close)
 #include "ResizeHandle.hpp"
 #include "GamepadManager.hpp"
 #include "dpfjs/LvglJsEngine.hpp"
@@ -63,6 +64,9 @@ class LVGLPluginUI : public UI
     std::unique_ptr<PluginJsBridge> bridge;
     retroplug::GamepadManager gamepad;
     SharedDSPData* shared = nullptr;
+    // Set true once the user confirms an unsaved-changes close, so the re-entrant
+    // onClose() (from requestStandaloneQuit) allows the window to close.
+    bool allowClose_ = false;
     // Declared AFTER bridge so it destructs FIRST: stops the efsw watcher
     // before bridge/jsEngine tear down, so a stray bg-thread file event
     // can't race into a half-destroyed JS context.
@@ -291,6 +295,10 @@ public:
                 return isWindowSizeControlled();
             });
 
+            // Standalone close-veto: the modal asks us to actually quit once the
+            // user confirms (or after a save). See onClose() below.
+            bridge->setQuitCallback([this]() { requestStandaloneQuit(); });
+
             // Auto-load a project on startup. Useful for fast debug loops
             // and for headless agent verification of LoadProject (the
             // alternative is driving the native file dialog under Xvfb
@@ -353,6 +361,26 @@ protected:
     {
         if (index == 0) fGain = value;
         jsEngine.pushParameter(index, value);
+    }
+
+    // Standalone window-close veto (DPF forwards Window::onClose here only when
+    // running standalone; a DAW owns the plugin lifecycle). If there are unsaved
+    // changes, pop the in-app modal and veto this close; the modal calls back
+    // into requestStandaloneQuit() once the user confirms / after a save.
+    bool onClose() override
+    {
+        if (allowClose_) return true;                 // confirmed — let it close
+        if (!bridge || !bridge->hasUnsavedChanges()) return true;
+        bridge->requestCloseConfirm();                // emits "confirm-close" to the UI
+        return false;                                 // keep the window open
+    }
+
+    // Called from the modal (via the quit RPC) to actually close after confirm.
+    void requestStandaloneQuit()
+    {
+        allowClose_ = true;
+        getWindow().close();
+        getWindow().getApp().quit();
     }
 
     void uiIdle() override

@@ -210,6 +210,10 @@ bool UiTestHarness::boot() {
     bridge_->setOpenFileBrowserCallback(
         [](const char*, bool, const char*) { /* path injected via selectFile */ });
 
+    // Record standalone-quit requests so a UI test can assert the unsaved-changes
+    // modal's Discard/Save → quit path fired.
+    bridge_->setQuitCallback([this] { quitRequested_ = true; });
+
     if (engine_.evalModuleBytecode(ui_bundle, ui_bundle_size) != 0) return false;
 
     booted_ = true;
@@ -260,6 +264,10 @@ void UiTestHarness::notifyConfigChanged() {
 
 bool UiTestHarness::loadProject(const std::string& path) {
     return bridge_ && bridge_->loadProjectFromPath(path);
+}
+
+void UiTestHarness::requestCloseConfirm() {
+    if (bridge_) bridge_->requestCloseConfirm();   // emits "confirm-close"
 }
 
 void UiTestHarness::selectFile(const std::string& path) {

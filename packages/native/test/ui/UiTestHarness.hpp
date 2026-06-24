@@ -90,6 +90,12 @@ public:
     // pointing at `romPath` (use a non-existent path to exercise relink).
     void writeProjectJson(const std::string& path, const std::string& romPath);
 
+    // Emit "confirm-close" (as PluginUI::onClose would on a vetoed standalone
+    // close) so a test can drive the unsaved-changes modal.
+    void requestCloseConfirm();
+    // True once the modal's Discard/Save path called quitStandalone().
+    bool quitRequested() const { return quitRequested_; }
+
     // -- assertions surface -------------------------------------------------
 
     Snapshot snapshot();                 // render the active screen to ARGB
@@ -174,6 +180,8 @@ private:
     // headless). The mixed audio is discarded.
     std::vector<float> scratchL_;
     std::vector<float> scratchR_;
+
+    bool quitRequested_ = false;          // set by the stubbed quit callback
 
     LvglJsEngine engine_;
     std::unique_ptr<PluginJsBridge> bridge_; // after engine_: destructs first

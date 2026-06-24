@@ -208,6 +208,16 @@ JSValue jsUiWriteProjectJson(JSContext* ctx, JSValueConst, int argc, JSValueCons
     return ret;
 }
 
+JSValue jsUiRequestCloseConfirm(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    try { harnessOrThrow()->requestCloseConfirm(); return JS_UNDEFINED; }
+    catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.requestCloseConfirm: %s", e.what()); }
+}
+
+JSValue jsUiQuitRequested(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    try { return JS_NewBool(ctx, harnessOrThrow()->quitRequested()); }
+    catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.quitRequested: %s", e.what()); }
+}
+
 JSValue jsUiPump(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     int iterations = 30;
     if (argc >= 1 && !JS_IsUndefined(argv[0])) JS_ToInt32(ctx, &iterations, argv[0]);
@@ -388,6 +398,8 @@ int runUiTestFile(const std::string& jsPath) {
         { "selectFile",      { jsUiSelectFile,      1 } },
         { "writeFile",       { jsUiWriteFile,       2 } },
         { "writeProjectJson",{ jsUiWriteProjectJson, 2 } },
+        { "requestCloseConfirm", { jsUiRequestCloseConfirm, 0 } },
+        { "quitRequested",   { jsUiQuitRequested,   0 } },
         { "pump",            { jsUiPump,            1 } },
         { "readMemory",      { jsUiReadMemory,      2 } },
         { "snapshot",        { jsUiSnapshot,        0 } },

@@ -36,6 +36,8 @@ interface NativeUi {
   selectFile(path: string): void;
   writeFile(path: string, bytes: ArrayBuffer): void;
   writeProjectJson(path: string, romPath: string): void;
+  requestCloseConfirm(): void;
+  quitRequested(): boolean;
   pump(iterations?: number): void;
   readMemory(sys: number, type: number): ArrayBuffer;
   snapshot(): { width: number; height: number; pixels: ArrayBuffer };
@@ -120,6 +122,11 @@ export const ui = {
   /** Write a schema-correct thin project JSON (one path-only SameBoy system at
    *  `romPath`). Point it at a non-existent path to drive the relink flow. */
   writeProjectJson(path: string, romPath: string): void { rp.writeProjectJson(path, romPath); },
+  /** Emit "confirm-close" (as PluginUI::onClose does on a vetoed standalone
+   *  close) to drive the unsaved-changes modal. */
+  requestCloseConfirm(): void { rp.requestCloseConfirm(); },
+  /** True once the modal's Discard/Save path invoked quitStandalone(). */
+  quitRequested(): boolean { return rp.quitRequested(); },
   /** Advance the UI + emulator `iterations` blocks (settles RPC + render). */
   pump(iterations = 30): void { rp.pump(iterations); },
   /** Read a whole memory region of a system as a copy (see Mem). */

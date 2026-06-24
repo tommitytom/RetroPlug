@@ -171,11 +171,22 @@ public:
     using OpenFileBrowserFn        = std::function<void(const char* title, bool saving, const char* defaultName)>;
     using SetWindowSizeFn          = std::function<void(unsigned w, unsigned h)>;
     using IsWindowSizeControlledFn = std::function<bool()>;
+    // Standalone-only: ask the host UI to quit (close the window). Set by PluginUI.
+    using QuitFn                   = std::function<void()>;
 
     void setEmitEventCallback(EmitEventFn fn)              { emitEvent_ = std::move(fn); }
     void setOpenFileBrowserCallback(OpenFileBrowserFn fn)  { openFileBrowser_ = std::move(fn); }
     void setWindowSizeCallback(SetWindowSizeFn fn)         { setWindowSize_ = std::move(fn); }
     void setIsWindowSizeControlledQuery(IsWindowSizeControlledFn fn) { isWindowSizeControlled_ = std::move(fn); }
+    void setQuitCallback(QuitFn fn)                        { quit_ = std::move(fn); }
+
+    // Unsaved-changes tracking for the standalone close prompt -------------
+    // True if the project structure/settings changed since the last save/load,
+    // or any cartridge's battery RAM differs from its `.sav`. Called by PluginUI
+    // from onClose() (C++→C++) and exposed over RPC for the modal.
+    bool hasUnsavedChanges();
+    // Emit "confirm-close" so the UI shows the unsaved-changes modal.
+    void requestCloseConfirm() { emit("confirm-close", ""); }
 
     // Public helpers used by PluginJsBridge / PluginUI directly (not RPC) ---
 
@@ -195,6 +206,19 @@ public:
     bool openSaveProjectBrowser();
     bool openExportZipBrowser();
     bool openLoadProjectBrowser();
+    // Standalone unsaved-changes close prompt.
+    struct UnsavedSummary { bool project = false; std::uint32_t sramSystems = 0; };
+    UnsavedSummary getUnsavedSummary();
+    // Path of the most recent project load/save ("" if never). Lets the modal
+    // decide between saveProjectToPath and the save browser.
+    std::string getCurrentProjectPath() { return currentProjectPath_; }
+    // Write the sibling `<rom>.sav` for every system whose battery RAM is dirty.
+    bool saveDirtySram();
+    // Save the project to its known path silently (no dialog). False if there's
+    // no current path yet — the caller should open the save browser instead.
+    bool saveProject();
+    // Standalone-only: actually quit (close the window) after the user confirms.
+    bool quitStandalone();
     bool loadRomFromPath(std::string path);
     bool addRomFromPath(std::string path);
     bool replaceRomFromPath(std::uint32_t id, std::string path);
@@ -371,6 +395,13 @@ private:
     // loadProjectFromPath (no missing files) and relinkMissingFile (all resolved).
     bool commitPendingProject();
 
+    // Unsaved-changes tracking (standalone close prompt).
+    void markProjectDirty() { projectDirty_ = true; }
+    // Per-system battery dirtiness against the last-persisted baseline. Seeds
+    // missing baselines (sibling .sav hash, else current battery) so a freshly
+    // loaded system reads clean. Returns the count of dirty systems.
+    std::uint32_t sramDirtyCount();
+
     Project*                  project_              = nullptr;
     CommandQueue*             commands_             = nullptr;
     EventQueue*               events_               = nullptr;
@@ -378,6 +409,12 @@ private:
     std::atomic<SystemId>*    focusedSystemId_      = nullptr;
     UserConfig*               userConfig_           = nullptr;
     RecentFiles*              recentFiles_          = nullptr;
+
+    // Standalone unsaved-changes state. projectDirty_ flips on any project-
+    // mutating RPC and clears on save/load. SRAM dirtiness is computed from the
+    // per-system baseline hashes below.
+    bool                      projectDirty_         = false;
+    QuitFn                    quit_;
 
     // Lazy-allocated; constructed on first kit-related call so a project
     // that never opens an LSDJ ROM doesn't pay the enkiTS thread-pool
@@ -427,9 +464,14 @@ private:
     };
     std::map<SystemId, RomWatchEntry> romWatchers_;
 
-    // Per-system last-written SRAM hash for auto-save dedup (nullopt = never
-    // checked). Pruned alongside the systems they track in pumpSramAutoSave.
-    std::map<SystemId, std::optional<std::uint64_t>> sramAutoSaveHashes_;
+    // Per-system "last-persisted SRAM hash" baseline (nullopt = not yet seeded).
+    // Seeded from the sibling .sav (or the current battery) on first sight, and
+    // updated on every persist (auto-save write + manual Save SRAM). Drives both
+    // auto-save dedup and the unsaved-SRAM check. Pruned with their systems.
+    std::map<SystemId, std::optional<std::uint64_t>> sramSavedHashes_;
+    // Per-system SRAM hash captured at load (seeded once, never updated). Lets
+    // the unsaved-SRAM check tell "changed since load" from "untouched."
+    std::map<SystemId, std::uint64_t> sramLoadBaseline_;
     // Throttle: only scan for dirty SRAM every sramAutoSaveIntervalSec_ seconds.
     std::chrono::steady_clock::time_point lastSramAutoSave_{};
     double sramAutoSaveIntervalSec_ = 5.0;

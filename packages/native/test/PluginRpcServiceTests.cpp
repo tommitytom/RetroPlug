@@ -556,3 +556,63 @@ TEST_CASE("SRAM auto-save is a no-op without a romPath or a battery",
 #endif
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unsaved-changes tracking for the standalone close prompt.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("unsaved: a project edit flips hasUnsavedChanges; saving clears it",
+          "[PluginRpcService][unsaved]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    Fixture fx;
+    // Fresh project (system adopted directly, no mutating RPC) reads clean; the
+    // first check also seeds the SRAM baseline so SRAM doesn't read dirty.
+    CHECK_FALSE(fx.service.hasUnsavedChanges());
+
+    REQUIRE(fx.service.setZoom(4));
+    CHECK(fx.service.hasUnsavedChanges());
+    CHECK(fx.service.getUnsavedSummary().project);
+
+    // Save via the same open-browser + onFileBrowserSelected path the UI uses.
+    const std::string proj = "/tmp/rpc_unsaved_proj.rplg";
+    REQUIRE(fx.service.openSaveProjectBrowser());
+    fx.service.onFileBrowserSelected(proj.c_str());
+    CHECK(fx.sawEvent("project-saved"));
+    CHECK_FALSE(fx.service.hasUnsavedChanges());
+
+    std::error_code ec;
+    std::filesystem::remove(proj, ec);
+}
+
+TEST_CASE("unsaved: an SRAM change flips hasUnsavedChanges; saveDirtySram clears it",
+          "[PluginRpcService][unsaved]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    PumpFixture fx;
+    const auto rom = loadRom();
+    auto t = makeTmpSys(fx.project, rom, "unsaved");
+
+    fx.service.pumpSramAutoSave();                 // seeds the load baseline
+    CHECK_FALSE(fx.service.hasUnsavedChanges());
+
+    const std::size_t n = t.sys->saveSramBytes().size();
+    REQUIRE(n > 0);
+    REQUIRE(t.sys->loadSramBytes(std::vector<std::uint8_t>(n, 0x5A)));
+    CHECK(fx.service.hasUnsavedChanges());
+    CHECK(fx.service.getUnsavedSummary().sramSystems == 1u);
+
+    REQUIRE(fx.service.saveDirtySram());           // writes the /tmp sibling
+    CHECK_FALSE(fx.service.hasUnsavedChanges());
+
+    std::error_code ec;
+    std::filesystem::remove(t.savPath, ec);
+}
+
+TEST_CASE("unsaved: quitStandalone fires the quit callback",
+          "[PluginRpcService][unsaved]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    Fixture fx;
+    bool quit = false;
+    fx.service.setQuitCallback([&]{ quit = true; });
+    CHECK(fx.service.quitStandalone());
+    CHECK(quit);
+}

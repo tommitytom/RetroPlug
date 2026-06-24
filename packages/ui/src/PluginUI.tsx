@@ -11,6 +11,7 @@ import { DEFAULT_ZOOM } from "./layout";
 import { StartScreen } from "./menu/StartScreen";
 import { AboutPanel } from "./menu/AboutPanel";
 import { RelinkMenu } from "./menu/RelinkMenu";
+import { UnsavedChangesModal } from "./menu/UnsavedChangesModal";
 import { buildInstanceMenu, type RecentEntry } from "./menu/menuDefs";
 import type { RpMissingFile } from "plugin-service";
 import { useBindingsEditor } from "./useBindingsEditor";
@@ -61,6 +62,9 @@ function PluginUI() {
     // relink menu is shown until every entry is located (load commits) or the
     // user cancels. Populated by the "missing-files" event from C++.
     const [missingFiles, setMissingFiles] = useState<RpMissingFile[]>([]);
+    // Standalone unsaved-changes prompt: C++ vetoes the window close and emits
+    // "confirm-close"; this shows the modal until the user resolves it.
+    const [confirmClose, setConfirmClose] = useState<boolean>(false);
 
     const menuOpenRef = useRef(menuOpen);
     useEffect(() => { menuOpenRef.current = menuOpen; }, [menuOpen]);
@@ -151,6 +155,14 @@ function PluginUI() {
             off("project-loaded", onResolved);
             off("project-load-cancelled", onResolved);
         };
+    }, []);
+
+    // Standalone close prompt: C++ emits "confirm-close" after vetoing the window
+    // close when there are unsaved changes.
+    useEffect(() => {
+        const handler = () => setConfirmClose(true);
+        on("confirm-close", handler);
+        return () => off("confirm-close", handler);
     }, []);
 
     // User-config / bindings: fetch on mount, rebuild the runtime key+pad
@@ -253,8 +265,13 @@ function PluginUI() {
     const missingFilesRef = useRef(missingFiles);
     useEffect(() => { missingFilesRef.current = missingFiles; }, [missingFiles]);
 
+    const confirmCloseRef = useRef(confirmClose);
+    useEffect(() => { confirmCloseRef.current = confirmClose; }, [confirmClose]);
+
     useKeyboard(useCallback((key: number, press: boolean) => {
         if (key === KEY_ESCAPE) {
+            // Unsaved-changes modal is up: its own Menu owns Esc (dismiss).
+            if (confirmCloseRef.current) return;
             // Relink menu is up: let its own Esc handler cancel the pending load
             // (don't fall through to opening the tile menu underneath).
             if (missingFilesRef.current.length > 0) return;
@@ -283,8 +300,8 @@ function PluginUI() {
             setMenuOpen(true);
             return;
         }
-        // Relink menu / Kit editor / About consume their own key events through
-        // their child keyboard group.
+        // Modals consume their own key events through their child keyboard group.
+        if (confirmCloseRef.current) return;
         if (missingFilesRef.current.length > 0) return;
         if (kitEditorOpenRef.current) return;
         if (aboutOpenRef.current) return;
@@ -459,7 +476,13 @@ function PluginUI() {
                 overflow: "hidden",
             }}
         >
-            {missingFiles.length > 0 ? (
+            {confirmClose ? (
+                <UnsavedChangesModal
+                    zoom={zoom}
+                    onClose={() => setConfirmClose(false)}
+                    sinkGroup={sinkGroupRef.current}
+                />
+            ) : missingFiles.length > 0 ? (
                 <RelinkMenu
                     missing={missingFiles}
                     zoom={zoom}

@@ -68,6 +68,13 @@ public:
         service_.setIsWindowSizeControlledQuery(std::move(fn));
     }
 
+    // Standalone close-veto plumbing. PluginUI binds a quit callback and, from
+    // its onClose() override, asks whether to prompt and triggers the modal.
+    using QuitFn = std::function<void()>;
+    void setQuitCallback(QuitFn fn) { service_.setQuitCallback(std::move(fn)); }
+    bool hasUnsavedChanges()        { return service_.hasUnsavedChanges(); }
+    void requestCloseConfirm()      { service_.requestCloseConfirm(); }
+
     // Called from PluginUI::uiFileBrowserSelected. Routes to load- / add- /
     // save-project / load-project per the mode set by the most recent
     // open*Browser RPC call.

@@ -14,6 +14,11 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::openSaveProjectBrowser>();
     server.template addMethod<&PluginRpcService::openExportZipBrowser>();
     server.template addMethod<&PluginRpcService::openLoadProjectBrowser>();
+    server.template addMethod<&PluginRpcService::getUnsavedSummary>();
+    server.template addMethod<&PluginRpcService::getCurrentProjectPath>();
+    server.template addMethod<&PluginRpcService::saveDirtySram>();
+    server.template addMethod<&PluginRpcService::saveProject>();
+    server.template addMethod<&PluginRpcService::quitStandalone>();
     server.template addMethod<&PluginRpcService::loadProjectFromPath>();
     server.template addMethod<&PluginRpcService::getMissingFiles>();
     server.template addMethod<&PluginRpcService::relinkMissingFile>();
