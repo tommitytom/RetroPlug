@@ -519,8 +519,6 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
           onSelect: () => { void plugin.setAutoSaveSram(!ctx.autoSaveSram); },
           onCycle:  () => { void plugin.setAutoSaveSram(!ctx.autoSaveSram); } },
         sep(),
-        { id: "audioDevice",  label: "Audio Device: -", kind: "action",
-          onSelect: stub("Audio Device"), keepOpen: true },
         { id: "openSettings", label: "Open Settings Folder", kind: "action",
           onSelect: () => { void plugin.$notify("openSettingsFolder"); } },
     ];

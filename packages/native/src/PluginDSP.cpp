@@ -124,7 +124,7 @@ protected:
     const char* getDescription() const          override { return "Multi-system retro emulator host (Game Boy / NES / GBA)"; }
     const char* getMaker()       const noexcept override { return "tommitytom"; }
     const char* getLicense()     const noexcept override { return "ISC"; }
-    uint32_t    getVersion()     const noexcept override { return d_version(0, 6, 1); }
+    uint32_t    getVersion()     const noexcept override { return d_version(0, 6, 2); }
     int64_t     getUniqueId()    const noexcept override { return d_cconst('R', 'P', 'l', 'g'); }
 
     // ----------------------------------------------------------------------------------------------------------------
