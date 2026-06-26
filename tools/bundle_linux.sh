@@ -32,7 +32,6 @@ fi
 ARCHIVE="$BIN_DIR/retroplug-v${VERSION}.7z"
 ITEMS=(
     retroplug
-    retroplug-cli
     retroplug.clap
     retroplug-vst2.so
     retroplug.vst3
