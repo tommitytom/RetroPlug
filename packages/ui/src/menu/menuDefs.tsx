@@ -98,6 +98,9 @@ export interface MenuContext {
     zoom:           number;
     // Global SRAM auto-save preference (UserConfig). Toggled in Settings.
     autoSaveSram:   boolean;
+    // Global default zoom 1..6 (UserConfig). Set in Settings; used for projects
+    // with no explicit zoom. Distinct from `zoom` (the resolved per-project value).
+    defaultZoom:    number;
     // Most-recent first. Sourced from C++ via plugin.getRecentFiles().
     recentFiles:    RecentEntry[];
     // Called by Menu when the user picks Kit Editor.
@@ -518,6 +521,12 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
           kind: "action", keepOpen: true,
           onSelect: () => { void plugin.setAutoSaveSram(!ctx.autoSaveSram); },
           onCycle:  () => { void plugin.setAutoSaveSram(!ctx.autoSaveSram); } },
+        // Global default zoom (UserConfig). Applies to projects with no explicit
+        // zoom of their own. Enter cycles forward; Left/Right cycle either way.
+        { id: "defaultZoom", label: `Default Zoom: ${ctx.defaultZoom}x`,
+          kind: "action", keepOpen: true,
+          onSelect: () => { void plugin.setDefaultZoom(cycleInt(ctx.defaultZoom, 1, 6, 1)); },
+          onCycle:  (dir) => { void plugin.setDefaultZoom(cycleInt(ctx.defaultZoom, 1, 6, dir)); } },
         sep(),
         { id: "openSettings", label: "Open Settings Folder", kind: "action",
           onSelect: () => { void plugin.$notify("openSettingsFolder"); } },

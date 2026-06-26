@@ -179,6 +179,7 @@ function PluginUI() {
                     setActiveGamepadBindings(cfg.activeGamepadBindings ?? "");
                     setAvailableProfiles(cfg.availableProfiles ?? []);
                     setAutoSaveSram(cfg.autoSaveSram === true);
+                    setDefaultZoom(cfg.defaultZoom >= 1 && cfg.defaultZoom <= 6 ? cfg.defaultZoom : DEFAULT_ZOOM);
                 }
             } catch (e) {
                 console.warn("[bindings] getUserConfig failed", e);
@@ -197,6 +198,9 @@ function PluginUI() {
     const [availableProfiles,      setAvailableProfiles]      = useState<string[]>([]);
     // Global SRAM auto-save preference (UserConfig). Surfaced in the Settings menu.
     const [autoSaveSram,           setAutoSaveSram]           = useState<boolean>(false);
+    // Global default zoom (UserConfig). Surfaced in the Settings menu; the
+    // fallback zoom for projects with no explicit value of their own.
+    const [defaultZoom,            setDefaultZoom]            = useState<number>(DEFAULT_ZOOM);
 
     // Recent files. Same pattern as user-config: fetch on mount, refetch
     // when C++ emits "recent-files-changed" after a successful load/save.
@@ -446,6 +450,7 @@ function PluginUI() {
         layout,
         zoom,
         autoSaveSram,
+        defaultZoom,
         recentFiles,
         openKitEditor,
         openAbout,
@@ -510,6 +515,7 @@ function PluginUI() {
                     layout={layout}
                     zoom={zoom}
                     autoSaveSram={autoSaveSram}
+                    defaultZoom={defaultZoom}
                     recentFiles={recentFiles}
                     openAbout={openAbout}
                     keyboardEditor={keyboardEditor}

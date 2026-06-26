@@ -301,12 +301,14 @@ void UiTestHarness::writeFile(const std::string& path,
 }
 
 void UiTestHarness::writeProjectJson(const std::string& path,
-                                     const std::string& romPath) {
+                                     const std::string& romPath,
+                                     std::uint8_t zoom) {
     // Schema-correct thin project (one path-only SameBoy system) via the real
     // serializer — hand-authored JSON is too brittle against reflect-cpp.
     SameBoyConfig sb;
     sb.romPath = romPath;
     ProjectConfig cfg;
+    cfg.settings.zoom = zoom;
     cfg.systems.push_back(sb);
     const std::string json = projectConfigToJsonFile(cfg);
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
@@ -341,6 +343,9 @@ void UiTestHarness::pump(int iterations) {
                 if (config) {
                     project_.clearSystems();
                     project_.config() = ProjectConfig{};
+                    // Keep the loaded project-wide settings (zoom / layout /
+                    // routing), matching PluginDSP::applyProjectFromConfig.
+                    project_.config().settings = config->settings;
                     SystemId first = 0;
                     for (const auto& sc : config->systems) {
                         const SystemId id = project_.addSystem(sc);

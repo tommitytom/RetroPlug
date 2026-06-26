@@ -235,6 +235,9 @@ protected:
         // drain.
         project.clearSystems();
         project.config() = ProjectConfig{};
+        // Keep the loaded project-wide settings (zoom / layout / MIDI + audio
+        // routing); the addSystem loop below repopulates the systems list.
+        project.config().settings = parsed.settings;
 
         SystemId firstAdded = 0;
         for (const auto& sysConfig : parsed.systems) {

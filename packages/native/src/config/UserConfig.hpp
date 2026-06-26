@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -70,6 +71,10 @@ public:
     // read for the auto-save pump. See system/SramAutoSave.hpp.
     bool setAutoSaveSram(bool enabled);
     bool autoSaveSram() const;
+
+    // Global default zoom (1..6) used for projects that carry no explicit zoom.
+    // Writes config.json and refreshes the snapshot. Rejects out-of-range values.
+    bool setDefaultZoom(std::uint8_t zoom);
 
     // Read a single profile file from disk. Returns nullopt if the file
     // doesn't exist or fails to parse. Used by the in-app bindings editor

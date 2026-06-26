@@ -265,6 +265,10 @@ public:
     // battery RAM is flushed to its sibling `<rom>.sav` on a timer (pumped from
     // PluginUI::uiIdle via pumpSramAutoSave). See system/SramAutoSave.hpp.
     bool setAutoSaveSram(bool enabled);
+    // Global default zoom (1..6), persisted to config.json. Distinct from the
+    // per-project setZoom — used as the fallback when a project carries no
+    // explicit zoom. See UserConfig::setDefaultZoom.
+    bool setDefaultZoom(std::uint32_t zoom);
     // Periodic battery-RAM flush; cheap no-op when the preference is off. Writes
     // only changed SRAM, creating the sibling .sav on first write. UI thread.
     void pumpSramAutoSave();

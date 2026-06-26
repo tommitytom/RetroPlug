@@ -196,12 +196,17 @@ JSValue jsUiWriteFile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
 }
 
 JSValue jsUiWriteProjectJson(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (argc < 2) return JS_ThrowTypeError(ctx, "ui.writeProjectJson(path, romPath)");
+    if (argc < 2) return JS_ThrowTypeError(ctx, "ui.writeProjectJson(path, romPath, zoom?)");
     const char* path = JS_ToCString(ctx, argv[0]);
     const char* rom  = JS_ToCString(ctx, argv[1]);
     if (!path || !rom) { if (path) JS_FreeCString(ctx, path); if (rom) JS_FreeCString(ctx, rom); return JS_EXCEPTION; }
+    std::int32_t zoom = 0;
+    if (argc >= 3 && !JS_IsUndefined(argv[2])) JS_ToInt32(ctx, &zoom, argv[2]);
     JSValue ret;
-    try { harnessOrThrow()->writeProjectJson(path, rom); ret = JS_UNDEFINED; }
+    try {
+        harnessOrThrow()->writeProjectJson(path, rom, static_cast<std::uint8_t>(zoom));
+        ret = JS_UNDEFINED;
+    }
     catch (const std::exception& e) { ret = JS_ThrowTypeError(ctx, "ui.writeProjectJson: %s", e.what()); }
     JS_FreeCString(ctx, path);
     JS_FreeCString(ctx, rom);
@@ -410,7 +415,7 @@ int runUiTestFile(const std::string& jsPath) {
         { "loadProject",     { jsUiLoadProject,     1 } },
         { "selectFile",      { jsUiSelectFile,      1 } },
         { "writeFile",       { jsUiWriteFile,       2 } },
-        { "writeProjectJson",{ jsUiWriteProjectJson, 2 } },
+        { "writeProjectJson",{ jsUiWriteProjectJson, 3 } },
         { "seedRecent",      { jsUiSeedRecent,      2 } },
         { "requestCloseConfirm", { jsUiRequestCloseConfirm, 0 } },
         { "quitRequested",   { jsUiQuitRequested,   0 } },

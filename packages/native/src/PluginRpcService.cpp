@@ -861,6 +861,12 @@ bool PluginRpcService::setAutoSaveSram(bool enabled) {
     return userConfig_->setAutoSaveSram(enabled);
 }
 
+bool PluginRpcService::setDefaultZoom(std::uint32_t zoom) {
+    if (!userConfig_) return false;
+    if (zoom < 1u || zoom > 6u) return false;
+    return userConfig_->setDefaultZoom(static_cast<std::uint8_t>(zoom));
+}
+
 void PluginRpcService::pumpSramAutoSave() {
     if (!project_) return;
 

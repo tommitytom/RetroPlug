@@ -172,6 +172,29 @@ bool UserConfig::autoSaveSram() const {
     return current_.autoSaveSram;
 }
 
+bool UserConfig::setDefaultZoom(std::uint8_t zoom) {
+    if (!started_.load()) return false;
+    if (zoom < 1 || zoom > 6) return false;
+    UserConfigJson cfg;
+    cfg.schemaVersion = 1;
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (current_.defaultZoom == zoom) return true; // no-op write
+        cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
+        cfg.activeGamepadBindings  = current_.activeGamepadBindings;
+        cfg.defaultZoom            = zoom;
+        cfg.autoSaveSram           = current_.autoSaveSram;
+    }
+    if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
+        std::fprintf(stderr, "[user-config] failed to write %s\n",
+                     configFile_.string().c_str());
+        return false;
+    }
+    reloadFromDisk();
+    if (onReload_) onReload_();
+    return true;
+}
+
 std::optional<BindingMapJson> UserConfig::loadProfile(std::string_view name) const {
     if (!isValidProfileName(name)) return std::nullopt;
     const fs::path p = bindingsDir_ / (std::string(name) + ".json");

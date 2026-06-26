@@ -91,7 +91,10 @@ public:
     void writeFile(const std::string& path, const std::vector<std::uint8_t>& bytes);
     // Write a schema-correct thin project JSON with one path-only SameBoy system
     // pointing at `romPath` (use a non-existent path to exercise relink).
-    void writeProjectJson(const std::string& path, const std::string& romPath);
+    // `zoom` (0 = inherit default; 1..6 = explicit) is written to the project
+    // settings so a test can verify settings survive a load.
+    void writeProjectJson(const std::string& path, const std::string& romPath,
+                          std::uint8_t zoom = 0);
 
     // Add a project to the recent list (with an optional display alias) and tell
     // the UI to refetch. The headless stand-in for the real load path recording a

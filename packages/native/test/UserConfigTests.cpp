@@ -169,6 +169,40 @@ TEST_CASE("UserConfig::setAutoSaveSram persists and sticks across reloads", "[us
     fs::remove_all(dir);
 }
 
+TEST_CASE("UserConfig::setDefaultZoom persists, clamps, and sticks across reloads", "[user-config]") {
+    auto dir = makeTempDir("defaultzoom");
+
+    {
+        UserConfig cfg(dir);
+        cfg.start();
+        REQUIRE(cfg.snapshot().defaultZoom == 3);    // baked-in default
+
+        // Out-of-range values are rejected and leave the value untouched.
+        REQUIRE_FALSE(cfg.setDefaultZoom(0));
+        REQUIRE_FALSE(cfg.setDefaultZoom(7));
+        REQUIRE(cfg.snapshot().defaultZoom == 3);
+
+        REQUIRE(cfg.setDefaultZoom(5));
+        REQUIRE(cfg.snapshot().defaultZoom == 5);
+
+        // config.json on disk records the value.
+        auto cfgText = slurp(dir / "config.json");
+        REQUIRE(cfgText.find("defaultZoom") != std::string::npos);
+    }
+
+    // A fresh instance over the same dir reads the preference back (sticky),
+    // and an unrelated setter must not clobber it.
+    {
+        UserConfig cfg(dir);
+        cfg.start();
+        REQUIRE(cfg.snapshot().defaultZoom == 5);
+        REQUIRE(cfg.setAutoSaveSram(true));
+        REQUIRE(cfg.snapshot().defaultZoom == 5);
+    }
+
+    fs::remove_all(dir);
+}
+
 TEST_CASE("UserConfig live-reloads when bindings file changes on disk", "[user-config]") {
     auto dir = makeTempDir("live-reload");
 
