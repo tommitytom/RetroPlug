@@ -7,6 +7,15 @@
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# SameBoySystem.cpp pokes SameBoy internals (GNU Core headers cl.exe can't parse).
+# On Windows it's compiled by clang-cl into retroplug-samebsys (top-level
+# CMakeLists) and linked in; elsewhere it builds in place. Mirrors the plugin/CLI.
+if(WIN32)
+    set(_test_sbs_src "")
+else()
+    set(_test_sbs_src ../src/system/sameboy/SameBoySystem.cpp)
+endif()
+
 add_executable(retroplug-tests
     ArduinoboyMasterTests.cpp
     CommandQueueTests.cpp
@@ -51,7 +60,7 @@ target_compile_definitions(retroplug-tests PRIVATE
 )
 
 target_include_directories(retroplug-tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/deps/miniz
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz
 )
 
 target_link_libraries(retroplug-tests PRIVATE
@@ -120,7 +129,7 @@ add_executable(retroplug-sameboy-tests
     ../src/transport/CommandApply.cpp   # applySystemCommand: unit test + stress harness
     ../src/system/sameboy/LinkGroup.cpp
     ../src/system/sameboy/RomSniffer.cpp
-    ../src/system/sameboy/SameBoySystem.cpp
+    ${_test_sbs_src}
     ../src/system/sameboy/roles/ArduinoboyMaster.cpp
     ../src/system/sameboy/roles/LsdjSyncRole.cpp
     ../src/system/sameboy/roles/LsdjKitPatchRole.cpp
@@ -148,6 +157,7 @@ target_link_libraries(retroplug-sameboy-tests PRIVATE
     rpcpp
     r8brain
     sameboy
+    $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )
 
 catch_discover_tests(retroplug-sameboy-tests)
@@ -174,7 +184,7 @@ add_executable(retroplug-rpc-tests
     ../src/system/SystemBase.cpp
     ../src/system/sameboy/LinkGroup.cpp
     ../src/system/sameboy/RomSniffer.cpp
-    ../src/system/sameboy/SameBoySystem.cpp
+    ${_test_sbs_src}
     ../src/system/sameboy/roles/ArduinoboyMaster.cpp
     ../src/system/sameboy/roles/LsdjSyncRole.cpp
     ../src/system/sameboy/roles/LsdjKitPatchRole.cpp
@@ -210,6 +220,7 @@ target_link_libraries(retroplug-rpc-tests PRIVATE
     efsw
     miniz
     miniaudio   # header-only include path for lsdj/SampleCache.cpp
+    $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )
 
 catch_discover_tests(retroplug-rpc-tests)
@@ -289,7 +300,7 @@ add_executable(retroplug-ui-test
     ../src/system/SystemBase.cpp
     ../src/system/sameboy/LinkGroup.cpp
     ../src/system/sameboy/RomSniffer.cpp
-    ../src/system/sameboy/SameBoySystem.cpp
+    ${_test_sbs_src}
     ../src/system/sameboy/roles/ArduinoboyMaster.cpp
     ../src/system/sameboy/roles/LsdjSyncRole.cpp
     ../src/system/sameboy/roles/LsdjKitPatchRole.cpp
@@ -311,9 +322,9 @@ target_include_directories(retroplug-ui-test PRIVATE
     # txiki.js / QuickJS headers for the JS trampoline in UiTestHarness.cpp.
     # (lvgl-js-native PUBLIC-propagates the lv_binding_js render include dir, so
     # "native/..." headers resolve transitively.)
-    ${CMAKE_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/src
-    ${CMAKE_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/deps/quickjs
-    ${CMAKE_SOURCE_DIR}/deps/lv_binding_js/deps/txiki/deps/miniz
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/src
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz
 )
 
 target_compile_definitions(retroplug-ui-test PRIVATE
@@ -330,6 +341,7 @@ target_link_libraries(retroplug-ui-test PRIVATE
     miniaudio
     efsw
     miniz
+    $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )
 
 set_target_properties(retroplug-ui-test PROPERTIES
