@@ -35,7 +35,7 @@ test("author a sav from JSON and boot LSDJ from it", () => {
 
 test("generated zod accepts valid fixtures and rejects bad ones", () => {
   const goodKit = {
-    type: "kit", name: "DRUM", panning: "None", tableMode: "Play", volume: "V3",
+    type: "kit", name: "DRUM", panning: "None", tableMode: "Play", volume: 0xA8,
     kit1: 5, kit2: 0, halfSpeed: false, loop1: "Off", loop2: "Off",
     distortion: "Clip", pitch: 0, length1: 0, offset1: 0, offset2: 0,
   };

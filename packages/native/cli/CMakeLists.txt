@@ -8,6 +8,18 @@
 # (the codegen schema dumper). Deliberately free of txiki/QuickJS so the schema
 # dumper links without the JS runtime — that decoupling is what breaks the build
 # cycle once retroplug-cli embeds a TS bundle compiled from this schema.
+
+# SameBoySystem.cpp pokes SameBoy internals (GNU statement-exprs / __attribute__
+# in the Core headers), which cl.exe can't parse. On Windows it's compiled by
+# clang-cl into the retroplug-samebsys static lib (see the top-level CMakeLists)
+# and linked in below — the same isolation the plugin uses; elsewhere it builds
+# in place.
+if(WIN32)
+    set(_cli_sbs_src "")
+else()
+    set(_cli_sbs_src ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/SameBoySystem.cpp)
+endif()
+
 add_library(retroplug-cli-core STATIC
     HarnessRpcService.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/project/Project.cpp
@@ -21,7 +33,7 @@ add_library(retroplug-cli-core STATIC
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/SystemBase.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/LinkGroup.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/RomSniffer.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/SameBoySystem.cpp
+    ${_cli_sbs_src}
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
@@ -54,6 +66,8 @@ target_link_libraries(retroplug-cli-core PUBLIC
     enkiTS    # used by KitCompiler for per-sample parallel compile
     miniaudio # header-only audio decoder used by SampleCache
     miniz     # used by projectConfigToZip for --save-rplg
+    # Windows: SameBoySystem.cpp lives in this clang-cl-compiled lib (see above).
+    $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )
 
 set_target_properties(retroplug-cli-core PROPERTIES

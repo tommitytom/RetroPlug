@@ -536,7 +536,7 @@ TEST_CASE("sav with a stored project round-trips at the model level", "[lsdj-sav
     proj.version = 3;
     proj.song.settings.tempo = 150;
     proj.song.instruments[0] = KitInstrument{}; // a non-default allocated instrument
-    sav.projects[0] = proj;
+    sav.projects[0] = std::make_shared<StoredProject>(proj);
 
     const auto img = codec::encodeSav(sav);
     auto res = codec::decodeSav(img);

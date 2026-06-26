@@ -71,10 +71,10 @@ rfl::Result<model::Sav> decodeSav(std::span<const std::uint8_t> savBytes) {
         auto song = decodeSong(songBytes.value());
         if (!song) return rfl::error(song.error().what());
 
-        model::StoredProject proj;
-        proj.name    = readName(savBytes, kProjectNames + p * kNameLen);
-        proj.version = savBytes[kProjectVers + p];
-        proj.song    = std::move(song.value());
+        auto proj = std::make_shared<model::StoredProject>();
+        proj->name    = readName(savBytes, kProjectNames + p * kNameLen);
+        proj->version = savBytes[kProjectVers + p];
+        proj->song    = std::move(song.value());
         sav.projects[p] = std::move(proj);
     }
 

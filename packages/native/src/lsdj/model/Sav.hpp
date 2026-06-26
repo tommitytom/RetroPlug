@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <optional>
+#include <memory>
 #include <string>
 
 #include "FixedArray.hpp"
@@ -19,10 +19,14 @@ struct StoredProject {
 };
 
 struct Sav {
-    Byte                                          activeProjectIndex = 0xFF; // 0xFF = none
-    FixedArray<Byte, 30>                          reserved{};                // 0x8120, opaque
-    Song                                          workingSong;
-    FixedArray<std::optional<StoredProject>, 32>  projects{};
+    Byte                                              activeProjectIndex = 0xFF; // 0xFF = none
+    FixedArray<Byte, 30>                              reserved{};                // 0x8120, opaque
+    Song                                              workingSong;
+    // Stored projects are heap-allocated (each embeds a full Song): inline
+    // storage for 32 would put ~2 MB on the stack and blow MSVC's 1 MB default.
+    // shared_ptr (not unique_ptr) so the copy-based FixedArray reflector still
+    // compiles; serializes identically to optional (null-or-object).
+    FixedArray<std::shared_ptr<StoredProject>, 32>    projects{};
 };
 
 } // namespace rp::lsdj::model

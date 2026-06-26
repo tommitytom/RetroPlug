@@ -30,7 +30,8 @@ if (runner !== "cli" && runner !== "ui") {
 
 const TEST_TS_ROOT = path.join(REPO_ROOT, "test/ts");
 const testRoot = runner === "ui" ? path.join(TEST_TS_ROOT, "ui") : TEST_TS_ROOT;
-const binary = path.join(REPO_ROOT, "build/bin", runner === "ui" ? "retroplug-ui-test" : "retroplug-cli");
+const binary = path.join(REPO_ROOT, "build/bin", runner === "ui" ? "retroplug-ui-test" : "retroplug-cli")
+    + (process.platform === "win32" ? ".exe" : "");
 // cli bundles land in build/test-js/<slug>.js; ui in build/test-js/ui/<slug>.js
 const outRoot = runner === "ui"
     ? path.join(REPO_ROOT, "build/test-js/ui")

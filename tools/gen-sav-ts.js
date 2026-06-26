@@ -18,8 +18,11 @@ const { pathToFileURL } = require('url');
 const { execFileSync } = require('child_process');
 
 const REPO_ROOT  = path.resolve(__dirname, '..');
-const LV_DIR     = path.join(REPO_ROOT, 'deps/lv_binding_js');
-const CODEGEN_TS = path.join(REPO_ROOT, 'deps/rpcpp/clients/typescript/codegen/src/index.ts');
+// The framework (lv_binding_js + rpcpp) lives in the dpf.js package, resolved
+// from node_modules (location-independent — same as tools/esbuild-shared.js).
+const DPFJS_DIR  = path.dirname(require.resolve('dpf.js/package.json'));
+const LV_DIR     = path.join(DPFJS_DIR, 'deps/lv_binding_js');
+const CODEGEN_TS = path.join(DPFJS_DIR, 'deps/rpcpp/clients/typescript/codegen/src/index.ts');
 const esbuild    = require(path.join(LV_DIR, 'node_modules/esbuild'));
 
 const [, , exePath, outDirArg] = process.argv;
