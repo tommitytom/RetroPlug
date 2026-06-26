@@ -19,8 +19,15 @@ set(BR_OUT "${CMAKE_BINARY_DIR}/generated/system/sameboy/bootroms")
 file(MAKE_DIRECTORY "${BR_OBJ}")
 file(MAKE_DIRECTORY "${BR_OUT}")
 
-# pb12 logo compressor (host-native helper).
-add_executable(sameboy_pb12 "${BR_SRC}/pb12.c")
+# pb12 logo compressor (host-native helper). Upstream's pb12.c is POSIX-only
+# (unistd.h / read / write / void* arithmetic) and won't compile under MSVC, so
+# on Windows we build RetroPlug's portable port instead of the SameBoy submodule
+# source. Both emit an identical pb12 stream.
+if(WIN32)
+    add_executable(sameboy_pb12 "${CMAKE_SOURCE_DIR}/cmake/pb12.c")
+else()
+    add_executable(sameboy_pb12 "${BR_SRC}/pb12.c")
+endif()
 set_target_properties(sameboy_pb12 PROPERTIES
     C_STANDARD 99
     RUNTIME_OUTPUT_DIRECTORY "${BR_OBJ}"
@@ -88,7 +95,8 @@ endforeach()
 
 add_custom_target(sameboy_bootroms DEPENDS ${_bootrom_headers})
 
-# Make the generated dir visible to anyone linking `sameboy`, and force the
-# headers to exist before `sameboy` (and its dependents) build.
-target_include_directories(sameboy PUBLIC "${CMAKE_BINARY_DIR}/generated")
-add_dependencies(sameboy sameboy_bootroms)
+# NOTE: the `sameboy` target's dependency on sameboy_bootroms and the generated
+# include dir are wired in cmake/sameboy.cmake AFTER the sameboy library is
+# created — this file only produces the bootrom headers + the sameboy_bootroms
+# target, so it can be include()'d before `sameboy` exists (needed by the
+# Windows clang-cl path, where the core objects depend on sameboy_bootroms).

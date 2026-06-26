@@ -4,6 +4,16 @@
 
 cmake_minimum_required(VERSION 3.14...3.31)
 
+# Windows/MSVC: pin the static CRT (/MT) across the whole tree. The framework
+# (txiki, mbedtls, libwebsockets) forces MultiThreaded for its own targets, so
+# everything that links into the plugin must agree or the final link fails with
+# LNK4098 (mismatched CRT). CMP0091 NEW makes CMAKE_MSVC_RUNTIME_LIBRARY the
+# mechanism; CMAKE_POLICY_DEFAULT_CMP0091 forces it into add_subdirectory'd deps
+# regardless of their own cmake_minimum_required. Requires vcpkg's
+# x64-windows-static triplet for SDL2/libffi. (Matches lvgl-template-plugin.)
+cmake_policy(SET CMP0091 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
+
 # Default to Release when the user hasn't asked for a specific build type.
 # Without this the project compiles at -O0 (no opt flags), which makes the
 # DSP path 3-4x slower than necessary and the standalone visibly chug. Set
@@ -18,6 +28,13 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(NAME retroplug)
 project(${NAME})
+
+# Force the static MSVC runtime AFTER project() so it wins over anything the
+# vcpkg toolchain set during project init. All static deps must agree on /MT.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        CACHE STRING "MSVC runtime library" FORCE)
+endif()
 
 # Force a non-executable stack on Linux ELF outputs. Without this, one
 # unmarked assembly object in WAMR (txiki's wasm runtime —
@@ -43,6 +60,27 @@ endif()
 # so RetroPlug's lv_conf.h wins over the framework's default (CACHE no-FORCE).
 set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/packages/native/src/lv_conf.h" CACHE PATH "")
 
+# <windows.h> defines min()/max() macros that break std::numeric_limits<T>::max()
+# and std::min/max (e.g. lsdj/KitUtil.cpp). NOMINMAX suppresses them — safe and
+# standard; unlike WIN32_LEAN_AND_MEAN it removes no headers, so it's global.
+# (The earlier /FI cpp_stdlib_preinclude.h workaround for the extern "C" / STL
+# C2894 issue is gone — tommitytom/txiki.js's self-guarding headers + dropping
+# lv_binding_js's external extern "C" wraps fix it at the root.)
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
+
+# NOTE: the NOGDI / WIN32_LEAN_AND_MEAN fix for the GDI `Arc` name collision is
+# applied PER-TARGET on lvgl-js-native (in dpf.js's CMakeLists), not globally —
+# WIN32_LEAN_AND_MEAN drops winioctl.h which wamr's win_file.c needs, so it must
+# not leak into the framework's C deps. Matches the lvgl-template-plugin build.
+
+# MSVC reports __cplusplus as 199711L regardless of /std:c++NN unless told
+# otherwise; dpf-widgets' LVGL.hpp #errors when it sees < 201103L.
+if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>)
+endif()
+
 # --- dpf.js: the generic DPF + LVGL + txiki/QuickJS + rpcpp framework, consumed
 # as an npm source package. require.resolve gives its on-disk path; the
 # add_subdirectory pulls in DPF (which defines dpf_add_plugin globally), LVGL,
@@ -67,8 +105,17 @@ add_subdirectory("${DPFJS_PATH}" dpfjs)
 # JACK target only (audio backend fallback), so we find SDL2 ourselves at
 # the parent scope and link it into every variant after dpf_add_plugin.
 # Only SDL_INIT_GAMECONTROLLER is initialised — see packages/native/src/GamepadManager.cpp.
-find_package(PkgConfig REQUIRED)
-if(APPLE)
+if(WIN32)
+    # Windows has no pkg-config; SDL2 comes from vcpkg's CONFIG package, which
+    # exposes the SDL2::SDL2 imported target. Wrap it in a PkgConfig::SDL2
+    # INTERFACE target so the rest of the file links the same name on every
+    # platform. Requires configuring with the vcpkg toolchain file (or a
+    # CMAKE_PREFIX_PATH pointing at the vcpkg-installed tree).
+    find_package(SDL2 CONFIG REQUIRED)
+    add_library(PkgConfig::SDL2 INTERFACE IMPORTED)
+    target_link_libraries(PkgConfig::SDL2 INTERFACE SDL2::SDL2)
+elseif(APPLE)
+    find_package(PkgConfig REQUIRED)
     # SDL2.framework from /Library/Frameworks. find_library picks the right
     # arch slice for each value of CMAKE_OSX_ARCHITECTURES automatically,
     # so the same universal framework satisfies both single-arch and
@@ -79,6 +126,7 @@ if(APPLE)
     target_include_directories(PkgConfig::SDL2 INTERFACE
         ${SDL2_FRAMEWORK}/Headers)
 else()
+    find_package(PkgConfig REQUIRED)
     pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
 endif()
 
@@ -86,6 +134,44 @@ endif()
 
 # --- SameBoy: Game Boy emulator core (submodule at deps/sameboy) ---
 include(cmake/sameboy.cmake)
+
+# --- SameBoySystem.cpp: clang-cl isolation (Windows) ------------------------
+# SameBoySystem.cpp #defines GB_INTERNAL to reach SameBoy's internal struct view
+# and GNU-extension headers, which MSVC cl.exe cannot parse. Like the sameboy
+# core, compile it with clang-cl (MSVC-ABI) into a static lib and link THAT into
+# the plugin / tools rather than compiling the .cpp in the MSVC targets. It is
+# the only RetroPlug C++ that needs the internal view (verified via rpc-schema-dump
+# -k 0). Everything else compiles fine under MSVC because GB_INTERNAL is PRIVATE
+# to the sameboy target (gb.h then exposes GB_gameboy_t as an opaque same-size blob).
+if(WIN32)
+    find_program(RP_CLANG_CL clang-cl
+        HINTS "$ENV{VCINSTALLDIR}Tools/Llvm/x64/bin"
+              "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/Llvm/x64/bin"
+        REQUIRED)
+    set(_sbs_src "${CMAKE_SOURCE_DIR}/packages/native/src/system/sameboy/SameBoySystem.cpp")
+    set(_sbs_obj "${CMAKE_BINARY_DIR}/sameboy-clang/SameBoySystem.cpp.obj")
+    add_custom_command(
+        OUTPUT "${_sbs_obj}"
+        COMMAND "${RP_CLANG_CL}" /nologo /c /MT /O2 /Ob2 /DNDEBUG /EHsc /std:c++20 /Zc:__cplusplus
+            "/FI${CMAKE_BINARY_DIR}/sameboy-clang/sameboy_version.h"
+            # GB_DISABLE_* MUST match the sameboy core or GB_gameboy_t's layout diverges.
+            -DGB_DISABLE_TIMEKEEPING -DGB_DISABLE_DEBUGGER
+            -DNOMINMAX -DWIN32_LEAN_AND_MEAN -DNOGDI
+            "-I${CMAKE_SOURCE_DIR}/packages/native/src"
+            "-I${CMAKE_SOURCE_DIR}/deps/sameboy/Core"
+            "-I${CMAKE_BINARY_DIR}/generated"
+            "-I${CMAKE_BINARY_DIR}/_deps/reflectcpp-src/include"
+            "/Fo${_sbs_obj}" "${_sbs_src}"
+        DEPENDS "${_sbs_src}" sameboy_bootroms
+        COMMENT "clang-cl (sameboy) SameBoySystem.cpp"
+        VERBATIM)
+    add_library(retroplug-samebsys STATIC "${_sbs_obj}")
+    set_target_properties(retroplug-samebsys PROPERTIES LINKER_LANGUAGE CXX)
+    # On Windows the source is built above; elsewhere it compiles in-target.
+    set(RP_SAMEBOYSYSTEM_SRC "")
+else()
+    set(RP_SAMEBOYSYSTEM_SRC packages/native/src/system/sameboy/SameBoySystem.cpp)
+endif()
 
 # --- Mesen: NES emulator core (multi-system upstream; we use the NES path) ---
 add_subdirectory(deps/mesen)
@@ -136,7 +222,7 @@ add_executable(rpc-schema-dump
     packages/native/src/system/SystemBase.cpp
     packages/native/src/system/sameboy/LinkGroup.cpp
     packages/native/src/system/sameboy/RomSniffer.cpp
-    packages/native/src/system/sameboy/SameBoySystem.cpp
+    ${RP_SAMEBOYSYSTEM_SRC}
     packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
     packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
     packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
@@ -148,7 +234,8 @@ add_executable(rpc-schema-dump
     packages/native/src/system/mesen/roles/NesN8MidiRole.cpp)
 target_include_directories(rpc-schema-dump PRIVATE packages/native/src)
 target_include_directories(rpc-schema-dump PRIVATE ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz)
-target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw miniz)
+target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw miniz
+    $<$<BOOL:${WIN32}>:retroplug-samebsys>)
 
 # --- sav-schema-dump: prints the LSDj Sav model's JSON Schema for zod/TS gen ---
 # Header-only model + reflect-cpp (via rpcpp); no codec sources needed since
@@ -269,7 +356,7 @@ dpf_add_plugin(${NAME}
       packages/native/src/system/SystemBase.cpp
       packages/native/src/system/sameboy/LinkGroup.cpp
       packages/native/src/system/sameboy/RomSniffer.cpp
-      packages/native/src/system/sameboy/SameBoySystem.cpp
+      ${RP_SAMEBOYSYSTEM_SRC}
       packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
       packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
       packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
@@ -302,7 +389,7 @@ dpf_add_plugin(${NAME}
       packages/native/src/system/SystemBase.cpp
       packages/native/src/system/sameboy/LinkGroup.cpp
       packages/native/src/system/sameboy/RomSniffer.cpp
-      packages/native/src/system/sameboy/SameBoySystem.cpp
+      ${RP_SAMEBOYSYSTEM_SRC}
       packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
       packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
       packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
@@ -325,6 +412,9 @@ target_compile_definitions(${NAME} PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 # miniz) + their include dirs (incl. txiki's miniz for MinizZip.hpp).
 target_link_libraries(${NAME} PUBLIC dpfjs::core $<$<BOOL:${WIN32}>:winmm>)
 target_link_libraries(${NAME} PUBLIC sameboy)
+# Windows: SameBoySystem.cpp is compiled by clang-cl into this static lib (see the
+# clang-cl isolation block above) instead of in the MSVC plugin sources.
+target_link_libraries(${NAME} PUBLIC $<$<BOOL:${WIN32}>:retroplug-samebsys>)
 target_link_libraries(${NAME} PUBLIC mesen)
 target_link_libraries(${NAME} PUBLIC r8brain)
 target_link_libraries(${NAME} PUBLIC enkiTS)
@@ -366,6 +456,24 @@ target_link_libraries(${NAME} PUBLIC lvgl::demos)
 # without needing a per-variant loop). DSP-only outputs (the LV2 split's
 # -dsp half) never link UI sources and thus never see SDL.
 target_link_libraries(${NAME}-ui PUBLIC PkgConfig::SDL2)
+
+# --- Windows link-stage fixes (from the lvgl-template-plugin Windows build) ---
+if(WIN32)
+    # The JACK standalone's import lib (${NAME}.lib) and the umbrella static
+    # library share an output name → LNK1149 when both are built. Rename the
+    # umbrella so they no longer collide.
+    if(TARGET ${NAME})
+        set_target_properties(${NAME} PROPERTIES OUTPUT_NAME "${NAME}-common")
+    endif()
+    # DPF only exports the legacy VST3 entry points (InitDll/ExitDll) on Windows,
+    # but VST3 SDK 3.7+ hosts (incl. FL Studio) look for ModuleEntry/ModuleExit.
+    # Alias both names to the same functions.
+    if(MSVC AND TARGET ${NAME}-vst3)
+        target_link_options(${NAME}-vst3 PRIVATE
+            "/EXPORT:ModuleEntry=InitDll"
+            "/EXPORT:ModuleExit=ExitDll")
+    endif()
+endif()
 
 # --- Tests (Catch2) ----------------------------------------------------------
 # Gated so the default build stays small; opt in with -DBUILD_TESTING=ON.

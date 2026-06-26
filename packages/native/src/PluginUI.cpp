@@ -51,8 +51,18 @@ extern "C" {
 START_NAMESPACE_DISTRHO
 
 // Fallback for plugin formats where DSP and UI live in separate binaries (LV2).
+// In-process formats (VST3/CLAP/…) link PluginDSP.cpp's strong getSharedDSPData,
+// which must win over this default.
+#if defined(_MSC_VER)
+// MSVC has no weak symbols; emulate with /alternatename — the linker uses this
+// default only when getSharedDSPData is otherwise undefined (LV2's UI binary).
+// DPF uses the same idiom (choc_DynamicLibrary.h). Mangled name is x64-specific.
+SharedDSPData* getSharedDSPData_weakDefault(void*) { return nullptr; }
+#pragma comment(linker, "/alternatename:?getSharedDSPData@DISTRHO@@YAPEAUSharedDSPData@1@PEAX@Z=?getSharedDSPData_weakDefault@DISTRHO@@YAPEAUSharedDSPData@1@PEAX@Z")
+#else
 __attribute__((weak))
 SharedDSPData* getSharedDSPData(void*) { return nullptr; }
+#endif
 
 // --------------------------------------------------------------------------------------------------------------------
 
