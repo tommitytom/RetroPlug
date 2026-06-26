@@ -34,7 +34,11 @@ std::string canonicalize(const std::string& raw) {
         p = fs::absolute(fs::path(raw), ec);
         if (ec) return raw;
     }
-    return p.string();
+    // generic_string() yields forward slashes on every platform (a no-op on
+    // POSIX). Keeps recent.json portable and the dedup key stable regardless of
+    // the separator the caller passed in — std::filesystem on Windows would
+    // otherwise emit native backslashes here.
+    return p.generic_string();
 }
 
 } // namespace

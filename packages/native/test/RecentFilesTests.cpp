@@ -42,6 +42,20 @@ void writeFile(const fs::path& p, const std::string& contents) {
     out.write(contents.data(), static_cast<std::streamsize>(contents.size()));
 }
 
+// Mirror RecentFiles::canonicalize so expectations match the stored form on
+// every platform: on Windows a rooted POSIX path like "/tmp/x" canonicalizes to
+// "C:/tmp/x" (drive-absolute, forward slashes via generic_string), so the raw
+// literal won't compare equal.
+std::string canon(const std::string& raw) {
+    std::error_code ec;
+    fs::path p = fs::weakly_canonical(fs::path(raw), ec);
+    if (ec || p.empty()) {
+        p = fs::absolute(fs::path(raw), ec);
+        if (ec) return raw;
+    }
+    return p.generic_string();
+}
+
 } // namespace
 
 TEST_CASE("RecentFiles starts empty when no file exists", "[recent-files]") {
@@ -66,16 +80,16 @@ TEST_CASE("RecentFiles add() prepends and writes recent.json", "[recent-files]")
 
     auto snap = rf.snapshot();
     REQUIRE(snap.size() == 2);
-    REQUIRE(snap[0].path == "/tmp/other.rplg");
-    REQUIRE(snap[1].path == "/tmp/song.rplg");
+    REQUIRE(snap[0].path == canon("/tmp/other.rplg"));
+    REQUIRE(snap[1].path == canon("/tmp/song.rplg"));
 
     // File on disk reflects the same order.
     REQUIRE(fs::exists(dir / "recent.json"));
     auto parsed = recentFilesFromJson(slurp(dir / "recent.json"));
     REQUIRE(parsed.has_value());
     REQUIRE(parsed->entries.size() == 2);
-    REQUIRE(parsed->entries[0].path == "/tmp/other.rplg");
-    REQUIRE(parsed->entries[1].path == "/tmp/song.rplg");
+    REQUIRE(parsed->entries[0].path == canon("/tmp/other.rplg"));
+    REQUIRE(parsed->entries[1].path == canon("/tmp/song.rplg"));
 
     fs::remove_all(dir);
 }
@@ -98,8 +112,8 @@ TEST_CASE("RecentFiles add() deduplicates by canonical path", "[recent-files]") 
 
     auto snap = rf.snapshot();
     REQUIRE(snap.size() == 2);
-    REQUIRE(snap[0].path == real.string());
-    REQUIRE(snap[1].path == "/tmp/other.rplg");
+    REQUIRE(snap[0].path == canon(real.string()));
+    REQUIRE(snap[1].path == canon("/tmp/other.rplg"));
 
     fs::remove_all(dir);
 }
@@ -121,10 +135,10 @@ TEST_CASE("RecentFiles add() trims to kMaxEntries", "[recent-files]") {
     REQUIRE(snap.size() == RecentFiles::kMaxEntries);
     // Newest first, so index 0 = the last add.
     REQUIRE(snap.front().path ==
-            "/tmp/proj_" + std::to_string(over - 1) + ".rplg");
+            canon("/tmp/proj_" + std::to_string(over - 1) + ".rplg"));
     // Oldest still in the list should be `over - kMaxEntries`.
     REQUIRE(snap.back().path ==
-            "/tmp/proj_" + std::to_string(over - RecentFiles::kMaxEntries) + ".rplg");
+            canon("/tmp/proj_" + std::to_string(over - RecentFiles::kMaxEntries) + ".rplg"));
 
     fs::remove_all(dir);
 }
@@ -143,8 +157,8 @@ TEST_CASE("RecentFiles reloads list from recent.json across sessions", "[recent-
     rf2.start();
     auto snap = rf2.snapshot();
     REQUIRE(snap.size() == 2);
-    REQUIRE(snap[0].path == "/tmp/b.rplg");
-    REQUIRE(snap[1].path == "/tmp/a.rplg");
+    REQUIRE(snap[0].path == canon("/tmp/b.rplg"));
+    REQUIRE(snap[1].path == canon("/tmp/a.rplg"));
 
     fs::remove_all(dir);
 }
@@ -189,8 +203,8 @@ TEST_CASE("RecentFiles remove() drops an entry and preserves order", "[recent-fi
     REQUIRE(rf.remove("/tmp/b.rplg"));
     auto snap = rf.snapshot();
     REQUIRE(snap.size() == 2);
-    REQUIRE(snap[0].path == "/tmp/c.rplg");
-    REQUIRE(snap[1].path == "/tmp/a.rplg");
+    REQUIRE(snap[0].path == canon("/tmp/c.rplg"));
+    REQUIRE(snap[1].path == canon("/tmp/a.rplg"));
 
     // Removing an absent path is a no-op.
     REQUIRE_FALSE(rf.remove("/tmp/missing.rplg"));
@@ -227,9 +241,9 @@ TEST_CASE("RecentFiles relink() replaces path in place", "[recent-files]") {
     REQUIRE(rf.relink("/tmp/b.rplg", "/tmp/b2.rplg"));
     auto snap = rf.snapshot();
     REQUIRE(snap.size() == 3);
-    REQUIRE(snap[0].path == "/tmp/c.rplg");
-    REQUIRE(snap[1].path == "/tmp/b2.rplg");   // same slot
-    REQUIRE(snap[2].path == "/tmp/a.rplg");
+    REQUIRE(snap[0].path == canon("/tmp/c.rplg"));
+    REQUIRE(snap[1].path == canon("/tmp/b2.rplg"));   // same slot
+    REQUIRE(snap[2].path == canon("/tmp/a.rplg"));
 
     // Unknown oldPath -> false, no change.
     REQUIRE_FALSE(rf.relink("/tmp/nope.rplg", "/tmp/x.rplg"));
@@ -251,8 +265,8 @@ TEST_CASE("RecentFiles relink() drops a colliding duplicate", "[recent-files]") 
     REQUIRE(rf.relink("/tmp/b.rplg", "/tmp/a.rplg"));
     auto snap = rf.snapshot();
     REQUIRE(snap.size() == 2);
-    REQUIRE(snap[0].path == "/tmp/c.rplg");
-    REQUIRE(snap[1].path == "/tmp/a.rplg");
+    REQUIRE(snap[0].path == canon("/tmp/c.rplg"));
+    REQUIRE(snap[1].path == canon("/tmp/a.rplg"));
 
     fs::remove_all(dir);
 }

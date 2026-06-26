@@ -43,8 +43,10 @@ test("two-system thin project reloads each ROM + sibling .sav", () => {
   let text = "";
   const bytes = emu.readFile(PROJ);
   for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
-  expect(text.indexOf(ROM_A) >= 0).toBeTruthy();
-  expect(text.indexOf(ROM_B) >= 0).toBeTruthy();
+  // Match by basename: on Windows the harness redirects /tmp to %TEMP%\retroplug,
+  // so the stored romPaths are those resolved absolute paths, not the literal /tmp.
+  expect(text.indexOf(ROM_A.split("/").pop()!) >= 0).toBeTruthy();
+  expect(text.indexOf(ROM_B.split("/").pop()!) >= 0).toBeTruthy();
   expect(text.indexOf('"romBytes":[]') >= 0).toBeTruthy();
 
   // Reload from scratch: both systems come back, each with its own sibling SRAM.

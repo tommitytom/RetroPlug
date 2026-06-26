@@ -11,15 +11,18 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
+#include "HostPath.hpp"
 #include "Screenshot.hpp"
 #include "Wav.hpp"
 #include "TestHarness.hpp"

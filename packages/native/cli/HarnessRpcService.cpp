@@ -25,6 +25,10 @@ std::uint32_t HarnessRpcService::loadRom(std::string path,
         std::vector<std::uint8_t> sram,
         std::string lsdjSyncMode,
         std::uint32_t linkGroup) {
+    // Resolve so a ROM a test staged at /tmp (e.g. to exercise the sibling-.sav
+    // auto-save) is found, and cfg.romPath (which the sibling .sav derives from)
+    // stays consistent with where readFile/writeFile put things.
+    path = rpcli::resolveHostPath(path);
     const std::vector<std::uint8_t>* sramPtr = sram.empty() ? nullptr : &sram;
     return h_->loadRom(path, sramPtr, lsdjSyncMode,
                        static_cast<std::uint8_t>(linkGroup));
@@ -129,12 +133,14 @@ void HarnessRpcService::reset(std::uint32_t systemId) {
 }
 
 rfl::Bytestring HarnessRpcService::readFile(std::string path) {
+    path = rpcli::resolveHostPath(path);
     const auto bytes = rpcli::slurpBytes(path);
     const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
     return rfl::Bytestring(p, p + bytes.size());
 }
 
 void HarnessRpcService::writeFile(std::string path, std::vector<std::uint8_t> bytes) {
+    path = rpcli::resolveHostPath(path);
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     if (!f.write(reinterpret_cast<const char*>(bytes.data()),
                  static_cast<std::streamsize>(bytes.size())).good())
@@ -144,6 +150,7 @@ void HarnessRpcService::writeFile(std::string path, std::vector<std::uint8_t> by
 void HarnessRpcService::removeFile(std::string path) {
     // Best-effort delete (no error if absent) — lets tests simulate a moved /
     // missing ROM or kit sample WAV.
+    path = rpcli::resolveHostPath(path);
     std::remove(path.c_str());
 }
 
@@ -217,7 +224,7 @@ bool HarnessRpcService::runUntilPc(std::uint32_t systemId, std::uint32_t pc, std
 bool HarnessRpcService::screenshot(std::uint32_t systemId, std::string path) {
     SystemBase* sys = h_->system(systemId);
     if (!sys) throw std::runtime_error("screenshot: unknown system id");
-    return rpcli::writeFramebufferPng(*sys, path);
+    return rpcli::writeFramebufferPng(*sys, rpcli::resolveHostPath(path));
 }
 
 HarnessPerSystemAudio HarnessRpcService::runMsPerSystem(double ms) {
@@ -237,35 +244,39 @@ void HarnessRpcService::writeWav(std::string path, std::vector<std::uint8_t> sam
     std::vector<float> l(frames), r(frames);
     for (std::size_t i = 0; i < frames; ++i) { l[i] = data[2 * i]; r[i] = data[2 * i + 1]; }
     float* outs[2] = { l.data(), r.data() };
-    WavWriter w(path, sampleRate, 2);
+    WavWriter w(rpcli::resolveHostPath(path), sampleRate, 2);
     w.writeBlockFloatPlanar(outs, static_cast<std::uint32_t>(frames));
 }
 
 void HarnessRpcService::renderWav(std::string path, double ms, std::uint32_t sampleRate) {
-    h_->renderWav(path, ms, sampleRate);
+    h_->renderWav(rpcli::resolveHostPath(path), ms, sampleRate);
 }
 
 void HarnessRpcService::renderWavPerSystem(std::string mixPath,
         std::vector<std::string> perSystemPaths, double ms, std::uint32_t sampleRate) {
+    mixPath = rpcli::resolveHostPath(mixPath);
+    for (auto& p : perSystemPaths) p = rpcli::resolveHostPath(p);
     h_->renderWavPerSystem(mixPath, perSystemPaths, ms, sampleRate);
 }
 
 void HarnessRpcService::renderBegin(std::string mixPath,
         std::vector<std::string> perSystemPaths, std::uint32_t sampleRate) {
+    mixPath = rpcli::resolveHostPath(mixPath);
+    for (auto& p : perSystemPaths) p = rpcli::resolveHostPath(p);
     h_->renderBegin(mixPath, perSystemPaths, sampleRate);
 }
 void HarnessRpcService::renderChunk(double ms) { h_->renderChunk(ms); }
 void HarnessRpcService::renderEnd() { h_->renderEnd(); }
 
-void HarnessRpcService::saveRplg(std::string path) { h_->saveRplg(path); }
-void HarnessRpcService::saveProjectFile(std::string path) { h_->saveProjectFile(path); }
-std::uint32_t HarnessRpcService::loadRplg(std::string path) { return h_->loadRplg(path); }
+void HarnessRpcService::saveRplg(std::string path) { h_->saveRplg(rpcli::resolveHostPath(path)); }
+void HarnessRpcService::saveProjectFile(std::string path) { h_->saveProjectFile(rpcli::resolveHostPath(path)); }
+std::uint32_t HarnessRpcService::loadRplg(std::string path) { return h_->loadRplg(rpcli::resolveHostPath(path)); }
 
 void HarnessRpcService::patchKit(std::uint32_t systemId, std::uint32_t slot, std::string name,
                                  std::vector<HarnessKitSample> samples) {
     std::vector<std::pair<std::string, std::string>> pairs;
     pairs.reserve(samples.size());
-    for (auto& s : samples) pairs.emplace_back(std::move(s.path), std::move(s.name));
+    for (auto& s : samples) pairs.emplace_back(rpcli::resolveHostPath(s.path), std::move(s.name));
     h_->patchKit(systemId, static_cast<std::uint8_t>(slot), name, pairs);
 }
 

@@ -42,7 +42,9 @@ test("path-only JSON save reloads ROM from path + sibling .sav", () => {
   // ROM path, and embeds no binary blobs (they serialize as `[]`).
   const text = decodeAscii(emu.readFile(PROJ));
   expect(text.charCodeAt(0)).toBe(0x7b); // '{'
-  expect(text.indexOf(ROM) >= 0).toBeTruthy();
+  // Match by basename: on Windows the harness redirects /tmp to %TEMP%\retroplug,
+  // so the stored romPath is that resolved absolute path, not the literal /tmp one.
+  expect(text.indexOf(ROM.split("/").pop()!) >= 0).toBeTruthy();
   expect(text.indexOf('"romBytes":[]') >= 0).toBeTruthy();
   expect(text.indexOf('"sram":[]') >= 0).toBeTruthy();
 
