@@ -8,3 +8,7 @@
 [submodule "deps/efsw"]
 	path = deps/efsw
 	url = https://github.com/SpartanJ/efsw.git
+[submodule "deps/dpf.js"]
+	path = deps/dpf.js
+	url = git@github.com:tommitytom/dpf.js.git
+	branch = main

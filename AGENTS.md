@@ -17,12 +17,18 @@ the parts that don't naturally fit either.
 - Don't push to remotes or open PRs without an explicit ask. The user pushes
   their own work.
 - The generic framework submodules (DPF, lv_binding_js → LVGL/txiki, rpcpp,
-  msgpack-c, dpf-widgets) now live in the **dpf.js** repo (`../dpf.js`,
-  consumed via `require.resolve` + `add_subdirectory`), not here. RetroPlug
-  keeps `deps/sameboy`, `deps/catch2`, and `deps/efsw` (the config/ROM file
-  watcher — RetroPlug-specific, the framework doesn't watch files). Don't commit
-  changes to any submodule pointer — in either repo — without checking; they're
-  managed deliberately.
+  msgpack-c, dpf-widgets) live in the **dpf.js** repo, which is itself a git
+  submodule at **`deps/dpf.js`** (a nested submodule — clone with `--recursive`).
+  It's still consumed via `require.resolve('dpf.js')` + `add_subdirectory`
+  (location-independent), plus a pnpm `link:./deps/dpf.js` and a tsconfig path;
+  `pnpm install` wires the link before the first configure. lv_binding_js has
+  its OWN pnpm workspace (provides react/react-reconciler/lvgljs-ui) — after a
+  fresh checkout run `pnpm install` in `deps/dpf.js/deps/lv_binding_js` too, or
+  the UI bundle can't resolve `react`. RetroPlug also keeps `deps/sameboy`,
+  `deps/catch2`, and `deps/efsw` (the config/ROM file watcher — RetroPlug-
+  specific, the framework doesn't watch files). Don't commit changes to any
+  submodule pointer — in either repo — without checking; they're managed
+  deliberately.
 - Don't `rm -rf build` to "fix" CMake — investigate first. The configured
   build dir is load-bearing for the development loop.
 - Treat the embedded UI bundle as derived; never check in

@@ -33,7 +33,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "dpf.js": "link:../dpf.js",
+    "dpf.js": "link:./deps/dpf.js",
     "esbuild": "^0.28"
   }
 }
