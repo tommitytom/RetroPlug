@@ -341,16 +341,7 @@ void UiTestHarness::pump(int iterations) {
                 // by the RPC service (after relinking) actually applies in-harness.
                 ProjectConfig* config = cmd.payload.loadProject.config;
                 if (config) {
-                    project_.clearSystems();
-                    project_.config() = ProjectConfig{};
-                    // Keep the loaded project-wide settings (zoom / layout /
-                    // routing), matching PluginDSP::applyProjectFromConfig.
-                    project_.config().settings = config->settings;
-                    SystemId first = 0;
-                    for (const auto& sc : config->systems) {
-                        const SystemId id = project_.addSystem(sc);
-                        if (id != 0 && first == 0) first = id;
-                    }
+                    const SystemId first = project_.loadFromConfig(*config);
                     focusedSystemId_.store(first);
                     project_.rebuildLinkGroups();
                     project_.onActivate(sampleRate_.load());

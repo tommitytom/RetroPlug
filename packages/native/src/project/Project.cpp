@@ -229,3 +229,15 @@ ProjectConfig Project::snapshotConfig() const {
     }
     return out;
 }
+
+SystemId Project::loadFromConfig(const ProjectConfig& cfg) {
+    clearSystems();
+    config_ = ProjectConfig{};
+    config_.settings = cfg.settings;   // keep the loaded zoom / layout / routing
+    SystemId first = 0;
+    for (const auto& sysConfig : cfg.systems) {
+        const SystemId id = addSystem(sysConfig);
+        if (id != 0 && first == 0) first = id;
+    }
+    return first;
+}

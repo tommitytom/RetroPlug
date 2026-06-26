@@ -587,23 +587,21 @@ struct TestHarness::Impl {
             if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::lsdj::KitCompiler>();
             rp::lsdj::recompileMissingKits(*parsed, *kitCompiler_);
         }
-        // Fresh project, mirroring PluginDSP::applyProjectFromConfig's
-        // clearSystems + rebuild.
+        // Fresh project rebuilt via the shared Project::loadFromConfig, which
+        // also restores the project-wide settings (zoom / layout / routing) —
+        // the same path PluginDSP::applyProjectFromConfig uses on a DAW reload.
         project = std::make_unique<Project>();
         sysList.clear();
         midiOutLog.clear();
         serialOutLog.clear();
-        std::vector<SystemId> ids;
-        for (const auto& sysConfig : parsed->systems) {
-            const SystemId id = project->addSystem(sysConfig);
-            if (id == 0) throw std::runtime_error("loadRplg: addSystem failed");
-            ids.push_back(id);
-        }
+        const SystemId first = project->loadFromConfig(*parsed);
+        if (!parsed->systems.empty() && first == 0)
+            throw std::runtime_error("loadRplg: addSystem failed");
         project->onActivate(sampleRate); // restores each system's savestate
-        for (SystemId id : ids)
-            if (SystemBase* raw = project->findSystem(id)) sysList.push_back(raw);
+        for (const auto& s : project->systems())
+            if (s) sysList.push_back(s.get());
         project->rebuildLinkGroups();
-        return ids.empty() ? 0u : static_cast<std::uint32_t>(ids.front());
+        return static_cast<std::uint32_t>(first);
     }
 
     // Take + clear the accumulated role outputs for a system.

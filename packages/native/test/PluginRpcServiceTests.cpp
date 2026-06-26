@@ -824,3 +824,50 @@ TEST_CASE("recent: openRecentRelinkBrowser + selection relinks the entry",
     std::filesystem::remove(projPath, ec);
     std::filesystem::remove(newProj, ec);
 }
+
+// ---------------------------------------------------------------------------
+// Project::loadFromConfig — the single shared apply path used by the DSP
+// (applyProjectFromConfig), the UI test harness, and the CLI harness loadRplg.
+// Regression: applying a loaded project used to reset config() to defaults and
+// only re-add systems, so the saved zoom / layout / routing were dropped (a
+// saved project reopened at the default zoom).
+// ---------------------------------------------------------------------------
+TEST_CASE("Project::loadFromConfig preserves settings and rebuilds systems",
+          "[PluginRpcService][project-load]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    const auto rom = loadRom();
+
+    Project project;
+    // Seed stale settings to prove loadFromConfig replaces (not merges) them.
+    project.config().settings.zoom   = 1;
+    project.config().settings.layout = SystemLayout::Row;
+
+    ProjectConfig cfg;
+    cfg.settings.zoom         = 5;
+    cfg.settings.layout       = SystemLayout::Grid;
+    cfg.settings.midiRouting  = MidiRouting::FourChannelsPerInstance;
+    cfg.settings.audioRouting = AudioRouting::TwoPerInstance;
+    SameBoyConfig sb{};
+    sb.romPath  = kRomPath;
+    sb.romBytes = rom;          // embedded so addSystem builds without disk
+    cfg.systems.push_back(sb);
+
+    const SystemId first = project.loadFromConfig(cfg);
+
+    // The loaded project-wide settings were adopted (the regression).
+    CHECK(project.config().settings.zoom         == 5);
+    CHECK(project.config().settings.layout       == SystemLayout::Grid);
+    CHECK(project.config().settings.midiRouting  == MidiRouting::FourChannelsPerInstance);
+    CHECK(project.config().settings.audioRouting == AudioRouting::TwoPerInstance);
+    // The system was rebuilt from the config.
+    CHECK(first != 0);
+    CHECK(project.systems().size() == 1);
+    CHECK(project.findSystem(first) != nullptr);
+
+    // Reloading a default config replaces the settings (zoom back to the 0 =
+    // "inherit" sentinel) and clears the systems.
+    project.loadFromConfig(ProjectConfig{});
+    CHECK(project.config().settings.zoom   == 0);
+    CHECK(project.config().settings.layout == SystemLayout::Auto);
+    CHECK(project.systems().empty());
+}

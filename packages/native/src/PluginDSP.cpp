@@ -230,24 +230,12 @@ protected:
     // same window AddSystem/etc. already mutate the project.
     void applyProjectFromConfig(const ProjectConfig& parsed)
     {
-        // Tear down current systems. Non-RT (deletes GB instances) — same
-        // category of work AddSystem/RemoveSystem already do during command
-        // drain.
-        project.clearSystems();
-        project.config() = ProjectConfig{};
-        // Keep the loaded project-wide settings (zoom / layout / MIDI + audio
-        // routing); the addSystem loop below repopulates the systems list.
-        project.config().settings = parsed.settings;
-
-        SystemId firstAdded = 0;
-        for (const auto& sysConfig : parsed.systems) {
-            const SystemId id = project.addSystem(sysConfig);
-            if (id == 0) {
-                d_stderr("[PluginDSP] applyProjectFromConfig: addSystem failed for one entry");
-                continue;
-            }
-            if (firstAdded == 0) firstAdded = id;
-        }
+        // Tear down current systems and rebuild from the parsed config. The
+        // shared Project::loadFromConfig preserves the project-wide settings
+        // (zoom / layout / routing) — see its callers (UI + CLI harness) which
+        // must stay in lockstep. Non-RT (deletes/builds GB instances) — same
+        // category of work AddSystem/RemoveSystem already do during the drain.
+        const SystemId firstAdded = project.loadFromConfig(parsed);
         focusedSystemAtomic.store(firstAdded, std::memory_order_release);
 
         // Notify the UI (if attached) so it drops its cached project view.

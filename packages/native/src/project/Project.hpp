@@ -194,6 +194,14 @@ public:
     // Used by Plugin::getState.
     ProjectConfig snapshotConfig() const;
 
+    // Rebuild this project from a parsed config (the inverse of snapshotConfig):
+    // clear existing systems, adopt the project-wide settings (zoom / layout /
+    // MIDI + audio routing), then rebuild each system. Returns the first
+    // restored SystemId (0 if none). The caller sequences onActivate /
+    // rebuildLinkGroups / focus + ConfigChanged. Shared by every project-load
+    // path so settings can't be dropped on apply.
+    SystemId loadFromConfig(const ProjectConfig& cfg);
+
 private:
     SystemId nextId_ = 1;
     std::vector<std::unique_ptr<SystemBase>> systems_;
