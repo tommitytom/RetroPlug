@@ -106,7 +106,7 @@ struct Fixture {
             [this](const std::string& ch, const std::string& p) { emitted.emplace_back(ch, p); });
         // A no-op browser so the open*Browser() calls succeed (they bail when
         // no callback is registered).
-        service.setOpenFileBrowserCallback([](const char*, bool, const char*) {});
+        service.setOpenFileBrowserCallback([](const char*, bool, const char*, const char*, const char*) {});
     }
 
     bool sawEvent(const std::string& ch) const {
@@ -674,7 +674,7 @@ struct RecentFixture {
         recent.start();
         service.setEmitEventCallback(
             [this](const std::string& ch, const std::string& p) { emitted.emplace_back(ch, p); });
-        service.setOpenFileBrowserCallback([](const char*, bool, const char*) {});
+        service.setOpenFileBrowserCallback([](const char*, bool, const char*, const char*, const char*) {});
     }
     ~RecentFixture() {
         drainSystems();

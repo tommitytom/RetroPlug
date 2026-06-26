@@ -50,9 +50,13 @@ public:
     Project* project() const { return project_; }
 
     // PluginUI passes a callback that opens DPF's native file browser.
+    // patterns is a whitespace-separated glob list ("*.gb *.gbc"), filterName
+    // an optional human label; both may be null for no filtering.
     using OpenFileBrowserFn = std::function<void(const char* title,
                                                  bool saving,
-                                                 const char* defaultName)>;
+                                                 const char* defaultName,
+                                                 const char* patterns,
+                                                 const char* filterName)>;
     void setOpenFileBrowserCallback(OpenFileBrowserFn fn) {
         service_.setOpenFileBrowserCallback(std::move(fn));
     }

@@ -171,7 +171,9 @@ public:
     // Wiring (set by PluginJsBridge after construction) ---------------------
 
     using EmitEventFn              = std::function<void(const std::string& channel, const std::string& payload)>;
-    using OpenFileBrowserFn        = std::function<void(const char* title, bool saving, const char* defaultName)>;
+    // patterns: whitespace-separated glob list ("*.gb *.gbc"); filterName: optional label. Both nullable.
+    using OpenFileBrowserFn        = std::function<void(const char* title, bool saving, const char* defaultName,
+                                                        const char* patterns, const char* filterName)>;
     using SetWindowSizeFn          = std::function<void(unsigned w, unsigned h)>;
     using IsWindowSizeControlledFn = std::function<bool()>;
     // Standalone-only: ask the host UI to quit (close the window). Set by PluginUI.

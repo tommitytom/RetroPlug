@@ -41,6 +41,21 @@
 
 namespace {
 
+// File-browser glob filters (whitespace-separated patterns + human label),
+// passed straight through to DPF's FileBrowserOptions.
+constexpr const char* kRomPatterns     = "*.gb *.gbc *.gba *.nes";
+constexpr const char* kRomFilterName   = "ROM files";
+constexpr const char* kAudioPatterns   = "*.wav *.mp3 *.flac";
+constexpr const char* kAudioFilterName = "Audio files";
+constexpr const char* kProjPatterns    = "*.rplg";
+constexpr const char* kProjFilterName  = "RetroPlug project";
+constexpr const char* kZipPatterns     = "*.zip";
+constexpr const char* kZipFilterName   = "Zip archive";
+constexpr const char* kSramPatterns    = "*.sav";
+constexpr const char* kSramFilterName  = "Save RAM";
+constexpr const char* kStatePatterns   = "*.ss?";
+constexpr const char* kStateFilterName = "Savestate";
+
 // File slurper. Runs on the UI thread. Empty vector on any failure.
 std::vector<std::uint8_t> slurp(const std::string& path) {
     std::ifstream in(path, std::ios::binary | std::ios::ate);
@@ -458,7 +473,9 @@ bool PluginRpcService::openRelinkBrowser(bool isRom) {
     if (!openFileBrowser_) return false;
     pendingFileMode_ = PendingFileMode::Relink;
     openFileBrowser_(isRom ? "Locate ROM" : "Locate sample (WAV / MP3 / FLAC)",
-                     false, nullptr);
+                     false, nullptr,
+                     isRom ? kRomPatterns   : kAudioPatterns,
+                     isRom ? kRomFilterName : kAudioFilterName);
     return true;
 }
 
@@ -526,7 +543,7 @@ bool PluginRpcService::openRomBrowser(OpenRomOpts opts) {
     pendingFileMode_ = (opts.mode && *opts.mode == "add")
         ? PendingFileMode::AddRom
         : PendingFileMode::LoadRom;
-    openFileBrowser_("Open ROM (Game Boy or NES)", false, nullptr);
+    openFileBrowser_("Open ROM (Game Boy or NES)", false, nullptr, kRomPatterns, kRomFilterName);
     return true;
 }
 
@@ -538,21 +555,21 @@ bool PluginRpcService::openSaveProjectBrowser() {
         auto name = std::filesystem::path(currentProjectPath_).filename();
         if (!name.empty()) defaultName = name.string();
     }
-    openFileBrowser_("Save RetroPlug project", true, defaultName.c_str());
+    openFileBrowser_("Save RetroPlug project", true, defaultName.c_str(), kProjPatterns, kProjFilterName);
     return true;
 }
 
 bool PluginRpcService::openExportZipBrowser() {
     if (!openFileBrowser_) return false;
     pendingFileMode_ = PendingFileMode::ExportZip;
-    openFileBrowser_("Export RetroPlug zip", true, "project.zip");
+    openFileBrowser_("Export RetroPlug zip", true, "project.zip", kZipPatterns, kZipFilterName);
     return true;
 }
 
 bool PluginRpcService::openLoadProjectBrowser() {
     if (!openFileBrowser_) return false;
     pendingFileMode_ = PendingFileMode::LoadProject;
-    openFileBrowser_("Load RetroPlug project", false, nullptr);
+    openFileBrowser_("Load RetroPlug project", false, nullptr, kProjPatterns, kProjFilterName);
     return true;
 }
 
@@ -1182,7 +1199,7 @@ PluginRpcService::auditionSample(std::string path) {
 bool PluginRpcService::openSampleBrowser() {
     if (!openFileBrowser_) return false;
     pendingFileMode_ = PendingFileMode::LoadSample;
-    openFileBrowser_("Load sample (WAV / MP3 / FLAC)", false, nullptr);
+    openFileBrowser_("Load sample (WAV / MP3 / FLAC)", false, nullptr, kAudioPatterns, kAudioFilterName);
     return true;
 }
 
@@ -1390,7 +1407,7 @@ bool PluginRpcService::openSaveSramBrowser(std::uint32_t systemId) {
             defaultName = name.string();
         }
     }
-    openFileBrowser_("Save SRAM", true, defaultName.c_str());
+    openFileBrowser_("Save SRAM", true, defaultName.c_str(), kSramPatterns, kSramFilterName);
     return true;
 }
 
@@ -1398,7 +1415,7 @@ bool PluginRpcService::openLoadSramBrowser(std::uint32_t systemId) {
     if (!openFileBrowser_) return false;
     pendingFileMode_     = PendingFileMode::LoadSram;
     pendingFileSystemId_ = systemId;
-    openFileBrowser_("Load SRAM", false, nullptr);
+    openFileBrowser_("Load SRAM", false, nullptr, kSramPatterns, kSramFilterName);
     return true;
 }
 
@@ -1425,7 +1442,7 @@ bool PluginRpcService::openSaveStateBrowser(std::uint32_t systemId) {
             defaultName = name.string();
         }
     }
-    openFileBrowser_("Save State", true, defaultName.c_str());
+    openFileBrowser_("Save State", true, defaultName.c_str(), kStatePatterns, kStateFilterName);
     return true;
 }
 
@@ -1433,7 +1450,7 @@ bool PluginRpcService::openLoadStateBrowser(std::uint32_t systemId) {
     if (!openFileBrowser_) return false;
     pendingFileMode_     = PendingFileMode::LoadState;
     pendingFileSystemId_ = systemId;
-    openFileBrowser_("Load State", false, nullptr);
+    openFileBrowser_("Load State", false, nullptr, kStatePatterns, kStateFilterName);
     return true;
 }
 
@@ -1481,7 +1498,7 @@ bool PluginRpcService::openRecentRelinkBrowser(std::string path) {
     if (!openFileBrowser_ || path.empty()) return false;
     pendingFileMode_         = PendingFileMode::RelinkRecent;
     pendingRelinkRecentPath_ = std::move(path);
-    openFileBrowser_("Locate project (.rplg)", /*saving=*/false, nullptr);
+    openFileBrowser_("Locate project (.rplg)", /*saving=*/false, nullptr, kProjPatterns, kProjFilterName);
     return true;
 }
 

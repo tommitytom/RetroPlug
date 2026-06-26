@@ -288,11 +288,15 @@ public:
             // save mode, `defaultName` pre-fills the filename field.
             bridge->setOpenFileBrowserCallback([this](const char* title,
                                                       bool saving,
-                                                      const char* defaultName) {
+                                                      const char* defaultName,
+                                                      const char* patterns,
+                                                      const char* filterName) {
                 FileBrowserOptions opts;
-                opts.title       = title ? title : "";
-                opts.saving      = saving;
-                opts.defaultName = defaultName ? defaultName : "";
+                opts.title              = title ? title : "";
+                opts.saving             = saving;
+                opts.defaultName        = defaultName ? defaultName : "";
+                opts.fileFilterPatterns = patterns;    // nullable → no filter
+                opts.fileFilterName     = filterName;  // nullable → generated label
                 openFileBrowser(opts);
             });
 
