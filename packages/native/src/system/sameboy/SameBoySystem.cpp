@@ -394,16 +394,33 @@ SystemBase::StateRegionTable SameBoySystem::stateSnapshotRegions() const {
     StateRegionTable t{};
     if (!gb_) return t;
     auto* gb = const_cast<GB_gameboy_t*>(gb_);
+    // Region sizes come from the public GB_get_direct_access, NOT raw gb->*_size
+    // fields. SameBoySystem.cpp compiles gb.h as C++ while the SameBoy Core lib
+    // compiles it as C; under the MSVC ABI (clang-cl) the GB_gameboy_t layout
+    // diverges past the timing/APU sections, so gb->vram_size read garbage here
+    // (it tested as 0, shifting the SRAM offset by a VRAM bank). The accessor is
+    // computed inside the lib against the correct C layout, so it's robust.
+    // (gb->io_registers lives before the divergence, so the synthetic-clock path
+    // that reads it directly is unaffected.)
+    auto regionSize = [&](GB_direct_access_t a) -> std::size_t {
+        size_t sz = 0; uint16_t bank = 0;
+        GB_get_direct_access(gb, a, &sz, &bank);
+        return sz;
+    };
+    const std::size_t vramSize = regionSize(GB_DIRECT_ACCESS_VRAM);
+    const std::size_t ramSize  = regionSize(GB_DIRECT_ACCESS_RAM);
+    const std::size_t mbcSize  = regionSize(GB_DIRECT_ACCESS_CART_RAM);
+
     std::size_t off = GB_get_save_state_size_no_bess(gb);
-    off -= gb->vram_size;
+    off -= vramSize;
     t[static_cast<std::size_t>(rp::MemoryType::Vram)] =
-        { static_cast<std::uint32_t>(off), static_cast<std::uint32_t>(gb->vram_size) };
-    off -= gb->ram_size;
+        { static_cast<std::uint32_t>(off), static_cast<std::uint32_t>(vramSize) };
+    off -= ramSize;
     t[static_cast<std::size_t>(rp::MemoryType::Ram)] =
-        { static_cast<std::uint32_t>(off), static_cast<std::uint32_t>(gb->ram_size) };
-    off -= gb->mbc_ram_size;
+        { static_cast<std::uint32_t>(off), static_cast<std::uint32_t>(ramSize) };
+    off -= mbcSize;
     t[static_cast<std::size_t>(rp::MemoryType::Sram)] =
-        { static_cast<std::uint32_t>(off), static_cast<std::uint32_t>(gb->mbc_ram_size) };
+        { static_cast<std::uint32_t>(off), static_cast<std::uint32_t>(mbcSize) };
     return t;
 }
 
