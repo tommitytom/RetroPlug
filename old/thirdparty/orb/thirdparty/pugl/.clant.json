@@ -1,9 +1,0 @@
-{
-  "version": "1.0.0",
-  "exclude_patterns": [
-    "glad\\.c"
-  ],
-  "mapping_files": [
-    ".includes.imp"
-  ]
-}

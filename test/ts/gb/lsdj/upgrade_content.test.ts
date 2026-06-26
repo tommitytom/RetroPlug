@@ -12,7 +12,7 @@
 // not the 8KB GB work-RAM, so the upgrade is written in place there).
 import { test, expect, emu, Mem } from "harness";
 
-const SRC = "old/thirdparty/liblsdj/resources/sav/lsdj888.sav"; // fmt16 content
+const SRC = "packages/native/test/liblsdj/resources/sav/lsdj888.sav"; // fmt16 content
 const CART_RAM = 0x2040; // instrumentAllocTable (64 bytes)
 const FMT_OFF = 0x7fff;
 

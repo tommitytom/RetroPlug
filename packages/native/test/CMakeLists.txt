@@ -47,7 +47,7 @@ target_include_directories(retroplug-tests PRIVATE
 # resources tree; see AGENTS.md). SavCodecTests decodes against it.
 target_compile_definitions(retroplug-tests PRIVATE
     RETROPLUG_LSDJ_SAV_DIR="${CMAKE_SOURCE_DIR}/../resources/roms/lsdj"
-    RETROPLUG_LSDJ_DIFF_SAV_DIR="${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/resources/sav"
+    RETROPLUG_LSDJ_DIFF_SAV_DIR="${CMAKE_CURRENT_SOURCE_DIR}/liblsdj/resources/sav"
 )
 
 target_include_directories(retroplug-tests PRIVATE
@@ -222,7 +222,7 @@ catch_discover_tests(retroplug-rpc-tests)
 # free of the legacy C library. (liblsdj's offsets/gates are the ground truth
 # for fmt<=16; this is what proves the old-format `else` branches are correct.)
 # -----------------------------------------------------------------------------
-set(_LIBLSDJ_SRC ${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/liblsdj/src)
+set(_LIBLSDJ_SRC ${CMAKE_CURRENT_SOURCE_DIR}/liblsdj/liblsdj/src)
 add_executable(retroplug-lsdj-diff-tests
     LsdjDifferentialTests.cpp
     ../src/lsdj/codec/SongCodec.cpp
@@ -244,14 +244,14 @@ add_executable(retroplug-lsdj-diff-tests
 
 target_include_directories(retroplug-lsdj-diff-tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/liblsdj/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/liblsdj/liblsdj/include
     # liblsdj's .c files include their private headers bare ("speech.h").
-    ${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/liblsdj/include/lsdj
+    ${CMAKE_CURRENT_SOURCE_DIR}/liblsdj/liblsdj/include/lsdj
 )
 
 target_compile_definitions(retroplug-lsdj-diff-tests PRIVATE
     # Content-bearing savs spanning fmt3..fmt16 (liblsdj's own test fixtures).
-    RETROPLUG_LSDJ_DIFF_SAV_DIR="${CMAKE_SOURCE_DIR}/old/thirdparty/liblsdj/resources/sav"
+    RETROPLUG_LSDJ_DIFF_SAV_DIR="${CMAKE_CURRENT_SOURCE_DIR}/liblsdj/resources/sav"
 )
 
 target_link_libraries(retroplug-lsdj-diff-tests PRIVATE

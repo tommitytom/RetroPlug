@@ -1,1 +1,0 @@
-thirdparty\orb\thirdparty\bin\premake5 vs2022 %*
