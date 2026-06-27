@@ -51,6 +51,15 @@ inline bool romPresent(const Cfg& c) {
     return !c.romBytes.empty() || fileExists(c.romPath);
 }
 
+// SameBoy also carries binary-embedded ROMs (e.g. mGB): the bytes live in the
+// executable and Project::addSystem re-supplies them on load, so an
+// `embeddedRom` marker counts as present even with no path and no saved bytes.
+// Without this a saved mGB project loaded via loadProjectFromPath (standalone
+// Load Project / recent / autoload) would be flagged as a missing ROM.
+inline bool romPresent(const SameBoyConfig& c) {
+    return !c.embeddedRom.empty() || !c.romBytes.empty() || fileExists(c.romPath);
+}
+
 // Append any missing kit-sample entries for a SameBoy system. Kits only need
 // their source WAVs when they'll be recompiled (compiledBytes empty — a JSON
 // load); a zip kit carries its bytes and is self-sufficient.

@@ -974,6 +974,27 @@ TEST_CASE("an embedded-mGB project survives a thin round-trip",
     CHECK(project.systems().size() == 1);
 }
 
+TEST_CASE("scanMissingFiles treats an embedded-mGB system as present",
+          "[PluginRpcService][mgb]") {
+    // A saved mGB project is path-less and byte-less (the bytes live in the
+    // binary). scanMissingFiles must treat the embeddedRom marker as present,
+    // else loadProjectFromPath (standalone Load Project / recent / autoload)
+    // would route it into the relink menu instead of loading it.
+    ProjectConfig cfg;
+    SameBoyConfig sb;
+    sb.embeddedRom = "mgb";
+    sb.embedRom    = false;                // no romBytes; no romPath
+    cfg.systems.push_back(sb);
+    CHECK(rp::scanMissingFiles(cfg).empty());
+
+    // Sanity: a genuinely missing ROM (no marker, no bytes, bogus path) IS flagged.
+    ProjectConfig bad;
+    SameBoyConfig miss;
+    miss.romPath = "/nonexistent/rp-does-not-exist.gb";
+    bad.systems.push_back(miss);
+    CHECK_FALSE(rp::scanMissingFiles(bad).empty());
+}
+
 // ---------------------------------------------------------------------------
 // New Project: discards the current project for an empty default one. Queues a
 // LoadProject with a zero-system config and resets the load/save bookkeeping
