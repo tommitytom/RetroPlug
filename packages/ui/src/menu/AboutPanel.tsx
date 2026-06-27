@@ -1,5 +1,5 @@
 import { View, Text, ELvKey } from "lvgljs-ui";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { createGroup, setKeyboardGroup } from "lvgljs";
 
 import { tileWidth, tileHeight } from "../layout";
@@ -33,7 +33,13 @@ export function AboutPanel({ zoom, onClose, sinkGroup }: AboutPanelProps) {
     const focusRef = useRef<any>(null);
     const onCloseRef = useRef(onClose);
     useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
-    useEffect(() => {
+    // useLayoutEffect (not useEffect) so the cleanup that restores the sink
+    // group runs in the commit's mutation phase. When this panel is dismissed
+    // from the StartScreen the underlying Menu re-mounts in the SAME commit and
+    // claims the keypad from its own useLayoutEffect; a passive (useEffect)
+    // cleanup here would run AFTER that synchronous claim and clobber it with
+    // the sink, leaving menu keyboard nav dead. Matches Menu.tsx's pattern.
+    useLayoutEffect(() => {
         const group = createGroup();
         if (focusRef.current) group.add(focusRef.current);
         if (focusRef.current) group.focus(focusRef.current);
