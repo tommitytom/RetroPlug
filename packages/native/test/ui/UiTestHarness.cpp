@@ -410,6 +410,30 @@ void UiTestHarness::pump(int iterations) {
                         configMutated = true;
                     }
                 }
+            } else if (cmd.kind == Command::Kind::AddSystem) {
+                // Mirror PluginDSP's AddSystem so the menu's "Add Instance" /
+                // "Duplicate Instance" flows apply in headless UI tests. The
+                // incoming system is already onActivate'd by the RPC service.
+                SystemBase* incoming = cmd.payload.addSystem.newSystem;
+                if (incoming) {
+                    project_.adoptSystem(incoming);
+                    project_.rebuildLinkGroups();
+                    if (focusedSystemId_.load() == 0)
+                        focusedSystemId_.store(incoming->id());
+                    configMutated = true;
+                }
+            } else if (cmd.kind == Command::Kind::RemoveSystem) {
+                // Mirror PluginDSP's RemoveSystem so "Remove Instance" applies.
+                // No event-queue consumer headless — delete the released system
+                // directly (the plugin hands it back to the UI thread to free).
+                const SystemId removedId = cmd.payload.removeSystem.id;
+                delete project_.removeSystemAndRelease(removedId);
+                project_.rebuildLinkGroups();
+                if (focusedSystemId_.load() == removedId) {
+                    focusedSystemId_.store(project_.systems().empty()
+                        ? SystemId{0} : project_.systems().front()->id());
+                }
+                configMutated = true;
             }
         }
         if (configMutated) notifyConfigChanged();
