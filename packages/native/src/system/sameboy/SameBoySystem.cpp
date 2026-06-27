@@ -166,7 +166,19 @@ void SameBoySystem::onActivate(double sampleRate) {
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
     gainSmoother_.clearToTargetValue();
 
-    gb_ = new GB_gameboy_t();
+    // Allocate via the lib's GB_alloc, NOT `new GB_gameboy_t()`. The SameBoy
+    // Core compiles gb.h as C (/std:c11) while this TU compiles it as C++
+    // (/std:c++20); under the MSVC ABI (clang-cl) the GB_gameboy_t layout — and
+    // therefore its sizeof — diverges between the two (measured 54216 C++ vs
+    // 54208 C; same GB_SECTION padding noted in stateSnapshotRegions). `new`
+    // sizes the struct to the C++ layout, but GB_init's `memset(gb, 0,
+    // sizeof_C(*gb))` and every later lib write use the C sizeof. It is safe
+    // today only because the C++ size is the LARGER of the two; if a future
+    // GB_DISABLE_* flag or struct change flips that, `new` becomes an instant
+    // heap overflow on Windows. GB_alloc sizes it with the lib's C sizeof
+    // unconditionally — SameBoy's documented "provided allocators" contract
+    // (gb.h). No-op on Linux, where the C and C++ layouts are identical.
+    gb_ = GB_alloc();
     GB_init(gb_, toSameBoyModel(config_.model));
     GB_set_user_data(gb_, this);
 
@@ -260,8 +272,8 @@ void SameBoySystem::onDeactivate() {
                 config_.sram = std::move(sram);
             }
         }
-        GB_free(gb_);
-        delete gb_;
+        GB_free(gb_);       // tear down the lib's internal allocations
+        GB_dealloc(gb_);    // free the struct itself (counterpart to GB_alloc)
         gb_ = nullptr;
     }
     activated_ = false;
