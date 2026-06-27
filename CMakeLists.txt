@@ -256,10 +256,10 @@ set_target_properties(sav-schema-dump PROPERTIES
 # --- UI bundle: esbuild-bundled TS/TSX, embedded into the plugin as a byte array ---
 find_program(NODE_EXECUTABLE node REQUIRED)
 
-# --- sav-regenerate: emit zod + TS for the LSDj Sav model (on demand) ---
+# --- sav-regenerate: emit zod + TS for the LSDj Sav model ---
 # Derived artifacts (build/ui/generated/SavSchema.ts + SavTypes.ts); never
-# committed. Not part of ALL — invoked via `make sav-regenerate` (and wired into
-# the UI build later, when the UI consumes the schema).
+# committed. Not ALL on its own, but pulled in by cli-regenerate below so the
+# TS CLI tests (gb/lsdj/sav) that import SavSchema can't go stale.
 add_custom_target(sav-regenerate
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/gen-sav-ts.js
             $<TARGET_FILE:sav-schema-dump> ${CMAKE_BINARY_DIR}/ui/generated
@@ -531,6 +531,11 @@ if(BUILD_CLI AND NODE_EXECUTABLE)
         DEPENDS harness-schema-dump
         COMMENT "Regenerating harness RPC client (HarnessService.ts)"
         VERBATIM)
+    # The TS CLI tests also consume the generated LSDj Sav zod/TS schema
+    # (gb/lsdj/sav imports build/ui/generated/SavSchema.ts). Fold its regen in
+    # here so every CLI-test path (pnpm test:cli, smoke, reaper authors) and a
+    # plain full build produce it — same anti-stale contract as HarnessService.
+    add_dependencies(cli-regenerate sav-regenerate)
 endif()
 
 # --- cli-bundle-regenerate: the embedded end-user CLI app bytecode -----------
