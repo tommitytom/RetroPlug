@@ -229,6 +229,19 @@ int TestHarness::runFile(const std::string& jsPath) {
     }
 
     impl_->done();  // ensure a plan line even if the test forgot
+
+    // A bundle that registers zero tests is almost always a harness failure,
+    // not an empty file: e.g. the runner registers itself via
+    // `window.addEventListener('load', runAll)`, and with QuickJS's async ES
+    // modules a throw there (or any top-level throw) surfaces only as a
+    // rejected module promise — evalModuleBuffer still returns 0. Without this
+    // guard that yields a silent `1..0` + exit 0 (a false pass). Fail loudly.
+    if (impl_->testIndex == 0) {
+        std::printf("Bail out! no tests ran (registration failed or the test "
+                    "module threw at top level)\n");
+        std::fflush(stdout);
+        return 1;
+    }
     return impl_->failures > 0 ? 1 : 0;
 }
 
