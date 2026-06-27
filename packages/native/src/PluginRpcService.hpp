@@ -246,8 +246,13 @@ public:
     std::uint32_t getAudioRouting();
     bool setAudioRouting(std::uint32_t routing);
     // Returns the resolved zoom (1..6): per-project value if set, otherwise
-    // the user-config default. setZoom always writes 1..6 to the project.
+    // the user-config default.
     std::uint32_t getZoom();
+    // Returns the RAW per-project zoom (0..6): 0 = "inherit the user default",
+    // 1..6 = explicit. The UI uses this to show "Default (Nx)" vs "Nx" and to
+    // track the user default live while a project carries no explicit zoom.
+    std::uint32_t getProjectZoom();
+    // Writes the per-project zoom. 0 = inherit the user default, 1..6 = explicit.
     bool setZoom(std::uint32_t zoom);
     std::uint32_t getLayout();
     bool setLayout(std::uint32_t layout);

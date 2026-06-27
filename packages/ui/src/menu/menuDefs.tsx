@@ -96,6 +96,9 @@ export interface MenuContext {
     layout:         number;
     // Resolved zoom level 1..6 (project setting or user-config default).
     zoom:           number;
+    // Raw per-project zoom: 0 = inherit the user default, 1..6 = explicit.
+    // Distinguishes "Zoom: Default (Nx)" from an explicit "Zoom: Nx".
+    projectZoom:    number;
     // Global SRAM auto-save preference (UserConfig). Toggled in Settings.
     autoSaveSram:   boolean;
     // Global default zoom 1..6 (UserConfig). Set in Settings; used for projects
@@ -401,9 +404,17 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
               const next = cycleInt(ctx.layout, 0, LAYOUT_NAMES.length - 1, dir);
               void plugin.$notify("setLayout", next);
           } },
-        { id: "zoom",         label: `Zoom: ${ctx.zoom}x`, kind: "action", keepOpen: true,
-          onSelect: () => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, 1)); },
-          onCycle: (dir) => { void plugin.$notify("setZoom", cycleInt(ctx.zoom, 1, 6, dir)); } },
+        // Raw 0 = inherit the user default; the resolved value is shown in
+        // parens so the user sees what "Default" currently maps to. Cycling
+        // includes Default as a slot (0 → 1 → … → 6 → 0) so a project can be
+        // put back on the user default.
+        { id: "zoom",
+          label: ctx.projectZoom === 0
+              ? `Zoom: Default (${ctx.zoom}x)`
+              : `Zoom: ${ctx.zoom}x`,
+          kind: "action", keepOpen: true,
+          onSelect: () => { void plugin.$notify("setZoom", cycleInt(ctx.projectZoom, 0, 6, 1)); },
+          onCycle: (dir) => { void plugin.$notify("setZoom", cycleInt(ctx.projectZoom, 0, 6, dir)); } },
         sep(),
         { id: "midiRouting", label: `MIDI Routing: ${routingName}`, kind: "action", keepOpen: true,
           onSelect: () => {

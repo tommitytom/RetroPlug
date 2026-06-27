@@ -380,8 +380,9 @@ protected:
                 } break;
 
                 case Command::Kind::SetZoom: {
+                    // 0 = inherit the user default; 1..6 = explicit per-project.
                     const std::uint8_t z = cmd.payload.setZoom.zoom;
-                    if (z >= 1 && z <= 6 &&
+                    if (z <= 6 &&
                         project.config().settings.zoom != z) {
                         project.config().settings.zoom = z;
                         projectMutated = true;

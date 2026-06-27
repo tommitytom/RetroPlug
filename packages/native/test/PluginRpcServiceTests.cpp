@@ -662,6 +662,32 @@ TEST_CASE("unsaved: a project edit flips hasUnsavedChanges; saving clears it",
     std::filesystem::remove(proj, ec);
 }
 
+// ---------------------------------------------------------------------------
+// Zoom: getProjectZoom returns the RAW per-project value (0 = inherit the user
+// default), getZoom resolves it, and setZoom accepts the full 0..6 range so a
+// project can be put back on the default (stored as 0).
+// ---------------------------------------------------------------------------
+TEST_CASE("zoom: getProjectZoom is raw, getZoom resolves, setZoom accepts 0..6",
+          "[PluginRpcService][zoom]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    Fixture fx;
+
+    // Raw 0 = inherit; with no UserConfig getZoom falls back to the default 3.
+    fx.project.config().settings.zoom = 0;
+    CHECK(fx.service.getProjectZoom() == 0);
+    CHECK(fx.service.getZoom() == 3);
+
+    // Explicit value: raw == resolved.
+    fx.project.config().settings.zoom = 5;
+    CHECK(fx.service.getProjectZoom() == 5);
+    CHECK(fx.service.getZoom() == 5);
+
+    // setZoom spans 0..6 (0 = back to inherit); out-of-range is rejected.
+    CHECK(fx.service.setZoom(0));
+    CHECK(fx.service.setZoom(6));
+    CHECK_FALSE(fx.service.setZoom(7));
+}
+
 TEST_CASE("unsaved: an SRAM change flips hasUnsavedChanges; saveDirtySram clears it",
           "[PluginRpcService][unsaved]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);

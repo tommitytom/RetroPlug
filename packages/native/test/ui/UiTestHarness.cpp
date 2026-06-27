@@ -153,9 +153,11 @@ UiTestHarness::~UiTestHarness() {
     if (display_) lv_display_delete(display_);
     if (group_)   lv_group_delete(group_);
     recentFiles_.reset();
-    if (!recentDir_.empty()) {
+    userConfig_.reset();
+    if (!recentDir_.empty() || !userConfigDir_.empty()) {
         std::error_code ec;
-        std::filesystem::remove_all(recentDir_, ec);
+        if (!recentDir_.empty())     std::filesystem::remove_all(recentDir_, ec);
+        if (!userConfigDir_.empty()) std::filesystem::remove_all(userConfigDir_, ec);
     }
     if (g_active == this) g_active = nullptr;
 }
@@ -221,9 +223,21 @@ bool UiTestHarness::boot() {
     });
     recentFiles_->start();
 
+    // Per-harness UserConfig in a temp dir (same isolation as recentFiles_). The
+    // reload callback emits "user-config-changed" exactly like PluginUI, so the
+    // UI refetches and re-derives — e.g. live default-zoom propagation.
+    userConfigDir_ = std::filesystem::temp_directory_path() /
+                     ("rp_ui_cfg_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)));
+    std::filesystem::create_directories(userConfigDir_, ec);
+    userConfig_ = std::make_unique<UserConfig>(userConfigDir_);
+    userConfig_->setOnReload([this] {
+        if (engine_.getContext()) engine_.emit("user-config-changed", 0, nullptr);
+    });
+    userConfig_->start();
+
     bridge_ = std::make_unique<PluginJsBridge>(
         engine_, &project_, &commands_, &events_, &sampleRate_, &focusedSystemId_,
-        /*userConfig*/ nullptr, recentFiles_.get());
+        userConfig_.get(), recentFiles_.get());
 
     // Stub the file browser so open*Browser RPCs succeed headlessly. The actual
     // chosen path is injected by the test via selectFile() -> onFileBrowserSelected.
@@ -352,6 +366,15 @@ void UiTestHarness::pump(int iterations) {
                     project_.rebuildLinkGroups();
                     project_.onActivate(sampleRate_.load());
                     delete config;
+                    configMutated = true;
+                }
+            } else if (cmd.kind == Command::Kind::SetZoom) {
+                // Mirror PluginDSP's SetZoom handler so the Project > Zoom
+                // cycle (incl. 0 = inherit default) reflects in headless UI
+                // tests. 0..6; the real round-trip is DSP-thread only.
+                const std::uint8_t z = cmd.payload.setZoom.zoom;
+                if (z <= 6 && project_.config().settings.zoom != z) {
+                    project_.config().settings.zoom = z;
                     configMutated = true;
                 }
             } else if (cmd.kind == Command::Kind::SetFastBoot) {

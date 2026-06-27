@@ -26,6 +26,7 @@ extern "C" {
 #include <filesystem>
 
 #include "config/RecentFiles.hpp"
+#include "config/UserConfig.hpp"
 #include "dpfjs/LvglJsEngine.hpp"
 #include "project/Project.hpp"
 #include "transport/CommandQueue.hpp"
@@ -195,6 +196,11 @@ private:
     // Declared before engine_/bridge_ so it outlives the bridge that points at it.
     std::filesystem::path recentDir_;
     std::unique_ptr<RecentFiles> recentFiles_;
+    // Per-harness UserConfig (temp dir) so setDefaultZoom / getUserConfig work
+    // headlessly and the "user-config-changed" event drives the UI's live
+    // default-zoom propagation. Also outlives the bridge that points at it.
+    std::filesystem::path userConfigDir_;
+    std::unique_ptr<UserConfig> userConfig_;
 
     // Scratch audio buffers: pump() runs project_.onProcess each iteration so
     // the emulator advances and publishes framebuffers (there is no DSP thread

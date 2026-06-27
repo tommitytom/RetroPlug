@@ -10,6 +10,7 @@ interface StartScreenProps {
     audioRouting:    number;
     layout:          number;
     zoom:            number;
+    projectZoom:     number;
     autoSaveSram:    boolean;
     defaultZoom:     number;
     recentFiles:     RecentEntry[];
@@ -25,7 +26,7 @@ interface StartScreenProps {
 // Submenu navigation is in-place (children expand inline below their parent
 // — see Menu.tsx). No pane-stack, no Back item.
 export function StartScreen({
-    midiRouting, audioRouting, layout, zoom, autoSaveSram, defaultZoom, recentFiles, openAbout,
+    midiRouting, audioRouting, layout, zoom, projectZoom, autoSaveSram, defaultZoom, recentFiles, openAbout,
     keyboardEditor, gamepadEditor, sinkGroup,
 }: StartScreenProps) {
     // Esc on the start screen must NOT close the menu (the empty-project
@@ -41,6 +42,7 @@ export function StartScreen({
         audioRouting,
         layout,
         zoom,
+        projectZoom,
         autoSaveSram,
         defaultZoom,
         recentFiles,

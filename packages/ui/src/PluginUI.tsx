@@ -52,10 +52,21 @@ function PluginUI() {
     const [midiRouting, setMidiRouting] = useState<number>(0);
     const [audioRouting, setAudioRouting] = useState<number>(0);
     const [layout, setLayout] = useState<number>(0);
-    // Integer zoom 1..6. Initialized to DEFAULT_ZOOM; replaced by the first
-    // getZoom() in refreshSystems (which resolves project setting and
-    // user-config default on the C++ side).
-    const [zoom, setZoom] = useState<number>(DEFAULT_ZOOM);
+    // Raw per-project zoom: 0 = "inherit the user default", 1..6 = explicit.
+    // Seeded from getProjectZoom().
+    const [projectZoom, setProjectZoom] = useState<number>(0);
+    // Global default zoom (UserConfig). Surfaced in the Settings menu; the
+    // fallback zoom for projects with no explicit value of their own.
+    const [defaultZoom, setDefaultZoom] = useState<number>(DEFAULT_ZOOM);
+    // Resolved zoom (1..6) used for rendering and window sizing. DERIVED from
+    // the raw project zoom and the user default, so a default-zoom project (0)
+    // tracks the user default live the moment it changes in Settings — the
+    // "user-config-changed" refetch updates defaultZoom and this re-derives,
+    // firing the window-resize effect below. Mirrors C++ getZoom().
+    const clampZoom = (z: number) => (z >= 1 && z <= 6 ? z : DEFAULT_ZOOM);
+    const zoom = projectZoom >= 1 && projectZoom <= 6
+        ? projectZoom
+        : clampZoom(defaultZoom);
     // Recent ROMs + projects. Fetched on mount and on "recent-files-changed".
     const [recentFiles, setRecentFiles] = useState<RecentEntry[]>([]);
     // Non-empty while a loaded project references files that have moved. The
@@ -108,7 +119,7 @@ function PluginUI() {
             plugin.getFocus(),
             plugin.getMidiRouting(),
             plugin.getAudioRouting(),
-            plugin.getZoom(),
+            plugin.getProjectZoom(),
             plugin.getLayout(),
         ]);
         setSystems(list);
@@ -123,7 +134,7 @@ function PluginUI() {
         setMidiRouting(routing);
         setAudioRouting(audio);
         setLayout(l);
-        setZoom(z >= 1 && z <= 6 ? z : DEFAULT_ZOOM);
+        setProjectZoom(z >= 0 && z <= 6 ? z : 0);
     }, []);
 
     useEffect(() => {
@@ -198,9 +209,6 @@ function PluginUI() {
     const [availableProfiles,      setAvailableProfiles]      = useState<string[]>([]);
     // Global SRAM auto-save preference (UserConfig). Surfaced in the Settings menu.
     const [autoSaveSram,           setAutoSaveSram]           = useState<boolean>(false);
-    // Global default zoom (UserConfig). Surfaced in the Settings menu; the
-    // fallback zoom for projects with no explicit value of their own.
-    const [defaultZoom,            setDefaultZoom]            = useState<number>(DEFAULT_ZOOM);
 
     // Recent files. Same pattern as user-config: fetch on mount, refetch
     // when C++ emits "recent-files-changed" after a successful load/save.
@@ -449,6 +457,7 @@ function PluginUI() {
         audioRouting,
         layout,
         zoom,
+        projectZoom,
         autoSaveSram,
         defaultZoom,
         recentFiles,
@@ -514,6 +523,7 @@ function PluginUI() {
                     audioRouting={audioRouting}
                     layout={layout}
                     zoom={zoom}
+                    projectZoom={projectZoom}
                     autoSaveSram={autoSaveSram}
                     defaultZoom={defaultZoom}
                     recentFiles={recentFiles}

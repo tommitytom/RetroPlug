@@ -740,9 +740,16 @@ std::uint32_t PluginRpcService::getZoom() {
     return z;
 }
 
+std::uint32_t PluginRpcService::getProjectZoom() {
+    // Raw per-project value: 0 = inherit the user default, 1..6 = explicit.
+    if (!project_) return 0;
+    std::uint8_t z = project_->config().settings.zoom;
+    return z > 6 ? 0 : z;
+}
+
 bool PluginRpcService::setZoom(std::uint32_t zoom) {
     if (!commands_) return false;
-    if (zoom < 1u || zoom > 6u) return false;
+    if (zoom > 6u) return false;   // 0 = inherit default, 1..6 = explicit
     markProjectDirty();
     return commands_->tryPush(
         Command::makeSetZoom(static_cast<std::uint8_t>(zoom)));
