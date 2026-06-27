@@ -18,6 +18,12 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#include <process.h>   // _getpid
+#else
+#include <unistd.h>    // getpid
+#endif
+
 #include "PluginRpcService.hpp"
 #include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
@@ -272,10 +278,25 @@ namespace {
 
 std::atomic<int> g_tmpCounter{0};
 
+// Catch2's ctest discovery runs every TEST_CASE in its own process, where the
+// process-local g_tmpCounter restarts at 0 — so parallel `ctest -j` runs would
+// otherwise collide on identical /tmp names (one fixture's remove_all wiping
+// another's live dir). Qualify every temp path with the OS process id.
+int processToken() {
+    static const int pid =
+#if defined(_WIN32)
+        ::_getpid();
+#else
+        static_cast<int>(::getpid());
+#endif
+    return pid;
+}
+
 std::string uniqueTmpPath(const char* tag, const char* ext) {
     const int n = g_tmpCounter.fetch_add(1);
     auto p = std::filesystem::temp_directory_path() /
-             (std::string("rp_as_") + tag + "_" + std::to_string(n) + ext);
+             (std::string("rp_as_") + tag + "_" + std::to_string(processToken()) +
+              "_" + std::to_string(n) + ext);
     return p.string();
 }
 
@@ -656,7 +677,8 @@ struct RecentFixture {
     std::vector<std::uint8_t>  rom = loadRom();
     std::filesystem::path      cfgDir = [] {
         auto d = std::filesystem::temp_directory_path() /
-                 ("rp_recent_cfg_" + std::to_string(g_tmpCounter.fetch_add(1)));
+                 ("rp_recent_cfg_" + std::to_string(processToken()) + "_" +
+                  std::to_string(g_tmpCounter.fetch_add(1)));
         std::filesystem::create_directories(d);
         return d;
     }();
