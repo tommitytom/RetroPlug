@@ -76,7 +76,15 @@ public:
 
             std::memcpy(dst, slots_[idx].data(), size_);
 
-            const std::uint64_t after = seq_.load(std::memory_order_acquire);
+            // Order the memcpy's loads BEFORE the re-read of `seq_`. An acquire
+            // *load* doesn't stop the preceding memcpy from sinking below it, so
+            // without this fence a weakly-ordered CPU (arm64/Apple Silicon) can
+            // read `after`, observe before == after, then finish the memcpy while
+            // the writer mutates the slot → torn read. Invisible on x86. This is
+            // the canonical seqlock read barrier.
+            std::atomic_thread_fence(std::memory_order_acquire);
+
+            const std::uint64_t after = seq_.load(std::memory_order_relaxed);
             if (before == after) return true;
         }
         return false;
