@@ -975,6 +975,58 @@ TEST_CASE("an embedded-mGB project survives a thin round-trip",
 }
 
 // ---------------------------------------------------------------------------
+// New Project: discards the current project for an empty default one. Queues a
+// LoadProject with a zero-system config and resets the load/save bookkeeping
+// (remembered path + dirty flag) so a follow-up Save opens the dialog.
+// ---------------------------------------------------------------------------
+TEST_CASE("newProject queues an empty default project and clears save state",
+          "[PluginRpcService][project-new]") {
+    PumpFixture f;
+    REQUIRE(f.service.newProject());
+
+    Command cmd;
+    REQUIRE(f.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadProject);
+    ProjectConfig* cfg = cmd.payload.loadProject.config;
+    REQUIRE(cfg != nullptr);
+    CHECK(cfg->systems.empty());        // a clean slate
+    CHECK(cfg->settings.zoom == 0);     // default settings (0 = inherit user default)
+    delete cfg;
+
+    CHECK(f.service.getCurrentProjectPath().empty());
+    CHECK(f.service.hasUnsavedChanges() == false);
+}
+
+TEST_CASE("newProject forgets a loaded project's remembered path",
+          "[PluginRpcService][project-new]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    const auto rom = loadRom();
+
+    const std::string romPath = uniqueTmpPath("newproj", ".gb");
+    {
+        std::ofstream o(romPath, std::ios::binary | std::ios::trunc);
+        o.write(reinterpret_cast<const char*>(rom.data()),
+                static_cast<std::streamsize>(rom.size()));
+    }
+
+    PumpFixture f;
+    REQUIRE(f.service.loadRomFromPath(romPath));   // sets currentProjectPath_ (sibling .rplg)
+    CHECK_FALSE(f.service.getCurrentProjectPath().empty());
+    { Command c; REQUIRE(f.commands.tryPop(c)); delete c.payload.loadRom.newSystem; }
+
+    REQUIRE(f.service.newProject());
+    CHECK(f.service.getCurrentProjectPath().empty());   // the path was dropped
+    { Command c; REQUIRE(f.commands.tryPop(c));
+      REQUIRE(c.kind == Command::Kind::LoadProject);
+      delete c.payload.loadProject.config; }
+
+    std::error_code ec;
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::path rplg(romPath); rplg.replace_extension(".rplg");
+    std::filesystem::remove(rplg, ec);
+}
+
+// ---------------------------------------------------------------------------
 // Project::loadFromConfig — the single shared apply path used by the DSP
 // (applyProjectFromConfig), the UI test harness, and the CLI harness loadRplg.
 // Regression: applying a loaded project used to reset config() to defaults and

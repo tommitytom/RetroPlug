@@ -222,6 +222,12 @@ public:
     // Save the project to its known path silently (no dialog). False if there's
     // no current path yet — the caller should open the save browser instead.
     bool saveProject();
+    // Discard the current project for a clean, empty one: drops all systems and
+    // resets the project-wide settings (zoom/layout/routing) to defaults, exactly
+    // as loading a default ProjectConfig would. Forgets the remembered project
+    // path so a follow-up "Save Project" opens the dialog. Applied via a
+    // LoadProject command so it runs on the DSP thread like any project mutation.
+    bool newProject();
     // Standalone-only: actually quit (close the window) after the user confirms.
     bool quitStandalone();
     bool loadRomFromPath(std::string path);

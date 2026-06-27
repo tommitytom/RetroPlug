@@ -28,6 +28,7 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::addRomFromPath>();
     server.template addMethod<&PluginRpcService::replaceRomFromPath>();
     server.template addMethod<&PluginRpcService::loadMgb>();
+    server.template addMethod<&PluginRpcService::newProject>();
     server.template addMethod<&PluginRpcService::removeSystem>();
     server.template addMethod<&PluginRpcService::duplicateSystem>();
     server.template addMethod<&PluginRpcService::clearCurrentProjectPath>();

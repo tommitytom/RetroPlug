@@ -1047,6 +1047,27 @@ bool PluginRpcService::saveProject() {
     return saveProjectToPath(currentProjectPath_);
 }
 
+bool PluginRpcService::newProject() {
+    if (!commands_) return false;
+    // Empty default config: zero systems, default settings. The DSP's
+    // LoadProject handler tears down the current systems via loadFromConfig and
+    // adopts these defaults, then pushes ConfigChanged so the UI drops back to
+    // the start screen.
+    auto* heap = new ProjectConfig();
+    if (!commands_->tryPush(Command::makeLoadProject(heap))) {
+        std::fprintf(stderr, "newProject: command queue full\n");
+        delete heap;
+        return false;
+    }
+    // A fresh project has no path and nothing unsaved; the new (zero) systems
+    // re-seed their own SRAM baselines on next sight.
+    currentProjectPath_.clear();
+    projectDirty_ = false;
+    sramLoadBaseline_.clear();
+    sramSavedHashes_.clear();
+    return true;
+}
+
 bool PluginRpcService::setLsdjSyncConfig(std::uint32_t id,
                                          std::uint32_t mode,
                                          std::uint32_t divisor) {

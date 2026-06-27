@@ -389,13 +389,27 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     const audioRoutingName = AUDIO_ROUTING_NAMES[ctx.audioRouting] ?? AUDIO_ROUTING_NAMES[0];
     const layoutName       = LAYOUT_NAMES       [ctx.layout]       ?? LAYOUT_NAMES       [0];
     const items: MenuItem[] = [];
-    // Save / Export are meaningless without systems to serialize — hide them on
-    // the start screen. "Save Project" writes a path-only JSON `.rplg`; "Export
-    // Zip" bundles every binary (ROM/SRAM/savestate/kits) into a self-contained
-    // `.zip`.
+    // New / Save / Export operate on an existing project — hidden on the start
+    // screen (nothing to clear, save, or export there). "New Project" discards
+    // the current systems for an empty default project. "Save Project" writes a
+    // path-only JSON `.rplg` to the known path silently, falling back to the
+    // Save-As dialog when there's no path yet; "Save Project As..." always
+    // prompts. "Export Zip" bundles every binary (ROM/SRAM/savestate/kits) into
+    // a self-contained `.zip`.
     if (ctx.systems.length > 0) {
         items.push(
+            { id: "newProject", label: "New Project", kind: "action",
+              onSelect: () => { void plugin.$notify("newProject"); } },
             { id: "saveProject", label: "Save Project", kind: "action",
+              onSelect: () => {
+                  void (async () => {
+                      if (!(await plugin.saveProject())) {
+                          // No known path yet — open the Save-As dialog instead.
+                          void plugin.$notify("openSaveProjectBrowser");
+                      }
+                  })();
+              } },
+            { id: "saveProjectAs", label: "Save Project As...", kind: "action",
               onSelect: () => { void plugin.$notify("openSaveProjectBrowser"); } },
             { id: "exportZip", label: "Export Zip", kind: "action",
               onSelect: () => { void plugin.$notify("openExportZipBrowser"); } });
