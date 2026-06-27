@@ -234,12 +234,8 @@ catch_discover_tests(retroplug-rpc-tests)
 # for fmt<=16; this is what proves the old-format `else` branches are correct.)
 # -----------------------------------------------------------------------------
 set(_LIBLSDJ_SRC ${CMAKE_CURRENT_SOURCE_DIR}/liblsdj/liblsdj/src)
-add_executable(retroplug-lsdj-diff-tests
-    LsdjDifferentialTests.cpp
-    ../src/lsdj/codec/SongCodec.cpp
-    ../src/lsdj/codec/Compression.cpp
-    ../src/lsdj/codec/SavCodec.cpp
-    # liblsdj (C), compiled directly into the test binary.
+# liblsdj (vendored upstream C), compiled directly into the test binary.
+set(_LIBLSDJ_C
     ${_LIBLSDJ_SRC}/allocator.c        ${_LIBLSDJ_SRC}/bytes.c
     ${_LIBLSDJ_SRC}/chain.c            ${_LIBLSDJ_SRC}/compression.c
     ${_LIBLSDJ_SRC}/error.c            ${_LIBLSDJ_SRC}/groove.c
@@ -250,7 +246,22 @@ add_executable(retroplug-lsdj-diff-tests
     ${_LIBLSDJ_SRC}/song.c             ${_LIBLSDJ_SRC}/song_empty.c
     ${_LIBLSDJ_SRC}/speech.c           ${_LIBLSDJ_SRC}/synth.c
     ${_LIBLSDJ_SRC}/table.c            ${_LIBLSDJ_SRC}/vio.c
-    ${_LIBLSDJ_SRC}/wave.c
+    ${_LIBLSDJ_SRC}/wave.c)
+# Vendored upstream C — we don't own its warnings; silence them on just these
+# sources (the RetroPlug .cpp in the same target keep full warnings). The target
+# sets no explicit /W, so /w disables all warnings here without tripping D9025.
+if(MSVC)
+    set(_LIBLSDJ_NOWARN /w)
+else()
+    set(_LIBLSDJ_NOWARN -w)
+endif()
+set_source_files_properties(${_LIBLSDJ_C} PROPERTIES COMPILE_OPTIONS "${_LIBLSDJ_NOWARN}")
+add_executable(retroplug-lsdj-diff-tests
+    LsdjDifferentialTests.cpp
+    ../src/lsdj/codec/SongCodec.cpp
+    ../src/lsdj/codec/Compression.cpp
+    ../src/lsdj/codec/SavCodec.cpp
+    ${_LIBLSDJ_C}
 )
 
 target_include_directories(retroplug-lsdj-diff-tests PRIVATE

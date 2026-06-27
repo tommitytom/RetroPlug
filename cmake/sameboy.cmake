@@ -59,9 +59,9 @@ if(WIN32)
         "/FI${CMAKE_SOURCE_DIR}/cmake/sameboy_win_shim.h"
         -DGB_INTERNAL -DGB_DISABLE_TIMEKEEPING -DGB_DISABLE_DEBUGGER
         "-I${SAMEBOY_DIR}/Core" "-I${_SAMEBOY_GEN_INC}"
-        -Wno-unused-variable -Wno-unused-function -Wno-missing-braces -Wno-switch
-        -Wno-int-in-bool-context -Wno-implicit-function-declaration -Wno-multichar
-        -Wno-strict-aliasing -Wno-deprecated-non-prototype -Wno-unused-but-set-variable)
+        # Vendored upstream core — we don't own its warnings. -w silences them
+        # all (a clean build stays warning-free) without touching SameBoy itself.
+        -w)
 
     set(_sb_objs "")
     foreach(src ${SAMEBOY_SOURCES})
@@ -85,10 +85,8 @@ else()
     target_compile_definitions(sameboy PRIVATE GB_INTERNAL)
     set_target_properties(sameboy PROPERTIES C_STANDARD 11)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(sameboy PRIVATE
-            -Wno-unused-variable -Wno-unused-function -Wno-missing-braces
-            -Wno-switch -Wno-int-in-bool-context -Wno-implicit-function-declaration
-            -Wno-multichar -Wno-strict-aliasing)
+        # Vendored upstream core — silence all its warnings (we don't own them).
+        target_compile_options(sameboy PRIVATE -w)
     endif()
 endif()
 

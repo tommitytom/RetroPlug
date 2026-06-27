@@ -17,7 +17,7 @@ TEST_CASE("EventQueue is empty on construction", "[EventQueue]") {
 TEST_CASE("EventQueue carries SystemReleased payload", "[EventQueue]") {
     EventQueue q;
     // Sentinel pointer; we don't dereference, just confirm round-trip.
-    auto* sentinel = reinterpret_cast<SystemBase*>(0xCAFEBABE);
+    auto* sentinel = reinterpret_cast<SystemBase*>(uintptr_t(0xCAFEBABE));
     REQUIRE(q.tryPush(Event::makeSystemReleased(sentinel)));
 
     Event out;

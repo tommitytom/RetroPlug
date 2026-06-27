@@ -72,7 +72,7 @@ TEST_CASE("CommandQueue carries LoadRom payload", "[CommandQueue]") {
     CommandQueue q;
     // We don't actually dereference the pointer in this test — just confirm
     // the variant payload round-trips intact.
-    auto* sentinel = reinterpret_cast<SystemBase*>(0xDEADBEEF);
+    auto* sentinel = reinterpret_cast<SystemBase*>(uintptr_t(0xDEADBEEF));
     REQUIRE(q.tryPush(Command::makeLoadRom(sentinel)));
 
     Command out;
