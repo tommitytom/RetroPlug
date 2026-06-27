@@ -82,6 +82,13 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
     const [promptState, setPromptState] = useState<PromptState | null>(null);
     const promptStateRef = useRef<PromptState | null>(null);
     useEffect(() => { promptStateRef.current = promptState; }, [promptState]);
+    // Set true when the global key handler consumes an Enter on behalf of the
+    // prompt overlay. That same physical Enter also reaches the focused menu
+    // row as LV_EVENT_CLICKED on release (see the onItemKey comment re: Enter
+    // → PRESSED → CLICKED); if the prompt has already closed by then, the
+    // resulting activate() would immediately re-open it. We swallow exactly
+    // that one stray activation.
+    const suppressNextActivateRef = useRef(false);
     // Visual highlight state. Updated by LV_EVENT_FOCUSED via onItemFocus so
     // the blue text-color tracks whichever widget LVGL actually has focused.
     // Tracked by item id (not flat-array index) so non-focusable separator
@@ -342,6 +349,13 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
     }, []);
 
     const activate = useCallback((item: MenuItem) => {
+        // Swallow the trailing CLICKED from an Enter the prompt overlay just
+        // consumed to confirm/close itself — without this it re-opens the
+        // prompt the instant it closes (see suppressNextActivateRef).
+        if (suppressNextActivateRef.current) {
+            suppressNextActivateRef.current = false;
+            return;
+        }
         // Capture / prompt mode owns input; click-events on focused rows
         // (Enter → LVGL CLICKED → here) are swallowed so the just-captured
         // key doesn't immediately re-arm capture for the same item.
@@ -424,7 +438,13 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
         const ps = promptStateRef.current;
         if (ps) {
             if (key === KEY_ESCAPE) { setPromptState(null); return; }
-            if (key === KEY_ENTER)  { void confirmPrompt();  return; }
+            if (key === KEY_ENTER)  {
+                // Suppress the row's trailing CLICKED (this same Enter) so a
+                // successful confirm doesn't immediately re-open the prompt.
+                suppressNextActivateRef.current = true;
+                void confirmPrompt();
+                return;
+            }
             if (key === KEY_BACKSPACE) {
                 if (ps.spec.confirm) return;
                 setPromptState(p => p
