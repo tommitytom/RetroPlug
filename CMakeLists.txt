@@ -121,16 +121,25 @@ if(WIN32)
     add_library(PkgConfig::SDL2 INTERFACE IMPORTED)
     target_link_libraries(PkgConfig::SDL2 INTERFACE SDL2::SDL2)
 elseif(APPLE)
-    find_package(PkgConfig REQUIRED)
-    # SDL2.framework from /Library/Frameworks. find_library picks the right
-    # arch slice for each value of CMAKE_OSX_ARCHITECTURES automatically,
-    # so the same universal framework satisfies both single-arch and
-    # universal builds without per-arch wiring.
-    find_library(SDL2_FRAMEWORK SDL2 REQUIRED)
-    add_library(PkgConfig::SDL2 INTERFACE IMPORTED)
-    target_link_libraries(PkgConfig::SDL2 INTERFACE ${SDL2_FRAMEWORK})
-    target_include_directories(PkgConfig::SDL2 INTERFACE
-        ${SDL2_FRAMEWORK}/Headers)
+    # Two ways to get SDL2 on macOS:
+    #  - Default: Homebrew (`brew install sdl2`, which today installs the
+    #    sdl2-compat shim over SDL3) ships an sdl2.pc, so pkg-config resolves
+    #    it exactly like the Linux path. This is the dev default.
+    #  - Distribution: drop the official universal SDL2.framework into
+    #    ~/Library/Frameworks (or /Library/Frameworks) and configure with
+    #    -DRETROPLUG_SDL2_FRAMEWORK=ON. find_library then picks the right arch
+    #    slice for each CMAKE_OSX_ARCHITECTURES value automatically, so one fat
+    #    framework satisfies single-arch and universal builds without per-arch wiring.
+    if(RETROPLUG_SDL2_FRAMEWORK)
+        find_library(SDL2_FRAMEWORK SDL2 REQUIRED)
+        add_library(PkgConfig::SDL2 INTERFACE IMPORTED)
+        target_link_libraries(PkgConfig::SDL2 INTERFACE ${SDL2_FRAMEWORK})
+        target_include_directories(PkgConfig::SDL2 INTERFACE
+            ${SDL2_FRAMEWORK}/Headers)
+    else()
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+    endif()
 else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
