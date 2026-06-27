@@ -22,6 +22,7 @@
 #include "dpfjs/LvglJsEngine.hpp"
 #include "PluginJsBridge.hpp"
 #include "PluginShared.hpp"
+#include "Version.hpp"
 #include "dpfjs/Env.hpp"
 #include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
@@ -100,6 +101,11 @@ class LVGLPluginUI : public UI
     std::string screenshotPath_;
     std::chrono::milliseconds screenshotInterval_{1000};
     std::chrono::steady_clock::time_point screenshotLast_{};
+
+    // The JACK standalone titles its window "<maker>: <name>" once, after we're
+    // constructed but before the event loop. Override it to "RetroPlug v<ver>"
+    // on the first uiIdle (standalone only — plugin hosts own their frame).
+    bool windowTitleSet_ = false;
 
     void maybeWriteScreenshot()
     {
@@ -399,6 +405,14 @@ protected:
 
     void uiIdle() override
     {
+        // Standalone window title: "RetroPlug v<version>" (overrides DPF's
+        // "<maker>: <name>"). Once, after the loop starts so DPF's set has run.
+        if (!windowTitleSet_) {
+            windowTitleSet_ = true;
+            if (getWindow().getApp().isStandalone())
+                getWindow().setTitle("RetroPlug v" RETROPLUG_VERSION_STRING);
+        }
+
         drainEvents();
 
         // Drain the user-config watcher's dirty flag on the UI thread.

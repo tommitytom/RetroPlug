@@ -6,6 +6,7 @@
 #include "DistrhoPlugin.hpp"
 #include "extra/ValueSmoother.hpp"
 #include "PluginShared.hpp"
+#include "Version.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -124,7 +125,9 @@ protected:
     const char* getDescription() const          override { return "Multi-system retro emulator host (Game Boy / NES / GBA)"; }
     const char* getMaker()       const noexcept override { return "tommitytom"; }
     const char* getLicense()     const noexcept override { return "ISC"; }
-    uint32_t    getVersion()     const noexcept override { return d_version(0, 6, 2); }
+    uint32_t    getVersion()     const noexcept override {
+        return d_version(RETROPLUG_VERSION_MAJOR, RETROPLUG_VERSION_MINOR, RETROPLUG_VERSION_MICRO);
+    }
     int64_t     getUniqueId()    const noexcept override { return d_cconst('R', 'P', 'l', 'g'); }
 
     // ----------------------------------------------------------------------------------------------------------------

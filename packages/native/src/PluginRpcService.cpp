@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "Version.hpp"
 #include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
 #include "lsdj/KitCompiler.hpp"
@@ -724,6 +725,10 @@ bool PluginRpcService::setAudioRouting(std::uint32_t routing) {
     markProjectDirty();
     return commands_->tryPush(
         Command::makeSetAudioRouting(static_cast<AudioRouting>(routing)));
+}
+
+std::string PluginRpcService::getVersion() {
+    return RETROPLUG_VERSION_STRING;
 }
 
 std::uint32_t PluginRpcService::getZoom() {

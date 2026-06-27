@@ -245,6 +245,9 @@ public:
     bool setMidiRouting(std::uint32_t routing);
     std::uint32_t getAudioRouting();
     bool setAudioRouting(std::uint32_t routing);
+    // App version as a bare semver string ("0.6.2"), from Version.hpp. The UI
+    // shows it in the menu chrome title; the display layer adds any "v" prefix.
+    std::string getVersion();
     // Returns the resolved zoom (1..6): per-project value if set, otherwise
     // the user-config default.
     std::uint32_t getZoom();

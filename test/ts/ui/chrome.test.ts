@@ -19,8 +19,9 @@ test("StartScreen shows the expected menu items", () => {
   expect(ui.boot()).toBeTruthy();
   ui.pump(40);
 
-  // Title + the top-level menu (submenus render with a trailing " >").
-  expect(ui.findByText("RetroPlug")).toBeTruthy();
+  // Title (now carries the version, e.g. "RetroPlug v0.6.2") + the top-level
+  // menu (submenus render with a trailing " >").
+  expect(ui.findByTextContaining("RetroPlug")).toBeTruthy();
   expect(ui.findByText("Load...")).toBeTruthy();
   expect(ui.findByTextContaining("Recent")).toBeTruthy();
   expect(ui.findByTextContaining("Project")).toBeTruthy();

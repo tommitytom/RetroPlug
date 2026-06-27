@@ -67,6 +67,9 @@ function PluginUI() {
     const zoom = projectZoom >= 1 && projectZoom <= 6
         ? projectZoom
         : clampZoom(defaultZoom);
+    // App version (bare semver from getVersion(), "" until it resolves). Shown
+    // in the menu chrome title. Static — fetched once on mount.
+    const [version, setVersion] = useState<string>("");
     // Recent ROMs + projects. Fetched on mount and on "recent-files-changed".
     const [recentFiles, setRecentFiles] = useState<RecentEntry[]>([]);
     // Non-empty while a loaded project references files that have moved. The
@@ -143,6 +146,14 @@ function PluginUI() {
         on("config-changed", handler);
         return () => off("config-changed", handler);
     }, [refreshSystems]);
+
+    // App version is static — fetch it once for the menu chrome title.
+    useEffect(() => {
+        void (async () => {
+            try { setVersion(await plugin.getVersion()); }
+            catch (e) { console.warn("[version] getVersion failed", e); }
+        })();
+    }, []);
 
     // Missing-files relink flow. A thin project whose ROMs / kit WAVs moved is
     // held pending on the C++ side, which emits "missing-files" with the list;
@@ -453,6 +464,7 @@ function PluginUI() {
     const instanceTree = buildInstanceMenu({
         systems,
         focusedSystem,
+        version,
         midiRouting,
         audioRouting,
         layout,
@@ -519,6 +531,7 @@ function PluginUI() {
                 />
             ) : systems.length === 0 ? (
                 <StartScreen
+                    version={version}
                     midiRouting={midiRouting}
                     audioRouting={audioRouting}
                     layout={layout}

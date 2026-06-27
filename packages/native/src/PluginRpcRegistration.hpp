@@ -39,6 +39,7 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::setMidiRouting>();
     server.template addMethod<&PluginRpcService::getAudioRouting>();
     server.template addMethod<&PluginRpcService::setAudioRouting>();
+    server.template addMethod<&PluginRpcService::getVersion>();
     server.template addMethod<&PluginRpcService::getZoom>();
     server.template addMethod<&PluginRpcService::getProjectZoom>();
     server.template addMethod<&PluginRpcService::setZoom>();

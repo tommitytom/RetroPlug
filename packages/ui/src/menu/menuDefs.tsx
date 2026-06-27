@@ -89,6 +89,9 @@ export interface RecentEntry {
 export interface MenuContext {
     systems:        SystemEntry[];
     focusedSystem?: SystemEntry;
+    // App version (bare semver "0.6.2" from the getVersion RPC, "" until it
+    // resolves). Shown in the menu chrome title as "RetroPlug v<version>".
+    version:        string;
     midiRouting:    number;
     // AudioRouting enum value (0=Stereo, 1=TwoPerInstance, 2=OnePerInstance).
     audioRouting:   number;
@@ -182,6 +185,12 @@ const LSDJ_MODE_NAMES = [
 ];
 
 const LINK_GROUP_MAX = 4;
+
+// Menu chrome title: "RetroPlug v<version>" once the version RPC resolves,
+// else just "RetroPlug" (the version arrives a frame or two after mount).
+function appTitle(ctx: MenuContext): string {
+    return ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug";
+}
 
 function stub(label: string): () => void {
     return () => {
@@ -606,7 +615,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         { id: "about",    label: "About",    kind: "action",  onSelect: () => ctx.openAbout() },
     );
 
-    const title = sys ? `RetroPlug - System #${sys.id}` : "RetroPlug";
+    const title = sys ? `${appTitle(ctx)} - System #${sys.id}` : appTitle(ctx);
     return { title, items };
 }
 
@@ -614,7 +623,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
 // wide config even before the user adds any instance.
 export function buildStartMenu(ctx: MenuContext): MenuTree {
     return {
-        title: "RetroPlug",
+        title: appTitle(ctx),
         items: [
             { id: "load", label: "Load...", kind: "action",
               onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },

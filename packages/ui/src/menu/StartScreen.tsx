@@ -6,6 +6,7 @@ import { buildStartMenu, type RecentEntry } from "./menuDefs";
 import type { BindingsEditor } from "../useBindingsEditor";
 
 interface StartScreenProps {
+    version:         string;
     midiRouting:     number;
     audioRouting:    number;
     layout:          number;
@@ -26,7 +27,7 @@ interface StartScreenProps {
 // Submenu navigation is in-place (children expand inline below their parent
 // — see Menu.tsx). No pane-stack, no Back item.
 export function StartScreen({
-    midiRouting, audioRouting, layout, zoom, projectZoom, autoSaveSram, defaultZoom, recentFiles, openAbout,
+    version, midiRouting, audioRouting, layout, zoom, projectZoom, autoSaveSram, defaultZoom, recentFiles, openAbout,
     keyboardEditor, gamepadEditor, sinkGroup,
 }: StartScreenProps) {
     // Esc on the start screen must NOT close the menu (the empty-project
@@ -38,6 +39,7 @@ export function StartScreen({
     const tree = buildStartMenu({
         systems:       [],
         focusedSystem: undefined,
+        version,
         midiRouting,
         audioRouting,
         layout,
