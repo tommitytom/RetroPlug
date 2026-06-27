@@ -50,10 +50,17 @@ export function AboutPanel({ zoom, onClose, sinkGroup }: AboutPanelProps) {
         };
     }, [sinkGroup]);
 
+    // Esc closes on key-press here. Enter is deliberately NOT handled on the
+    // key event: LVGL turns Enter into PRESSED → CLICKED (on release), so it's
+    // closed by onClick below instead. Closing on the Enter *press* would
+    // unmount this panel before the release, and on the StartScreen the menu
+    // re-mounts in the same commit — the trailing CLICKED would then land on
+    // the menu's now-focused first row and activate it (opening the ROM
+    // browser). Letting onClick handle Enter keeps the panel as the click
+    // target until the event is fully consumed, so nothing leaks underneath.
     const onKey = (e: { key: number }) => {
         (e as any).stopPropagation?.();
-        if (e.key === ELvKey.LV_KEY_ESC ||
-            e.key === ELvKey.LV_KEY_ENTER) {
+        if (e.key === ELvKey.LV_KEY_ESC) {
             onCloseRef.current();
         }
     };

@@ -227,8 +227,10 @@ bool UiTestHarness::boot() {
 
     // Stub the file browser so open*Browser RPCs succeed headlessly. The actual
     // chosen path is injected by the test via selectFile() -> onFileBrowserSelected.
+    // Count the opens so a test can assert a browser did (or didn't) pop.
+    browserOpenCount_ = 0;
     bridge_->setOpenFileBrowserCallback(
-        [](const char*, bool, const char*, const char*, const char*) { /* path injected via selectFile */ });
+        [this](const char*, bool, const char*, const char*, const char*) { ++browserOpenCount_; });
 
     // Record standalone-quit requests so a UI test can assert the unsaved-changes
     // modal's Discard/Save → quit path fired.

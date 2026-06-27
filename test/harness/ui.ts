@@ -39,6 +39,7 @@ interface NativeUi {
   seedRecent(path: string, name?: string): void;
   requestCloseConfirm(): void;
   quitRequested(): boolean;
+  browserOpenCount(): number;
   pump(iterations?: number): void;
   readMemory(sys: number, type: number): ArrayBuffer;
   snapshot(): { width: number; height: number; pixels: ArrayBuffer };
@@ -132,6 +133,10 @@ export const ui = {
   requestCloseConfirm(): void { rp.requestCloseConfirm(); },
   /** True once the modal's Discard/Save path invoked quitStandalone(). */
   quitRequested(): boolean { return rp.quitRequested(); },
+  /** How many times a file browser has been opened since boot(). Use to assert
+   *  an action did (or did NOT) pop a browser — e.g. that closing a modal
+   *  doesn't leak a stray click into the menu's "open ROM" row. */
+  browserOpenCount(): number { return rp.browserOpenCount(); },
   /** Advance the UI + emulator `iterations` blocks (settles RPC + render). */
   pump(iterations = 30): void { rp.pump(iterations); },
   /** Read a whole memory region of a system as a copy (see Mem). */

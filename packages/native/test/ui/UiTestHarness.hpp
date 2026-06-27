@@ -106,6 +106,10 @@ public:
     void requestCloseConfirm();
     // True once the modal's Discard/Save path called quitStandalone().
     bool quitRequested() const { return quitRequested_; }
+    // Number of times the file-browser callback fired since boot(). Lets a test
+    // assert that an action did (or did NOT) pop a browser — e.g. that closing
+    // a modal doesn't leak a stray click into the menu's "open ROM" row.
+    std::uint32_t browserOpenCount() const { return browserOpenCount_; }
 
     // -- assertions surface -------------------------------------------------
 
@@ -199,6 +203,7 @@ private:
     std::vector<float> scratchR_;
 
     bool quitRequested_ = false;          // set by the stubbed quit callback
+    std::uint32_t browserOpenCount_ = 0;  // bumped by the stubbed file-browser callback
 
     LvglJsEngine engine_;
     std::unique_ptr<PluginJsBridge> bridge_; // after engine_: destructs first

@@ -236,6 +236,11 @@ JSValue jsUiQuitRequested(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.quitRequested: %s", e.what()); }
 }
 
+JSValue jsUiBrowserOpenCount(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    try { return JS_NewUint32(ctx, harnessOrThrow()->browserOpenCount()); }
+    catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.browserOpenCount: %s", e.what()); }
+}
+
 JSValue jsUiPump(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     int iterations = 30;
     if (argc >= 1 && !JS_IsUndefined(argv[0])) JS_ToInt32(ctx, &iterations, argv[0]);
@@ -419,6 +424,7 @@ int runUiTestFile(const std::string& jsPath) {
         { "seedRecent",      { jsUiSeedRecent,      2 } },
         { "requestCloseConfirm", { jsUiRequestCloseConfirm, 0 } },
         { "quitRequested",   { jsUiQuitRequested,   0 } },
+        { "browserOpenCount",{ jsUiBrowserOpenCount,0 } },
         { "pump",            { jsUiPump,            1 } },
         { "readMemory",      { jsUiReadMemory,      2 } },
         { "snapshot",        { jsUiSnapshot,        0 } },
