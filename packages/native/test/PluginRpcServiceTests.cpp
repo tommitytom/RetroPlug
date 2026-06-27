@@ -360,6 +360,60 @@ struct PumpFixture {
 
 } // namespace
 
+// loadRomFromPath() reads the sibling `<rom>.sav` inline in buildSystemFromPath
+// (distinct from the project-load path's slurpSiblingSav). This is the exact
+// flow the file-open dialog drives. Regression guard for the Windows port where
+// the SameBoy GB_gameboy_t C-vs-C++ layout divergence (see SameBoySystem.cpp's
+// GB_alloc note) made battery-RAM handling fragile.
+TEST_CASE("loadRomFromPath applies the sibling .sav",
+          "[PluginRpcService][sram]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    const auto rom = loadRom();
+
+    const std::string romPath = uniqueTmpPath("repro", ".gb");
+    const std::string savPath = rp::sram_autosave::siblingSavPath(romPath);
+    {
+        std::ofstream o(romPath, std::ios::binary | std::ios::trunc);
+        o.write(reinterpret_cast<const char*>(rom.data()),
+                static_cast<std::streamsize>(rom.size()));
+    }
+
+    // Probe the cart's battery size.
+    std::size_t n = 0;
+    {
+        SameBoyConfig c{}; c.romPath = romPath;
+        SameBoySystem s{SystemId{99}, c, rom};
+        s.onActivate(kSampleRate);
+        n = s.saveSramBytes().size();
+        s.onDeactivate();
+    }
+    REQUIRE(n > 0);
+
+    const std::vector<std::uint8_t> image(n, 0x3C);
+    {
+        std::ofstream o(savPath, std::ios::binary | std::ios::trunc);
+        o.write(reinterpret_cast<const char*>(image.data()),
+                static_cast<std::streamsize>(image.size()));
+    }
+
+    PumpFixture f;
+    REQUIRE(f.service.loadRomFromPath(romPath));   // == the file-dialog flow
+
+    Command cmd;
+    REQUIRE(f.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadRom);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
+    REQUIRE(sb != nullptr);
+    CHECK(sb->saveSramBytes() == image);           // <-- the sibling .sav got applied
+    delete cmd.payload.loadRom.newSystem;
+
+    std::error_code ec;
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(savPath, ec);
+    std::filesystem::path rplg(romPath); rplg.replace_extension(".rplg");
+    std::filesystem::remove(rplg, ec);
+}
+
 TEST_CASE("SRAM auto-save round-trips through the sibling .sav on reload",
           "[PluginRpcService][sram-autosave]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
