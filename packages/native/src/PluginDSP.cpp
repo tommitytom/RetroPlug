@@ -124,7 +124,7 @@ protected:
     const char* getLabel()       const noexcept override { return "RetroPlug"; }
     const char* getDescription() const          override { return "Multi-system retro emulator host (Game Boy / NES / GBA)"; }
     const char* getMaker()       const noexcept override { return "tommitytom"; }
-    const char* getLicense()     const noexcept override { return "ISC"; }
+    const char* getLicense()     const noexcept override { return "MIT"; }
     uint32_t    getVersion()     const noexcept override {
         return d_version(RETROPLUG_VERSION_MAJOR, RETROPLUG_VERSION_MINOR, RETROPLUG_VERSION_MICRO);
     }
