@@ -340,7 +340,8 @@ TmpSys makeTmpSys(Project& project, const std::vector<std::uint8_t>& rom,
 struct PumpFixture {
     std::filesystem::path cfgDir = [] {
         auto d = std::filesystem::temp_directory_path() /
-                 ("rp_as_cfg_" + std::to_string(g_tmpCounter.fetch_add(1)));
+                 ("rp_as_cfg_" + std::to_string(processToken()) + "_" +
+                  std::to_string(g_tmpCounter.fetch_add(1)));
         std::filesystem::create_directories(d);
         return d;
     }();
