@@ -8,6 +8,7 @@
 
 #include "rfl/Variant.hpp"
 
+#include "EmbeddedRoms.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
@@ -58,6 +59,13 @@ SystemId Project::addSystem(const SystemConfig& config) {
         // re-reading from disk. Only fall back to slurpFile when bytes are
         // absent — covers legacy/dev paths and the embedRom=false opt-out.
         std::vector<std::uint8_t> rom = sb->romBytes;
+        // A thin .rplg / DPF-state save strips romBytes; if this slot is an
+        // embedded ROM (e.g. mGB), re-supply the bytes from the binary so the
+        // project reloads without a file on disk. See EmbeddedRoms.hpp.
+        if (rom.empty() && !sb->embeddedRom.empty()) {
+            const auto bytes = rp::embeddedRom(sb->embeddedRom);
+            rom.assign(bytes.begin(), bytes.end());
+        }
         if (rom.empty())
             rom = slurpFile(sb->romPath);
         if (rom.empty()) {

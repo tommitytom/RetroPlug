@@ -627,6 +627,10 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
         items: [
             { id: "load", label: "Load...", kind: "action",
               onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
+            // The mGB MIDI synth is embedded in the binary — load it without a
+            // file browser. No recent entry, no .sav (see PluginRpcService::loadMgb).
+            { id: "loadMgb", label: "Load mGB (Gameboy MIDI Synth)", kind: "action",
+              onSelect: () => { void plugin.$notify("loadMgb"); } },
             { id: "recent",   label: "Recent",   kind: "submenu", children: recentChildren(ctx) },
             sep(),
             { id: "project",  label: "Project",  kind: "submenu", children: projectChildren(ctx) },

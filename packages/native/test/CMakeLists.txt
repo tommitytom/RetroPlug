@@ -220,6 +220,7 @@ target_link_libraries(retroplug-rpc-tests PRIVATE
     efsw
     miniz
     miniaudio   # header-only include path for lsdj/SampleCache.cpp
+    mgb-rom     # embedded mGB ROM (loadMgb + project-load re-supply)
     $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )
 
@@ -352,6 +353,7 @@ target_link_libraries(retroplug-ui-test PRIVATE
     miniaudio
     efsw
     miniz
+    mgb-rom          # embedded mGB ROM (loadMgb + project-load re-supply)
     $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )
 

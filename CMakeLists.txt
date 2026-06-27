@@ -218,6 +218,27 @@ set_target_properties(efsw PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # lvgl-js-native + the framework PIC settings now come from dpf.js (above).
 
+# --- mgb-rom: the mGB Game Boy MIDI-synth ROM, embedded in the binary ---------
+# bin2c turns resources/roms/mGB.gb into an external-linkage byte array; a small
+# static lib so every consumer just links it (no per-source-list / cross-dir
+# generated-source wiring). PluginRpcService::loadMgb builds a system from it,
+# and Project::addSystem re-supplies it for saved projects (see EmbeddedRoms.hpp).
+# Fixed, git-tracked asset → a timestamp-tracked rule (regen only when it changes).
+set(MGB_ROM_C "${CMAKE_BINARY_DIR}/generated/roms/mgb_rom_data.c")
+add_custom_command(
+    OUTPUT  "${MGB_ROM_C}"
+    COMMAND ${CMAKE_COMMAND}
+            -DINPUT=${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb
+            -DSYMBOL=mgb_rom
+            -DOUTPUT=${MGB_ROM_C}
+            -P ${CMAKE_SOURCE_DIR}/cmake/bin2c.cmake
+    DEPENDS "${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
+            "${CMAKE_SOURCE_DIR}/cmake/bin2c.cmake"
+    COMMENT "bin2c mgb_rom_data.c"
+    VERBATIM)
+add_library(mgb-rom STATIC "${MGB_ROM_C}")
+set_target_properties(mgb-rom PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # --- rpc-schema-dump: prints PluginRpcService's OpenRPC schema for codegen ---
 # Standalone executable so the codegen step doesn't need to start the plugin
 # (or wire up the rest of its dependency graph). Constructs the service with
@@ -249,7 +270,7 @@ add_executable(rpc-schema-dump
     packages/native/src/system/mesen/roles/NesN8MidiRole.cpp)
 target_include_directories(rpc-schema-dump PRIVATE packages/native/src)
 target_include_directories(rpc-schema-dump PRIVATE ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz)
-target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw miniz
+target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw miniz mgb-rom
     $<$<BOOL:${WIN32}>:retroplug-samebsys>)
 
 # --- sav-schema-dump: prints the LSDj Sav model's JSON Schema for zod/TS gen ---
@@ -427,6 +448,8 @@ target_compile_definitions(${NAME} PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 # miniz) + their include dirs (incl. txiki's miniz for MinizZip.hpp).
 target_link_libraries(${NAME} PUBLIC dpfjs::core $<$<BOOL:${WIN32}>:winmm>)
 target_link_libraries(${NAME} PUBLIC sameboy)
+# Embedded mGB ROM (loadMgb + project-load re-supply). See the mgb-rom lib above.
+target_link_libraries(${NAME} PUBLIC mgb-rom)
 # Windows: SameBoySystem.cpp is compiled by clang-cl into this static lib (see the
 # clang-cl isolation block above) instead of in the MSVC plugin sources.
 target_link_libraries(${NAME} PUBLIC $<$<BOOL:${WIN32}>:retroplug-samebsys>)

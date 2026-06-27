@@ -929,6 +929,52 @@ TEST_CASE("recent: openRecentRelinkBrowser + selection relinks the entry",
 }
 
 // ---------------------------------------------------------------------------
+// Embedded mGB: loaded from the binary (no file), so it carries no romPath
+// (→ no .sav / ROM-watcher), no battery SRAM, and an "mgb" marker so a saved
+// project re-supplies the bytes on reload. loadMgb does not touch recent files.
+// ---------------------------------------------------------------------------
+TEST_CASE("loadMgb builds a pathless, marked embedded mGB system",
+          "[PluginRpcService][mgb]") {
+    PumpFixture f;
+    REQUIRE(f.service.loadMgb());
+
+    Command cmd;
+    REQUIRE(f.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadRom);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
+    REQUIRE(sb != nullptr);
+
+    CHECK(sb->romPath().empty());          // pathless → SRAM auto-save + watcher skip it
+    CHECK(sb->saveSramBytes().empty());    // mGB has no battery SRAM → nothing to .sav
+    CHECK(sb->config_.embeddedRom == "mgb"); // marker → reloadable from a saved project
+    CHECK(sb->config_.embedRom == false);  // bytes live in the binary, not saved state
+
+    delete cmd.payload.loadRom.newSystem;
+}
+
+TEST_CASE("an embedded-mGB project survives a thin round-trip",
+          "[PluginRpcService][mgb]") {
+    // A thin .rplg / DPF-state save strips romBytes; only the "mgb" marker and
+    // empty romPath remain. The project loader must re-supply the bytes from
+    // the binary so the system still loads.
+    ProjectConfig cfg;
+    SameBoyConfig sb;
+    sb.embeddedRom = "mgb";
+    sb.embedRom    = false;                // no romBytes; no romPath
+    cfg.systems.push_back(sb);
+
+    const std::string json = projectConfigToJsonFile(cfg);   // strips binaries
+    const auto parsed = projectConfigFromJson(json);
+    REQUIRE(parsed);
+    REQUIRE(parsed->systems.size() == 1);
+
+    Project project;
+    const SystemId id = project.loadFromConfig(*parsed);
+    CHECK(id != 0);                        // loaded despite no bytes/path on disk
+    CHECK(project.systems().size() == 1);
+}
+
+// ---------------------------------------------------------------------------
 // Project::loadFromConfig — the single shared apply path used by the DSP
 // (applyProjectFromConfig), the UI test harness, and the CLI harness loadRplg.
 // Regression: applying a loaded project used to reset config() to defaults and

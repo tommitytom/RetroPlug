@@ -60,6 +60,12 @@ struct SameBoyConfig {
     // src/system/sameboy/LinkGroup.hpp.
     std::uint8_t              linkGroupId = 0;
     std::string               romPath;    // absolute path; populated at bootstrap or load
+    // Non-empty => this system's ROM is baked into the binary (id, e.g. "mgb"),
+    // not a file on disk. romPath stays empty (so no .sav / ROM-watcher); the
+    // bytes are supplied by rp::embeddedRom() on load (see EmbeddedRoms.hpp).
+    // Survives the thin-JSON strip (not a binary blob), so a saved project
+    // re-supplies the embedded ROM on reopen.
+    std::string               embeddedRom;
     // Binary blobs live in the .rplg zip as raw entries (see ProjectBinaries).
     // In project.json they always serialize as `[]` because ProjectSerialization
     // strips them before the JSON pass.

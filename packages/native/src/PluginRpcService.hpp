@@ -227,6 +227,11 @@ public:
     bool loadRomFromPath(std::string path);
     bool addRomFromPath(std::string path);
     bool replaceRomFromPath(std::uint32_t id, std::string path);
+    // Load the mGB Game Boy MIDI-synth ROM that's embedded in the binary. Like
+    // a "Load…" (replaces/adopts as the first system) but with no file: no
+    // recent-files entry, no sibling .sav (it's pathless and battery-less). The
+    // system carries embeddedRom="mgb" so saved projects reload it.
+    bool loadMgb();
     bool removeSystem(std::uint32_t id);
     // Clone the selected system (same ROM, current SRAM, current savestate).
     // New instance is appended; linkGroupId is reset to 0 so the clone

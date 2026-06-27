@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "EmbeddedRoms.hpp"
 #include "Version.hpp"
 #include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
@@ -255,6 +256,50 @@ bool PluginRpcService::loadRomFromPath(std::string path) {
         projectDirty_       = false;      // the on-disk project matches the load
     }
     emit("rom-loaded", path);
+    return true;
+}
+
+bool PluginRpcService::loadMgb() {
+    if (!commands_ || !project_ || !sampleRate_) {
+        emit("rom-error", "embedded:mGB");
+        return false;
+    }
+
+    const std::span<const std::uint8_t> rom = rp::embeddedRom("mgb");
+    if (rom.empty()) {   // missing build wiring — shouldn't happen
+        std::fprintf(stderr, "loadMgb: embedded mGB ROM unavailable\n");
+        emit("rom-error", "embedded:mGB");
+        return false;
+    }
+
+    // Pathless + battery-less: the empty romPath skips the sibling-.sav load,
+    // the SRAM auto-save, and the ROM-change watcher. embeddedRom="mgb" lets a
+    // saved project re-supply the bytes on reload; embedRom=false keeps saved
+    // state small (the bytes live in the binary). The MGB passthrough role
+    // auto-attaches from the ROM content — identical to a file-loaded mGB.
+    SameBoyConfig cfg;
+    cfg.model       = SameBoyModel::CgbC;
+    cfg.fastBoot    = true;
+    cfg.embedRom    = false;
+    cfg.embeddedRom = "mgb";
+
+    const SystemId id = project_->nextSystemId();
+    const double   sr = sampleRate_->load(std::memory_order_acquire);
+    auto sys = std::make_unique<SameBoySystem>(
+        id, cfg, std::vector<std::uint8_t>(rom.begin(), rom.end()));
+    sys->onActivate(sr);
+
+    SystemBase* raw = sys.release();
+    if (!commands_->tryPush(Command::makeLoadRom(raw))) {
+        std::fprintf(stderr, "loadMgb: command queue full\n");
+        delete raw;
+        emit("rom-error", "embedded:mGB");
+        return false;
+    }
+    markProjectDirty();
+    // Deliberately no writeSiblingProject / recentFiles_->add — the embedded mGB
+    // stays out of the recent list and writes no files.
+    emit("rom-loaded", "embedded:mGB");
     return true;
 }
 

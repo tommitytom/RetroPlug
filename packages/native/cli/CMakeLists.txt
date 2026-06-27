@@ -66,6 +66,7 @@ target_link_libraries(retroplug-cli-core PUBLIC
     enkiTS    # used by KitCompiler for per-sample parallel compile
     miniaudio # header-only audio decoder used by SampleCache
     miniz     # used by projectConfigToZip for --save-rplg
+    mgb-rom   # embedded mGB ROM (Project.cpp re-supplies it on load)
     # Windows: SameBoySystem.cpp lives in this clang-cl-compiled lib (see above).
     $<$<BOOL:${WIN32}>:retroplug-samebsys>
 )

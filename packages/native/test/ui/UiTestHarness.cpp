@@ -368,6 +368,26 @@ void UiTestHarness::pump(int iterations) {
                     delete config;
                     configMutated = true;
                 }
+            } else if (cmd.kind == Command::Kind::LoadRom) {
+                // Mirror PluginDSP's LoadRom so menu-driven ROM loads (e.g. the
+                // embedded loadMgb) apply in headless UI tests: adopt into an
+                // empty project, else replace the focused system. The incoming
+                // system is already onActivate'd by the RPC service.
+                SystemBase* incoming = cmd.payload.loadRom.newSystem;
+                if (incoming) {
+                    if (project_.systems().empty()) {
+                        project_.adoptSystem(incoming);
+                        focusedSystemId_.store(incoming->id());
+                    } else {
+                        SystemId target = focusedSystemId_.load();
+                        if (!project_.findSystem(target))
+                            target = project_.systems().front()->id();
+                        delete project_.swapSystem(target, incoming);
+                        focusedSystemId_.store(incoming->id());
+                    }
+                    project_.rebuildLinkGroups();
+                    configMutated = true;
+                }
             } else if (cmd.kind == Command::Kind::SetZoom) {
                 // Mirror PluginDSP's SetZoom handler so the Project > Zoom
                 // cycle (incl. 0 = inherit default) reflects in headless UI
