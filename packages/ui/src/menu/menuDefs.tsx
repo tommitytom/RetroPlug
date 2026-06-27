@@ -113,6 +113,11 @@ export interface MenuContext {
     openKitEditor:  () => void;
     // Called by Menu when the user picks About.
     openAbout:      () => void;
+    // Called by Menu for "New Project" / "Load Project". These route through
+    // PluginUI so an unsaved project first raises the save prompt (the same
+    // modal the window-close uses) before the current project is discarded.
+    requestNewProject:  () => void;
+    requestLoadProject: () => void;
     // Bindings editors (one per channel). Own all of their own state +
     // RPC calls — see ui/useBindingsEditor.ts. The Settings submenu
     // builds two inline submenus from these (one for keyboard, one for
@@ -399,7 +404,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     if (ctx.systems.length > 0) {
         items.push(
             { id: "newProject", label: "New Project", kind: "action",
-              onSelect: () => { void plugin.$notify("newProject"); } },
+              onSelect: () => ctx.requestNewProject() },
             { id: "saveProject", label: "Save Project", kind: "action",
               onSelect: () => {
                   void (async () => {
@@ -416,7 +421,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     }
     items.push(
         { id: "loadProject", label: "Load Project", kind: "action",
-          onSelect: () => { void plugin.$notify("openLoadProjectBrowser"); } },
+          onSelect: () => ctx.requestLoadProject() },
         sep(),
         { id: "layout", label: `Layout: ${layoutName}`, kind: "action", keepOpen: true,
           onSelect: () => {

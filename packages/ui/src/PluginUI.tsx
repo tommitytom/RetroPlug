@@ -11,7 +11,7 @@ import { DEFAULT_ZOOM } from "./layout";
 import { StartScreen } from "./menu/StartScreen";
 import { AboutPanel } from "./menu/AboutPanel";
 import { RelinkMenu } from "./menu/RelinkMenu";
-import { UnsavedChangesModal } from "./menu/UnsavedChangesModal";
+import { UnsavedChangesModal, type UnsavedIntent } from "./menu/UnsavedChangesModal";
 import { buildInstanceMenu, type RecentEntry } from "./menu/menuDefs";
 import type { RpMissingFile } from "plugin-service";
 import { useBindingsEditor } from "./useBindingsEditor";
@@ -76,9 +76,10 @@ function PluginUI() {
     // relink menu is shown until every entry is located (load commits) or the
     // user cancels. Populated by the "missing-files" event from C++.
     const [missingFiles, setMissingFiles] = useState<RpMissingFile[]>([]);
-    // Standalone unsaved-changes prompt: C++ vetoes the window close and emits
-    // "confirm-close"; this shows the modal until the user resolves it.
-    const [confirmClose, setConfirmClose] = useState<boolean>(false);
+    // Unsaved-changes prompt. Non-null while the modal is up; the intent says
+    // what to do once the user resolves it (quit the standalone on a vetoed
+    // window close, or discard the current project for a new / loaded one).
+    const [unsavedIntent, setUnsavedIntent] = useState<UnsavedIntent | null>(null);
 
     const menuOpenRef = useRef(menuOpen);
     useEffect(() => { menuOpenRef.current = menuOpen; }, [menuOpen]);
@@ -182,7 +183,7 @@ function PluginUI() {
     // Standalone close prompt: C++ emits "confirm-close" after vetoing the window
     // close when there are unsaved changes.
     useEffect(() => {
-        const handler = () => setConfirmClose(true);
+        const handler = () => setUnsavedIntent({ kind: "quit" });
         on("confirm-close", handler);
         return () => off("confirm-close", handler);
     }, []);
@@ -288,13 +289,13 @@ function PluginUI() {
     const missingFilesRef = useRef(missingFiles);
     useEffect(() => { missingFilesRef.current = missingFiles; }, [missingFiles]);
 
-    const confirmCloseRef = useRef(confirmClose);
-    useEffect(() => { confirmCloseRef.current = confirmClose; }, [confirmClose]);
+    const unsavedModalRef = useRef(unsavedIntent !== null);
+    useEffect(() => { unsavedModalRef.current = unsavedIntent !== null; }, [unsavedIntent]);
 
     useKeyboard(useCallback((key: number, press: boolean) => {
         if (key === KEY_ESCAPE) {
             // Unsaved-changes modal is up: its own Menu owns Esc (dismiss).
-            if (confirmCloseRef.current) return;
+            if (unsavedModalRef.current) return;
             // Relink menu is up: let its own Esc handler cancel the pending load
             // (don't fall through to opening the tile menu underneath).
             if (missingFilesRef.current.length > 0) return;
@@ -324,7 +325,7 @@ function PluginUI() {
             return;
         }
         // Modals consume their own key events through their child keyboard group.
-        if (confirmCloseRef.current) return;
+        if (unsavedModalRef.current) return;
         if (missingFilesRef.current.length > 0) return;
         if (kitEditorOpenRef.current) return;
         if (aboutOpenRef.current) return;
@@ -452,6 +453,25 @@ function PluginUI() {
         setAboutOpen(true);
     }, []);
 
+    // "New Project" / "Load Project" from the menu. If the current project has
+    // unsaved changes, raise the save prompt first (the same modal the window-
+    // close uses) with the chosen follow-up; otherwise act immediately. The
+    // start screen has no project on screen, so its own menu skips this gate.
+    const requestNewProject = useCallback(() => {
+        void (async () => {
+            const s = await plugin.getUnsavedSummary();
+            if (s.project || s.sramSystems > 0) setUnsavedIntent({ kind: "new" });
+            else void plugin.$notify("newProject");
+        })();
+    }, []);
+    const requestLoadProject = useCallback(() => {
+        void (async () => {
+            const s = await plugin.getUnsavedSummary();
+            if (s.project || s.sramSystems > 0) setUnsavedIntent({ kind: "loadBrowser" });
+            else void plugin.$notify("openLoadProjectBrowser");
+        })();
+    }, []);
+
     // Bindings editors (one per channel). State lives here so opening /
     // closing the menu doesn't drop in-progress edits. The Settings
     // submenu in menuDefs renders these as nested submenus with capture
@@ -475,6 +495,8 @@ function PluginUI() {
         recentFiles,
         openKitEditor,
         openAbout,
+        requestNewProject,
+        requestLoadProject,
         keyboardEditor,
         gamepadEditor,
     });
@@ -502,10 +524,11 @@ function PluginUI() {
                 overflow: "hidden",
             }}
         >
-            {confirmClose ? (
+            {unsavedIntent ? (
                 <UnsavedChangesModal
                     zoom={zoom}
-                    onClose={() => setConfirmClose(false)}
+                    intent={unsavedIntent}
+                    onClose={() => setUnsavedIntent(null)}
                     sinkGroup={sinkGroupRef.current}
                 />
             ) : missingFiles.length > 0 ? (

@@ -4,6 +4,7 @@ import { tileWidth, tileHeight } from "../layout";
 import { Menu } from "./Menu";
 import { buildStartMenu, type RecentEntry } from "./menuDefs";
 import type { BindingsEditor } from "../useBindingsEditor";
+import { plugin } from "../plugin/client";
 
 interface StartScreenProps {
     version:         string;
@@ -50,6 +51,11 @@ export function StartScreen({
         recentFiles,
         openKitEditor: () => { /* unreachable from start menu */ },
         openAbout,
+        // New Project is hidden on the empty start screen; Load Project has no
+        // on-screen project to lose, so it skips the unsaved-changes gate and
+        // opens the browser directly.
+        requestNewProject:  () => { /* unreachable from start menu */ },
+        requestLoadProject: () => { void plugin.$notify("openLoadProjectBrowser"); },
         keyboardEditor,
         gamepadEditor,
     });
