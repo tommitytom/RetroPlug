@@ -688,8 +688,8 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
             </View>
             {promptState && (() => {
                 // Inline modal overlay anchored top-centre, sized to the
-                // menu width minus a small inset. Same colour palette as
-                // the rest of the menu (cyan accent + neutral panels).
+                // menu width minus a small inset. Matches the rest of the menu:
+                // black panel + cyan accent border, with a grey input field.
                 const promptW = Math.max(120, width - r(32));
                 const promptH = r(promptState.spec.confirm ? 72 : 96);
                 const promptX = Math.max(0, Math.floor((width  - promptW) / 2));
@@ -709,7 +709,7 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
                             top:  promptY,
                             width:  promptW,
                             height: promptH,
-                            "background-color": "#161628",
+                            "background-color": "#000000",
                             "background-opacity": 255,
                             "border-width": 1,
                             "border-color": "#4fc3f7",
@@ -734,7 +734,7 @@ export function Menu({ width, height, zoom, tree, onClose, sinkGroup }: MenuProp
                         {!sp.confirm && (
                             <Text style={{
                                 "text-color": "#ffffff",
-                                "background-color": "#1a1a2e",
+                                "background-color": "#333333",
                                 "background-opacity": 255,
                                 "font-size": fontSize,
                                 width:       "100%",
