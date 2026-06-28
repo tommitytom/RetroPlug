@@ -52,7 +52,55 @@ protected:
     }
 };
 
+// Records the fused-onProcess dispatch order. Overrides ONLY the triad (leaves
+// onProcess at the base default) so we pin that the base entry calls
+// prepareForBlock once, stepIfBelowTarget until it returns false, then
+// finishBlock once — the contract every real backend now relies on.
+class TriadRecordingSystem final : public SystemBase {
+public:
+    using SystemBase::SystemBase;
+    SystemKind kind() const override { return SystemKind::MesenNes; }
+    void onActivate(double) override {}
+    void onSampleRateChanged(double) override {}
+    SystemConfig snapshotConfig() const override { return MesenNesConfig{}; }
+
+    void prepareForBlock(const AudioBlockInfo&) override { calls.push_back('p'); }
+    bool stepIfBelowTarget(std::uint32_t framesNeeded) override {
+        calls.push_back('s');
+        lastFramesNeeded = framesNeeded;
+        return ++steps < stepsBeforeDone;   // true until the Nth call
+    }
+    void finishBlock(const AudioBlockInfo&, float* const*) override { calls.push_back('f'); }
+
+    int           stepsBeforeDone = 3;
+    int           steps = 0;
+    std::uint32_t lastFramesNeeded = 0;
+    std::string   calls;   // sequence of 'p' / 's' / 'f'
+};
+
 } // namespace
+
+TEST_CASE("SystemBase::onProcess fuses the triad: prepare, step-to-done, finish",
+          "[SystemBase][defaults][triad]") {
+    TriadRecordingSystem sys{1};
+    sys.stepsBeforeDone = 3;   // step returns true twice, then false on the 3rd
+
+    float l[8] = {}, r[8] = {};
+    float* outs[2] = { l, r };
+    const AudioBlockInfo info{ /*frames*/ 8, /*sampleRate*/ 44100.0,
+                               /*tempo*/ 120.0, /*ppq*/ 0.0, /*playing*/ false };
+
+    sys.onProcess(info, outs);
+
+    // prepare once, three steps (true, true, false), finish once — in order.
+    CHECK(sys.calls == "psssf");
+    CHECK(sys.lastFramesNeeded == 8);   // the runner passes info.frames as the target
+}
+
+TEST_CASE("SystemBase::isLinked defaults to false", "[SystemBase][defaults][triad]") {
+    TriadRecordingSystem sys{1};
+    CHECK_FALSE(sys.isLinked());
+}
 
 TEST_CASE("SystemBase default fastBoot returns nullopt", "[SystemBase][defaults]") {
     DefaultsOnlySystem sys{1};

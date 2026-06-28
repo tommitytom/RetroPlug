@@ -223,7 +223,7 @@ NesController::Buttons toNesButton(std::uint8_t b) {
 }
 } // namespace
 
-void MesenNesSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
+void MesenNesSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!activated_ || !emu_) return;
 
     // First call from the audio thread: tell Mesen this is the emulation
@@ -248,19 +248,30 @@ void MesenNesSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     }
 
     emu_->ProcessEvent(EventType::InputPolled, CpuType::Nes);
+}
 
+bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
+    if (!activated_ || !emu_) return false;
+    auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get());
+    if (!console) return false;
     auto* cpu = console->GetCpu();
-    const std::uint32_t blockSize = info.frames;
 
-    // Run the CPU one instruction at a time until the audio device has
-    // accumulated enough samples for this block. The APU auto-flushes into
+    // Degenerate 1-member unit: run the whole block here and report "done"
+    // (false). Run the CPU one instruction at a time until the audio device
+    // has accumulated enough samples for this block. The APU auto-flushes into
     // MesenAudioDevice every CycleLength APU cycles via NesApu::EndFrame().
-    // ~227 samples per flush at 44.1 kHz, so blockSize samples are ready
-    // well within one PPU frame.
-    while (audioDevice_->availableFrames() < blockSize) {
+    // ~227 samples per flush at 44.1 kHz, so blockSize samples are ready well
+    // within one PPU frame.
+    while (audioDevice_->availableFrames() < framesNeeded) {
         cpu->Exec();
     }
+    return false;
+}
 
+void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs) {
+    if (!activated_ || !emu_) return;
+
+    const std::uint32_t blockSize = info.frames;
     if (stereoAccum_.size() < std::size_t(blockSize) * 2) {
         stereoAccum_.assign(std::size_t(blockSize) * 2, 0.0f);
     }

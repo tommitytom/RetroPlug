@@ -44,10 +44,37 @@ public:
     virtual void onSampleRateChanged(double sampleRate) = 0;
     virtual void onReset() {}
 
-    // Audio-thread per-block entry. `outs[0]` and `outs[1]` are planar L/R
-    // buffers (DPF convention). Implementations must SUM into outs, not
-    // overwrite, so multiple systems can mix into a single output pair.
-    virtual void onProcess(const AudioBlockInfo& info, float* const* outs) = 0;
+    // -- Per-block audio lockstep -------------------------------------------
+    //
+    // Every system advances through a 3-phase triad: prepareForBlock →
+    // stepIfBelowTarget (looped until it returns false) → finishBlock. A link
+    // group round-robins stepIfBelowTarget across its members so serial bits
+    // ferry mid-block; a standalone system (or a Mesen backend) is the
+    // degenerate 1-member unit. The runner (system/BlockRunner.cpp) drives
+    // these directly for link groups and via the fused onProcess() below for
+    // singletons.
+    //
+    // Output contract: `outs[0]`/`outs[1]` are planar L/R buffers (DPF
+    // convention) the system must SUM into, not overwrite, so multiple systems
+    // can mix into one output pair. The CALLER zeroes the buffers.
+    //
+    // Defaults are inert (no-op / "done") so trivial backends and test doubles
+    // need not implement them.
+    virtual void prepareForBlock(const AudioBlockInfo& /*info*/) {}
+    virtual bool stepIfBelowTarget(std::uint32_t /*framesNeeded*/) { return false; }
+    virtual void finishBlock(const AudioBlockInfo& /*info*/, float* const* /*outs*/) {}
+
+    // True when this system is advanced as part of a multi-member link unit —
+    // its block is stepped by the group's round-robin, so it must NOT be driven
+    // standalone. Default false; SameBoySystem returns true when it has linked
+    // peers.
+    virtual bool isLinked() const { return false; }
+
+    // Fused single-system entry: the degenerate 1-member unit, prepare →
+    // step-to-done → finish. The standalone audio path and direct callers use
+    // it; the runner uses it for unlinked systems. Defined out-of-line in
+    // SystemBase.cpp. Backends implement the triad, not this.
+    virtual void onProcess(const AudioBlockInfo& info, float* const* outs);
 
     // Audio-thread MIDI delivery.
     virtual void onMidi(const ::MidiEvent* /*events*/, std::uint32_t /*count*/) {}

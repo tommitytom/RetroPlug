@@ -34,7 +34,14 @@ public:
     void onDeactivate() override;
     void onSampleRateChanged(double sampleRate) override;
     void onReset() override;
-    void onProcess(const AudioBlockInfo& info, float* const* outs) override;
+
+    // SystemBase per-block triad (see base for the contract). NES is a
+    // degenerate 1-member unit: stepIfBelowTarget runs the whole block once and
+    // returns false; finishBlock drains/sums the audio and publishes snapshots.
+    // The base onProcess() fuses the three.
+    void prepareForBlock(const AudioBlockInfo& info) override;
+    bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
+    void finishBlock(const AudioBlockInfo& info, float* const* outs) override;
 
     // Audio-thread: forward host MIDI events to the attached N8 role (if any).
     // The role pushes bytes into the FIFO RX queue so the ROM's polling loop

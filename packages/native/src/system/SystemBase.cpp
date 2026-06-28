@@ -12,6 +12,14 @@ constexpr std::size_t typeIndex(rp::MemoryType t) {
 
 } // namespace
 
+void SystemBase::onProcess(const AudioBlockInfo& info, float* const* outs) {
+    // The degenerate 1-member unit: drive the triad to the block target, then
+    // finish. Identical to a link group of size one (system/BlockRunner.cpp).
+    prepareForBlock(info);
+    while (stepIfBelowTarget(info.frames)) {}
+    finishBlock(info, outs);
+}
+
 bool SystemBase::enableMemorySnapshot(rp::MemoryType type) {
     const std::size_t idx = typeIndex(type);
     if (idx >= rp::kMemoryTypeCount) return false;

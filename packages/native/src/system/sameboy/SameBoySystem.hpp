@@ -34,7 +34,6 @@ public:
     void onDeactivate() override;
     void onSampleRateChanged(double sampleRate) override;
     void onReset() override;
-    void onProcess(const AudioBlockInfo& info, float* const* outs) override;
 
     // Build runtime `RomRole` instances from `config_.roles`. Called once at
     // the end of onActivate (after the sniffer has had a chance to fill in
@@ -77,15 +76,19 @@ public:
 
     SystemConfig snapshotConfig() const override;
 
-    // Per-block driver split out of onProcess so LinkGroup can interleave
-    // GB_run() across linked peers. Standalone path: onProcess() calls
-    // prepareForBlock → spin stepIfBelowTarget → finishBlock. Linked path:
-    // LinkGroup does the same but interleaves stepIfBelowTarget across all
-    // members.
+    // The SystemBase per-block triad (see base for the contract). The runner
+    // round-robins stepIfBelowTarget across a link group's members so GB_run()
+    // interleaves and serial bits ferry mid-block; the base onProcess() fuses
+    // the three for the standalone (singleton) path.
     ExpSmoother& gainSmoother() noexcept { return gainSmoother_; }
-    void prepareForBlock(const AudioBlockInfo& info);
-    bool stepIfBelowTarget(std::uint32_t framesNeeded);
-    void finishBlock(const AudioBlockInfo& info, float* const* outs);
+    void prepareForBlock(const AudioBlockInfo& info) override;
+    bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
+    void finishBlock(const AudioBlockInfo& info, float* const* outs) override;
+
+    // Linked iff this system shares a nonzero linkGroupId with surviving peers
+    // (linkPeers_ populated by Project::rebuildLinkGroups). The runner skips
+    // linked systems in its singleton pass and drives them via their LinkGroup.
+    bool isLinked() const override { return !linkPeers_.empty(); }
 
     // Set the per-system gain target (dB). Smoothed at audio rate inside
     // finishBlock so live edits don't click. Not realtime-safe to call from

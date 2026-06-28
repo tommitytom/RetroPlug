@@ -31,7 +31,14 @@ public:
     void onDeactivate() override;
     void onSampleRateChanged(double sampleRate) override;
     void onReset() override;
-    void onProcess(const AudioBlockInfo& info, float* const* outs) override;
+
+    // SystemBase per-block triad (see base for the contract). GBA is a
+    // degenerate 1-member unit: stepIfBelowTarget runs the whole block once and
+    // returns false; finishBlock drains/sums the audio and publishes snapshots.
+    // The base onProcess() fuses the three.
+    void prepareForBlock(const AudioBlockInfo& info) override;
+    bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
+    void finishBlock(const AudioBlockInfo& info, float* const* outs) override;
 
     // Audio-thread: queue a GBA button transition. The byte is the
     // position-aligned name index (GbaButton wire byte); remapped to

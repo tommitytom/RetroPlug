@@ -26,12 +26,15 @@ std::size_t slotOf(const std::vector<std::unique_ptr<SystemBase>>& systems,
 void runBlock(const AudioBlockInfo& info, Project& project, const AudioRouter& router) {
     auto& systems = project.systems();
 
-    // Unlinked pass: every system gets its routed bus. Linked SameBoys self-bail
-    // (their LinkGroup drives them below, so they no-op here — double-processing
-    // is impossible); Mesen / standalone systems produce audio here.
+    // Singleton units: every unlinked system advances as a degenerate 1-member
+    // lockstep (onProcess == prepare -> step-to-done -> finish). Linked SameBoys
+    // are skipped here and driven by their LinkGroup below — skipping them
+    // explicitly (rather than relying on a per-system self-bail) keeps the
+    // link-vs-singleton decision in one place. Every backend (SameBoy / Mesen)
+    // flows through the same triad.
     for (std::size_t i = 0; i < systems.size(); ++i) {
         SystemBase* sys = systems[i].get();
-        if (!sys) continue;
+        if (!sys || sys->isLinked()) continue;
         const AudioBus b = router.bus(i);
         float* outs[2] = { b.l, b.r };
         sys->onProcess(info, outs);

@@ -218,12 +218,12 @@ GbaController::Buttons toGbaButton(std::uint8_t wire) {
 }
 } // namespace
 
-void MesenGbaSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
+void MesenGbaSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!activated_ || !emu_) return;
 
     // First call from the audio thread: tell Mesen this is the emulation
     // thread so its internal `IsEmulationThread()` checks pass during
-    // cpu->Exec().
+    // console->RunFrame().
     if (!threadIdSet_) {
         emu_->SetEmulationThreadId(std::this_thread::get_id());
         threadIdSet_ = true;
@@ -243,27 +243,38 @@ void MesenGbaSystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
     }
 
     emu_->ProcessEvent(EventType::InputPolled, CpuType::Gba);
+}
 
-    const std::uint32_t blockSize = info.frames;
+bool MesenGbaSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
+    if (!activated_ || !emu_) return false;
+    auto* console = dynamic_cast<GbaConsole*>(emu_->GetConsole().get());
+    if (!console) return false;
 
-    // GBA APU is driven per-frame, not by CPU instructions: GbaConsole::
-    // RunFrame steps the CPU until the PPU advances FrameCount, then calls
-    // _apu->Run() + PlayQueuedAudio() to generate and flush the samples for
-    // that frame. (Contrast with NES, where the APU auto-flushes during
-    // CPU execution.) Loop RunFrame until we have enough samples for this
-    // host block. ~735 samples per frame @ 44.1 kHz / 60 fps, so usually
+    // Degenerate 1-member unit: run the whole block here and report "done"
+    // (false). The GBA APU is driven per-frame, not by CPU instructions:
+    // GbaConsole::RunFrame steps the CPU until the PPU advances FrameCount,
+    // then calls _apu->Run() + PlayQueuedAudio() to generate and flush the
+    // samples for that frame. (Contrast with NES, where the APU auto-flushes
+    // during CPU execution.) Loop RunFrame until we have enough samples for
+    // this host block. ~735 samples per frame @ 44.1 kHz / 60 fps, so usually
     // 2 frames per 1024-sample block.
-    while (audioDevice_->availableFrames() < blockSize) {
+    while (audioDevice_->availableFrames() < framesNeeded) {
         console->RunFrame();
     }
+    return false;
+}
 
+void MesenGbaSystem::finishBlock(const AudioBlockInfo& info, float* const* outs) {
+    if (!activated_ || !emu_) return;
+
+    const std::uint32_t blockSize = info.frames;
     if (stereoAccum_.size() < std::size_t(blockSize) * 2) {
         stereoAccum_.assign(std::size_t(blockSize) * 2, 0.0f);
     }
     audioDevice_->drain(stereoAccum_.data(), blockSize);
 
     // Sum interleaved stereo into the planar L/R outputs with smoothed gain
-    // (matches MesenNesSystem::onProcess so multi-system mixes are uniform).
+    // (matches MesenNesSystem::finishBlock so multi-system mixes are uniform).
     float* outL = outs[0];
     float* outR = outs[1];
     for (std::uint32_t i = 0; i < blockSize; ++i) {

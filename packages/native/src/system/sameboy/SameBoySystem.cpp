@@ -708,16 +708,9 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs) 
     publishStateSnapshot(frames, sampleRate_);
 }
 
-void SameBoySystem::onProcess(const AudioBlockInfo& info, float* const* outs) {
-    // Linked systems are driven by LinkGroup::onProcess; bail so we don't
-    // race-step them ahead of their peers. The link group will call
-    // prepareForBlock / stepIfBelowTarget / finishBlock in lockstep.
-    if (!linkPeers_.empty()) return;
-
-    prepareForBlock(info);
-    while (stepIfBelowTarget(info.frames)) {}
-    finishBlock(info, outs);
-}
+// The standalone fused entry is SystemBase::onProcess (prepare → spin step →
+// finish); the runner skips linked systems via isLinked() and drives them
+// through their LinkGroup, so no self-bail lives here anymore.
 
 rp::MemoryAccessor SameBoySystem::getMemory(rp::MemoryType type, rp::AccessType access) {
     if (!gb_) return rp::MemoryAccessor{};
