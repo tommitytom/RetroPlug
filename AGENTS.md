@@ -37,6 +37,14 @@ the parts that don't naturally fit either.
   derived (regenerated from `PluginRpcService`'s OpenRPC schema by
   `tools/gen-rpc-ts.js` whenever the service signatures change). Never
   commit it.
+- On Linux / macOS, `build.sh` is the canonical build entry point. Bare
+  `./build.sh` does an incremental parallel build; `--clean` wipes `build/`
+  first; `--tests` (re)configures with `-DBUILD_TESTING=ON` so the Catch2
+  unit tests build (off by default). Flags combine, e.g.
+  `./build.sh --clean --tests`. It always builds with `-j$(nproc)` and runs
+  the configure this project needs, so prefer it over invoking `cmake`
+  directly. (For a single target after a configure, `cmake --build build
+  --target <t> -j$(nproc)` is still fine — see the standalone gotcha below.)
 - Always build in parallel: pass `-j$(nproc)` (or `-j` followed by the core
   count) to `cmake --build`. The default is single-threaded and turns a
   full build into a multi-minute serial slog.
