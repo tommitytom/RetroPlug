@@ -514,6 +514,18 @@ if(WIN32)
             "/EXPORT:ModuleEntry=InitDll"
             "/EXPORT:ModuleExit=ExitDll")
     endif()
+    # Standalone (retroplug-jack → bin/retroplug): build as a GUI-subsystem app
+    # so launching from Explorer / the Start menu doesn't pop a console window.
+    # This does NOT lose the console for debugging: DPF's standalone main()
+    # already calls AttachConsole(ATTACH_PARENT_PROCESS) (DistrhoPluginJACK.cpp),
+    # so running the exe from a terminal (PowerShell/cmd) still routes
+    # stdout/stderr into that console — no rebuild needed to see output.
+    # /SUBSYSTEM:WINDOWS defaults the entry point to WinMain, but DPF defines
+    # int main(), so point the linker back at the CRT's standard main entry.
+    if(MSVC AND TARGET ${NAME}-jack)
+        set_target_properties(${NAME}-jack PROPERTIES WIN32_EXECUTABLE TRUE)
+        target_link_options(${NAME}-jack PRIVATE "/ENTRY:mainCRTStartup")
+    endif()
 endif()
 
 # --- Tests (Catch2) ----------------------------------------------------------

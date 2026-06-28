@@ -40,6 +40,15 @@ the parts that don't naturally fit either.
 - Always build in parallel: pass `-j$(nproc)` (or `-j` followed by the core
   count) to `cmake --build`. The default is single-threaded and turns a
   full build into a multi-minute serial slog.
+- On Windows, `build.bat` is the canonical build entry point (the `build.sh`
+  counterpart). It enters the VS x64 dev environment (vcvars64), puts RGBDS /
+  Node / the VS-bundled CMake + Ninja on PATH, and runs the `cl` +
+  vcpkg-`x64-windows-static` configure this project needs (SameBoy is isolated
+  to clang-cl from there). `build.bat` does the full configure + build;
+  `build.bat --clean` wipes `build\` first. To build a single target after a
+  configure, set up the same environment (vcvars64 + the PATH prepends from
+  `build.bat`) and run `cmake --build build --target <t> -j%NUMBER_OF_PROCESSORS%`.
+  Tool locations are overridable via `VCPKG_ROOT` / `RGBDS_DIR` / `NODE_DIR`.
 - Nothing has been released yet. Don't write migration code, version-gating,
   or backwards-compatibility shims for on-disk formats (project state, DPF
   state, kit-patch persistence, config schemas, etc.). When changing a
