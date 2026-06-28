@@ -50,9 +50,9 @@ public:
     // stepIfBelowTarget (looped until it returns false) → finishBlock. A link
     // group round-robins stepIfBelowTarget across its members so serial bits
     // ferry mid-block; a standalone system (or a Mesen backend) is the
-    // degenerate 1-member unit. The runner (system/BlockRunner.cpp) drives
-    // these directly for link groups and via the fused onProcess() below for
-    // singletons.
+    // degenerate 1-member unit. The runner (system/BlockRunner.cpp's runUnit())
+    // drives these three directly for EVERY unit — singleton or link group; it
+    // does not route singletons through onProcess().
     //
     // Output contract: `outs[0]`/`outs[1]` are planar L/R buffers (DPF
     // convention) the system must SUM into, not overwrite, so multiple systems
@@ -70,10 +70,11 @@ public:
     // peers.
     virtual bool isLinked() const { return false; }
 
-    // Fused single-system entry: the degenerate 1-member unit, prepare →
-    // step-to-done → finish. The standalone audio path and direct callers use
-    // it; the runner uses it for unlinked systems. Defined out-of-line in
-    // SystemBase.cpp. Backends implement the triad, not this.
+    // Fused single-system convenience entry: prepare → step-to-done → finish.
+    // NOT on the runner's hot path (runUnit drives the triad directly) — this is
+    // for direct callers and test doubles that want to advance one system in one
+    // call. Defined out-of-line in SystemBase.cpp. Backends implement the triad,
+    // not this.
     virtual void onProcess(const AudioBlockInfo& info, float* const* outs);
 
     // Audio-thread MIDI delivery.

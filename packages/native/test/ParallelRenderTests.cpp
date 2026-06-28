@@ -24,6 +24,7 @@
 #include "system/sameboy/SameBoySystem.hpp"
 #include "system/mesen/MesenNesConfig.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
+#include "transport/MidiTypes.hpp"
 
 #ifndef RETROPLUG_TEST_GB_ROM
 #  error "RETROPLUG_TEST_GB_ROM must be defined by CMake"
@@ -107,6 +108,12 @@ void expectByteIdentical(const std::vector<std::vector<float>>& parallel,
     }
 }
 
+// A real-audio guard: byte-identity over two all-zero buffers proves nothing, so
+// every determinism case asserts its per-system reference actually has signal.
+bool hasAudio(const std::vector<float>& buf) {
+    return std::any_of(buf.begin(), buf.end(), [](float x) { return x != 0.0f; });
+}
+
 // `count` SameBoy instances. If `linkGroupId != 0`, the first two share it (a
 // 2-member link group); the rest are standalone.
 std::unique_ptr<Project> makeSameBoyProject(const std::vector<std::uint8_t>& rom,
@@ -116,6 +123,13 @@ std::unique_ptr<Project> makeSameBoyProject(const std::vector<std::uint8_t>& rom
         SameBoyConfig cfg{};
         cfg.romPath = kGbRomPath;
         if (linkGroupId != 0 && i < 2) cfg.linkGroupId = linkGroupId;
+        // Distinct per-slot gain so each system's output is DISTINGUISHABLE. With
+        // identical config every system boots byte-identical, and a slot-mapping
+        // cross-wire in the parallel renderer would land audio in the wrong slot
+        // yet still byte-match — invisible. Distinct gains make a cross-wire diverge
+        // (both paths apply the same per-slot gain via the same routing, so a
+        // CORRECT render still byte-matches).
+        cfg.gainDb = -3.0f * static_cast<float>(i);
         const SystemId id = project->nextSystemId();
         auto sys = std::make_unique<SameBoySystem>(id, cfg, rom);
         sys->onActivate(kSampleRate);
@@ -139,6 +153,21 @@ std::unique_ptr<Project> makeNesProject(const std::vector<std::uint8_t>& rom, in
     return project;
 }
 
+// n8-midi.nes (the evermidi ROM) is SILENT until driven by MIDI — comparing two
+// silent renders proves nothing. Settle the ROM (~1s) so its main loop is
+// servicing the everdrive FIFO, then sustain a note on every instance. MIDI ch1
+// (status 0x90) -> APU Pulse 1 (a built-in voice Mesen emulates), note 60 is in
+// range -> real, deterministic audio for the byte-identity comparison. The warmup
+// runs on the calling (main) thread, so the subsequent parallel render exercises
+// the main->worker IsEmulationThread() rebind.
+void primeNes(Project& p) {
+    renderSingleThreaded(p, makeParams(/*~1s settle*/ 44100, /*blockSize*/ 256)); // discard
+    ::MidiEvent ev{};
+    ev.frame = 0; ev.size = 3;
+    ev.data[0] = 0x90; ev.data[1] = 60; ev.data[2] = 100;   // ch1 NoteOn, note 60
+    for (auto& s : p.systems()) if (s) s->onMidi(&ev, 1);
+}
+
 } // namespace
 
 TEST_CASE("Parallel render byte-matches single-threaded: 3 standalone SameBoys",
@@ -146,16 +175,22 @@ TEST_CASE("Parallel render byte-matches single-threaded: 3 standalone SameBoys",
     if (!exists(kGbRomPath)) SKIP("Game Boy ROM missing at " << kGbRomPath);
     const auto rom = loadFile(kGbRomPath);
 
-    const auto params = makeParams(/*totalSamples*/ 8192, /*blockSize*/ 256);
+    // 8200 is deliberately NOT a multiple of the 256 block size, so the partial
+    // final block (8 frames) is exercised by a byte-identity comparison.
+    const auto params = makeParams(/*totalSamples*/ 8200, /*blockSize*/ 256);
     auto single   = makeSameBoyProject(rom, 3, /*linkGroupId*/ 0);
     auto parallel = makeSameBoyProject(rom, 3, /*linkGroupId*/ 0);
 
     const auto refOut = renderSingleThreaded(*single, params);
     const auto parOut = renderUnitsParallel(*parallel, params);
 
-    // Three distinct units (one task each); SameBoy boot produces real audio.
+    // Three distinct units (one task each), each with a distinct gain -> distinct,
+    // non-silent audio per slot (so a routing cross-wire would diverge).
     REQUIRE(refOut.size() == 3);
-    CHECK_FALSE(refOut[0].empty());
+    CHECK(hasAudio(refOut[0]));
+    CHECK(hasAudio(refOut[1]));
+    CHECK(hasAudio(refOut[2]));
+    CHECK(refOut[0] != refOut[1]);   // distinct gains -> distinguishable slots
     expectByteIdentical(parOut, refOut);
 }
 
@@ -177,6 +212,7 @@ TEST_CASE("Parallel render byte-matches single-threaded: 2 standalone + a link g
     const auto parOut = renderUnitsParallel(*parallel, params);
 
     REQUIRE(refOut.size() == 4);
+    for (const auto& slot : refOut) CHECK(hasAudio(slot));   // every slot has signal
     expectByteIdentical(parOut, refOut);
 }
 
@@ -186,17 +222,22 @@ TEST_CASE("Parallel render byte-matches single-threaded: 2 Mesen NES instances",
     const auto rom = loadFile(kNesRomPath);
     REQUIRE(rom.size() > 16);
 
-    // Two Mesen units rendered on two worker threads — also the missing
-    // "two Mesen instances stepped concurrently on separate threads" safety
-    // case (n8-midi.nes is silent without MIDI, so the audio is zero; the test
-    // still validates the parallel-stepping path + byte-identity under TSan).
-    const auto params = makeParams(/*totalSamples*/ 4096, /*blockSize*/ 256);
+    // Two Mesen units rendered on two worker threads — the concurrent-Mesen
+    // determinism + safety case (also clean under TSan). primeNes() drives a
+    // sustained APU note into both instances FIRST, so this compares real audio,
+    // not silence: a mis-stepped / wrongly-rebound instance would diverge here.
     auto single   = makeNesProject(rom, 2);
     auto parallel = makeNesProject(rom, 2);
+    primeNes(*single);
+    primeNes(*parallel);
 
+    // 22050 (~0.5 s) is not a multiple of 256 -> also covers the partial tail.
+    const auto params = makeParams(/*totalSamples*/ 22050, /*blockSize*/ 256);
     const auto refOut = renderSingleThreaded(*single, params);
     const auto parOut = renderUnitsParallel(*parallel, params);
 
     REQUIRE(refOut.size() == 2);
+    CHECK(hasAudio(refOut[0]));   // the note actually sounded — not silence-vs-silence
+    CHECK(hasAudio(refOut[1]));
     expectByteIdentical(parOut, refOut);
 }

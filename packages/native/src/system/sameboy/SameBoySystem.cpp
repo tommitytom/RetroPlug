@@ -708,9 +708,10 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs) 
     publishStateSnapshot(frames, sampleRate_);
 }
 
-// The standalone fused entry is SystemBase::onProcess (prepare → spin step →
-// finish); the runner skips linked systems via isLinked() and drives them
-// through their LinkGroup, so no self-bail lives here anymore.
+// onProcess is no longer overridden here: the runner (runUnit) drives the triad
+// directly for every unit, skipping linked systems via isLinked() and driving
+// them through their LinkGroup, so no self-bail lives here anymore. The base
+// SystemBase::onProcess remains as a fused convenience entry for direct callers.
 
 rp::MemoryAccessor SameBoySystem::getMemory(rp::MemoryType type, rp::AccessType access) {
     if (!gb_) return rp::MemoryAccessor{};

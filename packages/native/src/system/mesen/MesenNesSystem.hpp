@@ -35,10 +35,10 @@ public:
     void onSampleRateChanged(double sampleRate) override;
     void onReset() override;
 
-    // SystemBase per-block triad (see base for the contract). NES is a
-    // degenerate 1-member unit: stepIfBelowTarget runs the whole block once and
-    // returns false; finishBlock drains/sums the audio and publishes snapshots.
-    // The base onProcess() fuses the three.
+    // SystemBase per-block triad (see base for the contract); the runner
+    // (runUnit) drives these directly. NES is a degenerate 1-member unit:
+    // stepIfBelowTarget runs the whole block once and returns false; finishBlock
+    // drains/sums the audio and publishes snapshots.
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
     void finishBlock(const AudioBlockInfo& info, float* const* outs) override;

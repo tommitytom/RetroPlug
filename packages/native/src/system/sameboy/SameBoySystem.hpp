@@ -77,9 +77,9 @@ public:
     SystemConfig snapshotConfig() const override;
 
     // The SystemBase per-block triad (see base for the contract). The runner
-    // round-robins stepIfBelowTarget across a link group's members so GB_run()
-    // interleaves and serial bits ferry mid-block; the base onProcess() fuses
-    // the three for the standalone (singleton) path.
+    // (runUnit) round-robins stepIfBelowTarget across a link group's members so
+    // GB_run() interleaves and serial bits ferry mid-block; a standalone system
+    // is the degenerate 1-member case of the same triad.
     ExpSmoother& gainSmoother() noexcept { return gainSmoother_; }
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;

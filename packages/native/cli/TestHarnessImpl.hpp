@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -509,6 +510,11 @@ struct TestHarness::Impl {
         const std::uint64_t total =
             static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
         if (total == 0) return;
+        // WavWriter sizes (and writeBlockFloatPlanar's frame count) are 32-bit;
+        // a single WAV caps at 2^32 frames. The in-RAM buffers would OOM long
+        // before this, but fail loudly rather than truncate the RIFF size.
+        if (total > std::numeric_limits<std::uint32_t>::max())
+            throw std::runtime_error("renderWavPerSystemParallel: render too long for one WAV");
 
         OfflineRenderParams params{};
         params.totalSamples     = total;

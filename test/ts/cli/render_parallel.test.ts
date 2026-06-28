@@ -3,7 +3,7 @@
 // ParallelRenderTests prove byte-identity vs the single-threaded path; this just
 // checks the WAV plumbing and that the mix is the per-sample sum of the
 // per-system files (within int16 rounding).
-import { test, expect, emu } from "harness";
+import { test, expect, emu, Routing } from "harness";
 
 const MGB = "resources/roms/mGB.gb";
 
@@ -25,7 +25,11 @@ test("renderWavPerSystemParallel writes valid WAVs whose mix == sum of per-syste
   emu.loadRom(MGB); // system 0
   emu.loadRom(MGB); // system 1
   emu.runMs(1500);
-  emu.dispatchMidi([0x90, 60, 100]); // SendToAll: both systems sound
+  // Distinct note per instance (channel nibble -> system) so the two per-system
+  // outputs DIFFER — otherwise p0==p1 and the mix==sum check is invariant under a
+  // slot swap, proving nothing about per-system routing.
+  emu.dispatchMidi([0x90, 60, 100], Routing.OneChannelPerInstance); // ch0 -> sys0
+  emu.dispatchMidi([0x91, 67, 100], Routing.OneChannelPerInstance); // ch1 -> sys1
 
   const mix = "/tmp/rp-par-mix.test.wav";
   const s0 = "/tmp/rp-par-s0.test.wav";
@@ -45,15 +49,20 @@ test("renderWavPerSystemParallel writes valid WAVs whose mix == sum of per-syste
   const p1 = pcm16(b1);
   expect(m.length).toBe(p0.length);
 
-  // The mix is the per-sample sum of the (float) per-system buffers, quantized;
-  // independent int16 rounding allows a couple of LSB of slack.
-  let within = 0;
+  // Per-system isolation: distinct notes -> the two files must actually differ
+  // (a degenerate p0==p1 would make the sum check swap-invariant).
+  let diff = 0;
   let energy = 0;
+  let within = 0;
   for (let i = 0; i < m.length; i++) {
+    if (p0[i] !== p1[i]) diff++;
+    // The mix is the per-sample sum of the (float) per-system buffers, quantized;
+    // independent int16 rounding allows a couple of LSB of slack.
     const sum = Math.max(-32768, Math.min(32767, p0[i] + p1[i]));
     if (Math.abs(m[i] - sum) <= 2) within++;
     energy += Math.abs(m[i]);
   }
   expect(energy).toBeGreaterThan(0);                 // non-silent render
+  expect(diff).toBeGreaterThan(0);                   // per-system outputs are distinct
   expect(within / m.length).toBeGreaterThan(0.99);   // mix ≈ sum of per-system
 });
