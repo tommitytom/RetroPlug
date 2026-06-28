@@ -39,6 +39,7 @@ void registerHarnessRpcMethods(Server& server) {
     server.template addMethod<&HarnessRpcService::writeWav>();
     server.template addMethod<&HarnessRpcService::renderWav>();
     server.template addMethod<&HarnessRpcService::renderWavPerSystem>();
+    server.template addMethod<&HarnessRpcService::renderWavPerSystemParallel>();
     server.template addMethod<&HarnessRpcService::renderBegin>();
     server.template addMethod<&HarnessRpcService::renderChunk>();
     server.template addMethod<&HarnessRpcService::renderEnd>();

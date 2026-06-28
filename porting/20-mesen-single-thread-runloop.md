@@ -37,10 +37,17 @@ GBA). So:
 
 - **`_debuggerLock`** around `InternalLoadRom` (Emulator.cpp ~398) — ROM-load
   ordering vs. the debugger; keep the `AcquireSafe()`.
-- **`IsEmulationThread()` / `_emulationThreadId`** (Emulator.cpp ~1096; set by the
-  wrappers' `SetEmulationThreadId` in `onProcess`) — gates the debug hooks, the
-  APU `IsEmulationThread()` fast-path (NesApu.cpp ~118), and `GetConsoleUnsafe`
-  safety asserts. Load-bearing.
+- **`IsEmulationThread()` / `_emulationThreadId`** (Emulator.cpp ~1096) — gates
+  the debug hooks, the APU `IsEmulationThread()` fast-path (NesApu.cpp ~118), and
+  `GetConsoleUnsafe` safety asserts. Load-bearing. The wrappers bind it to
+  **whoever drives the block**: `prepareForBlock` / `stepInstruction` call
+  `SetEmulationThreadId(this_thread)` whenever `!emu_->IsEmulationThread()`, so it
+  **rebinds when the driving thread changes** (e.g. boot on the main thread, then
+  an offline parallel render on a worker thread, then back). It is still
+  per-instance and the instance is still only ever driven by one thread at a time
+  — the thread just isn't frozen at first block. (This replaced an earlier
+  one-time `threadIdSet_` latch, which broke when a booted instance was handed to
+  a render worker.)
 - **`_threadPaused` write in `InternalLoadRom`** (Emulator.cpp ~392) — keep (it's
   a real "paused during load" signal, not run-loop coordination).
 
@@ -91,8 +98,12 @@ TSan also flags genuine races in Mesen's process-global singletons —
 `GameDatabase::InitDatabase` (`GameDatabase.cpp:82`), `SimpleLock::Acquire`
 (`SimpleLock.cpp:26`), `FolderUtilities` — but **only** from the
 `[MesenSingleton]` tests, which deliberately hammer those globals from many
-threads to document the limitation (several are already `[!mayfail]`). The
-plugin only ever drives a given instance from one thread and doesn't mutate
-these globals concurrently, so `tools/run-sanitizers.sh` excludes
-`[MesenSingleton]` from the sanitizer gate rather than suppressing each. Making
-those singletons thread-safe would be a separate effort.
+threads to document the limitation (several are already `[!mayfail]`). A given
+instance is only ever driven by **one thread at a time** — including offline
+parallel render (`system/OfflineRender.cpp`), which farms each render unit onto
+its own worker thread but never steps the same instance from two threads — and
+the process-globals (`FolderUtilities` home folder, `MessageManager` options) are
+written once at **activation**, single-threaded, before any render. So no
+instance mutates these globals concurrently, and `tools/run-sanitizers.sh`
+excludes `[MesenSingleton]` from the sanitizer gate rather than suppressing each.
+Making those singletons thread-safe would be a separate effort.

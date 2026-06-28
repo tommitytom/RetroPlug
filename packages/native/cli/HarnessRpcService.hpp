@@ -97,6 +97,11 @@ public:
     void renderWav(std::string path, double ms, std::uint32_t sampleRate);
     void renderWavPerSystem(std::string mixPath, std::vector<std::string> perSystemPaths,
                             double ms, std::uint32_t sampleRate);
+    // Like renderWavPerSystem but farms each render unit onto its own worker
+    // thread (system/OfflineRender.cpp) and sums the mix single-threaded — same
+    // audio, faster on multi-unit projects, and not SameBoy-only. In-RAM.
+    void renderWavPerSystemParallel(std::string mixPath, std::vector<std::string> perSystemPaths,
+                                    double ms, std::uint32_t sampleRate);
     // Render session: open the writers, render one or more chunks (applying
     // scripted input between them), then close — so a contiguous WAV interleaves
     // with events. Empty mixPath = no mix; non-empty perSystemPaths = per-system.

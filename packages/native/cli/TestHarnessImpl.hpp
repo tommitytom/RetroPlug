@@ -29,6 +29,7 @@
 #include "project/Project.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/BlockRunner.hpp"
+#include "system/OfflineRender.hpp"
 #include "system/DebugTarget.hpp"
 #include "system/InputTypes.hpp"
 #include "system/RomFormat.hpp"
@@ -487,6 +488,69 @@ struct TestHarness::Impl {
         renderBegin(mixPath, perSystemPaths, wavRate);
         renderChunk(ms);
         renderEnd();
+    }
+
+    // Parallel per-system render: farms each render unit (a system, or a SameBoy
+    // link group) onto its own worker thread (system/OfflineRender.cpp), then
+    // single-threaded sums the mix. Byte-identical to renderWavPerSystem's audio
+    // but faster on multi-unit projects, and not SameBoy-only (covers Mesen too).
+    // In-RAM per-system buffers (same memory profile as runMsPerSystem); the
+    // streaming renderWavPerSystem stays the path for hour-scale renders. Pure
+    // audio — any role MIDI/serial output this block is discarded, not captured.
+    void renderWavPerSystemParallel(const std::string& mixPath,
+                                    const std::vector<std::string>& perSystemPaths,
+                                    double ms, std::uint32_t wavRate) {
+        if (wavRate == 0) wavRate = static_cast<std::uint32_t>(sampleRate);
+        if (ms <= 0.0) return;
+        const std::size_t n = sysList.size();
+        if (perSystemPaths.size() != n)
+            throw std::runtime_error("renderWavPerSystemParallel: expected one path per system");
+
+        const std::uint64_t total =
+            static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
+        if (total == 0) return;
+
+        OfflineRenderParams params{};
+        params.totalSamples     = total;
+        params.blockSize        = blockSize;
+        params.sampleRate       = sampleRate;
+        params.bpm              = bpm;
+        params.transportPlaying = transportPlaying;
+        params.startPpq         = ppq;
+
+        // per[slot] is interleaved L,R; slot index == sysList / systems() order.
+        std::vector<std::vector<float>> per = renderUnitsParallel(*project, params);
+
+        std::vector<float> mixL, mixR;
+        if (!mixPath.empty()) { mixL.assign(total, 0.0f); mixR.assign(total, 0.0f); }
+        std::vector<float> l(total), r(total);
+        for (std::size_t i = 0; i < n; ++i) {
+            const auto& buf = per[i];
+            for (std::uint64_t f = 0; f < total; ++f) {
+                const float lv = buf[f * 2 + 0];
+                const float rv = buf[f * 2 + 1];
+                l[f] = lv; r[f] = rv;
+                if (!mixPath.empty()) { mixL[f] += lv; mixR[f] += rv; }
+            }
+            WavWriter w(perSystemPaths[i], wavRate, 2);
+            float* o[2] = { l.data(), r.data() };
+            w.writeBlockFloatPlanar(o, static_cast<std::uint32_t>(total));
+        }
+        if (!mixPath.empty()) {
+            WavWriter w(mixPath, wavRate, 2);
+            float* mo[2] = { mixL.data(), mixR.data() };
+            w.writeBlockFloatPlanar(mo, static_cast<std::uint32_t>(total));
+        }
+
+        // Pure-audio render: discard any role MIDI/serial accumulated this pass
+        // (not drained per block), then advance the simulated transport.
+        for (SystemBase* s : sysList) {
+            s->midiOut().clear();
+            if (auto* sb = dynamic_cast<SameBoySystem*>(s)) sb->serialOutLog_.clear();
+        }
+        sampleClock += total;
+        if (transportPlaying)
+            ppq += (bpm / 60.0) * (static_cast<double>(total) / sampleRate);
     }
 
     // Compile a kit from sample files and queue it into the system's

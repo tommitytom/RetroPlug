@@ -174,6 +174,7 @@ catch_discover_tests(retroplug-sameboy-tests)
 add_executable(retroplug-rpc-tests
     PluginRpcServiceTests.cpp
     BlockRunnerTests.cpp
+    ParallelRenderTests.cpp
     ../src/PluginRpcService.cpp
     ../src/config/UserConfig.cpp
     ../src/config/UserConfigPaths.cpp
@@ -185,6 +186,7 @@ add_executable(retroplug-rpc-tests
     ../src/lsdj/KitCompiler.cpp
     ../src/system/SystemBase.cpp
     ../src/system/BlockRunner.cpp
+    ../src/system/OfflineRender.cpp
     ../src/system/sameboy/LinkGroup.cpp
     ../src/system/sameboy/RomSniffer.cpp
     ${_test_sbs_src}
@@ -211,6 +213,9 @@ test. The test skips when the file is missing.")
 target_compile_definitions(retroplug-rpc-tests PRIVATE
     RETROPLUG_TEST_GB_ROM="${_RETROPLUG_TEST_GB_ROM}"
     RETROPLUG_TEST_MGB_ROM="${_RETROPLUG_TEST_MGB_ROM}"
+    # NES ROM dir (mirrors retroplug-mesen-tests) so the parallel-render
+    # determinism test can spin up a Mesen unit. Tests skip if absent.
+    RETROPLUG_TEST_ROM_DIR="${CMAKE_SOURCE_DIR}/resources/roms"
 )
 
 target_link_libraries(retroplug-rpc-tests PRIVATE

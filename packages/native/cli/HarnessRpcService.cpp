@@ -259,6 +259,13 @@ void HarnessRpcService::renderWavPerSystem(std::string mixPath,
     h_->renderWavPerSystem(mixPath, perSystemPaths, ms, sampleRate);
 }
 
+void HarnessRpcService::renderWavPerSystemParallel(std::string mixPath,
+        std::vector<std::string> perSystemPaths, double ms, std::uint32_t sampleRate) {
+    mixPath = rpcli::resolveHostPath(mixPath);
+    for (auto& p : perSystemPaths) p = rpcli::resolveHostPath(p);
+    h_->renderWavPerSystemParallel(mixPath, perSystemPaths, ms, sampleRate);
+}
+
 void HarnessRpcService::renderBegin(std::string mixPath,
         std::vector<std::string> perSystemPaths, std::uint32_t sampleRate) {
     mixPath = rpcli::resolveHostPath(mixPath);

@@ -351,6 +351,15 @@ export function createEmu(rpcSend: RpcSend) {
                        sampleRate = 44100): void {
       client.renderWavPerSystem(mixPath, perSystemPaths, ms, sampleRate);
     },
+    /** Like renderWavPerSystem but renders each unit (a system, or a SameBoy
+     *  link group) on its own worker thread, then sums the mix single-threaded —
+     *  byte-identical audio, faster on multi-unit projects, and not SameBoy-only
+     *  (covers Mesen too). In-RAM (same profile as runMsPerSystem). Pure audio:
+     *  role MIDI/serial output is discarded, not captured. */
+    renderWavPerSystemParallel(mixPath: string, perSystemPaths: string[], ms: number,
+                               sampleRate = 44100): void {
+      client.renderWavPerSystemParallel(mixPath, perSystemPaths, ms, sampleRate);
+    },
     /** Open a render session: subsequent renderChunk(ms) calls append a
      *  contiguous WAV while you apply scripted input between them, then
      *  renderEnd() closes the writers. `mixPath` "" = no mix; `perSystemPaths`

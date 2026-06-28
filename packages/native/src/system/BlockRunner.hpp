@@ -2,11 +2,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <vector>
 
 #include "project/ProjectConfig.hpp"   // AudioRouting
 #include "system/SystemTypes.hpp"      // AudioBlockInfo
 
 class Project;
+class SystemBase;
 
 // Shared "advance one audio block" runner. Pure C++ — no threads, queues, DPF,
 // or JS. Every audio path (the plugin DSP run-loop, the standalone callback, the
@@ -82,8 +85,19 @@ struct PerSystemRouter final : AudioRouter {
     }
 };
 
+// Advance ONE render unit (1..N systems stepped in lockstep) by one block,
+// finishing each member into its router-provided bus. A singleton is the size-1
+// case; a SameBoy link group is the size-N case (round-robin step so serial bits
+// ferry mid-block). `systems` is project.systems(), used to resolve each
+// member's router slot. Shared by realtime runBlock (per unit) and the offline
+// parallel renderer (per worker thread) — it never owns or zeroes buffers and
+// touches only the members' own state, so disjoint units render concurrently.
+void runUnit(const AudioBlockInfo& info,
+             SystemBase* const* members, std::size_t count,
+             const std::vector<std::unique_ptr<SystemBase>>& systems,
+             const AudioRouter& router);
+
 // Advance every system in `project` by one block, routing each system's output
-// through `router`. Unlinked systems run via onProcess (linked SameBoys self-
-// bail); link groups step their members in lockstep (round-robin so serial bits
-// ferry mid-block) and finish each member into its own routed bus.
+// through `router`. Each unlinked system is a singleton unit; each link group is
+// a multi-member unit — both driven via runUnit().
 void runBlock(const AudioBlockInfo& info, Project& project, const AudioRouter& router);

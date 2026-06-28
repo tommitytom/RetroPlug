@@ -90,7 +90,6 @@ void MesenNesSystem::onActivate(double sampleRate) {
     }
 
     sampleRate_  = sampleRate;
-    threadIdSet_ = false;
 
     gainSmoother_.setSampleRate(static_cast<float>(sampleRate));
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
@@ -226,12 +225,12 @@ NesController::Buttons toNesButton(std::uint8_t b) {
 void MesenNesSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!activated_ || !emu_) return;
 
-    // First call from the audio thread: tell Mesen this is the emulation
-    // thread so its internal `IsEmulationThread()` checks pass during
-    // cpu->Exec().
-    if (!threadIdSet_) {
+    // Bind Mesen's emulation thread to whoever drives this block, so its
+    // internal `IsEmulationThread()` checks pass during cpu->Exec(). Rebinds
+    // when the driving thread changes (e.g. boot on the main thread, then an
+    // offline parallel render on a worker, then back) — cheap thread-id compare.
+    if (!emu_->IsEmulationThread()) {
         emu_->SetEmulationThreadId(std::this_thread::get_id());
-        threadIdSet_ = true;
     }
 
     auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get());
@@ -401,11 +400,10 @@ std::optional<std::uint8_t> MesenNesSystem::readCpuByte(std::uint32_t addr) cons
 std::uint64_t MesenNesSystem::stepInstruction() {
     NesCpu* cpu = nesCpu(emu_.get());
     if (!cpu) return 0;
-    // Exec() relies on Mesen's IsEmulationThread() check; ensure the thread id
-    // is set even if step is called before the first onProcess.
-    if (!threadIdSet_) {
+    // Exec() relies on Mesen's IsEmulationThread() check; bind it to the calling
+    // thread (rebinds if that differs from the last driving thread).
+    if (!emu_->IsEmulationThread()) {
         emu_->SetEmulationThreadId(std::this_thread::get_id());
-        threadIdSet_ = true;
     }
     const std::uint64_t before = cpu->GetState().CycleCount;
     cpu->Exec();

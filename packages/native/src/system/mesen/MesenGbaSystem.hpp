@@ -96,7 +96,6 @@ private:
     std::shared_ptr<MesenVideoDevice> videoDevice_;
     FrameBufferTriple                 frames_{kPixelWidth, kPixelHeight};
     bool                              activated_      = false;
-    bool                              threadIdSet_    = false;
     double                            sampleRate_     = 44100.0;
     ExpSmoother                       gainSmoother_;
     std::vector<float>                stereoAccum_;   // sized lazily to 2*blockSize

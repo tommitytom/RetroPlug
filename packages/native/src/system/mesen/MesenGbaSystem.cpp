@@ -105,7 +105,6 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     }
 
     sampleRate_  = sampleRate;
-    threadIdSet_ = false;
 
     gainSmoother_.setSampleRate(static_cast<float>(sampleRate));
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
@@ -221,12 +220,12 @@ GbaController::Buttons toGbaButton(std::uint8_t wire) {
 void MesenGbaSystem::prepareForBlock(const AudioBlockInfo& /*info*/) {
     if (!activated_ || !emu_) return;
 
-    // First call from the audio thread: tell Mesen this is the emulation
-    // thread so its internal `IsEmulationThread()` checks pass during
-    // console->RunFrame().
-    if (!threadIdSet_) {
+    // Bind Mesen's emulation thread to whoever drives this block, so its
+    // internal `IsEmulationThread()` checks pass during console->RunFrame().
+    // Rebinds when the driving thread changes (e.g. boot on the main thread,
+    // then an offline parallel render on a worker, then back) — cheap compare.
+    if (!emu_->IsEmulationThread()) {
         emu_->SetEmulationThreadId(std::this_thread::get_id());
-        threadIdSet_ = true;
     }
 
     auto* console = dynamic_cast<GbaConsole*>(emu_->GetConsole().get());
@@ -398,11 +397,10 @@ std::optional<std::uint8_t> MesenGbaSystem::readCpuByte(std::uint32_t addr) cons
 std::uint64_t MesenGbaSystem::stepInstruction() {
     GbaCpu* cpu = gbaCpu(emu_.get());
     if (!cpu) return 0;
-    // Exec() relies on Mesen's IsEmulationThread() check; ensure the thread id
-    // is set even if step is called before the first onProcess.
-    if (!threadIdSet_) {
+    // Exec() relies on Mesen's IsEmulationThread() check; bind it to the calling
+    // thread (rebinds if that differs from the last driving thread).
+    if (!emu_->IsEmulationThread()) {
         emu_->SetEmulationThreadId(std::this_thread::get_id());
-        threadIdSet_ = true;
     }
     // One ARM/Thumb instruction, no debugger (the same Exec() RunFrame loops on
     // when IsDebugging() is false). Cycles via the CycleCount delta.
