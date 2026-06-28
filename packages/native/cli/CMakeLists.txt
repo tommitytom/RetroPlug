@@ -31,6 +31,7 @@ add_library(retroplug-cli-core STATIC
     ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/Compression.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/SavCodec.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/SystemBase.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/BlockRunner.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/LinkGroup.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/RomSniffer.cpp
     ${_cli_sbs_src}

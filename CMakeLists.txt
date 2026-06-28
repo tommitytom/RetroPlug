@@ -256,6 +256,7 @@ add_executable(rpc-schema-dump
     packages/native/src/lsdj/SampleCache.cpp
     packages/native/src/lsdj/KitCompiler.cpp
     packages/native/src/system/SystemBase.cpp
+    packages/native/src/system/BlockRunner.cpp
     packages/native/src/system/sameboy/LinkGroup.cpp
     packages/native/src/system/sameboy/RomSniffer.cpp
     ${RP_SAMEBOYSYSTEM_SRC}
@@ -390,6 +391,7 @@ dpf_add_plugin(${NAME}
       packages/native/src/lsdj/SampleCache.cpp
       packages/native/src/lsdj/KitCompiler.cpp
       packages/native/src/system/SystemBase.cpp
+      packages/native/src/system/BlockRunner.cpp
       packages/native/src/system/sameboy/LinkGroup.cpp
       packages/native/src/system/sameboy/RomSniffer.cpp
       ${RP_SAMEBOYSYSTEM_SRC}
@@ -423,6 +425,7 @@ dpf_add_plugin(${NAME}
       packages/native/src/lsdj/SampleCache.cpp
       packages/native/src/lsdj/KitCompiler.cpp
       packages/native/src/system/SystemBase.cpp
+      packages/native/src/system/BlockRunner.cpp
       packages/native/src/system/sameboy/LinkGroup.cpp
       packages/native/src/system/sameboy/RomSniffer.cpp
       ${RP_SAMEBOYSYSTEM_SRC}

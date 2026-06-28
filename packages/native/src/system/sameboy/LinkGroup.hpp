@@ -30,11 +30,9 @@ public:
     std::size_t                        size() const noexcept    { return members_.size(); }
     bool                               empty() const noexcept   { return members_.empty(); }
 
-    // Audio-thread per-block entry. Drives all members in round-robin
-    // GB_run() calls until each has produced `info.frames` samples, then
-    // calls each member's mixInto(outs) to sum into the host buffers with
-    // per-system gain applied.
-    void onProcess(const AudioBlockInfo& info, float* const* outs);
+    // The audio-thread lockstep (prepare-all / round-robin stepIfBelowTarget /
+    // finishBlock each member into its own routed bus) lives in runBlock() in
+    // system/BlockRunner.cpp. LinkGroup is just the membership container.
 
 private:
     std::uint8_t                  id_;

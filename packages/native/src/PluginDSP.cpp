@@ -18,6 +18,7 @@
 
 #include "lsdj/SampleCache.hpp"
 #include "project/ProjectSerialization.hpp"
+#include "system/BlockRunner.hpp"
 #include "system/SystemTypes.hpp"
 #include "util/Base64.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
@@ -639,85 +640,16 @@ protected:
         }
         AudioBlockInfo info{ frames, fSampleRate, bpm, ppq, tp.playing };
 
-        // Audio routing — pick which output channels each system writes to.
-        //   Stereo:         all systems sum into outs[0]/[1] (existing path).
-        //   TwoPerInstance: system i writes to outs[(2i)%N]/[(2i+1)%N].
-        //   OnePerInstance: system i writes its (L+R) mono mix to outs[i%N].
-        //                   Passing the same buffer for both finishBlock
-        //                   channels makes SameBoySystem sum L and R into
-        //                   that single channel for free.
+        // Audio routing — map each system's output to host channels per the
+        // current AudioRouting mode, then advance one block through the shared
+        // runner. MultiOutRouter owns the channel-placement policy (Stereo:
+        // everyone -> outs[0]/[1]; TwoPerInstance: slot i -> (2i)%N/(2i+1)%N;
+        // OnePerInstance: slot i -> i%N for both L and R, the mono-sum trick);
+        // runBlock owns the unlinked/linked lockstep and routes each linked
+        // member to its own bus (what LinkGroup::onProcess couldn't do).
         const AudioRouting audioRouting = project.config().settings.audioRouting;
-        if (audioRouting == AudioRouting::Stereo) {
-            project.onProcess(info, outputs);
-        } else {
-            constexpr uint32_t kNumOuts = DISTRHO_PLUGIN_NUM_OUTPUTS;
-            auto outsForIndex = [&](std::size_t i, float** dst) {
-                if (audioRouting == AudioRouting::OnePerInstance) {
-                    dst[0] = outputs[i % kNumOuts];
-                    dst[1] = outputs[i % kNumOuts];
-                } else {
-                    const std::size_t p = (2 * i) % kNumOuts;
-                    dst[0] = outputs[p];
-                    dst[1] = outputs[(p + 1) % kNumOuts];
-                }
-            };
-
-            const auto& systems = project.systems();
-
-            // Index lookup for linked SameBoy members — they need their
-            // outs slice computed from the system's slot in the project,
-            // not their position within the link group.
-            auto indexOf = [&systems](const SameBoySystem* needle) -> std::size_t {
-                for (std::size_t i = 0; i < systems.size(); ++i) {
-                    if (systems[i].get() == needle) return i;
-                }
-                return SIZE_MAX;
-            };
-
-            // Unlinked systems: SameBoySystem::onProcess bails when
-            // linkPeers_ is non-empty, so this loop only drives the
-            // standalone ones. Non-SameBoy systems (Mesen, GBA) flow
-            // through here too — their onProcess writes to the per-system
-            // outs slice with no further routing logic needed.
-            for (std::size_t i = 0; i < systems.size(); ++i) {
-                auto* sys = systems[i].get();
-                if (!sys) continue;
-                float* perSysOuts[2];
-                outsForIndex(i, perSysOuts);
-                sys->onProcess(info, perSysOuts);
-            }
-
-            // Linked SameBoy groups: round-robin step in lockstep (the
-            // serial-bit ferrying inside SameBoySystem::serialStart/end
-            // needs members to advance together), then finishBlock each
-            // into its routed outs slice. LinkGroup::onProcess can't do
-            // this directly because it hard-codes outs[0]/[1] for every
-            // member.
-            for (const auto& group : project.linkGroups()) {
-                const auto& members = group.members();
-                if (members.empty()) continue;
-
-                for (auto* sb : members) {
-                    if (sb) sb->prepareForBlock(info);
-                }
-                bool anyBelow = true;
-                while (anyBelow) {
-                    anyBelow = false;
-                    for (auto* sb : members) {
-                        if (sb && sb->stepIfBelowTarget(info.frames))
-                            anyBelow = true;
-                    }
-                }
-                for (auto* sb : members) {
-                    if (!sb) continue;
-                    const std::size_t idx = indexOf(sb);
-                    if (idx == SIZE_MAX) continue;
-                    float* perSysOuts[2];
-                    outsForIndex(idx, perSysOuts);
-                    sb->finishBlock(info, perSysOuts);
-                }
-            }
-        }
+        MultiOutRouter router(outputs, DISTRHO_PLUGIN_NUM_OUTPUTS, audioRouting);
+        runBlock(info, project, router);
 
         // Drain per-system MIDI output back to the host. Populated by
         // MIDI-emitting roles (e.g. ArduinoboyMaster's MI.OUT decoder).

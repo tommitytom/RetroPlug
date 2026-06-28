@@ -127,6 +127,7 @@ add_executable(retroplug-sameboy-tests
     SameBoySystemBaseTests.cpp
     ../src/system/SystemBase.cpp
     ../src/transport/CommandApply.cpp   # applySystemCommand: unit test + stress harness
+    ../src/system/BlockRunner.cpp
     ../src/system/sameboy/LinkGroup.cpp
     ../src/system/sameboy/RomSniffer.cpp
     ${_test_sbs_src}
@@ -172,6 +173,7 @@ catch_discover_tests(retroplug-sameboy-tests)
 # -----------------------------------------------------------------------------
 add_executable(retroplug-rpc-tests
     PluginRpcServiceTests.cpp
+    BlockRunnerTests.cpp
     ../src/PluginRpcService.cpp
     ../src/config/UserConfig.cpp
     ../src/config/UserConfigPaths.cpp
@@ -182,6 +184,7 @@ add_executable(retroplug-rpc-tests
     ../src/lsdj/SampleCache.cpp
     ../src/lsdj/KitCompiler.cpp
     ../src/system/SystemBase.cpp
+    ../src/system/BlockRunner.cpp
     ../src/system/sameboy/LinkGroup.cpp
     ../src/system/sameboy/RomSniffer.cpp
     ${_test_sbs_src}
@@ -310,6 +313,7 @@ add_executable(retroplug-ui-test
     ../src/lsdj/SampleCache.cpp
     ../src/lsdj/KitCompiler.cpp
     ../src/system/SystemBase.cpp
+    ../src/system/BlockRunner.cpp
     ../src/system/sameboy/LinkGroup.cpp
     ../src/system/sameboy/RomSniffer.cpp
     ${_test_sbs_src}

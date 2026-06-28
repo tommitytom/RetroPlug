@@ -9,6 +9,7 @@
 #include "rfl/Variant.hpp"
 
 #include "EmbeddedRoms.hpp"
+#include "system/BlockRunner.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
@@ -168,15 +169,10 @@ void Project::onSampleRateChanged(double sampleRate) {
 }
 
 void Project::onProcess(const AudioBlockInfo& info, float* const* outs) {
-    // Drive each system. Linked systems are intercepted by their LinkGroup
-    // (which steps them in lockstep); their per-system onProcess short-
-    // circuits because linkPeers_ is non-empty.
-    for (auto& sys : systems_) {
-        if (sys) sys->onProcess(info, outs);
-    }
-    for (auto& group : linkGroups_) {
-        group.onProcess(info, outs);
-    }
+    // The Stereo path: every system sums into the one host stereo pair. Routing
+    // and the unlinked/linked lockstep both live in the shared runner now.
+    StereoRouter router(outs[0], outs[1]);
+    runBlock(info, *this, router);
 }
 
 void Project::rebuildLinkGroups() {

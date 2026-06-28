@@ -28,6 +28,7 @@
 #include "TestHarness.hpp"
 #include "project/Project.hpp"
 #include "project/ProjectSerialization.hpp"
+#include "system/BlockRunner.hpp"
 #include "system/DebugTarget.hpp"
 #include "system/InputTypes.hpp"
 #include "system/RomFormat.hpp"
@@ -319,38 +320,40 @@ struct TestHarness::Impl {
     // linked systems the same way LinkGroup does. Used to prove LSDj link-cable
     // sync (the follower produces audio only when actually synced to the leader).
     std::vector<std::vector<float>> runMsPerSystem(double ms) {
-        std::vector<std::vector<float>> out(sysList.size());
-        if (ms <= 0.0 || sysList.empty()) return out;
-        std::vector<SameBoySystem*> sb;
-        sb.reserve(sysList.size());
-        for (SystemBase* s : sysList) {
-            auto* p = dynamic_cast<SameBoySystem*>(s);
-            if (!p) throw std::runtime_error("runMsPerSystem is SameBoy-only");
-            sb.push_back(p);
-        }
+        const std::size_t n = sysList.size();
+        std::vector<std::vector<float>> out(n);
+        if (ms <= 0.0 || n == 0) return out;
+        // Per-system isolation is SameBoy-only (the per-system reaper fixtures
+        // load only SameBoys). runBlock handles other kinds, but keep the guard
+        // so this increment adds no new surface.
+        for (SystemBase* s : sysList)
+            if (!dynamic_cast<SameBoySystem*>(s))
+                throw std::runtime_error("runMsPerSystem is SameBoy-only");
+
+        // One persistent L/R block buffer per slot; runBlock routes each system
+        // (linked or not) into its own buffer via PerSystemRouter.
+        std::vector<std::vector<float>> bl(n, std::vector<float>(blockSize));
+        std::vector<std::vector<float>> br(n, std::vector<float>(blockSize));
+        std::vector<float*> ls(n), rs(n);
+        for (std::size_t i = 0; i < n; ++i) { ls[i] = bl[i].data(); rs[i] = br[i].data(); }
+        PerSystemRouter router(ls.data(), rs.data());
+
         const std::uint64_t total =
             static_cast<std::uint64_t>(ms * sampleRate / 1000.0);
-        std::vector<float> bl(blockSize), br(blockSize);
         for (std::uint64_t s = 0; s < total; s += blockSize) {
             const std::uint32_t frames = static_cast<std::uint32_t>(
                 std::min<std::uint64_t>(blockSize, total - s));
             AudioBlockInfo info{ frames, sampleRate, bpm, ppq, transportPlaying };
-            for (auto* x : sb) x->prepareForBlock(info);
-            bool any = true;
-            while (any) {
-                any = false;
-                for (auto* x : sb) if (x->stepIfBelowTarget(frames)) any = true;
+            for (std::size_t i = 0; i < n; ++i) {
+                std::fill_n(ls[i], frames, 0.0f);
+                std::fill_n(rs[i], frames, 0.0f);
             }
-            for (std::size_t i = 0; i < sb.size(); ++i) {
-                std::fill_n(bl.data(), frames, 0.0f);
-                std::fill_n(br.data(), frames, 0.0f);
-                float* o[2] = { bl.data(), br.data() };
-                sb[i]->finishBlock(info, o);
+            runBlock(info, *project, router);
+            for (std::size_t i = 0; i < n; ++i)
                 for (std::uint32_t f = 0; f < frames; ++f) {
-                    out[i].push_back(bl[f]);
-                    out[i].push_back(br[f]);
+                    out[i].push_back(ls[i][f]);
+                    out[i].push_back(rs[i][f]);
                 }
-            }
             drainCaptures();
             sampleClock += frames;
             if (transportPlaying)
@@ -386,9 +389,9 @@ struct TestHarness::Impl {
     std::vector<SameBoySystem*>  renderSb_;    // per-system targets (per-system mode)
 
     // Render `total` samples into the currently-open render writers. mix-only
-    // uses stepBlock (the linked Project::onProcess path); per-system uses the
-    // manual prepareForBlock -> stepIfBelowTarget -> finishBlock orchestration
-    // and sums into the mix (mix = sum of per-system).
+    // uses stepBlock (the Stereo Project::onProcess path); per-system routes each
+    // system to its own buffer via runBlock + PerSystemRouter, writes each
+    // system's WAV, and sums into the mix (mix = sum of per-system).
     void renderInto(std::uint64_t total) {
         if (renderPer_.empty()) {
             for (std::uint64_t s = 0; s < total; s += blockSize) {
@@ -402,29 +405,32 @@ struct TestHarness::Impl {
             }
             return;
         }
-        std::vector<float> bl(blockSize), br(blockSize), ml(blockSize), mr(blockSize);
+        // One persistent L/R block buffer per slot (renderSb_[i] == systems()[i]).
+        const std::size_t n = renderSb_.size();
+        std::vector<std::vector<float>> bl(n, std::vector<float>(blockSize));
+        std::vector<std::vector<float>> br(n, std::vector<float>(blockSize));
+        std::vector<float*> ls(n), rs(n);
+        for (std::size_t i = 0; i < n; ++i) { ls[i] = bl[i].data(); rs[i] = br[i].data(); }
+        PerSystemRouter router(ls.data(), rs.data());
+        std::vector<float> ml(blockSize), mr(blockSize);
         for (std::uint64_t s = 0; s < total; s += blockSize) {
             const std::uint32_t frames = static_cast<std::uint32_t>(
                 std::min<std::uint64_t>(blockSize, total - s));
             AudioBlockInfo info{ frames, sampleRate, bpm, ppq, transportPlaying };
-            for (auto* x : renderSb_) x->prepareForBlock(info);
-            bool any = true;
-            while (any) {
-                any = false;
-                for (auto* x : renderSb_) if (x->stepIfBelowTarget(frames)) any = true;
+            for (std::size_t i = 0; i < n; ++i) {
+                std::fill_n(ls[i], frames, 0.0f);
+                std::fill_n(rs[i], frames, 0.0f);
             }
+            runBlock(info, *project, router);
             if (renderMix_) { std::fill_n(ml.data(), frames, 0.0f);
                               std::fill_n(mr.data(), frames, 0.0f); }
-            for (std::size_t i = 0; i < renderSb_.size(); ++i) {
-                std::fill_n(bl.data(), frames, 0.0f);
-                std::fill_n(br.data(), frames, 0.0f);
-                float* o[2] = { bl.data(), br.data() };
-                renderSb_[i]->finishBlock(info, o);
+            for (std::size_t i = 0; i < n; ++i) {
+                float* o[2] = { ls[i], rs[i] };
                 renderPer_[i].writeBlockFloatPlanar(o, frames);
                 if (renderMix_)
                     for (std::uint32_t f = 0; f < frames; ++f) {
-                        ml[f] += bl[f];
-                        mr[f] += br[f];
+                        ml[f] += ls[i][f];
+                        mr[f] += rs[i][f];
                     }
             }
             if (renderMix_) {
