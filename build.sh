@@ -36,6 +36,10 @@ if [[ ! -d build ]]; then
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 fi
 
-JOBS="$(nproc)"
+if command -v nproc >/dev/null 2>&1; then
+    JOBS="$(nproc)"
+else
+    JOBS="$(sysctl -n hw.ncpu)"   # macOS / BSD
+fi
 echo "==> Building (-j${JOBS})"
 cmake --build build -j"${JOBS}"
