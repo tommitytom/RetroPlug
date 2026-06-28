@@ -521,6 +521,11 @@ protected:
         const uint h = ev.size.getHeight();
         d_stderr("[PluginUI] onResize %ux%u (asked %ux%u, wmControlled=%d)",
                  w, h, requestedW_, requestedH_, wmControlled_ ? 1 : 0);
+#ifdef DISTRHO_OS_LINUX
+        // Tiled-WM (e.g. Wayland/Hyprland) clamp detection. Only Linux
+        // compositors tile/clamp the window out from under us; on Windows and
+        // macOS the WM honours setSize, so a legitimate resize (DPI scaling,
+        // host-driven sizing, user drag) must NOT be mistaken for a clamp.
         if (!wmControlled_ && requestedW_ != 0 && requestedH_ != 0) {
             if (w != requestedW_ || h != requestedH_) {
                 wmControlled_ = true;
@@ -529,6 +534,7 @@ protected:
                          requestedW_, requestedH_, w, h);
             }
         }
+#endif
     }
 
     bool onKeyboard(const KeyboardEvent& ev) override
