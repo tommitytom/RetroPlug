@@ -414,6 +414,74 @@ TEST_CASE("loadRomFromPath applies the sibling .sav",
     std::filesystem::remove(rplg, ec);
 }
 
+// Duplicating a system (or loading the same ROM twice) must hand each instance
+// its own loose battery file, or both auto-save over one `<rom>.sav` and clobber
+// each other. The duplicate gets suffix 2 -> `<rom>-2.sav`; a third gets 3.
+TEST_CASE("duplicateSystem gives each instance a distinct sibling .sav",
+          "[PluginRpcService][sram]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    const auto rom = loadRom();
+
+    PumpFixture f;
+    auto base = makeTmpSys(f.project, rom, "dup");      // suffix 0 -> <rom>.sav
+    CHECK(base.sys->savSuffix() == 0);
+
+    REQUIRE(f.service.duplicateSystem(base.id));
+    Command cmd;
+    REQUIRE(f.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::AddSystem);
+    auto* dup = dynamic_cast<SameBoySystem*>(cmd.payload.addSystem.newSystem);
+    REQUIRE(dup != nullptr);
+
+    CHECK(dup->romPath() == base.romPath);              // same ROM file...
+    CHECK(dup->savSuffix() == 2);                       // ...but its own battery slot
+    const std::string basePath =
+        rp::sram_autosave::siblingSavPath(base.sys->romPath(), base.sys->savSuffix());
+    const std::string dupPath =
+        rp::sram_autosave::siblingSavPath(dup->romPath(), dup->savSuffix());
+    CHECK(basePath != dupPath);                         // distinct targets
+    CHECK(dupPath.find("-2.sav") != std::string::npos);
+
+    // Behavioural proof: give the two instances *different* battery RAM, run each
+    // instance's auto-save, and confirm two files survive on disk holding their
+    // own contents — i.e. neither overwrote the other's `.sav`.
+    std::error_code ec;
+    std::filesystem::remove(dupPath, ec);               // base.savPath already cleared by makeTmpSys
+    const std::size_t n = base.sys->saveSramBytes().size();
+    REQUIRE(n > 0);
+    const std::vector<std::uint8_t> baseImg(n, 0x11);
+    const std::vector<std::uint8_t> dupImg(n, 0x22);
+    REQUIRE(base.sys->loadSramBytes(baseImg));
+    REQUIRE(dup->loadSramBytes(dupImg));
+
+    std::optional<std::uint64_t> hashBase, hashDup;
+    REQUIRE(rp::autoSaveSramToSibling(*base.sys, hashBase));
+    REQUIRE(rp::autoSaveSramToSibling(*dup, hashDup));
+    REQUIRE(fileExists(basePath));
+    REQUIRE(fileExists(dupPath));
+    // Each file holds its own instance's SRAM, untouched by the other.
+    CHECK(rp::sram_autosave::hashFile(basePath) ==
+          rp::lsdj::SampleCache::hashBytes(baseImg.data(), baseImg.size()));
+    CHECK(rp::sram_autosave::hashFile(dupPath) ==
+          rp::lsdj::SampleCache::hashBytes(dupImg.data(), dupImg.size()));
+    CHECK(rp::sram_autosave::hashFile(basePath) != rp::sram_autosave::hashFile(dupPath));
+
+    // Adopt the duplicate, then duplicate the base again: the next free slot is 3
+    // (0 and 2 are taken), not a re-collision on 2.
+    f.project.adoptSystem(cmd.payload.addSystem.newSystem);
+    REQUIRE(f.service.duplicateSystem(base.id));
+    Command cmd2;
+    REQUIRE(f.commands.tryPop(cmd2));
+    REQUIRE(cmd2.kind == Command::Kind::AddSystem);
+    auto* dup3 = dynamic_cast<SameBoySystem*>(cmd2.payload.addSystem.newSystem);
+    REQUIRE(dup3 != nullptr);
+    CHECK(dup3->savSuffix() == 3);
+    delete cmd2.payload.addSystem.newSystem;
+
+    std::filesystem::remove(basePath, ec);
+    std::filesystem::remove(dupPath, ec);
+}
+
 TEST_CASE("SRAM auto-save round-trips through the sibling .sav on reload",
           "[PluginRpcService][sram-autosave]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);

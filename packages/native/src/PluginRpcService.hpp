@@ -414,8 +414,17 @@ public:
 
 private:
     // Content-dispatched ROM loader. Lives here rather than on PluginJsBridge
-    // because the service owns the file IO + system construction.
-    SystemBase* buildSystemFromPath(const std::string& path);
+    // because the service owns the file IO + system construction. When
+    // `disambiguate` is set (adding an instance), the built system is given a
+    // loose-battery suffix that doesn't collide with an existing same-ROM
+    // system, and its sibling `.sav` is read from that suffixed path.
+    SystemBase* buildSystemFromPath(const std::string& path, bool disambiguate);
+
+    // Lowest free loose-battery suffix for `romPath` across the current systems:
+    // 0 when the plain `<rom>.sav` is unclaimed, else the smallest N>=2 whose
+    // `<rom>-N.sav` is free. Keeps duplicated / repeat-loaded instances from
+    // sharing one sibling battery file. See SystemBase::savSuffix.
+    std::uint32_t assignSavSuffix(const std::string& romPath) const;
 
     // saveProjectToPath / addRomFromPath / etc share the same "emit
     // (channel, path)" pattern; this is the one indirection that points

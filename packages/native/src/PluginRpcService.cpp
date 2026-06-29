@@ -123,11 +123,28 @@ void PluginRpcService::emit(const std::string& channel, const std::string& paylo
     if (emitEvent_) emitEvent_(channel, payload);
 }
 
-SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path) {
+std::uint32_t PluginRpcService::assignSavSuffix(const std::string& romPath) const {
+    if (!project_ || romPath.empty()) return 0;
+    const auto taken = [&](std::uint32_t cand) {
+        for (const auto& sys : project_->systems())
+            if (sys && sys->romPath() == romPath && sys->savSuffix() == cand)
+                return true;
+        return false;
+    };
+    if (!taken(0)) return 0;       // plain `<rom>.sav` is still free
+    std::uint32_t n = 2;           // skip 1 — duplicates read naturally as -2, -3, ...
+    while (taken(n)) ++n;
+    return n;
+}
+
+SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path, bool disambiguate) {
     if (!project_ || !sampleRate_) {
         std::fprintf(stderr, "buildSystemFromPath: shared DSP state unavailable (LV2-UI?)\n");
         return nullptr;
     }
+    // When adding an instance, claim a non-colliding loose-battery suffix so two
+    // systems backed by the same ROM file don't auto-save over one `<rom>.sav`.
+    const std::uint32_t suffix = disambiguate ? assignSavSuffix(path) : 0;
     std::vector<std::uint8_t> bytes = slurp(path);
     if (bytes.empty()) {
         std::fprintf(stderr, "buildSystemFromPath: failed to read '%s'\n", path.c_str());
@@ -153,7 +170,8 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path) {
 
     if (fmt == RomFormat::MesenNes) {
         MesenNesConfig cfg;
-        cfg.romPath = path;
+        cfg.romPath   = path;
+        cfg.savSuffix = suffix;
         auto sys = std::make_unique<MesenNesSystem>(id, cfg, std::move(bytes));
         sys->onActivate(sr);
         return sys.release();
@@ -161,7 +179,8 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path) {
 
     if (fmt == RomFormat::MesenGba) {
         MesenGbaConfig cfg;
-        cfg.romPath = path;
+        cfg.romPath   = path;
+        cfg.savSuffix = suffix;
         cfg.biosPath = "build/firmware/gba_bios.bin";
         auto sys = std::make_unique<MesenGbaSystem>(id, cfg, std::move(bytes));
         sys->onActivate(sr);
@@ -169,15 +188,16 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path) {
     }
 
     SameBoyConfig cfg;
-    cfg.romPath  = path;
-    cfg.model    = SameBoyModel::CgbC;
-    cfg.fastBoot = true;
+    cfg.romPath   = path;
+    cfg.savSuffix = suffix;
+    cfg.model     = SameBoyModel::CgbC;
+    cfg.fastBoot  = true;
 
-    // Optional sibling .sav (cartridge battery RAM). Missing file is fine.
+    // Optional sibling .sav (cartridge battery RAM) for this instance's suffix.
+    // Missing file is fine — a freshly disambiguated instance starts empty.
     {
-        std::filesystem::path sav = std::filesystem::path(path);
-        sav.replace_extension(".sav");
-        std::vector<std::uint8_t> sramBytes = slurp(sav.string());
+        const std::string sav = rp::sram_autosave::siblingSavPath(path, suffix);
+        std::vector<std::uint8_t> sramBytes = slurp(sav);
         if (!sramBytes.empty())
             cfg.sram = std::move(sramBytes);
     }
@@ -234,7 +254,9 @@ bool PluginRpcService::loadRomFromPath(std::string path) {
         }
     }
 
-    SystemBase* sys = buildSystemFromPath(path);
+    // Replaces the focused tile, so no disambiguation — this instance owns the
+    // plain `<rom>.sav`.
+    SystemBase* sys = buildSystemFromPath(path, /*disambiguate*/ false);
     if (!sys) return false;
 
     // Capture the system's config before tryPush transfers ownership to the DSP.
@@ -308,7 +330,9 @@ bool PluginRpcService::addRomFromPath(std::string path) {
         emit("rom-error", path);
         return false;
     }
-    SystemBase* sys = buildSystemFromPath(path);
+    // Adds a new instance: disambiguate so a second copy of the same ROM file
+    // gets its own `<rom>-N.sav` instead of clobbering the existing sibling.
+    SystemBase* sys = buildSystemFromPath(path, /*disambiguate*/ true);
     if (!sys) return false;
 
     if (!commands_->tryPush(Command::makeAddSystem(sys))) {
@@ -329,8 +353,13 @@ bool PluginRpcService::replaceRomFromPath(std::uint32_t id, std::string path) {
         emit("rom-error", path);
         return false;
     }
-    SystemBase* sys = buildSystemFromPath(path);
+    SystemBase* sys = buildSystemFromPath(path, /*disambiguate*/ false);
     if (!sys) return false;
+    // Replacing a tile in place: keep the slot's existing loose-battery suffix so
+    // it doesn't suddenly start writing a different `.sav` than before.
+    if (project_)
+        if (SystemBase* old = project_->findSystem(static_cast<SystemId>(id)))
+            sys->setSavSuffix(old->savSuffix());
 
     if (!commands_->tryPush(Command::makeReplaceSystem(static_cast<SystemId>(id), sys))) {
         std::fprintf(stderr, "replaceRomFromPath: command queue full\n");
@@ -642,6 +671,10 @@ bool PluginRpcService::duplicateSystem(std::uint32_t id) {
     if (!clone) clone = src->clone(newId, sr);
     if (!clone) return false;
 
+    // The clone copied the source's ROM path, so give it its own loose-battery
+    // suffix (`<rom>-N.sav`) — otherwise both would auto-save over one `<rom>.sav`.
+    clone->setSavSuffix(assignSavSuffix(clone->romPath()));
+
     SystemBase* released = clone.release();
     if (!commands_->tryPush(Command::makeAddSystem(released))) {
         std::fprintf(stderr, "duplicateSystem: command queue full\n");
@@ -902,11 +935,14 @@ void PluginRpcService::pumpRomWatchers() {
         std::vector<std::uint8_t> liveSram;
         if (!sliceFromStateSnapshot(sys.get(), rp::MemoryType::Sram, liveSram))
             liveSram = sys->saveSramBytes();
-        SystemBase* rebuilt = buildSystemFromPath(romPath);
+        SystemBase* rebuilt = buildSystemFromPath(romPath, /*disambiguate*/ false);
         if (!rebuilt) {
             it->second.mtime = mtime;
             continue;
         }
+        // Same ROM, reloaded from disk: keep this instance's loose-battery suffix
+        // so a duplicated tile keeps writing its own `<rom>-N.sav`.
+        rebuilt->setSavSuffix(sys->savSuffix());
         // Fold the live SRAM forward into the rebuilt system so in-game
         // progress survives the reload. Savestate intentionally drops.
         if (!liveSram.empty()) {
@@ -1001,7 +1037,7 @@ std::uint32_t PluginRpcService::sramDirtyCount() {
         }
         if (cur == it->second) continue;                       // unchanged since load
         // Changed since load — unsaved unless the sibling already holds it.
-        const std::string sav = rp::sram_autosave::siblingSavPath(sys->romPath());
+        const std::string sav = rp::sram_autosave::siblingSavPath(sys->romPath(), sys->savSuffix());
         std::error_code ec;
         if (std::filesystem::exists(sav, ec) &&
             rp::sram_autosave::hashFile(sav) == cur) continue; // already persisted
@@ -1026,7 +1062,7 @@ bool PluginRpcService::saveDirtySram() {
         if (bytes.empty()) continue;
         const std::uint64_t cur =
             rp::lsdj::SampleCache::hashBytes(bytes.data(), bytes.size());
-        const std::string sav = rp::sram_autosave::siblingSavPath(sys->romPath());
+        const std::string sav = rp::sram_autosave::siblingSavPath(sys->romPath(), sys->savSuffix());
         std::error_code ec;
         if (std::filesystem::exists(sav, ec) &&
             rp::sram_autosave::hashFile(sav) == cur) continue;  // already saved
@@ -1344,11 +1380,9 @@ bool PluginRpcService::deleteBindingProfile(std::string name) {
 
 namespace {
 std::string defaultSavePath(const SystemBase& sys, const char* ext) {
-    const std::string& romPath = sys.romPath();
-    if (romPath.empty()) return {};
-    std::filesystem::path p(romPath);
-    p.replace_extension(ext);
-    return p.string();
+    // Honour the instance's loose-battery suffix so Save SRAM / Save State for a
+    // duplicated system targets `<rom>-N.<ext>` rather than the shared sibling.
+    return rp::sram_autosave::siblingPath(sys.romPath(), sys.savSuffix(), ext);
 }
 
 bool spillBytes(const std::string& path, const std::vector<std::uint8_t>& bytes) {
@@ -1393,7 +1427,7 @@ bool PluginRpcService::saveSramToPath(std::uint32_t systemId, const std::string&
     }
     // Keep the auto-save dedup baseline in sync when writing the sibling, so a
     // manual Save SRAM doesn't immediately trigger a redundant auto-save write.
-    if (path == rp::sram_autosave::siblingSavPath(sys->romPath()))
+    if (path == rp::sram_autosave::siblingSavPath(sys->romPath(), sys->savSuffix()))
         sramSavedHashes_[static_cast<SystemId>(systemId)] =
             rp::lsdj::SampleCache::hashBytes(bytes.data(), bytes.size());
     emit("sram-saved", path);

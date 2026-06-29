@@ -464,6 +464,7 @@ bool MesenGbaSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
 
 std::unique_ptr<SystemBase> MesenGbaSystem::clone(SystemId newId, double sampleRate) const {
     MesenGbaConfig cfg = config_;
+    cfg.savSuffix = 0;   // caller (duplicateSystem) assigns a non-colliding suffix
     auto sramBytes = saveSramBytes();
     if (!sramBytes.empty()) cfg.sram = std::move(sramBytes);
     auto stateBytes = saveStateBytes();

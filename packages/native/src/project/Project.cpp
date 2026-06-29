@@ -10,6 +10,7 @@
 
 #include "EmbeddedRoms.hpp"
 #include "system/BlockRunner.hpp"
+#include "system/SramAutoSave.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
@@ -35,16 +36,16 @@ std::vector<std::uint8_t> slurpFile(const std::string& path) {
     return buf;
 }
 
-// Read the sibling `<rom>.sav` (cartridge battery RAM) next to a ROM path.
-// Returns empty when there's no path or no sibling file. Used to restore SRAM
-// for a path-only project save, which drops embedded `sram`.
-std::vector<std::uint8_t> slurpSiblingSav(const std::string& romPath) {
-    if (romPath.empty()) return {};
-    std::filesystem::path sav(romPath);
-    sav.replace_extension(".sav");
+// Read the sibling `.sav` (cartridge battery RAM) next to a ROM path. `suffix`
+// selects this system's loose battery file (`<rom>.sav` or `<rom>-N.sav`; see
+// SramAutoSave.hpp). Returns empty when there's no path or no sibling file.
+// Used to restore SRAM for a path-only project save, which drops embedded `sram`.
+std::vector<std::uint8_t> slurpSiblingSav(const std::string& romPath, std::uint32_t suffix) {
+    const std::string sav = rp::sram_autosave::siblingSavPath(romPath, suffix);
+    if (sav.empty()) return {};
     std::error_code ec;
     if (!std::filesystem::exists(sav, ec)) return {};
-    return slurpFile(sav.string());
+    return slurpFile(sav);
 }
 
 } // namespace
@@ -78,7 +79,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
         // `<rom>.sav` when none is present in the config.
         SameBoyConfig cfg = *sb;
         if (cfg.sram.empty())
-            cfg.sram = slurpSiblingSav(cfg.romPath);
+            cfg.sram = slurpSiblingSav(cfg.romPath, cfg.savSuffix);
         auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(rom));
         systems_.push_back(std::move(sys));
         config_.systems.push_back(std::move(cfg));
@@ -97,7 +98,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
         }
         MesenNesConfig cfg = *mb;
         if (cfg.sram.empty())
-            cfg.sram = slurpSiblingSav(cfg.romPath);
+            cfg.sram = slurpSiblingSav(cfg.romPath, cfg.savSuffix);
         auto sys = std::make_unique<MesenNesSystem>(id, cfg, std::move(rom));
         systems_.push_back(std::move(sys));
         config_.systems.push_back(std::move(cfg));
@@ -118,7 +119,7 @@ SystemId Project::addSystem(const SystemConfig& config) {
         }
         MesenGbaConfig cfg = *gb;
         if (cfg.sram.empty())
-            cfg.sram = slurpSiblingSav(cfg.romPath);
+            cfg.sram = slurpSiblingSav(cfg.romPath, cfg.savSuffix);
         auto sys = std::make_unique<MesenGbaSystem>(id, cfg, std::move(rom));
         systems_.push_back(std::move(sys));
         config_.systems.push_back(std::move(cfg));

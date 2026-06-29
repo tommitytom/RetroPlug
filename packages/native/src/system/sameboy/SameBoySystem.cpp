@@ -439,6 +439,7 @@ SystemBase::StateRegionTable SameBoySystem::stateSnapshotRegions() const {
 std::unique_ptr<SystemBase> SameBoySystem::clone(SystemId newId, double sampleRate) const {
     SameBoyConfig cfg = config_;
     cfg.linkGroupId   = 0;
+    cfg.savSuffix     = 0;   // caller (duplicateSystem) assigns a non-colliding suffix
     auto sramBytes  = saveSramBytes();
     if (!sramBytes.empty())  cfg.sram      = std::move(sramBytes);
     auto stateBytes = saveStateBytes();
@@ -455,6 +456,7 @@ std::unique_ptr<SystemBase> SameBoySystem::cloneFromState(
     if (savestate.empty()) return nullptr;
     SameBoyConfig cfg = config_;       // non-state config copy (the deferred config-race)
     cfg.linkGroupId   = 0;
+    cfg.savSuffix     = 0;   // caller (duplicateSystem) assigns a non-colliding suffix
     cfg.savestate     = savestate;
     // Slice SRAM out of the savestate (same offsets the snapshot uses) so the
     // clone's battery RAM round-trips, matching clone().

@@ -21,11 +21,24 @@ namespace rp {
 
 namespace sram_autosave {
 
-inline std::string siblingSavPath(const std::string& romPath) {
+// Resolve a system's sibling file path next to its ROM. `suffix` disambiguates
+// systems that share one ROM file: 0 (or 1) => the plain `<rom><ext>`; N>=2 =>
+// `<rom>-N<ext>`. Keeps Duplicate Instance / repeat loads from clobbering one
+// shared `<rom>.sav`. Returns empty when there's no ROM path.
+inline std::string siblingPath(const std::string& romPath, std::uint32_t suffix,
+                               const char* ext) {
     if (romPath.empty()) return {};
     std::filesystem::path p(romPath);
-    p.replace_extension(".sav");
+    if (suffix >= 2) {
+        p.replace_filename(p.stem().string() + "-" + std::to_string(suffix) + ext);
+        return p.string();
+    }
+    p.replace_extension(ext);
     return p.string();
+}
+
+inline std::string siblingSavPath(const std::string& romPath, std::uint32_t suffix = 0) {
+    return siblingPath(romPath, suffix, ".sav");
 }
 
 // Current battery RAM, read tear-free from the DSP-published state snapshot when
@@ -73,7 +86,7 @@ inline bool spill(const std::string& path, const std::vector<std::uint8_t>& byte
 // Returns false (no-op) for systems with no romPath or no battery.
 inline bool autoSaveSramToSibling(SystemBase& sys,
                                   std::optional<std::uint64_t>& lastHash) {
-    const std::string path = sram_autosave::siblingSavPath(sys.romPath());
+    const std::string path = sram_autosave::siblingSavPath(sys.romPath(), sys.savSuffix());
     if (path.empty()) return false;
 
     const std::vector<std::uint8_t> bytes = sram_autosave::readSram(sys);

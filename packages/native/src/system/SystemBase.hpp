@@ -108,6 +108,14 @@ public:
         return empty;
     }
 
+    // Loose-battery disambiguator. 0 => this system owns the plain sibling
+    // `<rom>.sav`; N>=2 => `<rom>-N.sav`. Lets multiple systems backed by the
+    // same ROM file (Duplicate Instance / loading the same file twice) keep
+    // independent battery files instead of clobbering one another. Persisted
+    // in the per-system config; see SramAutoSave.hpp / siblingSavPath.
+    virtual std::uint32_t savSuffix() const { return 0; }
+    virtual void          setSavSuffix(std::uint32_t /*suffix*/) {}
+
     // Boot-time toggle. SameBoy maps this to fastBoot; GBA to skipBootScreen.
     // Mesen returns nullopt → the UI hides the Fast boot row.
     virtual std::optional<bool> fastBoot() const { return std::nullopt; }
