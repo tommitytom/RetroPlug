@@ -1743,3 +1743,91 @@ TEST_CASE("paths: the sibling .rplg records the ROM by relative basename",
     std::filesystem::remove(romPath, ec);
     std::filesystem::remove(siblingRplg(romPath), ec);
 }
+
+// ---------------------------------------------------------------------------
+// Regressions found by the robustness audit.
+// ---------------------------------------------------------------------------
+
+// A cart whose battery lives inside an embedded savestate (zip form) is present,
+// even with a stale explicit savPath — no phantom "missing save" that blocks load.
+TEST_CASE("relink: an embedded savestate counts the battery as present",
+          "[PluginRpcService][relink]") {
+    ProjectConfig cfg;
+    SameBoyConfig sb;
+    sb.romBytes  = {1};                                 // ROM present (bytes)
+    sb.savPath   = "/nonexistent/rp-phantom.sav";       // explicit override, absent
+    sb.sram.clear();                                    // no standalone SRAM
+    sb.savestate = {9, 9, 9};                           // battery carried in the savestate
+    cfg.systems.push_back(sb);
+    CHECK(rp::scanMissingFiles(cfg).empty());
+}
+
+// One system missing BOTH its ROM and its paired save must yield two items whose
+// only distinguishing field is itemKind (kitSlot/sampleIndex both default -1) —
+// the reason the RelinkMenu row key must include itemKind.
+TEST_CASE("relink: a system missing both ROM and paired save yields two distinct-kind items",
+          "[PluginRpcService][relink]") {
+    ProjectConfig cfg;
+    SameBoyConfig sb;
+    sb.romPath = "/nonexistent/rp-gone.gb";
+    sb.savPath = "/nonexistent/rp-gone.sav";
+    cfg.systems.push_back(sb);
+
+    const auto missing = rp::scanMissingFiles(cfg);
+    REQUIRE(missing.size() == 2);
+    CHECK(missing[0].systemIndex == missing[1].systemIndex);
+    CHECK(missing[0].kitSlot     == missing[1].kitSlot);      // both -1
+    CHECK(missing[0].sampleIndex == missing[1].sampleIndex);  // both -1
+    CHECK(missing[0].itemKind    != missing[1].itemKind);     // ONLY itemKind differs
+    const bool rom  = missing[0].itemKind == "rom"  || missing[1].itemKind == "rom";
+    const bool sram = missing[0].itemKind == "sram" || missing[1].itemKind == "sram";
+    CHECK(rom);
+    CHECK(sram);
+}
+
+// Add-pairing a ROM's own sibling <rom>.sav must NOT make the new instance share
+// that file with the live suffix-0 instance — it gets its own <rom>-2.sav (seeded
+// from the pick), no override.
+TEST_CASE("pair: add-pairing a ROM's own sibling .sav gives the new instance its own file",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("collide", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string savPath = rp::sram_autosave::siblingSavPath(romPath);   // <rom>.sav
+    const std::size_t n = probeBatterySize(fx.rom);
+    writeBytes(savPath, std::vector<std::uint8_t>(n, 0x01));
+    std::error_code ec;
+    std::filesystem::remove(siblingRplg(romPath), ec);
+
+    // A live instance already owns <rom>.sav (suffix 0, no override).
+    SameBoyConfig cfg; cfg.romPath = romPath;
+    const SystemId liveId = fx.project.nextSystemId();
+    auto live = std::make_unique<SameBoySystem>(liveId, cfg, fx.rom);
+    live->onActivate(kSampleRate);
+    SameBoySystem* livePtr = live.get();
+    fx.project.adoptSystem(live.release());
+    REQUIRE(rp::sram_autosave::resolveSavPath(*livePtr) == savPath);
+
+    // Add-pair by picking <rom>.sav in the Open browser (add mode).
+    PluginRpcService::OpenRomOpts opts; opts.mode = "add";
+    REQUIRE(fx.service.openRomBrowser(opts));
+    fx.service.onFileBrowserSelected(savPath.c_str());
+
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::AddSystem);
+    auto* dup = dynamic_cast<SameBoySystem*>(cmd.payload.addSystem.newSystem);
+    REQUIRE(dup != nullptr);
+    CHECK(dup->savPath().empty());                       // no override pinned
+    CHECK(dup->savSuffix() == 2);                        // disambiguated instead
+    const std::string dupTarget = rp::sram_autosave::resolveSavPath(*dup);
+    CHECK(dupTarget != savPath);                         // NOT the live instance's file
+    CHECK(dupTarget == rp::sram_autosave::siblingSavPath(romPath, 2));
+    delete cmd.payload.addSystem.newSystem;
+
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(savPath, ec);
+    std::filesystem::remove(siblingRplg(romPath), ec);
+}

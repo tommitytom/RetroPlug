@@ -180,10 +180,17 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path, bool 
                 explicitSav.c_str());
         } else {
             std::error_code ec;
-            const auto picked  = std::filesystem::weakly_canonical(explicitSav, ec);
-            const auto sibling = std::filesystem::weakly_canonical(
+            const auto picked   = std::filesystem::weakly_canonical(explicitSav, ec);
+            const auto siblingN = std::filesystem::weakly_canonical(
                 rp::sram_autosave::siblingSavPath(path, suffix), ec);
-            if (picked != sibling) savPathOverride = explicitSav;
+            const auto sibling0 = std::filesystem::weakly_canonical(
+                rp::sram_autosave::siblingSavPath(path, 0), ec);
+            // Only pin an override when the pick is a genuinely different file from
+            // this ROM's managed loose-battery siblings. If it's the plain <rom>.sav
+            // or this instance's own <rom>-N.sav, leave the override empty so the
+            // suffix mechanism owns the file — otherwise an *added* instance that
+            // picked <rom>.sav would auto-save over the suffix-0 instance.
+            if (picked != siblingN && picked != sibling0) savPathOverride = explicitSav;
         }
     }
 

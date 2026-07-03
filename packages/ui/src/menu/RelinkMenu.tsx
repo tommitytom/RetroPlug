@@ -58,7 +58,10 @@ export function RelinkMenu({ missing, zoom, sinkGroup }: RelinkMenuProps) {
 
     const items: MenuItem[] = missing.map((m) => {
         return {
-            id:    `relink-${m.systemIndex}-${m.kitSlot}-${m.sampleIndex}`,
+            // itemKind is load-bearing: a "rom" and an "sram" item for the same
+            // system both default kitSlot/sampleIndex to -1, so without it the two
+            // rows collapse to one key and the second becomes unfocusable.
+            id:    `relink-${m.itemKind}-${m.systemIndex}-${m.kitSlot}-${m.sampleIndex}`,
             label: `Locate ${kindLabel(m.itemKind)}: ${basename(m.path)}`,
             kind:  "action",
             // Keep the menu open while browsing — activating must NOT close it

@@ -63,12 +63,13 @@ inline bool romPresent(const SameBoyConfig& c) {
 // A system's battery save is "present" unless it names an *explicit* paired
 // `savPath` that can't be found. An empty savPath means the loose sibling is
 // suffix-derived and may legitimately be absent (a fresh cart with no save yet),
-// so that is never a missing file. Embedded/zip SRAM (`sram` non-empty) means the
-// battery is already in hand. Only a non-empty, non-embedded, absent savPath is
-// missing — the one case the "Locate missing files" flow should surface.
+// so that is never a missing file. Embedded SRAM — either standalone (`sram`) or
+// carried inside an embedded `savestate` (zip export) — means the battery is
+// already in hand. Only a non-empty, non-embedded, absent savPath is missing.
 template <class Cfg>
 inline bool savPresent(const Cfg& c) {
-    return c.savPath.empty() || !c.sram.empty() || fileExists(c.savPath);
+    return c.savPath.empty() || !c.sram.empty() || !c.savestate.empty() ||
+           fileExists(c.savPath);
 }
 
 // Append any missing kit-sample entries for a SameBoy system. Kits only need
