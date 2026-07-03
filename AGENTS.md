@@ -57,12 +57,21 @@ the parts that don't naturally fit either.
   configure, set up the same environment (vcvars64 + the PATH prepends from
   `build.bat`) and run `cmake --build build --target <t> -j%NUMBER_OF_PROCESSORS%`.
   Tool locations are overridable via `VCPKG_ROOT` / `RGBDS_DIR` / `NODE_DIR`.
-- Nothing has been released yet. Don't write migration code, version-gating,
-  or backwards-compatibility shims for on-disk formats (project state, DPF
-  state, kit-patch persistence, config schemas, etc.). When changing a
-  serialized shape, just change it — no "fall back to old format" branches,
-  no `version: 2` fields, no read-old / write-new. Saved projects from the
-  pre-release period are expected to break.
+- Nothing has been released yet. Don't write *versioned* migration code,
+  version-gating, or read-old/write-new shims for on-disk formats (project
+  state, DPF state, kit-patch persistence, config schemas, etc.). When changing
+  a serialized shape, just change it — no "fall back to old format" branches,
+  no `version: 2` transform pipeline. Renames / restructures / semantic changes
+  are still expected to break old saves.
+  - **But reads are forward-tolerant.** `ProjectConfig`, `UserConfigJson`,
+    `BindingMapJson`, `RecentFilesJson` and the LSDj sav/song model all read
+    with `rfl::DefaultIfMissing` (a field absent from the JSON takes its struct
+    default; unknown fields are ignored). So **additive** and **removed** field
+    changes are non-breaking — an old file still loads. Keep it that way: when
+    you add a serialized field, give it a sensible C++ default and DON'T switch
+    a reader back to strict `rfl::json::read<T>` (that's what broke old `.rplg`
+    loads when `savSuffix`/`savPath` were added). This is forward-tolerance, not
+    a migration — no version field, no transform.
 
 ## Known framework gotchas
 
