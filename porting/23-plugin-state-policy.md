@@ -78,6 +78,22 @@ suffix sibling** rather than silently no-op'ing or clobbering. (Scanning for
 missing files on the chunk path is heavier; the fallback is the minimal safe
 behaviour.) Default: silent fallback + a one-line log.
 
+**D6 — Two *independent* instances mirroring to the same `<rom>.sav`.** Within one
+project, `savSuffix` already disambiguates duplicate/repeat loads of a ROM
+(`game.sav` / `game-2.sav`, plus orphan-file protection). But `assignSavSuffix`
+scopes to a single `project_`, so **separate** plugin instances (two DAW plugins,
+or two standalone processes) each default to suffix 0 and, with continuous
+mirroring on, both write `<rom>.sav` — last-writer-wins. This is inherent:
+independent instances can't coordinate without a cross-process lock/registry,
+which is disproportionate. Recommend **don't detect it.** Rely on (a) the DAW
+chunk being each instance's real truth (no session data loss — the loose file is
+only a mirror), and (b) D2 making continuous `.sav` mirroring opt-in, so the
+collision only happens when a user deliberately mirrors — the same semantics as
+pointing two emulators at one save file. Document it. Note this is a `.sav`-only
+concern: the `.rplg` is never auto-written (only `writeSiblingProject` once on
+load + explicit Save), so a shared `.rplg` is just ordinary last-writer-wins on
+an explicit save.
+
 ## Where the settings live
 
 - Global user preferences already exist:
