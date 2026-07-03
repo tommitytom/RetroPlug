@@ -793,6 +793,83 @@ TEST_CASE("setSramMirror persists the mode and pushes it to the DSP",
     CHECK(*pushed == rp::SramMirror::Off);
 }
 
+// D1: on load, embedded SRAM (the DAW chunk) is authoritative — the loose
+// sibling on disk is never consulted when the config already carries bytes.
+// Project::addSystem only slurps the sibling `if (cfg.sram.empty())`.
+TEST_CASE("embedded SRAM wins over a conflicting on-disk sibling (chunk-authoritative)",
+          "[PluginRpcService][sram]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    const auto rom = loadRom();
+
+    const std::string romPath = uniqueTmpPath("d1", ".gb");
+    const std::string savPath = rp::sram_autosave::siblingSavPath(romPath);
+
+    // Probe the cart's battery size with a throwaway system.
+    std::size_t n = 0;
+    {
+        SameBoyConfig c{}; c.romPath = romPath;
+        SameBoySystem s{SystemId{77}, c, rom};
+        s.onActivate(kSampleRate);
+        n = s.saveSramBytes().size();
+        s.onDeactivate();
+    }
+    REQUIRE(n > 0);
+
+    const std::vector<std::uint8_t> embedded(n, 0x11);   // the "chunk" SRAM
+    const std::vector<std::uint8_t> onDisk  (n, 0x22);   // a conflicting sibling
+    {
+        std::ofstream o(savPath, std::ios::binary | std::ios::trunc);
+        o.write(reinterpret_cast<const char*>(onDisk.data()),
+                static_cast<std::streamsize>(onDisk.size()));
+    }
+
+    // Load with embedded bytes present: the sibling must be ignored entirely.
+    Project project;
+    SameBoyConfig cfg{};
+    cfg.romPath  = romPath;
+    cfg.romBytes = rom;
+    cfg.sram     = embedded;
+    const SystemId id = project.addSystem(cfg);
+    REQUIRE(id != 0);
+    SystemBase* sys = project.findSystem(id);
+    REQUIRE(sys != nullptr);
+    sys->onActivate(kSampleRate);
+    CHECK(sys->saveSramBytes() == embedded);             // chunk wins, not onDisk
+    sys->onDeactivate();
+
+    std::error_code ec;
+    std::filesystem::remove(savPath, ec);
+}
+
+// D5: sanitizeSavTargets clears a paired-save override whose directory is gone
+// (a project moved between machines), so a later mirror flush falls back to the
+// ROM sibling instead of a dangling absolute path. A target whose directory
+// still exists is kept.
+TEST_CASE("sanitizeSavTargets drops dangling paired-save write-targets",
+          "[PluginRpcService][sram]") {
+    ProjectConfig cfg;
+
+    SameBoyConfig gone{};
+    gone.romPath = "/nonexistent-machine/roms/game.gb";
+    gone.savPath = "/nonexistent-machine/roms/game.sav";   // parent dir absent
+    cfg.systems.push_back(SystemConfig{gone});
+
+    const std::string liveDir  = uniqueTmpPath("d5live", "");   // a real directory
+    std::filesystem::create_directories(liveDir);
+    SameBoyConfig live{};
+    live.romPath = liveDir + "/here.gb";
+    live.savPath = liveDir + "/here.sav";                  // parent dir exists (kept)
+    cfg.systems.push_back(SystemConfig{live});
+
+    const int cleared = rp::sanitizeSavTargets(cfg);
+    CHECK(cleared == 1);
+    CHECK(rfl::get_if<SameBoyConfig>(&cfg.systems[0].variant())->savPath.empty());        // dropped
+    CHECK(rfl::get_if<SameBoyConfig>(&cfg.systems[1].variant())->savPath == live.savPath); // kept
+
+    std::error_code ec;
+    std::filesystem::remove_all(liveDir, ec);
+}
+
 TEST_CASE("SRAM auto-save is a no-op without a romPath or a battery",
           "[PluginRpcService][sram-autosave]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);

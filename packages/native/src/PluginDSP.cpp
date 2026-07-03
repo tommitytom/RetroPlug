@@ -19,6 +19,7 @@
 
 #include "config/SramMirror.hpp"
 #include "lsdj/SampleCache.hpp"
+#include "project/ProjectMissingFiles.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/BlockRunner.hpp"
 #include "system/SramAutoSave.hpp"
@@ -246,6 +247,12 @@ protected:
             d_stderr("[PluginDSP] setState: failed to parse project zip");
             return;
         }
+        // The chunk is authoritative for SRAM (embedded bytes), but a project
+        // moved between machines carries an absolute paired-save write-target
+        // that may point nowhere. Drop dangling targets so the mirror flush
+        // falls back to the ROM sibling instead of a stale absolute path (D5).
+        if (const int cleared = rp::sanitizeSavTargets(*parsed))
+            d_stderr("[PluginDSP] setState: cleared %d stale paired-save target(s)", cleared);
         applyProjectFromConfig(*parsed);
     }
 
