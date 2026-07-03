@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "rfl/DefaultIfMissing.hpp"
 #include "rfl/json/read.hpp"
 #include "rfl/json/write.hpp"
 
@@ -29,7 +30,13 @@ inline std::string projectConfigToJson(const ProjectConfig& cfg) {
 }
 
 inline std::optional<ProjectConfig> projectConfigFromJson(std::string_view json) {
-    auto result = rfl::json::read<ProjectConfig>(json);
+    // DefaultIfMissing: a field absent from the JSON takes its struct default
+    // rather than failing the whole parse. Lets a project saved before a field
+    // existed (e.g. savSuffix / savPath) still load — the same forward-tolerance
+    // the LSDj sav codec uses (lsdj/SavSerialization.hpp). Pre-release, this is
+    // the migration story for additive schema changes; unknown fields are also
+    // ignored, so a removed field in an old file is harmless too.
+    auto result = rfl::json::read<ProjectConfig, rfl::DefaultIfMissing>(json);
     if (!result) return std::nullopt;
     return std::move(result.value());
 }

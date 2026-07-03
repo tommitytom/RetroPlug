@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "rfl/DefaultIfMissing.hpp"
 #include "rfl/json/read.hpp"
 #include "rfl/json/write.hpp"
 
@@ -62,7 +63,10 @@ inline std::string userConfigToJson(const UserConfigJson& cfg) {
 }
 
 inline std::optional<UserConfigJson> userConfigFromJson(std::string_view json) {
-    auto r = rfl::json::read<UserConfigJson>(json);
+    // DefaultIfMissing so a config.json written before a field existed (e.g. an
+    // old `autoSaveSram` file with no `sramMirror`) still loads with the rest of
+    // its settings intact instead of resetting everything on a strict-parse fail.
+    auto r = rfl::json::read<UserConfigJson, rfl::DefaultIfMissing>(json);
     if (!r) return std::nullopt;
     return std::move(r.value());
 }
@@ -72,7 +76,7 @@ inline std::string bindingMapToJson(const BindingMapJson& b) {
 }
 
 inline std::optional<BindingMapJson> bindingMapFromJson(std::string_view json) {
-    auto r = rfl::json::read<BindingMapJson>(json);
+    auto r = rfl::json::read<BindingMapJson, rfl::DefaultIfMissing>(json);
     if (!r) return std::nullopt;
     return std::move(r.value());
 }

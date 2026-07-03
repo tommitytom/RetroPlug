@@ -244,6 +244,38 @@ TEST_CASE("projectConfigFromJson reports failure for malformed JSON", "[ProjectS
     REQUIRE_FALSE(projectConfigFromJson("").has_value());
 }
 
+// Forward-tolerance (DefaultIfMissing): a project saved before newer fields
+// existed must still load, with the absent fields taking their struct defaults.
+// This is the regression guard for "my previous projects no longer load" after
+// savSuffix / savPath (and friends) were added to the system configs.
+TEST_CASE("projectConfigFromJson loads an old project missing newer fields",
+          "[ProjectSerialization]") {
+    // A pre-savSuffix/savPath thin project: only the fields that existed back
+    // then. Note `settings` and most SameBoy fields are omitted entirely.
+    const char* oldJson = R"({
+        "schemaVersion": "1.0",
+        "systems": [
+            { "kind": "sameboy", "romPath": "/roms/lsdj.gb", "model": "CgbC" }
+        ]
+    })";
+
+    auto cfg = projectConfigFromJson(oldJson);
+    REQUIRE(cfg.has_value());
+    REQUIRE(cfg->systems.size() == 1);
+    const auto* sb = rfl::get_if<SameBoyConfig>(&cfg->systems[0].variant());
+    REQUIRE(sb != nullptr);
+    CHECK(sb->romPath == "/roms/lsdj.gb");
+    CHECK(sb->savSuffix == 0);        // defaulted, not a parse error
+    CHECK(sb->savPath.empty());       // defaulted
+    CHECK(sb->embedRom == true);      // other newer-ish fields default too
+
+    // An even sparser project (no schemaVersion, no settings) still loads.
+    auto minimal = projectConfigFromJson(
+        R"({"systems":[{"kind":"sameboy","romPath":"/x/g.gb"}]})");
+    REQUIRE(minimal.has_value());
+    REQUIRE(minimal->systems.size() == 1);
+}
+
 TEST_CASE("projectConfigFromZip reports failure for malformed input", "[ProjectSerialization]") {
     REQUIRE_FALSE(projectConfigFromZip(std::span<const std::uint8_t>{}).has_value());
     const std::uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};

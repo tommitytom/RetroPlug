@@ -5,6 +5,7 @@
 #include <string_view>
 #include <vector>
 
+#include "rfl/DefaultIfMissing.hpp"
 #include "rfl/json/read.hpp"
 #include "rfl/json/write.hpp"
 
@@ -28,7 +29,7 @@ inline std::string recentFilesToJson(const RecentFilesJson& r) {
 }
 
 inline std::optional<RecentFilesJson> recentFilesFromJson(std::string_view json) {
-    auto r = rfl::json::read<RecentFilesJson>(json);
+    auto r = rfl::json::read<RecentFilesJson, rfl::DefaultIfMissing>(json);
     if (!r) return std::nullopt;
     return std::move(r.value());
 }
