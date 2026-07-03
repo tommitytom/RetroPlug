@@ -1,6 +1,7 @@
 #include "PluginRpcService.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -47,6 +48,10 @@ namespace {
 // passed straight through to DPF's FileBrowserOptions.
 constexpr const char* kRomPatterns     = "*.gb *.gbc *.gba *.nes";
 constexpr const char* kRomFilterName   = "ROM files";
+// The Open browser also accepts a `.sav`, which we pair with a ROM (see
+// handleOpenRomSelection). The 2nd (ROM-for-sav) browser uses kRomPatterns.
+constexpr const char* kRomOrSavPatterns   = "*.gb *.gbc *.gba *.nes *.sav";
+constexpr const char* kRomOrSavFilterName = "ROM or save (.sav)";
 constexpr const char* kAudioPatterns   = "*.wav *.mp3 *.flac";
 constexpr const char* kAudioFilterName = "Audio files";
 constexpr const char* kProjPatterns    = "*.rplg";
@@ -149,7 +154,8 @@ std::uint32_t PluginRpcService::assignSavSuffix(const std::string& romPath) cons
     return n;
 }
 
-SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path, bool disambiguate) {
+SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path, bool disambiguate,
+                                                  const std::string& explicitSav) {
     if (!project_ || !sampleRate_) {
         std::fprintf(stderr, "buildSystemFromPath: shared DSP state unavailable (LV2-UI?)\n");
         return nullptr;
@@ -157,6 +163,29 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path, bool 
     // When adding an instance, claim a non-colliding loose-battery suffix so two
     // systems backed by the same ROM file don't auto-save over one `<rom>.sav`.
     const std::uint32_t suffix = disambiguate ? assignSavSuffix(path) : 0;
+
+    // Optional explicit battery save the caller paired with this ROM. Seeds the
+    // instance's SRAM, and — unless it's already this system's natural sibling —
+    // becomes a persisted override so future saves target that exact file
+    // (rather than the suffix-derived sibling). Keeping the common "picked the
+    // sibling" case override-free preserves relink-following.
+    std::vector<std::uint8_t> explicitSram;
+    std::string savPathOverride;
+    if (!explicitSav.empty()) {
+        explicitSram = slurp(explicitSav);
+        if (explicitSram.empty()) {
+            std::fprintf(stderr,
+                "buildSystemFromPath: explicit sav '%s' unreadable; using sibling\n",
+                explicitSav.c_str());
+        } else {
+            std::error_code ec;
+            const auto picked  = std::filesystem::weakly_canonical(explicitSav, ec);
+            const auto sibling = std::filesystem::weakly_canonical(
+                rp::sram_autosave::siblingSavPath(path, suffix), ec);
+            if (picked != sibling) savPathOverride = explicitSav;
+        }
+    }
+
     std::vector<std::uint8_t> bytes = slurp(path);
     if (bytes.empty()) {
         std::fprintf(stderr, "buildSystemFromPath: failed to read '%s'\n", path.c_str());
@@ -184,6 +213,8 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path, bool 
         MesenNesConfig cfg;
         cfg.romPath   = path;
         cfg.savSuffix = suffix;
+        cfg.savPath   = savPathOverride;
+        if (!explicitSram.empty()) cfg.sram = std::move(explicitSram);
         auto sys = std::make_unique<MesenNesSystem>(id, cfg, std::move(bytes));
         sys->onActivate(sr);
         return sys.release();
@@ -193,6 +224,8 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path, bool 
         MesenGbaConfig cfg;
         cfg.romPath   = path;
         cfg.savSuffix = suffix;
+        cfg.savPath   = savPathOverride;
+        if (!explicitSram.empty()) cfg.sram = std::move(explicitSram);
         cfg.biosPath = "build/firmware/gba_bios.bin";
         auto sys = std::make_unique<MesenGbaSystem>(id, cfg, std::move(bytes));
         sys->onActivate(sr);
@@ -202,14 +235,17 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path, bool 
     SameBoyConfig cfg;
     cfg.romPath   = path;
     cfg.savSuffix = suffix;
+    cfg.savPath   = savPathOverride;
     cfg.model     = SameBoyModel::CgbC;
     cfg.fastBoot  = true;
 
-    // Optional sibling .sav (cartridge battery RAM) for this instance's suffix.
-    // Missing file is fine — a freshly disambiguated instance starts empty.
-    {
-        const std::string sav = rp::sram_autosave::siblingSavPath(path, suffix);
-        std::vector<std::uint8_t> sramBytes = slurp(sav);
+    // Battery RAM: an explicit paired save wins; otherwise the sibling .sav for
+    // this instance's suffix. Missing file is fine — the instance starts empty.
+    if (!explicitSram.empty()) {
+        cfg.sram = std::move(explicitSram);
+    } else {
+        std::vector<std::uint8_t> sramBytes =
+            slurp(rp::sram_autosave::siblingSavPath(path, suffix));
         if (!sramBytes.empty())
             cfg.sram = std::move(sramBytes);
     }
@@ -360,6 +396,105 @@ bool PluginRpcService::addRomFromPath(std::string path) {
     return true;
 }
 
+std::string PluginRpcService::findSiblingRom(const std::string& savPath) const {
+    std::filesystem::path p(savPath);
+    const std::filesystem::path dir = p.parent_path();
+    const std::string stem = p.stem().string();
+
+    // Candidate stems: the save's own stem, plus (when it's a `<base>-N.sav`
+    // duplicate slot) the base stem — so `game-2.sav` can pair with `game.gb`.
+    // Exact stem is tried first so `song-2.sav` prefers `song-2.gb` over `song.gb`.
+    std::vector<std::string> stems{ stem };
+    const auto dash = stem.rfind('-');
+    if (dash != std::string::npos && dash + 1 < stem.size() &&
+        stem.find_first_not_of("0123456789", dash + 1) == std::string::npos)
+        stems.push_back(stem.substr(0, dash));
+
+    // Probes lowercase extensions only; a mixed-case ROM filename on a
+    // case-sensitive filesystem is reached via the fallback 2nd browser instead.
+    static constexpr const char* kExts[] = { ".gb", ".gbc", ".gba", ".nes" };
+    for (const auto& s : stems) {
+        for (const char* ext : kExts) {
+            const std::filesystem::path cand = dir / (s + ext);
+            std::error_code ec;
+            if (!std::filesystem::exists(cand, ec)) continue;
+            const auto bytes = slurp(cand.string());
+            if (!bytes.empty() && detectRomFormat(bytes) != RomFormat::Unknown)
+                return cand.string();   // content-validated ROM
+        }
+    }
+    return {};
+}
+
+bool PluginRpcService::loadRomPaired(const std::string& romPath,
+                                     const std::string& savPath, bool add) {
+    if (!commands_) {
+        emit("rom-error", romPath);
+        return false;
+    }
+    SystemBase* sys = buildSystemFromPath(romPath, /*disambiguate*/ add, savPath);
+    if (!sys) return false;   // buildSystemFromPath already emitted rom-error
+
+    // Capture the config before tryPush transfers ownership to the DSP.
+    SystemConfig sysCfg = sys->snapshotConfig();
+
+    Command cmd = add ? Command::makeAddSystem(sys) : Command::makeLoadRom(sys);
+    if (!commands_->tryPush(cmd)) {
+        std::fprintf(stderr, "loadRomPaired: command queue full\n");
+        delete sys;
+        emit("rom-error", romPath);
+        return false;
+    }
+    markProjectDirty();
+
+    // Replace mode mirrors loadRomFromPath's recent/currentProjectPath bookkeeping,
+    // but deliberately does NOT defer to a sibling `<rom>.rplg` — the user picked a
+    // specific save, so the pairing wins over the project's own SRAM.
+    if (!add) {
+        const std::string projPath = writeSiblingProject(sysCfg, romPath);
+        if (!projPath.empty()) {
+            if (recentFiles_) recentFiles_->add(projPath);
+            currentProjectPath_ = projPath;
+            projectDirty_       = false;
+        }
+    }
+    emit("rom-loaded", romPath);
+    return true;
+}
+
+bool PluginRpcService::handleOpenRomSelection(const std::string& path, bool add) {
+    // Content decides: a real ROM loads/adds exactly as before. Reading the file
+    // also lets a `.sav` (which detectRomFormat rejects) route into pairing.
+    const auto bytes = slurp(path);
+    if (!bytes.empty() && detectRomFormat(bytes) != RomFormat::Unknown)
+        return add ? addRomFromPath(path) : loadRomFromPath(path);
+
+    // Not a ROM. Only a `.sav` is treated as a save to pair; anything else falls
+    // through to the normal loader so its existing "rom-error" fires.
+    std::string ext = std::filesystem::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (ext != ".sav")
+        return add ? addRomFromPath(path) : loadRomFromPath(path);
+
+    // A picked save: pair with its sibling ROM if there is one, else arm the 2nd
+    // (ROM) browser to let the user point at the ROM.
+    const std::string rom = findSiblingRom(path);
+    if (!rom.empty())
+        return loadRomPaired(rom, path, add);
+
+    if (!openFileBrowser_) {   // no browser available (e.g. LV2-UI) — give up
+        emit("rom-error", path);
+        return false;
+    }
+    pendingSavPath_  = path;
+    pendingFileMode_ = add ? PendingFileMode::PairRomForSavAdd
+                           : PendingFileMode::PairRomForSav;
+    openFileBrowser_("Select the ROM for this save", false, nullptr,
+                     kRomPatterns, kRomFilterName);
+    return true;
+}
+
 bool PluginRpcService::replaceRomFromPath(std::uint32_t id, std::string path) {
     if (!commands_) {
         emit("rom-error", path);
@@ -368,7 +503,9 @@ bool PluginRpcService::replaceRomFromPath(std::uint32_t id, std::string path) {
     SystemBase* sys = buildSystemFromPath(path, /*disambiguate*/ false);
     if (!sys) return false;
     // Replacing a tile in place: keep the slot's existing loose-battery suffix so
-    // it doesn't suddenly start writing a different `.sav` than before.
+    // it doesn't suddenly start writing a different `.sav` than before. Any paired
+    // sav override is intentionally NOT carried over — it belonged to the old ROM;
+    // the freshly built system starts with an empty savPath (its own sibling).
     if (project_)
         if (SystemBase* old = project_->findSystem(static_cast<SystemId>(id)))
             sys->setSavSuffix(old->savSuffix());
@@ -571,10 +708,14 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
         pendingFileMode_ = PendingFileMode::LoadRom;
         pendingFileSystemId_ = 0;
         pendingRelinkRecentPath_.clear();
+        pendingSavPath_.clear();
         return;
     }
-    switch (pendingFileMode_) {
-        case PendingFileMode::AddRom:      addRomFromPath(path);             break;
+    // Capture the mode at entry: handleOpenRomSelection may *arm* a pairing mode
+    // (opening a 2nd browser), which must survive the reset below.
+    const PendingFileMode entryMode = pendingFileMode_;
+    switch (entryMode) {
+        case PendingFileMode::AddRom:      handleOpenRomSelection(path, /*add*/ true);  break;
         case PendingFileMode::LoadProject: loadProjectFromPath(path);        break;
         case PendingFileMode::SaveProject: saveProjectToPath(path);          break;
         case PendingFileMode::ExportZip:   exportZipToPath(path);            break;
@@ -588,12 +729,30 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
         case PendingFileMode::LoadSram:    loadSramFromPath(pendingFileSystemId_, path); break;
         case PendingFileMode::SaveState:   saveStateToPath(pendingFileSystemId_, path); break;
         case PendingFileMode::LoadState:   loadStateFromPath(pendingFileSystemId_, path); break;
+        case PendingFileMode::PairRomForSav:
+        case PendingFileMode::PairRomForSavAdd: {
+            // 2nd dialog returned the ROM for the stashed save. Guard against the
+            // user picking another non-ROM.
+            const bool add = (entryMode == PendingFileMode::PairRomForSavAdd);
+            const auto bytes = slurp(path);
+            if (!bytes.empty() && detectRomFormat(bytes) != RomFormat::Unknown)
+                loadRomPaired(path, pendingSavPath_, add);
+            else
+                emit("rom-error", path);
+            break;
+        }
         case PendingFileMode::LoadRom:
-        default:                           loadRomFromPath(path);            break;
+        default:                           handleOpenRomSelection(path, /*add*/ false); break;
     }
+    // If handling armed a 2nd (pairing) browser, keep the pending state alive.
+    if (pendingFileMode_ != entryMode &&
+        (pendingFileMode_ == PendingFileMode::PairRomForSav ||
+         pendingFileMode_ == PendingFileMode::PairRomForSavAdd))
+        return;
     pendingFileMode_ = PendingFileMode::LoadRom;
     pendingFileSystemId_ = 0;
     pendingRelinkRecentPath_.clear();
+    pendingSavPath_.clear();
 }
 
 std::optional<PluginRpcService::FrameResponse>
@@ -627,10 +786,13 @@ bool PluginRpcService::openRomBrowser(OpenRomOpts opts) {
         std::fprintf(stderr, "plugin.openRomBrowser: no open-browser callback registered\n");
         return false;
     }
+    pendingSavPath_.clear();   // defensive: drop any save stranded by a prior flow
     pendingFileMode_ = (opts.mode && *opts.mode == "add")
         ? PendingFileMode::AddRom
         : PendingFileMode::LoadRom;
-    openFileBrowser_("Open ROM (Game Boy or NES)", false, nullptr, kRomPatterns, kRomFilterName);
+    // Also accept a `.sav` here; onFileBrowserSelected pairs it with a ROM.
+    openFileBrowser_("Open ROM or .sav", false, nullptr,
+                     kRomOrSavPatterns, kRomOrSavFilterName);
     return true;
 }
 
@@ -953,8 +1115,9 @@ void PluginRpcService::pumpRomWatchers() {
             continue;
         }
         // Same ROM, reloaded from disk: keep this instance's loose-battery suffix
-        // so a duplicated tile keeps writing its own `<rom>-N.sav`.
+        // (and any user-paired sav override) so it keeps writing the same file.
         rebuilt->setSavSuffix(sys->savSuffix());
+        rebuilt->setSavPath(sys->savPath());
         // Fold the live SRAM forward into the rebuilt system so in-game
         // progress survives the reload. Savestate intentionally drops.
         if (!liveSram.empty()) {
@@ -1049,7 +1212,7 @@ std::uint32_t PluginRpcService::sramDirtyCount() {
         }
         if (cur == it->second) continue;                       // unchanged since load
         // Changed since load — unsaved unless the sibling already holds it.
-        const std::string sav = rp::sram_autosave::siblingSavPath(sys->romPath(), sys->savSuffix());
+        const std::string sav = rp::sram_autosave::resolveSavPath(*sys);
         std::error_code ec;
         if (std::filesystem::exists(sav, ec) &&
             rp::sram_autosave::hashFile(sav) == cur) continue; // already persisted
@@ -1074,7 +1237,7 @@ bool PluginRpcService::saveDirtySram() {
         if (bytes.empty()) continue;
         const std::uint64_t cur =
             rp::lsdj::SampleCache::hashBytes(bytes.data(), bytes.size());
-        const std::string sav = rp::sram_autosave::siblingSavPath(sys->romPath(), sys->savSuffix());
+        const std::string sav = rp::sram_autosave::resolveSavPath(*sys);
         std::error_code ec;
         if (std::filesystem::exists(sav, ec) &&
             rp::sram_autosave::hashFile(sav) == cur) continue;  // already saved
@@ -1439,7 +1602,7 @@ bool PluginRpcService::saveSramToPath(std::uint32_t systemId, const std::string&
     }
     // Keep the auto-save dedup baseline in sync when writing the sibling, so a
     // manual Save SRAM doesn't immediately trigger a redundant auto-save write.
-    if (path == rp::sram_autosave::siblingSavPath(sys->romPath(), sys->savSuffix()))
+    if (path == rp::sram_autosave::resolveSavPath(*sys))
         sramSavedHashes_[static_cast<SystemId>(systemId)] =
             rp::lsdj::SampleCache::hashBytes(bytes.data(), bytes.size());
     emit("sram-saved", path);
@@ -1511,7 +1674,10 @@ bool PluginRpcService::saveSram(std::uint32_t systemId) {
     if (!project_) return false;
     SystemBase* sys = project_->findSystem(static_cast<SystemId>(systemId));
     if (!sys) return false;
-    const std::string path = defaultSavePath(*sys, ".sav");
+    // Battery target honours a user-paired `savPath` override, else the
+    // suffix-derived sibling. (Save State keeps using defaultSavePath — the
+    // override is sav-only.)
+    const std::string path = rp::sram_autosave::resolveSavPath(*sys);
     if (path.empty()) {
         // No romPath — fall back to the file dialog so the user picks a target.
         return openSaveSramBrowser(systemId);

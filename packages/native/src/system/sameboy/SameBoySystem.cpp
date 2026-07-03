@@ -440,6 +440,7 @@ std::unique_ptr<SystemBase> SameBoySystem::clone(SystemId newId, double sampleRa
     SameBoyConfig cfg = config_;
     cfg.linkGroupId   = 0;
     cfg.savSuffix     = 0;   // caller (duplicateSystem) assigns a non-colliding suffix
+    cfg.savPath.clear();     // and its own sav file, not the source's paired one
     auto sramBytes  = saveSramBytes();
     if (!sramBytes.empty())  cfg.sram      = std::move(sramBytes);
     auto stateBytes = saveStateBytes();
@@ -457,6 +458,7 @@ std::unique_ptr<SystemBase> SameBoySystem::cloneFromState(
     SameBoyConfig cfg = config_;       // non-state config copy (the deferred config-race)
     cfg.linkGroupId   = 0;
     cfg.savSuffix     = 0;   // caller (duplicateSystem) assigns a non-colliding suffix
+    cfg.savPath.clear();     // and its own sav file, not the source's paired one
     cfg.savestate     = savestate;
     // Slice SRAM out of the savestate (same offsets the snapshot uses) so the
     // clone's battery RAM round-trips, matching clone().

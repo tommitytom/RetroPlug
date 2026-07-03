@@ -25,6 +25,9 @@ struct MesenNesConfig {
     // See SameBoyConfig::savSuffix. 0 => owns `<rom>.sav`; N>=2 => `<rom>-N.sav`,
     // so duplicated / repeat-loaded instances don't clobber a shared sibling.
     std::uint32_t savSuffix = 0;
+    // See SameBoyConfig::savPath. Empty => suffix-derived sibling; non-empty =>
+    // a user-paired `.sav` file that all battery I/O targets.
+    std::string   savPath;
     // Binary blobs live in the .rplg zip as raw entries — see ProjectBinaries.
     std::vector<std::uint8_t> romBytes;
     std::vector<std::uint8_t> sram;

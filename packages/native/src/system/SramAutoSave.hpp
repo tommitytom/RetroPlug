@@ -41,6 +41,17 @@ inline std::string siblingSavPath(const std::string& romPath, std::uint32_t suff
     return siblingPath(romPath, suffix, ".sav");
 }
 
+// Resolve where a system's battery RAM is read/written: the explicit user-paired
+// `savPath` override when set, else the suffix-derived sibling. Single source of
+// truth for auto-save, Save SRAM, dirty tracking, and project-load restore.
+inline std::string resolveSavPath(const std::string& romPath, std::uint32_t suffix,
+                                  const std::string& savPathOverride) {
+    return savPathOverride.empty() ? siblingSavPath(romPath, suffix) : savPathOverride;
+}
+inline std::string resolveSavPath(const SystemBase& sys) {
+    return resolveSavPath(sys.romPath(), sys.savSuffix(), sys.savPath());
+}
+
 // Current battery RAM, read tear-free from the DSP-published state snapshot when
 // available (the same race-free path Save SRAM uses), else a direct live read.
 inline std::vector<std::uint8_t> readSram(SystemBase& sys) {
@@ -78,15 +89,16 @@ inline bool spill(const std::string& path, const std::vector<std::uint8_t>& byte
 
 } // namespace sram_autosave
 
-// Flush `sys`'s battery RAM to its sibling .sav if it changed since the last
-// call. `lastHash` is per-system caller-owned state (nullopt = never checked):
+// Flush `sys`'s battery RAM to its resolved sav path (the suffix-derived sibling,
+// or the user-paired `savPath` override) if it changed since the last call.
+// `lastHash` is per-system caller-owned state (nullopt = never checked):
 //   - unchanged since last write  -> no-op, returns false
 //   - first check + identical file already on disk -> seed hash, returns false
 //   - changed (or no/needs file)  -> write, update hash, returns true
 // Returns false (no-op) for systems with no romPath or no battery.
 inline bool autoSaveSramToSibling(SystemBase& sys,
                                   std::optional<std::uint64_t>& lastHash) {
-    const std::string path = sram_autosave::siblingSavPath(sys.romPath(), sys.savSuffix());
+    const std::string path = sram_autosave::resolveSavPath(sys);
     if (path.empty()) return false;
 
     const std::vector<std::uint8_t> bytes = sram_autosave::readSram(sys);

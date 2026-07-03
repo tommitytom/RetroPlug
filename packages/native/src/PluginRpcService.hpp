@@ -417,8 +417,26 @@ private:
     // because the service owns the file IO + system construction. When
     // `disambiguate` is set (adding an instance), the built system is given a
     // loose-battery suffix that doesn't collide with an existing same-ROM
-    // system, and its sibling `.sav` is read from that suffixed path.
-    SystemBase* buildSystemFromPath(const std::string& path, bool disambiguate);
+    // system, and its sibling `.sav` is read from that suffixed path. When
+    // `explicitSav` is non-empty, it seeds the battery and (unless it's the
+    // natural sibling) becomes the system's persisted `savPath` override.
+    SystemBase* buildSystemFromPath(const std::string& path, bool disambiguate,
+                                    const std::string& explicitSav = "");
+
+    // Find a ROM to pair with a user-picked `.sav`: a same-directory file whose
+    // stem matches the save's (also trying the base stem when the save is a
+    // `<name>-N.sav` duplicate slot), validated by content via detectRomFormat.
+    // Returns the ROM path, or empty if none is found (caller opens a 2nd browser).
+    std::string findSiblingRom(const std::string& savPath) const;
+
+    // Build + push a (ROM, explicit sav) pairing. `add` => AddSystem (new instance);
+    // else LoadRom (replace the focused tile, with recent/currentProjectPath
+    // bookkeeping, but NOT deferring to a sibling `.rplg` — the user's sav wins).
+    bool loadRomPaired(const std::string& romPath, const std::string& savPath, bool add);
+
+    // Dispatch a first-dialog Open selection: a ROM loads/adds as before; a `.sav`
+    // pairs with its sibling ROM, or arms a 2nd (ROM) browser when none is found.
+    bool handleOpenRomSelection(const std::string& path, bool add);
 
     // Lowest free loose-battery suffix for `romPath`: 0 when no live system owns
     // the plain `<rom>.sav`, else the smallest N>=2 that neither a live system
@@ -436,7 +454,11 @@ private:
     // delivers the chosen path back via onFileBrowserSelected.
     enum class PendingFileMode { LoadRom, AddRom, LoadProject, SaveProject, ExportZip,
                                  LoadSample, Relink, RelinkRecent,
-                                 SaveSram, LoadSram, SaveState, LoadState };
+                                 SaveSram, LoadSram, SaveState, LoadState,
+                                 // 2nd-dialog modes: a picked `.sav` had no sibling
+                                 // ROM, so the next pick is the ROM to pair with
+                                 // pendingSavPath_ (Add = new instance vs replace).
+                                 PairRomForSav, PairRomForSavAdd };
 
     bool saveProjectToPath(const std::string& path);
 
@@ -492,6 +514,8 @@ private:
     std::uint32_t             pendingFileSystemId_  = 0;
     // Old path of the recent entry being relinked while its browser is up.
     std::string               pendingRelinkRecentPath_;
+    // A user-picked `.sav` awaiting its ROM in the 2nd browser (PairRomForSav*).
+    std::string               pendingSavPath_;
 
     // Common helpers used by saveSram / saveState / loadState.
     bool saveSramToPath(std::uint32_t systemId, const std::string& path);

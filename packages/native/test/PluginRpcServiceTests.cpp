@@ -870,6 +870,17 @@ std::string siblingRplg(const std::string& romPath) {
     return p.string();
 }
 
+// Cartridge battery size for `rom` (0 if the cart has no battery). Lets a test
+// author a correctly-sized `.sav` before loading.
+std::size_t probeBatterySize(const std::vector<std::uint8_t>& rom) {
+    SameBoyConfig c{};
+    SameBoySystem s{SystemId{0xB0FF}, c, rom};
+    s.onActivate(kSampleRate);
+    const std::size_t n = s.saveSramBytes().size();
+    s.onDeactivate();
+    return n;
+}
+
 // A thin (path-only) project referencing `romPath`, as projectConfigToJsonFile
 // produces. Used to pre-seed an existing sibling project on disk.
 void writeThinProject(const std::string& path, const std::string& romPath) {
@@ -1222,4 +1233,306 @@ TEST_CASE("Project::loadFromConfig preserves settings and rebuilds systems",
     CHECK(project.config().settings.zoom   == 0);
     CHECK(project.config().settings.layout == SystemLayout::Auto);
     CHECK(project.systems().empty());
+}
+
+// ---------------------------------------------------------------------------
+// Pairing a user-picked `.sav` with a ROM in the Open browser.
+// Drives the real onFileBrowserSelected round-trip; the fixture's browser
+// callback is a no-op, so a 2nd (ROM) dialog is simulated by calling
+// onFileBrowserSelected again.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("pair: picking a .sav loads its sibling ROM (replace)",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("pair", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string savPath = rp::sram_autosave::siblingSavPath(romPath);
+    const std::size_t n = probeBatterySize(fx.rom);
+    REQUIRE(n > 0);
+    const std::vector<std::uint8_t> image(n, 0x3C);
+    writeBytes(savPath, image);
+    std::error_code ec;
+    std::filesystem::remove(siblingRplg(romPath), ec);
+
+    REQUIRE(fx.service.openRomBrowser({}));            // replace mode
+    fx.service.onFileBrowserSelected(savPath.c_str()); // user picks the .sav
+
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadRom);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
+    REQUIRE(sb != nullptr);
+    CHECK(sb->romPath() == romPath);                  // paired with the sibling ROM
+    CHECK(sb->saveSramBytes() == image);              // battery seeded from the sav
+    CHECK(sb->savPath().empty());                     // it IS the sibling -> no override
+    CHECK(fx.sawEvent("rom-loaded"));
+    delete cmd.payload.loadRom.newSystem;
+
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(savPath, ec);
+    std::filesystem::remove(siblingRplg(romPath), ec);
+}
+
+TEST_CASE("pair: picking a .sav adds an instance of its sibling ROM (add)",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("pairadd", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string savPath = rp::sram_autosave::siblingSavPath(romPath);
+    const std::size_t n = probeBatterySize(fx.rom);
+    const std::vector<std::uint8_t> image(n, 0x42);
+    writeBytes(savPath, image);
+
+    PluginRpcService::OpenRomOpts opts; opts.mode = "add";
+    REQUIRE(fx.service.openRomBrowser(opts));
+    fx.service.onFileBrowserSelected(savPath.c_str());
+
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::AddSystem);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.addSystem.newSystem);
+    REQUIRE(sb != nullptr);
+    CHECK(sb->romPath() == romPath);
+    CHECK(sb->saveSramBytes() == image);
+    CHECK(sb->savSuffix() == 0);                       // first instance of this ROM
+    CHECK(sb->savPath().empty());                      // picked == sibling
+    delete cmd.payload.addSystem.newSystem;
+
+    std::error_code ec;
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(savPath, ec);
+}
+
+TEST_CASE("pair: a .sav with no sibling ROM opens a 2nd browser, then honours the override",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::size_t n = probeBatterySize(fx.rom);
+    const std::vector<std::uint8_t> image(n, 0x5A);
+    const std::string savPath = uniqueTmpPath("orphan", ".sav");  // no sibling ROM
+    writeBytes(savPath, image);
+    const std::string romPath = uniqueTmpPath("elsewhere", ".gb"); // different stem
+    writeBytes(romPath, fx.rom);
+    std::error_code ec;
+    std::filesystem::remove(siblingRplg(romPath), ec);
+
+    REQUIRE(fx.service.openRomBrowser({}));
+    fx.service.onFileBrowserSelected(savPath.c_str());   // no sibling -> arms 2nd browser
+    CHECK_FALSE(fx.sawEvent("rom-loaded"));
+    CHECK_FALSE(fx.sawEvent("rom-error"));
+    Command none;
+    CHECK_FALSE(fx.commands.tryPop(none));               // nothing queued yet
+
+    fx.service.onFileBrowserSelected(romPath.c_str());   // user picks the ROM
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadRom);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
+    REQUIRE(sb != nullptr);
+    CHECK(sb->romPath() == romPath);
+    CHECK(sb->saveSramBytes() == image);                 // seeded from the orphan sav
+    CHECK(sb->savPath() == savPath);                     // non-sibling -> override set
+    CHECK(fx.sawEvent("rom-loaded"));
+
+    // Auto-save writes back to the paired file, NOT <elsewhere>.sav.
+    const std::string elsewhereSibling = rp::sram_autosave::siblingSavPath(romPath);
+    std::filesystem::remove(elsewhereSibling, ec);
+    const std::vector<std::uint8_t> played(n, 0x77);
+    REQUIRE(sb->loadSramBytes(played));
+    std::optional<std::uint64_t> h;
+    REQUIRE(rp::autoSaveSramToSibling(*sb, h));
+    CHECK(readFile(savPath) == played);                  // the picked file was updated
+    CHECK_FALSE(fileExists(elsewhereSibling));           // the sibling was NOT written
+    delete cmd.payload.loadRom.newSystem;
+
+    std::filesystem::remove(savPath, ec);
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(siblingRplg(romPath), ec);
+}
+
+TEST_CASE("pair: a <name>-N.sav auto-pairs with the <name> ROM (no 2nd browser)",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("song", ".gb");
+    writeBytes(romPath, fx.rom);
+    auto p = std::filesystem::path(romPath);
+    const std::string savPath =
+        (p.parent_path() / (p.stem().string() + "-2.sav")).string();  // the `-2` slot
+    const std::size_t n = probeBatterySize(fx.rom);
+    const std::vector<std::uint8_t> image(n, 0x2B);
+    writeBytes(savPath, image);
+    std::error_code ec;
+    std::filesystem::remove(siblingRplg(romPath), ec);
+
+    REQUIRE(fx.service.openRomBrowser({}));
+    fx.service.onFileBrowserSelected(savPath.c_str());
+
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));                     // paired immediately, no 2nd browser
+    REQUIRE(cmd.kind == Command::Kind::LoadRom);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
+    REQUIRE(sb != nullptr);
+    CHECK(sb->romPath() == romPath);
+    CHECK(sb->saveSramBytes() == image);
+    CHECK(sb->savPath() == savPath);                     // `-2.sav` != `<rom>.sav` -> override
+    delete cmd.payload.loadRom.newSystem;
+
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(savPath, ec);
+    std::filesystem::remove(siblingRplg(romPath), ec);
+}
+
+TEST_CASE("pair: an exact <name>-N ROM beats the base ROM for a <name>-N.sav",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string basePath = uniqueTmpPath("tune", ".gb");
+    writeBytes(basePath, fx.rom);
+    auto p = std::filesystem::path(basePath);
+    const std::string dupRom =
+        (p.parent_path() / (p.stem().string() + "-2.gb")).string();
+    const std::string savPath =
+        (p.parent_path() / (p.stem().string() + "-2.sav")).string();
+    writeBytes(dupRom, fx.rom);
+    const std::size_t n = probeBatterySize(fx.rom);
+    writeBytes(savPath, std::vector<std::uint8_t>(n, 0x19));
+    std::error_code ec;
+    std::filesystem::remove(siblingRplg(dupRom), ec);
+
+    REQUIRE(fx.service.openRomBrowser({}));
+    fx.service.onFileBrowserSelected(savPath.c_str());
+
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadRom);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
+    REQUIRE(sb != nullptr);
+    CHECK(sb->romPath() == dupRom);                      // exact `-2` stem, not the base
+    delete cmd.payload.loadRom.newSystem;
+
+    std::filesystem::remove(basePath, ec);
+    std::filesystem::remove(dupRom, ec);
+    std::filesystem::remove(savPath, ec);
+    std::filesystem::remove(siblingRplg(dupRom), ec);
+}
+
+TEST_CASE("pair: picking a ROM still loads normally",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("plain", ".gb");
+    writeBytes(romPath, fx.rom);
+    std::error_code ec;
+    std::filesystem::remove(siblingRplg(romPath), ec);
+
+    REQUIRE(fx.service.openRomBrowser({}));
+    fx.service.onFileBrowserSelected(romPath.c_str());
+
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadRom);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
+    REQUIRE(sb != nullptr);
+    CHECK(sb->romPath() == romPath);
+    CHECK(sb->savPath().empty());                        // plain load -> no override
+    CHECK(fx.sawEvent("rom-loaded"));
+    CHECK(fileExists(siblingRplg(romPath)));             // normal sibling-project write
+    delete cmd.payload.loadRom.newSystem;
+
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(siblingRplg(romPath), ec);
+}
+
+TEST_CASE("pair: an explicit sav pick bypasses a sibling .rplg",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("withproj", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string savPath = rp::sram_autosave::siblingSavPath(romPath);
+    const std::size_t n = probeBatterySize(fx.rom);
+    const std::vector<std::uint8_t> imageA(n, 0xA1);
+    writeBytes(savPath, imageA);
+    writeThinProject(siblingRplg(romPath), romPath);     // a project sits beside the ROM
+
+    REQUIRE(fx.service.openRomBrowser({}));
+    fx.service.onFileBrowserSelected(savPath.c_str());
+
+    // Picking the .sav pairs directly — it must NOT defer to the sibling project.
+    CHECK(fx.sawEvent("rom-loaded"));
+    CHECK_FALSE(fx.sawEvent("project-loaded"));
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadRom);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
+    REQUIRE(sb != nullptr);
+    CHECK(sb->saveSramBytes() == imageA);
+    delete cmd.payload.loadRom.newSystem;
+
+    std::error_code ec;
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(savPath, ec);
+    std::filesystem::remove(siblingRplg(romPath), ec);
+}
+
+TEST_CASE("pair: duplicating a paired system does not inherit its sav file",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("paired", ".gb");
+    SameBoyConfig cfg{};
+    cfg.romPath = romPath;
+    cfg.savPath = uniqueTmpPath("explicit", ".sav");     // an explicit paired file
+    const SystemId id = fx.project.nextSystemId();
+    auto owned = std::make_unique<SameBoySystem>(id, cfg, fx.rom);
+    owned->onActivate(kSampleRate);
+    REQUIRE(owned->savPath() == cfg.savPath);
+    fx.project.adoptSystem(owned.release());
+
+    REQUIRE(fx.service.duplicateSystem(id));
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::AddSystem);
+    auto* dup = dynamic_cast<SameBoySystem*>(cmd.payload.addSystem.newSystem);
+    REQUIRE(dup != nullptr);
+    CHECK(dup->savPath().empty());                       // NOT the source's paired file
+    CHECK(dup->savSuffix() == 2);                        // disambiguated instead
+    delete cmd.payload.addSystem.newSystem;
+}
+
+TEST_CASE("pair: a non-ROM picked in the 2nd browser errors, loads nothing",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::size_t n = probeBatterySize(fx.rom);
+    const std::string savPath = uniqueTmpPath("lonely", ".sav");   // no sibling ROM
+    writeBytes(savPath, std::vector<std::uint8_t>(n, 0x33));
+
+    REQUIRE(fx.service.openRomBrowser({}));
+    fx.service.onFileBrowserSelected(savPath.c_str());   // arms 2nd browser
+
+    const std::string notRom = uniqueTmpPath("notrom", ".sav");    // 2nd pick isn't a ROM
+    writeBytes(notRom, std::vector<std::uint8_t>(n, 0x44));
+    fx.service.onFileBrowserSelected(notRom.c_str());
+
+    CHECK(fx.sawEvent("rom-error"));
+    Command none;
+    CHECK_FALSE(fx.commands.tryPop(none));
+
+    std::error_code ec;
+    std::filesystem::remove(savPath, ec);
+    std::filesystem::remove(notRom, ec);
 }

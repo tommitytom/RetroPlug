@@ -116,6 +116,16 @@ public:
     virtual std::uint32_t savSuffix() const { return 0; }
     virtual void          setSavSuffix(std::uint32_t /*suffix*/) {}
 
+    // Explicit battery-file override. Empty => the loose `.sav` is derived from
+    // romPath + savSuffix (default). Non-empty => this exact file, set when the
+    // user pairs a hand-picked `.sav` with the ROM; all battery I/O targets it.
+    // See SramAutoSave.hpp / resolveSavPath.
+    virtual const std::string& savPath() const {
+        static const std::string empty;
+        return empty;
+    }
+    virtual void          setSavPath(const std::string& /*path*/) {}
+
     // Boot-time toggle. SameBoy maps this to fastBoot; GBA to skipBootScreen.
     // Mesen returns nullopt → the UI hides the Fast boot row.
     virtual std::optional<bool> fastBoot() const { return std::nullopt; }

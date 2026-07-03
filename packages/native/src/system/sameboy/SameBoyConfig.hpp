@@ -66,6 +66,12 @@ struct SameBoyConfig {
     // twice) so the instances keep independent battery files instead of all
     // auto-saving over `<rom>.sav`. Persisted so it survives reload.
     std::uint32_t             savSuffix = 0;
+    // Explicit battery-file override. Empty => derive `<rom>.sav` / `<rom>-N.sav`
+    // from romPath + savSuffix (the default). Non-empty => this exact file, set
+    // when the user pairs a hand-picked `.sav` with the ROM in the load browser;
+    // all battery reads/writes (auto-save, Save SRAM, project-load restore) then
+    // target it instead of the sibling.
+    std::string               savPath;
     // Non-empty => this system's ROM is baked into the binary (id, e.g. "mgb"),
     // not a file on disk. romPath stays empty (so no .sav / ROM-watcher); the
     // bytes are supplied by rp::embeddedRom() on load (see EmbeddedRoms.hpp).
