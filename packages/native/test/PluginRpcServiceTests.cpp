@@ -28,6 +28,7 @@
 #include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
 #include "project/Project.hpp"
+#include "project/ProjectMissingFiles.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/MemoryType.hpp"
 #include "system/SramAutoSave.hpp"
@@ -882,10 +883,13 @@ std::size_t probeBatterySize(const std::vector<std::uint8_t>& rom) {
 }
 
 // A thin (path-only) project referencing `romPath`, as projectConfigToJsonFile
-// produces. Used to pre-seed an existing sibling project on disk.
-void writeThinProject(const std::string& path, const std::string& romPath) {
+// produces. Used to pre-seed an existing sibling project on disk. `savPath`, when
+// non-empty, sets the system's explicit paired-save override.
+void writeThinProject(const std::string& path, const std::string& romPath,
+                      const std::string& savPath = "") {
     SameBoyConfig sb{};
     sb.romPath = romPath;
+    sb.savPath = savPath;
     ProjectConfig cfg;
     cfg.systems.push_back(sb);
     const std::string json = projectConfigToJsonFile(cfg);
@@ -1535,4 +1539,103 @@ TEST_CASE("pair: a non-ROM picked in the 2nd browser errors, loads nothing",
     std::error_code ec;
     std::filesystem::remove(savPath, ec);
     std::filesystem::remove(notRom, ec);
+}
+
+// ---------------------------------------------------------------------------
+// Missing-file relink for an explicit paired save (`savPath`).
+// ---------------------------------------------------------------------------
+
+TEST_CASE("relink: a missing paired savPath is flagged as an sram item",
+          "[PluginRpcService][relink]") {
+    const std::string missingSav = "/nonexistent/rp-relink-missing.sav";
+
+    // A present ROM (embedded bytes) + an explicit savPath that isn't on disk.
+    ProjectConfig cfg;
+    SameBoyConfig sb;
+    sb.romBytes = {1, 2, 3};          // romPresent via bytes — isolates the sram case
+    sb.savPath  = missingSav;
+    cfg.systems.push_back(sb);
+    const auto missing = rp::scanMissingFiles(cfg);
+    REQUIRE(missing.size() == 1);
+    CHECK(missing[0].itemKind   == "sram");
+    CHECK(missing[0].path       == missingSav);
+    CHECK(missing[0].systemIndex == 0);
+
+    // Negatives: no override, an existing override, and embedded SRAM are all "present".
+    ProjectConfig none;      SameBoyConfig a; a.romBytes = {1}; a.savPath.clear();
+    none.systems.push_back(a);
+    CHECK(rp::scanMissingFiles(none).empty());
+
+    const std::string realSav = uniqueTmpPath("relink_present", ".sav");
+    writeBytes(realSav, {0, 0, 0});
+    ProjectConfig present;   SameBoyConfig b; b.romBytes = {1}; b.savPath = realSav;
+    present.systems.push_back(b);
+    CHECK(rp::scanMissingFiles(present).empty());
+
+    ProjectConfig embedded;  SameBoyConfig c; c.romBytes = {1}; c.savPath = missingSav; c.sram = {9, 9};
+    embedded.systems.push_back(c);
+    CHECK(rp::scanMissingFiles(embedded).empty());   // sram bytes in hand -> not missing
+
+    std::error_code ec;
+    std::filesystem::remove(realSav, ec);
+}
+
+TEST_CASE("relink: relinkInConfig sram sets savPath and leaves romPath",
+          "[PluginRpcService][relink]") {
+    ProjectConfig cfg;
+    SameBoyConfig sb;
+    sb.romPath = "/orig/rom.gb";
+    sb.romBytes = {1};
+    sb.savPath = "/old/save.sav";
+    cfg.systems.push_back(sb);
+
+    rp::MissingFile item{0, "sram", "/old/save.sav", -1, -1};
+    REQUIRE(rp::relinkInConfig(cfg, item, "/located/save.sav"));
+
+    const auto* out = rfl::get_if<SameBoyConfig>(&cfg.systems[0].variant());
+    REQUIRE(out != nullptr);
+    CHECK(out->savPath == "/located/save.sav");   // override repointed
+    CHECK(out->romPath == "/orig/rom.gb");         // ROM untouched (the kitSlot<0 regression)
+}
+
+TEST_CASE("relink: loading a project with a missing paired save relinks it",
+          "[PluginRpcService][relink]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    // Present ROM on disk + a thin project pointing at a missing paired save.
+    const std::string romPath = uniqueTmpPath("relinksav", ".gb");
+    writeBytes(romPath, fx.rom);
+    const std::string missingSav = uniqueTmpPath("relinksav_gone", ".sav");
+    std::error_code ec;
+    std::filesystem::remove(missingSav, ec);          // ensure it's absent
+    const std::string projPath = uniqueTmpPath("relinksav_proj", ".rplg");
+    writeThinProject(projPath, romPath, missingSav);
+
+    // Load is held: only the sram is missing (ROM is present).
+    REQUIRE(fx.service.loadProjectFromPath(projPath));
+    CHECK(fx.sawEvent("missing-files"));
+    CHECK_FALSE(fx.sawEvent("project-loaded"));
+    auto missing = fx.service.getMissingFiles();
+    REQUIRE(missing.items.size() == 1);
+    CHECK(missing.items[0].itemKind == "sram");
+
+    // Locate the save; the load commits and the queued project carries the path.
+    const std::string realSav = uniqueTmpPath("relinksav_found", ".sav");
+    writeBytes(realSav, {0x11, 0x22, 0x33});
+    auto remaining = fx.service.relinkMissingFile(0, "sram", -1, -1, realSav);
+    CHECK(remaining.items.empty());
+    CHECK(fx.sawEvent("project-loaded"));
+
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadProject);
+    const auto* sb = rfl::get_if<SameBoyConfig>(&cmd.payload.loadProject.config->systems.at(0).variant());
+    REQUIRE(sb != nullptr);
+    CHECK(sb->savPath == realSav);                    // committed project points at the located save
+    delete cmd.payload.loadProject.config;
+
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(realSav, ec);
+    std::filesystem::remove(projPath, ec);
 }

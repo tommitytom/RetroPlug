@@ -321,11 +321,13 @@ public:
     // Point one pending item at newPath (+ auto-relink siblings in its folder),
     // re-scan, and either commit (when nothing's left) or return the remainder.
     MissingFilesResponse relinkMissingFile(std::uint32_t systemIndex,
+                                           std::string   itemKind,
                                            std::int32_t  kitSlot,
                                            std::int32_t  sampleIndex,
                                            std::string   newPath);
     // Open a file browser for a relink; the path returns via "relink-path-selected".
-    bool openRelinkBrowser(bool isRom);
+    // `kind` ("rom" | "sram" | "sample") selects the file-type filter.
+    bool openRelinkBrowser(std::string kind);
     // Abandon the pending load, keeping the current project.
     bool cancelMissingFiles();
 

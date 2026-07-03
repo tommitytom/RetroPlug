@@ -60,6 +60,17 @@ inline bool romPresent(const SameBoyConfig& c) {
     return !c.embeddedRom.empty() || !c.romBytes.empty() || fileExists(c.romPath);
 }
 
+// A system's battery save is "present" unless it names an *explicit* paired
+// `savPath` that can't be found. An empty savPath means the loose sibling is
+// suffix-derived and may legitimately be absent (a fresh cart with no save yet),
+// so that is never a missing file. Embedded/zip SRAM (`sram` non-empty) means the
+// battery is already in hand. Only a non-empty, non-embedded, absent savPath is
+// missing — the one case the "Locate missing files" flow should surface.
+template <class Cfg>
+inline bool savPresent(const Cfg& c) {
+    return c.savPath.empty() || !c.sram.empty() || fileExists(c.savPath);
+}
+
 // Append any missing kit-sample entries for a SameBoy system. Kits only need
 // their source WAVs when they'll be recompiled (compiledBytes empty — a JSON
 // load); a zip kit carries its bytes and is self-sufficient.
@@ -93,11 +104,14 @@ inline std::vector<MissingFile> scanMissingFiles(const ProjectConfig& cfg) {
         const auto& sys = cfg.systems[i];
         if (const auto* sb = rfl::get_if<SameBoyConfig>(&sys.variant())) {
             if (!romPresent(*sb)) out.push_back(MissingFile{idx, "rom", sb->romPath});
+            if (!savPresent(*sb)) out.push_back(MissingFile{idx, "sram", sb->savPath});
             scanKitSamples(*sb, idx, out);
         } else if (const auto* mb = rfl::get_if<MesenNesConfig>(&sys.variant())) {
             if (!romPresent(*mb)) out.push_back(MissingFile{idx, "rom", mb->romPath});
+            if (!savPresent(*mb)) out.push_back(MissingFile{idx, "sram", mb->savPath});
         } else if (const auto* gb = rfl::get_if<MesenGbaConfig>(&sys.variant())) {
             if (!romPresent(*gb)) out.push_back(MissingFile{idx, "rom", gb->romPath});
+            if (!savPresent(*gb)) out.push_back(MissingFile{idx, "sram", gb->savPath});
         }
     }
     return out;
@@ -121,6 +135,16 @@ inline bool relinkInConfig(ProjectConfig& cfg, const MissingFile& item,
         if (auto* gb = rfl::get_if<MesenGbaConfig>(&sys.variant())) {
             gb->romPath = newPath; gb->romBytes.clear(); return true;
         }
+        return false;
+    }
+
+    if (item.itemKind == "sram") {
+        // Point the paired-save override at the located file; `sram` is already
+        // empty here (else it wouldn't have been flagged), so nothing to clear —
+        // Project::addSystem slurps the new savPath on commit.
+        if (auto* sb = rfl::get_if<SameBoyConfig>(&sys.variant())) { sb->savPath = newPath; return true; }
+        if (auto* mb = rfl::get_if<MesenNesConfig>(&sys.variant())) { mb->savPath = newPath; return true; }
+        if (auto* gb = rfl::get_if<MesenGbaConfig>(&sys.variant())) { gb->savPath = newPath; return true; }
         return false;
     }
 

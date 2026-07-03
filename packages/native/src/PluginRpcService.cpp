@@ -660,6 +660,7 @@ PluginRpcService::MissingFilesResponse PluginRpcService::getMissingFiles() {
 
 PluginRpcService::MissingFilesResponse
 PluginRpcService::relinkMissingFile(std::uint32_t systemIndex,
+                                    std::string   itemKind,
                                     std::int32_t  kitSlot,
                                     std::int32_t  sampleIndex,
                                     std::string   newPath) {
@@ -667,7 +668,7 @@ PluginRpcService::relinkMissingFile(std::uint32_t systemIndex,
 
     rp::MissingFile target;
     target.systemIndex = systemIndex;
-    target.itemKind    = (kitSlot < 0) ? "rom" : "sample";
+    target.itemKind    = std::move(itemKind);   // "rom" | "sram" | "sample" (carried, not inferred)
     target.kitSlot     = kitSlot;
     target.sampleIndex = sampleIndex;
     rp::relinkInConfig(*pendingProject_, target, newPath);
@@ -693,13 +694,20 @@ bool PluginRpcService::cancelMissingFiles() {
     return true;
 }
 
-bool PluginRpcService::openRelinkBrowser(bool isRom) {
+bool PluginRpcService::openRelinkBrowser(std::string kind) {
     if (!openFileBrowser_) return false;
     pendingFileMode_ = PendingFileMode::Relink;
-    openFileBrowser_(isRom ? "Locate ROM" : "Locate sample (WAV / MP3 / FLAC)",
-                     false, nullptr,
-                     isRom ? kRomPatterns   : kAudioPatterns,
-                     isRom ? kRomFilterName : kAudioFilterName);
+    const char* title;
+    const char* patterns;
+    const char* filterName;
+    if (kind == "sram") {
+        title = "Locate save (.sav)";  patterns = kSramPatterns;  filterName = kSramFilterName;
+    } else if (kind == "sample") {
+        title = "Locate sample (WAV / MP3 / FLAC)"; patterns = kAudioPatterns; filterName = kAudioFilterName;
+    } else {   // "rom" (default)
+        title = "Locate ROM";          patterns = kRomPatterns;   filterName = kRomFilterName;
+    }
+    openFileBrowser_(title, false, nullptr, patterns, filterName);
     return true;
 }
 

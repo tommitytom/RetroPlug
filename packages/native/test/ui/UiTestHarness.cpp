@@ -321,11 +321,13 @@ void UiTestHarness::writeFile(const std::string& path,
 
 void UiTestHarness::writeProjectJson(const std::string& path,
                                      const std::string& romPath,
-                                     std::uint8_t zoom) {
+                                     std::uint8_t zoom,
+                                     const std::string& savPath) {
     // Schema-correct thin project (one path-only SameBoy system) via the real
     // serializer — hand-authored JSON is too brittle against reflect-cpp.
     SameBoyConfig sb;
     sb.romPath = rpcli::resolveHostPath(romPath);   // stored ref stays consistent with the file location
+    if (!savPath.empty()) sb.savPath = rpcli::resolveHostPath(savPath);
     ProjectConfig cfg;
     cfg.settings.zoom = zoom;
     cfg.systems.push_back(sb);

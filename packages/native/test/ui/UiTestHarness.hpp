@@ -94,8 +94,10 @@ public:
     // pointing at `romPath` (use a non-existent path to exercise relink).
     // `zoom` (0 = inherit default; 1..6 = explicit) is written to the project
     // settings so a test can verify settings survive a load.
+    // `savPath`, when non-empty, sets the system's explicit paired-save override
+    // (SameBoyConfig::savPath) so a test can exercise a missing-.sav relink.
     void writeProjectJson(const std::string& path, const std::string& romPath,
-                          std::uint8_t zoom = 0);
+                          std::uint8_t zoom = 0, const std::string& savPath = "");
 
     // Add a project to the recent list (with an optional display alias) and tell
     // the UI to refetch. The headless stand-in for the real load path recording a

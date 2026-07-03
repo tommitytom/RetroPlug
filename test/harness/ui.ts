@@ -35,7 +35,7 @@ interface NativeUi {
   loadProject(path: string): boolean;
   selectFile(path: string): void;
   writeFile(path: string, bytes: ArrayBuffer): void;
-  writeProjectJson(path: string, romPath: string, zoom?: number): void;
+  writeProjectJson(path: string, romPath: string, zoom?: number, savPath?: string): void;
   seedRecent(path: string, name?: string): void;
   requestCloseConfirm(): void;
   quitRequested(): boolean;
@@ -123,8 +123,10 @@ export const ui = {
   },
   /** Write a schema-correct thin project JSON (one path-only SameBoy system at
    *  `romPath`). Point it at a non-existent path to drive the relink flow.
-   *  `zoom` (0 = inherit; 1..6) is written to the project settings. */
-  writeProjectJson(path: string, romPath: string, zoom = 0): void { rp.writeProjectJson(path, romPath, zoom); },
+   *  `zoom` (0 = inherit; 1..6) is written to the project settings. `savPath`,
+   *  when given, sets the system's explicit paired-save override (a missing one
+   *  drives the sram relink flow). */
+  writeProjectJson(path: string, romPath: string, zoom = 0, savPath = ""): void { rp.writeProjectJson(path, romPath, zoom, savPath); },
   /** Add a project to the recent list (optional display alias) and refresh the
    *  menu. getRecentFiles() flags `missing` when `path` is absent on disk. */
   seedRecent(path: string, name?: string): void { rp.seedRecent(path, name); },
