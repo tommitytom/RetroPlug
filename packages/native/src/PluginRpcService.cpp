@@ -446,6 +446,9 @@ bool PluginRpcService::loadRomPaired(const std::string& romPath,
     SystemBase* sys = buildSystemFromPath(romPath, /*disambiguate*/ add, savPath);
     if (!sys) return false;   // buildSystemFromPath already emitted rom-error
 
+    // A pinned paired-save override is a deliberate edit that must reach disk.
+    const bool hasOverride = !sys->savPath().empty();
+
     // Capture the config before tryPush transfers ownership to the DSP.
     SystemConfig sysCfg = sys->snapshotConfig();
 
@@ -462,11 +465,20 @@ bool PluginRpcService::loadRomPaired(const std::string& romPath,
     // but deliberately does NOT defer to a sibling `<rom>.rplg` — the user picked a
     // specific save, so the pairing wins over the project's own SRAM.
     if (!add) {
+        std::error_code ec;
+        std::filesystem::path siblingRplgPath(romPath);
+        siblingRplgPath.replace_extension(".rplg");
+        const bool siblingExisted = std::filesystem::exists(siblingRplgPath, ec);
         const std::string projPath = writeSiblingProject(sysCfg, romPath);
         if (!projPath.empty()) {
             if (recentFiles_) recentFiles_->add(projPath);
             currentProjectPath_ = projPath;
-            projectDirty_       = false;
+            // writeSiblingProject leaves a pre-existing sibling untouched, so it
+            // won't carry a freshly-pinned override. Keep the project dirty in
+            // that case so the pairing survives a save/close (saveProjectToPath
+            // serializes the live config, override included) instead of being
+            // silently discarded when the stale sibling reloads.
+            projectDirty_ = siblingExisted && hasOverride;
         }
     }
     emit("rom-loaded", romPath);

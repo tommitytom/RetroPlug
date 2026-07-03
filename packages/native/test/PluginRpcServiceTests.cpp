@@ -1831,3 +1831,49 @@ TEST_CASE("pair: add-pairing a ROM's own sibling .sav gives the new instance its
     std::filesystem::remove(savPath, ec);
     std::filesystem::remove(siblingRplg(romPath), ec);
 }
+
+// Replace-mode pairing when a sibling <rom>.rplg already exists: writeSiblingProject
+// won't overwrite it, so the freshly-pinned override isn't on disk. The project
+// must stay DIRTY so a save/close persists the pairing (audit bug #2).
+TEST_CASE("pair: replace-mode pairing over a stale sibling .rplg keeps the project dirty",
+          "[PluginRpcService][pair]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("staleproj", ".gb");
+    writeBytes(romPath, fx.rom);
+    // A pre-existing sibling project WITHOUT any override.
+    writeThinProject(siblingRplg(romPath), romPath);
+    // A non-sibling paired save (a `-2` name so findSiblingRom auto-pairs to romPath).
+    auto p = std::filesystem::path(romPath);
+    const std::string savPath = (p.parent_path() / (p.stem().string() + "-2.sav")).string();
+    const std::size_t n = probeBatterySize(fx.rom);
+    writeBytes(savPath, std::vector<std::uint8_t>(n, 0x5C));
+
+    // Replace-mode pairing: picking the `-2.sav` auto-pairs with romPath.
+    REQUIRE(fx.service.openRomBrowser({}));
+    fx.service.onFileBrowserSelected(savPath.c_str());
+
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadRom);
+    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
+    REQUIRE(sb != nullptr);
+    REQUIRE(sb->savPath() == savPath);                     // override pinned in memory
+
+    // Stale sibling on disk lacks the override -> the project MUST be dirty.
+    CHECK(fx.service.getUnsavedSummary().project);
+
+    const auto bytes = readFile(siblingRplg(romPath));
+    auto cfg = projectConfigFromBytes(std::vector<std::uint8_t>(bytes.begin(), bytes.end()));
+    REQUIRE(cfg.has_value());
+    const auto* stored = rfl::get_if<SameBoyConfig>(&cfg->systems.at(0).variant());
+    REQUIRE(stored != nullptr);
+    CHECK(stored->savPath.empty());                        // proves why dirty is needed
+
+    delete cmd.payload.loadRom.newSystem;
+    std::error_code ec;
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(savPath, ec);
+    std::filesystem::remove(siblingRplg(romPath), ec);
+}
