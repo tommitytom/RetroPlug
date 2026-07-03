@@ -482,6 +482,68 @@ TEST_CASE("duplicateSystem gives each instance a distinct sibling .sav",
     std::filesystem::remove(dupPath, ec);
 }
 
+// The reuse-after-remove hazard: add an instance (writes <rom>-2.sav), remove
+// it, then duplicate again. Suffix 2 is free among live systems but its file
+// still sits on disk holding the removed instance's save. Reclaiming 2 would
+// have the duplicate (carrying the source's SRAM) auto-save over that orphan, so
+// assignSavSuffix must skip to 3 and leave <rom>-2.sav byte-for-byte intact.
+TEST_CASE("duplicate does not clobber a removed instance's orphaned .sav",
+          "[PluginRpcService][sram]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    const auto rom = loadRom();
+
+    PumpFixture f;
+    auto base = makeTmpSys(f.project, rom, "orphan");   // A: suffix 0
+    const std::string dup2Path =
+        rp::sram_autosave::siblingSavPath(base.romPath, 2);
+    const std::string dup3Path =
+        rp::sram_autosave::siblingSavPath(base.romPath, 3);
+    std::error_code ec;
+    std::filesystem::remove(dup2Path, ec);
+    std::filesystem::remove(dup3Path, ec);
+
+    // Duplicate A -> B (suffix 2), give B its own SRAM, adopt + auto-save it so
+    // <rom>-2.sav lands on disk.
+    REQUIRE(f.service.duplicateSystem(base.id));
+    Command addB;
+    REQUIRE(f.commands.tryPop(addB));
+    auto* b = dynamic_cast<SameBoySystem*>(addB.payload.addSystem.newSystem);
+    REQUIRE(b != nullptr);
+    REQUIRE(b->savSuffix() == 2);
+    const std::size_t n = b->saveSramBytes().size();
+    REQUIRE(n > 0);
+    const std::vector<std::uint8_t> bImg(n, 0x7E);
+    REQUIRE(b->loadSramBytes(bImg));
+    const SystemId bId = b->id();
+    f.project.adoptSystem(addB.payload.addSystem.newSystem);
+    std::optional<std::uint64_t> hb;
+    REQUIRE(rp::autoSaveSramToSibling(*b, hb));
+    REQUIRE(fileExists(dup2Path));
+    const std::uint64_t orphanHash = rp::sram_autosave::hashFile(dup2Path);
+    CHECK(orphanHash == rp::lsdj::SampleCache::hashBytes(bImg.data(), bImg.size()));
+
+    // Remove B. <rom>-2.sav is now orphaned — no live system owns suffix 2.
+    f.project.removeSystem(bId);
+
+    // Duplicate A again -> C. Suffix 2 is free among live systems but the file
+    // exists, so C must take 3, not clobber the orphan.
+    REQUIRE(f.service.duplicateSystem(base.id));
+    Command addC;
+    REQUIRE(f.commands.tryPop(addC));
+    auto* c = dynamic_cast<SameBoySystem*>(addC.payload.addSystem.newSystem);
+    REQUIRE(c != nullptr);
+    CHECK(c->savSuffix() == 3);
+    CHECK(rp::sram_autosave::siblingSavPath(c->romPath(), c->savSuffix()) == dup3Path);
+    // The orphan on disk is untouched.
+    CHECK(fileExists(dup2Path));
+    CHECK(rp::sram_autosave::hashFile(dup2Path) == orphanHash);
+    delete addC.payload.addSystem.newSystem;
+
+    std::filesystem::remove(base.savPath, ec);
+    std::filesystem::remove(dup2Path, ec);
+    std::filesystem::remove(dup3Path, ec);
+}
+
 TEST_CASE("SRAM auto-save round-trips through the sibling .sav on reload",
           "[PluginRpcService][sram-autosave]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);

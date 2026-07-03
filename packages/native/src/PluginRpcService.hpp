@@ -420,10 +420,11 @@ private:
     // system, and its sibling `.sav` is read from that suffixed path.
     SystemBase* buildSystemFromPath(const std::string& path, bool disambiguate);
 
-    // Lowest free loose-battery suffix for `romPath` across the current systems:
-    // 0 when the plain `<rom>.sav` is unclaimed, else the smallest N>=2 whose
-    // `<rom>-N.sav` is free. Keeps duplicated / repeat-loaded instances from
-    // sharing one sibling battery file. See SystemBase::savSuffix.
+    // Lowest free loose-battery suffix for `romPath`: 0 when no live system owns
+    // the plain `<rom>.sav`, else the smallest N>=2 that neither a live system
+    // owns nor already exists as `<rom>-N.sav` on disk. Skipping on-disk files
+    // stops a duplicate from clobbering a since-removed instance's orphaned
+    // battery file. See SystemBase::savSuffix.
     std::uint32_t assignSavSuffix(const std::string& romPath) const;
 
     // saveProjectToPath / addRomFromPath / etc share the same "emit

@@ -125,15 +125,27 @@ void PluginRpcService::emit(const std::string& channel, const std::string& paylo
 
 std::uint32_t PluginRpcService::assignSavSuffix(const std::string& romPath) const {
     if (!project_ || romPath.empty()) return 0;
-    const auto taken = [&](std::uint32_t cand) {
+    const auto ownedByLive = [&](std::uint32_t cand) {
         for (const auto& sys : project_->systems())
             if (sys && sys->romPath() == romPath && sys->savSuffix() == cand)
                 return true;
         return false;
     };
-    if (!taken(0)) return 0;       // plain `<rom>.sav` is still free
+    const auto fileOnDisk = [&](std::uint32_t cand) {
+        std::error_code ec;
+        return std::filesystem::exists(
+            rp::sram_autosave::siblingSavPath(romPath, cand), ec);
+    };
+    // Prefer the plain `<rom>.sav` when no live system owns it — reclaiming it is
+    // the normal single-instance "resume my save" case (the loader reads it back).
+    if (!ownedByLive(0)) return 0;
+    // For a disambiguated slot, skip any suffix whose `<rom>-N.sav` already exists
+    // on disk, even if no live system owns it: that file belongs to a since-removed
+    // instance, and a duplicate (which carries the source's SRAM, not the file's)
+    // would otherwise auto-save straight over it. Grow to the next free slot so no
+    // orphaned battery file is ever clobbered.
     std::uint32_t n = 2;           // skip 1 — duplicates read naturally as -2, -3, ...
-    while (taken(n)) ++n;
+    while (ownedByLive(n) || fileOnDisk(n)) ++n;
     return n;
 }
 
