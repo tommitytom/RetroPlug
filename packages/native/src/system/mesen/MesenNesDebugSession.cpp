@@ -22,6 +22,8 @@
 #include "Core/Debugger/Breakpoint.h"
 #include "Core/NES/NesConsole.h"
 #include "Core/NES/NesCpu.h"
+#include "Core/NES/NesTypes.h"
+#include "Core/NES/APU/NesApu.h"
 
 MesenNesDebugSession::MesenNesDebugSession(Emulator* emu) : emu_(emu) {}
 
@@ -170,6 +172,67 @@ rp::BreakInfo doStep(Debugger* dbg, NesCpu* cpu, StepType type) {
     return execLoop(dbg, cpu, 50'000'000ull, /*reportPcBefore*/ false);
 }
 } // namespace
+
+rp::ApuState MesenNesDebugSession::getApuState() {
+    // A pure live-state read (no debugger needed): pull Mesen's decoded APU
+    // snapshot straight off the console, mirroring nesCpuOf's console access.
+    rp::ApuState out;
+    auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get());
+    if (!console) return out;
+    NesApu* apu = console->GetApu();
+    if (!apu) return out;
+    const ApuState s = apu->GetState();
+
+    const auto square = [](const ApuSquareState& q) {
+        rp::ApuSquareState o;
+        o.enabled        = q.Enabled;
+        o.period         = q.Period;
+        o.timer          = q.Timer;
+        o.duty           = q.Duty;
+        o.outputVolume   = q.OutputVolume;
+        o.frequency      = q.Frequency;
+        o.lengthCounter  = q.LengthCounter.Counter;
+        o.constantVolume = q.Envelope.ConstantVolume;
+        o.envelopeVolume = q.Envelope.Volume;
+        o.sweepEnabled   = q.SweepEnabled;
+        o.sweepNegate    = q.SweepNegate;
+        o.sweepPeriod    = q.SweepPeriod;
+        o.sweepShift     = q.SweepShift;
+        return o;
+    };
+    out.pulse1 = square(s.Square1);
+    out.pulse2 = square(s.Square2);
+
+    out.triangle.enabled       = s.Triangle.Enabled;
+    out.triangle.period        = s.Triangle.Period;
+    out.triangle.timer         = s.Triangle.Timer;
+    out.triangle.outputVolume  = s.Triangle.OutputVolume;
+    out.triangle.frequency     = s.Triangle.Frequency;
+    out.triangle.lengthCounter = s.Triangle.LengthCounter.Counter;
+    out.triangle.linearCounter = s.Triangle.LinearCounter;
+
+    out.noise.enabled        = s.Noise.Enabled;
+    out.noise.period         = s.Noise.Period;
+    out.noise.timer          = s.Noise.Timer;
+    out.noise.outputVolume   = s.Noise.OutputVolume;
+    out.noise.frequency      = s.Noise.Frequency;
+    out.noise.lengthCounter  = s.Noise.LengthCounter.Counter;
+    out.noise.modeFlag       = s.Noise.ModeFlag;
+    out.noise.constantVolume = s.Noise.Envelope.ConstantVolume;
+    out.noise.envelopeVolume = s.Noise.Envelope.Volume;
+
+    out.dmc.enabled        = s.Dmc.BytesRemaining > 0;
+    out.dmc.sampleAddr     = s.Dmc.SampleAddr;
+    out.dmc.sampleLength   = s.Dmc.SampleLength;
+    out.dmc.bytesRemaining = s.Dmc.BytesRemaining;
+    out.dmc.period         = s.Dmc.Period;
+    out.dmc.outputVolume   = s.Dmc.OutputVolume;
+    out.dmc.loop           = s.Dmc.Loop;
+    out.dmc.irqEnabled     = s.Dmc.IrqEnabled;
+    out.dmc.sampleRate     = s.Dmc.SampleRate;
+
+    return out;
+}
 
 void MesenNesDebugSession::setBreakpoints(const std::vector<rp::BreakpointSpec>& specs) {
     Debugger* dbg = ensureDebugger();

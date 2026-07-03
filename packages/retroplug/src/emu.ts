@@ -33,6 +33,72 @@ export interface DisasmLine { address: number; text: string; bytes: string; }
 export interface TraceLine { pc: number; text: string; }
 export interface CallFrame { address: number; label: string; }
 
+// -- NES APU per-channel state (Mesen NES only) ------------------------------
+//
+// A snapshot of the five NES APU channels' DECODED state. The raw $4000-$4013
+// APU registers are write-only on the NES (they read back as open bus), so a
+// MIDI-driven ROM's effect on the sound chip can't be seen via readMemory — this
+// is how you observe it. `frequency` is the derived pitch in Hz. `outputVolume`
+// is the instantaneous, duty/sequence-gated mixer output (it oscillates). A
+// *sounding note* shows as `period` > 0 and (square/noise) `envelopeVolume` > 0;
+// `enabled` is only the channel's $4015 on/off switch, which a ROM often sets
+// once at init, so it is NOT "a note is sounding". (`period` == 0 makes
+// `frequency` meaninglessly high, not 0 — gate on `period`/`outputVolume`.)
+export interface ApuSquareState {
+  enabled: boolean;        // $4015 channel switch (not "a note is sounding")
+  period: number;          // raw 11-bit timer reload
+  timer: number;
+  duty: number;            // 0-3
+  outputVolume: number;    // live 0-15, duty-gated
+  frequency: number;       // Hz
+  lengthCounter: number;
+  constantVolume: boolean;
+  envelopeVolume: number;  // the set volume 0-15
+  sweepEnabled: boolean;
+  sweepNegate: boolean;
+  sweepPeriod: number;
+  sweepShift: number;
+}
+export interface ApuTriangleState {
+  enabled: boolean;
+  period: number;
+  timer: number;
+  outputVolume: number;    // triangle step 0-15 (no volume control)
+  frequency: number;
+  lengthCounter: number;
+  linearCounter: number;
+}
+export interface ApuNoiseState {
+  enabled: boolean;
+  period: number;          // period index -> pitch
+  timer: number;
+  outputVolume: number;
+  frequency: number;
+  lengthCounter: number;
+  modeFlag: boolean;       // metallic/periodic vs normal noise
+  constantVolume: boolean;
+  envelopeVolume: number;
+}
+export interface ApuDmcState {
+  enabled: boolean;        // bytes remaining > 0 (sample playing)
+  sampleAddr: number;      // $C000-$FFFF start
+  sampleLength: number;
+  bytesRemaining: number;
+  period: number;
+  outputVolume: number;    // 7-bit DAC level 0-127
+  loop: boolean;
+  irqEnabled: boolean;
+  sampleRate: number;      // Hz
+}
+/** The five NES APU channels' decoded state (pulse1/pulse2/triangle/noise/dmc). */
+export interface ApuState {
+  pulse1: ApuSquareState;
+  pulse2: ApuSquareState;
+  triangle: ApuTriangleState;
+  noise: ApuNoiseState;
+  dmc: ApuDmcState;
+}
+
 // One MIDI message a role emitted back to the host (e.g. Arduinoboy MI.OUT).
 // `sample` is the absolute sample position since the system was loaded.
 export interface MidiOutEvent { sample: number; bytes: number[]; }
@@ -287,6 +353,14 @@ export function createEmu(rpcSend: RpcSend) {
     /** Current call stack (outermost first), each frame named when labels load. */
     getCallStack(sys: number): CallFrame[] {
       return client.getCallStack(sys);
+    },
+    /** Snapshot the NES APU's five channels' decoded state — per channel:
+     *  period/duty/volume/enable/output (+ sweep, envelope, length, DMC sample
+     *  fields). Mesen NES only (throws on other backends). The raw APU registers
+     *  are write-only on the NES, so this is how a MIDI-driven ROM's effect on
+     *  the sound chip is observed; call after runMs. */
+    getApuState(sys: number): ApuState {
+      return client.getApuState(sys) as unknown as ApuState;
     },
     /** Install breakpoints/watchpoints (replaces existing; [] clears). Drive with
      *  runUntilBreak, not runMs, while breakpoints are active. */

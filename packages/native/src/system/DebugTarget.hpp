@@ -65,6 +65,81 @@ struct BreakInfo {
     std::int32_t  breakpointId = -1;
 };
 
+// -- NES APU per-channel state ----------------------------------------------
+//
+// A snapshot of the five NES APU channels' DECODED musical state — period,
+// duty, volume, length, enable, live output — mirroring a curated subset of
+// Mesen's ApuState (deps/mesen/Core/NES/NesTypes.h). The raw $4000-$4013 APU
+// registers are WRITE-ONLY on the NES (they read back as open bus), so a
+// MIDI-driven ROM's effect on the sound chip can't be seen via readMemory; this
+// exposes what the emulator decodes internally instead. `frequency` is the
+// derived pitch in Hz. `outputVolume` is the instantaneous mixer output — for
+// square/triangle it is gated by the duty/sequence position, so it oscillates.
+// A *sounding note* shows as `period` > 0 and (square/noise) `envelopeVolume` >
+// 0; `enabled` is only the channel's $4015 on/off switch, which a ROM often
+// sets once at init, so it is NOT "a note is sounding". (`period` == 0 makes
+// `frequency` meaninglessly high, not 0 — gate on `period`/`outputVolume`.)
+
+struct ApuSquareState {
+    bool          enabled        = false;  // $4015 channel switch (not "sounding")
+    std::uint16_t period         = 0;      // raw 11-bit timer reload
+    std::uint16_t timer          = 0;      // live countdown
+    std::uint8_t  duty           = 0;      // 0-3
+    std::uint8_t  outputVolume   = 0;      // live mixer output 0-15 (duty-gated)
+    double        frequency      = 0.0;    // Hz
+    std::uint8_t  lengthCounter  = 0;
+    bool          constantVolume = false;  // fixed volume vs envelope decay
+    std::uint8_t  envelopeVolume = 0;      // the set volume 0-15
+    bool          sweepEnabled   = false;
+    bool          sweepNegate    = false;
+    std::uint8_t  sweepPeriod    = 0;
+    std::uint8_t  sweepShift     = 0;
+};
+
+struct ApuTriangleState {
+    bool          enabled       = false;
+    std::uint16_t period        = 0;
+    std::uint16_t timer         = 0;
+    std::uint8_t  outputVolume  = 0;       // triangle step 0-15 (no volume ctrl)
+    double        frequency     = 0.0;     // Hz
+    std::uint8_t  lengthCounter = 0;
+    std::uint8_t  linearCounter = 0;
+};
+
+struct ApuNoiseState {
+    bool          enabled        = false;
+    std::uint16_t period         = 0;      // period index -> pitch
+    std::uint16_t timer          = 0;
+    std::uint8_t  outputVolume   = 0;
+    double        frequency      = 0.0;    // Hz
+    std::uint8_t  lengthCounter  = 0;
+    bool          modeFlag       = false;  // metallic/periodic vs normal noise
+    bool          constantVolume = false;
+    std::uint8_t  envelopeVolume = 0;      // the set volume 0-15
+};
+
+struct ApuDmcState {
+    bool          enabled        = false;  // bytes remaining > 0 (sample playing)
+    std::uint16_t sampleAddr     = 0;      // $C000-$FFFF start
+    std::uint16_t sampleLength   = 0;      // bytes
+    std::uint16_t bytesRemaining = 0;
+    std::uint16_t period         = 0;      // rate-index timer
+    std::uint8_t  outputVolume   = 0;      // 7-bit DAC level 0-127
+    bool          loop           = false;
+    bool          irqEnabled     = false;
+    double        sampleRate     = 0.0;    // Hz
+};
+
+// The five NES APU channels' decoded state. Channel names follow NES/evermidi
+// convention (pulse1/pulse2), not Mesen's Square1/Square2.
+struct ApuState {
+    ApuSquareState   pulse1;
+    ApuSquareState   pulse2;
+    ApuTriangleState triangle;
+    ApuNoiseState    noise;
+    ApuDmcState      dmc;
+};
+
 // Optional per-system debugger / profiler, returned by
 // SystemBase::debugTarget() (nullptr when the backend has no debugger).
 // Implemented by the Mesen backends on top of Mesen's debugger; SameBoy has
@@ -103,6 +178,12 @@ public:
     // Current call stack (outermost first), each frame's entered function +
     // resolved label.
     virtual std::vector<CallFrame> getCallStack() = 0;
+
+    // Snapshot the NES APU's five channels' decoded state (period/duty/volume/
+    // length/enable/output). The raw APU registers are write-only on the NES,
+    // so this is the way to observe what a MIDI-driven ROM did to the sound
+    // chip. Call after advancing the emulator.
+    virtual ApuState getApuState() = 0;
 
     // -- Breakpoints / stepping ---------------------------------------------
     //

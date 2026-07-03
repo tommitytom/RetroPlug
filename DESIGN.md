@@ -392,6 +392,16 @@ live use case (NES dev/testing). Practically: unify the runtime *under* the
 existing `emu.*` API so test/dev workflows don't regress, before worrying about
 the public SDK or UI extensibility.
 
+The concrete live consumer is **evermidi** — the owner's NES MIDI ROM, developed
+in its own repo — which will grow its own devcontainer that drives retroplug-cli
++ the harness to build and test the ROM headlessly. That consumption mechanism is
+deliberately *deferred* until this binding unification and the `--script` runtime
+land, so evermidi binds the curated SDK rather than today's `HarnessRpcService` /
+`retroplug-cli` plumbing. Capabilities purely *additive* to `emu.*` are pulled
+forward meanwhile — e.g. `emu.getApuState` (NES APU per-channel decoded state),
+added for headless APU verification since the raw APU registers are write-only on
+the NES and so can't be observed through `readMemory`.
+
 ### Extension model (future)
 
 - Extensions live in the RetroPlug config dir; projects reference them by id and

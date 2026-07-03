@@ -309,6 +309,9 @@ std::vector<rp::TraceLine> HarnessRpcService::readTrace(std::uint32_t systemId, 
 std::vector<rp::CallFrame> HarnessRpcService::getCallStack(std::uint32_t systemId) {
     return h_->debugTarget(systemId)->getCallStack();
 }
+rp::ApuState HarnessRpcService::getApuState(std::uint32_t systemId) {
+    return h_->debugTarget(systemId)->getApuState();
+}
 void HarnessRpcService::setBreakpoints(std::uint32_t systemId, std::vector<rp::BreakpointSpec> bps) {
     h_->debugTarget(systemId)->setBreakpoints(bps);
 }

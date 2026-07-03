@@ -125,6 +125,7 @@ public:
     void setTrace(std::uint32_t systemId, bool on);
     std::vector<rp::TraceLine> readTrace(std::uint32_t systemId, std::uint32_t count);
     std::vector<rp::CallFrame> getCallStack(std::uint32_t systemId);
+    rp::ApuState getApuState(std::uint32_t systemId);
     void setBreakpoints(std::uint32_t systemId, std::vector<rp::BreakpointSpec> bps);
     rp::BreakInfo runUntilBreak(std::uint32_t systemId, std::uint64_t maxCycles);
     rp::BreakInfo stepInto(std::uint32_t systemId);

@@ -24,6 +24,8 @@ export {
   type CpuRegisters, type ProfiledFunction, type DisasmLine, type TraceLine,
   type CallFrame, type MidiOutEvent, type SerialOutByte, type KitSample,
   type BreakpointSpec, type BreakInfo, type Frame, type ChordOpts,
+  type ApuState, type ApuSquareState, type ApuTriangleState,
+  type ApuNoiseState, type ApuDmcState,
 } from "@retroplug/retroplug";
 
 // Native runner plumbing on Symbol.for("retroplug") (bound by TestHarness.cpp).

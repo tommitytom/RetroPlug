@@ -54,6 +54,7 @@ void registerHarnessRpcMethods(Server& server) {
     server.template addMethod<&HarnessRpcService::setTrace>();
     server.template addMethod<&HarnessRpcService::readTrace>();
     server.template addMethod<&HarnessRpcService::getCallStack>();
+    server.template addMethod<&HarnessRpcService::getApuState>();
     server.template addMethod<&HarnessRpcService::setBreakpoints>();
     server.template addMethod<&HarnessRpcService::runUntilBreak>();
     server.template addMethod<&HarnessRpcService::stepInto>();
