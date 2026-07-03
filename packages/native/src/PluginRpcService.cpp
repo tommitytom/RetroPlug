@@ -23,6 +23,7 @@
 #include "lsdj/SampleCache.hpp"
 #include "project/Project.hpp"
 #include "project/ProjectMissingFiles.hpp"
+#include "project/ProjectPaths.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/InputTypes.hpp"
 #include "system/MemoryAccessor.hpp"
@@ -268,6 +269,9 @@ std::string PluginRpcService::writeSiblingProject(const SystemConfig& sysCfg,
 
     ProjectConfig cfg;                 // default schemaVersion / settings
     cfg.systems.push_back(sysCfg);     // single freshly-built system
+    // Store paths relative to the .rplg's dir when the asset is under it, so the
+    // sibling records the ROM's bare basename and the folder stays relocatable.
+    rp::project_paths::toRelative(cfg, proj.parent_path().string());
     std::string json;
     try {
         json = projectConfigToJsonFile(cfg);   // thin, strips embedded binaries
@@ -531,9 +535,13 @@ bool PluginRpcService::saveProjectToPath(const std::string& path) {
     // Default disk save: path-only JSON (config + romPath, no embedded binaries).
     // ROM/SRAM are re-read from disk on load; savestate and kit bytes are dropped.
     // Use Export Zip (exportZipToPath) for a self-contained bundle.
+    // Rebase a *copy* to project-relative form (assets under the .rplg's dir) so
+    // the saved folder is portable; the live project keeps its absolute paths.
     std::string json;
     try {
-        json = projectConfigToJsonFile(project_->snapshotConfig());
+        ProjectConfig saved = project_->snapshotConfig();
+        rp::project_paths::toRelative(saved, std::filesystem::path(path).parent_path().string());
+        json = projectConfigToJsonFile(saved);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "saveProjectToPath: serialize failed: %s\n", e.what());
         emit("project-error", path);
@@ -605,6 +613,10 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
         emit("project-error", path);
         return false;
     }
+    // Resolve any project-relative paths against the .rplg's dir so everything
+    // downstream (missing-file scan, relink, commit) works in absolute terms.
+    // Absolute paths (zip exports, old saves) pass through unchanged.
+    rp::project_paths::toAbsolute(*parsed, std::filesystem::path(path).parent_path().string());
 
     // A thin JSON project references ROMs / kit WAVs by path. If any have moved,
     // hold the parse pending and let the UI relink them before we apply it — a

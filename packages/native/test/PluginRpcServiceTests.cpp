@@ -1639,3 +1639,107 @@ TEST_CASE("relink: loading a project with a missing paired save relinks it",
     std::filesystem::remove(realSav, ec);
     std::filesystem::remove(projPath, ec);
 }
+
+// ---------------------------------------------------------------------------
+// Portable .rplg: file saves store project-relative paths; loads resolve them.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("paths: saveProjectToPath stores a ROM under the project dir as relative",
+          "[PluginRpcService][paths]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+    auto t = makeTmpSys(fx.project, fx.rom, "paths");   // ROM at a /tmp path
+    const std::string projPath = uniqueTmpPath("paths_proj", ".rplg");   // same dir (/tmp)
+
+    // Save via the public open-browser + onFileBrowserSelected path the UI uses.
+    REQUIRE(fx.service.openSaveProjectBrowser());
+    fx.service.onFileBrowserSelected(projPath.c_str());
+    REQUIRE(fx.sawEvent("project-saved"));
+
+    const auto bytes = readFile(projPath);
+    auto cfg = projectConfigFromBytes(std::vector<std::uint8_t>(bytes.begin(), bytes.end()));
+    REQUIRE(cfg.has_value());
+    const auto* sb = rfl::get_if<SameBoyConfig>(&cfg->systems.at(0).variant());
+    REQUIRE(sb != nullptr);
+    CHECK_FALSE(std::filesystem::path(sb->romPath).is_absolute());   // stored relative
+    CHECK(sb->romPath == std::filesystem::path(t.romPath).filename().string());  // bare basename
+
+    std::error_code ec;
+    std::filesystem::remove(t.romPath, ec);
+    std::filesystem::remove(projPath, ec);
+}
+
+TEST_CASE("paths: a saved project folder can be moved and still loads",
+          "[PluginRpcService][paths]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+    std::error_code ec;
+
+    // Dir A: a real ROM + a project referencing it.
+    const auto dirA = std::filesystem::temp_directory_path() /
+        ("rp_paths_A_" + std::to_string(processToken()) + "_" + std::to_string(g_tmpCounter.fetch_add(1)));
+    std::filesystem::create_directories(dirA);
+    const std::string romA  = (dirA / "game.gb").string();
+    const std::string projA = (dirA / "proj.rplg").string();
+    writeBytes(romA, fx.rom);
+    {
+        SameBoyConfig cfg; cfg.romPath = romA;
+        const SystemId id = fx.project.nextSystemId();
+        auto sys = std::make_unique<SameBoySystem>(id, cfg, fx.rom);
+        sys->onActivate(kSampleRate);
+        fx.project.adoptSystem(sys.release());
+    }
+    REQUIRE(fx.service.openSaveProjectBrowser());
+    fx.service.onFileBrowserSelected(projA.c_str());
+    REQUIRE(fx.sawEvent("project-saved"));
+
+    // "Move" the folder: copy both files into a fresh dir B, then delete A so
+    // only the relative path (game.gb) — not any absolute A path — can resolve.
+    const auto dirB = std::filesystem::temp_directory_path() /
+        ("rp_paths_B_" + std::to_string(processToken()) + "_" + std::to_string(g_tmpCounter.fetch_add(1)));
+    std::filesystem::create_directories(dirB);
+    std::filesystem::copy_file(projA, dirB / "proj.rplg");
+    std::filesystem::copy_file(romA,  dirB / "game.gb");
+    std::filesystem::remove_all(dirA, ec);
+
+    fx.drainSystems();   // clear the SaveProject/queue state from the setup
+
+    const std::string projB = (dirB / "proj.rplg").string();
+    REQUIRE(fx.service.loadProjectFromPath(projB));
+    CHECK_FALSE(fx.sawEvent("missing-files"));   // relative path resolved in dir B
+    CHECK(fx.sawEvent("project-loaded"));
+
+    Command cmd;
+    REQUIRE(fx.commands.tryPop(cmd));
+    REQUIRE(cmd.kind == Command::Kind::LoadProject);
+    const auto* sb = rfl::get_if<SameBoyConfig>(&cmd.payload.loadProject.config->systems.at(0).variant());
+    REQUIRE(sb != nullptr);
+    CHECK(sb->romPath == std::filesystem::weakly_canonical(dirB / "game.gb").string());
+    delete cmd.payload.loadProject.config;
+
+    std::filesystem::remove_all(dirB, ec);
+}
+
+TEST_CASE("paths: the sibling .rplg records the ROM by relative basename",
+          "[PluginRpcService][paths]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("paths_sib", ".gb");
+    writeBytes(romPath, fx.rom);
+    std::error_code ec;
+    std::filesystem::remove(siblingRplg(romPath), ec);
+
+    REQUIRE(fx.service.loadRomFromPath(romPath));
+    REQUIRE(fileExists(siblingRplg(romPath)));
+
+    const auto bytes = readFile(siblingRplg(romPath));
+    auto cfg = projectConfigFromBytes(std::vector<std::uint8_t>(bytes.begin(), bytes.end()));
+    REQUIRE(cfg.has_value());
+    const auto* sb = rfl::get_if<SameBoyConfig>(&cfg->systems.at(0).variant());
+    REQUIRE(sb != nullptr);
+    CHECK(sb->romPath == std::filesystem::path(romPath).filename().string());
+
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(siblingRplg(romPath), ec);
+}

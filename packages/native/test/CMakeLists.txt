@@ -26,6 +26,7 @@ add_executable(retroplug-tests
     MemorySnapshotTripleTests.cpp
     PpqUtilTests.cpp
     ProjectTests.cpp
+    ProjectPathsTests.cpp
     RecentFilesTests.cpp
     RomSnifferTests.cpp
     SavCodecTests.cpp

@@ -325,9 +325,17 @@ void UiTestHarness::writeProjectJson(const std::string& path,
                                      const std::string& savPath) {
     // Schema-correct thin project (one path-only SameBoy system) via the real
     // serializer — hand-authored JSON is too brittle against reflect-cpp.
+    // Store ABSOLUTE asset paths, as a real file-dialog load does — a bare
+    // relative like "../resources/x.gb" would otherwise be resolved against the
+    // .rplg's own dir by loadProjectFromPath's project-relative path handling.
+    auto absPath = [](const std::string& p) {
+        std::error_code ec;
+        std::string a = std::filesystem::weakly_canonical(rpcli::resolveHostPath(p), ec).string();
+        return a.empty() ? rpcli::resolveHostPath(p) : a;
+    };
     SameBoyConfig sb;
-    sb.romPath = rpcli::resolveHostPath(romPath);   // stored ref stays consistent with the file location
-    if (!savPath.empty()) sb.savPath = rpcli::resolveHostPath(savPath);
+    sb.romPath = absPath(romPath);
+    if (!savPath.empty()) sb.savPath = absPath(savPath);
     ProjectConfig cfg;
     cfg.settings.zoom = zoom;
     cfg.systems.push_back(sb);
