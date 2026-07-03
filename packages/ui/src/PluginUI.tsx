@@ -201,7 +201,7 @@ function PluginUI() {
                     setActiveKeyboardBindings(cfg.activeKeyboardBindings ?? "");
                     setActiveGamepadBindings(cfg.activeGamepadBindings ?? "");
                     setAvailableProfiles(cfg.availableProfiles ?? []);
-                    setAutoSaveSram(cfg.autoSaveSram === true);
+                    setSramMirror(typeof cfg.sramMirror === "string" ? cfg.sramMirror : "OnProjectSave");
                     setDefaultZoom(cfg.defaultZoom >= 1 && cfg.defaultZoom <= 6 ? cfg.defaultZoom : DEFAULT_ZOOM);
                 }
             } catch (e) {
@@ -219,8 +219,9 @@ function PluginUI() {
     const [activeKeyboardBindings, setActiveKeyboardBindings] = useState<string>("");
     const [activeGamepadBindings,  setActiveGamepadBindings]  = useState<string>("");
     const [availableProfiles,      setAvailableProfiles]      = useState<string[]>([]);
-    // Global SRAM auto-save preference (UserConfig). Surfaced in the Settings menu.
-    const [autoSaveSram,           setAutoSaveSram]           = useState<boolean>(false);
+    // Global loose-`.sav` mirror preference (UserConfig). One of the SramMirror
+    // enum names; surfaced in the Settings menu. See config/SramMirror.hpp.
+    const [sramMirror,             setSramMirror]             = useState<string>("OnProjectSave");
 
     // Recent files. Same pattern as user-config: fetch on mount, refetch
     // when C++ emits "recent-files-changed" after a successful load/save.
@@ -490,7 +491,7 @@ function PluginUI() {
         layout,
         zoom,
         projectZoom,
-        autoSaveSram,
+        sramMirror,
         defaultZoom,
         recentFiles,
         openKitEditor,
@@ -560,7 +561,7 @@ function PluginUI() {
                     layout={layout}
                     zoom={zoom}
                     projectZoom={projectZoom}
-                    autoSaveSram={autoSaveSram}
+                    sramMirror={sramMirror}
                     defaultZoom={defaultZoom}
                     recentFiles={recentFiles}
                     openAbout={openAbout}

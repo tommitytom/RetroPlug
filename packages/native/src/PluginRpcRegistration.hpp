@@ -64,7 +64,7 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::getUserConfig>();
     server.template addMethod<&PluginRpcService::setActiveKeyboardBindings>();
     server.template addMethod<&PluginRpcService::setActiveGamepadBindings>();
-    server.template addMethod<&PluginRpcService::setAutoSaveSram>();
+    server.template addMethod<&PluginRpcService::setSramMirror>();
     server.template addMethod<&PluginRpcService::setDefaultZoom>();
     server.template addMethod<&PluginRpcService::getBindingProfile>();
     server.template addMethod<&PluginRpcService::saveBindingProfile>();

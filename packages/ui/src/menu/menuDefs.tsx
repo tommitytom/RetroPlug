@@ -102,8 +102,9 @@ export interface MenuContext {
     // Raw per-project zoom: 0 = inherit the user default, 1..6 = explicit.
     // Distinguishes "Zoom: Default (Nx)" from an explicit "Zoom: Nx".
     projectZoom:    number;
-    // Global SRAM auto-save preference (UserConfig). Toggled in Settings.
-    autoSaveSram:   boolean;
+    // Global loose-`.sav` mirror preference (UserConfig). One of the SramMirror
+    // enum names ("Off" | "OnProjectSave" | "Continuous"). Cycled in Settings.
+    sramMirror:     string;
     // Global default zoom 1..6 (UserConfig). Set in Settings; used for projects
     // with no explicit zoom. Distinct from `zoom` (the resolved per-project value).
     defaultZoom:    number;
@@ -211,6 +212,20 @@ function cycleInt(current: number, min: number, max: number,
                   dir: 1 | -1): number {
     if (dir > 0) return current >= max ? min : current + 1;
     return current <= min ? max : current - 1;
+}
+
+// SramMirror enum names (config/SramMirror.hpp) in cycle order, with the short
+// labels shown in the Settings menu. Unknown values fall back to OnProjectSave.
+const SRAM_MIRROR_MODES  = ["Off", "OnProjectSave", "Continuous"] as const;
+const SRAM_MIRROR_LABELS: Record<string, string> = {
+    Off:           "Off",
+    OnProjectSave: "On Save",
+    Continuous:    "Continuous",
+};
+function cycleSramMirror(current: string, dir: 1 | -1): string {
+    const i = SRAM_MIRROR_MODES.indexOf(current as typeof SRAM_MIRROR_MODES[number]);
+    const from = i < 0 ? 1 : i; // unknown -> treat as OnProjectSave
+    return SRAM_MIRROR_MODES[cycleInt(from, 0, SRAM_MIRROR_MODES.length - 1, dir)];
 }
 
 // Filename component, handling both `/` and `\\` separators so paths recorded
@@ -554,12 +569,14 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
         bindingsSubmenu(ctx.keyboardEditor),
         bindingsSubmenu(ctx.gamepadEditor),
         sep(),
-        // Global, sticky SRAM auto-save (UserConfig). Writes each system's
-        // sibling <rom>.sav while playing. Boolean toggle: Left/Right flip it.
-        { id: "autoSave", label: `Auto Save: ${ctx.autoSaveSram ? "On" : "Off"}`,
+        // Global, sticky loose-`.sav` mirror mode (UserConfig). Off / On Save /
+        // Continuous — see config/SramMirror.hpp. Enter cycles forward;
+        // Left/Right cycle either way.
+        { id: "sramMirror",
+          label: `SRAM Mirror: ${SRAM_MIRROR_LABELS[ctx.sramMirror] ?? "On Save"}`,
           kind: "action", keepOpen: true,
-          onSelect: () => { void plugin.setAutoSaveSram(!ctx.autoSaveSram); },
-          onCycle:  () => { void plugin.setAutoSaveSram(!ctx.autoSaveSram); } },
+          onSelect: () => { void plugin.setSramMirror(cycleSramMirror(ctx.sramMirror, 1)); },
+          onCycle:  (dir) => { void plugin.setSramMirror(cycleSramMirror(ctx.sramMirror, dir)); } },
         // Global default zoom (UserConfig). Applies to projects with no explicit
         // zoom of their own. Enter cycles forward; Left/Right cycle either way.
         { id: "defaultZoom", label: `Default Zoom: ${ctx.defaultZoom}x`,

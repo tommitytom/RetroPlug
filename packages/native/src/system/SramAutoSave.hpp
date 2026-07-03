@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "config/SramMirror.hpp"
 #include "lsdj/SampleCache.hpp"
 #include "system/MemoryType.hpp"
 #include "system/SystemBase.hpp"
@@ -120,6 +121,24 @@ inline bool autoSaveSramToSibling(SystemBase& sys,
     if (!sram_autosave::spill(path, bytes)) return false;
     lastHash = h;
     return true;
+}
+
+// Flush every system's battery RAM to its resolved sibling `.sav` when `mode`
+// permits (OnProjectSave / Continuous; Off is a no-op). This is the loose-`.sav`
+// mirror at explicit save/quit moments — the DSP getState / deactivate hooks
+// call it (see PluginDSP and porting/23 D2/D4). Each system gets a fresh nullopt
+// hash, so an unchanged sibling is only hashed (not rewritten) and a changed one
+// is written. Returns the number of systems actually written.
+template <class SystemRange>
+inline int flushSramMirror(SystemRange&& systems, SramMirror mode) {
+    if (!sramMirrorFlushesOnSave(mode)) return 0;
+    int written = 0;
+    for (auto& sys : systems) {
+        if (!sys || sys->romPath().empty()) continue;
+        std::optional<std::uint64_t> hash; // fresh: seed-or-write vs on-disk
+        if (autoSaveSramToSibling(*sys, hash)) ++written;
+    }
+    return written;
 }
 
 } // namespace rp

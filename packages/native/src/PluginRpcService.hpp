@@ -282,16 +282,19 @@ public:
     // it (replacing the slot, preserving SRAM, dropping savestate). Called
     // from PluginUI::uiIdle.
     void pumpRomWatchers();
-    // Global SRAM auto-save preference (UserConfig). When on, every system's
-    // battery RAM is flushed to its sibling `<rom>.sav` on a timer (pumped from
-    // PluginUI::uiIdle via pumpSramAutoSave). See system/SramAutoSave.hpp.
-    bool setAutoSaveSram(bool enabled);
+    // Global loose-`.sav` mirror preference (UserConfig). `mode` is a SramMirror
+    // enum name ("Off" | "OnProjectSave" | "Continuous"); unrecognised values
+    // fall back to OnProjectSave. Persists to config.json and pushes the mode to
+    // the DSP for its flush hooks. See config/SramMirror.hpp and porting/23 (D2).
+    bool setSramMirror(std::string mode);
     // Global default zoom (1..6), persisted to config.json. Distinct from the
     // per-project setZoom — used as the fallback when a project carries no
     // explicit zoom. See UserConfig::setDefaultZoom.
     bool setDefaultZoom(std::uint32_t zoom);
-    // Periodic battery-RAM flush; cheap no-op when the preference is off. Writes
-    // only changed SRAM, creating the sibling .sav on first write. UI thread.
+    // Periodic battery-RAM flush; idle-tick writes happen only in Continuous
+    // mirror mode (OnProjectSave/Off leave the loose .sav to the DSP flush
+    // hooks). Also reconciles the DSP's mirror mode. Writes only changed SRAM,
+    // creating the sibling .sav on first write. UI thread.
     void pumpSramAutoSave();
     // Seconds between auto-save scans (default 5). Exposed mainly so tests can
     // disable the throttle (0) to drive consecutive flushes deterministically.
@@ -558,4 +561,9 @@ private:
     // Throttle: only scan for dirty SRAM every sramAutoSaveIntervalSec_ seconds.
     std::chrono::steady_clock::time_point lastSramAutoSave_{};
     double sramAutoSaveIntervalSec_ = 5.0;
+    // Last mirror mode pushed to the DSP (SetSramMirror). The pump re-pushes
+    // whenever the UserConfig value drifts from this, so a config.json edit
+    // (efsw reload) or a toggle converges the DSP within one idle tick. -1 =
+    // never pushed, so the first pump always sends the current mode.
+    int lastPushedSramMirror_ = -1;
 };

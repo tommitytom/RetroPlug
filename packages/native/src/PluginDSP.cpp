@@ -15,10 +15,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <optional>
 
+#include "config/SramMirror.hpp"
 #include "lsdj/SampleCache.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/BlockRunner.hpp"
+#include "system/SramAutoSave.hpp"
 #include "system/SystemTypes.hpp"
 #include "util/Base64.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
@@ -66,6 +69,12 @@ public:
     EventQueue            events;
     std::atomic<double>   sampleRateAtomic{44100.0};
     std::atomic<SystemId> focusedSystemAtomic{0};
+    // Loose-`.sav` mirror preference, pushed from the UI (SetSramMirror command).
+    // Read by the getState / deactivate flush hooks. Defaults to OnProjectSave to
+    // match UserConfig's default, so a host that saves before the UI pushes still
+    // mirrors (an unchanged sibling is a no-op anyway). See config/SramMirror.hpp.
+    std::atomic<std::uint8_t> sramMirrorMode{
+        static_cast<std::uint8_t>(rp::SramMirror::OnProjectSave)};
 
     LVGLPluginDSP()
         : Plugin(static_cast<uint32_t>(kRetroPlugDescriptor.parameters.size()), 0, /*states=*/1)
@@ -193,9 +202,24 @@ protected:
         state.defaultValue = "";
     }
 
+    // Spill each system's battery RAM to its resolved sibling `.sav` when the
+    // mirror preference allows it (OnProjectSave / Continuous). Called at the
+    // explicit save/quit moments — getState (host save) and deactivate (stop /
+    // quit) — so the loose file stays fresh WITHOUT depending on the editor
+    // idle-pump. See porting/23 (D2/D4). A fresh nullopt hash per system means
+    // an unchanged sibling is only hashed, not rewritten; a changed one writes.
+    void flushSramMirrorToDisk()
+    {
+        rp::flushSramMirror(project.systems(), static_cast<rp::SramMirror>(
+            sramMirrorMode.load(std::memory_order_acquire)));
+    }
+
     String getState(const char* key) const override
     {
         if (std::strcmp(key, "project") != 0) return String();
+        // Mirror the loose `.sav` at host-save time (logical-const side effect:
+        // the plugin's parameter state is unchanged; only disk is touched).
+        const_cast<LVGLPluginDSP*>(this)->flushSramMirrorToDisk();
         try {
             const auto zip = projectConfigToZip(project.snapshotConfig());
             // DPF state is a NUL-terminated UTF-8 string, so the binary zip
@@ -283,6 +307,9 @@ protected:
     {
         if (std::getenv("RETROPLUG_TRACE_LIFECYCLE"))
             d_stderr("[PluginDSP] deactivate");
+        // Flush battery RAM on stop / quit so in-game progress isn't lost when
+        // the host tears the plugin down (standalone durability — porting/23 D4).
+        flushSramMirrorToDisk();
         project.onDeactivate();
     }
 
@@ -408,6 +435,15 @@ protected:
                         projectMutated = true;
                     }
                 } break;
+
+                case Command::Kind::SetSramMirror:
+                    // Global user preference, not project state — just latch it
+                    // for the getState / deactivate flush hooks to read. No
+                    // projectMutated (nothing the UI re-queries changed).
+                    sramMirrorMode.store(
+                        static_cast<std::uint8_t>(cmd.payload.setSramMirror.mode),
+                        std::memory_order_release);
+                    break;
 
                 // Per-system mutations share one implementation with the stress
                 // harness and unit tests (see transport/CommandApply.hpp). It

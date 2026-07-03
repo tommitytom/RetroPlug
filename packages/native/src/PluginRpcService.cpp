@@ -1180,9 +1180,15 @@ void PluginRpcService::pumpRomWatchers() {
     }
 }
 
-bool PluginRpcService::setAutoSaveSram(bool enabled) {
+bool PluginRpcService::setSramMirror(std::string mode) {
     if (!userConfig_) return false;
-    return userConfig_->setAutoSaveSram(enabled);
+    const rp::SramMirror parsed = rp::sramMirrorFromString(mode);
+    if (!userConfig_->setSramMirror(parsed)) return false;
+    // Push the new mode to the DSP immediately so getState/deactivate flush with
+    // it right away; the pump also reconciles, but don't wait a tick.
+    if (commands_ && commands_->tryPush(Command::makeSetSramMirror(parsed)))
+        lastPushedSramMirror_ = static_cast<int>(parsed);
+    return true;
 }
 
 bool PluginRpcService::setDefaultZoom(std::uint32_t zoom) {
@@ -1215,8 +1221,20 @@ void PluginRpcService::pumpSramAutoSave() {
                 rp::lsdj::SampleCache::hashBytes(bytes.data(), bytes.size());
     }
 
-    // Auto-save writes: gated on the preference + throttled.
-    if (!userConfig_ || !userConfig_->autoSaveSram()) return;
+    // Keep the DSP's mirror mode (used by its getState/deactivate flush hooks)
+    // in sync with UserConfig. Re-push whenever it drifts — a config.json edit
+    // picked up by efsw, or the initial value the DSP hasn't heard yet.
+    if (userConfig_ && commands_) {
+        const int mode = static_cast<int>(userConfig_->sramMirror());
+        if (mode != lastPushedSramMirror_ &&
+            commands_->tryPush(Command::makeSetSramMirror(
+                static_cast<rp::SramMirror>(mode))))
+            lastPushedSramMirror_ = mode;
+    }
+
+    // Idle-tick writes only in Continuous mode; OnProjectSave/Off leave the
+    // loose `.sav` to the DSP flush hooks (host save / quit). Throttled.
+    if (!userConfig_ || userConfig_->sramMirror() != rp::SramMirror::Continuous) return;
     const auto now = std::chrono::steady_clock::now();
     if (lastSramAutoSave_.time_since_epoch().count() != 0) {
         const std::chrono::duration<double> elapsed = now - lastSramAutoSave_;

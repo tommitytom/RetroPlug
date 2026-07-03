@@ -9,6 +9,8 @@
 #include "rfl/json/read.hpp"
 #include "rfl/json/write.hpp"
 
+#include "SramMirror.hpp"
+
 // JSON shapes for the per-user config tree. Layout mirrors
 // src/project/ProjectSerialization.hpp.
 //
@@ -28,10 +30,10 @@ struct UserConfigJson {
     // Default zoom level for fresh projects (1..6). Per-project zoom set
     // via the menu overrides this; see ProjectSettings::zoom.
     std::uint8_t defaultZoom            = 3;
-    // Auto-save cartridge battery RAM to the sibling `<rom>.sav` while playing
-    // (a global, sticky preference toggled from the Settings menu). Only
-    // affects systems loaded from a path. See system/SramAutoSave.hpp.
-    bool         autoSaveSram           = false;
+    // How the loose sibling `<rom>.sav` mirror is kept in sync (a global, sticky
+    // preference toggled from the Settings menu). Only affects systems loaded
+    // from a path. See config/SramMirror.hpp and system/SramAutoSave.hpp.
+    rp::SramMirror sramMirror           = rp::SramMirror::OnProjectSave;
 };
 
 // Key = GameboyButton name ("Right" "Left" "Up" "Down" "A" "B" "Select" "Start").
@@ -52,7 +54,7 @@ struct UserConfigDto {
     BindingMapJson           bindings;
     std::vector<std::string> availableProfiles;
     std::uint8_t             defaultZoom = 3;
-    bool                     autoSaveSram = false;
+    rp::SramMirror           sramMirror  = rp::SramMirror::OnProjectSave;
 };
 
 inline std::string userConfigToJson(const UserConfigJson& cfg) {

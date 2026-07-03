@@ -112,7 +112,7 @@ bool UserConfig::setActiveKeyboardBindings(std::string name) {
         cfg.activeKeyboardBindings = std::move(name);
         cfg.activeGamepadBindings  = current_.activeGamepadBindings;
         cfg.defaultZoom            = current_.defaultZoom;
-        cfg.autoSaveSram           = current_.autoSaveSram;
+        cfg.sramMirror             = current_.sramMirror;
     }
     if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
         std::fprintf(stderr, "[user-config] failed to write %s\n",
@@ -133,7 +133,7 @@ bool UserConfig::setActiveGamepadBindings(std::string name) {
         cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
         cfg.activeGamepadBindings  = std::move(name);
         cfg.defaultZoom            = current_.defaultZoom;
-        cfg.autoSaveSram           = current_.autoSaveSram;
+        cfg.sramMirror             = current_.sramMirror;
     }
     if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
         std::fprintf(stderr, "[user-config] failed to write %s\n",
@@ -145,17 +145,17 @@ bool UserConfig::setActiveGamepadBindings(std::string name) {
     return true;
 }
 
-bool UserConfig::setAutoSaveSram(bool enabled) {
+bool UserConfig::setSramMirror(rp::SramMirror mode) {
     if (!started_.load()) return false;
     UserConfigJson cfg;
     cfg.schemaVersion = 1;
     {
         std::lock_guard<std::mutex> lock(mu_);
-        if (current_.autoSaveSram == enabled) return true; // no-op write
+        if (current_.sramMirror == mode) return true; // no-op write
         cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
         cfg.activeGamepadBindings  = current_.activeGamepadBindings;
         cfg.defaultZoom            = current_.defaultZoom;
-        cfg.autoSaveSram           = enabled;
+        cfg.sramMirror             = mode;
     }
     if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
         std::fprintf(stderr, "[user-config] failed to write %s\n",
@@ -167,9 +167,9 @@ bool UserConfig::setAutoSaveSram(bool enabled) {
     return true;
 }
 
-bool UserConfig::autoSaveSram() const {
+rp::SramMirror UserConfig::sramMirror() const {
     std::lock_guard<std::mutex> lock(mu_);
-    return current_.autoSaveSram;
+    return current_.sramMirror;
 }
 
 bool UserConfig::setDefaultZoom(std::uint8_t zoom) {
@@ -183,7 +183,7 @@ bool UserConfig::setDefaultZoom(std::uint8_t zoom) {
         cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
         cfg.activeGamepadBindings  = current_.activeGamepadBindings;
         cfg.defaultZoom            = zoom;
-        cfg.autoSaveSram           = current_.autoSaveSram;
+        cfg.sramMirror             = current_.sramMirror;
     }
     if (!atomicWrite(configFile_, userConfigToJson(cfg))) {
         std::fprintf(stderr, "[user-config] failed to write %s\n",
@@ -267,7 +267,7 @@ bool UserConfig::renameProfile(std::string oldName, std::string newName) {
         cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
         cfg.activeGamepadBindings  = current_.activeGamepadBindings;
         cfg.defaultZoom            = current_.defaultZoom;
-        cfg.autoSaveSram           = current_.autoSaveSram;
+        cfg.sramMirror             = current_.sramMirror;
         if (cfg.activeKeyboardBindings == oldName) {
             cfg.activeKeyboardBindings = newName;
             rewrote = true;
@@ -325,7 +325,7 @@ void UserConfig::reloadFromDisk() {
             std::uint8_t z = cfg->defaultZoom;
             if (z < 1 || z > 6) z = 3;
             next.defaultZoom = z;
-            next.autoSaveSram = cfg->autoSaveSram;
+            next.sramMirror = cfg->sramMirror;
         } else {
             std::fprintf(stderr,
                 "[user-config] %s parse failed — keeping previous active profiles\n",

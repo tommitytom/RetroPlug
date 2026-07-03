@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "config/SramMirror.hpp"
 #include "project/ProjectConfig.hpp"
 #include "system/InputTypes.hpp"
 #include "system/MemoryType.hpp"
@@ -104,6 +105,13 @@ struct SetLayoutCommand {
 // Project-wide audio routing change. Same pattern as SetMidiRouting.
 struct SetAudioRoutingCommand {
     AudioRouting routing;
+};
+
+// Global loose-`.sav` mirror preference pushed from the UI (UserConfig) so the
+// DSP-side flush hooks (getState / deactivate) know whether — and how eagerly —
+// to spill battery RAM to disk. See config/SramMirror.hpp and porting/23 (D2).
+struct SetSramMirrorCommand {
+    rp::SramMirror mode;
 };
 
 // Soft-reset of a single system (the GB equivalent of pressing the reset
@@ -229,6 +237,7 @@ struct Command {
         SetHighpass       = 21,
         LoadSram          = 22,
         LoadState         = 23,
+        SetSramMirror     = 24,
     };
 
     Kind kind = Kind::None;
@@ -256,6 +265,7 @@ struct Command {
         SetReloadOnRomChangeCommand setReloadOnRomChange;
         SetAudioRoutingCommand   setAudioRouting;
         SetHighpassCommand       setHighpass;
+        SetSramMirrorCommand     setSramMirror;
         Payload() : buttonPress{} {}
     } payload;
 
@@ -422,6 +432,13 @@ struct Command {
         Command c;
         c.kind = Kind::SetHighpass;
         c.payload.setHighpass = SetHighpassCommand{id, mode};
+        return c;
+    }
+
+    static Command makeSetSramMirror(rp::SramMirror mode) {
+        Command c;
+        c.kind = Kind::SetSramMirror;
+        c.payload.setSramMirror = SetSramMirrorCommand{mode};
         return c;
     }
 };

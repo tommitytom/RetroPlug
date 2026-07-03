@@ -139,31 +139,41 @@ TEST_CASE("UserConfig::setActiveKeyboardBindings switches profile synchronously"
     fs::remove_all(dir);
 }
 
-TEST_CASE("UserConfig::setAutoSaveSram persists and sticks across reloads", "[user-config]") {
-    auto dir = makeTempDir("autosave");
+TEST_CASE("UserConfig::setSramMirror persists and sticks across reloads", "[user-config]") {
+    auto dir = makeTempDir("srammirror");
 
     {
         UserConfig cfg(dir);
         cfg.start();
-        REQUIRE_FALSE(cfg.autoSaveSram());          // default off
-        REQUIRE(cfg.setAutoSaveSram(true));
-        REQUIRE(cfg.autoSaveSram());
-        REQUIRE(cfg.snapshot().autoSaveSram);
+        REQUIRE(cfg.sramMirror() == rp::SramMirror::OnProjectSave); // default
+        REQUIRE(cfg.setSramMirror(rp::SramMirror::Continuous));
+        REQUIRE(cfg.sramMirror() == rp::SramMirror::Continuous);
+        REQUIRE(cfg.snapshot().sramMirror == rp::SramMirror::Continuous);
 
-        // config.json on disk records the flag.
+        // config.json on disk records the mode as its enum name.
         auto cfgText = slurp(dir / "config.json");
-        REQUIRE(cfgText.find("autoSaveSram") != std::string::npos);
+        REQUIRE(cfgText.find("sramMirror") != std::string::npos);
+        REQUIRE(cfgText.find("Continuous") != std::string::npos);
     }
 
     // A fresh instance over the same dir reads the preference back (sticky).
     {
         UserConfig cfg(dir);
         cfg.start();
-        REQUIRE(cfg.autoSaveSram());
+        REQUIRE(cfg.sramMirror() == rp::SramMirror::Continuous);
 
-        // Switching a binding profile must NOT clobber the flag.
+        // Switching a binding profile must NOT clobber the mode.
         REQUIRE(cfg.setActiveKeyboardBindings("default"));
-        REQUIRE(cfg.autoSaveSram());
+        REQUIRE(cfg.sramMirror() == rp::SramMirror::Continuous);
+
+        // Off round-trips too (distinct from the default).
+        REQUIRE(cfg.setSramMirror(rp::SramMirror::Off));
+        REQUIRE(cfg.sramMirror() == rp::SramMirror::Off);
+    }
+    {
+        UserConfig cfg(dir);
+        cfg.start();
+        REQUIRE(cfg.sramMirror() == rp::SramMirror::Off);
     }
 
     fs::remove_all(dir);
@@ -196,7 +206,7 @@ TEST_CASE("UserConfig::setDefaultZoom persists, clamps, and sticks across reload
         UserConfig cfg(dir);
         cfg.start();
         REQUIRE(cfg.snapshot().defaultZoom == 5);
-        REQUIRE(cfg.setAutoSaveSram(true));
+        REQUIRE(cfg.setSramMirror(rp::SramMirror::Continuous));
         REQUIRE(cfg.snapshot().defaultZoom == 5);
     }
 

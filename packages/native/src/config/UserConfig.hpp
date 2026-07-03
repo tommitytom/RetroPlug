@@ -66,11 +66,12 @@ public:
     bool setActiveKeyboardBindings(std::string name);
     bool setActiveGamepadBindings(std::string name);
 
-    // Global SRAM auto-save preference. setAutoSaveSram writes config.json and
-    // refreshes the in-memory snapshot; autoSaveSram() is a cheap mutex-guarded
-    // read for the auto-save pump. See system/SramAutoSave.hpp.
-    bool setAutoSaveSram(bool enabled);
-    bool autoSaveSram() const;
+    // Global loose-`.sav` mirror preference. setSramMirror writes config.json and
+    // refreshes the in-memory snapshot; sramMirror() is a cheap mutex-guarded
+    // read for the auto-save pump and the flush hooks. See config/SramMirror.hpp
+    // and system/SramAutoSave.hpp.
+    bool       setSramMirror(rp::SramMirror mode);
+    rp::SramMirror sramMirror() const;
 
     // Global default zoom (1..6) used for projects that carry no explicit zoom.
     // Writes config.json and refreshes the snapshot. Rejects out-of-range values.

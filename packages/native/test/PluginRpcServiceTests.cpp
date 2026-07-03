@@ -337,7 +337,7 @@ TmpSys makeTmpSys(Project& project, const std::vector<std::uint8_t>& rom,
 }
 
 // Project + queues + a UserConfig(tempdir) wired into the service, for the pump
-// tests (the pump is gated on userConfig_->autoSaveSram()).
+// tests (idle-tick writes are gated on userConfig_->sramMirror() == Continuous).
 struct PumpFixture {
     std::filesystem::path cfgDir = [] {
         auto d = std::filesystem::temp_directory_path() /
@@ -656,13 +656,14 @@ TEST_CASE("pumpSramAutoSave honours the preference gate and the throttle",
     const std::vector<std::uint8_t> imageA(n, 0x41);
     REQUIRE(t.sys->loadSramBytes(imageA));
 
-    // Preference OFF -> no write at all.
-    REQUIRE_FALSE(fx.userConfig.autoSaveSram());
+    // Default (OnProjectSave) -> the idle pump never writes; that's the DSP
+    // flush hook's job. Only Continuous mirrors on the idle tick.
+    REQUIRE(fx.userConfig.sramMirror() == rp::SramMirror::OnProjectSave);
     fx.service.pumpSramAutoSave();
     CHECK_FALSE(fileExists(t.savPath));
 
-    // ON -> the first pump flushes (the throttle starts disarmed).
-    REQUIRE(fx.userConfig.setAutoSaveSram(true));
+    // Continuous -> the first pump flushes (the throttle starts disarmed).
+    REQUIRE(fx.userConfig.setSramMirror(rp::SramMirror::Continuous));
     fx.service.pumpSramAutoSave();
     REQUIRE(fileExists(t.savPath));
     CHECK(readFile(t.savPath) == imageA);
@@ -683,7 +684,7 @@ TEST_CASE("pumpSramAutoSave writes each system's own sibling and prunes removed 
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
     PumpFixture fx;
     fx.service.setSramAutoSaveIntervalSec(0.0);          // disable throttle for the test
-    REQUIRE(fx.userConfig.setAutoSaveSram(true));
+    REQUIRE(fx.userConfig.setSramMirror(rp::SramMirror::Continuous));
     const auto rom = loadRom();
 
     auto a = makeTmpSys(fx.project, rom, "multiA");
@@ -715,6 +716,81 @@ TEST_CASE("pumpSramAutoSave writes each system's own sibling and prunes removed 
 
     std::filesystem::remove(a.savPath, ec);
     std::filesystem::remove(b.savPath, ec);
+}
+
+// flushSramMirror is the loose-`.sav` spill the DSP calls at host save (getState)
+// and quit (deactivate) — porting/23 D2/D4. Exercises the mode gate + on-disk
+// dedup directly, since the DSP hooks themselves need a DPF host to reach.
+TEST_CASE("flushSramMirror honours the mirror mode and dedups on disk",
+          "[PluginRpcService][sram-autosave]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    const auto rom = loadRom();
+
+    Project project;
+    auto t = makeTmpSys(project, rom, "flush");
+    const std::size_t n = t.sys->saveSramBytes().size();
+    REQUIRE(n > 0);
+    const std::vector<std::uint8_t> imageA(n, 0x5A);
+    REQUIRE(t.sys->loadSramBytes(imageA));
+
+    std::error_code ec;
+    std::filesystem::remove(t.savPath, ec);
+
+    // Off -> never touches the loose file.
+    CHECK(rp::flushSramMirror(project.systems(), rp::SramMirror::Off) == 0);
+    CHECK_FALSE(fileExists(t.savPath));
+
+    // OnProjectSave -> writes the sibling (the DAW host-save / quit path).
+    CHECK(rp::flushSramMirror(project.systems(), rp::SramMirror::OnProjectSave) == 1);
+    REQUIRE(fileExists(t.savPath));
+    CHECK(readFile(t.savPath) == imageA);
+
+    // Unchanged SRAM -> a second flush is a no-op (dedup against the on-disk file;
+    // each call starts from a fresh nullopt hash, so no throttle is involved).
+    CHECK(rp::flushSramMirror(project.systems(), rp::SramMirror::OnProjectSave) == 0);
+
+    // Changed SRAM -> flushed again (Continuous mirrors on save too).
+    const std::vector<std::uint8_t> imageB(n, 0xA5);
+    REQUIRE(t.sys->loadSramBytes(imageB));
+    CHECK(rp::flushSramMirror(project.systems(), rp::SramMirror::Continuous) == 1);
+    CHECK(readFile(t.savPath) == imageB);
+
+    std::filesystem::remove(t.savPath, ec);
+}
+
+// The UI toggle persists the preference AND pushes the mode to the DSP (which
+// reads it in its flush hooks). The pump also reconciles a drifted mode so a
+// config.json edit converges the DSP within one idle tick.
+TEST_CASE("setSramMirror persists the mode and pushes it to the DSP",
+          "[PluginRpcService][sram]") {
+    PumpFixture fx;
+
+    auto drainLastMirror = [&]() -> std::optional<rp::SramMirror> {
+        std::optional<rp::SramMirror> found;
+        Command c;
+        while (fx.commands.tryPop(c))
+            if (c.kind == Command::Kind::SetSramMirror)
+                found = c.payload.setSramMirror.mode;
+        return found;
+    };
+
+    REQUIRE(fx.service.setSramMirror("Continuous"));
+    REQUIRE(fx.userConfig.sramMirror() == rp::SramMirror::Continuous);
+    auto pushed = drainLastMirror();
+    REQUIRE(pushed.has_value());
+    CHECK(*pushed == rp::SramMirror::Continuous);
+
+    // An unrecognised mode name falls back to OnProjectSave (documented contract).
+    REQUIRE(fx.service.setSramMirror("bogus"));
+    CHECK(fx.userConfig.sramMirror() == rp::SramMirror::OnProjectSave);
+
+    // A direct UserConfig change (as an efsw config.json edit would produce) is
+    // reconciled to the DSP by the next pump.
+    REQUIRE(fx.userConfig.setSramMirror(rp::SramMirror::Off));
+    fx.service.pumpSramAutoSave();
+    pushed = drainLastMirror();
+    REQUIRE(pushed.has_value());
+    CHECK(*pushed == rp::SramMirror::Off);
 }
 
 TEST_CASE("SRAM auto-save is a no-op without a romPath or a battery",
