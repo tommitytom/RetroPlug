@@ -569,11 +569,11 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
         bindingsSubmenu(ctx.keyboardEditor),
         bindingsSubmenu(ctx.gamepadEditor),
         sep(),
-        // Global, sticky loose-`.sav` mirror mode (UserConfig). Off / On Save /
+        // Global, sticky loose-`.sav` auto-save mode (UserConfig). Off / On Save /
         // Continuous — see config/SramMirror.hpp. Enter cycles forward;
         // Left/Right cycle either way.
         { id: "sramMirror",
-          label: `SRAM Mirror: ${SRAM_MIRROR_LABELS[ctx.sramMirror] ?? "On Save"}`,
+          label: `SRAM Auto-Save: ${SRAM_MIRROR_LABELS[ctx.sramMirror] ?? "On Save"}`,
           kind: "action", keepOpen: true,
           onSelect: () => { void plugin.setSramMirror(cycleSramMirror(ctx.sramMirror, 1)); },
           onCycle:  (dir) => { void plugin.setSramMirror(cycleSramMirror(ctx.sramMirror, dir)); } },
