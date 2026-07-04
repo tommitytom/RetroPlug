@@ -2,8 +2,21 @@
 
 ## Status
 
-**Proposed.** The primitives are mostly built; the orchestration that would sit
-on top of them is still in C++. This doc names the line and the plan to move it.
+**Increment 1 shipped** (branch `arch/rework`): project save/load **serialization**
+moved to shared TS (`@retroplug/retroplug`) for the **CLI-harness host**, over new
+native byte-mover primitives (`zipEntries`/`unzipEntries` (miniz), a thin
+`snapshotProjectConfig` = config JSON + keyed blob `ArrayBuffer`s, `applyProjectConfig`,
+`fileExists`) — deleting the harness's C++ `saveRplg`/`saveProjectFile`/`loadRplg`
+duplicate. `ProjectSerialization` + the `ProjectBinaries` entry-key contract +
+`SchemaVersions` are now TS; the config JSON stays opaque (native writes/reads it),
+and blobs never cross as JSON. `project_binaries::strip/restore` were templated on
+the sink/source so the plugin's `.rplg` codec is unchanged.
+
+**Still C++ (later increments):** the **plugin** save/load/relink band (its runtime
+has no fs/zip bindings and it's a `pending`/event machine), `ProjectMissingFiles`,
+`ProjectPaths` (needs a `realpath` primitive), the config layer, and the
+`Project::addSystem` → `constructInstance` split. The rest of this doc is the
+forward plan for those.
 
 ## Why
 

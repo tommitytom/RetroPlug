@@ -102,7 +102,7 @@ source as the C++ structs (the RPC codegen already emits TS types).
 | --- | --- | --- |
 | 01 | [The Block Runner (render core)](01-block-runner.md) | Shipped + 1 deferred |
 | 02 | [Project-state ownership (split authority)](02-project-state-ownership.md) | Steps 1–3 shipped |
-| 03 | [The C++/TS boundary](03-cpp-ts-boundary.md) | Proposed (centerpiece) |
+| 03 | [The C++/TS boundary](03-cpp-ts-boundary.md) | Increment 1 shipped (harness serialization) |
 | 04 | [The scriptable runtime](04-scriptable-runtime.md) | §A always-available runtime shipped |
 | 05 | [Cross-core roles](05-roles-cross-core.md) | Proposed |
 | 06 | [MIDI routing as hot-reloadable scripts](06-midi-routing-scripts.md) | Proposed |
