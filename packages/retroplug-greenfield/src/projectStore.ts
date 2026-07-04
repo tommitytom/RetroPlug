@@ -1,15 +1,18 @@
 // ProjectStore: the top-level project state and source of truth. It owns the systems
 // store (wiring its onChange to mark the project dirty) + the project settings +
-// currentPath + dirty, and drives new / save / load with the missing-files scan +
-// relink. TS produces AND consumes the thin config JSON — a fresh project round-trips
+// currentPath + dirty, and drives new / save / export / load with the missing-files
+// scan + relink. TS produces AND consumes the config JSON — a fresh project round-trips
 // faithfully (native restores omitted rich fields via DefaultIfMissing).
 //
-// Thin only: a thin .rplg is raw JSON, so save = build config → writeFile, and load =
-// readFile → parse → toAbsolute → scan/relink → reconstruct each system from its path
-// (systems.adopt). No zip, no blobs, no new native. A "PK" (zip/export) file is
-// refused until the export follow-on lands.
+// Two on-disk shapes, one config model:
+//   - THIN `.rplg` (save) = raw JSON, paths only. save = build config → writeFile;
+//     load = readFile → parse → toAbsolute → scan/relink → adopt each system from disk.
+//   - EXPORT `.rplg` (PKZIP) = the same thin project.json PLUS the emulator's live blobs
+//     (per-system SRAM/savestate). export gathers the blobs via the pump (backend.read*)
+//     and frames the archive; native only compresses (backend.zip). A picked PK archive
+//     loads back through the same scan/relink tail, its blobs seeding each system.
 
-import type { Backend } from "./backend";
+import type { Backend, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
 import type { RecentStore } from "./recentStore";
 import { dirname } from "./pathUtil";
@@ -27,26 +30,32 @@ import {
   toAbsolute,
 } from "./projectConfig";
 import { scanMissingFiles, autoFindSiblings, relinkInConfig, type MissingFile } from "./projectMissing";
+import { PROJECT_JSON, sramKey, stateKey, partitionEntries } from "./projectBinaries";
 
 export type LoadOutcome =
   | { kind: "loaded"; systems: number }
   | { kind: "incompatible" } // schema stamped newer than this build
   | { kind: "missing"; missing: MissingFile[] } // needs relink before it can apply
-  | { kind: "error" }; // unreadable / not a thin project (e.g. a zip)
+  | { kind: "error" }; // unreadable / corrupt archive / not a RetroPlug project
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
-const NO_BLOBS: ReadonlySet<string> = new Set(); // a thin load embeds nothing
 
 // Inclusive upper bounds for the settings enums (native validates + rejects above).
 const SETTING_MAX = { layout: 3, midiRouting: 3, audioRouting: 2, zoom: 6 };
+
+// A restored blob as an exact-size ArrayBuffer for ConstructSpec (a zip entry may be a
+// view into a larger buffer; slice() copies to a fresh, tightly-sized backing store).
+function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  return u8.slice().buffer;
+}
 
 export class ProjectStore {
   readonly systems: SystemsStore;
   private projectSettings: ProjectSettings = { ...DEFAULT_SETTINGS };
   private path = "";
   private dirty = false;
-  private pendingLoad: { cfg: ProjectConfig; path: string } | null = null;
+  private pendingLoad: { cfg: ProjectConfig; path: string; blobs: Map<string, Uint8Array> } | null = null;
 
   constructor(private readonly backend: Backend, private readonly recent: RecentStore) {
     // Any user mutation of the systems list marks the project dirty.
@@ -96,38 +105,50 @@ export class ProjectStore {
     return true;
   }
 
-  /** Load a thin `.rplg`. Refuses a zip (deferred), refuses a newer schema, and holds
-   *  a project with missing files for relink before applying. */
+  /** Export a portable `.rplg` PKZIP: the thin project.json + each live system's
+   *  SRAM/savestate gathered from the pump, keyed `systems/{i}/{sram,state}`. TS frames
+   *  every entry; native only compresses. Records it in recents + as the current
+   *  project, and marks clean. Returns false on a compression / write failure. */
+  export(path: string): boolean {
+    const cfg = buildConfig(this.projectSettings, this.systems.systems());
+    const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
+    const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
+    // The store's systems() order matches buildConfig's, so index i keys both alike.
+    this.systems.systems().forEach((sys, i) => {
+      const state = this.backend.readState(sys.id);
+      if (state && state.length) entries.push({ name: stateKey(i), bytes: state });
+      const sram = this.backend.readSram(sys.id);
+      if (sram && sram.length) entries.push({ name: sramKey(i), bytes: sram });
+    });
+    const archive = this.backend.zip(entries);
+    if (!archive || !this.backend.writeFileAtomic(path, archive)) return false;
+    this.recent.add(path);
+    this.path = path;
+    this.dirty = false;
+    return true;
+  }
+
+  /** Load a `.rplg` — thin (raw JSON) or an export (PKZIP). Refuses a newer schema, and
+   *  holds a project with missing files for relink before applying. */
   load(path: string): LoadOutcome {
-    const head = this.backend.readFilePrefix(path, 2);
-    if (head && head.length >= 2 && head[0] === 0x50 && head[1] === 0x4b) return { kind: "error" }; // "PK" zip
-    const bytes = this.backend.readFile(path);
-    if (!bytes) return { kind: "error" };
-
-    const cfg = parseConfig(dec.decode(bytes));
-    if (checkVersion(parseProjectVersion(cfg.schemaVersion), K_PROJECT) === VersionCheck.Newer)
-      return { kind: "incompatible" };
-
-    toAbsolute(cfg, dirname(path));
-    const missing = scanMissingFiles(cfg, NO_BLOBS, (p) => this.backend.fileExists(p));
-    if (missing.length) {
-      this.pendingLoad = { cfg, path };
-      return { kind: "missing", missing };
-    }
-    return this.commit(cfg, path);
+    const head = this.backend.readFilePrefix(path, 4);
+    const isZip =
+      !!head && head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+    return isZip ? this.loadZip(path) : this.loadThin(path);
   }
 
   /** Point a missing item at `newPath`, auto-fix its folder-mates, and complete the
    *  load when nothing remains missing. */
   relink(item: MissingFile, newPath: string): LoadOutcome {
     if (!this.pendingLoad) return { kind: "error" };
-    const { cfg, path } = this.pendingLoad;
+    const { cfg, path, blobs } = this.pendingLoad;
+    const blobKeys = new Set(blobs.keys());
     relinkInConfig(cfg, item, newPath);
-    autoFindSiblings(cfg, dirname(newPath), NO_BLOBS, (p) => this.backend.fileExists(p));
-    const missing = scanMissingFiles(cfg, NO_BLOBS, (p) => this.backend.fileExists(p));
+    autoFindSiblings(cfg, dirname(newPath), blobKeys, (p) => this.backend.fileExists(p));
+    const missing = scanMissingFiles(cfg, blobKeys, (p) => this.backend.fileExists(p));
     if (missing.length) return { kind: "missing", missing };
     this.pendingLoad = null;
-    return this.commit(cfg, path);
+    return this.commit(cfg, path, blobs);
   }
 
   /** Abandon a load that was awaiting relink. */
@@ -137,10 +158,52 @@ export class ProjectStore {
 
   // --- internals ----------------------------------------------------------
 
-  // Rebuild the systems from a resolved config + adopt the settings; mark clean.
-  private commit(cfg: ProjectConfig, path: string): LoadOutcome {
+  // Thin `.rplg`: raw JSON, no embedded blobs — adopt each system from disk.
+  private loadThin(path: string): LoadOutcome {
+    const bytes = this.backend.readFile(path);
+    if (!bytes) return { kind: "error" };
+    return this.beginLoad(parseConfig(dec.decode(bytes)), path, new Map(), dirname(path));
+  }
+
+  // Export `.rplg`: PKZIP of project.json + per-system blobs that seed each emulator.
+  private loadZip(path: string): LoadOutcome {
+    const bytes = this.backend.readFile(path);
+    if (!bytes) return { kind: "error" };
+    const entries = this.backend.unzip(bytes);
+    if (!entries) return { kind: "error" };
+    const { config, blobs } = partitionEntries(entries);
+    if (!config) return { kind: "error" }; // no project.json → not a RetroPlug archive
+    return this.beginLoad(parseConfig(dec.decode(config)), path, blobs, dirname(path));
+  }
+
+  // Shared load tail: refuse-newer, absolutize, blob-aware missing scan, then pend for
+  // relink or commit. `blobs` is empty for a thin load, populated for an export.
+  private beginLoad(cfg: ProjectConfig, path: string, blobs: Map<string, Uint8Array>, baseDir: string): LoadOutcome {
+    if (checkVersion(parseProjectVersion(cfg.schemaVersion), K_PROJECT) === VersionCheck.Newer)
+      return { kind: "incompatible" };
+    toAbsolute(cfg, baseDir);
+    const blobKeys = new Set(blobs.keys());
+    const missing = scanMissingFiles(cfg, blobKeys, (p) => this.backend.fileExists(p));
+    if (missing.length) {
+      this.pendingLoad = { cfg, path, blobs };
+      return { kind: "missing", missing };
+    }
+    return this.commit(cfg, path, blobs);
+  }
+
+  // Rebuild the systems from a resolved config + adopt the settings; mark clean. Each
+  // system's SRAM/savestate blobs (export only) seed its emulator via adopt.
+  private commit(cfg: ProjectConfig, path: string, blobs: Map<string, Uint8Array>): LoadOutcome {
     this.systems.clear();
-    for (const s of cfg.systems) this.systems.adopt(s);
+    cfg.systems.forEach((s, i) => {
+      const sram = blobs.get(sramKey(i));
+      const state = blobs.get(stateKey(i));
+      const sysBlobs =
+        sram || state
+          ? { sramBytes: sram ? toArrayBuffer(sram) : undefined, stateBytes: state ? toArrayBuffer(state) : undefined }
+          : undefined;
+      this.systems.adopt(s, sysBlobs);
+    });
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     this.recent.add(path);
     this.path = path;

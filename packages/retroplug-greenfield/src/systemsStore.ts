@@ -240,15 +240,20 @@ export class SystemsStore {
 
   /** Reconstruct one system from a serialized config entry, preserving its EXACT
    *  savSuffix + savPath-override (no free-suffix reassignment). Appends; focuses the
-   *  first. Returns the new id, or null when the ROM won't classify. */
-  adopt(config: {
-    romPath?: string;
-    savPath?: string;
-    savSuffix?: number;
-    embeddedRom?: string;
-    settings?: Partial<CoreSettings>;
-    roles?: RoleInstance[];
-  }): number | null {
+   *  first. Returns the new id, or null when the ROM won't classify. `blobs` (present
+   *  only for a zip-import) seed the emulator's SRAM/savestate from the archive instead
+   *  of from disk; `savPath` stays the auto-save target. */
+  adopt(
+    config: {
+      romPath?: string;
+      savPath?: string;
+      savSuffix?: number;
+      embeddedRom?: string;
+      settings?: Partial<CoreSettings>;
+      roles?: RoleInstance[];
+    },
+    blobs?: { sramBytes?: ArrayBuffer; stateBytes?: ArrayBuffer },
+  ): number | null {
     const embeddedRom = config.embeddedRom ?? "";
     const romPath = config.romPath ?? "";
     const savSuffix = config.savSuffix ?? 0;
@@ -262,7 +267,14 @@ export class SystemsStore {
       kind = fmt;
     }
     const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
-    const id = this.backend.constructSystem({ romPath, embeddedRom, savPath, statePath: null });
+    const id = this.backend.constructSystem({
+      romPath,
+      embeddedRom,
+      savPath,
+      statePath: null,
+      sramBytes: blobs?.sramBytes,
+      stateBytes: blobs?.stateBytes,
+    });
     if (id === null) return null;
     // Stored settings/roles win; a config that omits them re-attaches defaults.
     const settings = coreSettingsSchema.parse(config.settings ?? {}) as CoreSettings;

@@ -104,6 +104,37 @@ export interface Backend {
    *  by kind (e.g. `"sameboy"`: model → restart, highpass → live). Returns false on
    *  failure. */
   applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
+
+  // --- Live emulator reads (the pump) -------------------------------------
+  // The DSP→TS direction: read a live system's state out. Native publishes these from
+  // the audio thread into race-free triple-buffers; TS pulls the latest snapshot by the
+  // same id handle the store owns. This is how TS gathers the blobs it puts in an export
+  // zip (the emulator state "exactly as it does today"); native only reads the bytes.
+
+  /** The full savestate snapshot for system `id` (includes SRAM), or `null` when the
+   *  handle is gone / nothing has been published yet. */
+  readState(id: number): Uint8Array | null;
+
+  /** The battery-backed SRAM region for system `id`, or `null`. */
+  readSram(id: number): Uint8Array | null;
+
+  // --- Byte codec ---------------------------------------------------------
+  // The ONLY native part of `.rplg` export framing: TS assembles every entry (the thin
+  // project.json + the per-system blobs) and hands them here to compress; native just
+  // deflates (miniz). The inverse inflates a picked archive back to entries.
+
+  /** Deflate `entries` into a PKZIP archive (`PK\x03\x04` magic), or `null` on failure. */
+  zip(entries: ZipEntry[]): Uint8Array | null;
+
+  /** Inflate a PKZIP archive back to its entries, or `null` when it isn't a valid zip. */
+  unzip(bytes: Uint8Array): ZipEntry[] | null;
+}
+
+/** One named blob in a zip archive (an `.rplg` entry: `project.json` or a
+ *  `systems/{i}/…` blob). Bytes cross as `Uint8Array`, never a JS string. */
+export interface ZipEntry {
+  name: string;
+  bytes: Uint8Array;
 }
 
 /** Presentation for an OS file dialog: its title + the glob patterns to show. */
@@ -128,4 +159,11 @@ export interface ConstructSpec {
   /** When set, swap this existing SystemId in place (load / replace); otherwise the
    *  new system is appended. */
   replaceId?: number;
+  /** Zip-import only: the initial SRAM bytes for a system restored from an export whose
+   *  save lives in the archive (no on-disk path). When set, native seeds from these
+   *  instead of reading `savPath`; `savPath` remains the auto-save target. */
+  sramBytes?: ArrayBuffer;
+  /** Zip-import only: the savestate bytes to boot from (from the archive). When set,
+   *  native boots from these instead of reading `statePath`. */
+  stateBytes?: ArrayBuffer;
 }

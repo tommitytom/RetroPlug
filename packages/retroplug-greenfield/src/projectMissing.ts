@@ -6,6 +6,7 @@
 
 import type { ProjectConfig } from "./projectConfig";
 import { basename } from "./pathUtil";
+import { romKey, sramKey, stateKey } from "./projectBinaries";
 
 export interface MissingFile {
   systemIndex: number;
@@ -14,10 +15,6 @@ export interface MissingFile {
 }
 
 type FileExists = (path: string) => boolean;
-
-const romKey = (i: number) => `systems/${i}/rom`;
-const sramKey = (i: number) => `systems/${i}/sram`;
-const stateKey = (i: number) => `systems/${i}/state`;
 
 /** Every referenced-but-absent asset, in config order. A ROM is present if it's
  *  embedded (marker or `systems/{i}/rom` blob) or its path exists; a paired save is
@@ -34,7 +31,7 @@ export function scanMissingFiles(
     if (!romOk) out.push({ systemIndex: i, itemKind: "rom", path: sys.romPath ?? "" });
 
     const savOk = !sys.savPath || blobKeys.has(sramKey(i)) || blobKeys.has(stateKey(i)) || exists(sys.savPath);
-    if (!savOk) out.push({ systemIndex: i, itemKind: "sram", path: sys.savPath });
+    if (!savOk) out.push({ systemIndex: i, itemKind: "sram", path: sys.savPath ?? "" });
   });
   return out;
 }

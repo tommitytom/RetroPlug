@@ -93,11 +93,12 @@ test("load: a project stamped newer than this build is incompatible", () => {
   expect(project.load("/proj/x.rplg")).toEqual({ kind: "incompatible" });
 });
 
-test("load: a zip (PK) project is refused (export load deferred)", () => {
+test("load: a PK archive routes through the import path; no project.json is corrupt", () => {
   const { be, project } = newProject();
+  // A bare PK magic with no entries → valid zip, but no project.json → corrupt archive.
   be.seed("/proj/z.rplg", new Uint8Array([0x50, 0x4b, 0x03, 0x04])); // "PK\x03\x04"
   expect(project.load("/proj/z.rplg")).toEqual({ kind: "error" });
-  expect(be.log.includes("readFile")).toBeFalsy(); // never slurped the zip whole
+  expect(be.log.includes("unzip")).toBeTruthy(); // took the export import path, not thin
 });
 
 test("dirty: flips on a systems mutation or a settings change; clears on save/new", () => {
