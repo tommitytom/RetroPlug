@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "RecentFilesSerialization.hpp"
+#include "SchemaVersions.hpp"
 #include "UserConfig.hpp"   // for resolveDefaultUserConfigDir()
 
 namespace fs = std::filesystem;
@@ -73,6 +74,14 @@ void RecentFiles::start() {
         std::fprintf(stderr,
             "[recent-files] %s parse failed — starting from empty list\n",
             recentFile_.string().c_str());
+        return;
+    }
+    if (rp::schema::checkVersion(parsed->schemaVersion, rp::schema::kRecent)
+            == rp::schema::Check::Newer) {
+        std::fprintf(stderr,
+            "[recent-files] %s is schemaVersion %d (this build understands %d) "
+            "— starting from empty list\n",
+            recentFile_.string().c_str(), parsed->schemaVersion, rp::schema::kRecent);
         return;
     }
 
@@ -183,6 +192,7 @@ bool RecentFiles::writeAndNotify() {
     {
         std::lock_guard<std::mutex> lock(mu_);
         RecentFilesJson out;
+        out.schemaVersion = rp::schema::kRecent;   // stamp current
         out.entries.reserve(entries_.size());
         for (const auto& e : entries_) {
             out.entries.push_back(RecentFileJson{e.path, e.name});

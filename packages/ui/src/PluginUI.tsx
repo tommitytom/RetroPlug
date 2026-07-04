@@ -12,6 +12,7 @@ import { StartScreen } from "./menu/StartScreen";
 import { AboutPanel } from "./menu/AboutPanel";
 import { RelinkMenu } from "./menu/RelinkMenu";
 import { UnsavedChangesModal, type UnsavedIntent } from "./menu/UnsavedChangesModal";
+import { IncompatibleProjectModal } from "./menu/IncompatibleProjectModal";
 import { buildInstanceMenu, type RecentEntry } from "./menu/menuDefs";
 import type { RpMissingFile } from "plugin-service";
 import { useBindingsEditor } from "./useBindingsEditor";
@@ -76,6 +77,9 @@ function PluginUI() {
     // relink menu is shown until every entry is located (load commits) or the
     // user cancels. Populated by the "missing-files" event from C++.
     const [missingFiles, setMissingFiles] = useState<RpMissingFile[]>([]);
+    // True while the "can't open — saved by a newer version" modal is shown.
+    // Set by the "project-incompatible" event from C++ (schema version too new).
+    const [incompatibleProject, setIncompatibleProject] = useState<boolean>(false);
     // Unsaved-changes prompt. Non-null while the modal is up; the intent says
     // what to do once the user resolves it (quit the standalone on a vetoed
     // window close, or discard the current project for a new / loaded one).
@@ -170,13 +174,16 @@ function PluginUI() {
             }
         };
         const onResolved = () => setMissingFiles([]);
+        const onIncompatible = () => setIncompatibleProject(true);
         on("missing-files", onMissing);
         on("project-loaded", onResolved);
         on("project-load-cancelled", onResolved);
+        on("project-incompatible", onIncompatible);
         return () => {
             off("missing-files", onMissing);
             off("project-loaded", onResolved);
             off("project-load-cancelled", onResolved);
+            off("project-incompatible", onIncompatible);
         };
     }, []);
 
@@ -525,7 +532,13 @@ function PluginUI() {
                 overflow: "hidden",
             }}
         >
-            {unsavedIntent ? (
+            {incompatibleProject ? (
+                <IncompatibleProjectModal
+                    zoom={zoom}
+                    onClose={() => setIncompatibleProject(false)}
+                    sinkGroup={sinkGroupRef.current}
+                />
+            ) : unsavedIntent ? (
                 <UnsavedChangesModal
                     zoom={zoom}
                     intent={unsavedIntent}

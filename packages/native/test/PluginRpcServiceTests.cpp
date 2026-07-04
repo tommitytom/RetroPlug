@@ -1176,6 +1176,53 @@ TEST_CASE("recent: loading a ROM with an existing sibling opens it, no overwrite
     std::filesystem::remove(projPath, ec);
 }
 
+// Schema version: a project stamped newer than this build is refused with the
+// "project-incompatible" event and never commits. projectConfigToJson (unlike
+// ...ToJsonFile) does not re-stamp, so the forced future version survives to disk.
+TEST_CASE("loadProjectFromPath refuses a project from a newer schema version",
+          "[PluginRpcService][schema-version]") {
+    RecentFixture fx;
+
+    SameBoyConfig sb{}; sb.romPath = uniqueTmpPath("vernew", ".gb");
+    ProjectConfig cfg; cfg.systems.push_back(sb);
+    cfg.schemaVersion = std::to_string(rp::schema::kProject + 1);
+    const std::string projPath = uniqueTmpPath("vernew", ".rplg");
+    const std::string json = projectConfigToJson(cfg);
+    writeBytes(projPath, std::vector<std::uint8_t>(json.begin(), json.end()));
+
+    CHECK_FALSE(fx.service.loadProjectFromPath(projPath));   // refused at the gate
+    CHECK(fx.sawEvent("project-incompatible"));
+    CHECK_FALSE(fx.sawEvent("project-loaded"));
+
+    std::error_code ec;
+    std::filesystem::remove(projPath, ec);
+}
+
+// The gate only refuses *newer* — an older/equal version loads normally (older is
+// the future-migration hook, not a rejection).
+TEST_CASE("loadProjectFromPath accepts an older schema version",
+          "[PluginRpcService][schema-version]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    RecentFixture fx;
+
+    const std::string romPath = uniqueTmpPath("verold", ".gb");
+    writeBytes(romPath, fx.rom);
+    SameBoyConfig sb{}; sb.romPath = romPath;
+    ProjectConfig cfg; cfg.systems.push_back(sb);
+    cfg.schemaVersion = "0";                                 // older than kProject
+    const std::string projPath = uniqueTmpPath("verold", ".rplg");
+    const std::string json = projectConfigToJson(cfg);
+    writeBytes(projPath, std::vector<std::uint8_t>(json.begin(), json.end()));
+
+    REQUIRE(fx.service.loadProjectFromPath(projPath));       // loads (ROM present)
+    CHECK_FALSE(fx.sawEvent("project-incompatible"));
+    CHECK(fx.sawEvent("project-loaded"));
+
+    std::error_code ec;
+    std::filesystem::remove(romPath, ec);
+    std::filesystem::remove(projPath, ec);
+}
+
 TEST_CASE("recent: rename sets an alias and remove drops the entry",
           "[PluginRpcService][recent]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);

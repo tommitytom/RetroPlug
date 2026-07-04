@@ -11,6 +11,7 @@
 #include "rfl/json/read.hpp"
 #include "rfl/json/write.hpp"
 
+#include "config/SchemaVersions.hpp"
 #include "project/ProjectBinaries.hpp"
 #include "project/ProjectConfig.hpp"
 #include "util/MinizZip.hpp"
@@ -48,6 +49,9 @@ inline std::optional<ProjectConfig> projectConfigFromJson(std::string_view json)
 // for a self-contained bundle.
 inline std::string projectConfigToJsonFile(const ProjectConfig& cfg) {
     ProjectConfig stripped = cfg;
+    // Stamp the current schema version (not whatever was loaded) so every save
+    // records the format the running build actually writes. See SchemaVersions.hpp.
+    stripped.schemaVersion = std::to_string(rp::schema::kProject);
     project_binaries::clear(stripped);
     return projectConfigToJson(stripped);
 }
@@ -58,6 +62,7 @@ inline std::vector<std::uint8_t> projectConfigToZip(const ProjectConfig& cfg) {
 
     // Walk a mutable copy so we can null out blobs as they're written to zip.
     ProjectConfig stripped = cfg;
+    stripped.schemaVersion = std::to_string(rp::schema::kProject); // stamp current
     if (!project_binaries::strip(zip, stripped)) return {};
 
     const std::string json = projectConfigToJson(stripped);

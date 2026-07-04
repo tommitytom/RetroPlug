@@ -72,6 +72,17 @@ the parts that don't naturally fit either.
     a reader back to strict `rfl::json::read<T>` (that's what broke old `.rplg`
     loads when `savSuffix`/`savPath` were added). This is forward-tolerance, not
     a migration — no version field, no transform.
+  - **Version stamps are live for detection.** Each serialized root is stamped on
+    save and validated on load against a constant in
+    [`config/SchemaVersions.hpp`](packages/native/src/config/SchemaVersions.hpp)
+    (`kProject` / `kUserConfig` / `kBindings` / `kRecent`). A file stamped
+    **newer** than the running build is refused (project load → the
+    "project-incompatible" modal; config/bindings/recent → keep-previous + log).
+    Bump a `k*` constant **only** on a *breaking* (non-additive) change — additive
+    changes are covered by `DefaultIfMissing` and must NOT bump. When you do bump,
+    that's when the `Check::Older` branch at the matching load seam grows a
+    migration (the only place a transform ever lives). Still no versioned
+    read-old/write-new shims until then — this is detection, not migration.
 
 ## Known framework gotchas
 

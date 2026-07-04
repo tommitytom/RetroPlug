@@ -1,5 +1,7 @@
 #include "UserConfig.hpp"
 
+#include "config/SchemaVersions.hpp"
+
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
@@ -106,7 +108,7 @@ UserConfigDto UserConfig::snapshot() const {
 bool UserConfig::setActiveKeyboardBindings(std::string name) {
     if (!started_.load()) return false;
     UserConfigJson cfg;
-    cfg.schemaVersion = 1;
+    cfg.schemaVersion = rp::schema::kUserConfig;
     {
         std::lock_guard<std::mutex> lock(mu_);
         cfg.activeKeyboardBindings = std::move(name);
@@ -127,7 +129,7 @@ bool UserConfig::setActiveKeyboardBindings(std::string name) {
 bool UserConfig::setActiveGamepadBindings(std::string name) {
     if (!started_.load()) return false;
     UserConfigJson cfg;
-    cfg.schemaVersion = 1;
+    cfg.schemaVersion = rp::schema::kUserConfig;
     {
         std::lock_guard<std::mutex> lock(mu_);
         cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
@@ -148,7 +150,7 @@ bool UserConfig::setActiveGamepadBindings(std::string name) {
 bool UserConfig::setSramMirror(rp::SramMirror mode) {
     if (!started_.load()) return false;
     UserConfigJson cfg;
-    cfg.schemaVersion = 1;
+    cfg.schemaVersion = rp::schema::kUserConfig;
     {
         std::lock_guard<std::mutex> lock(mu_);
         if (current_.sramMirror == mode) return true; // no-op write
@@ -176,7 +178,7 @@ bool UserConfig::setDefaultZoom(std::uint8_t zoom) {
     if (!started_.load()) return false;
     if (zoom < 1 || zoom > 6) return false;
     UserConfigJson cfg;
-    cfg.schemaVersion = 1;
+    cfg.schemaVersion = rp::schema::kUserConfig;
     {
         std::lock_guard<std::mutex> lock(mu_);
         if (current_.defaultZoom == zoom) return true; // no-op write
@@ -219,7 +221,7 @@ bool UserConfig::isValidProfileName(std::string_view name) {
 bool UserConfig::saveProfile(std::string name, BindingMapJson bindings) {
     if (!started_.load()) return false;
     if (!isValidProfileName(name)) return false;
-    bindings.schemaVersion = 1;
+    bindings.schemaVersion = rp::schema::kBindings;
     bindings.name          = name;
     const fs::path target  = bindingsDir_ / (name + ".json");
     if (!atomicWrite(target, bindingMapToJson(bindings))) {
@@ -261,7 +263,7 @@ bool UserConfig::renameProfile(std::string oldName, std::string newName) {
     // Repoint active profile references in config.json if needed.
     bool rewrote = false;
     UserConfigJson cfg;
-    cfg.schemaVersion = 1;
+    cfg.schemaVersion = rp::schema::kUserConfig;
     {
         std::lock_guard<std::mutex> lock(mu_);
         cfg.activeKeyboardBindings = current_.activeKeyboardBindings;
@@ -315,9 +317,18 @@ void UserConfig::reloadFromDisk() {
         next = current_;
     }
 
-    // config.json: keep previous active profiles on parse failure.
+    // config.json: keep previous active profiles on parse failure, and on a
+    // version stamped newer than this build understands (don't apply a future
+    // format we might misread — mirrors the parse-fail degradation).
     if (auto cfgText = slurp(configFile_); !cfgText.empty()) {
-        if (auto cfg = userConfigFromJson(cfgText)) {
+        if (auto cfg = userConfigFromJson(cfgText);
+            cfg && rp::schema::checkVersion(cfg->schemaVersion, rp::schema::kUserConfig)
+                       == rp::schema::Check::Newer) {
+            std::fprintf(stderr,
+                "[user-config] %s is schemaVersion %d (this build understands %d) "
+                "— keeping previous settings\n",
+                configFile_.string().c_str(), cfg->schemaVersion, rp::schema::kUserConfig);
+        } else if (cfg) {
             next.activeKeyboardBindings = cfg->activeKeyboardBindings;
             next.activeGamepadBindings  = cfg->activeGamepadBindings;
             // Clamp to the supported zoom range; out-of-range values
@@ -347,6 +358,14 @@ void UserConfig::reloadFromDisk() {
             std::fprintf(stderr,
                 "[user-config] %s parse failed — keeping previous bindings\n",
                 p.string().c_str());
+            return std::nullopt;
+        }
+        if (rp::schema::checkVersion(parsed->schemaVersion, rp::schema::kBindings)
+                == rp::schema::Check::Newer) {
+            std::fprintf(stderr,
+                "[user-config] %s is schemaVersion %d (this build understands %d) "
+                "— keeping previous bindings\n",
+                p.string().c_str(), parsed->schemaVersion, rp::schema::kBindings);
             return std::nullopt;
         }
         return parsed;

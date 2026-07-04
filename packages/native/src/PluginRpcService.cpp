@@ -17,6 +17,7 @@
 #include "EmbeddedRoms.hpp"
 #include "Version.hpp"
 #include "config/RecentFiles.hpp"
+#include "config/SchemaVersions.hpp"
 #include "config/UserConfig.hpp"
 #include "lsdj/KitCompiler.hpp"
 #include "lsdj/ProjectKitRecompile.hpp"
@@ -630,6 +631,17 @@ bool PluginRpcService::loadProjectFromPath(const std::string& path) {
     if (!parsed) {
         std::fprintf(stderr, "loadProjectFromPath: failed to parse '%s'\n", path.c_str());
         emit("project-error", path);
+        return false;
+    }
+    // Refuse a project stamped by a newer build than we understand — its format
+    // may be incompatible and would otherwise load with silently-dropped fields.
+    // Older / equal versions load normally (older is the future-migration hook).
+    if (rp::schema::checkVersion(rp::schema::parseProjectVersion(parsed->schemaVersion),
+                                 rp::schema::kProject) == rp::schema::Check::Newer) {
+        std::fprintf(stderr,
+            "loadProjectFromPath: '%s' schemaVersion '%s' is newer than this build (%d)\n",
+            path.c_str(), parsed->schemaVersion.c_str(), rp::schema::kProject);
+        emit("project-incompatible", path);
         return false;
     }
     // Resolve any project-relative paths against the .rplg's dir so everything

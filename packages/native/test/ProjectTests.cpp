@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "config/SchemaVersions.hpp"
 #include "project/Project.hpp"
 #include "project/ProjectConfig.hpp"
 #include "project/ProjectMissingFiles.hpp"
@@ -165,7 +166,8 @@ TEST_CASE("ProjectConfig round-trips an empty project through zip", "[ProjectSer
 
     auto parsed = projectConfigFromZip(blob);
     REQUIRE(parsed.has_value());
-    REQUIRE(parsed->schemaVersion == "1.0");
+    // Saves stamp the current schema version (see SchemaVersions.hpp).
+    REQUIRE(parsed->schemaVersion == std::to_string(rp::schema::kProject));
     REQUIRE(parsed->systems.empty());
 }
 
@@ -274,6 +276,39 @@ TEST_CASE("projectConfigFromJson loads an old project missing newer fields",
         R"({"systems":[{"kind":"sameboy","romPath":"/x/g.gb"}]})");
     REQUIRE(minimal.has_value());
     REQUIRE(minimal->systems.size() == 1);
+}
+
+// Schema-version primitives: the compare + the ProjectConfig string-version parse.
+TEST_CASE("schema::checkVersion and parseProjectVersion", "[schema-version]") {
+    using namespace rp::schema;
+    CHECK(checkVersion(1, 1) == Check::Ok);
+    CHECK(checkVersion(0, 1) == Check::Older);   // older never rejects (migration hook)
+    CHECK(checkVersion(2, 1) == Check::Newer);   // newer is refused
+
+    CHECK(parseProjectVersion("1.0") == 1);      // legacy string form
+    CHECK(parseProjectVersion("2")   == 2);
+    CHECK(parseProjectVersion("  3.5 ") == 3);   // leading int, whitespace tolerated
+    CHECK(parseProjectVersion("")        == kProject);   // floor, not spuriously "older"
+    CHECK(parseProjectVersion("garbage") == kProject);
+}
+
+// Every save re-stamps the current schema version, even if the in-memory config
+// carried a stale/loaded value — so on-disk files always record what this build
+// actually wrote.
+TEST_CASE("saving a project stamps the current schema version", "[schema-version]") {
+    SameBoyConfig sb{}; sb.romPath = "/x/g.gb";
+    ProjectConfig cfg; cfg.systems.push_back(sb);
+    cfg.schemaVersion = "0.9-stale";                 // as if loaded from an older file
+
+    // Thin-JSON form.
+    auto thin = projectConfigFromJson(projectConfigToJsonFile(cfg));
+    REQUIRE(thin.has_value());
+    CHECK(thin->schemaVersion == std::to_string(rp::schema::kProject));
+
+    // Zip form (Export Zip / DAW chunk).
+    auto zipped = projectConfigFromZip(projectConfigToZip(cfg));
+    REQUIRE(zipped.has_value());
+    CHECK(zipped->schemaVersion == std::to_string(rp::schema::kProject));
 }
 
 TEST_CASE("projectConfigFromZip reports failure for malformed input", "[ProjectSerialization]") {

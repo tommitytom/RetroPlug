@@ -17,6 +17,7 @@
 #include <fstream>
 #include <optional>
 
+#include "config/SchemaVersions.hpp"
 #include "config/SramMirror.hpp"
 #include "lsdj/SampleCache.hpp"
 #include "project/ProjectMissingFiles.hpp"
@@ -115,8 +116,10 @@ public:
                     std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
                     if (in.read(reinterpret_cast<char*>(bytes.data()), size)) {
                         if (auto parsed = projectConfigFromZip(bytes)) {
-                            applyProjectFromConfig(*parsed);
-                            d_stderr("[PluginDSP] autoloaded project from %s", autoloadPath);
+                            if (!projectChunkTooNew(*parsed, "autoload")) {
+                                applyProjectFromConfig(*parsed);
+                                d_stderr("[PluginDSP] autoloaded project from %s", autoloadPath);
+                            }
                         } else {
                             d_stderr("[PluginDSP] RETROPLUG_AUTOLOAD_PROJECT: failed to parse %s", autoloadPath);
                         }
@@ -247,6 +250,8 @@ protected:
             d_stderr("[PluginDSP] setState: failed to parse project zip");
             return;
         }
+        // Refuse a chunk stamped by a newer build than we understand.
+        if (projectChunkTooNew(*parsed, "setState")) return;
         // The chunk is authoritative for SRAM (embedded bytes), but a project
         // moved between machines carries an absolute paired-save write-target
         // that may point nowhere. Drop dangling targets so the mirror flush
@@ -254,6 +259,21 @@ protected:
         if (const int cleared = rp::sanitizeSavTargets(*parsed))
             d_stderr("[PluginDSP] setState: cleared %d stale paired-save target(s)", cleared);
         applyProjectFromConfig(*parsed);
+    }
+
+    // True (and logs) when a parsed project chunk was stamped by a build newer
+    // than this one understands — refuse rather than apply a possibly-incompatible
+    // format. DSP-side has no UI channel, so this is a log + skip (leave prior
+    // state). See config/SchemaVersions.hpp.
+    static bool projectChunkTooNew(const ProjectConfig& cfg, const char* source)
+    {
+        if (rp::schema::checkVersion(rp::schema::parseProjectVersion(cfg.schemaVersion),
+                                     rp::schema::kProject) != rp::schema::Check::Newer)
+            return false;
+        d_stderr("[PluginDSP] %s: project schemaVersion '%s' is newer than this "
+                 "build (%d) — not loading", source, cfg.schemaVersion.c_str(),
+                 rp::schema::kProject);
+        return true;
     }
 
     // Replace the running project with a fully-parsed config. Shared by DPF
