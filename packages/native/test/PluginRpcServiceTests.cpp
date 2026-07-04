@@ -415,12 +415,12 @@ struct PumpFixture {
 
 } // namespace
 
-// loadRomFromPath() reads the sibling `<rom>.sav` inline in buildSystemFromPath
+// constructSystem() reads the sibling `<rom>.sav` inline via constructInstanceCore
 // (distinct from the project-load path's slurpSiblingSav). This is the exact
 // flow the file-open dialog drives. Regression guard for the Windows port where
 // the SameBoy GB_gameboy_t C-vs-C++ layout divergence (see SameBoySystem.cpp's
 // GB_alloc note) made battery-RAM handling fragile.
-TEST_CASE("loadRomFromPath applies the sibling .sav",
+TEST_CASE("constructSystem applies the sibling .sav",
           "[PluginRpcService][sram]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
     const auto rom = loadRom();
@@ -452,7 +452,7 @@ TEST_CASE("loadRomFromPath applies the sibling .sav",
     }
 
     PumpFixture f;
-    REQUIRE(f.service.loadRomFromPath(romPath));   // == the file-dialog flow
+    REQUIRE(f.service.constructSystem(romPath, "", "load"));   // == the file-dialog flow
 
     Command cmd;
     REQUIRE(f.commands.tryPop(cmd));
@@ -1168,7 +1168,7 @@ TEST_CASE("recent: loading a ROM writes a sibling project and tracks it",
     std::error_code ec;
     std::filesystem::remove(projPath, ec);
 
-    REQUIRE(fx.service.loadRomFromPath(romPath));
+    REQUIRE(fx.service.constructSystem(romPath, "", "load"));
 
     // A thin project was written beside the ROM.
     REQUIRE(fileExists(projPath));
@@ -1197,7 +1197,7 @@ TEST_CASE("recent: getRecentFiles flags a deleted project as missing",
     writeBytes(romPath, fx.rom);
     const std::string projPath = siblingRplg(romPath);
 
-    REQUIRE(fx.service.loadRomFromPath(romPath));
+    REQUIRE(fx.service.constructSystem(romPath, "", "load"));
     CHECK_FALSE(fx.service.getRecentFiles().at(0).missing);
 
     std::error_code ec;
@@ -1207,34 +1207,11 @@ TEST_CASE("recent: getRecentFiles flags a deleted project as missing",
     std::filesystem::remove(romPath, ec);
 }
 
-TEST_CASE("recent: loading a ROM with an existing sibling opens it, no overwrite",
-          "[PluginRpcService][recent]") {
-    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
-    RecentFixture fx;
-
-    const std::string romPath = uniqueTmpPath("existing", ".gb");
-    writeBytes(romPath, fx.rom);
-    const std::string projPath = siblingRplg(romPath);
-    writeThinProject(projPath, romPath);
-    const auto before = readFile(projPath);
-
-    REQUIRE(fx.service.loadRomFromPath(romPath));
-
-    // A sibling .rplg exists → loadRomFromPath delegates to the UI's TS project
-    // loader (emits "load-path-selected" with the sibling path) rather than doing
-    // a fresh rom-load, and leaves the file untouched. The load itself
-    // (project-loaded + recent bookkeeping) runs in TS — see the UI load tests.
-    const auto it = std::find_if(fx.emitted.begin(), fx.emitted.end(),
-        [](const auto& e) { return e.first == "load-path-selected"; });
-    REQUIRE(it != fx.emitted.end());
-    CHECK(it->second == projPath);
-    CHECK_FALSE(fx.sawEvent("rom-loaded"));
-    CHECK(readFile(projPath) == before);
-
-    std::error_code ec;
-    std::filesystem::remove(romPath, ec);
-    std::filesystem::remove(projPath, ec);
-}
+// The sibling-`.rplg` deferral (Load ROM beside an existing <rom>.rplg opens the
+// project instead of building a bare system) now runs in the UI (TS) —
+// onRomPathSelected checks for the sibling and routes into startLoad. Native
+// constructSystem always builds; it never sees the deferral. Coverage moved to
+// the rom_sibling_rplg UI test (test/ts/ui/).
 
 // Schema version: a project stamped newer than this build is refused with the
 // "project-incompatible" event and never commits. projectConfigToJson (unlike
@@ -1252,7 +1229,7 @@ TEST_CASE("recent: rename sets an alias and remove drops the entry",
     const std::string romPath = uniqueTmpPath("rename", ".gb");
     writeBytes(romPath, fx.rom);
     const std::string projPath = siblingRplg(romPath);
-    REQUIRE(fx.service.loadRomFromPath(romPath));
+    REQUIRE(fx.service.constructSystem(romPath, "", "load"));
 
     REQUIRE(fx.service.renameRecentFile(projPath, "My Song"));
     CHECK(fx.service.getRecentFiles().at(0).name == "My Song");
@@ -1273,7 +1250,7 @@ TEST_CASE("recent: openRecentRelinkBrowser + selection relinks the entry",
     const std::string romPath = uniqueTmpPath("relink", ".gb");
     writeBytes(romPath, fx.rom);
     const std::string projPath = siblingRplg(romPath);
-    REQUIRE(fx.service.loadRomFromPath(romPath));
+    REQUIRE(fx.service.constructSystem(romPath, "", "load"));
 
     // Point the entry at a new project file (the file-browser stand-in).
     const std::string newProj = uniqueTmpPath("relinked", ".rplg");
@@ -1297,12 +1274,12 @@ TEST_CASE("recent: openRecentRelinkBrowser + selection relinks the entry",
 // ---------------------------------------------------------------------------
 // Embedded mGB: loaded from the binary (no file), so it carries no romPath
 // (→ no .sav / ROM-watcher), no battery SRAM, and an "mgb" marker so a saved
-// project re-supplies the bytes on reload. loadMgb does not touch recent files.
+// project re-supplies the bytes on reload. constructSystem (mGB, empty romPath) does not touch recent files.
 // ---------------------------------------------------------------------------
-TEST_CASE("loadMgb builds a pathless, marked embedded mGB system",
+TEST_CASE("constructSystem builds a pathless, marked embedded mGB system",
           "[PluginRpcService][mgb]") {
     PumpFixture f;
-    REQUIRE(f.service.loadMgb());
+    REQUIRE(f.service.constructSystem("", "mgb", "load"));
 
     Command cmd;
     REQUIRE(f.commands.tryPop(cmd));
@@ -1379,7 +1356,7 @@ TEST_CASE("newProject forgets a loaded project's remembered path",
     }
 
     PumpFixture f;
-    REQUIRE(f.service.loadRomFromPath(romPath));   // sets currentProjectPath_ (sibling .rplg)
+    REQUIRE(f.service.constructSystem(romPath, "", "load"));   // sets currentProjectPath_ (sibling .rplg)
     CHECK_FALSE(f.service.getCurrentProjectPath().empty());
     { Command c; REQUIRE(f.commands.tryPop(c)); delete c.payload.loadRom.newSystem; }
 
@@ -1632,7 +1609,7 @@ TEST_CASE("pair: an exact <name>-N ROM beats the base ROM for a <name>-N.sav",
     std::filesystem::remove(siblingRplg(dupRom), ec);
 }
 
-TEST_CASE("pair: picking a ROM still loads normally",
+TEST_CASE("pair: picking a plain ROM hands the path to the UI (rom-path-selected)",
           "[PluginRpcService][pair]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
     RecentFixture fx;
@@ -1645,16 +1622,18 @@ TEST_CASE("pair: picking a ROM still loads normally",
     REQUIRE(fx.service.openRomBrowser({}));
     fx.service.onFileBrowserSelected(romPath.c_str());
 
+    // A real ROM (not a .sav) is content-detected, then handed to the UI's TS
+    // ROM orchestration via "rom-path-selected". The build + sibling-project
+    // write + recent bookkeeping now run in TS (constructSystem); nothing is
+    // queued or written natively. The load-vs-add decision + the actual build
+    // are covered by the project_add_instance / rom_sibling_rplg UI tests.
+    const auto it = std::find_if(fx.emitted.begin(), fx.emitted.end(),
+        [](const auto& e) { return e.first == "rom-path-selected"; });
+    REQUIRE(it != fx.emitted.end());
+    CHECK(it->second == romPath);
     Command cmd;
-    REQUIRE(fx.commands.tryPop(cmd));
-    REQUIRE(cmd.kind == Command::Kind::LoadRom);
-    auto* sb = dynamic_cast<SameBoySystem*>(cmd.payload.loadRom.newSystem);
-    REQUIRE(sb != nullptr);
-    CHECK(sb->romPath() == romPath);
-    CHECK(sb->savPath().empty());                        // plain load -> no override
-    CHECK(fx.sawEvent("rom-loaded"));
-    CHECK(fileExists(siblingRplg(romPath)));             // normal sibling-project write
-    delete cmd.payload.loadRom.newSystem;
+    CHECK_FALSE(fx.commands.tryPop(cmd));                 // no native build
+    CHECK_FALSE(fileExists(siblingRplg(romPath)));        // no native sibling write
 
     std::filesystem::remove(romPath, ec);
     std::filesystem::remove(siblingRplg(romPath), ec);
@@ -1797,7 +1776,7 @@ TEST_CASE("paths: the sibling .rplg records the ROM by relative basename",
     std::error_code ec;
     std::filesystem::remove(siblingRplg(romPath), ec);
 
-    REQUIRE(fx.service.loadRomFromPath(romPath));
+    REQUIRE(fx.service.constructSystem(romPath, "", "load"));
     REQUIRE(fileExists(siblingRplg(romPath)));
 
     const auto bytes = readFile(siblingRplg(romPath));

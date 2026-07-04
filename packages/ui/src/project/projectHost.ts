@@ -39,6 +39,12 @@ interface ProjectPrimitives {
     notifyProjectSaved(path: string, exported: boolean): Promise<boolean>;
     fileExists(path: string): Promise<boolean>;
     commitProject(config: string, blobs: { name: string; bytes: number[] }[], path: string): Promise<boolean>;
+    // ROM add/load: the UI (romBuild.ts) decides load-vs-add + the sibling-.rplg
+    // deferral, then drives this. `romPath` empty + `embeddedRom` set (e.g.
+    // "mgb") builds the binary-baked ROM; otherwise the file is slurped +
+    // auto-detected natively. No bytes cross — just the path.
+    constructSystem(romPath: string, embeddedRom: string, mode: string): Promise<boolean>;
+    openRomBrowser(opts: { mode: string }): Promise<boolean>;
 }
 
 // Resolve the plugin bridge's synchronous send at call time (the bridge is
@@ -81,6 +87,18 @@ export function fileExists(path: string): boolean {
 }
 export function commitProject(config: string, blobs: Blob[], path: string): void {
     rpc.commitProject(config, blobs.map((b) => ({ name: b.name, bytes: toNums(b.bytes) })), path);
+}
+
+// ROM-build primitives (used by romBuild.ts). constructSystem builds + queues a
+// system (LoadRom for "load", AddSystem for "add") on the DSP thread and does
+// the native sibling-.rplg + recent bookkeeping for a "load"; openRomBrowser
+// opens the native ROM file dialog (its selection returns via the
+// "rom-path-selected" event). mode is "load" | "add".
+export function constructSystem(romPath: string, embeddedRom: string, mode: string): boolean {
+    return rpc.constructSystem(romPath, embeddedRom, mode);
+}
+export function openRomBrowser(mode: string): void {
+    rpc.openRomBrowser({ mode });
 }
 
 // Post-write bookkeeping (recent-files + currentProjectPath + the

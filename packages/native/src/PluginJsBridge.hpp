@@ -123,7 +123,8 @@ public:
     // exercise the framebuffer + system-construction path without driving
     // the native chooser under Xvfb.
     bool loadRomFromPath(const std::string& path) {
-        return service_.loadRomFromPath(path);
+        service_.requestLoadRom(path);   // hand off to the UI's TS ROM orchestration
+        return true;
     }
 
     // Drains the rpcpp server's outgoing async/notification queue and emits

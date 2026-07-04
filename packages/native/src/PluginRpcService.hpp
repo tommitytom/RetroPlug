@@ -15,6 +15,7 @@
 #include "config/UserConfigSerialization.hpp"
 #include "lsdj/Effects.hpp"
 #include "system/MemoryType.hpp"
+#include "system/RomFormat.hpp"      // RomFormat (constructInstanceCore)
 #include "system/SystemConfig.hpp"   // SystemConfig (writeSiblingProject)
 #include "system/SystemTypes.hpp"
 
@@ -232,6 +233,12 @@ public:
     // the test harness use (the browser + sibling-.rplg paths emit inline).
     void requestLoadProject(const std::string& path) { emit("load-path-selected", path); }
 
+    // ROM-load counterpart of requestLoadProject: the ROM add/load orchestration
+    // lives in the UI (TS) now; this hands a path to it (used by the standalone
+    // RETROPLUG_AUTOLOAD_ROM autoload — the browser path emits inline from
+    // onFileBrowserSelected). TS defaults a path with no pending latch to "load".
+    void requestLoadRom(const std::string& path) { emit("rom-path-selected", path); }
+
     // RPC surface (registered via TypedRpcServer::addMethod<&...>()) --------
 
     std::optional<FrameResponse> getFrame(std::uint32_t systemId);
@@ -289,14 +296,15 @@ public:
     bool newProject();
     // Standalone-only: actually quit (close the window) after the user confirms.
     bool quitStandalone();
-    bool loadRomFromPath(std::string path);
-    bool addRomFromPath(std::string path);
-    bool replaceRomFromPath(std::uint32_t id, std::string path);
-    // Load the mGB Game Boy MIDI-synth ROM that's embedded in the binary. Like
-    // a "Load…" (replaces/adopts as the first system) but with no file: no
-    // recent-files entry, no sibling .sav (it's pathless and battery-less). The
-    // system carries embeddedRom="mgb" so saved projects reload it.
-    bool loadMgb();
+    // The ROM add/load/mGB orchestration (which mode, sibling-.rplg deferral,
+    // the mGB trigger) lives in the UI (TS) now; this is the one native
+    // primitive it drives. `romPath` empty + `embeddedRom` set (e.g. "mgb")
+    // builds the binary-baked ROM (no file, no sibling .sav, no recent entry);
+    // otherwise the file is slurped and its backend auto-detected. `mode` is
+    // "add" (new instance, disambiguated .sav suffix) or "load" (replace the
+    // focused tile + write a thin sibling `.rplg` and track it in recents).
+    // Byte IO + emulator construction stay native; no bytes cross the bridge.
+    bool constructSystem(std::string romPath, std::string embeddedRom, std::string mode);
     bool removeSystem(std::uint32_t id);
     // Clone the selected system (same ROM, current SRAM, current savestate).
     // New instance is appended; linkGroupId is reset to 0 so the clone
@@ -471,13 +479,29 @@ public:
     const MemorySubRegistry& memorySubs() const { return memorySubs_; }
 
 private:
-    // Content-dispatched ROM loader. Lives here rather than on PluginJsBridge
-    // because the service owns the file IO + system construction. When
-    // `disambiguate` is set (adding an instance), the built system is given a
-    // loose-battery suffix that doesn't collide with an existing same-ROM
-    // system, and its sibling `.sav` is read from that suffixed path. When
-    // `explicitSav` is non-empty, it seeds the battery and (unless it's the
-    // natural sibling) becomes the system's persisted `savPath` override.
+    // The emulator-build core: pick the SystemBase subclass by `fmt`, apply the
+    // per-backend config defaults (SameBoy model/fastBoot; a non-empty
+    // `embeddedRom` marks a binary-baked ROM as embedRom=false; GBA BIOS path),
+    // seed SRAM (explicit battery, else the SameBoy sibling `.sav`), then
+    // construct + `onActivate` on the UI thread and hand back the owning pointer.
+    // Shared by `constructSystem` (the TS-driven primitive) and the two callers
+    // that still source bytes natively: `buildSystemFromPath` (pairing) and the
+    // ROM-change watcher.
+    SystemBase* constructInstanceCore(RomFormat fmt, const std::string& romPath,
+                                      const std::string& embeddedRom, std::uint32_t suffix,
+                                      std::vector<std::uint8_t> romBytes,
+                                      std::vector<std::uint8_t> explicitSram,
+                                      const std::string& savPathOverride);
+
+    // Slurp + auto-detect a ROM file, then build via constructInstanceCore.
+    // Lives here rather than on PluginJsBridge because the service owns the file
+    // IO. When `disambiguate` is set (adding an instance), the built system is
+    // given a loose-battery suffix that doesn't collide with an existing
+    // same-ROM system, and its sibling `.sav` is read from that suffixed path.
+    // When `explicitSav` is non-empty, it seeds the battery and (unless it's the
+    // natural sibling) becomes the system's persisted `savPath` override. Used
+    // by the `.sav` pairing path + the ROM-change watcher (constructSystem is
+    // the direct-path equivalent driven from TS).
     SystemBase* buildSystemFromPath(const std::string& path, bool disambiguate,
                                     const std::string& explicitSav = "");
 

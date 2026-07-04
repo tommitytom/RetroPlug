@@ -6,7 +6,8 @@
 
 // ROMs baked into the binary at build time (see cmake bin2c step + the
 // generated build/generated/roms/mgb_rom_data.c). Exposed through one accessor
-// so both the menu loader (PluginRpcService::loadMgb) and the project loader
+// so both the menu loader (PluginRpcService::constructSystem, embeddedRom="mgb")
+// and the project loader
 // (Project::addSystem, re-supplying bytes a thin .rplg stripped) read the same
 // array — linked once, not duplicated per translation unit.
 

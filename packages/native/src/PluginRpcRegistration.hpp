@@ -29,10 +29,9 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::commitProject>();
     server.template addMethod<&PluginRpcService::quitStandalone>();
     server.template addMethod<&PluginRpcService::openRelinkBrowser>();
-    server.template addMethod<&PluginRpcService::loadRomFromPath>();
-    server.template addMethod<&PluginRpcService::addRomFromPath>();
-    server.template addMethod<&PluginRpcService::replaceRomFromPath>();
-    server.template addMethod<&PluginRpcService::loadMgb>();
+    // ROM add/load/mGB orchestration is shared TS; this is the one native
+    // primitive it drives (byte IO + emulator construction stay native).
+    server.template addMethod<&PluginRpcService::constructSystem>();
     server.template addMethod<&PluginRpcService::newProject>();
     server.template addMethod<&PluginRpcService::removeSystem>();
     server.template addMethod<&PluginRpcService::duplicateSystem>();

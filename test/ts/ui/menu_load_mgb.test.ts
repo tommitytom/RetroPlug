@@ -1,7 +1,7 @@
 // The start menu can load the embedded mGB MIDI synth directly — no file
-// browser — and it leaves no recent-files entry (it's pathless, see
-// PluginRpcService::loadMgb). browserOpenCount() proves no dialog was opened
-// (distinguishing it from the "Load…" item).
+// browser — and it leaves no recent-files entry (it's pathless: TS loadMgb ->
+// constructSystem with embeddedRom="mgb"). browserOpenCount() proves no dialog
+// was opened (distinguishing it from the "Load…" item).
 import { test, expect, ui, Key } from "ui-harness";
 
 const LABEL = "Load mGB (Gameboy MIDI Synth)";

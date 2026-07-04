@@ -28,7 +28,7 @@ test("Add Instance adds a second tile via the ROM browser", () => {
   ui.pump(20);
   expect(ui.browserOpenCount()).toBe(1);
 
-  ui.selectFile(MGB); // → addRomFromPath → AddSystem
+  ui.selectFile(MGB); // → rom-path-selected → constructSystem(add) → AddSystem
   ui.pump(60);
 
   expect(ui.countByType(CompType.Image)).toBe(before + 1); // a second tile

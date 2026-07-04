@@ -215,51 +215,70 @@ SystemBase* PluginRpcService::buildSystemFromPath(const std::string& path, bool 
         return nullptr;
     }
 
+    return constructInstanceCore(fmt, path, /*embeddedRom*/ "", suffix, std::move(bytes),
+                                 std::move(explicitSram), savPathOverride);
+}
+
+SystemBase* PluginRpcService::constructInstanceCore(
+        RomFormat fmt, const std::string& romPath, const std::string& embeddedRom,
+        std::uint32_t suffix, std::vector<std::uint8_t> romBytes,
+        std::vector<std::uint8_t> explicitSram, const std::string& savPathOverride) {
+    if (!project_ || !sampleRate_) {
+        std::fprintf(stderr, "constructInstanceCore: shared DSP state unavailable (LV2-UI?)\n");
+        return nullptr;
+    }
     const SystemId id = project_->nextSystemId();
     const double sr = sampleRate_->load(std::memory_order_acquire);
 
     if (fmt == RomFormat::MesenNes) {
         MesenNesConfig cfg;
-        cfg.romPath   = path;
+        cfg.romPath   = romPath;
         cfg.savSuffix = suffix;
         cfg.savPath   = savPathOverride;
         if (!explicitSram.empty()) cfg.sram = std::move(explicitSram);
-        auto sys = std::make_unique<MesenNesSystem>(id, cfg, std::move(bytes));
+        auto sys = std::make_unique<MesenNesSystem>(id, cfg, std::move(romBytes));
         sys->onActivate(sr);
         return sys.release();
     }
 
     if (fmt == RomFormat::MesenGba) {
         MesenGbaConfig cfg;
-        cfg.romPath   = path;
+        cfg.romPath   = romPath;
         cfg.savSuffix = suffix;
         cfg.savPath   = savPathOverride;
         if (!explicitSram.empty()) cfg.sram = std::move(explicitSram);
         cfg.biosPath = "build/firmware/gba_bios.bin";
-        auto sys = std::make_unique<MesenGbaSystem>(id, cfg, std::move(bytes));
+        auto sys = std::make_unique<MesenGbaSystem>(id, cfg, std::move(romBytes));
         sys->onActivate(sr);
         return sys.release();
     }
 
     SameBoyConfig cfg;
-    cfg.romPath   = path;
+    cfg.romPath   = romPath;
     cfg.savSuffix = suffix;
     cfg.savPath   = savPathOverride;
     cfg.model     = SameBoyModel::CgbC;
     cfg.fastBoot  = true;
+    // A binary-baked ROM (e.g. mGB) has no file: mark it embedded so saves
+    // re-supply the bytes from the binary and stay small (embedRom=false).
+    if (!embeddedRom.empty()) {
+        cfg.embeddedRom = embeddedRom;
+        cfg.embedRom    = false;
+    }
 
     // Battery RAM: an explicit paired save wins; otherwise the sibling .sav for
-    // this instance's suffix. Missing file is fine — the instance starts empty.
+    // this instance's suffix (only for a real file — an embedded/pathless ROM
+    // has no sibling). Missing file is fine — the instance starts empty.
     if (!explicitSram.empty()) {
         cfg.sram = std::move(explicitSram);
-    } else {
+    } else if (!romPath.empty()) {
         std::vector<std::uint8_t> sramBytes =
-            slurp(rp::sram_autosave::siblingSavPath(path, suffix));
+            slurp(rp::sram_autosave::siblingSavPath(romPath, suffix));
         if (!sramBytes.empty())
             cfg.sram = std::move(sramBytes);
     }
 
-    auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(bytes));
+    auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(romBytes));
     sys->onActivate(sr);
     return sys.release();
 }
@@ -296,117 +315,65 @@ std::string PluginRpcService::writeSiblingProject(const SystemConfig& sysCfg,
     return projPath;
 }
 
-bool PluginRpcService::loadRomFromPath(std::string path) {
-    if (!commands_) {
-        emit("rom-error", path);
+bool PluginRpcService::constructSystem(std::string romPath, std::string embeddedRom,
+                                       std::string mode) {
+    if (!commands_ || !project_ || !sampleRate_) return false;
+
+    // Source the ROM bytes + pick the backend. A non-empty embedded marker (e.g.
+    // "mgb") supplies binary-baked bytes and is always Game Boy; otherwise the
+    // file is slurped and its format auto-detected (a mislabelled extension
+    // still routes correctly, a non-ROM is rejected). No bytes cross the bridge
+    // — the UI hands us the path; the slurp stays native.
+    std::vector<std::uint8_t> romBytes;
+    RomFormat fmt;
+    if (!embeddedRom.empty()) {
+        const std::span<const std::uint8_t> rom = rp::embeddedRom(embeddedRom);
+        romBytes.assign(rom.begin(), rom.end());
+        fmt = RomFormat::SameBoy;
+    } else {
+        romBytes = slurp(romPath);
+        fmt = detectRomFormat(romBytes);
+    }
+    if (romBytes.empty() || fmt == RomFormat::Unknown) return false;
+
+    const bool add = (mode == "add");
+    // Adding disambiguates the loose-battery suffix so a second copy of the same
+    // ROM gets its own `<rom>-N.sav`; a "load" owns the plain `<rom>.sav`.
+    const std::uint32_t suffix = (add && !romPath.empty()) ? assignSavSuffix(romPath) : 0;
+
+    SystemBase* sys = constructInstanceCore(fmt, romPath, embeddedRom, suffix,
+                                            std::move(romBytes), /*explicitSram*/ {},
+                                            /*savPathOverride*/ "");
+    if (!sys) return false;
+
+    // A "load" of a real file writes a thin sibling `.rplg` and tracks it in the
+    // recent list (mirrors the old loadRomFromPath, minus the sibling-`.rplg`
+    // deferral which now runs in the UI before we're called); an "add", or a
+    // pathless embedded mGB, does neither. Capture the config before tryPush
+    // transfers ownership to the DSP.
+    const bool writeSibling = (!add && !romPath.empty());
+    SystemConfig sysCfg;
+    if (writeSibling) sysCfg = sys->snapshotConfig();
+
+    const Command cmd = add ? Command::makeAddSystem(sys) : Command::makeLoadRom(sys);
+    if (!commands_->tryPush(cmd)) {
+        std::fprintf(stderr, "constructSystem: command queue full\n");
+        delete sys;
         return false;
     }
+    markProjectDirty();
 
-    // The recent list tracks projects, not ROMs. If a project already sits
-    // beside this ROM, open it (preserving its saved settings/layout/instances)
-    // rather than building a bare single-system project.
-    {
-        std::filesystem::path proj = std::filesystem::path(path);
-        proj.replace_extension(".rplg");
-        std::error_code ec;
-        if (std::filesystem::exists(proj, ec) && !ec) {
-            // Project load orchestration lives in the UI (TS) now; hand it the path.
-            emit("load-path-selected", proj.string());
-            return true;
+    if (writeSibling) {
+        const std::string projPath = writeSiblingProject(sysCfg, romPath);
+        if (!projPath.empty()) {
+            if (recentFiles_) recentFiles_->add(projPath);
+            currentProjectPath_ = projPath;   // subsequent saves are silent
+            projectDirty_       = false;      // the on-disk project matches the load
         }
     }
-
-    // Replaces the focused tile, so no disambiguation — this instance owns the
-    // plain `<rom>.sav`.
-    SystemBase* sys = buildSystemFromPath(path, /*disambiguate*/ false);
-    if (!sys) return false;
-
-    // Capture the system's config before tryPush transfers ownership to the DSP.
-    SystemConfig sysCfg = sys->snapshotConfig();
-
-    if (!commands_->tryPush(Command::makeLoadRom(sys))) {
-        std::fprintf(stderr, "loadRomFromPath: command queue full\n");
-        delete sys;
-        emit("rom-error", path);
-        return false;
-    }
-    markProjectDirty();
-
-    // Write a thin project beside the ROM and track *that* in the recent list.
-    const std::string projPath = writeSiblingProject(sysCfg, path);
-    if (!projPath.empty()) {
-        if (recentFiles_) recentFiles_->add(projPath);
-        currentProjectPath_ = projPath;   // subsequent saves are silent
-        projectDirty_       = false;      // the on-disk project matches the load
-    }
-    emit("rom-loaded", path);
-    return true;
-}
-
-bool PluginRpcService::loadMgb() {
-    if (!commands_ || !project_ || !sampleRate_) {
-        emit("rom-error", "embedded:mGB");
-        return false;
-    }
-
-    const std::span<const std::uint8_t> rom = rp::embeddedRom("mgb");
-    if (rom.empty()) {   // missing build wiring — shouldn't happen
-        std::fprintf(stderr, "loadMgb: embedded mGB ROM unavailable\n");
-        emit("rom-error", "embedded:mGB");
-        return false;
-    }
-
-    // Pathless + battery-less: the empty romPath skips the sibling-.sav load,
-    // the SRAM auto-save, and the ROM-change watcher. embeddedRom="mgb" lets a
-    // saved project re-supply the bytes on reload; embedRom=false keeps saved
-    // state small (the bytes live in the binary). The MGB passthrough role
-    // auto-attaches from the ROM content — identical to a file-loaded mGB.
-    SameBoyConfig cfg;
-    cfg.model       = SameBoyModel::CgbC;
-    cfg.fastBoot    = true;
-    cfg.embedRom    = false;
-    cfg.embeddedRom = "mgb";
-
-    const SystemId id = project_->nextSystemId();
-    const double   sr = sampleRate_->load(std::memory_order_acquire);
-    auto sys = std::make_unique<SameBoySystem>(
-        id, cfg, std::vector<std::uint8_t>(rom.begin(), rom.end()));
-    sys->onActivate(sr);
-
-    SystemBase* raw = sys.release();
-    if (!commands_->tryPush(Command::makeLoadRom(raw))) {
-        std::fprintf(stderr, "loadMgb: command queue full\n");
-        delete raw;
-        emit("rom-error", "embedded:mGB");
-        return false;
-    }
-    markProjectDirty();
-    // Deliberately no writeSiblingProject / recentFiles_->add — the embedded mGB
-    // stays out of the recent list and writes no files.
-    emit("rom-loaded", "embedded:mGB");
-    return true;
-}
-
-bool PluginRpcService::addRomFromPath(std::string path) {
-    if (!commands_) {
-        emit("rom-error", path);
-        return false;
-    }
-    // Adds a new instance: disambiguate so a second copy of the same ROM file
-    // gets its own `<rom>-N.sav` instead of clobbering the existing sibling.
-    SystemBase* sys = buildSystemFromPath(path, /*disambiguate*/ true);
-    if (!sys) return false;
-
-    if (!commands_->tryPush(Command::makeAddSystem(sys))) {
-        std::fprintf(stderr, "addRomFromPath: command queue full\n");
-        delete sys;
-        emit("rom-error", path);
-        return false;
-    }
-    // Adding an instance edits the open project; the recent list tracks the
-    // project itself (already recorded), so don't add a separate entry here.
-    markProjectDirty();
-    emit("rom-loaded", path);
+    // No emit: the UI ignores rom-loaded/rom-error, and the DSP's ConfigChanged
+    // (from adopt/swap) drives the "config-changed" re-seed. Errors are our
+    // bool return.
     return true;
 }
 
@@ -493,7 +460,11 @@ bool PluginRpcService::handleOpenRomSelection(const std::string& path, bool add)
     // also lets a `.sav` (which detectRomFormat rejects) route into pairing.
     const auto bytes = slurp(path);
     if (!bytes.empty() && detectRomFormat(bytes) != RomFormat::Unknown)
-        return add ? addRomFromPath(path) : loadRomFromPath(path);
+        // ROM construction orchestration lives in the UI (TS) now; hand it the
+        // path. TS decides load-vs-add (its own pending latch), does the
+        // sibling-`.rplg` deferral, then drives constructSystem. Only the `.sav`
+        // pairing below stays native (deferred).
+        { emit("rom-path-selected", path); return true; }
 
     // Not a ROM. Only a `.sav` is treated as a save to pair; anything else falls
     // through to the normal loader so its existing "rom-error" fires.
@@ -501,7 +472,11 @@ bool PluginRpcService::handleOpenRomSelection(const std::string& path, bool add)
     std::transform(ext.begin(), ext.end(), ext.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (ext != ".sav")
-        return add ? addRomFromPath(path) : loadRomFromPath(path);
+        // ROM construction orchestration lives in the UI (TS) now; hand it the
+        // path. TS decides load-vs-add (its own pending latch), does the
+        // sibling-`.rplg` deferral, then drives constructSystem. Only the `.sav`
+        // pairing below stays native (deferred).
+        { emit("rom-path-selected", path); return true; }
 
     // A picked save: pair with its sibling ROM if there is one, else arm the 2nd
     // (ROM) browser to let the user point at the ROM.
@@ -518,34 +493,6 @@ bool PluginRpcService::handleOpenRomSelection(const std::string& path, bool add)
                            : PendingFileMode::PairRomForSav;
     openFileBrowser_("Select the ROM for this save", false, nullptr,
                      kRomPatterns, kRomFilterName);
-    return true;
-}
-
-bool PluginRpcService::replaceRomFromPath(std::uint32_t id, std::string path) {
-    if (!commands_) {
-        emit("rom-error", path);
-        return false;
-    }
-    SystemBase* sys = buildSystemFromPath(path, /*disambiguate*/ false);
-    if (!sys) return false;
-    // Replacing a tile in place: keep the slot's existing loose-battery suffix so
-    // it doesn't suddenly start writing a different `.sav` than before. Any paired
-    // sav override is intentionally NOT carried over — it belonged to the old ROM;
-    // the freshly built system starts with an empty savPath (its own sibling).
-    if (project_)
-        if (SystemBase* old = project_->findSystem(static_cast<SystemId>(id)))
-            sys->setSavSuffix(old->savSuffix());
-
-    if (!commands_->tryPush(Command::makeReplaceSystem(static_cast<SystemId>(id), sys))) {
-        std::fprintf(stderr, "replaceRomFromPath: command queue full\n");
-        delete sys;
-        emit("rom-error", path);
-        return false;
-    }
-    // Replacing a system's ROM edits the open project in place — no new recent
-    // entry (the project is what's tracked).
-    markProjectDirty();
-    emit("rom-loaded", path);
     return true;
 }
 

@@ -7,6 +7,7 @@ import { createGroup, setKeyboardGroup, on, off } from "lvgljs";
 import { plugin } from "./plugin/client";
 import { runSave } from "./project/projectHost";
 import { startLoad } from "./project/loadProject";
+import { onRomPathSelected } from "./project/romBuild";
 import { KitEditor } from "./KitEditor";
 import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds } from "./SystemGrid";
 import { DEFAULT_ZOOM } from "./layout";
@@ -224,6 +225,23 @@ function PluginUI() {
             off("project-loaded", onResolved);
         };
     }, [doLoad]);
+
+    // ROM add/load orchestration (moved to shared TS — project/romBuild.ts). The
+    // native ROM browser (or RETROPLUG_AUTOLOAD_ROM) content-detects the pick and
+    // hands a real ROM path here via "rom-path-selected"; onRomPathSelected builds
+    // it (constructSystem) or, for a "load" beside an existing <rom>.rplg, defers
+    // to startLoad — so it can surface the same missing-files / incompatible UI.
+    const doRomPath = useCallback((path: string) => {
+        const r = onRomPathSelected(path);
+        setIncompatibleProject(r.incompatible);
+        setMissingFiles(r.missing);
+        if (r.error) console.warn("[rom] " + r.error, path);
+    }, []);
+    useEffect(() => {
+        const handler = (path: string) => { if (path) doRomPath(path); };
+        on("rom-path-selected", handler);
+        return () => off("rom-path-selected", handler);
+    }, [doRomPath]);
 
     // Save / export orchestration (moved to shared TS). The native save/export
     // browsers deliver the chosen path via these one-shot events (from

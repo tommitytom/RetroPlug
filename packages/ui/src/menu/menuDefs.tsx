@@ -11,6 +11,7 @@
 
 import { plugin, type SystemEntry } from "../plugin/client";
 import { runSave } from "../project/projectHost";
+import { startLoadRom, startAddRom, loadMgb } from "../project/romBuild";
 import {
     GB_BUTTONS, formatBindingList, type BindingsEditor,
 } from "../useBindingsEditor";
@@ -601,10 +602,10 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
     const items: MenuItem[] = [
         { id: "recent", label: "Recent", kind: "submenu", children: recentChildren(ctx) },
         { id: "loadRom",        label: "Load ROM...",    kind: "action",
-          onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
+          onSelect: () => { startLoadRom(); } },
         sep(),
         { id: "addInstance",    label: "Add Instance",   kind: "action",
-          onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "add" }); } },
+          onSelect: () => { startAddRom(); } },
         { id: "duplicate",      label: "Duplicate Instance", kind: "action",
           onSelect: () => { if (sys) void plugin.$notify("duplicateSystem", sys.id); } },
         { id: "removeInstance", label: "Remove Instance", kind: "action",
@@ -658,11 +659,11 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
         title: appTitle(ctx),
         items: [
             { id: "load", label: "Load...", kind: "action",
-              onSelect: () => { void plugin.$notify("openRomBrowser", { mode: "replace" }); } },
+              onSelect: () => { startLoadRom(); } },
             // The mGB MIDI synth is embedded in the binary — load it without a
-            // file browser. No recent entry, no .sav (see PluginRpcService::loadMgb).
+            // file browser. No recent entry, no .sav (constructSystem, embeddedRom="mgb").
             { id: "loadMgb", label: "Load mGB (Gameboy MIDI Synth)", kind: "action",
-              onSelect: () => { void plugin.$notify("loadMgb"); } },
+              onSelect: () => { loadMgb(); } },
             { id: "recent",   label: "Recent",   kind: "submenu", children: recentChildren(ctx) },
             sep(),
             { id: "project",  label: "Project",  kind: "submenu", children: projectChildren(ctx) },
