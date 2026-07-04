@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { Backend, ConstructSpec } from "../src/backend";
+import type { Backend, ConstructSpec, FileBrowserOpts } from "../src/backend";
 import { detectRomFormat } from "../src/romFormat";
 
 const enc = new TextEncoder();
@@ -36,8 +36,20 @@ export class MockBackend implements Backend {
   /** (srcId, savPath) pairs passed to duplicateSystem, in order. */
   readonly duplicateCalls: { srcId: number; savPath: string | null }[] = [];
 
+  // --- file-dialog bookkeeping (mock-only) --------------------------------
+  /** Opts passed to each openFileBrowser call, in order — lets tests assert which
+   *  dialog (ROM-or-sav vs ROM-only) was opened. */
+  readonly fileBrowserCalls: FileBrowserOpts[] = [];
+  /** One response per dialog the flow will open, consumed FIFO. `null` = cancel. */
+  private browseQueue: (string | null)[] = [];
+
   constructor(configDir = "/config") {
     this.dir = configDir;
+  }
+
+  /** Seed the responses openFileBrowser will resolve to, in dialog order. */
+  queueBrowse(...responses: (string | null)[]): void {
+    this.browseQueue.push(...responses);
   }
 
   // --- test helpers (not part of Backend) ---------------------------------
@@ -168,6 +180,12 @@ export class MockBackend implements Backend {
   removeSystem(id: number): boolean {
     this.log.push("removeSystem");
     return this.systems.delete(id);
+  }
+
+  openFileBrowser(opts: FileBrowserOpts): Promise<string | null> {
+    this.log.push("openFileBrowser");
+    this.fileBrowserCalls.push(opts);
+    return Promise.resolve(this.browseQueue.length ? (this.browseQueue.shift() as string | null) : null);
   }
 
   // --- test helpers (not part of Backend) ---------------------------------

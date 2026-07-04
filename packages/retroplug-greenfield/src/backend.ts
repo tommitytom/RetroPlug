@@ -80,6 +80,21 @@ export interface Backend {
 
   /** Drop system `id`. Returns false when it isn't present. */
   removeSystem(id: number): boolean;
+
+  // --- File dialog --------------------------------------------------------
+
+  /** Open an OS file browser; resolves to the picked absolute path, or `null` on
+   *  cancel. The ONE intrinsically-async Backend method: it waits on human input
+   *  over DPF's non-blocking browser (there is no modal/synchronous variant), unlike
+   *  the fast in-process calls above which stay synchronous. Modelling it as a Promise
+   *  collapses the pending-mode latch + the 2nd-ROM browser into plain `await`s. */
+  openFileBrowser(opts: FileBrowserOpts): Promise<string | null>;
+}
+
+/** Presentation for an OS file dialog: its title + the glob patterns to show. */
+export interface FileBrowserOpts {
+  title: string;
+  patterns: string[];
 }
 
 /** What TS hands the native builder: concrete paths only — everything is resolved
