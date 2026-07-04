@@ -38,3 +38,5 @@ core.*
 *.rpp
 
 plans.md
+# Greenfield package test-bundle output (derived: esbuild -> tjs run)
+packages/retroplug-greenfield/.test-build/
