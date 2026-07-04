@@ -74,6 +74,21 @@ public:
         std::optional<std::uint32_t> highpass;
     };
 
+    // Atomic seed for the editing UI: the whole UI-visible project view
+    // (structure + focus + project-wide settings) fetched in ONE call, so the
+    // UI doesn't fan out six getters that could observe a torn state across a
+    // concurrent mutation. Blob-free (SystemEntry carries no ROM/SRAM/state).
+    // `projectZoom` is the RAW per-project zoom (0 = inherit user default);
+    // routing/layout mirror the getMidiRouting/getAudioRouting/getLayout values.
+    struct ProjectView {
+        std::vector<SystemEntry> systems;
+        std::uint32_t            focus;
+        std::uint32_t            midiRouting;
+        std::uint32_t            audioRouting;
+        std::uint32_t            layout;
+        std::uint32_t            projectZoom;
+    };
+
     // --- LSDJ kit-patch DTOs ----------------------------------------------
     //
     // Per-sample input for compileAndPatchKit. Mirrors `LsdjSampleConfig`
@@ -248,6 +263,10 @@ public:
     // default to the previously loaded project's filename.
     bool clearCurrentProjectPath();
     std::vector<SystemEntry> listSystems();
+    // Atomic seed for the UI: systems + focus + settings in one call. Replaces
+    // the UI's six-getter fan-out (listSystems/getFocus/getMidiRouting/
+    // getAudioRouting/getProjectZoom/getLayout). See ProjectView.
+    ProjectView getProjectView();
     bool setFocus(std::uint32_t id);
     std::uint32_t getFocus();
     bool pressButton(std::int32_t button, bool down, std::optional<std::uint32_t> systemId);

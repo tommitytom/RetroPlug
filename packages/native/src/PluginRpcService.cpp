@@ -955,6 +955,20 @@ std::vector<PluginRpcService::SystemEntry> PluginRpcService::listSystems() {
     return out;
 }
 
+PluginRpcService::ProjectView PluginRpcService::getProjectView() {
+    // Compose the individual getters so the semantics stay identical (defaults,
+    // zoom-raw handling) — this is purely a fan-in that hands the UI one atomic
+    // snapshot instead of six separate round-trips.
+    ProjectView v;
+    v.systems      = listSystems();
+    v.focus        = getFocus();
+    v.midiRouting  = getMidiRouting();
+    v.audioRouting = getAudioRouting();
+    v.layout       = getLayout();
+    v.projectZoom  = getProjectZoom();
+    return v;
+}
+
 bool PluginRpcService::setFocus(std::uint32_t id) {
     if (!focusedSystemId_) return false;
     focusedSystemId_->store(static_cast<SystemId>(id), std::memory_order_release);

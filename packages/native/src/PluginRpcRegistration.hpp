@@ -33,6 +33,7 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::duplicateSystem>();
     server.template addMethod<&PluginRpcService::clearCurrentProjectPath>();
     server.template addMethod<&PluginRpcService::listSystems>();
+    server.template addMethod<&PluginRpcService::getProjectView>();
     server.template addMethod<&PluginRpcService::setFocus>();
     server.template addMethod<&PluginRpcService::getFocus>();
     server.template addMethod<&PluginRpcService::pressButton>();
