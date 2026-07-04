@@ -252,6 +252,11 @@ JSValue jsUiPump(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.pump: %s", e.what()); }
 }
 
+JSValue jsUiReopen(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    try { harnessOrThrow()->reopenEditor(); return JS_UNDEFINED; }
+    catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.reopen: %s", e.what()); }
+}
+
 JSValue jsUiSnapshot(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     try {
         const rpui::Snapshot s = harnessOrThrow()->snapshot();
@@ -430,6 +435,7 @@ int runUiTestFile(const std::string& jsPath) {
         { "quitRequested",   { jsUiQuitRequested,   0 } },
         { "browserOpenCount",{ jsUiBrowserOpenCount,0 } },
         { "pump",            { jsUiPump,            1 } },
+        { "reopen",          { jsUiReopen,          0 } },
         { "readMemory",      { jsUiReadMemory,      2 } },
         { "snapshot",        { jsUiSnapshot,        0 } },
         { "snapshotPng",     { jsUiSnapshotPng,     1 } },

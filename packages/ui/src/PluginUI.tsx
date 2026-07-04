@@ -641,4 +641,15 @@ function PluginUI() {
     );
 }
 
-Render.render(<PluginUI />);
+// Mount/unmount hooks for the plugin-lifetime runtime: the host attaches a
+// fresh LVGL display per editor session and calls these to (re)mount the React
+// tree onto it, so the QuickJS context can persist across window close/reopen
+// without re-eval (module caching would skip a top-level re-mount). The
+// auto-mount below preserves the single-session path (standalone / eval-once
+// hosts) that don't drive detach/reattach.
+function mountUI() { Render.render(<PluginUI />); }
+function unmountUI() { (Render as unknown as { unmount?: () => void }).unmount?.(); }
+(globalThis as unknown as { __rp_mountUI?: () => void }).__rp_mountUI = mountUI;
+(globalThis as unknown as { __rp_unmountUI?: () => void }).__rp_unmountUI = unmountUI;
+
+mountUI();

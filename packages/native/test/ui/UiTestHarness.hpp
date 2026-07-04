@@ -78,6 +78,12 @@ public:
     // settle before the tree is stable.
     void pump(int iterations = 30);
 
+    // Simulate an editor window close + reopen on the SAME persistent runtime:
+    // detach the display layer (unmount the React tree, drop the window root),
+    // pump to flush LVGL's async deletes, then re-attach a fresh display binding
+    // and re-mount. Proves the QuickJS context survives a reopen without re-eval.
+    void reopenEditor();
+
     // Tell the UI a structural change happened (emits "config-changed"); the UI
     // refetches its system list + focus but keeps the settings it owns. Use
     // after loadRom / add / remove.

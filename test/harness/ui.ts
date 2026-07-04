@@ -41,6 +41,7 @@ interface NativeUi {
   quitRequested(): boolean;
   browserOpenCount(): number;
   pump(iterations?: number): void;
+  reopen(): void;
   readMemory(sys: number, type: number): ArrayBuffer;
   snapshot(): { width: number; height: number; pixels: ArrayBuffer };
   snapshotPng(path: string): boolean;
@@ -141,6 +142,11 @@ export const ui = {
   browserOpenCount(): number { return rp.browserOpenCount(); },
   /** Advance the UI + emulator `iterations` blocks (settles RPC + render). */
   pump(iterations = 30): void { rp.pump(iterations); },
+
+  /** Simulate an editor window close + reopen on the SAME persistent runtime:
+   *  detach the display layer + unmount React, then re-attach a fresh display
+   *  and re-mount. Proves the QuickJS context survives a reopen without re-eval. */
+  reopen(): void { rp.reopen(); },
   /** Read a whole memory region of a system as a copy (see Mem). */
   readMemory(sys: number, type: number): Uint8Array { return new Uint8Array(rp.readMemory(sys, type)); },
   /** Render the active screen to an ARGB snapshot. */

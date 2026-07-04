@@ -294,6 +294,13 @@ std::uint32_t UiTestHarness::loadRom(const std::string& path, const std::string&
     return static_cast<std::uint32_t>(id);
 }
 
+void UiTestHarness::reopenEditor() {
+    engine_.detachDisplay();
+    pump(10);                 // flush LVGL async deletes from the unmount
+    engine_.reattachDisplay();
+    pump(30);                 // let the re-mounted React tree settle
+}
+
 void UiTestHarness::notifyConfigChanged() {
     if (engine_.getContext()) engine_.emit("config-changed", 0, nullptr);
 }
