@@ -29,8 +29,11 @@ export interface ProjectHost {
   /** Parse a PKZIP blob into its entries (miniz). */
   unzipEntries(bytes: Uint8Array): Blob[];
   /** Live project -> thin config JSON (blobs stripped, schema stamped) + the
-   *  blobs as keyed entries. */
-  snapshotProjectConfig(): { config: string; blobs: Blob[] };
+   *  blobs as keyed entries. `baseDir` (when set) rebases asset paths relative
+   *  to it for a portable path-only save — done host-side (native `toRelative`),
+   *  so path canonicalization stays native. Empty/undefined leaves paths as-is
+   *  (the self-contained zip embeds every blob, so paths don't matter). */
+  snapshotProjectConfig(baseDir?: string): { config: string; blobs: Blob[] };
   /** Rebuild + activate the project from a config + its blob entries; returns
    *  the first restored system id. */
   applyProjectConfig(config: string, blobs: Blob[]): number;
@@ -43,6 +46,13 @@ function isZip(bytes: Uint8Array): boolean {
   return bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b; // "PK"
 }
 
+// Directory of a path (everything up to the last separator; "" if none). Used
+// to rebase a path-only save's assets relative to the .rplg's own folder.
+function dirOf(path: string): string {
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return i < 0 ? "" : path.slice(0, i);
+}
+
 // Self-contained bundle: project.json + every binary blob at its keyed entry.
 export function saveRplg(host: ProjectHost, path: string): void {
   const snap = host.snapshotProjectConfig();
@@ -53,8 +63,9 @@ export function saveRplg(host: ProjectHost, path: string): void {
 // Path-only JSON save: config + paths, no embedded binaries (the snapshot
 // already stripped the blobs). On load the ROM is re-read from romPath, SRAM
 // from the sibling `<rom>.sav`, and kits are recompiled from their samples.
+// Asset paths are rebased relative to the .rplg's folder so it stays portable.
 export function saveProjectFile(host: ProjectHost, path: string): void {
-  const snap = host.snapshotProjectConfig();
+  const snap = host.snapshotProjectConfig(dirOf(path));
   host.writeFile(path, enc.encode(snap.config));
 }
 

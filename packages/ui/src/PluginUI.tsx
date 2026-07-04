@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createGroup, setKeyboardGroup, on, off } from "lvgljs";
 
 import { plugin } from "./plugin/client";
+import { runSave } from "./project/projectHost";
 import { KitEditor } from "./KitEditor";
 import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds } from "./SystemGrid";
 import { DEFAULT_ZOOM } from "./layout";
@@ -223,6 +224,22 @@ function PluginUI() {
             off("project-loaded", onResolved);
             off("project-load-cancelled", onResolved);
             off("project-incompatible", onIncompatible);
+        };
+    }, []);
+
+    // Save / export orchestration (moved to shared TS). The native save/export
+    // browsers deliver the chosen path via these one-shot events (from
+    // onFileBrowserSelected), same as the relink flow; we run the shared
+    // serialization here. The silent "Save Project" path (known path, no dialog)
+    // runs runSave directly from the menu, so it doesn't come through here.
+    useEffect(() => {
+        const onSave   = (path: string) => { if (path) runSave(path, /*exported*/ false); };
+        const onExport = (path: string) => { if (path) runSave(path, /*exported*/ true); };
+        on("save-path-selected", onSave);
+        on("export-path-selected", onExport);
+        return () => {
+            off("save-path-selected", onSave);
+            off("export-path-selected", onExport);
         };
     }, []);
 

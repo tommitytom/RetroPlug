@@ -164,6 +164,16 @@ public:
         bool        missing = false;
     };
 
+    // Project save/load byte-mover primitives. The .rplg save/export
+    // orchestration lives in shared TS (@retroplug/retroplug
+    // projectSerialization.ts); these just move bytes for it. Output bytes use
+    // rfl::Bytestring (msgpack BIN -> Uint8Array); input bytes use
+    // std::vector<std::uint8_t> (reflect-cpp's reader is int-array-only for
+    // binary — see the FrameResponse note above). Mirrors HarnessRpcService.
+    struct ZipEntry { std::string name; rfl::Bytestring bytes; };            // read / unzip / snapshot output
+    struct ZipInput { std::string name; std::vector<std::uint8_t> bytes; };  // zip input
+    struct ProjectSnapshot { std::string config; std::vector<ZipEntry> blobs; };
+
     // Construction ----------------------------------------------------------
 
     // `userConfig` and `recentFiles` are optional (nullptr in LV2-UI and
@@ -234,9 +244,29 @@ public:
     std::string getCurrentProjectPath() { return currentProjectPath_; }
     // Write the sibling `<rom>.sav` for every system whose battery RAM is dirty.
     bool saveDirtySram();
-    // Save the project to its known path silently (no dialog). False if there's
-    // no current path yet — the caller should open the save browser instead.
-    bool saveProject();
+
+    // --- Project save/export byte-mover primitives -------------------------
+    //
+    // The .rplg save + zip-export orchestration lives in shared TS
+    // (@retroplug/retroplug projectSerialization.ts, the same module the CLI
+    // harness drives); these primitives move the bytes it can't. readFile /
+    // writeFile are generic fs; zipEntries / unzipEntries wrap miniz;
+    // snapshotProjectConfig walks the live project into a thin config + keyed
+    // blobs. (The load rebuild — the harness's applyProjectConfig — is deferred
+    // with the plugin *load* path, which is async via the CommandQueue.)
+    rfl::Bytestring        readFile(std::string path);
+    bool                   writeFile(std::string path, std::vector<std::uint8_t> bytes);
+    rfl::Bytestring        zipEntries(std::vector<ZipInput> entries);
+    std::vector<ZipEntry>  unzipEntries(std::vector<std::uint8_t> bytes);
+    // baseDir non-empty => rebase asset paths relative to it (the thin path-only
+    // save, portable folder); empty => leave absolute (the self-contained zip
+    // export embeds every blob, so paths don't matter). Keeps ProjectPaths native.
+    ProjectSnapshot        snapshotProjectConfig(std::string baseDir);
+    // Post-write bookkeeping the old saveProjectToPath / exportZipToPath did
+    // inline: clear the dirty flag, and for a real save (exported=false) add the
+    // path to recents + remember it as currentProjectPath. Emits
+    // "project-saved" / "project-exported".
+    bool                   notifyProjectSaved(std::string path, bool exported);
     // Discard the current project for a clean, empty one: drops all systems and
     // resets the project-wide settings (zoom/layout/routing) to defaults, exactly
     // as loading a default ProjectConfig would. Forgets the remembered project
@@ -484,14 +514,11 @@ private:
                                  // pendingSavPath_ (Add = new instance vs replace).
                                  PairRomForSav, PairRomForSavAdd };
 
-    bool saveProjectToPath(const std::string& path);
-
     // Write a thin (path-only) `<rom>.rplg` beside `romPath` for a freshly-built
     // single system, unless one already exists. Returns the sibling path (whether
     // newly written or pre-existing), or empty on write failure.
     std::string writeSiblingProject(const SystemConfig& sysCfg,
                                     const std::string& romPath);
-    bool exportZipToPath(const std::string& path);
     // Apply pendingProject_ to the DSP (recompiling kits first). Shared by
     // loadProjectFromPath (no missing files) and relinkMissingFile (all resolved).
     bool commitPendingProject();

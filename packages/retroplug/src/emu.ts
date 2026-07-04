@@ -216,7 +216,9 @@ export function createEmu(rpcSend: RpcSend) {
       copyU8(client.zipEntries(entries.map((e) => ({ name: e.name, bytes: toNums(e.bytes) })))),
     unzipEntries: (bytes) =>
       client.unzipEntries(toNums(bytes)).map((e) => ({ name: e.name, bytes: copyU8(e.bytes) })),
-    snapshotProjectConfig: () => {
+    // The harness doesn't relocate projects, so it ignores baseDir (paths stay
+    // absolute); the plugin adapter forwards it for the portable path-only save.
+    snapshotProjectConfig: (_baseDir) => {
       const s = client.snapshotProjectConfig();
       return { config: s.config, blobs: s.blobs.map((b) => ({ name: b.name, bytes: copyU8(b.bytes) })) };
     },

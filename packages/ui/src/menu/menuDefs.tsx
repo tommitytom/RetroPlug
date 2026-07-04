@@ -10,6 +10,7 @@
 // has no RPC for them yet. See the menu redesign plan for the follow-up list.
 
 import { plugin, type SystemEntry } from "../plugin/client";
+import { runSave } from "../project/projectHost";
 import {
     GB_BUTTONS, formatBindingList, type BindingsEditor,
 } from "../useBindingsEditor";
@@ -432,10 +433,11 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
             { id: "saveProject", label: "Save Project", kind: "action",
               onSelect: () => {
                   void (async () => {
-                      if (!(await plugin.saveProject())) {
-                          // No known path yet — open the Save-As dialog instead.
-                          void plugin.$notify("openSaveProjectBrowser");
-                      }
+                      // Silent save runs the shared TS orchestration directly with
+                      // the known path; no path yet ⇒ fall back to the Save-As dialog.
+                      const path = await plugin.getCurrentProjectPath();
+                      if (path) runSave(path, /*exported*/ false);
+                      else void plugin.$notify("openSaveProjectBrowser");
                   })();
               } },
             { id: "saveProjectAs", label: "Save Project As...", kind: "action",

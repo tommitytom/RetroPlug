@@ -35,6 +35,7 @@ interface NativeUi {
   loadProject(path: string): boolean;
   selectFile(path: string): void;
   writeFile(path: string, bytes: ArrayBuffer): void;
+  readFile(path: string): ArrayBuffer;
   writeProjectJson(path: string, romPath: string, zoom?: number, savPath?: string): void;
   seedRecent(path: string, name?: string): void;
   requestCloseConfirm(): void;
@@ -122,6 +123,8 @@ export const ui = {
   writeFile(path: string, bytes: Uint8Array): void {
     rp.writeFile(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
   },
+  /** Read raw bytes back off disk (e.g. assert what a Save Project wrote). */
+  readFile(path: string): Uint8Array { return new Uint8Array(rp.readFile(path)); },
   /** Write a schema-correct thin project JSON (one path-only SameBoy system at
    *  `romPath`). Point it at a non-existent path to drive the relink flow.
    *  `zoom` (0 = inherit; 1..6) is written to the project settings. `savPath`,

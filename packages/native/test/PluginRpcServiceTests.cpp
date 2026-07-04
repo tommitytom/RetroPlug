@@ -125,6 +125,22 @@ struct Fixture {
 
 } // namespace
 
+// Reproduce the shared-TS thin project save (projectSerialization.ts
+// saveProjectFile) over the native byte-mover primitives. The .rplg save
+// orchestration moved to TS, so a pure-C++ test drives the primitives directly:
+// snapshotProjectConfig(baseDir) yields the thin config JSON (blobs stripped,
+// asset paths rebased relative to the .rplg's dir, schema stamped); writeFile
+// spills it; notifyProjectSaved does the post-save bookkeeping (recent +
+// currentProjectPath + clear-dirty + emit "project-saved"). Mirrors runSave in
+// packages/ui/src/project/projectHost.ts.
+static void saveThinProject(PluginRpcService& service, const std::string& path) {
+    const std::string baseDir = std::filesystem::path(path).parent_path().string();
+    auto snap = service.snapshotProjectConfig(baseDir);
+    REQUIRE(service.writeFile(
+        path, std::vector<std::uint8_t>(snap.config.begin(), snap.config.end())));
+    REQUIRE(service.notifyProjectSaved(path, /*exported*/ false));
+}
+
 TEST_CASE("PluginRpcService saveState falls back to a live read without a snapshot",
           "[PluginRpcService]") {
     if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
@@ -973,10 +989,11 @@ TEST_CASE("unsaved: a project edit flips hasUnsavedChanges; saving clears it",
     CHECK(fx.service.hasUnsavedChanges());
     CHECK(fx.service.getUnsavedSummary().project);
 
-    // Save via the same open-browser + onFileBrowserSelected path the UI uses.
+    // Save now runs in shared TS (snapshot -> write) and finishes with the
+    // native notifyProjectSaved, which clears the dirty flag + emits
+    // "project-saved". Drive the primitives directly (no JS runtime in a C++ test).
     const std::string proj = "/tmp/rpc_unsaved_proj.rplg";
-    REQUIRE(fx.service.openSaveProjectBrowser());
-    fx.service.onFileBrowserSelected(proj.c_str());
+    saveThinProject(fx.service, proj);
     CHECK(fx.sawEvent("project-saved"));
     CHECK_FALSE(fx.service.hasUnsavedChanges());
 
@@ -1889,9 +1906,9 @@ TEST_CASE("paths: saveProjectToPath stores a ROM under the project dir as relati
     auto t = makeTmpSys(fx.project, fx.rom, "paths");   // ROM at a /tmp path
     const std::string projPath = uniqueTmpPath("paths_proj", ".rplg");   // same dir (/tmp)
 
-    // Save via the public open-browser + onFileBrowserSelected path the UI uses.
-    REQUIRE(fx.service.openSaveProjectBrowser());
-    fx.service.onFileBrowserSelected(projPath.c_str());
+    // Save = shared TS over the native primitives (snapshotProjectConfig rebases
+    // the ROM path relative to the .rplg's dir); drive them directly here.
+    saveThinProject(fx.service, projPath);
     REQUIRE(fx.sawEvent("project-saved"));
 
     const auto bytes = readFile(projPath);
@@ -1927,8 +1944,7 @@ TEST_CASE("paths: a saved project folder can be moved and still loads",
         sys->onActivate(kSampleRate);
         fx.project.adoptSystem(sys.release());
     }
-    REQUIRE(fx.service.openSaveProjectBrowser());
-    fx.service.onFileBrowserSelected(projA.c_str());
+    saveThinProject(fx.service, projA);
     REQUIRE(fx.sawEvent("project-saved"));
 
     // "Move" the folder: copy both files into a fresh dir B, then delete A so

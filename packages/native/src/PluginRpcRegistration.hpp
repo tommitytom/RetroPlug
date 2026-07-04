@@ -17,7 +17,13 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::getUnsavedSummary>();
     server.template addMethod<&PluginRpcService::getCurrentProjectPath>();
     server.template addMethod<&PluginRpcService::saveDirtySram>();
-    server.template addMethod<&PluginRpcService::saveProject>();
+    // Project save/export byte-mover primitives (orchestration is shared TS).
+    server.template addMethod<&PluginRpcService::readFile>();
+    server.template addMethod<&PluginRpcService::writeFile>();
+    server.template addMethod<&PluginRpcService::zipEntries>();
+    server.template addMethod<&PluginRpcService::unzipEntries>();
+    server.template addMethod<&PluginRpcService::snapshotProjectConfig>();
+    server.template addMethod<&PluginRpcService::notifyProjectSaved>();
     server.template addMethod<&PluginRpcService::quitStandalone>();
     server.template addMethod<&PluginRpcService::loadProjectFromPath>();
     server.template addMethod<&PluginRpcService::getMissingFiles>();

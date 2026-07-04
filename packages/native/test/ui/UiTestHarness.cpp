@@ -337,6 +337,20 @@ void UiTestHarness::writeFile(const std::string& path,
         throw std::runtime_error("UiTestHarness::writeFile failed: " + out);
 }
 
+std::vector<std::uint8_t> UiTestHarness::readFile(const std::string& path) {
+    const std::string in = rpcli::resolveHostPath(path);
+    std::ifstream f(in, std::ios::binary | std::ios::ate);
+    if (!f) throw std::runtime_error("UiTestHarness::readFile failed to open: " + in);
+    const std::streamsize size = f.tellg();
+    std::vector<std::uint8_t> buf(size > 0 ? static_cast<std::size_t>(size) : 0);
+    if (size > 0) {
+        f.seekg(0, std::ios::beg);
+        if (!f.read(reinterpret_cast<char*>(buf.data()), size).good())
+            throw std::runtime_error("UiTestHarness::readFile failed to read: " + in);
+    }
+    return buf;
+}
+
 void UiTestHarness::writeProjectJson(const std::string& path,
                                      const std::string& romPath,
                                      std::uint8_t zoom,

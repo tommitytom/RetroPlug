@@ -195,6 +195,21 @@ JSValue jsUiWriteFile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     }
 }
 
+JSValue jsUiReadFile(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "ui.readFile(path)");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    try {
+        const auto bytes = harnessOrThrow()->readFile(path);
+        JS_FreeCString(ctx, path);
+        return JS_NewArrayBufferCopy(ctx, bytes.data(), bytes.size());
+    } catch (const std::exception& e) {
+        JSValue err = JS_ThrowTypeError(ctx, "ui.readFile: %s", e.what());
+        JS_FreeCString(ctx, path);
+        return err;
+    }
+}
+
 JSValue jsUiWriteProjectJson(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 2) return JS_ThrowTypeError(ctx, "ui.writeProjectJson(path, romPath, zoom?, savPath?)");
     const char* path = JS_ToCString(ctx, argv[0]);
@@ -429,6 +444,7 @@ int runUiTestFile(const std::string& jsPath) {
         { "loadProject",     { jsUiLoadProject,     1 } },
         { "selectFile",      { jsUiSelectFile,      1 } },
         { "writeFile",       { jsUiWriteFile,       2 } },
+        { "readFile",        { jsUiReadFile,        1 } },
         { "writeProjectJson",{ jsUiWriteProjectJson, 4 } },
         { "seedRecent",      { jsUiSeedRecent,      2 } },
         { "requestCloseConfirm", { jsUiRequestCloseConfirm, 0 } },

@@ -6,6 +6,11 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./serialization": "./src/projectSerialization.ts",
+    "./project-binaries": "./src/projectBinaries.ts",
+    "./schema-versions": "./src/schemaVersions.ts",
+    "./project-config": "./src/projectConfig.ts",
+    "./sync-client": "./src/createSyncClient.ts"
   }
 }

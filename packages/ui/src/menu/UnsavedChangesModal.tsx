@@ -5,6 +5,7 @@ import { tileWidth, tileHeight } from "../layout";
 import { Menu } from "./Menu";
 import type { MenuItem, MenuTree } from "./menuDefs";
 import { plugin } from "../plugin/client";
+import { runSave } from "../project/projectHost";
 
 // What to carry out once the user resolves the unsaved-changes prompt. "quit"
 // closes the standalone window; "new" / "loadBrowser" discard the current
@@ -55,7 +56,7 @@ export function UnsavedChangesModal({ zoom, intent, onClose, sinkGroup }: Unsave
             await plugin.saveDirtySram();
             const path = await plugin.getCurrentProjectPath();
             if (path && path.length > 0) {
-                await plugin.saveProject();   // silent save to known path
+                runSave(path, /*exported*/ false);   // silent save to known path (shared TS)
                 proceed(intent);
                 onClose();
             } else {

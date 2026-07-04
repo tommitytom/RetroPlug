@@ -102,6 +102,8 @@ public:
     void selectFile(const std::string& path);
     // Write raw bytes to disk (stage a project JSON / ROM for a test).
     void writeFile(const std::string& path, const std::vector<std::uint8_t>& bytes);
+    // Read raw bytes back (assert what a save wrote). Throws on open/read error.
+    std::vector<std::uint8_t> readFile(const std::string& path);
     // Write a schema-correct thin project JSON with one path-only SameBoy system
     // pointing at `romPath` (use a non-existent path to exercise relink).
     // `zoom` (0 = inherit default; 1..6 = explicit) is written to the project

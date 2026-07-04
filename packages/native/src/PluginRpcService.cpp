@@ -10,6 +10,7 @@
 #include <fstream>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -547,71 +548,83 @@ bool PluginRpcService::replaceRomFromPath(std::uint32_t id, std::string path) {
     return true;
 }
 
-bool PluginRpcService::saveProjectToPath(const std::string& path) {
-    if (!project_) {
-        emit("project-error", path);
-        return false;
-    }
-    // Default disk save: path-only JSON (config + romPath, no embedded binaries).
-    // ROM/SRAM are re-read from disk on load; savestate and kit bytes are dropped.
-    // Use Export Zip (exportZipToPath) for a self-contained bundle.
-    // Rebase a *copy* to project-relative form (assets under the .rplg's dir) so
-    // the saved folder is portable; the live project keeps its absolute paths.
-    std::string json;
-    try {
-        ProjectConfig saved = project_->snapshotConfig();
-        rp::project_paths::toRelative(saved, std::filesystem::path(path).parent_path().string());
-        json = projectConfigToJsonFile(saved);
-    } catch (const std::exception& e) {
-        std::fprintf(stderr, "saveProjectToPath: serialize failed: %s\n", e.what());
-        emit("project-error", path);
-        return false;
-    }
-    if (json.empty()) {
-        std::fprintf(stderr, "saveProjectToPath: JSON serialization produced empty buffer\n");
-        emit("project-error", path);
-        return false;
-    }
-    const std::vector<std::uint8_t> bytes(json.begin(), json.end());
-    if (!spillBytes(path, bytes)) {
-        std::fprintf(stderr, "saveProjectToPath: write failed for '%s'\n", path.c_str());
-        emit("project-error", path);
-        return false;
-    }
-    if (recentFiles_) recentFiles_->add(path);
-    currentProjectPath_ = path;
-    projectDirty_ = false;
-    emit("project-saved", path);
-    return true;
+// --- Project save/export byte-mover primitives -----------------------------
+//
+// The .rplg save + zip-export orchestration moved to shared TS
+// (@retroplug/retroplug projectSerialization.ts, the same module the CLI harness
+// drives). These primitives move the bytes it can't; the UI runs them on
+// "save-path-selected" / "export-path-selected" (emitted from
+// onFileBrowserSelected) and finishes with notifyProjectSaved.
+
+rfl::Bytestring PluginRpcService::readFile(std::string path) {
+    const auto bytes = slurp(path);
+    const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
+    return rfl::Bytestring(p, p + bytes.size());
 }
 
-bool PluginRpcService::exportZipToPath(const std::string& path) {
-    if (!project_) {
-        emit("project-error", path);
-        return false;
+bool PluginRpcService::writeFile(std::string path, std::vector<std::uint8_t> bytes) {
+    return spillBytes(path, bytes);
+}
+
+rfl::Bytestring PluginRpcService::zipEntries(std::vector<ZipInput> entries) {
+    MinizWriter zip;
+    for (const auto& e : entries)
+        if (!zip.add(e.name, e.bytes))
+            throw std::runtime_error("zipEntries: failed to add entry " + e.name);
+    const auto bytes = zip.finish();
+    const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
+    return rfl::Bytestring(p, p + bytes.size());
+}
+
+std::vector<PluginRpcService::ZipEntry> PluginRpcService::unzipEntries(std::vector<std::uint8_t> bytes) {
+    std::vector<ZipEntry> out;
+    MinizReader zip(bytes);
+    if (!zip.valid()) return out;
+    for (const auto& name : zip.names()) {
+        const auto data = zip.read(name);
+        const auto* p = reinterpret_cast<const std::byte*>(data.data());
+        out.push_back({ name, rfl::Bytestring(p, p + data.size()) });
     }
-    // Self-contained bundle: config + every binary blob (ROM/SRAM/savestate/kits)
-    // packed into a PKZIP. The shareable / archival form (vs the path-only save).
-    std::vector<std::uint8_t> zip;
-    try {
-        zip = projectConfigToZip(project_->snapshotConfig());
-    } catch (const std::exception& e) {
-        std::fprintf(stderr, "exportZipToPath: serialize failed: %s\n", e.what());
-        emit("project-error", path);
-        return false;
-    }
-    if (zip.empty()) {
-        std::fprintf(stderr, "exportZipToPath: zip serialization produced empty buffer\n");
-        emit("project-error", path);
-        return false;
-    }
-    if (!spillBytes(path, zip)) {
-        std::fprintf(stderr, "exportZipToPath: write failed for '%s'\n", path.c_str());
-        emit("project-error", path);
-        return false;
-    }
+    return out;
+}
+
+PluginRpcService::ProjectSnapshot PluginRpcService::snapshotProjectConfig(std::string baseDir) {
+    ProjectSnapshot out;
+    if (!project_) return out;
+    ProjectConfig cfg = project_->snapshotConfig();
+    // baseDir non-empty => rebase a *copy* to project-relative form (the thin
+    // path-only save); the live project keeps its absolute paths. Empty leaves
+    // paths absolute (the self-contained zip export embeds every blob).
+    if (!baseDir.empty())
+        rp::project_paths::toRelative(cfg, baseDir);
+    // Stamp the running build's schema, not whatever was loaded.
+    cfg.schemaVersion = std::to_string(rp::schema::kProject);
+    // Collect the stripped blobs (key + bytes) instead of writing them into a
+    // zip — the templated project_binaries walk drives this sink, so TS owns the
+    // zip framing while the codec stays native (see ProjectBinaries.hpp).
+    struct Collector {
+        std::vector<ZipEntry> blobs;
+        bool add(std::string_view name, std::span<const std::uint8_t> bytes) {
+            const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
+            blobs.push_back({ std::string(name), rfl::Bytestring(p, p + bytes.size()) });
+            return true;
+        }
+    } coll;
+    project_binaries::strip(coll, cfg); // empties cfg's blobs into coll
+    out.config = projectConfigToJson(cfg);
+    out.blobs  = std::move(coll.blobs);
+    return out;
+}
+
+bool PluginRpcService::notifyProjectSaved(std::string path, bool exported) {
     projectDirty_ = false;
-    emit("project-exported", path);
+    if (exported) {
+        emit("project-exported", path);
+    } else {
+        if (recentFiles_) recentFiles_->add(path);
+        currentProjectPath_ = path;
+        emit("project-saved", path);
+    }
     return true;
 }
 
@@ -768,8 +781,11 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
     switch (entryMode) {
         case PendingFileMode::AddRom:      handleOpenRomSelection(path, /*add*/ true);  break;
         case PendingFileMode::LoadProject: loadProjectFromPath(path);        break;
-        case PendingFileMode::SaveProject: saveProjectToPath(path);          break;
-        case PendingFileMode::ExportZip:   exportZipToPath(path);            break;
+        // Save / export orchestration runs in shared TS: hand the chosen path
+        // to the UI, which drives saveRplg/saveProjectFile over the byte-mover
+        // primitives (same event-style flow as LoadSample / Relink below).
+        case PendingFileMode::SaveProject: emit("save-path-selected", path);   break;
+        case PendingFileMode::ExportZip:   emit("export-path-selected", path); break;
         case PendingFileMode::LoadSample:  emit("sample-path-selected", path); break;
         case PendingFileMode::Relink:      emit("relink-path-selected", path); break;
         case PendingFileMode::RelinkRecent:
@@ -1334,11 +1350,6 @@ bool PluginRpcService::quitStandalone() {
     if (!quit_) return false;
     quit_();
     return true;
-}
-
-bool PluginRpcService::saveProject() {
-    if (!project_ || currentProjectPath_.empty()) return false;
-    return saveProjectToPath(currentProjectPath_);
 }
 
 bool PluginRpcService::newProject() {
