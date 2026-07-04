@@ -107,7 +107,7 @@ sequenceDiagram
 
 - `cmake --build --target retroplug` builds the static plugin library and runs `ui-regenerate` but does **not** rebuild `bin/retroplug` — that's the `retroplug-jack` target. Use a bare build (no `--target`) when verifying UI changes.
 - `PluginRpcService` deliberately has **no QuickJS/LVGL references**, which is what lets the same method surface run headless in the UI test harness.
-- There is no `ARCHITECTURE.md`/`docs/` precedent — this is the first; existing docs (`README.md`, `AGENTS.md`, `dpfjs.md`) use prose-with-anchors and keep framework vs product clearly separated.
+- This is the current-state reference (moved here from the former root `ARCHITECTURE.md`); forward-looking design lives in the sibling [architecture/](README.md) docs, and `README.md` / `AGENTS.md` / `dpfjs.md` use prose-with-anchors and keep framework vs product clearly separated.
 
 ---
 

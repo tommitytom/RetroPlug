@@ -12,6 +12,11 @@ before starting:
 Most of what an agent needs day-to-day is in those two. The rules below are
 the parts that don't naturally fit either.
 
+For architecture: [architecture/](architecture/README.md) holds the
+forward-looking design (one doc per work-stream, each with a status);
+[architecture/current-state.md](architecture/current-state.md) is the as-is
+reference. Numbered migration steps live in [porting/](porting/).
+
 ## Workflow rules
 
 - Don't push to remotes or open PRs without an explicit ask. The user pushes
