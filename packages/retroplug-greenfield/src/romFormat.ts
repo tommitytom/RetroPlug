@@ -6,6 +6,11 @@
 
 export type RomFormat = "sameboy" | "nes" | "gba" | "unknown";
 
+// Bytes needed to classify any supported ROM: the Game Boy logo ends at $0133, so
+// a 0x134-byte prefix covers all three headers (NES needs 4, GBA needs 36). This is
+// how much to read when classifying from a file header rather than the whole ROM.
+export const ROM_SNIFF_LEN = 0x134;
+
 // GBA Nintendo logo (first 32 of 156 bytes) at $0004 — the boot ROM CRC-checks it.
 const GBA_LOGO = [
   0x24, 0xff, 0xae, 0x51, 0x69, 0x9a, 0xa2, 0x21, 0x3d, 0x84, 0x82, 0x0a, 0x84, 0xe4, 0x09, 0xad,
