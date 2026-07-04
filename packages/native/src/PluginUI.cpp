@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -71,20 +72,28 @@ class LVGLPluginUI : public UI
 {
     float fGain = 0.0f;
     ResizeHandle fResizeHandle;
+    // The display layer for this editor session. Adds LVGL/React on top of the
+    // DSP-owned plugin-lifetime host (in-process, via useExternalHost) or owns
+    // its own host (LV2 separate-binary UI / no DSP).
     LvglJsEngine jsEngine;
-    std::unique_ptr<PluginJsBridge> bridge;
+    // -> shared->jsBridge (in-process, DSP-owned + plugin-lifetime) OR
+    // ownedBridge_ (LV2 fallback). Never owned via this pointer.
+    PluginJsBridge* bridge = nullptr;
     retroplug::GamepadManager gamepad;
     SharedDSPData* shared = nullptr;
     // Set true once the user confirms an unsaved-changes close, so the re-entrant
     // onClose() (from requestStandaloneQuit) allows the window to close.
     bool allowClose_ = false;
-    // Declared AFTER bridge so it destructs FIRST: stops the efsw watcher
-    // before bridge/jsEngine tear down, so a stray bg-thread file event
-    // can't race into a half-destroyed JS context.
-    UserConfig userConfig;
-    // Recent ROMs + projects. UI-thread owned, no watcher — the load/save
-    // RPC handlers are the only writers.
-    RecentFiles recentFiles;
+    // -> shared->userConfig (in-process, DSP-owned) OR &*ownedUserConfig_ (LV2).
+    // uiIdle pumps its file-watch reloads on the UI thread.
+    UserConfig* userConfig_ = nullptr;
+    // LV2 / no-DSP fallback: the editor owns the runtime bits the DSP would own
+    // in-process. Declared AFTER jsEngine so they destruct FIRST: stop the
+    // watcher + drop the bridge before the JS context (jsEngine) tears down, so
+    // a stray bg-thread file event can't race into a half-destroyed context.
+    std::optional<UserConfig>       ownedUserConfig_;
+    std::optional<RecentFiles>      ownedRecentFiles_;
+    std::unique_ptr<PluginJsBridge> ownedBridge_;
 
     // Track the last setSize request so we can detect a tiled-WM clamp.
     // Once `wmControlled_` flips true (compositor returned a different
@@ -232,10 +241,21 @@ public:
                      static_cast<long long>(screenshotInterval_.count()));
         }
 
-        // In-process plugin formats: reach the DSP-owned Project via the shared
-        // pointer. LV2-UI returns nullptr; the bridge degrades gracefully.
+        // In-process plugin formats: reach the DSP-owned Project + plugin-lifetime
+        // runtime via the shared pointer. LV2-UI (separate binary) returns nullptr.
         if (void* dspPtr = getPluginInstancePointer())
             shared = getSharedDSPData(dspPtr);
+
+        // In-process: attach this editor session to the DSP's plugin-lifetime
+        // runtime + its already-constructed rpc bridge (the context + evaluated
+        // bundle persist across window close/reopen). Must switch the engine to
+        // the external host BEFORE init().
+        const bool inProcess = shared && shared->jsHost && shared->jsBridge;
+        if (inProcess) {
+            jsEngine.useExternalHost(*shared->jsHost);
+            bridge      = shared->jsBridge;
+            userConfig_ = shared->userConfig;
+        }
 
         if (jsEngine.init())
         {
@@ -249,37 +269,33 @@ public:
             for (uint32_t i = 0; i < params.size(); ++i)
                 jsEngine.registerParameter(i, params[i].symbol);
 
-            // Spin up the per-user config + bindings watcher BEFORE the
-            // bridge so the bridge can hand a non-null pointer to the RPC
-            // service. The reload callback emits "user-config-changed" so
-            // the JS side knows to refetch and rebuild its key map.
-            userConfig.setOnReload([this]() {
-                if (jsEngine.getContext())
-                    jsEngine.emit("user-config-changed", 0, nullptr);
-            });
-            userConfig.start();
+            if (!inProcess) {
+                // LV2 / no DSP: own the runtime bits the DSP owns in-process —
+                // config watchers + the rpc bridge (with no project, so the
+                // service degrades). Watchers before the bridge so it hands a
+                // non-null UserConfig to the service.
+                ownedUserConfig_.emplace();
+                ownedRecentFiles_.emplace();
+                userConfig_ = &*ownedUserConfig_;
+                ownedUserConfig_->setOnReload([this]() {
+                    if (jsEngine.getContext())
+                        jsEngine.emit("user-config-changed", 0, nullptr);
+                });
+                ownedUserConfig_->start();
+                ownedRecentFiles_->setOnChange([this]() {
+                    if (jsEngine.getContext())
+                        jsEngine.emit("recent-files-changed", 0, nullptr);
+                });
+                ownedRecentFiles_->start();
+                ownedBridge_ = std::make_unique<PluginJsBridge>(
+                    jsEngine.host(), nullptr, nullptr, nullptr, nullptr, nullptr,
+                    &*ownedUserConfig_, &*ownedRecentFiles_);
+                bridge = ownedBridge_.get();
+            }
 
-            // Recent files. Same pattern as userConfig: the change callback
-            // emits "recent-files-changed" so the UI can refetch.
-            recentFiles.setOnChange([this]() {
-                if (jsEngine.getContext())
-                    jsEngine.emit("recent-files-changed", 0, nullptr);
-            });
-            recentFiles.start();
-
-            // Plugin-specific JS bridge. Must exist before evalModule so
-            // useEffect handlers can register before the bundle's first render.
-            bridge = std::make_unique<PluginJsBridge>(
-                jsEngine.host(),
-                shared ? shared->project         : nullptr,
-                shared ? shared->commands        : nullptr,
-                shared ? shared->events          : nullptr,
-                shared ? shared->sampleRate      : nullptr,
-                shared ? shared->focusedSystemId : nullptr,
-                &userConfig,
-                &recentFiles);
             // Route JS events (rpc-message frames + service string events) out
-            // through this editor session's display engine.
+            // through this editor session's display engine. Cleared on close so
+            // the DSP-owned bridge stops delivering to a gone engine.
             bridge->setEmitSink([this](const char* ch, int argc, JSValueConst* argv) {
                 jsEngine.emit(ch, argc, argv);
             });
@@ -332,26 +348,33 @@ public:
                 bridge->loadRomFromPath(p);
             }
 
-            // Generic dev override: <PREFIX>BUNDLE_PATH (RETROPLUG_BUNDLE_PATH)
-            // loads the UI bundle from source instead of the embedded bytecode.
-            const char* devPath = dpfjs::getenvWithPrefix("BUNDLE_PATH");
-            if (devPath && *devPath)
+            // Evaluate the UI bundle exactly once per host: a reused (persistent)
+            // host from a prior editor session already has it registered
+            // (module caching would no-op a re-eval anyway). attachDisplay()
+            // below (re)mounts via the bundle's __rp_mountUI hook regardless.
+            if (jsEngine.contextFresh())
             {
-                if (jsEngine.evalModule(devPath) != 0)
-                    d_stderr("Failed to load %s", devPath);
+                // Generic dev override: <PREFIX>BUNDLE_PATH (RETROPLUG_BUNDLE_PATH)
+                // loads the UI bundle from source instead of the embedded bytecode.
+                const char* devPath = dpfjs::getenvWithPrefix("BUNDLE_PATH");
+                if (devPath && *devPath)
+                {
+                    if (jsEngine.evalModule(devPath) != 0)
+                        d_stderr("Failed to load %s", devPath);
+                    else
+                        d_stdout("LvglJsEngine: React UI loaded from %s", devPath);
+                }
                 else
-                    d_stdout("LvglJsEngine: React UI loaded from %s", devPath);
-            }
-            else
-            {
-                if (jsEngine.evalModuleBytecode(ui_bundle, ui_bundle_size) != 0)
-                    d_stderr("Failed to load embedded UI bundle");
-                else
-                    d_stdout("LvglJsEngine: React UI loaded (embedded)");
+                {
+                    if (jsEngine.evalModuleBytecode(ui_bundle, ui_bundle_size) != 0)
+                        d_stderr("Failed to load embedded UI bundle");
+                    else
+                        d_stdout("LvglJsEngine: React UI loaded (embedded)");
+                }
             }
 
             // Bind this editor session's LVGL display + mount the React tree
-            // (the bundle is evaluated above; attachDisplay calls __rp_mountUI).
+            // (attachDisplay calls __rp_mountUI on the evaluated bundle).
             jsEngine.attachDisplay();
 
             // Force the LVGL screen background to black. Without this the
@@ -382,16 +405,26 @@ public:
 
     ~LVGLPluginUI() override
     {
-        // Tear down the LVGL widget tree (React-managed views, canvases,
-        // event handlers) WHILE the JS engine is still alive. Otherwise the
-        // base UI destructor walks the widget tree after member destruction
-        // — by which point jsEngine has freed the JSContext — and any event
-        // that fires during deletion (DEFOCUSED on the focused menu item,
-        // CHILD_DELETED bubbling up, etc.) hits lv_binding_js's FireEventToJS
-        // which does `qrt->ctx` with no null check. Cleaning the screen here
-        // drains all those events with a valid context. Renoise close-while-
-        // probing reproduces this; carla and pluginval happen to close in a
-        // different order and don't trip it.
+        // Stop the (possibly DSP-owned, plugin-lifetime) bridge from calling
+        // back into this closing editor. The service guards each of these, so
+        // clearing them makes the calls no-ops after we're gone.
+        if (bridge) {
+            bridge->setEmitSink({});
+            bridge->setOpenFileBrowserCallback(nullptr);
+            bridge->setWindowSizeCallback(nullptr);
+            bridge->setIsWindowSizeControlledQuery(nullptr);
+            bridge->setQuitCallback(nullptr);
+        }
+
+        // Unmount the React tree (via __rp_unmountUI) + drop the display binding
+        // WHILE the JS context is still alive, leaving a persistent (DSP-owned)
+        // host clean for the next editor session. Then flush the unmount's async
+        // widget deletes with a valid context — otherwise the base UI destructor
+        // walks the tree after member destruction (context freed) and any event
+        // that fires during deletion hits lv_binding_js's FireEventToJS which
+        // does `qrt->ctx` with no null check. lv_obj_clean drains any residual.
+        jsEngine.detachDisplay();
+        lv_timer_handler();
         if (lv_obj_t* screen = lv_screen_active())
             lv_obj_clean(screen);
     }
@@ -438,7 +471,7 @@ protected:
         // Drain the user-config watcher's dirty flag on the UI thread.
         // efsw fires on a bg thread but only flips an atomic; the parse +
         // RPC-event emit lives here.
-        userConfig.pumpReloadsOnUiThread();
+        if (userConfig_) userConfig_->pumpReloadsOnUiThread();
 
         // Walk live memory subscriptions, read tear-free snapshots from the
         // DSP-published triple-buffers, hash for dedup, push "memory"

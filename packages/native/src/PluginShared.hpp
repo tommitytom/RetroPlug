@@ -12,6 +12,12 @@
 // pull DistrhoDetails.hpp before this header, which is what defines the
 // kParameterIs* hint flags used in the table below.
 
+// Owned by the DSP; only the pointers cross into SharedDSPData (headers stay out
+// of this widely-included file).
+class TjsHostRuntime;
+class PluginJsBridge;
+class UserConfig;
+
 START_NAMESPACE_DISTRHO
 
 // Direct-access channel between DSP and UI for in-process plugin formats
@@ -22,6 +28,16 @@ struct SharedDSPData {
     Project*             project    = nullptr;
     CommandQueue*        commands   = nullptr;
     EventQueue*          events     = nullptr;
+    // The plugin-lifetime JS runtime + its rpc bridge, owned by the DSP so
+    // orchestration survives the editor window. The editor attaches its LVGL
+    // display layer to jsHost (LvglJsEngine external-host ctor) and drives the
+    // already-constructed jsBridge (setEmitSink + window callbacks) per session.
+    // Null in LV2-UI (separate binary) — the editor falls back to its own host.
+    TjsHostRuntime*      jsHost     = nullptr;
+    PluginJsBridge*      jsBridge   = nullptr;
+    // DSP-owned user config, exposed so the editor's uiIdle can pump its
+    // file-watch reloads (pumpReloadsOnUiThread must run on the UI thread).
+    UserConfig*          userConfig = nullptr;
     // DSP writes on activate / sampleRateChanged. UI reads when constructing
     // a SameBoySystem off the audio thread so onActivate can configure
     // GB_set_sample_rate at the right rate. Atomic because UI may read

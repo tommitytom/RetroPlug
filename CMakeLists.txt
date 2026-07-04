@@ -380,6 +380,13 @@ dpf_add_plugin(${NAME}
   USE_FILE_BROWSER
   FILES_DSP
       packages/native/src/PluginDSP.cpp
+      # The DSP owns the plugin-lifetime control-plane runtime + rpc bridge, so
+      # the bridge links here too. It's decoupled from LvglJsEngine (bare host +
+      # emit sink), so this pulls tjs + rpcpp from dpfjs::core but NOT LVGL —
+      # the DSP stays display-free. In-process formats share one binary; for LV2
+      # this puts the runtime in the separate DSP .so (that's the point: get/
+      # setState orchestration exists without the editor window).
+      packages/native/src/PluginJsBridge.cpp
       packages/native/src/PluginRpcService.cpp
       packages/native/src/transport/CommandApply.cpp
       packages/native/src/config/UserConfig.cpp

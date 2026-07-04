@@ -104,6 +104,12 @@ public:
         rpc_.setEmitSink(std::move(fn));
     }
 
+    // Emit a JS event through the current sink (no-op while detached). Used by
+    // the DSP-owned config watchers (user-config-changed / recent-files-changed).
+    void emit(const char* channel, int argc, JSValueConst* argv) {
+        if (emitSink_) emitSink_(channel, argc, argv);
+    }
+
     // Standalone-friendly project load. Used by PluginUI's
     // RETROPLUG_AUTOLOAD_PROJECT env-var path.
     bool loadProjectFromPath(const std::string& path) {

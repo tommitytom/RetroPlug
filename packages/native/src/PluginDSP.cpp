@@ -15,10 +15,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <optional>
 
+#include "PluginJsBridge.hpp"
+#include "config/RecentFiles.hpp"
 #include "config/SchemaVersions.hpp"
 #include "config/SramMirror.hpp"
+#include "config/UserConfig.hpp"
+#include "dpfjs/host/TjsHostRuntime.hpp"
 #include "lsdj/SampleCache.hpp"
 #include "project/ProjectMissingFiles.hpp"
 #include "project/ProjectSerialization.hpp"
@@ -78,6 +83,17 @@ public:
     std::atomic<std::uint8_t> sramMirrorMode{
         static_cast<std::uint8_t>(rp::SramMirror::OnProjectSave)};
 
+    // Plugin-lifetime JS control-plane runtime + rpc bridge. Created here so
+    // orchestration can run regardless of the editor window; the editor attaches
+    // its LVGL display layer to jsHost and drives jsBridge per session. run()
+    // never touches these — they live on the main/UI thread (pumped from uiIdle,
+    // driven by get/setState). Declared so jsBridge destructs first, before the
+    // host + config it references.
+    TjsHostRuntime          jsHost;
+    UserConfig              userConfig;
+    RecentFiles             recentFiles;
+    std::unique_ptr<PluginJsBridge> jsBridge;
+
     LVGLPluginDSP()
         : Plugin(static_cast<uint32_t>(kRetroPlugDescriptor.parameters.size()), 0, /*states=*/1)
     {
@@ -97,6 +113,26 @@ public:
         shared.events          = &events;
         shared.sampleRate      = &sampleRateAtomic;
         shared.focusedSystemId = &focusedSystemAtomic;
+
+        // Bring up the plugin-lifetime control-plane runtime + rpc bridge. The
+        // bare host has no LVGL, so it exists before/without any editor window;
+        // the editor attaches its display to jsHost when it opens (in-process
+        // formats reach it via getSharedDSPData; LV2's separate UI binary falls
+        // back to its own host). run() stays JS-free.
+        jsHost.init();
+        jsBridge = std::make_unique<PluginJsBridge>(
+            jsHost, &project, &commands, &events, &sampleRateAtomic,
+            &focusedSystemAtomic, &userConfig, &recentFiles);
+        // Config watchers run plugin-lifetime; their change events route through
+        // the bridge's emit sink (delivered only while an editor is attached).
+        userConfig.setOnReload([this] { jsBridge->emit("user-config-changed", 0, nullptr); });
+        userConfig.start();
+        recentFiles.setOnChange([this] { jsBridge->emit("recent-files-changed", 0, nullptr); });
+        recentFiles.start();
+
+        shared.jsHost     = &jsHost;
+        shared.jsBridge   = jsBridge.get();
+        shared.userConfig = &userConfig;
 
         // No bootstrap system — the UI loads a ROM via plugin.openRomBrowser,
         // and DPF setState populates the project from a saved host project
