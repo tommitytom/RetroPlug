@@ -11,6 +11,8 @@
 
 import type { SystemEntry, SystemKind } from "./systemsList";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
+import type { CoreSettings } from "./systemSettings";
+import type { RoleInstance } from "./systemRoles";
 
 /** Project-level settings (four scalars). `zoom` 0 = inherit the user default. */
 export interface ProjectSettings {
@@ -29,6 +31,8 @@ export interface SystemThin {
   savPath?: string; // an explicit override; absent = derive from suffix
   savSuffix?: number;
   embeddedRom?: string; // e.g. "mgb"
+  settings?: Partial<CoreSettings>; // only non-default universal settings
+  roles?: RoleInstance[]; // the generic roles (backend + feature); absent = re-derive
 }
 
 export interface ProjectConfig {
@@ -62,6 +66,15 @@ export function parseProjectVersion(s: string): number {
 
 // --- build / serialize / parse --------------------------------------------
 
+// A system's universal settings, keeping only non-default fields (or undefined).
+function thinSettings(s: CoreSettings | undefined): Partial<CoreSettings> | undefined {
+  if (!s) return undefined;
+  const out: Partial<CoreSettings> = {};
+  if (s.gainDb) out.gainDb = s.gainDb; // 0 = default
+  if (s.reloadOnRomChange) out.reloadOnRomChange = s.reloadOnRomChange; // false = default
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** Live systems + settings → a thin ProjectConfig, dropping runtime ids and any
  *  field at its default. Stamps the running schema version. */
 export function buildConfig(settings: ProjectSettings, systems: SystemEntry[]): ProjectConfig {
@@ -74,6 +87,9 @@ export function buildConfig(settings: ProjectSettings, systems: SystemEntry[]): 
       if (e.savPath) t.savPath = e.savPath;
       if (e.savSuffix) t.savSuffix = e.savSuffix;
       if (e.embeddedRom) t.embeddedRom = e.embeddedRom;
+      const settings = thinSettings(e.settings);
+      if (settings) t.settings = settings;
+      if (e.roles && e.roles.length) t.roles = e.roles;
       return t;
     }),
   };

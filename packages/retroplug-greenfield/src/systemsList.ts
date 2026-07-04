@@ -10,13 +10,17 @@
 
 import { siblingSavPath, siblingRomCandidates } from "./savPaths";
 import type { RomFormat } from "./romFormat";
+import type { CoreSettings } from "./systemSettings";
+import type { RoleInstance } from "./systemRoles";
 
 /** A supported emulator backend (the non-"unknown" RomFormat values). */
 export type SystemKind = "sameboy" | "nes" | "gba";
 
-/** The thin per-system record TS owns. `savSuffix` + `savPath` (an override, `""`
- *  when the natural sibling is used) are the persistent identity: the suffix
- *  accounting reads them, and the Project domain serializes them. */
+/** The per-system record TS owns. `savSuffix` + `savPath` (an override, `""` when the
+ *  natural sibling is used) are the persistent identity. `settings` are the universal
+ *  per-system knobs; `roles` are the generic per-system roles (backend "system" role +
+ *  optional feature roles) — everything backend/feature-specific lives here, not in
+ *  fixed fields. */
 export interface SystemEntry {
   id: number;
   kind: SystemKind;
@@ -24,6 +28,8 @@ export interface SystemEntry {
   savPath: string; // override; "" = derive from romPath + savSuffix
   savSuffix: number;
   embeddedRom: string; // "" unless a binary-baked ROM (e.g. "mgb")
+  settings: CoreSettings;
+  roles: RoleInstance[];
 }
 
 /** The live system with `id`, or undefined. */

@@ -89,6 +89,21 @@ export interface Backend {
    *  the fast in-process calls above which stay synchronous. Modelling it as a Promise
    *  collapses the pending-mode latch + the 2nd-ROM browser into plain `await`s. */
   openFileBrowser(opts: FileBrowserOpts): Promise<string | null>;
+
+  // --- Live emulator config ----------------------------------------------
+  // TS owns the config; these apply a change to the LIVE emulator. Only EMULATOR
+  // config crosses: the two universal settings + SYSTEM-role config (a backend's own
+  // knobs). Feature-role config never reaches native — its behaviour is the deferred
+  // TS-script future (doc 06), so it stays pure TS config.
+
+  /** Apply a universal per-system setting (`"gainDb"` / `"reloadOnRomChange"`) to the
+   *  live emulator. Returns false on failure. */
+  applySystemSetting(id: number, key: string, value: number | boolean): boolean;
+
+  /** Apply a SYSTEM-role's (backend) config to the live emulator — native dispatches
+   *  by kind (e.g. `"sameboy"`: model → restart, highpass → live). Returns false on
+   *  failure. */
+  applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
 }
 
 /** Presentation for an OS file dialog: its title + the glob patterns to show. */

@@ -43,6 +43,10 @@ export class MockBackend implements Backend {
   /** One response per dialog the flow will open, consumed FIFO. `null` = cancel. */
   private browseQueue: (string | null)[] = [];
 
+  /** Live-config applies recorded for assertions. */
+  readonly applySettingCalls: { id: number; key: string; value: number | boolean }[] = [];
+  readonly applyRoleCalls: { id: number; kind: string; config: Record<string, unknown> }[] = [];
+
   constructor(configDir = "/config") {
     this.dir = configDir;
   }
@@ -186,6 +190,18 @@ export class MockBackend implements Backend {
     this.log.push("openFileBrowser");
     this.fileBrowserCalls.push(opts);
     return Promise.resolve(this.browseQueue.length ? (this.browseQueue.shift() as string | null) : null);
+  }
+
+  applySystemSetting(id: number, key: string, value: number | boolean): boolean {
+    this.log.push("applySystemSetting");
+    this.applySettingCalls.push({ id, key, value });
+    return true;
+  }
+
+  applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean {
+    this.log.push("applyRoleConfig");
+    this.applyRoleCalls.push({ id, kind, config });
+    return true;
   }
 
   // --- test helpers (not part of Backend) ---------------------------------
