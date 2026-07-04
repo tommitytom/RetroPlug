@@ -26,13 +26,25 @@ out of the UI bundle. `snapshotProjectConfig(baseDir)` does the thin-save `toRel
 natively (so `ProjectPaths` stays deferred). Exercised end-to-end through the **real**
 `PluginRpcService` + UI bundle by `test:ui`.
 
-**Still C++ (later increments):** the **plugin LOAD** path (its `pendingProject_` latch,
-`missing-files`/relink event flow, and the async `CommandQueue` apply — `applyProjectConfig`
-is deferred with it), the DAW `getState`/`setState` headless path (needs the bare-`jsHost`
-non-UI bundle, [04](04-scriptable-runtime.md) §A step 2), `ProjectMissingFiles`,
-`ProjectPaths` (needs a `realpath` primitive), the config layer, and the
-`Project::addSystem` → `constructInstance` split. The rest of this doc is the
-forward plan for those.
+**Increment 3 shipped** (branch `arch/rework`): the **plugin project-file LOAD** path +
+its `pendingProject_` / missing-files / relink machine moved to shared TS. `loadProjectFromPath`,
+`commitPendingProject`, `getMissingFiles`, `relinkMissingFile`, `cancelMissingFiles` and the
+pending latch are deleted; the UI drives load through `project/loadProject.ts`
+(`startLoad`/`relinkOne`/`cancelLoad`) over two new primitives — `fileExists` and
+`commitProject` (restore blobs → recompile kits → `Command::makeLoadProject` → recent +
+emit `project-loaded`; the DSP applies + re-emits `ProjectLoaded`). The native dialog /
+recent / autoload / sibling-`.rplg` hand the path to the UI via `load-path-selected`.
+`ProjectMissingFiles`'s scan/relink/`autoFindSiblings` became shared TS (`missingFiles.ts`,
+incl. `toAbsolute`); the header shrank to just `sanitizeSavTargets` (the DAW `setState`
+path still needs it). Net **−227 C++ src**, taking the work-stream cumulative to **−87** —
+net-negative for the first time.
+
+**Still C++ (later increments):** the **ROM-build band** (`buildSystemFromPath` / pairing —
+needs the `Project::addSystem` → `constructInstance` split, the deep cut), the DAW
+`getState`/`setState` headless path (needs the bare-`jsHost` non-UI bundle,
+[04](04-scriptable-runtime.md) §A step 2 — the gate to deleting the codec headers +
+`sanitizeSavTargets`), `ProjectPaths` `toRelative` (needs a `realpath` primitive), and the
+config layer. The rest of this doc is the forward plan for those.
 
 ## Why
 
