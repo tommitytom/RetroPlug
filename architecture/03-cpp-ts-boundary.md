@@ -12,8 +12,24 @@ duplicate. `ProjectSerialization` + the `ProjectBinaries` entry-key contract +
 and blobs never cross as JSON. `project_binaries::strip/restore` were templated on
 the sink/source so the plugin's `.rplg` codec is unchanged.
 
-**Still C++ (later increments):** the **plugin** save/load/relink band (its runtime
-has no fs/zip bindings and it's a `pending`/event machine), `ProjectMissingFiles`,
+**Increment 2 shipped** (branch `arch/rework`): the **plugin** save + zip-export paths
+now run the *same* shared TS, over the same primitives added to `PluginRpcService`
+(`readFile`/`writeFile`/`zipEntries`/`unzipEntries`/`snapshotProjectConfig` + a
+`notifyProjectSaved` bookkeeping call). The C++ `saveProjectToPath`/`exportZipToPath`/
+`saveProject` orchestration is deleted; the native file dialog hands the chosen path
+to the UI via `save-path-selected`/`export-path-selected` events (mirroring the relink
+flow), and the silent "Save Project" runs the TS directly from the menu. The UI drives
+it through a plugin `ProjectHost` adapter that binds the harness's `createSyncClient`
+to the synchronous in-process `Symbol.for("plugin").__rpcSend` (the UI's async client
+is untouched); transport-free package subpath exports keep the harness-only transport
+out of the UI bundle. `snapshotProjectConfig(baseDir)` does the thin-save `toRelative`
+natively (so `ProjectPaths` stays deferred). Exercised end-to-end through the **real**
+`PluginRpcService` + UI bundle by `test:ui`.
+
+**Still C++ (later increments):** the **plugin LOAD** path (its `pendingProject_` latch,
+`missing-files`/relink event flow, and the async `CommandQueue` apply — `applyProjectConfig`
+is deferred with it), the DAW `getState`/`setState` headless path (needs the bare-`jsHost`
+non-UI bundle, [04](04-scriptable-runtime.md) §A step 2), `ProjectMissingFiles`,
 `ProjectPaths` (needs a `realpath` primitive), the config layer, and the
 `Project::addSystem` → `constructInstance` split. The rest of this doc is the
 forward plan for those.
