@@ -2,10 +2,16 @@
 
 ## Status
 
-**Proposed (Designed).** Live emulator state is already DSP-authoritative; the
-net-new piece is relocating the *config* authority to the UI (when open) and
-demoting the DSP's `config_` to a replica. No code written yet — this documents
-the target and the seams that already support it.
+**Steps 1–3 shipped** (branch `arch/rework`). The editing UI now owns the
+project-wide settings and edits them synchronously; the DSP holds a replica
+(routing still feeds live mixing). Live emulator state stays DSP-authoritative.
+Realized as: a `getProjectView()` RPC (atomic, blob-free seed = systems + focus
++ settings) replacing the UI's six-getter fan-out; a `ProjectLoaded` event
+distinct from `ConfigChanged` so a load re-seeds settings while a structural
+change does not; and the four settings command handlers dropping the
+`ConfigChanged` echo. **Deferred:** the stopped-audio `getState` edge (step 4)
+and relocating the authoritative `ProjectConfig` into TS (step 5, gated on the
+[control-plane runtime](04-scriptable-runtime.md)).
 
 ## Why
 
@@ -171,22 +177,31 @@ first, so 03/04 can move the *language* of the authority without re-litigating
 
 Each step is independently shippable and leaves the plugin working.
 
-1. **Add the thin `snapshotConfig`** (blob-stripped) and route seed-on-open /
-   `listSystems` through it. No behaviour change — just the seed source the rest
-   depends on.
-2. **Make the editing UI authoritative for persistence-only settings.** UI
-   holds `zoom`/`layout` in its working copy, edits synchronously, sends the
-   field-update command *without* expecting a `ConfigChanged` echo; the DSP
-   stops setting `projectMutated` for those. Removes the zoom-reset race.
-3. **Stop refetching settings on `ConfigChanged` for edits the UI originated.**
-   `ConfigChanged` narrows to *structural* changes the UI didn't initiate
-   (DAW `setState` reload, external load). Route-affecting settings still push
-   to the DSP for live mixing.
-4. **`getState` while audio is stopped** (see edge below): drain pending
-   commands at `getState`, or write settings to the replica on a path that
-   doesn't depend on `run()`.
-5. **(with 04)** Relocate the authoritative `ProjectConfig` into the TS
-   control-plane runtime; the DSP `config_` becomes a pure replica fed by the
+1. ✅ **Atomic, blob-free seed.** Realized as a `getProjectView()` RPC (systems
+   + focus + settings in one tear-free call) rather than a thin
+   `Project::snapshotConfig` variant — the UI's six-getter fan-out
+   (`listSystems`/`getFocus`/`getMidiRouting`/`getAudioRouting`/`getProjectZoom`/
+   `getLayout`) collapses to it. `SystemEntry` was already blob-free, so the
+   heavier live-instance-walking thin snapshot the UI *doesn't* need was avoided.
+2. ✅ **The editing UI is authoritative for the project-wide settings.** It
+   holds `zoom`/`layout`/`midiRouting`/`audioRouting` in its working copy, edits
+   them synchronously (`applyProjectZoom`/`applyLayout`/…), and sends the
+   field-update command *without* a `ConfigChanged` echo; the four DSP settings
+   handlers no longer set `projectMutated`. Routing still reaches the DSP for
+   live mixing (it always did — the command still fires).
+3. ✅ **`ConfigChanged` narrowed to structural.** A whole-project load emits the
+   new `ProjectLoaded` event → the UI full-re-seeds (incl. settings);
+   `ConfigChanged` now covers only structural changes → the UI refetches systems
+   + focus and keeps the settings it owns. This is what makes the optimism
+   correct: settings are re-adopted only on a load, never clobbered by a
+   structural tick.
+4. **`getState` while audio is stopped** (see edge below) — *deferred*: drain
+   pending commands at `getState`, or write settings to the replica on a path
+   that doesn't depend on `run()`. In practice `run()` (the audio process
+   callback) ticks continuously, so the replica is current by save time; the
+   clean fix is left until the edge is shown to bite, to avoid a lock ahead of need.
+5. **(with 04)** *deferred* — relocate the authoritative `ProjectConfig` into the
+   TS control-plane runtime; the DSP `config_` becomes a pure replica fed by the
    same commands.
 
 ## One real edge: the audio engine isn't ticking

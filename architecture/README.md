@@ -101,7 +101,7 @@ source as the C++ structs (the RPC codegen already emits TS types).
 | # | Doc | Status |
 | --- | --- | --- |
 | 01 | [The Block Runner (render core)](01-block-runner.md) | Shipped + 1 deferred |
-| 02 | [Project-state ownership (split authority)](02-project-state-ownership.md) | Proposed |
+| 02 | [Project-state ownership (split authority)](02-project-state-ownership.md) | Steps 1–3 shipped |
 | 03 | [The C++/TS boundary](03-cpp-ts-boundary.md) | Proposed (centerpiece) |
 | 04 | [The scriptable runtime](04-scriptable-runtime.md) | Proposed |
 | 05 | [Cross-core roles](05-roles-cross-core.md) | Proposed |
