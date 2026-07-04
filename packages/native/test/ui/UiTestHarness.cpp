@@ -256,6 +256,9 @@ bool UiTestHarness::boot() {
 
     if (engine_.evalModuleBytecode(ui_bundle, ui_bundle_size) != 0) return false;
 
+    // Bind the display + mount React (the bundle no longer auto-mounts).
+    engine_.attachDisplay();
+
     booted_ = true;
     return true;
 }
@@ -301,7 +304,7 @@ std::uint32_t UiTestHarness::loadRom(const std::string& path, const std::string&
 void UiTestHarness::reopenEditor() {
     engine_.detachDisplay();
     pump(10);                 // flush LVGL async deletes from the unmount
-    engine_.reattachDisplay();
+    engine_.attachDisplay();
     pump(30);                 // let the re-mounted React tree settle
 }
 

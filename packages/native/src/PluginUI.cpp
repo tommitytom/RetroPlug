@@ -239,26 +239,6 @@ public:
 
         if (jsEngine.init())
         {
-            // Force the LVGL screen background to black. Without this the
-            // default-light theme leaks a light grey/white through any gap
-            // not covered by the React tree (visible especially on tiled
-            // WMs that pad the window beyond our requested size).
-            if (lv_obj_t* screen = lv_screen_active()) {
-                lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
-                lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
-            }
-
-            // lv_binding_js's WindowInit() pins the React-tree root's
-            // width/height to the LVGL display's CURRENT pixel size. That
-            // captures the initial 480x432 and never updates when the
-            // compositor resizes us, so React's "100%" stays bound to
-            // 480x432 forever. Switch to lv_pct(100) so the root tracks
-            // the active screen — which IS resized by lv_display_set_resolution.
-            if (lv_obj_t* win = GetWindowInstance()) {
-                lv_obj_set_style_width(win, lv_pct(100), 0);
-                lv_obj_set_style_height(win, lv_pct(100), 0);
-            }
-
             jsEngine.setParamWriteCallback(
                 [this](uint32_t idx, float val) {
                     editParameter(idx, true);
@@ -368,6 +348,30 @@ public:
                     d_stderr("Failed to load embedded UI bundle");
                 else
                     d_stdout("LvglJsEngine: React UI loaded (embedded)");
+            }
+
+            // Bind this editor session's LVGL display + mount the React tree
+            // (the bundle is evaluated above; attachDisplay calls __rp_mountUI).
+            jsEngine.attachDisplay();
+
+            // Force the LVGL screen background to black. Without this the
+            // default-light theme leaks a light grey/white through any gap
+            // not covered by the React tree (visible especially on tiled
+            // WMs that pad the window beyond our requested size).
+            if (lv_obj_t* screen = lv_screen_active()) {
+                lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
+                lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+            }
+
+            // lv_binding_js's WindowInit() pins the React-tree root's
+            // width/height to the LVGL display's CURRENT pixel size. That
+            // captures the initial 480x432 and never updates when the
+            // compositor resizes us, so React's "100%" stays bound to
+            // 480x432 forever. Switch to lv_pct(100) so the root tracks
+            // the active screen — which IS resized by lv_display_set_resolution.
+            if (lv_obj_t* win = GetWindowInstance()) {
+                lv_obj_set_style_width(win, lv_pct(100), 0);
+                lv_obj_set_style_height(win, lv_pct(100), 0);
             }
         }
         else
