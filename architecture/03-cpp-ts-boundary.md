@@ -39,8 +39,28 @@ incl. `toAbsolute`); the header shrank to just `sanitizeSavTargets` (the DAW `se
 path still needs it). Net **−227 C++ src**, taking the work-stream cumulative to **−87** —
 net-negative for the first time.
 
-**Still C++ (later increments):** the **ROM-build band** (`buildSystemFromPath` / pairing —
-needs the `Project::addSystem` → `constructInstance` split, the deep cut), the DAW
+**Increment 4 shipped** (branch `arch/rework`): the **plugin ROM load / add / mGB** paths
+moved to shared TS. The per-mode `loadRomFromPath` / `addRomFromPath` / `loadMgb` wrappers
++ the UI-dead `replaceRomFromPath` are deleted; the UI drives ROM building through
+`project/romBuild.ts` (`startLoadRom` / `startAddRom` / `loadMgb` / `onRomPathSelected`)
+over one new native primitive — `constructSystem(romPath, embeddedRom, mode)` — which
+slurps + auto-detects the ROM (or supplies the binary-baked mGB), builds + activates the
+emulator via the extracted-but-kept-native `constructInstanceCore`, queues it
+(`makeLoadRom` / `makeAddSystem`), and does the sibling-`.rplg` + recent bookkeeping for a
+"load". **No ROM bytes cross the bridge — just the path** (a 32 MB GBA ROM as a JS
+`number[]` would be a real regression). The native `onFileBrowserSelected` ROM branch now
+emits `rom-path-selected` (mirroring `load-path-selected`); TS owns the load-vs-add
+decision + the sibling-`.rplg` deferral (Load ROM beside a project opens it via `startLoad`).
+This is **consolidation, not thinning**: emulator construction (`constructInstanceCore`),
+`assignSavSuffix`, `writeSiblingProject`, and the ROM-watcher builder all legitimately stay
+native (DSP core / authoritative live-system reads), and the new primitive carries its own
+doc block — so the cut is a modest **−28 C++ src** (cumulative **−115**). The `.sav`→ROM
+pairing (`findSiblingRom` + the 2nd-browser + the savPath-override pin) is **deferred** —
+still native.
+
+**Still C++ (later increments):** the **`.sav`→ROM pairing** (`loadRomPaired` /
+`findSiblingRom` / the `handleOpenRomSelection` `.sav` branch — the deferred ROM-band
+follow-up), the whole-project **`Project::addSystem`** DSP-thread build, the DAW
 `getState`/`setState` headless path (needs the bare-`jsHost` non-UI bundle,
 [04](04-scriptable-runtime.md) §A step 2 — the gate to deleting the codec headers +
 `sanitizeSavTargets`), `ProjectPaths` `toRelative` (needs a `realpath` primitive), and the
