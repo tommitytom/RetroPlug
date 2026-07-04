@@ -1,50 +1,51 @@
-// Forward-tolerance: parseConfig validates the config SHAPE (defaults filled, values
-// coerced) via zod, but must PRESERVE unknown fields — a native-written .rplg carries
-// richer per-system fields (model, native-shaped roles, …) that the greenfield thin
-// model doesn't track. If those were stripped, a greenfield load→save round-trip
-// would silently lose them. This locks the z.looseObject passthrough that a naive
-// zod migration (strip-by-default) would break.
+// Config validation: parseConfig validates STRICTLY (unknown keys stripped) and coerces
+// malformed values. Forward-tolerance across greenfield versions is field DEFAULTS (an
+// old config missing a newer field gets its default) — not passthrough. Unknown fields
+// from a *different* writer (native C++'s richer shape) are a translation concern for
+// the real adapter, and a *newer* greenfield writer is refused by version detection, so
+// an older reader never needs to preserve unknowns. Breaking format changes bump the
+// version and migrate at the load seam (migrateProjectRaw — no-op today).
 import { test, expect } from "../../testing/harness";
-import { parseConfig, serializeConfig } from "../../src/projectConfig";
+import { parseConfig } from "../../src/projectConfig";
 
-const identity = (p: string) => p;
-
-test("parseConfig preserves unknown top-level + per-system fields", () => {
+test("additive tolerance: a config missing newer fields gets their defaults", () => {
   const raw = JSON.stringify({
     schemaVersion: "1",
-    settings: { layout: 2, futureSetting: 42 }, // unknown settings field
+    settings: { layout: 2 }, // the other three settings are absent
+    systems: [{ kind: "sameboy", romPath: "/a.gb" }],
+  });
+  const cfg = parseConfig(raw);
+  expect(cfg.settings).toEqual({ layout: 2, midiRouting: 0, audioRouting: 0, zoom: 0 }); // defaults filled
+  expect(cfg.systems[0]).toEqual({ kind: "sameboy", romPath: "/a.gb" }); // no spurious fields
+});
+
+test("strict: unknown fields are stripped, known fields kept", () => {
+  const raw = JSON.stringify({
+    schemaVersion: "1",
     futureTopLevel: { anything: true }, // unknown root field
+    settings: { layout: 2, futureSetting: 42 }, // unknown settings field
     systems: [
       {
         kind: "sameboy",
-        romPath: "/roms/a.gb",
+        romPath: "/a.gb",
         model: 5, // a native flat field greenfield doesn't model
-        roles: [{ kind: "lsdj-sync", config: { mode: 2, tempoDivisor: 1 } }], // native-shaped role
-        highpass: 2, // another unknown rich field
+        highpass: 2,
+        roles: [{ kind: "lsdj-sync", config: { mode: 2, tempoDivisor: 1 } }], // known field
       },
     ],
   });
-
   const cfg = parseConfig(raw);
-  // known fields validated/typed
-  expect(cfg.settings.layout).toBe(2);
-  expect(cfg.systems[0].romPath).toBe("/roms/a.gb");
-  // unknown fields survive on the parsed object
+  expect((cfg as Record<string, unknown>).futureTopLevel).toBe(undefined); // root unknown stripped
+  expect((cfg.settings as Record<string, unknown>).futureSetting).toBe(undefined); // settings unknown stripped
   const sys = cfg.systems[0] as Record<string, unknown>;
-  expect(sys.model).toBe(5);
-  expect(sys.highpass).toBe(2);
+  expect(sys.model).toBe(undefined); // per-system unknown stripped
+  expect(sys.highpass).toBe(undefined);
+  expect(sys.romPath).toBe("/a.gb"); // known field kept
+  // roles is a known field; a role's `config` is an open record, so its fields survive
   expect(sys.roles).toEqual([{ kind: "lsdj-sync", config: { mode: 2, tempoDivisor: 1 } }]);
-  expect((cfg.settings as Record<string, unknown>).futureSetting).toBe(42);
-  expect((cfg as Record<string, unknown>).futureTopLevel).toEqual({ anything: true });
-
-  // and they survive a re-serialize (no data loss on round-trip)
-  const round = JSON.parse(serializeConfig(cfg, "", identity));
-  expect(round.systems[0].model).toBe(5);
-  expect(round.systems[0].roles[0].config.mode).toBe(2);
-  expect(round.futureTopLevel).toEqual({ anything: true });
 });
 
-test("parseConfig coerces a malformed settings value + drops a garbage system entry", () => {
+test("coerces a malformed settings value + drops a garbage system entry", () => {
   const raw = JSON.stringify({
     schemaVersion: "1",
     settings: { layout: 99, zoom: "bad" }, // out-of-range + wrong-type → clamped/defaulted

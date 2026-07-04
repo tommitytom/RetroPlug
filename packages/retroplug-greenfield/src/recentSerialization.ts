@@ -12,7 +12,7 @@ import { MAX_ENTRIES, type RecentEntry } from "./recentList";
 export const RECENT_SCHEMA = 2;
 
 // One recent entry: a non-empty path + a display alias (defaulting to "").
-const recentEntrySchema = z.looseObject({
+const recentEntrySchema = z.object({
   path: z.string().min(1),
   name: z.string().catch("").default(""),
 });

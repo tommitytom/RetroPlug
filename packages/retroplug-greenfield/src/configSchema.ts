@@ -2,9 +2,16 @@
 // per-system settings, project files, recent files. A config's shape, defaults, and
 // clamping all live in one zod schema, so every user config is validated + coerced
 // declaratively (a malformed/partial/stale value snaps to a sane one rather than
-// being ad-hoc guarded). Config object schemas use `z.looseObject` so unknown fields
-// are PRESERVED (forward-tolerance — a native config's richer fields survive a
-// greenfield load→save round-trip instead of being stripped).
+// being ad-hoc guarded).
+//
+// Config object schemas are STRICT (z.object — unknown keys stripped). Forward-
+// tolerance across greenfield versions comes from field `.default()`s (an old config
+// missing a newly-added field gets the default) plus the version-stamp/refuse-newer
+// detection, NOT from passthrough: an older reader never sees a newer writer's fields
+// (they're refused), and additive fields are filled by defaults. The only other
+// writer is native C++ (a richer/different shape) — that's a translation concern for
+// the real adapter, not loose passthrough. Breaking format changes bump the version
+// and get an explicit raw migration at the load seam.
 //
 // These fields CLAMP rather than throw (a settings knob shouldn't reject an overflow
 // value — it snaps to the nearest bound), and default when missing or the wrong type,

@@ -41,13 +41,13 @@ export interface ProjectConfig {
 }
 
 // --- zod validation schemas -----------------------------------------------
-// Every config object is a z.looseObject so UNKNOWN fields are PRESERVED — a native
-// config's richer per-system fields (model / native-shaped roles / …) survive a
-// greenfield load→save round-trip instead of being stripped. Fields clamp/default via
-// the configSchema helpers, so a malformed/partial user config is coerced, not rejected.
+// STRICT schemas (unknown keys stripped). Forward-tolerance across greenfield versions
+// is field `.default()`s + refuse-newer detection, not passthrough (see configSchema.ts).
+// A malformed/partial config is coerced (clamp/default), not rejected. The role
+// `config` stays an open record — its per-kind RoleType schema validates it elsewhere.
 
 /** Project-level settings: defaults filled, values clamped to their enum ranges. */
-export const projectSettingsSchema = z.looseObject({
+export const projectSettingsSchema = z.object({
   layout: clampedInt(0, 3, 0),
   midiRouting: clampedInt(0, 3, 0),
   audioRouting: clampedInt(0, 2, 0),
@@ -56,15 +56,15 @@ export const projectSettingsSchema = z.looseObject({
 
 export const DEFAULT_SETTINGS: ProjectSettings = projectSettingsSchema.parse({}) as ProjectSettings;
 
-// A role instance: kind + an opaque config record (its per-kind RoleType schema
-// validates the config elsewhere; here it's passed through).
-const roleInstanceSchema = z.looseObject({
+// A role instance: kind + an opaque config record (the record is intentionally open;
+// the role's own RoleType schema validates the config's fields).
+const roleInstanceSchema = z.object({
   kind: z.string(),
   config: z.record(z.string(), z.unknown()).catch(() => ({})),
 });
 
-// A serialized system: known fields typed/optional, everything else preserved (loose).
-const systemThinSchema = z.looseObject({
+// A serialized system: known fields typed/optional; unknowns stripped.
+const systemThinSchema = z.object({
   kind: z.string().optional(),
   romPath: z.string().optional(),
   savPath: z.string().optional(),
@@ -75,12 +75,23 @@ const systemThinSchema = z.looseObject({
 });
 
 // The root: schemaVersion coerced to a string; settings/systems validated separately
-// (per-element tolerant) in parseConfig; unknown root fields preserved (loose).
-const projectConfigSchema = z.looseObject({
+// (per-element tolerant) in parseConfig.
+const projectConfigSchema = z.object({
   schemaVersion: stringField(""),
   settings: z.unknown().optional(),
   systems: z.array(z.unknown()).catch(() => []).default(() => []),
 });
+
+/** Bring a raw parsed config from `fromVersion` up to `K_PROJECT` before validation.
+ *  Pre-release there are NO migrations — additive changes are handled by zod defaults,
+ *  so an older config validates as-is (its missing fields default). When the first
+ *  BREAKING (non-additive) bump lands, this is where an ordered chain of raw
+ *  `(obj) => obj` steps (v1→v2, v2→v3, …) is applied up to `K_PROJECT`, then the
+ *  current schema validates the result. The Newer branch (refuse) lives at the load
+ *  seam (ProjectStore.load); this handles Older. */
+function migrateProjectRaw(raw: Record<string, unknown>, _fromVersion: number): Record<string, unknown> {
+  return raw; // no migrations yet
+}
 
 // --- schema version (port of schemaVersions.ts) ---------------------------
 
@@ -154,10 +165,10 @@ export function serializeConfig(cfg: ProjectConfig, baseDir: string, canonicaliz
   return JSON.stringify(out);
 }
 
-/** Parse config JSON with the zod schemas: validates + defaults + clamps, and
- *  PRESERVES unknown fields (forward-tolerance). Never throws — malformed JSON /
- *  a non-object root yield an empty-default config, a garbage system entry is
- *  dropped, and out-of-range/wrong-type values are coerced. */
+/** Parse config JSON with the zod schemas: migrate an older raw shape up to current
+ *  (no-op today), then validate + default + clamp (unknown fields stripped). Never
+ *  throws — malformed JSON / a non-object root yield an empty-default config, a
+ *  garbage system entry is dropped, out-of-range/wrong-type values are coerced. */
 export function parseConfig(json: string): ProjectConfig {
   let doc: unknown;
   try {
@@ -165,8 +176,10 @@ export function parseConfig(json: string): ProjectConfig {
   } catch {
     doc = {};
   }
-  const root = doc && typeof doc === "object" && !Array.isArray(doc) ? doc : {};
-  const parsed = projectConfigSchema.parse(root);
+  const root = (doc && typeof doc === "object" && !Array.isArray(doc) ? doc : {}) as Record<string, unknown>;
+  const version = parseProjectVersion(typeof root.schemaVersion === "string" ? root.schemaVersion : "");
+  const migrated = migrateProjectRaw(root, version);
+  const parsed = projectConfigSchema.parse(migrated);
 
   // Settings: default when missing/invalid, else clamped/defaulted (unknowns kept).
   const sp = projectSettingsSchema.safeParse(parsed.settings);

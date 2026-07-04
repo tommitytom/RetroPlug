@@ -17,8 +17,10 @@ export interface CoreSettings {
   reloadOnRomChange: boolean;
 }
 
-/** Validates + defaults + clamps a (possibly partial/stale) settings object. */
-export const coreSettingsSchema = z.looseObject({
+/** Validates + defaults + clamps a (possibly partial/stale) settings object. Strict:
+ *  unknown keys are stripped (a newer writer's fields are refused by version detection,
+ *  additive fields are filled by defaults). */
+export const coreSettingsSchema = z.object({
   gainDb: clampedNumber(GAIN_MIN, GAIN_MAX, 0),
   reloadOnRomChange: boolField(false),
 });
