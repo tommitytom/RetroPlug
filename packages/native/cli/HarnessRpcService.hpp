@@ -22,6 +22,13 @@ struct HarnessSerialByte { std::uint64_t sample; std::uint8_t byte; };
 struct HarnessFrame      { std::uint32_t width; std::uint32_t height; bool published; rfl::Bytestring data; };
 struct HarnessKitSample  { std::string path; std::string name; };
 struct HarnessPerSystemAudio { std::vector<rfl::Bytestring> systems; }; // one interleaved-stereo-f32 buffer per system
+// Project save/load byte-mover primitives (the orchestration is TS —
+// @retroplug/retroplug projectSerialization.ts). Output byte fields use
+// rfl::Bytestring (msgpack BIN); input byte fields use std::vector<std::uint8_t>
+// (reflect-cpp's reader is int-array-only for binary — see the note above).
+struct HarnessZipEntry { std::string name; rfl::Bytestring bytes; };            // unzip / snapshot output
+struct HarnessZipInput { std::string name; std::vector<std::uint8_t> bytes; };  // zip / apply input
+struct HarnessProjectSnapshot { std::string config; std::vector<HarnessZipEntry> blobs; };
 
 // The emulator/debug/fixture surface the cli test harness exposes to TypeScript,
 // via rpcpp (reflect-cpp -> OpenRPC -> generated client). A thin wrapper over
@@ -110,10 +117,14 @@ public:
     void renderChunk(double ms);
     void renderEnd();
 
-    // project / kits
-    void saveRplg(std::string path);
-    void saveProjectFile(std::string path);
-    std::uint32_t loadRplg(std::string path);
+    // project save/load primitives (orchestration is TS)
+    rfl::Bytestring zipEntries(std::vector<HarnessZipInput> entries);
+    std::vector<HarnessZipEntry> unzipEntries(std::vector<std::uint8_t> bytes);
+    HarnessProjectSnapshot snapshotProjectConfig();
+    std::uint32_t applyProjectConfig(std::string config, std::vector<HarnessZipInput> blobs);
+    bool fileExists(std::string path);
+
+    // kits
     void patchKit(std::uint32_t systemId, std::uint32_t slot, std::string name,
                   std::vector<HarnessKitSample> samples);
 

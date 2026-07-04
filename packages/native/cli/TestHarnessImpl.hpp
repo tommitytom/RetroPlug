@@ -621,61 +621,70 @@ struct TestHarness::Impl {
         role->queuePatch(slot, std::move(compiled.bytes));
     }
 
-    // Snapshot the project's current config + savestate into a .rplg (pure
-    // PKZIP from projectConfigToZip). Used to author Reaper DAW fixtures: a TS
-    // test builds the LSDj/mGB state, then writes the .rplg the plugin auto-loads
-    // via RETROPLUG_AUTOLOAD_PROJECT.
-    void saveRplg(const std::string& path) {
-        const auto zip = projectConfigToZip(project->snapshotConfig());
-        if (zip.empty())
-            throw std::runtime_error("saveRplg: projectConfigToZip returned empty");
-        std::ofstream f(path, std::ios::binary | std::ios::trunc);
-        if (!f) throw std::runtime_error("saveRplg: cannot open " + path);
-        f.write(reinterpret_cast<const char*>(zip.data()),
-                static_cast<std::streamsize>(zip.size()));
-        if (!f) throw std::runtime_error("saveRplg: write failed: " + path);
+    // .rplg save/load orchestration now lives in shared TS (@retroplug/retroplug
+    // projectSerialization.ts) over these two byte-mover primitives + the generic
+    // zip/unzip in HarnessRpcService. The primitives keep the irreducibly-native
+    // work: walking the live instances for the config + blobs (snapshot) and
+    // building/activating the emulator from a config (apply). TS owns the zip
+    // structure, the entry-key contract, and the schema check.
+
+    // A blob entry (name = the zip key, e.g. "systems/0/rom") + its raw bytes.
+    struct RplgBlob { std::string name; std::vector<std::uint8_t> bytes; };
+    struct RplgSnapshot { std::string config; std::vector<RplgBlob> blobs; };
+
+    // Live project -> { thin config JSON (blobs emptied, schema stamped), each
+    // blob keyed by the project_binaries entry contract }. The thin-snapshotConfig.
+    RplgSnapshot snapshotProjectConfig() {
+        ProjectConfig cfg = project->snapshotConfig();
+        cfg.schemaVersion = std::to_string(rp::schema::kProject); // stamp current
+        // A sink that collects the stripped blobs (name/key + bytes) instead of
+        // writing them into a zip — the templated project_binaries walk drives it.
+        struct Collector {
+            std::vector<RplgBlob> blobs;
+            bool add(std::string_view name, std::span<const std::uint8_t> bytes) {
+                blobs.push_back({std::string(name), {bytes.begin(), bytes.end()}});
+                return true;
+            }
+        } coll;
+        project_binaries::strip(coll, cfg); // empties cfg's blobs into coll
+        return { projectConfigToJson(cfg), std::move(coll.blobs) };
     }
 
-    // Path-only JSON save — the harness mirror of PluginRpcService::saveProjectToPath.
-    // Writes config + romPath (no embedded binaries); a subsequent loadRplg re-reads
-    // the ROM from disk and the sibling `<rom>.sav`. Use saveRplg for the bundled zip.
-    void saveProjectFile(const std::string& path) {
-        const std::string json = projectConfigToJsonFile(project->snapshotConfig());
-        if (json.empty())
-            throw std::runtime_error("saveProjectFile: projectConfigToJsonFile returned empty");
-        std::ofstream f(path, std::ios::binary | std::ios::trunc);
-        if (!f) throw std::runtime_error("saveProjectFile: cannot open " + path);
-        f.write(json.data(), static_cast<std::streamsize>(json.size()));
-        if (!f) throw std::runtime_error("saveProjectFile: write failed: " + path);
-    }
-
-    // Inverse of saveRplg / saveProjectFile: parse a project file (autodetecting
-    // zip vs path-only JSON) and rebuild the project from it — the harness-side
-    // mirror of the plugin's RETROPLUG_AUTOLOAD_PROJECT / setState path
-    // (projectConfigFromBytes -> addSystem -> onActivate, restoring each GB
-    // savestate). Lets a test round-trip a fixture to reproduce exactly what a
-    // DAW sees when it reloads the project. Returns the first restored system id.
-    std::uint32_t loadRplg(const std::string& path) {
-        auto bytes = rpcli::slurpBytes(path);
-        auto parsed = projectConfigFromBytes(bytes);
+    // { thin config JSON, blob entries } -> rebuild the project. Restores the
+    // blobs into the config, recompiles any kits missing compiled bytes, then the
+    // shared Project::loadFromConfig -> onActivate -> rebuildLinkGroups (the same
+    // path a DAW reload takes). Returns the first restored system id.
+    std::uint32_t applyProjectConfig(const std::string& config,
+                                     const std::vector<RplgBlob>& blobs) {
+        auto parsed = projectConfigFromJson(config);
         if (!parsed)
-            throw std::runtime_error("loadRplg: failed to parse " + path);
-        // Path-only JSON saves carry kit samples but no compiled bytes — rebuild
-        // them from source before addSystem, mirroring loadProjectFromPath.
+            throw std::runtime_error("applyProjectConfig: failed to parse config JSON");
+        if (!blobs.empty()) {
+            // A source that reads blobs from the entry list — mirror of Collector.
+            struct MapSource {
+                const std::vector<RplgBlob>* entries;
+                bool has(std::string_view name) const {
+                    for (const auto& e : *entries) if (e.name == name) return true;
+                    return false;
+                }
+                std::vector<std::uint8_t> read(std::string_view name) const {
+                    for (const auto& e : *entries) if (e.name == name) return e.bytes;
+                    return {};
+                }
+            } src{&blobs};
+            project_binaries::restore(src, *parsed);
+        }
         if (rp::lsdj::projectHasKitsNeedingRecompile(*parsed)) {
             if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::lsdj::KitCompiler>();
             rp::lsdj::recompileMissingKits(*parsed, *kitCompiler_);
         }
-        // Fresh project rebuilt via the shared Project::loadFromConfig, which
-        // also restores the project-wide settings (zoom / layout / routing) —
-        // the same path PluginDSP::applyProjectFromConfig uses on a DAW reload.
         project = std::make_unique<Project>();
         sysList.clear();
         midiOutLog.clear();
         serialOutLog.clear();
         const SystemId first = project->loadFromConfig(*parsed);
         if (!parsed->systems.empty() && first == 0)
-            throw std::runtime_error("loadRplg: addSystem failed");
+            throw std::runtime_error("applyProjectConfig: loadFromConfig failed");
         project->onActivate(sampleRate); // restores each system's savestate
         for (const auto& s : project->systems())
             if (s) sysList.push_back(s.get());

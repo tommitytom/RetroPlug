@@ -10,6 +10,12 @@
 
 import { createSyncClient, type RpcSend } from "./createSyncClient";
 import type { HarnessService } from "harness-service";
+import {
+  saveRplg as tsSaveRplg,
+  saveProjectFile as tsSaveProjectFile,
+  loadRplg as tsLoadRplg,
+  type ProjectHost,
+} from "./projectSerialization";
 
 // Name-keyed CPU register file. The set differs per backend — every supported
 // system includes a "pc". SameBoy: af,bc,de,hl,sp,pc. NES: a,x,y,sp,ps,pc.
@@ -199,6 +205,24 @@ function toFloat32(v: unknown): Float32Array {
 /** Build an `emu` control surface over a synchronous RPC transport. */
 export function createEmu(rpcSend: RpcSend) {
   const client = createSyncClient<HarnessService>(rpcSend);
+
+  // The native byte-mover primitives that the shared TS project-serialization
+  // orchestration (projectSerialization.ts) drives — wire-type conversions
+  // (BIN <-> Uint8Array, byte input <-> number[]) live here.
+  const projectHost: ProjectHost = {
+    readFile: (path) => copyU8(client.readFile(path)),
+    writeFile: (path, bytes) => client.writeFile(path, toNums(bytes)),
+    zipEntries: (entries) =>
+      copyU8(client.zipEntries(entries.map((e) => ({ name: e.name, bytes: toNums(e.bytes) })))),
+    unzipEntries: (bytes) =>
+      client.unzipEntries(toNums(bytes)).map((e) => ({ name: e.name, bytes: copyU8(e.bytes) })),
+    snapshotProjectConfig: () => {
+      const s = client.snapshotProjectConfig();
+      return { config: s.config, blobs: s.blobs.map((b) => ({ name: b.name, bytes: copyU8(b.bytes) })) };
+    },
+    applyProjectConfig: (config, blobs) =>
+      client.applyProjectConfig(config, blobs.map((b) => ({ name: b.name, bytes: toNums(b.bytes) }))),
+  };
 
   const emu = {
     /** Load a Game Boy ROM; returns the new system id. An optional `sav`
@@ -452,14 +476,14 @@ export function createEmu(rpcSend: RpcSend) {
     /** Snapshot the project (config + savestate) to a .rplg fixture — the file a
      *  Reaper DAW test auto-loads via RETROPLUG_AUTOLOAD_PROJECT. */
     saveRplg(path: string): void {
-      client.saveRplg(path);
+      tsSaveRplg(projectHost, path);
     },
     /** Path-only JSON project save — the harness mirror of the plugin's default
      *  "Save Project" (config + romPath, no embedded binaries). A subsequent
      *  loadRplg re-reads the ROM from disk and the sibling `<rom>.sav`. Use
      *  saveRplg for the self-contained zip bundle. */
     saveProjectFile(path: string): void {
-      client.saveProjectFile(path);
+      tsSaveProjectFile(projectHost, path);
     },
     /** Inverse of saveRplg / saveProjectFile: rebuild the project from a project
      *  file (autodetecting zip vs path-only JSON), exactly as the plugin does on
@@ -468,7 +492,7 @@ export function createEmu(rpcSend: RpcSend) {
      *  reproduce what a DAW sees on reload (e.g. whether a savestate restores to a
      *  playable state). */
     loadRplg(path: string): number {
-      return client.loadRplg(path);
+      return tsLoadRplg(projectHost, path);
     },
     /** Compile a custom LSDj drum kit from sample files and queue it into `slot`.
      *  The sniffer auto-attaches the kit-patch role to LSDj ROMs; call runMs after

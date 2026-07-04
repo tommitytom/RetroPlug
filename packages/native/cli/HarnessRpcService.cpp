@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -275,9 +276,51 @@ void HarnessRpcService::renderBegin(std::string mixPath,
 void HarnessRpcService::renderChunk(double ms) { h_->renderChunk(ms); }
 void HarnessRpcService::renderEnd() { h_->renderEnd(); }
 
-void HarnessRpcService::saveRplg(std::string path) { h_->saveRplg(rpcli::resolveHostPath(path)); }
-void HarnessRpcService::saveProjectFile(std::string path) { h_->saveProjectFile(rpcli::resolveHostPath(path)); }
-std::uint32_t HarnessRpcService::loadRplg(std::string path) { return h_->loadRplg(rpcli::resolveHostPath(path)); }
+rfl::Bytestring HarnessRpcService::zipEntries(std::vector<HarnessZipInput> entries) {
+    MinizWriter zip;
+    for (const auto& e : entries)
+        if (!zip.add(e.name, e.bytes))
+            throw std::runtime_error("zipEntries: failed to add entry " + e.name);
+    const auto bytes = zip.finish();
+    const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
+    return rfl::Bytestring(p, p + bytes.size());
+}
+
+std::vector<HarnessZipEntry> HarnessRpcService::unzipEntries(std::vector<std::uint8_t> bytes) {
+    std::vector<HarnessZipEntry> out;
+    MinizReader zip(bytes);
+    if (!zip.valid()) return out;
+    for (const auto& name : zip.names()) {
+        const auto data = zip.read(name);
+        const auto* p = reinterpret_cast<const std::byte*>(data.data());
+        out.push_back({ name, rfl::Bytestring(p, p + data.size()) });
+    }
+    return out;
+}
+
+HarnessProjectSnapshot HarnessRpcService::snapshotProjectConfig() {
+    auto snap = h_->snapshotProjectConfig();
+    HarnessProjectSnapshot out;
+    out.config = std::move(snap.config);
+    out.blobs.reserve(snap.blobs.size());
+    for (const auto& b : snap.blobs) {
+        const auto* p = reinterpret_cast<const std::byte*>(b.bytes.data());
+        out.blobs.push_back({ b.name, rfl::Bytestring(p, p + b.bytes.size()) });
+    }
+    return out;
+}
+
+std::uint32_t HarnessRpcService::applyProjectConfig(std::string config, std::vector<HarnessZipInput> blobs) {
+    std::vector<TestHarness::Impl::RplgBlob> native;
+    native.reserve(blobs.size());
+    for (auto& b : blobs) native.push_back({ std::move(b.name), std::move(b.bytes) });
+    return h_->applyProjectConfig(config, native);
+}
+
+bool HarnessRpcService::fileExists(std::string path) {
+    std::error_code ec;
+    return std::filesystem::exists(rpcli::resolveHostPath(path), ec);
+}
 
 void HarnessRpcService::patchKit(std::uint32_t systemId, std::uint32_t slot, std::string name,
                                  std::vector<HarnessKitSample> samples) {

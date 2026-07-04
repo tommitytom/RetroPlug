@@ -15,3 +15,12 @@ export {
   type ApuState, type ApuSquareState, type ApuTriangleState,
   type ApuNoiseState, type ApuDmcState,
 } from "./emu";
+
+// Shared project-serialization orchestration (moved out of C++).
+export { K_PROJECT, VersionCheck, checkVersion, parseProjectVersion } from "./schemaVersions";
+export { PROJECT_JSON, blobKey, parseBlobKey, isBlobEntry, type BlobKey, type BlobKind } from "./projectBinaries";
+export { saveRplg, saveProjectFile, loadRplg, type ProjectHost, type Blob } from "./projectSerialization";
+export type {
+  ProjectConfig, ProjectSettings, SystemConfig, SystemKind,
+  SameBoyConfig, MesenNesConfig, MesenGbaConfig, RoleConfig, LsdjKitConfig, KitSampleConfig,
+} from "./projectConfig";

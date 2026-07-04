@@ -43,9 +43,11 @@ void registerHarnessRpcMethods(Server& server) {
     server.template addMethod<&HarnessRpcService::renderBegin>();
     server.template addMethod<&HarnessRpcService::renderChunk>();
     server.template addMethod<&HarnessRpcService::renderEnd>();
-    server.template addMethod<&HarnessRpcService::saveRplg>();
-    server.template addMethod<&HarnessRpcService::saveProjectFile>();
-    server.template addMethod<&HarnessRpcService::loadRplg>();
+    server.template addMethod<&HarnessRpcService::zipEntries>();
+    server.template addMethod<&HarnessRpcService::unzipEntries>();
+    server.template addMethod<&HarnessRpcService::snapshotProjectConfig>();
+    server.template addMethod<&HarnessRpcService::applyProjectConfig>();
+    server.template addMethod<&HarnessRpcService::fileExists>();
     server.template addMethod<&HarnessRpcService::patchKit>();
     server.template addMethod<&HarnessRpcService::beginProfile>();
     server.template addMethod<&HarnessRpcService::readProfile>();

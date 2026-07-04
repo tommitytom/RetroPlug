@@ -25,6 +25,12 @@
 //   systems/{i}/sram
 //   systems/{i}/state
 //   systems/{i}/roles/{r}/kits/{k}/compiled
+//
+// strip/restore are templated on the sink/source so the same walk drives a
+// MinizWriter/MinizReader (the plugin's .rplg codec) or a plain entry
+// collector/map (the CLI harness, which hands the entries to TS orchestration).
+// A Sink needs `add(string_view, span<const uint8_t>) -> bool`; a Source needs
+// `has(string_view) -> bool` and `read(string_view) -> vector<uint8_t>`.
 
 namespace project_binaries {
 
@@ -34,26 +40,29 @@ inline std::string key(const std::string& prefix, const char* suffix) {
     return prefix + suffix;
 }
 
-// Strip a single blob into the zip, then empty it on the source.
-inline bool stripBlob(MinizWriter& zip,
+// Strip a single blob into the sink, then empty it on the source.
+template <class Sink>
+inline bool stripBlob(Sink& sink,
                       const std::string& name,
                       std::vector<std::uint8_t>& blob) {
     if (blob.empty()) return true;
-    if (!zip.add(name, blob)) return false;
+    if (!sink.add(name, blob)) return false;
     blob.clear();
     blob.shrink_to_fit();
     return true;
 }
 
-inline bool restoreBlob(const MinizReader& zip,
+template <class Source>
+inline bool restoreBlob(const Source& src,
                         const std::string& name,
                         std::vector<std::uint8_t>& blob) {
-    if (!zip.has(name)) return true;
-    blob = zip.read(name);
+    if (!src.has(name)) return true;
+    blob = src.read(name);
     return true;
 }
 
-inline bool stripRoles(MinizWriter& zip,
+template <class Sink>
+inline bool stripRoles(Sink& zip,
                        const std::string& prefix,
                        std::vector<RoleConfig>& roles) {
     for (std::size_t r = 0; r < roles.size(); ++r) {
@@ -72,7 +81,8 @@ inline bool stripRoles(MinizWriter& zip,
     return true;
 }
 
-inline bool restoreRoles(const MinizReader& zip,
+template <class Source>
+inline bool restoreRoles(const Source& zip,
                          const std::string& prefix,
                          std::vector<RoleConfig>& roles) {
     for (std::size_t r = 0; r < roles.size(); ++r) {
@@ -111,7 +121,8 @@ inline void clearRoles(std::vector<RoleConfig>& roles) {
 
 } // namespace detail
 
-inline bool strip(MinizWriter& zip, ProjectConfig& cfg) {
+template <class Sink>
+inline bool strip(Sink& zip, ProjectConfig& cfg) {
     for (std::size_t i = 0; i < cfg.systems.size(); ++i) {
         const std::string prefix = "systems/" + std::to_string(i) + "/";
         auto& sys = cfg.systems[i];
@@ -160,7 +171,8 @@ inline void clear(ProjectConfig& cfg) {
     }
 }
 
-inline bool restore(const MinizReader& zip, ProjectConfig& cfg) {
+template <class Source>
+inline bool restore(const Source& zip, ProjectConfig& cfg) {
     for (std::size_t i = 0; i < cfg.systems.size(); ++i) {
         const std::string prefix = "systems/" + std::to_string(i) + "/";
         auto& sys = cfg.systems[i];

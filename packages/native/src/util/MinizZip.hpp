@@ -163,6 +163,25 @@ public:
         return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     }
 
+    // Enumerate every entry name in the archive, in stored order. Lets a caller
+    // unzip to a full {name, bytes} list without knowing the keys up front.
+    std::vector<std::string> names() const {
+        std::vector<std::string> out;
+        if (!valid_) return out;
+        auto* z = const_cast<mz_zip_archive*>(&zip_);
+        const mz_uint n = mz_zip_reader_get_num_files(z);
+        out.reserve(n);
+        for (mz_uint i = 0; i < n; ++i) {
+            const mz_uint sz = mz_zip_reader_get_filename(z, i, nullptr, 0); // incl NUL
+            if (sz == 0) continue;
+            std::string name(sz, '\0');
+            mz_zip_reader_get_filename(z, i, name.data(), sz);
+            name.resize(sz - 1); // drop the trailing NUL miniz writes
+            out.push_back(std::move(name));
+        }
+        return out;
+    }
+
 private:
     mz_zip_archive zip_{};
     bool valid_ = false;
