@@ -5,10 +5,14 @@ import { tileWidth, tileHeight } from "../layout";
 import { Menu } from "./Menu";
 import type { MenuItem, MenuTree } from "./menuDefs";
 import { plugin } from "../plugin/client";
-import type { RpMissingFile } from "plugin-service";
+import { relinkOne, cancelLoad } from "../project/loadProject";
+import type { MissingFile } from "@retroplug/retroplug/missing-files";
 
 interface RelinkMenuProps {
-    missing:   RpMissingFile[];
+    missing:   MissingFile[];
+    // Report the remaining missing files after a relink (or [] on cancel/commit)
+    // so PluginUI updates its state — the relink orchestration is TS now.
+    onMissing: (remaining: MissingFile[]) => void;
     zoom:      number;
     sinkGroup: any;
 }
@@ -51,10 +55,11 @@ function kindLabel(kind: string): string {
 // one commits the load (server emits "project-loaded"). Esc cancels the load.
 //
 // Reuses the standard <Menu> so the styling matches the rest of the app for free.
-export function RelinkMenu({ missing, zoom, sinkGroup }: RelinkMenuProps) {
+export function RelinkMenu({ missing, onMissing, zoom, sinkGroup }: RelinkMenuProps) {
     const onClose = useCallback(() => {
-        void plugin.$notify("cancelMissingFiles");
-    }, []);
+        cancelLoad();       // drop the pending load, keep the current project
+        onMissing([]);
+    }, [onMissing]);
 
     const items: MenuItem[] = missing.map((m) => {
         return {
@@ -72,10 +77,10 @@ export function RelinkMenu({ missing, zoom, sinkGroup }: RelinkMenuProps) {
                 void (async () => {
                     const picked = await pickRelinkFile(m.itemKind);
                     if (!picked) return;
-                    // The result (and a re-emitted "missing-files" / "project-loaded")
-                    // drives PluginUI's state; nothing to do with it here.
-                    await plugin.relinkMissingFile(
-                        m.systemIndex, m.itemKind, m.kitSlot, m.sampleIndex, picked);
+                    // relinkOne locates the file (+ auto-relinks siblings), re-scans,
+                    // and commits when nothing's left; the remaining list drives
+                    // PluginUI's state (empty ⇒ the load committed).
+                    onMissing(relinkOne(m, picked));
                 })();
             },
         };

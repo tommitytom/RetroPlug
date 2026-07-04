@@ -1220,11 +1220,16 @@ TEST_CASE("recent: loading a ROM with an existing sibling opens it, no overwrite
 
     REQUIRE(fx.service.loadRomFromPath(romPath));
 
-    // Delegated to the project loader (no fresh rom-load) and left the file as-is.
-    CHECK(fx.sawEvent("project-loaded"));
+    // A sibling .rplg exists → loadRomFromPath delegates to the UI's TS project
+    // loader (emits "load-path-selected" with the sibling path) rather than doing
+    // a fresh rom-load, and leaves the file untouched. The load itself
+    // (project-loaded + recent bookkeeping) runs in TS — see the UI load tests.
+    const auto it = std::find_if(fx.emitted.begin(), fx.emitted.end(),
+        [](const auto& e) { return e.first == "load-path-selected"; });
+    REQUIRE(it != fx.emitted.end());
+    CHECK(it->second == projPath);
     CHECK_FALSE(fx.sawEvent("rom-loaded"));
     CHECK(readFile(projPath) == before);
-    CHECK(fx.service.getRecentFiles().size() == 1);
 
     std::error_code ec;
     std::filesystem::remove(romPath, ec);
@@ -1234,49 +1239,10 @@ TEST_CASE("recent: loading a ROM with an existing sibling opens it, no overwrite
 // Schema version: a project stamped newer than this build is refused with the
 // "project-incompatible" event and never commits. projectConfigToJson (unlike
 // ...ToJsonFile) does not re-stamp, so the forced future version survives to disk.
-TEST_CASE("loadProjectFromPath refuses a project from a newer schema version",
-          "[PluginRpcService][schema-version]") {
-    RecentFixture fx;
-
-    SameBoyConfig sb{}; sb.romPath = uniqueTmpPath("vernew", ".gb");
-    ProjectConfig cfg; cfg.systems.push_back(sb);
-    cfg.schemaVersion = std::to_string(rp::schema::kProject + 1);
-    const std::string projPath = uniqueTmpPath("vernew", ".rplg");
-    const std::string json = projectConfigToJson(cfg);
-    writeBytes(projPath, std::vector<std::uint8_t>(json.begin(), json.end()));
-
-    CHECK_FALSE(fx.service.loadProjectFromPath(projPath));   // refused at the gate
-    CHECK(fx.sawEvent("project-incompatible"));
-    CHECK_FALSE(fx.sawEvent("project-loaded"));
-
-    std::error_code ec;
-    std::filesystem::remove(projPath, ec);
-}
-
-// The gate only refuses *newer* — an older/equal version loads normally (older is
-// the future-migration hook, not a rejection).
-TEST_CASE("loadProjectFromPath accepts an older schema version",
-          "[PluginRpcService][schema-version]") {
-    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
-    RecentFixture fx;
-
-    const std::string romPath = uniqueTmpPath("verold", ".gb");
-    writeBytes(romPath, fx.rom);
-    SameBoyConfig sb{}; sb.romPath = romPath;
-    ProjectConfig cfg; cfg.systems.push_back(sb);
-    cfg.schemaVersion = "0";                                 // older than kProject
-    const std::string projPath = uniqueTmpPath("verold", ".rplg");
-    const std::string json = projectConfigToJson(cfg);
-    writeBytes(projPath, std::vector<std::uint8_t>(json.begin(), json.end()));
-
-    REQUIRE(fx.service.loadProjectFromPath(projPath));       // loads (ROM present)
-    CHECK_FALSE(fx.sawEvent("project-incompatible"));
-    CHECK(fx.sawEvent("project-loaded"));
-
-    std::error_code ec;
-    std::filesystem::remove(romPath, ec);
-    std::filesystem::remove(projPath, ec);
-}
+// The project-load schema gate (refuse newer, accept older/equal) moved to shared
+// TS (startLoad in packages/ui/src/project/loadProject.ts over checkVersion);
+// coverage is the incompatible_project + project_load_clean UI tests. The pure
+// version-compare unit is test/ts/project/serialization_units.test.ts.
 
 TEST_CASE("recent: rename sets an alias and remove drops the entry",
           "[PluginRpcService][recent]") {
@@ -1374,26 +1340,8 @@ TEST_CASE("an embedded-mGB project survives a thin round-trip",
     CHECK(project.systems().size() == 1);
 }
 
-TEST_CASE("scanMissingFiles treats an embedded-mGB system as present",
-          "[PluginRpcService][mgb]") {
-    // A saved mGB project is path-less and byte-less (the bytes live in the
-    // binary). scanMissingFiles must treat the embeddedRom marker as present,
-    // else loadProjectFromPath (standalone Load Project / recent / autoload)
-    // would route it into the relink menu instead of loading it.
-    ProjectConfig cfg;
-    SameBoyConfig sb;
-    sb.embeddedRom = "mgb";
-    sb.embedRom    = false;                // no romBytes; no romPath
-    cfg.systems.push_back(sb);
-    CHECK(rp::scanMissingFiles(cfg).empty());
-
-    // Sanity: a genuinely missing ROM (no marker, no bytes, bogus path) IS flagged.
-    ProjectConfig bad;
-    SameBoyConfig miss;
-    miss.romPath = "/nonexistent/rp-does-not-exist.gb";
-    bad.systems.push_back(miss);
-    CHECK_FALSE(rp::scanMissingFiles(bad).empty());
-}
+// scanMissingFiles (incl. the embedded-mGB-is-present rule) moved to shared TS —
+// test/ts/project/missing_files.test.ts covers it.
 
 // ---------------------------------------------------------------------------
 // New Project: discards the current project for an empty default one. Queues a
@@ -1800,100 +1748,10 @@ TEST_CASE("pair: a non-ROM picked in the 2nd browser errors, loads nothing",
 // Missing-file relink for an explicit paired save (`savPath`).
 // ---------------------------------------------------------------------------
 
-TEST_CASE("relink: a missing paired savPath is flagged as an sram item",
-          "[PluginRpcService][relink]") {
-    const std::string missingSav = "/nonexistent/rp-relink-missing.sav";
-
-    // A present ROM (embedded bytes) + an explicit savPath that isn't on disk.
-    ProjectConfig cfg;
-    SameBoyConfig sb;
-    sb.romBytes = {1, 2, 3};          // romPresent via bytes — isolates the sram case
-    sb.savPath  = missingSav;
-    cfg.systems.push_back(sb);
-    const auto missing = rp::scanMissingFiles(cfg);
-    REQUIRE(missing.size() == 1);
-    CHECK(missing[0].itemKind   == "sram");
-    CHECK(missing[0].path       == missingSav);
-    CHECK(missing[0].systemIndex == 0);
-
-    // Negatives: no override, an existing override, and embedded SRAM are all "present".
-    ProjectConfig none;      SameBoyConfig a; a.romBytes = {1}; a.savPath.clear();
-    none.systems.push_back(a);
-    CHECK(rp::scanMissingFiles(none).empty());
-
-    const std::string realSav = uniqueTmpPath("relink_present", ".sav");
-    writeBytes(realSav, {0, 0, 0});
-    ProjectConfig present;   SameBoyConfig b; b.romBytes = {1}; b.savPath = realSav;
-    present.systems.push_back(b);
-    CHECK(rp::scanMissingFiles(present).empty());
-
-    ProjectConfig embedded;  SameBoyConfig c; c.romBytes = {1}; c.savPath = missingSav; c.sram = {9, 9};
-    embedded.systems.push_back(c);
-    CHECK(rp::scanMissingFiles(embedded).empty());   // sram bytes in hand -> not missing
-
-    std::error_code ec;
-    std::filesystem::remove(realSav, ec);
-}
-
-TEST_CASE("relink: relinkInConfig sram sets savPath and leaves romPath",
-          "[PluginRpcService][relink]") {
-    ProjectConfig cfg;
-    SameBoyConfig sb;
-    sb.romPath = "/orig/rom.gb";
-    sb.romBytes = {1};
-    sb.savPath = "/old/save.sav";
-    cfg.systems.push_back(sb);
-
-    rp::MissingFile item{0, "sram", "/old/save.sav", -1, -1};
-    REQUIRE(rp::relinkInConfig(cfg, item, "/located/save.sav"));
-
-    const auto* out = rfl::get_if<SameBoyConfig>(&cfg.systems[0].variant());
-    REQUIRE(out != nullptr);
-    CHECK(out->savPath == "/located/save.sav");   // override repointed
-    CHECK(out->romPath == "/orig/rom.gb");         // ROM untouched (the kitSlot<0 regression)
-}
-
-TEST_CASE("relink: loading a project with a missing paired save relinks it",
-          "[PluginRpcService][relink]") {
-    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
-    RecentFixture fx;
-
-    // Present ROM on disk + a thin project pointing at a missing paired save.
-    const std::string romPath = uniqueTmpPath("relinksav", ".gb");
-    writeBytes(romPath, fx.rom);
-    const std::string missingSav = uniqueTmpPath("relinksav_gone", ".sav");
-    std::error_code ec;
-    std::filesystem::remove(missingSav, ec);          // ensure it's absent
-    const std::string projPath = uniqueTmpPath("relinksav_proj", ".rplg");
-    writeThinProject(projPath, romPath, missingSav);
-
-    // Load is held: only the sram is missing (ROM is present).
-    REQUIRE(fx.service.loadProjectFromPath(projPath));
-    CHECK(fx.sawEvent("missing-files"));
-    CHECK_FALSE(fx.sawEvent("project-loaded"));
-    auto missing = fx.service.getMissingFiles();
-    REQUIRE(missing.items.size() == 1);
-    CHECK(missing.items[0].itemKind == "sram");
-
-    // Locate the save; the load commits and the queued project carries the path.
-    const std::string realSav = uniqueTmpPath("relinksav_found", ".sav");
-    writeBytes(realSav, {0x11, 0x22, 0x33});
-    auto remaining = fx.service.relinkMissingFile(0, "sram", -1, -1, realSav);
-    CHECK(remaining.items.empty());
-    CHECK(fx.sawEvent("project-loaded"));
-
-    Command cmd;
-    REQUIRE(fx.commands.tryPop(cmd));
-    REQUIRE(cmd.kind == Command::Kind::LoadProject);
-    const auto* sb = rfl::get_if<SameBoyConfig>(&cmd.payload.loadProject.config->systems.at(0).variant());
-    REQUIRE(sb != nullptr);
-    CHECK(sb->savPath == realSav);                    // committed project points at the located save
-    delete cmd.payload.loadProject.config;
-
-    std::filesystem::remove(romPath, ec);
-    std::filesystem::remove(realSav, ec);
-    std::filesystem::remove(projPath, ec);
-}
+// The missing-files scan/relink unit cases (sram flagging, relinkInConfig,
+// embedded-savestate present, missing-both) moved to shared TS —
+// test/ts/project/missing_files.test.ts. The end-to-end relink flow (load ->
+// missing-files -> relink -> commit) is the relink_sram / relink UI tests.
 
 // ---------------------------------------------------------------------------
 // Portable .rplg: file saves store project-relative paths; loads resolve them.
@@ -1924,55 +1782,10 @@ TEST_CASE("paths: saveProjectToPath stores a ROM under the project dir as relati
     std::filesystem::remove(projPath, ec);
 }
 
-TEST_CASE("paths: a saved project folder can be moved and still loads",
-          "[PluginRpcService][paths]") {
-    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
-    RecentFixture fx;
-    std::error_code ec;
-
-    // Dir A: a real ROM + a project referencing it.
-    const auto dirA = std::filesystem::temp_directory_path() /
-        ("rp_paths_A_" + std::to_string(processToken()) + "_" + std::to_string(g_tmpCounter.fetch_add(1)));
-    std::filesystem::create_directories(dirA);
-    const std::string romA  = (dirA / "game.gb").string();
-    const std::string projA = (dirA / "proj.rplg").string();
-    writeBytes(romA, fx.rom);
-    {
-        SameBoyConfig cfg; cfg.romPath = romA;
-        const SystemId id = fx.project.nextSystemId();
-        auto sys = std::make_unique<SameBoySystem>(id, cfg, fx.rom);
-        sys->onActivate(kSampleRate);
-        fx.project.adoptSystem(sys.release());
-    }
-    saveThinProject(fx.service, projA);
-    REQUIRE(fx.sawEvent("project-saved"));
-
-    // "Move" the folder: copy both files into a fresh dir B, then delete A so
-    // only the relative path (game.gb) — not any absolute A path — can resolve.
-    const auto dirB = std::filesystem::temp_directory_path() /
-        ("rp_paths_B_" + std::to_string(processToken()) + "_" + std::to_string(g_tmpCounter.fetch_add(1)));
-    std::filesystem::create_directories(dirB);
-    std::filesystem::copy_file(projA, dirB / "proj.rplg");
-    std::filesystem::copy_file(romA,  dirB / "game.gb");
-    std::filesystem::remove_all(dirA, ec);
-
-    fx.drainSystems();   // clear the SaveProject/queue state from the setup
-
-    const std::string projB = (dirB / "proj.rplg").string();
-    REQUIRE(fx.service.loadProjectFromPath(projB));
-    CHECK_FALSE(fx.sawEvent("missing-files"));   // relative path resolved in dir B
-    CHECK(fx.sawEvent("project-loaded"));
-
-    Command cmd;
-    REQUIRE(fx.commands.tryPop(cmd));
-    REQUIRE(cmd.kind == Command::Kind::LoadProject);
-    const auto* sb = rfl::get_if<SameBoyConfig>(&cmd.payload.loadProject.config->systems.at(0).variant());
-    REQUIRE(sb != nullptr);
-    CHECK(sb->romPath == std::filesystem::weakly_canonical(dirB / "game.gb").string());
-    delete cmd.payload.loadProject.config;
-
-    std::filesystem::remove_all(dirB, ec);
-}
+// "a saved project folder can be moved and still loads" (relative save -> load
+// resolves against the new dir) is now the project_save_roundtrip UI test — the
+// load half runs in TS (toAbsolute + commitProject). The relative *save* half is
+// still covered by the preceding test.
 
 TEST_CASE("paths: the sibling .rplg records the ROM by relative basename",
           "[PluginRpcService][paths]") {
@@ -1998,46 +1811,9 @@ TEST_CASE("paths: the sibling .rplg records the ROM by relative basename",
     std::filesystem::remove(siblingRplg(romPath), ec);
 }
 
-// ---------------------------------------------------------------------------
-// Regressions found by the robustness audit.
-// ---------------------------------------------------------------------------
-
-// A cart whose battery lives inside an embedded savestate (zip form) is present,
-// even with a stale explicit savPath — no phantom "missing save" that blocks load.
-TEST_CASE("relink: an embedded savestate counts the battery as present",
-          "[PluginRpcService][relink]") {
-    ProjectConfig cfg;
-    SameBoyConfig sb;
-    sb.romBytes  = {1};                                 // ROM present (bytes)
-    sb.savPath   = "/nonexistent/rp-phantom.sav";       // explicit override, absent
-    sb.sram.clear();                                    // no standalone SRAM
-    sb.savestate = {9, 9, 9};                           // battery carried in the savestate
-    cfg.systems.push_back(sb);
-    CHECK(rp::scanMissingFiles(cfg).empty());
-}
-
-// One system missing BOTH its ROM and its paired save must yield two items whose
-// only distinguishing field is itemKind (kitSlot/sampleIndex both default -1) —
-// the reason the RelinkMenu row key must include itemKind.
-TEST_CASE("relink: a system missing both ROM and paired save yields two distinct-kind items",
-          "[PluginRpcService][relink]") {
-    ProjectConfig cfg;
-    SameBoyConfig sb;
-    sb.romPath = "/nonexistent/rp-gone.gb";
-    sb.savPath = "/nonexistent/rp-gone.sav";
-    cfg.systems.push_back(sb);
-
-    const auto missing = rp::scanMissingFiles(cfg);
-    REQUIRE(missing.size() == 2);
-    CHECK(missing[0].systemIndex == missing[1].systemIndex);
-    CHECK(missing[0].kitSlot     == missing[1].kitSlot);      // both -1
-    CHECK(missing[0].sampleIndex == missing[1].sampleIndex);  // both -1
-    CHECK(missing[0].itemKind    != missing[1].itemKind);     // ONLY itemKind differs
-    const bool rom  = missing[0].itemKind == "rom"  || missing[1].itemKind == "rom";
-    const bool sram = missing[0].itemKind == "sram" || missing[1].itemKind == "sram";
-    CHECK(rom);
-    CHECK(sram);
-}
+// The scan-behaviour regressions (embedded-savestate counts the battery present;
+// a system missing both ROM + paired save yields two distinct-kind items) moved
+// to test/ts/project/missing_files.test.ts with the rest of the scan coverage.
 
 // Add-pairing a ROM's own sibling <rom>.sav must NOT make the new instance share
 // that file with the live suffix-0 instance — it gets its own <rom>-2.sav (seeded

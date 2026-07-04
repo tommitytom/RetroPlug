@@ -111,9 +111,11 @@ public:
     }
 
     // Standalone-friendly project load. Used by PluginUI's
-    // RETROPLUG_AUTOLOAD_PROJECT env-var path.
+    // RETROPLUG_AUTOLOAD_PROJECT env-var path + the UI test harness. The load
+    // orchestration lives in the UI (TS) now, so this just hands it the path.
     bool loadProjectFromPath(const std::string& path) {
-        return service_.loadProjectFromPath(path);
+        service_.requestLoadProject(path);
+        return true;
     }
 
     // Diagnostic-only ROM autoload (RETROPLUG_AUTOLOAD_ROM env var, wired

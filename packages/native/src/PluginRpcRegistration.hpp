@@ -24,12 +24,11 @@ void registerPluginRpcMethods(Server& server) {
     server.template addMethod<&PluginRpcService::unzipEntries>();
     server.template addMethod<&PluginRpcService::snapshotProjectConfig>();
     server.template addMethod<&PluginRpcService::notifyProjectSaved>();
+    // Project-load byte-mover primitives (orchestration is shared TS).
+    server.template addMethod<&PluginRpcService::fileExists>();
+    server.template addMethod<&PluginRpcService::commitProject>();
     server.template addMethod<&PluginRpcService::quitStandalone>();
-    server.template addMethod<&PluginRpcService::loadProjectFromPath>();
-    server.template addMethod<&PluginRpcService::getMissingFiles>();
-    server.template addMethod<&PluginRpcService::relinkMissingFile>();
     server.template addMethod<&PluginRpcService::openRelinkBrowser>();
-    server.template addMethod<&PluginRpcService::cancelMissingFiles>();
     server.template addMethod<&PluginRpcService::loadRomFromPath>();
     server.template addMethod<&PluginRpcService::addRomFromPath>();
     server.template addMethod<&PluginRpcService::replaceRomFromPath>();

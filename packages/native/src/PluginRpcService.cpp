@@ -24,7 +24,6 @@
 #include "lsdj/ProjectKitRecompile.hpp"
 #include "lsdj/SampleCache.hpp"
 #include "project/Project.hpp"
-#include "project/ProjectMissingFiles.hpp"
 #include "project/ProjectPaths.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/InputTypes.hpp"
@@ -311,7 +310,9 @@ bool PluginRpcService::loadRomFromPath(std::string path) {
         proj.replace_extension(".rplg");
         std::error_code ec;
         if (std::filesystem::exists(proj, ec) && !ec) {
-            return loadProjectFromPath(proj.string());
+            // Project load orchestration lives in the UI (TS) now; hand it the path.
+            emit("load-path-selected", proj.string());
+            return true;
         }
     }
 
@@ -628,72 +629,49 @@ bool PluginRpcService::notifyProjectSaved(std::string path, bool exported) {
     return true;
 }
 
-bool PluginRpcService::loadProjectFromPath(const std::string& path) {
-    if (!commands_) {
-        emit("project-error", path);
-        return false;
-    }
-    const auto bytes = slurp(path);
-    if (bytes.empty()) {
-        std::fprintf(stderr, "loadProjectFromPath: empty / unreadable '%s'\n", path.c_str());
-        emit("project-error", path);
-        return false;
-    }
-    // Accepts both the path-only JSON save and the zip export (autodetected).
-    auto parsed = projectConfigFromBytes(bytes);
-    if (!parsed) {
-        std::fprintf(stderr, "loadProjectFromPath: failed to parse '%s'\n", path.c_str());
-        emit("project-error", path);
-        return false;
-    }
-    // Refuse a project stamped by a newer build than we understand — its format
-    // may be incompatible and would otherwise load with silently-dropped fields.
-    // Older / equal versions load normally (older is the future-migration hook).
-    if (rp::schema::checkVersion(rp::schema::parseProjectVersion(parsed->schemaVersion),
-                                 rp::schema::kProject) == rp::schema::Check::Newer) {
-        std::fprintf(stderr,
-            "loadProjectFromPath: '%s' schemaVersion '%s' is newer than this build (%d)\n",
-            path.c_str(), parsed->schemaVersion.c_str(), rp::schema::kProject);
-        emit("project-incompatible", path);
-        return false;
-    }
-    // Resolve any project-relative paths against the .rplg's dir so everything
-    // downstream (missing-file scan, relink, commit) works in absolute terms.
-    // Absolute paths (zip exports, old saves) pass through unchanged.
-    rp::project_paths::toAbsolute(*parsed, std::filesystem::path(path).parent_path().string());
-
-    // A thin JSON project references ROMs / kit WAVs by path. If any have moved,
-    // hold the parse pending and let the UI relink them before we apply it — a
-    // missing-ROM system would otherwise be dropped with no way to fix it. With
-    // no UI attached (headless / autoload), fall through and load best-effort.
-    pendingProject_     = std::move(*parsed);
-    pendingProjectPath_ = path;
-    if (emitEvent_) {
-        const auto missing = rp::scanMissingFiles(*pendingProject_);
-        if (!missing.empty()) {
-            emit("missing-files", rfl::json::write(rp::MissingFilesResponse{missing}));
-            return true; // wait for relinkMissingFile / cancelMissingFiles
-        }
-    }
-    return commitPendingProject();
+bool PluginRpcService::fileExists(std::string path) {
+    std::error_code ec;
+    return std::filesystem::exists(path, ec);
 }
 
-bool PluginRpcService::commitPendingProject() {
-    if (!pendingProject_ || !commands_) return false;
-    const std::string path = pendingProjectPath_;
+bool PluginRpcService::commitProject(std::string config,
+                                     std::vector<ZipInput> blobs,
+                                     std::string path) {
+    if (!commands_) { emit("project-error", path); return false; }
 
-    // Path-only saves carry kit sample metadata but no compiled bytes — rebuild
-    // each kit from its (now-relinked) source WAVs before the DSP applies the
-    // project. Zip exports already carry the bytes, so this is a no-op for them.
-    if (rp::lsdj::projectHasKitsNeedingRecompile(*pendingProject_)) {
+    auto parsed = projectConfigFromJson(config);
+    if (!parsed) {
+        std::fprintf(stderr, "commitProject: failed to parse config for '%s'\n", path.c_str());
+        emit("project-error", path);
+        return false;
+    }
+    // Restore the keyed blob entries (zip export) back into the thin config so
+    // the DSP's loadFromConfig sees the bytes. A thin JSON load carries no blobs;
+    // addSystem re-reads ROM/SRAM from (now-relinked) paths + the sibling .sav.
+    if (!blobs.empty()) {
+        struct MapSource {
+            const std::vector<ZipInput>* entries;
+            bool has(std::string_view name) const {
+                for (const auto& e : *entries) if (e.name == name) return true;
+                return false;
+            }
+            std::vector<std::uint8_t> read(std::string_view name) const {
+                for (const auto& e : *entries) if (e.name == name) return e.bytes;
+                return {};
+            }
+        } src{&blobs};
+        project_binaries::restore(src, *parsed);
+    }
+    // Path-only saves carry kit metadata but no compiled bytes — rebuild each kit
+    // from its (now-relinked) source WAVs. Zip exports carry the bytes (no-op).
+    if (rp::lsdj::projectHasKitsNeedingRecompile(*parsed)) {
         if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::lsdj::KitCompiler>();
-        rp::lsdj::recompileMissingKits(*pendingProject_, *kitCompiler_);
+        rp::lsdj::recompileMissingKits(*parsed, *kitCompiler_);
     }
     // Heap-allocate the parsed config; DSP frees after applying.
-    auto* heap = new ProjectConfig(std::move(*pendingProject_));
-    pendingProject_.reset();
+    auto* heap = new ProjectConfig(std::move(*parsed));
     if (!commands_->tryPush(Command::makeLoadProject(heap))) {
-        std::fprintf(stderr, "commitPendingProject: command queue full\n");
+        std::fprintf(stderr, "commitProject: command queue full\n");
         delete heap;
         emit("project-error", path);
         return false;
@@ -706,47 +684,6 @@ bool PluginRpcService::commitPendingProject() {
     sramLoadBaseline_.clear();
     sramSavedHashes_.clear();
     emit("project-loaded", path);
-    return true;
-}
-
-PluginRpcService::MissingFilesResponse PluginRpcService::getMissingFiles() {
-    if (!pendingProject_) return {};
-    return rp::MissingFilesResponse{rp::scanMissingFiles(*pendingProject_)};
-}
-
-PluginRpcService::MissingFilesResponse
-PluginRpcService::relinkMissingFile(std::uint32_t systemIndex,
-                                    std::string   itemKind,
-                                    std::int32_t  kitSlot,
-                                    std::int32_t  sampleIndex,
-                                    std::string   newPath) {
-    if (!pendingProject_ || newPath.empty()) return getMissingFiles();
-
-    rp::MissingFile target;
-    target.systemIndex = systemIndex;
-    target.itemKind    = std::move(itemKind);   // "rom" | "sram" | "sample" (carried, not inferred)
-    target.kitSlot     = kitSlot;
-    target.sampleIndex = sampleIndex;
-    rp::relinkInConfig(*pendingProject_, target, newPath);
-
-    // Locating one file fixes its siblings sitting in the same folder.
-    const std::string dir = std::filesystem::path(newPath).parent_path().string();
-    if (!dir.empty()) rp::autoFindSiblings(*pendingProject_, dir);
-
-    auto remaining = rp::scanMissingFiles(*pendingProject_);
-    if (remaining.empty()) {
-        commitPendingProject();          // emits project-loaded
-        return {};
-    }
-    emit("missing-files", rfl::json::write(rp::MissingFilesResponse{remaining}));
-    return rp::MissingFilesResponse{std::move(remaining)};
-}
-
-bool PluginRpcService::cancelMissingFiles() {
-    if (!pendingProject_) return false;
-    pendingProject_.reset();
-    pendingProjectPath_.clear();
-    emit("project-load-cancelled", "");
     return true;
 }
 
@@ -780,7 +717,8 @@ void PluginRpcService::onFileBrowserSelected(const char* path) {
     const PendingFileMode entryMode = pendingFileMode_;
     switch (entryMode) {
         case PendingFileMode::AddRom:      handleOpenRomSelection(path, /*add*/ true);  break;
-        case PendingFileMode::LoadProject: loadProjectFromPath(path);        break;
+        // Project load orchestration lives in the UI (TS) now; hand it the path.
+        case PendingFileMode::LoadProject: emit("load-path-selected", path);  break;
         // Save / export orchestration runs in shared TS: hand the chosen path
         // to the UI, which drives saveRplg/saveProjectFile over the byte-mover
         // primitives (same event-style flow as LoadSample / Relink below).

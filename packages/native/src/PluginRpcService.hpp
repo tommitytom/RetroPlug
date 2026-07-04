@@ -14,8 +14,8 @@
 
 #include "config/UserConfigSerialization.hpp"
 #include "lsdj/Effects.hpp"
-#include "project/ProjectMissingFiles.hpp"
 #include "system/MemoryType.hpp"
+#include "system/SystemConfig.hpp"   // SystemConfig (writeSiblingProject)
 #include "system/SystemTypes.hpp"
 
 class Project;
@@ -221,13 +221,16 @@ public:
     // Public helpers used by PluginJsBridge / PluginUI directly (not RPC) ---
 
     // PluginUI::uiFileBrowserSelected routes the chosen path here; we then
-    // dispatch to load / add / save / load-project based on which open*
-    // call set pendingFileMode_ most recently.
+    // dispatch to load / add / save based on which open* call set
+    // pendingFileMode_ most recently. Project *load* is handed to the UI (TS)
+    // via a "load-path-selected" event; the orchestration lives there now.
     void onFileBrowserSelected(const char* path);
 
-    // Auto-load on startup (PluginUI reads RETROPLUG_AUTOLOAD_PROJECT and
-    // calls this directly — bypasses the file browser).
-    bool loadProjectFromPath(const std::string& path);
+    // Hand a `.rplg` path to the UI's TS load orchestration (emits
+    // "load-path-selected"). The project-load parse/scan/relink/commit machine
+    // lives in the UI now; this is the C++-side entry the standalone autoload +
+    // the test harness use (the browser + sibling-.rplg paths emit inline).
+    void requestLoadProject(const std::string& path) { emit("load-path-selected", path); }
 
     // RPC surface (registered via TypedRpcServer::addMethod<&...>()) --------
 
@@ -267,6 +270,17 @@ public:
     // path to recents + remember it as currentProjectPath. Emits
     // "project-saved" / "project-exported".
     bool                   notifyProjectSaved(std::string path, bool exported);
+    // Existence check for the TS missing-files scan (the scan/relink logic itself
+    // is shared TS — @retroplug/retroplug missingFiles.ts).
+    bool                   fileExists(std::string path);
+    // Commit a resolved project. The .rplg *load* orchestration (parse, schema
+    // check, toAbsolute, missing-file scan/relink) moved to shared TS; TS calls
+    // this once everything's located. Restores the blob entries into the thin
+    // config, recompiles kits, hands it to the DSP (Command::makeLoadProject —
+    // async; the DSP applies + re-emits ProjectLoaded), and does the post-load
+    // bookkeeping (recent + currentProjectPath + clear-dirty + emit
+    // "project-loaded"). `path` is the source .rplg. Replaces commitPendingProject.
+    bool                   commitProject(std::string config, std::vector<ZipInput> blobs, std::string path);
     // Discard the current project for a clean, empty one: drops all systems and
     // resets the project-wide settings (zoom/layout/routing) to defaults, exactly
     // as loading a default ProjectConfig would. Forgets the remembered project
@@ -365,23 +379,13 @@ public:
     // Promise around it. Matches the event-style flow openRomBrowser uses.
     bool             openSampleBrowser();
 
-    // Relink-missing-files (a thin JSON project whose ROMs / kit WAVs moved).
-    // After loadProjectFromPath finds missing files it holds the project pending
-    // and emits "missing-files"; the UI walks the list, locating each file.
-    using MissingFilesResponse = rp::MissingFilesResponse;
-    MissingFilesResponse getMissingFiles();
-    // Point one pending item at newPath (+ auto-relink siblings in its folder),
-    // re-scan, and either commit (when nothing's left) or return the remainder.
-    MissingFilesResponse relinkMissingFile(std::uint32_t systemIndex,
-                                           std::string   itemKind,
-                                           std::int32_t  kitSlot,
-                                           std::int32_t  sampleIndex,
-                                           std::string   newPath);
-    // Open a file browser for a relink; the path returns via "relink-path-selected".
-    // `kind` ("rom" | "sram" | "sample") selects the file-type filter.
+    // Relink-missing-files: a thin project whose ROMs / kit WAVs moved. The scan /
+    // relink / pending-project orchestration lives in the UI (shared TS
+    // missingFiles.ts over fileExists + commitProject); the only native piece left
+    // is the file dialog for *locating* a file. Open a browser; the chosen path
+    // returns via "relink-path-selected". `kind` ("rom" | "sram" | "sample")
+    // selects the file-type filter.
     bool openRelinkBrowser(std::string kind);
-    // Abandon the pending load, keeping the current project.
-    bool cancelMissingFiles();
 
     // User config / key-pad bindings. See src/config/UserConfig.hpp.
     UserConfigDto getUserConfig();
@@ -519,9 +523,6 @@ private:
     // newly written or pre-existing), or empty on write failure.
     std::string writeSiblingProject(const SystemConfig& sysCfg,
                                     const std::string& romPath);
-    // Apply pendingProject_ to the DSP (recompiling kits first). Shared by
-    // loadProjectFromPath (no missing files) and relinkMissingFile (all resolved).
-    bool commitPendingProject();
 
     // Unsaved-changes tracking (standalone close prompt).
     void markProjectDirty() { projectDirty_ = true; }
@@ -548,11 +549,6 @@ private:
     // that never opens an LSDJ ROM doesn't pay the enkiTS thread-pool
     // spin-up cost.
     std::unique_ptr<rp::lsdj::KitCompiler> kitCompiler_;
-
-    // A parsed project awaiting missing-file relinks before it's applied. Held
-    // on the UI thread between loadProjectFromPath and commit/cancel.
-    std::optional<ProjectConfig> pendingProject_;
-    std::string                  pendingProjectPath_;
 
     EmitEventFn               emitEvent_;
     OpenFileBrowserFn         openFileBrowser_;

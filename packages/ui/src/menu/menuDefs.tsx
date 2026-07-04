@@ -120,6 +120,9 @@ export interface MenuContext {
     // modal the window-close uses) before the current project is discarded.
     requestNewProject:  () => void;
     requestLoadProject: () => void;
+    // Load a known `.rplg` path (a recent entry) through the TS load orchestration
+    // (project/loadProject.ts) — same handler the load dialog / autoload use.
+    loadProject:        (path: string) => void;
     // Optimistic project-settings edits. Each updates the UI's own working copy
     // synchronously (the UI owns these settings) and then informs the DSP. The
     // DSP applies them to its replica (routing also feeds live mixing) WITHOUT
@@ -261,7 +264,7 @@ function recentLabel(entry: RecentEntry): string {
 // Each recent project is a submenu: Load / Rename, plus Locate (when missing)
 // and Remove. Mutations are fire-and-forget — the C++ side emits
 // "recent-files-changed", PluginUI refetches, and the tree rebuilds.
-function recentEntryChildren(entry: RecentEntry, idp: string): MenuItem[] {
+function recentEntryChildren(entry: RecentEntry, idp: string, ctx: MenuContext): MenuItem[] {
     const children: MenuItem[] = [];
 
     children.push({
@@ -271,7 +274,7 @@ function recentEntryChildren(entry: RecentEntry, idp: string): MenuItem[] {
         keepOpen: entry.missing,   // browsing must not close the menu
         onSelect: () => {
             if (entry.missing) { void plugin.$notify("openRecentRelinkBrowser", entry.path); return; }
-            void plugin.$notify("loadProjectFromPath", entry.path);
+            ctx.loadProject(entry.path);
         },
     });
 
@@ -326,7 +329,7 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
             id:       idp,
             label:    recentLabel(entry),
             kind:     "submenu",
-            children: recentEntryChildren(entry, idp),
+            children: recentEntryChildren(entry, idp, ctx),
         };
     });
 }

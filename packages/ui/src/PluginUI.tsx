@@ -6,6 +6,7 @@ import { createGroup, setKeyboardGroup, on, off } from "lvgljs";
 
 import { plugin } from "./plugin/client";
 import { runSave } from "./project/projectHost";
+import { startLoad } from "./project/loadProject";
 import { KitEditor } from "./KitEditor";
 import { SystemGrid, SystemEntry, SystemLayout, gridContentSize, getTileBounds } from "./SystemGrid";
 import { DEFAULT_ZOOM } from "./layout";
@@ -15,7 +16,7 @@ import { RelinkMenu } from "./menu/RelinkMenu";
 import { UnsavedChangesModal, type UnsavedIntent } from "./menu/UnsavedChangesModal";
 import { IncompatibleProjectModal } from "./menu/IncompatibleProjectModal";
 import { buildInstanceMenu, type RecentEntry } from "./menu/menuDefs";
-import type { RpMissingFile } from "plugin-service";
+import type { MissingFile } from "@retroplug/retroplug/missing-files";
 import { useBindingsEditor } from "./useBindingsEditor";
 import {
     GameboyButton,
@@ -76,10 +77,10 @@ function PluginUI() {
     const [recentFiles, setRecentFiles] = useState<RecentEntry[]>([]);
     // Non-empty while a loaded project references files that have moved. The
     // relink menu is shown until every entry is located (load commits) or the
-    // user cancels. Populated by the "missing-files" event from C++.
-    const [missingFiles, setMissingFiles] = useState<RpMissingFile[]>([]);
+    // user cancels. Populated by startLoad / relinkOne (project/loadProject.ts).
+    const [missingFiles, setMissingFiles] = useState<MissingFile[]>([]);
     // True while the "can't open — saved by a newer version" modal is shown.
-    // Set by the "project-incompatible" event from C++ (schema version too new).
+    // Set from startLoad's result when the schema version is newer than the build.
     const [incompatibleProject, setIncompatibleProject] = useState<boolean>(false);
     // Unsaved-changes prompt. Non-null while the modal is up; the intent says
     // what to do once the user resolves it (quit the standalone on a vetoed
@@ -200,32 +201,29 @@ function PluginUI() {
         })();
     }, []);
 
-    // Missing-files relink flow. A thin project whose ROMs / kit WAVs moved is
-    // held pending on the C++ side, which emits "missing-files" with the list;
-    // the relink menu shows until everything's located (load commits, fires
-    // "project-loaded") or the user cancels ("project-load-cancelled").
-    useEffect(() => {
-        const onMissing = (payload: string) => {
-            try {
-                const r = JSON.parse(payload) as { items?: RpMissingFile[] };
-                setMissingFiles(r.items ?? []);
-            } catch (e) {
-                console.warn("[missing-files] bad payload", e);
-            }
-        };
-        const onResolved = () => setMissingFiles([]);
-        const onIncompatible = () => setIncompatibleProject(true);
-        on("missing-files", onMissing);
-        on("project-loaded", onResolved);
-        on("project-load-cancelled", onResolved);
-        on("project-incompatible", onIncompatible);
-        return () => {
-            off("missing-files", onMissing);
-            off("project-loaded", onResolved);
-            off("project-load-cancelled", onResolved);
-            off("project-incompatible", onIncompatible);
-        };
+    // Project load + missing-files relink flow (orchestrated in TS —
+    // project/loadProject.ts). The native Load Project dialog / recent / autoload
+    // / sibling-.rplg all hand us the path via "load-path-selected"; startLoad
+    // parses + scans, then either commits (the DSP applies + emits "project-loaded"
+    // → re-seed below) or returns the missing list to drive the relink menu. A
+    // thin project whose ROMs / kit WAVs moved is held pending in TS until every
+    // entry is located (RelinkMenu → relinkOne commits) or the user cancels.
+    const doLoad = useCallback((path: string) => {
+        const r = startLoad(path);
+        setIncompatibleProject(r.incompatible);
+        setMissingFiles(r.missing);
+        if (r.error) console.warn("[load] " + r.error, path);
     }, []);
+    useEffect(() => {
+        const onLoadPath = (path: string) => doLoad(path);
+        const onResolved = () => setMissingFiles([]);
+        on("load-path-selected", onLoadPath);
+        on("project-loaded", onResolved);
+        return () => {
+            off("load-path-selected", onLoadPath);
+            off("project-loaded", onResolved);
+        };
+    }, [doLoad]);
 
     // Save / export orchestration (moved to shared TS). The native save/export
     // browsers deliver the chosen path via these one-shot events (from
@@ -561,6 +559,7 @@ function PluginUI() {
         openAbout,
         requestNewProject,
         requestLoadProject,
+        loadProject: doLoad,
         applyProjectZoom,
         applyLayout,
         applyMidiRouting,
@@ -608,6 +607,7 @@ function PluginUI() {
             ) : missingFiles.length > 0 ? (
                 <RelinkMenu
                     missing={missingFiles}
+                    onMissing={setMissingFiles}
                     zoom={zoom}
                     sinkGroup={sinkGroupRef.current}
                 />

@@ -11,7 +11,7 @@
 // transport.
 
 import { createSyncClient, type RpcSend } from "@retroplug/retroplug/sync-client";
-import { saveRplg, saveProjectFile, type ProjectHost } from "@retroplug/retroplug/serialization";
+import { saveRplg, saveProjectFile, type ProjectHost, type Blob } from "@retroplug/retroplug/serialization";
 
 // The in-process bridge marshals JSON-RPC envelopes as live JS objects (no
 // serialization). Binary OUTPUT (rfl::Bytestring) arrives as a Uint8Array;
@@ -37,6 +37,8 @@ interface ProjectPrimitives {
     unzipEntries(bytes: number[]): Promise<{ name: string; bytes: number[] }[]>;
     snapshotProjectConfig(baseDir: string): Promise<{ config: string; blobs: { name: string; bytes: number[] }[] }>;
     notifyProjectSaved(path: string, exported: boolean): Promise<boolean>;
+    fileExists(path: string): Promise<boolean>;
+    commitProject(config: string, blobs: { name: string; bytes: number[] }[], path: string): Promise<boolean>;
 }
 
 // Resolve the plugin bridge's synchronous send at call time (the bridge is
@@ -50,9 +52,10 @@ const send: RpcSend = (request) => {
 
 const rpc = createSyncClient<ProjectPrimitives>(send);
 
-// The 6-method ProjectHost. applyProjectConfig (the load rebuild) is deferred:
-// the plugin load path is async via the CommandQueue and lands in a later
-// increment; this increment only wires save/export, which never call it.
+// The ProjectHost (save side). applyProjectConfig — the harness's synchronous
+// load rebuild — isn't used by the plugin: the plugin load is async (the DSP
+// applies the makeLoadProject command off-thread), so it goes through
+// commitProject below instead, and the plugin never calls the shared loadRplg.
 export const projectHost: ProjectHost = {
     readFile: (path) => copyU8(rpc.readFile(path)),
     writeFile: (path, bytes) => { rpc.writeFile(path, toNums(bytes)); },
@@ -65,9 +68,20 @@ export const projectHost: ProjectHost = {
         return { config: s.config, blobs: s.blobs.map((b) => ({ name: b.name, bytes: copyU8(b.bytes) })) };
     },
     applyProjectConfig: () => {
-        throw new Error("applyProjectConfig: plugin load not yet routed through TS (deferred increment)");
+        throw new Error("applyProjectConfig: the plugin load is async (commitProject) — not used here");
     },
 };
+
+// Load-side primitives (used by loadProject.ts). fileExists backs the TS
+// missing-files scan; commitProject hands a resolved project to the DSP
+// (Command::makeLoadProject) + does the native post-load bookkeeping. Both
+// speak the shared Blob shape (Uint8Array) at the boundary.
+export function fileExists(path: string): boolean {
+    return rpc.fileExists(path);
+}
+export function commitProject(config: string, blobs: Blob[], path: string): void {
+    rpc.commitProject(config, blobs.map((b) => ({ name: b.name, bytes: toNums(b.bytes) })), path);
+}
 
 // Post-write bookkeeping (recent-files + currentProjectPath + the
 // project-saved/exported event) that the old C++ saveProjectToPath/exportZipToPath
