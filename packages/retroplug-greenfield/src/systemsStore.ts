@@ -166,6 +166,47 @@ export class SystemsStore {
     );
   }
 
+  // --- project-load rebuild seam ------------------------------------------
+  // clear()/adopt() are QUIET: no dirty/onChange, since a load isn't a user edit
+  // (the ProjectStore sets dirty explicitly around load/new).
+
+  /** Tear down every system + reset the list/focus (for `new` + before a load). */
+  clear(): void {
+    for (const e of this.entries) this.backend.removeSystem(e.id);
+    this.entries = [];
+    this.focusedId = 0;
+  }
+
+  /** Reconstruct one system from a serialized config entry, preserving its EXACT
+   *  savSuffix + savPath-override (no free-suffix reassignment). Appends; focuses the
+   *  first. Returns the new id, or null when the ROM won't classify. */
+  adopt(config: {
+    romPath?: string;
+    savPath?: string;
+    savSuffix?: number;
+    embeddedRom?: string;
+  }): number | null {
+    const embeddedRom = config.embeddedRom ?? "";
+    const romPath = config.romPath ?? "";
+    const savSuffix = config.savSuffix ?? 0;
+    const override = config.savPath ?? "";
+    let kind: SystemKind;
+    if (embeddedRom) {
+      kind = "sameboy";
+    } else {
+      const fmt = classifyRom(this.backend, romPath);
+      if (fmt === "unknown") return null;
+      kind = fmt;
+    }
+    const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
+    const id = this.backend.constructSystem({ romPath, embeddedRom, savPath, statePath: null });
+    if (id === null) return null;
+    const wasEmpty = this.entries.length === 0;
+    this.entries = appendEntry(this.entries, { id, kind, romPath, savPath: override, savSuffix, embeddedRom });
+    if (wasEmpty) this.focusedId = id;
+    return id;
+  }
+
   // --- internals ----------------------------------------------------------
 
   // Replace the focused tile (or adopt into an empty project), focusing the result.
