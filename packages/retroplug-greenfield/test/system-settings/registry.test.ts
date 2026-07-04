@@ -6,7 +6,7 @@
 import { test, expect } from "../../testing/harness";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
-import { z, clampedInt } from "../../src/roleSchema";
+import { z, clampedInt } from "../../src/configSchema";
 
 // A ROM header (0x150 bytes) carrying an ASCII cartridge title at 0x134.
 function headerWithTitle(title: string): Uint8Array {

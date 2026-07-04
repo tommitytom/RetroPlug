@@ -8,7 +8,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
-import { z, clampedInt } from "../../src/roleSchema";
+import { z, clampedInt } from "../../src/configSchema";
 import { gbRom } from "../systems/fixtures";
 
 // A GB ROM (valid logo for classification) carrying a cartridge title at 0x134.

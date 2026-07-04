@@ -25,7 +25,7 @@ import {
   pickSiblingRom,
   nextFocusAfterRemove,
 } from "./systemsList";
-import { type CoreSettings, DEFAULT_CORE_SETTINGS, clampGain } from "./systemSettings";
+import { type CoreSettings, DEFAULT_CORE_SETTINGS, clampGain, coreSettingsSchema } from "./systemSettings";
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
 
 // How much ROM header to read for the role providers (title lives at 0x134).
@@ -265,7 +265,7 @@ export class SystemsStore {
     const id = this.backend.constructSystem({ romPath, embeddedRom, savPath, statePath: null });
     if (id === null) return null;
     // Stored settings/roles win; a config that omits them re-attaches defaults.
-    const settings = { ...DEFAULT_CORE_SETTINGS, ...config.settings };
+    const settings = coreSettingsSchema.parse(config.settings ?? {}) as CoreSettings;
     const roles = config.roles && config.roles.length ? config.roles : this.defaultRoles(kind, romPath, embeddedRom);
     const wasEmpty = this.entries.length === 0;
     this.entries = appendEntry(this.entries, { id, kind, romPath, savPath: override, savSuffix, embeddedRom, settings, roles });

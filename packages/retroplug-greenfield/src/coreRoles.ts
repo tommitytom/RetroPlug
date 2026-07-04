@@ -7,7 +7,7 @@
 // 0..13, highpass 0..2, linkGroupId 0..255).
 
 import type { RoleRegistry } from "./systemRoles";
-import { z, clampedInt, boolField, stringField } from "./roleSchema";
+import { z, clampedInt, boolField, stringField } from "./configSchema";
 
 /** Register the built-in backend system roles into `registry`. */
 export function registerCoreRoles(registry: RoleRegistry): void {

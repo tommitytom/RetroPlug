@@ -11,8 +11,9 @@
 
 import type { SystemEntry, SystemKind } from "./systemsList";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
-import type { CoreSettings } from "./systemSettings";
+import { coreSettingsSchema, type CoreSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
+import { z, clampedInt, stringField } from "./configSchema";
 
 /** Project-level settings (four scalars). `zoom` 0 = inherit the user default. */
 export interface ProjectSettings {
@@ -21,8 +22,6 @@ export interface ProjectSettings {
   audioRouting: number; // 0 Stereo / 1 TwoPerInstance / 2 OnePerInstance
   zoom: number; // 0 inherit / 1..6
 }
-
-export const DEFAULT_SETTINGS: ProjectSettings = { layout: 0, midiRouting: 0, audioRouting: 0, zoom: 0 };
 
 /** A system as serialized: thin, with default fields omitted. */
 export interface SystemThin {
@@ -40,6 +39,48 @@ export interface ProjectConfig {
   settings: ProjectSettings;
   systems: SystemThin[];
 }
+
+// --- zod validation schemas -----------------------------------------------
+// Every config object is a z.looseObject so UNKNOWN fields are PRESERVED — a native
+// config's richer per-system fields (model / native-shaped roles / …) survive a
+// greenfield load→save round-trip instead of being stripped. Fields clamp/default via
+// the configSchema helpers, so a malformed/partial user config is coerced, not rejected.
+
+/** Project-level settings: defaults filled, values clamped to their enum ranges. */
+export const projectSettingsSchema = z.looseObject({
+  layout: clampedInt(0, 3, 0),
+  midiRouting: clampedInt(0, 3, 0),
+  audioRouting: clampedInt(0, 2, 0),
+  zoom: clampedInt(0, 6, 0),
+});
+
+export const DEFAULT_SETTINGS: ProjectSettings = projectSettingsSchema.parse({}) as ProjectSettings;
+
+// A role instance: kind + an opaque config record (its per-kind RoleType schema
+// validates the config elsewhere; here it's passed through).
+const roleInstanceSchema = z.looseObject({
+  kind: z.string(),
+  config: z.record(z.string(), z.unknown()).catch(() => ({})),
+});
+
+// A serialized system: known fields typed/optional, everything else preserved (loose).
+const systemThinSchema = z.looseObject({
+  kind: z.string().optional(),
+  romPath: z.string().optional(),
+  savPath: z.string().optional(),
+  savSuffix: z.number().optional(),
+  embeddedRom: z.string().optional(),
+  settings: coreSettingsSchema.optional(),
+  roles: z.array(roleInstanceSchema).optional(),
+});
+
+// The root: schemaVersion coerced to a string; settings/systems validated separately
+// (per-element tolerant) in parseConfig; unknown root fields preserved (loose).
+const projectConfigSchema = z.looseObject({
+  schemaVersion: stringField(""),
+  settings: z.unknown().optional(),
+  systems: z.array(z.unknown()).catch(() => []).default(() => []),
+});
 
 // --- schema version (port of schemaVersions.ts) ---------------------------
 
@@ -113,19 +154,33 @@ export function serializeConfig(cfg: ProjectConfig, baseDir: string, canonicaliz
   return JSON.stringify(out);
 }
 
-/** Parse config JSON, tolerantly filling settings defaults + an empty systems array. */
+/** Parse config JSON with the zod schemas: validates + defaults + clamps, and
+ *  PRESERVES unknown fields (forward-tolerance). Never throws — malformed JSON /
+ *  a non-object root yield an empty-default config, a garbage system entry is
+ *  dropped, and out-of-range/wrong-type values are coerced. */
 export function parseConfig(json: string): ProjectConfig {
-  let doc: Partial<ProjectConfig> = {};
+  let doc: unknown;
   try {
-    doc = JSON.parse(json) as Partial<ProjectConfig>;
+    doc = JSON.parse(json);
   } catch {
     doc = {};
   }
-  return {
-    schemaVersion: typeof doc.schemaVersion === "string" ? doc.schemaVersion : "",
-    settings: { ...DEFAULT_SETTINGS, ...(doc.settings ?? {}) },
-    systems: Array.isArray(doc.systems) ? doc.systems : [],
-  };
+  const root = doc && typeof doc === "object" && !Array.isArray(doc) ? doc : {};
+  const parsed = projectConfigSchema.parse(root);
+
+  // Settings: default when missing/invalid, else clamped/defaulted (unknowns kept).
+  const sp = projectSettingsSchema.safeParse(parsed.settings);
+  const settings = (sp.success ? sp.data : projectSettingsSchema.parse({})) as ProjectSettings;
+
+  // Systems: keep each valid (object) entry with its unknowns preserved; drop garbage.
+  const systems: SystemThin[] = [];
+  for (const raw of parsed.systems as unknown[]) {
+    const r = systemThinSchema.safeParse(raw);
+    if (r.success) systems.push(r.data as SystemThin);
+  }
+
+  // Spread `parsed` first to preserve unknown ROOT fields, then override the validated ones.
+  return { ...parsed, schemaVersion: parsed.schemaVersion as string, settings, systems } as ProjectConfig;
 }
 
 /** Rebase each asset path to absolute against `baseDir`, in place (load side). */
