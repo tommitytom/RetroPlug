@@ -28,6 +28,7 @@
 #include "config/RecentFiles.hpp"
 #include "config/UserConfig.hpp"
 #include "project/Project.hpp"
+#include "project/ProjectConfig.hpp"
 #include "project/ProjectMissingFiles.hpp"
 #include "project/ProjectSerialization.hpp"
 #include "system/MemoryType.hpp"
@@ -175,6 +176,43 @@ TEST_CASE("PluginRpcService saveSram writes the battery RAM",
 
     CHECK(fx.sawEvent("sram-saved"));
     CHECK(readFile(path) == fx.sys->saveSramBytes());
+}
+
+TEST_CASE("PluginRpcService getProjectView fans in the individual getters",
+          "[PluginRpcService]") {
+    if (!romAvailable()) SKIP("Game Boy ROM missing at " << kRomPath);
+    Fixture fx;
+
+    // Seed non-default settings directly on the project (the DSP replica the
+    // getters read) plus a focus, then assert the atomic view returns exactly
+    // what the six per-field getters do — the UI relies on this one call
+    // replacing that fan-out with a single, tear-free read.
+    fx.project.config().settings.midiRouting  = MidiRouting::MidiChannelToInstance;
+    fx.project.config().settings.audioRouting = AudioRouting::OnePerInstance;
+    fx.project.config().settings.layout       = SystemLayout::Grid;
+    fx.project.config().settings.zoom         = 4;
+    fx.focused.store(fx.id);
+
+    const auto v    = fx.service.getProjectView();
+    const auto list = fx.service.listSystems();
+
+    REQUIRE(v.systems.size() == list.size());
+    REQUIRE(v.systems.size() == 1);
+    CHECK(v.systems[0].id   == list[0].id);
+    CHECK(v.systems[0].kind == list[0].kind);
+
+    CHECK(v.focus        == fx.service.getFocus());
+    CHECK(v.midiRouting  == fx.service.getMidiRouting());
+    CHECK(v.audioRouting == fx.service.getAudioRouting());
+    CHECK(v.layout       == fx.service.getLayout());
+    CHECK(v.projectZoom  == fx.service.getProjectZoom());
+
+    // And the concrete values we seeded round-trip through the view.
+    CHECK(v.focus        == fx.id);
+    CHECK(v.projectZoom  == 4u);
+    CHECK(v.layout       == static_cast<std::uint32_t>(SystemLayout::Grid));
+    CHECK(v.midiRouting  == static_cast<std::uint32_t>(MidiRouting::MidiChannelToInstance));
+    CHECK(v.audioRouting == static_cast<std::uint32_t>(AudioRouting::OnePerInstance));
 }
 
 TEST_CASE("PluginRpcService getMemory prefers the snapshot slice",

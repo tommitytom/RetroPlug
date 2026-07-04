@@ -293,9 +293,12 @@ protected:
         const SystemId firstAdded = project.loadFromConfig(parsed);
         focusedSystemAtomic.store(firstAdded, std::memory_order_release);
 
-        // Notify the UI (if attached) so it drops its cached project view.
-        if (!events.tryPush(Event::makeConfigChanged()))
-            d_stderr("[PluginDSP] applyProjectFromConfig: event queue full; dropping ConfigChanged");
+        // Notify the UI (if attached) that the whole project was replaced, so it
+        // does a full re-seed *including* the settings it otherwise owns — a load
+        // is the only non-UI source of a settings change. Distinct from the
+        // structural ConfigChanged emitted for add/remove/model/link edits.
+        if (!events.tryPush(Event::makeProjectLoaded()))
+            d_stderr("[PluginDSP] applyProjectFromConfig: event queue full; dropping ProjectLoaded");
     }
 
     // ----------------------------------------------------------------------------------------------------------------
@@ -429,38 +432,31 @@ protected:
                     }
                 } break;
 
+                // Project-wide settings are owned by the editing UI: it updates
+                // its own working copy synchronously on edit, so these handlers
+                // just keep the DSP's replica current (for getState) — and, for
+                // routing, feed the live read at the bottom of run(). They do
+                // NOT set projectMutated: emitting ConfigChanged here would make
+                // the UI re-fetch and clobber the value it just set. Structural
+                // changes still echo; a project load re-seeds via ProjectLoaded.
                 case Command::Kind::SetMidiRouting: {
-                    const MidiRouting r = cmd.payload.setMidiRouting.routing;
-                    if (project.config().settings.midiRouting != r) {
-                        project.config().settings.midiRouting = r;
-                        projectMutated = true;
-                    }
+                    project.config().settings.midiRouting =
+                        cmd.payload.setMidiRouting.routing;
                 } break;
 
                 case Command::Kind::SetZoom: {
                     // 0 = inherit the user default; 1..6 = explicit per-project.
                     const std::uint8_t z = cmd.payload.setZoom.zoom;
-                    if (z <= 6 &&
-                        project.config().settings.zoom != z) {
-                        project.config().settings.zoom = z;
-                        projectMutated = true;
-                    }
+                    if (z <= 6) project.config().settings.zoom = z;
                 } break;
 
                 case Command::Kind::SetLayout: {
-                    const SystemLayout l = cmd.payload.setLayout.layout;
-                    if (project.config().settings.layout != l) {
-                        project.config().settings.layout = l;
-                        projectMutated = true;
-                    }
+                    project.config().settings.layout = cmd.payload.setLayout.layout;
                 } break;
 
                 case Command::Kind::SetAudioRouting: {
-                    const AudioRouting r = cmd.payload.setAudioRouting.routing;
-                    if (project.config().settings.audioRouting != r) {
-                        project.config().settings.audioRouting = r;
-                        projectMutated = true;
-                    }
+                    project.config().settings.audioRouting =
+                        cmd.payload.setAudioRouting.routing;
                 } break;
 
                 case Command::Kind::SetSramMirror:
@@ -644,10 +640,13 @@ protected:
             }
         }
 
-        // Notify the UI exactly once per block when the project tree changed.
-        // The UI listens for ConfigChanged and re-queries listSystems() —
-        // without this, the bridge's "rom-loaded" event fires before the DSP
-        // has drained the command, so React would see a stale (empty) project.
+        // Notify the UI exactly once per block when the project *structure*
+        // changed (system add/remove/model/link). The UI listens for
+        // ConfigChanged and re-queries listSystems() — without this, the
+        // bridge's "rom-loaded" event fires before the DSP has drained the
+        // command, so React would see a stale (empty) project. Settings edits
+        // do NOT set projectMutated (the UI owns them optimistically); a whole
+        // project load re-seeds the UI via the distinct ProjectLoaded event.
         if (projectMutated) {
             if (!events.tryPush(Event::makeConfigChanged()))
                 d_stderr("event queue full; UI will miss a ConfigChanged tick");

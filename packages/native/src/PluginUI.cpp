@@ -145,13 +145,18 @@ class LVGLPluginUI : public UI
     //  - SystemReleased: the DSP shipped a displaced SystemBase back so the
     //    UI thread can free it. Must run before anything else that could
     //    observe a stale system pointer.
-    //  - ConfigChanged: project tree changed (setState reload, add/remove,
-    //    swap). Re-emitted to JS as "config-changed" so React re-queries
-    //    plugin.listSystems().
+    //  - ConfigChanged: project *structure* changed (add/remove/model/link).
+    //    Re-emitted to JS as "config-changed"; React re-fetches its system
+    //    list + focus but keeps the settings it owns.
+    //  - ProjectLoaded: the whole project was replaced (setState / LoadProject).
+    //    Re-emitted as "project-loaded"; React does a full re-seed including
+    //    settings. Supersedes ConfigChanged for the same drain — a load is a
+    //    superset re-seed, so we fire only the one JS event.
     void drainEvents()
     {
         if (!shared || !shared->events) return;
         bool configChanged = false;
+        bool projectLoaded = false;
         Event ev;
         while (shared->events->tryPop(ev)) {
             switch (ev.kind) {
@@ -161,12 +166,18 @@ class LVGLPluginUI : public UI
                 case Event::Kind::ConfigChanged:
                     configChanged = true;
                     break;
+                case Event::Kind::ProjectLoaded:
+                    projectLoaded = true;
+                    break;
                 case Event::Kind::None:
                 default:
                     break;
             }
         }
-        if (configChanged && jsEngine.getContext())
+        if (!jsEngine.getContext()) return;
+        if (projectLoaded)
+            jsEngine.emit("project-loaded", 0, nullptr);
+        else if (configChanged)
             jsEngine.emit("config-changed", 0, nullptr);
     }
 

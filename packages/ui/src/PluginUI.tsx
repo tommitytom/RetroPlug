@@ -47,7 +47,7 @@ function PluginUI() {
     const [aboutOpen, setAboutOpen] = useState(false);
     const [systems, setSystems] = useState<SystemEntry[]>([]);
     const [focusedId, setFocusedId] = useState<number>(0);
-    // Seeded to 0 and replaced by the first refreshSystems(). The brief
+    // Seeded to 0 and replaced by the first seedAll(). The brief
     // 0-flash before that arrives is acceptable — the menu is open at
     // mount and the routing label only matters once a tile exists.
     const [midiRouting, setMidiRouting] = useState<number>(0);
@@ -119,18 +119,10 @@ function PluginUI() {
         };
     }, []);
 
-    // Pull the current system list and focus from C++. Called on mount and
-    // every "config-changed" tick (after the DSP commits a project mutation).
-    const refreshSystems = useCallback(async () => {
-        const [list, f, routing, audio, z, l] = await Promise.all([
-            plugin.listSystems(),
-            plugin.getFocus(),
-            plugin.getMidiRouting(),
-            plugin.getAudioRouting(),
-            plugin.getProjectZoom(),
-            plugin.getLayout(),
-        ]);
-        setSystems(list);
+    // Reconcile the focused system against a freshly-fetched list: keep the
+    // current focus if it still exists, else focus the first system (and tell
+    // C++), else clear focus. Shared by the two seed paths below.
+    const reconcileFocus = useCallback((list: SystemEntry[], f: number) => {
         if (f !== 0 && list.some((s) => s.id === f)) {
             setFocusedId(f);
         } else if (list.length > 0) {
@@ -139,18 +131,65 @@ function PluginUI() {
         } else {
             setFocusedId(0);
         }
-        setMidiRouting(routing);
-        setAudioRouting(audio);
-        setLayout(l);
-        setProjectZoom(z >= 0 && z <= 6 ? z : 0);
     }, []);
 
+    // Full re-seed from one atomic snapshot (systems + focus + all project
+    // settings). Used on mount and whenever the whole project is replaced
+    // ("project-loaded"). Settings are adopted here because a load is the only
+    // non-UI source of a settings change — otherwise the UI owns them.
+    const seedAll = useCallback(async () => {
+        const v = await plugin.getProjectView();
+        setSystems(v.systems);
+        reconcileFocus(v.systems, v.focus);
+        setMidiRouting(v.midiRouting);
+        setAudioRouting(v.audioRouting);
+        setLayout(v.layout);
+        setProjectZoom(v.projectZoom >= 0 && v.projectZoom <= 6 ? v.projectZoom : 0);
+    }, [reconcileFocus]);
+
+    // Structural re-seed on "config-changed": adopt systems + focus but LEAVE
+    // the UI-owned settings alone. A structural change (add/remove/model/link)
+    // never alters settings, and re-reading the DSP replica here could clobber
+    // an in-flight optimistic settings edit whose command hasn't drained yet.
+    const refreshStructure = useCallback(async () => {
+        const v = await plugin.getProjectView();
+        setSystems(v.systems);
+        reconcileFocus(v.systems, v.focus);
+    }, [reconcileFocus]);
+
     useEffect(() => {
-        void refreshSystems();
-        const handler = () => { void refreshSystems(); };
-        on("config-changed", handler);
-        return () => off("config-changed", handler);
-    }, [refreshSystems]);
+        void seedAll();
+        const onConfig = () => { void refreshStructure(); };
+        const onLoaded = () => { void seedAll(); };
+        on("config-changed", onConfig);
+        on("project-loaded", onLoaded);
+        return () => {
+            off("config-changed", onConfig);
+            off("project-loaded", onLoaded);
+        };
+    }, [seedAll, refreshStructure]);
+
+    // Optimistic project-settings edits: update the UI's own copy synchronously
+    // (the UI owns these), then inform the DSP via $notify. The DSP updates its
+    // replica (routing also feeds live mixing) WITHOUT echoing ConfigChanged, so
+    // nothing re-fetches and clobbers the value we just set. markProjectDirty
+    // still fires server-side in the RPC setter, so the unsaved gate still sees it.
+    const applyProjectZoom = useCallback((z: number) => {
+        setProjectZoom(z >= 0 && z <= 6 ? z : 0);
+        void plugin.$notify("setZoom", z);
+    }, []);
+    const applyLayout = useCallback((l: number) => {
+        setLayout(l);
+        void plugin.$notify("setLayout", l);
+    }, []);
+    const applyMidiRouting = useCallback((r: number) => {
+        setMidiRouting(r);
+        void plugin.$notify("setMidiRouting", r);
+    }, []);
+    const applyAudioRouting = useCallback((r: number) => {
+        setAudioRouting(r);
+        void plugin.$notify("setAudioRouting", r);
+    }, []);
 
     // App version is static — fetch it once for the menu chrome title.
     useEffect(() => {
@@ -505,6 +544,10 @@ function PluginUI() {
         openAbout,
         requestNewProject,
         requestLoadProject,
+        applyProjectZoom,
+        applyLayout,
+        applyMidiRouting,
+        applyAudioRouting,
         keyboardEditor,
         gamepadEditor,
     });

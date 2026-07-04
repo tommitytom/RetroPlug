@@ -298,6 +298,10 @@ void UiTestHarness::notifyConfigChanged() {
     if (engine_.getContext()) engine_.emit("config-changed", 0, nullptr);
 }
 
+void UiTestHarness::notifyProjectLoaded() {
+    if (engine_.getContext()) engine_.emit("project-loaded", 0, nullptr);
+}
+
 bool UiTestHarness::loadProject(const std::string& path) {
     return bridge_ && bridge_->loadProjectFromPath(rpcli::resolveHostPath(path));
 }
@@ -361,6 +365,7 @@ void UiTestHarness::pump(int iterations) {
         // not via the LoadRom/AddSystem commands).
         Command cmd;
         bool configMutated = false;
+        bool projectLoaded = false;
         while (commands_.tryPop(cmd)) {
             if (cmd.kind == Command::Kind::ButtonPress) {
                 const auto& bp = cmd.payload.buttonPress;
@@ -376,7 +381,9 @@ void UiTestHarness::pump(int iterations) {
                     project_.rebuildLinkGroups();
                     project_.onActivate(sampleRate_.load());
                     delete config;
-                    configMutated = true;
+                    // A whole-project replace: emit ProjectLoaded so the UI
+                    // re-seeds its settings too (not just structure).
+                    projectLoaded = true;
                 }
             } else if (cmd.kind == Command::Kind::LoadRom) {
                 // Mirror PluginDSP's LoadRom so menu-driven ROM loads (e.g. the
@@ -399,14 +406,20 @@ void UiTestHarness::pump(int iterations) {
                     configMutated = true;
                 }
             } else if (cmd.kind == Command::Kind::SetZoom) {
-                // Mirror PluginDSP's SetZoom handler so the Project > Zoom
-                // cycle (incl. 0 = inherit default) reflects in headless UI
-                // tests. 0..6; the real round-trip is DSP-thread only.
+                // Mirror PluginDSP's SetZoom: update the replica only, NO
+                // config-changed echo — the UI owns zoom and edits it
+                // optimistically. 0..6 (0 = inherit the user default).
                 const std::uint8_t z = cmd.payload.setZoom.zoom;
-                if (z <= 6 && project_.config().settings.zoom != z) {
-                    project_.config().settings.zoom = z;
-                    configMutated = true;
-                }
+                if (z <= 6) project_.config().settings.zoom = z;
+            } else if (cmd.kind == Command::Kind::SetLayout) {
+                // Mirror PluginDSP's SetLayout: replica only, no echo.
+                project_.config().settings.layout = cmd.payload.setLayout.layout;
+            } else if (cmd.kind == Command::Kind::SetMidiRouting) {
+                // Mirror PluginDSP's SetMidiRouting: replica only, no echo.
+                project_.config().settings.midiRouting = cmd.payload.setMidiRouting.routing;
+            } else if (cmd.kind == Command::Kind::SetAudioRouting) {
+                // Mirror PluginDSP's SetAudioRouting: replica only, no echo.
+                project_.config().settings.audioRouting = cmd.payload.setAudioRouting.routing;
             } else if (cmd.kind == Command::Kind::SetFastBoot) {
                 // Boolean config toggle. Mirrors PluginDSP's handler so the
                 // cyclable Fast Boot menu row reflects in headless UI tests
@@ -446,7 +459,10 @@ void UiTestHarness::pump(int iterations) {
                 configMutated = true;
             }
         }
-        if (configMutated) notifyConfigChanged();
+        // ProjectLoaded supersedes ConfigChanged for the same drain — a load is
+        // a superset re-seed, so fire only the one event (mirrors PluginUI.cpp).
+        if (projectLoaded) notifyProjectLoaded();
+        else if (configMutated) notifyConfigChanged();
 
         // Advance the emulator so framebuffers publish (no DSP thread headless),
         // matching the per-tick emulator advance the plugin's audio thread does.

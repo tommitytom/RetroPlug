@@ -119,6 +119,15 @@ export interface MenuContext {
     // modal the window-close uses) before the current project is discarded.
     requestNewProject:  () => void;
     requestLoadProject: () => void;
+    // Optimistic project-settings edits. Each updates the UI's own working copy
+    // synchronously (the UI owns these settings) and then informs the DSP. The
+    // DSP applies them to its replica (routing also feeds live mixing) WITHOUT
+    // echoing ConfigChanged, so the UI never re-fetches and clobbers the value
+    // it just set. Raw zoom: 0 = inherit the user default, 1..6 = explicit.
+    applyProjectZoom:  (zoom: number) => void;
+    applyLayout:       (layout: number) => void;
+    applyMidiRouting:  (routing: number) => void;
+    applyAudioRouting: (routing: number) => void;
     // Bindings editors (one per channel). Own all of their own state +
     // RPC calls — see ui/useBindingsEditor.ts. The Settings submenu
     // builds two inline submenus from these (one for keyboard, one for
@@ -439,14 +448,8 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
           onSelect: () => ctx.requestLoadProject() },
         sep(),
         { id: "layout", label: `Layout: ${layoutName}`, kind: "action", keepOpen: true,
-          onSelect: () => {
-              const next = cycleInt(ctx.layout, 0, LAYOUT_NAMES.length - 1, 1);
-              void plugin.$notify("setLayout", next);
-          },
-          onCycle: (dir) => {
-              const next = cycleInt(ctx.layout, 0, LAYOUT_NAMES.length - 1, dir);
-              void plugin.$notify("setLayout", next);
-          } },
+          onSelect: () => ctx.applyLayout(cycleInt(ctx.layout, 0, LAYOUT_NAMES.length - 1, 1)),
+          onCycle: (dir) => ctx.applyLayout(cycleInt(ctx.layout, 0, LAYOUT_NAMES.length - 1, dir)) },
         // Raw 0 = inherit the user default; the resolved value is shown in
         // parens so the user sees what "Default" currently maps to. Cycling
         // includes Default as a slot (0 → 1 → … → 6 → 0) so a project can be
@@ -456,27 +459,15 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
               ? `Zoom: Default (${ctx.zoom}x)`
               : `Zoom: ${ctx.zoom}x`,
           kind: "action", keepOpen: true,
-          onSelect: () => { void plugin.$notify("setZoom", cycleInt(ctx.projectZoom, 0, 6, 1)); },
-          onCycle: (dir) => { void plugin.$notify("setZoom", cycleInt(ctx.projectZoom, 0, 6, dir)); } },
+          onSelect: () => ctx.applyProjectZoom(cycleInt(ctx.projectZoom, 0, 6, 1)),
+          onCycle: (dir) => ctx.applyProjectZoom(cycleInt(ctx.projectZoom, 0, 6, dir)) },
         sep(),
         { id: "midiRouting", label: `MIDI Routing: ${routingName}`, kind: "action", keepOpen: true,
-          onSelect: () => {
-              const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, 1);
-              void plugin.$notify("setMidiRouting", next);
-          },
-          onCycle: (dir) => {
-              const next = cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, dir);
-              void plugin.$notify("setMidiRouting", next);
-          } },
+          onSelect: () => ctx.applyMidiRouting(cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, 1)),
+          onCycle: (dir) => ctx.applyMidiRouting(cycleInt(ctx.midiRouting, 0, MIDI_ROUTING_NAMES.length - 1, dir)) },
         { id: "audioRouting", label: `Audio Routing: ${audioRoutingName}`, kind: "action", keepOpen: true,
-          onSelect: () => {
-              const next = cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, 1);
-              void plugin.$notify("setAudioRouting", next);
-          },
-          onCycle: (dir) => {
-              const next = cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, dir);
-              void plugin.$notify("setAudioRouting", next);
-          } },
+          onSelect: () => ctx.applyAudioRouting(cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, 1)),
+          onCycle: (dir) => ctx.applyAudioRouting(cycleInt(ctx.audioRouting, 0, AUDIO_ROUTING_NAMES.length - 1, dir)) },
     );
     return items;
 }

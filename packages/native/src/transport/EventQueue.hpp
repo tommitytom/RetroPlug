@@ -14,8 +14,11 @@ class SystemBase;
 //
 // `SystemReleased` ships ownership of an unwanted `SystemBase*` back to the
 // UI for off-thread `delete`. `ConfigChanged` is a payload-less "the project
-// tree has been swapped out" signal — the UI drops its cache and re-fetches.
-// Emitted by setState (DPF state restore).
+// *structure* changed (system added/removed/model/link)" signal — the UI
+// re-fetches its system list + focus but keeps the settings it owns.
+// `ProjectLoaded` is the payload-less "the whole project was replaced" signal
+// (setState / LoadProject) — the UI does a full re-seed including settings,
+// because a load is the only non-UI source of a settings change.
 
 struct SystemReleasedEvent {
     // TODO: std::unique_ptr?
@@ -27,6 +30,7 @@ struct Event {
         None            = 0,
         SystemReleased  = 1,
         ConfigChanged   = 2,
+        ProjectLoaded   = 3,
     };
 
     Kind kind = Kind::None;
@@ -47,6 +51,12 @@ struct Event {
     static Event makeConfigChanged() {
         Event e;
         e.kind = Kind::ConfigChanged;
+        return e;
+    }
+
+    static Event makeProjectLoaded() {
+        Event e;
+        e.kind = Kind::ProjectLoaded;
         return e;
     }
 };

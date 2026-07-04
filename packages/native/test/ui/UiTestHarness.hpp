@@ -78,8 +78,14 @@ public:
     // settle before the tree is stable.
     void pump(int iterations = 30);
 
-    // Tell the UI to refetch systems (emits "config-changed"); use after loadRom.
+    // Tell the UI a structural change happened (emits "config-changed"); the UI
+    // refetches its system list + focus but keeps the settings it owns. Use
+    // after loadRom / add / remove.
     void notifyConfigChanged();
+    // Tell the UI the whole project was replaced (emits "project-loaded"); the UI
+    // does a full re-seed including settings. Mirrors PluginDSP's ProjectLoaded
+    // event — use after a LoadProject command applies.
+    void notifyProjectLoaded();
 
     // Load a project file through the REAL PluginRpcService path (parses, detects
     // missing ROMs / kit WAVs, emits "missing-files" or commits). Lets a UI test
