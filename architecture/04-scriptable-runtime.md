@@ -2,14 +2,20 @@
 
 ## Status
 
-**Proposed.** The txiki/QuickJS host substrate is shipped and reusable
-([`TjsHostRuntime`](../deps/dpf.js/src/dpfjs/host/TjsHostRuntime.hpp#L35)); what's
-proposed is (A) giving it a **plugin-lifetime** existence so orchestration TS runs
-whether or not the editor window is open, and (B) collapsing the two hand-written
-RPC surfaces + two QuickJS embeddings into **one runtime over one curated binding
-set**. Neither is built. The "unify the RPC surface" work was attempted and
-explicitly did *not* land as one service — see
-[restructure-04](../porting/restructure-04-unify-rpc-surface.md).
+**(A) always-available runtime — shipped** (branch `arch/rework`). The
+txiki/QuickJS runtime + rpc bridge are now owned by `LVGLPluginDSP`
+(plugin-lifetime); the editor **attaches** its LVGL display layer to that host
+per session (`LvglJsEngine::useExternalHost` + `attachDisplay`/`detachDisplay`)
+and the runtime survives window close/reopen without a bundle re-eval. The rpc
+bridge was decoupled from `LvglJsEngine` (bare `TjsHostRuntime` + a settable
+emit sink), and `lv_binding_js` gained `Renderer.unmount()` so React can be
+re-mounted on the persistent context. Orchestration + the RPC surface now exist
+regardless of the editor window; `run()` stays JS-free. Behaviour-identical
+(screenshot byte-identical, `pnpm validate` SUCCESS). **Not yet done:** routing
+`get`/`setState`/autoload *through* the runtime (step 2, gated on 03's
+primitives) and **(B)** collapsing the two RPC surfaces / one binding set (the
+CLI harness still embeds its own `TjsHostRuntime` + `HarnessRpcService` — see
+[restructure-04](../porting/restructure-04-unify-rpc-surface.md)).
 
 ## Why
 
@@ -193,11 +199,12 @@ marshal as `ArrayBuffer`/handles, never JS strings.
 
 Ordered; each independently shippable.
 
-1. **Lift `TjsHostRuntime` out of `LvglJsEngine`'s lifetime.** Give the plugin a
-   runtime that exists at construction, before/independent of any window. The
-   editor, when it opens, attaches its LVGL display + bundle to the *existing*
-   runtime instead of creating one. Behaviour-identical while the window is the
-   only driver.
+1. ✅ **Lift `TjsHostRuntime` out of `LvglJsEngine`'s lifetime.** Done: the DSP
+   owns a bare `TjsHostRuntime` + `PluginJsBridge` + `UserConfig`/`RecentFiles`
+   at construction (published via `SharedDSPData`); the editor attaches its LVGL
+   display + bundle to that host per session and re-mounts on reopen. Required a
+   bridge/engine decoupling (bare host + emit sink), an `init()`/`attachDisplay()`
+   split, and `Renderer.unmount()` in `lv_binding_js`. Behaviour-identical.
 2. **Route `getState`/`setState`/autoload through the runtime.** Replace the
    native zip/base64/ProjectConfig paths in `PluginDSP` with synchronous calls
    into the control-plane TS (guarded by the runtime mutex). Delete the DSP-side
