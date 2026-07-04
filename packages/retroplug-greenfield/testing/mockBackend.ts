@@ -13,6 +13,10 @@ export class MockBackend implements Backend {
   private files = new Map<string, Uint8Array>();
   private dir: string;
 
+  /** Names of Backend methods called, in order — lets tests assert side-effects
+   *  (e.g. that a write went through writeFileAtomic, not writeFile). */
+  readonly log: string[] = [];
+
   constructor(configDir = "/config") {
     this.dir = configDir;
   }
@@ -39,25 +43,31 @@ export class MockBackend implements Backend {
   // --- Backend ------------------------------------------------------------
 
   readFile(path: string): Uint8Array | null {
+    this.log.push("readFile");
     const b = this.files.get(this.canonicalize(path));
     return b ? new Uint8Array(b) : null;
   }
 
   writeFile(path: string, bytes: Uint8Array): boolean {
+    this.log.push("writeFile");
     this.files.set(this.canonicalize(path), new Uint8Array(bytes));
     return true;
   }
 
   writeFileAtomic(path: string, bytes: Uint8Array): boolean {
-    // Atomicity is invisible in-memory; behave like writeFile.
-    return this.writeFile(path, bytes);
+    // Atomicity is invisible in-memory; behave like writeFile but log distinctly.
+    this.log.push("writeFileAtomic");
+    this.files.set(this.canonicalize(path), new Uint8Array(bytes));
+    return true;
   }
 
   fileExists(path: string): boolean {
+    this.log.push("fileExists");
     return this.files.has(this.canonicalize(path));
   }
 
   rename(from: string, to: string): boolean {
+    this.log.push("rename");
     const cf = this.canonicalize(from);
     const bytes = this.files.get(cf);
     if (!bytes) return false;
