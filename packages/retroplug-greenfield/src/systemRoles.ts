@@ -20,15 +20,21 @@ export interface RoleInstance {
   config: Record<string, unknown>;
 }
 
+/** A role's config validator: a zod schema whose `.parse` fills defaults + clamps a
+ *  (possibly partial/invalid) config into a full one. Structurally-typed so the
+ *  registry stays zod-agnostic; the schemas themselves are built with zod
+ *  (roleSchema.ts). `parse({})` yields the default config. */
+export interface RoleConfigSchema {
+  parse(config: unknown): Record<string, unknown>;
+}
+
 /** A registry entry contributed by an extension (or the core, for backend roles). */
 export interface RoleType {
   kind: string;
   category: RoleCategory;
-  /** A fresh default config for this role. */
-  defaultConfig(): Record<string, unknown>;
-  /** Fill defaults + validate/clamp a (possibly partial/out-of-range) config. The
-   *  only place ranges live. */
-  clampConfig(config: Record<string, unknown>): Record<string, unknown>;
+  /** The zod schema for this role's config — the single source of truth for its
+   *  shape, defaults, and clamping. */
+  schema: RoleConfigSchema;
   /** DEFERRED: the doc-06 translator (byte/MIDI behavior). A later domain fills it. */
   behavior?: unknown;
   /** DEFERRED: a render descriptor for the settings UI. */
@@ -60,12 +66,18 @@ export class RoleRegistry {
   }
 
   /** The default roles for a freshly-constructed system: the backend's system role
-   *  (if any), then every provider's feature-role suggestions for this ROM. */
+   *  (if any), then every provider's feature-role suggestions for this ROM. Each
+   *  config is parsed through its role's schema (defaults filled, values clamped). */
   defaultRoles(backendKind: string, header: Uint8Array): RoleInstance[] {
     const out: RoleInstance[] = [];
     const sysRole = this.systemRoleFor(backendKind);
-    if (sysRole) out.push({ kind: sysRole.kind, config: sysRole.defaultConfig() });
-    for (const p of this.providers) out.push(...p(header));
+    if (sysRole) out.push({ kind: sysRole.kind, config: sysRole.schema.parse({}) });
+    for (const p of this.providers) {
+      for (const r of p(header)) {
+        const rt = this.types.get(r.kind);
+        out.push({ kind: r.kind, config: rt ? rt.schema.parse(r.config) : r.config });
+      }
+    }
     return out;
   }
 }

@@ -6,6 +6,7 @@
 import { test, expect } from "../../testing/harness";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
+import { z, clampedInt } from "../../src/roleSchema";
 
 // A ROM header (0x150 bytes) carrying an ASCII cartridge title at 0x134.
 function headerWithTitle(title: string): Uint8Array {
@@ -20,8 +21,7 @@ function registerFakeExtension(reg: RoleRegistry): void {
   reg.registerRole({
     kind: "demo-sync",
     category: "feature",
-    defaultConfig: () => ({ level: 1 }),
-    clampConfig: (c) => ({ level: Math.max(0, Math.min(10, Number(c.level ?? 1) | 0)) }),
+    schema: z.object({ level: clampedInt(0, 10, 1) }),
   });
   reg.registerRomProvider((header) => {
     const title = String.fromCharCode(...header.slice(0x134, 0x138));
@@ -35,16 +35,16 @@ test("systemRoleFor: the core registers a SameBoy system role; NES has none", ()
   const sb = reg.systemRoleFor("sameboy");
   expect(sb?.kind).toBe("sameboy");
   expect(sb?.category).toBe("system");
-  expect(sb?.defaultConfig()).toEqual({ model: 9, highpass: 1, linkGroupId: 0, fastBoot: true });
+  expect(sb?.schema.parse({})).toEqual({ model: 9, highpass: 1, linkGroupId: 0, fastBoot: true });
   expect(reg.systemRoleFor("nes")).toBe(undefined);
 });
 
-test("clampConfig: fills defaults + clamps out-of-range fields", () => {
+test("schema: fills defaults + clamps out-of-range fields", () => {
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
   const sb = reg.roleType("sameboy")!;
-  expect(sb.clampConfig({})).toEqual({ model: 9, highpass: 1, linkGroupId: 0, fastBoot: true });
-  expect(sb.clampConfig({ model: 99, highpass: 5, linkGroupId: 999 })).toEqual({
+  expect(sb.schema.parse({})).toEqual({ model: 9, highpass: 1, linkGroupId: 0, fastBoot: true });
+  expect(sb.schema.parse({ model: 99, highpass: 5, linkGroupId: 999 })).toEqual({
     model: 13,
     highpass: 2,
     linkGroupId: 255,

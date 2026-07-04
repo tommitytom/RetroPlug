@@ -8,6 +8,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
+import { z, clampedInt } from "../../src/roleSchema";
 import { gbRom } from "../systems/fixtures";
 
 // A GB ROM (valid logo for classification) carrying a cartridge title at 0x134.
@@ -25,8 +26,7 @@ function registryWithFake(): RoleRegistry {
   reg.registerRole({
     kind: "demo-sync",
     category: "feature",
-    defaultConfig: () => ({ level: 1 }),
-    clampConfig: (c) => ({ level: Math.max(0, Math.min(10, Number(c.level ?? 1) | 0)) }),
+    schema: z.object({ level: clampedInt(0, 10, 1) }),
   });
   reg.registerRomProvider((h) =>
     String.fromCharCode(...h.slice(0x134, 0x138)).startsWith("DEMO") ? [{ kind: "demo-sync", config: { level: 1 } }] : [],

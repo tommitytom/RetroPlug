@@ -205,7 +205,7 @@ export class SystemsStore {
     if (idx < 0) return false;
     const rt = this.registry?.roleType(roleKind);
     const merged = { ...e.roles[idx].config, ...partial };
-    const config = rt ? rt.clampConfig(merged) : merged;
+    const config = rt ? rt.schema.parse(merged) : merged;
     if (rt?.category === "system") this.backend.applyRoleConfig(id, roleKind, config);
     const roles = e.roles.slice();
     roles[idx] = { kind: roleKind, config };
