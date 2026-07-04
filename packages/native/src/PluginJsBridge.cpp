@@ -34,7 +34,7 @@ struct MemoryNotificationPayload {
 
 } // namespace
 
-PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
+PluginJsBridge::PluginJsBridge(TjsHostRuntime& host,
                                Project* project,
                                CommandQueue* commands,
                                EventQueue* events,
@@ -42,30 +42,31 @@ PluginJsBridge::PluginJsBridge(LvglJsEngine& eng,
                                std::atomic<SystemId>* focusedSystemId,
                                UserConfig* userConfig,
                                RecentFiles* recentFiles)
-    : engine(eng),
+    : host_(host),
       project_(project),
       service_(project, commands, events, sampleRate, focusedSystemId,
                userConfig, recentFiles),
       // The generic bridge owns the rpc server/transport + the "plugin"
       // namespace (__rpcSend / __log). It references service_ — declared first.
-      rpc_(eng, service_, "plugin") {
+      rpc_(host, service_, "plugin") {
 
     registerPluginRpcMethods(rpc_.server());
 
-    // Service emits string-payload JS events through the engine channel
-    // mechanism (on/off in runtime/lvgljs/index.ts).
+    // Service emits string-payload JS events through the emit sink (routed to
+    // LvglJsEngine::emit while the editor is attached; dropped otherwise).
     service_.setEmitEventCallback(
         [this](const std::string& channel, const std::string& payload) {
-            JSContext* ctx = engine.getContext();
+            if (!emitSink_) return;
+            JSContext* ctx = host_.context();
             if (!ctx) return;
             JSValue v = JS_NewStringLen(ctx, payload.data(), payload.size());
-            engine.emit(channel.c_str(), 1, &v);
+            emitSink_(channel.c_str(), 1, &v);
             JS_FreeValue(ctx, v);
         });
 
     // RetroPlug-specific JS prop on the bridge namespace: a debug-overlay
     // toggle read from the (domain) RETROPLUG_DEBUG_OVERLAY env var.
-    if (JSContext* ctx = engine.getContext();
+    if (JSContext* ctx = host_.context();
         ctx && !JS_IsUndefined(rpc_.jsNamespace())) {
         JS_SetPropertyStr(ctx, rpc_.jsNamespace(), "debugOverlay",
                           JS_NewBool(ctx, std::getenv("RETROPLUG_DEBUG_OVERLAY") != nullptr));

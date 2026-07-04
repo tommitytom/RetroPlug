@@ -290,7 +290,7 @@ public:
             // Plugin-specific JS bridge. Must exist before evalModule so
             // useEffect handlers can register before the bundle's first render.
             bridge = std::make_unique<PluginJsBridge>(
-                jsEngine,
+                jsEngine.host(),
                 shared ? shared->project         : nullptr,
                 shared ? shared->commands        : nullptr,
                 shared ? shared->events          : nullptr,
@@ -298,6 +298,11 @@ public:
                 shared ? shared->focusedSystemId : nullptr,
                 &userConfig,
                 &recentFiles);
+            // Route JS events (rpc-message frames + service string events) out
+            // through this editor session's display engine.
+            bridge->setEmitSink([this](const char* ch, int argc, JSValueConst* argv) {
+                jsEngine.emit(ch, argc, argv);
+            });
 
             // The bridge invokes this for any file-browser action — Open ROM,
             // Add instance, Save project, Load project. The flags map to

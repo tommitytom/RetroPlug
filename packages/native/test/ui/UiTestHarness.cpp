@@ -236,8 +236,12 @@ bool UiTestHarness::boot() {
     userConfig_->start();
 
     bridge_ = std::make_unique<PluginJsBridge>(
-        engine_, &project_, &commands_, &events_, &sampleRate_, &focusedSystemId_,
+        engine_.host(), &project_, &commands_, &events_, &sampleRate_, &focusedSystemId_,
         userConfig_.get(), recentFiles_.get());
+    // Route JS events out through this harness's display engine.
+    bridge_->setEmitSink([this](const char* ch, int argc, JSValueConst* argv) {
+        engine_.emit(ch, argc, argv);
+    });
 
     // Stub the file browser so open*Browser RPCs succeed headlessly. The actual
     // chosen path is injected by the test via selectFile() -> onFileBrowserSelected.

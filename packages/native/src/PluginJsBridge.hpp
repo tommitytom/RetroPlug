@@ -5,7 +5,7 @@
 #include <functional>
 #include <string>
 
-#include "dpfjs/LvglJsEngine.hpp"
+#include "dpfjs/host/TjsHostRuntime.hpp"
 #include "PluginRpcService.hpp"
 #include "dpfjs/JsRpcBridge.hpp"
 #include "system/SystemTypes.hpp"
@@ -29,13 +29,23 @@ class RecentFiles;
 // The RPC method bodies (loadRomFromPath, listSystems, …) live in
 // PluginRpcService — see src/PluginRpcService.{hpp,cpp}.
 //
-// Lifetime: must be destroyed before the LvglJsEngine it references.
+// Bound to a bare TjsHostRuntime (not LvglJsEngine) so it can be owned by the
+// plugin-lifetime object with no LVGL dependency. JS events (rpc-message async
+// frames + service string events) go nowhere until the editor attaches and
+// calls setEmitSink() (routing them to LvglJsEngine::emit); detach clears it.
+//
+// Lifetime: must be destroyed after the TjsHostRuntime it references is still
+// alive (the host frees the __rpcSend binding at its own shutdown).
 class PluginJsBridge {
 public:
+    // The sink that carries JS events (channel + argv) out to the attached
+    // display engine. Matches dpfjs::JsRpcBridge's EmitFn.
+    using EmitFn = std::function<void(const char* channel, int argc, JSValueConst* argv)>;
+
     // Any of the pointers may be nullptr in LV2-UI (separate-binary UI;
     // getPluginInstancePointer() is null, there is no shared DSP state). The
     // service degrades — getFrame returns null, loadRom returns false.
-    PluginJsBridge(LvglJsEngine& engine,
+    PluginJsBridge(TjsHostRuntime& host,
                    Project* project,
                    CommandQueue* commands,
                    EventQueue* events,
@@ -86,6 +96,14 @@ public:
         service_.onFileBrowserSelected(path);
     }
 
+    // Route JS events to the display engine (editor attach), or pass {} to stop
+    // delivering (editor detach). Feeds both the async rpc-message frames and
+    // the service's string-payload events.
+    void setEmitSink(EmitFn fn) {
+        emitSink_ = fn;
+        rpc_.setEmitSink(std::move(fn));
+    }
+
     // Standalone-friendly project load. Used by PluginUI's
     // RETROPLUG_AUTOLOAD_PROJECT env-var path.
     bool loadProjectFromPath(const std::string& path) {
@@ -121,7 +139,8 @@ public:
     void pumpSramAutoSave() { service_.pumpSramAutoSave(); }
 
 private:
-    LvglJsEngine&    engine;
+    TjsHostRuntime&  host_;
+    EmitFn           emitSink_;
     Project*         project_ = nullptr;
     // service_ before rpc_: the generic bridge holds the server, which
     // references the service.
