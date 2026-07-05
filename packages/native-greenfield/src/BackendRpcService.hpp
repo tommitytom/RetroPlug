@@ -15,7 +15,7 @@
 // exposed to the TS app + tests over rpcpp (reflect-cpp -> QuickJS object codec, same shape
 // as cli/HarnessRpcService). Two halves: the fs / config / codec primitives (std::filesystem
 // + miniz + config-dir resolution) and the emulator seam — the latter backed by a real
-// `Project` of `StubSystem`s (a SystemBase stand-in; no real core yet). Method bodies in
+// `Project` of real `SameBoySystem`s (SameBoy-only for now). Method bodies in
 // BackendRpcService.cpp.
 //
 // Byte OUTPUT rides rfl::Bytestring (msgpack BIN -> JS Uint8Array); a nullable read is
@@ -74,7 +74,7 @@ public:
     rfl::Bytestring zip(std::vector<BackendZipInput> entries);
     std::vector<BackendZipEntry> unzip(std::vector<std::uint8_t> bytes);
 
-    // --- emulator lifecycle / reads (a StubSystem in a real Project) ---
+    // --- emulator lifecycle / reads (a real SameBoySystem in a real Project) ---
     // TS hands concrete paths only; native builds + tracks the system, returning its id
     // (nullopt on an unreadable ROM). The reads pull the pump's latest bytes by id.
     std::optional<std::uint32_t> constructSystem(BackendConstructSpec spec);

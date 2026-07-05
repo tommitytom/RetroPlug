@@ -2,8 +2,8 @@
 #
 # Exposes the greenfield Backend to a TS bundle over
 # globalThis[Symbol.for("plugin")].__rpcSend, and runs the greenfield test harness. The
-# fs/config/codec half is std::filesystem + miniz; the emulator half is a StubSystem in a
-# real Project. It links `retroplug-cli-core` (Project + SystemBase + SameBoy/Mesen, plus
+# fs/config/codec half is std::filesystem + miniz; the emulator half is a real SameBoySystem
+# in a real Project. It links `retroplug-cli-core` (Project + SystemBase + SameBoy/Mesen, plus
 # transitive rpcpp + miniz and the packages/native/src include) — so no longer emulator-free.
 # Output binary lands in build/bin/.
 

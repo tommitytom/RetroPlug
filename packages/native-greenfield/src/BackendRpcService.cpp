@@ -8,8 +8,12 @@
 #include <system_error>
 
 #include "ScriptCompiler.hpp"
-#include "StubSystem.hpp"
 #include "util/MinizZip.hpp"
+
+#include "EmbeddedRoms.hpp"
+#include "system/RomFormat.hpp"
+#include "system/sameboy/SameBoyConfig.hpp"
+#include "system/sameboy/SameBoySystem.hpp"
 
 namespace fs = std::filesystem;
 
@@ -54,16 +58,6 @@ std::size_t fileSizeOr(const std::string& path, std::size_t fallback) {
     std::error_code ec;
     const auto n = fs::file_size(path, ec);
     return ec ? fallback : static_cast<std::size_t>(n);
-}
-
-// Deterministic, id-tagged stand-ins for a live system's pump bytes (mirrors the mock's
-// "SR"/"ST" + little-endian id): legible in a hexdump and stable across a round-trip, so an
-// export → import → read comparison is byte-exact.
-std::vector<std::uint8_t> defaultSram(SystemId id) {
-    return { 'S', 'R', static_cast<std::uint8_t>(id & 0xff), static_cast<std::uint8_t>((id >> 8) & 0xff) };
-}
-std::vector<std::uint8_t> defaultState(SystemId id) {
-    return { 'S', 'T', static_cast<std::uint8_t>(id & 0xff), static_cast<std::uint8_t>((id >> 8) & 0xff) };
 }
 
 } // namespace
@@ -163,31 +157,54 @@ std::vector<BackendZipEntry> BackendRpcService::unzip(std::vector<std::uint8_t> 
 }
 
 // --- emulator lifecycle / reads --------------------------------------------
-// Every system in this host is a StubSystem; static_cast is safe (and RTTI-free).
+// A real SameBoySystem (Game Boy) is built for every construct — the fold-in of the actual
+// core. SameBoy-only for now: a non-GB file-backed ROM is rejected. NES/GBA (Mesen) is a
+// later increment. Seed order matters: a live core restores SRAM/savestate INSIDE onActivate
+// from cfg.sram/cfg.savestate, so bytes go into the config BEFORE construct (loadSramBytes /
+// loadStateBytes no-op before gb_ exists).
+
+namespace {
+
+// Slurp a whole file into a byte vector (empty if unreadable). Used for the ROM + a seed .sav.
+std::vector<std::uint8_t> slurpAll(const std::string& path) {
+    auto bytes = slurp(path, fileSizeOr(path, 0));
+    return bytes ? std::move(*bytes) : std::vector<std::uint8_t>{};
+}
+
+} // namespace
 
 std::optional<std::uint32_t> BackendRpcService::constructSystem(BackendConstructSpec spec) {
-    if (spec.embeddedRom.empty()) {
-        // File-backed: native slurps the ROM. An unreadable file is the only native reject —
-        // the TS store already classified the format before calling.
-        if (!slurp(spec.romPath, fileSizeOr(spec.romPath, 0))) return std::nullopt;
+    std::vector<std::uint8_t> romBytes;
+    if (!spec.embeddedRom.empty()) {
+        // Embedded ROM: resolve the marker to baked bytes; the format is SameBoy by fiat.
+        const auto rom = rp::embeddedRom(spec.embeddedRom);
+        if (rom.empty()) return std::nullopt;  // unknown marker
+        romBytes.assign(rom.begin(), rom.end());
+    } else {
+        // File-backed: slurp the full ROM and sniff. SameBoy-only gate here.
+        romBytes = slurpAll(spec.romPath);
+        if (romBytes.empty() || detectRomFormat(romBytes) != RomFormat::SameBoy) return std::nullopt;
     }
+
+    SameBoyConfig cfg;
+    cfg.romPath = spec.romPath;
+    cfg.model = SameBoyModel::CgbC;
+    cfg.fastBoot = true;
+    if (!spec.embeddedRom.empty()) {
+        cfg.embeddedRom = spec.embeddedRom;
+        cfg.embedRom = false;  // re-supplied from the marker on load; keeps saves small
+    }
+    // Seed SRAM: zip-import bytes win; else the on-disk .sav if present; else empty (cold boot).
+    if (spec.sramBytes) cfg.sram = *spec.sramBytes;
+    else if (spec.savPath) cfg.sram = slurpAll(*spec.savPath);
+    // Seed savestate: zip-import bytes, else the on-disk savestate if present.
+    if (spec.stateBytes) cfg.savestate = *spec.stateBytes;
+    else if (spec.statePath) cfg.savestate = slurpAll(*spec.statePath);
 
     const SystemId id = project_.nextSystemId();
-    auto sys = std::make_unique<StubSystem>(id, spec.romPath, spec.embeddedRom, spec.savPath.value_or(""));
+    auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(romBytes));
+    sys->onActivate(sampleRate_);  // boots gb_ + restores cfg.sram then cfg.savestate
 
-    // Seed SRAM: zip-import bytes win; else the on-disk .sav if present; else a default.
-    if (spec.sramBytes) {
-        sys->loadSramBytes(*spec.sramBytes);
-    } else if (spec.savPath) {
-        if (auto s = slurp(*spec.savPath, fileSizeOr(*spec.savPath, 0))) sys->loadSramBytes(*s);
-        else sys->loadSramBytes(defaultSram(id));
-    } else {
-        sys->loadSramBytes(defaultSram(id));
-    }
-    // Seed savestate: zip-import bytes, else a default (no cold-boot core to snapshot).
-    sys->loadStateBytes(spec.stateBytes ? *spec.stateBytes : defaultState(id));
-
-    sys->onActivate(sampleRate_);
     if (spec.replaceId) project_.removeSystem(*spec.replaceId);  // swap in place
     project_.adoptSystem(sys.release());
     project_.rebuildLinkGroups();
@@ -198,13 +215,12 @@ std::optional<std::uint32_t> BackendRpcService::duplicateSystem(std::uint32_t sr
                                                                 std::optional<std::string> savPath) {
     SystemBase* src = project_.findSystem(srcId);
     if (!src) return std::nullopt;
-    const auto* stub = static_cast<StubSystem*>(src);
 
+    // clone() boots an independent copy of the live state (SRAM + savestate).
     const SystemId id = project_.nextSystemId();
-    auto sys = std::make_unique<StubSystem>(id, src->romPath(), stub->embeddedRom(), savPath.value_or(""));
-    sys->loadSramBytes(src->saveSramBytes());   // clone the live state
-    sys->loadStateBytes(src->saveStateBytes());
-    sys->onActivate(sampleRate_);
+    auto sys = src->clone(id, sampleRate_);
+    if (!sys) return std::nullopt;
+    if (savPath) sys->setSavPath(*savPath);  // the duplicate auto-saves to its own file
     project_.adoptSystem(sys.release());
     project_.rebuildLinkGroups();
     return id;
@@ -213,19 +229,28 @@ std::optional<std::uint32_t> BackendRpcService::duplicateSystem(std::uint32_t sr
 std::optional<std::uint32_t> BackendRpcService::reloadSystem(std::uint32_t id) {
     SystemBase* old = project_.findSystem(id);
     if (!old) return std::nullopt;
-    const auto* stub = static_cast<StubSystem*>(old);
 
-    const std::string rom = old->romPath();
-    const std::string embedded = stub->embeddedRom();
-    const std::string sav = old->savPath();
-    const auto sram = old->saveSramBytes();     // carry live SRAM forward
+    // Rebuild the ROM from disk (or the embedded marker), carrying the live SRAM forward and
+    // dropping the savestate — a genuine reload, swapped in place with a fresh id.
+    const std::string romPath = old->romPath();
+    const auto sram = old->saveSramBytes();
+    SameBoyConfig cfg = static_cast<const SameBoySystem*>(old)->config_;  // carry paths/roles/model
+    cfg.sram = sram;
+    cfg.savestate.clear();
+
+    std::vector<std::uint8_t> romBytes;
+    if (!cfg.embeddedRom.empty()) {
+        const auto rom = rp::embeddedRom(cfg.embeddedRom);
+        romBytes.assign(rom.begin(), rom.end());
+    } else {
+        romBytes = slurpAll(romPath);
+    }
+    if (romBytes.empty()) return std::nullopt;
 
     const SystemId newId = project_.nextSystemId();
-    auto sys = std::make_unique<StubSystem>(newId, rom, embedded, sav);
-    sys->loadSramBytes(sram);
-    sys->loadStateBytes(defaultState(newId));   // reload drops the savestate
+    auto sys = std::make_unique<SameBoySystem>(newId, cfg, std::move(romBytes));
     sys->onActivate(sampleRate_);
-    project_.removeSystem(id);                   // swap in place, fresh id
+    project_.removeSystem(id);
     project_.adoptSystem(sys.release());
     project_.rebuildLinkGroups();
     return newId;
