@@ -1,0 +1,53 @@
+// The control-plane driver for the native audio-render path: send MIDI into a real core and
+// capture its rendered audio. Distinct from `Backend` (in production the HOST drives audio per
+// block, not the store), so it stays off that interface — over the same
+// globalThis[Symbol.for("plugin")].__rpcSend channel realBackend/dspRuntime use. A dev/test
+// facade for driving the emulator headlessly.
+
+type RpcSend = (request: unknown) => unknown;
+interface Reply {
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
+function resolveSend(): RpcSend {
+  const ns = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as { __rpcSend?: RpcSend } | undefined;
+  if (!ns || typeof ns.__rpcSend !== "function")
+    throw new Error("no native backend: globalThis[Symbol.for('plugin')].__rpcSend is missing");
+  return ns.__rpcSend;
+}
+
+export interface AudioDriver {
+  /** Queue a MIDI message (1–4 raw bytes, e.g. [0x90, note, vel]) on one system. */
+  sendMidi(id: number, bytes: Uint8Array | number[]): boolean;
+  /** Advance the block runner `ms` and return the mixed stereo output, interleaved L,R,L,R…. */
+  renderAudio(ms: number): Float32Array;
+  setTransport(running: boolean): boolean;
+  setBpm(bpm: number): boolean;
+}
+
+/** Build an audio driver backed by the native host. Throws if no RPC surface is bound. */
+export function createAudioDriver(): AudioDriver {
+  const send = resolveSend();
+  let nextId = 1;
+
+  const call = (method: string, ...params: unknown[]): unknown => {
+    const reply = send({ jsonrpc: "2.0", id: nextId++, method, params }) as Reply | null | undefined;
+    if (reply == null) return undefined;
+    if (reply.error) throw new Error(`rpc ${method}: [${reply.error.code}] ${reply.error.message}`);
+    return reply.result;
+  };
+
+  const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
+
+  return {
+    sendMidi: (id, bytes) => call("sendMidi", id, ints(bytes)) as boolean,
+    renderAudio: (ms) => {
+      const bytes = call("renderAudio", ms) as Uint8Array;
+      // Raw interleaved f32; slice() copies to a fresh 4-byte-aligned ArrayBuffer at offset 0.
+      return new Float32Array(bytes.slice().buffer);
+    },
+    setTransport: (running) => call("setTransport", running) as boolean,
+    setBpm: (bpm) => call("setBpm", bpm) as boolean,
+  };
+}
