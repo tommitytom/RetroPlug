@@ -5,8 +5,9 @@
 // so binary rides Uint8Arrays and nothing is serialized), keeping greenfield dependency-
 // free.
 //
-// Increment 1 wires the emulator-free fs / config / codec methods; the emulator methods
-// throw until the stub core lands (increment 2).
+// The fs / config / codec methods forward to std::filesystem + miniz; the emulator methods
+// (constructSystem / read* / …) drive a StubSystem in a real native Project. Only
+// openFileBrowser is unimplemented (async — deferred).
 
 import type { Backend, ConstructSpec, FileBrowserOpts, ZipEntry } from "./backend";
 
@@ -42,8 +43,21 @@ export function createRealBackend(): Backend {
   const ints = (b: Uint8Array): number[] => Array.from(b);
 
   const notImpl = (name: string): never => {
-    throw new Error(`realBackend.${name} is not implemented yet (increment 2 — stub core)`);
+    throw new Error(`realBackend.${name} is not implemented (async — deferred)`);
   };
+
+  // ConstructSpec → RPC params: omit null path fields (so native reads nullopt, not "") and
+  // send seed bytes as number[] only when present.
+  const specParams = (spec: ConstructSpec): Record<string, unknown> => {
+    const p: Record<string, unknown> = { romPath: spec.romPath, embeddedRom: spec.embeddedRom };
+    if (spec.savPath != null) p.savPath = spec.savPath;
+    if (spec.statePath != null) p.statePath = spec.statePath;
+    if (spec.replaceId !== undefined) p.replaceId = spec.replaceId;
+    if (spec.sramBytes) p.sramBytes = ints(new Uint8Array(spec.sramBytes));
+    if (spec.stateBytes) p.stateBytes = ints(new Uint8Array(spec.stateBytes));
+    return p;
+  };
+  const idOrNull = (v: unknown): number | null => (v == null ? null : (v as number));
 
   return {
     // --- fs / config / codec (increment 1) --------------------------------
@@ -61,15 +75,16 @@ export function createRealBackend(): Backend {
     zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries.map((e) => ({ name: e.name, bytes: ints(e.bytes) })))),
     unzip: (bytes) => (call("unzip", ints(bytes)) as ZipEntry[] | null) ?? null,
 
-    // --- emulator lifecycle / reads (increment 2) -------------------------
-    constructSystem: (_spec: ConstructSpec) => notImpl("constructSystem"),
-    duplicateSystem: (_srcId, _savPath) => notImpl("duplicateSystem"),
-    reloadSystem: (_id) => notImpl("reloadSystem"),
-    removeSystem: (_id) => notImpl("removeSystem"),
-    applySystemSetting: (_id, _key, _value) => notImpl("applySystemSetting"),
-    applyRoleConfig: (_id, _kind, _config) => notImpl("applyRoleConfig"),
-    readState: (_id) => notImpl("readState"),
-    readSram: (_id) => notImpl("readSram"),
+    // --- emulator lifecycle / reads ---------------------------------------
+    constructSystem: (spec: ConstructSpec) => idOrNull(call("constructSystem", specParams(spec))),
+    duplicateSystem: (srcId, savPath) => idOrNull(call("duplicateSystem", srcId, savPath)),
+    reloadSystem: (id) => idOrNull(call("reloadSystem", id)),
+    removeSystem: (id) => call("removeSystem", id) as boolean,
+    applySystemSetting: (id, key, value) =>
+      call("applySystemSetting", id, key, typeof value === "boolean" ? (value ? 1 : 0) : value) as boolean,
+    applyRoleConfig: (id, kind, config) => call("applyRoleConfig", id, kind, JSON.stringify(config)) as boolean,
+    readState: (id) => bytesOrNull(call("readState", id)),
+    readSram: (id) => bytesOrNull(call("readSram", id)),
 
     // --- async dialog (deferred; needs the emit path) ---------------------
     openFileBrowser: (_opts: FileBrowserOpts) => notImpl("openFileBrowser"),
