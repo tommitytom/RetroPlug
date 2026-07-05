@@ -20,6 +20,16 @@ export function gbRom(): Uint8Array {
   return b;
 }
 
+/** A GB ROM whose header declares MBC1+RAM+BATTERY (0x147) + 8KB SRAM (0x149), so a REAL
+ *  SameBoy core allocates battery RAM and saveSramBytes() is non-empty. (The mock ignores
+ *  the cartridge header, so this only matters for the native-host integration tests.) */
+export function gbRomBattery(): Uint8Array {
+  const b = gbRom();
+  b[0x147] = 0x03; // MBC1 + RAM + BATTERY
+  b[0x149] = 0x02; // 8 KB SRAM
+  return b;
+}
+
 /** A buffer that classifies as a GBA ROM (Nintendo logo at 0x04). */
 export function gbaRom(): Uint8Array {
   const b = new Uint8Array(0x8000);

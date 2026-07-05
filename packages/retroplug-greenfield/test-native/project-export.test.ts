@@ -1,12 +1,12 @@
-// ProjectStore export/import over the REAL native Backend: the pump → real-miniz zip → disk
-// round-trip. Mirrors the mock export tests' setup (test/project/export.test.ts) but asserts
-// on observable outcomes — the on-disk PK archive, its unzipped entries, and a byte-exact
-// seed→export→import→read round-trip through the real stub — never mock introspection.
+// ProjectStore export/import over the REAL native Backend — now with real SameBoy cores. The
+// pump reads real savestate/SRAM, frames a real-miniz PKZIP, and round-trips. Savestates are
+// always present (any booted core); SRAM only for battery carts, so the file-backed system
+// uses gbRomBattery() and we don't assume mGB has SRAM. Observable outcomes only.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
-import { gbRom } from "../test/systems/fixtures";
+import { gbRomBattery } from "../test/systems/fixtures";
 
 declare const __CONFIG_DIR__: string;
 
@@ -19,43 +19,38 @@ function newProject() {
   return { be, project: new ProjectStore(be, recent) };
 }
 
-test("export: a real PKZIP of project.json + each system's sram/state, from the pump", () => {
+test("export: a real PKZIP of project.json + each core's savestate (+ SRAM for battery carts)", () => {
   const { be, project } = newProject();
   const rom = __CONFIG_DIR__ + "/a.gb";
-  be.writeFile(rom, gbRom());
+  be.writeFile(rom, gbRomBattery());
   const song = __CONFIG_DIR__ + "/song.rplg";
 
   project.systems.loadMgb(); // embedded → index 0
-  project.systems.addSystem(rom); // file-backed → index 1
+  project.systems.addSystem(rom); // file-backed battery cart → index 1
   project.setLayout(3);
 
   expect(project.export(song)).toBeTruthy();
   expect(be.fileExists(song)).toBeTruthy();
 
-  // On disk it's a real PK zip; unzip it back (real miniz) and check the exact entry set.
   const archive = be.readFile(song)!;
-  expect(Array.from(archive.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04]);
-  const entries = be.unzip(archive)!;
-  expect(entries.map((e) => e.name).sort()).toEqual([
-    "project.json",
-    "systems/0/sram",
-    "systems/0/state",
-    "systems/1/sram",
-    "systems/1/state",
-  ]);
+  expect(Array.from(archive.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04]); // PK magic
+  const names = be.unzip(archive)!.map((e) => e.name);
+  // Savestates are always present (both cores booted); the battery cart also has SRAM.
+  for (const n of ["project.json", "systems/0/state", "systems/1/state", "systems/1/sram"])
+    expect(names.includes(n)).toBeTruthy();
 
   // project.json re-parses to the thin config (embedded marker + relative ROM path).
-  const doc = JSON.parse(dec.decode(entries.find((e) => e.name === "project.json")!.bytes));
+  const doc = JSON.parse(dec.decode(be.unzip(archive)!.find((e) => e.name === "project.json")!.bytes));
   expect(doc.settings.layout).toBe(3);
   expect(doc.systems.length).toBe(2);
   expect(doc.systems[0].embeddedRom).toBe("mgb");
   expect(doc.systems[1].romPath).toBe("a.gb"); // rebased relative, not embedded as a blob
 });
 
-test("export then load: round-trips systems + settings; the archive seeds each stub byte-exactly", () => {
+test("export then load: round-trips systems + settings; the archive re-seeds the real core", () => {
   const { be, project } = newProject();
   const rom = __CONFIG_DIR__ + "/rt.gb";
-  be.writeFile(rom, gbRom());
+  be.writeFile(rom, gbRomBattery());
   const song = __CONFIG_DIR__ + "/rt.rplg";
 
   project.systems.loadMgb();
@@ -63,7 +58,7 @@ test("export then load: round-trips systems + settings; the archive seeds each s
   project.setZoom(4);
   expect(project.export(song)).toBeTruthy();
 
-  // Capture the exported file-backed system's SRAM blob from the real archive.
+  // Capture the exported file-backed core's SRAM blob from the real archive.
   const exportedSram = be.unzip(be.readFile(song)!)!.find((e) => e.name === "systems/1/sram")!.bytes;
 
   project.newProject();
@@ -76,7 +71,7 @@ test("export then load: round-trips systems + settings; the archive seeds each s
   expect(v.map((s) => s.romPath)).toEqual(["", rom]); // absolutized back
   expect(project.settings().zoom).toBe(4);
 
-  // The import seeded each stub from the archive; the pump now echoes those exact bytes —
-  // proving seed → zip → unzip → seed → read round-trips through real miniz + the stub.
+  // The import re-seeded the real core from the archive; the pump now reads those same SRAM
+  // bytes back — proving seed → boot → snapshot → zip → unzip → reboot round-trips real bytes.
   expect(be.readSram(v[1].id)!).toEqual(exportedSram);
 });
