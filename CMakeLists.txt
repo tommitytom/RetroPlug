@@ -568,6 +568,11 @@ if(BUILD_CLI)
     add_subdirectory(packages/native/cli cli)
 endif()
 
+# --- native-greenfield host -------------------------------------------------
+# Clean, emulator-free txiki host that runs the greenfield TS app/tests over a real
+# Backend (fs/config/codec). Consumes the shared host + rpcpp; no Project/SystemBase.
+add_subdirectory(packages/native-greenfield native-greenfield)
+
 # --- cli-regenerate: typed TS client for the harness RPC surface ------------
 # Derived artifact (build/generated/HarnessService.ts); never committed. Kept
 # separate from ui-regenerate so the cli test client doesn't drag in the
