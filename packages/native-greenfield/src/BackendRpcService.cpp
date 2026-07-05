@@ -7,6 +7,7 @@
 #include <memory>
 #include <system_error>
 
+#include "ScriptCompiler.hpp"
 #include "StubSystem.hpp"
 #include "util/MinizZip.hpp"
 
@@ -255,4 +256,34 @@ std::optional<rfl::Bytestring> BackendRpcService::readSram(std::uint32_t id) {
     SystemBase* s = project_.findSystem(id);
     if (!s) return std::nullopt;
     return toBytestring(s->saveSramBytes());
+}
+
+// --- DSP-side JS runtime ----------------------------------------------------
+
+std::optional<rfl::Bytestring> BackendRpcService::compileScript(std::string source) {
+    auto bytecode = dsp::compileToBytecode(source);
+    if (!bytecode) return std::nullopt;
+    return toBytestring(*bytecode);
+}
+
+bool BackendRpcService::dspLoadScript(std::vector<std::uint8_t> bytecode) {
+    return dsp_.loadScript(bytecode);
+}
+
+bool BackendRpcService::dspSetConfig(std::vector<std::uint8_t> bytes) {
+    return dsp_.setConfig(bytes);
+}
+
+std::vector<DspMidiOut> BackendRpcService::dspRunBlock(std::vector<DspMidiIn> midi, DspBlockInfo block) {
+    std::vector<DspRuntime::MidiIn> in;
+    in.reserve(midi.size());
+    for (auto& m : midi) in.push_back({ m.frame, std::move(m.data) });
+
+    const DspRuntime::BlockInfo bi{ block.frames, block.sampleRate, block.tempo,
+                                    block.ppqPosBlockStart, block.transportPlaying };
+
+    std::vector<DspMidiOut> out;
+    for (auto& ev : dsp_.runBlock(in, bi))
+        out.push_back({ ev.frame, toBytestring(ev.data) });
+    return out;
 }

@@ -32,5 +32,10 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendRpcService::applyRoleConfig>();
     server.template addMethod<&BackendRpcService::readState>();
     server.template addMethod<&BackendRpcService::readSram>();
+    // DSP-side JS runtime
+    server.template addMethod<&BackendRpcService::compileScript>();
+    server.template addMethod<&BackendRpcService::dspLoadScript>();
+    server.template addMethod<&BackendRpcService::dspSetConfig>();
+    server.template addMethod<&BackendRpcService::dspRunBlock>();
     server.addDiscoveryMethod();
 }

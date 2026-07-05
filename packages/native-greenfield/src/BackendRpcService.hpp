@@ -9,6 +9,8 @@
 
 #include "project/Project.hpp"
 
+#include "DspRuntime.hpp"
+
 // The native side of the greenfield `Backend` (packages/retroplug-greenfield/src/backend.ts),
 // exposed to the TS app + tests over rpcpp (reflect-cpp -> QuickJS object codec, same shape
 // as cli/HarnessRpcService). Two halves: the fs / config / codec primitives (std::filesystem
@@ -21,6 +23,19 @@
 // (reflect-cpp's binary reader is int-array-only). Zip entry DTOs mirror the harness.
 struct BackendZipEntry { std::string name; rfl::Bytestring bytes; };            // unzip output
 struct BackendZipInput { std::string name; std::vector<std::uint8_t> bytes; };  // zip input
+
+// DSP-runtime wire DTOs (see plans/03-dsp-js-runtime.md). Per-block MIDI in/out + block info,
+// crossing the RPC as structured bytes (never a shared JS object). Byte fields follow the rfl
+// convention: input std::vector<std::uint8_t>, output rfl::Bytestring.
+struct DspMidiIn  { std::uint32_t frame; std::vector<std::uint8_t> data; };
+struct DspMidiOut { std::uint32_t frame; rfl::Bytestring data; };
+struct DspBlockInfo {
+    std::uint32_t frames           = 0;
+    double        sampleRate       = 44100.0;
+    double        tempo            = 120.0;
+    double        ppqPosBlockStart = 0.0;
+    bool          transportPlaying = false;
+};
 
 // Mirrors the greenfield ConstructSpec (packages/retroplug-greenfield/src/backend.ts):
 // concrete paths + an embedded-ROM marker + optional zip-import seed bytes. The optional
@@ -74,7 +89,16 @@ public:
     std::optional<rfl::Bytestring> readState(std::uint32_t id);
     std::optional<rfl::Bytestring> readSram(std::uint32_t id);
 
+    // --- DSP-side JS runtime (a second, bare QuickJS context) ---
+    // Compile an ES5 translator to QuickJS bytecode (on a scratch context), then load / config
+    // / run it on the DSP context. The script + config cross as bytes; a JSValue never does.
+    std::optional<rfl::Bytestring> compileScript(std::string source);   // nullopt on compile error
+    bool dspLoadScript(std::vector<std::uint8_t> bytecode);
+    bool dspSetConfig(std::vector<std::uint8_t> bytes);
+    std::vector<DspMidiOut> dspRunBlock(std::vector<DspMidiIn> midi, DspBlockInfo block);
+
 private:
-    Project project_;
-    double  sampleRate_ = 44100.0;
+    Project    project_;
+    double     sampleRate_ = 44100.0;
+    DspRuntime dsp_;
 };
