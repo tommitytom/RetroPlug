@@ -1,0 +1,81 @@
+// UserConfigStore: config.json as the app uses it. Ties the model + serialization to the
+// Backend — reads/writes <configDir>/config.json atomically, fills defaults on first run,
+// and fires onChange on a real change. Mirrors RecentStore. Every mutation is a no-op
+// (no write, no notify) when it doesn't change the value; setters validate and reject bad
+// input (matching native UserConfig::setDefaultZoom / setSramMirror).
+
+import type { Backend } from "./backend";
+import { DEFAULT_USER_CONFIG, SRAM_MIRRORS, type SramMirror, type UserConfig } from "./userConfig";
+import { parseUserConfig, serializeUserConfig } from "./userConfigSerialization";
+
+const CONFIG_FILE = "config.json";
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+export class UserConfigStore {
+  private current: UserConfig = { ...DEFAULT_USER_CONFIG };
+
+  constructor(private readonly backend: Backend, private readonly onChange: () => void = () => {}) {}
+
+  /** Read config.json into memory. A parsed value replaces the current config; a missing
+   *  file writes the defaults out (first run, so the user has a file to edit); a malformed
+   *  / newer file keeps the current defaults. Safe to call once at startup. */
+  load(): void {
+    const bytes = this.backend.readFile(this.filePath());
+    if (!bytes) {
+      this.backend.writeFileAtomic(this.filePath(), enc.encode(serializeUserConfig(this.current)));
+      return;
+    }
+    const parsed = parseUserConfig(dec.decode(bytes));
+    if (parsed) this.current = parsed;
+  }
+
+  /** A copy of the current config. */
+  config(): UserConfig {
+    return { ...this.current };
+  }
+  defaultZoom(): number {
+    return this.current.defaultZoom;
+  }
+  sramMirror(): SramMirror {
+    return this.current.sramMirror;
+  }
+
+  /** Set the active keyboard binding profile (a plain name; profile-name format
+   *  validation lands with the profiles increment). Returns whether it changed. */
+  setActiveKeyboardBindings(name: string): boolean {
+    return this.commit({ ...this.current, activeKeyboardBindings: name });
+  }
+
+  /** Set the active gamepad binding profile. Returns whether it changed. */
+  setActiveGamepadBindings(name: string): boolean {
+    return this.commit({ ...this.current, activeGamepadBindings: name });
+  }
+
+  /** Set the default zoom. Rejects a non-integer or out-of-range (1..6) value (returns
+   *  false, no change), matching native. */
+  setDefaultZoom(zoom: number): boolean {
+    if (!Number.isInteger(zoom) || zoom < 1 || zoom > 6) return false;
+    return this.commit({ ...this.current, defaultZoom: zoom });
+  }
+
+  /** Set the loose-.sav mirror preference. Rejects an unknown mode. */
+  setSramMirror(mode: SramMirror): boolean {
+    if (!SRAM_MIRRORS.includes(mode)) return false;
+    return this.commit({ ...this.current, sramMirror: mode });
+  }
+
+  private filePath(): string {
+    return `${this.backend.configDir()}/${CONFIG_FILE}`;
+  }
+
+  // Adopt `next` if it differs from the current config: persist atomically + notify.
+  private commit(next: UserConfig): boolean {
+    const after = serializeUserConfig(next);
+    if (after === serializeUserConfig(this.current)) return false; // genuine no-op
+    this.current = next;
+    this.backend.writeFileAtomic(this.filePath(), enc.encode(after));
+    this.onChange();
+    return true;
+  }
+}
