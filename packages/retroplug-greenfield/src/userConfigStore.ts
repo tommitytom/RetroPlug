@@ -30,6 +30,21 @@ export class UserConfigStore {
     if (parsed) this.current = parsed;
   }
 
+  /** Re-read config.json after an external change (the file-watch reaction). A missing /
+   *  malformed / newer-stamped file keeps the current value (unlike load(), no first-run
+   *  default write); a valid, different config replaces it and fires onChange. Returns
+   *  whether it changed. */
+  reload(): boolean {
+    const bytes = this.backend.readFile(this.filePath());
+    if (!bytes) return false; // deleted → keep current
+    const parsed = parseUserConfig(dec.decode(bytes));
+    if (!parsed) return false; // malformed / newer → keep current
+    if (serializeUserConfig(parsed) === serializeUserConfig(this.current)) return false; // no change
+    this.current = parsed;
+    this.onChange();
+    return true;
+  }
+
   /** A copy of the current config. */
   config(): UserConfig {
     return { ...this.current };

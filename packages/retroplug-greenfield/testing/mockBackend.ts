@@ -74,6 +74,10 @@ export class MockBackend implements Backend {
   /** Test-driven SRAM content per system (setSram), overriding the deterministic
    *  default — lets a test model SRAM changing over time (dedup vs write). */
   private sramOverrides = new Map<number, Uint8Array>();
+
+  /** Paths queued by emitFileChange, drained by drainChangedPaths — simulates the
+   *  native watcher (efsw + ROM mtime poll) firing. */
+  private changedPaths: string[] = [];
   /** Entry lists passed to zip / archives passed to unzip, in order. */
   readonly zipCalls: ZipEntry[][] = [];
   readonly unzipCalls: Uint8Array[] = [];
@@ -99,6 +103,12 @@ export class MockBackend implements Backend {
    *  deterministic default — lets a test model SRAM changing between flushes. */
   setSram(id: number, bytes: Uint8Array): void {
     this.sramOverrides.set(id, new Uint8Array(bytes));
+  }
+
+  /** Simulate the native watcher firing for `path` (config.json / a bindings profile /
+   *  a ROM) — the next drainChangedPaths returns it. */
+  emitFileChange(path: string): void {
+    this.changedPaths.push(path);
   }
 
   /** Read a file back as text, or null if absent. */
@@ -163,6 +173,13 @@ export class MockBackend implements Backend {
   deleteFile(path: string): boolean {
     this.log.push("deleteFile");
     return this.files.delete(this.canonicalize(path));
+  }
+
+  drainChangedPaths(): string[] {
+    this.log.push("drainChangedPaths");
+    const out = this.changedPaths;
+    this.changedPaths = [];
+    return out;
   }
 
   readFilePrefix(path: string, length: number): Uint8Array | null {

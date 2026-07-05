@@ -44,6 +44,13 @@ export interface Backend {
   /** Delete the file at `path`. Returns false when it isn't present. */
   deleteFile(path: string): boolean;
 
+  /** The watched-file paths that changed since the last drain (empty when nothing did).
+   *  Native owns the watching — efsw over the config dir + `bindings/`, plus the per-ROM
+   *  mtime poll — and collects the changed paths; TS pulls + reacts at idle (re-read
+   *  config, refresh bindings, reload a system whose ROM changed). A pull-drain, so the
+   *  sync Backend stays sync. */
+  drainChangedPaths(): string[];
+
   // --- Paths (the OS-specific bits TS can't reproduce) --------------------
 
   /** Normalize + resolve a path the way the OS would (weakly_canonical):
