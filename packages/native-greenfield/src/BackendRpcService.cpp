@@ -1,5 +1,6 @@
 #include "BackendRpcService.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -12,8 +13,10 @@
 
 #include "EmbeddedRoms.hpp"
 #include "system/RomFormat.hpp"
+#include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "transport/MidiTypes.hpp"
 
 namespace fs = std::filesystem;
 
@@ -281,6 +284,57 @@ std::optional<rfl::Bytestring> BackendRpcService::readSram(std::uint32_t id) {
     SystemBase* s = project_.findSystem(id);
     if (!s) return std::nullopt;
     return toBytestring(s->saveSramBytes());
+}
+
+// --- audio render / MIDI drive ----------------------------------------------
+
+bool BackendRpcService::sendMidi(std::uint32_t id, std::vector<std::uint8_t> bytes) {
+    SystemBase* sys = project_.findSystem(id);
+    if (!sys) return false;
+    if (bytes.empty() || bytes.size() > ::MidiEvent::kDataSize) return false;
+    ::MidiEvent ev{};
+    ev.frame = 0;
+    ev.size = static_cast<std::uint32_t>(bytes.size());
+    for (std::size_t i = 0; i < bytes.size(); ++i) ev.data[i] = bytes[i];
+    sys->onMidi(&ev, 1);  // mGB's role forwards the bytes to serialIn_, drained in onProcess
+    return true;
+}
+
+rfl::Bytestring BackendRpcService::renderAudio(double ms) {
+    if (ms <= 0.0) return {};
+    scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
+    scratchR_.resize(kBlockSize);
+
+    const std::uint64_t total = static_cast<std::uint64_t>(ms * sampleRate_ / 1000.0);
+    std::vector<float> out;
+    out.reserve(total * 2);
+    for (std::uint64_t s = 0; s < total; s += kBlockSize) {
+        const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
+        float* outs[2] = { scratchL_.data(), scratchR_.data() };
+        std::fill_n(scratchL_.data(), frames, 0.0f);  // cores mix additively → zero each block
+        std::fill_n(scratchR_.data(), frames, 0.0f);
+        AudioBlockInfo info{ frames, sampleRate_, bpm_, ppq_, transportPlaying_ };
+        project_.onProcess(info, outs);
+        for (std::uint32_t f = 0; f < frames; ++f) {
+            out.push_back(scratchL_[f]);  // interleave L,R,L,R…
+            out.push_back(scratchR_[f]);
+        }
+        if (transportPlaying_)
+            ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
+    }
+    const auto* p = reinterpret_cast<const std::byte*>(out.data());
+    return rfl::Bytestring(p, p + out.size() * sizeof(float));
+}
+
+bool BackendRpcService::setTransport(bool running) {
+    transportPlaying_ = running;
+    return true;
+}
+
+bool BackendRpcService::setBpm(double bpm) {
+    if (bpm <= 0.0) return false;
+    bpm_ = bpm;
+    return true;
 }
 
 // --- DSP-side JS runtime ----------------------------------------------------

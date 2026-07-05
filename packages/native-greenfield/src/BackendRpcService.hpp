@@ -97,8 +97,25 @@ public:
     bool dspSetConfig(std::vector<std::uint8_t> bytes);
     std::vector<DspMidiOut> dspRunBlock(std::vector<DspMidiIn> midi, DspBlockInfo block);
 
+    // --- audio render / MIDI drive (drive the real cores, capture their sound) ---
+    // sendMidi queues a MIDI message on one system; renderAudio advances the block runner N ms
+    // and returns the mixed stereo bus as interleaved f32 (L,R,L,R…). setTransport/setBpm feed
+    // the AudioBlockInfo for transport-driven ROMs (mGB needs neither).
+    bool            sendMidi(std::uint32_t id, std::vector<std::uint8_t> bytes);
+    rfl::Bytestring renderAudio(double ms);
+    bool            setTransport(bool running);
+    bool            setBpm(double bpm);
+
 private:
     Project    project_;
     double     sampleRate_ = 44100.0;
     DspRuntime dsp_;
+
+    // Audio-render scratch + simulated host transport (mirrors TestHarnessImpl).
+    static constexpr std::uint32_t kBlockSize = 1024;
+    double             bpm_              = 120.0;
+    bool               transportPlaying_ = false;
+    double             ppq_              = 0.0;
+    std::vector<float> scratchL_;
+    std::vector<float> scratchR_;
 };
