@@ -1,0 +1,109 @@
+// The loose-`.sav` auto-save (mirror) policy — a port of native's system/SramAutoSave.hpp
+// write logic. Flush a system's battery RAM to its sibling <rom>.sav the way most Game
+// Boy emulators do: write when the SRAM changed since the last check, seeding (not
+// rewriting) an identical sibling that was just loaded. Gated on the user's `sramAutoSave`
+// preference (Off / OnProjectSave / Continuous).
+//
+// This is pure decision logic over the live SRAM byte read: it reads SRAM via the
+// existing backend.readSram(id) pump and resolves the target with resolveSavPath — no new
+// native primitive. The pairing (path/suffix/override resolution) already lives in
+// savPaths.ts; this is only the write policy.
+
+import type { Backend } from "./backend";
+import type { SystemsStore } from "./systemsStore";
+import type { UserConfigStore } from "./userConfigStore";
+import { resolveSavPath } from "./savPaths";
+
+/** A stable FNV-1a (32-bit) hash of `bytes`. Used only for in-process dedup (never
+ *  persisted), so it need not match native's SampleCache::hashBytes — it just has to
+ *  hash live SRAM and on-disk `.sav` bytes with the same function. */
+export function hashBytes(bytes: Uint8Array): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) {
+    h ^= bytes[i];
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/** The per-system auto-save decision (port of autoSaveSramToSibling's core):
+ *   - `lastHash === h`                          → unchanged, no write
+ *   - `lastHash === null` and the on-disk file already hashes to `h` → seed, no write
+ *   - otherwise                                 → write
+ *  Always returns the current hash for the caller to adopt (after a successful write, or
+ *  as the seed/unchanged value). */
+export function decideAutoSave(
+  savBytes: Uint8Array,
+  lastHash: number | null,
+  onDiskBytes: Uint8Array | null,
+): { write: boolean; hash: number } {
+  const hash = hashBytes(savBytes);
+  if (lastHash !== null && lastHash === hash) return { write: false, hash };
+  if (lastHash === null && onDiskBytes !== null && hashBytes(onDiskBytes) === hash) return { write: false, hash };
+  return { write: true, hash };
+}
+
+export class SramAutoSaver {
+  // Persistent per-system hash of the last-written SRAM, used by pump() so the Continuous
+  // idle-tick only writes on change. flushOnSave() uses a fresh (null) hash instead.
+  private hashes = new Map<number, number>();
+
+  constructor(
+    private readonly backend: Backend,
+    private readonly systems: SystemsStore,
+    private readonly userConfig: UserConfigStore,
+  ) {}
+
+  /** Flush every system's battery RAM to its resolved sibling `.sav` at a save/quit
+   *  moment (port of flushSramMirror): a no-op when the preference is Off; otherwise each
+   *  system is seeded-or-written against its on-disk file with a fresh hash. Returns the
+   *  number of systems actually written. */
+  flushOnSave(): number {
+    if (this.userConfig.sramAutoSave() === "Off") return 0;
+    let written = 0;
+    for (const sys of this.systems.systems()) {
+      if (this.flushSystem(sys.id, sys.romPath, sys.savSuffix, sys.savPath, false)) written++;
+    }
+    return written;
+  }
+
+  /** The Continuous idle-tick: writes each system's changed SRAM using its persistent
+   *  hash (no write when unchanged). A no-op unless the preference is Continuous — Off /
+   *  OnProjectSave leave the loose `.sav` to flushOnSave. The caller throttles the
+   *  cadence. Returns the number of systems written this tick. */
+  pump(): number {
+    if (this.userConfig.sramAutoSave() !== "Continuous") return 0;
+    this.pruneDeadHashes();
+    let written = 0;
+    for (const sys of this.systems.systems()) {
+      if (this.flushSystem(sys.id, sys.romPath, sys.savSuffix, sys.savPath, true)) written++;
+    }
+    return written;
+  }
+
+  // Resolve, read, decide, and (maybe) write one system's SRAM. `persistent` selects the
+  // pump's cross-tick hash vs flushOnSave's fresh one. Returns whether it wrote.
+  private flushSystem(id: number, romPath: string, savSuffix: number, savOverride: string, persistent: boolean): boolean {
+    if (!romPath) return false; // embedded ROM: no sibling to mirror
+    const savPath = resolveSavPath(romPath, savSuffix, savOverride);
+    if (!savPath) return false;
+    const savBytes = this.backend.readSram(id);
+    if (!savBytes || savBytes.length === 0) return false;
+
+    const lastHash = persistent ? this.hashes.get(id) ?? null : null;
+    // The on-disk file is only needed for the first-observation seed check.
+    const onDisk = lastHash === null ? this.backend.readFile(savPath) : null;
+    const decision = decideAutoSave(savBytes, lastHash, onDisk);
+
+    if (decision.write && !this.backend.writeFile(savPath, savBytes)) return false; // retry next time
+    if (persistent) this.hashes.set(id, decision.hash);
+    return decision.write;
+  }
+
+  // Drop persistent hashes for systems that no longer exist (ids are monotonic, so this
+  // only sheds removed/reloaded ones).
+  private pruneDeadHashes(): void {
+    const live = new Set(this.systems.systems().map((s) => s.id));
+    for (const id of this.hashes.keys()) if (!live.has(id)) this.hashes.delete(id);
+  }
+}

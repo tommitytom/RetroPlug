@@ -71,6 +71,9 @@ export class MockBackend implements Backend {
   /** Ids passed to the pump reads, in order. */
   readonly readStateCalls: number[] = [];
   readonly readSramCalls: number[] = [];
+  /** Test-driven SRAM content per system (setSram), overriding the deterministic
+   *  default — lets a test model SRAM changing over time (dedup vs write). */
+  private sramOverrides = new Map<number, Uint8Array>();
   /** Entry lists passed to zip / archives passed to unzip, in order. */
   readonly zipCalls: ZipEntry[][] = [];
   readonly unzipCalls: Uint8Array[] = [];
@@ -90,6 +93,12 @@ export class MockBackend implements Backend {
   seed(path: string, contents: string | Uint8Array): void {
     const bytes = typeof contents === "string" ? enc.encode(contents) : new Uint8Array(contents);
     this.files.set(this.canonicalize(path), bytes);
+  }
+
+  /** Drive a system's live SRAM content (what readSram returns), overriding the
+   *  deterministic default — lets a test model SRAM changing between flushes. */
+  setSram(id: number, bytes: Uint8Array): void {
+    this.sramOverrides.set(id, new Uint8Array(bytes));
   }
 
   /** Read a file back as text, or null if absent. */
@@ -236,6 +245,8 @@ export class MockBackend implements Backend {
   readSram(id: number): Uint8Array | null {
     this.log.push("readSram");
     this.readSramCalls.push(id);
+    const override = this.sramOverrides.get(id);
+    if (override) return new Uint8Array(override);
     return this.systems.has(id) ? sramBytesFor(id) : null;
   }
 
