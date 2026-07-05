@@ -23,5 +23,14 @@ void registerBackendRpcMethods(Server& server) {
     // codec
     server.template addMethod<&BackendRpcService::zip>();
     server.template addMethod<&BackendRpcService::unzip>();
+    // emulator lifecycle / reads
+    server.template addMethod<&BackendRpcService::constructSystem>();
+    server.template addMethod<&BackendRpcService::duplicateSystem>();
+    server.template addMethod<&BackendRpcService::reloadSystem>();
+    server.template addMethod<&BackendRpcService::removeSystem>();
+    server.template addMethod<&BackendRpcService::applySystemSetting>();
+    server.template addMethod<&BackendRpcService::applyRoleConfig>();
+    server.template addMethod<&BackendRpcService::readState>();
+    server.template addMethod<&BackendRpcService::readSram>();
     server.addDiscoveryMethod();
 }

@@ -1,9 +1,11 @@
-# native-greenfield-host: the clean, emulator-free native host for the greenfield TS app.
+# native-greenfield-host: the native host for the greenfield TS app.
 #
-# Exposes the greenfield Backend (fs/config/codec) to a TS bundle over
-# globalThis[Symbol.for("plugin")].__rpcSend, and runs the greenfield test harness. Links
-# only the shared txiki host + rpcpp + miniz — deliberately NO Project/SystemBase/emulator
-# (that arrives in increment 2). Output binary lands in build/bin/.
+# Exposes the greenfield Backend to a TS bundle over
+# globalThis[Symbol.for("plugin")].__rpcSend, and runs the greenfield test harness. The
+# fs/config/codec half is std::filesystem + miniz; the emulator half is a StubSystem in a
+# real Project. It links `retroplug-cli-core` (Project + SystemBase + SameBoy/Mesen, plus
+# transitive rpcpp + miniz and the packages/native/src include) — so no longer emulator-free.
+# Output binary lands in build/bin/.
 
 add_executable(native-greenfield-host
     src/main.cpp
@@ -18,16 +20,13 @@ target_include_directories(native-greenfield-host PRIVATE
     # txiki.js / QuickJS runtime headers (tjs.h + internal private.h; quickjs.h transitive).
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/src
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs
-    # native src root for util/MinizZip.hpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src
-    # MinizZip.hpp -> miniz.h (txiki's vendored copy; matches the linked `miniz` lib)
-    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz
+    # (packages/native/src for the Project/SystemBase headers + util/MinizZip.hpp, and the
+    #  miniz header dir, arrive PUBLIC from retroplug-cli-core below.)
 )
 
 target_link_libraries(native-greenfield-host PRIVATE
-    tjs     # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
-    rpcpp   # TypedRpcServer + QuickJS codec/transport (transitively pulls reflectcpp)
-    miniz   # zip/unzip (BackendRpcService::zip/unzip)
+    retroplug-cli-core  # Project + SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
+    tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
 )
 
 set_target_properties(native-greenfield-host PROPERTIES

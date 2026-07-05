@@ -4,8 +4,10 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <system_error>
 
+#include "StubSystem.hpp"
 #include "util/MinizZip.hpp"
 
 namespace fs = std::filesystem;
@@ -51,6 +53,16 @@ std::size_t fileSizeOr(const std::string& path, std::size_t fallback) {
     std::error_code ec;
     const auto n = fs::file_size(path, ec);
     return ec ? fallback : static_cast<std::size_t>(n);
+}
+
+// Deterministic, id-tagged stand-ins for a live system's pump bytes (mirrors the mock's
+// "SR"/"ST" + little-endian id): legible in a hexdump and stable across a round-trip, so an
+// export → import → read comparison is byte-exact.
+std::vector<std::uint8_t> defaultSram(SystemId id) {
+    return { 'S', 'R', static_cast<std::uint8_t>(id & 0xff), static_cast<std::uint8_t>((id >> 8) & 0xff) };
+}
+std::vector<std::uint8_t> defaultState(SystemId id) {
+    return { 'S', 'T', static_cast<std::uint8_t>(id & 0xff), static_cast<std::uint8_t>((id >> 8) & 0xff) };
 }
 
 } // namespace
@@ -147,4 +159,100 @@ std::vector<BackendZipEntry> BackendRpcService::unzip(std::vector<std::uint8_t> 
     for (const auto& name : r.names())
         out.push_back({ name, toBytestring(r.read(name)) });
     return out;
+}
+
+// --- emulator lifecycle / reads --------------------------------------------
+// Every system in this host is a StubSystem; static_cast is safe (and RTTI-free).
+
+std::optional<std::uint32_t> BackendRpcService::constructSystem(BackendConstructSpec spec) {
+    if (spec.embeddedRom.empty()) {
+        // File-backed: native slurps the ROM. An unreadable file is the only native reject —
+        // the TS store already classified the format before calling.
+        if (!slurp(spec.romPath, fileSizeOr(spec.romPath, 0))) return std::nullopt;
+    }
+
+    const SystemId id = project_.nextSystemId();
+    auto sys = std::make_unique<StubSystem>(id, spec.romPath, spec.embeddedRom, spec.savPath.value_or(""));
+
+    // Seed SRAM: zip-import bytes win; else the on-disk .sav if present; else a default.
+    if (spec.sramBytes) {
+        sys->loadSramBytes(*spec.sramBytes);
+    } else if (spec.savPath) {
+        if (auto s = slurp(*spec.savPath, fileSizeOr(*spec.savPath, 0))) sys->loadSramBytes(*s);
+        else sys->loadSramBytes(defaultSram(id));
+    } else {
+        sys->loadSramBytes(defaultSram(id));
+    }
+    // Seed savestate: zip-import bytes, else a default (no cold-boot core to snapshot).
+    sys->loadStateBytes(spec.stateBytes ? *spec.stateBytes : defaultState(id));
+
+    sys->onActivate(sampleRate_);
+    if (spec.replaceId) project_.removeSystem(*spec.replaceId);  // swap in place
+    project_.adoptSystem(sys.release());
+    project_.rebuildLinkGroups();
+    return id;
+}
+
+std::optional<std::uint32_t> BackendRpcService::duplicateSystem(std::uint32_t srcId,
+                                                                std::optional<std::string> savPath) {
+    SystemBase* src = project_.findSystem(srcId);
+    if (!src) return std::nullopt;
+    const auto* stub = static_cast<StubSystem*>(src);
+
+    const SystemId id = project_.nextSystemId();
+    auto sys = std::make_unique<StubSystem>(id, src->romPath(), stub->embeddedRom(), savPath.value_or(""));
+    sys->loadSramBytes(src->saveSramBytes());   // clone the live state
+    sys->loadStateBytes(src->saveStateBytes());
+    sys->onActivate(sampleRate_);
+    project_.adoptSystem(sys.release());
+    project_.rebuildLinkGroups();
+    return id;
+}
+
+std::optional<std::uint32_t> BackendRpcService::reloadSystem(std::uint32_t id) {
+    SystemBase* old = project_.findSystem(id);
+    if (!old) return std::nullopt;
+    const auto* stub = static_cast<StubSystem*>(old);
+
+    const std::string rom = old->romPath();
+    const std::string embedded = stub->embeddedRom();
+    const std::string sav = old->savPath();
+    const auto sram = old->saveSramBytes();     // carry live SRAM forward
+
+    const SystemId newId = project_.nextSystemId();
+    auto sys = std::make_unique<StubSystem>(newId, rom, embedded, sav);
+    sys->loadSramBytes(sram);
+    sys->loadStateBytes(defaultState(newId));   // reload drops the savestate
+    sys->onActivate(sampleRate_);
+    project_.removeSystem(id);                   // swap in place, fresh id
+    project_.adoptSystem(sys.release());
+    project_.rebuildLinkGroups();
+    return newId;
+}
+
+bool BackendRpcService::removeSystem(std::uint32_t id) {
+    if (!project_.findSystem(id)) return false;
+    project_.removeSystem(id);
+    project_.rebuildLinkGroups();
+    return true;
+}
+
+bool BackendRpcService::applySystemSetting(std::uint32_t id, std::string /*key*/, double /*value*/) {
+    return project_.findSystem(id) != nullptr;
+}
+
+bool BackendRpcService::applyRoleConfig(std::uint32_t id, std::string /*kind*/, std::string /*config*/) {
+    return project_.findSystem(id) != nullptr;
+}
+
+std::optional<rfl::Bytestring> BackendRpcService::readState(std::uint32_t id) {
+    SystemBase* s = project_.findSystem(id);
+    if (!s) return std::nullopt;
+    return toBytestring(s->saveStateBytes());
+}
+
+std::optional<rfl::Bytestring> BackendRpcService::readSram(std::uint32_t id) {
+    SystemBase* s = project_.findSystem(id);
+    if (!s) return std::nullopt;
+    return toBytestring(s->saveSramBytes());
 }

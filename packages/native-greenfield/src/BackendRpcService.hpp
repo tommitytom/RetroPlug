@@ -7,11 +7,13 @@
 
 #include <rfl/Bytestring.hpp>
 
-// The native side of the greenfield `Backend` (packages/retroplug-greenfield/src/backend.ts):
-// the emulator-free fs / config / codec primitives, exposed to the TS app + tests over
-// rpcpp (reflect-cpp -> QuickJS object codec, same shape as cli/HarnessRpcService). This
-// is the "native-greenfield" seam — a clean host over std::filesystem + miniz + config-dir
-// resolution, with NO Project / SystemBase (that arrives in increment 2). Method bodies in
+#include "project/Project.hpp"
+
+// The native side of the greenfield `Backend` (packages/retroplug-greenfield/src/backend.ts),
+// exposed to the TS app + tests over rpcpp (reflect-cpp -> QuickJS object codec, same shape
+// as cli/HarnessRpcService). Two halves: the fs / config / codec primitives (std::filesystem
+// + miniz + config-dir resolution) and the emulator seam — the latter backed by a real
+// `Project` of `StubSystem`s (a SystemBase stand-in; no real core yet). Method bodies in
 // BackendRpcService.cpp.
 //
 // Byte OUTPUT rides rfl::Bytestring (msgpack BIN -> JS Uint8Array); a nullable read is
@@ -19,6 +21,19 @@
 // (reflect-cpp's binary reader is int-array-only). Zip entry DTOs mirror the harness.
 struct BackendZipEntry { std::string name; rfl::Bytestring bytes; };            // unzip output
 struct BackendZipInput { std::string name; std::vector<std::uint8_t> bytes; };  // zip input
+
+// Mirrors the greenfield ConstructSpec (packages/retroplug-greenfield/src/backend.ts):
+// concrete paths + an embedded-ROM marker + optional zip-import seed bytes. The optional
+// string fields are absent (nullopt) rather than "" when the TS side has null.
+struct BackendConstructSpec {
+    std::string                              romPath;
+    std::string                              embeddedRom;
+    std::optional<std::string>               savPath;
+    std::optional<std::string>               statePath;
+    std::optional<std::uint32_t>             replaceId;
+    std::optional<std::vector<std::uint8_t>> sramBytes;
+    std::optional<std::vector<std::uint8_t>> stateBytes;
+};
 
 class BackendRpcService {
 public:
@@ -43,4 +58,23 @@ public:
     // --- codec (miniz) ---
     rfl::Bytestring zip(std::vector<BackendZipInput> entries);
     std::vector<BackendZipEntry> unzip(std::vector<std::uint8_t> bytes);
+
+    // --- emulator lifecycle / reads (a StubSystem in a real Project) ---
+    // TS hands concrete paths only; native builds + tracks the system, returning its id
+    // (nullopt on an unreadable ROM). The reads pull the pump's latest bytes by id.
+    std::optional<std::uint32_t> constructSystem(BackendConstructSpec spec);
+    std::optional<std::uint32_t> duplicateSystem(std::uint32_t srcId, std::optional<std::string> savPath);
+    std::optional<std::uint32_t> reloadSystem(std::uint32_t id);
+    bool removeSystem(std::uint32_t id);
+    // value is number|boolean on the TS side; booleans cross as 1/0. The stub applies
+    // nothing observable, so it just reports whether the system exists.
+    bool applySystemSetting(std::uint32_t id, std::string key, double value);
+    // config is a JSON object stringified by the adapter (the stub ignores its contents).
+    bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config);
+    std::optional<rfl::Bytestring> readState(std::uint32_t id);
+    std::optional<rfl::Bytestring> readSram(std::uint32_t id);
+
+private:
+    Project project_;
+    double  sampleRate_ = 44100.0;
 };

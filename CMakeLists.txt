@@ -566,12 +566,13 @@ endif()
 
 if(BUILD_CLI)
     add_subdirectory(packages/native/cli cli)
-endif()
 
-# --- native-greenfield host -------------------------------------------------
-# Clean, emulator-free txiki host that runs the greenfield TS app/tests over a real
-# Backend (fs/config/codec). Consumes the shared host + rpcpp; no Project/SystemBase.
-add_subdirectory(packages/native-greenfield native-greenfield)
+    # --- native-greenfield host ---------------------------------------------
+    # txiki host that runs the greenfield TS app/tests over a real Backend. Depends on
+    # retroplug-cli-core (defined just above) for Project + SystemBase + the emulator, so it
+    # lives inside this BUILD_CLI block.
+    add_subdirectory(packages/native-greenfield native-greenfield)
+endif()
 
 # --- cli-regenerate: typed TS client for the harness RPC surface ------------
 # Derived artifact (build/generated/HarnessService.ts); never committed. Kept
