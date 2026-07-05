@@ -1,12 +1,13 @@
 // User config (config.json): the model/serialization tolerance + the Backend-backed
 // store (first-run defaults, validated setters, atomic persist, no-op guard). Mirrors
-// the recent-store tests. The on-disk shape + field spellings match native's
-// UserConfigJson, so a real config.json round-trips.
+// the recent-store tests. The on-disk shape + field spellings mirror native's
+// UserConfigJson (with the mirror preference renamed to sramAutoSave), so a real
+// config.json round-trips its shared fields.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { parseUserConfig, serializeUserConfig, USER_CONFIG_SCHEMA } from "../../src/userConfigSerialization";
-import { DEFAULT_USER_CONFIG, type SramMirror } from "../../src/userConfig";
+import { DEFAULT_USER_CONFIG, type SramAutoSave } from "../../src/userConfig";
 
 const CONFIG = "/config/config.json";
 
@@ -21,13 +22,13 @@ test("parse: a partial doc fills the rest with defaults (additive tolerance)", (
   expect(cfg.activeKeyboardBindings).toBe("wasd");
   expect(cfg.activeGamepadBindings).toBe("default");
   expect(cfg.defaultZoom).toBe(3);
-  expect(cfg.sramMirror).toBe("OnProjectSave");
+  expect(cfg.sramAutoSave).toBe("OnProjectSave");
 });
 
-test("parse: out-of-range zoom clamps and a bogus sramMirror coerces to the default", () => {
-  const cfg = parseUserConfig(JSON.stringify({ defaultZoom: 99, sramMirror: "bogus" }))!;
+test("parse: out-of-range zoom clamps and a bogus sramAutoSave coerces to the default", () => {
+  const cfg = parseUserConfig(JSON.stringify({ defaultZoom: 99, sramAutoSave: "bogus" }))!;
   expect(cfg.defaultZoom).toBe(6); // clamped to max
-  expect(cfg.sramMirror).toBe("OnProjectSave");
+  expect(cfg.sramAutoSave).toBe("OnProjectSave");
 });
 
 test("parse: a newer schema stamp / malformed / non-object all yield null (keep previous)", () => {
@@ -53,10 +54,10 @@ function newStore() {
 
 test("load: reads an existing config.json into config()", () => {
   const { be, store } = newStore();
-  be.seed(CONFIG, serializeUserConfig({ ...DEFAULT_USER_CONFIG, defaultZoom: 5, sramMirror: "Continuous" }));
+  be.seed(CONFIG, serializeUserConfig({ ...DEFAULT_USER_CONFIG, defaultZoom: 5, sramAutoSave: "Continuous" }));
   store.load();
   expect(store.config().defaultZoom).toBe(5);
-  expect(store.sramMirror()).toBe("Continuous");
+  expect(store.sramAutoSave()).toBe("Continuous");
 });
 
 test("load: first run (no file) writes the defaults out", () => {
@@ -88,12 +89,12 @@ test("setDefaultZoom: accepts 1..6 (persists + notifies); rejects out-of-range /
   expect(changed()).toBe(1); // no extra notifications
 });
 
-test("setSramMirror: accepts a known mode, rejects an unknown one", () => {
+test("setSramAutoSave: accepts a known mode, rejects an unknown one", () => {
   const { store } = newStore();
-  expect(store.setSramMirror("Off")).toBeTruthy();
-  expect(store.sramMirror()).toBe("Off");
-  expect(store.setSramMirror("bogus" as SramMirror)).toBeFalsy();
-  expect(store.sramMirror()).toBe("Off");
+  expect(store.setSramAutoSave("Off")).toBeTruthy();
+  expect(store.sramAutoSave()).toBe("Off");
+  expect(store.setSramAutoSave("bogus" as SramAutoSave)).toBeFalsy();
+  expect(store.sramAutoSave()).toBe("Off");
 });
 
 test("setActive*: persist the active profile names", () => {
@@ -110,7 +111,7 @@ test("no-op guard: setting the current value doesn't write or notify", () => {
   store.load(); // first-run write of the defaults (no onChange)
   const writesBefore = be.log.filter((m) => m === "writeFileAtomic").length;
   expect(store.setDefaultZoom(DEFAULT_USER_CONFIG.defaultZoom)).toBeFalsy();
-  expect(store.setSramMirror(DEFAULT_USER_CONFIG.sramMirror)).toBeFalsy();
+  expect(store.setSramAutoSave(DEFAULT_USER_CONFIG.sramAutoSave)).toBeFalsy();
   expect(changed()).toBe(0);
   expect(be.log.filter((m) => m === "writeFileAtomic").length).toBe(writesBefore); // no extra writes
 });

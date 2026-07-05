@@ -5,7 +5,7 @@
 // input (matching native UserConfig::setDefaultZoom / setSramMirror).
 
 import type { Backend } from "./backend";
-import { DEFAULT_USER_CONFIG, SRAM_MIRRORS, type SramMirror, type UserConfig } from "./userConfig";
+import { DEFAULT_USER_CONFIG, SRAM_AUTO_SAVES, type SramAutoSave, type UserConfig } from "./userConfig";
 import { parseUserConfig, serializeUserConfig } from "./userConfigSerialization";
 
 const CONFIG_FILE = "config.json";
@@ -37,8 +37,8 @@ export class UserConfigStore {
   defaultZoom(): number {
     return this.current.defaultZoom;
   }
-  sramMirror(): SramMirror {
-    return this.current.sramMirror;
+  sramAutoSave(): SramAutoSave {
+    return this.current.sramAutoSave;
   }
 
   /** Set the active keyboard binding profile (a plain name; profile-name format
@@ -59,10 +59,10 @@ export class UserConfigStore {
     return this.commit({ ...this.current, defaultZoom: zoom });
   }
 
-  /** Set the loose-.sav mirror preference. Rejects an unknown mode. */
-  setSramMirror(mode: SramMirror): boolean {
-    if (!SRAM_MIRRORS.includes(mode)) return false;
-    return this.commit({ ...this.current, sramMirror: mode });
+  /** Set the loose-.sav auto-save preference. Rejects an unknown mode. */
+  setSramAutoSave(mode: SramAutoSave): boolean {
+    if (!SRAM_AUTO_SAVES.includes(mode)) return false;
+    return this.commit({ ...this.current, sramAutoSave: mode });
   }
 
   private filePath(): string {

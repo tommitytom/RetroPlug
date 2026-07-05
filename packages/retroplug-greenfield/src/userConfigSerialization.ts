@@ -1,9 +1,10 @@
-// config.json parse/serialize. The on-disk shape matches native's UserConfigJson —
-// { schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom, sramMirror }
-// — so a user's current config.json still loads when the real backend replaces the C++
-// one. Reads stay tolerant: a missing field takes its default (additive), an unknown one
-// is stripped; malformed / non-object / newer-than-us yield null (the store keeps its
-// current value, mirroring native's "retain previous snapshot on parse error").
+// config.json parse/serialize. The on-disk shape mirrors native's UserConfigJson —
+// { schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom, sramAutoSave }
+// — except greenfield renames native's `sramMirror` key to `sramAutoSave` (the string
+// values still match native's enum). Reads stay tolerant: a missing field takes its
+// default (additive), an unknown one is stripped; malformed / non-object / newer-than-us
+// yield null (the store keeps its current value, mirroring native's "retain previous
+// snapshot on parse error").
 
 import { userConfigSchema, type UserConfig } from "./userConfig";
 
@@ -34,6 +35,6 @@ export function serializeUserConfig(cfg: UserConfig): string {
     activeKeyboardBindings: cfg.activeKeyboardBindings,
     activeGamepadBindings: cfg.activeGamepadBindings,
     defaultZoom: cfg.defaultZoom,
-    sramMirror: cfg.sramMirror,
+    sramAutoSave: cfg.sramAutoSave,
   });
 }
