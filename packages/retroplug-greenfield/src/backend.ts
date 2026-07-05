@@ -36,6 +36,14 @@ export interface Backend {
   /** Move/rename `from` to `to`. Returns false on failure. */
   rename(from: string, to: string): boolean;
 
+  /** The entry names directly under `dir` (files + subdirectories, not recursive), or an
+   *  empty list when `dir` is absent. Generic readdir — filtering (e.g. `.json` profiles)
+   *  is the caller's job. */
+  listDir(dir: string): string[];
+
+  /** Delete the file at `path`. Returns false when it isn't present. */
+  deleteFile(path: string): boolean;
+
   // --- Paths (the OS-specific bits TS can't reproduce) --------------------
 
   /** Normalize + resolve a path the way the OS would (weakly_canonical):

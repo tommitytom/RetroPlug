@@ -139,6 +139,23 @@ export class MockBackend implements Backend {
     return true;
   }
 
+  listDir(dir: string): string[] {
+    this.log.push("listDir");
+    const parent = this.canonicalize(dir);
+    const out: string[] = [];
+    for (const key of this.files.keys()) {
+      const slash = key.lastIndexOf("/");
+      const keyParent = slash <= 0 ? "/" : key.slice(0, slash);
+      if (keyParent === parent) out.push(key.slice(slash + 1));
+    }
+    return out.sort();
+  }
+
+  deleteFile(path: string): boolean {
+    this.log.push("deleteFile");
+    return this.files.delete(this.canonicalize(path));
+  }
+
   readFilePrefix(path: string, length: number): Uint8Array | null {
     this.log.push("readFilePrefix");
     const b = this.files.get(this.canonicalize(path));
