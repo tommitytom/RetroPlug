@@ -8,11 +8,18 @@
 //
 // Two categories: "system" roles carry a backend's emulator settings (attached by
 // backend kind); "feature" roles are behaviors attached by a ROM provider. A role's
-// BEHAVIOR (the doc-06 translator scripts + a UI descriptor) is a DEFERRED RoleType
-// seam — named here, filled by a later domain — so a role is never an opaque native
-// blob.
+// DSP-thread behavior (the doc-06 translator/source/router — mGB, lsdj-sync, routing)
+// is the `dsp` field, authored as a plain TS behavior over dspKernel's per-system
+// context. Its UI-thread behavior (control-plane, e.g. kit-patch) stays a deferred `ui`
+// seam — a role is never an opaque native blob.
+
+import type { ProjectBehavior, SystemBehavior } from "./dspKernel";
 
 export type RoleCategory = "system" | "feature";
+
+/** Where a DSP-thread behavior runs: per-system (translator/source), or once over all systems
+ *  (project scope — e.g. MIDI routing). Defaults to "system". */
+export type RoleScope = "system" | "project";
 
 /** A role on a system: a kind + its opaque config data. This is what serializes. */
 export interface RoleInstance {
@@ -32,12 +39,16 @@ export interface RoleConfigSchema {
 export interface RoleType {
   kind: string;
   category: RoleCategory;
+  /** Where the `dsp` behavior runs (default "system"). "project" behaviors (routing) run once
+   *  over all systems, before the per-system pipelines. */
+  scope?: RoleScope;
   /** The zod schema for this role's config — the single source of truth for its
    *  shape, defaults, and clamping. */
   schema: RoleConfigSchema;
-  /** DEFERRED: the doc-06 translator (byte/MIDI behavior). A later domain fills it. */
-  behavior?: unknown;
-  /** DEFERRED: a render descriptor for the settings UI. */
+  /** The DSP-thread behavior (doc-06 translator/source/router): a `SystemBehavior` for system
+   *  scope, a `ProjectBehavior` for project scope. Run per block by the DSP kernel. */
+  dsp?: SystemBehavior | ProjectBehavior;
+  /** DEFERRED: a UI-thread behavior (control-plane, e.g. kit-patch) + settings render descriptor. */
   ui?: unknown;
 }
 
