@@ -9,12 +9,11 @@
 
 #include <rfl/Bytestring.hpp>
 
-#include "project/Project.hpp"
 #include "transport/SpscRing.hpp"
 
 #include "DspCommand.hpp"
 #include "DspEvent.hpp"
-#include "DspRuntime.hpp"
+#include "Engine.hpp"
 #include "SystemFactory.hpp"
 
 // The native side of the greenfield `Backend` (packages/retroplug-greenfield/src/backend.ts),
@@ -150,42 +149,31 @@ public:
     std::uint32_t drainReleased();
 
 private:
-    // Render one block: run the kernel (if active) + fan its sinks to cores, then advance all cores
-    // one block and `ppq`. Shared by the synchronous renderAudio pull and the audio thread's loop.
-    void renderBlock(std::uint32_t frames, double bpm, bool transport, double& ppq,
-                     const std::vector<DspRuntime::MidiIn>& midi, float* outL, float* outR);
     void audioLoop();  // the background audio thread body
-    // Apply one drained command to dsp_/project_ (freeing/adopting its payload); StageMidi appends
-    // to `pending`. Runs on the audio thread only.
-    void applyDspCommand(const DspCommand& cmd, std::vector<DspRuntime::MidiIn>& pending);
+    // Apply one drained command to the Engine (freeing/adopting its payload). Runs on the audio
+    // thread only.
+    void applyDspCommand(const DspCommand& cmd);
     // Audio thread: hand a released core back to the control thread for off-thread delete.
     void handBackReleased(SystemBase* sys);
-    // Store the live Project system count for systemCount() (called after any list mutation, on
-    // whichever thread owns project_ at the time — audio during a run, control when quiescent).
+    // Store the live Engine system count for systemCount() (called after any list mutation, on
+    // whichever thread owns the Engine at the time — audio during a run, control when quiescent).
     void publishSystemCount();
     // Pop + free any un-applied command payloads (built-but-unadopted systems, config/bytecode
     // blobs). Called after the audio thread is joined, so the queue is single-threaded again.
     void freePendingCommands();
 
-    Project       project_;
-    double        sampleRate_ = 44100.0;  // fixed; const-after-construction (safe cross-thread read)
-    DspRuntime    dsp_;
+    Engine        engine_;   // owns Project + DspRuntime; the single source of truth
     SystemFactory factory_;  // the one build path (control thread only); SameBoy backend registered in ctor
 
     // Simulated host transport. bpm_/transportPlaying_ are atomic — written by the control thread
-    // (setBpm/setTransport), read by whichever render path is active. ppq_ is owned by the pull
-    // path; the audio thread keeps its own local.
+    // (setBpm/setTransport), read by whichever render path is active. ppq_ is owned by the pull path;
+    // the audio thread keeps its own local.
     static constexpr std::uint32_t kBlockSize = 1024;
     std::atomic<double> bpm_{120.0};
     std::atomic<bool>   transportPlaying_{false};
     double              ppq_ = 0.0;
     std::vector<float>  scratchL_;
     std::vector<float>  scratchR_;
-
-    // DSP-in-render: whether a kernel is loaded (drives whether the per-block DSP stage runs) +
-    // global host MIDI staged for the pull path (the audio thread stages into a local instead).
-    bool                            dspActive_ = false;
-    std::vector<DspRuntime::MidiIn> pendingMidiIn_;
 
     // Background audio thread + its lock-free channels. dspCommands_ carries edits control -> audio;
     // dspReleased_ hands removed/displaced cores back audio -> control for off-thread delete;

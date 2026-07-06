@@ -10,6 +10,7 @@
 add_executable(native-greenfield-host
     src/main.cpp
     src/BackendRpcService.cpp
+    src/Engine.cpp           # single-threaded core: owns Project + DspRuntime, runs blocks
     src/SystemFactory.cpp    # backend-agnostic build registry (the one build path)
     src/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
     src/ScriptCompiler.cpp   # bare-QuickJS bytecode compiler (DSP-side JS runtime)

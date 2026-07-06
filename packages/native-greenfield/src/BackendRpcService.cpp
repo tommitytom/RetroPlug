@@ -19,13 +19,9 @@
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
-#include "transport/MidiTypes.hpp"
 
 #include "lsdj/SavSerialization.hpp"
 #include "lsdj/codec/SavCodec.hpp"
-
-#include "transport/FrameBufferTriple.hpp"
-#include "native/core/img/png/lodepng.h"
 
 namespace fs = std::filesystem;
 
@@ -55,12 +51,6 @@ rfl::Bytestring toBytestring(const std::vector<std::uint8_t>& v) {
     const auto* p = reinterpret_cast<const std::byte*>(v.data());
     return rfl::Bytestring(p, p + v.size());
 }
-
-// Read-only empties the kernel's per-block inputs default to (const, so safe to read from either
-// render thread). The greenfield host doesn't yet feed the kernel per-block buttons/keys.
-const std::vector<DspRuntime::MidiIn>   kEmptyMidi;
-const std::vector<DspRuntime::ButtonIn> kNoButtons;
-const std::vector<DspRuntime::KeyIn>    kNoKeys;
 
 // Per-block sleep on the background audio thread: runs faster than real time (so a short sleepMs
 // window yields plenty of audio) while yielding the core rather than busy-spinning.
@@ -223,14 +213,13 @@ std::optional<std::uint32_t> BackendRpcService::constructSystem(BackendConstruct
     // Build + activate off the audio thread (heavy, non-RT) via the one factory path. nextSystemId
     // only bumps nextId_, which the audio thread never touches, so id allocation is race-free even
     // mid-run.
-    const SystemId id = project_.nextSystemId();
-    auto sys = factory_.build(id, toBuildSpec(spec), sampleRate_);
+    const SystemId id = engine_.nextSystemId();
+    auto sys = factory_.build(id, toBuildSpec(spec), engine_.sampleRate());
     if (!sys) return std::nullopt;  // unknown backend / unreadable or non-SameBoy ROM
 
     if (audioRunning_.load(std::memory_order_acquire)) {
-        // The audio thread owns project_ — ship the raw pointer through the queue for an alloc-free
-        // adopt/swap there (production's AddSystem/LoadRom pattern). Id is already allocated, so we
-        // still return it synchronously.
+        // The audio thread owns the Engine — ship the raw pointer through the queue for an
+        // alloc-free adopt/swap there. Id is already allocated, so we still return it synchronously.
         DspCommand c;
         if (spec.replaceId) {
             c.kind = DspCommand::Kind::ReplaceSystem;
@@ -245,9 +234,8 @@ std::optional<std::uint32_t> BackendRpcService::constructSystem(BackendConstruct
     }
 
     // Quiescent: apply directly on this thread.
-    if (spec.replaceId) project_.removeSystem(*spec.replaceId);  // swap in place
-    project_.adoptSystem(sys.release());
-    project_.rebuildLinkGroups();
+    if (spec.replaceId) engine_.removeSystem(*spec.replaceId);  // returned unique_ptr → delete (in place)
+    engine_.adoptSystem(std::move(sys));
     publishSystemCount();
     return id;
 }
@@ -257,31 +245,29 @@ std::optional<std::uint32_t> BackendRpcService::duplicateSystem(std::uint32_t sr
     // Reads the SOURCE core's live state (clone) — unsafe while the audio thread owns it. Needs the
     // deferred per-system snapshot triple-buffers; until then, quiescent only.
     if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
-    SystemBase* src = project_.findSystem(srcId);
+    SystemBase* src = engine_.findSystem(srcId);
     if (!src) return std::nullopt;
 
     // clone() boots an independent copy of the live state (SRAM + savestate).
-    const SystemId id = project_.nextSystemId();
-    auto sys = src->clone(id, sampleRate_);
+    const SystemId id = engine_.nextSystemId();
+    auto sys = src->clone(id, engine_.sampleRate());
     if (!sys) return std::nullopt;
     if (savPath) sys->setSavPath(*savPath);  // the duplicate auto-saves to its own file
-    project_.adoptSystem(sys.release());
-    project_.rebuildLinkGroups();
+    engine_.adoptSystem(std::move(sys));
     return id;
 }
 
 std::optional<std::uint32_t> BackendRpcService::reloadSystem(std::uint32_t id) {
     // Reads the existing core's live SRAM/config — unsafe mid-run (see duplicateSystem).
     if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
-    SystemBase* old = project_.findSystem(id);
+    SystemBase* old = engine_.findSystem(id);
     if (!old) return std::nullopt;
 
     // Rebuild the ROM from disk (or the embedded marker), carrying the live SRAM forward and
     // dropping the savestate — a genuine reload, swapped in place with a fresh id.
     const std::string romPath = old->romPath();
-    const auto sram = old->saveSramBytes();
     SameBoyConfig cfg = static_cast<const SameBoySystem*>(old)->config_;  // carry paths/roles/model
-    cfg.sram = sram;
+    cfg.sram = old->saveSramBytes();
     cfg.savestate.clear();
 
     std::vector<std::uint8_t> romBytes;
@@ -293,11 +279,10 @@ std::optional<std::uint32_t> BackendRpcService::reloadSystem(std::uint32_t id) {
     }
     if (romBytes.empty()) return std::nullopt;
 
-    const SystemId newId = project_.nextSystemId();
-    auto sys = SameBoyBackend::buildSameBoy(newId, std::move(cfg), std::move(romBytes), sampleRate_);
-    project_.removeSystem(id);
-    project_.adoptSystem(sys.release());
-    project_.rebuildLinkGroups();
+    const SystemId newId = engine_.nextSystemId();
+    auto sys = SameBoyBackend::buildSameBoy(newId, std::move(cfg), std::move(romBytes), engine_.sampleRate());
+    engine_.removeSystem(id);  // returned unique_ptr → delete (in place)
+    engine_.adoptSystem(std::move(sys));
     publishSystemCount();
     return newId;
 }
@@ -311,107 +296,51 @@ bool BackendRpcService::removeSystem(std::uint32_t id) {
         c.removeSystem = { id };
         return dspCommands_.tryPush(c);
     }
-    if (!project_.findSystem(id)) return false;
-    project_.removeSystem(id);
-    project_.rebuildLinkGroups();
+    if (!engine_.findSystem(id)) return false;
+    engine_.removeSystem(id);  // returned unique_ptr → delete (in place)
     publishSystemCount();
     return true;
 }
 
 bool BackendRpcService::applySystemSetting(std::uint32_t id, std::string /*key*/, double /*value*/) {
-    return project_.findSystem(id) != nullptr;
+    return engine_.findSystem(id) != nullptr;
 }
 
 bool BackendRpcService::applyRoleConfig(std::uint32_t id, std::string /*kind*/, std::string /*config*/) {
-    return project_.findSystem(id) != nullptr;
+    return engine_.findSystem(id) != nullptr;
 }
 
-// Core reads below touch live core state, unsafe while the audio thread owns project_. Until the
+// Core reads below touch live core state, unsafe while the audio thread owns the Engine. Until the
 // per-system snapshot triple-buffers land (deferred), they fail safe during a run.
 std::optional<rfl::Bytestring> BackendRpcService::readState(std::uint32_t id) {
     if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
-    SystemBase* s = project_.findSystem(id);
-    if (!s) return std::nullopt;
-    return toBytestring(s->saveStateBytes());
+    auto bytes = engine_.readState(id);
+    if (!bytes) return std::nullopt;
+    return toBytestring(*bytes);
 }
 
 std::optional<rfl::Bytestring> BackendRpcService::readSram(std::uint32_t id) {
     if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
-    SystemBase* s = project_.findSystem(id);
-    if (!s) return std::nullopt;
-    return toBytestring(s->saveSramBytes());
+    auto bytes = engine_.readSram(id);
+    if (!bytes) return std::nullopt;
+    return toBytestring(*bytes);
 }
 
 bool BackendRpcService::screenshot(std::uint32_t id, std::string path) {
     if (audioRunning_.load(std::memory_order_acquire)) return false;
-    SystemBase* s = project_.findSystem(id);
-    if (!s) return false;
-    FrameBufferTriple* fb = s->framebuffer();
-    if (!fb) return false;
-    const std::uint32_t w = fb->width();
-    const std::uint32_t h = fb->height();
-    const std::size_t pixels = static_cast<std::size_t>(w) * h;
-    // FrameBufferTriple stores XRGB8888 (little-endian B,G,R,X) -> transcode to RGB24 for lodepng.
-    std::vector<std::uint32_t> xrgb(pixels);
-    if (!fb->readInto(xrgb.data(), static_cast<std::uint32_t>(pixels))) return false;
-    std::vector<unsigned char> rgb(pixels * 3);
-    const std::uint8_t* src = reinterpret_cast<const std::uint8_t*>(xrgb.data());
-    for (std::size_t i = 0; i < pixels; ++i) {
-        rgb[i * 3 + 0] = src[i * 4 + 2]; // R
-        rgb[i * 3 + 1] = src[i * 4 + 1]; // G
-        rgb[i * 3 + 2] = src[i * 4 + 0]; // B
-    }
-    return lodepng_encode24_file(path.c_str(), rgb.data(), w, h) == 0;
+    return engine_.screenshot(id, path);
 }
 
 // --- audio render / MIDI drive ----------------------------------------------
 
 bool BackendRpcService::sendMidi(std::uint32_t id, std::vector<std::uint8_t> bytes) {
     if (audioRunning_.load(std::memory_order_acquire)) return false;  // direct core mutation; quiescent only
-    SystemBase* sys = project_.findSystem(id);
-    if (!sys) return false;
-    if (bytes.empty() || bytes.size() > ::MidiEvent::kDataSize) return false;
-    ::MidiEvent ev{};
-    ev.frame = 0;
-    ev.size = static_cast<std::uint32_t>(bytes.size());
-    for (std::size_t i = 0; i < bytes.size(); ++i) ev.data[i] = bytes[i];
-    sys->onMidi(&ev, 1);  // mGB's role forwards the bytes to serialIn_, drained in onProcess
-    return true;
+    return engine_.sendMidi(id, bytes);
 }
 
 bool BackendRpcService::pressButton(std::uint32_t id, std::uint32_t button, bool down) {
     if (audioRunning_.load(std::memory_order_acquire)) return false;  // direct core mutation; quiescent only
-    SystemBase* sys = project_.findSystem(id);
-    if (!sys) return false;
-    sys->pressButton(static_cast<std::uint8_t>(button), down);  // spread across the block in onProcess
-    return true;
-}
-
-// Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
-// (delivered this block); `dInfo`/`AudioBlockInfo` are both built at the block-start `ppq`, and
-// `ppq` advances only after — so the kernel's walkTicks and the cores see the same block-start ppq.
-void BackendRpcService::renderBlock(std::uint32_t frames, double bpm, bool transport, double& ppq,
-                                    const std::vector<DspRuntime::MidiIn>& midi, float* outL, float* outR) {
-    if (dspActive_) {
-        const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm, ppq, transport };
-        dsp_.processBlock(midi, kNoButtons, kNoKeys, dInfo);
-        // serial-in sink → the addressed system's serial FIFO (intra-block frame not yet honoured —
-        // a plain FIFO). Host MIDI-out (midiOut_) has no destination in this cut.
-        for (const auto& sv : dsp_.serialIn_)
-            if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.byte);
-        // role-generated button presses → the addressed core (distinct from a host UI tap, which
-        // arrives via the pressButton RPC and is not fed back through the kernel).
-        for (const auto& bo : dsp_.buttonOut_)
-            if (SystemBase* t = project_.findSystem(bo.system))
-                t->pressButton(static_cast<std::uint8_t>(bo.button), bo.down);
-    }
-    std::fill_n(outL, frames, 0.0f);  // cores mix additively → zero each block
-    std::fill_n(outR, frames, 0.0f);
-    float* outs[2] = { outL, outR };
-    AudioBlockInfo info{ frames, sampleRate_, bpm, ppq, transport };
-    project_.onProcess(info, outs);
-    if (transport)
-        ppq += (bpm / 60.0) * (static_cast<double>(frames) / sampleRate_);
+    return engine_.pressButton(id, static_cast<std::uint8_t>(button), down);
 }
 
 rfl::Bytestring BackendRpcService::renderAudio(double ms) {
@@ -419,19 +348,15 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
     scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
     scratchR_.resize(kBlockSize);
 
-    // Host MIDI staged for the kernel, consumed on the first block (nothing when no kernel loaded).
-    std::vector<DspRuntime::MidiIn> pending;
-    if (dspActive_) { pending = std::move(pendingMidiIn_); pendingMidiIn_.clear(); }
-
     const double bpm = bpm_.load(std::memory_order_relaxed);
     const bool   transport = transportPlaying_.load(std::memory_order_relaxed);
-    const std::uint64_t total = static_cast<std::uint64_t>(ms * sampleRate_ / 1000.0);
+    const std::uint64_t total = static_cast<std::uint64_t>(ms * engine_.sampleRate() / 1000.0);
     std::vector<float> out;
     out.reserve(total * 2);
+    // The Engine consumes any host MIDI staged via stageMidiIn on the first block it renders.
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
-        renderBlock(frames, bpm, transport, ppq_, s == 0 ? pending : kEmptyMidi,
-                    scratchL_.data(), scratchR_.data());
+        engine_.processBlock(frames, bpm, transport, ppq_, scratchL_.data(), scratchR_.data());
         for (std::uint32_t f = 0; f < frames; ++f) {
             out.push_back(scratchL_[f]);  // interleave L,R,L,R…
             out.push_back(scratchR_[f]);
@@ -450,7 +375,7 @@ bool BackendRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
         for (std::size_t i = 0; i < bytes.size(); ++i) c.stageMidi.data[i] = bytes[i];
         return dspCommands_.tryPush(c);
     }
-    pendingMidiIn_.push_back({ 0, std::move(bytes) });
+    engine_.stageMidi(std::move(bytes));
     return true;
 }
 
@@ -479,10 +404,9 @@ bool BackendRpcService::dspLoadKernel(std::vector<std::uint8_t> bytecode) {
         c.kind = DspCommand::Kind::LoadKernel;
         c.loadKernel.bytecode = new std::vector<std::uint8_t>(std::move(bytecode));
         if (!dspCommands_.tryPush(c)) { delete c.loadKernel.bytecode; return false; }
-        return true;  // applied on the audio thread; dspActive_ is set there
+        return true;  // applied on the audio thread; the DSP stage goes active there
     }
-    dspActive_ = dsp_.loadKernel(bytecode);
-    return dspActive_;
+    return engine_.loadKernel(bytecode);
 }
 
 bool BackendRpcService::dspSetSystems(std::string json) {
@@ -493,16 +417,14 @@ bool BackendRpcService::dspSetSystems(std::string json) {
         if (!dspCommands_.tryPush(c)) { delete c.setSystems.json; return false; }
         return true;
     }
-    return dsp_.setSystems(std::vector<std::uint8_t>(json.begin(), json.end()));
+    return engine_.setSystems(std::vector<std::uint8_t>(json.begin(), json.end()));
 }
 
 // --- background audio thread ------------------------------------------------
 
 BackendRpcService::BackendRpcService() {
-    // Pre-reserve so the audio thread's adoptSystem/swapSystem never reallocate systems_ (production
-    // reserves the same way). 16 is plenty for the greenfield host's tests.
-    project_.reserve(16);
-    // The one build path. SameBoy-only for now; a Mesen backend registers here later.
+    // The one build path. SameBoy-only for now; a Mesen backend registers here later. (The Engine
+    // pre-reserves its Project so the audio thread's adopt/swap never reallocates.)
     factory_.registerBackend("sameboy", std::make_unique<SameBoyBackend>());
 }
 
@@ -515,37 +437,34 @@ BackendRpcService::~BackendRpcService() {
     drainReleased();        // cores the audio thread released but nobody drained
 }
 
-void BackendRpcService::applyDspCommand(const DspCommand& cmd, std::vector<DspRuntime::MidiIn>& pending) {
+void BackendRpcService::applyDspCommand(const DspCommand& cmd) {
     switch (cmd.kind) {
         case DspCommand::Kind::SetSystems:
-            dsp_.setSystems(std::vector<std::uint8_t>(cmd.setSystems.json->begin(), cmd.setSystems.json->end()));
+            engine_.setSystems(std::vector<std::uint8_t>(cmd.setSystems.json->begin(), cmd.setSystems.json->end()));
             delete cmd.setSystems.json;  // owning payload — free on the audio thread (rare structural op)
             break;
         case DspCommand::Kind::LoadKernel:
-            dspActive_ = dsp_.loadKernel(*cmd.loadKernel.bytecode);
+            engine_.loadKernel(*cmd.loadKernel.bytecode);
             delete cmd.loadKernel.bytecode;
             break;
         case DspCommand::Kind::StageMidi:
-            pending.push_back({ 0, std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len) });
+            engine_.stageMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
             break;
         // Lifecycle: alloc-free pointer swaps into the pre-reserved Project; displaced/removed cores
         // are handed back to the control thread for delete (never freed here).
         case DspCommand::Kind::AddSystem:
-            project_.adoptSystem(cmd.addSystem.sys);
-            project_.rebuildLinkGroups();
+            engine_.adoptSystem(std::unique_ptr<SystemBase>(cmd.addSystem.sys));
             publishSystemCount();
             break;
-        case DspCommand::Kind::ReplaceSystem: {
-            // swapSystem returns the displaced core, or the incoming one unchanged if id wasn't
-            // found (then it was never adopted) — either way it's the leftover to free.
-            SystemBase* old = project_.swapSystem(cmd.replaceSystem.id, cmd.replaceSystem.sys);
-            handBackReleased(old);
-            project_.rebuildLinkGroups();
+        case DspCommand::Kind::ReplaceSystem:
+            // The displaced core (or the incoming one unchanged if id wasn't found) is handed back
+            // for the control thread to delete.
+            handBackReleased(engine_.replaceSystem(cmd.replaceSystem.id,
+                                                   std::unique_ptr<SystemBase>(cmd.replaceSystem.sys)).release());
             publishSystemCount();
             break;
-        }
         case DspCommand::Kind::RemoveSystem:
-            handBackReleased(project_.removeSystemAndRelease(cmd.removeSystem.id));  // does its own rebuild
+            handBackReleased(engine_.removeSystem(cmd.removeSystem.id).release());
             publishSystemCount();
             break;
         default:
@@ -557,19 +476,17 @@ void BackendRpcService::audioLoop() {
     // All of these are audio-thread-local: the control thread reaches the loop only through the
     // command queue (dspCommands_), the transport atomics, and audioRunning_.
     std::vector<float> l(kBlockSize), r(kBlockSize);
-    std::vector<DspRuntime::MidiIn> pending;
     double ppq = 0.0;
     double energy = 0.0;
     std::uint64_t frames = 0;
 
     while (audioRunning_.load(std::memory_order_acquire)) {
         DspCommand cmd;
-        while (dspCommands_.tryPop(cmd)) applyDspCommand(cmd, pending);
+        while (dspCommands_.tryPop(cmd)) applyDspCommand(cmd);
 
         const double bpm = bpm_.load(std::memory_order_relaxed);
         const bool   transport = transportPlaying_.load(std::memory_order_relaxed);
-        renderBlock(kBlockSize, bpm, transport, ppq, pending, l.data(), r.data());
-        pending.clear();  // staged MIDI consumed this block
+        engine_.processBlock(kBlockSize, bpm, transport, ppq, l.data(), r.data());
 
         for (std::uint32_t f = 0; f < kBlockSize; ++f)
             energy += static_cast<double>(l[f]) * l[f] + static_cast<double>(r[f]) * r[f];
@@ -629,7 +546,7 @@ void BackendRpcService::handBackReleased(SystemBase* sys) {
 }
 
 void BackendRpcService::publishSystemCount() {
-    liveSystemCount_.store(static_cast<std::uint32_t>(project_.systems().size()), std::memory_order_release);
+    liveSystemCount_.store(static_cast<std::uint32_t>(engine_.systemCount()), std::memory_order_release);
 }
 
 AudioCaptured BackendRpcService::audioCaptured() {
