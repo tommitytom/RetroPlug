@@ -1,58 +1,59 @@
 #pragma once
 
-// Single source of truth for the BackendRpcService method surface (mirrors
-// cli/HarnessRpcRegistration.hpp). Registers each method on the rpcpp server.
+// Single source of truth for the greenfield Backend method surface (mirrors
+// cli/HarnessRpcRegistration.hpp). Registers each method on the rpcpp server. The bound type is the
+// thin BackendFacade (one object per server); each method identifier IS the wire name.
 
-#include "BackendRpcService.hpp"
+#include "BackendFacade.hpp"
 
 template <class Server>
 void registerBackendRpcMethods(Server& server) {
     // filesystem
-    server.template addMethod<&BackendRpcService::readFile>();
-    server.template addMethod<&BackendRpcService::writeFile>();
-    server.template addMethod<&BackendRpcService::writeFileAtomic>();
-    server.template addMethod<&BackendRpcService::fileExists>();
-    server.template addMethod<&BackendRpcService::rename>();
-    server.template addMethod<&BackendRpcService::listDir>();
-    server.template addMethod<&BackendRpcService::deleteFile>();
-    server.template addMethod<&BackendRpcService::drainChangedPaths>();
+    server.template addMethod<&BackendFacade::readFile>();
+    server.template addMethod<&BackendFacade::writeFile>();
+    server.template addMethod<&BackendFacade::writeFileAtomic>();
+    server.template addMethod<&BackendFacade::fileExists>();
+    server.template addMethod<&BackendFacade::rename>();
+    server.template addMethod<&BackendFacade::listDir>();
+    server.template addMethod<&BackendFacade::deleteFile>();
+    server.template addMethod<&BackendFacade::drainChangedPaths>();
     // paths / config
-    server.template addMethod<&BackendRpcService::canonicalize>();
-    server.template addMethod<&BackendRpcService::readFilePrefix>();
-    server.template addMethod<&BackendRpcService::configDir>();
+    server.template addMethod<&BackendFacade::canonicalize>();
+    server.template addMethod<&BackendFacade::readFilePrefix>();
+    server.template addMethod<&BackendFacade::configDir>();
     // codec
-    server.template addMethod<&BackendRpcService::zip>();
-    server.template addMethod<&BackendRpcService::unzip>();
+    server.template addMethod<&BackendFacade::zip>();
+    server.template addMethod<&BackendFacade::unzip>();
     // LSDJ sav authoring
-    server.template addMethod<&BackendRpcService::savFromJson>();
+    server.template addMethod<&BackendFacade::savFromJson>();
     // emulator lifecycle / reads
-    server.template addMethod<&BackendRpcService::constructSystem>();
-    server.template addMethod<&BackendRpcService::duplicateSystem>();
-    server.template addMethod<&BackendRpcService::reloadSystem>();
-    server.template addMethod<&BackendRpcService::removeSystem>();
-    server.template addMethod<&BackendRpcService::applySystemSetting>();
-    server.template addMethod<&BackendRpcService::applyRoleConfig>();
-    server.template addMethod<&BackendRpcService::readState>();
-    server.template addMethod<&BackendRpcService::readSram>();
-    server.template addMethod<&BackendRpcService::screenshot>();
+    server.template addMethod<&BackendFacade::constructSystem>();
+    server.template addMethod<&BackendFacade::duplicateSystem>();
+    server.template addMethod<&BackendFacade::reloadSystem>();
+    server.template addMethod<&BackendFacade::removeSystem>();
+    server.template addMethod<&BackendFacade::applySystemSetting>();
+    server.template addMethod<&BackendFacade::applyRoleConfig>();
+    server.template addMethod<&BackendFacade::readState>();
+    server.template addMethod<&BackendFacade::readSram>();
+    server.template addMethod<&BackendFacade::screenshot>();
     // DSP-side JS runtime (the role kernel)
-    server.template addMethod<&BackendRpcService::compileScript>();
-    server.template addMethod<&BackendRpcService::dspLoadKernel>();
-    server.template addMethod<&BackendRpcService::dspSetSystems>();
+    server.template addMethod<&BackendFacade::compileScript>();
+    server.template addMethod<&BackendFacade::dspLoadKernel>();
+    server.template addMethod<&BackendFacade::dspSetSystems>();
     // audio render / MIDI drive
-    server.template addMethod<&BackendRpcService::sendMidi>();
-    server.template addMethod<&BackendRpcService::pressButton>();
-    server.template addMethod<&BackendRpcService::renderAudio>();
-    server.template addMethod<&BackendRpcService::setTransport>();
-    server.template addMethod<&BackendRpcService::setBpm>();
+    server.template addMethod<&BackendFacade::sendMidi>();
+    server.template addMethod<&BackendFacade::pressButton>();
+    server.template addMethod<&BackendFacade::renderAudio>();
+    server.template addMethod<&BackendFacade::setTransport>();
+    server.template addMethod<&BackendFacade::setBpm>();
     // DSP runtime in the render loop
-    server.template addMethod<&BackendRpcService::stageMidiIn>();
+    server.template addMethod<&BackendFacade::stageMidiIn>();
     // background audio thread (threaded mode)
-    server.template addMethod<&BackendRpcService::startAudio>();
-    server.template addMethod<&BackendRpcService::stopAudio>();
-    server.template addMethod<&BackendRpcService::audioCaptured>();
-    server.template addMethod<&BackendRpcService::sleepMs>();
-    server.template addMethod<&BackendRpcService::systemCount>();
-    server.template addMethod<&BackendRpcService::drainReleased>();
+    server.template addMethod<&BackendFacade::startAudio>();
+    server.template addMethod<&BackendFacade::stopAudio>();
+    server.template addMethod<&BackendFacade::audioCaptured>();
+    server.template addMethod<&BackendFacade::sleepMs>();
+    server.template addMethod<&BackendFacade::systemCount>();
+    server.template addMethod<&BackendFacade::drainReleased>();
     server.addDiscoveryMethod();
 }

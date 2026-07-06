@@ -9,13 +9,16 @@
 
 add_executable(native-greenfield-host
     src/main.cpp
-    src/BackendRpcService.cpp
-    src/Engine.cpp           # single-threaded core: owns Project + DspRuntime, runs blocks
-    src/EngineInvoker.cpp    # Direct/Queued invokers — the only threading-aware layer
-    src/SystemFactory.cpp    # backend-agnostic build registry (the one build path)
-    src/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
-    src/ScriptCompiler.cpp   # bare-QuickJS bytecode compiler (DSP-side JS runtime)
-    src/DspRuntime.cpp       # second bare QuickJS context — runs translator scripts
+    src/BackendFacade.cpp         # thin facade: owns the shared state, forwards to the 3 services
+    src/HostRpcService.cpp        # fs / config / codec / sav (pure, stateless)
+    src/EngineRpcService.cpp      # emulator surface over Engine + Invoker + Factory
+    src/AudioDriverRpcService.cpp # background audio thread + observation atomics
+    src/Engine.cpp                # single-threaded core: owns Project + DspRuntime, runs blocks
+    src/EngineInvoker.cpp         # Direct/Queued invokers — the only threading-aware layer
+    src/SystemFactory.cpp         # backend-agnostic build registry (the one build path)
+    src/SameBoyBackend.cpp        # SameBoy builder — the only place SameBoyConfig is constructed
+    src/ScriptCompiler.cpp        # bare-QuickJS bytecode compiler (DSP-side JS runtime)
+    src/DspRuntime.cpp            # second bare QuickJS context — runs translator scripts
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
 )
 

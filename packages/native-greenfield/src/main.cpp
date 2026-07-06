@@ -20,13 +20,13 @@
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
-#include "BackendRpcService.hpp"
+#include "BackendFacade.hpp"
 #include "BackendRpcRegistration.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 
-using BackendRpcServer = rpcpp::TypedRpcServer<BackendRpcService, rpcpp::QuickJSCodec>;
+using BackendRpcServer = rpcpp::TypedRpcServer<BackendFacade, rpcpp::QuickJSCodec>;
 
 namespace {
 
@@ -74,7 +74,7 @@ int main(int argc, char** argv) try {
 
     // rpcpp server over the QuickJS object codec (marshals request/response as live JS
     // objects against ctx — nothing serialized). The transport's async sink is unused.
-    BackendRpcService service;
+    BackendFacade service;
     rpcpp::QuickJSTransport transport(ctx, [](JSContext*, JSValue) {});
     BackendRpcServer server(service, transport, rpcpp::QuickJSCodec{ctx});
     registerBackendRpcMethods(server);
