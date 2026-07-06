@@ -330,6 +330,9 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
                     for (std::size_t i = 0; i < ev.data.size(); ++i) m.data[i] = ev.data[i];
                     t->onMidi(&m, 1);
                 }
+                // The pushSerialIn sink: feed the script's serial bytes straight into the
+                // system's serial input (the LSDj MidiSync path; identical to onMidi for mGB).
+                for (const auto& sv : dsp_.serialOut_) t->pushSerialIn(sv.byte);
             }
         }
 

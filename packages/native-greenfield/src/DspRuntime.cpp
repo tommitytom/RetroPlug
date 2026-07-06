@@ -38,6 +38,23 @@ JSValue emitMidiOut(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueC
     return JS_UNDEFINED;
 }
 
+// pushSerialIn(frame, byte) — the serial-in sink; appends {frame, byte} to serialOut_. The host
+// drains these into the attached system's serial input after the block. `frame` is carried for
+// ABI symmetry with emitMidiOut but the GB serial pump is a plain FIFO (intra-block frame is not
+// yet honoured — same as MgbPassthroughRole).
+JSValue pushSerialIn(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueConst* argv) {
+    DspRuntime* rt = self(ctx);
+    if (!rt || argc < 2) return JS_UNDEFINED;
+
+    std::int32_t frame = 0;
+    JS_ToInt32(ctx, &frame, argv[0]);
+    std::int32_t byte = 0;
+    JS_ToInt32(ctx, &byte, argv[1]);
+
+    rt->serialOut_.push_back({ static_cast<std::uint32_t>(frame), static_cast<std::uint8_t>(byte & 0xff) });
+    return JS_UNDEFINED;
+}
+
 // eachTick(resolution, callback) — walks the `resolution`-PPQN ticks in the current block via the
 // shipped drift-exact PpqUtil::eachTick (nextTick_ persists across blocks), calling
 // callback(tickIndex, sampleOffset) for each. A script emits a sample-accurate clock from here.
@@ -74,6 +91,7 @@ DspRuntime::DspRuntime() {
 
     JSValue global = JS_GetGlobalObject(ctx_);
     JS_SetPropertyStr(ctx_, global, "emitMidiOut", JS_NewCFunction(ctx_, emitMidiOut, "emitMidiOut", 2));
+    JS_SetPropertyStr(ctx_, global, "pushSerialIn", JS_NewCFunction(ctx_, pushSerialIn, "pushSerialIn", 2));
     JS_SetPropertyStr(ctx_, global, "eachTick", JS_NewCFunction(ctx_, eachTick, "eachTick", 2));
     JS_FreeValue(ctx_, global);
 }
@@ -121,6 +139,7 @@ bool DspRuntime::setConfig(const std::vector<std::uint8_t>& bytes) {
 std::vector<DspRuntime::MidiOut> DspRuntime::runBlock(const std::vector<MidiIn>& midi,
                                                       const BlockInfo& block) {
     out_.clear();
+    serialOut_.clear();
     curBlock_ = block;  // so the eachTick thunk sees this block's info
     if (!loaded_) return {};
     JSContext* ctx = ctx_;
