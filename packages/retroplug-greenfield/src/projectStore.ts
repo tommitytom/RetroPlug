@@ -14,6 +14,7 @@
 
 import type { Backend, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
+import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
 import { dirname } from "./pathUtil";
 import {
@@ -56,10 +57,26 @@ export class ProjectStore {
   private path = "";
   private dirty = false;
   private pendingLoad: { cfg: ProjectConfig; path: string; blobs: Map<string, Uint8Array> } | null = null;
+  private onSystemsChange: () => void = () => {};
 
-  constructor(private readonly backend: Backend, private readonly recent: RecentStore) {
-    // Any user mutation of the systems list marks the project dirty.
-    this.systems = new SystemsStore(backend, () => this.markDirty());
+  constructor(private readonly backend: Backend, private readonly recent: RecentStore, registry?: RoleRegistry) {
+    // Any user mutation of the systems list marks the project dirty and re-drives the DSP.
+    this.systems = new SystemsStore(
+      backend,
+      () => {
+        this.markDirty();
+        this.onSystemsChange();
+      },
+      registry,
+    );
+  }
+
+  /** Install the hook fired whenever the systems structure changes — a user edit, or a load / new
+   *  (the quiet rebuild path notifies at the end of commit/newProject). A host wires this to project
+   *  the store and push it to the DSP runtime; set it AFTER the runtime exists, since the first
+   *  mutation fires it. */
+  setOnSystemsChange(fn: () => void): void {
+    this.onSystemsChange = fn;
   }
 
   settings(): ProjectSettings {
@@ -91,6 +108,7 @@ export class ProjectStore {
     this.projectSettings = { ...DEFAULT_SETTINGS };
     this.path = "";
     this.dirty = false;
+    this.onSystemsChange(); // the DSP now runs nothing
   }
 
   /** Save a thin `.rplg` (raw JSON, paths rebased relative to its folder). Records it
@@ -208,6 +226,7 @@ export class ProjectStore {
     this.recent.add(path);
     this.path = path;
     this.dirty = false;
+    this.onSystemsChange(); // push the rebuilt systems (the adopt path is quiet)
     return { kind: "loaded", systems: this.systems.systems().length };
   }
 
