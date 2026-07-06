@@ -10,6 +10,12 @@
 
 #include "DspRuntime.hpp"
 
+// A per-system config field a control-plane edit applies to the live core (SameBoy today). Carried
+// as a double across the command ring: gain in dB; a bool as 0/1; an enum/int as its integer value.
+enum class ConfigField : std::uint8_t {
+    Gain = 0, ReloadOnRomChange = 1, Model = 2, Highpass = 3, LinkGroup = 4, FastBoot = 5,
+};
+
 // The single-threaded core of the greenfield host: owns the Project of live systems and the DSP
 // role kernel, and knows nothing about audio threads, queues, or RPC. Every op runs "now, on the
 // calling thread." Removed/displaced cores are RETURNED to the caller (who deletes them, or routes
@@ -46,6 +52,9 @@ public:
     std::optional<std::vector<std::uint8_t>> readSram(SystemId id);
     bool screenshot(SystemId id, const std::string& path);
     bool pressButton(SystemId id, std::uint8_t button, bool down);
+    // Apply a live config edit to a system (SameBoy-only cast today). Value-guarded per field so a
+    // whole-config re-send only acts on what changed (no spurious model restart).
+    void applyConfigField(SystemId id, std::uint8_t field, double value);
 
 private:
     Project    project_;

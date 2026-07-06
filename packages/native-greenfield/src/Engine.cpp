@@ -5,6 +5,7 @@
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
+#include "system/sameboy/SameBoySystem.hpp"  // live-apply cast target (model/highpass/gain/…)
 
 #include "transport/FrameBufferTriple.hpp"
 #include "native/core/img/png/lodepng.h"
@@ -132,4 +133,48 @@ bool Engine::pressButton(SystemId id, std::uint8_t button, bool down) {
     if (!sys) return false;
     sys->pressButton(button, down);  // spread across the block in onProcess
     return true;
+}
+
+void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
+    SystemBase* sys = project_.findSystem(id);
+    if (!sys) return;
+    // SameBoy-only for now; NES/GBA gain/reload generalize to a base virtual when those backends land.
+    auto* sb = dynamic_cast<SameBoySystem*>(sys);
+    if (!sb) return;
+    switch (static_cast<ConfigField>(field)) {
+        case ConfigField::Gain:
+            sb->setGainDb(static_cast<float>(value));  // live, smoothed
+            break;
+        case ConfigField::ReloadOnRomChange:
+            sb->setRomReload(value != 0.0);  // a UI-thread ROM-watch flag; no core effect
+            break;
+        case ConfigField::Model: {
+            const auto m = static_cast<SameBoyModel>(static_cast<std::uint32_t>(value));
+            if (sb->config_.model != m) {
+                sb->config_.model = m;
+                sb->restartEmulator();  // rebuilds gb_ + clears the savestate (a new model can't restore an old one)
+                project_.rebuildLinkGroups();
+            }
+            break;
+        }
+        case ConfigField::Highpass: {
+            const auto hp = static_cast<SameBoyHighpass>(static_cast<std::uint32_t>(value));
+            if (sb->config_.highpass != hp) {
+                sb->config_.highpass = hp;
+                sb->applyHighpassMode();  // live — the filter samples its mode every audio frame
+            }
+            break;
+        }
+        case ConfigField::LinkGroup: {
+            const auto g = static_cast<std::uint8_t>(static_cast<std::uint32_t>(value));
+            if (sb->config_.linkGroupId != g) {
+                sb->config_.linkGroupId = g;
+                project_.rebuildLinkGroups();
+            }
+            break;
+        }
+        case ConfigField::FastBoot:
+            sb->setFastBoot(value != 0.0);  // deferred to the next restart
+            break;
+    }
 }

@@ -4,6 +4,8 @@
 #include <iterator>
 #include <string>
 
+#include <rfl/json.hpp>
+
 #include "EmbeddedRoms.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
@@ -20,6 +22,11 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
 }
 
 } // namespace
+
+SameBoyRoleConfig SameBoyBackend::decodeSameBoyRoleConfig(const std::string& json) {
+    const auto r = rfl::json::read<SameBoyRoleConfig, rfl::DefaultIfMissing>(json);
+    return r ? r.value() : SameBoyRoleConfig{};  // unparseable → all defaults (a no-op apply)
+}
 
 std::unique_ptr<SameBoySystem> SameBoyBackend::buildSameBoy(SystemId id, SameBoyConfig cfg,
                                                            std::vector<std::uint8_t> romBytes,

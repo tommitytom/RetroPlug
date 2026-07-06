@@ -20,7 +20,7 @@ struct DspCommand {
     enum class Kind : std::uint8_t {
         None = 0, SetSystems = 1, LoadKernel = 2, StageMidi = 3,
         AddSystem = 4, ReplaceSystem = 5, RemoveSystem = 6,
-        SetBpm = 7, SetTransport = 8,
+        SetBpm = 7, SetTransport = 8, SetConfigField = 9,
     };
 
     Kind kind = Kind::None;
@@ -33,6 +33,7 @@ struct DspCommand {
         struct { std::uint32_t id; } removeSystem;
         struct { double value; } setBpm;                          // transport as a queued op
         struct { bool value; } setTransport;
+        struct { std::uint32_t id; std::uint8_t field; double value; } setConfigField; // live setting → core
     };
 
     DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0} {}

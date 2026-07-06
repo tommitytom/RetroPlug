@@ -118,12 +118,29 @@ bool EngineRpcService::removeSystem(std::uint32_t id) {
     return true;
 }
 
-bool EngineRpcService::applySystemSetting(std::uint32_t id, std::string /*key*/, double /*value*/) {
-    return engine_.findSystem(id) != nullptr;
+bool EngineRpcService::applySystemSetting(std::uint32_t id, std::string key, double value) {
+    // A universal per-system setting → the live core, through `active_` (direct when quiescent,
+    // queued when the audio thread runs). The store gates existence on its own list, so accept.
+    if (key == "gainDb")
+        active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Gain), value);
+    else if (key == "reloadOnRomChange")
+        active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::ReloadOnRomChange), value);
+    else
+        return false;  // unknown key
+    return true;
 }
 
-bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string /*kind*/, std::string /*config*/) {
-    return engine_.findSystem(id) != nullptr;
+bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string kind, std::string config) {
+    // Only a backend "system" role carries live emulator config; SameBoy is the only one today. The
+    // store re-sends the WHOLE role config, so each field applies guarded (Engine no-ops an unchanged
+    // one — no spurious model restart when only highpass moved).
+    if (kind != "sameboy") return false;
+    const SameBoyRoleConfig c = SameBoyBackend::decodeSameBoyRoleConfig(config);
+    active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Model), static_cast<double>(c.model));
+    active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Highpass), static_cast<double>(c.highpass));
+    active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LinkGroup), static_cast<double>(c.linkGroupId));
+    active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::FastBoot), c.fastBoot ? 1.0 : 0.0);
+    return true;
 }
 
 // Core reads below touch live core state, unsafe while the audio thread owns the Engine. Until the

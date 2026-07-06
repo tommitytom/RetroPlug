@@ -41,6 +41,10 @@ void DirectInvoker::setTransport(bool playing) {
     engine_.setTransport(playing);
 }
 
+void DirectInvoker::applyConfigField(SystemId id, std::uint8_t field, double value) {
+    engine_.applyConfigField(id, field, value);
+}
+
 // --- QueuedInvoker: producer half (control thread) --------------------------
 
 void QueuedInvoker::adoptSystem(std::unique_ptr<SystemBase> sys) {
@@ -100,6 +104,13 @@ void QueuedInvoker::setTransport(bool playing) {
     commands_.tryPush(c);
 }
 
+void QueuedInvoker::applyConfigField(SystemId id, std::uint8_t field, double value) {
+    DspCommand c;
+    c.kind = DspCommand::Kind::SetConfigField;
+    c.setConfigField = { static_cast<std::uint32_t>(id), field, value };
+    commands_.tryPush(c);  // no heap payload — dropped on a full ring
+}
+
 // --- QueuedInvoker: consumer half (audio thread) ----------------------------
 
 void QueuedInvoker::drainInto(Engine& engine) {
@@ -122,6 +133,9 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 break;
             case DspCommand::Kind::SetTransport:
                 engine.setTransport(cmd.setTransport.value);
+                break;
+            case DspCommand::Kind::SetConfigField:
+                engine.applyConfigField(cmd.setConfigField.id, cmd.setConfigField.field, cmd.setConfigField.value);
                 break;
             // Lifecycle: alloc-free pointer swaps into the pre-reserved Project; displaced/removed
             // cores are handed back to the control thread for delete (never freed here).
