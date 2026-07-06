@@ -24,6 +24,11 @@ export interface AudioDriver {
   renderAudio(ms: number): Float32Array;
   setTransport(running: boolean): boolean;
   setBpm(bpm: number): boolean;
+  /** Bind the loaded DSP script's output to a system (0 = detach). While attached, renderAudio
+   *  runs the DSP per block and delivers its emitMidiOut output to that system. */
+  dspAttach(systemId: number): boolean;
+  /** Stage a MIDI message for the DSP script's next render (consumed on its first block). */
+  sendDspMidi(bytes: Uint8Array | number[]): boolean;
 }
 
 /** Build an audio driver backed by the native host. Throws if no RPC surface is bound. */
@@ -49,5 +54,7 @@ export function createAudioDriver(): AudioDriver {
     },
     setTransport: (running) => call("setTransport", running) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
+    dspAttach: (systemId) => call("dspAttach", systemId) as boolean,
+    sendDspMidi: (bytes) => call("sendDspMidi", ints(bytes)) as boolean,
   };
 }
