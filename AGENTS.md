@@ -190,6 +190,14 @@ order of preference:
      The triple-buffer seqlock has a documented benign suppression
      (`packages/native/test/sanitizer/tsan.supp`); the deliberately-racy `[MesenSingleton]`
      probes are excluded (see `porting/20-mesen-single-thread-runloop.md`).
+     `tools/run-greenfield-tsan.sh [slug]` (default `dsp-threaded`) is the
+     counterpart for the **greenfield** host: it builds `native-greenfield-host`
+     into the same `build-tsan/` and runs a native TS test with the instrumented
+     host (`RETROPLUG_GREENFIELD_HOST` + the same `tsan.supp`). Use it after
+     touching the greenfield audio thread / DSP-context seam (`BackendRpcService`'s
+     `audioLoop`, the `SpscRing<DspCommand>` command queue, the transport/captured
+     atomics). That seam is expected to need **no** new suppressions — a clean run
+     IS the proof the QuickJS DSP context is touched only by the audio thread.
 5. **Audio-quality check on a render** — `pnpm reaper:analyze-smoke`
    (runs `test/ts/gb/mgb.test.ts`, which writes `/tmp/cli-smoke.wav`) or
    `reaper-analyze-lsdj-sync` (runs `test/ts/gb/lsdj/sync_pattern.test.ts`,
