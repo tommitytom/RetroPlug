@@ -34,14 +34,27 @@ export interface KeyEvent {
   down: boolean;
 }
 
-/** Everything the host collected for one block. `midiIn` is GLOBAL (a project-scope routing
- *  behaviour fans it to systems); `buttons`/`keys` already carry a target system. `project` is the
- *  project-scope pipeline (e.g. midi-routing); `systems[i].pipeline` is that system's ordered
- *  DSP-thread behaviours. */
-export interface Block extends BlockInfo {
+/** The rarely-changing structure of a project: the project-scope pipeline (e.g. midi-routing) and
+ *  each system's ordered DSP-thread pipeline. Pushed ONCE via `setSystems` (not re-marshalled per
+ *  block). The system ORDER is authoritative — positional MIDI routing (midiRouting.ts) maps a MIDI
+ *  channel to a system by its index here, so this list defines both the set and the order. */
+export interface KernelStructure {
+  project?: RoleInstance[];
+  systems: { id: number; pipeline: RoleInstance[] }[];
+}
+
+/** The dynamic per-block input: transport/timing + the events the host collected this block.
+ *  `midiIn` is GLOBAL (a project-scope routing behaviour fans it to systems); `buttons`/`keys`
+ *  already carry a target system. This is all `processBlock` marshals each block. */
+export interface BlockInput extends BlockInfo {
   midiIn: MidiEvent[];
   buttons: ButtonEvent[];
   keys: KeyEvent[];
+}
+
+/** The full block view a behaviour sees: the dynamic input merged onto the stored structure. The
+ *  kernel keeps ONE of these and overwrites its dynamic fields each block (no per-block alloc). */
+export interface Block extends BlockInput {
   systems: { id: number; pipeline: RoleInstance[] }[];
   project?: RoleInstance[];
 }
@@ -51,6 +64,37 @@ export interface Sinks {
   serialIn: { system: number; frame: number; byte: number }[];
   midiOut: { system: number; frame: number; data: number[] }[];
   buttons: { system: number; frame: number; button: number; down: boolean }[];
+}
+
+/** Where a behaviour's sinks go. The kernel forwards each ctx sink call to the injected target,
+ *  scoped by system id. In tests/txiki the default `CollectingSink` gathers them into a `Sinks`
+ *  object the assertions read; natively the target's methods ARE the bound C thunks, so bytes cross
+ *  as scalars with no intermediate JS arrays. `reset` (optional) clears per-block state. */
+export interface SinkTarget {
+  pushSerialIn(system: number, frame: number, byte: number): void;
+  emitMidiOut(system: number, frame: number, data: number[]): void;
+  pressButton(system: number, frame: number, button: number, down: boolean): void;
+  reset?(): void;
+}
+
+/** The default `SinkTarget`: gathers sink calls into a `Sinks` object (what `processBlock` returns
+ *  and the pure-TS tests assert on). */
+export class CollectingSink implements SinkTarget {
+  readonly sinks: Sinks = emptySinks();
+  reset(): void {
+    this.sinks.serialIn.length = 0;
+    this.sinks.midiOut.length = 0;
+    this.sinks.buttons.length = 0;
+  }
+  pushSerialIn(system: number, frame: number, byte: number): void {
+    this.sinks.serialIn.push({ system, frame, byte });
+  }
+  emitMidiOut(system: number, frame: number, data: number[]): void {
+    this.sinks.midiOut.push({ system, frame, data });
+  }
+  pressButton(system: number, frame: number, button: number, down: boolean): void {
+    this.sinks.buttons.push({ system, frame, button, down });
+  }
 }
 
 /** Per-system context handed to a system-scope behaviour: its inputs + sinks, scoped to the
@@ -110,52 +154,101 @@ export function walkTicks(
   return nextTick;
 }
 
-/** Runs a project's DSP-thread behaviours per block. Holds per-system `nextTick` state so
- *  `eachTick` stays drift-free across successive `processBlock` calls. Stateless otherwise — one
+/** Runs a project's DSP-thread behaviours per block. Structure (systems + pipelines) is pushed once
+ *  via `setSystems`; each block passes only dynamic input. Holds per-system `nextTick` state so
+ *  `eachTick` stays drift-free across successive `processBlock` calls, and forwards every sink to an
+ *  injected `SinkTarget` (default: a `CollectingSink` whose `Sinks` `processBlock` returns). One
  *  instance per project; a fresh one per unit test. */
 export class DspKernel {
   private readonly tick = new Map<number, number>();
+  // The single persistent block view: setSystems writes its structure, processBlock its dynamics.
+  private readonly block: Block = {
+    frames: 0,
+    sampleRate: 44100,
+    tempo: 120,
+    ppqStart: 0,
+    transport: false,
+    midiIn: [],
+    buttons: [],
+    keys: [],
+    systems: [],
+    project: [],
+  };
+  // Returned from processBlock: the collecting sink's Sinks, else a stable empty (native ignores it).
+  private readonly result: Sinks;
 
-  constructor(private readonly registry: RoleRegistry) {}
+  constructor(
+    private readonly registry: RoleRegistry,
+    private readonly sink: SinkTarget = new CollectingSink(),
+  ) {
+    this.result = sink instanceof CollectingSink ? sink.sinks : emptySinks();
+  }
 
-  processBlock(block: Block): Sinks {
-    const out = emptySinks();
+  /** Push the (rarely-changing) system + pipeline structure. The stored ORDER is authoritative for
+   *  positional routing. Also prunes per-system tick state for ids no longer present, so a
+   *  removed-then-readded id starts a fresh clock instead of resuming mid-count. */
+  setSystems(struct: KernelStructure): void {
+    this.block.systems = struct.systems;
+    this.block.project = struct.project ?? [];
+    const live = new Set(struct.systems.map((s) => s.id));
+    for (const id of this.tick.keys()) if (!live.has(id)) this.tick.delete(id);
+  }
+
+  /** Run one block over the stored structure, marshalling only the dynamic input. Returns the
+   *  collecting sink's `Sinks` (meaningful only under a `CollectingSink`; a forwarding target has
+   *  already sent everything and the return is ignored). */
+  processBlock(dyn: BlockInput): Sinks {
+    const b = this.block;
+    b.frames = dyn.frames;
+    b.sampleRate = dyn.sampleRate;
+    b.tempo = dyn.tempo;
+    b.ppqStart = dyn.ppqStart;
+    b.transport = dyn.transport;
+    b.midiIn = dyn.midiIn;
+    b.buttons = dyn.buttons;
+    b.keys = dyn.keys;
+
+    this.sink.reset?.();
     const routed = new Map<number, MidiEvent[]>();
 
     // Project scope: routing fans the global midiIn into per-system inboxes.
-    for (const stage of block.project ?? []) {
+    for (const stage of b.project ?? []) {
       const rt = this.registry.roleType(stage.kind);
-      if (rt?.scope === "project" && rt.dsp) (rt.dsp as ProjectBehavior)(block, routed, stage.config);
+      if (rt?.scope === "project" && rt.dsp) (rt.dsp as ProjectBehavior)(b, routed, stage.config);
     }
 
-    // System scope: each system's ordered pipeline of translators/sources.
-    for (const sys of block.systems) {
+    // System scope: each system's ordered pipeline of translators/sources. Filter this system's
+    // keys/buttons ONCE (not per pipeline stage).
+    for (const sys of b.systems) {
       const midi = routed.get(sys.id) ?? [];
+      const keys = b.keys.filter((k) => k.system === sys.id);
+      const buttons = b.buttons.filter((k) => k.system === sys.id);
       for (const stage of sys.pipeline) {
         const rt = this.registry.roleType(stage.kind);
         if (!rt || rt.scope === "project" || !rt.dsp) continue;
-        (rt.dsp as SystemBehavior)(this.makeCtx(sys.id, stage.config, midi, block, out));
+        (rt.dsp as SystemBehavior)(this.makeCtx(sys.id, stage.config, midi, keys, buttons, b));
       }
     }
-    return out;
+    return this.result;
   }
 
   private makeCtx(
     id: number,
     config: Record<string, unknown>,
     midi: MidiEvent[],
-    block: Block,
-    out: Sinks,
+    keys: KeyEvent[],
+    buttons: ButtonEvent[],
+    block: BlockInfo,
   ): SystemCtx {
     return {
       config,
       midi,
-      keys: block.keys.filter((k) => k.system === id),
-      buttons: block.buttons.filter((b) => b.system === id),
+      keys,
+      buttons,
       block,
-      pushSerialIn: (frame, byte) => out.serialIn.push({ system: id, frame, byte }),
-      emitMidiOut: (frame, data) => out.midiOut.push({ system: id, frame, data }),
-      pressButton: (button, down) => out.buttons.push({ system: id, frame: 0, button, down }),
+      pushSerialIn: (frame, byte) => this.sink.pushSerialIn(id, frame, byte),
+      emitMidiOut: (frame, data) => this.sink.emitMidiOut(id, frame, data),
+      pressButton: (button, down) => this.sink.pressButton(id, 0, button, down),
       eachTick: (resolution, cb) => {
         const nt = this.tick.get(id) ?? 0;
         this.tick.set(id, walkTicks(block, resolution, nt, cb));
