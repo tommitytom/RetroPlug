@@ -223,8 +223,9 @@ void SameBoySystem::onActivate(double sampleRate) {
 
     // Stored config is the source of truth. Empty roles → ask the sniffer
     // for a default; user edits later overwrite both the sniff and any role
-    // already attached.
-    if (config_.roles.empty()) {
+    // already attached. (Greenfield constructs with sniffing disabled: cores
+    // stay bare because feature roles are TS behaviours in the DSP kernel.)
+    if (config_.roles.empty() && sniffDefaultRoles_) {
         switch (detectRomKind(rom_)) {
             case RomKind::Mgb:
                 config_.roles.emplace_back(MgbRoleConfig{});
@@ -447,6 +448,7 @@ std::unique_ptr<SystemBase> SameBoySystem::clone(SystemId newId, double sampleRa
     if (!stateBytes.empty()) cfg.savestate = std::move(stateBytes);
     std::vector<std::uint8_t> romCopy = rom_;
     auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
+    out->setSniffDefaultRoles(sniffDefaultRoles_);  // a bare source clones bare
     out->onActivate(sampleRate);
     return out;
 }
@@ -471,6 +473,7 @@ std::unique_ptr<SystemBase> SameBoySystem::cloneFromState(
     }
     std::vector<std::uint8_t> romCopy = rom_;
     auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
+    out->setSniffDefaultRoles(sniffDefaultRoles_);  // a bare source clones bare
     out->onActivate(sampleRate);
     return out;
 }

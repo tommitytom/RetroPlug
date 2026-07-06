@@ -40,6 +40,13 @@ public:
     // defaults). Idempotent: clears `roles_` first.
     void instantiateRoles();
 
+    // When false, onActivate skips the RomSniffer default-role step, so a
+    // fresh ROM with empty `config_.roles` activates BARE (zero roles). The
+    // greenfield host sets this before onActivate — feature roles live in its
+    // TS DSP kernel, not native. Default true keeps the legacy plugin / CLI
+    // sniffer behaviour unchanged. Set before onActivate; propagated by clone.
+    void setSniffDefaultRoles(bool sniff) { sniffDefaultRoles_ = sniff; }
+
     // Pop the next bit (MSB-first) from `serialIn_` and return it. Returns
     // `true` (idle high) when the queue is empty. Called from the SameBoy
     // serial-end callback in standalone mode.
@@ -207,6 +214,11 @@ public:
     std::uint8_t serialOutByte_ = 0;
     int          serialOutBits_ = 0;
     bool         serialOutEnabled_ = false; // cached from roles_ in instantiateRoles()
+
+    // When false, onActivate skips the RomSniffer default-role step (bare
+    // activation). Default true = legacy sniffer behaviour. Not serialized —
+    // the greenfield host re-applies it on every construct via buildSameBoy.
+    bool         sniffDefaultRoles_ = true;
 
     // Diagnostic raw-byte log. Every completed serial-out byte while
     // serialOutEnabled_ is also appended here keyed by the in-block
