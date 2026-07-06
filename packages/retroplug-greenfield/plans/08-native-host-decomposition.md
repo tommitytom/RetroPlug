@@ -1,4 +1,9 @@
-> **Status:** design — captured from a design discussion; forward-looking (informs the next greenfield-native refactor), not yet implemented.
+> **Status:** implemented — the decomposition below shipped in `packages/native-greenfield`
+> (`SystemFactory`/`SameBoyBackend`, `Engine`, `EngineInvoker` with `Direct`/`Queued`,
+> and `HostRpcService`/`EngineRpcService`/`AudioDriverRpcService` behind `BackendFacade`).
+> One deviation from the sketch below: the dual-purpose test host selects Direct↔Queued
+> *dynamically* via an `active_` invoker pointer the audio driver swaps on start/stop
+> (rather than a static per-host composition). Deferred items are unchanged.
 
 # Native host decomposition — Engine, Factory, Invoker, and a thin RPC facade
 
@@ -334,7 +339,8 @@ Each step is independently green and independently committable.
 
 ## Status / links
 
-Design only — not yet implemented. Sequenced above; step 1 is the natural next chunk.
+Implemented (the four-step sequence above landed as four commits, each independently green;
+the audio-thread seam stayed TSan/ASan-clean). The named deferred items below remain open.
 
 - [architecture/07 — Multithreading](../../../architecture/07-multithreading.md) — the audio/UI seam
   this decomposition cleans up on the greenfield side.
