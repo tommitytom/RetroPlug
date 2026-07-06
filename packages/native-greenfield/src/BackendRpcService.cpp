@@ -305,11 +305,34 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
     scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
     scratchR_.resize(kBlockSize);
 
+    // Host MIDI staged for the DSP stage, consumed on the first block (nothing when detached).
+    std::vector<DspRuntime::MidiIn> pending;
+    if (dspTarget_ != 0) { pending = std::move(pendingDspMidi_); pendingDspMidi_.clear(); }
+    static const std::vector<DspRuntime::MidiIn> kEmpty;
+
     const std::uint64_t total = static_cast<std::uint64_t>(ms * sampleRate_ / 1000.0);
     std::vector<float> out;
     out.reserve(total * 2);
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
+
+        // DSP stage: run the loaded translator over this block's MIDI and deliver its output to
+        // the attached system BEFORE onProcess (the role forwards it to serialIn_, drained this
+        // block). Runs every block — the faithful per-block model eachTick will use.
+        if (dspTarget_ != 0) {
+            if (SystemBase* t = project_.findSystem(dspTarget_)) {
+                const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transportPlaying_ };
+                for (const auto& ev : dsp_.runBlock(s == 0 ? pending : kEmpty, dInfo)) {
+                    if (ev.data.empty() || ev.data.size() > ::MidiEvent::kDataSize) continue;
+                    ::MidiEvent m{};
+                    m.frame = ev.frame;
+                    m.size = static_cast<std::uint32_t>(ev.data.size());
+                    for (std::size_t i = 0; i < ev.data.size(); ++i) m.data[i] = ev.data[i];
+                    t->onMidi(&m, 1);
+                }
+            }
+        }
+
         float* outs[2] = { scratchL_.data(), scratchR_.data() };
         std::fill_n(scratchL_.data(), frames, 0.0f);  // cores mix additively → zero each block
         std::fill_n(scratchR_.data(), frames, 0.0f);
@@ -324,6 +347,19 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
     }
     const auto* p = reinterpret_cast<const std::byte*>(out.data());
     return rfl::Bytestring(p, p + out.size() * sizeof(float));
+}
+
+bool BackendRpcService::dspAttach(std::uint32_t systemId) {
+    if (systemId == 0) { dspTarget_ = 0; return true; }  // detach
+    if (!project_.findSystem(systemId)) return false;
+    dspTarget_ = systemId;
+    return true;
+}
+
+bool BackendRpcService::sendDspMidi(std::vector<std::uint8_t> bytes) {
+    if (bytes.empty() || bytes.size() > ::MidiEvent::kDataSize) return false;
+    pendingDspMidi_.push_back({ 0, std::move(bytes) });
+    return true;
 }
 
 bool BackendRpcService::setTransport(bool running) {

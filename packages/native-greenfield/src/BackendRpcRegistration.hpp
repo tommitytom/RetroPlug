@@ -42,5 +42,8 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendRpcService::renderAudio>();
     server.template addMethod<&BackendRpcService::setTransport>();
     server.template addMethod<&BackendRpcService::setBpm>();
+    // DSP runtime in the render loop
+    server.template addMethod<&BackendRpcService::dspAttach>();
+    server.template addMethod<&BackendRpcService::sendDspMidi>();
     server.addDiscoveryMethod();
 }

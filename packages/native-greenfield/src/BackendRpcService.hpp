@@ -106,6 +106,13 @@ public:
     bool            setTransport(bool running);
     bool            setBpm(double bpm);
 
+    // --- DSP runtime in the render loop ---
+    // Bind the loaded DSP script's output to a system (0 = detach); stage host MIDI for the
+    // DSP's next render. When a system is attached, renderAudio runs the DSP per block and
+    // delivers its emitMidiOut output to that system before onProcess.
+    bool dspAttach(std::uint32_t systemId);
+    bool sendDspMidi(std::vector<std::uint8_t> bytes);
+
 private:
     Project    project_;
     double     sampleRate_ = 44100.0;
@@ -118,4 +125,8 @@ private:
     double             ppq_              = 0.0;
     std::vector<float> scratchL_;
     std::vector<float> scratchR_;
+
+    // DSP-in-render: the attached system (0 = none) + host MIDI staged for the DSP script.
+    std::uint32_t                   dspTarget_ = 0;
+    std::vector<DspRuntime::MidiIn> pendingDspMidi_;
 };
