@@ -213,30 +213,14 @@ std::optional<std::uint32_t> BackendRpcService::constructSystem(BackendConstruct
     // Build + activate off the audio thread (heavy, non-RT) via the one factory path. nextSystemId
     // only bumps nextId_, which the audio thread never touches, so id allocation is race-free even
     // mid-run.
+    // Id is allocated up front (nextSystemId only bumps a control-thread counter) so we return it
+    // synchronously whether the invoker applies now or enqueues for the audio thread.
     const SystemId id = engine_.nextSystemId();
     auto sys = factory_.build(id, toBuildSpec(spec), engine_.sampleRate());
     if (!sys) return std::nullopt;  // unknown backend / unreadable or non-SameBoy ROM
 
-    if (audioRunning_.load(std::memory_order_acquire)) {
-        // The audio thread owns the Engine — ship the raw pointer through the queue for an
-        // alloc-free adopt/swap there. Id is already allocated, so we still return it synchronously.
-        DspCommand c;
-        if (spec.replaceId) {
-            c.kind = DspCommand::Kind::ReplaceSystem;
-            c.replaceSystem = { sys.get(), *spec.replaceId };
-        } else {
-            c.kind = DspCommand::Kind::AddSystem;
-            c.addSystem = { sys.get() };
-        }
-        if (!dspCommands_.tryPush(c)) return std::nullopt;  // full — unique_ptr frees the build
-        sys.release();  // ownership transferred to the command / audio thread
-        return id;
-    }
-
-    // Quiescent: apply directly on this thread.
-    if (spec.replaceId) engine_.removeSystem(*spec.replaceId);  // returned unique_ptr → delete (in place)
-    engine_.adoptSystem(std::move(sys));
-    publishSystemCount();
+    if (spec.replaceId) active_->replaceSystem(*spec.replaceId, std::move(sys));
+    else                active_->adoptSystem(std::move(sys));
     return id;
 }
 
@@ -279,26 +263,18 @@ std::optional<std::uint32_t> BackendRpcService::reloadSystem(std::uint32_t id) {
     }
     if (romBytes.empty()) return std::nullopt;
 
+    // Quiescent only (guarded above) — swap in place through the active (direct) invoker so the
+    // reload shares the one Engine::replaceSystem path.
     const SystemId newId = engine_.nextSystemId();
     auto sys = SameBoyBackend::buildSameBoy(newId, std::move(cfg), std::move(romBytes), engine_.sampleRate());
-    engine_.removeSystem(id);  // returned unique_ptr → delete (in place)
-    engine_.adoptSystem(std::move(sys));
-    publishSystemCount();
+    active_->replaceSystem(id, std::move(sys));
     return newId;
 }
 
 bool BackendRpcService::removeSystem(std::uint32_t id) {
-    if (audioRunning_.load(std::memory_order_acquire)) {
-        // Ship the id to the audio thread; it erases + releases the core and hands the pointer back
-        // through dspReleased_ for the control thread to delete (drainReleased).
-        DspCommand c;
-        c.kind = DspCommand::Kind::RemoveSystem;
-        c.removeSystem = { id };
-        return dspCommands_.tryPush(c);
-    }
-    if (!engine_.findSystem(id)) return false;
-    engine_.removeSystem(id);  // returned unique_ptr → delete (in place)
-    publishSystemCount();
+    // No threading branch: quiescent → direct erase; running → enqueue for the audio thread, which
+    // hands the core back through the release ring for the control thread to delete (drainReleased).
+    active_->removeSystem(id);
     return true;
 }
 
@@ -348,15 +324,14 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
     scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
     scratchR_.resize(kBlockSize);
 
-    const double bpm = bpm_.load(std::memory_order_relaxed);
-    const bool   transport = transportPlaying_.load(std::memory_order_relaxed);
     const std::uint64_t total = static_cast<std::uint64_t>(ms * engine_.sampleRate() / 1000.0);
     std::vector<float> out;
     out.reserve(total * 2);
-    // The Engine consumes any host MIDI staged via stageMidiIn on the first block it renders.
+    // The Engine owns transport + the ppq clock and consumes any host MIDI staged via stageMidiIn on
+    // the first block it renders.
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
-        engine_.processBlock(frames, bpm, transport, ppq_, scratchL_.data(), scratchR_.data());
+        engine_.processBlock(frames, scratchL_.data(), scratchR_.data());
         for (std::uint32_t f = 0; f < frames; ++f) {
             out.push_back(scratchL_[f]);  // interleave L,R,L,R…
             out.push_back(scratchR_[f]);
@@ -368,25 +343,18 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
 
 bool BackendRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
     if (bytes.empty() || bytes.size() > 4) return false;  // a MIDI message fits in 4 bytes
-    if (audioRunning_.load(std::memory_order_acquire)) {
-        DspCommand c;
-        c.kind = DspCommand::Kind::StageMidi;
-        c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());
-        for (std::size_t i = 0; i < bytes.size(); ++i) c.stageMidi.data[i] = bytes[i];
-        return dspCommands_.tryPush(c);
-    }
-    engine_.stageMidi(std::move(bytes));
+    active_->stageMidi(std::move(bytes));
     return true;
 }
 
 bool BackendRpcService::setTransport(bool running) {
-    transportPlaying_.store(running, std::memory_order_relaxed);
+    active_->setTransport(running);  // transport is a queued op — applied now (direct) or on the audio thread
     return true;
 }
 
 bool BackendRpcService::setBpm(double bpm) {
     if (bpm <= 0.0) return false;
-    bpm_.store(bpm, std::memory_order_relaxed);
+    active_->setBpm(bpm);
     return true;
 }
 
@@ -399,25 +367,13 @@ std::optional<rfl::Bytestring> BackendRpcService::compileScript(std::string sour
 }
 
 bool BackendRpcService::dspLoadKernel(std::vector<std::uint8_t> bytecode) {
-    if (audioRunning_.load(std::memory_order_acquire)) {
-        DspCommand c;
-        c.kind = DspCommand::Kind::LoadKernel;
-        c.loadKernel.bytecode = new std::vector<std::uint8_t>(std::move(bytecode));
-        if (!dspCommands_.tryPush(c)) { delete c.loadKernel.bytecode; return false; }
-        return true;  // applied on the audio thread; the DSP stage goes active there
-    }
-    return engine_.loadKernel(bytecode);
+    active_->loadKernel(std::move(bytecode));
+    return true;  // applied now (direct) or on the audio thread; the DSP stage goes active there
 }
 
 bool BackendRpcService::dspSetSystems(std::string json) {
-    if (audioRunning_.load(std::memory_order_acquire)) {
-        DspCommand c;
-        c.kind = DspCommand::Kind::SetSystems;
-        c.setSystems.json = new std::string(std::move(json));
-        if (!dspCommands_.tryPush(c)) { delete c.setSystems.json; return false; }
-        return true;
-    }
-    return engine_.setSystems(std::vector<std::uint8_t>(json.begin(), json.end()));
+    active_->setSystems(std::move(json));
+    return true;
 }
 
 // --- background audio thread ------------------------------------------------
@@ -433,60 +389,22 @@ BackendRpcService::~BackendRpcService() {
         audioRunning_.store(false, std::memory_order_release);
         if (audioThread_.joinable()) audioThread_.join();
     }
-    freePendingCommands();  // un-applied command payloads (built-but-unadopted systems etc.)
+    queued_.freePending();  // un-applied command payloads (built-but-unadopted systems etc.)
     drainReleased();        // cores the audio thread released but nobody drained
 }
 
-void BackendRpcService::applyDspCommand(const DspCommand& cmd) {
-    switch (cmd.kind) {
-        case DspCommand::Kind::SetSystems:
-            engine_.setSystems(std::vector<std::uint8_t>(cmd.setSystems.json->begin(), cmd.setSystems.json->end()));
-            delete cmd.setSystems.json;  // owning payload — free on the audio thread (rare structural op)
-            break;
-        case DspCommand::Kind::LoadKernel:
-            engine_.loadKernel(*cmd.loadKernel.bytecode);
-            delete cmd.loadKernel.bytecode;
-            break;
-        case DspCommand::Kind::StageMidi:
-            engine_.stageMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
-            break;
-        // Lifecycle: alloc-free pointer swaps into the pre-reserved Project; displaced/removed cores
-        // are handed back to the control thread for delete (never freed here).
-        case DspCommand::Kind::AddSystem:
-            engine_.adoptSystem(std::unique_ptr<SystemBase>(cmd.addSystem.sys));
-            publishSystemCount();
-            break;
-        case DspCommand::Kind::ReplaceSystem:
-            // The displaced core (or the incoming one unchanged if id wasn't found) is handed back
-            // for the control thread to delete.
-            handBackReleased(engine_.replaceSystem(cmd.replaceSystem.id,
-                                                   std::unique_ptr<SystemBase>(cmd.replaceSystem.sys)).release());
-            publishSystemCount();
-            break;
-        case DspCommand::Kind::RemoveSystem:
-            handBackReleased(engine_.removeSystem(cmd.removeSystem.id).release());
-            publishSystemCount();
-            break;
-        default:
-            break;
-    }
-}
-
 void BackendRpcService::audioLoop() {
-    // All of these are audio-thread-local: the control thread reaches the loop only through the
-    // command queue (dspCommands_), the transport atomics, and audioRunning_.
+    // Audio-thread-local: the control thread reaches the loop only through the QueuedInvoker's
+    // command ring and audioRunning_. drainInto applies every queued edit (structure + transport)
+    // INTO the Engine before the block; the live count is republished each iteration.
     std::vector<float> l(kBlockSize), r(kBlockSize);
-    double ppq = 0.0;
     double energy = 0.0;
     std::uint64_t frames = 0;
 
     while (audioRunning_.load(std::memory_order_acquire)) {
-        DspCommand cmd;
-        while (dspCommands_.tryPop(cmd)) applyDspCommand(cmd);
-
-        const double bpm = bpm_.load(std::memory_order_relaxed);
-        const bool   transport = transportPlaying_.load(std::memory_order_relaxed);
-        engine_.processBlock(kBlockSize, bpm, transport, ppq, l.data(), r.data());
+        queued_.drainInto(engine_);
+        liveSystemCount_.store(static_cast<std::uint32_t>(engine_.systemCount()), std::memory_order_release);
+        engine_.processBlock(kBlockSize, l.data(), r.data());
 
         for (std::uint32_t f = 0; f < kBlockSize; ++f)
             energy += static_cast<double>(l[f]) * l[f] + static_cast<double>(r[f]) * r[f];
@@ -502,6 +420,8 @@ bool BackendRpcService::startAudio() {
     if (audioRunning_.load(std::memory_order_acquire)) return false;  // already running
     capturedEnergy_.store(0.0, std::memory_order_relaxed);
     capturedFrames_.store(0, std::memory_order_relaxed);
+    liveSystemCount_.store(static_cast<std::uint32_t>(engine_.systemCount()), std::memory_order_relaxed);
+    active_ = &queued_;  // subsequent mutations enqueue for the audio thread (control-thread state)
     audioRunning_.store(true, std::memory_order_release);
     audioThread_ = std::thread([this] { audioLoop(); });
     return true;
@@ -511,42 +431,12 @@ bool BackendRpcService::stopAudio() {
     if (!audioRunning_.load(std::memory_order_acquire)) return false;
     audioRunning_.store(false, std::memory_order_release);
     if (audioThread_.joinable()) audioThread_.join();
+    active_ = &direct_;  // back to synchronous application
     // The audio thread is joined, so both rings are single-threaded again: free any un-applied
     // command payloads, and delete any cores the audio thread released just before stopping.
-    freePendingCommands();
+    queued_.freePending();
     drainReleased();
     return true;
-}
-
-// Free command payloads the control thread pushed after the loop's last drain. Only safe once the
-// audio thread is joined (dtor / stopAudio) — the ring has a single accessor again.
-void BackendRpcService::freePendingCommands() {
-    DspCommand cmd;
-    while (dspCommands_.tryPop(cmd)) {
-        switch (cmd.kind) {
-            case DspCommand::Kind::SetSystems:    delete cmd.setSystems.json; break;
-            case DspCommand::Kind::LoadKernel:    delete cmd.loadKernel.bytecode; break;
-            case DspCommand::Kind::AddSystem:     delete cmd.addSystem.sys; break;      // built but never adopted
-            case DspCommand::Kind::ReplaceSystem: delete cmd.replaceSystem.sys; break;  // built but never swapped in
-            default: break;  // StageMidi/RemoveSystem carry no heap payload
-        }
-    }
-}
-
-void BackendRpcService::handBackReleased(SystemBase* sys) {
-    if (!sys) return;
-    DspEvent e;
-    e.kind = DspEvent::Kind::SystemReleased;
-    e.released.sys = sys;
-    if (!dspReleased_.tryPush(e)) {
-        // Ring full (256 pending releases undrained) — can't free on the audio thread; leak rather
-        // than block/free in the render loop. In practice a test/app drains far more often than this.
-        std::fprintf(stderr, "[greenfield] released-system ring full; leaking a core\n");
-    }
-}
-
-void BackendRpcService::publishSystemCount() {
-    liveSystemCount_.store(static_cast<std::uint32_t>(engine_.systemCount()), std::memory_order_release);
 }
 
 AudioCaptured BackendRpcService::audioCaptured() {
@@ -566,15 +456,9 @@ std::uint32_t BackendRpcService::systemCount() {
 
 std::uint32_t BackendRpcService::drainReleased() {
     // Control-thread consumer of the release ring: delete each core the audio thread handed back.
-    // SPSC-safe against the audio-thread producer; deleting here is safe because the audio thread
-    // already dropped the core from the Project (no longer rendered) before pushing it.
+    // popReleased is SPSC-safe against the audio-thread producer; deleting here is safe because the
+    // audio thread already dropped the core from the Project (no longer rendered) before pushing it.
     std::uint32_t freed = 0;
-    DspEvent e;
-    while (dspReleased_.tryPop(e)) {
-        if (e.kind == DspEvent::Kind::SystemReleased) {
-            delete e.released.sys;
-            ++freed;
-        }
-    }
+    while (std::unique_ptr<SystemBase> sys = queued_.popReleased()) ++freed;  // deleted at scope end
     return freed;
 }

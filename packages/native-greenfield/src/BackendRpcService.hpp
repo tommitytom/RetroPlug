@@ -9,11 +9,8 @@
 
 #include <rfl/Bytestring.hpp>
 
-#include "transport/SpscRing.hpp"
-
-#include "DspCommand.hpp"
-#include "DspEvent.hpp"
 #include "Engine.hpp"
+#include "EngineInvoker.hpp"
 #include "SystemFactory.hpp"
 
 // The native side of the greenfield `Backend` (packages/retroplug-greenfield/src/backend.ts),
@@ -150,38 +147,26 @@ public:
 
 private:
     void audioLoop();  // the background audio thread body
-    // Apply one drained command to the Engine (freeing/adopting its payload). Runs on the audio
-    // thread only.
-    void applyDspCommand(const DspCommand& cmd);
-    // Audio thread: hand a released core back to the control thread for off-thread delete.
-    void handBackReleased(SystemBase* sys);
-    // Store the live Engine system count for systemCount() (called after any list mutation, on
-    // whichever thread owns the Engine at the time — audio during a run, control when quiescent).
-    void publishSystemCount();
-    // Pop + free any un-applied command payloads (built-but-unadopted systems, config/bytecode
-    // blobs). Called after the audio thread is joined, so the queue is single-threaded again.
-    void freePendingCommands();
 
     Engine        engine_;   // owns Project + DspRuntime; the single source of truth
     SystemFactory factory_;  // the one build path (control thread only); SameBoy backend registered in ctor
 
-    // Simulated host transport. bpm_/transportPlaying_ are atomic — written by the control thread
-    // (setBpm/setTransport), read by whichever render path is active. ppq_ is owned by the pull path;
-    // the audio thread keeps its own local.
+    // The invokers decide "apply now vs enqueue for the audio thread". Mutation RPCs call `active_`
+    // and never branch on threading: it points at direct_ when quiescent, queued_ while the audio
+    // thread runs (swapped by startAudio/stopAudio — control-thread-only state).
+    DirectInvoker  direct_{engine_};
+    QueuedInvoker  queued_;
+    EngineInvoker* active_ = &direct_;
+
     static constexpr std::uint32_t kBlockSize = 1024;
-    std::atomic<double> bpm_{120.0};
-    std::atomic<bool>   transportPlaying_{false};
-    double              ppq_ = 0.0;
-    std::vector<float>  scratchL_;
+    std::vector<float>  scratchL_;   // renderAudio pull-path scratch (control thread)
     std::vector<float>  scratchR_;
 
-    // Background audio thread + its lock-free channels. dspCommands_ carries edits control -> audio;
-    // dspReleased_ hands removed/displaced cores back audio -> control for off-thread delete;
-    // capturedEnergy_/Frames_ + liveSystemCount_ publish audio -> control (monotonic, store/load).
+    // Background audio thread + its published observation. audioRunning_ selects invoker mode + gates
+    // the deferred live reads; capturedEnergy_/Frames_ + liveSystemCount_ publish audio -> control
+    // (monotonic, store/load). Transport is a queued op now — no bpm/transport atomics here.
     std::thread                 audioThread_;
     std::atomic<bool>           audioRunning_{false};
-    SpscRing<DspCommand, 256>   dspCommands_;
-    SpscRing<DspEvent, 256>     dspReleased_;
     std::atomic<double>         capturedEnergy_{0.0};
     std::atomic<std::uint64_t>  capturedFrames_{0};
     std::atomic<std::uint32_t>  liveSystemCount_{0};

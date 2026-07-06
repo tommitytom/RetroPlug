@@ -34,9 +34,12 @@ public:
     bool setSystems(const std::vector<std::uint8_t>& json);
     void stageMidi(std::vector<std::uint8_t> bytes);              // delivered on the next processBlock
 
-    // --- per block: run kernel → fan sinks to cores → onProcess → advance ppq ---
-    void processBlock(std::uint32_t frames, double bpm, bool transport, double& ppq,
-                      float* outL, float* outR);
+    // --- transport (plain members; mutated only by the Engine's owning thread) ---
+    void setBpm(double bpm);
+    void setTransport(bool playing);
+
+    // --- per block: run kernel → fan sinks to cores → onProcess → advance the ppq clock ---
+    void processBlock(std::uint32_t frames, float* outL, float* outR);
 
     // --- live-state reads / direct mutation (valid only on the Engine's owning thread) ---
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);
@@ -51,4 +54,10 @@ private:
     double     sampleRate_;
     bool       dspActive_ = false;                 // a kernel is loaded → run the per-block DSP stage
     std::vector<DspRuntime::MidiIn> pendingMidi_;  // staged host MIDI, consumed on the next block
+
+    // Simulated host transport, driven per block. Continuous ppq clock (the pull path and the audio
+    // loop share it; they never run concurrently). Plain — mutated only by the owning thread.
+    double bpm_       = 120.0;
+    bool   transport_ = false;
+    double ppq_       = 0.0;
 };
