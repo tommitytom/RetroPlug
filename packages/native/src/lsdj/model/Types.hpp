@@ -49,10 +49,22 @@ enum class KitDistortion : std::uint8_t { Clip = 0, Shape = 1, Shape2 = 2, Wrap 
 enum class NoiseStability : std::uint8_t { Free = 0, Stable = 1 };
 
 // --- Song settings -------------------------------------------------------
-// Stored as a full byte at SYNC_MODE_OFFSET. aboy / newer builds expose extra
-// on-screen entries; the codec preserves the raw byte for values beyond these.
+// Stored as a full byte at SYNC_MODE_OFFSET. Values are LSDJ's own byte encoding
+// (NOT contiguous) — verified by cycling the PROJECT-screen SYNC field across
+// versions 3.8.9 → 9.4.2: bytes 2 and 4 are unused, and each mode keeps the same
+// byte across versions (older builds simply omit modes). LSDJ = link-cable sync
+// (~7.x+); MIDI/KEYBD/ANALOG go back to 3.8.9. MidiMap/MidiOut (8/9) are the
+// Arduinoboy build's MI.MAP / MI.OUT. The codec casts this byte verbatim, so these
+// values ARE the on-disk encoding; the raw byte is preserved for anything beyond.
 enum class SyncMode : std::uint8_t {
-    None = 0, Lsdj = 1, Midi = 2, Keyboard = 3, AnalogIn = 4, AnalogOut = 5
+    None    = 0,  // OFF
+    Lsdj    = 1,  // LSDJ (link cable)
+    Midi    = 3,  // MIDI
+    Keyboard = 5, // KEYBD
+    AnalogIn = 6, // ANALOG / ANA.IN
+    AnalogOut = 7,// AN.OUT
+    MidiMap = 8,  // MI.MAP (Arduinoboy build)
+    MidiOut = 9,  // MI.OUT (Arduinoboy build)
 };
 
 enum class CloneMode : std::uint8_t { Deep = 0, Slim = 1 };

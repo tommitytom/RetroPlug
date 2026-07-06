@@ -39,7 +39,7 @@ test("LSDj SYNC=MIDI song authored + MidiSync role stays live under transport", 
 
   // SYNC=MIDI got written to the song settings (no UI navigation needed).
   const sram = new Uint8Array(emu.readMemory(sys, Mem.Sram));
-  expect(sram[0x3fbd]).toBe(2); // SYNC = MIDI
+  expect(sram[0x3fbd]).toBe(3); // SYNC = MIDI (LSDj byte 3)
 
   // Drive the role's clock output with a running host transport; LSDj must stay
   // live (framebuffer keeps publishing) rather than crash or hang.

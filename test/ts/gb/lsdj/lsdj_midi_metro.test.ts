@@ -28,7 +28,7 @@ test("author the LSDj MidiSync metro state (armed) and emit the Reaper fixture",
   const sys = emu.loadRom(LSDJ, midiSyncSongSav(), "MidiSync");
   emu.runMs(6000); // valid sav skips the self-test; LSDj needs a few s to song screen
 
-  expect(new Uint8Array(emu.readMemory(sys, Mem.Sram))[0x3fbd]).toBe(2); // SYNC = MIDI
+  expect(new Uint8Array(emu.readMemory(sys, Mem.Sram))[0x3fbd]).toBe(3); // SYNC = MIDI (LSDj byte 3)
 
   // Arm LSDj: in SYNC=MIDI, START parks it "waiting for clock" (captured in the
   // savestate so the .RPP is self-contained).

@@ -41,9 +41,9 @@ test("ArduinoboyMaster role captures LSDj serial-out via the synthetic clock", (
   emu.runMs(6000); // valid sav skips self-test; LSDj needs a few s to song screen
   emu.screenshot(sys, "/tmp/lsdj_aboy_master_boot.png");
 
-  // SYNC=KEYBD landed in the song (byte 3) — KEYBD polls the serial port.
+  // SYNC=KEYBD landed in the song (byte 5) — KEYBD polls the serial port.
   const sram = new Uint8Array(emu.readMemory(sys, Mem.Sram));
-  expect(sram[SYNC_OFF]).toBe(3); // SYNC = KEYBD
+  expect(sram[SYNC_OFF]).toBe(5); // SYNC = KEYBD (LSDj byte 5)
 
   emu.drainSerial(sys); // clear any boot-time transients
   emu.tap(sys, Button.Start, 100);

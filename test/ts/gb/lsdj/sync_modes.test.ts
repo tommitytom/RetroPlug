@@ -16,15 +16,19 @@ import { test, expect, emu, Mem } from "harness";
 const ABOY = "../resources/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
 const SYNC_OFF = 0x3fbd; // working-song SYNC byte
 
-// model::SyncMode (packages/native/src/lsdj/model/Types.hpp): None=0,Lsdj=1,Midi=2,Keyboard=3,
-// AnalogIn=4,AnalogOut=5 — matches the on-screen SYNC cycle positions 0..5.
+// model::SyncMode (packages/native/src/lsdj/model/Types.hpp) uses LSDJ's own byte
+// encoding — verified by cycling the PROJECT-screen SYNC field across versions
+// 3.8.9 → 9.4.2: OFF=0, LSDJ=1, MIDI=3, KEYBD=5, ANA.IN=6, AN.OUT=7 (bytes 2 and 4
+// are unused/dead slots), plus the aboy MI.MAP=8 / MI.OUT=9. NOT contiguous.
 const MODES: { name: string; byte: number }[] = [
   { name: "None", byte: 0 },
   { name: "Lsdj", byte: 1 },
-  { name: "Midi", byte: 2 },
-  { name: "Keyboard", byte: 3 },
-  { name: "AnalogIn", byte: 4 },
-  { name: "AnalogOut", byte: 5 },
+  { name: "Midi", byte: 3 },
+  { name: "Keyboard", byte: 5 },
+  { name: "AnalogIn", byte: 6 },
+  { name: "AnalogOut", byte: 7 },
+  { name: "MidiMap", byte: 8 },
+  { name: "MidiOut", byte: 9 },
 ];
 
 for (const m of MODES) {
