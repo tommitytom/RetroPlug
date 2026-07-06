@@ -13,6 +13,7 @@
 #include "transport/SpscRing.hpp"
 
 #include "DspCommand.hpp"
+#include "DspEvent.hpp"
 #include "DspRuntime.hpp"
 
 // The native side of the greenfield `Backend` (packages/retroplug-greenfield/src/backend.ts),
@@ -52,7 +53,7 @@ struct BackendConstructSpec {
 
 class BackendRpcService {
 public:
-    BackendRpcService() = default;
+    BackendRpcService();
     ~BackendRpcService();
     BackendRpcService(const BackendRpcService&)            = delete;
     BackendRpcService& operator=(const BackendRpcService&) = delete;
@@ -139,6 +140,13 @@ public:
     bool          stopAudio();
     AudioCaptured audioCaptured();
     bool          sleepMs(double ms);
+    // Live count of systems in the Project, published by the audio thread after each lifecycle
+    // command — the one structural read that's safe while the audio thread runs.
+    std::uint32_t systemCount();
+    // Pop every system the audio thread released (removed/displaced) and delete it on THIS thread,
+    // returning the count freed. The control-thread end of the ownership handoff (production drains
+    // the same channel in uiIdle; the host has no idle loop, so a test/app polls this).
+    std::uint32_t drainReleased();
 
 private:
     // Render one block: run the kernel (if active) + fan its sinks to cores, then advance all cores
@@ -146,8 +154,17 @@ private:
     void renderBlock(std::uint32_t frames, double bpm, bool transport, double& ppq,
                      const std::vector<DspRuntime::MidiIn>& midi, float* outL, float* outR);
     void audioLoop();  // the background audio thread body
-    // Apply one drained command to dsp_ (freeing its heap payload); StageMidi appends to `pending`.
+    // Apply one drained command to dsp_/project_ (freeing/adopting its payload); StageMidi appends
+    // to `pending`. Runs on the audio thread only.
     void applyDspCommand(const DspCommand& cmd, std::vector<DspRuntime::MidiIn>& pending);
+    // Audio thread: hand a released core back to the control thread for off-thread delete.
+    void handBackReleased(SystemBase* sys);
+    // Store the live Project system count for systemCount() (called after any list mutation, on
+    // whichever thread owns project_ at the time — audio during a run, control when quiescent).
+    void publishSystemCount();
+    // Pop + free any un-applied command payloads (built-but-unadopted systems, config/bytecode
+    // blobs). Called after the audio thread is joined, so the queue is single-threaded again.
+    void freePendingCommands();
 
     Project    project_;
     double     sampleRate_ = 44100.0;  // fixed; const-after-construction (safe cross-thread read)
@@ -168,11 +185,14 @@ private:
     bool                            dspActive_ = false;
     std::vector<DspRuntime::MidiIn> pendingMidiIn_;
 
-    // Background audio thread + its lock-free control channel. dspCommands_ carries structure edits
-    // control -> audio; capturedEnergy_/Frames_ publish audio -> control (monotonic, store/load).
+    // Background audio thread + its lock-free channels. dspCommands_ carries edits control -> audio;
+    // dspReleased_ hands removed/displaced cores back audio -> control for off-thread delete;
+    // capturedEnergy_/Frames_ + liveSystemCount_ publish audio -> control (monotonic, store/load).
     std::thread                 audioThread_;
     std::atomic<bool>           audioRunning_{false};
     SpscRing<DspCommand, 256>   dspCommands_;
+    SpscRing<DspEvent, 256>     dspReleased_;
     std::atomic<double>         capturedEnergy_{0.0};
     std::atomic<std::uint64_t>  capturedFrames_{0};
+    std::atomic<std::uint32_t>  liveSystemCount_{0};
 };

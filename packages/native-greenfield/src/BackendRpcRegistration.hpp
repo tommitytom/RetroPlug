@@ -52,5 +52,7 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendRpcService::stopAudio>();
     server.template addMethod<&BackendRpcService::audioCaptured>();
     server.template addMethod<&BackendRpcService::sleepMs>();
+    server.template addMethod<&BackendRpcService::systemCount>();
+    server.template addMethod<&BackendRpcService::drainReleased>();
     server.addDiscoveryMethod();
 }

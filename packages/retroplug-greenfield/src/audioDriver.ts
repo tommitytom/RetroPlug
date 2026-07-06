@@ -44,6 +44,12 @@ export interface AudioDriver {
   sleepMs(ms: number): boolean;
   /** Monotonic capture snapshot; diff two of these for a windowed RMS = sqrt(Δenergy / Δframes). */
   audioCaptured(): { energy: number; frames: number };
+  /** Live count of systems in the Project — safe to read while the audio thread runs (the audio
+   *  thread publishes it after each add/remove applied from the command queue). */
+  systemCount(): number;
+  /** Delete every core the audio thread released (via removeSystem while running), returning the
+   *  count freed — the control-thread end of the ownership handoff. */
+  drainReleased(): number;
 }
 
 /** Build an audio driver backed by the native host. Throws if no RPC surface is bound. */
@@ -76,5 +82,7 @@ export function createAudioDriver(): AudioDriver {
     stopAudio: () => call("stopAudio") as boolean,
     sleepMs: (ms) => call("sleepMs", ms) as boolean,
     audioCaptured: () => call("audioCaptured") as { energy: number; frames: number },
+    systemCount: () => call("systemCount") as number,
+    drainReleased: () => call("drainReleased") as number,
   };
 }
