@@ -52,8 +52,18 @@ export interface RoleType {
   ui?: unknown;
 }
 
-/** Inspect a ROM header (title at 0x134) and return the feature roles to attach. */
-export type RomProvider = (header: Uint8Array) => RoleInstance[];
+/** What a ROM provider inspects to decide feature roles: the backend kind, the ROM
+ *  header (cartridge title at 0x134), and the embedded-ROM marker — "" for a file-backed
+ *  ROM, else the baked-in synth's id (e.g. "mgb"). The marker is the ONLY signal for an
+ *  embedded ROM, whose bytes never reach TS, so its header is empty. */
+export interface RomContext {
+  backendKind: string;
+  header: Uint8Array;
+  embeddedRom: string;
+}
+
+/** Inspect a ROM and return the feature roles to attach. */
+export type RomProvider = (rom: RomContext) => RoleInstance[];
 
 export class RoleRegistry {
   private types = new Map<string, RoleType>();
@@ -78,13 +88,16 @@ export class RoleRegistry {
 
   /** The default roles for a freshly-constructed system: the backend's system role
    *  (if any), then every provider's feature-role suggestions for this ROM. Each
-   *  config is parsed through its role's schema (defaults filled, values clamped). */
-  defaultRoles(backendKind: string, header: Uint8Array): RoleInstance[] {
+   *  config is parsed through its role's schema (defaults filled, values clamped).
+   *  `embeddedRom` ("" for a file-backed ROM) lets a provider match a baked-in synth
+   *  whose header can't be sniffed. */
+  defaultRoles(backendKind: string, header: Uint8Array, embeddedRom = ""): RoleInstance[] {
     const out: RoleInstance[] = [];
     const sysRole = this.systemRoleFor(backendKind);
     if (sysRole) out.push({ kind: sysRole.kind, config: sysRole.schema.parse({}) });
+    const ctx: RomContext = { backendKind, header, embeddedRom };
     for (const p of this.providers) {
-      for (const r of p(header)) {
+      for (const r of p(ctx)) {
         const rt = this.types.get(r.kind);
         out.push({ kind: r.kind, config: rt ? rt.schema.parse(r.config) : r.config });
       }

@@ -28,8 +28,10 @@ function registryWithFake(): RoleRegistry {
     category: "feature",
     schema: z.object({ level: clampedInt(0, 10, 1) }),
   });
-  reg.registerRomProvider((h) =>
-    String.fromCharCode(...h.slice(0x134, 0x138)).startsWith("DEMO") ? [{ kind: "demo-sync", config: { level: 1 } }] : [],
+  reg.registerRomProvider(({ header }) =>
+    String.fromCharCode(...header.slice(0x134, 0x138)).startsWith("DEMO")
+      ? [{ kind: "demo-sync", config: { level: 1 } }]
+      : [],
   );
   return reg;
 }

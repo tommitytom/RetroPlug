@@ -23,7 +23,7 @@ function registerFakeExtension(reg: RoleRegistry): void {
     category: "feature",
     schema: z.object({ level: clampedInt(0, 10, 1) }),
   });
-  reg.registerRomProvider((header) => {
+  reg.registerRomProvider(({ header }) => {
     const title = String.fromCharCode(...header.slice(0x134, 0x138));
     return title.startsWith("DEMO") ? [{ kind: "demo-sync", config: { level: 1 } }] : [];
   });

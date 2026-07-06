@@ -345,7 +345,7 @@ export class SystemsStore {
     if (!this.registry) return [];
     const header =
       romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array() : new Uint8Array();
-    return this.registry.defaultRoles(kind, header);
+    return this.registry.defaultRoles(kind, header, embeddedRom);
   }
 
   // The free suffix for a new instance of `romPath`: live-list ownership + on-disk.
