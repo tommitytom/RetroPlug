@@ -4,14 +4,19 @@ extern "C" {
 #include "quickjs.h"
 }
 
+#include "system/SystemTypes.hpp"  // AudioBlockInfo
+#include "util/PpqUtil.hpp"        // PpqUtil::eachTick (drift-exact PPQ iterator)
+
 namespace {
 
-// The bound emitMidiOut(frame, [b0, b1, …]) sink. Routed to the owning DspRuntime's per-block
-// collector via the context opaque pointer (one DspRuntime per context). Appends {frame,
-// bytes}; the script calls it from inside onBlock.
+// The DspRuntime is the context opaque (one runtime per context), so every bound thunk reaches
+// its collector + block state through it.
+DspRuntime* self(JSContext* ctx) { return static_cast<DspRuntime*>(JS_GetContextOpaque(ctx)); }
+
+// emitMidiOut(frame, [b0, b1, …]) — the MIDI output sink; appends {frame, bytes} to out_.
 JSValue emitMidiOut(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueConst* argv) {
-    auto* out = static_cast<std::vector<DspRuntime::MidiOut>*>(JS_GetContextOpaque(ctx));
-    if (!out || argc < 2) return JS_UNDEFINED;
+    DspRuntime* rt = self(ctx);
+    if (!rt || argc < 2) return JS_UNDEFINED;
 
     std::int32_t frame = 0;
     JS_ToInt32(ctx, &frame, argv[0]);
@@ -29,7 +34,33 @@ JSValue emitMidiOut(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueC
         JS_FreeValue(ctx, e);
         ev.data.push_back(static_cast<std::uint8_t>(b & 0xff));
     }
-    out->push_back(std::move(ev));
+    rt->out_.push_back(std::move(ev));
+    return JS_UNDEFINED;
+}
+
+// eachTick(resolution, callback) — walks the `resolution`-PPQN ticks in the current block via the
+// shipped drift-exact PpqUtil::eachTick (nextTick_ persists across blocks), calling
+// callback(tickIndex, sampleOffset) for each. A script emits a sample-accurate clock from here.
+JSValue eachTick(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueConst* argv) {
+    DspRuntime* rt = self(ctx);
+    if (!rt || argc < 2) return JS_UNDEFINED;
+
+    std::int32_t resolution = 0;
+    JS_ToInt32(ctx, &resolution, argv[0]);
+    JSValueConst cb = argv[1];
+    if (!JS_IsFunction(ctx, cb)) return JS_UNDEFINED;
+
+    const AudioBlockInfo info{ rt->curBlock_.frames, rt->curBlock_.sampleRate, rt->curBlock_.tempo,
+                               rt->curBlock_.ppqPosBlockStart, rt->curBlock_.transportPlaying };
+    PpqUtil::eachTick(info, static_cast<std::uint32_t>(resolution), rt->nextTick_,
+                      [&](std::uint32_t tick, std::uint32_t off) {
+        JSValue args[2] = { JS_NewInt32(ctx, static_cast<std::int32_t>(tick)),
+                            JS_NewInt32(ctx, static_cast<std::int32_t>(off)) };
+        JSValue r = JS_Call(ctx, cb, JS_UNDEFINED, 2, args);  // re-entrant JS call is fine
+        JS_FreeValue(ctx, r);
+        JS_FreeValue(ctx, args[0]);
+        JS_FreeValue(ctx, args[1]);
+    });
     return JS_UNDEFINED;
 }
 
@@ -38,12 +69,12 @@ JSValue emitMidiOut(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueC
 DspRuntime::DspRuntime() {
     rt_ = JS_NewRuntime();
     ctx_ = JS_NewContext(rt_);
-    // The collector is reachable from the sink via the context opaque (one runtime, one
-    // collector). out_'s address is stable across clear()s.
-    JS_SetContextOpaque(ctx_, &out_);
+    // The DspRuntime is the context opaque, so the bound thunks reach out_ / curBlock_ / nextTick_.
+    JS_SetContextOpaque(ctx_, this);
 
     JSValue global = JS_GetGlobalObject(ctx_);
     JS_SetPropertyStr(ctx_, global, "emitMidiOut", JS_NewCFunction(ctx_, emitMidiOut, "emitMidiOut", 2));
+    JS_SetPropertyStr(ctx_, global, "eachTick", JS_NewCFunction(ctx_, eachTick, "eachTick", 2));
     JS_FreeValue(ctx_, global);
 }
 
@@ -66,6 +97,7 @@ bool DspRuntime::loadScript(const std::vector<std::uint8_t>& bytecode) {
     const bool ok = !JS_IsException(res);
     JS_FreeValue(ctx_, res);
     loaded_ = ok;
+    if (ok) nextTick_ = 0;  // a fresh script = a fresh clock
     return ok;
 }
 
@@ -89,6 +121,7 @@ bool DspRuntime::setConfig(const std::vector<std::uint8_t>& bytes) {
 std::vector<DspRuntime::MidiOut> DspRuntime::runBlock(const std::vector<MidiIn>& midi,
                                                       const BlockInfo& block) {
     out_.clear();
+    curBlock_ = block;  // so the eachTick thunk sees this block's info
     if (!loaded_) return {};
     JSContext* ctx = ctx_;
 

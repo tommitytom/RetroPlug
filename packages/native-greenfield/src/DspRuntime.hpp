@@ -13,10 +13,14 @@ struct JSContext;
 // packages/retroplug-greenfield/plans/03-dsp-js-runtime.md — the script crosses as bytecode,
 // config as bytes, and per-block I/O as structured bytes; a JSValue never crosses.
 //
-// Minimal first cut: one input (MidiIn[] + BlockInfo), config as a JSON string the script
-// parses once into pre-allocated slots, and one output sink `emitMidiOut(frame, [bytes])`
-// bound onto the context global. No audio thread, no RT queue yet — the per-block drive is a
-// direct call (doc-03's "functional first cut").
+// Config is a JSON string the script parses once into pre-allocated slots. Script-side ABI
+// bound onto the context global:
+//   - emitMidiOut(frame, [bytes])       — the MIDI output sink (collected into out_)
+//   - eachTick(resolution, callback)    — the doc-06 drift-exact PPQ iterator; calls
+//                                         callback(tickIndex, sampleOffset) for each `resolution`-
+//                                         PPQN tick in the block, so a script can emit a
+//                                         sample-accurate clock (PpqUtil::eachTick).
+// No audio thread, no RT queue yet — the per-block drive is a direct call (doc-03's first cut).
 class DspRuntime {
 public:
     struct MidiIn  { std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
@@ -48,11 +52,14 @@ public:
     // sink fills the returned list. Empty when no script is loaded.
     std::vector<MidiOut> runBlock(const std::vector<MidiIn>& midi, const BlockInfo& block);
 
+    // --- public for the bound C-function thunks only (the SameBoySystem idiom) ---
+    // The DspRuntime is the context opaque, so the emitMidiOut / eachTick thunks reach these.
+    std::vector<MidiOut> out_;                 // per-block MIDI collector, cleared each runBlock
+    BlockInfo            curBlock_{};           // the block being processed (for eachTick)
+    std::int64_t         nextTick_ = 0;         // PPQ counter; persists across blocks (drift-free)
+
 private:
     JSRuntime* rt_     = nullptr;
     JSContext* ctx_    = nullptr;
     bool       loaded_ = false;
-    // Per-block collector; its address is the context opaque, so the emitMidiOut C sink
-    // appends here. Cleared at the start of each runBlock (address stays stable).
-    std::vector<MidiOut> out_;
 };
