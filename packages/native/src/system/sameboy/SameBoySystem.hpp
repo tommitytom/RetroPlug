@@ -56,6 +56,11 @@ public:
     // SameBoyUtil.cpp:149-163).
     void pressButton(std::uint8_t button, bool down) override;
 
+    // Queue a raw byte for the GB serial port — exactly what the MIDI-listener
+    // roles do (MgbPassthroughRole). Drained MSB-first by nextSerialInBit() /
+    // the slave-mode pump in stepIfBelowTarget().
+    void pushSerialIn(std::uint8_t byte) override { serialIn_.push_back(byte); }
+
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
     // MemoryType → GB_DIRECT_ACCESS_* mapping. Returns invalid for
