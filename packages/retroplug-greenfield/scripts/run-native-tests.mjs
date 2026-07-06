@@ -23,6 +23,9 @@ const OUT_DIR = join(PKG, ".native-build");
 // The sibling resources dir (ROMs/manuals/…), overridable — mirrors the repo-wide convention.
 // Injected into the bundle so a test can locate real ROMs by absolute path (native slurps them).
 const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../resources");
+// The in-repo resources dir — a few small ROMs are committed here (e.g. resources/roms/n8-midi.nes)
+// rather than in the sibling tree, so a test can reach them without the sibling being populated.
+const REPO_RESOURCES_DIR = join(REPO, "resources");
 
 const HOST = process.env.RETROPLUG_GREENFIELD_HOST || join(REPO, "build/bin/native-greenfield-host");
 
@@ -96,6 +99,7 @@ for (const { file, slug } of tests) {
         "process.env.NODE_ENV": '"production"',
         __CONFIG_DIR__: JSON.stringify(cfgDir),
         __RESOURCES_DIR__: JSON.stringify(RESOURCES_DIR),
+        __REPO_RESOURCES_DIR__: JSON.stringify(REPO_RESOURCES_DIR),
         __DSP_KERNEL_BUNDLE__: JSON.stringify(DSP_KERNEL_BUNDLE),
       },
     });
