@@ -32,8 +32,8 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
 }
 
 // Map the wire construct spec to the backend-agnostic build spec: resolve the SRAM/savestate seeds
-// (zip-import bytes win, else the on-disk file, else empty) and carry the SameBoy-specific LSDJ
-// sync-role mode as the opaque settings blob the SameBoy backend decodes.
+// (zip-import bytes win, else the on-disk file, else empty). The opaque `settings` blob stays empty
+// for now — cores construct bare (feature roles are TS kernel behaviours, not native config).
 SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
     SystemBuildSpec out;
     out.backendKind = "sameboy";  // greenfield host is SameBoy-only for now
@@ -43,7 +43,6 @@ SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
     else if (spec.savPath) out.sram = slurpAll(*spec.savPath);
     if (spec.stateBytes) out.savestate = *spec.stateBytes;
     else if (spec.statePath) out.savestate = slurpAll(*spec.statePath);
-    if (spec.lsdjSyncMode) out.settings.assign(spec.lsdjSyncMode->begin(), spec.lsdjSyncMode->end());
     return out;
 }
 
@@ -162,11 +161,6 @@ bool EngineRpcService::dspLoadKernel(std::vector<std::uint8_t> bytecode) {
 bool EngineRpcService::dspSetSystems(std::string json) {
     active_->setSystems(std::move(json));
     return true;
-}
-
-bool EngineRpcService::sendMidi(std::uint32_t id, std::vector<std::uint8_t> bytes) {
-    if (audioRunning_.load(std::memory_order_acquire)) return false;  // direct core mutation; quiescent only
-    return engine_.sendMidi(id, bytes);
 }
 
 bool EngineRpcService::pressButton(std::uint32_t id, std::uint32_t button, bool down) {

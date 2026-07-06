@@ -56,7 +56,6 @@ public:
     std::optional<rfl::Bytestring> compileScript(std::string source) { return engine_svc_.compileScript(std::move(source)); }
     bool dspLoadKernel(std::vector<std::uint8_t> bytecode) { return engine_svc_.dspLoadKernel(std::move(bytecode)); }
     bool dspSetSystems(std::string json) { return engine_svc_.dspSetSystems(std::move(json)); }
-    bool sendMidi(std::uint32_t id, std::vector<std::uint8_t> bytes) { return engine_svc_.sendMidi(id, std::move(bytes)); }
     bool pressButton(std::uint32_t id, std::uint32_t button, bool down) { return engine_svc_.pressButton(id, button, down); }
     rfl::Bytestring renderAudio(double ms) { return engine_svc_.renderAudio(ms); }
     bool setTransport(bool running) { return engine_svc_.setTransport(running); }

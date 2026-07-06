@@ -3,9 +3,9 @@
 // pushSerialIn(0xF8) — now authored as a plain TS role (dspRoles.ts) rather than an ad-hoc script.
 //
 // LSDj in SYNC=MIDI is a serial slave: a START press arms it ("wait for MIDI"), then the 0xF8 clock
-// advances it. The C++ sync role is forced Off so nothing but the kernel clocks it. The kernel drives
-// every system; we toggle THIS system's lsdj-sync mode: Off (0) leaves the armed LSDj frozen/SILENT,
-// MidiSync (1) makes it sing. Whole-mix RMS on a single system = that system's audio. In-TS RMS.
+// advances it. The core constructs bare (no C++ roles) so nothing but the kernel clocks it. The kernel
+// drives every system; we toggle THIS system's lsdj-sync mode: Off (0) leaves the armed LSDj
+// frozen/SILENT, MidiSync (1) makes it sing. Whole-mix RMS on a single system = that system's audio.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
@@ -53,7 +53,7 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
   const dsp = createDspRuntime();
   const audio = createAudioDriver();
 
-  // Real LSDj, authored SYNC=MIDI song, its C++ sync role forced Off so the kernel is the only clock.
+  // Real LSDj, authored SYNC=MIDI song, constructed bare (no C++ roles) so the kernel is the only clock.
   const sav = savFromJson(SYNC_MIDI_SONG);
   const id = be.constructSystem({
     romPath: LSDJ,
@@ -61,7 +61,6 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
     savPath: null,
     statePath: null,
     sramBytes: sav.slice().buffer, // fresh ArrayBuffer at offset 0
-    lsdjSyncMode: "Off",
   })!;
   expect(id != null).toBeTruthy();
 

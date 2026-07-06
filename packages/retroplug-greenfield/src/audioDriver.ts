@@ -18,8 +18,6 @@ function resolveSend(): RpcSend {
 }
 
 export interface AudioDriver {
-  /** Queue a MIDI message (1–4 raw bytes, e.g. [0x90, note, vel]) on one system. */
-  sendMidi(id: number, bytes: Uint8Array | number[]): boolean;
   /** Enqueue a button transition (button = GameboyButton value; down = press/release). A
    *  press then release around a short render is a tap. */
   pressButton(id: number, button: number, down: boolean): boolean;
@@ -67,7 +65,6 @@ export function createAudioDriver(): AudioDriver {
   const ints = (b: Uint8Array | number[]): number[] => Array.from(b);
 
   return {
-    sendMidi: (id, bytes) => call("sendMidi", id, ints(bytes)) as boolean,
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
     screenshot: (id, path) => call("screenshot", id, path) as boolean,
     renderAudio: (ms) => {

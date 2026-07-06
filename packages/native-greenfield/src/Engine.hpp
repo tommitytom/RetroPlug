@@ -45,7 +45,6 @@ public:
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);
     std::optional<std::vector<std::uint8_t>> readSram(SystemId id);
     bool screenshot(SystemId id, const std::string& path);
-    bool sendMidi(SystemId id, const std::vector<std::uint8_t>& bytes);
     bool pressButton(SystemId id, std::uint8_t button, bool down);
 
 private:

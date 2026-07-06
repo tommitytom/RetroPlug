@@ -39,8 +39,7 @@ public:
     bool dspLoadKernel(std::vector<std::uint8_t> bytecode);
     bool dspSetSystems(std::string json);
 
-    // --- audio render / MIDI drive / transport ---
-    bool            sendMidi(std::uint32_t id, std::vector<std::uint8_t> bytes);
+    // --- audio render / input drive / transport ---
     bool            pressButton(std::uint32_t id, std::uint32_t button, bool down);
     rfl::Bytestring renderAudio(double ms);
     bool            setTransport(bool running);

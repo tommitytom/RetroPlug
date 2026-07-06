@@ -5,7 +5,6 @@
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
-#include "transport/MidiTypes.hpp"  // ::MidiEvent
 
 #include "transport/FrameBufferTriple.hpp"
 #include "native/core/img/png/lodepng.h"
@@ -126,18 +125,6 @@ bool Engine::screenshot(SystemId id, const std::string& path) {
         rgb[i * 3 + 2] = src[i * 4 + 0]; // B
     }
     return lodepng_encode24_file(path.c_str(), rgb.data(), w, h) == 0;
-}
-
-bool Engine::sendMidi(SystemId id, const std::vector<std::uint8_t>& bytes) {
-    SystemBase* sys = project_.findSystem(id);
-    if (!sys) return false;
-    if (bytes.empty() || bytes.size() > ::MidiEvent::kDataSize) return false;
-    ::MidiEvent ev{};
-    ev.frame = 0;
-    ev.size = static_cast<std::uint32_t>(bytes.size());
-    for (std::size_t i = 0; i < bytes.size(); ++i) ev.data[i] = bytes[i];
-    sys->onMidi(&ev, 1);  // mGB's role forwards the bytes to serialIn_, drained in onProcess
-    return true;
 }
 
 bool Engine::pressButton(SystemId id, std::uint8_t button, bool down) {

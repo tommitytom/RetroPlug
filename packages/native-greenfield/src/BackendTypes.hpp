@@ -29,7 +29,4 @@ struct BackendConstructSpec {
     std::optional<std::uint32_t>             replaceId;
     std::optional<std::vector<std::uint8_t>> sramBytes;
     std::optional<std::vector<std::uint8_t>> stateBytes;
-    // Optional LSDJ sync-role mode ("Off" / "MidiSync" / …). When set, seeds the role at construct
-    // time (skipping the sniffer default). "Off" makes the role passive (no host clock).
-    std::optional<std::string>               lsdjSyncMode;
 };

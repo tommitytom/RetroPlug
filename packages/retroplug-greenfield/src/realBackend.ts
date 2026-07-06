@@ -55,7 +55,6 @@ export function createRealBackend(): Backend {
     if (spec.replaceId !== undefined) p.replaceId = spec.replaceId;
     if (spec.sramBytes) p.sramBytes = ints(new Uint8Array(spec.sramBytes));
     if (spec.stateBytes) p.stateBytes = ints(new Uint8Array(spec.stateBytes));
-    if (spec.lsdjSyncMode != null) p.lsdjSyncMode = spec.lsdjSyncMode;
     return p;
   };
   const idOrNull = (v: unknown): number | null => (v == null ? null : (v as number));

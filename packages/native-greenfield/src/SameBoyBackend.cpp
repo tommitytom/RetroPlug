@@ -2,14 +2,12 @@
 
 #include <fstream>
 #include <iterator>
-#include <stdexcept>
 #include <string>
 
 #include "EmbeddedRoms.hpp"
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
-#include "system/sameboy/roles/LsdjSyncRole.hpp"
 
 namespace {
 
@@ -21,27 +19,14 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
                                      std::istreambuf_iterator<char>());
 }
 
-// Parse an LSDJ sync-mode name into the role enum. Unknown names throw so a typo surfaces
-// rather than silently defaulting (mirrors the CLI harness).
-LsdjSyncMode parseLsdjSyncMode(const std::string& s) {
-    if (s == "Off")                return LsdjSyncMode::Off;
-    if (s == "MidiSync")           return LsdjSyncMode::MidiSync;
-    if (s == "MidiSyncArduinoboy") return LsdjSyncMode::MidiSyncArduinoboy;
-    if (s == "MidiMap")            return LsdjSyncMode::MidiMap;
-    if (s == "Keyboard")           return LsdjSyncMode::Keyboard;
-    if (s == "KeyboardMidi")       return LsdjSyncMode::KeyboardMidi;
-    if (s == "MidiPassthrough")    return LsdjSyncMode::MidiPassthrough;
-    if (s == "ArduinoboyMaster")   return LsdjSyncMode::ArduinoboyMaster;
-    throw std::runtime_error("constructSystem: unknown lsdjSyncMode: " + s);
-}
-
 } // namespace
 
 std::unique_ptr<SameBoySystem> SameBoyBackend::buildSameBoy(SystemId id, SameBoyConfig cfg,
                                                            std::vector<std::uint8_t> romBytes,
                                                            double sampleRate) {
     auto sys = std::make_unique<SameBoySystem>(id, std::move(cfg), std::move(romBytes));
-    sys->onActivate(sampleRate);  // boots gb_ + restores cfg.sram then cfg.savestate
+    sys->setSniffDefaultRoles(false);  // greenfield cores are bare — feature roles live in the TS kernel
+    sys->onActivate(sampleRate);       // boots gb_ + restores cfg.sram then cfg.savestate
     return sys;
 }
 
@@ -69,14 +54,8 @@ std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, const SystemBuild
     }
     cfg.sram = spec.sram;
     cfg.savestate = spec.savestate;
-    // Opaque per-backend settings: today just the optional LSDJ sync-role seed (a mode name),
-    // decoded only here. Empty = no seed, so onActivate's sniffer default applies. "Off" makes
-    // the role passive (no host clock) so a DSP script can be the sole clock.
-    if (!spec.settings.empty()) {
-        LsdjSyncConfig lsdj;
-        lsdj.mode = parseLsdjSyncMode(std::string(spec.settings.begin(), spec.settings.end()));
-        cfg.roles.emplace_back(lsdj);
-    }
-
+    // `spec.settings` (the opaque per-backend blob) is the seam for TS-owned SameBoy settings
+    // (model / highpass / fast-boot) — not yet wired, so model/fastBoot stay backend defaults and
+    // no roles are seeded. buildSameBoy activates the core bare.
     return buildSameBoy(id, std::move(cfg), std::move(romBytes), sampleRate);
 }

@@ -40,8 +40,7 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::compileScript>();
     server.template addMethod<&BackendFacade::dspLoadKernel>();
     server.template addMethod<&BackendFacade::dspSetSystems>();
-    // audio render / MIDI drive
-    server.template addMethod<&BackendFacade::sendMidi>();
+    // audio render / input drive
     server.template addMethod<&BackendFacade::pressButton>();
     server.template addMethod<&BackendFacade::renderAudio>();
     server.template addMethod<&BackendFacade::setTransport>();
