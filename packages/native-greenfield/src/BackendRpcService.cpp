@@ -11,15 +11,14 @@
 #include <system_error>
 #include <thread>
 
+#include "SameBoyBackend.hpp"
 #include "ScriptCompiler.hpp"
 #include "util/MinizZip.hpp"
 
 #include "EmbeddedRoms.hpp"
-#include "system/RomFormat.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
-#include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "transport/MidiTypes.hpp"
 
 #include "lsdj/SavSerialization.hpp"
@@ -190,77 +189,43 @@ rfl::Bytestring BackendRpcService::savFromJson(std::string json) {
 }
 
 // --- emulator lifecycle / reads --------------------------------------------
-// A real SameBoySystem (Game Boy) is built for every construct — the fold-in of the actual
-// core. SameBoy-only for now: a non-GB file-backed ROM is rejected. NES/GBA (Mesen) is a
-// later increment. Seed order matters: a live core restores SRAM/savestate INSIDE onActivate
-// from cfg.sram/cfg.savestate, so bytes go into the config BEFORE construct (loadSramBytes /
-// loadStateBytes no-op before gb_ exists).
+// Systems are built off the audio thread through the one SystemFactory path (SameBoyBackend for
+// now — a non-GB file-backed ROM is rejected; NES/GBA via Mesen is a later increment). The
+// audio thread only ever adopts the finished pointer.
 
 namespace {
 
-// Slurp a whole file into a byte vector (empty if unreadable). Used for the ROM + a seed .sav.
+// Slurp a whole file into a byte vector (empty if unreadable). Used for a seed .sav/state.
 std::vector<std::uint8_t> slurpAll(const std::string& path) {
     auto bytes = slurp(path, fileSizeOr(path, 0));
     return bytes ? std::move(*bytes) : std::vector<std::uint8_t>{};
 }
 
-// Parse an LSDJ sync-mode name into the role enum (mirrors cli parseLsdjSyncMode). Unknown
-// names throw so a typo surfaces rather than silently defaulting.
-LsdjSyncMode parseLsdjSyncMode(const std::string& s) {
-    if (s == "Off")                return LsdjSyncMode::Off;
-    if (s == "MidiSync")           return LsdjSyncMode::MidiSync;
-    if (s == "MidiSyncArduinoboy") return LsdjSyncMode::MidiSyncArduinoboy;
-    if (s == "MidiMap")            return LsdjSyncMode::MidiMap;
-    if (s == "Keyboard")           return LsdjSyncMode::Keyboard;
-    if (s == "KeyboardMidi")       return LsdjSyncMode::KeyboardMidi;
-    if (s == "MidiPassthrough")    return LsdjSyncMode::MidiPassthrough;
-    if (s == "ArduinoboyMaster")   return LsdjSyncMode::ArduinoboyMaster;
-    throw std::runtime_error("constructSystem: unknown lsdjSyncMode: " + s);
+// Map the wire construct spec to the backend-agnostic build spec: resolve the SRAM/savestate
+// seeds (zip-import bytes win, else the on-disk file, else empty) and carry the SameBoy-specific
+// LSDJ sync-role mode as the opaque settings blob the SameBoy backend decodes.
+SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
+    SystemBuildSpec out;
+    out.backendKind = "sameboy";  // greenfield host is SameBoy-only for now
+    out.romPath = spec.romPath;
+    out.embeddedRom = spec.embeddedRom;
+    if (spec.sramBytes) out.sram = *spec.sramBytes;
+    else if (spec.savPath) out.sram = slurpAll(*spec.savPath);
+    if (spec.stateBytes) out.savestate = *spec.stateBytes;
+    else if (spec.statePath) out.savestate = slurpAll(*spec.statePath);
+    if (spec.lsdjSyncMode) out.settings.assign(spec.lsdjSyncMode->begin(), spec.lsdjSyncMode->end());
+    return out;
 }
 
 } // namespace
 
 std::optional<std::uint32_t> BackendRpcService::constructSystem(BackendConstructSpec spec) {
-    std::vector<std::uint8_t> romBytes;
-    if (!spec.embeddedRom.empty()) {
-        // Embedded ROM: resolve the marker to baked bytes; the format is SameBoy by fiat.
-        const auto rom = rp::embeddedRom(spec.embeddedRom);
-        if (rom.empty()) return std::nullopt;  // unknown marker
-        romBytes.assign(rom.begin(), rom.end());
-    } else {
-        // File-backed: slurp the full ROM and sniff. SameBoy-only gate here.
-        romBytes = slurpAll(spec.romPath);
-        if (romBytes.empty() || detectRomFormat(romBytes) != RomFormat::SameBoy) return std::nullopt;
-    }
-
-    SameBoyConfig cfg;
-    cfg.romPath = spec.romPath;
-    cfg.model = SameBoyModel::CgbC;
-    cfg.fastBoot = true;
-    if (!spec.embeddedRom.empty()) {
-        cfg.embeddedRom = spec.embeddedRom;
-        cfg.embedRom = false;  // re-supplied from the marker on load; keeps saves small
-    }
-    // Seed SRAM: zip-import bytes win; else the on-disk .sav if present; else empty (cold boot).
-    if (spec.sramBytes) cfg.sram = *spec.sramBytes;
-    else if (spec.savPath) cfg.sram = slurpAll(*spec.savPath);
-    // Seed savestate: zip-import bytes, else the on-disk savestate if present.
-    if (spec.stateBytes) cfg.savestate = *spec.stateBytes;
-    else if (spec.statePath) cfg.savestate = slurpAll(*spec.statePath);
-    // Optional LSDJ sync-role mode: pre-seed the role so onActivate skips the sniffer default.
-    // "Off" makes the role passive — the C++ side emits no host clock (e.g. so a DSP script can
-    // be the sole clock).
-    if (spec.lsdjSyncMode) {
-        LsdjSyncConfig lsdj;
-        lsdj.mode = parseLsdjSyncMode(*spec.lsdjSyncMode);
-        cfg.roles.emplace_back(lsdj);
-    }
-
-    // Build + activate off the audio thread (heavy, non-RT) — nextSystemId only bumps nextId_, which
-    // the audio thread never touches, so id allocation is race-free even mid-run.
+    // Build + activate off the audio thread (heavy, non-RT) via the one factory path. nextSystemId
+    // only bumps nextId_, which the audio thread never touches, so id allocation is race-free even
+    // mid-run.
     const SystemId id = project_.nextSystemId();
-    auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(romBytes));
-    sys->onActivate(sampleRate_);  // boots gb_ + restores cfg.sram then cfg.savestate
+    auto sys = factory_.build(id, toBuildSpec(spec), sampleRate_);
+    if (!sys) return std::nullopt;  // unknown backend / unreadable or non-SameBoy ROM
 
     if (audioRunning_.load(std::memory_order_acquire)) {
         // The audio thread owns project_ — ship the raw pointer through the queue for an alloc-free
@@ -329,8 +294,7 @@ std::optional<std::uint32_t> BackendRpcService::reloadSystem(std::uint32_t id) {
     if (romBytes.empty()) return std::nullopt;
 
     const SystemId newId = project_.nextSystemId();
-    auto sys = std::make_unique<SameBoySystem>(newId, cfg, std::move(romBytes));
-    sys->onActivate(sampleRate_);
+    auto sys = SameBoyBackend::buildSameBoy(newId, std::move(cfg), std::move(romBytes), sampleRate_);
     project_.removeSystem(id);
     project_.adoptSystem(sys.release());
     project_.rebuildLinkGroups();
@@ -538,6 +502,8 @@ BackendRpcService::BackendRpcService() {
     // Pre-reserve so the audio thread's adoptSystem/swapSystem never reallocate systems_ (production
     // reserves the same way). 16 is plenty for the greenfield host's tests.
     project_.reserve(16);
+    // The one build path. SameBoy-only for now; a Mesen backend registers here later.
+    factory_.registerBackend("sameboy", std::make_unique<SameBoyBackend>());
 }
 
 BackendRpcService::~BackendRpcService() {

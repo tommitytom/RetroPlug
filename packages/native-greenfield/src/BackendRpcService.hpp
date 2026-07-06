@@ -15,6 +15,7 @@
 #include "DspCommand.hpp"
 #include "DspEvent.hpp"
 #include "DspRuntime.hpp"
+#include "SystemFactory.hpp"
 
 // The native side of the greenfield `Backend` (packages/retroplug-greenfield/src/backend.ts),
 // exposed to the TS app + tests over rpcpp (reflect-cpp -> QuickJS object codec, same shape
@@ -166,9 +167,10 @@ private:
     // blobs). Called after the audio thread is joined, so the queue is single-threaded again.
     void freePendingCommands();
 
-    Project    project_;
-    double     sampleRate_ = 44100.0;  // fixed; const-after-construction (safe cross-thread read)
-    DspRuntime dsp_;
+    Project       project_;
+    double        sampleRate_ = 44100.0;  // fixed; const-after-construction (safe cross-thread read)
+    DspRuntime    dsp_;
+    SystemFactory factory_;  // the one build path (control thread only); SameBoy backend registered in ctor
 
     // Simulated host transport. bpm_/transportPlaying_ are atomic — written by the control thread
     // (setBpm/setTransport), read by whichever render path is active. ppq_ is owned by the pull

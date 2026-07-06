@@ -10,6 +10,8 @@
 add_executable(native-greenfield-host
     src/main.cpp
     src/BackendRpcService.cpp
+    src/SystemFactory.cpp    # backend-agnostic build registry (the one build path)
+    src/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
     src/ScriptCompiler.cpp   # bare-QuickJS bytecode compiler (DSP-side JS runtime)
     src/DspRuntime.cpp       # second bare QuickJS context — runs translator scripts
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
