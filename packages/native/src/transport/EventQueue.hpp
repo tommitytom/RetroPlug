@@ -1,8 +1,8 @@
 #pragma once
 
-#include <atomic>
-#include <cstddef>
 #include <cstdint>
+
+#include "transport/SpscRing.hpp"
 
 class SystemBase;
 
@@ -61,37 +61,7 @@ struct Event {
     }
 };
 
-class EventQueue {
-public:
-    static constexpr std::size_t kCapacity = 256;
-    static_assert((kCapacity & (kCapacity - 1)) == 0,
-                  "kCapacity must be a power of two");
-
-    EventQueue() = default;
-    EventQueue(const EventQueue&)            = delete;
-    EventQueue& operator=(const EventQueue&) = delete;
-
-    bool tryPush(const Event& e) {
-        const std::size_t w = writeIdx.load(std::memory_order_relaxed);
-        const std::size_t next = (w + 1) & (kCapacity - 1);
-        if (next == readIdx.load(std::memory_order_acquire))
-            return false;
-        slots[w] = e;
-        writeIdx.store(next, std::memory_order_release);
-        return true;
-    }
-
-    bool tryPop(Event& out) {
-        const std::size_t r = readIdx.load(std::memory_order_relaxed);
-        if (r == writeIdx.load(std::memory_order_acquire))
-            return false;
-        out = slots[r];
-        readIdx.store((r + 1) & (kCapacity - 1), std::memory_order_release);
-        return true;
-    }
-
-private:
-    alignas(64) std::atomic<std::size_t> writeIdx{0};
-    alignas(64) std::atomic<std::size_t> readIdx{0};
-    Event slots[kCapacity]{};
-};
+// DSP thread → UI thread. A 256-entry SpscRing of POD Event records. An empty
+// derived class (not a `using` alias) so `class EventQueue;` forward
+// declarations elsewhere stay valid.
+class EventQueue : public SpscRing<Event, 256> {};
