@@ -37,6 +37,20 @@ if (!existsSync(HOST)) {
 
 const filter = process.argv[2];
 
+// Build the DSP role kernel once as a self-contained IIFE and inject its SOURCE into every test
+// (like __RESOURCES_DIR__ below). A test compiles+loads it into the native DSP runtime — the real
+// per-block program — instead of authoring an ad-hoc translator string.
+const DSP_KERNEL_BUNDLE = buildSync({
+  entryPoints: [join(PKG, "src/dspKernelBundle.ts")],
+  bundle: true,
+  format: "iife",
+  platform: "neutral",
+  mainFields: ["module", "main"],
+  target: "es2020",
+  write: false,
+  define: { "process.env.NODE_ENV": '"production"' },
+}).outputFiles[0].text;
+
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
@@ -82,6 +96,7 @@ for (const { file, slug } of tests) {
         "process.env.NODE_ENV": '"production"',
         __CONFIG_DIR__: JSON.stringify(cfgDir),
         __RESOURCES_DIR__: JSON.stringify(RESOURCES_DIR),
+        __DSP_KERNEL_BUNDLE__: JSON.stringify(DSP_KERNEL_BUNDLE),
       },
     });
   } catch (e) {

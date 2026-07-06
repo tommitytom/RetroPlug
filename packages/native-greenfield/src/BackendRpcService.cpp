@@ -372,10 +372,12 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
     scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
     scratchR_.resize(kBlockSize);
 
-    // Host MIDI staged for the DSP stage, consumed on the first block (nothing when detached).
+    // Host MIDI staged for the kernel, consumed on the first block (nothing when no kernel loaded).
     std::vector<DspRuntime::MidiIn> pending;
-    if (dspTarget_ != 0) { pending = std::move(pendingDspMidi_); pendingDspMidi_.clear(); }
-    static const std::vector<DspRuntime::MidiIn> kEmpty;
+    if (dspActive_) { pending = std::move(pendingMidiIn_); pendingMidiIn_.clear(); }
+    static const std::vector<DspRuntime::MidiIn>    kEmptyMidi;
+    static const std::vector<DspRuntime::ButtonIn>  kNoButtons;
+    static const std::vector<DspRuntime::KeyIn>     kNoKeys;
 
     const std::uint64_t total = static_cast<std::uint64_t>(ms * sampleRate_ / 1000.0);
     std::vector<float> out;
@@ -383,24 +385,22 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
 
-        // DSP stage: run the loaded translator over this block's MIDI and deliver its output to
-        // the attached system BEFORE onProcess (the role forwards it to serialIn_, drained this
-        // block). Runs every block — the faithful per-block model eachTick will use.
-        if (dspTarget_ != 0) {
-            if (SystemBase* t = project_.findSystem(dspTarget_)) {
-                const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transportPlaying_ };
-                for (const auto& ev : dsp_.runBlock(s == 0 ? pending : kEmpty, dInfo)) {
-                    if (ev.data.empty() || ev.data.size() > ::MidiEvent::kDataSize) continue;
-                    ::MidiEvent m{};
-                    m.frame = ev.frame;
-                    m.size = static_cast<std::uint32_t>(ev.data.size());
-                    for (std::size_t i = 0; i < ev.data.size(); ++i) m.data[i] = ev.data[i];
-                    t->onMidi(&m, 1);
-                }
-                // The pushSerialIn sink: feed the script's serial bytes straight into the
-                // system's serial input (the LSDj MidiSync path; identical to onMidi for mGB).
-                for (const auto& sv : dsp_.serialOut_) t->pushSerialIn(sv.byte);
-            }
+        // DSP stage: run the whole role kernel over this block and fan its SYSTEM-ADDRESSED sinks to
+        // the cores BEFORE onProcess (delivered this block). Built from ppq_/bpm_/transportPlaying_
+        // here, before the ppq advance below, so the kernel's walkTicks and the cores' AudioBlockInfo
+        // share the same block-start ppq. Runs every block whenever a kernel is loaded.
+        if (dspActive_) {
+            const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transportPlaying_ };
+            dsp_.processBlock(s == 0 ? pending : kEmptyMidi, kNoButtons, kNoKeys, dInfo);
+            // serial-in sink → the addressed system's serial FIFO (intra-block frame not yet honoured
+            // — a plain FIFO, as before). Host MIDI-out (midiOut_) has no destination in this cut.
+            for (const auto& sv : dsp_.serialIn_)
+                if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.byte);
+            // role-generated button presses → the addressed core (distinct from a host UI tap, which
+            // arrives via the pressButton RPC and is not fed back through the kernel).
+            for (const auto& bo : dsp_.buttonOut_)
+                if (SystemBase* t = project_.findSystem(bo.system))
+                    t->pressButton(static_cast<std::uint8_t>(bo.button), bo.down);
         }
 
         float* outs[2] = { scratchL_.data(), scratchR_.data() };
@@ -419,16 +419,9 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
     return rfl::Bytestring(p, p + out.size() * sizeof(float));
 }
 
-bool BackendRpcService::dspAttach(std::uint32_t systemId) {
-    if (systemId == 0) { dspTarget_ = 0; return true; }  // detach
-    if (!project_.findSystem(systemId)) return false;
-    dspTarget_ = systemId;
-    return true;
-}
-
-bool BackendRpcService::sendDspMidi(std::vector<std::uint8_t> bytes) {
+bool BackendRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
     if (bytes.empty() || bytes.size() > ::MidiEvent::kDataSize) return false;
-    pendingDspMidi_.push_back({ 0, std::move(bytes) });
+    pendingMidiIn_.push_back({ 0, std::move(bytes) });
     return true;
 }
 
@@ -451,24 +444,11 @@ std::optional<rfl::Bytestring> BackendRpcService::compileScript(std::string sour
     return toBytestring(*bytecode);
 }
 
-bool BackendRpcService::dspLoadScript(std::vector<std::uint8_t> bytecode) {
-    return dsp_.loadScript(bytecode);
+bool BackendRpcService::dspLoadKernel(std::vector<std::uint8_t> bytecode) {
+    dspActive_ = dsp_.loadKernel(bytecode);
+    return dspActive_;
 }
 
-bool BackendRpcService::dspSetConfig(std::vector<std::uint8_t> bytes) {
-    return dsp_.setConfig(bytes);
-}
-
-std::vector<DspMidiOut> BackendRpcService::dspRunBlock(std::vector<DspMidiIn> midi, DspBlockInfo block) {
-    std::vector<DspRuntime::MidiIn> in;
-    in.reserve(midi.size());
-    for (auto& m : midi) in.push_back({ m.frame, std::move(m.data) });
-
-    const DspRuntime::BlockInfo bi{ block.frames, block.sampleRate, block.tempo,
-                                    block.ppqPosBlockStart, block.transportPlaying };
-
-    std::vector<DspMidiOut> out;
-    for (auto& ev : dsp_.runBlock(in, bi))
-        out.push_back({ ev.frame, toBytestring(ev.data) });
-    return out;
+bool BackendRpcService::dspSetSystems(std::string json) {
+    return dsp_.setSystems(std::vector<std::uint8_t>(json.begin(), json.end()));
 }

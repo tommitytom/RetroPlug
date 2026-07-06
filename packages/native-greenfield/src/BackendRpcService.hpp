@@ -24,18 +24,6 @@
 struct BackendZipEntry { std::string name; rfl::Bytestring bytes; };            // unzip output
 struct BackendZipInput { std::string name; std::vector<std::uint8_t> bytes; };  // zip input
 
-// DSP-runtime wire DTOs (see plans/03-dsp-js-runtime.md). Per-block MIDI in/out + block info,
-// crossing the RPC as structured bytes (never a shared JS object). Byte fields follow the rfl
-// convention: input std::vector<std::uint8_t>, output rfl::Bytestring.
-struct DspMidiIn  { std::uint32_t frame; std::vector<std::uint8_t> data; };
-struct DspMidiOut { std::uint32_t frame; rfl::Bytestring data; };
-struct DspBlockInfo {
-    std::uint32_t frames           = 0;
-    double        sampleRate       = 44100.0;
-    double        tempo            = 120.0;
-    double        ppqPosBlockStart = 0.0;
-    bool          transportPlaying = false;
-};
 
 // Mirrors the greenfield ConstructSpec (packages/retroplug-greenfield/src/backend.ts):
 // concrete paths + an embedded-ROM marker + optional zip-import seed bytes. The optional
@@ -101,13 +89,13 @@ public:
     // published / encode failed). Lets a headless test see what the ROM is actually showing.
     bool screenshot(std::uint32_t id, std::string path);
 
-    // --- DSP-side JS runtime (a second, bare QuickJS context) ---
-    // Compile an ES5 translator to QuickJS bytecode (on a scratch context), then load / config
-    // / run it on the DSP context. The script + config cross as bytes; a JSValue never does.
+    // --- DSP-side JS runtime (a second, bare QuickJS context running the role kernel) ---
+    // Compile the kernel bundle to QuickJS bytecode (on a scratch context), load it onto the DSP
+    // context, then push the system structure. Bytecode + structure JSON cross as bytes; a JSValue
+    // never does. The per-block drive happens inside renderAudio, not over RPC.
     std::optional<rfl::Bytestring> compileScript(std::string source);   // nullopt on compile error
-    bool dspLoadScript(std::vector<std::uint8_t> bytecode);
-    bool dspSetConfig(std::vector<std::uint8_t> bytes);
-    std::vector<DspMidiOut> dspRunBlock(std::vector<DspMidiIn> midi, DspBlockInfo block);
+    bool dspLoadKernel(std::vector<std::uint8_t> bytecode);
+    bool dspSetSystems(std::string json);
 
     // --- audio render / MIDI drive (drive the real cores, capture their sound) ---
     // sendMidi queues a MIDI message on one system; renderAudio advances the block runner N ms
@@ -122,11 +110,9 @@ public:
     bool            setBpm(double bpm);
 
     // --- DSP runtime in the render loop ---
-    // Bind the loaded DSP script's output to a system (0 = detach); stage host MIDI for the
-    // DSP's next render. When a system is attached, renderAudio runs the DSP per block and
-    // delivers its emitMidiOut output to that system before onProcess.
-    bool dspAttach(std::uint32_t systemId);
-    bool sendDspMidi(std::vector<std::uint8_t> bytes);
+    // Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
+    // The kernel's midi-routing behaviour fans it to systems; with no routing role it reaches none.
+    bool stageMidiIn(std::vector<std::uint8_t> bytes);
 
 private:
     Project    project_;
@@ -141,7 +127,8 @@ private:
     std::vector<float> scratchL_;
     std::vector<float> scratchR_;
 
-    // DSP-in-render: the attached system (0 = none) + host MIDI staged for the DSP script.
-    std::uint32_t                   dspTarget_ = 0;
-    std::vector<DspRuntime::MidiIn> pendingDspMidi_;
+    // DSP-in-render: whether a kernel is loaded (drives whether the per-block DSP stage runs) +
+    // global host MIDI staged for the kernel (consumed on the first block of the next render).
+    bool                            dspActive_ = false;
+    std::vector<DspRuntime::MidiIn> pendingMidiIn_;
 };

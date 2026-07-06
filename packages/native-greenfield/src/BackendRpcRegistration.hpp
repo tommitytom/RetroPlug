@@ -35,11 +35,10 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendRpcService::readState>();
     server.template addMethod<&BackendRpcService::readSram>();
     server.template addMethod<&BackendRpcService::screenshot>();
-    // DSP-side JS runtime
+    // DSP-side JS runtime (the role kernel)
     server.template addMethod<&BackendRpcService::compileScript>();
-    server.template addMethod<&BackendRpcService::dspLoadScript>();
-    server.template addMethod<&BackendRpcService::dspSetConfig>();
-    server.template addMethod<&BackendRpcService::dspRunBlock>();
+    server.template addMethod<&BackendRpcService::dspLoadKernel>();
+    server.template addMethod<&BackendRpcService::dspSetSystems>();
     // audio render / MIDI drive
     server.template addMethod<&BackendRpcService::sendMidi>();
     server.template addMethod<&BackendRpcService::pressButton>();
@@ -47,7 +46,6 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendRpcService::setTransport>();
     server.template addMethod<&BackendRpcService::setBpm>();
     // DSP runtime in the render loop
-    server.template addMethod<&BackendRpcService::dspAttach>();
-    server.template addMethod<&BackendRpcService::sendDspMidi>();
+    server.template addMethod<&BackendRpcService::stageMidiIn>();
     server.addDiscoveryMethod();
 }

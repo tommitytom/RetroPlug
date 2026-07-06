@@ -8,62 +8,70 @@
 struct JSRuntime;
 struct JSContext;
 
-// The DSP-side JS runtime: a second, BARE QuickJS context (no txiki) that runs a translator
-// script per block, fed only by bytes. Proves the two-runtime byte seam from
-// packages/retroplug-greenfield/plans/03-dsp-js-runtime.md — the script crosses as bytecode,
-// config as bytes, and per-block I/O as structured bytes; a JSValue never crosses.
+// The DSP-side JS runtime: a second, BARE QuickJS context (no txiki) that runs the whole DSP role
+// KERNEL (packages/retroplug-greenfield/src/dspKernel.ts) per block, fed only by bytes. Native is a
+// dumb, role-agnostic runner: it loads the kernel as bytecode, pushes the system structure once,
+// hands it per-block input, and reads back SYSTEM-ADDRESSED output sinks — a JSValue never crosses.
 //
-// Config is a JSON string the script parses once into pre-allocated slots. Script-side ABI
-// bound onto the context global:
-//   - emitMidiOut(frame, [bytes])       — the MIDI output sink (collected into out_)
-//   - pushSerialIn(frame, byte)         — the serial-in sink (collected into serialOut_); the
-//                                         host delivers each byte to the attached system's serial
-//                                         input. The LSDj MidiSync clock is eachTick → pushSerialIn.
-//   - eachTick(resolution, callback)    — the doc-06 drift-exact PPQ iterator; calls
-//                                         callback(tickIndex, sampleOffset) for each `resolution`-
-//                                         PPQN tick in the block, so a script can emit a
-//                                         sample-accurate clock (PpqUtil::eachTick).
+// The kernel bundle defines two globals when evaluated:
+//   - setSystems(jsonString)   — the (rarely-changing) system + pipeline structure. Parsed once.
+//   - processBlock(input)      — run one block over that structure. `input` is the dynamic data.
+// and calls three bound C-function sink thunks as it runs (all system-addressed, so one context
+// drives every system):
+//   - pushSerialIn(system, frame, byte)          — serial-in sink → serialIn_
+//   - emitMidiOut(system, frame, [bytes])        — host MIDI-out sink → midiOut_
+//   - pressButton(system, frame, button, down)   — role-generated button sink → buttonOut_
+// Tick state (the drift-exact PPQ clock) lives ENTIRELY in the JS kernel now (walkTicks) — native
+// no longer owns a nextTick or an eachTick primitive.
+//
 // No audio thread, no RT queue yet — the per-block drive is a direct call (doc-03's first cut).
 class DspRuntime {
 public:
-    struct MidiIn   { std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
-    struct MidiOut  { std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
-    struct SerialOut { std::uint32_t frame = 0; std::uint8_t byte = 0; };
+    // --- per-block input (crosses into the JS `processBlock`) ---
+    struct MidiIn   { std::uint32_t frame = 0; std::vector<std::uint8_t> data; };  // global; routing assigns a system
+    struct ButtonIn { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint32_t button = 0; bool down = false; };
+    struct KeyIn    { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint32_t key = 0; bool down = false; };
     struct BlockInfo {
-        std::uint32_t frames          = 0;
-        double        sampleRate       = 44100.0;
-        double        tempo            = 120.0;
-        double        ppqPosBlockStart = 0.0;
-        bool          transportPlaying = false;
+        std::uint32_t frames     = 0;
+        double        sampleRate = 44100.0;
+        double        tempo      = 120.0;
+        double        ppqStart   = 0.0;
+        bool          transport  = false;
     };
+
+    // --- per-block output (the bound sinks fill these; the caller fans them to cores by system) ---
+    struct SerialIn  { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint8_t byte = 0; };
+    struct MidiOut   { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
+    struct ButtonOut { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint32_t button = 0; bool down = false; };
 
     DspRuntime();
     ~DspRuntime();
     DspRuntime(const DspRuntime&) = delete;
     DspRuntime& operator=(const DspRuntime&) = delete;
 
-    // Instantiate a script from QuickJS bytecode: JS_ReadObject + JS_EvalFunction runs the ES5
-    // global code (defining the `setConfig` / `onBlock` globals). Re-loading swaps behavior
-    // (hot-reload). Returns false on a read/eval exception.
-    bool loadScript(const std::vector<std::uint8_t>& bytecode);
+    // Instantiate the kernel from QuickJS bytecode: JS_ReadObject + JS_EvalFunction runs the ES5
+    // global code, which defines the `setSystems` / `processBlock` globals. Re-loading swaps the
+    // kernel (hot-reload). Returns false on a read/eval exception.
+    bool loadKernel(const std::vector<std::uint8_t>& bytecode);
 
-    // Hand the script a config blob (a JSON string in the first cut). Calls the global
-    // `setConfig`, which parses once and overwrites its pre-allocated slots. False if no
-    // script is loaded / no `setConfig` / it threw.
-    bool setConfig(const std::vector<std::uint8_t>& bytes);
+    // Push the system structure (a JSON string in the first cut): calls the global `setSystems`,
+    // which parses it once into the kernel. False if no kernel is loaded / no `setSystems` / it threw.
+    bool setSystems(const std::vector<std::uint8_t>& json);
 
-    // Run one block: build the JS input, call the global `onBlock`; the bound `emitMidiOut`
-    // sink fills the returned list. Empty when no script is loaded.
-    std::vector<MidiOut> runBlock(const std::vector<MidiIn>& midi, const BlockInfo& block);
+    // Run one block: build the JS input (block info + dynamic events), call the global `processBlock`;
+    // the bound sinks fill serialIn_/midiOut_/buttonOut_ (all cleared at the top of the call). A
+    // no-op (empty output) when no kernel is loaded.
+    void processBlock(const std::vector<MidiIn>& midi,
+                      const std::vector<ButtonIn>& buttons,
+                      const std::vector<KeyIn>& keys,
+                      const BlockInfo& block);
 
     // --- public for the bound C-function thunks only (the SameBoySystem idiom) ---
-    // The DspRuntime is the context opaque, so the emitMidiOut / pushSerialIn / eachTick thunks
-    // reach these. out_ and serialOut_ are both cleared at the top of each runBlock; the render
-    // loop reads out_ (via the return value) and serialOut_ (directly) after the call.
-    std::vector<MidiOut>   out_;               // per-block MIDI-out collector (emitMidiOut sink)
-    std::vector<SerialOut> serialOut_;         // per-block serial-in collector (pushSerialIn sink)
-    BlockInfo              curBlock_{};         // the block being processed (for eachTick)
-    std::int64_t           nextTick_ = 0;       // PPQ counter; persists across blocks (drift-free)
+    // The DspRuntime is the context opaque, so the sink thunks reach these. All three are cleared at
+    // the top of each processBlock; the caller reads them after the call and fans them to cores.
+    std::vector<SerialIn>  serialIn_;   // pushSerialIn sink
+    std::vector<MidiOut>   midiOut_;    // emitMidiOut sink
+    std::vector<ButtonOut> buttonOut_;  // pressButton sink
 
 private:
     JSRuntime* rt_     = nullptr;
