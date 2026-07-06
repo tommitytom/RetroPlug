@@ -20,6 +20,11 @@ function resolveSend(): RpcSend {
 export interface AudioDriver {
   /** Queue a MIDI message (1–4 raw bytes, e.g. [0x90, note, vel]) on one system. */
   sendMidi(id: number, bytes: Uint8Array | number[]): boolean;
+  /** Enqueue a button transition (button = GameboyButton value; down = press/release). A
+   *  press then release around a short render is a tap. */
+  pressButton(id: number, button: number, down: boolean): boolean;
+  /** Debug: write a system's latest framebuffer to `path` as an RGB24 PNG. */
+  screenshot(id: number, path: string): boolean;
   /** Advance the block runner `ms` and return the mixed stereo output, interleaved L,R,L,R…. */
   renderAudio(ms: number): Float32Array;
   setTransport(running: boolean): boolean;
@@ -47,6 +52,8 @@ export function createAudioDriver(): AudioDriver {
 
   return {
     sendMidi: (id, bytes) => call("sendMidi", id, ints(bytes)) as boolean,
+    pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
+    screenshot: (id, path) => call("screenshot", id, path) as boolean,
     renderAudio: (ms) => {
       const bytes = call("renderAudio", ms) as Uint8Array;
       // Raw interleaved f32; slice() copies to a fresh 4-byte-aligned ArrayBuffer at offset 0.

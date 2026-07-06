@@ -23,6 +23,8 @@ void registerBackendRpcMethods(Server& server) {
     // codec
     server.template addMethod<&BackendRpcService::zip>();
     server.template addMethod<&BackendRpcService::unzip>();
+    // LSDJ sav authoring
+    server.template addMethod<&BackendRpcService::savFromJson>();
     // emulator lifecycle / reads
     server.template addMethod<&BackendRpcService::constructSystem>();
     server.template addMethod<&BackendRpcService::duplicateSystem>();
@@ -32,6 +34,7 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendRpcService::applyRoleConfig>();
     server.template addMethod<&BackendRpcService::readState>();
     server.template addMethod<&BackendRpcService::readSram>();
+    server.template addMethod<&BackendRpcService::screenshot>();
     // DSP-side JS runtime
     server.template addMethod<&BackendRpcService::compileScript>();
     server.template addMethod<&BackendRpcService::dspLoadScript>();
@@ -39,6 +42,7 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendRpcService::dspRunBlock>();
     // audio render / MIDI drive
     server.template addMethod<&BackendRpcService::sendMidi>();
+    server.template addMethod<&BackendRpcService::pressButton>();
     server.template addMethod<&BackendRpcService::renderAudio>();
     server.template addMethod<&BackendRpcService::setTransport>();
     server.template addMethod<&BackendRpcService::setBpm>();

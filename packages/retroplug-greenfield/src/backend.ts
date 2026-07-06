@@ -181,4 +181,7 @@ export interface ConstructSpec {
   /** Zip-import only: the savestate bytes to boot from (from the archive). When set,
    *  native boots from these instead of reading `statePath`. */
   stateBytes?: ArrayBuffer;
+  /** Optional LSDJ sync-role mode ("Off" / "MidiSync" / …). When set, native seeds the role
+   *  at construct time (skipping the sniffer default); "Off" makes it emit no host clock. */
+  lsdjSyncMode?: string;
 }

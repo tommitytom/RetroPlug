@@ -48,6 +48,10 @@ struct BackendConstructSpec {
     std::optional<std::uint32_t>             replaceId;
     std::optional<std::vector<std::uint8_t>> sramBytes;
     std::optional<std::vector<std::uint8_t>> stateBytes;
+    // Optional LSDJ sync-role mode ("Off" / "MidiSync" / …). When set, seeds the
+    // role at construct time (skipping the sniffer default) — mirrors the CLI
+    // harness's loadRom. "Off" makes the role passive (no host clock).
+    std::optional<std::string>               lsdjSyncMode;
 };
 
 class BackendRpcService {
@@ -74,6 +78,11 @@ public:
     rfl::Bytestring zip(std::vector<BackendZipInput> entries);
     std::vector<BackendZipEntry> unzip(std::vector<std::uint8_t> bytes);
 
+    // --- LSDJ sav authoring (test/tooling) ---
+    // JSON (an rp::lsdj::model::Sav, lenient) -> encoded .sav bytes. Lets a test author
+    // song/sync state directly and boot LSDJ into it. Mirrors cli/HarnessRpcService::savFromJson.
+    rfl::Bytestring savFromJson(std::string json);
+
     // --- emulator lifecycle / reads (a real SameBoySystem in a real Project) ---
     // TS hands concrete paths only; native builds + tracks the system, returning its id
     // (nullopt on an unreadable ROM). The reads pull the pump's latest bytes by id.
@@ -88,6 +97,9 @@ public:
     bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config);
     std::optional<rfl::Bytestring> readState(std::uint32_t id);
     std::optional<rfl::Bytestring> readSram(std::uint32_t id);
+    // Debug: write a system's latest framebuffer to `path` as an RGB24 PNG (false if no frame
+    // published / encode failed). Lets a headless test see what the ROM is actually showing.
+    bool screenshot(std::uint32_t id, std::string path);
 
     // --- DSP-side JS runtime (a second, bare QuickJS context) ---
     // Compile an ES5 translator to QuickJS bytecode (on a scratch context), then load / config
@@ -102,6 +114,9 @@ public:
     // and returns the mixed stereo bus as interleaved f32 (L,R,L,R…). setTransport/setBpm feed
     // the AudioBlockInfo for transport-driven ROMs (mGB needs neither).
     bool            sendMidi(std::uint32_t id, std::vector<std::uint8_t> bytes);
+    // Enqueue a button transition on one system (button = GameboyButton value; down = press/release).
+    // Spread across the block inside the core; a press+release around a short render is a tap.
+    bool            pressButton(std::uint32_t id, std::uint32_t button, bool down);
     rfl::Bytestring renderAudio(double ms);
     bool            setTransport(bool running);
     bool            setBpm(double bpm);

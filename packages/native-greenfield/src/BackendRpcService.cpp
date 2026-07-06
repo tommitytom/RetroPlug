@@ -16,7 +16,14 @@
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
+#include "system/sameboy/roles/LsdjSyncRole.hpp"
 #include "transport/MidiTypes.hpp"
+
+#include "lsdj/SavSerialization.hpp"
+#include "lsdj/codec/SavCodec.hpp"
+
+#include "transport/FrameBufferTriple.hpp"
+#include "native/core/img/png/lodepng.h"
 
 namespace fs = std::filesystem;
 
@@ -159,6 +166,16 @@ std::vector<BackendZipEntry> BackendRpcService::unzip(std::vector<std::uint8_t> 
     return out;
 }
 
+// --- LSDJ sav authoring ----------------------------------------------------
+
+rfl::Bytestring BackendRpcService::savFromJson(std::string json) {
+    auto sav = rp::lsdj::savFromJsonFixture(json);  // lenient (DefaultIfMissing): author only set cells
+    if (!sav) throw std::runtime_error("savFromJson: " + sav.error().what());
+    const auto bytes = rp::lsdj::codec::encodeSav(sav.value());
+    const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
+    return rfl::Bytestring(p, p + bytes.size());
+}
+
 // --- emulator lifecycle / reads --------------------------------------------
 // A real SameBoySystem (Game Boy) is built for every construct — the fold-in of the actual
 // core. SameBoy-only for now: a non-GB file-backed ROM is rejected. NES/GBA (Mesen) is a
@@ -172,6 +189,20 @@ namespace {
 std::vector<std::uint8_t> slurpAll(const std::string& path) {
     auto bytes = slurp(path, fileSizeOr(path, 0));
     return bytes ? std::move(*bytes) : std::vector<std::uint8_t>{};
+}
+
+// Parse an LSDJ sync-mode name into the role enum (mirrors cli parseLsdjSyncMode). Unknown
+// names throw so a typo surfaces rather than silently defaulting.
+LsdjSyncMode parseLsdjSyncMode(const std::string& s) {
+    if (s == "Off")                return LsdjSyncMode::Off;
+    if (s == "MidiSync")           return LsdjSyncMode::MidiSync;
+    if (s == "MidiSyncArduinoboy") return LsdjSyncMode::MidiSyncArduinoboy;
+    if (s == "MidiMap")            return LsdjSyncMode::MidiMap;
+    if (s == "Keyboard")           return LsdjSyncMode::Keyboard;
+    if (s == "KeyboardMidi")       return LsdjSyncMode::KeyboardMidi;
+    if (s == "MidiPassthrough")    return LsdjSyncMode::MidiPassthrough;
+    if (s == "ArduinoboyMaster")   return LsdjSyncMode::ArduinoboyMaster;
+    throw std::runtime_error("constructSystem: unknown lsdjSyncMode: " + s);
 }
 
 } // namespace
@@ -203,6 +234,14 @@ std::optional<std::uint32_t> BackendRpcService::constructSystem(BackendConstruct
     // Seed savestate: zip-import bytes, else the on-disk savestate if present.
     if (spec.stateBytes) cfg.savestate = *spec.stateBytes;
     else if (spec.statePath) cfg.savestate = slurpAll(*spec.statePath);
+    // Optional LSDJ sync-role mode: pre-seed the role so onActivate skips the sniffer default.
+    // "Off" makes the role passive — the C++ side emits no host clock (e.g. so a DSP script can
+    // be the sole clock).
+    if (spec.lsdjSyncMode) {
+        LsdjSyncConfig lsdj;
+        lsdj.mode = parseLsdjSyncMode(*spec.lsdjSyncMode);
+        cfg.roles.emplace_back(lsdj);
+    }
 
     const SystemId id = project_.nextSystemId();
     auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(romBytes));
@@ -286,6 +325,27 @@ std::optional<rfl::Bytestring> BackendRpcService::readSram(std::uint32_t id) {
     return toBytestring(s->saveSramBytes());
 }
 
+bool BackendRpcService::screenshot(std::uint32_t id, std::string path) {
+    SystemBase* s = project_.findSystem(id);
+    if (!s) return false;
+    FrameBufferTriple* fb = s->framebuffer();
+    if (!fb) return false;
+    const std::uint32_t w = fb->width();
+    const std::uint32_t h = fb->height();
+    const std::size_t pixels = static_cast<std::size_t>(w) * h;
+    // FrameBufferTriple stores XRGB8888 (little-endian B,G,R,X) -> transcode to RGB24 for lodepng.
+    std::vector<std::uint32_t> xrgb(pixels);
+    if (!fb->readInto(xrgb.data(), static_cast<std::uint32_t>(pixels))) return false;
+    std::vector<unsigned char> rgb(pixels * 3);
+    const std::uint8_t* src = reinterpret_cast<const std::uint8_t*>(xrgb.data());
+    for (std::size_t i = 0; i < pixels; ++i) {
+        rgb[i * 3 + 0] = src[i * 4 + 2]; // R
+        rgb[i * 3 + 1] = src[i * 4 + 1]; // G
+        rgb[i * 3 + 2] = src[i * 4 + 0]; // B
+    }
+    return lodepng_encode24_file(path.c_str(), rgb.data(), w, h) == 0;
+}
+
 // --- audio render / MIDI drive ----------------------------------------------
 
 bool BackendRpcService::sendMidi(std::uint32_t id, std::vector<std::uint8_t> bytes) {
@@ -297,6 +357,13 @@ bool BackendRpcService::sendMidi(std::uint32_t id, std::vector<std::uint8_t> byt
     ev.size = static_cast<std::uint32_t>(bytes.size());
     for (std::size_t i = 0; i < bytes.size(); ++i) ev.data[i] = bytes[i];
     sys->onMidi(&ev, 1);  // mGB's role forwards the bytes to serialIn_, drained in onProcess
+    return true;
+}
+
+bool BackendRpcService::pressButton(std::uint32_t id, std::uint32_t button, bool down) {
+    SystemBase* sys = project_.findSystem(id);
+    if (!sys) return false;
+    sys->pressButton(static_cast<std::uint8_t>(button), down);  // spread across the block in onProcess
     return true;
 }
 

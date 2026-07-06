@@ -20,6 +20,10 @@ const REPO = resolve(PKG, "../..");
 const TEST_DIR = join(PKG, "test-native");
 const OUT_DIR = join(PKG, ".native-build");
 
+// The sibling resources dir (ROMs/manuals/…), overridable — mirrors the repo-wide convention.
+// Injected into the bundle so a test can locate real ROMs by absolute path (native slurps them).
+const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../resources");
+
 const HOST = process.env.RETROPLUG_GREENFIELD_HOST || join(REPO, "build/bin/native-greenfield-host");
 
 if (!existsSync(HOST)) {
@@ -77,6 +81,7 @@ for (const { file, slug } of tests) {
       define: {
         "process.env.NODE_ENV": '"production"',
         __CONFIG_DIR__: JSON.stringify(cfgDir),
+        __RESOURCES_DIR__: JSON.stringify(RESOURCES_DIR),
       },
     });
   } catch (e) {
