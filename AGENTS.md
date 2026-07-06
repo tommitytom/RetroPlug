@@ -190,14 +190,18 @@ order of preference:
      The triple-buffer seqlock has a documented benign suppression
      (`packages/native/test/sanitizer/tsan.supp`); the deliberately-racy `[MesenSingleton]`
      probes are excluded (see `porting/20-mesen-single-thread-runloop.md`).
-     `tools/run-greenfield-tsan.sh [slug]` (default `dsp-threaded`) is the
-     counterpart for the **greenfield** host: it builds `native-greenfield-host`
-     into the same `build-tsan/` and runs a native TS test with the instrumented
-     host (`RETROPLUG_GREENFIELD_HOST` + the same `tsan.supp`). Use it after
-     touching the greenfield audio thread / DSP-context seam (`BackendRpcService`'s
-     `audioLoop`, the `SpscRing<DspCommand>` command queue, the transport/captured
-     atomics). That seam is expected to need **no** new suppressions — a clean run
-     IS the proof the QuickJS DSP context is touched only by the audio thread.
+     `tools/run-greenfield-sanitizer.sh <thread|address> [slug]` is the counterpart
+     for the **greenfield** host: it builds `native-greenfield-host` into the same
+     `build-tsan/` / `build-asan/` and runs the audio-thread native tests with the
+     instrumented host (`RETROPLUG_GREENFIELD_HOST` + the same suppressions). Default
+     slugs are `dsp-threaded` + `dsp-lifecycle`. Use it after touching the greenfield
+     audio thread / DSP-context / core-lifecycle seam (`BackendRpcService`'s
+     `audioLoop`, the `SpscRing<DspCommand>` command queue + `SpscRing<DspEvent>`
+     release ring, the transport/captured atomics). `thread` proves the seam is
+     race-free; `address` proves the cross-thread `new`/`delete` ownership handoff
+     (add → adopt, remove → release → `drainReleased` delete) has no use-after-free
+     or leak. Both are expected to need **no** new suppressions — a clean run IS the
+     proof the QuickJS DSP context + cores are touched only by the audio thread.
 5. **Audio-quality check on a render** — `pnpm reaper:analyze-smoke`
    (runs `test/ts/gb/mgb.test.ts`, which writes `/tmp/cli-smoke.wav`) or
    `reaper-analyze-lsdj-sync` (runs `test/ts/gb/lsdj/sync_pattern.test.ts`,
