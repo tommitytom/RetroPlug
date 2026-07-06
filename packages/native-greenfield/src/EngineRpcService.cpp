@@ -34,9 +34,17 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
 // Map the wire construct spec to the backend-agnostic build spec: resolve the SRAM/savestate seeds
 // (zip-import bytes win, else the on-disk file, else empty) and carry the opaque `settings` blob
 // (the backend's "system"-role config JSON, decoded only by the matching backend) through unchanged.
+// The TS SystemKind → the backend-registry key (which core serves this kind — a native factory
+// decision). Unknown / absent kind falls back to SameBoy.
+std::string backendKindFor(const std::optional<std::string>& kind) {
+    if (kind == "nes") return "mesen-nes";
+    if (kind == "gba") return "mesen-gba";
+    return "sameboy";
+}
+
 SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
     SystemBuildSpec out;
-    out.backendKind = "sameboy";  // greenfield host is SameBoy-only for now
+    out.backendKind = backendKindFor(spec.kind);
     out.romPath = spec.romPath;
     out.embeddedRom = spec.embeddedRom;
     if (spec.sramBytes) out.sram = *spec.sramBytes;
@@ -87,6 +95,10 @@ std::optional<std::uint32_t> EngineRpcService::reloadSystem(std::uint32_t id) {
     if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
     SystemBase* old = engine_.findSystem(id);
     if (!old) return std::nullopt;
+    // SameBoy-only: the rebuild below reads SameBoyConfig. NES/GBA reload needs a backend-agnostic
+    // rebuild (deferred) — refuse rather than downcast a Mesen core (UB). The store treats null as
+    // "not reloaded".
+    if (old->kind() != SystemKind::SameBoy) return std::nullopt;
 
     // Rebuild the ROM from disk (or the embedded marker), carrying the live SRAM forward and
     // dropping the savestate — a genuine reload, swapped in place with a fresh id.

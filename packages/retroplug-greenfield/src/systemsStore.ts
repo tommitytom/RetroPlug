@@ -273,6 +273,7 @@ export class SystemsStore {
     const systemRole = config.roles?.find((r) => r.kind === kind);
     const id = this.backend.constructSystem({
       romPath,
+      kind,
       embeddedRom,
       savPath,
       statePath: null,
@@ -326,7 +327,7 @@ export class SystemsStore {
       this.backend.canonicalize(p),
     );
     const savPath = embeddedRom ? null : resolveSavPath(romPath, suffix, override);
-    const id = this.backend.constructSystem({ romPath, embeddedRom, savPath, statePath: null, replaceId });
+    const id = this.backend.constructSystem({ romPath, kind, embeddedRom, savPath, statePath: null, replaceId });
     if (id === null) return null;
     return {
       id,

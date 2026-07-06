@@ -57,6 +57,7 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
   const sav = savFromJson(SYNC_MIDI_SONG);
   const id = be.constructSystem({
     romPath: LSDJ,
+    kind: "sameboy",
     embeddedRom: "",
     savPath: null,
     statePath: null,

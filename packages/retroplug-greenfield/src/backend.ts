@@ -17,6 +17,8 @@
 // OS/emulator to do something TS can't. If a thing can be done in pure TS, it
 // belongs in the application layer, not here.
 
+import type { SystemKind } from "./systemsList";
+
 export interface Backend {
   // --- Filesystem ---------------------------------------------------------
 
@@ -164,6 +166,9 @@ export interface FileBrowserOpts {
 export interface ConstructSpec {
   /** The ROM file to slurp; `""` when an embedded ROM is used instead. */
   romPath: string;
+  /** The classified emulator kind — picks the native backend (SameBoy / Mesen NES / Mesen GBA).
+   *  TS classifies the ROM (romFormat.ts); native maps this to its backend registry key. */
+  kind: SystemKind;
   /** A binary-baked ROM marker (e.g. `"mgb"`); `""` for a file-backed ROM. */
   embeddedRom: string;
   /** Exact battery file: SRAM is loaded from it and auto-saved to it. `null` = fresh. */
