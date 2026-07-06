@@ -32,8 +32,8 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
 }
 
 // Map the wire construct spec to the backend-agnostic build spec: resolve the SRAM/savestate seeds
-// (zip-import bytes win, else the on-disk file, else empty). The opaque `settings` blob stays empty
-// for now — cores construct bare (feature roles are TS kernel behaviours, not native config).
+// (zip-import bytes win, else the on-disk file, else empty) and carry the opaque `settings` blob
+// (the backend's "system"-role config JSON, decoded only by the matching backend) through unchanged.
 SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
     SystemBuildSpec out;
     out.backendKind = "sameboy";  // greenfield host is SameBoy-only for now
@@ -43,6 +43,7 @@ SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
     else if (spec.savPath) out.sram = slurpAll(*spec.savPath);
     if (spec.stateBytes) out.savestate = *spec.stateBytes;
     else if (spec.statePath) out.savestate = slurpAll(*spec.statePath);
+    if (spec.settings) out.settings.assign(spec.settings->begin(), spec.settings->end());
     return out;
 }
 

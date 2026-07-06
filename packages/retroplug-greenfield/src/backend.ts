@@ -181,4 +181,9 @@ export interface ConstructSpec {
   /** Zip-import only: the savestate bytes to boot from (from the archive). When set,
    *  native boots from these instead of reading `statePath`. */
   stateBytes?: ArrayBuffer;
+  /** The system's backend ("system"-role) config as JSON, so a loaded non-default setting
+   *  (SameBoy model/highpass/…) is applied at CONSTRUCT rather than via a post-build restart
+   *  that would nuke the just-restored savestate. Omitted for a fresh build (backend defaults
+   *  match the role-schema defaults). */
+  settings?: string;
 }

@@ -267,6 +267,10 @@ export class SystemsStore {
       kind = fmt;
     }
     const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
+    // The backend "system" role (kind === backend kind) carries the emulator config; pass it as the
+    // construct-time settings blob so a loaded non-default model/highpass is applied AT build, not via
+    // a post-construct restart that would nuke the just-restored savestate.
+    const systemRole = config.roles?.find((r) => r.kind === kind);
     const id = this.backend.constructSystem({
       romPath,
       embeddedRom,
@@ -274,6 +278,7 @@ export class SystemsStore {
       statePath: null,
       sramBytes: blobs?.sramBytes,
       stateBytes: blobs?.stateBytes,
+      settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
     });
     if (id === null) return null;
     // Stored settings/roles win; a config that omits them re-attaches defaults.

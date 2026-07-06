@@ -53,16 +53,22 @@ std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, const SystemBuild
 
     SameBoyConfig cfg;
     cfg.romPath = spec.romPath;
-    cfg.model = SameBoyModel::CgbC;
-    cfg.fastBoot = true;
     if (!spec.embeddedRom.empty()) {
         cfg.embeddedRom = spec.embeddedRom;
         cfg.embedRom = false;  // re-supplied from the marker on load; keeps saves small
     }
     cfg.sram = spec.sram;
     cfg.savestate = spec.savestate;
-    // `spec.settings` (the opaque per-backend blob) is the seam for TS-owned SameBoy settings
-    // (model / highpass / fast-boot) — not yet wired, so model/fastBoot stay backend defaults and
-    // no roles are seeded. buildSameBoy activates the core bare.
+    // TS-owned SameBoy settings: the "sameboy" role config crosses in the opaque `settings` blob so a
+    // loaded non-default model/highpass is applied AT construct (no post-build restart that would nuke
+    // the just-restored savestate). A fresh build sends no blob → these stay the role-schema defaults
+    // (model CgbC / highpass Accurate / fastBoot true), which are the SameBoyConfig struct defaults.
+    const std::string settings(spec.settings.begin(), spec.settings.end());
+    const SameBoyRoleConfig role =
+        settings.empty() ? SameBoyRoleConfig{} : decodeSameBoyRoleConfig(settings);
+    cfg.model = static_cast<SameBoyModel>(role.model);
+    cfg.highpass = static_cast<SameBoyHighpass>(role.highpass);
+    cfg.linkGroupId = static_cast<std::uint8_t>(role.linkGroupId);
+    cfg.fastBoot = role.fastBoot;
     return buildSameBoy(id, std::move(cfg), std::move(romBytes), sampleRate);
 }
