@@ -1,14 +1,18 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <rfl/Bytestring.hpp>
 
 #include "project/Project.hpp"
+#include "transport/SpscRing.hpp"
 
+#include "DspCommand.hpp"
 #include "DspRuntime.hpp"
 
 // The native side of the greenfield `Backend` (packages/retroplug-greenfield/src/backend.ts),
@@ -23,6 +27,10 @@
 // (reflect-cpp's binary reader is int-array-only). Zip entry DTOs mirror the harness.
 struct BackendZipEntry { std::string name; rfl::Bytestring bytes; };            // unzip output
 struct BackendZipInput { std::string name; std::vector<std::uint8_t> bytes; };  // zip input
+
+// Monotonic audio-capture snapshot published by the background audio thread (energy = sum of
+// squared samples, frames = total). A control-thread reader diffs two snapshots for a windowed RMS.
+struct AudioCaptured { double energy; std::uint64_t frames; };
 
 
 // Mirrors the greenfield ConstructSpec (packages/retroplug-greenfield/src/backend.ts):
@@ -45,6 +53,9 @@ struct BackendConstructSpec {
 class BackendRpcService {
 public:
     BackendRpcService() = default;
+    ~BackendRpcService();
+    BackendRpcService(const BackendRpcService&)            = delete;
+    BackendRpcService& operator=(const BackendRpcService&) = delete;
 
     // --- filesystem ---
     std::optional<rfl::Bytestring> readFile(std::string path);
@@ -112,23 +123,56 @@ public:
     // --- DSP runtime in the render loop ---
     // Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
     // The kernel's midi-routing behaviour fans it to systems; with no routing role it reaches none.
+    // While the background audio thread runs it enqueues a command; otherwise it stages directly.
     bool stageMidiIn(std::vector<std::uint8_t> bytes);
 
+    // --- background audio thread (threaded mode) ---
+    // startAudio spawns a real audio thread that free-runs the render loop (drain commands ->
+    // processBlock -> fan sinks -> onProcess -> publish energy); the control thread then edits the
+    // DSP structure concurrently via the command queue + transport atomics. stopAudio joins it.
+    // sleepMs blocks the control thread so the audio thread accumulates a real window; audioCaptured
+    // reads the published energy/frames (diff two snapshots for a windowed RMS). This is the model
+    // a DAW audio callback imposes, made testable headlessly — see plans + AGENTS sanitizer bullet.
+    // While the audio thread runs, the control thread must NOT touch project_/dsp_ directly
+    // (construct systems + load the kernel BEFORE startAudio; read state AFTER stopAudio).
+    bool          startAudio();
+    bool          stopAudio();
+    AudioCaptured audioCaptured();
+    bool          sleepMs(double ms);
+
 private:
+    // Render one block: run the kernel (if active) + fan its sinks to cores, then advance all cores
+    // one block and `ppq`. Shared by the synchronous renderAudio pull and the audio thread's loop.
+    void renderBlock(std::uint32_t frames, double bpm, bool transport, double& ppq,
+                     const std::vector<DspRuntime::MidiIn>& midi, float* outL, float* outR);
+    void audioLoop();  // the background audio thread body
+    // Apply one drained command to dsp_ (freeing its heap payload); StageMidi appends to `pending`.
+    void applyDspCommand(const DspCommand& cmd, std::vector<DspRuntime::MidiIn>& pending);
+
     Project    project_;
-    double     sampleRate_ = 44100.0;
+    double     sampleRate_ = 44100.0;  // fixed; const-after-construction (safe cross-thread read)
     DspRuntime dsp_;
 
-    // Audio-render scratch + simulated host transport (mirrors TestHarnessImpl).
+    // Simulated host transport. bpm_/transportPlaying_ are atomic — written by the control thread
+    // (setBpm/setTransport), read by whichever render path is active. ppq_ is owned by the pull
+    // path; the audio thread keeps its own local.
     static constexpr std::uint32_t kBlockSize = 1024;
-    double             bpm_              = 120.0;
-    bool               transportPlaying_ = false;
-    double             ppq_              = 0.0;
-    std::vector<float> scratchL_;
-    std::vector<float> scratchR_;
+    std::atomic<double> bpm_{120.0};
+    std::atomic<bool>   transportPlaying_{false};
+    double              ppq_ = 0.0;
+    std::vector<float>  scratchL_;
+    std::vector<float>  scratchR_;
 
     // DSP-in-render: whether a kernel is loaded (drives whether the per-block DSP stage runs) +
-    // global host MIDI staged for the kernel (consumed on the first block of the next render).
+    // global host MIDI staged for the pull path (the audio thread stages into a local instead).
     bool                            dspActive_ = false;
     std::vector<DspRuntime::MidiIn> pendingMidiIn_;
+
+    // Background audio thread + its lock-free control channel. dspCommands_ carries structure edits
+    // control -> audio; capturedEnergy_/Frames_ publish audio -> control (monotonic, store/load).
+    std::thread                 audioThread_;
+    std::atomic<bool>           audioRunning_{false};
+    SpscRing<DspCommand, 256>   dspCommands_;
+    std::atomic<double>         capturedEnergy_{0.0};
+    std::atomic<std::uint64_t>  capturedFrames_{0};
 };

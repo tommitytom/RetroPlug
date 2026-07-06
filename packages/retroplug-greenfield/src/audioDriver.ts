@@ -32,6 +32,18 @@ export interface AudioDriver {
   /** Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
    *  The kernel's midi-routing behaviour fans it to systems; with no routing role it reaches none. */
   stageMidiIn(bytes: Uint8Array | number[]): boolean;
+
+  // --- background audio thread (threaded mode) ---
+  /** Spawn a real audio thread that free-runs the render loop; DSP-structure edits sent while it
+   *  runs (setSystems/loadKernel/stageMidiIn) cross via a lock-free queue applied on that thread.
+   *  Construct systems + load the kernel BEFORE this; read core state only AFTER stopAudio. */
+  startAudio(): boolean;
+  /** Stop and join the audio thread. */
+  stopAudio(): boolean;
+  /** Block the caller `ms` so the audio thread accumulates a real window (it keeps running). */
+  sleepMs(ms: number): boolean;
+  /** Monotonic capture snapshot; diff two of these for a windowed RMS = sqrt(Δenergy / Δframes). */
+  audioCaptured(): { energy: number; frames: number };
 }
 
 /** Build an audio driver backed by the native host. Throws if no RPC surface is bound. */
@@ -60,5 +72,9 @@ export function createAudioDriver(): AudioDriver {
     setTransport: (running) => call("setTransport", running) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
     stageMidiIn: (bytes) => call("stageMidiIn", ints(bytes)) as boolean,
+    startAudio: () => call("startAudio") as boolean,
+    stopAudio: () => call("stopAudio") as boolean,
+    sleepMs: (ms) => call("sleepMs", ms) as boolean,
+    audioCaptured: () => call("audioCaptured") as { energy: number; frames: number },
   };
 }

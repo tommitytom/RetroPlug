@@ -1,12 +1,14 @@
 #include "BackendRpcService.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <system_error>
+#include <thread>
 
 #include "ScriptCompiler.hpp"
 #include "util/MinizZip.hpp"
@@ -53,6 +55,16 @@ rfl::Bytestring toBytestring(const std::vector<std::uint8_t>& v) {
     const auto* p = reinterpret_cast<const std::byte*>(v.data());
     return rfl::Bytestring(p, p + v.size());
 }
+
+// Read-only empties the kernel's per-block inputs default to (const, so safe to read from either
+// render thread). The greenfield host doesn't yet feed the kernel per-block buttons/keys.
+const std::vector<DspRuntime::MidiIn>   kEmptyMidi;
+const std::vector<DspRuntime::ButtonIn> kNoButtons;
+const std::vector<DspRuntime::KeyIn>    kNoKeys;
+
+// Per-block sleep on the background audio thread: runs faster than real time (so a short sleepMs
+// window yields plenty of audio) while yielding the core rather than busy-spinning.
+constexpr auto kAudioBlockPace = std::chrono::microseconds(200);
 
 // Read a file's bytes (or the first `maxBytes`), or nullopt when it can't be opened.
 std::optional<std::vector<std::uint8_t>> slurp(const std::string& path, std::size_t maxBytes) {
@@ -367,6 +379,33 @@ bool BackendRpcService::pressButton(std::uint32_t id, std::uint32_t button, bool
     return true;
 }
 
+// Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
+// (delivered this block); `dInfo`/`AudioBlockInfo` are both built at the block-start `ppq`, and
+// `ppq` advances only after — so the kernel's walkTicks and the cores see the same block-start ppq.
+void BackendRpcService::renderBlock(std::uint32_t frames, double bpm, bool transport, double& ppq,
+                                    const std::vector<DspRuntime::MidiIn>& midi, float* outL, float* outR) {
+    if (dspActive_) {
+        const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm, ppq, transport };
+        dsp_.processBlock(midi, kNoButtons, kNoKeys, dInfo);
+        // serial-in sink → the addressed system's serial FIFO (intra-block frame not yet honoured —
+        // a plain FIFO). Host MIDI-out (midiOut_) has no destination in this cut.
+        for (const auto& sv : dsp_.serialIn_)
+            if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.byte);
+        // role-generated button presses → the addressed core (distinct from a host UI tap, which
+        // arrives via the pressButton RPC and is not fed back through the kernel).
+        for (const auto& bo : dsp_.buttonOut_)
+            if (SystemBase* t = project_.findSystem(bo.system))
+                t->pressButton(static_cast<std::uint8_t>(bo.button), bo.down);
+    }
+    std::fill_n(outL, frames, 0.0f);  // cores mix additively → zero each block
+    std::fill_n(outR, frames, 0.0f);
+    float* outs[2] = { outL, outR };
+    AudioBlockInfo info{ frames, sampleRate_, bpm, ppq, transport };
+    project_.onProcess(info, outs);
+    if (transport)
+        ppq += (bpm / 60.0) * (static_cast<double>(frames) / sampleRate_);
+}
+
 rfl::Bytestring BackendRpcService::renderAudio(double ms) {
     if (ms <= 0.0) return {};
     scratchL_.resize(kBlockSize);  // idempotent — no per-call realloc after the first
@@ -375,64 +414,46 @@ rfl::Bytestring BackendRpcService::renderAudio(double ms) {
     // Host MIDI staged for the kernel, consumed on the first block (nothing when no kernel loaded).
     std::vector<DspRuntime::MidiIn> pending;
     if (dspActive_) { pending = std::move(pendingMidiIn_); pendingMidiIn_.clear(); }
-    static const std::vector<DspRuntime::MidiIn>    kEmptyMidi;
-    static const std::vector<DspRuntime::ButtonIn>  kNoButtons;
-    static const std::vector<DspRuntime::KeyIn>     kNoKeys;
 
+    const double bpm = bpm_.load(std::memory_order_relaxed);
+    const bool   transport = transportPlaying_.load(std::memory_order_relaxed);
     const std::uint64_t total = static_cast<std::uint64_t>(ms * sampleRate_ / 1000.0);
     std::vector<float> out;
     out.reserve(total * 2);
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
-
-        // DSP stage: run the whole role kernel over this block and fan its SYSTEM-ADDRESSED sinks to
-        // the cores BEFORE onProcess (delivered this block). Built from ppq_/bpm_/transportPlaying_
-        // here, before the ppq advance below, so the kernel's walkTicks and the cores' AudioBlockInfo
-        // share the same block-start ppq. Runs every block whenever a kernel is loaded.
-        if (dspActive_) {
-            const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transportPlaying_ };
-            dsp_.processBlock(s == 0 ? pending : kEmptyMidi, kNoButtons, kNoKeys, dInfo);
-            // serial-in sink → the addressed system's serial FIFO (intra-block frame not yet honoured
-            // — a plain FIFO, as before). Host MIDI-out (midiOut_) has no destination in this cut.
-            for (const auto& sv : dsp_.serialIn_)
-                if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.byte);
-            // role-generated button presses → the addressed core (distinct from a host UI tap, which
-            // arrives via the pressButton RPC and is not fed back through the kernel).
-            for (const auto& bo : dsp_.buttonOut_)
-                if (SystemBase* t = project_.findSystem(bo.system))
-                    t->pressButton(static_cast<std::uint8_t>(bo.button), bo.down);
-        }
-
-        float* outs[2] = { scratchL_.data(), scratchR_.data() };
-        std::fill_n(scratchL_.data(), frames, 0.0f);  // cores mix additively → zero each block
-        std::fill_n(scratchR_.data(), frames, 0.0f);
-        AudioBlockInfo info{ frames, sampleRate_, bpm_, ppq_, transportPlaying_ };
-        project_.onProcess(info, outs);
+        renderBlock(frames, bpm, transport, ppq_, s == 0 ? pending : kEmptyMidi,
+                    scratchL_.data(), scratchR_.data());
         for (std::uint32_t f = 0; f < frames; ++f) {
             out.push_back(scratchL_[f]);  // interleave L,R,L,R…
             out.push_back(scratchR_[f]);
         }
-        if (transportPlaying_)
-            ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
     }
     const auto* p = reinterpret_cast<const std::byte*>(out.data());
     return rfl::Bytestring(p, p + out.size() * sizeof(float));
 }
 
 bool BackendRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
-    if (bytes.empty() || bytes.size() > ::MidiEvent::kDataSize) return false;
+    if (bytes.empty() || bytes.size() > 4) return false;  // a MIDI message fits in 4 bytes
+    if (audioRunning_.load(std::memory_order_acquire)) {
+        DspCommand c;
+        c.kind = DspCommand::Kind::StageMidi;
+        c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());
+        for (std::size_t i = 0; i < bytes.size(); ++i) c.stageMidi.data[i] = bytes[i];
+        return dspCommands_.tryPush(c);
+    }
     pendingMidiIn_.push_back({ 0, std::move(bytes) });
     return true;
 }
 
 bool BackendRpcService::setTransport(bool running) {
-    transportPlaying_ = running;
+    transportPlaying_.store(running, std::memory_order_relaxed);
     return true;
 }
 
 bool BackendRpcService::setBpm(double bpm) {
     if (bpm <= 0.0) return false;
-    bpm_ = bpm;
+    bpm_.store(bpm, std::memory_order_relaxed);
     return true;
 }
 
@@ -445,10 +466,113 @@ std::optional<rfl::Bytestring> BackendRpcService::compileScript(std::string sour
 }
 
 bool BackendRpcService::dspLoadKernel(std::vector<std::uint8_t> bytecode) {
+    if (audioRunning_.load(std::memory_order_acquire)) {
+        DspCommand c;
+        c.kind = DspCommand::Kind::LoadKernel;
+        c.loadKernel.bytecode = new std::vector<std::uint8_t>(std::move(bytecode));
+        if (!dspCommands_.tryPush(c)) { delete c.loadKernel.bytecode; return false; }
+        return true;  // applied on the audio thread; dspActive_ is set there
+    }
     dspActive_ = dsp_.loadKernel(bytecode);
     return dspActive_;
 }
 
 bool BackendRpcService::dspSetSystems(std::string json) {
+    if (audioRunning_.load(std::memory_order_acquire)) {
+        DspCommand c;
+        c.kind = DspCommand::Kind::SetSystems;
+        c.setSystems.json = new std::string(std::move(json));
+        if (!dspCommands_.tryPush(c)) { delete c.setSystems.json; return false; }
+        return true;
+    }
     return dsp_.setSystems(std::vector<std::uint8_t>(json.begin(), json.end()));
+}
+
+// --- background audio thread ------------------------------------------------
+
+BackendRpcService::~BackendRpcService() {
+    if (audioRunning_.load(std::memory_order_acquire)) {
+        audioRunning_.store(false, std::memory_order_release);
+        if (audioThread_.joinable()) audioThread_.join();
+    }
+}
+
+void BackendRpcService::applyDspCommand(const DspCommand& cmd, std::vector<DspRuntime::MidiIn>& pending) {
+    switch (cmd.kind) {
+        case DspCommand::Kind::SetSystems:
+            dsp_.setSystems(std::vector<std::uint8_t>(cmd.setSystems.json->begin(), cmd.setSystems.json->end()));
+            delete cmd.setSystems.json;  // owning payload — free on the audio thread (rare structural op)
+            break;
+        case DspCommand::Kind::LoadKernel:
+            dspActive_ = dsp_.loadKernel(*cmd.loadKernel.bytecode);
+            delete cmd.loadKernel.bytecode;
+            break;
+        case DspCommand::Kind::StageMidi:
+            pending.push_back({ 0, std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len) });
+            break;
+        default:
+            break;
+    }
+}
+
+void BackendRpcService::audioLoop() {
+    // All of these are audio-thread-local: the control thread reaches the loop only through the
+    // command queue (dspCommands_), the transport atomics, and audioRunning_.
+    std::vector<float> l(kBlockSize), r(kBlockSize);
+    std::vector<DspRuntime::MidiIn> pending;
+    double ppq = 0.0;
+    double energy = 0.0;
+    std::uint64_t frames = 0;
+
+    while (audioRunning_.load(std::memory_order_acquire)) {
+        DspCommand cmd;
+        while (dspCommands_.tryPop(cmd)) applyDspCommand(cmd, pending);
+
+        const double bpm = bpm_.load(std::memory_order_relaxed);
+        const bool   transport = transportPlaying_.load(std::memory_order_relaxed);
+        renderBlock(kBlockSize, bpm, transport, ppq, pending, l.data(), r.data());
+        pending.clear();  // staged MIDI consumed this block
+
+        for (std::uint32_t f = 0; f < kBlockSize; ++f)
+            energy += static_cast<double>(l[f]) * l[f] + static_cast<double>(r[f]) * r[f];
+        frames += kBlockSize;
+        capturedEnergy_.store(energy, std::memory_order_release);
+        capturedFrames_.store(frames, std::memory_order_release);
+
+        std::this_thread::sleep_for(kAudioBlockPace);
+    }
+}
+
+bool BackendRpcService::startAudio() {
+    if (audioRunning_.load(std::memory_order_acquire)) return false;  // already running
+    capturedEnergy_.store(0.0, std::memory_order_relaxed);
+    capturedFrames_.store(0, std::memory_order_relaxed);
+    audioRunning_.store(true, std::memory_order_release);
+    audioThread_ = std::thread([this] { audioLoop(); });
+    return true;
+}
+
+bool BackendRpcService::stopAudio() {
+    if (!audioRunning_.load(std::memory_order_acquire)) return false;
+    audioRunning_.store(false, std::memory_order_release);
+    if (audioThread_.joinable()) audioThread_.join();
+    // Free any commands the control thread pushed after the loop's last drain (audio thread is
+    // joined, so touching the queue here is single-threaded again).
+    DspCommand cmd;
+    while (dspCommands_.tryPop(cmd)) {
+        if (cmd.kind == DspCommand::Kind::SetSystems) delete cmd.setSystems.json;
+        else if (cmd.kind == DspCommand::Kind::LoadKernel) delete cmd.loadKernel.bytecode;
+    }
+    return true;
+}
+
+AudioCaptured BackendRpcService::audioCaptured() {
+    const std::uint64_t f = capturedFrames_.load(std::memory_order_acquire);
+    const double        e = capturedEnergy_.load(std::memory_order_acquire);
+    return { e, f };
+}
+
+bool BackendRpcService::sleepMs(double ms) {
+    if (ms > 0.0) std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(ms));
+    return true;
 }

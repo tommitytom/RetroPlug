@@ -95,6 +95,11 @@ DspRuntime::~DspRuntime() {
 }
 
 bool DspRuntime::loadKernel(const std::vector<std::uint8_t>& bytecode) {
+    // QuickJS's stack-overflow guard is calibrated against the stack top captured when the runtime
+    // was created. This context is driven from whichever thread owns it (the control thread for the
+    // pull path, the audio thread once running) — so re-anchor the stack top to the CURRENT thread
+    // before entering JS, or a call from a different stack throws a spurious stack overflow.
+    JS_UpdateStackTop(rt_);
     JSValue obj = JS_ReadObject(ctx_, bytecode.data(), bytecode.size(), JS_READ_OBJ_BYTECODE);
     if (JS_IsException(obj)) {
         JS_FreeValue(ctx_, obj);
@@ -111,6 +116,7 @@ bool DspRuntime::loadKernel(const std::vector<std::uint8_t>& bytecode) {
 
 bool DspRuntime::setSystems(const std::vector<std::uint8_t>& json) {
     if (!loaded_) return false;
+    JS_UpdateStackTop(rt_);  // re-anchor for the calling thread (see loadKernel)
     JSValue global = JS_GetGlobalObject(ctx_);
     JSValue fn = JS_GetPropertyStr(ctx_, global, "setSystems");
     bool ok = false;
@@ -134,6 +140,7 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
     midiOut_.clear();
     buttonOut_.clear();
     if (!loaded_) return;
+    JS_UpdateStackTop(rt_);  // re-anchor for the calling thread (see loadKernel)
     JSContext* ctx = ctx_;
 
     // input = { frames, sampleRate, tempo, ppqStart, transport,

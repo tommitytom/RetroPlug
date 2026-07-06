@@ -47,5 +47,10 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendRpcService::setBpm>();
     // DSP runtime in the render loop
     server.template addMethod<&BackendRpcService::stageMidiIn>();
+    // background audio thread (threaded mode)
+    server.template addMethod<&BackendRpcService::startAudio>();
+    server.template addMethod<&BackendRpcService::stopAudio>();
+    server.template addMethod<&BackendRpcService::audioCaptured>();
+    server.template addMethod<&BackendRpcService::sleepMs>();
     server.addDiscoveryMethod();
 }
