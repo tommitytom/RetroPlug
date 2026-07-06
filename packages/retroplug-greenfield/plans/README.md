@@ -43,6 +43,7 @@ Read in this order:
 | 05 | [Export and render](./05-export-and-render.md) | Export/offline-render is control-plane-orchestrated + per-role, not a monolithic native call. |
 | 06 | [Audio routing and streams](./06-audio-routing-and-streams.md) | Audio routing becomes a JS decision over per-system output streams (NES stereo-mod). |
 | 07 | [Host consumption](./07-host-consumption.md) | How the plugin / CLI / standalone consume the app layer, and how `emu.*` shrinks to a test/dev facade. |
+| 08 | [Native host decomposition](./08-native-host-decomposition.md) | Split the monolithic `BackendRpcService`: an `Engine` (what) vs an `Invoker` (direct/queued), a `SystemFactory`, three RPC services + a thin facade — killing the threading branches + the direct/`applyDspCommand` duplication. |
 
 ## The through-line
 
