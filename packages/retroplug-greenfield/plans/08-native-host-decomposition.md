@@ -79,9 +79,12 @@ the finished pointer.
 Two things are deliberately kept OUT of the generic spec:
 
 - **Feature roles** (mgb / lsdj-sync / kit-patch) — TS behaviours in the DSP kernel, pushed via
-  `setSystems`; never native config (per [02 — DSP data model](./02-dsp-data-model.md)). The same leak
-  `lsdjSyncMode` on `BackendConstructSpec` is — systems construct **bare**, and dropping that seed +
-  the C++ sniffer is a named greenfield follow-up.
+  `setSystems`; never native config (per [02 — DSP data model](./02-dsp-data-model.md)). **Done:**
+  greenfield cores now construct **bare** — `SameBoyBackend::buildSameBoy` calls
+  `SameBoySystem::setSniffDefaultRoles(false)`, so no C++ role attaches; the `lsdjSyncMode` seed +
+  its `BackendConstructSpec`/wire field are gone, and `sendMidi` (which only worked via the C++ mgb
+  role) went with them. The C++ sniffer stays intact for the legacy CLI/plugin (the flag defaults
+  true).
 - **Backend-specific emulator settings** (SameBoy model / highpass / fast-boot, Mesen equivalents).
   These genuinely *are* native — they're handed straight to the `SameBoySystem` ctor — but they're
   **SameBoy-specific**, so they must not sit in a *generic* build spec. They ride as an **opaque
