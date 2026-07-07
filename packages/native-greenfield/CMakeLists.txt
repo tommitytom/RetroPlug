@@ -7,8 +7,10 @@
 # transitive rpcpp + miniz and the packages/native/src include) — so no longer emulator-free.
 # Output binary lands in build/bin/.
 
-add_executable(native-greenfield-host
-    src/main.cpp
+# retroplug-greenfield-backend: the greenfield Backend as a static library — everything except a host
+# entry point, so both the test host (native-greenfield-host) and the DPF plugin compose the SAME
+# Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
+add_library(retroplug-greenfield-backend STATIC
     src/BackendFacade.cpp         # thin facade: owns the shared state, forwards to the 3 services
     src/HostRpcService.cpp        # fs / config / codec / sav (pure, stateless)
     src/EngineRpcService.cpp      # emulator surface over Engine + Invoker + Factory
@@ -24,7 +26,7 @@ add_executable(native-greenfield-host
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
 )
 
-target_include_directories(native-greenfield-host PRIVATE
+target_include_directories(retroplug-greenfield-backend PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     # dpf.js src root for the shared host header ("dpfjs/host/TjsHostRuntime.hpp").
     ${DPFJS_PATH}/src
@@ -35,10 +37,21 @@ target_include_directories(native-greenfield-host PRIVATE
     #  miniz header dir, arrive PUBLIC from retroplug-cli-core below.)
 )
 
-target_link_libraries(native-greenfield-host PRIVATE
+target_link_libraries(retroplug-greenfield-backend PUBLIC
     retroplug-cli-core  # Project + SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
 )
+
+set_target_properties(retroplug-greenfield-backend PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+
+# native-greenfield-host: the test host — the backend lib + a main() that evals a TS bundle over the
+# __rpcSend bridge. Output binary lands in build/bin/.
+add_executable(native-greenfield-host src/main.cpp)
+
+target_link_libraries(native-greenfield-host PRIVATE retroplug-greenfield-backend)
 
 set_target_properties(native-greenfield-host PROPERTIES
     CXX_STANDARD 20
