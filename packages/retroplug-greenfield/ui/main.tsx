@@ -2,18 +2,18 @@
 // attached (and unmount on detach), keeping the QuickJS context alive across a window close/reopen.
 //
 // The tree is the store-backed app: <StoreProvider> composes the greenfield store graph over the
-// __rpcSend backend and multiplexes its change notifications to the hooks; DevProbe is the current
-// (minimal) screen. Real screens grow under here in Phase 4.
+// __rpcSend backend and multiplexes its change notifications to the hooks; SystemGrid is the first real
+// screen (the emulator grid). More screens grow under here as they're ported.
 
 import { Render } from "lvgljs-ui";
 
 import { StoreProvider } from "./stores/StoreProvider";
-import { DevProbe } from "./DevProbe";
+import { SystemGrid } from "./screens/grid/SystemGrid";
 
 function Root() {
   return (
     <StoreProvider>
-      <DevProbe />
+      <SystemGrid />
     </StoreProvider>
   );
 }

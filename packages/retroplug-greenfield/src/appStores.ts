@@ -64,6 +64,8 @@ export function composeAppStores({ backend = createRealBackend(), notify = () =>
   const project = new ProjectStore(backend, recent, registry);
   project.setOnSystemsChange(() => notify("systems"));
   project.setOnChange(() => notify("project"));
+  // Focus is transient: re-render the tiles on the systems channel, but bypass dirty + the DSP re-project.
+  project.systems.setOnFocusChange(() => notify("systems"));
 
   return { backend, registry, recent, userConfig, bindings, project };
 }

@@ -60,6 +60,7 @@ export class SystemsStore {
   private entries: SystemEntry[] = [];
   private focusedId = 0;
   private dirty = false;
+  private onFocusChange: () => void = () => {};
 
   constructor(
     private readonly backend: Backend,
@@ -92,6 +93,23 @@ export class SystemsStore {
   }
   isDirty(): boolean {
     return this.dirty;
+  }
+
+  /** Install the observer fired on a focus change (setFocus). A NON-dirtying UI signal — focus is
+   *  transient (not persisted), so it re-renders the tiles without marking the project dirty or
+   *  re-projecting the DSP (distinct from the structural onChange). */
+  setOnFocusChange(fn: () => void): void {
+    this.onFocusChange = fn;
+  }
+
+  /** Focus system `id` when it exists. Returns whether focus changed. Transient UI state: notifies for
+   *  a re-render but does not mark the project dirty. */
+  setFocus(id: number): boolean {
+    if (id === this.focusedId) return false;
+    if (!this.entries.some((e) => e.id === id)) return false;
+    this.focusedId = id;
+    this.onFocusChange();
+    return true;
   }
 
   /** Append a new instance of `romPath`, disambiguating its sav suffix against the

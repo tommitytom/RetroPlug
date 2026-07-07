@@ -114,3 +114,40 @@ test("dirty: flips on a systems mutation or a settings change; clears on save/ne
   expect(project.setLayout(99)).toBeFalsy(); // out of range → rejected, no change
   expect(project.settings().layout).toBe(0);
 });
+
+test("setOnChange: the general observer fires on settings edits, save, and new", () => {
+  const { be, project } = newProject();
+  be.seed("/proj/a.gb", gbRom());
+  let changes = 0;
+  project.setOnChange(() => changes++);
+
+  expect(project.setZoom(4)).toBeTruthy(); // a silent settings setter — now observed
+  expect(changes).toBe(1);
+  project.systems.addSystem("/proj/a.gb"); // structural edit marks dirty → onChange too
+  expect(changes).toBe(2);
+  project.save("/proj/song.rplg"); // dirty-clearing transition
+  expect(changes).toBe(3);
+  project.newProject();
+  expect(changes).toBe(4);
+});
+
+test("setFocus: fires the focus observer for a re-render but does NOT mark the project dirty", () => {
+  const { be, project } = newProject();
+  be.seed("/proj/a.gb", gbRom());
+  project.systems.addSystem("/proj/a.gb"); // first → focused
+  const b = project.systems.addSystem("/proj/a.gb")!; // second → not focused
+  project.save("/proj/song.rplg"); // clean baseline (adds dirtied)
+  expect(project.isDirty()).toBeFalsy();
+
+  let focusNotifies = 0;
+  project.systems.setOnFocusChange(() => focusNotifies++);
+
+  expect(project.systems.setFocus(b)).toBeTruthy();
+  expect(project.systems.focused()).toBe(b);
+  expect(focusNotifies).toBe(1);
+  expect(project.isDirty()).toBeFalsy(); // focus is transient — not a project edit
+
+  expect(project.systems.setFocus(b)).toBeFalsy(); // already focused → no-op, no notify
+  expect(project.systems.setFocus(999999)).toBeFalsy(); // unknown id → no-op, no notify
+  expect(focusNotifies).toBe(1);
+});
