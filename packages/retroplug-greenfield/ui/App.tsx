@@ -14,6 +14,7 @@ import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent } f
 import { useSinkGroup } from "./lvgl/FocusProvider";
 import { Box } from "./lvgl/Box";
 import { useNativeEvent } from "./lvgl/useNativeEvent";
+import { useGameInput } from "./input/useGameInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "./screens/menu/menuDefs";
@@ -68,6 +69,10 @@ export function App() {
       setMenuOpen(true);
     }
   });
+
+  // Game input: route keyboard to the focused instance's joypad, but only when a tile is showing (not the
+  // start menu) and no instance menu is open — otherwise arrows/Enter belong to menu navigation.
+  useGameInput({ active: !empty && !menuOpen, focusedId: stores.project.systems.focused() });
 
   const ctx: MenuContext = { stores, settings, userConfig, systems, recent, version: "" };
   const resolvedZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, settings.zoom >= MIN_ZOOM && settings.zoom <= MAX_ZOOM ? settings.zoom : userConfig.defaultZoom));
