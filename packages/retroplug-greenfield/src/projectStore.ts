@@ -58,6 +58,7 @@ export class ProjectStore {
   private dirty = false;
   private pendingLoad: { cfg: ProjectConfig; path: string; blobs: Map<string, Uint8Array> } | null = null;
   private onSystemsChange: () => void = () => {};
+  private onChangeCb: () => void = () => {};
 
   constructor(private readonly backend: Backend, private readonly recent: RecentStore, registry?: RoleRegistry) {
     // Any user mutation of the systems list marks the project dirty and re-drives the DSP.
@@ -77,6 +78,14 @@ export class ProjectStore {
    *  mutation fires it. */
   setOnSystemsChange(fn: () => void): void {
     this.onSystemsChange = fn;
+  }
+
+  /** Install a hook fired on ANY project-state change — settings edits (setLayout / setZoom / …) and
+   *  dirty transitions (mutation, save, export, new, load). Distinct from setOnSystemsChange, which
+   *  fires only on a systems-structure change (and drives the DSP projection). A UI multiplexer wires
+   *  this to re-render the settings / dirty views, which would otherwise never be notified. */
+  setOnChange(fn: () => void): void {
+    this.onChangeCb = fn;
   }
 
   settings(): ProjectSettings {
@@ -109,6 +118,7 @@ export class ProjectStore {
     this.path = "";
     this.dirty = false;
     this.onSystemsChange(); // the DSP now runs nothing
+    this.onChangeCb();
   }
 
   /** Save a thin `.rplg` (raw JSON, paths rebased relative to its folder). Records it
@@ -120,6 +130,7 @@ export class ProjectStore {
     this.recent.add(path);
     this.path = path;
     this.dirty = false;
+    this.onChangeCb();
     return true;
   }
 
@@ -143,6 +154,7 @@ export class ProjectStore {
     this.recent.add(path);
     this.path = path;
     this.dirty = false;
+    this.onChangeCb();
     return true;
   }
 
@@ -254,6 +266,7 @@ export class ProjectStore {
     this.path = path;
     this.dirty = false;
     this.onSystemsChange(); // push the rebuilt systems (the adopt path is quiet)
+    this.onChangeCb();
     return { kind: "loaded", systems: this.systems.systems().length };
   }
 
@@ -266,5 +279,6 @@ export class ProjectStore {
 
   private markDirty(): void {
     this.dirty = true;
+    this.onChangeCb();
   }
 }
