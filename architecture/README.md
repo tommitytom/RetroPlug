@@ -108,6 +108,7 @@ source as the C++ structs (the RPC codegen already emits TS types).
 | 06 | [MIDI routing as hot-reloadable scripts](06-midi-routing-scripts.md) | Proposed |
 | 07 | [Multithreading](07-multithreading.md) | Offline shipped + future |
 | 08 | [The LSDj subsystem](08-lsdj.md) | Proposed |
+| 09 | [Project isolation (DSP-only, one door in/out)](09-project-isolation.md) | Proposed (greenfield) |
 | — | [current-state.md](current-state.md) | The as-is reference |
 
 ## Suggested sequencing

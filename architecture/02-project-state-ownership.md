@@ -251,5 +251,6 @@ the UI can't reach the audio thread. This affects *apply*, not *visibility*:
   - [03-cpp-ts-boundary.md](03-cpp-ts-boundary.md) — the native contract + what moves to TS
   - [04-scriptable-runtime.md](04-scriptable-runtime.md) — control-plane runtime that ends up holding the authoritative config
   - [07-multithreading.md](07-multithreading.md) — render-from-UI needs the UI's authoritative config to build an offline `Project`
+  - [09-project-isolation.md](09-project-isolation.md) — the greenfield realization: takes this authority line to its end (state, not just config), `Project` isolated to DSP-only behind a command ring + snapshot registry
   - [current-state.md](current-state.md) — as-is `Project` / `snapshotConfig` / `loadFromConfig` reference
 - **Design origin:** DESIGN.md Component 2 (retired into this doc).
