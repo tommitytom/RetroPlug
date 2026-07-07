@@ -15,6 +15,7 @@
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node scripts/run-ts-tests.js ui",
     "test:greenfield": "node scripts/cmake-build.js tjs-cli && node packages/retroplug-greenfield/scripts/run-tests.mjs",
     "test:greenfield-native": "node scripts/cmake-build.js native-greenfield-host && node packages/retroplug-greenfield/scripts/run-native-tests.mjs",
+    "test:greenfield-ui": "node scripts/cmake-build.js retroplug-greenfield-ui-test && node packages/retroplug-greenfield/scripts/run-ui-tests.mjs",
     "smoke": "node scripts/cmake-build.js retroplug-cli cli-regenerate && node scripts/run-ts-tests.js cli gb/mgb",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
     "validate": "node scripts/cmake-build.js retroplug-clap retroplug-vst3 && tools/validate-plugins.sh",

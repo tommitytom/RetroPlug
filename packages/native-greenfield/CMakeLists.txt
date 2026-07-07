@@ -100,3 +100,49 @@ target_compile_definitions(retroplug-greenfield PUBLIC DPFJS_ENV_PREFIX="RETROPL
 
 # The embedded bundle must exist before the plugin compiles it.
 add_dependencies(retroplug-greenfield retroplug-greenfield-cp-bundle)
+
+# --- greenfield UI test harness --------------------------------------------------------------------
+# retroplug-greenfield-ui-test boots the greenfield React UI on a headless software LVGL display
+# (RenderCore) driven by the BackendFacade RPC (GreenfieldUiHarness) — the greenfield twin of the
+# legacy retroplug-ui-test. Only built on demand (not ALL).
+
+# The greenfield UI bundle: smoke.tsx → bytecode C array (mirrors retroplug-greenfield-cp-bundle, but
+# a React entry via build-ui.js). Derived; never committed.
+set(GFUI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle.js")
+set(GFUI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle_data.c")
+set_source_files_properties(${GFUI_BUNDLE_C} PROPERTIES GENERATED TRUE)
+
+add_custom_target(retroplug-greenfield-ui-bundle
+    BYPRODUCTS ${GFUI_BUNDLE_JS} ${GFUI_BUNDLE_C} ${GFUI_BUNDLE_C}.new
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
+            ${GFUI_BUNDLE_JS} ${GFUI_BUNDLE_JS}.d
+            ${CMAKE_SOURCE_DIR}/packages/retroplug-greenfield/ui/smoke.tsx
+    COMMAND ${_TJSC_COMMAND} -m -s -p gfui_ -o ${GFUI_BUNDLE_C}.new ${GFUI_BUNDLE_JS}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GFUI_BUNDLE_C}.new ${GFUI_BUNDLE_C}
+    COMMENT "Regenerating greenfield UI bundle (esbuild + bytecode)"
+    VERBATIM)
+add_dependencies(retroplug-greenfield-ui-bundle ${_TJSC_DEP})
+
+add_executable(retroplug-greenfield-ui-test
+    test/ui/GreenfieldUiRunner.cpp
+    test/ui/GreenfieldUiHarness.cpp
+    test/ui/RenderCore.cpp
+    ${GFUI_BUNDLE_C})               # the embedded greenfield UI bytecode (gfui_ui_bundle)
+
+target_link_libraries(retroplug-greenfield-ui-test PRIVATE
+    lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng (+ tjs)
+    retroplug-greenfield-backend) # BackendFacade + rpcpp + the cores + the txiki host
+
+target_include_directories(retroplug-greenfield-ui-test PRIVATE
+    # quickjs.h for the JS trampolines in RenderCore/GreenfieldUiRunner (lvgl-js-native
+    # PUBLIC-propagates the lv_binding_js render include dir, so "native/..." resolves transitively).
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)
+
+set_target_properties(retroplug-greenfield-ui-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# The embedded bundle must exist before the test binary compiles it.
+add_dependencies(retroplug-greenfield-ui-test retroplug-greenfield-ui-bundle)

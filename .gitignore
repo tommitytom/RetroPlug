@@ -41,3 +41,4 @@ plans.md
 # Greenfield package test-bundle output (derived: esbuild -> tjs run / native host)
 packages/retroplug-greenfield/.test-build/
 packages/retroplug-greenfield/.native-build/
+packages/retroplug-greenfield/.ui-build/
