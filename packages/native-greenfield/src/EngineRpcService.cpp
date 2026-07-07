@@ -76,23 +76,37 @@ std::optional<std::uint32_t> EngineRpcService::constructSystem(BackendConstructS
 
 std::optional<std::uint32_t> EngineRpcService::duplicateSystem(std::uint32_t srcId,
                                                                std::optional<std::string> savPath) {
-    // Reads the SOURCE core's live state (clone) — unsafe while the audio thread owns it. Needs the
-    // deferred per-system snapshot triple-buffers; until then, quiescent only.
-    if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
+    // Two modes, mirroring the invoker's Direct/Queued split — both produce an independent clone, then
+    // adopt through `active_` (direct when quiescent, queued onto the audio thread when it runs):
+    //   - running: clone off the DSP-published state snapshot — a tear-free control-thread read (like
+    //     getFrame), NOT a GB_save_state on the core the audio thread is stepping. This is what makes
+    //     Duplicate work in the live plugin (the old path was audioRunning_-guarded → returned null).
+    //   - quiescent: clone the live core directly, as before — no audio thread owns it, and no block has
+    //     necessarily run yet so there may be no snapshot to read.
     SystemBase* src = engine_.findSystem(srcId);
     if (!src) return std::nullopt;
 
-    // clone() boots an independent copy of the live state (SRAM + savestate).
     const SystemId id = engine_.nextSystemId();
-    auto sys = src->clone(id, engine_.sampleRate());
+    std::unique_ptr<SystemBase> sys;
+    if (audioRunning_.load(std::memory_order_acquire)) {
+        std::vector<std::uint8_t> savestate;
+        if (!src->readStateSnapshot(savestate)) return std::nullopt;  // nothing published yet
+        sys = src->cloneFromState(id, engine_.sampleRate(), savestate);
+    } else {
+        sys = src->clone(id, engine_.sampleRate());
+    }
     if (!sys) return std::nullopt;
-    if (savPath) sys->setSavPath(*savPath);  // the duplicate auto-saves to its own file
-    engine_.adoptSystem(std::move(sys));
+    sys->enableStateSnapshot();               // so the duplicate can itself be duplicated mid-run
+    if (savPath) sys->setSavPath(*savPath);   // the duplicate auto-saves to its own file
+    active_->adoptSystem(std::move(sys));
     return id;
 }
 
 std::optional<std::uint32_t> EngineRpcService::reloadSystem(std::uint32_t id) {
-    // Reads the existing core's live SRAM/config — unsafe mid-run (see duplicateSystem).
+    // Reads the existing core's live SRAM (saveSramBytes) — quiescent only for now. The same fix
+    // duplicateSystem uses applies (take SRAM from the published state snapshot via stateSnapshotRegions
+    // instead of the live read), but reload is only reached via reloadOnRomChange file-watching, which the
+    // embedded-ROM standalone never triggers — so the run-safe rebuild is a deferred follow-on.
     if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
     SystemBase* old = engine_.findSystem(id);
     if (!old) return std::nullopt;

@@ -157,7 +157,10 @@ export class SystemsStore {
     const suffix = this.freeSuffix(src.romPath);
     const savPath = resolveSavPath(src.romPath, suffix, "");
     const newId = this.backend.duplicateSystem(id, savPath);
-    if (newId === null) return null;
+    if (newId === null) {
+      console.warn(`[systems] duplicateSystem(${id}) failed (backend returned null) — no instance added`);
+      return null;
+    }
     this.entries = appendEntry(this.entries, {
       id: newId,
       platform: src.platform,

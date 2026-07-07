@@ -34,6 +34,8 @@ std::unique_ptr<SameBoySystem> SameBoyBackend::buildSameBoy(SystemId id, SameBoy
     auto sys = std::make_unique<SameBoySystem>(id, std::move(cfg), std::move(romBytes));
     sys->setSniffDefaultRoles(false);  // greenfield cores are bare — feature roles live in the TS kernel
     sys->onActivate(sampleRate);       // boots gb_ + restores cfg.sram then cfg.savestate
+    sys->enableStateSnapshot();        // publish a tear-free savestate each block so Duplicate can clone
+                                       // off the snapshot while the audio thread runs (getFrame's analogue)
     return sys;
 }
 
