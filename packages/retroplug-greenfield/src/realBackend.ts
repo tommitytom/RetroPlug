@@ -78,8 +78,6 @@ export function createRealBackend(): Backend {
 
     // --- emulator lifecycle / reads ---------------------------------------
     constructSystem: (spec: ConstructSpec) => idOrNull(call("constructSystem", specParams(spec))),
-    duplicateSystem: (srcId, savPath) => idOrNull(call("duplicateSystem", srcId, savPath)),
-    reloadSystem: (id) => idOrNull(call("reloadSystem", id)),
     removeSystem: (id) => call("removeSystem", id) as boolean,
     applySystemSetting: (id, key, value) =>
       call("applySystemSetting", id, key, typeof value === "boolean" ? (value ? 1 : 0) : value) as boolean,

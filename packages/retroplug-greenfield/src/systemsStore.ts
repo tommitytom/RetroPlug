@@ -30,6 +30,12 @@ import type { RoleRegistry, RoleInstance } from "./systemRoles";
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
 
+// A registry blob as an exact-size ArrayBuffer for ConstructSpec (readState/readSram may hand back a
+// view into a larger buffer; slice() copies to a fresh, tightly-sized backing store).
+function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
+  return u8.slice().buffer;
+}
+
 /** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
  *  the first `ROM_SNIFF_LEN` of them. Native never classifies. */
 export function classifyRom(backend: Backend, romPath: string): Platform | "unknown" {
@@ -150,15 +156,33 @@ export class SystemsStore {
     return this.committed(built.id);
   }
 
-  /** Clone a system's LIVE state into a fresh appended instance with its own suffix. */
+  /** Clone a system's LIVE state into a fresh appended instance with its own suffix. Orchestrated in
+   *  TS: pull the source's savestate from the registry (it includes SRAM), then build an INDEPENDENT
+   *  core seeded from those bytes — the source's role config crosses as the construct settings blob so
+   *  the clone boots the same model the savestate was captured under. No native duplicate method. */
   duplicateSystem(id: number): number | null {
     const src = findById(this.entries, id);
     if (!src) return null;
+    const state = this.backend.readState(id);
+    if (!state) {
+      console.warn(`[systems] duplicateSystem(${id}) failed (no published state) — no instance added`);
+      return null;
+    }
     const suffix = this.freeSuffix(src.romPath);
-    const savPath = resolveSavPath(src.romPath, suffix, "");
-    const newId = this.backend.duplicateSystem(id, savPath);
+    const savPath = src.embeddedRom ? null : resolveSavPath(src.romPath, suffix, "");
+    const systemRole = src.roles.find((r) => r.kind === src.core);
+    const newId = this.backend.constructSystem({
+      romPath: src.romPath,
+      platform: src.platform,
+      core: src.core,
+      embeddedRom: src.embeddedRom,
+      savPath,
+      statePath: null,
+      stateBytes: toArrayBuffer(state),
+      settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
+    });
     if (newId === null) {
-      console.warn(`[systems] duplicateSystem(${id}) failed (backend returned null) — no instance added`);
+      console.warn(`[systems] duplicateSystem(${id}) failed (construct returned null) — no instance added`);
       return null;
     }
     this.entries = appendEntry(this.entries, {
@@ -185,12 +209,26 @@ export class SystemsStore {
     return true;
   }
 
-  /** Rebuild a system's ROM from disk (native carries its live SRAM + paths),
-   *  swapping in place with a new id and preserving identity + focus. */
+  /** Rebuild a system's ROM from disk, carrying its battery SRAM forward, swapping in place with a new
+   *  id and preserving identity + focus. Orchestrated in TS: pull SRAM from the registry, then cold-boot
+   *  the ROM with it (no savestate) via a replaceId construct — the source's role config crosses as the
+   *  settings blob. No native reload method. */
   reloadSystem(id: number): number | null {
     const src = findById(this.entries, id);
     if (!src) return null;
-    const newId = this.backend.reloadSystem(id);
+    const sram = this.backend.readSram(id);
+    const systemRole = src.roles.find((r) => r.kind === src.core);
+    const newId = this.backend.constructSystem({
+      romPath: src.romPath,
+      platform: src.platform,
+      core: src.core,
+      embeddedRom: src.embeddedRom,
+      savPath: src.embeddedRom ? null : resolveSavPath(src.romPath, src.savSuffix, src.savPath),
+      statePath: null,
+      sramBytes: sram ? toArrayBuffer(sram) : undefined,
+      replaceId: id,
+      settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
+    });
     if (newId === null) return null;
     this.entries = replaceById(this.entries, id, { ...src, id: newId });
     if (this.focusedId === id) this.focusedId = newId;

@@ -78,72 +78,10 @@ std::optional<std::uint32_t> EngineRpcService::constructSystem(BackendConstructS
     return id;
 }
 
-std::optional<std::uint32_t> EngineRpcService::duplicateSystem(std::uint32_t srcId,
-                                                               std::optional<std::string> savPath) {
-    // Two modes, mirroring the invoker's Direct/Queued split — both produce an independent clone, then
-    // adopt through `active_` (direct when quiescent, queued onto the audio thread when it runs):
-    //   - running: clone off the DSP-published state snapshot — a tear-free control-thread read (like
-    //     getFrame), NOT a GB_save_state on the core the audio thread is stepping. This is what makes
-    //     Duplicate work in the live plugin (the old path was audioRunning_-guarded → returned null).
-    //   - quiescent: clone the live core directly, as before — no audio thread owns it, and no block has
-    //     necessarily run yet so there may be no snapshot to read.
-    SystemBase* src = engine_.findSystem(srcId);
-    if (!src) return std::nullopt;
-
-    const SystemId id = engine_.nextSystemId();
-    std::unique_ptr<SystemBase> sys;
-    if (audioRunning_.load(std::memory_order_acquire)) {
-        std::vector<std::uint8_t> savestate;
-        if (!src->readStateSnapshot(savestate)) return std::nullopt;  // nothing published yet
-        sys = src->cloneFromState(id, engine_.sampleRate(), savestate);
-    } else {
-        sys = src->clone(id, engine_.sampleRate());
-    }
-    if (!sys) return std::nullopt;
-    sys->enableStateSnapshot();               // so the duplicate can itself be duplicated mid-run
-    if (savPath) sys->setSavPath(*savPath);   // the duplicate auto-saves to its own file
-    if (!engine_.registry().claim(id, *sys)) return std::nullopt;  // seed the slot before handoff
-    active_->adoptSystem(std::move(sys));
-    return id;
-}
-
-std::optional<std::uint32_t> EngineRpcService::reloadSystem(std::uint32_t id) {
-    // Reads the existing core's live SRAM (saveSramBytes) — quiescent only for now. The same fix
-    // duplicateSystem uses applies (take SRAM from the published state snapshot via stateSnapshotRegions
-    // instead of the live read), but reload is only reached via reloadOnRomChange file-watching, which the
-    // embedded-ROM standalone never triggers — so the run-safe rebuild is a deferred follow-on.
-    if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
-    SystemBase* old = engine_.findSystem(id);
-    if (!old) return std::nullopt;
-    // SameBoy-only: the rebuild below reads SameBoyConfig. NES/GBA reload needs a backend-agnostic
-    // rebuild (deferred) — refuse rather than downcast a Mesen core (UB). The store treats null as
-    // "not reloaded".
-    if (old->kind() != SystemKind::SameBoy) return std::nullopt;
-
-    // Rebuild the ROM from disk (or the embedded marker), carrying the live SRAM forward and
-    // dropping the savestate — a genuine reload, swapped in place with a fresh id.
-    const std::string romPath = old->romPath();
-    SameBoyConfig cfg = static_cast<const SameBoySystem*>(old)->config_;  // carry paths/roles/model
-    cfg.sram = old->saveSramBytes();
-    cfg.savestate.clear();
-
-    std::vector<std::uint8_t> romBytes;
-    if (!cfg.embeddedRom.empty()) {
-        const auto rom = rp::embeddedRom(cfg.embeddedRom);
-        romBytes.assign(rom.begin(), rom.end());
-    } else {
-        romBytes = slurpAll(romPath);
-    }
-    if (romBytes.empty()) return std::nullopt;
-
-    // Quiescent only (guarded above) — swap in place through the active (direct) invoker so the
-    // reload shares the one Engine::replaceSystem path.
-    const SystemId newId = engine_.nextSystemId();
-    auto sys = SameBoyBackend::buildSameBoy(newId, std::move(cfg), std::move(romBytes), engine_.sampleRate());
-    if (!engine_.registry().claim(newId, *sys)) return std::nullopt;  // seed the new core's slot; old id's slot released on delete
-    active_->replaceSystem(id, std::move(sys));
-    return newId;
-}
+// duplicate + reload are TS orchestration now (SystemsStore over the registry reads + constructSystem-
+// with-state): duplicate pulls the source savestate and builds a seeded core; reload pulls SRAM and
+// cold-boots the ROM with replaceId. Native has no bespoke method for either — that deletes the
+// findSystem walks + the last live-core clone/cloneFromState reliance from this layer.
 
 bool EngineRpcService::removeSystem(std::uint32_t id) {
     // No threading branch: quiescent → direct erase; running → enqueue for the audio thread, which

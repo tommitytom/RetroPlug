@@ -28,8 +28,6 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::savFromJson>();
     // emulator lifecycle / reads
     server.template addMethod<&BackendFacade::constructSystem>();
-    server.template addMethod<&BackendFacade::duplicateSystem>();
-    server.template addMethod<&BackendFacade::reloadSystem>();
     server.template addMethod<&BackendFacade::removeSystem>();
     server.template addMethod<&BackendFacade::applySystemSetting>();
     server.template addMethod<&BackendFacade::applyRoleConfig>();

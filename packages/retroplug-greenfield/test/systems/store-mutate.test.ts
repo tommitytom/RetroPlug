@@ -2,7 +2,7 @@
 // clones live state with a fresh suffix; remove splices + refocuses; reload swaps in
 // place preserving identity with a new id; resolveSiblingRom pairs a picked .sav.
 import { test, expect } from "../../testing/harness";
-import { MockBackend } from "../../testing/mockBackend";
+import { MockBackend, stateBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { gbRom, gbaRom, garbage } from "./fixtures";
 
@@ -24,8 +24,12 @@ test("duplicate: appends a clone with a fresh suffix + concrete auto-save path",
   expect(v[1].romPath).toBe("/roms/a.gb"); // clone carries the source ROM
   expect(v[1].savSuffix).toBe(2); // 0 owned -> 2
   expect(store.focused()).toBe(a); // duplicate doesn't steal focus
-  const call = be.duplicateCalls[be.duplicateCalls.length - 1];
-  expect(call).toEqual({ srcId: a, savPath: "/roms/a-2.sav" });
+  // Duplicate is TS orchestration now: readState(src) → constructSystem seeded with those bytes + the
+  // clone's own auto-save path. No bespoke backend method — it lands as a construct call.
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.romPath).toBe("/roms/a.gb");
+  expect(call.savPath).toBe("/roms/a-2.sav");
+  expect(new Uint8Array(call.stateBytes!)).toEqual(stateBytesFor(a as number));
 });
 
 test("duplicate: an absent id is a no-op", () => {

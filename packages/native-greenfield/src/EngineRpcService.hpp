@@ -24,9 +24,8 @@ public:
                      const std::atomic<bool>& audioRunning);
 
     // --- emulator lifecycle / reads ---
+    // (duplicate + reload live in the TS SystemsStore as constructSystem-with-state orchestration.)
     std::optional<std::uint32_t> constructSystem(BackendConstructSpec spec);
-    std::optional<std::uint32_t> duplicateSystem(std::uint32_t srcId, std::optional<std::string> savPath);
-    std::optional<std::uint32_t> reloadSystem(std::uint32_t id);
     bool removeSystem(std::uint32_t id);
     bool applySystemSetting(std::uint32_t id, std::string key, double value);
     bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config);

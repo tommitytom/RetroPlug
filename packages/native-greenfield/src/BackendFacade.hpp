@@ -45,8 +45,6 @@ public:
 
     // --- emulator lifecycle / reads / kernel / MIDI / transport → engine_svc_ ---
     std::optional<std::uint32_t> constructSystem(BackendConstructSpec spec) { return engine_svc_.constructSystem(std::move(spec)); }
-    std::optional<std::uint32_t> duplicateSystem(std::uint32_t srcId, std::optional<std::string> savPath) { return engine_svc_.duplicateSystem(srcId, std::move(savPath)); }
-    std::optional<std::uint32_t> reloadSystem(std::uint32_t id) { return engine_svc_.reloadSystem(id); }
     bool removeSystem(std::uint32_t id) { return engine_svc_.removeSystem(id); }
     bool applySystemSetting(std::uint32_t id, std::string key, double value) { return engine_svc_.applySystemSetting(id, std::move(key), value); }
     bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config) { return engine_svc_.applyRoleConfig(id, std::move(kind), std::move(config)); }

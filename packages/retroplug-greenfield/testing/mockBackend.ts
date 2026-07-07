@@ -54,8 +54,8 @@ export class MockBackend implements Backend {
   /** Every ConstructSpec passed to constructSystem, in order — lets tests assert
    *  the CONCRETE paths TS resolved (savPath/statePath/replaceId). */
   readonly constructCalls: ConstructSpec[] = [];
-  /** (srcId, savPath) pairs passed to duplicateSystem, in order. */
-  readonly duplicateCalls: { srcId: number; savPath: string | null }[] = [];
+  // NOTE: duplicate/reload no longer hit the backend — they are TS orchestration over constructSystem,
+  // so their effect shows up in constructCalls (with stateBytes/sramBytes + replaceId), not a dedicated log.
 
   // --- file-dialog bookkeeping (mock-only) --------------------------------
   /** Opts passed to each openFileBrowser call, in order — lets tests assert which
@@ -235,25 +235,8 @@ export class MockBackend implements Backend {
     return id;
   }
 
-  duplicateSystem(srcId: number, savPath: string | null): number | null {
-    this.log.push("duplicateSystem");
-    this.duplicateCalls.push({ srcId, savPath });
-    const src = this.systems.get(srcId);
-    if (!src) return null;
-    const id = this.nextId++;
-    this.systems.set(id, { ...src, savPath });
-    return id;
-  }
-
-  reloadSystem(id: number): number | null {
-    this.log.push("reloadSystem");
-    const src = this.systems.get(id);
-    if (!src) return null;
-    const newId = this.nextId++;
-    this.systems.delete(id);
-    this.systems.set(newId, { ...src });
-    return newId;
-  }
+  // duplicate + reload are TS orchestration (SystemsStore) over readState/readSram + constructSystem —
+  // the mock has no bespoke method; those store paths land as constructCalls (restoredFromBytes).
 
   readState(id: number): Uint8Array | null {
     this.log.push("readState");

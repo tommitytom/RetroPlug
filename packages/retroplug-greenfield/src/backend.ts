@@ -86,14 +86,9 @@ export interface Backend {
    *  `replaceId` the instance swaps that id in place; otherwise it is appended. */
   constructSystem(spec: ConstructSpec): number | null;
 
-  /** Clone the LIVE state (savestate incl. SRAM) of system `srcId` into a fresh
-   *  instance whose auto-save target is `savPath`. Returns the new id, or `null`. */
-  duplicateSystem(srcId: number, savPath: string | null): number | null;
-
-  /** Rebuild system `id`'s ROM from disk, carrying its live (unsaved) SRAM forward
-   *  and keeping its paths, as a fresh instance swapped in place. Returns the new
-   *  id, or `null`. (A live-emulator read only native can do.) */
-  reloadSystem(id: number): number | null;
+  // duplicate + reload are TS orchestration over constructSystem-with-state (SystemsStore): the store
+  // pulls the source's savestate/SRAM from the registry and builds a seeded/replaceId core — native has
+  // no bespoke method for either.
 
   /** Drop system `id`. Returns false when it isn't present. */
   removeSystem(id: number): boolean;

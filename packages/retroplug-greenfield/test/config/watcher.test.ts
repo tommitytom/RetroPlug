@@ -90,8 +90,10 @@ test("pump: a changed ROM reloads a system with reloadOnRomChange on", () => {
   be.emitFileChange("/proj/a.gb");
   const r = fw.pump();
   expect(r.romReloaded.length).toBe(1);
-  expect(r.romReloaded[0] !== id).toBeTruthy(); // reloadSystem swapped in a new id
-  expect(be.log.includes("reloadSystem")).toBeTruthy();
+  expect(r.romReloaded[0] !== id).toBeTruthy(); // reload swapped in a new id
+  // Reload is TS orchestration now: a replaceId construct (cold-boot the ROM carrying SRAM forward).
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(id);
 });
 
 test("pump: a changed ROM is ignored when reloadOnRomChange is off", () => {
@@ -100,7 +102,7 @@ test("pump: a changed ROM is ignored when reloadOnRomChange is off", () => {
   systems.addSystem("/proj/a.gb"); // reloadOnRomChange defaults false
   be.emitFileChange("/proj/a.gb");
   expect(fw.pump().romReloaded).toEqual([]);
-  expect(be.log.includes("reloadSystem")).toBeFalsy();
+  expect(be.constructCalls.length).toBe(1); // only the initial add — no reload construct
 });
 
 test("pump: an unrelated path (recent.json) is ignored", () => {
