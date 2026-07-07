@@ -202,6 +202,16 @@ JSValue jsUiClickAt(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
     catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.clickAt: %s", e.what()); }
 }
 
+// Advance the emulator so tiles get live frames (the plugin's audio thread does this; pump() only ticks
+// LVGL). Drives the BackendFacade the UI reads over RPC.
+JSValue jsUiAdvance(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    double ms = 0;
+    if (argc >= 1) JS_ToFloat64(ctx, &ms, argv[0]);
+    if (!g_harness) return JS_ThrowTypeError(ctx, "ui.advance: boot first");
+    try { g_harness->advance(ms); return JS_UNDEFINED; }
+    catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.advance: %s", e.what()); }
+}
+
 void installUiNamespace(JSContext* ctx) {
     const std::vector<std::pair<const char*, std::pair<JSCFunction*, int>>> fns = {
         { "boot",                 { jsUiBoot,                 0 } },
@@ -218,6 +228,7 @@ void installUiNamespace(JSContext* ctx) {
         { "focused",              { jsUiFocused,              0 } },
         { "tapKey",               { jsUiTapKey,               1 } },
         { "clickAt",              { jsUiClickAt,              2 } },
+        { "advance",              { jsUiAdvance,              1 } },
     };
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue sym    = JS_NewSymbol(ctx, "retroplug-ui", /*is_global*/ true);

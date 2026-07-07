@@ -43,6 +43,7 @@ interface NativeUi {
   focused(): WidgetInfo | null;
   tapKey(lvKey: number): void;
   clickAt(x: number, y: number): void;
+  advance(ms: number): void;
 }
 
 const rp: NativeUi = (globalThis as Record<symbol, unknown>)[Symbol.for("retroplug-ui")] as NativeUi;
@@ -103,4 +104,6 @@ export const ui = {
   tapKey(lvKey: number): void { rp.tapKey(lvKey); },
   /** Click (press+release) at absolute (x,y) → the widget's onClick. */
   clickAt(x: number, y: number): void { rp.clickAt(x, y); },
+  /** Advance the emulator by `ms` so tiles receive live frames (pump() only ticks LVGL). */
+  advance(ms: number): void { rp.advance(ms); },
 };

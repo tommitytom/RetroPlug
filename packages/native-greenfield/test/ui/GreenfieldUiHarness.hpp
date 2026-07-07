@@ -38,6 +38,11 @@ public:
     // The render scaffold — the runner drives pump/snapshot/queries/input through it.
     RenderCore& core() { return core_; }
 
+    // Advance the emulator by `ms` (discarding the rendered audio) so tiles receive live frames. The
+    // plugin's audio thread does this per block; RenderCore::pump only ticks LVGL, so a headless UI test
+    // must drive it explicitly. Same Engine the UI's getFrame reads over the bound RPC.
+    void advance(double ms) { service_.renderAudio(ms); }
+
 private:
     using BackendRpcServer = rpcpp::TypedRpcServer<BackendFacade, rpcpp::QuickJSCodec>;
 
