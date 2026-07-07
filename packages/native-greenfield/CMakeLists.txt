@@ -58,3 +58,19 @@ set_target_properties(native-greenfield-host PROPERTIES
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
+
+# --- control-plane bundle: pluginControlPlane.ts → bytecode C array (mirrors ui-regenerate). The DPF
+# plugin evals this at construct to compose the stores + DSP kernel. Derived; never committed.
+set(GFCP_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle.js")
+set(GFCP_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle_data.c")
+set_source_files_properties(${GFCP_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the plugin compiles
+
+add_custom_target(retroplug-greenfield-cp-bundle ALL
+    BYPRODUCTS ${GFCP_BUNDLE_JS} ${GFCP_BUNDLE_C} ${GFCP_BUNDLE_C}.new
+    COMMAND ${NODE_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tools/build-greenfield-controlplane.js ${GFCP_BUNDLE_JS}
+    COMMAND ${_TJSC_COMMAND} -m -s -p gfcp_ -o ${GFCP_BUNDLE_C}.new ${GFCP_BUNDLE_JS}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GFCP_BUNDLE_C}.new ${GFCP_BUNDLE_C}
+    COMMENT "Regenerating greenfield control-plane bundle (esbuild + bytecode)"
+    VERBATIM)
+add_dependencies(retroplug-greenfield-cp-bundle ${_TJSC_DEP})
