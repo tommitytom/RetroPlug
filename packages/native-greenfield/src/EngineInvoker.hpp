@@ -29,6 +29,7 @@ public:
     virtual void setBpm(double bpm)                                       = 0;
     virtual void setTransport(bool playing)                              = 0;
     virtual void applyConfigField(SystemId id, std::uint8_t field, double value) = 0;
+    virtual void pressButton(SystemId id, std::uint8_t button, bool down) = 0;
 };
 
 // Quiescent / CLI: straight through to the Engine on the calling thread. Removed/displaced cores
@@ -45,6 +46,7 @@ public:
     void setBpm(double bpm) override;
     void setTransport(bool playing) override;
     void applyConfigField(SystemId id, std::uint8_t field, double value) override;
+    void pressButton(SystemId id, std::uint8_t button, bool down) override;
 
 private:
     Engine& engine_;
@@ -67,6 +69,7 @@ public:
     void setBpm(double bpm) override;
     void setTransport(bool playing) override;
     void applyConfigField(SystemId id, std::uint8_t field, double value) override;
+    void pressButton(SystemId id, std::uint8_t button, bool down) override;
 
     // consumer half (audio thread): apply every queued command into the Engine.
     void drainInto(Engine& engine);

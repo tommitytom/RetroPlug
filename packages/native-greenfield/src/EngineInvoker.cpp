@@ -45,6 +45,10 @@ void DirectInvoker::applyConfigField(SystemId id, std::uint8_t field, double val
     engine_.applyConfigField(id, field, value);
 }
 
+void DirectInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {
+    engine_.pressButton(id, button, down);
+}
+
 // --- QueuedInvoker: producer half (control thread) --------------------------
 
 void QueuedInvoker::adoptSystem(std::unique_ptr<SystemBase> sys) {
@@ -111,6 +115,13 @@ void QueuedInvoker::applyConfigField(SystemId id, std::uint8_t field, double val
     commands_.tryPush(c);  // no heap payload — dropped on a full ring
 }
 
+void QueuedInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {
+    DspCommand c;
+    c.kind = DspCommand::Kind::PressButton;
+    c.pressButton = { static_cast<std::uint32_t>(id), button, down };
+    commands_.tryPush(c);  // no heap payload — dropped on a full ring (a lost key edge, not a leak)
+}
+
 // --- QueuedInvoker: consumer half (audio thread) ----------------------------
 
 void QueuedInvoker::drainInto(Engine& engine) {
@@ -136,6 +147,9 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 break;
             case DspCommand::Kind::SetConfigField:
                 engine.applyConfigField(cmd.setConfigField.id, cmd.setConfigField.field, cmd.setConfigField.value);
+                break;
+            case DspCommand::Kind::PressButton:
+                engine.pressButton(cmd.pressButton.id, cmd.pressButton.button, cmd.pressButton.down);
                 break;
             // Lifecycle: alloc-free pointer swaps into the pre-reserved Project; displaced/removed
             // cores are handed back to the control thread for delete (never freed here).

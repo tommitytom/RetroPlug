@@ -212,8 +212,12 @@ bool EngineRpcService::dspSetSystems(std::string json) {
 }
 
 bool EngineRpcService::pressButton(std::uint32_t id, std::uint32_t button, bool down) {
-    if (audioRunning_.load(std::memory_order_acquire)) return false;  // direct core mutation; quiescent only
-    return engine_.pressButton(id, static_cast<std::uint8_t>(button), down);
+    // A joypad transition → the focused core, through `active_` (direct when quiescent, queued onto the
+    // audio thread when it runs). SystemBase::pressButton is the audio-thread entry point, so — unlike the
+    // old direct-only path that returned false the moment audio started — this reaches a live core. The
+    // store owns existence; accept optimistically (the queued apply can't report back).
+    active_->pressButton(id, static_cast<std::uint8_t>(button), down);
+    return true;
 }
 
 rfl::Bytestring EngineRpcService::renderAudio(double ms) {
