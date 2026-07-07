@@ -106,7 +106,7 @@ add_dependencies(retroplug-greenfield retroplug-greenfield-cp-bundle)
 # (RenderCore) driven by the BackendFacade RPC (GreenfieldUiHarness) — the greenfield twin of the
 # legacy retroplug-ui-test. Only built on demand (not ALL).
 
-# The greenfield UI bundle: smoke.tsx → bytecode C array (mirrors retroplug-greenfield-cp-bundle, but
+# The greenfield UI bundle: main.tsx → bytecode C array (mirrors retroplug-greenfield-cp-bundle, but
 # a React entry via build-ui.js). Derived; never committed.
 set(GFUI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle.js")
 set(GFUI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle_data.c")
@@ -116,7 +116,7 @@ add_custom_target(retroplug-greenfield-ui-bundle
     BYPRODUCTS ${GFUI_BUNDLE_JS} ${GFUI_BUNDLE_C} ${GFUI_BUNDLE_C}.new
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
             ${GFUI_BUNDLE_JS} ${GFUI_BUNDLE_JS}.d
-            ${CMAKE_SOURCE_DIR}/packages/retroplug-greenfield/ui/smoke.tsx
+            ${CMAKE_SOURCE_DIR}/packages/retroplug-greenfield/ui/main.tsx
     COMMAND ${_TJSC_COMMAND} -m -s -p gfui_ -o ${GFUI_BUNDLE_C}.new ${GFUI_BUNDLE_JS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GFUI_BUNDLE_C}.new ${GFUI_BUNDLE_C}
     COMMENT "Regenerating greenfield UI bundle (esbuild + bytecode)"
