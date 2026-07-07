@@ -16,7 +16,10 @@ import type { ReactNode } from "react";
 // lvgljs-ui's View type doesn't expose a ref prop; cast to reach the native uid for the test-id tag.
 const SlotView = View as any;
 
-function tagSlot(testId: string) {
+/** A ref callback that tags a widget's native uid with a stable testId (findByTestId). Inert in
+ *  production — the __rp_tagTestId hook only exists in the UI test harness. Shared by any widget a test
+ *  needs to locate. */
+export function tagTestId(testId: string) {
   return (node: { uid?: unknown } | null) => {
     if (node) (globalThis as { __rp_tagTestId?: (uid: string, name: string) => void }).__rp_tagTestId?.(String(node.uid), testId);
   };
@@ -35,7 +38,7 @@ export function StableSlot({
 }) {
   return (
     <SlotView
-      ref={tagSlot(testId)}
+      ref={tagTestId(testId)}
       style={{
         width,
         height,
