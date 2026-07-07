@@ -2,18 +2,22 @@
 // attached (and unmount on detach), keeping the QuickJS context alive across a window close/reopen.
 //
 // The tree is the store-backed app: <StoreProvider> composes the greenfield store graph over the
-// __rpcSend backend and multiplexes its change notifications to the hooks; SystemGrid is the first real
-// screen (the emulator grid). More screens grow under here as they're ported.
+// __rpcSend backend and multiplexes its change notifications to the hooks; <FocusProvider> owns the
+// keyboard "sink" group; <App> is the controller (start menu / grid + instance menu). More screens grow
+// under App as they're ported.
 
 import { Render } from "lvgljs-ui";
 
 import { StoreProvider } from "./stores/StoreProvider";
-import { SystemGrid } from "./screens/grid/SystemGrid";
+import { FocusProvider } from "./lvgl/FocusProvider";
+import { App } from "./App";
 
 function Root() {
   return (
     <StoreProvider>
-      <SystemGrid />
+      <FocusProvider>
+        <App />
+      </FocusProvider>
     </StoreProvider>
   );
 }
