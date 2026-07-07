@@ -14,7 +14,16 @@
 
 #define DISTRHO_PLUGIN_IS_RT_SAFE  1
 #define DISTRHO_PLUGIN_IS_SYNTH    1
-#define DISTRHO_PLUGIN_HAS_UI      0   // DSP-first milestone: no editor (validate + reaper never open one)
+#define DISTRHO_PLUGIN_HAS_UI      1   // the greenfield React UI, on the shared LVGL editor widget
+
+// Custom OpenGL toolkit: the generic dpf.js LVGL top-level widget (GL flush + keypad/pointer indevs +
+// DPF→LVGL input translation). The editor (PluginGreenfieldUI.cpp) subclasses it. Mirrors the legacy
+// packages/native/src/DistrhoPluginInfo.h.
+#define DISTRHO_UI_USE_CUSTOM          1
+#define DISTRHO_UI_CUSTOM_INCLUDE_PATH "LVGL.hpp"   // relative to dpf/distrho/DistrhoUI.hpp
+#define DISTRHO_UI_CUSTOM_WIDGET_TYPE  DGL_NAMESPACE::LVGLTopLevelWidget
+#define DISTRHO_UI_DEFAULT_WIDTH       480
+#define DISTRHO_UI_DEFAULT_HEIGHT      432
 
 #define DISTRHO_PLUGIN_WANT_MIDI_INPUT  1
 #define DISTRHO_PLUGIN_WANT_MIDI_OUTPUT 1
@@ -23,6 +32,10 @@
 #define DISTRHO_PLUGIN_WANT_FULL_STATE  1
 #define DISTRHO_PLUGIN_WANT_LATENCY     0
 #define DISTRHO_PLUGIN_WANT_PROGRAMS    0
+
+// In-process editor↔DSP access: enables UI::getPluginInstancePointer() so the editor reaches the shared
+// host (GreenfieldSharedDSP). All greenfield formats (clap/vst3/jack) link DSP+UI in one binary.
+#define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1
 
 // A distinct 4-char id so the greenfield VST3/AU never collides with the legacy RPlg.
 #define DISTRHO_PLUGIN_BRAND_ID  Dstr

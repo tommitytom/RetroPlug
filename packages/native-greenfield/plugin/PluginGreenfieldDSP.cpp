@@ -14,6 +14,8 @@
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
+#include "PluginGreenfieldShared.hpp"     // GreenfieldSharedDSP handoff to the editor
+
 #include "BackendFacade.hpp"
 #include "BackendRpcRegistration.hpp"
 #include "TypedRpcServer.h"
@@ -41,6 +43,10 @@ class PluginGreenfieldDSP : public Plugin {
     float gainDb_ = 0.0f;
 
 public:
+    // In-process handoff to the editor: exposes host_ so a DPF UI can attach its LVGL display to the
+    // control-plane context (where __rpcSend is already bound). Public so getGreenfieldSharedDSP reaches it.
+    GreenfieldSharedDSP shared_{};
+
     PluginGreenfieldDSP() : Plugin(1 /*params*/, 0 /*programs*/, 1 /*states*/) {
         bootControlPlane();
     }
@@ -160,6 +166,9 @@ private:
         jsReady_ = readReady();
         if (!jsReady_) { d_stderr("[greenfield] control plane not ready"); return; }
 
+        // Publish the host so an editor can attach its LVGL display to this same context.
+        shared_.host = &host_;
+
         // Headless seed: reaper -renderproject sets RETROPLUG_AUTOLOAD_PROJECT to a .rplg path.
         if (const char* autoload = std::getenv("RETROPLUG_AUTOLOAD_PROJECT")) {
             const std::string ok = callGlobal("__rp_loadProjectPath", autoload);
@@ -213,5 +222,10 @@ private:
 };
 
 Plugin* createPlugin() { return new PluginGreenfieldDSP(); }
+
+// In-process handoff: the editor calls this with getPluginInstancePointer() to reach the shared host.
+GreenfieldSharedDSP* getGreenfieldSharedDSP(void* pluginPtr) {
+    return &static_cast<PluginGreenfieldDSP*>(pluginPtr)->shared_;
+}
 
 END_NAMESPACE_DISTRHO

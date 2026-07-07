@@ -80,34 +80,9 @@ add_custom_target(retroplug-greenfield-cp-bundle ALL
     VERBATIM)
 add_dependencies(retroplug-greenfield-cp-bundle ${_TJSC_DEP})
 
-# --- retroplug-greenfield.{vst3,clap} + the jack standalone: the UI-less DPF plugin hosting the
-# greenfield Engine + control plane. Distinct identity from the legacy `retroplug` (they coexist).
-dpf_add_plugin(retroplug-greenfield
-    TARGETS clap vst3 jack
-    FILES_DSP
-        plugin/PluginGreenfieldDSP.cpp
-        ${GFCP_BUNDLE_C})               # the embedded control-plane bytecode (gfcp_cp_bundle)
-
-# plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h, not the legacy one that arrives transitively
-# via retroplug-cli-core's packages/native/src include.
-target_include_directories(retroplug-greenfield BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
-
-target_link_libraries(retroplug-greenfield PUBLIC
-    retroplug-greenfield-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
-    dpfjs::core)                   # DPF Plugin base
-
-target_compile_definitions(retroplug-greenfield PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
-
-# The embedded bundle must exist before the plugin compiles it.
-add_dependencies(retroplug-greenfield retroplug-greenfield-cp-bundle)
-
-# --- greenfield UI test harness --------------------------------------------------------------------
-# retroplug-greenfield-ui-test boots the greenfield React UI on a headless software LVGL display
-# (RenderCore) driven by the BackendFacade RPC (GreenfieldUiHarness) — the greenfield twin of the
-# legacy retroplug-ui-test. Only built on demand (not ALL).
-
-# The greenfield UI bundle: main.tsx → bytecode C array (mirrors retroplug-greenfield-cp-bundle, but
-# a React entry via build-ui.js). Derived; never committed.
+# The greenfield UI bundle: main.tsx → bytecode C array (React entry via build-ui.js). Derived; never
+# committed. Defined BEFORE the plugin so its FILES_UI can embed it; the UI-test binary below reuses the
+# same vars/target.
 set(GFUI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle.js")
 set(GFUI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle_data.c")
 set_source_files_properties(${GFUI_BUNDLE_C} PROPERTIES GENERATED TRUE)
@@ -122,6 +97,40 @@ add_custom_target(retroplug-greenfield-ui-bundle
     COMMENT "Regenerating greenfield UI bundle (esbuild + bytecode)"
     VERBATIM)
 add_dependencies(retroplug-greenfield-ui-bundle ${_TJSC_DEP})
+
+# --- retroplug-greenfield.{vst3,clap} + the jack standalone: the DPF plugin hosting the greenfield
+# Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
+# legacy `retroplug` (they coexist).
+dpf_add_plugin(retroplug-greenfield
+    TARGETS clap vst3 jack
+    FILES_DSP
+        plugin/PluginGreenfieldDSP.cpp
+        ${GFCP_BUNDLE_C}                # the embedded control-plane bytecode (gfcp_cp_bundle)
+    FILES_UI
+        plugin/PluginGreenfieldUI.cpp
+        ${GFUI_BUNDLE_C}                # the embedded React UI bytecode (gfui_ui_bundle)
+        ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)  # the generic DPF↔LVGL base widget
+
+# plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h, not the legacy one that arrives transitively
+# via retroplug-cli-core's packages/native/src include. dpf-widgets/generic resolves "LVGL.hpp".
+target_include_directories(retroplug-greenfield BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
+target_include_directories(retroplug-greenfield PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
+
+target_link_libraries(retroplug-greenfield PUBLIC
+    retroplug-greenfield-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
+    lvgl-js-native                # LVGL + LvglJsEngine + lv_binding_js + lodepng (the editor)
+    dpfjs::core)                  # DPF Plugin + UI base
+
+target_compile_definitions(retroplug-greenfield PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
+
+# The embedded bundles must exist before the plugin compiles them.
+add_dependencies(retroplug-greenfield retroplug-greenfield-cp-bundle retroplug-greenfield-ui-bundle)
+
+# --- greenfield UI test harness --------------------------------------------------------------------
+# retroplug-greenfield-ui-test boots the greenfield React UI on a headless software LVGL display
+# (RenderCore) driven by the BackendFacade RPC (GreenfieldUiHarness) — the greenfield twin of the
+# legacy retroplug-ui-test. Only built on demand (not ALL). Reuses GFUI_BUNDLE_C + the ui-bundle target
+# defined above the plugin.
 
 add_executable(retroplug-greenfield-ui-test
     test/ui/GreenfieldUiRunner.cpp
