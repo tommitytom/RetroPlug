@@ -53,12 +53,18 @@ mkdir -p "$REAPER_CFG"
 # Reaper Linux always scans ~/.vst3; point HOME at the isolated cfg dir
 # and symlink the build bundle there. VST3_PATH alone gets ignored by
 # Reaper unless the user manually re-scans in the prefs UI.
+# Which built VST3 to author against (RETROPLUG_VST3_NAME overrides the legacy default so the
+# greenfield plugin is authored through the same harness).
+VST3_NAME="${RETROPLUG_VST3_NAME:-retroplug}"
 export HOME="$REAPER_CFG"
 mkdir -p "$HOME/.vst3"
-ln -sfn "$REPO_DIR/build/bin/retroplug.vst3" "$HOME/.vst3/retroplug.vst3"
+ln -sfn "$REPO_DIR/build/bin/${VST3_NAME}.vst3" "$HOME/.vst3/${VST3_NAME}.vst3"
 
 export REAPER_AUTHOR_DEST="$DEST"
-export REAPER_AUTHOR_RENDER_DIR="$RENDER_DIR"
+# Absolutize the render dir: the author lua stamps it into the .rpp's RENDER_FILE, and Reaper resolves
+# a relative RENDER_FILE against the .rpp's own directory (not the repo root) — so a relative dir would
+# scatter the render next to the fixture. Absolute keeps the output in the repo-root build/ tree.
+export REAPER_AUTHOR_RENDER_DIR="$(realpath -m "$RENDER_DIR")"
 
 # Optional fixture: point the plugin at a configured project state via the
 # autoload env var so the .RPP chunk captures it. The .rplg is produced by a
@@ -70,6 +76,10 @@ if [ -n "$FIXTURE" ]; then
     fi
     case "$FIXTURE" in
         *.rplg)
+            # Absolutize: the plugin's readFile resolves relative to the process cwd, but Reaper
+            # changes its cwd when it loads the project / runs the script, so a relative fixture path
+            # wouldn't resolve at plugin-construction time (autoload -> false, empty state captured).
+            FIXTURE="$(realpath "$FIXTURE")"
             echo "fixture (rplg): $FIXTURE"
             export RETROPLUG_AUTOLOAD_PROJECT="$FIXTURE"
             ;;
@@ -112,8 +122,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "reaper author: DISPLAY=$DISPLAY dest=$DEST lua=$AUTHOR_LUA"
-echo "  HOME=$HOME (.vst3 symlink: $HOME/.vst3/retroplug.vst3)"
+echo "  HOME=$HOME (.vst3 symlink: $HOME/.vst3/${VST3_NAME}.vst3)"
 [ -n "${RETROPLUG_AUTOLOAD_PROJECT:-}" ] && echo "  autoload=$RETROPLUG_AUTOLOAD_PROJECT"
+
+# Author fresh: drop any prior artifact so the settle-poll below keys on THIS run's save, not a stale
+# file from a previous run.
+rm -f "$DEST"
 
 reaper -cfgfile "$REAPER_CFG/reaper.ini" \
        -nosplash \
@@ -139,8 +153,29 @@ for _ in $(seq 1 30); do
 done &
 DISMISS_PID=$!
 
-wait "$REAPER_PID"
-RC=$?
+# Reaper's headless "Quit" (Main_OnCommand 40004) frequently never returns without a UI thread. The
+# lua saves the .rpp synchronously BEFORE it asks to quit, so wait for the artifact to appear and its
+# size to settle, then stop Reaper ourselves rather than blocking on a self-quit that may never come.
+# (If Reaper does exit cleanly, kill -0 fails first and we simply reap it.)
+DEADLINE=$((SECONDS + 180))
+last_size=-1
+while kill -0 "$REAPER_PID" 2>/dev/null; do
+    if [ -f "$DEST" ]; then
+        sz=$(stat -c '%s' "$DEST" 2>/dev/null || echo 0)
+        if [ "$sz" -gt 0 ] && [ "$sz" = "$last_size" ]; then
+            kill "$REAPER_PID" 2>/dev/null || true
+            break
+        fi
+        last_size="$sz"
+    fi
+    if [ "$SECONDS" -ge "$DEADLINE" ]; then
+        echo "error: timed out waiting for $DEST" >&2
+        kill "$REAPER_PID" 2>/dev/null || true
+        break
+    fi
+    sleep 1
+done
+wait "$REAPER_PID" 2>/dev/null || true
 
 if [ -f "$DEST" ]; then
     echo "authored: $DEST ($(stat -c '%s bytes' "$DEST"))"
@@ -149,4 +184,3 @@ else
     echo "  log: /tmp/reaper-author.log" >&2
     exit 1
 fi
-exit $RC

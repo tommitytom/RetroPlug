@@ -199,6 +199,10 @@ private:
             } else if (JS_IsString(ret)) {
                 const char* s = JS_ToCString(ctx, ret);
                 if (s) { out = s; JS_FreeCString(ctx, s); }
+            } else if (JS_IsBool(ret)) {
+                // Stringify booleans so callers that return a bool (e.g. __rp_loadProjectPath) get an
+                // unambiguous "true"/"false" in diagnostics instead of the empty "false/void" default.
+                out = JS_ToBool(ctx, ret) > 0 ? "true" : "false";
             }
             JS_FreeValue(ctx, ret);
         }

@@ -66,7 +66,9 @@ if [ -n "$AUTOLOAD" ]; then
         echo "error: autoload fixture not found: $AUTOLOAD" >&2
         exit 1
     fi
-    export RETROPLUG_AUTOLOAD_PROJECT="$AUTOLOAD"
+    # Absolutize: the plugin's readFile resolves relative to the process cwd, and Reaper changes its
+    # cwd when it loads the project, so a relative autoload path wouldn't resolve at construction.
+    export RETROPLUG_AUTOLOAD_PROJECT="$(realpath "$AUTOLOAD")"
 fi
 
 # Force isolation from any host X11 / Wayland forwarding the devcontainer
@@ -105,7 +107,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "reaper render: DISPLAY=$DISPLAY project=$PROJECT autoload=${AUTOLOAD:-(none)}"
-echo "  HOME=$HOME (.vst3 symlink: $HOME/.vst3/retroplug.vst3)"
+echo "  HOME=$HOME (.vst3 symlink: $HOME/.vst3/${VST3_NAME}.vst3)"
 echo "  config=$REAPER_CFG"
 
 reaper -cfgfile "$REAPER_CFG/reaper.ini" \
