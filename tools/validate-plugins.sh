@@ -14,8 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BIN_DIR="${RETROPLUG_BIN_DIR:-$REPO_DIR/build/bin}"
 
-CLAP_PLUGIN="$BIN_DIR/retroplug.clap"
-VST3_PLUGIN="$BIN_DIR/retroplug.vst3"
+# Which built plugin to validate (RETROPLUG_*_NAME override the legacy default so the greenfield
+# plugin can be validated by the same script).
+CLAP_PLUGIN="$BIN_DIR/${RETROPLUG_CLAP_NAME:-retroplug}.clap"
+VST3_PLUGIN="$BIN_DIR/${RETROPLUG_VST3_NAME:-retroplug}.vst3"
 
 clap_rc=0
 vst3_rc=0

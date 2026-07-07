@@ -85,10 +85,9 @@ g.__rp_loadProjectPath = (path: string): boolean => {
 };
 
 g.__rp_loadProjectB64 = (b64: string): boolean => {
-  if (!b64) {
-    project.newProject();
-    return true;
-  }
+  // Empty chunk = no-op (matches the legacy plugin): a host that saved an empty project, or the
+  // autoload path having already seeded one, must not be wiped. Explicit reset goes via __rp_newProject.
+  if (!b64) return true;
   return project.loadBytes(b64decode(b64), "").kind === "loaded";
 };
 
