@@ -3,33 +3,23 @@
 // Reads useSystems() for the tiles and useProjectSettings()/useUserConfig() for layout + zoom, and
 // mutates through useStores() (setFocus) with no action wrapper. Tiles are wrapped in a StableSlot (the
 // insertChildBefore-append workaround); the slot whose id matches `menuSystemId` swaps its child from the
-// EmulatorTile to the instance <Menu>, so sibling tiles keep rendering. Because the display is a fixed
-// size (no window-resize yet), the tile zoom is capped to fit the whole grid on screen. Empty projects
-// and the add/duplicate actions are handled by the menu (App), not here.
-
-import { Dimensions } from "lvgljs-ui";
+// EmulatorTile to the instance <Menu>, so sibling tiles keep rendering. The tile zoom is capped (fitZoom)
+// to fit the whole grid in the current window — App resizes the window to the grid, but a tiling WM may
+// clamp it, so the cap keeps everything visible either way. Empty projects and the add/duplicate actions
+// are handled by the menu (App), not here.
 
 import { useStores, useSystems, useProjectSettings, useUserConfig } from "../../stores/useStores";
 import { Box } from "../../lvgl/Box";
+import { useWindowSize } from "../../lvgl/useWindowSize";
 import { StableSlot } from "../../lvgl/StableSlot";
 import { EmulatorTile } from "./EmulatorTile";
 import { Menu } from "../menu/Menu";
 import type { MenuTree } from "../menu/menuTree";
 import type { SystemView } from "../../../src/systemsStore";
-import { SystemLayout, shapeFor, tileWidth, tileHeight, GB_NATIVE_W, GB_NATIVE_H } from "./layout";
+import { SystemLayout, shapeFor, tileWidth, tileHeight } from "./layout";
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 6;
-
-function displaySize(): { width: number; height: number } {
-  try {
-    const d = (Dimensions as { window?: { width: number; height: number } }).window;
-    if (d && d.width > 0 && d.height > 0) return { width: d.width, height: d.height };
-  } catch {
-    /* fall through to the default */
-  }
-  return { width: GB_NATIVE_W * 3, height: GB_NATIVE_H * 3 }; // 480×432 fallback (the harness display)
-}
 
 // The largest integer zoom in [1, cap] whose grid fits `area`, so the whole grid is always visible.
 function fitZoom(count: number, layout: SystemLayout, cap: number, area: { width: number; height: number }): number {
@@ -53,10 +43,10 @@ export function SystemGrid({
   const systems = useSystems();
   const settings = useProjectSettings();
   const userConfig = useUserConfig();
+  const display = useWindowSize();
 
   if (systems.length === 0) return null; // App renders the start menu when empty
 
-  const display = displaySize();
   const layout = settings.layout as SystemLayout;
   const resolvedZoom = settings.zoom >= MIN_ZOOM && settings.zoom <= MAX_ZOOM ? settings.zoom : userConfig.defaultZoom;
   const zoom = fitZoom(systems.length, layout, resolvedZoom, display);
