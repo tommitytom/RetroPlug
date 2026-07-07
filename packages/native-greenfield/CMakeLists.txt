@@ -45,7 +45,13 @@ target_link_libraries(retroplug-greenfield-backend PUBLIC
 set_target_properties(retroplug-greenfield-backend PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON  # linked into the shared plugin module (below)
 )
+
+# The plugin is a shared module, so its static deps must be PIC. The CLI core lib is shared with the
+# test host + CLI (executables that don't need PIC); make it position-independent so it can also link
+# into the plugin. The emulator cores (sameboy/mesen/…) already set PIC themselves.
+set_target_properties(retroplug-cli-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # native-greenfield-host: the test host — the backend lib + a main() that evals a TS bundle over the
 # __rpcSend bridge. Output binary lands in build/bin/.
@@ -74,3 +80,24 @@ add_custom_target(retroplug-greenfield-cp-bundle ALL
     COMMENT "Regenerating greenfield control-plane bundle (esbuild + bytecode)"
     VERBATIM)
 add_dependencies(retroplug-greenfield-cp-bundle ${_TJSC_DEP})
+
+# --- retroplug-greenfield.{vst3,clap} + the jack standalone: the UI-less DPF plugin hosting the
+# greenfield Engine + control plane. Distinct identity from the legacy `retroplug` (they coexist).
+dpf_add_plugin(retroplug-greenfield
+    TARGETS clap vst3 jack
+    FILES_DSP
+        plugin/PluginGreenfieldDSP.cpp
+        ${GFCP_BUNDLE_C})               # the embedded control-plane bytecode (gfcp_cp_bundle)
+
+# plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h, not the legacy one that arrives transitively
+# via retroplug-cli-core's packages/native/src include.
+target_include_directories(retroplug-greenfield BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
+
+target_link_libraries(retroplug-greenfield PUBLIC
+    retroplug-greenfield-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
+    dpfjs::core)                   # DPF Plugin base
+
+target_compile_definitions(retroplug-greenfield PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
+
+# The embedded bundle must exist before the plugin compiles it.
+add_dependencies(retroplug-greenfield retroplug-greenfield-cp-bundle)
