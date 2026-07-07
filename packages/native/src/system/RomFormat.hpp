@@ -3,29 +3,29 @@
 #include <cstdint>
 #include <vector>
 
-// Detect the emulator backend a given ROM file should run on. Called by
-// PluginJsBridge::buildSystemFromPath (and any caller that needs to gate
-// "is this actually a ROM?" before constructing a system). Uses magic bytes,
-// not the file extension, so a mislabelled .gb that's really a .nes still
-// picks the right backend — and a totally unrelated file (a .sh script,
-// say) is rejected cleanly instead of being fed to SameBoy as garbage.
+// Detect the platform a given ROM targets — Game Boy, NES, or GBA. Called by
+// any caller that needs to gate "is this actually a ROM?" before constructing
+// a system (and to route it to the core that runs that platform). Uses magic
+// bytes, not the file extension, so a mislabelled .gb that's really a .nes
+// still classifies correctly — and a totally unrelated file (a .sh script,
+// say) is rejected cleanly instead of being fed to a core as garbage.
 
 enum class RomFormat : std::uint8_t {
-    Unknown  = 0,  // bytes don't look like any supported ROM
-    SameBoy  = 1,  // Game Boy / Game Boy Color (DMG/CGB)
-    MesenNes = 2,  // NES (iNES header), via the Mesen backend
-    MesenGba = 3,  // Game Boy Advance (Nintendo logo at $0004..$009F), via Mesen
+    Unknown = 0,  // bytes don't look like any supported ROM
+    Gb      = 1,  // Game Boy / Game Boy Color (DMG/CGB)
+    Nes     = 2,  // NES (iNES header)
+    Gba     = 3,  // Game Boy Advance (Nintendo logo at $0004..$009F)
 };
 
-// Returns MesenNes if `bytes` starts with the iNES magic ("NES\x1A").
-// Returns MesenGba if `bytes` contains the GBA Nintendo logo at offset $0004.
-// Returns SameBoy if `bytes` contains the Game Boy Nintendo logo at offset
+// Returns Nes if `bytes` starts with the iNES magic ("NES\x1A").
+// Returns Gba if `bytes` contains the GBA Nintendo logo at offset $0004.
+// Returns Gb if `bytes` contains the Game Boy Nintendo logo at offset
 // $0104. Returns Unknown otherwise. Empty / short buffers are Unknown.
 inline RomFormat detectRomFormat(const std::vector<std::uint8_t>& bytes) {
     // iNES: 'N','E','S',0x1A at offset 0
     if (bytes.size() >= 4 &&
         bytes[0] == 'N' && bytes[1] == 'E' && bytes[2] == 'S' && bytes[3] == 0x1A) {
-        return RomFormat::MesenNes;
+        return RomFormat::Nes;
     }
 
     // GBA: Nintendo logo at $0004..$009F. Every licensed GBA cart contains
@@ -45,7 +45,7 @@ inline RomFormat detectRomFormat(const std::vector<std::uint8_t>& bytes) {
         for (std::size_t i = 0; i < kGbaLogoSize; ++i) {
             if (bytes[kGbaLogoOffset + i] != kGbaLogo[i]) { match = false; break; }
         }
-        if (match) return RomFormat::MesenGba;
+        if (match) return RomFormat::Gba;
     }
 
     // Game Boy: Nintendo logo at $0104..$0133. Every licensed (and most
@@ -67,7 +67,7 @@ inline RomFormat detectRomFormat(const std::vector<std::uint8_t>& bytes) {
         for (std::size_t i = 0; i < kLogoSize; ++i) {
             if (bytes[kLogoOffset + i] != kNintendoLogo[i]) { match = false; break; }
         }
-        if (match) return RomFormat::SameBoy;
+        if (match) return RomFormat::Gb;
     }
 
     return RomFormat::Unknown;

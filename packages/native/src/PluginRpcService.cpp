@@ -230,7 +230,7 @@ SystemBase* PluginRpcService::constructInstanceCore(
     const SystemId id = project_->nextSystemId();
     const double sr = sampleRate_->load(std::memory_order_acquire);
 
-    if (fmt == RomFormat::MesenNes) {
+    if (fmt == RomFormat::Nes) {
         MesenNesConfig cfg;
         cfg.romPath   = romPath;
         cfg.savSuffix = suffix;
@@ -241,7 +241,7 @@ SystemBase* PluginRpcService::constructInstanceCore(
         return sys.release();
     }
 
-    if (fmt == RomFormat::MesenGba) {
+    if (fmt == RomFormat::Gba) {
         MesenGbaConfig cfg;
         cfg.romPath   = romPath;
         cfg.savSuffix = suffix;
@@ -329,7 +329,7 @@ bool PluginRpcService::constructSystem(std::string romPath, std::string embedded
     if (!embeddedRom.empty()) {
         const std::span<const std::uint8_t> rom = rp::embeddedRom(embeddedRom);
         romBytes.assign(rom.begin(), rom.end());
-        fmt = RomFormat::SameBoy;
+        fmt = RomFormat::Gb;
     } else {
         romBytes = slurp(romPath);
         fmt = detectRomFormat(romBytes);

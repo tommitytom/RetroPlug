@@ -48,7 +48,7 @@ std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, const SystemBuild
     } else {
         // File-backed: slurp the full ROM and sniff. SameBoy-only gate here.
         romBytes = slurpAll(spec.romPath);
-        if (romBytes.empty() || detectRomFormat(romBytes) != RomFormat::SameBoy) return nullptr;
+        if (romBytes.empty() || detectRomFormat(romBytes) != RomFormat::Gb) return nullptr;
     }
 
     SameBoyConfig cfg;

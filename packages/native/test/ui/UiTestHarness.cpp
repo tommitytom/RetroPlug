@@ -274,7 +274,7 @@ void UiTestHarness::installTestIdHook() {
 
 std::uint32_t UiTestHarness::loadRom(const std::string& path, const std::string& savPath) {
     auto bytes = slurpBytes(path);
-    if (detectRomFormat(bytes) != RomFormat::SameBoy)
+    if (detectRomFormat(bytes) != RomFormat::Gb)
         throw std::runtime_error("UiTestHarness::loadRom supports SameBoy ROMs only: " + path);
 
     SameBoyConfig cfg;

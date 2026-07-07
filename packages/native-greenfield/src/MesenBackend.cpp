@@ -29,7 +29,7 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
     // Dispatch on the platform: one Mesen core, two systems. The RomFormat gate confirms the bytes
     // actually match the requested platform (a mislabelled ROM is rejected).
     if (spec.platform == "nes") {
-        if (detectRomFormat(romBytes) != RomFormat::MesenNes) return nullptr;
+        if (detectRomFormat(romBytes) != RomFormat::Nes) return nullptr;
         MesenNesConfig cfg;
         cfg.romPath = spec.romPath;
         cfg.sram = spec.sram;
@@ -40,7 +40,7 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
     }
 
     if (spec.platform == "gba") {
-        if (detectRomFormat(romBytes) != RomFormat::MesenGba) return nullptr;
+        if (detectRomFormat(romBytes) != RomFormat::Gba) return nullptr;
         MesenGbaConfig cfg;
         cfg.romPath = spec.romPath;
         cfg.sram = spec.sram;

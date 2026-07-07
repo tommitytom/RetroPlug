@@ -169,7 +169,7 @@ struct TestHarness::Impl {
 
         std::unique_ptr<SystemBase> sys;
         switch (fmt) {
-            case RomFormat::SameBoy: {
+            case RomFormat::Gb: {
                 SameBoyConfig cfg;
                 cfg.romPath  = path;
                 cfg.model    = SameBoyModel::CgbC;
@@ -193,14 +193,14 @@ struct TestHarness::Impl {
                     project->nextSystemId(), cfg, std::move(bytes));
                 break;
             }
-            case RomFormat::MesenNes: {
+            case RomFormat::Nes: {
                 MesenNesConfig cfg;
                 cfg.romPath = path;
                 sys = std::make_unique<MesenNesSystem>(
                     project->nextSystemId(), cfg, std::move(bytes));
                 break;
             }
-            case RomFormat::MesenGba: {
+            case RomFormat::Gba: {
                 MesenGbaConfig cfg;
                 cfg.romPath = path; // no biosPath -> Mesen falls back to HLE BIOS
                 sys = std::make_unique<MesenGbaSystem>(
