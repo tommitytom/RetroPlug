@@ -122,6 +122,15 @@ export interface Backend {
    *  failure. */
   applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
 
+  // --- Live emulator input ------------------------------------------------
+  // The UI→DSP direction for game input: a joypad button transition on the focused system. Native queues
+  // it to the core's audio-thread button sink, so it applies live while the instance plays.
+
+  /** Press (`down`) or release a Game Boy button on system `id`. `button` is a GameboyButton value
+   *  (Right=0 … Start=7). Effectively fire-and-forget — the edge is queued to the audio thread, so the
+   *  return only says the call was accepted, not that the id exists. */
+  pressButton(id: number, button: number, down: boolean): boolean;
+
   // --- Live emulator reads (the pump) -------------------------------------
   // The DSP→TS direction: read a live system's state out. Native publishes these from
   // the audio thread into race-free triple-buffers; TS pulls the latest snapshot by the
