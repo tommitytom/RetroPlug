@@ -99,15 +99,11 @@ void Engine::processBlock(std::uint32_t frames, float* outL, float* outR) {
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {
-    SystemBase* s = project_.findSystem(id);
-    if (!s) return std::nullopt;
-    return s->saveStateBytes();
+    return registry_.readState(id);   // the owned published copy — never walks Project / the live core
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
-    SystemBase* s = project_.findSystem(id);
-    if (!s) return std::nullopt;
-    return s->saveSramBytes();
+    return registry_.readSram(id);    // SRAM sliced from the published savestate, not a live read
 }
 
 bool Engine::screenshot(SystemId id, const std::string& path) {
@@ -132,21 +128,14 @@ bool Engine::screenshot(SystemId id, const std::string& path) {
 }
 
 EngineFrame Engine::getFrame(SystemId id) {
+    // The owned frame copy, by id — no findSystem, no live-core deref. width/height are 0 (published
+    // false) for an unknown system; set with published false for a claimed core that hasn't rendered.
+    SnapshotRegistry::Frame f = registry_.readFrame(id);
     EngineFrame out;
-    SystemBase* s = project_.findSystem(id);
-    if (!s) return out; // unknown system → width/height 0, published false
-    FrameBufferTriple* fb = s->framebuffer();
-    if (!fb) return out;
-    out.width = fb->width();
-    out.height = fb->height();
-    const std::size_t pixels = static_cast<std::size_t>(out.width) * out.height;
-    // FrameBufferTriple stores XRGB8888; hand the raw bytes straight to the Canvas (its native format).
-    std::vector<std::uint32_t> xrgb(pixels);
-    out.published = fb->readInto(xrgb.data(), static_cast<std::uint32_t>(pixels));
-    if (out.published) {
-        const auto* p = reinterpret_cast<const std::uint8_t*>(xrgb.data());
-        out.data.assign(p, p + pixels * 4);
-    }
+    out.width = f.width;
+    out.height = f.height;
+    out.published = f.published;
+    out.data = std::move(f.data);   // raw XRGB8888, the Canvas's native format
     return out;
 }
 

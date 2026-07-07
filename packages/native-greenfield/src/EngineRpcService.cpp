@@ -177,17 +177,15 @@ bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string kind, std::
     return true;
 }
 
-// Core reads below touch live core state, unsafe while the audio thread owns the Engine. Until the
-// per-system snapshot triple-buffers land (deferred), they fail safe during a run.
+// Reads of the owned snapshot registry — the control plane reads published copies by id, never the
+// live core, so they're safe while the audio thread runs (no audioRunning_ guard, no findSystem walk).
 std::optional<rfl::Bytestring> EngineRpcService::readState(std::uint32_t id) {
-    if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
     auto bytes = engine_.readState(id);
     if (!bytes) return std::nullopt;
     return toBytestring(*bytes);
 }
 
 std::optional<rfl::Bytestring> EngineRpcService::readSram(std::uint32_t id) {
-    if (audioRunning_.load(std::memory_order_acquire)) return std::nullopt;
     auto bytes = engine_.readSram(id);
     if (!bytes) return std::nullopt;
     return toBytestring(*bytes);
@@ -198,10 +196,8 @@ bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {
     return engine_.screenshot(id, path);
 }
 
-// Unlike the reads above, getFrame is NOT audioRunning_-guarded: the UI displays frames WHILE audio
-// plays, and the FrameBufferTriple is a concurrent one-writer/one-reader design. (The findSystem walk
-// shares the same deferred structural-snapshot concern, but a live editor over a running audio thread
-// doesn't exist yet.)
+// Like the reads above, getFrame reads the owned registry by id (the UI displays frames while audio
+// plays) — no guard, no findSystem walk.
 GreenfieldFrame EngineRpcService::getFrame(std::uint32_t id) {
     const EngineFrame f = engine_.getFrame(id);
     GreenfieldFrame out;
