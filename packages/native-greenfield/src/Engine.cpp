@@ -5,6 +5,7 @@
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
+#include "system/BlockRunner.hpp"   // runBlock + MultiOutRouter
 #include "system/sameboy/SameBoySystem.hpp"  // live-apply cast target (model/highpass/gain/…)
 
 #include "transport/FrameBufferTriple.hpp"
@@ -69,11 +70,12 @@ void Engine::stageMidi(std::vector<std::uint8_t> bytes) {
 
 void Engine::setBpm(double bpm) { bpm_ = bpm; }
 void Engine::setTransport(bool playing) { transport_ = playing; }
+void Engine::setAudioRouting(AudioRouting mode) { audioRouting_ = mode; }
 
 // Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
 // (delivered this block); `dInfo`/`AudioBlockInfo` are both built at the block-start `ppq_`, and
 // `ppq_` advances only after — so the kernel's walkTicks and the cores see the same block-start ppq.
-void Engine::processBlock(std::uint32_t frames, float* outL, float* outR) {
+void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
     if (dspActive_) {
         const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transport_ };
         dsp_.processBlock(pendingMidi_, kNoButtons, kNoKeys, dInfo);
@@ -86,16 +88,25 @@ void Engine::processBlock(std::uint32_t frames, float* outL, float* outR) {
             if (SystemBase* t = project_.findSystem(bo.system))
                 t->pressButton(static_cast<std::uint8_t>(bo.button), bo.down);
     }
-    std::fill_n(outL, frames, 0.0f);  // cores mix additively → zero each block
-    std::fill_n(outR, frames, 0.0f);
-    float* outs[2] = { outL, outR };
+    // Caller owns the buffers; systems SUM into their router-assigned bus, so zero every channel
+    // first. MultiOutRouter places each system per audioRouting_ (Stereo = all → pair 0; with 2
+    // channels every mode collapses to that one pair).
+    for (std::size_t c = 0; c < numOutputs; ++c)
+        std::fill_n(outputs[c], frames, 0.0f);
     AudioBlockInfo info{ frames, sampleRate_, bpm_, ppq_, transport_ };
-    project_.onProcess(info, outs);
+    MultiOutRouter router(outputs, numOutputs, audioRouting_);
+    runBlock(info, project_, router);
     // Copy each core's freshly-published frame/state/SRAM into the owned registry the control plane
     // reads through — the one place every driver funnels the block, so it covers all of them.
     registry_.publishAll(project_, frames, sampleRate_);
     if (transport_)
         ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
+}
+
+// Stereo convenience (the CLI render + the test-host audio loop): one pair, everyone mixed.
+void Engine::processBlock(std::uint32_t frames, float* outL, float* outR) {
+    float* outs[2] = { outL, outR };
+    processBlock(frames, outs, 2);
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {

@@ -54,6 +54,8 @@ public:
     // --- transport (plain members; mutated only by the Engine's owning thread) ---
     void setBpm(double bpm);
     void setTransport(bool playing);
+    // Which output pairs each system routes to (Stereo = all → pair 0). Plain member, like transport.
+    void setAudioRouting(AudioRouting mode);
 
     // Host sample rate. Baked into each core at construct (findable via sampleRate()); set it BEFORE
     // constructing systems — there is no per-system resample-on-change today.
@@ -64,7 +66,11 @@ public:
     const std::vector<DspRuntime::MidiOut>& midiOut() const { return dsp_.midiOut_; }
     void clearMidiOut() { dsp_.midiOut_.clear(); }
 
-    // --- per block: run kernel → fan sinks to cores → onProcess → advance the ppq clock ---
+    // --- per block: run kernel → fan sinks to cores → route to the outputs → advance the ppq clock ---
+    // Multi-out core: `outputs` is a flat array of `numOutputs` planar channels; each system routes
+    // into its pair per audioRouting_ (via MultiOutRouter). The plugin passes its 8 channels; the
+    // stereo overload below passes 2 (any routing mode collapses to one pair with 2 channels).
+    void processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs);
     void processBlock(std::uint32_t frames, float* outL, float* outR);
 
     // --- live-state reads / direct mutation (valid only on the Engine's owning thread) ---
@@ -96,4 +102,6 @@ private:
     double bpm_       = 120.0;
     bool   transport_ = false;
     double ppq_       = 0.0;
+
+    AudioRouting audioRouting_ = AudioRouting::Stereo;  // output-pair placement; Stereo = all → pair 0
 };
