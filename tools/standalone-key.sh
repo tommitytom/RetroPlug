@@ -24,10 +24,12 @@ if [ -z "${DISPLAY:-}" ]; then
     exit 1
 fi
 
-# Ensure retroplug has window focus before sending keys.
-WINDOW=$(xdotool search --name "retroplug" 2>/dev/null | head -1 || true)
+# Ensure the standalone window has focus before sending keys. RETROPLUG_WINDOW_NAME overrides the
+# xdotool --name match (default "retroplug"; the greenfield standalone titles itself "RetroPlug Greenfield").
+WIN_NAME="${RETROPLUG_WINDOW_NAME:-retroplug}"
+WINDOW=$(xdotool search --name "$WIN_NAME" 2>/dev/null | head -1 || true)
 if [ -z "$WINDOW" ]; then
-    echo "warning: no retroplug window found on $DISPLAY" >&2
+    echo "warning: no '$WIN_NAME' window found on $DISPLAY" >&2
 fi
 
 if [ "${1:-}" = "--repeat" ]; then
