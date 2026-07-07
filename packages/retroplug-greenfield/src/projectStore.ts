@@ -146,6 +146,33 @@ export class ProjectStore {
     return true;
   }
 
+  /** Export to in-memory PKZIP bytes (the plugin's DPF state chunk) — the same archive `export`
+   *  writes, but WITHOUT the recents/currentPath/dirty side-effects a host save has. Paths are left
+   *  absolute (`baseDir=""`), so `loadBytes` round-trips them with no rebase. */
+  exportBytes(): Uint8Array | null {
+    const cfg = buildConfig(this.projectSettings, this.systems.systems());
+    const json = serializeConfig(cfg, "", (p) => this.backend.canonicalize(p));
+    const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
+    this.systems.systems().forEach((sys, i) => {
+      const state = this.backend.readState(sys.id);
+      if (state && state.length) entries.push({ name: stateKey(i), bytes: state });
+      const sram = this.backend.readSram(sys.id);
+      if (sram && sram.length) entries.push({ name: sramKey(i), bytes: sram });
+    });
+    return this.backend.zip(entries);
+  }
+
+  /** Load a project from in-memory PKZIP bytes (the plugin's DPF state chunk / an autoloaded `.rplg`).
+   *  `baseDir` rebases relative asset paths (`""` for an absolute-path chunk from `exportBytes`, or the
+   *  `.rplg`'s folder for an on-disk file). No recents/currentPath side-effects. */
+  loadBytes(bytes: Uint8Array, baseDir = ""): LoadOutcome {
+    const entries = this.backend.unzip(bytes);
+    if (!entries) return { kind: "error" };
+    const { config, blobs } = partitionEntries(entries);
+    if (!config) return { kind: "error" }; // no project.json → not a RetroPlug archive
+    return this.beginLoad(parseConfig(dec.decode(config)), "", blobs, baseDir);
+  }
+
   /** Load a `.rplg` — thin (raw JSON) or an export (PKZIP). Refuses a newer schema, and
    *  holds a project with missing files for relink before applying. */
   load(path: string): LoadOutcome {
@@ -223,7 +250,7 @@ export class ProjectStore {
       this.systems.adopt(s, sysBlobs);
     });
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
-    this.recent.add(path);
+    if (path) this.recent.add(path); // in-memory loads (plugin state chunk) pass "" — no recents entry
     this.path = path;
     this.dirty = false;
     this.onSystemsChange(); // push the rebuilt systems (the adopt path is quiet)
