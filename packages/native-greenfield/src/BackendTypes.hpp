@@ -18,6 +18,11 @@ struct BackendZipInput { std::string name; std::vector<std::uint8_t> bytes; };  
 // squared samples, frames = total). A control-thread reader diffs two snapshots for a windowed RMS.
 struct AudioCaptured { double energy; std::uint64_t frames; };
 
+// One system's video frame for the UI (mirrors the harness HarnessFrame). `data` is raw XRGB8888,
+// width*height*4 bytes (msgpack BIN -> JS Uint8Array); empty until `published`. Read from the
+// concurrent FrameBufferTriple, so it is safe to fetch while the audio thread renders.
+struct GreenfieldFrame { std::uint32_t width; std::uint32_t height; bool published; rfl::Bytestring data; };
+
 // Mirrors the greenfield ConstructSpec (packages/retroplug-greenfield/src/backend.ts): concrete
 // paths + an embedded-ROM marker + optional zip-import seed bytes. The optional string fields are
 // absent (nullopt) rather than "" when the TS side has null.

@@ -33,6 +33,7 @@ public:
     std::optional<rfl::Bytestring> readState(std::uint32_t id);
     std::optional<rfl::Bytestring> readSram(std::uint32_t id);
     bool screenshot(std::uint32_t id, std::string path);
+    GreenfieldFrame getFrame(std::uint32_t id);
 
     // --- DSP-side JS runtime (the role kernel) ---
     std::optional<rfl::Bytestring> compileScript(std::string source);

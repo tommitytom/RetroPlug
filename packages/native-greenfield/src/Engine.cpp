@@ -128,6 +128,25 @@ bool Engine::screenshot(SystemId id, const std::string& path) {
     return lodepng_encode24_file(path.c_str(), rgb.data(), w, h) == 0;
 }
 
+EngineFrame Engine::getFrame(SystemId id) {
+    EngineFrame out;
+    SystemBase* s = project_.findSystem(id);
+    if (!s) return out; // unknown system → width/height 0, published false
+    FrameBufferTriple* fb = s->framebuffer();
+    if (!fb) return out;
+    out.width = fb->width();
+    out.height = fb->height();
+    const std::size_t pixels = static_cast<std::size_t>(out.width) * out.height;
+    // FrameBufferTriple stores XRGB8888; hand the raw bytes straight to the Canvas (its native format).
+    std::vector<std::uint32_t> xrgb(pixels);
+    out.published = fb->readInto(xrgb.data(), static_cast<std::uint32_t>(pixels));
+    if (out.published) {
+        const auto* p = reinterpret_cast<const std::uint8_t*>(xrgb.data());
+        out.data.assign(p, p + pixels * 4);
+    }
+    return out;
+}
+
 bool Engine::pressButton(SystemId id, std::uint8_t button, bool down) {
     SystemBase* sys = project_.findSystem(id);
     if (!sys) return false;

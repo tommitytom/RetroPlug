@@ -36,6 +36,7 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::readState>();
     server.template addMethod<&BackendFacade::readSram>();
     server.template addMethod<&BackendFacade::screenshot>();
+    server.template addMethod<&BackendFacade::getFrame>();
     // DSP-side JS runtime (the role kernel)
     server.template addMethod<&BackendFacade::compileScript>();
     server.template addMethod<&BackendFacade::dspLoadKernel>();

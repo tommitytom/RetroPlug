@@ -16,6 +16,16 @@ enum class ConfigField : std::uint8_t {
     Gain = 0, ReloadOnRomChange = 1, Model = 2, Highpass = 3, LinkGroup = 4, FastBoot = 5,
 };
 
+// One system's video frame, read from its lock-free FrameBufferTriple. `data` is raw XRGB8888
+// (little-endian B,G,R,X), width*height*4 bytes — the LVGL Canvas's native format, so no transcode.
+// `published` is false (and `data` empty) until the core has rendered its first frame.
+struct EngineFrame {
+    std::uint32_t             width = 0;
+    std::uint32_t             height = 0;
+    bool                      published = false;
+    std::vector<std::uint8_t> data;
+};
+
 // The single-threaded core of the greenfield host: owns the Project of live systems and the DSP
 // role kernel, and knows nothing about audio threads, queues, or RPC. Every op runs "now, on the
 // calling thread." Removed/displaced cores are RETURNED to the caller (who deletes them, or routes
@@ -60,6 +70,9 @@ public:
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);
     std::optional<std::vector<std::uint8_t>> readSram(SystemId id);
     bool screenshot(SystemId id, const std::string& path);
+    // The system's latest video frame (raw XRGB8888). Reads the concurrent FrameBufferTriple, so it is
+    // safe while the audio thread writes; width/height are 0 (published false) for an unknown system.
+    EngineFrame getFrame(SystemId id);
     bool pressButton(SystemId id, std::uint8_t button, bool down);
     // Apply a live config edit to a system (SameBoy-only cast today). Value-guarded per field so a
     // whole-config re-send only acts on what changed (no spurious model restart).

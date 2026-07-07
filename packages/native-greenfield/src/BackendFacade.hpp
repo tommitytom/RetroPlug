@@ -53,6 +53,7 @@ public:
     std::optional<rfl::Bytestring> readState(std::uint32_t id) { return engine_svc_.readState(id); }
     std::optional<rfl::Bytestring> readSram(std::uint32_t id) { return engine_svc_.readSram(id); }
     bool screenshot(std::uint32_t id, std::string path) { return engine_svc_.screenshot(id, std::move(path)); }
+    GreenfieldFrame getFrame(std::uint32_t id) { return engine_svc_.getFrame(id); }
     std::optional<rfl::Bytestring> compileScript(std::string source) { return engine_svc_.compileScript(std::move(source)); }
     bool dspLoadKernel(std::vector<std::uint8_t> bytecode) { return engine_svc_.dspLoadKernel(std::move(bytecode)); }
     bool dspSetSystems(std::string json) { return engine_svc_.dspSetSystems(std::move(json)); }

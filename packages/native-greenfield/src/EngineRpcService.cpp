@@ -178,6 +178,23 @@ bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {
     return engine_.screenshot(id, path);
 }
 
+// Unlike the reads above, getFrame is NOT audioRunning_-guarded: the UI displays frames WHILE audio
+// plays, and the FrameBufferTriple is a concurrent one-writer/one-reader design. (The findSystem walk
+// shares the same deferred structural-snapshot concern, but a live editor over a running audio thread
+// doesn't exist yet.)
+GreenfieldFrame EngineRpcService::getFrame(std::uint32_t id) {
+    const EngineFrame f = engine_.getFrame(id);
+    GreenfieldFrame out;
+    out.width = f.width;
+    out.height = f.height;
+    out.published = f.published;
+    if (f.published) {
+        const auto* p = reinterpret_cast<const std::byte*>(f.data.data());
+        out.data.assign(p, p + f.data.size());
+    }
+    return out;
+}
+
 std::optional<rfl::Bytestring> EngineRpcService::compileScript(std::string source) {
     auto bytecode = dsp::compileToBytecode(source);
     if (!bytecode) return std::nullopt;
