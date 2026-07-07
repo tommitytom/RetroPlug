@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -60,6 +61,34 @@ protected:
     uint32_t    getVersion()     const noexcept override { return d_version(0, 1, 0); }
     int64_t     getUniqueId()    const noexcept override { return d_cconst('R', 'P', 'g', 'f'); }
 
+    // --- audio ports: name the 8 outputs as four stereo pairs (out_1..4) + tag each with a port
+    // group so DAWs show Out 1..4 stereo pairs. Systems route to a pair per audioRouting. (Mirrors
+    // the legacy plugin so tooling that links `out_N_l/r` works the same.) ---
+    void initAudioPort(bool input, uint32_t index, AudioPort& port) override {
+        if (input) { Plugin::initAudioPort(input, index, port); return; }
+        const uint32_t pair = index / 2;
+        const bool     left = (index % 2) == 0;
+        char nameBuf[16];
+        char symBuf [16];
+        std::snprintf(nameBuf, sizeof(nameBuf), "Out %u%c", pair + 1, left ? 'L' : 'R');
+        std::snprintf(symBuf,  sizeof(symBuf),  "out_%u_%c", pair + 1, left ? 'l' : 'r');
+        port.hints   = 0;
+        port.name    = nameBuf;
+        port.symbol  = symBuf;
+        port.groupId = pair;
+    }
+
+    void initPortGroup(uint32_t groupId, PortGroup& portGroup) override {
+        constexpr uint32_t kPairCount = DISTRHO_PLUGIN_NUM_OUTPUTS / 2;
+        if (groupId >= kPairCount) return;
+        char nameBuf[16];
+        char symBuf [16];
+        std::snprintf(nameBuf, sizeof(nameBuf), "Out %u", groupId + 1);
+        std::snprintf(symBuf,  sizeof(symBuf),  "out_%u", groupId + 1);
+        portGroup.name   = nameBuf;
+        portGroup.symbol = symBuf;
+    }
+
     // --- parameters (one: master gain, applied post-render) ---
     void initParameter(uint32_t index, Parameter& p) override {
         if (index != 0) return;
@@ -109,9 +138,7 @@ protected:
             if (e.size >= 1 && e.size <= 4) service_.stageMidiRaw(e.data, e.size);
         }
 
-        float* outL = outputs[0];
-        float* outR = outputs[1];
-        service_.pluginProcessBlock(bpm, playing, frames, outL, outR);
+        service_.pluginProcessBlock(bpm, playing, frames, outputs, DISTRHO_PLUGIN_NUM_OUTPUTS);
 
         // Kernel MIDI-out → the DAW.
         for (const auto& mo : service_.pluginMidiOut()) {
@@ -124,10 +151,11 @@ protected:
         }
         service_.pluginClearMidiOut();
 
-        // Master gain (post-render; the Engine has no master-gain stage).
+        // Master gain across every output channel (post-render; the Engine has no master-gain stage).
         const float lin = std::pow(10.0f, gainDb_ / 20.0f);
         if (lin != 1.0f)
-            for (uint32_t i = 0; i < frames; ++i) { outL[i] *= lin; outR[i] *= lin; }
+            for (uint32_t c = 0; c < DISTRHO_PLUGIN_NUM_OUTPUTS; ++c)
+                for (uint32_t i = 0; i < frames; ++i) outputs[c][i] *= lin;
     }
 
 private:

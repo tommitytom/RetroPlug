@@ -32,9 +32,10 @@ void BackendFacade::pluginDeactivate() {
     while (std::unique_ptr<SystemBase> sys = queued_.popReleased()) engine_.registry().release(sys->id());
 }
 
-void BackendFacade::pluginProcessBlock(double bpm, bool playing, std::uint32_t frames, float* outL, float* outR) {
+void BackendFacade::pluginProcessBlock(double bpm, bool playing, std::uint32_t frames,
+                                       float* const* outputs, std::uint32_t numOutputs) {
     queued_.drainInto(engine_);       // apply control-thread structural edits on the audio thread
     engine_.setBpm(bpm);              // transport from DPF TimePosition (direct — we're the audio thread)
     engine_.setTransport(playing);
-    engine_.processBlock(frames, outL, outR);  // consumes MIDI staged this block + the drained edits
+    engine_.processBlock(frames, outputs, numOutputs);  // consumes MIDI staged this block + the drained edits
 }

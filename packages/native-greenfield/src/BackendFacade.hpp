@@ -84,8 +84,10 @@ public:
     void stageMidiRaw(const std::uint8_t* data, std::size_t size) {
         engine_.stageMidi(std::vector<std::uint8_t>(data, data + size));
     }
-    // One audio block: drain control-thread edits → set transport → render into outL/outR.
-    void pluginProcessBlock(double bpm, bool playing, std::uint32_t frames, float* outL, float* outR);
+    // One audio block: drain control-thread edits → set transport → render into the output channels
+    // (the plugin's 4 stereo pairs; routed per audioRouting by the Engine's MultiOutRouter).
+    void pluginProcessBlock(double bpm, bool playing, std::uint32_t frames,
+                            float* const* outputs, std::uint32_t numOutputs);
     // The kernel's MIDI-out for the block just rendered (drain to the DAW, then clear).
     const std::vector<DspRuntime::MidiOut>& pluginMidiOut() const { return engine_.midiOut(); }
     void pluginClearMidiOut() { engine_.clearMidiOut(); }

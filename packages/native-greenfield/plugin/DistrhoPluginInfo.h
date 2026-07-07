@@ -10,7 +10,7 @@
 #define DISTRHO_PLUGIN_CLAP_ID     "studio.kx.distrho.retroplug-greenfield"
 
 #define DISTRHO_PLUGIN_NUM_INPUTS  0
-#define DISTRHO_PLUGIN_NUM_OUTPUTS 2   // greenfield Engine::processBlock is hard-stereo (outL/outR)
+#define DISTRHO_PLUGIN_NUM_OUTPUTS 8   // four stereo pairs (out_1..4); each system routes to one per audioRouting
 
 #define DISTRHO_PLUGIN_IS_RT_SAFE  1
 #define DISTRHO_PLUGIN_IS_SYNTH    1
