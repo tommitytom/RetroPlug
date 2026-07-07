@@ -68,7 +68,8 @@ test("loadMgb: builds the embedded ROM (sameboy, no file, no header read)", () =
   const id = store.loadMgb();
   expect(id).toBeTruthy();
   const v = store.view();
-  expect(v[0].kind).toBe("sameboy");
+  expect(v[0].platform).toBe("gb");
+  expect(v[0].core).toBe("sameboy");
   expect(v[0].embedded).toBeTruthy();
   expect(v[0].romPath).toBe("");
   expect(v[0].missing).toBeFalsy(); // embedded is never missing

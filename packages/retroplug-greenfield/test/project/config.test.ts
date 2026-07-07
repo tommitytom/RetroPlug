@@ -20,7 +20,7 @@ import type { SystemEntry } from "../../src/systemsList";
 const identity = (p: string) => p;
 
 function sys(id: number, romPath: string, savPath = "", savSuffix = 0, embeddedRom = ""): SystemEntry {
-  return { id, kind: "sameboy", romPath, savPath, savSuffix, embeddedRom };
+  return { id, platform: "gb", core: "sameboy", romPath, savPath, savSuffix, embeddedRom };
 }
 
 test("schema: checkVersion + parseProjectVersion", () => {
@@ -41,9 +41,9 @@ test("buildConfig: systems → thin entries, ids dropped, defaults omitted, sche
   ]);
   expect(cfg.schemaVersion).toBe(String(K_PROJECT));
   expect(cfg.systems).toEqual([
-    { kind: "sameboy", romPath: "/roms/a.gb" },
-    { kind: "sameboy", romPath: "/roms/a.gb", savPath: "/saves/x.sav", savSuffix: 2 },
-    { kind: "sameboy", embeddedRom: "mgb" },
+    { platform: "gb", romPath: "/roms/a.gb" },
+    { platform: "gb", romPath: "/roms/a.gb", savPath: "/saves/x.sav", savSuffix: 2 },
+    { platform: "gb", embeddedRom: "mgb" },
   ]);
 });
 
@@ -52,7 +52,7 @@ test("serializeConfig + parseConfig: round-trips, filling settings defaults", ()
   const json = serializeConfig(cfg, "", identity); // no baseDir → absolute
   const back = parseConfig(json);
   expect(back.settings).toEqual({ layout: 3, midiRouting: 1, audioRouting: 2, zoom: 4 });
-  expect(back.systems).toEqual([{ kind: "sameboy", romPath: "/proj/a.gb" }]);
+  expect(back.systems).toEqual([{ platform: "gb", romPath: "/proj/a.gb" }]);
 });
 
 test("parseConfig: tolerant of a partial document (defaults + empty systems)", () => {

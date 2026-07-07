@@ -11,11 +11,10 @@
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
 import type { Backend } from "./backend";
-import { detectRomFormat, ROM_SNIFF_LEN, type RomFormat } from "./romFormat";
+import { detectPlatform, ROM_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix } from "./savPaths";
 import {
   type SystemEntry,
-  type SystemKind,
   findById,
   appendEntry,
   removeById,
@@ -25,16 +24,16 @@ import {
   pickSiblingRom,
   nextFocusAfterRemove,
 } from "./systemsList";
-import { type CoreSettings, DEFAULT_CORE_SETTINGS, clampGain, coreSettingsSchema } from "./systemSettings";
+import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
 
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
 
-/** Classify a ROM from its header only — the one place ROM bytes enter TS, and just
+/** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
  *  the first `ROM_SNIFF_LEN` of them. Native never classifies. */
-export function classifyRom(backend: Backend, romPath: string): RomFormat {
-  return detectRomFormat(backend.readFilePrefix(romPath, ROM_SNIFF_LEN) ?? new Uint8Array());
+export function classifyRom(backend: Backend, romPath: string): Platform | "unknown" {
+  return detectPlatform(backend.readFilePrefix(romPath, ROM_SNIFF_LEN) ?? new Uint8Array());
 }
 
 /** A system as the UI sees it: identity + live `focused`/`missing` flags + the
@@ -42,14 +41,15 @@ export function classifyRom(backend: Backend, romPath: string): RomFormat {
  *  descriptors — no backend/LSDj fields are hardcoded here). */
 export interface SystemView {
   id: number;
-  kind: SystemKind;
+  platform: Platform;
+  core: Core;
   romPath: string;
   savPath: string; // the override ("" = derived from suffix)
   savSuffix: number;
   embedded: boolean;
   focused: boolean;
   missing: boolean;
-  settings: CoreSettings;
+  settings: CommonSettings;
   roles: RoleInstance[];
 }
 
@@ -71,14 +71,15 @@ export class SystemsStore {
   view(): SystemView[] {
     return this.entries.map((e) => ({
       id: e.id,
-      kind: e.kind,
+      platform: e.platform,
+      core: e.core,
       romPath: e.romPath,
       savPath: e.savPath,
       savSuffix: e.savSuffix,
       embedded: e.embeddedRom !== "",
       focused: e.id === this.focusedId,
       missing: e.romPath !== "" && e.embeddedRom === "" && !this.backend.fileExists(e.romPath),
-      settings: e.settings ?? DEFAULT_CORE_SETTINGS,
+      settings: e.settings ?? DEFAULT_COMMON_SETTINGS,
       roles: e.roles ?? [],
     }));
   }
@@ -141,7 +142,8 @@ export class SystemsStore {
     if (newId === null) return null;
     this.entries = appendEntry(this.entries, {
       id: newId,
-      kind: src.kind,
+      platform: src.platform,
+      core: src.core,
       romPath: src.romPath,
       savPath: "",
       savSuffix: suffix,
@@ -215,13 +217,13 @@ export class SystemsStore {
   }
 
   // A universal-setting change: emulator-apply + update + dirty. False when absent.
-  private applySetting(id: number, key: keyof CoreSettings, value: number | boolean): boolean {
+  private applySetting(id: number, key: keyof CommonSettings, value: number | boolean): boolean {
     const e = findById(this.entries, id);
     if (!e) return false;
     this.backend.applySystemSetting(id, key, value);
     this.entries = replaceById(this.entries, id, {
       ...e,
-      settings: { ...e.settings, [key]: value } as CoreSettings,
+      settings: { ...e.settings, [key]: value } as CommonSettings,
     });
     this.markDirty();
     return true;
@@ -249,7 +251,7 @@ export class SystemsStore {
       savPath?: string;
       savSuffix?: number;
       embeddedRom?: string;
-      settings?: Partial<CoreSettings>;
+      settings?: Partial<CommonSettings>;
       roles?: RoleInstance[];
     },
     blobs?: { sramBytes?: ArrayBuffer; stateBytes?: ArrayBuffer },
@@ -258,22 +260,24 @@ export class SystemsStore {
     const romPath = config.romPath ?? "";
     const savSuffix = config.savSuffix ?? 0;
     const override = config.savPath ?? "";
-    let kind: SystemKind;
+    let platform: Platform;
     if (embeddedRom) {
-      kind = "sameboy";
+      platform = "gb";
     } else {
       const fmt = classifyRom(this.backend, romPath);
       if (fmt === "unknown") return null;
-      kind = fmt;
+      platform = fmt;
     }
+    const core = defaultCoreFor(platform);
     const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
-    // The backend "system" role (kind === backend kind) carries the emulator config; pass it as the
+    // The core-config "system" role (kind === core) carries the emulator config; pass it as the
     // construct-time settings blob so a loaded non-default model/highpass is applied AT build, not via
     // a post-construct restart that would nuke the just-restored savestate.
-    const systemRole = config.roles?.find((r) => r.kind === kind);
+    const systemRole = config.roles?.find((r) => r.kind === core);
     const id = this.backend.constructSystem({
       romPath,
-      kind,
+      platform,
+      core,
       embeddedRom,
       savPath,
       statePath: null,
@@ -283,10 +287,10 @@ export class SystemsStore {
     });
     if (id === null) return null;
     // Stored settings/roles win; a config that omits them re-attaches defaults.
-    const settings = coreSettingsSchema.parse(config.settings ?? {}) as CoreSettings;
-    const roles = config.roles && config.roles.length ? config.roles : this.defaultRoles(kind, romPath, embeddedRom);
+    const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
+    const roles = config.roles && config.roles.length ? config.roles : this.defaultRoles(core, platform, romPath, embeddedRom);
     const wasEmpty = this.entries.length === 0;
-    this.entries = appendEntry(this.entries, { id, kind, romPath, savPath: override, savSuffix, embeddedRom, settings, roles });
+    this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, settings, roles });
     if (wasEmpty) this.focusedId = id;
     return id;
   }
@@ -315,43 +319,45 @@ export class SystemsStore {
     explicitSav: string | undefined,
     replaceId?: number,
   ): { id: number; entry: SystemEntry } | null {
-    let kind: SystemKind;
+    let platform: Platform;
     if (embeddedRom) {
-      kind = "sameboy"; // embedded ROMs are always Game Boy
+      platform = "gb"; // embedded ROMs are always Game Boy
     } else {
       const fmt = classifyRom(this.backend, romPath);
       if (fmt === "unknown") return null;
-      kind = fmt;
+      platform = fmt;
     }
+    const core = defaultCoreFor(platform);
     const override = resolveSavOverride(romPath, suffix, explicitSav ?? "", (p) =>
       this.backend.canonicalize(p),
     );
     const savPath = embeddedRom ? null : resolveSavPath(romPath, suffix, override);
-    const id = this.backend.constructSystem({ romPath, kind, embeddedRom, savPath, statePath: null, replaceId });
+    const id = this.backend.constructSystem({ romPath, platform, core, embeddedRom, savPath, statePath: null, replaceId });
     if (id === null) return null;
     return {
       id,
       entry: {
         id,
-        kind,
+        platform,
+        core,
         romPath,
         savPath: override,
         savSuffix: suffix,
         embeddedRom,
-        settings: { ...DEFAULT_CORE_SETTINGS },
-        roles: this.defaultRoles(kind, romPath, embeddedRom),
+        settings: { ...DEFAULT_COMMON_SETTINGS },
+        roles: this.defaultRoles(core, platform, romPath, embeddedRom),
       },
     };
   }
 
-  // The default roles for a freshly-built system: the backend's system role + any
-  // feature roles the registry's providers suggest for this ROM's header. Empty when
-  // no registry is wired (back-compat) or for an embedded ROM (no file to sniff).
-  private defaultRoles(kind: SystemKind, romPath: string, embeddedRom: string): RoleInstance[] {
+  // The default roles for a freshly-built system: the core's config role + any feature
+  // roles the registry's providers suggest for this ROM's header. Empty when no registry
+  // is wired (back-compat) or for an embedded ROM (no file to sniff).
+  private defaultRoles(core: Core, platform: Platform, romPath: string, embeddedRom: string): RoleInstance[] {
     if (!this.registry) return [];
     const header =
       romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array() : new Uint8Array();
-    return this.registry.defaultRoles(kind, header, embeddedRom);
+    return this.registry.defaultRoles(core, platform, header, embeddedRom);
   }
 
   // The free suffix for a new instance of `romPath`: live-list ownership + on-disk.

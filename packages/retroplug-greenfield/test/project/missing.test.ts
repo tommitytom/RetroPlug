@@ -13,43 +13,43 @@ function cfg(systems: ProjectConfig["systems"]): ProjectConfig {
 }
 
 test("scan: a ROM is missing when its path is absent and no blob is embedded", () => {
-  const c = cfg([{ kind: "sameboy", romPath: "/roms/a.gb" }]);
+  const c = cfg([{ platform: "gb", romPath: "/roms/a.gb" }]);
   const missing = scanMissingFiles(c, NO_BLOBS, () => false); // nothing on disk
   expect(missing).toEqual([{ systemIndex: 0, itemKind: "rom", path: "/roms/a.gb" }]);
 });
 
 test("scan: present ROM / embedded ROM / bundled rom-blob are all OK", () => {
-  const present = cfg([{ kind: "sameboy", romPath: "/roms/a.gb" }]);
+  const present = cfg([{ platform: "gb", romPath: "/roms/a.gb" }]);
   expect(scanMissingFiles(present, NO_BLOBS, (p) => p === "/roms/a.gb")).toEqual([]);
 
-  const embedded = cfg([{ kind: "sameboy", embeddedRom: "mgb" }]);
+  const embedded = cfg([{ platform: "gb", embeddedRom: "mgb" }]);
   expect(scanMissingFiles(embedded, NO_BLOBS, () => false)).toEqual([]); // baked in
 
-  const bundled = cfg([{ kind: "sameboy", romPath: "/roms/a.gb" }]);
+  const bundled = cfg([{ platform: "gb", romPath: "/roms/a.gb" }]);
   expect(scanMissingFiles(bundled, new Set(["systems/0/rom"]), () => false)).toEqual([]); // blob present
 });
 
 test("scan: an explicit savPath with no file + no blob is missing; an empty savPath is allowed", () => {
-  const withOverride = cfg([{ kind: "sameboy", romPath: "/roms/a.gb", savPath: "/saves/x.sav" }]);
+  const withOverride = cfg([{ platform: "gb", romPath: "/roms/a.gb", savPath: "/saves/x.sav" }]);
   const missing = scanMissingFiles(withOverride, NO_BLOBS, (p) => p === "/roms/a.gb"); // rom ok, sav gone
   expect(missing).toEqual([{ systemIndex: 0, itemKind: "sram", path: "/saves/x.sav" }]);
 
   // empty savPath = the suffix sibling, allowed to be absent (fresh cart)
-  const noOverride = cfg([{ kind: "sameboy", romPath: "/roms/a.gb" }]);
+  const noOverride = cfg([{ platform: "gb", romPath: "/roms/a.gb" }]);
   expect(scanMissingFiles(noOverride, NO_BLOBS, (p) => p === "/roms/a.gb")).toEqual([]);
 });
 
 test("scan: multiple systems report by config index", () => {
   const c = cfg([
-    { kind: "sameboy", romPath: "/roms/a.gb" }, // present
-    { kind: "sameboy", romPath: "/roms/b.gb" }, // missing
+    { platform: "gb", romPath: "/roms/a.gb" }, // present
+    { platform: "gb", romPath: "/roms/b.gb" }, // missing
   ]);
   const missing = scanMissingFiles(c, NO_BLOBS, (p) => p === "/roms/a.gb");
   expect(missing).toEqual([{ systemIndex: 1, itemKind: "rom", path: "/roms/b.gb" }]);
 });
 
 test("relinkInConfig: repoints rom / sram in place; false for a bad index", () => {
-  const c = cfg([{ kind: "sameboy", romPath: "/old/a.gb", savPath: "/old/a.sav" }]);
+  const c = cfg([{ platform: "gb", romPath: "/old/a.gb", savPath: "/old/a.sav" }]);
   expect(relinkInConfig(c, { systemIndex: 0, itemKind: "rom", path: "/old/a.gb" }, "/new/a.gb")).toBeTruthy();
   expect(c.systems[0].romPath).toBe("/new/a.gb");
   expect(relinkInConfig(c, { systemIndex: 0, itemKind: "sram", path: "/old/a.sav" }, "/new/a.sav")).toBeTruthy();
@@ -59,8 +59,8 @@ test("relinkInConfig: repoints rom / sram in place; false for a bad index", () =
 
 test("autoFindSiblings: one located folder fixes the rest by basename", () => {
   const c = cfg([
-    { kind: "sameboy", romPath: "/old/a.gb" },
-    { kind: "sameboy", romPath: "/old/b.gb" },
+    { platform: "gb", romPath: "/old/a.gb" },
+    { platform: "gb", romPath: "/old/b.gb" },
   ]);
   // both files moved to /new; point autoFind at that folder
   const onDisk = new Set(["/new/a.gb", "/new/b.gb"]);

@@ -21,7 +21,7 @@ test("add: classifies, appends, and auto-focuses the first system", () => {
   expect(id).toBeTruthy();
   const v = store.view();
   expect(v.length).toBe(1);
-  expect(v[0].kind).toBe("sameboy");
+  expect(v[0].platform).toBe("gb");
   expect(v[0].romPath).toBe("/roms/a.gb");
   expect(v[0].focused).toBeTruthy(); // first system into an empty project
   expect(v[0].missing).toBeFalsy(); // the ROM is on the fake disk

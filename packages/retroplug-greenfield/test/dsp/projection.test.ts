@@ -11,7 +11,8 @@ import type { RoleInstance } from "../../src/systemRoles";
 function view(id: number, roles: RoleInstance[]): SystemView {
   return {
     id,
-    kind: "sameboy",
+    platform: "gb",
+    core: "sameboy",
     romPath: "",
     savPath: "",
     savSuffix: 0,

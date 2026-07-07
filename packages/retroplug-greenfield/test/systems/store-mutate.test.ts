@@ -20,7 +20,7 @@ test("duplicate: appends a clone with a fresh suffix + concrete auto-save path",
   expect(dup).toBeTruthy();
   const v = store.view();
   expect(v.length).toBe(2);
-  expect(v[1].kind).toBe("sameboy");
+  expect(v[1].platform).toBe("gb");
   expect(v[1].romPath).toBe("/roms/a.gb"); // clone carries the source ROM
   expect(v[1].savSuffix).toBe(2); // 0 owned -> 2
   expect(store.focused()).toBe(a); // duplicate doesn't steal focus

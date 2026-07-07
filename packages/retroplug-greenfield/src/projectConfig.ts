@@ -9,9 +9,10 @@
 // round-trips faithfully. Only user-customized fields are lost until the
 // system-settings/kits domains land.
 
-import type { SystemEntry, SystemKind } from "./systemsList";
+import type { SystemEntry } from "./systemsList";
+import type { Platform } from "./platform";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
-import { coreSettingsSchema, type CoreSettings } from "./systemSettings";
+import { commonSettingsSchema, type CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
 import { z, clampedInt, stringField } from "./configSchema";
 
@@ -23,15 +24,17 @@ export interface ProjectSettings {
   zoom: number; // 0 inherit / 1..6
 }
 
-/** A system as serialized: thin, with default fields omitted. */
+/** A system as serialized: thin, with default fields omitted. `core` is not stored — it's
+ *  re-derived from `platform` on load (auto-derive only; mirrors how the runtime kind was
+ *  always re-sniffed and the persisted value never read back). */
 export interface SystemThin {
-  kind: SystemKind;
+  platform: Platform;
   romPath?: string;
   savPath?: string; // an explicit override; absent = derive from suffix
   savSuffix?: number;
   embeddedRom?: string; // e.g. "mgb"
-  settings?: Partial<CoreSettings>; // only non-default universal settings
-  roles?: RoleInstance[]; // the generic roles (backend + feature); absent = re-derive
+  settings?: Partial<CommonSettings>; // only non-default universal settings
+  roles?: RoleInstance[]; // the generic roles (core-config + feature); absent = re-derive
 }
 
 export interface ProjectConfig {
@@ -65,12 +68,12 @@ const roleInstanceSchema = z.object({
 
 // A serialized system: known fields typed/optional; unknowns stripped.
 const systemThinSchema = z.object({
-  kind: z.string().optional(),
+  platform: z.string().optional(),
   romPath: z.string().optional(),
   savPath: z.string().optional(),
   savSuffix: z.number().optional(),
   embeddedRom: z.string().optional(),
-  settings: coreSettingsSchema.optional(),
+  settings: commonSettingsSchema.optional(),
   roles: z.array(roleInstanceSchema).optional(),
 });
 
@@ -119,9 +122,9 @@ export function parseProjectVersion(s: string): number {
 // --- build / serialize / parse --------------------------------------------
 
 // A system's universal settings, keeping only non-default fields (or undefined).
-function thinSettings(s: CoreSettings | undefined): Partial<CoreSettings> | undefined {
+function thinSettings(s: CommonSettings | undefined): Partial<CommonSettings> | undefined {
   if (!s) return undefined;
-  const out: Partial<CoreSettings> = {};
+  const out: Partial<CommonSettings> = {};
   if (s.gainDb) out.gainDb = s.gainDb; // 0 = default
   if (s.reloadOnRomChange) out.reloadOnRomChange = s.reloadOnRomChange; // false = default
   return Object.keys(out).length ? out : undefined;
@@ -134,7 +137,7 @@ export function buildConfig(settings: ProjectSettings, systems: SystemEntry[]): 
     schemaVersion: String(K_PROJECT),
     settings: { ...settings },
     systems: systems.map((e) => {
-      const t: SystemThin = { kind: e.kind };
+      const t: SystemThin = { platform: e.platform };
       if (e.romPath) t.romPath = e.romPath;
       if (e.savPath) t.savPath = e.savPath;
       if (e.savSuffix) t.savSuffix = e.savSuffix;

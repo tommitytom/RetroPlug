@@ -24,27 +24,27 @@ function registry(): RoleRegistry {
 }
 
 test("embedded mGB attaches the mgb role (empty header — matched by the marker)", () => {
-  const roles = registry().defaultRoles("sameboy", new Uint8Array(), "mgb");
+  const roles = registry().defaultRoles("sameboy", "gb", new Uint8Array(), "mgb");
   expect(roles.map((r) => r.kind)).toEqual(["sameboy", "mgb"]);
 });
 
 test("a file-backed mGB cart attaches the mgb role by title", () => {
-  const roles = registry().defaultRoles("sameboy", headerWithTitle("MGB"));
+  const roles = registry().defaultRoles("sameboy", "gb", headerWithTitle("MGB"));
   expect(roles.map((r) => r.kind)).toEqual(["sameboy", "mgb"]);
 });
 
 test("LSDj attaches lsdj-sync (MidiSync default), case-insensitively", () => {
-  const lower = registry().defaultRoles("sameboy", headerWithTitle("LSDj-v9.4.2"));
+  const lower = registry().defaultRoles("sameboy", "gb", headerWithTitle("LSDj-v9.4.2"));
   expect(lower).toEqual([
     { kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: true } },
     { kind: "lsdj-sync", config: { mode: 1 } },
   ]);
   // Older ROMs stamp an uppercase "LSDJ" title — must still match.
-  const upper = registry().defaultRoles("sameboy", headerWithTitle("LSDJ"));
+  const upper = registry().defaultRoles("sameboy", "gb", headerWithTitle("LSDJ"));
   expect(upper.map((r) => r.kind)).toEqual(["sameboy", "lsdj-sync"]);
 });
 
 test("an unrelated GB cart gets only the sameboy system role", () => {
-  const roles = registry().defaultRoles("sameboy", headerWithTitle("ZELDA"));
+  const roles = registry().defaultRoles("sameboy", "gb", headerWithTitle("ZELDA"));
   expect(roles.map((r) => r.kind)).toEqual(["sameboy"]);
 });

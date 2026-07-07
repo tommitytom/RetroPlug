@@ -9,26 +9,24 @@
 // "is this pick my sibling?" override test; findSiblingRom's candidate loop.
 
 import { siblingSavPath, siblingRomCandidates } from "./savPaths";
-import type { RomFormat } from "./romFormat";
-import type { CoreSettings } from "./systemSettings";
+import type { Platform, Core } from "./platform";
+import type { CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
 
-/** A supported emulator backend (the non-"unknown" RomFormat values). */
-export type SystemKind = "sameboy" | "nes" | "gba";
-
 /** The per-system record TS owns. `savSuffix` + `savPath` (an override, `""` when the
- *  natural sibling is used) are the persistent identity. `settings` are the universal
- *  per-system knobs; `roles` are the generic per-system roles (backend "system" role +
- *  optional feature roles) — everything backend/feature-specific lives here, not in
- *  fixed fields. */
+ *  natural sibling is used) are the persistent identity. `platform` (what the ROM is) and
+ *  `core` (the emulator running it) are the two orthogonal axes; `settings` are the universal
+ *  per-system knobs; `roles` are the generic per-system roles (core-config "system" role +
+ *  optional feature roles) — everything core/feature-specific lives here, not in fixed fields. */
 export interface SystemEntry {
   id: number;
-  kind: SystemKind;
+  platform: Platform;
+  core: Core;
   romPath: string;
   savPath: string; // override; "" = derive from romPath + savSuffix
   savSuffix: number;
   embeddedRom: string; // "" unless a binary-baked ROM (e.g. "mgb")
-  settings: CoreSettings;
+  settings: CommonSettings;
   roles: RoleInstance[];
 }
 
@@ -87,7 +85,7 @@ export function resolveSavOverride(
 export function pickSiblingRom(
   savPath: string,
   exists: (path: string) => boolean,
-  classify: (path: string) => RomFormat,
+  classify: (path: string) => Platform | "unknown",
 ): string | null {
   for (const cand of siblingRomCandidates(savPath)) {
     if (exists(cand) && classify(cand) !== "unknown") return cand;

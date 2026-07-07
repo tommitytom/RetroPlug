@@ -14,6 +14,7 @@
 // seam — a role is never an opaque native blob.
 
 import type { ProjectBehavior, SystemBehavior } from "./dspKernel";
+import type { Platform, Core } from "./platform";
 
 export type RoleCategory = "system" | "feature";
 
@@ -52,12 +53,14 @@ export interface RoleType {
   ui?: unknown;
 }
 
-/** What a ROM provider inspects to decide feature roles: the backend kind, the ROM
+/** What a ROM provider inspects to decide feature roles: the platform + core, the ROM
  *  header (cartridge title at 0x134), and the embedded-ROM marker — "" for a file-backed
  *  ROM, else the baked-in synth's id (e.g. "mgb"). The marker is the ONLY signal for an
- *  embedded ROM, whose bytes never reach TS, so its header is empty. */
+ *  embedded ROM, whose bytes never reach TS, so its header is empty. (Built-in providers
+ *  match on ROM identity — header/marker — but `platform`/`core` are here for extensions.) */
 export interface RomContext {
-  backendKind: string;
+  platform: Platform;
+  core: Core;
   header: Uint8Array;
   embeddedRom: string;
 }
@@ -80,22 +83,21 @@ export class RoleRegistry {
     return this.types.get(kind);
   }
 
-  /** The "system" role whose kind === the backend kind (e.g. "sameboy"), or none. */
-  systemRoleFor(backendKind: string): RoleType | undefined {
-    const t = this.types.get(backendKind);
+  /** The core-config "system" role whose kind === the core (e.g. "sameboy"), or none. */
+  systemRoleFor(core: string): RoleType | undefined {
+    const t = this.types.get(core);
     return t && t.category === "system" ? t : undefined;
   }
 
-  /** The default roles for a freshly-constructed system: the backend's system role
-   *  (if any), then every provider's feature-role suggestions for this ROM. Each
-   *  config is parsed through its role's schema (defaults filled, values clamped).
-   *  `embeddedRom` ("" for a file-backed ROM) lets a provider match a baked-in synth
-   *  whose header can't be sniffed. */
-  defaultRoles(backendKind: string, header: Uint8Array, embeddedRom = ""): RoleInstance[] {
+  /** The default roles for a freshly-constructed system: the core's config role (if any),
+   *  then every provider's feature-role suggestions for this ROM. Each config is parsed
+   *  through its role's schema (defaults filled, values clamped). `embeddedRom` ("" for a
+   *  file-backed ROM) lets a provider match a baked-in synth whose header can't be sniffed. */
+  defaultRoles(core: Core, platform: Platform, header: Uint8Array, embeddedRom = ""): RoleInstance[] {
     const out: RoleInstance[] = [];
-    const sysRole = this.systemRoleFor(backendKind);
+    const sysRole = this.systemRoleFor(core);
     if (sysRole) out.push({ kind: sysRole.kind, config: sysRole.schema.parse({}) });
-    const ctx: RomContext = { backendKind, header, embeddedRom };
+    const ctx: RomContext = { platform, core, header, embeddedRom };
     for (const p of this.providers) {
       for (const r of p(ctx)) {
         const rt = this.types.get(r.kind);

@@ -5,7 +5,7 @@
 // and nothing else.
 
 import type { Backend, ConstructSpec, FileBrowserOpts, ZipEntry } from "../src/backend";
-import { detectRomFormat } from "../src/romFormat";
+import { detectPlatform } from "../src/platform";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -219,7 +219,7 @@ export class MockBackend implements Backend {
     // bytes that classify as a known format (mirrors native's slurp + reject).
     if (!spec.embeddedRom) {
       const bytes = this.files.get(this.canonicalize(spec.romPath));
-      if (!bytes || detectRomFormat(bytes) === "unknown") return null;
+      if (!bytes || detectPlatform(bytes) === "unknown") return null;
     }
     const id = this.nextId++;
     if (spec.replaceId !== undefined) this.systems.delete(spec.replaceId); // swap in place

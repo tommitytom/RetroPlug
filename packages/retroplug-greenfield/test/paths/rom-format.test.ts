@@ -1,10 +1,10 @@
-// detectRomFormat — classify a ROM by magic bytes (not extension), a faithful
+// detectPlatform — classify a ROM by magic bytes (not extension), a faithful
 // port of packages/native/src/system/RomFormat.hpp. Priority is NES → GBA → GB →
 // unknown (first match wins), and short/empty buffers are unknown via the length
 // guards. The logo byte-arrays here are transcribed independently from the C++ so
 // a wrong copy in the implementation is caught.
 import { test, expect } from "../../testing/harness";
-import { detectRomFormat } from "../../src/romFormat";
+import { detectPlatform } from "../../src/platform";
 
 // iNES magic "NES\x1A" at offset 0.
 const NES_MAGIC = [0x4e, 0x45, 0x53, 0x1a];
@@ -30,39 +30,39 @@ function buf(len: number, at: number, bytes: number[]): Uint8Array {
 }
 
 test("nes: iNES magic at offset 0", () => {
-  expect(detectRomFormat(buf(64, 0, NES_MAGIC))).toBe("nes");
-  expect(detectRomFormat(new Uint8Array(NES_MAGIC))).toBe("nes"); // exactly 4 bytes
+  expect(detectPlatform(buf(64, 0, NES_MAGIC))).toBe("nes");
+  expect(detectPlatform(new Uint8Array(NES_MAGIC))).toBe("nes"); // exactly 4 bytes
 });
 
 test("gba: Nintendo logo at 0x04", () => {
-  expect(detectRomFormat(buf(0x2000, 0x04, GBA_LOGO))).toBe("gba");
-  expect(detectRomFormat(buf(0x04 + 32, 0x04, GBA_LOGO))).toBe("gba"); // exactly to the guard
+  expect(detectPlatform(buf(0x2000, 0x04, GBA_LOGO))).toBe("gba");
+  expect(detectPlatform(buf(0x04 + 32, 0x04, GBA_LOGO))).toBe("gba"); // exactly to the guard
 });
 
-test("sameboy: Game Boy logo at 0x104 (DMG + CGB carts share it)", () => {
-  expect(detectRomFormat(buf(0x8000, 0x104, GB_LOGO))).toBe("sameboy");
-  expect(detectRomFormat(buf(0x104 + 48, 0x104, GB_LOGO))).toBe("sameboy"); // exactly to the guard
+test("gb: Game Boy logo at 0x104 (DMG + CGB carts share it)", () => {
+  expect(detectPlatform(buf(0x8000, 0x104, GB_LOGO))).toBe("gb");
+  expect(detectPlatform(buf(0x104 + 48, 0x104, GB_LOGO))).toBe("gb"); // exactly to the guard
 });
 
 test("unknown: no recognizable magic", () => {
-  expect(detectRomFormat(new Uint8Array(0x8000))).toBe("unknown"); // all zero
-  expect(detectRomFormat(new Uint8Array([1, 2, 3, 4, 5, 6]))).toBe("unknown");
+  expect(detectPlatform(new Uint8Array(0x8000))).toBe("unknown"); // all zero
+  expect(detectPlatform(new Uint8Array([1, 2, 3, 4, 5, 6]))).toBe("unknown");
 });
 
 test("unknown: short / empty buffers fall through the length guards", () => {
-  expect(detectRomFormat(new Uint8Array(0))).toBe("unknown");
-  expect(detectRomFormat(new Uint8Array([0x4e, 0x45, 0x53]))).toBe("unknown"); // 3 bytes, not the full NES magic
-  expect(detectRomFormat(buf(0x104 + 47, 0x104, GB_LOGO.slice(0, 47)))).toBe("unknown"); // one byte short of the GB guard
+  expect(detectPlatform(new Uint8Array(0))).toBe("unknown");
+  expect(detectPlatform(new Uint8Array([0x4e, 0x45, 0x53]))).toBe("unknown"); // 3 bytes, not the full NES magic
+  expect(detectPlatform(buf(0x104 + 47, 0x104, GB_LOGO.slice(0, 47)))).toBe("unknown"); // one byte short of the GB guard
 });
 
 test("priority: NES beats a GB logo, GBA beats a GB logo", () => {
   // Buffer carrying BOTH the NES magic at 0 and the GB logo at 0x104 → NES wins.
   const nesOverGb = buf(0x8000, 0x104, GB_LOGO);
   nesOverGb.set(NES_MAGIC, 0);
-  expect(detectRomFormat(nesOverGb)).toBe("nes");
+  expect(detectPlatform(nesOverGb)).toBe("nes");
 
   // Buffer carrying BOTH the GBA logo at 0x04 and the GB logo at 0x104 → GBA wins.
   const gbaOverGb = buf(0x8000, 0x104, GB_LOGO);
   gbaOverGb.set(GBA_LOGO, 0x04);
-  expect(detectRomFormat(gbaOverGb)).toBe("gba");
+  expect(detectPlatform(gbaOverGb)).toBe("gba");
 });

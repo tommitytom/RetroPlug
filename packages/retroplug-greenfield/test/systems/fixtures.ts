@@ -1,5 +1,5 @@
 // Minimal valid ROM byte buffers for systems-store tests. The mock classifies via
-// detectRomFormat, so a fixture only needs the right magic at the right offset.
+// detectPlatform, so a fixture only needs the right magic at the right offset.
 // (Not a *.test.ts, so the runner ignores it; imported by the store tests.)
 
 const GB_LOGO = [

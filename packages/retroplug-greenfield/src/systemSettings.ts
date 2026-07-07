@@ -1,6 +1,7 @@
-// The UNIVERSAL per-system settings — the ones every emulator backend has, so they
-// live on the system itself rather than in a backend role. Backend-specific knobs
-// (model/highpass/…) are system roles (coreRoles.ts); LSDj etc. are feature roles.
+// The UNIVERSAL per-system settings — the ones every core has, so they live on the system itself
+// rather than in a core-config role. Core-specific knobs (SameBoy model/highpass/…) are system roles
+// (coreRoles.ts); LSDj etc. are feature roles. ("Common" here = common to all cores; not to be confused
+// with the `Core` emulator axis in platform.ts.)
 //
 // The shape + defaults + clamping are a zod schema (the load-time validator); the
 // interface is kept as the public type. `z.looseObject` preserves any unknown
@@ -11,8 +12,8 @@ import { z, clampedNumber, boolField } from "./configSchema";
 export const GAIN_MIN = -90;
 export const GAIN_MAX = 12;
 
-/** Per-system settings common to all backends. */
-export interface CoreSettings {
+/** Per-system settings common to all cores. */
+export interface CommonSettings {
   gainDb: number; // -90..+12, 0 = unity (mirrors the master-gain param range)
   reloadOnRomChange: boolean;
 }
@@ -20,12 +21,12 @@ export interface CoreSettings {
 /** Validates + defaults + clamps a (possibly partial/stale) settings object. Strict:
  *  unknown keys are stripped (a newer writer's fields are refused by version detection,
  *  additive fields are filled by defaults). */
-export const coreSettingsSchema = z.object({
+export const commonSettingsSchema = z.object({
   gainDb: clampedNumber(GAIN_MIN, GAIN_MAX, 0),
   reloadOnRomChange: boolField(false),
 });
 
-export const DEFAULT_CORE_SETTINGS: CoreSettings = coreSettingsSchema.parse({}) as CoreSettings;
+export const DEFAULT_COMMON_SETTINGS: CommonSettings = commonSettingsSchema.parse({}) as CommonSettings;
 
 /** Clamp a gain value to the supported range (the set-time clamp for `setGain`). */
 export function clampGain(db: number): number {

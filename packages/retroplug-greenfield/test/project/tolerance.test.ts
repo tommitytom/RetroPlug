@@ -12,11 +12,11 @@ test("additive tolerance: a config missing newer fields gets their defaults", ()
   const raw = JSON.stringify({
     schemaVersion: "1",
     settings: { layout: 2 }, // the other three settings are absent
-    systems: [{ kind: "sameboy", romPath: "/a.gb" }],
+    systems: [{ platform: "gb", romPath: "/a.gb" }],
   });
   const cfg = parseConfig(raw);
   expect(cfg.settings).toEqual({ layout: 2, midiRouting: 0, audioRouting: 0, zoom: 0 }); // defaults filled
-  expect(cfg.systems[0]).toEqual({ kind: "sameboy", romPath: "/a.gb" }); // no spurious fields
+  expect(cfg.systems[0]).toEqual({ platform: "gb", romPath: "/a.gb" }); // no spurious fields
 });
 
 test("strict: unknown fields are stripped, known fields kept", () => {
@@ -26,7 +26,7 @@ test("strict: unknown fields are stripped, known fields kept", () => {
     settings: { layout: 2, futureSetting: 42 }, // unknown settings field
     systems: [
       {
-        kind: "sameboy",
+        platform: "gb",
         romPath: "/a.gb",
         model: 5, // a native flat field greenfield doesn't model
         highpass: 2,
@@ -49,7 +49,7 @@ test("coerces a malformed settings value + drops a garbage system entry", () => 
   const raw = JSON.stringify({
     schemaVersion: "1",
     settings: { layout: 99, zoom: "bad" }, // out-of-range + wrong-type → clamped/defaulted
-    systems: [{ kind: "sameboy", romPath: "/a.gb" }, 12345, null], // non-object entries dropped
+    systems: [{ platform: "gb", romPath: "/a.gb" }, 12345, null], // non-object entries dropped
   });
   const cfg = parseConfig(raw);
   expect(cfg.settings.layout).toBe(3); // clamped to max

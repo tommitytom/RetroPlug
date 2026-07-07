@@ -36,7 +36,7 @@ test("systemRoleFor: the core registers a SameBoy system role; NES has none", ()
   expect(sb?.kind).toBe("sameboy");
   expect(sb?.category).toBe("system");
   expect(sb?.schema.parse({})).toEqual({ model: 9, highpass: 1, linkGroupId: 0, fastBoot: true });
-  expect(reg.systemRoleFor("nes")).toBe(undefined);
+  expect(reg.systemRoleFor("mesen")).toBe(undefined);
 });
 
 test("schema: fills defaults + clamps out-of-range fields", () => {
@@ -65,18 +65,18 @@ test("defaultRoles: system role first, then provider-matched feature roles", () 
   registerCoreRoles(reg);
   registerFakeExtension(reg);
 
-  const demo = reg.defaultRoles("sameboy", headerWithTitle("DEMO-GAME"));
+  const demo = reg.defaultRoles("sameboy", "gb", headerWithTitle("DEMO-GAME"));
   expect(demo).toEqual([
     { kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: true } },
     { kind: "demo-sync", config: { level: 1 } },
   ]);
 
   // A non-matching ROM gets only the backend system role.
-  const plain = reg.defaultRoles("sameboy", headerWithTitle("ZELDA"));
+  const plain = reg.defaultRoles("sameboy", "gb", headerWithTitle("ZELDA"));
   expect(plain).toEqual([
     { kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: true } },
   ]);
 
   // A backend with no system role + no provider match → nothing.
-  expect(reg.defaultRoles("nes", headerWithTitle("SMB3"))).toEqual([]);
+  expect(reg.defaultRoles("mesen", "nes", headerWithTitle("SMB3"))).toEqual([]);
 });

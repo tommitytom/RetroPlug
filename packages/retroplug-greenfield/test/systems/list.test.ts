@@ -18,7 +18,7 @@ import {
 } from "../../src/systemsList";
 
 function entry(id: number, romPath: string, savSuffix = 0, savPath = ""): SystemEntry {
-  return { id, kind: "sameboy", romPath, savPath, savSuffix, embeddedRom: "" };
+  return { id, platform: "gb", core: "sameboy", romPath, savPath, savSuffix, embeddedRom: "" };
 }
 
 test("findById / appendEntry: append keeps order and returns a new list", () => {
