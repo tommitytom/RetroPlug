@@ -9,6 +9,7 @@
 #include "project/Project.hpp"
 
 #include "DspRuntime.hpp"
+#include "SnapshotRegistry.hpp"
 
 // A per-system config field a control-plane edit applies to the live core (SameBoy today). Carried
 // as a double across the command ring: gain in dB; a bool as 0/1; an enum/int as its integer value.
@@ -78,8 +79,13 @@ public:
     // whole-config re-send only acts on what changed (no spurious model restart).
     void applyConfigField(SystemId id, std::uint8_t field, double value);
 
+    // The owned snapshot store the control plane reads through. Claim a slot at build, release it
+    // when the core is deleted; processBlock publishes into it.
+    SnapshotRegistry& registry() { return registry_; }
+
 private:
-    Project    project_;
+    Project          project_;
+    SnapshotRegistry registry_;
     DspRuntime dsp_;
     double     sampleRate_;
     bool       dspActive_ = false;                 // a kernel is loaded → run the per-block DSP stage

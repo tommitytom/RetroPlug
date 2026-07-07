@@ -27,8 +27,9 @@ void BackendFacade::pluginDeactivate() {
     // DPF guarantees no run() during/after deactivate, so the ring has a single accessor again.
     audioRunning_.store(false, std::memory_order_release);
     active_ = &direct_;
-    queued_.freePending();            // free un-applied command payloads
-    while (queued_.popReleased()) {}  // delete cores the audio thread released just before stop
+    queued_.freePending();            // free un-applied command payloads (+ their snapshot slots)
+    // delete cores the audio thread released just before stop, freeing each slot first
+    while (std::unique_ptr<SystemBase> sys = queued_.popReleased()) engine_.registry().release(sys->id());
 }
 
 void BackendFacade::pluginProcessBlock(double bpm, bool playing, std::uint32_t frames, float* outL, float* outR) {

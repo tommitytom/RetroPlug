@@ -96,6 +96,9 @@ std::uint32_t AudioDriverRpcService::drainReleased() {
     // popReleased is SPSC-safe against the audio-thread producer; deleting here is safe because the
     // audio thread already dropped the core from the Project (no longer rendered) before pushing it.
     std::uint32_t freed = 0;
-    while (std::unique_ptr<SystemBase> sys = queued_.popReleased()) ++freed;  // deleted at scope end
+    while (std::unique_ptr<SystemBase> sys = queued_.popReleased()) {
+        engine_.registry().release(sys->id());  // free its snapshot slot before the core is deleted
+        ++freed;                                 // deleted at scope end
+    }
     return freed;
 }

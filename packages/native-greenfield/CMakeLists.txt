@@ -16,6 +16,7 @@ add_library(retroplug-greenfield-backend STATIC
     src/EngineRpcService.cpp      # emulator surface over Engine + Invoker + Factory
     src/AudioDriverRpcService.cpp # background audio thread + observation atomics
     src/Engine.cpp                # single-threaded core: owns Project + DspRuntime, runs blocks
+    src/SnapshotRegistry.cpp      # owned id-keyed frame/state/SRAM store — the control plane's one read door
     src/EngineInvoker.cpp         # Direct/Queued invokers — the only threading-aware layer
     src/SystemFactory.cpp         # backend-agnostic build registry (the one build path)
     src/SameBoyBackend.cpp        # SameBoy builder — the only place SameBoyConfig is constructed

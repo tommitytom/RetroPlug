@@ -91,6 +91,9 @@ void Engine::processBlock(std::uint32_t frames, float* outL, float* outR) {
     float* outs[2] = { outL, outR };
     AudioBlockInfo info{ frames, sampleRate_, bpm_, ppq_, transport_ };
     project_.onProcess(info, outs);
+    // Copy each core's freshly-published frame/state/SRAM into the owned registry the control plane
+    // reads through — the one place every driver funnels the block, so it covers all of them.
+    registry_.publishAll(project_, frames, sampleRate_);
     if (transport_)
         ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
 }

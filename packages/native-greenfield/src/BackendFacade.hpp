@@ -95,7 +95,7 @@ private:
     Engine         engine_;
     SystemFactory  factory_;
     DirectInvoker  direct_{engine_};
-    QueuedInvoker  queued_;
+    QueuedInvoker  queued_{engine_.registry()};
     EngineInvoker* active_ = &direct_;      // direct_ when quiescent, queued_ while the audio thread runs
     std::atomic<bool> audioRunning_{false};
 

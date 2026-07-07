@@ -6,6 +6,7 @@
 #include "system/SystemBase.hpp"  // complete type for unique_ptr<SystemBase>
 
 #include "Engine.hpp"
+#include "SnapshotRegistry.hpp"
 
 // --- DirectInvoker: apply now, on the calling thread ------------------------
 
@@ -14,11 +15,13 @@ void DirectInvoker::adoptSystem(std::unique_ptr<SystemBase> sys) {
 }
 
 void DirectInvoker::replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys) {
-    engine_.replaceSystem(id, std::move(sys));  // returned displaced core → delete
+    auto displaced = engine_.replaceSystem(id, std::move(sys));  // → delete
+    if (displaced) engine_.registry().release(displaced->id());  // free the displaced core's slot
 }
 
 void DirectInvoker::removeSystem(SystemId id) {
-    engine_.removeSystem(id);  // returned removed core → delete
+    engine_.removeSystem(id);           // returned removed core → delete
+    engine_.registry().release(id);     // free its slot (idempotent if id wasn't present)
 }
 
 void DirectInvoker::loadKernel(std::vector<std::uint8_t> bytecode) {
@@ -55,14 +58,16 @@ void QueuedInvoker::adoptSystem(std::unique_ptr<SystemBase> sys) {
     DspCommand c;
     c.kind = DspCommand::Kind::AddSystem;
     c.addSystem = { sys.get() };
-    if (commands_.tryPush(c)) sys.release();  // else: unique_ptr deletes the build (full ring)
+    if (commands_.tryPush(c)) sys.release();               // handed to the audio thread
+    else if (registry_) registry_->release(sys->id());     // full ring: unique_ptr deletes the build → free its slot
 }
 
 void QueuedInvoker::replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys) {
     DspCommand c;
     c.kind = DspCommand::Kind::ReplaceSystem;
     c.replaceSystem = { sys.get(), id };
-    if (commands_.tryPush(c)) sys.release();  // else: unique_ptr deletes the build
+    if (commands_.tryPush(c)) sys.release();               // handed to the audio thread
+    else if (registry_) registry_->release(sys->id());     // full ring: unique_ptr deletes the build → free its slot
 }
 
 void QueuedInvoker::removeSystem(SystemId id) {
@@ -184,8 +189,12 @@ void QueuedInvoker::freePending() {
         switch (cmd.kind) {
             case DspCommand::Kind::SetSystems:    delete cmd.setSystems.json; break;
             case DspCommand::Kind::LoadKernel:    delete cmd.loadKernel.bytecode; break;
-            case DspCommand::Kind::AddSystem:     delete cmd.addSystem.sys; break;      // built but never adopted
-            case DspCommand::Kind::ReplaceSystem: delete cmd.replaceSystem.sys; break;  // built but never swapped in
+            case DspCommand::Kind::AddSystem:     // built but never adopted → free its slot too
+                if (registry_) registry_->release(cmd.addSystem.sys->id());
+                delete cmd.addSystem.sys; break;
+            case DspCommand::Kind::ReplaceSystem: // built but never swapped in → free its slot too
+                if (registry_) registry_->release(cmd.replaceSystem.sys->id());
+                delete cmd.replaceSystem.sys; break;
             default: break;  // StageMidi/RemoveSystem/SetBpm/SetTransport carry no heap payload
         }
     }

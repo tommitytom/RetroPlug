@@ -69,6 +69,10 @@ std::optional<std::uint32_t> EngineRpcService::constructSystem(BackendConstructS
     auto sys = factory_.build(id, toBuildSpec(spec), engine_.sampleRate());
     if (!sys) return std::nullopt;  // unknown backend / unreadable or non-SameBoy ROM
 
+    // Seed the snapshot slot from the just-built core (control thread) BEFORE handoff, so a read
+    // right after construct works with no block rendered.
+    if (!engine_.registry().claim(id, *sys)) return std::nullopt;  // pool full
+
     if (spec.replaceId) active_->replaceSystem(*spec.replaceId, std::move(sys));
     else                active_->adoptSystem(std::move(sys));
     return id;
@@ -98,6 +102,7 @@ std::optional<std::uint32_t> EngineRpcService::duplicateSystem(std::uint32_t src
     if (!sys) return std::nullopt;
     sys->enableStateSnapshot();               // so the duplicate can itself be duplicated mid-run
     if (savPath) sys->setSavPath(*savPath);   // the duplicate auto-saves to its own file
+    if (!engine_.registry().claim(id, *sys)) return std::nullopt;  // seed the slot before handoff
     active_->adoptSystem(std::move(sys));
     return id;
 }
@@ -135,6 +140,7 @@ std::optional<std::uint32_t> EngineRpcService::reloadSystem(std::uint32_t id) {
     // reload shares the one Engine::replaceSystem path.
     const SystemId newId = engine_.nextSystemId();
     auto sys = SameBoyBackend::buildSameBoy(newId, std::move(cfg), std::move(romBytes), engine_.sampleRate());
+    if (!engine_.registry().claim(newId, *sys)) return std::nullopt;  // seed the new core's slot; old id's slot released on delete
     active_->replaceSystem(id, std::move(sys));
     return newId;
 }

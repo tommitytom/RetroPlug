@@ -13,6 +13,7 @@
 
 class Engine;
 class SystemBase;
+class SnapshotRegistry;
 
 // Where "apply now vs apply on the audio thread" lives — the ONLY threading-aware layer above the
 // Engine. The RPC methods call an EngineInvoker without knowing which mode they're in. Both
@@ -59,6 +60,10 @@ private:
 // drop so nothing leaks.
 class QueuedInvoker final : public EngineInvoker {
 public:
+    // Holds the registry so the two paths that DELETE a claimed-but-unadopted core on the control
+    // thread (a full command ring in adopt/replace; freePending after join) also free its slot.
+    explicit QueuedInvoker(SnapshotRegistry& registry) : registry_(&registry) {}
+
     // producer half (control thread)
     void adoptSystem(std::unique_ptr<SystemBase> sys) override;
     void replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys) override;
@@ -83,4 +88,5 @@ private:
 
     SpscRing<DspCommand, 256> commands_;   // control → audio
     SpscRing<DspEvent, 256>   released_;    // audio  → control (raw SystemBase* to delete)
+    SnapshotRegistry*         registry_ = nullptr;
 };

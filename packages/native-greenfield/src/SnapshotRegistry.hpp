@@ -1,0 +1,88 @@
+#pragma once
+
+#include <array>
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <vector>
+
+#include "system/SystemTypes.hpp"   // SystemId
+#include "transport/FrameBufferTriple.hpp"
+#include "transport/MemorySnapshotTriple.hpp"
+
+class SystemBase;
+class Project;
+
+// The control plane's ONE door to a system's video frame / savestate / SRAM — an owned, id-keyed
+// snapshot store. The DSP thread copies each live core's already-published snapshot into a
+// registry-OWNED buffer (publishAll, at the end of each block); the control plane reads those owned
+// copies by id (readFrame/readState/readSram) without ever walking Project or dereferencing a live
+// SystemBase. That severs the control plane from the cores: reads never touch the DSP's structure.
+//
+// (The DSP still copies from each core's own tear-free triple, because the shared SystemBase can't
+// be made to publish straight into the registry without changing it. When that core becomes
+// greenfield-only the second copy collapses; the read-side contract here is unaffected.)
+//
+// Threading: claim()/readFrame()/readState()/readSram()/release() run on the control thread;
+// publishAll() on whichever thread drives the block (the audio thread while running, the control
+// thread in a direct render). Slots live in a fixed-address array so the block thread can scan them
+// by id without a rehash; each slot's id is atomic. Buffers are allocated at claim (control thread,
+// before the system is handed off) and freed at release (control thread, after the audio thread has
+// dropped the system) — never on the audio thread. publishAll only ever writes a slot whose system
+// is still in project.systems(), which is exactly the window before its release, so a published-to
+// slot is never concurrently freed.
+class SnapshotRegistry {
+public:
+    SnapshotRegistry() = default;
+    SnapshotRegistry(const SnapshotRegistry&) = delete;
+    SnapshotRegistry& operator=(const SnapshotRegistry&) = delete;
+
+    // Reserve + SEED a slot for a freshly-built system from its live state (control thread, BEFORE
+    // the system is handed to the audio thread). Seeding makes a read right after construct work
+    // with no block rendered. `sys` must already have enableStateSnapshot()'d (for stateRegions()).
+    // Returns false only if the pool is full (the caller fails the construct).
+    bool claim(SystemId id, SystemBase& sys);
+
+    // Copy each live system's latest frame (every block) + savestate/SRAM (on a coarse interval)
+    // into its slot. Runs at the end of Engine::processBlock, on the block-driving thread.
+    void publishAll(const Project& project, std::uint32_t frames, double sampleRate);
+
+    // Control-thread reads of the OWNED copies.
+    struct Frame {
+        std::uint32_t             width = 0;
+        std::uint32_t             height = 0;
+        bool                      published = false;
+        std::vector<std::uint8_t> data;   // raw XRGB8888, width*height*4 bytes
+    };
+    Frame readFrame(SystemId id);
+    std::optional<std::vector<std::uint8_t>> readState(SystemId id);   // whole savestate
+    std::optional<std::vector<std::uint8_t>> readSram(SystemId id);    // SRAM sliced from the savestate
+
+    // Free a slot when its system is deleted (control thread). Idempotent (no-op for an unknown id).
+    void release(SystemId id);
+
+private:
+    struct Slot {
+        std::atomic<SystemId>                 id{0};          // 0 = free; the block thread scans this
+        std::uint32_t                         width = 0;
+        std::uint32_t                         height = 0;
+        std::unique_ptr<FrameBufferTriple>    frame;
+        std::unique_ptr<MemorySnapshotTriple> state;
+        std::unique_ptr<MemorySnapshotTriple> sram;
+        std::uint32_t                         sramOffset = 0; // SRAM slice offset within the savestate
+        std::uint64_t                         sampleAccum = 0;// samples since the last state/sram publish
+    };
+
+    // Generous: RetroPlug never approaches this, but tests share one Project across a file's cases
+    // so slots accumulate. A full pool fails the construct (logged) rather than corrupting.
+    static constexpr std::size_t kMaxSlots         = 64;
+    static constexpr double      kStateIntervalSec = 0.5;              // matches the core's own snapshot cadence
+    static constexpr std::size_t kMaxStateBytes    = 16 * 1024 * 1024; // sanity bound on one savestate
+
+    Slot* find(SystemId id);
+    Slot* findFree();
+
+    std::array<Slot, kMaxSlots> slots_;
+    std::vector<std::uint8_t>   publishScratch_;   // block-thread reuse for readStateSnapshot
+};
