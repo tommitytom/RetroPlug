@@ -44,6 +44,15 @@ public:
     void setBpm(double bpm);
     void setTransport(bool playing);
 
+    // Host sample rate. Baked into each core at construct (findable via sampleRate()); set it BEFORE
+    // constructing systems — there is no per-system resample-on-change today.
+    void setSampleRate(double sr) { sampleRate_ = sr; }
+
+    // The kernel's host-MIDI-out sink for this block (filled by processBlock's DSP stage, cleared at
+    // the top of the next). The plugin drains this to the DAW after processBlock; nothing else reads it.
+    const std::vector<DspRuntime::MidiOut>& midiOut() const { return dsp_.midiOut_; }
+    void clearMidiOut() { dsp_.midiOut_.clear(); }
+
     // --- per block: run kernel → fan sinks to cores → onProcess → advance the ppq clock ---
     void processBlock(std::uint32_t frames, float* outL, float* outR);
 

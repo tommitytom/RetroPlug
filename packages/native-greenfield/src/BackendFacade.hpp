@@ -62,13 +62,31 @@ public:
     bool setBpm(double bpm) { return engine_svc_.setBpm(bpm); }
     bool stageMidiIn(std::vector<std::uint8_t> bytes) { return engine_svc_.stageMidiIn(std::move(bytes)); }
 
-    // --- background audio thread → driver_ ---
+    // --- background audio thread → driver_ (test host only; the plugin drives run() directly) ---
     bool          startAudio() { return driver_.startAudio(); }
     bool          stopAudio() { return driver_.stopAudio(); }
     AudioCaptured audioCaptured() { return driver_.audioCaptured(); }
     bool          sleepMs(double ms) { return driver_.sleepMs(ms); }
     std::uint32_t systemCount() { return driver_.systemCount(); }
     std::uint32_t drainReleased() { return driver_.drainReleased(); }
+
+    // --- DPF plugin driving: the host's run()/activate() replace the AudioDriverRpcService loop.
+    // NOT wire methods — the plugin holds the facade directly and calls these from C++.
+    void setSampleRate(double sr) { engine_.setSampleRate(sr); }
+    // Enter/leave audio-active: audioRunning_ THEN active_ (the invariant that makes main-thread reads
+    // fail-safe instead of racing run()); deactivate frees pending payloads + reclaims released cores.
+    void pluginActivate();
+    void pluginDeactivate();
+    // Stage one host-MIDI message directly on the audio thread (bypasses the ring + its 4-byte cap;
+    // safe because run() owns the Engine while active). Call before pluginProcessBlock.
+    void stageMidiRaw(const std::uint8_t* data, std::size_t size) {
+        engine_.stageMidi(std::vector<std::uint8_t>(data, data + size));
+    }
+    // One audio block: drain control-thread edits → set transport → render into outL/outR.
+    void pluginProcessBlock(double bpm, bool playing, std::uint32_t frames, float* outL, float* outR);
+    // The kernel's MIDI-out for the block just rendered (drain to the DAW, then clear).
+    const std::vector<DspRuntime::MidiOut>& pluginMidiOut() const { return engine_.midiOut(); }
+    void pluginClearMidiOut() { engine_.clearMidiOut(); }
 
 private:
     // Shared state (owned here; the services hold references). Declaration order is load-bearing —
