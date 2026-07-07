@@ -13,7 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BIN="$REPO_DIR/build/bin/retroplug"
+BIN="$REPO_DIR/build/bin/retroplug-greenfield"
 
 [ -x "$BIN" ] || { echo "error: $BIN not built" >&2; exit 1; }
 command -v pw-link >/dev/null || { echo "error: pw-link not found (install pipewire)" >&2; exit 1; }
@@ -27,22 +27,22 @@ RP=$!
 cleanup() { kill "$RP" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
-# Wait for the main output port to register (up to ~5s).
+# Greenfield registers one JACK client "RetroPlug Greenfield" with a single hard-stereo pair
+# (all cores mix into audio_out_1 = L, audio_out_2 = R — DPF's default port symbols, since the
+# greenfield plugin doesn't override initAudioPort). Wait for it to register (up to ~5s), then link.
+CLIENT="RetroPlug Greenfield"
 for _ in $(seq 1 50); do
-    if pw-link -o 2>/dev/null | grep -q '^RetroPlug:out_1_l$'; then break; fi
+    if pw-link -o 2>/dev/null | grep -q "^${CLIENT}:audio_out_1$"; then break; fi
     sleep 0.1
 done
 
-# Link every RetroPlug stereo pair that exists to the default sink. Each system
-# output sums into the same speakers; unused/silent systems are harmless.
-linked=0
-for n in 1 2 3 4; do
-    if pw-link -o 2>/dev/null | grep -q "^RetroPlug:out_${n}_l$"; then
-        pw-link "RetroPlug:out_${n}_l" "${SINK}:playback_FL" 2>/dev/null || true
-        pw-link "RetroPlug:out_${n}_r" "${SINK}:playback_FR" 2>/dev/null || true
-        linked=$((linked + 1))
-    fi
-done
-echo "linked $linked RetroPlug output pair(s) -> $SINK"
+if pw-link -o 2>/dev/null | grep -q "^${CLIENT}:audio_out_1$"; then
+    pw-link "${CLIENT}:audio_out_1" "${SINK}:playback_FL" 2>/dev/null || true
+    pw-link "${CLIENT}:audio_out_2" "${SINK}:playback_FR" 2>/dev/null || true
+    echo "linked ${CLIENT} stereo out -> $SINK"
+else
+    echo "warning: no '${CLIENT}' output ports found — actual output ports:" >&2
+    pw-link -o 2>/dev/null | grep -i "retroplug\|greenfield" >&2 || echo "  (none matching retroplug/greenfield)" >&2
+fi
 
 wait "$RP"
