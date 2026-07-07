@@ -122,6 +122,12 @@ export interface Backend {
    *  failure. */
   applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
 
+  /** Set the project's audio-output routing (0 Stereo / 1 TwoPerInstance / 2 OnePerInstance) — which
+   *  of the plugin's 4 stereo output pairs each system mixes into. The one project-level setting that
+   *  reaches native audio (drives the block runner's MultiOutRouter). Returns false on an out-of-range
+   *  mode. */
+  setAudioRouting(mode: number): boolean;
+
   // --- Live emulator input ------------------------------------------------
   // The UI→DSP direction for game input: a joypad button transition on the focused system. Native queues
   // it to the core's audio-thread button sink, so it applies live while the instance plays.

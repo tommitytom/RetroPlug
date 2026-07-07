@@ -61,6 +61,7 @@ public:
     rfl::Bytestring renderAudio(double ms) { return engine_svc_.renderAudio(ms); }
     bool setTransport(bool running) { return engine_svc_.setTransport(running); }
     bool setBpm(double bpm) { return engine_svc_.setBpm(bpm); }
+    bool setAudioRouting(std::uint32_t mode) { return engine_svc_.setAudioRouting(mode); }
     bool stageMidiIn(std::vector<std::uint8_t> bytes) { return engine_svc_.stageMidiIn(std::move(bytes)); }
 
     // --- background audio thread → driver_ (test host only; the plugin drives run() directly) ---

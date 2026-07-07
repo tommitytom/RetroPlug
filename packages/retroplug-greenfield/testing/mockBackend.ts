@@ -67,6 +67,7 @@ export class MockBackend implements Backend {
   /** Live-config applies recorded for assertions. */
   readonly applySettingCalls: { id: number; key: string; value: number | boolean }[] = [];
   readonly applyRoleCalls: { id: number; kind: string; config: Record<string, unknown> }[] = [];
+  readonly audioRoutingCalls: number[] = [];
   readonly pressButtonCalls: { id: number; button: number; down: boolean }[] = [];
 
   /** Ids passed to the pump reads, in order. */
@@ -330,6 +331,12 @@ export class MockBackend implements Backend {
     this.log.push("applyRoleConfig");
     this.applyRoleCalls.push({ id, kind, config });
     return true;
+  }
+
+  setAudioRouting(mode: number): boolean {
+    this.log.push("setAudioRouting");
+    this.audioRoutingCalls.push(mode);
+    return mode >= 0 && mode <= 2;
   }
 
   pressButton(id: number, button: number, down: boolean): boolean {

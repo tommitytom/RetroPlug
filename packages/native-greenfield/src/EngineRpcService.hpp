@@ -45,6 +45,7 @@ public:
     rfl::Bytestring renderAudio(double ms);
     bool            setTransport(bool running);
     bool            setBpm(double bpm);
+    bool            setAudioRouting(std::uint32_t mode);
     bool            stageMidiIn(std::vector<std::uint8_t> bytes);
 
 private:

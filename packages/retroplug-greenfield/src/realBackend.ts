@@ -84,6 +84,7 @@ export function createRealBackend(): Backend {
     applySystemSetting: (id, key, value) =>
       call("applySystemSetting", id, key, typeof value === "boolean" ? (value ? 1 : 0) : value) as boolean,
     applyRoleConfig: (id, kind, config) => call("applyRoleConfig", id, kind, JSON.stringify(config)) as boolean,
+    setAudioRouting: (mode) => call("setAudioRouting", mode) as boolean,
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
     readState: (id) => bytesOrNull(call("readState", id)),
     readSram: (id) => bytesOrNull(call("readSram", id)),

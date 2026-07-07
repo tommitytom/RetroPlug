@@ -44,6 +44,10 @@ void DirectInvoker::setTransport(bool playing) {
     engine_.setTransport(playing);
 }
 
+void DirectInvoker::setAudioRouting(std::uint8_t mode) {
+    engine_.setAudioRouting(static_cast<AudioRouting>(mode));
+}
+
 void DirectInvoker::applyConfigField(SystemId id, std::uint8_t field, double value) {
     engine_.applyConfigField(id, field, value);
 }
@@ -113,6 +117,13 @@ void QueuedInvoker::setTransport(bool playing) {
     commands_.tryPush(c);
 }
 
+void QueuedInvoker::setAudioRouting(std::uint8_t mode) {
+    DspCommand c;
+    c.kind = DspCommand::Kind::SetAudioRouting;
+    c.setAudioRouting = { mode };
+    commands_.tryPush(c);  // no heap payload — dropped on a full ring
+}
+
 void QueuedInvoker::applyConfigField(SystemId id, std::uint8_t field, double value) {
     DspCommand c;
     c.kind = DspCommand::Kind::SetConfigField;
@@ -149,6 +160,9 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 break;
             case DspCommand::Kind::SetTransport:
                 engine.setTransport(cmd.setTransport.value);
+                break;
+            case DspCommand::Kind::SetAudioRouting:
+                engine.setAudioRouting(static_cast<AudioRouting>(cmd.setAudioRouting.mode));
                 break;
             case DspCommand::Kind::SetConfigField:
                 engine.applyConfigField(cmd.setConfigField.id, cmd.setConfigField.field, cmd.setConfigField.value);

@@ -105,7 +105,9 @@ export class ProjectStore {
     return this.setSetting("midiRouting", n);
   }
   setAudioRouting(n: number): boolean {
-    return this.setSetting("audioRouting", n);
+    if (!this.setSetting("audioRouting", n)) return false;
+    this.pushAudioRouting(); // the one project setting that reaches native audio (the MultiOutRouter)
+    return true;
   }
   setZoom(n: number): boolean {
     return this.setSetting("zoom", n);
@@ -115,6 +117,7 @@ export class ProjectStore {
   newProject(): void {
     this.systems.clear();
     this.projectSettings = { ...DEFAULT_SETTINGS };
+    this.pushAudioRouting(); // reset native routing to the default
     this.path = "";
     this.dirty = false;
     this.onSystemsChange(); // the DSP now runs nothing
@@ -262,6 +265,7 @@ export class ProjectStore {
       this.systems.adopt(s, sysBlobs);
     });
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
+    this.pushAudioRouting(); // apply the loaded project's routing to native audio
     if (path) this.recent.add(path); // in-memory loads (plugin state chunk) pass "" — no recents entry
     this.path = path;
     this.dirty = false;
@@ -275,6 +279,12 @@ export class ProjectStore {
     this.projectSettings = { ...this.projectSettings, [key]: n };
     this.markDirty();
     return true;
+  }
+
+  /** Push the current audio-routing mode to native — the one project setting that drives native audio
+   *  (the block runner's MultiOutRouter). Called on set / load / reset so native tracks the TS value. */
+  private pushAudioRouting(): void {
+    this.backend.setAudioRouting(this.projectSettings.audioRouting);
   }
 
   private markDirty(): void {

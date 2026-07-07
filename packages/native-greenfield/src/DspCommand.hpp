@@ -21,6 +21,7 @@ struct DspCommand {
         None = 0, SetSystems = 1, LoadKernel = 2, StageMidi = 3,
         AddSystem = 4, ReplaceSystem = 5, RemoveSystem = 6,
         SetBpm = 7, SetTransport = 8, SetConfigField = 9, PressButton = 10,
+        SetAudioRouting = 11,
     };
 
     Kind kind = Kind::None;
@@ -35,6 +36,7 @@ struct DspCommand {
         struct { bool value; } setTransport;
         struct { std::uint32_t id; std::uint8_t field; double value; } setConfigField; // live setting → core
         struct { std::uint32_t id; std::uint8_t button; bool down; } pressButton; // joypad transition → core
+        struct { std::uint8_t mode; } setAudioRouting;            // project output-pair placement
     };
 
     DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0} {}

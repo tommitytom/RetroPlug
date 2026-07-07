@@ -269,6 +269,12 @@ bool EngineRpcService::setBpm(double bpm) {
     return true;
 }
 
+bool EngineRpcService::setAudioRouting(std::uint32_t mode) {
+    if (mode > 2) return false;  // Stereo / TwoPerInstance / OnePerInstance
+    active_->setAudioRouting(static_cast<std::uint8_t>(mode));  // → the block runner's MultiOutRouter
+    return true;
+}
+
 bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
     if (bytes.empty() || bytes.size() > 4) return false;  // a MIDI message fits in 4 bytes
     active_->stageMidi(std::move(bytes));

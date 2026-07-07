@@ -29,6 +29,7 @@ public:
     virtual void stageMidi(std::vector<std::uint8_t> bytes)               = 0;
     virtual void setBpm(double bpm)                                       = 0;
     virtual void setTransport(bool playing)                              = 0;
+    virtual void setAudioRouting(std::uint8_t mode)                      = 0;
     virtual void applyConfigField(SystemId id, std::uint8_t field, double value) = 0;
     virtual void pressButton(SystemId id, std::uint8_t button, bool down) = 0;
 };
@@ -46,6 +47,7 @@ public:
     void stageMidi(std::vector<std::uint8_t> bytes) override;
     void setBpm(double bpm) override;
     void setTransport(bool playing) override;
+    void setAudioRouting(std::uint8_t mode) override;
     void applyConfigField(SystemId id, std::uint8_t field, double value) override;
     void pressButton(SystemId id, std::uint8_t button, bool down) override;
 
@@ -73,6 +75,7 @@ public:
     void stageMidi(std::vector<std::uint8_t> bytes) override;
     void setBpm(double bpm) override;
     void setTransport(bool playing) override;
+    void setAudioRouting(std::uint8_t mode) override;
     void applyConfigField(SystemId id, std::uint8_t field, double value) override;
     void pressButton(SystemId id, std::uint8_t button, bool down) override;
 
