@@ -7,11 +7,12 @@
 // leak into the clickable tiles.
 
 import { useEffect, useState } from "react";
-import { View, Dimensions } from "lvgljs-ui";
+import { Dimensions } from "lvgljs-ui";
 import { setKeyboardGroup } from "lvgljs";
 
 import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent } from "./stores/useStores";
 import { useSinkGroup } from "./lvgl/FocusProvider";
+import { Box } from "./lvgl/Box";
 import { useNativeEvent } from "./lvgl/useNativeEvent";
 import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
@@ -74,9 +75,9 @@ export function App() {
   if (empty) {
     const d = displaySize();
     return (
-      <View style={{ width: d.width, height: d.height, "background-color": "#0b0b12" }}>
+      <Box style={{ width: d.width, height: d.height, "background-color": "#000000" }}>
         <Menu width={d.width} height={d.height} zoom={resolvedZoom} tree={buildStartMenu(ctx)} onClose={() => {}} />
-      </View>
+      </Box>
     );
   }
 

@@ -16,9 +16,10 @@
 // item's value. Esc is NOT handled here — the menu controller owns open/close.
 
 import { useCallback, useRef, useState } from "react";
-import { View, Text, ELvKey } from "lvgljs-ui";
+import { Text, ELvKey } from "lvgljs-ui";
 
 import { useFocusGroup } from "../../lvgl/useFocusGroup";
+import { Box } from "../../lvgl/Box";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 // lvgljs-ui's Text type doesn't expose ref / onKey / onFocusedStyle; cast to reach them.
@@ -153,7 +154,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   );
 
   return (
-    <View
+    <Box
       style={{
         width,
         height,
@@ -162,7 +163,6 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
         "border-color": "#4fc3f7",
         display: "flex",
         "flex-direction": "column",
-        overflow: "hidden",
         "padding-left": outerPadLR,
         "padding-right": outerPadLR,
         "padding-top": outerPadTB,
@@ -172,13 +172,12 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       <Text style={{ "text-color": "#4fc3f7", "font-size": titleFont, "padding-bottom": r(4) }}>{tree.title}</Text>
       {/* Re-keyed on the visible set: a submenu toggle fully remounts the row list so every Text mounts via
           appendChild in JSX order (lv_binding_js's insertChildBefore just appends). */}
-      <View
+      <Box
         key={visibleKey}
         style={{
           width: "100%",
           height: height - titleRegionH,
           "background-opacity": 0,
-          "border-width": 0,
           display: "flex",
           "flex-direction": "column",
           "align-items": "stretch",
@@ -191,9 +190,9 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
             const padTB = r(4);
             const lineH = Math.max(1, r(1));
             return (
-              <View key={item.id} style={{ width: "100%", height: padTB * 2 + lineH, "background-opacity": 0, "border-width": 0, "padding-top": padTB, "padding-bottom": padTB }}>
-                <View style={{ width: "100%", height: lineH, "background-color": "#444444", "border-width": 0 }} />
-              </View>
+              <Box key={item.id} style={{ width: "100%", height: padTB * 2 + lineH, "background-opacity": 0, "padding-top": padTB, "padding-bottom": padTB }}>
+                <Box style={{ width: "100%", height: lineH, "background-color": "#444444" }} />
+              </Box>
             );
           }
           const label = item.kind === "submenu" ? `${item.label} ${openItems.has(item.id) ? "v" : ">"}` : item.label;
@@ -223,7 +222,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
             </TextAny>
           );
         })}
-      </View>
-    </View>
+      </Box>
+    </Box>
   );
 }

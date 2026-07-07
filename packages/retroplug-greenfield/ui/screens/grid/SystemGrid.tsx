@@ -7,9 +7,10 @@
 // size (no window-resize yet), the tile zoom is capped to fit the whole grid on screen. Empty projects
 // and the add/duplicate actions are handled by the menu (App), not here.
 
-import { View, Dimensions } from "lvgljs-ui";
+import { Dimensions } from "lvgljs-ui";
 
 import { useStores, useSystems, useProjectSettings, useUserConfig } from "../../stores/useStores";
+import { Box } from "../../lvgl/Box";
 import { StableSlot } from "../../lvgl/StableSlot";
 import { EmulatorTile } from "./EmulatorTile";
 import { Menu } from "../menu/Menu";
@@ -68,11 +69,11 @@ export function SystemGrid({
   for (let r = 0; r < shape.rows; r++) rows.push(systems.slice(r * shape.cols, (r + 1) * shape.cols));
 
   return (
-    <View style={{ width: display.width, height: display.height, "background-color": "#0b0b12", display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center" }}>
+    <Box style={{ width: display.width, height: display.height, "background-color": "#000000", display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center" }}>
       {/* Intermediate containers are transparent so only the dark root + the tiles show. */}
-      <View style={{ width: shape.cols * tw, height: shape.rows * th, "background-opacity": 0, "border-width": 0, display: "flex", "flex-direction": "column", overflow: "hidden" }}>
+      <Box style={{ width: shape.cols * tw, height: shape.rows * th, "background-opacity": 0, display: "flex", "flex-direction": "column" }}>
         {rows.map((row, ri) => (
-          <View key={`row-${ri}`} style={{ width: shape.cols * tw, height: th, "background-opacity": 0, "border-width": 0, display: "flex", "flex-direction": "row" }}>
+          <Box key={`row-${ri}`} style={{ width: shape.cols * tw, height: th, "background-opacity": 0, display: "flex", "flex-direction": "row" }}>
             {row.map((sys, ci) => {
               const index = ri * shape.cols + ci;
               const showMenu = sys.id === menuSystemId && menuTree != null;
@@ -83,7 +84,8 @@ export function SystemGrid({
                   ) : (
                     <EmulatorTile
                       systemId={sys.id}
-                      focused={sys.focused || single}
+                      focused={sys.focused}
+                      single={single}
                       width={tw}
                       height={th}
                       dimTestId={`dim-${index}`}
@@ -93,9 +95,9 @@ export function SystemGrid({
                 </StableSlot>
               );
             })}
-          </View>
+          </Box>
         ))}
-      </View>
-    </View>
+      </Box>
+    </Box>
   );
 }

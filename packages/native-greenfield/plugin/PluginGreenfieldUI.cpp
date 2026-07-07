@@ -126,10 +126,16 @@ public:
 
         jsEngine.attachDisplay(); // → __rp_mountUI
 
-        // Force the screen bg black so the default-light theme can't leak through any uncovered gap.
+        // The screen is a plain lv_obj, so lv_theme_default (DARK) gives it a rounded border + padding and
+        // leaves it scrollable. Black it out, strip the chrome, and clear the scrollable flag so nothing —
+        // an off-by-one child, a fixed-size root — can draw a border, inset the UI, or raise a scrollbar.
         if (lv_obj_t* screen = lv_screen_active()) {
             lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
             lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(screen, 0, 0);
+            lv_obj_set_style_radius(screen, 0, 0);
+            lv_obj_set_style_pad_all(screen, 0, 0);
+            lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
         }
     }
 

@@ -7,18 +7,18 @@
 // (only Image widgets route it) and opacity units are 0..1 floats (0.5 = LV_OPA_50).
 
 import { useRef } from "react";
-import { View, Canvas } from "lvgljs-ui";
+import { Canvas } from "lvgljs-ui";
 
 import { useStores } from "../../stores/useStores";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
+import { Box } from "../../lvgl/Box";
 import { tagTestId } from "../../lvgl/StableSlot";
 
 const LV_IMAGE_ALIGN_CONTAIN = 14; // aspect-preserving nearest-neighbour scale
 const LV_ALIGN_CENTER = 0x09;
 
-// lvgljs-ui's Canvas / View types don't expose a ref prop; cast to reach setBuffer / the dim testId.
+// lvgljs-ui's Canvas type doesn't expose a ref prop; cast to reach setBuffer.
 const CanvasAny = Canvas as any;
-const OverlayView = View as any;
 
 interface CanvasHandle {
   setBuffer(buffer: ArrayBuffer, width: number, height: number): void;
@@ -27,6 +27,7 @@ interface CanvasHandle {
 export function EmulatorTile({
   systemId,
   focused,
+  single,
   width,
   height,
   onFocus,
@@ -34,6 +35,9 @@ export function EmulatorTile({
 }: {
   systemId: number;
   focused: boolean;
+  /** The only system in the project. A lone tile fills the window with no focus border and no dim — the
+   *  focus cue only means something when there's another tile to distinguish it from. */
+  single?: boolean;
   width: number;
   height: number;
   onFocus?: () => void;
@@ -53,28 +57,32 @@ export function EmulatorTile({
     canvas.setBuffer(frame.pixels.slice().buffer, frame.width, frame.height);
   });
 
+  // The focus cue only distinguishes one tile from another, so a lone tile shows neither: no accent border
+  // (it would inset the full-window fill) and no dim.
+  const showBorder = focused && !single;
+  const dim = !focused && !single;
+
   return (
-    <View
+    <Box
       onClick={onFocus}
       style={{
         width,
         height,
         "background-color": "#000000",
         // Accent border on the focused tile — the visible focus cue (the dim is imperceptible on a
-        // near-black GB screen). Unfocused tiles are borderless + dimmed.
-        "border-width": focused ? 2 : 0,
+        // near-black GB screen). Unfocused tiles are borderless + dimmed. Box keeps it square + flush.
+        "border-width": showBorder ? 2 : 0,
         "border-color": "#4a86e8",
-        overflow: "hidden",
       }}
     >
       <CanvasAny ref={canvasRef} nearestNeighbor={true} innerAlign={LV_IMAGE_ALIGN_CONTAIN} style={{ width, height, "border-width": 0 }} />
-      {!focused && (
-        <OverlayView
-          ref={dimTestId ? tagTestId(dimTestId) : undefined}
+      {dim && (
+        <Box
+          innerRef={dimTestId ? tagTestId(dimTestId) : undefined}
           align={{ type: LV_ALIGN_CENTER, pos: [0, 0] }}
-          style={{ width, height, "background-color": "#000000", "background-opacity": 0.5, "border-width": 0 }}
+          style={{ width, height, "background-color": "#000000", "background-opacity": 0.5 }}
         />
       )}
-    </View>
+    </Box>
   );
 }

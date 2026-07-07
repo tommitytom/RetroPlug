@@ -10,11 +10,9 @@
 // The parent sets a stable React `key` on each StableSlot; pass the matching `testId` so the harness can
 // findByTestId it (inert in production — the __rp_tagTestId hook only exists in the UI test harness).
 
-import { View } from "lvgljs-ui";
 import type { ReactNode } from "react";
 
-// lvgljs-ui's View type doesn't expose a ref prop; cast to reach the native uid for the test-id tag.
-const SlotView = View as any;
+import { Box } from "./Box";
 
 /** A ref callback that tags a widget's native uid with a stable testId (findByTestId). Inert in
  *  production — the __rp_tagTestId hook only exists in the UI test harness. Shared by any widget a test
@@ -37,21 +35,8 @@ export function StableSlot({
   children: ReactNode;
 }) {
   return (
-    <SlotView
-      ref={tagTestId(testId)}
-      style={{
-        width,
-        height,
-        "background-opacity": 0,
-        "border-width": 0,
-        "padding-left": 0,
-        "padding-right": 0,
-        "padding-top": 0,
-        "padding-bottom": 0,
-        overflow: "hidden",
-      }}
-    >
+    <Box innerRef={tagTestId(testId)} style={{ width, height, "background-opacity": 0 }}>
       {children}
-    </SlotView>
+    </Box>
   );
 }
