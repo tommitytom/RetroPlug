@@ -24,6 +24,10 @@
 #define DISTRHO_UI_CUSTOM_WIDGET_TYPE  DGL_NAMESPACE::LVGLTopLevelWidget
 #define DISTRHO_UI_DEFAULT_WIDTH       480
 #define DISTRHO_UI_DEFAULT_HEIGHT      432
+// User-resizable: setGeometryConstraints(480,432) becomes the min floor (not a fixed size), so the editor
+// can grow to fit a multi-instance grid, and a Wayland tiling WM tiles it instead of floating a fixed-size
+// window. PluginGreenfieldUI drives setSize to fit the grid + detects a tiling clamp in onResize.
+#define DISTRHO_UI_USER_RESIZABLE      1
 
 #define DISTRHO_PLUGIN_WANT_MIDI_INPUT  1
 #define DISTRHO_PLUGIN_WANT_MIDI_OUTPUT 1
