@@ -19,8 +19,7 @@ add_library(retroplug-greenfield-backend STATIC
     src/EngineInvoker.cpp         # Direct/Queued invokers — the only threading-aware layer
     src/SystemFactory.cpp         # backend-agnostic build registry (the one build path)
     src/SameBoyBackend.cpp        # SameBoy builder — the only place SameBoyConfig is constructed
-    src/NesBackend.cpp            # NES builder (Mesen)
-    src/GbaBackend.cpp            # GBA builder (Mesen, HLE BIOS)
+    src/MesenBackend.cpp          # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
     src/ScriptCompiler.cpp        # bare-QuickJS bytecode compiler (DSP-side JS runtime)
     src/DspRuntime.cpp            # second bare QuickJS context — runs translator scripts
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)

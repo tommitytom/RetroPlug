@@ -50,7 +50,8 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
   const sav = savFromJson(SYNC_MIDI_SONG);
   const id = be.constructSystem({
     romPath: LSDJ,
-    kind: "sameboy",
+    platform: "gb",
+    core: "sameboy",
     embeddedRom: "",
     savPath: null,
     statePath: null,

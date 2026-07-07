@@ -24,7 +24,8 @@ struct AudioCaptured { double energy; std::uint64_t frames; };
 struct BackendConstructSpec {
     std::string                              romPath;
     std::string                              embeddedRom;
-    std::optional<std::string>               kind;      // TS SystemKind ("sameboy"/"nes"/"gba"); picks the backend
+    std::optional<std::string>               platform;  // TS Platform ("gb"/"nes"/"gba"); which system a multi-platform core builds
+    std::optional<std::string>               core;      // TS Core ("sameboy"/"mesen"); the factory registry key
     std::optional<std::string>               savPath;
     std::optional<std::string>               statePath;
     std::optional<std::uint32_t>             replaceId;

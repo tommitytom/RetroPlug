@@ -20,7 +20,7 @@ const GBA = __RESOURCES_DIR__ + "/roms/nanoloop287d.gba";
 
 // Boot `rom` through the stores, advance the core, and assert its framebuffer published (the core is
 // live and rendering). No DSP kernel needed — this is a construct/boot/render proof, not a role test.
-function bootsAndRenders(rom: string, expectKind: string, warmupMs: number, pngName: string): void {
+function bootsAndRenders(rom: string, expectPlatform: string, warmupMs: number, pngName: string): void {
   const be = createRealBackend();
   if (!be.fileExists(rom)) {
     console.log(`# SKIP app-cores: ROM not found at ${rom}`);
@@ -32,11 +32,11 @@ function bootsAndRenders(rom: string, expectKind: string, warmupMs: number, pngN
   const res = project.systems.loadRom(rom);
   expect(res != null && "system" in res).toBeTruthy(); // a real system id, not a deferred project
   const id = (res as { system: number }).system;
-  expect(project.systems.view()[0].kind).toBe(expectKind); // classified + routed to the right backend
+  expect(project.systems.view()[0].platform).toBe(expectPlatform); // classified + routed to the right core
 
   audio.renderAudio(warmupMs); // advance the CPU + PPU/renderer
   const published = audio.screenshot(id, `/tmp/app-cores_${pngName}.png`);
-  console.log(`[app-cores] ${expectKind} published=${published}`);
+  console.log(`[app-cores] ${expectPlatform} published=${published}`);
   expect(published).toBeTruthy(); // ≥1 frame rendered → the backend built a live, running core
 }
 

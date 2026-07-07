@@ -31,20 +31,21 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
     return std::vector<std::uint8_t>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
-// Map the wire construct spec to the backend-agnostic build spec: resolve the SRAM/savestate seeds
-// (zip-import bytes win, else the on-disk file, else empty) and carry the opaque `settings` blob
-// (the backend's "system"-role config JSON, decoded only by the matching backend) through unchanged.
-// The TS SystemKind → the backend-registry key (which core serves this kind — a native factory
-// decision). Unknown / absent kind falls back to SameBoy.
-std::string backendKindFor(const std::optional<std::string>& kind) {
-    if (kind == "nes") return "mesen-nes";
-    if (kind == "gba") return "mesen-gba";
-    return "sameboy";
+// The default core for a platform — the fallback when the wire spec omits `core`. TS always sends
+// both (derived via defaultCoreFor), so this only backstops a caller that sends platform alone.
+std::string defaultCoreFor(const std::string& platform) {
+    if (platform == "nes" || platform == "gba") return "mesen";
+    return "sameboy";  // "gb" (and unknown/absent) → SameBoy
 }
 
+// Map the wire construct spec to the backend-agnostic build spec: carry `core` (the factory-registry
+// key, defaulted from `platform` if absent) and `platform` (so a multi-platform core picks the right
+// system), resolve the SRAM/savestate seeds (zip-import bytes win, else the on-disk file, else empty),
+// and carry the opaque `settings` blob (decoded only by the matching backend) through unchanged.
 SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
     SystemBuildSpec out;
-    out.backendKind = backendKindFor(spec.kind);
+    out.platform = spec.platform.value_or("");
+    out.core = spec.core.value_or(defaultCoreFor(out.platform));
     out.romPath = spec.romPath;
     out.embeddedRom = spec.embeddedRom;
     if (spec.sramBytes) out.sram = *spec.sramBytes;

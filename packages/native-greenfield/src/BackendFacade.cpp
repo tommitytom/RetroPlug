@@ -2,17 +2,15 @@
 
 #include <memory>
 
-#include "GbaBackend.hpp"
-#include "NesBackend.hpp"
+#include "MesenBackend.hpp"
 #include "SameBoyBackend.hpp"
 
 BackendFacade::BackendFacade() {
-    // The one build path: a backend per emulator kind, keyed by the factory key toBuildSpec maps the
-    // TS SystemKind onto. (The Engine pre-reserves its Project so the audio thread's adopt/swap never
-    // reallocates.)
+    // The one build path: a backend per core, keyed by the `core` value. Mesen serves both NES and
+    // GBA (it dispatches internally on the platform). (The Engine pre-reserves its Project so the
+    // audio thread's adopt/swap never reallocates.)
     factory_.registerBackend("sameboy", std::make_unique<SameBoyBackend>());
-    factory_.registerBackend("mesen-nes", std::make_unique<NesBackend>());
-    factory_.registerBackend("mesen-gba", std::make_unique<GbaBackend>());
+    factory_.registerBackend("mesen", std::make_unique<MesenBackend>());
 }
 
 // --- DPF plugin driving (mirrors AudioDriverRpcService::startAudio/stopAudio/audioLoop, minus the
