@@ -114,24 +114,20 @@ std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
 }
 
 bool Engine::screenshot(SystemId id, const std::string& path) {
-    SystemBase* s = project_.findSystem(id);
-    if (!s) return false;
-    FrameBufferTriple* fb = s->framebuffer();
-    if (!fb) return false;
-    const std::uint32_t w = fb->width();
-    const std::uint32_t h = fb->height();
-    const std::size_t pixels = static_cast<std::size_t>(w) * h;
-    // FrameBufferTriple stores XRGB8888 (little-endian B,G,R,X) → transcode to RGB24 for lodepng.
-    std::vector<std::uint32_t> xrgb(pixels);
-    if (!fb->readInto(xrgb.data(), static_cast<std::uint32_t>(pixels))) return false;
+    // Encode the owned registry frame (a published copy) — no findSystem walk, no live-core read, so
+    // it's safe while the audio thread plays. false until the core has rendered its first frame.
+    const SnapshotRegistry::Frame f = registry_.readFrame(id);
+    if (!f.published) return false;
+    const std::size_t pixels = static_cast<std::size_t>(f.width) * f.height;
+    // The frame data is XRGB8888 (little-endian B,G,R,X) → transcode to RGB24 for lodepng.
     std::vector<unsigned char> rgb(pixels * 3);
-    const std::uint8_t* src = reinterpret_cast<const std::uint8_t*>(xrgb.data());
+    const std::uint8_t* src = f.data.data();
     for (std::size_t i = 0; i < pixels; ++i) {
         rgb[i * 3 + 0] = src[i * 4 + 2]; // R
         rgb[i * 3 + 1] = src[i * 4 + 1]; // G
         rgb[i * 3 + 2] = src[i * 4 + 0]; // B
     }
-    return lodepng_encode24_file(path.c_str(), rgb.data(), w, h) == 0;
+    return lodepng_encode24_file(path.c_str(), rgb.data(), f.width, f.height) == 0;
 }
 
 EngineFrame Engine::getFrame(SystemId id) {

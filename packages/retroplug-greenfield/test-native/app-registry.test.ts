@@ -41,8 +41,8 @@ test("frame + state read through the registry while the background audio thread 
   expect(cold != null && cold.published).toBeTruthy();
   expect(be.readState(id)!.length > 0).toBeTruthy();
 
-  // The real background audio thread: active_ is the QueuedInvoker, audioRunning_ is set — exactly
-  // the state where readState used to return null and getFrame walked the live Project.
+  // The real background audio thread now owns the Engine (invoker pushes are push-only) — exactly the
+  // state where readState used to return null and getFrame walked the live Project.
   expect(audio.startAudio()).toBeTruthy();
   audio.sleepMs(80); // let the audio thread publish into the registry
 

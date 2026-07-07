@@ -35,15 +35,15 @@ test("pressButton reaches a live core quiescent AND while the audio thread runs"
 
   audio.renderAudio(1500); // GB boot + mGB firmware init
 
-  // Quiescent (DirectInvoker): applied inline on the calling thread.
+  // Quiescent: the press is pushed onto the invoker and flushed inline on the calling thread.
   expect(audio.pressButton(id, START, true)).toBeTruthy();
   expect(audio.pressButton(id, START, false)).toBeTruthy();
   // An absent system is still accepted (the store owns existence; the invoker no-ops a missing id).
   expect(audio.pressButton(id, RIGHT, true)).toBeTruthy();
   expect(audio.pressButton(id, RIGHT, false)).toBeTruthy();
 
-  // Running (QueuedInvoker): the press crosses the command ring to the audio thread. The OLD code
-  // returned false here (audioRunning_ guard) — the regression this locks in.
+  // Running: the same push crosses the command ring to the audio thread (push-only while it owns the
+  // Engine). The OLD forked code returned false here (audioRunning_ guard) — the regression this locks in.
   expect(audio.startAudio()).toBeTruthy();
   expect(audio.pressButton(id, START, true)).toBeTruthy();
   audio.sleepMs(20); // let the audio thread drain the PressButton command

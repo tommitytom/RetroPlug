@@ -95,12 +95,9 @@ private:
     // the services' member initializers below reference these.
     Engine         engine_;
     SystemFactory  factory_;
-    DirectInvoker  direct_{engine_};
-    QueuedInvoker  queued_{engine_.registry()};
-    EngineInvoker* active_ = &direct_;      // direct_ when quiescent, queued_ while the audio thread runs
-    std::atomic<bool> audioRunning_{false};
+    QueuedInvoker  invoker_{engine_, engine_.registry()};  // the ONE mutation path (queue + inline flush)
 
     HostRpcService        host_;
-    EngineRpcService      engine_svc_{engine_, factory_, active_, audioRunning_};
-    AudioDriverRpcService driver_{engine_, queued_, direct_, active_, audioRunning_};
+    EngineRpcService      engine_svc_{engine_, factory_, invoker_};
+    AudioDriverRpcService driver_{engine_, invoker_};
 };

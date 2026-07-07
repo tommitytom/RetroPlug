@@ -58,9 +58,8 @@ SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
 
 } // namespace
 
-EngineRpcService::EngineRpcService(Engine& engine, SystemFactory& factory, EngineInvoker*& active,
-                                   const std::atomic<bool>& audioRunning)
-    : engine_(engine), factory_(factory), active_(active), audioRunning_(audioRunning) {}
+EngineRpcService::EngineRpcService(Engine& engine, SystemFactory& factory, QueuedInvoker& invoker)
+    : engine_(engine), factory_(factory), invoker_(invoker) {}
 
 bool EngineRpcService::constructSystem(BackendConstructSpec spec) {
     // TS owns the id counter and passes it in; the build (control thread) can fail (bad ROM), the
@@ -73,8 +72,8 @@ bool EngineRpcService::constructSystem(BackendConstructSpec spec) {
     // right after construct works with no block rendered.
     if (!engine_.registry().claim(id, *sys)) return false;  // pool full
 
-    if (spec.replaceId) active_->replaceSystem(*spec.replaceId, std::move(sys));
-    else                active_->adoptSystem(std::move(sys));
+    if (spec.replaceId) invoker_.replaceSystem(*spec.replaceId, std::move(sys));
+    else                invoker_.adoptSystem(std::move(sys));
     return true;
 }
 
@@ -86,17 +85,17 @@ bool EngineRpcService::constructSystem(BackendConstructSpec spec) {
 bool EngineRpcService::removeSystem(std::uint32_t id) {
     // No threading branch: quiescent → direct erase; running → enqueue for the audio thread, which
     // hands the core back through the release ring for the control thread to delete (drainReleased).
-    active_->removeSystem(id);
+    invoker_.removeSystem(id);
     return true;
 }
 
 bool EngineRpcService::applySystemSetting(std::uint32_t id, std::string key, double value) {
-    // A universal per-system setting → the live core, through `active_` (direct when quiescent,
-    // queued when the audio thread runs). The store gates existence on its own list, so accept.
+    // A universal per-system setting → the live core, pushed through the invoker (flushed inline when
+    // quiescent, applied on the audio thread while it runs). The store gates existence on its own list.
     if (key == "gainDb")
-        active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Gain), value);
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Gain), value);
     else if (key == "reloadOnRomChange")
-        active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::ReloadOnRomChange), value);
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::ReloadOnRomChange), value);
     else
         return false;  // unknown key
     return true;
@@ -108,10 +107,10 @@ bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string kind, std::
     // one — no spurious model restart when only highpass moved).
     if (kind != "sameboy") return false;
     const SameBoyRoleConfig c = SameBoyBackend::decodeSameBoyRoleConfig(config);
-    active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Model), static_cast<double>(c.model));
-    active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Highpass), static_cast<double>(c.highpass));
-    active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LinkGroup), static_cast<double>(c.linkGroupId));
-    active_->applyConfigField(id, static_cast<std::uint8_t>(ConfigField::FastBoot), c.fastBoot ? 1.0 : 0.0);
+    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Model), static_cast<double>(c.model));
+    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Highpass), static_cast<double>(c.highpass));
+    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LinkGroup), static_cast<double>(c.linkGroupId));
+    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::FastBoot), c.fastBoot ? 1.0 : 0.0);
     return true;
 }
 
@@ -130,7 +129,7 @@ std::optional<rfl::Bytestring> EngineRpcService::readSram(std::uint32_t id) {
 }
 
 bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {
-    if (audioRunning_.load(std::memory_order_acquire)) return false;
+    // Encodes the owned registry frame (a published copy) — safe while the audio thread runs, no guard.
     return engine_.screenshot(id, path);
 }
 
@@ -156,21 +155,20 @@ std::optional<rfl::Bytestring> EngineRpcService::compileScript(std::string sourc
 }
 
 bool EngineRpcService::dspLoadKernel(std::vector<std::uint8_t> bytecode) {
-    active_->loadKernel(std::move(bytecode));
+    invoker_.loadKernel(std::move(bytecode));
     return true;  // applied now (direct) or on the audio thread; the DSP stage goes active there
 }
 
 bool EngineRpcService::dspSetSystems(std::string json) {
-    active_->setSystems(std::move(json));
+    invoker_.setSystems(std::move(json));
     return true;
 }
 
 bool EngineRpcService::pressButton(std::uint32_t id, std::uint32_t button, bool down) {
-    // A joypad transition → the focused core, through `active_` (direct when quiescent, queued onto the
-    // audio thread when it runs). SystemBase::pressButton is the audio-thread entry point, so — unlike the
-    // old direct-only path that returned false the moment audio started — this reaches a live core. The
-    // store owns existence; accept optimistically (the queued apply can't report back).
-    active_->pressButton(id, static_cast<std::uint8_t>(button), down);
+    // A joypad transition → the focused core, pushed through the invoker (flushed inline when quiescent,
+    // applied on the audio thread while it runs) — so it reaches a live core in both. The store owns
+    // existence; accept optimistically (the queued apply can't report back).
+    invoker_.pressButton(id, static_cast<std::uint8_t>(button), down);
     return true;
 }
 
@@ -197,24 +195,24 @@ rfl::Bytestring EngineRpcService::renderAudio(double ms) {
 }
 
 bool EngineRpcService::setTransport(bool running) {
-    active_->setTransport(running);  // transport is a queued op — applied now (direct) or on the audio thread
+    invoker_.setTransport(running);  // transport is a queued op — applied now (direct) or on the audio thread
     return true;
 }
 
 bool EngineRpcService::setBpm(double bpm) {
     if (bpm <= 0.0) return false;
-    active_->setBpm(bpm);
+    invoker_.setBpm(bpm);
     return true;
 }
 
 bool EngineRpcService::setAudioRouting(std::uint32_t mode) {
     if (mode > 2) return false;  // Stereo / TwoPerInstance / OnePerInstance
-    active_->setAudioRouting(static_cast<std::uint8_t>(mode));  // → the block runner's MultiOutRouter
+    invoker_.setAudioRouting(static_cast<std::uint8_t>(mode));  // → the block runner's MultiOutRouter
     return true;
 }
 
 bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
     if (bytes.empty() || bytes.size() > 4) return false;  // a MIDI message fits in 4 bytes
-    active_->stageMidi(std::move(bytes));
+    invoker_.stageMidi(std::move(bytes));
     return true;
 }

@@ -17,29 +17,28 @@ constexpr auto kAudioBlockPace = std::chrono::microseconds(200);
 
 } // namespace
 
-AudioDriverRpcService::AudioDriverRpcService(Engine& engine, QueuedInvoker& queued, DirectInvoker& direct,
-                                             EngineInvoker*& active, std::atomic<bool>& audioRunning)
-    : engine_(engine), queued_(queued), direct_(direct), active_(active), audioRunning_(audioRunning) {}
+AudioDriverRpcService::AudioDriverRpcService(Engine& engine, QueuedInvoker& invoker)
+    : engine_(engine), invoker_(invoker) {}
 
 AudioDriverRpcService::~AudioDriverRpcService() {
-    if (audioRunning_.load(std::memory_order_acquire)) {
-        audioRunning_.store(false, std::memory_order_release);
+    if (invoker_.audioThreadOwns()) {
+        invoker_.setAudioThreadOwns(false);
         if (audioThread_.joinable()) audioThread_.join();
     }
-    queued_.freePending();  // un-applied command payloads (built-but-unadopted systems etc.)
-    drainReleased();        // cores the audio thread released but nobody drained
+    invoker_.freePending();     // teardown: DISCARD un-applied command payloads (built-but-unadopted systems etc.)
+    invoker_.reclaimReleased(); // cores the audio thread released but nobody drained
 }
 
 void AudioDriverRpcService::audioLoop() {
-    // Audio-thread-local: the control thread reaches the loop only through the QueuedInvoker's
-    // command ring and audioRunning_. drainInto applies every queued edit (structure + transport)
-    // INTO the Engine before the block; the live count is republished each iteration.
+    // Audio-thread-local: the control thread reaches the loop only through the invoker's command ring
+    // and its audioThreadOwns bit. drainInto applies every queued edit (structure + transport) INTO the
+    // Engine before the block; the live count is republished each iteration.
     std::vector<float> l(kBlockSize), r(kBlockSize);
     double energy = 0.0;
     std::uint64_t frames = 0;
 
-    while (audioRunning_.load(std::memory_order_acquire)) {
-        queued_.drainInto(engine_);
+    while (invoker_.audioThreadOwns()) {
+        invoker_.drainInto(engine_);
         liveSystemCount_.store(static_cast<std::uint32_t>(engine_.systemCount()), std::memory_order_release);
         engine_.processBlock(kBlockSize, l.data(), r.data());
 
@@ -54,25 +53,25 @@ void AudioDriverRpcService::audioLoop() {
 }
 
 bool AudioDriverRpcService::startAudio() {
-    if (audioRunning_.load(std::memory_order_acquire)) return false;  // already running
+    if (invoker_.audioThreadOwns()) return false;  // already running
     capturedEnergy_.store(0.0, std::memory_order_relaxed);
     capturedFrames_.store(0, std::memory_order_relaxed);
+    // The quiescent path flushed every push, so the ring is empty + Project current: this live read is
+    // accurate, and it's the last one before the audio thread takes over the count.
     liveSystemCount_.store(static_cast<std::uint32_t>(engine_.systemCount()), std::memory_order_relaxed);
-    active_ = &queued_;  // subsequent mutations enqueue for the audio thread (control-thread state)
-    audioRunning_.store(true, std::memory_order_release);
+    invoker_.setAudioThreadOwns(true);  // pushes become push-only BEFORE the thread spawns
     audioThread_ = std::thread([this] { audioLoop(); });
     return true;
 }
 
 bool AudioDriverRpcService::stopAudio() {
-    if (!audioRunning_.load(std::memory_order_acquire)) return false;
-    audioRunning_.store(false, std::memory_order_release);
+    if (!invoker_.audioThreadOwns()) return false;
+    invoker_.setAudioThreadOwns(false);  // the loop exits after its current iteration
     if (audioThread_.joinable()) audioThread_.join();
-    active_ = &direct_;  // back to synchronous application
-    // The audio thread is joined, so both rings are single-threaded again: free any un-applied
-    // command payloads, and delete any cores the audio thread released just before stopping.
-    queued_.freePending();
-    drainReleased();
+    // Single accessor again: APPLY any commands the last block didn't drain (no lost mutation), then
+    // reclaim released cores. From here every push flushes inline again.
+    invoker_.drainInto(engine_);
+    invoker_.reclaimReleased();
     return true;
 }
 
@@ -88,17 +87,17 @@ bool AudioDriverRpcService::sleepMs(double ms) {
 }
 
 std::uint32_t AudioDriverRpcService::systemCount() {
-    return liveSystemCount_.load(std::memory_order_acquire);
+    // While the audio thread owns the Engine, read its per-block republished count (reading Project
+    // directly would race it). Quiescent, the control thread owns the Engine + the ring is flushed, so
+    // read it live.
+    return invoker_.audioThreadOwns()
+        ? liveSystemCount_.load(std::memory_order_acquire)
+        : static_cast<std::uint32_t>(engine_.systemCount());
 }
 
 std::uint32_t AudioDriverRpcService::drainReleased() {
-    // Control-thread consumer of the release ring: delete each core the audio thread handed back.
-    // popReleased is SPSC-safe against the audio-thread producer; deleting here is safe because the
-    // audio thread already dropped the core from the Project (no longer rendered) before pushing it.
-    std::uint32_t freed = 0;
-    while (std::unique_ptr<SystemBase> sys = queued_.popReleased()) {
-        engine_.registry().release(sys->id());  // free its snapshot slot before the core is deleted
-        ++freed;                                 // deleted at scope end
-    }
-    return freed;
+    // Control-thread consumer of the release ring: delete each core the audio thread handed back,
+    // freeing its snapshot slot. Safe because the audio thread already dropped the core from the
+    // Project (no longer rendered) before pushing it.
+    return invoker_.reclaimReleased();
 }

@@ -17,24 +17,24 @@ BackendFacade::BackendFacade() {
 // spawned thread — DPF owns the audio thread and calls run()). ---
 
 void BackendFacade::pluginActivate() {
-    // Order is load-bearing: raise audioRunning_ (so main-thread reads fail-safe) BEFORE routing
-    // mutations through the ring. From here every control-plane edit is applied on the audio thread.
-    audioRunning_.store(true, std::memory_order_release);
-    active_ = &queued_;
+    // Hand the Engine to the DPF audio thread: from here every control-plane edit is push-only, drained
+    // by pluginProcessBlock each block. (Set BEFORE the host starts calling run(); the quiescent path
+    // flushed every push, so the command ring is empty at this handoff.)
+    invoker_.setAudioThreadOwns(true);
 }
 
 void BackendFacade::pluginDeactivate() {
-    // DPF guarantees no run() during/after deactivate, so the ring has a single accessor again.
-    audioRunning_.store(false, std::memory_order_release);
-    active_ = &direct_;
-    queued_.freePending();            // free un-applied command payloads (+ their snapshot slots)
-    // delete cores the audio thread released just before stop, freeing each slot first
-    while (std::unique_ptr<SystemBase> sys = queued_.popReleased()) engine_.registry().release(sys->id());
+    // DPF guarantees no run() during/after deactivate, so the ring has a single accessor again. Take the
+    // Engine back, apply any commands the last block didn't drain (no lost mutation), and reclaim cores
+    // the audio thread released just before stopping (freeing each snapshot slot).
+    invoker_.setAudioThreadOwns(false);
+    invoker_.drainInto(engine_);
+    invoker_.reclaimReleased();
 }
 
 void BackendFacade::pluginProcessBlock(double bpm, bool playing, std::uint32_t frames,
                                        float* const* outputs, std::uint32_t numOutputs) {
-    queued_.drainInto(engine_);       // apply control-thread structural edits on the audio thread
+    invoker_.drainInto(engine_);      // apply control-thread structural edits on the audio thread
     engine_.setBpm(bpm);              // transport from DPF TimePosition (direct — we're the audio thread)
     engine_.setTransport(playing);
     engine_.processBlock(frames, outputs, numOutputs);  // consumes MIDI staged this block + the drained edits

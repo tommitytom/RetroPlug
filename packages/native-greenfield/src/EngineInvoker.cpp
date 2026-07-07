@@ -8,70 +8,24 @@
 #include "Engine.hpp"
 #include "SnapshotRegistry.hpp"
 
-// --- DirectInvoker: apply now, on the calling thread ------------------------
-
-void DirectInvoker::adoptSystem(std::unique_ptr<SystemBase> sys) {
-    engine_.adoptSystem(std::move(sys));
-}
-
-void DirectInvoker::replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys) {
-    auto displaced = engine_.replaceSystem(id, std::move(sys));  // → delete
-    if (displaced) engine_.registry().release(displaced->id());  // free the displaced core's slot
-}
-
-void DirectInvoker::removeSystem(SystemId id) {
-    engine_.removeSystem(id);           // returned removed core → delete
-    engine_.registry().release(id);     // free its slot (idempotent if id wasn't present)
-}
-
-void DirectInvoker::loadKernel(std::vector<std::uint8_t> bytecode) {
-    engine_.loadKernel(bytecode);
-}
-
-void DirectInvoker::setSystems(std::string json) {
-    engine_.setSystems(std::vector<std::uint8_t>(json.begin(), json.end()));
-}
-
-void DirectInvoker::stageMidi(std::vector<std::uint8_t> bytes) {
-    engine_.stageMidi(std::move(bytes));
-}
-
-void DirectInvoker::setBpm(double bpm) {
-    engine_.setBpm(bpm);
-}
-
-void DirectInvoker::setTransport(bool playing) {
-    engine_.setTransport(playing);
-}
-
-void DirectInvoker::setAudioRouting(std::uint8_t mode) {
-    engine_.setAudioRouting(static_cast<AudioRouting>(mode));
-}
-
-void DirectInvoker::applyConfigField(SystemId id, std::uint8_t field, double value) {
-    engine_.applyConfigField(id, field, value);
-}
-
-void DirectInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {
-    engine_.pressButton(id, button, down);
-}
-
-// --- QueuedInvoker: producer half (control thread) --------------------------
+// --- producer half (control thread): pack + push, then flush inline unless the audio thread drains ---
 
 void QueuedInvoker::adoptSystem(std::unique_ptr<SystemBase> sys) {
     DspCommand c;
     c.kind = DspCommand::Kind::AddSystem;
     c.addSystem = { sys.get() };
-    if (commands_.tryPush(c)) sys.release();               // handed to the audio thread
+    if (commands_.tryPush(c)) sys.release();               // handed off (adopted inline by flush, or by the audio thread)
     else if (registry_) registry_->release(sys->id());     // full ring: unique_ptr deletes the build → free its slot
+    maybeFlush();
 }
 
 void QueuedInvoker::replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys) {
     DspCommand c;
     c.kind = DspCommand::Kind::ReplaceSystem;
     c.replaceSystem = { sys.get(), id };
-    if (commands_.tryPush(c)) sys.release();               // handed to the audio thread
+    if (commands_.tryPush(c)) sys.release();
     else if (registry_) registry_->release(sys->id());     // full ring: unique_ptr deletes the build → free its slot
+    maybeFlush();
 }
 
 void QueuedInvoker::removeSystem(SystemId id) {
@@ -79,6 +33,7 @@ void QueuedInvoker::removeSystem(SystemId id) {
     c.kind = DspCommand::Kind::RemoveSystem;
     c.removeSystem = { id };
     commands_.tryPush(c);  // no heap payload — dropped on a full ring
+    maybeFlush();
 }
 
 void QueuedInvoker::loadKernel(std::vector<std::uint8_t> bytecode) {
@@ -86,6 +41,7 @@ void QueuedInvoker::loadKernel(std::vector<std::uint8_t> bytecode) {
     c.kind = DspCommand::Kind::LoadKernel;
     c.loadKernel.bytecode = new std::vector<std::uint8_t>(std::move(bytecode));
     if (!commands_.tryPush(c)) delete c.loadKernel.bytecode;
+    maybeFlush();
 }
 
 void QueuedInvoker::setSystems(std::string json) {
@@ -93,6 +49,7 @@ void QueuedInvoker::setSystems(std::string json) {
     c.kind = DspCommand::Kind::SetSystems;
     c.setSystems.json = new std::string(std::move(json));
     if (!commands_.tryPush(c)) delete c.setSystems.json;
+    maybeFlush();
 }
 
 void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes) {
@@ -101,6 +58,7 @@ void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes) {
     c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());
     for (std::size_t i = 0; i < bytes.size() && i < 4; ++i) c.stageMidi.data[i] = bytes[i];
     commands_.tryPush(c);
+    maybeFlush();
 }
 
 void QueuedInvoker::setBpm(double bpm) {
@@ -108,6 +66,7 @@ void QueuedInvoker::setBpm(double bpm) {
     c.kind = DspCommand::Kind::SetBpm;
     c.setBpm = { bpm };
     commands_.tryPush(c);
+    maybeFlush();
 }
 
 void QueuedInvoker::setTransport(bool playing) {
@@ -115,6 +74,7 @@ void QueuedInvoker::setTransport(bool playing) {
     c.kind = DspCommand::Kind::SetTransport;
     c.setTransport = { playing };
     commands_.tryPush(c);
+    maybeFlush();
 }
 
 void QueuedInvoker::setAudioRouting(std::uint8_t mode) {
@@ -122,6 +82,7 @@ void QueuedInvoker::setAudioRouting(std::uint8_t mode) {
     c.kind = DspCommand::Kind::SetAudioRouting;
     c.setAudioRouting = { mode };
     commands_.tryPush(c);  // no heap payload — dropped on a full ring
+    maybeFlush();
 }
 
 void QueuedInvoker::applyConfigField(SystemId id, std::uint8_t field, double value) {
@@ -129,6 +90,7 @@ void QueuedInvoker::applyConfigField(SystemId id, std::uint8_t field, double val
     c.kind = DspCommand::Kind::SetConfigField;
     c.setConfigField = { static_cast<std::uint32_t>(id), field, value };
     commands_.tryPush(c);  // no heap payload — dropped on a full ring
+    maybeFlush();
 }
 
 void QueuedInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {
@@ -136,9 +98,10 @@ void QueuedInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {
     c.kind = DspCommand::Kind::PressButton;
     c.pressButton = { static_cast<std::uint32_t>(id), button, down };
     commands_.tryPush(c);  // no heap payload — dropped on a full ring (a lost key edge, not a leak)
+    maybeFlush();
 }
 
-// --- QueuedInvoker: consumer half (audio thread) ----------------------------
+// --- consumer half: apply every queued command into the Engine (audio loop, or the inline flush) -----
 
 void QueuedInvoker::drainInto(Engine& engine) {
     DspCommand cmd;
@@ -146,7 +109,7 @@ void QueuedInvoker::drainInto(Engine& engine) {
         switch (cmd.kind) {
             case DspCommand::Kind::SetSystems:
                 engine.setSystems(std::vector<std::uint8_t>(cmd.setSystems.json->begin(), cmd.setSystems.json->end()));
-                delete cmd.setSystems.json;  // owning payload — free on the audio thread (rare op)
+                delete cmd.setSystems.json;  // owning payload — free after applying (rare op)
                 break;
             case DspCommand::Kind::LoadKernel:
                 engine.loadKernel(*cmd.loadKernel.bytecode);
@@ -171,7 +134,7 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 engine.pressButton(cmd.pressButton.id, cmd.pressButton.button, cmd.pressButton.down);
                 break;
             // Lifecycle: alloc-free pointer swaps into the pre-reserved Project; displaced/removed
-            // cores are handed back to the control thread for delete (never freed here).
+            // cores are handed back for delete (never freed here).
             case DspCommand::Kind::AddSystem:
                 engine.adoptSystem(std::unique_ptr<SystemBase>(cmd.addSystem.sys));
                 break;
@@ -188,6 +151,23 @@ void QueuedInvoker::drainInto(Engine& engine) {
     }
 }
 
+void QueuedInvoker::flush() {
+    // Control-thread inline apply: drain the commands into the Engine, then reclaim any core they
+    // displaced/removed (so a quiescent removeSystem deletes the core + frees its slot synchronously,
+    // exactly as the old DirectInvoker did).
+    if (engine_) drainInto(*engine_);
+    reclaimReleased();
+}
+
+std::uint32_t QueuedInvoker::reclaimReleased() {
+    std::uint32_t freed = 0;
+    while (std::unique_ptr<SystemBase> sys = popReleased()) {
+        if (registry_) registry_->release(sys->id());  // free its snapshot slot before the core is deleted
+        ++freed;                                        // deleted at scope end
+    }
+    return freed;
+}
+
 std::unique_ptr<SystemBase> QueuedInvoker::popReleased() {
     DspEvent e;
     if (!released_.tryPop(e)) return nullptr;
@@ -196,8 +176,9 @@ std::unique_ptr<SystemBase> QueuedInvoker::popReleased() {
 }
 
 void QueuedInvoker::freePending() {
-    // Only safe once the audio thread is joined (the ring has a single accessor again). Free the
-    // heap payloads of any un-applied commands — built-but-unadopted systems, config/bytecode blobs.
+    // Only safe once the audio thread is joined (the ring has a single accessor again). DISCARD the
+    // heap payloads of any un-applied commands — built-but-unadopted systems (+ their slots),
+    // config/bytecode blobs. Teardown only; the normal transition APPLIES via flush()/drainInto.
     DspCommand cmd;
     while (commands_.tryPop(cmd)) {
         switch (cmd.kind) {

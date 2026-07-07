@@ -7,19 +7,16 @@
 #include "BackendTypes.hpp"
 
 class Engine;
-class DirectInvoker;
 class QueuedInvoker;
-class EngineInvoker;
 
 // Test/dev harness control: spins the background audio thread that OWNS the Engine while it runs,
-// draining the QueuedInvoker into it each block and publishing observation (energy/frames/count) for
-// the control thread. It also flips the shared invoker pointer — direct_ ⇄ queued_ — so mutation
-// RPCs enqueue during a run and apply synchronously when quiescent, with no per-method threading
-// branch. Only the threaded host mounts this.
+// draining the invoker into it each block and publishing observation (energy/frames/count) for the
+// control thread. Start/stop just flip the invoker's ownership bit (audioThreadOwns) — while owned,
+// mutation RPCs push-only; when quiescent, the invoker flushes each push inline. Only the threaded
+// host mounts this (the plugin drives run()/pluginProcessBlock directly).
 class AudioDriverRpcService {
 public:
-    AudioDriverRpcService(Engine& engine, QueuedInvoker& queued, DirectInvoker& direct,
-                          EngineInvoker*& active, std::atomic<bool>& audioRunning);
+    AudioDriverRpcService(Engine& engine, QueuedInvoker& invoker);
     ~AudioDriverRpcService();
     AudioDriverRpcService(const AudioDriverRpcService&)            = delete;
     AudioDriverRpcService& operator=(const AudioDriverRpcService&) = delete;
@@ -34,11 +31,8 @@ public:
 private:
     void audioLoop();  // the background audio thread body
 
-    Engine&            engine_;
-    QueuedInvoker&     queued_;
-    DirectInvoker&     direct_;
-    EngineInvoker*&    active_;        // the facade's invoker pointer, swapped on start/stop
-    std::atomic<bool>& audioRunning_;  // shared: selects invoker mode + gates the engine reads
+    Engine&        engine_;
+    QueuedInvoker& invoker_;   // the one mutation path; its audioThreadOwns bit is the run condition
 
     static constexpr std::uint32_t kBlockSize = 1024;
     std::thread                audioThread_;

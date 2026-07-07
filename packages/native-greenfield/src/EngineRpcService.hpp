@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -12,16 +11,15 @@
 
 class Engine;
 class SystemFactory;
-class EngineInvoker;
+class QueuedInvoker;
 
 // The emulator surface (lifecycle / reads / DSP kernel / MIDI / transport) as a THIN RPC layer over
-// (SystemFactory + Engine + EngineInvoker). No threading branches: mutations go through `active_`
-// (which the audio driver points at direct_ or queued_); the genuinely-deferred live reads keep a
-// single fail-safe guard against `audioRunning_` until the snapshot triple-buffers land.
+// (SystemFactory + Engine + the one Invoker). No threading branches: every mutation just pushes onto
+// the invoker (which flushes inline when quiescent, or hands to the audio thread when it owns the
+// Engine); reads come from the snapshot registry, so they need no guard.
 class EngineRpcService {
 public:
-    EngineRpcService(Engine& engine, SystemFactory& factory, EngineInvoker*& active,
-                     const std::atomic<bool>& audioRunning);
+    EngineRpcService(Engine& engine, SystemFactory& factory, QueuedInvoker& invoker);
 
     // --- emulator lifecycle / reads ---
     // (duplicate + reload live in the TS SystemsStore as constructSystem-with-state orchestration.)
@@ -48,10 +46,9 @@ public:
     bool            stageMidiIn(std::vector<std::uint8_t> bytes);
 
 private:
-    Engine&                  engine_;
-    SystemFactory&           factory_;
-    EngineInvoker*&          active_;       // the facade's invoker pointer (direct_ or queued_)
-    const std::atomic<bool>& audioRunning_; // gates the deferred live reads
+    Engine&        engine_;
+    SystemFactory& factory_;
+    QueuedInvoker& invoker_;   // the one mutation path (push; flushes inline when quiescent)
 
     static constexpr std::uint32_t kBlockSize = 1024;
     std::vector<float>       scratchL_;  // renderAudio pull-path scratch (control thread)
