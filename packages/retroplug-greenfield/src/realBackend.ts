@@ -9,7 +9,7 @@
 // (constructSystem / read* / …) drive a StubSystem in a real native Project. Only
 // openFileBrowser is unimplemented (async — deferred).
 
-import type { Backend, ConstructSpec, FileBrowserOpts, ZipEntry } from "./backend";
+import type { Backend, ConstructSpec, FileBrowserOpts, FrameData, ZipEntry } from "./backend";
 
 type RpcSend = (request: unknown) => unknown;
 interface Reply {
@@ -86,6 +86,11 @@ export function createRealBackend(): Backend {
     applyRoleConfig: (id, kind, config) => call("applyRoleConfig", id, kind, JSON.stringify(config)) as boolean,
     readState: (id) => bytesOrNull(call("readState", id)),
     readSram: (id) => bytesOrNull(call("readSram", id)),
+    getFrame: (id): FrameData | null => {
+      const r = call("getFrame", id) as { width: number; height: number; published: boolean; data?: Uint8Array } | null;
+      if (r == null || r.width === 0) return null; // no such system / no framebuffer
+      return { width: r.width, height: r.height, published: r.published, pixels: r.data ?? new Uint8Array(0) };
+    },
 
     // --- async dialog (deferred; needs the emit path) ---------------------
     openFileBrowser: (_opts: FileBrowserOpts) => notImpl("openFileBrowser"),

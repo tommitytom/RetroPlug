@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { Backend, ConstructSpec, FileBrowserOpts, ZipEntry } from "../src/backend";
+import type { Backend, ConstructSpec, FileBrowserOpts, FrameData, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 
 const enc = new TextEncoder();
@@ -265,6 +265,14 @@ export class MockBackend implements Backend {
     const override = this.sramOverrides.get(id);
     if (override) return new Uint8Array(override);
     return this.systems.has(id) ? sramBytesFor(id) : null;
+  }
+
+  getFrame(id: number): FrameData | null {
+    this.log.push("getFrame");
+    // The mock never advances a real core, so a live system reports GB dimensions but no published
+    // frame; an absent id is null. (Video rendering is proven against the native backend, not here.)
+    if (!this.systems.has(id)) return null;
+    return { width: 160, height: 144, published: false, pixels: new Uint8Array(0) };
   }
 
   zip(entries: ZipEntry[]): Uint8Array | null {

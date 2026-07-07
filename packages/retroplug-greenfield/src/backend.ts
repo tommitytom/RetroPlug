@@ -135,6 +135,11 @@ export interface Backend {
   /** The battery-backed SRAM region for system `id`, or `null`. */
   readSram(id: number): Uint8Array | null;
 
+  /** The system's latest video frame for display, or `null` when the id is gone / has no framebuffer.
+   *  `published` is false (and `pixels` empty) until the core has rendered a frame. Read from the
+   *  race-free framebuffer triple-buffer, so it is safe to poll while the core plays. */
+  getFrame(id: number): FrameData | null;
+
   // --- Byte codec ---------------------------------------------------------
   // The ONLY native part of `.rplg` export framing: TS assembles every entry (the thin
   // project.json + the per-system blobs) and hands them here to compress; native just
@@ -152,6 +157,16 @@ export interface Backend {
 export interface ZipEntry {
   name: string;
   bytes: Uint8Array;
+}
+
+/** One system's video frame for display: raw XRGB8888 pixels (`width*height*4` bytes — the LVGL
+ *  Canvas's native format). `published` is false, and `pixels` empty, until the core has rendered a
+ *  frame. */
+export interface FrameData {
+  width: number;
+  height: number;
+  published: boolean;
+  pixels: Uint8Array;
 }
 
 /** Presentation for an OS file dialog: its title + the glob patterns to show. */
