@@ -48,7 +48,8 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
 
   // --- setup (single-threaded, before the audio thread) ---
   const sav = savFromJson(SYNC_MIDI_SONG);
-  const id = be.constructSystem({
+  const id = 1; // TS owns the id counter; this direct-backend test picks its own (fresh host per file)
+  expect(be.constructSystem({
     romPath: LSDJ,
     platform: "gb",
     core: "sameboy",
@@ -57,8 +58,7 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
     statePath: null,
     sramBytes: sav.slice().buffer,
     // Cores construct bare (no C++ roles) — the TS lsdj-sync kernel role is the sole clock.
-  })!;
-  expect(id != null).toBeTruthy();
+  }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   expect(dsp.setSystems(lsdjSync(id, 0))).toBeTruthy(); // structure known, clock off

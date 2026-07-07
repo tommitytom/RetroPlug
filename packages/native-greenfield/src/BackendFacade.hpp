@@ -44,7 +44,7 @@ public:
     rfl::Bytestring savFromJson(std::string json) { return host_.savFromJson(std::move(json)); }
 
     // --- emulator lifecycle / reads / kernel / MIDI / transport → engine_svc_ ---
-    std::optional<std::uint32_t> constructSystem(BackendConstructSpec spec) { return engine_svc_.constructSystem(std::move(spec)); }
+    bool constructSystem(BackendConstructSpec spec) { return engine_svc_.constructSystem(std::move(spec)); }
     bool removeSystem(std::uint32_t id) { return engine_svc_.removeSystem(id); }
     bool applySystemSetting(std::uint32_t id, std::string key, double value) { return engine_svc_.applySystemSetting(id, std::move(key), value); }
     bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config) { return engine_svc_.applyRoleConfig(id, std::move(kind), std::move(config)); }

@@ -48,8 +48,8 @@ export function createRealBackend(): Backend {
 
   // ConstructSpec → RPC params: omit null path fields (so native reads nullopt, not "") and
   // send seed bytes as number[] only when present.
-  const specParams = (spec: ConstructSpec): Record<string, unknown> => {
-    const p: Record<string, unknown> = { romPath: spec.romPath, platform: spec.platform, core: spec.core, embeddedRom: spec.embeddedRom };
+  const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> => {
+    const p: Record<string, unknown> = { id, romPath: spec.romPath, platform: spec.platform, core: spec.core, embeddedRom: spec.embeddedRom };
     if (spec.savPath != null) p.savPath = spec.savPath;
     if (spec.statePath != null) p.statePath = spec.statePath;
     if (spec.replaceId !== undefined) p.replaceId = spec.replaceId;
@@ -58,7 +58,6 @@ export function createRealBackend(): Backend {
     if (spec.settings != null) p.settings = spec.settings;
     return p;
   };
-  const idOrNull = (v: unknown): number | null => (v == null ? null : (v as number));
 
   return {
     // --- fs / config / codec (increment 1) --------------------------------
@@ -77,7 +76,7 @@ export function createRealBackend(): Backend {
     unzip: (bytes) => (call("unzip", ints(bytes)) as ZipEntry[] | null) ?? null,
 
     // --- emulator lifecycle / reads ---------------------------------------
-    constructSystem: (spec: ConstructSpec) => idOrNull(call("constructSystem", specParams(spec))),
+    constructSystem: (spec: ConstructSpec, id: number) => call("constructSystem", specParams(spec, id)) as boolean,
     removeSystem: (id) => call("removeSystem", id) as boolean,
     applySystemSetting: (id, key, value) =>
       call("applySystemSetting", id, key, typeof value === "boolean" ? (value ? 1 : 0) : value) as boolean,

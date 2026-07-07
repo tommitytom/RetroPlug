@@ -64,8 +64,8 @@ test("export: PKZIP of project.json + each system's state & sram, from the pump"
 test("export then load: round-trips systems (blobs seed each emulator) + settings", () => {
   const { be, project } = newProject();
   be.seed("/proj/a.gb", gbRom());
-  project.systems.loadMgb(); // export id 1
-  project.systems.addSystem("/proj/a.gb"); // export id 2
+  const mgbId = project.systems.loadMgb()!; // export id (mgb) — TS-allocated, not assumed to be 1
+  const aId = project.systems.addSystem("/proj/a.gb")!; // export id (a.gb)
   project.setZoom(4);
   project.export("/proj/song.rplg");
 
@@ -81,10 +81,10 @@ test("export then load: round-trips systems (blobs seed each emulator) + setting
 
   // Both new systems were reconstructed FROM the archive's blobs (not cold-booted).
   expect(be.restoredIds()).toEqual(project.systems.systems().map((s) => s.id).sort((a, b) => a - b));
-  // The exact archive bytes (keyed by the EXPORT-time ids 1,2) reached construct.
+  // The exact archive bytes (keyed by the EXPORT-time ids) reached construct.
   const imported = be.constructCalls.slice(-2);
-  expect(new Uint8Array(imported[0].stateBytes!)).toEqual(stateBytesFor(1));
-  expect(new Uint8Array(imported[1].stateBytes!)).toEqual(stateBytesFor(2));
+  expect(new Uint8Array(imported[0].stateBytes!)).toEqual(stateBytesFor(mgbId));
+  expect(new Uint8Array(imported[1].stateBytes!)).toEqual(stateBytesFor(aId));
 });
 
 test("load export: a moved cartridge ROM reports missing (blobs cover only sram/state)", () => {

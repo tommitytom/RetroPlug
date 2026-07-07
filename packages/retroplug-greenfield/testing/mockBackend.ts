@@ -49,7 +49,7 @@ export class MockBackend implements Backend {
   readonly log: string[] = [];
 
   // --- emulator-lifecycle bookkeeping (mock-only) -------------------------
-  private nextId = 1;
+  // (no id counter — TS owns ids and passes them to constructSystem.)
   private systems = new Map<number, MockSystem>();
   /** Every ConstructSpec passed to constructSystem, in order — lets tests assert
    *  the CONCRETE paths TS resolved (savPath/statePath/replaceId). */
@@ -214,25 +214,24 @@ export class MockBackend implements Backend {
 
   // --- Emulator lifecycle -------------------------------------------------
 
-  constructSystem(spec: ConstructSpec): number | null {
+  constructSystem(spec: ConstructSpec, id: number): boolean {
     this.log.push("constructSystem");
     this.constructCalls.push(spec);
     // Build only when a real ROM is available: an embedded marker, or seeded ROM
     // bytes that classify as a known format (mirrors native's slurp + reject).
     if (!spec.embeddedRom) {
       const bytes = this.files.get(this.canonicalize(spec.romPath));
-      if (!bytes || detectPlatform(bytes) === "unknown") return null;
+      if (!bytes || detectPlatform(bytes) === "unknown") return false;
     }
-    const id = this.nextId++;
     if (spec.replaceId !== undefined) this.systems.delete(spec.replaceId); // swap in place
-    this.systems.set(id, {
+    this.systems.set(id, {  // TS owns the id counter; the mock just records under the given id
       romPath: spec.romPath,
       embeddedRom: spec.embeddedRom,
       savPath: spec.savPath,
       statePath: spec.statePath,
       restoredFromBytes: spec.sramBytes !== undefined || spec.stateBytes !== undefined,
     });
-    return id;
+    return true;
   }
 
   // duplicate + reload are TS orchestration (SystemsStore) over readState/readSram + constructSystem —

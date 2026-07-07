@@ -26,10 +26,6 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
     project_.reserve(16);
 }
 
-SystemId Engine::nextSystemId() {
-    return project_.nextSystemId();
-}
-
 void Engine::adoptSystem(std::unique_ptr<SystemBase> sys) {
     project_.adoptSystem(sys.release());  // Project takes ownership of the raw pointer
     project_.rebuildLinkGroups();

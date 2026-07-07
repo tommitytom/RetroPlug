@@ -28,8 +28,9 @@ test("add + remove a system while the audio thread plays, via the command + rele
   const audio = createAudioDriver();
 
   // --- setup (quiescent): one mGB + the kernel routing so notes can reach it ---
-  const a = be.constructSystem(MGB)!;
-  expect(a != null).toBeTruthy();
+  // TS owns the id counter now; a test calling the backend directly picks its own (fresh host per file).
+  const a = 1;
+  expect(be.constructSystem(MGB, a)).toBeTruthy();
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   expect(dsp.setSystems(routingMgb([a]))).toBeTruthy();
 
@@ -48,8 +49,8 @@ test("add + remove a system while the audio thread plays, via the command + rele
   const oneSys = energyWindow(120);
 
   // --- ADD a second mGB while running → built on the control thread, adopted on the audio thread ---
-  const b = be.constructSystem(MGB)!;
-  expect(b != null).toBeTruthy();
+  const b = 2;
+  expect(be.constructSystem(MGB, b)).toBeTruthy();
   audio.sleepMs(30); // let the audio thread apply the AddSystem command
   expect(audio.systemCount()).toBe(2);
   expect(dsp.setSystems(routingMgb([a, b]))).toBeTruthy();

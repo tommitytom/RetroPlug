@@ -25,7 +25,7 @@ public:
 
     // --- emulator lifecycle / reads ---
     // (duplicate + reload live in the TS SystemsStore as constructSystem-with-state orchestration.)
-    std::optional<std::uint32_t> constructSystem(BackendConstructSpec spec);
+    bool constructSystem(BackendConstructSpec spec);   // TS-owned id in spec.id; returns "did it build"
     bool removeSystem(std::uint32_t id);
     bool applySystemSetting(std::uint32_t id, std::string key, double value);
     bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config);

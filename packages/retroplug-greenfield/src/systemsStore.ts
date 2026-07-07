@@ -36,6 +36,15 @@ function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
   return u8.slice().buffer;
 }
 
+// TS owns the system-id counter (native never allocates). Module-scoped so it's ONE id space per
+// control-plane JS context — which is 1:1 with the native Project in every host (a plugin instance has
+// its own JS context + Project; a native test file shares one host + Project across its cases). Ids are
+// opaque handles; the snapshot registry uses 0 as its free-slot sentinel, so they start at 1.
+let nextSystemId = 1;
+function allocSystemId(): number {
+  return nextSystemId++;
+}
+
 /** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
  *  the first `ROM_SNIFF_LEN` of them. Native never classifies. */
 export function classifyRom(backend: Backend, romPath: string): Platform | "unknown" {
@@ -171,7 +180,8 @@ export class SystemsStore {
     const suffix = this.freeSuffix(src.romPath);
     const savPath = src.embeddedRom ? null : resolveSavPath(src.romPath, suffix, "");
     const systemRole = src.roles.find((r) => r.kind === src.core);
-    const newId = this.backend.constructSystem({
+    const newId = allocSystemId();
+    const ok = this.backend.constructSystem({
       romPath: src.romPath,
       platform: src.platform,
       core: src.core,
@@ -180,9 +190,9 @@ export class SystemsStore {
       statePath: null,
       stateBytes: toArrayBuffer(state),
       settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
-    });
-    if (newId === null) {
-      console.warn(`[systems] duplicateSystem(${id}) failed (construct returned null) — no instance added`);
+    }, newId);
+    if (!ok) {
+      console.warn(`[systems] duplicateSystem(${id}) failed (construct returned false) — no instance added`);
       return null;
     }
     this.entries = appendEntry(this.entries, {
@@ -218,7 +228,8 @@ export class SystemsStore {
     if (!src) return null;
     const sram = this.backend.readSram(id);
     const systemRole = src.roles.find((r) => r.kind === src.core);
-    const newId = this.backend.constructSystem({
+    const newId = allocSystemId();
+    const ok = this.backend.constructSystem({
       romPath: src.romPath,
       platform: src.platform,
       core: src.core,
@@ -228,8 +239,8 @@ export class SystemsStore {
       sramBytes: sram ? toArrayBuffer(sram) : undefined,
       replaceId: id,
       settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
-    });
-    if (newId === null) return null;
+    }, newId);
+    if (!ok) return null;
     this.entries = replaceById(this.entries, id, { ...src, id: newId });
     if (this.focusedId === id) this.focusedId = newId;
     return this.committed(newId);
@@ -333,7 +344,8 @@ export class SystemsStore {
     // construct-time settings blob so a loaded non-default model/highpass is applied AT build, not via
     // a post-construct restart that would nuke the just-restored savestate.
     const systemRole = config.roles?.find((r) => r.kind === core);
-    const id = this.backend.constructSystem({
+    const id = allocSystemId();
+    if (!this.backend.constructSystem({
       romPath,
       platform,
       core,
@@ -343,8 +355,7 @@ export class SystemsStore {
       sramBytes: blobs?.sramBytes,
       stateBytes: blobs?.stateBytes,
       settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
-    });
-    if (id === null) return null;
+    }, id)) return null;
     // Stored settings/roles win; a config that omits them re-attaches defaults.
     const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
     const roles = config.roles && config.roles.length ? config.roles : this.defaultRoles(core, platform, romPath, embeddedRom);
@@ -391,8 +402,8 @@ export class SystemsStore {
       this.backend.canonicalize(p),
     );
     const savPath = embeddedRom ? null : resolveSavPath(romPath, suffix, override);
-    const id = this.backend.constructSystem({ romPath, platform, core, embeddedRom, savPath, statePath: null, replaceId });
-    if (id === null) return null;
+    const id = allocSystemId();
+    if (!this.backend.constructSystem({ romPath, platform, core, embeddedRom, savPath, statePath: null, replaceId }, id)) return null;
     return {
       id,
       entry: {

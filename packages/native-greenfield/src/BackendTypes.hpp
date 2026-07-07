@@ -27,6 +27,7 @@ struct GreenfieldFrame { std::uint32_t width; std::uint32_t height; bool publish
 // paths + an embedded-ROM marker + optional zip-import seed bytes. The optional string fields are
 // absent (nullopt) rather than "" when the TS side has null.
 struct BackendConstructSpec {
+    std::uint32_t                            id;        // TS owns the id counter; native never allocates
     std::string                              romPath;
     std::string                              embeddedRom;
     std::optional<std::string>               platform;  // TS Platform ("gb"/"nes"/"gba"); which system a multi-platform core builds

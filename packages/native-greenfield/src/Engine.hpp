@@ -39,7 +39,7 @@ public:
     double sampleRate() const { return sampleRate_; }
 
     // --- structure (alloc-free swaps vs the pre-reserved Project; `sys` was built off-thread) ---
-    SystemId nextSystemId();
+    // (ids are TS-owned now — the store allocates and passes them in; native never mints one.)
     void adoptSystem(std::unique_ptr<SystemBase> sys);                                        // + rebuild
     std::unique_ptr<SystemBase> removeSystem(SystemId id);                                    // returns removed
     std::unique_ptr<SystemBase> replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys);  // returns displaced

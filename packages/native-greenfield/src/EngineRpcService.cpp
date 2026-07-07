@@ -62,20 +62,20 @@ EngineRpcService::EngineRpcService(Engine& engine, SystemFactory& factory, Engin
                                    const std::atomic<bool>& audioRunning)
     : engine_(engine), factory_(factory), active_(active), audioRunning_(audioRunning) {}
 
-std::optional<std::uint32_t> EngineRpcService::constructSystem(BackendConstructSpec spec) {
-    // Id is allocated up front (nextSystemId only bumps a control-thread counter) so we return it
-    // synchronously whether the invoker applies now or enqueues for the audio thread.
-    const SystemId id = engine_.nextSystemId();
+bool EngineRpcService::constructSystem(BackendConstructSpec spec) {
+    // TS owns the id counter and passes it in; the build (control thread) can fail (bad ROM), the
+    // queued adopt can't — so this returns "did it build", never an id.
+    const SystemId id = spec.id;
     auto sys = factory_.build(id, toBuildSpec(spec), engine_.sampleRate());
-    if (!sys) return std::nullopt;  // unknown backend / unreadable or non-SameBoy ROM
+    if (!sys) return false;  // unknown backend / unreadable or non-SameBoy ROM
 
     // Seed the snapshot slot from the just-built core (control thread) BEFORE handoff, so a read
     // right after construct works with no block rendered.
-    if (!engine_.registry().claim(id, *sys)) return std::nullopt;  // pool full
+    if (!engine_.registry().claim(id, *sys)) return false;  // pool full
 
     if (spec.replaceId) active_->replaceSystem(*spec.replaceId, std::move(sys));
     else                active_->adoptSystem(std::move(sys));
-    return id;
+    return true;
 }
 
 // duplicate + reload are TS orchestration now (SystemsStore over the registry reads + constructSystem-

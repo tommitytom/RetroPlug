@@ -81,10 +81,11 @@ export interface Backend {
   // looks for a sibling, never classifies. No ROM/SRAM bytes cross for construction:
   // native slurps the paths it's given.
 
-  /** Build + activate an emulator from a spec, returning the new (monotonic)
-   *  SystemId, or `null` on an I/O failure (unreadable ROM / unknown format). With
-   *  `replaceId` the instance swaps that id in place; otherwise it is appended. */
-  constructSystem(spec: ConstructSpec): number | null;
+  /** Build + activate an emulator from a spec under the TS-allocated `id` (TS owns the id counter;
+   *  native never mints one). Returns whether it BUILT — true on success, false on an I/O failure
+   *  (unreadable ROM / unknown format / pool full). With `replaceId` the instance swaps that id in
+   *  place; otherwise it is appended. The adopt is fire-and-forget, so there's no id to return. */
+  constructSystem(spec: ConstructSpec, id: number): boolean;
 
   // duplicate + reload are TS orchestration over constructSystem-with-state (SystemsStore): the store
   // pulls the source's savestate/SRAM from the registry and builds a seeded/replaceId core — native has

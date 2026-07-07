@@ -55,7 +55,8 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
 
   // Real LSDj, authored SYNC=MIDI song, constructed bare (no C++ roles) so the kernel is the only clock.
   const sav = savFromJson(SYNC_MIDI_SONG);
-  const id = be.constructSystem({
+  const id = 1; // TS owns the id counter; this direct-backend test picks its own (fresh host per file)
+  expect(be.constructSystem({
     romPath: LSDJ,
     platform: "gb",
     core: "sameboy",
@@ -63,8 +64,7 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
     savPath: null,
     statePath: null,
     sramBytes: sav.slice().buffer, // fresh ArrayBuffer at offset 0
-  })!;
-  expect(id != null).toBeTruthy();
+  }, id)).toBeTruthy();
 
   // Load the real role kernel; per-block drive is the kernel from here on.
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
