@@ -123,6 +123,64 @@ test("adoptRomProject: an embedded ROM (no path) is a no-op — nothing written 
   expect(be.log.includes("writeFile")).toBeFalsy();
 });
 
+test("renameProject: edits the .rplg name, updates recents, syncs the open project, sticks on reload", () => {
+  const { be, recent, project } = newProject();
+  be.seed("/roms/a.gb", gbRom());
+  project.systems.loadRom("/roms/a.gb");
+  project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg, name "a", current project
+  expect(project.name()).toBe("a");
+
+  expect(project.renameProject("/roms/a.rplg", "My Song")).toBeTruthy();
+  expect(project.name()).toBe("My Song"); // live sync (it IS the open project)
+  expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song"); // persisted in the file
+  expect(recent.view()[0].label).toBe("My Song"); // recents shows it
+
+  project.newProject();
+  project.load("/roms/a.rplg"); // reload restores the renamed name from the file
+  expect(project.name()).toBe("My Song");
+});
+
+test("renameProject: renames a non-open recent project without touching the open one", () => {
+  const { be, recent, project } = newProject();
+  be.seed("/roms/b.gb", gbRom());
+  be.seed("/roms/b.rplg", JSON.stringify({ schemaVersion: "1", name: "b", systems: [{ platform: "gb", romPath: "b.gb" }] }));
+  recent.add("/roms/b.rplg", "b"); // in recents, but not the open project
+
+  be.seed("/roms/a.gb", gbRom());
+  project.systems.loadRom("/roms/a.gb");
+  project.adoptRomProject("/roms/a.gb"); // open project = /roms/a.rplg, name "a"
+
+  expect(project.renameProject("/roms/b.rplg", "Other")).toBeTruthy();
+  expect(JSON.parse(be.readText("/roms/b.rplg")!).name).toBe("Other"); // b's file edited
+  expect(recent.view().find((v) => v.path === "/roms/b.rplg")!.label).toBe("Other");
+  expect(project.name()).toBe("a"); // the OPEN project is untouched
+});
+
+test("renameProject: rewrites project.json inside an export .rplg.zip", () => {
+  const { be, project } = newProject();
+  be.seed("/roms/a.gb", gbRom());
+  project.systems.addSystem("/roms/a.gb");
+  expect(project.export("/out/proj.rplg.zip")).toBeTruthy();
+
+  expect(project.renameProject("/out/proj.rplg.zip", "Zipped")).toBeTruthy();
+  project.newProject();
+  project.load("/out/proj.rplg.zip"); // reload the archive → the renamed name is stored inside
+  expect(project.name()).toBe("Zipped");
+});
+
+test("renameProject: a blank name is rejected; a missing file still updates the alias (best-effort)", () => {
+  const { be, recent, project } = newProject();
+  be.seed("/roms/a.gb", gbRom());
+  project.systems.loadRom("/roms/a.gb");
+  project.adoptRomProject("/roms/a.gb");
+  expect(project.renameProject("/roms/a.rplg", "   ")).toBeFalsy(); // blank → no-op
+  expect(project.name()).toBe("a");
+
+  recent.add("/gone/x.rplg", "x"); // in recents, no file on disk
+  expect(project.renameProject("/gone/x.rplg", "Renamed")).toBeFalsy(); // file not written
+  expect(recent.view().find((v) => v.path === "/gone/x.rplg")!.label).toBe("Renamed"); // alias still set
+});
+
 test("save then load: round-trips the systems (rebuilt over the real store)", () => {
   const { be, project } = newProject();
   be.seed("/proj/a.gb", gbRom());

@@ -53,6 +53,37 @@ function systemMenu(be: MockBackend, stores: AppStores): { id: number; items: Me
   return { id, items: submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-system") };
 }
 
+test("the Recent submenu appears on BOTH the start and instance menus", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  stores.recent.add("/music/song.rplg", "Song"); // one recent entry so the submenu is populated
+
+  expect(findItem(buildStartMenu(ctxOf(stores)).items, "start-recent")?.kind).toBe("submenu");
+
+  be.seed("/roms/a.gb", gbRom());
+  const sysId = stores.project.systems.addSystem("/roms/a.gb")!;
+  const anchored = stores.project.systems.view().find((s) => s.id === sysId)!;
+  const inst = buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items;
+  expect(findItem(inst, "inst-recent")?.kind).toBe("submenu");
+});
+
+test("a recent entry's Rename prompt renames the project (edits the file + recents alias)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  stores.project.systems.loadRom("/roms/a.gb");
+  stores.project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg in recents, name "a", open project
+
+  const row = submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent"), "recent-0");
+  const rename = findItem(row, "recent-0-rename")!;
+  expect(rename.kind).toBe("prompt");
+  expect(rename.prompt!.onConfirm("  ")).toBe("Name cannot be empty."); // blank → error keeps it open
+  expect(rename.prompt!.onConfirm("My Song")).toBe(null); // success closes it
+
+  expect(stores.project.name()).toBe("My Song");
+  expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song");
+});
+
 test("start menu Load... browses the ROM-or-sav dialog and loads the picked ROM", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

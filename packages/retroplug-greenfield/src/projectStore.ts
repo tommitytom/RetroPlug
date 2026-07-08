@@ -43,6 +43,17 @@ export type LoadOutcome =
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
+// Parse JSON to a plain object, or null (invalid JSON / not an object). Used to edit a single field of a
+// project file without disturbing the rest — a targeted name swap, not a full parse/rebuild.
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const doc = JSON.parse(text);
+    return doc && typeof doc === "object" && !Array.isArray(doc) ? (doc as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 // Inclusive upper bounds for the settings enums (native validates + rejects above).
 const SETTING_MAX = { layout: 3, midiRouting: 3, audioRouting: 2, zoom: 6 };
 
@@ -170,6 +181,49 @@ export class ProjectStore {
     this.recent.add(path, this.projectName);
     this.path = path;
     this.onChangeCb();
+  }
+
+  /** Rename the project at `path`: edit its persisted `name` (the source of truth), refresh the recents
+   *  display alias, and sync the live name when it's the open project. Works on a thin `.rplg` or an
+   *  export `.rplg.zip`. A blank name is rejected. When the file can't be read/written the alias is still
+   *  updated (best-effort) so the entry shows the chosen name; the on-disk name would re-seed on next
+   *  save. Returns whether the file itself was rewritten. */
+  renameProject(path: string, name: string): boolean {
+    const trimmed = name.trim();
+    if (!path || !trimmed) return false;
+    const wrote = this.writeProjectName(path, trimmed);
+    this.recent.rename(path, trimmed); // update the recents display alias (fires its onChange)
+    if (this.path && this.backend.canonicalize(path) === this.backend.canonicalize(this.path)) {
+      this.projectName = trimmed; // keep the open project's live name in sync
+      this.onChangeCb();
+    }
+    return wrote;
+  }
+
+  // Edit ONLY the `name` field of a project file on disk, leaving everything else (paths, systems,
+  // settings) byte-identical. Thin `.rplg` = a JSON field swap; export `.rplg.zip` = rewrite its
+  // project.json entry. Returns false when the file is unreadable / unparseable / unwritable.
+  private writeProjectName(path: string, name: string): boolean {
+    const bytes = this.backend.readFile(path);
+    if (!bytes) return false;
+    const isZip =
+      bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
+    if (!isZip) {
+      const doc = parseJsonObject(dec.decode(bytes));
+      if (!doc) return false;
+      doc.name = name;
+      return this.backend.writeFile(path, enc.encode(JSON.stringify(doc)));
+    }
+    const entries = this.backend.unzip(bytes);
+    if (!entries) return false;
+    const out: ZipEntry[] = entries.map((e) => {
+      if (e.name !== PROJECT_JSON) return e;
+      const doc = parseJsonObject(dec.decode(e.bytes)) ?? {};
+      doc.name = name;
+      return { name: e.name, bytes: enc.encode(JSON.stringify(doc)) };
+    });
+    const archive = this.backend.zip(out);
+    return !!archive && this.backend.writeFileAtomic(path, archive);
   }
 
   /** Export a portable `.rplg` PKZIP: the thin project.json + each live system's

@@ -271,8 +271,22 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
       action(`recent-${i}-locate`, "Locate on Disk", () =>
         browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p)),
       ),
+      {
+        id: `recent-${i}-rename`,
+        label: "Rename...",
+        kind: "prompt",
+        keepOpen: true,
+        prompt: {
+          title: `Rename "${entry.label}" to:`,
+          initial: entry.label,
+          onConfirm: (v: string) => {
+            const name = v.trim();
+            if (!name) return "Name cannot be empty.";
+            return ctx.stores.project.renameProject(entry.path, name) ? null : "Rename failed.";
+          },
+        },
+      },
       action(`recent-${i}-remove`, "Remove from List", () => ctx.stores.recent.remove(entry.path)),
-      // Deferred: Rename (needs a text prompt).
     ]),
   );
 }
@@ -288,6 +302,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
       action("inst-load", "Load ROM", () => runSelection(ctx, ctx.stores.fileSelection.browse("load"))),
       action("inst-add", "Add Instance", () => runSelection(ctx, ctx.stores.fileSelection.browse("add"))),
+      submenu("inst-recent", "Recent", recentChildren(ctx)),
       sep("inst-sep0"),
       cycler("inst-link", "Link Group", LINK_GROUP_NAMES, sameboyConfig(sys).linkGroupId, (n) =>
         systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
