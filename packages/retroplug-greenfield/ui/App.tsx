@@ -14,11 +14,13 @@ import { useSinkGroup } from "./lvgl/FocusProvider";
 import { Box } from "./lvgl/Box";
 import { useNativeEvent } from "./lvgl/useNativeEvent";
 import { useWindowSize, requestWindowSize, isWindowSizeControlled } from "./lvgl/useWindowSize";
+import { useCloseGuard } from "./lvgl/useCloseGuard";
 import { useGameInput } from "./input/useGameInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "./screens/menu/menuDefs";
+import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 
 const KEY_ESCAPE = 0x1b;
@@ -34,6 +36,7 @@ export function App() {
   const bindings = useBindings();
   const sink = useSinkGroup();
   const windowSize = useWindowSize();
+  const closeGuard = useCloseGuard(stores);
 
   const [menuOpen, setMenuOpen] = useState(true);
   const [menuSystemId, setMenuSystemId] = useState<number | null>(null);
@@ -63,7 +66,9 @@ export function App() {
   useNativeEvent("key", (...args) => {
     const key = args[0] as number;
     const press = args[1] as boolean;
-    if (!press || key !== KEY_ESCAPE || empty) return; // start menu is always open
+    if (!press || key !== KEY_ESCAPE) return;
+    if (closeGuard.active) return void closeGuard.onCancel(); // the close prompt owns Esc → cancel it
+    if (empty) return; // start menu is always open
     if (isMenuModalActive()) return; // a capture/prompt owns Esc — cancel it, don't close the menu
     if (menuOpen) {
       setMenuOpen(false);
@@ -76,9 +81,28 @@ export function App() {
 
   // Game input: route keyboard to the focused instance's joypad, but only when a tile is showing (not the
   // start menu) and no instance menu is open — otherwise arrows/Enter belong to menu navigation.
-  useGameInput({ active: !empty && !menuOpen, focusedId: stores.project.systems.focused() });
+  useGameInput({ active: !empty && !menuOpen && !closeGuard.active, focusedId: stores.project.systems.focused() });
 
   const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version: "" };
+
+  // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
+  // the keypad. Save & Quit / Discard & Quit / Cancel — the guard drives the native quit + dismissal.
+  if (closeGuard.active) {
+    const { width, height } = windowSize;
+    const closeTree: MenuTree = {
+      title: "Unsaved changes",
+      items: [
+        { id: "close-save", label: "Save & Quit", kind: "action", keepOpen: true, onSelect: closeGuard.onSave },
+        { id: "close-discard", label: "Discard & Quit", kind: "action", keepOpen: true, onSelect: closeGuard.onDiscard },
+        { id: "close-cancel", label: "Cancel", kind: "action", keepOpen: true, onSelect: closeGuard.onCancel },
+      ],
+    };
+    return (
+      <Box style={{ width, height, "background-color": "#000000" }}>
+        <Menu width={width} height={height} zoom={resolvedZoom} tree={closeTree} onClose={closeGuard.onCancel} />
+      </Box>
+    );
+  }
 
   if (empty) {
     const { width, height } = windowSize;

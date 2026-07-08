@@ -43,6 +43,49 @@ export function decideAutoSave(
   return { write: true, hash };
 }
 
+/** The per-system fields the unsaved-SRAM check needs (SystemEntry / SystemView satisfy it). */
+export interface SramTarget {
+  id: number;
+  romPath: string;
+  savSuffix: number;
+  savPath: string; // the paired-save override ("" = the suffix sibling)
+}
+
+// Whether a system's LIVE battery differs from the sibling `.sav` on disk — the "unsaved SRAM" signal.
+// Whole-SRAM for now (hashBytes over every byte); a later role-provided signature can normalise away
+// volatile regions (e.g. LSDj rewrites working RAM every frame) so only meaningful changes count. Embedded
+// ROMs (no romPath) and empty batteries are never dirty; a missing `.sav` with a non-empty battery is.
+function sramTargetDirty(backend: Backend, s: SramTarget): boolean {
+  if (!s.romPath) return false;
+  const savPath = resolveSavPath(s.romPath, s.savSuffix, s.savPath);
+  if (!savPath) return false;
+  const live = backend.readSram(s.id);
+  if (!live || live.length === 0) return false;
+  const disk = backend.readFile(savPath);
+  if (!disk) return true; // no .sav yet, but the battery has content
+  return hashBytes(live) !== hashBytes(disk);
+}
+
+/** How many systems have a live battery that differs from its on-disk `.sav`. */
+export function sramDirtyCount(backend: Backend, systems: SramTarget[]): number {
+  let n = 0;
+  for (const s of systems) if (sramTargetDirty(backend, s)) n++;
+  return n;
+}
+
+/** Write every dirty system's live battery to its sibling `.sav` (UNGATED — an explicit "save on close",
+ *  unlike the auto-save mirror which respects the Off preference). Returns the number written. */
+export function flushDirtySram(backend: Backend, systems: SramTarget[]): number {
+  let n = 0;
+  for (const s of systems) {
+    if (!sramTargetDirty(backend, s)) continue;
+    const savPath = resolveSavPath(s.romPath, s.savSuffix, s.savPath);
+    const live = backend.readSram(s.id);
+    if (savPath && live && backend.writeFile(savPath, live)) n++;
+  }
+  return n;
+}
+
 export class SramAutoSaver {
   // Persistent per-system hash of the last-written SRAM, used by pump() so the Continuous
   // idle-tick only writes on change. flushOnSave() uses a fresh (null) hash instead.

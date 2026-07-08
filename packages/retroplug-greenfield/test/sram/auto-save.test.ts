@@ -6,7 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { UserConfigStore } from "../../src/userConfigStore";
-import { SramAutoSaver, hashBytes, decideAutoSave } from "../../src/sramAutoSave";
+import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, flushDirtySram } from "../../src/sramAutoSave";
 import { gbRom } from "../systems/fixtures";
 
 const bytes = (...b: number[]) => new Uint8Array(b);
@@ -107,4 +107,43 @@ test("a paired savPath override is honored as the write target", () => {
   expect(saver.flushOnSave()).toBe(1);
   expect([...be.readFile("/saves/custom.sav")!]).toEqual([1, 1]); // wrote to the override, not /proj/a.sav
   expect(be.readFile(SAV)).toBe(null);
+});
+
+// --- unsaved-SRAM check (the close-confirm signal; whole-SRAM signature) ---
+
+test("sramDirtyCount: dirty when the live battery has no matching .sav; clean once mirrored", () => {
+  const { be, systems, id } = setup();
+  const list = systems.systems();
+  expect(sramDirtyCount(be, list)).toBe(1); // fresh system has a live battery but no .sav on disk → dirty
+  be.seed(SAV, be.readSram(id)!); // an identical sibling is now on disk
+  expect(sramDirtyCount(be, list)).toBe(0); // matches → clean
+  be.setSram(id, bytes(9, 9)); // an in-game battery write
+  expect(sramDirtyCount(be, list)).toBe(1); // differs from disk → dirty again
+});
+
+test("flushDirtySram: writes each dirty battery to its sibling .sav, then it's clean", () => {
+  const { be, systems, id } = setup();
+  be.setSram(id, bytes(4, 5, 6));
+  const list = systems.systems();
+  expect(flushDirtySram(be, list)).toBe(1);
+  expect([...be.readFile(SAV)!]).toEqual([4, 5, 6]);
+  expect(sramDirtyCount(be, list)).toBe(0); // now mirrored
+  expect(flushDirtySram(be, list)).toBe(0); // nothing dirty → no rewrite
+});
+
+test("flushDirtySram is NOT gated on the auto-save preference (unlike flushOnSave)", () => {
+  const { be, uc, systems, id } = setup();
+  uc.setSramAutoSave("Off"); // would make flushOnSave a no-op
+  be.setSram(id, bytes(7, 7));
+  expect(flushDirtySram(be, systems.systems())).toBe(1); // still writes — an explicit save on close
+  expect([...be.readFile(SAV)!]).toEqual([7, 7]);
+});
+
+test("sramDirtyCount / flushDirtySram skip embedded systems (no romPath)", () => {
+  const be = new MockBackend("/config");
+  const systems = new SystemsStore(be);
+  systems.loadMgb(); // embedded, no sibling
+  expect(sramDirtyCount(be, systems.systems())).toBe(0);
+  expect(flushDirtySram(be, systems.systems())).toBe(0);
+  expect(be.log.includes("writeFile")).toBeFalsy();
 });

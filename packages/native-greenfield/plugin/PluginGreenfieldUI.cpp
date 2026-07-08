@@ -75,6 +75,7 @@ class PluginGreenfieldUI : public UI {
     std::chrono::milliseconds screenshotInterval_{1000};
     std::chrono::steady_clock::time_point screenshotLast_{};
     bool windowTitleSet_ = false;
+    bool allowClose_ = false; // set by requestQuit() so the re-entrant onClose() lets the window close
 
     // Window geometry: the resize-grip fallback + tiling-WM clamp detection. Once a size comes back
     // different from what we asked (a Wayland/Hyprland tile), wmControlled_ latches true and we stop
@@ -133,6 +134,15 @@ public:
         if (defaultName && *defaultName) opts.defaultName = defaultName;
         if (patterns && *patterns) opts.fileFilterPatterns = patterns;
         openFileBrowser(opts);
+    }
+
+    // Close the standalone window for real — called from the UI via the __rp_quitWindow seam once the
+    // unsaved-changes prompt is resolved (Save or Discard). allowClose_ lets the re-entrant onClose()
+    // (getWindow().close() re-asks) through. Standalone only; a DAW never reaches here.
+    void requestQuit() {
+        allowClose_ = true;
+        getWindow().close();
+        getWindow().getApp().quit();
     }
 
     PluginGreenfieldUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT), fResizeHandle(this) {
@@ -217,6 +227,28 @@ public:
 
 protected:
     void parameterChanged(uint32_t, float) override {} // UI drives nothing via params
+
+    // Standalone window-close veto (DPF forwards Window::onClose here only in standalone; a DAW owns the
+    // plugin lifecycle). Ask the UI via __rp_onCloseRequested whether to keep the window open: when there
+    // are unsaved changes it shows the Save/Discard/Cancel prompt and returns true, so we veto (return
+    // false). Once the user confirms, JS calls __rp_quitWindow → requestQuit(), which re-enters here with
+    // allowClose_ set. Absent hook (headless / not yet mounted) → allow the close.
+    bool onClose() override {
+        if (allowClose_) return true;
+        JSContext* ctx = jsEngine.getContext();
+        if (!ctx) return true;
+        JSValue global = JS_GetGlobalObject(ctx);
+        JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_onCloseRequested");
+        bool veto = false;
+        if (JS_IsFunction(ctx, fn)) {
+            JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 0, nullptr);
+            veto = JS_ToBool(ctx, ret) == 1;
+            JS_FreeValue(ctx, ret);
+        }
+        JS_FreeValue(ctx, fn);
+        JS_FreeValue(ctx, global);
+        return !veto;
+    }
 
     // The native OS file dialog's result (null/empty filename = cancel). Deliver it into JS by calling the
     // __rp_onFileBrowserResult resolver the real Backend registered — same shared context, same UI thread
@@ -334,6 +366,12 @@ JSValue jsIsWindowSizeControlled(JSContext* ctx, JSValueConst, int, JSValueConst
     return JS_NewBool(ctx, g_windowUi && g_windowUi->isWindowSizeControlled());
 }
 
+// __rp_quitWindow(): close the standalone for real after the unsaved-changes prompt resolves.
+JSValue jsQuitWindow(JSContext*, JSValueConst, int, JSValueConst*) {
+    if (g_windowUi) g_windowUi->requestQuit();
+    return JS_UNDEFINED;
+}
+
 // __rp_openFileBrowser(title, patterns, saving, defaultName): open the native OS dialog. patterns is a
 // whitespace-separated glob list. The result comes back later via the UI's uiFileBrowserSelected override.
 JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -359,6 +397,7 @@ void installWindowSizeHooks(JSContext* ctx, PluginGreenfieldUI* ui) {
     JS_SetPropertyStr(ctx, g, "__rp_isWindowSizeControlled",
                       JS_NewCFunction(ctx, jsIsWindowSizeControlled, "__rp_isWindowSizeControlled", 0));
     JS_SetPropertyStr(ctx, g, "__rp_openFileBrowser", JS_NewCFunction(ctx, jsOpenFileBrowser, "__rp_openFileBrowser", 4));
+    JS_SetPropertyStr(ctx, g, "__rp_quitWindow", JS_NewCFunction(ctx, jsQuitWindow, "__rp_quitWindow", 0));
     JS_FreeValue(ctx, g);
 }
 
