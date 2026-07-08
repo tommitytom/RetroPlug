@@ -56,6 +56,30 @@ export function resolveKeyName(name: string): number | null {
   return null;
 }
 
+// The inverse of KEY_NAME_TO_DPF, canonical name per code (Enter, not its Return synonym). Used by the
+// bindings editor to turn a captured DPF code back into the symbolic name it stores.
+const DPF_TO_KEY_NAME: Record<number, string> = {
+  [KEY_BACKSPACE]: "Backspace",
+  [KEY_TAB]: "Tab",
+  [KEY_ENTER]: "Enter",
+  [KEY_ESCAPE]: "Escape",
+  [KEY_LEFT]: "Left",
+  [KEY_UP]: "Up",
+  [KEY_RIGHT]: "Right",
+  [KEY_DOWN]: "Down",
+  [KEY_SHIFT_L]: "ShiftL",
+  [KEY_SHIFT_R]: "ShiftR",
+};
+
+/** A captured DPF code → the symbolic name to store, or null when unbindable. Named keys resolve from the
+ *  table; printable ASCII (0x20..0x7e) becomes its character. The round-trip inverse of resolveKeyName, so
+ *  a captured key re-resolves to the same code in buildKeyToButton. */
+export function dpfCodeToKeyName(code: number): string | null {
+  if (code in DPF_TO_KEY_NAME) return DPF_TO_KEY_NAME[code];
+  if (code >= 0x20 && code <= 0x7e) return String.fromCharCode(code);
+  return null;
+}
+
 /** Invert a resolved keyboard binding map (GB-button-name → key-name[]) into a DPF-code → button-value
  *  lookup. Unknown key names and button names are skipped; a later binding for the same code wins. */
 export function buildKeyToButton(keyboard: Record<string, string[]>): Map<number, number> {

@@ -3,7 +3,7 @@
 // -input hook indexes per keystroke. Values mirror native InputTypes.hpp (Right=0 … Start=7).
 import { test, expect } from "../../testing/harness";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { resolveKeyName, buildKeyToButton, BUTTON_VALUE } from "../../src/keyCodes";
+import { resolveKeyName, dpfCodeToKeyName, buildKeyToButton, BUTTON_VALUE } from "../../src/keyCodes";
 
 test("resolveKeyName: named keys, single-char codepoints, unknown → null", () => {
   expect(resolveKeyName("Right")).toBe(0xe037);
@@ -31,6 +31,29 @@ test("buildKeyToButton: the default bindings invert to the native button values"
   expect(m.get(0xe052)).toBe(6); // ShiftR → Select
   expect(m.get(0x08)).toBe(6); // Backspace → Select
   expect(m.get(0x1b)).toBe(undefined); // Esc is unbound — falls through to the menu handler
+});
+
+test("dpfCodeToKeyName: named codes, printable ASCII, unknown → null", () => {
+  expect(dpfCodeToKeyName(0x0d)).toBe("Enter"); // canonical, not "Return"
+  expect(dpfCodeToKeyName(0x1b)).toBe("Escape");
+  expect(dpfCodeToKeyName(0x08)).toBe("Backspace");
+  expect(dpfCodeToKeyName(0x09)).toBe("Tab");
+  expect(dpfCodeToKeyName(0xe035)).toBe("Left");
+  expect(dpfCodeToKeyName(0xe036)).toBe("Up");
+  expect(dpfCodeToKeyName(0xe037)).toBe("Right");
+  expect(dpfCodeToKeyName(0xe038)).toBe("Down");
+  expect(dpfCodeToKeyName(0xe051)).toBe("ShiftL");
+  expect(dpfCodeToKeyName(0xe052)).toBe("ShiftR");
+  expect(dpfCodeToKeyName(0x51)).toBe("Q"); // printable ASCII
+  expect(dpfCodeToKeyName(0x7a)).toBe("z"); // case preserved
+  expect(dpfCodeToKeyName(0x00)).toBe(null); // NUL — below printable range
+  expect(dpfCodeToKeyName(0xe099)).toBe(null); // unknown named-band code
+});
+
+test("dpfCodeToKeyName ∘ resolveKeyName: a captured key round-trips to its code", () => {
+  for (const code of [0x0d, 0x1b, 0x08, 0x09, 0xe035, 0xe036, 0xe037, 0xe038, 0xe051, 0xe052, 0x51, 0x7a]) {
+    expect(resolveKeyName(dpfCodeToKeyName(code)!)).toBe(code);
+  }
 });
 
 test("buildKeyToButton: unknown button names + unresolvable keys are skipped", () => {
