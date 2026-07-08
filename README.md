@@ -12,7 +12,7 @@ Built on:
 - [SameBoy](https://github.com/LIJI32/SameBoy) — high-accuracy Game Boy
   emulator core
 - A React + TypeScript UI on top of LVGL via QuickJS — the framework slice is
-  documented separately in [dpfjs.md](dpfjs.md)
+  the [deps/dpf.js](deps/dpf.js) submodule (documented in its own README)
 
 ## Status
 
@@ -205,8 +205,8 @@ deps/dpf.js/                         the generic framework submodule (DPF, lv_bi
 ```
 
 For the React/TSX/QuickJS framework slice (everything that's not Game Boy or
-SameBoy specific), see [dpfjs.md](dpfjs.md). For the greenfield architecture and
-the migration plan, see [spec/README.md](spec/README.md).
+SameBoy specific), see the [deps/dpf.js](deps/dpf.js) submodule. For the greenfield
+architecture and the migration plan, see [spec/README.md](spec/README.md).
 
 ## Acknowledgements
 
