@@ -319,6 +319,7 @@ WidgetInfo RenderCore::widgetInfo(lv_obj_t* obj) const {
     wi.width  = lv_area_get_width(&a);
     wi.height = lv_area_get_height(&a);
     wi.childCount = lv_obj_get_child_count(obj);
+    wi.state = lv_obj_get_state(obj); // LV_STATE_* bitmask (FOCUSED/HOVERED/PRESSED/…)
     if (lv_obj_check_type(obj, &lv_label_class)) {
         if (const char* t = lv_label_get_text(obj)) wi.text = t;
     }
@@ -369,6 +370,15 @@ void RenderCore::clickAt(std::int32_t x, std::int32_t y) {
     mouseDown_ = false;
     emitMouse(false);
     pump(2);  // release -> LVGL fires CLICKED -> onClick
+}
+
+// Move the (unpressed) pointer to (x,y). The pointer indev reads the released cursor at the new position,
+// so LVGL fires LV_EVENT_HOVER_LEAVE on the old object + LV_EVENT_HOVER_OVER on the new → LV_STATE_HOVERED
+// toggles + any onHoveredStyle applies. Mirrors the real plugin's onMotion path; no "mouse" button event.
+void RenderCore::moveMouse(std::int32_t x, std::int32_t y) {
+    mouseDown_ = false;
+    mousePos_  = { x, y };
+    pump(2);  // let the indev read + LVGL hover-process the new released position
 }
 
 } // namespace rpuigf

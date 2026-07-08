@@ -19,6 +19,7 @@ export interface WidgetInfo {
   width: number;
   height: number;
   childCount: number;
+  state: number; // lv_obj_get_state bitmask (see State) — e.g. hover/focus
   text: string; // non-empty only for Text widgets
 }
 
@@ -43,6 +44,7 @@ interface NativeUi {
   focused(): WidgetInfo | null;
   tapKey(lvKey: number): void;
   clickAt(x: number, y: number): void;
+  moveMouse(x: number, y: number): void;
   advance(ms: number): void;
 }
 
@@ -60,6 +62,12 @@ export const CompType = {
 // LVGL key codes for tapKey (mirror LV_KEY_*).
 export const Key = {
   Up: 17, Down: 18, Right: 19, Left: 20, Esc: 27, Enter: 10,
+} as const;
+
+// lv_obj state bits (mirror LVGL 9.x lv_state_t in lv_obj_style.h), for WidgetInfo.state assertions.
+export const State = {
+  Checked: 0x0004, Focused: 0x0008, FocusKey: 0x0010, Edited: 0x0020,
+  Hovered: 0x0040, Pressed: 0x0080, Scrolled: 0x0100, Disabled: 0x0200,
 } as const;
 
 /** True when every pixel is identical (nothing meaningful rendered). */
@@ -104,6 +112,8 @@ export const ui = {
   tapKey(lvKey: number): void { rp.tapKey(lvKey); },
   /** Click (press+release) at absolute (x,y) → the widget's onClick. */
   clickAt(x: number, y: number): void { rp.clickAt(x, y); },
+  /** Move the (unpressed) pointer to absolute (x,y) → LVGL hover on the widget under it. */
+  moveMouse(x: number, y: number): void { rp.moveMouse(x, y); },
   /** Advance the emulator by `ms` so tiles receive live frames (pump() only ticks LVGL). */
   advance(ms: number): void { rp.advance(ms); },
 };

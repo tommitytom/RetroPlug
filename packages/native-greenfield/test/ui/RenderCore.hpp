@@ -45,6 +45,7 @@ struct WidgetInfo {
     bool          found  = false;
     std::int32_t  x = 0, y = 0, width = 0, height = 0;
     std::uint32_t childCount = 0;
+    std::uint32_t state = 0; // lv_obj_get_state bitmask (LV_STATE_FOCUSED/HOVERED/…) — for hover assertions
     std::string   text;  // non-empty only for COMP_TYPE_TEXT (lv_label) widgets
 };
 
@@ -100,6 +101,7 @@ public:
     // -- input driving ------------------------------------------------------
     void tapKey(std::uint32_t lvKey);           // LV_KEY_UP/DOWN/LEFT/RIGHT/ENTER/ESC
     void clickAt(std::int32_t x, std::int32_t y);// press+release at absolute (x,y)
+    void moveMouse(std::int32_t x, std::int32_t y);// move the (unpressed) pointer → LVGL hover at (x,y)
 
     // Called by the __rp_tagTestId JS trampoline (UI ref hook).
     void recordTestId(const std::string& name, lv_obj_t* obj) { testIds_[name] = obj; }

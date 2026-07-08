@@ -64,6 +64,7 @@ JSValue widgetInfoToJs(JSContext* ctx, const rpuigf::WidgetInfo& wi) {
     JS_SetPropertyStr(ctx, o, "width",      JS_NewInt32(ctx, wi.width));
     JS_SetPropertyStr(ctx, o, "height",     JS_NewInt32(ctx, wi.height));
     JS_SetPropertyStr(ctx, o, "childCount", JS_NewUint32(ctx, wi.childCount));
+    JS_SetPropertyStr(ctx, o, "state",      JS_NewUint32(ctx, wi.state));
     JS_SetPropertyStr(ctx, o, "text",       JS_NewStringLen(ctx, wi.text.data(), wi.text.size()));
     return o;
 }
@@ -202,6 +203,14 @@ JSValue jsUiClickAt(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) 
     catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.clickAt: %s", e.what()); }
 }
 
+JSValue jsUiMoveMouse(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    int x = 0, y = 0;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "ui.moveMouse(x, y)");
+    if (JS_ToInt32(ctx, &x, argv[0]) < 0 || JS_ToInt32(ctx, &y, argv[1]) < 0) return JS_EXCEPTION;
+    try { coreOrThrow().moveMouse(x, y); return JS_UNDEFINED; }
+    catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.moveMouse: %s", e.what()); }
+}
+
 // Advance the emulator so tiles get live frames (the plugin's audio thread does this; pump() only ticks
 // LVGL). Drives the BackendFacade the UI reads over RPC.
 JSValue jsUiAdvance(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -228,6 +237,7 @@ void installUiNamespace(JSContext* ctx) {
         { "focused",              { jsUiFocused,              0 } },
         { "tapKey",               { jsUiTapKey,               1 } },
         { "clickAt",              { jsUiClickAt,              2 } },
+        { "moveMouse",            { jsUiMoveMouse,            2 } },
         { "advance",              { jsUiAdvance,              1 } },
     };
     JSValue global = JS_GetGlobalObject(ctx);
