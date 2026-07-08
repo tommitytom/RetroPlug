@@ -31,7 +31,7 @@ test("selectPath: a ROM loads (and adds under the add mode)", async () => {
   const { be, fs, systems } = newFs();
   be.seed("/roms/a.gb", gbRom());
   const out = await fs.selectPath("/roms/a.gb", "load");
-  expect(out).toEqual({ kind: "loaded", system: systems.focused() });
+  expect(out).toEqual({ kind: "loaded", system: systems.focused(), romPath: "/roms/a.gb" });
   expect(systems.view().length).toBe(1);
 
   be.seed("/roms/b.gb", gbRom());

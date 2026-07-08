@@ -17,6 +17,7 @@ import { SystemsStore } from "./systemsStore";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
 import { dirname } from "./pathUtil";
+import { siblingRplgPath } from "./savPaths";
 import {
   type ProjectConfig,
   type ProjectSettings,
@@ -130,6 +131,24 @@ export class ProjectStore {
     this.dirty = false;
     this.onChangeCb();
     return true;
+  }
+
+  /** Adopt a freshly-loaded ROM as its sibling project so it lands in recents. On the first open of a
+   *  ROM (no `<rom>.rplg` yet — `systems.loadRom` would have deferred to it otherwise), write the thin
+   *  sibling via `save`, which records it in recents + adopts it as the current project + marks clean.
+   *  A pre-existing sibling (only reachable via a paired-`.sav` load, which bypasses the auto-defer) is
+   *  left untouched — just track it in recents + as the current path, keeping `dirty` so a pinned save
+   *  override survives to the next save. Mirrors legacy's writeSiblingProject-on-load. */
+  adoptRomProject(romPath: string): void {
+    if (!romPath) return; // embedded ROMs (mgb) have no on-disk sibling to track
+    const path = siblingRplgPath(romPath);
+    if (!this.backend.fileExists(path)) {
+      this.save(path);
+      return;
+    }
+    this.recent.add(path);
+    this.path = path;
+    this.onChangeCb();
   }
 
   /** Export a portable `.rplg` PKZIP: the thin project.json + each live system's

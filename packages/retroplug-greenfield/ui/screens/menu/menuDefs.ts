@@ -73,6 +73,9 @@ function cycler(id: string, prefix: string, names: string[], current: number, ap
 function runSelection(ctx: MenuContext, p: Promise<SelectionOutcome>): void {
   void p.then((outcome) => {
     if (outcome.kind === "deferred") ctx.stores.project.load(outcome.project);
+    // A fresh ROM load has no on-disk project yet — adopt its `<rom>.rplg` sibling so it enters recents
+    // (an `added` instance deliberately doesn't: it appends to the current project, not a new one).
+    else if (outcome.kind === "loaded") ctx.stores.project.adoptRomProject(outcome.romPath);
   });
 }
 

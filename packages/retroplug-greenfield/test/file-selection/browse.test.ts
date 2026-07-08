@@ -21,7 +21,7 @@ test("browse: opens the ROM-or-sav dialog and loads the picked ROM", async () =>
   be.seed("/roms/a.gb", gbRom());
   be.queueBrowse("/roms/a.gb");
   const out = await fs.browse("load");
-  expect(out).toEqual({ kind: "loaded", system: systems.focused() });
+  expect(out).toEqual({ kind: "loaded", system: systems.focused(), romPath: "/roms/a.gb" });
   expect(be.fileBrowserCalls.length).toBe(1);
   expect(be.fileBrowserCalls[0].patterns.includes("*.sav")).toBeTruthy(); // ROM-or-sav
 });

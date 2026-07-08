@@ -43,6 +43,47 @@ test("save: writes raw JSON (not a zip), records recents + path, clears dirty", 
   expect(project.isDirty()).toBeFalsy();
 });
 
+test("adoptRomProject: a fresh ROM open writes the sibling .rplg and enters recents", () => {
+  const { be, recent, project } = newProject();
+  be.seed("/roms/a.gb", gbRom());
+  const r = project.systems.loadRom("/roms/a.gb"); // no /roms/a.rplg sibling → builds a bare system
+  expect(r && "system" in r).toBeTruthy();
+
+  project.adoptRomProject("/roms/a.gb");
+
+  const onDisk = be.readText("/roms/a.rplg")!;
+  expect(onDisk[0]).toBe("{"); // thin raw JSON, not a "PK" zip
+  expect(JSON.parse(onDisk).systems[0].romPath).toBe("a.gb"); // rebased relative to the .rplg folder
+  expect(recent.view().map((v) => v.path)).toEqual(["/roms/a.rplg"]);
+  expect(project.currentPath()).toBe("/roms/a.rplg");
+  expect(project.isDirty()).toBeFalsy(); // the on-disk sibling matches the load
+});
+
+test("adoptRomProject: an existing sibling .rplg is tracked, never overwritten, and stays dirty", () => {
+  const { be, recent, project } = newProject();
+  be.seed("/roms/a.gb", gbRom());
+  const sentinel = '{"schemaVersion":"1","authored":true}';
+  be.seed("/roms/a.rplg", sentinel); // a project the user already saved beside the ROM
+
+  // A paired-sav load bypasses loadRom's auto-defer, so we reach adopt with the sibling present + dirty.
+  project.systems.loadRom("/roms/a.gb", { explicitSav: "/roms/b.sav" });
+  expect(project.isDirty()).toBeTruthy();
+  project.adoptRomProject("/roms/a.gb");
+
+  expect(be.readText("/roms/a.rplg")).toBe(sentinel); // untouched — the user's project is preserved
+  expect(recent.view().map((v) => v.path)).toEqual(["/roms/a.rplg"]); // still tracked
+  expect(project.currentPath()).toBe("/roms/a.rplg");
+  expect(project.isDirty()).toBeTruthy(); // the pinned paired-sav override survives to the next save
+});
+
+test("adoptRomProject: an embedded ROM (no path) is a no-op — nothing written or tracked", () => {
+  const { be, recent, project } = newProject();
+  project.systems.loadMgb(); // embedded mGB: no on-disk sibling
+  project.adoptRomProject("");
+  expect(recent.view().length).toBe(0);
+  expect(be.log.includes("writeFile")).toBeFalsy();
+});
+
 test("save then load: round-trips the systems (rebuilt over the real store)", () => {
   const { be, project } = newProject();
   be.seed("/proj/a.gb", gbRom());

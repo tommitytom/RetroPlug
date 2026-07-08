@@ -29,7 +29,7 @@ export function classifyKind(backend: Backend, path: string): FileKind {
 
 /** The result of a selection, once every dialog it triggered has settled. */
 export type SelectionOutcome =
-  | { kind: "loaded"; system: number } // a load replaced/adopted a system
+  | { kind: "loaded"; system: number; romPath: string } // a load replaced/adopted a system (romPath → sibling project)
   | { kind: "added"; system: number } // an add appended one
   | { kind: "deferred"; project: string } // sibling <rom>.rplg → the Project domain loads it
   | { kind: "error"; path: string } // unreadable / not a ROM / bad pair target
@@ -86,6 +86,8 @@ export class FileSelection {
     const r = this.systems.loadRom(rom, opts);
     if (r === null) return { kind: "error", path: rom };
     if ("deferredProject" in r) return { kind: "deferred", project: r.deferredProject };
-    return { kind: "loaded", system: r.system };
+    // A fresh ROM (no sibling `<rom>.rplg`, or the caller pinned a paired sav) builds a bare system; the
+    // caller adopts `<rom>.rplg` as its project + recents entry (mirrors legacy's writeSiblingProject).
+    return { kind: "loaded", system: r.system, romPath: rom };
   }
 }
