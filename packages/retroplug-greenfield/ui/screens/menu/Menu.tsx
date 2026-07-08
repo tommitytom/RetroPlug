@@ -275,7 +275,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           if (item.kind === "submenu") label = `${item.label} ${openItems.has(item.id) ? "v" : ">"}`;
           else if (isCapturing) {
             const colon = item.label.indexOf(":"); // keep the "<Button>: " head, swap the value for a prompt
-            label = `${colon >= 0 ? item.label.slice(0, colon) : item.label}: Press a key…`;
+            label = `${colon >= 0 ? item.label.slice(0, colon) : item.label}: Press a key...`;
           } else label = item.label;
           const isFocused = focusedId === item.id;
           return (
