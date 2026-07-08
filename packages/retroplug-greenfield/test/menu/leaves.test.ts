@@ -244,6 +244,41 @@ test("system Reset reboots carrying the live battery, no dialog", () => {
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(id)); // the live battery carried forward
 });
 
+test("system Reload on ROM Change + Fast Boot are cyclers — Left/Right arrows step them", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+
+  // Re-derive the System submenu off the live view (as a re-render would) so a fresh row carries the
+  // post-change `current`. Reading the same stale item twice would re-apply the old value.
+  const row = (itemId: string): MenuItem => {
+    const sys = stores.project.systems.view().find((s) => s.id === id)!;
+    return findItem(submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system"), itemId)!;
+  };
+  const reloadOn = () => stores.project.systems.view().find((s) => s.id === id)!.settings.reloadOnRomChange;
+  const fastBootOn = () =>
+    (stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "sameboy")!.config as { fastBoot: boolean }).fastBoot;
+
+  // Both are cyclers (arrow-steppable) with keepOpen, not plain actions.
+  expect(findItem(items, "sys-reload")!.kind).toBe("cycler");
+  expect(findItem(items, "sys-reload")!.keepOpen).toBeTruthy();
+  expect(findItem(items, "sys-fastboot")!.kind).toBe("cycler");
+
+  // Reload defaults Off; Right (onCycle +1) turns it On, Left (−1) back Off.
+  expect(reloadOn()).toBeFalsy();
+  row("sys-reload").onCycle!(1);
+  expect(reloadOn()).toBeTruthy();
+  row("sys-reload").onCycle!(-1);
+  expect(reloadOn()).toBeFalsy();
+
+  // Fast Boot defaults On; either arrow flips a 2-value cycler.
+  expect(fastBootOn()).toBeTruthy();
+  row("sys-fastboot").onCycle!(1);
+  expect(fastBootOn()).toBeFalsy();
+  row("sys-fastboot").onCycle!(1);
+  expect(fastBootOn()).toBeTruthy();
+});
+
 // The Settings → Keyboard Bindings submenu (reachable from the start menu, no system needed).
 function keyboardBindings(stores: AppStores): MenuItem[] {
   const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");

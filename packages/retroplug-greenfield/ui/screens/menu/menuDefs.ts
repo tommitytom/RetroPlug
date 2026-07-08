@@ -36,6 +36,7 @@ const HIGHPASS_NAMES = ["Off", "Accurate", "DC-Block"];
 const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSave: "On Save", Continuous: "Continuous" };
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
+const OFF_ON = ["Off", "On"]; // boolean toggles rendered as 2-value cyclers (Left/Right + Enter step)
 
 // Glob filters for the file dialogs (realBackend space-joins them for DPF).
 const PROJECT_PATTERNS = ["*.rplg"]; // thin project (raw JSON) — the Save target
@@ -102,8 +103,8 @@ function sameboyConfig(sys: SystemView): { model: number; highpass: number; link
 function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
   const items: MenuItem[] = [
-    action("sys-reload", `Reload on ROM Change: ${sys.settings.reloadOnRomChange ? "On" : "Off"}`, () =>
-      systems.setReloadOnRomChange(sys.id, !sys.settings.reloadOnRomChange),
+    cycler("sys-reload", "Reload on ROM Change", OFF_ON, sys.settings.reloadOnRomChange ? 1 : 0, (n) =>
+      systems.setReloadOnRomChange(sys.id, n === 1),
     ),
   ];
   // SameBoy-only core knobs.
@@ -112,7 +113,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     items.push(
       cycler("sys-model", "Model", MODEL_NAMES, cfg.model, (n) => systems.setRoleConfig(sys.id, "sameboy", { model: n })),
       cycler("sys-highpass", "Highpass", HIGHPASS_NAMES, cfg.highpass, (n) => systems.setRoleConfig(sys.id, "sameboy", { highpass: n })),
-      action("sys-fastboot", `Fast Boot: ${cfg.fastBoot ? "On" : "Off"}`, () => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: !cfg.fastBoot })),
+      cycler("sys-fastboot", "Fast Boot", OFF_ON, cfg.fastBoot ? 1 : 0, (n) => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: n === 1 })),
     );
   }
   // Save/Load State + SRAM: browse for a path, then the store reads/writes it (the registry read is safe
