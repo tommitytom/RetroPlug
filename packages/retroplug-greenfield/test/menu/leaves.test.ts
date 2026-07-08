@@ -7,6 +7,8 @@ import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBack
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildStartMenu, buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import { buildKeyToButton, BUTTON_VALUE } from "../../src/keyCodes";
+import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom } from "../systems/fixtures";
 
 // A leaf's onSelect fires browse() fire-and-forget; flush the microtask chain it kicks off (openFileBrowser
@@ -21,6 +23,7 @@ function ctxOf(stores: AppStores): MenuContext {
     stores,
     settings: stores.project.settings(),
     userConfig: stores.userConfig.config(),
+    bindings: stores.bindings.resolvedBindings(),
     systems: stores.project.systems.view(),
     recent: stores.recent.view(),
     version: "",
@@ -239,4 +242,37 @@ test("system Reset reboots carrying the live battery, no dialog", () => {
   const call = be.constructCalls[be.constructCalls.length - 1];
   expect(call.replaceId).toBe(id); // in-place replace
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(id)); // the live battery carried forward
+});
+
+// The Settings → Keyboard Bindings submenu (reachable from the start menu, no system needed).
+function keyboardBindings(stores: AppStores): MenuItem[] {
+  const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+  return submenuChildren(settings, "set-keybindings");
+}
+
+test("Keyboard Bindings: 8 capture rows + reset; capture rebinds write-through, clear + reset", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+
+  const rows = keyboardBindings(stores);
+  expect(rows.filter((r) => r.kind === "capture").length).toBe(8);
+  expect(findItem(rows, "bind-A")!.label).toBe("A: Z, z"); // resolved default baked into the label
+  expect(findItem(rows, "bind-reset")!.kind).toBe("action");
+
+  // Capture A → Q: the active keyboard profile persists and the resolved map + key→button lookup follow.
+  findItem(rows, "bind-A")!.capture!.onCapture("Q");
+  const active = stores.userConfig.config().activeKeyboardBindings;
+  expect(stores.bindings.loadProfile(active)!.keyboard.A).toEqual(["Q"]); // written through to disk
+  expect(buildKeyToButton(stores.bindings.resolvedBindings().keyboard).get("Q".charCodeAt(0))).toBe(BUTTON_VALUE.A);
+  expect(keyboardBindings(stores).find((r) => r.id === "bind-A")!.label).toBe("A: Q"); // relabels on rebuild
+
+  // Clear A → the button unbinds.
+  keyboardBindings(stores).find((r) => r.id === "bind-A")!.capture!.onClear();
+  expect(stores.bindings.resolvedBindings().keyboard.A).toEqual([]);
+  expect(keyboardBindings(stores).find((r) => r.id === "bind-A")!.label).toBe("A: -");
+
+  // Reset restores the default keyboard map (and preserves the gamepad channel).
+  keyboardBindings(stores).find((r) => r.id === "bind-reset")!.onSelect!();
+  expect(stores.bindings.resolvedBindings().keyboard.A).toEqual(defaultBindingMap().keyboard.A);
+  expect(stores.bindings.loadProfile(active)!.gamepad).toEqual(defaultBindingMap().gamepad);
 });

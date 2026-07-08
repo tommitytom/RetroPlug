@@ -8,6 +8,7 @@ import type { SystemView } from "../../../src/systemsStore";
 import type { ProjectSettings } from "../../../src/projectConfig";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES } from "../../../src/userConfig";
+import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import type { RecentView } from "../../../src/recentStore";
 import type { SelectionOutcome } from "../../../src/fileSelection";
 import type { FileBrowserOpts } from "../../../src/backend";
@@ -19,6 +20,7 @@ export interface MenuContext {
   system?: SystemView; // the anchored system (instance menu)
   settings: ProjectSettings;
   userConfig: UserConfig;
+  bindings: BindingMap; // resolved active bindings — the keyboard editor reads/displays this
   systems: SystemView[];
   recent: RecentView[];
   version: string;
@@ -164,13 +166,46 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   return items;
 }
 
+// GB button display/edit order (mirrors the legacy bindings editor).
+const GB_BUTTONS = ["Right", "Left", "Up", "Down", "A", "B", "Select", "Start"];
+
+/** The keyboard bindings editor: one capture row per GB button (Enter arms, the next key rebinds,
+ *  Backspace clears) plus a keyboard reset. Write-through — every edit re-saves the active keyboard
+ *  profile and the live joypad rebinds via useGameInput. Gamepad + named-profile CRUD are deferred. */
+function bindingsChildren(ctx: MenuContext): MenuItem[] {
+  const bindings = ctx.stores.bindings;
+  const activeName = ctx.userConfig.activeKeyboardBindings;
+  const kb = ctx.bindings.keyboard; // resolved active keyboard map — recomputed each render
+  const write = (edit: (m: BindingMap) => BindingMap) => {
+    const map = bindings.loadProfile(activeName) ?? defaultBindingMap();
+    bindings.saveProfile(activeName, edit(map));
+  };
+  const items: MenuItem[] = GB_BUTTONS.map((btn) => ({
+    id: `bind-${btn}`,
+    label: `${btn}: ${kb[btn]?.length ? kb[btn].join(", ") : "-"}`,
+    kind: "capture",
+    keepOpen: true,
+    capture: {
+      onCapture: (name: string) => write((m) => ({ ...m, keyboard: { ...m.keyboard, [btn]: [name] } })),
+      onClear: () => write((m) => ({ ...m, keyboard: { ...m.keyboard, [btn]: [] } })),
+    },
+  }));
+  items.push(
+    sep("bind-sep"),
+    // Keyboard channel only — preserve the profile's gamepad map.
+    action("bind-reset", "Reset Keyboard to Defaults", () => write((m) => ({ ...m, keyboard: defaultBindingMap().keyboard }))),
+  );
+  return items;
+}
+
 function settingsChildren(ctx: MenuContext): MenuItem[] {
   const userConfig = ctx.stores.userConfig;
   const sramIdx = Math.max(0, SRAM_AUTO_SAVES.indexOf(ctx.userConfig.sramAutoSave));
   return [
     cycler("set-sram", "SRAM Auto-Save", SRAM_AUTO_SAVES.map((m) => SRAM_AUTO_SAVE_LABELS[m] ?? m), sramIdx, (n) => userConfig.setSramAutoSave(SRAM_AUTO_SAVES[n])),
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
-    // Deferred: Keyboard/Gamepad Bindings (editor), Open Settings Folder.
+    submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx)),
+    // Deferred: Gamepad Bindings (needs live gamepad I/O), Open Settings Folder.
   ];
 }
 

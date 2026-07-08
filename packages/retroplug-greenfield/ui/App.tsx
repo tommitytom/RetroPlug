@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { setKeyboardGroup } from "lvgljs";
 
-import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent } from "./stores/useStores";
+import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent, useBindings } from "./stores/useStores";
 import { useSinkGroup } from "./lvgl/FocusProvider";
 import { Box } from "./lvgl/Box";
 import { useNativeEvent } from "./lvgl/useNativeEvent";
@@ -30,6 +30,7 @@ export function App() {
   const settings = useProjectSettings();
   const userConfig = useUserConfig();
   const recent = useRecent();
+  const bindings = useBindings();
   const sink = useSinkGroup();
   const windowSize = useWindowSize();
 
@@ -75,7 +76,7 @@ export function App() {
   // start menu) and no instance menu is open — otherwise arrows/Enter belong to menu navigation.
   useGameInput({ active: !empty && !menuOpen, focusedId: stores.project.systems.focused() });
 
-  const ctx: MenuContext = { stores, settings, userConfig, systems, recent, version: "" };
+  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version: "" };
 
   if (empty) {
     const { width, height } = windowSize;
