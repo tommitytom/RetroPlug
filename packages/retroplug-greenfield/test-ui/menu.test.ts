@@ -34,6 +34,9 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   ui.pump(4);
   expect(ui.focused()!.text.includes("Load mGB")).toBeTruthy();
 
+  // The file-browser "Load..." item renders in the start menu (its browse resolves null in the harness).
+  expect(ui.findByTextContaining("Load...") != null).toBeTruthy();
+
   // Enter on "Load mGB" → a system is added, the menu gives way to the grid.
   ui.tapKey(Key.Enter);
   ui.pump(20);
@@ -43,6 +46,9 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   ui.tapKey(Key.Esc);
   ui.pump(10);
   expect(ui.findByTextContaining("Duplicate Instance") != null).toBeTruthy();
+  // The file-browser lifecycle items render alongside it.
+  expect(ui.findByTextContaining("Load ROM") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Add Instance") != null).toBeTruthy();
 
   // Cycle a top-level value with Right (Link Group: Off → 1).
   expect(navTo("Link Group")).toBeTruthy();
