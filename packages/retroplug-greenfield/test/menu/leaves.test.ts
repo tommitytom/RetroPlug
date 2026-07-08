@@ -27,6 +27,8 @@ function ctxOf(stores: AppStores): MenuContext {
     systems: stores.project.systems.view(),
     recent: stores.recent.view(),
     version: "",
+    newProject: () => {}, // App wires these to useProjectModals; tests spy per-case (see routing test).
+    loadProject: () => {},
   };
 }
 
@@ -441,6 +443,35 @@ test("Profile cycler: switches the active profile; resolved bindings follow", ()
   findItem(keyboardBindings(stores), "bind-profile")!.onCycle!(-1); // wasd -> default
   expect(stores.userConfig.config().activeKeyboardBindings).toBe("default");
   expect(stores.bindings.resolvedBindings().keyboard.A).toEqual(defaultBindingMap().keyboard.A); // re-resolved
+});
+
+test("New Project / Load Project / recent Load route through the guarded ctx ops", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  stores.project.systems.addSystem("/roms/a.gb"); // a system → the Project submenu shows New Project
+  stores.recent.add("/music/song.rplg", "Song");
+  be.seed("/picked/proj.rplg", "PK");
+  be.queueBrowse("/picked/proj.rplg");
+
+  const calls: string[] = [];
+  const ctx: MenuContext = { ...ctxOf(stores), newProject: () => calls.push("new"), loadProject: (p) => calls.push(`load:${p}`) };
+  const anchored = stores.project.systems.view()[0];
+
+  // New Project → ctx.newProject (guarded), NOT a raw project.newProject().
+  const proj = submenuChildren(buildInstanceMenu({ ...ctx, system: anchored }).items, "inst-project");
+  findItem(proj, "proj-new")!.onSelect!();
+  expect(calls).toEqual(["new"]);
+
+  // Load Project... browses, then hands the picked path to ctx.loadProject (guarded + outcome-aware).
+  findItem(proj, "proj-load")!.onSelect!();
+  await flush();
+  expect(calls).toEqual(["new", "load:/picked/proj.rplg"]);
+
+  // A recent entry's Load also routes through ctx.loadProject (was a fire-and-forget project.load).
+  const recentRow = submenuChildren(submenuChildren(buildStartMenu(ctx).items, "start-recent"), "recent-0");
+  findItem(recentRow, "recent-0-load")!.onSelect!();
+  expect(calls).toEqual(["new", "load:/picked/proj.rplg", "load:/music/song.rplg"]);
 });
 
 test("Settings -> Open Settings Folder reveals the config dir via the native seam", () => {

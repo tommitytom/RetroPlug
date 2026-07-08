@@ -12,9 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
-import { flushDirtySram } from "../../src/sramAutoSave";
-
-const PROJECT_SAVE_PATTERNS = ["*.rplg"];
+import { saveProjectInteractive } from "./saveProjectInteractive";
 
 export interface CloseGuard {
   /** True while the unsaved-changes prompt is showing. */
@@ -57,19 +55,7 @@ export function useCloseGuard(stores: AppStores): CloseGuard {
 
   const onSave = useCallback(() => {
     void (async () => {
-      flushDirtySram(stores.backend, stores.project.systems.systems()); // battery → sibling .sav (ungated)
-      let path = stores.project.currentPath();
-      if (!path) {
-        path =
-          (await stores.backend.openFileBrowser({
-            title: "Save Project",
-            patterns: PROJECT_SAVE_PATTERNS,
-            saving: true,
-            defaultName: "project.rplg",
-          })) ?? "";
-        if (!path) return; // Save-As cancelled → keep the prompt open, don't quit
-      }
-      stores.project.save(path);
+      if (!(await saveProjectInteractive(stores))) return; // Save-As cancelled → keep the prompt open
       setActive(false);
       quitWindow();
     })();

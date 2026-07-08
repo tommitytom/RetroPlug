@@ -27,6 +27,10 @@ export interface MenuContext {
   systems: SystemView[];
   recent: RecentView[];
   version: string;
+  // Destructive project ops, guarded (unsaved-changes prompt) + outcome-aware (incompatible / relink /
+  // error) by useProjectModals — the menu drives these instead of project.newProject / project.load.
+  newProject: () => void;
+  loadProject: (path: string) => void;
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -155,7 +159,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   const project = ctx.stores.project;
   const items: MenuItem[] = [];
   if (ctx.systems.length > 0) {
-    items.push(action("proj-new", "New Project", () => project.newProject()));
+    items.push(action("proj-new", "New Project", () => ctx.newProject()));
     // Save writes to the known path when there is one (else Save As covers it). Save As / Export browse
     // for a target; each store method already takes a resolved path.
     if (project.currentPath()) items.push(action("proj-save", "Save Project", () => project.save(project.currentPath())));
@@ -166,9 +170,9 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
       browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.rplg.zip" }, (p) => project.export(p)),
     ));
   }
-  // Load is always available (even from an empty start menu).
+  // Load is always available (even from an empty start menu). Guarded + outcome-aware via ctx.loadProject.
   items.push(action("proj-load", "Load Project...", () =>
-    browseThen(ctx, { title: "Load Project", patterns: LOAD_PATTERNS }, (p) => void project.load(p)),
+    browseThen(ctx, { title: "Load Project", patterns: LOAD_PATTERNS }, (p) => ctx.loadProject(p)),
   ));
   items.push(sep("proj-sep0"));
   items.push(
@@ -278,7 +282,7 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.recent.length === 0) return [action("recent-none", "(No Recent Files)", () => {})];
   return ctx.recent.map((entry, i) =>
     submenu(`recent-${i}`, entry.label, [
-      action(`recent-${i}-load`, entry.missing ? "Load (missing)" : "Load", () => ctx.stores.project.load(entry.path)),
+      action(`recent-${i}-load`, entry.missing ? "Load (missing)" : "Load", () => ctx.loadProject(entry.path)),
       action(`recent-${i}-locate`, "Locate on Disk", () =>
         browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p)),
       ),

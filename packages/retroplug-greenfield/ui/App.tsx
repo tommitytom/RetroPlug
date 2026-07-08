@@ -15,6 +15,7 @@ import { Box } from "./lvgl/Box";
 import { useNativeEvent } from "./lvgl/useNativeEvent";
 import { useWindowSize, requestWindowSize, isWindowSizeControlled } from "./lvgl/useWindowSize";
 import { useCloseGuard } from "./lvgl/useCloseGuard";
+import { useProjectModals } from "./lvgl/useProjectModals";
 import { useGameInput } from "./input/useGameInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
@@ -37,6 +38,7 @@ export function App() {
   const sink = useSinkGroup();
   const windowSize = useWindowSize();
   const closeGuard = useCloseGuard(stores);
+  const modals = useProjectModals(stores);
 
   const [menuOpen, setMenuOpen] = useState(true);
   const [menuSystemId, setMenuSystemId] = useState<number | null>(null);
@@ -50,10 +52,11 @@ export function App() {
     if (empty) setMenuSystemId(null);
   }, [empty]);
 
-  // Idle: point the keypad at the sink when the grid shows without a menu.
+  // Idle: point the keypad at the sink when the grid shows without a menu. Not while a modal overlay owns
+  // the keypad (close prompt / project modal) — else closing the menu to raise one steals its focus.
   useEffect(() => {
-    if (!empty && !menuOpen && sink) setKeyboardGroup(sink);
-  }, [empty, menuOpen, sink]);
+    if (!empty && !menuOpen && !closeGuard.active && !modals.active && sink) setKeyboardGroup(sink);
+  }, [empty, menuOpen, sink, closeGuard.active, modals.active]);
 
   // Fit the window to the grid when instances or zoom change — unless a tiling WM owns geometry, in which
   // case the request is ignored and the grid's fitZoom shrinks tiles to whatever the compositor gave us.
@@ -68,6 +71,7 @@ export function App() {
     const press = args[1] as boolean;
     if (!press || key !== KEY_ESCAPE) return;
     if (closeGuard.active) return void closeGuard.onCancel(); // the close prompt owns Esc → cancel it
+    if (modals.active) return void modals.onClose(); // a project modal (discard / notice / relink) owns Esc
     if (empty) return; // start menu is always open
     if (isMenuModalActive()) return; // a capture/prompt owns Esc — cancel it, don't close the menu
     if (menuOpen) {
@@ -81,9 +85,9 @@ export function App() {
 
   // Game input: route keyboard to the focused instance's joypad, but only when a tile is showing (not the
   // start menu) and no instance menu is open — otherwise arrows/Enter belong to menu navigation.
-  useGameInput({ active: !empty && !menuOpen && !closeGuard.active, focusedId: stores.project.systems.focused() });
+  useGameInput({ active: !empty && !menuOpen && !closeGuard.active && !modals.active, focusedId: stores.project.systems.focused() });
 
-  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version: "" };
+  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version: "", newProject: modals.newProject, loadProject: modals.loadProject };
 
   // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
   // the keypad. Save & Quit / Discard & Quit / Cancel — the guard drives the native quit + dismissal.
@@ -100,6 +104,17 @@ export function App() {
     return (
       <Box style={{ width, height, "background-color": "#000000" }}>
         <Menu width={width} height={height} zoom={resolvedZoom} tree={closeTree} onClose={closeGuard.onCancel} />
+      </Box>
+    );
+  }
+
+  // Project modals (discard confirm on New/Load, incompatible/error notice, missing-files relink): a
+  // full-window overlay above everything, same pattern as the close prompt. The tree is owned by the hook.
+  if (modals.active && modals.modal) {
+    const { width, height } = windowSize;
+    return (
+      <Box style={{ width, height, "background-color": "#000000" }}>
+        <Menu width={width} height={height} zoom={resolvedZoom} tree={modals.modal} onClose={modals.onClose} />
       </Box>
     );
   }
