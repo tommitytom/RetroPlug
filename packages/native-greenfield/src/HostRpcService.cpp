@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <stdexcept>
 #include <system_error>
 
@@ -41,6 +42,12 @@ rfl::Bytestring toBytestring(const std::vector<std::uint8_t>& v) {
     return rfl::Bytestring(p, p + v.size());
 }
 
+// A non-owning byte view over an rfl::Bytestring for APIs that take a span/pointer — lets miniz read
+// straight from the wire buffer with no vector copy.
+std::span<const std::uint8_t> byteSpan(const rfl::Bytestring& b) {
+    return { reinterpret_cast<const std::uint8_t*>(b.data()), b.size() };
+}
+
 // Read a file's bytes (or the first `maxBytes`), or nullopt when it can't be opened.
 std::optional<std::vector<std::uint8_t>> slurp(const std::string& path, std::size_t maxBytes) {
     std::ifstream in(path, std::ios::binary);
@@ -71,7 +78,7 @@ std::optional<rfl::Bytestring> HostRpcService::readFilePrefix(std::string path, 
     return toBytestring(*bytes);
 }
 
-bool HostRpcService::writeFile(std::string path, std::vector<std::uint8_t> bytes) {
+bool HostRpcService::writeFile(std::string path, rfl::Bytestring bytes) {
     // Create parent dirs on demand — the mock backend is dir-free, and the stores (e.g.
     // BindingsStore writing bindings/<name>.json) rely on that forgiving behaviour.
     std::error_code ec;
@@ -84,7 +91,7 @@ bool HostRpcService::writeFile(std::string path, std::vector<std::uint8_t> bytes
     return f.good();
 }
 
-bool HostRpcService::writeFileAtomic(std::string path, std::vector<std::uint8_t> bytes) {
+bool HostRpcService::writeFileAtomic(std::string path, rfl::Bytestring bytes) {
     const std::string tmp = path + ".tmp";
     if (!writeFile(tmp, std::move(bytes))) return false;
     std::error_code ec;
@@ -140,13 +147,13 @@ std::string HostRpcService::configDir() {
 rfl::Bytestring HostRpcService::zip(std::vector<BackendZipInput> entries) {
     MinizWriter w;
     for (const auto& e : entries)
-        if (!w.add(e.name, e.bytes)) return {};
+        if (!w.add(e.name, e.bytes.data(), e.bytes.size())) return {};  // void*+size overload — no copy
     return toBytestring(w.finish());
 }
 
-std::vector<BackendZipEntry> HostRpcService::unzip(std::vector<std::uint8_t> bytes) {
+std::vector<BackendZipEntry> HostRpcService::unzip(rfl::Bytestring bytes) {
     std::vector<BackendZipEntry> out;
-    MinizReader r(bytes);
+    MinizReader r(byteSpan(bytes));
     if (!r.valid()) return out;
     for (const auto& name : r.names())
         out.push_back({ name, toBytestring(r.read(name)) });

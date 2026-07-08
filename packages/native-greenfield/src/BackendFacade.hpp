@@ -29,8 +29,8 @@ public:
 
     // --- filesystem / config / codec / sav → host_ ---
     std::optional<rfl::Bytestring> readFile(std::string path) { return host_.readFile(std::move(path)); }
-    bool writeFile(std::string path, std::vector<std::uint8_t> bytes) { return host_.writeFile(std::move(path), std::move(bytes)); }
-    bool writeFileAtomic(std::string path, std::vector<std::uint8_t> bytes) { return host_.writeFileAtomic(std::move(path), std::move(bytes)); }
+    bool writeFile(std::string path, rfl::Bytestring bytes) { return host_.writeFile(std::move(path), std::move(bytes)); }
+    bool writeFileAtomic(std::string path, rfl::Bytestring bytes) { return host_.writeFileAtomic(std::move(path), std::move(bytes)); }
     bool fileExists(std::string path) { return host_.fileExists(std::move(path)); }
     bool rename(std::string from, std::string to) { return host_.rename(std::move(from), std::move(to)); }
     std::vector<std::string> listDir(std::string dir) { return host_.listDir(std::move(dir)); }
@@ -40,7 +40,7 @@ public:
     std::optional<rfl::Bytestring> readFilePrefix(std::string path, std::uint32_t length) { return host_.readFilePrefix(std::move(path), length); }
     std::string configDir() { return host_.configDir(); }
     rfl::Bytestring zip(std::vector<BackendZipInput> entries) { return host_.zip(std::move(entries)); }
-    std::vector<BackendZipEntry> unzip(std::vector<std::uint8_t> bytes) { return host_.unzip(std::move(bytes)); }
+    std::vector<BackendZipEntry> unzip(rfl::Bytestring bytes) { return host_.unzip(std::move(bytes)); }
     rfl::Bytestring savFromJson(std::string json) { return host_.savFromJson(std::move(json)); }
 
     // --- emulator lifecycle / reads / kernel / MIDI / transport → engine_svc_ ---

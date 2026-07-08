@@ -16,8 +16,8 @@ class HostRpcService {
 public:
     // --- filesystem ---
     std::optional<rfl::Bytestring> readFile(std::string path);
-    bool writeFile(std::string path, std::vector<std::uint8_t> bytes);
-    bool writeFileAtomic(std::string path, std::vector<std::uint8_t> bytes);
+    bool writeFile(std::string path, rfl::Bytestring bytes);
+    bool writeFileAtomic(std::string path, rfl::Bytestring bytes);
     bool fileExists(std::string path);
     bool rename(std::string from, std::string to);
     std::vector<std::string> listDir(std::string dir);
@@ -31,7 +31,7 @@ public:
 
     // --- codec (miniz) ---
     rfl::Bytestring zip(std::vector<BackendZipInput> entries);
-    std::vector<BackendZipEntry> unzip(std::vector<std::uint8_t> bytes);
+    std::vector<BackendZipEntry> unzip(rfl::Bytestring bytes);
 
     // --- LSDJ sav authoring (test/tooling) ---
     // JSON (an rp::lsdj::model::Sav, lenient) -> encoded .sav bytes. Lets a test author song/sync

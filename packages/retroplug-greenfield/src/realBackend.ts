@@ -62,8 +62,8 @@ export function createRealBackend(): Backend {
   return {
     // --- fs / config / codec (increment 1) --------------------------------
     readFile: (path) => bytesOrNull(call("readFile", path)),
-    writeFile: (path, bytes) => call("writeFile", path, ints(bytes)) as boolean,
-    writeFileAtomic: (path, bytes) => call("writeFileAtomic", path, ints(bytes)) as boolean,
+    writeFile: (path, bytes) => call("writeFile", path, bytes) as boolean,
+    writeFileAtomic: (path, bytes) => call("writeFileAtomic", path, bytes) as boolean,
     fileExists: (path) => call("fileExists", path) as boolean,
     rename: (from, to) => call("rename", from, to) as boolean,
     listDir: (dir) => call("listDir", dir) as string[],
@@ -72,8 +72,8 @@ export function createRealBackend(): Backend {
     canonicalize: (path) => call("canonicalize", path) as string,
     readFilePrefix: (path, length) => bytesOrNull(call("readFilePrefix", path, length)),
     configDir: () => call("configDir") as string,
-    zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries.map((e) => ({ name: e.name, bytes: ints(e.bytes) })))),
-    unzip: (bytes) => (call("unzip", ints(bytes)) as ZipEntry[] | null) ?? null,
+    zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries)), // {name, bytes: Uint8Array} matches BackendZipInput
+    unzip: (bytes) => (call("unzip", bytes) as ZipEntry[] | null) ?? null,
     savFromJson: (json) => call("savFromJson", json) as Uint8Array, // Bytestring result → Uint8Array
 
     // --- emulator lifecycle / reads ---------------------------------------
