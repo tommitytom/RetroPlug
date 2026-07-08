@@ -11,6 +11,7 @@ import { SRAM_AUTO_SAVES } from "../../../src/userConfig";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
+import { resolveSavPath, siblingPath } from "../../../src/savPaths";
 import type { SelectionOutcome } from "../../../src/fileSelection";
 import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
@@ -116,19 +117,27 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       cycler("sys-fastboot", "Fast Boot", OFF_ON, cfg.fastBoot ? 1 : 0, (n) => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: n === 1 })),
     );
   }
-  // Save/Load State + SRAM: browse for a path, then the store reads/writes it (the registry read is safe
-  // while playing; load reconstructs the core in place). Reset reboots carrying the battery; New SRAM
-  // reboots with a blank battery — both pathless, reconstructing in place (no live GB_reset/clearSram).
+  // Save/Load State + SRAM. The quick "Save State"/"Save SRAM" write to the ROM's sibling path with no
+  // dialog (a real ROM only — the embedded synth has no on-disk target); the "As…" variants browse. The
+  // store reads/writes the resolved path (the registry read is safe while playing; load reconstructs the
+  // core in place). Reset reboots carrying the battery; New SRAM reboots with a blank battery — both
+  // pathless, reconstructing in place (no live GB_reset/clearSram).
   const stem = sys.romPath ? sys.romPath.replace(/^.*[\\/]/, "").replace(/\.[^.]*$/, "") : "";
+  items.push(sep("sys-sep-state"));
+  if (sys.romPath)
+    items.push(action("sys-quicksavestate", "Save State", () => systems.saveState(sys.id, siblingPath(sys.romPath, sys.savSuffix, ".ss0"))));
   items.push(
-    sep("sys-sep-state"),
-    action("sys-savestate", "Save State...", () =>
+    action("sys-savestate", "Save State As...", () =>
       browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${stem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
     ),
     action("sys-loadstate", "Load State...", () =>
       browseThen(ctx, { title: "Load State", patterns: STATE_PATTERNS }, (p) => void systems.loadState(sys.id, p)),
     ),
-    action("sys-savesram", "Save SRAM...", () =>
+  );
+  if (sys.romPath)
+    items.push(action("sys-quicksavesram", "Save SRAM", () => systems.saveSram(sys.id, resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath))));
+  items.push(
+    action("sys-savesram", "Save SRAM As...", () =>
       browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${stem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
     ),
     action("sys-loadsram", "Load SRAM...", () =>

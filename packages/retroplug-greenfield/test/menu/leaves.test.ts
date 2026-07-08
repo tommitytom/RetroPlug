@@ -232,6 +232,40 @@ test("system Save SRAM... writes the battery SRAM to the picked path", async () 
   expect(be.readFile("/out/a.sav")).toEqual(sramBytesFor(id));
 });
 
+test("system Save State (quick) writes the live savestate to the ROM's sibling .ss0, no dialog", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+
+  findItem(items, "sys-quicksavestate")!.onSelect!();
+
+  expect(be.fileBrowserCalls.length).toBe(0); // pathless — no browser opens
+  expect(be.readFile("/roms/a.ss0")).toEqual(stateBytesFor(id)); // rom-sibling slot 0
+});
+
+test("system Save SRAM (quick) writes the battery to the resolved sibling .sav, no dialog", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+
+  findItem(items, "sys-quicksavesram")!.onSelect!();
+
+  expect(be.fileBrowserCalls.length).toBe(0);
+  expect(be.readFile("/roms/a.sav")).toEqual(sramBytesFor(id)); // the auto-save target
+});
+
+test("the embedded mGB synth omits the quick-save items (no on-disk ROM target)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  stores.project.systems.loadMgb();
+  const anchored = stores.project.systems.view()[0];
+  expect(anchored.romPath).toBe(""); // embedded
+  const items = submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-system");
+  expect(findItem(items, "sys-quicksavestate")).toBe(undefined);
+  expect(findItem(items, "sys-quicksavesram")).toBe(undefined);
+  expect(findItem(items, "sys-savestate")?.label).toBe("Save State As..."); // the "As…" browse variant remains
+});
+
 test("system Load SRAM... cold-boots the system with the picked file's SRAM", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
