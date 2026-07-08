@@ -56,6 +56,12 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   ui.pump(6);
   expect(ui.findByTextContaining("Link Group: 1") != null).toBeTruthy();
 
+  // Expand System — the per-instance Save/Load State + SRAM items appear inline.
+  expect(navTo("System")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(15);
+  expect(ui.findByTextContaining("Save State") != null).toBeTruthy();
+
   // Expand a submenu (Settings) — its children appear inline.
   expect(navTo("Settings")).toBeTruthy();
   ui.tapKey(Key.Enter);

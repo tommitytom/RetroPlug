@@ -34,9 +34,11 @@ const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSav
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
 
-// Glob filters for the project file dialogs (realBackend space-joins them for DPF).
+// Glob filters for the file dialogs (realBackend space-joins them for DPF).
 const PROJECT_PATTERNS = ["*.rplg"];
 const ZIP_PATTERNS = ["*.zip"];
+const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
+const SRAM_PATTERNS = ["*.sav"];
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
 function cycleInt(current: number, min: number, max: number, dir: 1 | -1): number {
@@ -106,7 +108,24 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       action("sys-fastboot", `Fast Boot: ${cfg.fastBoot ? "On" : "Off"}`, () => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: !cfg.fastBoot })),
     );
   }
-  // Deferred (need native methods): Reset, Save/Load State, Save/Load/New SRAM.
+  // Save/Load State + SRAM: browse for a path, then the store reads/writes it (the registry read is safe
+  // while playing; load reconstructs the core in place). Reset / New SRAM stay deferred.
+  const stem = sys.romPath ? sys.romPath.replace(/^.*[\\/]/, "").replace(/\.[^.]*$/, "") : "";
+  items.push(
+    sep("sys-sep-state"),
+    action("sys-savestate", "Save State...", () =>
+      browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${stem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
+    ),
+    action("sys-loadstate", "Load State...", () =>
+      browseThen(ctx, { title: "Load State", patterns: STATE_PATTERNS }, (p) => void systems.loadState(sys.id, p)),
+    ),
+    action("sys-savesram", "Save SRAM...", () =>
+      browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${stem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
+    ),
+    action("sys-loadsram", "Load SRAM...", () =>
+      browseThen(ctx, { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
+    ),
+  );
   return items;
 }
 

@@ -3,7 +3,7 @@
 // mirrors browse.test.ts but exercises the menu wiring: build the MenuContext the way App.tsx does,
 // invoke a leaf's onSelect, and assert the store mutated once the (mocked) dialog settled.
 import { test, expect } from "../../testing/harness";
-import { MockBackend } from "../../testing/mockBackend";
+import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildStartMenu, buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
@@ -40,6 +40,14 @@ function projectSubmenuWithSystem(be: MockBackend, stores: AppStores): MenuItem[
   const id = stores.project.systems.addSystem("/roms/a.gb");
   const anchored = stores.project.systems.view().find((s) => s.id === id)!;
   return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-project");
+}
+
+// The instance-menu System submenu + the anchored system's id (for asserting per-id state/sram bytes).
+function systemMenu(be: MockBackend, stores: AppStores): { id: number; items: MenuItem[] } {
+  be.seed("/roms/a.gb", gbRom());
+  const id = stores.project.systems.addSystem("/roms/a.gb")!;
+  const anchored = stores.project.systems.view().find((s) => s.id === id)!;
+  return { id, items: submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-system") };
 }
 
 test("start menu Load... browses the ROM-or-sav dialog and loads the picked ROM", async () => {
@@ -142,4 +150,63 @@ test("recent Locate on Disk relinks the entry to the picked path", async () => {
 
   const view = stores.recent.view();
   expect(view.some((e) => e.path.endsWith("new.rplg"))).toBeTruthy();
+});
+
+test("system Save State... writes the live savestate to the picked path via a save dialog", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+  be.queueBrowse("/out/a.ss0");
+
+  findItem(items, "sys-savestate")!.onSelect!();
+  await flush();
+
+  const last = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
+  expect(last.saving).toBe(true);
+  expect(last.patterns.includes("*.ss?")).toBeTruthy();
+  expect(be.readFile("/out/a.ss0")).toEqual(stateBytesFor(id));
+});
+
+test("system Load State... reconstructs the system from the picked savestate", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+  be.seed("/in/x.ss0", stateBytesFor(999));
+  be.queueBrowse("/in/x.ss0");
+
+  findItem(items, "sys-loadstate")!.onSelect!();
+  await flush();
+
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(id); // in-place replace
+  expect(new Uint8Array(call.stateBytes!)).toEqual(stateBytesFor(999)); // the file's bytes seeded the core
+});
+
+test("system Save SRAM... writes the battery SRAM to the picked path", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+  be.queueBrowse("/out/a.sav");
+
+  findItem(items, "sys-savesram")!.onSelect!();
+  await flush();
+
+  const last = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
+  expect(last.patterns.includes("*.sav")).toBeTruthy();
+  expect(be.readFile("/out/a.sav")).toEqual(sramBytesFor(id));
+});
+
+test("system Load SRAM... cold-boots the system with the picked file's SRAM", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+  be.seed("/in/x.sav", sramBytesFor(999));
+  be.queueBrowse("/in/x.sav");
+
+  findItem(items, "sys-loadsram")!.onSelect!();
+  await flush();
+
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(id);
+  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(999));
 });
