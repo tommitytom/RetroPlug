@@ -192,6 +192,11 @@ export interface FrameData {
 export interface FileBrowserOpts {
   title: string;
   patterns: string[];
+  /** True for a SAVE dialog (a filename can be typed and an overwrite confirmed); absent/false
+   *  opens for reading. Drives DPF's FileBrowserOptions.saving. */
+  saving?: boolean;
+  /** A suggested filename for a save dialog (e.g. `"project.rplg"`); ignored when opening. */
+  defaultName?: string;
 }
 
 /** What TS hands the native builder: concrete paths only — everything is resolved

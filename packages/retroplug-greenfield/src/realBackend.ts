@@ -6,8 +6,8 @@
 // free.
 //
 // The fs / config / codec methods forward to std::filesystem + miniz; the emulator methods
-// (constructSystem / read* / …) drive a StubSystem in a real native Project. Only
-// openFileBrowser is unimplemented (async — deferred).
+// (constructSystem / read* / …) drive a StubSystem in a real native Project. openFileBrowser is the
+// one async method and rides a UI-direct native hook rather than the RPC bridge (see below).
 
 import type { Backend, ConstructSpec, FileBrowserOpts, FrameData, ZipEntry } from "./backend";
 
@@ -15,6 +15,39 @@ type RpcSend = (request: unknown) => unknown;
 interface Reply {
   result?: unknown;
   error?: { code: number; message: string };
+}
+
+// --- file dialog (async, UI-direct) ------------------------------------------------------------------
+// openFileBrowser is the ONE async Backend method, and it does NOT ride the RPC bridge: the editor
+// (PluginGreenfieldUI) hangs __rp_openFileBrowser on the shared context — like __rp_setWindowSize — and,
+// once the OS dialog settles, calls __rp_onFileBrowserResult back, both on the single UI thread. Only one
+// native dialog is ever in flight, so one module-level pending slot suffices (shared across every
+// createRealBackend on this context). When the hook is absent (the headless UI harness) the browser is
+// inert and every browse resolves null, exactly as the window-size hooks no-op there.
+type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string) => void;
+
+let pendingBrowse: ((path: string | null) => void) | null = null;
+let browseResolverInstalled = false;
+
+function installBrowseResolver(): void {
+  if (browseResolverInstalled) return;
+  browseResolverInstalled = true;
+  (globalThis as Record<string, unknown>).__rp_onFileBrowserResult = (path: string | null): void => {
+    const resolve = pendingBrowse;
+    pendingBrowse = null;
+    resolve?.(path ?? null);
+  };
+}
+
+function browseFile(opts: FileBrowserOpts): Promise<string | null> {
+  const hook = (globalThis as Record<string, unknown>).__rp_openFileBrowser as OpenBrowserHook | undefined;
+  if (typeof hook !== "function") return Promise.resolve(null); // no editor window (e.g. the headless harness)
+  if (pendingBrowse) return Promise.resolve(null); // one dialog at a time
+  installBrowseResolver();
+  return new Promise<string | null>((resolve) => {
+    pendingBrowse = resolve;
+    hook(opts.title, opts.patterns.join(" "), !!opts.saving, opts.defaultName ?? "");
+  });
 }
 
 function resolveSend(): RpcSend {
@@ -40,10 +73,6 @@ export function createRealBackend(): Backend {
   // crosses as a Uint8Array in both directions (the qjs codec decodes a typed byte param straight
   // into rfl::Bytestring), so no number[] marshaling is needed either way.
   const bytesOrNull = (v: unknown): Uint8Array | null => (v == null ? null : (v as Uint8Array));
-
-  const notImpl = (name: string): never => {
-    throw new Error(`realBackend.${name} is not implemented (async — deferred)`);
-  };
 
   // ConstructSpec → RPC params: omit null path fields (so native reads nullopt, not "") and pass the
   // seed bytes as a Uint8Array only when present.
@@ -91,7 +120,7 @@ export function createRealBackend(): Backend {
       return { width: r.width, height: r.height, published: r.published, pixels: r.data ?? new Uint8Array(0) };
     },
 
-    // --- async dialog (deferred; needs the emit path) ---------------------
-    openFileBrowser: (_opts: FileBrowserOpts) => notImpl("openFileBrowser"),
+    // --- async dialog (UI-direct native hook; see browseFile above) -------
+    openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts),
   };
 }

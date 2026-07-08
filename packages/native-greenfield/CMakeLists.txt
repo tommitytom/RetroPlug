@@ -104,6 +104,7 @@ add_dependencies(retroplug-greenfield-ui-bundle ${_TJSC_DEP})
 # legacy `retroplug` (they coexist).
 dpf_add_plugin(retroplug-greenfield
     TARGETS clap vst3 jack
+    USE_FILE_BROWSER                    # native OS file dialog (matches DISTRHO_UI_FILE_BROWSER)
     FILES_DSP
         plugin/PluginGreenfieldDSP.cpp
         ${GFCP_BUNDLE_C}                # the embedded control-plane bytecode (gfcp_cp_bundle)

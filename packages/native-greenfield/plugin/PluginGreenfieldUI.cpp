@@ -55,11 +55,12 @@ bool hasGlobalFunction(JSContext* ctx, const char* name) {
     return ok;
 }
 
-// Installs __rp_setWindowSize(w,h) / __rp_isWindowSizeControlled() on `ctx`, routed to `ui`. The
-// greenfield analog of legacy's setWindowSizeCallback RPC seam: the editor isn't on the backend RPC side,
-// so it hangs native C-functions on the shared context (the RenderCore installTestIdHook pattern). The UI
-// optional-chains them, so they are inert where absent (the headless harness). clearWindowSizeHooks
-// un-points the target on editor teardown (the globals outlive us on the persistent context).
+// Installs __rp_setWindowSize(w,h) / __rp_isWindowSizeControlled() / __rp_openFileBrowser(...) on `ctx`,
+// routed to `ui`. The greenfield analog of legacy's setWindowSizeCallback / file-browser RPC seams: the
+// editor isn't on the backend RPC side, so it hangs native C-functions on the shared context (the
+// RenderCore installTestIdHook pattern). The UI optional-chains them, so they are inert where absent (the
+// headless harness). clearWindowSizeHooks un-points the target on editor teardown (the globals outlive us
+// on the persistent context).
 void installWindowSizeHooks(JSContext* ctx, PluginGreenfieldUI* ui);
 void clearWindowSizeHooks(PluginGreenfieldUI* ui);
 } // namespace
@@ -120,6 +121,19 @@ public:
         return wmControlled_;
     }
     bool isWindowSizeControlled() const { return wmControlled_; }
+
+    // Open the native OS file dialog for the UI (the menu's Load / Save / Export / Locate items).
+    // `patterns` is a whitespace-separated glob list (DPF's FileBrowserOptions.fileFilterPatterns).
+    // Non-blocking: the pick arrives later on uiFileBrowserSelected. Called via the __rp_openFileBrowser
+    // seam. One dialog is ever in flight (the TS FileSelection flow awaits sequentially).
+    void requestFileBrowser(const char* title, const char* patterns, bool saving, const char* defaultName) {
+        FileBrowserOptions opts;
+        opts.title  = (title && *title) ? title : "Open";
+        opts.saving = saving;
+        if (defaultName && *defaultName) opts.defaultName = defaultName;
+        if (patterns && *patterns) opts.fileFilterPatterns = patterns;
+        openFileBrowser(opts);
+    }
 
     PluginGreenfieldUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT), fResizeHandle(this) {
         // Resizable window (DISTRHO_UI_USER_RESIZABLE): seed the requested-size baseline so onResize's
@@ -203,6 +217,24 @@ public:
 
 protected:
     void parameterChanged(uint32_t, float) override {} // UI drives nothing via params
+
+    // The native OS file dialog's result (null/empty filename = cancel). Deliver it into JS by calling the
+    // __rp_onFileBrowserResult resolver the real Backend registered — same shared context, same UI thread
+    // that pumps the JS loop, so a direct call is safe (the awaiting Promise settles on the next tick).
+    void uiFileBrowserSelected(const char* filename) override {
+        JSContext* ctx = jsEngine.getContext();
+        if (!ctx) return;
+        JSValue global = JS_GetGlobalObject(ctx);
+        JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_onFileBrowserResult");
+        if (JS_IsFunction(ctx, fn)) {
+            JSValue arg = (filename && *filename) ? JS_NewString(ctx, filename) : JS_NULL;
+            JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 1, &arg);
+            JS_FreeValue(ctx, ret);
+            JS_FreeValue(ctx, arg);
+        }
+        JS_FreeValue(ctx, fn);
+        JS_FreeValue(ctx, global);
+    }
 
     void uiIdle() override {
         if (!windowTitleSet_) {
@@ -302,6 +334,23 @@ JSValue jsIsWindowSizeControlled(JSContext* ctx, JSValueConst, int, JSValueConst
     return JS_NewBool(ctx, g_windowUi && g_windowUi->isWindowSizeControlled());
 }
 
+// __rp_openFileBrowser(title, patterns, saving, defaultName): open the native OS dialog. patterns is a
+// whitespace-separated glob list. The result comes back later via the UI's uiFileBrowserSelected override.
+JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (g_windowUi && argc >= 4) {
+        const char* title       = JS_ToCString(ctx, argv[0]);
+        const char* patterns    = JS_ToCString(ctx, argv[1]);
+        const int   saving      = JS_ToBool(ctx, argv[2]);
+        const char* defaultName = JS_ToCString(ctx, argv[3]);
+        g_windowUi->requestFileBrowser(title ? title : "", patterns ? patterns : "", saving == 1,
+                                       defaultName ? defaultName : "");
+        if (title) JS_FreeCString(ctx, title);
+        if (patterns) JS_FreeCString(ctx, patterns);
+        if (defaultName) JS_FreeCString(ctx, defaultName);
+    }
+    return JS_UNDEFINED;
+}
+
 void installWindowSizeHooks(JSContext* ctx, PluginGreenfieldUI* ui) {
     if (!ctx) return;
     g_windowUi = ui;
@@ -309,6 +358,7 @@ void installWindowSizeHooks(JSContext* ctx, PluginGreenfieldUI* ui) {
     JS_SetPropertyStr(ctx, g, "__rp_setWindowSize", JS_NewCFunction(ctx, jsSetWindowSize, "__rp_setWindowSize", 2));
     JS_SetPropertyStr(ctx, g, "__rp_isWindowSizeControlled",
                       JS_NewCFunction(ctx, jsIsWindowSizeControlled, "__rp_isWindowSizeControlled", 0));
+    JS_SetPropertyStr(ctx, g, "__rp_openFileBrowser", JS_NewCFunction(ctx, jsOpenFileBrowser, "__rp_openFileBrowser", 4));
     JS_FreeValue(ctx, g);
 }
 
