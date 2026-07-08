@@ -116,6 +116,12 @@ RenderCore::RenderCore(std::uint32_t width, std::uint32_t height)
     : width_(width), height_(height) {}
 
 RenderCore::~RenderCore() {
+    // Disable display invalidation before tearing anything down. Deleting a widget tree that has grouped
+    // objects makes LVGL refocus to a sibling and invalidate its style on the way out; that style walk is
+    // a use-after-free (SIGSEGV) once memory starts being freed. lv_obj_invalidate() early-outs when its
+    // display has invalidation disabled, so this skips those doomed walks entirely. Probability scaled
+    // with menu depth, which is why a taller menu surfaced it.
+    if (display_) lv_display_enable_invalidation(display_, false);
     // Clean the widget tree while the JS context is still alive (so delete events drain safely), then
     // shut the engine and tear down the LVGL display.
     if (lv_obj_t* scr = lv_screen_active()) lv_obj_clean(scr);
