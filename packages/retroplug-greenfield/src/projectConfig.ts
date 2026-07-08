@@ -39,6 +39,7 @@ export interface SystemThin {
 
 export interface ProjectConfig {
   schemaVersion: string;
+  name?: string; // display name (seeded from the primary system's sav/rom stem); absent = derive on load
   settings: ProjectSettings;
   systems: SystemThin[];
 }
@@ -81,6 +82,7 @@ const systemThinSchema = z.object({
 // (per-element tolerant) in parseConfig.
 const projectConfigSchema = z.object({
   schemaVersion: stringField(""),
+  name: z.string().optional(),
   settings: z.unknown().optional(),
   systems: z.array(z.unknown()).catch(() => []).default(() => []),
 });
@@ -131,10 +133,12 @@ function thinSettings(s: CommonSettings | undefined): Partial<CommonSettings> | 
 }
 
 /** Live systems + settings → a thin ProjectConfig, dropping runtime ids and any
- *  field at its default. Stamps the running schema version. */
-export function buildConfig(settings: ProjectSettings, systems: SystemEntry[]): ProjectConfig {
+ *  field at its default. Stamps the running schema version. `name` is omitted when
+ *  empty (thin convention — the reader derives one). */
+export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], name = ""): ProjectConfig {
   return {
     schemaVersion: String(K_PROJECT),
+    ...(name ? { name } : {}),
     settings: { ...settings },
     systems: systems.map((e) => {
       const t: SystemThin = { platform: e.platform };

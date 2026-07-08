@@ -47,6 +47,16 @@ test("buildConfig: systems → thin entries, ids dropped, defaults omitted, sche
   ]);
 });
 
+test("name: an explicit name round-trips; a nameless config omits it (parses undefined)", () => {
+  const named = buildConfig(DEFAULT_SETTINGS, [sys(1, "/roms/a.gb")], "My Song");
+  expect(named.name).toBe("My Song");
+  expect(parseConfig(serializeConfig(named, "", identity)).name).toBe("My Song");
+
+  const nameless = buildConfig(DEFAULT_SETTINGS, [sys(1, "/roms/a.gb")]);
+  expect("name" in nameless).toBeFalsy(); // omitted from the thin config
+  expect(parseConfig(serializeConfig(nameless, "", identity)).name).toBe(undefined);
+});
+
 test("serializeConfig + parseConfig: round-trips, filling settings defaults", () => {
   const cfg = buildConfig({ layout: 3, midiRouting: 1, audioRouting: 2, zoom: 4 }, [sys(1, "/proj/a.gb")]);
   const json = serializeConfig(cfg, "", identity); // no baseDir → absolute

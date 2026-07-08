@@ -54,9 +54,48 @@ test("adoptRomProject: a fresh ROM open writes the sibling .rplg and enters rece
   const onDisk = be.readText("/roms/a.rplg")!;
   expect(onDisk[0]).toBe("{"); // thin raw JSON, not a "PK" zip
   expect(JSON.parse(onDisk).systems[0].romPath).toBe("a.gb"); // rebased relative to the .rplg folder
+  expect(JSON.parse(onDisk).name).toBe("a"); // the seeded name is persisted
   expect(recent.view().map((v) => v.path)).toEqual(["/roms/a.rplg"]);
+  expect(recent.view()[0].label).toBe("a"); // recents shows the name (rom stem), not "a.rplg"
+  expect(project.name()).toBe("a");
   expect(project.currentPath()).toBe("/roms/a.rplg");
   expect(project.isDirty()).toBeFalsy(); // the on-disk sibling matches the load
+});
+
+test("project name: persisted on save, restored on reload, and kept across Save-As", () => {
+  const { be, project } = newProject();
+  be.seed("/roms/a.gb", gbRom());
+  project.systems.loadRom("/roms/a.gb");
+  project.adoptRomProject("/roms/a.gb"); // seeds name "a", writes /roms/a.rplg
+  expect(project.name()).toBe("a");
+
+  project.newProject();
+  expect(project.name()).toBe(""); // torn down
+
+  project.load("/roms/a.rplg"); // reload restores the stored name
+  expect(project.name()).toBe("a");
+
+  project.save("/roms/renamed.rplg"); // Save-As keeps the seeded name (not the new filename)
+  expect(project.name()).toBe("a");
+  expect(JSON.parse(be.readText("/roms/renamed.rplg")!).name).toBe("a");
+});
+
+test("project name: a paired sav names the project from the sav stem", () => {
+  const { be, recent, project } = newProject();
+  be.seed("/roms/lsdj.gb", gbRom());
+  be.seed("/saves/mysong.sav", "battery");
+  project.systems.loadRom("/roms/lsdj.gb", { explicitSav: "/saves/mysong.sav" }); // paired override
+  project.adoptRomProject("/roms/lsdj.gb");
+  expect(project.name()).toBe("mysong"); // the sav stem, not "lsdj"
+  expect(recent.view()[0].label).toBe("mysong");
+});
+
+test("project name: a nameless (pre-feature) .rplg derives its name from the first system on load", () => {
+  const { be, project } = newProject();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/old.rplg", JSON.stringify({ schemaVersion: "1", systems: [{ platform: "gb", romPath: "a.gb" }] }));
+  expect(project.load("/roms/old.rplg")).toEqual({ kind: "loaded", systems: 1 });
+  expect(project.name()).toBe("a"); // no stored name → derived from the system's rom stem
 });
 
 test("adoptRomProject: an existing sibling .rplg is tracked, never overwritten, and stays dirty", () => {

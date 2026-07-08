@@ -74,8 +74,11 @@ test("relink: a missing source leaves the list untouched", () => {
   expect(relinkEntry(l, "/nope", "/c")).toEqual(l);
 });
 
-test("label: alias wins, else the path basename", () => {
+test("label: alias wins, else the basename with the project extension stripped", () => {
   expect(label(e("/music/song.rplg", "Nice Name"))).toBe("Nice Name");
-  expect(label(e("/music/song.rplg", "  "))).toBe("song.rplg"); // blank alias -> basename
-  expect(label(e("/music/song.rplg"))).toBe("song.rplg");
+  expect(label(e("/music/song.rplg", "  "))).toBe("song"); // blank alias -> basename, .rplg stripped
+  expect(label(e("/music/song.rplg"))).toBe("song");
+  expect(label(e("/music/song.rplg.zip"))).toBe("song"); // exported project extension too
+  expect(label(e("/music/mixtape.RPLG"))).toBe("mixtape"); // case-insensitive
+  expect(label(e("/roms/game.gb"))).toBe("game.gb"); // non-project names are left intact
 });

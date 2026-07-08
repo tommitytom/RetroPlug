@@ -45,11 +45,17 @@ export function relinkEntry(list: RecentEntry[], oldPath: string, newPath: strin
   return out;
 }
 
-/** The label to show: the alias if set, else the path's basename. */
+/** The label to show: the alias if set, else the path's basename with the project extension stripped
+ *  (so an alias-less entry reads `game`, not `game.rplg`). */
 export function label(entry: RecentEntry): string {
-  return entry.name.trim() || basename(entry.path);
+  return entry.name.trim() || stripProjectExt(basename(entry.path));
 }
 
 function basename(p: string): string {
   return p.split(/[\\/]/).pop() ?? p;
+}
+
+// Drop a trailing `.rplg` or `.rplg.zip` from a project filename (case-insensitive), leaving other names alone.
+function stripProjectExt(name: string): string {
+  return name.replace(/\.rplg(\.zip)?$/i, "");
 }

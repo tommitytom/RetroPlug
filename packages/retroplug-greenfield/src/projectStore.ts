@@ -16,7 +16,7 @@ import type { Backend, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
-import { dirname } from "./pathUtil";
+import { dirname, stem } from "./pathUtil";
 import { siblingRplgPath } from "./savPaths";
 import {
   type ProjectConfig,
@@ -51,6 +51,7 @@ export class ProjectStore {
   readonly systems: SystemsStore;
   private projectSettings: ProjectSettings = { ...DEFAULT_SETTINGS };
   private path = "";
+  private projectName = ""; // display name; seeded from the primary system's sav/rom stem, persisted in the .rplg
   private dirty = false;
   private pendingLoad: { cfg: ProjectConfig; path: string; blobs: Map<string, Uint8Array> } | null = null;
   private onSystemsChange: () => void = () => {};
@@ -90,8 +91,25 @@ export class ProjectStore {
   currentPath(): string {
     return this.path;
   }
+  /** The project's display name (seeded from the primary system's sav/rom stem, persisted in the .rplg). */
+  name(): string {
+    return this.projectName;
+  }
   isDirty(): boolean {
     return this.dirty;
+  }
+
+  // The name to seed from: the primary system's paired-sav override stem, else its rom stem, minus the
+  // extension — "the sav name, or the rom name if there's no [explicit] sav". Primary = focused, else first.
+  // Empty (embedded / no systems) yields "", leaving the recents basename fallback to label it.
+  private deriveName(): string {
+    const list = this.systems.systems();
+    const primary = list.find((s) => s.id === this.systems.focused()) ?? list[0];
+    return primary ? stem(primary.savPath || primary.romPath || "") : "";
+  }
+  // Seed the name from the primary system if it doesn't have one yet (a no-op once named).
+  private ensureName(): void {
+    if (!this.projectName) this.projectName = this.deriveName();
   }
 
   setLayout(n: number): boolean {
@@ -115,6 +133,7 @@ export class ProjectStore {
     this.projectSettings = { ...DEFAULT_SETTINGS };
     this.pushAudioRouting(); // reset native routing to the default
     this.path = "";
+    this.projectName = "";
     this.dirty = false;
     this.onSystemsChange(); // the DSP now runs nothing
     this.onChangeCb();
@@ -123,10 +142,11 @@ export class ProjectStore {
   /** Save a thin `.rplg` (raw JSON, paths rebased relative to its folder). Records it
    *  in recents + as the current project, and marks clean. */
   save(path: string): boolean {
-    const cfg = buildConfig(this.projectSettings, this.systems.systems());
+    this.ensureName(); // a manually-built project (New Project + Add) gets named at its first save
+    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
     if (!this.backend.writeFile(path, enc.encode(json))) return false;
-    this.recent.add(path);
+    this.recent.add(path, this.projectName); // seed the recents display name (Save-As keeps it, not the file stem)
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -142,11 +162,12 @@ export class ProjectStore {
   adoptRomProject(romPath: string): void {
     if (!romPath) return; // embedded ROMs (mgb) have no on-disk sibling to track
     const path = siblingRplgPath(romPath);
+    this.projectName = this.deriveName(); // this ROM defines the project's name (its sav/rom stem)
     if (!this.backend.fileExists(path)) {
       this.save(path);
       return;
     }
-    this.recent.add(path);
+    this.recent.add(path, this.projectName);
     this.path = path;
     this.onChangeCb();
   }
@@ -156,7 +177,8 @@ export class ProjectStore {
    *  every entry; native only compresses. Records it in recents + as the current
    *  project, and marks clean. Returns false on a compression / write failure. */
   export(path: string): boolean {
-    const cfg = buildConfig(this.projectSettings, this.systems.systems());
+    this.ensureName();
+    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
     const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
     // The store's systems() order matches buildConfig's, so index i keys both alike.
@@ -168,7 +190,7 @@ export class ProjectStore {
     });
     const archive = this.backend.zip(entries);
     if (!archive || !this.backend.writeFileAtomic(path, archive)) return false;
-    this.recent.add(path);
+    this.recent.add(path, this.projectName);
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -179,7 +201,7 @@ export class ProjectStore {
    *  writes, but WITHOUT the recents/currentPath/dirty side-effects a host save has. Paths are left
    *  absolute (`baseDir=""`), so `loadBytes` round-trips them with no rebase. */
   exportBytes(): Uint8Array | null {
-    const cfg = buildConfig(this.projectSettings, this.systems.systems());
+    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName || this.deriveName());
     const json = serializeConfig(cfg, "", (p) => this.backend.canonicalize(p));
     const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
     this.systems.systems().forEach((sys, i) => {
@@ -277,7 +299,8 @@ export class ProjectStore {
     });
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     this.pushAudioRouting(); // apply the loaded project's routing to native audio
-    if (path) this.recent.add(path); // in-memory loads (plugin state chunk) pass "" — no recents entry
+    this.projectName = cfg.name || this.deriveName(); // stored name wins; an old nameless .rplg derives one
+    if (path) this.recent.add(path, this.projectName); // in-memory loads (plugin state chunk) pass "" — no recents entry
     this.path = path;
     this.dirty = false;
     this.onSystemsChange(); // push the rebuilt systems (the adopt path is quiet)
