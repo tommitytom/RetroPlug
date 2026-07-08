@@ -39,6 +39,10 @@ function allocSystemId(): number {
   return nextSystemId++;
 }
 
+// New SRAM seeds a blank battery: 128 KiB (max GB cart RAM) of zeros. Native's onActivate truncates or
+// zero-pads it to the cart's real GB_save_battery_size, so any non-empty all-zero buffer blanks the SRAM.
+const BLANK_SRAM_BYTES = 0x20000;
+
 /** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
  *  the first `ROM_SNIFF_LEN` of them. Native never classifies. */
 export function classifyRom(backend: Backend, romPath: string): Platform | "unknown" {
@@ -280,6 +284,22 @@ export class SystemsStore {
     const bytes = this.backend.readFile(path);
     if (!bytes) return null;
     return this.rebuildInPlace(id, { sramBytes: bytes });
+  }
+
+  /** Reboot system `id` in place, carrying its live battery SRAM forward — a hardware-style reset: the
+   *  save persists, the running state is dropped. Greenfield reconstructs from the ROM (the same engine
+   *  as reload) rather than a live GB_reset. Null when `id` is absent. */
+  reset(id: number): number | null {
+    if (!findById(this.entries, id)) return null;
+    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
+  }
+
+  /** Wipe system `id`'s battery SRAM (a fresh cartridge) and cold-boot it in place. Seeds an all-zero
+   *  battery — native truncates/zero-pads it to the cart's real size — so the live core reads blank SRAM;
+   *  the on-disk `.sav` follows on the next battery save. Null when `id` is absent. */
+  newSram(id: number): number | null {
+    if (!findById(this.entries, id)) return null;
+    return this.rebuildInPlace(id, { sramBytes: new Uint8Array(BLANK_SRAM_BYTES) });
   }
 
   /** The sibling ROM for a picked `.sav`, or null — the pairing helper. */

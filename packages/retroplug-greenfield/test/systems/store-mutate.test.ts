@@ -125,6 +125,43 @@ test("loadSram: cold-boots the ROM in place with the file's SRAM", () => {
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(999));
 });
 
+test("reset: reboots in place carrying the live battery, with a new id + focus", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const a = store.addSystem("/roms/a.gb") as number;
+  const newId = store.reset(a);
+  expect(newId).toBeTruthy();
+  expect(newId === a).toBeFalsy();
+  const v = store.view();
+  expect(v.length).toBe(1); // swapped, not appended
+  expect(v[0].id).toBe(newId);
+  expect(v[0].romPath).toBe("/roms/a.gb"); // identity preserved
+  expect(store.focused()).toBe(newId); // focus followed the swap
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(a); // in-place replace
+  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(a)); // the live battery carried forward
+  expect(call.stateBytes).toBe(undefined); // cold boot, no savestate
+  expect(store.reset(9999)).toBe(null); // absent -> no-op
+});
+
+test("newSram: cold-boots in place with a blank (all-zero) battery", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const a = store.addSystem("/roms/a.gb") as number;
+  const newId = store.newSram(a);
+  expect(newId).toBeTruthy();
+  expect(newId === a).toBeFalsy();
+  expect(store.view().length).toBe(1); // swapped, not appended
+  expect(store.focused()).toBe(newId); // focus followed the swap
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(a);
+  const seed = new Uint8Array(call.sramBytes!);
+  expect(seed.length).toBe(0x20000); // native truncates/zero-pads this to the cart's real battery size
+  expect(seed.every((b) => b === 0)).toBeTruthy(); // blank battery
+  expect(call.stateBytes).toBe(undefined); // cold boot, no savestate
+  expect(store.newSram(9999)).toBe(null); // absent -> no-op
+});
+
 test("resolveSiblingRom: picks the sibling ROM, skipping a present non-ROM of the same stem", () => {
   const { be, store } = newStore();
   be.seed("/roms/game.gb", garbage()); // present but classifies unknown -> skipped
