@@ -4,7 +4,7 @@
 // (project dirty) the request is vetoed and the Save/Discard/Cancel overlay appears. Esc cancels; Discard
 // & Quit calls __rp_quitWindow (spied here — natively it closes the window).
 
-import { test, expect, ui, Key } from "ui-harness";
+import { test, expect, ui, navTo, Key } from "ui-harness";
 
 const onCloseRequested = (): boolean =>
   (globalThis as unknown as { __rp_onCloseRequested?: () => boolean }).__rp_onCloseRequested?.() ?? false;
@@ -22,8 +22,8 @@ test("close is vetoed with unsaved changes; Esc cancels, Discard quits", () => {
   expect(onCloseRequested()).toBe(false);
   expect(ui.findByTextContaining("Unsaved changes")).toBe(null);
 
-  // Load mGB (focused start-menu row) → adds a tile and marks the project dirty.
-  expect(ui.findByTextContaining("Load mGB") != null).toBeTruthy();
+  // Load mGB (navigate to it) → adds a tile and marks the project dirty.
+  expect(navTo("Load mGB")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(20);
   expect(ui.findByTestId("tile-0") != null).toBeTruthy();

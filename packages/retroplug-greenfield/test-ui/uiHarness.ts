@@ -117,3 +117,17 @@ export const ui = {
   /** Advance the emulator by `ms` so tiles receive live frames (pump() only ticks LVGL). */
   advance(ms: number): void { rp.advance(ms); },
 };
+
+/** Tap Down until the focused menu row's label contains `substr`, then stop. Order-robust nav — prefer
+ *  this over counting Downs / assuming an item is focused first, so menu reorders don't break tests.
+ *  Returns whether the target ended up focused. */
+export function navTo(substr: string, maxSteps = 24): boolean {
+  for (let i = 0; i < maxSteps; i++) {
+    const f = ui.focused();
+    if (f && f.text.includes(substr)) return true;
+    ui.tapKey(Key.Down);
+    ui.pump(2);
+  }
+  const f = ui.focused();
+  return !!f && f.text.includes(substr);
+}

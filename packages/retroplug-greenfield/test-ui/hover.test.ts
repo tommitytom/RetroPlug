@@ -16,8 +16,8 @@ test("a menu row shows the hover bar when the pointer moves over it", () => {
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
 
-  // "Load..." is a non-focused start-menu row, so any highlight there is purely from hover.
-  const row = ui.findByTextContaining("Load...")!;
+  // "Recent" is a non-focused start-menu row, so any highlight there is purely from hover.
+  const row = ui.findByTextContaining("Recent")!;
   expect(row.state & State.Hovered).toBe(0);
 
   const sx = row.x + row.width - 6; // sample the background near the right edge, past the label glyphs
@@ -28,13 +28,13 @@ test("a menu row shows the hover bar when the pointer moves over it", () => {
   ui.moveMouse(row.x + Math.floor(row.width / 2), sy);
   ui.pump(4);
 
-  const hovered = ui.findByTextContaining("Load...")!;
+  const hovered = ui.findByTextContaining("Recent")!;
   expect((hovered.state & State.Hovered) !== 0).toBeTruthy(); // LVGL flagged the row hovered
   const after = bgAt(sx, sy);
   expect(after.b > before.b + 4).toBeTruthy(); // the onHoveredStyle navy bar now paints the row bg
 
-  // The hover bar is dimmer than the keyboard-focus bar (on the focused "Load mGB" row).
-  const focus = ui.findByTextContaining("Load mGB")!;
+  // The hover bar is dimmer than the keyboard-focus bar (on the focused "Load..." row).
+  const focus = ui.findByTextContaining("Load...")!;
   const focusBar = bgAt(focus.x + focus.width - 6, focus.y + Math.floor(focus.height / 2));
   console.log(`hover bg=${JSON.stringify(after)} focus bar=${JSON.stringify(focusBar)}`);
   expect(after.b < focusBar.b).toBeTruthy();
@@ -44,5 +44,5 @@ test("a menu row shows the hover bar when the pointer moves over it", () => {
   // Moving to blank space clears the hover.
   ui.moveMouse(Math.floor(row.width / 2), row.y + row.height * 8);
   ui.pump(4);
-  expect(ui.findByTextContaining("Load...")!.state & State.Hovered).toBe(0);
+  expect(ui.findByTextContaining("Recent")!.state & State.Hovered).toBe(0);
 });

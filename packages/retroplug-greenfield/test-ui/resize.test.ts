@@ -4,7 +4,7 @@
 // the UI bundle) and drives the menu to add a second instance — the App effect should request a window
 // twice as wide (2 columns) at the same height. Zoom-agnostic: asserts the ratio, not absolute pixels.
 
-import { test, expect, ui, Key } from "ui-harness";
+import { test, expect, ui, navTo, Key } from "ui-harness";
 
 test("adding a second instance requests a window resized to fit the grid", () => {
   const calls: Array<[number, number]> = [];
@@ -15,6 +15,7 @@ test("adding a second instance requests a window resized to fit the grid", () =>
   ui.pump(30);
 
   // Start menu → Load mGB: one tile → the fit-to-grid effect requests a single-column window.
+  expect(navTo("Load mGB")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(20);
   expect(ui.findByTestId("tile-0") != null).toBeTruthy();
@@ -24,7 +25,7 @@ test("adding a second instance requests a window resized to fit the grid", () =>
   // Duplicate via the instance menu → two tiles → a two-column window (2× wide, same height).
   ui.tapKey(Key.Esc);
   ui.pump(10);
-  expect(ui.findByTextContaining("Duplicate Instance") != null).toBeTruthy();
+  expect(navTo("Duplicate Instance")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(20);
   expect(ui.findByTestId("tile-1") != null).toBeTruthy();

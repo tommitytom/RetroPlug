@@ -298,11 +298,12 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   return {
     title: ctx.version ? `RetroPlug v${ctx.version} - #${sys.id}` : `RetroPlug - #${sys.id}`,
     items: [
+      action("inst-load", "Load ROM", () => runSelection(ctx, ctx.stores.fileSelection.browse("load"))),
+      submenu("inst-recent", "Recent", recentChildren(ctx)),
+      sep("inst-sep-top"),
+      action("inst-add", "Add Instance", () => runSelection(ctx, ctx.stores.fileSelection.browse("add"))),
       action("inst-dup", "Duplicate Instance", () => systems.duplicateSystem(sys.id)),
       action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
-      action("inst-load", "Load ROM", () => runSelection(ctx, ctx.stores.fileSelection.browse("load"))),
-      action("inst-add", "Add Instance", () => runSelection(ctx, ctx.stores.fileSelection.browse("add"))),
-      submenu("inst-recent", "Recent", recentChildren(ctx)),
       sep("inst-sep0"),
       cycler("inst-link", "Link Group", LINK_GROUP_NAMES, sameboyConfig(sys).linkGroupId, (n) =>
         systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
@@ -320,8 +321,8 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
   return {
     title: ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug",
     items: [
-      action("start-mgb", "Load mGB (GB MIDI Synth)", () => ctx.stores.project.systems.loadMgb()),
       action("start-load", "Load...", () => runSelection(ctx, ctx.stores.fileSelection.browse("load"))),
+      action("start-mgb", "Load mGB (GB MIDI Synth)", () => ctx.stores.project.systems.loadMgb()),
       submenu("start-recent", "Recent", recentChildren(ctx)),
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),

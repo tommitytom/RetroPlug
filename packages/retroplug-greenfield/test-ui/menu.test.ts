@@ -3,27 +3,15 @@
 // cycles values. Drives everything through the keypad the way the useFocusGroup primitive claims it —
 // proving focus nav (LVGL-native), Enter/CLICKED select, Left/Right cycle, and the tile↔menu swap.
 
-import { test, expect, ui, Key } from "ui-harness";
-
-// Tap Down until the focused row's label contains `substr` (robust to exact item ordering).
-function navTo(substr: string, maxSteps = 24): boolean {
-  for (let i = 0; i < maxSteps; i++) {
-    const f = ui.focused();
-    if (f && f.text.includes(substr)) return true;
-    ui.tapKey(Key.Down);
-    ui.pump(2);
-  }
-  const f = ui.focused();
-  return !!f && f.text.includes(substr);
-}
+import { test, expect, ui, navTo, Key } from "ui-harness";
 
 test("the menu navigates, selects an action, cycles a value, and expands a submenu", () => {
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
 
-  // Empty project → the start menu; its first item is focused on mount.
+  // Empty project → the start menu; its first item ("Load...") is focused on mount.
   const first = ui.focused();
-  expect(first != null && first.text.includes("Load mGB")).toBeTruthy();
+  expect(first != null && first.text.includes("Load...")).toBeTruthy();
 
   // Arrow nav moves the LVGL focus.
   ui.tapKey(Key.Down);
@@ -32,12 +20,13 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   expect(second != null && second.text !== first!.text).toBeTruthy();
   ui.tapKey(Key.Up);
   ui.pump(4);
-  expect(ui.focused()!.text.includes("Load mGB")).toBeTruthy();
+  expect(ui.focused()!.text.includes("Load...")).toBeTruthy();
 
-  // The file-browser "Load..." item renders in the start menu (its browse resolves null in the harness).
-  expect(ui.findByTextContaining("Load...") != null).toBeTruthy();
+  // The embedded-synth "Load mGB" item renders in the start menu.
+  expect(ui.findByTextContaining("Load mGB") != null).toBeTruthy();
 
-  // Enter on "Load mGB" → a system is added, the menu gives way to the grid.
+  // Focus "Load mGB" and Enter → a system is added, the menu gives way to the grid.
+  expect(navTo("Load mGB")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(20);
   expect(ui.findByTestId("tile-0") != null).toBeTruthy();

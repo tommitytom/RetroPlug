@@ -3,7 +3,7 @@
 // focuses it (the other dims). Systems are now added via the menu (Load mGB / Duplicate), so this test
 // drives the menu just enough to populate the grid, then asserts the grid behaviour.
 
-import { test, expect, ui, type WidgetInfo, type UiSnapshot, Key } from "ui-harness";
+import { test, expect, ui, navTo, type WidgetInfo, type UiSnapshot, Key } from "ui-harness";
 
 // True when the snapshot has >1 distinct colour inside `r` — i.e. the tile isn't a flat (unrendered)
 // block. A blitted GB frame (boot logo / mGB UI) always varies.
@@ -30,8 +30,8 @@ test("the grid shows a live frame and click-to-focus, populated through the menu
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
 
-  // Start menu → "Load mGB" is focused first; Enter adds a tile and the grid takes over.
-  expect(ui.findByTextContaining("Load mGB") != null).toBeTruthy();
+  // Start menu → focus "Load mGB", Enter adds a tile and the grid takes over.
+  expect(navTo("Load mGB")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(20);
   const tile0 = ui.findByTestId("tile-0");
@@ -42,10 +42,10 @@ test("the grid shows a live frame and click-to-focus, populated through the menu
   ui.pump(10);
   expect(regionVaried(ui.snapshot(), ui.findByTestId("tile-0")!)).toBeTruthy();
 
-  // Duplicate via the instance menu (Esc → menu; "Duplicate Instance" is first/focused).
+  // Duplicate via the instance menu (Esc → menu; navigate to "Duplicate Instance").
   ui.tapKey(Key.Esc);
   ui.pump(10);
-  expect(ui.findByTextContaining("Duplicate Instance") != null).toBeTruthy();
+  expect(navTo("Duplicate Instance")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(20);
   expect(ui.findByTestId("tile-0") != null).toBeTruthy();
