@@ -10,7 +10,7 @@
 // duplicateSystem / reload orchestration and the DSP list handlers
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
-import type { Backend } from "./backend";
+import type { Backend, ConstructSpec } from "./backend";
 import { detectPlatform, ROM_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix } from "./savPaths";
 import {
@@ -340,12 +340,15 @@ export class SystemsStore {
     }
     const core = defaultCoreFor(platform);
     const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
+    // Stored roles win; a config that omits them re-attaches defaults. Known before the build so a
+    // role's load-time hook can seed the spec (e.g. an empty LSDj sav) before instantiation.
+    const roles = config.roles && config.roles.length ? config.roles : this.defaultRoles(core, platform, romPath, embeddedRom);
     // The core-config "system" role (kind === core) carries the emulator config; pass it as the
     // construct-time settings blob so a loaded non-default model/highpass is applied AT build, not via
     // a post-construct restart that would nuke the just-restored savestate.
     const systemRole = config.roles?.find((r) => r.kind === core);
     const id = allocSystemId();
-    if (!this.backend.constructSystem({
+    const spec = this.applyConstructHooks({
       romPath,
       platform,
       core,
@@ -355,10 +358,10 @@ export class SystemsStore {
       sramBytes: blobs?.sramBytes,
       stateBytes: blobs?.stateBytes,
       settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
-    }, id)) return null;
+    }, roles);
+    if (!this.backend.constructSystem(spec, id)) return null;
     // Stored settings/roles win; a config that omits them re-attaches defaults.
     const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
-    const roles = config.roles && config.roles.length ? config.roles : this.defaultRoles(core, platform, romPath, embeddedRom);
     const wasEmpty = this.entries.length === 0;
     this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, settings, roles });
     if (wasEmpty) this.focusedId = id;
@@ -403,7 +406,14 @@ export class SystemsStore {
     );
     const savPath = embeddedRom ? null : resolveSavPath(romPath, suffix, override);
     const id = allocSystemId();
-    if (!this.backend.constructSystem({ romPath, platform, core, embeddedRom, savPath, statePath: null, replaceId }, id)) return null;
+    // Roles are known before the build (a pure function of core/platform/header), so a role's
+    // load-time hook can seed the spec — e.g. an empty LSDj sav — before the core is instantiated.
+    const roles = this.defaultRoles(core, platform, romPath, embeddedRom);
+    const spec = this.applyConstructHooks(
+      { romPath, platform, core, embeddedRom, savPath, statePath: null, replaceId },
+      roles,
+    );
+    if (!this.backend.constructSystem(spec, id)) return null;
     return {
       id,
       entry: {
@@ -415,7 +425,7 @@ export class SystemsStore {
         savSuffix: suffix,
         embeddedRom,
         settings: { ...DEFAULT_COMMON_SETTINGS },
-        roles: this.defaultRoles(core, platform, romPath, embeddedRom),
+        roles,
       },
     };
   }
@@ -428,6 +438,20 @@ export class SystemsStore {
     const header =
       romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array() : new Uint8Array();
     return this.registry.defaultRoles(core, platform, header, embeddedRom);
+  }
+
+  // Fold each attached role's load-time hook over the tentative spec, letting a role seed data that
+  // is otherwise absent (e.g. a fresh LSDj ROM gets a valid empty sav so it skips its self-test).
+  // Additive by contract — a hook returns the spec unchanged when the data it would seed is present.
+  // The backend satisfies ConstructCaps structurally (savFromJson + fileExists), so it's the caps arg.
+  private applyConstructHooks(spec: ConstructSpec, roles: RoleInstance[]): ConstructSpec {
+    if (!this.registry) return spec;
+    let s = spec;
+    for (const r of roles) {
+      const rt = this.registry.roleType(r.kind);
+      if (rt?.onConstruct) s = rt.onConstruct(s, this.backend);
+    }
+    return s;
   }
 
   // The free suffix for a new instance of `romPath`: live-list ownership + on-disk.

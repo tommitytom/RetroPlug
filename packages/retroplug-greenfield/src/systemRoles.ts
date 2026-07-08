@@ -15,6 +15,7 @@
 
 import type { ProjectBehavior, SystemBehavior } from "./dspKernel";
 import type { Platform, Core } from "./platform";
+import type { ConstructSpec } from "./backend";
 
 export type RoleCategory = "system" | "feature";
 
@@ -49,8 +50,21 @@ export interface RoleType {
   /** The DSP-thread behavior (doc-06 translator/source/router): a `SystemBehavior` for system
    *  scope, a `ProjectBehavior` for project scope. Run per block by the DSP kernel. */
   dsp?: SystemBehavior | ProjectBehavior;
+  /** A load-time hook: transform the resolved `ConstructSpec` just before the core is instantiated
+   *  (after paths + any seed blobs are resolved). ADDITIVE by contract — seed data that is otherwise
+   *  absent (e.g. a fresh LSDj cart gets a valid empty sav), never clobber what's already there.
+   *  Runs only for roles actually attached to the system, so it's inherently ROM-gated. */
+  onConstruct?(spec: ConstructSpec, caps: ConstructCaps): ConstructSpec;
   /** DEFERRED: a UI-thread behavior (control-plane, e.g. kit-patch) + settings render descriptor. */
   ui?: unknown;
+}
+
+/** The narrow Backend slice a load-time `onConstruct` hook may use: synthesize an LSDj SRAM image,
+ *  and check whether native will find a real sav on disk to load. The full `Backend` satisfies this
+ *  structurally, so the store passes itself. */
+export interface ConstructCaps {
+  savFromJson(json: string): Uint8Array;
+  fileExists(path: string): boolean;
 }
 
 /** What a ROM provider inspects to decide feature roles: the platform + core, the ROM
