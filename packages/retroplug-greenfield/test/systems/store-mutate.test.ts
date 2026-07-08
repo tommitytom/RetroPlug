@@ -1,8 +1,9 @@
-// SystemsStore duplicate / remove / reload + the sav→ROM pairing helper. Duplicate
-// clones live state with a fresh suffix; remove splices + refocuses; reload swaps in
-// place preserving identity with a new id; resolveSiblingRom pairs a picked .sav.
+// SystemsStore duplicate / remove / reload + save-load state/sram + the sav→ROM pairing helper.
+// Duplicate clones live state with a fresh suffix; remove splices + refocuses; reload + loadState/
+// loadSram swap in place preserving identity with a new id; saveState/saveSram dump the registry read
+// to disk; resolveSiblingRom pairs a picked .sav.
 import { test, expect } from "../../testing/harness";
-import { MockBackend, stateBytesFor } from "../../testing/mockBackend";
+import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { gbRom, gbaRom, garbage } from "./fixtures";
 
@@ -73,6 +74,55 @@ test("reload: swaps in place preserving identity, with a new id + focus", () => 
   expect(v[0].savSuffix).toBe(0);
   expect(store.focused()).toBe(newId); // focus followed the swap
   expect(store.reloadSystem(9999)).toBe(null); // absent -> no-op
+});
+
+test("saveState: dumps the system's published savestate to the picked path", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const a = store.addSystem("/roms/a.gb") as number;
+  expect(store.saveState(a, "/out/a.ss0")).toBeTruthy();
+  expect(be.readFile("/out/a.ss0")).toEqual(stateBytesFor(a)); // the registry read reached disk
+  expect(store.saveState(9999, "/out/x.ss0")).toBeFalsy(); // absent -> false, nothing written
+});
+
+test("saveSram: dumps the system's battery SRAM to the picked path", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const a = store.addSystem("/roms/a.gb") as number;
+  expect(store.saveSram(a, "/out/a.sav")).toBeTruthy();
+  expect(be.readFile("/out/a.sav")).toEqual(sramBytesFor(a));
+});
+
+test("loadState: reconstructs the system in place, booted from the file's bytes", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/states/x.ss0", stateBytesFor(999)); // arbitrary savestate bytes
+  const a = store.addSystem("/roms/a.gb") as number;
+  const newId = store.loadState(a, "/states/x.ss0");
+  expect(newId).toBeTruthy();
+  expect(newId === a).toBeFalsy();
+  const v = store.view();
+  expect(v.length).toBe(1); // swapped, not appended
+  expect(v[0].id).toBe(newId);
+  expect(store.focused()).toBe(newId); // focus followed the swap
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(a); // in-place replace
+  expect(new Uint8Array(call.stateBytes!)).toEqual(stateBytesFor(999)); // the file's bytes seeded the core
+  expect(store.loadState(9999, "/states/x.ss0")).toBe(null); // absent id -> no-op
+  expect(store.loadState(newId as number, "/nope.ss0")).toBe(null); // unreadable file -> no-op
+});
+
+test("loadSram: cold-boots the ROM in place with the file's SRAM", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/saves/x.sav", sramBytesFor(999));
+  const a = store.addSystem("/roms/a.gb") as number;
+  const newId = store.loadSram(a, "/saves/x.sav");
+  expect(newId).toBeTruthy();
+  expect(newId === a).toBeFalsy();
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(a);
+  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(999));
 });
 
 test("resolveSiblingRom: picks the sibling ROM, skipping a present non-ROM of the same stem", () => {

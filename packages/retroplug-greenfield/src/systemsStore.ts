@@ -215,12 +215,20 @@ export class SystemsStore {
 
   /** Rebuild a system's ROM from disk, carrying its battery SRAM forward, swapping in place with a new
    *  id and preserving identity + focus. Orchestrated in TS: pull SRAM from the registry, then cold-boot
-   *  the ROM with it (no savestate) via a replaceId construct — the source's role config crosses as the
-   *  settings blob. No native reload method. */
+   *  the ROM with it (no savestate) via a replaceId construct. No native reload method. */
   reloadSystem(id: number): number | null {
+    if (!findById(this.entries, id)) return null;
+    return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
+  }
+
+  /** Reconstruct system `id` in place from seed bytes: capture the source's spec, build a fresh core
+   *  under a new id that swaps the old one (replaceId), and keep identity + focus. The seed (sramBytes
+   *  = cold-boot battery, stateBytes = boot from savestate) overrides what native would read from disk;
+   *  savPath stays the auto-save target. The shared body of reload / loadState / loadSram — the in-place
+   *  twin of duplicateSystem (which appends). */
+  private rebuildInPlace(id: number, seed: { sramBytes?: Uint8Array; stateBytes?: Uint8Array }): number | null {
     const src = findById(this.entries, id);
     if (!src) return null;
-    const sram = this.backend.readSram(id);
     const systemRole = src.roles.find((r) => r.kind === src.core);
     const newId = allocSystemId();
     const ok = this.backend.constructSystem({
@@ -230,7 +238,8 @@ export class SystemsStore {
       embeddedRom: src.embeddedRom,
       savPath: src.embeddedRom ? null : resolveSavPath(src.romPath, src.savSuffix, src.savPath),
       statePath: null,
-      sramBytes: sram ?? undefined,
+      sramBytes: seed.sramBytes,
+      stateBytes: seed.stateBytes,
       replaceId: id,
       settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
     }, newId);
@@ -238,6 +247,39 @@ export class SystemsStore {
     this.entries = replaceById(this.entries, id, { ...src, id: newId });
     if (this.focusedId === id) this.focusedId = newId;
     return this.committed(newId);
+  }
+
+  /** Dump system `id`'s live savestate to `path`. The registry read is safe while the audio thread runs.
+   *  False when nothing has been published for the id, or the write fails. A disk dump — no project-state
+   *  change (like export). */
+  saveState(id: number, path: string): boolean {
+    const bytes = this.backend.readState(id);
+    if (!bytes) return false;
+    return this.backend.writeFileAtomic(path, bytes);
+  }
+
+  /** Dump system `id`'s battery SRAM to `path`. False when the id has no SRAM published, or the write fails. */
+  saveSram(id: number, path: string): boolean {
+    const bytes = this.backend.readSram(id);
+    if (!bytes) return false;
+    return this.backend.writeFileAtomic(path, bytes);
+  }
+
+  /** Load a savestate file into system `id`: reconstruct the core in place, booted from those bytes
+   *  (greenfield reconstructs rather than live-injecting). Null when the file is unreadable or the build
+   *  fails. */
+  loadState(id: number, path: string): number | null {
+    const bytes = this.backend.readFile(path);
+    if (!bytes) return null;
+    return this.rebuildInPlace(id, { stateBytes: bytes });
+  }
+
+  /** Load a battery SRAM file into system `id`: cold-boot the ROM in place with those bytes (as reload
+   *  does with the carried battery). Null when the file is unreadable or the build fails. */
+  loadSram(id: number, path: string): number | null {
+    const bytes = this.backend.readFile(path);
+    if (!bytes) return null;
+    return this.rebuildInPlace(id, { sramBytes: bytes });
   }
 
   /** The sibling ROM for a picked `.sav`, or null — the pairing helper. */
