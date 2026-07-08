@@ -19,8 +19,12 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Text, ELvKey } from "lvgljs-ui";
 
 import { useFocusGroup } from "../../lvgl/useFocusGroup";
+import { useNativeEvent } from "../../lvgl/useNativeEvent";
 import { Box } from "../../lvgl/Box";
+import { dpfCodeToKeyName, KEY_ESCAPE, KEY_BACKSPACE, KEY_ENTER } from "../../../src/keyCodes";
 import type { MenuItem, MenuTree } from "./menuTree";
+
+const CAPTURE_COLOR = "#ffb74d"; // orange, matching the legacy capture-armed row
 
 // lvgljs-ui's Text type doesn't expose ref / onKey / onFocusedStyle; cast to reach them.
 const TextAny = Text as any;
@@ -64,6 +68,14 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // The focus highlight, driven ONLY by explicit nav / click / rebuild (never by LVGL onFocus events, so
   // no stray-focus suppression is needed). LVGL owns actual keypad focus; this just paints the row.
   const [focusedId, setFocusedId] = useState<string>("");
+  // The armed capture row (a "capture" item awaiting its next key), or "". The ref is set synchronously so
+  // the key-bus handler and onItemKey see the armed state within the same event; the state repaints the row.
+  const [capturingId, setCapturingId] = useState<string>("");
+  const capturingIdRef = useRef<string>("");
+  const setCapturing = useCallback((id: string) => {
+    capturingIdRef.current = id;
+    setCapturingId(id);
+  }, []);
 
   // id → LVGL Text ref, and the current flat (visible) list. Refs are keyed by stable id (not index) so
   // separators can sit in the list without breaking alignment.
@@ -112,6 +124,9 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     (item: MenuItem) => {
       focusedIdRef.current = item.id; // so the rebuild keeps this row focused
       setFocusedId(item.id);
+      // Capture rows arm from the key bus (below), not here — an Enter/click here would race the captured
+      // Enter, so LVGL's CLICKED on a capture row is a no-op.
+      if (item.kind === "capture") return;
       if (item.kind === "submenu") {
         setOpenItems((prev) => {
           const next = new Set(prev);
@@ -130,6 +145,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   const onItemKey = useCallback(
     (e: { key: number }) => {
       (e as { stopPropagation?: () => void }).stopPropagation?.(); // else bubbles to the scroll View
+      if (capturingIdRef.current) return; // freeze nav while a capture row is armed — the key binds instead
       const entries = flatRef.current;
       const cur = entries.findIndex((f) => f.item.id === focusedIdRef.current);
       if (cur < 0) return;
@@ -152,6 +168,33 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     },
     [focus],
   );
+
+  // Key capture for "capture" rows (the bindings editor). Letter keys reach the UI only on the raw "key"
+  // bus, not through LVGL's focus-group nav — so arm / bind / clear live here. Enter on a focused capture
+  // row arms it; the next press binds (Backspace/arrows/Enter included), Escape cancels. A not-armed
+  // Backspace on a capture row clears it. Esc also reaches App's handler (which closes the menu), so during
+  // capture Esc both cancels and closes — an accepted, minor divergence from legacy (which only disarmed).
+  useNativeEvent("key", (...args) => {
+    const code = args[0] as number;
+    const press = args[1] as boolean;
+    if (!press) return;
+    const itemById = (id: string): MenuItem | undefined => flatRef.current.find((f) => f.item.id === id)?.item;
+
+    const armed = capturingIdRef.current;
+    if (armed) {
+      setCapturing("");
+      if (code === KEY_ESCAPE) return; // cancel — bind nothing
+      const name = dpfCodeToKeyName(code);
+      if (name == null) return; // an unbindable key — treat as cancel
+      itemById(armed)?.capture?.onCapture(name);
+      return;
+    }
+
+    const focused = itemById(focusedIdRef.current);
+    if (!focused || focused.kind !== "capture") return;
+    if (code === KEY_ENTER) setCapturing(focused.id); // arm
+    else if (code === KEY_BACKSPACE) focused.capture?.onClear(); // clear
+  });
 
   // Keyboard scroll-follow: keep the focused row near the viewport midpoint so an expanded submenu that
   // overflows the window still tracks the cursor. Container-level scrollToY with explicit midpoint math
@@ -227,7 +270,13 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
               </Box>
             );
           }
-          const label = item.kind === "submenu" ? `${item.label} ${openItems.has(item.id) ? "v" : ">"}` : item.label;
+          const isCapturing = capturingId === item.id;
+          let label: string;
+          if (item.kind === "submenu") label = `${item.label} ${openItems.has(item.id) ? "v" : ">"}`;
+          else if (isCapturing) {
+            const colon = item.label.indexOf(":"); // keep the "<Button>: " head, swap the value for a prompt
+            label = `${colon >= 0 ? item.label.slice(0, colon) : item.label}: Press a key…`;
+          } else label = item.label;
           const isFocused = focusedId === item.id;
           return (
             <TextAny
@@ -238,7 +287,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
               }}
               style={{
                 width: "100%",
-                "text-color": isFocused ? "#4fc3f7" : "#ffffff",
+                "text-color": isCapturing ? CAPTURE_COLOR : isFocused ? "#4fc3f7" : "#ffffff",
                 "background-color": "#14243f", // full-width highlight bar on the focused row
                 "background-opacity": isFocused ? 255 : 0,
                 "font-size": itemFont,
