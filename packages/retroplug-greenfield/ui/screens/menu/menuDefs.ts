@@ -10,6 +10,7 @@ import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES } from "../../../src/userConfig";
 import type { RecentView } from "../../../src/recentStore";
 import type { SelectionOutcome } from "../../../src/fileSelection";
+import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -32,6 +33,10 @@ const HIGHPASS_NAMES = ["Off", "Accurate", "DC-Block"];
 const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSave: "On Save", Continuous: "Continuous" };
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
+
+// Glob filters for the project file dialogs (realBackend space-joins them for DPF).
+const PROJECT_PATTERNS = ["*.rplg"];
+const ZIP_PATTERNS = ["*.zip"];
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
 function cycleInt(current: number, min: number, max: number, dir: 1 | -1): number {
@@ -62,6 +67,14 @@ function cycler(id: string, prefix: string, names: string[], current: number, ap
 function runSelection(ctx: MenuContext, p: Promise<SelectionOutcome>): void {
   void p.then((outcome) => {
     if (outcome.kind === "deferred") ctx.stores.project.load(outcome.project);
+  });
+}
+
+/** Open the OS browser with `opts` and apply the picked path (a cancel is ignored). For the project file
+ *  ops, whose store methods already take a resolved path — the dialog is the only missing piece. */
+function browseThen(ctx: MenuContext, opts: FileBrowserOpts, apply: (path: string) => void): void {
+  void ctx.stores.backend.openFileBrowser(opts).then((path) => {
+    if (path) apply(path);
   });
 }
 
@@ -102,9 +115,21 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   const items: MenuItem[] = [];
   if (ctx.systems.length > 0) {
     items.push(action("proj-new", "New Project", () => project.newProject()));
-    items.push(sep("proj-sep0"));
-    // Deferred (browser): Save / Save As / Export / Load Project.
+    // Save writes to the known path when there is one (else Save As covers it). Save As / Export browse
+    // for a target; each store method already takes a resolved path.
+    if (project.currentPath()) items.push(action("proj-save", "Save Project", () => project.save(project.currentPath())));
+    items.push(action("proj-saveas", "Save Project As...", () =>
+      browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) => project.save(p)),
+    ));
+    items.push(action("proj-export", "Export Zip...", () =>
+      browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.zip" }, (p) => project.export(p)),
+    ));
   }
+  // Load is always available (even from an empty start menu).
+  items.push(action("proj-load", "Load Project...", () =>
+    browseThen(ctx, { title: "Load Project", patterns: PROJECT_PATTERNS }, (p) => void project.load(p)),
+  ));
+  items.push(sep("proj-sep0"));
   items.push(
     cycler("proj-layout", "Layout", LAYOUT_NAMES, ctx.settings.layout, (n) => project.setLayout(n)),
     { id: "proj-zoom", label: `Zoom: ${ctx.settings.zoom === 0 ? "Default" : `${ctx.settings.zoom}x`}`, kind: "cycler", keepOpen: true, onSelect: () => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, 1)), onCycle: (dir) => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, dir)) },
@@ -130,8 +155,11 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
   return ctx.recent.map((entry, i) =>
     submenu(`recent-${i}`, entry.label, [
       action(`recent-${i}-load`, entry.missing ? "Load (missing)" : "Load", () => ctx.stores.project.load(entry.path)),
+      action(`recent-${i}-locate`, "Locate on Disk", () =>
+        browseThen(ctx, { title: "Locate Project", patterns: PROJECT_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p)),
+      ),
       action(`recent-${i}-remove`, "Remove from List", () => ctx.stores.recent.remove(entry.path)),
-      // Deferred: Rename (needs a text prompt), Locate on Disk (browser).
+      // Deferred: Rename (needs a text prompt).
     ]),
   );
 }

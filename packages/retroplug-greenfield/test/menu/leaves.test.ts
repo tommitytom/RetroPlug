@@ -29,6 +29,19 @@ function ctxOf(stores: AppStores): MenuContext {
 
 const findItem = (items: MenuItem[], id: string): MenuItem | undefined => items.find((i) => i.id === id);
 
+function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
+  const sm = items.find((i) => i.id === id);
+  return sm && sm.kind === "submenu" ? sm.children : [];
+}
+
+// The instance-menu Project submenu, with one system seeded so the save-side items appear.
+function projectSubmenuWithSystem(be: MockBackend, stores: AppStores): MenuItem[] {
+  be.seed("/roms/a.gb", gbRom());
+  const id = stores.project.systems.addSystem("/roms/a.gb");
+  const anchored = stores.project.systems.view().find((s) => s.id === id)!;
+  return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-project");
+}
+
 test("start menu Load... browses the ROM-or-sav dialog and loads the picked ROM", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
@@ -71,4 +84,62 @@ test("a cancelled browse mutates nothing", async () => {
   await flush();
 
   expect(stores.project.systems.view().length).toBe(0);
+});
+
+test("project Save Project As... writes the project to the picked path via a save dialog", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const proj = projectSubmenuWithSystem(be, stores);
+  be.queueBrowse("/out/proj.rplg");
+
+  findItem(proj, "proj-saveas")!.onSelect!();
+  await flush();
+
+  const last = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
+  expect(last.saving).toBe(true); // a save dialog
+  expect(be.fileExists("/out/proj.rplg")).toBeTruthy();
+});
+
+test("project Export Zip... writes the archive to the picked path", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const proj = projectSubmenuWithSystem(be, stores);
+  be.queueBrowse("/out/proj.zip");
+
+  findItem(proj, "proj-export")!.onSelect!();
+  await flush();
+
+  expect(be.fileExists("/out/proj.zip")).toBeTruthy();
+});
+
+test("project Load Project... opens a read (non-saving) .rplg dialog", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.queueBrowse(null); // cancel — we only assert the dialog it opened
+
+  findItem(buildStartMenu(ctxOf(stores)).items, "start-project"); // ensure the submenu builds
+  const proj = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project");
+  findItem(proj, "proj-load")!.onSelect!();
+  await flush();
+
+  const last = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
+  expect(!!last.saving).toBe(false); // read dialog
+  expect(last.patterns.includes("*.rplg")).toBeTruthy();
+});
+
+test("recent Locate on Disk relinks the entry to the picked path", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  stores.recent.add("/gone/old.rplg"); // a missing entry
+  be.seed("/found/new.rplg", "PK"); // the file the user points at
+  be.queueBrowse("/found/new.rplg");
+
+  const recent = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
+  findItem(recent, "recent-0")!; // the entry submenu exists
+  const entrySub = submenuChildren(recent, "recent-0");
+  findItem(entrySub, "recent-0-locate")!.onSelect!();
+  await flush();
+
+  const view = stores.recent.view();
+  expect(view.some((e) => e.path.endsWith("new.rplg"))).toBeTruthy();
 });
