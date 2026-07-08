@@ -71,3 +71,30 @@ test("saveSram writes a battery cart's SRAM and loadSram rebuilds from it", () =
   expect(newId != null && newId !== a).toBeTruthy(); // in-place rebuild with the file's SRAM
   expect(be.readSram(newId as number)!.length > 0).toBeTruthy();
 });
+
+test("New SRAM zeros the battery and Reset carries the live battery forward", () => {
+  const be = createRealBackend();
+  const rom = __CONFIG_DIR__ + "/roms/ss.gb";
+  be.writeFile(rom, gbRomBattery());
+
+  const store = new SystemsStore(be);
+  const a = store.addSystem(rom)!;
+  expect(typeof a).toBe("number");
+
+  // A fresh battery cart powers up with SameBoy's 0xFF fill — so an all-zero result below is a real change,
+  // not a coincidence.
+  const fresh = be.readSram(a)!;
+  expect(fresh.length > 0 && fresh.some((b) => b !== 0)).toBeTruthy();
+
+  // New SRAM cold-boots with an all-zero seed; native sizes it to the cart's battery and the live core
+  // reads blank SRAM. Only a real onActivate zero-fill can prove this — the mock can't.
+  const blanked = store.newSram(a)!;
+  expect(blanked !== a).toBeTruthy();
+  expect(be.readSram(blanked)!.every((b) => b === 0)).toBeTruthy();
+
+  // Reset carries the *live* (now-blanked) battery forward — not a disk re-read (no .sav was written) and
+  // not a fresh 0xFF fill. If reset dropped the live battery, this would read 0xFF and fail.
+  const rst = store.reset(blanked)!;
+  expect(rst !== blanked).toBeTruthy();
+  expect(be.readSram(rst)!.every((b) => b === 0)).toBeTruthy();
+});
