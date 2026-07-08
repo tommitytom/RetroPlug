@@ -1,0 +1,264 @@
+# 05 — Data & Persistence
+
+How RetroPlug2 (greenfield) turns a live session into bytes on disk and back:
+the project model and the `.rplg` file, the plugin's DAW state chunk, the three
+per-user config files, the persistence policy (version stamps + forward-tolerant
+reads, no migrations), the LSDj `.sav` codec, and the SRAM auto-save policy.
+
+This doc is the concrete expression of the thesis (see
+[01-architecture.md](01-architecture.md)): **TypeScript owns the framing —
+the model, the JSON shape, path resolution, version policy — and native owns
+only the bytes: compression (zip/unzip), file I/O, and the LSDj sav codec.**
+Native never decides what a project *is*; it slurps resolved paths and
+compresses byte buffers TS hands it.
+
+## The project model
+
+TS is the single source of truth for the project. It **builds** the config from
+the live systems + settings, **serializes** it (rebasing asset paths portable),
+and **parses** it back. The model lives in
+[projectConfig.ts](../packages/retroplug-greenfield/src/projectConfig.ts).
+
+| Type | Fields | Notes |
+|---|---|---|
+| `ProjectConfig` | `schemaVersion: string`, `settings`, `systems[]` | The root; `schemaVersion` is a legacy *string* (`"1"`) |
+| `ProjectSettings` | `layout 0-3`, `midiRouting 0-3`, `audioRouting 0-2`, `zoom 0-6` | Four scalar enums; `zoom 0` = inherit the user default |
+| `SystemThin` | `platform`, `romPath?`, `savPath?`, `savSuffix?`, `embeddedRom?`, `settings?`, `roles?` | One serialized system |
+
+**"Thin"** means the model carries no binary blobs (ROM/SRAM/savestate/kit
+bytes are never in the config) and omits any field sitting at its default —
+`buildConfig` drops zero-gain, non-overridden savPath, and default settings so a
+fresh/uncustomized project stays terse ([projectConfig.ts:135](../packages/retroplug-greenfield/src/projectConfig.ts#L135)).
+`core` is deliberately **not stored**: it is re-derived from `platform` on load
+(nes/gba → mesen, else sameboy), mirroring how the runtime kind was always
+re-sniffed rather than trusted from disk. Omitted rich fields restore to native
+defaults via forward-tolerant reads (below), so a thin file round-trips
+faithfully.
+
+## The project file: THIN `.rplg` vs EXPORT `.rplg.zip`
+
+A project comes in two on-disk shapes over **one** config model — a **thin**
+`.rplg` (raw JSON) and an **exported** `.rplg.zip` (PKZIP). **Zip-based projects
+always use the `.rplg.zip` extension; thin projects use `.rplg`.** Both are driven
+by [projectStore.ts](../packages/retroplug-greenfield/src/projectStore.ts); the
+blob key contract is the pure module
+[projectBinaries.ts](../packages/retroplug-greenfield/src/projectBinaries.ts).
+
+| Shape | Extension | On disk | Written by | Contents |
+|---|---|---|---|---|
+| **THIN** | `.rplg` | raw JSON, paths only | `save(path)` | `project.json` bytes, asset paths rebased **relative** to the file's folder (portable) |
+| **EXPORT** | `.rplg.zip` | PKZIP archive | `export(path)` | the same `project.json` + one entry per live system's SRAM/savestate blob |
+
+Blob entries are keyed by config **index**, not id: `systems/{i}/sram` and
+`systems/{i}/state` ([projectBinaries.ts:17](../packages/retroplug-greenfield/src/projectBinaries.ts#L17)).
+The store's `systems()` order matches `buildConfig`'s, so index `i` addresses
+both alike. On export, TS gathers each blob through the snapshot read door
+(`backend.readState` / `backend.readSram` — see [01-architecture.md](01-architecture.md)),
+**frames every entry itself**, and hands the entry list to native's `zip`; native
+only deflates (miniz). Import is the inverse: `unzip` → `partitionEntries` splits
+`project.json` from a key→bytes blob map, and each blob seeds its system's
+emulator at reconstruct time.
+
+**Path portability.** Serialize rebases each `romPath`/`savPath` to a
+forward-slash relative path when it sits at/under the file's folder, keeping it
+absolute otherwise (no fragile `../` chains); load rebases back to absolute
+([projectPaths.ts](../packages/retroplug-greenfield/src/projectPaths.ts)). Native
+supplies only `canonicalize` (`weakly_canonical`) for the realpath-hard
+to-relative test.
+
+**Load routing + lifecycle.** The Load / Locate file dialog offers both `*.rplg`
+and `*.rplg.zip`; routing is by **content**, not extension — `load(path)` sniffs
+the first four bytes for the PKZIP magic `PK\x03\x04` and routes to `loadZip` or
+`loadThin`
+([projectStore.ts:188](../packages/retroplug-greenfield/src/projectStore.ts#L188)).
+All paths converge on `beginLoad`, which: refuses a newer schema stamp (→
+`{kind:"incompatible"}`), absolutizes paths, then runs a blob-aware
+missing-files scan. A project with missing assets is held as `pendingLoad` for
+`relink(item, newPath)` (which auto-finds folder-mates) before `commit` rebuilds
+the systems. The outcome is one of:
+
+```
+LoadOutcome = loaded | incompatible | missing | error
+```
+
+## Plugin state: DPF getState/setState + autoload
+
+The plugin has no editor-side persistence of its own — get/setState and the
+headless autoload hook all bounce to JS project globals, so base64 and `.rplg`
+framing happen entirely in TypeScript.
+
+| DPF seam | JS global | Behaviour |
+|---|---|---|
+| `getState("project")` | `__rp_saveProjectB64()` | export the project as a base64 `.rplg` chunk |
+| `setState("project", v)` | `__rp_loadProjectB64(v)` | load an in-memory chunk; **empty string = no-op** (don't wipe a seeded project) |
+| `RETROPLUG_AUTOLOAD_PROJECT=path` | `__rp_loadProjectPath(path)` | headless seed (reaper `-renderproject`): read a `.rplg` from disk and load it |
+
+State is a single `"project"` key, host-readable + host-writable
+([PluginGreenfieldDSP.cpp:103](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L103)).
+The C++ boundary stays **string-only**: base64 is done in JS
+([pluginControlPlane.ts](../packages/retroplug-greenfield/src/pluginControlPlane.ts))
+because a DPF state chunk is NUL-terminated UTF-8 while a `.rplg` is binary
+PKZIP. `exportBytes()` produces the chunk with paths left **absolute**
+(`baseDir=""`) and none of the recents/currentPath/dirty side-effects a host
+`save`/`export` has, so `loadBytes` round-trips it with no rebase
+([projectStore.ts:162](../packages/retroplug-greenfield/src/projectStore.ts#L162)).
+
+**State-source decisions.** In a **DAW**, the host chunk is authoritative: the
+DAW persists `getState()` in its project and replays it via `setState()` on
+reload, so the chunk wins over anything on disk. In the **standalone** (the JACK
+build) there is no host chunk, so the plugin starts **empty** unless
+`RETROPLUG_AUTOLOAD_PROJECT` seeds it. A standalone that reopens the last-saved
+project from disk on launch is *not yet built* (see below).
+
+## Config models on disk
+
+Three per-user, machine-global files live under `configDir()` (per-OS:
+`XDG_CONFIG_HOME`/`~/.config/retroplug`, `%APPDATA%\RetroPlug`, or
+`~/Library/Application Support/RetroPlug`; overridable via
+`RETROPLUG_USER_CONFIG_DIR` —
+[HostRpcService.cpp:23](../packages/native-greenfield/src/HostRpcService.cpp#L23)).
+Each on-disk shape matches the legacy native file so a user's existing configs
+still load.
+
+| File | Model | Stamp const | Shape |
+|---|---|---|---|
+| `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug-greenfield/src/userConfig.ts)) | `USER_CONFIG_SCHEMA = 1` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave }` |
+| `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug-greenfield/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad }` (one profile per file) |
+| `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug-greenfield/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name }] }`, most-recent-first, capped at 10 |
+
+One deliberate rename: greenfield's `sramAutoSave` field is native's
+`sramMirror` key ("mirror" reads from the plugin's side; "auto save" fits both
+plugin and standalone). The string enum values (`Off` / `OnProjectSave` /
+`Continuous`) still match native's spellings. The three config **stores** and the
+`__rp_*` UI seam are documented in [03-ts-layer.md](03-ts-layer.md); this doc
+covers only their on-disk shapes.
+
+## Persistence policy (the precise statement)
+
+Nothing is released yet, so **there are no versioned migrations** — when a
+serialized shape changes, it just changes; renames/restructures are expected to
+break old saves. But the policy has two guardrails that make ordinary,
+*additive* changes non-breaking:
+
+1. **Reads are forward-tolerant.** A field absent from a file takes its model
+   default; unknown fields are ignored. Native does this with reflect-cpp's
+   `rfl::DefaultIfMissing`; TS mirrors it with strict zod schemas whose every
+   field has a `.default()` and whose out-of-range scalars **clamp** rather than
+   throw ([configSchema.ts](../packages/retroplug-greenfield/src/configSchema.ts)).
+   So adding or removing a field doesn't break an old file — no version field, no
+   transform.
+
+2. **Each root is version-stamped and validated (refuse-newer).** Every
+   serialized root carries a `schemaVersion`, checked on load against a constant.
+   The native constants are the single source of truth in
+   [SchemaVersions.hpp](../packages/native/src/config/SchemaVersions.hpp); the TS
+   stamps mirror them:
+
+| Root | Native const | TS const |
+|---|---|---|
+| `.rplg` / DAW chunk | `kProject = 1` | `K_PROJECT = 1` ([projectConfig.ts:102](../packages/retroplug-greenfield/src/projectConfig.ts#L102)) |
+| `config.json` | `kUserConfig = 1` | `USER_CONFIG_SCHEMA = 1` |
+| `bindings/*.json` | `kBindings = 1` | `BINDINGS_SCHEMA = 1` |
+| `recent.json` | `kRecent = 2` | `RECENT_SCHEMA = 2` |
+
+`checkVersion` yields `Ok` / `Older` / `Newer`. A file stamped **newer** than the
+running build is refused — a format from the future can't be safely read. The
+refusal differs by root:
+
+- **Project** → the load returns `{kind:"incompatible"}`, which the UI surfaces
+  as the project-incompatible modal.
+- **config / bindings / recent** → the parser returns `null` (or `[]`) and the
+  store **keeps its previous in-memory value** (matching native's "retain
+  previous snapshot on parse error"). The same keep-previous applies to malformed
+  or non-object files.
+
+The project `schemaVersion` is a **string** (old `.rplg` files carry `"1.0"`);
+`parseProjectVersion` takes its leading integer, flooring an empty/garbage value
+to the current baseline rather than spuriously reporting "older".
+
+**Bump a `k*` constant only on a breaking (non-additive) change.** When that
+first breaking bump lands, the `Older` branch at the matching load seam is where
+a migration transform would hook in — in TS that seam is the `migrateProjectRaw`
+stub ([projectConfig.ts:95](../packages/retroplug-greenfield/src/projectConfig.ts#L95)),
+today an identity function. This is **detection groundwork, not a migration
+pipeline**: no versioned read-old/write-new shims exist or should be added until
+then.
+
+## The LSDj `.sav` codec
+
+RetroPlug ships a hand-written, version-aware codec for the 128 KiB LSDj `.sav`
+image (working-memory song at offset 0 + a 512-byte header at `0x8000` +
+the RLE-compressed stored-project archive —
+[SavCodec.hpp](../packages/native/src/lsdj/codec/SavCodec.hpp)). The model is a
+reflect-cpp struct that is the single source of truth for the on-disk shape,
+JSON, and the TS-facing types; the codec reads/writes the bytes.
+
+**TS authoring.** `savFromJson(json)` on the `Backend` encodes a `.sav` from a
+JSON `rp::lsdj::model::Sav`. It decodes **leniently** — via
+`savFromJsonFixture`, which reads with `rfl::DefaultIfMissing` so a fixture
+specifies only the cells it sets and everything else takes its model default
+([HostRpcService.cpp:163](../packages/native-greenfield/src/HostRpcService.cpp#L163),
+[SavSerialization.hpp:33](../packages/native/src/lsdj/SavSerialization.hpp#L33)).
+`savFromJson("{}")` yields a valid 128 KiB image, letting a test boot LSDj
+straight into authored song/sync state and skip the 12–15 s cartridge self-test.
+The TS-side wrapper [lsdjSav.ts](../packages/retroplug-greenfield/src/lsdjSav.ts) is
+a test/tooling helper over the same RPC channel — it is deliberately **not** part
+of the production `Backend` seam.
+
+**Correctness rationale (the liblsdj differential oracle).** Byte-identical
+round-tripping only proves *losslessness*, not that the old-format decode
+branches interpret the bytes correctly. liblsdj is a known-correct reference for
+song format versions ≤ 16, so
+[LsdjDifferentialTests.cpp](../packages/native/test/LsdjDifferentialTests.cpp)
+decodes each content-bearing fixture sav with **both** liblsdj and this codec and
+asserts the semantic fields match. That differential oracle is what proves the
+`fmt < N` decode paths are right. (liblsdj is a test-only dependency; the
+shipping codec has no liblsdj link.)
+
+## SRAM auto-save policy
+
+Battery RAM is mirrored to the loose sibling `<rom>.sav` the way most Game Boy
+emulators do, gated on the user's `sramAutoSave` preference. Native only reads
+SRAM (through the snapshot read door) and writes a file; the whole policy is TS
+([sramAutoSave.ts](../packages/retroplug-greenfield/src/sramAutoSave.ts)).
+
+| Mode | Behaviour |
+|---|---|
+| `Off` | never write the loose `.sav` |
+| `OnProjectSave` (default) | flush every system at a save/quit moment (`flushOnSave`) |
+| `Continuous` | also write changed SRAM on a throttled idle tick (`pump`) |
+
+`SramAutoSaver` reads live SRAM via `backend.readSram(id)`, resolves the target
+with `resolveSavPath` (embedded-ROM systems have no sibling and are skipped), and
+**seeds rather than rewrites** an identical file just loaded — the first
+observation compares an FNV-1a hash of live SRAM against the on-disk bytes and
+writes only on a genuine change. The hash is in-process dedup only, never
+persisted. The idle cadence and change detection are driven from the control
+plane; the file-watch side ("watcher = C++, policy = TS") is covered in
+[03-ts-layer.md](03-ts-layer.md).
+
+## Not yet built / deferred
+
+- **Standalone disk-wins reopen.** The standalone starts empty (or from
+  `RETROPLUG_AUTOLOAD_PROJECT`); reopening the last-saved project from disk on
+  launch is not implemented. See [07-migration.md](07-migration.md).
+- **Migration transforms.** `migrateProjectRaw` and the native `Older` branch are
+  identity stubs — no root has taken a breaking bump, so no transform exists.
+- **Kit-patch persistence.** The thin config persists platform, paths, sav
+  suffix/override, embedded-ROM marker, non-default universal settings, and
+  roles; kit (sample-patch) state is not yet serialized. Rich per-system domains
+  are tracked in [07-migration.md](07-migration.md).
+
+## Key files
+
+- [projectConfig.ts](../packages/retroplug-greenfield/src/projectConfig.ts) — the config model, build/serialize/parse, schema-version helpers.
+- [projectStore.ts](../packages/retroplug-greenfield/src/projectStore.ts) — save/export/load, the missing-scan + relink lifecycle, `exportBytes`/`loadBytes`.
+- [projectBinaries.ts](../packages/retroplug-greenfield/src/projectBinaries.ts) / [projectPaths.ts](../packages/retroplug-greenfield/src/projectPaths.ts) — blob-key contract; path rebasing.
+- [pluginControlPlane.ts](../packages/retroplug-greenfield/src/pluginControlPlane.ts) — the `__rp_saveProjectB64`/`__rp_loadProjectB64`/`__rp_loadProjectPath` surface + base64.
+- [PluginGreenfieldDSP.cpp:103](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L103) — DPF `initState`/`getState`/`setState` + `RETROPLUG_AUTOLOAD_PROJECT`.
+- [userConfig.ts](../packages/retroplug-greenfield/src/userConfig.ts) / [userConfigSerialization.ts](../packages/retroplug-greenfield/src/userConfigSerialization.ts), [recentSerialization.ts](../packages/retroplug-greenfield/src/recentSerialization.ts), [bindingSerialization.ts](../packages/retroplug-greenfield/src/bindingSerialization.ts) — the config models + on-disk codecs.
+- [configSchema.ts](../packages/retroplug-greenfield/src/configSchema.ts) — the clamp/default zod builders (TS forward-tolerance).
+- [SchemaVersions.hpp](../packages/native/src/config/SchemaVersions.hpp) — the canonical version constants + `checkVersion`/`parseProjectVersion`.
+- [HostRpcService.cpp](../packages/native-greenfield/src/HostRpcService.cpp) — native file I/O, `zip`/`unzip`, `configDir`, `savFromJson`.
+- [SavCodec.hpp](../packages/native/src/lsdj/codec/SavCodec.hpp) + [LsdjDifferentialTests.cpp](../packages/native/test/LsdjDifferentialTests.cpp) — the sav codec + its liblsdj oracle.
+- [sramAutoSave.ts](../packages/retroplug-greenfield/src/sramAutoSave.ts) — the loose-`.sav` auto-save policy.

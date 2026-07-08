@@ -12,10 +12,10 @@ before starting:
 Most of what an agent needs day-to-day is in those two. The rules below are
 the parts that don't naturally fit either.
 
-For architecture: [architecture/](architecture/README.md) holds the
-forward-looking design (one doc per work-stream, each with a status);
-[architecture/current-state.md](architecture/current-state.md) is the as-is
-reference. Numbered migration steps live in [porting/](porting/).
+For architecture, see [spec/](spec/README.md) — the single source of truth for
+the greenfield design (one doc per concern). Start at
+[spec/README.md](spec/README.md); the switchover plan and the remaining work to
+retire the legacy build live in [spec/07-migration.md](spec/07-migration.md).
 
 ## Workflow rules
 
@@ -189,7 +189,7 @@ order of preference:
      paths (triple-buffers, `CommandQueue`, the state-snapshot publish/read).
      The triple-buffer seqlock has a documented benign suppression
      (`packages/native/test/sanitizer/tsan.supp`); the deliberately-racy `[MesenSingleton]`
-     probes are excluded (see `porting/20-mesen-single-thread-runloop.md`).
+     probes are excluded from that gate.
      `tools/run-greenfield-sanitizer.sh <thread|address> [slug]` is the counterpart
      for the **greenfield** host: it builds `native-greenfield-host` into the same
      `build-tsan/` / `build-asan/` and runs the audio-thread native tests with the

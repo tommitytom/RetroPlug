@@ -16,14 +16,17 @@ Built on:
 
 ## Status
 
-Early reboot. The SameBoy MVP boots ROMs, audio plays at the host sample rate,
-the LVGL menu overlay opens on Esc, and the file picker loads ROMs.
+RetroPlug2 is mid-rewrite. The active build — "greenfield" — lives in
+`packages/native-greenfield/` (C++ host) and `packages/retroplug-greenfield/`
+(TypeScript + React/LVGL UI), on the principle *native owns bytes and cores; TS
+owns meaning*. It boots ROMs, plays multi-instance audio at the host sample
+rate, drives the menu/tile UI, and persists projects. An older **legacy** build
+still ships alongside it and is being removed as greenfield reaches parity.
 
-The original RetroPlug's deeper features — multi-instance routing, save-state
-slots, MIDI control, mGB role, LSDJ sync / Arduinoboy / kit patching, the LSDJ
-HD player — are tracked as ordered migration steps under [`porting/`](porting/).
-Step 1 is in; steps 2 and 3 are partly in (basic input + file picker work, full
-ROM-picker UI not yet); the rest are TODO.
+The architecture is documented in [`spec/`](spec/README.md). The remaining work
+to retire legacy and make greenfield the sole build — the feature gap, the
+delete/rename checklist, and the risks — is in
+[spec/07-migration.md](spec/07-migration.md).
 
 ## Building
 
@@ -162,7 +165,12 @@ checks remain the job of `retroplug-cli`.
 
 ```
 packages/
-  native/                            RetroPlug C++ core (consumes dpf.js via add_subdirectory)
+  native-greenfield/                 greenfield C++ host — the active build (Engine, BackendFacade,
+                                     SnapshotRegistry, DspRuntime; the DPF plugin + standalone). See spec/.
+  retroplug-greenfield/              greenfield TS layer + React/LVGL UI (stores, DSP kernel, roles)
+  native/, ui/, retroplug/, cli/     the legacy build — being removed (see spec/07-migration.md).
+                                     The detailed tree below describes this legacy side:
+  native/                            legacy C++ core (consumes dpf.js via add_subdirectory)
     src/
       PluginDSP.cpp                  DSP class; runs SameBoy at host sample rate
       PluginUI.cpp                   UI class; owns JS engine + bridge
@@ -188,17 +196,17 @@ test/
   ts/                                TypeScript harness tests (run via retroplug-cli --test)
   harness/                           the `emu` API glue shared by the TS tests
 examples/reaper/                     committed Reaper .rpp fixtures (DAW host tests)
-porting/                             ordered migration roadmap from old RetroPlug
+spec/                                architecture spec — the greenfield design + migration plan
 tools/                               build-ui.js, run-standalone.sh, standalone-key.sh, validate-plugins.sh
 deps/                                domain submodules: sameboy, catch2, efsw (config/ROM file watcher)
-../dpf.js/                           the generic framework (DPF, lv_binding_js→LVGL/txiki,
+deps/dpf.js/                         the generic framework submodule (DPF, lv_binding_js→LVGL/txiki,
                                      rpcpp, msgpack-c, dpf-widgets, lvgl-js-native, the
                                      lvgljs runtime); consumed via require.resolve + add_subdirectory
 ```
 
 For the React/TSX/QuickJS framework slice (everything that's not Game Boy or
-SameBoy specific), see [dpfjs.md](dpfjs.md). For the migration plan, see
-[porting/README.md](porting/README.md).
+SameBoy specific), see [dpfjs.md](dpfjs.md). For the greenfield architecture and
+the migration plan, see [spec/README.md](spec/README.md).
 
 ## Acknowledgements
 
