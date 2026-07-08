@@ -30,6 +30,15 @@ export function gbRomBattery(): Uint8Array {
   return b;
 }
 
+/** A GB battery ROM whose cartridge title (0x134) reads "LSDJ", so the ROM providers attach the
+ *  lsdj-sync role — and thus its load-time sav-seed hook. The mock ignores the cartridge header, so
+ *  the title at 0x134 is what the provider keys on. */
+export function lsdjRom(title = "LSDJ"): Uint8Array {
+  const b = gbRomBattery();
+  for (let i = 0; i < title.length && i < 0x10; i++) b[0x134 + i] = title.charCodeAt(i);
+  return b;
+}
+
 /** A buffer that classifies as a GBA ROM (Nintendo logo at 0x04). */
 export function gbaRom(): Uint8Array {
   const b = new Uint8Array(0x8000);

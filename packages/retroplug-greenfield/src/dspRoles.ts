@@ -3,8 +3,9 @@
 // legacy C++ roles; `midi-routing` is the project-scope behavior that fans host MIDI to systems,
 // reusing the existing routeBlock decision. Registered into a RoleRegistry like registerCoreRoles.
 
-import type { RoleRegistry } from "./systemRoles";
+import type { RoleRegistry, ConstructCaps } from "./systemRoles";
 import type { ProjectBehavior, SystemBehavior } from "./dspKernel";
+import type { ConstructSpec } from "./backend";
 import { z, clampedInt } from "./configSchema";
 import { routeBlock, MidiRouting } from "./midiRouting";
 
@@ -16,6 +17,16 @@ const mgb: SystemBehavior = (c) => c.midi.forEach((e) => e.data.forEach((b) => c
 // UI/user action, not part of the clock.)
 const lsdjSync: SystemBehavior = (c) => {
   if ((c.config.mode as number) === 1) c.eachTick(24, (_tick, off) => c.pushSerialIn(off, 0xf8));
+};
+
+// lsdj-sync load-time hook: a fresh LSDj cart with no SRAM runs a 12–15 s cartridge self-test on boot.
+// When nothing else will seed the battery (no savestate, no sram blob, no on-disk .sav for native to
+// load), hand it a valid empty sav — savFromJson stamps the jk/rb validity markers LSDj checks — so it
+// boots straight to the song screen. Additive: return the spec untouched when real save data is present.
+const lsdjSeedSav = (spec: ConstructSpec, caps: ConstructCaps): ConstructSpec => {
+  const willLoadData = !!spec.stateBytes || !!spec.sramBytes || (spec.savPath != null && caps.fileExists(spec.savPath));
+  if (willLoadData) return spec;
+  return { ...spec, sramBytes: caps.savFromJson("{}").slice().buffer };
 };
 
 // midi-routing (project scope): fan the block's GLOBAL midiIn into the per-system inboxes the kernel
@@ -34,6 +45,7 @@ export function registerDspRoles(registry: RoleRegistry): void {
     scope: "system",
     schema: z.object({ mode: clampedInt(0, 7, 1) }), // LsdjSyncMode: Off=0, MidiSync=1, … ArduinoboyMaster=7
     dsp: lsdjSync,
+    onConstruct: lsdjSeedSav,
   });
   registry.registerRole({
     kind: "midi-routing",
