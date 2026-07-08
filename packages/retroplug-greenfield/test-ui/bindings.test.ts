@@ -1,8 +1,9 @@
 // The keyboard bindings editor, end to end on the headless display. Reaches Settings → Keyboard Bindings
 // from the start menu (no system needed), then drives the capture flow the way a user would: Enter arms a
 // button row (label → "Press a key…"), the next key press rebinds it (write-through — the row relabels
-// from the re-resolved profile), and Backspace clears it. Keys ride the raw "key" bus via tapKey, exactly
-// as the real editor receives them.
+// from the re-resolved profile), and Backspace clears it. Then the profile prompt: New Profile... opens a
+// text overlay, typing + Enter creates & switches to it, a dup-name shows the red error, and Esc cancels
+// without closing the menu (the menuModal Esc guard). Keys ride the raw "key" bus via tapKey.
 
 import { test, expect, ui, Key } from "ui-harness";
 
@@ -55,6 +56,34 @@ test("Settings → Keyboard Bindings: arm, capture a key, and clear a binding", 
   ui.tapKey(KEY_BACKSPACE);
   ui.pump(10);
   expect(ui.findByText("A: -") != null).toBeTruthy();
+
+  // --- Profile management via the text prompt ---
+  // New Profile... opens the text overlay; type a name and confirm → created + made active.
+  expect(navTo("New Profile")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(6);
+  expect(ui.findByTextContaining("New profile name:") != null).toBeTruthy();
+  for (const ch of "wasd") ui.tapKey(ch.charCodeAt(0));
+  ui.pump(4);
+  expect(ui.findByTextContaining("wasd_") != null).toBeTruthy(); // typed value + caret
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+  expect(ui.findByTextContaining("New profile name:") == null).toBeTruthy(); // overlay closed
+  expect(ui.findByTextContaining("Profile: wasd") != null).toBeTruthy(); // created + active
+
+  // A duplicate name keeps the overlay open with a red error; Esc cancels without closing the menu.
+  expect(navTo("New Profile")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(6);
+  for (const ch of "default") ui.tapKey(ch.charCodeAt(0));
+  ui.pump(4);
+  ui.tapKey(Key.Enter);
+  ui.pump(6);
+  expect(ui.findByTextContaining("already exists") != null).toBeTruthy();
+  ui.tapKey(Key.Esc);
+  ui.pump(6);
+  expect(ui.findByTextContaining("New profile name:") == null).toBeTruthy(); // cancelled
+  expect(ui.findByTextContaining("Profile: wasd") != null).toBeTruthy(); // menu stayed open
 
   ui.snapshotPng("/tmp/greenfield-ui-bindings.png");
 });

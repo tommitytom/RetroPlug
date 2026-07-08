@@ -9,6 +9,7 @@ import type { ProjectSettings } from "../../../src/projectConfig";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES } from "../../../src/userConfig";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
+import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
 import type { SelectionOutcome } from "../../../src/fileSelection";
 import type { FileBrowserOpts } from "../../../src/backend";
@@ -169,33 +170,82 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
 // GB button display/edit order (mirrors the legacy bindings editor).
 const GB_BUTTONS = ["Right", "Left", "Up", "Down", "A", "B", "Select", "Start"];
 
-/** The keyboard bindings editor: one capture row per GB button (Enter arms, the next key rebinds,
- *  Backspace clears) plus a keyboard reset. Write-through — every edit re-saves the active keyboard
- *  profile and the live joypad rebinds via useGameInput. Gamepad + named-profile CRUD are deferred. */
+/** The keyboard bindings editor: a profile switcher, one capture row per GB button (Enter arms, the next
+ *  key rebinds, Backspace clears), a keyboard reset, and named-profile management (New / Rename / Delete).
+ *  Write-through / edit-active — every edit + profile switch re-resolves and the live joypad follows via
+ *  useGameInput. Gamepad bindings stay out (no gamepad I/O yet). */
 function bindingsChildren(ctx: MenuContext): MenuItem[] {
   const bindings = ctx.stores.bindings;
+  const userConfig = ctx.stores.userConfig;
   const activeName = ctx.userConfig.activeKeyboardBindings;
+  const gamepadName = ctx.userConfig.activeGamepadBindings;
+  const profiles = bindings.availableProfiles();
   const kb = ctx.bindings.keyboard; // resolved active keyboard map — recomputed each render
   const write = (edit: (m: BindingMap) => BindingMap) => {
     const map = bindings.loadProfile(activeName) ?? defaultBindingMap();
     bindings.saveProfile(activeName, edit(map));
   };
-  const items: MenuItem[] = GB_BUTTONS.map((btn) => ({
+
+  // Create a named copy of the current bindings and make it active. Errors surface in the prompt's red line.
+  const newProfile = (raw: string): string | null => {
+    const n = raw.trim();
+    if (!isValidProfileName(n)) return "Invalid name (A-Z, 0-9, _, -).";
+    if (profiles.includes(n)) return "Profile already exists.";
+    const cur = bindings.loadProfile(activeName) ?? defaultBindingMap();
+    if (!bindings.saveProfile(n, { ...cur, name: n })) return "Save failed.";
+    userConfig.setActiveKeyboardBindings(n);
+    return null;
+  };
+  const renameActive = (raw: string): string | null => {
+    const n = raw.trim();
+    if (n === activeName) return null; // no-op rename
+    if (!isValidProfileName(n)) return "Invalid name (A-Z, 0-9, _, -).";
+    if (profiles.includes(n)) return "Profile already exists.";
+    return bindings.renameProfile(activeName, n) ? null : "Rename failed."; // repoints the active ref
+  };
+  // Deletable = neither active channel's profile, so nothing shown is un-deletable.
+  const deletable = profiles.filter((p) => p !== activeName && p !== gamepadName);
+  const deleteChildren: MenuItem[] = deletable.length
+    ? deletable.map((p) => ({
+        id: `bind-del-${p}`,
+        label: p,
+        kind: "prompt" as const,
+        keepOpen: true,
+        prompt: {
+          title: `Delete profile "${p}"?`,
+          hint: "Enter to delete  |  Esc to cancel",
+          confirm: true,
+          onConfirm: () => {
+            bindings.deleteProfile(p);
+            return null;
+          },
+        },
+      }))
+    : [action("bind-del-none", "(no other profiles)", () => {})];
+
+  const captureRows: MenuItem[] = GB_BUTTONS.map((btn) => ({
     id: `bind-${btn}`,
     label: `${btn}: ${kb[btn]?.length ? kb[btn].join(", ") : "-"}`,
-    kind: "capture",
+    kind: "capture" as const,
     keepOpen: true,
     capture: {
       onCapture: (name: string) => write((m) => ({ ...m, keyboard: { ...m.keyboard, [btn]: [name] } })),
       onClear: () => write((m) => ({ ...m, keyboard: { ...m.keyboard, [btn]: [] } })),
     },
   }));
-  items.push(
-    sep("bind-sep"),
+
+  return [
+    cycler("bind-profile", "Profile", profiles, Math.max(0, profiles.indexOf(activeName)), (n) => userConfig.setActiveKeyboardBindings(profiles[n])),
+    sep("bind-sep-top"),
+    ...captureRows,
+    sep("bind-sep-reset"),
     // Keyboard channel only — preserve the profile's gamepad map.
     action("bind-reset", "Reset Keyboard to Defaults", () => write((m) => ({ ...m, keyboard: defaultBindingMap().keyboard }))),
-  );
-  return items;
+    sep("bind-sep-mgmt"),
+    { id: "bind-new", label: "New Profile...", kind: "prompt", keepOpen: true, prompt: { title: "New profile name:", filter: isValidProfileChar, onConfirm: newProfile } },
+    { id: "bind-rename", label: "Rename...", kind: "prompt", keepOpen: true, prompt: { title: `Rename "${activeName}" to:`, initial: activeName, filter: isValidProfileChar, onConfirm: renameActive } },
+    submenu("bind-delete", "Delete Profile", deleteChildren),
+  ];
 }
 
 function settingsChildren(ctx: MenuContext): MenuItem[] {

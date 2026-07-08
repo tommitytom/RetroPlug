@@ -58,7 +58,12 @@ export function composeAppStores({ backend = createRealBackend(), notify = () =>
   const recent = new RecentStore(backend, () => notify("recent"));
   recent.load();
 
-  const userConfig = new UserConfigStore(backend, () => notify("userConfig"));
+  // Also re-fire "bindings": resolvedBindings() is derived from userConfig's active-profile pointers, so
+  // switching the active profile (or any config change) invalidates the resolved bindings snapshot too.
+  const userConfig = new UserConfigStore(backend, () => {
+    notify("userConfig");
+    notify("bindings");
+  });
   userConfig.load();
 
   const bindings = new BindingsStore(backend, userConfig, () => notify("bindings"));

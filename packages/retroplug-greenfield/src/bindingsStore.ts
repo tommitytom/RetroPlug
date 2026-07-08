@@ -26,6 +26,11 @@ export function isValidProfileName(name: string): boolean {
   return /^[A-Za-z0-9_-]+$/.test(name);
 }
 
+/** A single character allowed in a profile name — the per-keystroke filter for the rename/new prompts. */
+export function isValidProfileChar(ch: string): boolean {
+  return /^[A-Za-z0-9_-]$/.test(ch);
+}
+
 export class BindingsStore {
   constructor(
     private readonly backend: Backend,

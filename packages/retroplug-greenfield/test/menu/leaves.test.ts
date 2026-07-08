@@ -276,3 +276,80 @@ test("Keyboard Bindings: 8 capture rows + reset; capture rebinds write-through, 
   expect(stores.bindings.resolvedBindings().keyboard.A).toEqual(defaultBindingMap().keyboard.A);
   expect(stores.bindings.loadProfile(active)!.gamepad).toEqual(defaultBindingMap().gamepad);
 });
+
+const promptOf = (stores: AppStores, id: string) => findItem(keyboardBindings(stores), id)!.prompt!;
+
+test("New Profile: creates a named copy of the active bindings and switches to it", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+
+  expect(promptOf(stores, "bind-new").onConfirm("wasd")).toBe(null);
+  expect(stores.bindings.availableProfiles()).toEqual(["default", "wasd"]);
+  expect(stores.userConfig.config().activeKeyboardBindings).toBe("wasd"); // made active
+  expect(stores.bindings.loadProfile("wasd")!.keyboard).toEqual(defaultBindingMap().keyboard); // copied current
+});
+
+test("New Profile: rejects invalid + duplicate names, changing nothing", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+
+  expect(promptOf(stores, "bind-new").onConfirm("bad name")).toBe("Invalid name (A-Z, 0-9, _, -).");
+  expect(promptOf(stores, "bind-new").onConfirm("default")).toBe("Profile already exists.");
+  expect(stores.bindings.availableProfiles()).toEqual(["default"]);
+  expect(stores.userConfig.config().activeKeyboardBindings).toBe("default");
+});
+
+test("Rename: renames the active profile, repoints the active ref, rejects a dup", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  promptOf(stores, "bind-new").onConfirm("wasd"); // active = wasd
+
+  expect(promptOf(stores, "bind-rename").onConfirm("wasd2")).toBe(null);
+  expect(stores.bindings.availableProfiles()).toEqual(["default", "wasd2"]);
+  expect(stores.userConfig.config().activeKeyboardBindings).toBe("wasd2");
+  expect(promptOf(stores, "bind-rename").onConfirm("default")).toBe("Profile already exists.");
+});
+
+test("Delete Profile: lists only non-active profiles and removes on confirm", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  promptOf(stores, "bind-new").onConfirm("wasd"); // active = wasd
+  promptOf(stores, "bind-new").onConfirm("arrows"); // active = arrows (gamepad still default)
+
+  const delRows = submenuChildren(keyboardBindings(stores), "bind-delete");
+  expect(delRows.map((r) => r.id)).toEqual(["bind-del-wasd"]); // active keyboard (arrows) + gamepad (default) excluded
+
+  expect(delRows[0].prompt!.confirm).toBeTruthy(); // yes/no dialog
+  expect(delRows[0].prompt!.onConfirm("")).toBe(null);
+  expect(stores.bindings.availableProfiles()).toEqual(["arrows", "default"]);
+});
+
+test("Delete Profile: '(no other profiles)' when every profile is active", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const delRows = submenuChildren(keyboardBindings(stores), "bind-delete");
+  expect(delRows.length).toBe(1);
+  expect(delRows[0].id).toBe("bind-del-none");
+});
+
+test("Profile cycler: switches the active profile; resolved bindings follow", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  promptOf(stores, "bind-new").onConfirm("wasd"); // active = wasd, at profiles index 1
+  keyboardBindings(stores).find((r) => r.id === "bind-A")!.capture!.onCapture("Q"); // wasd.A = Q
+
+  findItem(keyboardBindings(stores), "bind-profile")!.onCycle!(-1); // wasd -> default
+  expect(stores.userConfig.config().activeKeyboardBindings).toBe("default");
+  expect(stores.bindings.resolvedBindings().keyboard.A).toEqual(defaultBindingMap().keyboard.A); // re-resolved
+});
+
+test("appStores: a userConfig change also invalidates the bindings channel", () => {
+  const be = new MockBackend("/cfg");
+  const fired: string[] = [];
+  const stores = composeAppStores({ backend: be, notify: (c) => fired.push(c) });
+  stores.bindings.saveProfile("wasd", { ...defaultBindingMap(), name: "wasd" });
+  fired.length = 0;
+  stores.userConfig.setActiveKeyboardBindings("wasd");
+  expect(fired.includes("userConfig")).toBeTruthy();
+  expect(fired.includes("bindings")).toBeTruthy(); // resolved bindings depend on the active pointer
+});
