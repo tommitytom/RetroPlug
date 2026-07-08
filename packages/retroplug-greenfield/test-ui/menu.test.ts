@@ -62,8 +62,16 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   ui.pump(15);
   expect(ui.findByTextContaining("Save State") != null).toBeTruthy();
 
-  // Expand a submenu (Settings) — its children appear inline.
+  // Scroll-follow (the reported bug): with System expanded the menu overflows the window, so a lower row
+  // like Settings sits below the fold. Navigating to it must scroll the container to keep it visible —
+  // before the fix, keyboard nav moved focus but never scrolled, leaving the selection off-screen.
   expect(navTo("Settings")).toBeTruthy();
+  ui.pump(10);
+  const win = ui.snapshot();
+  const settingsRow = ui.findByTextContaining("Settings")!;
+  expect(settingsRow.y >= 0 && settingsRow.y < win.height).toBeTruthy();
+
+  // Expand Settings — its children appear inline.
   ui.tapKey(Key.Enter);
   ui.pump(10);
   expect(ui.findByTextContaining("Default Zoom") != null).toBeTruthy();

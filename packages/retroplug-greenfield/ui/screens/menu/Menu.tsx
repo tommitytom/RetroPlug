@@ -15,7 +15,7 @@
 // Arrow Up/Down move a ref-tracked cursor and call the group's focus(); Left/Right cycle a "cycler"
 // item's value. Esc is NOT handled here — the menu controller owns open/close.
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Text, ELvKey } from "lvgljs-ui";
 
 import { useFocusGroup } from "../../lvgl/useFocusGroup";
@@ -71,6 +71,9 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // The authoritative focus cursor (a ref, not React state — the highlight is LVGL-native). Moved only by
   // explicit nav / click / rebuild.
   const focusedIdRef = useRef<string>("");
+  // The inner scrollable container + a cached row height, for the keyboard scroll-follow effect below.
+  const innerViewRef = useRef<{ scrollToY?: (y: number, animate: boolean) => void } | null>(null);
+  const itemHeightRef = useRef<number>(0);
 
   // Flatten depth-first, descending only into open submenus.
   const flat: FlatEntry[] = [];
@@ -145,13 +148,41 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       focusedIdRef.current = nextId;
       setFocusedId(nextId);
       const nextRef = refsByIdRef.current.get(nextId);
-      if (nextRef) {
-        focus(nextRef);
-        (nextRef as { scrollIntoView?: () => void }).scrollIntoView?.(); // keep it visible on overflow
-      }
+      if (nextRef) focus(nextRef); // move keypad focus; the scroll-follow effect keeps the row on-screen
     },
     [focus],
   );
+
+  // Keyboard scroll-follow: keep the focused row near the viewport midpoint so an expanded submenu that
+  // overflows the window still tracks the cursor. Container-level scrollToY with explicit midpoint math
+  // (clamped at the ends) — the child's scrollIntoView didn't follow the cursor. useLayoutEffect so the
+  // scroll lands before paint (no blip when a submenu toggle remounts the inner container). Ported from the
+  // legacy Menu; driven by focusedId (arrow nav + click), visibleKey (expand/collapse), height + zoom.
+  useLayoutEffect(() => {
+    const view = innerViewRef.current;
+    const entries = flatRef.current;
+    if (!view?.scrollToY || entries.length === 0) return;
+
+    // Measure a real row once (font + padding are constant): the first focusable row — separators are thinner.
+    const firstItem = entries.find((f) => f.item.kind !== "separator");
+    const firstRef = firstItem
+      ? (refsByIdRef.current.get(firstItem.item.id) as { getBoundingClientRect?: () => { height: number } } | undefined)
+      : undefined;
+    const measured = firstRef?.getBoundingClientRect?.().height;
+    if (measured && measured > 0) itemHeightRef.current = measured;
+    const itemH = itemHeightRef.current;
+    if (itemH <= 0) return;
+
+    const focusedFlatIdx = entries.findIndex((f) => f.item.id === focusedId);
+    if (focusedFlatIdx < 0) return;
+
+    const viewportH = height - titleRegionH; // matches the inner container's height
+    const visibleRows = Math.max(1, Math.floor(viewportH / itemH));
+    const midpoint = Math.floor((visibleRows - 1) / 2);
+    const maxScroll = Math.max(0, entries.length * itemH - viewportH);
+    const target = Math.min(Math.max(0, (focusedFlatIdx - midpoint) * itemH), maxScroll);
+    view.scrollToY(target, false); // LV_ANIM_OFF so rapid Down-holds don't lag the cursor
+  }, [focusedId, visibleKey, height, zoom]);
 
   return (
     <Box
@@ -174,6 +205,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           appendChild in JSX order (lv_binding_js's insertChildBefore just appends). */}
       <Box
         key={visibleKey}
+        innerRef={innerViewRef}
         style={{
           width: "100%",
           height: height - titleRegionH,
