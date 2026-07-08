@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <system_error>
 
+#include "Version.hpp"
 #include "util/MinizZip.hpp"
 
 #include "lsdj/SavSerialization.hpp"
@@ -142,6 +143,10 @@ std::string HostRpcService::canonicalize(std::string path) {
 
 std::string HostRpcService::configDir() {
     return resolveConfigDir().string();
+}
+
+std::string HostRpcService::version() {
+    return RETROPLUG_GF_VERSION_STRING;
 }
 
 rfl::Bytestring HostRpcService::zip(std::vector<BackendZipInput> entries) {

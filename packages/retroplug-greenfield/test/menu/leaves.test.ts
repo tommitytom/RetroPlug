@@ -86,6 +86,39 @@ test("a recent entry's Rename prompt renames the project (edits the file + recen
   expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song");
 });
 
+test("menu titles: start shows the version; instance adds project + ROM (deduped when equal)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+
+  expect(buildStartMenu({ ...ctxOf(stores), version: "0.6.2" }).title).toBe("RetroPlug v0.6.2");
+  expect(buildStartMenu({ ...ctxOf(stores), version: "" }).title).toBe("RetroPlug"); // no version → fallback
+
+  // A ROM-adopted project: its name is the ROM stem, so the ROM isn't repeated.
+  be.seed("/roms/zelda.gb", gbRom());
+  stores.project.systems.loadRom("/roms/zelda.gb");
+  stores.project.adoptRomProject("/roms/zelda.gb");
+  const sys = stores.project.systems.view()[0];
+  expect(buildInstanceMenu({ ...ctxOf(stores), version: "0.6.2", system: sys }).title).toBe("RetroPlug v0.6.2 - zelda");
+});
+
+test("instance title shows a distinct project + ROM, and 'mGB' for the embedded synth", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+
+  // A paired sav names the project distinctly from the ROM → both segments show.
+  be.seed("/roms/zelda.gb", gbRom());
+  stores.project.systems.loadRom("/roms/zelda.gb", { explicitSav: "/saves/song.sav" });
+  stores.project.adoptRomProject("/roms/zelda.gb");
+  const sys = stores.project.systems.view()[0];
+  expect(buildInstanceMenu({ ...ctxOf(stores), version: "0.6.2", system: sys }).title).toBe("RetroPlug v0.6.2 - song - zelda");
+
+  // The embedded mGB synth (no ROM path, no project name) → just "mGB".
+  stores.project.newProject();
+  stores.project.systems.loadMgb();
+  const mgb = stores.project.systems.view()[0];
+  expect(buildInstanceMenu({ ...ctxOf(stores), version: "0.6.2", system: mgb }).title).toBe("RetroPlug v0.6.2 - mGB");
+});
+
 test("start menu Load... browses the ROM-or-sav dialog and loads the picked ROM", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

@@ -9,6 +9,10 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
 
+  // The start-menu title carries the app version (proves the C++ Version.hpp → version() RPC → UI path,
+  // since the harness runs against the real backend).
+  expect(ui.findByTextContaining("RetroPlug v") != null).toBeTruthy();
+
   // Empty project → the start menu; its first item ("Load...") is focused on mount.
   const first = ui.focused();
   expect(first != null && first.text.includes("Load...")).toBeTruthy();
@@ -38,6 +42,11 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   // The file-browser lifecycle items render alongside it.
   expect(ui.findByTextContaining("Load ROM") != null).toBeTruthy();
   expect(ui.findByTextContaining("Add Instance") != null).toBeTruthy();
+
+  // The instance-menu title is "RetroPlug v<version> - <rom>"; for the embedded synth the ROM is "mGB"
+  // and (no project name) it isn't duplicated. Match the shape, not the literal version.
+  const title = ui.findByTextContaining("mGB");
+  expect(title != null && /^RetroPlug v.+ - mGB$/.test(title.text)).toBeTruthy();
 
   // Cycle a top-level value with Right (Link Group: Off → 1).
   expect(navTo("Link Group")).toBeTruthy();

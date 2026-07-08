@@ -212,6 +212,10 @@ export class MockBackend implements Backend {
     return this.dir;
   }
 
+  version(): string {
+    return "0.0.0"; // placeholder; UI tests that assert a title set ctx.version explicitly
+  }
+
   // --- Emulator lifecycle -------------------------------------------------
 
   constructSystem(spec: ConstructSpec, id: number): boolean {

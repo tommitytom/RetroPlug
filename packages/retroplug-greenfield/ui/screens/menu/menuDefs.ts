@@ -12,6 +12,7 @@ import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
+import { stem } from "../../../src/pathUtil";
 import type { SelectionOutcome } from "../../../src/fileSelection";
 import { openPath } from "../../lvgl/openPath";
 import type { FileBrowserOpts } from "../../../src/backend";
@@ -127,13 +128,13 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   // store reads/writes the resolved path (the registry read is safe while playing; load reconstructs the
   // core in place). Reset reboots carrying the battery; New SRAM reboots with a blank battery — both
   // pathless, reconstructing in place (no live GB_reset/clearSram).
-  const stem = sys.romPath ? sys.romPath.replace(/^.*[\\/]/, "").replace(/\.[^.]*$/, "") : "";
+  const romStem = stem(sys.romPath);
   items.push(sep("sys-sep-state"));
   if (sys.romPath)
     items.push(action("sys-quicksavestate", "Save State", () => systems.saveState(sys.id, siblingPath(sys.romPath, sys.savSuffix, ".ss0"))));
   items.push(
     action("sys-savestate", "Save State As...", () =>
-      browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${stem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
+      browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${romStem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
     ),
     action("sys-loadstate", "Load State...", () =>
       browseThen(ctx, { title: "Load State", patterns: STATE_PATTERNS }, (p) => void systems.loadState(sys.id, p)),
@@ -143,7 +144,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     items.push(action("sys-quicksavesram", "Save SRAM", () => systems.saveSram(sys.id, resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath))));
   items.push(
     action("sys-savesram", "Save SRAM As...", () =>
-      browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${stem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
+      browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${romStem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
     ),
     action("sys-loadsram", "Load SRAM...", () =>
       browseThen(ctx, { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
@@ -307,11 +308,26 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
 }
 
 // --- top-level builders -------------------------------------------------------------------------------
+
+/** The instance-menu title: "RetroPlug v<version> - <project> - <rom>". ROM name = the file stem, or
+ *  "mGB" for the embedded synth (romPath === ""). Empty segments are dropped, and the ROM is omitted when
+ *  it equals the project name (the common case where the name was seeded from the ROM) so it isn't shown
+ *  twice. */
+function instanceTitle(ctx: MenuContext, sys: SystemView): string {
+  const base = ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug";
+  const project = ctx.stores.project.name();
+  const rom = sys.embedded ? "mGB" : stem(sys.romPath);
+  const segs = [base];
+  if (project) segs.push(project);
+  if (rom && rom !== project) segs.push(rom);
+  return segs.join(" - ");
+}
+
 export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const sys = ctx.system!;
   const systems = ctx.stores.project.systems;
   return {
-    title: ctx.version ? `RetroPlug v${ctx.version} - #${sys.id}` : `RetroPlug - #${sys.id}`,
+    title: instanceTitle(ctx, sys),
     items: [
       action("inst-load", "Load ROM", () => runSelection(ctx, ctx.stores.fileSelection.browse("load"))),
       submenu("inst-recent", "Recent", recentChildren(ctx)),

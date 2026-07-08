@@ -21,6 +21,7 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::canonicalize>();
     server.template addMethod<&BackendFacade::readFilePrefix>();
     server.template addMethod<&BackendFacade::configDir>();
+    server.template addMethod<&BackendFacade::version>();
     // codec
     server.template addMethod<&BackendFacade::zip>();
     server.template addMethod<&BackendFacade::unzip>();

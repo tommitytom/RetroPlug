@@ -18,6 +18,7 @@
 #include "PluginGreenfieldShared.hpp"     // GreenfieldSharedDSP handoff to the editor
 
 #include "BackendFacade.hpp"
+#include "Version.hpp"                    // single source of truth for the plugin version
 #include "BackendRpcRegistration.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
@@ -58,7 +59,7 @@ protected:
     const char* getDescription() const          override { return "Greenfield multi-system retro emulator host"; }
     const char* getMaker()       const noexcept override { return "tommitytom"; }
     const char* getLicense()     const noexcept override { return "MIT"; }
-    uint32_t    getVersion()     const noexcept override { return d_version(0, 1, 0); }
+    uint32_t    getVersion()     const noexcept override { return d_version(RETROPLUG_GF_VERSION_MAJOR, RETROPLUG_GF_VERSION_MINOR, RETROPLUG_GF_VERSION_MICRO); }
     int64_t     getUniqueId()    const noexcept override { return d_cconst('R', 'P', 'g', 'f'); }
 
     // --- audio ports: name the 8 outputs as four stereo pairs (out_1..4) + tag each with a port

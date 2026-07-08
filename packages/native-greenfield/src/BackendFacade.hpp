@@ -39,6 +39,7 @@ public:
     std::string canonicalize(std::string path) { return host_.canonicalize(std::move(path)); }
     std::optional<rfl::Bytestring> readFilePrefix(std::string path, std::uint32_t length) { return host_.readFilePrefix(std::move(path), length); }
     std::string configDir() { return host_.configDir(); }
+    std::string version() { return host_.version(); }
     rfl::Bytestring zip(std::vector<BackendZipInput> entries) { return host_.zip(std::move(entries)); }
     std::vector<BackendZipEntry> unzip(rfl::Bytestring bytes) { return host_.unzip(std::move(bytes)); }
     rfl::Bytestring savFromJson(std::string json) { return host_.savFromJson(std::move(json)); }

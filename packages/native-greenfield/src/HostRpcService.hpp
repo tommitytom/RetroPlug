@@ -28,6 +28,7 @@ public:
     std::string canonicalize(std::string path);
     std::optional<rfl::Bytestring> readFilePrefix(std::string path, std::uint32_t length);
     std::string configDir();
+    std::string version();  // the app version string (Version.hpp) — surfaced to the UI menu title
 
     // --- codec (miniz) ---
     rfl::Bytestring zip(std::vector<BackendZipInput> entries);

@@ -6,7 +6,7 @@
 // open. When the grid shows without a menu, the keypad is pointed at the sink group so arrow keys don't
 // leak into the clickable tiles.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { setKeyboardGroup } from "lvgljs";
 
 import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent, useBindings } from "./stores/useStores";
@@ -39,6 +39,7 @@ export function App() {
   const windowSize = useWindowSize();
   const closeGuard = useCloseGuard(stores);
   const modals = useProjectModals(stores);
+  const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title
 
   const [menuOpen, setMenuOpen] = useState(true);
   const [menuSystemId, setMenuSystemId] = useState<number | null>(null);
@@ -87,7 +88,7 @@ export function App() {
   // start menu) and no instance menu is open — otherwise arrows/Enter belong to menu navigation.
   useGameInput({ active: !empty && !menuOpen && !closeGuard.active && !modals.active, focusedId: stores.project.systems.focused() });
 
-  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version: "", newProject: modals.newProject, loadProject: modals.loadProject };
+  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject };
 
   // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
   // the keypad. Save & Quit / Discard & Quit / Cancel — the guard drives the native quit + dismissal.

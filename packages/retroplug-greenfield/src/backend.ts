@@ -72,6 +72,10 @@ export interface Backend {
    *  RETROPLUG_USER_CONFIG_DIR override honoured. */
   configDir(): string;
 
+  /** The app version string (e.g. "0.6.2"), single-sourced from the native Version.hpp — shown in the
+   *  menu title chrome. */
+  version(): string;
+
   // --- Emulator lifecycle -------------------------------------------------
   //
   // The narrow native service: build / clone / reload / drop an emulator. It takes

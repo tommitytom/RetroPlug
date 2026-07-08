@@ -100,6 +100,7 @@ export function createRealBackend(): Backend {
     canonicalize: (path) => call("canonicalize", path) as string,
     readFilePrefix: (path, length) => bytesOrNull(call("readFilePrefix", path, length)),
     configDir: () => call("configDir") as string,
+    version: () => call("version") as string,
     zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries)), // {name, bytes: Uint8Array} matches BackendZipInput
     unzip: (bytes) => (call("unzip", bytes) as ZipEntry[] | null) ?? null,
     savFromJson: (json) => call("savFromJson", json) as Uint8Array, // Bytestring result → Uint8Array
