@@ -443,6 +443,23 @@ test("Profile cycler: switches the active profile; resolved bindings follow", ()
   expect(stores.bindings.resolvedBindings().keyboard.A).toEqual(defaultBindingMap().keyboard.A); // re-resolved
 });
 
+test("Settings -> Open Settings Folder reveals the config dir via the native seam", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  let opened: string | null = null;
+  (globalThis as { __rp_openPath?: (p: string) => void }).__rp_openPath = (p) => {
+    opened = p;
+  };
+
+  const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+  const item = findItem(settings, "set-open-folder")!;
+  expect(item.kind).toBe("action");
+  item.onSelect!();
+  expect(opened).toBe("/cfg"); // backend.configDir()
+
+  delete (globalThis as { __rp_openPath?: unknown }).__rp_openPath;
+});
+
 test("appStores: a userConfig change also invalidates the bindings channel", () => {
   const be = new MockBackend("/cfg");
   const fired: string[] = [];

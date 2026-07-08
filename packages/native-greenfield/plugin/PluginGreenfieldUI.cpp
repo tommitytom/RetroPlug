@@ -145,6 +145,22 @@ public:
         getWindow().getApp().quit();
     }
 
+    // Reveal `path` in the OS file manager (the Settings -> Open Settings Folder item). Fire-and-forget
+    // via the __rp_openPath seam; a per-OS shell handler backgrounded so it never blocks the UI, mirroring
+    // legacy PluginRpcService::openSettingsFolder.
+    void openPath(const char* path) {
+        if (!path || !*path) return;
+        const std::string p(path);
+#if defined(__APPLE__)
+        const std::string cmd = "open \"" + p + "\" &";
+#elif defined(_WIN32)
+        const std::string cmd = "start \"\" \"" + p + "\"";
+#else
+        const std::string cmd = "xdg-open \"" + p + "\" &";
+#endif
+        (void)std::system(cmd.c_str());
+    }
+
     PluginGreenfieldUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT), fResizeHandle(this) {
         // Resizable window (DISTRHO_UI_USER_RESIZABLE): seed the requested-size baseline so onResize's
         // clamp detection is armed before the WM's first resize, set the min-size floor (HiDPI-scaled),
@@ -372,6 +388,16 @@ JSValue jsQuitWindow(JSContext*, JSValueConst, int, JSValueConst*) {
     return JS_UNDEFINED;
 }
 
+// __rp_openPath(path): reveal a folder/file in the OS file manager (Settings -> Open Settings Folder).
+JSValue jsOpenPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (g_windowUi && argc >= 1) {
+        const char* path = JS_ToCString(ctx, argv[0]);
+        g_windowUi->openPath(path ? path : "");
+        if (path) JS_FreeCString(ctx, path);
+    }
+    return JS_UNDEFINED;
+}
+
 // __rp_openFileBrowser(title, patterns, saving, defaultName): open the native OS dialog. patterns is a
 // whitespace-separated glob list. The result comes back later via the UI's uiFileBrowserSelected override.
 JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -398,6 +424,7 @@ void installWindowSizeHooks(JSContext* ctx, PluginGreenfieldUI* ui) {
                       JS_NewCFunction(ctx, jsIsWindowSizeControlled, "__rp_isWindowSizeControlled", 0));
     JS_SetPropertyStr(ctx, g, "__rp_openFileBrowser", JS_NewCFunction(ctx, jsOpenFileBrowser, "__rp_openFileBrowser", 4));
     JS_SetPropertyStr(ctx, g, "__rp_quitWindow", JS_NewCFunction(ctx, jsQuitWindow, "__rp_quitWindow", 0));
+    JS_SetPropertyStr(ctx, g, "__rp_openPath", JS_NewCFunction(ctx, jsOpenPath, "__rp_openPath", 1));
     JS_FreeValue(ctx, g);
 }
 

@@ -13,6 +13,7 @@ import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsSto
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
 import type { SelectionOutcome } from "../../../src/fileSelection";
+import { openPath } from "../../lvgl/openPath";
 import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
 
@@ -268,7 +269,8 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     cycler("set-sram", "SRAM Auto-Save", SRAM_AUTO_SAVES.map((m) => SRAM_AUTO_SAVE_LABELS[m] ?? m), sramIdx, (n) => userConfig.setSramAutoSave(SRAM_AUTO_SAVES[n])),
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
     submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx)),
-    // Deferred: Gamepad Bindings (needs live gamepad I/O), Open Settings Folder.
+    action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
+    // Deferred: Gamepad Bindings (needs live gamepad I/O).
   ];
 }
 
