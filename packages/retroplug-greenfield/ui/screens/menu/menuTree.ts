@@ -1,12 +1,23 @@
 // The menu data model — pure data, no LVGL/React. Simplified from the legacy menuDefs types
-// (packages/ui/src/menu/menuDefs.tsx). A "capture" kind (re-added for the keyboard bindings editor) arms
-// on Enter and binds the next key; legacy's `prompt` kind stays deferred with named-profile CRUD.
+// (packages/ui/src/menu/menuDefs.tsx). "capture" arms on Enter and binds the next key (key rebinding);
+// "prompt" arms on Enter and opens an inline text-input / yes-no overlay (profile names, delete confirm).
 //
 // A leaf carries its own effect as a callback (no dispatch indirection). "cycler" items display their
 // current value baked into the label and step it: Enter/onSelect goes forward, Left/Right → onCycle(±1);
 // they set keepOpen so the menu stays put while stepping. Submenus nest inline via `children`.
 
-export type MenuItemKind = "action" | "submenu" | "separator" | "cycler" | "capture";
+export type MenuItemKind = "action" | "submenu" | "separator" | "cycler" | "capture" | "prompt";
+
+/** A text-input (or yes/no) overlay armed by a "prompt" row. onConfirm returns an error string to keep
+ *  the overlay open (shown red), or null to close it — the single success/failure channel. */
+export interface PromptSpec {
+  title: string;
+  initial?: string; // seeds the field (e.g. Rename pre-fills the current name)
+  hint?: string; // status-line default; a built-in is used when omitted
+  confirm?: boolean; // yes/no dialog — no text field
+  filter?: (ch: string) => boolean; // per-keystroke character filter (e.g. profile-name chars)
+  onConfirm: (value: string) => string | null;
+}
 
 export interface MenuItem {
   id: string;
@@ -18,6 +29,7 @@ export interface MenuItem {
   keepOpen?: boolean; // stay open after onSelect (cyclers)
   // present iff kind === "capture" — Enter arms the row, the next key press binds (Backspace clears).
   capture?: { onCapture: (keyName: string) => void; onClear: () => void };
+  prompt?: PromptSpec; // present iff kind === "prompt"
 }
 
 export interface MenuTree {

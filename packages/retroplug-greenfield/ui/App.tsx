@@ -19,6 +19,7 @@ import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "./screens/menu/menuDefs";
+import { isMenuModalActive } from "./screens/menu/menuModal";
 
 const KEY_ESCAPE = 0x1b;
 const MIN_ZOOM = 1;
@@ -63,6 +64,7 @@ export function App() {
     const key = args[0] as number;
     const press = args[1] as boolean;
     if (!press || key !== KEY_ESCAPE || empty) return; // start menu is always open
+    if (isMenuModalActive()) return; // a capture/prompt owns Esc — cancel it, don't close the menu
     if (menuOpen) {
       setMenuOpen(false);
       setMenuSystemId(null);

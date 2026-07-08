@@ -15,16 +15,24 @@
 // Arrow Up/Down move a ref-tracked cursor and call the group's focus(); Left/Right cycle a "cycler"
 // item's value. Esc is NOT handled here — the menu controller owns open/close.
 
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Text, ELvKey } from "lvgljs-ui";
 
 import { useFocusGroup } from "../../lvgl/useFocusGroup";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
 import { Box } from "../../lvgl/Box";
 import { dpfCodeToKeyName, KEY_ESCAPE, KEY_BACKSPACE, KEY_ENTER } from "../../../src/keyCodes";
-import type { MenuItem, MenuTree } from "./menuTree";
+import { setMenuModalActive } from "./menuModal";
+import type { MenuItem, MenuTree, PromptSpec } from "./menuTree";
 
 const CAPTURE_COLOR = "#ffb74d"; // orange, matching the legacy capture-armed row
+
+/** The live prompt overlay: its spec, the typed value, and any error string (shown red). */
+interface PromptState {
+  spec: PromptSpec;
+  value: string;
+  error: string;
+}
 
 // lvgljs-ui's Text type doesn't expose ref / onKey / onFocusedStyle; cast to reach them.
 const TextAny = Text as any;
@@ -76,6 +84,21 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     capturingIdRef.current = id;
     setCapturingId(id);
   }, []);
+  // The live text/confirm prompt overlay, or null. The ref mirrors it so the once-mounted key handler
+  // reads the latest; the state drives the render.
+  const [promptState, setPromptState] = useState<PromptState | null>(null);
+  const promptStateRef = useRef<PromptState | null>(null);
+  const setPrompt = useCallback((next: PromptState | null) => {
+    promptStateRef.current = next;
+    setPromptState(next);
+  }, []);
+
+  // Signal App's Esc handler while a capture/prompt modal is armed, so Esc cancels the modal instead of
+  // closing the menu. Flipped from an effect (post-render) so it stays set through the synchronous Esc.
+  useEffect(() => {
+    setMenuModalActive(!!capturingId || promptState != null);
+    return () => setMenuModalActive(false);
+  }, [capturingId, promptState]);
 
   // id → LVGL Text ref, and the current flat (visible) list. Refs are keyed by stable id (not index) so
   // separators can sit in the list without breaking alignment.
@@ -124,9 +147,9 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     (item: MenuItem) => {
       focusedIdRef.current = item.id; // so the rebuild keeps this row focused
       setFocusedId(item.id);
-      // Capture rows arm from the key bus (below), not here — an Enter/click here would race the captured
-      // Enter, so LVGL's CLICKED on a capture row is a no-op.
-      if (item.kind === "capture") return;
+      // Capture / prompt rows arm from the key bus (below), not here — an Enter/click here would race the
+      // captured/confirming Enter, so LVGL's CLICKED on those rows is a no-op.
+      if (item.kind === "capture" || item.kind === "prompt") return;
       if (item.kind === "submenu") {
         setOpenItems((prev) => {
           const next = new Set(prev);
@@ -142,10 +165,19 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     [onClose],
   );
 
+  // Run the open prompt's onConfirm: a returned error string keeps it open (shown red); null closes it.
+  const confirmPrompt = useCallback(() => {
+    const ps = promptStateRef.current;
+    if (!ps) return;
+    const err = ps.spec.onConfirm(ps.value);
+    if (err) setPrompt({ ...ps, error: err });
+    else setPrompt(null);
+  }, [setPrompt]);
+
   const onItemKey = useCallback(
     (e: { key: number }) => {
       (e as { stopPropagation?: () => void }).stopPropagation?.(); // else bubbles to the scroll View
-      if (capturingIdRef.current) return; // freeze nav while a capture row is armed — the key binds instead
+      if (capturingIdRef.current || promptStateRef.current) return; // freeze nav while a modal is armed
       const entries = flatRef.current;
       const cur = entries.findIndex((f) => f.item.id === focusedIdRef.current);
       if (cur < 0) return;
@@ -169,17 +201,32 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     [focus],
   );
 
-  // Key capture for "capture" rows (the bindings editor). Letter keys reach the UI only on the raw "key"
-  // bus, not through LVGL's focus-group nav — so arm / bind / clear live here. Enter on a focused capture
-  // row arms it; the next press binds (Backspace/arrows/Enter included), Escape cancels. A not-armed
-  // Backspace on a capture row clears it. Esc also reaches App's handler (which closes the menu), so during
-  // capture Esc both cancels and closes — an accepted, minor divergence from legacy (which only disarmed).
+  // Modal key input for "capture" and "prompt" rows. Letter keys reach the UI only on the raw "key" bus,
+  // not through LVGL's focus-group nav — so arm / type / bind live here. Esc cancels the armed modal;
+  // App's Esc handler defers while one is active (menuModal), so the menu stays open.
   useNativeEvent("key", (...args) => {
     const code = args[0] as number;
     const press = args[1] as boolean;
     if (!press) return;
     const itemById = (id: string): MenuItem | undefined => flatRef.current.find((f) => f.item.id === id)?.item;
 
+    // 1. An open prompt owns all input.
+    const prompt = promptStateRef.current;
+    if (prompt) {
+      if (code === KEY_ESCAPE) return setPrompt(null); // cancel — no callback
+      if (code === KEY_ENTER) return confirmPrompt();
+      if (prompt.spec.confirm) return; // yes/no dialog: only Enter/Esc
+      if (code === KEY_BACKSPACE) return setPrompt({ ...prompt, value: prompt.value.slice(0, -1), error: "" });
+      if (code >= 0x20 && code <= 0x7e) {
+        const ch = String.fromCharCode(code);
+        if (!prompt.spec.filter || prompt.spec.filter(ch)) {
+          setPrompt({ ...prompt, value: (prompt.value + ch).slice(0, 48), error: "" });
+        }
+      }
+      return;
+    }
+
+    // 2. An armed capture row consumes the next key.
     const armed = capturingIdRef.current;
     if (armed) {
       setCapturing("");
@@ -190,10 +237,15 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       return;
     }
 
+    // 3. Idle: Enter arms the focused capture/prompt row; Backspace clears a focused capture row.
     const focused = itemById(focusedIdRef.current);
-    if (!focused || focused.kind !== "capture") return;
-    if (code === KEY_ENTER) setCapturing(focused.id); // arm
-    else if (code === KEY_BACKSPACE) focused.capture?.onClear(); // clear
+    if (!focused) return;
+    if (focused.kind === "capture") {
+      if (code === KEY_ENTER) setCapturing(focused.id);
+      else if (code === KEY_BACKSPACE) focused.capture?.onClear();
+    } else if (focused.kind === "prompt" && code === KEY_ENTER && focused.prompt) {
+      setPrompt({ spec: focused.prompt, value: focused.prompt.initial ?? "", error: "" });
+    }
   });
 
   // Keyboard scroll-follow: keep the focused row near the viewport midpoint so an expanded submenu that
@@ -304,6 +356,61 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           );
         })}
       </Box>
+      {promptState &&
+        (() => {
+          const sp = promptState.spec;
+          const promptW = Math.max(r(120), width - r(32));
+          const promptX = Math.max(0, Math.floor((width - promptW) / 2));
+          const promptY = titleRegionH + r(8);
+          const fontSize = r(14);
+          const rowH = r(22);
+          const hint =
+            sp.hint ??
+            (sp.confirm ? "Enter to confirm  |  Esc to cancel" : "Enter to confirm  |  Esc to cancel  |  Backspace to erase");
+          return (
+            <Box
+              style={{
+                position: "absolute",
+                left: promptX,
+                top: promptY,
+                width: promptW,
+                "background-color": "#000000",
+                "border-width": 1,
+                "border-color": "#4fc3f7",
+                display: "flex",
+                "flex-direction": "column",
+                "row-spacing": r(4),
+                "padding-left": r(8),
+                "padding-right": r(8),
+                "padding-top": r(6),
+                "padding-bottom": r(6),
+              }}
+            >
+              <Text style={{ "text-color": "#4fc3f7", "font-size": fontSize, width: "100%", height: rowH }}>{sp.title}</Text>
+              {!sp.confirm && (
+                <Text
+                  style={{
+                    "text-color": "#ffffff",
+                    "background-color": "#333333",
+                    "background-opacity": 255,
+                    "font-size": fontSize,
+                    width: "100%",
+                    height: rowH,
+                    "padding-left": r(4),
+                    "padding-right": r(4),
+                    "padding-top": r(2),
+                    "padding-bottom": r(2),
+                  }}
+                >
+                  {promptState.value + "_"}
+                </Text>
+              )}
+              <Text style={{ "text-color": promptState.error ? "#ef5350" : "#888888", "font-size": fontSize, width: "100%", height: rowH }}>
+                {promptState.error || hint}
+              </Text>
+            </Box>
+          );
+        })()}
     </Box>
   );
 }
