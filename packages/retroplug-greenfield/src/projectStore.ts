@@ -7,7 +7,7 @@
 // Two on-disk shapes, one config model:
 //   - THIN `.rplg` (save) = raw JSON, paths only. save = build config → writeFile;
 //     load = readFile → parse → toAbsolute → scan/relink → adopt each system from disk.
-//   - EXPORT `.rplg` (PKZIP) = the same thin project.json PLUS the emulator's live blobs
+//   - EXPORT `.rplg.zip` (PKZIP) = the same thin project.json PLUS the emulator's live blobs
 //     (per-system SRAM/savestate). export gathers the blobs via the pump (backend.read*)
 //     and frames the archive; native only compresses (backend.zip). A picked PK archive
 //     loads back through the same scan/relink tail, its blobs seeding each system.

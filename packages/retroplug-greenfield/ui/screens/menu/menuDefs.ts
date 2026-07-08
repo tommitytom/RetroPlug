@@ -35,8 +35,9 @@ const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSav
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
 
 // Glob filters for the file dialogs (realBackend space-joins them for DPF).
-const PROJECT_PATTERNS = ["*.rplg"];
-const ZIP_PATTERNS = ["*.zip"];
+const PROJECT_PATTERNS = ["*.rplg"]; // thin project (raw JSON) — the Save target
+const ZIP_PATTERNS = ["*.rplg.zip"]; // exported project (PKZIP) — always `.rplg.zip`
+const LOAD_PATTERNS = ["*.rplg", "*.rplg.zip"]; // load/locate accept either on-disk shape
 const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
 const SRAM_PATTERNS = ["*.sav"];
 
@@ -145,12 +146,12 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
       browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) => project.save(p)),
     ));
     items.push(action("proj-export", "Export Zip...", () =>
-      browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.zip" }, (p) => project.export(p)),
+      browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.rplg.zip" }, (p) => project.export(p)),
     ));
   }
   // Load is always available (even from an empty start menu).
   items.push(action("proj-load", "Load Project...", () =>
-    browseThen(ctx, { title: "Load Project", patterns: PROJECT_PATTERNS }, (p) => void project.load(p)),
+    browseThen(ctx, { title: "Load Project", patterns: LOAD_PATTERNS }, (p) => void project.load(p)),
   ));
   items.push(sep("proj-sep0"));
   items.push(
@@ -179,7 +180,7 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
     submenu(`recent-${i}`, entry.label, [
       action(`recent-${i}-load`, entry.missing ? "Load (missing)" : "Load", () => ctx.stores.project.load(entry.path)),
       action(`recent-${i}-locate`, "Locate on Disk", () =>
-        browseThen(ctx, { title: "Locate Project", patterns: PROJECT_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p)),
+        browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p)),
       ),
       action(`recent-${i}-remove`, "Remove from List", () => ctx.stores.recent.remove(entry.path)),
       // Deferred: Rename (needs a text prompt).

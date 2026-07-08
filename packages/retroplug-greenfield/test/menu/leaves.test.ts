@@ -108,16 +108,18 @@ test("project Save Project As... writes the project to the picked path via a sav
   expect(be.fileExists("/out/proj.rplg")).toBeTruthy();
 });
 
-test("project Export Zip... writes the archive to the picked path", async () => {
+test("project Export Zip... writes a .rplg.zip archive to the picked path", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const proj = projectSubmenuWithSystem(be, stores);
-  be.queueBrowse("/out/proj.zip");
+  be.queueBrowse("/out/proj.rplg.zip");
 
   findItem(proj, "proj-export")!.onSelect!();
   await flush();
 
-  expect(be.fileExists("/out/proj.zip")).toBeTruthy();
+  const last = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
+  expect(last.patterns.includes("*.rplg.zip")).toBeTruthy(); // zip projects are always .rplg.zip
+  expect(be.fileExists("/out/proj.rplg.zip")).toBeTruthy();
 });
 
 test("project Load Project... opens a read (non-saving) .rplg dialog", async () => {
