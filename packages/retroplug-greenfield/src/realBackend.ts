@@ -74,6 +74,7 @@ export function createRealBackend(): Backend {
     configDir: () => call("configDir") as string,
     zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries.map((e) => ({ name: e.name, bytes: ints(e.bytes) })))),
     unzip: (bytes) => (call("unzip", ints(bytes)) as ZipEntry[] | null) ?? null,
+    savFromJson: (json) => call("savFromJson", json) as Uint8Array, // Bytestring result → Uint8Array
 
     // --- emulator lifecycle / reads ---------------------------------------
     constructSystem: (spec: ConstructSpec, id: number) => call("constructSystem", specParams(spec, id)) as boolean,

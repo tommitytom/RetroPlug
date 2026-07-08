@@ -161,6 +161,14 @@ export interface Backend {
 
   /** Inflate a PKZIP archive back to its entries, or `null` when it isn't a valid zip. */
   unzip(bytes: Uint8Array): ZipEntry[] | null;
+
+  // --- LSDj sav codec -----------------------------------------------------
+
+  /** Encode an LSDj `.sav` image from a JSON `rp::lsdj::model::Sav` (lenient — unset cells default).
+   *  The bytes-only half of the LSDj model that TS can't reproduce: native runs the version-aware
+   *  codec. `savFromJson("{}")` yields a valid, self-test-skipping 128 KiB image (the codec always
+   *  stamps the `jk` + `rb` validity markers), which is how a load-time role seeds a fresh LSDj ROM. */
+  savFromJson(json: string): Uint8Array;
 }
 
 /** One named blob in a zip archive (an `.rplg` entry: `project.json` or a

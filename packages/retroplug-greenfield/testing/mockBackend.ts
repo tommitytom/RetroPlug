@@ -292,6 +292,14 @@ export class MockBackend implements Backend {
     return out;
   }
 
+  savFromJson(_json: string): Uint8Array {
+    this.log.push("savFromJson");
+    // No LSDj codec in the mock — return a deterministic non-empty stand-in so the store records a
+    // seed. The real 128 KiB `jk`/`rb`-stamped image is proven against the native backend; here only
+    // "seeded vs not" matters. The leading `jk` mirrors the real SRAM-init magic for readability.
+    return Uint8Array.of(0x6a, 0x6b);
+  }
+
   removeSystem(id: number): boolean {
     this.log.push("removeSystem");
     return this.systems.delete(id);
