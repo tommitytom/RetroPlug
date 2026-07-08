@@ -56,11 +56,14 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   ui.pump(6);
   expect(ui.findByTextContaining("Link Group: 1") != null).toBeTruthy();
 
-  // Expand System — the per-instance Save/Load State + SRAM items appear inline.
+  // Expand System — the per-instance Save/Load State + SRAM items appear inline, plus the pathless
+  // New SRAM (blank battery) + Reset (reboot) reconstruct actions.
   expect(navTo("System")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(15);
   expect(ui.findByTextContaining("Save State") != null).toBeTruthy();
+  expect(ui.findByTextContaining("New SRAM") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Reset") != null).toBeTruthy();
 
   // Scroll-follow (the reported bug): with System expanded the menu overflows the window, so a lower row
   // like Settings sits below the fold. Navigating to it must scroll the container to keep it visible —

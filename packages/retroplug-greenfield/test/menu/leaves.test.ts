@@ -210,3 +210,31 @@ test("system Load SRAM... cold-boots the system with the picked file's SRAM", as
   expect(call.replaceId).toBe(id);
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(999));
 });
+
+test("system New SRAM cold-boots with a blank battery, no dialog", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+
+  findItem(items, "sys-newsram")!.onSelect!();
+
+  expect(be.fileBrowserCalls.length).toBe(0); // pathless — no browser opens
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(id); // in-place replace
+  const seed = new Uint8Array(call.sramBytes!);
+  expect(seed.length).toBe(0x20000); // native truncates/zero-pads to the cart's real battery size
+  expect(seed.every((b) => b === 0)).toBeTruthy(); // blank battery
+});
+
+test("system Reset reboots carrying the live battery, no dialog", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+
+  findItem(items, "sys-reset")!.onSelect!();
+
+  expect(be.fileBrowserCalls.length).toBe(0); // pathless — no browser opens
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(id); // in-place replace
+  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(id)); // the live battery carried forward
+});

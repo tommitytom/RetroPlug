@@ -1,7 +1,7 @@
-// The browser-free menu trees, ported from legacy menuDefs.tsx. Every leaf drives a greenfield store
-// method; current values are baked into labels and recomputed each render (there's no separate "checked"
-// state — the label IS the display). Actions gated on the deferred backend (file browsers, Reset, explicit
-// Save/Load SRAM+state, bindings) are omitted here, noted where their submenu would list them.
+// The menu trees, ported from legacy menuDefs.tsx. Every leaf drives a greenfield store method; current
+// values are baked into labels and recomputed each render (there's no separate "checked" state — the
+// label IS the display). Actions still gated on a deferred backend surface (the bindings editor) are
+// omitted here, noted where their submenu would list them.
 
 import type { AppStores } from "../../../src/appStores";
 import type { SystemView } from "../../../src/systemsStore";
@@ -109,7 +109,8 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     );
   }
   // Save/Load State + SRAM: browse for a path, then the store reads/writes it (the registry read is safe
-  // while playing; load reconstructs the core in place). Reset / New SRAM stay deferred.
+  // while playing; load reconstructs the core in place). Reset reboots carrying the battery; New SRAM
+  // reboots with a blank battery — both pathless, reconstructing in place (no live GB_reset/clearSram).
   const stem = sys.romPath ? sys.romPath.replace(/^.*[\\/]/, "").replace(/\.[^.]*$/, "") : "";
   items.push(
     sep("sys-sep-state"),
@@ -125,6 +126,9 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     action("sys-loadsram", "Load SRAM...", () =>
       browseThen(ctx, { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
     ),
+    action("sys-newsram", "New SRAM", () => void systems.newSram(sys.id)),
+    sep("sys-sep-reset"),
+    action("sys-reset", "Reset", () => void systems.reset(sys.id)),
   );
   return items;
 }
