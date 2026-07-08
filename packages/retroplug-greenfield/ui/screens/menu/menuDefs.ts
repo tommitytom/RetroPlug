@@ -9,6 +9,7 @@ import type { ProjectSettings } from "../../../src/projectConfig";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES } from "../../../src/userConfig";
 import type { RecentView } from "../../../src/recentStore";
+import type { SelectionOutcome } from "../../../src/fileSelection";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -53,6 +54,15 @@ function sep(id: string): MenuItem {
 function cycler(id: string, prefix: string, names: string[], current: number, apply: (next: number) => void): MenuItem {
   const step = (dir: 1 | -1) => apply(cycleInt(current, 0, names.length - 1, dir));
   return { id, label: `${prefix}: ${names[current] ?? "?"}`, kind: "cycler", keepOpen: true, onSelect: () => step(1), onCycle: step };
+}
+
+/** Fire a FileSelection browse and apply its outcome once every dialog settles: the store mutates itself
+ *  on load / add, and a `deferred` sibling `<rom>.rplg` is handed to the Project domain. Selection is
+ *  fire-and-forget from a menu leaf — the store's change notification re-renders when it lands. */
+function runSelection(ctx: MenuContext, p: Promise<SelectionOutcome>): void {
+  void p.then((outcome) => {
+    if (outcome.kind === "deferred") ctx.stores.project.load(outcome.project);
+  });
 }
 
 /** The SameBoy core-role config for a system (model / highpass / linkGroupId / fastBoot), with defaults. */
@@ -135,6 +145,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
     items: [
       action("inst-dup", "Duplicate Instance", () => systems.duplicateSystem(sys.id)),
       action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
+      action("inst-load", "Load ROM", () => runSelection(ctx, ctx.stores.fileSelection.browse("load"))),
+      action("inst-add", "Add Instance", () => runSelection(ctx, ctx.stores.fileSelection.browse("add"))),
       sep("inst-sep0"),
       cycler("inst-link", "Link Group", LINK_GROUP_NAMES, sameboyConfig(sys).linkGroupId, (n) =>
         systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
@@ -143,7 +155,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
-      // Deferred: Load ROM / Add Instance (browser), About panel, LSDj Mode (feature role, no live apply).
+      // Deferred: About panel, LSDj Mode (feature role, no live apply).
     ],
   };
 }
@@ -153,11 +165,12 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
     title: ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug",
     items: [
       action("start-mgb", "Load mGB (GB MIDI Synth)", () => ctx.stores.project.systems.loadMgb()),
+      action("start-load", "Load...", () => runSelection(ctx, ctx.stores.fileSelection.browse("load"))),
       submenu("start-recent", "Recent", recentChildren(ctx)),
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),
-      // Deferred: Load... (ROM browser), About panel.
+      // Deferred: About panel.
     ],
   };
 }

@@ -24,6 +24,7 @@ import { RecentStore } from "./recentStore";
 import { UserConfigStore } from "./userConfigStore";
 import { BindingsStore } from "./bindingsStore";
 import { ProjectStore } from "./projectStore";
+import { FileSelection } from "./fileSelection";
 
 /** The categories of store change a consumer can observe. `project` = project settings / dirty;
  *  `systems` = the systems-structure list; the rest name their store. */
@@ -37,6 +38,8 @@ export interface AppStores {
   userConfig: UserConfigStore;
   bindings: BindingsStore;
   project: ProjectStore;
+  /** Turns a user's file pick (ROM / .sav) into the right systems op — the menu's Load / Add items. */
+  fileSelection: FileSelection;
 }
 
 export interface ComposeOptions {
@@ -67,5 +70,7 @@ export function composeAppStores({ backend = createRealBackend(), notify = () =>
   // Focus is transient: re-render the tiles on the systems channel, but bypass dirty + the DSP re-project.
   project.systems.setOnFocusChange(() => notify("systems"));
 
-  return { backend, registry, recent, userConfig, bindings, project };
+  const fileSelection = new FileSelection(backend, project.systems);
+
+  return { backend, registry, recent, userConfig, bindings, project, fileSelection };
 }
