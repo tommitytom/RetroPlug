@@ -30,12 +30,6 @@ import type { RoleRegistry, RoleInstance } from "./systemRoles";
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
 
-// A registry blob as an exact-size ArrayBuffer for ConstructSpec (readState/readSram may hand back a
-// view into a larger buffer; slice() copies to a fresh, tightly-sized backing store).
-function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
-  return u8.slice().buffer;
-}
-
 // TS owns the system-id counter (native never allocates). Module-scoped so it's ONE id space per
 // control-plane JS context — which is 1:1 with the native Project in every host (a plugin instance has
 // its own JS context + Project; a native test file shares one host + Project across its cases). Ids are
@@ -188,7 +182,7 @@ export class SystemsStore {
       embeddedRom: src.embeddedRom,
       savPath,
       statePath: null,
-      stateBytes: toArrayBuffer(state),
+      stateBytes: state,
       settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
     }, newId);
     if (!ok) {
@@ -236,7 +230,7 @@ export class SystemsStore {
       embeddedRom: src.embeddedRom,
       savPath: src.embeddedRom ? null : resolveSavPath(src.romPath, src.savSuffix, src.savPath),
       statePath: null,
-      sramBytes: sram ? toArrayBuffer(sram) : undefined,
+      sramBytes: sram ?? undefined,
       replaceId: id,
       settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
     }, newId);
@@ -324,7 +318,7 @@ export class SystemsStore {
       settings?: Partial<CommonSettings>;
       roles?: RoleInstance[];
     },
-    blobs?: { sramBytes?: ArrayBuffer; stateBytes?: ArrayBuffer },
+    blobs?: { sramBytes?: Uint8Array; stateBytes?: Uint8Array },
   ): number | null {
     const embeddedRom = config.embeddedRom ?? "";
     const romPath = config.romPath ?? "";

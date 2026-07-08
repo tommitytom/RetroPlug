@@ -36,25 +36,24 @@ export function createRealBackend(): Backend {
     return reply.result;
   };
 
-  // A null RPC result (an absent std::optional) maps to null for the nullable byte reads.
+  // A null RPC result (an absent std::optional) maps to null for the nullable byte reads. Binary
+  // crosses as a Uint8Array in both directions (the qjs codec decodes a typed byte param straight
+  // into rfl::Bytestring), so no number[] marshaling is needed either way.
   const bytesOrNull = (v: unknown): Uint8Array | null => (v == null ? null : (v as Uint8Array));
-  // Binary INPUT crosses as a plain number[] — reflect-cpp's reader rejects a typed array
-  // (its byte fields are std::vector<std::uint8_t>). Outputs come back as Uint8Array.
-  const ints = (b: Uint8Array): number[] => Array.from(b);
 
   const notImpl = (name: string): never => {
     throw new Error(`realBackend.${name} is not implemented (async — deferred)`);
   };
 
-  // ConstructSpec → RPC params: omit null path fields (so native reads nullopt, not "") and
-  // send seed bytes as number[] only when present.
+  // ConstructSpec → RPC params: omit null path fields (so native reads nullopt, not "") and pass the
+  // seed bytes as a Uint8Array only when present.
   const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> => {
     const p: Record<string, unknown> = { id, romPath: spec.romPath, platform: spec.platform, core: spec.core, embeddedRom: spec.embeddedRom };
     if (spec.savPath != null) p.savPath = spec.savPath;
     if (spec.statePath != null) p.statePath = spec.statePath;
     if (spec.replaceId !== undefined) p.replaceId = spec.replaceId;
-    if (spec.sramBytes) p.sramBytes = ints(new Uint8Array(spec.sramBytes));
-    if (spec.stateBytes) p.stateBytes = ints(new Uint8Array(spec.stateBytes));
+    if (spec.sramBytes) p.sramBytes = spec.sramBytes;
+    if (spec.stateBytes) p.stateBytes = spec.stateBytes;
     if (spec.settings != null) p.settings = spec.settings;
     return p;
   };

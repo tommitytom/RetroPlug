@@ -56,7 +56,7 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
     embeddedRom: "",
     savPath: null,
     statePath: null,
-    sramBytes: sav.slice().buffer,
+    sramBytes: sav,
     // Cores construct bare (no C++ roles) — the TS lsdj-sync kernel role is the sole clock.
   }, id)).toBeTruthy();
 

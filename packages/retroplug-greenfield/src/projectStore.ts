@@ -45,11 +45,6 @@ const dec = new TextDecoder();
 // Inclusive upper bounds for the settings enums (native validates + rejects above).
 const SETTING_MAX = { layout: 3, midiRouting: 3, audioRouting: 2, zoom: 6 };
 
-// A restored blob as an exact-size ArrayBuffer for ConstructSpec (a zip entry may be a
-// view into a larger buffer; slice() copies to a fresh, tightly-sized backing store).
-function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
-  return u8.slice().buffer;
-}
 
 export class ProjectStore {
   readonly systems: SystemsStore;
@@ -258,10 +253,7 @@ export class ProjectStore {
     cfg.systems.forEach((s, i) => {
       const sram = blobs.get(sramKey(i));
       const state = blobs.get(stateKey(i));
-      const sysBlobs =
-        sram || state
-          ? { sramBytes: sram ? toArrayBuffer(sram) : undefined, stateBytes: state ? toArrayBuffer(state) : undefined }
-          : undefined;
+      const sysBlobs = sram || state ? { sramBytes: sram, stateBytes: state } : undefined;
       this.systems.adopt(s, sysBlobs);
     });
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };

@@ -26,7 +26,7 @@ const lsdjSync: SystemBehavior = (c) => {
 const lsdjSeedSav = (spec: ConstructSpec, caps: ConstructCaps): ConstructSpec => {
   const willLoadData = !!spec.stateBytes || !!spec.sramBytes || (spec.savPath != null && caps.fileExists(spec.savPath));
   if (willLoadData) return spec;
-  return { ...spec, sramBytes: caps.savFromJson("{}").slice().buffer };
+  return { ...spec, sramBytes: caps.savFromJson("{}") };
 };
 
 // midi-routing (project scope): fan the block's GLOBAL midiIn into the per-system inboxes the kernel

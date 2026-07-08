@@ -63,7 +63,7 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
     embeddedRom: "",
     savPath: null,
     statePath: null,
-    sramBytes: sav.slice().buffer, // fresh ArrayBuffer at offset 0
+    sramBytes: sav, // a Uint8Array — rides the bridge as-is (rfl::Bytestring)
   }, id)).toBeTruthy();
 
   // Load the real role kernel; per-block drive is the kernel from here on.

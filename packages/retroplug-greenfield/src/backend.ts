@@ -216,13 +216,13 @@ export interface ConstructSpec {
   /** When set, swap this existing SystemId in place (load / replace); otherwise the
    *  new system is appended. */
   replaceId?: number;
-  /** Zip-import only: the initial SRAM bytes for a system restored from an export whose
-   *  save lives in the archive (no on-disk path). When set, native seeds from these
-   *  instead of reading `savPath`; `savPath` remains the auto-save target. */
-  sramBytes?: ArrayBuffer;
-  /** Zip-import only: the savestate bytes to boot from (from the archive). When set,
-   *  native boots from these instead of reading `statePath`. */
-  stateBytes?: ArrayBuffer;
+  /** Seed SRAM bytes (a zip-import blob, a reload's carried battery, or a load-time role's
+   *  synthesized sav). When set, native seeds from these instead of reading `savPath`; `savPath`
+   *  remains the auto-save target. Rides the RPC bridge as a Uint8Array (rfl::Bytestring). */
+  sramBytes?: Uint8Array;
+  /** Seed savestate bytes (a zip-import blob or a duplicate's captured state). When set, native
+   *  boots from these instead of reading `statePath`. Rides as a Uint8Array (rfl::Bytestring). */
+  stateBytes?: Uint8Array;
   /** The system's backend ("system"-role) config as JSON, so a loaded non-default setting
    *  (SameBoy model/highpass/…) is applied at CONSTRUCT rather than via a post-build restart
    *  that would nuke the just-restored savestate. Omitted for a fresh build (backend defaults

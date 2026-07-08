@@ -57,7 +57,7 @@ test("the store's lsdj-sync role is the sole clock that makes an armed LSDj sing
   // header, so the ROM provider attaches lsdj-sync (mode 1 default). `adopt` is quiet, so push the
   // initial structure explicitly; then install the hook so later setRoleConfig edits re-push.
   const sav = savFromJson(SYNC_MIDI_SONG);
-  const id = project.systems.adopt({ romPath: LSDJ }, { sramBytes: sav.slice().buffer })!;
+  const id = project.systems.adopt({ romPath: LSDJ }, { sramBytes: sav })!;
   expect(typeof id).toBe("number");
   expect(project.systems.view()[0].roles.map((r) => r.kind).includes("lsdj-sync")).toBeTruthy();
   syncDspFromStore(project, dsp);

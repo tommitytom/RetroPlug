@@ -35,7 +35,7 @@ struct BackendConstructSpec {
     std::optional<std::string>               savPath;
     std::optional<std::string>               statePath;
     std::optional<std::uint32_t>             replaceId;
-    std::optional<std::vector<std::uint8_t>> sramBytes;
-    std::optional<std::vector<std::uint8_t>> stateBytes;
+    std::optional<rfl::Bytestring> sramBytes;
+    std::optional<rfl::Bytestring> stateBytes;
     std::optional<std::string>               settings;  // backend "system"-role config JSON (construct-time)
 };

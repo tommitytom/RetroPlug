@@ -24,6 +24,13 @@ rfl::Bytestring toBytestring(const std::vector<std::uint8_t>& v) {
     return rfl::Bytestring(p, p + v.size());
 }
 
+// The inverse for a wire seed (rfl::Bytestring, i.e. a Uint8Array) copied into the build spec's
+// byte vector — std::byte isn't implicitly convertible to std::uint8_t, so reinterpret + copy.
+std::vector<std::uint8_t> toBytes(const rfl::Bytestring& b) {
+    const auto* p = reinterpret_cast<const std::uint8_t*>(b.data());
+    return std::vector<std::uint8_t>(p, p + b.size());
+}
+
 // Whole file into a byte vector (empty if unreadable). Used for a seed .sav/state + the reload ROM.
 std::vector<std::uint8_t> slurpAll(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
@@ -48,9 +55,9 @@ SystemBuildSpec toBuildSpec(const BackendConstructSpec& spec) {
     out.core = spec.core.value_or(defaultCoreFor(out.platform));
     out.romPath = spec.romPath;
     out.embeddedRom = spec.embeddedRom;
-    if (spec.sramBytes) out.sram = *spec.sramBytes;
+    if (spec.sramBytes) out.sram = toBytes(*spec.sramBytes);
     else if (spec.savPath) out.sram = slurpAll(*spec.savPath);
-    if (spec.stateBytes) out.savestate = *spec.stateBytes;
+    if (spec.stateBytes) out.savestate = toBytes(*spec.stateBytes);
     else if (spec.statePath) out.savestate = slurpAll(*spec.statePath);
     if (spec.settings) out.settings.assign(spec.settings->begin(), spec.settings->end());
     return out;
