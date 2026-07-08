@@ -26,6 +26,10 @@ import { setMenuModalActive } from "./menuModal";
 import type { MenuItem, MenuTree, PromptSpec } from "./menuTree";
 
 const CAPTURE_COLOR = "#ffb74d"; // orange, matching the legacy capture-armed row
+// Mouse-hover bar: a dimmer navy than the focus bar (#14243f), so the row under the pointer reads as
+// highlighted but subordinate to the keyboard-selected row. A pre-dimmed colour at full opacity (a
+// state-style's background-opacity isn't reliably applied). LVGL toggles it on LV_STATE_HOVERED.
+const ROW_HOVER_STYLE = { "background-color": "#0d1626", "background-opacity": 255 } as const;
 
 /** The live prompt overlay: its spec, the typed value, and any error string (shown red). */
 interface PromptState {
@@ -348,6 +352,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
                 "padding-left": basePadLeft + depth * indentStep,
                 "padding-right": r(4),
               }}
+              onHoveredStyle={ROW_HOVER_STYLE}
               onKey={onItemKey}
               onClick={() => activate(item)}
             >
