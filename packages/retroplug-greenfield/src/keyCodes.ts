@@ -94,3 +94,18 @@ export function buildKeyToButton(keyboard: Record<string, string[]>): Map<number
   }
   return map;
 }
+
+/** Invert a resolved gamepad binding map (GB-button-name → gamepad-button-name[]) into a
+ *  gamepad-button-name → button-value lookup. Unlike buildKeyToButton there is no code table: the
+ *  gamepad names ("dpright"/"a"/"start") ARE the raw names the "gamepad-button" bus delivers (SDL
+ *  canonical), so they map straight onto BUTTON_VALUE. Unknown button names are skipped; a later
+ *  binding for the same gamepad name wins. */
+export function buildGamepadToButton(gamepad: Record<string, string[]>): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const [buttonName, padNames] of Object.entries(gamepad)) {
+    const value = BUTTON_VALUE[buttonName];
+    if (value === undefined) continue;
+    for (const padName of padNames) map.set(padName, value);
+  }
+  return map;
+}

@@ -17,6 +17,7 @@ import { useWindowSize, requestWindowSize, isWindowSizeControlled, setWindowTitl
 import { useCloseGuard } from "./lvgl/useCloseGuard";
 import { useProjectModals } from "./lvgl/useProjectModals";
 import { useGameInput } from "./input/useGameInput";
+import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, SystemLayout } from "./screens/grid/layout";
@@ -94,6 +95,9 @@ export function App() {
   // Game input: route keyboard to the focused instance's joypad, but only when a tile is showing (not the
   // start menu) and no instance menu is open — otherwise arrows/Enter belong to menu navigation.
   useGameInput({ active: !empty && !menuOpen && !closeGuard.active && !modals.active, focusedId: stores.project.systems.focused() });
+  // Gamepad: same policy as keyboard (tiles-only, focused instance) — the native SDL poll feeds the
+  // "gamepad-button" bus useGamepadInput reads.
+  useGamepadInput({ active: !empty && !menuOpen && !closeGuard.active && !modals.active, focusedId: stores.project.systems.focused() });
 
   const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject };
 
