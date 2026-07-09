@@ -78,17 +78,18 @@ set_target_properties(retroplug-greenfield-cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# The example session, esbuild-bundled to a runnable .js (with the DSP kernel injected as
-# __DSP_KERNEL_BUNDLE__, mirroring the cp-bundle recipe). A normal build yields both the binary and a
-# demo the binary can run: build/bin/retroplug-greenfield-cli build/greenfield-cli/mgb-smoke.js.
-set(GFCLI_EXAMPLE_JS "${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js")
+# The example sessions, esbuild-bundled to runnable .js (with the DSP kernel injected as
+# __DSP_KERNEL_BUNDLE__, mirroring the cp-bundle recipe). A normal build yields both the binary and demos
+# the binary can run, e.g. build/bin/retroplug-greenfield-cli build/greenfield-cli/mgb-smoke.js.
+set(GFCLI_SESSIONS "${CMAKE_SOURCE_DIR}/packages/retroplug-greenfield/cli/sessions")
 add_custom_target(retroplug-greenfield-example-session ALL
-    BYPRODUCTS ${GFCLI_EXAMPLE_JS}
-    COMMAND ${NODE_EXECUTABLE}
-            ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
-            ${CMAKE_SOURCE_DIR}/packages/retroplug-greenfield/cli/sessions/mgb-smoke.ts
-            ${GFCLI_EXAMPLE_JS}
-    COMMENT "Bundling greenfield CLI example session (esbuild)"
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
+               ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+            ${GFCLI_SESSIONS}/mgb-smoke.ts  ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+            ${GFCLI_SESSIONS}/render-rom.ts ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
+    COMMENT "Bundling greenfield CLI example sessions (esbuild)"
     VERBATIM)
 
 # --- control-plane bundle: pluginControlPlane.ts → bytecode C array (mirrors ui-regenerate). The DPF
