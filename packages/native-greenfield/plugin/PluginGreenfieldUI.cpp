@@ -21,6 +21,7 @@
 #include "dpfjs/Env.hpp"                 // dpfjs::getenvWithPrefix
 
 #include "PluginGreenfieldShared.hpp"
+#include "GamepadManager.hpp" // SDL controller poll (packages/native/src, PUBLIC via retroplug-cli-core)
 
 #include <chrono>
 #include <cstdint>
@@ -85,6 +86,11 @@ class PluginGreenfieldUI : public UI {
     uint requestedH_ = 0;
     bool wmControlled_ = false;
 
+    // SDL game-controller poller (reused from the legacy build). Ticked from uiIdle() on the UI thread; it
+    // re-emits each transition onto the gamepad-* JS bus that useGamepadInput subscribes to. Inert
+    // (ok()==false, update() a no-op) when SDL_INIT_GAMECONTROLLER fails — e.g. headless CI with no device.
+    retroplug::GamepadManager gamepad_;
+
     void maybeWriteScreenshot() {
         if (screenshotPath_.empty()) return;
         const auto now = std::chrono::steady_clock::now();
@@ -108,6 +114,47 @@ class PluginGreenfieldUI : public UI {
         const unsigned err = lodepng_encode24_file(screenshotPath_.c_str(), rgb.data(), w, h);
         if (err) d_stderr("[greenfield-ui] screenshot lodepng error %u: %s", err, lodepng_error_text(err));
         lv_draw_buf_destroy(snap);
+    }
+
+    // Poll SDL controllers once per idle and re-emit each transition onto the JS event bus — the gamepad-*
+    // channels useGamepadInput subscribes to. Ported from legacy PluginUI::pumpGamepad; native stays dumb
+    // (raw SDL button-name strings), while the GB-button mapping / focus routing / bindings all live in TS.
+    void pumpGamepad(JSContext* ctx) {
+        gamepad_.update([this, ctx](const retroplug::GamepadEvent& ev) {
+            switch (ev.kind) {
+                case retroplug::GamepadEvent::Kind::Connected: {
+                    JSValue args[2] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.name ? ev.name : "")};
+                    jsEngine.emit("gamepad-connected", 2, args);
+                    JS_FreeValue(ctx, args[0]);
+                    JS_FreeValue(ctx, args[1]);
+                    break;
+                }
+                case retroplug::GamepadEvent::Kind::Disconnected: {
+                    JSValue args[1] = {JS_NewInt32(ctx, ev.pad)};
+                    jsEngine.emit("gamepad-disconnected", 1, args);
+                    JS_FreeValue(ctx, args[0]);
+                    break;
+                }
+                case retroplug::GamepadEvent::Kind::Button: {
+                    JSValue args[3] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.button ? ev.button : ""),
+                                       JS_NewBool(ctx, ev.pressed)};
+                    jsEngine.emit("gamepad-button", 3, args);
+                    JS_FreeValue(ctx, args[0]);
+                    JS_FreeValue(ctx, args[1]);
+                    JS_FreeValue(ctx, args[2]);
+                    break;
+                }
+                case retroplug::GamepadEvent::Kind::Axis: {
+                    JSValue args[3] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.axis ? ev.axis : ""),
+                                       JS_NewFloat64(ctx, ev.value)};
+                    jsEngine.emit("gamepad-axis", 3, args);
+                    JS_FreeValue(ctx, args[0]);
+                    JS_FreeValue(ctx, args[1]);
+                    JS_FreeValue(ctx, args[2]);
+                    break;
+                }
+            }
+        });
     }
 
 public:
@@ -296,7 +343,10 @@ protected:
             windowTitleSet_ = true;
             if (getWindow().getApp().isStandalone()) getWindow().setTitle("RetroPlug Greenfield");
         }
-        if (jsEngine.getContext()) jsEngine.emit("frame", 0, nullptr); // drives EmulatorTile's getFrame
+        if (JSContext* ctx = jsEngine.getContext()) {
+            jsEngine.emit("frame", 0, nullptr); // drives EmulatorTile's getFrame
+            pumpGamepad(ctx);                   // poll controllers → the gamepad-* JS bus
+        }
         jsEngine.tick();                                               // pump the shared host's JS loop
         maybeWriteScreenshot();
     }

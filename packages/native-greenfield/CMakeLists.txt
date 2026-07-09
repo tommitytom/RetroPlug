@@ -110,6 +110,7 @@ dpf_add_plugin(retroplug-greenfield
         ${GFCP_BUNDLE_C}                # the embedded control-plane bytecode (gfcp_cp_bundle)
     FILES_UI
         plugin/PluginGreenfieldUI.cpp
+        ${CMAKE_SOURCE_DIR}/packages/native/src/GamepadManager.cpp  # SDL gamepad poll (shared; re-homes on legacy delete)
         ${GFUI_BUNDLE_C}                # the embedded React UI bytecode (gfui_ui_bundle)
         ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)  # the generic DPF↔LVGL base widget
 

@@ -584,6 +584,13 @@ if(BUILD_CLI)
     # retroplug-cli-core (defined just above) for Project + SystemBase + the emulator, so it
     # lives inside this BUILD_CLI block.
     add_subdirectory(packages/native-greenfield native-greenfield)
+
+    # SDL2 gamepad input for greenfield: link onto its UI aggregator (mirrors the legacy line above), so
+    # every UI-bearing greenfield variant (clap/vst3/jack) gets the GamepadManager poll compiled into
+    # FILES_UI. DSP-only outputs never link UI sources and never see SDL.
+    if(TARGET retroplug-greenfield-ui)
+        target_link_libraries(retroplug-greenfield-ui PUBLIC PkgConfig::SDL2)
+    endif()
 endif()
 
 # --- cli-regenerate: typed TS client for the harness RPC surface ------------
