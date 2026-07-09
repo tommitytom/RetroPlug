@@ -50,8 +50,16 @@ export function bootSession(): Session {
   return { backend, registry, recent, project, dsp, audio };
 }
 
-// The host records the code and returns it after the job loop drains (see cli/main.cpp).
+// The host records the exit code through globalThis.tjs.exit (see cli/main.cpp).
 declare const tjs: { exit(code: number): void };
+
+/** The session's argument vector — everything after the session `.js` on the command line
+ *  (`retroplug-greenfield-cli <session.js> [args...]`). The CLI host hangs it off the
+ *  Symbol.for("plugin") namespace (tjs.args is a read-only txiki accessor). Empty when absent. */
+export function hostArgs(): string[] {
+  const ns = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as { args?: string[] } | undefined;
+  return ns?.args ?? [];
+}
 
 /** Boot a session, run `main` against it, and exit 0. Any throw is reported and exits 1. This is the
  *  entry every session file wraps its body in. */

@@ -88,6 +88,13 @@ int main(int argc, char** argv) try {
             if (!out) return JS_NULL;        // notification / no reply
             return out->materialize(sctx);   // owned; handed back to JS
         });
+        // .args — the session's argument vector (argv[2..]; argv[1] is the session .js). Read by
+        // cli/session.ts's hostArgs(). Hung off our own namespace object because txiki already defines
+        // tjs.args as a read-only accessor.
+        JSValue args = JS_NewArray(ctx);
+        for (int i = 2, j = 0; i < argc; ++i, ++j)
+            JS_SetPropertyUint32(ctx, args, static_cast<uint32_t>(j), JS_NewString(ctx, argv[i]));
+        JS_SetPropertyStr(ctx, ns, "args", args);
         JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
         JS_FreeAtom(ctx, atom);
         JS_FreeValue(ctx, sym);
