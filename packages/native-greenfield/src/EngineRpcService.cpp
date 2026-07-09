@@ -213,6 +213,14 @@ std::uint64_t EngineRpcService::stepInstruction(std::uint32_t id) {
     return sys->stepInstruction();  // 0 when the backend can't step
 }
 
+std::vector<rp::DebugEvent> EngineRpcService::drainEvents(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
+    if (!dbg) return {};
+    return dbg->drainEvents();  // events Mesen logged for the frame just rendered
+}
+
 bool EngineRpcService::loadLabels(std::uint32_t id, std::string path) {
     SystemBase* sys = engine_.findSystem(id);
     if (!sys) return false;

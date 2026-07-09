@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DisasmLine, FileBrowserOpts, FrameData, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, FileBrowserOpts, FrameData, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 
 const enc = new TextEncoder();
@@ -303,6 +303,14 @@ export class MockBackend implements Backend {
   stepInstruction(id: number): number {
     this.log.push("stepInstruction");
     return this.systems.has(id) ? 1 : 0;
+  }
+
+  drainEvents(id: number): DebugEvent[] {
+    this.log.push("drainEvents");
+    // No real core: hand back one deterministic Register-write event when the id is live, otherwise none.
+    return this.systems.has(id)
+      ? [{ type: 0, operationType: 1, address: 0x4000, value: 0x80, programCounter: 0x8000, scanline: 0, cycle: 0 }]
+      : [];
   }
 
   loadLabels(_id: number, _path: string): boolean {

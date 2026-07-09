@@ -46,6 +46,7 @@ public:
     rfl::Bytestring              readMemory(std::uint32_t id, std::uint32_t memType);
     std::vector<rp::CpuRegister> getCpuRegisters(std::uint32_t id);
     std::uint64_t                stepInstruction(std::uint32_t id);
+    std::vector<rp::DebugEvent>  drainEvents(std::uint32_t id);
 
     // --- execution trace + single-step (needs a Mesen NES debug target; empty/false on SameBoy/GBA) ---
     // setTrace toggles Mesen's per-instruction trace logger; readTrace returns up to `count` most-recent

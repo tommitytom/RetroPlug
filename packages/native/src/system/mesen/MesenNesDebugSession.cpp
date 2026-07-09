@@ -24,6 +24,8 @@
 #include "Core/NES/NesCpu.h"
 #include "Core/NES/NesTypes.h"
 #include "Core/NES/APU/NesApu.h"
+#include "Core/Debugger/BaseEventManager.h"
+#include "Core/NES/Debugger/NesEventManager.h"
 
 MesenNesDebugSession::MesenNesDebugSession(Emulator* emu) : emu_(emu) {}
 
@@ -326,6 +328,53 @@ std::vector<rp::TraceLine> MesenNesDebugSession::readTrace(std::uint32_t count) 
     for (std::uint32_t i = 0; i < n; ++i) {
         const TraceRow& r = rows[i];
         out.push_back({ r.ProgramCounter, std::string(r.LogOutput, r.LogSize) });
+    }
+    return out;
+}
+
+std::vector<rp::DebugEvent> MesenNesDebugSession::drainEvents() {
+    std::vector<rp::DebugEvent> out;
+    Debugger* dbg = ensureDebugger();
+    if (!dbg) return out;
+    BaseEventManager* em = dbg->GetEventManager(CpuType::Nes);
+    if (!em) return out;
+
+    // The event manager filters snapshots by a per-category Visible flag; a
+    // default config is all-invisible, so GetEvents would return nothing. Turn
+    // every category on (and include the previous frame) so a caller sees the
+    // full register-access log for the frame just rendered.
+    NesEventViewerConfig cfg = {};
+    const EventViewerCategoryCfg on{ true, 0 };
+    cfg.Irq = on;                   cfg.Nmi = on;                   cfg.MarkedBreakpoints = on;
+    cfg.MapperRegisterWrites = on;  cfg.MapperRegisterReads = on;
+    cfg.ApuRegisterWrites = on;     cfg.ApuRegisterReads = on;
+    cfg.ControlRegisterWrites = on; cfg.ControlRegisterReads = on;
+    cfg.Ppu2000Write = on;          cfg.Ppu2001Write = on;          cfg.Ppu2003Write = on;
+    cfg.Ppu2004Write = on;          cfg.Ppu2005Write = on;          cfg.Ppu2006Write = on;
+    cfg.Ppu2007Write = on;
+    cfg.Ppu2002Read = on;           cfg.Ppu2004Read = on;           cfg.Ppu2007Read = on;
+    cfg.DmcDmaReads = on;           cfg.OtherDmaReads = on;         cfg.SpriteZeroHit = on;
+    cfg.ShowPreviousFrameEvents = true;
+    cfg.ShowNtscBorders = false;
+    em->SetConfiguration(static_cast<BaseEventViewerConfig&>(cfg));
+
+    em->TakeEventSnapshot(false);
+    std::uint32_t count = em->GetEventCount();   // also filters into the sent buffer
+    if (count == 0) return out;
+    std::vector<DebugEventInfo> buf(count);
+    em->GetEvents(buf.data(), count);            // count clamped to what was written
+    out.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const DebugEventInfo& e = buf[i];
+        rp::DebugEvent r;
+        r.type           = static_cast<std::uint8_t>(e.Type);
+        r.operationType  = static_cast<std::uint8_t>(e.Operation.Type);
+        r.address        = e.Operation.Address;
+        r.value          = e.Operation.Value;
+        r.programCounter = e.ProgramCounter;
+        r.scanline       = e.Scanline;
+        r.cycle          = e.Cycle;
+        out.push_back(r);
     }
     return out;
 }

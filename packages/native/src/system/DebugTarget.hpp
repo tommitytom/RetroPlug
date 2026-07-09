@@ -140,6 +140,25 @@ struct ApuState {
     ApuDmcState      dmc;
 };
 
+// One Mesen event-viewer event (a register read/write, NMI, IRQ, DMA read,
+// etc.) captured for the most recent PPU frame. Mesen's event manager logs
+// these per frame and wipes them at each frame boundary, so drainEvents()
+// snapshots the current (in-progress) frame plus the previous one. `type` is
+// the DebugEventType ordinal (0=Register, 1=Nmi, 2=Irq, 3=Breakpoint,
+// 4=BgColorChange, 5=SpriteZeroHit, 6=DmcDmaRead, 7=DmaRead); `operationType`
+// is the MemoryOperationType ordinal (0=Read, 1=Write, ...). `address`/`value`
+// are the register access (value is -1 for a read with no captured value).
+// `scanline`/`cycle` are the PPU position the event fired at.
+struct DebugEvent {
+    std::uint8_t  type           = 0;
+    std::uint8_t  operationType  = 0;
+    std::uint32_t address        = 0;
+    std::int32_t  value          = 0;
+    std::uint32_t programCounter = 0;
+    std::int32_t  scanline       = 0;
+    std::uint16_t cycle          = 0;
+};
+
 // Optional per-system debugger / profiler, returned by
 // SystemBase::debugTarget() (nullptr when the backend has no debugger).
 // Implemented by the Mesen backends on top of Mesen's debugger; SameBoy has
@@ -198,6 +217,12 @@ public:
     virtual BreakInfo step() = 0;
     virtual BreakInfo stepOver() = 0;
     virtual BreakInfo stepOut() = 0;
+
+    // Drain the events Mesen's event viewer logged for the most recent frame
+    // (register reads/writes to APU/PPU/mapper regs, NMI/IRQ, DMA reads).
+    // Frame-scoped: cleared at each PPU frame boundary, so call after advancing
+    // the emulator. Default {} for backends without an event viewer.
+    virtual std::vector<DebugEvent> drainEvents() { return {}; }
 };
 
 } // namespace rp

@@ -43,6 +43,7 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::readMemory>();
     server.template addMethod<&BackendFacade::getCpuRegisters>();
     server.template addMethod<&BackendFacade::stepInstruction>();
+    server.template addMethod<&BackendFacade::drainEvents>();
     server.template addMethod<&BackendFacade::loadLabels>();
     // live-core debug writes / control-flow (spec/09-cli-debugging.md)
     server.template addMethod<&BackendFacade::setCpuRegister>();

@@ -182,6 +182,11 @@ export interface Backend {
   /** Single-step the core one instruction; returns the cycle count consumed (0 when unsupported). */
   stepInstruction(id: number): number;
 
+  /** Drain the register/DMA/NMI/IRQ events Mesen's event viewer logged for the frame just rendered
+   *  (write $4000-$4013 APU regs, $2000-$2007 PPU regs, etc). Frame-scoped — call after advancing the
+   *  core. Empty when the id is gone or the core has no NES event viewer (SameBoy/GBA). */
+  drainEvents(id: number): DebugEvent[];
+
   /** Load a cc65 `.dbg` symbol file (by path) so profiler/disassembly output shows function names.
    *  Returns false when the id is gone, the core has no NES debug target (SameBoy/GBA), or the file
    *  can't be read/parsed. */
@@ -347,6 +352,21 @@ export interface CpuRegister {
   name: string;
   value: number;
   bits: number;
+}
+
+/** One Mesen event-viewer event (`drainEvents`) — a register access / NMI / IRQ / DMA read logged for a
+ *  frame. `type` is the DebugEventType ordinal (0=Register, 1=Nmi, 2=Irq, 3=Breakpoint, 4=BgColorChange,
+ *  5=SpriteZeroHit, 6=DmcDmaRead, 7=DmaRead); `operationType` is the MemoryOperationType ordinal (0=Read,
+ *  1=Write, ...). `address`/`value` are the register access (value -1 for a read with no captured value);
+ *  `scanline`/`cycle` are the PPU position it fired at. */
+export interface DebugEvent {
+  type: number;
+  operationType: number;
+  address: number;
+  value: number;
+  programCounter: number;
+  scanline: number;
+  cycle: number;
 }
 
 /** One row of the execution trace (`readTrace`, most-recent first). `pc` is the instruction address;

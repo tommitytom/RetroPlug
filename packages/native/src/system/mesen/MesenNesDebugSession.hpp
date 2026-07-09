@@ -34,6 +34,7 @@ public:
     rp::BreakInfo step() override;
     rp::BreakInfo stepOver() override;
     rp::BreakInfo stepOut() override;
+    std::vector<rp::DebugEvent> drainEvents() override;
 
 private:
     // Initialise Mesen's debugger on first use (claiming the emulation thread)

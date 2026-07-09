@@ -59,6 +59,7 @@ public:
     rfl::Bytestring readMemory(std::uint32_t id, std::uint32_t memType) { return engine_svc_.readMemory(id, memType); }
     std::vector<rp::CpuRegister> getCpuRegisters(std::uint32_t id) { return engine_svc_.getCpuRegisters(id); }
     std::uint64_t stepInstruction(std::uint32_t id) { return engine_svc_.stepInstruction(id); }
+    std::vector<rp::DebugEvent> drainEvents(std::uint32_t id) { return engine_svc_.drainEvents(id); }
     bool loadLabels(std::uint32_t id, std::string path) { return engine_svc_.loadLabels(id, std::move(path)); }
     bool setCpuRegister(std::uint32_t id, std::string name, std::uint32_t value) { return engine_svc_.setCpuRegister(id, std::move(name), value); }
     bool runUntilPc(std::uint32_t id, std::uint32_t target, std::uint64_t maxCycles) { return engine_svc_.runUntilPc(id, target, maxCycles); }
