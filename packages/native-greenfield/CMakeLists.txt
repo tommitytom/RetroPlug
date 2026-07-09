@@ -136,7 +136,7 @@ add_dependencies(retroplug-greenfield-ui-bundle ${_TJSC_DEP})
 # Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
 # legacy `retroplug` (they coexist).
 dpf_add_plugin(retroplug-greenfield
-    TARGETS clap vst3 jack
+    TARGETS clap vst3 vst2 jack
     USE_FILE_BROWSER                    # native OS file dialog (matches DISTRHO_UI_FILE_BROWSER)
     FILES_DSP
         plugin/PluginGreenfieldDSP.cpp
