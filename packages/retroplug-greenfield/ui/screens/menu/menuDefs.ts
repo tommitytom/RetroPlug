@@ -44,6 +44,10 @@ const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSav
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
 const OFF_ON = ["Off", "On"]; // boolean toggles rendered as 2-value cyclers (Left/Right + Enter step)
+// LSDj sync modes (LsdjSyncMode 0..7). All shown; Keyboard(4) + Arduinoboy Master(7) are not yet
+// driven (later phases) but remain valid enum values. Tempo divisor subdivides the 24-PPQN clock.
+const LSDJ_MODE_NAMES = ["Off", "MIDI Sync", "MIDI Sync (Arduinoboy)", "MIDI Map", "Keyboard", "Keyboard MIDI", "MIDI Passthrough", "Arduinoboy Master"];
+const LSDJ_DIVISORS = [1, 2, 4, 8];
 
 // Glob filters for the file dialogs (realBackend space-joins them for DPF).
 const PROJECT_PATTERNS = ["*.rplg"]; // thin project (raw JSON) — the Save target
@@ -154,6 +158,21 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     action("sys-reset", "Reset", () => void systems.reset(sys.id)),
   );
   return items;
+}
+
+/** The LSDj sync submenu — Mode + Tempo Divisor cyclers. Shown only for a system carrying an lsdj-sync
+ *  role (a sniffed LSDj cart). Both edits re-push the DSP kernel structure (setRoleConfig → markDirty →
+ *  syncDspFromStore), so they apply to the running behaviour on the next block — no dedicated RPC. */
+function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unknown>): MenuItem[] {
+  const systems = ctx.stores.project.systems;
+  const mode = typeof cfg.mode === "number" ? cfg.mode : 1;
+  const divisor = typeof cfg.tempoDivisor === "number" ? cfg.tempoDivisor : 1;
+  return [
+    cycler("lsdj-mode", "Mode", LSDJ_MODE_NAMES, mode, (n) => systems.setRoleConfig(sys.id, "lsdj-sync", { mode: n })),
+    cycler("lsdj-divisor", "Tempo Divisor", LSDJ_DIVISORS.map(String), Math.max(0, LSDJ_DIVISORS.indexOf(divisor)), (n) =>
+      systems.setRoleConfig(sys.id, "lsdj-sync", { tempoDivisor: LSDJ_DIVISORS[n] }),
+    ),
+  ];
 }
 
 function projectChildren(ctx: MenuContext): MenuItem[] {
@@ -333,6 +352,7 @@ function instanceTitle(ctx: MenuContext, sys: SystemView): string {
 export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const sys = ctx.system!;
   const systems = ctx.stores.project.systems;
+  const lsdj = sys.roles.find((r) => r.kind === "lsdj-sync"); // present iff the ROM sniffed as LSDj
   return {
     title: instanceTitle(ctx, sys),
     items: [
@@ -348,9 +368,10 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       ),
       sep("inst-sep1"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
+      ...(lsdj ? [submenu("inst-lsdj", "LSDj", lsdjChildren(ctx, sys, lsdj.config))] : []),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
-      // Deferred: About panel, LSDj Mode (feature role, no live apply).
+      // Deferred: About panel.
     ],
   };
 }

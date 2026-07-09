@@ -141,7 +141,7 @@ behaviours over the per-system context:
 | Role | Scope | Behaviour |
 |---|---|---|
 | `mgb` | system | forward every host-MIDI byte verbatim into the system's serial input |
-| `lsdj-sync` | system | mode 1 (MidiSync) emits a 24-PPQN `0xF8` clock via `eachTick`; mode 0 (Off) emits nothing. Has the `lsdjSeedSav` `onConstruct` hook |
+| `lsdj-sync` | system | dispatches on `config.mode` (LsdjSyncMode): MidiSync (24-PPQN `0xF8` clock, `tempoDivisor`-subdivided), MidiSyncArduinoboy (note-driven play/divisor + `0xFA`/`0xFC` transport bookends), MidiMap (row bytes + `0xFE`), KeyboardMidi (PS/2 scancodes), MidiPassthrough (raw bytes → serial); Off/Keyboard/ArduinoboyMaster emit nothing. Keeps cross-block scratch via `ctx.state`. Has the `lsdjSeedSav` `onConstruct` hook |
 | `midi-routing` | project | fans the block's global `midiIn` into per-system inboxes, reusing the pure `routeBlock` decision ([midiRouting.ts](../packages/retroplug-greenfield/src/midiRouting.ts)) |
 
 ## Which config reaches the live core
@@ -292,9 +292,10 @@ define), then `project.setOnSystemsChange(() => syncDspFromStore(project, dsp))`
 Only the pieces below are open; the [07-migration.md](07-migration.md) doc is the authoritative
 inventory of remaining work.
 
-- **LSDj sync modes beyond MidiSync.** `lsdj-sync` implements **mode 1 only**. The other modes
-  (MidiSyncArduinoboy, MidiMap, KeyboardMidi, MidiPassthrough, ArduinoboyMaster) — including the
-  `0xFA`/`0xFC` transport start/stop bytes — are not yet authored as TS behaviours.
+- **The two host-I/O LSDj modes.** `lsdj-sync` authors the four MIDI-in modes (MidiSyncArduinoboy,
+  MidiMap, KeyboardMidi, MidiPassthrough) plus MidiSync, backed by the `ctx.state` scratch bag and a
+  live-apply menu. Still open: raw **Keyboard** mode (needs the `keys` feed, below) and
+  **ArduinoboyMaster** MI.OUT (needs serial-out fed into the block, below).
 - **Keyboard behaviour.** The kernel carries a `keys` input and per-system filtering, but no built-in
   role turns raw keys into serial (LSDj keyboard mode). The live `Engine` path currently feeds only
   host MIDI into the kernel (`kNoButtons`/`kNoKeys`), so the `buttons`/`keys` ABI is present but not yet

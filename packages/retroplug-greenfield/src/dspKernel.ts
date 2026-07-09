@@ -99,13 +99,17 @@ export class CollectingSink implements SinkTarget {
 
 /** Per-system context handed to a system-scope behaviour: its inputs + sinks, scoped to the
  *  system so role code never carries a `sys` argument. `midi` is mutable — a future transform
- *  stage may rewrite it before a downstream translator reads it (the pipeline is ordered). */
+ *  stage may rewrite it before a downstream translator reads it (the pipeline is ordered).
+ *  `state` is a mutable scratch bag the kernel persists across blocks, scoped to this system +
+ *  pipeline stage — where a stateful translator (LSDj Arduinoboy play flag, MidiMap last row,
+ *  keyboard octave, transport edge) keeps what it needs between blocks. */
 export interface SystemCtx {
   config: Record<string, unknown>;
   midi: MidiEvent[];
   keys: KeyEvent[];
   buttons: ButtonEvent[];
   block: BlockInfo;
+  state: Record<string, unknown>;
   pushSerialIn(frame: number, byte: number): void;
   emitMidiOut(frame: number, data: number[]): void;
   pressButton(button: number, down: boolean): void;
@@ -161,6 +165,9 @@ export function walkTicks(
  *  instance per project; a fresh one per unit test. */
 export class DspKernel {
   private readonly tick = new Map<number, number>();
+  // Persistent per-system, per-stage scratch bags (system id → stage index → bag). Backs ctx.state
+  // so a stateful behaviour keeps its cross-block state; pruned alongside `tick` in setSystems.
+  private readonly state = new Map<number, Map<number, Record<string, unknown>>>();
   // The single persistent block view: setSystems writes its structure, processBlock its dynamics.
   private readonly block: Block = {
     frames: 0,
@@ -192,6 +199,7 @@ export class DspKernel {
     this.block.project = struct.project ?? [];
     const live = new Set(struct.systems.map((s) => s.id));
     for (const id of this.tick.keys()) if (!live.has(id)) this.tick.delete(id);
+    for (const id of this.state.keys()) if (!live.has(id)) this.state.delete(id);
   }
 
   /** Run one block over the stored structure, marshalling only the dynamic input. Returns the
@@ -223,17 +231,18 @@ export class DspKernel {
       const midi = routed.get(sys.id) ?? [];
       const keys = b.keys.filter((k) => k.system === sys.id);
       const buttons = b.buttons.filter((k) => k.system === sys.id);
-      for (const stage of sys.pipeline) {
+      sys.pipeline.forEach((stage, stageIndex) => {
         const rt = this.registry.roleType(stage.kind);
-        if (!rt || rt.scope === "project" || !rt.dsp) continue;
-        (rt.dsp as SystemBehavior)(this.makeCtx(sys.id, stage.config, midi, keys, buttons, b));
-      }
+        if (!rt || rt.scope === "project" || !rt.dsp) return;
+        (rt.dsp as SystemBehavior)(this.makeCtx(sys.id, stageIndex, stage.config, midi, keys, buttons, b));
+      });
     }
     return this.result;
   }
 
   private makeCtx(
     id: number,
+    stageIndex: number,
     config: Record<string, unknown>,
     midi: MidiEvent[],
     keys: KeyEvent[],
@@ -246,6 +255,7 @@ export class DspKernel {
       keys,
       buttons,
       block,
+      state: this.stageState(id, stageIndex),
       pushSerialIn: (frame, byte) => this.sink.pushSerialIn(id, frame, byte),
       emitMidiOut: (frame, data) => this.sink.emitMidiOut(id, frame, data),
       pressButton: (button, down) => this.sink.pressButton(id, 0, button, down),
@@ -254,5 +264,14 @@ export class DspKernel {
         this.tick.set(id, walkTicks(block, resolution, nt, cb));
       },
     };
+  }
+
+  // The persistent scratch bag for one system's pipeline stage, created on first use.
+  private stageState(id: number, stageIndex: number): Record<string, unknown> {
+    let byStage = this.state.get(id);
+    if (!byStage) this.state.set(id, (byStage = new Map()));
+    let bag = byStage.get(stageIndex);
+    if (!bag) byStage.set(stageIndex, (bag = {}));
+    return bag;
   }
 }

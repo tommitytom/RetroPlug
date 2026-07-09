@@ -9,7 +9,7 @@ import { buildStartMenu, buildInstanceMenu, composeWindowTitle, type MenuContext
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { buildKeyToButton, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { gbRom } from "../systems/fixtures";
+import { gbRom, lsdjRom } from "../systems/fixtures";
 
 // A leaf's onSelect fires browse() fire-and-forget; flush the microtask chain it kicks off (openFileBrowser
 // resolve → route → applyRom → the runSelection .then). A handful of turns settles the plain-ROM path.
@@ -384,6 +384,39 @@ test("system Reload on ROM Change + Fast Boot are cyclers — Left/Right arrows 
   expect(fastBootOn()).toBeFalsy();
   row("sys-fastboot").onCycle!(1);
   expect(fastBootOn()).toBeTruthy();
+});
+
+test("the LSDj submenu appears only for a system carrying an lsdj-sync role; its cyclers apply live", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+
+  // A plain GB ROM → no lsdj-sync role → no LSDj submenu.
+  be.seed("/roms/plain.gb", gbRom());
+  const plainId = stores.project.systems.addSystem("/roms/plain.gb")!;
+  const plain = stores.project.systems.view().find((s) => s.id === plainId)!;
+  expect(findItem(buildInstanceMenu({ ...ctxOf(stores), system: plain }).items, "inst-lsdj")).toBe(undefined);
+
+  // An LSDj cart (cartridge title "LSDJ") → the ROM provider attaches lsdj-sync → the submenu shows.
+  be.seed("/roms/song.gb", lsdjRom());
+  const id = stores.project.systems.addSystem("/roms/song.gb")!;
+  const lsdjItems = () =>
+    submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-lsdj");
+  const cfg = () =>
+    stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "lsdj-sync")!.config as { mode: number; tempoDivisor: number };
+
+  const mode = findItem(lsdjItems(), "lsdj-mode")!;
+  expect(mode.kind).toBe("cycler");
+  expect(mode.label).toBe("Mode: MIDI Sync"); // default mode 1
+  expect(cfg().mode).toBe(1);
+
+  // Enter/onSelect steps the mode forward (1 → 2), applied through setRoleConfig (the live re-push path).
+  mode.onSelect!();
+  expect(cfg().mode).toBe(2);
+
+  // Tempo Divisor cycler steps 1 → 2 (index 0 → 1 in [1,2,4,8]).
+  expect(findItem(lsdjItems(), "lsdj-divisor")!.label).toBe("Tempo Divisor: 1");
+  findItem(lsdjItems(), "lsdj-divisor")!.onSelect!();
+  expect(cfg().tempoDivisor).toBe(2);
 });
 
 // The Settings → Keyboard Bindings submenu (reachable from the start menu, no system needed).

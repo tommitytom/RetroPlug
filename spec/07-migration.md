@@ -32,7 +32,7 @@ precondition on deleting the corresponding legacy code.
 | **MIDI routing** | routing cycler + native routing roles | **Largely done.** `midi-routing` is a project-scope feature-role (`src/midiRouting.ts` + `src/dspRoles.ts`); host MIDI is staged in the plugin block. Open: per-block host-input feed + routing-config live re-push (§5). |
 | **About panel** | `packages/ui/src/menu/AboutPanel.tsx` + menu item | **Not yet built.** Deferred marker at [menuDefs.ts:209](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts#L209). |
 | **Bindings / keymap editor UI** | full keyboard+gamepad capture submenu | **Not yet built (data layer exists).** `bindingsStore.ts` / `bindingMap.ts` / `bindingSerialization.ts` + config tests are present; only the editor UI (capture/prompt rows) is missing ([menuDefs.ts:172](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts#L172), [menuTree.ts:3](../packages/retroplug-greenfield/ui/screens/menu/menuTree.ts#L3)). |
-| **LSDj mode selection (live apply)** | 8-mode cycler + `setLsdjSyncConfig` RPC | **Not yet built.** The behaviours are being authored in TS ([04-roles-dsp-kernel.md](04-roles-dsp-kernel.md)), but the feature-role config *re-push* path is open ([menuDefs.ts:209](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts#L209)). |
+| **LSDj mode selection (live apply)** | 8-mode cycler + `setLsdjSyncConfig` RPC | **Largely done.** An "LSDj" instance submenu (Mode + Tempo Divisor cyclers) drives `setRoleConfig`, which live-applies via the feature-role re-push path (no dedicated RPC). Behaviours built for MidiSync + MidiSyncArduinoboy + MidiMap + KeyboardMidi + MidiPassthrough; raw Keyboard + ArduinoboyMaster remain (§5). |
 | **Text-prompt / confirm-modal flows** | rename prompts, remove-confirm, incompatible-project / unsaved-changes / relink modals | **Partial.** Relink is present via the OS dialog ("Locate on Disk"); the `capture`/`prompt` menu kinds and the modal UIs are not built ([menuDefs.ts:185](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts#L185)). |
 | **Kit-patch UI + sample matcher + resampling** | `KitEditor.tsx`, native `KitCompiler` (r8brain + enkiTS) | **Not yet built.** Kit-patch is modelled as a deferred UI-thread behaviour, not a DSP role ([systemRoles.ts:58](../packages/retroplug-greenfield/src/systemRoles.ts#L58)); the sample matcher and emulator-output resampling ride on it and have no greenfield presence. (Kit *compilation* stays native — see §2.) |
 | **Savestate slots** | — (never built in legacy either) | **Not yet built.** The state-snapshot triple exists for save/duplicate; a user-facing multi-slot feature does not. |
@@ -221,18 +221,18 @@ and the store→kernel projection are wired.
 
 **Open:**
 
-- **DSP-role behaviours (pure TS):** only LSDj sync **mode 1 (MidiSync)** exists
-  ([dspRoles.ts:19](../packages/retroplug-greenfield/src/dspRoles.ts#L19)). Missing:
-  `MidiSyncArduinoboy`, `MidiMap`, `KeyboardMidi`, `MidiPassthrough`, `ArduinoboyMaster`, plus the
-  `0xFA`/`0xFC` transport-start/stop bytes; a keyboard behaviour (raw `keys` → serial); the
-  `emitMidiOut` host-out direction (which also needs serial-out fed *into* the block).
+- **DSP-role behaviours (pure TS):** LSDj sync authors MidiSync, MidiSyncArduinoboy, MidiMap,
+  KeyboardMidi, MidiPassthrough (including the `0xFA`/`0xFC` transport-start/stop bytes), backed by the
+  kernel's `ctx.state` per-system scratch bag ([dspRoles.ts](../packages/retroplug-greenfield/src/dspRoles.ts)).
+  Missing: raw **Keyboard** mode (needs the `keys` feed, below) and **ArduinoboyMaster** MI.OUT (the
+  `emitMidiOut` host-out direction, which also needs the emulator serial-out fed *into* the block).
 - **Legacy C++ role removal:** delete `LsdjSyncRole` / `MgbPassthroughRole` (and the rest of the
   role classes) once the TS path drives every host — blocked until the shared CLI/plugin consumers
   are gone.
-- **App / store wiring:** feed **all** real host input per block (host MIDI-in, UI-mapped buttons,
-  raw keys are still unfed; transport/tempo/ppq are); route feature-role config edits (LSDj mode,
-  routing mode) to **re-push to the running behaviour** — the feature-role config path is distinct
-  from the system-role `applyRoleConfig` and is the reason "LSDj mode live apply" is deferred (§1).
+- **App / store wiring:** host MIDI-in + transport/tempo/ppq are fed per block, and feature-role config
+  edits (LSDj mode, routing mode) already re-push to the running behaviour via `setRoleConfig` →
+  `markDirty` → `syncDspFromStore`. Still unfed: UI-mapped buttons and raw keys (blocks raw Keyboard
+  mode).
 - **NES/GBA store arms:** the native `MesenBackend` is done; the TS store role-pipeline + ROM
   providers that select NES/GBA are not.
 - **UI-thread behaviours + extensions:** the UI-thread behaviour kind (kit-patch first — it compiles
@@ -263,7 +263,7 @@ legacy" provenance comments are context, not action items.)
 | [systemRoles.ts:13](../packages/retroplug-greenfield/src/systemRoles.ts#L13) / [:58](../packages/retroplug-greenfield/src/systemRoles.ts#L58) | kit-patch stays a deferred `ui` UI-thread behaviour |
 | [backend.ts:109](../packages/retroplug-greenfield/src/backend.ts#L109) | feature-role config never reaches native — the deferred TS-script future |
 | [systemsStore.ts:328](../packages/retroplug-greenfield/src/systemsStore.ts#L328) | feature behaviour is the deferred script future |
-| [menuDefs.ts:172](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts#L172) / [:185](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts#L185) / [:209](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts#L209) / [:224](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts#L224) | deferred bindings editor, rename prompt, About panel, LSDj mode |
+| [menuDefs.ts](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts) (Gamepad Bindings / rename prompt / About panel markers) | deferred bindings editor, rename prompt, About panel (LSDj mode is now built) |
 | [menuTree.ts:3](../packages/retroplug-greenfield/ui/screens/menu/menuTree.ts#L3) | `capture`/`prompt` menu kinds belong to the deferred bindings editor |
 
 Not cleanup (intentional domain terms that read like TODOs): `deferredProject` in
