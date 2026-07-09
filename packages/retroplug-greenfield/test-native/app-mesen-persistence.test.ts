@@ -42,6 +42,28 @@ test("F1: a live NES core republishes its savestate — readState isn't frozen a
   expect(bytesEqual(boot!, live!)).toBeFalsy();
 });
 
+test("F1: Duplicate clones a live NES core off its published (advanced) state, not the boot seed", () => {
+  const be = createRealBackend();
+  if (!be.fileExists(NES)) { console.log("# SKIP: no NES rom"); return; }
+  const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
+  const audio = createAudioDriver();
+
+  const id = (project.systems.loadRom(NES) as { system: number }).system;
+  audio.renderAudio(1500); // advance the core so the registry has republished a LIVE savestate
+
+  // duplicateSystem reads backend.readState(id) (the live snapshot) and builds a seeded clone. Before
+  // the registry's variable-size fix this read returned the frozen boot seed, so the clone was a cold
+  // reboot; now it carries the advanced state forward.
+  const dupId = project.systems.duplicateSystem(id);
+  expect(dupId != null && dupId !== id).toBeTruthy();
+  expect(project.systems.view().length).toBe(2);
+
+  // The clone constructed from a valid live savestate → it has its own published snapshot and renders.
+  expect(be.readState(dupId as number)!.length > 0).toBeTruthy();
+  audio.renderAudio(300);
+  expect(audio.screenshot(dupId as number, "/tmp/app-mesen_dup.png")).toBeTruthy();
+});
+
 test("F1: a ROM that passes the NES magic gate but fails Mesen LoadRom fails the construct", () => {
   const be = createRealBackend();
   const bad = __CONFIG_DIR__ + "/roms/bad.nes";
