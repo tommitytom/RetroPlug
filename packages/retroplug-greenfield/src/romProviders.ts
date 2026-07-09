@@ -33,4 +33,10 @@ export function registerRomProviders(registry: RoleRegistry): void {
   registry.registerRomProvider((rom: RomContext) =>
     title(rom.header).startsWith("LSDJ") ? [{ kind: "lsdj-sync", config: { mode: 1 } }] : [],
   );
+
+  // Any NES ROM → host-MIDI passthrough to the core (the always-attached N8 FIFO). Match the PLATFORM
+  // (core is "mesen"); always-on, mirroring the native role — benign for a ROM that ignores $40F0.
+  registry.registerRomProvider((rom: RomContext) =>
+    rom.platform === "nes" ? [{ kind: "nes-n8-midi", config: {} }] : [],
+  );
 }

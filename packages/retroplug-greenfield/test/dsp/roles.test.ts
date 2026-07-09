@@ -39,6 +39,18 @@ test("mgb forwards each routed MIDI byte to its system's serial", () => {
   ]);
 });
 
+test("nes-n8-midi forwards each routed MIDI message to its system's core (emitCoreMidi)", () => {
+  const k = kernel();
+  k.setSystems({
+    project: [{ kind: "midi-routing", config: { mode: 0 } }], // SendToAll
+    systems: [{ id: 1, pipeline: [{ kind: "nes-n8-midi", config: {} }] }],
+  });
+  const out = k.processBlock({ ...baseDyn(), midiIn: [{ frame: 0, data: [0x90, 60, 100] }] });
+  // The whole message crosses as one coreMidi entry (native onMidi fans the bytes into the N8 FIFO).
+  expect(out.coreMidi).toEqual([{ system: 1, frame: 0, data: [0x90, 60, 100] }]);
+  expect(out.serialIn.length).toBe(0); // NES has no serial port — nothing on the mGB path
+});
+
 test("lsdj-sync MidiSync emits a 24-PPQN 0xF8 clock; Off emits nothing", () => {
   const run = (mode: number) => {
     const k = kernel();

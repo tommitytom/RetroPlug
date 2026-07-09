@@ -32,6 +32,17 @@ const forwardMidiToSerial: SystemBehavior = (c) => {
 };
 const mgb = forwardMidiToSerial;
 
+// Forward every routed host-MIDI message straight to the core's onMidi (the emitCoreMidi sink). The
+// NES twin of `mgb`: a core with no serial port (Mesen) receives MIDI here instead of over serial.
+// The whole message goes as one event — the native NesN8MidiRole iterates the bytes into its FIFO.
+const forwardMidiToCore: SystemBehavior = (c) => {
+  const midi = c.midi;
+  for (let i = 0; i < midi.length; i++) {
+    const e = midi[i];
+    c.emitCoreMidi(e.frame, e.data);
+  }
+};
+
 // LSDj serial control bytes (host → LSDj over the link cable) and MIDI status helpers, mirroring
 // LsdjSyncRole.cpp. DPF hands the full status byte (channel in the low nibble) in data[0].
 const LSDJ_CLOCK = 0xf8; // 24-PPQN MIDI clock tick
@@ -161,6 +172,9 @@ const midiRouting: ProjectBehavior = (block, inboxes, config) => {
 /** Register the built-in DSP-thread roles into `registry`. */
 export function registerDspRoles(registry: RoleRegistry): void {
   registry.registerRole({ kind: "mgb", category: "feature", scope: "system", schema: z.object({}), dsp: mgb });
+  // NES host-MIDI: forward routed MIDI to the core's onMidi (→ the always-attached N8 FIFO). Attached to
+  // every NES ROM by the rom provider (romProviders.ts), mirroring the native always-on N8 role.
+  registry.registerRole({ kind: "nes-n8-midi", category: "feature", scope: "system", schema: z.object({}), dsp: forwardMidiToCore });
   registry.registerRole({
     kind: "lsdj-sync",
     category: "feature",
