@@ -141,6 +141,11 @@ public:
     virtual bool wantsRomReload() const  { return false; }
     virtual void setRomReload(bool /*on*/) {}
 
+    // Live output gain in dB — a universal per-system setting every backend
+    // honours (smoothed at the audio frame). Default no-op so trivial backends /
+    // test doubles need not implement it; SameBoy + both Mesen systems override.
+    virtual void setGainDb(float /*dB*/) {}
+
     // Cartridge battery RAM. Empty vector when the cartridge has no battery
     // or the backend doesn't yet support snapshotting.
     virtual std::vector<std::uint8_t> saveSramBytes() const { return {}; }

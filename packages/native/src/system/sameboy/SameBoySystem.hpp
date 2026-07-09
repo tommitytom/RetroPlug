@@ -105,7 +105,7 @@ public:
     // Set the per-system gain target (dB). Smoothed at audio rate inside
     // finishBlock so live edits don't click. Not realtime-safe to call from
     // the audio thread, but a simple atomic store would make it so if needed.
-    void setGainDb(float dB);
+    void setGainDb(float dB) override;
 
     // Tear down `gb_` and rebuild it with the current `config_`. Snapshots
     // SRAM through `config_.sram` so it survives the cycle; clears

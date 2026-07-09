@@ -164,16 +164,26 @@ bool Engine::pressButton(SystemId id, std::uint8_t button, bool down) {
 void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
     SystemBase* sys = project_.findSystem(id);
     if (!sys) return;
-    // SameBoy-only for now; NES/GBA gain/reload generalize to a base virtual when those backends land.
+
+    // The two UNIVERSAL settings apply to every backend through the base interface — they must run
+    // before the SameBoy-only cast below, or they silently no-op on a Mesen (NES/GBA) system even
+    // though its gain slider / reload toggle look live in the UI.
+    switch (static_cast<ConfigField>(field)) {
+        case ConfigField::Gain:
+            sys->setGainDb(static_cast<float>(value));  // live, smoothed
+            return;
+        case ConfigField::ReloadOnRomChange:
+            sys->setRomReload(value != 0.0);  // a UI-thread ROM-watch flag; no core effect
+            return;
+        default:
+            break;
+    }
+
+    // The remaining fields are SameBoy emulator knobs (model / highpass / link group / fast boot).
+    // Mesen has its own disjoint knob set (none wired yet), so a non-SameBoy system ignores them.
     auto* sb = dynamic_cast<SameBoySystem*>(sys);
     if (!sb) return;
     switch (static_cast<ConfigField>(field)) {
-        case ConfigField::Gain:
-            sb->setGainDb(static_cast<float>(value));  // live, smoothed
-            break;
-        case ConfigField::ReloadOnRomChange:
-            sb->setRomReload(value != 0.0);  // a UI-thread ROM-watch flag; no core effect
-            break;
         case ConfigField::Model: {
             const auto m = static_cast<SameBoyModel>(static_cast<std::uint32_t>(value));
             if (sb->config_.model != m) {
@@ -202,5 +212,7 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
         case ConfigField::FastBoot:
             sb->setFastBoot(value != 0.0);  // deferred to the next restart
             break;
+        default:
+            break;  // the universal fields (Gain / ReloadOnRomChange) were handled above
     }
 }

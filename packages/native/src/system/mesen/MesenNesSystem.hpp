@@ -92,7 +92,7 @@ public:
     bool                      captureStateSnapshot(std::vector<std::uint8_t>& dst) override;
     std::unique_ptr<SystemBase> clone(SystemId newId, double sampleRate) const override;
 
-    void setGainDb(float dB);
+    void setGainDb(float dB) override;
 
     // NES native resolution (256x240). Public so callers can construct a
     // FrameBufferTriple-sized read buffer without hard-coding the constant.
