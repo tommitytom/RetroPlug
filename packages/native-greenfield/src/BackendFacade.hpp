@@ -53,6 +53,11 @@ public:
     std::optional<rfl::Bytestring> readSram(std::uint32_t id) { return engine_svc_.readSram(id); }
     bool screenshot(std::uint32_t id, std::string path) { return engine_svc_.screenshot(id, std::move(path)); }
     GreenfieldFrame getFrame(std::uint32_t id) { return engine_svc_.getFrame(id); }
+    rp::ApuState getApuState(std::uint32_t id) { return engine_svc_.getApuState(id); }
+    std::optional<std::uint8_t> readCpu(std::uint32_t id, std::uint32_t addr) { return engine_svc_.readCpu(id, addr); }
+    rfl::Bytestring readMemory(std::uint32_t id, std::uint32_t memType) { return engine_svc_.readMemory(id, memType); }
+    std::vector<rp::CpuRegister> getCpuRegisters(std::uint32_t id) { return engine_svc_.getCpuRegisters(id); }
+    std::uint64_t stepInstruction(std::uint32_t id) { return engine_svc_.stepInstruction(id); }
     std::optional<rfl::Bytestring> compileScript(std::string source) { return engine_svc_.compileScript(std::move(source)); }
     bool dspLoadKernel(std::vector<std::uint8_t> bytecode) { return engine_svc_.dspLoadKernel(std::move(bytecode)); }
     bool dspSetSystems(std::string json) { return engine_svc_.dspSetSystems(std::move(json)); }

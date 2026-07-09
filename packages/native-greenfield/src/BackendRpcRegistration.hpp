@@ -36,6 +36,12 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::readSram>();
     server.template addMethod<&BackendFacade::screenshot>();
     server.template addMethod<&BackendFacade::getFrame>();
+    // live-core debug reads (spec/09-cli-debugging.md)
+    server.template addMethod<&BackendFacade::getApuState>();
+    server.template addMethod<&BackendFacade::readCpu>();
+    server.template addMethod<&BackendFacade::readMemory>();
+    server.template addMethod<&BackendFacade::getCpuRegisters>();
+    server.template addMethod<&BackendFacade::stepInstruction>();
     // DSP-side JS runtime (the role kernel)
     server.template addMethod<&BackendFacade::compileScript>();
     server.template addMethod<&BackendFacade::dspLoadKernel>();

@@ -155,6 +155,29 @@ export interface Backend {
    *  race-free framebuffer triple-buffer, so it is safe to poll while the core plays. */
   getFrame(id: number): FrameData | null;
 
+  // --- Live-core debug reads (spec/09-cli-debugging.md) -------------------
+  // Unlike the snapshot-registry reads above, these read the LIVE core, so they are valid only on the
+  // control thread while the audio thread is not started — the CLI's single-threaded direct-render
+  // regime (a ROM-test harness never startAudio). NES-only today (empty on SameBoy/GBA).
+
+  /** Decoded per-channel APU state for system `id`. Zeroed when the id is gone or the core has no
+   *  APU debug target (SameBoy/GBA). Gate "is a note sounding" on `period > 0 && envelopeVolume > 0`,
+   *  not the `enabled` ($4015) bit. */
+  getApuState(id: number): ApuState;
+
+  /** One CPU-visible byte at `addr` (side-effect-free peek — sees mapped I/O like a MIDI FIFO), or
+   *  `null` when the id is gone or the peek is unsupported. */
+  readCpu(id: number, addr: number): number | null;
+
+  /** A whole memory region's bytes (`MemoryRegion.*`), empty when the id/region is unsupported. */
+  readMemory(id: number, region: number): Uint8Array | null;
+
+  /** The system's CPU register file (name-keyed; every backend that supports it includes a "pc"). */
+  getCpuRegisters(id: number): CpuRegister[];
+
+  /** Single-step the core one instruction; returns the cycle count consumed (0 when unsupported). */
+  stepInstruction(id: number): number;
+
   // --- Byte codec ---------------------------------------------------------
   // The ONLY native part of `.rplg` export framing: TS assembles every entry (the thin
   // project.json + the per-system blobs) and hands them here to compress; native just
@@ -191,6 +214,93 @@ export interface FrameData {
   published: boolean;
   pixels: Uint8Array;
 }
+
+// --- Debug-read result types (mirror the native reflect-cpp structs in
+// packages/native/src/system/DebugTarget.hpp + CpuState.hpp field-for-field, verbatim names — the RPC
+// returns each as a plain JS object, so a direct cast is a faithful shape). ---
+
+/** One 2A03 square (pulse) channel. `frequency` is the decoded Hz; `envelopeVolume`/`period` are the
+ *  reliable "is it sounding" signal (`enabled` is only the $4015 switch). */
+export interface ApuSquareState {
+  enabled: boolean;
+  period: number;
+  timer: number;
+  duty: number;
+  outputVolume: number;
+  frequency: number;
+  lengthCounter: number;
+  constantVolume: boolean;
+  envelopeVolume: number;
+  sweepEnabled: boolean;
+  sweepNegate: boolean;
+  sweepPeriod: number;
+  sweepShift: number;
+}
+
+export interface ApuTriangleState {
+  enabled: boolean;
+  period: number;
+  timer: number;
+  outputVolume: number;
+  frequency: number;
+  lengthCounter: number;
+  linearCounter: number;
+}
+
+export interface ApuNoiseState {
+  enabled: boolean;
+  period: number;
+  timer: number;
+  outputVolume: number;
+  frequency: number;
+  lengthCounter: number;
+  modeFlag: boolean;
+  constantVolume: boolean;
+  envelopeVolume: number;
+}
+
+export interface ApuDmcState {
+  enabled: boolean;
+  sampleAddr: number;
+  sampleLength: number;
+  bytesRemaining: number;
+  period: number;
+  outputVolume: number;
+  loop: boolean;
+  irqEnabled: boolean;
+  sampleRate: number;
+}
+
+/** The decoded NES APU snapshot (`getApuState`). */
+export interface ApuState {
+  pulse1: ApuSquareState;
+  pulse2: ApuSquareState;
+  triangle: ApuTriangleState;
+  noise: ApuNoiseState;
+  dmc: ApuDmcState;
+}
+
+/** One named CPU register (`getCpuRegisters`). `value` is zero-extended to 32 bits; `bits` is the real
+ *  width. NES (6502) reports `a/x/y/sp/ps` (8-bit) + `pc` (16-bit). */
+export interface CpuRegister {
+  name: string;
+  value: number;
+  bits: number;
+}
+
+/** Memory-region selector for `readMemory` — mirrors native `rp::MemoryType`. NES supports Ram/Rom/Sram/
+ *  Vram/OAM/NametableRam; the rest are unsupported on NES (return empty). */
+export const MemoryRegion = {
+  Ram: 0,
+  Rom: 1,
+  Sram: 2,
+  Vram: 3,
+  IORegisters: 4,
+  HRam: 5,
+  OAM: 6,
+  NametableRam: 7,
+  ExtWorkRam: 8,
+} as const;
 
 /** Presentation for an OS file dialog: its title + the glob patterns to show. */
 export interface FileBrowserOpts {

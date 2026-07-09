@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { Backend, ConstructSpec, FileBrowserOpts, FrameData, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, ConstructSpec, CpuRegister, FileBrowserOpts, FrameData, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 
 const enc = new TextEncoder();
@@ -261,6 +261,43 @@ export class MockBackend implements Backend {
     // frame; an absent id is null. (Video rendering is proven against the native backend, not here.)
     if (!this.systems.has(id)) return null;
     return { width: 160, height: 144, published: false, pixels: new Uint8Array(0) };
+  }
+
+  // Live-core debug reads: the mock has no real core, so these are deterministic stand-ins that keep
+  // `implements Backend` satisfied (the real behaviour is proven against the native backend).
+  getApuState(_id: number): ApuState {
+    this.log.push("getApuState");
+    const square = (): ApuSquareState => ({
+      enabled: false, period: 0, timer: 0, duty: 0, outputVolume: 0, frequency: 0, lengthCounter: 0,
+      constantVolume: false, envelopeVolume: 0, sweepEnabled: false, sweepNegate: false, sweepPeriod: 0, sweepShift: 0,
+    });
+    return {
+      pulse1: square(),
+      pulse2: square(),
+      triangle: { enabled: false, period: 0, timer: 0, outputVolume: 0, frequency: 0, lengthCounter: 0, linearCounter: 0 },
+      noise: { enabled: false, period: 0, timer: 0, outputVolume: 0, frequency: 0, lengthCounter: 0, modeFlag: false, constantVolume: false, envelopeVolume: 0 },
+      dmc: { enabled: false, sampleAddr: 0, sampleLength: 0, bytesRemaining: 0, period: 0, outputVolume: 0, loop: false, irqEnabled: false, sampleRate: 0 },
+    };
+  }
+
+  readCpu(id: number, _addr: number): number | null {
+    this.log.push("readCpu");
+    return this.systems.has(id) ? 0 : null;
+  }
+
+  readMemory(id: number, _region: number): Uint8Array | null {
+    this.log.push("readMemory");
+    return this.systems.has(id) ? new Uint8Array(0) : null;
+  }
+
+  getCpuRegisters(_id: number): CpuRegister[] {
+    this.log.push("getCpuRegisters");
+    return [];
+  }
+
+  stepInstruction(id: number): number {
+    this.log.push("stepInstruction");
+    return this.systems.has(id) ? 1 : 0;
   }
 
   zip(entries: ZipEntry[]): Uint8Array | null {

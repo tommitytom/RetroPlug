@@ -13,6 +13,7 @@
 #include "SystemFactory.hpp"
 
 #include "EmbeddedRoms.hpp"
+#include "system/MemoryType.hpp"  // rp::MemoryType / rp::AccessType (readMemory)
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
@@ -163,6 +164,47 @@ GreenfieldFrame EngineRpcService::getFrame(std::uint32_t id) {
         out.data.assign(p, p + f.data.size());
     }
     return out;
+}
+
+// Live-core debug reads — resolve the real system via findSystem (NOT the snapshot registry), so they
+// are only valid on the control thread while the audio thread is not started (see the header note). The
+// bodies mirror the legacy HarnessRpcService methods.
+rp::ApuState EngineRpcService::getApuState(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
+    if (!dbg) return {};
+    return dbg->getApuState();
+}
+
+std::optional<std::uint8_t> EngineRpcService::readCpu(std::uint32_t id, std::uint32_t addr) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return std::nullopt;
+    return sys->readCpuByte(addr);  // nullopt (→ JS null) when the peek is unsupported
+}
+
+rfl::Bytestring EngineRpcService::readMemory(std::uint32_t id, std::uint32_t memType) {
+    rfl::Bytestring out;
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return out;
+    rp::MemoryAccessor acc = sys->getMemory(static_cast<rp::MemoryType>(memType), rp::AccessType::Read);
+    if (acc.valid()) {
+        const auto* p = reinterpret_cast<const std::byte*>(acc.data());
+        out.assign(p, p + acc.size());
+    }
+    return out;
+}
+
+std::vector<rp::CpuRegister> EngineRpcService::getCpuRegisters(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    return sys->getCpuRegisters();
+}
+
+std::uint64_t EngineRpcService::stepInstruction(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return 0;
+    return sys->stepInstruction();  // 0 when the backend can't step
 }
 
 std::optional<rfl::Bytestring> EngineRpcService::compileScript(std::string source) {
