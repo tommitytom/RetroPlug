@@ -3,7 +3,7 @@
 # build, and optionally under valgrind for allocation-site / CPU attribution.
 #
 #   tools/run-greenfield-profile.sh [mode] [slug]
-#     mode: stats (default) | dhat | callgrind | massif
+#     mode: stats (default) | trace | dhat | callgrind | massif
 #     slug: the test-native file to run (default: dsp-bench)
 #
 # Uses a SEPARATE build-prof/ dir (RelWithDebInfo + -DRETROPLUG_PROFILE=ON): the bare-QuickJS counting
@@ -11,6 +11,8 @@
 # quickjs.c. The load-bearing build/ and the shipped plugin are untouched (they never define the macro).
 #
 #   stats     — in-process allocation counters; prints one JSON metrics line (deterministic, fast).
+#   trace     — per-role runtime spans (spec/08 Tier B) → build-prof/trace.json (Chrome trace-event JSON;
+#               load in ui.perfetto.dev or speedscope). Knob: RP_BENCH_TRACE_BLOCKS (default 64).
 #   dhat      — valgrind DHAT allocation census → build-prof/valgrind/dhat.out.json (load in the viewer).
 #   callgrind — deterministic instruction counts → callgrind_annotate top-N.
 #   massif    — heap size over time → ms_print.
@@ -45,6 +47,22 @@ case "$mode" in
         echo "==> running '$slug' (in-process allocation counters)"
         run_native "$host"
         ;;
+    trace)
+        : "${RP_BENCH_TRACE_BLOCKS:=64}"
+        export RP_BENCH_TRACE=1 RP_BENCH_TRACE_BLOCKS
+        out="$repo/$builddir/trace.json"
+        log="$(mktemp)"
+        echo "==> running '$slug' with per-role tracing (RP_BENCH_TRACE_BLOCKS=$RP_BENCH_TRACE_BLOCKS)"
+        run_native "$host" | tee "$log" || true
+        grep '^DSP-TRACE ' "$log" | tail -1 | sed 's/^DSP-TRACE //' > "$out" || true
+        rm -f "$log"
+        if [ -s "$out" ]; then
+            echo "==> wrote $out ($(wc -c < "$out") bytes) — load in https://ui.perfetto.dev or speedscope"
+        else
+            echo "!! no DSP-TRACE line captured (need a RETROPLUG_PROFILE host + the dsp-bench slug)" >&2
+            exit 1
+        fi
+        ;;
     dhat|callgrind|massif)
         command -v valgrind >/dev/null || { echo "!! valgrind not installed" >&2; exit 2; }
         out="$repo/$builddir/valgrind"
@@ -70,5 +88,5 @@ case "$mode" in
             massif)    ms_print "$out/massif.out" | head -60 ;;
         esac
         ;;
-    *) echo "usage: $0 <stats|dhat|callgrind|massif> [slug]" >&2; exit 2 ;;
+    *) echo "usage: $0 <stats|trace|dhat|callgrind|massif> [slug]" >&2; exit 2 ;;
 esac

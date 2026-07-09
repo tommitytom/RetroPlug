@@ -196,4 +196,35 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
 
   expect(s.blockCount > 0).toBeTruthy();
   expect(s.allocCalls >= 0).toBeTruthy();
+
+  // --- optional per-role runtime trace (spec/08-profiling.md Tier B) --------------------------------
+  // A separate SHORT armed window AFTER the alloc measurement (so those numbers stay pristine). Records
+  // nested wall-time spans — engine.processBlock ⊃ dsp-kernel (⊃ marshal, js-call ⊃ per-role) + apu-render
+  // — and prints ONE Chrome trace-event JSON line the wrapper captures → build-prof/trace.json (load in
+  // ui.perfetto.dev or speedscope). Gated on RP_BENCH_TRACE so the normal stats run stays a single line.
+  if (env("RP_BENCH_TRACE")) {
+    const traceBlocks = Math.max(1, envInt("RP_BENCH_TRACE_BLOCKS", 64));
+    const tSched = buildSchedule(profile, traceBlocks, seed ^ 0x9e3779b9);
+    let ti = 0;
+    const stageTrace = (blk: number): void => {
+      while (ti < tSched.length && tSched[ti].block === blk) audio.stageMidiIn(tSched[ti++].msg);
+    };
+    audio.dspTraceReset(true); // arm: native pipeline + kernel record spans
+    for (let blk = 0; blk < traceBlocks; blk++) {
+      stageTrace(blk);
+      audio.renderAudio(BLOCK_MS);
+    }
+    const spans = audio.dspTrace();
+    const names = audio.dspTraceNames();
+    audio.dspTraceReset(false); // disarm
+    const traceEvents = spans.map((sp) => ({
+      name: names[sp.label] ?? `#${sp.label}`,
+      ph: "X",
+      ts: sp.t0, // µs, relative to the window base
+      dur: sp.t1 - sp.t0,
+      pid: 1,
+      tid: 1,
+    }));
+    console.log("DSP-TRACE " + JSON.stringify({ traceEvents, displayTimeUnit: "ms" }));
+  }
 });
