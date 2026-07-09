@@ -402,6 +402,7 @@ function instanceTitle(ctx: MenuContext, sys: SystemView): string {
 export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const sys = ctx.system!;
   const systems = ctx.stores.project.systems;
+  const multi = ctx.systems.length > 1; // Replace / Remove / Link Group are peer-only rows
   const lsdj = sys.roles.find((r) => r.kind === "lsdj-sync"); // present iff the ROM sniffed as LSDj
   return {
     title: instanceTitle(ctx, sys),
@@ -416,12 +417,21 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         const id = systems.duplicateSystem(sys.id);
         if (id != null) systems.inheritLinkGroup(id, sys.id);
       }),
-      action("inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
-      action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
-      sep("inst-sep0"),
-      cycler("inst-link", "Link Group", LINK_GROUP_NAMES, sameboyConfig(sys).linkGroupId, (n) =>
-        systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
-      ),
+      // Replace / Remove / Link Group only make sense with a peer instance — hidden for a lone instance.
+      ...(multi
+        ? [
+            action("inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
+            action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
+          ]
+        : []),
+      ...(multi
+        ? [
+            sep("inst-sep-link"),
+            cycler("inst-link", "Link Group", LINK_GROUP_NAMES, sameboyConfig(sys).linkGroupId, (n) =>
+              systems.setRoleConfig(sys.id, "sameboy", { linkGroupId: n }),
+            ),
+          ]
+        : []),
       sep("inst-sep1"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       ...(lsdj ? [submenu("inst-lsdj", "LSDj", lsdjChildren(ctx, sys, lsdj.config))] : []),

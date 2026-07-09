@@ -33,11 +33,20 @@ test("the gamepad navigates the start menu, adds a system, then opens + drives t
   ui.pump(10);
   expect(ui.findByTextContaining("Duplicate Instance") != null).toBeTruthy();
 
-  // D-pad Right cycles a value in place (Link Group: Off → 1), focus staying on the cycler.
+  // Duplicate → a second instance, so the peer-only Link Group row appears (auto-linked at group 1).
+  expect(navToPad("Duplicate Instance")).toBeTruthy();
+  ui.gamepadTap("a");
+  ui.pump(20);
+  expect(ui.findByTestId("tile-1") != null).toBeTruthy();
+  ui.gamepadTap("leftshoulder");
+  ui.pump(10);
+
+  // D-pad Right cycles a value in place (Link Group: 1 → 2), focus staying on the cycler.
   expect(navToPad("Link Group")).toBeTruthy();
+  expect(ui.findByTextContaining("Link Group: 1") != null).toBeTruthy();
   ui.gamepadTap("dpright");
   ui.pump(6);
-  expect(ui.findByTextContaining("Link Group: 1") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Link Group: 2") != null).toBeTruthy();
 
   // A on a submenu expands it inline (System → the per-instance state items appear).
   expect(navToPad("System")).toBeTruthy();

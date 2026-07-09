@@ -39,20 +39,35 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   ui.tapKey(Key.Esc);
   ui.pump(10);
   expect(ui.findByTextContaining("Duplicate Instance") != null).toBeTruthy();
-  // The file-browser lifecycle items render alongside it (Load… split from Replace Instance).
-  expect(ui.findByTextContaining("Replace Instance") != null).toBeTruthy();
   expect(ui.findByTextContaining("Add Instance") != null).toBeTruthy();
+  // A lone instance hides the peer-only rows (Replace / Remove / Link Group).
+  expect(ui.findByTextContaining("Replace Instance")).toBe(null);
+  expect(ui.findByTextContaining("Remove Instance")).toBe(null);
+  expect(ui.findByTextContaining("Link Group")).toBe(null);
 
   // The instance-menu title is "RetroPlug v<version> - <rom>"; for the embedded synth the ROM is "mGB"
   // and (no project name) it isn't duplicated. Match the shape, not the literal version.
   const title = ui.findByTextContaining("mGB");
   expect(title != null && /^RetroPlug v.+ - mGB$/.test(title.text)).toBeTruthy();
 
-  // Cycle a top-level value with Right (Link Group: Off → 1).
+  // Duplicate → a second instance; the pair auto-links (Link Group promoted from Off to 1).
+  expect(navTo("Duplicate Instance")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(20);
+  expect(ui.findByTestId("tile-1") != null).toBeTruthy();
+
+  // Reopen the instance menu — the peer-only rows now appear.
+  ui.tapKey(Key.Esc);
+  ui.pump(10);
+  expect(ui.findByTextContaining("Replace Instance") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Remove Instance") != null).toBeTruthy();
+
+  // Link Group reads "1" (the auto-promotion), and Right cycles it in place to "2".
   expect(navTo("Link Group")).toBeTruthy();
+  expect(ui.findByTextContaining("Link Group: 1") != null).toBeTruthy();
   ui.tapKey(Key.Right);
   ui.pump(6);
-  expect(ui.findByTextContaining("Link Group: 1") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Link Group: 2") != null).toBeTruthy();
 
   // Expand System — the per-instance Save/Load State + SRAM items appear inline, plus the pathless
   // New SRAM (blank battery) + Reset (reboot) reconstruct actions.

@@ -224,6 +224,29 @@ test("instance menu Duplicate inherits + promotes the link group", () => {
   expect(groupOf(clone.id)).toBe(1); // the clone joined it
 });
 
+test("instance menu hides Replace / Remove / Link Group for a lone instance, shows them for a peer", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  const first = stores.project.systems.addSystem("/roms/a.gb")!;
+  const anchoredOf = (id: number) => stores.project.systems.view().find((s) => s.id === id)!;
+
+  // Lone instance: the peer-only rows are absent (Add / Duplicate stay).
+  const solo = buildInstanceMenu({ ...ctxOf(stores), system: anchoredOf(first) }).items;
+  expect(findItem(solo, "inst-add")).toBeTruthy();
+  expect(findItem(solo, "inst-dup")).toBeTruthy();
+  expect(findItem(solo, "inst-replace")).toBe(undefined);
+  expect(findItem(solo, "inst-remove")).toBe(undefined);
+  expect(findItem(solo, "inst-link")).toBe(undefined);
+
+  // A second instance makes them appear.
+  stores.project.systems.addSystem("/roms/a.gb");
+  const multi = buildInstanceMenu({ ...ctxOf(stores), system: anchoredOf(first) }).items;
+  expect(findItem(multi, "inst-replace")).toBeTruthy();
+  expect(findItem(multi, "inst-remove")).toBeTruthy();
+  expect(findItem(multi, "inst-link")).toBeTruthy();
+});
+
 test("a cancelled browse mutates nothing", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
