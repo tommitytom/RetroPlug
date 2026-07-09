@@ -60,6 +60,15 @@ public:
     // NES debug target (false on SameBoy/GBA, a gone id, or read/parse failure). Reached via debugTarget().
     bool loadLabels(std::uint32_t id, std::string path);
 
+    // --- profiler + disassembler + call stack (needs a Mesen NES debug target; empty/false on else) ---
+    // beginProfile inits the debugger + clears the profiler (drive execution via the render window, then
+    // readProfile returns the per-function stats hottest-first). disassemble decodes `count` instructions
+    // from `addr`. getCallStack returns the current frames (outermost first).
+    bool                            beginProfile(std::uint32_t id);
+    std::vector<rp::ProfiledFunction> readProfile(std::uint32_t id);
+    std::vector<rp::DisasmLine>     disassemble(std::uint32_t id, std::uint32_t addr, std::uint32_t count);
+    std::vector<rp::CallFrame>      getCallStack(std::uint32_t id);
+
     // --- live-core debug writes / control-flow (spec/09-cli-debugging.md) ---
     // Plain SystemBase virtuals (no debugTarget needed); false when the id is gone or the backend can't
     // serve. setCpuRegister writes one register by name; runUntilPc single-steps until PC == target.

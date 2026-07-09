@@ -66,6 +66,10 @@ public:
     rp::BreakInfo stepInto(std::uint32_t id) { return engine_svc_.stepInto(id); }
     rp::BreakInfo stepOver(std::uint32_t id) { return engine_svc_.stepOver(id); }
     rp::BreakInfo stepOut(std::uint32_t id) { return engine_svc_.stepOut(id); }
+    bool beginProfile(std::uint32_t id) { return engine_svc_.beginProfile(id); }
+    std::vector<rp::ProfiledFunction> readProfile(std::uint32_t id) { return engine_svc_.readProfile(id); }
+    std::vector<rp::DisasmLine> disassemble(std::uint32_t id, std::uint32_t addr, std::uint32_t count) { return engine_svc_.disassemble(id, addr, count); }
+    std::vector<rp::CallFrame> getCallStack(std::uint32_t id) { return engine_svc_.getCallStack(id); }
     std::optional<rfl::Bytestring> compileScript(std::string source) { return engine_svc_.compileScript(std::move(source)); }
     bool dspLoadKernel(std::vector<std::uint8_t> bytecode) { return engine_svc_.dspLoadKernel(std::move(bytecode)); }
     bool dspSetSystems(std::string json) { return engine_svc_.dspSetSystems(std::move(json)); }

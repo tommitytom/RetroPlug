@@ -270,6 +270,41 @@ rp::BreakInfo EngineRpcService::stepOut(std::uint32_t id) {
     return dbg->stepOut();
 }
 
+// Profiler + disassembler + call stack — all route through the Mesen NES debug target (null on
+// SameBoy/GBA → no-op/empty). Mirror the legacy HarnessRpcService profiler/disassemble/getCallStack.
+bool EngineRpcService::beginProfile(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return false;
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return false;
+    dbg->beginProfile();
+    return true;
+}
+
+std::vector<rp::ProfiledFunction> EngineRpcService::readProfile(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    return dbg->readProfile();
+}
+
+std::vector<rp::DisasmLine> EngineRpcService::disassemble(std::uint32_t id, std::uint32_t addr, std::uint32_t count) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    return dbg->disassemble(addr, count);
+}
+
+std::vector<rp::CallFrame> EngineRpcService::getCallStack(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    return dbg->getCallStack();
+}
+
 std::optional<rfl::Bytestring> EngineRpcService::compileScript(std::string source) {
     auto bytecode = dsp::compileToBytecode(source);
     if (!bytecode) return std::nullopt;

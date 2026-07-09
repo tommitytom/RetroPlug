@@ -52,6 +52,11 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::stepInto>();
     server.template addMethod<&BackendFacade::stepOver>();
     server.template addMethod<&BackendFacade::stepOut>();
+    // profiler + disassembler + call stack (spec/09-cli-debugging.md)
+    server.template addMethod<&BackendFacade::beginProfile>();
+    server.template addMethod<&BackendFacade::readProfile>();
+    server.template addMethod<&BackendFacade::disassemble>();
+    server.template addMethod<&BackendFacade::getCallStack>();
     // DSP-side JS runtime (the role kernel)
     server.template addMethod<&BackendFacade::compileScript>();
     server.template addMethod<&BackendFacade::dspLoadKernel>();

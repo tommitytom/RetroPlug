@@ -209,6 +209,22 @@ export interface Backend {
   /** Run out of the current subroutine frame; returns the resulting BreakInfo. */
   stepOut(id: number): BreakInfo;
 
+  /** Init the debugger + clear the profiler. Drive execution (a render window) between this and
+   *  readProfile. Returns false when the id is gone or the core has no NES debug target (SameBoy/GBA). */
+  beginProfile(id: number): boolean;
+
+  /** The accumulated per-function profiler stats, hottest-first (descending `exclusiveCycles`). Empty
+   *  when profiling was never begun, the id is gone, or there is no NES debug target. */
+  readProfile(id: number): ProfiledFunction[];
+
+  /** Disassemble `count` instructions from CPU address `addr`. Empty when the id is gone or the core has
+   *  no NES debug target (SameBoy/GBA). */
+  disassemble(id: number, addr: number, count: number): DisasmLine[];
+
+  /** The current call stack (outermost first), each frame's entered address + resolved label. Empty when
+   *  the id is gone, the stack is empty, or there is no NES debug target. */
+  getCallStack(id: number): CallFrame[];
+
   // --- Byte codec ---------------------------------------------------------
   // The ONLY native part of `.rplg` export framing: TS assembles every entry (the thin
   // project.json + the per-system blobs) and hands them here to compress; native just
@@ -332,6 +348,34 @@ export interface BreakInfo {
   broke: boolean;
   pc: number;
   breakpointId: number;
+}
+
+/** One function's profiler sample (`readProfile`). `address` is the absolute ROM offset the profiler
+ *  keys on; `label` is the resolved symbol name (empty until labels load). `exclusiveCycles` is time in
+ *  the function itself (the bottleneck signal); `inclusiveCycles` counts callees too. */
+export interface ProfiledFunction {
+  address: number;
+  label: string;
+  exclusiveCycles: number;
+  inclusiveCycles: number;
+  callCount: number;
+  minCycles: number;
+  maxCycles: number;
+}
+
+/** One disassembled instruction (`disassemble`). `address` is the CPU address; `text` is the mnemonic +
+ *  operands (symbol-resolved once labels load); `bytes` is the machine bytes as hex. */
+export interface DisasmLine {
+  address: number;
+  text: string;
+  bytes: string;
+}
+
+/** One call-stack frame (`getCallStack`, outermost first). `address` is the entered function's address;
+ *  `label` is its resolved symbol (empty until labels load). */
+export interface CallFrame {
+  address: number;
+  label: string;
 }
 
 /** Memory-region selector for `readMemory` — mirrors native `rp::MemoryType`. NES supports Ram/Rom/Sram/

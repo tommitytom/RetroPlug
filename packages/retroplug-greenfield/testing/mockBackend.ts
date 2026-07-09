@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakInfo, ConstructSpec, CpuRegister, FileBrowserOpts, FrameData, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakInfo, CallFrame, ConstructSpec, CpuRegister, DisasmLine, FileBrowserOpts, FrameData, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 
 const enc = new TextEncoder();
@@ -338,6 +338,26 @@ export class MockBackend implements Backend {
   stepOut(id: number): BreakInfo {
     this.log.push("stepOut");
     return { broke: this.systems.has(id), pc: 0, breakpointId: -1 };
+  }
+
+  beginProfile(id: number): boolean {
+    this.log.push("beginProfile");
+    return this.systems.has(id); // only a live NES core has a profiler
+  }
+
+  readProfile(_id: number): ProfiledFunction[] {
+    this.log.push("readProfile");
+    return []; // the mock never profiles (no real core)
+  }
+
+  disassemble(_id: number, _addr: number, _count: number): DisasmLine[] {
+    this.log.push("disassemble");
+    return []; // the mock has no disassembler (no real core)
+  }
+
+  getCallStack(_id: number): CallFrame[] {
+    this.log.push("getCallStack");
+    return []; // the mock has no call stack (no real core)
   }
 
   zip(entries: ZipEntry[]): Uint8Array | null {
