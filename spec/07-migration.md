@@ -17,6 +17,30 @@ resolve. Nothing about the runtime architecture changes — greenfield *is* the 
 
 ---
 
+## Final tasks before deletion
+
+Most of the original §1 gap has since closed — live config apply, plugin state, **NES/GBA Mesen
+systems + their TS store wiring**, the **Mesen state-snapshot arming** (§4.1), the **TS default-role
+providers** (§4.4), the bindings + gamepad UI, and the confirm/prompt modals are all done, and
+`gain`/`reload` are generalized off SameBoy-only. After the scoping decisions below, **four feature/
+verification tasks remain** before legacy can be deleted:
+
+1. **VST2 build.** Greenfield builds `clap vst3 jack` ([CMakeLists.txt:139](../packages/native-greenfield/CMakeLists.txt#L139)); add the `vst2` DPF target (the legacy build already wires the VST2 SDK, so it's ~a one-line `TARGETS` addition). See §1.
+2. **Port the LSDj-sync / DAW-timing / audio-quality test matrix to greenfield.** The legacy CLI + reaper harness still owns this (`docs/lsdj.md`); the **greenfield CLI + the observe/debug RPCs** ([spec/09-cli-debugging.md](09-cli-debugging.md)) are the vehicle. This gates deleting `packages/native/test`, `test/ts/**`, and the `reaper:*` scripts (§3).
+3. **Native KeyboardMidi coverage.** KeyboardMidi (mode 5) is behavior-unit-tested ([test/dsp/lsdj-modes.test.ts](../packages/retroplug-greenfield/test/dsp/lsdj-modes.test.ts)) but never driven against a **real LSDj core**. Add a real-core test proving MIDI→LSDj-keyboard end to end (fold it into task 2's matrix).
+4. **The final 2 LSDj sync modes** (§5): raw **Keyboard** (mode 4 — needs the per-block UI-keys feed) and **ArduinoboyMaster** (mode 7, LSDj→MIDI-out — needs the emulator **serial-OUT fed into the block** + `emitMidiOut` **drained to the host MIDI-out port** + the master-protocol behaviour). ArduinoboyMaster is the priority.
+
+**Explicitly deferred / dropped (NOT blockers for deletion):**
+- **Kit-patch UI + sample matcher + resampling** — will be **reworked from scratch on greenfield** after it becomes the main build; not gating deletion (the native `KitCompiler` primitives stay — §2).
+- **About panel** — dropped (offered little).
+- **LV2** — deferred indefinitely (its out-of-process DSP/UI split doesn't fit RetroPlug).
+- **Live memory subscription** (§4.2), **savestate slots**, **sav inspector**, **web/Emscripten** — deferred; none are features the switchover depends on.
+
+Beyond these four, the rest is **mechanical**: finish the DSP-roles C++→TS move + delete the dead role
+classes (§5), re-home `retroplug-cli-core` (§3), delete legacy, then the rename + plugin-identity revert (§3).
+
+---
+
 ## 1. Feature gap (greenfield vs legacy)
 
 Greenfield is a real, buildable, multi-format plugin (`clap` / `vst3` / `jack` standalone),
@@ -28,19 +52,19 @@ precondition on deleting the corresponding legacy code.
 |---|---|---|
 | **Live per-system config apply** | model / highpass / linkGroup / fastBoot / gain / reloadOnRomChange applied live | **Done.** `applySystemSetting` (gain / reloadOnRomChange) + `applyRoleConfig` (sameboy model/highpass/link/fastBoot) run through the command ring ([EngineRpcService.cpp:99](../packages/native-greenfield/src/EngineRpcService.cpp#L99)). `fastBoot` takes effect on the next restart ([Engine.cpp:191](../packages/native-greenfield/src/Engine.cpp#L191)). |
 | **Plugin state (get/setState)** | project chunk in `PluginDSP` | **Done.** Base64 `.rplg` via the control plane; autoload via `__rp_loadProjectPath`. See [05-data-persistence.md](05-data-persistence.md). |
-| **NES / GBA (Mesen) systems** | fully wired | **Native backend done; TS wiring open.** `MesenBackend` builds `MesenNesSystem` / `MesenGbaSystem`, registered as `"mesen"` ([BackendFacade.cpp:13](../packages/native-greenfield/src/BackendFacade.cpp#L13)). The TS store role-pipeline + `RomProvider` arms that select NES/GBA are not wired; `Engine` gain/reload are SameBoy-only ([Engine.cpp:155](../packages/native-greenfield/src/Engine.cpp#L155)). |
-| **MIDI routing** | routing cycler + native routing roles | **Largely done.** `midi-routing` is a project-scope feature-role (`src/midiRouting.ts` + `src/dspRoles.ts`); host MIDI is staged in the plugin block. Open: per-block host-input feed + routing-config live re-push (§5). |
-| **About panel** | `packages/ui/src/menu/AboutPanel.tsx` + menu item | **Not yet built.** Deferred marker at [menuDefs.ts:209](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts#L209). |
+| **NES / GBA (Mesen) systems** | fully wired | **Done.** `MesenBackend` builds `MesenNesSystem` / `MesenGbaSystem` and arms their state snapshot (`bootMesen`). The TS store wires them: `defaultCoreFor` routes `nes`/`gba` → `mesen`, `coreRoles` registers the `"mesen"` system-role (NES Region + Remove Sprite Limit knobs), `romProviders` attaches `nes-n8-midi`, and `Engine` gain/reload are generalized (`setGainDb` is a `SystemBase` virtual). NES host-MIDI + the N8 FIFO play. Further NES↔SameBoy polish is product-scoped, not a legacy-parity blocker. |
+| **MIDI routing** | routing cycler + native routing roles | **Done.** `midi-routing` is a project-scope feature-role (`src/midiRouting.ts` + `src/dspRoles.ts`); host MIDI is staged per block and fanned to systems; routing-config edits live-re-push via `setRoleConfig` → `syncDspFromStore`. |
+| **About panel** | `packages/ui/src/menu/AboutPanel.tsx` + menu item | **Dropped** — not a deletion blocker (it offered little). |
 | **Bindings / keymap editor UI** | full keyboard+gamepad capture submenu | **Built.** Settings → Keyboard Bindings + Gamepad Bindings ([menuDefs.ts](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts) `bindingsChildren` per channel): a profile switcher, one capture row per GB button, three **app-action** capture rows (Open Menu / Cycle Instances / Cycle Instances (Back) → the `keyboardActions`/`gamepadActions` binding sections), a channel reset (GB buttons + actions), and New / Rename / Delete, write-through via `bindingsStore`. |
 | **LSDj mode selection (live apply)** | 8-mode cycler + `setLsdjSyncConfig` RPC | **Largely done.** An "LSDj" instance submenu (Mode + Tempo Divisor cyclers) drives `setRoleConfig`, which live-applies via the feature-role re-push path (no dedicated RPC). Behaviours built for MidiSync + MidiSyncArduinoboy + MidiMap + KeyboardMidi + MidiPassthrough; raw Keyboard + ArduinoboyMaster remain (§5). |
 | **Text-prompt / confirm-modal flows** | rename prompts, remove-confirm, incompatible-project / unsaved-changes / relink modals | **Largely built.** The `capture`/`prompt` menu kinds exist (bindings capture rows + New/Rename/delete-confirm prompts), and the unsaved-changes / discard / notice / relink modal overlays are built ([App.tsx](../packages/retroplug-greenfield/ui/App.tsx) `useCloseGuard` / `useProjectModals`); relink uses the OS "Locate on Disk" dialog. |
-| **Kit-patch UI + sample matcher + resampling** | `KitEditor.tsx`, native `KitCompiler` (r8brain + enkiTS) | **Not yet built.** Kit-patch is modelled as a deferred UI-thread behaviour, not a DSP role ([systemRoles.ts:58](../packages/retroplug-greenfield/src/systemRoles.ts#L58)); the sample matcher and emulator-output resampling ride on it and have no greenfield presence. (Kit *compilation* stays native — see §2.) |
-| **Savestate slots** | — (never built in legacy either) | **Not yet built.** The state-snapshot triple exists for save/duplicate; a user-facing multi-slot feature does not. |
-| **Sav inspector** | — (design only) | **Not yet built.** The LSDj sav codec exists; RPC exposure + a React view do not. |
-| **Live memory subscription** | `subscribeMemory` → `enableMemorySnapshot` streaming | **Not yet built.** Greenfield has one-shot frame/state/SRAM reads through the read door but no live region pump; nothing arms `enableMemorySnapshot` (§4). |
+| **Kit-patch UI + sample matcher + resampling** | `KitEditor.tsx`, native `KitCompiler` (r8brain + enkiTS) | **Deferred — reworked from scratch on greenfield post-switchover; NOT a deletion blocker.** Kit *compilation* stays native (§2); the greenfield UI-thread behaviour + sample matcher + resampling are a fresh build once greenfield is the main build. |
+| **Savestate slots** | — (never built in legacy either) | **Deferred.** Never in legacy → not a parity blocker. The state-snapshot triple exists for save/duplicate; a user-facing multi-slot feature does not. |
+| **Sav inspector** | — (design only) | **Deferred.** Design-only in legacy → not a blocker. The LSDj sav codec exists; RPC exposure + a React view do not. |
+| **Live memory subscription** | `subscribeMemory` → `enableMemorySnapshot` streaming | **Deferred (§4.2).** Greenfield has one-shot frame/state/SRAM reads through the read door but no live region pump; nothing arms `enableMemorySnapshot`. Not a switchover blocker unless a feature needs it. |
 | **Gamepad (SDL) input** | `GamepadManager.{hpp,cpp}` | **Live input built (default bindings).** The legacy `GamepadManager` is compiled into greenfield too and polled from `PluginGreenfieldUI::uiIdle` (emitting the `gamepad-*` JS bus); `ui/input/useGamepadInput.ts` maps via the existing `bindings.gamepad` and routes to the focused core, twin of `useGameInput`. An in-app Gamepad Bindings editor (rebind by pressing a button *or* flicking a stick) is built, and the **left stick drives the d-pad** via half-axis tokens + hysteresis (`keyCodes.ts` `axisToken`, seeded in the default map, consumed in `useGamepadInput`). The **gamepad also drives the menu** ([Menu.tsx](../packages/retroplug-greenfield/ui/screens/menu/Menu.tsx)): d-pad / left stick move + cycle, A selects, B backs out (fixed SDL names via `keyCodes.ts` `menuNavForButton` / `menuNavForAxisToken`). Opening the menu and cycling the focused instance are **rebindable app actions** (`buildKeyToAction` / `buildGamepadToAction`, dispatched in [App.tsx](../packages/retroplug-greenfield/ui/App.tsx)): Open Menu defaults to Esc / `leftshoulder`, Cycle Instances to Tab / `rightshoulder` (Back unbound), so a gamepad-only user is never stranded. |
-| **Plugin formats VST2 + LV2** | JACK / CLAP / VST2 / VST3 / LV2 | **Not built.** Greenfield builds `clap vst3 jack` only ([CMakeLists.txt:106](../packages/native-greenfield/CMakeLists.txt#L106)). LV2's out-of-process DSP/UI split is a distinct model greenfield hasn't addressed. |
-| **Web / Emscripten port** | — (design only) | **Not started.** |
+| **Plugin formats VST2 + LV2** | JACK / CLAP / VST2 / VST3 / LV2 | **VST2 = a final task** (add the `vst2` entry to the DPF `TARGETS` — the SDK is already wired for the legacy build). **LV2 = deferred indefinitely** — its out-of-process DSP/UI split doesn't fit RetroPlug. Greenfield builds `clap vst3 jack` today ([CMakeLists.txt:139](../packages/native-greenfield/CMakeLists.txt#L139)). |
+| **Web / Emscripten port** | — (design only) | **Deferred** (design-only in legacy). |
 
 ---
 
@@ -175,19 +199,12 @@ These are arming steps and responsibilities a from-scratch greenfield host must 
 deletion introduces. They are listed here because they're the loose ends that must close for
 greenfield to be the sole build.
 
-1. **`enableStateSnapshot()` is armed only for SameBoy — Mesen is unarmed today.** Greenfield arms
-   the state snapshot explicitly in
-   [SameBoyBackend.cpp:37](../packages/native-greenfield/src/SameBoyBackend.cpp#L37), but
-   [MesenBackend.cpp](../packages/native-greenfield/src/MesenBackend.cpp) only `onActivate`s, never
-   arming it. Since the read door claims a slot for *every* constructed system
-   ([EngineRpcService.cpp:80](../packages/native-greenfield/src/EngineRpcService.cpp#L80)) and its
-   contract says the core "must already have `enableStateSnapshot()`'d (for `stateRegions()`)"
-   ([SnapshotRegistry.hpp:43](../packages/native-greenfield/src/SnapshotRegistry.hpp#L43)), a
-   greenfield NES/GBA system **already** gets a slot with empty state regions — savestate-based
-   `readSram`/duplicate is degraded for Mesen cores now. (Legacy's `PluginDSP` arms its *own*
-   systems centrally, which is why the pattern can look "inherited", but it never touches
-   greenfield's cores.) Arm `enableStateSnapshot()` in `MesenBackend` (or centrally in the
-   factory / `constructSystem`).
+1. **`enableStateSnapshot()` for Mesen — DONE.** (Was SameBoy-only.) `MesenBackend`'s `bootMesen`
+   now calls `enableStateSnapshot()` for both NES and GBA (mirroring
+   [SameBoyBackend.cpp:37](../packages/native-greenfield/src/SameBoyBackend.cpp#L37)), so a Mesen
+   system's read-door slot ([EngineRpcService.cpp:80](../packages/native-greenfield/src/EngineRpcService.cpp#L80))
+   has live `stateRegions()` — savestate-based `readSram` / duplicate work on Mesen cores. Closed
+   during the Mesen-parity FOUNDATION work.
 
 2. **`enableMemorySnapshot(type)` has no greenfield equivalent.** Legacy arms live region streaming on a
    `SubscribeMemory` command. Greenfield has no equivalent subscription path (§1, "live memory
@@ -201,13 +218,13 @@ greenfield to be the sole build.
    second copy. Until someone does that refactor both copies live — a documented redundancy, not a
    regression.
 
-4. **The sniffer's default-role suggestion is gone by design.** Legacy relied on `RomSniffer` to
-   auto-attach LSDj-sync / mGB / kit-patch role config on a fresh ROM. Greenfield turns this off
-   ([SameBoyBackend.cpp:35](../packages/native-greenfield/src/SameBoyBackend.cpp#L35)), so **the TS
-   store/kernel must supply the equivalent default feature wiring** — there is no C++ fallback once
-   legacy is gone. This is a responsibility that has fully moved to TS
-   ([04-roles-dsp-kernel.md](04-roles-dsp-kernel.md)), not a core regression; the TS side must cover
-   it (`RomProvider` default-role attachment is the seam, and it is one of the in-flight items in §5).
+4. **The sniffer's default-role suggestion moved to TS — DONE.** Legacy relied on `RomSniffer` to
+   auto-attach LSDj-sync / mGB / N8-MIDI role config on a fresh ROM; greenfield turns the C++ sniffer
+   off ([SameBoyBackend.cpp:35](../packages/native-greenfield/src/SameBoyBackend.cpp#L35)) and supplies
+   the equivalent in TS: `registerRomProviders`
+   ([romProviders.ts](../packages/retroplug-greenfield/src/romProviders.ts)) attaches `mgb` (title /
+   embedded), `lsdj-sync` (LSDj title), and `nes-n8-midi` (platform). Kit-patch default attachment
+   follows if/when that feature is (re)built.
 
 ---
 
@@ -230,6 +247,9 @@ and the store→kernel projection are wired.
   kernel's `ctx.state` per-system scratch bag ([dspRoles.ts](../packages/retroplug-greenfield/src/dspRoles.ts)).
   Missing: raw **Keyboard** mode (needs the `keys` feed, below) and **ArduinoboyMaster** MI.OUT (the
   `emitMidiOut` host-out direction, which also needs the emulator serial-out fed *into* the block).
+  These two are **final task 4** (ArduinoboyMaster is the priority); and KeyboardMidi, though built +
+  unit-tested ([test/dsp/lsdj-modes.test.ts](../packages/retroplug-greenfield/test/dsp/lsdj-modes.test.ts)),
+  still needs **real-core coverage** (final task 3) — no test drives it against an actual LSDj ROM yet.
 - **Legacy C++ role removal:** delete `LsdjSyncRole` / `MgbPassthroughRole` (and the rest of the
   role classes) once the TS path drives every host — blocked until the shared CLI/plugin consumers
   are gone.
@@ -237,8 +257,9 @@ and the store→kernel projection are wired.
   edits (LSDj mode, routing mode) already re-push to the running behaviour via `setRoleConfig` →
   `markDirty` → `syncDspFromStore`. Still unfed: UI-mapped buttons and raw keys (blocks raw Keyboard
   mode).
-- **NES/GBA store arms:** the native `MesenBackend` is done; the TS store role-pipeline + ROM
-  providers that select NES/GBA are not.
+- **NES/GBA store arms — DONE.** `MesenBackend` + the TS store select and wire NES/GBA:
+  `defaultCoreFor` → `mesen`, the `coreRoles` `"mesen"` system-role (Region + sprite-limit knobs), and
+  `romProviders`' `nes-n8-midi` attachment.
 - **UI-thread behaviours + extensions:** the UI-thread behaviour kind (kit-patch first — it compiles
   on the UI thread and writes patched memory regions into the core, needing a control-plane
   memory-write path that does not exist yet, **not** a DSP-kernel sink), the `RoleType.ui`
@@ -261,7 +282,7 @@ legacy" provenance comments are context, not action items.)
 | Location | Marker |
 |---|---|
 | [DspRuntime.cpp:15](../packages/native-greenfield/src/DspRuntime.cpp#L15) | GB serial pump is a plain FIFO; intra-block frame not yet modelled |
-| [Engine.cpp:155](../packages/native-greenfield/src/Engine.cpp#L155) | gain/reload SameBoy-only "for now"; generalize when NES/GBA land |
+| [Engine.cpp](../packages/native-greenfield/src/Engine.cpp) | **Resolved** — gain/reload generalized: `setGainDb` is a `SystemBase` virtual applied before the SameBoy cast (was SameBoy-only). |
 | [Engine.cpp:191](../packages/native-greenfield/src/Engine.cpp#L191) | `fastBoot` deferred to the next restart |
 | [PluginGreenfieldDSP.cpp:135](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L135) | host MIDI short messages only; SysEx deferred |
 | [systemRoles.ts:13](../packages/retroplug-greenfield/src/systemRoles.ts#L13) / [:58](../packages/retroplug-greenfield/src/systemRoles.ts#L58) | kit-patch stays a deferred `ui` UI-thread behaviour |
