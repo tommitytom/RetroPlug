@@ -3,7 +3,7 @@
 // -input hook indexes per keystroke. Values mirror native InputTypes.hpp (Right=0 … Start=7).
 import { test, expect } from "../../testing/harness";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { resolveKeyName, dpfCodeToKeyName, buildKeyToButton, BUTTON_VALUE } from "../../src/keyCodes";
+import { resolveKeyName, dpfCodeToKeyName, buildKeyToButton, buildKeyToAction, BUTTON_VALUE } from "../../src/keyCodes";
 
 test("resolveKeyName: named keys, single-char codepoints, unknown → null", () => {
   expect(resolveKeyName("Right")).toBe(0xe037);
@@ -61,4 +61,19 @@ test("buildKeyToButton: unknown button names + unresolvable keys are skipped", (
   expect(m.get(0xe037)).toBe(undefined); // Bogus button dropped
   expect(m.get(0x5a)).toBe(BUTTON_VALUE.A); // the resolvable key still maps
   expect(m.size).toBe(1);
+});
+
+test("buildKeyToAction: the default app-action bindings invert to DPF-code → action", () => {
+  const m = buildKeyToAction(defaultBindingMap().keyboardActions);
+  expect(m.get(0x1b)).toBe("OpenMenu"); // Escape
+  expect(m.get(0x09)).toBe("CycleNext"); // Tab
+  expect(m.get(0x5a)).toBe(undefined); // Z is a GB button, not an action key
+});
+
+test("buildKeyToAction: unknown action ids + unresolvable keys skipped; null-tolerant", () => {
+  const m = buildKeyToAction({ OpenMenu: ["Escape"], Bogus: ["Enter"], CyclePrev: ["Nonsense"] });
+  expect(m.get(0x1b)).toBe("OpenMenu");
+  expect(m.get(0x0d)).toBe(undefined); // Bogus action id dropped
+  expect(m.size).toBe(1); // CyclePrev's "Nonsense" doesn't resolve
+  expect(buildKeyToAction(undefined).size).toBe(0); // an older profile lacking the section
 });

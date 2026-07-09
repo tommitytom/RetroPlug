@@ -74,3 +74,28 @@ test("add: an unknown or absent ROM is a no-op (rejected before construct)", () 
   expect(changes()).toBe(0);
   expect(be.log.includes("constructSystem")).toBeFalsy(); // never reached native
 });
+
+test("focusNext: cycles focus forward/back through the instances in grid order, wrapping", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const a = store.addSystem("/roms/a.gb") as number; // focused (first)
+  const b = store.addSystem("/roms/a.gb") as number;
+  const c = store.addSystem("/roms/a.gb") as number; // order: [a, b, c], focus still a
+
+  expect(store.focused()).toBe(a);
+  expect(store.focusNext(1)).toBeTruthy(); // a → b
+  expect(store.focused()).toBe(b);
+  expect(store.focusNext(1)).toBeTruthy(); // b → c
+  expect(store.focusNext(1)).toBeTruthy(); // c → a (wrap)
+  expect(store.focused()).toBe(a);
+  expect(store.focusNext(-1)).toBeTruthy(); // a → c (wrap back)
+  expect(store.focused()).toBe(c);
+});
+
+test("focusNext: a no-op with fewer than two instances", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  expect(store.focusNext(1)).toBeFalsy(); // empty
+  store.addSystem("/roms/a.gb");
+  expect(store.focusNext(1)).toBeFalsy(); // single instance — nowhere to go
+});

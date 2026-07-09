@@ -26,12 +26,16 @@ export function parseBindingMap(json: string): BindingMap | null {
   return bindingMapSchema.parse(doc) as BindingMap;
 }
 
-/** Serialize a profile, stamping the current schema version (native field order). */
+/** Serialize a profile, stamping the current schema version (native field order, then the greenfield-only
+ *  app-action sections). Emitting keyboardActions/gamepadActions is load-bearing: the editor re-serializes on
+ *  every rebind, so omitting them would silently strip a user's customized Open Menu / Cycle bindings. */
 export function serializeBindingMap(map: BindingMap): string {
   return JSON.stringify({
     schemaVersion: BINDINGS_SCHEMA,
     name: map.name,
     keyboard: map.keyboard,
     gamepad: map.gamepad,
+    keyboardActions: map.keyboardActions,
+    gamepadActions: map.gamepadActions,
   });
 }

@@ -4,7 +4,7 @@
 // so there is no code table — unlike the keyboard channel's resolveKeyName.
 import { test, expect } from "../../testing/harness";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { buildGamepadToButton, axisToken, menuNavForButton, menuNavForAxisToken, BUTTON_VALUE } from "../../src/keyCodes";
+import { buildGamepadToButton, buildGamepadToAction, axisToken, menuNavForButton, menuNavForAxisToken, BUTTON_VALUE } from "../../src/keyCodes";
 
 test("buildGamepadToButton: the default bindings invert to the native button values", () => {
   const m = buildGamepadToButton(defaultBindingMap().gamepad);
@@ -82,4 +82,19 @@ test("menuNavForAxisToken: only the left stick navigates, per the SDL sign conve
   expect(menuNavForAxisToken("rightx+")).toBe(null);
   expect(menuNavForAxisToken("righty-")).toBe(null);
   expect(menuNavForAxisToken("")).toBe(null);
+});
+
+test("buildGamepadToAction: the default app-action bindings invert to SDL-name → action", () => {
+  const m = buildGamepadToAction(defaultBindingMap().gamepadActions);
+  expect(m.get("leftshoulder")).toBe("OpenMenu"); // L1
+  expect(m.get("rightshoulder")).toBe("CycleNext"); // R1
+  expect(m.get("a")).toBe(undefined); // a face button is a GB button, not an action
+});
+
+test("buildGamepadToAction: unknown action ids skipped; null-tolerant", () => {
+  const m = buildGamepadToAction({ OpenMenu: ["guide"], Bogus: ["x"] });
+  expect(m.get("guide")).toBe("OpenMenu");
+  expect(m.get("x")).toBe(undefined); // Bogus action id dropped
+  expect(m.size).toBe(1);
+  expect(buildGamepadToAction(undefined).size).toBe(0); // older profile lacking the section
 });

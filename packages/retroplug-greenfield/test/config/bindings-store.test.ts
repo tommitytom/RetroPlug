@@ -24,6 +24,8 @@ const wasd = (): BindingMap => ({
   name: "ignored",
   keyboard: { Left: ["A"], Right: ["D"], Up: ["W"], Down: ["S"] },
   gamepad: {},
+  keyboardActions: {},
+  gamepadActions: {},
 });
 
 test("ensureDefaults: writes bindings/default.json from defaultBindingMap", () => {
@@ -99,4 +101,27 @@ test("resolvedBindings: merges active keyboard + gamepad; default fallback when 
   // A missing active keyboard profile falls back to the built-in default keyboard.
   uc.setActiveKeyboardBindings("ghost");
   expect(store.resolvedBindings().keyboard).toEqual(defaultBindingMap().keyboard);
+});
+
+test("resolvedBindings: forwards keyboardActions from the keyboard profile, gamepadActions from the gamepad profile", () => {
+  const { uc, store } = setup();
+  const mk = (name: string, ka: string[], ga: string[]): BindingMap => ({
+    name,
+    keyboard: {},
+    gamepad: {},
+    keyboardActions: { OpenMenu: ka },
+    gamepadActions: { OpenMenu: ga },
+  });
+  store.saveProfile("kb", mk("kb", ["F1"], ["x"]));
+  store.saveProfile("gp", mk("gp", ["F9"], ["y"]));
+  uc.setActiveKeyboardBindings("kb");
+  uc.setActiveGamepadBindings("gp");
+
+  const r = store.resolvedBindings();
+  expect(r.keyboardActions.OpenMenu).toEqual(["F1"]); // from the keyboard profile
+  expect(r.gamepadActions.OpenMenu).toEqual(["y"]); // from the gamepad profile
+
+  // A missing active keyboard profile falls back to the seeded default actions.
+  uc.setActiveKeyboardBindings("ghost");
+  expect(store.resolvedBindings().keyboardActions).toEqual(defaultBindingMap().keyboardActions);
 });

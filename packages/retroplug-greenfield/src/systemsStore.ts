@@ -125,6 +125,17 @@ export class SystemsStore {
     return true;
   }
 
+  /** Move focus to the next (`dir=1`) or previous (`dir=-1`) instance in grid order, wrapping around. The
+   *  "cycle instances" app action. No-op with fewer than two instances; a stale/absent focus starts at the
+   *  front. Reuses setFocus, so it's transient + fires the same re-render signal. */
+  focusNext(dir: 1 | -1): boolean {
+    const n = this.entries.length;
+    if (n < 2) return false; // n===0 would make % 0 NaN; a single instance has nowhere to go
+    let idx = this.entries.findIndex((e) => e.id === this.focusedId);
+    if (idx < 0) idx = 0; // no live focus → start at the front
+    return this.setFocus(this.entries[(idx + dir + n) % n].id); // +n so dir=-1 doesn't go negative in JS
+  }
+
   /** Append a new instance of `romPath`, disambiguating its sav suffix against the
    *  live list. Returns the new id, or null when the ROM is unknown/unreadable. */
   addSystem(romPath: string, opts?: { explicitSav?: string }): number | null {

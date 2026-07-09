@@ -53,7 +53,7 @@ test("BindingsStore: ensureDefaults + profile CRUD over real disk (listDir/write
   expect(be.fileExists(__CONFIG_DIR__ + "/bindings/default.json")).toBeTruthy();
   expect(b.availableProfiles()).toEqual(["default"]);
 
-  expect(b.saveProfile("wasd", { name: "ignored", keyboard: { Left: ["A"] }, gamepad: {} })).toBeTruthy();
+  expect(b.saveProfile("wasd", { name: "ignored", keyboard: { Left: ["A"] }, gamepad: {}, keyboardActions: {}, gamepadActions: {} })).toBeTruthy();
   expect(b.availableProfiles()).toEqual(["default", "wasd"]); // listDir → *.json stems, sorted
 
   const loaded = b.loadProfile("wasd")!;

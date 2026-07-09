@@ -110,6 +110,42 @@ export function buildGamepadToButton(gamepad: Record<string, string[]>): Map<str
   return map;
 }
 
+/** An app-level (non-GB) action a key or controller button can be bound to: open/close the menu, and cycle
+ *  which instance is focused (forward / back). These live in the separate keyboardActions/gamepadActions
+ *  binding sections, so they never collide with the GB-button resolvers above. */
+export type AppAction = "OpenMenu" | "CycleNext" | "CyclePrev";
+const APP_ACTIONS: readonly AppAction[] = ["OpenMenu", "CycleNext", "CyclePrev"];
+const isAppAction = (id: string): id is AppAction => (APP_ACTIONS as readonly string[]).includes(id);
+
+/** Invert a keyboard app-action map (AppAction id → key-name[]) into a DPF-code → action lookup — the
+ *  app-action twin of buildKeyToButton. Null-tolerant (an older profile may lack the section); unknown action
+ *  ids and unresolvable key names are skipped; a later binding for the same code wins. */
+export function buildKeyToAction(actions: Record<string, string[]> | undefined): Map<number, AppAction> {
+  const map = new Map<number, AppAction>();
+  if (!actions) return map;
+  for (const [id, keyNames] of Object.entries(actions)) {
+    if (!isAppAction(id)) continue;
+    for (const keyName of keyNames) {
+      const code = resolveKeyName(keyName);
+      if (code !== null) map.set(code, id);
+    }
+  }
+  return map;
+}
+
+/** The gamepad twin: SDL-button-name → action (the names ARE the raw "gamepad-button" bus names, so no code
+ *  table, like buildGamepadToButton). Null-tolerant; unknown action ids skipped; a later binding for the same
+ *  name wins. */
+export function buildGamepadToAction(actions: Record<string, string[]> | undefined): Map<string, AppAction> {
+  const map = new Map<string, AppAction>();
+  if (!actions) return map;
+  for (const [id, padNames] of Object.entries(actions)) {
+    if (!isAppAction(id)) continue;
+    for (const padName of padNames) map.set(padName, id);
+  }
+  return map;
+}
+
 /** Which half-axis token (or "" = centered) a stick axis is in, with hysteresis so it doesn't chatter at
  *  the boundary. A token is `<axisName><sign>` and lives in the gamepad map like a button name (SDL
  *  convention: X+ = right, Y+ = down → "leftx+"=Right, "leftx-"=Left, "lefty+"=Down, "lefty-"=Up). `current`

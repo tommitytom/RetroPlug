@@ -121,6 +121,8 @@ export class BindingsStore {
       name: active.activeKeyboardBindings,
       keyboard: kb ? kb.keyboard : def.keyboard,
       gamepad: gp ? gp.gamepad : def.gamepad,
+      keyboardActions: kb ? kb.keyboardActions : def.keyboardActions,
+      gamepadActions: gp ? gp.gamepadActions : def.gamepadActions,
     };
   }
 
