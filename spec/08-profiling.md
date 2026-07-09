@@ -59,11 +59,18 @@ per block:
 
 The mGB **sink** path itself is clean — `pushSerialIn` crosses scalars via the C thunk
 ([DspRuntime.cpp:17-29](../packages/native-greenfield/src/DspRuntime.cpp#L17)) with no JS allocation, and
-`serialIn_` is a cleared-not-freed member vector — but everything upstream churns. This is the
-optimization target the harness makes measurable: hoist the ctx/closures/filters/routing-Map out of the
-per-block path toward zero steady-state allocation. (`emitMidiOut`
+`serialIn_` is a cleared-not-freed member vector — but everything upstream churns. (`emitMidiOut`
 [DspRuntime.cpp:32-56](../packages/native-greenfield/src/DspRuntime.cpp#L32), which *does* allocate per
 call, is unused by mGB.)
+
+**The TS-kernel rows are now optimized away** (the "hoist the ctx/closures/filters/routing-Map out of the
+per-block path" pass): the per-system `SystemCtx` + its sink closures, the routed inboxes, and the
+per-system key/button lists are built **once** at `setSystems` and mutated in place each block
+([dspKernel.ts](../packages/retroplug-greenfield/src/dspKernel.ts) `slots`/`buildCtx`,
+`routeBlockInto` in [midiRouting.ts](../packages/retroplug-greenfield/src/midiRouting.ts), and an
+indexed-loop `mgb`). That cut Profile A from **~171 to ~32 allocs/block** (−81%). The residual per-block
+churn is now the **native marshalling** row (the C→JS input object graph — a separate, deferred pass) plus
+QuickJS per-call internals.
 
 ## 4. Approach
 
@@ -234,10 +241,17 @@ modes are out.
 - `pnpm profile:greenfield` builds `build-prof` and prints a JSON metrics line; the allocation counts are
   **bit-identical run-to-run** (only `xRT`/`gcMs` wall-clock vary). First measured result (Profile A, 1
   mGB core, 2000 blocks): **~171 allocs/block**, `freesPerBlock` ≈ allocs (balanced churn),
-  `liveHeapDelta` ≈ 0 (not a leak), `maxBlockAllocs` 279. Notably the end-of-window `runGc` reclaims
-  **~595 KB** of cyclic garbage → the per-block ctx/closures form reference cycles the collector must
-  sweep (so the DSP thread *will* incur periodic cycle-GC in production) — the headline optimization
-  target (§3).
+  `liveHeapDelta` ≈ 0 (not a leak), `maxBlockAllocs` 279.
+- **Optimization pass (done):** hoisting the per-block ctx/closures/filters/routing-Map to `setSystems`
+  (§3) cut Profile A to **~32 allocs/block** (−81%), **~2.3 KB/block** (−79%), `maxBlockAllocs` 279 → 60,
+  behaviour-identical (41-file mock + 25-file native suites green).
+- **Correction to the earlier cyclic-garbage read.** The end-of-window `runGc` reclaims ~595 KB in **both**
+  the old and new kernels, and a **block-count sweep (500 / 1000 / 2000 / 4000 blocks) shows it is
+  constant, not proportional to blocks** — so it is *not* per-block cyclic garbage from the ctx/closures
+  (removing them left it unchanged). It is a **fixed, one-time setup structure** (the zod-based role
+  registry built at kernel load) that production's auto-GC collects once early and never regenerates — not
+  an unbounded audio-thread hazard. The real steady-state RT cost was the malloc/free churn, now ~5×
+  lower; further reduction means the native marshalling row (§3), a separate pass.
 - **Ship path clean:** dsp-bench no-ops under the default host; the full `pnpm test:greenfield-native`
   sweep (25 files) + `pnpm test:greenfield` (41) stay green; the default `build/` and shipped plugin never
   define `RETROPLUG_PROFILE` (zero overhead).
