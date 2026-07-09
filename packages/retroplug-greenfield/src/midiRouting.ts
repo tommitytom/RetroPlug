@@ -80,3 +80,46 @@ function allTargets(n: number): number[] {
   for (let i = 0; i < n; i++) out.push(i);
   return out;
 }
+
+/** The allocation-free hot-path twin of `routeBlock`: fan `events` into caller-owned, PRE-CLEARED
+ *  positional `inboxes` (element `i` = system `i`), mutating them in place. Used per audio block by
+ *  the DSP kernel, so it inlines the routing arithmetic — no per-event `routeEvent` result object, no
+ *  `allTargets` array. For every mode EXCEPT MidiChannelToInstance the delivered event is the ORIGINAL
+ *  `ev` reference (zero allocation), which downstream translators must treat as read-only (true today;
+ *  a future transform stage rewriting `ctx.midi` would need copy-on-write here). Only the mode-3
+ *  channel rewrite allocates a fresh event. `routeBlock` stays the pure reference/conformance oracle. */
+export function routeBlockInto(events: MidiEvent[], mode: MidiRouting, inboxes: MidiEvent[][]): void {
+  const systemCount = inboxes.length;
+  if (systemCount <= 0) return;
+  for (let e = 0; e < events.length; e++) {
+    const ev = events[e];
+    const data = ev.data;
+    if (data.length === 0) continue;
+
+    const status = data[0];
+    // System/realtime messages and SysEx have no channel nibble — broadcast unchanged.
+    if ((status & 0xf0) === 0xf0 || data.length > MIDI_DATA_SIZE) {
+      for (let i = 0; i < systemCount; i++) inboxes[i].push(ev);
+      continue;
+    }
+
+    const chan = status & 0x0f;
+    switch (mode) {
+      case MidiRouting.SendToAll:
+        for (let i = 0; i < systemCount; i++) inboxes[i].push(ev);
+        break;
+      case MidiRouting.FourChannelsPerInstance:
+        inboxes[Math.floor(chan / 4) % systemCount].push(ev);
+        break;
+      case MidiRouting.OneChannelPerInstance:
+        inboxes[chan % systemCount].push(ev);
+        break;
+      case MidiRouting.MidiChannelToInstance:
+        // Rewrite the channel nibble to 0; only the single target sees the (freshly allocated) copy.
+        inboxes[chan % systemCount].push({ frame: ev.frame, data: [status & 0xf0, ...data.slice(1)] });
+        break;
+      default:
+        break; // modes are clamped 0..3 upstream; an unknown one drops
+    }
+  }
+}
