@@ -270,6 +270,21 @@ test("instance menu hides Replace / Remove / Link Group for a lone instance, sho
   expect(findItem(multi, "inst-link")).toBeTruthy();
 });
 
+test("Link Group stays hidden for a NES peer (SameBoy serial link only); Replace / Remove still show", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.nes", nesRom());
+  be.seed("/roms/b.nes", nesRom());
+  const first = stores.project.systems.addSystem("/roms/a.nes")!;
+  stores.project.systems.addSystem("/roms/b.nes"); // a NES peer → multi-instance
+  const anchored = stores.project.systems.view().find((s) => s.id === first)!;
+
+  const items = buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items;
+  expect(findItem(items, "inst-replace")).toBeTruthy();       // core-agnostic peer rows still show
+  expect(findItem(items, "inst-remove")).toBeTruthy();
+  expect(findItem(items, "inst-link")).toBe(undefined);       // NES has no link cable → row gated out
+});
+
 test("a cancelled browse mutates nothing", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

@@ -439,14 +439,16 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         const id = systems.duplicateSystem(sys.id);
         if (id != null) systems.inheritLinkGroup(id, sys.id);
       }),
-      // Replace / Remove / Link Group only make sense with a peer instance — hidden for a lone instance.
+      // Replace / Remove only make sense with a peer instance — hidden for a lone instance.
       ...(multi
         ? [
             action("inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
             action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
           ]
         : []),
-      ...(multi
+      // Link Group is SameBoy-only (the GB serial link cable); on a NES/GBA peer it would be a dead
+      // always-"Off" row, so gate it on the core too — not just on having a peer.
+      ...(multi && sys.core === "sameboy"
         ? [
             sep("inst-sep-link"),
             cycler("inst-link", "Link Group", LINK_GROUP_NAMES, sameboyConfig(sys).linkGroupId, (n) =>
