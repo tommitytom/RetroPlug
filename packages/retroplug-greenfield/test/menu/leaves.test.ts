@@ -9,7 +9,7 @@ import { buildStartMenu, buildInstanceMenu, composeWindowTitle, type MenuContext
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadToAction, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { gbRom, lsdjRom } from "../systems/fixtures";
+import { gbRom, lsdjRom, nesRom } from "../systems/fixtures";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
@@ -58,6 +58,29 @@ function systemMenu(be: MockBackend, stores: AppStores): { id: number; items: Me
   const anchored = stores.project.systems.view().find((s) => s.id === id)!;
   return { id, items: submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-system") };
 }
+
+test("the System submenu shows NES core knobs for a NES system, and the SameBoy knobs for GB", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const systemMenuFor = (id: number) => {
+    const sys = stores.project.systems.view().find((s) => s.id === id)!;
+    return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system");
+  };
+
+  // GB: SameBoy knobs present, NES rows absent.
+  be.seed("/roms/a.gb", gbRom());
+  const gbSys = systemMenuFor(stores.project.systems.addSystem("/roms/a.gb")!);
+  expect(findItem(gbSys, "sys-model")).toBeTruthy();
+  expect(findItem(gbSys, "sys-nes-region")).toBe(undefined);
+  expect(findItem(gbSys, "sys-nes-spritelimit")).toBe(undefined);
+
+  // NES: Region + Remove Sprite Limit present (defaults read through), SameBoy knobs absent.
+  be.seed("/roms/g.nes", nesRom());
+  const nesSys = systemMenuFor(stores.project.systems.addSystem("/roms/g.nes")!);
+  expect(findItem(nesSys, "sys-nes-region")?.label).toBe("Region: Auto");
+  expect(findItem(nesSys, "sys-nes-spritelimit")?.label).toBe("Remove Sprite Limit: Off");
+  expect(findItem(nesSys, "sys-model")).toBe(undefined);
+});
 
 test("the Recent submenu appears on BOTH the start and instance menus", () => {
   const be = new MockBackend("/cfg");

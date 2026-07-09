@@ -43,6 +43,8 @@ const HIGHPASS_NAMES = ["Off", "Accurate", "DC-Block"];
 const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSave: "On Save", Continuous: "Continuous" };
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
+// NES console region (ConsoleRegion 0..4), the "mesen" role's region knob.
+const REGION_NAMES = ["Auto", "NTSC", "PAL", "Dendy", "NTSC-J"];
 const OFF_ON = ["Off", "On"]; // boolean toggles rendered as 2-value cyclers (Left/Right + Enter step)
 // LSDj sync modes (LsdjSyncMode 0..7). All shown; Keyboard(4) + Arduinoboy Master(7) are not yet
 // driven (later phases) but remain valid enum values. Tempo divisor subdivides the 24-PPQN clock.
@@ -110,6 +112,16 @@ function sameboyConfig(sys: SystemView): { model: number; highpass: number; link
   };
 }
 
+/** The Mesen core-role config (region / removeSpriteLimit), with defaults. The role attaches to any
+ *  Mesen system; the knobs are NES-only, so the menu gates the rows on platform === "nes". */
+function mesenConfig(sys: SystemView): { region: number; removeSpriteLimit: boolean } {
+  const c = (sys.roles.find((r) => r.kind === "mesen")?.config ?? {}) as Record<string, unknown>;
+  return {
+    region: typeof c.region === "number" ? c.region : 0,
+    removeSpriteLimit: c.removeSpriteLimit === true,
+  };
+}
+
 // --- child builders -----------------------------------------------------------------------------------
 function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
@@ -129,6 +141,16 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       cycler("sys-model", "Model", MODEL_NAMES, cfg.model, (n) => systems.setRoleConfig(sys.id, "sameboy", { model: n })),
       cycler("sys-highpass", "Highpass", HIGHPASS_NAMES, cfg.highpass, (n) => systems.setRoleConfig(sys.id, "sameboy", { highpass: n })),
       cycler("sys-fastboot", "Fast Boot", OFF_ON, cfg.fastBoot ? 1 : 0, (n) => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: n === 1 })),
+    );
+  }
+  // NES-only core knobs (the "mesen" role also attaches to GBA, so gate on platform, not core).
+  if (sys.platform === "nes") {
+    const cfg = mesenConfig(sys);
+    items.push(
+      cycler("sys-nes-region", "Region", REGION_NAMES, cfg.region, (n) => systems.setRoleConfig(sys.id, "mesen", { region: n })),
+      cycler("sys-nes-spritelimit", "Remove Sprite Limit", OFF_ON, cfg.removeSpriteLimit ? 1 : 0, (n) =>
+        systems.setRoleConfig(sys.id, "mesen", { removeSpriteLimit: n === 1 }),
+      ),
     );
   }
   // Save/Load SRAM + State. The quick "Save SRAM"/"Save State" write to the ROM's sibling path with no
