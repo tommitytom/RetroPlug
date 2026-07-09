@@ -56,6 +56,18 @@ if(RETROPLUG_SANITIZE)
     add_link_options(-fsanitize=${RETROPLUG_SANITIZE})
 endif()
 
+# Optional DSP-thread profiling instrumentation (spec/08-profiling.md). Like RETROPLUG_SANITIZE, use a
+# SEPARATE build dir (build-prof/, via tools/run-greenfield-profile.sh) — never the load-bearing build/.
+# Activates the bare-QuickJS counting allocator + the dsp* profiling RPCs (DspRuntime.cpp guards on the
+# RETROPLUG_PROFILE macro), and adds -g globally so valgrind (DHAT/Callgrind) attributes into quickjs.c.
+# Set here, before the dep subdirectories, so deps + src all get -g. The default build/ and the shipped
+# plugin never define this, so they carry zero profiling overhead.
+option(RETROPLUG_PROFILE "Build the DSP-thread profiling instrumentation + -g (use build-prof/)" OFF)
+if(RETROPLUG_PROFILE)
+    add_compile_definitions(RETROPLUG_PROFILE)
+    add_compile_options(-g -fno-omit-frame-pointer)
+endif()
+
 # tell LVGL where to find its config file. Set before add_subdirectory(dpf.js)
 # so RetroPlug's lv_conf.h wins over the framework's default (CACHE no-FORCE).
 set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/packages/native/src/lv_conf.h" CACHE PATH "")

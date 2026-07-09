@@ -4,6 +4,8 @@
 # sanitizer build dirs (tools/run-sanitizers.sh)
 /build-tsan/
 /build-asan/
+# profiling build dir (tools/run-greenfield-profile.sh)
+/build-prof/
 
 # cmake temp files that remain around
 CMakeFiles/

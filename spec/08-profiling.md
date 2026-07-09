@@ -1,10 +1,10 @@
-# 08 — Profiling the audio thread (plan)
+# 08 — Profiling the audio thread
 
-**Status: not yet built.** This is a design + implementation plan for a benchmark harness that measures
-what the DSP-thread **JavaScript runtime** does — allocations and garbage collection — under an mGB +
-heavy-MIDI workload. Everything below describes a harness to build, not code that exists. The runtime
-model it profiles is [01-architecture.md](01-architecture.md) (two QuickJS runtimes, the audio thread)
-and [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) (the DSP role kernel this exercises).
+**Status: built** (compile-guarded behind `RETROPLUG_PROFILE`; run with `pnpm profile:greenfield`). A
+benchmark harness that measures what the DSP-thread **JavaScript runtime** does — allocations and garbage
+collection — under an mGB + heavy-MIDI workload. The runtime model it profiles is
+[01-architecture.md](01-architecture.md) (two QuickJS runtimes, the audio thread) and
+[04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) (the DSP role kernel this exercises).
 
 ## 1. The question
 
@@ -206,36 +206,43 @@ fan ignores sub-block frame anyway). True sub-block jitter would need a one-arg 
 - `renderAudio` runs the SameBoy APU (C++) → it dominates wall-time but not JS heap; allocation counts
   stay isolated, wall-time does not.
 
-## 8. Implementation checklist
+## 8. What was built
 
-Phased, smallest-useful-first:
+- **Native allocator instrumentation** ([DspRuntime.hpp/.cpp](../packages/native-greenfield/src/DspRuntime.cpp)):
+  a counting `JSMallocFunctions` installed via `JS_NewRuntime2` (the opaque is a `DspAllocCounters`
+  member; `js_malloc_usable_size` returns the real platform size so QuickJS's own accounting stays
+  valid), a per-`processBlock` allocation bracket (native aggregation → no per-block RPC), and
+  `allocStats()` / `resetAllocStats(disableAutoGc)` (pins `JS_SetGCThreshold(SIZE_MAX)`) / `runGc()`
+  (timed `JS_RunGC`). All behind `#ifdef RETROPLUG_PROFILE`; the `#else` path returns `enabled:false`.
+- **Introspection RPCs** — `dspAllocStats` / `dspResetAllocStats` / `dspRunGc` forwarded
+  `Engine` → `EngineRpcService` → `BackendFacade` (reached directly through `engine_` in the quiescent
+  `renderAudio` regime) and surfaced in [audioDriver.ts](../packages/retroplug-greenfield/src/audioDriver.ts).
+- **The seeded-MIDI benchmark** [test-native/dsp-bench.test.ts](../packages/retroplug-greenfield/test-native/dsp-bench.test.ts):
+  a mulberry32 generator for Profiles A/B/C, the block-stepped `stageMidiIn` + `renderAudio(BLOCK_MS)`
+  loop (warmup window discarded), one JSON metrics line. Env knobs `RP_BENCH_{PROFILE,CORES,BLOCKS,WARMUP,SEED}`.
+  No-ops (warns) under a non-profile host so the normal sweep stays green.
+- **Build knob + scripts** — `RETROPLUG_PROFILE` ([CMakeLists.txt](../CMakeLists.txt), mirrors
+  `RETROPLUG_SANITIZE`), `tools/run-greenfield-profile.sh [stats|dhat|callgrind|massif]` (separate
+  `build-prof/` RelWithDebInfo dir), and `pnpm profile:greenfield`.
 
-1. **Native allocator instrumentation.** Add a counting `JSMallocFunctions` + `AllocStats` to the DSP
-   runtime; switch its ctor from `JS_NewRuntime` to `JS_NewRuntime2`. Add a build/env flag so it is a
-   no-op unless profiling is on (keep the ship path allocator-neutral). Files:
-   [DspRuntime.hpp/.cpp](../packages/native-greenfield/src/DspRuntime.cpp).
-2. **Introspection RPCs** on the audio-driver / engine surface: read `AllocStats` deltas + a
-   `JS_ComputeMemoryUsage` snapshot; a `runGc()` that toggles `JS_SetGCThreshold(SIZE_MAX)` and times
-   `JS_RunGC`. Register them like the existing `renderAudio`/`stageMidiIn`
-   ([EngineRpcService.cpp](../packages/native-greenfield/src/EngineRpcService.cpp),
-   [audioDriver.ts](../packages/retroplug-greenfield/src/audioDriver.ts)).
-3. **The seeded-MIDI benchmark** `test-native/dsp-bench.test.ts`: profile generators (A/B/C), the
-   block-stepped `stageMidiIn` + `renderAudio` loop, warmup + measured window, one JSON metrics line.
-   Configurable system count.
-4. **A `pnpm` runner + baseline file** (a `profile:greenfield` script) that runs the bench, prints the
-   JSON, and diffs against a committed baseline with threshold gates.
-5. **(Optional) external-tool wrappers**: a `tools/` script to run the same binary under DHAT / Callgrind
-   / heaptrack and emit filtered top-N text; a RealtimeSanitizer build variant.
+**Deferred:** a committed baseline + CI threshold gate, and a RealtimeSanitizer build variant, are not
+built. `perf` / `heaptrack` are not installed in the devcontainer (valgrind 3.22 is), so those wrapper
+modes are out.
 
-## 9. Verification
+## 9. Verification (done)
 
-- The bench runs green under `pnpm test:greenfield-native` and prints a deterministic JSON metrics line;
-  re-running yields **identical** allocation/instruction counts (the determinism proof).
-- The reported `allocs_per_block` is **non-zero initially** (§3 — it should surface the marshalling +
-  kernel churn), giving a concrete number to drive down.
-- DHAT/Callgrind on the same binary attribute the churn to the expected sites (native marshalling,
-  `makeCtx` closures, `routeBlock`).
-- Optional RT run (`startAudio` / a live host) reports block wall-time vs `1024/44100` and xrun count.
+- `pnpm profile:greenfield` builds `build-prof` and prints a JSON metrics line; the allocation counts are
+  **bit-identical run-to-run** (only `xRT`/`gcMs` wall-clock vary). First measured result (Profile A, 1
+  mGB core, 2000 blocks): **~171 allocs/block**, `freesPerBlock` ≈ allocs (balanced churn),
+  `liveHeapDelta` ≈ 0 (not a leak), `maxBlockAllocs` 279. Notably the end-of-window `runGc` reclaims
+  **~595 KB** of cyclic garbage → the per-block ctx/closures form reference cycles the collector must
+  sweep (so the DSP thread *will* incur periodic cycle-GC in production) — the headline optimization
+  target (§3).
+- **Ship path clean:** dsp-bench no-ops under the default host; the full `pnpm test:greenfield-native`
+  sweep (25 files) + `pnpm test:greenfield` (41) stay green; the default `build/` and shipped plugin never
+  define `RETROPLUG_PROFILE` (zero overhead).
+- `tools/run-greenfield-profile.sh callgrind|dhat|massif` attributes the churn to the marshalling +
+  `makeCtx` closures + `routeBlock` (filtered top-N text / DHAT JSON).
 
 ## 10. Key files
 

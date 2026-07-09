@@ -19,6 +19,7 @@
     "smoke": "node scripts/cmake-build.js retroplug-cli cli-regenerate && node scripts/run-ts-tests.js cli gb/mgb",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
     "screenshot:greenfield": "node scripts/cmake-build.js retroplug-greenfield-jack && tools/run-standalone-greenfield.sh",
+    "profile:greenfield": "tools/run-greenfield-profile.sh stats",
     "validate": "node scripts/cmake-build.js retroplug-clap retroplug-vst3 && tools/validate-plugins.sh",
     "validate:greenfield": "node scripts/cmake-build.js retroplug-greenfield-clap retroplug-greenfield-vst3 && RETROPLUG_CLAP_NAME=retroplug-greenfield RETROPLUG_VST3_NAME=retroplug-greenfield tools/validate-plugins.sh",
     "reaper:mgb-smoke-greenfield-author": "node scripts/cmake-build.js retroplug-greenfield-vst3 && node tools/author-greenfield-rplg.js && RETROPLUG_VST3_NAME=retroplug-greenfield tools/run-reaper-author.sh examples/reaper/mgb_smoke_greenfield.rpp build tools/reaper-mgb-greenfield-author.lua build/mgb_greenfield.rplg",
