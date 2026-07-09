@@ -214,6 +214,14 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
 // GB button display/edit order (mirrors the legacy bindings editor).
 const GB_BUTTONS = ["Right", "Left", "Up", "Down", "A", "B", "Select", "Start"];
 
+// The rebindable app actions (AppAction id → display label), shown below the GB buttons in each channel's
+// editor. Same capture plumbing as a GB row, but written into the keyboardActions/gamepadActions section.
+const APP_ACTION_ROWS: { id: string; label: string }[] = [
+  { id: "OpenMenu", label: "Open Menu" },
+  { id: "CycleNext", label: "Cycle Instances" },
+  { id: "CyclePrev", label: "Cycle Instances (Back)" },
+];
+
 type BindingsChannel = "keyboard" | "gamepad";
 
 /** The bindings editor for one channel: a profile switcher, one capture row per GB button (Enter arms, the
@@ -235,6 +243,9 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
   const idp = channel === "keyboard" ? "bind" : "bind-gp";
   const label = channel === "keyboard" ? "Keyboard" : "Gamepad";
 
+  const actionsKey: "keyboardActions" | "gamepadActions" = channel === "keyboard" ? "keyboardActions" : "gamepadActions";
+  const actMap = ctx.bindings[actionsKey]; // resolved active app-action map
+
   const withChannel = (m: BindingMap, chan: Record<string, string[]>): BindingMap =>
     channel === "keyboard" ? { ...m, keyboard: chan } : { ...m, gamepad: chan };
   const write = (edit: (m: BindingMap) => BindingMap) => {
@@ -242,6 +253,7 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
     bindings.saveProfile(activeName, edit(map));
   };
   const setBtn = (btn: string, vals: string[]) => write((m) => withChannel(m, { ...m[channel], [btn]: vals }));
+  const setAction = (id: string, vals: string[]) => write((m) => ({ ...m, [actionsKey]: { ...m[actionsKey], [id]: vals } }));
 
   // Create a named copy of the current bindings and make it active. Errors surface in the prompt's red line.
   const newProfile = (raw: string): string | null => {
@@ -292,13 +304,31 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
     },
   }));
 
+  // The app-action rows (Open Menu / Cycle Instances / Cycle Instances (Back)) — same capture plumbing as a GB
+  // row, written into the actions section. The "<label>: " head is kept so Menu's "Press a key/button…" swap works.
+  const actionRows: MenuItem[] = APP_ACTION_ROWS.map((a) => ({
+    id: `${idp}-act-${a.id}`,
+    label: `${a.label}: ${actMap[a.id]?.length ? actMap[a.id].join(", ") : "-"}`,
+    kind: "capture" as const,
+    keepOpen: true,
+    capture: {
+      source: channel,
+      onCapture: (name: string) => setAction(a.id, [name]),
+      onClear: () => setAction(a.id, []),
+    },
+  }));
+
   return [
     cycler(`${idp}-profile`, "Profile", profiles, Math.max(0, profiles.indexOf(activeName)), (n) => setActive(profiles[n])),
     sep(`${idp}-sep-top`),
     ...captureRows,
+    sep(`${idp}-sep-actions`),
+    ...actionRows,
     sep(`${idp}-sep-reset`),
-    // This channel only — preserve the profile's other channel.
-    action(`${idp}-reset`, `Reset ${label} to Defaults`, () => write((m) => withChannel(m, defaultBindingMap()[channel]))),
+    // This channel only — the GB buttons AND the app actions — preserving the profile's OTHER channel.
+    action(`${idp}-reset`, `Reset ${label} to Defaults`, () =>
+      write((m) => ({ ...withChannel(m, defaultBindingMap()[channel]), [actionsKey]: defaultBindingMap()[actionsKey] })),
+    ),
     sep(`${idp}-sep-mgmt`),
     { id: `${idp}-new`, label: "New Profile...", kind: "prompt", keepOpen: true, prompt: { title: "New profile name:", filter: isValidProfileChar, onConfirm: newProfile } },
     { id: `${idp}-rename`, label: "Rename...", kind: "prompt", keepOpen: true, prompt: { title: `Rename "${activeName}" to:`, initial: activeName, filter: isValidProfileChar, onConfirm: renameActive } },

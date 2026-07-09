@@ -1,10 +1,11 @@
 // The app controller: owns the menu open/close state and swaps between the start menu (empty project)
 // and the system grid (with the instance menu swapping into a tile).
 //
-// Esc is owned HERE, in one place (simpler than legacy's split ladder): menu closed + a system focused →
-// open the instance menu anchored to it; menu open → close it. The start menu (empty project) is always
-// open. When the grid shows without a menu, the keypad is pointed at the sink group so arrow keys don't
-// leak into the clickable tiles.
+// App-level input is owned HERE. Esc always cancels an active overlay (a universal back, independent of
+// bindings). Beyond that, the rebindable app actions (resolved from the active bindings) drive open/close
+// the menu (default Esc / leftshoulder) and cycle the focused instance (default Tab / rightshoulder). The
+// start menu (empty project) is always open. When the grid shows without a menu, the keypad is pointed at
+// the sink group so arrow keys don't leak into the clickable tiles.
 
 import { useEffect, useMemo, useState } from "react";
 import { setKeyboardGroup } from "lvgljs";
@@ -24,11 +25,9 @@ import { gridContentSize, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
+import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
 
 const KEY_ESCAPE = 0x1b;
-// A fixed, non-GB controller button that opens/closes the menu — the gamepad twin of Esc. Deliberately NOT
-// a default gameplay binding (a/b/start/back/dpad), so pressing it during play never doubles as a GB button.
-const OPEN_MENU_BUTTON = "leftshoulder";
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 6;
 
@@ -49,6 +48,11 @@ export function App() {
   const [menuSystemId, setMenuSystemId] = useState<number | null>(null);
 
   const empty = systems.length === 0;
+  // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.
+  const playing = !empty && !menuOpen && !closeGuard.active && !modals.active;
+  // App-action lookups (open menu / cycle instances), rebuilt only when the bindings change.
+  const keyToAction = useMemo(() => buildKeyToAction(bindings.keyboardActions), [bindings.keyboardActions]);
+  const padToAction = useMemo(() => buildGamepadToAction(bindings.gamepadActions), [bindings.gamepadActions]);
   const resolvedZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, settings.zoom >= MIN_ZOOM && settings.zoom <= MAX_ZOOM ? settings.zoom : userConfig.defaultZoom));
 
   // The standalone OS window title: version + project name (re-renders on the project channel, which fires
@@ -78,12 +82,10 @@ export function App() {
   // Keep the OS window title in sync with the project name / version.
   useEffect(() => setWindowTitle(windowTitle), [windowTitle]);
 
-  // The one guard ladder + open/close toggle, shared by Esc and the gamepad open-button so the two entry
-  // points can't drift. Deferrals: overlays (close prompt / project modal) own the key and cancel/close;
-  // the start menu is always open; a capture/prompt modal owns it (Menu handles the press).
-  const toggleMenu = () => {
-    if (closeGuard.active) return void closeGuard.onCancel();
-    if (modals.active) return void modals.onClose();
+  // Open/close the instance menu. NOT the overlay-cancel path (that's hardwired to Esc below): the start menu
+  // is always open, and a capture/prompt modal owns the press (Menu handles it) via the isMenuModalActive
+  // deferral — load-bearing so a gamepad rebind can bind the open-menu button instead of the toggle fighting it.
+  const toggleMenuCore = () => {
     if (empty) return;
     if (isMenuModalActive()) return;
     if (menuOpen) {
@@ -95,26 +97,39 @@ export function App() {
     }
   };
 
+  // Dispatch a resolved app action: open/close the menu, or cycle the focused instance (only in play).
+  const runAction = (action: AppAction | undefined) => {
+    if (action === "OpenMenu") toggleMenuCore();
+    else if (action === "CycleNext" && playing) stores.project.systems.focusNext(1);
+    else if (action === "CyclePrev" && playing) stores.project.systems.focusNext(-1);
+  };
+
   useNativeEvent("key", (...args) => {
     const key = args[0] as number;
     const press = args[1] as boolean;
-    if (press && key === KEY_ESCAPE) toggleMenu();
+    if (!press) return;
+    // Esc always cancels an active overlay — a universal back, independent of the (rebindable) OpenMenu key.
+    if (key === KEY_ESCAPE) {
+      if (closeGuard.active) return void closeGuard.onCancel();
+      if (modals.active) return void modals.onClose();
+    }
+    if (closeGuard.active || modals.active) return; // an overlay owns input; actions don't fire under it
+    runAction(keyToAction.get(key));
   });
-  // Gamepad twin of Esc: a fixed non-GB button opens/closes the menu, so a gamepad-only user isn't stranded
-  // once a game is running. Unbound in gameplay, so it fires no GB button; while a rebind is armed the
-  // isMenuModalActive() deferral above lets Menu bind this button instead of the toggle fighting it.
+  // Gamepad app actions. Overlays (close prompt / project modal) render a <Menu>, so they're cancelled by the
+  // Menu B button — the gamepad handler just defers under them.
   useNativeEvent("gamepad-button", (...args) => {
     const name = args[1] as string;
     const press = args[2] as boolean;
-    if (press && name === OPEN_MENU_BUTTON) toggleMenu();
+    if (!press) return;
+    if (closeGuard.active || modals.active) return;
+    runAction(padToAction.get(name));
   });
 
-  // Game input: route keyboard to the focused instance's joypad, but only when a tile is showing (not the
-  // start menu) and no instance menu is open — otherwise arrows/Enter belong to menu navigation.
-  useGameInput({ active: !empty && !menuOpen && !closeGuard.active && !modals.active, focusedId: stores.project.systems.focused() });
-  // Gamepad: same policy as keyboard (tiles-only, focused instance) — the native SDL poll feeds the
-  // "gamepad-button" bus useGamepadInput reads.
-  useGamepadInput({ active: !empty && !menuOpen && !closeGuard.active && !modals.active, focusedId: stores.project.systems.focused() });
+  // Game input: route keyboard/gamepad to the focused instance's joypad only while in play (a tile showing,
+  // no menu/overlay) — otherwise arrows/Enter belong to menu navigation.
+  useGameInput({ active: playing, focusedId: stores.project.systems.focused() });
+  useGamepadInput({ active: playing, focusedId: stores.project.systems.focused() });
 
   const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject };
 

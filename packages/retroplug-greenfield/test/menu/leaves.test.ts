@@ -7,7 +7,7 @@ import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBack
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildStartMenu, buildInstanceMenu, composeWindowTitle, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { buildKeyToButton, buildGamepadToButton, BUTTON_VALUE } from "../../src/keyCodes";
+import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadToAction, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, lsdjRom } from "../systems/fixtures";
 
@@ -472,13 +472,15 @@ function keyboardBindings(stores: AppStores): MenuItem[] {
   return submenuChildren(settings, "set-keybindings");
 }
 
-test("Keyboard Bindings: 8 capture rows + reset; capture rebinds write-through, clear + reset", () => {
+test("Keyboard Bindings: 8 GB + 3 app-action rows; capture rebinds write-through, clear + reset", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
 
   const rows = keyboardBindings(stores);
-  expect(rows.filter((r) => r.kind === "capture").length).toBe(8);
+  expect(rows.filter((r) => r.kind === "capture").length).toBe(11); // 8 GB buttons + Open Menu / Cycle / Cycle (Back)
   expect(findItem(rows, "bind-A")!.label).toBe("A: Z, z"); // resolved default baked into the label
+  expect(findItem(rows, "bind-act-OpenMenu")!.label).toBe("Open Menu: Escape"); // app action seeded default
+  expect(findItem(rows, "bind-act-CyclePrev")!.label).toBe("Cycle Instances (Back): -"); // unbound by default
   expect(findItem(rows, "bind-reset")!.kind).toBe("action");
 
   // Capture A → Q: the active keyboard profile persists and the resolved map + key→button lookup follow.
@@ -488,14 +490,20 @@ test("Keyboard Bindings: 8 capture rows + reset; capture rebinds write-through, 
   expect(buildKeyToButton(stores.bindings.resolvedBindings().keyboard).get("Q".charCodeAt(0))).toBe(BUTTON_VALUE.A);
   expect(keyboardBindings(stores).find((r) => r.id === "bind-A")!.label).toBe("A: Q"); // relabels on rebuild
 
+  // Rebind Open Menu → M: written into keyboardActions; the action lookup follows.
+  keyboardBindings(stores).find((r) => r.id === "bind-act-OpenMenu")!.capture!.onCapture("M");
+  expect(stores.bindings.loadProfile(active)!.keyboardActions.OpenMenu).toEqual(["M"]);
+  expect(buildKeyToAction(stores.bindings.resolvedBindings().keyboardActions).get("M".charCodeAt(0))).toBe("OpenMenu");
+
   // Clear A → the button unbinds.
   keyboardBindings(stores).find((r) => r.id === "bind-A")!.capture!.onClear();
   expect(stores.bindings.resolvedBindings().keyboard.A).toEqual([]);
   expect(keyboardBindings(stores).find((r) => r.id === "bind-A")!.label).toBe("A: -");
 
-  // Reset restores the default keyboard map (and preserves the gamepad channel).
+  // Reset restores BOTH the default keyboard map and the app actions (and preserves the gamepad channel).
   keyboardBindings(stores).find((r) => r.id === "bind-reset")!.onSelect!();
   expect(stores.bindings.resolvedBindings().keyboard.A).toEqual(defaultBindingMap().keyboard.A);
+  expect(stores.bindings.resolvedBindings().keyboardActions.OpenMenu).toEqual(["Escape"]); // action reset too
   expect(stores.bindings.loadProfile(active)!.gamepad).toEqual(defaultBindingMap().gamepad);
 });
 
@@ -510,9 +518,11 @@ test("Gamepad Bindings: gamepad-source capture rows; button + axis-token rebinds
   const stores = composeAppStores({ backend: be });
 
   const rows = gamepadBindings(stores);
-  expect(rows.filter((r) => r.kind === "capture").length).toBe(8);
+  expect(rows.filter((r) => r.kind === "capture").length).toBe(11); // 8 GB buttons + 3 app actions
   expect(findItem(rows, "bind-gp-A")!.capture!.source).toBe("gamepad"); // arms the pad bus, not the key bus
   expect(findItem(rows, "bind-gp-Up")!.label).toBe("Up: dpup, lefty-"); // default d-pad hat + left stick
+  expect(findItem(rows, "bind-gp-act-OpenMenu")!.label).toBe("Open Menu: leftshoulder"); // seeded gamepad action
+  expect(findItem(rows, "bind-gp-act-CycleNext")!.capture!.source).toBe("gamepad");
 
   // Capture A → a controller button (raw SDL name): written through to the active GAMEPAD profile.
   findItem(rows, "bind-gp-A")!.capture!.onCapture("y");
@@ -525,11 +535,17 @@ test("Gamepad Bindings: gamepad-source capture rows; button + axis-token rebinds
   expect(stores.bindings.resolvedBindings().gamepad.Up).toEqual(["lefty-"]);
   expect(buildGamepadToButton(stores.bindings.resolvedBindings().gamepad).get("lefty-")).toBe(BUTTON_VALUE.Up);
 
-  // Clear A → unbinds; reset restores the default gamepad map (and preserves the keyboard channel).
+  // Bind Cycle (Back) → a stick click: written into gamepadActions; the action lookup follows.
+  gamepadBindings(stores).find((r) => r.id === "bind-gp-act-CyclePrev")!.capture!.onCapture("leftstick");
+  expect(stores.bindings.loadProfile(active)!.gamepadActions.CyclePrev).toEqual(["leftstick"]);
+  expect(buildGamepadToAction(stores.bindings.resolvedBindings().gamepadActions).get("leftstick")).toBe("CyclePrev");
+
+  // Clear A → unbinds; reset restores BOTH the default gamepad map and the app actions (preserving keyboard).
   gamepadBindings(stores).find((r) => r.id === "bind-gp-A")!.capture!.onClear();
   expect(stores.bindings.resolvedBindings().gamepad.A).toEqual([]);
   gamepadBindings(stores).find((r) => r.id === "bind-gp-reset")!.onSelect!();
   expect(stores.bindings.resolvedBindings().gamepad.Up).toEqual(defaultBindingMap().gamepad.Up);
+  expect(stores.bindings.resolvedBindings().gamepadActions.CyclePrev).toEqual([]); // action reset (back to unbound)
   expect(stores.bindings.loadProfile(active)!.keyboard).toEqual(defaultBindingMap().keyboard);
 });
 
