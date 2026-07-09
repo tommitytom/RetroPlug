@@ -102,6 +102,10 @@ public:
     void tapKey(std::uint32_t lvKey);           // LV_KEY_UP/DOWN/LEFT/RIGHT/ENTER/ESC
     void clickAt(std::int32_t x, std::int32_t y);// press+release at absolute (x,y)
     void moveMouse(std::int32_t x, std::int32_t y);// move the (unpressed) pointer → LVGL hover at (x,y)
+    // Synthesize the native SDL-poll buses so a test can drive gamepad input (menu nav / game routing).
+    // Arg shapes mirror PluginGreenfieldUI::pumpGamepad exactly: button [pad, name, press]; axis [pad, name, value].
+    void gamepadButton(int pad, const std::string& name, bool press);
+    void gamepadAxis(int pad, const std::string& name, double value);
 
     // Called by the __rp_tagTestId JS trampoline (UI ref hook).
     void recordTestId(const std::string& name, lv_obj_t* obj) { testIds_[name] = obj; }

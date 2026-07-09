@@ -211,6 +211,31 @@ JSValue jsUiMoveMouse(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.moveMouse: %s", e.what()); }
 }
 
+// Inject the native gamepad buses. JS arg order is caller-friendly (name, press[, pad]); the core reorders
+// to the bus shape (pad, name, press). pad defaults to 0 (a single virtual controller).
+JSValue jsUiGamepadButton(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 2) return JS_ThrowTypeError(ctx, "ui.gamepadButton(name, press[, pad])");
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_EXCEPTION;
+    const bool press = JS_ToBool(ctx, argv[1]) != 0;
+    int pad = 0;
+    if (argc >= 3 && !JS_IsUndefined(argv[2])) JS_ToInt32(ctx, &pad, argv[2]);
+    try { coreOrThrow().gamepadButton(pad, name, press); JS_FreeCString(ctx, name); return JS_UNDEFINED; }
+    catch (const std::exception& e) { JSValue err = JS_ThrowTypeError(ctx, "ui.gamepadButton: %s", e.what()); JS_FreeCString(ctx, name); return err; }
+}
+
+JSValue jsUiGamepadAxis(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 2) return JS_ThrowTypeError(ctx, "ui.gamepadAxis(axis, value[, pad])");
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_EXCEPTION;
+    double value = 0;
+    if (JS_ToFloat64(ctx, &value, argv[1]) < 0) { JS_FreeCString(ctx, name); return JS_EXCEPTION; }
+    int pad = 0;
+    if (argc >= 3 && !JS_IsUndefined(argv[2])) JS_ToInt32(ctx, &pad, argv[2]);
+    try { coreOrThrow().gamepadAxis(pad, name, value); JS_FreeCString(ctx, name); return JS_UNDEFINED; }
+    catch (const std::exception& e) { JSValue err = JS_ThrowTypeError(ctx, "ui.gamepadAxis: %s", e.what()); JS_FreeCString(ctx, name); return err; }
+}
+
 // Advance the emulator so tiles get live frames (the plugin's audio thread does this; pump() only ticks
 // LVGL). Drives the BackendFacade the UI reads over RPC.
 JSValue jsUiAdvance(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -238,6 +263,8 @@ void installUiNamespace(JSContext* ctx) {
         { "tapKey",               { jsUiTapKey,               1 } },
         { "clickAt",              { jsUiClickAt,              2 } },
         { "moveMouse",            { jsUiMoveMouse,            2 } },
+        { "gamepadButton",        { jsUiGamepadButton,        2 } },
+        { "gamepadAxis",          { jsUiGamepadAxis,          2 } },
         { "advance",              { jsUiAdvance,              1 } },
     };
     JSValue global = JS_GetGlobalObject(ctx);

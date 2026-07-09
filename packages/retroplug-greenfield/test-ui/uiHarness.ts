@@ -45,6 +45,8 @@ interface NativeUi {
   tapKey(lvKey: number): void;
   clickAt(x: number, y: number): void;
   moveMouse(x: number, y: number): void;
+  gamepadButton(name: string, press: boolean, pad?: number): void;
+  gamepadAxis(axis: string, value: number, pad?: number): void;
   advance(ms: number): void;
 }
 
@@ -114,6 +116,16 @@ export const ui = {
   clickAt(x: number, y: number): void { rp.clickAt(x, y); },
   /** Move the (unpressed) pointer to absolute (x,y) → LVGL hover on the widget under it. */
   moveMouse(x: number, y: number): void { rp.moveMouse(x, y); },
+  /** Emit one SDL controller button transition on the "gamepad-button" bus (name = SDL canonical, e.g.
+   *  "dpdown"/"a"/"leftshoulder"). Menu nav / open-button / game routing all read this. */
+  gamepadButton(name: string, press: boolean, pad = 0): void { rp.gamepadButton(name, press, pad); },
+  /** Emit a continuous axis value on the "gamepad-axis" bus (axis = "leftx"/"lefty"/…, value in [-1,1]). */
+  gamepadAxis(axis: string, value: number, pad = 0): void { rp.gamepadAxis(axis, value, pad); },
+  /** Press+release a controller button (the pad twin of tapKey): a single deliberate tap. */
+  gamepadTap(name: string, pad = 0): void {
+    rp.gamepadButton(name, true, pad);
+    rp.gamepadButton(name, false, pad);
+  },
   /** Advance the emulator by `ms` so tiles receive live frames (pump() only ticks LVGL). */
   advance(ms: number): void { rp.advance(ms); },
 };
@@ -126,6 +138,19 @@ export function navTo(substr: string, maxSteps = 24): boolean {
     const f = ui.focused();
     if (f && f.text.includes(substr)) return true;
     ui.tapKey(Key.Down);
+    ui.pump(2);
+  }
+  const f = ui.focused();
+  return !!f && f.text.includes(substr);
+}
+
+/** navTo's gamepad twin: tap the d-pad Down button until the focused row matches, proving the pad drives
+ *  the same focus nav the keyboard does. Returns whether the target ended up focused. */
+export function navToPad(substr: string, maxSteps = 24): boolean {
+  for (let i = 0; i < maxSteps; i++) {
+    const f = ui.focused();
+    if (f && f.text.includes(substr)) return true;
+    ui.gamepadTap("dpdown");
     ui.pump(2);
   }
   const f = ui.focused();

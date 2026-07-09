@@ -387,4 +387,26 @@ void RenderCore::moveMouse(std::int32_t x, std::int32_t y) {
     pump(2);  // let the indev read + LVGL hover-process the new released position
 }
 
+void RenderCore::gamepadButton(int pad, const std::string& name, bool press) {
+    JSContext* ctx = engine_.getContext();
+    if (!ctx) return;
+    JSValue args[3] = { JS_NewInt32(ctx, pad),
+                        JS_NewStringLen(ctx, name.data(), name.size()),
+                        JS_NewBool(ctx, press) };
+    engine_.emit("gamepad-button", 3, args);
+    for (JSValue& v : args) JS_FreeValue(ctx, v);
+    pump(2);  // let the React handler + any LVGL focus move settle
+}
+
+void RenderCore::gamepadAxis(int pad, const std::string& name, double value) {
+    JSContext* ctx = engine_.getContext();
+    if (!ctx) return;
+    JSValue args[3] = { JS_NewInt32(ctx, pad),
+                        JS_NewStringLen(ctx, name.data(), name.size()),
+                        JS_NewFloat64(ctx, value) };
+    engine_.emit("gamepad-axis", 3, args);
+    for (JSValue& v : args) JS_FreeValue(ctx, v);
+    pump(2);
+}
+
 } // namespace rpuigf
