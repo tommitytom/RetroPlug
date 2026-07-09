@@ -93,6 +93,9 @@ public:
     // --- audio render / input drive / transport ---
     bool            pressButton(std::uint32_t id, std::uint32_t button, bool down);
     rfl::Bytestring renderAudio(double ms);
+    // Per-system audio: each live system's interleaved-stereo PCM, in Project-slot order (marshals to
+    // Uint8Array[]). Isolates each core so LSDj link-cable sync is provable (a follower's own RMS).
+    std::vector<rfl::Bytestring> renderAudioPerSystem(double ms);
     bool            setTransport(bool running);
     bool            setBpm(double bpm);
     bool            setAudioRouting(std::uint32_t mode);

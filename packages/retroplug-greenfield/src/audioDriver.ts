@@ -56,6 +56,10 @@ export interface AudioDriver {
   screenshot(id: number, path: string): boolean;
   /** Advance the block runner `ms` and return the mixed stereo output, interleaved L,R,L,R…. */
   renderAudio(ms: number): Float32Array;
+  /** Advance the block runner `ms` and return EACH live system's own interleaved-stereo output, in
+   *  Project-slot order — the per-system isolation that proves LSDj link-cable sync (a follower sounds
+   *  only when it actually synced; a healthy two-system mix can't show that). Empty when no systems. */
+  renderAudioPerSystem(ms: number): Float32Array[];
   setTransport(running: boolean): boolean;
   setBpm(bpm: number): boolean;
   /** Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
@@ -117,6 +121,11 @@ export function createAudioDriver(): AudioDriver {
       const bytes = call("renderAudio", ms) as Uint8Array;
       // Raw interleaved f32; slice() copies to a fresh 4-byte-aligned ArrayBuffer at offset 0.
       return new Float32Array(bytes.slice().buffer);
+    },
+    renderAudioPerSystem: (ms) => {
+      const bufs = call("renderAudioPerSystem", ms) as Uint8Array[];
+      // One interleaved-f32 buffer per system; slice() 4-byte-aligns each like the mixed path above.
+      return bufs.map((b) => new Float32Array(b.slice().buffer));
     },
     setTransport: (running) => call("setTransport", running) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,

@@ -393,6 +393,42 @@ rfl::Bytestring EngineRpcService::renderAudio(double ms) {
     return rfl::Bytestring(p, p + out.size() * sizeof(float));
 }
 
+std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
+    const std::size_t n = engine_.systemCount();
+    std::vector<rfl::Bytestring> result;
+    if (ms <= 0.0 || n == 0) return result;
+
+    // One persistent L/R block buffer per system; the Engine routes each core into its own pair
+    // (PerSystemRouter) so linked systems interleave exactly as they do in the mixed path.
+    std::vector<std::vector<float>> bl(n, std::vector<float>(kBlockSize));
+    std::vector<std::vector<float>> br(n, std::vector<float>(kBlockSize));
+    std::vector<float*> ls(n), rs(n);
+    std::vector<std::vector<float>> out(n);  // per system: interleaved L,R,L,R…
+    const std::uint64_t total = static_cast<std::uint64_t>(ms * engine_.sampleRate() / 1000.0);
+    for (std::size_t i = 0; i < n; ++i) {
+        ls[i] = bl[i].data();
+        rs[i] = br[i].data();
+        out[i].reserve(total * 2);
+    }
+
+    for (std::uint64_t s = 0; s < total; s += kBlockSize) {
+        const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
+        engine_.processBlockPerSystem(frames, ls.data(), rs.data(), n);
+        for (std::size_t i = 0; i < n; ++i)
+            for (std::uint32_t f = 0; f < frames; ++f) {
+                out[i].push_back(ls[i][f]);  // interleave L,R,L,R…
+                out[i].push_back(rs[i][f]);
+            }
+    }
+
+    result.reserve(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto* p = reinterpret_cast<const std::byte*>(out[i].data());
+        result.emplace_back(p, p + out[i].size() * sizeof(float));
+    }
+    return result;
+}
+
 bool EngineRpcService::setTransport(bool running) {
     invoker_.setTransport(running);  // transport is a queued op — applied now (direct) or on the audio thread
     return true;

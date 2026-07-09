@@ -70,6 +70,7 @@ void registerBackendRpcMethods(Server& server) {
     // audio render / input drive
     server.template addMethod<&BackendFacade::pressButton>();
     server.template addMethod<&BackendFacade::renderAudio>();
+    server.template addMethod<&BackendFacade::renderAudioPerSystem>();
     server.template addMethod<&BackendFacade::setTransport>();
     server.template addMethod<&BackendFacade::setBpm>();
     server.template addMethod<&BackendFacade::setAudioRouting>();

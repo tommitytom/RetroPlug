@@ -72,7 +72,7 @@ void Engine::setAudioRouting(AudioRouting mode) { audioRouting_ = mode; }
 // Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
 // (delivered this block); `dInfo`/`AudioBlockInfo` are both built at the block-start `ppq_`, and
 // `ppq_` advances only after — so the kernel's walkTicks and the cores see the same block-start ppq.
-void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
+void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router) {
     if (dspActive_) {
 #ifdef RETROPLUG_PROFILE
         dsp_.spanBegin(DSP_SPAN_KERNEL);  // the whole DSP-kernel stage (marshal + JS + sink fan-out)
@@ -103,13 +103,7 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
         dsp_.spanEnd();  // dsp-kernel
 #endif
     }
-    // Caller owns the buffers; systems SUM into their router-assigned bus, so zero every channel
-    // first. MultiOutRouter places each system per audioRouting_ (Stereo = all → pair 0; with 2
-    // channels every mode collapses to that one pair).
-    for (std::size_t c = 0; c < numOutputs; ++c)
-        std::fill_n(outputs[c], frames, 0.0f);
     AudioBlockInfo info{ frames, sampleRate_, bpm_, ppq_, transport_ };
-    MultiOutRouter router(outputs, numOutputs, audioRouting_);
 #ifdef RETROPLUG_PROFILE
     dsp_.spanBegin(DSP_SPAN_APU);  // the SameBoy core/APU render (dominates audio-thread wall-time)
 #endif
@@ -124,10 +118,30 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
         ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
 }
 
+void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
+    // Caller owns the buffers; systems SUM into their router-assigned bus, so zero every channel
+    // first. MultiOutRouter places each system per audioRouting_ (Stereo = all → pair 0; with 2
+    // channels every mode collapses to that one pair).
+    for (std::size_t c = 0; c < numOutputs; ++c)
+        std::fill_n(outputs[c], frames, 0.0f);
+    MultiOutRouter router(outputs, numOutputs, audioRouting_);
+    runBlockWithRouter(frames, router);
+}
+
 // Stereo convenience (the CLI render + the test-host audio loop): one pair, everyone mixed.
 void Engine::processBlock(std::uint32_t frames, float* outL, float* outR) {
     float* outs[2] = { outL, outR };
     processBlock(frames, outs, 2);
+}
+
+void Engine::processBlockPerSystem(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nSystems) {
+    // Each slot writes into its own L/R pair; zero them first (systems SUM in, like the mixed path).
+    for (std::size_t i = 0; i < nSystems; ++i) {
+        std::fill_n(ls[i], frames, 0.0f);
+        std::fill_n(rs[i], frames, 0.0f);
+    }
+    PerSystemRouter router(ls, rs);
+    runBlockWithRouter(frames, router);
 }
 
 std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {

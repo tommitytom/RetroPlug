@@ -11,6 +11,8 @@
 #include "DspRuntime.hpp"
 #include "SnapshotRegistry.hpp"
 
+struct AudioRouter;  // BlockRunner.hpp — the per-block bus-placement policy (used by ref below)
+
 // A per-system config field a control-plane edit applies to the live core (SameBoy today). Carried
 // as a double across the command ring: gain in dB; a bool as 0/1; an enum/int as its integer value.
 enum class ConfigField : std::uint8_t {
@@ -86,6 +88,10 @@ public:
     // stereo overload below passes 2 (any routing mode collapses to one pair with 2 channels).
     void processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs);
     void processBlock(std::uint32_t frames, float* outL, float* outR);
+    // Per-system isolation: each system renders into its OWN L/R pair (ls[i]/rs[i] for slot i in
+    // Project::systems() order) via PerSystemRouter, ignoring audioRouting_. Proves LSDj link-cable
+    // sync — a follower sounds only when it actually synced (a healthy 2-system mix can't show that).
+    void processBlockPerSystem(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nSystems);
 
     // --- live-state reads / direct mutation (valid only on the Engine's owning thread) ---
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);
@@ -104,6 +110,12 @@ public:
     SnapshotRegistry& registry() { return registry_; }
 
 private:
+    // Shared per-block core: run the kernel (if active) + fan its sinks to the cores, render every
+    // system through `router`, publish snapshots, advance the ppq clock. Both processBlock overloads
+    // and processBlockPerSystem funnel through here; the caller zeroes the router's destination buffers
+    // first (they differ per router — the flat multi-out array vs the per-system pairs).
+    void runBlockWithRouter(std::uint32_t frames, const AudioRouter& router);
+
     Project          project_;
     SnapshotRegistry registry_;
     DspRuntime dsp_;

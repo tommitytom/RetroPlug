@@ -80,6 +80,7 @@ public:
     bool dspSetSystems(std::string json) { return engine_svc_.dspSetSystems(std::move(json)); }
     bool pressButton(std::uint32_t id, std::uint32_t button, bool down) { return engine_svc_.pressButton(id, button, down); }
     rfl::Bytestring renderAudio(double ms) { return engine_svc_.renderAudio(ms); }
+    std::vector<rfl::Bytestring> renderAudioPerSystem(double ms) { return engine_svc_.renderAudioPerSystem(ms); }
     bool setTransport(bool running) { return engine_svc_.setTransport(running); }
     bool setBpm(double bpm) { return engine_svc_.setBpm(bpm); }
     bool setAudioRouting(std::uint32_t mode) { return engine_svc_.setAudioRouting(mode); }
