@@ -126,6 +126,15 @@ export type ProjectBehavior = (
   config: Record<string, unknown>,
 ) => void;
 
+/** Per-role runtime-tracing hooks (spec/08-profiling.md Tier B), injected into the kernel only under a
+ *  profile host (the bundle builds one iff the native `spanBegin` thunk is bound). `begin`/`end` bracket a
+ *  stage's wall-time span (label = interned role id); `name` registers a label id → role kind once. */
+export interface DspTracer {
+  name(label: number, kind: string): void;
+  begin(label: number): void;
+  end(): void;
+}
+
 export function emptySinks(): Sinks {
   return { serialIn: [], midiOut: [], buttons: [] };
 }
@@ -166,6 +175,7 @@ export function walkTicks(
 interface StageRun {
   dsp: SystemBehavior;
   ctx: SystemCtx;
+  label: number; // interned role-kind id for tracing (0 when no tracer)
 }
 
 /** Everything the kernel holds per live system, built once per `setSystems`. `inbox`/`keys`/`buttons`
@@ -182,6 +192,7 @@ interface SystemSlot {
 interface ProjectStage {
   dsp: ProjectBehavior;
   config: Record<string, unknown>;
+  label: number; // interned role-kind id for tracing (0 when no tracer)
 }
 
 /** Runs a project's DSP-thread behaviours per block. Structure (systems + pipelines) is pushed once
@@ -204,6 +215,13 @@ export class DspKernel {
   private slotById = new Map<number, SystemSlot>();
   private inboxes: MidiEvent[][] = [];
   private projectStages: ProjectStage[] = [];
+  // Per-role runtime tracing (spec/08-profiling.md Tier B). `tracer` exists only under a profile host;
+  // `traceOn` is flipped by the host (__setTrace → setTracing) so per-stage span calls happen ONLY while
+  // armed — the non-traced path stays byte-identical (deterministic alloc counts). Kinds are interned to
+  // stable ids from ROLE_BASE (16; native pipeline stages own 0..3).
+  private traceOn = false;
+  private readonly traceLabels = new Map<string, number>();
+  private nextLabel = 16;
   // The single persistent block view: setSystems writes its structure, processBlock its dynamics.
   private readonly block: Block = {
     frames: 0,
@@ -223,8 +241,26 @@ export class DspKernel {
   constructor(
     private readonly registry: RoleRegistry,
     private readonly sink: SinkTarget = new CollectingSink(),
+    private readonly tracer?: DspTracer,
   ) {
     this.result = sink instanceof CollectingSink ? sink.sinks : emptySinks();
+  }
+
+  /** Host hook (profile build only): arm/disarm per-role span emission for a trace window. */
+  setTracing(on: boolean): void {
+    this.traceOn = on;
+  }
+
+  // Intern a role kind → a stable label id (registering the name with the tracer on first sight). Only
+  // called when a tracer exists, so the mock/production path never touches it.
+  private internLabel(kind: string): number {
+    let id = this.traceLabels.get(kind);
+    if (id === undefined) {
+      id = this.nextLabel++;
+      this.traceLabels.set(kind, id);
+      this.tracer?.name(id, kind);
+    }
+    return id;
   }
 
   /** Push the (rarely-changing) system + pipeline structure. The stored ORDER is authoritative for
@@ -245,7 +281,11 @@ export class DspKernel {
     for (const stage of this.block.project) {
       const rt = this.registry.roleType(stage.kind);
       if (rt?.scope === "project" && rt.dsp) {
-        this.projectStages.push({ dsp: rt.dsp as ProjectBehavior, config: stage.config });
+        this.projectStages.push({
+          dsp: rt.dsp as ProjectBehavior,
+          config: stage.config,
+          label: this.tracer ? this.internLabel(stage.kind) : 0,
+        });
       }
     }
     this.slots = [];
@@ -256,7 +296,11 @@ export class DspKernel {
       sys.pipeline.forEach((stage, stageIndex) => {
         const rt = this.registry.roleType(stage.kind);
         if (!rt || rt.scope === "project" || !rt.dsp) return;
-        slot.stages.push({ dsp: rt.dsp as SystemBehavior, ctx: this.buildCtx(sys.id, stageIndex, stage.config, slot) });
+        slot.stages.push({
+          dsp: rt.dsp as SystemBehavior,
+          ctx: this.buildCtx(sys.id, stageIndex, stage.config, slot),
+          label: this.tracer ? this.internLabel(stage.kind) : 0,
+        });
       });
       this.slots.push(slot);
       this.slotById.set(sys.id, slot);
@@ -304,14 +348,26 @@ export class DspKernel {
       if (slot) slot.buttons.push(buttons[i]);
     }
 
-    // Project scope: routing fans the global midiIn into the positional persistent inboxes.
+    // Project scope: routing fans the global midiIn into the positional persistent inboxes. The
+    // `if (this.traceOn)` guard is false on the non-traced path (production/mock/alloc window) → the hot
+    // path is byte-identical; only a trace window pays the span-thunk crossings (spec/08-profiling.md).
     const project = this.projectStages;
-    for (let i = 0; i < project.length; i++) project[i].dsp(b, this.inboxes, project[i].config);
+    for (let i = 0; i < project.length; i++) {
+      const ps = project[i];
+      if (this.traceOn) this.tracer!.begin(ps.label);
+      ps.dsp(b, this.inboxes, ps.config);
+      if (this.traceOn) this.tracer!.end();
+    }
 
     // System scope: run each system's ordered pipeline against its persistent ctx.
     for (let i = 0; i < slots.length; i++) {
       const stages = slots[i].stages;
-      for (let s = 0; s < stages.length; s++) stages[s].dsp(stages[s].ctx);
+      for (let s = 0; s < stages.length; s++) {
+        const st = stages[s];
+        if (this.traceOn) this.tracer!.begin(st.label);
+        st.dsp(st.ctx);
+        if (this.traceOn) this.tracer!.end();
+      }
     }
     return this.result;
   }

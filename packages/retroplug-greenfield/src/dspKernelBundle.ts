@@ -5,7 +5,7 @@
 // roles, and exposes the two globals native calls: setSystems(json) once per structure change, and
 // processBlock(input) once per audio block. A JSValue never crosses — only bytes and scalars.
 
-import { DspKernel, type SinkTarget, type BlockInput, type KernelStructure } from "./dspKernel";
+import { DspKernel, type SinkTarget, type BlockInput, type KernelStructure, type DspTracer } from "./dspKernel";
 import { RoleRegistry } from "./systemRoles";
 import { registerDspRoles } from "./dspRoles";
 
@@ -14,6 +14,12 @@ import { registerDspRoles } from "./dspRoles";
 declare function pushSerialIn(system: number, frame: number, byte: number): void;
 declare function emitMidiOut(system: number, frame: number, data: number[]): void;
 declare function pressButton(system: number, frame: number, button: number, down: boolean): void;
+
+// Per-role runtime-tracing thunks (spec/08-profiling.md Tier B). Bound by the host ONLY in a
+// RETROPLUG_PROFILE build — so `typeof spanBegin === "function"` is the runtime feature gate below.
+declare function spanBegin(label: number): void;
+declare function spanEnd(): void;
+declare function traceName(label: number, kind: string): void;
 
 const registry = new RoleRegistry();
 registerDspRoles(registry);
@@ -25,10 +31,19 @@ const sink: SinkTarget = {
   pressButton: (system, frame, button, down) => pressButton(system, frame, button, down),
 };
 
-const kernel = new DspKernel(registry, sink);
+// A tracer only when the profile host bound the span thunks (production/mock leave it undefined → the
+// kernel's trace path stays inert). `typeof` is safe on an unbound global.
+const tracer: DspTracer | undefined =
+  typeof spanBegin === "function"
+    ? { name: (label, kind) => traceName(label, kind), begin: (label) => spanBegin(label), end: () => spanEnd() }
+    : undefined;
+
+const kernel = new DspKernel(registry, sink, tracer);
 
 const g = globalThis as Record<string, unknown>;
 g.setSystems = (json: string): void => kernel.setSystems(JSON.parse(json) as KernelStructure);
 g.processBlock = (input: BlockInput): void => {
   kernel.processBlock(input);
 };
+// Native traceReset() calls this to arm/disarm per-role span emission for a trace window.
+g.__setTrace = (on: boolean): void => kernel.setTracing(on);
