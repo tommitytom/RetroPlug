@@ -62,30 +62,33 @@ The current session verb vocabulary (all on the booted `Session`):
 | Load | `project.systems.addSystem(romPath)` / `loadMgb()` |
 | Drive | `audio.stageMidiIn(bytes)`, `audio.pressButton(id, button, down)`, `audio.setBpm(v)`, `audio.setTransport(running)` |
 | Render | `audio.renderAudio(ms): Float32Array` |
-| Observe (today) | `audio.screenshot(id, path)`, `backend.readState/readSram(id)`, `backend.getFrame(id)` |
-| Schedule | `Timeline` + `renderTimeline` |
+| Observe — media/state | `audio.screenshot(id, path)`, `backend.readState/readSram(id)`, `backend.getFrame(id)` |
+| Observe — debug (NES) | `backend.getApuState(id)`, `readCpu(id, addr)`, `readMemory(id, region)`, `getCpuRegisters(id)`, `setCpuRegister`, `stepInstruction`/`runUntilPc`, `setBreakpoints`/`runUntilBreak`, `setTrace`/`readTrace`, `stepInto`/`stepOver`/`stepOut`, `loadLabels`, `beginProfile`/`readProfile`, `disassemble`, `getCallStack` |
+| Schedule / assert | `Timeline` (+ `.at(ms, fn)` — the observe/assert hook) + `renderTimeline` |
 
 Example sessions live in [cli/sessions/](../packages/retroplug-greenfield/cli/sessions) (`mgb-smoke.ts`,
-`render-rom.ts`, `render-song.ts`) and are bundled by the `retroplug-greenfield-example-session` CMake
-target via [tools/build-greenfield-session.js](../tools/build-greenfield-session.js).
+`render-rom.ts`, `render-song.ts`, and `rom-test.ts` — the TAP-emitting debug/observe example) and are
+bundled by the `retroplug-greenfield-example-session` CMake target via
+[tools/build-greenfield-session.js](../tools/build-greenfield-session.js).
 
 ## 3. The gap: the observe/assert half
 
-For **rendering** artifacts the CLI is complete. For **testing** it is not: a test needs to see *what the
+This *was* the gap; §5–6 close it (the observe/assert half is now built). A test needs to see *what the
 ROM did* and assert on it, in a form an agent can parse. NES APU registers (`$4000-$4013`) are
 write-only / open-bus on real hardware, so you **cannot** observe MIDI→sound by reading registers — you
 need the emulator's **decoded internal state**. That, plus memory/CPU introspection and structured
-pass/fail, is what turns the CLI from an artifact producer into a ROM-test harness.
+pass/fail, is what turns the CLI from an artifact producer into a ROM-test harness — and is exactly what
+the shipped debug RPCs (§5) + `Timeline.at` + the TAP harness now provide.
 
 ## 4. Mesen's debugger is already compiled in — and already proven on the legacy CLI
 
 A survey of the vendored Mesen core and the integration seam established the decisive facts:
 
 - **The whole debugger is compiled in.** [deps/mesen/CMakeLists.txt](../deps/mesen/CMakeLists.txt) builds
-  the `mesen` static lib by a recursive glob of `Core/*.cpp` (+ `Utilities/`, `Lua/`) with **no
+  the `mesen` static lib by a recursive glob of `Core/*.cpp` (+ `Utilities/`) with **no
   debugger exclusions**. That pulls in the entire `Core/Debugger/` subtree — `Debugger`, `Breakpoint` /
   `BreakpointManager`, `ExpressionEvaluator`, `MemoryDumper`, `TraceLogger`, `CallstackManager`,
-  `Profiler`, `LabelManager`, `EventManager` — plus Mesen's Lua engine.
+  `Profiler`, `LabelManager`, `EventManager`.
 - **It is linked into the greenfield binaries.** `retroplug-greenfield-backend` links `retroplug-cli-core`
   ([packages/native-greenfield/CMakeLists.txt](../packages/native-greenfield/CMakeLists.txt#L41)), which
   compiles [MesenNesSystem.cpp](../packages/native/src/system/mesen/MesenNesSystem.cpp) +
@@ -105,76 +108,87 @@ A survey of the vendored Mesen core and the integration seam established the dec
   stepInstruction). `test/ts/nes/{apu,debug,cpu}.test.ts` already drive a **real** `n8-midi.nes` via MIDI
   and assert on APU channels, memory, breakpoints, and traces — including a **read-watchpoint on the MIDI
   FIFO at `$40F1`** that fires.
-- **The greenfield gap is narrow and mechanical.** `packages/native-greenfield` and
-  `packages/retroplug-greenfield` have **zero** references to `debugTarget`/`getApuState`/`setBreakpoints`.
-  The C++ is compiled, linked, and reachable via `Engine → Project → SystemBase::debugTarget()`; it is
-  simply not surfaced through `EngineRpcService` / `BackendFacade`.
+- **The greenfield gap was narrow and mechanical — and is now closed for the plumbing tier.** The C++ was
+  compiled, linked, and reachable via `Engine → Project → SystemBase::debugTarget()`, just not surfaced
+  through `EngineRpcService` / `BackendFacade`. That surfacing is done: `EngineRpcService` now resolves the
+  live system via `Engine::findSystem(id)` and forwards to `SystemBase::…` / `debugTarget()->…`, mirroring
+  `HarnessRpcService` (§5–6). Only the new-C++-wrapper rows remain.
 
 **Decision: port, do not hand-roll.** Writing bespoke `getApuState`/`readMemory` RPCs would re-implement a
-strict subset of a working, tested surface. The right move is to port the proven `HarnessRpcService`
-methods onto the greenfield RPC seam and wrap them in a TS session/`observe` API.
+strict subset of a working, tested surface. The right move — taken — was to port the proven
+`HarnessRpcService` methods onto the greenfield RPC seam and wrap them in a TS session/`observe` API.
 
 ## 5. Capability inventory (prioritized for a MIDI→APU ROM)
 
-| Priority | Capability | Mesen provides | Reachable in greenfield build | Cost | CLI/session mapping |
-|---|---|---|---|---|---|
-| **Do first** | **Decoded per-channel APU state** — Square1/2, Triangle, Noise, DMC: period, frequency Hz, duty, envelope volume, length | `NesApu::GetState()` → `ApuState` (`Core/NES/…/NesApu.cpp`); freq computed live | compiled-in **and implemented**: `MesenNesDebugSession::getApuState()` → `rp::ApuState`; **no `InitDebugger`** | low (1 RPC) | `getApuState(id)` → `Timeline.at(t, s => expect(apu.square1.frequencyHz ≈ 262 && apu.square1.envelopeVolume > 0))`. **The centerpiece** — the only way to observe MIDI→sound. |
-| **Do first** | **Side-effect-free CPU-bus peek + flat region reads** (incl. the `$40F0/$40F1` Everdrive MIDI FIFO) | `NesMemoryManager::DebugRead` (non-destructive `PeekRam`); `Emulator::GetMemory(MemoryType)` | compiled-in **and implemented**: `SystemBase::readCpuByte()` / `getMemory()` | low (2 RPCs) | `readCpu(id, addr)` for mapped I/O / FIFO status; `readMemory(id, region)` for RAM/OAM/VRAM/PRG. |
-| **Do first** | CPU registers + single-step (`A/X/Y/SP/PS/PC`, `stepInstruction`, `runUntilPc`) | `NesCpu::GetState/SetState`, `Debugger::Step` | compiled-in **and base-implemented** on `SystemBase` | low | `getCpuRegisters/setRegister/stepInto`. |
-| Next | **Breakpoints + `runUntilBreak`** with expression conditions (exec/read/write watchpoints; `[$40F0]!=0`, scanline/cycle gates) | `Breakpoint::Create` → `Debugger::SetBreakpoints`; `ExpressionEvaluator` | compiled-in, implemented **and tested** (FIFO read-watch fires) | low (port RPCs) | `setBreakpoints(id, […])` + `runUntilBreak(id, maxCycles)` → `.at(break, …)`. Lazily inits the heavyweight debugger. |
-| Next | Execution trace (per-instruction disasm + register trace) | `Debugger::GetExecutionTrace`, `TraceLogger` | compiled-in and implemented | low | `setTrace/readTrace` — post-mortem assertions on the instruction stream. |
-| Next | **cc65 symbol labels** (name-resolved disasm/callstack/profile) | `LabelManager` fed from cc65 `.dbg` via `rp::parseCc65Dbg` | compiled-in and implemented **for cc65 `.dbg`** | low (cc65); **`.mlb` needs a new parser** (Mesen's C# parser is not vendored) | `loadLabels(id, dbgPath)`. |
-| Later | Profiler + disassembler + call stack | `Profiler`, `Disassembler`, `CallstackManager` | compiled-in and implemented | low (port RPCs) | `beginProfile/readProfile`, `disassemble`, `getCallStack`. |
-| Later | **EventManager** — batch-capture every `$2000-$401F` register write per frame with PC/scanline/cycle | `NesEventManager` (`TakeEventSnapshot`/`GetEvents`) | compiled + linked but **no `rp::` wrapper yet** | medium (new C++ wrapper + struct) | `drainEvents(id)` per frame → assert the *sequence/timing* of APU writes. Frame-scoped (drain ~60/s). |
-| Later | PPU state + viewers (scanline/cycle/scroll; tilemap/sprite/palette) | `NesDebugger::GetPpuState`, `NesPpuTools` | compiled + linked but **no `rp::` wrapper**; framebuffer already published for screenshots | medium (structs + caller-alloc buffers) | `getPpuState/getSpriteList`. Marginal for an audio ROM. |
-| Later | Memory **write**/poke (arrange state before assertions) | `MemoryDumper::SetMemoryValue` / `NesMemoryManager::DebugWrite` | compiled-in but **unimplemented** anywhere (only `setRegister` exists) | low (1 new method) | `writeCpu(id, addr, val)`. |
-| **Avoid** | Mesen Lua scripting (`ScriptManager`/`LuaApi` + Lua 5.4) | `emu.read/write`, `addMemoryCallback`, `addEventCallback` | **compiled + linked but dead** (`LoadScript` never called) | medium–high, **not worth it** | None. Its `getState` exposes *raw* registers (poorer than our decoded APU state); a second interpreter beside the TS/QuickJS session is net-negative. Extend `IDebugTarget` instead. |
+The **plumbing tier is built** — each is a greenfield RPC on `Backend` (`getApuState` … `runUntilBreak`),
+resolving the live system via `Engine::findSystem` and forwarding to `SystemBase::…` / `debugTarget()->…`,
+proven on a real `n8-midi.nes` in `test-native/cli-*.test.ts`. Only the new-C++-wrapper rows remain a plan.
 
-## 6. Proposed greenfield integration
+| Status | Capability | Mesen provides | Greenfield RPC(s) + session use |
+|---|---|---|---|
+| **Built** | **Decoded per-channel APU state** — pulse1/2, triangle, noise, dmc: period, frequency Hz, duty, envelope volume, length | `NesApu::GetState()` → `rp::ApuState` (no `InitDebugger`) | `getApuState(id): ApuState` → `.at(t, s => expect(s.backend.getApuState(id).pulse1.frequency > 250 && …pulse1.envelopeVolume > 0).toBeTruthy())`. **The centerpiece** — the only way to observe MIDI→sound. |
+| **Built** | **CPU-bus peek + region reads** (incl. the `$40F1` Everdrive MIDI FIFO) | `NesMemoryManager::DebugRead` (`PeekRam`); `GetMemory(MemoryType)` | `readCpu(id, addr): number\|null` (mapped I/O / FIFO); `readMemory(id, region): Uint8Array` (`MemoryRegion.Ram/OAM/…`). |
+| **Built** | CPU registers + step + PC-run + register-write | `NesCpu::GetState/SetState`, `Debugger::Step` | `getCpuRegisters(id): CpuRegister[]`, `stepInstruction(id)`, `setCpuRegister(id, name, value)`, `runUntilPc(id, target, maxCycles)`. |
+| **Built** | **Breakpoints + `runUntilBreak`** — exec/read/write watchpoints with expression conditions (`[$40F0]!=0`, `Y==0`, scanline/cycle gates) | `Breakpoint::Create` → `Debugger::SetBreakpoints`; `ExpressionEvaluator` | `setBreakpoints(id, Breakpoint[]): bool` + `runUntilBreak(id, maxCycles): BreakInfo`. The `$40F1` read-watch fires. Lazily inits the heavy debugger. |
+| **Built** | Execution trace + step trio | `Debugger::GetExecutionTrace`, `TraceLogger` | `setTrace(id, on)`, `readTrace(id, count): TraceLine[]` (`{pc, text}`), `stepInto/stepOver/stepOut(id): BreakInfo`. |
+| **Built** | **cc65 symbol labels** | `LabelManager` ← cc65 `.dbg` (`rp::parseCc65Dbg`) | `loadLabels(id, path): bool` (name-resolves disasm/profile/callstack). **`.mlb` still needs a new parser** — Mesen's C# one isn't vendored. |
+| **Built** | Profiler + disassembler + call stack | `Profiler`, `Disassembler`, `CallstackManager` | `beginProfile/readProfile(id)`, `disassemble(id, addr, count)`, `getCallStack(id)`. |
+| Plan | **EventManager** — batch-capture every `$2000-$401F` register write per frame with PC/scanline/cycle | `NesEventManager` (`TakeEventSnapshot`/`GetEvents`) | needs a **new `rp::` wrapper + struct**. `drainEvents(id)` per frame → assert the *sequence/timing* of APU writes. Frame-scoped (drain ~60/s). |
+| Plan | PPU state + viewers (scanline/cycle/scroll; tilemap/sprite/palette) | `NesDebugger::GetPpuState`, `NesPpuTools` | needs **new `rp::` structs + caller-alloc buffers**. `getPpuState/getSpriteList`. Marginal for an audio ROM (the framebuffer is already published for screenshots). |
+| Plan | Memory **write**/poke (arrange state before assertions) | `MemoryDumper::SetMemoryValue` / `NesMemoryManager::DebugWrite` | compiled but **unimplemented** (~1 new method). `writeCpu(id, addr, val)`. |
 
-Three layers; only the first touches C++, and it is plumbing over already-compiled symbols.
+## 6. Greenfield integration — built + remaining
 
-1. **Native — port the RPCs.** Add the debug methods to
-   [EngineRpcService](../packages/native-greenfield/src/EngineRpcService.cpp) →
-   [BackendFacade](../packages/native-greenfield/src/BackendFacade.hpp) →
-   [backend.ts](../packages/retroplug-greenfield/src/backend.ts), each forwarding to
-   `project_.findSystem(id)->debugTarget()->…` (or `SystemBase::readCpuByte/getMemory/getCpuRegisters/…`),
-   mirroring `HarnessRpcService`. Start with the **Do-first** rows (getApuState, readCpu, readMemory, CPU
-   registers/step). Reuse the existing reflect-cpp result structs (`rp::ApuState` et al.).
-2. **TS — the ergonomics.** A typed `observe` surface on the `Session` (`getApuState(id)`, `readCpu(id,
-   addr)`, `readMemory(id, region)`, …); a `Timeline.at(ms, fn)` scheduled-callback event so assertions run
-   *at a scheduled time* mid-render; reuse [testing/harness.ts](../packages/retroplug-greenfield/testing/harness.ts)
-   `test()`/`expect()` so a ROM test **emits TAP** the agent parses; plus pure audio-analysis helpers
-   (RMS / dominant-frequency) to cross-check the *sound* against the register state.
-3. **External authoring.** Because the ROM (and its tests) live outside this repo, the
-   `session`/`timeline`/`observe`/`expect` API must be an **importable, stable entry** the bundler resolves,
-   so out-of-repo scripts can `import { runTest, Timeline, expect } from "…"`. This is what makes it a real
-   "agents write scripts against a real NES" system rather than in-repo examples.
+The plumbing tier is integrated end to end; only the new-wrapper tier + external-authoring packaging remain.
 
-Sketch of the target authoring experience:
+**Built (the port).** Every capability is the same 7-file seam, mirroring the do-first commit:
+- **Native** — a decl in [EngineRpcService.hpp](../packages/native-greenfield/src/EngineRpcService.hpp), an
+  impl in [EngineRpcService.cpp](../packages/native-greenfield/src/EngineRpcService.cpp) (`SystemBase* sys =
+  engine_.findSystem(id)`, guard null, then `sys->…` or `sys->debugTarget()->…`), a one-line
+  [BackendFacade.hpp](../packages/native-greenfield/src/BackendFacade.hpp) forwarder, and a
+  [BackendRpcRegistration.hpp](../packages/native-greenfield/src/BackendRpcRegistration.hpp) `addMethod` line.
+- **TS** — the method on the `Backend` interface + a verbatim-field mirror in
+  [backend.ts](../packages/retroplug-greenfield/src/backend.ts) (`ApuState`, `CpuRegister`, `TraceLine`,
+  `BreakInfo`, `ProfiledFunction`, `DisasmLine`, `CallFrame`, `Breakpoint`, + the `MemoryRegion` const), a
+  `realBackend.ts` impl (a bare cast / `bytesOrNull`), and a deterministic `MockBackend` stub.
+- **Ergonomics** — `Timeline.at(ms, fn)` runs `fn(session)` after the render advances to `ms`, so a session
+  reads state + asserts at a scheduled time; a ROM test reuses
+  [testing/harness.ts](../packages/retroplug-greenfield/testing/harness.ts) `test()`/`expect()` to **emit TAP**.
+- **Proof** — one `test-native/cli-*.test.ts` per capability, mining known-good assertions (breakpoint PCs,
+  the `$40F1` watch) from the legacy `test/ts/nes/*.test.ts`, plus the agent-facing `cli/sessions/rom-test.ts`.
+
+**Remaining.**
+1. The **new-C++-wrapper tier** (§5 "Plan" rows): `EventManager` per-frame register-write capture and PPU
+   state/viewers need brand-new `rp::` structs (+ caller-allocated buffers for PPU); memory-write (`writeCpu`)
+   is ~one method. The only rows that touch new emulator glue rather than pure plumbing.
+2. **External authoring.** The ROM (and its tests) live outside this repo, so the
+   `session`/`timeline`/`observe`/`expect` API should become an **importable, stable entry** the bundler
+   resolves, so out-of-repo scripts can `import { Timeline, expect } from "…"`. Today a test lives in-repo
+   (a `cli/sessions/*.ts` or `test-native/*.test.ts`).
+3. **Audio-active debug reads.** The shipped reads use `Engine::findSystem` — valid on the control thread
+   while the audio thread isn't started (the CLI's direct render). Reading a live core *while the plugin
+   plays* would need an invoker read-path; not needed for the CLI harness.
+
+Authoring shape (from `cli/sessions/rom-test.ts`) — import `test`/`expect` from the harness (NOT
+`runSession`; the harness owns TAP + `tjs.exit`), and read state through `s.backend`:
 
 ```ts
-runTest("n8-midi: ch1 note → Square1 at pitch; ch2 → Square2 (not Square1)", (s) => {
-  const id = s.project.systems.addSystem(rom);
+test("n8-midi: ch1 note → pulse1 at pitch; pulse2 silent", () => {
+  const s = bootSession();
+  const id = s.project.systems.addSystem(rom)!;
+  let apu: ApuState | null = null;
   const tl = new Timeline()
-    .note(1000, 60, { channel: 1, durationMs: 500 })
-    .at(1200, () => {
-      const apu = s.getApuState(id);
-      expect(apu.square1.envelopeVolume > 0).toBe(true);
-      expectNear(apu.square1.frequencyHz, 262, 3);
-      expect(apu.square2.envelopeVolume).toBe(0);   // the ch2 regression guard
-    })
-    .at(1300, () => expect(s.readCpu(id, 0x40f1) !== 0).toBe(false)); // FIFO drained
-  renderTimeline(s, tl, { durationMs: 2000, warmupMs: 1000 });
+    .note(200, 60, { channel: 1, durationMs: 400 })
+    .at(400, (sess) => (apu = sess.backend.getApuState(id)));
+  renderTimeline(s, tl, { durationMs: 800, warmupMs: 1000 });
+  expect(apu!.pulse1.period > 0 && apu!.pulse1.envelopeVolume > 0).toBeTruthy();
+  expect(apu!.pulse1.frequency > 250 && apu!.pulse1.frequency < 275).toBeTruthy(); // ~C4
+  expect(apu!.pulse2.envelopeVolume === 0).toBeTruthy(); // ch1 only → pulse2 silent
 });
 ```
 
-### First slice (recommended)
-
-`getApuState` + `readCpu`/`readMemory` + CPU-registers/step ported to the greenfield RPC, a TS
-`observe` API + `Timeline.at()`, a TAP wrapper, and one example `n8-midi` APU test. Breakpoints /
-`runUntilBreak` / trace / cc65 labels follow. This is the smallest change that makes the CLI an
-agent-runnable NES test harness — and it re-catches the known `ch2→Square1` ROM bug on day one.
+(Breakpoints work the same way: `s.backend.setBreakpoints(id, [{ …read-watch on $40F1… }])` then
+`runUntilBreak(id, max)` → assert the returned `BreakInfo` stopped there.)
 
 ## 7. Caveats & gotchas
 
@@ -191,22 +205,21 @@ agent-runnable NES test harness — and it re-catches the known `ch2→Square1` 
   with an actual exit-zero run, not by inspection.** (See [01-architecture.md](01-architecture.md) on the
   read door and threading invariants.)
 - **NES-only.** Only `MesenNesSystem` has a `debugTarget()`; `MesenGbaSystem` has none and SameBoy returns
-  nullptr (`getApuState` throws on GB). The harness is inherently NES-scoped today.
+  nullptr — so on GB/GBA the greenfield reads degrade gracefully (`getApuState` → an empty `ApuState`, the
+  CPU/breakpoint reads → empty/false), never throwing. The harness is inherently NES-scoped today.
 - **Teardown ordering is delicate.** The debugger must be stopped while the `Emulator`/`DebugHud` is still
   alive, or `ScriptManager`'s destructor → `DebugHud::ClearScreen` segfaults. Preserve the
   `MesenNesDebugSession` / `MesenNesSystem` teardown order when porting.
-- **`InitDebugger` is heavyweight** (builds the full per-CPU debugger graph incl. the dead Lua
-  `ScriptManager`). Keep the lazy-on-first-breakpoint/step/trace init so `getApuState` + `readCpu` +
-  `readMemory` (which don't need it) stay cheap and non-debug renders aren't slowed.
-- **Lua is compiled in, not absent** — but dead-linked (`LoadScript` never called). It is linker weight, not
-  a foundation; do not build the harness on it.
+- **`InitDebugger` is heavyweight** (builds the full per-CPU debugger graph). It is lazy-on-first-
+  breakpoint/step/trace/profile, so `getApuState` + `readCpu` + `readMemory` (which don't need it) stay cheap
+  and non-debug renders aren't slowed — keep that laziness.
 - **APU `enabled` semantics.** `enabled` is only the `$4015` switch (often set once at init), **not** "a
   note is sounding." Gate APU assertions on `period > 0 && envelopeVolume > 0` (square/noise) or
   `period/outputVolume`, else false positives.
 - **Source-present-not-wrapped costs (honest).** `EventManager` and the PPU viewers are compiled+linked but
   have **zero** `rp::` wrappers — real glue (structs + caller-allocated buffers). Memory-**write** and a
-  standalone `EvaluateExpression` are compiled but unimplemented (~small adds). Mesen native `.mlb` label
-  files need a **new parser** (only cc65 `.dbg` works today).
+  standalone `EvaluateExpression` are compiled but unimplemented (~small adds). cc65 `.dbg` labels are
+  shipped; Mesen native `.mlb` label files still need a **new parser** (Mesen's C# one isn't vendored).
 - **Known ROM bug, not a harness bug.** The committed `resources/roms/n8-midi.nes` drives MIDI ch2 to
   Square1 (Square2 silent) — a stale cc65 binary already *caught* by `getApuState`. Rebuild the ROM; don't
   chase it as an integration defect.
