@@ -214,21 +214,34 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
 // GB button display/edit order (mirrors the legacy bindings editor).
 const GB_BUTTONS = ["Right", "Left", "Up", "Down", "A", "B", "Select", "Start"];
 
-/** The keyboard bindings editor: a profile switcher, one capture row per GB button (Enter arms, the next
- *  key rebinds, Backspace clears), a keyboard reset, and named-profile management (New / Rename / Delete).
- *  Write-through / edit-active — every edit + profile switch re-resolves and the live joypad follows via
- *  useGameInput. Gamepad bindings stay out (no gamepad I/O yet). */
-function bindingsChildren(ctx: MenuContext): MenuItem[] {
+type BindingsChannel = "keyboard" | "gamepad";
+
+/** The bindings editor for one channel: a profile switcher, one capture row per GB button (Enter arms, the
+ *  next key/button rebinds, Backspace clears), a channel reset, and named-profile management (New / Rename /
+ *  Delete). Write-through / edit-active — every edit + profile switch re-resolves and the live joypad follows
+ *  via useGameInput / useGamepadInput. Both channels share this; only the active profile, the channel key,
+ *  and the capture source differ. */
+function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[] {
   const bindings = ctx.stores.bindings;
   const userConfig = ctx.stores.userConfig;
-  const activeName = ctx.userConfig.activeKeyboardBindings;
-  const gamepadName = ctx.userConfig.activeGamepadBindings;
+  const kbName = ctx.userConfig.activeKeyboardBindings;
+  const gpName = ctx.userConfig.activeGamepadBindings;
+  const activeName = channel === "keyboard" ? kbName : gpName;
+  const setActive = (n: string): boolean =>
+    channel === "keyboard" ? userConfig.setActiveKeyboardBindings(n) : userConfig.setActiveGamepadBindings(n);
   const profiles = bindings.availableProfiles();
-  const kb = ctx.bindings.keyboard; // resolved active keyboard map — recomputed each render
+  const chMap = ctx.bindings[channel]; // resolved active channel map — recomputed each render
+  // Distinct id prefix per channel; "bind" for keyboard keeps its existing row ids stable.
+  const idp = channel === "keyboard" ? "bind" : "bind-gp";
+  const label = channel === "keyboard" ? "Keyboard" : "Gamepad";
+
+  const withChannel = (m: BindingMap, chan: Record<string, string[]>): BindingMap =>
+    channel === "keyboard" ? { ...m, keyboard: chan } : { ...m, gamepad: chan };
   const write = (edit: (m: BindingMap) => BindingMap) => {
     const map = bindings.loadProfile(activeName) ?? defaultBindingMap();
     bindings.saveProfile(activeName, edit(map));
   };
+  const setBtn = (btn: string, vals: string[]) => write((m) => withChannel(m, { ...m[channel], [btn]: vals }));
 
   // Create a named copy of the current bindings and make it active. Errors surface in the prompt's red line.
   const newProfile = (raw: string): string | null => {
@@ -237,7 +250,7 @@ function bindingsChildren(ctx: MenuContext): MenuItem[] {
     if (profiles.includes(n)) return "Profile already exists.";
     const cur = bindings.loadProfile(activeName) ?? defaultBindingMap();
     if (!bindings.saveProfile(n, { ...cur, name: n })) return "Save failed.";
-    userConfig.setActiveKeyboardBindings(n);
+    setActive(n);
     return null;
   };
   const renameActive = (raw: string): string | null => {
@@ -248,10 +261,10 @@ function bindingsChildren(ctx: MenuContext): MenuItem[] {
     return bindings.renameProfile(activeName, n) ? null : "Rename failed."; // repoints the active ref
   };
   // Deletable = neither active channel's profile, so nothing shown is un-deletable.
-  const deletable = profiles.filter((p) => p !== activeName && p !== gamepadName);
+  const deletable = profiles.filter((p) => p !== kbName && p !== gpName);
   const deleteChildren: MenuItem[] = deletable.length
     ? deletable.map((p) => ({
-        id: `bind-del-${p}`,
+        id: `${idp}-del-${p}`,
         label: p,
         kind: "prompt" as const,
         keepOpen: true,
@@ -265,30 +278,31 @@ function bindingsChildren(ctx: MenuContext): MenuItem[] {
           },
         },
       }))
-    : [action("bind-del-none", "(no other profiles)", () => {})];
+    : [action(`${idp}-del-none`, "(no other profiles)", () => {})];
 
   const captureRows: MenuItem[] = GB_BUTTONS.map((btn) => ({
-    id: `bind-${btn}`,
-    label: `${btn}: ${kb[btn]?.length ? kb[btn].join(", ") : "-"}`,
+    id: `${idp}-${btn}`,
+    label: `${btn}: ${chMap[btn]?.length ? chMap[btn].join(", ") : "-"}`,
     kind: "capture" as const,
     keepOpen: true,
     capture: {
-      onCapture: (name: string) => write((m) => ({ ...m, keyboard: { ...m.keyboard, [btn]: [name] } })),
-      onClear: () => write((m) => ({ ...m, keyboard: { ...m.keyboard, [btn]: [] } })),
+      source: channel,
+      onCapture: (name: string) => setBtn(btn, [name]),
+      onClear: () => setBtn(btn, []),
     },
   }));
 
   return [
-    cycler("bind-profile", "Profile", profiles, Math.max(0, profiles.indexOf(activeName)), (n) => userConfig.setActiveKeyboardBindings(profiles[n])),
-    sep("bind-sep-top"),
+    cycler(`${idp}-profile`, "Profile", profiles, Math.max(0, profiles.indexOf(activeName)), (n) => setActive(profiles[n])),
+    sep(`${idp}-sep-top`),
     ...captureRows,
-    sep("bind-sep-reset"),
-    // Keyboard channel only — preserve the profile's gamepad map.
-    action("bind-reset", "Reset Keyboard to Defaults", () => write((m) => ({ ...m, keyboard: defaultBindingMap().keyboard }))),
-    sep("bind-sep-mgmt"),
-    { id: "bind-new", label: "New Profile...", kind: "prompt", keepOpen: true, prompt: { title: "New profile name:", filter: isValidProfileChar, onConfirm: newProfile } },
-    { id: "bind-rename", label: "Rename...", kind: "prompt", keepOpen: true, prompt: { title: `Rename "${activeName}" to:`, initial: activeName, filter: isValidProfileChar, onConfirm: renameActive } },
-    submenu("bind-delete", "Delete Profile", deleteChildren),
+    sep(`${idp}-sep-reset`),
+    // This channel only — preserve the profile's other channel.
+    action(`${idp}-reset`, `Reset ${label} to Defaults`, () => write((m) => withChannel(m, defaultBindingMap()[channel]))),
+    sep(`${idp}-sep-mgmt`),
+    { id: `${idp}-new`, label: "New Profile...", kind: "prompt", keepOpen: true, prompt: { title: "New profile name:", filter: isValidProfileChar, onConfirm: newProfile } },
+    { id: `${idp}-rename`, label: "Rename...", kind: "prompt", keepOpen: true, prompt: { title: `Rename "${activeName}" to:`, initial: activeName, filter: isValidProfileChar, onConfirm: renameActive } },
+    submenu(`${idp}-delete`, "Delete Profile", deleteChildren),
   ];
 }
 
@@ -298,9 +312,9 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
   return [
     cycler("set-sram", "SRAM Auto-Save", SRAM_AUTO_SAVES.map((m) => SRAM_AUTO_SAVE_LABELS[m] ?? m), sramIdx, (n) => userConfig.setSramAutoSave(SRAM_AUTO_SAVES[n])),
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
-    submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx)),
+    submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
+    submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
-    // Deferred: Gamepad Bindings (needs live gamepad I/O).
   ];
 }
 

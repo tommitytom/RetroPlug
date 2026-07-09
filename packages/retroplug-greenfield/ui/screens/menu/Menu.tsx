@@ -26,6 +26,7 @@ import { setMenuModalActive } from "./menuModal";
 import type { MenuItem, MenuTree, PromptSpec } from "./menuTree";
 
 const CAPTURE_COLOR = "#ffb74d"; // orange, matching the legacy capture-armed row
+const GAMEPAD_CAPTURE_AXIS = 0.6; // a stick must pass this (past the play threshold) to bind as an axis token
 // Mouse-hover bar: a dimmer navy than the focus bar (#14243f), so the row under the pointer reads as
 // highlighted but subordinate to the keyboard-selected row. A pre-dimmed colour at full opacity (a
 // state-style's background-opacity isn't reliably applied). LVGL toggles it on LV_STATE_HOVERED.
@@ -230,11 +231,13 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       return;
     }
 
-    // 2. An armed capture row consumes the next key.
+    // 2. An armed capture row consumes the next key — but only a keyboard-source row; a gamepad-source row
+    //    waits for the pad bus (below) and ignores stray keys. Esc cancels either.
     const armed = capturingIdRef.current;
     if (armed) {
+      if (code === KEY_ESCAPE) return setCapturing(""); // cancel — bind nothing
+      if (itemById(armed)?.capture?.source === "gamepad") return; // gamepad row: keep listening on the pad bus
       setCapturing("");
-      if (code === KEY_ESCAPE) return; // cancel — bind nothing
       const name = dpfCodeToKeyName(code);
       if (name == null) return; // an unbindable key — treat as cancel
       itemById(armed)?.capture?.onCapture(name);
@@ -250,6 +253,28 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     } else if (focused.kind === "prompt" && code === KEY_ENTER && focused.prompt) {
       setPrompt({ spec: focused.prompt, value: focused.prompt.initial ?? "", error: "" });
     }
+  });
+
+  // Gamepad capture: while a gamepad-source row is armed, the next controller button (its SDL name) or a
+  // deliberate stick flick (a `<axis><sign>` token) binds. No-op unless a gamepad row is armed — and
+  // menuOpen already gates useGamepadInput off, so game routing never competes for these events.
+  useNativeEvent("gamepad-button", (...args) => {
+    const armed = capturingIdRef.current;
+    if (!args[2] || !armed) return; // press only
+    const item = flatRef.current.find((f) => f.item.id === armed)?.item;
+    if (item?.capture?.source !== "gamepad") return;
+    setCapturing("");
+    item.capture.onCapture(args[1] as string); // raw SDL button name is the token
+  });
+  useNativeEvent("gamepad-axis", (...args) => {
+    const armed = capturingIdRef.current;
+    if (!armed) return;
+    const value = args[2] as number;
+    if (Math.abs(value) < GAMEPAD_CAPTURE_AXIS) return; // ignore drift; a deliberate flick binds
+    const item = flatRef.current.find((f) => f.item.id === armed)?.item;
+    if (item?.capture?.source !== "gamepad") return;
+    setCapturing("");
+    item.capture.onCapture(`${args[1] as string}${value < 0 ? "-" : "+"}`); // half-axis token
   });
 
   // Keyboard scroll-follow: keep the focused row near the viewport midpoint so an expanded submenu that
@@ -331,7 +356,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           if (item.kind === "submenu") label = `${item.label} ${openItems.has(item.id) ? "v" : ">"}`;
           else if (isCapturing) {
             const colon = item.label.indexOf(":"); // keep the "<Button>: " head, swap the value for a prompt
-            label = `${colon >= 0 ? item.label.slice(0, colon) : item.label}: Press a key...`;
+            const what = item.capture?.source === "gamepad" ? "button" : "key";
+            label = `${colon >= 0 ? item.label.slice(0, colon) : item.label}: Press a ${what}...`;
           } else label = item.label;
           const isFocused = focusedId === item.id;
           return (

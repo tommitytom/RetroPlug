@@ -27,8 +27,10 @@ export interface MenuItem {
   onSelect?: () => void; // action / cycler (Enter or click)
   onCycle?: (dir: 1 | -1) => void; // cycler (Left/Right)
   keepOpen?: boolean; // stay open after onSelect (cyclers)
-  // present iff kind === "capture" — Enter arms the row, the next key press binds (Backspace clears).
-  capture?: { onCapture: (keyName: string) => void; onClear: () => void };
+  // present iff kind === "capture" — Enter arms the row, the next input binds (Backspace clears). `source`
+  // picks the event bus: "keyboard" (default) captures the next key; "gamepad" captures the next controller
+  // button or stick flick. `onCapture` receives the resolved token (key name / SDL button name / axis token).
+  capture?: { source?: "keyboard" | "gamepad"; onCapture: (name: string) => void; onClear: () => void };
   prompt?: PromptSpec; // present iff kind === "prompt"
 }
 

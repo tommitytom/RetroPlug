@@ -7,7 +7,7 @@ import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBack
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildStartMenu, buildInstanceMenu, composeWindowTitle, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { buildKeyToButton, BUTTON_VALUE } from "../../src/keyCodes";
+import { buildKeyToButton, buildGamepadToButton, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, lsdjRom } from "../systems/fixtures";
 
@@ -497,6 +497,40 @@ test("Keyboard Bindings: 8 capture rows + reset; capture rebinds write-through, 
   keyboardBindings(stores).find((r) => r.id === "bind-reset")!.onSelect!();
   expect(stores.bindings.resolvedBindings().keyboard.A).toEqual(defaultBindingMap().keyboard.A);
   expect(stores.bindings.loadProfile(active)!.gamepad).toEqual(defaultBindingMap().gamepad);
+});
+
+// The Settings → Gamepad Bindings submenu — the gamepad twin of the keyboard editor.
+function gamepadBindings(stores: AppStores): MenuItem[] {
+  const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+  return submenuChildren(settings, "set-gamepad-bindings");
+}
+
+test("Gamepad Bindings: gamepad-source capture rows; button + axis-token rebinds write-through, clear + reset", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+
+  const rows = gamepadBindings(stores);
+  expect(rows.filter((r) => r.kind === "capture").length).toBe(8);
+  expect(findItem(rows, "bind-gp-A")!.capture!.source).toBe("gamepad"); // arms the pad bus, not the key bus
+  expect(findItem(rows, "bind-gp-Up")!.label).toBe("Up: dpup, lefty-"); // default d-pad hat + left stick
+
+  // Capture A → a controller button (raw SDL name): written through to the active GAMEPAD profile.
+  findItem(rows, "bind-gp-A")!.capture!.onCapture("y");
+  const active = stores.userConfig.config().activeGamepadBindings;
+  expect(stores.bindings.loadProfile(active)!.gamepad.A).toEqual(["y"]); // written through to disk
+  expect(buildGamepadToButton(stores.bindings.resolvedBindings().gamepad).get("y")).toBe(BUTTON_VALUE.A);
+
+  // Capture Up → a stick direction (half-axis token) — the analog-as-dpad binding form.
+  gamepadBindings(stores).find((r) => r.id === "bind-gp-Up")!.capture!.onCapture("lefty-");
+  expect(stores.bindings.resolvedBindings().gamepad.Up).toEqual(["lefty-"]);
+  expect(buildGamepadToButton(stores.bindings.resolvedBindings().gamepad).get("lefty-")).toBe(BUTTON_VALUE.Up);
+
+  // Clear A → unbinds; reset restores the default gamepad map (and preserves the keyboard channel).
+  gamepadBindings(stores).find((r) => r.id === "bind-gp-A")!.capture!.onClear();
+  expect(stores.bindings.resolvedBindings().gamepad.A).toEqual([]);
+  gamepadBindings(stores).find((r) => r.id === "bind-gp-reset")!.onSelect!();
+  expect(stores.bindings.resolvedBindings().gamepad.Up).toEqual(defaultBindingMap().gamepad.Up);
+  expect(stores.bindings.loadProfile(active)!.keyboard).toEqual(defaultBindingMap().keyboard);
 });
 
 const promptOf = (stores: AppStores, id: string) => findItem(keyboardBindings(stores), id)!.prompt!;
