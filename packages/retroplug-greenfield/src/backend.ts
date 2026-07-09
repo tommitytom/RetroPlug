@@ -178,6 +178,14 @@ export interface Backend {
   /** Single-step the core one instruction; returns the cycle count consumed (0 when unsupported). */
   stepInstruction(id: number): number;
 
+  /** Write one CPU register by name (canonical lower-case, e.g. "a"/"pc"). Returns false when the id is
+   *  gone, the backend can't write, or the name is unknown / read-only. */
+  setCpuRegister(id: number, name: string, value: number): boolean;
+
+  /** Single-step until PC == `target` or `maxCycles` elapse; true iff the target was reached (false when
+   *  the id is gone, the backend can't step, or the cap trips first). */
+  runUntilPc(id: number, target: number, maxCycles: number): boolean;
+
   // --- Byte codec ---------------------------------------------------------
   // The ONLY native part of `.rplg` export framing: TS assembles every entry (the thin
   // project.json + the per-system blobs) and hands them here to compress; native just

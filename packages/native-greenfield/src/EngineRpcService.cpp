@@ -207,6 +207,18 @@ std::uint64_t EngineRpcService::stepInstruction(std::uint32_t id) {
     return sys->stepInstruction();  // 0 when the backend can't step
 }
 
+bool EngineRpcService::setCpuRegister(std::uint32_t id, std::string name, std::uint32_t value) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return false;
+    return sys->setCpuRegister(name, value);  // false on unknown / read-only register
+}
+
+bool EngineRpcService::runUntilPc(std::uint32_t id, std::uint32_t target, std::uint64_t maxCycles) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return false;
+    return sys->runUntilPc(target, maxCycles);  // false when the target is never reached / can't step
+}
+
 std::optional<rfl::Bytestring> EngineRpcService::compileScript(std::string source) {
     auto bytecode = dsp::compileToBytecode(source);
     if (!bytecode) return std::nullopt;

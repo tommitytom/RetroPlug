@@ -300,6 +300,16 @@ export class MockBackend implements Backend {
     return this.systems.has(id) ? 1 : 0;
   }
 
+  setCpuRegister(id: number, _name: string, _value: number): boolean {
+    this.log.push("setCpuRegister");
+    return this.systems.has(id);
+  }
+
+  runUntilPc(_id: number, _target: number, _maxCycles: number): boolean {
+    this.log.push("runUntilPc");
+    return false; // the mock has no real core to step, so a target PC is never reached
+  }
+
   zip(entries: ZipEntry[]): Uint8Array | null {
     this.log.push("zip");
     this.zipCalls.push(entries.map((e) => ({ name: e.name, bytes: new Uint8Array(e.bytes) })));

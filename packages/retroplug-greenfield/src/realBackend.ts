@@ -128,6 +128,8 @@ export function createRealBackend(): Backend {
     readMemory: (id, region) => bytesOrNull(call("readMemory", id, region)),
     getCpuRegisters: (id) => call("getCpuRegisters", id) as CpuRegister[],
     stepInstruction: (id) => Number(call("stepInstruction", id)),
+    setCpuRegister: (id, name, value) => call("setCpuRegister", id, name, value) as boolean,
+    runUntilPc: (id, target, maxCycles) => call("runUntilPc", id, target, maxCycles) as boolean,
 
     // --- async dialog (UI-direct native hook; see browseFile above) -------
     openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts),

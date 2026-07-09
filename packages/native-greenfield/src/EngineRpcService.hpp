@@ -46,6 +46,12 @@ public:
     std::vector<rp::CpuRegister> getCpuRegisters(std::uint32_t id);
     std::uint64_t                stepInstruction(std::uint32_t id);
 
+    // --- live-core debug writes / control-flow (spec/09-cli-debugging.md) ---
+    // Plain SystemBase virtuals (no debugTarget needed); false when the id is gone or the backend can't
+    // serve. setCpuRegister writes one register by name; runUntilPc single-steps until PC == target.
+    bool setCpuRegister(std::uint32_t id, std::string name, std::uint32_t value);
+    bool runUntilPc(std::uint32_t id, std::uint32_t target, std::uint64_t maxCycles);
+
     // --- DSP-side JS runtime (the role kernel) ---
     std::optional<rfl::Bytestring> compileScript(std::string source);
     bool dspLoadKernel(std::vector<std::uint8_t> bytecode);
