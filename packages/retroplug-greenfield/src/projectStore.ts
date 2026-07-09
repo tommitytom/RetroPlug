@@ -150,6 +150,16 @@ export class ProjectStore {
     this.onChangeCb();
   }
 
+  /** Open a ROM as a fresh project: reset to empty, build the ROM as the sole system, then adopt its
+   *  `<rom>.rplg` sibling (name + recents + current path). The "new project from a ROM" op — what the start
+   *  menu does from empty, reusable when a project is already open. The caller resolves the ROM-vs-project
+   *  branch first (FileSelection.resolveLoad), so `loadRom`'s sibling-project defer never fires here. */
+  openRom(romPath: string, opts?: { explicitSav?: string }): void {
+    this.newProject();
+    this.systems.loadRom(romPath, opts);
+    this.adoptRomProject(romPath);
+  }
+
   /** Save a thin `.rplg` (raw JSON, paths rebased relative to its folder). Records it
    *  in recents + as the current project, and marks clean. */
   save(path: string): boolean {

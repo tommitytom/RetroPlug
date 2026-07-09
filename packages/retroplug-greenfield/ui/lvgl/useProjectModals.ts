@@ -41,6 +41,8 @@ export interface ProjectModals {
   newProject: () => void;
   /** Load `path`, guarding unsaved changes first and surfacing the outcome. */
   loadProject: (path: string) => void;
+  /** Open `romPath` as a fresh project (with an optional paired sav), guarding unsaved changes first. */
+  loadRomAsProject: (romPath: string, explicitSav?: string) => void;
 }
 
 export function useProjectModals(stores: AppStores): ProjectModals {
@@ -79,6 +81,12 @@ export function useProjectModals(stores: AppStores): ProjectModals {
 
   const loadProject = (path: string): void => guard(() => handleOutcome(project.load(path)));
 
+  const loadRomAsProject = (romPath: string, explicitSav?: string): void =>
+    guard(() => {
+      setPending(null);
+      project.openRom(romPath, explicitSav ? { explicitSav } : undefined);
+    });
+
   const onClose = (): void =>
     setPending((p) => {
       if (p?.kind === "relink") project.cancelLoad(); // abandoning the relink drops the held load
@@ -86,7 +94,7 @@ export function useProjectModals(stores: AppStores): ProjectModals {
     });
 
   const modal = pending ? buildModal(pending, stores, handleOutcome, onClose) : null;
-  return { modal, active: pending !== null, onClose, newProject, loadProject };
+  return { modal, active: pending !== null, onClose, newProject, loadProject, loadRomAsProject };
 }
 
 // Build the overlay tree for `pending`. Every button uses keepOpen (the overlay owns dismissal itself),

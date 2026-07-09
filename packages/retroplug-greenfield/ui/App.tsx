@@ -99,7 +99,7 @@ export function App() {
   // "gamepad-button" bus useGamepadInput reads.
   useGamepadInput({ active: !empty && !menuOpen && !closeGuard.active && !modals.active, focusedId: stores.project.systems.focused() });
 
-  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject };
+  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject };
 
   // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
   // the keypad. Save & Quit / Discard & Quit / Cancel — the guard drives the native quit + dismissal.

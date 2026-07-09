@@ -1,17 +1,20 @@
 // FileSelection: turn a user's file pick into the right systems op. Opens the OS
 // browser, classifies what comes back (ROM by content / .sav by extension / other),
-// and routes it — load vs add per the caller's mode, and the .sav→ROM pairing with
-// its 2nd (ROM-only) browser.
+// resolves the .sav→ROM pairing (its 2nd, ROM-only browser), then routes:
+//   - resolveLoad: RESOLVE-ONLY (no mutation) for the project-level "Load…" — decide
+//     between a sibling <rom>.rplg project and a fresh ROM, letting the caller apply
+//     the guarded reset+load.
+//   - browseAdd: append a new instance.
+//   - browseReplace(id): swap one instance in place.
 //
 // The dialog is the one intrinsically-async op (it waits on human input over DPF's
-// non-blocking browser), so the whole flow is plain async: browse() resolves to the
+// non-blocking browser), so the whole flow is plain async: each method resolves to its
 // FINAL outcome after every dialog settles. The 2nd browser is just another `await`
 // inside the same Promise — no pending-mode latch, no out-of-band event correlation.
-// Port of PluginRpcService's handleOpenRomSelection / onFileBrowserSelected /
-// openRomBrowser, with classification + pairing done TS-side over the systems store.
 
 import type { Backend } from "./backend";
 import { extensionLower } from "./pathUtil";
+import { siblingRplgPath } from "./savPaths";
 import { classifyRom, type SystemsStore } from "./systemsStore";
 
 export const ROM_OR_SAV_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sav"];
@@ -27,67 +30,81 @@ export function classifyKind(backend: Backend, path: string): FileKind {
   return "other";
 }
 
-/** The result of a selection, once every dialog it triggered has settled. */
+/** The result of an add/replace selection, once every dialog it triggered has settled. */
 export type SelectionOutcome =
-  | { kind: "loaded"; system: number; romPath: string } // a load replaced/adopted a system (romPath → sibling project)
   | { kind: "added"; system: number } // an add appended one
-  | { kind: "deferred"; project: string } // sibling <rom>.rplg → the Project domain loads it
+  | { kind: "replaced"; system: number } // a replace swapped one in place
   | { kind: "error"; path: string } // unreadable / not a ROM / bad pair target
   | { kind: "cancelled" }; // a dialog closed with no pick
 
-type Mode = "load" | "add";
+/** What a "Load…" pick resolves to (RESOLVE-ONLY — the caller applies it, guarded). */
+export type ResolvedLoad =
+  | { kind: "project"; path: string } // a sibling <rom>.rplg → load that project
+  | { kind: "rom"; romPath: string; explicitSav?: string } // a fresh ROM → new project from it
+  | { kind: "error"; path: string } // unreadable / not a ROM / bad pair target
+  | { kind: "cancelled" }; // a dialog closed with no pick
+
+// A picked path resolved to a concrete ROM (+ paired sav), or a terminal state — the
+// shared classify-and-pair step, done WITHOUT mutating the store.
+type Pick =
+  | { kind: "rom"; rom: string; explicitSav?: string }
+  | { kind: "error"; path: string }
+  | { kind: "cancelled" };
 
 export class FileSelection {
   constructor(private readonly backend: Backend, private readonly systems: SystemsStore) {}
 
-  /** Open the ROM-or-sav browser and route the pick. Resolves to the final outcome. */
-  async browse(mode: Mode): Promise<SelectionOutcome> {
-    const path = await this.backend.openFileBrowser({
-      title: "Open ROM or .sav",
-      patterns: ROM_OR_SAV_PATTERNS,
-    });
-    return this.route(path, mode);
+  /** Project-level "Load…": browse a ROM/sav (pairing an unpaired `.sav` via the 2nd browser), then decide
+   *  between the sibling `<rom>.rplg` project and a fresh ROM. Pure of store mutation — the caller applies
+   *  the outcome behind the unsaved-changes guard. */
+  async resolveLoad(): Promise<ResolvedLoad> {
+    const pick = await this.pickRom();
+    if (pick.kind !== "rom") return pick; // cancelled / error
+    // With no paired save, a sibling `<rom>.rplg` means "open that project" rather than "new project from ROM".
+    if (!pick.explicitSav) {
+      const rplg = siblingRplgPath(pick.rom);
+      if (this.backend.fileExists(rplg)) return { kind: "project", path: rplg };
+    }
+    return { kind: "rom", romPath: pick.rom, explicitSav: pick.explicitSav };
   }
 
-  /** Route a KNOWN path with no dialog (autoload / recent-files / drag-drop). May
-   *  still open a pairing browser when it's an unpaired `.sav`. */
-  selectPath(path: string, mode: Mode): Promise<SelectionOutcome> {
-    return this.route(path, mode);
+  /** "Add Instance": browse a ROM/sav and append a new instance (with `.sav` pairing). */
+  async browseAdd(): Promise<SelectionOutcome> {
+    const pick = await this.pickRom();
+    if (pick.kind !== "rom") return pick;
+    const opts = pick.explicitSav ? { explicitSav: pick.explicitSav } : undefined;
+    const id = this.systems.addSystem(pick.rom, opts);
+    return id === null ? { kind: "error", path: pick.rom } : { kind: "added", system: id };
   }
 
-  private async route(path: string | null, mode: Mode): Promise<SelectionOutcome> {
+  /** "Replace Instance": browse a ROM/sav and swap system `id` in place (with `.sav` pairing). Stays in the
+   *  current project — no sibling-project defer, no project adoption. */
+  async browseReplace(id: number): Promise<SelectionOutcome> {
+    const pick = await this.pickRom();
+    if (pick.kind !== "rom") return pick;
+    const opts = pick.explicitSav ? { explicitSav: pick.explicitSav } : undefined;
+    const newId = this.systems.replaceSystem(id, pick.rom, opts);
+    return newId === null ? { kind: "error", path: pick.rom } : { kind: "replaced", system: newId };
+  }
+
+  // Open the ROM-or-sav browser and resolve the pick to a concrete ROM (+ paired sav), running the 2nd
+  // ROM-only browser for an unpaired `.sav`. No store mutation — the shared front half of every op.
+  private async pickRom(): Promise<Pick> {
+    const path = await this.backend.openFileBrowser({ title: "Open ROM or .sav", patterns: ROM_OR_SAV_PATTERNS });
     if (path === null) return { kind: "cancelled" };
-    if (classifyKind(this.backend, path) === "sav") return this.beginPair(path, mode);
-    return this.applyRom(path, mode); // rom, or "other" (which fails cleanly)
+    if (classifyKind(this.backend, path) === "sav") return this.pairSav(path);
+    if (classifyKind(this.backend, path) === "rom") return { kind: "rom", rom: path };
+    return { kind: "error", path }; // "other" — fails cleanly
   }
 
-  // A picked save: pair with its sibling ROM if there is one, else open the 2nd
-  // (ROM-only) browser and pair with what the user points at.
-  private async beginPair(sav: string, mode: Mode): Promise<SelectionOutcome> {
+  // A picked save: pair with its sibling ROM if there is one, else open the 2nd (ROM-only) browser and
+  // pair with what the user points at.
+  private async pairSav(sav: string): Promise<Pick> {
     const sibling = this.systems.resolveSiblingRom(sav);
-    if (sibling) return this.applyRom(sibling, mode, sav);
-    const rom = await this.backend.openFileBrowser({
-      title: "Select the ROM for this save",
-      patterns: ROM_PATTERNS,
-    });
+    if (sibling) return { kind: "rom", rom: sibling, explicitSav: sav };
+    const rom = await this.backend.openFileBrowser({ title: "Select the ROM for this save", patterns: ROM_PATTERNS });
     if (rom === null) return { kind: "cancelled" };
     if (classifyKind(this.backend, rom) !== "rom") return { kind: "error", path: rom };
-    return this.applyRom(rom, mode, sav);
-  }
-
-  // Drive the systems store: add appends, load replaces the focused tile (or defers to
-  // a sibling project). `explicitSav` is a paired save.
-  private applyRom(rom: string, mode: Mode, explicitSav?: string): SelectionOutcome {
-    const opts = explicitSav ? { explicitSav } : undefined;
-    if (mode === "add") {
-      const id = this.systems.addSystem(rom, opts);
-      return id === null ? { kind: "error", path: rom } : { kind: "added", system: id };
-    }
-    const r = this.systems.loadRom(rom, opts);
-    if (r === null) return { kind: "error", path: rom };
-    if ("deferredProject" in r) return { kind: "deferred", project: r.deferredProject };
-    // A fresh ROM (no sibling `<rom>.rplg`, or the caller pinned a paired sav) builds a bare system; the
-    // caller adopts `<rom>.rplg` as its project + recents entry (mirrors legacy's writeSiblingProject).
-    return { kind: "loaded", system: r.system, romPath: rom };
+    return { kind: "rom", rom, explicitSav: sav };
   }
 }

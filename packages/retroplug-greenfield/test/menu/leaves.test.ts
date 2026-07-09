@@ -11,8 +11,8 @@ import { buildKeyToButton, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, lsdjRom } from "../systems/fixtures";
 
-// A leaf's onSelect fires browse() fire-and-forget; flush the microtask chain it kicks off (openFileBrowser
-// resolve → route → applyRom → the runSelection .then). A handful of turns settles the plain-ROM path.
+// A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
+// (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
 const flush = async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 };
@@ -29,6 +29,10 @@ function ctxOf(stores: AppStores): MenuContext {
     version: "",
     newProject: () => {}, // App wires these to useProjectModals; tests spy per-case (see routing test).
     loadProject: () => {},
+    // App guards this through useProjectModals; here it applies unguarded so the load tests observe the
+    // store mutation directly (a clean project has nothing to guard anyway).
+    loadRomAsProject: (romPath: string, explicitSav?: string) =>
+      stores.project.openRom(romPath, explicitSav ? { explicitSav } : undefined),
   };
 }
 
@@ -157,6 +161,49 @@ test("instance menu Add Instance appends the picked ROM", async () => {
   await flush();
 
   expect(stores.project.systems.view().length).toBe(2);
+});
+
+test("instance menu Load... opens a NEW project (does not swap the anchored tile)", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.gb", gbRom());
+  be.seed("/roms/c.gb", gbRom());
+  const anchoredId = stores.project.systems.addSystem("/roms/a.gb")!;
+  stores.project.systems.addSystem("/roms/b.gb"); // a 2nd instance — a real multi-instance project
+  const anchored = stores.project.systems.view().find((s) => s.id === anchoredId)!;
+  be.queueBrowse("/roms/c.gb");
+
+  findItem(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-load")!.onSelect!();
+  await flush();
+
+  // Load… is project-level: the whole project is replaced by a fresh single-system one — not a tile swap
+  // (which would keep both instances).
+  const view = stores.project.systems.view();
+  expect(view.length).toBe(1);
+  expect(view[0].romPath).toBe("/roms/c.gb");
+});
+
+test("instance menu Replace Instance swaps the anchored instance in place", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.gb", gbRom());
+  be.seed("/roms/c.gb", gbRom());
+  const anchoredId = stores.project.systems.addSystem("/roms/a.gb")!; // slot 0
+  const otherId = stores.project.systems.addSystem("/roms/b.gb")!; // slot 1 — must stay untouched
+  const anchored = stores.project.systems.view().find((s) => s.id === anchoredId)!;
+  be.queueBrowse("/roms/c.gb");
+
+  findItem(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-replace")!.onSelect!();
+  await flush();
+
+  const view = stores.project.systems.view();
+  expect(view.length).toBe(2); // in place — no add/remove
+  expect(view[0].romPath).toBe("/roms/c.gb"); // the anchored slot now holds the new ROM
+  expect(view.find((s) => s.id === otherId)?.romPath).toBe("/roms/b.gb"); // the other instance is untouched
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.replaceId).toBe(anchoredId); // swapped the anchored id, not the focused tile
 });
 
 test("a cancelled browse mutates nothing", async () => {

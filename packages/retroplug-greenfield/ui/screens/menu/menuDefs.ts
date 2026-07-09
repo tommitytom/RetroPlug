@@ -13,7 +13,6 @@ import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsSto
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
 import { stem } from "../../../src/pathUtil";
-import type { SelectionOutcome } from "../../../src/fileSelection";
 import { openPath } from "../../lvgl/openPath";
 import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
@@ -32,6 +31,7 @@ export interface MenuContext {
   // error) by useProjectModals — the menu drives these instead of project.newProject / project.load.
   newProject: () => void;
   loadProject: (path: string) => void;
+  loadRomAsProject: (romPath: string, explicitSav?: string) => void;
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -79,15 +79,15 @@ function cycler(id: string, prefix: string, names: string[], current: number, ap
   return { id, label: `${prefix}: ${names[current] ?? "?"}`, kind: "cycler", keepOpen: true, onSelect: () => step(1), onCycle: step };
 }
 
-/** Fire a FileSelection browse and apply its outcome once every dialog settles: the store mutates itself
- *  on load / add, and a `deferred` sibling `<rom>.rplg` is handed to the Project domain. Selection is
- *  fire-and-forget from a menu leaf — the store's change notification re-renders when it lands. */
-function runSelection(ctx: MenuContext, p: Promise<SelectionOutcome>): void {
-  void p.then((outcome) => {
-    if (outcome.kind === "deferred") ctx.stores.project.load(outcome.project);
-    // A fresh ROM load has no on-disk project yet — adopt its `<rom>.rplg` sibling so it enters recents
-    // (an `added` instance deliberately doesn't: it appends to the current project, not a new one).
-    else if (outcome.kind === "loaded") ctx.stores.project.adoptRomProject(outcome.romPath);
+/** The shared "Load…" leaf (start + instance): browse a ROM/sav (resolve-only), then apply the pick behind
+ *  the unsaved-changes guard — a sibling `<rom>.rplg` loads that project, a fresh ROM opens as a new project.
+ *  Never mutates an existing instance (that's "Replace Instance"). Fire-and-forget; the store's change
+ *  notification re-renders when it lands. */
+function runLoad(ctx: MenuContext): void {
+  void ctx.stores.fileSelection.resolveLoad().then((r) => {
+    if (r.kind === "project") ctx.loadProject(r.path);
+    else if (r.kind === "rom") ctx.loadRomAsProject(r.romPath, r.explicitSav);
+    // cancelled / error: nothing to apply (a bad pair target silently no-ops, as before).
   });
 }
 
@@ -113,7 +113,11 @@ function sameboyConfig(sys: SystemView): { model: number; highpass: number; link
 // --- child builders -----------------------------------------------------------------------------------
 function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
+  // Reset reboots carrying the battery — pathless, reconstructing in place (no live GB_reset). Sits at the
+  // top with a separator below it.
   const items: MenuItem[] = [
+    action("sys-reset", "Reset", () => void systems.reset(sys.id)),
+    sep("sys-sep-reset"),
     cycler("sys-reload", "Reload on ROM Change", OFF_ON, sys.settings.reloadOnRomChange ? 1 : 0, (n) =>
       systems.setReloadOnRomChange(sys.id, n === 1),
     ),
@@ -127,21 +131,17 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       cycler("sys-fastboot", "Fast Boot", OFF_ON, cfg.fastBoot ? 1 : 0, (n) => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: n === 1 })),
     );
   }
-  // Save/Load State + SRAM. The quick "Save State"/"Save SRAM" write to the ROM's sibling path with no
+  // Save/Load SRAM + State. The quick "Save SRAM"/"Save State" write to the ROM's sibling path with no
   // dialog (a real ROM only — the embedded synth has no on-disk target); the "As…" variants browse. The
   // store reads/writes the resolved path (the registry read is safe while playing; load reconstructs the
-  // core in place). Reset reboots carrying the battery; New SRAM reboots with a blank battery — both
-  // pathless, reconstructing in place (no live GB_reset/clearSram).
+  // core in place). New SRAM reboots with a blank battery — pathless, reconstructing in place (no live
+  // clearSram).
   const romStem = stem(sys.romPath);
-  items.push(sep("sys-sep-state"));
-  if (sys.romPath)
-    items.push(action("sys-quicksavestate", "Save State", () => systems.saveState(sys.id, siblingPath(sys.romPath, sys.savSuffix, ".ss0"))));
   items.push(
-    action("sys-savestate", "Save State As...", () =>
-      browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${romStem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
-    ),
-    action("sys-loadstate", "Load State...", () =>
-      browseThen(ctx, { title: "Load State", patterns: STATE_PATTERNS }, (p) => void systems.loadState(sys.id, p)),
+    sep("sys-sep-state"),
+    action("sys-newsram", "New SRAM", () => void systems.newSram(sys.id)),
+    action("sys-loadsram", "Load SRAM...", () =>
+      browseThen(ctx, { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
     ),
   );
   if (sys.romPath)
@@ -150,12 +150,16 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     action("sys-savesram", "Save SRAM As...", () =>
       browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${romStem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
     ),
-    action("sys-loadsram", "Load SRAM...", () =>
-      browseThen(ctx, { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
+    action("sys-loadstate", "Load State...", () =>
+      browseThen(ctx, { title: "Load State", patterns: STATE_PATTERNS }, (p) => void systems.loadState(sys.id, p)),
     ),
-    action("sys-newsram", "New SRAM", () => void systems.newSram(sys.id)),
-    sep("sys-sep-reset"),
-    action("sys-reset", "Reset", () => void systems.reset(sys.id)),
+  );
+  if (sys.romPath)
+    items.push(action("sys-quicksavestate", "Save State", () => systems.saveState(sys.id, siblingPath(sys.romPath, sys.savSuffix, ".ss0"))));
+  items.push(
+    action("sys-savestate", "Save State As...", () =>
+      browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${romStem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
+    ),
   );
   return items;
 }
@@ -178,8 +182,14 @@ function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unk
 function projectChildren(ctx: MenuContext): MenuItem[] {
   const project = ctx.stores.project;
   const items: MenuItem[] = [];
+  // Order: New → Load → Save → Save As → Export. New/Save/SaveAs/Export need a project (systems > 0); Load
+  // is always available (even from an empty start menu, where it's the only file op).
+  if (ctx.systems.length > 0) items.push(action("proj-new", "New Project", () => ctx.newProject()));
+  // Load is guarded + outcome-aware via ctx.loadProject.
+  items.push(action("proj-load", "Load Project...", () =>
+    browseThen(ctx, { title: "Load Project", patterns: LOAD_PATTERNS }, (p) => ctx.loadProject(p)),
+  ));
   if (ctx.systems.length > 0) {
-    items.push(action("proj-new", "New Project", () => ctx.newProject()));
     // Save writes to the known path when there is one (else Save As covers it). Save As / Export browse
     // for a target; each store method already takes a resolved path.
     if (project.currentPath()) items.push(action("proj-save", "Save Project", () => project.save(project.currentPath())));
@@ -190,10 +200,6 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
       browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.rplg.zip" }, (p) => project.export(p)),
     ));
   }
-  // Load is always available (even from an empty start menu). Guarded + outcome-aware via ctx.loadProject.
-  items.push(action("proj-load", "Load Project...", () =>
-    browseThen(ctx, { title: "Load Project", patterns: LOAD_PATTERNS }, (p) => ctx.loadProject(p)),
-  ));
   items.push(sep("proj-sep0"));
   items.push(
     cycler("proj-layout", "Layout", LAYOUT_NAMES, ctx.settings.layout, (n) => project.setLayout(n)),
@@ -356,11 +362,14 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   return {
     title: instanceTitle(ctx, sys),
     items: [
-      action("inst-load", "Load ROM", () => runSelection(ctx, ctx.stores.fileSelection.browse("load"))),
+      // "Load…" is a project-level op (load the sibling project / new project from the ROM) — it never
+      // swaps this instance. Swapping a single instance in place is "Replace Instance".
+      action("inst-load", "Load...", () => runLoad(ctx)),
       submenu("inst-recent", "Recent", recentChildren(ctx)),
       sep("inst-sep-top"),
-      action("inst-add", "Add Instance", () => runSelection(ctx, ctx.stores.fileSelection.browse("add"))),
+      action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd()),
       action("inst-dup", "Duplicate Instance", () => systems.duplicateSystem(sys.id)),
+      action("inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
       action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
       sep("inst-sep0"),
       cycler("inst-link", "Link Group", LINK_GROUP_NAMES, sameboyConfig(sys).linkGroupId, (n) =>
@@ -380,9 +389,9 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
   return {
     title: ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug",
     items: [
-      action("start-load", "Load...", () => runSelection(ctx, ctx.stores.fileSelection.browse("load"))),
-      action("start-mgb", "Load mGB (GB MIDI Synth)", () => ctx.stores.project.systems.loadMgb()),
       submenu("start-recent", "Recent", recentChildren(ctx)),
+      action("start-load", "Load...", () => runLoad(ctx)),
+      action("start-mgb", "Load mGB (GB MIDI Synth)", () => ctx.stores.project.systems.loadMgb()),
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),
