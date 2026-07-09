@@ -38,7 +38,7 @@ precondition on deleting the corresponding legacy code.
 | **Savestate slots** | — (never built in legacy either) | **Not yet built.** The state-snapshot triple exists for save/duplicate; a user-facing multi-slot feature does not. |
 | **Sav inspector** | — (design only) | **Not yet built.** The LSDj sav codec exists; RPC exposure + a React view do not. |
 | **Live memory subscription** | `subscribeMemory` → `enableMemorySnapshot` streaming | **Not yet built.** Greenfield has one-shot frame/state/SRAM reads through the read door but no live region pump; nothing arms `enableMemorySnapshot` (§4). |
-| **Gamepad (SDL) input** | `GamepadManager.{hpp,cpp}` | **Data modelled, live input not built.** A gamepad bindings channel exists in the store; there is no SDL polling equivalent (`ui/input/useGameInput.ts` is keyboard-only). |
+| **Gamepad (SDL) input** | `GamepadManager.{hpp,cpp}` | **Live input built (default bindings).** The legacy `GamepadManager` is compiled into greenfield too and polled from `PluginGreenfieldUI::uiIdle` (emitting the `gamepad-*` JS bus); `ui/input/useGamepadInput.ts` maps via the existing `bindings.gamepad` and routes to the focused core, twin of `useGameInput`. The in-app rebinding editor + analog-stick-as-dpad remain deferred (§6). |
 | **Plugin formats VST2 + LV2** | JACK / CLAP / VST2 / VST3 / LV2 | **Not built.** Greenfield builds `clap vst3 jack` only ([CMakeLists.txt:106](../packages/native-greenfield/CMakeLists.txt#L106)). LV2's out-of-process DSP/UI split is a distinct model greenfield hasn't addressed. |
 | **Web / Emscripten port** | — (design only) | **Not started.** |
 
@@ -65,6 +65,10 @@ part of the **shared core** described in [01-architecture.md](01-architecture.md
 | Transport primitives | `transport/SpscRing`, `transport/FrameBufferTriple`, `transport/MemorySnapshotTriple` | the lock-free ring + tear-free triples greenfield's command ring / release ring / read door are built on |
 | Util | `util/MinizZip`, `EmbeddedRoms` | `zip`/`unzip` for `.rplg`; embedded mGB bytes |
 
+`GamepadManager.{hpp,cpp}` is now **also** compiled into greenfield (its plugin `FILES_UI`; SDL2 linked onto
+`retroplug-greenfield-ui`) — see the §1 gamepad row — so it survives legacy deletion and re-homes into the
+greenfield tree alongside `retroplug-cli-core` (§3), rather than dying with the legacy plugin.
+
 The C++ feature-role classes — `LsdjSyncRole`, `ArduinoboyMaster`, `MgbPassthroughRole`,
 `LsdjKitPatchRole`, `mesen/roles/NesN8MidiRole` — are compiled into `retroplug-cli-core` and
 therefore *linked* into greenfield, but they are **runtime-dead** there: greenfield builds bare
@@ -83,7 +87,6 @@ deleted from the tree once the TS path drives every host that needs them (§5).
 | `transport/CommandApply.{hpp,cpp}`, `transport/CommandQueue.hpp`, `transport/EventQueue.hpp` | the legacy command/return machinery — greenfield reimplements this as the command ring + release ring ([EngineInvoker.hpp](../packages/native-greenfield/src/EngineInvoker.hpp)) |
 | `config/UserConfig*`, `RecentFiles*`, `config/SramMirror.hpp`, `config/SchemaVersions.hpp` | legacy config persistence + efsw watch. Greenfield reimplements the config dir in `HostRpcService` to stay free of `UserConfig.hpp` / efsw, and never validates a C++ schema version — persistence + versioning are TS-owned ([05-data-persistence.md](05-data-persistence.md)) |
 | `project/ProjectSerialization.hpp`, `ProjectBinaries.hpp`, `ProjectPaths.hpp`, `ProjectMissingFiles.hpp`, the `ProjectConfig` persistence path | `.rplg` / project.json persistence — TS-owned in greenfield |
-| `GamepadManager.{hpp,cpp}` | legacy SDL gamepad glue |
 | `packages/retroplug/` (TS) | generated legacy RPC client + project/schema TS |
 | `packages/ui/` (TS) | legacy LVGL/React menu + tiles |
 | `packages/cli/` + the CLI-facing pieces of `packages/native/cli/` (`retroplug-cli`, `HarnessRpcService`, `TestHarness`, `harness-schema-dump`) | legacy CLI + test harness |
@@ -103,9 +106,10 @@ This is an inventory of the mechanical moves, not a sequenced plan. See
 - **Packages:** `packages/retroplug/`, `packages/ui/`, `packages/cli/`, `packages/native/test/`
   (all Catch2 suites + `retroplug-ui-test`, unless ported).
 - **Legacy C++ in `packages/native/src`:** `PluginDSP.cpp`, `PluginUI.cpp`, `PluginJsBridge.cpp`,
-  `PluginRpcService.cpp`, `RpcSchemaDump.cpp`, `GamepadManager.cpp`, the `transport/Command*`
+  `PluginRpcService.cpp`, `RpcSchemaDump.cpp`, the `transport/Command*`
   + `EventQueue` + `config/*` serialization files listed in §2. Verify each is not reachable
-  through `retroplug-cli-core` first.
+  through `retroplug-cli-core` first. (**Not** `GamepadManager.cpp` — greenfield now compiles it; re-home it
+  into the greenfield tree instead of deleting.)
 - **Root `CMakeLists.txt` blocks:** `rpc-schema-dump`, `ui-regenerate`, the legacy
   `sav-regenerate` / `cli-regenerate` / `cli-bundle-regenerate` portions, the
   `dpf_add_plugin(retroplug …)` definition + its Windows link fixes, and
@@ -263,7 +267,7 @@ legacy" provenance comments are context, not action items.)
 | [systemRoles.ts:13](../packages/retroplug-greenfield/src/systemRoles.ts#L13) / [:58](../packages/retroplug-greenfield/src/systemRoles.ts#L58) | kit-patch stays a deferred `ui` UI-thread behaviour |
 | [backend.ts:109](../packages/retroplug-greenfield/src/backend.ts#L109) | feature-role config never reaches native — the deferred TS-script future |
 | [systemsStore.ts:328](../packages/retroplug-greenfield/src/systemsStore.ts#L328) | feature behaviour is the deferred script future |
-| [menuDefs.ts](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts) (Gamepad Bindings / rename prompt / About panel markers) | deferred bindings editor, rename prompt, About panel (LSDj mode is now built) |
+| [menuDefs.ts](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts) (Gamepad Bindings / rename prompt / About panel markers) | deferred bindings editor, rename prompt, About panel (LSDj mode + live gamepad input are now built; the gamepad *rebinding editor* is now unblocked but still deferred) |
 | [menuTree.ts:3](../packages/retroplug-greenfield/ui/screens/menu/menuTree.ts#L3) | `capture`/`prompt` menu kinds belong to the deferred bindings editor |
 
 Not cleanup (intentional domain terms that read like TODOs): `deferredProject` in
