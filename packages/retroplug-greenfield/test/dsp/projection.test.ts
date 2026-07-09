@@ -17,6 +17,7 @@ function view(id: number, roles: RoleInstance[]): SystemView {
     savPath: "",
     savSuffix: 0,
     embedded: false,
+    battery: false,
     focused: false,
     missing: false,
     settings: { gainDb: 0, reloadOnRomChange: false },

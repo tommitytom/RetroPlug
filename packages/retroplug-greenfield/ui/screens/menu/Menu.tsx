@@ -35,6 +35,7 @@ import { setMenuModalActive } from "./menuModal";
 import type { MenuItem, MenuTree, PromptSpec } from "./menuTree";
 
 const CAPTURE_COLOR = "#ffb74d"; // orange, matching the legacy capture-armed row
+const DISABLED_COLOR = "#666666"; // greyed text for an inert (unavailable-for-this-cart) row
 const GAMEPAD_CAPTURE_AXIS = 0.6; // a stick must pass this (past the play threshold) to bind as an axis token
 // Mouse-hover bar: a dimmer navy than the focus bar (#14243f), so the row under the pointer reads as
 // highlighted but subordinate to the keyboard-selected row. A pre-dimmed colour at full opacity (a
@@ -142,7 +143,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   const orderedRefs = useCallback(
     () =>
       flatRef.current
-        .filter((f) => f.item.kind !== "separator")
+        .filter((f) => f.item.kind !== "separator" && !f.item.disabled)
         .map((f) => refsByIdRef.current.get(f.item.id))
         .filter((x) => x != null),
     [],
@@ -150,7 +151,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
 
   // Keep the previously-focused row if it still exists, else the first focusable; sync focusedIdRef.
   const focusTarget = useCallback(() => {
-    const focusable = flatRef.current.filter((f) => f.item.kind !== "separator").map((f) => f.item.id);
+    const focusable = flatRef.current.filter((f) => f.item.kind !== "separator" && !f.item.disabled).map((f) => f.item.id);
     let id = focusedIdRef.current;
     if (!focusable.includes(id)) id = focusable[0] ?? "";
     focusedIdRef.current = id;
@@ -162,6 +163,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
 
   const activate = useCallback(
     (item: MenuItem) => {
+      if (item.disabled) return; // greyed row: fully inert, don't even move the highlight
       focusedIdRef.current = item.id; // so the rebuild keeps this row focused
       setFocusedId(item.id);
       // Capture / prompt rows arm from the key bus (below), not here — an Enter/click here would race the
@@ -207,7 +209,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       else if (e.key === ELvKey.LV_KEY_UP) dir = -1;
       else return;
       let next = cur + dir;
-      while (next >= 0 && next < entries.length && entries[next].item.kind === "separator") next += dir;
+      while (next >= 0 && next < entries.length && (entries[next].item.kind === "separator" || entries[next].item.disabled)) next += dir;
       if (next < 0 || next >= entries.length) return; // no wrap-around
       const nextId = entries[next].item.id;
       focusedIdRef.current = nextId;
@@ -440,7 +442,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
               }}
               style={{
                 width: "100%",
-                "text-color": isCapturing ? CAPTURE_COLOR : isFocused ? "#4fc3f7" : "#ffffff",
+                "text-color": item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : isFocused ? "#4fc3f7" : "#ffffff",
                 "background-color": "#14243f", // full-width highlight bar on the focused row
                 "background-opacity": isFocused ? 255 : 0,
                 "font-size": itemFont,
@@ -449,7 +451,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
                 "padding-left": basePadLeft + depth * indentStep,
                 "padding-right": r(4),
               }}
-              onHoveredStyle={ROW_HOVER_STYLE}
+              onHoveredStyle={item.disabled ? undefined : ROW_HOVER_STYLE}
               onKey={onItemKey}
               onClick={() => activate(item)}
             >

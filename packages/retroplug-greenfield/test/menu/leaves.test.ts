@@ -9,7 +9,7 @@ import { buildStartMenu, buildInstanceMenu, composeWindowTitle, type MenuContext
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadToAction, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { gbRom, lsdjRom, nesRom } from "../systems/fixtures";
+import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery } from "../systems/fixtures";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
@@ -52,8 +52,9 @@ function projectSubmenuWithSystem(be: MockBackend, stores: AppStores): MenuItem[
 }
 
 // The instance-menu System submenu + the anchored system's id (for asserting per-id state/sram bytes).
+// A battery cart (gbRomBattery) so the Save-SRAM rows are live — the save/state leaves exercise a real target.
 function systemMenu(be: MockBackend, stores: AppStores): { id: number; items: MenuItem[] } {
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", gbRomBattery());
   const id = stores.project.systems.addSystem("/roms/a.gb")!;
   const anchored = stores.project.systems.view().find((s) => s.id === id)!;
   return { id, items: submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-system") };
@@ -432,6 +433,39 @@ test("the embedded mGB synth omits the quick-save items (no on-disk ROM target)"
   expect(findItem(items, "sys-quicksavestate")).toBe(undefined);
   expect(findItem(items, "sys-quicksavesram")).toBe(undefined);
   expect(findItem(items, "sys-savestate")?.label).toBe("Save State As..."); // the "As…" browse variant remains
+});
+
+test("Save SRAM rows grey out for a battery-less cart; New / Load SRAM stay live", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const sysItems = (romPath: string) => {
+    const id = stores.project.systems.addSystem(romPath)!;
+    const sys = stores.project.systems.view().find((s) => s.id === id)!;
+    return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system");
+  };
+
+  // Battery carts (GB MBC1+RAM+BATTERY, NES iNES battery flag): both Save-SRAM rows are live.
+  be.seed("/roms/batt.gb", gbRomBattery());
+  const gbBatt = sysItems("/roms/batt.gb");
+  expect(findItem(gbBatt, "sys-quicksavesram")?.disabled).toBeFalsy();
+  expect(findItem(gbBatt, "sys-savesram")?.disabled).toBeFalsy();
+  be.seed("/roms/batt.nes", nesRomBattery());
+  const nesBatt = sysItems("/roms/batt.nes");
+  expect(findItem(nesBatt, "sys-quicksavesram")?.disabled).toBeFalsy();
+  expect(findItem(nesBatt, "sys-savesram")?.disabled).toBeFalsy();
+
+  // Battery-less carts (GB ROM-only, plain NES): the two Save-SRAM rows grey out...
+  be.seed("/roms/plain.gb", gbRom());
+  const gbPlain = sysItems("/roms/plain.gb");
+  expect(findItem(gbPlain, "sys-quicksavesram")?.disabled).toBe(true);
+  expect(findItem(gbPlain, "sys-savesram")?.disabled).toBe(true);
+  be.seed("/roms/plain.nes", nesRom());
+  const nesPlain = sysItems("/roms/plain.nes");
+  expect(findItem(nesPlain, "sys-quicksavesram")?.disabled).toBe(true);
+  expect(findItem(nesPlain, "sys-savesram")?.disabled).toBe(true);
+  // ...but New / Load SRAM stay live (they mutate the running core, not an on-disk .sav).
+  expect(findItem(nesPlain, "sys-newsram")?.disabled).toBeFalsy();
+  expect(findItem(nesPlain, "sys-loadsram")?.disabled).toBeFalsy();
 });
 
 test("system Load SRAM... cold-boots the system with the picked file's SRAM", async () => {

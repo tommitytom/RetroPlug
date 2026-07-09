@@ -27,6 +27,7 @@ export interface MenuItem {
   onSelect?: () => void; // action / cycler (Enter or click)
   onCycle?: (dir: 1 | -1) => void; // cycler (Left/Right)
   keepOpen?: boolean; // stay open after onSelect (cyclers)
+  disabled?: boolean; // greyed + inert: skipped by nav, no-op on click (an unavailable-for-this-cart action)
   // present iff kind === "capture" — Enter arms the row, the next input binds (Backspace clears). `source`
   // picks the event bus: "keyboard" (default) captures the next key; "gamepad" captures the next controller
   // button or stick flick. `onCapture` receives the resolved token (key name / SDL button name / axis token).

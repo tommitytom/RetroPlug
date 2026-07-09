@@ -65,8 +65,9 @@ function cycleInt(current: number, min: number, max: number, dir: 1 | -1): numbe
 }
 
 // --- item helpers -------------------------------------------------------------------------------------
-function action(id: string, label: string, onSelect: () => void): MenuItem {
-  return { id, label, kind: "action", onSelect };
+function action(id: string, label: string, onSelect: () => void, disabled = false): MenuItem {
+  // Only attach `disabled` when set, so every enabled action stays byte-identical (toEqual-stable in tests).
+  return disabled ? { id, label, kind: "action", onSelect, disabled } : { id, label, kind: "action", onSelect };
 }
 function submenu(id: string, label: string, children: MenuItem[]): MenuItem {
   return { id, label, kind: "submenu", children };
@@ -157,8 +158,10 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   // dialog (a real ROM only — the embedded synth has no on-disk target); the "As…" variants browse. The
   // store reads/writes the resolved path (the registry read is safe while playing; load reconstructs the
   // core in place). New SRAM reboots with a blank battery — pathless, reconstructing in place (no live
-  // clearSram).
+  // clearSram). The two Save-SRAM rows grey out for a battery-less cart (no save memory → only a stray
+  // empty .sav); New / Load SRAM stay live (they touch the running core, not an on-disk artifact).
   const romStem = stem(sys.romPath);
+  const noSave = !sys.battery;
   items.push(
     sep("sys-sep-state"),
     action("sys-newsram", "New SRAM", () => void systems.newSram(sys.id)),
@@ -167,10 +170,16 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     ),
   );
   if (sys.romPath)
-    items.push(action("sys-quicksavesram", "Save SRAM", () => systems.saveSram(sys.id, resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath))));
+    items.push(
+      action("sys-quicksavesram", "Save SRAM", () => systems.saveSram(sys.id, resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath)), noSave),
+    );
   items.push(
-    action("sys-savesram", "Save SRAM As...", () =>
-      browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${romStem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
+    action(
+      "sys-savesram",
+      "Save SRAM As...",
+      () =>
+        browseThen(ctx, { title: "Save SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: `${romStem || "sram"}.sav` }, (p) => systems.saveSram(sys.id, p)),
+      noSave,
     ),
     action("sys-loadstate", "Load State...", () =>
       browseThen(ctx, { title: "Load State", patterns: STATE_PATTERNS }, (p) => void systems.loadState(sys.id, p)),
