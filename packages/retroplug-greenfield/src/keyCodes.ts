@@ -109,3 +109,19 @@ export function buildGamepadToButton(gamepad: Record<string, string[]>): Map<str
   }
   return map;
 }
+
+/** Which half-axis token (or "" = centered) a stick axis is in, with hysteresis so it doesn't chatter at
+ *  the boundary. A token is `<axisName><sign>` and lives in the gamepad map like a button name (SDL
+ *  convention: X+ = right, Y+ = down → "leftx+"=Right, "leftx-"=Left, "lefty+"=Down, "lefty-"=Up). `current`
+ *  is the token currently held for this axis: press when |value| ≥ 0.5, then hold that direction until value
+ *  falls back under 0.4 on the SAME side (so a flip through centre releases before the opposite direction
+ *  presses). The native poll already dead-zone-clips to 0 at centre, which reads here as release. */
+export function axisToken(axisName: string, value: number, current: string): string {
+  const PRESS = 0.5;
+  const RELEASE = 0.4;
+  if (value <= -PRESS) return `${axisName}-`;
+  if (value >= PRESS) return `${axisName}+`;
+  if (current === `${axisName}+` && value >= RELEASE) return current; // still pushed positive within hysteresis
+  if (current === `${axisName}-` && value <= -RELEASE) return current; // still pushed negative within hysteresis
+  return "";
+}

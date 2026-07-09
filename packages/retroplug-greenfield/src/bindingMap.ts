@@ -28,8 +28,10 @@ export const bindingMapSchema = z.object({
   gamepad: channel(),
 });
 
-/** The built-in "default" profile — the exact native defaultBindingMap() values, the
- *  seed for bindings/default.json and the fallback when an active profile is absent. */
+/** The built-in "default" profile — the seed for bindings/default.json and the fallback when an active
+ *  profile is absent. Keyboard mirrors native's defaultBindingMap(); the gamepad channel additionally binds
+ *  the LEFT STICK alongside the d-pad hat (the `<axis><sign>` tokens — greenfield-only, native binds only the
+ *  hat) so analog-as-dpad works out of the box. See keyCodes.ts `axisToken` for the token convention. */
 export function defaultBindingMap(): BindingMap {
   return {
     name: "default",
@@ -44,10 +46,10 @@ export function defaultBindingMap(): BindingMap {
       Select: ["ShiftL", "ShiftR", "Backspace"],
     },
     gamepad: {
-      Right: ["dpright"],
-      Left: ["dpleft"],
-      Up: ["dpup"],
-      Down: ["dpdown"],
+      Right: ["dpright", "leftx+"],
+      Left: ["dpleft", "leftx-"],
+      Up: ["dpup", "lefty-"],
+      Down: ["dpdown", "lefty+"],
       A: ["a"],
       B: ["b"],
       Start: ["start"],

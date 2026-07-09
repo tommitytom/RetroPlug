@@ -4,7 +4,7 @@
 // so there is no code table — unlike the keyboard channel's resolveKeyName.
 import { test, expect } from "../../testing/harness";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { buildGamepadToButton, BUTTON_VALUE } from "../../src/keyCodes";
+import { buildGamepadToButton, axisToken, BUTTON_VALUE } from "../../src/keyCodes";
 
 test("buildGamepadToButton: the default bindings invert to the native button values", () => {
   const m = buildGamepadToButton(defaultBindingMap().gamepad);
@@ -30,4 +30,29 @@ test("buildGamepadToButton: unknown button names are skipped", () => {
   expect(m.get("dpright")).toBe(undefined); // Bogus GB button dropped
   expect(m.get("a")).toBe(BUTTON_VALUE.A);
   expect(m.size).toBe(1);
+});
+
+test("buildGamepadToButton: the default maps the left-stick half-axis tokens to the d-pad", () => {
+  const m = buildGamepadToButton(defaultBindingMap().gamepad);
+  expect(m.get("leftx+")).toBe(0); // Right
+  expect(m.get("leftx-")).toBe(1); // Left
+  expect(m.get("lefty-")).toBe(2); // Up (SDL: Y negative = up)
+  expect(m.get("lefty+")).toBe(3); // Down
+});
+
+test("axisToken: sign → half-axis token, hysteresis, and centre release", () => {
+  // Past the press threshold in each direction (SDL: X+ right, Y+ down).
+  expect(axisToken("lefty", -0.9, "")).toBe("lefty-"); // up
+  expect(axisToken("lefty", 0.9, "")).toBe("lefty+"); // down
+  expect(axisToken("leftx", -0.6, "")).toBe("leftx-"); // left
+  expect(axisToken("leftx", 0.6, "")).toBe("leftx+"); // right
+  // Centre / below press with nothing held → no token.
+  expect(axisToken("lefty", 0.0, "")).toBe("");
+  expect(axisToken("lefty", 0.2, "")).toBe("");
+  // Hysteresis: once held, stays held down to the release band (0.4), then drops at centre.
+  expect(axisToken("lefty", 0.45, "lefty+")).toBe("lefty+"); // still pushed (≥ 0.4)
+  expect(axisToken("lefty", 0.35, "lefty+")).toBe(""); // fell under release → centred
+  // A flip through centre releases the old side first (never holds the wrong sign).
+  expect(axisToken("lefty", -0.45, "lefty+")).toBe(""); // now negative but not past press → release, don't hold "+"
+  expect(axisToken("lefty", -0.9, "lefty+")).toBe("lefty-"); // full flip → opposite token
 });
