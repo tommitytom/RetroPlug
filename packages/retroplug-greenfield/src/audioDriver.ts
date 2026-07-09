@@ -17,6 +17,29 @@ function resolveSend(): RpcSend {
   return ns.__rpcSend;
 }
 
+/** DSP-runtime allocation counters (spec/08-profiling.md). Fields are DELTAS since the last
+ *  dspResetAllocStats(); `enabled` is false unless the host was built with RETROPLUG_PROFILE.
+ *  Mirrors the native DspAllocStats struct field-for-field (reflect-cpp names). */
+export interface DspAllocStats {
+  enabled: boolean;
+  allocCalls: number;
+  reallocCalls: number;
+  freeCalls: number;
+  allocBytes: number;
+  liveBytesDelta: number; // net live-heap change over the window (flat ~0 = churn, rising = leak)
+  peakBytes: number;
+  blockCount: number;
+  maxBlockAllocCalls: number;
+  maxBlockAllocBytes: number;
+}
+
+/** Result of a self-driven JS_RunGC pass. `freedBytes` ~0 proves the acyclic kernel holds no cycles. */
+export interface DspGcResult {
+  enabled: boolean;
+  ms: number;
+  freedBytes: number;
+}
+
 export interface AudioDriver {
   /** Enqueue a button transition (button = GameboyButton value; down = press/release). A
    *  press then release around a short render is a tap. */
@@ -30,6 +53,14 @@ export interface AudioDriver {
   /** Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
    *  The kernel's midi-routing behaviour fans it to systems; with no routing role it reaches none. */
   stageMidiIn(bytes: Uint8Array | number[]): boolean;
+
+  // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md; real only in a RETROPLUG_PROFILE host) ---
+  /** Snapshot the DSP JS runtime's allocation counters (deltas since the last reset). */
+  dspAllocStats(): DspAllocStats;
+  /** Open a fresh measurement window; `disableAutoGc` pins QuickJS auto-GC off for determinism. */
+  dspResetAllocStats(disableAutoGc: boolean): boolean;
+  /** Run + time a self-driven cycle-collection pass; freedBytes ~0 proves no reference cycles. */
+  dspRunGc(): DspGcResult;
 
   // --- background audio thread (threaded mode) ---
   /** Spawn a real audio thread that free-runs the render loop; DSP-structure edits sent while it
@@ -75,6 +106,9 @@ export function createAudioDriver(): AudioDriver {
     setTransport: (running) => call("setTransport", running) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
     stageMidiIn: (bytes) => call("stageMidiIn", ints(bytes)) as boolean,
+    dspAllocStats: () => call("dspAllocStats") as DspAllocStats,
+    dspResetAllocStats: (disableAutoGc) => call("dspResetAllocStats", disableAutoGc) as boolean,
+    dspRunGc: () => call("dspRunGc") as DspGcResult,
     startAudio: () => call("startAudio") as boolean,
     stopAudio: () => call("stopAudio") as boolean,
     sleepMs: (ms) => call("sleepMs", ms) as boolean,
