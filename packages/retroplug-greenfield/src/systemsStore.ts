@@ -39,8 +39,9 @@ function allocSystemId(): number {
   return nextSystemId++;
 }
 
-// New SRAM seeds a blank battery: 128 KiB (max GB cart RAM) of zeros. Native's onActivate truncates or
-// zero-pads it to the cart's real GB_save_battery_size, so any non-empty all-zero buffer blanks the SRAM.
+// New SRAM seeds a blank battery: a generous 128 KiB of zeros (a safe upper bound across GB/NES/GBA save
+// sizes). Each core's onActivate truncates or zero-pads it to the cart's real battery size (SameBoy via
+// GB_save_battery_size, Mesen via the NesSaveRam region), so any non-empty all-zero buffer blanks the SRAM.
 const BLANK_SRAM_BYTES = 0x20000;
 
 /** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
