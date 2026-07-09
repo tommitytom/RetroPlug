@@ -85,10 +85,13 @@ set(GFCLI_SESSIONS "${CMAKE_SOURCE_DIR}/packages/retroplug-greenfield/cli/sessio
 add_custom_target(retroplug-greenfield-example-session ALL
     BYPRODUCTS ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
                ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
+               ${CMAKE_BINARY_DIR}/greenfield-cli/render-song.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
-            ${GFCLI_SESSIONS}/mgb-smoke.ts  ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
+            ${GFCLI_SESSIONS}/mgb-smoke.ts   ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
-            ${GFCLI_SESSIONS}/render-rom.ts ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
+            ${GFCLI_SESSIONS}/render-rom.ts  ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+            ${GFCLI_SESSIONS}/render-song.ts ${CMAKE_BINARY_DIR}/greenfield-cli/render-song.js
     COMMENT "Bundling greenfield CLI example sessions (esbuild)"
     VERBATIM)
 

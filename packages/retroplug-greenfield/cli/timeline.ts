@@ -83,9 +83,18 @@ export class Timeline {
 
 /** Play `timeline` against a booted session: render up to each event's ms, fire it, render on, then
  *  render the tail out to `durationMs`. Returns the concatenated interleaved-stereo PCM (feed to
- *  encodeWav). The engine is persistent, so an event fired between renders lands in the next chunk. */
-export function renderTimeline(session: Session, timeline: Timeline, opts: { durationMs: number }): Float32Array {
+ *  encodeWav). The engine is persistent, so an event fired between renders lands in the next chunk.
+ *
+ *  `warmupMs` renders (and DISCARDS) that many ms first, to boot the core before the timeline — many
+ *  ROMs ignore input until initialized (n8-midi needs ~1s), so a note at t=0 would otherwise be lost.
+ *  The returned PCM starts at the timeline's t=0, not the warm-up. */
+export function renderTimeline(
+  session: Session,
+  timeline: Timeline,
+  opts: { durationMs: number; warmupMs?: number },
+): Float32Array {
   const audio = session.audio;
+  if (opts.warmupMs && opts.warmupMs > 0) audio.renderAudio(opts.warmupMs); // boot, discarded
   const chunks: Float32Array[] = [];
   let cur = 0;
   const advance = (toMs: number) => {
