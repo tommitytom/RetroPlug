@@ -36,6 +36,7 @@ away. The switchover itself — the feature gap, the delete/rename checklist, an
 | [05-data-persistence.md](05-data-persistence.md) | The project model and `.rplg` (thin vs export), DPF get/setState, the config schemas, the forward-tolerant-read + version-stamp policy, the LSDj sav codec, and SRAM auto-save. |
 | [06-build-test.md](06-build-test.md) | How greenfield builds, the pnpm scripts, and the headless verification loop — which command proves which kind of change. The practical "how do I verify a change" doc. |
 | [07-migration.md](07-migration.md) | The switchover to greenfield-as-sole-build: the feature gap, the shared-vs-legacy C++ map, the rename/delete checklist, the gaps greenfield must own, and the code-comment cleanup follow-up. |
+| [08-profiling.md](08-profiling.md) | **Plan (not yet built).** A benchmark harness to profile the DSP-thread JS runtime — allocations/GC — under an mGB + heavy-MIDI workload: the refcount-churn reframe, the off-RT `renderAudio` harness, in-process QuickJS allocator instrumentation, the agent-friendly tool tier, and CI gates. |
 
 ## Reading order
 
