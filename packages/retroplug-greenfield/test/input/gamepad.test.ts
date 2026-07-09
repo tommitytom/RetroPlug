@@ -4,7 +4,7 @@
 // so there is no code table — unlike the keyboard channel's resolveKeyName.
 import { test, expect } from "../../testing/harness";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { buildGamepadToButton, axisToken, BUTTON_VALUE } from "../../src/keyCodes";
+import { buildGamepadToButton, axisToken, menuNavForButton, menuNavForAxisToken, BUTTON_VALUE } from "../../src/keyCodes";
 
 test("buildGamepadToButton: the default bindings invert to the native button values", () => {
   const m = buildGamepadToButton(defaultBindingMap().gamepad);
@@ -55,4 +55,31 @@ test("axisToken: sign → half-axis token, hysteresis, and centre release", () =
   // A flip through centre releases the old side first (never holds the wrong sign).
   expect(axisToken("lefty", -0.45, "lefty+")).toBe(""); // now negative but not past press → release, don't hold "+"
   expect(axisToken("lefty", -0.9, "lefty+")).toBe("lefty-"); // full flip → opposite token
+});
+
+test("menuNavForButton: the fixed d-pad/face buttons map to menu actions", () => {
+  expect(menuNavForButton("dpup")).toBe("up");
+  expect(menuNavForButton("dpdown")).toBe("down");
+  expect(menuNavForButton("dpleft")).toBe("left"); // Left/Right cycle a value, not move focus
+  expect(menuNavForButton("dpright")).toBe("right");
+  expect(menuNavForButton("a")).toBe("select");
+  expect(menuNavForButton("b")).toBe("back");
+});
+
+test("menuNavForButton: buttons with no menu role fall through", () => {
+  expect(menuNavForButton("start")).toBe(null); // Start is gameplay-only; leftshoulder opens the menu (App)
+  expect(menuNavForButton("leftshoulder")).toBe(null);
+  expect(menuNavForButton("x")).toBe(null);
+  expect(menuNavForButton("")).toBe(null);
+});
+
+test("menuNavForAxisToken: only the left stick navigates, per the SDL sign convention", () => {
+  expect(menuNavForAxisToken("lefty-")).toBe("up"); // SDL: Y negative = up
+  expect(menuNavForAxisToken("lefty+")).toBe("down");
+  expect(menuNavForAxisToken("leftx-")).toBe("left");
+  expect(menuNavForAxisToken("leftx+")).toBe("right");
+  // Right stick + centred axis don't drive the menu.
+  expect(menuNavForAxisToken("rightx+")).toBe(null);
+  expect(menuNavForAxisToken("righty-")).toBe(null);
+  expect(menuNavForAxisToken("")).toBe(null);
 });

@@ -125,3 +125,46 @@ export function axisToken(axisName: string, value: number, current: string): str
   if (current === `${axisName}-` && value <= -RELEASE) return current; // still pushed negative within hysteresis
   return "";
 }
+
+/** A menu-navigation action: cursor moves (up/down), value cycles (left/right), and the confirm/back
+ *  buttons — the semantic vocabulary the Menu maps onto its keyboard nav primitives. */
+export type MenuNav = "up" | "down" | "left" | "right" | "select" | "back";
+
+/** A controller button's fixed menu role, or null when it doesn't drive the menu. These are FIXED SDL
+ *  names (independent of the user's gameplay bindings), mirroring how keyboard menu nav uses fixed
+ *  arrows/Enter regardless of game keybinds: d-pad moves + cycles, A confirms, B backs out. */
+export function menuNavForButton(name: string): MenuNav | null {
+  switch (name) {
+    case "dpup":
+      return "up";
+    case "dpdown":
+      return "down";
+    case "dpleft":
+      return "left";
+    case "dpright":
+      return "right";
+    case "a":
+      return "select";
+    case "b":
+      return "back";
+    default:
+      return null;
+  }
+}
+
+/** The menu direction a resolved half-axis token drives, or null. Only the LEFT stick navigates (the right
+ *  stick + triggers are ignored); tokens follow the SDL convention (Y− = up, Y+ = down, X∓ = left/right). */
+export function menuNavForAxisToken(token: string): MenuNav | null {
+  switch (token) {
+    case "lefty-":
+      return "up";
+    case "lefty+":
+      return "down";
+    case "leftx-":
+      return "left";
+    case "leftx+":
+      return "right";
+    default:
+      return null;
+  }
+}
