@@ -11,7 +11,7 @@
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
 import type { Backend, ConstructSpec } from "./backend";
-import { detectPlatform, ROM_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
+import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix } from "./savPaths";
 import {
   type SystemEntry,
@@ -60,6 +60,7 @@ export interface SystemView {
   savPath: string; // the override ("" = derived from suffix)
   savSuffix: number;
   embedded: boolean;
+  battery: boolean; // the cart has battery-backed save memory (a real .sav target)
   focused: boolean;
   missing: boolean;
   settings: CommonSettings;
@@ -91,6 +92,7 @@ export class SystemsStore {
       savPath: e.savPath,
       savSuffix: e.savSuffix,
       embedded: e.embeddedRom !== "",
+      battery: e.battery,
       focused: e.id === this.focusedId,
       missing: e.romPath !== "" && e.embeddedRom === "" && !this.backend.fileExists(e.romPath),
       settings: e.settings ?? DEFAULT_COMMON_SETTINGS,
@@ -212,6 +214,7 @@ export class SystemsStore {
       savPath: "",
       savSuffix: suffix,
       embeddedRom: src.embeddedRom,
+      battery: src.battery, // same ROM as the source
       settings: { ...src.settings },
       roles: src.roles.map((r) => ({ kind: r.kind, config: { ...r.config } })),
     });
@@ -444,7 +447,8 @@ export class SystemsStore {
     // Stored settings/roles win; a config that omits them re-attaches defaults.
     const settings = commonSettingsSchema.parse(config.settings ?? {}) as CommonSettings;
     const wasEmpty = this.entries.length === 0;
-    this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, settings, roles });
+    const battery = this.detectBattery(romPath, embeddedRom, platform);
+    this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles });
     if (wasEmpty) this.focusedId = id;
     return id;
   }
@@ -505,6 +509,7 @@ export class SystemsStore {
         savPath: override,
         savSuffix: suffix,
         embeddedRom,
+        battery: this.detectBattery(romPath, embeddedRom, platform),
         settings: { ...DEFAULT_COMMON_SETTINGS },
         roles,
       },
@@ -519,6 +524,15 @@ export class SystemsStore {
     const header =
       romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array() : new Uint8Array();
     return this.registry.defaultRoles(core, platform, header, embeddedRom);
+  }
+
+  // Whether this cart has battery-backed save memory, derived from the ROM header (embedded/missing → false).
+  // Not serialized — re-derived at every build so a loaded project reflects the on-disk ROM. Gates the UI's
+  // "Save SRAM" affordances (a battery-less cart would only write a stray empty .sav).
+  private detectBattery(romPath: string, embeddedRom: string, platform: Platform): boolean {
+    if (!romPath || embeddedRom) return false;
+    const header = this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array();
+    return romHasBattery(header, platform);
   }
 
   // Fold each attached role's load-time hook over the tentative spec, letting a role seed data that

@@ -68,3 +68,17 @@ export function detectPlatform(bytes: Uint8Array): Platform | "unknown" {
   if (matchesAt(bytes, GB_LOGO_OFFSET, GB_LOGO)) return "gb";
   return "unknown";
 }
+
+// GB cartridge types (header $147) that carry battery-backed save memory — the set SameBoy allocates a
+// .sav for. NES uses iNES flags6 bit 1 (header byte 6). GBA/unknown default to "has battery" so a save is
+// never wrongly disabled (GBA save-type detection is heuristic and out of scope here).
+const GB_BATTERY_CART_TYPES = new Set([0x03, 0x06, 0x09, 0x0d, 0x0f, 0x10, 0x13, 0x1b, 0x1e, 0x22, 0xff]);
+
+/** Whether a cart has battery-backed save memory, read from its `header` — NES iNES flags6 bit 1, GB
+ *  cartridge-type at $147. Only ever returns `false` when we're certain there's no save (so a real
+ *  battery/LSDj cart is never wrongly greyed); GBA and anything unrecognized default to `true`. */
+export function romHasBattery(header: Uint8Array, platform: Platform): boolean {
+  if (platform === "nes") return header.length > 6 && (header[6] & 0x02) !== 0;
+  if (platform === "gb") return header.length > 0x147 && GB_BATTERY_CART_TYPES.has(header[0x147]);
+  return true; // gba / anything else — never disable
+}

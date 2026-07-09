@@ -26,6 +26,7 @@ export interface SystemEntry {
   savPath: string; // override; "" = derive from romPath + savSuffix
   savSuffix: number;
   embeddedRom: string; // "" unless a binary-baked ROM (e.g. "mgb")
+  battery: boolean; // derived (not serialized): the cart has battery-backed save memory
   settings: CommonSettings;
   roles: RoleInstance[];
 }
