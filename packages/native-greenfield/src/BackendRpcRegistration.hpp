@@ -48,6 +48,10 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::setAudioRouting>();
     // DSP runtime in the render loop
     server.template addMethod<&BackendFacade::stageMidiIn>();
+    // DSP-runtime allocation/GC profiling (spec/08-profiling.md)
+    server.template addMethod<&BackendFacade::dspAllocStats>();
+    server.template addMethod<&BackendFacade::dspResetAllocStats>();
+    server.template addMethod<&BackendFacade::dspRunGc>();
     // background audio thread (threaded mode)
     server.template addMethod<&BackendFacade::startAudio>();
     server.template addMethod<&BackendFacade::stopAudio>();

@@ -223,3 +223,14 @@ bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
     invoker_.stageMidi(std::move(bytes));
     return true;
 }
+
+// Direct engine_ access (not the invoker): the benchmark drives the synchronous renderAudio pull path
+// and never startAudio, so the control thread owns the Engine here — same regime as readState.
+DspAllocStats EngineRpcService::dspAllocStats() { return engine_.dspAllocStats(); }
+
+bool EngineRpcService::dspResetAllocStats(bool disableAutoGc) {
+    engine_.resetDspAllocStats(disableAutoGc);
+    return true;
+}
+
+DspGcResult EngineRpcService::dspRunGc() { return engine_.dspRunGc(); }

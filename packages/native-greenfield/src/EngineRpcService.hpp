@@ -8,6 +8,7 @@
 #include <rfl/Bytestring.hpp>
 
 #include "BackendTypes.hpp"
+#include "DspRuntime.hpp"  // DspAllocStats / DspGcResult (lean header, no quickjs types)
 
 class Engine;
 class SystemFactory;
@@ -44,6 +45,13 @@ public:
     bool            setBpm(double bpm);
     bool            setAudioRouting(std::uint32_t mode);
     bool            stageMidiIn(std::vector<std::uint8_t> bytes);
+
+    // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
+    // Reads/GC on the DSP JS runtime, reached directly through the Engine (the quiescent renderAudio
+    // pull path owns it — the benchmark never starts the audio thread). enabled=false off-profile.
+    DspAllocStats dspAllocStats();
+    bool          dspResetAllocStats(bool disableAutoGc);
+    DspGcResult   dspRunGc();
 
 private:
     Engine&        engine_;

@@ -63,6 +63,11 @@ public:
     bool setAudioRouting(std::uint32_t mode) { return engine_svc_.setAudioRouting(mode); }
     bool stageMidiIn(std::vector<std::uint8_t> bytes) { return engine_svc_.stageMidiIn(std::move(bytes)); }
 
+    // --- DSP-runtime allocation/GC profiling → engine_svc_ (spec/08-profiling.md; enabled off-profile) ---
+    DspAllocStats dspAllocStats() { return engine_svc_.dspAllocStats(); }
+    bool          dspResetAllocStats(bool disableAutoGc) { return engine_svc_.dspResetAllocStats(disableAutoGc); }
+    DspGcResult   dspRunGc() { return engine_svc_.dspRunGc(); }
+
     // --- background audio thread → driver_ (test host only; the plugin drives run() directly) ---
     bool          startAudio() { return driver_.startAudio(); }
     bool          stopAudio() { return driver_.stopAudio(); }

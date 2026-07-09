@@ -66,6 +66,13 @@ public:
     const std::vector<DspRuntime::MidiOut>& midiOut() const { return dsp_.midiOut_; }
     void clearMidiOut() { dsp_.midiOut_.clear(); }
 
+    // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
+    // Forward to the bare JS runtime's counters. Valid only on the Engine's owning thread (the
+    // renderAudio pull path); no-op / enabled=false in a non-RETROPLUG_PROFILE build.
+    DspAllocStats dspAllocStats() const { return dsp_.allocStats(); }
+    void          resetDspAllocStats(bool disableAutoGc) { dsp_.resetAllocStats(disableAutoGc); }
+    DspGcResult   dspRunGc() { return dsp_.runGc(); }
+
     // --- per block: run kernel → fan sinks to cores → route to the outputs → advance the ppq clock ---
     // Multi-out core: `outputs` is a flat array of `numOutputs` planar channels; each system routes
     // into its pair per audioRouting_ (via MultiOutRouter). The plugin passes its 8 channels; the
