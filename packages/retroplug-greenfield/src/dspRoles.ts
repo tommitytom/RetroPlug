@@ -7,7 +7,7 @@ import type { RoleRegistry, ConstructCaps } from "./systemRoles";
 import type { ProjectBehavior, SystemBehavior, SystemCtx } from "./dspKernel";
 import type { ConstructSpec } from "./backend";
 import { z, clampedInt } from "./configSchema";
-import { routeBlock, MidiRouting } from "./midiRouting";
+import { routeBlockInto, MidiRouting } from "./midiRouting";
 import {
   KEYBOARD_NOTE_START,
   KEYBOARD_LOW_START,
@@ -20,7 +20,16 @@ import {
 
 // Forward every host-MIDI byte verbatim into the system's serial input. This is both `mgb`
 // (== MgbPassthroughRole) and lsdj-sync's MidiPassthrough mode (== LsdjSyncRole handlePassthrough).
-const forwardMidiToSerial: SystemBehavior = (c) => c.midi.forEach((e) => e.data.forEach((b) => c.pushSerialIn(e.frame, b)));
+const forwardMidiToSerial: SystemBehavior = (c) => {
+  // Indexed loops, not `.forEach` — the nested forEach allocated a closure per call + one per event,
+  // and this is the hot mGB path (spec/08-profiling.md).
+  const midi = c.midi;
+  for (let i = 0; i < midi.length; i++) {
+    const e = midi[i];
+    const data = e.data;
+    for (let j = 0; j < data.length; j++) c.pushSerialIn(e.frame, data[j]);
+  }
+};
 const mgb = forwardMidiToSerial;
 
 // LSDj serial control bytes (host → LSDj over the link cable) and MIDI status helpers, mirroring
@@ -143,10 +152,10 @@ const lsdjSeedSav = (spec: ConstructSpec, caps: ConstructCaps): ConstructSpec =>
 };
 
 // midi-routing (project scope): fan the block's GLOBAL midiIn into the per-system inboxes the kernel
-// then hands to each system's pipeline. Reuses the pure routeBlock decision (midiRouting.ts).
-const midiRouting: ProjectBehavior = (block, routed, config) => {
-  const inboxes = routeBlock(block.midiIn, (config.mode as MidiRouting) ?? MidiRouting.SendToAll, block.systems.length);
-  block.systems.forEach((s, i) => routed.set(s.id, inboxes[i] ?? []));
+// then hands to each system's pipeline. `inboxes` are the kernel's persistent, pre-cleared arrays
+// (positional, parallel to block.systems), filled in place with no per-block allocation.
+const midiRouting: ProjectBehavior = (block, inboxes, config) => {
+  routeBlockInto(block.midiIn, (config.mode as MidiRouting) ?? MidiRouting.SendToAll, inboxes);
 };
 
 /** Register the built-in DSP-thread roles into `registry`. */

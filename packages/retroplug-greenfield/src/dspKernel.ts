@@ -117,9 +117,12 @@ export interface SystemCtx {
 }
 
 export type SystemBehavior = (ctx: SystemCtx) => void;
+/** A project-scope behaviour (e.g. routing). `inboxes` is positional — `inboxes[i]` is the pre-cleared
+ *  persistent inbox for `block.systems[i]`, in the same order — which the behaviour fills IN PLACE (the
+ *  kernel then hands each system its inbox as `ctx.midi`). No per-block Map: the kernel owns the arrays. */
 export type ProjectBehavior = (
   block: Block,
-  routed: Map<number, MidiEvent[]>,
+  inboxes: MidiEvent[][],
   config: Record<string, unknown>,
 ) => void;
 
@@ -158,16 +161,49 @@ export function walkTicks(
   return nextTick;
 }
 
+/** One resolved system-scope pipeline stage: its behaviour + the PERSISTENT ctx it runs against
+ *  (built once in `setSystems`; `processBlock` only mutates what the ctx's fields point at). */
+interface StageRun {
+  dsp: SystemBehavior;
+  ctx: SystemCtx;
+}
+
+/** Everything the kernel holds per live system, built once per `setSystems`. `inbox`/`keys`/`buttons`
+ *  are reused every block (cleared, not reallocated); the stage ctxs point straight at them. */
+interface SystemSlot {
+  id: number;
+  inbox: MidiEvent[];
+  keys: KeyEvent[];
+  buttons: ButtonEvent[];
+  stages: StageRun[];
+}
+
+/** A resolved project-scope stage (e.g. routing): its behaviour + its stored config. */
+interface ProjectStage {
+  dsp: ProjectBehavior;
+  config: Record<string, unknown>;
+}
+
 /** Runs a project's DSP-thread behaviours per block. Structure (systems + pipelines) is pushed once
  *  via `setSystems`; each block passes only dynamic input. Holds per-system `nextTick` state so
  *  `eachTick` stays drift-free across successive `processBlock` calls, and forwards every sink to an
  *  injected `SinkTarget` (default: a `CollectingSink` whose `Sinks` `processBlock` returns). One
- *  instance per project; a fresh one per unit test. */
+ *  instance per project; a fresh one per unit test.
+ *
+ *  Per-block allocation is designed OUT: the per-system ctx + its sink closures, the routed inboxes,
+ *  and the per-system key/button lists are all built once in `setSystems` and reused (mutated in
+ *  place) every block, so a steady-state block allocates nothing on the kernel side. */
 export class DspKernel {
   private readonly tick = new Map<number, number>();
   // Persistent per-system, per-stage scratch bags (system id → stage index → bag). Backs ctx.state
   // so a stateful behaviour keeps its cross-block state; pruned alongside `tick` in setSystems.
   private readonly state = new Map<number, Map<number, Record<string, unknown>>>();
+  // Persistent per-system structure, rebuilt on each setSystems. `inboxes[i] === slots[i].inbox`
+  // (positional, parallel to block.systems) — the array handed to project-scope routing.
+  private slots: SystemSlot[] = [];
+  private slotById = new Map<number, SystemSlot>();
+  private inboxes: MidiEvent[][] = [];
+  private projectStages: ProjectStage[] = [];
   // The single persistent block view: setSystems writes its structure, processBlock its dynamics.
   private readonly block: Block = {
     frames: 0,
@@ -197,9 +233,35 @@ export class DspKernel {
   setSystems(struct: KernelStructure): void {
     this.block.systems = struct.systems;
     this.block.project = struct.project ?? [];
+    // Prune dead-id tick/state FIRST so a removed-then-re-added id gets a fresh scratch bag (a
+    // survived id keeps its state across a config change). buildCtx below then binds the surviving bag.
     const live = new Set(struct.systems.map((s) => s.id));
     for (const id of this.tick.keys()) if (!live.has(id)) this.tick.delete(id);
     for (const id of this.state.keys()) if (!live.has(id)) this.state.delete(id);
+
+    // Rebuild the persistent structure: RoleInstance/config identity changes on every setSystems, so
+    // the ctxs (which capture config/id) and the role resolution must be rebuilt each time.
+    this.projectStages = [];
+    for (const stage of this.block.project) {
+      const rt = this.registry.roleType(stage.kind);
+      if (rt?.scope === "project" && rt.dsp) {
+        this.projectStages.push({ dsp: rt.dsp as ProjectBehavior, config: stage.config });
+      }
+    }
+    this.slots = [];
+    this.slotById.clear();
+    this.inboxes = [];
+    for (const sys of struct.systems) {
+      const slot: SystemSlot = { id: sys.id, inbox: [], keys: [], buttons: [], stages: [] };
+      sys.pipeline.forEach((stage, stageIndex) => {
+        const rt = this.registry.roleType(stage.kind);
+        if (!rt || rt.scope === "project" || !rt.dsp) return;
+        slot.stages.push({ dsp: rt.dsp as SystemBehavior, ctx: this.buildCtx(sys.id, stageIndex, stage.config, slot) });
+      });
+      this.slots.push(slot);
+      this.slotById.set(sys.id, slot);
+      this.inboxes.push(slot.inbox);
+    }
   }
 
   /** Run one block over the stored structure, marshalling only the dynamic input. Returns the
@@ -217,51 +279,62 @@ export class DspKernel {
     b.keys = dyn.keys;
 
     this.sink.reset?.();
-    const routed = new Map<number, MidiEvent[]>();
 
-    // Project scope: routing fans the global midiIn into per-system inboxes.
-    for (const stage of b.project ?? []) {
-      const rt = this.registry.roleType(stage.kind);
-      if (rt?.scope === "project" && rt.dsp) (rt.dsp as ProjectBehavior)(b, routed, stage.config);
+    // Clear the persistent per-system inboxes/keys/buttons (length=0 keeps capacity — no realloc as
+    // they refill to the prior high-water). Indexed loops throughout: `for...of` on an array would
+    // allocate an iterator per call, defeating the point.
+    const slots = this.slots;
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i];
+      slot.inbox.length = 0;
+      slot.keys.length = 0;
+      slot.buttons.length = 0;
     }
 
-    // System scope: each system's ordered pipeline of translators/sources. Filter this system's
-    // keys/buttons ONCE (not per pipeline stage).
-    for (const sys of b.systems) {
-      const midi = routed.get(sys.id) ?? [];
-      const keys = b.keys.filter((k) => k.system === sys.id);
-      const buttons = b.buttons.filter((k) => k.system === sys.id);
-      sys.pipeline.forEach((stage, stageIndex) => {
-        const rt = this.registry.roleType(stage.kind);
-        if (!rt || rt.scope === "project" || !rt.dsp) return;
-        (rt.dsp as SystemBehavior)(this.makeCtx(sys.id, stageIndex, stage.config, midi, keys, buttons, b));
-      });
+    // Fan this block's keys/buttons to their target system (shared refs — read-only downstream),
+    // one pass each; replaces the old per-system `.filter()` + predicate closures.
+    const keys = b.keys;
+    for (let i = 0; i < keys.length; i++) {
+      const slot = this.slotById.get(keys[i].system);
+      if (slot) slot.keys.push(keys[i]);
+    }
+    const buttons = b.buttons;
+    for (let i = 0; i < buttons.length; i++) {
+      const slot = this.slotById.get(buttons[i].system);
+      if (slot) slot.buttons.push(buttons[i]);
+    }
+
+    // Project scope: routing fans the global midiIn into the positional persistent inboxes.
+    const project = this.projectStages;
+    for (let i = 0; i < project.length; i++) project[i].dsp(b, this.inboxes, project[i].config);
+
+    // System scope: run each system's ordered pipeline against its persistent ctx.
+    for (let i = 0; i < slots.length; i++) {
+      const stages = slots[i].stages;
+      for (let s = 0; s < stages.length; s++) stages[s].dsp(stages[s].ctx);
     }
     return this.result;
   }
 
-  private makeCtx(
-    id: number,
-    stageIndex: number,
-    config: Record<string, unknown>,
-    midi: MidiEvent[],
-    keys: KeyEvent[],
-    buttons: ButtonEvent[],
-    block: BlockInfo,
-  ): SystemCtx {
+  // Build the PERSISTENT per-(system, stage) context. Every field points at something the kernel
+  // mutates in place each block — `slot.inbox/keys/buttons` (refilled), `this.block` (overwritten),
+  // the persistent `state` bag — so `processBlock` never rebuilds a ctx or its sink closures. The
+  // four closures are bound once here (capture `this`/`id`), eliminating the per-block closure
+  // clusters that formerly formed the reference cycles the collector had to sweep.
+  private buildCtx(id: number, stageIndex: number, config: Record<string, unknown>, slot: SystemSlot): SystemCtx {
     return {
       config,
-      midi,
-      keys,
-      buttons,
-      block,
+      midi: slot.inbox,
+      keys: slot.keys,
+      buttons: slot.buttons,
+      block: this.block,
       state: this.stageState(id, stageIndex),
       pushSerialIn: (frame, byte) => this.sink.pushSerialIn(id, frame, byte),
       emitMidiOut: (frame, data) => this.sink.emitMidiOut(id, frame, data),
       pressButton: (button, down) => this.sink.pressButton(id, 0, button, down),
       eachTick: (resolution, cb) => {
         const nt = this.tick.get(id) ?? 0;
-        this.tick.set(id, walkTicks(block, resolution, nt, cb));
+        this.tick.set(id, walkTicks(this.block, resolution, nt, cb));
       },
     };
   }
