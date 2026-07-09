@@ -191,6 +191,16 @@ export interface Backend {
    *  the id is gone, the backend can't step, or the cap trips first). */
   runUntilPc(id: number, target: number, maxCycles: number): boolean;
 
+  /** Install the whole breakpoint set at once (replacing any prior set). Each `Breakpoint` is an
+   *  execute/read/write watch over `[start,end]` with an optional Mesen condition expression. Returns
+   *  false when the id is gone or the core has no NES debug target (SameBoy/GBA). */
+  setBreakpoints(id: number, breakpoints: Breakpoint[]): boolean;
+
+  /** Step the core until an installed breakpoint fires or `maxCycles` elapse. Returns the triggering
+   *  BreakInfo (`broke` true + the hit `pc`/`breakpointId`), or broke=false + defaults on the cycle cap
+   *  or when the id is gone / there is no NES debug target. */
+  runUntilBreak(id: number, maxCycles: number): BreakInfo;
+
   /** Toggle Mesen's per-instruction execution trace logger. Returns false when the id is gone or the
    *  core has no NES debug target (SameBoy/GBA); read the captured rows afterwards with readTrace. */
   setTrace(id: number, on: boolean): boolean;
@@ -342,12 +352,24 @@ export interface TraceLine {
   text: string;
 }
 
-/** Result of a step (`stepInto`/`stepOver`/`stepOut`). `broke` is false when the step couldn't run
- *  (no debug target / cycle cap); `pc` is the new PC after the step; `breakpointId` is -1 for a step. */
+/** Result of a step (`stepInto`/`stepOver`/`stepOut`) or `runUntilBreak`. `broke` is false when nothing
+ *  fired (no debug target / cycle cap); `pc` is the triggering address (runUntilBreak) or the new PC
+ *  (step); `breakpointId` is the hit breakpoint index, or -1 for a step / the cap. */
 export interface BreakInfo {
   broke: boolean;
   pc: number;
   breakpointId: number;
+}
+
+/** A breakpoint to install via `setBreakpoints` (input; mirrors native `rp::BreakpointSpec`). `type` is
+ *  "execute" (break when PC enters `[start,end]`) / "read" / "write" (break on a CPU access to the
+ *  range). `end` defaults to `start` (single address); `condition` is an optional Mesen expression
+ *  (e.g. "Y == 0"), empty for unconditional. */
+export interface Breakpoint {
+  type: "execute" | "read" | "write";
+  start: number;
+  end?: number;
+  condition?: string;
 }
 
 /** One function's profiler sample (`readProfile`). `address` is the absolute ROM offset the profiler

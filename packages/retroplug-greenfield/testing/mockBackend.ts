@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakInfo, CallFrame, ConstructSpec, CpuRegister, DisasmLine, FileBrowserOpts, FrameData, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DisasmLine, FileBrowserOpts, FrameData, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 
 const enc = new TextEncoder();
@@ -313,6 +313,16 @@ export class MockBackend implements Backend {
   runUntilPc(_id: number, _target: number, _maxCycles: number): boolean {
     this.log.push("runUntilPc");
     return false; // the mock has no real core to step, so a target PC is never reached
+  }
+
+  setBreakpoints(id: number, _breakpoints: Breakpoint[]): boolean {
+    this.log.push("setBreakpoints");
+    return this.systems.has(id); // installs nothing real; only a live NES core breaks
+  }
+
+  runUntilBreak(_id: number, _maxCycles: number): BreakInfo {
+    this.log.push("runUntilBreak");
+    return { broke: false, pc: 0, breakpointId: -1 }; // no real core → nothing ever fires
   }
 
   setTrace(id: number, _on: boolean): boolean {

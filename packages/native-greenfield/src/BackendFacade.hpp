@@ -61,6 +61,8 @@ public:
     bool loadLabels(std::uint32_t id, std::string path) { return engine_svc_.loadLabels(id, std::move(path)); }
     bool setCpuRegister(std::uint32_t id, std::string name, std::uint32_t value) { return engine_svc_.setCpuRegister(id, std::move(name), value); }
     bool runUntilPc(std::uint32_t id, std::uint32_t target, std::uint64_t maxCycles) { return engine_svc_.runUntilPc(id, target, maxCycles); }
+    bool setBreakpoints(std::uint32_t id, std::vector<rp::BreakpointSpec> bps) { return engine_svc_.setBreakpoints(id, std::move(bps)); }
+    rp::BreakInfo runUntilBreak(std::uint32_t id, std::uint64_t maxCycles) { return engine_svc_.runUntilBreak(id, maxCycles); }
     bool setTrace(std::uint32_t id, bool on) { return engine_svc_.setTrace(id, on); }
     std::vector<rp::TraceLine> readTrace(std::uint32_t id, std::uint32_t count) { return engine_svc_.readTrace(id, count); }
     rp::BreakInfo stepInto(std::uint32_t id) { return engine_svc_.stepInto(id); }

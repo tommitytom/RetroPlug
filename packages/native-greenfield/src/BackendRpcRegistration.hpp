@@ -46,6 +46,9 @@ void registerBackendRpcMethods(Server& server) {
     // live-core debug writes / control-flow (spec/09-cli-debugging.md)
     server.template addMethod<&BackendFacade::setCpuRegister>();
     server.template addMethod<&BackendFacade::runUntilPc>();
+    // breakpoints + run-until-break (spec/09-cli-debugging.md)
+    server.template addMethod<&BackendFacade::setBreakpoints>();
+    server.template addMethod<&BackendFacade::runUntilBreak>();
     // execution trace + single-step (spec/09-cli-debugging.md)
     server.template addMethod<&BackendFacade::setTrace>();
     server.template addMethod<&BackendFacade::readTrace>();

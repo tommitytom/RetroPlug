@@ -75,6 +75,13 @@ public:
     bool setCpuRegister(std::uint32_t id, std::string name, std::uint32_t value);
     bool runUntilPc(std::uint32_t id, std::uint32_t target, std::uint64_t maxCycles);
 
+    // --- breakpoints / run-until-break (needs a Mesen NES debug target; false/empty on SameBoy/GBA) ---
+    // setBreakpoints installs the whole set at once (replacing any prior set); each spec is execute/read/
+    // write over [start,end] with an optional Mesen condition expression. runUntilBreak steps the core
+    // until a breakpoint fires or `maxCycles` elapses (broke=false + defaults on the cap / no target).
+    bool          setBreakpoints(std::uint32_t id, std::vector<rp::BreakpointSpec> bps);
+    rp::BreakInfo runUntilBreak(std::uint32_t id, std::uint64_t maxCycles);
+
     // --- DSP-side JS runtime (the role kernel) ---
     std::optional<rfl::Bytestring> compileScript(std::string source);
     bool dspLoadKernel(std::vector<std::uint8_t> bytecode);

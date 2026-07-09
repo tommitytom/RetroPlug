@@ -227,6 +227,26 @@ bool EngineRpcService::runUntilPc(std::uint32_t id, std::uint32_t target, std::u
     return sys->runUntilPc(target, maxCycles);  // false when the target is never reached / can't step
 }
 
+// Breakpoints + run-until-break — route through the Mesen NES debug target (null on SameBoy/GBA →
+// false/default). The vector<BreakpointSpec> input auto-decodes from the JS array (the zip/BackendZipInput
+// pattern). Mirror the legacy HarnessRpcService::setBreakpoints/runUntilBreak.
+bool EngineRpcService::setBreakpoints(std::uint32_t id, std::vector<rp::BreakpointSpec> bps) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return false;
+    rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
+    if (!dbg) return false;
+    dbg->setBreakpoints(bps);
+    return true;
+}
+
+rp::BreakInfo EngineRpcService::runUntilBreak(std::uint32_t id, std::uint64_t maxCycles) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    return dbg->runUntilBreak(maxCycles);  // broke=false on the cycle cap
+}
+
 // Execution trace + single-step — all route through the Mesen NES debug target (null on SameBoy/GBA →
 // no-op/empty/default). Mirror the legacy HarnessRpcService trace/step methods.
 bool EngineRpcService::setTrace(std::uint32_t id, bool on) {
