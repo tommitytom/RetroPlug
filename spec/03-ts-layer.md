@@ -202,7 +202,9 @@ file. Setters validate and reject bad input.
 
 ### BindingsStore — [`src/bindingsStore.ts`](../packages/retroplug-greenfield/src/bindingsStore.ts)
 
-Per-profile `bindings/<name>.json` maps (`{ name, keyboard, gamepad }`), reading the
+Per-profile `bindings/<name>.json` maps (`{ name, keyboard, gamepad, keyboardActions,
+gamepadActions }` — the `*Actions` sections bind the app actions Open Menu / Cycle Instances,
+resolved by `buildKeyToAction` / `buildGamepadToAction`), reading the
 active-profile names through `UserConfigStore`. CRUD: `ensureDefaults` (seeds
 `bindings/default.json`), `availableProfiles`, `loadProfile` / `saveProfile`, `renameProfile`
 (no-clobber, repoints active refs), `deleteProfile` (refuses the active one), and

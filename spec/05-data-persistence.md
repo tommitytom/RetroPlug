@@ -123,7 +123,7 @@ still load.
 | File | Model | Stamp const | Shape |
 |---|---|---|---|
 | `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug-greenfield/src/userConfig.ts)) | `USER_CONFIG_SCHEMA = 1` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave }` |
-| `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug-greenfield/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad }` (one profile per file) |
+| `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug-greenfield/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad, keyboardActions, gamepadActions }` (one profile per file; the `*Actions` sections — Open Menu / Cycle Instances — seed to defaults when missing) |
 | `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug-greenfield/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name }] }`, most-recent-first, capped at 10 |
 
 One deliberate rename: greenfield's `sramAutoSave` field is native's
