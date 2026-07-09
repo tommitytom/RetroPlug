@@ -227,6 +227,49 @@ bool EngineRpcService::runUntilPc(std::uint32_t id, std::uint32_t target, std::u
     return sys->runUntilPc(target, maxCycles);  // false when the target is never reached / can't step
 }
 
+// Execution trace + single-step — all route through the Mesen NES debug target (null on SameBoy/GBA →
+// no-op/empty/default). Mirror the legacy HarnessRpcService trace/step methods.
+bool EngineRpcService::setTrace(std::uint32_t id, bool on) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return false;
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return false;
+    dbg->setTraceEnabled(on);
+    return true;
+}
+
+std::vector<rp::TraceLine> EngineRpcService::readTrace(std::uint32_t id, std::uint32_t count) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    return dbg->readTrace(count);
+}
+
+rp::BreakInfo EngineRpcService::stepInto(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    return dbg->step();
+}
+
+rp::BreakInfo EngineRpcService::stepOver(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    return dbg->stepOver();
+}
+
+rp::BreakInfo EngineRpcService::stepOut(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    return dbg->stepOut();
+}
+
 std::optional<rfl::Bytestring> EngineRpcService::compileScript(std::string source) {
     auto bytecode = dsp::compileToBytecode(source);
     if (!bytecode) return std::nullopt;

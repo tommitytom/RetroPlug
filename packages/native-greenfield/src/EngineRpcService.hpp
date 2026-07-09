@@ -46,6 +46,16 @@ public:
     std::vector<rp::CpuRegister> getCpuRegisters(std::uint32_t id);
     std::uint64_t                stepInstruction(std::uint32_t id);
 
+    // --- execution trace + single-step (needs a Mesen NES debug target; empty/false on SameBoy/GBA) ---
+    // setTrace toggles Mesen's per-instruction trace logger; readTrace returns up to `count` most-recent
+    // rows (each a pc + formatted disassembly). stepInto/Over/Out advance one instruction / over a call /
+    // out of the current frame, returning the resulting BreakInfo (broke=false + defaults when unserved).
+    bool                        setTrace(std::uint32_t id, bool on);
+    std::vector<rp::TraceLine>  readTrace(std::uint32_t id, std::uint32_t count);
+    rp::BreakInfo               stepInto(std::uint32_t id);
+    rp::BreakInfo               stepOver(std::uint32_t id);
+    rp::BreakInfo               stepOut(std::uint32_t id);
+
     // Load a cc65 `.dbg` symbol file so profiler/disassembly output shows function names. Needs a Mesen
     // NES debug target (false on SameBoy/GBA, a gone id, or read/parse failure). Reached via debugTarget().
     bool loadLabels(std::uint32_t id, std::string path);

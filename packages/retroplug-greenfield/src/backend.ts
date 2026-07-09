@@ -191,6 +191,24 @@ export interface Backend {
    *  the id is gone, the backend can't step, or the cap trips first). */
   runUntilPc(id: number, target: number, maxCycles: number): boolean;
 
+  /** Toggle Mesen's per-instruction execution trace logger. Returns false when the id is gone or the
+   *  core has no NES debug target (SameBoy/GBA); read the captured rows afterwards with readTrace. */
+  setTrace(id: number, on: boolean): boolean;
+
+  /** The up-to-`count` most-recent trace rows (each a pc + formatted disassembly line), most-recent
+   *  first. Empty when tracing was never enabled, the id is gone, or there is no NES debug target. */
+  readTrace(id: number, count: number): TraceLine[];
+
+  /** Single-step into the next instruction; returns the resulting BreakInfo (broke=false + defaults
+   *  when the id is gone or the core can't step). */
+  stepInto(id: number): BreakInfo;
+
+  /** Single-step over a subroutine call (runs to the return); returns the resulting BreakInfo. */
+  stepOver(id: number): BreakInfo;
+
+  /** Run out of the current subroutine frame; returns the resulting BreakInfo. */
+  stepOut(id: number): BreakInfo;
+
   // --- Byte codec ---------------------------------------------------------
   // The ONLY native part of `.rplg` export framing: TS assembles every entry (the thin
   // project.json + the per-system blobs) and hands them here to compress; native just
@@ -299,6 +317,21 @@ export interface CpuRegister {
   name: string;
   value: number;
   bits: number;
+}
+
+/** One row of the execution trace (`readTrace`, most-recent first). `pc` is the instruction address;
+ *  `text` is the formatted disassembly + register state Mesen logged for it. */
+export interface TraceLine {
+  pc: number;
+  text: string;
+}
+
+/** Result of a step (`stepInto`/`stepOver`/`stepOut`). `broke` is false when the step couldn't run
+ *  (no debug target / cycle cap); `pc` is the new PC after the step; `breakpointId` is -1 for a step. */
+export interface BreakInfo {
+  broke: boolean;
+  pc: number;
+  breakpointId: number;
 }
 
 /** Memory-region selector for `readMemory` — mirrors native `rp::MemoryType`. NES supports Ram/Rom/Sram/

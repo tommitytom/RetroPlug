@@ -46,6 +46,12 @@ void registerBackendRpcMethods(Server& server) {
     // live-core debug writes / control-flow (spec/09-cli-debugging.md)
     server.template addMethod<&BackendFacade::setCpuRegister>();
     server.template addMethod<&BackendFacade::runUntilPc>();
+    // execution trace + single-step (spec/09-cli-debugging.md)
+    server.template addMethod<&BackendFacade::setTrace>();
+    server.template addMethod<&BackendFacade::readTrace>();
+    server.template addMethod<&BackendFacade::stepInto>();
+    server.template addMethod<&BackendFacade::stepOver>();
+    server.template addMethod<&BackendFacade::stepOut>();
     // DSP-side JS runtime (the role kernel)
     server.template addMethod<&BackendFacade::compileScript>();
     server.template addMethod<&BackendFacade::dspLoadKernel>();

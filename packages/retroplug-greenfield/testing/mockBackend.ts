@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, ConstructSpec, CpuRegister, FileBrowserOpts, FrameData, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakInfo, ConstructSpec, CpuRegister, FileBrowserOpts, FrameData, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 
 const enc = new TextEncoder();
@@ -313,6 +313,31 @@ export class MockBackend implements Backend {
   runUntilPc(_id: number, _target: number, _maxCycles: number): boolean {
     this.log.push("runUntilPc");
     return false; // the mock has no real core to step, so a target PC is never reached
+  }
+
+  setTrace(id: number, _on: boolean): boolean {
+    this.log.push("setTrace");
+    return this.systems.has(id); // toggles nothing real; only a live NES core traces
+  }
+
+  readTrace(_id: number, _count: number): TraceLine[] {
+    this.log.push("readTrace");
+    return []; // the mock never captures a trace (no real core)
+  }
+
+  stepInto(id: number): BreakInfo {
+    this.log.push("stepInto");
+    return { broke: this.systems.has(id), pc: 0, breakpointId: -1 };
+  }
+
+  stepOver(id: number): BreakInfo {
+    this.log.push("stepOver");
+    return { broke: this.systems.has(id), pc: 0, breakpointId: -1 };
+  }
+
+  stepOut(id: number): BreakInfo {
+    this.log.push("stepOut");
+    return { broke: this.systems.has(id), pc: 0, breakpointId: -1 };
   }
 
   zip(entries: ZipEntry[]): Uint8Array | null {

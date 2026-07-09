@@ -9,7 +9,7 @@
 // (constructSystem / read* / …) drive a StubSystem in a real native Project. openFileBrowser is the
 // one async method and rides a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, ConstructSpec, CpuRegister, FileBrowserOpts, FrameData, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakInfo, ConstructSpec, CpuRegister, FileBrowserOpts, FrameData, TraceLine, ZipEntry } from "./backend";
 
 type RpcSend = (request: unknown) => unknown;
 interface Reply {
@@ -131,6 +131,11 @@ export function createRealBackend(): Backend {
     loadLabels: (id, path) => call("loadLabels", id, path) as boolean,
     setCpuRegister: (id, name, value) => call("setCpuRegister", id, name, value) as boolean,
     runUntilPc: (id, target, maxCycles) => call("runUntilPc", id, target, maxCycles) as boolean,
+    setTrace: (id, on) => call("setTrace", id, on) as boolean,
+    readTrace: (id, count) => call("readTrace", id, count) as TraceLine[],
+    stepInto: (id) => call("stepInto", id) as BreakInfo,
+    stepOver: (id) => call("stepOver", id) as BreakInfo,
+    stepOut: (id) => call("stepOut", id) as BreakInfo,
 
     // --- async dialog (UI-direct native hook; see browseFile above) -------
     openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts),
