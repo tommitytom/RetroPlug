@@ -7,6 +7,16 @@
 #include "system/SystemBase.hpp"
 #include "system/MemoryType.hpp"   // rp::MemoryType::Sram
 
+// Write [len:4 LE][payload] into a state triple's next slot and publish it. `payload`/`len` must fit
+// the triple (prefix + len <= triple size) — checked by the callers. Matches SystemBase's own layout.
+void SnapshotRegistry::writeState(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len) {
+    std::uint8_t* slot = triple.writeSlot();
+    const std::uint32_t len32 = static_cast<std::uint32_t>(len);
+    std::memcpy(slot, &len32, sizeof(len32));
+    std::memcpy(slot + kStateLenPrefix, payload, len);
+    triple.publish();
+}
+
 SnapshotRegistry::Slot* SnapshotRegistry::find(SystemId id) {
     for (auto& s : slots_)
         if (s.id.load(std::memory_order_acquire) == id) return &s;
@@ -43,17 +53,21 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
     }
 
     // State + SRAM: seed from the live savestate so a read right after construct (no block yet)
-    // returns real bytes. saveStateBytes() and the per-block readStateSnapshot() are the same
-    // GB_save_state_to_buffer layout, so stateRegions()' SRAM offset slices both identically.
+    // returns real bytes. The slot is sized to the live snapshot triple's PAYLOAD CAPACITY (which
+    // carries per-core headroom — Mesen savestates grow within a session) plus the length prefix, so
+    // the coarse-interval republish never overflows it. `sys` must already have enableStateSnapshot()'d.
     const std::vector<std::uint8_t> savestate = sys.saveStateBytes();
-    const std::size_t stateSize = savestate.size();
-    if (stateSize > 0 && stateSize <= kMaxStateBytes) {
-        s->state = std::make_unique<MemorySnapshotTriple>(stateSize);
-        std::memcpy(s->state->writeSlot(), savestate.data(), stateSize);
-        s->state->publish();
+    const std::size_t bootLen = savestate.size();
+    const std::size_t cap     = sys.stateSnapshotCapacity();
+    if (bootLen > 0 && cap >= bootLen && cap <= kMaxStateBytes) {
+        s->state = std::make_unique<MemorySnapshotTriple>(kStateLenPrefix + cap);
+        writeState(*s->state, savestate.data(), bootLen);
 
+        // SRAM: SameBoy exposes its cart RAM as a region WITHIN the savestate (same layout live +
+        // seeded), so slice it out. A core whose savestate has no locatable SRAM region (Mesen's
+        // streamed format leaves stateRegions() empty) is handled by the live-core path (F2).
         const auto& reg = sys.stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
-        if (reg.size > 0 && static_cast<std::size_t>(reg.offset) + reg.size <= savestate.size()) {
+        if (reg.size > 0 && static_cast<std::size_t>(reg.offset) + reg.size <= bootLen) {
             s->sramOffset = reg.offset;
             s->sram = std::make_unique<MemorySnapshotTriple>(reg.size);
             std::memcpy(s->sram->writeSlot(), savestate.data() + reg.offset, reg.size);
@@ -92,10 +106,12 @@ void SnapshotRegistry::publishAll(const Project& project, std::uint32_t frames, 
         s->sampleAccum = 0;
 
         if (s->state && sys->readStateSnapshot(publishScratch_) && !publishScratch_.empty()) {
-            if (publishScratch_.size() == s->state->size()) {
-                std::memcpy(s->state->writeSlot(), publishScratch_.data(), publishScratch_.size());
-                s->state->publish();
-            }
+            // Republish the fresh savestate. The slot carries headroom (prefix + capacity), so a
+            // grown Mesen savestate still fits; only a capture that would overflow it is skipped —
+            // NOT the old exact-size (==) match, which froze every variable-size republish.
+            if (publishScratch_.size() + kStateLenPrefix <= s->state->size())
+                writeState(*s->state, publishScratch_.data(), publishScratch_.size());
+            // SameBoy SRAM slice (payload-relative offset). Mesen's SRAM comes from the live core (F2).
             if (s->sram &&
                 static_cast<std::size_t>(s->sramOffset) + s->sram->size() <= publishScratch_.size()) {
                 std::memcpy(s->sram->writeSlot(), publishScratch_.data() + s->sramOffset, s->sram->size());
@@ -124,9 +140,14 @@ SnapshotRegistry::Frame SnapshotRegistry::readFrame(SystemId id) {
 std::optional<std::vector<std::uint8_t>> SnapshotRegistry::readState(SystemId id) {
     Slot* s = find(id);
     if (!s || !s->state) return std::nullopt;
-    std::vector<std::uint8_t> out;
-    if (!s->state->readInto(out)) return std::nullopt;
-    return out;
+    const std::size_t slotSize = s->state->size();
+    if (stateReadScratch_.size() < slotSize) stateReadScratch_.resize(slotSize);
+    if (!s->state->readInto(stateReadScratch_.data(), slotSize)) return std::nullopt;
+    std::uint32_t len = 0;
+    std::memcpy(&len, stateReadScratch_.data(), sizeof(len));
+    if (len == 0 || static_cast<std::size_t>(len) + kStateLenPrefix > slotSize) return std::nullopt;
+    return std::vector<std::uint8_t>(stateReadScratch_.begin() + kStateLenPrefix,
+                                     stateReadScratch_.begin() + kStateLenPrefix + len);
 }
 
 std::optional<std::vector<std::uint8_t>> SnapshotRegistry::readSram(SystemId id) {

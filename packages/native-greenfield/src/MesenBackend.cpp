@@ -19,6 +19,18 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
                                      std::istreambuf_iterator<char>());
 }
 
+// Shared Mesen boot tail (mirrors SameBoyBackend::buildSameBoy): activate the core, reject the build
+// if Mesen's LoadRom failed (a corrupt ROM that passed the magic gate) rather than adopting a dead
+// system, then opt into the live snapshot plane so the control plane's readState/readSram see fresh
+// bytes instead of the boot seed frozen forever. `T` is MesenNesSystem or MesenGbaSystem.
+template <typename T>
+std::unique_ptr<SystemBase> bootMesen(std::unique_ptr<T> sys, double sampleRate) {
+    sys->onActivate(sampleRate);
+    if (!sys->activated()) return nullptr;  // core rejected the ROM at LoadRom → fail the construct
+    sys->enableStateSnapshot();             // republish a tear-free savestate every ~0.5s (Duplicate/Save State)
+    return sys;                             // implicit upcast to unique_ptr<SystemBase>
+}
+
 } // namespace
 
 std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSpec& spec,
@@ -34,9 +46,8 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
         cfg.romPath = spec.romPath;
         cfg.sram = spec.sram;
         cfg.savestate = spec.savestate;
-        auto sys = std::make_unique<MesenNesSystem>(id, std::move(cfg), std::move(romBytes));
-        sys->onActivate(sampleRate);  // boots the Mesen NES core (graceful on a bad ROM)
-        return sys;
+        return bootMesen(std::make_unique<MesenNesSystem>(id, std::move(cfg), std::move(romBytes)),
+                         sampleRate);
     }
 
     if (spec.platform == "gba") {
@@ -46,9 +57,8 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
         cfg.sram = spec.sram;
         cfg.savestate = spec.savestate;
         // biosPath left empty → HLE boot ROM; skipBootScreen stays the default (true).
-        auto sys = std::make_unique<MesenGbaSystem>(id, std::move(cfg), std::move(romBytes));
-        sys->onActivate(sampleRate);  // boots the Mesen GBA core on HLE (graceful on a bad ROM)
-        return sys;
+        return bootMesen(std::make_unique<MesenGbaSystem>(id, std::move(cfg), std::move(romBytes)),
+                         sampleRate);
     }
 
     return nullptr;  // Mesen doesn't serve this platform

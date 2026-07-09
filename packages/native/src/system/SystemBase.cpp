@@ -133,6 +133,11 @@ void SystemBase::publishStateSnapshot(std::uint32_t frames, double sampleRate) {
     stateSnapshot_->publish();
 }
 
+std::size_t SystemBase::stateSnapshotCapacity() const {
+    // The triple was sized kStateLenPrefix + stateSnapshotSize(); the payload cap is what's left.
+    return stateSnapshot_ ? stateSnapshot_->size() - kStateLenPrefix : 0;
+}
+
 bool SystemBase::readStateSnapshot(std::vector<std::uint8_t>& out) {
     if (!stateSnapshot_) return false;
     const std::size_t cap = stateSnapshot_->size();

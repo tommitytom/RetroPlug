@@ -55,6 +55,11 @@ public:
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
+    // True once onActivate has booted a live core. False if the ROM failed
+    // Mesen's LoadRom (a corrupt/mislabelled file that passed the format gate),
+    // so the backend can reject the build instead of adopting a dead system.
+    bool activated() const { return activated_; }
+
     // MemoryType → Mesen MemoryType. Maps to Nes* regions; returns invalid
     // for IORegisters / HRam / ExtWorkRam (GB / GBA only).
     rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;

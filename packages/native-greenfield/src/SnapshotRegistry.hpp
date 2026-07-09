@@ -57,7 +57,7 @@ public:
     };
     Frame readFrame(SystemId id);
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);   // whole savestate
-    std::optional<std::vector<std::uint8_t>> readSram(SystemId id);    // SRAM sliced from the savestate
+    std::optional<std::vector<std::uint8_t>> readSram(SystemId id);    // SRAM (savestate slice or live core)
 
     // Free a slot when its system is deleted (control thread). Idempotent (no-op for an unknown id).
     void release(SystemId id);
@@ -68,11 +68,16 @@ private:
         std::uint32_t                         width = 0;
         std::uint32_t                         height = 0;
         std::unique_ptr<FrameBufferTriple>    frame;
-        std::unique_ptr<MemorySnapshotTriple> state;
+        std::unique_ptr<MemorySnapshotTriple> state;          // [len:4 LE][savestate][headroom tail]
         std::unique_ptr<MemorySnapshotTriple> sram;
         std::uint32_t                         sramOffset = 0; // SRAM slice offset within the savestate
         std::uint64_t                         sampleAccum = 0;// samples since the last state/sram publish
     };
+
+    // The state slot stores a 4-byte little-endian length prefix ahead of the savestate, so a
+    // variable-size (Mesen) savestate stays tear-free in one publish and the slot can carry headroom
+    // (mirrors SystemBase's own snapshot triple). SameBoy's fixed-size savestate uses the same layout.
+    static constexpr std::size_t kStateLenPrefix = 4;
 
     // Generous: RetroPlug never approaches this, but tests share one Project across a file's cases
     // so slots accumulate. A full pool fails the construct (logged) rather than corrupting.
@@ -83,6 +88,11 @@ private:
     Slot* find(SystemId id);
     Slot* findFree();
 
+    // Write [len:4 LE][payload] into a state triple's next slot and publish it (prefix + len must fit
+    // the triple; callers check). The one place the state-slot layout is written — claim + publishAll.
+    static void writeState(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len);
+
     std::array<Slot, kMaxSlots> slots_;
-    std::vector<std::uint8_t>   publishScratch_;   // block-thread reuse for readStateSnapshot
+    std::vector<std::uint8_t>   publishScratch_;    // block-thread reuse for readStateSnapshot
+    std::vector<std::uint8_t>   stateReadScratch_;  // control-thread reuse for readState (strips the prefix)
 };

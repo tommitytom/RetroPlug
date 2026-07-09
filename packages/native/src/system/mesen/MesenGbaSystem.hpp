@@ -48,6 +48,11 @@ public:
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
+    // True once onActivate has booted a live core. False if the ROM failed
+    // Mesen's LoadRom (a corrupt/mislabelled file that passed the format gate),
+    // so the backend can reject the build instead of adopting a dead system.
+    bool activated() const { return activated_; }
+
     // MemoryType → Mesen MemoryType. Maps to Gba* regions; returns invalid
     // for IORegisters / HRam / NametableRam (GB / NES only). Ram = IWRAM
     // (32KB, fast on-chip); ExtWorkRam = EWRAM (256KB, slower off-chip).
