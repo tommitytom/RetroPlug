@@ -7,7 +7,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
-import { gbRom } from "../systems/fixtures";
+import { gbRom, nesRom } from "../systems/fixtures";
 
 function makeStore() {
   const be = new MockBackend("/cfg");
@@ -27,6 +27,20 @@ test("adopt forwards the saved sameboy role config as the construct-time setting
   const spec = be.constructCalls[be.constructCalls.length - 1];
   expect(spec.settings != null).toBeTruthy();
   expect(JSON.parse(spec.settings!)).toEqual({ model: 1, highpass: 2, linkGroupId: 0, fastBoot: true });
+});
+
+test("adopt forwards the saved mesen (NES) role config as the construct-time settings blob", () => {
+  const { be, store } = makeStore();
+  be.seed("/roms/a.nes", nesRom());
+
+  // A saved NES system whose mesen role carries a non-default region (PAL=2). The store finds the
+  // blob via r.kind === core, and a NES system's core is "mesen".
+  const roles = [{ kind: "mesen", config: { region: 2, removeSpriteLimit: true } }];
+  store.adopt({ romPath: "/roms/a.nes", roles });
+
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.settings != null).toBeTruthy();
+  expect(JSON.parse(spec.settings!)).toEqual({ region: 2, removeSpriteLimit: true });
 });
 
 test("a fresh add sends no settings blob (backend defaults suffice)", () => {

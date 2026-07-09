@@ -99,6 +99,11 @@ public:
 
     void setGainDb(float dB) override;
 
+    // "mesen" system-role knobs (coreRoles.ts), applied live via Engine::applyConfigField.
+    // removeSpriteLimit is a live PPU toggle; region reconfigures timing so it forces a reset.
+    void setRemoveSpriteLimit(bool on);
+    void setRegion(std::uint32_t region);
+
     // NES native resolution (256x240). Public so callers can construct a
     // FrameBufferTriple-sized read buffer without hard-coding the constant.
     static constexpr std::uint32_t kPixelWidth  = 256;

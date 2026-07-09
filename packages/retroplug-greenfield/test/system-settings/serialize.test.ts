@@ -8,7 +8,7 @@ import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { buildConfig, serializeConfig, parseConfig, DEFAULT_SETTINGS } from "../../src/projectConfig";
-import { gbRom } from "../systems/fixtures";
+import { gbRom, nesRom } from "../systems/fixtures";
 
 const identity = (p: string) => p;
 function reg(): RoleRegistry {
@@ -41,6 +41,25 @@ test("customized settings + role round-trip through build → serialize → pars
   const v = s2.view()[0];
   expect(v.settings.gainDb).toBe(-6); // restored
   expect(v.roles[0].config.model).toBe(3); // restored (stored role wins over defaults)
+});
+
+test("a customized NES (mesen) role round-trips through serialize → parse → adopt", () => {
+  const be = new MockBackend("/cfg");
+  be.seed("/proj/a.nes", nesRom());
+  const s1 = new SystemsStore(be, () => {}, reg());
+  const id = s1.addSystem("/proj/a.nes") as number;
+  s1.setRoleConfig(id, "mesen", { region: 2 }); // PAL
+
+  const cfg = buildConfig(DEFAULT_SETTINGS, s1.systems());
+  expect(cfg.systems[0].roles).toEqual([{ kind: "mesen", config: { region: 2, removeSpriteLimit: false } }]);
+
+  const back = parseConfig(serializeConfig(cfg, "", identity));
+  const be2 = new MockBackend("/cfg");
+  be2.seed("/proj/a.nes", nesRom());
+  const s2 = new SystemsStore(be2, () => {}, reg());
+  for (const sys of back.systems) s2.adopt(sys);
+
+  expect(s2.view()[0].roles[0].config.region).toBe(2); // restored
 });
 
 test("a fresh all-default system emits no settings/roles", () => {

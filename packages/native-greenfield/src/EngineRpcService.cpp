@@ -7,6 +7,7 @@
 
 #include "Engine.hpp"
 #include "EngineInvoker.hpp"
+#include "MesenBackend.hpp"
 #include "SameBoyBackend.hpp"
 #include "ScriptCompiler.hpp"
 #include "SystemFactory.hpp"
@@ -109,16 +110,25 @@ bool EngineRpcService::applySystemSetting(std::uint32_t id, std::string key, dou
 }
 
 bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string kind, std::string config) {
-    // Only a backend "system" role carries live emulator config; SameBoy is the only one today. The
+    // A backend "system" role carries live emulator config, keyed by core ("sameboy" | "mesen"). The
     // store re-sends the WHOLE role config, so each field applies guarded (Engine no-ops an unchanged
-    // one — no spurious model restart when only highpass moved).
-    if (kind != "sameboy") return false;
-    const SameBoyRoleConfig c = SameBoyBackend::decodeSameBoyRoleConfig(config);
-    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Model), static_cast<double>(c.model));
-    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Highpass), static_cast<double>(c.highpass));
-    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LinkGroup), static_cast<double>(c.linkGroupId));
-    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::FastBoot), c.fastBoot ? 1.0 : 0.0);
-    return true;
+    // one — no spurious model restart / region reset when only a sibling knob moved).
+    if (kind == "sameboy") {
+        const SameBoyRoleConfig c = SameBoyBackend::decodeSameBoyRoleConfig(config);
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Model), static_cast<double>(c.model));
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Highpass), static_cast<double>(c.highpass));
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LinkGroup), static_cast<double>(c.linkGroupId));
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::FastBoot), c.fastBoot ? 1.0 : 0.0);
+        return true;
+    }
+    if (kind == "mesen") {
+        // Attaches to any Mesen system; a GBA system casts to null in Engine::applyConfigField → no-op.
+        const MesenNesRoleConfig c = MesenBackend::decodeMesenNesRoleConfig(config);
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesRegion), static_cast<double>(c.region));
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesRemoveSpriteLimit), c.removeSpriteLimit ? 1.0 : 0.0);
+        return true;
+    }
+    return false;
 }
 
 // Reads of the owned snapshot registry — the control plane reads published copies by id, never the

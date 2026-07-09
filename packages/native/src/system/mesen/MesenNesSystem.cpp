@@ -50,7 +50,7 @@ constexpr uint32_t kNesPalette[64] = {
     0xFFE4E594, 0xFFCFEF96, 0xFFBDF4AB, 0xFFB3F3CC, 0xFFB5EBF2, 0xFFB8B8B8, 0xFF000000, 0xFF000000,
 };
 
-void configureNes(Emulator& emu) {
+void configureNes(Emulator& emu, std::uint32_t region, bool removeSpriteLimit) {
     EmuSettings* settings = emu.GetSettings();
     NesConfig cfg{};
     cfg.Port1 = ControllerConfig{ .Type = ControllerType::NesController };
@@ -61,6 +61,9 @@ void configureNes(Emulator& emu) {
     for (int i = 0; i < 11; ++i) {
         cfg.ChannelVolumes[i] = 100;
     }
+    // TS-owned "mesen" role knobs, seeded before LoadRom so region is correct from power-on.
+    cfg.Region = static_cast<ConsoleRegion>(region);
+    cfg.RemoveSpriteLimit = removeSpriteLimit;
     settings->SetNesConfig(cfg);
 }
 
@@ -107,7 +110,7 @@ void MesenNesSystem::onActivate(double sampleRate) {
     // background polling thread (ShortcutKeyHandler) that, besides being pure
     // overhead, races the debugger pointer against LoadRom's ResetDebugger.
     emu_->Initialize(false);
-    configureNes(*emu_);
+    configureNes(*emu_, config_.region, config_.removeSpriteLimit);
 
     VirtualFile romFile(rom_.data(), rom_.size(),
                         config_.romPath.empty() ? std::string("rom.nes") : config_.romPath);
@@ -194,6 +197,23 @@ void MesenNesSystem::onReset() {
 void MesenNesSystem::setGainDb(float dB) {
     config_.gainDb = dB;
     gainSmoother_.setTargetValue(dbToLin(dB));
+}
+
+void MesenNesSystem::setRemoveSpriteLimit(bool on) {
+    config_.removeSpriteLimit = on;
+    // Live: the PPU re-reads this from the config reference every scanline.
+    if (emu_) emu_->GetSettings()->GetNesConfig().RemoveSpriteLimit = on;
+}
+
+void MesenNesSystem::setRegion(std::uint32_t region) {
+    if (config_.region == region) return;  // value-guarded — a reset is expensive
+    config_.region = region;
+    // Region reconfigures CPU/PPU/APU timing, which this integration only re-polls on reset (the NES
+    // path drives cpu->Exec() directly and bypasses RunFrame). Mirror SameBoy model→restartEmulator.
+    if (emu_) {
+        emu_->GetSettings()->GetNesConfig().Region = static_cast<ConsoleRegion>(region);
+        emu_->Reset();
+    }
 }
 
 void MesenNesSystem::pressButton(std::uint8_t button, bool down) {

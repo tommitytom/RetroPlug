@@ -22,7 +22,16 @@ export function registerCoreRoles(registry: RoleRegistry): void {
     }),
   });
 
-  // Mesen (NES + GBA) exposes no natively-consumed knobs yet → no system role. (The former GBA
-  // skipBootScreen/biosPath were inert — the backend ignored the settings blob — so they're dropped
-  // until Mesen actually wires them, at which point a "mesen" core role is added here.)
+  // Mesen: keyed by core ("mesen"), so this ONE role attaches to any Mesen system (NES today, GBA
+  // later). The knobs are NES-only for now — region (ConsoleRegion 0..4) + remove-sprite-limit — and
+  // the settings menu gates them on platform === "nes" (menuDefs.ts). GBA carries them as inert bytes
+  // until it gets its own knobs, at which point the schema grows.
+  registry.registerRole({
+    kind: "mesen",
+    category: "system",
+    schema: z.object({
+      region: clampedInt(0, 4, 0), // ConsoleRegion: Auto / NTSC / PAL / Dendy / NTSC-J
+      removeSpriteLimit: boolField(false),
+    }),
+  });
 }

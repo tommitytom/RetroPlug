@@ -14,7 +14,9 @@
 // A per-system config field a control-plane edit applies to the live core (SameBoy today). Carried
 // as a double across the command ring: gain in dB; a bool as 0/1; an enum/int as its integer value.
 enum class ConfigField : std::uint8_t {
-    Gain = 0, ReloadOnRomChange = 1, Model = 2, Highpass = 3, LinkGroup = 4, FastBoot = 5,
+    Gain = 0, ReloadOnRomChange = 1,
+    Model = 2, Highpass = 3, LinkGroup = 4, FastBoot = 5,     // SameBoy
+    NesRegion = 6, NesRemoveSpriteLimit = 7,                  // Mesen (NES)
 };
 
 // One system's video frame, read from its lock-free FrameBufferTriple. `data` is raw XRGB8888

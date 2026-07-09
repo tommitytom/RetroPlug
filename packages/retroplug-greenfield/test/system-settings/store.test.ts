@@ -9,7 +9,7 @@ import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { z, clampedInt } from "../../src/configSchema";
-import { gbRom } from "../systems/fixtures";
+import { gbRom, nesRom } from "../systems/fixtures";
 
 // A GB ROM (valid logo for classification) carrying a cartridge title at 0x134.
 function gbRomWithTitle(title: string): Uint8Array {
@@ -50,6 +50,23 @@ test("a SameBoy system auto-gets the sameboy system role + universal settings", 
   const v = store.view()[0];
   expect(v.settings).toEqual({ gainDb: 0, reloadOnRomChange: false });
   expect(v.roles).toEqual([{ kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: true } }]);
+});
+
+test("a NES system auto-gets the mesen system role; editing region crosses to the emulator", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/g.nes", nesRom());
+  const id = store.addSystem("/roms/g.nes") as number;
+  const v = store.view()[0];
+  expect(v.platform).toBe("nes");
+  expect(v.roles).toEqual([{ kind: "mesen", config: { region: 0, removeSpriteLimit: false } }]);
+
+  expect(store.setRoleConfig(id, "mesen", { region: 2 })).toBeTruthy(); // PAL
+  expect(store.view()[0].roles[0].config.region).toBe(2);
+  expect(be.applyRoleCalls[be.applyRoleCalls.length - 1]).toEqual({
+    id,
+    kind: "mesen",
+    config: { region: 2, removeSpriteLimit: false }, // whole role config crosses (system-category)
+  });
 });
 
 test("setRoleConfig on a system role: updates, clamps, applies to the emulator, dirties", () => {

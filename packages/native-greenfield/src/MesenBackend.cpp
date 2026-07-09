@@ -4,6 +4,8 @@
 #include <iterator>
 #include <string>
 
+#include <rfl/json.hpp>
+
 #include "system/RomFormat.hpp"
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
@@ -33,6 +35,11 @@ std::unique_ptr<SystemBase> bootMesen(std::unique_ptr<T> sys, double sampleRate)
 
 } // namespace
 
+MesenNesRoleConfig MesenBackend::decodeMesenNesRoleConfig(const std::string& json) {
+    const auto r = rfl::json::read<MesenNesRoleConfig, rfl::DefaultIfMissing>(json);
+    return r ? r.value() : MesenNesRoleConfig{};  // unparseable → all defaults (a no-op apply)
+}
+
 std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSpec& spec,
                                                 double sampleRate) {
     std::vector<std::uint8_t> romBytes = slurpAll(spec.romPath);
@@ -46,6 +53,14 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
         cfg.romPath = spec.romPath;
         cfg.sram = spec.sram;
         cfg.savestate = spec.savestate;
+        // TS-owned "mesen" role knobs cross in the opaque settings blob so a loaded non-default region
+        // is applied AT construct (configureNes runs before LoadRom → no post-build reset). A fresh
+        // build sends no blob → the MesenNesConfig defaults (Auto region / sprite limit on).
+        const std::string settings(spec.settings.begin(), spec.settings.end());
+        const MesenNesRoleConfig role =
+            settings.empty() ? MesenNesRoleConfig{} : decodeMesenNesRoleConfig(settings);
+        cfg.region = role.region;
+        cfg.removeSpriteLimit = role.removeSpriteLimit;
         return bootMesen(std::make_unique<MesenNesSystem>(id, std::move(cfg), std::move(romBytes)),
                          sampleRate);
     }

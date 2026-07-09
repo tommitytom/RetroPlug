@@ -29,14 +29,26 @@ function registerFakeExtension(reg: RoleRegistry): void {
   });
 }
 
-test("systemRoleFor: the core registers a SameBoy system role; NES has none", () => {
+test("systemRoleFor: the core registers a SameBoy and a Mesen system role", () => {
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
   const sb = reg.systemRoleFor("sameboy");
   expect(sb?.kind).toBe("sameboy");
   expect(sb?.category).toBe("system");
   expect(sb?.schema.parse({})).toEqual({ model: 9, highpass: 1, linkGroupId: 0, fastBoot: true });
-  expect(reg.systemRoleFor("mesen")).toBe(undefined);
+
+  const mesen = reg.systemRoleFor("mesen");
+  expect(mesen?.kind).toBe("mesen");
+  expect(mesen?.category).toBe("system");
+  expect(mesen?.schema.parse({})).toEqual({ region: 0, removeSpriteLimit: false });
+});
+
+test("mesen schema: fills defaults + clamps an out-of-range region", () => {
+  const reg = new RoleRegistry();
+  registerCoreRoles(reg);
+  const mesen = reg.roleType("mesen")!;
+  expect(mesen.schema.parse({ region: 99 })).toEqual({ region: 4, removeSpriteLimit: false });
+  expect(mesen.schema.parse({ removeSpriteLimit: true })).toEqual({ region: 0, removeSpriteLimit: true });
 });
 
 test("schema: fills defaults + clamps out-of-range fields", () => {
@@ -77,6 +89,8 @@ test("defaultRoles: system role first, then provider-matched feature roles", () 
     { kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: true } },
   ]);
 
-  // A backend with no system role + no provider match → nothing.
-  expect(reg.defaultRoles("mesen", "nes", headerWithTitle("SMB3"))).toEqual([]);
+  // A NES system gets the Mesen system role (no feature provider registered in this reg → just it).
+  expect(reg.defaultRoles("mesen", "nes", headerWithTitle("SMB3"))).toEqual([
+    { kind: "mesen", config: { region: 0, removeSpriteLimit: false } },
+  ]);
 });

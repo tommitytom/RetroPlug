@@ -7,6 +7,7 @@
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
 #include "system/BlockRunner.hpp"   // runBlock + MultiOutRouter
 #include "system/sameboy/SameBoySystem.hpp"  // live-apply cast target (model/highpass/gain/…)
+#include "system/mesen/MesenNesSystem.hpp"    // live-apply cast target (NES region / sprite limit)
 
 #include "transport/FrameBufferTriple.hpp"
 #include "native/core/img/png/lodepng.h"
@@ -191,8 +192,23 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
             break;
     }
 
-    // The remaining fields are SameBoy emulator knobs (model / highpass / link group / fast boot).
-    // Mesen has its own disjoint knob set (none wired yet), so a non-SameBoy system ignores them.
+    // The remaining fields are backend-specific emulator knobs, dispatched by concrete type (a system
+    // is exactly one, so the order of the casts below doesn't matter). Mesen (NES) first.
+    if (auto* mn = dynamic_cast<MesenNesSystem*>(sys)) {
+        switch (static_cast<ConfigField>(field)) {
+            case ConfigField::NesRegion:
+                mn->setRegion(static_cast<std::uint32_t>(value));  // value-guarded; resets the core on change
+                break;
+            case ConfigField::NesRemoveSpriteLimit:
+                mn->setRemoveSpriteLimit(value != 0.0);            // live — the PPU re-reads it per scanline
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+
+    // SameBoy emulator knobs (model / highpass / link group / fast boot).
     auto* sb = dynamic_cast<SameBoySystem*>(sys);
     if (!sb) return;
     switch (static_cast<ConfigField>(field)) {
