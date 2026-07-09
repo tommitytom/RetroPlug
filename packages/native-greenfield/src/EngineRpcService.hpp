@@ -41,6 +41,7 @@ public:
     // started (the CLI's single-threaded direct-render regime). getApuState needs a Mesen NES system
     // (empty on SameBoy/GBA); the rest are SystemBase virtuals (empty/null when a backend can't serve).
     rp::ApuState                 getApuState(std::uint32_t id);
+    rp::PpuState                 getPpuState(std::uint32_t id);
     std::optional<std::uint8_t>  readCpu(std::uint32_t id, std::uint32_t addr);
     bool                         writeCpu(std::uint32_t id, std::uint32_t addr, std::uint32_t value);
     rfl::Bytestring              readMemory(std::uint32_t id, std::uint32_t memType);

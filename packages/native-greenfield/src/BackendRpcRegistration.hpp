@@ -38,6 +38,7 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::getFrame>();
     // live-core debug reads (spec/09-cli-debugging.md)
     server.template addMethod<&BackendFacade::getApuState>();
+    server.template addMethod<&BackendFacade::getPpuState>();
     server.template addMethod<&BackendFacade::readCpu>();
     server.template addMethod<&BackendFacade::writeCpu>();
     server.template addMethod<&BackendFacade::readMemory>();

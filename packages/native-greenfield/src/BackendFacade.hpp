@@ -54,6 +54,7 @@ public:
     bool screenshot(std::uint32_t id, std::string path) { return engine_svc_.screenshot(id, std::move(path)); }
     GreenfieldFrame getFrame(std::uint32_t id) { return engine_svc_.getFrame(id); }
     rp::ApuState getApuState(std::uint32_t id) { return engine_svc_.getApuState(id); }
+    rp::PpuState getPpuState(std::uint32_t id) { return engine_svc_.getPpuState(id); }
     std::optional<std::uint8_t> readCpu(std::uint32_t id, std::uint32_t addr) { return engine_svc_.readCpu(id, addr); }
     bool writeCpu(std::uint32_t id, std::uint32_t addr, std::uint32_t value) { return engine_svc_.writeCpu(id, addr, value); }
     rfl::Bytestring readMemory(std::uint32_t id, std::uint32_t memType) { return engine_svc_.readMemory(id, memType); }

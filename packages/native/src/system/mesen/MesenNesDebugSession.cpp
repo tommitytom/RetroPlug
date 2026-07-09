@@ -22,6 +22,7 @@
 #include "Core/Debugger/Breakpoint.h"
 #include "Core/NES/NesConsole.h"
 #include "Core/NES/NesCpu.h"
+#include "Core/NES/BaseNesPpu.h"
 #include "Core/NES/NesTypes.h"
 #include "Core/NES/APU/NesApu.h"
 #include "Core/Debugger/BaseEventManager.h"
@@ -232,6 +233,57 @@ rp::ApuState MesenNesDebugSession::getApuState() {
     out.dmc.loop           = s.Dmc.Loop;
     out.dmc.irqEnabled     = s.Dmc.IrqEnabled;
     out.dmc.sampleRate     = s.Dmc.SampleRate;
+
+    return out;
+}
+
+rp::PpuState MesenNesDebugSession::getPpuState() {
+    // A pure live-state read (no debugger needed): pull Mesen's PPU state
+    // straight off the console, mirroring getApuState's console access.
+    rp::PpuState out;
+    auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get());
+    if (!console) return out;
+    BaseNesPpu* ppu = console->GetPpu();
+    if (!ppu) return out;
+    NesPpuState s;
+    ppu->GetState(s);
+
+    out.scanline        = s.Scanline;
+    out.cycle           = s.Cycle;
+    out.frameCount      = s.FrameCount;
+    out.scrollX         = s.ScrollX;
+    out.videoRamAddr    = s.VideoRamAddr;
+    out.tmpVideoRamAddr = s.TmpVideoRamAddr;
+    out.writeToggle     = s.WriteToggle;
+    out.spriteRamAddr   = s.SpriteRamAddr;
+
+    // Reconstruct the $2000 PPUCTRL byte from the decoded flags; the nametable
+    // base bits (0-1) live in the internal temp VRAM address (t bits 10-11).
+    std::uint8_t control = static_cast<std::uint8_t>((s.TmpVideoRamAddr >> 10) & 0x03);
+    control |= s.Control.VerticalWrite                    ? 0x04 : 0;
+    control |= (s.Control.SpritePatternAddr == 0x1000)    ? 0x08 : 0;
+    control |= (s.Control.BackgroundPatternAddr == 0x1000)? 0x10 : 0;
+    control |= s.Control.LargeSprites                     ? 0x20 : 0;
+    control |= s.Control.SecondaryPpu                     ? 0x40 : 0;
+    control |= s.Control.NmiOnVerticalBlank              ? 0x80 : 0;
+    out.control = control;
+
+    std::uint8_t mask = 0;
+    mask |= s.Mask.Grayscale         ? 0x01 : 0;
+    mask |= s.Mask.BackgroundMask    ? 0x02 : 0;
+    mask |= s.Mask.SpriteMask        ? 0x04 : 0;
+    mask |= s.Mask.BackgroundEnabled ? 0x08 : 0;
+    mask |= s.Mask.SpritesEnabled    ? 0x10 : 0;
+    mask |= s.Mask.IntensifyRed      ? 0x20 : 0;
+    mask |= s.Mask.IntensifyGreen    ? 0x40 : 0;
+    mask |= s.Mask.IntensifyBlue     ? 0x80 : 0;
+    out.mask = mask;
+
+    std::uint8_t status = 0;
+    status |= s.StatusFlags.SpriteOverflow ? 0x20 : 0;
+    status |= s.StatusFlags.Sprite0Hit     ? 0x40 : 0;
+    status |= s.StatusFlags.VerticalBlank  ? 0x80 : 0;
+    out.status = status;
 
     return out;
 }

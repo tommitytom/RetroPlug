@@ -28,6 +28,7 @@ public:
     std::vector<rp::TraceLine> readTrace(std::uint32_t count) override;
     std::vector<rp::CallFrame> getCallStack() override;
     rp::ApuState getApuState() override;
+    rp::PpuState getPpuState() override;
 
     void setBreakpoints(const std::vector<rp::BreakpointSpec>& bps) override;
     rp::BreakInfo runUntilBreak(std::uint64_t maxCycles) override;

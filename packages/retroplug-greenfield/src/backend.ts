@@ -165,6 +165,11 @@ export interface Backend {
    *  not the `enabled` ($4015) bit. */
   getApuState(id: number): ApuState;
 
+  /** The NES PPU's live timing + register state (scanline/cycle/frameCount + the $2000/$2001/$2002
+   *  register bytes + scroll). Zeroed when the id is gone or the core has no PPU debug target
+   *  (SameBoy/GBA). The tilemap/sprite/palette viewers are not exposed. */
+  getPpuState(id: number): PpuState;
+
   /** One CPU-visible byte at `addr` (side-effect-free peek — sees mapped I/O like a MIDI FIFO), or
    *  `null` when the id is gone or the peek is unsupported. */
   readCpu(id: number, addr: number): number | null;
@@ -344,6 +349,25 @@ export interface ApuState {
   triangle: ApuTriangleState;
   noise: ApuNoiseState;
   dmc: ApuDmcState;
+}
+
+/** The NES PPU state snapshot (`getPpuState`) — verbatim mirror of the native `rp::PpuState`.
+ *  `scanline` is -1..260 (-1 = pre-render), `cycle` 0..340, `frameCount` > 0 once the core has
+ *  advanced. `control`/`mask`/`status` are the $2000/$2001/$2002 register bytes; `scrollX` the fine-X
+ *  scroll; `videoRamAddr`/`tmpVideoRamAddr` the current/temp VRAM addresses (v/t); `writeToggle` the
+ *  $2005/$2006 write latch (w); `spriteRamAddr` the $2003 OAM address. */
+export interface PpuState {
+  scanline: number;
+  cycle: number;
+  frameCount: number;
+  control: number;
+  mask: number;
+  status: number;
+  scrollX: number;
+  videoRamAddr: number;
+  tmpVideoRamAddr: number;
+  writeToggle: boolean;
+  spriteRamAddr: number;
 }
 
 /** One named CPU register (`getCpuRegisters`). `value` is zero-extended to 32 bits; `bits` is the real

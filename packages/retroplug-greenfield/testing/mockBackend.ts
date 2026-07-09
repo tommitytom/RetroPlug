@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, FileBrowserOpts, FrameData, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, FileBrowserOpts, FrameData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 
 const enc = new TextEncoder();
@@ -277,6 +277,14 @@ export class MockBackend implements Backend {
       triangle: { enabled: false, period: 0, timer: 0, outputVolume: 0, frequency: 0, lengthCounter: 0, linearCounter: 0 },
       noise: { enabled: false, period: 0, timer: 0, outputVolume: 0, frequency: 0, lengthCounter: 0, modeFlag: false, constantVolume: false, envelopeVolume: 0 },
       dmc: { enabled: false, sampleAddr: 0, sampleLength: 0, bytesRemaining: 0, period: 0, outputVolume: 0, loop: false, irqEnabled: false, sampleRate: 0 },
+    };
+  }
+
+  getPpuState(_id: number): PpuState {
+    this.log.push("getPpuState");
+    return {
+      scanline: 0, cycle: 0, frameCount: 0, control: 0, mask: 0, status: 0,
+      scrollX: 0, videoRamAddr: 0, tmpVideoRamAddr: 0, writeToggle: false, spriteRamAddr: 0,
     };
   }
 

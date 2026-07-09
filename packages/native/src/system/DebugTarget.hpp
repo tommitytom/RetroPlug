@@ -140,6 +140,33 @@ struct ApuState {
     ApuDmcState      dmc;
 };
 
+// -- NES PPU state ----------------------------------------------------------
+//
+// A snapshot of the NES PPU's live timing + register state, mirroring a curated
+// subset of Mesen's NesPpuState (deps/mesen/Core/NES/NesTypes.h). `scanline`
+// (-1..260, -1 = pre-render) and `cycle` (0..340) are the current dot position;
+// `frameCount` increments once per rendered frame (so > 0 once the emulator has
+// advanced). `control`/`mask`/`status` are the $2000/$2001/$2002 register bytes
+// reconstructed from the decoded flag structs (the nametable-base bits of
+// $2000 come from the internal temp VRAM address). `scrollX` is the fine-X
+// scroll; `videoRamAddr`/`tmpVideoRamAddr` are the current/temp VRAM addresses
+// (v/t); `writeToggle` is the $2005/$2006 first/second-write latch (w);
+// `spriteRamAddr` is the OAM address ($2003). This is the flat state only — the
+// tilemap / sprite / palette VIEWERS (caller-allocated buffers) are not exposed.
+struct PpuState {
+    std::int32_t  scanline        = 0;
+    std::uint32_t cycle           = 0;
+    std::uint32_t frameCount      = 0;
+    std::uint8_t  control         = 0;      // $2000 PPUCTRL
+    std::uint8_t  mask            = 0;      // $2001 PPUMASK
+    std::uint8_t  status          = 0;      // $2002 PPUSTATUS
+    std::uint8_t  scrollX         = 0;      // fine-X scroll
+    std::uint16_t videoRamAddr    = 0;      // current VRAM address (v)
+    std::uint16_t tmpVideoRamAddr = 0;      // temp VRAM address (t)
+    bool          writeToggle     = false;  // $2005/$2006 write latch (w)
+    std::uint8_t  spriteRamAddr   = 0;      // $2003 OAM address
+};
+
 // One Mesen event-viewer event (a register read/write, NMI, IRQ, DMA read,
 // etc.) captured for the most recent PPU frame. Mesen's event manager logs
 // these per frame and wipes them at each frame boundary, so drainEvents()
@@ -203,6 +230,12 @@ public:
     // so this is the way to observe what a MIDI-driven ROM did to the sound
     // chip. Call after advancing the emulator.
     virtual ApuState getApuState() = 0;
+
+    // Snapshot the NES PPU's live timing + register state (scanline/cycle/
+    // frameCount + the $2000/$2001/$2002 register bytes + scroll). Call after
+    // advancing the emulator. Default {} for backends without a NES PPU. The
+    // tilemap/sprite/palette viewers are deliberately not exposed here.
+    virtual PpuState getPpuState() { return {}; }
 
     // -- Breakpoints / stepping ---------------------------------------------
     //

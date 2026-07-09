@@ -177,6 +177,14 @@ rp::ApuState EngineRpcService::getApuState(std::uint32_t id) {
     return dbg->getApuState();
 }
 
+rp::PpuState EngineRpcService::getPpuState(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
+    if (!dbg) return {};
+    return dbg->getPpuState();
+}
+
 std::optional<std::uint8_t> EngineRpcService::readCpu(std::uint32_t id, std::uint32_t addr) {
     SystemBase* sys = engine_.findSystem(id);
     if (!sys) return std::nullopt;
