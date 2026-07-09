@@ -63,6 +63,7 @@ export interface Block extends BlockInput {
 export interface Sinks {
   serialIn: { system: number; frame: number; byte: number }[];
   midiOut: { system: number; frame: number; data: number[] }[];
+  coreMidi: { system: number; frame: number; data: number[] }[];
   buttons: { system: number; frame: number; button: number; down: boolean }[];
 }
 
@@ -73,6 +74,7 @@ export interface Sinks {
 export interface SinkTarget {
   pushSerialIn(system: number, frame: number, byte: number): void;
   emitMidiOut(system: number, frame: number, data: number[]): void;
+  emitCoreMidi(system: number, frame: number, data: number[]): void;
   pressButton(system: number, frame: number, button: number, down: boolean): void;
   reset?(): void;
 }
@@ -84,6 +86,7 @@ export class CollectingSink implements SinkTarget {
   reset(): void {
     this.sinks.serialIn.length = 0;
     this.sinks.midiOut.length = 0;
+    this.sinks.coreMidi.length = 0;
     this.sinks.buttons.length = 0;
   }
   pushSerialIn(system: number, frame: number, byte: number): void {
@@ -91,6 +94,9 @@ export class CollectingSink implements SinkTarget {
   }
   emitMidiOut(system: number, frame: number, data: number[]): void {
     this.sinks.midiOut.push({ system, frame, data });
+  }
+  emitCoreMidi(system: number, frame: number, data: number[]): void {
+    this.sinks.coreMidi.push({ system, frame, data });
   }
   pressButton(system: number, frame: number, button: number, down: boolean): void {
     this.sinks.buttons.push({ system, frame, button, down });
@@ -112,6 +118,7 @@ export interface SystemCtx {
   state: Record<string, unknown>;
   pushSerialIn(frame: number, byte: number): void;
   emitMidiOut(frame: number, data: number[]): void;
+  emitCoreMidi(frame: number, data: number[]): void;
   pressButton(button: number, down: boolean): void;
   eachTick(resolution: number, cb: (tick: number, off: number) => void): void;
 }
@@ -136,7 +143,7 @@ export interface DspTracer {
 }
 
 export function emptySinks(): Sinks {
-  return { serialIn: [], midiOut: [], buttons: [] };
+  return { serialIn: [], midiOut: [], coreMidi: [], buttons: [] };
 }
 
 // Walk the PPQ ticks that fall in this block at `resolution` ticks/quarter, calling cb(tick, off)
@@ -375,7 +382,7 @@ export class DspKernel {
   // Build the PERSISTENT per-(system, stage) context. Every field points at something the kernel
   // mutates in place each block — `slot.inbox/keys/buttons` (refilled), `this.block` (overwritten),
   // the persistent `state` bag — so `processBlock` never rebuilds a ctx or its sink closures. The
-  // four closures are bound once here (capture `this`/`id`), eliminating the per-block closure
+  // sink closures are bound once here (capture `this`/`id`), eliminating the per-block closure
   // clusters that formerly formed the reference cycles the collector had to sweep.
   private buildCtx(id: number, stageIndex: number, config: Record<string, unknown>, slot: SystemSlot): SystemCtx {
     return {
@@ -387,6 +394,7 @@ export class DspKernel {
       state: this.stageState(id, stageIndex),
       pushSerialIn: (frame, byte) => this.sink.pushSerialIn(id, frame, byte),
       emitMidiOut: (frame, data) => this.sink.emitMidiOut(id, frame, data),
+      emitCoreMidi: (frame, data) => this.sink.emitCoreMidi(id, frame, data),
       pressButton: (button, down) => this.sink.pressButton(id, 0, button, down),
       eachTick: (resolution, cb) => {
         const nt = this.tick.get(id) ?? 0;

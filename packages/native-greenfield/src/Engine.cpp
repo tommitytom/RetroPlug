@@ -82,6 +82,18 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
         // serial-in sink → the addressed system's serial FIFO.
         for (const auto& sv : dsp_.serialIn_)
             if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.byte);
+        // core-MIDI sink → the addressed core's onMidi (e.g. the NES N8 FIFO). One ::MidiEvent per entry;
+        // an oversized message (> the inline data[4]) is skipped, matching the DAW-drain guard.
+        for (const auto& cm : dsp_.coreMidi_) {
+            if (cm.data.empty() || cm.data.size() > ::MidiEvent::kDataSize) continue;
+            if (SystemBase* t = project_.findSystem(cm.system)) {
+                ::MidiEvent ev{};
+                ev.frame = cm.frame;
+                ev.size  = static_cast<std::uint32_t>(cm.data.size());
+                for (std::size_t j = 0; j < cm.data.size(); ++j) ev.data[j] = cm.data[j];
+                t->onMidi(&ev, 1);
+            }
+        }
         // role-generated button presses → the addressed core.
         for (const auto& bo : dsp_.buttonOut_)
             if (SystemBase* t = project_.findSystem(bo.system))

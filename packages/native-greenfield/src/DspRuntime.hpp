@@ -73,7 +73,8 @@ struct DspAllocCounters {
 // and calls three bound C-function sink thunks as it runs (all system-addressed, so one context
 // drives every system):
 //   - pushSerialIn(system, frame, byte)          — serial-in sink → serialIn_
-//   - emitMidiOut(system, frame, [bytes])        — host MIDI-out sink → midiOut_
+//   - emitMidiOut(system, frame, [bytes])        — host MIDI-out sink (→ DAW) → midiOut_
+//   - emitCoreMidi(system, frame, [bytes])       — MIDI-IN-to-core sink (→ onMidi) → coreMidi_
 //   - pressButton(system, frame, button, down)   — role-generated button sink → buttonOut_
 // Tick state (the drift-exact PPQ clock) lives ENTIRELY in the JS kernel now (walkTicks) — native
 // no longer owns a nextTick or an eachTick primitive.
@@ -96,6 +97,7 @@ public:
     // --- per-block output (the bound sinks fill these; the caller fans them to cores by system) ---
     struct SerialIn  { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint8_t byte = 0; };
     struct MidiOut   { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
+    struct CoreMidi  { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
     struct ButtonOut { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint32_t button = 0; bool down = false; };
 
     DspRuntime();
@@ -145,7 +147,8 @@ public:
     // The DspRuntime is the context opaque, so the sink thunks reach these. All three are cleared at
     // the top of each processBlock; the caller reads them after the call and fans them to cores.
     std::vector<SerialIn>  serialIn_;   // pushSerialIn sink
-    std::vector<MidiOut>   midiOut_;    // emitMidiOut sink
+    std::vector<MidiOut>   midiOut_;    // emitMidiOut sink (host MIDI-out → DAW)
+    std::vector<CoreMidi>  coreMidi_;   // emitCoreMidi sink (MIDI-in → the core's onMidi)
     std::vector<ButtonOut> buttonOut_;  // pressButton sink
 
 private:

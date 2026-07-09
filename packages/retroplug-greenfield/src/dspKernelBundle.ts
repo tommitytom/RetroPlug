@@ -13,6 +13,7 @@ import { registerDspRoles } from "./dspRoles";
 // the type-checker; provided by the host at runtime as free globals.
 declare function pushSerialIn(system: number, frame: number, byte: number): void;
 declare function emitMidiOut(system: number, frame: number, data: number[]): void;
+declare function emitCoreMidi(system: number, frame: number, data: number[]): void;
 declare function pressButton(system: number, frame: number, button: number, down: boolean): void;
 
 // Per-role runtime-tracing thunks (spec/08-profiling.md Tier B). Bound by the host ONLY in a
@@ -28,6 +29,7 @@ registerDspRoles(registry);
 const sink: SinkTarget = {
   pushSerialIn: (system, frame, byte) => pushSerialIn(system, frame, byte),
   emitMidiOut: (system, frame, data) => emitMidiOut(system, frame, data),
+  emitCoreMidi: (system, frame, data) => emitCoreMidi(system, frame, data),
   pressButton: (system, frame, button, down) => pressButton(system, frame, button, down),
 };
 
