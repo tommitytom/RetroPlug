@@ -125,6 +125,43 @@ JSValue pressButton(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueC
     return JS_UNDEFINED;
 }
 
+#ifdef RETROPLUG_PROFILE
+// Monotonic wall-clock in ns (spec/08-profiling.md Tier B). Spans store µs relative to a per-window base.
+std::uint64_t nowNs() {
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+// Per-role runtime-tracing thunks, bound onto the DSP global ONLY in a profile build. The JS kernel
+// brackets each role's dsp() call with spanBegin(label)/spanEnd() and registers kind→label via
+// traceName(); everything reaches its DspRuntime through the context opaque, like the sinks.
+JSValue spanBeginThunk(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueConst* argv) {
+    DspRuntime* rt = self(ctx);
+    std::int32_t label = 0;
+    if (rt && argc >= 1) {
+        JS_ToInt32(ctx, &label, argv[0]);
+        rt->spanBegin(static_cast<std::uint32_t>(label));
+    }
+    return JS_UNDEFINED;
+}
+JSValue spanEndThunk(JSContext* ctx, JSValueConst /*thisVal*/, int /*argc*/, JSValueConst* /*argv*/) {
+    if (DspRuntime* rt = self(ctx)) rt->spanEnd();
+    return JS_UNDEFINED;
+}
+JSValue traceNameThunk(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueConst* argv) {
+    DspRuntime* rt = self(ctx);
+    if (rt && argc >= 2) {
+        std::int32_t label = 0;
+        JS_ToInt32(ctx, &label, argv[0]);
+        if (const char* s = JS_ToCString(ctx, argv[1])) {
+            rt->traceName(static_cast<std::uint32_t>(label), s);
+            JS_FreeCString(ctx, s);
+        }
+    }
+    return JS_UNDEFINED;
+}
+#endif
+
 } // namespace
 
 DspRuntime::DspRuntime() {
@@ -144,6 +181,18 @@ DspRuntime::DspRuntime() {
     JS_SetPropertyStr(ctx_, global, "pushSerialIn", JS_NewCFunction(ctx_, pushSerialIn, "pushSerialIn", 3));
     JS_SetPropertyStr(ctx_, global, "emitMidiOut", JS_NewCFunction(ctx_, emitMidiOut, "emitMidiOut", 3));
     JS_SetPropertyStr(ctx_, global, "pressButton", JS_NewCFunction(ctx_, pressButton, "pressButton", 4));
+#ifdef RETROPLUG_PROFILE
+    // Per-role runtime tracing (spec/08-profiling.md Tier B): bind the span thunks + name the fixed
+    // native pipeline stages. Only present in a profile build → the kernel detects tracing via
+    // `typeof spanBegin === "function"` and stays inert in production.
+    JS_SetPropertyStr(ctx_, global, "spanBegin", JS_NewCFunction(ctx_, spanBeginThunk, "spanBegin", 1));
+    JS_SetPropertyStr(ctx_, global, "spanEnd", JS_NewCFunction(ctx_, spanEndThunk, "spanEnd", 0));
+    JS_SetPropertyStr(ctx_, global, "traceName", JS_NewCFunction(ctx_, traceNameThunk, "traceName", 2));
+    traceName(DSP_SPAN_KERNEL, "dsp-kernel");
+    traceName(DSP_SPAN_MARSHAL, "marshal");
+    traceName(DSP_SPAN_JSCALL, "js-call");
+    traceName(DSP_SPAN_APU, "apu-render");
+#endif
     JS_FreeValue(ctx_, global);
 }
 
@@ -216,6 +265,9 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
     //           keys:    [{system, frame, key, down}] }
     // The event arrays are always present (empty is fine) — the kernel filters keys/buttons per
     // system and would fault on `undefined`.
+#ifdef RETROPLUG_PROFILE
+    spanBegin(DSP_SPAN_MARSHAL);
+#endif
     JSValue input = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, input, "frames", JS_NewInt32(ctx, static_cast<std::int32_t>(block.frames)));
     JS_SetPropertyStr(ctx, input, "sampleRate", JS_NewFloat64(ctx, block.sampleRate));
@@ -256,6 +308,10 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
         JS_SetPropertyUint32(ctx, keyArr, static_cast<std::uint32_t>(i), ev);
     }
     JS_SetPropertyStr(ctx, input, "keys", keyArr);
+#ifdef RETROPLUG_PROFILE
+    spanEnd();                    // marshal
+    spanBegin(DSP_SPAN_JSCALL);
+#endif
 
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue fn = JS_GetPropertyStr(ctx, global, "processBlock");
@@ -268,6 +324,7 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
     JS_FreeValue(ctx, input);
 
 #ifdef RETROPLUG_PROFILE
+    spanEnd();  // js-call (paired with the spanBegin before JS_GetGlobalObject)
     ++blockCount_;
     const std::uint64_t dCalls = counters_.allocCalls - blockCalls0;
     const std::uint64_t dBytes = counters_.allocBytes - blockBytes0;
@@ -315,8 +372,56 @@ DspGcResult DspRuntime::runGc() {
     r.freedBytes = before - counters_.liveBytes;  // cyclic garbage reclaimed (~0 = no cycles)
     return r;
 }
+
+// --- per-role runtime tracing (spec/08-profiling.md Tier B) ---
+void DspRuntime::spanBegin(std::uint32_t label) {
+    if (!traceArmed_) return;
+    traceStack_.emplace_back(label, (nowNs() - traceBaseNs_) / 1000.0);  // µs relative to the window base
+}
+
+void DspRuntime::spanEnd() {
+    if (!traceArmed_ || traceStack_.empty()) return;
+    const auto top = traceStack_.back();
+    traceStack_.pop_back();
+    traceSpans_.push_back({ top.first, top.second, (nowNs() - traceBaseNs_) / 1000.0 });
+}
+
+void DspRuntime::traceName(std::uint32_t label, const std::string& name) {
+    if (traceNames_.size() <= label) traceNames_.resize(label + 1);
+    traceNames_[label] = name;
+}
+
+void DspRuntime::traceReset(bool arm) {
+    traceSpans_.clear();
+    traceStack_.clear();
+    traceArmed_  = arm;
+    traceBaseNs_ = nowNs();
+    // Flip the kernel's in-JS trace flag (like setSystems calls a global) so JS emits per-role spans
+    // ONLY while armed — the non-traced path then makes zero span-thunk crossings (alloc counts pristine).
+    if (!loaded_) return;
+    JS_UpdateStackTop(rt_);
+    JSValue global = JS_GetGlobalObject(ctx_);
+    JSValue fn = JS_GetPropertyStr(ctx_, global, "__setTrace");
+    if (JS_IsFunction(ctx_, fn)) {
+        JSValue arg = JS_NewBool(ctx_, arm);
+        JSValue res = JS_Call(ctx_, fn, global, 1, &arg);
+        JS_FreeValue(ctx_, res);
+        JS_FreeValue(ctx_, arg);
+    }
+    JS_FreeValue(ctx_, fn);
+    JS_FreeValue(ctx_, global);
+}
+
+std::vector<DspTraceSpan> DspRuntime::traceSpans() const { return traceSpans_; }
+std::vector<std::string>  DspRuntime::traceNames() const { return traceNames_; }
 #else
 DspAllocStats DspRuntime::allocStats() const { return DspAllocStats{}; }  // enabled=false
 void          DspRuntime::resetAllocStats(bool /*disableAutoGc*/) {}
 DspGcResult   DspRuntime::runGc() { return DspGcResult{}; }               // enabled=false
+void          DspRuntime::spanBegin(std::uint32_t /*label*/) {}
+void          DspRuntime::spanEnd() {}
+void          DspRuntime::traceName(std::uint32_t /*label*/, const std::string& /*name*/) {}
+void          DspRuntime::traceReset(bool /*arm*/) {}
+std::vector<DspTraceSpan> DspRuntime::traceSpans() const { return {}; }
+std::vector<std::string>  DspRuntime::traceNames() const { return {}; }
 #endif

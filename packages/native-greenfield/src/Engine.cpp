@@ -73,6 +73,9 @@ void Engine::setAudioRouting(AudioRouting mode) { audioRouting_ = mode; }
 // `ppq_` advances only after — so the kernel's walkTicks and the cores see the same block-start ppq.
 void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size_t numOutputs) {
     if (dspActive_) {
+#ifdef RETROPLUG_PROFILE
+        dsp_.spanBegin(DSP_SPAN_KERNEL);  // the whole DSP-kernel stage (marshal + JS + sink fan-out)
+#endif
         const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transport_ };
         dsp_.processBlock(pendingMidi_, kNoButtons, kNoKeys, dInfo);
         pendingMidi_.clear();  // staged host MIDI consumed this block
@@ -83,6 +86,9 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
         for (const auto& bo : dsp_.buttonOut_)
             if (SystemBase* t = project_.findSystem(bo.system))
                 t->pressButton(static_cast<std::uint8_t>(bo.button), bo.down);
+#ifdef RETROPLUG_PROFILE
+        dsp_.spanEnd();  // dsp-kernel
+#endif
     }
     // Caller owns the buffers; systems SUM into their router-assigned bus, so zero every channel
     // first. MultiOutRouter places each system per audioRouting_ (Stereo = all → pair 0; with 2
@@ -91,7 +97,13 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
         std::fill_n(outputs[c], frames, 0.0f);
     AudioBlockInfo info{ frames, sampleRate_, bpm_, ppq_, transport_ };
     MultiOutRouter router(outputs, numOutputs, audioRouting_);
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanBegin(DSP_SPAN_APU);  // the SameBoy core/APU render (dominates audio-thread wall-time)
+#endif
     runBlock(info, project_, router);
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanEnd();  // apu-render
+#endif
     // Copy each core's freshly-published frame/state/SRAM into the owned registry the control plane
     // reads through — the one place every driver funnels the block, so it covers all of them.
     registry_.publishAll(project_, frames, sampleRate_);

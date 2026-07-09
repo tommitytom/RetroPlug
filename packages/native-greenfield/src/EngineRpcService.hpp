@@ -53,6 +53,11 @@ public:
     bool          dspResetAllocStats(bool disableAutoGc);
     DspGcResult   dspRunGc();
 
+    // --- per-role runtime tracing (spec/08-profiling.md Tier B; enabled off-profile returns empty) ---
+    bool                      dspTraceReset(bool arm);
+    std::vector<DspTraceSpan> dspTrace();
+    std::vector<std::string>  dspTraceNames();
+
 private:
     Engine&        engine_;
     SystemFactory& factory_;

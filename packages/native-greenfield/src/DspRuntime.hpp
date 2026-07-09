@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <utility>
 #include <vector>
 
 // Forward-declared so quickjs.h stays out of this header (it's C, wrapped in extern "C" in
@@ -32,6 +34,24 @@ struct DspGcResult {
     bool         enabled    = false;
     double       ms         = 0.0;
     std::int64_t freedBytes = 0;
+};
+
+// One recorded timing span (spec/08-profiling.md Tier B — per-role runtime profile). `t0`/`t1` are
+// microseconds relative to the window base set by traceReset(); `label` indexes traceNames(). Native
+// pipeline stages use the fixed ids below; the JS kernel interns role kinds from DSP_SPAN_ROLE_BASE up.
+struct DspTraceSpan {
+    std::uint32_t label = 0;
+    double        t0    = 0.0;
+    double        t1    = 0.0;
+};
+
+// Fixed span-label ids for the native pipeline stages; JS role kinds are interned from ROLE_BASE up.
+enum DspSpanLabel : std::uint32_t {
+    DSP_SPAN_KERNEL    = 0,   // Engine: the whole DSP-kernel stage (marshal + JS + sink fan-out)
+    DSP_SPAN_MARSHAL   = 1,   // DspRuntime: C→JS input marshalling
+    DSP_SPAN_JSCALL    = 2,   // DspRuntime: the JS_Call into the kernel's processBlock
+    DSP_SPAN_APU       = 3,   // Engine: the SameBoy core/APU render (runBlock)
+    DSP_SPAN_ROLE_BASE = 16,  // JS kernel interns role kinds (mgb, midi-routing, …) from here up
 };
 
 // Raw cumulative counters the profiling allocator bumps (the JS_NewRuntime2 opaque). Plain POD, so
@@ -108,6 +128,19 @@ public:
     void          resetAllocStats(bool disableAutoGc);
     DspGcResult   runGc();
 
+    // --- per-role runtime tracing (spec/08-profiling.md Tier B); real only under RETROPLUG_PROFILE ---
+    // spanBegin/spanEnd bracket a nested wall-time span; the native pipeline stages call them directly
+    // and the JS kernel reaches them via bound thunks (spanBegin/spanEnd/traceName) around each role.
+    // traceReset(arm) opens a window (clears buffers, pins the clock base) and flips the kernel's
+    // __setTrace so JS only emits when armed — keeping the non-traced path allocation-identical.
+    // traceSpans()/traceNames() dump the window for the bench to assemble Chrome trace-event JSON.
+    void spanBegin(std::uint32_t label);
+    void spanEnd();
+    void traceName(std::uint32_t label, const std::string& name);
+    void traceReset(bool arm);
+    std::vector<DspTraceSpan> traceSpans() const;
+    std::vector<std::string>  traceNames() const;
+
     // --- public for the bound C-function thunks only (the SameBoySystem idiom) ---
     // The DspRuntime is the context opaque, so the sink thunks reach these. All three are cleared at
     // the top of each processBlock; the caller reads them after the call and fans them to cores.
@@ -128,4 +161,12 @@ private:
     std::uint64_t    blockCount_         = 0;
     std::uint64_t    maxBlockAllocCalls_ = 0;
     std::uint64_t    maxBlockAllocBytes_ = 0;
+
+    // Per-role runtime tracing (spec/08-profiling.md Tier B; recorded only under RETROPLUG_PROFILE while
+    // armed). traceStack_ holds the currently-open spans as {label, t0µs}; spanEnd pops → traceSpans_.
+    bool                                          traceArmed_  = false;
+    std::uint64_t                                 traceBaseNs_ = 0;  // steady_clock ns at last traceReset
+    std::vector<DspTraceSpan>                     traceSpans_;
+    std::vector<std::string>                      traceNames_;
+    std::vector<std::pair<std::uint32_t, double>> traceStack_;
 };

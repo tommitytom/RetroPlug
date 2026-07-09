@@ -52,6 +52,10 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::dspAllocStats>();
     server.template addMethod<&BackendFacade::dspResetAllocStats>();
     server.template addMethod<&BackendFacade::dspRunGc>();
+    // per-role runtime tracing (spec/08-profiling.md Tier B)
+    server.template addMethod<&BackendFacade::dspTraceReset>();
+    server.template addMethod<&BackendFacade::dspTrace>();
+    server.template addMethod<&BackendFacade::dspTraceNames>();
     // background audio thread (threaded mode)
     server.template addMethod<&BackendFacade::startAudio>();
     server.template addMethod<&BackendFacade::stopAudio>();

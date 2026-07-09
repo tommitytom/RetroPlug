@@ -67,6 +67,9 @@ public:
     DspAllocStats dspAllocStats() { return engine_svc_.dspAllocStats(); }
     bool          dspResetAllocStats(bool disableAutoGc) { return engine_svc_.dspResetAllocStats(disableAutoGc); }
     DspGcResult   dspRunGc() { return engine_svc_.dspRunGc(); }
+    bool                      dspTraceReset(bool arm) { return engine_svc_.dspTraceReset(arm); }
+    std::vector<DspTraceSpan> dspTrace() { return engine_svc_.dspTrace(); }
+    std::vector<std::string>  dspTraceNames() { return engine_svc_.dspTraceNames(); }
 
     // --- background audio thread → driver_ (test host only; the plugin drives run() directly) ---
     bool          startAudio() { return driver_.startAudio(); }

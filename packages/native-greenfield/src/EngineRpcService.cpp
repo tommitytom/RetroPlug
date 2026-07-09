@@ -234,3 +234,11 @@ bool EngineRpcService::dspResetAllocStats(bool disableAutoGc) {
 }
 
 DspGcResult EngineRpcService::dspRunGc() { return engine_.dspRunGc(); }
+
+bool EngineRpcService::dspTraceReset(bool arm) {
+    engine_.dspTraceReset(arm);
+    return true;
+}
+
+std::vector<DspTraceSpan> EngineRpcService::dspTrace() { return engine_.dspTrace(); }
+std::vector<std::string>  EngineRpcService::dspTraceNames() { return engine_.dspTraceNames(); }

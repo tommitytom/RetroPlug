@@ -73,6 +73,11 @@ public:
     void          resetDspAllocStats(bool disableAutoGc) { dsp_.resetAllocStats(disableAutoGc); }
     DspGcResult   dspRunGc() { return dsp_.runGc(); }
 
+    // --- per-role runtime tracing (spec/08-profiling.md Tier B) ---
+    void                      dspTraceReset(bool arm) { dsp_.traceReset(arm); }
+    std::vector<DspTraceSpan> dspTrace() const { return dsp_.traceSpans(); }
+    std::vector<std::string>  dspTraceNames() const { return dsp_.traceNames(); }
+
     // --- per block: run kernel → fan sinks to cores → route to the outputs → advance the ppq clock ---
     // Multi-out core: `outputs` is a flat array of `numOutputs` planar channels; each system routes
     // into its pair per audioRouting_ (via MultiOutRouter). The plugin passes its 8 channels; the

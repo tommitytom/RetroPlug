@@ -40,6 +40,14 @@ export interface DspGcResult {
   freedBytes: number;
 }
 
+/** One recorded timing span (spec/08-profiling.md Tier B). `t0`/`t1` are microseconds relative to the
+ *  window base; `label` indexes the parallel `dspTraceNames()` array. Empty off-profile. */
+export interface DspTraceSpan {
+  label: number;
+  t0: number;
+  t1: number;
+}
+
 export interface AudioDriver {
   /** Enqueue a button transition (button = GameboyButton value; down = press/release). A
    *  press then release around a short render is a tap. */
@@ -61,6 +69,13 @@ export interface AudioDriver {
   dspResetAllocStats(disableAutoGc: boolean): boolean;
   /** Run + time a self-driven cycle-collection pass; freedBytes ~0 proves no reference cycles. */
   dspRunGc(): DspGcResult;
+  /** Open (arm=true) / close (arm=false) a per-role runtime-trace window; while armed, the DSP kernel
+   *  + native pipeline record nested wall-time spans. Also flips the kernel's in-JS trace flag. */
+  dspTraceReset(arm: boolean): boolean;
+  /** Drain the recorded spans (µs, relative to the window base) — nest by containment for a flame. */
+  dspTrace(): DspTraceSpan[];
+  /** The span label table: `dspTraceNames()[span.label]` is the stage/role name. */
+  dspTraceNames(): string[];
 
   // --- background audio thread (threaded mode) ---
   /** Spawn a real audio thread that free-runs the render loop; DSP-structure edits sent while it
@@ -109,6 +124,9 @@ export function createAudioDriver(): AudioDriver {
     dspAllocStats: () => call("dspAllocStats") as DspAllocStats,
     dspResetAllocStats: (disableAutoGc) => call("dspResetAllocStats", disableAutoGc) as boolean,
     dspRunGc: () => call("dspRunGc") as DspGcResult,
+    dspTraceReset: (arm) => call("dspTraceReset", arm) as boolean,
+    dspTrace: () => call("dspTrace") as DspTraceSpan[],
+    dspTraceNames: () => call("dspTraceNames") as string[],
     startAudio: () => call("startAudio") as boolean,
     stopAudio: () => call("stopAudio") as boolean,
     sleepMs: (ms) => call("sleepMs", ms) as boolean,
