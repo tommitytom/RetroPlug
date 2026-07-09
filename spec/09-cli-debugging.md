@@ -7,10 +7,18 @@ observe slice** are built and verified. The observe slice (shipped) surfaces the
 backend RPC (`EngineRpcService` → `BackendFacade` → `backend.ts`, resolving the live system via
 `Engine::findSystem` — the control-thread/direct-render regime), plus `Timeline.at(ms, fn)` as the
 observe/assert hook and a TAP-emitting `cli/sessions/rom-test.ts` example. Proven on a real n8-midi core:
-a ch1 note drives pulse1 at ~261 Hz (C4) with pulse2 silent. **Still a plan (next slice):** breakpoints,
-trace, labels, and the rest of §5's "next/later" rows. The load-bearing finding of this doc — the whole
-debugger is **already compiled into the greenfield binaries and already proven on the legacy CLI**, so the
-remaining work is RPC plumbing, not emulator work — held: the do-first slice was pure plumbing.
+a ch1 note drives pulse1 at ~261 Hz (C4) with pulse2 silent.
+
+The **entire §5 "next" (plumbing) tier is now also built** — register write + PC run (`setCpuRegister`,
+`runUntilPc`), cc65 `loadLabels`, execution `setTrace`/`readTrace` + `stepInto`/`stepOver`/`stepOut`,
+`beginProfile`/`readProfile` + `disassemble` + `getCallStack`, and **breakpoints** (`setBreakpoints` +
+`runUntilBreak`, with a real `$40F1` FIFO read-watchpoint that fires). Each mirrors the do-first pattern
+(the 7-file RPC seam + a `test-native/cli-*.test.ts` mining known-good assertions from the legacy
+`test/ts/nes/*.test.ts`). **Still a plan (the "later"/new-wrapper tier):** `EventManager`, PPU
+state/viewers, and memory-write — the rows in §5 that need brand-new C++ structs rather than pure
+plumbing. The load-bearing finding of this doc — the whole debugger is **already compiled into the
+greenfield binaries and already proven on the legacy CLI**, so the remaining work is RPC plumbing, not
+emulator work — held across the whole plumbing tier.
 
 This doc builds on [02-native-host.md](02-native-host.md) (the `BackendFacade` RPC surface it would
 extend) and [06-build-test.md](06-build-test.md) (how the CLI builds and is verified). The stimulus path
