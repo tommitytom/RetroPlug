@@ -53,6 +53,28 @@ export function nesRom(): Uint8Array {
   return b;
 }
 
+/** A minimal but VALID iNES ROM (mapper 1 / MMC1, battery flag) that a real Mesen core boots and for
+ *  which it allocates battery-backed save RAM — so saveSramBytes() / readSram() are non-empty. 16-byte
+ *  header + one 16 KB PRG bank (CHR-RAM); PRG holds a JMP-to-self at the reset vector so the booted CPU
+ *  idles instead of running off into garbage. (The mock ignores the header; this only matters for the
+ *  native-host integration tests.) */
+export function nesRomBattery(): Uint8Array {
+  const PRG = 0x4000; // one 16 KB bank
+  const b = new Uint8Array(0x10 + PRG);
+  b.set([0x4e, 0x45, 0x53, 0x1a], 0); // "NES\x1A"
+  b[4] = 0x01; // 1 x 16 KB PRG
+  b[5] = 0x00; // 0 x 8 KB CHR → CHR-RAM
+  b[6] = 0x12; // flags6: mapper low nibble = 1 (MMC1) | bit1 battery
+  b[7] = 0x00; // flags7: mapper high nibble = 0, iNES v1
+  // A single 16 KB bank maps to $C000-$FFFF. Put `JMP $C000` at $C000 and point the reset vector at it.
+  b[0x10 + 0x0000] = 0x4c; // JMP abs
+  b[0x10 + 0x0001] = 0x00;
+  b[0x10 + 0x0002] = 0xc0; // → $C000 (infinite loop)
+  b[0x10 + 0x3ffc] = 0x00; // reset vector low  ($FFFC)
+  b[0x10 + 0x3ffd] = 0xc0; // reset vector high ($FFFD) → $C000
+  return b;
+}
+
 /** A present-but-not-a-ROM buffer (classifies "unknown"). */
 export function garbage(): Uint8Array {
   return new Uint8Array(0x8000); // all zero

@@ -70,14 +70,16 @@ private:
         std::unique_ptr<FrameBufferTriple>    frame;
         std::unique_ptr<MemorySnapshotTriple> state;          // [len:4 LE][savestate][headroom tail]
         std::unique_ptr<MemorySnapshotTriple> sram;
-        std::uint32_t                         sramOffset = 0; // SRAM slice offset within the savestate
-        std::uint64_t                         sampleAccum = 0;// samples since the last state/sram publish
+        std::uint32_t                         sramOffset = 0;     // SRAM slice offset within the savestate
+        bool                                  sramFromCore = false; // SRAM published live (saveSramBytes), not sliced
+        std::uint64_t                         sampleAccum = 0;    // samples since the last state/sram publish
     };
 
     // The state slot stores a 4-byte little-endian length prefix ahead of the savestate, so a
     // variable-size (Mesen) savestate stays tear-free in one publish and the slot can carry headroom
     // (mirrors SystemBase's own snapshot triple). SameBoy's fixed-size savestate uses the same layout.
     static constexpr std::size_t kStateLenPrefix = 4;
+    static constexpr std::size_t kMaxSramBytes   = 4 * 1024 * 1024;  // sanity bound on one battery image
 
     // Generous: RetroPlug never approaches this, but tests share one Project across a file's cases
     // so slots accumulate. A full pool fails the construct (logged) rather than corrupting.
@@ -94,5 +96,6 @@ private:
 
     std::array<Slot, kMaxSlots> slots_;
     std::vector<std::uint8_t>   publishScratch_;    // block-thread reuse for readStateSnapshot
+    std::vector<std::uint8_t>   sramScratch_;       // block-thread reuse for a live saveSramBytes() copy
     std::vector<std::uint8_t>   stateReadScratch_;  // control-thread reuse for readState (strips the prefix)
 };
