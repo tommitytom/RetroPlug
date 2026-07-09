@@ -38,6 +38,20 @@ test("tap expands to a down then an up at ms + holdMs (default 50)", () => {
   expect(new Timeline().tap(0, 1, Button.Start).build()[1].ms).toBe(50); // default hold
 });
 
+test("at() records a scheduled callback that sorts by ms; build() never invokes it", () => {
+  const seen: string[] = [];
+  const evs = new Timeline()
+    .midi(0, [0x90, 60, 100])
+    .at(200, () => seen.push("probe"))
+    .midi(100, [0x80, 60, 0])
+    .build();
+  expect(evs.map((e) => e.kind)).toEqual(["midi", "midi", "at"]);
+  expect(evs.map((e) => e.ms)).toEqual([0, 100, 200]);
+  expect(seen).toEqual([]); // build() is pure — the callback is carried, not run
+  (evs[2] as { fn: () => void }).fn();
+  expect(seen).toEqual(["probe"]);
+});
+
 test("raw midi / bpm / transport / screenshot pass through as typed events", () => {
   const evs = new Timeline()
     .midi(0, [0xb0, 1, 64])

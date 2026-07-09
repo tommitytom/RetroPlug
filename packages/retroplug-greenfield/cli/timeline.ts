@@ -22,7 +22,8 @@ export type TimelineEvent =
   | { ms: number; kind: "press"; system: number; button: number; down: boolean }
   | { ms: number; kind: "bpm"; bpm: number }
   | { ms: number; kind: "transport"; running: boolean }
-  | { ms: number; kind: "screenshot"; system: number; path: string };
+  | { ms: number; kind: "screenshot"; system: number; path: string }
+  | { ms: number; kind: "at"; fn: (s: Session) => void };
 
 const statusFor = (base: number, channel = 1) => base | ((channel - 1) & 0x0f);
 const noteOnBytes = (note: number, o?: NoteOpts) => [statusFor(0x90, o?.channel), note & 0x7f, (o?.velocity ?? 100) & 0x7f];
@@ -70,6 +71,12 @@ export class Timeline {
   screenshot(ms: number, system: number, path: string): this {
     return this.push({ ms, kind: "screenshot", system, path });
   }
+  /** Run `fn` against the live Session at `ms` — the render advances to `ms` first, so `fn` observes
+   *  the core at exactly that time. This is the observe/assert hook: read APU/CPU/memory and `expect`
+   *  on it (`s.backend.getApuState(id)`, `readCpu`, `getCpuRegisters`). */
+  at(ms: number, fn: (s: Session) => void): this {
+    return this.push({ ms, kind: "at", fn });
+  }
 
   /** The events flattened to a stable ms-sorted list — insertion order breaks ties, so a same-ms noteOn
    *  precedes its noteOff and a tap's down precedes its up. Pure; touches no engine. */
@@ -112,6 +119,7 @@ export function renderTimeline(
       case "bpm": audio.setBpm(ev.bpm); break;
       case "transport": audio.setTransport(ev.running); break;
       case "screenshot": audio.screenshot(ev.system, ev.path); break;
+      case "at": ev.fn(session); break; // observe/assert at the scheduled time
     }
   }
   advance(opts.durationMs); // tail
