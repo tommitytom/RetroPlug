@@ -5,7 +5,7 @@
 import { test, expect } from "../../testing/harness";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
-import { buildStartMenu, buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
+import { buildStartMenu, buildInstanceMenu, composeWindowTitle, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { buildKeyToButton, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
@@ -99,6 +99,13 @@ test("menu titles: start shows the version; instance adds project + ROM (deduped
   stores.project.adoptRomProject("/roms/zelda.gb");
   const sys = stores.project.systems.view()[0];
   expect(buildInstanceMenu({ ...ctxOf(stores), version: "0.6.2", system: sys }).title).toBe("RetroPlug v0.6.2 - zelda");
+});
+
+test("composeWindowTitle: version + project (no ROM), dropping empty segments", () => {
+  expect(composeWindowTitle("0.6.2", "Song")).toBe("RetroPlug v0.6.2 - Song");
+  expect(composeWindowTitle("0.6.2", "")).toBe("RetroPlug v0.6.2"); // nameless project → version only
+  expect(composeWindowTitle("", "Song")).toBe("RetroPlug - Song"); // no version → bare base
+  expect(composeWindowTitle("", "")).toBe("RetroPlug");
 });
 
 test("instance title shows a distinct project + ROM, and 'mGB' for the embedded synth", () => {

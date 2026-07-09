@@ -309,6 +309,13 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
 
 // --- top-level builders -------------------------------------------------------------------------------
 
+/** The standalone OS window title: "RetroPlug v<version> - <project>" (no ROM name). Empty segments are
+ *  dropped, so a nameless project shows just "RetroPlug v<version>". */
+export function composeWindowTitle(version: string, project: string): string {
+  const base = version ? `RetroPlug v${version}` : "RetroPlug";
+  return project ? `${base} - ${project}` : base;
+}
+
 /** The instance-menu title: "RetroPlug v<version> - <project> - <rom>". ROM name = the file stem, or
  *  "mGB" for the embedded synth (romPath === ""). Empty segments are dropped, and the ROM is omitted when
  *  it equals the project name (the common case where the name was seeded from the ROM) so it isn't shown

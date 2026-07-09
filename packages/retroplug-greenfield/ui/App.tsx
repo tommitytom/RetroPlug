@@ -13,14 +13,14 @@ import { useStores, useSystems, useProjectSettings, useUserConfig, useRecent, us
 import { useSinkGroup } from "./lvgl/FocusProvider";
 import { Box } from "./lvgl/Box";
 import { useNativeEvent } from "./lvgl/useNativeEvent";
-import { useWindowSize, requestWindowSize, isWindowSizeControlled } from "./lvgl/useWindowSize";
+import { useWindowSize, requestWindowSize, isWindowSizeControlled, setWindowTitle } from "./lvgl/useWindowSize";
 import { useCloseGuard } from "./lvgl/useCloseGuard";
 import { useProjectModals } from "./lvgl/useProjectModals";
 import { useGameInput } from "./input/useGameInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, SystemLayout } from "./screens/grid/layout";
-import { buildInstanceMenu, buildStartMenu, type MenuContext } from "./screens/menu/menuDefs";
+import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 
@@ -47,6 +47,10 @@ export function App() {
   const empty = systems.length === 0;
   const resolvedZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, settings.zoom >= MIN_ZOOM && settings.zoom <= MAX_ZOOM ? settings.zoom : userConfig.defaultZoom));
 
+  // The standalone OS window title: version + project name (re-renders on the project channel, which fires
+  // on load / adopt / rename / new). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).
+  const windowTitle = composeWindowTitle(version, stores.project.name());
+
   // Menu-open invariant on empty transitions: empty → the start menu (always open); first system → close.
   useEffect(() => {
     setMenuOpen(empty);
@@ -66,6 +70,9 @@ export function App() {
     const { width, height } = gridContentSize(systems.length, settings.layout as SystemLayout, resolvedZoom);
     requestWindowSize(width, height);
   }, [empty, systems.length, settings.layout, resolvedZoom]);
+
+  // Keep the OS window title in sync with the project name / version.
+  useEffect(() => setWindowTitle(windowTitle), [windowTitle]);
 
   useNativeEvent("key", (...args) => {
     const key = args[0] as number;

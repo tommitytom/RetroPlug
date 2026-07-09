@@ -49,3 +49,9 @@ export function requestWindowSize(width: number, height: number): void {
 export function isWindowSizeControlled(): boolean {
   return !!(globalThis as { __rp_isWindowSizeControlled?: () => boolean }).__rp_isWindowSizeControlled?.();
 }
+
+/** Set the standalone OS window title. Inert where the native seam isn't installed (the harness / a DAW,
+ *  where the plugin doesn't own the window). */
+export function setWindowTitle(title: string): void {
+  (globalThis as { __rp_setWindowTitle?: (t: string) => void }).__rp_setWindowTitle?.(title);
+}

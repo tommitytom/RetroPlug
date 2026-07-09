@@ -161,6 +161,13 @@ public:
         (void)std::system(cmd.c_str());
     }
 
+    // Set the OS window title (standalone only — a DAW owns the plugin window). Called from the UI via the
+    // __rp_setWindowTitle seam; the JS composes "RetroPlug v<version> - <project>". Overrides the static
+    // boot title set in uiIdle.
+    void setWindowTitle(const char* title) {
+        if (title && *title && getWindow().getApp().isStandalone()) getWindow().setTitle(title);
+    }
+
     PluginGreenfieldUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT), fResizeHandle(this) {
         // Resizable window (DISTRHO_UI_USER_RESIZABLE): seed the requested-size baseline so onResize's
         // clamp detection is armed before the WM's first resize, set the min-size floor (HiDPI-scaled),
@@ -398,6 +405,16 @@ JSValue jsOpenPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     return JS_UNDEFINED;
 }
 
+// __rp_setWindowTitle(title): set the standalone OS window title (the UI composes it from version + project).
+JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (g_windowUi && argc >= 1) {
+        const char* title = JS_ToCString(ctx, argv[0]);
+        g_windowUi->setWindowTitle(title ? title : "");
+        if (title) JS_FreeCString(ctx, title);
+    }
+    return JS_UNDEFINED;
+}
+
 // __rp_openFileBrowser(title, patterns, saving, defaultName): open the native OS dialog. patterns is a
 // whitespace-separated glob list. The result comes back later via the UI's uiFileBrowserSelected override.
 JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -425,6 +442,7 @@ void installWindowSizeHooks(JSContext* ctx, PluginGreenfieldUI* ui) {
     JS_SetPropertyStr(ctx, g, "__rp_openFileBrowser", JS_NewCFunction(ctx, jsOpenFileBrowser, "__rp_openFileBrowser", 4));
     JS_SetPropertyStr(ctx, g, "__rp_quitWindow", JS_NewCFunction(ctx, jsQuitWindow, "__rp_quitWindow", 0));
     JS_SetPropertyStr(ctx, g, "__rp_openPath", JS_NewCFunction(ctx, jsOpenPath, "__rp_openPath", 1));
+    JS_SetPropertyStr(ctx, g, "__rp_setWindowTitle", JS_NewCFunction(ctx, jsSetWindowTitle, "__rp_setWindowTitle", 1));
     JS_FreeValue(ctx, g);
 }
 
