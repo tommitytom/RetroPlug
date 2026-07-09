@@ -1,11 +1,16 @@
 # 09 — CLI debugging & ROM testing
 
 **Status: partly built.** The greenfield **CLI session runner** (a standalone txiki binary that runs a
-TS-authored session) plus **event scripting** (the `Timeline`) and **WAV/screenshot** output are built
-and verified. The **observe + assert** half — surfacing Mesen's debugger through the greenfield RPC so a
-session can read APU/CPU/memory state and assert on it — is a **plan (not yet built)**. The load-bearing
-finding of this doc: that machinery is **already compiled into the greenfield binaries and already
-proven on the legacy CLI**; the greenfield gap is RPC plumbing, not emulator work.
+TS-authored session), **event scripting** (the `Timeline`), **WAV/screenshot** output, AND the **do-first
+observe slice** are built and verified. The observe slice (shipped) surfaces the live-core reads
+`getApuState` / `readCpu` / `readMemory` / `getCpuRegisters` / `stepInstruction` through the greenfield
+backend RPC (`EngineRpcService` → `BackendFacade` → `backend.ts`, resolving the live system via
+`Engine::findSystem` — the control-thread/direct-render regime), plus `Timeline.at(ms, fn)` as the
+observe/assert hook and a TAP-emitting `cli/sessions/rom-test.ts` example. Proven on a real n8-midi core:
+a ch1 note drives pulse1 at ~261 Hz (C4) with pulse2 silent. **Still a plan (next slice):** breakpoints,
+trace, labels, and the rest of §5's "next/later" rows. The load-bearing finding of this doc — the whole
+debugger is **already compiled into the greenfield binaries and already proven on the legacy CLI**, so the
+remaining work is RPC plumbing, not emulator work — held: the do-first slice was pure plumbing.
 
 This doc builds on [02-native-host.md](02-native-host.md) (the `BackendFacade` RPC surface it would
 extend) and [06-build-test.md](06-build-test.md) (how the CLI builds and is verified). The stimulus path
