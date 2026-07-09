@@ -73,6 +73,7 @@ public:
     bool setCpuRegister(std::string_view name, std::uint32_t value) override;
     std::optional<std::uint32_t> getProgramCounter() const override;
     std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
+    bool                         writeCpuByte(std::uint32_t addr, std::uint8_t value) override;
     std::uint64_t stepInstruction() override;
 
     // Mesen debugger / profiler. Lazily created on first call (so non-debug

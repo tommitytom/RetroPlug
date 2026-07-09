@@ -183,6 +183,12 @@ std::optional<std::uint8_t> EngineRpcService::readCpu(std::uint32_t id, std::uin
     return sys->readCpuByte(addr);  // nullopt (→ JS null) when the peek is unsupported
 }
 
+bool EngineRpcService::writeCpu(std::uint32_t id, std::uint32_t addr, std::uint32_t value) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return false;
+    return sys->writeCpuByte(addr, static_cast<std::uint8_t>(value));  // false when the write is unsupported
+}
+
 rfl::Bytestring EngineRpcService::readMemory(std::uint32_t id, std::uint32_t memType) {
     rfl::Bytestring out;
     SystemBase* sys = engine_.findSystem(id);

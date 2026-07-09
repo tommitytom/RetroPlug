@@ -55,6 +55,7 @@ public:
     GreenfieldFrame getFrame(std::uint32_t id) { return engine_svc_.getFrame(id); }
     rp::ApuState getApuState(std::uint32_t id) { return engine_svc_.getApuState(id); }
     std::optional<std::uint8_t> readCpu(std::uint32_t id, std::uint32_t addr) { return engine_svc_.readCpu(id, addr); }
+    bool writeCpu(std::uint32_t id, std::uint32_t addr, std::uint32_t value) { return engine_svc_.writeCpu(id, addr, value); }
     rfl::Bytestring readMemory(std::uint32_t id, std::uint32_t memType) { return engine_svc_.readMemory(id, memType); }
     std::vector<rp::CpuRegister> getCpuRegisters(std::uint32_t id) { return engine_svc_.getCpuRegisters(id); }
     std::uint64_t stepInstruction(std::uint32_t id) { return engine_svc_.stepInstruction(id); }

@@ -417,6 +417,16 @@ std::optional<std::uint8_t> MesenNesSystem::readCpuByte(std::uint32_t addr) cons
     return console->GetMemoryManager()->DebugRead(static_cast<std::uint16_t>(addr));
 }
 
+bool MesenNesSystem::writeCpuByte(std::uint32_t addr, std::uint8_t value) {
+    if (!emu_) return false;
+    auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get());
+    if (!console) return false;
+    // Debugger-style write into the 6502 address space, bypassing side effects
+    // (the memory-edit path — mirrors readCpuByte's DebugRead).
+    console->GetMemoryManager()->DebugWrite(static_cast<std::uint16_t>(addr), value, /*disableSideEffects*/ true);
+    return true;
+}
+
 std::uint64_t MesenNesSystem::stepInstruction() {
     NesCpu* cpu = nesCpu(emu_.get());
     if (!cpu) return 0;

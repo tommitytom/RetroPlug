@@ -285,6 +285,11 @@ export class MockBackend implements Backend {
     return this.systems.has(id) ? 0 : null;
   }
 
+  writeCpu(id: number, _addr: number, _value: number): boolean {
+    this.log.push("writeCpu");
+    return this.systems.has(id);
+  }
+
   readMemory(id: number, _region: number): Uint8Array | null {
     this.log.push("readMemory");
     return this.systems.has(id) ? new Uint8Array(0) : null;

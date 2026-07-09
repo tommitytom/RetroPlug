@@ -125,6 +125,7 @@ export function createRealBackend(): Backend {
     // Field-for-field mirrors of the native reflect-cpp structs → a direct cast (the DspAllocStats pattern).
     getApuState: (id) => call("getApuState", id) as ApuState,
     readCpu: (id, addr) => call("readCpu", id, addr) as number | null,
+    writeCpu: (id, addr, value) => call("writeCpu", id, addr, value) as boolean,
     readMemory: (id, region) => bytesOrNull(call("readMemory", id, region)),
     getCpuRegisters: (id) => call("getCpuRegisters", id) as CpuRegister[],
     stepInstruction: (id) => Number(call("stepInstruction", id)),

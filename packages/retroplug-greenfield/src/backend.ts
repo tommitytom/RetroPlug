@@ -169,6 +169,10 @@ export interface Backend {
    *  `null` when the id is gone or the peek is unsupported. */
   readCpu(id: number, addr: number): number | null;
 
+  /** Debugger-style write of one byte at `addr` (the write counterpart of `readCpu`); returns true when
+   *  the write was served, false when the id is gone or the backend can't write. NES-only today. */
+  writeCpu(id: number, addr: number, value: number): boolean;
+
   /** A whole memory region's bytes (`MemoryRegion.*`), empty when the id/region is unsupported. */
   readMemory(id: number, region: number): Uint8Array | null;
 

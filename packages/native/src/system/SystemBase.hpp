@@ -224,6 +224,13 @@ public:
         return std::nullopt;
     }
 
+    // Debugger-style write of one byte into the CPU's address space (the write
+    // counterpart of readCpuByte). Returns false when the backend can't serve
+    // it. The Mesen backends route it through the memory manager's debug write.
+    virtual bool writeCpuByte(std::uint32_t /*addr*/, std::uint8_t /*value*/) {
+        return false;
+    }
+
     // Execute one CPU instruction; returns the cycles it consumed. Returns 0
     // when the backend can't instruction-step (the "unsupported" signal — no
     // real instruction costs zero cycles).
