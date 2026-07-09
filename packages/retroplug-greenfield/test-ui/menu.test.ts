@@ -13,9 +13,9 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   // since the harness runs against the real backend).
   expect(ui.findByTextContaining("RetroPlug v") != null).toBeTruthy();
 
-  // Empty project → the start menu; its first item ("Load...") is focused on mount.
+  // Empty project → the start menu; its first item ("Recent") is focused on mount.
   const first = ui.focused();
-  expect(first != null && first.text.includes("Load...")).toBeTruthy();
+  expect(first != null && first.text.includes("Recent")).toBeTruthy();
 
   // Arrow nav moves the LVGL focus.
   ui.tapKey(Key.Down);
@@ -24,7 +24,7 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   expect(second != null && second.text !== first!.text).toBeTruthy();
   ui.tapKey(Key.Up);
   ui.pump(4);
-  expect(ui.focused()!.text.includes("Load...")).toBeTruthy();
+  expect(ui.focused()!.text.includes("Recent")).toBeTruthy();
 
   // The embedded-synth "Load mGB" item renders in the start menu.
   expect(ui.findByTextContaining("Load mGB") != null).toBeTruthy();
@@ -39,8 +39,8 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   ui.tapKey(Key.Esc);
   ui.pump(10);
   expect(ui.findByTextContaining("Duplicate Instance") != null).toBeTruthy();
-  // The file-browser lifecycle items render alongside it.
-  expect(ui.findByTextContaining("Load ROM") != null).toBeTruthy();
+  // The file-browser lifecycle items render alongside it (Load… split from Replace Instance).
+  expect(ui.findByTextContaining("Replace Instance") != null).toBeTruthy();
   expect(ui.findByTextContaining("Add Instance") != null).toBeTruthy();
 
   // The instance-menu title is "RetroPlug v<version> - <rom>"; for the embedded synth the ROM is "mGB"
