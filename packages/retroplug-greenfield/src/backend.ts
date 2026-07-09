@@ -178,6 +178,11 @@ export interface Backend {
   /** Single-step the core one instruction; returns the cycle count consumed (0 when unsupported). */
   stepInstruction(id: number): number;
 
+  /** Load a cc65 `.dbg` symbol file (by path) so profiler/disassembly output shows function names.
+   *  Returns false when the id is gone, the core has no NES debug target (SameBoy/GBA), or the file
+   *  can't be read/parsed. */
+  loadLabels(id: number, path: string): boolean;
+
   /** Write one CPU register by name (canonical lower-case, e.g. "a"/"pc"). Returns false when the id is
    *  gone, the backend can't write, or the name is unknown / read-only. */
   setCpuRegister(id: number, name: string, value: number): boolean;

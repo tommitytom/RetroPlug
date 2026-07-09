@@ -207,6 +207,14 @@ std::uint64_t EngineRpcService::stepInstruction(std::uint32_t id) {
     return sys->stepInstruction();  // 0 when the backend can't step
 }
 
+bool EngineRpcService::loadLabels(std::uint32_t id, std::string path) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return false;
+    rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
+    if (!dbg) return false;
+    return dbg->loadLabels(path);  // false on read/parse failure
+}
+
 bool EngineRpcService::setCpuRegister(std::uint32_t id, std::string name, std::uint32_t value) {
     SystemBase* sys = engine_.findSystem(id);
     if (!sys) return false;

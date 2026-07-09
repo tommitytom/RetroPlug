@@ -300,6 +300,11 @@ export class MockBackend implements Backend {
     return this.systems.has(id) ? 1 : 0;
   }
 
+  loadLabels(_id: number, _path: string): boolean {
+    this.log.push("loadLabels");
+    return false; // the mock has no NES debug target, so no symbol file is ever loaded
+  }
+
   setCpuRegister(id: number, _name: string, _value: number): boolean {
     this.log.push("setCpuRegister");
     return this.systems.has(id);

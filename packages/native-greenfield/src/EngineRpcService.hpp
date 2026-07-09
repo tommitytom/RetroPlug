@@ -46,6 +46,10 @@ public:
     std::vector<rp::CpuRegister> getCpuRegisters(std::uint32_t id);
     std::uint64_t                stepInstruction(std::uint32_t id);
 
+    // Load a cc65 `.dbg` symbol file so profiler/disassembly output shows function names. Needs a Mesen
+    // NES debug target (false on SameBoy/GBA, a gone id, or read/parse failure). Reached via debugTarget().
+    bool loadLabels(std::uint32_t id, std::string path);
+
     // --- live-core debug writes / control-flow (spec/09-cli-debugging.md) ---
     // Plain SystemBase virtuals (no debugTarget needed); false when the id is gone or the backend can't
     // serve. setCpuRegister writes one register by name; runUntilPc single-steps until PC == target.
