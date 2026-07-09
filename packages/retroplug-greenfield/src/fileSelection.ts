@@ -68,13 +68,17 @@ export class FileSelection {
     return { kind: "rom", romPath: pick.rom, explicitSav: pick.explicitSav };
   }
 
-  /** "Add Instance": browse a ROM/sav and append a new instance (with `.sav` pairing). */
-  async browseAdd(): Promise<SelectionOutcome> {
+  /** "Add Instance": browse a ROM/sav and append a new instance (with `.sav` pairing). When `parentId` is
+   *  given (the instance the Add was launched from), the new instance inherits its link group — promoting the
+   *  parent to group 1 if it was ungrouped, so the pair is linked. */
+  async browseAdd(parentId?: number): Promise<SelectionOutcome> {
     const pick = await this.pickRom();
     if (pick.kind !== "rom") return pick;
     const opts = pick.explicitSav ? { explicitSav: pick.explicitSav } : undefined;
     const id = this.systems.addSystem(pick.rom, opts);
-    return id === null ? { kind: "error", path: pick.rom } : { kind: "added", system: id };
+    if (id === null) return { kind: "error", path: pick.rom };
+    if (parentId != null) this.systems.inheritLinkGroup(id, parentId);
+    return { kind: "added", system: id };
   }
 
   /** "Replace Instance": browse a ROM/sav and swap system `id` in place (with `.sav` pairing). Stays in the

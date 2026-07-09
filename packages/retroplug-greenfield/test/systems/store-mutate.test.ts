@@ -5,11 +5,20 @@
 import { test, expect } from "../../testing/harness";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
+import { buildAppRegistry } from "../../src/appHost";
 import { gbRom, gbaRom, garbage } from "./fixtures";
 
 function newStore() {
   const be = new MockBackend("/cfg");
   const store = new SystemsStore(be);
+  return { be, store };
+}
+
+// A store with the real role registry, so constructed systems carry their `sameboy` role (and its
+// linkGroupId) — needed for the link-group tests below (the bare store above builds roleless systems).
+function newStoreWithRoles() {
+  const be = new MockBackend("/cfg");
+  const store = new SystemsStore(be, () => {}, buildAppRegistry());
   return { be, store };
 }
 
@@ -168,4 +177,35 @@ test("resolveSiblingRom: picks the sibling ROM, skipping a present non-ROM of th
   be.seed("/roms/game.gba", gbaRom()); // present + valid -> the pick
   expect(store.resolveSiblingRom("/roms/game.sav")).toBe("/roms/game.gba");
   expect(store.resolveSiblingRom("/roms/none.sav")).toBe(null);
+});
+
+const linkGroupOf = (store: SystemsStore, id: number): number =>
+  (store.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "sameboy")!.config as { linkGroupId: number }).linkGroupId;
+
+test("inheritLinkGroup: child joins the parent's group; a lone parent (0) is promoted to 1", () => {
+  const { be, store } = newStoreWithRoles();
+  be.seed("/roms/a.gb", gbRom());
+  const parent = store.addSystem("/roms/a.gb") as number; // group 0
+  const child = store.addSystem("/roms/a.gb") as number; // group 0
+
+  store.inheritLinkGroup(child, parent); // parent ungrouped → both promoted to 1
+  expect(linkGroupOf(store, parent)).toBe(1);
+  expect(linkGroupOf(store, child)).toBe(1);
+
+  // Parent already in a group → the child matches it and the parent is left untouched.
+  const child2 = store.addSystem("/roms/a.gb") as number;
+  store.setRoleConfig(parent, "sameboy", { linkGroupId: 3 });
+  store.inheritLinkGroup(child2, parent);
+  expect(linkGroupOf(store, parent)).toBe(3);
+  expect(linkGroupOf(store, child2)).toBe(3);
+});
+
+test("inheritLinkGroup: a non-SameBoy parent is a no-op (link groups are a GB concept)", () => {
+  const { be, store } = newStoreWithRoles();
+  be.seed("/roms/a.gba", gbaRom()); // mesen core — no sameboy role
+  be.seed("/roms/b.gb", gbRom());
+  const parent = store.addSystem("/roms/a.gba") as number;
+  const child = store.addSystem("/roms/b.gb") as number;
+  store.inheritLinkGroup(child, parent);
+  expect(linkGroupOf(store, child)).toBe(0); // nothing promoted or assigned
 });

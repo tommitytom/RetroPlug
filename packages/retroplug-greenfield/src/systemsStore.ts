@@ -353,6 +353,20 @@ export class SystemsStore {
     return true;
   }
 
+  /** Link a freshly-created instance to the one it was created from: the child joins the parent's link group,
+   *  and if the parent is ungrouped (0) the parent is promoted to group 1 so the pair is linked. A no-op unless
+   *  BOTH are SameBoy (GB) systems — link groups are a Game Boy link-cable concept. Routes through
+   *  setRoleConfig, so native-apply + dirty + re-projection are handled. */
+  inheritLinkGroup(childId: number, parentId: number): void {
+    const parentSb = findById(this.entries, parentId)?.roles.find((r) => r.kind === "sameboy");
+    const childSb = findById(this.entries, childId)?.roles.find((r) => r.kind === "sameboy");
+    if (!parentSb || !childSb) return;
+    const g = (parentSb.config as { linkGroupId?: number }).linkGroupId ?? 0;
+    const target = g > 0 ? g : 1;
+    if (g === 0) this.setRoleConfig(parentId, "sameboy", { linkGroupId: target }); // promote the lone parent
+    this.setRoleConfig(childId, "sameboy", { linkGroupId: target }); // child joins the parent's group
+  }
+
   // A universal-setting change: emulator-apply + update + dirty. False when absent.
   private applySetting(id: number, key: keyof CommonSettings, value: number | boolean): boolean {
     const e = findById(this.entries, id);

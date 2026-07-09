@@ -206,6 +206,24 @@ test("instance menu Replace Instance swaps the anchored instance in place", asyn
   expect(spec.replaceId).toBe(anchoredId); // swapped the anchored id, not the focused tile
 });
 
+test("instance menu Duplicate inherits + promotes the link group", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  const id = stores.project.systems.addSystem("/roms/a.gb")!; // lone instance, group 0
+  const anchored = stores.project.systems.view().find((s) => s.id === id)!;
+  const groupOf = (sid: number) =>
+    (stores.project.systems.view().find((s) => s.id === sid)!.roles.find((r) => r.kind === "sameboy")!.config as { linkGroupId: number }).linkGroupId;
+
+  findItem(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-dup")!.onSelect!();
+
+  const view = stores.project.systems.view();
+  expect(view.length).toBe(2);
+  const clone = view.find((s) => s.id !== id)!;
+  expect(groupOf(id)).toBe(1); // the lone parent was promoted to group 1
+  expect(groupOf(clone.id)).toBe(1); // the clone joined it
+});
+
 test("a cancelled browse mutates nothing", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

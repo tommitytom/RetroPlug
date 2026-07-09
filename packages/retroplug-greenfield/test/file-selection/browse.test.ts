@@ -7,11 +7,21 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { FileSelection } from "../../src/fileSelection";
+import { buildAppRegistry } from "../../src/appHost";
 import { gbRom } from "../systems/fixtures";
 
 function newFs() {
   const be = new MockBackend("/cfg");
   const systems = new SystemsStore(be);
+  const fs = new FileSelection(be, systems);
+  return { be, systems, fs };
+}
+
+// A FileSelection over a role-registry-backed store, so added systems carry their `sameboy` role — needed
+// for the link-group inheritance test (the bare store above builds roleless systems).
+function newFsWithRoles() {
+  const be = new MockBackend("/cfg");
+  const systems = new SystemsStore(be, () => {}, buildAppRegistry());
   const fs = new FileSelection(be, systems);
   return { be, systems, fs };
 }
@@ -33,6 +43,22 @@ test("browseAdd: a cancelled dialog yields cancelled and builds nothing", async 
   const out = await fs.browseAdd();
   expect(out).toEqual({ kind: "cancelled" });
   expect(systems.view().length).toBe(0);
+});
+
+test("browseAdd(parentId): the new instance inherits the parent's link group, promoting a lone parent to 1", async () => {
+  const { be, fs, systems } = newFsWithRoles();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.gb", gbRom());
+  const parent = systems.addSystem("/roms/a.gb")!; // group 0
+  const groupOf = (id: number) =>
+    (systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "sameboy")!.config as { linkGroupId: number }).linkGroupId;
+
+  be.queueBrowse("/roms/b.gb");
+  const out = await fs.browseAdd(parent);
+  expect(out.kind).toBe("added");
+  const child = (out as { system: number }).system;
+  expect(groupOf(parent)).toBe(1); // the lone parent promoted
+  expect(groupOf(child)).toBe(1); // the added instance joined it
 });
 
 test("browseAdd: an unpaired .sav awaits a 2nd ROM-only browser and pairs the result", async () => {

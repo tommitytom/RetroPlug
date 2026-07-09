@@ -411,8 +411,11 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       action("inst-load", "Load...", () => runLoad(ctx)),
       submenu("inst-recent", "Recent", recentChildren(ctx)),
       sep("inst-sep-top"),
-      action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd()),
-      action("inst-dup", "Duplicate Instance", () => systems.duplicateSystem(sys.id)),
+      action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd(sys.id)),
+      action("inst-dup", "Duplicate Instance", () => {
+        const id = systems.duplicateSystem(sys.id);
+        if (id != null) systems.inheritLinkGroup(id, sys.id);
+      }),
       action("inst-replace", "Replace Instance", () => void ctx.stores.fileSelection.browseReplace(sys.id)),
       action("inst-remove", "Remove Instance", () => systems.removeSystem(sys.id)),
       sep("inst-sep0"),
