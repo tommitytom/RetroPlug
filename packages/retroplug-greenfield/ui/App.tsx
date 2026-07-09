@@ -26,6 +26,9 @@ import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 
 const KEY_ESCAPE = 0x1b;
+// A fixed, non-GB controller button that opens/closes the menu — the gamepad twin of Esc. Deliberately NOT
+// a default gameplay binding (a/b/start/back/dpad), so pressing it during play never doubles as a GB button.
+const OPEN_MENU_BUTTON = "leftshoulder";
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 6;
 
@@ -75,14 +78,14 @@ export function App() {
   // Keep the OS window title in sync with the project name / version.
   useEffect(() => setWindowTitle(windowTitle), [windowTitle]);
 
-  useNativeEvent("key", (...args) => {
-    const key = args[0] as number;
-    const press = args[1] as boolean;
-    if (!press || key !== KEY_ESCAPE) return;
-    if (closeGuard.active) return void closeGuard.onCancel(); // the close prompt owns Esc → cancel it
-    if (modals.active) return void modals.onClose(); // a project modal (discard / notice / relink) owns Esc
-    if (empty) return; // start menu is always open
-    if (isMenuModalActive()) return; // a capture/prompt owns Esc — cancel it, don't close the menu
+  // The one guard ladder + open/close toggle, shared by Esc and the gamepad open-button so the two entry
+  // points can't drift. Deferrals: overlays (close prompt / project modal) own the key and cancel/close;
+  // the start menu is always open; a capture/prompt modal owns it (Menu handles the press).
+  const toggleMenu = () => {
+    if (closeGuard.active) return void closeGuard.onCancel();
+    if (modals.active) return void modals.onClose();
+    if (empty) return;
+    if (isMenuModalActive()) return;
     if (menuOpen) {
       setMenuOpen(false);
       setMenuSystemId(null);
@@ -90,6 +93,20 @@ export function App() {
       setMenuSystemId(stores.project.systems.focused());
       setMenuOpen(true);
     }
+  };
+
+  useNativeEvent("key", (...args) => {
+    const key = args[0] as number;
+    const press = args[1] as boolean;
+    if (press && key === KEY_ESCAPE) toggleMenu();
+  });
+  // Gamepad twin of Esc: a fixed non-GB button opens/closes the menu, so a gamepad-only user isn't stranded
+  // once a game is running. Unbound in gameplay, so it fires no GB button; while a rebind is armed the
+  // isMenuModalActive() deferral above lets Menu bind this button instead of the toggle fighting it.
+  useNativeEvent("gamepad-button", (...args) => {
+    const name = args[1] as string;
+    const press = args[2] as boolean;
+    if (press && name === OPEN_MENU_BUTTON) toggleMenu();
   });
 
   // Game input: route keyboard to the focused instance's joypad, but only when a tile is showing (not the

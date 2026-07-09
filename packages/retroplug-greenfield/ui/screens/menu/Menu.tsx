@@ -21,7 +21,16 @@ import { Text, ELvKey } from "lvgljs-ui";
 import { useFocusGroup } from "../../lvgl/useFocusGroup";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
 import { Box } from "../../lvgl/Box";
-import { dpfCodeToKeyName, KEY_ESCAPE, KEY_BACKSPACE, KEY_ENTER } from "../../../src/keyCodes";
+import {
+  dpfCodeToKeyName,
+  axisToken,
+  menuNavForButton,
+  menuNavForAxisToken,
+  KEY_ESCAPE,
+  KEY_BACKSPACE,
+  KEY_ENTER,
+  type MenuNav,
+} from "../../../src/keyCodes";
 import { setMenuModalActive } from "./menuModal";
 import type { MenuItem, MenuTree, PromptSpec } from "./menuTree";
 
@@ -114,6 +123,9 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // The inner scrollable container + a cached row height, for the keyboard scroll-follow effect below.
   const innerViewRef = useRef<{ scrollToY?: (y: number, animate: boolean) => void } | null>(null);
   const itemHeightRef = useRef<number>(0);
+  // `${pad}:${axisName}` → the half-axis token the left stick is currently in, for edge-detected nav (a
+  // held stick fires one move, not a stream). Separate from useGamepadInput's — this one drives the menu.
+  const menuAxisDirRef = useRef<Map<string, string>>(new Map());
 
   // Flatten depth-first, descending only into open submenus.
   const flat: FlatEntry[] = [];
@@ -255,26 +267,85 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     }
   });
 
-  // Gamepad capture: while a gamepad-source row is armed, the next controller button (its SDL name) or a
-  // deliberate stick flick (a `<axis><sign>` token) binds. No-op unless a gamepad row is armed — and
-  // menuOpen already gates useGamepadInput off, so game routing never competes for these events.
+  // Apply a resolved menu-nav action from the gamepad, reusing the exact primitives the keyboard drives:
+  // Up/Down/Left/Right feed onItemKey (a synthetic {key} is fine — it optional-chains stopPropagation);
+  // Back closes the menu. Select reproduces BOTH the key-bus idle arming AND LVGL's Enter→CLICKED activate,
+  // since the gamepad bus never reaches the keypad indev (so there's no CLICKED to lean on).
+  const applyMenuNav = useCallback(
+    (nav: MenuNav) => {
+      if (nav === "up") return onItemKey({ key: ELvKey.LV_KEY_UP });
+      if (nav === "down") return onItemKey({ key: ELvKey.LV_KEY_DOWN });
+      if (nav === "left") return onItemKey({ key: ELvKey.LV_KEY_LEFT });
+      if (nav === "right") return onItemKey({ key: ELvKey.LV_KEY_RIGHT });
+      if (nav === "back") return onClose();
+      const focused = flatRef.current.find((f) => f.item.id === focusedIdRef.current)?.item;
+      if (!focused) return;
+      if (focused.kind === "capture") return setCapturing(focused.id);
+      if (focused.kind === "prompt" && focused.prompt) {
+        return setPrompt({ spec: focused.prompt, value: focused.prompt.initial ?? "", error: "" });
+      }
+      activate(focused);
+    },
+    [onItemKey, onClose, activate, setCapturing, setPrompt],
+  );
+
+  // Gamepad: bind a rebind row when one is armed, else navigate the menu like the keyboard. menuOpen already
+  // gates useGamepadInput off while the menu is up, so game routing never competes for these events.
   useNativeEvent("gamepad-button", (...args) => {
+    const name = args[1] as string;
+    const press = args[2] as boolean;
+    if (!press) return; // the menu acts on press only
+
+    // 1. An open prompt owns the pad: A confirms, B cancels; ignore the rest.
+    if (promptStateRef.current) {
+      if (name === "a") confirmPrompt();
+      else if (name === "b") setPrompt(null);
+      return;
+    }
+    // 2. An armed capture row consumes the button: a gamepad-source row binds its SDL name; a
+    //    keyboard-source row (still listening on the key bus) cancels on Back. Either way nav stays frozen.
     const armed = capturingIdRef.current;
-    if (!args[2] || !armed) return; // press only
-    const item = flatRef.current.find((f) => f.item.id === armed)?.item;
-    if (item?.capture?.source !== "gamepad") return;
-    setCapturing("");
-    item.capture.onCapture(args[1] as string); // raw SDL button name is the token
+    if (armed) {
+      const item = flatRef.current.find((f) => f.item.id === armed)?.item;
+      if (item?.capture?.source === "gamepad") {
+        setCapturing("");
+        item.capture.onCapture(name); // raw SDL button name is the token
+      } else if (name === "b") {
+        setCapturing(""); // cancel a keyboard-armed row via Back
+      }
+      return;
+    }
+    // 3. Idle: drive nav (d-pad moves + cycles, A selects, B backs out) exactly like the keyboard.
+    const nav = menuNavForButton(name);
+    if (nav) applyMenuNav(nav);
   });
   useNativeEvent("gamepad-axis", (...args) => {
-    const armed = capturingIdRef.current;
-    if (!armed) return;
+    const pad = args[0] as number;
+    const axisName = args[1] as string;
     const value = args[2] as number;
-    if (Math.abs(value) < GAMEPAD_CAPTURE_AXIS) return; // ignore drift; a deliberate flick binds
-    const item = flatRef.current.find((f) => f.item.id === armed)?.item;
-    if (item?.capture?.source !== "gamepad") return;
-    setCapturing("");
-    item.capture.onCapture(`${args[1] as string}${value < 0 ? "-" : "+"}`); // half-axis token
+
+    // 1. An armed gamepad-source row binds a deliberate stick flick as a half-axis token.
+    const armed = capturingIdRef.current;
+    if (armed) {
+      if (Math.abs(value) < GAMEPAD_CAPTURE_AXIS) return; // ignore drift; a deliberate flick binds
+      const item = flatRef.current.find((f) => f.item.id === armed)?.item;
+      if (item?.capture?.source !== "gamepad") return;
+      setCapturing("");
+      item.capture.onCapture(`${axisName}${value < 0 ? "-" : "+"}`); // half-axis token
+      return;
+    }
+    if (promptStateRef.current) return; // a prompt owns input; don't drift the axis-dir map
+
+    // 2. Idle: the left stick navigates like the d-pad, edge-detected (via the axisToken hysteresis) so a
+    //    held stick fires a single move, not a stream.
+    if (axisName !== "leftx" && axisName !== "lefty") return;
+    const key = `${pad}:${axisName}`;
+    const cur = menuAxisDirRef.current.get(key) ?? "";
+    const next = axisToken(axisName, value, cur);
+    if (next === cur) return;
+    menuAxisDirRef.current.set(key, next);
+    const nav = menuNavForAxisToken(next); // null when centred
+    if (nav) applyMenuNav(nav);
   });
 
   // Keyboard scroll-follow: keep the focused row near the viewport midpoint so an expanded submenu that
