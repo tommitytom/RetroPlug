@@ -21,7 +21,7 @@
 #include "dpfjs/Env.hpp"                 // dpfjs::getenvWithPrefix
 
 #include "PluginGreenfieldShared.hpp"
-#include "GamepadManager.hpp" // SDL controller poll (packages/native/src, PUBLIC via retroplug-cli-core)
+#include "GamepadManager.hpp" // SDL controller poll (packages/native/src, PUBLIC via retroplug-core)
 
 #include <chrono>
 #include <cstdint>

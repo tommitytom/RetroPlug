@@ -577,13 +577,14 @@ if(BUILD_CLI AND NODE_EXECUTABLE)
 endif()
 
 if(BUILD_CLI)
-    add_subdirectory(packages/native/cli cli)
-
-    # --- native-greenfield host ---------------------------------------------
-    # txiki host that runs the greenfield TS app/tests over a real Backend. Depends on
-    # retroplug-cli-core (defined just above) for Project + SystemBase + the emulator, so it
-    # lives inside this BUILD_CLI block.
+    # --- native-greenfield host + the shared retroplug-core lib -----------------
+    # Added FIRST because it now defines `retroplug-core` (the shared emulator/Project core), which the
+    # legacy CLI below links instead of compiling the core itself. This is also the txiki host that runs
+    # the greenfield TS app/tests over a real Backend; it lives inside this BUILD_CLI block.
     add_subdirectory(packages/native-greenfield native-greenfield)
+
+    # The legacy CLI: retroplug-cli-core is now a thin HarnessRpcService wrapper over retroplug-core.
+    add_subdirectory(packages/native/cli cli)
 
     # SDL2 gamepad input for greenfield: link onto its UI aggregator (mirrors the legacy line above), so
     # every UI-bearing greenfield variant (clap/vst3/jack) gets the GamepadManager poll compiled into

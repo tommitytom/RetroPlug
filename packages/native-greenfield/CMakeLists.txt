@@ -3,9 +3,78 @@
 # Exposes the greenfield Backend to a TS bundle over
 # globalThis[Symbol.for("plugin")].__rpcSend, and runs the greenfield test harness. The
 # fs/config/codec half is std::filesystem + miniz; the emulator half is a real SameBoySystem
-# in a real Project. It links `retroplug-cli-core` (Project + SystemBase + SameBoy/Mesen, plus
+# in a real Project. It links `retroplug-core` (Project + SystemBase + SameBoy/Mesen, plus
 # transitive rpcpp + miniz and the packages/native/src include) — so no longer emulator-free.
 # Output binary lands in build/bin/.
+
+# --- retroplug-core: the shared emulator/Project core, as a neutrally-named static lib. Extracted out of
+# packages/native/cli (which also compiled the CLI-only HarnessRpcService) so greenfield links ONLY the
+# shared core, never a CLI RPC surface it doesn't use. The legacy `retroplug-cli-core` is now a thin
+# wrapper = HarnessRpcService.cpp + this lib. Deliberately txiki/QuickJS-free (harness-schema-dump links it
+# without the JS runtime); PIC so it links into the greenfield plugin .so.
+if(WIN32)
+    # SameBoySystem.cpp pokes SameBoy internals cl.exe can't parse; on Windows it's compiled by clang-cl
+    # into retroplug-samebsys (see the root CMakeLists) and linked below. Elsewhere it builds in place.
+    set(_rpcore_sbs "")
+else()
+    set(_rpcore_sbs ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/SameBoySystem.cpp)
+endif()
+
+add_library(retroplug-core STATIC
+    ${PROJECT_SOURCE_DIR}/packages/native/src/project/Project.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/Effects.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/KitUtil.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/SampleCache.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/KitCompiler.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/SongCodec.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/Compression.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/SavCodec.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/SystemBase.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/BlockRunner.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/OfflineRender.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/LinkGroup.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/RomSniffer.cpp
+    ${_rpcore_sbs}
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/MgbPassthroughRole.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesSystem.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesDebugSession.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenVideoDevice.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenGbaSystem.cpp
+    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/roles/NesN8MidiRole.cpp
+    # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull
+    # the full lvgl-js-native static lib for it.
+    ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
+)
+
+target_include_directories(retroplug-core PUBLIC
+    ${PROJECT_SOURCE_DIR}/packages/native/src
+    # `native/core/img/png/lodepng.h` lives under this root (in dpf.js).
+    ${DPFJS_PATH}/deps/lv_binding_js/src/render
+    # MinizZip.hpp -> miniz.h (txiki's v3.1.0; matches the linked `miniz` lib)
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz
+)
+
+target_link_libraries(retroplug-core PUBLIC
+    sameboy
+    mesen
+    rpcpp     # transitively pulls reflectcpp
+    r8brain   # used by KitUtil for resampling
+    enkiTS    # used by KitCompiler for per-sample parallel compile
+    miniaudio # header-only audio decoder used by SampleCache
+    miniz     # used by projectConfigToZip for --save-rplg
+    mgb-rom   # embedded mGB ROM (Project.cpp re-supplies it on load)
+    # Windows: SameBoySystem.cpp lives in this clang-cl-compiled lib (see root CMakeLists).
+    $<$<BOOL:${WIN32}>:retroplug-samebsys>
+)
+
+set_target_properties(retroplug-core PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON   # linked into the greenfield plugin .so
+)
 
 # retroplug-greenfield-backend: the greenfield Backend as a static library — everything except a host
 # entry point, so both the test host (native-greenfield-host) and the DPF plugin compose the SAME
@@ -34,11 +103,11 @@ target_include_directories(retroplug-greenfield-backend PUBLIC
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/src
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs
     # (packages/native/src for the Project/SystemBase headers + util/MinizZip.hpp, and the
-    #  miniz header dir, arrive PUBLIC from retroplug-cli-core below.)
+    #  miniz header dir, arrive PUBLIC from retroplug-core above.)
 )
 
 target_link_libraries(retroplug-greenfield-backend PUBLIC
-    retroplug-cli-core  # Project + SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
+    retroplug-core      # Project + SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
 )
 
@@ -47,11 +116,6 @@ set_target_properties(retroplug-greenfield-backend PROPERTIES
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON  # linked into the shared plugin module (below)
 )
-
-# The plugin is a shared module, so its static deps must be PIC. The CLI core lib is shared with the
-# test host + CLI (executables that don't need PIC); make it position-independent so it can also link
-# into the plugin. The emulator cores (sameboy/mesen/…) already set PIC themselves.
-set_target_properties(retroplug-cli-core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # native-greenfield-host: the test host — the backend lib + a main() that evals a TS bundle over the
 # __rpcSend bridge. Output binary lands in build/bin/.
@@ -154,7 +218,7 @@ dpf_add_plugin(retroplug-greenfield
         ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)  # the generic DPF↔LVGL base widget
 
 # plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h, not the legacy one that arrives transitively
-# via retroplug-cli-core's packages/native/src include. dpf-widgets/generic resolves "LVGL.hpp".
+# via retroplug-core's packages/native/src include. dpf-widgets/generic resolves "LVGL.hpp".
 target_include_directories(retroplug-greenfield BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
 target_include_directories(retroplug-greenfield PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
 

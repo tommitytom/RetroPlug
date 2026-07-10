@@ -3,75 +3,19 @@
 # Reuses the DSP-side sources directly (Project.cpp + SameBoySystem.cpp);
 # no DPF, no LVGL. Output binary lands in build/bin/.
 
-# --- retroplug-cli-core: the emulator/Project + rpcpp HarnessRpcService surface.
-# A static lib shared by retroplug-cli (the txiki host) and harness-schema-dump
-# (the codegen schema dumper). Deliberately free of txiki/QuickJS so the schema
-# dumper links without the JS runtime — that decoupling is what breaks the build
-# cycle once retroplug-cli embeds a TS bundle compiled from this schema.
+# --- retroplug-cli-core: HarnessRpcService (the CLI / test-harness RPC surface) over retroplug-core.
+# The shared emulator/Project core now lives in the neutrally-named `retroplug-core` lib (defined in the
+# greenfield tree — packages/native-greenfield/CMakeLists.txt); this is the thin CLI-only wrapper that adds
+# HarnessRpcService on top. Kept free of txiki/QuickJS (like retroplug-core) so harness-schema-dump links
+# without the JS runtime — that decoupling is what breaks the build cycle once retroplug-cli embeds a TS
+# bundle compiled from this schema.
+add_library(retroplug-cli-core STATIC HarnessRpcService.cpp)
 
-# SameBoySystem.cpp pokes SameBoy internals (GNU statement-exprs / __attribute__
-# in the Core headers), which cl.exe can't parse. On Windows it's compiled by
-# clang-cl into the retroplug-samebsys static lib (see the top-level CMakeLists)
-# and linked in below — the same isolation the plugin uses; elsewhere it builds
-# in place.
-if(WIN32)
-    set(_cli_sbs_src "")
-else()
-    set(_cli_sbs_src ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/SameBoySystem.cpp)
-endif()
-
-add_library(retroplug-cli-core STATIC
-    HarnessRpcService.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/project/Project.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/Effects.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/KitUtil.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/SampleCache.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/KitCompiler.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/SongCodec.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/Compression.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/SavCodec.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/SystemBase.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/BlockRunner.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/OfflineRender.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/LinkGroup.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/RomSniffer.cpp
-    ${_cli_sbs_src}
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/MgbPassthroughRole.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesSystem.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesDebugSession.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenVideoDevice.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenGbaSystem.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/roles/NesN8MidiRole.cpp
-    # lodepng (vendored under lv_binding_js, now in dpf.js). Compiled directly so
-    # the CLI doesn't have to pull in the full lvgl-js-native static lib for one
-    # PNG encoder.
-    ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
-)
-
-target_include_directories(retroplug-cli-core PUBLIC
-    ${PROJECT_SOURCE_DIR}/packages/native/src
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    # `native/core/img/png/lodepng.h` lives under this root (in dpf.js).
-    ${DPFJS_PATH}/deps/lv_binding_js/src/render
-    # MinizZip.hpp -> miniz.h (txiki's v3.1.0; matches the linked `miniz` lib)
-    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/miniz
-)
-
-target_link_libraries(retroplug-cli-core PUBLIC
-    sameboy
-    mesen
-    rpcpp     # transitively pulls reflectcpp
-    r8brain   # used by KitUtil for resampling
-    enkiTS    # used by KitCompiler for per-sample parallel compile
-    miniaudio # header-only audio decoder used by SampleCache
-    miniz     # used by projectConfigToZip for --save-rplg
-    mgb-rom   # embedded mGB ROM (Project.cpp re-supplies it on load)
-    # Windows: SameBoySystem.cpp lives in this clang-cl-compiled lib (see above).
-    $<$<BOOL:${WIN32}>:retroplug-samebsys>
-)
+# HarnessRpcService.cpp's own headers (HarnessRpcService.hpp / HarnessRpcRegistration.hpp /
+# TestHarnessImpl.hpp / SchemaDumpCodec.hpp) live in this dir; the shared-core includes + all the core
+# libs (sameboy / mesen / rpcpp / …) arrive PUBLIC from retroplug-core.
+target_include_directories(retroplug-cli-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(retroplug-cli-core PUBLIC retroplug-core)
 
 set_target_properties(retroplug-cli-core PROPERTIES
     CXX_STANDARD 20
