@@ -27,7 +27,9 @@ const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../r
 // rather than in the sibling tree, so a test can reach them without the sibling being populated.
 const REPO_RESOURCES_DIR = join(REPO, "resources");
 
-const HOST = process.env.RETROPLUG_HOST || join(REPO, "build/bin/retroplug-host");
+const HOST =
+  process.env.RETROPLUG_HOST ||
+  join(REPO, "build/bin/retroplug-host" + (process.platform === "win32" ? ".exe" : ""));
 
 if (!existsSync(HOST)) {
   console.error(
@@ -84,7 +86,11 @@ const failures = [];
 for (const { file, slug } of tests) {
   const outFile = join(OUT_DIR, `${slug}.js`);
   mkdirSync(dirname(outFile), { recursive: true });
-  const cfgDir = mkdtempSync(join(tmpdir(), "rp-greenfield-"));
+  // Forward slashes so the injected __CONFIG_DIR__ matches the native backend's
+  // path convention (it canonicalizes stored paths to '/'). On Windows mkdtempSync
+  // yields backslashes; both node fs and the native host accept '/' there. No-op
+  // elsewhere. Without this, path round-trip assertions mismatch on Windows.
+  const cfgDir = mkdtempSync(join(tmpdir(), "rp-greenfield-")).replaceAll("\\", "/");
 
   try {
     buildSync({
