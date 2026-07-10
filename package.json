@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "RetroPlug workspace root: the JS build toolchain (esbuild) and the runtime deps bundled into the UI.",
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@10.15.0",
   "engines": {
     "node": ">=18.12"
   },
