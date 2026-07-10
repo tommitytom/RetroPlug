@@ -69,12 +69,14 @@ test("MidiSyncArduinoboy: tempo divisor subdivides the clock; note >= 30 pushes 
   expect(bytes(lsdj(2).processBlock({ ...baseDyn(), midiIn: [noteOn(0, 40)] }))).toEqual([10]);
 });
 
-test("KeyboardMidi: a note maps to its PS/2 scancode (sliding the octave); a cursor note gets the 0xE0 prefix", () => {
+test("KeyboardMidi: a note maps to its GB-serial-mangled PS/2 scancode; a cursor note gets the extended prefix", () => {
   const k = lsdj(5);
-  // note 48 (C-3 = NOTE_START): octave slides 4 → 0 (4× OCT_DN 0x05) then NOTE_MAP[0] = 0x1A.
-  expect(bytes(k.processBlock({ ...baseDyn(), midiIn: [noteOn(0, 48)] }))).toEqual([0x05, 0x05, 0x05, 0x05, 0x1a]);
-  // note 40 (LOW_START 36 + 4 = Cursor Left, 0x68) → extended 0xE0 prefix then the code.
-  expect(bytes(k.processBlock({ ...baseDyn(), midiIn: [noteOn(0, 40)] }))).toEqual([0xe0, 0x68]);
+  // Every byte is mangled to LSDj's GB-serial form (reverse-low-7-bits, per keyjazz — toGbSerialByte).
+  // note 48 (C-3 = NOTE_START): octave slides 4 → 0 (4× OCT_DN 0x05 → 0x50) then NOTE_MAP[0] 0x1A → 0x2C.
+  expect(bytes(k.processBlock({ ...baseDyn(), midiIn: [noteOn(0, 48)] }))).toEqual([0x50, 0x50, 0x50, 0x50, 0x2c]);
+  // note 40 (LOW_START 36 + 4 = Cursor Left 0x6B) → extended prefix 0xE0 → 0x03, then 0x6B → 0x6B.
+  // These are exactly keyjazz's "Left" bytes, [3, 0x6b].
+  expect(bytes(k.processBlock({ ...baseDyn(), midiIn: [noteOn(0, 40)] }))).toEqual([0x03, 0x6b]);
 });
 
 test("the kernel prunes per-system scratch state: a removed-then-readded system starts fresh", () => {

@@ -21,7 +21,7 @@ export const KEYBOARD_LOW_OCTAVE_MAP: readonly number[] = [
   0x09, // Mute2
   0x78, // Mute3
   0x07, // Mute4
-  0x68, // Cursor Left
+  0x6b, // Cursor Left  (textbook PS/2 left-arrow make code; jkotlinski/keyjazz confirms 0x6b, not 0x68)
   0x74, // Cursor Right
   0x75, // Cursor Up
   0x72, // Cursor Down
@@ -36,5 +36,17 @@ export const KEYBOARD_OCT_UP = 0x06;
 
 /** True for the four cursor scancodes that require the 0xE0 "extended" prefix before them. */
 export function isExtendedScancode(scancode: number): boolean {
-  return scancode === 0x68 || scancode === 0x72 || scancode === 0x74 || scancode === 0x75;
+  return scancode === 0x6b || scancode === 0x72 || scancode === 0x74 || scancode === 0x75;
+}
+
+/** LSDj reads a PS/2 keyboard over the link cable in EXTERNAL-clock mode, and the GB serial mangles
+ *  each incoming PS/2 scancode: it keeps the low 7 bits and reverses their order (per the LSDj author's
+ *  jkotlinski/keyjazz — "transferred backwards … loses some bits"). So what LSDj actually decodes is
+ *  this reversed-low-7-bits form, NOT the textbook PS/2 code. Every scancode we push over serial must
+ *  be pre-mangled to that form (e.g. Enter 0x5A → 0x2D, the extended prefix 0xE0 → 0x03, octave-up 0x06
+ *  → 0x30 — all matching keyjazz's tables). */
+export function toGbSerialByte(scancode: number): number {
+  let r = 0;
+  for (let i = 0; i < 7; i++) r = (r << 1) | ((scancode >> i) & 1);
+  return r;
 }

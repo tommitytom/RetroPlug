@@ -1,17 +1,19 @@
-// Native KeyboardMidi coverage (migration task #3), and an honest one. The TS `lsdj-sync` role in
-// KeyboardMidi mode (5), in the real DSP kernel, turns host MIDI notes into LSDj PS/2 keyboard
-// scancodes (dspRoles.ts) and pushes them to a real LSDj's serial FIFO.
+// Final migration task #3: native KeyboardMidi coverage — a real end-to-end functional proof. The TS
+// `lsdj-sync` role in KeyboardMidi mode (5), in the real DSP kernel, turns host MIDI notes into LSDj
+// PS/2 keyboard scancodes and plays them LIVE on a real LSDj core, audibly.
 //
-// This is a REGRESSION SMOKE: it proves the role runs against a real LSDj core in the render loop
-// without throwing. It deliberately does NOT assert that LSDj ACTS on the scancodes, because — proven
-// empirically here — it currently doesn't headlessly: keyboard scancodes produce no audio, no SRAM
-// change, and no framebuffer change, while a joypad button on the same core DOES change the screen.
-// The cause is documented in docs/lsdj.md: LSDj's KEYBD (and MI.OUT) mode reads the GB serial port in
-// EXTERNAL-clock mode (SC=0x80), and the headless harness only drives that synthetic clock for
-// serial-OUT capture — so the input bytes land in the FIFO but never shift into LSDj. Making this
-// functional needs the external-clock INPUT path (entangled with the ArduinoboyMaster / serial-out
-// work, migration task #4). Byte-exactness of the MIDI→scancode mapping is covered separately by the
-// mock test/dsp/lsdj-modes.test.ts.
+// Getting this to work required three things the reference (jkotlinski/keyjazz) + the LSDj manual made
+// clear:
+//   1. External-clock serial. KEYBD reads the PS/2 keyboard over the link cable in external-clock mode
+//      (SC=0x80): LSDj is the slave and waits for the sender to clock each byte in. SameBoySystem now
+//      drives that clock for the serial-IN direction (writeAudioSample), playing the PS/2 adapter.
+//   2. GB-serial byte mangling. The GB serial truncates each PS/2 scancode to 7 bits and reverses them,
+//      so the role emits the "as seen by LSDj" values (lsdjKeyboardMap.ts `toGbSerialByte`), matching
+//      keyjazz — NOT the textbook PS/2 codes.
+//   3. A running song. Per the manual (§5.6), the keyboard only sounds on the phrase screen or "while
+//      the song is running" — LSDj only polls the keyboard (arms SC=0xfc) once playing. So we author a
+//      one-note song and press START; the sparse song is mostly silent between its notes, and the
+//      keyboard notes fill every window with audio.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
@@ -22,12 +24,17 @@ declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
 
 const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
+const START = 7; // GameboyButton::Start
 
-// SYNC=KEYBD so LSDj listens to the PS/2 keyboard.
+// SYNC=KEYBD + a sparse one-note song: START makes LSDj run (and poll the keyboard), but the song
+// itself is silent most of the time, so the keyboard notes are what fill each measured window.
 const KEYBD_SONG = JSON.stringify({
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "Keyboard" },
+    rows: [{ chains: [0] }],
+    chains: [{ phrases: [0] }],
+    phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } }],
   },
 });
@@ -42,8 +49,9 @@ const rms = (a: Float32Array): number => {
   for (let i = 0; i < a.length; i++) s += a[i] * a[i];
   return a.length ? Math.sqrt(s / a.length) : 0;
 };
+const mean = (a: number[]): number => a.reduce((x, y) => x + y, 0) / a.length;
 
-test("the TS lsdj-sync KeyboardMidi role runs against a real LSDj core (regression smoke)", () => {
+test("KeyboardMidi: MIDI notes play live on a real LSDj via the PS/2-keyboard serial path", () => {
   const be = createRealBackend();
   if (!be.fileExists(ABOY)) {
     console.log(`# SKIP lsdj-keyboardmidi: aboy LSDj ROM not found at ${ABOY}`);
@@ -67,19 +75,32 @@ test("the TS lsdj-sync KeyboardMidi role runs against a real LSDj core (regressi
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   expect(dsp.setSystems(sysStruct(id, 5))).toBeTruthy();
 
-  audio.renderAudio(6000); // reach the song screen from the sav
+  audio.renderAudio(6000); // reach the song screen
 
-  // Drive the role: host MIDI note-ons across octaves → PS/2 scancodes pushed to LSDj's serial FIFO.
-  for (const n of [48, 55, 60, 48, 60]) {
-    audio.stageMidiIn([0x90, n, 100]);
-    audio.renderAudio(180);
+  // START so LSDj runs and begins polling the keyboard.
+  audio.pressButton(id, START, true);
+  audio.renderAudio(120);
+  audio.pressButton(id, START, false);
+  audio.renderAudio(500); // let playback settle
+
+  // Baseline: the song alone. It's sparse (one note per phrase), so most windows are silent.
+  const base: number[] = [];
+  for (let i = 0; i < 6; i++) base.push(rms(audio.renderAudio(250)));
+
+  // With keys: a live keyboard note before each window. Every window should now carry audio.
+  const withKeys: number[] = [];
+  const notes = [48, 52, 55, 60, 64, 67]; // C/E/G across octaves — all map to LSDj piano keys
+  for (let i = 0; i < 6; i++) {
+    audio.stageMidiIn([0x90, notes[i], 100]);
+    withKeys.push(rms(audio.renderAudio(250)));
   }
-  const rmsAfter = rms(audio.renderAudio(200));
 
-  const frame = be.getFrame(id)!;
-  // The role fed a real core through the real kernel without throwing, and the core is still alive.
-  // (Functional effect on LSDj is not asserted — see the file header: KEYBD needs external-clock serial.)
-  console.log(`[lsdj-keyboardmidi] rmsAfter=${rmsAfter.toFixed(5)} (not gated — KEYBD is external-clock serial)`);
-  expect(frame.width).toBe(160);
-  expect(frame.height).toBe(144);
+  console.log(`[lsdj-keyboardmidi] base=[${base.map((x) => x.toFixed(4)).join(",")}] keys=[${withKeys.map((x) => x.toFixed(4)).join(",")}]`);
+
+  // Every with-keys window is audible — the keyboard notes sustain live audio through the render.
+  expect(withKeys.every((x) => x > 0.015)).toBeTruthy();
+  // The song alone leaves silent gaps (proof the audio is the keyboard, not the song).
+  expect(base.filter((x) => x < 0.005).length >= 3).toBeTruthy();
+  // And the keyboard clearly raises the average level over the song alone.
+  expect(mean(withKeys) > mean(base) + 0.01).toBeTruthy();
 });

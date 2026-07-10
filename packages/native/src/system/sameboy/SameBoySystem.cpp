@@ -600,20 +600,22 @@ void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
 
     // TODO: Does this belong here?
 
-    // Synthetic Arduinoboy clock for master-mode roles. LSDJ in MI.OUT sets
-    // SC=0x80 (transfer enable + external clock) and waits for a clock source
-    // to shift its byte out. Real Arduinoboy hardware drives the clock; we
-    // emulate that here by shifting one bit per audio sample whenever LSDJ
-    // has a transfer pending and external clock is selected. The outgoing bit
-    // is read from SB.bit7 BEFORE the shift; the incoming bit is idle-high
-    // (1), matching the GB's pull-up behavior on the SIN line.
-    // Bypassed when a link peer exists (LinkGroup handles that path).
-    if (linkPeers_.empty() && serialOutEnabled_ && gb_) {
+    // Synthetic external-clock serial for master-mode roles. LSDJ sets SC=0x80 (transfer enable +
+    // EXTERNAL clock) and waits for a clock source to shift its byte across. Two directions use this:
+    //   - MI.OUT (Arduinoboy master): LSDJ shifts a byte OUT; we capture it (serialOutEnabled_).
+    //   - KEYBD: LSDJ shifts a PS/2 scancode IN; we feed it from the serial-in FIFO.
+    // Real hardware (an Arduinoboy / a PS/2-to-link adapter) drives the clock; we play that role,
+    // shifting one bit per audio sample while a transfer is pending. Full-duplex: the OUT bit is read
+    // from SB.bit7 BEFORE the shift, the IN bit is fed via GB_serial_set_data_bit (idle-high when the
+    // FIFO is empty, matching the SIN pull-up). Bypassed when a link peer exists (LinkGroup owns that).
+    if (linkPeers_.empty() && gb_) {
         const auto sc = gb_->io_registers[GB_IO_SC];
-        if ((sc & 0x81) == 0x80) {
-            const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
-            captureSerialOutBit(outBit);
-            GB_serial_set_data_bit(gb_, true);
+        if ((sc & 0x81) == 0x80 && (serialOutEnabled_ || !serialIn_.empty())) {
+            if (serialOutEnabled_) {
+                const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
+                captureSerialOutBit(outBit);
+            }
+            GB_serial_set_data_bit(gb_, nextSerialInBit());
         }
     }
 }

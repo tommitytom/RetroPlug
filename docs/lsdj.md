@@ -321,26 +321,35 @@ See [test/ts/gb/lsdj/arduinoboy_master.test.ts](../test/ts/gb/lsdj/arduinoboy_ma
 which authors SYNC=KEYBD + the `ArduinoboyMaster` role, presses START, and
 asserts thousands of captured bytes (the synthetic-clock + capture path).
 
-### Synthetic Arduinoboy clock (subtle but load-bearing)
+### Synthetic external-clock serial (subtle but load-bearing)
 
 LSDJ in MI.OUT (and KEYBD) uses the GB serial port in **external-clock** mode
-(`SC=0x80`). Real Arduinoboy hardware provides the clock pulses that shift the
-GB's SB register. SameBoy by default does nothing here. To make this verifiable
-headlessly, [packages/native/src/system/sameboy/SameBoySystem.cpp](../packages/native/src/system/sameboy/SameBoySystem.cpp)
-drives one bit per audio sample in `writeAudioSample` whenever
-`(SC & 0x81) == 0x80` and serial-out capture is enabled:
+(`SC=0x80`): LSDJ is the *slave* and waits for the sender to clock each byte
+across. Real hardware (an Arduinoboy for MI.OUT, a PS/2-to-link adapter for
+KEYBD) drives the clock; SameBoy by default does nothing. To make both directions
+verifiable headlessly, [packages/native/src/system/sameboy/SameBoySystem.cpp](../packages/native/src/system/sameboy/SameBoySystem.cpp)
+plays that role in `writeAudioSample`, shifting one bit per audio sample whenever
+`(SC & 0x81) == 0x80` and there's something to transfer — **full-duplex**:
 
 ```cpp
 const auto sc = gb_->io_registers[GB_IO_SC];
-if ((sc & 0x81) == 0x80) {
-    const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
-    captureSerialOutBit(outBit);
-    GB_serial_set_data_bit(gb_, true);
+if ((sc & 0x81) == 0x80 && (serialOutEnabled_ || !serialIn_.empty())) {
+    if (serialOutEnabled_) {                              // OUT: capture LSDJ's byte (MI.OUT)
+        const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
+        captureSerialOutBit(outBit);
+    }
+    GB_serial_set_data_bit(gb_, nextSerialInBit());        // IN: feed the FIFO (KEYBD scancodes)
 }
 ```
 
-This runs ~5.5 kHz faster than real Arduinoboy (~8 kHz) but the byte protocol is
-rate-independent so the captured bytes are correct.
+The OUT direction captures LSDJ's outgoing byte (Arduinoboy MI.OUT); the IN
+direction feeds the serial-in FIFO so LSDJ can read PS/2 keyboard scancodes in
+KEYBD mode (idle-high when the FIFO is empty). This runs ~5.5 kHz — faster than
+real hardware — but the byte protocol is rate-independent so the bytes are
+correct. **KEYBD also needs** the scancodes pre-mangled to LSDJ's GB-serial form
+(reverse-low-7-bits, see [jkotlinski/keyjazz](https://github.com/jkotlinski/keyjazz) /
+`lsdjKeyboardMap.ts` `toGbSerialByte`) and LSDJ actually *playing* (it only polls
+the keyboard, arming `SC=0xfc`, once a song is running or on the phrase screen).
 
 **Pitfall:** the bit-start callback gives the outgoing bit as its `bit_received`
 parameter; this is the bit being SENT. Do NOT read `GB_serial_get_data_bit` in

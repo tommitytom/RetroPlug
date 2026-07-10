@@ -16,6 +16,7 @@ import {
   KEYBOARD_OCT_UP,
   KEYBOARD_OCT_DN,
   isExtendedScancode,
+  toGbSerialByte,
 } from "./lsdjKeyboardMap";
 
 // Forward every host-MIDI byte verbatim into the system's serial input. This is both `mgb`
@@ -106,7 +107,7 @@ const midiMap: SystemBehavior = (c) => {
 // new octave. Mirrors slideKeyboardOctave in LsdjSyncRole.cpp.
 function slideKeyboardOctave(c: SystemCtx, frame: number, target: number, current: number): number {
   if (target === current) return current;
-  const code = target > current ? KEYBOARD_OCT_UP : KEYBOARD_OCT_DN;
+  const code = toGbSerialByte(target > current ? KEYBOARD_OCT_UP : KEYBOARD_OCT_DN);
   let steps = Math.abs(target - current);
   while (steps-- > 0) c.pushSerialIn(frame, code);
   return target;
@@ -124,11 +125,12 @@ const keyboardMidi: SystemBehavior = (c) => {
       note -= KEYBOARD_NOTE_START;
       st.octave = slideKeyboardOctave(c, e.frame, Math.floor(note / 12), st.octave);
       const idx = note >= 0x3c ? (note % 12) + 0x0c : note % 12; // two rows of note keys
-      c.pushSerialIn(e.frame, KEYBOARD_NOTE_MAP[idx]);
+      c.pushSerialIn(e.frame, toGbSerialByte(KEYBOARD_NOTE_MAP[idx]));
     } else if (note >= KEYBOARD_LOW_START) {
       const command = KEYBOARD_LOW_OCTAVE_MAP[note - KEYBOARD_LOW_START];
-      if (isExtendedScancode(command)) c.pushSerialIn(e.frame, 0xe0); // cursor keys need the extended prefix
-      c.pushSerialIn(e.frame, command);
+      // Cursor keys need the extended (0xE0) prefix; every byte is mangled to LSDj's GB-serial form.
+      if (isExtendedScancode(command)) c.pushSerialIn(e.frame, toGbSerialByte(0xe0));
+      c.pushSerialIn(e.frame, toGbSerialByte(command));
     }
   }
 };
