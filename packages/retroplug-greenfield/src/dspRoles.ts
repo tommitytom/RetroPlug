@@ -62,8 +62,14 @@ const midiMapRow = (channel: number, note: number) => (channel === 0 ? note : ch
 // the play flag, 26-29 set the tempo divisor, 30+ push a raw row byte (note-30). The 0xF8 clock flows
 // only while the play flag is set (NOT on host transport), and 0xFA/0xFC bookend host-transport edges.
 const arduinoboy: SystemBehavior = (c) => {
-  const st = c.state as { playing?: boolean; divisor?: number; prevTransport?: boolean };
+  const st = c.state as { playing?: boolean; divisor?: number; prevTransport?: boolean; armDown?: number };
   if (st.divisor === undefined) st.divisor = (c.config.tempoDivisor as number) || 1;
+  // autoStart: tap START on the host transport rise to park the SYNC=Lsdj cart in "wait for sync" before
+  // the note-24 play-enable + clock arrive — so a headless render starts on-grid instead of boot-lagging.
+  if (c.config.autoStart) {
+    if (c.block.transport && !(st.prevTransport ?? false)) { c.pressButton(START_BTN, true); st.armDown = 2; }
+    else if (st.armDown && st.armDown > 0) { if (--st.armDown === 0) c.pressButton(START_BTN, false); }
+  }
   for (const e of c.midi) {
     if (!isNoteOn(e.data[0])) continue;
     const note = e.data[1];

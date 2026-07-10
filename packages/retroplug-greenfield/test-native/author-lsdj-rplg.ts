@@ -33,7 +33,7 @@ const SONGS: Record<string, { syncMode: string; mode: number; autoStart: boolean
     },
   },
   "arduinoboy-metro": {
-    syncMode: "Lsdj", mode: 2, autoStart: false, // note 24 in the .rpp arms play at render t=0
+    syncMode: "Lsdj", mode: 2, autoStart: true, // START-tap arms the cart; note 24 in the .rpp enables play
     song: {
       rows: [{ chains: [0] }],
       chains: [{ phrases: [0] }],
