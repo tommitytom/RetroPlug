@@ -7,10 +7,15 @@
 // snapshot on parse error").
 
 import { userConfigSchema, type UserConfig } from "./userConfig";
+import { migrateRaw, readNumericVersion, type MigrationMap, type RawObject } from "./migrate";
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file stamped
- *  newer than this is refused on load. Matches the native `kUserConfig`. */
+ *  newer than this is refused on load, one stamped older is migrated (below). */
 export const USER_CONFIG_SCHEMA = 1;
+
+/** Raw-JSON migrations keyed by from-version (see migrate.ts). Empty — config.json hasn't
+ *  taken a breaking bump; the seam is here so the first one is a one-line add. */
+const USER_CONFIG_MIGRATIONS: MigrationMap = {};
 
 /** Parse config.json text. Returns null when the text can't be trusted (malformed JSON,
  *  a non-object root, or a newer schema stamp) — the caller retains its current config.
@@ -23,9 +28,10 @@ export function parseUserConfig(json: string): UserConfig | null {
     return null;
   }
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
-  const d = doc as { schemaVersion?: unknown };
-  if (typeof d.schemaVersion === "number" && d.schemaVersion > USER_CONFIG_SCHEMA) return null;
-  return userConfigSchema.parse(doc) as UserConfig;
+  const raw = doc as RawObject;
+  if (typeof raw.schemaVersion === "number" && raw.schemaVersion > USER_CONFIG_SCHEMA) return null;
+  const migrated = migrateRaw(raw, readNumericVersion(raw, USER_CONFIG_SCHEMA), USER_CONFIG_SCHEMA, USER_CONFIG_MIGRATIONS);
+  return userConfigSchema.parse(migrated) as UserConfig;
 }
 
 /** Serialize config.json text, stamping the current schema version (native field order). */

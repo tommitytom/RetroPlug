@@ -15,6 +15,7 @@ import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
 import { commonSettingsSchema, type CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
 import { z, clampedInt, stringField } from "./configSchema";
+import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
 
 /** Project-level settings (four scalars). `zoom` 0 = inherit the user default. */
 export interface ProjectSettings {
@@ -87,15 +88,15 @@ const projectConfigSchema = z.object({
   systems: z.array(z.unknown()).catch(() => []).default(() => []),
 });
 
-/** Bring a raw parsed config from `fromVersion` up to `K_PROJECT` before validation.
- *  Pre-release there are NO migrations — additive changes are handled by zod defaults,
- *  so an older config validates as-is (its missing fields default). When the first
- *  BREAKING (non-additive) bump lands, this is where an ordered chain of raw
- *  `(obj) => obj` steps (v1→v2, v2→v3, …) is applied up to `K_PROJECT`, then the
- *  current schema validates the result. The Newer branch (refuse) lives at the load
- *  seam (ProjectStore.load); this handles Older. */
-function migrateProjectRaw(raw: Record<string, unknown>, _fromVersion: number): Record<string, unknown> {
-  return raw; // no migrations yet
+/** Ordered raw-JSON migrations for the project root, keyed by from-version (see migrate.ts):
+ *  `PROJECT_MIGRATIONS[v]` upgrades a v-stamped config to v+1. */
+const PROJECT_MIGRATIONS: MigrationMap = {};
+
+/** Bring a raw config from its stamped `fromVersion` up to `K_PROJECT`, on the raw object,
+ *  before the (single, latest) zod schema validates it. The Newer branch (refuse) lives at
+ *  the load seam (ProjectStore.beginLoad); this handles Older. */
+function migrateProjectRaw(raw: RawObject, fromVersion: number): RawObject {
+  return migrateRaw(raw, fromVersion, K_PROJECT, PROJECT_MIGRATIONS);
 }
 
 // --- schema version (port of schemaVersions.ts) ---------------------------

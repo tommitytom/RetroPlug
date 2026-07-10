@@ -5,10 +5,15 @@
 // / non-object / newer-than-us yield null (the caller keeps its current value).
 
 import { bindingMapSchema, type BindingMap } from "./bindingMap";
+import { migrateRaw, readNumericVersion, type MigrationMap, type RawObject } from "./migrate";
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file stamped
- *  newer than this is refused on load. Matches the native `kBindings`. */
+ *  newer than this is refused on load, one stamped older is migrated (below). */
 export const BINDINGS_SCHEMA = 1;
+
+/** Raw-JSON migrations keyed by from-version (see migrate.ts). Empty — bindings hasn't taken
+ *  a breaking bump; the seam is here so the first one is a one-line add. */
+const BINDINGS_MIGRATIONS: MigrationMap = {};
 
 /** Parse a profile file. Returns null when the text can't be trusted (malformed JSON, a
  *  non-object root, or a newer schema stamp) — the caller retains its current value. A
@@ -21,9 +26,10 @@ export function parseBindingMap(json: string): BindingMap | null {
     return null;
   }
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
-  const d = doc as { schemaVersion?: unknown };
-  if (typeof d.schemaVersion === "number" && d.schemaVersion > BINDINGS_SCHEMA) return null;
-  return bindingMapSchema.parse(doc) as BindingMap;
+  const raw = doc as RawObject;
+  if (typeof raw.schemaVersion === "number" && raw.schemaVersion > BINDINGS_SCHEMA) return null;
+  const migrated = migrateRaw(raw, readNumericVersion(raw, BINDINGS_SCHEMA), BINDINGS_SCHEMA, BINDINGS_MIGRATIONS);
+  return bindingMapSchema.parse(migrated) as BindingMap;
 }
 
 /** Serialize a profile, stamping the current schema version (native field order, then the greenfield-only
