@@ -10,13 +10,9 @@
   "scripts": {
     "configure": "cmake -S . -B build -DBUILD_TESTING=ON -DBUILD_CLI=ON",
     "build": "node scripts/cmake-build.js",
-    "test": "pnpm test:cli && pnpm test:ui",
-    "test:cli": "node scripts/cmake-build.js retroplug-cli cli-regenerate && node scripts/run-ts-tests.js cli",
-    "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node scripts/run-ts-tests.js ui",
     "test:greenfield": "node scripts/cmake-build.js tjs-cli && node packages/retroplug-greenfield/scripts/run-tests.mjs",
     "test:greenfield-native": "node scripts/cmake-build.js native-greenfield-host && node packages/retroplug-greenfield/scripts/run-native-tests.mjs",
     "test:greenfield-ui": "node scripts/cmake-build.js retroplug-greenfield-ui-test && node packages/retroplug-greenfield/scripts/run-ui-tests.mjs",
-    "smoke": "node scripts/cmake-build.js retroplug-cli cli-regenerate && node scripts/run-ts-tests.js cli gb/mgb",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
     "screenshot:greenfield": "node scripts/cmake-build.js retroplug-greenfield-jack && tools/run-standalone-greenfield.sh",
     "profile:greenfield": "tools/run-greenfield-profile.sh stats",

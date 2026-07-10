@@ -555,15 +555,6 @@ if(WIN32)
     endif()
 endif()
 
-# --- Tests (Catch2) ----------------------------------------------------------
-# Gated so the default build stays small; opt in with -DBUILD_TESTING=ON.
-option(BUILD_TESTING "Build the Catch2 unit tests" OFF)
-if(BUILD_TESTING)
-    add_subdirectory(deps/catch2)
-    enable_testing()
-    add_subdirectory(packages/native/test test)
-
-endif()
 
 # --- CLI tool ---------------------------------------------------------------
 # Headless renderer + scripted-input runner. Useful for fast LSDJ renders

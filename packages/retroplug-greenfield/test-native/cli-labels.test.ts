@@ -8,9 +8,8 @@ import { Timeline, renderTimeline } from "../cli/timeline";
 
 declare const __REPO_RESOURCES_DIR__: string;
 const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
-// The cc65 .dbg fixture lives beside the legacy TS tests (repo-root test/ts/fixtures), not under
-// resources/ — reach it by an absolute path relative to the in-repo resources dir.
-const DBG = __REPO_RESOURCES_DIR__ + "/../test/ts/fixtures/n8-midi.dbg";
+// The cc65 .dbg fixture (symbols for n8-midi.nes) lives beside its ROM under resources/roms.
+const DBG = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.dbg";
 
 test("loadLabels loads a cc65 .dbg into a real NES core (and fails a bogus path gracefully)", () => {
   const s = bootSession();
