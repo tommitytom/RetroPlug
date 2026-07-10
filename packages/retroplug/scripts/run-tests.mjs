@@ -27,7 +27,11 @@ const OUT_DIR = join(PKG, ".test-build");
 
 const TJS =
   process.env.RETROPLUG_TJS ||
-  join(REPO, "build/dpfjs/deps/lv_binding_js/deps/txiki/tjs");
+  join(
+    REPO,
+    "build/dpfjs/deps/lv_binding_js/deps/txiki/tjs" +
+      (process.platform === "win32" ? ".exe" : ""),
+  );
 
 if (!existsSync(TJS)) {
   console.error(

@@ -20,7 +20,9 @@ const REPO = resolve(PKG, "../..");
 const TEST_DIR = join(PKG, "test-ui");
 const OUT_DIR = join(PKG, ".ui-build");
 
-const HOST = process.env.RETROPLUG_UI_TEST || join(REPO, "build/bin/retroplug-ui-test");
+const HOST =
+  process.env.RETROPLUG_UI_TEST ||
+  join(REPO, "build/bin/retroplug-ui-test" + (process.platform === "win32" ? ".exe" : ""));
 
 if (!existsSync(HOST)) {
   console.error(
