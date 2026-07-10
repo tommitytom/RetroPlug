@@ -44,6 +44,10 @@ function allocSystemId(): number {
 // GB_save_battery_size, Mesen via the NesSaveRam region), so any non-empty all-zero buffer blanks the SRAM.
 const BLANK_SRAM_BYTES = 0x20000;
 
+// The lsdj-sync mode that needs native serial-out capture (Arduinoboy MIDIOUT / "Arduinoboy Master").
+// Kept in step with the LsdjSyncMode dispatch in dspRoles.ts + LSDJ_MODE_NAMES in menuDefs.ts.
+const LSDJ_MIDIOUT_MODE = 7;
+
 /** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
  *  the first `ROM_SNIFF_LEN` of them. Native never classifies. */
 export function classifyRom(backend: Backend, romPath: string): Platform | "unknown" {
@@ -353,6 +357,9 @@ export class SystemsStore {
     const roles = e.roles.slice();
     roles[idx] = { kind: roleKind, config };
     this.entries = replaceById(this.entries, id, { ...e, roles });
+    // A feature role stays pure TS, EXCEPT lsdj-sync's serial-out capture gate — arm/disarm it on a
+    // MIDIOUT mode change (the decoder itself runs in the kernel via the re-projection below).
+    if (roleKind === "lsdj-sync") this.syncSerialOutCapture(id);
     this.markDirty();
     return true;
   }
@@ -451,6 +458,7 @@ export class SystemsStore {
     const battery = this.detectBattery(romPath, embeddedRom, platform);
     this.entries = appendEntry(this.entries, { id, platform, core, romPath, savPath: override, savSuffix, embeddedRom, battery, settings, roles });
     if (wasEmpty) this.focusedId = id;
+    this.syncSerialOutCapture(id); // a loaded project may carry a system already in MIDIOUT mode
     return id;
   }
 
@@ -571,7 +579,17 @@ export class SystemsStore {
 
   // Finish a successful mutation: mark dirty + notify, return the id.
   private committed(id: number): number {
+    this.syncSerialOutCapture(id); // a freshly (re)built core defaults to unarmed — re-establish the gate
     this.markDirty();
     return id;
+  }
+
+  // Arm/disarm native serial-out capture (LSDj MI.OUT) for a system from its lsdj-sync mode. Called
+  // wherever a core is (re)built (committed/adopt — a fresh core defaults to unarmed) and when the mode
+  // changes (setRoleConfig). A no-op for a non-LSDj system (no lsdj-sync role → nothing to arm).
+  private syncSerialOutCapture(id: number): void {
+    const lsdj = findById(this.entries, id)?.roles.find((r) => r.kind === "lsdj-sync");
+    if (!lsdj) return;
+    this.backend.setSerialOutCapture(id, (lsdj.config as { mode?: number }).mode === LSDJ_MIDIOUT_MODE);
   }
 }

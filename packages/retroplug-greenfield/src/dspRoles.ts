@@ -18,6 +18,7 @@ import {
   isExtendedScancode,
   toGbSerialByte,
 } from "./lsdjKeyboardMap";
+import { arduinoboyDecodeSerialOut, type ArduinoboyState } from "./lsdjArduinoboy";
 
 // Forward every host-MIDI byte verbatim into the system's serial input. This is both `mgb`
 // (== MgbPassthroughRole) and lsdj-sync's MidiPassthrough mode (== LsdjSyncRole handlePassthrough).
@@ -135,10 +136,21 @@ const keyboardMidi: SystemBehavior = (c) => {
   }
 };
 
-// lsdj-sync: dispatch on the configured mode (LsdjSyncMode). Off(0)/Keyboard(4)/ArduinoboyMaster(7) emit
-// nothing here — 4 needs the host `keys` feed and 7 needs the emulator serial-out fed into the block,
-// both later phases. MidiSync's 0xF8 stream carries no 0xFA; the START-arm that begins LSDj is a user
-// action, not part of the clock (only Arduinoboy mode bookends with 0xFA/0xFC).
+// ArduinoboyMaster / MIDIOUT (mode 7, == the native ArduinoboyMaster role): LSDj is a serial SLAVE that
+// emits the Arduinoboy MI.OUT protocol on its serial-out port. Native captures the raw bytes and hands
+// them back as ctx.serialOut (one-block latency); we strip the flag-gated framing + decode the byte
+// protocol into host MIDI (emitMidiOut). Frame 0 — the protocol carries no intra-block timing, and the
+// downstream drain/DAW timestamps by block. Decoder state (pending command, partial framing bits)
+// persists across blocks in ctx.state.
+const arduinoboyMaster: SystemBehavior = (c) => {
+  if (c.serialOut.length === 0) return;
+  const st = c.state as ArduinoboyState;
+  arduinoboyDecodeSerialOut(c.serialOut, st, (data) => c.emitMidiOut(0, data));
+};
+
+// lsdj-sync: dispatch on the configured mode (LsdjSyncMode). Off(0)/Keyboard(4) emit nothing here — 4
+// needs the host `keys` feed (a later phase). MidiSync's 0xF8 stream carries no 0xFA; the START-arm that
+// begins LSDj is a user action, not part of the clock (only Arduinoboy mode bookends with 0xFA/0xFC).
 const lsdjSync: SystemBehavior = (c) => {
   switch (c.config.mode as number) {
     case 1: { // MidiSync
@@ -150,6 +162,7 @@ const lsdjSync: SystemBehavior = (c) => {
     case 3: midiMap(c); break; // MidiMap
     case 5: keyboardMidi(c); break; // KeyboardMidi
     case 6: forwardMidiToSerial(c); break; // MidiPassthrough
+    case 7: arduinoboyMaster(c); break; // ArduinoboyMaster / MIDIOUT
     default: break;
   }
 };
