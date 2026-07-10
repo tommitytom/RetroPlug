@@ -195,5 +195,5 @@ function createRealBackend() {
 // packages/retroplug/test-native/smoke.test.ts
 test("configDir returns the config dir the native host was given", () => {
   const be = createRealBackend();
-  expect(be.configDir()).toBe("/tmp/rp-greenfield-e3lUBF");
+  expect(be.configDir()).toBe("/tmp/rp-greenfield-SdKByo");
 });

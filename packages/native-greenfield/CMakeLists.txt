@@ -153,17 +153,17 @@ add_custom_target(retroplug-example-session ALL
                ${CMAKE_BINARY_DIR}/greenfield-cli/rom-test.js
                ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-mgb.js
                ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-lsdj-sync.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${GFCLI_SESSIONS}/mgb-smoke.ts   ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${GFCLI_SESSIONS}/render-rom.ts  ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${GFCLI_SESSIONS}/render-song.ts ${CMAKE_BINARY_DIR}/greenfield-cli/render-song.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${GFCLI_SESSIONS}/rom-test.ts    ${CMAKE_BINARY_DIR}/greenfield-cli/rom-test.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${GFCLI_SESSIONS}/analyze-mgb.ts       ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-mgb.js
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${GFCLI_SESSIONS}/analyze-lsdj-sync.ts ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-lsdj-sync.js
     COMMENT "Bundling greenfield CLI example sessions (esbuild)"
     VERBATIM)
@@ -177,7 +177,7 @@ set_source_files_properties(${CP_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produce
 add_custom_target(retroplug-cp-bundle ALL
     BYPRODUCTS ${CP_BUNDLE_JS} ${CP_BUNDLE_C} ${CP_BUNDLE_C}.new
     COMMAND ${NODE_EXECUTABLE}
-            ${CMAKE_SOURCE_DIR}/tools/build-greenfield-controlplane.js ${CP_BUNDLE_JS}
+            ${CMAKE_SOURCE_DIR}/tools/build-controlplane.js ${CP_BUNDLE_JS}
     COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${CP_BUNDLE_C}.new ${CP_BUNDLE_JS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CP_BUNDLE_C}.new ${CP_BUNDLE_C}
     COMMENT "Regenerating greenfield control-plane bundle (esbuild + bytecode)"

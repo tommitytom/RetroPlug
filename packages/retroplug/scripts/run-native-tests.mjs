@@ -27,13 +27,13 @@ const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../r
 // rather than in the sibling tree, so a test can reach them without the sibling being populated.
 const REPO_RESOURCES_DIR = join(REPO, "resources");
 
-const HOST = process.env.RETROPLUG_GREENFIELD_HOST || join(REPO, "build/bin/retroplug-host");
+const HOST = process.env.RETROPLUG_HOST || join(REPO, "build/bin/retroplug-host");
 
 if (!existsSync(HOST)) {
   console.error(
     `native-greenfield host not found: ${HOST}\n` +
       `build it once:  cmake --build build --target retroplug-host -j$(nproc)\n` +
-      `or set RETROPLUG_GREENFIELD_HOST to a host binary.`,
+      `or set RETROPLUG_HOST to a host binary.`,
   );
   process.exit(1);
 }

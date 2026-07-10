@@ -15176,7 +15176,7 @@ var BindingsStore = class {
 // packages/retroplug/test-native/fs-config.test.ts
 test("RecentStore: add persists to real recent.json; a fresh store reads it back", () => {
   const be = createRealBackend();
-  const song = "/tmp/rp-greenfield-gFVSHt/song.rplg";
+  const song = "/tmp/rp-greenfield-YsXkTy/song.rplg";
   const r1 = new RecentStore(be);
   r1.load();
   r1.add(song);
@@ -15188,7 +15188,7 @@ test("RecentStore: add persists to real recent.json; a fresh store reads it back
 });
 test("UserConfigStore: first load writes real defaults; a set persists across a reload", () => {
   const be = createRealBackend();
-  const cfg = "/tmp/rp-greenfield-gFVSHt/config.json";
+  const cfg = "/tmp/rp-greenfield-YsXkTy/config.json";
   const u1 = new UserConfigStore(be);
   u1.load();
   expect(be.fileExists(cfg)).toBeTruthy();
@@ -15204,7 +15204,7 @@ test("BindingsStore: ensureDefaults + profile CRUD over real disk (listDir/write
   uc.load();
   const b = new BindingsStore(be, uc);
   b.ensureDefaults();
-  expect(be.fileExists("/tmp/rp-greenfield-gFVSHt/bindings/default.json")).toBeTruthy();
+  expect(be.fileExists("/tmp/rp-greenfield-YsXkTy/bindings/default.json")).toBeTruthy();
   expect(b.availableProfiles()).toEqual(["default"]);
   expect(b.saveProfile("wasd", { name: "ignored", keyboard: { Left: ["A"] }, gamepad: {}, keyboardActions: {}, gamepadActions: {} })).toBeTruthy();
   expect(b.availableProfiles()).toEqual(["default", "wasd"]);

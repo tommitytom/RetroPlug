@@ -38,8 +38,8 @@ cmake -B "$builddir" \
 echo "==> building retroplug-host (profiling)"
 cmake --build "$builddir" -j"$(nproc)" --target retroplug-host
 
-run_native() {  # $1 = host binary the runner launches (RETROPLUG_GREENFIELD_HOST)
-    RETROPLUG_GREENFIELD_HOST="$1" node packages/retroplug/scripts/run-native-tests.mjs "$slug"
+run_native() {  # $1 = host binary the runner launches (RETROPLUG_HOST)
+    RETROPLUG_HOST="$1" node packages/retroplug/scripts/run-native-tests.mjs "$slug"
 }
 
 case "$mode" in
@@ -74,7 +74,7 @@ case "$mode" in
             callgrind) vg=(--tool=callgrind "--callgrind-out-file=$out/callgrind.out" --dump-instr=yes --collect-jumps=yes) ;;
             massif)    vg=(--tool=massif --time-unit=B "--massif-out-file=$out/massif.out") ;;
         esac
-        # run-native-tests.mjs exec's RETROPLUG_GREENFIELD_HOST directly, so point it at a shim that
+        # run-native-tests.mjs exec's RETROPLUG_HOST directly, so point it at a shim that
         # launches the real host under valgrind.
         shim="$out/host-$mode.sh"
         { echo '#!/usr/bin/env bash'; echo "exec valgrind ${vg[*]} \"$host\" \"\$@\""; } > "$shim"

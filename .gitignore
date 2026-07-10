@@ -4,7 +4,7 @@
 # sanitizer build dirs (tools/run-sanitizers.sh)
 /build-tsan/
 /build-asan/
-# profiling build dir (tools/run-greenfield-profile.sh)
+# profiling build dir (tools/run-profile.sh)
 /build-prof/
 
 # cmake temp files that remain around
@@ -44,6 +44,6 @@ __pycache__/
 
 plans.md
 # Greenfield package test-bundle output (derived: esbuild -> tjs run / native host)
-packages/retroplug-greenfield/.test-build/
-packages/retroplug-greenfield/.native-build/
-packages/retroplug-greenfield/.ui-build/
+packages/retroplug/.test-build/
+packages/retroplug/.native-build/
+packages/retroplug/.ui-build/

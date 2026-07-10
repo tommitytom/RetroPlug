@@ -15935,8 +15935,8 @@ test("a fresh LSDj ROM with no sav is seeded a valid empty sav \u2014 the real c
   const emptySav = be.savFromJson("{}");
   expect(emptySav.length > 33088).toBeTruthy();
   expect(emptySav[33086] === JK0 && emptySav[33087] === JK1).toBeTruthy();
-  const rom = "/tmp/rp-greenfield-Ifcach/lsdj-seed.gb";
-  const sav = "/tmp/rp-greenfield-Ifcach/lsdj-seed.sav";
+  const rom = "/tmp/rp-greenfield-V1CYIg/lsdj-seed.gb";
+  const sav = "/tmp/rp-greenfield-V1CYIg/lsdj-seed.sav";
   be.deleteFile(sav);
   const romBytes = be.readFile(LSDJ);
   expect(romBytes != null).toBeTruthy();

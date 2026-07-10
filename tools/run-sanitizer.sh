@@ -49,7 +49,7 @@ else
     lsan="$repo/packages/native/test/sanitizer/lsan.supp"
     [ -f "$lsan" ] && export LSAN_OPTIONS="suppressions=$lsan"
 fi
-export RETROPLUG_GREENFIELD_HOST="$repo/$builddir/bin/retroplug-host"
+export RETROPLUG_HOST="$repo/$builddir/bin/retroplug-host"
 
 rc=0
 for slug in "${slugs[@]}"; do

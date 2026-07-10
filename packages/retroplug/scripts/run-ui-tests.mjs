@@ -20,13 +20,13 @@ const REPO = resolve(PKG, "../..");
 const TEST_DIR = join(PKG, "test-ui");
 const OUT_DIR = join(PKG, ".ui-build");
 
-const HOST = process.env.RETROPLUG_GREENFIELD_UI_TEST || join(REPO, "build/bin/retroplug-ui-test");
+const HOST = process.env.RETROPLUG_UI_TEST || join(REPO, "build/bin/retroplug-ui-test");
 
 if (!existsSync(HOST)) {
   console.error(
     `greenfield UI test binary not found: ${HOST}\n` +
       `build it once:  cmake --build build --target retroplug-ui-test -j$(nproc)\n` +
-      `or set RETROPLUG_GREENFIELD_UI_TEST to a binary.`,
+      `or set RETROPLUG_UI_TEST to a binary.`,
   );
   process.exit(1);
 }

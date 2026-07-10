@@ -16178,9 +16178,9 @@ function newProject() {
 }
 test("export: a real PKZIP of project.json + each core's savestate (+ SRAM for battery carts)", () => {
   const { be, project } = newProject();
-  const rom = "/tmp/rp-greenfield-89JCEF/a.gb";
+  const rom = "/tmp/rp-greenfield-pCTLnU/a.gb";
   be.writeFile(rom, gbRomBattery());
-  const song = "/tmp/rp-greenfield-89JCEF/song.rplg";
+  const song = "/tmp/rp-greenfield-pCTLnU/song.rplg";
   project.systems.loadMgb();
   project.systems.addSystem(rom);
   project.setLayout(3);
@@ -16199,9 +16199,9 @@ test("export: a real PKZIP of project.json + each core's savestate (+ SRAM for b
 });
 test("export then load: round-trips systems + settings; the archive re-seeds the real core", () => {
   const { be, project } = newProject();
-  const rom = "/tmp/rp-greenfield-89JCEF/rt.gb";
+  const rom = "/tmp/rp-greenfield-pCTLnU/rt.gb";
   be.writeFile(rom, gbRomBattery());
-  const song = "/tmp/rp-greenfield-89JCEF/rt.rplg";
+  const song = "/tmp/rp-greenfield-pCTLnU/rt.rplg";
   project.systems.loadMgb();
   project.systems.addSystem(rom);
   project.setZoom(4);

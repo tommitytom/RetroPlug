@@ -16755,7 +16755,7 @@ test("the control-plane bundle composes, loads the kernel, and exposes the __rp_
 });
 test("autoload an mGB .rplg \u2192 the kernel plays it; base64 getState/setState round-trips", () => {
   const author = new ProjectStore(createRealBackend(), new RecentStore(createRealBackend()), buildAppRegistry());
-  const rplg = "/tmp/rp-greenfield-ki3sB7/cp_mgb.rplg";
+  const rplg = "/tmp/rp-greenfield-FLA9ho/cp_mgb.rplg";
   author.systems.loadMgb();
   expect(author.export(rplg)).toBeTruthy();
   author.newProject();

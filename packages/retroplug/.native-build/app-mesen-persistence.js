@@ -16685,7 +16685,7 @@ test("F1: Duplicate clones a live NES core off its published (advanced) state, n
 });
 test("F1: a ROM that passes the NES magic gate but fails Mesen LoadRom fails the construct", () => {
   const be = createRealBackend();
-  const bad = "/tmp/rp-greenfield-GnRAdc/roms/bad.nes";
+  const bad = "/tmp/rp-greenfield-YM4onw/roms/bad.nes";
   be.writeFile(bad, nesRom());
   const store = new SystemsStore(be, () => {
   }, buildAppRegistry());
@@ -16695,7 +16695,7 @@ test("F1: a ROM that passes the NES magic gate but fails Mesen LoadRom fails the
 });
 test("F2: a battery NES cart's SRAM reads back through the registry; reset carries it forward", () => {
   const be = createRealBackend();
-  const rom = "/tmp/rp-greenfield-GnRAdc/roms/batt.nes";
+  const rom = "/tmp/rp-greenfield-YM4onw/roms/batt.nes";
   be.writeFile(rom, nesRomBattery());
   const store = new SystemsStore(be, () => {
   }, buildAppRegistry());
@@ -16704,7 +16704,7 @@ test("F2: a battery NES cart's SRAM reads back through the registry; reset carri
   expect(store.view()[0].platform).toBe("nes");
   const sram = be.readSram(a);
   expect(sram != null && sram.length > 0).toBeTruthy();
-  const sramPath = "/tmp/rp-greenfield-GnRAdc/batt.sav";
+  const sramPath = "/tmp/rp-greenfield-YM4onw/batt.sav";
   expect(store.saveSram(a, sramPath)).toBeTruthy();
   const onDisk = be.readFile(sramPath);
   expect(onDisk != null && onDisk.length > 0).toBeTruthy();
