@@ -75,7 +75,7 @@ verification tasks remain** before legacy can be deleted:
 - **Live memory subscription** (§4.2), **savestate slots**, **sav inspector**, **web/Emscripten** — deferred; none are features the switchover depends on.
 
 Beyond these four, the rest is **mechanical**: finish the DSP-roles C++→TS move + delete the dead role
-classes (§5), re-home `retroplug-cli-core` (§3), delete legacy, then the rename + plugin-identity revert (§3).
+classes (§5), re-home the shared core + `GamepadManager` (§3, **done**), delete legacy, then the rename + plugin-identity revert (§3).
 
 ---
 
@@ -128,8 +128,9 @@ part of the **shared core** described in [01-architecture.md](01-architecture.md
 | Util | `util/MinizZip`, `EmbeddedRoms` | `zip`/`unzip` for `.rplg`; embedded mGB bytes |
 
 `GamepadManager.{hpp,cpp}` is now **also** compiled into greenfield (its plugin `FILES_UI`; SDL2 linked onto
-`retroplug-greenfield-ui`) — see the §1 gamepad row — so it survives legacy deletion and re-homes into the
-greenfield tree alongside `retroplug-cli-core` (§3), rather than dying with the legacy plugin.
+`retroplug-greenfield-ui`) — see the §1 gamepad row. It has **re-homed** to
+`packages/native-greenfield/src/input/` (§3): both plugins compile it from there, so it survives legacy
+deletion rather than dying with the legacy plugin.
 
 The C++ feature-role classes — `LsdjSyncRole`, `ArduinoboyMaster`, `MgbPassthroughRole`,
 `LsdjKitPatchRole`, `mesen/roles/NesN8MidiRole` — are compiled into `retroplug-cli-core` and
@@ -219,16 +220,24 @@ the two plugins coexist in a DAW. On switchover these revert to the canonical `R
 reference the legacy plugin resolve. This is an on-disk identity change; sequence it after legacy
 is removed.
 
-### Re-home `retroplug-cli-core`
+### Re-home the shared core + `GamepadManager` — DONE
 
-`retroplug-cli-core` ([CMakeLists.txt:23](../packages/native/cli/CMakeLists.txt#L23)) is the single
-load-bearing shared C++ lib — greenfield's whole emulator/Project surface flows through it
-([CMakeLists.txt:41](../packages/native-greenfield/CMakeLists.txt#L41), made PIC at
-[:54](../packages/native-greenfield/CMakeLists.txt#L54)). It currently lives inside a target that also
-compiles the CLI-only `HarnessRpcService`, so greenfield transitively links a CLI surface it never
-uses. Any "delete `packages/native/cli`" step must first **extract the shared core into a
-neutrally-named lib** (e.g. `retroplug-core`) in the greenfield tree, preserving the PIC setting, or
-greenfield stops building. This is the one delete step with a hard ordering constraint.
+The shared C++ core no longer lives inside the legacy CLI target, and the last shared *source* is out of
+`packages/native/src`:
+
+- **`retroplug-core`** — the emulator / Project / lsdj-codec sources are now a neutrally-named static lib
+  in the greenfield tree ([native-greenfield/CMakeLists.txt](../packages/native-greenfield/CMakeLists.txt),
+  PIC, txiki-free). Legacy `retroplug-cli-core` is a thin `HarnessRpcService.cpp` wrapper that links it,
+  and the root `add_subdirectory` order was swapped so `retroplug-core` is defined before the CLI that
+  links it. Greenfield's backend links `retroplug-core` directly, so **deleting `packages/native/cli` no
+  longer strands greenfield** — the one delete step that had a hard ordering constraint is cleared.
+- **`GamepadManager.{cpp,hpp}`** — the SDL gamepad poll shared by both plugins' `FILES_UI` — moved to
+  `packages/native-greenfield/src/input/`. Both plugins compile it from there; the legacy plugin references
+  it (source + a single-file include dir) transitionally until it's deleted.
+
+Greenfield now holds **no link or source that lives only in dying legacy code** — the ~20 shared-core
+headers it `#include`s all resolve through `retroplug-core`'s `packages/native/src` PUBLIC include, which
+survives the eventual tree rename. What remains is mechanical deletion + the rename.
 
 ### tsconfig drift
 
