@@ -98,4 +98,19 @@ g.__rp_saveProjectB64 = (): string => {
 
 g.__rp_newProject = (): void => project.newProject();
 
+// LSDj in a host-clocked sync mode (MidiSync / MidiSyncArduinoboy) locks its playback a fixed distance
+// behind the DAW clock — an emulator clock→sound latency, not a drift. Reporting it as plugin latency lets
+// the host apply PDC so LSDj lands on the grid, for the DAW-timing renders and real users alike. Output
+// modes (MI.OUT / Master Sync) and Off/Keyboard don't host-clock playback, so they add no latency. The
+// plugin queries this (as ms) after each load and converts to frames at the live sample rate.
+const LSDJ_HOST_SYNC_LATENCY_MS = 33;
+g.__rp_syncLatencyMs = (): string => {
+  let ms = 0;
+  for (const s of project.systems.view()) {
+    const mode = (s.roles.find((r) => r.kind === "lsdj-sync")?.config as { mode?: number } | undefined)?.mode;
+    if (mode === 1 || mode === 2) ms = Math.max(ms, LSDJ_HOST_SYNC_LATENCY_MS);
+  }
+  return String(ms);
+};
+
 g.__rp_ready = kernelOk;

@@ -116,10 +116,11 @@ protected:
     void setState(const char* key, const char* value) override {
         if (std::strcmp(key, "project") != 0) return;
         callGlobal("__rp_loadProjectB64", value ? value : "");
+        updateLatency();  // the loaded project's sync mode determines the compensable latency
     }
 
     // --- audio lifecycle ---
-    void activate()   override { service_.pluginActivate(); }    // audioRunning_ + active_=&queued_
+    void activate()   override { service_.pluginActivate(); updateLatency(); }  // audioRunning_ + active_=&queued_; report PDC
     void deactivate() override { service_.pluginDeactivate(); }  // + freePending + reclaim released
     void sampleRateChanged(double newSampleRate) override { service_.setSampleRate(newSampleRate); }
 
@@ -202,6 +203,7 @@ private:
         if (const char* autoload = std::getenv("RETROPLUG_AUTOLOAD_PROJECT")) {
             const std::string ok = callGlobal("__rp_loadProjectPath", autoload);
             d_stderr("[greenfield] autoload %s -> %s", autoload, ok.empty() ? "false/void" : ok.c_str());
+            updateLatency();  // report the autoloaded project's PDC latency before the host reads it
         }
     }
 
@@ -247,6 +249,16 @@ private:
         JS_FreeValue(ctx, fn);
         JS_FreeValue(ctx, global);
         return out;
+    }
+
+    // Report the loaded project's compensable latency to the host (PDC). LSDj in a host-clocked sync mode
+    // locks a fixed distance behind the DAW clock; the control plane returns that latency in ms, which we
+    // convert to frames at the live sample rate. Called after each load + on activate (hosts read latency
+    // around activation); a change re-runs setLatency, which DPF forwards to the host where supported.
+    void updateLatency() {
+        const std::string ms = callGlobal("__rp_syncLatencyMs", nullptr);
+        const double latMs = ms.empty() ? 0.0 : std::atof(ms.c_str());
+        setLatency(static_cast<uint32_t>(latMs * getSampleRate() / 1000.0 + 0.5));
     }
 };
 
