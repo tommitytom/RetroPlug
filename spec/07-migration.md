@@ -284,6 +284,19 @@ greenfield to be the sole build.
    embedded), `lsdj-sync` (LSDj title), and `nes-n8-midi` (platform). Kit-patch default attachment
    follows if/when that feature is (re)built.
 
+5. **The native file watcher is unimplemented — ROM hot-reload / config live-reload is inert.** Greenfield's
+   design is "watcher = C++, policy = TS": native watches (efsw over the config dir + `bindings/`, plus a
+   per-ROM mtime poll) and reports changed paths through `HostRpcService::drainChangedPaths()`; TS
+   ([fileWatcher.ts](../packages/retroplug-greenfield/src/fileWatcher.ts) `FileWatcher.pump`) drains at idle
+   and reloads systems whose ROM changed with `reloadOnRomChange` on. The **TS policy half is built +
+   unit-tested**, but the **native half was never ported** — `drainChangedPaths()` is a stub returning `{}`
+   ([HostRpcService.cpp:134](../packages/native-greenfield/src/HostRpcService.cpp#L134)), and the host is
+   deliberately efsw-free (`configDir` reimplemented to avoid linking it). So the "Reload on ROM Change"
+   menu item stores/applies its preference but nothing triggers the reload. Closing it means re-adding
+   `deps/efsw` to `native-greenfield` + a per-ROM mtime poll behind `drainChangedPaths` (and confirming
+   `FileWatcher.pump` is wired into the plugin idle loop). Not a switchover blocker — a post-switchover
+   feature gap, like §4.2. (So `deps/efsw` is **kept**, not removed with the legacy build.)
+
 ---
 
 ## 5. In-flight workstream: DSP roles C++ → TS
