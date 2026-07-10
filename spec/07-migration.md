@@ -38,14 +38,14 @@ verification tasks remain** before legacy can be deleted:
 3. **Native KeyboardMidi coverage — DONE (functional).** The mock
    [lsdj-modes.test.ts](../packages/retroplug-greenfield/test/dsp/lsdj-modes.test.ts) asserts the exact scancodes
    the role emits, and [test-native/lsdj-keyboardmidi.test.ts](../packages/retroplug-greenfield/test-native/lsdj-keyboardmidi.test.ts)
-   proves MIDI notes play **audibly** on a real LSDj via the PS/2-keyboard path. Getting there took three fixes
-   (all per the LSDj author's [jkotlinski/keyjazz](https://github.com/jkotlinski/keyjazz) + the manual): (a) an
-   **external-clock serial-IN path** — KEYBD reads the keyboard as a serial slave (`SC=0x80`), so
-   `SameBoySystem::writeAudioSample` now drives the clock for the IN direction too, not just serial-out capture;
-   (b) **GB-serial byte mangling** — the GB serial truncates each PS/2 scancode to 7 bits and reverses them, so
-   the role emits the "as seen by LSDj" values (`lsdjKeyboardMap.ts` `toGbSerialByte`), matching keyjazz, not the
-   textbook codes; (c) a **running song** — LSDj only polls the keyboard (arms `SC=0xfc`) once playing. The
-   external-clock IN path is the same primitive **ArduinoboyMaster** (task 4) needs.
+   proves MIDI notes play **audibly** on a real LSDj via the PS/2-keyboard path. Two fixes (both per the LSDj
+   author's [jkotlinski/keyjazz](https://github.com/jkotlinski/keyjazz) + the manual): (a) **GB-serial byte
+   mangling** — LSDj reads the keyboard as a serial slave and the GB serial truncates each PS/2 scancode to 7
+   bits and reverses them, so the role must emit the "as seen by LSDj" values (`lsdjKeyboardMap.ts`
+   `toGbSerialByte`), matching keyjazz, not the textbook codes; (b) a **running song** — LSDj only polls the
+   keyboard (arms `SC=0xfc`) once playing. Serial-IN delivery itself needed no new code: the existing per-byte
+   slave pump in `SameBoySystem::stepIfBelowTarget` (which also serves mGB) already clocks external-clock
+   scancodes in. (An earlier `writeAudioSample` serial-IN addition turned out redundant and was reverted.)
 4. **The final 2 LSDj sync modes** (§5): raw **Keyboard** (mode 4 — needs the per-block UI-keys feed) and **ArduinoboyMaster** (mode 7, LSDj→MIDI-out — needs the emulator **serial-OUT fed into the block** + `emitMidiOut` **drained to the host MIDI-out port** + the master-protocol behaviour). ArduinoboyMaster is the priority.
 
 **Explicitly deferred / dropped (NOT blockers for deletion):**

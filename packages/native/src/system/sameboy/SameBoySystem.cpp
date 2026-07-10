@@ -598,24 +598,21 @@ void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
     // old behavior in old/src/sameboy/SameBoyUtil.cpp; ≤1 sample/block click).
     ++audioFrameCount_;
 
-    // TODO: Does this belong here?
-
-    // Synthetic external-clock serial for master-mode roles. LSDJ sets SC=0x80 (transfer enable +
-    // EXTERNAL clock) and waits for a clock source to shift its byte across. Two directions use this:
-    //   - MI.OUT (Arduinoboy master): LSDJ shifts a byte OUT; we capture it (serialOutEnabled_).
-    //   - KEYBD: LSDJ shifts a PS/2 scancode IN; we feed it from the serial-in FIFO.
-    // Real hardware (an Arduinoboy / a PS/2-to-link adapter) drives the clock; we play that role,
-    // shifting one bit per audio sample while a transfer is pending. Full-duplex: the OUT bit is read
-    // from SB.bit7 BEFORE the shift, the IN bit is fed via GB_serial_set_data_bit (idle-high when the
-    // FIFO is empty, matching the SIN pull-up). Bypassed when a link peer exists (LinkGroup owns that).
-    if (linkPeers_.empty() && gb_) {
+    // MI.OUT serial-OUT capture — and yes, this belongs in the per-sample APU callback. LSDJ in
+    // ArduinoboyMaster (MI.OUT) mode sets SC=0x80 (transfer enable + EXTERNAL clock) and shifts a byte
+    // OUT one bit at a time, waiting for a master to clock it. We play that master here: read the
+    // outgoing bit from SB.bit7 BEFORE the shift, then clock it via GB_serial_set_data_bit (feeding
+    // idle-high back on SIN). It can't move to SameBoy's serial bit callbacks — those fire only as
+    // internal-clock master (SC=0x81) and are dormant in external-clock mode — and it can't be batched:
+    // the OUT bit must be sampled full-duplex as the GB shifts it during GB_run, which only the
+    // per-sample hook sees. Serial IN (mGB / LSDJ KEYBD scancodes) is delivered separately, per byte,
+    // by the slave pump in stepIfBelowTarget. Bypassed when a link peer exists (LinkGroup owns that).
+    if (linkPeers_.empty() && serialOutEnabled_ && gb_) {
         const auto sc = gb_->io_registers[GB_IO_SC];
-        if ((sc & 0x81) == 0x80 && (serialOutEnabled_ || !serialIn_.empty())) {
-            if (serialOutEnabled_) {
-                const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
-                captureSerialOutBit(outBit);
-            }
-            GB_serial_set_data_bit(gb_, nextSerialInBit());
+        if ((sc & 0x81) == 0x80) {
+            const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
+            captureSerialOutBit(outBit);
+            GB_serial_set_data_bit(gb_, true);
         }
     }
 }

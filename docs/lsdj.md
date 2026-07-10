@@ -326,30 +326,37 @@ asserts thousands of captured bytes (the synthetic-clock + capture path).
 LSDJ in MI.OUT (and KEYBD) uses the GB serial port in **external-clock** mode
 (`SC=0x80`): LSDJ is the *slave* and waits for the sender to clock each byte
 across. Real hardware (an Arduinoboy for MI.OUT, a PS/2-to-link adapter for
-KEYBD) drives the clock; SameBoy by default does nothing. To make both directions
-verifiable headlessly, [packages/native/src/system/sameboy/SameBoySystem.cpp](../packages/native/src/system/sameboy/SameBoySystem.cpp)
-plays that role in `writeAudioSample`, shifting one bit per audio sample whenever
-`(SC & 0x81) == 0x80` and there's something to transfer — **full-duplex**:
+KEYBD) drives the clock; SameBoy by default does nothing. Two paths in
+[packages/native/src/system/sameboy/SameBoySystem.cpp](../packages/native/src/system/sameboy/SameBoySystem.cpp)
+play that role:
 
-```cpp
-const auto sc = gb_->io_registers[GB_IO_SC];
-if ((sc & 0x81) == 0x80 && (serialOutEnabled_ || !serialIn_.empty())) {
-    if (serialOutEnabled_) {                              // OUT: capture LSDJ's byte (MI.OUT)
-        const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
-        captureSerialOutBit(outBit);
-    }
-    GB_serial_set_data_bit(gb_, nextSerialInBit());        // IN: feed the FIFO (KEYBD scancodes)
-}
-```
+- **Serial-OUT capture (MI.OUT)** lives in `writeAudioSample` — the per-sample
+  APU callback — because the outgoing bit must be sampled from `SB.bit7`
+  full-duplex *as the GB shifts it during `GB_run`*, which no other hook sees
+  (SameBoy's serial bit callbacks fire only as internal-clock master):
 
-The OUT direction captures LSDJ's outgoing byte (Arduinoboy MI.OUT); the IN
-direction feeds the serial-in FIFO so LSDJ can read PS/2 keyboard scancodes in
-KEYBD mode (idle-high when the FIFO is empty). This runs ~5.5 kHz — faster than
-real hardware — but the byte protocol is rate-independent so the bytes are
-correct. **KEYBD also needs** the scancodes pre-mangled to LSDJ's GB-serial form
-(reverse-low-7-bits, see [jkotlinski/keyjazz](https://github.com/jkotlinski/keyjazz) /
-`lsdjKeyboardMap.ts` `toGbSerialByte`) and LSDJ actually *playing* (it only polls
-the keyboard, arming `SC=0xfc`, once a song is running or on the phrase screen).
+  ```cpp
+  if (linkPeers_.empty() && serialOutEnabled_ && gb_) {
+      const auto sc = gb_->io_registers[GB_IO_SC];
+      if ((sc & 0x81) == 0x80) {
+          const bool outBit = (gb_->io_registers[GB_IO_SB] & 0x80) != 0;
+          captureSerialOutBit(outBit);           // MI.OUT: capture LSDJ's outgoing byte
+          GB_serial_set_data_bit(gb_, true);      // clock it; feed idle-high back on SIN
+      }
+  }
+  ```
+
+- **Serial-IN delivery (mGB, LSDJ KEYBD)** lives in `stepIfBelowTarget`, a
+  per-byte slave pump: while `SC=0x80` and the FIFO is non-empty, it pops a byte
+  and clocks all 8 bits with `GB_serial_set_data_bit` before `GB_run`. This is
+  how mGB reads MIDI-over-serial and how LSDJ reads keyboard scancodes.
+
+This runs faster than real hardware but the byte protocol is rate-independent so
+the bytes are correct. **KEYBD additionally needs** the scancodes pre-mangled to
+LSDJ's GB-serial form (reverse-low-7-bits, see
+[jkotlinski/keyjazz](https://github.com/jkotlinski/keyjazz) / `lsdjKeyboardMap.ts`
+`toGbSerialByte`) and LSDJ actually *playing* — it only polls the keyboard,
+arming `SC=0xfc`, once a song is running or on the phrase screen.
 
 **Pitfall:** the bit-start callback gives the outgoing bit as its `bit_received`
 parameter; this is the bit being SENT. Do NOT read `GB_serial_get_data_bit` in

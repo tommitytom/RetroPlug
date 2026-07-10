@@ -2,15 +2,14 @@
 // `lsdj-sync` role in KeyboardMidi mode (5), in the real DSP kernel, turns host MIDI notes into LSDj
 // PS/2 keyboard scancodes and plays them LIVE on a real LSDj core, audibly.
 //
-// Getting this to work required three things the reference (jkotlinski/keyjazz) + the LSDj manual made
-// clear:
-//   1. External-clock serial. KEYBD reads the PS/2 keyboard over the link cable in external-clock mode
-//      (SC=0x80): LSDj is the slave and waits for the sender to clock each byte in. SameBoySystem now
-//      drives that clock for the serial-IN direction (writeAudioSample), playing the PS/2 adapter.
-//   2. GB-serial byte mangling. The GB serial truncates each PS/2 scancode to 7 bits and reverses them,
-//      so the role emits the "as seen by LSDj" values (lsdjKeyboardMap.ts `toGbSerialByte`), matching
-//      keyjazz — NOT the textbook PS/2 codes.
-//   3. A running song. Per the manual (§5.6), the keyboard only sounds on the phrase screen or "while
+// Getting this to work required two fixes the reference (jkotlinski/keyjazz) + the LSDj manual made
+// clear (serial-IN delivery itself needed no new code — the per-byte slave pump in
+// SameBoySystem::stepIfBelowTarget, which also serves mGB, already clocks external-clock scancodes in):
+//   1. GB-serial byte mangling. KEYBD reads the PS/2 keyboard over the link cable as a serial slave,
+//      and the GB serial truncates each PS/2 scancode to 7 bits and reverses them, so the role emits the
+//      "as seen by LSDj" values (lsdjKeyboardMap.ts `toGbSerialByte`), matching keyjazz — NOT the
+//      textbook PS/2 codes. (This was the actual fix; the bytes were being delivered all along.)
+//   2. A running song. Per the manual (§5.6), the keyboard only sounds on the phrase screen or "while
 //      the song is running" — LSDj only polls the keyboard (arms SC=0xfc) once playing. So we author a
 //      one-note song and press START; the sparse song is mostly silent between its notes, and the
 //      keyboard notes fill every window with audio.
