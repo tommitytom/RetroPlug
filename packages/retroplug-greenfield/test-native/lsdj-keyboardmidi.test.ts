@@ -1,11 +1,17 @@
-// Final migration task #3: native KeyboardMidi coverage. Port of legacy test/ts/gb/lsdj/keyboardmidi.test.ts
-// onto greenfield — the TS `lsdj-sync` role in KeyboardMidi mode (5), running in the real DSP kernel,
-// turns host MIDI notes into LSDj PS/2 keyboard scancodes (dspRoles.ts) and feeds them to a real LSDj
-// core in SYNC=KEYBD. End-to-end coverage is split across two layers: the mock test/dsp/lsdj-modes.test.ts
-// asserts the EXACT scancodes the role emits (MIDI → bytes), and this native test proves those scancodes
-// are delivered to a real LSDj core in the real kernel and it keeps running (bytes → live core, no crash).
-// LSDj's keyboard is a song-EDITOR input, not a live synth, so a bare note stream is silent (matching the
-// legacy test, which also never asserted audio) — audio is logged for visibility, not gated.
+// Native KeyboardMidi coverage (migration task #3), and an honest one. The TS `lsdj-sync` role in
+// KeyboardMidi mode (5), in the real DSP kernel, turns host MIDI notes into LSDj PS/2 keyboard
+// scancodes (dspRoles.ts) and pushes them to a real LSDj's serial FIFO.
+//
+// This is a REGRESSION SMOKE: it proves the role runs against a real LSDj core in the render loop
+// without throwing. It deliberately does NOT assert that LSDj ACTS on the scancodes, because — proven
+// empirically here — it currently doesn't headlessly: keyboard scancodes produce no audio, no SRAM
+// change, and no framebuffer change, while a joypad button on the same core DOES change the screen.
+// The cause is documented in docs/lsdj.md: LSDj's KEYBD (and MI.OUT) mode reads the GB serial port in
+// EXTERNAL-clock mode (SC=0x80), and the headless harness only drives that synthetic clock for
+// serial-OUT capture — so the input bytes land in the FIFO but never shift into LSDj. Making this
+// functional needs the external-clock INPUT path (entangled with the ArduinoboyMaster / serial-out
+// work, migration task #4). Byte-exactness of the MIDI→scancode mapping is covered separately by the
+// mock test/dsp/lsdj-modes.test.ts.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
@@ -17,7 +23,7 @@ declare const __DSP_KERNEL_BUNDLE__: string;
 
 const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
 
-// SYNC=KEYBD so LSDj listens to the PS/2 keyboard; a default pulse instrument so live keys are audible.
+// SYNC=KEYBD so LSDj listens to the PS/2 keyboard.
 const KEYBD_SONG = JSON.stringify({
   workingSong: {
     formatVersion: 22,
@@ -37,7 +43,7 @@ const rms = (a: Float32Array): number => {
   return a.length ? Math.sqrt(s / a.length) : 0;
 };
 
-test("the TS lsdj-sync KeyboardMidi role maps MIDI notes to LSDj keyboard scancodes on a real core", () => {
+test("the TS lsdj-sync KeyboardMidi role runs against a real LSDj core (regression smoke)", () => {
   const be = createRealBackend();
   if (!be.fileExists(ABOY)) {
     console.log(`# SKIP lsdj-keyboardmidi: aboy LSDj ROM not found at ${ABOY}`);
@@ -62,17 +68,18 @@ test("the TS lsdj-sync KeyboardMidi role maps MIDI notes to LSDj keyboard scanco
   expect(dsp.setSystems(sysStruct(id, 5))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen from the sav
-  const idle = rms(audio.renderAudio(500)); // no keys → baseline
 
-  // A stream of note-ons across octaves → the role emits PS/2 scancodes → LSDj plays them live.
+  // Drive the role: host MIDI note-ons across octaves → PS/2 scancodes pushed to LSDj's serial FIFO.
   for (const n of [48, 55, 60, 48, 60]) {
     audio.stageMidiIn([0x90, n, 100]);
     audio.renderAudio(180);
   }
-  const played = rms(audio.renderAudio(500));
+  const rmsAfter = rms(audio.renderAudio(200));
 
-  const frame = be.getFrame(id);
-  console.log(`[lsdj-keyboardmidi] idle=${idle.toFixed(5)} played=${played.toFixed(5)}`);
-  expect(frame!.width).toBe(160); // the core survived the scancode stream (processed MIDI, no crash)
-  expect(frame!.height).toBe(144);
+  const frame = be.getFrame(id)!;
+  // The role fed a real core through the real kernel without throwing, and the core is still alive.
+  // (Functional effect on LSDj is not asserted — see the file header: KEYBD needs external-clock serial.)
+  console.log(`[lsdj-keyboardmidi] rmsAfter=${rmsAfter.toFixed(5)} (not gated — KEYBD is external-clock serial)`);
+  expect(frame.width).toBe(160);
+  expect(frame.height).toBe(144);
 });

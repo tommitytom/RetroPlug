@@ -35,10 +35,15 @@ verification tasks remain** before legacy can be deleted:
    fixtures + the reaper scripts pointed at the greenfield VST3 + `reaper-timing-analyze.py`). Deleting
    `packages/native/test`, `test/ts/**`, and the `reaper:*` scripts (§3) is gated on that leg **plus the
    ArduinoboyMaster serial-out test** (task 4).
-3. **Native KeyboardMidi coverage — DONE.** KeyboardMidi (mode 5) is now driven against a **real LSDj core**
-   ([test-native/lsdj-keyboardmidi.test.ts](../packages/retroplug-greenfield/test-native/lsdj-keyboardmidi.test.ts)):
-   the mock [lsdj-modes.test.ts](../packages/retroplug-greenfield/test/dsp/lsdj-modes.test.ts) asserts the exact
-   PS/2 scancodes, and the native test proves they reach a real LSDj and it keeps running (delivery, no crash).
+3. **Native KeyboardMidi coverage — partial (regression smoke; functional proof BLOCKED).** The mock
+   [lsdj-modes.test.ts](../packages/retroplug-greenfield/test/dsp/lsdj-modes.test.ts) asserts the exact PS/2
+   scancodes the role emits, and [test-native/lsdj-keyboardmidi.test.ts](../packages/retroplug-greenfield/test-native/lsdj-keyboardmidi.test.ts)
+   runs the role against a **real LSDj core** in the render loop without throwing. But **end-to-end functional
+   proof is not yet achievable headlessly**: LSDj's KEYBD mode reads the serial port in **external-clock** mode
+   (`SC=0x80`, [docs/lsdj.md](../docs/lsdj.md)), and the harness only drives that synthetic clock for serial-**out**
+   capture — so the scancodes reach the FIFO but never shift into LSDj (confirmed: keyboard input yields no audio
+   / SRAM / frame change, while joypad input does). Completing this needs the **external-clock input path**,
+   which is entangled with the ArduinoboyMaster serial work (task 4).
 4. **The final 2 LSDj sync modes** (§5): raw **Keyboard** (mode 4 — needs the per-block UI-keys feed) and **ArduinoboyMaster** (mode 7, LSDj→MIDI-out — needs the emulator **serial-OUT fed into the block** + `emitMidiOut` **drained to the host MIDI-out port** + the master-protocol behaviour). ArduinoboyMaster is the priority.
 
 **Explicitly deferred / dropped (NOT blockers for deletion):**
