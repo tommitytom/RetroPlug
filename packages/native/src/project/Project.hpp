@@ -3,31 +3,29 @@
 #include <memory>
 #include <vector>
 
-#include "project/ProjectConfig.hpp"
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"
 #include "system/sameboy/LinkGroup.hpp"
 #include "transport/MidiTypes.hpp"
 
-// DSP-thread runtime container. Holds:
-//  - the polymorphic emulator instances
-//  - the authoritative ProjectConfig (the one persisted via DPF state)
+// DSP-thread runtime container. Holds the polymorphic emulator instances and
+// their resolved link groups. Project state is persisted via TS (DPF state
+// carries an opaque blob); this class is the runtime container only.
 //
 // Lifetime: one Project per Plugin instance. Build/teardown happens on the DSP
 // thread; the UI thread reads through getPluginInstancePointer() and never
-// mutates. All mutations come through the command queue (Step 3+).
+// mutates. All mutations come through the command queue.
 class Project {
 public:
     Project() = default;
 
     // Removes the system identified by `id`. Returns the displaced raw
     // pointer (caller-owned, dispose off the audio thread) or nullptr if
-    // not found. The internal `config_.systems` mirror is also updated.
+    // not found.
     SystemBase* removeSystemAndRelease(SystemId id);
 
-    // Pre-Step-5 convenience that destroys the system in-place. Kept for
-    // the existing callers in tests and Project's own setState path; not
-    // used on the audio thread.
+    // Convenience that destroys the system in-place (not used on the audio
+    // thread).
     void removeSystem(SystemId id);
 
     // Realtime-safe swap. Caller passes a fully-built SystemBase* (already
@@ -92,74 +90,6 @@ public:
     // the bare loop that lived in PluginDSP::run.
     void onProcess(const AudioBlockInfo& info, float* const* outs);
 
-    // Audio-thread MIDI dispatcher. Walks `events` once and applies `routing`
-    // to decide which system(s) each event lands on, calling `sys->onMidi`.
-    // Realtime-safe: no allocation, no I/O. System messages (status >= 0xF0)
-    // are broadcast to every system regardless of routing mode.
-    //
-    // Defined inline so the unit tests (which don't link Project.cpp because
-    // it pulls in SameBoy) can exercise routing without dragging the
-    // emulator backend into the test target.
-    // Fully-qualified `::MidiEvent` throughout — translation units that pull
-    // in DistrhoDetails.hpp (e.g. PluginUI.cpp) also have DISTRHO::MidiEvent
-    // visible, and unqualified lookup inside this inline body would otherwise
-    // be ambiguous when the header is included in those TUs.
-    void dispatchMidi(const ::MidiEvent* events,
-                      std::uint32_t      count,
-                      MidiRouting        routing) {
-        if (events == nullptr || count == 0 || systems_.empty()) return;
-        const std::size_t n = systems_.size();
-
-        for (std::uint32_t i = 0; i < count; ++i) {
-            const ::MidiEvent& ev = events[i];
-            if (ev.size == 0) continue;
-
-            const std::uint8_t status = ev.data[0];
-            const bool isSystemMsg = (status & 0xF0) == 0xF0;
-
-            // System / realtime messages and SysEx (carried via dataExt) have
-            // no channel nibble — broadcast unchanged regardless of routing.
-            if (isSystemMsg || ev.size > ::MidiEvent::kDataSize) {
-                for (auto& sys : systems_) {
-                    if (sys) sys->onMidi(&ev, 1);
-                }
-                continue;
-            }
-
-            const std::uint8_t chan = status & 0x0F;
-            switch (routing) {
-                case MidiRouting::SendToAll: {
-                    for (auto& sys : systems_) {
-                        if (sys) sys->onMidi(&ev, 1);
-                    }
-                    break;
-                }
-                case MidiRouting::FourChannelsPerInstance: {
-                    const std::size_t target = static_cast<std::size_t>(chan / 4) % n;
-                    if (auto& sys = systems_[target]; sys) sys->onMidi(&ev, 1);
-                    break;
-                }
-                case MidiRouting::OneChannelPerInstance: {
-                    const std::size_t target = static_cast<std::size_t>(chan) % n;
-                    if (auto& sys = systems_[target]; sys) sys->onMidi(&ev, 1);
-                    break;
-                }
-                case MidiRouting::MidiChannelToInstance: {
-                    const std::size_t target = static_cast<std::size_t>(chan) % n;
-                    if (auto& sys = systems_[target]; sys) {
-                        // Rewrite to channel 1 (low nibble = 0). Stack-local
-                        // copy keeps the call non-allocating; dataExt stays
-                        // null because we already excluded size > kDataSize.
-                        ::MidiEvent rewritten = ev;
-                        rewritten.data[0] = static_cast<std::uint8_t>(status & 0xF0);
-                        sys->onMidi(&rewritten, 1);
-                    }
-                    break;
-                }
-            }
-        }
-    }
-
     // Rebuild `linkGroups_` from current systems' linkGroupId. Updates each
     // SameBoySystem's linkPeers_ cache. Single member groups are dissolved
     // (linkPeers_ left empty so the standalone path runs). Call after any
@@ -176,12 +106,8 @@ public:
     // because it hard-codes outs[0]/[1] for every member).
     const std::vector<LinkGroup>& linkGroups() const { return linkGroups_; }
 
-    const ProjectConfig& config() const { return config_; }
-    ProjectConfig&       config()       { return config_; }
-
 private:
     SystemId nextId_ = 1;
     std::vector<std::unique_ptr<SystemBase>> systems_;
     std::vector<LinkGroup>                   linkGroups_;
-    ProjectConfig                            config_;
 };

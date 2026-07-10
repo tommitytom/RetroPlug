@@ -7,8 +7,8 @@
 #include "rfl/Literal.hpp"
 
 // Plain-data, reflectcpp-friendly config for a GBA (Mesen2) system slot.
-// Mirrors MesenNesConfig's shape so the three configs are interchangeable
-// through the SystemConfig tagged union.
+// Mirrors MesenNesConfig's shape so the three concrete configs are handled
+// uniformly by the system backends.
 
 // Named MesenGbaConfig (not GbaConfig) to avoid colliding with Mesen's own
 // `struct GbaConfig` in deps/mesen/Core/Shared/SettingTypes.h — both live at

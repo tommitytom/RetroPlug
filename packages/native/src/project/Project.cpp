@@ -11,10 +11,7 @@ SystemBase* Project::removeSystemAndRelease(SystemId id) {
         [&](const std::unique_ptr<SystemBase>& s) { return s && s->id() == id; });
     if (it == systems_.end()) return nullptr;
     SystemBase* released = it->release();
-    const std::size_t idx = static_cast<std::size_t>(it - systems_.begin());
     systems_.erase(it);
-    if (idx < config_.systems.size())
-        config_.systems.erase(config_.systems.begin() + idx);
     rebuildLinkGroups();
     return released;
 }

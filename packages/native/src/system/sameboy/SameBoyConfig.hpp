@@ -6,8 +6,9 @@
 
 #include "rfl/Literal.hpp"
 
-// Plain-data, reflectcpp-friendly config for a SameBoy system slot.
-// Lives in the DSP-owned ProjectConfig tree; mirrored to the UI cache.
+// Plain-data, reflectcpp-friendly config for a SameBoy system slot. Built by the
+// SameBoy backend and held as the running system's config_; the TS layer owns
+// project persistence and mirrors this to the UI cache.
 
 enum class SameBoyModel : std::uint32_t {
     Auto = 0,

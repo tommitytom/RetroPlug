@@ -7,8 +7,8 @@
 #include "rfl/Literal.hpp"
 
 // Plain-data, reflectcpp-friendly config for a Mesen-backed NES system slot.
-// Mirrors SameBoyConfig's shape so the two are interchangeable through the
-// SystemConfig tagged union.
+// Mirrors SameBoyConfig's shape (embed / rom / sram / savestate) so the system
+// backends handle the concrete configs uniformly.
 
 struct MesenNesConfig {
     // On-disk variant discriminator (`"kind":"nes"`).

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "project/Project.hpp"
+#include "system/AudioRouting.hpp"
 
 #include "DspRuntime.hpp"
 #include "SnapshotRegistry.hpp"

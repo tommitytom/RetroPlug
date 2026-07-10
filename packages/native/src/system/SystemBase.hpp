@@ -13,7 +13,6 @@
 #include "system/MemoryAccessor.hpp"
 #include "system/MemoryType.hpp"
 #include "system/SystemTypes.hpp"
-#include "system/SystemConfig.hpp"
 #include "transport/FrameBufferTriple.hpp"
 #include "transport/MemorySnapshotTriple.hpp"
 #include "transport/MidiTypes.hpp"

@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#include "project/ProjectConfig.hpp"   // AudioRouting
+#include "system/AudioRouting.hpp"
 #include "system/SystemTypes.hpp"      // AudioBlockInfo
 
 class Project;

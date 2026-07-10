@@ -13,7 +13,7 @@
 // old/src/core/Effects.h + old/src/core/audio/AudioDithering.h.
 //
 // Each effect is a plain-data struct that round-trips via reflectcpp; the
-// `LsdjEffect` TaggedUnion below is what stores in ProjectConfig. The
+// `LsdjEffect` TaggedUnion below is the serialized effect descriptor. The
 // per-effect `processEffect(...)` overloads run in `KitUtil::compileKit`
 // against a float buffer in [-1, 1] (or, for dither, expect [-1, 1] and
 // output samples pre-quantized into [0, 2^bitDepth - 1]).
