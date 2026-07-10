@@ -27,8 +27,10 @@ The rules below are the parts that don't fit those.
   also run `pnpm install` in `deps/dpf.js/deps/lv_binding_js`, or the UI bundle
   can't resolve `react`. Don't bump any submodule pointer (in either repo) without
   checking — they're managed deliberately. RetroPlug also keeps `deps/sameboy` +
-  `deps/mesen` / `deps/r8brain` / `deps/enkiTS` (the shared core). `deps/catch2` +
-  `deps/efsw` are now unused (legacy-only) — pending submodule removal.
+  `deps/mesen` / `deps/r8brain` / `deps/enkiTS` (the shared core), and `deps/efsw`
+  (greenfield's file-watcher is *designed* to use it — `drainChangedPaths` is a stub
+  today, so nothing links it yet). `deps/catch2` is now unused (legacy test
+  framework) — removable.
 - **Don't `rm -rf build` to "fix" CMake** — investigate first. The configured
   `build/` is load-bearing for the dev loop.
 - **Build via `build.sh` (Linux/macOS) / `build.bat` (Windows)** — the canonical
