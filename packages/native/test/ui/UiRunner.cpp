@@ -28,7 +28,19 @@ extern "C" {
 
 namespace {
 
-std::unique_ptr<rpuigf::UiHarness> g_harness;
+// Owned via a raw pointer, NOT a static std::unique_ptr, and deliberately so.
+// The greenfield harness signals completion with tjs.exit(code); txiki's native
+// tjs.exit calls libc exit(), which runs static destructors. A static unique_ptr
+// here would then tear the harness down — JS_FreeRuntime -> GC finalizers ->
+// ~BasicComponent — *reentrantly*, while a JS call frame (the tjs.exit call
+// itself) is still live on the stack inside uv_run. Freeing the runtime under
+// its own live stack is a use-after-free (segfault on Windows; the tjs.exit hook
+// below can't reliably shadow the native one because txiki re-creates the `tjs`
+// global on every module evaluation). A raw pointer has no destructor for exit()
+// to trigger, so native exit() cleanly terminates the process with the test's
+// own code; the orderly fallback path (test never called exit) deletes it
+// explicitly, when no JS is on the stack.
+rpuigf::UiHarness* g_harness = nullptr;
 
 // The exit code the harness reports through globalThis.tjs.exit(). One runner per process,
 // single-threaded (mirrors retroplug-host's g_exit).
@@ -298,7 +310,7 @@ int runUiTestFile(const std::string& jsPath) {
     // Boot the harness FIRST: it owns the single JS runtime (LvglJsEngine) + the headless display +
     // the BackendFacade RPC bridge + the greenfield UI bundle. The test bundle runs IN this runtime.
     try {
-        g_harness = std::make_unique<rpuigf::UiHarness>();
+        g_harness = new rpuigf::UiHarness();
         if (!g_harness->boot()) { std::fprintf(stderr, "greenfield UI harness boot failed\n"); return 1; }
     } catch (const std::exception& e) {
         std::fprintf(stderr, "greenfield UI harness boot: %s\n", e.what());
@@ -323,7 +335,12 @@ int runUiTestFile(const std::string& jsPath) {
     // drives LVGL). Bounded.
     for (int i = 0; i < 20000 && !g_exit.set; ++i) g_harness->core().engine().host().pump();
 
-    g_harness.reset(); // tear down display + engine + UI bundle cleanly
+    // Orderly teardown ONLY on the fallback path where the test finished without
+    // calling tjs.exit() (so we're here with no JS on the stack). The common path
+    // is that tjs.exit() already terminated the process via libc exit(); see the
+    // g_harness declaration for why we must not let exit() do this teardown.
+    delete g_harness;
+    g_harness = nullptr;
 
     if (!g_exit.set) {
         std::fprintf(stderr, "tests did not complete (tjs.exit never called)\n");
