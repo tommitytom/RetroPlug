@@ -14,7 +14,7 @@
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/EngineRpcService.hpp"
 #include "host/rpc/HostRpcService.hpp"
-#include "host/backends/SystemFactory.hpp"
+#include "system/SystemFactory.hpp"
 
 // One object per RPC server. Owns the shared Engine + invokers + factory + audio-running flag, and
 // has-a the three concern-separated services (fs/config/codec, emulator/kernel, audio thread). Every

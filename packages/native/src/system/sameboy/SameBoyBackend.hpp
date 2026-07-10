@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "host/backends/SystemFactory.hpp"
+#include "system/SystemFactory.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 
 class SameBoySystem;

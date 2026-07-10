@@ -8,10 +8,10 @@
 
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
-#include "host/backends/MesenBackend.hpp"
-#include "host/backends/SameBoyBackend.hpp"
+#include "system/mesen/MesenBackend.hpp"
+#include "system/sameboy/SameBoyBackend.hpp"
 #include "host/dsp/ScriptCompiler.hpp"
-#include "host/backends/SystemFactory.hpp"
+#include "system/SystemFactory.hpp"
 
 #include "EmbeddedRoms.hpp"
 #include "system/MemoryType.hpp"  // rp::MemoryType / rp::AccessType (readMemory)

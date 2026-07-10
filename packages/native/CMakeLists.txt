@@ -82,9 +82,9 @@ add_library(retroplug-backend STATIC
     src/host/engine/Engine.cpp              # single-threaded core: owns Project + DspRuntime, runs blocks
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
     src/host/engine/EngineInvoker.cpp       # Direct/Queued invokers — the only threading-aware layer
-    src/host/backends/SystemFactory.cpp     # backend-agnostic build registry (the one build path)
-    src/host/backends/SameBoyBackend.cpp    # SameBoy builder — the only place SameBoyConfig is constructed
-    src/host/backends/MesenBackend.cpp      # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
+    src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
+    src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
+    src/system/mesen/MesenBackend.cpp       # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (DSP-side JS runtime)
     src/host/dsp/DspRuntime.cpp             # second bare QuickJS context — runs translator scripts
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)

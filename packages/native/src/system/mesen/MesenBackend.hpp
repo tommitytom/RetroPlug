@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-#include "host/backends/SystemFactory.hpp"
+#include "system/SystemFactory.hpp"
 
 class SystemBase;
 
