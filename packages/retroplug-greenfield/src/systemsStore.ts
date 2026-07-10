@@ -44,9 +44,11 @@ function allocSystemId(): number {
 // GB_save_battery_size, Mesen via the NesSaveRam region), so any non-empty all-zero buffer blanks the SRAM.
 const BLANK_SRAM_BYTES = 0x20000;
 
-// The lsdj-sync mode that needs native serial-out capture (Arduinoboy MIDIOUT / "Arduinoboy Master").
-// Kept in step with the LsdjSyncMode dispatch in dspRoles.ts + LSDJ_MODE_NAMES in menuDefs.ts.
+// The lsdj-sync modes that need native serial-out capture — both LSDj→host MIDI-out modes: MIDIOUT
+// ("MIDI Out", SYNC=MI.OUT) and Master Sync (SYNC=LSDJ). Kept in step with the LsdjSyncMode dispatch in
+// dspRoles.ts + LSDJ_MODE_NAMES in menuDefs.ts.
 const LSDJ_MIDIOUT_MODE = 7;
+const LSDJ_MASTERSYNC_MODE = 8;
 
 /** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
  *  the first `ROM_SNIFF_LEN` of them. Native never classifies. */
@@ -590,6 +592,7 @@ export class SystemsStore {
   private syncSerialOutCapture(id: number): void {
     const lsdj = findById(this.entries, id)?.roles.find((r) => r.kind === "lsdj-sync");
     if (!lsdj) return;
-    this.backend.setSerialOutCapture(id, (lsdj.config as { mode?: number }).mode === LSDJ_MIDIOUT_MODE);
+    const mode = (lsdj.config as { mode?: number }).mode;
+    this.backend.setSerialOutCapture(id, mode === LSDJ_MIDIOUT_MODE || mode === LSDJ_MASTERSYNC_MODE);
   }
 }

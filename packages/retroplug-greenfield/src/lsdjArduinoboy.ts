@@ -140,3 +140,53 @@ export function arduinoboyDecodeSerialOut(bytes: number[], state: ArduinoboyStat
   state.bitAcc = acc;
   state.bitCount = count;
 }
+
+// --- Master Sync (Arduinoboy Mode 2, SYNC=LSDJ) --------------------------------------------------
+//
+// Here LSDj is the serial MASTER: playing, it self-clocks and streams one byte out its link port per
+// MIDI-clock tick. captureSerialOutBit already assembles 8 serial-clock pulses into one byte, so — per
+// the trash80/Arduinoboy Mode_LSDJ_MasterSync.ino firmware — each captured byte maps to exactly ONE
+// MIDI clock (0xF8). This is the inverse of MidiSync (mode 1, where the host clocks LSDj): the DAW
+// follows LSDj's tempo. No flag-framing (that's MI.OUT's slave protocol) — just byte → clock plus the
+// transport bookends the firmware sends: a song-row NoteOn + 0xFA on the first byte of a run, 0xFC when
+// the stream goes idle (LSDj stopped).
+
+// The play↔stop discriminator is byte DENSITY, not presence. A PLAYING LSDj master clocks one byte per
+// MIDI tick — sparse, ~1-2 bytes/block even at fast tempos (24 PPQN → tens of clocks/sec). A STOPPED
+// master doesn't go silent: it floods a continuous link handshake (~100+ bytes/block, thousands/sec).
+// So a block with more than this many bytes is the idle flood (LSDj stopped), not tempo clocking — the
+// empirical resolution of the old "SYNC=LSDJ is a ~4500 bytes/sec stream" folklore (that was LSDj idle).
+const MASTER_SYNC_IDLE_FLOOD = 16;
+
+/** Cross-block Master Sync state (persisted in the role's `ctx.state`). */
+export interface MasterSyncState {
+  started?: boolean; // a run is in progress (0xFA sent; 0xFC pending on the play→stop transition)
+  channel?: number; // MIDI channel for the song-row NoteOn (default 0)
+}
+
+/** Decode one block's worth of Master Sync serial-out bytes into host MIDI. Call once per block with the
+ *  system's `ctx.serialOut`: a sparse block is tempo clocking; a flooded block is LSDj's stopped-idle
+ *  handshake (→ one 0xFC on the play→stop edge); an empty block is a between-tick gap (nothing to do). */
+export function arduinoboyMasterSyncBlock(bytes: number[], state: MasterSyncState, emit: MidiEmit): void {
+  const ch = state.channel ?? 0;
+
+  if (bytes.length > MASTER_SYNC_IDLE_FLOOD) {
+    // Idle flood → LSDj has stopped. Emit a single transport stop on the play→stop edge and drop the noise.
+    if (state.started) {
+      emit([0xfc]);
+      state.started = false;
+    }
+    return;
+  }
+
+  for (let i = 0; i < bytes.length; i++) {
+    if (!state.started) {
+      // First tick of a run: the byte value is LSDj's song row → NoteOn, then transport start, then this
+      // byte's own clock tick (the firmware sends NoteOn + 0xFA before the first 0xF8).
+      state.started = true;
+      emit([0x90 | ch, bytes[i] & 0x7f, 0x7f]);
+      emit([0xfa]);
+    }
+    emit([0xf8]); // one MIDI clock per tempo byte
+  }
+}

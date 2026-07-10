@@ -18,7 +18,7 @@ import {
   isExtendedScancode,
   toGbSerialByte,
 } from "./lsdjKeyboardMap";
-import { arduinoboyDecodeSerialOut, type ArduinoboyState } from "./lsdjArduinoboy";
+import { arduinoboyDecodeSerialOut, arduinoboyMasterSyncBlock, type ArduinoboyState, type MasterSyncState } from "./lsdjArduinoboy";
 
 // Forward every host-MIDI byte verbatim into the system's serial input. This is both `mgb`
 // (== MgbPassthroughRole) and lsdj-sync's MidiPassthrough mode (== LsdjSyncRole handlePassthrough).
@@ -148,6 +148,15 @@ const arduinoboyMaster: SystemBehavior = (c) => {
   arduinoboyDecodeSerialOut(c.serialOut, st, (data) => c.emitMidiOut(0, data));
 };
 
+// Master Sync (mode 8, == Arduinoboy firmware Mode 2, SYNC=LSDJ): LSDj self-clocks as the serial master
+// and streams one byte per MIDI-clock tick out its link port; we turn each captured byte into a 0xF8
+// clock (+ a song-row NoteOn/0xFA at run start, 0xFC on idle), so the host follows LSDj's tempo. Unlike
+// mode 7 this runs EVERY block — an empty serial-out block is how the idle stop is detected.
+const masterSync: SystemBehavior = (c) => {
+  const st = c.state as MasterSyncState;
+  arduinoboyMasterSyncBlock(c.serialOut, st, (data) => c.emitMidiOut(0, data));
+};
+
 // lsdj-sync: dispatch on the configured mode (LsdjSyncMode). Off(0)/Keyboard(4) emit nothing here — 4
 // needs the host `keys` feed (a later phase). MidiSync's 0xF8 stream carries no 0xFA; the START-arm that
 // begins LSDj is a user action, not part of the clock (only Arduinoboy mode bookends with 0xFA/0xFC).
@@ -163,6 +172,7 @@ const lsdjSync: SystemBehavior = (c) => {
     case 5: keyboardMidi(c); break; // KeyboardMidi
     case 6: forwardMidiToSerial(c); break; // MidiPassthrough
     case 7: arduinoboyMaster(c); break; // ArduinoboyMaster / MIDIOUT
+    case 8: masterSync(c); break; // Master Sync (LSDj drives the host clock)
     default: break;
   }
 };
@@ -194,9 +204,9 @@ export function registerDspRoles(registry: RoleRegistry): void {
     kind: "lsdj-sync",
     category: "feature",
     scope: "system",
-    // mode: LsdjSyncMode (Off=0, MidiSync=1, … ArduinoboyMaster=7). tempoDivisor subdivides the 24-PPQN
-    // clock (24/divisor) for MidiSync + MidiSyncArduinoboy; the menu offers 1/2/4/8.
-    schema: z.object({ mode: clampedInt(0, 7, 1), tempoDivisor: clampedInt(1, 8, 1) }),
+    // mode: LsdjSyncMode (Off=0, MidiSync=1, … MidiOut=7, MasterSync=8). tempoDivisor subdivides the
+    // 24-PPQN clock (24/divisor) for MidiSync + MidiSyncArduinoboy; the menu offers 1/2/4/8.
+    schema: z.object({ mode: clampedInt(0, 8, 1), tempoDivisor: clampedInt(1, 8, 1) }),
     dsp: lsdjSync,
     onConstruct: lsdjSeedSav,
   });

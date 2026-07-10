@@ -8,8 +8,10 @@ import { test, expect } from "../../testing/harness";
 import {
   arduinoboyDecodeByte,
   arduinoboyDecodeSerialOut,
+  arduinoboyMasterSyncBlock,
   arduinoboyReset,
   type ArduinoboyState,
+  type MasterSyncState,
 } from "../../src/lsdjArduinoboy";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerDspRoles } from "../../src/dspRoles";
@@ -144,4 +146,61 @@ test("lsdj-sync mode 7: kernel fans serialOut to the role, which decodes it to e
   });
   expect(out.midiOut.map((m) => m.data)).toEqual([[0xfa], [0xf8], [0x90, 0x69, 0x7f]]);
   expect(out.serialIn.length).toBe(0); // mode 7 is a pure decoder — it never feeds LSDj serial-in
+});
+
+// --- Master Sync (mode 8, SYNC=LSDJ): each captured byte → one MIDI clock -------------------------
+
+// Run per-block serial-out through a fresh master-sync decoder; each element is one block's bytes.
+function masterSync(blocks: number[][]): number[][] {
+  const out: number[][] = [];
+  const state: MasterSyncState = {};
+  for (const b of blocks) arduinoboyMasterSyncBlock(b, state, (d) => out.push(d));
+  return out;
+}
+
+test("MasterSync: first byte → NoteOn(row) + start then a clock; the rest of the block → clocks", () => {
+  expect(masterSync([[5, 5, 5]])).toEqual([[0x90, 5, 0x7f], [0xfa], [0xf8], [0xf8], [0xf8]]);
+});
+
+test("MasterSync: clocks continue across blocks without re-announcing the start", () => {
+  // First byte announces the run; later blocks are clock-only (one 0xF8 per byte).
+  expect(masterSync([[9], [9], [9]])).toEqual([[0x90, 9, 0x7f], [0xfa], [0xf8], [0xf8], [0xf8]]);
+});
+
+test("MasterSync: empty (between-tick) blocks emit nothing", () => {
+  expect(masterSync([[], [], []])).toEqual([]);
+});
+
+// A flooded block (> the idle threshold) is LSDj's stopped-idle link handshake, not tempo clocking.
+const flood = (): number[] => Array.from({ length: 40 }, (_, i) => i & 0x7f);
+
+test("MasterSync: a flooded block after a run → exactly one transport stop (0xFC), no clocks", () => {
+  const out = masterSync([[3], flood(), flood()]);
+  expect(out.slice(0, 3)).toEqual([[0x90, 3, 0x7f], [0xfa], [0xf8]]); // start bookend + first clock
+  expect(out.filter((m) => m[0] === 0xf8).length).toBe(1); // the flood emits NO clocks
+  expect(out.filter((m) => m[0] === 0xfc).length).toBe(1); // one stop, not one per flooded block
+  expect(out[out.length - 1]).toEqual([0xfc]);
+});
+
+test("MasterSync: a flood before any run emits nothing (idle at rest, never started)", () => {
+  expect(masterSync([flood(), flood()])).toEqual([]);
+});
+
+test("MasterSync: after a flood stop, a new tempo byte restarts the run with a fresh NoteOn + start", () => {
+  const out = masterSync([[3], flood(), [7]]);
+  const fc = out.findIndex((m) => m[0] === 0xfc);
+  expect(out.slice(fc + 1)).toEqual([[0x90, 7, 0x7f], [0xfa], [0xf8]]);
+});
+
+test("lsdj-sync mode 8: kernel fans serialOut to the master-sync role → clock + start MIDI", () => {
+  const reg = new RoleRegistry();
+  registerDspRoles(reg);
+  const k = new DspKernel(reg);
+  k.setSystems({
+    project: [{ kind: "midi-routing", config: { mode: 0 } }],
+    systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: 8 } }] }],
+  });
+  const out = k.processBlock({ ...baseDyn(), serialOut: [{ system: 1, byte: 5 }, { system: 1, byte: 6 }] });
+  expect(out.midiOut.map((m) => m.data)).toEqual([[0x90, 5, 0x7f], [0xfa], [0xf8], [0xf8]]);
+  expect(out.serialIn.length).toBe(0); // master sync is a pure decoder — no serial-in
 });

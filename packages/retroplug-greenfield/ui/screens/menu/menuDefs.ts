@@ -46,9 +46,9 @@ const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
 // NES console region (ConsoleRegion 0..4), the "mesen" role's region knob.
 const REGION_NAMES = ["Auto", "NTSC", "PAL", "Dendy", "NTSC-J"];
 const OFF_ON = ["Off", "On"]; // boolean toggles rendered as 2-value cyclers (Left/Right + Enter step)
-// LSDj sync modes (LsdjSyncMode 0..7). All shown; Keyboard(4) + Arduinoboy Master(7) are not yet
-// driven (later phases) but remain valid enum values. Tempo divisor subdivides the 24-PPQN clock.
-const LSDJ_MODE_NAMES = ["Off", "MIDI Sync", "MIDI Sync (Arduinoboy)", "MIDI Map", "Keyboard", "Keyboard MIDI", "MIDI Passthrough", "Arduinoboy Master"];
+// LSDj sync modes (LsdjSyncMode 0..8). All shown; Keyboard(4) is not yet driven. "MIDI Out"(7, SYNC=MI.OUT)
+// and "Master Sync"(8, SYNC=LSDJ) are the two LSDj→host MIDI-out modes. Tempo divisor subdivides the 24-PPQN clock.
+const LSDJ_MODE_NAMES = ["Off", "MIDI Sync", "MIDI Sync (Arduinoboy)", "MIDI Map", "Keyboard", "Keyboard MIDI", "MIDI Passthrough", "MIDI Out", "Master Sync"];
 const LSDJ_DIVISORS = [1, 2, 4, 8];
 
 // Glob filters for the file dialogs (realBackend space-joins them for DPF).
