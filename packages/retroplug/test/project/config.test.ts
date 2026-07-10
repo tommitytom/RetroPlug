@@ -41,9 +41,9 @@ test("buildConfig: systems → thin entries, ids dropped, defaults omitted, sche
   ]);
   expect(cfg.schemaVersion).toBe(String(K_PROJECT));
   expect(cfg.systems).toEqual([
-    { platform: "gb", romPath: "/roms/a.gb" },
-    { platform: "gb", romPath: "/roms/a.gb", savPath: "/saves/x.sav", savSuffix: 2 },
-    { platform: "gb", embeddedRom: "mgb" },
+    { platform: "gb", core: "sameboy", romPath: "/roms/a.gb" },
+    { platform: "gb", core: "sameboy", romPath: "/roms/a.gb", savPath: "/saves/x.sav", savSuffix: 2 },
+    { platform: "gb", core: "sameboy", embeddedRom: "mgb" },
   ]);
 });
 
@@ -62,7 +62,7 @@ test("serializeConfig + parseConfig: round-trips, filling settings defaults", ()
   const json = serializeConfig(cfg, "", identity); // no baseDir → absolute
   const back = parseConfig(json);
   expect(back.settings).toEqual({ layout: 3, midiRouting: 1, audioRouting: 2, zoom: 4 });
-  expect(back.systems).toEqual([{ platform: "gb", romPath: "/proj/a.gb" }]);
+  expect(back.systems).toEqual([{ platform: "gb", core: "sameboy", romPath: "/proj/a.gb" }]);
 });
 
 test("parseConfig: tolerant of a partial document (defaults + empty systems)", () => {

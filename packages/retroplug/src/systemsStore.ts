@@ -432,7 +432,8 @@ export class SystemsStore {
       if (fmt === "unknown") return null;
       platform = fmt;
     }
-    const core = defaultCoreFor(platform);
+    // Prefer the persisted core (v2+); fall back to auto-derive for a pre-migration/hand-built entry.
+    const core = config.core ?? defaultCoreFor(platform);
     const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
     // Stored roles win; a config that omits them re-attaches defaults. Known before the build so a
     // role's load-time hook can seed the spec (e.g. an empty LSDj sav) before instantiation.

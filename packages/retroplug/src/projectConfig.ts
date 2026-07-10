@@ -10,7 +10,7 @@
 // system-settings/kits domains land.
 
 import type { SystemEntry } from "./systemsList";
-import type { Platform } from "./platform";
+import { defaultCoreFor, type Platform, type Core } from "./platform";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
 import { commonSettingsSchema, type CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
@@ -25,11 +25,13 @@ export interface ProjectSettings {
   zoom: number; // 0 inherit / 1..6
 }
 
-/** A system as serialized: thin, with default fields omitted. `core` is not stored — it's
- *  re-derived from `platform` on load (auto-derive only; mirrors how the runtime kind was
- *  always re-sniffed and the persisted value never read back). */
+/** A system as serialized: thin, with default per-system fields omitted. Its two structural
+ *  axes are both stored: `platform` (what the ROM targets) and `core` (the emulator backend
+ *  running it). `core` is persisted since the v2 schema — it's auto-derived from `platform`
+ *  today, but storing it lets an explicit core survive if a chooser is ever added. */
 export interface SystemThin {
   platform: Platform;
+  core: Core;
   romPath?: string;
   savPath?: string; // an explicit override; absent = derive from suffix
   savSuffix?: number;
@@ -68,9 +70,19 @@ const roleInstanceSchema = z.object({
   config: z.record(z.string(), z.unknown()).catch(() => ({})),
 });
 
-// A serialized system: known fields typed/optional; unknowns stripped.
+// Structural identity — the ROM's platform + the emulator backend. Both REQUIRED: a valid
+// system always has them, and a migration backfills any pre-v2 file (see projectV1toV2).
+// An entry missing/with an invalid value fails the strict parse and is dropped in parseConfig.
+const platformSchema = z.enum(["gb", "nes", "gba"]);
+const coreSchema = z.enum(["sameboy", "mesen"]);
+
+// A serialized system: structural fields (platform/core) required; asset paths + overrides
+// optional (genuine either-ors — file-backed vs embedded, sav override); unknowns stripped.
+// `roles[].config` stays an open record (its per-kind RoleType schema validates it, and it
+// still crosses to native reflect-cpp).
 const systemThinSchema = z.object({
-  platform: z.string().optional(),
+  platform: platformSchema,
+  core: coreSchema,
   romPath: z.string().optional(),
   savPath: z.string().optional(),
   savSuffix: z.number().optional(),
@@ -88,9 +100,27 @@ const projectConfigSchema = z.object({
   systems: z.array(z.unknown()).catch(() => []).default(() => []),
 });
 
+/** v1 → v2: persist each system's `core` (previously re-derived from `platform` on every
+ *  load and never stored). Backfills `core = defaultCoreFor(platform)`; idempotent (only
+ *  fills when absent, and leaves a garbage/unknown-platform entry's core unset so the strict
+ *  parse drops it rather than inventing one). */
+function projectV1toV2(raw: RawObject): RawObject {
+  const systems = raw.systems;
+  if (Array.isArray(systems)) {
+    for (const s of systems) {
+      if (s && typeof s === "object") {
+        const sys = s as RawObject;
+        const core = defaultCoreFor(sys.platform as Platform); // undefined for a non-platform string
+        if (sys.core == null && core) sys.core = core;
+      }
+    }
+  }
+  return raw;
+}
+
 /** Ordered raw-JSON migrations for the project root, keyed by from-version (see migrate.ts):
  *  `PROJECT_MIGRATIONS[v]` upgrades a v-stamped config to v+1. */
-const PROJECT_MIGRATIONS: MigrationMap = {};
+const PROJECT_MIGRATIONS: MigrationMap = { 1: projectV1toV2 };
 
 /** Bring a raw config from its stamped `fromVersion` up to `K_PROJECT`, on the raw object,
  *  before the (single, latest) zod schema validates it. The Newer branch (refuse) lives at
@@ -101,8 +131,9 @@ function migrateProjectRaw(raw: RawObject, fromVersion: number): RawObject {
 
 // --- schema version (port of schemaVersions.ts) ---------------------------
 
-/** Bump ONLY on a breaking (non-additive) project-format change. Mirrors kProject. */
-export const K_PROJECT = 1;
+/** The current project-format version. Bump ONLY on a breaking (non-additive) change, and add
+ *  the matching `PROJECT_MIGRATIONS[N-1]` step. v2 persists each system's `core`. */
+export const K_PROJECT = 2;
 
 export enum VersionCheck {
   Ok = "ok",
@@ -142,7 +173,7 @@ export function buildConfig(settings: ProjectSettings, systems: SystemEntry[], n
     ...(name ? { name } : {}),
     settings: { ...settings },
     systems: systems.map((e) => {
-      const t: SystemThin = { platform: e.platform };
+      const t: SystemThin = { platform: e.platform, core: e.core };
       if (e.romPath) t.romPath = e.romPath;
       if (e.savPath) t.savPath = e.savPath;
       if (e.savSuffix) t.savSuffix = e.savSuffix;

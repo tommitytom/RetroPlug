@@ -4,7 +4,7 @@
 // from a *different* writer (native C++'s richer shape) are a translation concern for
 // the real adapter, and a *newer* greenfield writer is refused by version detection, so
 // an older reader never needs to preserve unknowns. Breaking format changes bump the
-// version and migrate at the load seam (migrateProjectRaw — no-op today).
+// version and migrate at the load seam (migrateProjectRaw; e.g. v1→v2 backfills `core`).
 import { test, expect } from "../../testing/harness";
 import { parseConfig } from "../../src/projectConfig";
 
@@ -16,7 +16,7 @@ test("additive tolerance: a config missing newer fields gets their defaults", ()
   });
   const cfg = parseConfig(raw);
   expect(cfg.settings).toEqual({ layout: 2, midiRouting: 0, audioRouting: 0, zoom: 0 }); // defaults filled
-  expect(cfg.systems[0]).toEqual({ platform: "gb", romPath: "/a.gb" }); // no spurious fields
+  expect(cfg.systems[0]).toEqual({ platform: "gb", core: "sameboy", romPath: "/a.gb" }); // core backfilled (v1→v2)
 });
 
 test("strict: unknown fields are stripped, known fields kept", () => {

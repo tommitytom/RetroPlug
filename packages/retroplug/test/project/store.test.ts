@@ -6,6 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
+import { K_PROJECT } from "../../src/projectConfig";
 import { gbRom } from "../systems/fixtures";
 
 function newProject(be = new MockBackend("/cfg")) {
@@ -227,7 +228,7 @@ test("load: a moved ROM reports missing, then relink completes the load", () => 
 
 test("load: a project stamped newer than this build is incompatible", () => {
   const { be, project } = newProject();
-  be.seed("/proj/x.rplg", JSON.stringify({ schemaVersion: "2", settings: {}, systems: [] }));
+  be.seed("/proj/x.rplg", JSON.stringify({ schemaVersion: String(K_PROJECT + 1), settings: {}, systems: [] }));
   expect(project.load("/proj/x.rplg")).toEqual({ kind: "incompatible" });
 });
 
