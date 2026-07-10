@@ -1,4 +1,4 @@
-# @retroplug/greenfield
+# @retroplug/retroplug
 
 A **TS-first, test-driven** reimplementation of RetroPlug's orchestration layer —
 the parts of the app that are policy over plain data and the filesystem, not
@@ -34,10 +34,10 @@ plugin embeds — no Node runtime semantics, no C++/plugin build, no emulator.
 # one-time: build the tjs runtime binary from the vendored txiki
 cmake --build build --target tjs-cli -j$(nproc)
 
-# run all greenfield tests (bundles each with esbuild, runs via `tjs run`)
-node packages/retroplug-greenfield/scripts/run-tests.mjs
+# run all tests (bundles each with esbuild, runs via `tjs run`)
+node packages/retroplug/scripts/run-tests.mjs
 # or a subset:
-node packages/retroplug-greenfield/scripts/run-tests.mjs recent
+node packages/retroplug/scripts/run-tests.mjs recent
 ```
 
 The runner locates `tjs` at `build/dpfjs/.../txiki/tjs` (override with

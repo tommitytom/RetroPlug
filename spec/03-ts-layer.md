@@ -1,6 +1,6 @@
 # 03 — The TypeScript layer
 
-`packages/retroplug-greenfield/` is the TypeScript half of greenfield — the embodiment
+`packages/retroplug/` is the TypeScript half of greenfield — the embodiment
 of the thesis **"native owns bytes and cores; TypeScript owns meaning."** Everything a
 user *decides* lives here: system identity and order, ROM classification, path/sibling/
 suffix resolution, the project model and its serialization, the config schemas, routing
@@ -31,7 +31,7 @@ the `SnapshotRegistry` read door, the release ring, the two QuickJS runtimes —
 
 ## The `Backend` interface
 
-[`src/backend.ts`](../packages/retroplug-greenfield/src/backend.ts) is the **single** native
+[`src/backend.ts`](../packages/retroplug/src/backend.ts) is the **single** native
 contract the application calls. It is deliberately narrow and deliberately grown: *if a
 thing can be done in pure TS, it belongs in the application layer, not here.* It is
 **synchronous** on purpose — in the real plugin these are in-process calls over the
@@ -53,13 +53,13 @@ The methods, grouped by concern:
 | **Byte codecs** | `zip(entries)` · `unzip(bytes)` | miniz deflate/inflate — the only native part of `.rplg` framing (TS assembles every entry) |
 | **LSDj sav codec** | `savFromJson(json)` | Run the version-aware sav codec; `savFromJson("{}")` yields a valid 128 KiB image |
 
-The real adapter [`src/realBackend.ts`](../packages/retroplug-greenfield/src/realBackend.ts)'s
+The real adapter [`src/realBackend.ts`](../packages/retroplug/src/realBackend.ts)'s
 `createRealBackend()` resolves `globalThis[Symbol.for("plugin")].__rpcSend` and wraps it in
 a self-contained synchronous JSON-RPC `call()`
-([realBackend.ts:65](../packages/retroplug-greenfield/src/realBackend.ts#L65)). Binary rides as
+([realBackend.ts:65](../packages/retroplug/src/realBackend.ts#L65)). Binary rides as
 `Uint8Array` in both directions (the QuickJS codec decodes a typed byte param straight into
 `rfl::Bytestring`), so nothing is base64'd or number-array'd on this path. `specParams`
-([realBackend.ts:79](../packages/retroplug-greenfield/src/realBackend.ts#L79)) omits null path
+([realBackend.ts:79](../packages/retroplug/src/realBackend.ts#L79)) omits null path
 fields (so native reads `nullopt`, not `""`) and attaches seed bytes only when present.
 This same adapter serves all three hosts — the difference is only which
 `BackendFacade` is bound behind `__rpcSend` (see doc 01/02).
@@ -67,14 +67,14 @@ This same adapter serves all three hosts — the difference is only which
 ### `ConstructSpec` — the resolved-paths-only build request
 
 `constructSystem` takes a `ConstructSpec`
-([backend.ts:205](../packages/retroplug-greenfield/src/backend.ts#L205)) in which **TS has
+([backend.ts:205](../packages/retroplug/src/backend.ts#L205)) in which **TS has
 already resolved every path, suffix, sibling, and classification** — *native never sees a
 suffix, never looks for a sibling, never classifies.*
 
 | Field | Meaning |
 |---|---|
 | `romPath` / `embeddedRom` | The ROM file to slurp, or a binary-baked marker (e.g. `"mgb"`) with `romPath = ""` |
-| `platform` / `core` | What the ROM targets + which factory builds it — TS classifies via [`platform.ts`](../packages/retroplug-greenfield/src/platform.ts) |
+| `platform` / `core` | What the ROM targets + which factory builds it — TS classifies via [`platform.ts`](../packages/retroplug/src/platform.ts) |
 | `savPath` / `statePath` | The exact battery file (load-from + auto-save-to) and savestate to boot from, or `null` |
 | `replaceId?` | When set, swap this existing id **in place**; otherwise append |
 | `sramBytes?` / `stateBytes?` | Seed bytes (zip-import blob, carried battery, role-synthesized sav) that override what native reads from disk; `savPath` stays the auto-save target |
@@ -82,7 +82,7 @@ suffix, never looks for a sibling, never classifies.*
 
 `openFileBrowser` is the odd one out and does **not** ride the RPC bridge: it uses the
 UI-direct hooks `__rp_openFileBrowser` / `__rp_onFileBrowserResult` on the shared context
-([realBackend.ts:27-51](../packages/retroplug-greenfield/src/realBackend.ts#L27)), with a
+([realBackend.ts:27-51](../packages/retroplug/src/realBackend.ts#L27)), with a
 single module-level `pendingBrowse` slot (one dialog at a time). Where the hook is absent
 (the headless UI harness), a browse resolves `null` — inert, like the other `__rp_*` seams.
 
@@ -101,30 +101,30 @@ The load-bearing point: **TypeScript is the source of truth for system identity,
 focus, and dirty.** Native holds cores keyed by an id, but it never mints an id, never
 tracks order, never knows which system is focused, and never decides the project is dirty.
 
-### SystemsStore — [`src/systemsStore.ts`](../packages/retroplug-greenfield/src/systemsStore.ts)
+### SystemsStore — [`src/systemsStore.ts`](../packages/retroplug/src/systemsStore.ts)
 
 The live systems list. `SystemEntry[]`
-([systemsList.ts:21](../packages/retroplug-greenfield/src/systemsList.ts#L21)) is the persistent
+([systemsList.ts:21](../packages/retroplug/src/systemsList.ts#L21)) is the persistent
 model (`{ id, platform, core, romPath, savPath override, savSuffix, embeddedRom, settings,
 roles }`); the private state is `entries`, `focusedId`, and `dirty`
-([systemsStore.ts:73-76](../packages/retroplug-greenfield/src/systemsStore.ts#L73)). `view()`
-([systemsStore.ts:85](../packages/retroplug-greenfield/src/systemsStore.ts#L85)) projects a
+([systemsStore.ts:73-76](../packages/retroplug/src/systemsStore.ts#L73)). `view()`
+([systemsStore.ts:85](../packages/retroplug/src/systemsStore.ts#L85)) projects a
 `SystemView[]` for the UI, computing the live `focused` and `missing` flags each call.
 
 - **TS owns the system-id counter.** `allocSystemId()` increments a module-scoped
-  `nextSystemId` ([systemsStore.ts:37](../packages/retroplug-greenfield/src/systemsStore.ts#L37)) —
+  `nextSystemId` ([systemsStore.ts:37](../packages/retroplug/src/systemsStore.ts#L37)) —
   *"native never allocates."* Ids are opaque handles, one id space per control-plane JS
   context (1:1 with the native `Project`), and start at **1** because the snapshot registry
   uses 0 as its free-slot sentinel.
-- **`classifyRom`** ([systemsStore.ts:48](../packages/retroplug-greenfield/src/systemsStore.ts#L48))
+- **`classifyRom`** ([systemsStore.ts:48](../packages/retroplug/src/systemsStore.ts#L48))
   is the one place ROM bytes enter TS — and just the `ROM_SNIFF_LEN` (0x134) header prefix.
 - **Mutators through `Backend`:** `addSystem` (append), `loadRom` (replace focused, or defer
   to a sibling `<rom>.rplg`), `loadMgb` (embedded), `replaceSystem`, `removeSystem`, plus the
   per-system `setGain` / `setReloadOnRomChange` (→ `applySystemSetting`) and `setRoleConfig`
-  ([systemsStore.ts:329](../packages/retroplug-greenfield/src/systemsStore.ts#L329)) — where
+  ([systemsStore.ts:329](../packages/retroplug/src/systemsStore.ts#L329)) — where
   **only a `"system"`-category role's config crosses to the live core** (`applyRoleConfig`);
   a feature-role's config stays pure TS.
-- **`duplicateSystem`** ([systemsStore.ts:170](../packages/retroplug-greenfield/src/systemsStore.ts#L170))
+- **`duplicateSystem`** ([systemsStore.ts:170](../packages/retroplug/src/systemsStore.ts#L170))
   is TS orchestration with **no native duplicate method**: it pulls `readState(id)` (state
   includes SRAM), then `constructSystem` seeded with those `stateBytes` under a fresh
   `allocSystemId()`, and appends.
@@ -133,7 +133,7 @@ roles }`); the private state is `entries`, `focusedId`, and `dirty`
 
 Greenfield **reconstructs** a core rather than live-injecting into it (no `GB_reset`, no
 in-place SRAM clear). The private `rebuildInPlace(id, seed)`
-([systemsStore.ts:233](../packages/retroplug-greenfield/src/systemsStore.ts#L233)) is the shared
+([systemsStore.ts:233](../packages/retroplug/src/systemsStore.ts#L233)) is the shared
 body: it captures the source spec, builds a fresh core under a **new id** that swaps the old
 one (`replaceId: id`), and preserves identity + focus
 (`replaceById(entries, id, {...src, id: newId})`; `if (focusedId === id) focusedId = newId`).
@@ -151,19 +151,19 @@ operations are thin wrappers over it:
 
 A separate **project-load rebuild seam** is deliberately quiet (no dirty/onChange, since a
 load isn't a user edit): `clear()` tears every system down; `adopt(config, blobs?)`
-([systemsStore.ts:374](../packages/retroplug-greenfield/src/systemsStore.ts#L374)) reconstructs
+([systemsStore.ts:374](../packages/retroplug/src/systemsStore.ts#L374)) reconstructs
 one system preserving its **exact** `savSuffix`/`savPath`, with `blobs` seeding SRAM/state on
 a zip import. Default roles are derived before the build from a `ROLE_HEADER_LEN` (0x150)
 header prefix via `defaultRoles`, and each role's `onConstruct` hook folds over the spec
 (`applyConstructHooks`) — e.g. the LSDj empty-sav seed — before instantiation.
 
-### ProjectStore — [`src/projectStore.ts`](../packages/retroplug-greenfield/src/projectStore.ts)
+### ProjectStore — [`src/projectStore.ts`](../packages/retroplug/src/projectStore.ts)
 
 The top-level source of truth. It **owns** the `SystemsStore` (wiring its `onChange` →
 `markDirty` + `onSystemsChange`,
-[projectStore.ts:60](../packages/retroplug-greenfield/src/projectStore.ts#L60)), the project
+[projectStore.ts:60](../packages/retroplug/src/projectStore.ts#L60)), the project
 settings (`ProjectSettings` = `{ layout, midiRouting, audioRouting, zoom }`,
-[projectConfig.ts:20](../packages/retroplug-greenfield/src/projectConfig.ts#L20)), the
+[projectConfig.ts:20](../packages/retroplug/src/projectConfig.ts#L20)), the
 `currentPath`, `dirty`, and a `pendingLoad` latch. It exposes **three** change signals:
 `setOnSystemsChange` (structural — drives DSP re-projection), `setOnChange` (any state —
 settings/dirty), and the transient focus signal via `systems.setOnFocusChange` (re-renders
@@ -176,31 +176,31 @@ thin `.rplg` — raw JSON, paths only), `export(path)` (an export `.rplg.zip` �
 autoload), and `load(path)` (sniffs `PK\x03\x04` to route zip vs thin). The load lifecycle
 refuses a **newer** schema stamp (`{kind:"incompatible"}`), absolutizes paths, scans for
 missing files, and holds `pendingLoad` for `relink` or `commit`
-([projectStore.ts:236](../packages/retroplug-greenfield/src/projectStore.ts#L236)).
+([projectStore.ts:236](../packages/retroplug/src/projectStore.ts#L236)).
 `setAudioRouting` is the **only** project setting that also reaches native audio, via
 `pushAudioRouting()` → `backend.setAudioRouting`
-([projectStore.ts:278](../packages/retroplug-greenfield/src/projectStore.ts#L278)).
+([projectStore.ts:278](../packages/retroplug/src/projectStore.ts#L278)).
 
-### RecentStore — [`src/recentStore.ts`](../packages/retroplug-greenfield/src/recentStore.ts)
+### RecentStore — [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts)
 
 A `RecentEntry[]` (`{ path, name }`) most-recent-first, capped at `MAX_ENTRIES = 10`
-([recentList.ts:13](../packages/retroplug-greenfield/src/recentList.ts#L13)). Incoming paths are
+([recentList.ts:13](../packages/retroplug/src/recentList.ts#L13)). Incoming paths are
 canonicalized via `backend.canonicalize` (the dedupe key); `view()` computes live `missing` +
-`label`. `commit(next)` ([recentStore.ts:91](../packages/retroplug-greenfield/src/recentStore.ts#L91))
+`label`. `commit(next)` ([recentStore.ts:91](../packages/retroplug/src/recentStore.ts#L91))
 serializes and skips both write and notify when identical. Persists atomically to
 `<configDir>/recent.json`.
 
-### UserConfigStore — [`src/userConfigStore.ts`](../packages/retroplug-greenfield/src/userConfigStore.ts)
+### UserConfigStore — [`src/userConfigStore.ts`](../packages/retroplug/src/userConfigStore.ts)
 
 `UserConfig` = `{ activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6,
 sramAutoSave: "Off"|"OnProjectSave"|"Continuous" }`
-([userConfig.ts:23](../packages/retroplug-greenfield/src/userConfig.ts#L23)), persisted to
+([userConfig.ts:23](../packages/retroplug/src/userConfig.ts#L23)), persisted to
 `config.json`. `load()` writes defaults on first run; `reload()`
-([userConfigStore.ts:37](../packages/retroplug-greenfield/src/userConfigStore.ts#L37)) is the
+([userConfigStore.ts:37](../packages/retroplug/src/userConfigStore.ts#L37)) is the
 file-watch reaction and keeps the current value on a missing / malformed / newer-stamped
 file. Setters validate and reject bad input.
 
-### BindingsStore — [`src/bindingsStore.ts`](../packages/retroplug-greenfield/src/bindingsStore.ts)
+### BindingsStore — [`src/bindingsStore.ts`](../packages/retroplug/src/bindingsStore.ts)
 
 Per-profile `bindings/<name>.json` maps (`{ name, keyboard, gamepad, keyboardActions,
 gamepadActions }` — the `*Actions` sections bind the app actions Open Menu / Cycle Instances,
@@ -208,26 +208,26 @@ resolved by `buildKeyToAction` / `buildGamepadToAction`), reading the
 active-profile names through `UserConfigStore`. CRUD: `ensureDefaults` (seeds
 `bindings/default.json`), `availableProfiles`, `loadProfile` / `saveProfile`, `renameProfile`
 (no-clobber, repoints active refs), `deleteProfile` (refuses the active one), and
-`resolvedBindings()` ([bindingsStore.ts:110](../packages/retroplug-greenfield/src/bindingsStore.ts#L110))
+`resolvedBindings()` ([bindingsStore.ts:110](../packages/retroplug/src/bindingsStore.ts#L110))
 which merges the active keyboard + gamepad profiles, each falling back to a default. Names
 are validated by `isValidProfileName`
-([bindingsStore.ts:24](../packages/retroplug-greenfield/src/bindingsStore.ts#L24)).
+([bindingsStore.ts:24](../packages/retroplug/src/bindingsStore.ts#L24)).
 
 ### Store-adjacent services
 
-- **FileSelection** — [`src/fileSelection.ts`](../packages/retroplug-greenfield/src/fileSelection.ts):
+- **FileSelection** — [`src/fileSelection.ts`](../packages/retroplug/src/fileSelection.ts):
   turns a file pick into a systems op. `browse(mode)` opens the ROM-or-sav dialog, classifies
   (ROM by content / `.sav` by extension / other), and routes. A picked `.sav` finds its
   sibling ROM, or opens a second ROM-only browser — *"just another `await` inside the same
   Promise"*, no pending-mode latch. `SelectionOutcome` = `loaded | added | deferred | error
   | cancelled`.
-- **FileWatcher** — [`src/fileWatcher.ts`](../packages/retroplug-greenfield/src/fileWatcher.ts):
+- **FileWatcher** — [`src/fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts):
   the TS reaction to native's watchers. **"Watcher = C++, policy = TS."** `pump()` drains
   `backend.drainChangedPaths()` at idle and routes each: `config.json` → `userConfig.reload()`,
   `bindings/*.json` → a refresh signal, a system's ROM → `reloadSystem(id)` **when
   `reloadOnRomChange` is on**. Native owns the efsw + mtime watching; TS owns what a change
   *means*.
-- **SramAutoSaver** — [`src/sramAutoSave.ts`](../packages/retroplug-greenfield/src/sramAutoSave.ts):
+- **SramAutoSaver** — [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts):
   the loose-`.sav` mirror policy over `backend.readSram(id)` + `resolveSavPath`, gated on the
   `sramAutoSave` preference. `flushOnSave()` writes at save/quit; `pump()` is the Continuous
   idle-tick. An FNV-1a change hash dedups writes and distinguishes seed-vs-write against the
@@ -242,11 +242,11 @@ host builds the *same* graph the *same* way.
 
 ### `pluginControlPlane.ts` — the plugin composition root
 
-[`src/pluginControlPlane.ts`](../packages/retroplug-greenfield/src/pluginControlPlane.ts) is
+[`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) is
 evaluated once by the plugin host in its txiki context. It composes `createRealBackend()` +
 `buildAppRegistry()` + `RecentStore` + `ProjectStore` + `createDspRuntime()`, loads the DSP
 kernel (`dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__))`,
-[pluginControlPlane.ts:74](../packages/retroplug-greenfield/src/pluginControlPlane.ts#L74)), and
+[pluginControlPlane.ts:74](../packages/retroplug/src/pluginControlPlane.ts#L74)), and
 wires `project.setOnSystemsChange(() => syncDspFromStore(project, dsp))`.
 
 It then exposes the **string-only C++→JS surface** for project I/O — the plugin drives these
@@ -261,32 +261,32 @@ directly with no further RPC:
 | `__rp_ready` | Set true once composition + kernel load succeeded |
 
 Base64 is done **here** in runtime-independent code
-([pluginControlPlane.ts:24-64](../packages/retroplug-greenfield/src/pluginControlPlane.ts#L24)),
+([pluginControlPlane.ts:24-64](../packages/retroplug/src/pluginControlPlane.ts#L24)),
 not native, because DPF state is NUL-terminated UTF-8 while a `.rplg` is binary PKZIP — the
 C++ boundary stays string-only.
 
 ### `appStores.ts` — the shared store graph
 
-[`src/appStores.ts`](../packages/retroplug-greenfield/src/appStores.ts)'s `composeAppStores({
+[`src/appStores.ts`](../packages/retroplug/src/appStores.ts)'s `composeAppStores({
 backend?, notify? })` builds the full graph — `registry, recent, userConfig, bindings,
 project, fileSelection` — so every host constructs it identically. Change notification is
 injected as one `notify(channel)` where `StoreChannel = "project" | "systems" | "recent" |
 "userConfig" | "bindings"`. It wires the project's two signals plus focus
-([appStores.ts:68-71](../packages/retroplug-greenfield/src/appStores.ts#L68)) but **does not**
+([appStores.ts:68-71](../packages/retroplug/src/appStores.ts#L68)) but **does not**
 wire the DSP (that stays the control plane's job). The DPF plugin's editor builds its graph this
-way (through [`StoreProvider`](../packages/retroplug-greenfield/ui/stores/StoreProvider.tsx#L35)),
-but the plugin's **control-plane bundle** ([`pluginControlPlane.ts`](../packages/retroplug-greenfield/src/pluginControlPlane.ts))
+way (through [`StoreProvider`](../packages/retroplug/ui/stores/StoreProvider.tsx#L35)),
+but the plugin's **control-plane bundle** ([`pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts))
 still composes a *separate* graph inline — so the plugin currently runs two store graphs on its one
 shared context (the control plane's, which drives DSP projection and DAW get/setState, and the
 editor's) rather than one. Unifying them onto a single `composeAppStores` graph is flagged in
-[appStores.ts:14-17](../packages/retroplug-greenfield/src/appStores.ts#L14) but not done.
+[appStores.ts:14-17](../packages/retroplug/src/appStores.ts#L14) but not done.
 
 ### `appHost.ts` — host glue
 
-[`src/appHost.ts`](../packages/retroplug-greenfield/src/appHost.ts) holds the wiring every host
+[`src/appHost.ts`](../packages/retroplug/src/appHost.ts) holds the wiring every host
 reuses: `buildAppRegistry()` assembles the control-plane role registry (core roles + DSP
 feature behaviours + ROM providers — see doc 04), and `syncDspFromStore(project, dsp)`
-([appHost.ts:32](../packages/retroplug-greenfield/src/appHost.ts#L32)) projects the live systems
+([appHost.ts:32](../packages/retroplug/src/appHost.ts#L32)) projects the live systems
 into a kernel structure and pushes it — the callback installed on `onSystemsChange`.
 
 ### The `__rp_*` UI↔native direct-hook pattern
@@ -298,42 +298,42 @@ harness**:
 
 | Hook | Owner | Purpose |
 |---|---|---|
-| `__rp_openFileBrowser` / `__rp_onFileBrowserResult` | [realBackend.ts](../packages/retroplug-greenfield/src/realBackend.ts) | The async file dialog |
-| `__rp_setWindowSize` / `__rp_isWindowSizeControlled` | [useWindowSize.ts:43-51](../packages/retroplug-greenfield/ui/lvgl/useWindowSize.ts#L43) | Fit-to-grid resize / tiling-WM detection |
-| `__rp_mountUI` / `__rp_unmountUI` | [main.tsx:31-32](../packages/retroplug-greenfield/ui/main.tsx#L31) | Render/teardown across window close/reopen |
-| `__rp_tagTestId` | [StableSlot.tsx:20](../packages/retroplug-greenfield/ui/lvgl/StableSlot.tsx#L20) | Test-only widget tagging (inert in production) |
+| `__rp_openFileBrowser` / `__rp_onFileBrowserResult` | [realBackend.ts](../packages/retroplug/src/realBackend.ts) | The async file dialog |
+| `__rp_setWindowSize` / `__rp_isWindowSizeControlled` | [useWindowSize.ts:43-51](../packages/retroplug/ui/lvgl/useWindowSize.ts#L43) | Fit-to-grid resize / tiling-WM detection |
+| `__rp_mountUI` / `__rp_unmountUI` | [main.tsx:31-32](../packages/retroplug/ui/main.tsx#L31) | Render/teardown across window close/reopen |
+| `__rp_tagTestId` | [StableSlot.tsx:20](../packages/retroplug/ui/lvgl/StableSlot.tsx#L20) | Test-only widget tagging (inert in production) |
 
 ---
 
-## The React / LVGL UI — [`ui/`](../packages/retroplug-greenfield/ui)
+## The React / LVGL UI — [`ui/`](../packages/retroplug/ui)
 
 The UI renders React (via `react-reconciler`) to **LVGL** widgets through `lvgljs-ui` /
 `lvgljs`. It reads the stores reactively and mutates them imperatively.
 
 ### Entry + provider chain
 
-[`main.tsx`](../packages/retroplug-greenfield/ui/main.tsx) defines
+[`main.tsx`](../packages/retroplug/ui/main.tsx) defines
 `<StoreProvider><FocusProvider><App/></FocusProvider></StoreProvider>` and installs
 `__rp_mountUI` / `__rp_unmountUI` so the host renders after a display attaches and keeps
 QuickJS alive across a window close/reopen.
 
-- [`StoreProvider.tsx`](../packages/retroplug-greenfield/ui/stores/StoreProvider.tsx) builds the
+- [`StoreProvider.tsx`](../packages/retroplug/ui/stores/StoreProvider.tsx) builds the
   graph lazily via `useRef` (so `createRealBackend()` resolves after the host binds
   `__rpcSend`) and passes `composeAppStores` a `notify(channel)` that fans out to per-channel
   listener `Set`s; it exposes `subscribe`.
-- [`useStores.ts`](../packages/retroplug-greenfield/ui/stores/useStores.ts) exposes `useStores()`
+- [`useStores.ts`](../packages/retroplug/ui/stores/useStores.ts) exposes `useStores()`
   (imperative mutators) and `useStoreSnapshot(channel, read)`
-  ([useStores.ts:40](../packages/retroplug-greenfield/ui/stores/useStores.ts#L40)), which caches
+  ([useStores.ts:40](../packages/retroplug/ui/stores/useStores.ts#L40)), which caches
   `read()` and recomputes **only after a notify** (via `useSyncExternalStore` + an
   invalidate-on-notify ref) — necessary because store getters return a fresh reference every
   call. Public hooks: `useSystems`, `useProjectSettings`, `useIsDirty`, `useRecent`,
   `useUserConfig`, `useBindings`.
 
-### App controller — [`App.tsx`](../packages/retroplug-greenfield/ui/App.tsx)
+### App controller — [`App.tsx`](../packages/retroplug/ui/App.tsx)
 
 Owns menu open/close and swaps between the start menu (empty project) and the system grid.
 **Esc is owned here, in one place**
-([App.tsx:61-72](../packages/retroplug-greenfield/ui/App.tsx#L61)): closed + a focused system →
+([App.tsx:61-72](../packages/retroplug/ui/App.tsx#L61)): closed + a focused system →
 open the instance menu anchored to it; open → close. The start menu is always open when
 empty. When the grid shows idle (no menu), the keypad is pointed at the sink group so arrow
 keys don't leak into the clickable tiles. The window is fit to the grid on instance/zoom
@@ -341,74 +341,74 @@ change unless a tiling WM owns geometry (`isWindowSizeControlled()`). It drives
 `useGameInput({ active: !empty && !menuOpen, focusedId })` and renders `<Menu>` (empty) or
 `<SystemGrid>`.
 
-### The grid — [`screens/grid/`](../packages/retroplug-greenfield/ui/screens/grid)
+### The grid — [`screens/grid/`](../packages/retroplug/ui/screens/grid)
 
-- [`SystemGrid.tsx`](../packages/retroplug-greenfield/ui/screens/grid/SystemGrid.tsx) renders one
+- [`SystemGrid.tsx`](../packages/retroplug/ui/screens/grid/SystemGrid.tsx) renders one
   tile per system from `useSystems()`. `fitZoom`
-  ([SystemGrid.tsx:25](../packages/retroplug-greenfield/ui/screens/grid/SystemGrid.tsx#L25)) caps
+  ([SystemGrid.tsx:25](../packages/retroplug/ui/screens/grid/SystemGrid.tsx#L25)) caps
   zoom to keep the whole grid visible. Each tile is wrapped in a
   `StableSlot key={slot-${sys.id}}`; the slot matching `menuSystemId` swaps its single child
   EmulatorTile↔`<Menu>` so sibling tiles keep rendering.
-- [`EmulatorTile.tsx`](../packages/retroplug-greenfield/ui/screens/grid/EmulatorTile.tsx) pulls
+- [`EmulatorTile.tsx`](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx) pulls
   `backend.getFrame(systemId)` on each native `"frame"` event and blits it into an LVGL
-  `Canvas` via `setBuffer` ([EmulatorTile.tsx:50](../packages/retroplug-greenfield/ui/screens/grid/EmulatorTile.tsx#L50)).
+  `Canvas` via `setBuffer` ([EmulatorTile.tsx:50](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx#L50)).
   Click → `setFocus`; an unfocused tile gets a translucent dim overlay, a focused one an accent
   border (both suppressed when it is the only tile).
-- [`layout.ts`](../packages/retroplug-greenfield/ui/screens/grid/layout.ts) is pure grid math
+- [`layout.ts`](../packages/retroplug/ui/screens/grid/layout.ts) is pure grid math
   (`GB_NATIVE_W/H`, `shapeFor`, `gridContentSize`, `getTileBounds`).
 
 **Why `StableSlot`.** `lv_binding_js`'s `insertChildBefore` ignores its `beforeChild`
 argument and always appends, so React reordering a child (or swapping its type) at a stable
 position lands the new widget at the *end* of the LVGL child list.
-[`StableSlot.tsx`](../packages/retroplug-greenfield/ui/lvgl/StableSlot.tsx) is the workaround: a
+[`StableSlot.tsx`](../packages/retroplug/ui/lvgl/StableSlot.tsx) is the workaround: a
 fixed-position wrapper View whose position never changes, whose *single* child swaps — where
 `appendChild` lands correctly. Its `tagTestId`
-([StableSlot.tsx:20](../packages/retroplug-greenfield/ui/lvgl/StableSlot.tsx#L20)) tags a
+([StableSlot.tsx:20](../packages/retroplug/ui/lvgl/StableSlot.tsx#L20)) tags a
 widget's native uid for the test harness and is inert in production.
 
-### The menu — [`screens/menu/`](../packages/retroplug-greenfield/ui/screens/menu)
+### The menu — [`screens/menu/`](../packages/retroplug/ui/screens/menu)
 
-- [`menuTree.ts`](../packages/retroplug-greenfield/ui/screens/menu/menuTree.ts) is the pure data
+- [`menuTree.ts`](../packages/retroplug/ui/screens/menu/menuTree.ts) is the pure data
   model: `MenuItem { id, label, kind: "action"|"submenu"|"separator"|"cycler", … }` where each
   leaf carries its own effect callback (no dispatch).
-- [`menuDefs.ts`](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts) builds the start
+- [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts) builds the start
   and instance menus over a `MenuContext` (stores + current values, rebuilt each render).
   Leaves call greenfield store methods directly, current values are baked into labels, and
   `browseThen` opens the OS dialog before applying. The instance menu offers Duplicate /
   Remove / Load ROM / Add / Link Group / a System submenu (SameBoy model/highpass/fastBoot
   cyclers, Save/Load State + SRAM, New SRAM, Reset) / Project / Settings.
-- [`Menu.tsx`](../packages/retroplug-greenfield/ui/screens/menu/Menu.tsx) is the keyboard-driven
+- [`Menu.tsx`](../packages/retroplug/ui/screens/menu/Menu.tsx) is the keyboard-driven
   tree renderer. The focus highlight is React state driven **only** by explicit nav / click /
   rebuild — never by LVGL `onFocus` events — so there's nothing for stray focus events to
   corrupt. It flattens depth-first into open submenus and **re-keys the inner scrollable View
-  on `visibleKey`** ([Menu.tsx:207](../packages/retroplug-greenfield/ui/screens/menu/Menu.tsx#L207))
+  on `visibleKey`** ([Menu.tsx:207](../packages/retroplug/ui/screens/menu/Menu.tsx#L207))
   — the same append workaround, forcing a full remount so every row mounts in JSX order.
   `useFocusGroup` claims the keypad; Enter → activate, Up/Down move the cursor, Left/Right →
   `onCycle(±1)`.
 
-### LVGL primitives — [`ui/lvgl/`](../packages/retroplug-greenfield/ui/lvgl)
+### LVGL primitives — [`ui/lvgl/`](../packages/retroplug/ui/lvgl)
 
-- [`Box.tsx`](../packages/retroplug-greenfield/ui/lvgl/Box.tsx) — a `<View>` with the LVGL
+- [`Box.tsx`](../packages/retroplug/ui/lvgl/Box.tsx) — a `<View>` with the LVGL
   default-theme chrome zeroed, caller style merged on top.
-- [`FocusProvider.tsx`](../packages/retroplug-greenfield/ui/lvgl/FocusProvider.tsx) — owns the
+- [`FocusProvider.tsx`](../packages/retroplug/ui/lvgl/FocusProvider.tsx) — owns the
   app-wide empty **"sink"** keyboard group's lifecycle so LVGL doesn't route arrows/Enter into
   clickable tiles. It deliberately does *not* claim the keypad itself (parent effects run
   after children's, so it would clobber a just-mounted menu).
-- [`useFocusGroup.ts`](../packages/retroplug-greenfield/ui/lvgl/useFocusGroup.ts) — the reusable
+- [`useFocusGroup.ts`](../packages/retroplug/ui/lvgl/useFocusGroup.ts) — the reusable
   claim-the-keypad dance: a `useLayoutEffect` builds a fresh group from ordered refs, focuses a
   target, `setKeyboardGroup(group)`, and on cleanup restores the sink (**never null**) and
   destroys the group.
-- [`useNativeEvent.ts`](../packages/retroplug-greenfield/ui/lvgl/useNativeEvent.ts) — subscribes to
+- [`useNativeEvent.ts`](../packages/retroplug/ui/lvgl/useNativeEvent.ts) — subscribes to
   the `lvgljs` `on`/`off` bus (`frame` / `key` / `resize` / …) with a stable listener + handler
   ref (no re-subscribe on inline closures).
-- [`useWindowSize.ts`](../packages/retroplug-greenfield/ui/lvgl/useWindowSize.ts) — the live window
+- [`useWindowSize.ts`](../packages/retroplug/ui/lvgl/useWindowSize.ts) — the live window
   size reactive to `"resize"`; `requestWindowSize` / `isWindowSizeControlled` are the TS side of
   the `__rp_*` native window seam.
 
-### Game input — [`ui/input/useGameInput.ts`](../packages/retroplug-greenfield/ui/input/useGameInput.ts)
+### Game input — [`ui/input/useGameInput.ts`](../packages/retroplug/ui/input/useGameInput.ts)
 
 Resolves each `"key"` bus code to a Game Boy button via `buildKeyToButton(bindings.keyboard)`
-([keyCodes.ts](../packages/retroplug-greenfield/src/keyCodes.ts)) and fires
+([keyCodes.ts](../packages/retroplug/src/keyCodes.ts)) and fires
 `backend.pressButton(focusedId, button, down)`. A `targetsRef` (dpf code → routed system id)
 does OS auto-repeat suppression and release-to-original-target, so a held button never sticks
 on the wrong (or a removed) instance. Releases are always processed — opening a menu mid-hold
@@ -425,15 +425,15 @@ Two concepts touched throughout this doc belong fully to **doc 04**:
   role config that crosses to the live core (via `applyRoleConfig`). **Feature-roles**
   (LSDj-sync, mGB, midi-routing) are pure TS behaviours whose config **never** gets a C++
   struct. The control-plane `RoleRegistry` (built by `buildAppRegistry`) attaches feature
-  roles to a system by ROM identity ([`romProviders.ts`](../packages/retroplug-greenfield/src/romProviders.ts),
+  roles to a system by ROM identity ([`romProviders.ts`](../packages/retroplug/src/romProviders.ts),
   the TS twin of the native `RomSniffer`).
-- **The DSP role kernel.** [`src/dspKernel.ts`](../packages/retroplug-greenfield/src/dspKernel.ts)
+- **The DSP role kernel.** [`src/dspKernel.ts`](../packages/retroplug/src/dspKernel.ts)
   is compiled to bytecode and run inside a **second, bare QuickJS context** on the audio
   thread — the distinct **DSP runtime**, never shared with the control-plane runtime.
-  [`src/dspRuntime.ts`](../packages/retroplug-greenfield/src/dspRuntime.ts) is the control-plane
+  [`src/dspRuntime.ts`](../packages/retroplug/src/dspRuntime.ts) is the control-plane
   client that compiles/loads the kernel and pushes the system structure (as a JSON string) over
   the same `__rpcSend` channel; it is a **distinct capability from `Backend`** so the mock
-  stays clean. [`kernelProjection.ts`](../packages/retroplug-greenfield/src/kernelProjection.ts)
+  stays clean. [`kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts)
   turns a `SystemView[]` + `midiRouting` into the kernel structure `syncDspFromStore` pushes.
 
 Doc 04 covers the byte-sink ABI, the per-system pipelines, the drift-exact PPQ clock in JS,
@@ -444,13 +444,13 @@ and how the kernel runs on the bare context.
 ## Not yet built / deferred
 
 - **The plugin's two store graphs aren't unified.** The editor
-  ([`PluginGreenfieldUI`](../packages/native-greenfield/plugin/PluginGreenfieldUI.cpp)) is wired and
+  ([`PluginUI`](../packages/native-greenfield/plugin/PluginUI.cpp)) is wired and
   mounts the React UI on the shared context, but its UI bundle composes one store graph
   (`StoreProvider` → `composeAppStores`) while the control-plane bundle (`pluginControlPlane.ts`)
   composes a separate one inline. Routing both through a single `composeAppStores` graph — so the
   editor and the DAW get/setState path observe one model — is flagged in `appStores.ts` but not
   done. (The `appStores.ts:14-17` comment still calls the plugin "headless", which is now stale.)
-- **Menu items marked deferred** in [`menuDefs.ts`](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts):
+- **Menu items marked deferred** in [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts):
   the About panel, the keyboard/gamepad bindings **editor** UI, "Open Settings Folder", and
   **LSDj Mode** (a feature role with no live-apply path today).
 - **Feature-role config is intentionally not wired to the live core** — a feature role's
@@ -468,11 +468,11 @@ this list is only the TS-layer-local deferrals.
 
 | Concern | File |
 |---|---|
-| Native contract | [`src/backend.ts`](../packages/retroplug-greenfield/src/backend.ts) · [`src/realBackend.ts`](../packages/retroplug-greenfield/src/realBackend.ts) |
-| Systems | [`src/systemsStore.ts`](../packages/retroplug-greenfield/src/systemsStore.ts) · [`src/systemsList.ts`](../packages/retroplug-greenfield/src/systemsList.ts) |
-| Project | [`src/projectStore.ts`](../packages/retroplug-greenfield/src/projectStore.ts) · [`src/projectConfig.ts`](../packages/retroplug-greenfield/src/projectConfig.ts) |
-| Config stores | [`src/recentStore.ts`](../packages/retroplug-greenfield/src/recentStore.ts) · [`src/userConfigStore.ts`](../packages/retroplug-greenfield/src/userConfigStore.ts) · [`src/bindingsStore.ts`](../packages/retroplug-greenfield/src/bindingsStore.ts) |
-| Services | [`src/fileSelection.ts`](../packages/retroplug-greenfield/src/fileSelection.ts) · [`src/fileWatcher.ts`](../packages/retroplug-greenfield/src/fileWatcher.ts) · [`src/sramAutoSave.ts`](../packages/retroplug-greenfield/src/sramAutoSave.ts) |
-| Composition | [`src/pluginControlPlane.ts`](../packages/retroplug-greenfield/src/pluginControlPlane.ts) · [`src/appStores.ts`](../packages/retroplug-greenfield/src/appStores.ts) · [`src/appHost.ts`](../packages/retroplug-greenfield/src/appHost.ts) |
-| UI | [`ui/main.tsx`](../packages/retroplug-greenfield/ui/main.tsx) · [`ui/App.tsx`](../packages/retroplug-greenfield/ui/App.tsx) · [`ui/screens/grid/`](../packages/retroplug-greenfield/ui/screens/grid) · [`ui/screens/menu/`](../packages/retroplug-greenfield/ui/screens/menu) · [`ui/lvgl/`](../packages/retroplug-greenfield/ui/lvgl) |
-| DSP client (doc 04) | [`src/dspRuntime.ts`](../packages/retroplug-greenfield/src/dspRuntime.ts) · [`src/kernelProjection.ts`](../packages/retroplug-greenfield/src/kernelProjection.ts) |
+| Native contract | [`src/backend.ts`](../packages/retroplug/src/backend.ts) · [`src/realBackend.ts`](../packages/retroplug/src/realBackend.ts) |
+| Systems | [`src/systemsStore.ts`](../packages/retroplug/src/systemsStore.ts) · [`src/systemsList.ts`](../packages/retroplug/src/systemsList.ts) |
+| Project | [`src/projectStore.ts`](../packages/retroplug/src/projectStore.ts) · [`src/projectConfig.ts`](../packages/retroplug/src/projectConfig.ts) |
+| Config stores | [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts) · [`src/userConfigStore.ts`](../packages/retroplug/src/userConfigStore.ts) · [`src/bindingsStore.ts`](../packages/retroplug/src/bindingsStore.ts) |
+| Services | [`src/fileSelection.ts`](../packages/retroplug/src/fileSelection.ts) · [`src/fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts) · [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts) |
+| Composition | [`src/pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) · [`src/appStores.ts`](../packages/retroplug/src/appStores.ts) · [`src/appHost.ts`](../packages/retroplug/src/appHost.ts) |
+| UI | [`ui/main.tsx`](../packages/retroplug/ui/main.tsx) · [`ui/App.tsx`](../packages/retroplug/ui/App.tsx) · [`ui/screens/grid/`](../packages/retroplug/ui/screens/grid) · [`ui/screens/menu/`](../packages/retroplug/ui/screens/menu) · [`ui/lvgl/`](../packages/retroplug/ui/lvgl) |
+| DSP client (doc 04) | [`src/dspRuntime.ts`](../packages/retroplug/src/dspRuntime.ts) · [`src/kernelProjection.ts`](../packages/retroplug/src/kernelProjection.ts) |

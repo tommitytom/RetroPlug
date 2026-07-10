@@ -26,7 +26,7 @@ providers** (§4.4), the bindings + gamepad UI, and the confirm/prompt modals ar
 verification tasks remain** before legacy can be deleted:
 
 1. **Cross-platform build parity.** `vst2` is added to the greenfield DPF `TARGETS`;
-   `retroplug-greenfield-{clap,vst3,vst2,jack}` build clean on Linux. Three gaps remain before greenfield
+   `retroplug-{clap,vst3,vst2,jack}` build clean on Linux. Three gaps remain before greenfield
    matches legacy's platform reach — none are Linux-visible, so they're easy to miss:
    - **Per-target Windows link fixes were never ported.** Four fixes live only on the legacy `${NAME}`
      target and have no `-greenfield` equivalent (greenfield's `CMakeLists.txt` has zero
@@ -47,7 +47,7 @@ verification tasks remain** before legacy can be deleted:
      points at the stale `deps/dpf` path, and never had a Windows job; the greenfield build is unexercised
      off Linux. A real Windows + macOS build is a precondition, not an assumption.
 2. **Port the LSDj-sync / DAW-timing / audio-quality test matrix to greenfield.** The **headless** portion
-   is **DONE** on `pnpm test:greenfield-native`: the sync-mode real-core tests (MidiSyncArduinoboy / MidiMap /
+   is **DONE** on `pnpm test:native`: the sync-mode real-core tests (MidiSyncArduinoboy / MidiMap /
    KeyboardMidi / MidiPassthrough — `test-native/lsdj-*.test.ts`), link-cable sync via **per-system audio**
    (the new `renderAudioPerSystem` RPC — `lsdj-sync-{pattern,negative}.test.ts`), and audio-quality WAV staging
    (`reaper:analyze-{smoke,lsdj-sync}-greenfield`). **Remaining:** the **DAW-timing** leg — the real-Reaper
@@ -56,8 +56,8 @@ verification tasks remain** before legacy can be deleted:
    `packages/native/test`, `test/ts/**`, and the `reaper:*` scripts (§3) is gated on that leg **plus the
    ArduinoboyMaster serial-out test** (task 4).
 3. **Native KeyboardMidi coverage — DONE (functional).** The mock
-   [lsdj-modes.test.ts](../packages/retroplug-greenfield/test/dsp/lsdj-modes.test.ts) asserts the exact scancodes
-   the role emits, and [test-native/lsdj-keyboardmidi.test.ts](../packages/retroplug-greenfield/test-native/lsdj-keyboardmidi.test.ts)
+   [lsdj-modes.test.ts](../packages/retroplug/test/dsp/lsdj-modes.test.ts) asserts the exact scancodes
+   the role emits, and [test-native/lsdj-keyboardmidi.test.ts](../packages/retroplug/test-native/lsdj-keyboardmidi.test.ts)
    proves MIDI notes play **audibly** on a real LSDj via the PS/2-keyboard path. Two fixes (both per the LSDj
    author's [jkotlinski/keyjazz](https://github.com/jkotlinski/keyjazz) + the manual): (a) **GB-serial byte
    mangling** — LSDj reads the keyboard as a serial slave and the GB serial truncates each PS/2 scancode to 7
@@ -93,15 +93,15 @@ precondition on deleting the corresponding legacy code.
 | **NES / GBA (Mesen) systems** | fully wired | **Done.** `MesenBackend` builds `MesenNesSystem` / `MesenGbaSystem` and arms their state snapshot (`bootMesen`). The TS store wires them: `defaultCoreFor` routes `nes`/`gba` → `mesen`, `coreRoles` registers the `"mesen"` system-role (NES Region + Remove Sprite Limit knobs), `romProviders` attaches `nes-n8-midi`, and `Engine` gain/reload are generalized (`setGainDb` is a `SystemBase` virtual). NES host-MIDI + the N8 FIFO play. Further NES↔SameBoy polish is product-scoped, not a legacy-parity blocker. |
 | **MIDI routing** | routing cycler + native routing roles | **Done.** `midi-routing` is a project-scope feature-role (`src/midiRouting.ts` + `src/dspRoles.ts`); host MIDI is staged per block and fanned to systems; routing-config edits live-re-push via `setRoleConfig` → `syncDspFromStore`. |
 | **About panel** | `packages/ui/src/menu/AboutPanel.tsx` + menu item | **Dropped** — not a deletion blocker (it offered little). |
-| **Bindings / keymap editor UI** | full keyboard+gamepad capture submenu | **Built.** Settings → Keyboard Bindings + Gamepad Bindings ([menuDefs.ts](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts) `bindingsChildren` per channel): a profile switcher, one capture row per GB button, three **app-action** capture rows (Open Menu / Cycle Instances / Cycle Instances (Back) → the `keyboardActions`/`gamepadActions` binding sections), a channel reset (GB buttons + actions), and New / Rename / Delete, write-through via `bindingsStore`. |
+| **Bindings / keymap editor UI** | full keyboard+gamepad capture submenu | **Built.** Settings → Keyboard Bindings + Gamepad Bindings ([menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts) `bindingsChildren` per channel): a profile switcher, one capture row per GB button, three **app-action** capture rows (Open Menu / Cycle Instances / Cycle Instances (Back) → the `keyboardActions`/`gamepadActions` binding sections), a channel reset (GB buttons + actions), and New / Rename / Delete, write-through via `bindingsStore`. |
 | **LSDj mode selection (live apply)** | 8-mode cycler + `setLsdjSyncConfig` RPC | **Largely done.** An "LSDj" instance submenu (Mode + Tempo Divisor cyclers) drives `setRoleConfig`, which live-applies via the feature-role re-push path (no dedicated RPC). Behaviours built for MidiSync + MidiSyncArduinoboy + MidiMap + KeyboardMidi + MidiPassthrough; raw Keyboard + ArduinoboyMaster remain (§5). |
-| **Text-prompt / confirm-modal flows** | rename prompts, remove-confirm, incompatible-project / unsaved-changes / relink modals | **Largely built.** The `capture`/`prompt` menu kinds exist (bindings capture rows + New/Rename/delete-confirm prompts), and the unsaved-changes / discard / notice / relink modal overlays are built ([App.tsx](../packages/retroplug-greenfield/ui/App.tsx) `useCloseGuard` / `useProjectModals`); relink uses the OS "Locate on Disk" dialog. |
+| **Text-prompt / confirm-modal flows** | rename prompts, remove-confirm, incompatible-project / unsaved-changes / relink modals | **Largely built.** The `capture`/`prompt` menu kinds exist (bindings capture rows + New/Rename/delete-confirm prompts), and the unsaved-changes / discard / notice / relink modal overlays are built ([App.tsx](../packages/retroplug/ui/App.tsx) `useCloseGuard` / `useProjectModals`); relink uses the OS "Locate on Disk" dialog. |
 | **Kit-patch UI + sample matcher + resampling** | `KitEditor.tsx`, native `KitCompiler` (r8brain + enkiTS) | **Deferred — reworked from scratch on greenfield post-switchover; NOT a deletion blocker.** Kit *compilation* stays native (§2); the greenfield UI-thread behaviour + sample matcher + resampling are a fresh build once greenfield is the main build. |
 | **Savestate slots** | — (never built in legacy either) | **Deferred.** Never in legacy → not a parity blocker. The state-snapshot triple exists for save/duplicate; a user-facing multi-slot feature does not. |
 | **Sav inspector** | — (design only) | **Deferred.** Design-only in legacy → not a blocker. The LSDj sav codec exists; RPC exposure + a React view do not. |
 | **Live memory subscription** | `subscribeMemory` → `enableMemorySnapshot` streaming | **Deferred (§4.2).** Greenfield has one-shot frame/state/SRAM reads through the read door but no live region pump; nothing arms `enableMemorySnapshot`. Not a switchover blocker unless a feature needs it. |
-| **Gamepad (SDL) input** | `GamepadManager.{hpp,cpp}` | **Live input built (default bindings).** The legacy `GamepadManager` is compiled into greenfield too and polled from `PluginGreenfieldUI::uiIdle` (emitting the `gamepad-*` JS bus); `ui/input/useGamepadInput.ts` maps via the existing `bindings.gamepad` and routes to the focused core, twin of `useGameInput`. An in-app Gamepad Bindings editor (rebind by pressing a button *or* flicking a stick) is built, and the **left stick drives the d-pad** via half-axis tokens + hysteresis (`keyCodes.ts` `axisToken`, seeded in the default map, consumed in `useGamepadInput`). The **gamepad also drives the menu** ([Menu.tsx](../packages/retroplug-greenfield/ui/screens/menu/Menu.tsx)): d-pad / left stick move + cycle, A selects, B backs out (fixed SDL names via `keyCodes.ts` `menuNavForButton` / `menuNavForAxisToken`). Opening the menu and cycling the focused instance are **rebindable app actions** (`buildKeyToAction` / `buildGamepadToAction`, dispatched in [App.tsx](../packages/retroplug-greenfield/ui/App.tsx)): Open Menu defaults to Esc / `leftshoulder`, Cycle Instances to Tab / `rightshoulder` (Back unbound), so a gamepad-only user is never stranded. |
-| **Plugin formats VST2 / LV2 / AU** | JACK / CLAP / VST2 / VST3 / LV2 / AU | **VST2 builds** — `vst2` added to the DPF `TARGETS` (`retroplug-greenfield-vst2.so`, Linux); DAW-load / Windows validation is the only remaining polish (see the cross-platform parity task, §1). **LV2 = deferred indefinitely** — its out-of-process DSP/UI split doesn't fit RetroPlug. **AU = not built** (no rationale on record) — an explicit keep/drop decision, not yet made. Greenfield now builds `clap vst3 vst2 jack`. |
+| **Gamepad (SDL) input** | `GamepadManager.{hpp,cpp}` | **Live input built (default bindings).** The legacy `GamepadManager` is compiled into greenfield too and polled from `PluginUI::uiIdle` (emitting the `gamepad-*` JS bus); `ui/input/useGamepadInput.ts` maps via the existing `bindings.gamepad` and routes to the focused core, twin of `useGameInput`. An in-app Gamepad Bindings editor (rebind by pressing a button *or* flicking a stick) is built, and the **left stick drives the d-pad** via half-axis tokens + hysteresis (`keyCodes.ts` `axisToken`, seeded in the default map, consumed in `useGamepadInput`). The **gamepad also drives the menu** ([Menu.tsx](../packages/retroplug/ui/screens/menu/Menu.tsx)): d-pad / left stick move + cycle, A selects, B backs out (fixed SDL names via `keyCodes.ts` `menuNavForButton` / `menuNavForAxisToken`). Opening the menu and cycling the focused instance are **rebindable app actions** (`buildKeyToAction` / `buildGamepadToAction`, dispatched in [App.tsx](../packages/retroplug/ui/App.tsx)): Open Menu defaults to Esc / `leftshoulder`, Cycle Instances to Tab / `rightshoulder` (Back unbound), so a gamepad-only user is never stranded. |
+| **Plugin formats VST2 / LV2 / AU** | JACK / CLAP / VST2 / VST3 / LV2 / AU | **VST2 builds** — `vst2` added to the DPF `TARGETS` (`retroplug-vst2.so`, Linux); DAW-load / Windows validation is the only remaining polish (see the cross-platform parity task, §1). **LV2 = deferred indefinitely** — its out-of-process DSP/UI split doesn't fit RetroPlug. **AU = not built** (no rationale on record) — an explicit keep/drop decision, not yet made. Greenfield now builds `clap vst3 vst2 jack`. |
 | **Web / Emscripten port** | — (design only) | **Deferred** (design-only in legacy). |
 
 ---
@@ -128,7 +128,7 @@ part of the **shared core** described in [01-architecture.md](01-architecture.md
 | Util | `util/MinizZip`, `EmbeddedRoms` | `zip`/`unzip` for `.rplg`; embedded mGB bytes |
 
 `GamepadManager.{hpp,cpp}` is now **also** compiled into greenfield (its plugin `FILES_UI`; SDL2 linked onto
-`retroplug-greenfield-ui`) — see the §1 gamepad row. It has **re-homed** to
+`retroplug-ui`) — see the §1 gamepad row. It has **re-homed** to
 `packages/native-greenfield/src/input/` (§3): both plugins compile it from there, so it survives legacy
 deletion rather than dying with the legacy plugin.
 
@@ -201,20 +201,20 @@ This is an inventory of the mechanical moves, not a sequenced plan. See
 
 | From | To |
 |---|---|
-| `retroplug-greenfield` (+ `-clap`/`-vst3`/`-jack`/`-ui`/`-dsp`) | `retroplug` (+ variants) |
-| `retroplug-greenfield-backend` | `retroplug-backend` |
-| `retroplug-greenfield-cp-bundle` / `-ui-bundle` | `retroplug-cp-bundle` / `-ui-bundle` |
-| `retroplug-greenfield-ui-test` | `retroplug-ui-test` |
-| `native-greenfield-host` | `retroplug-host` (or `native-host`) |
+| `retroplug` (+ `-clap`/`-vst3`/`-jack`/`-ui`/`-dsp`) | `retroplug` (+ variants) |
+| `retroplug-backend` | `retroplug-backend` |
+| `retroplug-cp-bundle` / `-ui-bundle` | `retroplug-cp-bundle` / `-ui-bundle` |
+| `retroplug-ui-test` | `retroplug-ui-test` |
+| `retroplug-host` | `retroplug-host` (or `native-host`) |
 | `packages/native-greenfield/` | `packages/native/` (after the old one is gutted — **name collision** with the current `@retroplug/native` manifest) |
-| `packages/retroplug-greenfield/` | `packages/retroplug/` (**collides** with the legacy `@retroplug/retroplug` package name) |
-| pnpm `test:greenfield*` / `screenshot:greenfield` / `validate:greenfield` / `reaper:mgb-smoke-greenfield*` | drop the infix; drop the `RETROPLUG_{CLAP,VST3}_NAME=retroplug-greenfield` env overrides |
-| `tools/run-standalone-greenfield.sh`, `run-greenfield-sanitizer.sh`, `author-greenfield-rplg.js`, `build-greenfield-controlplane.js`, `reaper-mgb-greenfield-author.lua` | drop the `greenfield` infix / merge into their legacy-named counterparts |
-| bundle symbol prefixes `gfcp_` / `gfui_` | `cp_` / `ui_` (cosmetic) |
+| `packages/retroplug/` | `packages/retroplug/` (**collides** with the legacy `@retroplug/retroplug` package name) |
+| pnpm `test*` / `screenshot` / `validate` / `reaper:mgb-smoke-greenfield*` | drop the infix; drop the `RETROPLUG_{CLAP,VST3}_NAME=retroplug` env overrides |
+| `tools/run-standalone.sh`, `run-sanitizer.sh`, `author-rplg.js`, `build-controlplane.js`, `reaper-mgb-greenfield-author.lua` | drop the `greenfield` infix / merge into their legacy-named counterparts |
+| bundle symbol prefixes `rp_` / `rp_` | `cp_` / `ui_` (cosmetic) |
 
 **Plugin identity** ([DistrhoPluginInfo.h](../packages/native-greenfield/plugin/DistrhoPluginInfo.h)):
 today greenfield is deliberately distinct — `DISTRHO_PLUGIN_NAME "RetroPlug Greenfield"`, URI
-`urn:distrho:retroplug-greenfield`, CLAP id `studio.kx.distrho.retroplug-greenfield` — precisely so
+`urn:distrho:retroplug`, CLAP id `studio.kx.distrho.retroplug` — precisely so
 the two plugins coexist in a DAW. On switchover these revert to the canonical `RetroPlug` /
 `urn:distrho:retroplug` / `studio.kx.distrho.retroplug` strings so existing DAW projects that
 reference the legacy plugin resolve. This is an on-disk identity change; sequence it after legacy
@@ -243,7 +243,7 @@ survives the eventual tree rename. What remains is mechanical deletion + the ren
 
 `tsconfig.base.json` still maps `react` / `lvgljs-ui` / `@rpcpp/*` to a `../dpf.js` **sibling**
 path, but the live location is the `deps/dpf.js` submodule. Greenfield's own
-`packages/retroplug-greenfield/tsconfig.json` does not extend base (`"types": []`, relies on
+`packages/retroplug/tsconfig.json` does not extend base (`"types": []`, relies on
 esbuild resolution), so this does not affect the greenfield build — but it is a stale mapping to
 fix on the way through.
 
@@ -280,14 +280,14 @@ greenfield to be the sole build.
    auto-attach LSDj-sync / mGB / N8-MIDI role config on a fresh ROM; greenfield turns the C++ sniffer
    off ([SameBoyBackend.cpp:35](../packages/native-greenfield/src/SameBoyBackend.cpp#L35)) and supplies
    the equivalent in TS: `registerRomProviders`
-   ([romProviders.ts](../packages/retroplug-greenfield/src/romProviders.ts)) attaches `mgb` (title /
+   ([romProviders.ts](../packages/retroplug/src/romProviders.ts)) attaches `mgb` (title /
    embedded), `lsdj-sync` (LSDj title), and `nes-n8-midi` (platform). Kit-patch default attachment
    follows if/when that feature is (re)built.
 
 5. **The native file watcher is unimplemented — ROM hot-reload / config live-reload is inert.** Greenfield's
    design is "watcher = C++, policy = TS": native watches (efsw over the config dir + `bindings/`, plus a
    per-ROM mtime poll) and reports changed paths through `HostRpcService::drainChangedPaths()`; TS
-   ([fileWatcher.ts](../packages/retroplug-greenfield/src/fileWatcher.ts) `FileWatcher.pump`) drains at idle
+   ([fileWatcher.ts](../packages/retroplug/src/fileWatcher.ts) `FileWatcher.pump`) drains at idle
    and reloads systems whose ROM changed with `reloadOnRomChange` on. The **TS policy half is built +
    unit-tested**, but the **native half was never ported** — `drainChangedPaths()` is a stub returning `{}`
    ([HostRpcService.cpp:134](../packages/native-greenfield/src/HostRpcService.cpp#L134)), and the host is
@@ -315,11 +315,11 @@ and the store→kernel projection are wired.
 
 - **DSP-role behaviours (pure TS):** LSDj sync authors MidiSync, MidiSyncArduinoboy, MidiMap,
   KeyboardMidi, MidiPassthrough (including the `0xFA`/`0xFC` transport-start/stop bytes), backed by the
-  kernel's `ctx.state` per-system scratch bag ([dspRoles.ts](../packages/retroplug-greenfield/src/dspRoles.ts)).
+  kernel's `ctx.state` per-system scratch bag ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)).
   Missing: raw **Keyboard** mode (needs the `keys` feed, below) and **ArduinoboyMaster** MI.OUT (the
   `emitMidiOut` host-out direction, which also needs the emulator serial-out fed *into* the block).
   These two are **final task 4** (ArduinoboyMaster is the priority); and KeyboardMidi, though built +
-  unit-tested ([test/dsp/lsdj-modes.test.ts](../packages/retroplug-greenfield/test/dsp/lsdj-modes.test.ts)),
+  unit-tested ([test/dsp/lsdj-modes.test.ts](../packages/retroplug/test/dsp/lsdj-modes.test.ts)),
   still needs **real-core coverage** (final task 3) — no test drives it against an actual LSDj ROM yet.
 - **Legacy C++ role removal:** delete `LsdjSyncRole` / `MgbPassthroughRole` (and the rest of the
   role classes) once the TS path drives every host — blocked until the shared CLI/plugin consumers
@@ -355,14 +355,14 @@ legacy" provenance comments are context, not action items.)
 | [DspRuntime.cpp:15](../packages/native-greenfield/src/DspRuntime.cpp#L15) | GB serial pump is a plain FIFO; intra-block frame not yet modelled |
 | [Engine.cpp](../packages/native-greenfield/src/Engine.cpp) | **Resolved** — gain/reload generalized: `setGainDb` is a `SystemBase` virtual applied before the SameBoy cast (was SameBoy-only). |
 | [Engine.cpp:191](../packages/native-greenfield/src/Engine.cpp#L191) | `fastBoot` deferred to the next restart |
-| [PluginGreenfieldDSP.cpp:135](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L135) | host MIDI short messages only; SysEx deferred |
-| [systemRoles.ts:13](../packages/retroplug-greenfield/src/systemRoles.ts#L13) / [:58](../packages/retroplug-greenfield/src/systemRoles.ts#L58) | kit-patch stays a deferred `ui` UI-thread behaviour |
-| [backend.ts:109](../packages/retroplug-greenfield/src/backend.ts#L109) | feature-role config never reaches native — the deferred TS-script future |
-| [systemsStore.ts:328](../packages/retroplug-greenfield/src/systemsStore.ts#L328) | feature behaviour is the deferred script future |
-| [menuDefs.ts](../packages/retroplug-greenfield/ui/screens/menu/menuDefs.ts) (About panel marker) | Deferred About panel only — LSDj mode, live gamepad input, gamepad menu navigation, and the keyboard + gamepad rebinding editors (with analog-stick-as-dpad) are all now built |
+| [PluginDSP.cpp:135](../packages/native-greenfield/plugin/PluginDSP.cpp#L135) | host MIDI short messages only; SysEx deferred |
+| [systemRoles.ts:13](../packages/retroplug/src/systemRoles.ts#L13) / [:58](../packages/retroplug/src/systemRoles.ts#L58) | kit-patch stays a deferred `ui` UI-thread behaviour |
+| [backend.ts:109](../packages/retroplug/src/backend.ts#L109) | feature-role config never reaches native — the deferred TS-script future |
+| [systemsStore.ts:328](../packages/retroplug/src/systemsStore.ts#L328) | feature behaviour is the deferred script future |
+| [menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts) (About panel marker) | Deferred About panel only — LSDj mode, live gamepad input, gamepad menu navigation, and the keyboard + gamepad rebinding editors (with analog-stick-as-dpad) are all now built |
 
 Not cleanup (intentional domain terms that read like TODOs): `deferredProject` in
-[systemsStore.ts](../packages/retroplug-greenfield/src/systemsStore.ts) and `kind: "deferred"` in
+[systemsStore.ts](../packages/retroplug/src/systemsStore.ts) and `kind: "deferred"` in
 `fileSelection.ts` are the sibling-`.rplg` load-handoff concept, not incomplete work.
 
 ---
@@ -374,4 +374,4 @@ Not cleanup (intentional domain terms that read like TODOs): `deferredProject` i
 - [packages/native-greenfield/src/SameBoyBackend.cpp](../packages/native-greenfield/src/SameBoyBackend.cpp) / [MesenBackend.cpp](../packages/native-greenfield/src/MesenBackend.cpp) — snapshot arming asymmetry
 - [packages/native-greenfield/src/SnapshotRegistry.hpp](../packages/native-greenfield/src/SnapshotRegistry.hpp) — the read-door claim contract + double-copy collapse note
 - [packages/native-greenfield/plugin/DistrhoPluginInfo.h](../packages/native-greenfield/plugin/DistrhoPluginInfo.h) — the distinct plugin identity to revert
-- [packages/retroplug-greenfield/src/dspRoles.ts](../packages/retroplug-greenfield/src/dspRoles.ts) — the shipped roles + the sync-mode gap
+- [packages/retroplug/src/dspRoles.ts](../packages/retroplug/src/dspRoles.ts) — the shipped roles + the sync-mode gap

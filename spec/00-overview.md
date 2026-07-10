@@ -5,7 +5,7 @@ NES/GBA (Mesen) emulator cores inside a DAW or as a standalone app, wires their
 serial/MIDI/audio together, and drives music-tracker workflows (LSDj sync, mGB,
 Arduinoboy, kit patching) on top. This `spec/` describes the **greenfield**
 build — the active reimplementation in [`packages/native-greenfield/`](../packages/native-greenfield)
-(C++ host) and [`packages/retroplug-greenfield/`](../packages/retroplug-greenfield)
+(C++ host) and [`packages/retroplug/`](../packages/retroplug)
 (TypeScript + React/LVGL UI). It is written in the present tense: it documents
 what exists today, and calls out what does not yet exist in explicit
 "Not yet built" subsections.
@@ -37,7 +37,7 @@ Two consequences show up everywhere and are worth stating once here:
 - **Cores are built bare.** Greenfield constructs each core with
   `setSniffDefaultRoles(false)`, so no feature behaviour is baked into C++. LSDj
   sync, mGB and Arduinoboy behaviour live in a TypeScript **DSP role kernel**
-  ([dspKernel.ts](../packages/retroplug-greenfield/src/dspKernel.ts)) that native
+  ([dspKernel.ts](../packages/retroplug/src/dspKernel.ts)) that native
   runs as bytecode. (Kit-patch is the exception: it runs on the **UI thread**,
   writing already-patched memory regions into the core — it has no DSP-kernel
   component.) See [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).
@@ -49,16 +49,16 @@ Two consequences show up everywhere and are worth stating once here:
 
 Three C++ entry points compose the **same** `BackendFacade` over the **same** RPC
 surface. Each binds `globalThis[Symbol.for("plugin")].__rpcSend`, and one
-TypeScript adapter ([realBackend.ts](../packages/retroplug-greenfield/src/realBackend.ts))
+TypeScript adapter ([realBackend.ts](../packages/retroplug/src/realBackend.ts))
 targets exactly that namespace — so the control-plane code is identical across all
 three. The threading model, command ring, snapshot registry and release ring that
 these hosts share are defined canonically in [01-architecture.md](01-architecture.md).
 
 | Host | Entry point | Role |
 |---|---|---|
-| DPF plugin | [`PluginGreenfieldDSP.cpp`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp) + [`PluginGreenfieldUI.cpp`](../packages/native-greenfield/plugin/PluginGreenfieldUI.cpp) | The shipping plugin. DSP + UI link in one binary; the editor runs in-process on the DSP's control-plane context. |
-| Native test host | [`src/main.cpp`](../packages/native-greenfield/src/main.cpp) (`native-greenfield-host`) | Headless txiki host that evals a TS bundle over the real `Backend`. The `test:greenfield-native` runner. |
-| Headless UI-test host | [`test/ui/GreenfieldUiHarness.cpp`](../packages/native-greenfield/test/ui/GreenfieldUiHarness.cpp) | Boots the real React UI on a software LVGL display, no audio thread. The `test:greenfield-ui` runner. |
+| DPF plugin | [`PluginDSP.cpp`](../packages/native-greenfield/plugin/PluginDSP.cpp) + [`PluginUI.cpp`](../packages/native-greenfield/plugin/PluginUI.cpp) | The shipping plugin. DSP + UI link in one binary; the editor runs in-process on the DSP's control-plane context. |
+| Native test host | [`src/main.cpp`](../packages/native-greenfield/src/main.cpp) (`retroplug-host`) | Headless txiki host that evals a TS bundle over the real `Backend`. The `test:native` runner. |
+| Headless UI-test host | [`test/ui/UiHarness.cpp`](../packages/native-greenfield/test/ui/UiHarness.cpp) | Boots the real React UI on a software LVGL display, no audio thread. The `test:ui` runner. |
 
 ## The artifact set
 
@@ -68,15 +68,15 @@ executables. Targets are verified against the configured build; see
 
 | Artifact | CMake target | Output |
 |---|---|---|
-| CLAP plugin | `retroplug-greenfield-clap` | `bin/retroplug-greenfield.clap` |
-| VST3 plugin | `retroplug-greenfield-vst3` | `bin/retroplug-greenfield.vst3` |
-| Standalone (GUI) app | `retroplug-greenfield-jack` | `bin/retroplug-greenfield` |
-| Native test host | `native-greenfield-host` | `bin/native-greenfield-host` |
-| Headless UI-test host | `retroplug-greenfield-ui-test` | `bin/retroplug-greenfield-ui-test` |
+| CLAP plugin | `retroplug-clap` | `bin/retroplug.clap` |
+| VST3 plugin | `retroplug-vst3` | `bin/retroplug.vst3` |
+| Standalone (GUI) app | `retroplug-jack` | `bin/retroplug` |
+| Native test host | `retroplug-host` | `bin/retroplug-host` |
+| Headless UI-test host | `retroplug-ui-test` | `bin/retroplug-ui-test` |
 
 Greenfield declares **no** LV2 / VST2 / AU (unlike legacy). Its DPF identity is
 distinct from legacy — name `RetroPlug Greenfield`, URI
-`urn:distrho:retroplug-greenfield`, unique id `RPgf` — so the two plugins coexist
+`urn:distrho:retroplug`, unique id `RPgf` — so the two plugins coexist
 in a DAW ([DistrhoPluginInfo.h](../packages/native-greenfield/plugin/DistrhoPluginInfo.h)).
 The plugin exposes 0 inputs / **8 outputs = four stereo pairs** (`out_1..4`), each
 system routed to one pair by its audio routing.
@@ -86,7 +86,7 @@ system routed to one pair by its audio routing.
 | Package | Contents | Lifetime |
 |---|---|---|
 | [`packages/native-greenfield/`](../packages/native-greenfield) | The C++ host: `BackendFacade` + the RPC services, `Engine`, `SystemFactory`/backends, the command/snapshot/release seams, the DSP-kernel runner, the DPF plugin, and both test hosts. | Greenfield — becomes the sole native tree. |
-| [`packages/retroplug-greenfield/`](../packages/retroplug-greenfield) | The TypeScript control plane and React/LVGL UI: the `Backend` interface, the stores (Systems/Project/Recent/UserConfig/Bindings), roles + the DSP kernel, and the UI. | Greenfield. |
+| [`packages/retroplug/`](../packages/retroplug) | The TypeScript control plane and React/LVGL UI: the `Backend` interface, the stores (Systems/Project/Recent/UserConfig/Bindings), roles + the DSP kernel, and the UI. | Greenfield. |
 | [`packages/native/src/`](../packages/native/src) | The **shared core**, compiled once into the `retroplug-cli-core` static lib and linked by greenfield: `SystemBase`, `SameBoySystem`, `Mesen{Nes,Gba}System`, `Project`, `BlockRunner`, `LinkGroup`, `RomSniffer`, the LSDj sav codec + model, and the transport *primitives* (`SpscRing`, `FrameBufferTriple`, `MemorySnapshotTriple`). | **Permanent** — survives the legacy deletion. |
 
 Greenfield uses `Project`'s runtime methods only (adopt/remove/swap/rebuild link
@@ -136,7 +136,7 @@ the audio thread) — never shared. All of this is specified in
 |---|---|
 | [01-architecture.md](01-architecture.md) | The canonical runtime architecture: three hosts over one `BackendFacade`; control plane vs audio thread; the command ring, snapshot registry, release ring; the two QuickJS runtimes; threading/ownership invariants. |
 | [02-native-host.md](02-native-host.md) | `packages/native-greenfield/`: the full RPC surface, `Engine`/`EngineInvoker`, `SnapshotRegistry` internals, `SystemFactory` + backends, the DSP runtime and script compiler. |
-| [03-ts-layer.md](03-ts-layer.md) | `packages/retroplug-greenfield/`: the `Backend` interface, the stores, the control-plane composition, the `__rp_*` UI↔native hooks, and the React/LVGL UI. |
+| [03-ts-layer.md](03-ts-layer.md) | `packages/retroplug/`: the `Backend` interface, the stores, the control-plane composition, the `__rp_*` UI↔native hooks, and the React/LVGL UI. |
 | [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) | The role model: system-role vs feature-role, the role registry, and the DSP kernel's per-system pipelines and byte-sink ABI. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model + `.rplg`, DPF get/setState + autoload, config models, forward-tolerant reads + version stamps, the LSDj sav codec, SRAM auto-save. |
 | [06-build-test.md](06-build-test.md) | How greenfield builds, the pnpm scripts, the dpf.js seam, and the headless verification loop. |
@@ -145,7 +145,7 @@ the audio thread) — never shared. All of this is specified in
 ## Key files
 
 - [`packages/native-greenfield/src/BackendFacade.hpp`](../packages/native-greenfield/src/BackendFacade.hpp) — the C++ RPC facade the three hosts share.
-- [`packages/retroplug-greenfield/src/backend.ts`](../packages/retroplug-greenfield/src/backend.ts) — the TypeScript side of that contract.
-- [`packages/retroplug-greenfield/src/realBackend.ts`](../packages/retroplug-greenfield/src/realBackend.ts) — the adapter that binds `Symbol.for("plugin").__rpcSend`.
+- [`packages/retroplug/src/backend.ts`](../packages/retroplug/src/backend.ts) — the TypeScript side of that contract.
+- [`packages/retroplug/src/realBackend.ts`](../packages/retroplug/src/realBackend.ts) — the adapter that binds `Symbol.for("plugin").__rpcSend`.
 - [`packages/native-greenfield/src/Engine.hpp`](../packages/native-greenfield/src/Engine.hpp) — the single-threaded owner of the live `Project` of cores.
-- [`packages/retroplug-greenfield/src/dspKernel.ts`](../packages/retroplug-greenfield/src/dspKernel.ts) — the TS DSP role kernel run as bytecode on the audio thread.
+- [`packages/retroplug/src/dspKernel.ts`](../packages/retroplug/src/dspKernel.ts) — the TS DSP role kernel run as bytecode on the audio thread.

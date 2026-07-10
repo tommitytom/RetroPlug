@@ -13,7 +13,7 @@ method tables, the `QueuedInvoker` internals, the `SnapshotRegistry` slot machin
 core backends, and the bare DSP runtime.
 
 Everything below lives under [`packages/native-greenfield/`](../packages/native-greenfield).
-It compiles into one static library, [`retroplug-greenfield-backend`](../packages/native-greenfield/CMakeLists.txt#L13),
+It compiles into one static library, [`retroplug-backend`](../packages/native-greenfield/CMakeLists.txt#L13),
 which both the DPF plugin and the two test hosts link — so all three drive the *same*
 `Engine` over the *same* `BackendFacade`.
 
@@ -55,24 +55,24 @@ All three hosts build a `BackendFacade`, wrap it in a
 `globalThis[Symbol.for("plugin")].__rpcSend` — the exact namespace the TS
 `realBackend.ts` adapter targets. The bind is byte-identical across hosts:
 
-- **DPF plugin** — [`PluginGreenfieldDSP::bootControlPlane`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L163)
+- **DPF plugin** — [`PluginDSP::bootControlPlane`](../packages/native-greenfield/plugin/PluginDSP.cpp#L163)
   brings up a plugin-lifetime txiki runtime, binds `__rpcSend`
-  ([`:171-185`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L171)), sets the
+  ([`:171-185`](../packages/native-greenfield/plugin/PluginDSP.cpp#L171)), sets the
   sample rate **before** the bundle composes (systems bake SR at construct), evals the embedded
   control-plane bytecode, then pumps until `__rp_ready`. The editor
-  ([`PluginGreenfieldUI.cpp`](../packages/native-greenfield/plugin/PluginGreenfieldUI.cpp))
+  ([`PluginUI.cpp`](../packages/native-greenfield/plugin/PluginUI.cpp))
   attaches its LVGL display to that *same* context via the in-process handoff
-  ([`GreenfieldSharedDSP`](../packages/native-greenfield/plugin/PluginGreenfieldShared.hpp#L19)),
+  ([`SharedDSP`](../packages/native-greenfield/plugin/PluginShared.hpp#L19)),
   so the UI reaches the backend through the already-bound `__rpcSend` — no second RPC bridge.
   The UI and window-geometry seams are 03's topic.
 - **Native test host** — [`main.cpp:84-97`](../packages/native-greenfield/src/main.cpp#L84) binds
   the same namespace, installs a `globalThis.tjs.exit` hook that records the exit code, evals a TS
   bundle, and pumps the job loop until the harness reports TAP. This is the
-  `test:greenfield-native` runner (`native-greenfield-host`).
-- **Headless UI-test host** — [`GreenfieldUiHarness`](../packages/native-greenfield/test/ui/GreenfieldUiHarness.hpp#L26)
+  `test:native` runner (`retroplug-host`).
+- **Headless UI-test host** — [`UiHarness`](../packages/native-greenfield/test/ui/UiHarness.hpp#L26)
   is the plugin's control-plane bring-up **minus the audio thread, plus a display**. Because
   there is no audio thread, its
-  [`advance(ms)`](../packages/native-greenfield/test/ui/GreenfieldUiHarness.hpp#L44) explicitly
+  [`advance(ms)`](../packages/native-greenfield/test/ui/UiHarness.hpp#L44) explicitly
   calls `renderAudio(ms)` to push frames into the registry the UI reads.
 
 ## The RPC surface
@@ -378,7 +378,7 @@ returns nullptr. Both call `onActivate` only — there are no backend role-knobs
 
 Native runs the TypeScript DSP role kernel but understands nothing about roles — it is "a
 dumb, role-agnostic runner … fed only by bytes." The kernel itself
-([`dspKernel.ts`](../packages/retroplug-greenfield/src/dspKernel.ts)) and its behaviour are
+([`dspKernel.ts`](../packages/retroplug/src/dspKernel.ts)) and its behaviour are
 04's topic; this doc covers the C++ runner.
 
 [`DspRuntime`](../packages/native-greenfield/src/DspRuntime.hpp#L28) owns a **second, bare
@@ -442,26 +442,26 @@ The txiki host `TjsHostRuntime` comes from
 ## Build & identity
 
 One CMake target,
-[`retroplug-greenfield-backend`](../packages/native-greenfield/CMakeLists.txt#L13), compiles
+[`retroplug-backend`](../packages/native-greenfield/CMakeLists.txt#L13), compiles
 all of `src/*.cpp` plus the shared `TjsHostRuntime.cpp`, links `retroplug-cli-core` + `tjs`,
 and is PIC (it links into the shared plugin module). The test host
-`native-greenfield-host` is that lib + `main.cpp`; the DPF plugin is
-[`dpf_add_plugin(retroplug-greenfield TARGETS clap vst3 jack)`](../packages/native-greenfield/CMakeLists.txt#L105).
-The control-plane and UI bytecode bundles (`gfcp_` / `gfui_` prefixes) are built by
-`tools/build-greenfield-controlplane.js` + `tools/build-ui.js` piped through `tjsc`, and are
+`retroplug-host` is that lib + `main.cpp`; the DPF plugin is
+[`dpf_add_plugin(retroplug TARGETS clap vst3 jack)`](../packages/native-greenfield/CMakeLists.txt#L105).
+The control-plane and UI bytecode bundles (`rp_` / `rp_` prefixes) are built by
+`tools/build-controlplane.js` + `tools/build-ui.js` piped through `tjsc`, and are
 **derived — never committed**. The `plugin/` include dir is ordered **BEFORE** the shared tree
 so DPF resolves greenfield's
 [`DistrhoPluginInfo.h`](../packages/native-greenfield/plugin/DistrhoPluginInfo.h#L8) over the
 legacy one. [06-build-test.md](06-build-test.md) is the full build/verify story.
 
 Plugin identity: name `RetroPlug Greenfield`, CLAP id
-`studio.kx.distrho.retroplug-greenfield`, `UNIQUE_ID RPgf` / `BRAND Dstr` (distinct from legacy
+`studio.kx.distrho.retroplug`, `UNIQUE_ID RPgf` / `BRAND Dstr` (distinct from legacy
 `RPlg`), **0 inputs / 8 outputs = four stereo pairs `out_1..4`**
 ([`DistrhoPluginInfo.h:13`](../packages/native-greenfield/plugin/DistrhoPluginInfo.h#L13)),
 IS_SYNTH, HAS_UI (the React/LVGL editor, 480×432, user-resizable), FILE_BROWSER, MIDI in+out,
 TIMEPOS, STATE + FULL_STATE, and DIRECT_ACCESS (the in-process editor↔DSP handoff). Master gain
 is one automatable parameter applied post-render across all 8 channels
-([`PluginGreenfieldDSP.cpp:154-158`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L154)).
+([`PluginDSP.cpp:154-158`](../packages/native-greenfield/plugin/PluginDSP.cpp#L154)).
 
 ## Not yet built / deferred
 
@@ -498,5 +498,5 @@ is one automatable parameter applied post-render across all 8 channels
 - [`SystemFactory.hpp`](../packages/native-greenfield/src/SystemFactory.hpp), [`SameBoyBackend.cpp`](../packages/native-greenfield/src/SameBoyBackend.cpp), [`MesenBackend.cpp`](../packages/native-greenfield/src/MesenBackend.cpp) — the build path.
 - [`DspRuntime.hpp`](../packages/native-greenfield/src/DspRuntime.hpp) / [`.cpp`](../packages/native-greenfield/src/DspRuntime.cpp), [`ScriptCompiler.hpp`](../packages/native-greenfield/src/ScriptCompiler.hpp) — the bare DSP context runner + compiler.
 - [`HostRpcService.cpp`](../packages/native-greenfield/src/HostRpcService.cpp), [`EngineRpcService.cpp`](../packages/native-greenfield/src/EngineRpcService.cpp), [`AudioDriverRpcService.cpp`](../packages/native-greenfield/src/AudioDriverRpcService.cpp) — the three concern services.
-- [`plugin/PluginGreenfieldDSP.cpp`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp), [`plugin/PluginGreenfieldShared.hpp`](../packages/native-greenfield/plugin/PluginGreenfieldShared.hpp), [`src/main.cpp`](../packages/native-greenfield/src/main.cpp), [`test/ui/GreenfieldUiHarness.hpp`](../packages/native-greenfield/test/ui/GreenfieldUiHarness.hpp) — the three hosts.
+- [`plugin/PluginDSP.cpp`](../packages/native-greenfield/plugin/PluginDSP.cpp), [`plugin/PluginShared.hpp`](../packages/native-greenfield/plugin/PluginShared.hpp), [`src/main.cpp`](../packages/native-greenfield/src/main.cpp), [`test/ui/UiHarness.hpp`](../packages/native-greenfield/test/ui/UiHarness.hpp) — the three hosts.
 - [`CMakeLists.txt`](../packages/native-greenfield/CMakeLists.txt), [`plugin/DistrhoPluginInfo.h`](../packages/native-greenfield/plugin/DistrhoPluginInfo.h) — build wiring + plugin identity.

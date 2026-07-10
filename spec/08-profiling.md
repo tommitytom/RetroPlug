@@ -1,6 +1,6 @@
 # 08 — Profiling the audio thread
 
-**Status: built** (compile-guarded behind `RETROPLUG_PROFILE`; run with `pnpm profile:greenfield`). A
+**Status: built** (compile-guarded behind `RETROPLUG_PROFILE`; run with `pnpm profile`). A
 benchmark harness that measures what the DSP-thread **JavaScript runtime** does — allocations and garbage
 collection — under an mGB + heavy-MIDI workload. The runtime model it profiles is
 [01-architecture.md](01-architecture.md) (two QuickJS runtimes, the audio thread) and
@@ -37,7 +37,7 @@ goes unmeasured.
 
 ## 3. What the per-block path allocates today
 
-The kernel header comments claim "no per-block allocation" ([dspKernel.ts:56](../packages/retroplug-greenfield/src/dspKernel.ts#L56)).
+The kernel header comments claim "no per-block allocation" ([dspKernel.ts:56](../packages/retroplug/src/dspKernel.ts#L56)).
 That holds **only for the top-level reused `Block` struct**; in practice two layers allocate every
 block, and the harness should expose this on day one.
 
@@ -46,16 +46,16 @@ rebuilds a fresh JS object graph each block: an `input` object + 5 props; a `mid
 object + a nested `data` array + a JS int per byte); and `buttons`/`keys` arrays **created even when
 empty**. The whole graph is freed after the call → per-block garbage.
 
-**The TS kernel** ([dspKernel.ts:220-266](../packages/retroplug-greenfield/src/dspKernel.ts#L220)) adds
+**The TS kernel** ([dspKernel.ts:220-266](../packages/retroplug/src/dspKernel.ts#L220)) adds
 per block:
 
 | Site | Allocates |
 |---|---|
-| `const routed = new Map()` ([:220](../packages/retroplug-greenfield/src/dspKernel.ts#L220)) | 1 Map every block |
-| `keys.filter()` / `buttons.filter()` ([:232-233](../packages/retroplug-greenfield/src/dspKernel.ts#L232)) | 2 arrays **per system** (even when empty) |
-| `makeCtx(...)` object + 4 sink closures ([:252-266](../packages/retroplug-greenfield/src/dspKernel.ts#L252)) | 1 `SystemCtx` + 4 closures **per system × per pipeline stage** |
-| `routeBlock` inboxes + per-target event objects ([midiRouting.ts:68-73](../packages/retroplug-greenfield/src/midiRouting.ts#L68)) | array graph + 1 `{frame,data}` per routed event |
-| `mgb` role `forEach` closures ([dspRoles.ts:23](../packages/retroplug-greenfield/src/dspRoles.ts#L23)) | 2 nested arrow closures per call |
+| `const routed = new Map()` ([:220](../packages/retroplug/src/dspKernel.ts#L220)) | 1 Map every block |
+| `keys.filter()` / `buttons.filter()` ([:232-233](../packages/retroplug/src/dspKernel.ts#L232)) | 2 arrays **per system** (even when empty) |
+| `makeCtx(...)` object + 4 sink closures ([:252-266](../packages/retroplug/src/dspKernel.ts#L252)) | 1 `SystemCtx` + 4 closures **per system × per pipeline stage** |
+| `routeBlock` inboxes + per-target event objects ([midiRouting.ts:68-73](../packages/retroplug/src/midiRouting.ts#L68)) | array graph + 1 `{frame,data}` per routed event |
+| `mgb` role `forEach` closures ([dspRoles.ts:23](../packages/retroplug/src/dspRoles.ts#L23)) | 2 nested arrow closures per call |
 
 The mGB **sink** path itself is clean — `pushSerialIn` crosses scalars via the C thunk
 ([DspRuntime.cpp:17-29](../packages/native-greenfield/src/DspRuntime.cpp#L17)) with no JS allocation, and
@@ -66,8 +66,8 @@ call, is unused by mGB.)
 **The TS-kernel rows are now optimized away** (the "hoist the ctx/closures/filters/routing-Map out of the
 per-block path" pass): the per-system `SystemCtx` + its sink closures, the routed inboxes, and the
 per-system key/button lists are built **once** at `setSystems` and mutated in place each block
-([dspKernel.ts](../packages/retroplug-greenfield/src/dspKernel.ts) `slots`/`buildCtx`,
-`routeBlockInto` in [midiRouting.ts](../packages/retroplug-greenfield/src/midiRouting.ts), and an
+([dspKernel.ts](../packages/retroplug/src/dspKernel.ts) `slots`/`buildCtx`,
+`routeBlockInto` in [midiRouting.ts](../packages/retroplug/src/midiRouting.ts), and an
 indexed-loop `mgb`). That cut Profile A from **~171 to ~32 allocs/block** (−81%). The residual per-block
 churn is now the **native marshalling** row (the C→JS input object graph — a separate, deferred pass) plus
 QuickJS per-call internals.
@@ -80,15 +80,15 @@ There is already a deterministic, device-free pull-render path:
 [`EngineRpcService::renderAudio(ms)`](../packages/native-greenfield/src/EngineRpcService.cpp#L182) loops
 `Engine::processBlock` in 1024-frame blocks synchronously on the **calling** thread — no audio device, no
 RT scheduling, fully repeatable. It is exposed to TS as `createAudioDriver().renderAudio`
-([audioDriver.ts](../packages/retroplug-greenfield/src/audioDriver.ts)). Profile **this**, not a live
+([audioDriver.ts](../packages/retroplug/src/audioDriver.ts)). Profile **this**, not a live
 JACK/CLAP host: under a live host the measurement is confounded by RT jitter, CPU-frequency settling,
 xruns, and the callback deadline itself — the very noise that swamps the allocation signal. Removing the
 clock is what makes allocation and instruction counts **deterministic** (identical run to run), which is
 the property an agent/CI needs to tell a real regression from noise.
 
-The benchmark is a new `test-native/*.test.ts` run under `pnpm test:greenfield-native` (which builds
-`native-greenfield-host` and injects the real compiled kernel as `__DSP_KERNEL_BUNDLE__` —
-[06-build-test.md](06-build-test.md)); copy [test-native/audio-render.test.ts](../packages/retroplug-greenfield/test-native/audio-render.test.ts).
+The benchmark is a new `test-native/*.test.ts` run under `pnpm test:native` (which builds
+`retroplug-host` and injects the real compiled kernel as `__DSP_KERNEL_BUNDLE__` —
+[06-build-test.md](06-build-test.md)); copy [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts).
 Shape: `setSystems({ midi-routing + mgb })`, then per block *stage this block's MIDI →
 `renderAudio(oneBlock)`*. `renderAudio` also runs the SameBoy APU (C++), which dominates **wall-time** but
 contributes **zero JS heap** — so the JS allocation counts stay cleanly isolated even though wall-time
@@ -147,7 +147,7 @@ top-N is what fits an agent's context and yields a trustworthy diff.
 
 mGB is 4 monophonic voices + a poly voice (MIDI ch1→PU1, ch2→PU2, ch3→WAV, ch4→NOISE, ch5→POLY), fed raw
 MIDI-over-serial; the `mgb` role forwards every byte verbatim
-([dspRoles.ts:23](../packages/retroplug-greenfield/src/dspRoles.ts#L23)). It responds to note on/off
+([dspRoles.ts:23](../packages/retroplug/src/dspRoles.ts#L23)). It responds to note on/off
 (velocity 0 = note-off), a handful of CCs (pulse-width, envelope, sweep, PB-range, preset, pan, sustain),
 pitch bend, and program change (1–15 = preset). Profiles:
 
@@ -191,7 +191,7 @@ fan ignores sub-block frame anyway). True sub-block jitter would need a one-arg 
   **max** block wall-time and xrun count — the only questions the off-RT harness structurally cannot
   answer. The threaded free-run path already exists (`startAudio` →
   [`AudioDriverRpcService::audioLoop`](../packages/native-greenfield/src/AudioDriverRpcService.cpp#L32),
-  validated under `tools/run-greenfield-sanitizer.sh`), but its ~200 µs/block pacing is non-deterministic
+  validated under `tools/run-sanitizer.sh`), but its ~200 µs/block pacing is non-deterministic
   → use it for the race/soak/deadline run, not for allocation counts.
 - **CI gates (exit-code walls):** RealtimeSanitizer exit == 0; `allocs_per_block == 0` (or ≤ a pinned
   budget); `gc_cycles == 0`; Callgrind `Ir` within baseline ±X%. Deterministic inputs make an exact-match
@@ -223,14 +223,14 @@ fan ignores sub-block frame anyway). True sub-block jitter would need a one-arg 
   (timed `JS_RunGC`). All behind `#ifdef RETROPLUG_PROFILE`; the `#else` path returns `enabled:false`.
 - **Introspection RPCs** — `dspAllocStats` / `dspResetAllocStats` / `dspRunGc` forwarded
   `Engine` → `EngineRpcService` → `BackendFacade` (reached directly through `engine_` in the quiescent
-  `renderAudio` regime) and surfaced in [audioDriver.ts](../packages/retroplug-greenfield/src/audioDriver.ts).
-- **The seeded-MIDI benchmark** [test-native/dsp-bench.test.ts](../packages/retroplug-greenfield/test-native/dsp-bench.test.ts):
+  `renderAudio` regime) and surfaced in [audioDriver.ts](../packages/retroplug/src/audioDriver.ts).
+- **The seeded-MIDI benchmark** [test-native/dsp-bench.test.ts](../packages/retroplug/test-native/dsp-bench.test.ts):
   a mulberry32 generator for Profiles A/B/C, the block-stepped `stageMidiIn` + `renderAudio(BLOCK_MS)`
   loop (warmup window discarded), one JSON metrics line. Env knobs `RP_BENCH_{PROFILE,CORES,BLOCKS,WARMUP,SEED}`.
   No-ops (warns) under a non-profile host so the normal sweep stays green.
 - **Build knob + scripts** — `RETROPLUG_PROFILE` ([CMakeLists.txt](../CMakeLists.txt), mirrors
-  `RETROPLUG_SANITIZE`), `tools/run-greenfield-profile.sh [stats|dhat|callgrind|massif]` (separate
-  `build-prof/` RelWithDebInfo dir), and `pnpm profile:greenfield`.
+  `RETROPLUG_SANITIZE`), `tools/run-profile.sh [stats|dhat|callgrind|massif]` (separate
+  `build-prof/` RelWithDebInfo dir), and `pnpm profile`.
 
 **Deferred:** a committed baseline + CI threshold gate, and a RealtimeSanitizer build variant, are not
 built. `perf` / `heaptrack` are not installed in the devcontainer (valgrind 3.22 is), so those wrapper
@@ -238,7 +238,7 @@ modes are out.
 
 ## 9. Verification (done)
 
-- `pnpm profile:greenfield` builds `build-prof` and prints a JSON metrics line; the allocation counts are
+- `pnpm profile` builds `build-prof` and prints a JSON metrics line; the allocation counts are
   **bit-identical run-to-run** (only `xRT`/`gcMs` wall-clock vary). First measured result (Profile A, 1
   mGB core, 2000 blocks): **~171 allocs/block**, `freesPerBlock` ≈ allocs (balanced churn),
   `liveHeapDelta` ≈ 0 (not a leak), `maxBlockAllocs` 279.
@@ -252,10 +252,10 @@ modes are out.
   registry built at kernel load) that production's auto-GC collects once early and never regenerates — not
   an unbounded audio-thread hazard. The real steady-state RT cost was the malloc/free churn, now ~5×
   lower; further reduction means the native marshalling row (§3), a separate pass.
-- **Ship path clean:** dsp-bench no-ops under the default host; the full `pnpm test:greenfield-native`
-  sweep (25 files) + `pnpm test:greenfield` (41) stay green; the default `build/` and shipped plugin never
+- **Ship path clean:** dsp-bench no-ops under the default host; the full `pnpm test:native`
+  sweep (25 files) + `pnpm test` (41) stay green; the default `build/` and shipped plugin never
   define `RETROPLUG_PROFILE` (zero overhead).
-- `tools/run-greenfield-profile.sh callgrind|dhat|massif` attributes the churn to the marshalling +
+- `tools/run-profile.sh callgrind|dhat|massif` attributes the churn to the marshalling +
   `makeCtx` closures + `routeBlock` (filtered top-N text / DHAT JSON).
 
 ## 10. Key files
@@ -272,11 +272,11 @@ Native ([packages/native-greenfield/src/](../packages/native-greenfield/src/)):
 - QuickJS-ng vendored at `deps/dpf.js/deps/lv_binding_js/deps/txiki/deps/quickjs/quickjs.{h,c}` —
   `JSMallocFunctions` / `JS_NewRuntime2` / `JS_ComputeMemoryUsage` / `JS_SetGCThreshold` / `JS_RunGC`.
 
-TypeScript ([packages/retroplug-greenfield/](../packages/retroplug-greenfield/)):
-- [src/audioDriver.ts](../packages/retroplug-greenfield/src/audioDriver.ts) — `renderAudio` /
+TypeScript ([packages/retroplug/](../packages/retroplug/)):
+- [src/audioDriver.ts](../packages/retroplug/src/audioDriver.ts) — `renderAudio` /
   `stageMidiIn` / `setBpm` / `setTransport` (the bench's injection surface).
-- [src/dspKernel.ts](../packages/retroplug-greenfield/src/dspKernel.ts) / [src/midiRouting.ts](../packages/retroplug-greenfield/src/midiRouting.ts) / [src/dspRoles.ts](../packages/retroplug-greenfield/src/dspRoles.ts) — the per-block allocation sites (§3).
-- [test-native/audio-render.test.ts](../packages/retroplug-greenfield/test-native/audio-render.test.ts) —
+- [src/dspKernel.ts](../packages/retroplug/src/dspKernel.ts) / [src/midiRouting.ts](../packages/retroplug/src/midiRouting.ts) / [src/dspRoles.ts](../packages/retroplug/src/dspRoles.ts) — the per-block allocation sites (§3).
+- [test-native/audio-render.test.ts](../packages/retroplug/test-native/audio-render.test.ts) —
   the setup template to copy.
-- [scripts/run-native-tests.mjs](../packages/retroplug-greenfield/scripts/run-native-tests.mjs) — how a
+- [scripts/run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) — how a
   `test-native/*.test.ts` is bundled + run.

@@ -3,10 +3,10 @@
 Start with these — all short:
 
 - [README.md](README.md) — what RetroPlug2 is, how to build, project layout.
-- [spec/](spec/README.md) — the **greenfield** architecture (one doc per concern).
-  The active build lives in `packages/native-greenfield/` +
-  `packages/retroplug-greenfield/`; the older **legacy** build is being removed
-  ([spec/07-migration.md](spec/07-migration.md)).
+- [spec/](spec/README.md) — the architecture (one doc per concern). The build lives
+  in `packages/native-greenfield/` (C++ host) + `packages/retroplug/` (TS/UI). The
+  older **legacy** build has been removed; [spec/07-migration.md](spec/07-migration.md)
+  tracks the residual rename/cleanup + the remaining feature gaps.
 - [docs/lsdj.md](docs/lsdj.md) — the LSDj domain reference + how to test LSDj sync /
   DAW timing / audio quality headlessly.
 
@@ -37,7 +37,7 @@ The rules below are the parts that don't fit those.
   entry points; they run the configure this project needs and build in parallel.
   Bare `./build.sh` = incremental; `--clean` wipes `build/`. (`--tests` /
   `BUILD_TESTING` is now inert — the Catch2 suites are gone; tests are the `pnpm
-  test:greenfield*` scripts.) For a single target after a configure,
+  test*` scripts.) For a single target after a configure,
   `cmake --build build --target <t> -j$(nproc)` — always pass `-j`, the default is
   a single-threaded slog. `build.bat` enters vcvars64 + the tool PATH and runs the
   `cl` + vcpkg-`x64-windows-static` configure (overridable via `VCPKG_ROOT` /
@@ -51,9 +51,8 @@ The rules below are the parts that don't fit those.
   (`rfl::DefaultIfMissing`): additive / removed fields don't break old files, so
   give a new field a sensible default and don't switch a reader back to strict
   `read<T>`. Each serialized root is version-**stamped** and refused if stamped
-  newer than the running build — detection, not migration. The greenfield
-  persistence model + the stamps live in
-  [spec/05-data-persistence.md](spec/05-data-persistence.md).
+  newer than the running build — detection, not migration. The persistence model +
+  the stamps live in [spec/05-data-persistence.md](spec/05-data-persistence.md).
 
 ## Framework gotchas
 
@@ -67,10 +66,10 @@ the code:
 
 - **A stable per-id wrapper** whose position never changes, with a single swappable
   child (`appendChild` lands correctly when the parent has ≤1 child) — `StableSlot`
-  in [SystemGrid.tsx](packages/retroplug-greenfield/ui/screens/grid/SystemGrid.tsx).
+  in [SystemGrid.tsx](packages/retroplug/ui/screens/grid/SystemGrid.tsx).
 - **Re-key the parent on the visible set** to force a full remount, so every child
   mounts fresh in JSX order —
-  [Menu.tsx](packages/retroplug-greenfield/ui/screens/menu/Menu.tsx).
+  [Menu.tsx](packages/retroplug/ui/screens/menu/Menu.tsx).
 
 If a tile / row / menu renders in a confusingly wrong slot, this is almost certainly
 why. (Build-target gotchas — which target rebuilds the standalone vs the embedded
@@ -81,10 +80,10 @@ bundle — are in [spec/06-build-test.md](spec/06-build-test.md).)
 Verify your own work headlessly before claiming it's done — **a "tests pass" claim
 must be backed by an actual exit-zero** from one of these.
 
-The **greenfield** loop is the only path (the legacy build is gone), documented in
-[spec/06-build-test.md](spec/06-build-test.md): `pnpm test:greenfield` (pure-TS
-mock), `test:greenfield-native` (real host + cores), `test:greenfield-ui` (LVGL
-React), `screenshot:greenfield`, the `tools/run-greenfield-sanitizer.sh` thread /
-address checks, and `validate:greenfield`. The LSDj-sync / DAW-timing / audio-quality
-matrix runs on greenfield too — the real-Reaper `reaper:*-greenfield` renders +
-`tools/reaper-timing-analyze.py`; see [docs/lsdj.md](docs/lsdj.md).
+The headless loop (the only path — legacy is gone) is documented in
+[spec/06-build-test.md](spec/06-build-test.md): `pnpm test` (pure-TS mock),
+`test:native` (real host + cores), `test:ui` (LVGL React), `screenshot`, the
+`tools/run-sanitizer.sh` thread / address checks, and `validate`. The LSDj-sync /
+DAW-timing / audio-quality matrix runs headlessly too — the real-Reaper
+`reaper:lsdj-*` renders + `tools/reaper-timing-analyze.py`; see
+[docs/lsdj.md](docs/lsdj.md).

@@ -36,7 +36,7 @@ Mesen exposes no natively-consumed knobs yet, so NES/GBA systems carry no system
 
 ## The role model
 
-Five pieces make up the generic model, in [systemRoles.ts](../packages/retroplug-greenfield/src/systemRoles.ts).
+Five pieces make up the generic model, in [systemRoles.ts](../packages/retroplug/src/systemRoles.ts).
 It ports the shape of the native `RoleConfig` tagged union into a runtime registry, minus the
 hardcoded if/else chains.
 
@@ -52,7 +52,7 @@ config is an opaque per-kind blob whose schema the role owns.
 ### `RoleType` — a registry entry
 
 Contributed by the built-ins (or, eventually, an extension). Fields
-([systemRoles.ts:41](../packages/retroplug-greenfield/src/systemRoles.ts#L41)):
+([systemRoles.ts:41](../packages/retroplug/src/systemRoles.ts#L41)):
 
 | Field | Meaning |
 |---|---|
@@ -66,7 +66,7 @@ Contributed by the built-ins (or, eventually, an extension). Fields
 
 ### `RoleRegistry` — the kind-keyed store
 
-[`RoleRegistry`](../packages/retroplug-greenfield/src/systemRoles.ts#L85) holds a `Map<kind, RoleType>`
+[`RoleRegistry`](../packages/retroplug/src/systemRoles.ts#L85) holds a `Map<kind, RoleType>`
 plus a list of `RomProvider`s:
 
 | Method | Behaviour |
@@ -86,7 +86,7 @@ type RomProvider = (rom: RomContext) => RoleInstance[];
 // RomContext = { platform, core, header (cartridge title @ 0x134), embeddedRom }
 ```
 
-The built-ins ([romProviders.ts](../packages/retroplug-greenfield/src/romProviders.ts)) match on ROM
+The built-ins ([romProviders.ts](../packages/retroplug/src/romProviders.ts)) match on ROM
 identity:
 
 | Provider | Match | Attaches |
@@ -106,7 +106,7 @@ ROM-gated), transforming the resolved `ConstructSpec`. It sees only a narrow `Co
 itself.
 
 The one hook today is LSDj's empty-sav seed
-([dspRoles.ts:26](../packages/retroplug-greenfield/src/dspRoles.ts#L26)): a fresh LSDj cart with no
+([dspRoles.ts:26](../packages/retroplug/src/dspRoles.ts#L26)): a fresh LSDj cart with no
 save data runs a 12–15 s cartridge self-test on boot. When nothing else will seed the battery (no
 savestate, no SRAM blob, no on-disk `.sav` for native to load) the hook hands it a valid empty sav
 via `savFromJson("{}")` so LSDj boots straight to the song screen. It is additive — the spec is
@@ -114,35 +114,35 @@ returned untouched when real save data is present.
 
 ### Where derivation happens in the store
 
-[SystemsStore](../packages/retroplug-greenfield/src/systemsStore.ts) drives the registry:
+[SystemsStore](../packages/retroplug/src/systemsStore.ts) drives the registry:
 `defaultRoles(...)` reads a `ROLE_HEADER_LEN = 0x150` header prefix and calls
 `registry.defaultRoles(...)`
-([systemsStore.ts:492](../packages/retroplug-greenfield/src/systemsStore.ts#L492)); `applyConstructHooks`
+([systemsStore.ts:492](../packages/retroplug/src/systemsStore.ts#L492)); `applyConstructHooks`
 folds each attached role's `onConstruct` over the spec before the build call
-([systemsStore.ts:503](../packages/retroplug-greenfield/src/systemsStore.ts#L503)). See
+([systemsStore.ts:503](../packages/retroplug/src/systemsStore.ts#L503)). See
 [03-ts-layer.md](03-ts-layer.md) for the surrounding store idioms.
 
 ## The built-in roles
 
 Three registration functions populate the control-plane registry
-([appHost.ts](../packages/retroplug-greenfield/src/appHost.ts) `buildAppRegistry`):
+([appHost.ts](../packages/retroplug/src/appHost.ts) `buildAppRegistry`):
 `registerCoreRoles` + `registerDspRoles` + `registerRomProviders`.
 
-**System roles** ([coreRoles.ts](../packages/retroplug-greenfield/src/coreRoles.ts)) — keyed by core
+**System roles** ([coreRoles.ts](../packages/retroplug/src/coreRoles.ts)) — keyed by core
 value, ranges mirroring the native enums:
 
 | Role | Config (zod, defaults) |
 |---|---|
 | `sameboy` | `model` 0–13 (CgbC=9), `highpass` 0–2, `linkGroupId` 0–255, `fastBoot` bool (true) |
 
-**DSP-thread roles** ([dspRoles.ts](../packages/retroplug-greenfield/src/dspRoles.ts)) — feature
+**DSP-thread roles** ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)) — feature
 behaviours over the per-system context:
 
 | Role | Scope | Behaviour |
 |---|---|---|
 | `mgb` | system | forward every host-MIDI byte verbatim into the system's serial input |
 | `lsdj-sync` | system | dispatches on `config.mode` (LsdjSyncMode): MidiSync (24-PPQN `0xF8` clock, `tempoDivisor`-subdivided), MidiSyncArduinoboy (note-driven play/divisor + `0xFA`/`0xFC` transport bookends), MidiMap (row bytes + `0xFE`), KeyboardMidi (PS/2 scancodes), MidiPassthrough (raw bytes → serial); Off/Keyboard/ArduinoboyMaster emit nothing. Keeps cross-block scratch via `ctx.state`. Has the `lsdjSeedSav` `onConstruct` hook |
-| `midi-routing` | project | fans the block's global `midiIn` into per-system inboxes, reusing the pure `routeBlock` decision ([midiRouting.ts](../packages/retroplug-greenfield/src/midiRouting.ts)) |
+| `midi-routing` | project | fans the block's global `midiIn` into per-system inboxes, reusing the pure `routeBlock` decision ([midiRouting.ts](../packages/retroplug/src/midiRouting.ts)) |
 
 ## Which config reaches the live core
 
@@ -154,7 +154,7 @@ Two channels cross the RPC boundary to a running emulator, and no feature-role c
 | a **system-role** config edit | `applyRoleConfig(id, kind, config)` | the live core, `sameboy` only |
 | a **feature-role** config edit | *(none)* | only the DSP kernel, as part of the re-pushed structure |
 
-[`SystemsStore.setRoleConfig`](../packages/retroplug-greenfield/src/systemsStore.ts#L329) merges the
+[`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L329) merges the
 partial, re-parses through the role schema, and calls `backend.applyRoleConfig` **only when the role's
 `category === "system"`**. On the native side
 [`EngineRpcService::applyRoleConfig`](../packages/native-greenfield/src/EngineRpcService.cpp#L111)
@@ -164,14 +164,14 @@ a spurious model restart).
 
 A **feature**-role config edit takes a different path: `setRoleConfig` updates TS state and calls
 `markDirty`, which fires the systems `onChange` → the project's `onSystemsChange`
-([projectStore.ts:62](../packages/retroplug-greenfield/src/projectStore.ts#L62)) → `syncDspFromStore`,
+([projectStore.ts:62](../packages/retroplug/src/projectStore.ts#L62)) → `syncDspFromStore`,
 re-pushing the whole `KernelStructure` (its config rides inside the JSON). The core is never told. (A
 menu/UI to *trigger* an LSDj-mode edit live is still a gap — see
 [07-migration.md](07-migration.md).)
 
 ## The DSP kernel
 
-[dspKernel.ts](../packages/retroplug-greenfield/src/dspKernel.ts) is pure TS with no `Backend`
+[dspKernel.ts](../packages/retroplug/src/dspKernel.ts) is pure TS with no `Backend`
 dependency. The host hands `processBlock` everything it collected for one audio block; project-scope
 behaviours fan the input to systems, then each system's ordered pipeline of behaviours reads its
 inputs and writes frame-tagged byte sinks.
@@ -189,7 +189,7 @@ view and overwrites its dynamic fields each block — no per-block allocation.
 
 ### Execution order
 
-[`DspKernel.processBlock`](../packages/retroplug-greenfield/src/dspKernel.ts#L200):
+[`DspKernel.processBlock`](../packages/retroplug/src/dspKernel.ts#L200):
 
 1. **Project scope first** — each project-scope stage (routing) runs, populating a `routed`
    `Map<systemId, MidiEvent[]>` from the global `midiIn`.
@@ -204,7 +204,7 @@ id starts a fresh clock instead of resuming mid-count.
 ### The byte-sink ABI
 
 A behaviour never carries a `sys` argument; it writes through a per-system `SystemCtx`
-([dspKernel.ts:103](../packages/retroplug-greenfield/src/dspKernel.ts#L103)) whose sinks are scoped to
+([dspKernel.ts:103](../packages/retroplug/src/dspKernel.ts#L103)) whose sinks are scoped to
 the system id. The kernel forwards each call to an injected `SinkTarget`:
 
 | Sink | Signature (on `SystemCtx`) | Direction |
@@ -214,7 +214,7 @@ the system id. The kernel forwards each call to an injected `SinkTarget`:
 | `pressButton` | `(button, down)` | → role-generated joypad transition (distinct from a UI tap) |
 | `eachTick` | `(resolution, cb)` | walk the PPQ ticks in this block (see below) |
 
-`SinkTarget` ([dspKernel.ts:73](../packages/retroplug-greenfield/src/dspKernel.ts#L73)) is the
+`SinkTarget` ([dspKernel.ts:73](../packages/retroplug/src/dspKernel.ts#L73)) is the
 system-addressed form — `pushSerialIn(system, frame, byte)`, `emitMidiOut(system, frame, data)`,
 `pressButton(system, frame, button, down)`, optional `reset()`. Under the mock a `CollectingSink`
 gathers calls into a `Sinks` object the assertions read; natively the target's methods **are** the
@@ -224,7 +224,7 @@ bound C thunks, so bytes cross as scalars with no intermediate JS arrays. (Role-
 ### The drift-exact PPQ clock — in JS
 
 The tick clock lives **entirely in the kernel**; native owns no `nextTick`/`eachTick` primitive.
-[`walkTicks`](../packages/retroplug-greenfield/src/dspKernel.ts#L131) is a faithful TS twin of native
+[`walkTicks`](../packages/retroplug/src/dspKernel.ts#L131) is a faithful TS twin of native
 `PpqUtil::eachTick`: it walks the ticks at `resolution` ticks/quarter that fall in this block, calling
 `cb(tick, offsetSamples)` for each. The caller-owned `nextTick` persists across blocks (the kernel
 stores it per system id), so the clock is drift-free at block edges — each tick fires exactly once,
@@ -233,7 +233,7 @@ never double or missed, and a >1-tick transport jump (seek/loop/start) resyncs. 
 
 ## `kernelProjection` — store → kernel
 
-[projectKernelStructure(views, midiRouting)](../packages/retroplug-greenfield/src/kernelProjection.ts#L16)
+[projectKernelStructure(views, midiRouting)](../packages/retroplug/src/kernelProjection.ts#L16)
 is the single seam that turns "what the app has" into "what the DSP runs":
 
 - each system's `roles` map straight into its `pipeline`, order preserved;
@@ -242,7 +242,7 @@ is the single seam that turns "what the app has" into "what the DSP runs":
 
 It is pure and **registry-free** — the kernel self-guards scope, so a system's backend `sameboy` role
 projects through as dead bytes without needing to be filtered here.
-[`syncDspFromStore`](../packages/retroplug-greenfield/src/appHost.ts#L32) wraps this and pushes the
+[`syncDspFromStore`](../packages/retroplug/src/appHost.ts#L32) wraps this and pushes the
 result to the DSP runtime; it is installed on `ProjectStore.onSystemsChange`, so every structural edit
 (and every feature-role config edit) re-drives the kernel.
 
@@ -253,7 +253,7 @@ thread — distinct from the control-plane runtime; see [01-architecture.md](01-
 two-runtimes model. Three artifacts bridge control plane to that context:
 
 **Control-plane client** —
-[dspRuntime.ts](../packages/retroplug-greenfield/src/dspRuntime.ts). `createDspRuntime()` returns a
+[dspRuntime.ts](../packages/retroplug/src/dspRuntime.ts). `createDspRuntime()` returns a
 `DspRuntimeClient` with `compileScript(source) → bytecode`, `loadKernel(bytecode)`, and
 `setSystems(struct)`. It rides the same `globalThis[Symbol.for("plugin")].__rpcSend` channel as
 `realBackend`, but is a **distinct capability from `Backend`** (it never joins that interface, so the
@@ -262,7 +262,7 @@ as a **JSON string** (`dspSetSystems`); a JS object never crosses. (Bytecode inp
 `number[]` because reflect-cpp's byte reader rejects a typed array.)
 
 **Bare-context entry** —
-[dspKernelBundle.ts](../packages/retroplug-greenfield/src/dspKernelBundle.ts). esbuild bundles this
+[dspKernelBundle.ts](../packages/retroplug/src/dspKernelBundle.ts). esbuild bundles this
 into one IIFE; native compiles it to bytecode. It builds its **own** registry (**`dspRoles` only** —
 no core roles, no ROM providers), wires the host-bound `pushSerialIn`/`emitMidiOut`/`pressButton`
 global thunks into a `SinkTarget`, and exposes the two globals native calls: `setSystems(json)` (once
@@ -283,7 +283,7 @@ because `kernelProjection` is registry-free and the kernel self-guards scope, so
 system projects (including its `sameboy` system-role) is interpreted identically whether or not the
 bundle knows that kind.
 
-**Plugin wiring.** [pluginControlPlane.ts](../packages/retroplug-greenfield/src/pluginControlPlane.ts)
+**Plugin wiring.** [pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts)
 composes it: `dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__))` (the bundle injected as a build
 define), then `project.setOnSystemsChange(() => syncDspFromStore(project, dsp))`.
 
@@ -315,23 +315,23 @@ inventory of remaining work.
 
 ## Key files
 
-TypeScript ([packages/retroplug-greenfield/src/](../packages/retroplug-greenfield/src/)):
+TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
 
-- [systemRoles.ts](../packages/retroplug-greenfield/src/systemRoles.ts) — `RoleInstance` / `RoleType` /
+- [systemRoles.ts](../packages/retroplug/src/systemRoles.ts) — `RoleInstance` / `RoleType` /
   `RoleRegistry` / `RomProvider` / `ConstructCaps`.
-- [coreRoles.ts](../packages/retroplug-greenfield/src/coreRoles.ts) — the `sameboy` system-role.
-- [dspRoles.ts](../packages/retroplug-greenfield/src/dspRoles.ts) — `mgb` / `lsdj-sync` /
+- [coreRoles.ts](../packages/retroplug/src/coreRoles.ts) — the `sameboy` system-role.
+- [dspRoles.ts](../packages/retroplug/src/dspRoles.ts) — `mgb` / `lsdj-sync` /
   `midi-routing` behaviours + the LSDj `onConstruct` seed.
-- [romProviders.ts](../packages/retroplug-greenfield/src/romProviders.ts) — feature-role attachment by
+- [romProviders.ts](../packages/retroplug/src/romProviders.ts) — feature-role attachment by
   ROM identity.
-- [dspKernel.ts](../packages/retroplug-greenfield/src/dspKernel.ts) — `DspKernel`, `SystemCtx`, the
+- [dspKernel.ts](../packages/retroplug/src/dspKernel.ts) — `DspKernel`, `SystemCtx`, the
   sink ABI, `walkTicks`.
-- [kernelProjection.ts](../packages/retroplug-greenfield/src/kernelProjection.ts) — store →
+- [kernelProjection.ts](../packages/retroplug/src/kernelProjection.ts) — store →
   `KernelStructure`.
-- [dspRuntime.ts](../packages/retroplug-greenfield/src/dspRuntime.ts) /
-  [dspKernelBundle.ts](../packages/retroplug-greenfield/src/dspKernelBundle.ts) — the DSP-context
+- [dspRuntime.ts](../packages/retroplug/src/dspRuntime.ts) /
+  [dspKernelBundle.ts](../packages/retroplug/src/dspKernelBundle.ts) — the DSP-context
   client + bare-context entry.
-- [appHost.ts](../packages/retroplug-greenfield/src/appHost.ts) — `buildAppRegistry` +
+- [appHost.ts](../packages/retroplug/src/appHost.ts) — `buildAppRegistry` +
   `syncDspFromStore`.
 
 Native ([packages/native-greenfield/src/](../packages/native-greenfield/src/)):

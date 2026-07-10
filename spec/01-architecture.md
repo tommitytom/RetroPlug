@@ -30,22 +30,22 @@ live JS objects against the context (nothing is serialized to a string). On the 
 
 | Host | Entry point | Audio thread | Display | Purpose |
 |---|---|---|---|---|
-| **DPF plugin** | [`PluginGreenfieldDSP`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp) (DSP) + [`PluginGreenfieldUI`](../packages/native-greenfield/plugin/PluginGreenfieldUI.cpp) (editor) | DPF's `run()` | LVGL editor window | The shipped `clap`/`vst3`/`jack` artifacts |
-| **Native test host** (headless) | [`native-greenfield-host`](../packages/native-greenfield/src/main.cpp) | spawned `audioThread_` (via `AudioDriverRpcService`) | none | Headless `test:greenfield-native`; runs a TS bundle to completion. (The GUI standalone is the `jack` variant of the DPF plugin above.) |
-| **Headless UI-test host** | [`GreenfieldUiHarness`](../packages/native-greenfield/test/ui/GreenfieldUiHarness.cpp) | none — `advance(ms)` calls `renderAudio` inline | software LVGL display | `test:greenfield-ui`; boots the real React bundle |
+| **DPF plugin** | [`PluginDSP`](../packages/native-greenfield/plugin/PluginDSP.cpp) (DSP) + [`PluginUI`](../packages/native-greenfield/plugin/PluginUI.cpp) (editor) | DPF's `run()` | LVGL editor window | The shipped `clap`/`vst3`/`jack` artifacts |
+| **Native test host** (headless) | [`retroplug-host`](../packages/native-greenfield/src/main.cpp) | spawned `audioThread_` (via `AudioDriverRpcService`) | none | Headless `test:native`; runs a TS bundle to completion. (The GUI standalone is the `jack` variant of the DPF plugin above.) |
+| **Headless UI-test host** | [`UiHarness`](../packages/native-greenfield/test/ui/UiHarness.cpp) | none — `advance(ms)` calls `renderAudio` inline | software LVGL display | `test:ui`; boots the real React bundle |
 
 The bind is literally the same three lines in each — build the RPC server, register the
-methods, define `Symbol.for("plugin")` on the global: see [`PluginGreenfieldDSP.cpp:167-186`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L167),
+methods, define `Symbol.for("plugin")` on the global: see [`PluginDSP.cpp:167-186`](../packages/native-greenfield/plugin/PluginDSP.cpp#L167),
 [`main.cpp:84-97`](../packages/native-greenfield/src/main.cpp#L84), and the UI-harness copy.
 
 ### The plugin's in-process editor handoff
 
 The DPF plugin is a special case worth calling out: **its editor runs on the same QuickJS
 context as its control plane**, not a separate RPC bridge. The DSP side owns a plugin-lifetime
-[`TjsHostRuntime`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L38) with `__rpcSend`
+[`TjsHostRuntime`](../packages/native-greenfield/plugin/PluginDSP.cpp#L38) with `__rpcSend`
 already bound (in `bootControlPlane`). The UI side reaches it through
-[`GreenfieldSharedDSP`](../packages/native-greenfield/plugin/PluginGreenfieldShared.hpp) —
-`getPluginInstancePointer()` → `getGreenfieldSharedDSP()` → `LvglJsEngine::useExternalHost()` —
+[`SharedDSP`](../packages/native-greenfield/plugin/PluginShared.hpp) —
+`getPluginInstancePointer()` → `getSharedDSP()` → `LvglJsEngine::useExternalHost()` —
 and attaches its LVGL display to that context. So the React UI reaches the backend through the
 existing `Symbol.for("plugin").__rpcSend`; there is no second server. Window-owning seams that
 must touch the editor's window (resize, file browser) are hung as direct `__rp_*` C-functions on
@@ -79,7 +79,7 @@ goes through the command ring; all audio→control observation goes through the 
 
 | | **Control plane** (main / UI thread) | **Audio thread** (DPF `run()` / spawned `audioThread_`) |
 |---|---|---|
-| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L38)) | bare DSP context ([`DspRuntime`](../packages/native-greenfield/src/DspRuntime.hpp), owned by `Engine::dsp_`) |
+| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native-greenfield/plugin/PluginDSP.cpp#L38)) | bare DSP context ([`DspRuntime`](../packages/native-greenfield/src/DspRuntime.hpp), owned by `Engine::dsp_`) |
 | Owns | `BackendFacade`, all three RPC services, the TS stores, the editor | the live [`Engine`](../packages/native-greenfield/src/Engine.hpp) + its `Project` of cores + the DSP kernel, **while running** |
 | Does | issues mutation *requests*; reads snapshots by id; frees released cores | drains the command ring; renders each block; publishes snapshots |
 | Never | dereferences a live `SystemBase`, walks `Project`, frees an audio-owned core | allocates, frees a core, or blocks |
@@ -266,9 +266,9 @@ Greenfield runs **two** QuickJS runtimes that are never shared:
 
 | | **Control-plane runtime** | **DSP context** |
 |---|---|---|
-| Type | txiki full host ([`TjsHostRuntime`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp#L38)) | bare QuickJS, no txiki ([`DspRuntime`](../packages/native-greenfield/src/DspRuntime.hpp)) |
+| Type | txiki full host ([`TjsHostRuntime`](../packages/native-greenfield/plugin/PluginDSP.cpp#L38)) | bare QuickJS, no txiki ([`DspRuntime`](../packages/native-greenfield/src/DspRuntime.hpp)) |
 | Owner | the host (plugin / test host / UI harness) | `Engine::dsp_` |
-| Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | the DSP role kernel [`dspKernel.ts`](../packages/retroplug-greenfield/src/dspKernel.ts), compiled to bytecode |
+| Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | the DSP role kernel [`dspKernel.ts`](../packages/retroplug/src/dspKernel.ts), compiled to bytecode |
 | Thread | control plane only | whichever thread drives the block |
 | Data | full JS objects over `__rpcSend` | **bytes only** — a JSValue never crosses out |
 
@@ -364,7 +364,7 @@ lost mutation.
 | [`DspEvent.hpp`](../packages/native-greenfield/src/DspEvent.hpp) | the release-ring event (`SystemReleased`) |
 | [`Engine.hpp`](../packages/native-greenfield/src/Engine.hpp) / [`.cpp`](../packages/native-greenfield/src/Engine.cpp) | the single-threaded live-project owner; `processBlock` wiring |
 | [`DspRuntime.hpp`](../packages/native-greenfield/src/DspRuntime.hpp) / [`.cpp`](../packages/native-greenfield/src/DspRuntime.cpp) | the bare DSP QuickJS context + byte-sink thunks |
-| [`PluginGreenfieldDSP.cpp`](../packages/native-greenfield/plugin/PluginGreenfieldDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
-| [`PluginGreenfieldShared.hpp`](../packages/native-greenfield/plugin/PluginGreenfieldShared.hpp) | the in-process editor↔control-plane handoff |
+| [`PluginDSP.cpp`](../packages/native-greenfield/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
+| [`PluginShared.hpp`](../packages/native-greenfield/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |
 | [`main.cpp`](../packages/native-greenfield/src/main.cpp) | the standalone / native test host |
 | [`AudioDriverRpcService.cpp`](../packages/native-greenfield/src/AudioDriverRpcService.cpp) | the test host's background audio thread + `audioLoop` |

@@ -2,7 +2,7 @@
 
 This directory is the single source of truth for the **greenfield** RetroPlug2 architecture — the
 active reimplementation in [`packages/native-greenfield/`](../packages/native-greenfield) (C++ host)
-and [`packages/retroplug-greenfield/`](../packages/retroplug-greenfield) (TypeScript + React/LVGL UI).
+and [`packages/retroplug/`](../packages/retroplug) (TypeScript + React/LVGL UI).
 
 The guiding principle is one sentence:
 
@@ -31,7 +31,7 @@ away. The switchover itself — the feature gap, the delete/rename checklist, an
 | [00-overview.md](00-overview.md) | The front door: what greenfield is, the thesis, the artifact set (clap/vst3/jack + standalone + test hosts), the package layout, a one-screen component map. |
 | [01-architecture.md](01-architecture.md) | **The canonical runtime model.** The three hosts over one `BackendFacade`; control plane vs audio thread; the command ring, the `SnapshotRegistry` read door, the release ring; the two QuickJS runtimes; the threading/ownership invariants. Other docs reference this one. |
 | [02-native-host.md](02-native-host.md) | The C++ host (`packages/native-greenfield`): the full RPC surface, `Engine` + `QueuedInvoker`, `SnapshotRegistry` internals, `SystemFactory` + the core backends, the bare DSP context runner, and the shared-core classes it wraps. |
-| [03-ts-layer.md](03-ts-layer.md) | The TypeScript layer (`packages/retroplug-greenfield`): the `Backend` interface, the stores + the reconstruct-in-place idiom, the control-plane composition, the `__rp_*` hooks, and the React/LVGL UI. |
+| [03-ts-layer.md](03-ts-layer.md) | The TypeScript layer (`packages/retroplug`): the `Backend` interface, the stores + the reconstruct-in-place idiom, the control-plane composition, the `__rp_*` hooks, and the React/LVGL UI. |
 | [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) | The role model (system-role vs feature-role) and the DSP role kernel: the byte-sink ABI, the drift-exact PPQ clock in JS, and store→kernel projection. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model and `.rplg` (thin vs export), DPF get/setState, the config schemas, the forward-tolerant-read + version-stamp policy, the LSDj sav codec, and SRAM auto-save. |
 | [06-build-test.md](06-build-test.md) | How greenfield builds, the pnpm scripts, and the headless verification loop — which command proves which kind of change. The practical "how do I verify a change" doc. |
@@ -49,7 +49,7 @@ away. The switchover itself — the feature gap, the delete/rename checklist, an
 ## Provenance
 
 `spec/` replaces three older planning directories (`porting/`, `architecture/`, and
-`packages/retroplug-greenfield/plans/`) whose content had drifted out of sync with the code and with
+`packages/retroplug/plans/`) whose content had drifted out of sync with the code and with
 each other. This set describes the architecture **as it is today**; forward-looking work lives under
 a clearly-labelled "Not yet built / deferred" heading in each doc, and is inventoried in
 [07-migration.md](07-migration.md). Stale in-code comments that still describe the old design are

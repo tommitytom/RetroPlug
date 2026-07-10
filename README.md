@@ -8,7 +8,7 @@ experience as a real DMG/CGB but as a normal track in your project.
 Built on:
 
 - [DPF](https://github.com/DISTRHO/DPF) — cross-platform audio plugin framework
-  (LV2 / VST2 / VST3 / CLAP / JACK)
+  (CLAP / VST3 / VST2 / JACK)
 - [SameBoy](https://github.com/LIJI32/SameBoy) — high-accuracy Game Boy
   emulator core
 - A React + TypeScript UI on top of LVGL via QuickJS — the framework slice is
@@ -16,42 +16,44 @@ Built on:
 
 ## Status
 
-RetroPlug2 is mid-rewrite. The active build — "greenfield" — lives in
-`packages/native-greenfield/` (C++ host) and `packages/retroplug-greenfield/`
-(TypeScript + React/LVGL UI), on the principle *native owns bytes and cores; TS
-owns meaning*. It boots ROMs, plays multi-instance audio at the host sample
-rate, drives the menu/tile UI, and persists projects. An older **legacy** build
-still ships alongside it and is being removed as greenfield reaches parity.
+The architecture is *native owns bytes and cores; TS owns meaning*: a C++ host
+([packages/native-greenfield/](packages/native-greenfield)) owns the emulator
+cores, realtime queues, byte codecs, and OS paths/dialogs, while the application
+logic + React/LVGL UI ([packages/retroplug/](packages/retroplug)) is TypeScript
+over a single synchronous `Backend` interface. It boots ROMs, plays
+multi-instance audio at the host sample rate, drives the menu/tile UI, and
+persists projects. The shared emulator/Project/codec core lives in
+[packages/native/src/](packages/native/src) (compiled into the `retroplug-core` lib).
 
-The architecture is documented in [`spec/`](spec/README.md). The remaining work
-to retire legacy and make greenfield the sole build — the feature gap, the
-delete/rename checklist, and the risks — is in
-[spec/07-migration.md](spec/07-migration.md).
+An older build was replaced by this one and has since been removed; the residual
+rename/cleanup and the remaining feature gaps (Windows link fixes, AU, the native
+file watcher) are tracked in [spec/07-migration.md](spec/07-migration.md). The full
+architecture is documented in [`spec/`](spec/README.md).
 
 ## Building
 
-Requires CMake 3.14+, a C++20 compiler, Node.js (for the esbuild UI bundle),
-and a handful of X11 / OpenGL / audio dev libraries — see
-[.devcontainer/Dockerfile](.devcontainer/Dockerfile) for the canonical apt
-list, or just use the devcontainer (below).
+Requires CMake 3.14+, a C++20 compiler, Node.js (for the esbuild UI bundle), and
+a handful of X11 / OpenGL / audio dev libraries — see
+[.devcontainer/Dockerfile](.devcontainer/Dockerfile) for the canonical apt list,
+or just use the devcontainer (below). `build.sh` (Linux/macOS) / `build.bat`
+(Windows) are the canonical entry points — they run the configure this project
+needs and build in parallel.
 
 ```bash
 git clone --recursive <repo-url>
 cd RetroPlug2
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
+pnpm install          # wires the deps/dpf.js link before the first configure
+./build.sh            # or: cmake -S . -B build && cmake --build build -j$(nproc)
 ```
 
-Output:
+Output (`build/bin/`):
 
 | Format | Path |
 |--------|------|
 | JACK standalone | `build/bin/retroplug` |
 | CLAP | `build/bin/retroplug.clap` |
-| VST2 | `build/bin/retroplug-vst2.so` |
 | VST3 | `build/bin/retroplug.vst3/` |
-| LV2 | `build/bin/retroplug.lv2/` |
-| Headless renderer | `build/bin/retroplug-cli` |
+| VST2 | `build/bin/retroplug-vst2.so` |
 
 ### Devcontainer
 
@@ -62,47 +64,18 @@ state in a Docker named volume.
 
 ## Headless workflows
 
-A few pnpm scripts exist for testing without a DAW. All of them run cleanly
-inside the devcontainer.
+A few pnpm scripts test without a DAW. All run cleanly inside the devcontainer.
 
 ```bash
-pnpm smoke   # mGB chord smoke (test/ts/gb/mgb.test.ts) -> /tmp/cli-smoke.wav
-pnpm screenshot  # capture standalone UI -> /tmp/retroplug.png
+pnpm test        # pure-TS store/kernel tests on the txiki runtime (no C++ build)
+pnpm test:native # real host + emulator cores (the native-greenfield test host)
+pnpm test:ui     # the React/LVGL UI on a headless software display
+pnpm screenshot  # capture the standalone UI -> /tmp/retroplug.png
 pnpm validate    # clap-validator + pluginval against the built artifacts
 ```
 
-### `retroplug-cli --test` — TypeScript tests (primary)
-
-The headless test path. Tests run in-process in the embedded txiki/QuickJS
-runtime (no Node, no DAW) and emit TAP — they can read emulator state and branch
-on it (memory regions, CPU registers, instruction stepping, framebuffer/audio
-capture, MIDI/serial-out capture, host transport, link groups, kit patching),
-and author LSDj `.sav` state directly via the sav codec (no fragile UI
-navigation):
-
-```bash
-pnpm test:cli     # transpile + run every test/ts/**/*.test.ts
-```
-
-```ts
-import { test, expect, emu, Button, Mem } from "harness";
-
-test("LSDJ boots and writes to WRAM", () => {
-  const sys = emu.loadRom("../resources/roms/lsdj/lsdj9_4_2.gb");
-  emu.runMs(2500);
-  expect(emu.readMemory(sys, Mem.Ram).length).toBe(0x8000);
-});
-```
-
-See [test/ts/README.md](test/ts/README.md) for the full `emu` API.
-
-Run with no `--test` and `retroplug-cli` boots the embedded end-user CLI
-([packages/cli](packages/cli)) — a JSON `--script` renderer
-(`{"at_ms":100,"tap":"A","hold_ms":50}` events, `--rom`/`--out`/`--duration`/
-`--save-sav`/`--save-rplg`/`--per-system-wav`/… flags). It's TypeScript over the
-same `emu` client as the tests, bundled to QuickJS bytecode (no Node at runtime);
-`RETROPLUG_CLI_BUNDLE_PATH` loads it from source for dev. For verification,
-prefer writing TypeScript tests.
+The LSDj-sync / DAW-timing / audio-quality matrix (real Reaper renders +
+`reaper-timing-analyze.py`) is documented in [docs/lsdj.md](docs/lsdj.md).
 
 ### Standalone screenshot tooling
 
@@ -145,8 +118,8 @@ DISPLAY=:99 tools/standalone-key.sh Escape Down Down Return
 
 - [clap-validator](https://github.com/free-audio/clap-validator) — CLAP
   protocol tests (state save/restore, parameter handling, MIDI, threading)
-- [pluginval](https://github.com/Tracktion/pluginval) — VST3 / AU / LV2
-  protocol tests (strictness 5 by default; bumpable in
+- [pluginval](https://github.com/Tracktion/pluginval) — VST3 protocol tests
+  (strictness 5 by default; bumpable in
   [tools/validate-plugins.sh](tools/validate-plugins.sh))
 
 Both binaries are baked into the devcontainer image. On a host without the
@@ -158,55 +131,31 @@ curl -fsSL https://github.com/free-audio/clap-validator/releases/download/0.3.2/
 ```
 
 Format validation catches DPF wrapper regressions, ABI bugs, and parameter /
-state-restore drift — it does NOT exercise the GameBoy DSP. Behavioural
-checks remain the job of `retroplug-cli`.
+state-restore drift — it does NOT exercise the Game Boy DSP. Behavioural
+checks are the job of `pnpm test:native` (real cores) + the Reaper matrix.
 
 ## Project layout
 
 ```
 packages/
-  native-greenfield/                 greenfield C++ host — the active build (Engine, BackendFacade,
-                                     SnapshotRegistry, DspRuntime; the DPF plugin + standalone). See spec/.
-  retroplug-greenfield/              greenfield TS layer + React/LVGL UI (stores, DSP kernel, roles)
-  native/, ui/, retroplug/, cli/     the legacy build — being removed (see spec/07-migration.md).
-                                     The detailed tree below describes this legacy side:
-  native/                            legacy C++ core (consumes dpf.js via add_subdirectory)
-    src/
-      PluginDSP.cpp                  DSP class; runs SameBoy at host sample rate
-      PluginUI.cpp                   UI class; owns JS engine + bridge
-      PluginJsBridge.{hpp,cpp}       plugin.* JS bindings (getFrame, pressButton, …)
-      PluginRpcService.{hpp,cpp}     the one rpcpp service; UI/CLI client generated from it
-      PluginShared.hpp               parameter spec + SharedDSPData (in-process)
-      GamepadManager.{hpp,cpp}       SDL game-controller input (RetroPlug-specific)
-      project/Project.{hpp,cpp}      DSP-thread runtime container; system table + config
-      system/
-        SystemBase.{hpp,cpp}         polymorphic emulator base class
-        InputTypes.hpp               GameboyButton enum
-        sameboy/SameBoySystem.{hpp,cpp}  SameBoy lifecycle + audio + framebuffer
-      transport/
-        CommandQueue.hpp             SPSC ring: UI → DSP (button presses, ROM swap)
-        EventQueue.hpp               SPSC ring: DSP → UI (released SystemBase pointers)
-        FrameBufferTriple.hpp        seqlock-protected triple-buffer for video
-    cli/                             retroplug-cli C++ host (Wav, TestHarness, HarnessRpcService, main)
-    test/                            Catch2 unit tests + headless UI runner (test/ui/)
-  ui/src/                            React/TSX UI source (esbuild-bundled): PluginUI, EmulatorTile, menu/…
-  retroplug/src/                     generated typed RPC client + domain ergonomics (txiki-compatible)
-  cli/src/                           TS CLI app, bundled into retroplug-cli
-test/
-  ts/                                TypeScript harness tests (run via retroplug-cli --test)
-  harness/                           the `emu` API glue shared by the TS tests
-examples/reaper/                     committed Reaper .rpp fixtures (DAW host tests)
-spec/                                architecture spec — the greenfield design + migration plan
-tools/                               build-ui.js, run-standalone.sh, standalone-key.sh, validate-plugins.sh
-deps/                                domain submodules: sameboy, catch2, efsw (config/ROM file watcher)
-deps/dpf.js/                         the generic framework submodule (DPF, lv_binding_js→LVGL/txiki,
-                                     rpcpp, msgpack-c, dpf-widgets, lvgl-js-native, the
-                                     lvgljs runtime); consumed via require.resolve + add_subdirectory
+  native-greenfield/   C++ host — the DPF plugin + standalone + the txiki test host
+                       (Engine, BackendFacade, SnapshotRegistry, DspRuntime, plugin/). See spec/.
+  retroplug/           TS layer + React/LVGL UI (stores, DSP kernel, roles, tests)
+  native/src/          the shared emulator/Project/codec core (compiled into retroplug-core):
+                       SameBoy + Mesen systems, Project, the LSDj sav codec, transport primitives
+examples/reaper/       Reaper .rpp fixtures for the DAW host tests (derived; regenerated by the authors)
+resources/             ROMs (mGB, LSDj, n8-midi) + the LSDj manual
+spec/                  the architecture spec (one doc per concern) + the migration record
+tools/                 build/bundle scripts, the headless standalone + reaper harness, validators
+deps/                  domain submodules: sameboy, mesen, r8brain, enkiTS, efsw (file watcher)
+deps/dpf.js/           the generic framework submodule (DPF, lv_binding_js→LVGL/txiki, rpcpp,
+                       msgpack-c, dpf-widgets, lvgl-js-native, the lvgljs runtime); consumed
+                       via require.resolve + add_subdirectory + a pnpm link
 ```
 
 For the React/TSX/QuickJS framework slice (everything that's not Game Boy or
-SameBoy specific), see the [deps/dpf.js](deps/dpf.js) submodule. For the greenfield
-architecture and the migration plan, see [spec/README.md](spec/README.md).
+SameBoy specific), see the [deps/dpf.js](deps/dpf.js) submodule. For the
+architecture and the migration record, see [spec/README.md](spec/README.md).
 
 ## Acknowledgements
 

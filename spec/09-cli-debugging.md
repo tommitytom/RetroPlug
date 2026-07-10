@@ -38,21 +38,21 @@ only (stimulus in, artifacts out). This doc is about closing the middle two.
 
 ## 2. What the CLI is today
 
-A single standalone executable, `retroplug-greenfield-cli`, that evals one pre-bundled session `.js` on
+A single standalone executable, `retroplug-cli`, that evals one pre-bundled session `.js` on
 txiki/QuickJS against the real greenfield `Backend` — **no Node at runtime** (esbuild bundles the
 TS session at build time; the binary runs the JS). See the CLI scaffold in
 [packages/native-greenfield/cli/main.cpp](../packages/native-greenfield/cli/main.cpp) and
-[packages/retroplug-greenfield/cli/](../packages/retroplug-greenfield/cli).
+[packages/retroplug/cli/](../packages/retroplug/cli).
 
-- **Session runtime** — [cli/session.ts](../packages/retroplug-greenfield/cli/session.ts): `bootSession()`
+- **Session runtime** — [cli/session.ts](../packages/retroplug/cli/session.ts): `bootSession()`
   wires the store graph over `createRealBackend()` (loading the DSP kernel before the `onSystemsChange`
   hook), and `runSession(main)` runs the body and reports the exit code. `hostArgs()` reads the session's
   argv (hung off the `Symbol.for("plugin")` namespace — `tjs.args` is a read-only txiki accessor).
-- **Event scripting** — [cli/timeline.ts](../packages/retroplug-greenfield/cli/timeline.ts): a fluent,
+- **Event scripting** — [cli/timeline.ts](../packages/retroplug/cli/timeline.ts): a fluent,
   typed `Timeline` (MIDI/`note`/`press`/`tap`/`bpm`/`transport`/`screenshot` at absolute ms) whose
   `build()` is pure (stable ms-sort), and `renderTimeline(session, timeline, { durationMs, warmupMs })`
   advances the render chunk-by-chunk, firing each event at its time, returning the concatenated PCM.
-- **Artifacts** — [cli/wav.ts](../packages/retroplug-greenfield/cli/wav.ts) encodes interleaved-stereo
+- **Artifacts** — [cli/wav.ts](../packages/retroplug/cli/wav.ts) encodes interleaved-stereo
   Float32 PCM (from `audio.renderAudio(ms)`) to a 16-bit WAV; `audio.screenshot(id, path)` writes a PNG.
 
 The current session verb vocabulary (all on the booted `Session`):
@@ -66,10 +66,10 @@ The current session verb vocabulary (all on the booted `Session`):
 | Observe — debug (NES) | `backend.getApuState(id)`, `readCpu(id, addr)`, `readMemory(id, region)`, `getCpuRegisters(id)`, `setCpuRegister`, `stepInstruction`/`runUntilPc`, `setBreakpoints`/`runUntilBreak`, `setTrace`/`readTrace`, `stepInto`/`stepOver`/`stepOut`, `loadLabels`, `beginProfile`/`readProfile`, `disassemble`, `getCallStack` |
 | Schedule / assert | `Timeline` (+ `.at(ms, fn)` — the observe/assert hook) + `renderTimeline` |
 
-Example sessions live in [cli/sessions/](../packages/retroplug-greenfield/cli/sessions) (`mgb-smoke.ts`,
+Example sessions live in [cli/sessions/](../packages/retroplug/cli/sessions) (`mgb-smoke.ts`,
 `render-rom.ts`, `render-song.ts`, and `rom-test.ts` — the TAP-emitting debug/observe example) and are
-bundled by the `retroplug-greenfield-example-session` CMake target via
-[tools/build-greenfield-session.js](../tools/build-greenfield-session.js).
+bundled by the `retroplug-example-session` CMake target via
+[tools/build-session.js](../tools/build-session.js).
 
 ## 3. The gap: the observe/assert half
 
@@ -89,11 +89,11 @@ A survey of the vendored Mesen core and the integration seam established the dec
   debugger exclusions**. That pulls in the entire `Core/Debugger/` subtree — `Debugger`, `Breakpoint` /
   `BreakpointManager`, `ExpressionEvaluator`, `MemoryDumper`, `TraceLogger`, `CallstackManager`,
   `Profiler`, `LabelManager`, `EventManager`.
-- **It is linked into the greenfield binaries.** `retroplug-greenfield-backend` links `retroplug-cli-core`
+- **It is linked into the greenfield binaries.** `retroplug-backend` links `retroplug-cli-core`
   ([packages/native-greenfield/CMakeLists.txt](../packages/native-greenfield/CMakeLists.txt#L41)), which
   compiles [MesenNesSystem.cpp](../packages/native/src/system/mesen/MesenNesSystem.cpp) +
   [MesenNesDebugSession.cpp](../packages/native/src/system/mesen/MesenNesDebugSession.cpp) and links
-  `libmesen`. So the capability is present in `retroplug-greenfield-cli` today.
+  `libmesen`. So the capability is present in `retroplug-cli` today.
 - **A complete debug target already exists.** `MesenNesSystem` runs headless and single-threaded — it
   never calls `Emulator::Run()/RunFrame`, driving `NesCpu::Exec()` directly and claiming the emulation
   thread id — and lazily owns a `MesenNesDebugSession` (a full `rp::IDebugTarget`,
@@ -148,12 +148,12 @@ The plumbing tier is integrated end to end; only the new-wrapper tier + external
   [BackendFacade.hpp](../packages/native-greenfield/src/BackendFacade.hpp) forwarder, and a
   [BackendRpcRegistration.hpp](../packages/native-greenfield/src/BackendRpcRegistration.hpp) `addMethod` line.
 - **TS** — the method on the `Backend` interface + a verbatim-field mirror in
-  [backend.ts](../packages/retroplug-greenfield/src/backend.ts) (`ApuState`, `CpuRegister`, `TraceLine`,
+  [backend.ts](../packages/retroplug/src/backend.ts) (`ApuState`, `CpuRegister`, `TraceLine`,
   `BreakInfo`, `ProfiledFunction`, `DisasmLine`, `CallFrame`, `Breakpoint`, + the `MemoryRegion` const), a
   `realBackend.ts` impl (a bare cast / `bytesOrNull`), and a deterministic `MockBackend` stub.
 - **Ergonomics** — `Timeline.at(ms, fn)` runs `fn(session)` after the render advances to `ms`, so a session
   reads state + asserts at a scheduled time; a ROM test reuses
-  [testing/harness.ts](../packages/retroplug-greenfield/testing/harness.ts) `test()`/`expect()` to **emit TAP**.
+  [testing/harness.ts](../packages/retroplug/testing/harness.ts) `test()`/`expect()` to **emit TAP**.
 - **Proof** — one `test-native/cli-*.test.ts` per capability, mining known-good assertions (breakpoint PCs,
   the `$40F1` watch) from the legacy `test/ts/nes/*.test.ts`, plus the agent-facing `cli/sessions/rom-test.ts`.
 
