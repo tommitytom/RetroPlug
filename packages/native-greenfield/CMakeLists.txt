@@ -87,6 +87,8 @@ add_custom_target(retroplug-greenfield-example-session ALL
                ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
                ${CMAKE_BINARY_DIR}/greenfield-cli/render-song.js
                ${CMAKE_BINARY_DIR}/greenfield-cli/rom-test.js
+               ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-mgb.js
+               ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-lsdj-sync.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
             ${GFCLI_SESSIONS}/mgb-smoke.ts   ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
@@ -95,6 +97,10 @@ add_custom_target(retroplug-greenfield-example-session ALL
             ${GFCLI_SESSIONS}/render-song.ts ${CMAKE_BINARY_DIR}/greenfield-cli/render-song.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
             ${GFCLI_SESSIONS}/rom-test.ts    ${CMAKE_BINARY_DIR}/greenfield-cli/rom-test.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+            ${GFCLI_SESSIONS}/analyze-mgb.ts       ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-mgb.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-greenfield-session.js
+            ${GFCLI_SESSIONS}/analyze-lsdj-sync.ts ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-lsdj-sync.js
     COMMENT "Bundling greenfield CLI example sessions (esbuild)"
     VERBATIM)
 
