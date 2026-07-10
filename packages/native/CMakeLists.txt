@@ -228,6 +228,16 @@ target_compile_definitions(retroplug PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 # The embedded bundles must exist before the plugin compiles them.
 add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)
 
+# Windows only: the standalone (retroplug-jack, OUTPUT_NAME "retroplug") exports
+# symbols, so link.exe emits an import library "retroplug.lib" — the same name,
+# in the same dir, as DPF's base plugin library "retroplug.lib" that the exe also
+# links, tripping LNK1149 ("output filename matches input filename"). Executables
+# never emit import libraries on Linux/macOS, so this is Windows-specific. Give
+# the standalone's implib a distinct name; nothing links against it.
+if(WIN32 AND TARGET retroplug-jack)
+    set_target_properties(retroplug-jack PROPERTIES ARCHIVE_OUTPUT_NAME retroplug-jack)
+endif()
+
 # --- greenfield UI test harness --------------------------------------------------------------------
 # retroplug-ui-test boots the greenfield React UI on a headless software LVGL display
 # (RenderCore) driven by the BackendFacade RPC (UiHarness) — the greenfield twin of the
