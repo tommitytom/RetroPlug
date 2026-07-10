@@ -1,4 +1,4 @@
-// The DSP role kernel, bundled for the BARE QuickJS DSP context (packages/native-greenfield). esbuild
+// The DSP role kernel, bundled for the BARE QuickJS DSP context (packages/native/src/host). esbuild
 // bundles this entry + its imports into one IIFE; native compiles it to bytecode and loads it into
 // the DSP runtime, which has ALREADY bound the pushSerialIn / emitMidiOut / pressButton sink thunks
 // on the global. This entry wires those thunks into a SinkTarget, builds the kernel with the built-in

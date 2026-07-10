@@ -31,7 +31,7 @@ const HOST = process.env.RETROPLUG_HOST || join(REPO, "build/bin/retroplug-host"
 
 if (!existsSync(HOST)) {
   console.error(
-    `native-greenfield host not found: ${HOST}\n` +
+    `retroplug-host not found: ${HOST}\n` +
       `build it once:  cmake --build build --target retroplug-host -j$(nproc)\n` +
       `or set RETROPLUG_HOST to a host binary.`,
   );

@@ -1,4 +1,4 @@
-// Author a greenfield mGB `.rplg` on native-greenfield-host: compose a store over the real backend,
+// Author a greenfield mGB `.rplg` on retroplug-host: compose a store over the real backend,
 // load the embedded mGB, and export the project. The plugin's RETROPLUG_AUTOLOAD_PROJECT hook loads
 // this at construct for the reaper render smoke — a greenfield-shaped .rplg (ProjectStore.export
 // format), not a legacy chunk. Not a *.test.ts, so the test runner ignores it; driven by

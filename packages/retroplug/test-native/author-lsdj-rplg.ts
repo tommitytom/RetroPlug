@@ -1,5 +1,5 @@
 // Author a greenfield LSDj `.rplg` fixture for the real-Reaper DAW-timing renders (the greenfield twin of
-// the legacy test/ts `lsdj_*_metro|drift` bootstraps). Runs on native-greenfield-host: compose a store
+// the legacy test/ts `lsdj_*_metro|drift` bootstraps). Runs on retroplug-host: compose a store
 // over the real backend, adopt the LSDj ROM with an authored sav + lsdj-sync mode, boot it to the song
 // screen (and, for the MidiSync scenarios, press START to ARM "wait for MIDI clock" so the fixture's
 // savestate captures the armed state — the Reaper host transport then clocks it from t=0), and export.

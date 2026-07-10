@@ -1,7 +1,7 @@
 // retroplug-greenfield-ui-test: a TypeScript-bundle runner for the greenfield headless UI harness.
 //
 // The greenfield twin of packages/native/test/ui/UiTsRunner.cpp, but wired to the GREENFIELD test
-// conventions (like native-greenfield-host): the TS harness self-reports TAP via console.log and sets
+// conventions (like retroplug-host): the TS harness self-reports TAP via console.log and sets
 // the exit code through globalThis.tjs.exit — so this runner just boots the harness, installs the
 // `retroplug-ui` (`ui.*`) namespace + the tjs.exit hook, evals the test bundle, and drives the JS job
 // loop until the harness exits. The harness boots the greenfield React UI on a headless software LVGL
@@ -31,7 +31,7 @@ namespace {
 std::unique_ptr<rpuigf::UiHarness> g_harness;
 
 // The exit code the harness reports through globalThis.tjs.exit(). One runner per process,
-// single-threaded (mirrors native-greenfield-host's g_exit).
+// single-threaded (mirrors retroplug-host's g_exit).
 struct ExitState { int code = 0; bool set = false; };
 ExitState g_exit;
 
@@ -280,7 +280,7 @@ void installUiNamespace(JSContext* ctx) {
 }
 
 // globalThis.tjs.exit — the greenfield harness sets the exit code through it (mirrors
-// native-greenfield-host). Override any txiki-provided exit so we record the code and return it.
+// retroplug-host). Override any txiki-provided exit so we record the code and return it.
 void installExitHook(JSContext* ctx) {
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue tjsObj = JS_GetPropertyStr(ctx, global, "tjs");

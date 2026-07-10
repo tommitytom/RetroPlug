@@ -1,4 +1,4 @@
-// native-greenfield-host — a minimal txiki/QuickJS host that runs a greenfield TS test
+// retroplug-host — a minimal txiki/QuickJS host that runs a greenfield TS test
 // bundle over a real `Backend`. It binds `globalThis[Symbol.for("plugin")].__rpcSend` to a
 // BackendRpcService (fs/config/codec) — the same namespace the future plugin host uses, so
 // one TS adapter (realBackend.ts) serves both. Emulator-free: no Project/SystemBase.
@@ -8,7 +8,7 @@
 // code via globalThis.tjs.exit(code). We provide that exit hook (recording the code rather
 // than terminating) and drive the job loop until it fires.
 //
-//   native-greenfield-host [--test] <bundle.js>
+//   retroplug-host [--test] <bundle.js>
 
 #include <cstdint>
 #include <cstdio>
@@ -61,7 +61,7 @@ int main(int argc, char** argv) try {
         bundlePath = argv[i];
     }
     if (bundlePath.empty()) {
-        std::fprintf(stderr, "usage: native-greenfield-host [--test] <bundle.js>\n");
+        std::fprintf(stderr, "usage: retroplug-host [--test] <bundle.js>\n");
         return 2;
     }
 

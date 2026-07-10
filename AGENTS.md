@@ -4,9 +4,9 @@ Start with these — all short:
 
 - [README.md](README.md) — what RetroPlug2 is, how to build, project layout.
 - [spec/](spec/README.md) — the architecture (one doc per concern). The build lives
-  in `packages/native-greenfield/` (C++ host) + `packages/retroplug/` (TS/UI). The
-  older **legacy** build has been removed; [spec/07-migration.md](spec/07-migration.md)
-  tracks the residual rename/cleanup + the remaining feature gaps.
+  in `packages/native/` (C++ host: `src/` core + `src/host/` layer + `plugin/`) +
+  `packages/retroplug/` (TS/UI). The older **legacy** build has been removed;
+  [spec/07-migration.md](spec/07-migration.md) tracks the residual cleanup + feature gaps.
 - [docs/lsdj.md](docs/lsdj.md) — the LSDj domain reference + how to test LSDj sync /
   DAW timing / audio quality headlessly.
 
@@ -43,7 +43,7 @@ The rules below are the parts that don't fit those.
   `cl` + vcpkg-`x64-windows-static` configure (overridable via `VCPKG_ROOT` /
   `RGBDS_DIR` / `NODE_DIR`).
 - **Never commit derived artifacts** — the embedded bundle C arrays
-  (`build/native-greenfield/*bundle_data.c`).
+  (`build/native/*bundle_data.c`).
 - **No versioned migrations (pre-release).** Nothing is released; when you change a
   serialized shape (project / DPF state, config, kit-patch, sav), just change it —
   no read-old/write-new shims, no `version: 2` transform. Renames / restructures are
