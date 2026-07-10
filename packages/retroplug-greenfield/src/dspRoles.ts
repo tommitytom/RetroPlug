@@ -6,7 +6,7 @@
 import type { RoleRegistry, ConstructCaps } from "./systemRoles";
 import type { ProjectBehavior, SystemBehavior, SystemCtx } from "./dspKernel";
 import type { ConstructSpec } from "./backend";
-import { z, clampedInt } from "./configSchema";
+import { z, clampedInt, boolField } from "./configSchema";
 import { routeBlockInto, MidiRouting } from "./midiRouting";
 import {
   KEYBOARD_NOTE_START,
@@ -47,6 +47,7 @@ const forwardMidiToCore: SystemBehavior = (c) => {
 
 // LSDj serial control bytes (host → LSDj over the link cable) and MIDI status helpers, mirroring
 // LsdjSyncRole.cpp. DPF hands the full status byte (channel in the low nibble) in data[0].
+const START_BTN = 7; // GameboyButton::Start
 const LSDJ_CLOCK = 0xf8; // 24-PPQN MIDI clock tick
 const LSDJ_START = 0xfa; // transport start — Arduinoboy-mode bookend
 const LSDJ_STOP = 0xfc; // transport stop
@@ -163,6 +164,16 @@ const masterSync: SystemBehavior = (c) => {
 const lsdjSync: SystemBehavior = (c) => {
   switch (c.config.mode as number) {
     case 1: { // MidiSync
+      // Optional auto-arm (autoStart): SYNC=MIDI LSDj only follows the clock once START has parked it in
+      // "wait for MIDI" — normally a user action. When autoStart is set, tap START on the transport rise
+      // (press ~2 blocks, then release) so LSDj starts with the host, the way a DAW user expects — and so
+      // a headless DAW render (which can't press a joypad) can drive it. Off by default (manual arm).
+      if (c.config.autoStart) {
+        const st = c.state as { prevT?: boolean; armDown?: number };
+        if (c.block.transport && !st.prevT) { c.pressButton(START_BTN, true); st.armDown = 2; }
+        else if (st.armDown && st.armDown > 0) { if (--st.armDown === 0) c.pressButton(START_BTN, false); }
+        st.prevT = c.block.transport;
+      }
       const divisor = (c.config.tempoDivisor as number) || 1;
       c.eachTick(24 / divisor, (_t, off) => c.pushSerialIn(off, LSDJ_CLOCK));
       break;
@@ -205,8 +216,10 @@ export function registerDspRoles(registry: RoleRegistry): void {
     category: "feature",
     scope: "system",
     // mode: LsdjSyncMode (Off=0, MidiSync=1, … MidiOut=7, MasterSync=8). tempoDivisor subdivides the
-    // 24-PPQN clock (24/divisor) for MidiSync + MidiSyncArduinoboy; the menu offers 1/2/4/8.
-    schema: z.object({ mode: clampedInt(0, 8, 1), tempoDivisor: clampedInt(1, 8, 1) }),
+    // 24-PPQN clock (24/divisor) for MidiSync + MidiSyncArduinoboy; the menu offers 1/2/4/8. autoStart
+    // taps START on the host transport rise to auto-arm a SYNC=MIDI (MidiSync) cart — needed for a
+    // headless DAW render, off by default so normal MidiSync keeps its manual-arm behaviour.
+    schema: z.object({ mode: clampedInt(0, 8, 1), tempoDivisor: clampedInt(1, 8, 1), autoStart: boolField(false) }),
     dsp: lsdjSync,
     onConstruct: lsdjSeedSav,
   });
