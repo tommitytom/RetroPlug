@@ -1,9 +1,0 @@
-{
-  "name": "@retroplug/cli",
-  "version": "0.1.0",
-  "private": true,
-  "description": "RetroPlug CLI (TypeScript, txiki-hosted). Populated in restructure-05.",
-  "dependencies": {
-    "@retroplug/retroplug": "workspace:*"
-  }
-}

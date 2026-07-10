@@ -22,21 +22,13 @@ importers:
         specifier: ^0.28
         version: 0.28.1
 
-  packages/cli:
-    dependencies:
-      '@retroplug/retroplug':
-        specifier: workspace:*
-        version: link:../retroplug
-
   packages/native: {}
 
-  packages/retroplug: {}
-
-  packages/ui:
+  packages/retroplug-greenfield:
     dependencies:
-      '@retroplug/retroplug':
-        specifier: workspace:*
-        version: link:../retroplug
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
 packages:
 
