@@ -40,7 +40,7 @@ const findItem = (items: MenuItem[], id: string): MenuItem | undefined => items.
 
 function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   const sm = items.find((i) => i.id === id);
-  return sm && sm.kind === "submenu" ? sm.children : [];
+  return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
 }
 
 // The instance-menu Project submenu, with one system seeded so the save-side items appear.

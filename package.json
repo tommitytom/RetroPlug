@@ -10,6 +10,7 @@
   "scripts": {
     "configure": "cmake -S . -B build",
     "build": "node scripts/cmake-build.js",
+    "typecheck": "pnpm -r typecheck",
     "test": "node scripts/cmake-build.js tjs-cli && node packages/retroplug/scripts/run-tests.mjs",
     "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node packages/retroplug/scripts/run-ui-tests.mjs",

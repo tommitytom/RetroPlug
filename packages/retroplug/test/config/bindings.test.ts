@@ -27,7 +27,7 @@ test("parse: a partial doc fills defaults; unknowns stripped; a bad channel → 
   expect(m.name).toBe("default"); // missing name → default
   expect(m.keyboard).toEqual({ A: ["Q"] });
   expect(m.gamepad).toEqual({}); // bad channel coerced to empty
-  expect((m as Record<string, unknown>).extra).toBe(undefined); // unknown stripped
+  expect((m as unknown as Record<string, unknown>).extra).toBe(undefined); // unknown stripped
   // A profile predating app actions seeds them, so Esc / leftshoulder keep opening the menu.
   expect(m.keyboardActions).toEqual(defaultBindingMap().keyboardActions);
   expect(m.gamepadActions).toEqual(defaultBindingMap().gamepadActions);

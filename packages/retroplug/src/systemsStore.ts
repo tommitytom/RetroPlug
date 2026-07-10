@@ -411,6 +411,7 @@ export class SystemsStore {
    *  of from disk; `savPath` stays the auto-save target. */
   adopt(
     config: {
+      core?: Core; // persisted since the v2 project schema (else auto-derived from platform)
       romPath?: string;
       savPath?: string;
       savSuffix?: number;

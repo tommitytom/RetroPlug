@@ -48,7 +48,7 @@ test("at() records a scheduled callback that sorts by ms; build() never invokes 
   expect(evs.map((e) => e.kind)).toEqual(["midi", "midi", "at"]);
   expect(evs.map((e) => e.ms)).toEqual([0, 100, 200]);
   expect(seen).toEqual([]); // build() is pure — the callback is carried, not run
-  (evs[2] as { fn: () => void }).fn();
+  (evs[2] as unknown as { fn: () => void }).fn();
   expect(seen).toEqual(["probe"]);
 });
 

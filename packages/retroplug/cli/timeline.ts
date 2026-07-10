@@ -9,7 +9,9 @@ import type { Session } from "./session";
 
 /** Named button values (Right=0..Start=7, position-aligned across GB/NES) + the GBA-only L/R wire bytes.
  *  Pass to Timeline.press / Timeline.tap. */
-export const Button = { ...BUTTON_VALUE, L: 8, R: 9 } as const;
+// Typed as a string→number map (not `as const`): spreading BUTTON_VALUE (a Record<string,number>)
+// erases its literal keys, so name access like `Button.A` needs the index signature.
+export const Button: Record<string, number> = { ...BUTTON_VALUE, L: 8, R: 9 };
 
 interface NoteOpts {
   channel?: number; // 1-based (default 1)

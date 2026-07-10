@@ -35,9 +35,9 @@ test("strict: unknown fields are stripped, known fields kept", () => {
     ],
   });
   const cfg = parseConfig(raw);
-  expect((cfg as Record<string, unknown>).futureTopLevel).toBe(undefined); // root unknown stripped
-  expect((cfg.settings as Record<string, unknown>).futureSetting).toBe(undefined); // settings unknown stripped
-  const sys = cfg.systems[0] as Record<string, unknown>;
+  expect((cfg as unknown as Record<string, unknown>).futureTopLevel).toBe(undefined); // root unknown stripped
+  expect((cfg.settings as unknown as Record<string, unknown>).futureSetting).toBe(undefined); // settings unknown stripped
+  const sys = cfg.systems[0] as unknown as Record<string, unknown>;
   expect(sys.model).toBe(undefined); // per-system unknown stripped
   expect(sys.highpass).toBe(undefined);
   expect(sys.romPath).toBe("/a.gb"); // known field kept
