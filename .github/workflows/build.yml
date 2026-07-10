@@ -214,4 +214,5 @@ jobs:
             build/bin/retroplug-cli
             build/bin/retroplug.clap
             build/bin/retroplug.vst3
+            build/bin/retroplug.component
             build/bin/retroplug-vst2.dylib
