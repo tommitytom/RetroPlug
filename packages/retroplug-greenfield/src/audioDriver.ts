@@ -65,6 +65,11 @@ export interface AudioDriver {
   /** Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
    *  The kernel's midi-routing behaviour fans it to systems; with no routing role it reaches none. */
   stageMidiIn(bytes: Uint8Array | number[]): boolean;
+  /** Drain the MIDI-out the DSP kernel emitted (e.g. the LSDj MI.OUT decoder → `emitMidiOut`),
+   *  accumulated across the renderAudio blocks since the last drain. Each entry is one MIDI message
+   *  with its source system + block-frame. The plugin drains this to the DAW directly; this is the
+   *  headless test path. */
+  drainMidiOut(): { system: number; frame: number; data: Uint8Array }[];
 
   // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md; real only in a RETROPLUG_PROFILE host) ---
   /** Snapshot the DSP JS runtime's allocation counters (deltas since the last reset). */
@@ -130,6 +135,8 @@ export function createAudioDriver(): AudioDriver {
     setTransport: (running) => call("setTransport", running) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
     stageMidiIn: (bytes) => call("stageMidiIn", ints(bytes)) as boolean,
+    drainMidiOut: () =>
+      (call("drainMidiOut") as { system: number; frame: number; data: Uint8Array }[] | null) ?? [],
     dspAllocStats: () => call("dspAllocStats") as DspAllocStats,
     dspResetAllocStats: (disableAutoGc) => call("dspResetAllocStats", disableAutoGc) as boolean,
     dspRunGc: () => call("dspRunGc") as DspGcResult,

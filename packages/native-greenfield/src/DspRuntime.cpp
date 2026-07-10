@@ -273,6 +273,7 @@ bool DspRuntime::setSystems(const std::vector<std::uint8_t>& json) {
 void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
                               const std::vector<ButtonIn>& buttons,
                               const std::vector<KeyIn>& keys,
+                              const std::vector<SerialOut>& serialOut,
                               const BlockInfo& block) {
     serialIn_.clear();
     midiOut_.clear();
@@ -290,9 +291,10 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
 #endif
 
     // input = { frames, sampleRate, tempo, ppqStart, transport,
-    //           midiIn:  [{frame, data:[…]}],
-    //           buttons: [{system, frame, button, down}],
-    //           keys:    [{system, frame, key, down}] }
+    //           midiIn:    [{frame, data:[…]}],
+    //           buttons:   [{system, frame, button, down}],
+    //           keys:      [{system, frame, key, down}],
+    //           serialOut: [{system, byte}] }
     // The event arrays are always present (empty is fine) — the kernel filters keys/buttons per
     // system and would fault on `undefined`.
 #ifdef RETROPLUG_PROFILE
@@ -338,6 +340,15 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
         JS_SetPropertyUint32(ctx, keyArr, static_cast<std::uint32_t>(i), ev);
     }
     JS_SetPropertyStr(ctx, input, "keys", keyArr);
+
+    JSValue serialArr = JS_NewArray(ctx);
+    for (std::size_t i = 0; i < serialOut.size(); ++i) {
+        JSValue ev = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, ev, "system", JS_NewInt32(ctx, static_cast<std::int32_t>(serialOut[i].system)));
+        JS_SetPropertyStr(ctx, ev, "byte", JS_NewInt32(ctx, static_cast<std::int32_t>(serialOut[i].byte)));
+        JS_SetPropertyUint32(ctx, serialArr, static_cast<std::uint32_t>(i), ev);
+    }
+    JS_SetPropertyStr(ctx, input, "serialOut", serialArr);
 #ifdef RETROPLUG_PROFILE
     spanEnd();                    // marshal
     spanBegin(DSP_SPAN_JSCALL);

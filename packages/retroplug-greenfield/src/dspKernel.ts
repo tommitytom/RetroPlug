@@ -34,6 +34,14 @@ export interface KeyEvent {
   down: boolean;
 }
 
+/** One raw serial-out byte a core emitted on its serial port (LSDj MI.OUT), targeted at a system.
+ *  Native gathers these AFTER rendering a block and feeds them to the NEXT block (one-block latency);
+ *  the kernel fans them per-system into `ctx.serialOut` for the mode-7 decoder. */
+export interface SerialOutEvent {
+  system: number;
+  byte: number;
+}
+
 /** The rarely-changing structure of a project: the project-scope pipeline (e.g. midi-routing) and
  *  each system's ordered DSP-thread pipeline. Pushed ONCE via `setSystems` (not re-marshalled per
  *  block). The system ORDER is authoritative — positional MIDI routing (midiRouting.ts) maps a MIDI
@@ -50,6 +58,7 @@ export interface BlockInput extends BlockInfo {
   midiIn: MidiEvent[];
   buttons: ButtonEvent[];
   keys: KeyEvent[];
+  serialOut: SerialOutEvent[];
 }
 
 /** The full block view a behaviour sees: the dynamic input merged onto the stored structure. The
@@ -114,6 +123,9 @@ export interface SystemCtx {
   midi: MidiEvent[];
   keys: KeyEvent[];
   buttons: ButtonEvent[];
+  /** The raw serial-out bytes this system emitted LAST block (LSDj MI.OUT), in order — the mode-7
+   *  Arduinoboy decoder's input. Empty unless native has serial-out capture armed for this system. */
+  serialOut: number[];
   block: BlockInfo;
   state: Record<string, unknown>;
   pushSerialIn(frame: number, byte: number): void;
@@ -192,6 +204,7 @@ interface SystemSlot {
   inbox: MidiEvent[];
   keys: KeyEvent[];
   buttons: ButtonEvent[];
+  serialOut: number[];
   stages: StageRun[];
 }
 
@@ -239,6 +252,7 @@ export class DspKernel {
     midiIn: [],
     buttons: [],
     keys: [],
+    serialOut: [],
     systems: [],
     project: [],
   };
@@ -299,7 +313,7 @@ export class DspKernel {
     this.slotById.clear();
     this.inboxes = [];
     for (const sys of struct.systems) {
-      const slot: SystemSlot = { id: sys.id, inbox: [], keys: [], buttons: [], stages: [] };
+      const slot: SystemSlot = { id: sys.id, inbox: [], keys: [], buttons: [], serialOut: [], stages: [] };
       sys.pipeline.forEach((stage, stageIndex) => {
         const rt = this.registry.roleType(stage.kind);
         if (!rt || rt.scope === "project" || !rt.dsp) return;
@@ -328,6 +342,7 @@ export class DspKernel {
     b.midiIn = dyn.midiIn;
     b.buttons = dyn.buttons;
     b.keys = dyn.keys;
+    b.serialOut = dyn.serialOut;
 
     this.sink.reset?.();
 
@@ -340,6 +355,7 @@ export class DspKernel {
       slot.inbox.length = 0;
       slot.keys.length = 0;
       slot.buttons.length = 0;
+      slot.serialOut.length = 0;
     }
 
     // Fan this block's keys/buttons to their target system (shared refs — read-only downstream),
@@ -353,6 +369,11 @@ export class DspKernel {
     for (let i = 0; i < buttons.length; i++) {
       const slot = this.slotById.get(buttons[i].system);
       if (slot) slot.buttons.push(buttons[i]);
+    }
+    const serialOut = b.serialOut;
+    for (let i = 0; i < serialOut.length; i++) {
+      const slot = this.slotById.get(serialOut[i].system);
+      if (slot) slot.serialOut.push(serialOut[i].byte);
     }
 
     // Project scope: routing fans the global midiIn into the positional persistent inboxes. The
@@ -390,6 +411,7 @@ export class DspKernel {
       midi: slot.inbox,
       keys: slot.keys,
       buttons: slot.buttons,
+      serialOut: slot.serialOut,
       block: this.block,
       state: this.stageState(id, stageIndex),
       pushSerialIn: (frame, byte) => this.sink.pushSerialIn(id, frame, byte),

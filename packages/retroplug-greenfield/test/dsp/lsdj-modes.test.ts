@@ -24,7 +24,7 @@ function lsdj(mode: number, config: Record<string, unknown> = {}): DspKernel {
 
 // 22050 frames @ 44100 / 120 = exactly 1 beat (24 ticks at 24 PPQN).
 const baseDyn = (): BlockInput => ({
-  frames: 22050, sampleRate: 44100, tempo: 120, ppqStart: 0, transport: false, midiIn: [], buttons: [], keys: [],
+  frames: 22050, sampleRate: 44100, tempo: 120, ppqStart: 0, transport: false, midiIn: [], buttons: [], keys: [], serialOut: [],
 });
 const noteOn = (channel: number, note: number, frame = 0): MidiEvent => ({ frame, data: [0x90 | channel, note, 100] });
 const noteOff = (channel: number, note: number, frame = 0): MidiEvent => ({ frame, data: [0x80 | channel, note, 0] });

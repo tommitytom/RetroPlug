@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <fstream>
 #include <iterator>
+#include <utility>
 
 #include "Engine.hpp"
 #include "EngineInvoker.hpp"
@@ -384,6 +385,7 @@ rfl::Bytestring EngineRpcService::renderAudio(double ms) {
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
         engine_.processBlock(frames, scratchL_.data(), scratchR_.data());
+        accumulateMidiOut();  // gather this block's kernel MIDI-out before the next block clears it
         for (std::uint32_t f = 0; f < frames; ++f) {
             out.push_back(scratchL_[f]);  // interleave L,R,L,R…
             out.push_back(scratchR_[f]);
@@ -414,6 +416,7 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
     for (std::uint64_t s = 0; s < total; s += kBlockSize) {
         const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
         engine_.processBlockPerSystem(frames, ls.data(), rs.data(), n);
+        accumulateMidiOut();  // gather this block's kernel MIDI-out before the next block clears it
         for (std::size_t i = 0; i < n; ++i)
             for (std::uint32_t f = 0; f < frames; ++f) {
                 out[i].push_back(ls[i][f]);  // interleave L,R,L,R…
@@ -450,6 +453,30 @@ bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
     if (bytes.empty() || bytes.size() > 4) return false;  // a MIDI message fits in 4 bytes
     invoker_.stageMidi(std::move(bytes));
     return true;
+}
+
+bool EngineRpcService::setSerialOutCapture(std::uint32_t id, bool on) {
+    // Control-plane arm/disarm through the invoker's config path (SameBoy-only in Engine::applyConfigField;
+    // a no-op on a Mesen/GBA system). The store gates existence on its own list — accept optimistically.
+    invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::SerialOutCapture), on ? 1.0 : 0.0);
+    return true;
+}
+
+void EngineRpcService::accumulateMidiOut() {
+    // Engine::midiOut() holds only the block just rendered (cleared at the top of the next processBlock),
+    // so copy it out now. Usually empty (only an armed LSDj MI.OUT system emits) — cheap when so.
+    for (const auto& mo : engine_.midiOut()) {
+        GreenfieldMidiOut g;
+        g.system = mo.system;
+        g.frame  = mo.frame;
+        const auto* p = reinterpret_cast<const std::byte*>(mo.data.data());
+        g.data.assign(p, p + mo.data.size());
+        accumMidiOut_.push_back(std::move(g));
+    }
+}
+
+std::vector<GreenfieldMidiOut> EngineRpcService::drainMidiOut() {
+    return std::exchange(accumMidiOut_, {});  // return the window's accumulation and reset it
 }
 
 // Direct engine_ access (not the invoker): the benchmark drives the synchronous renderAudio pull path

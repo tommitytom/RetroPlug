@@ -122,6 +122,11 @@ export interface Backend {
    *  failure. */
   applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean;
 
+  /** Arm/disarm capture of a system's outgoing serial bytes (LSDj MI.OUT). The store calls this when a
+   *  system's `lsdj-sync` mode is (or leaves) MIDIOUT — armed, native feeds the raw bytes to the DSP
+   *  kernel's `ctx.serialOut` for the Arduinoboy decoder. SameBoy-only (a no-op on other cores). */
+  setSerialOutCapture(id: number, on: boolean): boolean;
+
   /** Set the project's audio-output routing (0 Stereo / 1 TwoPerInstance / 2 OnePerInstance) — which
    *  of the plugin's 4 stereo output pairs each system mixes into. The one project-level setting that
    *  reaches native audio (drives the block runner's MultiOutRouter). Returns false on an out-of-range

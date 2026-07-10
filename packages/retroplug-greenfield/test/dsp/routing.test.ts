@@ -21,6 +21,7 @@ const baseDyn = (): BlockInput => ({
   midiIn: [],
   buttons: [],
   keys: [],
+  serialOut: [],
 });
 
 test("OneChannelPerInstance routing sends each channel to its system, which mgb then serializes", () => {

@@ -100,6 +100,12 @@ public:
     bool            setBpm(double bpm);
     bool            setAudioRouting(std::uint32_t mode);
     bool            stageMidiIn(std::vector<std::uint8_t> bytes);
+    // Arm/disarm a SameBoy's serial-out capture (LSDj MI.OUT). Control-plane, via the invoker's config
+    // path (ConfigField::SerialOutCapture) — the TS store calls it when a system's lsdj-sync mode is MIDIOUT.
+    bool            setSerialOutCapture(std::uint32_t id, bool on);
+    // Drain the MIDI-out the kernel emitted (LSDj MI.OUT decoder), accumulated across renderAudio blocks
+    // since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
+    std::vector<GreenfieldMidiOut> drainMidiOut();
 
     // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
     // Reads/GC on the DSP JS runtime, reached directly through the Engine (the quiescent renderAudio
@@ -114,6 +120,10 @@ public:
     std::vector<std::string>  dspTraceNames();
 
 private:
+    // Append the kernel's per-block MIDI-out (Engine::midiOut(), cleared each block) to accumMidiOut_.
+    // Called after each processBlock in the render loops so drainMidiOut() sees the whole window.
+    void accumulateMidiOut();
+
     Engine&        engine_;
     SystemFactory& factory_;
     QueuedInvoker& invoker_;   // the one mutation path (push; flushes inline when quiescent)
@@ -121,4 +131,5 @@ private:
     static constexpr std::uint32_t kBlockSize = 1024;
     std::vector<float>       scratchL_;  // renderAudio pull-path scratch (control thread)
     std::vector<float>       scratchR_;
+    std::vector<GreenfieldMidiOut> accumMidiOut_;  // kernel MIDI-out gathered across a render window (drainMidiOut)
 };

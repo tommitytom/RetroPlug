@@ -86,6 +86,7 @@ public:
     struct MidiIn   { std::uint32_t frame = 0; std::vector<std::uint8_t> data; };  // global; routing assigns a system
     struct ButtonIn { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint32_t button = 0; bool down = false; };
     struct KeyIn    { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint32_t key = 0; bool down = false; };
+    struct SerialOut { std::uint32_t system = 0; std::uint8_t byte = 0; };  // raw bytes a core emitted last block (LSDj MI.OUT)
     struct BlockInfo {
         std::uint32_t frames     = 0;
         double        sampleRate = 44100.0;
@@ -116,10 +117,13 @@ public:
 
     // Run one block: build the JS input (block info + dynamic events), call the global `processBlock`;
     // the bound sinks fill serialIn_/midiOut_/buttonOut_ (all cleared at the top of the call). A
-    // no-op (empty output) when no kernel is loaded.
+    // no-op (empty output) when no kernel is loaded. `serialOut` carries the raw bytes each core
+    // emitted on its serial port LAST block (LSDj MI.OUT — one-block latency; the caller gathers them
+    // after runBlock), fanned to `ctx.serialOut` for the addressed system.
     void processBlock(const std::vector<MidiIn>& midi,
                       const std::vector<ButtonIn>& buttons,
                       const std::vector<KeyIn>& keys,
+                      const std::vector<SerialOut>& serialOut,
                       const BlockInfo& block);
 
     // --- allocation / GC profiling (spec/08-profiling.md); real only in a RETROPLUG_PROFILE build ---

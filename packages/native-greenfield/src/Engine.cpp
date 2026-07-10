@@ -78,8 +78,9 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         dsp_.spanBegin(DSP_SPAN_KERNEL);  // the whole DSP-kernel stage (marshal + JS + sink fan-out)
 #endif
         const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transport_ };
-        dsp_.processBlock(pendingMidi_, kNoButtons, kNoKeys, dInfo);
-        pendingMidi_.clear();  // staged host MIDI consumed this block
+        dsp_.processBlock(pendingMidi_, kNoButtons, kNoKeys, pendingSerialOut_, dInfo);
+        pendingMidi_.clear();       // staged host MIDI consumed this block
+        pendingSerialOut_.clear();  // last block's serial-out consumed by the kernel this block
         // serial-in sink → the addressed system's serial FIFO.
         for (const auto& sv : dsp_.serialIn_)
             if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.byte);
@@ -111,6 +112,18 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
 #ifdef RETROPLUG_PROFILE
     dsp_.spanEnd();  // apu-render
 #endif
+    // Gather the raw serial-out bytes the SameBoy cores emitted THIS block (LSDj MI.OUT capture, armed
+    // via ConfigField::SerialOutCapture) into pendingSerialOut_, for the kernel to decode next block.
+    // Cheap no-op when nothing captured (an unarmed system's serialOutLog_ is empty). Only standalone
+    // systems capture (the writeAudioSample gate is linkPeers_.empty()); a linked system's log stays empty.
+    if (dspActive_) {
+        for (const auto& sys : project_.systems()) {
+            auto* sb = dynamic_cast<SameBoySystem*>(sys.get());
+            if (!sb || sb->serialOutLog_.empty()) continue;
+            for (const auto& entry : sb->serialOutLog_)
+                pendingSerialOut_.push_back({ sb->id(), entry.second });
+        }
+    }
     // Copy each core's freshly-published frame/state/SRAM into the owned registry the control plane
     // reads through — the one place every driver funnels the block, so it covers all of them.
     registry_.publishAll(project_, frames, sampleRate_);
@@ -253,6 +266,9 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
         }
         case ConfigField::FastBoot:
             sb->setFastBoot(value != 0.0);  // deferred to the next restart
+            break;
+        case ConfigField::SerialOutCapture:
+            sb->setSerialOutCapture(value != 0.0);  // live — arms LSDj MI.OUT serial-out capture
             break;
         default:
             break;  // the universal fields (Gain / ReloadOnRomChange) were handled above

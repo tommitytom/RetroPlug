@@ -67,6 +67,7 @@ export class MockBackend implements Backend {
   /** Live-config applies recorded for assertions. */
   readonly applySettingCalls: { id: number; key: string; value: number | boolean }[] = [];
   readonly applyRoleCalls: { id: number; kind: string; config: Record<string, unknown> }[] = [];
+  readonly serialOutCaptureCalls: { id: number; on: boolean }[] = [];
   readonly audioRoutingCalls: number[] = [];
   readonly pressButtonCalls: { id: number; button: number; down: boolean }[] = [];
 
@@ -452,6 +453,12 @@ export class MockBackend implements Backend {
   applyRoleConfig(id: number, kind: string, config: Record<string, unknown>): boolean {
     this.log.push("applyRoleConfig");
     this.applyRoleCalls.push({ id, kind, config });
+    return true;
+  }
+
+  setSerialOutCapture(id: number, on: boolean): boolean {
+    this.log.push("setSerialOutCapture");
+    this.serialOutCaptureCalls.push({ id, on });
     return true;
   }
 

@@ -85,6 +85,8 @@ public:
     bool setBpm(double bpm) { return engine_svc_.setBpm(bpm); }
     bool setAudioRouting(std::uint32_t mode) { return engine_svc_.setAudioRouting(mode); }
     bool stageMidiIn(std::vector<std::uint8_t> bytes) { return engine_svc_.stageMidiIn(std::move(bytes)); }
+    bool setSerialOutCapture(std::uint32_t id, bool on) { return engine_svc_.setSerialOutCapture(id, on); }
+    std::vector<GreenfieldMidiOut> drainMidiOut() { return engine_svc_.drainMidiOut(); }
 
     // --- DSP-runtime allocation/GC profiling → engine_svc_ (spec/08-profiling.md; enabled off-profile) ---
     DspAllocStats dspAllocStats() { return engine_svc_.dspAllocStats(); }

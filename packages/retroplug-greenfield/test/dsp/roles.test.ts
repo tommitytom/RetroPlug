@@ -23,6 +23,7 @@ const baseDyn = (): BlockInput => ({
   midiIn: [],
   buttons: [],
   keys: [],
+  serialOut: [],
 });
 
 test("mgb forwards each routed MIDI byte to its system's serial", () => {

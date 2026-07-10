@@ -23,6 +23,11 @@ struct AudioCaptured { double energy; std::uint64_t frames; };
 // concurrent FrameBufferTriple, so it is safe to fetch while the audio thread renders.
 struct GreenfieldFrame { std::uint32_t width; std::uint32_t height; bool published; rfl::Bytestring data; };
 
+// One MIDI-out message a system's DSP kernel emitted (LSDj MI.OUT decoder → emitMidiOut). `data` is the
+// raw MIDI bytes (msgpack BIN -> JS Uint8Array). Accumulated across a renderAudio loop and returned by
+// drainMidiOut for headless tests — the plugin drains Engine::midiOut() to the DAW directly instead.
+struct GreenfieldMidiOut { std::uint32_t system; std::uint32_t frame; rfl::Bytestring data; };
+
 // Mirrors the greenfield ConstructSpec (packages/retroplug-greenfield/src/backend.ts): concrete
 // paths + an embedded-ROM marker + optional zip-import seed bytes. The optional string fields are
 // absent (nullopt) rather than "" when the TS side has null.

@@ -19,6 +19,7 @@ enum class ConfigField : std::uint8_t {
     Gain = 0, ReloadOnRomChange = 1,
     Model = 2, Highpass = 3, LinkGroup = 4, FastBoot = 5,     // SameBoy
     NesRegion = 6, NesRemoveSpriteLimit = 7,                  // Mesen (NES)
+    SerialOutCapture = 8,                                     // SameBoy (LSDj MI.OUT)
 };
 
 // One system's video frame, read from its lock-free FrameBufferTriple. `data` is raw XRGB8888
@@ -122,6 +123,10 @@ private:
     double     sampleRate_;
     bool       dspActive_ = false;                 // a kernel is loaded → run the per-block DSP stage
     std::vector<DspRuntime::MidiIn> pendingMidi_;  // staged host MIDI, consumed on the next block
+    // Raw serial-out bytes each core emitted LAST block (LSDj MI.OUT), gathered after runBlock and fed
+    // to the kernel on the next block (one-block latency — the kernel runs before runBlock, and each
+    // SameBoy clears its serialOutLog_ in prepareForBlock).
+    std::vector<DspRuntime::SerialOut> pendingSerialOut_;
 
     // Simulated host transport, driven per block. Continuous ppq clock (the pull path and the audio
     // loop share it; they never run concurrently). Plain — mutated only by the owning thread.

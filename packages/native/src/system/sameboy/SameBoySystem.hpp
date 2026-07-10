@@ -155,6 +155,12 @@ public:
     // the Arduinoboy MI.OUT decoder). Cached on each instantiateRoles() so
     // the per-bit serial callback doesn't re-walk roles_.
     bool serialOutCaptureEnabled() const { return serialOutEnabled_; }
+    // Arm/disarm serial-out capture directly. The greenfield host attaches no
+    // native roles, so it drives the gate through this (e.g. when a system's
+    // TS lsdj-sync mode is MIDIOUT) instead of via a role's wantsSerialOut().
+    // A model-change restart re-runs instantiateRoles(), which recomputes the
+    // gate from roles_ (none in greenfield → false), so the host re-arms then.
+    void setSerialOutCapture(bool on) { serialOutEnabled_ = on; }
     void captureSerialOutBit(bool bit);
 
     // TODO: Not a fan of the public vars
