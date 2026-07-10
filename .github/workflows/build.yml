@@ -96,8 +96,11 @@ jobs:
 
   windows:
     runs-on: windows-2022
-    # Newly wired and not yet verified on a runner; don't let it block the
-    # trustworthy Linux job. Remove once the Windows build is confirmed green.
+    # Non-blocking: the CI plumbing here is correct (submodules, RGBDS, vcpkg
+    # sdl2+libffi, build.bat all run), but the reworked tree has a pre-existing
+    # Windows build break — DPF's DGL/NanoVG fails to compile under MSVC (GL2+
+    # symbols undeclared), and spec/07-migration.md lists 4 unported Windows
+    # link fixes on top. Drop continue-on-error once the Windows build compiles.
     continue-on-error: true
     env:
       # build.bat defaults VCPKG_ROOT to C:\code\vcpkg; point it at the runner's
@@ -163,12 +166,10 @@ jobs:
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.dll
 
-  # macOS is newly wired and unproven (no prior macOS build). A single native
-  # arm64 build check; universal + codesign/notarization are future work.
+  # Native arm64 build check (proven green). Universal + codesign/notarization
+  # and the AU target are future work.
   macos:
     runs-on: macos-14
-    # Unproven (no prior macOS build); don't block the workflow. Remove once green.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
