@@ -35,6 +35,15 @@ jobs:
             libsdl2-dev \
             xvfb
 
+      - name: Install RGBDS (boot-ROM assembler)
+        run: |
+          set -eux
+          tmp="$(mktemp -d)"; cd "$tmp"
+          curl -fsSL "https://github.com/gbdev/rgbds/releases/download/v1.0.1/rgbds-linux-x86_64.tar.xz" -o rgbds.tar.xz
+          tar -xJf rgbds.tar.xz
+          sudo install -m 0755 rgbasm rgblink rgbgfx rgbfix /usr/local/bin/
+          rgbasm --version
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
