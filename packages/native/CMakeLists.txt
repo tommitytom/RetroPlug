@@ -201,7 +201,7 @@ add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
 # Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
 # legacy `retroplug` (they coexist).
 dpf_add_plugin(retroplug
-    TARGETS clap vst3 vst2 jack
+    TARGETS clap vst3 vst2 au jack  # au is macOS-only (DPF gates it to APPLE; a no-op elsewhere)
     USE_FILE_BROWSER                    # native OS file dialog (matches DISTRHO_UI_FILE_BROWSER)
     FILES_DSP
         plugin/PluginDSP.cpp
