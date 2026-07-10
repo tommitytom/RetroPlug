@@ -90,6 +90,7 @@ jobs:
           if-no-files-found: warn
           path: |
             build/bin/retroplug
+            build/bin/retroplug-cli
             build/bin/retroplug.clap
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.so
@@ -162,6 +163,7 @@ jobs:
           if-no-files-found: warn
           path: |
             build/bin/retroplug.exe
+            build/bin/retroplug-cli.exe
             build/bin/retroplug.clap
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.dll
@@ -209,6 +211,7 @@ jobs:
           if-no-files-found: warn
           path: |
             build/bin/retroplug
+            build/bin/retroplug-cli
             build/bin/retroplug.clap
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.dylib
