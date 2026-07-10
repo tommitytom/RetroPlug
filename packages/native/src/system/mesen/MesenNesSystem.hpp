@@ -80,8 +80,6 @@ public:
     // renders never init Mesen's debugger). nullptr until activated.
     rp::IDebugTarget* debugTarget() override;
 
-    SystemConfig snapshotConfig() const override;
-
     // SystemBase virtuals — see base class for contracts.
     const std::string&        romPath() const override        { return config_.romPath; }
     std::uint32_t             savSuffix() const override      { return config_.savSuffix; }

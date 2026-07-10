@@ -72,8 +72,6 @@ public:
     std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
     std::uint64_t                stepInstruction() override;
 
-    SystemConfig snapshotConfig() const override;
-
     // The SystemBase per-block triad (see base for the contract). The runner
     // (runUnit) round-robins stepIfBelowTarget across a link group's members so
     // GB_run() interleaves and serial bits ferry mid-block; a standalone system

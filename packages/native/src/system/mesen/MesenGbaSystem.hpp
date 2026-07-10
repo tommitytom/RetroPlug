@@ -70,8 +70,6 @@ public:
     std::optional<std::uint8_t>  readCpuByte(std::uint32_t addr) const override;
     std::uint64_t stepInstruction() override;
 
-    SystemConfig snapshotConfig() const override;
-
     // SystemBase virtuals — see base class for contracts.
     const std::string&        romPath() const override        { return config_.romPath; }
     std::uint32_t             savSuffix() const override      { return config_.savSuffix; }

@@ -410,18 +410,6 @@ std::uint64_t MesenGbaSystem::stepInstruction() {
     return after - before;
 }
 
-SystemConfig MesenGbaSystem::snapshotConfig() const {
-    MesenGbaConfig out = config_;
-    if (out.embedRom) {
-        out.romBytes = rom_;
-    } else {
-        out.romBytes.clear();
-    }
-    out.sram      = saveSramBytes();
-    out.savestate = saveStateBytes();
-    return out;
-}
-
 void MesenGbaSystem::setFastBoot(bool on) {
     if (config_.skipBootScreen == on) return;
     config_.skipBootScreen = on;

@@ -79,7 +79,7 @@ struct SameBoyConfig {
     // Binary blobs live in the .rplg zip as raw entries (see ProjectBinaries).
     // In project.json they always serialize as `[]` because ProjectSerialization
     // strips them before the JSON pass.
-    std::vector<std::uint8_t> romBytes;   // populated when embedRom (snapshotConfig)
+    std::vector<std::uint8_t> romBytes;   // populated when embedRom
     // Cartridge battery RAM (.sav contents). Path-based ROM loads slurp the
     // sibling `<rom>.sav` once and stash it here; subsequent host-project
     // saves serialize whatever the running emulator currently has, so the

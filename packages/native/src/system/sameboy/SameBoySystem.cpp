@@ -705,35 +705,3 @@ std::uint64_t SameBoySystem::stepInstruction() {
     return static_cast<std::uint64_t>(GB_run(gb_));
 }
 
-SystemConfig SameBoySystem::snapshotConfig() const {
-    SameBoyConfig out = config_;
-    if (out.embedRom) {
-        out.romBytes = rom_;
-    } else {
-        out.romBytes.clear();
-    }
-    if (gb_) {
-        const std::size_t saveSize = GB_get_save_state_size((GB_gameboy_t*)gb_);
-        std::vector<std::uint8_t> save(saveSize);
-        GB_save_state_to_buffer((GB_gameboy_t*)gb_, save.data());
-        out.savestate = std::move(save);
-
-        // Capture cartridge battery RAM. Returns 0 for carts without a
-        // battery (RTC-only or none) — those simply don't carry an `sram`.
-        const int sramSize = GB_save_battery_size((GB_gameboy_t*)gb_);
-        if (sramSize > 0) {
-            std::vector<std::uint8_t> sram(static_cast<std::size_t>(sramSize));
-            if (GB_save_battery_to_buffer((GB_gameboy_t*)gb_, sram.data(), sram.size()) == 0) {
-                out.sram = std::move(sram);
-            } else {
-                out.sram.clear();
-            }
-        } else {
-            out.sram.clear();
-        }
-    } else {
-        out.savestate.clear();
-        out.sram.clear();
-    }
-    return out;
-}

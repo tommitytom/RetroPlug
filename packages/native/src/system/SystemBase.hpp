@@ -23,10 +23,6 @@ namespace rp { class IDebugTarget; }
 // Polymorphic runtime representation of one emulator instance. Owned by the
 // DSP thread inside Project. Concrete subclasses: SameBoySystem, MesenNesSystem
 // (NES), MesenGbaSystem.
-//
-// Persistence: snapshotConfig() returns a plain-data SystemConfig that the
-// DSP can serialize via reflectcpp from getState(). The runtime polymorphic
-// state never enters the JSON path.
 class SystemBase {
 public:
     explicit SystemBase(SystemId id) : id_(id) {}
@@ -95,10 +91,6 @@ public:
     // after onProcess.
     std::vector<::MidiEvent>&       midiOut()       { return midiOut_; }
     const std::vector<::MidiEvent>& midiOut() const { return midiOut_; }
-
-    // Round-trips current state back to a plain-data config. Called from
-    // Plugin::getState (rare; off-path). May allocate.
-    virtual SystemConfig snapshotConfig() const = 0;
 
     // -- Per-system menu actions --------------------------------------------
     //

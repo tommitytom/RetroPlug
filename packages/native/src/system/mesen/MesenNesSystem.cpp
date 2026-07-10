@@ -441,18 +441,6 @@ std::uint64_t MesenNesSystem::stepInstruction() {
     return after - before;
 }
 
-SystemConfig MesenNesSystem::snapshotConfig() const {
-    MesenNesConfig out = config_;
-    if (out.embedRom) {
-        out.romBytes = rom_;
-    } else {
-        out.romBytes.clear();
-    }
-    out.sram      = saveSramBytes();
-    out.savestate = saveStateBytes();
-    return out;
-}
-
 std::vector<std::uint8_t> MesenNesSystem::saveSramBytes() const {
     if (!emu_) return {};
     auto* self = const_cast<MesenNesSystem*>(this);
