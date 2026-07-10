@@ -26,7 +26,10 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 extern "C" {
@@ -56,14 +59,15 @@ bool hasGlobalFunction(JSContext* ctx, const char* name) {
     return ok;
 }
 
-// Installs __rp_setWindowSize(w,h) / __rp_isWindowSizeControlled() / __rp_openFileBrowser(...) on `ctx`,
-// routed to `ui`. The greenfield analog of legacy's setWindowSizeCallback / file-browser RPC seams: the
-// editor isn't on the backend RPC side, so it hangs native C-functions on the shared context (the
-// RenderCore installTestIdHook pattern). The UI optional-chains them, so they are inert where absent (the
-// headless harness). clearWindowSizeHooks un-points the target on editor teardown (the globals outlive us
-// on the persistent context).
+// Installs __rp_setWindowSize(w,h) / __rp_isWindowSizeControlled() / __rp_openFileBrowser(...) etc. on
+// `ctx`, routed to `ui`. The greenfield analog of legacy's setWindowSizeCallback / file-browser RPC seams:
+// the editor isn't on the backend RPC side, so it hangs native C-functions on the shared context. Each
+// hook carries its editor through per-context func-data (not a process-global), so concurrent plugin
+// instances — each with its own control-plane context — never cross-route into one another's window. The
+// UI optional-chains them, so they are inert where absent (the headless harness). clearWindowSizeHooks
+// un-points this editor's per-context target on teardown (the hooks outlive us on the persistent context).
 void installWindowSizeHooks(JSContext* ctx, PluginUI* ui);
-void clearWindowSizeHooks(PluginUI* ui);
+void clearWindowSizeHooks(JSContext* ctx, PluginUI* ui);
 } // namespace
 
 class PluginUI : public UI {
@@ -289,7 +293,7 @@ public:
     ~PluginUI() override {
         // Unmount (→ __rp_unmountUI) + flush the async widget deletes while the context is still alive,
         // leaving the shared host clean for the next editor session.
-        clearWindowSizeHooks(this); // the __rp_* globals outlive us on the shared context — un-point them
+        clearWindowSizeHooks(jsEngine.getContext(), this); // hooks outlive us on the shared context — un-point our target
         jsEngine.detachDisplay();
         lv_timer_handler();
         if (lv_obj_t* screen = lv_screen_active()) lv_obj_clean(screen);
@@ -420,46 +424,77 @@ protected:
 };
 
 namespace {
-// One editor at a time (single runtime, one window) — the same static-pointer recovery pattern
-// RenderCore uses for its testId hook. The JS C-functions below stay installed on the persistent shared
-// context across editor sessions; they no-op whenever g_windowUi is null (between / after sessions).
-PluginUI* g_windowUi = nullptr;
+// Per-context routing for the window-op hooks. Each plugin instance owns its own control-plane JSContext
+// (PluginDSP::host_, reached via useExternalHost), and a DAW can have several instances — several editors
+// — open at once. A single process-global target would misroute one instance's window calls into whichever
+// editor opened last, and go dead as soon as that one closed. So each __rp_* C-function instead carries a
+// stable WindowUiTarget* through its QuickJS func-data — the JS_NewCFunctionData mechanism
+// TjsHostRuntime::bindRpcSend uses — and reads ->ui at call time, needing no global to find its editor. The
+// hooks are bound once and outlive the editor on the persistent context, so editor open/close just
+// re-points / nulls ->ui. The target is owned per-context by g_windowTargets (unique_ptrs freed at process
+// exit — no per-instance leak, and a live editor is never dereferenced through a stale one's context).
+struct WindowUiTarget {
+    PluginUI* ui = nullptr;
+};
 
-JSValue jsSetWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_windowUi && argc >= 2) {
+std::unordered_map<JSContext*, std::unique_ptr<WindowUiTarget>> g_windowTargets;
+
+WindowUiTarget* windowTargetFor(JSContext* ctx) {
+    auto& slot = g_windowTargets[ctx];
+    if (!slot) slot = std::make_unique<WindowUiTarget>();
+    return slot.get();
+}
+
+// The editor a hook was bound with: funcData[0] is an ArrayBuffer of the WindowUiTarget* pointer bytes
+// (exactly as rpcSendThunk carries its RpcSendFn*). Null between / after editor sessions — callers no-op.
+PluginUI* windowUiFromData(JSContext* ctx, JSValue* funcData) {
+    std::size_t len = 0;
+    std::uint8_t* p = JS_GetArrayBuffer(ctx, &len, funcData[0]);
+    if (!p || len != sizeof(WindowUiTarget*)) return nullptr;
+    WindowUiTarget* target = nullptr;
+    std::memcpy(&target, p, sizeof(target));
+    return target ? target->ui : nullptr;
+}
+
+JSValue jsSetWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    PluginUI* ui = windowUiFromData(ctx, funcData);
+    if (ui && argc >= 2) {
         std::uint32_t w = 0, h = 0;
         JS_ToUint32(ctx, &w, argv[0]);
         JS_ToUint32(ctx, &h, argv[1]);
-        g_windowUi->requestWindowSize(w, h);
+        ui->requestWindowSize(w, h);
     }
     return JS_UNDEFINED;
 }
 
-JSValue jsIsWindowSizeControlled(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-    return JS_NewBool(ctx, g_windowUi && g_windowUi->isWindowSizeControlled());
+JSValue jsIsWindowSizeControlled(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSValue* funcData) {
+    PluginUI* ui = windowUiFromData(ctx, funcData);
+    return JS_NewBool(ctx, ui && ui->isWindowSizeControlled());
 }
 
 // __rp_quitWindow(): close the standalone for real after the unsaved-changes prompt resolves.
-JSValue jsQuitWindow(JSContext*, JSValueConst, int, JSValueConst*) {
-    if (g_windowUi) g_windowUi->requestQuit();
+JSValue jsQuitWindow(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSValue* funcData) {
+    if (PluginUI* ui = windowUiFromData(ctx, funcData)) ui->requestQuit();
     return JS_UNDEFINED;
 }
 
 // __rp_openPath(path): reveal a folder/file in the OS file manager (Settings -> Open Settings Folder).
-JSValue jsOpenPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_windowUi && argc >= 1) {
+JSValue jsOpenPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    PluginUI* ui = windowUiFromData(ctx, funcData);
+    if (ui && argc >= 1) {
         const char* path = JS_ToCString(ctx, argv[0]);
-        g_windowUi->openPath(path ? path : "");
+        ui->openPath(path ? path : "");
         if (path) JS_FreeCString(ctx, path);
     }
     return JS_UNDEFINED;
 }
 
 // __rp_setWindowTitle(title): set the standalone OS window title (the UI composes it from version + project).
-JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_windowUi && argc >= 1) {
+JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    PluginUI* ui = windowUiFromData(ctx, funcData);
+    if (ui && argc >= 1) {
         const char* title = JS_ToCString(ctx, argv[0]);
-        g_windowUi->setWindowTitle(title ? title : "");
+        ui->setWindowTitle(title ? title : "");
         if (title) JS_FreeCString(ctx, title);
     }
     return JS_UNDEFINED;
@@ -467,14 +502,15 @@ JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
 
 // __rp_openFileBrowser(title, patterns, saving, defaultName): open the native OS dialog. patterns is a
 // whitespace-separated glob list. The result comes back later via the UI's uiFileBrowserSelected override.
-JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_windowUi && argc >= 4) {
+JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    PluginUI* ui = windowUiFromData(ctx, funcData);
+    if (ui && argc >= 4) {
         const char* title       = JS_ToCString(ctx, argv[0]);
         const char* patterns    = JS_ToCString(ctx, argv[1]);
         const int   saving      = JS_ToBool(ctx, argv[2]);
         const char* defaultName = JS_ToCString(ctx, argv[3]);
-        g_windowUi->requestFileBrowser(title ? title : "", patterns ? patterns : "", saving == 1,
-                                       defaultName ? defaultName : "");
+        ui->requestFileBrowser(title ? title : "", patterns ? patterns : "", saving == 1,
+                               defaultName ? defaultName : "");
         if (title) JS_FreeCString(ctx, title);
         if (patterns) JS_FreeCString(ctx, patterns);
         if (defaultName) JS_FreeCString(ctx, defaultName);
@@ -484,20 +520,30 @@ JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* 
 
 void installWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
     if (!ctx) return;
-    g_windowUi = ui;
+    WindowUiTarget* target = windowTargetFor(ctx);
+    target->ui = ui;
+    // The hooks live on the persistent control-plane context and outlive this editor session; bind them
+    // once per context, then editor open/close only re-points the target (above / clearWindowSizeHooks).
+    if (hasGlobalFunction(ctx, "__rp_setWindowSize")) return;
+
     JSValue g = JS_GetGlobalObject(ctx);
-    JS_SetPropertyStr(ctx, g, "__rp_setWindowSize", JS_NewCFunction(ctx, jsSetWindowSize, "__rp_setWindowSize", 2));
-    JS_SetPropertyStr(ctx, g, "__rp_isWindowSizeControlled",
-                      JS_NewCFunction(ctx, jsIsWindowSizeControlled, "__rp_isWindowSizeControlled", 0));
-    JS_SetPropertyStr(ctx, g, "__rp_openFileBrowser", JS_NewCFunction(ctx, jsOpenFileBrowser, "__rp_openFileBrowser", 4));
-    JS_SetPropertyStr(ctx, g, "__rp_quitWindow", JS_NewCFunction(ctx, jsQuitWindow, "__rp_quitWindow", 0));
-    JS_SetPropertyStr(ctx, g, "__rp_openPath", JS_NewCFunction(ctx, jsOpenPath, "__rp_openPath", 1));
-    JS_SetPropertyStr(ctx, g, "__rp_setWindowTitle", JS_NewCFunction(ctx, jsSetWindowTitle, "__rp_setWindowTitle", 1));
+    auto bind = [&](const char* name, JSCFunctionData* fn, int length) {
+        JSValue data = JS_NewArrayBufferCopy(ctx, reinterpret_cast<const std::uint8_t*>(&target), sizeof(target));
+        JS_SetPropertyStr(ctx, g, name, JS_NewCFunctionData(ctx, fn, length, 0, 1, &data));
+        JS_FreeValue(ctx, data);
+    };
+    bind("__rp_setWindowSize", jsSetWindowSize, 2);
+    bind("__rp_isWindowSizeControlled", jsIsWindowSizeControlled, 0);
+    bind("__rp_openFileBrowser", jsOpenFileBrowser, 4);
+    bind("__rp_quitWindow", jsQuitWindow, 0);
+    bind("__rp_openPath", jsOpenPath, 1);
+    bind("__rp_setWindowTitle", jsSetWindowTitle, 1);
     JS_FreeValue(ctx, g);
 }
 
-void clearWindowSizeHooks(PluginUI* ui) {
-    if (g_windowUi == ui) g_windowUi = nullptr;
+void clearWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
+    auto it = g_windowTargets.find(ctx);
+    if (it != g_windowTargets.end() && it->second->ui == ui) it->second->ui = nullptr;
 }
 } // namespace
 
