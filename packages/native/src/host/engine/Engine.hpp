@@ -9,8 +9,8 @@
 #include "project/Project.hpp"
 #include "system/AudioRouting.hpp"
 
-#include "DspRuntime.hpp"
-#include "SnapshotRegistry.hpp"
+#include "host/dsp/DspRuntime.hpp"
+#include "host/engine/SnapshotRegistry.hpp"
 
 struct AudioRouter;  // BlockRunner.hpp — the per-block bus-placement policy (used by ref below)
 

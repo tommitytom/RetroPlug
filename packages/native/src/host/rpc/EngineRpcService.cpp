@@ -1,4 +1,4 @@
-#include "EngineRpcService.hpp"
+#include "host/rpc/EngineRpcService.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -6,12 +6,12 @@
 #include <iterator>
 #include <utility>
 
-#include "Engine.hpp"
-#include "EngineInvoker.hpp"
-#include "MesenBackend.hpp"
-#include "SameBoyBackend.hpp"
-#include "ScriptCompiler.hpp"
-#include "SystemFactory.hpp"
+#include "host/engine/Engine.hpp"
+#include "host/engine/EngineInvoker.hpp"
+#include "host/backends/MesenBackend.hpp"
+#include "host/backends/SameBoyBackend.hpp"
+#include "host/dsp/ScriptCompiler.hpp"
+#include "host/backends/SystemFactory.hpp"
 
 #include "EmbeddedRoms.hpp"
 #include "system/MemoryType.hpp"  // rp::MemoryType / rp::AccessType (readMemory)

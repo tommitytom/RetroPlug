@@ -16,7 +16,7 @@
 
 #include "RenderCore.hpp"
 
-#include "BackendFacade.hpp"
+#include "host/rpc/BackendFacade.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"

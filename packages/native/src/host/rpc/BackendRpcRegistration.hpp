@@ -4,7 +4,7 @@
 // cli/HarnessRpcRegistration.hpp). Registers each method on the rpcpp server. The bound type is the
 // thin BackendFacade (one object per server); each method identifier IS the wire name.
 
-#include "BackendFacade.hpp"
+#include "host/rpc/BackendFacade.hpp"
 
 template <class Server>
 void registerBackendRpcMethods(Server& server) {

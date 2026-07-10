@@ -75,18 +75,18 @@ set_target_properties(retroplug-core PROPERTIES
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
 add_library(retroplug-backend STATIC
-    src/BackendFacade.cpp         # thin facade: owns the shared state, forwards to the 3 services
-    src/HostRpcService.cpp        # fs / config / codec / sav (pure, stateless)
-    src/EngineRpcService.cpp      # emulator surface over Engine + Invoker + Factory
-    src/AudioDriverRpcService.cpp # background audio thread + observation atomics
-    src/Engine.cpp                # single-threaded core: owns Project + DspRuntime, runs blocks
-    src/SnapshotRegistry.cpp      # owned id-keyed frame/state/SRAM store — the control plane's one read door
-    src/EngineInvoker.cpp         # Direct/Queued invokers — the only threading-aware layer
-    src/SystemFactory.cpp         # backend-agnostic build registry (the one build path)
-    src/SameBoyBackend.cpp        # SameBoy builder — the only place SameBoyConfig is constructed
-    src/MesenBackend.cpp          # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
-    src/ScriptCompiler.cpp        # bare-QuickJS bytecode compiler (DSP-side JS runtime)
-    src/DspRuntime.cpp            # second bare QuickJS context — runs translator scripts
+    src/host/rpc/BackendFacade.cpp          # thin facade: owns the shared state, forwards to the 3 services
+    src/host/rpc/HostRpcService.cpp         # fs / config / codec / sav (pure, stateless)
+    src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
+    src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
+    src/host/engine/Engine.cpp              # single-threaded core: owns Project + DspRuntime, runs blocks
+    src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
+    src/host/engine/EngineInvoker.cpp       # Direct/Queued invokers — the only threading-aware layer
+    src/host/backends/SystemFactory.cpp     # backend-agnostic build registry (the one build path)
+    src/host/backends/SameBoyBackend.cpp    # SameBoy builder — the only place SameBoyConfig is constructed
+    src/host/backends/MesenBackend.cpp      # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
+    src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (DSP-side JS runtime)
+    src/host/dsp/DspRuntime.cpp             # second bare QuickJS context — runs translator scripts
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
 )
 
@@ -208,16 +208,15 @@ dpf_add_plugin(retroplug
         ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     FILES_UI
         plugin/PluginUI.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input; re-homed here from packages/native/src)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
         ${UI_BUNDLE_C}                # the embedded React UI bytecode (rp_ui_bundle)
         ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)  # the generic DPF↔LVGL base widget
 
-# plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h, not the legacy one that arrives transitively
-# via retroplug-core's packages/native/src include. dpf-widgets/generic resolves "LVGL.hpp".
+# plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h ahead of DPF's own default. The `src` root
+# (for "host/input/GamepadManager.hpp") arrives transitively PUBLIC via retroplug-backend.
+# dpf-widgets/generic resolves "LVGL.hpp".
 target_include_directories(retroplug BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
 target_include_directories(retroplug PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
-# GamepadManager.hpp lives in src/input/ (shared UI-thread input, re-homed from packages/native/src).
-target_include_directories(retroplug PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/input)
 
 target_link_libraries(retroplug PUBLIC
     retroplug-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp

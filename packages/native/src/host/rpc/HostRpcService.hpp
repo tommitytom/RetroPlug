@@ -7,7 +7,7 @@
 
 #include <rfl/Bytestring.hpp>
 
-#include "BackendTypes.hpp"
+#include "host/rpc/BackendTypes.hpp"
 
 // The fs / config / codec half of the greenfield Backend: std::filesystem + miniz + config-dir
 // resolution + LSDJ sav authoring. Pure and stateless — no Engine, no threads — so it's reusable

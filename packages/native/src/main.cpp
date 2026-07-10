@@ -20,8 +20,8 @@
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
-#include "BackendFacade.hpp"
-#include "BackendRpcRegistration.hpp"
+#include "host/rpc/BackendFacade.hpp"
+#include "host/rpc/BackendRpcRegistration.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"

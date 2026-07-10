@@ -9,8 +9,8 @@
 #include "system/SystemTypes.hpp"  // SystemId
 #include "transport/SpscRing.hpp"
 
-#include "DspCommand.hpp"
-#include "DspEvent.hpp"
+#include "host/engine/DspCommand.hpp"
+#include "host/engine/DspEvent.hpp"
 
 class Engine;
 class SystemBase;

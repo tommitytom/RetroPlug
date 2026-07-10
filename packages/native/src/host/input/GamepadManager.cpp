@@ -1,4 +1,4 @@
-#include "GamepadManager.hpp"
+#include "host/input/GamepadManager.hpp"
 
 #include <SDL.h>
 #include "DistrhoUtils.hpp"

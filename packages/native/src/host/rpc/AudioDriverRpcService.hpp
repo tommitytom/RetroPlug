@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <thread>
 
-#include "BackendTypes.hpp"
+#include "host/rpc/BackendTypes.hpp"
 
 class Engine;
 class QueuedInvoker;

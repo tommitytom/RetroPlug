@@ -1,4 +1,4 @@
-#include "HostRpcService.hpp"
+#include "host/rpc/HostRpcService.hpp"
 
 #include <cstddef>
 #include <cstdlib>

@@ -17,9 +17,9 @@
 
 #include "PluginShared.hpp"     // SharedDSP handoff to the editor
 
-#include "BackendFacade.hpp"
+#include "host/rpc/BackendFacade.hpp"
 #include "Version.hpp"                    // single source of truth for the plugin version
-#include "BackendRpcRegistration.hpp"
+#include "host/rpc/BackendRpcRegistration.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"

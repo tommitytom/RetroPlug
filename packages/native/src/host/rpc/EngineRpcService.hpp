@@ -7,8 +7,8 @@
 
 #include <rfl/Bytestring.hpp>
 
-#include "BackendTypes.hpp"
-#include "DspRuntime.hpp"  // DspAllocStats / DspGcResult (lean header, no quickjs types)
+#include "host/rpc/BackendTypes.hpp"
+#include "host/dsp/DspRuntime.hpp"  // DspAllocStats / DspGcResult (lean header, no quickjs types)
 #include "system/CpuState.hpp"    // rp::CpuRegister
 #include "system/DebugTarget.hpp" // rp::ApuState (the live-core debug reads)
 

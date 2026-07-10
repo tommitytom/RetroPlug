@@ -1,4 +1,4 @@
-#include "SnapshotRegistry.hpp"
+#include "host/engine/SnapshotRegistry.hpp"
 
 #include <cstdio>
 #include <cstring>

@@ -21,7 +21,7 @@
 #include "dpfjs/Env.hpp"                 // dpfjs::getenvWithPrefix
 
 #include "PluginShared.hpp"
-#include "GamepadManager.hpp" // SDL controller poll (src/input/, greenfield tree)
+#include "host/input/GamepadManager.hpp" // SDL controller poll (shared UI-thread input)
 
 #include <chrono>
 #include <cstdint>

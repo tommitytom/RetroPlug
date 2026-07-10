@@ -1,9 +1,9 @@
-#include "BackendFacade.hpp"
+#include "host/rpc/BackendFacade.hpp"
 
 #include <memory>
 
-#include "MesenBackend.hpp"
-#include "SameBoyBackend.hpp"
+#include "host/backends/MesenBackend.hpp"
+#include "host/backends/SameBoyBackend.hpp"
 
 BackendFacade::BackendFacade() {
     // The one build path: a backend per core, keyed by the `core` value. Mesen serves both NES and

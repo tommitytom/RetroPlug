@@ -1,4 +1,4 @@
-#include "ScriptCompiler.hpp"
+#include "host/dsp/ScriptCompiler.hpp"
 
 extern "C" {
 #include "quickjs.h"

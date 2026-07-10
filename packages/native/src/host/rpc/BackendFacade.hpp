@@ -8,13 +8,13 @@
 
 #include <rfl/Bytestring.hpp>
 
-#include "AudioDriverRpcService.hpp"
-#include "BackendTypes.hpp"
-#include "Engine.hpp"
-#include "EngineInvoker.hpp"
-#include "EngineRpcService.hpp"
-#include "HostRpcService.hpp"
-#include "SystemFactory.hpp"
+#include "host/rpc/AudioDriverRpcService.hpp"
+#include "host/rpc/BackendTypes.hpp"
+#include "host/engine/Engine.hpp"
+#include "host/engine/EngineInvoker.hpp"
+#include "host/rpc/EngineRpcService.hpp"
+#include "host/rpc/HostRpcService.hpp"
+#include "host/backends/SystemFactory.hpp"
 
 // One object per RPC server. Owns the shared Engine + invokers + factory + audio-running flag, and
 // has-a the three concern-separated services (fs/config/codec, emulator/kernel, audio thread). Every

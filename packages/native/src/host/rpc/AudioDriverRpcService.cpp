@@ -1,11 +1,11 @@
-#include "AudioDriverRpcService.hpp"
+#include "host/rpc/AudioDriverRpcService.hpp"
 
 #include <chrono>
 #include <memory>
 #include <vector>
 
-#include "Engine.hpp"
-#include "EngineInvoker.hpp"
+#include "host/engine/Engine.hpp"
+#include "host/engine/EngineInvoker.hpp"
 
 #include "system/SystemBase.hpp"  // complete type for unique_ptr<SystemBase> deletion
 
