@@ -6,7 +6,7 @@
 // greenfield BackendFacade: it binds the facade's RPC surface as `__rpcSend` on
 // globalThis[Symbol.for("plugin")] — the exact namespace realBackend.ts targets — then evals the
 // greenfield UI bundle and mounts React. This is the plugin's control-plane bring-up
-// (PluginGreenfieldDSP::bootControlPlane) minus the audio thread, plus a display.
+// (PluginDSP::bootControlPlane) minus the audio thread, plus a display.
 //
 // The bind is synchronous (the reply is materialized inline in __rpcSend) to match realBackend.ts's
 // synchronous JSON-RPC client — no async "rpc-message"/pumpAsync path.
@@ -23,13 +23,13 @@
 
 namespace rpuigf {
 
-class GreenfieldUiHarness {
+class UiHarness {
 public:
-    explicit GreenfieldUiHarness(std::uint32_t width = 480, std::uint32_t height = 432);
-    ~GreenfieldUiHarness();
+    explicit UiHarness(std::uint32_t width = 480, std::uint32_t height = 432);
+    ~UiHarness();
 
-    GreenfieldUiHarness(const GreenfieldUiHarness&) = delete;
-    GreenfieldUiHarness& operator=(const GreenfieldUiHarness&) = delete;
+    UiHarness(const UiHarness&) = delete;
+    UiHarness& operator=(const UiHarness&) = delete;
 
     // Bring up the render scaffold, bind the BackendFacade RPC, eval the greenfield UI bundle, and
     // mount React. Returns false if any stage fails. Call once.

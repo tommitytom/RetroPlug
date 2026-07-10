@@ -15,7 +15,7 @@
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
-#include "PluginGreenfieldShared.hpp"     // GreenfieldSharedDSP handoff to the editor
+#include "PluginShared.hpp"     // SharedDSP handoff to the editor
 
 #include "BackendFacade.hpp"
 #include "Version.hpp"                    // single source of truth for the plugin version
@@ -24,17 +24,17 @@
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 
-// The embedded control-plane bundle (bytecode) — build/native-greenfield/cp-bundle_data.c, gfcp_ prefix.
+// The embedded control-plane bundle (bytecode) — build/native-greenfield/cp-bundle_data.c, rp_ prefix.
 extern "C" {
-extern const std::uint8_t  gfcp_cp_bundle[];
-extern const std::uint32_t gfcp_cp_bundle_size;
+extern const std::uint8_t  rp_cp_bundle[];
+extern const std::uint32_t rp_cp_bundle_size;
 }
 
 START_NAMESPACE_DISTRHO
 
 using GreenfieldRpcServer = rpcpp::TypedRpcServer<BackendFacade, rpcpp::QuickJSCodec>;
 
-class PluginGreenfieldDSP : public Plugin {
+class PluginDSP : public Plugin {
     // Control-plane runtime (main-thread only): the txiki context + the facade it drives over __rpcSend.
     TjsHostRuntime host_;
     BackendFacade  service_;
@@ -46,10 +46,10 @@ class PluginGreenfieldDSP : public Plugin {
 
 public:
     // In-process handoff to the editor: exposes host_ so a DPF UI can attach its LVGL display to the
-    // control-plane context (where __rpcSend is already bound). Public so getGreenfieldSharedDSP reaches it.
-    GreenfieldSharedDSP shared_{};
+    // control-plane context (where __rpcSend is already bound). Public so getSharedDSP reaches it.
+    SharedDSP shared_{};
 
-    PluginGreenfieldDSP() : Plugin(1 /*params*/, 0 /*programs*/, 1 /*states*/) {
+    PluginDSP() : Plugin(1 /*params*/, 0 /*programs*/, 1 /*states*/) {
         bootControlPlane();
     }
 
@@ -111,7 +111,7 @@ protected:
     }
     String getState(const char* key) const override {
         if (std::strcmp(key, "project") != 0) return String();
-        return String(const_cast<PluginGreenfieldDSP*>(this)->callGlobal("__rp_saveProjectB64", nullptr).c_str());
+        return String(const_cast<PluginDSP*>(this)->callGlobal("__rp_saveProjectB64", nullptr).c_str());
     }
     void setState(const char* key, const char* value) override {
         if (std::strcmp(key, "project") != 0) return;
@@ -191,7 +191,7 @@ private:
 
         // Eval the control-plane bundle (composes stores + kernel, defines the __rp_* globals), then
         // pump until it signals ready (the composition is synchronous; a bounded pump covers module eval).
-        host_.evalModuleBytecode(gfcp_cp_bundle, gfcp_cp_bundle_size);
+        host_.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
         for (int i = 0; i < 1000 && !readReady(); ++i) host_.pump();
         jsReady_ = readReady();
         if (!jsReady_) { d_stderr("[greenfield] control plane not ready"); return; }
@@ -262,11 +262,11 @@ private:
     }
 };
 
-Plugin* createPlugin() { return new PluginGreenfieldDSP(); }
+Plugin* createPlugin() { return new PluginDSP(); }
 
 // In-process handoff: the editor calls this with getPluginInstancePointer() to reach the shared host.
-GreenfieldSharedDSP* getGreenfieldSharedDSP(void* pluginPtr) {
-    return &static_cast<PluginGreenfieldDSP*>(pluginPtr)->shared_;
+SharedDSP* getSharedDSP(void* pluginPtr) {
+    return &static_cast<PluginDSP*>(pluginPtr)->shared_;
 }
 
 END_NAMESPACE_DISTRHO

@@ -166,7 +166,7 @@ bool RenderCore::init() {
     // --- JS engine ----------------------------------------------------------
     if (!engine_.init()) return false;
 
-    // Match PluginGreenfieldUI: black screen + strip the theme's rounded border/padding and the scrollable
+    // Match PluginUI: black screen + strip the theme's rounded border/padding and the scrollable
     // flag, so the headless snapshot is chrome-free the same way the plugin's window is.
     if (lv_obj_t* scr = lv_screen_active()) {
         lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), 0);

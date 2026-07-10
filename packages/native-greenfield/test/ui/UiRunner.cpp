@@ -5,7 +5,7 @@
 // the exit code through globalThis.tjs.exit — so this runner just boots the harness, installs the
 // `retroplug-ui` (`ui.*`) namespace + the tjs.exit hook, evals the test bundle, and drives the JS job
 // loop until the harness exits. The harness boots the greenfield React UI on a headless software LVGL
-// display (RenderCore) driven by the BackendFacade RPC (GreenfieldUiHarness). Only the render-tree
+// display (RenderCore) driven by the BackendFacade RPC (UiHarness). Only the render-tree
 // surface is exposed; system state is driven through the stores over the bound BackendFacade RPC.
 //
 //   retroplug-greenfield-ui-test --test <bundle.js>
@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-#include "GreenfieldUiHarness.hpp"
+#include "UiHarness.hpp"
 
 extern "C" {
     #include <quickjs.h>   // JS_* (the runtime itself is owned by the harness's engine)
@@ -28,7 +28,7 @@ extern "C" {
 
 namespace {
 
-std::unique_ptr<rpuigf::GreenfieldUiHarness> g_harness;
+std::unique_ptr<rpuigf::UiHarness> g_harness;
 
 // The exit code the harness reports through globalThis.tjs.exit(). One runner per process,
 // single-threaded (mirrors native-greenfield-host's g_exit).
@@ -298,7 +298,7 @@ int runUiTestFile(const std::string& jsPath) {
     // Boot the harness FIRST: it owns the single JS runtime (LvglJsEngine) + the headless display +
     // the BackendFacade RPC bridge + the greenfield UI bundle. The test bundle runs IN this runtime.
     try {
-        g_harness = std::make_unique<rpuigf::GreenfieldUiHarness>();
+        g_harness = std::make_unique<rpuigf::UiHarness>();
         if (!g_harness->boot()) { std::fprintf(stderr, "greenfield UI harness boot failed\n"); return 1; }
     } catch (const std::exception& e) {
         std::fprintf(stderr, "greenfield UI harness boot: %s\n", e.what());

@@ -170,16 +170,16 @@ add_custom_target(retroplug-example-session ALL
 
 # --- control-plane bundle: pluginControlPlane.ts → bytecode C array (mirrors ui-regenerate). The DPF
 # plugin evals this at construct to compose the stores + DSP kernel. Derived; never committed.
-set(GFCP_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle.js")
-set(GFCP_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle_data.c")
-set_source_files_properties(${GFCP_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the plugin compiles
+set(CP_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle.js")
+set(CP_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle_data.c")
+set_source_files_properties(${CP_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the plugin compiles
 
 add_custom_target(retroplug-cp-bundle ALL
-    BYPRODUCTS ${GFCP_BUNDLE_JS} ${GFCP_BUNDLE_C} ${GFCP_BUNDLE_C}.new
+    BYPRODUCTS ${CP_BUNDLE_JS} ${CP_BUNDLE_C} ${CP_BUNDLE_C}.new
     COMMAND ${NODE_EXECUTABLE}
-            ${CMAKE_SOURCE_DIR}/tools/build-greenfield-controlplane.js ${GFCP_BUNDLE_JS}
-    COMMAND ${_TJSC_COMMAND} -m -s -p gfcp_ -o ${GFCP_BUNDLE_C}.new ${GFCP_BUNDLE_JS}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GFCP_BUNDLE_C}.new ${GFCP_BUNDLE_C}
+            ${CMAKE_SOURCE_DIR}/tools/build-greenfield-controlplane.js ${CP_BUNDLE_JS}
+    COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${CP_BUNDLE_C}.new ${CP_BUNDLE_JS}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CP_BUNDLE_C}.new ${CP_BUNDLE_C}
     COMMENT "Regenerating greenfield control-plane bundle (esbuild + bytecode)"
     VERBATIM)
 add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
@@ -187,17 +187,17 @@ add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
 # The greenfield UI bundle: main.tsx → bytecode C array (React entry via build-ui.js). Derived; never
 # committed. Defined BEFORE the plugin so its FILES_UI can embed it; the UI-test binary below reuses the
 # same vars/target.
-set(GFUI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle.js")
-set(GFUI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle_data.c")
-set_source_files_properties(${GFUI_BUNDLE_C} PROPERTIES GENERATED TRUE)
+set(UI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle.js")
+set(UI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle_data.c")
+set_source_files_properties(${UI_BUNDLE_C} PROPERTIES GENERATED TRUE)
 
 add_custom_target(retroplug-ui-bundle
-    BYPRODUCTS ${GFUI_BUNDLE_JS} ${GFUI_BUNDLE_C} ${GFUI_BUNDLE_C}.new
+    BYPRODUCTS ${UI_BUNDLE_JS} ${UI_BUNDLE_C} ${UI_BUNDLE_C}.new
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
-            ${GFUI_BUNDLE_JS} ${GFUI_BUNDLE_JS}.d
+            ${UI_BUNDLE_JS} ${UI_BUNDLE_JS}.d
             ${CMAKE_SOURCE_DIR}/packages/retroplug/ui/main.tsx
-    COMMAND ${_TJSC_COMMAND} -m -s -p gfui_ -o ${GFUI_BUNDLE_C}.new ${GFUI_BUNDLE_JS}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GFUI_BUNDLE_C}.new ${GFUI_BUNDLE_C}
+    COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${UI_BUNDLE_C}.new ${UI_BUNDLE_JS}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${UI_BUNDLE_C}.new ${UI_BUNDLE_C}
     COMMENT "Regenerating greenfield UI bundle (esbuild + bytecode)"
     VERBATIM)
 add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
@@ -209,12 +209,12 @@ dpf_add_plugin(retroplug
     TARGETS clap vst3 vst2 jack
     USE_FILE_BROWSER                    # native OS file dialog (matches DISTRHO_UI_FILE_BROWSER)
     FILES_DSP
-        plugin/PluginGreenfieldDSP.cpp
-        ${GFCP_BUNDLE_C}                # the embedded control-plane bytecode (gfcp_cp_bundle)
+        plugin/PluginDSP.cpp
+        ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     FILES_UI
-        plugin/PluginGreenfieldUI.cpp
+        plugin/PluginUI.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input; re-homed here from packages/native/src)
-        ${GFUI_BUNDLE_C}                # the embedded React UI bytecode (gfui_ui_bundle)
+        ${UI_BUNDLE_C}                # the embedded React UI bytecode (rp_ui_bundle)
         ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)  # the generic DPF↔LVGL base widget
 
 # plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h, not the legacy one that arrives transitively
@@ -236,22 +236,22 @@ add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)
 
 # --- greenfield UI test harness --------------------------------------------------------------------
 # retroplug-ui-test boots the greenfield React UI on a headless software LVGL display
-# (RenderCore) driven by the BackendFacade RPC (GreenfieldUiHarness) — the greenfield twin of the
-# legacy retroplug-ui-test. Only built on demand (not ALL). Reuses GFUI_BUNDLE_C + the ui-bundle target
+# (RenderCore) driven by the BackendFacade RPC (UiHarness) — the greenfield twin of the
+# legacy retroplug-ui-test. Only built on demand (not ALL). Reuses UI_BUNDLE_C + the ui-bundle target
 # defined above the plugin.
 
 add_executable(retroplug-ui-test
-    test/ui/GreenfieldUiRunner.cpp
-    test/ui/GreenfieldUiHarness.cpp
+    test/ui/UiRunner.cpp
+    test/ui/UiHarness.cpp
     test/ui/RenderCore.cpp
-    ${GFUI_BUNDLE_C})               # the embedded greenfield UI bytecode (gfui_ui_bundle)
+    ${UI_BUNDLE_C})               # the embedded greenfield UI bytecode (rp_ui_bundle)
 
 target_link_libraries(retroplug-ui-test PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng (+ tjs)
     retroplug-backend) # BackendFacade + rpcpp + the cores + the txiki host
 
 target_include_directories(retroplug-ui-test PRIVATE
-    # quickjs.h for the JS trampolines in RenderCore/GreenfieldUiRunner (lvgl-js-native
+    # quickjs.h for the JS trampolines in RenderCore/UiRunner (lvgl-js-native
     # PUBLIC-propagates the lv_binding_js render include dir, so "native/..." resolves transitively).
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)
 

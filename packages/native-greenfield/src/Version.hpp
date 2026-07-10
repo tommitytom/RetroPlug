@@ -1,7 +1,7 @@
 #pragma once
 
 // Single source of truth for the greenfield RetroPlug version. Consumed by:
-//   - PluginGreenfieldDSP::getVersion() — DPF's numeric d_version()
+//   - PluginDSP::getVersion() — DPF's numeric d_version()
 //   - the menu chrome title             — via the version() RPC (HostRpcService)
 // Bump these three numbers to release a new version; everything else follows.
 #define RETROPLUG_GF_VERSION_MAJOR 0

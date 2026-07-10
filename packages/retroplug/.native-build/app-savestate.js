@@ -16736,7 +16736,7 @@ test("saveState \u2192 disk \u2192 loadState round-trips a real core, saving whi
   const id = project.systems.loadMgb();
   expect(typeof id).toBe("number");
   audio.renderAudio(1500);
-  const statePath = "/tmp/rp-greenfield-7dWF66/mgb.ss0";
+  const statePath = "/tmp/rp-greenfield-qyLbe8/mgb.ss0";
   expect(audio.startAudio()).toBeTruthy();
   audio.sleepMs(80);
   expect(project.systems.saveState(id, statePath)).toBeTruthy();
@@ -16752,12 +16752,12 @@ test("saveState \u2192 disk \u2192 loadState round-trips a real core, saving whi
 });
 test("saveSram writes a battery cart's SRAM and loadSram rebuilds from it", () => {
   const be = createRealBackend();
-  const rom = "/tmp/rp-greenfield-7dWF66/roms/ss.gb";
+  const rom = "/tmp/rp-greenfield-qyLbe8/roms/ss.gb";
   be.writeFile(rom, gbRomBattery());
   const store = new SystemsStore(be);
   const a = store.addSystem(rom);
   expect(typeof a).toBe("number");
-  const sramPath = "/tmp/rp-greenfield-7dWF66/ss.sav";
+  const sramPath = "/tmp/rp-greenfield-qyLbe8/ss.sav";
   expect(store.saveSram(a, sramPath)).toBeTruthy();
   const onDisk = be.readFile(sramPath);
   expect(onDisk != null && onDisk.length > 0).toBeTruthy();
@@ -16767,7 +16767,7 @@ test("saveSram writes a battery cart's SRAM and loadSram rebuilds from it", () =
 });
 test("New SRAM zeros the battery and Reset carries the live battery forward", () => {
   const be = createRealBackend();
-  const rom = "/tmp/rp-greenfield-7dWF66/roms/ss.gb";
+  const rom = "/tmp/rp-greenfield-qyLbe8/roms/ss.gb";
   be.writeFile(rom, gbRomBattery());
   const store = new SystemsStore(be);
   const a = store.addSystem(rom);

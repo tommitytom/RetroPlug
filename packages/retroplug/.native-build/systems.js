@@ -15509,7 +15509,7 @@ function garbage() {
 // packages/retroplug/test-native/systems.test.ts
 test("add a file-backed ROM \u2192 a live Game Boy whose pump returns real savestate + SRAM", () => {
   const be = createRealBackend();
-  const rom = "/tmp/rp-greenfield-ZAHCk1/roms/a.gb";
+  const rom = "/tmp/rp-greenfield-Tv9ic7/roms/a.gb";
   be.writeFile(rom, gbRomBattery());
   const store = new SystemsStore(be);
   const id = store.addSystem(rom);
@@ -15522,7 +15522,7 @@ test("add a file-backed ROM \u2192 a live Game Boy whose pump returns real saves
 });
 test("duplicate \u2192 remove \u2192 reload, all against a real Project of Game Boys", () => {
   const be = createRealBackend();
-  const rom = "/tmp/rp-greenfield-ZAHCk1/roms/b.gb";
+  const rom = "/tmp/rp-greenfield-Tv9ic7/roms/b.gb";
   be.writeFile(rom, gbRomBattery());
   const store = new SystemsStore(be);
   const a = store.addSystem(rom);
@@ -15543,7 +15543,7 @@ test("mGB (embedded) boots with no ROM file; a garbage file is rejected", () => 
   const mgb = store.loadMgb();
   expect(store.systems().length).toBe(1);
   expect(be.readState(mgb).length > 0).toBeTruthy();
-  const bad = "/tmp/rp-greenfield-ZAHCk1/roms/bad.bin";
+  const bad = "/tmp/rp-greenfield-Tv9ic7/roms/bad.bin";
   be.writeFile(bad, garbage());
   expect(store.addSystem(bad)).toBe(null);
   expect(store.systems().length).toBe(1);

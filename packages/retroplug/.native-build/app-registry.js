@@ -16750,7 +16750,7 @@ test("frame + state read through the registry while the background audio thread 
 });
 test("battery SRAM slices from the seeded snapshot; a removed core's reads go null", () => {
   const be = createRealBackend();
-  const rom = "/tmp/rp-greenfield-ofpvSw/roms/reg.gb";
+  const rom = "/tmp/rp-greenfield-gilTcx/roms/reg.gb";
   be.writeFile(rom, gbRomBattery());
   const store = new SystemsStore(be);
   const a = store.addSystem(rom);

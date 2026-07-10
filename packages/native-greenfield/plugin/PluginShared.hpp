@@ -3,7 +3,7 @@
 // In-process handoff from the greenfield DSP plugin to its DPF editor.
 //
 // The plugin owns a plugin-lifetime TjsHostRuntime with __rpcSend already bound to the BackendFacade
-// (bootControlPlane). The editor reaches it via getPluginInstancePointer() → getGreenfieldSharedDSP(),
+// (bootControlPlane). The editor reaches it via getPluginInstancePointer() → getSharedDSP(),
 // then attaches its LVGL display layer to that host (LvglJsEngine::useExternalHost) so the React UI runs
 // on the SAME context as the control plane — the backend is reachable through the existing
 // Symbol.for("plugin").__rpcSend, no separate RPC bridge needed.
@@ -16,11 +16,11 @@ class TjsHostRuntime;
 
 START_NAMESPACE_DISTRHO
 
-struct GreenfieldSharedDSP {
+struct SharedDSP {
     TjsHostRuntime* host = nullptr; // the plugin's control-plane host (useExternalHost target)
 };
 
-// Defined in PluginGreenfieldDSP.cpp — returns the plugin instance's shared struct.
-GreenfieldSharedDSP* getGreenfieldSharedDSP(void* pluginPtr);
+// Defined in PluginDSP.cpp — returns the plugin instance's shared struct.
+SharedDSP* getSharedDSP(void* pluginPtr);
 
 END_NAMESPACE_DISTRHO
