@@ -6,8 +6,6 @@
 
 #include "rfl/Literal.hpp"
 
-#include "system/RoleConfig.hpp"
-
 // Plain-data, reflectcpp-friendly config for a Mesen-backed NES system slot.
 // Mirrors SameBoyConfig's shape so the two are interchangeable through the
 // SystemConfig tagged union.
@@ -37,8 +35,4 @@ struct MesenNesConfig {
     std::vector<std::uint8_t> romBytes;
     std::vector<std::uint8_t> sram;
     std::vector<std::uint8_t> savestate;
-
-    // Roles attached to this system (currently NesN8MidiRole). Empty triggers
-    // the NES sniffer to fill in a default.
-    std::vector<RoleConfig> roles;
 };

@@ -6,8 +6,6 @@
 
 #include "rfl/Literal.hpp"
 
-#include "system/RoleConfig.hpp"
-
 // Plain-data, reflectcpp-friendly config for a GBA (Mesen2) system slot.
 // Mirrors MesenNesConfig's shape so the three configs are interchangeable
 // through the SystemConfig tagged union.
@@ -44,7 +42,4 @@ struct MesenGbaConfig {
     // gba_bios.bin`) so FirmwareHelper::LoadGbaBootRom picks it up. When
     // empty, Mesen falls back to a zeroed boot ROM (HLE).
     std::string   biosPath;
-
-    // Reserved for future Mesen-side GBA roles.
-    std::vector<RoleConfig> roles;
 };

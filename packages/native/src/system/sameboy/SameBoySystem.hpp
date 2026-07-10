@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "system/InputTypes.hpp"
-#include "system/RomRole.hpp"
 #include "system/SystemBase.hpp"
 #include "system/sameboy/SameBoyConfig.hpp"
 #include "system/sameboy/SameBoyConstants.hpp"
@@ -35,26 +34,14 @@ public:
     void onSampleRateChanged(double sampleRate) override;
     void onReset() override;
 
-    // Build runtime `RomRole` instances from `config_.roles`. Called once at
-    // the end of onActivate (after the sniffer has had a chance to fill in
-    // defaults). Idempotent: clears `roles_` first.
-    void instantiateRoles();
-
-    // When false, onActivate skips the RomSniffer default-role step, so a
-    // fresh ROM with empty `config_.roles` activates BARE (zero roles). The
-    // greenfield host sets this before onActivate — feature roles live in its
-    // TS DSP kernel, not native. Default true keeps the legacy plugin / CLI
-    // sniffer behaviour unchanged. Set before onActivate; propagated by clone.
-    void setSniffDefaultRoles(bool sniff) { sniffDefaultRoles_ = sniff; }
-
     // Pop the next bit (MSB-first) from `serialIn_` and return it. Returns
     // `true` (idle high) when the queue is empty. Called from the SameBoy
     // serial-end callback in standalone mode.
     bool nextSerialInBit();
 
     // Append the routed events to `pendingMidi_` (cleared at the top of each
-    // onProcess) and fan them out to every attached role. Roles that care
-    // about timing read MidiEvent::frame from the events themselves.
+    // onProcess). Consumers that care about timing read MidiEvent::frame from
+    // the events themselves.
     void onMidi(const ::MidiEvent* events, std::uint32_t count) override;
 
     // Queue a button transition. Called from DSP-thread command-drain at the
@@ -63,9 +50,8 @@ public:
     // SameBoyUtil.cpp:149-163).
     void pressButton(std::uint8_t button, bool down) override;
 
-    // Queue a raw byte for the GB serial port — exactly what the MIDI-listener
-    // roles do (MgbPassthroughRole). Drained MSB-first by nextSerialInBit() /
-    // the slave-mode pump in stepIfBelowTarget().
+    // Queue a raw byte for the GB serial port. Drained MSB-first by
+    // nextSerialInBit() / the slave-mode pump in stepIfBelowTarget().
     void pushSerialIn(std::uint8_t byte) override { serialIn_.push_back(byte); }
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
@@ -151,15 +137,12 @@ public:
     bool serialBitFromPeer() const;
     void serialBroadcastBit() const;
 
-    // True when any attached role wants LSDJ's outgoing serial bytes (e.g.
-    // the Arduinoboy MI.OUT decoder). Cached on each instantiateRoles() so
-    // the per-bit serial callback doesn't re-walk roles_.
+    // True when serial-out capture is armed. The per-bit serial callback reads
+    // this to decide whether to accumulate LSDJ's outgoing bytes.
     bool serialOutCaptureEnabled() const { return serialOutEnabled_; }
-    // Arm/disarm serial-out capture directly. The greenfield host attaches no
-    // native roles, so it drives the gate through this (e.g. when a system's
-    // TS lsdj-sync mode is MIDIOUT) instead of via a role's wantsSerialOut().
-    // A model-change restart re-runs instantiateRoles(), which recomputes the
-    // gate from roles_ (none in greenfield → false), so the host re-arms then.
+    // Arm/disarm serial-out capture. The host drives the gate through this
+    // (e.g. when a system's TS lsdj-sync mode is MIDIOUT). Stays armed across a
+    // model-change restart (onActivate no longer clears it).
     void setSerialOutCapture(bool on) { serialOutEnabled_ = on; }
     void captureSerialOutBit(bool bit);
 
@@ -201,10 +184,8 @@ public:
     std::vector<SameBoySystem*> linkPeers_;
     bool                        bitToSend_ = false;
 
-    std::vector<std::unique_ptr<RomRole>> roles_;
-
     // MIDI events that landed on this system in the current block. Cleared
-    // at the top of onProcess; drained by roles inside onProcessBlock.
+    // at the top of onProcess.
     std::vector<::MidiEvent> pendingMidi_;
 
     // Bytes queued by roles for the GB serial port. Drained one bit at a
@@ -215,16 +196,11 @@ public:
     int                      serialBitsRemaining_ = 0;
 
     // Outgoing-serial byte accumulator. Bits arrive MSB-first from the GB;
-    // on every 8th bit we fan the assembled byte out via
-    // RomRole::onSerialOutByte for the master-mode decoder.
+    // on every 8th bit the assembled byte is appended to serialOutLog_ for the
+    // host to drain (LSDJ MI.OUT → host MIDI).
     std::uint8_t serialOutByte_ = 0;
     int          serialOutBits_ = 0;
-    bool         serialOutEnabled_ = false; // cached from roles_ in instantiateRoles()
-
-    // When false, onActivate skips the RomSniffer default-role step (bare
-    // activation). Default true = legacy sniffer behaviour. Not serialized —
-    // the greenfield host re-applies it on every construct via buildSameBoy.
-    bool         sniffDefaultRoles_ = true;
+    bool         serialOutEnabled_ = false; // armed via setSerialOutCapture()
 
     // Diagnostic raw-byte log. Every completed serial-out byte while
     // serialOutEnabled_ is also appended here keyed by the in-block

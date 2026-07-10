@@ -6,13 +6,6 @@
 #include <cstring>
 #include <string_view>
 
-#include "rfl/Variant.hpp"
-
-#include "system/sameboy/RomSniffer.hpp"
-#include "system/sameboy/roles/LsdjKitPatchRole.hpp"
-#include "system/sameboy/roles/LsdjSyncRole.hpp"
-#include "system/sameboy/roles/MgbPassthroughRole.hpp"
-
 extern "C" {
 #define GB_INTERNAL
 #include <gb.h>
@@ -221,32 +214,14 @@ void SameBoySystem::onActivate(double sampleRate) {
         }
     }
 
-    // Stored config is the source of truth. Empty roles → ask the sniffer
-    // for a default; user edits later overwrite both the sniff and any role
-    // already attached. (Greenfield constructs with sniffing disabled: cores
-    // stay bare because feature roles are TS behaviours in the DSP kernel.)
-    if (config_.roles.empty() && sniffDefaultRoles_) {
-        switch (detectRomKind(rom_)) {
-            case RomKind::Mgb:
-                config_.roles.emplace_back(MgbRoleConfig{});
-                break;
-            case RomKind::Lsdj:
-                // Default to MidiSync mode so LSDJ syncs to host transport
-                // out of the box. The UI's LSDJ-mode picker can flip this
-                // to Off or to the Arduinoboy modes per project.
-                config_.roles.emplace_back(LsdjSyncConfig{});
-                // Kit-patching role attaches alongside sync: orthogonal
-                // concerns, both wanted on every LSDJ ROM. Starts empty
-                // (no kits patched); the rpc layer's `patchKit` mutates
-                // `config_.roles[..]` via this role's runtime state.
-                config_.roles.emplace_back(rp::lsdj::LsdjKitPatchConfig{});
-                break;
-            case RomKind::Generic:
-            default:
-                break;
-        }
-    }
-    instantiateRoles();
+    // Reset the serial shift-register state so a re-activation (e.g. a
+    // model-change restart, which routes through onDeactivate→onActivate)
+    // doesn't carry over half-shifted bytes. Serial-out capture is armed
+    // separately by the host via setSerialOutCapture.
+    serialIn_.clear();
+    serialBitsRemaining_ = 0;
+    serialOutByte_ = 0;
+    serialOutBits_ = 0;
 
     activated_ = true;
 }
@@ -448,7 +423,6 @@ std::unique_ptr<SystemBase> SameBoySystem::clone(SystemId newId, double sampleRa
     if (!stateBytes.empty()) cfg.savestate = std::move(stateBytes);
     std::vector<std::uint8_t> romCopy = rom_;
     auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
-    out->setSniffDefaultRoles(sniffDefaultRoles_);  // a bare source clones bare
     out->onActivate(sampleRate);
     return out;
 }
@@ -473,51 +447,8 @@ std::unique_ptr<SystemBase> SameBoySystem::cloneFromState(
     }
     std::vector<std::uint8_t> romCopy = rom_;
     auto out = std::make_unique<SameBoySystem>(newId, std::move(cfg), std::move(romCopy));
-    out->setSniffDefaultRoles(sniffDefaultRoles_);  // a bare source clones bare
     out->onActivate(sampleRate);
     return out;
-}
-
-void SameBoySystem::instantiateRoles() {
-    roles_.clear();
-    serialIn_.clear();
-    serialBitsRemaining_ = 0;
-    serialOutByte_ = 0;
-    serialOutBits_ = 0;
-
-    // TODO: This could be nicer. Also does it belong in here? This stuff is gameboy specific, not necessarily SameBoy.
-    for (const auto& rc : config_.roles) {
-        if (rfl::get_if<MgbRoleConfig>(&rc.variant())) {
-            auto role = std::make_unique<MgbPassthroughRole>();
-            role->onAttach(*this);
-            roles_.push_back(std::move(role));
-            std::fprintf(stderr, "[RetroPlug] attached MGB passthrough role to system %u\n", id());
-        } else if (const auto* lsdj = rfl::get_if<LsdjSyncConfig>(&rc.variant())) {
-            auto role = std::make_unique<LsdjSyncRole>(*lsdj);
-            role->onAttach(*this);
-            roles_.push_back(std::move(role));
-            std::fprintf(stderr, "[RetroPlug] attached LSDJ sync role to system %u\n", id());
-        } else if (const auto* kitCfg = rfl::get_if<rp::lsdj::LsdjKitPatchConfig>(&rc.variant())) {
-            auto role = std::make_unique<LsdjKitPatchRole>();
-            role->onAttach(*this);
-            // Replay any persisted kit bytes through the role so the
-            // running emulator sees them after a project load. The role
-            // applies pending patches at the top of the next process
-            // block (sniffer-attached default with no kits is a no-op).
-            role->queueAllFromConfig(*kitCfg);
-            roles_.push_back(std::move(role));
-            std::fprintf(stderr, "[RetroPlug] attached LSDJ kit-patch role to system %u (%zu kits)\n",
-                         id(), kitCfg->kits.size());
-        }
-    }
-    // Recompute the serial-out capture gate now that roles_ is settled.
-    serialOutEnabled_ = false;
-    for (const auto& role : roles_) {
-        if (role && role->wantsSerialOut()) {
-            serialOutEnabled_ = true;
-            break;
-        }
-    }
 }
 
 void SameBoySystem::captureSerialOutBit(bool bit) {
@@ -529,12 +460,7 @@ void SameBoySystem::captureSerialOutBit(bool bit) {
     const std::uint8_t completed = serialOutByte_;
     serialOutByte_ = 0;
     serialOutBits_ = 0;
-    // Diagnostic capture before fan-out so even decoder-internal exceptions
-    // wouldn't drop the raw log entry.
     serialOutLog_.emplace_back(audioFrameCount_, completed);
-    for (auto& role : roles_) {
-        if (role) role->onSerialOutByte(*this, completed);
-    }
 }
 
 bool SameBoySystem::nextSerialInBit() {
@@ -558,9 +484,6 @@ bool SameBoySystem::nextSerialInBit() {
 void SameBoySystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     if (events == nullptr || count == 0) return;
     pendingMidi_.insert(pendingMidi_.end(), events, events + count);
-    for (auto& role : roles_) {
-        if (role) role->onMidi(*this, events, count);
-    }
 }
 
 // TODO: Remove references to old code in comments
@@ -599,7 +522,7 @@ void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
     ++audioFrameCount_;
 
     // MI.OUT serial-OUT capture — and yes, this belongs in the per-sample APU callback. LSDJ in
-    // ArduinoboyMaster (MI.OUT) mode sets SC=0x80 (transfer enable + EXTERNAL clock) and shifts a byte
+    // MI.OUT (Arduinoboy master-out) mode sets SC=0x80 (transfer enable + EXTERNAL clock) and shifts a byte
     // OUT one bit at a time, waiting for a master to clock it. We play that master here: read the
     // outgoing bit from SB.bit7 BEFORE the shift, then clock it via GB_serial_set_data_bit (feeding
     // idle-high back on SIN). It can't move to SameBoy's serial bit callbacks — those fire only as
@@ -699,13 +622,8 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs) 
 
     audioFrameCount_ = 0;
 
-    for (auto& role : roles_) {
-        role->onProcessBlock(*this, info);
-    }
-
-    // Roles have had their chance to consume this block's MIDI; clear so the
-    // next block starts empty. midiOut_ is drained by PluginDSP after
-    // Project::onProcess returns.
+    // Clear this block's MIDI so the next block starts empty. midiOut_ is
+    // drained by PluginDSP after Project::onProcess returns.
     pendingMidi_.clear();
 
     // Tear-free memory snapshots for any UI subscriptions. Done AFTER role

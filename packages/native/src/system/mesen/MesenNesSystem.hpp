@@ -20,7 +20,7 @@ class NesN8MidiRole;
 // MesenAudioDevice, then drains them into the planar L/R outs with smoothed
 // gain. Native NES resolution: 256x240. Audio runs at the host sample rate
 // (Mesen's SoundMixer resamples internally). Input arrives as NesButton; host
-// MIDI is forwarded to the N8 FIFO RomRole.
+// MIDI is forwarded to the N8 FIFO (NesN8MidiRole).
 class MesenNesSystem final : public SystemBase {
 public:
     MesenNesSystem(SystemId id,

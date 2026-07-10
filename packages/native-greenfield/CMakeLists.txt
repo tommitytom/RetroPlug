@@ -33,12 +33,7 @@ add_library(retroplug-core STATIC
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/BlockRunner.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/OfflineRender.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/LinkGroup.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/RomSniffer.cpp
     ${_rpcore_sbs}
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/ArduinoboyMaster.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjSyncRole.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/LsdjKitPatchRole.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/roles/MgbPassthroughRole.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesSystem.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesDebugSession.cpp
     ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenVideoDevice.cpp

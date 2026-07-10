@@ -6,8 +6,6 @@
 
 #include "rfl/Literal.hpp"
 
-#include "system/RoleConfig.hpp"
-
 // Plain-data, reflectcpp-friendly config for a SameBoy system slot.
 // Lives in the DSP-owned ProjectConfig tree; mirrored to the UI cache.
 
@@ -89,10 +87,4 @@ struct SameBoyConfig {
     // savestate's embedded SRAM still wins when both are set.
     std::vector<std::uint8_t> sram;
     std::vector<std::uint8_t> savestate;  // optional, populated when persisting
-
-    // Roles attached to this system (LSDJ sync, MGB passthrough, etc.).
-    // Round-trips through reflectcpp; SameBoySystem::onActivate replays it
-    // into runtime `RomRole` instances. Empty after a fresh ROM load triggers
-    // RomSniffer to fill in a default suggestion.
-    std::vector<RoleConfig>   roles;
 };

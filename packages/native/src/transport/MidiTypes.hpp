@@ -5,7 +5,7 @@
 // Shell-side MIDI event. Mirrors DPF's DISTRHO::MidiEvent shape exactly so the
 // audio-thread boundary in PluginDSP::run can do a field-by-field copy with
 // no transformation. Defined here (rather than reusing the DPF type) so the
-// Project / SystemBase / RomRole interfaces don't pull in DistrhoDetails.hpp,
+// Project / SystemBase interfaces don't pull in DistrhoDetails.hpp,
 // which keeps the unit tests free of the DPF link dependency.
 struct MidiEvent {
     static constexpr std::uint32_t kDataSize = 4;
