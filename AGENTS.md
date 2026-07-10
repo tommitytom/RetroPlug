@@ -44,15 +44,18 @@ The rules below are the parts that don't fit those.
   `RGBDS_DIR` / `NODE_DIR`).
 - **Never commit derived artifacts** — the embedded bundle C arrays
   (`build/native/*bundle_data.c`).
-- **No versioned migrations (pre-release).** Nothing is released; when you change a
-  serialized shape (project / DPF state, config, kit-patch, sav), just change it —
-  no read-old/write-new shims, no `version: 2` transform. Renames / restructures are
-  expected to break old saves. **But reads are forward-tolerant**
-  (`rfl::DefaultIfMissing`): additive / removed fields don't break old files, so
-  give a new field a sensible default and don't switch a reader back to strict
-  `read<T>`. Each serialized root is version-**stamped** and refused if stamped
-  newer than the running build — detection, not migration. The persistence model +
-  the stamps live in [spec/05-data-persistence.md](spec/05-data-persistence.md).
+- **Config migrations (versioned, raw-JSON).** Persistence is TS-owned. Every serialized
+  JSON root (project / DPF state, user config, bindings, recent) is version-**stamped**: a
+  file stamped newer than the build is refused; one stamped older is **migrated** up. Keep
+  only the LATEST zod schema per root — never a per-version copy. A breaking (non-additive)
+  change bumps that root's version constant (`K_PROJECT` / `*_SCHEMA`) and adds one raw
+  `(obj) => obj` step to its migrations map
+  ([migrate.ts](packages/retroplug/src/migrate.ts)), applied to the raw JSON *before* zod
+  validates; steps must be idempotent-safe. Additive-only changes still need no step (zod
+  `.default()`s fill them). Two exceptions: the per-system **role-config** that crosses to
+  native stays reflect-cpp `DefaultIfMissing`-tolerant (the one outlier), and the LSDj `.sav`
+  carries its own binary format version. The model + stamps live in
+  [spec/05-data-persistence.md](spec/05-data-persistence.md).
 
 ## Framework gotchas
 

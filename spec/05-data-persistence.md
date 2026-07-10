@@ -2,8 +2,8 @@
 
 How RetroPlug2 (greenfield) turns a live session into bytes on disk and back:
 the project model and the `.rplg` file, the plugin's DAW state chunk, the three
-per-user config files, the persistence policy (version stamps + forward-tolerant
-reads, no migrations), the LSDj `.sav` codec, and the SRAM auto-save policy.
+per-user config files, the persistence policy (version stamps + raw-JSON
+migrations), the LSDj `.sav` codec, and the SRAM auto-save policy.
 
 This doc is the concrete expression of the thesis (see
 [01-architecture.md](01-architecture.md)): **TypeScript owns the framing —
@@ -135,54 +135,46 @@ covers only their on-disk shapes.
 
 ## Persistence policy (the precise statement)
 
-Nothing is released yet, so **there are no versioned migrations** — when a
-serialized shape changes, it just changes; renames/restructures are expected to
-break old saves. But the policy has two guardrails that make ordinary,
-*additive* changes non-breaking:
+Persistence is TS-owned (native does no version checking — the TS constants are the
+single source of truth). Config forward-compat is **versioned migrations on the raw
+JSON**, backed by two mechanisms:
 
-1. **Reads are forward-tolerant.** A field absent from a file takes its model
-   default; unknown fields are ignored. Native does this with reflect-cpp's
-   `rfl::DefaultIfMissing`; TS mirrors it with strict zod schemas whose every
-   field has a `.default()` and whose out-of-range scalars **clamp** rather than
-   throw ([configSchema.ts](../packages/retroplug/src/configSchema.ts)).
-   So adding or removing a field doesn't break an old file — no version field, no
-   transform.
+1. **Version stamp + refuse-newer / migrate-older.** Every serialized JSON root carries
+   a `schemaVersion`, checked on load against a TS constant:
 
-2. **Each root is version-stamped and validated (refuse-newer).** Every
-   serialized root carries a `schemaVersion`, checked on load against a constant.
-   The native constants are the single source of truth in
-   [SchemaVersions.hpp](../packages/native/src/config/SchemaVersions.hpp); the TS
-   stamps mirror them:
+| Root | TS const |
+|---|---|
+| `.rplg` / DAW chunk | `K_PROJECT = 2` ([projectConfig.ts](../packages/retroplug/src/projectConfig.ts)) |
+| `config.json` | `USER_CONFIG_SCHEMA = 1` |
+| `bindings/*.json` | `BINDINGS_SCHEMA = 1` |
+| `recent.json` | `RECENT_SCHEMA = 2` |
 
-| Root | Native const | TS const |
-|---|---|---|
-| `.rplg` / DAW chunk | `kProject = 1` | `K_PROJECT = 1` ([projectConfig.ts:102](../packages/retroplug/src/projectConfig.ts#L102)) |
-| `config.json` | `kUserConfig = 1` | `USER_CONFIG_SCHEMA = 1` |
-| `bindings/*.json` | `kBindings = 1` | `BINDINGS_SCHEMA = 1` |
-| `recent.json` | `kRecent = 2` | `RECENT_SCHEMA = 2` |
+   A file stamped **newer** than the build is **refused** (a format from the future
+   can't be safely read); one stamped **older** is **migrated** up (below). Refusal
+   differs by root: the project load returns `{kind:"incompatible"}` (the
+   project-incompatible modal); config/bindings/recent return `null`/`[]` and the store
+   **keeps its previous in-memory value** (also on malformed/non-object files).
 
-`checkVersion` yields `Ok` / `Older` / `Newer`. A file stamped **newer** than the
-running build is refused — a format from the future can't be safely read. The
-refusal differs by root:
+2. **Migrations (raw-JSON, latest-schema-only).** Keep only the LATEST zod schema per
+   root — never a per-version copy. On a breaking (non-additive) change, bump the root's
+   version constant and add ONE raw `(obj) => obj` step to that root's migrations map,
+   keyed by from-version, in [migrate.ts](../packages/retroplug/src/migrate.ts). On load
+   `migrateRaw` applies the ordered chain from the file's stamp up to current, on the RAW
+   object, **before** the (latest) zod schema validates. Steps must be idempotent-safe (an
+   unstamped file floors to current). The first real one is the project **v1→v2**
+   (`PROJECT_MIGRATIONS[1]`), which backfills each system's `core` from `platform`.
 
-- **Project** → the load returns `{kind:"incompatible"}`, which the UI surfaces
-  as the project-incompatible modal.
-- **config / bindings / recent** → the parser returns `null` (or `[]`) and the
-  store **keeps its previous in-memory value** (matching native's "retain
-  previous snapshot on parse error"). The same keep-previous applies to malformed
-  or non-object files.
+Additive-only changes still need no step: the strict zod schemas fill a missing field from
+its `.default()` and **clamp** out-of-range scalars
+([configSchema.ts](../packages/retroplug/src/configSchema.ts)), so an old file that only
+lacks a newly-added optional field validates as-is. The project `schemaVersion` is a
+**string** (old `.rplg` carried `"1.0"`); `parseProjectVersion` takes its leading integer,
+flooring empty/garbage to the baseline. The other three stamps are numbers (`readNumericVersion`).
 
-The project `schemaVersion` is a **string** (old `.rplg` files carry `"1.0"`);
-`parseProjectVersion` takes its leading integer, flooring an empty/garbage value
-to the current baseline rather than spuriously reporting "older".
-
-**Bump a `k*` constant only on a breaking (non-additive) change.** When that
-first breaking bump lands, the `Older` branch at the matching load seam is where
-a migration transform would hook in — in TS that seam is the `migrateProjectRaw`
-stub ([projectConfig.ts:95](../packages/retroplug/src/projectConfig.ts#L95)),
-today an identity function. This is **detection groundwork, not a migration
-pipeline**: no versioned read-old/write-new shims exist or should be added until
-then.
+Two things stay outside the JSON-migration model: the per-system **role-config** that
+crosses to native is re-parsed there with reflect-cpp `rfl::DefaultIfMissing` (tolerant —
+the one outlier), and the LSDj `.sav` is a binary codec with its own internal format
+version (below).
 
 ## The LSDj `.sav` codec
 
@@ -242,8 +234,6 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 - **Standalone disk-wins reopen.** The standalone starts empty (or from
   `RETROPLUG_AUTOLOAD_PROJECT`); reopening the last-saved project from disk on
   launch is not implemented. See [07-migration.md](07-migration.md).
-- **Migration transforms.** `migrateProjectRaw` and the native `Older` branch are
-  identity stubs — no root has taken a breaking bump, so no transform exists.
 - **Kit-patch persistence.** The thin config persists platform, paths, sav
   suffix/override, embedded-ROM marker, non-default universal settings, and
   roles; kit (sample-patch) state is not yet serialized. Rich per-system domains
@@ -258,7 +248,7 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 - [PluginDSP.cpp:103](../packages/native-greenfield/plugin/PluginDSP.cpp#L103) — DPF `initState`/`getState`/`setState` + `RETROPLUG_AUTOLOAD_PROJECT`.
 - [userConfig.ts](../packages/retroplug/src/userConfig.ts) / [userConfigSerialization.ts](../packages/retroplug/src/userConfigSerialization.ts), [recentSerialization.ts](../packages/retroplug/src/recentSerialization.ts), [bindingSerialization.ts](../packages/retroplug/src/bindingSerialization.ts) — the config models + on-disk codecs.
 - [configSchema.ts](../packages/retroplug/src/configSchema.ts) — the clamp/default zod builders (TS forward-tolerance).
-- [SchemaVersions.hpp](../packages/native/src/config/SchemaVersions.hpp) — the canonical version constants + `checkVersion`/`parseProjectVersion`.
+- [migrate.ts](../packages/retroplug/src/migrate.ts) + [projectConfig.ts](../packages/retroplug/src/projectConfig.ts) — the raw-JSON migration framework + the version constants / `checkVersion` / `parseProjectVersion` (TS is the single source of truth; native does no version check).
 - [HostRpcService.cpp](../packages/native-greenfield/src/HostRpcService.cpp) — native file I/O, `zip`/`unzip`, `configDir`, `savFromJson`.
 - [SavCodec.hpp](../packages/native/src/lsdj/codec/SavCodec.hpp) + [LsdjDifferentialTests.cpp](../packages/native/test/LsdjDifferentialTests.cpp) — the sav codec + its liblsdj oracle.
 - [sramAutoSave.ts](../packages/retroplug/src/sramAutoSave.ts) — the loose-`.sav` auto-save policy.
