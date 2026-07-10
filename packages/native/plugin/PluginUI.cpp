@@ -21,15 +21,13 @@
 #include "dpfjs/Env.hpp"                 // dpfjs::getenvWithPrefix
 
 #include "PluginShared.hpp"
+#include "ContextTargets.hpp"             // per-context routing for the __rp_* window hooks
 #include "host/input/GamepadManager.hpp" // SDL controller poll (shared UI-thread input)
 
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
-#include <cstring>
-#include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 extern "C" {
@@ -425,35 +423,19 @@ protected:
 
 namespace {
 // Per-context routing for the window-op hooks. Each plugin instance owns its own control-plane JSContext
-// (PluginDSP::host_, reached via useExternalHost), and a DAW can have several instances — several editors
-// — open at once. A single process-global target would misroute one instance's window calls into whichever
-// editor opened last, and go dead as soon as that one closed. So each __rp_* C-function instead carries a
-// stable WindowUiTarget* through its QuickJS func-data — the JS_NewCFunctionData mechanism
-// TjsHostRuntime::bindRpcSend uses — and reads ->ui at call time, needing no global to find its editor. The
-// hooks are bound once and outlive the editor on the persistent context, so editor open/close just
-// re-points / nulls ->ui. The target is owned per-context by g_windowTargets (unique_ptrs freed at process
-// exit — no per-instance leak, and a live editor is never dereferenced through a stale one's context).
-struct WindowUiTarget {
-    PluginUI* ui = nullptr;
-};
+// (PluginDSP::host_, reached via useExternalHost), and a DAW can have several instances — several editors —
+// open at once. A single process-global editor pointer would misroute one instance's window calls into
+// whichever editor opened last, and go dead as soon as that one closed. So each __rp_* C-function instead
+// carries a stable per-context slot through its QuickJS func-data (retroplug::ContextTargetTable, the
+// JS_NewCFunctionData mechanism TjsHostRuntime::bindRpcSend uses) and follows it to the editor at call
+// time, needing no global. The hooks are bound once and outlive the editor on the persistent context, so
+// editor open/close just re-points / nulls the slot; the slots are owned per-context by g_windowTargets
+// (freed at process exit — no per-instance leak, and a live editor is never reached through a stale context).
+retroplug::ContextTargetTable<PluginUI> g_windowTargets;
 
-std::unordered_map<JSContext*, std::unique_ptr<WindowUiTarget>> g_windowTargets;
-
-WindowUiTarget* windowTargetFor(JSContext* ctx) {
-    auto& slot = g_windowTargets[ctx];
-    if (!slot) slot = std::make_unique<WindowUiTarget>();
-    return slot.get();
-}
-
-// The editor a hook was bound with: funcData[0] is an ArrayBuffer of the WindowUiTarget* pointer bytes
-// (exactly as rpcSendThunk carries its RpcSendFn*). Null between / after editor sessions — callers no-op.
+// The editor a hook was bound with, or null between / after editor sessions (callers no-op).
 PluginUI* windowUiFromData(JSContext* ctx, JSValue* funcData) {
-    std::size_t len = 0;
-    std::uint8_t* p = JS_GetArrayBuffer(ctx, &len, funcData[0]);
-    if (!p || len != sizeof(WindowUiTarget*)) return nullptr;
-    WindowUiTarget* target = nullptr;
-    std::memcpy(&target, p, sizeof(target));
-    return target ? target->ui : nullptr;
+    return retroplug::contextTargetFromData<PluginUI>(ctx, funcData);
 }
 
 JSValue jsSetWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
@@ -520,15 +502,15 @@ JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* 
 
 void installWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
     if (!ctx) return;
-    WindowUiTarget* target = windowTargetFor(ctx);
-    target->ui = ui;
+    auto* slot = g_windowTargets.slotFor(ctx);
+    slot->ptr  = ui;
     // The hooks live on the persistent control-plane context and outlive this editor session; bind them
-    // once per context, then editor open/close only re-points the target (above / clearWindowSizeHooks).
+    // once per context, then editor open/close only re-points the slot (above / clearWindowSizeHooks).
     if (hasGlobalFunction(ctx, "__rp_setWindowSize")) return;
 
     JSValue g = JS_GetGlobalObject(ctx);
     auto bind = [&](const char* name, JSCFunctionData* fn, int length) {
-        JSValue data = JS_NewArrayBufferCopy(ctx, reinterpret_cast<const std::uint8_t*>(&target), sizeof(target));
+        JSValue data = retroplug::packContextTarget(ctx, slot);
         JS_SetPropertyStr(ctx, g, name, JS_NewCFunctionData(ctx, fn, length, 0, 1, &data));
         JS_FreeValue(ctx, data);
     };
@@ -542,8 +524,7 @@ void installWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
 }
 
 void clearWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
-    auto it = g_windowTargets.find(ctx);
-    if (it != g_windowTargets.end() && it->second->ui == ui) it->second->ui = nullptr;
+    g_windowTargets.clear(ctx, ui);
 }
 } // namespace
 

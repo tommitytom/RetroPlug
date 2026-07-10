@@ -14,6 +14,7 @@
     "test": "node scripts/cmake-build.js tjs-cli && node packages/retroplug/scripts/run-tests.mjs",
     "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node packages/retroplug/scripts/run-ui-tests.mjs",
+    "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test && build/bin/retroplug-plugin-test",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
     "profile": "tools/run-profile.sh stats",
     "validate": "node scripts/cmake-build.js retroplug-clap retroplug-vst3 && tools/validate-plugins.sh",

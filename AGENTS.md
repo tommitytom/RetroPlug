@@ -85,8 +85,9 @@ must be backed by an actual exit-zero** from one of these.
 
 The headless loop (the only path — legacy is gone) is documented in
 [spec/06-build-test.md](spec/06-build-test.md): `pnpm test` (pure-TS mock),
-`test:native` (real host + cores), `test:ui` (LVGL React), `screenshot`, the
-`tools/run-sanitizer.sh` thread / address checks, and `validate`. The LSDj-sync /
+`test:native` (real host + cores), `test:ui` (LVGL React), `test:plugin` (a
+pure-C++ unit check — currently the per-context window-hook routing), `screenshot`,
+the `tools/run-sanitizer.sh` thread / address checks, and `validate`. The LSDj-sync /
 DAW-timing / audio-quality matrix runs headlessly too — the real-Reaper
 `reaper:lsdj-*` renders + `tools/reaper-timing-analyze.py`; see
 [docs/lsdj.md](docs/lsdj.md).

@@ -92,6 +92,7 @@ Root [package.json](../package.json). Each builds its CMake target(s) first, the
 | `test` | `tjs-cli` | Mock-backend TS suite ([:16](../package.json#L16)). |
 | `test:native` | `retroplug-host` | Real-host suite ([:17](../package.json#L17)). |
 | `test:ui` | `retroplug-ui-test` | LVGL React UI suite ([:18](../package.json#L18)). |
+| `test:plugin` | `retroplug-plugin-test` | Pure-C++ unit check (no TS runner; exit code is pass/fail): the per-context routing behind PluginUI's `__rp_*` window hooks — [ContextTargets.hpp](../packages/native/plugin/ContextTargets.hpp) proven on two live `JSContext`s — so concurrent plugin instances never cross-route ([:17](../package.json#L17)). |
 | `screenshot` | `retroplug-jack` | Boots the standalone headlessly → `/tmp/retroplug.png` ([:21](../package.json#L21)). |
 | `validate` | `-clap` + `-vst3` | `clap-validator` + `pluginval`, with `RETROPLUG_CLAP_NAME`/`RETROPLUG_VST3_NAME=retroplug` so the shared [validate-plugins.sh](../tools/validate-plugins.sh) targets the greenfield binaries ([:23](../package.json#L23)). |
 | `reaper:mgb-smoke-greenfield-author` | `-vst3` | Authors + bakes the `.rplg` fixture for the Reaper render ([:24](../package.json#L24)). |

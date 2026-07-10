@@ -267,3 +267,21 @@ set_target_properties(retroplug-ui-test PROPERTIES
 
 # The embedded bundle must exist before the test binary compiles it.
 add_dependencies(retroplug-ui-test retroplug-ui-bundle)
+
+# --- plugin unit checks (retroplug-plugin-test) ----------------------------------------------------
+# Pure-C++ checks for plugin/ mechanisms that need real JSContexts but no LVGL/txiki host — currently the
+# per-context window-hook routing (ContextTargets.hpp). Links bare quickjs (qjs), nothing else. Run via
+# `pnpm test:plugin` (builds + runs the binary; the exit code is pass/fail). On demand only (EXCLUDE_FROM_ALL).
+add_executable(retroplug-plugin-test EXCLUDE_FROM_ALL
+    test/plugin/ContextTargets.test.cpp)
+
+target_link_libraries(retroplug-plugin-test PRIVATE qjs)  # bare quickjs: JS_* + ArrayBuffer / CFunctionData
+
+target_include_directories(retroplug-plugin-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/plugin                                        # ContextTargets.hpp
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)                 # quickjs.h
+
+set_target_properties(retroplug-plugin-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
