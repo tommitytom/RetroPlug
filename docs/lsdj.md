@@ -288,22 +288,22 @@ contains `aboy` — check the stderr line `[RetroPlug] LSDJ sync role attached
 ### PROJECT-screen SYNC cycle (aboy v9.3.3)
 
 The on-screen SYNC value is the working-song byte at `0x3fbd`. The model
-`SyncMode` enum (`packages/native/src/lsdj/model/Types.hpp`) authors values 0–5
-directly via `settings.syncMode` —
-[test/ts/gb/lsdj/sync_modes.test.ts](../test/ts/gb/lsdj/sync_modes.test.ts) authors
-each and asserts the byte. The aboy-only MI.MAP / MI.OUT (6 / 7) are past the
-model enum (see Master mode below). The full cycle order:
+`SyncMode` enum ([Types.hpp](../packages/native/src/lsdj/model/Types.hpp)) is the
+verbatim on-disk byte and `settings.syncMode` authors ALL of them by name (verified:
+author each, screenshot the PROJECT screen, read `0x3fbd`). **The stored byte is NOT
+the on-screen cycle position** — the cycle steps 0..7 but skips bytes 2 and 4. Full
+cycle order (position → byte → label), confirmed by joypad A+Right:
 
-| Byte | SYNC value | Extra row visible |
-| --- | --- | --- |
-| 0 | OFF       | — |
-| 1 | LSDJ      | — |
-| 2 | MIDI      | — |
-| 3 | KEYBD     | PS/2 DELAY 06 |
-| 4 | ANA.IN    | TICKS/STEP 06 |
-| 5 | AN.OUT    | TICKS/STEP 06 |
-| 6 | MI.MAP    | — |
-| 7 | MI.OUT    | — |
+| Cycle pos | Byte (`0x3fbd`) | `syncMode` | SYNC value | Extra row visible |
+| --- | --- | --- | --- | --- |
+| 0 | 0 | `None`      | OFF    | — |
+| 1 | 1 | `Lsdj`      | LSDJ   | — |
+| 2 | 3 | `Midi`      | MIDI   | — |
+| 3 | 5 | `Keyboard`  | KEYBD  | PS/2 DELAY 06 |
+| 4 | 6 | `AnalogIn`  | ANA.IN | TICKS/STEP 06 |
+| 5 | 7 | `AnalogOut` | AN.OUT | TICKS/STEP 06 |
+| 6 | 8 | `MidiMap`   | MI.MAP | — |
+| 7 | 9 | `MidiOut`   | MI.OUT | — |
 
 Note: stock LSDJ's manual (v9.2.6) does NOT document MI.OUT / MI.MAP — those are
 aboy-specific. PRELISTEN row reads `ON` for OFF / LSDJ / KEYBD / MI.MAP / MI.OUT
@@ -396,13 +396,19 @@ The decoder is unit-tested in
 [packages/native/test/ArduinoboyMasterTests.cpp](../packages/native/test/ArduinoboyMasterTests.cpp)
 (11 cases covering each protocol byte).
 
-**Known gotcha — reaching functional MI.OUT mode.** The aboy MI.OUT SYNC value is
-byte 7, past the model `SyncMode` enum (0–5). You can *write* byte 7 into the
-working song (patch `0x3fbd` before `loadRom`) and LSDJ boots with it, but it does
-**not** engage the MI.OUT protocol — LSDJ emits only idle `0x00`/`0xFF`, not the
-`0x7D`/`0x7F`/note bytes (confirmed in `arduinoboy_master.test.ts`; the
-UI-navigation approach also can't reach MI.OUT — the aboy ROM stops accepting
-`A+Right` past KEYBD). So functional MI.OUT end-to-end remains future work: it
-needs a savestate captured from LSDJ already *in* MI.OUT mode. Until then, MI.OUT
-is verified via the decoder unit tests + the serial-out capture path (KEYBD mode
-via `emu.drainSerial`), not via functional MI.OUT playback.
+**Reaching functional MI.OUT mode (the record, corrected).** An earlier note here
+claimed MI.OUT was unreachable by authoring — that was **wrong on every count** and
+is retracted. The errors: it used the wrong byte (**MI.OUT is byte 9**, not 7 — 7 is
+AN.OUT), and it claimed `A+Right` "stops past KEYBD" (it doesn't — the joypad cycles
+cleanly to byte 9). Verified empirically: **cold-authoring `syncMode:"MidiOut"`
+(byte 9) fully engages MI.OUT and transmits** the protocol — no navigation, no
+savestate fixture needed.
+
+The reason it *looked* like idle garbage: MI.OUT frames on the link as **1
+data-present flag bit + 7 payload bits**, so each data byte arrives as `0x80|payload`.
+`captureSerialOutBit` assembles fixed 8-bit bytes, which mis-frames the flag-gated
+stream into high-bit bytes. To decode, reconstruct the bit stream (MSB-first per
+captured byte) and apply the Arduinoboy framing — `read 1 flag; if 1 read 7 payload
+→ a 7-bit command byte (0x00-0x7F); else idle` — which recovers a clean stream, e.g.
+`7D(start) 7F(clock) 70 69(NoteOn ch0, note) 7F 70 6A …`. So functional MI.OUT
+playback IS achievable headlessly; the flag-gated framing is the load-bearing detail.
