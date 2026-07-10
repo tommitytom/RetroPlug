@@ -84,3 +84,121 @@ jobs:
             build/bin/retroplug.clap
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.so
+
+  windows:
+    runs-on: windows-2022
+    # Newly wired and not yet verified on a runner; don't let it block the
+    # trustworthy Linux job. Remove once the Windows build is confirmed green.
+    continue-on-error: true
+    env:
+      # build.bat defaults VCPKG_ROOT to C:\code\vcpkg; point it at the runner's
+      # preinstalled vcpkg. RGBDS_DIR is set later once RGBDS is extracted.
+      VCPKG_ROOT: C:\vcpkg
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        shell: bash
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Install workspace deps (pnpm)
+        shell: bash
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Install RGBDS (boot-ROM assembler)
+        shell: pwsh
+        run: |
+          $ver = "v1.0.1"
+          Invoke-WebRequest "https://github.com/gbdev/rgbds/releases/download/$ver/rgbds-win64.zip" -OutFile rgbds.zip
+          Expand-Archive rgbds.zip -DestinationPath "$env:RUNNER_TEMP\rgbds"
+          # build.bat prepends %RGBDS_DIR% to PATH so find_program locates rgbasm/rgblink/rgbgfx.
+          "RGBDS_DIR=$env:RUNNER_TEMP\rgbds" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Cache vcpkg installed packages
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-static-sdl2-libffi-${{ runner.os }}
+
+      - name: Install vcpkg dependencies (x64-windows-static)
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install sdl2:x64-windows-static libffi:x64-windows-static
+
+      - name: Build
+        shell: cmd
+        run: build.bat
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retroplug-windows-x86_64
+          if-no-files-found: warn
+          path: |
+            build/bin/retroplug.exe
+            build/bin/retroplug.clap
+            build/bin/retroplug.vst3
+            build/bin/retroplug-vst2.dll
+
+  # macOS is newly wired and unproven (no prior macOS build). A single native
+  # arm64 build check; universal + codesign/notarization are future work.
+  macos:
+    runs-on: macos-14
+    # Unproven (no prior macOS build); don't block the workflow. Remove once green.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Install build dependencies (Homebrew)
+        run: |
+          brew install ninja pkg-config sdl2 libffi rgbds
+          # Homebrew's keg-only libffi needs its pkg-config on the path.
+          echo "PKG_CONFIG_PATH=$(brew --prefix libffi)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retroplug-macos-arm64
+          if-no-files-found: warn
+          path: |
+            build/bin/retroplug
+            build/bin/retroplug.clap
+            build/bin/retroplug.vst3
+            build/bin/retroplug-vst2.dylib
