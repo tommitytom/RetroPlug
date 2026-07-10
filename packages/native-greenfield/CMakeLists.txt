@@ -213,7 +213,7 @@ dpf_add_plugin(retroplug-greenfield
         ${GFCP_BUNDLE_C}                # the embedded control-plane bytecode (gfcp_cp_bundle)
     FILES_UI
         plugin/PluginGreenfieldUI.cpp
-        ${CMAKE_SOURCE_DIR}/packages/native/src/GamepadManager.cpp  # SDL gamepad poll (shared; re-homes on legacy delete)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input; re-homed here from packages/native/src)
         ${GFUI_BUNDLE_C}                # the embedded React UI bytecode (gfui_ui_bundle)
         ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)  # the generic DPF↔LVGL base widget
 
@@ -221,6 +221,8 @@ dpf_add_plugin(retroplug-greenfield
 # via retroplug-core's packages/native/src include. dpf-widgets/generic resolves "LVGL.hpp".
 target_include_directories(retroplug-greenfield BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
 target_include_directories(retroplug-greenfield PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
+# GamepadManager.hpp lives in src/input/ (shared UI-thread input, re-homed from packages/native/src).
+target_include_directories(retroplug-greenfield PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/input)
 
 target_link_libraries(retroplug-greenfield PUBLIC
     retroplug-greenfield-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp

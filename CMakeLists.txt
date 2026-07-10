@@ -122,7 +122,7 @@ add_subdirectory("${DPFJS_PATH}" dpfjs)
 # variant (and the standalone). DPF's own SDL2 detection is gated to the
 # JACK target only (audio backend fallback), so we find SDL2 ourselves at
 # the parent scope and link it into every variant after dpf_add_plugin.
-# Only SDL_INIT_GAMECONTROLLER is initialised — see packages/native/src/GamepadManager.cpp.
+# Only SDL_INIT_GAMECONTROLLER is initialised — see packages/native-greenfield/src/input/GamepadManager.cpp.
 if(WIN32)
     # Windows has no pkg-config; SDL2 comes from vcpkg's CONFIG package, which
     # exposes the SDL2::SDL2 imported target. Wrap it in a PkgConfig::SDL2
@@ -430,7 +430,9 @@ dpf_add_plugin(${NAME}
       packages/native/src/config/UserConfig.cpp
       packages/native/src/config/UserConfigPaths.cpp
       packages/native/src/config/RecentFiles.cpp
-      packages/native/src/GamepadManager.cpp
+      # GamepadManager re-homed to the greenfield tree; referenced here transitionally until the
+      # legacy plugin is deleted (see the include dir added below).
+      packages/native-greenfield/src/input/GamepadManager.cpp
       # SameBoySystem is constructed on the UI thread (loadRomFromPath) and
       # snapshotConfig is referenced by the bridge's Save project path; the
       # symbols must be linked into the UI binary as well, not just the DSP.
@@ -462,6 +464,9 @@ dpf_add_plugin(${NAME}
 
 # setup build includes and libraries
 target_include_directories(${NAME} PUBLIC packages/native/src)
+# GamepadManager.hpp re-homed to the greenfield tree; add its single-file dir so the legacy plugin's
+# PluginUI.cpp still resolves it. Transitional — goes away when the legacy plugin is deleted.
+target_include_directories(${NAME} PUBLIC packages/native-greenfield/src/input)
 target_include_directories(${NAME} PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
 # dpf.js framework env-var prefix (PluginUI's screenshot + dev-bundle reads use
 # dpfjs::getenvWithPrefix). The consumer owns the prefix; RetroPlug = RETROPLUG_.
