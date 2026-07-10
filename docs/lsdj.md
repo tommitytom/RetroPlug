@@ -8,11 +8,13 @@ quality headlessly.
 (`test-native/lsdj-{arduinoboy-slave,midimap,keyboardmidi,passthrough}.test.ts`),
 link-cable sync via per-system audio (`lsdj-sync-{pattern,negative}.test.ts`, on the
 `renderAudioPerSystem` RPC), and the reaper-MCP WAV staging
-(`pnpm reaper:analyze-{smoke,lsdj-sync}-greenfield`). The **DAW-timing** leg (real
-Reaper metro / drift renders, `reaper:lsdj-*-metro` / `-drift`) and the
-**ArduinoboyMaster** MI.OUT path still run only on the **legacy** CLI + reaper harness
-(`retroplug-cli`, `test/ts/**`, `emu.*`, `pnpm test:cli` / `reaper:*`); see
-`spec/07-migration.md`. Either way the **domain facts** here (the sav model, screen
+(`pnpm reaper:analyze-{smoke,lsdj-sync}-greenfield`), and the **DAW-timing** leg — real
+Reaper metro / drift renders through the greenfield VST3
+(`pnpm reaper:lsdj-{midi-metro,arduinoboy-metro,midi-drift}-greenfield`). The
+LSDj→MIDI-out modes (MI.OUT / Master Sync) also run on greenfield now. The **legacy**
+CLI + reaper harness (`retroplug-cli`, `test/ts/**`, `emu.*`, `pnpm test:cli` /
+`reaper:*`) still exists in parallel pending its removal; see `spec/07-migration.md`.
+Either way the **domain facts** here (the sav model, screen
 map, Arduinoboy protocol, manual lookup) are build-agnostic.
 
 ---
@@ -217,6 +219,23 @@ normal DAW behaviour).
 
 Each reaper fixture is regenerated with its `pnpm reaper:*-author` script when the
 matching `test/ts/gb/lsdj/*_author.test.ts` or `tools/reaper-*-author.lua` changes.
+
+- **Greenfield DAW-timing** — the same three checks against the **greenfield VST3**:
+  `pnpm reaper:lsdj-{midi-metro,arduinoboy-metro,midi-drift}-greenfield`. They reuse
+  `run-reaper-render.sh` (`RETROPLUG_VST3_NAME=retroplug-greenfield`) + the same
+  `reaper-timing-analyze.py`, with a greenfield fixture author
+  ([tools/author-lsdj-rplg.js](../tools/author-lsdj-rplg.js) →
+  [test-native/author-lsdj-rplg.ts](../packages/retroplug-greenfield/test-native/author-lsdj-rplg.ts),
+  a cold song-screen `.rplg`) and a parameterized Lua
+  ([tools/reaper-lsdj-greenfield-author.lua](../tools/reaper-lsdj-greenfield-author.lua)).
+  Two greenfield-specific pieces make it work: (1) the `lsdj-sync` role's **`autoStart`**
+  config taps START on the host transport rise to auto-arm a SYNC=MIDI cart (a headless
+  render can't press a joypad, and the armed state doesn't survive a savestate); (2) the
+  plugin reports LSDj's ~33 ms host-clocked **sync latency** so the DAW applies PDC and
+  aligns LSDj to the grid (`DISTRHO_PLUGIN_WANT_LATENCY` + `__rp_syncLatencyMs`). With PDC
+  the renders read midi-metro +0.0 ms, arduinoboy +0.9 ms, drift max|drift| ≈ 18 ms @180 s
+  (the drift render length is env-overridable via `REAPER_AUTHOR_DURATION`, default ~180 s;
+  the legacy hour is `=3600`).
 
 ## LSDj manual lookup
 
