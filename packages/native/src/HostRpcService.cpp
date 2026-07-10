@@ -146,7 +146,7 @@ std::string HostRpcService::configDir() {
 }
 
 std::string HostRpcService::version() {
-    return RETROPLUG_GF_VERSION_STRING;
+    return RETROPLUG_VERSION_STRING;
 }
 
 rfl::Bytestring HostRpcService::zip(std::vector<BackendZipInput> entries) {

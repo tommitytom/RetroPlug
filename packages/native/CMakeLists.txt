@@ -17,35 +17,35 @@ if(WIN32)
     # into retroplug-samebsys (see the root CMakeLists) and linked below. Elsewhere it builds in place.
     set(_rpcore_sbs "")
 else()
-    set(_rpcore_sbs ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/SameBoySystem.cpp)
+    set(_rpcore_sbs ${CMAKE_CURRENT_SOURCE_DIR}/src/system/sameboy/SameBoySystem.cpp)
 endif()
 
 add_library(retroplug-core STATIC
-    ${PROJECT_SOURCE_DIR}/packages/native/src/project/Project.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/Effects.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/KitUtil.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/SampleCache.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/KitCompiler.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/SongCodec.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/Compression.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/lsdj/codec/SavCodec.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/SystemBase.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/BlockRunner.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/OfflineRender.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/sameboy/LinkGroup.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/project/Project.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/SongCodec.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/Compression.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/SavCodec.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/sameboy/LinkGroup.cpp
     ${_rpcore_sbs}
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesSystem.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenNesDebugSession.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenVideoDevice.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/MesenGbaSystem.cpp
-    ${PROJECT_SOURCE_DIR}/packages/native/src/system/mesen/roles/NesN8MidiRole.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesSystem.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesDebugSession.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8MidiRole.cpp
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull
     # the full lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
 )
 
 target_include_directories(retroplug-core PUBLIC
-    ${PROJECT_SOURCE_DIR}/packages/native/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
     # `native/core/img/png/lodepng.h` lives under this root (in dpf.js).
     ${DPFJS_PATH}/deps/lv_binding_js/src/render
     # MinizZip.hpp -> miniz.h (txiki's v3.1.0; matches the linked `miniz` lib)
@@ -165,8 +165,8 @@ add_custom_target(retroplug-example-session ALL
 
 # --- control-plane bundle: pluginControlPlane.ts → bytecode C array (mirrors ui-regenerate). The DPF
 # plugin evals this at construct to compose the stores + DSP kernel. Derived; never committed.
-set(CP_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle.js")
-set(CP_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle_data.c")
+set(CP_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/cp-bundle.js")
+set(CP_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/cp-bundle_data.c")
 set_source_files_properties(${CP_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the plugin compiles
 
 add_custom_target(retroplug-cp-bundle ALL
@@ -182,8 +182,8 @@ add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
 # The greenfield UI bundle: main.tsx → bytecode C array (React entry via build-ui.js). Derived; never
 # committed. Defined BEFORE the plugin so its FILES_UI can embed it; the UI-test binary below reuses the
 # same vars/target.
-set(UI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle.js")
-set(UI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle_data.c")
+set(UI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/ui-bundle.js")
+set(UI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/ui-bundle_data.c")
 set_source_files_properties(${UI_BUNDLE_C} PROPERTIES GENERATED TRUE)
 
 add_custom_target(retroplug-ui-bundle

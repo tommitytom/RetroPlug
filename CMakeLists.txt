@@ -122,7 +122,7 @@ add_subdirectory("${DPFJS_PATH}" dpfjs)
 # variant (and the standalone). DPF's own SDL2 detection is gated to the
 # JACK target only (audio backend fallback), so we find SDL2 ourselves at
 # the parent scope and link it into every variant after dpf_add_plugin.
-# Only SDL_INIT_GAMECONTROLLER is initialised — see packages/native-greenfield/src/input/GamepadManager.cpp.
+# Only SDL_INIT_GAMECONTROLLER is initialised — see packages/native/src/input/GamepadManager.cpp.
 if(WIN32)
     # Windows has no pkg-config; SDL2 comes from vcpkg's CONFIG package, which
     # exposes the SDL2::SDL2 imported target. Wrap it in a PkgConfig::SDL2
@@ -241,8 +241,8 @@ add_custom_command(
 add_library(mgb-rom STATIC "${MGB_ROM_C}")
 set_target_properties(mgb-rom PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# Cross-compile knob for tjsc (bytecode compiler). Consumed by the greenfield
-# cp-bundle / ui-bundle targets (native-greenfield) via _TJSC_COMMAND / _TJSC_DEP.
+# Cross-compile knob for tjsc (bytecode compiler). Consumed by the
+# cp-bundle / ui-bundle targets (packages/native) via _TJSC_COMMAND / _TJSC_DEP.
 set(TJSC_EXECUTABLE "" CACHE FILEPATH
     "Path to a host-built tjsc/qjsc for bytecode compilation. \
 Leave empty to use the in-tree tjsc target.")
@@ -257,9 +257,9 @@ else()
     set(_TJSC_DEP tjsc)
 endif()
 
-# --- greenfield host + plugin (defines retroplug-core, the shared emulator/Project lib) -----
-# native-greenfield defines retroplug-core + the greenfield Backend / txiki host + the DPF plugin.
-add_subdirectory(packages/native-greenfield native-greenfield)
+# --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
+# + the DPF plugin + the test host / cli / ui-test.
+add_subdirectory(packages/native native)
 
 # SDL2 gamepad input for greenfield: link onto its UI aggregator so every UI-bearing greenfield variant
 # (clap/vst3/jack) gets the GamepadManager poll compiled into FILES_UI. DSP-only outputs never see SDL.

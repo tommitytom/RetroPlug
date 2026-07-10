@@ -24,7 +24,7 @@
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 
-// The embedded control-plane bundle (bytecode) — build/native-greenfield/cp-bundle_data.c, rp_ prefix.
+// The embedded control-plane bundle (bytecode) — build/native/cp-bundle_data.c, rp_ prefix.
 extern "C" {
 extern const std::uint8_t  rp_cp_bundle[];
 extern const std::uint32_t rp_cp_bundle_size;
@@ -59,7 +59,7 @@ protected:
     const char* getDescription() const          override { return "Greenfield multi-system retro emulator host"; }
     const char* getMaker()       const noexcept override { return "tommitytom"; }
     const char* getLicense()     const noexcept override { return "MIT"; }
-    uint32_t    getVersion()     const noexcept override { return d_version(RETROPLUG_GF_VERSION_MAJOR, RETROPLUG_GF_VERSION_MINOR, RETROPLUG_GF_VERSION_MICRO); }
+    uint32_t    getVersion()     const noexcept override { return d_version(RETROPLUG_VERSION_MAJOR, RETROPLUG_VERSION_MINOR, RETROPLUG_VERSION_MICRO); }
     int64_t     getUniqueId()    const noexcept override { return d_cconst('R', 'P', 'g', 'f'); }
 
     // --- audio ports: name the 8 outputs as four stereo pairs (out_1..4) + tag each with a port

@@ -13,7 +13,7 @@ const OUT = resolve(process.argv[2] || resolve(REPO, "build/mgb_greenfield.rplg"
 const HOST = process.env.RETROPLUG_GREENFIELD_HOST || resolve(REPO, "build/bin/retroplug-host");
 
 mkdirSync(dirname(OUT), { recursive: true });
-const bundle = resolve(REPO, "build/native-greenfield/author-mgb-rplg.js");
+const bundle = resolve(REPO, "build/native/author-mgb-rplg.js");
 mkdirSync(dirname(bundle), { recursive: true });
 
 buildSync({

@@ -7,7 +7,7 @@ const { buildSync } = require("esbuild");
 const { resolve } = require("path");
 
 const PKG = resolve(__dirname, "../packages/retroplug");
-const outFile = process.argv[2] || resolve(__dirname, "../build/native-greenfield/cp-bundle.js");
+const outFile = process.argv[2] || resolve(__dirname, "../build/native/cp-bundle.js");
 
 // The DSP role kernel as a self-contained IIFE (the bare DSP QuickJS context evals this per structure
 // change). Injected into the control plane so it can loadKernel() at boot.

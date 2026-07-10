@@ -29,7 +29,7 @@ const ROM = resolve(REPO, process.argv[3] || DEFAULT_ROM[scenario]);
 const OUT = resolve(process.argv[4] || resolve(REPO, `build/lsdj_${scenario}_greenfield.rplg`));
 
 mkdirSync(dirname(OUT), { recursive: true });
-const bundle = resolve(REPO, `build/native-greenfield/author-lsdj-rplg-${scenario}.js`);
+const bundle = resolve(REPO, `build/native/author-lsdj-rplg-${scenario}.js`);
 mkdirSync(dirname(bundle), { recursive: true });
 
 buildSync({
