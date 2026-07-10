@@ -285,3 +285,18 @@ set_target_properties(retroplug-plugin-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-classid-test guards TjsHostRuntime::init's class-id reservation (the plugin-editor blank-UI
+# fix): it needs the real txiki host, so it links retroplug-backend. Also `pnpm test:plugin`, on demand.
+add_executable(retroplug-classid-test EXCLUDE_FROM_ALL
+    test/plugin/ClassIdReserve.test.cpp)
+
+target_link_libraries(retroplug-classid-test PRIVATE retroplug-backend)  # TjsHostRuntime (+ txiki, quickjs)
+
+target_include_directories(retroplug-classid-test PRIVATE
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)             # quickjs.h
+
+set_target_properties(retroplug-classid-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
