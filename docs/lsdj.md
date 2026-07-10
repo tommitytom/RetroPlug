@@ -3,14 +3,17 @@
 The LSDj domain reference, plus how to verify LSDj sync / DAW timing / audio
 quality headlessly.
 
-**On tooling:** the test procedures below run on the **legacy** CLI + reaper
-harness (`retroplug-cli`, `test/ts/**`, `emu.*`, `pnpm test:cli` / `reaper:*`).
-Greenfield is growing its own DSP-role tests (`pnpm test:greenfield-native`; see
-[spec/06-build-test.md](../spec/06-build-test.md)), and the LSDj sync roles are being
-reimplemented in TypeScript (see [spec/04-roles-dsp-kernel.md](../spec/04-roles-dsp-kernel.md)
-and `spec/07-migration.md`). Until greenfield replaces the full LSDj/DAW matrix,
-this legacy harness is the way to run it — and the **domain facts** here (the sav
-model, screen map, Arduinoboy protocol, manual lookup) are build-agnostic.
+**On tooling:** the **headless** LSDj-sync + audio-quality matrix now also runs on
+**greenfield** (`pnpm test:greenfield-native`): the sync-mode real-core tests
+(`test-native/lsdj-{arduinoboy-slave,midimap,keyboardmidi,passthrough}.test.ts`),
+link-cable sync via per-system audio (`lsdj-sync-{pattern,negative}.test.ts`, on the
+`renderAudioPerSystem` RPC), and the reaper-MCP WAV staging
+(`pnpm reaper:analyze-{smoke,lsdj-sync}-greenfield`). The **DAW-timing** leg (real
+Reaper metro / drift renders, `reaper:lsdj-*-metro` / `-drift`) and the
+**ArduinoboyMaster** MI.OUT path still run only on the **legacy** CLI + reaper harness
+(`retroplug-cli`, `test/ts/**`, `emu.*`, `pnpm test:cli` / `reaper:*`); see
+`spec/07-migration.md`. Either way the **domain facts** here (the sav model, screen
+map, Arduinoboy protocol, manual lookup) are build-agnostic.
 
 ---
 

@@ -26,8 +26,19 @@ providers** (§4.4), the bindings + gamepad UI, and the confirm/prompt modals ar
 verification tasks remain** before legacy can be deleted:
 
 1. **VST2 build — DONE (builds).** `vst2` added to the greenfield DPF `TARGETS`; `retroplug-greenfield-vst2.so` builds clean on Linux. Remaining polish (not the build): DAW-load validation + any Windows link fixes the legacy VST2 carried.
-2. **Port the LSDj-sync / DAW-timing / audio-quality test matrix to greenfield.** The legacy CLI + reaper harness still owns this (`docs/lsdj.md`); the **greenfield CLI + the observe/debug RPCs** ([spec/09-cli-debugging.md](09-cli-debugging.md)) are the vehicle. This gates deleting `packages/native/test`, `test/ts/**`, and the `reaper:*` scripts (§3).
-3. **Native KeyboardMidi coverage.** KeyboardMidi (mode 5) is behavior-unit-tested ([test/dsp/lsdj-modes.test.ts](../packages/retroplug-greenfield/test/dsp/lsdj-modes.test.ts)) but never driven against a **real LSDj core**. Add a real-core test proving MIDI→LSDj-keyboard end to end (fold it into task 2's matrix).
+2. **Port the LSDj-sync / DAW-timing / audio-quality test matrix to greenfield.** The **headless** portion
+   is **DONE** on `pnpm test:greenfield-native`: the sync-mode real-core tests (MidiSyncArduinoboy / MidiMap /
+   KeyboardMidi / MidiPassthrough — `test-native/lsdj-*.test.ts`), link-cable sync via **per-system audio**
+   (the new `renderAudioPerSystem` RPC — `lsdj-sync-{pattern,negative}.test.ts`), and audio-quality WAV staging
+   (`reaper:analyze-{smoke,lsdj-sync}-greenfield`). **Remaining:** the **DAW-timing** leg — the real-Reaper
+   metro / drift renders (`reaper:lsdj-*-metro` / `-drift`, a DAW-in-the-loop vehicle: greenfield `.rplg`
+   fixtures + the reaper scripts pointed at the greenfield VST3 + `reaper-timing-analyze.py`). Deleting
+   `packages/native/test`, `test/ts/**`, and the `reaper:*` scripts (§3) is gated on that leg **plus the
+   ArduinoboyMaster serial-out test** (task 4).
+3. **Native KeyboardMidi coverage — DONE.** KeyboardMidi (mode 5) is now driven against a **real LSDj core**
+   ([test-native/lsdj-keyboardmidi.test.ts](../packages/retroplug-greenfield/test-native/lsdj-keyboardmidi.test.ts)):
+   the mock [lsdj-modes.test.ts](../packages/retroplug-greenfield/test/dsp/lsdj-modes.test.ts) asserts the exact
+   PS/2 scancodes, and the native test proves they reach a real LSDj and it keeps running (delivery, no crash).
 4. **The final 2 LSDj sync modes** (§5): raw **Keyboard** (mode 4 — needs the per-block UI-keys feed) and **ArduinoboyMaster** (mode 7, LSDj→MIDI-out — needs the emulator **serial-OUT fed into the block** + `emitMidiOut` **drained to the host MIDI-out port** + the master-protocol behaviour). ArduinoboyMaster is the priority.
 
 **Explicitly deferred / dropped (NOT blockers for deletion):**
