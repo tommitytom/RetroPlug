@@ -25,7 +25,27 @@ providers** (§4.4), the bindings + gamepad UI, and the confirm/prompt modals ar
 `gain`/`reload` are generalized off SameBoy-only. After the scoping decisions below, **four feature/
 verification tasks remain** before legacy can be deleted:
 
-1. **VST2 build — DONE (builds).** `vst2` added to the greenfield DPF `TARGETS`; `retroplug-greenfield-vst2.so` builds clean on Linux. Remaining polish (not the build): DAW-load validation + any Windows link fixes the legacy VST2 carried.
+1. **Cross-platform build parity.** `vst2` is added to the greenfield DPF `TARGETS`;
+   `retroplug-greenfield-{clap,vst3,vst2,jack}` build clean on Linux. Three gaps remain before greenfield
+   matches legacy's platform reach — none are Linux-visible, so they're easy to miss:
+   - **Per-target Windows link fixes were never ported.** Four fixes live only on the legacy `${NAME}`
+     target and have no `-greenfield` equivalent (greenfield's `CMakeLists.txt` has zero
+     `if(WIN32)`/`if(MSVC)` blocks): the VST3 `ModuleEntry`/`ModuleExit` → `InitDll`/`ExitDll` export
+     aliases (without them VST3-3.7+ hosts like FL Studio can't load the `.vst3`), the JACK-standalone
+     `WIN32_EXECUTABLE TRUE` + `/ENTRY:mainCRTStartup` (else a spurious console window / entry-point
+     mismatch), the umbrella `OUTPUT_NAME "…-common"` rename (LNK1149 import-lib vs static-lib name
+     clash), and the explicit `winmm` link. **Port these to the `-greenfield` umbrella / vst3 / jack
+     targets** (§3) — deleting the legacy block without porting silently loses them. The *global*
+     platform infra (clang-cl `SameBoySystem` isolation → `retroplug-samebsys`, per-platform SDL2 find,
+     `/MT` / `NOMINMAX` / `noexecstack`) lives at root scope on shared libs, so greenfield already
+     inherits it.
+   - **AU (macOS Audio Unit) is silently dropped.** Legacy `TARGETS au clap jack lv2 vst2 vst3`;
+     greenfield `TARGETS clap vst3 vst2 jack`. LV2 is dropped by decision (formats row below); **AU — the
+     native macOS format (Logic / GarageBand) — is absent with no stated rationale and no blocker flag.**
+     Decide explicitly: add `au` to the greenfield `TARGETS`, or accept the drop.
+   - **Greenfield has no evidence of a Windows or macOS build.** The only CI workflow predates greenfield,
+     points at the stale `deps/dpf` path, and never had a Windows job; the greenfield build is unexercised
+     off Linux. A real Windows + macOS build is a precondition, not an assumption.
 2. **Port the LSDj-sync / DAW-timing / audio-quality test matrix to greenfield.** The **headless** portion
    is **DONE** on `pnpm test:greenfield-native`: the sync-mode real-core tests (MidiSyncArduinoboy / MidiMap /
    KeyboardMidi / MidiPassthrough — `test-native/lsdj-*.test.ts`), link-cable sync via **per-system audio**
@@ -81,7 +101,7 @@ precondition on deleting the corresponding legacy code.
 | **Sav inspector** | — (design only) | **Deferred.** Design-only in legacy → not a blocker. The LSDj sav codec exists; RPC exposure + a React view do not. |
 | **Live memory subscription** | `subscribeMemory` → `enableMemorySnapshot` streaming | **Deferred (§4.2).** Greenfield has one-shot frame/state/SRAM reads through the read door but no live region pump; nothing arms `enableMemorySnapshot`. Not a switchover blocker unless a feature needs it. |
 | **Gamepad (SDL) input** | `GamepadManager.{hpp,cpp}` | **Live input built (default bindings).** The legacy `GamepadManager` is compiled into greenfield too and polled from `PluginGreenfieldUI::uiIdle` (emitting the `gamepad-*` JS bus); `ui/input/useGamepadInput.ts` maps via the existing `bindings.gamepad` and routes to the focused core, twin of `useGameInput`. An in-app Gamepad Bindings editor (rebind by pressing a button *or* flicking a stick) is built, and the **left stick drives the d-pad** via half-axis tokens + hysteresis (`keyCodes.ts` `axisToken`, seeded in the default map, consumed in `useGamepadInput`). The **gamepad also drives the menu** ([Menu.tsx](../packages/retroplug-greenfield/ui/screens/menu/Menu.tsx)): d-pad / left stick move + cycle, A selects, B backs out (fixed SDL names via `keyCodes.ts` `menuNavForButton` / `menuNavForAxisToken`). Opening the menu and cycling the focused instance are **rebindable app actions** (`buildKeyToAction` / `buildGamepadToAction`, dispatched in [App.tsx](../packages/retroplug-greenfield/ui/App.tsx)): Open Menu defaults to Esc / `leftshoulder`, Cycle Instances to Tab / `rightshoulder` (Back unbound), so a gamepad-only user is never stranded. |
-| **Plugin formats VST2 + LV2** | JACK / CLAP / VST2 / VST3 / LV2 | **VST2 builds** — `vst2` added to the DPF `TARGETS` (`retroplug-greenfield-vst2.so`, Linux); DAW-load / Windows validation is the only remaining polish. **LV2 = deferred indefinitely** — its out-of-process DSP/UI split doesn't fit RetroPlug. Greenfield now builds `clap vst3 vst2 jack`. |
+| **Plugin formats VST2 / LV2 / AU** | JACK / CLAP / VST2 / VST3 / LV2 / AU | **VST2 builds** — `vst2` added to the DPF `TARGETS` (`retroplug-greenfield-vst2.so`, Linux); DAW-load / Windows validation is the only remaining polish (see the cross-platform parity task, §1). **LV2 = deferred indefinitely** — its out-of-process DSP/UI split doesn't fit RetroPlug. **AU = not built** (no rationale on record) — an explicit keep/drop decision, not yet made. Greenfield now builds `clap vst3 vst2 jack`. |
 | **Web / Emscripten port** | — (design only) | **Deferred** (design-only in legacy). |
 
 ---
@@ -136,6 +156,16 @@ deleted from the tree once the TS path drives every host that needs them (§5).
 `Project.cpp` itself is **shared** — only its persistence *callers* are legacy. The class keeps
 `loadFromConfig` / `snapshotConfig`; greenfield just doesn't call them.
 
+**SRAM mirroring is already TS-owned — not a C++ keeper.** The loose-`.sav` mirror is reimplemented in
+TS: `savPaths.ts` (a direct port of `SramAutoSave.hpp`'s path derivation — `resolveSavPath` /
+`siblingSavPath`) and `sramAutoSave.ts` (the auto-save pump over `backend.readSram` + `resolveSavPath`),
+with the `SramMirror` mode + battery persistence decided in `projectStore` / config. Native keeps only the
+*bytes* (read-door `readSram`; `sramBytes` / `stateBytes` seeding on build). So `system/SramAutoSave.hpp` +
+`config/SramMirror.hpp` **die with legacy** — but they're `#include`d by the shared `Project.cpp` (via
+`slurpSiblingSav`, part of the legacy `loadFromConfig` persistence slice greenfield never calls), so they
+can't be `rm`'d standalone: they exit when that persistence slice is trimmed out of `Project.cpp`, not with
+the legacy plugin target.
+
 ---
 
 ## 3. Rename / delete checklist
@@ -154,8 +184,9 @@ This is an inventory of the mechanical moves, not a sequenced plan. See
   into the greenfield tree instead of deleting.)
 - **Root `CMakeLists.txt` blocks:** `rpc-schema-dump`, `ui-regenerate`, the legacy
   `sav-regenerate` / `cli-regenerate` / `cli-bundle-regenerate` portions, the
-  `dpf_add_plugin(retroplug …)` definition + its Windows link fixes, and
-  `add_subdirectory(packages/native/test …)`.
+  `dpf_add_plugin(retroplug …)` definition + its Windows link fixes (**port the four per-target ones to
+  the `-greenfield` targets first** — they have no greenfield equivalent today; see the cross-platform
+  parity task, §1), and `add_subdirectory(packages/native/test …)`.
 - **CMake targets:** `retroplug`, `retroplug-{clap,vst3,vst2,lv2,lv2-ui,jack,au,ui,dsp}`,
   `retroplug-cli`, `harness-schema-dump`, `rpc-schema-dump`, `ui-regenerate`, and the Catch2
   test targets. Keep `sav-schema-dump` / `sav-regenerate` if greenfield still consumes the sav
