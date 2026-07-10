@@ -10,7 +10,7 @@
 # Designed for agent workflows on hosts with no display or audio hardware. Cleans up Xvfb/jackd on exit.
 #
 # Usage:
-#   tools/run-standalone-greenfield.sh                    # screenshot to /tmp/retroplug-greenfield.png after 4s
+#   tools/run-standalone-greenfield.sh                    # screenshot to /tmp/retroplug.png after 4s
 #   tools/run-standalone-greenfield.sh /tmp/x.png 6       # custom path + 6s run
 #   tools/run-standalone-greenfield.sh /tmp/x.png 6 250   # 6s with 250ms screenshot interval
 #
@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-OUT="${1:-/tmp/retroplug-greenfield.png}"
+OUT="${1:-/tmp/retroplug.png}"
 DURATION="${2:-4}"
 INTERVAL="${3:-1000}"
 
@@ -36,10 +36,10 @@ for cmd in Xvfb jackd; do
     fi
 done
 
-BIN="$REPO_DIR/build/bin/retroplug-greenfield"
+BIN="$REPO_DIR/build/bin/retroplug"
 if [ ! -x "$BIN" ]; then
     echo "building greenfield standalone..."
-    cmake --build "$REPO_DIR/build" --target retroplug-greenfield-jack -j"$(nproc)" >/dev/null
+    cmake --build "$REPO_DIR/build" --target retroplug-jack -j"$(nproc)" >/dev/null
 fi
 
 # Find a free X display.
@@ -50,7 +50,7 @@ export DISPLAY=":${DISP}"
 Xvfb "$DISPLAY" -screen 0 1024x768x24 -nolisten tcp >/dev/null 2>&1 &
 XVFB_PID=$!
 
-jackd -d dummy -r 44100 -p 1024 >/tmp/retroplug-greenfield-jackd.log 2>&1 &
+jackd -d dummy -r 44100 -p 1024 >/tmp/retroplug-jackd.log 2>&1 &
 JACK_PID=$!
 
 sleep 0.4
@@ -65,7 +65,7 @@ trap cleanup EXIT INT TERM
 
 RETROPLUG_SCREENSHOT_PATH="$OUT" \
 RETROPLUG_SCREENSHOT_INTERVAL_MS="$INTERVAL" \
-    "$BIN" >/tmp/retroplug-greenfield-stdout.log 2>&1 &
+    "$BIN" >/tmp/retroplug-stdout.log 2>&1 &
 RETRO_PID=$!
 
 sleep "$DURATION"
@@ -77,7 +77,7 @@ if [ -f "$OUT" ]; then
     echo "screenshot: $OUT ($(stat -c '%s bytes' "$OUT"), sha1 $SHA)"
 else
     echo "warning: no screenshot produced at $OUT" >&2
-    echo "check stdout: /tmp/retroplug-greenfield-stdout.log" >&2
-    echo "check jackd:  /tmp/retroplug-greenfield-jackd.log" >&2
+    echo "check stdout: /tmp/retroplug-stdout.log" >&2
+    echo "check jackd:  /tmp/retroplug-jackd.log" >&2
     exit 1
 fi

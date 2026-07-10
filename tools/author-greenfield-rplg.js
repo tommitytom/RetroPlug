@@ -1,5 +1,5 @@
 // Author a greenfield mGB `.rplg` fixture: esbuild author-mgb-rplg.ts (injecting the output path) and
-// run it on native-greenfield-host, which composes a store + exports the project.
+// run it on retroplug-host, which composes a store + exports the project.
 //
 //   node tools/author-greenfield-rplg.js [OUT.rplg]   (default build/mgb_greenfield.rplg)
 const { buildSync } = require("esbuild");
@@ -8,9 +8,9 @@ const { resolve, dirname } = require("path");
 const { mkdirSync } = require("fs");
 
 const REPO = resolve(__dirname, "..");
-const PKG = resolve(REPO, "packages/retroplug-greenfield");
+const PKG = resolve(REPO, "packages/retroplug");
 const OUT = resolve(process.argv[2] || resolve(REPO, "build/mgb_greenfield.rplg"));
-const HOST = process.env.RETROPLUG_GREENFIELD_HOST || resolve(REPO, "build/bin/native-greenfield-host");
+const HOST = process.env.RETROPLUG_GREENFIELD_HOST || resolve(REPO, "build/bin/retroplug-host");
 
 mkdirSync(dirname(OUT), { recursive: true });
 const bundle = resolve(REPO, "build/native-greenfield/author-mgb-rplg.js");

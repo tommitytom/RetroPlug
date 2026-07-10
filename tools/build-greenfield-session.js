@@ -1,5 +1,5 @@
 // Bundle a greenfield CLI session (TypeScript) to a self-contained ES-module .js that the standalone
-// retroplug-greenfield-cli binary evals on txiki. Mirrors build-greenfield-controlplane.js: esbuild the
+// retroplug-cli binary evals on txiki. Mirrors build-greenfield-controlplane.js: esbuild the
 // DSP role kernel to an IIFE and inject it as __DSP_KERNEL_BUNDLE__, then esbuild the session entry.
 // This is the ONLY Node step — it runs at author/build time; the resulting .js runs with no Node.
 //
@@ -7,7 +7,7 @@
 const { buildSync } = require("esbuild");
 const { resolve } = require("path");
 
-const PKG = resolve(__dirname, "../packages/retroplug-greenfield");
+const PKG = resolve(__dirname, "../packages/retroplug");
 
 const entry = process.argv[2];
 const outFile = process.argv[3];

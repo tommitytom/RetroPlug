@@ -36,8 +36,8 @@ cmake -B "$builddir" \
     -DRETROPLUG_SANITIZE="$san" \
     -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
 
-echo "==> building native-greenfield-host (instrumented)"
-cmake --build "$builddir" -j"$(nproc)" --target native-greenfield-host
+echo "==> building retroplug-host (instrumented)"
+cmake --build "$builddir" -j"$(nproc)" --target retroplug-host
 
 # Any finding aborts the host -> nonzero exit -> the runner reports the file failed. Thread mode
 # reuses the Catch2 seqlock suppressions (the greenfield seam is expected to need none). Address mode
@@ -49,12 +49,12 @@ else
     lsan="$repo/packages/native/test/sanitizer/lsan.supp"
     [ -f "$lsan" ] && export LSAN_OPTIONS="suppressions=$lsan"
 fi
-export RETROPLUG_GREENFIELD_HOST="$repo/$builddir/bin/native-greenfield-host"
+export RETROPLUG_GREENFIELD_HOST="$repo/$builddir/bin/retroplug-host"
 
 rc=0
 for slug in "${slugs[@]}"; do
     echo "==> running greenfield native test '$slug' under $san sanitizer"
-    if ! node packages/retroplug-greenfield/scripts/run-native-tests.mjs "$slug"; then
+    if ! node packages/retroplug/scripts/run-native-tests.mjs "$slug"; then
         echo "!! $slug failed under $san sanitizer" >&2
         rc=1
     fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Native-backend test runner. For each test-native/**/*.test.ts: bundle it with esbuild
-// (same config as run-tests.mjs), then run the bundle on the native-greenfield-host binary
+// (same config as run-tests.mjs), then run the bundle on the retroplug-host binary
 // — which exposes a REAL Backend (fs/config/codec) over globalThis[Symbol.for("plugin")].
 // Each file gets a fresh temp dir as RETROPLUG_USER_CONFIG_DIR (isolated real disk), also
 // injected into the bundle as __CONFIG_DIR__ so tests can assert against it. Pass/fail from
@@ -27,12 +27,12 @@ const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../r
 // rather than in the sibling tree, so a test can reach them without the sibling being populated.
 const REPO_RESOURCES_DIR = join(REPO, "resources");
 
-const HOST = process.env.RETROPLUG_GREENFIELD_HOST || join(REPO, "build/bin/native-greenfield-host");
+const HOST = process.env.RETROPLUG_GREENFIELD_HOST || join(REPO, "build/bin/retroplug-host");
 
 if (!existsSync(HOST)) {
   console.error(
     `native-greenfield host not found: ${HOST}\n` +
-      `build it once:  cmake --build build --target native-greenfield-host -j$(nproc)\n` +
+      `build it once:  cmake --build build --target retroplug-host -j$(nproc)\n` +
       `or set RETROPLUG_GREENFIELD_HOST to a host binary.`,
   );
   process.exit(1);

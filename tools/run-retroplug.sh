@@ -13,7 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BIN="$REPO_DIR/build/bin/retroplug-greenfield"
+BIN="$REPO_DIR/build/bin/retroplug"
 
 [ -x "$BIN" ] || { echo "error: $BIN not built" >&2; exit 1; }
 command -v pw-link >/dev/null || { echo "error: pw-link not found (install pipewire)" >&2; exit 1; }

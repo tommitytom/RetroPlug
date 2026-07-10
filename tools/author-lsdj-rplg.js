@@ -1,5 +1,5 @@
 // Author a greenfield LSDj `.rplg` fixture for the DAW-timing reaper renders: esbuild
-// author-lsdj-rplg.ts (injecting the scenario + ROM + output path) and run it on native-greenfield-host.
+// author-lsdj-rplg.ts (injecting the scenario + ROM + output path) and run it on retroplug-host.
 //
 //   node tools/author-lsdj-rplg.js <scenario> [ROM] [OUT.rplg]
 //     scenario  midi-metro | arduinoboy-metro | midi-drift
@@ -11,8 +11,8 @@ const { resolve, dirname } = require("path");
 const { mkdirSync } = require("fs");
 
 const REPO = resolve(__dirname, "..");
-const PKG = resolve(REPO, "packages/retroplug-greenfield");
-const HOST = process.env.RETROPLUG_GREENFIELD_HOST || resolve(REPO, "build/bin/native-greenfield-host");
+const PKG = resolve(REPO, "packages/retroplug");
+const HOST = process.env.RETROPLUG_GREENFIELD_HOST || resolve(REPO, "build/bin/retroplug-host");
 
 const scenario = process.argv[2];
 const DEFAULT_ROM = {

@@ -27,7 +27,7 @@ slug="${2:-dsp-bench}"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
 builddir=build-prof
-host="$repo/$builddir/bin/native-greenfield-host"
+host="$repo/$builddir/bin/retroplug-host"
 
 echo "==> configuring $builddir (-DRETROPLUG_PROFILE=ON)"
 cmake -B "$builddir" \
@@ -35,11 +35,11 @@ cmake -B "$builddir" \
     -DRETROPLUG_PROFILE=ON \
     -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ >/dev/null
 
-echo "==> building native-greenfield-host (profiling)"
-cmake --build "$builddir" -j"$(nproc)" --target native-greenfield-host
+echo "==> building retroplug-host (profiling)"
+cmake --build "$builddir" -j"$(nproc)" --target retroplug-host
 
 run_native() {  # $1 = host binary the runner launches (RETROPLUG_GREENFIELD_HOST)
-    RETROPLUG_GREENFIELD_HOST="$1" node packages/retroplug-greenfield/scripts/run-native-tests.mjs "$slug"
+    RETROPLUG_GREENFIELD_HOST="$1" node packages/retroplug/scripts/run-native-tests.mjs "$slug"
 }
 
 case "$mode" in

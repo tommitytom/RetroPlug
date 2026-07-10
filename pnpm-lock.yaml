@@ -24,7 +24,7 @@ importers:
 
   packages/native: {}
 
-  packages/retroplug-greenfield:
+  packages/retroplug:
     dependencies:
       zod:
         specifier: ^4.4.3

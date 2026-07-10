@@ -1,4 +1,4 @@
-# native-greenfield-host: the native host for the greenfield TS app.
+# retroplug-host: the native host for the greenfield TS app.
 #
 # Exposes the greenfield Backend to a TS bundle over
 # globalThis[Symbol.for("plugin")].__rpcSend, and runs the greenfield test harness. The
@@ -76,10 +76,10 @@ set_target_properties(retroplug-core PROPERTIES
     POSITION_INDEPENDENT_CODE ON   # linked into the greenfield plugin .so
 )
 
-# retroplug-greenfield-backend: the greenfield Backend as a static library — everything except a host
-# entry point, so both the test host (native-greenfield-host) and the DPF plugin compose the SAME
+# retroplug-backend: the greenfield Backend as a static library — everything except a host
+# entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
-add_library(retroplug-greenfield-backend STATIC
+add_library(retroplug-backend STATIC
     src/BackendFacade.cpp         # thin facade: owns the shared state, forwards to the 3 services
     src/HostRpcService.cpp        # fs / config / codec / sav (pure, stateless)
     src/EngineRpcService.cpp      # emulator surface over Engine + Invoker + Factory
@@ -95,7 +95,7 @@ add_library(retroplug-greenfield-backend STATIC
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
 )
 
-target_include_directories(retroplug-greenfield-backend PUBLIC
+target_include_directories(retroplug-backend PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     # dpf.js src root for the shared host header ("dpfjs/host/TjsHostRuntime.hpp").
     ${DPFJS_PATH}/src
@@ -106,37 +106,37 @@ target_include_directories(retroplug-greenfield-backend PUBLIC
     #  miniz header dir, arrive PUBLIC from retroplug-core above.)
 )
 
-target_link_libraries(retroplug-greenfield-backend PUBLIC
+target_link_libraries(retroplug-backend PUBLIC
     retroplug-core      # Project + SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
 )
 
-set_target_properties(retroplug-greenfield-backend PROPERTIES
+set_target_properties(retroplug-backend PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON  # linked into the shared plugin module (below)
 )
 
-# native-greenfield-host: the test host — the backend lib + a main() that evals a TS bundle over the
+# retroplug-host: the test host — the backend lib + a main() that evals a TS bundle over the
 # __rpcSend bridge. Output binary lands in build/bin/.
-add_executable(native-greenfield-host src/main.cpp)
+add_executable(retroplug-host src/main.cpp)
 
-target_link_libraries(native-greenfield-host PRIVATE retroplug-greenfield-backend)
+target_link_libraries(retroplug-host PRIVATE retroplug-backend)
 
-set_target_properties(native-greenfield-host PROPERTIES
+set_target_properties(retroplug-host PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# retroplug-greenfield-cli: the standalone session runner — the same backend lib + a main() that evals
+# retroplug-cli: the standalone session runner — the same backend lib + a main() that evals
 # one pre-bundled session .js (authored in TS, esbuild-bundled) over the __rpcSend bridge. No Node at
 # runtime. Output binary lands in build/bin/.
-add_executable(retroplug-greenfield-cli cli/main.cpp)
+add_executable(retroplug-cli cli/main.cpp)
 
-target_link_libraries(retroplug-greenfield-cli PRIVATE retroplug-greenfield-backend)
+target_link_libraries(retroplug-cli PRIVATE retroplug-backend)
 
-set_target_properties(retroplug-greenfield-cli PROPERTIES
+set_target_properties(retroplug-cli PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
@@ -144,9 +144,9 @@ set_target_properties(retroplug-greenfield-cli PROPERTIES
 
 # The example sessions, esbuild-bundled to runnable .js (with the DSP kernel injected as
 # __DSP_KERNEL_BUNDLE__, mirroring the cp-bundle recipe). A normal build yields both the binary and demos
-# the binary can run, e.g. build/bin/retroplug-greenfield-cli build/greenfield-cli/mgb-smoke.js.
-set(GFCLI_SESSIONS "${CMAKE_SOURCE_DIR}/packages/retroplug-greenfield/cli/sessions")
-add_custom_target(retroplug-greenfield-example-session ALL
+# the binary can run, e.g. build/bin/retroplug-cli build/greenfield-cli/mgb-smoke.js.
+set(GFCLI_SESSIONS "${CMAKE_SOURCE_DIR}/packages/retroplug/cli/sessions")
+add_custom_target(retroplug-example-session ALL
     BYPRODUCTS ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
                ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
                ${CMAKE_BINARY_DIR}/greenfield-cli/render-song.js
@@ -174,7 +174,7 @@ set(GFCP_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle.js")
 set(GFCP_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/cp-bundle_data.c")
 set_source_files_properties(${GFCP_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the plugin compiles
 
-add_custom_target(retroplug-greenfield-cp-bundle ALL
+add_custom_target(retroplug-cp-bundle ALL
     BYPRODUCTS ${GFCP_BUNDLE_JS} ${GFCP_BUNDLE_C} ${GFCP_BUNDLE_C}.new
     COMMAND ${NODE_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tools/build-greenfield-controlplane.js ${GFCP_BUNDLE_JS}
@@ -182,7 +182,7 @@ add_custom_target(retroplug-greenfield-cp-bundle ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GFCP_BUNDLE_C}.new ${GFCP_BUNDLE_C}
     COMMENT "Regenerating greenfield control-plane bundle (esbuild + bytecode)"
     VERBATIM)
-add_dependencies(retroplug-greenfield-cp-bundle ${_TJSC_DEP})
+add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
 
 # The greenfield UI bundle: main.tsx → bytecode C array (React entry via build-ui.js). Derived; never
 # committed. Defined BEFORE the plugin so its FILES_UI can embed it; the UI-test binary below reuses the
@@ -191,21 +191,21 @@ set(GFUI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle.js")
 set(GFUI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native-greenfield/ui-bundle_data.c")
 set_source_files_properties(${GFUI_BUNDLE_C} PROPERTIES GENERATED TRUE)
 
-add_custom_target(retroplug-greenfield-ui-bundle
+add_custom_target(retroplug-ui-bundle
     BYPRODUCTS ${GFUI_BUNDLE_JS} ${GFUI_BUNDLE_C} ${GFUI_BUNDLE_C}.new
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
             ${GFUI_BUNDLE_JS} ${GFUI_BUNDLE_JS}.d
-            ${CMAKE_SOURCE_DIR}/packages/retroplug-greenfield/ui/main.tsx
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/ui/main.tsx
     COMMAND ${_TJSC_COMMAND} -m -s -p gfui_ -o ${GFUI_BUNDLE_C}.new ${GFUI_BUNDLE_JS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${GFUI_BUNDLE_C}.new ${GFUI_BUNDLE_C}
     COMMENT "Regenerating greenfield UI bundle (esbuild + bytecode)"
     VERBATIM)
-add_dependencies(retroplug-greenfield-ui-bundle ${_TJSC_DEP})
+add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
 
-# --- retroplug-greenfield.{vst3,clap} + the jack standalone: the DPF plugin hosting the greenfield
+# --- retroplug.{vst3,clap} + the jack standalone: the DPF plugin hosting the greenfield
 # Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
 # legacy `retroplug` (they coexist).
-dpf_add_plugin(retroplug-greenfield
+dpf_add_plugin(retroplug
     TARGETS clap vst3 vst2 jack
     USE_FILE_BROWSER                    # native OS file dialog (matches DISTRHO_UI_FILE_BROWSER)
     FILES_DSP
@@ -219,47 +219,47 @@ dpf_add_plugin(retroplug-greenfield
 
 # plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h, not the legacy one that arrives transitively
 # via retroplug-core's packages/native/src include. dpf-widgets/generic resolves "LVGL.hpp".
-target_include_directories(retroplug-greenfield BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
-target_include_directories(retroplug-greenfield PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
+target_include_directories(retroplug BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
+target_include_directories(retroplug PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
 # GamepadManager.hpp lives in src/input/ (shared UI-thread input, re-homed from packages/native/src).
-target_include_directories(retroplug-greenfield PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/input)
+target_include_directories(retroplug PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/input)
 
-target_link_libraries(retroplug-greenfield PUBLIC
-    retroplug-greenfield-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
+target_link_libraries(retroplug PUBLIC
+    retroplug-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
     lvgl-js-native                # LVGL + LvglJsEngine + lv_binding_js + lodepng (the editor)
     dpfjs::core)                  # DPF Plugin + UI base
 
-target_compile_definitions(retroplug-greenfield PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
+target_compile_definitions(retroplug PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 
 # The embedded bundles must exist before the plugin compiles them.
-add_dependencies(retroplug-greenfield retroplug-greenfield-cp-bundle retroplug-greenfield-ui-bundle)
+add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)
 
 # --- greenfield UI test harness --------------------------------------------------------------------
-# retroplug-greenfield-ui-test boots the greenfield React UI on a headless software LVGL display
+# retroplug-ui-test boots the greenfield React UI on a headless software LVGL display
 # (RenderCore) driven by the BackendFacade RPC (GreenfieldUiHarness) — the greenfield twin of the
 # legacy retroplug-ui-test. Only built on demand (not ALL). Reuses GFUI_BUNDLE_C + the ui-bundle target
 # defined above the plugin.
 
-add_executable(retroplug-greenfield-ui-test
+add_executable(retroplug-ui-test
     test/ui/GreenfieldUiRunner.cpp
     test/ui/GreenfieldUiHarness.cpp
     test/ui/RenderCore.cpp
     ${GFUI_BUNDLE_C})               # the embedded greenfield UI bytecode (gfui_ui_bundle)
 
-target_link_libraries(retroplug-greenfield-ui-test PRIVATE
+target_link_libraries(retroplug-ui-test PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng (+ tjs)
-    retroplug-greenfield-backend) # BackendFacade + rpcpp + the cores + the txiki host
+    retroplug-backend) # BackendFacade + rpcpp + the cores + the txiki host
 
-target_include_directories(retroplug-greenfield-ui-test PRIVATE
+target_include_directories(retroplug-ui-test PRIVATE
     # quickjs.h for the JS trampolines in RenderCore/GreenfieldUiRunner (lvgl-js-native
     # PUBLIC-propagates the lv_binding_js render include dir, so "native/..." resolves transitively).
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)
 
-set_target_properties(retroplug-greenfield-ui-test PROPERTIES
+set_target_properties(retroplug-ui-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 # The embedded bundle must exist before the test binary compiles it.
-add_dependencies(retroplug-greenfield-ui-test retroplug-greenfield-ui-bundle)
+add_dependencies(retroplug-ui-test retroplug-ui-bundle)
