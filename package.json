@@ -8,7 +8,7 @@
     "node": ">=18.12"
   },
   "scripts": {
-    "configure": "cmake -S . -B build -DBUILD_TESTING=ON -DBUILD_CLI=ON",
+    "configure": "cmake -S . -B build",
     "build": "node scripts/cmake-build.js",
     "test:greenfield": "node scripts/cmake-build.js tjs-cli && node packages/retroplug-greenfield/scripts/run-tests.mjs",
     "test:greenfield-native": "node scripts/cmake-build.js native-greenfield-host && node packages/retroplug-greenfield/scripts/run-native-tests.mjs",

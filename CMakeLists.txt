@@ -286,30 +286,8 @@ target_include_directories(rpc-schema-dump PRIVATE ${DPFJS_PATH}/deps/lv_binding
 target_link_libraries(rpc-schema-dump PRIVATE rpcpp sameboy mesen r8brain enkiTS miniaudio efsw miniz mgb-rom
     $<$<BOOL:${WIN32}>:retroplug-samebsys>)
 
-# --- sav-schema-dump: prints the LSDj Sav model's JSON Schema for zod/TS gen ---
-# Header-only model + reflect-cpp (via rpcpp); no codec sources needed since
-# to_schema only inspects the struct definitions.
-add_executable(sav-schema-dump tools/SavSchemaDump.cpp)
-target_include_directories(sav-schema-dump PRIVATE packages/native/src)
-target_link_libraries(sav-schema-dump PRIVATE rpcpp)
-set_target_properties(sav-schema-dump PROPERTIES
-    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-
 # --- UI bundle: esbuild-bundled TS/TSX, embedded into the plugin as a byte array ---
 find_program(NODE_EXECUTABLE node REQUIRED)
-
-# --- sav-regenerate: emit zod + TS for the LSDj Sav model ---
-# Derived artifacts (build/ui/generated/SavSchema.ts + SavTypes.ts); never
-# committed. Not ALL on its own, but pulled in by cli-regenerate below so the
-# TS CLI tests (gb/lsdj/sav) that import SavSchema can't go stale.
-add_custom_target(sav-regenerate
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/gen-sav-ts.js
-            $<TARGET_FILE:sav-schema-dump> ${CMAKE_BINARY_DIR}/ui/generated
-    DEPENDS sav-schema-dump
-    BYPRODUCTS ${CMAKE_BINARY_DIR}/ui/generated/SavSchema.ts
-               ${CMAKE_BINARY_DIR}/ui/generated/SavTypes.ts
-    COMMENT "Regenerating LSDj Sav zod/TS schema")
 
 set(UI_BUNDLE_JS  "${CMAKE_BINARY_DIR}/ui/bundle.js")
 set(UI_BUNDLE_C   "${CMAKE_BINARY_DIR}/ui/bundle_data.c")
@@ -556,89 +534,14 @@ if(WIN32)
 endif()
 
 
-# --- CLI tool ---------------------------------------------------------------
-# Headless renderer + scripted-input runner. Useful for fast LSDJ renders
-# and agent-driven workflows.
-option(BUILD_CLI "Build the retroplug-cli headless renderer" ON)
+# --- greenfield host + plugin (defines retroplug-core, the shared emulator/Project lib) -----
+# native-greenfield defines retroplug-core + the greenfield Backend / txiki host + the DPF plugin.
+add_subdirectory(packages/native-greenfield native-greenfield)
 
-# CLI bundle: packages/cli -> esbuild -> tjsc bytecode -> embedded in
-# retroplug-cli, run by default (the no-Node end-user path). Mirrors the UI
-# bundle. The vars must exist before add_subdirectory(cli) so retroplug-cli can
-# list ${CLI_BUNDLE_C} as a (generated) source.
-if(BUILD_CLI AND NODE_EXECUTABLE)
-    set(CLI_BUNDLE_JS  "${CMAKE_BINARY_DIR}/cli/bundle.js")
-    set(CLI_BUNDLE_C   "${CMAKE_BINARY_DIR}/cli/bundle_data.c")
-    set(CLI_BUNDLE_DEP "${CMAKE_BINARY_DIR}/cli/bundle.d")
-    set_source_files_properties(${CLI_BUNDLE_C} PROPERTIES GENERATED TRUE)
-endif()
-
-if(BUILD_CLI)
-    # --- native-greenfield host + the shared retroplug-core lib -----------------
-    # Added FIRST because it now defines `retroplug-core` (the shared emulator/Project core), which the
-    # legacy CLI below links instead of compiling the core itself. This is also the txiki host that runs
-    # the greenfield TS app/tests over a real Backend; it lives inside this BUILD_CLI block.
-    add_subdirectory(packages/native-greenfield native-greenfield)
-
-    # The legacy CLI: retroplug-cli-core is now a thin HarnessRpcService wrapper over retroplug-core.
-    add_subdirectory(packages/native/cli cli)
-
-    # SDL2 gamepad input for greenfield: link onto its UI aggregator (mirrors the legacy line above), so
-    # every UI-bearing greenfield variant (clap/vst3/jack) gets the GamepadManager poll compiled into
-    # FILES_UI. DSP-only outputs never link UI sources and never see SDL.
-    if(TARGET retroplug-greenfield-ui)
-        target_link_libraries(retroplug-greenfield-ui PUBLIC PkgConfig::SDL2)
-    endif()
-endif()
-
-# --- cli-regenerate: typed TS client for the harness RPC surface ------------
-# Derived artifact (build/generated/HarnessService.ts); never committed. Kept
-# separate from ui-regenerate so the cli test client doesn't drag in the
-# LVGL/UI build. Always runs (anti-stale, like ui-regenerate). The schema is
-# dumped by the standalone harness-schema-dump exe (NOT retroplug-cli) so this
-# stays decoupled from the binary that embeds the CLI bundle built off it.
-if(BUILD_CLI AND NODE_EXECUTABLE)
-    add_custom_target(cli-regenerate ALL
-        BYPRODUCTS ${CMAKE_BINARY_DIR}/generated/HarnessService.ts
-        COMMAND ${NODE_EXECUTABLE}
-                ${CMAKE_SOURCE_DIR}/tools/gen-rpc-ts.js
-                $<TARGET_FILE:harness-schema-dump>
-                ${CMAKE_BINARY_DIR}/generated/HarnessService.ts
-                HarnessService
-        DEPENDS harness-schema-dump
-        COMMENT "Regenerating harness RPC client (HarnessService.ts)"
-        VERBATIM)
-    # The TS CLI tests also consume the generated LSDj Sav zod/TS schema
-    # (gb/lsdj/sav imports build/ui/generated/SavSchema.ts). Fold its regen in
-    # here so every CLI-test path (pnpm test:cli, smoke, reaper authors) and a
-    # plain full build produce it — same anti-stale contract as HarnessService.
-    add_dependencies(cli-regenerate sav-regenerate)
-endif()
-
-# --- cli-bundle-regenerate: the embedded end-user CLI app bytecode -----------
-# packages/cli -> esbuild (build-cli.js) -> tjsc bytecode (cli_bundle). Depends
-# on cli-regenerate (HarnessService.ts) but NOT on retroplug-cli, so retroplug-cli
-# can embed the result without a build cycle. Always runs (anti-stale, like
-# ui-regenerate); copy_if_different guards the .o rebuild.
-if(BUILD_CLI AND NODE_EXECUTABLE)
-    add_custom_target(cli-bundle-regenerate ALL
-        BYPRODUCTS ${CLI_BUNDLE_JS}
-                   ${CLI_BUNDLE_DEP}
-                   ${CLI_BUNDLE_C}
-                   ${CLI_BUNDLE_C}.new
-        COMMAND ${NODE_EXECUTABLE}
-                ${CMAKE_SOURCE_DIR}/tools/build-cli.js
-                ${CLI_BUNDLE_JS} ${CLI_BUNDLE_DEP}
-        COMMAND ${_TJSC_COMMAND}
-                -m -s -p cli_
-                -o ${CLI_BUNDLE_C}.new
-                ${CLI_BUNDLE_JS}
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${CLI_BUNDLE_C}.new ${CLI_BUNDLE_C}
-        COMMENT "Regenerating CLI bundle (esbuild + bytecode)"
-        VERBATIM)
-    add_dependencies(cli-bundle-regenerate cli-regenerate ${_TJSC_DEP})
-    # retroplug-cli compiles ${CLI_BUNDLE_C}; make sure it's generated first.
-    add_dependencies(retroplug-cli cli-bundle-regenerate)
+# SDL2 gamepad input for greenfield: link onto its UI aggregator so every UI-bearing greenfield variant
+# (clap/vst3/jack) gets the GamepadManager poll compiled into FILES_UI. DSP-only outputs never see SDL.
+if(TARGET retroplug-greenfield-ui)
+    target_link_libraries(retroplug-greenfield-ui PUBLIC PkgConfig::SDL2)
 endif()
 
 # The dpf.js seam probe (examples/minimal) now lives in the dpf.js repo and is
