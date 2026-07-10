@@ -6,10 +6,9 @@
 
 // ROMs baked into the binary at build time (see cmake bin2c step + the
 // generated build/generated/roms/mgb_rom_data.c). Exposed through one accessor
-// so both the menu loader (PluginRpcService::constructSystem, embeddedRom="mgb")
-// and the project loader
-// (Project::addSystem, re-supplying bytes a thin .rplg stripped) read the same
-// array — linked once, not duplicated per translation unit.
+// so the system build path (SameBoyBackend, embeddedRom="mgb" — both a fresh
+// menu load and a saved project re-supplying bytes a thin .rplg stripped) reads
+// the same array — linked once, not duplicated per translation unit.
 
 extern "C" {
     extern const unsigned char mgb_rom[];

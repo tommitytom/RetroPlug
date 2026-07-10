@@ -1,136 +1,10 @@
 #include "project/Project.hpp"
 
 #include <algorithm>
-#include <cstdio>
-#include <filesystem>
-#include <fstream>
 #include <vector>
 
-#include "rfl/Variant.hpp"
-
-#include "EmbeddedRoms.hpp"
 #include "system/BlockRunner.hpp"
-#include "system/SramAutoSave.hpp"
-#include "system/mesen/MesenGbaSystem.hpp"
-#include "system/mesen/MesenNesSystem.hpp"
 #include "system/sameboy/SameBoySystem.hpp"
-
-namespace {
-
-// Load the entire file at `path` into a byte buffer. Returns empty on failure.
-std::vector<std::uint8_t> slurpFile(const std::string& path) {
-    if (path.empty()) return {};
-    std::ifstream in(path, std::ios::binary | std::ios::ate);
-    if (!in) {
-        std::fprintf(stderr, "[Project] could not open ROM '%s'\n", path.c_str());
-        return {};
-    }
-    const std::streamsize size = in.tellg();
-    if (size <= 0) return {};
-    in.seekg(0, std::ios::beg);
-    std::vector<std::uint8_t> buf(static_cast<std::size_t>(size));
-    if (!in.read(reinterpret_cast<char*>(buf.data()), size)) {
-        std::fprintf(stderr, "[Project] failed to read ROM '%s'\n", path.c_str());
-        return {};
-    }
-    return buf;
-}
-
-// Read a system's loose `.sav` (cartridge battery RAM). The path is resolved the
-// same way auto-save writes it: the user-paired `savPath` override when set, else
-// the suffix-derived sibling (`<rom>.sav` / `<rom>-N.sav`; see SramAutoSave.hpp).
-// Returns empty when there's no path or no file. Used to restore SRAM for a
-// path-only project save, which drops embedded `sram`.
-std::vector<std::uint8_t> slurpSiblingSav(const std::string& romPath, std::uint32_t suffix,
-                                          const std::string& savPath) {
-    const std::string sav = rp::sram_autosave::resolveSavPath(romPath, suffix, savPath);
-    if (sav.empty()) return {};
-    std::error_code ec;
-    if (!std::filesystem::exists(sav, ec)) return {};
-    return slurpFile(sav);
-}
-
-} // namespace
-
-SystemId Project::addSystem(const SystemConfig& config) {
-    const SystemId id = nextId_++;
-
-    // Dispatch on the variant alternative. Each branch constructs the matching
-    // runtime SystemBase subclass and pushes both into `systems_` and the
-    // canonical `config_.systems`.
-    if (const auto* sb = rfl::get_if<SameBoyConfig>(&config.variant())) {
-        // Prefer embedded ROM bytes (round-tripped through DPF state) over
-        // re-reading from disk. Only fall back to slurpFile when bytes are
-        // absent — covers legacy/dev paths and the embedRom=false opt-out.
-        std::vector<std::uint8_t> rom = sb->romBytes;
-        // A thin .rplg / DPF-state save strips romBytes; if this slot is an
-        // embedded ROM (e.g. mGB), re-supply the bytes from the binary so the
-        // project reloads without a file on disk. See EmbeddedRoms.hpp.
-        if (rom.empty() && !sb->embeddedRom.empty()) {
-            const auto bytes = rp::embeddedRom(sb->embeddedRom);
-            rom.assign(bytes.begin(), bytes.end());
-        }
-        if (rom.empty())
-            rom = slurpFile(sb->romPath);
-        if (rom.empty()) {
-            std::fprintf(stderr, "[Project] no ROM bytes/path for SameBoy id=%u path='%s'\n",
-                         id, sb->romPath.c_str());
-            return 0;
-        }
-        // Path-only saves drop embedded SRAM; restore it from the sibling
-        // `<rom>.sav` when none is present in the config.
-        SameBoyConfig cfg = *sb;
-        if (cfg.sram.empty())
-            cfg.sram = slurpSiblingSav(cfg.romPath, cfg.savSuffix, cfg.savPath);
-        auto sys = std::make_unique<SameBoySystem>(id, cfg, std::move(rom));
-        systems_.push_back(std::move(sys));
-        config_.systems.push_back(std::move(cfg));
-        rebuildLinkGroups();
-        return id;
-    }
-
-    if (const auto* mb = rfl::get_if<MesenNesConfig>(&config.variant())) {
-        std::vector<std::uint8_t> rom = mb->romBytes;
-        if (rom.empty())
-            rom = slurpFile(mb->romPath);
-        if (rom.empty()) {
-            std::fprintf(stderr, "[Project] no ROM bytes/path for Mesen id=%u path='%s'\n",
-                         id, mb->romPath.c_str());
-            return 0;
-        }
-        MesenNesConfig cfg = *mb;
-        if (cfg.sram.empty())
-            cfg.sram = slurpSiblingSav(cfg.romPath, cfg.savSuffix, cfg.savPath);
-        auto sys = std::make_unique<MesenNesSystem>(id, cfg, std::move(rom));
-        systems_.push_back(std::move(sys));
-        config_.systems.push_back(std::move(cfg));
-        // Mesen systems don't participate in LinkGroups (no GB serial); the
-        // call is still safe — it just leaves any existing GB groups intact.
-        rebuildLinkGroups();
-        return id;
-    }
-
-    if (const auto* gb = rfl::get_if<MesenGbaConfig>(&config.variant())) {
-        std::vector<std::uint8_t> rom = gb->romBytes;
-        if (rom.empty())
-            rom = slurpFile(gb->romPath);
-        if (rom.empty()) {
-            std::fprintf(stderr, "[Project] no ROM bytes/path for GBA id=%u path='%s'\n",
-                         id, gb->romPath.c_str());
-            return 0;
-        }
-        MesenGbaConfig cfg = *gb;
-        if (cfg.sram.empty())
-            cfg.sram = slurpSiblingSav(cfg.romPath, cfg.savSuffix, cfg.savPath);
-        auto sys = std::make_unique<MesenGbaSystem>(id, cfg, std::move(rom));
-        systems_.push_back(std::move(sys));
-        config_.systems.push_back(std::move(cfg));
-        rebuildLinkGroups();
-        return id;
-    }
-
-    return 0;
-}
 
 SystemBase* Project::removeSystemAndRelease(SystemId id) {
     auto it = std::find_if(systems_.begin(), systems_.end(),
@@ -150,13 +24,6 @@ void Project::removeSystem(SystemId id) {
         released->onDeactivate();
         delete released;
     }
-}
-
-void Project::clearSystems() {
-    onDeactivate();
-    systems_.clear();
-    config_.systems.clear();
-    linkGroups_.clear();
 }
 
 void Project::onActivate(double sampleRate) {
@@ -225,26 +92,4 @@ void Project::rebuildLinkGroups() {
             }
         }
     }
-}
-
-ProjectConfig Project::snapshotConfig() const {
-    ProjectConfig out = config_;
-    out.systems.clear();
-    out.systems.reserve(systems_.size());
-    for (const auto& s : systems_) {
-        if (s) out.systems.push_back(s->snapshotConfig());
-    }
-    return out;
-}
-
-SystemId Project::loadFromConfig(const ProjectConfig& cfg) {
-    clearSystems();
-    config_ = ProjectConfig{};
-    config_.settings = cfg.settings;   // keep the loaded zoom / layout / routing
-    SystemId first = 0;
-    for (const auto& sysConfig : cfg.systems) {
-        const SystemId id = addSystem(sysConfig);
-        if (id != 0 && first == 0) first = id;
-    }
-    return first;
 }

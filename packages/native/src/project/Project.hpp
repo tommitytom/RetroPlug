@@ -20,12 +20,6 @@ class Project {
 public:
     Project() = default;
 
-    // Append a fresh system built from the variant alternative in `config`.
-    // Returns the new SystemId, or 0 on failure. Caller (e.g. setState) is
-    // responsible for sequencing onActivate after the host hands us a sample
-    // rate.
-    SystemId addSystem(const SystemConfig& config);
-
     // Removes the system identified by `id`. Returns the displaced raw
     // pointer (caller-owned, dispose off the audio thread) or nullptr if
     // not found. The internal `config_.systems` mirror is also updated.
@@ -35,10 +29,6 @@ public:
     // the existing callers in tests and Project's own setState path; not
     // used on the audio thread.
     void removeSystem(SystemId id);
-
-    // Wipe all systems (after onDeactivate). Used by setState before
-    // rebuilding from a saved project.
-    void clearSystems();
 
     // Realtime-safe swap. Caller passes a fully-built SystemBase* (already
     // onActivate'd on a non-realtime thread). The DSP slot identified by
@@ -173,9 +163,8 @@ public:
     // Rebuild `linkGroups_` from current systems' linkGroupId. Updates each
     // SameBoySystem's linkPeers_ cache. Single member groups are dissolved
     // (linkPeers_ left empty so the standalone path runs). Call after any
-    // mutation that changes membership: addSystem, removeSystem, swapSystem,
-    // and after setState repopulates the project. Realtime-safe under the
-    // pre-reserved capacities of the relevant vectors.
+    // mutation that changes membership (removeSystem, swapSystem, adoptSystem).
+    // Realtime-safe under the pre-reserved capacities of the relevant vectors.
     void rebuildLinkGroups();
 
     const std::vector<std::unique_ptr<SystemBase>>& systems() const { return systems_; }
@@ -189,18 +178,6 @@ public:
 
     const ProjectConfig& config() const { return config_; }
     ProjectConfig&       config()       { return config_; }
-
-    // Walk runtime systems, build a fresh ProjectConfig from their snapshots.
-    // Used by Plugin::getState.
-    ProjectConfig snapshotConfig() const;
-
-    // Rebuild this project from a parsed config (the inverse of snapshotConfig):
-    // clear existing systems, adopt the project-wide settings (zoom / layout /
-    // MIDI + audio routing), then rebuild each system. Returns the first
-    // restored SystemId (0 if none). The caller sequences onActivate /
-    // rebuildLinkGroups / focus + ConfigChanged. Shared by every project-load
-    // path so settings can't be dropped on apply.
-    SystemId loadFromConfig(const ProjectConfig& cfg);
 
 private:
     SystemId nextId_ = 1;
