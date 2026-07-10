@@ -341,7 +341,7 @@ protected:
     void uiIdle() override {
         if (!windowTitleSet_) {
             windowTitleSet_ = true;
-            if (getWindow().getApp().isStandalone()) getWindow().setTitle("RetroPlug Greenfield");
+            if (getWindow().getApp().isStandalone()) getWindow().setTitle("RetroPlug");
         }
         if (JSContext* ctx = jsEngine.getContext()) {
             jsEngine.emit("frame", 0, nullptr); // drives EmulatorTile's getFrame

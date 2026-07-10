@@ -1,13 +1,12 @@
-// DPF identity for the GREENFIELD plugin (retroplug-greenfield.{vst3,clap,…}). UI-less and
-// hard-stereo: the DSP runs the greenfield Engine directly. Kept distinct from the legacy
-// packages/native/src/DistrhoPluginInfo.h (name / URI / UNIQUE_ID / CLAP_ID all differ) so the two
-// plugins coexist. DPF requires this header at a fixed include path — the plugin's own include dir is
-// ordered BEFORE packages/native/src so this file wins over the legacy one.
+// DPF identity for the RetroPlug plugin. The DSP runs the Engine directly. These are the canonical
+// name / URI / UNIQUE_ID / CLAP_ID — reverted from the transitional "…-greenfield" strings once the
+// legacy plugin was removed, so existing DAW projects that reference RetroPlug resolve. DPF requires
+// this header at a fixed include path (the plugin's own include dir is ordered first).
 #pragma once
 
-#define DISTRHO_PLUGIN_NAME        "RetroPlug Greenfield"
-#define DISTRHO_PLUGIN_URI         "urn:distrho:retroplug-greenfield"
-#define DISTRHO_PLUGIN_CLAP_ID     "studio.kx.distrho.retroplug-greenfield"
+#define DISTRHO_PLUGIN_NAME        "RetroPlug"
+#define DISTRHO_PLUGIN_URI         "urn:distrho:retroplug"
+#define DISTRHO_PLUGIN_CLAP_ID     "studio.kx.distrho.retroplug"
 
 #define DISTRHO_PLUGIN_NUM_INPUTS  0
 #define DISTRHO_PLUGIN_NUM_OUTPUTS 8   // four stereo pairs (out_1..4); each system routes to one per audioRouting
@@ -17,8 +16,7 @@
 #define DISTRHO_PLUGIN_HAS_UI      1   // the greenfield React UI, on the shared LVGL editor widget
 
 // Custom OpenGL toolkit: the generic dpf.js LVGL top-level widget (GL flush + keypad/pointer indevs +
-// DPF→LVGL input translation). The editor (PluginGreenfieldUI.cpp) subclasses it. Mirrors the legacy
-// packages/native/src/DistrhoPluginInfo.h.
+// DPF→LVGL input translation). The editor (PluginGreenfieldUI.cpp) subclasses it.
 #define DISTRHO_UI_USE_CUSTOM          1
 #define DISTRHO_UI_CUSTOM_INCLUDE_PATH "LVGL.hpp"   // relative to dpf/distrho/DistrhoUI.hpp
 #define DISTRHO_UI_CUSTOM_WIDGET_TYPE  DGL_NAMESPACE::LVGLTopLevelWidget
@@ -46,9 +44,9 @@
 // host (GreenfieldSharedDSP). All greenfield formats (clap/vst3/jack) link DSP+UI in one binary.
 #define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1
 
-// A distinct 4-char id so the greenfield VST3/AU never collides with the legacy RPlg.
+// The canonical RetroPlug 4-char ids (VST3/AU); DAW projects match on UNIQUE_ID.
 #define DISTRHO_PLUGIN_BRAND_ID  Dstr
-#define DISTRHO_PLUGIN_UNIQUE_ID RPgf
+#define DISTRHO_PLUGIN_UNIQUE_ID RPlg
 
 #define DISTRHO_PLUGIN_LV2_CATEGORY    "lv2:InstrumentPlugin"
 #define DISTRHO_PLUGIN_VST3_CATEGORIES "Instrument|Synth|Stereo"

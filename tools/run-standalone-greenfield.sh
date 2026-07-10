@@ -14,7 +14,7 @@
 #   tools/run-standalone-greenfield.sh /tmp/x.png 6       # custom path + 6s run
 #   tools/run-standalone-greenfield.sh /tmp/x.png 6 250   # 6s with 250ms screenshot interval
 #
-# Drive input during the run via tools/standalone-key.sh with RETROPLUG_WINDOW_NAME="RetroPlug Greenfield".
+# Drive input during the run via tools/standalone-key.sh with RETROPLUG_WINDOW_NAME="RetroPlug".
 #
 # Dependencies (one-time): sudo apt-get install xvfb jackd2 xdotool
 

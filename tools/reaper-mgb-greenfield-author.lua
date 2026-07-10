@@ -7,7 +7,7 @@
 --
 -- Identical content to reaper-mgb-author.lua (one track, one C-major chord),
 -- but instantiates the GREENFIELD plugin by its distinct display name
--- ("RetroPlug Greenfield") and renders to a distinct stem so the two smokes
+-- ("RetroPlug") and renders to a distinct stem so the two smokes
 -- never collide. Letting Reaper add the FX (rather than hand-authoring the
 -- .rpp) is what captures the correct scanned VST3 GUID + the plugin's getState
 -- chunk — the hand-derived UID is exactly what rendered silent before.
@@ -30,14 +30,14 @@ reaper.Main_OnCommand(40023, 0)  -- File: New project
 -- Insert one track + name it
 reaper.InsertTrackAtIndex(0, true)
 local track = reaper.GetTrack(0, 0)
-reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "RetroPlug Greenfield", true)
+reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "RetroPlug", true)
 
 -- Add the greenfield RetroPlug VST3i. TrackFX_AddByName respects the standard
 -- prefix: "VST3i:" forces VST3 instrument matching. The name after it is the
--- plugin's DISTRHO_PLUGIN_NAME ("RetroPlug Greenfield") — distinct from legacy.
-local fxidx = reaper.TrackFX_AddByName(track, "VST3i:RetroPlug Greenfield", false, -1)
+-- plugin's DISTRHO_PLUGIN_NAME ("RetroPlug") — distinct from legacy.
+local fxidx = reaper.TrackFX_AddByName(track, "VST3i:RetroPlug", false, -1)
 if fxidx < 0 then
-    log("ERROR: RetroPlug Greenfield VST3i not found on plugin path (VST3_PATH=" ..
+    log("ERROR: RetroPlug VST3i not found on plugin path (VST3_PATH=" ..
         (os.getenv("VST3_PATH") or "") .. ")")
     return
 end

@@ -8,7 +8,7 @@
 --                    (disable); MidiSyncArduinoboy (mode 2). 8 s.
 --   midi-drift       like midi-metro but long (REAPER_AUTHOR_DURATION, default 180 s) for per-beat drift.
 --
--- Same two-track shape as legacy: track 1 = the GREENFIELD plugin ("RetroPlug Greenfield", pan hard-L),
+-- Same two-track shape as legacy: track 1 = the GREENFIELD plugin ("RetroPlug", pan hard-L),
 -- track 2 = ReaSynth click (pan hard-R, one short C-5 per quarter beat) → the stereo analyzer separates
 -- LSDj (L) from the metronome grid (R). Letting Reaper add the FX by name captures the correct scanned
 -- VST3 GUID. The LSDj project itself loads from the autoloaded .rplg (RETROPLUG_AUTOLOAD_PROJECT), so the
@@ -46,15 +46,15 @@ reaper.SetCurrentBPM(0, BPM, false)
 -- Track 1: the greenfield RetroPlug, panned hard-left.
 reaper.InsertTrackAtIndex(0, true)
 local t_rp = reaper.GetTrack(0, 0)
-reaper.GetSetMediaTrackInfo_String(t_rp, "P_NAME", "RetroPlug Greenfield", true)
+reaper.GetSetMediaTrackInfo_String(t_rp, "P_NAME", "RetroPlug", true)
 reaper.SetMediaTrackInfo_Value(t_rp, "D_PAN", -1.0)
 
-local fx_rp = reaper.TrackFX_AddByName(t_rp, "VST3i:RetroPlug Greenfield", false, -1)
+local fx_rp = reaper.TrackFX_AddByName(t_rp, "VST3i:RetroPlug", false, -1)
 if fx_rp < 0 then
-    log("ERROR: RetroPlug Greenfield VST3i not found on plugin path")
+    log("ERROR: RetroPlug VST3i not found on plugin path")
     return
 end
-log("[author] RetroPlug Greenfield FX at index " .. fx_rp)
+log("[author] RetroPlug FX at index " .. fx_rp)
 
 local it_rp = reaper.CreateNewMIDIItemInProj(t_rp, 0, DURATION, false)
 if scenario == "arduinoboy-metro" then
