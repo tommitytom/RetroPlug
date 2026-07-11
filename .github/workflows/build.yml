@@ -97,12 +97,6 @@ jobs:
 
   windows:
     runs-on: windows-2022
-    # Non-blocking: the CI plumbing here is correct (submodules, RGBDS, vcpkg
-    # sdl2+libffi, build.bat all run), but the reworked tree has a pre-existing
-    # Windows build break — DPF's DGL/NanoVG fails to compile under MSVC (GL2+
-    # symbols undeclared), and spec/07-migration.md lists 4 unported Windows
-    # link fixes on top. Drop continue-on-error once the Windows build compiles.
-    continue-on-error: true
     env:
       # build.bat defaults VCPKG_ROOT to C:\code\vcpkg; point it at the runner's
       # preinstalled vcpkg. RGBDS_DIR is set later once RGBDS is extracted.
