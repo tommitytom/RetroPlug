@@ -29,14 +29,17 @@ struct AudioBus {
     float* r = nullptr;
 };
 
-// Maps a system's slot (its index in Project::systems()) to the bus it writes
-// into. `streamIndex` is reserved for a future per-channel split (a system
-// emitting more than one stream — e.g. the 4 Game Boy channels); it is always 0
-// today and routers ignore it. Keeping it in the contract now means per-channel
-// support is purely additive later.
+// Maps a system's slot (its index in Project::systems()) to the bus(es) it writes
+// into. A system may emit more than one output STREAM (e.g. the 4 Game Boy
+// channels); `streamCount(slot)` reports how many the router expects from that
+// slot and `bus(slot, streamIndex)` returns the destination for each. Most routers
+// keep the mix path (one stereo stream): they inherit `streamCount() == 1` and
+// ignore `streamIndex`. The router is the authority for how many streams a slot
+// produces — a wide layout only takes effect under a router built to split it.
 struct AudioRouter {
     virtual ~AudioRouter() = default;
     virtual AudioBus bus(std::size_t slot, std::uint32_t streamIndex = 0) const = 0;
+    virtual std::uint32_t streamCount(std::size_t /*slot*/) const { return 1; }
 };
 
 // Every system sums into one fixed stereo pair (the Stereo routing, plus every
@@ -83,6 +86,22 @@ struct PerSystemRouter final : AudioRouter {
     AudioBus bus(std::size_t slot, std::uint32_t = 0) const override {
         return { ls[slot], rs[slot] };
     }
+};
+
+// One system's individual output streams each write into their own L/R buffer (CLI
+// per-channel isolation / render). `nStreams` is fixed at construction (the system's
+// channelLayout() size); bus() keys off `streamIndex` and ignores `slot`, since this
+// router serves a single system's split. Each stream gets a stereo pair of lanes; a
+// mono stream just leaves its R lane unwritten.
+struct PerChannelRouter final : AudioRouter {
+    float* const* ls;          // one L buffer per stream
+    float* const* rs;          // one R buffer per stream
+    std::uint32_t nStreams;
+    PerChannelRouter(float* const* l, float* const* r, std::uint32_t n) : ls(l), rs(r), nStreams(n) {}
+    AudioBus bus(std::size_t /*slot*/, std::uint32_t streamIndex = 0) const override {
+        return { ls[streamIndex], rs[streamIndex] };
+    }
+    std::uint32_t streamCount(std::size_t /*slot*/) const override { return nStreams; }
 };
 
 // Advance ONE render unit (1..N systems stepped in lockstep) by one block,

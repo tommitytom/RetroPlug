@@ -79,7 +79,7 @@ public:
     ExpSmoother& gainSmoother() noexcept { return gainSmoother_; }
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
-    void finishBlock(const AudioBlockInfo& info, float* const* outs) override;
+    void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
 
     // Linked iff this system shares a nonzero linkGroupId with surviving peers
     // (linkPeers_ populated by Project::rebuildLinkGroups). The runner skips

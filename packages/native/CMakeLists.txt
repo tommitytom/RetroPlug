@@ -304,3 +304,18 @@ set_target_properties(retroplug-classid-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-audio-test guards the per-channel host seam (runUnit stream loop + AudioRouter::streamCount +
+# lane-counted finishBlock). Pure C++ over a fake SystemBase — links only retroplug-core (Project +
+# SystemBase + BlockRunner), no cores/host. Also `pnpm test:plugin`, on demand.
+add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
+    test/audio/ChannelStreams.test.cpp)
+
+target_link_libraries(retroplug-audio-test PRIVATE
+    retroplug-core             # SystemBase + BlockRunner (runUnit) + the routers
+    Catch2::Catch2WithMain)
+
+set_target_properties(retroplug-audio-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

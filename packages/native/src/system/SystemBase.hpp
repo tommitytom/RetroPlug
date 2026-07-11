@@ -49,15 +49,27 @@ public:
     // drives these three directly for EVERY unit — singleton or link group; it
     // does not route singletons through onProcess().
     //
-    // Output contract: `outs[0]`/`outs[1]` are planar L/R buffers (DPF
-    // convention) the system must SUM into, not overwrite, so multiple systems
-    // can mix into one output pair. The CALLER zeroes the buffers.
+    // Output contract: `outs` is `laneCount` planar buffers the system must SUM
+    // into, not overwrite, so multiple systems can mix into one destination. The
+    // CALLER zeroes the buffers. `laneCount` is 2 for the default single stereo
+    // stream (`outs[0]`/`outs[1]` = L/R); a backend that reports a wider
+    // channelLayout() receives `2 * streamCount` lanes (stream k → `outs[2k]` /
+    // `outs[2k+1]`) and must branch on `laneCount` — the router the runner built
+    // is the authority for how many lanes arrive.
     //
     // Defaults are inert (no-op / "done") so trivial backends and test doubles
     // need not implement them.
     virtual void prepareForBlock(const AudioBlockInfo& /*info*/) {}
     virtual bool stepIfBelowTarget(std::uint32_t /*framesNeeded*/) { return false; }
-    virtual void finishBlock(const AudioBlockInfo& /*info*/, float* const* /*outs*/) {}
+    virtual void finishBlock(const AudioBlockInfo& /*info*/, float* const* /*outs*/,
+                             std::size_t /*laneCount*/) {}
+
+    // The output streams this system can emit. Default = one stereo "Mix" stream
+    // (the mixed console output), i.e. today's behaviour. A backend that can split
+    // its audio reports one entry per stream; that layout only takes effect under
+    // a router built to split it (finishBlock still receives whatever laneCount
+    // the router sized), so reporting a wide layout is inert on the default path.
+    virtual std::vector<ChannelStream> channelLayout() const { return {{"Mix", true}}; }
 
     // True when this system is advanced as part of a multi-member link unit —
     // its block is stepped by the group's round-robin, so it must NOT be driven

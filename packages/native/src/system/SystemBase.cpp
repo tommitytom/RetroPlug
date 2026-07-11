@@ -17,7 +17,7 @@ void SystemBase::onProcess(const AudioBlockInfo& info, float* const* outs) {
     // finish. Identical to a link group of size one (system/BlockRunner.cpp).
     prepareForBlock(info);
     while (stepIfBelowTarget(info.frames)) {}
-    finishBlock(info, outs);
+    finishBlock(info, outs, 2); // the convenience entry is stereo (one Mix stream = two lanes)
 }
 
 bool SystemBase::enableMemorySnapshot(rp::MemoryType type) {

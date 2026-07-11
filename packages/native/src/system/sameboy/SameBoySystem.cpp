@@ -1,6 +1,7 @@
 #include "system/sameboy/SameBoySystem.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -600,8 +601,14 @@ bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     return audioFrameCount_ < framesNeeded;
 }
 
-void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs) {
+void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {
     if (!activated_ || !gb_) return;
+
+    // Only the mixed stereo stream is produced here today; the per-channel split
+    // lands in a later stage. The router never hands this backend more than two
+    // lanes yet (its channelLayout() is the default single stereo stream).
+    assert(laneCount == 2);
+    (void)laneCount;
 
     const std::uint32_t frames = info.frames;
 

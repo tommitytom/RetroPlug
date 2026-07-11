@@ -1,5 +1,6 @@
 #include "system/mesen/MesenGbaSystem.hpp"
 
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -263,8 +264,11 @@ bool MesenGbaSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     return false;
 }
 
-void MesenGbaSystem::finishBlock(const AudioBlockInfo& info, float* const* outs) {
+void MesenGbaSystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {
     if (!activated_ || !emu_) return;
+
+    assert(laneCount == 2); // mixed stereo only today (default single stereo stream)
+    (void)laneCount;
 
     const std::uint32_t blockSize = info.frames;
     if (stereoAccum_.size() < std::size_t(blockSize) * 2) {

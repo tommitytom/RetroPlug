@@ -41,7 +41,7 @@ public:
     // drains/sums the audio and publishes snapshots.
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
-    void finishBlock(const AudioBlockInfo& info, float* const* outs) override;
+    void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
 
     // Audio-thread: forward host MIDI events to the attached N8 role (if any).
     // The role pushes bytes into the FIFO RX queue so the ROM's polling loop
