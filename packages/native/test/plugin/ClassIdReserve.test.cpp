@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <string>
 
+#include "dpfjs/host/ClassIdSpace.hpp"
 #include "dpfjs/host/TjsHostRuntime.hpp"
 
 extern "C" {
@@ -64,7 +65,7 @@ void registerFreshClasses(JSContext* ctx, int n) {
 } // namespace
 
 int main() {
-    std::printf("TAP version 13\n1..2\n");
+    std::printf("TAP version 13\n1..5\n");
 
     // A first runtime sets txiki's process-global class-id statics, then is freed — the DAW's scan pass.
     {
@@ -84,6 +85,69 @@ int main() {
 
     const std::string after = decodeHi(ctx);
     check(after == "hi", "TextDecoder still decodes after fresh native classes register", after.c_str());
+
+    // Check 3 (hole-proof): the sync advances past the MAX registered id, not the
+    // first unregistered one. Register a sentinel class at a high id so the ids
+    // just above txiki's block are unregistered holes; the next fresh id must clear
+    // the sentinel. A naive stop-at-first-gap sync would land in the hole and fail.
+    {
+        TjsHostRuntime holey;
+        if (!holey.init()) { std::printf("holey init failed\n"); return 2; }
+        JSRuntime* r = JS_GetRuntime(holey.context());
+
+        const JSClassID sentinel = 4096; // far above txiki's ~67..94 block
+        JSClassDef sdef  = {};
+        sdef.class_name  = "HoleSentinel";
+        JS_NewClass(r, sentinel, &sdef); // ids between txiki's high-water and 4096 are holes
+        check(JS_IsRegisteredClass(r, sentinel), "sentinel class registered at a high id", "4096");
+
+        dpfjs::syncClassIdAllocator(r);
+        JSClassID fresh = 0;
+        JS_NewClassID(r, &fresh);
+        char det[64];
+        std::snprintf(det, sizeof det, "fresh=%u sentinel=%u", fresh, sentinel);
+        check(fresh > sentinel, "fresh id clears the max registered id (hole-proof)", det);
+    }
+
+    // Check 4 (reuse-then-fresh / second-editor case): a first runtime fresh-allocates
+    // a class block (caching statics + advancing its counter); a second runtime
+    // reuse-registers those same statics (growing class_count without advancing its
+    // counter), models lv_binding_js on a 2nd editor. After the post-registration
+    // sync, a later fresh id must clear the reused block.
+    static JSClassID s_libA[48] = {}; // process-global statics, like lv_binding_js's
+    {
+        // Runtime #1 fresh-allocates libA: caches the statics AND advances r1's counter.
+        TjsHostRuntime r1;
+        if (!r1.init()) { std::printf("r1 init failed\n"); return 2; }
+        JSRuntime* r = JS_GetRuntime(r1.context());
+        for (JSClassID& id : s_libA) {
+            JSClassDef d = {};
+            d.class_name = "LibA";
+            JS_NewClassID(r, &id);
+            JS_NewClass(r, id, &d);
+        }
+    }
+    {
+        // Runtime #2 reuses libA's cached ids: JS_NewClass grows r2's class_count,
+        // but the reused JS_NewClassID does NOT advance r2's counter.
+        TjsHostRuntime r2;
+        if (!r2.init()) { std::printf("r2 init failed\n"); return 2; }
+        JSRuntime* r = JS_GetRuntime(r2.context());
+        JSClassID maxLibA = 0;
+        for (JSClassID id : s_libA) {
+            JSClassDef d = {};
+            d.class_name = "LibA";
+            JS_NewClass(r, id, &d);
+            if (id > maxLibA) maxLibA = id;
+        }
+
+        dpfjs::syncClassIdAllocator(r); // the "after NativeRenderInit" sync
+        JSClassID later = 0;
+        JS_NewClassID(r, &later);
+        char det[64];
+        std::snprintf(det, sizeof det, "later=%u maxLibA=%u", later, maxLibA);
+        check(later > maxLibA, "later fresh id clears the reused block (2nd-editor case)", det);
+    }
 
     std::printf("\n%s: %d/%d\n", g_failures ? "FAILED" : "all checks passed", g_index - g_failures, g_index);
     return g_failures ? 1 : 0;
