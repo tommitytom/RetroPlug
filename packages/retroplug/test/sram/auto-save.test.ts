@@ -6,7 +6,8 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { UserConfigStore } from "../../src/userConfigStore";
-import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, flushDirtySram } from "../../src/sramAutoSave";
+import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, flushDirtySram, lsdjSramSignature, sramSignature } from "../../src/sramAutoSave";
+import { savFromJson } from "../../src/lsdj";
 import { gbRom } from "../systems/fixtures";
 
 const bytes = (...b: number[]) => new Uint8Array(b);
@@ -146,4 +147,54 @@ test("sramDirtyCount / flushDirtySram skip embedded systems (no romPath)", () =>
   expect(sramDirtyCount(be, systems.systems())).toBe(0);
   expect(flushDirtySram(be, systems.systems())).toBe(0);
   expect(be.log.includes("writeFile")).toBeFalsy();
+});
+
+// --- LSDj semantic dirty signature (normalises the per-frame working-RAM clock) ---
+
+const WORK_HOURS = 0x3fb2; // a ticking work-clock byte — LSDj rewrites it every frame; NOT modeled
+const TEMPO = 0x3fb4; // a meaningful, modeled byte
+
+test("lsdjSramSignature ignores the ticking work-clock but catches a real edit", () => {
+  const orig = savFromJson(JSON.stringify({ workingSong: { settings: { tempo: 150 } } }));
+  expect(orig.length).toBe(0x20000);
+
+  // A frame tick bumps the work clock (and its checksum) but changes nothing meaningful.
+  const ticked = orig.slice();
+  ticked[WORK_HOURS] = (ticked[WORK_HOURS] + 7) & 0xff;
+  ticked[0x3fb9] = (ticked[0x3fb9] + 7) & 0xff; // totalTimeChecksum
+  expect(lsdjSramSignature(ticked)).toBe(lsdjSramSignature(orig)); // same signature
+  expect(hashBytes(ticked) === hashBytes(orig)).toBeFalsy(); // but the raw bytes differ
+
+  // A tempo change IS meaningful (a modeled field) → the signature changes.
+  const edited = orig.slice();
+  edited[TEMPO] = 90;
+  expect(lsdjSramSignature(edited) === lsdjSramSignature(orig)).toBeFalsy();
+});
+
+test("sramSignature falls back to a whole-SRAM hash for a non-LSDj battery", () => {
+  const gb = bytes(1, 2, 3, 4); // not a 128 KiB jk-stamped image
+  expect(lsdjSramSignature(gb)).toBe(null);
+  expect(sramSignature(gb)).toBe(hashBytes(gb));
+});
+
+test("an LSDj cart whose only diff from disk is the ticked clock is NOT dirty", () => {
+  const be = new MockBackend("/config");
+  const systems = new SystemsStore(be);
+  be.seed("/proj/a.gb", gbRom());
+  const id = systems.addSystem("/proj/a.gb")!;
+
+  const disk = savFromJson(JSON.stringify({ workingSong: { settings: { tempo: 150 } } }));
+  be.seed(SAV, disk); // the last saved .sav
+  const live = disk.slice();
+  live[WORK_HOURS] = (live[WORK_HOURS] + 3) & 0xff; // the clock has since ticked
+  be.setSram(id, live);
+
+  // Whole-SRAM hashing would report this dirty; the semantic signature does not.
+  expect(sramDirtyCount(be, systems.systems())).toBe(0);
+
+  // A real edit (tempo) makes it dirty again.
+  const edited = live.slice();
+  edited[TEMPO] = 90;
+  be.setSram(id, edited);
+  expect(sramDirtyCount(be, systems.systems())).toBe(1);
 });
