@@ -93,7 +93,11 @@ C++ unit checks — the per-context window-hook routing + the class-id counter s
 that keeps the DAW-hosted editor from rendering blank), `screenshot`,
 `reaper:editor` (`tools/run-reaper-editor.sh` — floats the hosted plugin editor in
 headless Reaper and asserts its LVGL snapshot rendered; the only check of on-screen
-editor rendering, not in CI), the `tools/run-sanitizer.sh` thread / address checks,
+editor rendering, not in CI), `reaper:editor-reopen` (`tools/run-reaper-editor-reopen.sh`
+— loads mGB through the UI, closes + reopens the editor, and asserts the project is
+still shown; currently FAILS, reproducing an open close→reopen state-loss bug; mouse-
+driven since keys don't reach the plugin editor headlessly; not in CI), the
+`tools/run-sanitizer.sh` thread / address checks,
 and `validate`. The LSDj-sync / DAW-timing / audio-quality matrix runs headlessly
 too — the real-Reaper
 `reaper:lsdj-*` renders + `tools/reaper-timing-analyze.py`; see
