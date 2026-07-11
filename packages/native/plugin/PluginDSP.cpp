@@ -168,7 +168,7 @@ private:
 
         transport_ = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
         server_    = std::make_unique<GreenfieldRpcServer>(service_, *transport_, rpcpp::QuickJSCodec{ctx});
-        registerBackendRpcMethods(*server_);
+        registerAllBackendRpc(*server_, service_);
 
         // globalThis[Symbol.for("plugin")] = { __rpcSend } — the namespace realBackend.ts targets.
         JSValue global = JS_GetGlobalObject(ctx);

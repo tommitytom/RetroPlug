@@ -74,7 +74,7 @@ int main(int argc, char** argv) try {
     BackendFacade service;
     rpcpp::QuickJSTransport transport(ctx, [](JSContext*, JSValue) {});
     BackendRpcServer server(service, transport, rpcpp::QuickJSCodec{ctx});
-    registerBackendRpcMethods(server);
+    registerAllBackendRpc(server, service);
 
     JSValue global = JS_GetGlobalObject(ctx);
 
