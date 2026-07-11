@@ -5,11 +5,15 @@
 // so binary rides Uint8Arrays and nothing is serialized), keeping greenfield dependency-
 // free.
 //
-// The fs / config / codec methods forward to std::filesystem + miniz; the emulator methods
-// (constructSystem / read* / …) drive a StubSystem in a real native Project. openFileBrowser is the
-// one async method and rides a UI-direct native hook rather than the RPC bridge (see below).
+// The client is split by CAPABILITY into three factories — host (fs/config/codec/sav + the
+// file dialog), emulator (lifecycle / live config / input / reads), and debug (live-core
+// inspection) — mirroring the native RPC facets a host binds. All three resolve the SAME
+// __rpcSend channel; the split is about which subset a consumer depends on, so a store that
+// only needs the filesystem can't reach emulator or debug methods. `createRealBackend`
+// recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
+// a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, FileBrowserOpts, FrameData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, FileBrowserOpts, FrameData, HostBackend, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
 
 type RpcSend = (request: unknown) => unknown;
 interface Reply {
@@ -22,7 +26,7 @@ interface Reply {
 // (PluginGreenfieldUI) hangs __rp_openFileBrowser on the shared context — like __rp_setWindowSize — and,
 // once the OS dialog settles, calls __rp_onFileBrowserResult back, both on the single UI thread. Only one
 // native dialog is ever in flight, so one module-level pending slot suffices (shared across every
-// createRealBackend on this context). When the hook is absent (the headless UI harness) the browser is
+// createHostClient on this context). When the hook is absent (the headless UI harness) the browser is
 // inert and every browse resolves null, exactly as the window-size hooks no-op there.
 type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string) => void;
 
@@ -57,38 +61,42 @@ function resolveSend(): RpcSend {
   return ns.__rpcSend;
 }
 
-/** Build a Backend backed by the native host. Throws if no native RPC surface is bound. */
-export function createRealBackend(): Backend {
+// A synchronous JSON-RPC caller over the bound channel. Each client keeps its own id counter; ids are
+// only cosmetic here (the reply is returned inline), so independent counters across facets are fine.
+type Call = (method: string, ...params: unknown[]) => unknown;
+function makeCall(): Call {
   const send = resolveSend();
   let nextId = 1;
-
-  const call = (method: string, ...params: unknown[]): unknown => {
+  return (method, ...params) => {
     const reply = send({ jsonrpc: "2.0", id: nextId++, method, params }) as Reply | null | undefined;
     if (reply == null) return undefined; // notification / no reply
     if (reply.error) throw new Error(`rpc ${method}: [${reply.error.code}] ${reply.error.message}`);
     return reply.result;
   };
+}
 
-  // A null RPC result (an absent std::optional) maps to null for the nullable byte reads. Binary
-  // crosses as a Uint8Array in both directions (the qjs codec decodes a typed byte param straight
-  // into rfl::Bytestring), so no number[] marshaling is needed either way.
-  const bytesOrNull = (v: unknown): Uint8Array | null => (v == null ? null : (v as Uint8Array));
+// A null RPC result (an absent std::optional) maps to null for the nullable byte reads. Binary
+// crosses as a Uint8Array in both directions (the qjs codec decodes a typed byte param straight
+// into rfl::Bytestring), so no number[] marshaling is needed either way.
+const bytesOrNull = (v: unknown): Uint8Array | null => (v == null ? null : (v as Uint8Array));
 
-  // ConstructSpec → RPC params: omit null path fields (so native reads nullopt, not "") and pass the
-  // seed bytes as a Uint8Array only when present.
-  const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> => {
-    const p: Record<string, unknown> = { id, romPath: spec.romPath, platform: spec.platform, core: spec.core, embeddedRom: spec.embeddedRom };
-    if (spec.savPath != null) p.savPath = spec.savPath;
-    if (spec.statePath != null) p.statePath = spec.statePath;
-    if (spec.replaceId !== undefined) p.replaceId = spec.replaceId;
-    if (spec.sramBytes) p.sramBytes = spec.sramBytes;
-    if (spec.stateBytes) p.stateBytes = spec.stateBytes;
-    if (spec.settings != null) p.settings = spec.settings;
-    return p;
-  };
+// ConstructSpec → RPC params: omit null path fields (so native reads nullopt, not "") and pass the
+// seed bytes as a Uint8Array only when present.
+const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> => {
+  const p: Record<string, unknown> = { id, romPath: spec.romPath, platform: spec.platform, core: spec.core, embeddedRom: spec.embeddedRom };
+  if (spec.savPath != null) p.savPath = spec.savPath;
+  if (spec.statePath != null) p.statePath = spec.statePath;
+  if (spec.replaceId !== undefined) p.replaceId = spec.replaceId;
+  if (spec.sramBytes) p.sramBytes = spec.sramBytes;
+  if (spec.stateBytes) p.stateBytes = spec.stateBytes;
+  if (spec.settings != null) p.settings = spec.settings;
+  return p;
+};
 
+/** The fs / config / codec / sav facet + the async file dialog. Throws if no native RPC surface is bound. */
+export function createHostClient(): HostBackend {
+  const call = makeCall();
   return {
-    // --- fs / config / codec (increment 1) --------------------------------
     readFile: (path) => bytesOrNull(call("readFile", path)),
     writeFile: (path, bytes) => call("writeFile", path, bytes) as boolean,
     writeFileAtomic: (path, bytes) => call("writeFileAtomic", path, bytes) as boolean,
@@ -104,8 +112,14 @@ export function createRealBackend(): Backend {
     zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries)), // {name, bytes: Uint8Array} matches BackendZipInput
     unzip: (bytes) => (call("unzip", bytes) as ZipEntry[] | null) ?? null,
     savFromJson: (json) => call("savFromJson", json) as Uint8Array, // Bytestring result → Uint8Array
+    openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts), // async UI-direct native hook, not RPC
+  };
+}
 
-    // --- emulator lifecycle / reads ---------------------------------------
+/** The emulator lifecycle / live config / input / snapshot-reads facet. Throws if no RPC surface is bound. */
+export function createEmulatorClient(): EmulatorBackend {
+  const call = makeCall();
+  return {
     constructSystem: (spec: ConstructSpec, id: number) => call("constructSystem", specParams(spec, id)) as boolean,
     removeSystem: (id) => call("removeSystem", id) as boolean,
     applySystemSetting: (id, key, value) =>
@@ -121,9 +135,14 @@ export function createRealBackend(): Backend {
       if (r == null || r.width === 0) return null; // no such system / no framebuffer
       return { width: r.width, height: r.height, published: r.published, pixels: r.data ?? new Uint8Array(0) };
     },
+  };
+}
 
-    // --- live-core debug reads (spec/09-cli-debugging.md) ------------------
-    // Field-for-field mirrors of the native reflect-cpp structs → a direct cast (the DspAllocStats pattern).
+/** The live-core debug facet (spec/09-cli-debugging.md). Throws if no RPC surface is bound.
+ *  Field-for-field mirrors of the native reflect-cpp structs → a direct cast (the DspAllocStats pattern). */
+export function createDebugClient(): DebugBackend {
+  const call = makeCall();
+  return {
     getApuState: (id) => call("getApuState", id) as ApuState,
     getPpuState: (id) => call("getPpuState", id) as PpuState,
     readCpu: (id, addr) => call("readCpu", id, addr) as number | null,
@@ -147,8 +166,10 @@ export function createRealBackend(): Backend {
     readProfile: (id) => call("readProfile", id) as ProfiledFunction[],
     disassemble: (id, addr, count) => call("disassemble", id, addr, count) as DisasmLine[],
     getCallStack: (id) => call("getCallStack", id) as CallFrame[],
-
-    // --- async dialog (UI-direct native hook; see browseFile above) -------
-    openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts),
   };
+}
+
+/** Build the full native Backend (all three facets). Throws if no native RPC surface is bound. */
+export function createRealBackend(): Backend {
+  return { ...createHostClient(), ...createEmulatorClient(), ...createDebugClient() };
 }
