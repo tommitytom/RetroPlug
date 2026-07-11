@@ -9,7 +9,7 @@
 // native primitive. The pairing (path/suffix/override resolution) already lives in
 // savPaths.ts; this is only the write policy.
 
-import type { Backend } from "./backend";
+import type { ControlPlaneBackend } from "./backend";
 import type { SystemsStore } from "./systemsStore";
 import type { UserConfigStore } from "./userConfigStore";
 import { resolveSavPath } from "./savPaths";
@@ -55,7 +55,7 @@ export interface SramTarget {
 // Whole-SRAM for now (hashBytes over every byte); a later role-provided signature can normalise away
 // volatile regions (e.g. LSDj rewrites working RAM every frame) so only meaningful changes count. Embedded
 // ROMs (no romPath) and empty batteries are never dirty; a missing `.sav` with a non-empty battery is.
-function sramTargetDirty(backend: Backend, s: SramTarget): boolean {
+function sramTargetDirty(backend: ControlPlaneBackend, s: SramTarget): boolean {
   if (!s.romPath) return false;
   const savPath = resolveSavPath(s.romPath, s.savSuffix, s.savPath);
   if (!savPath) return false;
@@ -67,7 +67,7 @@ function sramTargetDirty(backend: Backend, s: SramTarget): boolean {
 }
 
 /** How many systems have a live battery that differs from its on-disk `.sav`. */
-export function sramDirtyCount(backend: Backend, systems: SramTarget[]): number {
+export function sramDirtyCount(backend: ControlPlaneBackend, systems: SramTarget[]): number {
   let n = 0;
   for (const s of systems) if (sramTargetDirty(backend, s)) n++;
   return n;
@@ -75,7 +75,7 @@ export function sramDirtyCount(backend: Backend, systems: SramTarget[]): number 
 
 /** Write every dirty system's live battery to its sibling `.sav` (UNGATED — an explicit "save on close",
  *  unlike the auto-save mirror which respects the Off preference). Returns the number written. */
-export function flushDirtySram(backend: Backend, systems: SramTarget[]): number {
+export function flushDirtySram(backend: ControlPlaneBackend, systems: SramTarget[]): number {
   let n = 0;
   for (const s of systems) {
     if (!sramTargetDirty(backend, s)) continue;
@@ -92,7 +92,7 @@ export class SramAutoSaver {
   private hashes = new Map<number, number>();
 
   constructor(
-    private readonly backend: Backend,
+    private readonly backend: ControlPlaneBackend,
     private readonly systems: SystemsStore,
     private readonly userConfig: UserConfigStore,
   ) {}

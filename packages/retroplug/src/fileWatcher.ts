@@ -7,7 +7,7 @@
 //   - a system's ROM     → SystemsStore.reloadSystem(id) when reloadOnRomChange is on
 // (doc-03: "watcher = C++, policy = TS"). Unrecognized paths (e.g. recent.json) are ignored.
 
-import type { Backend } from "./backend";
+import type { HostBackend } from "./backend";
 import type { UserConfigStore } from "./userConfigStore";
 import type { SystemsStore } from "./systemsStore";
 import { joinPath, dirname, extensionLower } from "./pathUtil";
@@ -21,7 +21,7 @@ export interface WatchReport {
 
 export class FileWatcher {
   constructor(
-    private readonly backend: Backend,
+    private readonly backend: HostBackend,
     private readonly userConfig: UserConfigStore,
     private readonly systems: SystemsStore,
     private readonly onBindingsChanged: () => void = () => {},

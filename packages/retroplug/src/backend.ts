@@ -274,6 +274,42 @@ export interface Backend {
   savFromJson(json: string): Uint8Array;
 }
 
+// --- Capability slices --------------------------------------------------------
+// The `Backend` surface splits into three capability facets that mirror the native RPC facets a host
+// binds (host / emulator / debug). A consumer depends on the narrowest slice it uses, so a store that
+// only touches the filesystem can't reach emulator or debug methods — the TS-side counterpart of a host
+// that never registers those facets. `Backend` stays the union (and the source of truth for the member
+// signatures + docs above), so existing full-surface callers and the mock are unaffected.
+
+/** Filesystem / config / codec / sav authoring + the OS file dialog — the facet every host binds. */
+export type HostBackend = Pick<
+  Backend,
+  | "readFile" | "writeFile" | "writeFileAtomic" | "fileExists" | "rename" | "listDir" | "deleteFile"
+  | "drainChangedPaths" | "canonicalize" | "readFilePrefix" | "configDir" | "version"
+  | "zip" | "unzip" | "savFromJson" | "openFileBrowser"
+>;
+
+/** Emulator lifecycle / live config / input / snapshot reads — bound by the plugin, UI, CLI, test host. */
+export type EmulatorBackend = Pick<
+  Backend,
+  | "constructSystem" | "removeSystem" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
+  | "setAudioRouting" | "pressButton" | "readState" | "readSram" | "getFrame"
+>;
+
+/** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */
+export type DebugBackend = Pick<
+  Backend,
+  | "getApuState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
+  | "stepInstruction" | "drainEvents" | "loadLabels" | "setCpuRegister" | "runUntilPc"
+  | "setBreakpoints" | "runUntilBreak" | "setTrace" | "readTrace" | "stepInto" | "stepOver" | "stepOut"
+  | "beginProfile" | "readProfile" | "disassemble" | "getCallStack"
+>;
+
+/** The store-graph backend: fs + emulator, minus the CLI-only debug facet. composeAppStores runs on
+ *  this, so the plugin/UI control-plane store graph is debug-free at the type level — matching the
+ *  plugin/UI native channels that never register the debug facet. */
+export type ControlPlaneBackend = HostBackend & EmulatorBackend;
+
 /** One named blob in a zip archive (an `.rplg` entry: `project.json` or a
  *  `systems/{i}/…` blob). Bytes cross as `Uint8Array`, never a JS string. */
 export interface ZipEntry {

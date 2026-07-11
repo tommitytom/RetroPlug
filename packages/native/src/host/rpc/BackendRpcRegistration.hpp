@@ -1,99 +1,123 @@
 #pragma once
 
-// Single source of truth for the greenfield Backend method surface (mirrors
-// cli/HarnessRpcRegistration.hpp). Registers each method on the rpcpp server. The bound type is the
-// thin BackendFacade (one object per server); each method identifier IS the wire name.
+// Per-facet registration of the Backend method surface. Each function mounts one capability facet's
+// methods onto an rpcpp server via the cross-object addMethod<&Service::m>(instance) — the wire name is
+// derived from the method identifier, so it is unchanged from when every method was a BackendFacade
+// forwarder. A host calls only the facets it is allowed to expose (BackendFacade owns the services;
+// registerAllBackendRpc mounts the full union). Adding a method = one line in the right facet.
 
 #include "host/rpc/BackendFacade.hpp"
 
+// --- host: filesystem / config / codec / sav (15) ---
 template <class Server>
-void registerBackendRpcMethods(Server& server) {
-    // filesystem
-    server.template addMethod<&BackendFacade::readFile>();
-    server.template addMethod<&BackendFacade::writeFile>();
-    server.template addMethod<&BackendFacade::writeFileAtomic>();
-    server.template addMethod<&BackendFacade::fileExists>();
-    server.template addMethod<&BackendFacade::rename>();
-    server.template addMethod<&BackendFacade::listDir>();
-    server.template addMethod<&BackendFacade::deleteFile>();
-    server.template addMethod<&BackendFacade::drainChangedPaths>();
-    // paths / config
-    server.template addMethod<&BackendFacade::canonicalize>();
-    server.template addMethod<&BackendFacade::readFilePrefix>();
-    server.template addMethod<&BackendFacade::configDir>();
-    server.template addMethod<&BackendFacade::version>();
-    // codec
-    server.template addMethod<&BackendFacade::zip>();
-    server.template addMethod<&BackendFacade::unzip>();
-    // LSDJ sav authoring
-    server.template addMethod<&BackendFacade::savFromJson>();
-    // emulator lifecycle / reads
-    server.template addMethod<&BackendFacade::constructSystem>();
-    server.template addMethod<&BackendFacade::removeSystem>();
-    server.template addMethod<&BackendFacade::applySystemSetting>();
-    server.template addMethod<&BackendFacade::applyRoleConfig>();
-    server.template addMethod<&BackendFacade::readState>();
-    server.template addMethod<&BackendFacade::readSram>();
-    server.template addMethod<&BackendFacade::screenshot>();
-    server.template addMethod<&BackendFacade::getFrame>();
-    // live-core debug reads (spec/09-cli-debugging.md)
-    server.template addMethod<&BackendFacade::getApuState>();
-    server.template addMethod<&BackendFacade::getPpuState>();
-    server.template addMethod<&BackendFacade::readCpu>();
-    server.template addMethod<&BackendFacade::writeCpu>();
-    server.template addMethod<&BackendFacade::readMemory>();
-    server.template addMethod<&BackendFacade::getCpuRegisters>();
-    server.template addMethod<&BackendFacade::stepInstruction>();
-    server.template addMethod<&BackendFacade::drainEvents>();
-    server.template addMethod<&BackendFacade::loadLabels>();
-    // live-core debug writes / control-flow (spec/09-cli-debugging.md)
-    server.template addMethod<&BackendFacade::setCpuRegister>();
-    server.template addMethod<&BackendFacade::runUntilPc>();
-    // breakpoints + run-until-break (spec/09-cli-debugging.md)
-    server.template addMethod<&BackendFacade::setBreakpoints>();
-    server.template addMethod<&BackendFacade::runUntilBreak>();
-    // execution trace + single-step (spec/09-cli-debugging.md)
-    server.template addMethod<&BackendFacade::setTrace>();
-    server.template addMethod<&BackendFacade::readTrace>();
-    server.template addMethod<&BackendFacade::stepInto>();
-    server.template addMethod<&BackendFacade::stepOver>();
-    server.template addMethod<&BackendFacade::stepOut>();
-    // profiler + disassembler + call stack (spec/09-cli-debugging.md)
-    server.template addMethod<&BackendFacade::beginProfile>();
-    server.template addMethod<&BackendFacade::readProfile>();
-    server.template addMethod<&BackendFacade::disassemble>();
-    server.template addMethod<&BackendFacade::getCallStack>();
-    // DSP-side JS runtime (the role kernel)
-    server.template addMethod<&BackendFacade::compileScript>();
-    server.template addMethod<&BackendFacade::dspLoadKernel>();
-    server.template addMethod<&BackendFacade::dspSetSystems>();
-    // audio render / input drive
-    server.template addMethod<&BackendFacade::pressButton>();
-    server.template addMethod<&BackendFacade::renderAudio>();
-    server.template addMethod<&BackendFacade::renderAudioPerSystem>();
-    server.template addMethod<&BackendFacade::renderAudioPerChannel>();
-    server.template addMethod<&BackendFacade::sampleRate>();
-    server.template addMethod<&BackendFacade::setTransport>();
-    server.template addMethod<&BackendFacade::setBpm>();
-    server.template addMethod<&BackendFacade::setAudioRouting>();
-    // DSP runtime in the render loop
-    server.template addMethod<&BackendFacade::stageMidiIn>();
-    server.template addMethod<&BackendFacade::setSerialOutCapture>();
-    server.template addMethod<&BackendFacade::drainMidiOut>();
-    // DSP-runtime allocation/GC profiling (spec/08-profiling.md)
-    server.template addMethod<&BackendFacade::dspAllocStats>();
-    server.template addMethod<&BackendFacade::dspResetAllocStats>();
-    server.template addMethod<&BackendFacade::dspRunGc>();
-    // per-role runtime tracing (spec/08-profiling.md Tier B)
-    server.template addMethod<&BackendFacade::dspTraceReset>();
-    server.template addMethod<&BackendFacade::dspTrace>();
-    server.template addMethod<&BackendFacade::dspTraceNames>();
-    // background audio thread (threaded mode)
-    server.template addMethod<&BackendFacade::startAudio>();
-    server.template addMethod<&BackendFacade::stopAudio>();
-    server.template addMethod<&BackendFacade::audioCaptured>();
-    server.template addMethod<&BackendFacade::sleepMs>();
-    server.template addMethod<&BackendFacade::systemCount>();
-    server.template addMethod<&BackendFacade::drainReleased>();
-    server.addDiscoveryMethod();
+void registerHostRpc(Server& s, HostRpcService& h) {
+    s.template addMethod<&HostRpcService::readFile>(h);
+    s.template addMethod<&HostRpcService::writeFile>(h);
+    s.template addMethod<&HostRpcService::writeFileAtomic>(h);
+    s.template addMethod<&HostRpcService::fileExists>(h);
+    s.template addMethod<&HostRpcService::rename>(h);
+    s.template addMethod<&HostRpcService::listDir>(h);
+    s.template addMethod<&HostRpcService::deleteFile>(h);
+    s.template addMethod<&HostRpcService::drainChangedPaths>(h);
+    s.template addMethod<&HostRpcService::canonicalize>(h);
+    s.template addMethod<&HostRpcService::readFilePrefix>(h);
+    s.template addMethod<&HostRpcService::configDir>(h);
+    s.template addMethod<&HostRpcService::version>(h);
+    s.template addMethod<&HostRpcService::zip>(h);
+    s.template addMethod<&HostRpcService::unzip>(h);
+    s.template addMethod<&HostRpcService::savFromJson>(h);
+}
+
+// --- emulator: lifecycle / snapshot reads / live config / input (11) ---
+template <class Server>
+void registerEmulatorRpc(Server& s, EngineRpcService& e) {
+    s.template addMethod<&EngineRpcService::constructSystem>(e);
+    s.template addMethod<&EngineRpcService::removeSystem>(e);
+    s.template addMethod<&EngineRpcService::applySystemSetting>(e);
+    s.template addMethod<&EngineRpcService::applyRoleConfig>(e);
+    s.template addMethod<&EngineRpcService::readState>(e);
+    s.template addMethod<&EngineRpcService::readSram>(e);
+    s.template addMethod<&EngineRpcService::screenshot>(e);
+    s.template addMethod<&EngineRpcService::getFrame>(e);
+    s.template addMethod<&EngineRpcService::pressButton>(e);
+    s.template addMethod<&EngineRpcService::setAudioRouting>(e);
+    s.template addMethod<&EngineRpcService::setSerialOutCapture>(e);
+}
+
+// --- dsp-kernel: the role kernel (3) ---
+template <class Server>
+void registerDspKernelRpc(Server& s, EngineRpcService& e) {
+    s.template addMethod<&EngineRpcService::compileScript>(e);
+    s.template addMethod<&EngineRpcService::dspLoadKernel>(e);
+    s.template addMethod<&EngineRpcService::dspSetSystems>(e);
+}
+
+// --- harness: audio render / transport / MIDI + DSP profiling (14; CLI + tests only) ---
+template <class Server>
+void registerHarnessRpc(Server& s, EngineRpcService& e) {
+    s.template addMethod<&EngineRpcService::renderAudio>(e);
+    s.template addMethod<&EngineRpcService::renderAudioPerSystem>(e);
+    s.template addMethod<&EngineRpcService::renderAudioPerChannel>(e);
+    s.template addMethod<&EngineRpcService::sampleRate>(e);
+    s.template addMethod<&EngineRpcService::setTransport>(e);
+    s.template addMethod<&EngineRpcService::setBpm>(e);
+    s.template addMethod<&EngineRpcService::stageMidiIn>(e);
+    s.template addMethod<&EngineRpcService::drainMidiOut>(e);
+    s.template addMethod<&EngineRpcService::dspAllocStats>(e);
+    s.template addMethod<&EngineRpcService::dspResetAllocStats>(e);
+    s.template addMethod<&EngineRpcService::dspRunGc>(e);
+    s.template addMethod<&EngineRpcService::dspTraceReset>(e);
+    s.template addMethod<&EngineRpcService::dspTrace>(e);
+    s.template addMethod<&EngineRpcService::dspTraceNames>(e);
+}
+
+// --- debug: live-core inspection / stepping / breakpoints / profiler (22; CLI only, spec/09) ---
+template <class Server>
+void registerDebugRpc(Server& s, DebugRpcService& d) {
+    s.template addMethod<&DebugRpcService::getApuState>(d);
+    s.template addMethod<&DebugRpcService::getPpuState>(d);
+    s.template addMethod<&DebugRpcService::readCpu>(d);
+    s.template addMethod<&DebugRpcService::writeCpu>(d);
+    s.template addMethod<&DebugRpcService::readMemory>(d);
+    s.template addMethod<&DebugRpcService::getCpuRegisters>(d);
+    s.template addMethod<&DebugRpcService::stepInstruction>(d);
+    s.template addMethod<&DebugRpcService::drainEvents>(d);
+    s.template addMethod<&DebugRpcService::loadLabels>(d);
+    s.template addMethod<&DebugRpcService::setCpuRegister>(d);
+    s.template addMethod<&DebugRpcService::runUntilPc>(d);
+    s.template addMethod<&DebugRpcService::setBreakpoints>(d);
+    s.template addMethod<&DebugRpcService::runUntilBreak>(d);
+    s.template addMethod<&DebugRpcService::setTrace>(d);
+    s.template addMethod<&DebugRpcService::readTrace>(d);
+    s.template addMethod<&DebugRpcService::stepInto>(d);
+    s.template addMethod<&DebugRpcService::stepOver>(d);
+    s.template addMethod<&DebugRpcService::stepOut>(d);
+    s.template addMethod<&DebugRpcService::beginProfile>(d);
+    s.template addMethod<&DebugRpcService::readProfile>(d);
+    s.template addMethod<&DebugRpcService::disassemble>(d);
+    s.template addMethod<&DebugRpcService::getCallStack>(d);
+}
+
+// --- driver: background audio thread (6; threaded test host only) ---
+template <class Server>
+void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
+    s.template addMethod<&AudioDriverRpcService::startAudio>(d);
+    s.template addMethod<&AudioDriverRpcService::stopAudio>(d);
+    s.template addMethod<&AudioDriverRpcService::audioCaptured>(d);
+    s.template addMethod<&AudioDriverRpcService::sleepMs>(d);
+    s.template addMethod<&AudioDriverRpcService::systemCount>(d);
+    s.template addMethod<&AudioDriverRpcService::drainReleased>(d);
+}
+
+// The full union (69 methods) + discovery — every facet mounted. Hosts that expose the whole surface
+// (CLI) use this; scoped hosts call the individual register functions they're allowed to.
+template <class Server>
+void registerAllBackendRpc(Server& s, BackendFacade& f) {
+    registerHostRpc(s, f.host());
+    registerEmulatorRpc(s, f.engine());
+    registerDspKernelRpc(s, f.engine());
+    registerHarnessRpc(s, f.engine());
+    registerDebugRpc(s, f.debug());
+    registerDriverRpc(s, f.driver());
+    s.addDiscoveryMethod();
 }

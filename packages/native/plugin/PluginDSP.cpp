@@ -168,7 +168,14 @@ private:
 
         transport_ = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
         server_    = std::make_unique<GreenfieldRpcServer>(service_, *transport_, rpcpp::QuickJSCodec{ctx});
-        registerBackendRpcMethods(*server_);
+        // The plugin control plane composes the stores (fs + emulator) and loads the DSP kernel. It
+        // drives audio per block in C++ (never the renderAudio harness), never debugs the live core,
+        // and never spawns the background audio-driver thread — so those facets are NOT on this channel.
+        // The editor reuses this same context/channel, so it inherits exactly this surface.
+        registerHostRpc(*server_, service_.host());
+        registerEmulatorRpc(*server_, service_.engine());
+        registerDspKernelRpc(*server_, service_.engine());
+        server_->addDiscoveryMethod();
 
         // globalThis[Symbol.for("plugin")] = { __rpcSend } — the namespace realBackend.ts targets.
         JSValue global = JS_GetGlobalObject(ctx);

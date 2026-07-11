@@ -5,7 +5,7 @@
 // can re-render. All mutations are no-ops (no write, no notify) when they don't
 // actually change the list.
 
-import type { Backend } from "./backend";
+import type { HostBackend } from "./backend";
 import { addEntry, removeEntry, renameEntry, relinkEntry, label, type RecentEntry } from "./recentList";
 import { parseRecent, serializeRecent } from "./recentSerialization";
 
@@ -25,7 +25,7 @@ export interface RecentView {
 export class RecentStore {
   private entries: RecentEntry[] = [];
 
-  constructor(private readonly backend: Backend, private readonly onChange: () => void = () => {}) {}
+  constructor(private readonly backend: HostBackend, private readonly onChange: () => void = () => {}) {}
 
   /** Read recent.json into memory. Safe to call once at startup; a missing or
    *  unreadable file leaves the list empty. */

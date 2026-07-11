@@ -9,8 +9,6 @@
 
 #include "host/rpc/BackendTypes.hpp"
 #include "host/dsp/DspRuntime.hpp"  // DspAllocStats / DspGcResult (lean header, no quickjs types)
-#include "system/CpuState.hpp"    // rp::CpuRegister
-#include "system/DebugTarget.hpp" // rp::ApuState (the live-core debug reads)
 
 class Engine;
 class SystemFactory;
@@ -35,55 +33,8 @@ public:
     bool screenshot(std::uint32_t id, std::string path);
     GreenfieldFrame getFrame(std::uint32_t id);
 
-    // --- live-core debug reads (spec/09-cli-debugging.md) ---
-    // Read the LIVE core (via engine_.findSystem), unlike the snapshot-registry reads above — so, like
-    // the dspAllocStats reads, they are only valid on the control thread while the audio thread is not
-    // started (the CLI's single-threaded direct-render regime). getApuState needs a Mesen NES system
-    // (empty on SameBoy/GBA); the rest are SystemBase virtuals (empty/null when a backend can't serve).
-    rp::ApuState                 getApuState(std::uint32_t id);
-    rp::PpuState                 getPpuState(std::uint32_t id);
-    std::optional<std::uint8_t>  readCpu(std::uint32_t id, std::uint32_t addr);
-    bool                         writeCpu(std::uint32_t id, std::uint32_t addr, std::uint32_t value);
-    rfl::Bytestring              readMemory(std::uint32_t id, std::uint32_t memType);
-    std::vector<rp::CpuRegister> getCpuRegisters(std::uint32_t id);
-    std::uint64_t                stepInstruction(std::uint32_t id);
-    std::vector<rp::DebugEvent>  drainEvents(std::uint32_t id);
-
-    // --- execution trace + single-step (needs a Mesen NES debug target; empty/false on SameBoy/GBA) ---
-    // setTrace toggles Mesen's per-instruction trace logger; readTrace returns up to `count` most-recent
-    // rows (each a pc + formatted disassembly). stepInto/Over/Out advance one instruction / over a call /
-    // out of the current frame, returning the resulting BreakInfo (broke=false + defaults when unserved).
-    bool                        setTrace(std::uint32_t id, bool on);
-    std::vector<rp::TraceLine>  readTrace(std::uint32_t id, std::uint32_t count);
-    rp::BreakInfo               stepInto(std::uint32_t id);
-    rp::BreakInfo               stepOver(std::uint32_t id);
-    rp::BreakInfo               stepOut(std::uint32_t id);
-
-    // Load a cc65 `.dbg` symbol file so profiler/disassembly output shows function names. Needs a Mesen
-    // NES debug target (false on SameBoy/GBA, a gone id, or read/parse failure). Reached via debugTarget().
-    bool loadLabels(std::uint32_t id, std::string path);
-
-    // --- profiler + disassembler + call stack (needs a Mesen NES debug target; empty/false on else) ---
-    // beginProfile inits the debugger + clears the profiler (drive execution via the render window, then
-    // readProfile returns the per-function stats hottest-first). disassemble decodes `count` instructions
-    // from `addr`. getCallStack returns the current frames (outermost first).
-    bool                            beginProfile(std::uint32_t id);
-    std::vector<rp::ProfiledFunction> readProfile(std::uint32_t id);
-    std::vector<rp::DisasmLine>     disassemble(std::uint32_t id, std::uint32_t addr, std::uint32_t count);
-    std::vector<rp::CallFrame>      getCallStack(std::uint32_t id);
-
-    // --- live-core debug writes / control-flow (spec/09-cli-debugging.md) ---
-    // Plain SystemBase virtuals (no debugTarget needed); false when the id is gone or the backend can't
-    // serve. setCpuRegister writes one register by name; runUntilPc single-steps until PC == target.
-    bool setCpuRegister(std::uint32_t id, std::string name, std::uint32_t value);
-    bool runUntilPc(std::uint32_t id, std::uint32_t target, std::uint64_t maxCycles);
-
-    // --- breakpoints / run-until-break (needs a Mesen NES debug target; false/empty on SameBoy/GBA) ---
-    // setBreakpoints installs the whole set at once (replacing any prior set); each spec is execute/read/
-    // write over [start,end] with an optional Mesen condition expression. runUntilBreak steps the core
-    // until a breakpoint fires or `maxCycles` elapses (broke=false + defaults on the cap / no target).
-    bool          setBreakpoints(std::uint32_t id, std::vector<rp::BreakpointSpec> bps);
-    rp::BreakInfo runUntilBreak(std::uint32_t id, std::uint64_t maxCycles);
+    // (Live-core debug/inspection — getApuState/readCpu/breakpoints/trace/profiler/… — moved to
+    // DebugRpcService; only the CLI binds that facet.)
 
     // --- DSP-side JS runtime (the role kernel) ---
     std::optional<rfl::Bytestring> compileScript(std::string source);

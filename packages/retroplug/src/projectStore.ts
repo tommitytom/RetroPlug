@@ -12,7 +12,7 @@
 //     and frames the archive; native only compresses (backend.zip). A picked PK archive
 //     loads back through the same scan/relink tail, its blobs seeding each system.
 
-import type { Backend, ZipEntry } from "./backend";
+import type { ControlPlaneBackend, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
@@ -68,7 +68,7 @@ export class ProjectStore {
   private onSystemsChange: () => void = () => {};
   private onChangeCb: () => void = () => {};
 
-  constructor(private readonly backend: Backend, private readonly recent: RecentStore, registry?: RoleRegistry) {
+  constructor(private readonly backend: ControlPlaneBackend, private readonly recent: RecentStore, registry?: RoleRegistry) {
     // Any user mutation of the systems list marks the project dirty and re-drives the DSP.
     this.systems = new SystemsStore(
       backend,
