@@ -12,11 +12,9 @@
 // The C++ boundary stays string-only: base64 is done HERE (DPF state is NUL-terminated UTF-8; the
 // .rplg is binary PKZIP). Every op is synchronous over the synchronous Backend RPC — the host pumps
 // once after eval to run this top-level, then calls the globals directly with no further pumping.
-import { createRealBackend } from "./realBackend";
-import { RecentStore } from "./recentStore";
-import { ProjectStore } from "./projectStore";
+import { composeAppStores, type StoreChannel, type AppStores } from "./appStores";
 import { createDspRuntime } from "./dspRuntime";
-import { buildAppRegistry, syncDspFromStore } from "./appHost";
+import { syncDspFromStore } from "./appHost";
 import { dirname } from "./pathUtil";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -64,22 +62,41 @@ function b64decode(s: string): Uint8Array {
 }
 
 // --- compose the app layer over the real backend + the DSP kernel ---
-const be = createRealBackend();
-const registry = buildAppRegistry();
-const recent = new RecentStore(be);
-recent.load();
-const project = new ProjectStore(be, recent, registry);
+// One store graph, composed here at construct. The editor, when it attaches (same runtime, separate
+// bundle), REUSES this graph rather than composing a second one — so the systems the UI loads are the
+// same ones the DSP plays and getState serializes, and they survive a window close/reopen. The editor
+// registers its React re-render fan-out through `uiNotify`; it's a mutable slot because the control
+// plane composes long before any editor exists (and the editor comes and goes).
+const uiNotify: { fn: (channel: StoreChannel) => void } = { fn: () => {} };
+const stores: AppStores = composeAppStores({ notify: (channel) => uiNotify.fn(channel) });
+const project = stores.project;
 const dsp = createDspRuntime();
 
 const kernelOk = dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
-// Any systems edit (load / new / role change) re-projects the store into the DSP kernel structure.
-project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
+// A structural systems edit (load / new / role change) re-projects the store into the DSP kernel AND
+// re-renders the editor. composeAppStores already routed onChange / onFocusChange to the UI notify;
+// layer the DSP projection onto the structure signal without dropping that notify (focus changes, wired
+// to onFocusChange, re-render only — no DSP re-project).
+project.setOnSystemsChange(() => {
+  syncDspFromStore(project, dsp);
+  uiNotify.fn("systems");
+});
+
+// Publish the graph + the editor's notify hook on the shared plugin namespace (globalThis[Symbol.for(
+// "plugin")], where __rpcSend already lives) for the UI bundle to reuse.
+const pluginNs = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as Record<string, unknown> | undefined;
+if (pluginNs) {
+  pluginNs.stores = stores;
+  pluginNs.setUiNotify = (fn: ((channel: StoreChannel) => void) | null | undefined): void => {
+    uiNotify.fn = typeof fn === "function" ? fn : () => {};
+  };
+}
 
 // --- the C++→JS surface ---
 const g = globalThis as Record<string, unknown>;
 
 g.__rp_loadProjectPath = (path: string): boolean => {
-  const bytes = be.readFile(path);
+  const bytes = stores.backend.readFile(path);
   if (!bytes) return false;
   return project.loadBytes(bytes, dirname(path)).kind === "loaded";
 };
