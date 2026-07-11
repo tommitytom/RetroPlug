@@ -9,10 +9,12 @@
 #include "lsdj/model/Sav.hpp"
 #include "lsdj/model/Song.hpp"
 
-// JSON (de)serialization for the LSDj sav/song model, mirroring the project's
-// existing rfl::json idiom (src/project/ProjectSerialization.hpp). The model is
-// the single source of truth: the same reflect-cpp structs drive JSON here and
-// the generated zod/TS schema (see tools/gen-sav-ts.js).
+// JSON (de)serialization for the C++ LSDj sav/song model (rfl::json idiom). The
+// shipping codec is now pure TS (packages/retroplug/src/lsdj), which is the single
+// source of truth. This reflect-cpp model + codec are retained ONLY as the test
+// oracle: retroplug-lsdj-diff-tests cross-checks decode against liblsdj, and
+// retroplug-lsdj-golden-dump freezes savToJson(decodeSav(..)) as the golden vectors
+// the pure-TS codec is validated against. Not part of any shipping target.
 namespace rp::lsdj {
 
 inline std::string savToJson(const model::Sav& sav) { return rfl::json::write(sav); }

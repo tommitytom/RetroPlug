@@ -31,8 +31,9 @@ The rules below are the parts that don't fit those.
   (greenfield's file-watcher is *designed* to use it — `drainChangedPaths` is a stub
   today, so nothing links it yet). `deps/catch2` is the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
-  `test:plugin` binaries (`retroplug-plugin-test` / `retroplug-classid-test`) as
-  `Catch2::Catch2WithMain`.
+  `test:plugin` binaries (`retroplug-plugin-test` / `retroplug-classid-test`) and
+  the LSDj sav-codec oracle binaries (`test:lsdj-diff` / `test:lsdj-sav`, which
+  compile vendored liblsdj + the test-only C++ codec) as `Catch2::Catch2WithMain`.
 - **Don't `rm -rf build` to "fix" CMake** — investigate first. The configured
   `build/` is load-bearing for the dev loop.
 - **Build via `build.sh` (Linux/macOS) / `build.bat` (Windows)** — the canonical

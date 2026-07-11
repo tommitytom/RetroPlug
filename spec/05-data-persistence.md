@@ -8,9 +8,9 @@ migrations), the LSDj `.sav` codec, and the SRAM auto-save policy.
 This doc is the concrete expression of the thesis (see
 [01-architecture.md](01-architecture.md)): **TypeScript owns the framing —
 the model, the JSON shape, path resolution, version policy — and native owns
-only the bytes: compression (zip/unzip), file I/O, and the LSDj sav codec.**
-Native never decides what a project *is*; it slurps resolved paths and
-compresses byte buffers TS hands it.
+only the bytes: compression (zip/unzip) and file I/O.** Native never decides what
+a project *is*; it slurps resolved paths and compresses byte buffers TS hands it.
+(The LSDj `.sav` codec was the one exception; it is now pure TS too — see below.)
 
 ## The project model
 
@@ -178,34 +178,38 @@ version (below).
 
 ## The LSDj `.sav` codec
 
-RetroPlug ships a hand-written, version-aware codec for the 128 KiB LSDj `.sav`
-image (working-memory song at offset 0 + a 512-byte header at `0x8000` +
-the RLE-compressed stored-project archive —
-[SavCodec.hpp](../packages/native/src/lsdj/codec/SavCodec.hpp)). The model is a
-reflect-cpp struct that is the single source of truth for the on-disk shape,
-JSON, and the TS-facing types; the codec reads/writes the bytes.
+RetroPlug has a hand-written, version-aware codec for the 128 KiB LSDj `.sav`
+image (working-memory song at offset 0 + a 512-byte header at `0x8000` + the
+RLE-compressed stored-project archive). It is **pure TypeScript**
+([packages/retroplug/src/lsdj/](../packages/retroplug/src/lsdj/): `model.ts` is the
+zod SSOT; `codec/{bits,regions,rle,song,sav}.ts` is the byte codec), supporting
+every LSDj format version (fmt 0..22). The model — a zod schema mirroring the
+reflect-cpp JSON contract exactly — is the single source of truth for the on-disk
+shape, JSON, and TS types; the codec reads/writes the bytes. It runs in every
+runtime with no native host (the pure-TS test tier, the plugin, a future web
+build), and the model + decode are usable directly in TS.
 
-**TS authoring.** `savFromJson(json)` on the `Backend` encodes a `.sav` from a
-JSON `rp::lsdj::model::Sav`. It decodes **leniently** — via
-`savFromJsonFixture`, which reads with `rfl::DefaultIfMissing` so a fixture
-specifies only the cells it sets and everything else takes its model default
-([HostRpcService.cpp:163](../packages/native-greenfield/src/HostRpcService.cpp#L163),
-[SavSerialization.hpp:33](../packages/native/src/lsdj/SavSerialization.hpp#L33)).
-`savFromJson("{}")` yields a valid 128 KiB image, letting a test boot LSDj
-straight into authored song/sync state and skip the 12–15 s cartridge self-test.
-The TS-side wrapper [lsdjSav.ts](../packages/retroplug/src/lsdjSav.ts) is
-a test/tooling helper over the same RPC channel — it is deliberately **not** part
-of the production `Backend` seam.
+**TS authoring.** `savFromJson(json)` (a local function in `src/lsdj`, re-exported
+by [lsdjSav.ts](../packages/retroplug/src/lsdjSav.ts); also on the `Backend` seam
+for the load-time seed) encodes a `.sav` from a JSON `Sav` model. It decodes
+**leniently** — every field has a default so a fixture specifies only the cells it
+sets and everything else takes its model default. `savFromJson("{}")` yields a
+valid 128 KiB image, letting a test boot LSDj straight into authored song/sync
+state and skip the 12–15 s cartridge self-test. `savToJson(bytes)` decodes the
+inverse — the read direction TS never had before the port.
 
-**Correctness rationale (the liblsdj differential oracle).** Byte-identical
-round-tripping only proves *losslessness*, not that the old-format decode
-branches interpret the bytes correctly. liblsdj is a known-correct reference for
-song format versions ≤ 16, so
-[LsdjDifferentialTests.cpp](../packages/native/test/LsdjDifferentialTests.cpp)
-decodes each content-bearing fixture sav with **both** liblsdj and this codec and
-asserts the semantic fields match. That differential oracle is what proves the
-`fmt < N` decode paths are right. (liblsdj is a test-only dependency; the
-shipping codec has no liblsdj link.)
+**Correctness rationale (the liblsdj differential oracle + frozen goldens).**
+Byte-identical round-tripping only proves *losslessness*, not that the old-format
+decode branches interpret the bytes correctly. The (retained, test-only) C++
+reflect-cpp codec is validated against **liblsdj** — a known-correct reference for
+song format versions ≤ 16 —
+([LsdjDifferentialTests.cpp](../packages/native/test/LsdjDifferentialTests.cpp),
+`pnpm test:lsdj-diff`) and byte-identity round-trips the whole per-version corpus
+(`pnpm test:lsdj-sav`). Its decode output is frozen as golden JSON
+([test/lsdj/golden/](../packages/retroplug/test/lsdj/golden/)); the pure-TS codec
+is asserted byte-for-byte against those goldens (pure tier) and byte-identity
+round-trips all ~549 corpus savs (`test-native/lsdj-codec-corpus.test.ts`). The
+C++ codec + liblsdj are a **test-only** dependency; the shipping build links neither.
 
 ## SRAM auto-save policy
 
