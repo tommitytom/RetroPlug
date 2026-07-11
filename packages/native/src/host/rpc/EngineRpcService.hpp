@@ -96,6 +96,12 @@ public:
     // Per-system audio: each live system's interleaved-stereo PCM, in Project-slot order (marshals to
     // Uint8Array[]). Isolates each core so LSDj link-cable sync is provable (a follower's own RMS).
     std::vector<rfl::Bytestring> renderAudioPerSystem(double ms);
+    // Per-channel audio for ONE system: each of its channelLayout() streams as its own interleaved-stereo
+    // PCM (Game Boy = 4: Pulse 1/Pulse 2/Wave/Noise). Single-system only (empty if systemCount() != 1 or
+    // `id` is unknown) — the per-channel router keys off streamIndex, not slot. Marshals to Uint8Array[].
+    std::vector<rfl::Bytestring> renderAudioPerChannel(std::uint32_t id, double ms);
+    // The engine's audio sample rate (Hz), so callers can label WAV output correctly.
+    double          sampleRate() const;
     bool            setTransport(bool running);
     bool            setBpm(double bpm);
     bool            setAudioRouting(std::uint32_t mode);

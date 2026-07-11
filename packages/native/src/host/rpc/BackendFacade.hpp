@@ -81,6 +81,8 @@ public:
     bool pressButton(std::uint32_t id, std::uint32_t button, bool down) { return engine_svc_.pressButton(id, button, down); }
     rfl::Bytestring renderAudio(double ms) { return engine_svc_.renderAudio(ms); }
     std::vector<rfl::Bytestring> renderAudioPerSystem(double ms) { return engine_svc_.renderAudioPerSystem(ms); }
+    std::vector<rfl::Bytestring> renderAudioPerChannel(std::uint32_t id, double ms) { return engine_svc_.renderAudioPerChannel(id, ms); }
+    double sampleRate() { return engine_svc_.sampleRate(); }
     bool setTransport(bool running) { return engine_svc_.setTransport(running); }
     bool setBpm(double bpm) { return engine_svc_.setBpm(bpm); }
     bool setAudioRouting(std::uint32_t mode) { return engine_svc_.setAudioRouting(mode); }

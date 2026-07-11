@@ -1,7 +1,8 @@
 # 10 — Multi-channel audio output (per-console channel stems)
 
-**Status: in progress — the host seam and the SameBoy GB tap are built (§10 steps 1–2); the CLI/plugin
-exposure and NES work remain.** This doc designs outputting the *individual console sound channels*
+**Status: in progress — the host seam, the SameBoy GB tap, and the CLI GB export are built (§10 steps
+1–3); the plugin exposure and NES work remain.** This doc designs outputting the *individual console
+sound channels*
 of a single emulator instance instead of its mixed stereo — 8 outputs for a Game Boy (a stereo pair
 per channel), and 5-plus mono channels / the hardware "stereo-mod" pins for an NES. It is a design
 only; no code exists yet. It builds on [02-native-host.md](02-native-host.md) (the `Engine` /
@@ -329,7 +330,7 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
 7. **NES expansion:** **stereo-mod mode → one lumped expansion channel; multiple-mono mode → each
    individual expansion sub-channel** (accepting the VRC7-scale channel count) — §3a/§3b.
 
-## 10. Phased build order (steps 1–2 built)
+## 10. Phased build order (steps 1–3 built)
 
 1. **Host seam only** — `channelLayout()` (default 1 stereo stream), widened `finishBlock(…, laneCount)`,
    `AudioRouter::streamCount`, `runUnit` stream loop, `AudioRouting::ChannelSplit` + the GB
@@ -343,8 +344,16 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    and `finishBlock` fans them into 8 lanes when `laneCount ≥ 8` (one gain per frame across all lanes).
    Guarded by `retroplug-audio-test` (`SameBoyStems.test.cpp`): `Sum(4 stems) == mix` per-sample on a
    real mGB boot render (Off + Accurate), plus the golden mGB mix render staying byte-identical.
-3. **CLI GB export** — `renderAudioPerChannel` RPC + wiring; a CLI session emitting the 3 shapes; the
-   8-channel WAV round-trip test; thread the real sample rate.
+3. **CLI GB export — DONE.** `Engine::processBlockPerChannel` (a `PerChannelRouter` sibling of
+   `processBlockPerSystem`, single-system, keeping the kernel/MIDI pipeline) + `EngineRpcService::
+   renderAudioPerChannel(id, ms)` (gated `systemCount()==1`, sized from the target's `channelLayout()`,
+   returns one interleaved-stereo `Bytestring` per stream) + a `sampleRate()` query, all wired through
+   `BackendFacade` / `BackendRpcRegistration` and `audioDriver.ts`. `export-mgb-channels.ts` emits the 3
+   shapes (`interleaveStereoStreams` → one 8-ch WAV; per-stream stereo → 4 WAVs; `deinterleaveStereo` →
+   8 mono WAVs) at the real `sampleRate()`. Guards: `wav.test.ts` (8-channel encode/decode round-trip +
+   the interleave/deinterleave helpers) and `app-play-mgb-channels.test.ts` (RPC shape + real channel
+   separation — Noise stays silent while the pulse voices ring); the summed 8-ch export matches the
+   mixed render within ~5 int16 LSB.
 4. **Plugin GB option** — surface `ChannelSplit` (the §7 TS/native widenings + `systemCount()==1`
    gating). Verify a single GB → 8 outputs headlessly in a host (via `reaper:editor` / a render).
 5. **NES tap** — the `NesSoundMixer` edit emitting the 5 core stems + the 2–3 pin/expansion group terms

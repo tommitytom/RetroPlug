@@ -157,6 +157,18 @@ void Engine::processBlockPerSystem(std::uint32_t frames, float* const* ls, float
     runBlockWithRouter(frames, router);
 }
 
+void Engine::processBlockPerChannel(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nStreams) {
+    // Each stream writes into its own L/R pair; zero them first (systems SUM in, like the mixed path).
+    // PerChannelRouter keys off streamIndex, not slot — correct only for a single-system project (the
+    // RPC enforces that); runBlockWithRouter still drives the kernel/serial pipeline so MIDI reaches the core.
+    for (std::size_t i = 0; i < nStreams; ++i) {
+        std::fill_n(ls[i], frames, 0.0f);
+        std::fill_n(rs[i], frames, 0.0f);
+    }
+    PerChannelRouter router(ls, rs, static_cast<std::uint32_t>(nStreams));
+    runBlockWithRouter(frames, router);
+}
+
 std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {
     return registry_.readState(id);   // the owned published copy — never walks Project / the live core
 }

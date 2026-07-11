@@ -71,6 +71,8 @@ void registerBackendRpcMethods(Server& server) {
     server.template addMethod<&BackendFacade::pressButton>();
     server.template addMethod<&BackendFacade::renderAudio>();
     server.template addMethod<&BackendFacade::renderAudioPerSystem>();
+    server.template addMethod<&BackendFacade::renderAudioPerChannel>();
+    server.template addMethod<&BackendFacade::sampleRate>();
     server.template addMethod<&BackendFacade::setTransport>();
     server.template addMethod<&BackendFacade::setBpm>();
     server.template addMethod<&BackendFacade::setAudioRouting>();
