@@ -5,13 +5,16 @@
 // native tier (test-native/lsdj-codec-corpus.test.ts).
 import { test, expect } from "../../testing/harness";
 import { deepEqual } from "./_assert";
-import { savBytes, FIXTURE_KEYS } from "./fixtures";
+import { savBytes } from "./fixtures";
 import { decodeSong, encodeSong } from "../../src/lsdj/codec/song";
 import gold499 from "./golden/lsdj499.json";
 import goldAll from "./golden/all.json";
 import gold834 from "./golden/lsdj834.json";
 import gold888 from "./golden/lsdj888.json";
 
+// A focused subset spanning fmt3/7/11/16 (the full branch matrix + all 12 goldens
+// are asserted in corpus.test.ts).
+const KEYS = ["lsdj499", "all", "lsdj834", "lsdj888"] as const;
 const goldens: Record<string, { workingSong: unknown }> = {
   lsdj499: gold499,
   all: goldAll,
@@ -19,7 +22,7 @@ const goldens: Record<string, { workingSong: unknown }> = {
   lsdj888: gold888,
 };
 
-for (const key of FIXTURE_KEYS) {
+for (const key of KEYS) {
   test(`decodeSong(${key}) matches the C++ golden working song`, () => {
     const body = savBytes(key).subarray(0, 0x8000);
     deepEqual(decodeSong(body), goldens[key].workingSong, `${key}.workingSong`);

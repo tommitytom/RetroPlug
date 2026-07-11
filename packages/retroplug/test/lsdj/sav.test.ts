@@ -4,16 +4,18 @@
 // corpus sweep runs in the native tier (test-native/lsdj-codec-corpus.test.ts).
 import { test, expect } from "../../testing/harness";
 import { deepEqual } from "./_assert";
-import { savBytes, FIXTURE_KEYS } from "./fixtures";
+import { savBytes } from "./fixtures";
 import { decodeSav, encodeSav } from "../../src/lsdj/codec/sav";
 import gold499 from "./golden/lsdj499.json";
 import goldAll from "./golden/all.json";
 import gold834 from "./golden/lsdj834.json";
 import gold888 from "./golden/lsdj888.json";
 
+// A focused subset (the full 12-golden matrix is asserted in corpus.test.ts).
+const KEYS = ["lsdj499", "all", "lsdj834", "lsdj888"] as const;
 const goldens: Record<string, unknown> = { lsdj499: gold499, all: goldAll, lsdj834: gold834, lsdj888: gold888 };
 
-for (const key of FIXTURE_KEYS) {
+for (const key of KEYS) {
   test(`decodeSav(${key}) matches the full C++ golden (incl stored projects)`, () => {
     deepEqual(decodeSav(savBytes(key)), goldens[key], key);
   });
