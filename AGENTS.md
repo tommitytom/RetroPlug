@@ -29,15 +29,18 @@ The rules below are the parts that don't fit those.
   checking — they're managed deliberately. RetroPlug also keeps `deps/sameboy` +
   `deps/mesen` / `deps/r8brain` / `deps/enkiTS` (the shared core), and `deps/efsw`
   (greenfield's file-watcher is *designed* to use it — `drainChangedPaths` is a stub
-  today, so nothing links it yet). `deps/catch2` is now unused (legacy test
-  framework) — removable.
+  today, so nothing links it yet). `deps/catch2` is the C++ unit-test framework:
+  it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
+  `test:plugin` binaries (`retroplug-plugin-test` / `retroplug-classid-test`) as
+  `Catch2::Catch2WithMain`.
 - **Don't `rm -rf build` to "fix" CMake** — investigate first. The configured
   `build/` is load-bearing for the dev loop.
 - **Build via `build.sh` (Linux/macOS) / `build.bat` (Windows)** — the canonical
   entry points; they run the configure this project needs and build in parallel.
   Bare `./build.sh` = incremental; `--clean` wipes `build/`. (`--tests` /
-  `BUILD_TESTING` is now inert — the Catch2 suites are gone; tests are the `pnpm
-  test*` scripts.) For a single target after a configure,
+  `BUILD_TESTING` is inert — the C++ Catch2 test binaries are `EXCLUDE_FROM_ALL`,
+  built by name from the `pnpm test*` scripts, not gated on `BUILD_TESTING`.) For a
+  single target after a configure,
   `cmake --build build --target <t> -j$(nproc)` — always pass `-j`, the default is
   a single-threaded slog. `build.bat` enters vcvars64 + the tool PATH and runs the
   `cl` + vcpkg-`x64-windows-static` configure (overridable via `VCPKG_ROOT` /
@@ -85,9 +88,13 @@ must be backed by an actual exit-zero** from one of these.
 
 The headless loop (the only path — legacy is gone) is documented in
 [spec/06-build-test.md](spec/06-build-test.md): `pnpm test` (pure-TS mock),
-`test:native` (real host + cores), `test:ui` (LVGL React), `test:plugin` (a
-pure-C++ unit check — currently the per-context window-hook routing), `screenshot`,
-the `tools/run-sanitizer.sh` thread / address checks, and `validate`. The LSDj-sync /
-DAW-timing / audio-quality matrix runs headlessly too — the real-Reaper
+`test:native` (real host + cores), `test:ui` (LVGL React), `test:plugin` (Catch2
+C++ unit checks — the per-context window-hook routing + the class-id counter sync
+that keeps the DAW-hosted editor from rendering blank), `screenshot`,
+`reaper:editor` (`tools/run-reaper-editor.sh` — floats the hosted plugin editor in
+headless Reaper and asserts its LVGL snapshot rendered; the only check of on-screen
+editor rendering, not in CI), the `tools/run-sanitizer.sh` thread / address checks,
+and `validate`. The LSDj-sync / DAW-timing / audio-quality matrix runs headlessly
+too — the real-Reaper
 `reaper:lsdj-*` renders + `tools/reaper-timing-analyze.py`; see
 [docs/lsdj.md](docs/lsdj.md).

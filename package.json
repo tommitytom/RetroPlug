@@ -28,7 +28,8 @@
     "reaper:lsdj-arduinoboy-metro-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js arduinoboy-metro && RP_SCENARIO=arduinoboy-metro tools/run-reaper-author.sh examples/reaper/lsdj_arduinoboy_metro_greenfield.rpp build tools/reaper-lsdj-greenfield-author.lua build/lsdj_arduinoboy-metro_greenfield.rplg",
     "reaper:lsdj-arduinoboy-metro": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js arduinoboy-metro && tools/run-reaper-render.sh examples/reaper/lsdj_arduinoboy_metro_greenfield.rpp build/lsdj_arduinoboy-metro_greenfield.rplg && tools/reaper-timing-analyze.py build/reaper-lsdj-arduinoboy-metro-greenfield.wav",
     "reaper:lsdj-midi-drift-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js midi-drift && RP_SCENARIO=midi-drift tools/run-reaper-author.sh examples/reaper/lsdj_midi_drift_greenfield.rpp build tools/reaper-lsdj-greenfield-author.lua build/lsdj_midi-drift_greenfield.rplg",
-    "reaper:lsdj-midi-drift": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js midi-drift && tools/run-reaper-render.sh examples/reaper/lsdj_midi_drift_greenfield.rpp build/lsdj_midi-drift_greenfield.rplg && tools/reaper-timing-analyze.py build/reaper-lsdj-midi-drift-greenfield.wav --drift"
+    "reaper:lsdj-midi-drift": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js midi-drift && tools/run-reaper-render.sh examples/reaper/lsdj_midi_drift_greenfield.rpp build/lsdj_midi-drift_greenfield.rplg && tools/reaper-timing-analyze.py build/reaper-lsdj-midi-drift-greenfield.wav --drift",
+    "reaper:editor": "node scripts/cmake-build.js retroplug-vst3 && tools/run-reaper-editor.sh"
   },
   "dependencies": {
     "@msgpack/msgpack": "^3.0.0",
