@@ -40,7 +40,11 @@ bool UiHarness::boot() {
     // ctx — nothing serialized). The transport's async sink is unused (the client is synchronous).
     transport_ = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
     server_    = std::make_unique<BackendRpcServer>(service_, *transport_, rpcpp::QuickJSCodec{ctx});
-    registerAllBackendRpc(*server_, service_);
+    // The UI reads getFrame + drives pressButton over RPC and its stores use the fs surface; it never
+    // touches the DSP kernel, the audio-render harness, the debugger, or the background driver.
+    registerHostRpc(*server_, service_.host());
+    registerEmulatorRpc(*server_, service_.engine());
+    server_->addDiscoveryMethod();
 
     // globalThis[Symbol.for("plugin")] = { __rpcSend } — the namespace realBackend.ts targets.
     JSValue global = JS_GetGlobalObject(ctx);
