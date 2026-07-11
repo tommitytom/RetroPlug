@@ -33,9 +33,4 @@ public:
     // --- codec (miniz) ---
     rfl::Bytestring zip(std::vector<BackendZipInput> entries);
     std::vector<BackendZipEntry> unzip(rfl::Bytestring bytes);
-
-    // --- LSDJ sav authoring (test/tooling) ---
-    // JSON (an rp::lsdj::model::Sav, lenient) -> encoded .sav bytes. Lets a test author song/sync
-    // state directly and boot LSDJ into it.
-    rfl::Bytestring savFromJson(std::string json);
 };

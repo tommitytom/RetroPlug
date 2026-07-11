@@ -26,9 +26,9 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/SongCodec.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/Compression.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/SavCodec.cpp
+    # NOTE: the LSDj sav codec + model were removed — they are now pure TS
+    # (packages/retroplug/src/lsdj), validated by frozen golden vectors. Only the
+    # kit/sample pipeline (Effects/KitUtil/SampleCache/KitCompiler) remains in C++.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp
@@ -76,7 +76,7 @@ set_target_properties(retroplug-core PROPERTIES
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
 add_library(retroplug-backend STATIC
     src/host/rpc/BackendFacade.cpp          # owner: shared Engine/factory/invoker + the concern services
-    src/host/rpc/HostRpcService.cpp         # fs / config / codec / sav (pure, stateless)
+    src/host/rpc/HostRpcService.cpp         # fs / config / zip (pure, stateless)
     src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
     src/host/rpc/DebugRpcService.cpp        # live-core inspection over Engine (CLI-only facet)
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics

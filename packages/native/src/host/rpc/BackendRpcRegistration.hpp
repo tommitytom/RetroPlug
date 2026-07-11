@@ -8,7 +8,7 @@
 
 #include "host/rpc/BackendFacade.hpp"
 
-// --- host: filesystem / config / codec / sav (15) ---
+// --- host: filesystem / config / codec (14) ---
 template <class Server>
 void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::readFile>(h);
@@ -25,7 +25,6 @@ void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::version>(h);
     s.template addMethod<&HostRpcService::zip>(h);
     s.template addMethod<&HostRpcService::unzip>(h);
-    s.template addMethod<&HostRpcService::savFromJson>(h);
 }
 
 // --- emulator: lifecycle / snapshot reads / live config / input (11) ---

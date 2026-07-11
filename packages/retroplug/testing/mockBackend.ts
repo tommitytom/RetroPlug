@@ -6,6 +6,7 @@
 
 import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, FileBrowserOpts, FrameData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
+import { savFromJson } from "../src/lsdj";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -425,12 +426,11 @@ export class MockBackend implements Backend {
     return out;
   }
 
-  savFromJson(_json: string): Uint8Array {
+  savFromJson(json: string): Uint8Array {
     this.log.push("savFromJson");
-    // No LSDj codec in the mock — return a deterministic non-empty stand-in so the store records a
-    // seed. The real 128 KiB `jk`/`rb`-stamped image is proven against the native backend; here only
-    // "seeded vs not" matters. The leading `jk` mirrors the real SRAM-init magic for readability.
-    return Uint8Array.of(0x6a, 0x6b);
+    // The LSDj codec is now pure TS, so the mock runs the REAL encoder — a valid
+    // 128 KiB `jk`/`rb`-stamped image, no native host needed.
+    return savFromJson(json);
   }
 
   removeSystem(id: number): boolean {

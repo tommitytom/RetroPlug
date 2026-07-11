@@ -14,6 +14,7 @@
 // a UI-direct native hook rather than the RPC bridge (see below).
 
 import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, FileBrowserOpts, FrameData, HostBackend, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import { savFromJson as savFromJsonTs } from "./lsdj";
 
 type RpcSend = (request: unknown) => unknown;
 interface Reply {
@@ -111,7 +112,7 @@ export function createHostClient(): HostBackend {
     version: () => call("version") as string,
     zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries)), // {name, bytes: Uint8Array} matches BackendZipInput
     unzip: (bytes) => (call("unzip", bytes) as ZipEntry[] | null) ?? null,
-    savFromJson: (json) => call("savFromJson", json) as Uint8Array, // Bytestring result → Uint8Array
+    savFromJson: (json) => savFromJsonTs(json), // pure-TS codec (was a native RPC round-trip)
     openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts), // async UI-direct native hook, not RPC
   };
 }
