@@ -385,3 +385,17 @@ set_target_properties(retroplug-sav-tests PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# --- retroplug-lsdj-golden-dump — freeze C++ decode reference JSON for the TS port's fidelity gate.
+# One-shot tool: <outDir> <in.sav ...> -> <outDir>/<stem>.json = savToJson(decodeSav(bytes)).
+add_executable(retroplug-lsdj-golden-dump EXCLUDE_FROM_ALL
+    test/DumpLsdjGolden.cpp
+    src/lsdj/codec/SongCodec.cpp
+    src/lsdj/codec/Compression.cpp
+    src/lsdj/codec/SavCodec.cpp)
+target_include_directories(retroplug-lsdj-golden-dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(retroplug-lsdj-golden-dump PRIVATE rpcpp)
+set_target_properties(retroplug-lsdj-golden-dump PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
