@@ -6,9 +6,13 @@ documented in [spec/05-data-persistence.md](../spec/05-data-persistence.md). Thi
 retained as the design rationale + the evidence behind the decision.
 
 Owner decisions taken (resolving §10): **pure TS** is the destination; **all LSDj versions**
-are supported (not descoped); the oracle is the revived liblsdj differential + frozen golden
-vectors. The hybrid (native RLE) was evaluated and **not** adopted — pure-TS RLE is fast
-enough and native would forfeit the environment-reach + SSOT wins (§6).
+are supported (not descoped). The liblsdj differential + C++ codec were used to **certify**
+the golden vectors, then **deleted** — the frozen goldens ([test/lsdj/golden/](../packages/retroplug/test/lsdj/golden/),
+covering every decode branch) + the 549-sav corpus byte-identity sweep are the permanent
+oracle; the shipping build and test suite link no C++ sav codec. The hybrid (native RLE) was
+evaluated and **not** adopted — pure-TS RLE is fast enough and native would forfeit the
+environment-reach + SSOT wins (§6). (The historical sections below describe the C++ codec as
+it *was*, for rationale.)
 
 This explores replacing the C++/reflect-cpp LSDj `.sav` codec with a TypeScript
 implementation, and evaluates the "keep the RLE/codec in C++, bulk in TS" hybrid the

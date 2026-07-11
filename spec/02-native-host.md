@@ -27,7 +27,7 @@ concern-separated services that hold references to them:
 
 | Sub-object | Concern | Header |
 |---|---|---|
-| `host_` | filesystem / config / codec / sav (pure, stateless) | [`HostRpcService.hpp`](../packages/native-greenfield/src/HostRpcService.hpp) |
+| `host_` | filesystem / config / zip (pure, stateless) | [`HostRpcService.hpp`](../packages/native-greenfield/src/HostRpcService.hpp) |
 | `engine_svc_` | emulator lifecycle / reads / kernel / MIDI / transport | [`EngineRpcService.hpp`](../packages/native-greenfield/src/EngineRpcService.hpp) |
 | `driver_` | background audio thread + observation atomics (test host only) | [`AudioDriverRpcService.hpp`](../packages/native-greenfield/src/AudioDriverRpcService.hpp#L17) |
 
@@ -82,10 +82,11 @@ the qjs codec decodes a typed byte param straight into `rfl::Bytestring`, never 
 int-array. A nullable read is `std::optional` (absent → JS `null`). The shared DTOs live in
 [`BackendTypes.hpp`](../packages/native-greenfield/src/BackendTypes.hpp).
 
-### `HostRpcService` — fs / config / codec / sav
+### `HostRpcService` — fs / config / zip
 
-Pure and stateless: no `Engine`, no cores. It is `std::filesystem` + miniz + the shared LSDj
-sav codec.
+Pure and stateless: no `Engine`, no cores. It is `std::filesystem` + miniz (`zip`/`unzip`).
+(The LSDj sav codec used to live here as `savFromJson`; it is now pure TS —
+see [05-data-persistence.md](05-data-persistence.md).)
 
 | Method | Signature | Notes |
 |---|---|---|

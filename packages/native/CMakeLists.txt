@@ -26,12 +26,9 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
-    # NOTE: the LSDj sav codec (codec/{SongCodec,Compression,SavCodec}.cpp + model/ +
-    # SavSerialization.hpp) is NO LONGER shipped — it was ported to pure TS
-    # (packages/retroplug/src/lsdj). The C++ codec is retained ONLY as the test
-    # oracle (retroplug-lsdj-diff-tests / retroplug-sav-tests / -golden-dump below),
-    # which compile it directly, and against which the frozen golden vectors + the
-    # pure-TS codec are validated.
+    # NOTE: the LSDj sav codec + model were removed — they are now pure TS
+    # (packages/retroplug/src/lsdj), validated by frozen golden vectors. Only the
+    # kit/sample pipeline (Effects/KitUtil/SampleCache/KitCompiler) remains in C++.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp
@@ -79,7 +76,7 @@ set_target_properties(retroplug-core PROPERTIES
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
 add_library(retroplug-backend STATIC
     src/host/rpc/BackendFacade.cpp          # thin facade: owns the shared state, forwards to the 3 services
-    src/host/rpc/HostRpcService.cpp         # fs / config / codec / sav (pure, stateless)
+    src/host/rpc/HostRpcService.cpp         # fs / config / zip (pure, stateless)
     src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
     src/host/engine/Engine.cpp              # single-threaded core: owns Project + DspRuntime, runs blocks
@@ -304,101 +301,6 @@ target_include_directories(retroplug-classid-test PRIVATE
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)             # quickjs.h
 
 set_target_properties(retroplug-classid-test PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-
-# --- retroplug-lsdj-diff-tests — differential oracle for the LSDJ sav codec ------------------------
-# Compiles the vendored liblsdj (correct for song format versions <= 16) and decodes the same
-# content-bearing savs with BOTH liblsdj and our codec, asserting the semantic fields match. This is
-# the ground truth that proves the old-format (`fmt < N`) decode branches are right; the byte-identical
-# round-trip only proves losslessness. Isolated binary so the shipping libs stay free of the legacy C
-# library. Revived from origin/dpf (the codec .cpp are byte-identical). Run via `pnpm test:lsdj-diff`.
-set(_LIBLSDJ_SRC ${CMAKE_CURRENT_SOURCE_DIR}/test/liblsdj/liblsdj/src)
-set(_LIBLSDJ_C
-    ${_LIBLSDJ_SRC}/allocator.c        ${_LIBLSDJ_SRC}/bytes.c
-    ${_LIBLSDJ_SRC}/chain.c            ${_LIBLSDJ_SRC}/compression.c
-    ${_LIBLSDJ_SRC}/error.c            ${_LIBLSDJ_SRC}/groove.c
-    ${_LIBLSDJ_SRC}/instrument.c       ${_LIBLSDJ_SRC}/instrument_kit.c
-    ${_LIBLSDJ_SRC}/instrument_noise.c ${_LIBLSDJ_SRC}/instrument_pulse.c
-    ${_LIBLSDJ_SRC}/instrument_wave.c  ${_LIBLSDJ_SRC}/phrase.c
-    ${_LIBLSDJ_SRC}/project.c          ${_LIBLSDJ_SRC}/sav.c
-    ${_LIBLSDJ_SRC}/song.c             ${_LIBLSDJ_SRC}/song_empty.c
-    ${_LIBLSDJ_SRC}/speech.c           ${_LIBLSDJ_SRC}/synth.c
-    ${_LIBLSDJ_SRC}/table.c            ${_LIBLSDJ_SRC}/vio.c
-    ${_LIBLSDJ_SRC}/wave.c)
-# Vendored upstream C — silence its warnings on just these sources (our .cpp keep full warnings).
-if(MSVC)
-    set(_LIBLSDJ_NOWARN /w)
-else()
-    set(_LIBLSDJ_NOWARN -w)
-endif()
-set_source_files_properties(${_LIBLSDJ_C} PROPERTIES COMPILE_OPTIONS "${_LIBLSDJ_NOWARN}")
-
-add_executable(retroplug-lsdj-diff-tests EXCLUDE_FROM_ALL
-    test/LsdjDifferentialTests.cpp
-    src/lsdj/codec/SongCodec.cpp
-    src/lsdj/codec/Compression.cpp
-    src/lsdj/codec/SavCodec.cpp
-    ${_LIBLSDJ_C})
-
-target_include_directories(retroplug-lsdj-diff-tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/liblsdj/liblsdj/include
-    # liblsdj's .c files include their private headers bare ("speech.h").
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/liblsdj/liblsdj/include/lsdj)
-
-target_compile_definitions(retroplug-lsdj-diff-tests PRIVATE
-    # Content-bearing savs spanning fmt3..fmt16 (liblsdj's own test fixtures).
-    RETROPLUG_LSDJ_DIFF_SAV_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/liblsdj/resources/sav")
-
-target_link_libraries(retroplug-lsdj-diff-tests PRIVATE
-    Catch2::Catch2WithMain
-    rpcpp)                     # transitively pulls reflectcpp (rfl) for the codec + model
-
-set_target_properties(retroplug-lsdj-diff-tests PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-
-# --- retroplug-sav-tests — byte-identity + model round-trip gate for the C++ codec ----------------
-# The losslessness anchor: decodes/encodes the whole per-version corpus (../resources/roms/lsdj) and
-# liblsdj's content savs and asserts byte-identical round-trips + instrument/compression inverses +
-# JSON losslessness. This is the reference the pure-TS port's golden encode vectors are frozen from.
-# Run via `pnpm test:lsdj-sav`. Revived from origin/dpf.
-add_executable(retroplug-sav-tests EXCLUDE_FROM_ALL
-    test/SavCodecTests.cpp
-    src/lsdj/codec/SongCodec.cpp
-    src/lsdj/codec/Compression.cpp
-    src/lsdj/codec/SavCodec.cpp)
-
-target_include_directories(retroplug-sav-tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src)
-
-target_compile_definitions(retroplug-sav-tests PRIVATE
-    # The generated per-version golden corpus (sibling resources tree; see AGENTS.md).
-    RETROPLUG_LSDJ_SAV_DIR="${CMAKE_SOURCE_DIR}/../resources/roms/lsdj"
-    RETROPLUG_LSDJ_DIFF_SAV_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/liblsdj/resources/sav")
-
-target_link_libraries(retroplug-sav-tests PRIVATE
-    Catch2::Catch2WithMain
-    rpcpp)                     # reflectcpp (rfl) for SavSerialization + the model
-
-set_target_properties(retroplug-sav-tests PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-
-# --- retroplug-lsdj-golden-dump — freeze C++ decode reference JSON for the TS port's fidelity gate.
-# One-shot tool: <outDir> <in.sav ...> -> <outDir>/<stem>.json = savToJson(decodeSav(bytes)).
-add_executable(retroplug-lsdj-golden-dump EXCLUDE_FROM_ALL
-    test/DumpLsdjGolden.cpp
-    src/lsdj/codec/SongCodec.cpp
-    src/lsdj/codec/Compression.cpp
-    src/lsdj/codec/SavCodec.cpp)
-target_include_directories(retroplug-lsdj-golden-dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(retroplug-lsdj-golden-dump PRIVATE rpcpp)
-set_target_properties(retroplug-lsdj-golden-dump PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

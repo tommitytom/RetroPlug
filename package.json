@@ -15,8 +15,6 @@
     "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node packages/retroplug/scripts/run-ui-tests.mjs",
     "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-classid-test && build/bin/retroplug-plugin-test && build/bin/retroplug-classid-test",
-    "test:lsdj-diff": "node scripts/cmake-build.js retroplug-lsdj-diff-tests && build/bin/retroplug-lsdj-diff-tests",
-    "test:lsdj-sav": "node scripts/cmake-build.js retroplug-sav-tests && build/bin/retroplug-sav-tests",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
     "profile": "tools/run-profile.sh stats",
     "validate": "node scripts/cmake-build.js retroplug-clap retroplug-vst3 && tools/validate-plugins.sh",

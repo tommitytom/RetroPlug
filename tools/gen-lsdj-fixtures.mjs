@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // Regenerates packages/retroplug/test/lsdj/fixtures.ts — a base64-embedded set of
 // real LSDj .sav bytes for the pure-TS test tier (which cannot read disk). The
-// matching C++ decode reference lives as JSON under test/lsdj/golden/ and is
-// imported directly (esbuild inlines JSON). Savs are the in-repo liblsdj content
-// fixtures, so this is deterministic. Run: node tools/gen-lsdj-fixtures.mjs
+// matching decode reference lives as JSON under test/lsdj/golden/ and is imported
+// directly (esbuild inlines JSON). Source savs are the committed liblsdj content
+// fixtures under test/lsdj/savs/, so this is deterministic.
+// Run: node tools/gen-lsdj-fixtures.mjs
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SAV_DIR = resolve(REPO, "packages/native/test/liblsdj/resources/sav");
+const SAV_DIR = resolve(REPO, "packages/retroplug/test/lsdj/savs");
 
 // The full set of liblsdj content-bearing savs — content-rich AND spanning EVERY
 // decode branch (the version predicates sit at fmt 4/5/6/7/8/9/10/11/16, with

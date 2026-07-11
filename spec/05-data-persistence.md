@@ -198,18 +198,19 @@ valid 128 KiB image, letting a test boot LSDj straight into authored song/sync
 state and skip the 12–15 s cartridge self-test. `savToJson(bytes)` decodes the
 inverse — the read direction TS never had before the port.
 
-**Correctness rationale (the liblsdj differential oracle + frozen goldens).**
+**Correctness rationale (frozen goldens + corpus byte-identity).**
 Byte-identical round-tripping only proves *losslessness*, not that the old-format
-decode branches interpret the bytes correctly. The (retained, test-only) C++
-reflect-cpp codec is validated against **liblsdj** — a known-correct reference for
-song format versions ≤ 16 —
-([LsdjDifferentialTests.cpp](../packages/native/test/LsdjDifferentialTests.cpp),
-`pnpm test:lsdj-diff`) and byte-identity round-trips the whole per-version corpus
-(`pnpm test:lsdj-sav`). Its decode output is frozen as golden JSON
-([test/lsdj/golden/](../packages/retroplug/test/lsdj/golden/)); the pure-TS codec
-is asserted byte-for-byte against those goldens (pure tier) and byte-identity
-round-trips all ~549 corpus savs (`test-native/lsdj-codec-corpus.test.ts`). The
-C++ codec + liblsdj are a **test-only** dependency; the shipping build links neither.
+decode branches interpret the bytes correctly. The decode semantics are pinned by
+**frozen golden JSON** ([test/lsdj/golden/](../packages/retroplug/test/lsdj/golden/)):
+one per liblsdj content sav spanning fmt 3..11 + 16 — which cover EVERY version-decode
+branch (predicates sit at fmt 4/5/6/7/8/9/10/11/16; fmt12..15/17..22 share fmt11/16's
+paths). Those goldens were certified against **liblsdj** (the known-correct reference
+for song format versions ≤ 16) by a differential oracle, then frozen. The pure-TS codec
+is asserted byte-for-byte against them ([test/lsdj/corpus.test.ts](../packages/retroplug/test/lsdj/corpus.test.ts))
+and byte-identity round-trips all ~549 per-version corpus savs
+([test-native/lsdj-codec-corpus.test.ts](../packages/retroplug/test-native/lsdj-codec-corpus.test.ts)).
+The C++ codec + liblsdj were retired once the goldens were frozen — the shipping build
+and the test suite both link no C++ sav codec.
 
 ## SRAM auto-save policy
 
@@ -253,6 +254,6 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 - [userConfig.ts](../packages/retroplug/src/userConfig.ts) / [userConfigSerialization.ts](../packages/retroplug/src/userConfigSerialization.ts), [recentSerialization.ts](../packages/retroplug/src/recentSerialization.ts), [bindingSerialization.ts](../packages/retroplug/src/bindingSerialization.ts) — the config models + on-disk codecs.
 - [configSchema.ts](../packages/retroplug/src/configSchema.ts) — the clamp/default zod builders (TS forward-tolerance).
 - [migrate.ts](../packages/retroplug/src/migrate.ts) + [projectConfig.ts](../packages/retroplug/src/projectConfig.ts) — the raw-JSON migration framework + the version constants / `checkVersion` / `parseProjectVersion` (TS is the single source of truth; native does no version check).
-- [HostRpcService.cpp](../packages/native-greenfield/src/HostRpcService.cpp) — native file I/O, `zip`/`unzip`, `configDir`, `savFromJson`.
-- [SavCodec.hpp](../packages/native/src/lsdj/codec/SavCodec.hpp) + [LsdjDifferentialTests.cpp](../packages/native/test/LsdjDifferentialTests.cpp) — the sav codec + its liblsdj oracle.
-- [sramAutoSave.ts](../packages/retroplug/src/sramAutoSave.ts) — the loose-`.sav` auto-save policy.
+- [HostRpcService.cpp](../packages/native/src/host/rpc/HostRpcService.cpp) — native file I/O, `zip`/`unzip`, `configDir`.
+- [src/lsdj/](../packages/retroplug/src/lsdj/) — the pure-TS sav model (`model.ts`) + codec (`codec/`); [test/lsdj/](../packages/retroplug/test/lsdj/) holds the frozen goldens + branch-covering fixtures.
+- [sramAutoSave.ts](../packages/retroplug/src/sramAutoSave.ts) — the loose-`.sav` auto-save policy (+ the LSDj semantic dirty signature).
