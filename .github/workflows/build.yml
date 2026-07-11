@@ -65,6 +65,15 @@ jobs:
       - name: TS tests
         run: pnpm test
 
+      - name: Native tests (real host + emulator cores)
+        run: pnpm test:native
+
+      - name: Plugin unit tests (Catch2)
+        run: pnpm test:plugin
+
+      - name: UI tests (headless LVGL)
+        run: pnpm test:ui
+
       - name: Install plugin-format validators
         run: |
           set -eux
