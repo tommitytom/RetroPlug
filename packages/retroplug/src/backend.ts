@@ -267,10 +267,10 @@ export interface Backend {
 
   // --- LSDj sav codec -----------------------------------------------------
 
-  /** Encode an LSDj `.sav` image from a JSON `rp::lsdj::model::Sav` (lenient — unset cells default).
-   *  The bytes-only half of the LSDj model that TS can't reproduce: native runs the version-aware
-   *  codec. `savFromJson("{}")` yields a valid, self-test-skipping 128 KiB image (the codec always
-   *  stamps the `jk` + `rb` validity markers), which is how a load-time role seeds a fresh LSDj ROM. */
+  /** Encode an LSDj `.sav` image from a JSON `Sav` model (lenient — unset cells default). Backed by
+   *  the pure-TS codec (src/lsdj); kept on the Backend seam so the load-time seed stays one call.
+   *  `savFromJson("{}")` yields a valid, self-test-skipping 128 KiB image (the codec always stamps the
+   *  `jk` + `rb` validity markers), which is how a load-time role seeds a fresh LSDj ROM. */
   savFromJson(json: string): Uint8Array;
 }
 

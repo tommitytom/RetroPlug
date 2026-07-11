@@ -32,8 +32,9 @@ for (const [key, file] of FIXTURES) {
 }
 body += `};
 
+declare function atob(s: string): string; // txiki/QuickJS + node globals (no DOM lib)
+
 function decodeB64(b64: string): Uint8Array {
-  // txiki/QuickJS + node both expose atob.
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);

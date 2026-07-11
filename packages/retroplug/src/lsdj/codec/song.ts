@@ -8,13 +8,10 @@ import { BitView, BitWriter } from "./bits";
 import * as R from "./regions";
 import {
   PanningNames,
-  TableModeNames,
   PulseWidthNames,
   VibratoShapeNames,
   VibratoDirectionNames,
-  PlvSpeedNames,
   WavePlayModeNames,
-  KitLoopModeNames,
   KitDistortionNames,
   NoiseStabilityNames,
   CloneModeNames,

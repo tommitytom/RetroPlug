@@ -10,6 +10,7 @@
 // one async method and rides a UI-direct native hook rather than the RPC bridge (see below).
 
 import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, FileBrowserOpts, FrameData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import { savFromJson as savFromJsonTs } from "./lsdj";
 
 type RpcSend = (request: unknown) => unknown;
 interface Reply {
@@ -103,7 +104,7 @@ export function createRealBackend(): Backend {
     version: () => call("version") as string,
     zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries)), // {name, bytes: Uint8Array} matches BackendZipInput
     unzip: (bytes) => (call("unzip", bytes) as ZipEntry[] | null) ?? null,
-    savFromJson: (json) => call("savFromJson", json) as Uint8Array, // Bytestring result → Uint8Array
+    savFromJson: (json) => savFromJsonTs(json), // pure-TS codec (was a native RPC round-trip)
 
     // --- emulator lifecycle / reads ---------------------------------------
     constructSystem: (spec: ConstructSpec, id: number) => call("constructSystem", specParams(spec, id)) as boolean,
