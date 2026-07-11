@@ -305,15 +305,21 @@ set_target_properties(retroplug-classid-test PROPERTIES
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-# retroplug-audio-test guards the per-channel host seam (runUnit stream loop + AudioRouter::streamCount +
-# lane-counted finishBlock). Pure C++ over a fake SystemBase — links only retroplug-core (Project +
-# SystemBase + BlockRunner), no cores/host. Also `pnpm test:plugin`, on demand.
+# retroplug-audio-test guards the per-channel audio path: the host seam (runUnit stream loop +
+# AudioRouter::streamCount + lane-counted finishBlock, over a fake SystemBase) AND the real SameBoy
+# per-channel tap (ChannelStreams + SameBoyStems). Links retroplug-core, which PUBLIC-brings the
+# `sameboy` core, so SameBoyStems can drive a real mGB ROM. Also `pnpm test:plugin`, on demand.
 add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
-    test/audio/ChannelStreams.test.cpp)
+    test/audio/ChannelStreams.test.cpp
+    test/audio/SameBoyStems.test.cpp)
 
 target_link_libraries(retroplug-audio-test PRIVATE
-    retroplug-core             # SystemBase + BlockRunner (runUnit) + the routers
+    retroplug-core             # SystemBase + BlockRunner (runUnit) + the routers + the sameboy core
     Catch2::Catch2WithMain)
+
+# The mGB ROM the SameBoyStems fidelity test drives (the boot chime supplies real multi-channel signal).
+target_compile_definitions(retroplug-audio-test PRIVATE
+    RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb")
 
 set_target_properties(retroplug-audio-test PROPERTIES
     CXX_STANDARD 20

@@ -83,6 +83,19 @@ void audioHandler(GB_gameboy_t* gb, GB_sample_t* sample) {
     self(gb).writeAudioSample(sample->left, sample->right);
 }
 
+// Per-channel tap. Fires immediately before audioHandler in the same render()
+// tick (see the patch in deps/sameboy/Core/apu.c), so both capture at the same
+// frame index. Unpacks the four GB_sample_t pairs into 8 interleaved int16 so
+// the header need not see <apu.h>.
+void channelAudioHandler(GB_gameboy_t* gb, const GB_sample_t* channels) {
+    int16_t interleaved[8];
+    for (int k = 0; k < 4; ++k) {
+        interleaved[2 * k + 0] = channels[k].left;
+        interleaved[2 * k + 1] = channels[k].right;
+    }
+    self(gb).writeChannelSamples(interleaved);
+}
+
 void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t /*type*/) {
     auto& s = self(gb);
     GB_model_t model = toSameBoyModel(s.config_.model);
@@ -183,6 +196,7 @@ void SameBoySystem::onActivate(double sampleRate) {
     GB_set_rgb_encode_callback(gb_, rgbEncode);
     GB_set_vblank_callback(gb_, vblankHandler);
     GB_apu_set_sample_callback(gb_, audioHandler);
+    GB_apu_set_channel_sample_callback(gb_, channelAudioHandler);
     GB_set_serial_transfer_bit_start_callback(gb_, serialStart);
     GB_set_serial_transfer_bit_end_callback(gb_, serialEnd);
 
@@ -512,6 +526,24 @@ void SameBoySystem::pressButton(std::uint8_t button, bool down) {
     pendingButtons_.push_back(PendingButton{offset, static_cast<GameboyButton>(button), down});
 }
 
+std::vector<ChannelStream> SameBoySystem::channelLayout() const {
+    // GB_channel_t order: GB_SQUARE_1, GB_SQUARE_2, GB_WAVE, GB_NOISE.
+    return {{"Pulse 1", true}, {"Pulse 2", true}, {"Wave", true}, {"Noise", true}};
+}
+
+void SameBoySystem::writeChannelSamples(const int16_t* samples) {
+    // Same frame index as the mixed sample (this fires just before audioHandler,
+    // which owns the audioFrameCount_ increment). Bounds mirror writeAudioSample.
+    const std::size_t writeIdx = static_cast<std::size_t>(audioFrameCount_) * 2;
+    for (std::size_t k = 0; k < kAudioChannelCount; ++k) {
+        std::vector<float>& acc = chanAccum_[k];
+        if (writeIdx + 1 < acc.size()) {
+            acc[writeIdx + 0] = s16ToF32(samples[2 * k + 0]);
+            acc[writeIdx + 1] = s16ToF32(samples[2 * k + 1]);
+        }
+    }
+}
+
 void SameBoySystem::writeAudioSample(int16_t left, int16_t right) {
     const std::size_t writeIdx = static_cast<std::size_t>(audioFrameCount_) * 2;
     if (writeIdx + 1 < stereoAccum_.size()) {
@@ -561,6 +593,16 @@ void SameBoySystem::prepareForBlock(const AudioBlockInfo& info) {
         std::fill_n(stereoAccum_.data(), std::size_t(frames) * 2, 0.0f);
     }
 
+    // Same sizing/zeroing for the per-channel accumulators (the tap fills them
+    // every block regardless of routing; finishBlock decides whether to emit them).
+    for (std::vector<float>& acc : chanAccum_) {
+        if (acc.size() < std::size_t(frames) * 2 + 2) {
+            acc.assign(std::size_t(frames) * 2 + 16, 0.0f);
+        } else {
+            std::fill_n(acc.data(), std::size_t(frames) * 2, 0.0f);
+        }
+    }
+
     audioFrameCount_ = 0;
     serialOutLog_.clear();
 }
@@ -604,11 +646,11 @@ bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
 void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {
     if (!activated_ || !gb_) return;
 
-    // Only the mixed stereo stream is produced here today; the per-channel split
-    // lands in a later stage. The router never hands this backend more than two
-    // lanes yet (its channelLayout() is the default single stereo stream).
-    assert(laneCount == 2);
-    (void)laneCount;
+    // The mixed stereo stream (laneCount == 2) is the default path. A split router
+    // instead hands us 8 lanes to fan the four GB channels into their own stereo
+    // pairs (stream k -> outs[2k]/outs[2k+1]); channelLayout() reports those 4
+    // streams and the runner sizes the lanes from the router's streamCount.
+    assert(laneCount == 2 || laneCount == 2 * kAudioChannelCount);
 
     const std::uint32_t frames = info.frames;
 
@@ -618,13 +660,25 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs, 
         pb.offset = (pb.offset > frames) ? pb.offset - frames : 0;
     }
 
-    // Sum interleaved stereo into the planar L/R outputs with smoothed gain.
-    float* outL = outs[0];
-    float* outR = outs[1];
-    for (std::uint32_t i = 0; i < frames; ++i) {
-        const float g = gainSmoother_.next();
-        outL[i] += stereoAccum_[std::size_t(i) * 2 + 0] * g;
-        outR[i] += stereoAccum_[std::size_t(i) * 2 + 1] * g;
+    // Sum into the planar outputs with ONE smoothed gain per frame — the same g
+    // across every lane, so the per-channel stems remain a faithful decomposition
+    // of the mix (a per-lane next() would advance the ramp N times too fast).
+    if (laneCount >= 2 * kAudioChannelCount) {
+        for (std::uint32_t i = 0; i < frames; ++i) {
+            const float g = gainSmoother_.next();
+            for (std::size_t k = 0; k < kAudioChannelCount; ++k) {
+                outs[2 * k + 0][i] += chanAccum_[k][std::size_t(i) * 2 + 0] * g;
+                outs[2 * k + 1][i] += chanAccum_[k][std::size_t(i) * 2 + 1] * g;
+            }
+        }
+    } else {
+        float* outL = outs[0];
+        float* outR = outs[1];
+        for (std::uint32_t i = 0; i < frames; ++i) {
+            const float g = gainSmoother_.next();
+            outL[i] += stereoAccum_[std::size_t(i) * 2 + 0] * g;
+            outR[i] += stereoAccum_[std::size_t(i) * 2 + 1] * g;
+        }
     }
 
     audioFrameCount_ = 0;

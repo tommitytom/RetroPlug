@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <memory>
@@ -81,6 +82,12 @@ public:
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
     void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
 
+    // The Game Boy's four sound channels as separate stereo streams (Pulse 1,
+    // Pulse 2, Wave, Noise, in GB_channel_t order). Inert until a split router
+    // asks for them: on the default path the router still reports one stream, so
+    // finishBlock keeps receiving the 2-lane mix. See the per-channel tap below.
+    std::vector<ChannelStream> channelLayout() const override;
+
     // Linked iff this system shares a nonzero linkGroupId with surviving peers
     // (linkPeers_ populated by Project::rebuildLinkGroups). The runner skips
     // linked systems in its singleton pass and drives them via their LinkGroup.
@@ -130,6 +137,11 @@ public:
     // Internal hooks invoked from the C callbacks (made public so the
     // free-function trampolines can reach them; not part of the public API).
     void writeAudioSample(int16_t left, int16_t right);
+    // Per-channel tap: `samples` is 8 interleaved int16 (l0,r0,l1,r1,l2,r2,l3,r3),
+    // one stereo pair per GB channel, captured in the same render() tick as the
+    // mixed sample. The GB_sample_t unpack lives in the .cpp trampoline so this
+    // header stays free of <apu.h>.
+    void writeChannelSamples(const int16_t* samples);
     void onVblank();
     void serialBitReceived(bool bit);
     bool serialBitFromPeer() const;
@@ -156,6 +168,14 @@ public:
     // onProcess if a host hands us a larger block than we've seen.
     std::vector<float>        stereoAccum_;
     std::uint32_t             audioFrameCount_ = 0;
+
+    // Per-channel audio tap: one interleaved-stereo accumulator per GB channel
+    // (Pulse 1, Pulse 2, Wave, Noise), filled every block from the SameBoy
+    // per-channel callback alongside stereoAccum_ and sized/zeroed with it in
+    // prepareForBlock. Consumed by finishBlock only when a split router hands us
+    // >= 8 lanes; otherwise carried along at negligible cost.
+    static constexpr std::size_t kAudioChannelCount = 4;
+    std::array<std::vector<float>, kAudioChannelCount> chanAccum_;
 
     bool                      activated_  = false;
     double                    sampleRate_ = 44100.0;

@@ -1,6 +1,7 @@
 # 10 — Multi-channel audio output (per-console channel stems)
 
-**Status: plan (not yet built).** This doc designs outputting the *individual console sound channels*
+**Status: in progress — the host seam and the SameBoy GB tap are built (§10 steps 1–2); the CLI/plugin
+exposure and NES work remain.** This doc designs outputting the *individual console sound channels*
 of a single emulator instance instead of its mixed stereo — 8 outputs for a Game Boy (a stereo pair
 per channel), and 5-plus mono channels / the hardware "stereo-mod" pins for an NES. It is a design
 only; no code exists yet. It builds on [02-native-host.md](02-native-host.md) (the `Engine` /
@@ -130,8 +131,11 @@ No, not strictly — but it is **recommended**, and decision (1) makes it the cl
   instantaneous 0–15 DAC index, pre-band-limit / pre-pan / pre-highpass. It aliases and will not
   reconstruct the mix — fine for meters/scopes, unusable as an audio stem source.
 
-SameBoy is a **pinned vendored submodule** — the tap must be a tracked diff/patch reapplied on bump,
-or upstreamed as a clean per-channel sample callback (open decision, §8).
+SameBoy is a **pinned vendored submodule**, so the tap ships as a tracked patch
+(`cmake/patches/sameboy-per-channel-audio.patch`) applied idempotently at configure by
+`cmake/sameboy.cmake` — no submodule-pointer bump, durable on a fresh clone, and a future bump that
+invalidates the patch fails loudly at configure rather than silently dropping per-channel output
+(resolved, §8/§9).
 
 ## 3. NES design (Mesen) — secondary, CLI-first
 
@@ -297,15 +301,14 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
 - **NES expansion sub-channels (higher effort):** multiple-mono mode's individual expansion voices need
   per-mapper audio taps beyond the mixer's per-chip `AudioChannel`; exact tap points per chip are an
   implementation-time task. EPSM lives outside the enum.
-- **SameBoy pin:** the tap must be a tracked vendored diff or upstreamed, or a submodule bump silently
-  drops per-channel output. `OfflineRender` per-unit buffer disjointness must be preserved for the new
-  per-stream buffers.
+- **SameBoy pin (resolved):** the tap is a tracked patch reapplied at configure (§8/§9); a submodule
+  bump that invalidates it fails loudly at configure instead of silently dropping per-channel output.
+  `OfflineRender` per-unit buffer disjointness must be preserved for the new per-stream buffers.
 - **WAV:** > 2-channel `encodeWav` is real but untested — needs a round-trip test; thread the real
   sample rate; hard-panned GB channels yield silent mono files (faithful, documented).
 
 **Open decisions still to make** (the rest were locked, §9):
 
-- SameBoy patch: keep as a **local tracked vendored diff** vs **upstream a clean per-channel callback**.
 - NES stereo-mod "separation" pot: expose an automatable 0..1 pulse/TND blend, or ship a fixed hard
   pin-split for v1.
 - NES EPSM: fold into the lumped expansion out, or expose separately.
@@ -316,6 +319,9 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    Accurate / Remove DC Offset) — §2.
 2. **SameBoy patch:** not strictly necessary (a mod-free 4-instance fallback exists), but **recommended**
    — it is 1× CPU and, unlike the fallback, can honour the Remove DC Offset mode from decision 1 — §2.
+   **Tracking (resolved): a tracked patch (`cmake/patches/sameboy-per-channel-audio.patch`) applied
+   idempotently at configure by `cmake/sameboy.cmake`** — no submodule-pointer bump, durable on fresh
+   clone, loud configure-time failure if a bump invalidates it.
 3. **NES in plugin:** **deferred** — NES per-channel is CLI-only in v1 — §3/§4.
 4. **NES 5-mono stems:** raw pre-DAC linear levels with an explicit **"does not sum"** label — §3b.
 5. **Plugin port labels:** **generic** `Out 1..4 L/R` + a documented mapping — §4.
@@ -323,16 +329,20 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
 7. **NES expansion:** **stereo-mod mode → one lumped expansion channel; multiple-mono mode → each
    individual expansion sub-channel** (accepting the VRC7-scale channel count) — §3a/§3b.
 
-## 10. Phased build order (nothing implemented yet)
+## 10. Phased build order (steps 1–2 built)
 
 1. **Host seam only** — `channelLayout()` (default 1 stereo stream), widened `finishBlock(…, laneCount)`,
    `AudioRouter::streamCount`, `runUnit` stream loop, `AudioRouting::ChannelSplit` + the GB
    `ChannelSplitRouter` (plugin) + `PerChannelRouter` + `Engine::processBlockPerChannel` (CLI). No
    emulator change, no behaviour change. Prove the default path byte-identical (existing tests +
    `screenshot` still green; assert `laneCount` matches router width).
-2. **SameBoy GB tap** — the tracked `apu.c`/`apu.h` edit (per-stem highpass in the active mode);
-   `SameBoySystem` captures the mixed sample + 4 stems; `finishBlock` writes 8 lanes when
-   `laneCount ≥ 8`. Fidelity check: `Sum(4 stems) == a same-mode reference` within tolerance.
+2. **SameBoy GB tap — DONE.** The tracked `apu.c`/`apu.h` patch adds a per-channel sample callback that
+   emits the four `channel_output` stems, each highpassed per-stem in the active mode via its own
+   `per_channel_highpass_diff[4]` (the mixed bus is untouched → byte-identical). `SameBoySystem`
+   registers it, captures the four stems alongside the mix, reports a 4-stereo-stream `channelLayout()`,
+   and `finishBlock` fans them into 8 lanes when `laneCount ≥ 8` (one gain per frame across all lanes).
+   Guarded by `retroplug-audio-test` (`SameBoyStems.test.cpp`): `Sum(4 stems) == mix` per-sample on a
+   real mGB boot render (Off + Accurate), plus the golden mGB mix render staying byte-identical.
 3. **CLI GB export** — `renderAudioPerChannel` RPC + wiring; a CLI session emitting the 3 shapes; the
    8-channel WAV round-trip test; thread the real sample rate.
 4. **Plugin GB option** — surface `ChannelSplit` (the §7 TS/native widenings + `systemCount()==1`

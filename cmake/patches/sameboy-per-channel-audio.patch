@@ -1,0 +1,145 @@
+diff --git a/Core/apu.c b/Core/apu.c
+index caa5451..6c86e23 100644
+--- a/Core/apu.c
++++ b/Core/apu.c
+@@ -313,9 +313,57 @@ static signed interference(GB_gameboy_t *gb)
+     return ret;
+ }
+ 
++/* RetroPlug per-channel tap: highpass one channel's band-limited output through its own
++   accumulator, in the same mode the mixed bus uses. Mirrors the mixed highpass in render()
++   below but per-stem — the mix's highpass_diff is never touched, so the mixed callback stays
++   byte-identical. Remove-DC-Offset here targets THIS channel's own DAC/NR51 DC (each stem
++   removes its own offset), so per-stem stems intentionally do not bit-exact-sum to the mixed
++   Remove-DC-Offset output; Off and Accurate do sum back to the mix. */
++static GB_sample_t apu_highpass_channel(GB_gameboy_t *gb, unsigned index, GB_sample_t input)
++{
++    GB_double_sample_t *diff = &gb->apu_output.per_channel_highpass_diff[index];
++    GB_sample_t filtered = gb->apu_output.highpass_mode?
++        (GB_sample_t) {input.left  - (int16_t)diff->left,
++                       input.right - (int16_t)diff->right} :
++        input;
++
++    switch (gb->apu_output.highpass_mode) {
++        case GB_HIGHPASS_OFF:
++            *diff = (GB_double_sample_t) {0, 0};
++            break;
++        case GB_HIGHPASS_ACCURATE:
++            *diff = (GB_double_sample_t) {
++                input.left  - (input.left  - diff->left)  * gb->apu_output.highpass_rate,
++                input.right - (input.right - diff->right) * gb->apu_output.highpass_rate
++            };
++            break;
++        case GB_HIGHPASS_REMOVE_DC_OFFSET: {
++            unsigned nr51 = gb->io_registers[GB_IO_NR51];
++            unsigned left_volume = 0;
++            unsigned right_volume = 0;
++            if (GB_apu_is_DAC_enabled(gb, index)) {
++                if (nr51 & (0x10 << index)) {
++                    left_volume = (((gb->io_registers[GB_IO_NR50] >> 4) & 7) + 1) * CH_STEP * 0xF;
++                }
++                if (nr51 & (1 << index)) {
++                    right_volume = ((gb->io_registers[GB_IO_NR50] & 7) + 1) * CH_STEP * 0xF;
++                }
++            }
++            *diff = (GB_double_sample_t) {
++                left_volume  * (1 - gb->apu_output.highpass_rate) + diff->left  * gb->apu_output.highpass_rate,
++                right_volume * (1 - gb->apu_output.highpass_rate) + diff->right * gb->apu_output.highpass_rate
++            };
++
++        case GB_HIGHPASS_MAX:;
++        }
++    }
++    return filtered;
++}
++
+ static void render(GB_gameboy_t *gb)
+ {
+     GB_sample_t output = {0, 0};
++    GB_sample_t stems[GB_N_CHANNELS]; // RetroPlug per-channel tap: each channel_output before the mix sum
+ 
+     unrolled for (unsigned i = 0; i < GB_N_CHANNELS; i++) {
+         double multiplier = CH_STEP;
+@@ -345,6 +393,7 @@ static void render(GB_gameboy_t *gb)
+         GB_sample_t channel_output;
+         band_limited_read(&gb->apu_output.band_limited[i], &channel_output, multiplier);
+ 
++        stems[i] = channel_output; // RetroPlug per-channel tap
+         output.left += channel_output.left;
+         output.right += channel_output.right;
+     }
+@@ -409,6 +458,16 @@ static void render(GB_gameboy_t *gb)
+         filtered_output.left = MAX(MIN(filtered_output.left + interference_bias, 0x7FFF), -0x8000);
+         filtered_output.right = MAX(MIN(filtered_output.right + interference_bias, 0x7FFF), -0x8000);
+     }
++    /* RetroPlug per-channel tap: emit the four per-stem outputs (each highpassed in the active
++       mode via its own accumulator), immediately before the mixed sample so both callbacks
++       capture at the same frame index. The mixed path above is untouched. */
++    if (gb->apu_output.channel_sample_callback) {
++        GB_sample_t filtered_stems[GB_N_CHANNELS];
++        for (unsigned i = 0; i < GB_N_CHANNELS; i++) {
++            filtered_stems[i] = apu_highpass_channel(gb, i, stems[i]);
++        }
++        gb->apu_output.channel_sample_callback(gb, filtered_stems);
++    }
+     assert(gb->apu_output.sample_callback);
+     gb->apu_output.sample_callback(gb, &filtered_output);
+     if (unlikely(gb->apu_output.output_file)) {
+@@ -2207,9 +2266,17 @@ void GB_apu_set_sample_callback(GB_gameboy_t *gb, GB_sample_callback_t callback)
+     gb->apu_output.sample_callback = callback;
+ }
+ 
++/* RetroPlug per-channel tap: arm the per-channel callback and clear its filter state. */
++void GB_apu_set_channel_sample_callback(GB_gameboy_t *gb, GB_channel_sample_callback_t callback)
++{
++    gb->apu_output.channel_sample_callback = callback;
++    memset(gb->apu_output.per_channel_highpass_diff, 0, sizeof(gb->apu_output.per_channel_highpass_diff));
++}
++
+ void GB_set_highpass_filter_mode(GB_gameboy_t *gb, GB_highpass_mode_t mode)
+ {
+     gb->apu_output.highpass_mode = mode;
++    memset(gb->apu_output.per_channel_highpass_diff, 0, sizeof(gb->apu_output.per_channel_highpass_diff)); // RetroPlug per-channel tap
+ }
+ 
+ void GB_set_interference_volume(GB_gameboy_t *gb, double volume)
+diff --git a/Core/apu.h b/Core/apu.h
+index 604931e..29a130c 100644
+--- a/Core/apu.h
++++ b/Core/apu.h
+@@ -68,6 +68,11 @@ typedef struct
+ 
+ typedef void (*GB_sample_callback_t)(GB_gameboy_t *gb, GB_sample_t *sample);
+ 
++/* RetroPlug per-channel tap: fires alongside the mixed sample_callback with the four
++   individual channel outputs (GB_channel_t order), each already band-limited, panned and
++   highpassed per-stem in the active highpass mode. See render() in apu.c. */
++typedef void (*GB_channel_sample_callback_t)(GB_gameboy_t *gb, const GB_sample_t *channels);
++
+ typedef struct
+ {
+     bool global_enable;
+@@ -203,9 +208,13 @@ typedef struct {
+     GB_highpass_mode_t highpass_mode;
+     double highpass_rate;
+     GB_double_sample_t highpass_diff;
+-    
++    /* RetroPlug per-channel tap: independent highpass state per channel, wholly separate
++       from the mixed-bus highpass_diff above so the mix is never perturbed. */
++    GB_double_sample_t per_channel_highpass_diff[GB_N_CHANNELS];
++
+     GB_sample_callback_t sample_callback;
+-    
++    GB_channel_sample_callback_t channel_sample_callback; // RetroPlug per-channel tap
++
+     double interference_volume;
+     double interference_highpass;
+     
+@@ -225,6 +234,7 @@ void GB_set_sample_rate_by_clocks(GB_gameboy_t *gb, double cycles_per_sample); /
+ void GB_set_highpass_filter_mode(GB_gameboy_t *gb, GB_highpass_mode_t mode);
+ void GB_set_interference_volume(GB_gameboy_t *gb, double volume);
+ void GB_apu_set_sample_callback(GB_gameboy_t *gb, GB_sample_callback_t callback);
++void GB_apu_set_channel_sample_callback(GB_gameboy_t *gb, GB_channel_sample_callback_t callback); // RetroPlug per-channel tap
+ int GB_start_audio_recording(GB_gameboy_t *gb, const char *path, GB_audio_format_t format);
+ int GB_stop_audio_recording(GB_gameboy_t *gb);
+ uint8_t GB_get_channel_volume(GB_gameboy_t *gb, GB_channel_t channel);
