@@ -71,29 +71,29 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
 
 // --- debug: live-core inspection / stepping / breakpoints / profiler (22; CLI only, spec/09) ---
 template <class Server>
-void registerDebugRpc(Server& s, EngineRpcService& e) {
-    s.template addMethod<&EngineRpcService::getApuState>(e);
-    s.template addMethod<&EngineRpcService::getPpuState>(e);
-    s.template addMethod<&EngineRpcService::readCpu>(e);
-    s.template addMethod<&EngineRpcService::writeCpu>(e);
-    s.template addMethod<&EngineRpcService::readMemory>(e);
-    s.template addMethod<&EngineRpcService::getCpuRegisters>(e);
-    s.template addMethod<&EngineRpcService::stepInstruction>(e);
-    s.template addMethod<&EngineRpcService::drainEvents>(e);
-    s.template addMethod<&EngineRpcService::loadLabels>(e);
-    s.template addMethod<&EngineRpcService::setCpuRegister>(e);
-    s.template addMethod<&EngineRpcService::runUntilPc>(e);
-    s.template addMethod<&EngineRpcService::setBreakpoints>(e);
-    s.template addMethod<&EngineRpcService::runUntilBreak>(e);
-    s.template addMethod<&EngineRpcService::setTrace>(e);
-    s.template addMethod<&EngineRpcService::readTrace>(e);
-    s.template addMethod<&EngineRpcService::stepInto>(e);
-    s.template addMethod<&EngineRpcService::stepOver>(e);
-    s.template addMethod<&EngineRpcService::stepOut>(e);
-    s.template addMethod<&EngineRpcService::beginProfile>(e);
-    s.template addMethod<&EngineRpcService::readProfile>(e);
-    s.template addMethod<&EngineRpcService::disassemble>(e);
-    s.template addMethod<&EngineRpcService::getCallStack>(e);
+void registerDebugRpc(Server& s, DebugRpcService& d) {
+    s.template addMethod<&DebugRpcService::getApuState>(d);
+    s.template addMethod<&DebugRpcService::getPpuState>(d);
+    s.template addMethod<&DebugRpcService::readCpu>(d);
+    s.template addMethod<&DebugRpcService::writeCpu>(d);
+    s.template addMethod<&DebugRpcService::readMemory>(d);
+    s.template addMethod<&DebugRpcService::getCpuRegisters>(d);
+    s.template addMethod<&DebugRpcService::stepInstruction>(d);
+    s.template addMethod<&DebugRpcService::drainEvents>(d);
+    s.template addMethod<&DebugRpcService::loadLabels>(d);
+    s.template addMethod<&DebugRpcService::setCpuRegister>(d);
+    s.template addMethod<&DebugRpcService::runUntilPc>(d);
+    s.template addMethod<&DebugRpcService::setBreakpoints>(d);
+    s.template addMethod<&DebugRpcService::runUntilBreak>(d);
+    s.template addMethod<&DebugRpcService::setTrace>(d);
+    s.template addMethod<&DebugRpcService::readTrace>(d);
+    s.template addMethod<&DebugRpcService::stepInto>(d);
+    s.template addMethod<&DebugRpcService::stepOver>(d);
+    s.template addMethod<&DebugRpcService::stepOut>(d);
+    s.template addMethod<&DebugRpcService::beginProfile>(d);
+    s.template addMethod<&DebugRpcService::readProfile>(d);
+    s.template addMethod<&DebugRpcService::disassemble>(d);
+    s.template addMethod<&DebugRpcService::getCallStack>(d);
 }
 
 // --- driver: background audio thread (6; threaded test host only) ---
@@ -115,7 +115,7 @@ void registerAllBackendRpc(Server& s, BackendFacade& f) {
     registerEmulatorRpc(s, f.engine());
     registerDspKernelRpc(s, f.engine());
     registerHarnessRpc(s, f.engine());
-    registerDebugRpc(s, f.engine());
+    registerDebugRpc(s, f.debug());
     registerDriverRpc(s, f.driver());
     s.addDiscoveryMethod();
 }

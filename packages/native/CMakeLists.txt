@@ -75,9 +75,10 @@ set_target_properties(retroplug-core PROPERTIES
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
 add_library(retroplug-backend STATIC
-    src/host/rpc/BackendFacade.cpp          # thin facade: owns the shared state, forwards to the 3 services
+    src/host/rpc/BackendFacade.cpp          # owner: shared Engine/factory/invoker + the concern services
     src/host/rpc/HostRpcService.cpp         # fs / config / codec / sav (pure, stateless)
     src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
+    src/host/rpc/DebugRpcService.cpp        # live-core inspection over Engine (CLI-only facet)
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
     src/host/engine/Engine.cpp              # single-threaded core: owns Project + DspRuntime, runs blocks
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door

@@ -12,6 +12,7 @@
 #include "host/rpc/BackendTypes.hpp"
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
+#include "host/rpc/DebugRpcService.hpp"
 #include "host/rpc/EngineRpcService.hpp"
 #include "host/rpc/HostRpcService.hpp"
 #include "system/SystemFactory.hpp"
@@ -32,6 +33,7 @@ public:
     // Service instances for the per-facet register functions to mount (see BackendRpcRegistration.hpp).
     HostRpcService&        host()   { return host_; }
     EngineRpcService&      engine() { return engine_svc_; }
+    DebugRpcService&       debug()  { return debug_; }
     AudioDriverRpcService& driver() { return driver_; }
 
     // --- DPF plugin driving: the host's run()/activate() replace the AudioDriverRpcService loop.
@@ -63,5 +65,6 @@ private:
 
     HostRpcService        host_;
     EngineRpcService      engine_svc_{engine_, factory_, invoker_};
+    DebugRpcService       debug_{engine_};  // live-core inspection (CLI-only facet)
     AudioDriverRpcService driver_{engine_, invoker_};
 };
