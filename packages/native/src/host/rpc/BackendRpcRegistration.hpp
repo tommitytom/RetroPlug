@@ -25,8 +25,6 @@ void registerBackendRpcMethods(Server& server) {
     // codec
     server.template addMethod<&BackendFacade::zip>();
     server.template addMethod<&BackendFacade::unzip>();
-    // LSDJ sav authoring
-    server.template addMethod<&BackendFacade::savFromJson>();
     // emulator lifecycle / reads
     server.template addMethod<&BackendFacade::constructSystem>();
     server.template addMethod<&BackendFacade::removeSystem>();

@@ -11,9 +11,6 @@
 #include "Version.hpp"
 #include "util/MinizZip.hpp"
 
-#include "lsdj/SavSerialization.hpp"
-#include "lsdj/codec/SavCodec.hpp"
-
 namespace fs = std::filesystem;
 
 namespace {
@@ -163,12 +160,4 @@ std::vector<BackendZipEntry> HostRpcService::unzip(rfl::Bytestring bytes) {
     for (const auto& name : r.names())
         out.push_back({ name, toBytestring(r.read(name)) });
     return out;
-}
-
-rfl::Bytestring HostRpcService::savFromJson(std::string json) {
-    auto sav = rp::lsdj::savFromJsonFixture(json);  // lenient (DefaultIfMissing): author only set cells
-    if (!sav) throw std::runtime_error("savFromJson: " + sav.error().what());
-    const auto bytes = rp::lsdj::codec::encodeSav(sav.value());
-    const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
-    return rfl::Bytestring(p, p + bytes.size());
 }

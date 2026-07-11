@@ -26,9 +26,12 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/SongCodec.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/Compression.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/SavCodec.cpp
+    # NOTE: the LSDj sav codec (codec/{SongCodec,Compression,SavCodec}.cpp + model/ +
+    # SavSerialization.hpp) is NO LONGER shipped — it was ported to pure TS
+    # (packages/retroplug/src/lsdj). The C++ codec is retained ONLY as the test
+    # oracle (retroplug-lsdj-diff-tests / retroplug-sav-tests / -golden-dump below),
+    # which compile it directly, and against which the frozen golden vectors + the
+    # pure-TS codec are validated.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp

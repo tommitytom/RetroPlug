@@ -42,7 +42,6 @@ public:
     std::string version() { return host_.version(); }
     rfl::Bytestring zip(std::vector<BackendZipInput> entries) { return host_.zip(std::move(entries)); }
     std::vector<BackendZipEntry> unzip(rfl::Bytestring bytes) { return host_.unzip(std::move(bytes)); }
-    rfl::Bytestring savFromJson(std::string json) { return host_.savFromJson(std::move(json)); }
 
     // --- emulator lifecycle / reads / kernel / MIDI / transport → engine_svc_ ---
     bool constructSystem(BackendConstructSpec spec) { return engine_svc_.constructSystem(std::move(spec)); }
