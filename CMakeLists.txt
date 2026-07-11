@@ -257,6 +257,15 @@ else()
     set(_TJSC_DEP tjsc)
 endif()
 
+# --- Catch2: the C++ unit-test framework for the on-demand plugin test binaries
+# (retroplug-plugin-test / retroplug-classid-test, built + run by `pnpm test:plugin`).
+# From the deps/catch2 submodule; EXCLUDE_FROM_ALL so the library only compiles when a
+# test target links it — a normal / plugin build never pays for it. dpf.js keeps its own
+# host tests behind DPFJS_BUILD_TESTS (default OFF), so there's no duplicate Catch2 target.
+set(CATCH_INSTALL_DOCS   OFF CACHE BOOL "" FORCE)
+set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
+add_subdirectory(deps/catch2 "${CMAKE_BINARY_DIR}/deps/catch2" EXCLUDE_FROM_ALL)
+
 # --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
 # + the DPF plugin + the test host / cli / ui-test.
 add_subdirectory(packages/native native)

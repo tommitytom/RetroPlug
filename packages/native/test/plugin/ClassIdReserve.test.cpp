@@ -1,4 +1,4 @@
-// Regression guard for the class-id reservation in TjsHostRuntime::init (dpf.js).
+// Regression guard for the class-id counter sync in TjsHostRuntime::init / LvglJsEngine (dpf.js).
 //
 // quickjs-ng's JS_NewClassID caches each class id in a process-global static but allocates from a
 // PER-RUNTIME counter. A runtime that REUSES a static id an earlier runtime already set does not advance
@@ -9,15 +9,17 @@
 // .decode going missing in the plugin's editor runtime only — the config load threw, React never mounted,
 // and the VST3/VST2 UI was blank while the standalone (single runtime) rendered fine.
 //
-// This reproduces it headlessly: a first runtime sets the statics and is freed; the second runtime then
-// registers a batch of fresh native classes (standing in for lv_binding_js), and TextDecoder must still
-// decode. Without the reservation, one fresh class lands on Utf8Decoder's id and check 2 fails.
+// dpfjs::syncClassIdAllocator (ClassIdSpace.hpp) closes it by advancing the runtime's counter past the
+// true registered high-water via the public JS_IsRegisteredClass — self-sizing (no magic constant) and
+// hole-proof (past the MAX registered id, not the first gap).
 //
 // Run via `pnpm test:plugin`.
 
-#include <cstdio>
 #include <string>
 
+// Include the txiki-bearing host header first: its utils.h defines a CHECK(expr) macro
+// (abort-on-false) that would otherwise shadow Catch2's CHECK. Undef it before pulling in
+// Catch2 so the Catch2 assertion macros win in this translation unit.
 #include "dpfjs/host/ClassIdSpace.hpp"
 #include "dpfjs/host/TjsHostRuntime.hpp"
 
@@ -25,100 +27,93 @@ extern "C" {
 #include "quickjs.h"
 }
 
-namespace {
+#ifdef CHECK
+#undef CHECK
+#endif
 
-int g_index    = 0;
-int g_failures = 0;
+#include <catch2/catch_test_macros.hpp>
+
+namespace {
 
 std::string decodeHi(JSContext* ctx) {
     static const char s[] = "(()=>{try{return new TextDecoder().decode(new Uint8Array([104,105]))}"
                             "catch(e){return 'ERR:'+(e&&e.message)}})()";
-    JSValue r     = JS_Eval(ctx, s, sizeof(s) - 1, "<decode>", JS_EVAL_TYPE_GLOBAL);
-    const char* o = JS_ToCString(ctx, r);
+    JSValue r       = JS_Eval(ctx, s, sizeof(s) - 1, "<decode>", JS_EVAL_TYPE_GLOBAL);
+    const char* o   = JS_ToCString(ctx, r);
     std::string out = o ? o : "(null)";
     if (o) JS_FreeCString(ctx, o);
     JS_FreeValue(ctx, r);
     return out;
 }
 
-void check(bool cond, const char* what, const char* detail) {
-    ++g_index;
-    std::printf("%s %d - %s (%s)\n", cond ? "ok" : "not ok", g_index, what, detail);
-    if (!cond) ++g_failures;
-}
-
 // Register `n` fresh native classes on ctx via the same JS_NewClassID(process-global static) idiom txiki
 // and lv_binding_js use — standing in for lv_binding_js's LVGL component registration. Each gets a plain
 // prototype WITHOUT a `decode` method, so any that lands on txiki's Utf8Decoder id strips TextDecoder.
-JSClassID g_fresh[256] = {};
-void registerFreshClasses(JSContext* ctx, int n) {
+void registerFreshClasses(JSContext* ctx, int n, JSClassID* ids) {
     JSRuntime* rt = JS_GetRuntime(ctx);
     for (int i = 0; i < n; ++i) {
-        JSClassDef def = {};
-        def.class_name = "FreshWidget";
-        JS_NewClassID(rt, &g_fresh[i]);
-        JS_NewClass(rt, g_fresh[i], &def);
-        JS_SetClassProto(ctx, g_fresh[i], JS_NewObject(ctx));
+        JSClassDef def  = {};
+        def.class_name  = "FreshWidget";
+        JS_NewClassID(rt, &ids[i]);
+        JS_NewClass(rt, ids[i], &def);
+        JS_SetClassProto(ctx, ids[i], JS_NewObject(ctx));
     }
 }
 
 } // namespace
 
-int main() {
-    std::printf("TAP version 13\n1..5\n");
-
+TEST_CASE("TextDecoder survives a fresh native-class batch in a reused runtime", "[classid]") {
     // A first runtime sets txiki's process-global class-id statics, then is freed — the DAW's scan pass.
     {
         TjsHostRuntime scan;
-        if (!scan.init()) { std::printf("scan runtime init failed\n"); return 2; }
+        REQUIRE(scan.init());
     }
 
-    // The editor's runtime: init reuses the cached ids, then lv_binding_js-like fresh registration.
+    // The editor's runtime: init reuses the cached ids (counter left low without the sync), then
+    // lv_binding_js-like fresh registration would collide with a live txiki class.
     TjsHostRuntime host;
-    if (!host.init()) { std::printf("host runtime init failed\n"); return 2; }
+    REQUIRE(host.init());
     JSContext* ctx = host.context();
 
-    const std::string before = decodeHi(ctx);
-    check(before == "hi", "TextDecoder decodes in a 2nd runtime after init", before.c_str());
+    CHECK(decodeHi(ctx) == "hi"); // decodes after init
 
-    registerFreshClasses(ctx, 128); // stand in for lv_binding_js registering its native LVGL classes
+    static JSClassID s_fresh[128] = {};
+    registerFreshClasses(ctx, 128, s_fresh); // stand in for lv_binding_js registering its LVGL classes
 
-    const std::string after = decodeHi(ctx);
-    check(after == "hi", "TextDecoder still decodes after fresh native classes register", after.c_str());
+    CHECK(decodeHi(ctx) == "hi"); // still decodes after fresh native classes register
+}
 
-    // Check 3 (hole-proof): the sync advances past the MAX registered id, not the
-    // first unregistered one. Register a sentinel class at a high id so the ids
-    // just above txiki's block are unregistered holes; the next fresh id must clear
-    // the sentinel. A naive stop-at-first-gap sync would land in the hole and fail.
-    {
-        TjsHostRuntime holey;
-        if (!holey.init()) { std::printf("holey init failed\n"); return 2; }
-        JSRuntime* r = JS_GetRuntime(holey.context());
+TEST_CASE("syncClassIdAllocator advances past the max registered id (hole-proof)", "[classid]") {
+    // The sync must clear the MAX registered id, not the first unregistered one. Register a sentinel at a
+    // high id so the ids just above txiki's block are unregistered holes; the next fresh id must clear the
+    // sentinel. A naive stop-at-first-gap sync would land in the hole and hand out a colliding id.
+    TjsHostRuntime holey;
+    REQUIRE(holey.init());
+    JSRuntime* r = JS_GetRuntime(holey.context());
 
-        const JSClassID sentinel = 4096; // far above txiki's ~67..94 block
-        JSClassDef sdef  = {};
-        sdef.class_name  = "HoleSentinel";
-        JS_NewClass(r, sentinel, &sdef); // ids between txiki's high-water and 4096 are holes
-        check(JS_IsRegisteredClass(r, sentinel), "sentinel class registered at a high id", "4096");
+    const JSClassID sentinel = 4096; // far above txiki's ~67..94 block
+    JSClassDef sdef  = {};
+    sdef.class_name  = "HoleSentinel";
+    JS_NewClass(r, sentinel, &sdef); // ids between txiki's high-water and 4096 are holes
+    REQUIRE(JS_IsRegisteredClass(r, sentinel));
 
-        dpfjs::syncClassIdAllocator(r);
-        JSClassID fresh = 0;
-        JS_NewClassID(r, &fresh);
-        char det[64];
-        std::snprintf(det, sizeof det, "fresh=%u sentinel=%u", fresh, sentinel);
-        check(fresh > sentinel, "fresh id clears the max registered id (hole-proof)", det);
-    }
+    dpfjs::syncClassIdAllocator(r);
+    JSClassID fresh = 0;
+    JS_NewClassID(r, &fresh);
+    CHECK(fresh > sentinel);
+}
 
-    // Check 4 (reuse-then-fresh / second-editor case): a first runtime fresh-allocates
-    // a class block (caching statics + advancing its counter); a second runtime
-    // reuse-registers those same statics (growing class_count without advancing its
-    // counter), models lv_binding_js on a 2nd editor. After the post-registration
-    // sync, a later fresh id must clear the reused block.
+TEST_CASE("syncClassIdAllocator clears a reused class block (second-editor case)", "[classid]") {
+    // A first runtime fresh-allocates a class block (caching statics + advancing its counter); a second
+    // runtime reuse-registers those same statics (growing class_count without advancing its counter) —
+    // modelling lv_binding_js on a 2nd editor. After the post-registration sync, a later fresh id must
+    // clear the reused block.
     static JSClassID s_libA[48] = {}; // process-global statics, like lv_binding_js's
+
     {
         // Runtime #1 fresh-allocates libA: caches the statics AND advances r1's counter.
         TjsHostRuntime r1;
-        if (!r1.init()) { std::printf("r1 init failed\n"); return 2; }
+        REQUIRE(r1.init());
         JSRuntime* r = JS_GetRuntime(r1.context());
         for (JSClassID& id : s_libA) {
             JSClassDef d = {};
@@ -127,28 +122,22 @@ int main() {
             JS_NewClass(r, id, &d);
         }
     }
-    {
-        // Runtime #2 reuses libA's cached ids: JS_NewClass grows r2's class_count,
-        // but the reused JS_NewClassID does NOT advance r2's counter.
-        TjsHostRuntime r2;
-        if (!r2.init()) { std::printf("r2 init failed\n"); return 2; }
-        JSRuntime* r = JS_GetRuntime(r2.context());
-        JSClassID maxLibA = 0;
-        for (JSClassID id : s_libA) {
-            JSClassDef d = {};
-            d.class_name = "LibA";
-            JS_NewClass(r, id, &d);
-            if (id > maxLibA) maxLibA = id;
-        }
 
-        dpfjs::syncClassIdAllocator(r); // the "after NativeRenderInit" sync
-        JSClassID later = 0;
-        JS_NewClassID(r, &later);
-        char det[64];
-        std::snprintf(det, sizeof det, "later=%u maxLibA=%u", later, maxLibA);
-        check(later > maxLibA, "later fresh id clears the reused block (2nd-editor case)", det);
+    // Runtime #2 reuses libA's cached ids: JS_NewClass grows r2's class_count, but the reused
+    // JS_NewClassID does NOT advance r2's counter.
+    TjsHostRuntime r2;
+    REQUIRE(r2.init());
+    JSRuntime* r = JS_GetRuntime(r2.context());
+    JSClassID maxLibA = 0;
+    for (JSClassID id : s_libA) {
+        JSClassDef d = {};
+        d.class_name = "LibA";
+        JS_NewClass(r, id, &d);
+        if (id > maxLibA) maxLibA = id;
     }
 
-    std::printf("\n%s: %d/%d\n", g_failures ? "FAILED" : "all checks passed", g_index - g_failures, g_index);
-    return g_failures ? 1 : 0;
+    dpfjs::syncClassIdAllocator(r); // the "after NativeRenderInit" sync
+    JSClassID later = 0;
+    JS_NewClassID(r, &later);
+    CHECK(later > maxLibA);
 }
