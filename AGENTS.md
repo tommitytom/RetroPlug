@@ -95,9 +95,12 @@ that keeps the DAW-hosted editor from rendering blank), `screenshot`,
 headless Reaper and asserts its LVGL snapshot rendered; the only check of on-screen
 editor rendering, not in CI), `reaper:editor-reopen` (`tools/run-reaper-editor-reopen.sh`
 — loads mGB through the UI, closes + reopens the editor, and asserts the project is
-still shown; currently FAILS, reproducing an open close→reopen state-loss bug; mouse-
-driven since keys don't reach the plugin editor headlessly; not in CI), the
-`tools/run-sanitizer.sh` thread / address checks,
+still shown; mouse-driven since keys don't reach the plugin editor headlessly),
+`reaper:editor-autoload` (`tools/run-reaper-editor-autoload.sh` — floats the editor with a
+project already in the control plane and asserts the editor shows it, the session-restore /
+setState half; deterministic, no mouse) — both guard the editor↔control-plane single-store
+graph (a close/reopen or a setState-restored project showing the start menu means the UI
+composed its own store again); not in CI. Then the `tools/run-sanitizer.sh` thread / address checks,
 and `validate`. The LSDj-sync / DAW-timing / audio-quality matrix runs headlessly
 too — the real-Reaper
 `reaper:lsdj-*` renders + `tools/reaper-timing-analyze.py`; see
