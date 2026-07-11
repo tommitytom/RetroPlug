@@ -4,7 +4,7 @@
 // (no write, no notify) when it doesn't change the value; setters validate and reject bad
 // input (matching native UserConfig::setDefaultZoom / setSramMirror).
 
-import type { Backend } from "./backend";
+import type { HostBackend } from "./backend";
 import { DEFAULT_USER_CONFIG, SRAM_AUTO_SAVES, type SramAutoSave, type UserConfig } from "./userConfig";
 import { parseUserConfig, serializeUserConfig } from "./userConfigSerialization";
 
@@ -15,7 +15,7 @@ const dec = new TextDecoder();
 export class UserConfigStore {
   private current: UserConfig = { ...DEFAULT_USER_CONFIG };
 
-  constructor(private readonly backend: Backend, private readonly onChange: () => void = () => {}) {}
+  constructor(private readonly backend: HostBackend, private readonly onChange: () => void = () => {}) {}
 
   /** Read config.json into memory. A parsed value replaces the current config; a missing
    *  file writes the defaults out (first run, so the user has a file to edit); a malformed

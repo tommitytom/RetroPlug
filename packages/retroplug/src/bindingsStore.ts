@@ -7,7 +7,7 @@
 // The config.json side (active names, zoom, sram) lives in UserConfigStore; renaming or
 // resolving profiles reads/updates the active names through it.
 
-import type { Backend } from "./backend";
+import type { HostBackend } from "./backend";
 import type { UserConfigStore } from "./userConfigStore";
 import { defaultBindingMap, type BindingMap } from "./bindingMap";
 import { parseBindingMap, serializeBindingMap } from "./bindingSerialization";
@@ -33,7 +33,7 @@ export function isValidProfileChar(ch: string): boolean {
 
 export class BindingsStore {
   constructor(
-    private readonly backend: Backend,
+    private readonly backend: HostBackend,
     private readonly userConfig: UserConfigStore,
     private readonly onChange: () => void = () => {},
   ) {}

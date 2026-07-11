@@ -305,6 +305,11 @@ export type DebugBackend = Pick<
   | "beginProfile" | "readProfile" | "disassemble" | "getCallStack"
 >;
 
+/** The store-graph backend: fs + emulator, minus the CLI-only debug facet. composeAppStores runs on
+ *  this, so the plugin/UI control-plane store graph is debug-free at the type level — matching the
+ *  plugin/UI native channels that never register the debug facet. */
+export type ControlPlaneBackend = HostBackend & EmulatorBackend;
+
 /** One named blob in a zip archive (an `.rplg` entry: `project.json` or a
  *  `systems/{i}/…` blob). Bytes cross as `Uint8Array`, never a JS string. */
 export interface ZipEntry {

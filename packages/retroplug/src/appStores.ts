@@ -17,7 +17,7 @@
 // control plane and the UI observe ONE graph.
 
 import { createRealBackend } from "./realBackend";
-import type { Backend } from "./backend";
+import type { ControlPlaneBackend } from "./backend";
 import type { RoleRegistry } from "./systemRoles";
 import { buildAppRegistry } from "./appHost";
 import { RecentStore } from "./recentStore";
@@ -32,7 +32,7 @@ export type StoreChannel = "project" | "systems" | "recent" | "userConfig" | "bi
 
 /** The full greenfield store graph, plus the shared backend + role registry the stores hang off. */
 export interface AppStores {
-  backend: Backend;
+  backend: ControlPlaneBackend;
   registry: RoleRegistry;
   recent: RecentStore;
   userConfig: UserConfigStore;
@@ -44,7 +44,7 @@ export interface AppStores {
 
 export interface ComposeOptions {
   /** The native backend the stores drive. Defaults to the real RPC backend. */
-  backend?: Backend;
+  backend?: ControlPlaneBackend;
   /** Called with the changed channel on every store mutation. Defaults to a no-op. */
   notify?: (channel: StoreChannel) => void;
 }
@@ -52,7 +52,7 @@ export interface ComposeOptions {
 /** Build the store graph over `backend` (the real native backend by default). Mirrors
  *  pluginControlPlane.ts's sequence and additionally composes the config/bindings stores (nothing in
  *  src/ constructs them yet), loading each store's on-disk state. Does NOT wire the DSP. */
-export function composeAppStores({ backend = createRealBackend(), notify = () => {} }: ComposeOptions = {}): AppStores {
+export function composeAppStores({ backend = createRealBackend({ debug: false }), notify = () => {} }: ComposeOptions = {}): AppStores {
   const registry = buildAppRegistry();
 
   const recent = new RecentStore(backend, () => notify("recent"));

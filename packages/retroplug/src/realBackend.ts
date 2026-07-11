@@ -13,7 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, FileBrowserOpts, FrameData, HostBackend, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, FileBrowserOpts, FrameData, HostBackend, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
 
 type RpcSend = (request: unknown) => unknown;
 interface Reply {
@@ -169,7 +169,12 @@ export function createDebugClient(): DebugBackend {
   };
 }
 
-/** Build the full native Backend (all three facets). Throws if no native RPC surface is bound. */
-export function createRealBackend(): Backend {
-  return { ...createHostClient(), ...createEmulatorClient(), ...createDebugClient() };
+/** Build the native Backend. By default all three facets (the CLI's full surface); pass `{debug:false}`
+ *  for the control-plane surface (fs + emulator only) the plugin/UI store graph runs on. Throws if no
+ *  native RPC surface is bound. */
+export function createRealBackend(opts: { debug: false }): ControlPlaneBackend;
+export function createRealBackend(opts?: { debug?: boolean }): Backend;
+export function createRealBackend(opts: { debug?: boolean } = {}): Backend | ControlPlaneBackend {
+  const base = { ...createHostClient(), ...createEmulatorClient() };
+  return opts.debug === false ? base : { ...base, ...createDebugClient() };
 }

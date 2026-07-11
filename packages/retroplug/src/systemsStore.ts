@@ -10,7 +10,7 @@
 // duplicateSystem / reload orchestration and the DSP list handlers
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
-import type { Backend, ConstructSpec } from "./backend";
+import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix } from "./savPaths";
 import {
@@ -52,7 +52,7 @@ const LSDJ_MASTERSYNC_MODE = 8;
 
 /** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
  *  the first `ROM_SNIFF_LEN` of them. Native never classifies. */
-export function classifyRom(backend: Backend, romPath: string): Platform | "unknown" {
+export function classifyRom(backend: HostBackend, romPath: string): Platform | "unknown" {
   return detectPlatform(backend.readFilePrefix(romPath, ROM_SNIFF_LEN) ?? new Uint8Array());
 }
 
@@ -84,7 +84,7 @@ export class SystemsStore {
   private onFocusChange: () => void = () => {};
 
   constructor(
-    private readonly backend: Backend,
+    private readonly backend: ControlPlaneBackend,
     private readonly onChange: () => void = () => {},
     private readonly registry?: RoleRegistry,
   ) {}

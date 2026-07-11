@@ -12,7 +12,7 @@
 // FINAL outcome after every dialog settles. The 2nd browser is just another `await`
 // inside the same Promise — no pending-mode latch, no out-of-band event correlation.
 
-import type { Backend } from "./backend";
+import type { HostBackend } from "./backend";
 import { extensionLower } from "./pathUtil";
 import { siblingRplgPath } from "./savPaths";
 import { classifyRom, type SystemsStore } from "./systemsStore";
@@ -24,7 +24,7 @@ export const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes"];
  *  extension, since it isn't a ROM), or something else. */
 export type FileKind = "rom" | "sav" | "other";
 
-export function classifyKind(backend: Backend, path: string): FileKind {
+export function classifyKind(backend: HostBackend, path: string): FileKind {
   if (classifyRom(backend, path) !== "unknown") return "rom";
   if (extensionLower(path) === ".sav") return "sav";
   return "other";
@@ -52,7 +52,7 @@ type Pick =
   | { kind: "cancelled" };
 
 export class FileSelection {
-  constructor(private readonly backend: Backend, private readonly systems: SystemsStore) {}
+  constructor(private readonly backend: HostBackend, private readonly systems: SystemsStore) {}
 
   /** Project-level "Load…": browse a ROM/sav (pairing an unpaired `.sav` via the 2nd browser), then decide
    *  between the sibling `<rom>.rplg` project and a fresh ROM. Pure of store mutation — the caller applies
