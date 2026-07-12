@@ -105,10 +105,7 @@ jobs:
             build/bin/retroplug-vst2.so
 
   windows:
-    # windows-2025 (MSVC 14.4x newer toolset). windows-2022's 14.44 miscompiles
-    # the Mesen core — the NES PPU publishes no frame, failing the native suite —
-    # while 14.51 locally + Linux/macOS render fine.
-    runs-on: windows-2025
+    runs-on: windows-2022
     env:
       # build.bat defaults VCPKG_ROOT to C:\code\vcpkg; point it at the runner's
       # preinstalled vcpkg. RGBDS_DIR is set later once RGBDS is extracted.
@@ -150,9 +147,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\vcpkg\installed
-          # Include the runner image: static libs built with one MSVC toolset
-          # shouldn't be restored onto a different one.
-          key: vcpkg-x64-windows-static-sdl2-libffi-windows-2025
+          key: vcpkg-x64-windows-static-sdl2-libffi-${{ runner.os }}
 
       - name: Install vcpkg dependencies (x64-windows-static)
         shell: pwsh

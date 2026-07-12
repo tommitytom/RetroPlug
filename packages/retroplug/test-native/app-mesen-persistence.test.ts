@@ -61,7 +61,7 @@ test("F1: Duplicate clones a live NES core off its published (advanced) state, n
   // The clone constructed from a valid live savestate → it has its own published snapshot and renders.
   expect(be.readState(dupId as number)!.length > 0).toBeTruthy();
   audio.renderAudio(300);
-  expect(audio.screenshot(dupId as number, "/tmp/app-mesen_dup.png")).toBeTruthy();
+  expect(audio.screenshot(dupId as number, `${__CONFIG_DIR__}/app-mesen_dup.png`)).toBeTruthy();
 });
 
 test("F1: a ROM that passes the NES magic gate but fails Mesen LoadRom fails the construct", () => {

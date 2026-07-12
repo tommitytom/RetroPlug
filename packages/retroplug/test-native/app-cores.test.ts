@@ -13,6 +13,7 @@ import { buildAppRegistry } from "../src/appHost";
 
 declare const __RESOURCES_DIR__: string;
 declare const __REPO_RESOURCES_DIR__: string;
+declare const __CONFIG_DIR__: string; // per-test writable temp dir (a bare /tmp isn't writable on Windows)
 
 // n8-midi.nes is committed in-repo; the GBA ROM lives only in the sibling resources tree.
 const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
@@ -35,7 +36,7 @@ function bootsAndRenders(rom: string, expectPlatform: string, warmupMs: number, 
   expect(project.systems.view()[0].platform).toBe(expectPlatform); // classified + routed to the right core
 
   audio.renderAudio(warmupMs); // advance the CPU + PPU/renderer
-  const published = audio.screenshot(id, `/tmp/app-cores_${pngName}.png`);
+  const published = audio.screenshot(id, `${__CONFIG_DIR__}/app-cores_${pngName}.png`);
   console.log(`[app-cores] ${expectPlatform} published=${published}`);
   expect(published).toBeTruthy(); // ≥1 frame rendered → the backend built a live, running core
 }
