@@ -2,7 +2,7 @@
 // unit-testable in the mock suite. render.ts imports parseRenderArgs and drives the render off the result.
 //
 //   render <rom> [--sav f] [--state f] [--out f] [--ms n] [--split mix|channels|pins|mono]
-//                [--bpm n] [--transport] [--no-start]
+//                [--bpm n] [--transport] [--no-start] [--song name | --song-index n] [--list-songs]
 
 export type SplitMode = "mix" | "channels" | "pins" | "mono";
 
@@ -18,11 +18,17 @@ export interface RenderOpts {
   bpm?: number;
   transport: boolean;
   start: boolean; // auto-start playback on boot (press Start); default true
+  // LSDj song selection (GB only). A sav holds up to 32 named projects but only plays its working song;
+  // these promote a chosen project to the working song before boot. song / songIndex are exclusive.
+  song?: string; // by name (case-insensitive, ≤8 chars)
+  songIndex?: number; // by slot 0–31
+  listSongs: boolean; // print the sav's song names and exit
 }
 
 export const RENDER_USAGE =
   "usage: render <rom> [--sav f] [--state f] [--out f] [--ms n] " +
-  "[--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]";
+  "[--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start] " +
+  "[--song name | --song-index n] [--list-songs]";
 
 function intValue(flag: string, raw: string | undefined): number {
   const n = Number(raw);
@@ -42,6 +48,9 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
   let bpm: number | undefined;
   let transport = false;
   let start = true;
+  let song: string | undefined;
+  let songIndex: number | undefined;
+  let listSongs = false;
 
   // A flag's value is the next token; missing → error via undefined feeding the validators.
   const next = (i: number, flag: string): string => {
@@ -65,6 +74,16 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
         split = v as SplitMode;
         break;
       }
+      case "--song": song = next(i, a); i++; break;
+      case "--song-index": {
+        const raw = next(i, a); i++;
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 0 || n > 31)
+          throw new Error(`render: --song-index must be 0–31 (got ${raw})`);
+        songIndex = n;
+        break;
+      }
+      case "--list-songs": listSongs = true; break;
       case "--transport": transport = true; break;
       case "--start": start = true; break;
       case "--no-start": start = false; break;
@@ -76,5 +95,7 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
   }
 
   if (!rom) throw new Error(`render: missing <rom>\n${RENDER_USAGE}`);
-  return { rom, sav, state, out, ms, split, bpm, transport, start };
+  if (song !== undefined && songIndex !== undefined)
+    throw new Error("render: --song and --song-index are mutually exclusive");
+  return { rom, sav, state, out, ms, split, bpm, transport, start, song, songIndex, listSongs };
 }

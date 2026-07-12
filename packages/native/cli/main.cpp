@@ -83,7 +83,9 @@ int main(int argc, char** argv) try {
             "usage: retroplug-cli <command|session.js> [args...]\n"
             "  render <rom> [--sav f] [--state f] [--out f] [--ms n]\n"
             "               [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]\n"
+            "               [--song name | --song-index n] [--list-songs]\n"
             "                       Render a ROM (+.sav/savestate) to WAV (compiled-in; no Node).\n"
+            "                       LSDj: --song picks a saved song; --list-songs lists them.\n"
             "  <session.js> [args]  Run a pre-bundled greenfield session by path (dev fallback).\n");
         return 2;
     }

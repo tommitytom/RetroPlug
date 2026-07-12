@@ -9,11 +9,17 @@
 // A missing --sav auto-pairs the sibling <rom>.sav (native resolveSavPath). By default it presses Start
 // on boot so a saved song (e.g. LSDj) actually plays — pass --no-start to render raw boot audio. The
 // --split modes fold in the per-channel/stem exports (GB 4 channels; NES 3 pins / 5 mono core stems).
+//
+// LSDj (GB) song selection: a .sav holds up to 32 named projects but LSDj only plays its WORKING song on
+// boot, so --song NAME / --song-index N promote a chosen project to the working song before booting
+// (decode → assign → re-encode → seed the fresh system). --list-songs prints the sav's song names.
 import { runSession, hostArgs } from "../session";
 import { encodeWav, interleaveStereoStreams, deinterleaveStereo } from "../wav";
 import { parseRenderArgs, type RenderOpts, type SplitMode } from "../renderArgs";
 import { syncDspFromStore } from "../../src/appHost";
 import { extensionLower, replaceExtension } from "../../src/pathUtil";
+import { siblingSavPath } from "../../src/savPaths";
+import { decodeSav, encodeSav, kSavSize } from "../../src/lsdj";
 import type { Session } from "../session";
 
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
@@ -40,11 +46,64 @@ function nesExportMode(split: SplitMode): number {
   return split === "mono" ? 3 : 1;
 }
 
-/** Build the single system, arming construct-time capture when a NES split mode needs it, and project
- *  the store into the DSP runtime. Returns the system id + its platform. */
-function buildSystem(s: Session, o: RenderOpts, platform: Platform): number {
+// --- LSDj song selection (GB only) ----------------------------------------------------------------
+
+type LsdjSav = ReturnType<typeof decodeSav>;
+
+/** Read + decode the LSDj sav a song-selection flag needs: --sav else the sibling <rom>.sav. */
+function readSav(s: Session, o: RenderOpts): { path: string; sav: LsdjSav; raw: Uint8Array } {
+  const path = o.sav ?? siblingSavPath(o.rom);
+  const raw = s.backend.readFile(path);
+  if (!raw) throw new Error(`render: no sav to read songs from at ${path}`);
+  return { path, sav: decodeSav(raw), raw };
+}
+
+/** "0: HAPPYBD, 3: DEMO" — the populated project slots, for --list-songs and not-found errors. */
+function songList(sav: LsdjSav): string {
+  const names = sav.projects
+    .map((p, i) => (p ? `${i}: ${p.name || "(unnamed)"}` : null))
+    .filter((x): x is string => x !== null);
+  return names.length ? names.join(", ") : "(no named projects)";
+}
+
+/** Resolve the requested project index (by --song-index or --song name), promote it to the working
+ *  song, and re-encode → the SRAM bytes to seed the system with. Returns undefined when no song flag. */
+function resolveSongSeed(s: Session, o: RenderOpts): Uint8Array | undefined {
+  if (o.song === undefined && o.songIndex === undefined) return undefined;
+  const { sav, raw } = readSav(s, o);
+
+  let idx: number;
+  if (o.songIndex !== undefined) {
+    idx = o.songIndex;
+    if (!sav.projects[idx]) throw new Error(`render: slot ${idx} is empty; songs: ${songList(sav)}`);
+  } else {
+    const want = o.song!.trim().toUpperCase().slice(0, 8); // LSDj names are ≤8 chars, uppercase
+    const hits = sav.projects
+      .map((p, i) => ({ p, i }))
+      .filter((x) => x.p && x.p.name.trim().toUpperCase() === want);
+    if (hits.length === 0) throw new Error(`render: no song named "${o.song}"; songs: ${songList(sav)}`);
+    if (hits.length > 1) console.warn(`render: ${hits.length} songs named "${o.song}"; using slot ${hits[0].i}`);
+    idx = hits[0].i;
+  }
+
+  const project = sav.projects[idx]!;
+  sav.workingSong = project.song; // working song and project songs share the decoded Song shape
+  sav.activeProjectIndex = idx;
+  console.log(`retroplug-cli: song "${project.name || "(unnamed)"}" (slot ${idx}) → working song`);
+  // Seed unmodeled regions from the original sav when it's a full 128 KiB image (else author fresh).
+  return encodeSav(sav, raw.length >= kSavSize ? raw : undefined);
+}
+
+/** Build the single system + project it into the DSP runtime. `seed` (LSDj song bytes) forces the adopt
+ *  path; a NES split mode arms construct-time capture; otherwise addSystem auto-detects. */
+function buildSystem(s: Session, o: RenderOpts, platform: Platform, seed?: Uint8Array): number {
   let id: number | null;
-  if (platform === "nes" && o.split !== "mix") {
+  if (seed) {
+    // Seed the fresh system from the chosen-song SRAM bytes (adopt takes raw bytes; addSystem doesn't).
+    s.project.systems.adopt({ romPath: o.rom }, { sramBytes: seed });
+    syncDspFromStore(s.project, s.dsp);
+    id = s.project.systems.view()[0]?.id ?? null;
+  } else if (platform === "nes" && o.split !== "mix") {
     // NES per-channel capture engages at construct/onActivate, so channelExportMode MUST be set here.
     // adopt is quiet → project the store by hand (bootSession's onSystemsChange hook doesn't fire).
     s.project.systems.adopt({
@@ -76,6 +135,20 @@ runSession((s) => {
   const o = parseRenderArgs(hostArgs());
   const platform = platformOf(o.rom);
 
+  // Song selection is an LSDj (GB) concept — reject it early on other platforms.
+  const wantsSong = o.listSongs || o.song !== undefined || o.songIndex !== undefined;
+  if (wantsSong && platform !== "gb")
+    throw new Error(`render: --song/--list-songs is a Game Boy (LSDj) feature (got ${platform})`);
+
+  // --list-songs: print the sav's populated project slots and exit before building anything.
+  if (o.listSongs) {
+    const { path, sav } = readSav(s, o);
+    console.log(`retroplug-cli: songs in ${path}:`);
+    sav.projects.forEach((p, i) => { if (p) console.log(`  ${i}: ${p.name || "(unnamed)"}`); });
+    if (sav.projects.every((p) => !p)) console.log("  (no named projects — only the working song)");
+    return;
+  }
+
   // Validate split ↔ platform up front so a bad combo fails before we load anything.
   if (o.split === "pins" || o.split === "mono") {
     if (platform !== "nes") throw new Error(`render: --split ${o.split} is NES-only (got ${platform})`);
@@ -83,7 +156,7 @@ runSession((s) => {
     throw new Error(`render: --split channels needs a Game Boy or NES ROM (got ${platform})`);
   }
 
-  const id = buildSystem(s, o, platform);
+  const id = buildSystem(s, o, platform, resolveSongSeed(s, o));
 
   s.audio.renderAudio(1500); // settle boot (past the mGB/LSDj splash) before driving playback
   if (o.bpm) s.audio.setBpm(o.bpm);

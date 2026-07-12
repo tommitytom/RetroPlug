@@ -82,11 +82,16 @@ straight to WAV:
 ```
 retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--ms n]
                           [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]
+                          [--song name | --song-index n] [--list-songs]
 ```
 
 A missing `--sav` auto-pairs the sibling `<rom>.sav` (native `resolveSavPath`); by default it presses
 Start on boot so a saved song (LSDj) actually plays (`--no-start` for raw boot audio). `--split` folds
-in the per-channel/stem exports: GB 4 channels, NES 3 pins (`pins`) / 5 mono core stems (`mono`). The
+in the per-channel/stem exports: GB 4 channels, NES 3 pins (`pins`) / 5 mono core stems (`mono`).
+**LSDj song selection** (GB only): a `.sav` holds up to 32 named projects but LSDj only plays its
+*working song* on boot, so `--song NAME` / `--song-index N` decode the sav, promote the chosen project to
+the working song (pure-TS `decodeSav`/`encodeSav` → `adopt({ sramBytes })`), and boot that; `--list-songs`
+prints the sav's song names. The
 session is [cli/sessions/render.ts](../packages/retroplug/cli/sessions/render.ts) (parser split into the
 pure, unit-tested [cli/renderArgs.ts](../packages/retroplug/cli/renderArgs.ts)); it's bundled by the
 `retroplug-render-bundle` CMake target and linked into `retroplug-cli` (`rp_render_bundle`), dispatched

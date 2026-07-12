@@ -12,6 +12,31 @@ test("render args: bare <rom> yields the documented defaults", () => {
   expect(o.transport).toBe(false);
   expect(o.sav).toBe(undefined); // sibling <rom>.sav is resolved natively, not here
   expect(o.out).toBe(undefined);
+  expect(o.song).toBe(undefined);
+  expect(o.songIndex).toBe(undefined);
+  expect(o.listSongs).toBe(false);
+});
+
+test("render args: LSDj song selection flags parse", () => {
+  const byName = parseRenderArgs(["lsdj.gb", "--sav", "s.sav", "--song", "HAPPYBD"]);
+  expect(byName.song).toBe("HAPPYBD");
+  expect(byName.songIndex).toBe(undefined);
+
+  const byIndex = parseRenderArgs(["lsdj.gb", "--sav", "s.sav", "--song-index", "0"]);
+  expect(byIndex.songIndex).toBe(0); // slot 0 is valid (intValue would reject it)
+
+  const list = parseRenderArgs(["lsdj.gb", "--sav", "s.sav", "--list-songs"]);
+  expect(list.listSongs).toBe(true);
+});
+
+test("render args: --song and --song-index are mutually exclusive", () => {
+  expect(() => parseRenderArgs(["r.gb", "--song", "A", "--song-index", "1"])).toThrow("mutually exclusive");
+});
+
+test("render args: --song-index rejects out-of-range / non-integer", () => {
+  expect(() => parseRenderArgs(["r.gb", "--song-index", "32"])).toThrow("--song-index");
+  expect(() => parseRenderArgs(["r.gb", "--song-index", "-1"])).toThrow("--song-index");
+  expect(() => parseRenderArgs(["r.gb", "--song-index", "x"])).toThrow("--song-index");
 });
 
 test("render args: every value + boolean flag parses", () => {
