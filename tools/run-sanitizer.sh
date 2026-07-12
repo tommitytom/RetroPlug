@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Build + run the greenfield native host under a sanitizer to prove the audio-thread /
+# Build + run the native host under a sanitizer to prove the audio-thread /
 # control-thread seam is race-free (thread) and its cross-thread ownership handoff is
 # leak / use-after-free free (address).
 #
-#   tools/run-greenfield-sanitizer.sh thread  [slug]   # ThreadSanitizer  -> build-tsan/
-#   tools/run-greenfield-sanitizer.sh address [slug]   # AddressSanitizer -> build-asan/
+#   tools/run-sanitizer.sh thread  [slug]   # ThreadSanitizer  -> build-tsan/
+#   tools/run-sanitizer.sh address [slug]   # AddressSanitizer -> build-asan/
 #
 # Default slugs are the two audio-thread tests (dsp-threaded + dsp-lifecycle); pass a slug to run
 # just one. tools/run-sanitizers.sh only builds/runs the Catch2 targets (from build-<san>/test/); the
@@ -40,7 +40,7 @@ echo "==> building retroplug-host (instrumented)"
 cmake --build "$builddir" -j"$(nproc)" --target retroplug-host
 
 # Any finding aborts the host -> nonzero exit -> the runner reports the file failed. Thread mode
-# reuses the Catch2 seqlock suppressions (the greenfield seam is expected to need none). Address mode
+# reuses the Catch2 seqlock suppressions (the seam is expected to need none). Address mode
 # detects leaks at exit — the cross-thread new/delete handoff is exactly what it guards.
 if [ "$san" = thread ]; then
     export TSAN_OPTIONS="suppressions=$repo/packages/native/test/sanitizer/tsan.supp halt_on_error=1 second_deadlock_stack=1"
@@ -53,12 +53,12 @@ export RETROPLUG_HOST="$repo/$builddir/bin/retroplug-host"
 
 rc=0
 for slug in "${slugs[@]}"; do
-    echo "==> running greenfield native test '$slug' under $san sanitizer"
+    echo "==> running native test '$slug' under $san sanitizer"
     if ! node packages/retroplug/scripts/run-native-tests.mjs "$slug"; then
         echo "!! $slug failed under $san sanitizer" >&2
         rc=1
     fi
 done
 
-[ "$rc" -eq 0 ] && echo "==> greenfield host passed under $san sanitizer"
+[ "$rc" -eq 0 ] && echo "==> host passed under $san sanitizer"
 exit "$rc"

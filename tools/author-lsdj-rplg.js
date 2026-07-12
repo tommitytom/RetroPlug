@@ -1,10 +1,10 @@
-// Author a greenfield LSDj `.rplg` fixture for the DAW-timing reaper renders: esbuild
+// Author an LSDj `.rplg` fixture for the DAW-timing reaper renders: esbuild
 // author-lsdj-rplg.ts (injecting the scenario + ROM + output path) and run it on retroplug-host.
 //
 //   node tools/author-lsdj-rplg.js <scenario> [ROM] [OUT.rplg]
 //     scenario  midi-metro | arduinoboy-metro | midi-drift
 //     ROM       default per scenario (../resources/roms/lsdj/…)
-//     OUT       default build/lsdj_<scenario>_greenfield.rplg
+//     OUT       default build/lsdj_<scenario>.rplg
 const { buildSync } = require("esbuild");
 const { execFileSync } = require("child_process");
 const { resolve, dirname } = require("path");
@@ -12,7 +12,7 @@ const { mkdirSync } = require("fs");
 
 const REPO = resolve(__dirname, "..");
 const PKG = resolve(REPO, "packages/retroplug");
-const HOST = process.env.RETROPLUG_GREENFIELD_HOST || resolve(REPO, "build/bin/retroplug-host");
+const HOST = process.env.RETROPLUG_HOST || resolve(REPO, "build/bin/retroplug-host");
 
 const scenario = process.argv[2];
 const DEFAULT_ROM = {
@@ -26,7 +26,7 @@ if (!DEFAULT_ROM[scenario]) {
 }
 
 const ROM = resolve(REPO, process.argv[3] || DEFAULT_ROM[scenario]);
-const OUT = resolve(process.argv[4] || resolve(REPO, `build/lsdj_${scenario}_greenfield.rplg`));
+const OUT = resolve(process.argv[4] || resolve(REPO, `build/lsdj_${scenario}.rplg`));
 
 mkdirSync(dirname(OUT), { recursive: true });
 const bundle = resolve(REPO, `build/native/author-lsdj-rplg-${scenario}.js`);

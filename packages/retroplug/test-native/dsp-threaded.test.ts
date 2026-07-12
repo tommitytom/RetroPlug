@@ -1,7 +1,7 @@
 // The flagship through the THREADED path: the TS lsdj-sync role runs on a real background AUDIO
 // THREAD while the control thread flips its mode over the lock-free command queue. This is the
 // audio-thread / control-thread seam a DAW imposes, made testable headlessly — and under TSan
-// (tools/run-greenfield-tsan.sh) it proves the QuickJS DSP context is touched only by the audio
+// (tools/run-sanitizer.sh) it proves the QuickJS DSP context is touched only by the audio
 // thread (structure edits cross as queued commands, transport as atomics). Coarse silent→audible
 // over a real time window (a concurrency test, not exact samples). In-TS RMS.
 //

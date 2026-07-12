@@ -11,7 +11,7 @@
 #include "host/rpc/EngineRpcService.hpp"
 #include "host/rpc/HostRpcService.hpp"
 
-// --- host: filesystem / config / codec / sav (15) ---
+// --- host: filesystem / config / codec (14) ---
 template <class Server>
 void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::readFile>(h);
@@ -28,7 +28,6 @@ void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::version>(h);
     s.template addMethod<&HostRpcService::zip>(h);
     s.template addMethod<&HostRpcService::unzip>(h);
-    s.template addMethod<&HostRpcService::savFromJson>(h);
 }
 
 // --- emulator: lifecycle / snapshot reads / live config / input (11) ---
@@ -55,11 +54,13 @@ void registerDspKernelRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::dspSetSystems>(e);
 }
 
-// --- harness: audio render / transport / MIDI + DSP profiling (12; CLI + tests only) ---
+// --- harness: audio render / transport / MIDI + DSP profiling (14; CLI + tests only) ---
 template <class Server>
 void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::renderAudio>(e);
     s.template addMethod<&EngineRpcService::renderAudioPerSystem>(e);
+    s.template addMethod<&EngineRpcService::renderAudioPerChannel>(e);
+    s.template addMethod<&EngineRpcService::sampleRate>(e);
     s.template addMethod<&EngineRpcService::setTransport>(e);
     s.template addMethod<&EngineRpcService::setBpm>(e);
     s.template addMethod<&EngineRpcService::stageMidiIn>(e);

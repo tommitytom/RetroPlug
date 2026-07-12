@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Greenfield UI test runner. For each test-ui/**/*.test.ts: bundle it with esbuild (aliasing
+// UI test runner. For each test-ui/**/*.test.ts: bundle it with esbuild (aliasing
 // "ui-harness" → the root test/harness/ui.ts, the same front door the legacy UI tests use), then run
-// the bundle on the retroplug-ui-test binary — which boots the greenfield React UI on a
-// headless software LVGL display (RenderCore) driven by the BackendFacade RPC (GreenfieldUiHarness).
+// the bundle on the retroplug-ui-test binary — which boots the React UI on a
+// headless software LVGL display (RenderCore) driven by the BackendFacade RPC (UiHarness).
 // The runner installs the `retroplug` (TAP) + `retroplug-ui` (ui.*) globals and reports the exit code.
 // One binary process per file.
 //
@@ -26,14 +26,14 @@ const HOST =
 
 if (!existsSync(HOST)) {
   console.error(
-    `greenfield UI test binary not found: ${HOST}\n` +
+    `UI test binary not found: ${HOST}\n` +
       `build it once:  cmake --build build --target retroplug-ui-test -j$(nproc)\n` +
       `or set RETROPLUG_UI_TEST to a binary.`,
   );
   process.exit(1);
 }
 
-// The greenfield UI front door (test/expect over the greenfield harness + the `ui` facade over
+// The UI front door (test/expect over the harness + the `ui` facade over
 // Symbol.for("retroplug-ui")). Self-contained — no legacy emu-harness graph. Aliased so a test can
 // `import ... from "ui-harness"`.
 const UI_HARNESS = join(PKG, "test-ui/uiHarness.ts");
@@ -70,7 +70,7 @@ const failures = [];
 for (const { file, slug } of tests) {
   const outFile = join(OUT_DIR, `${slug}.js`);
   mkdirSync(dirname(outFile), { recursive: true });
-  const cfgDir = mkdtempSync(join(tmpdir(), "rp-greenfield-ui-"));
+  const cfgDir = mkdtempSync(join(tmpdir(), "rp-ui-"));
 
   try {
     buildSync({

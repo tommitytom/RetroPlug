@@ -1,6 +1,6 @@
 # 05 — Data & Persistence
 
-How RetroPlug2 (greenfield) turns a live session into bytes on disk and back:
+How RetroPlug2 turns a live session into bytes on disk and back:
 the project model and the `.rplg` file, the plugin's DAW state chunk, the three
 per-user config files, the persistence policy (version stamps + raw-JSON
 migrations), the LSDj `.sav` codec, and the SRAM auto-save policy.
@@ -8,9 +8,9 @@ migrations), the LSDj `.sav` codec, and the SRAM auto-save policy.
 This doc is the concrete expression of the thesis (see
 [01-architecture.md](01-architecture.md)): **TypeScript owns the framing —
 the model, the JSON shape, path resolution, version policy — and native owns
-only the bytes: compression (zip/unzip), file I/O, and the LSDj sav codec.**
-Native never decides what a project *is*; it slurps resolved paths and
-compresses byte buffers TS hands it.
+only the bytes: compression (zip/unzip) and file I/O.** Native never decides what
+a project *is*; it slurps resolved paths and compresses byte buffers TS hands it.
+(The LSDj `.sav` codec was the one exception; it is now pure TS too — see below.)
 
 ## The project model
 
@@ -94,7 +94,7 @@ framing happen entirely in TypeScript.
 | `RETROPLUG_AUTOLOAD_PROJECT=path` | `__rp_loadProjectPath(path)` | headless seed (reaper `-renderproject`): read a `.rplg` from disk and load it |
 
 State is a single `"project"` key, host-readable + host-writable
-([PluginDSP.cpp:103](../packages/native-greenfield/plugin/PluginDSP.cpp#L103)).
+([PluginDSP.cpp:103](../packages/native/plugin/PluginDSP.cpp#L103)).
 The C++ boundary stays **string-only**: base64 is done in JS
 ([pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts))
 because a DPF state chunk is NUL-terminated UTF-8 while a `.rplg` is binary
@@ -116,7 +116,7 @@ Three per-user, machine-global files live under `configDir()` (per-OS:
 `XDG_CONFIG_HOME`/`~/.config/retroplug`, `%APPDATA%\RetroPlug`, or
 `~/Library/Application Support/RetroPlug`; overridable via
 `RETROPLUG_USER_CONFIG_DIR` —
-[HostRpcService.cpp:23](../packages/native-greenfield/src/HostRpcService.cpp#L23)).
+[HostRpcService.cpp:23](../packages/native/src/HostRpcService.cpp#L23)).
 Each on-disk shape matches the legacy native file so a user's existing configs
 still load.
 
@@ -126,7 +126,7 @@ still load.
 | `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad, keyboardActions, gamepadActions }` (one profile per file; the `*Actions` sections — Open Menu / Cycle Instances — seed to defaults when missing) |
 | `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name }] }`, most-recent-first, capped at 10 |
 
-One deliberate rename: greenfield's `sramAutoSave` field is native's
+One deliberate rename: the TS layer's `sramAutoSave` field is native's
 `sramMirror` key ("mirror" reads from the plugin's side; "auto save" fits both
 plugin and standalone). The string enum values (`Off` / `OnProjectSave` /
 `Continuous`) still match native's spellings. The three config **stores** and the
@@ -178,34 +178,39 @@ version (below).
 
 ## The LSDj `.sav` codec
 
-RetroPlug ships a hand-written, version-aware codec for the 128 KiB LSDj `.sav`
-image (working-memory song at offset 0 + a 512-byte header at `0x8000` +
-the RLE-compressed stored-project archive —
-[SavCodec.hpp](../packages/native/src/lsdj/codec/SavCodec.hpp)). The model is a
-reflect-cpp struct that is the single source of truth for the on-disk shape,
-JSON, and the TS-facing types; the codec reads/writes the bytes.
+RetroPlug has a hand-written, version-aware codec for the 128 KiB LSDj `.sav`
+image (working-memory song at offset 0 + a 512-byte header at `0x8000` + the
+RLE-compressed stored-project archive). It is **pure TypeScript**
+([packages/retroplug/src/lsdj/](../packages/retroplug/src/lsdj/): `model.ts` is the
+zod SSOT; `codec/{bits,regions,rle,song,sav}.ts` is the byte codec), supporting
+every LSDj format version (fmt 0..22). The model — a zod schema mirroring the
+reflect-cpp JSON contract exactly — is the single source of truth for the on-disk
+shape, JSON, and TS types; the codec reads/writes the bytes. It runs in every
+runtime with no native host (the pure-TS test tier, the plugin, a future web
+build), and the model + decode are usable directly in TS.
 
-**TS authoring.** `savFromJson(json)` on the `Backend` encodes a `.sav` from a
-JSON `rp::lsdj::model::Sav`. It decodes **leniently** — via
-`savFromJsonFixture`, which reads with `rfl::DefaultIfMissing` so a fixture
-specifies only the cells it sets and everything else takes its model default
-([HostRpcService.cpp:163](../packages/native-greenfield/src/HostRpcService.cpp#L163),
-[SavSerialization.hpp:33](../packages/native/src/lsdj/SavSerialization.hpp#L33)).
-`savFromJson("{}")` yields a valid 128 KiB image, letting a test boot LSDj
-straight into authored song/sync state and skip the 12–15 s cartridge self-test.
-The TS-side wrapper [lsdjSav.ts](../packages/retroplug/src/lsdjSav.ts) is
-a test/tooling helper over the same RPC channel — it is deliberately **not** part
-of the production `Backend` seam.
+**TS authoring.** `savFromJson(json)` (a local function in `src/lsdj`, re-exported
+by [lsdjSav.ts](../packages/retroplug/src/lsdjSav.ts); also on the `Backend` seam
+for the load-time seed) encodes a `.sav` from a JSON `Sav` model. It decodes
+**leniently** — every field has a default so a fixture specifies only the cells it
+sets and everything else takes its model default. `savFromJson("{}")` yields a
+valid 128 KiB image, letting a test boot LSDj straight into authored song/sync
+state and skip the 12–15 s cartridge self-test. `savToJson(bytes)` decodes the
+inverse — the read direction TS never had before the port.
 
-**Correctness rationale (the liblsdj differential oracle).** Byte-identical
-round-tripping only proves *losslessness*, not that the old-format decode
-branches interpret the bytes correctly. liblsdj is a known-correct reference for
-song format versions ≤ 16, so
-[LsdjDifferentialTests.cpp](../packages/native/test/LsdjDifferentialTests.cpp)
-decodes each content-bearing fixture sav with **both** liblsdj and this codec and
-asserts the semantic fields match. That differential oracle is what proves the
-`fmt < N` decode paths are right. (liblsdj is a test-only dependency; the
-shipping codec has no liblsdj link.)
+**Correctness rationale (frozen goldens + corpus byte-identity).**
+Byte-identical round-tripping only proves *losslessness*, not that the old-format
+decode branches interpret the bytes correctly. The decode semantics are pinned by
+**frozen golden JSON** ([test/lsdj/golden/](../packages/retroplug/test/lsdj/golden/)):
+one per liblsdj content sav spanning fmt 3..11 + 16 — which cover EVERY version-decode
+branch (predicates sit at fmt 4/5/6/7/8/9/10/11/16; fmt12..15/17..22 share fmt11/16's
+paths). Those goldens were certified against **liblsdj** (the known-correct reference
+for song format versions ≤ 16) by a differential oracle, then frozen. The pure-TS codec
+is asserted byte-for-byte against them ([test/lsdj/corpus.test.ts](../packages/retroplug/test/lsdj/corpus.test.ts))
+and byte-identity round-trips all ~549 per-version corpus savs
+([test-native/lsdj-codec-corpus.test.ts](../packages/retroplug/test-native/lsdj-codec-corpus.test.ts)).
+The C++ codec + liblsdj were retired once the goldens were frozen — the shipping build
+and the test suite both link no C++ sav codec.
 
 ## SRAM auto-save policy
 
@@ -245,10 +250,10 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 - [projectStore.ts](../packages/retroplug/src/projectStore.ts) — save/export/load, the missing-scan + relink lifecycle, `exportBytes`/`loadBytes`.
 - [projectBinaries.ts](../packages/retroplug/src/projectBinaries.ts) / [projectPaths.ts](../packages/retroplug/src/projectPaths.ts) — blob-key contract; path rebasing.
 - [pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts) — the `__rp_saveProjectB64`/`__rp_loadProjectB64`/`__rp_loadProjectPath` surface + base64.
-- [PluginDSP.cpp:103](../packages/native-greenfield/plugin/PluginDSP.cpp#L103) — DPF `initState`/`getState`/`setState` + `RETROPLUG_AUTOLOAD_PROJECT`.
+- [PluginDSP.cpp:103](../packages/native/plugin/PluginDSP.cpp#L103) — DPF `initState`/`getState`/`setState` + `RETROPLUG_AUTOLOAD_PROJECT`.
 - [userConfig.ts](../packages/retroplug/src/userConfig.ts) / [userConfigSerialization.ts](../packages/retroplug/src/userConfigSerialization.ts), [recentSerialization.ts](../packages/retroplug/src/recentSerialization.ts), [bindingSerialization.ts](../packages/retroplug/src/bindingSerialization.ts) — the config models + on-disk codecs.
 - [configSchema.ts](../packages/retroplug/src/configSchema.ts) — the clamp/default zod builders (TS forward-tolerance).
 - [migrate.ts](../packages/retroplug/src/migrate.ts) + [projectConfig.ts](../packages/retroplug/src/projectConfig.ts) — the raw-JSON migration framework + the version constants / `checkVersion` / `parseProjectVersion` (TS is the single source of truth; native does no version check).
-- [HostRpcService.cpp](../packages/native-greenfield/src/HostRpcService.cpp) — native file I/O, `zip`/`unzip`, `configDir`, `savFromJson`.
-- [SavCodec.hpp](../packages/native/src/lsdj/codec/SavCodec.hpp) + [LsdjDifferentialTests.cpp](../packages/native/test/LsdjDifferentialTests.cpp) — the sav codec + its liblsdj oracle.
-- [sramAutoSave.ts](../packages/retroplug/src/sramAutoSave.ts) — the loose-`.sav` auto-save policy.
+- [HostRpcService.cpp](../packages/native/src/host/rpc/HostRpcService.cpp) — native file I/O, `zip`/`unzip`, `configDir`.
+- [src/lsdj/](../packages/retroplug/src/lsdj/) — the pure-TS sav model (`model.ts`) + codec (`codec/`); [test/lsdj/](../packages/retroplug/test/lsdj/) holds the frozen goldens + branch-covering fixtures.
+- [sramAutoSave.ts](../packages/retroplug/src/sramAutoSave.ts) — the loose-`.sav` auto-save policy (+ the LSDj semantic dirty signature).

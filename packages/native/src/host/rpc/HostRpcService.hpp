@@ -9,7 +9,7 @@
 
 #include "host/rpc/BackendTypes.hpp"
 
-// The fs / config / codec half of the greenfield Backend: std::filesystem + miniz + config-dir
+// The fs / config / codec half of the Backend: std::filesystem + miniz + config-dir
 // resolution + LSDJ sav authoring. Pure and stateless — no Engine, no threads — so it's reusable
 // verbatim across hosts.
 class HostRpcService {
@@ -33,9 +33,4 @@ public:
     // --- codec (miniz) ---
     rfl::Bytestring zip(std::vector<BackendZipInput> entries);
     std::vector<BackendZipEntry> unzip(rfl::Bytestring bytes);
-
-    // --- LSDJ sav authoring (test/tooling) ---
-    // JSON (an rp::lsdj::model::Sav, lenient) -> encoded .sav bytes. Lets a test author song/sync
-    // state directly and boot LSDJ into it.
-    rfl::Bytestring savFromJson(std::string json);
 };

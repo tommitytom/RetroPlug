@@ -1,17 +1,17 @@
-# retroplug-host: the native host for the greenfield TS app.
+# retroplug-host: the native host for the TS app.
 #
-# Exposes the greenfield Backend to a TS bundle over
-# globalThis[Symbol.for("plugin")].__rpcSend, and runs the greenfield test harness. The
+# Exposes the Backend to a TS bundle over
+# globalThis[Symbol.for("plugin")].__rpcSend, and runs the test harness. The
 # fs/config/codec half is std::filesystem + miniz; the emulator half is a real SameBoySystem
 # in a real Project. It links `retroplug-core` (Project + SystemBase + SameBoy/Mesen, plus
 # transitive rpcpp + miniz and the packages/native/src include) — so no longer emulator-free.
 # Output binary lands in build/bin/.
 
 # --- retroplug-core: the shared emulator/Project core, as a neutrally-named static lib. Extracted out of
-# packages/native/cli (which also compiled the CLI-only HarnessRpcService) so greenfield links ONLY the
+# packages/native/cli (which also compiled the CLI-only HarnessRpcService) so the host links ONLY the
 # shared core, never a CLI RPC surface it doesn't use. The legacy `retroplug-cli-core` is now a thin
 # wrapper = HarnessRpcService.cpp + this lib. Deliberately txiki/QuickJS-free (harness-schema-dump links it
-# without the JS runtime); PIC so it links into the greenfield plugin .so.
+# without the JS runtime); PIC so it links into the plugin .so.
 if(WIN32)
     # SameBoySystem.cpp pokes SameBoy internals cl.exe can't parse; on Windows it's compiled by clang-cl
     # into retroplug-samebsys (see the root CMakeLists) and linked below. Elsewhere it builds in place.
@@ -26,9 +26,9 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/SongCodec.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/Compression.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/codec/SavCodec.cpp
+    # NOTE: the LSDj sav codec + model were removed — they are now pure TS
+    # (packages/retroplug/src/lsdj), validated by frozen golden vectors. Only the
+    # kit/sample pipeline (Effects/KitUtil/SampleCache/KitCompiler) remains in C++.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp
@@ -68,14 +68,14 @@ target_link_libraries(retroplug-core PUBLIC
 set_target_properties(retroplug-core PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
-    POSITION_INDEPENDENT_CODE ON   # linked into the greenfield plugin .so
+    POSITION_INDEPENDENT_CODE ON   # linked into the plugin .so
 )
 
-# retroplug-backend: the greenfield Backend as a static library — everything except a host
+# retroplug-backend: the Backend as a static library — everything except a host
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
 add_library(retroplug-backend STATIC
-    src/host/rpc/HostRpcService.cpp         # fs / config / codec / sav (pure, stateless)
+    src/host/rpc/HostRpcService.cpp         # fs / config / zip (pure, stateless)
     src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
     src/host/rpc/DebugRpcService.cpp        # live-core inspection over Engine (CLI-only facet)
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
@@ -140,28 +140,31 @@ set_target_properties(retroplug-cli PROPERTIES
 
 # The example sessions, esbuild-bundled to runnable .js (with the DSP kernel injected as
 # __DSP_KERNEL_BUNDLE__, mirroring the cp-bundle recipe). A normal build yields both the binary and demos
-# the binary can run, e.g. build/bin/retroplug-cli build/greenfield-cli/mgb-smoke.js.
-set(GFCLI_SESSIONS "${CMAKE_SOURCE_DIR}/packages/retroplug/cli/sessions")
+# the binary can run, e.g. build/bin/retroplug-cli build/cli/mgb-smoke.js.
+set(CLI_SESSIONS "${CMAKE_SOURCE_DIR}/packages/retroplug/cli/sessions")
 add_custom_target(retroplug-example-session ALL
-    BYPRODUCTS ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
-               ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
-               ${CMAKE_BINARY_DIR}/greenfield-cli/render-song.js
-               ${CMAKE_BINARY_DIR}/greenfield-cli/rom-test.js
-               ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-mgb.js
-               ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-lsdj-sync.js
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/cli/mgb-smoke.js
+               ${CMAKE_BINARY_DIR}/cli/render-rom.js
+               ${CMAKE_BINARY_DIR}/cli/render-song.js
+               ${CMAKE_BINARY_DIR}/cli/rom-test.js
+               ${CMAKE_BINARY_DIR}/cli/analyze-mgb.js
+               ${CMAKE_BINARY_DIR}/cli/analyze-lsdj-sync.js
+               ${CMAKE_BINARY_DIR}/cli/export-mgb-channels.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${GFCLI_SESSIONS}/mgb-smoke.ts   ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
+            ${CLI_SESSIONS}/mgb-smoke.ts   ${CMAKE_BINARY_DIR}/cli/mgb-smoke.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${GFCLI_SESSIONS}/render-rom.ts  ${CMAKE_BINARY_DIR}/greenfield-cli/render-rom.js
+            ${CLI_SESSIONS}/render-rom.ts  ${CMAKE_BINARY_DIR}/cli/render-rom.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${GFCLI_SESSIONS}/render-song.ts ${CMAKE_BINARY_DIR}/greenfield-cli/render-song.js
+            ${CLI_SESSIONS}/render-song.ts ${CMAKE_BINARY_DIR}/cli/render-song.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${GFCLI_SESSIONS}/rom-test.ts    ${CMAKE_BINARY_DIR}/greenfield-cli/rom-test.js
+            ${CLI_SESSIONS}/rom-test.ts    ${CMAKE_BINARY_DIR}/cli/rom-test.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${GFCLI_SESSIONS}/analyze-mgb.ts       ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-mgb.js
+            ${CLI_SESSIONS}/analyze-mgb.ts       ${CMAKE_BINARY_DIR}/cli/analyze-mgb.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
-            ${GFCLI_SESSIONS}/analyze-lsdj-sync.ts ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-lsdj-sync.js
-    COMMENT "Bundling greenfield CLI example sessions (esbuild)"
+            ${CLI_SESSIONS}/analyze-lsdj-sync.ts ${CMAKE_BINARY_DIR}/cli/analyze-lsdj-sync.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
+            ${CLI_SESSIONS}/export-mgb-channels.ts ${CMAKE_BINARY_DIR}/cli/export-mgb-channels.js
+    COMMENT "Bundling CLI example sessions (esbuild)"
     VERBATIM)
 
 # --- control-plane bundle: pluginControlPlane.ts → bytecode C array (mirrors ui-regenerate). The DPF
@@ -176,11 +179,11 @@ add_custom_target(retroplug-cp-bundle ALL
             ${CMAKE_SOURCE_DIR}/tools/build-controlplane.js ${CP_BUNDLE_JS}
     COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${CP_BUNDLE_C}.new ${CP_BUNDLE_JS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CP_BUNDLE_C}.new ${CP_BUNDLE_C}
-    COMMENT "Regenerating greenfield control-plane bundle (esbuild + bytecode)"
+    COMMENT "Regenerating control-plane bundle (esbuild + bytecode)"
     VERBATIM)
 add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
 
-# The greenfield UI bundle: main.tsx → bytecode C array (React entry via build-ui.js). Derived; never
+# The UI bundle: main.tsx → bytecode C array (React entry via build-ui.js). Derived; never
 # committed. Defined BEFORE the plugin so its FILES_UI can embed it; the UI-test binary below reuses the
 # same vars/target.
 set(UI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/ui-bundle.js")
@@ -194,11 +197,11 @@ add_custom_target(retroplug-ui-bundle
             ${CMAKE_SOURCE_DIR}/packages/retroplug/ui/main.tsx
     COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${UI_BUNDLE_C}.new ${UI_BUNDLE_JS}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${UI_BUNDLE_C}.new ${UI_BUNDLE_C}
-    COMMENT "Regenerating greenfield UI bundle (esbuild + bytecode)"
+    COMMENT "Regenerating UI bundle (esbuild + bytecode)"
     VERBATIM)
 add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
 
-# --- retroplug.{vst3,clap} + the jack standalone: the DPF plugin hosting the greenfield
+# --- retroplug.{vst3,clap} + the jack standalone: the DPF plugin hosting the
 # Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
 # legacy `retroplug` (they coexist).
 dpf_add_plugin(retroplug
@@ -237,11 +240,21 @@ add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)
 # the standalone's implib a distinct name; nothing links against it.
 if(WIN32 AND TARGET retroplug-jack)
     set_target_properties(retroplug-jack PROPERTIES ARCHIVE_OUTPUT_NAME retroplug-jack)
+
+    # No console window when the standalone is launched directly. DPF's main() already attaches to a
+    # parent console when there is one (AttachConsole(ATTACH_PARENT_PROCESS) in DistrhoPluginJACK.cpp),
+    # but the exe links as a CONSOLE-subsystem app, so Windows always spawns a console. Build it as a
+    # GUI-subsystem app instead: double-clicking shows no console, while running it from a terminal still
+    # prints there (DPF's attach picks up the launching shell) — so debugging via `retroplug.exe` in a
+    # console still works. main() (not WinMain) stays the entry via /ENTRY:mainCRTStartup.
+    if(MSVC)
+        target_link_options(retroplug-jack PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
+    endif()
 endif()
 
-# --- greenfield UI test harness --------------------------------------------------------------------
-# retroplug-ui-test boots the greenfield React UI on a headless software LVGL display
-# (RenderCore) driven by the BackendFacade RPC (UiHarness) — the greenfield twin of the
+# --- UI test harness -------------------------------------------------------------------------------
+# retroplug-ui-test boots the React UI on a headless software LVGL display
+# (RenderCore) driven by the BackendFacade RPC (UiHarness) — the counterpart of the
 # legacy retroplug-ui-test. Only built on demand (not ALL). Reuses UI_BUNDLE_C + the ui-bundle target
 # defined above the plugin.
 
@@ -249,7 +262,7 @@ add_executable(retroplug-ui-test
     test/ui/UiRunner.cpp
     test/ui/UiHarness.cpp
     test/ui/RenderCore.cpp
-    ${UI_BUNDLE_C})               # the embedded greenfield UI bytecode (rp_ui_bundle)
+    ${UI_BUNDLE_C})               # the embedded UI bytecode (rp_ui_bundle)
 
 target_link_libraries(retroplug-ui-test PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng (+ tjs)
@@ -302,6 +315,27 @@ target_include_directories(retroplug-classid-test PRIVATE
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)             # quickjs.h
 
 set_target_properties(retroplug-classid-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-audio-test guards the per-channel audio path: the host seam (runUnit stream loop +
+# AudioRouter::streamCount + lane-counted finishBlock, over a fake SystemBase) AND the real SameBoy
+# per-channel tap (ChannelStreams + SameBoyStems). Links retroplug-core, which PUBLIC-brings the
+# `sameboy` core, so SameBoyStems can drive a real mGB ROM. Also `pnpm test:plugin`, on demand.
+add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
+    test/audio/ChannelStreams.test.cpp
+    test/audio/SameBoyStems.test.cpp)
+
+target_link_libraries(retroplug-audio-test PRIVATE
+    retroplug-core             # SystemBase + BlockRunner (runUnit) + the routers + the sameboy core
+    Catch2::Catch2WithMain)
+
+# The mGB ROM the SameBoyStems fidelity test drives (the boot chime supplies real multi-channel signal).
+target_compile_definitions(retroplug-audio-test PRIVATE
+    RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb")
+
+set_target_properties(retroplug-audio-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

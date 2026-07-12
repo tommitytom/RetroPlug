@@ -38,7 +38,7 @@ public:
     // drains/sums the audio and publishes snapshots.
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
-    void finishBlock(const AudioBlockInfo& info, float* const* outs) override;
+    void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
 
     // Audio-thread: queue a GBA button transition. The byte is the
     // position-aligned name index (GbaButton wire byte); remapped to

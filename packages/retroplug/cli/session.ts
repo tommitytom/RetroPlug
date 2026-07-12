@@ -1,10 +1,10 @@
-// The greenfield CLI session runtime: the small composition root a session script boots against, plus
+// The CLI session runtime: the small composition root a session script boots against, plus
 // the runSession() wrapper that reports the process exit code. This is the TS-authored ergonomics layer
-// — a session imports { runSession } from here, and gets the whole greenfield control-plane API
+// — a session imports { runSession } from here, and gets the whole control-plane API
 // (backend / project / dsp / audio) already wired the way the plugin and native tests wire it.
 //
-// Authored in TS, esbuild-bundled to JS (tools/build-greenfield-session.js), then run on the standalone
-// retroplug-greenfield-cli binary (no Node at runtime). The binary provides the Backend over
+// Authored in TS, esbuild-bundled to JS (tools/build-session.js), then run on the standalone
+// retroplug-cli binary (no Node at runtime). The binary provides the Backend over
 // globalThis[Symbol.for("plugin")].__rpcSend and globalThis.tjs.exit(code); __DSP_KERNEL_BUNDLE__ is
 // injected at bundle time.
 
@@ -19,11 +19,11 @@ import type { RoleRegistry } from "../src/systemRoles";
 import type { DspRuntimeClient } from "../src/dspRuntime";
 import type { AudioDriver } from "../src/audioDriver";
 
-// The DSP role kernel source, baked in at bundle time (see tools/build-greenfield-session.js). Any
+// The DSP role kernel source, baked in at bundle time (see tools/build-session.js). Any
 // session that renders audio needs it loaded into the DSP runtime before the first structural edit.
 declare const __DSP_KERNEL_BUNDLE__: string;
 
-/** Everything a session drives: the wired greenfield control plane over the real backend. */
+/** Everything a session drives: the wired control plane over the real backend. */
 export interface Session {
   backend: Backend;
   registry: RoleRegistry;
@@ -33,7 +33,7 @@ export interface Session {
   audio: AudioDriver;
 }
 
-/** Stand up the greenfield control plane the way every host does: build the registry, compose the
+/** Stand up the control plane the way every host does: build the registry, compose the
  *  store graph over the real backend, then load the DSP kernel BEFORE installing the store→DSP
  *  projection hook (the first systems mutation fires the hook, which needs the kernel already loaded). */
 export function bootSession(): Session {
@@ -54,7 +54,7 @@ export function bootSession(): Session {
 declare const tjs: { exit(code: number): void };
 
 /** The session's argument vector — everything after the session `.js` on the command line
- *  (`retroplug-greenfield-cli <session.js> [args...]`). The CLI host hangs it off the
+ *  (`retroplug-cli <session.js> [args...]`). The CLI host hangs it off the
  *  Symbol.for("plugin") namespace (tjs.args is a read-only txiki accessor). Empty when absent. */
 export function hostArgs(): string[] {
   const ns = (globalThis as Record<symbol, unknown>)[Symbol.for("plugin")] as { args?: string[] } | undefined;
@@ -68,7 +68,7 @@ export function runSession(main: (s: Session) => void): void {
     main(bootSession());
     tjs.exit(0);
   } catch (e) {
-    console.error(`greenfield-cli: session failed: ${(e as Error)?.stack ?? e}`);
+    console.error(`cli: session failed: ${(e as Error)?.stack ?? e}`);
     tjs.exit(1);
   }
 }

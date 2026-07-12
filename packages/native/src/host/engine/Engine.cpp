@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
@@ -14,7 +15,7 @@
 
 namespace {
 
-// Read-only empties the kernel's per-block button/key inputs default to. The greenfield host
+// Read-only empties the kernel's per-block button/key inputs default to. The host
 // doesn't yet feed the kernel per-block buttons/keys.
 const std::vector<DspRuntime::ButtonIn> kNoButtons;
 const std::vector<DspRuntime::KeyIn>    kNoKeys;
@@ -157,6 +158,18 @@ void Engine::processBlockPerSystem(std::uint32_t frames, float* const* ls, float
     runBlockWithRouter(frames, router);
 }
 
+void Engine::processBlockPerChannel(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nStreams) {
+    // Each stream writes into its own L/R pair; zero them first (systems SUM in, like the mixed path).
+    // PerChannelRouter keys off streamIndex, not slot — correct only for a single-system project (the
+    // RPC enforces that); runBlockWithRouter still drives the kernel/serial pipeline so MIDI reaches the core.
+    for (std::size_t i = 0; i < nStreams; ++i) {
+        std::fill_n(ls[i], frames, 0.0f);
+        std::fill_n(rs[i], frames, 0.0f);
+    }
+    PerChannelRouter router(ls, rs, static_cast<std::uint32_t>(nStreams));
+    runBlockWithRouter(frames, router);
+}
+
 std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {
     return registry_.readState(id);   // the owned published copy — never walks Project / the live core
 }
@@ -169,7 +182,13 @@ bool Engine::screenshot(SystemId id, const std::string& path) {
     // Encode the owned registry frame (a published copy) — no findSystem walk, no live-core read, so
     // it's safe while the audio thread plays. false until the core has rendered its first frame.
     const SnapshotRegistry::Frame f = registry_.readFrame(id);
-    if (!f.published) return false;
+    // Distinguish the two failure modes so a false is diagnosable: a caller wanting liveness should query
+    // getFrame(id).published (no file I/O); screenshot() is a file-writing action whose bool means "wrote".
+    if (!f.published) {
+        std::fprintf(stderr, "[Engine] screenshot: system %u has not published a frame yet\n",
+                     static_cast<unsigned>(id));
+        return false;
+    }
     const std::size_t pixels = static_cast<std::size_t>(f.width) * f.height;
     // The frame data is XRGB8888 (little-endian B,G,R,X) → transcode to RGB24 for lodepng.
     std::vector<unsigned char> rgb(pixels * 3);
@@ -179,7 +198,13 @@ bool Engine::screenshot(SystemId id, const std::string& path) {
         rgb[i * 3 + 1] = src[i * 4 + 1]; // G
         rgb[i * 3 + 2] = src[i * 4 + 0]; // B
     }
-    return lodepng_encode24_file(path.c_str(), rgb.data(), f.width, f.height) == 0;
+    const unsigned err = lodepng_encode24_file(path.c_str(), rgb.data(), f.width, f.height);
+    if (err) {
+        std::fprintf(stderr, "[Engine] screenshot: failed to write '%s': %s\n",
+                     path.c_str(), lodepng_error_text(err));
+        return false;
+    }
+    return true;
 }
 
 EngineFrame Engine::getFrame(SystemId id) {

@@ -33,7 +33,7 @@ struct EngineFrame {
     std::vector<std::uint8_t> data;
 };
 
-// The single-threaded core of the greenfield host: owns the Project of live systems and the DSP
+// The single-threaded core of the host: owns the Project of live systems and the DSP
 // role kernel, and knows nothing about audio threads, queues, or RPC. Every op runs "now, on the
 // calling thread." Removed/displaced cores are RETURNED to the caller (who deletes them, or routes
 // them back across a thread) — the Engine never frees on a hot path. No atomics: transport + ppq
@@ -94,6 +94,11 @@ public:
     // Project::systems() order) via PerSystemRouter, ignoring audioRouting_. Proves LSDj link-cable
     // sync — a follower sounds only when it actually synced (a healthy 2-system mix can't show that).
     void processBlockPerSystem(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nSystems);
+    // Per-channel isolation for ONE system: its channelLayout() streams each render into their own L/R
+    // pair (ls[k]/rs[k] for stream k) via PerChannelRouter. Since that router keys off streamIndex (not
+    // slot), this is only correct for a single-system project — the RPC gates on systemCount() == 1. The
+    // full kernel/serial/snapshot pipeline still runs, so MIDI-driven audio (e.g. mGB) sounds.
+    void processBlockPerChannel(std::uint32_t frames, float* const* ls, float* const* rs, std::size_t nStreams);
 
     // --- live-state reads / direct mutation (valid only on the Engine's owning thread) ---
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);

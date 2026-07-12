@@ -3,7 +3,7 @@
 // routing mode + system count, it decides which system(s) each event lands on and
 // applies the MidiChannelToInstance channel rewrite. No emulator, no audio thread, no
 // retained state — pure decision logic (doc-06 Tier-1). This is the canonical routing
-// the greenfield app will eventually run; today it's the reference / conformance oracle
+// the app will eventually run; today it's the reference / conformance oracle
 // (the live per-block execution waits on the doc-04 scriptable runtime + RT-safety).
 
 /** Events with more than this many bytes are SysEx (native rides them on `dataExt`). */

@@ -157,7 +157,7 @@ Two channels cross the RPC boundary to a running emulator, and no feature-role c
 [`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L329) merges the
 partial, re-parses through the role schema, and calls `backend.applyRoleConfig` **only when the role's
 `category === "system"`**. On the native side
-[`EngineRpcService::applyRoleConfig`](../packages/native-greenfield/src/EngineRpcService.cpp#L111)
+[`EngineRpcService::applyRoleConfig`](../packages/native/src/EngineRpcService.cpp#L111)
 accepts `kind == "sameboy"` only, decodes the whole role config, and pushes Model/Highpass/LinkGroup/
 FastBoot as guarded config fields (an unchanged field is a no-op, so moving `highpass` never triggers
 a spurious model restart).
@@ -271,7 +271,7 @@ per structure change) and `processBlock(input)` (once per audio block).
 **Native runner** — `DspRuntime` (C++, see [02-native-host.md](02-native-host.md)) loads the bytecode
 (`loadKernel` = `JS_ReadObject` + `JS_EvalFunction`; re-loading hot-swaps the kernel), binds the three
 sink thunks, and drives `processBlock` per block.
-[`Engine::processBlock`](../packages/native-greenfield/src/Engine.cpp#L74) wires it in: when the DSP
+[`Engine::processBlock`](../packages/native/src/Engine.cpp#L74) wires it in: when the DSP
 stage is active it builds a `BlockInfo` at the block-start `ppq_`, runs the kernel, then fans the
 system-addressed sinks to cores — `serialIn_` → each addressed core's serial FIFO, `buttonOut_` →
 `pressButton` — before the block renders. The kernel's host `midiOut_` is drained by the plugin after
@@ -334,11 +334,11 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
 - [appHost.ts](../packages/retroplug/src/appHost.ts) — `buildAppRegistry` +
   `syncDspFromStore`.
 
-Native ([packages/native-greenfield/src/](../packages/native-greenfield/src/)):
+Native ([packages/native/src/](../packages/native/src/)):
 
-- [DspRuntime.hpp](../packages/native-greenfield/src/DspRuntime.hpp) /
-  [DspRuntime.cpp](../packages/native-greenfield/src/DspRuntime.cpp) — the bare-context runner + sink
+- [DspRuntime.hpp](../packages/native/src/DspRuntime.hpp) /
+  [DspRuntime.cpp](../packages/native/src/DspRuntime.cpp) — the bare-context runner + sink
   thunks.
-- [Engine.cpp](../packages/native-greenfield/src/Engine.cpp#L74) — per-block wiring + sink-to-core fan.
-- [EngineRpcService.cpp](../packages/native-greenfield/src/EngineRpcService.cpp#L111) — `applyRoleConfig`
+- [Engine.cpp](../packages/native/src/Engine.cpp#L74) — per-block wiring + sink-to-core fan.
+- [EngineRpcService.cpp](../packages/native/src/EngineRpcService.cpp#L111) — `applyRoleConfig`
   (system-role only), `compileScript` / `dspLoadKernel` / `dspSetSystems`.

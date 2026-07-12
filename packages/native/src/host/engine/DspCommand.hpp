@@ -6,7 +6,7 @@
 
 class SystemBase;  // pointer-only — keeps DspCommand trivially copyable and the header light
 
-// A control-thread → audio-thread command for the greenfield DSP kernel, carried by an
+// A control-thread → audio-thread command for the DSP kernel, carried by an
 // SpscRing<DspCommand, N>. POD / trivially copy-assignable so it rides the ring without heap
 // churn. The heavy payloads (rare, user-initiated) cross as raw OWNING pointers — the audio thread
 // applies then `delete`s / hands them off, the accepted non-RT-on-rare-op pattern from PluginDSP's

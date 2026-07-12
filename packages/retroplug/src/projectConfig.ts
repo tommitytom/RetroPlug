@@ -48,7 +48,7 @@ export interface ProjectConfig {
 }
 
 // --- zod validation schemas -----------------------------------------------
-// STRICT schemas (unknown keys stripped). Forward-tolerance across greenfield versions
+// STRICT schemas (unknown keys stripped). Forward-tolerance across config versions
 // is field `.default()`s + refuse-newer detection, not passthrough (see configSchema.ts).
 // A malformed/partial config is coerced (clamp/default), not rejected. The role
 // `config` stays an open record — its per-kind RoleType schema validates it elsewhere.

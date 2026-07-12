@@ -1,9 +1,9 @@
-// retroplug-host — a minimal txiki/QuickJS host that runs a greenfield TS test
+// retroplug-host — a minimal txiki/QuickJS host that runs a TS test
 // bundle over a real `Backend`. It binds `globalThis[Symbol.for("plugin")].__rpcSend` to a
 // BackendRpcService (fs/config/codec) — the same namespace the future plugin host uses, so
 // one TS adapter (realBackend.ts) serves both. Emulator-free: no Project/SystemBase.
 //
-// The greenfield harness (packages/retroplug-greenfield/testing/harness.ts) self-reports
+// The harness (packages/retroplug/testing/harness.ts) self-reports
 // TAP via console.log (txiki's console -> stdout, left untouched) and sets the process exit
 // code via globalThis.tjs.exit(code). We provide that exit hook (recording the code rather
 // than terminating) and drive the job loop until it fires.
@@ -109,7 +109,7 @@ int main(int argc, char** argv) try {
         JS_FreeValue(ctx, sym);
     }
 
-    // globalThis.tjs.exit — the greenfield harness sets the exit code through it. Override
+    // globalThis.tjs.exit — the harness sets the exit code through it. Override
     // any txiki-provided exit so we record the code and return it (rather than terminating
     // mid-pump and losing it).
     {

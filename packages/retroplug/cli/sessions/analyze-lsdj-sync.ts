@@ -1,9 +1,9 @@
 // Render two link-synced LSDj instances to per-system WAVs for the reaper-MCP audio-quality workflow
-// (the greenfield counterpart of legacy `reaper:analyze-lsdj-sync`). Two LSDj cores in one link group,
+// (the counterpart of legacy `reaper:analyze-lsdj-sync`). Two LSDj cores in one link group,
 // both authored SYNC=LSDJ, START on the leader; renderAudioPerSystem isolates each core's audio so the
-// follower's WAV shows it actually synced. Staged by `pnpm reaper:analyze-lsdj-sync-greenfield`.
+// follower's WAV shows it actually synced. Staged by `pnpm reaper:analyze-lsdj-sync`.
 //
-//   retroplug-greenfield-cli build/greenfield-cli/analyze-lsdj-sync.js <lsdjRom> [outPrefix]
+//   retroplug-cli build/cli/analyze-lsdj-sync.js <lsdjRom> [outPrefix]
 import { runSession, hostArgs } from "../session";
 import { encodeWav } from "../wav";
 import { savFromJson } from "../../src/lsdjSav";
@@ -25,7 +25,7 @@ const songSav = (sync: string) => savFromJson(JSON.stringify({
 runSession((s) => {
   const [romPath, outPrefix] = hostArgs();
   if (!romPath) throw new Error("usage: analyze-lsdj-sync.js <lsdjRom> [outPrefix]");
-  const prefix = outPrefix || "/tmp/lsdj-sync-pattern-greenfield";
+  const prefix = outPrefix || "/tmp/lsdj-sync-pattern";
 
   // Link-cable sync is pure GB serial ferrying in the block runner — construct both cores directly,
   // link them, and drive; no DSP kernel needed.
@@ -46,6 +46,6 @@ runSession((s) => {
   bufs.forEach((pcm, i) => {
     const out = `${prefix}_sys${i}.wav`;
     if (!s.backend.writeFile(out, encodeWav(pcm))) throw new Error(`write failed: ${out}`);
-    console.log(`greenfield-cli: LSDj sync system ${i} → ${out}`);
+    console.log(`cli: LSDj sync system ${i} → ${out}`);
   });
 });

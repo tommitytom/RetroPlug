@@ -32,7 +32,7 @@ SnapshotRegistry::Slot* SnapshotRegistry::findFree() {
 bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
     Slot* s = findFree();
     if (!s) {
-        std::fprintf(stderr, "[greenfield] snapshot registry full (%zu slots); construct dropped\n", kMaxSlots);
+        std::fprintf(stderr, "[retroplug] snapshot registry full (%zu slots); construct dropped\n", kMaxSlots);
         return false;
     }
 

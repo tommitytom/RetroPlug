@@ -1,11 +1,11 @@
-// Shared zod schema builders for the greenfield config surface — role configs,
+// Shared zod schema builders for the config surface — role configs,
 // per-system settings, project files, recent files. A config's shape, defaults, and
 // clamping all live in one zod schema, so every user config is validated + coerced
 // declaratively (a malformed/partial/stale value snaps to a sane one rather than
 // being ad-hoc guarded).
 //
 // Config object schemas are STRICT (z.object — unknown keys stripped). Forward-
-// tolerance across greenfield versions comes from field `.default()`s (an old config
+// tolerance across config versions comes from field `.default()`s (an old config
 // missing a newly-added field gets the default) plus the version-stamp/refuse-newer
 // detection, NOT from passthrough: an older reader never sees a newer writer's fields
 // (they're refused), and additive fields are filled by defaults. The only other

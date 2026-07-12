@@ -43,7 +43,7 @@ __pycache__/
 *.rpp
 
 plans.md
-# Greenfield package test-bundle output (derived: esbuild -> tjs run / native host)
+# Package test-bundle output (derived: esbuild -> tjs run / native host)
 packages/retroplug/.test-build/
 packages/retroplug/.native-build/
 packages/retroplug/.ui-build/

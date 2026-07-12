@@ -63,5 +63,5 @@ test("the grid shows a live frame and click-to-focus, populated through the menu
 
   ui.advance(300);
   ui.pump(10);
-  ui.snapshotPng("/tmp/greenfield-ui-grid.png");
+  ui.snapshotPng("/tmp/ui-grid.png");
 });

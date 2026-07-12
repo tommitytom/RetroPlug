@@ -1,11 +1,11 @@
 #pragma once
 
-// Greenfield headless UI test harness.
+// Headless UI test harness.
 //
 // Composes the backend-agnostic RenderCore (LVGL + LvglJsEngine + snapshot/queries/input) with the
 // backend service graph: it mounts the host + emulator facets as `__rpcSend` on
 // globalThis[Symbol.for("plugin")] — the exact namespace realBackend.ts targets — then evals the
-// greenfield UI bundle and mounts React. This is the plugin's control-plane bring-up
+// UI bundle and mounts React. This is the plugin's control-plane bring-up
 // (PluginDSP::bootControlPlane) minus the audio thread + DSP kernel, plus a display.
 //
 // The bind is synchronous (the reply is materialized inline in __rpcSend) to match realBackend.ts's
@@ -35,7 +35,7 @@ public:
     UiHarness(const UiHarness&) = delete;
     UiHarness& operator=(const UiHarness&) = delete;
 
-    // Bring up the render scaffold, bind the backend RPC surface, eval the greenfield UI bundle, and
+    // Bring up the render scaffold, bind the backend RPC surface, eval the UI bundle, and
     // mount React. Returns false if any stage fails. Call once.
     bool boot();
 

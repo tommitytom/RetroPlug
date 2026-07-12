@@ -1,4 +1,4 @@
-// The greenfield DPF plugin (DSP-first, UI-less). It hosts the SAME control-plane runtime the test
+// The DPF plugin (DSP-first, UI-less). It hosts the SAME control-plane runtime the test
 // host does — TjsHostRuntime + the backend service graph + the __rpcSend bridge on Symbol.for("plugin") — evals
 // the embedded control-plane bundle (which composes the stores + DSP kernel and defines the __rp_*
 // globals), and drives the Engine per audio block from DPF's run(). No editor: get/setState and the
@@ -35,7 +35,7 @@ extern const std::uint32_t rp_cp_bundle_size;
 
 START_NAMESPACE_DISTRHO
 
-using GreenfieldRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
+using PluginRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
 class PluginDSP : public Plugin {
     // Control-plane runtime (main-thread only): the txiki context + the backend service graph it drives
@@ -49,7 +49,7 @@ class PluginDSP : public Plugin {
     HostRpcService   hostSvc_;
     EngineRpcService engineSvc_{engine_, factory_, invoker_};
     std::unique_ptr<rpcpp::QuickJSTransport> transport_;
-    std::unique_ptr<GreenfieldRpcServer>     server_;
+    std::unique_ptr<PluginRpcServer>     server_;
     bool jsReady_ = false;
 
     float gainDb_ = 0.0f;
@@ -65,8 +65,8 @@ public:
 
 protected:
     // --- information ---
-    const char* getLabel()       const noexcept override { return "RetroPlugGreenfield"; }
-    const char* getDescription() const          override { return "Greenfield multi-system retro emulator host"; }
+    const char* getLabel()       const noexcept override { return "RetroPlug"; }
+    const char* getDescription() const          override { return "Multi-system retro emulator host"; }
     const char* getMaker()       const noexcept override { return "tommitytom"; }
     const char* getLicense()     const noexcept override { return "MIT"; }
     uint32_t    getVersion()     const noexcept override { return d_version(RETROPLUG_VERSION_MAJOR, RETROPLUG_VERSION_MINOR, RETROPLUG_VERSION_MICRO); }
@@ -195,13 +195,13 @@ protected:
 private:
     // Bring up the control-plane runtime: bind __rpcSend, eval the bundle, autoload.
     void bootControlPlane() {
-        if (!host_.init()) { d_stderr("[greenfield] TjsHostRuntime init failed"); return; }
+        if (!host_.init()) { d_stderr("[retroplug] TjsHostRuntime init failed"); return; }
         JSContext* ctx = host_.context();
 
         registerCoreBackends(factory_);  // sameboy + mesen — before the bundle autoloads any system
 
         transport_ = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
-        server_    = std::make_unique<GreenfieldRpcServer>(*transport_, rpcpp::QuickJSCodec{ctx});
+        server_    = std::make_unique<PluginRpcServer>(*transport_, rpcpp::QuickJSCodec{ctx});
         // The plugin control plane composes the stores (fs + emulator) and loads the DSP kernel. It
         // drives audio per block in C++ (never the renderAudio harness), never debugs the live core,
         // and never spawns the background audio-driver thread — so those facets are NOT on this channel.
@@ -216,7 +216,7 @@ private:
         JSValue sym    = JS_NewSymbol(ctx, "plugin", /*is_global*/ 1);
         JSAtom atom    = JS_ValueToAtom(ctx, sym);
         JSValue ns     = JS_NewObjectProto(ctx, JS_NULL);
-        GreenfieldRpcServer* srv = server_.get();
+        PluginRpcServer* srv = server_.get();
         host_.bindRpcSend(ns, [srv](JSContext* sctx, JSValueConst req) -> JSValue {
             auto out = srv->processMessage(req);
             if (!out) return JS_NULL;
@@ -235,7 +235,7 @@ private:
         host_.evalModuleBytecode(rp_cp_bundle, rp_cp_bundle_size);
         for (int i = 0; i < 1000 && !readReady(); ++i) host_.pump();
         jsReady_ = readReady();
-        if (!jsReady_) { d_stderr("[greenfield] control plane not ready"); return; }
+        if (!jsReady_) { d_stderr("[retroplug] control plane not ready"); return; }
 
         // Publish the host so an editor can attach its LVGL display to this same context.
         shared_.host = &host_;
@@ -243,7 +243,7 @@ private:
         // Headless seed: reaper -renderproject sets RETROPLUG_AUTOLOAD_PROJECT to a .rplg path.
         if (const char* autoload = std::getenv("RETROPLUG_AUTOLOAD_PROJECT")) {
             const std::string ok = callGlobal("__rp_loadProjectPath", autoload);
-            d_stderr("[greenfield] autoload %s -> %s", autoload, ok.empty() ? "false/void" : ok.c_str());
+            d_stderr("[retroplug] autoload %s -> %s", autoload, ok.empty() ? "false/void" : ok.c_str());
             updateLatency();  // report the autoloaded project's PDC latency before the host reads it
         }
     }
@@ -274,7 +274,12 @@ private:
             if (JS_IsException(ret)) {
                 JSValue exc  = JS_GetException(ctx);
                 const char* s = JS_ToCString(ctx, exc);
-                d_stderr("[greenfield] %s threw: %s", name, s ? s : "?");
+                JSValue stk  = JS_GetPropertyStr(ctx, exc, "stack");
+                const char* st = JS_IsUndefined(stk) ? nullptr : JS_ToCString(ctx, stk);
+                d_stderr("[retroplug] %s threw: %s%s%s", name, s ? s : "?",
+                         st ? "\n" : "", st ? st : "");
+                if (st) JS_FreeCString(ctx, st);
+                JS_FreeValue(ctx, stk);
                 if (s) JS_FreeCString(ctx, s);
                 JS_FreeValue(ctx, exc);
             } else if (JS_IsString(ret)) {

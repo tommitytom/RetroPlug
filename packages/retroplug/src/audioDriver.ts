@@ -60,6 +60,12 @@ export interface AudioDriver {
    *  Project-slot order — the per-system isolation that proves LSDj link-cable sync (a follower sounds
    *  only when it actually synced; a healthy two-system mix can't show that). Empty when no systems. */
   renderAudioPerSystem(ms: number): Float32Array[];
+  /** Advance the block runner `ms` and return system `id`'s per-channel output — one interleaved-stereo
+   *  buffer per stream in its `channelLayout()` (Game Boy = 4: Pulse 1, Pulse 2, Wave, Noise). Empty
+   *  unless the project holds exactly ONE system (the split router isolates a single core's channels). */
+  renderAudioPerChannel(id: number, ms: number): Float32Array[];
+  /** The engine's audio sample rate (Hz) — thread into encodeWav so WAV headers are labelled correctly. */
+  sampleRate(): number;
   setTransport(running: boolean): boolean;
   setBpm(bpm: number): boolean;
   /** Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
@@ -132,6 +138,12 @@ export function createAudioDriver(): AudioDriver {
       // One interleaved-f32 buffer per system; slice() 4-byte-aligns each like the mixed path above.
       return bufs.map((b) => new Float32Array(b.slice().buffer));
     },
+    renderAudioPerChannel: (id, ms) => {
+      const bufs = (call("renderAudioPerChannel", id, ms) as Uint8Array[] | null) ?? [];
+      // One interleaved-f32 buffer per channel stream; slice() 4-byte-aligns each.
+      return bufs.map((b) => new Float32Array(b.slice().buffer));
+    },
+    sampleRate: () => call("sampleRate") as number,
     setTransport: (running) => call("setTransport", running) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
     stageMidiIn: (bytes) => call("stageMidiIn", ints(bytes)) as boolean,

@@ -9,6 +9,45 @@ if(NOT EXISTS "${SAMEBOY_DIR}/Core/gb.h")
         "deps/sameboy is empty. Run: git submodule update --init --recursive")
 endif()
 
+# --- RetroPlug per-channel audio tap ----------------------------------------
+# deps/sameboy is a pinned submodule; the parent repo tracks only its commit
+# pointer. The per-channel (4-stem) Game Boy audio tap lives in Core/apu.{c,h}
+# and is shipped as a tracked patch here, applied idempotently at configure so a
+# fresh clone gets it without bumping the submodule pointer. A future submodule
+# bump that invalidates the patch fails LOUDLY at configure rather than silently
+# dropping per-channel output.
+set(_SAMEBOY_PATCH "${CMAKE_SOURCE_DIR}/cmake/patches/sameboy-per-channel-audio.patch")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_SAMEBOY_PATCH}")
+find_package(Git QUIET)
+if(NOT GIT_FOUND)
+    message(FATAL_ERROR "git is required to apply the SameBoy per-channel patch (${_SAMEBOY_PATCH})")
+endif()
+# `git apply --reverse --check` succeeds only when the patch is already present.
+execute_process(
+    COMMAND "${GIT_EXECUTABLE}" -C "${SAMEBOY_DIR}" apply --reverse --check "${_SAMEBOY_PATCH}"
+    RESULT_VARIABLE _SAMEBOY_PATCH_PRESENT
+    OUTPUT_QUIET ERROR_QUIET)
+if(_SAMEBOY_PATCH_PRESENT EQUAL 0)
+    message(STATUS "SameBoy: per-channel audio tap patch already present")
+else()
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${SAMEBOY_DIR}" apply --check "${_SAMEBOY_PATCH}"
+        RESULT_VARIABLE _SAMEBOY_PATCH_OK
+        OUTPUT_VARIABLE _SAMEBOY_PATCH_MSG ERROR_VARIABLE _SAMEBOY_PATCH_MSG)
+    if(NOT _SAMEBOY_PATCH_OK EQUAL 0)
+        message(FATAL_ERROR
+            "SameBoy per-channel patch no longer applies to deps/sameboy (did the "
+            "submodule move?). Regenerate ${_SAMEBOY_PATCH}.\n${_SAMEBOY_PATCH_MSG}")
+    endif()
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${SAMEBOY_DIR}" apply "${_SAMEBOY_PATCH}"
+        RESULT_VARIABLE _SAMEBOY_PATCH_APPLIED)
+    if(NOT _SAMEBOY_PATCH_APPLIED EQUAL 0)
+        message(FATAL_ERROR "Failed to apply SameBoy per-channel patch ${_SAMEBOY_PATCH}")
+    endif()
+    message(STATUS "SameBoy: applied per-channel audio tap patch")
+endif()
+
 file(STRINGS "${SAMEBOY_DIR}/version.mk" _SAMEBOY_VERSION_RAW
      REGEX "^VERSION[ \t]*:=[ \t]*")
 string(REGEX REPLACE "^VERSION[ \t]*:=[ \t]*" "" SAMEBOY_VERSION "${_SAMEBOY_VERSION_RAW}")

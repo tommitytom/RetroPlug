@@ -1,5 +1,7 @@
 #include "system/BlockRunner.hpp"
 
+#include <cassert>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -41,13 +43,24 @@ void runUnit(const AudioBlockInfo& info,
             if (members[k] && members[k]->stepIfBelowTarget(info.frames)) anyBelow = true;
     }
 
-    // Finish each member into its OWN routed bus (members SUM into it).
+    // Finish each member into its OWN routed stream bus(es) (members SUM into them).
+    // The router decides how many streams a slot emits: the default single stereo
+    // stream is the outs[2] path (byte-identical to before); a split router gives
+    // 2 lanes per stream (stream s -> outs[2s]/outs[2s+1]).
     for (std::size_t k = 0; k < count; ++k) {
         SystemBase* m = members[k];
         if (!m) continue;
-        const AudioBus b = router.bus(slotOf(systems, m));
-        float* outs[2] = { b.l, b.r };
-        m->finishBlock(info, outs);
+        const std::size_t   slot     = slotOf(systems, m);
+        const std::uint32_t nStreams = router.streamCount(slot);
+        constexpr std::size_t kMaxLanes = 32; // 16 stereo streams; asserts if a layout exceeds it
+        assert(nStreams >= 1 && 2 * static_cast<std::size_t>(nStreams) <= kMaxLanes);
+        float* outs[kMaxLanes];
+        for (std::uint32_t s = 0; s < nStreams; ++s) {
+            const AudioBus b = router.bus(slot, s);
+            outs[2 * s + 0] = b.l;
+            outs[2 * s + 1] = b.r;
+        }
+        m->finishBlock(info, outs, 2 * static_cast<std::size_t>(nStreams));
     }
 }
 

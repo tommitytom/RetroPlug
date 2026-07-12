@@ -1,6 +1,6 @@
 # 03 — The TypeScript layer
 
-`packages/retroplug/` is the TypeScript half of greenfield — the embodiment
+`packages/retroplug/` is the TypeScript half of the build — the embodiment
 of the thesis **"native owns bytes and cores; TypeScript owns meaning."** Everything a
 user *decides* lives here: system identity and order, ROM classification, path/sibling/
 suffix resolution, the project model and its serialization, the config schemas, routing
@@ -131,7 +131,7 @@ roles }`); the private state is `entries`, `focusedId`, and `dirty`
 
 ### The reconstruct-in-place idiom
 
-Greenfield **reconstructs** a core rather than live-injecting into it (no `GB_reset`, no
+The control plane **reconstructs** a core rather than live-injecting into it (no `GB_reset`, no
 in-place SRAM clear). The private `rebuildInPlace(id, seed)`
 ([systemsStore.ts:233](../packages/retroplug/src/systemsStore.ts#L233)) is the shared
 body: it captures the source spec, builds a fresh core under a **new id** that swaps the old
@@ -373,7 +373,7 @@ widget's native uid for the test harness and is inert in production.
   leaf carries its own effect callback (no dispatch).
 - [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts) builds the start
   and instance menus over a `MenuContext` (stores + current values, rebuilt each render).
-  Leaves call greenfield store methods directly, current values are baked into labels, and
+  Leaves call store methods directly, current values are baked into labels, and
   `browseThen` opens the OS dialog before applying. The instance menu offers Duplicate /
   Remove / Load ROM / Add / Link Group / a System submenu (SameBoy model/highpass/fastBoot
   cyclers, Save/Load State + SRAM, New SRAM, Reset) / Project / Settings.
@@ -444,7 +444,7 @@ and how the kernel runs on the bare context.
 ## Not yet built / deferred
 
 - **The plugin's two store graphs aren't unified.** The editor
-  ([`PluginUI`](../packages/native-greenfield/plugin/PluginUI.cpp)) is wired and
+  ([`PluginUI`](../packages/native/plugin/PluginUI.cpp)) is wired and
   mounts the React UI on the shared context, but its UI bundle composes one store graph
   (`StoreProvider` → `composeAppStores`) while the control-plane bundle (`pluginControlPlane.ts`)
   composes a separate one inline. Routing both through a single `composeAppStores` graph — so the
@@ -459,7 +459,7 @@ and how the kernel runs on the bare context.
 - The `ui?` field on a `RoleType` (a role's own settings UI) is present in the model but not
   yet consumed.
 
-The broader greenfield↔legacy feature gap and the switchover checklist live in **doc 07** —
+The broader feature gap against legacy and the switchover checklist live in **doc 07** —
 this list is only the TS-layer-local deferrals.
 
 ---

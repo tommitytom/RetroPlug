@@ -85,5 +85,5 @@ test("Settings → Keyboard Bindings: arm, capture a key, and clear a binding", 
   expect(ui.findByTextContaining("New profile name:") == null).toBeTruthy(); // cancelled
   expect(ui.findByTextContaining("Profile: wasd") != null).toBeTruthy(); // menu stayed open
 
-  ui.snapshotPng("/tmp/greenfield-ui-bindings.png");
+  ui.snapshotPng("/tmp/ui-bindings.png");
 });

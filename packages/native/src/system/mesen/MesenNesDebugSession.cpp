@@ -9,6 +9,7 @@
 #include "debug/Cc65DbgParser.hpp"
 
 #include "Core/Shared/Emulator.h"
+#include "Core/Shared/EmuSettings.h"
 #include "Core/Shared/CpuType.h"
 #include "Core/Shared/MemoryType.h"
 #include "Core/Debugger/AddressInfo.h"
@@ -17,6 +18,8 @@
 #include "Core/Debugger/Profiler.h"
 #include "Core/Debugger/LabelManager.h"
 #include "Core/Debugger/Disassembler.h"
+#include "Core/Debugger/DisassemblyInfo.h"
+#include "Core/Debugger/MemoryDumper.h"
 #include "Core/Debugger/ITraceLogger.h"
 #include "Core/Debugger/DebugTypes.h"
 #include "Core/Debugger/Breakpoint.h"
@@ -343,16 +346,29 @@ std::vector<rp::DisasmLine> MesenNesDebugSession::disassemble(std::uint32_t addr
     std::vector<rp::DisasmLine> out;
     Debugger* dbg = ensureDebugger();
     if (!dbg || count == 0) return out;
-    Disassembler* dis = dbg->GetDisassembler();
-    if (!dis) return out;
 
-    std::vector<CodeLineData> rows(count);
-    const std::uint32_t n = dis->GetDisassemblyOutput(CpuType::Nes, addr, rows.data(), count);
-    out.reserve(n);
-    for (std::uint32_t i = 0; i < n; ++i) {
-        const CodeLineData& r = rows[i];
-        out.push_back({ r.Address, std::string(r.Text),
-                        hexBytes(r.ByteCode, r.OpSize) });
+    // Decode instructions straight off the live CPU bus instead of Mesen's disassembly cache. That
+    // cache is only built for executed code while the trace logger / NesDebuggerEnabled flag is on
+    // (neither is set in this manual-drive harness), so GetDisassemblyOutput returns empty "unknown
+    // region" blocks at the live PC. DisassemblyInfo reads the opcode + operand bytes via the
+    // MemoryDumper (mapper-resolved NesMemory) and renders through the label manager — cache-independent,
+    // count-exact, and anchored exactly at `addr`. NES opcodes have fixed sizes, so cpuFlags is unused.
+    MemoryDumper* dumper   = dbg->GetMemoryDumper();
+    LabelManager* labels   = dbg->GetLabelManager();
+    EmuSettings*  settings = dbg->GetEmulator() ? dbg->GetEmulator()->GetSettings() : nullptr;
+    if (!dumper || !settings) return out;
+
+    std::uint32_t pc = addr & 0xFFFF;
+    out.reserve(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        DisassemblyInfo info(pc, /*cpuFlags*/ 0, CpuType::Nes, MemoryType::NesMemory, dumper);
+        std::string text;
+        info.GetDisassembly(text, pc, labels, settings);
+        std::uint8_t bytes[8] = {0};
+        info.GetByteCode(bytes);
+        const std::uint8_t opSize = info.GetOpSize() ? info.GetOpSize() : 1; // NES: always 1..3
+        out.push_back({ static_cast<std::int32_t>(pc), std::move(text), hexBytes(bytes, opSize) });
+        pc = (pc + opSize) & 0xFFFF; // NES CPU space wraps at 64 KiB
     }
     return out;
 }

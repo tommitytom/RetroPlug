@@ -1,4 +1,4 @@
-// The greenfield host renders REAL audio from a REAL Game Boy core, driven purely through the TS
+// The host renders REAL audio from a REAL Game Boy core, driven purely through the TS
 // DSP kernel (cores construct bare — no C++ roles). Boots the embedded mGB synth, captures an idle
 // baseline (near-silent control), then stages a MIDI C-major chord that the kernel's midi-routing
 // role fans to the system and its `mgb` role turns into serial input; asserts the rendered audio is

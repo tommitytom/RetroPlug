@@ -1,9 +1,9 @@
 # 09 — CLI debugging & ROM testing
 
-**Status: partly built.** The greenfield **CLI session runner** (a standalone txiki binary that runs a
+**Status: partly built.** The **CLI session runner** (a standalone txiki binary that runs a
 TS-authored session), **event scripting** (the `Timeline`), **WAV/screenshot** output, AND the **do-first
 observe slice** are built and verified. The observe slice (shipped) surfaces the live-core reads
-`getApuState` / `readCpu` / `readMemory` / `getCpuRegisters` / `stepInstruction` through the greenfield
+`getApuState` / `readCpu` / `readMemory` / `getCpuRegisters` / `stepInstruction` through the
 backend RPC (`EngineRpcService` → `BackendFacade` → `backend.ts`, resolving the live system via
 `Engine::findSystem` — the control-thread/direct-render regime), plus `Timeline.at(ms, fn)` as the
 observe/assert hook and a TAP-emitting `cli/sessions/rom-test.ts` example. Proven on a real n8-midi core:
@@ -17,7 +17,7 @@ The **entire §5 "next" (plumbing) tier is now also built** — register write +
 `test/ts/nes/*.test.ts`). **Still a plan (the "later"/new-wrapper tier):** `EventManager`, PPU
 state/viewers, and memory-write — the rows in §5 that need brand-new C++ structs rather than pure
 plumbing. The load-bearing finding of this doc — the whole debugger is **already compiled into the
-greenfield binaries and already proven on the legacy CLI**, so the remaining work is RPC plumbing, not
+native binaries and already proven on the legacy CLI**, so the remaining work is RPC plumbing, not
 emulator work — held across the whole plumbing tier.
 
 This doc builds on [02-native-host.md](02-native-host.md) (the `BackendFacade` RPC surface it would
@@ -39,9 +39,9 @@ only (stimulus in, artifacts out). This doc is about closing the middle two.
 ## 2. What the CLI is today
 
 A single standalone executable, `retroplug-cli`, that evals one pre-bundled session `.js` on
-txiki/QuickJS against the real greenfield `Backend` — **no Node at runtime** (esbuild bundles the
+txiki/QuickJS against the real `Backend` — **no Node at runtime** (esbuild bundles the
 TS session at build time; the binary runs the JS). See the CLI scaffold in
-[packages/native-greenfield/cli/main.cpp](../packages/native-greenfield/cli/main.cpp) and
+[packages/native/cli/main.cpp](../packages/native/cli/main.cpp) and
 [packages/retroplug/cli/](../packages/retroplug/cli).
 
 - **Session runtime** — [cli/session.ts](../packages/retroplug/cli/session.ts): `bootSession()`
@@ -89,8 +89,8 @@ A survey of the vendored Mesen core and the integration seam established the dec
   debugger exclusions**. That pulls in the entire `Core/Debugger/` subtree — `Debugger`, `Breakpoint` /
   `BreakpointManager`, `ExpressionEvaluator`, `MemoryDumper`, `TraceLogger`, `CallstackManager`,
   `Profiler`, `LabelManager`, `EventManager`.
-- **It is linked into the greenfield binaries.** `retroplug-backend` links `retroplug-cli-core`
-  ([packages/native-greenfield/CMakeLists.txt](../packages/native-greenfield/CMakeLists.txt#L41)), which
+- **It is linked into the native binaries.** `retroplug-backend` links `retroplug-cli-core`
+  ([packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt#L41)), which
   compiles [MesenNesSystem.cpp](../packages/native/src/system/mesen/MesenNesSystem.cpp) +
   [MesenNesDebugSession.cpp](../packages/native/src/system/mesen/MesenNesDebugSession.cpp) and links
   `libmesen`. So the capability is present in `retroplug-cli` today.
@@ -108,7 +108,7 @@ A survey of the vendored Mesen core and the integration seam established the dec
   stepInstruction). `test/ts/nes/{apu,debug,cpu}.test.ts` already drive a **real** `n8-midi.nes` via MIDI
   and assert on APU channels, memory, breakpoints, and traces — including a **read-watchpoint on the MIDI
   FIFO at `$40F1`** that fires.
-- **The greenfield gap was narrow and mechanical — and is now closed for the plumbing tier.** The C++ was
+- **The gap was narrow and mechanical — and is now closed for the plumbing tier.** The C++ was
   compiled, linked, and reachable via `Engine → Project → SystemBase::debugTarget()`, just not surfaced
   through `EngineRpcService` / `BackendFacade`. That surfacing is done: `EngineRpcService` now resolves the
   live system via `Engine::findSystem(id)` and forwards to `SystemBase::…` / `debugTarget()->…`, mirroring
@@ -116,15 +116,15 @@ A survey of the vendored Mesen core and the integration seam established the dec
 
 **Decision: port, do not hand-roll.** Writing bespoke `getApuState`/`readMemory` RPCs would re-implement a
 strict subset of a working, tested surface. The right move — taken — was to port the proven
-`HarnessRpcService` methods onto the greenfield RPC seam and wrap them in a TS session/`observe` API.
+`HarnessRpcService` methods onto the RPC seam and wrap them in a TS session/`observe` API.
 
 ## 5. Capability inventory (prioritized for a MIDI→APU ROM)
 
-The **plumbing tier is built** — each is a greenfield RPC on `Backend` (`getApuState` … `runUntilBreak`),
+The **plumbing tier is built** — each is an RPC on `Backend` (`getApuState` … `runUntilBreak`),
 resolving the live system via `Engine::findSystem` and forwarding to `SystemBase::…` / `debugTarget()->…`,
 proven on a real `n8-midi.nes` in `test-native/cli-*.test.ts`. Only the new-C++-wrapper rows remain a plan.
 
-| Status | Capability | Mesen provides | Greenfield RPC(s) + session use |
+| Status | Capability | Mesen provides | RPC(s) + session use |
 |---|---|---|---|
 | **Built** | **Decoded per-channel APU state** — pulse1/2, triangle, noise, dmc: period, frequency Hz, duty, envelope volume, length | `NesApu::GetState()` → `rp::ApuState` (no `InitDebugger`) | `getApuState(id): ApuState` → `.at(t, s => expect(s.backend.getApuState(id).pulse1.frequency > 250 && …pulse1.envelopeVolume > 0).toBeTruthy())`. **The centerpiece** — the only way to observe MIDI→sound. |
 | **Built** | **CPU-bus peek + region reads** (incl. the `$40F1` Everdrive MIDI FIFO) | `NesMemoryManager::DebugRead` (`PeekRam`); `GetMemory(MemoryType)` | `readCpu(id, addr): number\|null` (mapped I/O / FIFO); `readMemory(id, region): Uint8Array` (`MemoryRegion.Ram/OAM/…`). |
@@ -137,16 +137,16 @@ proven on a real `n8-midi.nes` in `test-native/cli-*.test.ts`. Only the new-C++-
 | Plan | PPU state + viewers (scanline/cycle/scroll; tilemap/sprite/palette) | `NesDebugger::GetPpuState`, `NesPpuTools` | needs **new `rp::` structs + caller-alloc buffers**. `getPpuState/getSpriteList`. Marginal for an audio ROM (the framebuffer is already published for screenshots). |
 | Plan | Memory **write**/poke (arrange state before assertions) | `MemoryDumper::SetMemoryValue` / `NesMemoryManager::DebugWrite` | compiled but **unimplemented** (~1 new method). `writeCpu(id, addr, val)`. |
 
-## 6. Greenfield integration — built + remaining
+## 6. Integration — built + remaining
 
 The plumbing tier is integrated end to end; only the new-wrapper tier + external-authoring packaging remain.
 
 **Built (the port).** Every capability is the same 7-file seam, mirroring the do-first commit:
-- **Native** — a decl in [EngineRpcService.hpp](../packages/native-greenfield/src/EngineRpcService.hpp), an
-  impl in [EngineRpcService.cpp](../packages/native-greenfield/src/EngineRpcService.cpp) (`SystemBase* sys =
+- **Native** — a decl in [EngineRpcService.hpp](../packages/native/src/EngineRpcService.hpp), an
+  impl in [EngineRpcService.cpp](../packages/native/src/EngineRpcService.cpp) (`SystemBase* sys =
   engine_.findSystem(id)`, guard null, then `sys->…` or `sys->debugTarget()->…`), a one-line
-  [BackendFacade.hpp](../packages/native-greenfield/src/BackendFacade.hpp) forwarder, and a
-  [BackendRpcRegistration.hpp](../packages/native-greenfield/src/BackendRpcRegistration.hpp) `addMethod` line.
+  [BackendFacade.hpp](../packages/native/src/BackendFacade.hpp) forwarder, and a
+  [BackendRpcRegistration.hpp](../packages/native/src/BackendRpcRegistration.hpp) `addMethod` line.
 - **TS** — the method on the `Backend` interface + a verbatim-field mirror in
   [backend.ts](../packages/retroplug/src/backend.ts) (`ApuState`, `CpuRegister`, `TraceLine`,
   `BreakInfo`, `ProfiledFunction`, `DisasmLine`, `CallFrame`, `Breakpoint`, + the `MemoryRegion` const), a
@@ -200,12 +200,12 @@ test("n8-midi: ch1 note → pulse1 at pitch; pulse2 silent", () => {
   `Emulator::SetEmulationThreadId(this_thread)` so Mesen's `IsEmulationThread`/`DebugBreakHelper` no-op.
   This fits the CLI's single-threaded direct-render model but is **unsafe from the audio thread**.
 - **`audioRunning_` live-read bug class.** This repo has a known pattern where ops that read a live core were
-  `audioRunning_`-guarded and went silently dead in the running plugin. Any greenfield debug RPC that reads
+  `audioRunning_`-guarded and went silently dead in the running plugin. Any debug RPC that reads
   live state must route to the correct single-threaded path (not be gated behind `audioRunning_`) — **verify
   with an actual exit-zero run, not by inspection.** (See [01-architecture.md](01-architecture.md) on the
   read door and threading invariants.)
 - **NES-only.** Only `MesenNesSystem` has a `debugTarget()`; `MesenGbaSystem` has none and SameBoy returns
-  nullptr — so on GB/GBA the greenfield reads degrade gracefully (`getApuState` → an empty `ApuState`, the
+  nullptr — so on GB/GBA the reads degrade gracefully (`getApuState` → an empty `ApuState`, the
   CPU/breakpoint reads → empty/false), never throwing. The harness is inherently NES-scoped today.
 - **Teardown ordering is delicate.** The debugger must be stopped while the `Emulator`/`DebugHud` is still
   alive, or `ScriptManager`'s destructor → `DebugHud::ClearScreen` segfaults. Preserve the

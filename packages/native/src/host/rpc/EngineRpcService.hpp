@@ -31,7 +31,7 @@ public:
     std::optional<rfl::Bytestring> readState(std::uint32_t id);
     std::optional<rfl::Bytestring> readSram(std::uint32_t id);
     bool screenshot(std::uint32_t id, std::string path);
-    GreenfieldFrame getFrame(std::uint32_t id);
+    RpcFrame getFrame(std::uint32_t id);
 
     // (Live-core debug/inspection — getApuState/readCpu/breakpoints/trace/profiler/… — moved to
     // DebugRpcService; only the CLI binds that facet.)
@@ -47,6 +47,12 @@ public:
     // Per-system audio: each live system's interleaved-stereo PCM, in Project-slot order (marshals to
     // Uint8Array[]). Isolates each core so LSDj link-cable sync is provable (a follower's own RMS).
     std::vector<rfl::Bytestring> renderAudioPerSystem(double ms);
+    // Per-channel audio for ONE system: each of its channelLayout() streams as its own interleaved-stereo
+    // PCM (Game Boy = 4: Pulse 1/Pulse 2/Wave/Noise). Single-system only (empty if systemCount() != 1 or
+    // `id` is unknown) — the per-channel router keys off streamIndex, not slot. Marshals to Uint8Array[].
+    std::vector<rfl::Bytestring> renderAudioPerChannel(std::uint32_t id, double ms);
+    // The engine's audio sample rate (Hz), so callers can label WAV output correctly.
+    double          sampleRate() const;
     bool            setTransport(bool running);
     bool            setBpm(double bpm);
     bool            setAudioRouting(std::uint32_t mode);
@@ -56,7 +62,7 @@ public:
     bool            setSerialOutCapture(std::uint32_t id, bool on);
     // Drain the MIDI-out the kernel emitted (LSDj MI.OUT decoder), accumulated across renderAudio blocks
     // since the last drain. For headless tests; the plugin drains Engine::midiOut() to the DAW directly.
-    std::vector<GreenfieldMidiOut> drainMidiOut();
+    std::vector<RpcMidiOut> drainMidiOut();
 
     // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
     // Reads/GC on the DSP JS runtime, reached directly through the Engine (the quiescent renderAudio
@@ -82,5 +88,5 @@ private:
     static constexpr std::uint32_t kBlockSize = 1024;
     std::vector<float>       scratchL_;  // renderAudio pull-path scratch (control thread)
     std::vector<float>       scratchR_;
-    std::vector<GreenfieldMidiOut> accumMidiOut_;  // kernel MIDI-out gathered across a render window (drainMidiOut)
+    std::vector<RpcMidiOut> accumMidiOut_;  // kernel MIDI-out gathered across a render window (drainMidiOut)
 };

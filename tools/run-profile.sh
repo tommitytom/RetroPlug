@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build + run the greenfield DSP-thread allocation benchmark (spec/08-profiling.md) in a profiling
+# Build + run the DSP-thread allocation benchmark (spec/08-profiling.md) in a profiling
 # build, and optionally under valgrind for allocation-site / CPU attribution.
 #
-#   tools/run-greenfield-profile.sh [mode] [slug]
+#   tools/run-profile.sh [mode] [slug]
 #     mode: stats (default) | trace | dhat | callgrind | massif
 #     slug: the test-native file to run (default: dsp-bench)
 #

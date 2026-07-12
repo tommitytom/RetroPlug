@@ -1,4 +1,4 @@
-// The React seam over the greenfield store graph.
+// The React seam over the store graph.
 //
 // The stores are framework-agnostic plain classes with single-observer callbacks and getters that return
 // a FRESH array/object each call (view() even does per-entry fileExists RPCs). Two consequences shape

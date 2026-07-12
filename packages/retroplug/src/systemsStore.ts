@@ -291,7 +291,7 @@ export class SystemsStore {
   }
 
   /** Load a savestate file into system `id`: reconstruct the core in place, booted from those bytes
-   *  (greenfield reconstructs rather than live-injecting). Null when the file is unreadable or the build
+   *  (reconstructs rather than live-injecting). Null when the file is unreadable or the build
    *  fails. */
   loadState(id: number, path: string): number | null {
     const bytes = this.backend.readFile(path);
@@ -308,7 +308,7 @@ export class SystemsStore {
   }
 
   /** Reboot system `id` in place, carrying its live battery SRAM forward — a hardware-style reset: the
-   *  save persists, the running state is dropped. Greenfield reconstructs from the ROM (the same engine
+   *  save persists, the running state is dropped. Reconstructs from the ROM (the same engine
    *  as reload) rather than a live GB_reset. Null when `id` is absent. */
   reset(id: number): number | null {
     if (!findById(this.entries, id)) return null;

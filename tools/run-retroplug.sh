@@ -27,7 +27,7 @@ RP=$!
 cleanup() { kill "$RP" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 
-# Greenfield registers one JACK client "RetroPlug" with four stereo output pairs
+# RetroPlug registers one JACK client "RetroPlug" with four stereo output pairs
 # (out_1_l/r … out_4_l/r); each system routes to a pair per the project's Audio Routing setting.
 # Wait for the first pair to register (up to ~5s), then link every pair that exists to the default
 # sink (each pair sums into the same speakers, so all systems are audible regardless of routing).
@@ -49,7 +49,7 @@ if [ "$linked" -gt 0 ]; then
     echo "linked $linked ${CLIENT} output pair(s) -> $SINK"
 else
     echo "warning: no '${CLIENT}' output ports found — actual output ports:" >&2
-    pw-link -o 2>/dev/null | grep -i "retroplug\|greenfield" >&2 || echo "  (none matching retroplug/greenfield)" >&2
+    pw-link -o 2>/dev/null | grep -i "retroplug" >&2 || echo "  (none matching retroplug)" >&2
 fi
 
 wait "$RP"

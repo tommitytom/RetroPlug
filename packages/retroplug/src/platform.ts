@@ -9,7 +9,7 @@
 // without reshaping. The sniffer classifies to a `Platform` (never a core), by logo/magic rather than
 // file extension: a mislabelled .gb that's really a .nes still picks the right platform, and an
 // unrelated file is `"unknown"`. Detection logic mirrors packages/native/src/system/RomFormat.hpp
-// (priority NES → GBA → GB → unknown); the vocabulary is greenfield's own (platforms, not core names).
+// (priority NES → GBA → GB → unknown); the vocabulary is this package's own (platforms, not core names).
 
 /** What a ROM targets. */
 export type Platform = "gb" | "nes" | "gba";

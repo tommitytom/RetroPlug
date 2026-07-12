@@ -153,9 +153,9 @@ bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {
 
 // Like the reads above, getFrame reads the owned registry by id (the UI displays frames while audio
 // plays) — no guard, no findSystem walk.
-GreenfieldFrame EngineRpcService::getFrame(std::uint32_t id) {
+RpcFrame EngineRpcService::getFrame(std::uint32_t id) {
     const EngineFrame f = engine_.getFrame(id);
-    GreenfieldFrame out;
+    RpcFrame out;
     out.width = f.width;
     out.height = f.height;
     out.published = f.published;
@@ -250,6 +250,53 @@ std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerSystem(double ms) {
     return result;
 }
 
+std::vector<rfl::Bytestring> EngineRpcService::renderAudioPerChannel(std::uint32_t id, double ms) {
+    std::vector<rfl::Bytestring> result;
+    // Single-system only: PerChannelRouter fans by stream index, not slot, so a second system's streams
+    // would collide into these buffers. The mixed/per-system paths are the multi-system routes.
+    if (ms <= 0.0 || engine_.systemCount() != 1) return result;
+    SystemBase* sys = engine_.findSystem(id);
+    if (sys == nullptr) return result;
+
+    // The target's output streams (Game Boy = 4 stereo: Pulse 1/Pulse 2/Wave/Noise; default = 1 "Mix").
+    const std::size_t n = sys->channelLayout().size();
+    if (n == 0) return result;
+
+    // One persistent L/R block buffer per stream; the Engine routes each stream into its own pair.
+    std::vector<std::vector<float>> bl(n, std::vector<float>(kBlockSize));
+    std::vector<std::vector<float>> br(n, std::vector<float>(kBlockSize));
+    std::vector<float*> ls(n), rs(n);
+    std::vector<std::vector<float>> out(n);  // per stream: interleaved L,R,L,R…
+    const std::uint64_t total = static_cast<std::uint64_t>(ms * engine_.sampleRate() / 1000.0);
+    for (std::size_t i = 0; i < n; ++i) {
+        ls[i] = bl[i].data();
+        rs[i] = br[i].data();
+        out[i].reserve(total * 2);
+    }
+
+    for (std::uint64_t s = 0; s < total; s += kBlockSize) {
+        const auto frames = static_cast<std::uint32_t>(std::min<std::uint64_t>(kBlockSize, total - s));
+        engine_.processBlockPerChannel(frames, ls.data(), rs.data(), n);
+        accumulateMidiOut();  // gather this block's kernel MIDI-out before the next block clears it
+        for (std::size_t i = 0; i < n; ++i)
+            for (std::uint32_t f = 0; f < frames; ++f) {
+                out[i].push_back(ls[i][f]);  // interleave L,R,L,R…
+                out[i].push_back(rs[i][f]);
+            }
+    }
+
+    result.reserve(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const auto* p = reinterpret_cast<const std::byte*>(out[i].data());
+        result.emplace_back(p, p + out[i].size() * sizeof(float));
+    }
+    return result;
+}
+
+double EngineRpcService::sampleRate() const {
+    return engine_.sampleRate();
+}
+
 bool EngineRpcService::setTransport(bool running) {
     invoker_.setTransport(running);  // transport is a queued op — applied now (direct) or on the audio thread
     return true;
@@ -284,7 +331,7 @@ void EngineRpcService::accumulateMidiOut() {
     // Engine::midiOut() holds only the block just rendered (cleared at the top of the next processBlock),
     // so copy it out now. Usually empty (only an armed LSDj MI.OUT system emits) — cheap when so.
     for (const auto& mo : engine_.midiOut()) {
-        GreenfieldMidiOut g;
+        RpcMidiOut g;
         g.system = mo.system;
         g.frame  = mo.frame;
         const auto* p = reinterpret_cast<const std::byte*>(mo.data.data());
@@ -293,7 +340,7 @@ void EngineRpcService::accumulateMidiOut() {
     }
 }
 
-std::vector<GreenfieldMidiOut> EngineRpcService::drainMidiOut() {
+std::vector<RpcMidiOut> EngineRpcService::drainMidiOut() {
     return std::exchange(accumMidiOut_, {});  // return the window's accumulation and reset it
 }
 

@@ -1,7 +1,7 @@
 // One emulator tile: the running Game Boy screen for a system, blitted into an LVGL Canvas.
 //
-// On every "frame" render tick it pulls the system's framebuffer (backend.getFrame — synchronous in
-// greenfield, so no async drop-frame guard) and pushes it into the Canvas via setBuffer. Clicking the
+// On every "frame" render tick it pulls the system's framebuffer (backend.getFrame — synchronous,
+// so no async drop-frame guard) and pushes it into the Canvas via setBuffer. Clicking the
 // tile focuses its system (LVGL bubbles the child click up to the root View's onClick). An unfocused
 // tile is dimmed by a translucent black overlay — the lvgl-js way, since opacity on a Canvas is dropped
 // (only Image widgets route it) and opacity units are 0..1 floats (0.5 = LV_OPA_50).

@@ -2,7 +2,7 @@
 // globalThis[Symbol.for("plugin")].__rpcSend — the same namespace the future plugin host
 // binds, so this one adapter serves both. A self-contained synchronous JSON-RPC client
 // (the native side marshals request/response as live JS objects through the QuickJS codec,
-// so binary rides Uint8Arrays and nothing is serialized), keeping greenfield dependency-
+// so binary rides Uint8Arrays and nothing is serialized), keeping the TS side dependency-
 // free.
 //
 // The client is split by CAPABILITY into three factories — host (fs/config/codec/sav + the
@@ -14,6 +14,7 @@
 // a UI-direct native hook rather than the RPC bridge (see below).
 
 import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, FileBrowserOpts, FrameData, HostBackend, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import { savFromJson as savFromJsonTs } from "./lsdj";
 
 type RpcSend = (request: unknown) => unknown;
 interface Reply {
@@ -23,7 +24,7 @@ interface Reply {
 
 // --- file dialog (async, UI-direct) ------------------------------------------------------------------
 // openFileBrowser is the ONE async Backend method, and it does NOT ride the RPC bridge: the editor
-// (PluginGreenfieldUI) hangs __rp_openFileBrowser on the shared context — like __rp_setWindowSize — and,
+// (PluginUI) hangs __rp_openFileBrowser on the shared context — like __rp_setWindowSize — and,
 // once the OS dialog settles, calls __rp_onFileBrowserResult back, both on the single UI thread. Only one
 // native dialog is ever in flight, so one module-level pending slot suffices (shared across every
 // createHostClient on this context). When the hook is absent (the headless UI harness) the browser is
@@ -111,7 +112,7 @@ export function createHostClient(): HostBackend {
     version: () => call("version") as string,
     zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries)), // {name, bytes: Uint8Array} matches BackendZipInput
     unzip: (bytes) => (call("unzip", bytes) as ZipEntry[] | null) ?? null,
-    savFromJson: (json) => call("savFromJson", json) as Uint8Array, // Bytestring result → Uint8Array
+    savFromJson: (json) => savFromJsonTs(json), // pure-TS codec (was a native RPC round-trip)
     openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts), // async UI-direct native hook, not RPC
   };
 }

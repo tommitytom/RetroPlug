@@ -92,5 +92,5 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   ui.pump(10);
   expect(ui.findByTextContaining("Default Zoom") != null).toBeTruthy();
 
-  ui.snapshotPng("/tmp/greenfield-ui-menu.png");
+  ui.snapshotPng("/tmp/ui-menu.png");
 });

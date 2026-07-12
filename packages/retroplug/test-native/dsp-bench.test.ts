@@ -3,9 +3,9 @@
 // the bare QuickJS runtime allocates PER BLOCK — the refcount-churn signal (QuickJS frees acyclic garbage
 // immediately, so "GC" is rare; malloc/free churn per block is the real cost).
 //
-// The allocation counters exist only in a RETROPLUG_PROFILE host (built by `pnpm profile:greenfield` /
-// tools/run-greenfield-profile.sh). Under the default host the counters report enabled:false and this
-// test no-ops (so the normal `pnpm test:greenfield-native` sweep stays green). One test per file (the
+// The allocation counters exist only in a RETROPLUG_PROFILE host (built by `pnpm profile` /
+// tools/run-profile.sh). Under the default host the counters report enabled:false and this
+// test no-ops (so the normal `pnpm test:native` sweep stays green). One test per file (the
 // native Project/Engine is shared per host process).
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
@@ -141,9 +141,9 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
   ).toBeTruthy();
 
   // Bail early (before the render loops) when the host has no profiling allocator, so the normal
-  // test:greenfield-native sweep stays fast + green.
+  // test:native sweep stays fast + green.
   if (!audio.dspAllocStats().enabled) {
-    console.warn("[dsp-bench] instrumentation off — run via `pnpm profile:greenfield` for real metrics. Skipping.");
+    console.warn("[dsp-bench] instrumentation off — run via `pnpm profile` for real metrics. Skipping.");
     expect(true).toBeTruthy();
     return;
   }
