@@ -128,10 +128,10 @@ private:
     ExpSmoother                       gainSmoother_;
     std::vector<float>                stereoAccum_;   // sized lazily to 2*blockSize
 
-    // Per-channel (stereo-mod pin) export — spec/10 §5. nesMixer_ is owned by emu_'s NesConsole; valid
-    // only while activated + channelCapture_. chanAccum_ holds the per-stream mono drain each block (3
-    // pins, or 4 when channelExportMode == 2 adds the mix-reference stream for the fidelity test).
-    static constexpr std::size_t      kMaxChannelStreams = 4;
+    // Per-channel export — spec/10 §5 (pins) + §5b (individual mono). nesMixer_ is owned by emu_'s
+    // NesConsole; valid only while activated + channelCapture_. chanAccum_ holds the per-stream mono drain
+    // each block: 3 pins (mode 1), 4 with the mix-reference (mode 2), or 5 core channels (mode 3).
+    static constexpr std::size_t      kMaxChannelStreams = 5;
     NesSoundMixer*                    nesMixer_ = nullptr;
     bool                              channelCapture_ = false;
     std::array<std::vector<float>, kMaxChannelStreams> chanAccum_;

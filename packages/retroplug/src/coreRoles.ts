@@ -32,9 +32,10 @@ export function registerCoreRoles(registry: RoleRegistry): void {
     schema: z.object({
       region: clampedInt(0, 4, 0), // ConsoleRegion: Auto / NTSC / PAL / Dendy / NTSC-J
       removeSpriteLimit: boolField(false),
-      // CLI-only per-channel export mode (spec/10 §5): 0 = Mix, 1 = StereoModPins (Pulse | TND +
-      // Expansion). Set at construct (via adopt) — the settings menu doesn't surface it. Additive.
-      channelExportMode: clampedInt(0, 1, 0),
+      // CLI-only per-channel export mode (spec/10 §5/§5b): 0 = Mix, 1 = StereoModPins (Pulse | TND +
+      // Expansion), 3 = IndividualMono (5 core channels). Set at construct (via adopt) — the settings menu
+      // doesn't surface it. Additive. (2 = pins + a mix reference, native/test-only.)
+      channelExportMode: clampedInt(0, 3, 0),
     }),
   });
 }

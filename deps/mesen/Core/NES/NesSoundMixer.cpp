@@ -244,6 +244,18 @@ void NesSoundMixer::GetStreamVolumes(uint16_t& square, uint16_t& tnd, int32_t& e
 		GetChannelOutput(AudioChannel::VRC7, false));
 }
 
+void NesSoundMixer::GetCoreChannelLevels(int16_t out[5])
+{
+	// RetroPlug §5b: the 5 core channels' raw pre-DAC linear levels (GetChannelOutput == _currentOutput at
+	// unity volume/pan), each scaled so a full-scale channel lands near half int16 — Square1/Square2/
+	// Triangle/Noise range 0-15 (×1024), DMC ranges 0-127 (×128). Bypassing the DAC, they do NOT re-sum.
+	out[0] = (int16_t)(GetChannelOutput(AudioChannel::Square1, false) * 1024);
+	out[1] = (int16_t)(GetChannelOutput(AudioChannel::Square2, false) * 1024);
+	out[2] = (int16_t)(GetChannelOutput(AudioChannel::Triangle, false) * 1024);
+	out[3] = (int16_t)(GetChannelOutput(AudioChannel::Noise, false) * 1024);
+	out[4] = (int16_t)(GetChannelOutput(AudioChannel::DMC, false) * 128);
+}
+
 void NesSoundMixer::AddDelta(AudioChannel channel, uint32_t time, int16_t delta)
 {
 	if(delta != 0) {
@@ -267,18 +279,23 @@ void NesSoundMixer::EndFrame(uint32_t time)
 		blip_add_delta(_blipBufLeft, stamp, (int)(currentOutput - _previousOutputLeft));
 		_previousOutputLeft = currentOutput;
 
-		// RetroPlug per-channel tap: feed the two 2A03 pins + lumped expansion into their own blips, at
-		// the same *4 scale and stamp as the mix's left channel. Reads _currentOutput only; the mix above
-		// is untouched. Pins are mono (pre-panning hardware pins), so only the forRightChannel=false terms.
-		// Slot 3 (when capturing a reference) is the full mix scalar `currentOutput` (== GetOutputVolume*4)
-		// through the identical path, so Σ(pins) == reference is exact for the fidelity test.
+		// RetroPlug per-channel tap: feed each stream into its own blip at the same stamp as the mix's left
+		// channel. Reads _currentOutput only; the mix above is untouched. Mode 1/2 (pins) = the two 2A03
+		// pins + lumped expansion at the mix's *4 scale (+ slot 3 = the full mix scalar `currentOutput` for
+		// the fidelity reference). Mode 3 (individual mono) = the 5 core channels' raw pre-DAC levels.
 		if(_captureStreams > 0) {
-			uint16_t square, tnd;
-			int32_t expansion;
-			GetStreamVolumes(square, tnd, expansion);
-			int16_t sv[MaxCaptureStreams] = {
-				(int16_t)(square * 4), (int16_t)(tnd * 4), (int16_t)(expansion * 4), currentOutput
-			};
+			int16_t sv[MaxCaptureStreams] = {};
+			if(_captureMode == 3) {
+				GetCoreChannelLevels(sv);
+			} else {
+				uint16_t square, tnd;
+				int32_t expansion;
+				GetStreamVolumes(square, tnd, expansion);
+				sv[0] = (int16_t)(square * 4);
+				sv[1] = (int16_t)(tnd * 4);
+				sv[2] = (int16_t)(expansion * 4);
+				sv[3] = currentOutput;  // reference (mode 2)
+			}
 			for(uint32_t k = 0; k < _captureStreams; k++) {
 				blip_add_delta(_streamBlip[k], stamp, (int)(sv[k] - _streamPrev[k]));
 				_streamPrev[k] = sv[k];
@@ -328,10 +345,12 @@ void NesSoundMixer::CaptureStreams()
 	}
 }
 
-void NesSoundMixer::SetChannelCapture(bool enabled, uint32_t hostRate, bool withReference)
+void NesSoundMixer::SetChannelCapture(uint32_t mode, uint32_t hostRate)
 {
-	const uint32_t want = enabled ? (withReference ? 4u : 3u) : 0u;
-	// Free any streams no longer wanted (e.g. re-arming without the reference).
+	// Stream count per mode: 1 pins → 3, 2 pins+ref → 4, 3 individual-mono → 5, else off.
+	const uint32_t want = mode == 1 ? 3u : mode == 2 ? 4u : mode == 3 ? 5u : 0u;
+	_captureMode = want > 0 ? mode : 0u;
+	// Free any streams no longer wanted (e.g. re-arming with fewer streams).
 	for(uint32_t k = want; k < MaxCaptureStreams; k++) {
 		if(_streamBlip[k]) {
 			blip_delete(_streamBlip[k]);

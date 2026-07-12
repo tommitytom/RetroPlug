@@ -50,17 +50,21 @@ private:
 
 	bool _hasPanning = false;
 
-	// --- RetroPlug per-channel (stereo-mod pin) capture — spec/10 §5 ---------------------------------
+	// --- RetroPlug per-channel capture — spec/10 §5 (pins) + §5b (individual mono) --------------------
 	// OFF by default → the mix path above is byte-identical and pays zero cost. When MesenNesSystem
-	// enables it (channelExportMode == StereoModPins), EndFrame ALSO feeds separate stream blips —
-	// [0] Pulse (squareVolume), [1] TND (tndVolume), [2] Expansion (the six expansion terms) — each
-	// mirroring the mix's clock→96k-blip→Hermite→host path so they stay sample-aligned with each other and
-	// provably re-sum. An optional [3] Reference stream (the full mix scalar through the SAME path) is
-	// captured for the fidelity test only (withReference) — it makes Σ(pins) == reference exact within one
-	// instance, without cross-instance/cross-resampler drift. The tap only READS _currentOutput; the mixed
-	// _blipBuf*/_previousOutput*/_channelOutput/_timestamps are never touched.
-	static constexpr uint32_t MaxCaptureStreams = 4;  // 3 pins (+ optional mix reference)
-	uint32_t _captureStreams = 0;                     // 0 = off, 3 = pins, 4 = pins + reference
+	// enables it, EndFrame ALSO feeds separate stream blips, each mirroring the mix's clock→96k-blip→
+	// Hermite→host path so they stay sample-aligned with each other. The mode (== channelExportMode):
+	//   1 StereoModPins: [0] Pulse (squareVolume), [1] TND (tndVolume), [2] Expansion (six terms) — 3
+	//                    streams that provably re-sum to the mix.
+	//   2 Pins+Reference: the above + [3] the full mix scalar through the SAME path — fidelity-test only,
+	//                    making Σ(pins) == reference exact within one instance (no cross-resampler drift).
+	//   3 IndividualMono: the 5 core channels [0] Square1 [1] Square2 [2] Triangle [3] Noise [4] DMC as
+	//                    raw pre-DAC linear levels (per-channel scaled) — for isolation; these DON'T sum.
+	// The tap only READS _currentOutput; the mixed _blipBuf*/_previousOutput*/_channelOutput/_timestamps
+	// are never touched.
+	static constexpr uint32_t MaxCaptureStreams = 5;  // 3 pins (+ ref), or 5 core mono channels
+	uint32_t _captureMode = 0;                        // 0 = off, else the active channelExportMode
+	uint32_t _captureStreams = 0;                     // stream count for _captureMode (0/3/4/5)
 	uint32_t _captureHostRate = 0;
 	blip_t* _streamBlip[MaxCaptureStreams] = {};
 	int16_t _streamPrev[MaxCaptureStreams] = {};
@@ -74,6 +78,9 @@ private:
 	// Split the mono (forRightChannel=false) mix into its two hardware pins + the lumped expansion term,
 	// using the SAME math as GetOutputVolume (whose body is left untouched to keep the mix byte-identical).
 	__forceinline void GetStreamVolumes(uint16_t& square, uint16_t& tnd, int32_t& expansion);
+	// The 5 core channels' raw pre-DAC linear levels, each per-channel-scaled to ~half int16 (§5b). These
+	// bypass the non-linear DAC, so they do NOT re-sum to the mix.
+	__forceinline void GetCoreChannelLevels(int16_t out[5]);
 	void CaptureStreams();                        // drain the stream blips → host mono rings
 	void EndFrame(uint32_t time);
 
@@ -91,12 +98,12 @@ public:
 	void PlayAudioBuffer(uint32_t cycle);
 	void AddDelta(AudioChannel channel, uint32_t time, int16_t delta);
 
-	// RetroPlug per-channel capture (spec/10 §5). Enable/disable the stereo-mod pin tap; `hostRate` is
-	// passed in (the caller's sample rate) so the mixer needn't reach into settings. `withReference` adds a
-	// 4th stream (the full mix scalar through the same path) for the fidelity test. AvailableCaptureFrames
-	// reports host frames ready (all captured streams stay equal length); DrainChannel pops `frameCount`
-	// mono float samples from stream k (int16→float ÷32768, erase-from-front), like MesenAudioDevice::drain.
-	void SetChannelCapture(bool enabled, uint32_t hostRate, bool withReference = false);
+	// RetroPlug per-channel capture (spec/10 §5/§5b). `mode` is the channelExportMode: 0 = off, 1 = pins,
+	// 2 = pins + reference (fidelity test), 3 = 5 individual core mono channels. `hostRate` is passed in
+	// (the caller's sample rate) so the mixer needn't reach into settings. AvailableCaptureFrames reports
+	// host frames ready (all captured streams stay equal length); DrainChannel pops `frameCount` mono float
+	// samples from stream k (int16→float ÷32768, erase-from-front), like MesenAudioDevice::drain.
+	void SetChannelCapture(uint32_t mode, uint32_t hostRate);
 	uint32_t AvailableCaptureFrames() const;
 	uint32_t DrainChannel(uint32_t stream, float* dest, uint32_t frameCount);
 

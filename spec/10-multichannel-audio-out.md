@@ -1,8 +1,9 @@
 # 10 — Multi-channel audio output (per-console channel stems)
 
-**Status: in progress — the host seam, the SameBoy GB tap, the CLI GB export, the plugin GB option, and
-the NES stereo-mod pins (CLI) are built (§10 steps 1–4 + the pin half of step 5); the NES 5-mono stems +
-per-mapper expansion remain.** This doc designs outputting the *individual console sound channels*
+**Status: in progress — the host seam, the SameBoy GB tap, the CLI GB export, the plugin GB option, the
+NES stereo-mod pins, and the NES 5-individual-mono core stems (CLI) are built (§10 steps 1–6, minus the
+per-mapper expansion sub-channels, which remain).** This doc designs outputting the *individual console
+sound channels*
 of a single emulator instance instead of its mixed stereo — 8 outputs for a Game Boy (a stereo pair
 per channel), and 5-plus mono channels / the hardware "stereo-mod" pins for an NES. It is a design
 only; no code exists yet. It builds on [02-native-host.md](02-native-host.md) (the `Engine` /
@@ -381,12 +382,17 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    writes 3 mono WAVs + one 3-channel WAV. Guards: `app-play-nes-channels.test.ts` (real separation — a ch1
    note lights the Pulse pin while TND + Expansion stay silent, R lanes silent) + `NesStems.test.cpp` (a
    native-only mode-2 adds a 4th mix-reference stream through the identical per-stream resampler, so
-   Σ(pins) == the reference is exact by construction — the fidelity proof). **Remaining for step 5b:** the
-   5-individual-mono core stems ("does not sum").
-6. **NES 5-mono + per-mapper expansion** — the 5 individual core channels (Pulse1/Pulse2/Triangle/Noise/
-   DMC) as the secondary "does not sum" mode; per-mapper expansion sub-channel taps (VRC6 pulse/saw, VRC7
-   6×FM, N163, …) inside each chip's `ClockAudio`.
-7. **Follow-ons** (decisions permitting) — upstream-vs-diff for the SameBoy patch; NES-in-plugin
-   (mono-lane packing); the NES separation pot; EPSM; mode-aware plugin port relabeling.
+   Σ(pins) == the reference is exact by construction — the fidelity proof).
+6. **NES 5-mono — DONE (the "does not sum" isolation mode).** `channelExportMode == 3` (IndividualMono)
+   reports the 5 core channels (Square1/Square2/Triangle/Noise/DMC) as raw mono stems via a new
+   `NesSoundMixer::GetCoreChannelLevels` (each channel's `GetChannelOutput` — the pre-DAC linear level —
+   per-channel scaled ×1024 / ×128-for-DMC to ~½ int16, through the same 96k-blip→Hermite path). Reuses
+   the step-5 capture machinery (`SetChannelCapture` is now mode-driven; `MaxCaptureStreams`/
+   `kMaxChannelStreams` grew to 5); `finishBlock`/`renderAudioPerChannel`/`menuDefs` unchanged. TS clamp
+   widened to `clampedInt(0,3,0)`. `export-nes-mono.ts` writes 5 mono + one 5-channel WAV. Guarded by
+   `app-play-nes-mono.test.ts` (real isolation: ch1→Square1, ch3→Triangle, ch4→Noise each light only their
+   own stream). **Remaining:** the per-mapper expansion sub-channel taps (VRC6 pulse/saw, VRC7 6×FM, N163,
+   … inside each chip's `ClockAudio`) — deferred: no expansion-chip ROM is committed to test them, and
+   VRC7's emu2413 core is the one large tap.
 7. **Follow-ons** (decisions permitting) — upstream-vs-diff for the SameBoy patch; NES-in-plugin
    (mono-lane packing); the NES separation pot; EPSM; mode-aware plugin port relabeling.

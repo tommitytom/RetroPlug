@@ -143,14 +143,13 @@ void MesenNesSystem::onActivate(double sampleRate) {
         n8Role_ = std::make_unique<NesN8MidiRole>();
         n8Role_->onAttach(*nesConsole);
 
-        // Per-channel export (spec/10 §5): when the "mesen" role selected StereoModPins (mode 1), arm the
-        // sound mixer's pin tap so channelLayout() exposes the 3 mono pin streams to renderAudioPerChannel.
-        // Mode 2 (native/test-only) adds a 4th mix-reference stream for the fidelity test. (CLI-only; a
-        // normal Mix build never touches this and stays byte-identical.)
+        // Per-channel export (spec/10 §5/§5b): arm the sound mixer's tap so channelLayout() exposes the
+        // per-mode streams to renderAudioPerChannel — mode 1 = 3 pins, mode 2 = pins + mix-reference
+        // (native/test-only), mode 3 = the 5 individual core channels. (CLI-only; a normal Mix build never
+        // touches this and stays byte-identical.)
         if (config_.channelExportMode >= 1) {
             nesMixer_ = nesConsole->GetSoundMixer();
-            nesMixer_->SetChannelCapture(true, static_cast<std::uint32_t>(sampleRate),
-                                         /*withReference=*/config_.channelExportMode == 2);
+            nesMixer_->SetChannelCapture(config_.channelExportMode, static_cast<std::uint32_t>(sampleRate));
             channelCapture_ = true;
         }
     }
@@ -203,10 +202,9 @@ void MesenNesSystem::onSampleRateChanged(double sampleRate) {
         audioCfg.SampleRate = static_cast<uint32_t>(sampleRate);
         emu_->GetSettings()->SetAudioConfig(audioCfg);
     }
-    // Re-arm the pin tap at the new host rate (re-inits the per-stream resamplers).
+    // Re-arm the tap at the new host rate (re-inits the per-stream resamplers).
     if (channelCapture_ && nesMixer_) {
-        nesMixer_->SetChannelCapture(true, static_cast<std::uint32_t>(sampleRate),
-                                     /*withReference=*/config_.channelExportMode == 2);
+        nesMixer_->SetChannelCapture(config_.channelExportMode, static_cast<std::uint32_t>(sampleRate));
     }
 }
 
@@ -369,6 +367,10 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
 
 std::vector<ChannelStream> MesenNesSystem::channelLayout() const {
     if (channelCapture_) {
+        // Mode 3 (§5b): the 5 individual core channels as raw mono stems ("does not sum").
+        if (config_.channelExportMode == 3) {
+            return {{"Square1", false}, {"Square2", false}, {"Triangle", false}, {"Noise", false}, {"DMC", false}};
+        }
         // The two 2A03 stereo-mod output pins + the lumped expansion term, as mono streams (spec/10 §5).
         // Mode 2 (native/test-only) appends the mix-reference stream for the fidelity test.
         if (config_.channelExportMode == 2) {
