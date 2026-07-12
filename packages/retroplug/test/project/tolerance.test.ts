@@ -1,8 +1,8 @@
 // Config validation: parseConfig validates STRICTLY (unknown keys stripped) and coerces
-// malformed values. Forward-tolerance across greenfield versions is field DEFAULTS (an
+// malformed values. Forward-tolerance across config versions is field DEFAULTS (an
 // old config missing a newer field gets its default) — not passthrough. Unknown fields
 // from a *different* writer (native C++'s richer shape) are a translation concern for
-// the real adapter, and a *newer* greenfield writer is refused by version detection, so
+// the real adapter, and a *newer* writer is refused by version detection, so
 // an older reader never needs to preserve unknowns. Breaking format changes bump the
 // version and migrate at the load seam (migrateProjectRaw; e.g. v1→v2 backfills `core`).
 import { test, expect } from "../../testing/harness";
@@ -28,7 +28,7 @@ test("strict: unknown fields are stripped, known fields kept", () => {
       {
         platform: "gb",
         romPath: "/a.gb",
-        model: 5, // a native flat field greenfield doesn't model
+        model: 5, // a native flat field the TS side doesn't model
         highpass: 2,
         roles: [{ kind: "lsdj-sync", config: { mode: 2, tempoDivisor: 1 } }], // known field
       },

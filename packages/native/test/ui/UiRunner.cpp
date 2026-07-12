@@ -1,14 +1,14 @@
-// retroplug-greenfield-ui-test: a TypeScript-bundle runner for the greenfield headless UI harness.
+// retroplug-ui-test: a TypeScript-bundle runner for the headless UI harness.
 //
-// The greenfield twin of packages/native/test/ui/UiTsRunner.cpp, but wired to the GREENFIELD test
+// The counterpart of packages/native/test/ui/UiTsRunner.cpp, but wired to the test
 // conventions (like retroplug-host): the TS harness self-reports TAP via console.log and sets
 // the exit code through globalThis.tjs.exit — so this runner just boots the harness, installs the
 // `retroplug-ui` (`ui.*`) namespace + the tjs.exit hook, evals the test bundle, and drives the JS job
-// loop until the harness exits. The harness boots the greenfield React UI on a headless software LVGL
+// loop until the harness exits. The harness boots the React UI on a headless software LVGL
 // display (RenderCore) driven by the BackendFacade RPC (UiHarness). Only the render-tree
 // surface is exposed; system state is driven through the stores over the bound BackendFacade RPC.
 //
-//   retroplug-greenfield-ui-test --test <bundle.js>
+//   retroplug-ui-test --test <bundle.js>
 
 #include <cstdint>
 #include <cstdio>
@@ -29,7 +29,7 @@ extern "C" {
 namespace {
 
 // Owned via a raw pointer, NOT a static std::unique_ptr, and deliberately so.
-// The greenfield harness signals completion with tjs.exit(code); txiki's native
+// The harness signals completion with tjs.exit(code); txiki's native
 // tjs.exit calls libc exit(), which runs static destructors. A static unique_ptr
 // here would then tear the harness down — JS_FreeRuntime -> GC finalizers ->
 // ~BasicComponent — *reentrantly*, while a JS call frame (the tjs.exit call
@@ -291,7 +291,7 @@ void installUiNamespace(JSContext* ctx) {
     JS_FreeValue(ctx, global);
 }
 
-// globalThis.tjs.exit — the greenfield harness sets the exit code through it (mirrors
+// globalThis.tjs.exit — the harness sets the exit code through it (mirrors
 // retroplug-host). Override any txiki-provided exit so we record the code and return it.
 void installExitHook(JSContext* ctx) {
     JSValue global = JS_GetGlobalObject(ctx);
@@ -308,12 +308,12 @@ void installExitHook(JSContext* ctx) {
 
 int runUiTestFile(const std::string& jsPath) {
     // Boot the harness FIRST: it owns the single JS runtime (LvglJsEngine) + the headless display +
-    // the BackendFacade RPC bridge + the greenfield UI bundle. The test bundle runs IN this runtime.
+    // the BackendFacade RPC bridge + the UI bundle. The test bundle runs IN this runtime.
     try {
         g_harness = new rpuigf::UiHarness();
-        if (!g_harness->boot()) { std::fprintf(stderr, "greenfield UI harness boot failed\n"); return 1; }
+        if (!g_harness->boot()) { std::fprintf(stderr, "UI harness boot failed\n"); return 1; }
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "greenfield UI harness boot: %s\n", e.what());
+        std::fprintf(stderr, "UI harness boot: %s\n", e.what());
         return 1;
     }
 

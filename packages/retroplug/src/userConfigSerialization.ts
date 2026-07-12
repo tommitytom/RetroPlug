@@ -1,6 +1,6 @@
 // config.json parse/serialize. The on-disk shape mirrors native's UserConfigJson —
 // { schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom, sramAutoSave }
-// — except greenfield renames native's `sramMirror` key to `sramAutoSave` (the string
+// — except the TS side renames native's `sramMirror` key to `sramAutoSave` (the string
 // values still match native's enum). Reads stay tolerant: a missing field takes its
 // default (additive), an unknown one is stripped; malformed / non-object / newer-than-us
 // yield null (the store keeps its current value, mirroring native's "retain previous

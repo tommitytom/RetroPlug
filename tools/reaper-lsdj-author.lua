@@ -1,6 +1,6 @@
--- reaper-lsdj-greenfield-author.lua
+-- reaper-lsdj-author.lua
 --
--- Author a greenfield LSDj DAW-timing project and save it. The greenfield twin of the legacy
+-- Author an LSDj DAW-timing project and save it. The counterpart of the legacy
 -- reaper-lsdj-{midi,arduinoboy}-author.lua trio, parameterized by RP_SCENARIO:
 --
 --   midi-metro       empty RetroPlug MIDI item; host transport clocks MidiSync (mode 1). 8 s.
@@ -8,13 +8,13 @@
 --                    (disable); MidiSyncArduinoboy (mode 2). 8 s.
 --   midi-drift       like midi-metro but long (REAPER_AUTHOR_DURATION, default 180 s) for per-beat drift.
 --
--- Same two-track shape as legacy: track 1 = the GREENFIELD plugin ("RetroPlug", pan hard-L),
+-- Same two-track shape as legacy: track 1 = the plugin ("RetroPlug", pan hard-L),
 -- track 2 = ReaSynth click (pan hard-R, one short C-5 per quarter beat) → the stereo analyzer separates
 -- LSDj (L) from the metronome grid (R). Letting Reaper add the FX by name captures the correct scanned
 -- VST3 GUID. The LSDj project itself loads from the autoloaded .rplg (RETROPLUG_AUTOLOAD_PROJECT), so the
 -- .rpp stays a template; the render re-applies the fixture fresh.
 
-local dest       = os.getenv("REAPER_AUTHOR_DEST") or "/tmp/lsdj_greenfield.rpp"
+local dest       = os.getenv("REAPER_AUTHOR_DEST") or "/tmp/lsdj.rpp"
 local render_dir = os.getenv("REAPER_AUTHOR_RENDER_DIR") or ""
 local scenario   = os.getenv("RP_SCENARIO") or "midi-metro"
 
@@ -29,11 +29,11 @@ local BPM = 120
 local DURATION = 8.0
 local RENDER_STEM
 if scenario == "midi-metro" then
-    RENDER_STEM = "reaper-lsdj-midi-metro-greenfield"
+    RENDER_STEM = "reaper-lsdj-midi-metro"
 elseif scenario == "arduinoboy-metro" then
-    RENDER_STEM = "reaper-lsdj-arduinoboy-metro-greenfield"
+    RENDER_STEM = "reaper-lsdj-arduinoboy-metro"
 elseif scenario == "midi-drift" then
-    RENDER_STEM = "reaper-lsdj-midi-drift-greenfield"
+    RENDER_STEM = "reaper-lsdj-midi-drift"
     DURATION = tonumber(os.getenv("REAPER_AUTHOR_DURATION")) or 180.0
 else
     log("ERROR: unknown RP_SCENARIO " .. scenario)
@@ -43,7 +43,7 @@ end
 reaper.Main_OnCommand(40023, 0)  -- File: New project
 reaper.SetCurrentBPM(0, BPM, false)
 
--- Track 1: the greenfield RetroPlug, panned hard-left.
+-- Track 1: the RetroPlug, panned hard-left.
 reaper.InsertTrackAtIndex(0, true)
 local t_rp = reaper.GetTrack(0, 0)
 reaper.GetSetMediaTrackInfo_String(t_rp, "P_NAME", "RetroPlug", true)

@@ -1,9 +1,9 @@
 // Render an mGB C-major chord to a WAV for the reaper-MCP audio-quality analysis workflow (the
-// greenfield counterpart of legacy `pnpm smoke` → /tmp/cli-smoke.wav). Boots the embedded mGB synth,
+// counterpart of legacy `pnpm smoke` → /tmp/cli-smoke.wav). Boots the embedded mGB synth,
 // stages a three-voice chord (mGB reads one MIDI channel per voice), and dumps the render. Staged by
-// `pnpm reaper:analyze-smoke-greenfield` for spectral / loudness inspection.
+// `pnpm reaper:analyze-smoke` for spectral / loudness inspection.
 //
-//   retroplug-greenfield-cli build/greenfield-cli/analyze-mgb.js [out.wav]
+//   retroplug-cli build/cli/analyze-mgb.js [out.wav]
 import { runSession, hostArgs } from "../session";
 import { encodeWav } from "../wav";
 
@@ -15,7 +15,7 @@ const CHORD: number[][] = [
 ];
 
 runSession((s) => {
-  const out = hostArgs()[0] || "/tmp/cli-smoke-greenfield.wav";
+  const out = hostArgs()[0] || "/tmp/cli-smoke.wav";
 
   const id = s.project.systems.loadMgb();
   if (id == null) throw new Error("loadMgb failed");
@@ -24,5 +24,5 @@ runSession((s) => {
   CHORD.forEach((m) => s.audio.stageMidiIn(m));
   const pcm = s.audio.renderAudio(2000); // the chord rings
   if (!s.backend.writeFile(out, encodeWav(pcm))) throw new Error(`write failed: ${out}`);
-  console.log(`greenfield-cli: mGB C-major chord → ${out}`);
+  console.log(`cli: mGB C-major chord → ${out}`);
 });

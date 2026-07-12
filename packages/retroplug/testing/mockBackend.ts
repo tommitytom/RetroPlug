@@ -1,4 +1,4 @@
-// In-memory Backend double for greenfield tests. No disk, no native: a Map of
+// In-memory Backend double for tests. No disk, no native: a Map of
 // canonical-path -> bytes, a fixed config dir, and a lexical canonicalizer.
 // Deterministic and inspectable — seed files, read them back, list what's on
 // "disk". This is what lets the whole application layer be tested with `tjs run`

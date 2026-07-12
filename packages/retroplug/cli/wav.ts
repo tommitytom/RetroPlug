@@ -1,4 +1,4 @@
-// A tiny RIFF/PCM16 WAV encoder for the greenfield CLI. The greenfield backend has no WAV writer (every
+// A tiny RIFF/PCM16 WAV encoder for the CLI. The backend has no WAV writer (every
 // one in the tree is native/legacy-only), and createAudioDriver().renderAudio(ms) hands back raw
 // interleaved-stereo Float32 PCM — so a session encodes the WAV itself and persists it via
 // backend.writeFile(). Byte layout mirrors packages/native/cli/Wav.hpp (16-bit PCM, little-endian).

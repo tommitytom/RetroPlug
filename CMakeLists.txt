@@ -57,7 +57,7 @@ if(RETROPLUG_SANITIZE)
 endif()
 
 # Optional DSP-thread profiling instrumentation (spec/08-profiling.md). Like RETROPLUG_SANITIZE, use a
-# SEPARATE build dir (build-prof/, via tools/run-greenfield-profile.sh) — never the load-bearing build/.
+# SEPARATE build dir (build-prof/, via tools/run-profile.sh) — never the load-bearing build/.
 # Activates the bare-QuickJS counting allocator + the dsp* profiling RPCs (DspRuntime.cpp guards on the
 # RETROPLUG_PROFILE macro), and adds -g globally so valgrind (DHAT/Callgrind) attributes into quickjs.c.
 # Set here, before the dep subdirectories, so deps + src all get -g. The default build/ and the shipped
@@ -270,7 +270,7 @@ add_subdirectory(deps/catch2 "${CMAKE_BINARY_DIR}/deps/catch2" EXCLUDE_FROM_ALL)
 # + the DPF plugin + the test host / cli / ui-test.
 add_subdirectory(packages/native native)
 
-# SDL2 gamepad input for greenfield: link onto its UI aggregator so every UI-bearing greenfield variant
+# SDL2 gamepad input: link onto the UI aggregator so every UI-bearing variant
 # (clap/vst3/jack) gets the GamepadManager poll compiled into FILES_UI. DSP-only outputs never see SDL.
 if(TARGET retroplug-ui)
     target_link_libraries(retroplug-ui PUBLIC PkgConfig::SDL2)

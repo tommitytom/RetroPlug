@@ -33,7 +33,7 @@ struct EngineFrame {
     std::vector<std::uint8_t> data;
 };
 
-// The single-threaded core of the greenfield host: owns the Project of live systems and the DSP
+// The single-threaded core of the host: owns the Project of live systems and the DSP
 // role kernel, and knows nothing about audio threads, queues, or RPC. Every op runs "now, on the
 // calling thread." Removed/displaced cores are RETURNED to the caller (who deletes them, or routes
 // them back across a thread) — the Engine never frees on a hot path. No atomics: transport + ppq

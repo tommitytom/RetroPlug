@@ -90,7 +90,7 @@ for (const { file, slug } of tests) {
   // path convention (it canonicalizes stored paths to '/'). On Windows mkdtempSync
   // yields backslashes; both node fs and the native host accept '/' there. No-op
   // elsewhere. Without this, path round-trip assertions mismatch on Windows.
-  const cfgDir = mkdtempSync(join(tmpdir(), "rp-greenfield-")).replaceAll("\\", "/");
+  const cfgDir = mkdtempSync(join(tmpdir(), "rp-")).replaceAll("\\", "/");
 
   try {
     buildSync({

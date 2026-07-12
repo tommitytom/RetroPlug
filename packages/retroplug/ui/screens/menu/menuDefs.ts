@@ -1,4 +1,4 @@
-// The menu trees, ported from legacy menuDefs.tsx. Every leaf drives a greenfield store method; current
+// The menu trees, ported from legacy menuDefs.tsx. Every leaf drives a store method; current
 // values are baked into labels and recomputed each render (there's no separate "checked" state — the
 // label IS the display). Actions still gated on a deferred backend surface (the bindings editor) are
 // omitted here, noted where their submenu would list them.

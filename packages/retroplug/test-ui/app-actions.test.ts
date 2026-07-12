@@ -38,5 +38,5 @@ test("the gamepad opens the menu and cycles focus between instances (app-action 
   expect(ui.findByTestId("dim-0")).toBe(null);
   expect(ui.findByTestId("dim-1") != null).toBeTruthy();
 
-  ui.snapshotPng("/tmp/greenfield-ui-app-actions.png");
+  ui.snapshotPng("/tmp/ui-app-actions.png");
 });

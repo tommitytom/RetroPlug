@@ -1,4 +1,4 @@
-// appStores.ts — the composition root for the greenfield store graph.
+// appStores.ts — the composition root for the store graph.
 //
 // One place that builds the full store graph over a Backend, so every host constructs it identically
 // instead of re-deriving pluginControlPlane.ts's sequence. Pure — no React, no DSP. Wiring the DSP stays
@@ -13,7 +13,7 @@
 //
 // Future unification: the plugin's control-plane bundle (pluginControlPlane.ts) still composes its stores
 // inline because the plugin is headless today — there's no co-resident UI context to share a graph with.
-// When the greenfield plugin gains an editor, route its composition through composeAppStores too so the
+// When the plugin gains an editor, route its composition through composeAppStores too so the
 // control plane and the UI observe ONE graph.
 
 import { createRealBackend } from "./realBackend";
@@ -30,7 +30,7 @@ import { FileSelection } from "./fileSelection";
  *  `systems` = the systems-structure list; the rest name their store. */
 export type StoreChannel = "project" | "systems" | "recent" | "userConfig" | "bindings";
 
-/** The full greenfield store graph, plus the shared backend + role registry the stores hang off. */
+/** The full store graph, plus the shared backend + role registry the stores hang off. */
 export interface AppStores {
   backend: ControlPlaneBackend;
   registry: RoleRegistry;

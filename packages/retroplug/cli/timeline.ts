@@ -1,4 +1,4 @@
-// The greenfield CLI's timed-event Timeline: MIDI/event "scripting" authored in TypeScript, not JSON. A
+// The CLI's timed-event Timeline: MIDI/event "scripting" authored in TypeScript, not JSON. A
 // session builds a Timeline fluently, then renderTimeline() advances the audio render in chunks —
 // rendering up to each event's scheduled ms, firing it against the AudioDriver, and continuing — and
 // returns the concatenated PCM (encode it with cli/wav.ts). Mirrors the legacy JSON CLI's advance loop

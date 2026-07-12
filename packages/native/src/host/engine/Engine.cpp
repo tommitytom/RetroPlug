@@ -15,7 +15,7 @@
 
 namespace {
 
-// Read-only empties the kernel's per-block button/key inputs default to. The greenfield host
+// Read-only empties the kernel's per-block button/key inputs default to. The host
 // doesn't yet feed the kernel per-block buttons/keys.
 const std::vector<DspRuntime::ButtonIn> kNoButtons;
 const std::vector<DspRuntime::KeyIn>    kNoKeys;

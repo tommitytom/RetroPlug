@@ -40,7 +40,7 @@ test("a menu row shows the hover bar when the pointer moves over it", () => {
   console.log(`hover bg=${JSON.stringify(after)} focus bar=${JSON.stringify(focusBar)}`);
   expect(after.b < focusBar.b).toBeTruthy();
 
-  ui.snapshotPng("/tmp/greenfield-ui-hover.png");
+  ui.snapshotPng("/tmp/ui-hover.png");
 
   // Moving to blank space clears the hover.
   ui.moveMouse(Math.floor(row.width / 2), row.y + row.height * 8);

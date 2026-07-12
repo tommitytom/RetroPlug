@@ -1,13 +1,13 @@
-// retroplug-greenfield-cli — a standalone txiki/QuickJS executable that runs a greenfield session
+// retroplug-cli — a standalone txiki/QuickJS executable that runs a session
 // bundle over a REAL `Backend`. No Node at runtime: the binary embeds the txiki host + the emulator
 // cores, evals one pre-bundled session `.js` (authored in TypeScript, esbuild-bundled to JS by
-// tools/build-greenfield-session.js), and returns its exit code.
+// tools/build-session.js), and returns its exit code.
 //
-//   retroplug-greenfield-cli <session.js>
+//   retroplug-cli <session.js>
 //
 // It binds the same JS surface the test host (src/main.cpp) and the plugin expose — the Backend over
 // globalThis[Symbol.for("plugin")].__rpcSend, console.log -> stdout, and globalThis.tjs.exit(code) —
-// so a session reuses the greenfield control-plane API (createRealBackend / ProjectStore /
+// so a session reuses the control-plane API (createRealBackend / ProjectStore /
 // createAudioDriver) unchanged. Deliberately a near-clone of src/main.cpp's host body; a shared
 // host-run helper can be factored later if a third entry point appears.
 
@@ -56,8 +56,8 @@ std::string slurp(const std::string& path) {
 int main(int argc, char** argv) try {
     if (argc < 2 || argv[1][0] == '\0') {
         std::fprintf(stderr,
-            "usage: retroplug-greenfield-cli <session.js>\n"
-            "  Runs a pre-bundled greenfield session (see tools/build-greenfield-session.js).\n");
+            "usage: retroplug-cli <session.js>\n"
+            "  Runs a pre-bundled session (see tools/build-session.js).\n");
         return 2;
     }
     const std::string sessionPath = argv[1];

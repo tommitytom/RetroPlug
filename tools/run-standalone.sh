@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
 #
-# Run the GREENFIELD retroplug standalone (JACK target) headlessly — the greenfield twin of
-# run-standalone.sh:
+# Run the retroplug standalone (JACK target) headlessly:
 #   * Xvfb provides a virtual display
 #   * jackd dummy backend provides an audio server with no real I/O
 #   * the screenshot env var dumps PNGs of the LVGL screen periodically
 #
-# The window boots the greenfield React UI (start menu → grid + menu) over the plugin's real Engine.
+# The window boots the React UI (start menu → grid + menu) over the plugin's real Engine.
 # Designed for agent workflows on hosts with no display or audio hardware. Cleans up Xvfb/jackd on exit.
 #
 # Usage:
-#   tools/run-standalone-greenfield.sh                    # screenshot to /tmp/retroplug.png after 4s
-#   tools/run-standalone-greenfield.sh /tmp/x.png 6       # custom path + 6s run
-#   tools/run-standalone-greenfield.sh /tmp/x.png 6 250   # 6s with 250ms screenshot interval
+#   tools/run-standalone.sh                    # screenshot to /tmp/retroplug.png after 4s
+#   tools/run-standalone.sh /tmp/x.png 6       # custom path + 6s run
+#   tools/run-standalone.sh /tmp/x.png 6 250   # 6s with 250ms screenshot interval
 #
 # Drive input during the run via tools/standalone-key.sh with RETROPLUG_WINDOW_NAME="RetroPlug".
 #
@@ -38,7 +37,7 @@ done
 
 BIN="$REPO_DIR/build/bin/retroplug"
 if [ ! -x "$BIN" ]; then
-    echo "building greenfield standalone..."
+    echo "building standalone..."
     cmake --build "$REPO_DIR/build" --target retroplug-jack -j"$(nproc)" >/dev/null
 fi
 

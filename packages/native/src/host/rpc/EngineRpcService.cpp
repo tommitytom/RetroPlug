@@ -153,9 +153,9 @@ bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {
 
 // Like the reads above, getFrame reads the owned registry by id (the UI displays frames while audio
 // plays) — no guard, no findSystem walk.
-GreenfieldFrame EngineRpcService::getFrame(std::uint32_t id) {
+RpcFrame EngineRpcService::getFrame(std::uint32_t id) {
     const EngineFrame f = engine_.getFrame(id);
-    GreenfieldFrame out;
+    RpcFrame out;
     out.width = f.width;
     out.height = f.height;
     out.published = f.published;
@@ -331,7 +331,7 @@ void EngineRpcService::accumulateMidiOut() {
     // Engine::midiOut() holds only the block just rendered (cleared at the top of the next processBlock),
     // so copy it out now. Usually empty (only an armed LSDj MI.OUT system emits) — cheap when so.
     for (const auto& mo : engine_.midiOut()) {
-        GreenfieldMidiOut g;
+        RpcMidiOut g;
         g.system = mo.system;
         g.frame  = mo.frame;
         const auto* p = reinterpret_cast<const std::byte*>(mo.data.data());
@@ -340,7 +340,7 @@ void EngineRpcService::accumulateMidiOut() {
     }
 }
 
-std::vector<GreenfieldMidiOut> EngineRpcService::drainMidiOut() {
+std::vector<RpcMidiOut> EngineRpcService::drainMidiOut() {
     return std::exchange(accumMidiOut_, {});  // return the window's accumulation and reset it
 }
 

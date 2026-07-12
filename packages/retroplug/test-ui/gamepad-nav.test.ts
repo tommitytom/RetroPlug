@@ -73,5 +73,5 @@ test("the gamepad navigates the start menu, adds a system, then opens + drives t
   const afterStick = ui.focused();
   expect(afterStick != null && afterStick.text !== beforeStick!.text).toBeTruthy();
 
-  ui.snapshotPng("/tmp/greenfield-ui-gamepad-nav.png");
+  ui.snapshotPng("/tmp/ui-gamepad-nav.png");
 });

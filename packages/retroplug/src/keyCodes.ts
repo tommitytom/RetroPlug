@@ -1,4 +1,4 @@
-// DPF keyboard codes → Game Boy joypad buttons — the greenfield game-input resolver.
+// DPF keyboard codes → Game Boy joypad buttons — the game-input resolver.
 //
 // The "key" event bus delivers raw DPF/DGL key codes (arrows in the 0xE03x band, ASCII as its
 // codepoint). The bindings model (bindingMap.ts / BindingsStore.resolvedBindings) speaks SYMBOLIC key

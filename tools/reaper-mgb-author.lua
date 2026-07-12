@@ -1,18 +1,18 @@
--- reaper-mgb-greenfield-author.lua
+-- reaper-mgb-author.lua
 --
--- Author the greenfield mgb_smoke test project programmatically and save it.
--- Run via: reaper tools/reaper-mgb-greenfield-author.lua
+-- Author the mgb_smoke test project programmatically and save it.
+-- Run via: reaper tools/reaper-mgb-author.lua
 -- Output path comes from the REAPER_AUTHOR_DEST env var so the wrapper
 -- controls where it lands.
 --
 -- Identical content to reaper-mgb-author.lua (one track, one C-major chord),
--- but instantiates the GREENFIELD plugin by its distinct display name
+-- but instantiates the plugin by its distinct display name
 -- ("RetroPlug") and renders to a distinct stem so the two smokes
 -- never collide. Letting Reaper add the FX (rather than hand-authoring the
 -- .rpp) is what captures the correct scanned VST3 GUID + the plugin's getState
 -- chunk — the hand-derived UID is exactly what rendered silent before.
 
-local dest = os.getenv("REAPER_AUTHOR_DEST") or "/tmp/mgb_smoke_greenfield.rpp"
+local dest = os.getenv("REAPER_AUTHOR_DEST") or "/tmp/mgb_smoke.rpp"
 local render_dir = os.getenv("REAPER_AUTHOR_RENDER_DIR") or ""
 
 -- Tee status to a log file so the headless wrapper can read it
@@ -32,7 +32,7 @@ reaper.InsertTrackAtIndex(0, true)
 local track = reaper.GetTrack(0, 0)
 reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "RetroPlug", true)
 
--- Add the greenfield RetroPlug VST3i. TrackFX_AddByName respects the standard
+-- Add the RetroPlug VST3i. TrackFX_AddByName respects the standard
 -- prefix: "VST3i:" forces VST3 instrument matching. The name after it is the
 -- plugin's DISTRHO_PLUGIN_NAME ("RetroPlug") — distinct from legacy.
 local fxidx = reaper.TrackFX_AddByName(track, "VST3i:RetroPlug", false, -1)
@@ -59,7 +59,7 @@ reaper.MIDI_Sort(take)
 -- target expects.
 if render_dir ~= "" then
     reaper.GetSetProjectInfo_String(0, "RENDER_FILE", render_dir, true)
-    reaper.GetSetProjectInfo_String(0, "RENDER_PATTERN", "reaper-mgb-smoke-greenfield", true)
+    reaper.GetSetProjectInfo_String(0, "RENDER_PATTERN", "reaper-mgb-smoke", true)
 end
 reaper.GetSetProjectInfo(0, "RENDER_SETTINGS", 0, true)        -- master mix
 reaper.GetSetProjectInfo(0, "RENDER_BOUNDSFLAG", 1, true)      -- entire project

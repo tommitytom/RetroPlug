@@ -1,8 +1,8 @@
-// Build the greenfield plugin's control-plane bundle (pluginControlPlane.ts) for embedding as
+// Build the plugin's control-plane bundle (pluginControlPlane.ts) for embedding as
 // bytecode. Mirrors run-native-tests.mjs: esbuild the DSP role kernel to an IIFE and inject it as
 // __DSP_KERNEL_BUNDLE__, then esbuild the control plane to an ES module CMake compiles with tjsc.
 //
-//   node tools/build-greenfield-controlplane.js OUT.js
+//   node tools/build-controlplane.js OUT.js
 const { buildSync } = require("esbuild");
 const { resolve } = require("path");
 

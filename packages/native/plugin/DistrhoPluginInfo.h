@@ -1,6 +1,5 @@
 // DPF identity for the RetroPlug plugin. The DSP runs the Engine directly. These are the canonical
-// name / URI / UNIQUE_ID / CLAP_ID — reverted from the transitional "…-greenfield" strings once the
-// legacy plugin was removed, so existing DAW projects that reference RetroPlug resolve. DPF requires
+// name / URI / UNIQUE_ID / CLAP_ID, so existing DAW projects that reference RetroPlug resolve. DPF requires
 // this header at a fixed include path (the plugin's own include dir is ordered first).
 #pragma once
 
@@ -13,10 +12,10 @@
 
 #define DISTRHO_PLUGIN_IS_RT_SAFE  1
 #define DISTRHO_PLUGIN_IS_SYNTH    1
-#define DISTRHO_PLUGIN_HAS_UI      1   // the greenfield React UI, on the shared LVGL editor widget
+#define DISTRHO_PLUGIN_HAS_UI      1   // the React UI, on the shared LVGL editor widget
 
 // Custom OpenGL toolkit: the generic dpf.js LVGL top-level widget (GL flush + keypad/pointer indevs +
-// DPF→LVGL input translation). The editor (PluginGreenfieldUI.cpp) subclasses it.
+// DPF→LVGL input translation). The editor (PluginUI.cpp) subclasses it.
 #define DISTRHO_UI_USE_CUSTOM          1
 #define DISTRHO_UI_CUSTOM_INCLUDE_PATH "LVGL.hpp"   // relative to dpf/distrho/DistrhoUI.hpp
 #define DISTRHO_UI_CUSTOM_WIDGET_TYPE  DGL_NAMESPACE::LVGLTopLevelWidget
@@ -24,7 +23,7 @@
 #define DISTRHO_UI_DEFAULT_HEIGHT      432
 // User-resizable: setGeometryConstraints(480,432) becomes the min floor (not a fixed size), so the editor
 // can grow to fit a multi-instance grid, and a Wayland tiling WM tiles it instead of floating a fixed-size
-// window. PluginGreenfieldUI drives setSize to fit the grid + detects a tiling clamp in onResize.
+// window. PluginUI drives setSize to fit the grid + detects a tiling clamp in onResize.
 #define DISTRHO_UI_USER_RESIZABLE      1
 
 // Native OS file dialog: enables UI::openFileBrowser + the uiFileBrowserSelected callback (the menu's
@@ -41,7 +40,7 @@
 #define DISTRHO_PLUGIN_WANT_PROGRAMS    0
 
 // In-process editor↔DSP access: enables UI::getPluginInstancePointer() so the editor reaches the shared
-// host (GreenfieldSharedDSP). All greenfield formats (clap/vst3/jack) link DSP+UI in one binary.
+// host. All plugin formats (clap/vst3/jack) link DSP+UI in one binary.
 #define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1
 
 // The canonical RetroPlug 4-char ids (VST3/AU); DAW projects match on UNIQUE_ID.

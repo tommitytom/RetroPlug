@@ -2,7 +2,7 @@
 // thread plays. The control thread builds + activates the SameBoySystem off-thread and ships the raw
 // pointer via the command ring; the audio thread does an alloc-free adopt/remove into the Project and
 // hands removed cores back through the release ring; the control thread drains + deletes them. Under
-// the sanitizers (tools/run-greenfield-sanitizer.sh) this proves the handoff is race-free (TSan) and
+// the sanitizers (tools/run-sanitizer.sh) this proves the handoff is race-free (TSan) and
 // leak/UAF-free (ASan). Here we assert the deterministic effects: systemCount 1→2→1 + one released
 // core freed, plus a coarse energy check that the concurrently-added core actually renders.
 import { test, expect } from "../testing/harness";

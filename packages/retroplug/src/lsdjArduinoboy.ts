@@ -1,6 +1,6 @@
 // The Arduinoboy MIDIOUT (MI.OUT) decoder for the `lsdj-sync` role's mode 7 — the TS port of the
 // native ArduinoboyMaster role (packages/native/src/system/sameboy/roles/ArduinoboyMaster.{hpp,cpp}).
-// Per greenfield's "native owns bytes, TS owns meaning": native captures LSDj's raw outgoing serial
+// Per the "native owns bytes, TS owns meaning" split: native captures LSDj's raw outgoing serial
 // bytes and feeds them to the kernel (ctx.serialOut); this module turns them into host MIDI.
 //
 // Two layers, both pure + testable in isolation:

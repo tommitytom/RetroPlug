@@ -1,6 +1,6 @@
 // useGamepadInput — route SDL game-controller buttons into the focused emulator's joypad.
 //
-// The native GamepadManager (ticked from PluginGreenfieldUI::uiIdle) polls SDL and pushes each transition
+// The native GamepadManager (ticked from PluginUI::uiIdle) polls SDL and pushes each transition
 // onto the "gamepad-button" bus as [pad, name, press]: pad = SDL_JoystickID (stable across hot-plug),
 // name = SDL canonical button name ("dpright"/"a"/"start"). This hook resolves the name to a Game Boy
 // button via the active GAMEPAD bindings and fires backend.pressButton at the focused system — the exact

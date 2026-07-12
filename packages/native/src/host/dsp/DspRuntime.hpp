@@ -63,7 +63,7 @@ struct DspAllocCounters {
 };
 
 // The DSP-side JS runtime: a second, BARE QuickJS context (no txiki) that runs the whole DSP role
-// KERNEL (packages/retroplug-greenfield/src/dspKernel.ts) per block, fed only by bytes. Native is a
+// KERNEL (packages/retroplug/src/dspKernel.ts) per block, fed only by bytes. Native is a
 // dumb, role-agnostic runner: it loads the kernel as bytecode, pushes the system structure once,
 // hands it per-block input, and reads back SYSTEM-ADDRESSED output sinks — a JSValue never crosses.
 //

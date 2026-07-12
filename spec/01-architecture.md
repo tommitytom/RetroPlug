@@ -1,6 +1,6 @@
 # 01 — Runtime architecture
 
-This is the canonical description of how RetroPlug2 (greenfield) runs: the threads, the
+This is the canonical description of how RetroPlug2 runs: the threads, the
 seams between them, and who owns what. Every other spec doc references this one for the
 command ring, the snapshot registry, the release ring, and the threading model — it defines
 those concepts once, here.
@@ -14,7 +14,7 @@ project model, roles, routing, UI — and drives native through one narrow RPC s
 
 ## 1. The three hosts, one BackendFacade, one `__rpcSend`
 
-There are three C++ entry points. They all compose the **same** [`BackendFacade`](../packages/native-greenfield/src/BackendFacade.hpp)
+There are three C++ entry points. They all compose the **same** [`BackendFacade`](../packages/native/src/BackendFacade.hpp)
 over the **same** wire surface, and they all publish it to JavaScript at exactly one place:
 
 ```
@@ -30,21 +30,21 @@ live JS objects against the context (nothing is serialized to a string). On the 
 
 | Host | Entry point | Audio thread | Display | Purpose |
 |---|---|---|---|---|
-| **DPF plugin** | [`PluginDSP`](../packages/native-greenfield/plugin/PluginDSP.cpp) (DSP) + [`PluginUI`](../packages/native-greenfield/plugin/PluginUI.cpp) (editor) | DPF's `run()` | LVGL editor window | The shipped `clap`/`vst3`/`jack` artifacts |
-| **Native test host** (headless) | [`retroplug-host`](../packages/native-greenfield/src/main.cpp) | spawned `audioThread_` (via `AudioDriverRpcService`) | none | Headless `test:native`; runs a TS bundle to completion. (The GUI standalone is the `jack` variant of the DPF plugin above.) |
-| **Headless UI-test host** | [`UiHarness`](../packages/native-greenfield/test/ui/UiHarness.cpp) | none — `advance(ms)` calls `renderAudio` inline | software LVGL display | `test:ui`; boots the real React bundle |
+| **DPF plugin** | [`PluginDSP`](../packages/native/plugin/PluginDSP.cpp) (DSP) + [`PluginUI`](../packages/native/plugin/PluginUI.cpp) (editor) | DPF's `run()` | LVGL editor window | The shipped `clap`/`vst3`/`jack` artifacts |
+| **Native test host** (headless) | [`retroplug-host`](../packages/native/src/main.cpp) | spawned `audioThread_` (via `AudioDriverRpcService`) | none | Headless `test:native`; runs a TS bundle to completion. (The GUI standalone is the `jack` variant of the DPF plugin above.) |
+| **Headless UI-test host** | [`UiHarness`](../packages/native/test/ui/UiHarness.cpp) | none — `advance(ms)` calls `renderAudio` inline | software LVGL display | `test:ui`; boots the real React bundle |
 
 The bind is literally the same three lines in each — build the RPC server, register the
-methods, define `Symbol.for("plugin")` on the global: see [`PluginDSP.cpp:167-186`](../packages/native-greenfield/plugin/PluginDSP.cpp#L167),
-[`main.cpp:84-97`](../packages/native-greenfield/src/main.cpp#L84), and the UI-harness copy.
+methods, define `Symbol.for("plugin")` on the global: see [`PluginDSP.cpp:167-186`](../packages/native/plugin/PluginDSP.cpp#L167),
+[`main.cpp:84-97`](../packages/native/src/main.cpp#L84), and the UI-harness copy.
 
 ### The plugin's in-process editor handoff
 
 The DPF plugin is a special case worth calling out: **its editor runs on the same QuickJS
 context as its control plane**, not a separate RPC bridge. The DSP side owns a plugin-lifetime
-[`TjsHostRuntime`](../packages/native-greenfield/plugin/PluginDSP.cpp#L38) with `__rpcSend`
+[`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp#L38) with `__rpcSend`
 already bound (in `bootControlPlane`). The UI side reaches it through
-[`SharedDSP`](../packages/native-greenfield/plugin/PluginShared.hpp) —
+[`SharedDSP`](../packages/native/plugin/PluginShared.hpp) —
 `getPluginInstancePointer()` → `getSharedDSP()` → `LvglJsEngine::useExternalHost()` —
 and attaches its LVGL display to that context. So the React UI reaches the backend through the
 existing `Symbol.for("plugin").__rpcSend`; there is no second server. Window-owning seams that
@@ -61,13 +61,13 @@ live in [02-native-host.md](02-native-host.md); the routing at a glance:
 
 | Sub-object | Concern | Thread |
 |---|---|---|
-| `host_` ([`HostRpcService`](../packages/native-greenfield/src/HostRpcService.hpp)) | filesystem, config dir, zip/unzip, LSDj sav codec — stateless, pure | control |
-| `engine_svc_` ([`EngineRpcService`](../packages/native-greenfield/src/EngineRpcService.hpp)) | construct/remove systems, reads, kernel load, MIDI, transport | control (pushes mutations) |
-| `driver_` ([`AudioDriverRpcService`](../packages/native-greenfield/src/AudioDriverRpcService.hpp)) | background audio thread (`startAudio`/`stopAudio`/`audioCaptured`/`drainReleased`) | control; owns `audioThread_` (**test host only**) |
+| `host_` ([`HostRpcService`](../packages/native/src/HostRpcService.hpp)) | filesystem, config dir, zip/unzip, LSDj sav codec — stateless, pure | control |
+| `engine_svc_` ([`EngineRpcService`](../packages/native/src/EngineRpcService.hpp)) | construct/remove systems, reads, kernel load, MIDI, transport | control (pushes mutations) |
+| `driver_` ([`AudioDriverRpcService`](../packages/native/src/AudioDriverRpcService.hpp)) | background audio thread (`startAudio`/`stopAudio`/`audioCaptured`/`drainReleased`) | control; owns `audioThread_` (**test host only**) |
 
 The plugin does not use `driver_` — DPF owns its audio thread and calls a set of **non-wire**
 facade methods directly from C++ (`pluginActivate`/`pluginDeactivate`/`pluginProcessBlock`/
-`stageMidiRaw`, [`BackendFacade.hpp:73-91`](../packages/native-greenfield/src/BackendFacade.hpp#L73)).
+`stageMidiRaw`, [`BackendFacade.hpp:73-91`](../packages/native/src/BackendFacade.hpp#L73)).
 
 ---
 
@@ -79,15 +79,15 @@ goes through the command ring; all audio→control observation goes through the 
 
 | | **Control plane** (main / UI thread) | **Audio thread** (DPF `run()` / spawned `audioThread_`) |
 |---|---|---|
-| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native-greenfield/plugin/PluginDSP.cpp#L38)) | bare DSP context ([`DspRuntime`](../packages/native-greenfield/src/DspRuntime.hpp), owned by `Engine::dsp_`) |
-| Owns | `BackendFacade`, all three RPC services, the TS stores, the editor | the live [`Engine`](../packages/native-greenfield/src/Engine.hpp) + its `Project` of cores + the DSP kernel, **while running** |
+| QuickJS runtime | control-plane txiki host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp#L38)) | bare DSP context ([`DspRuntime`](../packages/native/src/DspRuntime.hpp), owned by `Engine::dsp_`) |
+| Owns | `BackendFacade`, all three RPC services, the TS stores, the editor | the live [`Engine`](../packages/native/src/Engine.hpp) + its `Project` of cores + the DSP kernel, **while running** |
 | Does | issues mutation *requests*; reads snapshots by id; frees released cores | drains the command ring; renders each block; publishes snapshots |
 | Never | dereferences a live `SystemBase`, walks `Project`, frees an audio-owned core | allocates, frees a core, or blocks |
 
 The `Engine` itself is **single-threaded and thread-unaware** — it holds no locks and knows
 nothing about who is calling it. Thread-safety is entirely a property of the two rings and the
 registry that surround it. One control-thread-written bit,
-[`QueuedInvoker::audioThreadOwns_`](../packages/native-greenfield/src/EngineInvoker.hpp#L73),
+[`QueuedInvoker::audioThreadOwns_`](../packages/native/src/EngineInvoker.hpp#L73),
 decides which world currently owns the `Engine`, and therefore who drains the command ring.
 
 ### The seam map
@@ -127,30 +127,30 @@ All three are built on shared-core primitives that survive the legacy deletion:
 
 Every control-plane edit — add/remove/replace a system, load kernel bytecode, stage MIDI, set
 bpm/transport/routing, apply a config field, press a button — is packed into a POD
-[`DspCommand`](../packages/native-greenfield/src/DspCommand.hpp) and pushed onto a single
-`SpscRing<DspCommand, 256>` inside [`QueuedInvoker`](../packages/native-greenfield/src/EngineInvoker.hpp).
+[`DspCommand`](../packages/native/src/DspCommand.hpp) and pushed onto a single
+`SpscRing<DspCommand, 256>` inside [`QueuedInvoker`](../packages/native/src/EngineInvoker.hpp).
 
 **There is no Direct/Queued fork.** An earlier design had two invoker classes (one for the
 quiescent case, one for the running case); they were collapsed into this single path. The header
 states it plainly: *"The ONE mutation path to the Engine — there is no Direct/Queued fork"*
-([`EngineInvoker.hpp:19-27`](../packages/native-greenfield/src/EngineInvoker.hpp#L19)).
+([`EngineInvoker.hpp:19-27`](../packages/native/src/EngineInvoker.hpp#L19)).
 
 The only variable is **who drains the ring**, decided by `audioThreadOwns_`:
 
 - **Running (audio thread owns the Engine):** the producer only pushes. The block driver drains
-  the ring at the top of every block ([`drainInto`](../packages/native-greenfield/src/EngineInvoker.cpp#L106))
+  the ring at the top of every block ([`drainInto`](../packages/native/src/EngineInvoker.cpp#L106))
   and applies each command into the `Engine` before rendering.
 - **Quiescent (control thread owns the Engine):** every push flushes **inline** — `maybeFlush()`
   runs `flush()` = `drainInto(engine_) + reclaimReleased()` immediately after the push
-  ([`EngineInvoker.hpp:67`](../packages/native-greenfield/src/EngineInvoker.hpp#L67),
-  [`.cpp:154-160`](../packages/native-greenfield/src/EngineInvoker.cpp#L154)). The same thread is
+  ([`EngineInvoker.hpp:67`](../packages/native/src/EngineInvoker.hpp#L67),
+  [`.cpp:154-160`](../packages/native/src/EngineInvoker.cpp#L154)). The same thread is
   both producer and consumer, so the SPSC invariant holds trivially, and a quiescent
   `removeSystem` deletes the core synchronously — exactly as a direct call would.
 
 The key consequence: because the quiescent path flushes on **every** push, **the ring is empty
 at the moment ownership is handed to the audio thread**. That is what makes the handoff clean —
-`pluginActivate` / `startAudio` just set the bit ([`BackendFacade.cpp:19-24`](../packages/native-greenfield/src/BackendFacade.cpp#L19),
-[`AudioDriverRpcService.cpp:55-65`](../packages/native-greenfield/src/AudioDriverRpcService.cpp#L55)),
+`pluginActivate` / `startAudio` just set the bit ([`BackendFacade.cpp:19-24`](../packages/native/src/BackendFacade.cpp#L19),
+[`AudioDriverRpcService.cpp:55-65`](../packages/native/src/AudioDriverRpcService.cpp#L55)),
 with no ring to flush.
 
 ### Producers and the drain
@@ -161,14 +161,14 @@ if the ring is full they are simply dropped (a lost edge, never a leak). Heavy c
 **owning heap payload**: `setSystems`/`loadKernel` box a `new`-ed buffer (deleted on drain or, if
 the push fails, immediately); `adoptSystem`/`replaceSystem` push a raw owning `SystemBase*` and
 `release()` the `unique_ptr` on success, or free the build and its registry slot on a full ring
-([`EngineInvoker.cpp:13-102`](../packages/native-greenfield/src/EngineInvoker.cpp#L13)).
+([`EngineInvoker.cpp:13-102`](../packages/native/src/EngineInvoker.cpp#L13)).
 
 The consumer `drainInto(Engine&)` switches on `DspCommand::Kind` and applies each command. System
 lifecycle is done as **alloc-free pointer swaps into the pre-reserved `Project`**: `AddSystem` →
 `adoptSystem`; `ReplaceSystem`/`RemoveSystem` → swap/erase, then hand the displaced core back
-through the release ring ([`.cpp:136-152`](../packages/native-greenfield/src/EngineInvoker.cpp#L136)).
-The two block drivers ([`pluginProcessBlock`](../packages/native-greenfield/src/BackendFacade.cpp#L35)
-and [`audioLoop`](../packages/native-greenfield/src/AudioDriverRpcService.cpp#L32)) share a shape —
+through the release ring ([`.cpp:136-152`](../packages/native/src/EngineInvoker.cpp#L136)).
+The two block drivers ([`pluginProcessBlock`](../packages/native/src/BackendFacade.cpp#L35)
+and [`audioLoop`](../packages/native/src/AudioDriverRpcService.cpp#L32)) share a shape —
 `drainInto` the command ring, then `Engine::processBlock` — differing only in how transport arrives:
 `pluginProcessBlock` sets bpm/playing directly from the DAW's `TimePosition`, while `audioLoop`
 receives them as drained `SetBpm`/`SetTransport` ring commands.
@@ -177,7 +177,7 @@ receives them as drained `SetBpm`/`SetTransport` ring commands.
 
 ## 4. The SnapshotRegistry — the ONE read door
 
-[`SnapshotRegistry`](../packages/native-greenfield/src/SnapshotRegistry.hpp) is how the control
+[`SnapshotRegistry`](../packages/native/src/SnapshotRegistry.hpp) is how the control
 plane observes a system's video frame, savestate, and SRAM **without ever touching a live core**.
 It is an owned, id-keyed store of tear-free triple-buffers. The audio thread copies each live
 core's already-published snapshot into a **registry-owned** buffer at the end of every block
@@ -187,14 +187,14 @@ point — reads are decoupled from the DSP structure and are safe while the audi
 
 This closes a historical bug class where reads were guarded by an `audioRunning_` flag and went
 silently dead in the running plugin; the registry is the fix — reads route through
-[`Engine::readState`/`readSram`/`screenshot`/`getFrame`](../packages/native-greenfield/src/Engine.cpp#L108),
+[`Engine::readState`/`readSram`/`screenshot`/`getFrame`](../packages/native/src/Engine.cpp#L108),
 each of which "never walks Project / the live core".
 
 **Structure.** A fixed-address `std::array<Slot, 64> slots_`. Each `Slot` holds an **atomic `id`**
 (0 = free, so the block thread scans by id with no rehash), a `FrameBufferTriple`, and two
 `MemorySnapshotTriple`s (savestate + SRAM), plus the SRAM slice offset and a sample accumulator.
 
-**Threading contract** ([`SnapshotRegistry.hpp:27-34`](../packages/native-greenfield/src/SnapshotRegistry.hpp#L27)):
+**Threading contract** ([`SnapshotRegistry.hpp:27-34`](../packages/native/src/SnapshotRegistry.hpp#L27)):
 `claim`/`readFrame`/`readState`/`readSram`/`release` run on the **control thread**; `publishAll`
 runs on **whichever thread drives the block** (audio thread while running, control thread on the
 pull-path render). Buffers are allocated at `claim` (control thread, before handoff) and freed at
@@ -203,25 +203,25 @@ thread**. Two ordering rules make this race-free:
 
 - **Publish the slot LAST.** `claim` sizes the frame buffer, seeds state+SRAM from the live
   savestate, and only then does `id.store(..., release)` — so the block thread can't match a
-  half-built slot ([`SnapshotRegistry.cpp:64`](../packages/native-greenfield/src/SnapshotRegistry.cpp#L64)).
+  half-built slot ([`SnapshotRegistry.cpp:64`](../packages/native/src/SnapshotRegistry.cpp#L64)).
   Seeding at claim means a read *right after construct*, before any block renders, returns real
   bytes.
 - **Clear the id FIRST.** `release` does `id.store(0, release)` before freeing the buffers, so a
   stray block-thread scan can never match a slot that is being torn down
-  ([`SnapshotRegistry.cpp:140-147`](../packages/native-greenfield/src/SnapshotRegistry.cpp#L140)).
+  ([`SnapshotRegistry.cpp:140-147`](../packages/native/src/SnapshotRegistry.cpp#L140)).
   `release` only runs once the system is already out of `project.systems()`, so it can't race an
   in-flight `publishAll`.
 
 **Publish cadence.** `publishAll` copies each system's frame **every block** (cheap), and copies
 its savestate+SRAM on a **coarse 0.5 s interval** (`kStateIntervalSec`, matching the core's own
-snapshot cadence) via a per-slot sample accumulator ([`.cpp:68-106`](../packages/native-greenfield/src/SnapshotRegistry.cpp#L68)).
+snapshot cadence) via a per-slot sample accumulator ([`.cpp:68-106`](../packages/native/src/SnapshotRegistry.cpp#L68)).
 It only writes a slot whose system is still in `project.systems()` — exactly the window before
 that system's release.
 
 > The registry currently double-copies: from the core's own tear-free triple into the registry's
 > owned buffer. That second copy exists only because the shared `SystemBase` cannot yet publish
-> straight into the registry; it collapses when the core becomes greenfield-only
-> ([`SnapshotRegistry.hpp:22-25`](../packages/native-greenfield/src/SnapshotRegistry.hpp#L22)). It is
+> straight into the registry; it collapses once the core is legacy-free
+> ([`SnapshotRegistry.hpp:22-25`](../packages/native/src/SnapshotRegistry.hpp#L22)). It is
 > a documented redundancy, not a bug — see [07-migration.md](07-migration.md).
 
 ---
@@ -231,7 +231,7 @@ that system's release.
 The audio thread **cannot free a core** — `delete` is not real-time-safe. So when a lifecycle
 command displaces or removes a system, the audio thread hands the raw `SystemBase*` back to the
 control thread through a second SPSC ring, `SpscRing<DspEvent, 256> released_`
-([`DspEvent`](../packages/native-greenfield/src/DspEvent.hpp) carries a single
+([`DspEvent`](../packages/native/src/DspEvent.hpp) carries a single
 `Kind::SystemReleased{ SystemBase* }`).
 
 The protocol is symmetric with construction:
@@ -242,18 +242,18 @@ The protocol is symmetric with construction:
 | **remove/replace → release** | audio thread erases/swaps the core | `handBackReleased(sys.release())` → push onto the release ring |
 | **drain → free** | control thread reclaims | `reclaimReleased()`: `popReleased()` → `registry_->release(id)` → `unique_ptr` deletes at scope end |
 
-`reclaimReleased` ([`EngineInvoker.cpp:162-169`](../packages/native-greenfield/src/EngineInvoker.cpp#L162))
+`reclaimReleased` ([`EngineInvoker.cpp:162-169`](../packages/native/src/EngineInvoker.cpp#L162))
 frees each released core's snapshot slot **before** the core is deleted, and returns the count
 freed. It runs as part of the inline flush (quiescent) and is exposed on the wire as
 `drainReleased` for the test host to pump while running.
 
 **Leak, don't block.** If the release ring is full (256 undrained releases), the audio thread
 **leaks the core rather than block or free in the render loop** — it logs and moves on
-([`EngineInvoker.cpp:198-208`](../packages/native-greenfield/src/EngineInvoker.cpp#L198)). In
+([`EngineInvoker.cpp:198-208`](../packages/native/src/EngineInvoker.cpp#L198)). In
 practice any host drains far more often than that. Never trading real-time safety for a free is
 the deliberate invariant.
 
-On teardown, `freePending()` ([`.cpp:178-196`](../packages/native-greenfield/src/EngineInvoker.cpp#L178))
+On teardown, `freePending()` ([`.cpp:178-196`](../packages/native/src/EngineInvoker.cpp#L178))
 runs once the audio thread is joined (single accessor again) and **discards** un-applied command
 payloads — built-but-never-adopted cores (and their claimed slots), plus config/bytecode blobs.
 This is the teardown counterpart to `drainInto`, which *applies* pending commands.
@@ -262,11 +262,11 @@ This is the teardown counterpart to `drainInto`, which *applies* pending command
 
 ## 6. The two QuickJS runtimes
 
-Greenfield runs **two** QuickJS runtimes that are never shared:
+The host runs **two** QuickJS runtimes that are never shared:
 
 | | **Control-plane runtime** | **DSP context** |
 |---|---|---|
-| Type | txiki full host ([`TjsHostRuntime`](../packages/native-greenfield/plugin/PluginDSP.cpp#L38)) | bare QuickJS, no txiki ([`DspRuntime`](../packages/native-greenfield/src/DspRuntime.hpp)) |
+| Type | txiki full host ([`TjsHostRuntime`](../packages/native/plugin/PluginDSP.cpp#L38)) | bare QuickJS, no txiki ([`DspRuntime`](../packages/native/src/DspRuntime.hpp)) |
 | Owner | the host (plugin / test host / UI harness) | `Engine::dsp_` |
 | Runs | the TS control-plane bundle: stores, `Backend` adapter, `__rp_*` globals, editor | the DSP role kernel [`dspKernel.ts`](../packages/retroplug/src/dspKernel.ts), compiled to bytecode |
 | Thread | control plane only | whichever thread drives the block |
@@ -286,14 +286,14 @@ The DSP context runs on **both** threads over its lifetime — the control threa
 `renderAudio`, the audio thread once running — so every entry re-anchors QuickJS's stack-overflow
 guard to the current thread with `JS_UpdateStackTop(rt_)` before entering JS, or a call from a
 different stack throws a spurious overflow
-([`DspRuntime.cpp:97-102`](../packages/native-greenfield/src/DspRuntime.cpp#L97)).
+([`DspRuntime.cpp:97-102`](../packages/native/src/DspRuntime.cpp#L97)).
 
 `Engine::processBlock` wires it in: if the kernel is active it builds a `BlockInfo` at the
 block-start ppq, calls `dsp_.processBlock(...)`, fans the `serialIn_`/`buttonOut_` sinks to the
 addressed cores, then zeroes the outputs, runs `runBlock` (the shared
 [`BlockRunner`](../packages/native/src/system/BlockRunner.hpp) + `MultiOutRouter`), and calls
 `registry_.publishAll(...)` — the one place every driver funnels the block
-([`Engine.cpp:74-100`](../packages/native-greenfield/src/Engine.cpp#L74)). The kernel's host MIDI-out
+([`Engine.cpp:74-100`](../packages/native/src/Engine.cpp#L74)). The kernel's host MIDI-out
 is drained by the plugin after the block and written to the DAW.
 
 ---
@@ -336,17 +336,17 @@ lost mutation.
 
 8. **TypeScript owns identity and orchestration; native never mints or decides.** System ids are
    allocated by TS and passed into `constructSystem` — native returns "did it build", never an id
-   ([`EngineRpcService.cpp:71-85`](../packages/native-greenfield/src/EngineRpcService.cpp#L71)).
+   ([`EngineRpcService.cpp:71-85`](../packages/native/src/EngineRpcService.cpp#L71)).
    Duplicate and reload are TS orchestration over `constructSystem`-with-state plus registry reads,
-   not native methods ([`EngineRpcService.cpp:87-90`](../packages/native-greenfield/src/EngineRpcService.cpp#L87)).
+   not native methods ([`EngineRpcService.cpp:87-90`](../packages/native/src/EngineRpcService.cpp#L87)).
    Cores are built bare (`setSniffDefaultRoles(false)`); feature behaviour lives in the TS kernel.
 
 ### Not yet built / deferred
 
 - **`enableStateSnapshot()` is armed only for SameBoy.** The registry's `claim` contract requires a
-  system to have armed its state snapshot (so `stateRegions()` is populated). Greenfield arms it
-  explicitly in [`SameBoyBackend`](../packages/native-greenfield/src/SameBoyBackend.cpp), but the
-  Mesen backend does not — so a greenfield NES/GBA system already gets a slot with empty state
+  system to have armed its state snapshot (so `stateRegions()` is populated). The host arms it
+  explicitly in [`SameBoyBackend`](../packages/native/src/SameBoyBackend.cpp), but the
+  Mesen backend does not — so a NES/GBA system already gets a slot with empty state
   regions, degrading `readSram`/state-based duplicate for Mesen cores **today**. Arm it in
   `MesenBackend` (or centrally in the factory). Tracked in [07-migration.md](07-migration.md).
 - **The registry double-copy** (§4) stands until the shared `SystemBase` can publish directly into
@@ -358,13 +358,13 @@ lost mutation.
 
 | File | Role |
 |---|---|
-| [`BackendFacade.hpp`](../packages/native-greenfield/src/BackendFacade.hpp) | one object per RPC server; routes to the three concern services |
-| [`EngineInvoker.hpp`](../packages/native-greenfield/src/EngineInvoker.hpp) / [`.cpp`](../packages/native-greenfield/src/EngineInvoker.cpp) | `QueuedInvoker` — the command ring + release-ring drain, `audioThreadOwns_` |
-| [`SnapshotRegistry.hpp`](../packages/native-greenfield/src/SnapshotRegistry.hpp) / [`.cpp`](../packages/native-greenfield/src/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishAll/read/release |
-| [`DspEvent.hpp`](../packages/native-greenfield/src/DspEvent.hpp) | the release-ring event (`SystemReleased`) |
-| [`Engine.hpp`](../packages/native-greenfield/src/Engine.hpp) / [`.cpp`](../packages/native-greenfield/src/Engine.cpp) | the single-threaded live-project owner; `processBlock` wiring |
-| [`DspRuntime.hpp`](../packages/native-greenfield/src/DspRuntime.hpp) / [`.cpp`](../packages/native-greenfield/src/DspRuntime.cpp) | the bare DSP QuickJS context + byte-sink thunks |
-| [`PluginDSP.cpp`](../packages/native-greenfield/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
-| [`PluginShared.hpp`](../packages/native-greenfield/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |
-| [`main.cpp`](../packages/native-greenfield/src/main.cpp) | the standalone / native test host |
-| [`AudioDriverRpcService.cpp`](../packages/native-greenfield/src/AudioDriverRpcService.cpp) | the test host's background audio thread + `audioLoop` |
+| [`BackendFacade.hpp`](../packages/native/src/BackendFacade.hpp) | one object per RPC server; routes to the three concern services |
+| [`EngineInvoker.hpp`](../packages/native/src/EngineInvoker.hpp) / [`.cpp`](../packages/native/src/EngineInvoker.cpp) | `QueuedInvoker` — the command ring + release-ring drain, `audioThreadOwns_` |
+| [`SnapshotRegistry.hpp`](../packages/native/src/SnapshotRegistry.hpp) / [`.cpp`](../packages/native/src/SnapshotRegistry.cpp) | the id-keyed read door; claim/publishAll/read/release |
+| [`DspEvent.hpp`](../packages/native/src/DspEvent.hpp) | the release-ring event (`SystemReleased`) |
+| [`Engine.hpp`](../packages/native/src/Engine.hpp) / [`.cpp`](../packages/native/src/Engine.cpp) | the single-threaded live-project owner; `processBlock` wiring |
+| [`DspRuntime.hpp`](../packages/native/src/DspRuntime.hpp) / [`.cpp`](../packages/native/src/DspRuntime.cpp) | the bare DSP QuickJS context + byte-sink thunks |
+| [`PluginDSP.cpp`](../packages/native/plugin/PluginDSP.cpp) | plugin control-plane bring-up + the `run()` block driver |
+| [`PluginShared.hpp`](../packages/native/plugin/PluginShared.hpp) | the in-process editor↔control-plane handoff |
+| [`main.cpp`](../packages/native/src/main.cpp) | the standalone / native test host |
+| [`AudioDriverRpcService.cpp`](../packages/native/src/AudioDriverRpcService.cpp) | the test host's background audio thread + `audioLoop` |

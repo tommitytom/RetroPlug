@@ -21,8 +21,8 @@ class Project;
 // SystemBase. That severs the control plane from the cores: reads never touch the DSP's structure.
 //
 // (The DSP still copies from each core's own tear-free triple, because the shared SystemBase can't
-// be made to publish straight into the registry without changing it. When that core becomes
-// greenfield-only the second copy collapses; the read-side contract here is unaffected.)
+// be made to publish straight into the registry without changing it. When that core publishes
+// straight into the registry the second copy collapses; the read-side contract here is unaffected.)
 //
 // Threading: claim()/readFrame()/readState()/readSram()/release() run on the control thread;
 // publishAll() on whichever thread drives the block (the audio thread while running, the control
