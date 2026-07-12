@@ -1,6 +1,6 @@
 // useCloseGuard — the standalone "confirm on close" seam.
 //
-// The editor's native onClose() (PluginGreenfieldUI) calls __rp_onCloseRequested when the user tries to
+// The editor's native onClose() (PluginUI) calls __rp_onCloseRequested when the user tries to
 // close the window. This hook installs that global: if there are unsaved changes it raises the in-app
 // Save/Discard/Cancel prompt and returns true so native VETOES the close (keeps the window open);
 // otherwise it returns false and the window closes normally. Once the user resolves the prompt, Save /

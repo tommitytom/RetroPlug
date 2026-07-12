@@ -1,4 +1,4 @@
-// Port of legacy test/ts/gb/lsdj/sync_pattern.test.ts onto greenfield: LSDj link-cable sync, proven
+// Port of legacy test/ts/gb/lsdj/sync_pattern.test.ts: LSDj link-cable sync, proven
 // with PER-SYSTEM audio (the new renderAudioPerSystem RPC). Two LSDj instances in the same link group,
 // both authored SYNC=LSDJ, START on the leader only. Link sync is pure GB serial ferrying in the
 // block runner's LinkGroup (no DSP kernel needed), so the follower produces audio ONLY when it

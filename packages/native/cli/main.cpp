@@ -1,13 +1,13 @@
-// retroplug-greenfield-cli — a standalone txiki/QuickJS executable that runs a greenfield session
+// retroplug-cli — a standalone txiki/QuickJS executable that runs a session
 // bundle over a REAL `Backend`. No Node at runtime: the binary embeds the txiki host + the emulator
 // cores, evals one pre-bundled session `.js` (authored in TypeScript, esbuild-bundled to JS by
-// tools/build-greenfield-session.js), and returns its exit code.
+// tools/build-session.js), and returns its exit code.
 //
-//   retroplug-greenfield-cli <session.js>
+//   retroplug-cli <session.js>
 //
 // It binds the same JS surface the test host (src/main.cpp) and the plugin expose — the Backend over
 // globalThis[Symbol.for("plugin")].__rpcSend, console.log -> stdout, and globalThis.tjs.exit(code) —
-// so a session reuses the greenfield control-plane API (createRealBackend / ProjectStore /
+// so a session reuses the control-plane API (createRealBackend / ProjectStore /
 // createAudioDriver) unchanged. Deliberately a near-clone of src/main.cpp's host body; a shared
 // host-run helper can be factored later if a third entry point appears.
 
@@ -87,7 +87,7 @@ int main(int argc, char** argv) try {
             "                       Render a ROM (+.sav/savestate) to WAV (compiled-in; no Node).\n"
             "                       LSDj: --song picks a saved song; --list-songs lists them; a loaded\n"
             "                       LSDj sav auto-detects length (renders to the HFF stop) unless --ms.\n"
-            "  <session.js> [args]  Run a pre-bundled greenfield session by path (dev fallback).\n");
+            "  <session.js> [args]  Run a pre-bundled session by path (dev fallback).\n");
         return 2;
     }
     // A named subcommand (its session is compiled in) wins over a like-named file path.

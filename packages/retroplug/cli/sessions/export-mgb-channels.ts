@@ -6,7 +6,7 @@
 //   (c) eight mono WAVs (per channel L/R)     <prefix>_pulse1-l.wav … _noise-r.wav
 // GB-as-4-stereo-buffers is the source of truth; (a)/(c) derive by pure TS interleave/deinterleave.
 //
-//   retroplug-greenfield-cli build/greenfield-cli/export-mgb-channels.js [outPrefix]
+//   retroplug-cli build/cli/export-mgb-channels.js [outPrefix]
 import { runSession, hostArgs } from "../session";
 import { encodeWav, interleaveStereoStreams, deinterleaveStereo } from "../wav";
 
@@ -21,7 +21,7 @@ const CHORD: number[][] = [
 const CHANNEL_NAMES = ["pulse1", "pulse2", "wave", "noise"];
 
 runSession((s) => {
-  const prefix = hostArgs()[0] || "/tmp/mgb-channels-greenfield";
+  const prefix = hostArgs()[0] || "/tmp/mgb-channels";
 
   const id = s.project.systems.loadMgb();
   if (id == null) throw new Error("loadMgb failed");
@@ -34,7 +34,7 @@ runSession((s) => {
 
   const write = (name: string, bytes: Uint8Array) => {
     if (!s.backend.writeFile(name, bytes)) throw new Error(`write failed: ${name}`);
-    console.log(`greenfield-cli: ${name}`);
+    console.log(`cli: ${name}`);
   };
 
   // (a) one multichannel WAV — the 4 stereo streams interleaved into 8 channels.
@@ -51,5 +51,5 @@ runSession((s) => {
     write(`${prefix}_${base}-r.wav`, encodeWav(r, sr, 1));
   });
 
-  console.log(`greenfield-cli: mGB 4-channel export (@${sr} Hz) → ${prefix}_*`);
+  console.log(`cli: mGB 4-channel export (@${sr} Hz) → ${prefix}_*`);
 });

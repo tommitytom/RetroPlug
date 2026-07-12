@@ -6,7 +6,7 @@
 //   (a) five mono WAVs (one per channel)     <prefix>_square1.wav … _dmc.wav
 //   (b) one 5-channel WAV (all combined)      <prefix>_mono.wav
 //
-//   retroplug-cli build/greenfield-cli/export-nes-mono.js <rom.nes> [outPrefix]
+//   retroplug-cli build/cli/export-nes-mono.js <rom.nes> [outPrefix]
 import { runSession, hostArgs } from "../session";
 import { encodeWav, deinterleaveStereo } from "../wav";
 import { syncDspFromStore } from "../../src/appHost";
@@ -54,7 +54,7 @@ runSession((s) => {
 
   const write = (name: string, bytes: Uint8Array) => {
     if (!s.backend.writeFile(name, bytes)) throw new Error(`write failed: ${name}`);
-    console.log(`greenfield-cli: ${name}`);
+    console.log(`cli: ${name}`);
   };
 
   // (a) one mono WAV per core channel — the left lane carries the signal.
@@ -69,5 +69,5 @@ runSession((s) => {
   }
   write(`${prefix}_mono.wav`, encodeWav(inter, sr, 5));
 
-  console.log(`greenfield-cli: NES 5 core channels (@${sr} Hz) → ${prefix}_*`);
+  console.log(`cli: NES 5 core channels (@${sr} Hz) → ${prefix}_*`);
 });

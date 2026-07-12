@@ -1,8 +1,8 @@
 // The agent-facing ROM-test pattern: a session that DRIVES a real NES and ASSERTS on its state, emitting
 // TAP. This is how you develop a ROM against the CLI — write a session like this, bundle it, run it on
-// retroplug-greenfield-cli, parse the TAP. Tuned to the committed n8-midi.nes (a MIDI→APU synth).
+// retroplug-cli, parse the TAP. Tuned to the committed n8-midi.nes (a MIDI→APU synth).
 //
-//   retroplug-greenfield-cli build/greenfield-cli/rom-test.js <rom>
+//   retroplug-cli build/cli/rom-test.js <rom>
 //
 // NOTE: import test/expect from the harness and register at top level — the harness auto-runs on a
 // microtask and owns the TAP output + tjs.exit. Do NOT wrap the body in runSession() (it would call

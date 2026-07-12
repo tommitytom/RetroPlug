@@ -224,7 +224,7 @@ matching `test-native/author-lsdj-rplg.ts` or `tools/reaper-*-author.lua` change
   ([tools/author-lsdj-rplg.js](../tools/author-lsdj-rplg.js) →
   [test-native/author-lsdj-rplg.ts](../packages/retroplug/test-native/author-lsdj-rplg.ts),
   a cold song-screen `.rplg`) and a parameterized Lua
-  ([tools/reaper-lsdj-greenfield-author.lua](../tools/reaper-lsdj-greenfield-author.lua)).
+  ([tools/reaper-lsdj-author.lua](../tools/reaper-lsdj-author.lua)).
   Two pieces make it work: (1) the `lsdj-sync` role's **`autoStart`**
   config taps START on the host transport rise to auto-arm a SYNC=MIDI cart (a headless
   render can't press a joypad, and the armed state doesn't survive a savestate); (2) the

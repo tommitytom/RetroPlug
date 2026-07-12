@@ -54,7 +54,7 @@ mkdir -p "$REAPER_CFG"
 # and symlink the build bundle there. VST3_PATH alone gets ignored by
 # Reaper unless the user manually re-scans in the prefs UI.
 # Which built VST3 to author against (RETROPLUG_VST3_NAME overrides the legacy default so the
-# greenfield plugin is authored through the same harness).
+# plugin is authored through the same harness).
 VST3_NAME="${RETROPLUG_VST3_NAME:-retroplug}"
 export HOME="$REAPER_CFG"
 mkdir -p "$HOME/.vst3"

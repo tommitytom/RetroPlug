@@ -28,7 +28,7 @@ The rules below are the parts that don't fit those.
   can't resolve `react`. Don't bump any submodule pointer (in either repo) without
   checking — they're managed deliberately. RetroPlug also keeps `deps/sameboy` +
   `deps/mesen` / `deps/r8brain` / `deps/enkiTS` (the shared core), and `deps/efsw`
-  (greenfield's file-watcher is *designed* to use it — `drainChangedPaths` is a stub
+  (the file-watcher is *designed* to use it — `drainChangedPaths` is a stub
   today, so nothing links it yet). `deps/catch2` is the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
   `test:plugin` binaries (`retroplug-plugin-test` / `retroplug-classid-test` /

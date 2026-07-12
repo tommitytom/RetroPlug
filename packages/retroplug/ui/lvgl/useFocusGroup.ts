@@ -10,7 +10,7 @@
 // a passive claim would blip a frame, and a passive restore could run AFTER a sibling that re-mounted in
 // the same commit already claimed the keypad, clobbering it.
 //
-// The legacy stray-focus guard (isRebuildingRef) is intentionally NOT here: the greenfield menu styles
+// The legacy stray-focus guard (isRebuildingRef) is intentionally NOT here: the menu styles
 // its highlight with LVGL's native onFocusedStyle instead of a React cursor fed by onFocus, so there's
 // no state for stray FOCUSED events to corrupt. Re-add it as an opt-in only if a real flicker appears.
 

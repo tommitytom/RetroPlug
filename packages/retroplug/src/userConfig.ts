@@ -12,7 +12,7 @@ import { z, clampedInt, stringField } from "./configSchema";
 
 /** When the loose sibling <rom>.sav is auto-saved. The string values match native's
  *  rp::SramMirror enum spellings — Off = never write it; OnProjectSave = flush on
- *  save/quit (the default); Continuous = also throttled idle writes — but greenfield
+ *  save/quit (the default); Continuous = also throttled idle writes — but the TS side
  *  names the field `sramAutoSave`: "mirror" reads from the plugin's side, "auto save"
  *  fits both the plugin and the standalone. This store only holds the preference; the
  *  auto-save POLICY that consumes it is a later increment. */

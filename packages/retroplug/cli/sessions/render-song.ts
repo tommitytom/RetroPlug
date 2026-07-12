@@ -1,8 +1,8 @@
-// Play a TS-authored sequence and render it to a WAV — the greenfield CLI's event-scripting example.
+// Play a TS-authored sequence and render it to a WAV — the CLI's event-scripting example.
 // Reads the ROM + output paths from argv, builds a short melody as a typed Timeline (no JSON), plays it
 // through the render, and writes the result. Demonstrates MIDI/event scripting on the standalone binary.
 //
-//   retroplug-greenfield-cli build/greenfield-cli/render-song.js <rom> <out.wav> [ms]
+//   retroplug-cli build/cli/render-song.js <rom> <out.wav> [ms]
 import { runSession, hostArgs } from "../session";
 import { Timeline, renderTimeline } from "../timeline";
 import { encodeWav } from "../wav";
@@ -24,5 +24,5 @@ runSession((s) => {
   const ms = Number(msArg) || 2200;
   const pcm = renderTimeline(s, tl, { durationMs: ms, warmupMs: 1000 }); // boot before the sequence
   if (!s.backend.writeFile(outPath, encodeWav(pcm))) throw new Error(`write failed: ${outPath}`);
-  console.log(`greenfield-cli: rendered song on ${romPath} → ${outPath} (${ms}ms)`);
+  console.log(`cli: rendered song on ${romPath} → ${outPath} (${ms}ms)`);
 });

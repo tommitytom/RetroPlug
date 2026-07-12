@@ -325,7 +325,7 @@ public:
 
     // Control/UI thread: the max savestate PAYLOAD the live snapshot triple can
     // hold (0 if state snapshots aren't enabled). An external shadow buffer — the
-    // greenfield SnapshotRegistry — sizes its own slot to this so a variable-size
+    // SnapshotRegistry — sizes its own slot to this so a variable-size
     // (Mesen) savestate never overflows it, mirroring the headroom this triple
     // was allocated with (stateSnapshotSize() capped the payload).
     std::size_t stateSnapshotCapacity() const;

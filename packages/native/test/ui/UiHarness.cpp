@@ -62,7 +62,7 @@ bool UiHarness::boot() {
     JS_FreeValue(ctx, sym);
     JS_FreeValue(ctx, global);
 
-    // Eval the greenfield UI bundle (the React app + realBackend), then bind the display + mount React.
+    // Eval the UI bundle (the React app + realBackend), then bind the display + mount React.
     if (engine.evalModuleBytecode(rp_ui_bundle, rp_ui_bundle_size) != 0) return false;
     engine.attachDisplay();
 

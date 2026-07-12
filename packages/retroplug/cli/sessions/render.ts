@@ -107,7 +107,7 @@ function resolveSongSeed(s: Session, o: RenderOpts): Uint8Array | undefined {
   const project = sav.projects[idx]!;
   sav.workingSong = project.song; // working song and project songs share the decoded Song shape
   sav.activeProjectIndex = idx;
-  console.log(`retroplug-cli: song "${project.name || "(unnamed)"}" (slot ${idx}) → working song`);
+  console.log(`cli: song "${project.name || "(unnamed)"}" (slot ${idx}) → working song`);
   // Seed unmodeled regions from the original sav when it's a full 128 KiB image (else author fresh).
   return encodeSav(sav, raw.length >= kSavSize ? raw : undefined);
 }
@@ -208,7 +208,7 @@ runSession((s) => {
   // --list-songs: print the sav's populated project slots and exit before building anything.
   if (o.listSongs) {
     const { path, sav } = readSav(s, o);
-    console.log(`retroplug-cli: songs in ${path}:`);
+    console.log(`cli: songs in ${path}:`);
     sav.projects.forEach((p, i) => { if (p) console.log(`  ${i}: ${p.name || "(unnamed)"}`); });
     if (sav.projects.every((p) => !p)) console.log("  (no named projects — only the working song)");
     return;
@@ -236,7 +236,7 @@ runSession((s) => {
   const sr = s.audio.sampleRate();
   const write = (name: string, bytes: Uint8Array) => {
     if (!s.backend.writeFile(name, bytes)) throw new Error(`render: write failed: ${name}`);
-    console.log(`retroplug-cli: ${name}`);
+    console.log(`cli: ${name}`);
   };
   const base = outBase(o);
 
@@ -255,14 +255,14 @@ runSession((s) => {
       const endFrame = r.stopFrame ?? r.pcm.length / 2;
       const lengthMs = Math.round(((endFrame - r.startFrame) / sr) * 1000);
       write(base, encodeWav(r.pcm.subarray(0, endFrame * 2), sr, 2)); // trimmed to the HFF stop
-      console.log(`retroplug-cli: length: ${lengthMs} ms (${endFrame - r.startFrame} frames @${sr}Hz) hff:${r.hff}`);
-      if (!r.hff) console.warn(`retroplug-cli: no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
+      console.log(`cli: length: ${lengthMs} ms (${endFrame - r.startFrame} frames @${sr}Hz) hff:${r.hff}`);
+      if (!r.hff) console.warn(`cli: no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
       return;
     }
     const ms = o.ms ?? 8000;
     const pcm = s.audio.renderAudio(ms); // interleaved L/R float32
     write(base, encodeWav(pcm, sr, 2));
-    console.log(`retroplug-cli: rendered ${o.rom} → ${base} (${ms}ms @${sr}Hz)`);
+    console.log(`cli: rendered ${o.rom} → ${base} (${ms}ms @${sr}Hz)`);
     return;
   }
 
@@ -273,7 +273,7 @@ runSession((s) => {
     // GB channel streams are STEREO: one stereo WAV per channel + one combined multichannel WAV.
     write(`${base}_multi.wav`, encodeWav(interleaveStereoStreams(bufs), sr, bufs.length * 2));
     bufs.forEach((b, i) => write(`${base}_${GB_CHANNELS[i] ?? `ch${i}`}.wav`, encodeWav(b, sr, 2)));
-    console.log(`retroplug-cli: GB ${bufs.length}-channel render (@${sr}Hz) → ${base}_*`);
+    console.log(`cli: GB ${bufs.length}-channel render (@${sr}Hz) → ${base}_*`);
     return;
   }
 
@@ -287,5 +287,5 @@ runSession((s) => {
   for (let f = 0; f < frames; f++)
     for (let c = 0; c < mono.length; c++) combined[f * mono.length + c] = mono[c][f];
   write(`${base}_${o.split}.wav`, encodeWav(combined, sr, mono.length));
-  console.log(`retroplug-cli: NES ${o.split} (${mono.length} streams @${sr}Hz) → ${base}_*`);
+  console.log(`cli: NES ${o.split} (${mono.length} streams @${sr}Hz) → ${base}_*`);
 });

@@ -30,7 +30,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
 VST3_NAME="${RETROPLUG_VST3_NAME:-retroplug}"
-AUTOLOAD="${RP_EDITOR_AUTOLOAD:-$REPO_DIR/build/mgb_greenfield.rplg}"
+AUTOLOAD="${RP_EDITOR_AUTOLOAD:-$REPO_DIR/build/mgb.rplg}"
 SNAP="${RP_EDITOR_AUTOLOAD_SNAP:-$REPO_DIR/build/reaper-editor-autoload.png}"
 GRID_MAX_BYTES="${RP_GRID_MAX_BYTES:-2500}"  # a loaded grid is small + mostly black; the start menu is larger
 W=1280; H=720

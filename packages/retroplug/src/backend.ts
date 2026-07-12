@@ -1,4 +1,4 @@
-// The single native-backend contract the greenfield TS application calls into.
+// The single native-backend contract the TS application calls into.
 //
 // Everything the app cannot do in pure TS lives behind this one interface:
 // filesystem bytes, atomic writes, path canonicalization, the OS config dir —

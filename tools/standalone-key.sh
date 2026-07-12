@@ -25,7 +25,7 @@ if [ -z "${DISPLAY:-}" ]; then
 fi
 
 # Ensure the standalone window has focus before sending keys. RETROPLUG_WINDOW_NAME overrides the
-# xdotool --name match (default "retroplug"; the greenfield standalone titles itself "RetroPlug").
+# xdotool --name match (default "retroplug"; the standalone titles itself "RetroPlug").
 WIN_NAME="${RETROPLUG_WINDOW_NAME:-retroplug}"
 WINDOW=$(xdotool search --name "$WIN_NAME" 2>/dev/null | head -1 || true)
 if [ -z "$WINDOW" ]; then

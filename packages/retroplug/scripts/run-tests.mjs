@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Greenfield test runner. For each test/**/*.test.ts: bundle it with esbuild
+// Test runner. For each test/**/*.test.ts: bundle it with esbuild
 // (QuickJS/es2020 target, types stripped), then run the bundle on the
 // standalone txiki.js runtime (`tjs run`). Aggregates TAP; exits nonzero on any
 // failure. One tjs process per file = per-file isolation.

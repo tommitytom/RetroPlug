@@ -1,4 +1,4 @@
-// StoreProvider: exposes the greenfield store graph to the React tree and multiplexes its single-observer
+// StoreProvider: exposes the store graph to the React tree and multiplexes its single-observer
 // callbacks out to many React subscribers.
 //
 // In a real host (plugin / standalone) the control-plane bundle has ALREADY composed the one graph the

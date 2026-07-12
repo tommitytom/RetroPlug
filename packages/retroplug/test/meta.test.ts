@@ -1,4 +1,4 @@
-// Meta-test: proves the greenfield harness + runner + MockBackend work end to
+// Meta-test: proves the harness + runner + MockBackend work end to
 // end under `tjs run`, before any real feature exists. If this is green, the
 // TDD loop is ready and every subsequent feature test can rely on it.
 import { test, expect } from "../testing/harness";

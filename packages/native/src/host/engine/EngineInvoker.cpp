@@ -203,6 +203,6 @@ void QueuedInvoker::handBackReleased(SystemBase* sys) {
     if (!released_.tryPush(e)) {
         // Ring full (256 pending releases undrained) — can't free on the audio thread; leak rather
         // than block/free in the render loop. In practice a test/app drains far more often than this.
-        std::fprintf(stderr, "[greenfield] released-system ring full; leaking a core\n");
+        std::fprintf(stderr, "[retroplug] released-system ring full; leaking a core\n");
     }
 }

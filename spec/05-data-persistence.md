@@ -1,6 +1,6 @@
 # 05 — Data & Persistence
 
-How RetroPlug2 (greenfield) turns a live session into bytes on disk and back:
+How RetroPlug2 turns a live session into bytes on disk and back:
 the project model and the `.rplg` file, the plugin's DAW state chunk, the three
 per-user config files, the persistence policy (version stamps + raw-JSON
 migrations), the LSDj `.sav` codec, and the SRAM auto-save policy.
@@ -94,7 +94,7 @@ framing happen entirely in TypeScript.
 | `RETROPLUG_AUTOLOAD_PROJECT=path` | `__rp_loadProjectPath(path)` | headless seed (reaper `-renderproject`): read a `.rplg` from disk and load it |
 
 State is a single `"project"` key, host-readable + host-writable
-([PluginDSP.cpp:103](../packages/native-greenfield/plugin/PluginDSP.cpp#L103)).
+([PluginDSP.cpp:103](../packages/native/plugin/PluginDSP.cpp#L103)).
 The C++ boundary stays **string-only**: base64 is done in JS
 ([pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts))
 because a DPF state chunk is NUL-terminated UTF-8 while a `.rplg` is binary
@@ -116,7 +116,7 @@ Three per-user, machine-global files live under `configDir()` (per-OS:
 `XDG_CONFIG_HOME`/`~/.config/retroplug`, `%APPDATA%\RetroPlug`, or
 `~/Library/Application Support/RetroPlug`; overridable via
 `RETROPLUG_USER_CONFIG_DIR` —
-[HostRpcService.cpp:23](../packages/native-greenfield/src/HostRpcService.cpp#L23)).
+[HostRpcService.cpp:23](../packages/native/src/HostRpcService.cpp#L23)).
 Each on-disk shape matches the legacy native file so a user's existing configs
 still load.
 
@@ -126,7 +126,7 @@ still load.
 | `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad, keyboardActions, gamepadActions }` (one profile per file; the `*Actions` sections — Open Menu / Cycle Instances — seed to defaults when missing) |
 | `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name }] }`, most-recent-first, capped at 10 |
 
-One deliberate rename: greenfield's `sramAutoSave` field is native's
+One deliberate rename: the TS layer's `sramAutoSave` field is native's
 `sramMirror` key ("mirror" reads from the plugin's side; "auto save" fits both
 plugin and standalone). The string enum values (`Off` / `OnProjectSave` /
 `Continuous`) still match native's spellings. The three config **stores** and the
@@ -250,7 +250,7 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 - [projectStore.ts](../packages/retroplug/src/projectStore.ts) — save/export/load, the missing-scan + relink lifecycle, `exportBytes`/`loadBytes`.
 - [projectBinaries.ts](../packages/retroplug/src/projectBinaries.ts) / [projectPaths.ts](../packages/retroplug/src/projectPaths.ts) — blob-key contract; path rebasing.
 - [pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts) — the `__rp_saveProjectB64`/`__rp_loadProjectB64`/`__rp_loadProjectPath` surface + base64.
-- [PluginDSP.cpp:103](../packages/native-greenfield/plugin/PluginDSP.cpp#L103) — DPF `initState`/`getState`/`setState` + `RETROPLUG_AUTOLOAD_PROJECT`.
+- [PluginDSP.cpp:103](../packages/native/plugin/PluginDSP.cpp#L103) — DPF `initState`/`getState`/`setState` + `RETROPLUG_AUTOLOAD_PROJECT`.
 - [userConfig.ts](../packages/retroplug/src/userConfig.ts) / [userConfigSerialization.ts](../packages/retroplug/src/userConfigSerialization.ts), [recentSerialization.ts](../packages/retroplug/src/recentSerialization.ts), [bindingSerialization.ts](../packages/retroplug/src/bindingSerialization.ts) — the config models + on-disk codecs.
 - [configSchema.ts](../packages/retroplug/src/configSchema.ts) — the clamp/default zod builders (TS forward-tolerance).
 - [migrate.ts](../packages/retroplug/src/migrate.ts) + [projectConfig.ts](../packages/retroplug/src/projectConfig.ts) — the raw-JSON migration framework + the version constants / `checkVersion` / `parseProjectVersion` (TS is the single source of truth; native does no version check).

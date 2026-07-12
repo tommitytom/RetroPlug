@@ -6,7 +6,7 @@
 //   (a) three mono WAVs (one per pin)        <prefix>_pulse.wav / _tnd.wav / _expansion.wav
 //   (b) one 3-channel WAV (the pins combined) <prefix>_pins.wav
 //
-//   retroplug-cli build/greenfield-cli/export-nes-channels.js <rom.nes> [outPrefix]
+//   retroplug-cli build/cli/export-nes-channels.js <rom.nes> [outPrefix]
 import { runSession, hostArgs } from "../session";
 import { encodeWav, deinterleaveStereo } from "../wav";
 import { syncDspFromStore } from "../../src/appHost";
@@ -47,7 +47,7 @@ runSession((s) => {
 
   const write = (name: string, bytes: Uint8Array) => {
     if (!s.backend.writeFile(name, bytes)) throw new Error(`write failed: ${name}`);
-    console.log(`greenfield-cli: ${name}`);
+    console.log(`cli: ${name}`);
   };
 
   // (a) one mono WAV per pin — the left lane carries the signal (the pins are mono).
@@ -64,5 +64,5 @@ runSession((s) => {
   }
   write(`${prefix}_pins.wav`, encodeWav(pins, sr, 3));
 
-  console.log(`greenfield-cli: NES stereo-mod pins (@${sr} Hz) → ${prefix}_*`);
+  console.log(`cli: NES stereo-mod pins (@${sr} Hz) → ${prefix}_*`);
 });

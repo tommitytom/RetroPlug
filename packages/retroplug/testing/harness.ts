@@ -1,4 +1,4 @@
-// Minimal TAP test harness for the greenfield package. Runs under txiki.js
+// Minimal TAP test harness for the package. Runs under txiki.js
 // (`tjs run <bundle>`), completely independent of the C++/plugin build — the
 // whole point is to develop the TS application logic against a MOCK backend.
 //
