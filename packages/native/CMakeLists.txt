@@ -240,6 +240,16 @@ add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)
 # the standalone's implib a distinct name; nothing links against it.
 if(WIN32 AND TARGET retroplug-jack)
     set_target_properties(retroplug-jack PROPERTIES ARCHIVE_OUTPUT_NAME retroplug-jack)
+
+    # No console window when the standalone is launched directly. DPF's main() already attaches to a
+    # parent console when there is one (AttachConsole(ATTACH_PARENT_PROCESS) in DistrhoPluginJACK.cpp),
+    # but the exe links as a CONSOLE-subsystem app, so Windows always spawns a console. Build it as a
+    # GUI-subsystem app instead: double-clicking shows no console, while running it from a terminal still
+    # prints there (DPF's attach picks up the launching shell) — so debugging via `retroplug.exe` in a
+    # console still works. main() (not WinMain) stays the entry via /ENTRY:mainCRTStartup.
+    if(MSVC)
+        target_link_options(retroplug-jack PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
+    endif()
 endif()
 
 # --- greenfield UI test harness --------------------------------------------------------------------
