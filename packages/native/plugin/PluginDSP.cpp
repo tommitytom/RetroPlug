@@ -240,7 +240,12 @@ private:
             if (JS_IsException(ret)) {
                 JSValue exc  = JS_GetException(ctx);
                 const char* s = JS_ToCString(ctx, exc);
-                d_stderr("[greenfield] %s threw: %s", name, s ? s : "?");
+                JSValue stk  = JS_GetPropertyStr(ctx, exc, "stack");
+                const char* st = JS_IsUndefined(stk) ? nullptr : JS_ToCString(ctx, stk);
+                d_stderr("[greenfield] %s threw: %s%s%s", name, s ? s : "?",
+                         st ? "\n" : "", st ? st : "");
+                if (st) JS_FreeCString(ctx, st);
+                JS_FreeValue(ctx, stk);
                 if (s) JS_FreeCString(ctx, s);
                 JS_FreeValue(ctx, exc);
             } else if (JS_IsString(ret)) {
