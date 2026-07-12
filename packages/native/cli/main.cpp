@@ -20,13 +20,16 @@
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
-#include "host/rpc/BackendFacade.hpp"
+#include "host/engine/Engine.hpp"
+#include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/BackendRpcRegistration.hpp"
+#include "system/CoreBackends.hpp"
+#include "system/SystemFactory.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 
-using BackendRpcServer = rpcpp::TypedRpcServer<BackendFacade, rpcpp::QuickJSCodec>;
+using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
 namespace {
 
@@ -69,12 +72,22 @@ int main(int argc, char** argv) try {
     }
     JSContext* ctx = host.context();
 
+    // The backend service graph: one Engine + factory + the ONE invoker, and the four concern services
+    // over them. The CLI exposes the whole surface (incl. the debug facet), so it mounts every facet.
+    Engine engine;
+    SystemFactory factory;
+    registerCoreBackends(factory);
+    QueuedInvoker invoker{engine, engine.registry()};
+    HostRpcService        hostSvc;
+    EngineRpcService      engineSvc{engine, factory, invoker};
+    DebugRpcService       debugSvc{engine};
+    AudioDriverRpcService driver{engine, invoker};
+
     // rpcpp server over the QuickJS object codec (marshals request/response as live JS objects against
-    // ctx — nothing serialized). The transport's async sink is unused.
-    BackendFacade service;
+    // ctx — nothing serialized). No primary object: every facet is mounted cross-object. Async sink unused.
     rpcpp::QuickJSTransport transport(ctx, [](JSContext*, JSValue) {});
-    BackendRpcServer server(service, transport, rpcpp::QuickJSCodec{ctx});
-    registerAllBackendRpc(server, service);
+    BackendRpcServer server(transport, rpcpp::QuickJSCodec{ctx});
+    registerAllBackendRpc(server, hostSvc, engineSvc, debugSvc, driver);
 
     JSValue global = JS_GetGlobalObject(ctx);
 

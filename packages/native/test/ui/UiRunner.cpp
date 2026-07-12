@@ -5,8 +5,8 @@
 // the exit code through globalThis.tjs.exit — so this runner just boots the harness, installs the
 // `retroplug-ui` (`ui.*`) namespace + the tjs.exit hook, evals the test bundle, and drives the JS job
 // loop until the harness exits. The harness boots the greenfield React UI on a headless software LVGL
-// display (RenderCore) driven by the BackendFacade RPC (UiHarness). Only the render-tree
-// surface is exposed; system state is driven through the stores over the bound BackendFacade RPC.
+// display (RenderCore) driven by the backend RPC (UiHarness). Only the render-tree
+// surface is exposed; system state is driven through the stores over the bound backend RPC.
 //
 //   retroplug-greenfield-ui-test --test <bundle.js>
 
@@ -249,7 +249,7 @@ JSValue jsUiGamepadAxis(JSContext* ctx, JSValueConst, int argc, JSValueConst* ar
 }
 
 // Advance the emulator so tiles get live frames (the plugin's audio thread does this; pump() only ticks
-// LVGL). Drives the BackendFacade the UI reads over RPC.
+// LVGL). Drives the backend the UI reads over RPC.
 JSValue jsUiAdvance(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     double ms = 0;
     if (argc >= 1) JS_ToFloat64(ctx, &ms, argv[0]);
@@ -308,7 +308,7 @@ void installExitHook(JSContext* ctx) {
 
 int runUiTestFile(const std::string& jsPath) {
     // Boot the harness FIRST: it owns the single JS runtime (LvglJsEngine) + the headless display +
-    // the BackendFacade RPC bridge + the greenfield UI bundle. The test bundle runs IN this runtime.
+    // the backend RPC bridge + the greenfield UI bundle. The test bundle runs IN this runtime.
     try {
         g_harness = new rpuigf::UiHarness();
         if (!g_harness->boot()) { std::fprintf(stderr, "greenfield UI harness boot failed\n"); return 1; }

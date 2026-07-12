@@ -2,7 +2,7 @@
 
 // In-process handoff from the greenfield DSP plugin to its DPF editor.
 //
-// The plugin owns a plugin-lifetime TjsHostRuntime with __rpcSend already bound to the BackendFacade
+// The plugin owns a plugin-lifetime TjsHostRuntime with __rpcSend already bound to the backend services
 // (bootControlPlane). The editor reaches it via getPluginInstancePointer() → getSharedDSP(),
 // then attaches its LVGL display layer to that host (LvglJsEngine::useExternalHost) so the React UI runs
 // on the SAME context as the control plane — the backend is reachable through the existing

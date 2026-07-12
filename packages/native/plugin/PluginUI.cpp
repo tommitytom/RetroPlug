@@ -73,7 +73,7 @@ class PluginUI : public UI {
     LvglJsEngine jsEngine;
 
     // Screenshot hook (RETROPLUG_SCREENSHOT_PATH, cadence RETROPLUG_SCREENSHOT_INTERVAL_MS): dump the
-    // whole LVGL screen as PNG from the UI thread. Distinct from BackendFacade::screenshot (one core).
+    // whole LVGL screen as PNG from the UI thread. Distinct from the emulator RPC's screenshot (one core).
     std::string screenshotPath_;
     std::chrono::milliseconds screenshotInterval_{1000};
     std::chrono::steady_clock::time_point screenshotLast_{};

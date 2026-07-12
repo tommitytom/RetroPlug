@@ -2,11 +2,14 @@
 
 // Per-facet registration of the Backend method surface. Each function mounts one capability facet's
 // methods onto an rpcpp server via the cross-object addMethod<&Service::m>(instance) — the wire name is
-// derived from the method identifier, so it is unchanged from when every method was a BackendFacade
-// forwarder. A host calls only the facets it is allowed to expose (BackendFacade owns the services;
-// registerAllBackendRpc mounts the full union). Adding a method = one line in the right facet.
+// derived from the method identifier. A host composes its own service instances and calls only the
+// facets it is allowed to expose (registerAllBackendRpc mounts the full union). Adding a method = one
+// line in the right facet.
 
-#include "host/rpc/BackendFacade.hpp"
+#include "host/rpc/AudioDriverRpcService.hpp"
+#include "host/rpc/DebugRpcService.hpp"
+#include "host/rpc/EngineRpcService.hpp"
+#include "host/rpc/HostRpcService.hpp"
 
 // --- host: filesystem / config / codec / sav (15) ---
 template <class Server>
@@ -108,14 +111,15 @@ void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
 }
 
 // The full union (69 methods) + discovery — every facet mounted. Hosts that expose the whole surface
-// (CLI) use this; scoped hosts call the individual register functions they're allowed to.
+// (the CLI + test host) use this; scoped hosts call the individual register functions they're allowed to.
 template <class Server>
-void registerAllBackendRpc(Server& s, BackendFacade& f) {
-    registerHostRpc(s, f.host());
-    registerEmulatorRpc(s, f.engine());
-    registerDspKernelRpc(s, f.engine());
-    registerHarnessRpc(s, f.engine());
-    registerDebugRpc(s, f.debug());
-    registerDriverRpc(s, f.driver());
+void registerAllBackendRpc(Server& s, HostRpcService& host, EngineRpcService& engine,
+                           DebugRpcService& debug, AudioDriverRpcService& driver) {
+    registerHostRpc(s, host);
+    registerEmulatorRpc(s, engine);
+    registerDspKernelRpc(s, engine);
+    registerHarnessRpc(s, engine);
+    registerDebugRpc(s, debug);
+    registerDriverRpc(s, driver);
     s.addDiscoveryMethod();
 }

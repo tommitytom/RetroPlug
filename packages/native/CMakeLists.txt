@@ -75,7 +75,6 @@ set_target_properties(retroplug-core PROPERTIES
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
 add_library(retroplug-backend STATIC
-    src/host/rpc/BackendFacade.cpp          # owner: shared Engine/factory/invoker + the concern services
     src/host/rpc/HostRpcService.cpp         # fs / config / codec / sav (pure, stateless)
     src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
     src/host/rpc/DebugRpcService.cpp        # live-core inspection over Engine (CLI-only facet)
@@ -84,6 +83,7 @@ add_library(retroplug-backend STATIC
     src/host/engine/SnapshotRegistry.cpp    # owned id-keyed frame/state/SRAM store — the control plane's one read door
     src/host/engine/EngineInvoker.cpp       # Direct/Queued invokers — the only threading-aware layer
     src/system/SystemFactory.cpp            # backend-agnostic build registry (the one build path)
+    src/system/CoreBackends.cpp             # registerCoreBackends: mounts sameboy + mesen on a factory
     src/system/sameboy/SameBoyBackend.cpp   # SameBoy builder — the only place SameBoyConfig is constructed
     src/system/mesen/MesenBackend.cpp       # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (DSP-side JS runtime)

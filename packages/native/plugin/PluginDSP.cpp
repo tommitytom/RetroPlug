@@ -1,5 +1,5 @@
 // The greenfield DPF plugin (DSP-first, UI-less). It hosts the SAME control-plane runtime the test
-// host does — TjsHostRuntime + BackendFacade + the __rpcSend bridge on Symbol.for("plugin") — evals
+// host does — TjsHostRuntime + the backend service graph + the __rpcSend bridge on Symbol.for("plugin") — evals
 // the embedded control-plane bundle (which composes the stores + DSP kernel and defines the __rp_*
 // globals), and drives the Engine per audio block from DPF's run(). No editor: get/setState and the
 // RETROPLUG_AUTOLOAD_PROJECT hook go through the JS project globals (base64 done in JS).
@@ -17,9 +17,12 @@
 
 #include "PluginShared.hpp"     // SharedDSP handoff to the editor
 
-#include "host/rpc/BackendFacade.hpp"
+#include "host/engine/Engine.hpp"
+#include "host/engine/EngineInvoker.hpp"
 #include "Version.hpp"                    // single source of truth for the plugin version
 #include "host/rpc/BackendRpcRegistration.hpp"
+#include "system/CoreBackends.hpp"
+#include "system/SystemFactory.hpp"
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
@@ -32,12 +35,19 @@ extern const std::uint32_t rp_cp_bundle_size;
 
 START_NAMESPACE_DISTRHO
 
-using GreenfieldRpcServer = rpcpp::TypedRpcServer<BackendFacade, rpcpp::QuickJSCodec>;
+using GreenfieldRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
 class PluginDSP : public Plugin {
-    // Control-plane runtime (main-thread only): the txiki context + the facade it drives over __rpcSend.
+    // Control-plane runtime (main-thread only): the txiki context + the backend service graph it drives
+    // over __rpcSend. The plugin owns the Engine and drives it per audio block from run() directly (it
+    // never routes audio through RPC), so it holds engine_ + the ONE invoker plus the host + emulator
+    // services it mounts. Declaration order is load-bearing.
     TjsHostRuntime host_;
-    BackendFacade  service_;
+    Engine           engine_;
+    SystemFactory    factory_;
+    QueuedInvoker    invoker_{engine_, engine_.registry()};
+    HostRpcService   hostSvc_;
+    EngineRpcService engineSvc_{engine_, factory_, invoker_};
     std::unique_ptr<rpcpp::QuickJSTransport> transport_;
     std::unique_ptr<GreenfieldRpcServer>     server_;
     bool jsReady_ = false;
@@ -119,10 +129,24 @@ protected:
         updateLatency();  // the loaded project's sync mode determines the compensable latency
     }
 
-    // --- audio lifecycle ---
-    void activate()   override { service_.pluginActivate(); updateLatency(); }  // audioRunning_ + active_=&queued_; report PDC
-    void deactivate() override { service_.pluginDeactivate(); }  // + freePending + reclaim released
-    void sampleRateChanged(double newSampleRate) override { service_.setSampleRate(newSampleRate); }
+    // --- audio lifecycle: DPF owns the audio thread and calls run(), so the plugin drives the Engine
+    // directly here (mirrors AudioDriverRpcService's loop, minus the spawned thread). ---
+    void activate() override {
+        // Hand the Engine to the DPF audio thread: from here every control-plane edit is push-only,
+        // drained by run() each block. (Set BEFORE the host starts calling run(); the quiescent path
+        // flushed every push, so the command ring is empty at this handoff.) Then report PDC latency.
+        invoker_.setAudioThreadOwns(true);
+        updateLatency();
+    }
+    void deactivate() override {
+        // DPF guarantees no run() during/after deactivate, so the ring has a single accessor again. Take
+        // the Engine back, apply any commands the last block didn't drain (no lost mutation), and reclaim
+        // cores the audio thread released just before stopping (freeing each snapshot slot).
+        invoker_.setAudioThreadOwns(false);
+        invoker_.drainInto(engine_);
+        invoker_.reclaimReleased();
+    }
+    void sampleRateChanged(double newSampleRate) override { engine_.setSampleRate(newSampleRate); }
 
     // --- the per-block loop (replaces AudioDriverRpcService::audioLoop) ---
     void run(const float**, float** outputs, uint32_t frames,
@@ -134,16 +158,24 @@ protected:
         if (tp.bbt.valid) bpm = tp.bbt.beatsPerMinute;
         const bool playing = tp.playing;
 
-        // Host MIDI in → stage directly on the audio thread (short messages only; SysEx deferred).
+        // Host MIDI in → stage directly on the audio thread (bypasses the ring + its 4-byte cap; safe
+        // because run() owns the Engine while active). Short messages only; SysEx deferred.
         for (uint32_t i = 0; i < midiEventCount; ++i) {
             const MidiEvent& e = midiEvents[i];
-            if (e.size >= 1 && e.size <= 4) service_.stageMidiRaw(e.data, e.size);
+            if (e.size >= 1 && e.size <= 4)
+                engine_.stageMidi(std::vector<std::uint8_t>(e.data, e.data + e.size));
         }
 
-        service_.pluginProcessBlock(bpm, playing, frames, outputs, DISTRHO_PLUGIN_NUM_OUTPUTS);
+        // One audio block: drain control-thread structural edits on the audio thread → set transport
+        // (direct — we're the audio thread) → render into the output channels (the plugin's 4 stereo
+        // pairs; routed per audioRouting by the Engine's MultiOutRouter).
+        invoker_.drainInto(engine_);
+        engine_.setBpm(bpm);
+        engine_.setTransport(playing);
+        engine_.processBlock(frames, outputs, DISTRHO_PLUGIN_NUM_OUTPUTS);
 
-        // Kernel MIDI-out → the DAW.
-        for (const auto& mo : service_.pluginMidiOut()) {
+        // Kernel MIDI-out → the DAW (drain the block just rendered, then clear).
+        for (const auto& mo : engine_.midiOut()) {
             if (mo.data.empty() || mo.data.size() > MidiEvent::kDataSize) continue;
             MidiEvent ev{};
             ev.frame = mo.frame;
@@ -151,7 +183,7 @@ protected:
             for (std::size_t j = 0; j < mo.data.size(); ++j) ev.data[j] = mo.data[j];
             writeMidiEvent(ev);
         }
-        service_.pluginClearMidiOut();
+        engine_.clearMidiOut();
 
         // Master gain across every output channel (post-render; the Engine has no master-gain stage).
         const float lin = std::pow(10.0f, gainDb_ / 20.0f);
@@ -166,15 +198,17 @@ private:
         if (!host_.init()) { d_stderr("[greenfield] TjsHostRuntime init failed"); return; }
         JSContext* ctx = host_.context();
 
+        registerCoreBackends(factory_);  // sameboy + mesen — before the bundle autoloads any system
+
         transport_ = std::make_unique<rpcpp::QuickJSTransport>(ctx, [](JSContext*, JSValue) {});
-        server_    = std::make_unique<GreenfieldRpcServer>(service_, *transport_, rpcpp::QuickJSCodec{ctx});
+        server_    = std::make_unique<GreenfieldRpcServer>(*transport_, rpcpp::QuickJSCodec{ctx});
         // The plugin control plane composes the stores (fs + emulator) and loads the DSP kernel. It
         // drives audio per block in C++ (never the renderAudio harness), never debugs the live core,
         // and never spawns the background audio-driver thread — so those facets are NOT on this channel.
         // The editor reuses this same context/channel, so it inherits exactly this surface.
-        registerHostRpc(*server_, service_.host());
-        registerEmulatorRpc(*server_, service_.engine());
-        registerDspKernelRpc(*server_, service_.engine());
+        registerHostRpc(*server_, hostSvc_);
+        registerEmulatorRpc(*server_, engineSvc_);
+        registerDspKernelRpc(*server_, engineSvc_);
         server_->addDiscoveryMethod();
 
         // globalThis[Symbol.for("plugin")] = { __rpcSend } — the namespace realBackend.ts targets.
@@ -194,7 +228,7 @@ private:
         JS_FreeValue(ctx, global);
 
         // Systems bake the sample rate at construct — set it BEFORE the bundle composes / autoloads.
-        service_.setSampleRate(getSampleRate());
+        engine_.setSampleRate(getSampleRate());
 
         // Eval the control-plane bundle (composes stores + kernel, defines the __rp_* globals), then
         // pump until it signals ready (the composition is synchronous; a bounded pump covers module eval).
