@@ -271,6 +271,29 @@ test("instance menu hides Replace / Remove / Link Group for a lone instance, sho
   expect(findItem(multi, "inst-link")).toBeTruthy();
 });
 
+test("Audio Routing offers ChannelSplit only for a single system", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  // The Audio Routing cycler row, rebuilt fresh each call (picks up the current setting + system count).
+  const audioRow = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project"), "proj-audio")!;
+
+  // One system: cycling past OnePerInstance(2) reaches ChannelSplit(3) — the "Channels (1 GB)" option.
+  stores.project.systems.addSystem("/roms/a.gb");
+  stores.project.setAudioRouting(2);
+  expect(audioRow().label).toBe("Audio Routing: 1 Ch / Inst");
+  audioRow().onSelect!();
+  expect(stores.project.settings().audioRouting).toBe(3);
+  expect(audioRow().label).toBe("Audio Routing: Channels (1 GB)");
+
+  // A second system drops ChannelSplit from the cycle, so stepping past OnePerInstance wraps to Stereo(0)
+  // (native gates it too, so this is UX only — the three per-instance modes stay).
+  stores.project.systems.addSystem("/roms/a.gb");
+  stores.project.setAudioRouting(2);
+  audioRow().onSelect!();
+  expect(stores.project.settings().audioRouting).toBe(0);
+});
+
 test("Link Group stays hidden for a NES peer (SameBoy serial link only); Replace / Remove still show", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

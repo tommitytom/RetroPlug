@@ -465,7 +465,7 @@ export class MockBackend implements Backend {
   setAudioRouting(mode: number): boolean {
     this.log.push("setAudioRouting");
     this.audioRoutingCalls.push(mode);
-    return mode >= 0 && mode <= 2;
+    return mode >= 0 && mode <= 3; // 0 Stereo / 1 TwoPerInstance / 2 OnePerInstance / 3 ChannelSplit
   }
 
   pressButton(id: number, button: number, down: boolean): boolean {

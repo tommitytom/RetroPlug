@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "util/ExpSmoother.hpp"
 
 class Emulator;
+class NesSoundMixer;
 class MesenAudioDevice;
 class MesenVideoDevice;
 class MesenNesDebugSession;
@@ -42,6 +44,10 @@ public:
     void prepareForBlock(const AudioBlockInfo& info) override;
     bool stepIfBelowTarget(std::uint32_t framesNeeded) override;
     void finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) override;
+
+    // Default = one stereo "Mix" stream. Under channelExportMode == StereoModPins (CLI-only), reports
+    // the three mono pin streams (Pulse | TND | Expansion) the NesSoundMixer tap captures (spec/10 §5).
+    std::vector<ChannelStream> channelLayout() const override;
 
     // Audio-thread: forward host MIDI events to the attached N8 role (if any).
     // The role pushes bytes into the FIFO RX queue so the ROM's polling loop
@@ -121,6 +127,14 @@ private:
     double                            sampleRate_     = 44100.0;
     ExpSmoother                       gainSmoother_;
     std::vector<float>                stereoAccum_;   // sized lazily to 2*blockSize
+
+    // Per-channel export — spec/10 §5 (pins) + §5b (individual mono). nesMixer_ is owned by emu_'s
+    // NesConsole; valid only while activated + channelCapture_. chanAccum_ holds the per-stream mono drain
+    // each block: 3 pins (mode 1), 4 with the mix-reference (mode 2), or 5 core channels (mode 3).
+    static constexpr std::size_t      kMaxChannelStreams = 5;
+    NesSoundMixer*                    nesMixer_ = nullptr;
+    bool                              channelCapture_ = false;
+    std::array<std::vector<float>, kMaxChannelStreams> chanAccum_;
 
     // Pending NES button transitions (pos 0..7 from NesButton enum). Applied
     // at the top of onProcess via NesController::SetBitValue. Single-shot —

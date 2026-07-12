@@ -104,6 +104,26 @@ struct PerChannelRouter final : AudioRouter {
     std::uint32_t streamCount(std::size_t /*slot*/) const override { return nStreams; }
 };
 
+// One system's channel streams fan into fixed stereo PAIRS of the plugin's flat
+// output-channel array: stream k -> channels[2k]/channels[2k+1] (a Game Boy's 4
+// channels over the 8 DPF lanes = 4 pairs). The ChannelSplit routing (spec/10).
+// Single-system only — the Engine builds this only when systemCount()==1, so
+// `slot` is ignored and bus() keys off `streamIndex`. Distinct from
+// PerChannelRouter (which indexes two separate CLI L/R buffer arrays): this
+// addresses lane PAIRS of the one caller-owned channel array, like MultiOutRouter.
+struct ChannelSplitRouter final : AudioRouter {
+    float* const* channels;
+    std::size_t   numChannels;
+    std::uint32_t nStreams;
+    ChannelSplitRouter(float* const* ch, std::size_t n, std::uint32_t streams)
+        : channels(ch), numChannels(n), nStreams(streams) {}
+    AudioBus bus(std::size_t /*slot*/, std::uint32_t streamIndex = 0) const override {
+        const std::size_t l = (2 * streamIndex) % numChannels;
+        return { channels[l], channels[(l + 1) % numChannels] };
+    }
+    std::uint32_t streamCount(std::size_t /*slot*/) const override { return nStreams; }
+};
+
 // Advance ONE render unit (1..N systems stepped in lockstep) by one block,
 // finishing each member into its router-provided bus. A singleton is the size-1
 // case; a SameBoy link group is the size-N case (round-robin step so serial bits

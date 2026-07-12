@@ -125,12 +125,30 @@ set_target_properties(retroplug-host PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# retroplug-cli: the standalone session runner — the same backend lib + a main() that evals
-# one pre-bundled session .js (authored in TS, esbuild-bundled) over the __rpcSend bridge. No Node at
-# runtime. Output binary lands in build/bin/.
-add_executable(retroplug-cli cli/main.cpp)
+# The `render` subcommand bundle — cli/sessions/render.ts → tjsc bytecode C array, COMPILED INTO
+# retroplug-cli (mirrors the plugin's cp-/ui-bundle recipe). This is what lets `retroplug-cli render …`
+# run with no loose .js and no Node. build-session.js injects __DSP_KERNEL_BUNDLE__; tjsc emits
+# rp_render_bundle[] + rp_render_bundle_size. Derived; never committed.
+set(RENDER_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/render-bundle.js")
+set(RENDER_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/render-bundle_data.c")
+set_source_files_properties(${RENDER_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the CLI compiles
+add_custom_target(retroplug-render-bundle
+    BYPRODUCTS ${RENDER_BUNDLE_JS} ${RENDER_BUNDLE_C} ${RENDER_BUNDLE_C}.new
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/cli/sessions/render.ts ${RENDER_BUNDLE_JS}
+    COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${RENDER_BUNDLE_C}.new ${RENDER_BUNDLE_JS}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RENDER_BUNDLE_C}.new ${RENDER_BUNDLE_C}
+    COMMENT "Bundling retroplug-cli render subcommand (esbuild + bytecode)"
+    VERBATIM)
+add_dependencies(retroplug-render-bundle ${_TJSC_DEP})
+
+# retroplug-cli: the standalone session runner — the same backend lib + a main() that runs either a
+# COMPILED-IN subcommand bundle (e.g. `render`) or, as a fallback, one pre-bundled session .js given by
+# path over the __rpcSend bridge. No Node at runtime. Output binary lands in build/bin/.
+add_executable(retroplug-cli cli/main.cpp ${RENDER_BUNDLE_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend)
+add_dependencies(retroplug-cli retroplug-render-bundle)  # the embedded render bytecode must exist first
 
 set_target_properties(retroplug-cli PROPERTIES
     CXX_STANDARD 20
@@ -150,6 +168,8 @@ add_custom_target(retroplug-example-session ALL
                ${CMAKE_BINARY_DIR}/cli/analyze-mgb.js
                ${CMAKE_BINARY_DIR}/cli/analyze-lsdj-sync.js
                ${CMAKE_BINARY_DIR}/cli/export-mgb-channels.js
+               ${CMAKE_BINARY_DIR}/cli/export-nes-channels.js
+               ${CMAKE_BINARY_DIR}/cli/export-nes-mono.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${CLI_SESSIONS}/mgb-smoke.ts   ${CMAKE_BINARY_DIR}/cli/mgb-smoke.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
@@ -164,6 +184,10 @@ add_custom_target(retroplug-example-session ALL
             ${CLI_SESSIONS}/analyze-lsdj-sync.ts ${CMAKE_BINARY_DIR}/cli/analyze-lsdj-sync.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${CLI_SESSIONS}/export-mgb-channels.ts ${CMAKE_BINARY_DIR}/cli/export-mgb-channels.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
+            ${CLI_SESSIONS}/export-nes-channels.ts ${CMAKE_BINARY_DIR}/cli/export-nes-channels.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
+            ${CLI_SESSIONS}/export-nes-mono.ts ${CMAKE_BINARY_DIR}/cli/export-nes-mono.js
     COMMENT "Bundling CLI example sessions (esbuild)"
     VERBATIM)
 
@@ -321,19 +345,29 @@ set_target_properties(retroplug-classid-test PROPERTIES
 
 # retroplug-audio-test guards the per-channel audio path: the host seam (runUnit stream loop +
 # AudioRouter::streamCount + lane-counted finishBlock, over a fake SystemBase) AND the real SameBoy
-# per-channel tap (ChannelStreams + SameBoyStems). Links retroplug-core, which PUBLIC-brings the
-# `sameboy` core, so SameBoyStems can drive a real mGB ROM. Also `pnpm test:plugin`, on demand.
+# per-channel tap (ChannelStreams + SameBoyStems), plus the ChannelSplit plugin router + its Engine
+# gating (ChannelSplit + EngineChannelSplit, spec/10 step 4). Links retroplug-backend (which PUBLIC-brings
+# retroplug-core → BlockRunner + routers + the sameboy core) so the Engine gating test can build an
+# Engine. Also `pnpm test:plugin`, on demand.
 add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/ChannelStreams.test.cpp
-    test/audio/SameBoyStems.test.cpp)
+    test/audio/SameBoyStems.test.cpp
+    test/audio/ChannelSplit.test.cpp
+    test/audio/EngineChannelSplit.test.cpp
+    test/audio/NesStems.test.cpp)    # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
 
 target_link_libraries(retroplug-audio-test PRIVATE
-    retroplug-core             # SystemBase + BlockRunner (runUnit) + the routers + the sameboy core
+    retroplug-backend          # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
     Catch2::Catch2WithMain)
 
-# The mGB ROM the SameBoyStems fidelity test drives (the boot chime supplies real multi-channel signal).
+target_include_directories(retroplug-audio-test PRIVATE
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)             # quickjs.h (via Engine.hpp → DspRuntime.hpp)
+
+# The mGB ROM the SameBoyStems + ChannelSplit fidelity tests drive (the boot chime supplies real signal);
+# the n8-midi NES ROM the NesStems pin test drives (a ch1 note supplies real APU signal).
 target_compile_definitions(retroplug-audio-test PRIVATE
-    RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb")
+    RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
+    RP_N8_MIDI_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/n8-midi.nes")
 
 set_target_properties(retroplug-audio-test PROPERTIES
     CXX_STANDARD 20

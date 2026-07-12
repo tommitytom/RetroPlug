@@ -68,7 +68,11 @@ export function runSession(main: (s: Session) => void): void {
     main(bootSession());
     tjs.exit(0);
   } catch (e) {
-    console.error(`cli: session failed: ${(e as Error)?.stack ?? e}`);
+    // Print the message FIRST — QuickJS's Error.stack omits it, so a bare `.stack` loses the actual
+    // reason (e.g. a render flag-usage error). Then the stack, for debugging.
+    const err = e as Error;
+    console.error(`cli: session failed: ${err?.message ?? e}`);
+    if (err?.stack) console.error(err.stack);
     tjs.exit(1);
   }
 }

@@ -27,6 +27,13 @@ NesSoundMixer::~NesSoundMixer()
 
 	blip_delete(_blipBufLeft);
 	blip_delete(_blipBufRight);
+
+	for(uint32_t i = 0; i < MaxCaptureStreams; i++) {
+		if(_streamBlip[i]) {
+			blip_delete(_streamBlip[i]);
+			_streamBlip[i] = nullptr;
+		}
+	}
 }
 
 void NesSoundMixer::Serialize(Serializer& s)
@@ -53,6 +60,18 @@ void NesSoundMixer::Reset()
 	blip_clear(_blipBufLeft);
 	blip_clear(_blipBufRight);
 
+	// RetroPlug per-channel tap: a savestate load runs Reset — clear the stream blips + accumulators so
+	// no stale pin state carries across. (No-op when capture is off.)
+	for(uint32_t i = 0; i < _captureStreams; i++) {
+		if(_streamBlip[i]) {
+			blip_clear(_streamBlip[i]);
+		}
+		_streamPrev[i] = 0;
+		_streamResampler[i].Reset();
+		_streamResampler[i].SetSampleRates(_sampleRate, _captureHostRate);
+		_streamBuf[i].clear();
+	}
+
 	_timestamps.clear();
 
 	for(uint32_t i = 0; i < MaxChannelCount; i++) {
@@ -68,6 +87,12 @@ void NesSoundMixer::Reset()
 void NesSoundMixer::PlayAudioBuffer(uint32_t time)
 {
 	EndFrame(time);
+
+	// RetroPlug per-channel tap: drain the pin blips (96k) through their own resamplers into the host
+	// mono rings, right after EndFrame — same cadence the mix drains below. No-op when capture is off.
+	if(_captureStreams > 0) {
+		CaptureStreams();
+	}
 
 	int16_t* out = _outputBuffer + (_sampleCount * 2);
 	size_t sampleCount = blip_read_samples(_blipBufLeft, out, NesSoundMixer::MaxSamplesPerFrame, 1);
@@ -147,6 +172,14 @@ void NesSoundMixer::UpdateRates(bool forceUpdate)
 
 		blip_set_rates(_blipBufLeft, _clockRate, _sampleRate);
 		blip_set_rates(_blipBufRight, _clockRate, _sampleRate);
+
+		// RetroPlug per-channel tap: the stream blips render at the SAME 96k as the mix blip (their own
+		// Hermite resamplers take 96k→host), so re-rate them alongside on a region/clock change.
+		for(uint32_t i = 0; i < _captureStreams; i++) {
+			if(_streamBlip[i]) {
+				blip_set_rates(_streamBlip[i], _clockRate, _sampleRate);
+			}
+		}
 	}
 
 	NesConfig& cfg = _console->GetNesConfig();
@@ -190,6 +223,39 @@ int16_t NesSoundMixer::GetOutputVolume(bool forRightChannel)
 		GetChannelOutput(AudioChannel::VRC6, forRightChannel) * 5 +
 		GetChannelOutput(AudioChannel::VRC7, forRightChannel));
 }
+
+void NesSoundMixer::GetStreamVolumes(uint16_t& square, uint16_t& tnd, int32_t& expansion)
+{
+	// RetroPlug per-channel tap: the same terms GetOutputVolume sums, exposed separately for the pin
+	// streams. Kept in lockstep with GetOutputVolume by hand (that body stays verbatim so the mix is
+	// byte-identical). Mono only (forRightChannel = false — the 2A03 pins are pre-panning).
+	double squareOutput = GetChannelOutput(AudioChannel::Square1, false) + GetChannelOutput(AudioChannel::Square2, false);
+	double tndOutput = GetChannelOutput(AudioChannel::DMC, false) + 2.7516713261 * GetChannelOutput(AudioChannel::Triangle, false) + 1.8493587125 * GetChannelOutput(AudioChannel::Noise, false);
+
+	square = (uint16_t)((95.88*5000.0) / (8128.0 / squareOutput + 100.0));
+	tnd = (uint16_t)((159.79*5000.0) / (22638.0 / tndOutput + 100.0));
+
+	expansion = (int32_t)(
+		GetChannelOutput(AudioChannel::FDS, false) * 20 +
+		GetChannelOutput(AudioChannel::MMC5, false) * 43 +
+		GetChannelOutput(AudioChannel::Namco163, false) * 20 +
+		GetChannelOutput(AudioChannel::Sunsoft5B, false) * 15 +
+		GetChannelOutput(AudioChannel::VRC6, false) * 5 +
+		GetChannelOutput(AudioChannel::VRC7, false));
+}
+
+void NesSoundMixer::GetCoreChannelLevels(int16_t out[5])
+{
+	// RetroPlug §5b: the 5 core channels' raw pre-DAC linear levels (GetChannelOutput == _currentOutput at
+	// unity volume/pan), each scaled so a full-scale channel lands near half int16 — Square1/Square2/
+	// Triangle/Noise range 0-15 (×1024), DMC ranges 0-127 (×128). Bypassing the DAC, they do NOT re-sum.
+	out[0] = (int16_t)(GetChannelOutput(AudioChannel::Square1, false) * 1024);
+	out[1] = (int16_t)(GetChannelOutput(AudioChannel::Square2, false) * 1024);
+	out[2] = (int16_t)(GetChannelOutput(AudioChannel::Triangle, false) * 1024);
+	out[3] = (int16_t)(GetChannelOutput(AudioChannel::Noise, false) * 1024);
+	out[4] = (int16_t)(GetChannelOutput(AudioChannel::DMC, false) * 128);
+}
+
 void NesSoundMixer::AddDelta(AudioChannel channel, uint32_t time, int16_t delta)
 {
 	if(delta != 0) {
@@ -213,6 +279,29 @@ void NesSoundMixer::EndFrame(uint32_t time)
 		blip_add_delta(_blipBufLeft, stamp, (int)(currentOutput - _previousOutputLeft));
 		_previousOutputLeft = currentOutput;
 
+		// RetroPlug per-channel tap: feed each stream into its own blip at the same stamp as the mix's left
+		// channel. Reads _currentOutput only; the mix above is untouched. Mode 1/2 (pins) = the two 2A03
+		// pins + lumped expansion at the mix's *4 scale (+ slot 3 = the full mix scalar `currentOutput` for
+		// the fidelity reference). Mode 3 (individual mono) = the 5 core channels' raw pre-DAC levels.
+		if(_captureStreams > 0) {
+			int16_t sv[MaxCaptureStreams] = {};
+			if(_captureMode == 3) {
+				GetCoreChannelLevels(sv);
+			} else {
+				uint16_t square, tnd;
+				int32_t expansion;
+				GetStreamVolumes(square, tnd, expansion);
+				sv[0] = (int16_t)(square * 4);
+				sv[1] = (int16_t)(tnd * 4);
+				sv[2] = (int16_t)(expansion * 4);
+				sv[3] = currentOutput;  // reference (mode 2)
+			}
+			for(uint32_t k = 0; k < _captureStreams; k++) {
+				blip_add_delta(_streamBlip[k], stamp, (int)(sv[k] - _streamPrev[k]));
+				_streamPrev[k] = sv[k];
+			}
+		}
+
 		if(_hasPanning) {
 			currentOutput = GetOutputVolume(true) * 4;
 			blip_add_delta(_blipBufRight, stamp, (int)(currentOutput - _previousOutputRight));
@@ -224,9 +313,89 @@ void NesSoundMixer::EndFrame(uint32_t time)
 	if(_hasPanning) {
 		blip_end_frame(_blipBufRight, time);
 	}
+	for(uint32_t k = 0; k < _captureStreams; k++) {
+		blip_end_frame(_streamBlip[k], time);
+	}
 
 	//Reset everything
 	_timestamps.clear();
 	memset(_channelOutput, 0, sizeof(_channelOutput));
+}
+
+void NesSoundMixer::CaptureStreams()
+{
+	// Each pin blip carries the same 96k frame count as the mix blip (same clock rate + blip_end_frame
+	// time), and its own Hermite resampler (96k→host, fresh phase, dynamic-rate 1.0 headless) emits the
+	// same host count as the mix ring — so the pins stay sample-aligned with the mix and re-sum to it.
+	// Read the blip mono into the even lanes, mirror to the odd (the stereo HermiteResampler wants
+	// interleaved L/R), resample, then keep the left lane of the host output.
+	_streamScratch.resize((size_t)NesSoundMixer::MaxSamplesPerFrame * 2);
+	_streamOutScratch.resize((size_t)NesSoundMixer::MaxSamplesPerFrame * 2);
+	for(uint32_t k = 0; k < _captureStreams; k++) {
+		int n96 = blip_read_samples(_streamBlip[k], _streamScratch.data(), NesSoundMixer::MaxSamplesPerFrame, 1);
+		for(int i = 0; i < n96; i++) {
+			_streamScratch[i * 2 + 1] = _streamScratch[i * 2];
+		}
+		uint32_t nHost = _streamResampler[k].Resample<false>(_streamScratch.data(), (uint32_t)n96, _streamOutScratch.data(), NesSoundMixer::MaxSamplesPerFrame);
+		size_t base = _streamBuf[k].size();
+		_streamBuf[k].resize(base + nHost);
+		for(uint32_t i = 0; i < nHost; i++) {
+			_streamBuf[k][base + i] = _streamOutScratch[i * 2];
+		}
+	}
+}
+
+void NesSoundMixer::SetChannelCapture(uint32_t mode, uint32_t hostRate)
+{
+	// Stream count per mode: 1 pins → 3, 2 pins+ref → 4, 3 individual-mono → 5, else off.
+	const uint32_t want = mode == 1 ? 3u : mode == 2 ? 4u : mode == 3 ? 5u : 0u;
+	_captureMode = want > 0 ? mode : 0u;
+	// Free any streams no longer wanted (e.g. re-arming with fewer streams).
+	for(uint32_t k = want; k < MaxCaptureStreams; k++) {
+		if(_streamBlip[k]) {
+			blip_delete(_streamBlip[k]);
+			_streamBlip[k] = nullptr;
+		}
+		_streamBuf[k].clear();
+	}
+	_captureStreams = want;
+	if(want > 0) {
+		_captureHostRate = hostRate;
+		for(uint32_t k = 0; k < want; k++) {
+			if(!_streamBlip[k]) {
+				_streamBlip[k] = blip_new(NesSoundMixer::MaxSamplesPerFrame);
+			}
+			blip_clear(_streamBlip[k]);
+			if(_clockRate > 0) {
+				blip_set_rates(_streamBlip[k], _clockRate, _sampleRate);
+			}
+			_streamResampler[k].Reset();
+			_streamResampler[k].SetSampleRates(_sampleRate, hostRate);
+			_streamPrev[k] = 0;
+			_streamBuf[k].clear();
+		}
+	}
+}
+
+uint32_t NesSoundMixer::AvailableCaptureFrames() const
+{
+	// All captured streams advance in lockstep (identical rates + input counts), so stream 0's length is
+	// the available frame count for every stream.
+	return _captureStreams > 0 ? (uint32_t)_streamBuf[0].size() : 0;
+}
+
+uint32_t NesSoundMixer::DrainChannel(uint32_t stream, float* dest, uint32_t frameCount)
+{
+	if(stream >= _captureStreams) {
+		return 0;
+	}
+	vector<int16_t>& buf = _streamBuf[stream];
+	uint32_t take = std::min((uint32_t)buf.size(), frameCount);
+	constexpr float scale = 1.0f / 32768.0f;
+	for(uint32_t i = 0; i < take; i++) {
+		dest[i] = buf[i] * scale;
+	}
+	buf.erase(buf.begin(), buf.begin() + take);
+	return take;
 }
 

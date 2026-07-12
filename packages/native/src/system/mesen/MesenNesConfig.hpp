@@ -24,6 +24,12 @@ struct MesenNesConfig {
     // needs a reset. removeSpriteLimit toggles the PPU 8-sprites/line cap (live).
     std::uint32_t region            = 0;
     bool          removeSpriteLimit = false;
+    // Per-channel audio export mode (CLI-only; spec/10 §5/§5b). 0 = Mix (default, the mixed stereo
+    // output). 1 = StereoModPins: the two 2A03 output pins (Pulse | TND) + a lumped Expansion stream, 3
+    // mono channelLayout() streams. 3 = IndividualMono: the 5 core channels (Square1/Square2/Triangle/
+    // Noise/DMC) as raw mono stems ("does not sum"). (2 = pins + a mix reference, native/test-only.) Set
+    // at construct via the "mesen" role blob (capture engages in onActivate); there is no live toggle.
+    std::uint32_t channelExportMode = 0;
     std::string   romPath;
     // See SameBoyConfig::savSuffix. 0 => owns `<rom>.sav`; N>=2 => `<rom>-N.sav`,
     // so duplicated / repeat-loaded instances don't clobber a shared sibling.

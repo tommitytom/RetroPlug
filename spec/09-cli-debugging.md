@@ -69,7 +69,38 @@ The current session verb vocabulary (all on the booted `Session`):
 Example sessions live in [cli/sessions/](../packages/retroplug/cli/sessions) (`mgb-smoke.ts`,
 `render-rom.ts`, `render-song.ts`, and `rom-test.ts` — the TAP-emitting debug/observe example) and are
 bundled by the `retroplug-example-session` CMake target via
-[tools/build-session.js](../tools/build-session.js).
+[tools/build-session.js](../tools/build-session.js). These are **loose `.js`** run by path
+(`retroplug-cli build/cli/<name>.js …`) — a dev convenience that needs the build tree.
+
+### The `render` subcommand (compiled-in)
+
+For end users, `retroplug-cli` also carries **named subcommands whose session is compiled into the
+binary** (tjsc bytecode, exactly like the plugin's control-plane/UI bundles) — no loose `.js`, no Node,
+just the executable. The first is `render`, which takes a ROM + its battery `.sav` (or a savestate)
+straight to WAV:
+
+```
+retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--ms n]
+                          [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]
+                          [--song name | --song-index n] [--list-songs]
+```
+
+A missing `--sav` auto-pairs the sibling `<rom>.sav` (native `resolveSavPath`); by default it presses
+Start on boot so a saved song (LSDj) actually plays (`--no-start` for raw boot audio). `--split` folds
+in the per-channel/stem exports: GB 4 channels, NES 3 pins (`pins`) / 5 mono core stems (`mono`).
+**LSDj song selection** (GB only): a `.sav` holds up to 32 named projects but LSDj only plays its
+*working song* on boot, so `--song NAME` / `--song-index N` decode the sav, promote the chosen project to
+the working song (pure-TS `decodeSav`/`encodeSav` → `adopt({ sramBytes })`), and boot that; `--list-songs`
+prints the sav's song names. **LSDj length auto-detect**: when a valid LSDj sav is loaded (identified by
+the `'jk'` magic) and no `--ms` is pinned, `render` renders to the song's **HFF stop** — the APU
+master-enable `$FF26` (NR52) going high→low, polled each ~100 ms chunk via `backend.readCpu` (lsdpack's
+technique) — reports the length (`length: <ms> ms … hff:true`) and trims the WAV to it; `--max-ms` caps the
+no-HFF fallback. `--ms` forces a fixed duration. The
+session is [cli/sessions/render.ts](../packages/retroplug/cli/sessions/render.ts) (parser split into the
+pure, unit-tested [cli/renderArgs.ts](../packages/retroplug/cli/renderArgs.ts)); it's bundled by the
+`retroplug-render-bundle` CMake target and linked into `retroplug-cli` (`rp_render_bundle`), dispatched
+in [cli/main.cpp](../packages/native/cli/main.cpp) — a named subcommand wins over a like-named file
+path, and the `<session.js>` path form remains as the dev fallback. Smoke: `pnpm cli:render-smoke`.
 
 ## 3. The gap: the observe/assert half
 

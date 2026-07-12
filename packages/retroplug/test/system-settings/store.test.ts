@@ -58,14 +58,14 @@ test("a NES system auto-gets the mesen system role; editing region crosses to th
   const id = store.addSystem("/roms/g.nes") as number;
   const v = store.view()[0];
   expect(v.platform).toBe("nes");
-  expect(v.roles).toEqual([{ kind: "mesen", config: { region: 0, removeSpriteLimit: false } }]);
+  expect(v.roles).toEqual([{ kind: "mesen", config: { region: 0, removeSpriteLimit: false, channelExportMode: 0 } }]);
 
   expect(store.setRoleConfig(id, "mesen", { region: 2 })).toBeTruthy(); // PAL
   expect(store.view()[0].roles[0].config.region).toBe(2);
   expect(be.applyRoleCalls[be.applyRoleCalls.length - 1]).toEqual({
     id,
     kind: "mesen",
-    config: { region: 2, removeSpriteLimit: false }, // whole role config crosses (system-category)
+    config: { region: 2, removeSpriteLimit: false, channelExportMode: 0 }, // whole role config crosses (system-category)
   });
 });
 

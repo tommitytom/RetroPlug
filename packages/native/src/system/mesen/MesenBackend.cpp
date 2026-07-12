@@ -61,6 +61,7 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
             settings.empty() ? MesenNesRoleConfig{} : decodeMesenNesRoleConfig(settings);
         cfg.region = role.region;
         cfg.removeSpriteLimit = role.removeSpriteLimit;
+        cfg.channelExportMode = role.channelExportMode;
         return bootMesen(std::make_unique<MesenNesSystem>(id, std::move(cfg), std::move(romBytes)),
                          sampleRate);
     }

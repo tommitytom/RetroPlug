@@ -36,7 +36,9 @@ export interface MenuContext {
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
 const MIDI_ROUTING_NAMES = ["Send to All", "4 Ch / Inst", "1 Ch / Inst", "Ch -> Inst"];
-const AUDIO_ROUTING_NAMES = ["Stereo", "2 Ch / Inst", "1 Ch / Inst"];
+// Index 3 (ChannelSplit) fans one Game Boy's 4 channels across the 8 outputs; offered only for a
+// single system (see projectChildren) — native gates it to systemCount()==1 too.
+const AUDIO_ROUTING_NAMES = ["Stereo", "2 Ch / Inst", "1 Ch / Inst", "Channels (1 GB)"];
 const LAYOUT_NAMES = ["Auto", "Row", "Column", "Grid"];
 const MODEL_NAMES = ["Auto", "DMG-B", "MGB", "SGB", "SGB PAL", "SGB2", "CGB-0", "CGB-A", "CGB-B", "CGB-C", "CGB-D", "CGB-E", "AGB", "GBP"];
 const HIGHPASS_NAMES = ["Off", "Accurate", "DC-Block"];
@@ -237,7 +239,10 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     { id: "proj-zoom", label: `Zoom: ${ctx.settings.zoom === 0 ? "Default" : `${ctx.settings.zoom}x`}`, kind: "cycler", keepOpen: true, onSelect: () => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, 1)), onCycle: (dir) => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, dir)) },
     sep("proj-sep1"),
     cycler("proj-midi", "MIDI Routing", MIDI_ROUTING_NAMES, ctx.settings.midiRouting, (n) => project.setMidiRouting(n)),
-    cycler("proj-audio", "Audio Routing", AUDIO_ROUTING_NAMES, ctx.settings.audioRouting, (n) => project.setAudioRouting(n)),
+    // ChannelSplit (index 3) is single-system-only, so the cycler drops it with 0 or >1 systems (the
+    // per-instance modes stay — they're the multi-system routes). Native is the authority and can't
+    // mis-route regardless; this is UX only.
+    cycler("proj-audio", "Audio Routing", ctx.systems.length === 1 ? AUDIO_ROUTING_NAMES : AUDIO_ROUTING_NAMES.slice(0, 3), ctx.settings.audioRouting, (n) => project.setAudioRouting(n)),
   );
   return items;
 }

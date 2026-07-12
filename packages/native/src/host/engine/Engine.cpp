@@ -138,6 +138,21 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     // channels every mode collapses to that one pair).
     for (std::size_t c = 0; c < numOutputs; ++c)
         std::fill_n(outputs[c], frames, 0.0f);
+
+    // ChannelSplit: one system fans its per-channel streams across the output pairs (a Game Boy's 4
+    // channels → outs 0/1,2/3,4/5,6/7). Gated to a single system — a lone system has no link peers, so
+    // this IS the "unlinked" condition; any other project falls through to MultiOutRouter and the wide
+    // layout stays inert (the load-bearing correctness rule: the split is Engine/router-driven, never an
+    // always-on system trait). A non-GB single system reports 1 stream → collapses to Stereo (pair 0).
+    if (audioRouting_ == AudioRouting::ChannelSplit && systemCount() == 1) {
+        const auto n = static_cast<std::uint32_t>(project_.systems().front()->channelLayout().size());
+        if (n >= 1 && 2u * n <= numOutputs) {
+            ChannelSplitRouter router(outputs, numOutputs, n);
+            runBlockWithRouter(frames, router);
+            return;
+        }
+    }
+
     MultiOutRouter router(outputs, numOutputs, audioRouting_);
     runBlockWithRouter(frames, router);
 }

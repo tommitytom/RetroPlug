@@ -55,7 +55,7 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
 }
 
 // Inclusive upper bounds for the settings enums (native validates + rejects above).
-const SETTING_MAX = { layout: 3, midiRouting: 3, audioRouting: 2, zoom: 6 };
+const SETTING_MAX = { layout: 3, midiRouting: 3, audioRouting: 3, zoom: 6 };
 
 
 export class ProjectStore {
