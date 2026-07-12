@@ -16,6 +16,7 @@
 #include "Core/NES/Input/NesController.h"
 #include "Core/NES/NesConsole.h"
 #include "Core/NES/NesCpu.h"
+#include "Core/NES/NesSoundMixer.h"
 #include "Core/NES/NesMemoryManager.h"
 #include "Core/Shared/Audio/SoundMixer.h"
 #include "Core/Shared/BaseControlDevice.h"
@@ -141,6 +142,17 @@ void MesenNesSystem::onActivate(double sampleRate) {
     if (auto* nesConsole = dynamic_cast<NesConsole*>(emu_->GetConsole().get())) {
         n8Role_ = std::make_unique<NesN8MidiRole>();
         n8Role_->onAttach(*nesConsole);
+
+        // Per-channel export (spec/10 §5): when the "mesen" role selected StereoModPins (mode 1), arm the
+        // sound mixer's pin tap so channelLayout() exposes the 3 mono pin streams to renderAudioPerChannel.
+        // Mode 2 (native/test-only) adds a 4th mix-reference stream for the fidelity test. (CLI-only; a
+        // normal Mix build never touches this and stays byte-identical.)
+        if (config_.channelExportMode >= 1) {
+            nesMixer_ = nesConsole->GetSoundMixer();
+            nesMixer_->SetChannelCapture(true, static_cast<std::uint32_t>(sampleRate),
+                                         /*withReference=*/config_.channelExportMode == 2);
+            channelCapture_ = true;
+        }
     }
 
     // Restore persisted battery RAM / savestate. Mesen's BatteryManager will
@@ -168,6 +180,8 @@ void MesenNesSystem::onDeactivate() {
     // memory-manager registration) before tearing down the emulator.
     n8Role_.reset();
     debugSession_.reset();  // holds emu_ (raw); drop before the emulator
+    nesMixer_ = nullptr;    // owned by emu_'s console — drop the borrowed pointer before the emulator
+    channelCapture_ = false;
     emu_.reset();
     audioDevice_.reset();
     videoDevice_.reset();
@@ -188,6 +202,11 @@ void MesenNesSystem::onSampleRateChanged(double sampleRate) {
         AudioConfig audioCfg = emu_->GetSettings()->GetAudioConfig();
         audioCfg.SampleRate = static_cast<uint32_t>(sampleRate);
         emu_->GetSettings()->SetAudioConfig(audioCfg);
+    }
+    // Re-arm the pin tap at the new host rate (re-inits the per-stream resamplers).
+    if (channelCapture_ && nesMixer_) {
+        nesMixer_->SetChannelCapture(true, static_cast<std::uint32_t>(sampleRate),
+                                     /*withReference=*/config_.channelExportMode == 2);
     }
 }
 
@@ -277,13 +296,24 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     auto* cpu = console->GetCpu();
 
     // Degenerate 1-member unit: run the whole block here and report "done"
-    // (false). Run the CPU one instruction at a time until the audio device
-    // has accumulated enough samples for this block. The APU auto-flushes into
-    // MesenAudioDevice every CycleLength APU cycles via NesApu::EndFrame().
-    // ~227 samples per flush at 44.1 kHz, so blockSize samples are ready well
-    // within one PPU frame.
-    while (audioDevice_->availableFrames() < framesNeeded) {
-        cpu->Exec();
+    // (false). Run the CPU one instruction at a time until enough samples for
+    // this block have accumulated. The APU auto-flushes into MesenAudioDevice
+    // (and, in capture mode, the pin streams) every CycleLength APU cycles via
+    // NesApu::EndFrame(). ~227 samples per flush at 44.1 kHz, so blockSize
+    // samples are ready well within one PPU frame.
+    //
+    // In pins mode gate on the CAPTURE streams, not the mix ring: the pins take
+    // their own resampler path, so gating on the mix ring could leave a pin one
+    // sample short (finishBlock would then truncate it). The pins are mutually
+    // aligned, so stream 0's count is authoritative.
+    if (channelCapture_ && nesMixer_) {
+        while (nesMixer_->AvailableCaptureFrames() < framesNeeded) {
+            cpu->Exec();
+        }
+    } else {
+        while (audioDevice_->availableFrames() < framesNeeded) {
+            cpu->Exec();
+        }
     }
     return false;
 }
@@ -291,29 +321,62 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
 void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {
     if (!activated_ || !emu_) return;
 
-    assert(laneCount == 2); // mixed stereo only today (default single stereo stream)
-    (void)laneCount;
-
     const std::uint32_t blockSize = info.frames;
-    if (stereoAccum_.size() < std::size_t(blockSize) * 2) {
-        stereoAccum_.assign(std::size_t(blockSize) * 2, 0.0f);
-    }
-    audioDevice_->drain(stereoAccum_.data(), blockSize);
 
-    // Sum interleaved stereo into the planar L/R outputs with smoothed gain
-    // (matches SameBoySystem::finishBlock so multi-system mixes are uniform).
-    float* outL = outs[0];
-    float* outR = outs[1];
-    for (std::uint32_t i = 0; i < blockSize; ++i) {
-        const float g = gainSmoother_.next();
-        outL[i] += stereoAccum_[std::size_t(i) * 2 + 0] * g;
-        outR[i] += stereoAccum_[std::size_t(i) * 2 + 1] * g;
+    if (channelCapture_ && laneCount >= 6) {
+        // Pins mode: fan the mono pin streams (Pulse/TND/Expansion, +MixRef under mode 2) into their own L
+        // lanes (stream k -> outs[2k]); the R lanes stay at the caller-zeroed 0 (mono streams). We gated on
+        // the capture streams, so blockSize frames are ready in each. ONE smoothed gain per frame across
+        // the lanes (like SameBoySystem) keeps the stems a faithful decomposition of the mix.
+        const std::size_t nStreams = laneCount / 2;
+        for (std::size_t k = 0; k < nStreams; ++k) {
+            chanAccum_[k].assign(blockSize, 0.0f);  // re-zero; DrainChannel fills [0, take)
+            nesMixer_->DrainChannel(static_cast<std::uint32_t>(k), chanAccum_[k].data(), blockSize);
+        }
+        for (std::uint32_t i = 0; i < blockSize; ++i) {
+            const float g = gainSmoother_.next();
+            for (std::size_t k = 0; k < nStreams; ++k) {
+                outs[2 * k][i] += chanAccum_[k][i] * g;
+            }
+        }
+        // Flush the mix ring (discard) so it stays bounded — the loop gated on the capture streams, not it.
+        const std::uint32_t mixAvail = audioDevice_->availableFrames();
+        if (stereoAccum_.size() < std::size_t(mixAvail) * 2) stereoAccum_.assign(std::size_t(mixAvail) * 2, 0.0f);
+        audioDevice_->drain(stereoAccum_.data(), mixAvail);
+    } else {
+        assert(laneCount == 2); // mixed stereo (default single stereo stream)
+        (void)laneCount;
+        if (stereoAccum_.size() < std::size_t(blockSize) * 2) {
+            stereoAccum_.assign(std::size_t(blockSize) * 2, 0.0f);
+        }
+        audioDevice_->drain(stereoAccum_.data(), blockSize);
+        // Sum interleaved stereo into the planar L/R outputs with smoothed gain
+        // (matches SameBoySystem::finishBlock so multi-system mixes are uniform).
+        float* outL = outs[0];
+        float* outR = outs[1];
+        for (std::uint32_t i = 0; i < blockSize; ++i) {
+            const float g = gainSmoother_.next();
+            outL[i] += stereoAccum_[std::size_t(i) * 2 + 0] * g;
+            outR[i] += stereoAccum_[std::size_t(i) * 2 + 1] * g;
+        }
     }
 
     // Tear-free memory snapshots for any UI subscriptions. End-of-block =
     // internally consistent state because the CPU isn't mid-instruction.
     publishMemorySnapshots();
     publishStateSnapshot(info.frames, sampleRate_);
+}
+
+std::vector<ChannelStream> MesenNesSystem::channelLayout() const {
+    if (channelCapture_) {
+        // The two 2A03 stereo-mod output pins + the lumped expansion term, as mono streams (spec/10 §5).
+        // Mode 2 (native/test-only) appends the mix-reference stream for the fidelity test.
+        if (config_.channelExportMode == 2) {
+            return {{"Pulse", false}, {"TND", false}, {"Expansion", false}, {"MixRef", false}};
+        }
+        return {{"Pulse", false}, {"TND", false}, {"Expansion", false}};
+    }
+    return {{"Mix", true}};
 }
 
 std::size_t MesenNesSystem::stateSnapshotSize() const {

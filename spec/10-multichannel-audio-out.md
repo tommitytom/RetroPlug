@@ -1,8 +1,8 @@
 # 10 — Multi-channel audio output (per-console channel stems)
 
-**Status: in progress — the host seam, the SameBoy GB tap, the CLI GB export, and the plugin GB option
-are built (§10 steps 1–4); the NES work remains.** This doc designs outputting the *individual console
-sound channels*
+**Status: in progress — the host seam, the SameBoy GB tap, the CLI GB export, the plugin GB option, and
+the NES stereo-mod pins (CLI) are built (§10 steps 1–4 + the pin half of step 5); the NES 5-mono stems +
+per-mapper expansion remain.** This doc designs outputting the *individual console sound channels*
 of a single emulator instance instead of its mixed stereo — 8 outputs for a Game Boy (a stereo pair
 per channel), and 5-plus mono channels / the hardware "stereo-mod" pins for an NES. It is a design
 only; no code exists yet. It builds on [02-native-host.md](02-native-host.md) (the `Engine` /
@@ -22,9 +22,12 @@ Multi-channel output is achievable, and the codebase is partly pre-scaffolded fo
   [PluginDSP.cpp](../packages/native/plugin/PluginDSP.cpp) `initAudioPort` / `DISTRHO_PLUGIN_NUM_OUTPUTS = 8`).
 - `AudioRouter::bus(slot, streamIndex)` already reserves a `streamIndex` argument with a comment
   pointing at "the 4 Game Boy channels" ([BlockRunner.hpp](../packages/native/src/system/BlockRunner.hpp)).
-- There is **no realtime resampler** in the audio path — both cores render at the host sample rate
-  (SameBoy `GB_set_sample_rate`, Mesen `audioCfg.SampleRate`; r8brain is LSDj-kit-only), so per-channel
-  streams need no per-stream resampling.
+- Sample rates: **SameBoy renders at the host rate** (`GB_set_sample_rate`), so its per-channel streams
+  need no resampling. **The NES (Mesen) does NOT** — `NesSoundMixer` renders at a fixed **96 kHz** and the
+  *shared* `SoundMixer` resamples 96 kHz → host (a `HermiteResampler`; `audioCfg.SampleRate` is the
+  resampler *target*, not the render rate). So NES per-channel streams **must resample too**: each pin blip
+  runs at 96 kHz and takes its own `HermiteResampler` (96 kHz → host), mirroring the mix's path so the pins
+  stay sample-aligned with each other and re-sum. (r8brain is LSDj-kit-only, a separate path.)
 
 Per-console feasibility (both facts verified against the vendored source):
 
@@ -365,9 +368,25 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    splits to 8 lanes, a 2-system project falls back) in `retroplug-audio-test`; `app-audio-routing.test.ts`
    accepts mode 3. Per-pair separation in a real DAW (an 8-channel bus via `RETROPLUG_AUTOLOAD_PROJECT`)
    is the manual confirmation — no headless harness captures the plugin's 8 audio outs yet.
-5. **NES tap** — the `NesSoundMixer` edit emitting the 5 core stems + the 2–3 pin/expansion group terms
-   into per-stream blip buffers; expose via `renderAudioPerChannel` (CLI). Pin-mode fidelity check.
-6. **NES stereo-mod grouping in the CLI** — pulse | TND (+ lumped expansion) as the flagship faithful
-   mode; the 5-mono (+ per-mapper expansion sub-channel) mode as the secondary "does not sum" mode.
+5. **NES stereo-mod pins — DONE (the flagship faithful mode).** A direct (vendored, no patch harness)
+   `NesSoundMixer` edit taps the two 2A03 output pins — **Pulse** (`squareVolume`) and **TND**
+   (`tndVolume`) — plus a **lumped Expansion** term, into three mono stream blips (each at 96 kHz →
+   its own `HermiteResampler` → host, mirroring the mix's path). Guarded behind a capture flag so the
+   mixed path stays byte-identical when off; the tap only READS `_currentOutput`. `MesenNesSystem`
+   reports a 3-mono `channelLayout()` (Pulse/TND/Expansion) under a new `MesenNesConfig.channelExportMode`
+   (set at construct via the "mesen" role blob — `coreRoles.ts` `clampedInt(0,1,0)` → `MesenBackend` →
+   config; additive, no migration), gates the block pull loop on the capture streams, and fans them into
+   the lanes in `finishBlock`. CLI-only — `renderAudioPerChannel` needs no change (it sizes N from
+   `channelLayout()`; the mono pins ride the interleaved carrier with a silent R). `export-nes-channels.ts`
+   writes 3 mono WAVs + one 3-channel WAV. Guards: `app-play-nes-channels.test.ts` (real separation — a ch1
+   note lights the Pulse pin while TND + Expansion stay silent, R lanes silent) + `NesStems.test.cpp` (a
+   native-only mode-2 adds a 4th mix-reference stream through the identical per-stream resampler, so
+   Σ(pins) == the reference is exact by construction — the fidelity proof). **Remaining for step 5b:** the
+   5-individual-mono core stems ("does not sum").
+6. **NES 5-mono + per-mapper expansion** — the 5 individual core channels (Pulse1/Pulse2/Triangle/Noise/
+   DMC) as the secondary "does not sum" mode; per-mapper expansion sub-channel taps (VRC6 pulse/saw, VRC7
+   6×FM, N163, …) inside each chip's `ClockAudio`.
+7. **Follow-ons** (decisions permitting) — upstream-vs-diff for the SameBoy patch; NES-in-plugin
+   (mono-lane packing); the NES separation pot; EPSM; mode-aware plugin port relabeling.
 7. **Follow-ons** (decisions permitting) — upstream-vs-diff for the SameBoy patch; NES-in-plugin
    (mono-lane packing); the NES separation pot; EPSM; mode-aware plugin port relabeling.

@@ -15,6 +15,7 @@ class SystemBase;
 struct MesenNesRoleConfig {
     std::uint32_t region            = 0;      // ConsoleRegion (Auto/Ntsc/Pal/Dendy/NtscJapan)
     bool          removeSpriteLimit = false;
+    std::uint32_t channelExportMode = 0;      // 0 = Mix, 1 = StereoModPins (CLI-only; spec/10 §5)
 };
 
 // The Mesen core — one backend spanning multiple platforms. Dispatches on `spec.platform` to build the

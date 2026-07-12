@@ -150,6 +150,7 @@ add_custom_target(retroplug-example-session ALL
                ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-mgb.js
                ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-lsdj-sync.js
                ${CMAKE_BINARY_DIR}/greenfield-cli/export-mgb-channels.js
+               ${CMAKE_BINARY_DIR}/greenfield-cli/export-nes-channels.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${GFCLI_SESSIONS}/mgb-smoke.ts   ${CMAKE_BINARY_DIR}/greenfield-cli/mgb-smoke.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
@@ -164,6 +165,8 @@ add_custom_target(retroplug-example-session ALL
             ${GFCLI_SESSIONS}/analyze-lsdj-sync.ts ${CMAKE_BINARY_DIR}/greenfield-cli/analyze-lsdj-sync.js
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
             ${GFCLI_SESSIONS}/export-mgb-channels.ts ${CMAKE_BINARY_DIR}/greenfield-cli/export-mgb-channels.js
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
+            ${GFCLI_SESSIONS}/export-nes-channels.ts ${CMAKE_BINARY_DIR}/greenfield-cli/export-nes-channels.js
     COMMENT "Bundling greenfield CLI example sessions (esbuild)"
     VERBATIM)
 
@@ -319,7 +322,8 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/ChannelStreams.test.cpp
     test/audio/SameBoyStems.test.cpp
     test/audio/ChannelSplit.test.cpp
-    test/audio/EngineChannelSplit.test.cpp)
+    test/audio/EngineChannelSplit.test.cpp
+    test/audio/NesStems.test.cpp)    # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
 
 target_link_libraries(retroplug-audio-test PRIVATE
     retroplug-backend          # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
@@ -328,9 +332,11 @@ target_link_libraries(retroplug-audio-test PRIVATE
 target_include_directories(retroplug-audio-test PRIVATE
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)             # quickjs.h (via Engine.hpp → DspRuntime.hpp)
 
-# The mGB ROM the SameBoyStems + ChannelSplit fidelity tests drive (the boot chime supplies real signal).
+# The mGB ROM the SameBoyStems + ChannelSplit fidelity tests drive (the boot chime supplies real signal);
+# the n8-midi NES ROM the NesStems pin test drives (a ch1 note supplies real APU signal).
 target_compile_definitions(retroplug-audio-test PRIVATE
-    RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb")
+    RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
+    RP_N8_MIDI_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/n8-midi.nes")
 
 set_target_properties(retroplug-audio-test PROPERTIES
     CXX_STANDARD 20
