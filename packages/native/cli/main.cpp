@@ -84,10 +84,10 @@ int main(int argc, char** argv) try {
             "  render <rom> [--sav f] [--state f] [--out f] [--ms n] [--max-ms n]\n"
             "               [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]\n"
             "               [--song name | --song-index n] [--list-songs]\n"
-            "                       Render a ROM (+.sav/savestate) to WAV (compiled-in; no Node).\n"
+            "                       Render a ROM (+.sav/savestate) to WAV.\n"
             "                       LSDj: --song picks a saved song; --list-songs lists them; a loaded\n"
             "                       LSDj sav auto-detects length (renders to the HFF stop) unless --ms.\n"
-            "  <session.js> [args]  Run a pre-bundled session by path (dev fallback).\n");
+            "  <session.js> [args]  Run a JS based session by path\n");
         return 2;
     }
     // A named subcommand (its session is compiled in) wins over a like-named file path.
