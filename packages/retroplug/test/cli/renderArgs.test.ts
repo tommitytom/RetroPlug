@@ -6,7 +6,8 @@ import { parseRenderArgs } from "../../cli/renderArgs";
 test("render args: bare <rom> yields the documented defaults", () => {
   const o = parseRenderArgs(["song.gb"]);
   expect(o.rom).toBe("song.gb");
-  expect(o.ms).toBe(8000);
+  expect(o.ms).toBe(undefined); // unset → auto (LSDj length) / 8000 default applied in render.ts
+  expect(o.maxMs).toBe(300000);
   expect(o.split).toBe("mix");
   expect(o.start).toBe(true); // auto-start playback by default
   expect(o.transport).toBe(false);
@@ -42,13 +43,14 @@ test("render args: --song-index rejects out-of-range / non-integer", () => {
 test("render args: every value + boolean flag parses", () => {
   const o = parseRenderArgs([
     "r.nes", "--sav", "s.sav", "--state", "s.ss0", "--out", "o.wav",
-    "--ms", "1200", "--split", "mono", "--bpm", "128", "--transport", "--no-start",
+    "--ms", "1200", "--max-ms", "60000", "--split", "mono", "--bpm", "128", "--transport", "--no-start",
   ]);
   expect(o.rom).toBe("r.nes");
   expect(o.sav).toBe("s.sav");
   expect(o.state).toBe("s.ss0");
   expect(o.out).toBe("o.wav");
   expect(o.ms).toBe(1200);
+  expect(o.maxMs).toBe(60000);
   expect(o.split).toBe("mono");
   expect(o.bpm).toBe(128);
   expect(o.transport).toBe(true);
@@ -70,6 +72,11 @@ test("render args: --ms rejects a non-positive/non-integer value", () => {
   expect(() => parseRenderArgs(["r.gb", "--ms", "0"])).toThrow("--ms");
   expect(() => parseRenderArgs(["r.gb", "--ms", "1.5"])).toThrow("--ms");
   expect(() => parseRenderArgs(["r.gb", "--ms", "x"])).toThrow("--ms");
+});
+
+test("render args: --max-ms parses + rejects a bad value", () => {
+  expect(parseRenderArgs(["r.gb", "--max-ms", "12000"]).maxMs).toBe(12000);
+  expect(() => parseRenderArgs(["r.gb", "--max-ms", "0"])).toThrow("--max-ms");
 });
 
 test("render args: a missing rom throws usage", () => {

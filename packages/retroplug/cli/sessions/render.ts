@@ -10,6 +10,10 @@
 // on boot so a saved song (e.g. LSDj) actually plays — pass --no-start to render raw boot audio. The
 // --split modes fold in the per-channel/stem exports (GB 4 channels; NES 3 pins / 5 mono core stems).
 //
+// LSDj length auto-detect: when a valid LSDj sav is loaded (and no --ms is pinned), render to the song's
+// HFF stop (the APU master-enable NR52 going off — lsdpack's technique), report the length, and trim the
+// WAV to it. --ms forces a fixed duration; --max-ms caps the detection (no-HFF fallback).
+//
 // LSDj (GB) song selection: a .sav holds up to 32 named projects but LSDj only plays its WORKING song on
 // boot, so --song NAME / --song-index N promote a chosen project to the working song before booting
 // (decode → assign → re-encode → seed the fresh system). --list-songs prints the sav's song names.
@@ -23,6 +27,20 @@ import { decodeSav, encodeSav, kSavSize } from "../../src/lsdj";
 import type { Session } from "../session";
 
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
+
+// LSDj song-length auto-detect: LSDj's HFF command stops the song by powering the APU off — a 0 write to
+// NR52 ($FF26), the sound master-enable register (bit 7). We poll it each render chunk and stop at the
+// high→low edge (the technique lsdpack uses). Hardware-level, so version-independent + tempo/hop-agnostic.
+const NR52_ADDR = 0xff26;
+const NR52_ON = 0x80; // bit 7 = all-sound-on
+const DETECT_CHUNK_MS = 100; // poll granularity (≈ detection precision)
+const DETECT_ARM_MS = 2000; // window to confirm playback began (NR52 goes on) after Start
+const DETECT_OFF_CHUNKS = 2; // NR52 must read off this many consecutive chunks to count as the HFF stop
+
+/** A 128 KiB image carrying LSDj's 'jk' SRAM-init magic at 0x813E/0x813F — same check as lsdjSramSignature. */
+function isLsdjSav(bytes: Uint8Array): boolean {
+  return bytes.length >= 0x20000 && bytes[0x813e] === 0x6a && bytes[0x813f] === 0x6b;
+}
 
 // Per-mode stream labels, matching each system's channelLayout() order.
 const GB_CHANNELS = ["pulse1", "pulse2", "wave", "noise"]; // SameBoySystem::channelLayout (stereo streams)
@@ -131,6 +149,53 @@ function outBase(o: RenderOpts): string {
   return replaceExtension(o.rom, "");
 }
 
+interface StopResult {
+  pcm: Float32Array; // accumulated interleaved-stereo, whole render
+  startFrame: number; // frame where playback began (NR52 first on)
+  stopFrame: number | null; // frame of the HFF stop (first NR52-off chunk boundary), null if capped
+  hff: boolean; // an HFF stop was detected (vs. hitting --max-ms)
+}
+
+/** Render chunk-by-chunk, polling NR52 ($FF26) after each chunk, and stop at the LSDj HFF (the APU
+ *  master-enable going high→low, sustained ≥DETECT_OFF_CHUNKS). Returns the full PCM + the play/stop
+ *  frame markers so the caller can report the length and trim the tail. Caps at maxMs (no-HFF fallback). */
+function renderUntilStop(s: Session, id: number, maxMs: number): StopResult {
+  const chunks: Float32Array[] = [];
+  let total = 0; // accumulated frames
+  let elapsed = 0; // ms rendered
+  let armed = false;
+  let startFrame = 0;
+  let offStreak = 0;
+  let firstOffFrame: number | null = null;
+  let stopFrame: number | null = null;
+
+  while (elapsed < maxMs) {
+    const chunk = s.audio.renderAudio(DETECT_CHUNK_MS); // interleaved stereo
+    const frameBefore = total;
+    chunks.push(chunk);
+    total += chunk.length / 2;
+    elapsed += DETECT_CHUNK_MS;
+
+    const on = ((s.backend.readCpu(id, NR52_ADDR) ?? 0) & NR52_ON) !== 0;
+    if (!armed) {
+      if (on) { armed = true; startFrame = frameBefore; } // playback began here
+      continue; // (still un-armed after DETECT_ARM_MS just means it hasn't started — keep going to the cap)
+    }
+    if (!on) {
+      if (offStreak === 0) firstOffFrame = frameBefore; // the chunk the sound cut out
+      if (++offStreak >= DETECT_OFF_CHUNKS) { stopFrame = firstOffFrame; break; } // sustained → HFF stop
+    } else {
+      offStreak = 0;
+      firstOffFrame = null;
+    }
+  }
+
+  const pcm = new Float32Array(total * 2);
+  let o = 0;
+  for (const c of chunks) { pcm.set(c, o); o += c.length; }
+  return { pcm, startFrame, stopFrame, hff: stopFrame !== null };
+}
+
 runSession((s) => {
   const o = parseRenderArgs(hostArgs());
   const platform = platformOf(o.rom);
@@ -175,14 +240,33 @@ runSession((s) => {
   };
   const base = outBase(o);
 
+  // LSDj length auto-detect: when a valid LSDj sav is loaded and the user didn't pin a duration, render to
+  // the HFF stop (NR52→0) instead of a fixed window, report the length, and trim the silent tail.
+  let lsdjLoaded = false;
+  if (platform === "gb") {
+    const raw = s.backend.readFile(o.sav ?? siblingSavPath(o.rom));
+    lsdjLoaded = !!raw && isLsdjSav(raw);
+  }
+  const autoDetect = lsdjLoaded && o.split === "mix" && o.start && o.ms === undefined;
+
   if (o.split === "mix") {
-    const pcm = s.audio.renderAudio(o.ms); // interleaved L/R float32
+    if (autoDetect) {
+      const r = renderUntilStop(s, id, o.maxMs);
+      const endFrame = r.stopFrame ?? r.pcm.length / 2;
+      const lengthMs = Math.round(((endFrame - r.startFrame) / sr) * 1000);
+      write(base, encodeWav(r.pcm.subarray(0, endFrame * 2), sr, 2)); // trimmed to the HFF stop
+      console.log(`retroplug-cli: length: ${lengthMs} ms (${endFrame - r.startFrame} frames @${sr}Hz) hff:${r.hff}`);
+      if (!r.hff) console.warn(`retroplug-cli: no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
+      return;
+    }
+    const ms = o.ms ?? 8000;
+    const pcm = s.audio.renderAudio(ms); // interleaved L/R float32
     write(base, encodeWav(pcm, sr, 2));
-    console.log(`retroplug-cli: rendered ${o.rom} → ${base} (${o.ms}ms @${sr}Hz)`);
+    console.log(`retroplug-cli: rendered ${o.rom} → ${base} (${ms}ms @${sr}Hz)`);
     return;
   }
 
-  const bufs = s.audio.renderAudioPerChannel(id, o.ms);
+  const bufs = s.audio.renderAudioPerChannel(id, o.ms ?? 8000);
   if (bufs.length === 0) throw new Error("render: renderAudioPerChannel returned no streams");
 
   if (platform === "gb") {

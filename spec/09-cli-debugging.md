@@ -91,7 +91,11 @@ in the per-channel/stem exports: GB 4 channels, NES 3 pins (`pins`) / 5 mono cor
 **LSDj song selection** (GB only): a `.sav` holds up to 32 named projects but LSDj only plays its
 *working song* on boot, so `--song NAME` / `--song-index N` decode the sav, promote the chosen project to
 the working song (pure-TS `decodeSav`/`encodeSav` → `adopt({ sramBytes })`), and boot that; `--list-songs`
-prints the sav's song names. The
+prints the sav's song names. **LSDj length auto-detect**: when a valid LSDj sav is loaded (identified by
+the `'jk'` magic) and no `--ms` is pinned, `render` renders to the song's **HFF stop** — the APU
+master-enable `$FF26` (NR52) going high→low, polled each ~100 ms chunk via `backend.readCpu` (lsdpack's
+technique) — reports the length (`length: <ms> ms … hff:true`) and trims the WAV to it; `--max-ms` caps the
+no-HFF fallback. `--ms` forces a fixed duration. The
 session is [cli/sessions/render.ts](../packages/retroplug/cli/sessions/render.ts) (parser split into the
 pure, unit-tested [cli/renderArgs.ts](../packages/retroplug/cli/renderArgs.ts)); it's bundled by the
 `retroplug-render-bundle` CMake target and linked into `retroplug-cli` (`rp_render_bundle`), dispatched

@@ -13,7 +13,8 @@ export interface RenderOpts {
   sav?: string;
   state?: string;
   out?: string;
-  ms: number;
+  ms?: number; // explicit fixed duration; undefined = auto (LSDj: render to the HFF stop) / 8000 default
+  maxMs: number; // safety cap for LSDj length auto-detect (no-HFF fallback)
   split: SplitMode;
   bpm?: number;
   transport: boolean;
@@ -26,7 +27,7 @@ export interface RenderOpts {
 }
 
 export const RENDER_USAGE =
-  "usage: render <rom> [--sav f] [--state f] [--out f] [--ms n] " +
+  "usage: render <rom> [--sav f] [--state f] [--out f] [--ms n] [--max-ms n] " +
   "[--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start] " +
   "[--song name | --song-index n] [--list-songs]";
 
@@ -43,7 +44,8 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
   let sav: string | undefined;
   let state: string | undefined;
   let out: string | undefined;
-  let ms = 8000;
+  let ms: number | undefined;
+  let maxMs = 300000; // 5 min default cap for LSDj length auto-detect
   let split: SplitMode = "mix";
   let bpm: number | undefined;
   let transport = false;
@@ -66,6 +68,7 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
       case "--state": state = next(i, a); i++; break;
       case "--out": out = next(i, a); i++; break;
       case "--ms": ms = intValue(a, next(i, a)); i++; break;
+      case "--max-ms": maxMs = intValue(a, next(i, a)); i++; break;
       case "--bpm": bpm = intValue(a, next(i, a)); i++; break;
       case "--split": {
         const v = next(i, a); i++;
@@ -97,5 +100,5 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
   if (!rom) throw new Error(`render: missing <rom>\n${RENDER_USAGE}`);
   if (song !== undefined && songIndex !== undefined)
     throw new Error("render: --song and --song-index are mutually exclusive");
-  return { rom, sav, state, out, ms, split, bpm, transport, start, song, songIndex, listSongs };
+  return { rom, sav, state, out, ms, maxMs, split, bpm, transport, start, song, songIndex, listSongs };
 }

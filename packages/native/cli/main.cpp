@@ -81,11 +81,12 @@ int main(int argc, char** argv) try {
     if (argc < 2 || argv[1][0] == '\0') {
         std::fprintf(stderr,
             "usage: retroplug-cli <command|session.js> [args...]\n"
-            "  render <rom> [--sav f] [--state f] [--out f] [--ms n]\n"
+            "  render <rom> [--sav f] [--state f] [--out f] [--ms n] [--max-ms n]\n"
             "               [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]\n"
             "               [--song name | --song-index n] [--list-songs]\n"
             "                       Render a ROM (+.sav/savestate) to WAV (compiled-in; no Node).\n"
-            "                       LSDj: --song picks a saved song; --list-songs lists them.\n"
+            "                       LSDj: --song picks a saved song; --list-songs lists them; a loaded\n"
+            "                       LSDj sav auto-detects length (renders to the HFF stop) unless --ms.\n"
             "  <session.js> [args]  Run a pre-bundled greenfield session by path (dev fallback).\n");
         return 2;
     }
