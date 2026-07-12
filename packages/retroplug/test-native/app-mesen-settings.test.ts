@@ -13,7 +13,6 @@ import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
 
 declare const __REPO_RESOURCES_DIR__: string;
-declare const __CONFIG_DIR__: string; // per-test writable temp dir (a bare /tmp isn't writable on Windows)
 const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
 
 test("a NES core boots with a non-default region seeded from its role config (construct blob)", () => {
@@ -30,7 +29,7 @@ test("a NES core boots with a non-default region seeded from its role config (co
   expect(v.roles.find((r) => r.kind === "mesen")?.config.region).toBe(2);
 
   audio.renderAudio(500);
-  expect(audio.screenshot(v.id, `${__CONFIG_DIR__}/app-mesen-settings_construct.png`)).toBeTruthy(); // booted + rendered
+  expect(be.getFrame(v.id)?.published).toBeTruthy(); // booted + rendered
 });
 
 test("live NES knob edits reach the core: sprite-limit (live) + region (resets) both keep it rendering", () => {
@@ -41,20 +40,20 @@ test("live NES knob edits reach the core: sprite-limit (live) + region (resets) 
 
   const id = (project.systems.loadRom(NES) as { system: number }).system;
   audio.renderAudio(500);
-  expect(audio.screenshot(id, `${__CONFIG_DIR__}/app-mesen-settings_boot.png`)).toBeTruthy();
+  expect(be.getFrame(id)?.published).toBeTruthy();
 
   // Live: mutates GetNesConfig().RemoveSpriteLimit, no reset.
   expect(project.systems.setRoleConfig(id, "mesen", { removeSpriteLimit: true })).toBeTruthy();
   audio.renderAudio(200);
-  expect(audio.screenshot(id, `${__CONFIG_DIR__}/app-mesen-settings_sprite.png`)).toBeTruthy();
+  expect(be.getFrame(id)?.published).toBeTruthy();
 
   // Region change forces emu_->Reset() (RunFrame is bypassed). The core reboots and must render again.
   expect(project.systems.setRoleConfig(id, "mesen", { region: 2 })).toBeTruthy(); // PAL
   audio.renderAudio(500);
-  expect(audio.screenshot(id, `${__CONFIG_DIR__}/app-mesen-settings_region.png`)).toBeTruthy(); // survived the reset
+  expect(be.getFrame(id)?.published).toBeTruthy(); // survived the reset
 
   // Re-sending the same region is a no-op (value-guarded — no spurious reset).
   expect(project.systems.setRoleConfig(id, "mesen", { region: 2 })).toBeTruthy();
   audio.renderAudio(200);
-  expect(audio.screenshot(id, `${__CONFIG_DIR__}/app-mesen-settings_region2.png`)).toBeTruthy();
+  expect(be.getFrame(id)?.published).toBeTruthy();
 });

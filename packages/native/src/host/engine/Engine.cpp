@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
@@ -181,7 +182,13 @@ bool Engine::screenshot(SystemId id, const std::string& path) {
     // Encode the owned registry frame (a published copy) — no findSystem walk, no live-core read, so
     // it's safe while the audio thread plays. false until the core has rendered its first frame.
     const SnapshotRegistry::Frame f = registry_.readFrame(id);
-    if (!f.published) return false;
+    // Distinguish the two failure modes so a false is diagnosable: a caller wanting liveness should query
+    // getFrame(id).published (no file I/O); screenshot() is a file-writing action whose bool means "wrote".
+    if (!f.published) {
+        std::fprintf(stderr, "[Engine] screenshot: system %u has not published a frame yet\n",
+                     static_cast<unsigned>(id));
+        return false;
+    }
     const std::size_t pixels = static_cast<std::size_t>(f.width) * f.height;
     // The frame data is XRGB8888 (little-endian B,G,R,X) → transcode to RGB24 for lodepng.
     std::vector<unsigned char> rgb(pixels * 3);
@@ -191,7 +198,13 @@ bool Engine::screenshot(SystemId id, const std::string& path) {
         rgb[i * 3 + 1] = src[i * 4 + 1]; // G
         rgb[i * 3 + 2] = src[i * 4 + 0]; // B
     }
-    return lodepng_encode24_file(path.c_str(), rgb.data(), f.width, f.height) == 0;
+    const unsigned err = lodepng_encode24_file(path.c_str(), rgb.data(), f.width, f.height);
+    if (err) {
+        std::fprintf(stderr, "[Engine] screenshot: failed to write '%s': %s\n",
+                     path.c_str(), lodepng_error_text(err));
+        return false;
+    }
+    return true;
 }
 
 EngineFrame Engine::getFrame(SystemId id) {
