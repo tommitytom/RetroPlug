@@ -127,10 +127,11 @@ export interface Backend {
    *  kernel's `ctx.serialOut` for the Arduinoboy decoder. SameBoy-only (a no-op on other cores). */
   setSerialOutCapture(id: number, on: boolean): boolean;
 
-  /** Set the project's audio-output routing (0 Stereo / 1 TwoPerInstance / 2 OnePerInstance) — which
-   *  of the plugin's 4 stereo output pairs each system mixes into. The one project-level setting that
-   *  reaches native audio (drives the block runner's MultiOutRouter). Returns false on an out-of-range
-   *  mode. */
+  /** Set the project's audio-output routing (0 Stereo / 1 TwoPerInstance / 2 OnePerInstance /
+   *  3 ChannelSplit) — which of the plugin's 4 stereo output pairs each system mixes into, or (mode 3,
+   *  single Game Boy only) one system's 4 channels fanned across all 4 pairs. The one project-level
+   *  setting that reaches native audio (the Engine picks MultiOutRouter / ChannelSplitRouter per mode +
+   *  system count). Returns false on an out-of-range mode. */
   setAudioRouting(mode: number): boolean;
 
   // --- Live emulator input ------------------------------------------------

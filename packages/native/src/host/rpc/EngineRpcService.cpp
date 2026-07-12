@@ -309,8 +309,8 @@ bool EngineRpcService::setBpm(double bpm) {
 }
 
 bool EngineRpcService::setAudioRouting(std::uint32_t mode) {
-    if (mode > 2) return false;  // Stereo / TwoPerInstance / OnePerInstance
-    invoker_.setAudioRouting(static_cast<std::uint8_t>(mode));  // → the block runner's MultiOutRouter
+    if (mode > 3) return false;  // Stereo / TwoPerInstance / OnePerInstance / ChannelSplit
+    invoker_.setAudioRouting(static_cast<std::uint8_t>(mode));  // → the Engine's router (Multi-out / channel-split)
     return true;
 }
 

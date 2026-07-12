@@ -21,7 +21,7 @@ import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
 export interface ProjectSettings {
   layout: number; // 0 Auto / 1 Row / 2 Column / 3 Grid
   midiRouting: number; // 0 SendToAll / 1 FourPerInstance / 2 OnePerInstance / 3 ChannelToInstance
-  audioRouting: number; // 0 Stereo / 1 TwoPerInstance / 2 OnePerInstance
+  audioRouting: number; // 0 Stereo / 1 TwoPerInstance / 2 OnePerInstance / 3 ChannelSplit (1 GB → 8 outs)
   zoom: number; // 0 inherit / 1..6
 }
 
@@ -57,7 +57,7 @@ export interface ProjectConfig {
 export const projectSettingsSchema = z.object({
   layout: clampedInt(0, 3, 0),
   midiRouting: clampedInt(0, 3, 0),
-  audioRouting: clampedInt(0, 2, 0),
+  audioRouting: clampedInt(0, 3, 0),
   zoom: clampedInt(0, 6, 0),
 });
 

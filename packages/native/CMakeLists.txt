@@ -311,17 +311,24 @@ set_target_properties(retroplug-classid-test PROPERTIES
 
 # retroplug-audio-test guards the per-channel audio path: the host seam (runUnit stream loop +
 # AudioRouter::streamCount + lane-counted finishBlock, over a fake SystemBase) AND the real SameBoy
-# per-channel tap (ChannelStreams + SameBoyStems). Links retroplug-core, which PUBLIC-brings the
-# `sameboy` core, so SameBoyStems can drive a real mGB ROM. Also `pnpm test:plugin`, on demand.
+# per-channel tap (ChannelStreams + SameBoyStems), plus the ChannelSplit plugin router + its Engine
+# gating (ChannelSplit + EngineChannelSplit, spec/10 step 4). Links retroplug-backend (which PUBLIC-brings
+# retroplug-core → BlockRunner + routers + the sameboy core) so the Engine gating test can build an
+# Engine. Also `pnpm test:plugin`, on demand.
 add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/ChannelStreams.test.cpp
-    test/audio/SameBoyStems.test.cpp)
+    test/audio/SameBoyStems.test.cpp
+    test/audio/ChannelSplit.test.cpp
+    test/audio/EngineChannelSplit.test.cpp)
 
 target_link_libraries(retroplug-audio-test PRIVATE
-    retroplug-core             # SystemBase + BlockRunner (runUnit) + the routers + the sameboy core
+    retroplug-backend          # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
     Catch2::Catch2WithMain)
 
-# The mGB ROM the SameBoyStems fidelity test drives (the boot chime supplies real multi-channel signal).
+target_include_directories(retroplug-audio-test PRIVATE
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs)             # quickjs.h (via Engine.hpp → DspRuntime.hpp)
+
+# The mGB ROM the SameBoyStems + ChannelSplit fidelity tests drive (the boot chime supplies real signal).
 target_compile_definitions(retroplug-audio-test PRIVATE
     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb")
 

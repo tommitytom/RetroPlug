@@ -1,7 +1,7 @@
 # 10 — Multi-channel audio output (per-console channel stems)
 
-**Status: in progress — the host seam, the SameBoy GB tap, and the CLI GB export are built (§10 steps
-1–3); the plugin exposure and NES work remain.** This doc designs outputting the *individual console
+**Status: in progress — the host seam, the SameBoy GB tap, the CLI GB export, and the plugin GB option
+are built (§10 steps 1–4); the NES work remains.** This doc designs outputting the *individual console
 sound channels*
 of a single emulator instance instead of its mixed stereo — 8 outputs for a Game Boy (a stereo pair
 per channel), and 5-plus mono channels / the hardware "stereo-mod" pins for an NES. It is a design
@@ -332,11 +332,12 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
 
 ## 10. Phased build order (steps 1–3 built)
 
-1. **Host seam only** — `channelLayout()` (default 1 stereo stream), widened `finishBlock(…, laneCount)`,
-   `AudioRouter::streamCount`, `runUnit` stream loop, `AudioRouting::ChannelSplit` + the GB
-   `ChannelSplitRouter` (plugin) + `PerChannelRouter` + `Engine::processBlockPerChannel` (CLI). No
-   emulator change, no behaviour change. Prove the default path byte-identical (existing tests +
-   `screenshot` still green; assert `laneCount` matches router width).
+1. **Host seam only — DONE.** `channelLayout()` (default 1 stereo stream), widened
+   `finishBlock(…, laneCount)`, `AudioRouter::streamCount`, `runUnit` stream loop, plus the CLI
+   `PerChannelRouter` + `Engine::processBlockPerChannel`. No emulator change, no behaviour change; the
+   default path stays byte-identical (`ChannelStreams.test.cpp` over a fake system asserts `laneCount`
+   matches router width). (The plugin-facing `AudioRouting::ChannelSplit` + `ChannelSplitRouter` are
+   **step 4**, not here — an earlier draft of this list misattributed them.)
 2. **SameBoy GB tap — DONE.** The tracked `apu.c`/`apu.h` patch adds a per-channel sample callback that
    emits the four `channel_output` stems, each highpassed per-stem in the active mode via its own
    `per_channel_highpass_diff[4]` (the mixed bus is untouched → byte-identical). `SameBoySystem`
@@ -354,8 +355,16 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    the interleave/deinterleave helpers) and `app-play-mgb-channels.test.ts` (RPC shape + real channel
    separation — Noise stays silent while the pulse voices ring); the summed 8-ch export matches the
    mixed render within ~5 int16 LSB.
-4. **Plugin GB option** — surface `ChannelSplit` (the §7 TS/native widenings + `systemCount()==1`
-   gating). Verify a single GB → 8 outputs headlessly in a host (via `reaper:editor` / a render).
+4. **Plugin GB option — DONE.** `AudioRouting::ChannelSplit = 3` + a flat-lane `ChannelSplitRouter`
+   (stream *k* → outs 2k/2k+1) in `BlockRunner.hpp`; `Engine::processBlock` builds it **only** when
+   `audioRouting_ == ChannelSplit && systemCount() == 1` (else the per-instance `MultiOutRouter` — the
+   split stays inert, so a multi-instance project can't mis-route), widened RPC guard (`mode > 3`), and
+   the §7 TS widenings (clamp `0..3`, `SETTING_MAX`, the "Channels (1 GB)" cycler name gated to a single
+   system — UX only, native is authority). Guards: `ChannelSplit.test.cpp` (the router fans stream *k* →
+   pair *k* on a real mGB; summed pairs == the mixed render) + `EngineChannelSplit.test.cpp` (1 system
+   splits to 8 lanes, a 2-system project falls back) in `retroplug-audio-test`; `app-audio-routing.test.ts`
+   accepts mode 3. Per-pair separation in a real DAW (an 8-channel bus via `RETROPLUG_AUTOLOAD_PROJECT`)
+   is the manual confirmation — no headless harness captures the plugin's 8 audio outs yet.
 5. **NES tap** — the `NesSoundMixer` edit emitting the 5 core stems + the 2–3 pin/expansion group terms
    into per-stream blip buffers; expose via `renderAudioPerChannel` (CLI). Pin-mode fidelity check.
 6. **NES stereo-mod grouping in the CLI** — pulse | TND (+ lumped expansion) as the flagship faithful
