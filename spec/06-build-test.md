@@ -42,9 +42,9 @@ All defined in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.tx
 | `retroplug-ui` / `-dsp` | DPF aggregators | UI-side / DSP-side static aggregators (internal). | yes |
 | `retroplug-ui-test` | executable | `build/bin/retroplug-ui-test` — boots the real React UI on a headless software LVGL display via `UiHarness`. | no |
 
-The plugin's identity is deliberately distinct from legacy so the two coexist in one DAW:
-`DISTRHO_PLUGIN_NAME "RetroPlug"`, URI `urn:distrho:retroplug`, CLAP id
-`studio.kx.distrho.retroplug`
+The plugin's identity is vendor-owned (not the DPF example namespace):
+`DISTRHO_PLUGIN_NAME "RetroPlug"`, URI `https://retroplug.io`, CLAP id
+`net.tommitytom.retroplug`
 ([DistrhoPluginInfo.h:8](../packages/native/plugin/DistrhoPluginInfo.h#L8)). It exposes
 8 outputs — four stereo pairs `out_1..4`
 ([DistrhoPluginInfo.h:13](../packages/native/plugin/DistrhoPluginInfo.h#L13)).

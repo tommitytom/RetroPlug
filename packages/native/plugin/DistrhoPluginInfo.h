@@ -4,8 +4,8 @@
 #pragma once
 
 #define DISTRHO_PLUGIN_NAME        "RetroPlug"
-#define DISTRHO_PLUGIN_URI         "urn:distrho:retroplug"
-#define DISTRHO_PLUGIN_CLAP_ID     "studio.kx.distrho.retroplug"
+#define DISTRHO_PLUGIN_URI         "https://retroplug.io"
+#define DISTRHO_PLUGIN_CLAP_ID     "net.tommitytom.retroplug"
 
 #define DISTRHO_PLUGIN_NUM_INPUTS  0
 #define DISTRHO_PLUGIN_NUM_OUTPUTS 8   // four stereo pairs (out_1..4); each system routes to one per audioRouting
@@ -44,7 +44,8 @@
 #define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1
 
 // The canonical RetroPlug 4-char ids (VST3/AU); DAW projects match on UNIQUE_ID.
-#define DISTRHO_PLUGIN_BRAND_ID  Dstr
+// BRAND_ID is the manufacturer code (tommitytom); UNIQUE_ID is the product.
+#define DISTRHO_PLUGIN_BRAND_ID  Tmtt
 #define DISTRHO_PLUGIN_UNIQUE_ID RPlg
 
 #define DISTRHO_PLUGIN_LV2_CATEGORY    "lv2:InstrumentPlugin"

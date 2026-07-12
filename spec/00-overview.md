@@ -74,7 +74,7 @@ executables. Targets are verified against the configured build; see
 | Headless UI-test host | `retroplug-ui-test` | `bin/retroplug-ui-test` |
 
 The build declares **no** LV2 / VST2 / AU (unlike legacy). Its DPF identity is
-name `RetroPlug`, URI `urn:distrho:retroplug`, unique id `RPlg`
+name `RetroPlug`, URI `https://retroplug.io`, unique id `RPlg`
 ([DistrhoPluginInfo.h](../packages/native/plugin/DistrhoPluginInfo.h)).
 The plugin exposes 0 inputs / **8 outputs = four stereo pairs** (`out_1..4`), each
 system routed to one pair by its audio routing.

@@ -456,7 +456,7 @@ so DPF resolves the host's
 legacy one. [06-build-test.md](06-build-test.md) is the full build/verify story.
 
 Plugin identity: name `RetroPlug`, CLAP id
-`studio.kx.distrho.retroplug`, `UNIQUE_ID RPlg` / `BRAND Dstr`,
+`net.tommitytom.retroplug`, `UNIQUE_ID RPlg` / `BRAND Tmtt`,
 **0 inputs / 8 outputs = four stereo pairs `out_1..4`**
 ([`DistrhoPluginInfo.h:13`](../packages/native/plugin/DistrhoPluginInfo.h#L13)),
 IS_SYNTH, HAS_UI (the React/LVGL editor, 480×432, user-resizable), FILE_BROWSER, MIDI in+out,

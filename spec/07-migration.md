@@ -214,12 +214,10 @@ This is an inventory of the mechanical moves, not a sequenced plan. See
 | bundle symbol prefixes `rp_` / `rp_` | `cp_` / `ui_` (cosmetic) |
 
 **Plugin identity** ([DistrhoPluginInfo.h](../packages/native/plugin/DistrhoPluginInfo.h)):
-today the reimplementation is deliberately distinct — its `DISTRHO_PLUGIN_NAME` carries a
-transitional name, plus URI `urn:distrho:retroplug`, CLAP id `studio.kx.distrho.retroplug` —
-precisely so the two plugins coexist in a DAW. On switchover these revert to the canonical
-`RetroPlug` / `urn:distrho:retroplug` / `studio.kx.distrho.retroplug` strings so existing DAW
-projects that reference the legacy plugin resolve. This is an on-disk identity change; sequence it after legacy
-is removed.
+finalized and vendor-owned — `DISTRHO_PLUGIN_NAME "RetroPlug"`, URI `https://retroplug.io`,
+CLAP id `net.tommitytom.retroplug`, `UNIQUE_ID RPlg` / `BRAND_ID Tmtt`. These replaced the DPF
+example-namespace placeholders (`urn:distrho:…` / `studio.kx.distrho.…` / `Dstr`), which claimed
+DISTRHO/KXStudio branding the project isn't affiliated with.
 
 ### Re-home the shared core + `GamepadManager` — DONE
 
