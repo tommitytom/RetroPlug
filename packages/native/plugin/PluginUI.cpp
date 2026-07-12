@@ -385,6 +385,10 @@ protected:
     }
 
     bool onMouse(const MouseEvent& ev) override {
+        // Click-to-focus: an embedded plugin child window doesn't get keyboard focus on its own on Windows
+        // (pugl never SetFocus()es it, and hosts like Renoise deliver keys to the focused window rather than
+        // forwarding effEditKeyDown). Grab keyboard focus on any press so onKeyboard starts receiving keys.
+        if (ev.press) getWindow().focus();
         UI::onMouse(ev); // base → LVGL pointer indev (tile focus / onClick)
         if (JSContext* ctx = jsEngine.getContext()) {
             JSValue args[4] = {JS_NewUint32(ctx, ev.button), JS_NewBool(ctx, ev.press),
