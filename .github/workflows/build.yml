@@ -158,6 +158,12 @@ jobs:
         shell: cmd
         run: build.bat
 
+      # test.bat enters the MSVC env itself (GitHub Actions does not persist the
+      # env build.bat set up into later steps) and runs the suites via pnpm.
+      - name: Test suites (ts / native / plugin / ui)
+        shell: cmd
+        run: test.bat
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -205,6 +211,18 @@ jobs:
 
       - name: Build
         run: ./build.sh
+
+      - name: TS tests
+        run: pnpm test
+
+      - name: Native tests (real host + emulator cores)
+        run: pnpm test:native
+
+      - name: Plugin unit tests (Catch2)
+        run: pnpm test:plugin
+
+      - name: UI tests (headless LVGL)
+        run: pnpm test:ui
 
       - name: Upload artifacts
         if: always()

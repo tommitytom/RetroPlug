@@ -31,8 +31,20 @@ The rules below are the parts that don't fit those.
   (greenfield's file-watcher is *designed* to use it — `drainChangedPaths` is a stub
   today, so nothing links it yet). `deps/catch2` is the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
-  `test:plugin` binaries (`retroplug-plugin-test` / `retroplug-classid-test`) as
-  `Catch2::Catch2WithMain`.
+  `test:plugin` binaries (`retroplug-plugin-test` / `retroplug-classid-test` /
+  `retroplug-audio-test`) as `Catch2::Catch2WithMain`.
+- **`deps/sameboy` is patched at configure — a dirty working tree there is
+  EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
+  in `Core/apu.{c,h}` and ships as a tracked patch
+  ([cmake/patches/sameboy-per-channel-audio.patch](cmake/patches/sameboy-per-channel-audio.patch)),
+  applied idempotently at configure by
+  [cmake/sameboy.cmake](cmake/sameboy.cmake) via `git apply` (it uses
+  `git apply --reverse --check` to no-op when already present). The parent repo
+  tracks only the pinned submodule pointer, so after any configure `git status`
+  shows `deps/sameboy` with modified `Core/apu.c` / `Core/apu.h` — **don't
+  reset / stash / commit that, and don't bump the pointer to "absorb" it.** A
+  submodule bump that invalidates the patch fails LOUDLY at configure (rather than
+  silently dropping per-channel output); regenerate the patch if that happens.
 - **Don't `rm -rf build` to "fix" CMake** — investigate first. The configured
   `build/` is load-bearing for the dev loop.
 - **Build via `build.sh` (Linux/macOS) / `build.bat` (Windows)** — the canonical
