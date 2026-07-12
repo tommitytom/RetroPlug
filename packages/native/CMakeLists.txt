@@ -125,12 +125,30 @@ set_target_properties(retroplug-host PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# retroplug-cli: the standalone session runner — the same backend lib + a main() that evals
-# one pre-bundled session .js (authored in TS, esbuild-bundled) over the __rpcSend bridge. No Node at
-# runtime. Output binary lands in build/bin/.
-add_executable(retroplug-cli cli/main.cpp)
+# The `render` subcommand bundle — cli/sessions/render.ts → tjsc bytecode C array, COMPILED INTO
+# retroplug-cli (mirrors the plugin's cp-/ui-bundle recipe). This is what lets `retroplug-cli render …`
+# run with no loose .js and no Node. build-session.js injects __DSP_KERNEL_BUNDLE__; tjsc emits
+# rp_render_bundle[] + rp_render_bundle_size. Derived; never committed.
+set(RENDER_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/render-bundle.js")
+set(RENDER_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/render-bundle_data.c")
+set_source_files_properties(${RENDER_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the CLI compiles
+add_custom_target(retroplug-render-bundle
+    BYPRODUCTS ${RENDER_BUNDLE_JS} ${RENDER_BUNDLE_C} ${RENDER_BUNDLE_C}.new
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/cli/sessions/render.ts ${RENDER_BUNDLE_JS}
+    COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${RENDER_BUNDLE_C}.new ${RENDER_BUNDLE_JS}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RENDER_BUNDLE_C}.new ${RENDER_BUNDLE_C}
+    COMMENT "Bundling retroplug-cli render subcommand (esbuild + bytecode)"
+    VERBATIM)
+add_dependencies(retroplug-render-bundle ${_TJSC_DEP})
+
+# retroplug-cli: the standalone session runner — the same backend lib + a main() that runs either a
+# COMPILED-IN subcommand bundle (e.g. `render`) or, as a fallback, one pre-bundled session .js given by
+# path over the __rpcSend bridge. No Node at runtime. Output binary lands in build/bin/.
+add_executable(retroplug-cli cli/main.cpp ${RENDER_BUNDLE_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend)
+add_dependencies(retroplug-cli retroplug-render-bundle)  # the embedded render bytecode must exist first
 
 set_target_properties(retroplug-cli PROPERTIES
     CXX_STANDARD 20

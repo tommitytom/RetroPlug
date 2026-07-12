@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -28,7 +29,30 @@
 
 using BackendRpcServer = rpcpp::TypedRpcServer<BackendFacade, rpcpp::QuickJSCodec>;
 
+// Subcommand bundles compiled into the binary (tjsc bytecode, see packages/native/CMakeLists.txt).
+// `render` runs cli/sessions/render.ts with no loose .js and no Node.
+extern "C" {
+extern const std::uint8_t  rp_render_bundle[];
+extern const std::uint32_t rp_render_bundle_size;
+}
+
 namespace {
+
+// A named, compiled-in session. argv[1] selecting a subcommand evals its bytecode instead of a file.
+struct Subcommand {
+    const char* name;
+    const std::uint8_t* bytecode;
+    const std::uint32_t* size;
+};
+const Subcommand kSubcommands[] = {
+    {"render", rp_render_bundle, &rp_render_bundle_size},
+};
+
+const Subcommand* findSubcommand(const char* name) {
+    for (const auto& sc : kSubcommands)
+        if (std::strcmp(sc.name, name) == 0) return &sc;
+    return nullptr;
+}
 
 // The exit code the session reports through globalThis.tjs.exit(). One host per process,
 // single-threaded, so a TU-local is the right mechanism (mirrors src/main.cpp).
@@ -56,11 +80,15 @@ std::string slurp(const std::string& path) {
 int main(int argc, char** argv) try {
     if (argc < 2 || argv[1][0] == '\0') {
         std::fprintf(stderr,
-            "usage: retroplug-greenfield-cli <session.js>\n"
-            "  Runs a pre-bundled greenfield session (see tools/build-greenfield-session.js).\n");
+            "usage: retroplug-cli <command|session.js> [args...]\n"
+            "  render <rom> [--sav f] [--state f] [--out f] [--ms n]\n"
+            "               [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]\n"
+            "                       Render a ROM (+.sav/savestate) to WAV (compiled-in; no Node).\n"
+            "  <session.js> [args]  Run a pre-bundled greenfield session by path (dev fallback).\n");
         return 2;
     }
-    const std::string sessionPath = argv[1];
+    // A named subcommand (its session is compiled in) wins over a like-named file path.
+    const Subcommand* sub = findSubcommand(argv[1]);
 
     TjsHostRuntime host;
     if (!host.init()) {
@@ -115,8 +143,14 @@ int main(int argc, char** argv) try {
 
     JS_FreeValue(ctx, global);
 
-    const std::string code = slurp(sessionPath);
-    const int rc = host.evalModuleBuffer(code.data(), code.size(), sessionPath.c_str());
+    // A subcommand evals its compiled-in bytecode; otherwise argv[1] is a session .js path we slurp.
+    int rc;
+    if (sub) {
+        rc = host.evalModuleBytecode(sub->bytecode, *sub->size);
+    } else {
+        const std::string code = slurp(argv[1]);
+        rc = host.evalModuleBuffer(code.data(), code.size(), argv[1]);
+    }
     if (rc != 0) {
         std::fprintf(stderr, "session eval failed\n");
         return 1;
