@@ -5,13 +5,10 @@
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
 
-// From the grid: open the instance menu, expand Project, select New Project — which (project dirty)
+// From the grid: open the instance menu and select the top-level New Project — which (project dirty)
 // raises the discard guard instead of discarding.
 function selectNewProject(): void {
   ui.tapKey(Key.Esc); // instance menu over the focused tile
-  ui.pump(10);
-  expect(navTo("Project")).toBeTruthy();
-  ui.tapKey(Key.Enter); // expand the Project submenu inline
   ui.pump(10);
   expect(navTo("New Project")).toBeTruthy();
   ui.tapKey(Key.Enter);
