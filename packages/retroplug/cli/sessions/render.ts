@@ -18,7 +18,7 @@
 // boot, so --song NAME / --song-index N promote a chosen project to the working song before booting
 // (decode → assign → re-encode → seed the fresh system). --list-songs prints the sav's song names.
 import { runSession, hostArgs } from "../session";
-import { encodeWav, deinterleaveStereo } from "../wav";
+import { createWavWriter, type WavWriter } from "../wav";
 import { parseRenderArgs, type RenderOpts, type SplitMode } from "../renderArgs";
 import { syncDspFromStore } from "../../src/appHost";
 import { extensionLower, replaceExtension } from "../../src/pathUtil";
@@ -149,63 +149,151 @@ function outBase(o: RenderOpts): string {
   return replaceExtension(o.rom, "");
 }
 
-interface StopResult {
-  streams: Float32Array[]; // accumulated interleaved-stereo per stream (mix = 1 stream; split = per channel)
+// --- streaming render: pump 100 ms chunks straight into per-output WavWriters (no whole-song buffer) ---
+
+interface StopMarkers {
   startFrame: number; // frame where playback began (NR52 first on)
-  stopFrame: number | null; // frame of the HFF stop (first NR52-off chunk boundary), null if capped
+  endFrame: number; // frames committed to disk (== the HFF stop, or everything at the cap)
   hff: boolean; // an HFF stop was detected (vs. hitting --max-ms)
 }
 
-/** Render chunk-by-chunk via `renderChunk` (mix → one stream; split → one per channel), polling NR52
- *  ($FF26) after each chunk, and stop at the LSDj HFF (the APU master-enable going high→low, sustained
- *  ≥DETECT_OFF_CHUNKS). Returns each stream's full PCM + the play/stop frame markers so the caller can
- *  report the length and trim the tail. Caps at maxMs (no-HFF fallback). */
-function renderUntilStop(
-  s: Session,
-  id: number,
-  maxMs: number,
-  renderChunk: (ms: number) => Float32Array[],
-): StopResult {
-  const chunks: Float32Array[][] = []; // [chunk][stream] of interleaved stereo
-  let total = 0; // accumulated frames
-  let elapsed = 0; // ms rendered
+/** A render target: how to pull the next chunk, where each chunk's frames go (one interleaved buffer per
+ *  stream — mix=1, split=N), and how to close the files. Writers are created lazily on the first chunk. */
+interface RenderSink {
+  renderChunk(ms: number): Float32Array[];
+  emit(chunk: Float32Array[], takeFrames: number): void; // commit the first `takeFrames` frames of a chunk
+  finishAll(): void; // patch every writer's header + log the outputs
+}
+
+/** Left channel of an interleaved-stereo buffer, first `frames` frames (NES streams are mono in the L lane). */
+function leftLane(b: Float32Array, frames: number): Float32Array {
+  const out = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) out[f] = b[f * 2];
+  return out;
+}
+
+/** Interleave N equal-length mono lanes into one N-channel interleaved buffer (the NES combined WAV). */
+function interleaveLanes(lanes: Float32Array[], frames: number, n: number): Float32Array {
+  const out = new Float32Array(frames * n);
+  for (let f = 0; f < frames; f++)
+    for (let c = 0; c < n; c++) out[f * n + c] = lanes[c][f];
+  return out;
+}
+
+/** Build the sink for the requested output shape: mix (1 stereo WAV), GB channels (N stereo WABs), or NES
+ *  pins/mono (N mono WAVs + one combined N-channel WAV). Writers open on the first chunk once the stream
+ *  count is known (from chunk.length) — opening truncates, so a re-render clobbers any stale file. */
+function buildSink(s: Session, o: RenderOpts, id: number, platform: Platform, sr: number, base: string): RenderSink {
+  const renderChunk = o.split === "mix"
+    ? (ms: number) => [s.audio.renderAudio(ms)]
+    : (ms: number) => s.audio.renderAudioPerChannel(id, ms);
+
+  let writers: WavWriter[] | null = null; // per stream (mix=1 stereo; GB=N stereo; NES=N mono)
+  let combined: WavWriter | null = null; // NES only: the interleaved N-channel WAV
+  const paths: string[] = [];
+  let summary = "";
+
+  const open = (path: string, channels: number): WavWriter => {
+    paths.push(path);
+    return createWavWriter(s.backend, path, sr, channels);
+  };
+
+  const ensure = (streamCount: number) => {
+    if (writers) return;
+    if (o.split === "mix") {
+      writers = [open(base, 2)];
+      summary = `rendered ${o.rom} → ${base} (@${sr}Hz)`;
+    } else if (platform === "gb") {
+      writers = Array.from({ length: streamCount }, (_, i) => open(`${base}_${GB_CHANNELS[i] ?? `ch${i}`}.wav`, 2));
+      summary = `GB ${streamCount}-channel render (@${sr}Hz) → ${base}_*`;
+    } else {
+      const names = o.split === "mono" ? NES_MONO : NES_PINS;
+      writers = Array.from({ length: streamCount }, (_, i) => open(`${base}_${names[i] ?? `ch${i}`}.wav`, 1));
+      combined = open(`${base}_${o.split}.wav`, streamCount); // one interleaved N-channel WAV
+      summary = `NES ${o.split} (${streamCount} streams @${sr}Hz) → ${base}_*`;
+    }
+  };
+
+  return {
+    renderChunk,
+    emit(chunk, take) {
+      ensure(chunk.length);
+      if (o.split === "mix") {
+        writers![0].append(chunk[0].subarray(0, take * 2));
+      } else if (platform === "gb") {
+        chunk.forEach((b, i) => writers![i].append(b.subarray(0, take * 2)));
+      } else {
+        const lanes = chunk.map((b) => leftLane(b, take));
+        lanes.forEach((l, i) => writers![i].append(l));
+        combined!.append(interleaveLanes(lanes, take, lanes.length));
+      }
+    },
+    finishAll() {
+      if (!writers) throw new Error("render: no audio was rendered");
+      writers.forEach((w) => w.finish());
+      combined?.finish();
+      paths.forEach((p) => console.log(p));
+      console.log(summary);
+    },
+  };
+}
+
+/** Fixed-duration render: stream exactly `targetFrames` frames (trim the last chunk), so the output is
+ *  byte-identical to a single renderAudio(ms) of the same length for any sample rate / ms. */
+function driveFixed(sink: RenderSink, targetFrames: number): void {
+  let done = 0;
+  while (done < targetFrames) {
+    const chunk = sink.renderChunk(DETECT_CHUNK_MS);
+    if (chunk.length === 0) throw new Error("render: chunk render returned no streams");
+    const take = Math.min(chunk[0].length / 2, targetFrames - done);
+    sink.emit(chunk, take);
+    done += take;
+  }
+}
+
+/** LSDj auto-detect render: stream chunk-by-chunk, polling NR52 ($FF26), and stop at the HFF (the APU
+ *  master-enable going high→low, sustained ≥DETECT_OFF_CHUNKS). Holds back the current contiguous off-streak
+ *  (≤DETECT_OFF_CHUNKS whole chunks) so committed frames end exactly at the stop; a reset flushes them in
+ *  order. Caps at maxMs (no-HFF fallback → keep everything). */
+function driveAutoDetect(sink: RenderSink, s: Session, id: number, maxMs: number): StopMarkers {
+  let total = 0; // frames rendered (committed + held)
+  let committed = 0; // frames streamed to disk
+  let elapsed = 0;
   let armed = false;
   let startFrame = 0;
-  let offStreak = 0;
-  let firstOffFrame: number | null = null;
-  let stopFrame: number | null = null;
+  const held: Float32Array[][] = []; // the current off-streak, discarded on a confirmed stop
+
+  const commit = (chunk: Float32Array[]) => {
+    const frames = chunk[0].length / 2;
+    sink.emit(chunk, frames);
+    committed += frames;
+  };
 
   while (elapsed < maxMs) {
-    const chunk = renderChunk(DETECT_CHUNK_MS); // one interleaved-stereo buffer per stream
+    const chunk = sink.renderChunk(DETECT_CHUNK_MS);
     if (chunk.length === 0) throw new Error("render: chunk render returned no streams");
     const frameBefore = total;
-    chunks.push(chunk);
-    total += chunk[0].length / 2; // streams are frame-aligned; any stream gives the frame count
+    total += chunk[0].length / 2;
     elapsed += DETECT_CHUNK_MS;
 
     const on = ((s.backend.readCpu(id, NR52_ADDR) ?? 0) & NR52_ON) !== 0;
     if (!armed) {
+      commit(chunk); // keep the lead-in from frame 0
       if (on) { armed = true; startFrame = frameBefore; } // playback began here
       continue; // (still un-armed after DETECT_ARM_MS just means it hasn't started — keep going to the cap)
     }
     if (!on) {
-      if (offStreak === 0) firstOffFrame = frameBefore; // the chunk the sound cut out
-      if (++offStreak >= DETECT_OFF_CHUNKS) { stopFrame = firstOffFrame; break; } // sustained → HFF stop
+      held.push(chunk); // hold back — this may be the HFF tail
+      if (held.length >= DETECT_OFF_CHUNKS) // sustained → HFF stop; discard held, end at the first off frame
+        return { startFrame, endFrame: committed, hff: true };
     } else {
-      offStreak = 0;
-      firstOffFrame = null;
+      for (const c of held) commit(c); // song continues: flush the (kept) off-streak in order…
+      held.length = 0;
+      commit(chunk); // …then this chunk
     }
   }
-
-  const nStreams = chunks[0]?.length ?? 0;
-  const streams: Float32Array[] = [];
-  for (let si = 0; si < nStreams; si++) {
-    const buf = new Float32Array(total * 2);
-    let o = 0;
-    for (const c of chunks) { buf.set(c[si], o); o += c[si].length; }
-    streams.push(buf);
-  }
-  return { streams, startFrame, stopFrame, hff: stopFrame !== null };
+  for (const c of held) commit(c); // cap reached, no confirmed stop → keep everything
+  return { startFrame, endFrame: committed, hff: false };
 }
 
 runSession((s) => {
@@ -250,10 +338,6 @@ runSession((s) => {
   }
 
   const sr = s.audio.sampleRate();
-  const write = (name: string, bytes: Uint8Array) => {
-    if (!s.backend.writeFile(name, bytes)) throw new Error(`render: write failed: ${name}`);
-    console.log(`${name}`);
-  };
   const base = outBase(o);
 
   // LSDj length auto-detect: when a valid LSDj sav is loaded and the user didn't pin a duration, render to
@@ -266,61 +350,25 @@ runSession((s) => {
   // Auto-detect applies to both mix and split (GB channels) — split just renders per-channel chunks.
   const autoDetect = lsdjLoaded && o.start && o.ms === undefined;
 
-  // Report the detected length + warn on a no-HFF fallback; shared by the mix and split auto-detect paths.
-  const reportLength = (r: StopResult, endFrame: number) => {
-    const lengthMs = Math.round(((endFrame - r.startFrame) / sr) * 1000);
-    console.log(`length: ${lengthMs} ms (${endFrame - r.startFrame} frames @${sr}Hz) hff:${r.hff}`);
-    if (!r.hff) console.warn(`no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
+  // Report the detected length + warn on a no-HFF fallback.
+  const reportLength = (m: StopMarkers) => {
+    const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
+    console.log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);
+    if (!m.hff) console.warn(`no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
   };
 
   // Announce before the (possibly multi-minute) render so the CLI doesn't look hung while it works.
   const how = autoDetect ? `detecting length (HFF, cap ${o.maxMs}ms)` : `${o.ms ?? 8000}ms`;
   console.log(`rendering ${o.rom} → ${base}${o.split === "mix" ? "" : "_*"} (${how})…`);
 
-  if (o.split === "mix") {
-    if (autoDetect) {
-      const r = renderUntilStop(s, id, o.maxMs, (ms) => [s.audio.renderAudio(ms)]);
-      const endFrame = r.stopFrame ?? r.streams[0].length / 2;
-      write(base, encodeWav(r.streams[0].subarray(0, endFrame * 2), sr, 2)); // trimmed to the HFF stop
-      reportLength(r, endFrame);
-      return;
-    }
-    const ms = o.ms ?? 8000;
-    const pcm = s.audio.renderAudio(ms); // interleaved L/R float32
-    write(base, encodeWav(pcm, sr, 2));
-    console.log(`rendered ${o.rom} → ${base} (${ms}ms @${sr}Hz)`);
-    return;
-  }
-
-  // Split render: auto-detect the HFF length (GB/LSDj) by rendering per-channel chunks + polling NR52,
-  // else render a fixed window. Both yield one interleaved-stereo buffer per channel stream.
-  let bufs: Float32Array[];
+  // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
+  const sink = buildSink(s, o, id, platform, sr, base);
   if (autoDetect) {
-    const r = renderUntilStop(s, id, o.maxMs, (ms) => s.audio.renderAudioPerChannel(id, ms));
-    const endFrame = r.stopFrame ?? r.streams[0].length / 2;
-    bufs = r.streams.map((b) => b.subarray(0, endFrame * 2)); // trimmed to the HFF stop
-    reportLength(r, endFrame);
+    const markers = driveAutoDetect(sink, s, id, o.maxMs);
+    sink.finishAll();
+    reportLength(markers);
   } else {
-    bufs = s.audio.renderAudioPerChannel(id, o.ms ?? 8000);
+    driveFixed(sink, Math.floor(((o.ms ?? 8000) * sr) / 1000)); // exact target frame count
+    sink.finishAll();
   }
-  if (bufs.length === 0) throw new Error("render: renderAudioPerChannel returned no streams");
-
-  if (platform === "gb") {
-    // GB channel streams are STEREO: one stereo WAV per channel.
-    bufs.forEach((b, i) => write(`${base}_${GB_CHANNELS[i] ?? `ch${i}`}.wav`, encodeWav(b, sr, 2)));
-    console.log(`GB ${bufs.length}-channel render (@${sr}Hz) → ${base}_*`);
-    return;
-  }
-
-  // NES pins/mono streams are MONO (interleaved-stereo, silent R lane): keep the left lane. One mono WAV
-  // per stream + one combined N-channel WAV.
-  const names = o.split === "mono" ? NES_MONO : NES_PINS;
-  const mono = bufs.map((b) => deinterleaveStereo(b)[0]);
-  mono.forEach((l, i) => write(`${base}_${names[i] ?? `ch${i}`}.wav`, encodeWav(l, sr, 1)));
-  const frames = mono[0].length;
-  const combined = new Float32Array(frames * mono.length);
-  for (let f = 0; f < frames; f++)
-    for (let c = 0; c < mono.length; c++) combined[f * mono.length + c] = mono[c][f];
-  write(`${base}_${o.split}.wav`, encodeWav(combined, sr, mono.length));
-  console.log(`NES ${o.split} (${mono.length} streams @${sr}Hz) → ${base}_*`);
 });

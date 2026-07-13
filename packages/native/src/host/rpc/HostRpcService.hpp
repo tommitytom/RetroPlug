@@ -18,6 +18,12 @@ public:
     std::optional<rfl::Bytestring> readFile(std::string path);
     bool writeFile(std::string path, rfl::Bytestring bytes);
     bool writeFileAtomic(std::string path, rfl::Bytestring bytes);
+    // Streaming write pair for the CLI WAV renderer (write bytes as they render, no whole-file buffer):
+    // appendFile adds to the end (creating the file if absent); writeFileAt overwrites at a byte offset
+    // (the file must already exist). Used to write a placeholder WAV header, append PCM, then patch the
+    // header's two length fields at offset 0. u32 offset is enough — RIFF caps a WAV at ~4 GiB.
+    bool appendFile(std::string path, rfl::Bytestring bytes);
+    bool writeFileAt(std::string path, std::uint32_t offset, rfl::Bytestring bytes);
     bool fileExists(std::string path);
     bool rename(std::string from, std::string to);
     std::vector<std::string> listDir(std::string dir);

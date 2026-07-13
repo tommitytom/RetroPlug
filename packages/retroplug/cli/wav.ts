@@ -1,19 +1,19 @@
-// A tiny RIFF/PCM16 WAV encoder for the CLI. The backend has no WAV writer (every
-// one in the tree is native/legacy-only), and createAudioDriver().renderAudio(ms) hands back raw
-// interleaved-stereo Float32 PCM — so a session encodes the WAV itself and persists it via
-// backend.writeFile(). Byte layout mirrors packages/native/cli/Wav.hpp (16-bit PCM, little-endian).
+// A tiny RIFF/PCM16 WAV codec for the CLI. The backend has no native WAV writer, and
+// createAudioDriver().renderAudio(ms) hands back raw interleaved-stereo Float32 PCM — so a session encodes
+// the WAV in TS. `encodeWav` is the whole-buffer path; `createWavWriter` is the streaming path the render
+// session uses to write PCM as it renders (placeholder header → appended batches → header patch) without
+// buffering the whole song. All 16-bit PCM, little-endian.
 
 function writeAscii(view: DataView, offset: number, s: string): void {
   for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
 }
 
-/** Encode interleaved PCM (as renderAudio returns it) to a 16-bit WAV. `pcm` is L,R,L,R… in [-1,1]
- *  (clamped here — the render pipeline isn't hard-clamped); `channels` is how those samples interleave. */
-export function encodeWav(pcm: Float32Array, sampleRate = 44100, channels = 2): Uint8Array {
-  const dataSize = pcm.length * 2; // one int16 (2 bytes) per interleaved sample
-  const buf = new ArrayBuffer(44 + dataSize);
+/** The fixed 44-byte canonical RIFF/PCM16 header. Only two fields depend on length — offset 4 (RIFF
+ *  chunk size = 36 + dataSize) and offset 40 (dataSize) — so a streaming writer emits this with
+ *  dataSize=0, appends the PCM, then re-emits it at offset 0 with the final dataSize (createWavWriter). */
+export function wavHeader(sampleRate: number, channels: number, dataSize: number): Uint8Array {
+  const buf = new ArrayBuffer(44);
   const view = new DataView(buf);
-
   writeAscii(view, 0, "RIFF");
   view.setUint32(4, 36 + dataSize, true);
   writeAscii(view, 8, "WAVE");
@@ -27,14 +27,96 @@ export function encodeWav(pcm: Float32Array, sampleRate = 44100, channels = 2): 
   view.setUint16(34, 16, true); // bits per sample
   writeAscii(view, 36, "data");
   view.setUint32(40, dataSize, true);
+  return new Uint8Array(buf);
+}
 
-  let o = 44;
+/** Convert interleaved float PCM in [-1,1] (clamped — the render pipeline isn't hard-clamped) to the
+ *  little-endian int16 body a WAV carries. Iterates 0..length, so it honors a `subarray` view (non-zero
+ *  byteOffset) — the streaming writer feeds per-chunk sub-slices. */
+export function pcm16(pcm: Float32Array): Uint8Array {
+  const out = new Uint8Array(pcm.length * 2);
+  const view = new DataView(out.buffer);
   for (let i = 0; i < pcm.length; i++) {
     const v = pcm[i] > 1 ? 1 : pcm[i] < -1 ? -1 : pcm[i];
-    view.setInt16(o, (v * 32767) | 0, true);
-    o += 2;
+    view.setInt16(i * 2, (v * 32767) | 0, true);
   }
-  return new Uint8Array(buf);
+  return out;
+}
+
+/** Encode interleaved PCM (as renderAudio returns it) to a 16-bit WAV, whole-buffer. `pcm` is L,R,L,R…
+ *  in [-1,1]; `channels` is how those samples interleave. (Streaming callers use createWavWriter.) */
+export function encodeWav(pcm: Float32Array, sampleRate = 44100, channels = 2): Uint8Array {
+  const header = wavHeader(sampleRate, channels, pcm.length * 2);
+  const body = pcm16(pcm);
+  const out = new Uint8Array(header.length + body.length);
+  out.set(header);
+  out.set(body, header.length);
+  return out;
+}
+
+/** The subset of Backend a streaming WAV writer needs (kept structural so wav.ts stays dependency-free). */
+export interface WavBackend {
+  writeFile(path: string, bytes: Uint8Array): boolean;
+  appendFile(path: string, bytes: Uint8Array): boolean;
+  writeFileAt(path: string, offset: number, bytes: Uint8Array): boolean;
+}
+
+export interface WavWriter {
+  /** Append one interleaved-float chunk in this writer's channel layout (may be a subarray view). */
+  append(pcm: Float32Array): void;
+  /** Flush the remainder, patch the header with the final length, and return the frame count written. */
+  finish(): number;
+}
+
+const WAV_FLUSH_BYTES = 1 << 20; // batch ~1 MiB of PCM per appendFile to bound memory + cut open/close churn
+
+/** A streaming WAV writer: writes the header immediately (with a placeholder length), buffers PCM and
+ *  flushes it to disk in ~1 MiB batches, then patches the header's length fields on finish(). Peak memory
+ *  is O(one batch), independent of song length. `open` uses writeFile (truncating) so a re-render clobbers
+ *  any stale file and creates parent dirs — append must never be a path's first touch. */
+export function createWavWriter(
+  backend: WavBackend,
+  path: string,
+  sampleRate: number,
+  channels: number,
+): WavWriter {
+  if (!backend.writeFile(path, wavHeader(sampleRate, channels, 0)))
+    throw new Error(`wav: could not open ${path}`);
+
+  let pending: Uint8Array[] = [];
+  let pendingBytes = 0;
+  let dataSize = 0; // total PCM bytes appended (== frames * channels * 2)
+
+  const flush = () => {
+    if (pendingBytes === 0) return;
+    const batch = pending.length === 1 ? pending[0] : concatBytes(pending, pendingBytes);
+    if (!backend.appendFile(path, batch)) throw new Error(`wav: append failed: ${path}`);
+    pending = [];
+    pendingBytes = 0;
+  };
+
+  return {
+    append(pcm) {
+      const bytes = pcm16(pcm);
+      pending.push(bytes);
+      pendingBytes += bytes.length;
+      dataSize += bytes.length;
+      if (pendingBytes >= WAV_FLUSH_BYTES) flush();
+    },
+    finish() {
+      flush();
+      if (!backend.writeFileAt(path, 0, wavHeader(sampleRate, channels, dataSize)))
+        throw new Error(`wav: header patch failed: ${path}`);
+      return dataSize / 2 / channels;
+    },
+  };
+}
+
+function concatBytes(parts: Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
 }
 
 /** Interleave K equal-length stereo streams (each L,R,L,R…) into one 2K-channel interleaved buffer,

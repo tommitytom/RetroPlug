@@ -11,12 +11,14 @@
 #include "host/rpc/EngineRpcService.hpp"
 #include "host/rpc/HostRpcService.hpp"
 
-// --- host: filesystem / config / codec (14) ---
+// --- host: filesystem / config / codec (16) ---
 template <class Server>
 void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::readFile>(h);
     s.template addMethod<&HostRpcService::writeFile>(h);
     s.template addMethod<&HostRpcService::writeFileAtomic>(h);
+    s.template addMethod<&HostRpcService::appendFile>(h);
+    s.template addMethod<&HostRpcService::writeFileAt>(h);
     s.template addMethod<&HostRpcService::fileExists>(h);
     s.template addMethod<&HostRpcService::rename>(h);
     s.template addMethod<&HostRpcService::listDir>(h);

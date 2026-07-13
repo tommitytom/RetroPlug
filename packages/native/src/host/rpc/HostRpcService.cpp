@@ -101,6 +101,30 @@ bool HostRpcService::writeFileAtomic(std::string path, rfl::Bytestring bytes) {
     return true;
 }
 
+bool HostRpcService::appendFile(std::string path, rfl::Bytestring bytes) {
+    // Mirror writeFile's on-demand parent-dir creation; ios::app creates the file if absent and never
+    // truncates, so repeated calls stream to the end.
+    std::error_code ec;
+    if (const fs::path parent = fs::path(path).parent_path(); !parent.empty())
+        fs::create_directories(parent, ec);
+    std::ofstream f(path, std::ios::binary | std::ios::app);
+    if (!f) return false;
+    if (!bytes.empty())
+        f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    return f.good();
+}
+
+bool HostRpcService::writeFileAt(std::string path, std::uint32_t offset, rfl::Bytestring bytes) {
+    // in|out (no trunc) overwrites in place at `offset` — the file must already exist (the WAV writer
+    // creates it with the placeholder header via writeFile before patching).
+    std::fstream f(path, std::ios::binary | std::ios::in | std::ios::out);
+    if (!f) return false;
+    f.seekp(static_cast<std::streamoff>(offset));
+    if (!bytes.empty())
+        f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    return f.good();
+}
+
 bool HostRpcService::fileExists(std::string path) {
     std::error_code ec;
     return fs::exists(path, ec);

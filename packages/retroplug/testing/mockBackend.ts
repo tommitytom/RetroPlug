@@ -147,6 +147,30 @@ export class MockBackend implements Backend {
     return true;
   }
 
+  appendFile(path: string, bytes: Uint8Array): boolean {
+    this.log.push("appendFile");
+    const key = this.canonicalize(path);
+    const prev = this.files.get(key) ?? new Uint8Array(0);
+    const out = new Uint8Array(prev.length + bytes.length);
+    out.set(prev);
+    out.set(bytes, prev.length);
+    this.files.set(key, out);
+    return true;
+  }
+
+  writeFileAt(path: string, offset: number, bytes: Uint8Array): boolean {
+    this.log.push("writeFileAt");
+    const key = this.canonicalize(path);
+    const prev = this.files.get(key);
+    if (!prev) return false; // mirrors native: the file must exist (fstream in|out doesn't create)
+    const end = offset + bytes.length;
+    const out = end > prev.length ? new Uint8Array(end) : new Uint8Array(prev.length);
+    out.set(prev);
+    out.set(bytes, offset);
+    this.files.set(key, out);
+    return true;
+  }
+
   fileExists(path: string): boolean {
     this.log.push("fileExists");
     return this.files.has(this.canonicalize(path));

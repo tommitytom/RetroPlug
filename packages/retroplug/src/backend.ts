@@ -32,6 +32,15 @@ export interface Backend {
    *  leave a half-written (corrupt) file in place. Returns false on failure. */
   writeFileAtomic(path: string, bytes: Uint8Array): boolean;
 
+  /** Append bytes to the end of `path` (creating it if absent, never truncating). The streaming pair to
+   *  `writeFileAt` — the CLI WAV renderer uses them to write PCM as it renders instead of buffering the
+   *  whole song. Returns false on failure. */
+  appendFile(path: string, bytes: Uint8Array): boolean;
+
+  /** Overwrite bytes at `offset` in an existing file (no truncation, no create). Used to patch a WAV
+   *  header's length fields after streaming the PCM. Returns false on failure (e.g. the file is absent). */
+  writeFileAt(path: string, offset: number, bytes: Uint8Array): boolean;
+
   /** True when `path` exists on disk. */
   fileExists(path: string): boolean;
 
@@ -285,7 +294,7 @@ export interface Backend {
 /** Filesystem / config / codec / sav authoring + the OS file dialog — the facet every host binds. */
 export type HostBackend = Pick<
   Backend,
-  | "readFile" | "writeFile" | "writeFileAtomic" | "fileExists" | "rename" | "listDir" | "deleteFile"
+  | "readFile" | "writeFile" | "writeFileAtomic" | "appendFile" | "writeFileAt" | "fileExists" | "rename" | "listDir" | "deleteFile"
   | "drainChangedPaths" | "canonicalize" | "readFilePrefix" | "configDir" | "version"
   | "zip" | "unzip" | "savFromJson" | "openFileBrowser"
 >;

@@ -101,6 +101,8 @@ export function createHostClient(): HostBackend {
     readFile: (path) => bytesOrNull(call("readFile", path)),
     writeFile: (path, bytes) => call("writeFile", path, bytes) as boolean,
     writeFileAtomic: (path, bytes) => call("writeFileAtomic", path, bytes) as boolean,
+    appendFile: (path, bytes) => call("appendFile", path, bytes) as boolean,
+    writeFileAt: (path, offset, bytes) => call("writeFileAt", path, offset, bytes) as boolean,
     fileExists: (path) => call("fileExists", path) as boolean,
     rename: (from, to) => call("rename", from, to) as boolean,
     listDir: (dir) => call("listDir", dir) as string[],
