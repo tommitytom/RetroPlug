@@ -63,9 +63,11 @@ public:
     // Which output pairs each system routes to (Stereo = all → pair 0). Plain member, like transport.
     void setAudioRouting(AudioRouting mode);
 
-    // Host sample rate. Baked into each core at construct (findable via sampleRate()); set it BEFORE
-    // constructing systems — there is no per-system resample-on-change today.
-    void setSampleRate(double sr) { sampleRate_ = sr; }
+    // Host sample rate. Used at construct for new cores (findable via sampleRate()) AND pushed to every
+    // already-live core so a host sample-rate change re-rates them in place (SameBoy GB_set_sample_rate,
+    // Mesen resampler). Safe to call with cores live only when the audio thread isn't draining — the plugin
+    // calls it from DPF's sampleRateChanged, which fires only while deactivated; the CLI, before any build.
+    void setSampleRate(double sr) { sampleRate_ = sr; project_.onSampleRateChanged(sr); }
 
     // The kernel's host-MIDI-out sink for this block (filled by processBlock's DSP stage, cleared at
     // the top of the next). The plugin drains this to the DAW after processBlock; nothing else reads it.
