@@ -71,13 +71,18 @@ export function App() {
     if (!empty && !menuOpen && !closeGuard.active && !modals.active && sink) setKeyboardGroup(sink);
   }, [empty, menuOpen, sink, closeGuard.active, modals.active]);
 
-  // Fit the window to the grid when instances or zoom change — unless a tiling WM owns geometry, in which
-  // case the request is ignored and the grid's fitZoom shrinks tiles to whatever the compositor gave us.
+  // Keep the window sized to the grid. Fires on instance/zoom/layout changes AND on windowSize itself, so a
+  // tiling compositor that resizes a floating window out from under us (e.g. on move — Hyprland does this)
+  // gets the zoom size re-asserted rather than leaving the grid shrunk via fitZoom. Loop-safe: the effect
+  // only re-runs when a dep changes and useWindowSize de-dups identical sizes, so re-requesting the size we
+  // already have is a no-op setSize (no resize event, no re-run), and a WM that ignores the request settles
+  // after one attempt. A genuinely tiling WM that owns geometry latches isWindowSizeControlled, so we bail to
+  // fitZoom instead of fighting it.
   useEffect(() => {
     if (empty || isWindowSizeControlled()) return;
     const { width, height } = gridContentSize(systems.length, settings.layout as SystemLayout, resolvedZoom);
     requestWindowSize(width, height);
-  }, [empty, systems.length, settings.layout, resolvedZoom]);
+  }, [empty, systems.length, settings.layout, resolvedZoom, windowSize.width, windowSize.height]);
 
   // Keep the OS window title in sync with the project name / version.
   useEffect(() => setWindowTitle(windowTitle), [windowTitle]);

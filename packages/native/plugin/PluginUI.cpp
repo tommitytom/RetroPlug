@@ -87,6 +87,10 @@ class PluginUI : public UI {
     uint requestedW_ = 0;
     uint requestedH_ = 0;
     bool wmControlled_ = false;
+    // True once a resize we asked for actually took (a reported size matched the request) — i.e. we've
+    // proven this window is ours to size (it's floating, not tiled). Gates the clamp latch below so a later
+    // spurious compositor resize (a floating window shrunk on move) isn't mistaken for a tiling takeover.
+    bool sizeHonored_ = false;
 
     // SDL game-controller poller (reused from the legacy build). Ticked from uiIdle() on the UI thread; it
     // re-emits each transition onto the gamepad-* JS bus that useGamepadInput subscribes to. Inert
@@ -357,17 +361,22 @@ protected:
         UI::onResize(ev); // base LVGLWidget::onResize → lv_display_set_resolution + repaint (free)
         const uint w = ev.size.getWidth();
         const uint h = ev.size.getHeight();
+        // Latch once a requested size actually took: proof this window is ours to size (floating, not tiled).
+        if (requestedW_ != 0 && requestedH_ != 0 && w == requestedW_ && h == requestedH_) sizeHonored_ = true;
 #ifdef DISTRHO_OS_LINUX
-        // Tiling-WM (Wayland/Hyprland) clamp detection — STANDALONE ONLY. A size back different from what we
-        // asked means the compositor owns geometry, so we latch and stop driving setSize. Linux-only;
-        // Win/macOS honour it. But a DAW host also owns the editor window and treats setSize as a resize
-        // *request* (VST3 resize_view / CLAP request_resize), echoing back the size it granted here — which
-        // legitimately differs from what we asked (e.g. the host's restored editor frame at embed). Reading
-        // that as a compositor takeover would freeze the window at its embed size, so a second instance can't
-        // grow it and SystemGrid's fitZoom shrinks the tiles instead. In a DAW we keep driving setSize and let
-        // fitZoom cover a declined grow; only the standalone window fights a real tiling WM.
-        if (!wmControlled_ && getWindow().getApp().isStandalone() && requestedW_ != 0 && requestedH_ != 0 &&
-            (w != requestedW_ || h != requestedH_))
+        // Tiling-WM (Wayland/Hyprland) clamp detection — STANDALONE ONLY, and only for a window we've NEVER
+        // been able to size. A size back different from what we asked means the compositor owns geometry, so
+        // we latch and stop driving setSize. Linux-only; Win/macOS honour it. But a DAW host also owns the
+        // editor window and treats setSize as a resize *request* (VST3 resize_view / CLAP request_resize),
+        // echoing back the size it granted here — which legitimately differs from what we asked (e.g. the
+        // host's restored editor frame at embed). Reading that as a compositor takeover would freeze the
+        // window at its embed size, so a second instance can't grow it and SystemGrid's fitZoom shrinks the
+        // tiles instead. In a DAW we keep driving setSize and let fitZoom cover a declined grow. The
+        // !sizeHonored_ guard is the other half: a floating window (which HAS honoured our sizes — zoom grows
+        // it) must not latch when the compositor spuriously shrinks it on a move; the UI re-asserts the zoom
+        // size instead. Only a genuinely tiled window — which never matches a request — still latches.
+        if (!wmControlled_ && getWindow().getApp().isStandalone() && !sizeHonored_ && requestedW_ != 0 &&
+            requestedH_ != 0 && (w != requestedW_ || h != requestedH_))
             wmControlled_ = true;
 #endif
         // Tell the UI the display resized so it re-lays-out (the grid/menu read Dimensions.window at render
