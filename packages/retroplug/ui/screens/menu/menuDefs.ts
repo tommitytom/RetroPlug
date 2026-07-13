@@ -14,6 +14,7 @@ import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
 import { stem } from "../../../src/pathUtil";
 import { openPath } from "../../lvgl/openPath";
+import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
 
@@ -446,6 +447,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       // "Load…" is a project-level op (load the sibling project / new project from the ROM) — it never
       // swaps this instance. Swapping a single instance in place is "Replace Instance".
       action("inst-load", "Load...", () => runLoad(ctx)),
+      action("inst-save", "Save Project", () => void saveProjectInteractive(ctx.stores)),
+      action("inst-new", "New Project", () => ctx.newProject()),
       submenu("inst-recent", "Recent", recentChildren(ctx)),
       sep("inst-sep-top"),
       action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd(sys.id)),
