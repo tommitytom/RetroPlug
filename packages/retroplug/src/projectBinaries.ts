@@ -1,4 +1,4 @@
-// The `.rplg` blob contract — a pure port of native's ProjectBinaries. An exported
+// The `.rplg.zip` blob contract — a pure port of native's ProjectBinaries. An exported
 // project is a PKZIP of one thin `project.json` plus a deterministic entry per
 // per-system binary: `systems/{i}/rom`, `.../sram`, `.../state`. TS assembles the
 // entries and hands them to the native zip codec; native only compresses. On import

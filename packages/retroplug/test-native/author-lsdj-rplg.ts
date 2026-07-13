@@ -1,4 +1,5 @@
-// Author an LSDj `.rplg` fixture for the real-Reaper DAW-timing renders (the counterpart of
+// Author an LSDj `.rplg.zip` fixture (export = PKZIP, carrying the LSDj sav blob) for the real-Reaper
+// DAW-timing renders (the counterpart of
 // the legacy test/ts `lsdj_*_metro|drift` bootstraps). Runs on retroplug-host: compose a store
 // over the real backend, adopt the LSDj ROM with an authored sav + lsdj-sync mode, boot it to the song
 // screen (and, for the MidiSync scenarios, press START to ARM "wait for MIDI clock" so the fixture's
@@ -7,7 +8,7 @@
 // Scenario + paths are injected at bundle time by tools/author-lsdj-rplg.js.
 //   __SCENARIO__  "midi-metro" | "arduinoboy-metro" | "midi-drift"
 //   __LSDJ_ROM__  absolute ROM path
-//   __RPLG_OUT__  absolute output .rplg path
+//   __RPLG_OUT__  absolute output .rplg.zip path
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";

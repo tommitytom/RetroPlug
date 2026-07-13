@@ -1,10 +1,11 @@
-// Author an LSDj `.rplg` fixture for the DAW-timing reaper renders: esbuild
-// author-lsdj-rplg.ts (injecting the scenario + ROM + output path) and run it on retroplug-host.
+// Author an LSDj `.rplg.zip` fixture for the DAW-timing reaper renders: esbuild
+// author-lsdj-rplg.ts (injecting the scenario + ROM + output path) and run it on retroplug-host. It
+// EXPORTS (PKZIP, with the LSDj sav blob) → `.rplg.zip`; a plain `.rplg` is thin JSON and never a zip.
 //
-//   node tools/author-lsdj-rplg.js <scenario> [ROM] [OUT.rplg]
+//   node tools/author-lsdj-rplg.js <scenario> [ROM] [OUT.rplg.zip]
 //     scenario  midi-metro | arduinoboy-metro | midi-drift
 //     ROM       default per scenario (../resources/roms/lsdj/…)
-//     OUT       default build/lsdj_<scenario>.rplg
+//     OUT       default build/lsdj_<scenario>.rplg.zip
 const { buildSync } = require("esbuild");
 const { execFileSync } = require("child_process");
 const { resolve, dirname } = require("path");
@@ -26,7 +27,7 @@ if (!DEFAULT_ROM[scenario]) {
 }
 
 const ROM = resolve(REPO, process.argv[3] || DEFAULT_ROM[scenario]);
-const OUT = resolve(process.argv[4] || resolve(REPO, `build/lsdj_${scenario}.rplg`));
+const OUT = resolve(process.argv[4] || resolve(REPO, `build/lsdj_${scenario}.rplg.zip`));
 
 mkdirSync(dirname(OUT), { recursive: true });
 const bundle = resolve(REPO, `build/native/author-lsdj-rplg-${scenario}.js`);
