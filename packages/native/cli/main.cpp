@@ -84,7 +84,7 @@ int main(int argc, char** argv) try {
     if (argc < 2 || argv[1][0] == '\0') {
         std::fprintf(stderr,
             "usage: retroplug-cli <command|session.js> [args...]\n"
-            "  render <rom> [--sav f] [--state f] [--out f] [--ms n] [--max-ms n]\n"
+            "  render <rom> [--sav f] [--state f] [--out f] [--ms n] [--max-ms n] [--sample-rate hz]\n"
             "               [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]\n"
             "               [--song name | --song-index n] [--list-songs]\n"
             "                       Render a ROM (+.sav/savestate) to WAV.\n"
