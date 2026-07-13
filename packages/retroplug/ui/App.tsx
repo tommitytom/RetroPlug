@@ -69,18 +69,17 @@ export function App() {
     if (!empty && !menuOpen && !closeGuard.active && !modals.active && sink) setKeyboardGroup(sink);
   }, [empty, menuOpen, sink, closeGuard.active, modals.active]);
 
-  // Keep the window sized to the grid. Fires on instance/zoom/layout changes AND on windowSize itself, so a
-  // tiling compositor that resizes a floating window out from under us (e.g. on move — Hyprland does this)
-  // gets the zoom size re-asserted rather than leaving the grid shrunk via fitZoom. Loop-safe: the effect
-  // only re-runs when a dep changes and useWindowSize de-dups identical sizes, so re-requesting the size we
-  // already have is a no-op setSize (no resize event, no re-run), and a WM that ignores the request settles
-  // after one attempt. A genuinely tiling WM that owns geometry latches isWindowSizeControlled, so we bail to
-  // fitZoom instead of fighting it.
+  // Fit the window to the grid when the instance count / zoom / layout changes. Deliberately NOT reactive to
+  // windowSize: re-asserting the size on every observed resize fights a host/compositor that reverts our
+  // size (Renoise on XWayland snaps its embed back to 480×432, and re-requesting just oscillated forever),
+  // and can't help where it matters anyway — after a drag Hyprland ignores client resizes entirely. So we set
+  // the size on a real change and otherwise leave the window to fitZoom. The initial size is also applied
+  // pre-map by the editor (PluginUI::applyInitialWindowSize) so the window opens correct.
   useEffect(() => {
     if (empty || isWindowSizeControlled()) return;
     const { width, height } = gridContentSize(systems.length, settings.layout as SystemLayout, resolvedZoom);
     requestWindowSize(width, height);
-  }, [empty, systems.length, settings.layout, resolvedZoom, windowSize.width, windowSize.height]);
+  }, [empty, systems.length, settings.layout, resolvedZoom]);
 
   // Keep the OS window title in sync with the project name / version.
   useEffect(() => setWindowTitle(windowTitle), [windowTitle]);
