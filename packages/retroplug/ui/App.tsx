@@ -21,15 +21,13 @@ import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
-import { gridContentSize, SystemLayout } from "./screens/grid/layout";
+import { gridContentSize, resolveZoom, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
 
 const KEY_ESCAPE = 0x1b;
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 6;
 
 export function App() {
   const stores = useStores();
@@ -53,7 +51,7 @@ export function App() {
   // App-action lookups (open menu / cycle instances), rebuilt only when the bindings change.
   const keyToAction = useMemo(() => buildKeyToAction(bindings.keyboardActions), [bindings.keyboardActions]);
   const padToAction = useMemo(() => buildGamepadToAction(bindings.gamepadActions), [bindings.gamepadActions]);
-  const resolvedZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, settings.zoom >= MIN_ZOOM && settings.zoom <= MAX_ZOOM ? settings.zoom : userConfig.defaultZoom));
+  const resolvedZoom = resolveZoom(settings.zoom, userConfig.defaultZoom);
 
   // The standalone OS window title: version + project name (re-renders on the project channel, which fires
   // on load / adopt / rename / new). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).

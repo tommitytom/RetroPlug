@@ -18,6 +18,17 @@ export interface GridShape {
   rows: number;
 }
 
+export const MIN_ZOOM = 1;
+export const MAX_ZOOM = 6;
+
+/** The effective zoom for a project: its own zoom when a valid 1..6, else the user default; clamped to 1..6.
+ *  The single source of truth for "what zoom is this project shown at" — used by the window-size fit (App)
+ *  and the pre-map initial-size helper (main), which must agree or the window would resize on first frame. */
+export function resolveZoom(projectZoom: number, defaultZoom: number): number {
+  const z = projectZoom >= MIN_ZOOM && projectZoom <= MAX_ZOOM ? projectZoom : defaultZoom;
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+}
+
 export function tileWidth(zoom: number): number {
   return GB_NATIVE_W * zoom;
 }

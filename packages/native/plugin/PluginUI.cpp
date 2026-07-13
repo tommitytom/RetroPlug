@@ -296,6 +296,38 @@ public:
             lv_obj_set_style_height(win, lv_pct(100), 0);
         }
         installWindowSizeHooks(ctx, this);
+
+        // Size the window to the already-loaded project's grid BEFORE it first maps. The UI's fit-to-grid
+        // effect only runs on the first frame (after the window is shown), so the window would otherwise map
+        // at the 480×432 default and get resized afterwards — which a compositor that captures a floating
+        // window's size at map time (Hyprland re-applies it on every drag, hyprwm/Hyprland#2105) remembers as
+        // the "real" size, snapping back to 480 on a move. Sizing here maps it correct from the start. No-op
+        // for an empty project / no control plane (__rp_initialWindowSize returns null).
+        if (ctx) applyInitialWindowSize(ctx);
+    }
+
+    // Ask the UI bundle for the initial window size of the loaded project (__rp_initialWindowSize, computed
+    // the same way App fits the window) and drive it through requestWindowSize. Null / absent → keep the
+    // default (empty project, or the headless harness with no bundle helper).
+    void applyInitialWindowSize(JSContext* ctx) {
+        JSValue global = JS_GetGlobalObject(ctx);
+        JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_initialWindowSize");
+        if (JS_IsFunction(ctx, fn)) {
+            JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 0, nullptr);
+            if (JS_IsObject(ret)) {
+                JSValue      wv = JS_GetPropertyStr(ctx, ret, "width");
+                JSValue      hv = JS_GetPropertyStr(ctx, ret, "height");
+                std::uint32_t w = 0, h = 0;
+                JS_ToUint32(ctx, &w, wv);
+                JS_ToUint32(ctx, &h, hv);
+                JS_FreeValue(ctx, wv);
+                JS_FreeValue(ctx, hv);
+                if (w > 0 && h > 0) requestWindowSize(w, h);
+            }
+            JS_FreeValue(ctx, ret);
+        }
+        JS_FreeValue(ctx, fn);
+        JS_FreeValue(ctx, global);
     }
 
     ~PluginUI() override {
