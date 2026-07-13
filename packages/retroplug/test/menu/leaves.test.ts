@@ -780,6 +780,54 @@ test("New Project / Load Project / recent Load route through the guarded ctx ops
   expect(calls).toEqual(["new", "load:/picked/proj.rplg", "load:/music/song.rplg"]);
 });
 
+test("instance menu Save Project saves to the known path without browsing", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  stores.project.systems.addSystem("/roms/a.gb");
+  const anchored = stores.project.systems.view()[0];
+
+  stores.project.save("/proj/p.rplg"); // establish a path (clears dirty)
+  stores.project.setLayout(3); // Grid — re-dirties the project so the save has an observable effect
+  expect(stores.project.isDirty()).toBe(true);
+
+  findItem(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-save")!.onSelect!();
+  await flush();
+
+  expect(stores.project.isDirty()).toBe(false); // saved in place, no Save-As dialog
+  expect(stores.project.currentPath()).toBe("/proj/p.rplg");
+});
+
+test("instance menu Save Project opens Save-As for a never-saved project", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  stores.project.systems.addSystem("/roms/a.gb"); // a manually-built project — no path yet
+  const anchored = stores.project.systems.view()[0];
+  expect(stores.project.currentPath()).toBe("");
+  be.queueBrowse("/picked/new.rplg"); // the interactive Save-As pick
+
+  findItem(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-save")!.onSelect!();
+  await flush();
+
+  expect(stores.project.currentPath()).toBe("/picked/new.rplg"); // adopted the picked path
+  expect(stores.project.isDirty()).toBe(false);
+});
+
+test("instance menu New Project routes through the guarded ctx.newProject", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  stores.project.systems.addSystem("/roms/a.gb");
+  const anchored = stores.project.systems.view()[0];
+
+  const calls: string[] = [];
+  const ctx: MenuContext = { ...ctxOf(stores), newProject: () => calls.push("new") };
+
+  findItem(buildInstanceMenu({ ...ctx, system: anchored }).items, "inst-new")!.onSelect!();
+  expect(calls).toEqual(["new"]); // guarded op, NOT a raw project.newProject()
+});
+
 test("Settings -> Open Settings Folder reveals the config dir via the native seam", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
