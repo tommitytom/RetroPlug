@@ -358,9 +358,16 @@ protected:
         const uint w = ev.size.getWidth();
         const uint h = ev.size.getHeight();
 #ifdef DISTRHO_OS_LINUX
-        // Tiling-WM (Wayland/Hyprland) clamp detection: a size back different from what we asked means the
-        // compositor owns geometry — latch it and stop driving setSize. Linux-only; Win/macOS honour it.
-        if (!wmControlled_ && requestedW_ != 0 && requestedH_ != 0 && (w != requestedW_ || h != requestedH_))
+        // Tiling-WM (Wayland/Hyprland) clamp detection — STANDALONE ONLY. A size back different from what we
+        // asked means the compositor owns geometry, so we latch and stop driving setSize. Linux-only;
+        // Win/macOS honour it. But a DAW host also owns the editor window and treats setSize as a resize
+        // *request* (VST3 resize_view / CLAP request_resize), echoing back the size it granted here — which
+        // legitimately differs from what we asked (e.g. the host's restored editor frame at embed). Reading
+        // that as a compositor takeover would freeze the window at its embed size, so a second instance can't
+        // grow it and SystemGrid's fitZoom shrinks the tiles instead. In a DAW we keep driving setSize and let
+        // fitZoom cover a declined grow; only the standalone window fights a real tiling WM.
+        if (!wmControlled_ && getWindow().getApp().isStandalone() && requestedW_ != 0 && requestedH_ != 0 &&
+            (w != requestedW_ || h != requestedH_))
             wmControlled_ = true;
 #endif
         // Tell the UI the display resized so it re-lays-out (the grid/menu read Dimensions.window at render
