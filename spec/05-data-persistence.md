@@ -67,10 +67,12 @@ supplies only `canonicalize` (`weakly_canonical`) for the realpath-hard
 to-relative test.
 
 **Load routing + lifecycle.** The Load / Locate file dialog offers both `*.rplg`
-and `*.rplg.zip`; routing is by **content**, not extension — `load(path)` sniffs
-the first four bytes for the PKZIP magic `PK\x03\x04` and routes to `loadZip` or
-`loadThin`
-([projectStore.ts:188](../packages/retroplug/src/projectStore.ts#L188)).
+and `*.rplg.zip`; routing is by **extension**, not content — a `.rplg` is always
+parsed as thin raw JSON (`loadThin`), a `.rplg.zip` as a PKZIP (`loadZip`)
+([projectStore.ts](../packages/retroplug/src/projectStore.ts)). A `.rplg` is
+**never** loaded as a zip: if its bytes aren't pure JSON (e.g. a zip masquerading
+as `.rplg`, the reverted design) the load returns `{kind:"error"}` rather than
+silently coercing to an empty project.
 All paths converge on `beginLoad`, which: refuses a newer schema stamp (→
 `{kind:"incompatible"}`), absolutizes paths, then runs a blob-aware
 missing-files scan. A project with missing assets is held as `pendingLoad` for
@@ -91,14 +93,14 @@ framing happen entirely in TypeScript.
 |---|---|---|
 | `getState("project")` | `__rp_saveProjectB64()` | export the project as a base64 `.rplg` chunk |
 | `setState("project", v)` | `__rp_loadProjectB64(v)` | load an in-memory chunk; **empty string = no-op** (don't wipe a seeded project) |
-| `RETROPLUG_AUTOLOAD_PROJECT=path` | `__rp_loadProjectPath(path)` | headless seed (reaper `-renderproject`): read a `.rplg` from disk and load it |
+| `RETROPLUG_AUTOLOAD_PROJECT=path` | `__rp_loadProjectPath(path)` | headless seed (reaper `-renderproject`): load a project FILE from disk via `load()` — a thin `.rplg` or an export `.rplg.zip` |
 
 State is a single `"project"` key, host-readable + host-writable
 ([PluginDSP.cpp:103](../packages/native/plugin/PluginDSP.cpp#L103)).
 The C++ boundary stays **string-only**: base64 is done in JS
 ([pluginControlPlane.ts](../packages/retroplug/src/pluginControlPlane.ts))
-because a DPF state chunk is NUL-terminated UTF-8 while a `.rplg` is binary
-PKZIP. `exportBytes()` produces the chunk with paths left **absolute**
+because a DPF state chunk is NUL-terminated UTF-8 while the export archive it
+carries is binary PKZIP. `exportBytes()` produces the chunk with paths left **absolute**
 (`baseDir=""`) and none of the recents/currentPath/dirty side-effects a host
 `save`/`export` has, so `loadBytes` round-trips it with no rebase
 ([projectStore.ts:162](../packages/retroplug/src/projectStore.ts#L162)).

@@ -232,12 +232,14 @@ test("load: a project stamped newer than this build is incompatible", () => {
   expect(project.load("/proj/x.rplg")).toEqual({ kind: "incompatible" });
 });
 
-test("load: a PK archive routes through the import path; no project.json is corrupt", () => {
+test("load: a PK archive under a .rplg name errors — a .rplg must be pure JSON, never a zip", () => {
   const { be, project } = newProject();
-  // A bare PK magic with no entries → valid zip, but no project.json → corrupt archive.
+  // A `.rplg` whose bytes are a PKZIP (the reverted zip-as-.rplg design). Routing is by extension, so a
+  // `.rplg` is parsed as JSON — PK magic isn't valid JSON → error, and it is NEVER unzipped or silently
+  // coerced to an empty project. (Zip projects must use `.rplg.zip`.)
   be.seed("/proj/z.rplg", new Uint8Array([0x50, 0x4b, 0x03, 0x04])); // "PK\x03\x04"
   expect(project.load("/proj/z.rplg")).toEqual({ kind: "error" });
-  expect(be.log.includes("unzip")).toBeTruthy(); // took the export import path, not thin
+  expect(be.log.includes("unzip")).toBeFalsy(); // took the thin JSON path, not the zip path
 });
 
 test("dirty: flips on a systems mutation or a settings change; clears on save/new", () => {

@@ -172,8 +172,9 @@ tiles without dirtying or re-projecting).
 Project I/O is doc 05's territory, but the store surface is: `newProject`, `save(path)` (a
 thin `.rplg` — raw JSON, paths only), `export(path)` (an export `.rplg.zip` — PKZIP of
 `project.json` + per-system SRAM/savestate blobs gathered from the read door), `exportBytes()`
-(the in-memory chunk for DPF `getState`), `loadBytes(bytes, baseDir)` (DPF `setState` /
-autoload), and `load(path)` (sniffs `PK\x03\x04` to route zip vs thin). The load lifecycle
+(the in-memory chunk for DPF `getState`), `loadBytes(bytes, baseDir)` (the DPF `setState` zip
+chunk), and `load(path)` (routes by **extension**: a `.rplg` is always thin JSON, a `.rplg.zip`
+is PKZIP; a `.rplg` that isn't pure JSON errors — never loaded as a zip). The load lifecycle
 refuses a **newer** schema stamp (`{kind:"incompatible"}`), absolutizes paths, scans for
 missing files, and holds `pendingLoad` for `relink` or `commit`
 ([projectStore.ts:236](../packages/retroplug/src/projectStore.ts#L236)).

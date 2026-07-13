@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 #
 # Author a Reaper project from scratch by running a ReaScript inside
-# headless Reaper. Optionally takes a pre-built .rplg fixture (produced by a
-# TS harness test via emu.saveRplg) that the plugin auto-loads at construction,
-# so the saved .RPP captures a configured RetroPlug state in its chunk.
+# headless Reaper. Optionally takes a pre-built project fixture (a thin `.rplg` JSON or an
+# export `.rplg.zip` PKZIP, e.g. from tools/author-rplg.js) that the plugin auto-loads at
+# construction, so the saved .RPP captures a configured RetroPlug state in its chunk.
 #
 # Usage:
-#   tools/run-reaper-author.sh OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg]
+#   tools/run-reaper-author.sh OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg|.rplg.zip]
 #
 # OUTPUT.RPP     where the lua script writes the project (REAPER_AUTHOR_DEST)
 # RENDER_DIR     absolute dir for the project's render output
 #                (REAPER_AUTHOR_RENDER_DIR; the lua passes this to RENDER_FILE)
 # AUTHOR.lua     ReaScript that builds + saves the project
-# FIXTURE        optional. A pre-built .rplg becomes the plugin's
-#                RETROPLUG_AUTOLOAD_PROJECT directly (build it from a TS test, e.g.
-#                `pnpm test:cli gb/mgb` -> /tmp/mgb_smoke_author.rplg).
+# FIXTURE        optional. A pre-built `.rplg`/`.rplg.zip` becomes the plugin's
+#                RETROPLUG_AUTOLOAD_PROJECT directly (build it via tools/author-rplg.js
+#                or tools/author-lsdj-rplg.js).
 #
 # Same Xvfb + openbox + dummy-jackd + isolated-config + VST3-symlink
 # setup as tools/run-reaper-render.sh.
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 if [ $# -lt 3 ]; then
-    echo "usage: $0 OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg]" >&2
+    echo "usage: $0 OUTPUT.RPP RENDER_DIR AUTHOR.lua [FIXTURE.rplg|.rplg.zip]" >&2
     exit 2
 fi
 
@@ -75,16 +75,17 @@ if [ -n "$FIXTURE" ]; then
         exit 1
     fi
     case "$FIXTURE" in
-        *.rplg)
+        *.rplg | *.rplg.zip)
             # Absolutize: the plugin's readFile resolves relative to the process cwd, but Reaper
             # changes its cwd when it loads the project / runs the script, so a relative fixture path
             # wouldn't resolve at plugin-construction time (autoload -> false, empty state captured).
+            # A thin `.rplg` (JSON) or an export `.rplg.zip` (PKZIP) both load via the plugin's load().
             FIXTURE="$(realpath "$FIXTURE")"
             echo "fixture (rplg): $FIXTURE"
             export RETROPLUG_AUTOLOAD_PROJECT="$FIXTURE"
             ;;
         *)
-            echo "error: fixture must be a .rplg (author it from a TS test via emu.saveRplg): $FIXTURE" >&2
+            echo "error: fixture must be a .rplg or .rplg.zip: $FIXTURE" >&2
             exit 1
             ;;
     esac

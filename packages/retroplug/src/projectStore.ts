@@ -4,12 +4,13 @@
 // scan + relink. TS produces AND consumes the config JSON — a fresh project round-trips
 // faithfully (native restores omitted rich fields via DefaultIfMissing).
 //
-// Two on-disk shapes, one config model:
+// Two on-disk shapes, one config model — distinguished by EXTENSION, not by content:
 //   - THIN `.rplg` (save) = raw JSON, paths only. save = build config → writeFile;
-//     load = readFile → parse → toAbsolute → scan/relink → adopt each system from disk.
+//     load = readFile → parse → toAbsolute → scan/relink → adopt each system from disk. A `.rplg` is
+//     ALWAYS pure JSON — never a zip; load errors if the bytes aren't valid JSON.
 //   - EXPORT `.rplg.zip` (PKZIP) = the same thin project.json PLUS the emulator's live blobs
 //     (per-system SRAM/savestate). export gathers the blobs via the pump (backend.read*)
-//     and frames the archive; native only compresses (backend.zip). A picked PK archive
+//     and frames the archive; native only compresses (backend.zip). A `.rplg.zip`
 //     loads back through the same scan/relink tail, its blobs seeding each system.
 
 import type { ControlPlaneBackend, ZipEntry } from "./backend";
@@ -43,8 +44,8 @@ export type LoadOutcome =
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-// Parse JSON to a plain object, or null (invalid JSON / not an object). Used to edit a single field of a
-// project file without disturbing the rest — a targeted name swap, not a full parse/rebuild.
+// Parse JSON to a plain object, or null (invalid JSON / not an object). Used both to guard a thin `.rplg`
+// load (it must be pure JSON — never a zip) and to edit a single field of a project file in place.
 function parseJsonObject(text: string): Record<string, unknown> | null {
   try {
     const doc = JSON.parse(text);
@@ -52,6 +53,12 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+// A project is a zip (PKZIP, blobs) iff its name ends `.rplg.zip`; a plain `.rplg` is always thin raw JSON.
+// Load/rename dispatch on this extension — NOT on the file's bytes — so a `.rplg` is never treated as a zip.
+function isZipProjectPath(path: string): boolean {
+  return /\.rplg\.zip$/i.test(path);
 }
 
 // Inclusive upper bounds for the settings enums (native validates + rejects above).
@@ -216,9 +223,7 @@ export class ProjectStore {
   private writeProjectName(path: string, name: string): boolean {
     const bytes = this.backend.readFile(path);
     if (!bytes) return false;
-    const isZip =
-      bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
-    if (!isZip) {
+    if (!isZipProjectPath(path)) {
       const doc = parseJsonObject(dec.decode(bytes));
       if (!doc) return false;
       doc.name = name;
@@ -277,9 +282,9 @@ export class ProjectStore {
     return this.backend.zip(entries);
   }
 
-  /** Load a project from in-memory PKZIP bytes (the plugin's DPF state chunk / an autoloaded `.rplg`).
-   *  `baseDir` rebases relative asset paths (`""` for an absolute-path chunk from `exportBytes`, or the
-   *  `.rplg`'s folder for an on-disk file). No recents/currentPath side-effects. */
+  /** Load a project from in-memory PKZIP bytes — the plugin's DPF state chunk (base64 of an `exportBytes`
+   *  archive). Always a zip; on-disk files load via `load(path)` instead. `baseDir` rebases relative asset
+   *  paths (`""` for the absolute-path DPF chunk). No recents/currentPath side-effects. */
   loadBytes(bytes: Uint8Array, baseDir = ""): LoadOutcome {
     const entries = this.backend.unzip(bytes);
     if (!entries) return { kind: "error" };
@@ -288,13 +293,11 @@ export class ProjectStore {
     return this.beginLoad(parseConfig(dec.decode(config)), "", blobs, baseDir);
   }
 
-  /** Load a `.rplg` — thin (raw JSON) or an export (PKZIP). Refuses a newer schema, and
-   *  holds a project with missing files for relink before applying. */
+  /** Load a project — a thin `.rplg` (raw JSON) or an export `.rplg.zip` (PKZIP). Routing is by
+   *  EXTENSION, not content: a `.rplg` is always parsed as JSON (a zip masquerading as `.rplg` errors,
+   *  never loads). Refuses a newer schema, and holds a project with missing files for relink. */
   load(path: string): LoadOutcome {
-    const head = this.backend.readFilePrefix(path, 4);
-    const isZip =
-      !!head && head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
-    return isZip ? this.loadZip(path) : this.loadThin(path);
+    return isZipProjectPath(path) ? this.loadZip(path) : this.loadThin(path);
   }
 
   /** Point a missing item at `newPath`, auto-fix its folder-mates, and complete the
@@ -318,14 +321,21 @@ export class ProjectStore {
 
   // --- internals ----------------------------------------------------------
 
-  // Thin `.rplg`: raw JSON, no embedded blobs — adopt each system from disk.
+  // Thin `.rplg`: raw JSON, no embedded blobs — adopt each system from disk. It MUST be pure JSON: a zip
+  // (or any non-JSON) is rejected with an error, never silently coerced to an empty project (parseConfig
+  // never throws, so the explicit parseJsonObject guard is what enforces "pure JSON or error").
   private loadThin(path: string): LoadOutcome {
     const bytes = this.backend.readFile(path);
     if (!bytes) return { kind: "error" };
-    return this.beginLoad(parseConfig(dec.decode(bytes)), path, new Map(), dirname(path));
+    const text = dec.decode(bytes);
+    if (!parseJsonObject(text)) {
+      console.error(`.rplg is not pure JSON (a zip? zip projects must use .rplg.zip): ${path}`);
+      return { kind: "error" };
+    }
+    return this.beginLoad(parseConfig(text), path, new Map(), dirname(path));
   }
 
-  // Export `.rplg`: PKZIP of project.json + per-system blobs that seed each emulator.
+  // Export `.rplg.zip`: PKZIP of project.json + per-system blobs that seed each emulator.
   private loadZip(path: string): LoadOutcome {
     const bytes = this.backend.readFile(path);
     if (!bytes) return { kind: "error" };

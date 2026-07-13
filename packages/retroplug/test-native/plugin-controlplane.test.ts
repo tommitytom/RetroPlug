@@ -33,11 +33,12 @@ test("the control-plane bundle composes, loads the kernel, and exposes the __rp_
   expect(typeof g.__rp_saveProjectB64).toBe("function");
 });
 
-test("autoload an mGB .rplg → the kernel plays it; base64 getState/setState round-trips", () => {
-  // Author an mGB .rplg to disk with a throwaway store, then clear it from the shared native Project
-  // so the control plane loads into an empty backend (like a fresh plugin instance).
+test("autoload an mGB .rplg.zip → the kernel plays it; base64 getState/setState round-trips", () => {
+  // Author an mGB `.rplg.zip` (export = PKZIP) to disk with a throwaway store, then clear it from the
+  // shared native Project so the control plane loads into an empty backend (like a fresh plugin instance).
+  // __rp_loadProjectPath routes through load(), which picks the zip path by the `.rplg.zip` extension.
   const author = new ProjectStore(createRealBackend(), new RecentStore(createRealBackend()), buildAppRegistry());
-  const rplg = __CONFIG_DIR__ + "/cp_mgb.rplg";
+  const rplg = __CONFIG_DIR__ + "/cp_mgb.rplg.zip";
   author.systems.loadMgb();
   expect(author.export(rplg)).toBeTruthy();
   author.newProject(); // remove the author's system from the shared native Project

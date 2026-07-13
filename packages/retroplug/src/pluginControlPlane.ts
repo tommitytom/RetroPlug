@@ -15,7 +15,6 @@
 import { composeAppStores, type StoreChannel, type AppStores } from "./appStores";
 import { createDspRuntime } from "./dspRuntime";
 import { syncDspFromStore } from "./appHost";
-import { dirname } from "./pathUtil";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
@@ -95,11 +94,9 @@ if (pluginNs) {
 // --- the C++→JS surface ---
 const g = globalThis as Record<string, unknown>;
 
-g.__rp_loadProjectPath = (path: string): boolean => {
-  const bytes = stores.backend.readFile(path);
-  if (!bytes) return false;
-  return project.loadBytes(bytes, dirname(path)).kind === "loaded";
-};
+// Autoload a project FILE from disk (reaper -renderproject seeds RETROPLUG_AUTOLOAD_PROJECT). Routes
+// through load(), which dispatches by extension — a thin `.rplg` (JSON) or an export `.rplg.zip` (PKZIP).
+g.__rp_loadProjectPath = (path: string): boolean => project.load(path).kind === "loaded";
 
 g.__rp_loadProjectB64 = (b64: string): boolean => {
   // Empty chunk = no-op (matches the legacy plugin): a host that saved an empty project, or the

@@ -1,7 +1,7 @@
 // ProjectStore export/import: the pump→zip round-trip. export gathers each live
-// system's SRAM/savestate from the pump (backend.read*) and frames a PKZIP `.rplg`
-// (native only compresses); load routes a PK archive back through the same
-// scan/relink tail, its blobs seeding each reconstructed emulator. Path-backed ROMs
+// system's SRAM/savestate from the pump (backend.read*) and frames a PKZIP `.rplg.zip`
+// (native only compresses); load routes it back (by the `.rplg.zip` extension) through the
+// same scan/relink tail, its blobs seeding each reconstructed emulator. Path-backed ROMs
 // stay referenced by path (not embedded); embedded ROMs reconstruct from their marker.
 import { test, expect } from "../../testing/harness";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
@@ -24,10 +24,10 @@ test("export: PKZIP of project.json + each system's state & sram, from the pump"
   const gbId = project.systems.addSystem("/proj/a.gb")!; // path-backed → id 2
   project.setLayout(3);
 
-  expect(project.export("/proj/song.rplg")).toBeTruthy();
+  expect(project.export("/proj/song.rplg.zip")).toBeTruthy();
 
   // Written atomically, PK-prefixed.
-  const onDisk = be.readFile("/proj/song.rplg")!;
+  const onDisk = be.readFile("/proj/song.rplg.zip")!;
   expect([onDisk[0], onDisk[1], onDisk[2], onDisk[3]]).toEqual([0x50, 0x4b, 0x03, 0x04]);
   expect(be.log.includes("writeFileAtomic")).toBeTruthy();
 
@@ -56,8 +56,8 @@ test("export: PKZIP of project.json + each system's state & sram, from the pump"
   expect(blob("systems/1/state")).toEqual(stateBytesFor(gbId));
   expect(blob("systems/1/sram")).toEqual(sramBytesFor(gbId));
 
-  expect(recent.view().map((v) => v.path)).toEqual(["/proj/song.rplg"]);
-  expect(project.currentPath()).toBe("/proj/song.rplg");
+  expect(recent.view().map((v) => v.path)).toEqual(["/proj/song.rplg.zip"]);
+  expect(project.currentPath()).toBe("/proj/song.rplg.zip");
   expect(project.isDirty()).toBeFalsy();
 });
 
@@ -67,12 +67,12 @@ test("export then load: round-trips systems (blobs seed each emulator) + setting
   const mgbId = project.systems.loadMgb()!; // export id (mgb) — TS-allocated, not assumed to be 1
   const aId = project.systems.addSystem("/proj/a.gb")!; // export id (a.gb)
   project.setZoom(4);
-  project.export("/proj/song.rplg");
+  project.export("/proj/song.rplg.zip");
 
   project.newProject();
   expect(project.systems.view().length).toBe(0);
 
-  const out = project.load("/proj/song.rplg");
+  const out = project.load("/proj/song.rplg.zip");
   expect(out).toEqual({ kind: "loaded", systems: 2 });
   const v = project.systems.view();
   expect(v.map((s) => s.embedded)).toEqual([true, false]); // mgb, then a.gb
@@ -92,13 +92,13 @@ test("load export: a moved cartridge ROM reports missing (blobs cover only sram/
   const author = newProject();
   author.be.seed("/proj/a.gb", gbRom());
   author.project.systems.addSystem("/proj/a.gb");
-  author.project.export("/proj/song.rplg");
-  const archive = author.be.readFile("/proj/song.rplg")!;
+  author.project.export("/proj/song.rplg.zip");
+  const archive = author.be.readFile("/proj/song.rplg.zip")!;
 
   const { be, project } = newProject();
-  be.seed("/proj/song.rplg", archive); // the export, but no /proj/a.gb on this disk
+  be.seed("/proj/song.rplg.zip", archive); // the export, but no /proj/a.gb on this disk
 
-  const first = project.load("/proj/song.rplg");
+  const first = project.load("/proj/song.rplg.zip");
   expect(first.kind).toBe("missing"); // the ROM isn't in the zip — only the save is
   expect((first as { missing: unknown[] }).missing).toEqual([
     { systemIndex: 0, itemKind: "rom", path: "/proj/a.gb" },
