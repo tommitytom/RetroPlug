@@ -150,17 +150,23 @@ function outBase(o: RenderOpts): string {
 }
 
 interface StopResult {
-  pcm: Float32Array; // accumulated interleaved-stereo, whole render
+  streams: Float32Array[]; // accumulated interleaved-stereo per stream (mix = 1 stream; split = per channel)
   startFrame: number; // frame where playback began (NR52 first on)
   stopFrame: number | null; // frame of the HFF stop (first NR52-off chunk boundary), null if capped
   hff: boolean; // an HFF stop was detected (vs. hitting --max-ms)
 }
 
-/** Render chunk-by-chunk, polling NR52 ($FF26) after each chunk, and stop at the LSDj HFF (the APU
- *  master-enable going high→low, sustained ≥DETECT_OFF_CHUNKS). Returns the full PCM + the play/stop
- *  frame markers so the caller can report the length and trim the tail. Caps at maxMs (no-HFF fallback). */
-function renderUntilStop(s: Session, id: number, maxMs: number): StopResult {
-  const chunks: Float32Array[] = [];
+/** Render chunk-by-chunk via `renderChunk` (mix → one stream; split → one per channel), polling NR52
+ *  ($FF26) after each chunk, and stop at the LSDj HFF (the APU master-enable going high→low, sustained
+ *  ≥DETECT_OFF_CHUNKS). Returns each stream's full PCM + the play/stop frame markers so the caller can
+ *  report the length and trim the tail. Caps at maxMs (no-HFF fallback). */
+function renderUntilStop(
+  s: Session,
+  id: number,
+  maxMs: number,
+  renderChunk: (ms: number) => Float32Array[],
+): StopResult {
+  const chunks: Float32Array[][] = []; // [chunk][stream] of interleaved stereo
   let total = 0; // accumulated frames
   let elapsed = 0; // ms rendered
   let armed = false;
@@ -170,10 +176,11 @@ function renderUntilStop(s: Session, id: number, maxMs: number): StopResult {
   let stopFrame: number | null = null;
 
   while (elapsed < maxMs) {
-    const chunk = s.audio.renderAudio(DETECT_CHUNK_MS); // interleaved stereo
+    const chunk = renderChunk(DETECT_CHUNK_MS); // one interleaved-stereo buffer per stream
+    if (chunk.length === 0) throw new Error("render: chunk render returned no streams");
     const frameBefore = total;
     chunks.push(chunk);
-    total += chunk.length / 2;
+    total += chunk[0].length / 2; // streams are frame-aligned; any stream gives the frame count
     elapsed += DETECT_CHUNK_MS;
 
     const on = ((s.backend.readCpu(id, NR52_ADDR) ?? 0) & NR52_ON) !== 0;
@@ -190,10 +197,15 @@ function renderUntilStop(s: Session, id: number, maxMs: number): StopResult {
     }
   }
 
-  const pcm = new Float32Array(total * 2);
-  let o = 0;
-  for (const c of chunks) { pcm.set(c, o); o += c.length; }
-  return { pcm, startFrame, stopFrame, hff: stopFrame !== null };
+  const nStreams = chunks[0]?.length ?? 0;
+  const streams: Float32Array[] = [];
+  for (let si = 0; si < nStreams; si++) {
+    const buf = new Float32Array(total * 2);
+    let o = 0;
+    for (const c of chunks) { buf.set(c[si], o); o += c[si].length; }
+    streams.push(buf);
+  }
+  return { streams, startFrame, stopFrame, hff: stopFrame !== null };
 }
 
 runSession((s) => {
@@ -247,16 +259,22 @@ runSession((s) => {
     const raw = s.backend.readFile(o.sav ?? siblingSavPath(o.rom));
     lsdjLoaded = !!raw && isLsdjSav(raw);
   }
-  const autoDetect = lsdjLoaded && o.split === "mix" && o.start && o.ms === undefined;
+  // Auto-detect applies to both mix and split (GB channels) — split just renders per-channel chunks.
+  const autoDetect = lsdjLoaded && o.start && o.ms === undefined;
+
+  // Report the detected length + warn on a no-HFF fallback; shared by the mix and split auto-detect paths.
+  const reportLength = (r: StopResult, endFrame: number) => {
+    const lengthMs = Math.round(((endFrame - r.startFrame) / sr) * 1000);
+    console.log(`cli: length: ${lengthMs} ms (${endFrame - r.startFrame} frames @${sr}Hz) hff:${r.hff}`);
+    if (!r.hff) console.warn(`cli: no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
+  };
 
   if (o.split === "mix") {
     if (autoDetect) {
-      const r = renderUntilStop(s, id, o.maxMs);
-      const endFrame = r.stopFrame ?? r.pcm.length / 2;
-      const lengthMs = Math.round(((endFrame - r.startFrame) / sr) * 1000);
-      write(base, encodeWav(r.pcm.subarray(0, endFrame * 2), sr, 2)); // trimmed to the HFF stop
-      console.log(`cli: length: ${lengthMs} ms (${endFrame - r.startFrame} frames @${sr}Hz) hff:${r.hff}`);
-      if (!r.hff) console.warn(`cli: no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
+      const r = renderUntilStop(s, id, o.maxMs, (ms) => [s.audio.renderAudio(ms)]);
+      const endFrame = r.stopFrame ?? r.streams[0].length / 2;
+      write(base, encodeWav(r.streams[0].subarray(0, endFrame * 2), sr, 2)); // trimmed to the HFF stop
+      reportLength(r, endFrame);
       return;
     }
     const ms = o.ms ?? 8000;
@@ -266,7 +284,17 @@ runSession((s) => {
     return;
   }
 
-  const bufs = s.audio.renderAudioPerChannel(id, o.ms ?? 8000);
+  // Split render: auto-detect the HFF length (GB/LSDj) by rendering per-channel chunks + polling NR52,
+  // else render a fixed window. Both yield one interleaved-stereo buffer per channel stream.
+  let bufs: Float32Array[];
+  if (autoDetect) {
+    const r = renderUntilStop(s, id, o.maxMs, (ms) => s.audio.renderAudioPerChannel(id, ms));
+    const endFrame = r.stopFrame ?? r.streams[0].length / 2;
+    bufs = r.streams.map((b) => b.subarray(0, endFrame * 2)); // trimmed to the HFF stop
+    reportLength(r, endFrame);
+  } else {
+    bufs = s.audio.renderAudioPerChannel(id, o.ms ?? 8000);
+  }
   if (bufs.length === 0) throw new Error("render: renderAudioPerChannel returned no streams");
 
   if (platform === "gb") {
