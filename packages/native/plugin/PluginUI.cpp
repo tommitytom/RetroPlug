@@ -91,7 +91,10 @@ class PluginUI : public UI {
     // proven this window is ours to size (it's floating, not tiled). Gates the clamp latch below so a later
     // spurious compositor resize (a floating window shrunk on move) isn't mistaken for a tiling takeover.
     bool sizeHonored_ = false;
-    bool debugResize_ = false; // RETROPLUG_DEBUG_RESIZE: log every requestWindowSize / onResize (WM debugging)
+    bool debugResize_ = false;  // RETROPLUG_DEBUG_RESIZE: log every requestWindowSize / onResize (WM debugging)
+    bool pinMinSize_  = false;  // RETROPLUG_PIN_MINSIZE: pin the min-size floor to the content size on each
+                                // resize (candidate fix for Hyprland reverting a floating window to its
+                                // min/creation size on move — experimental, to be confirmed on real Hyprland)
 
     // SDL game-controller poller (reused from the legacy build). Ticked from uiIdle() on the UI thread; it
     // re-emits each transition onto the gamepad-* JS bus that useGamepadInput subscribes to. Inert
@@ -172,6 +175,7 @@ public:
         requestedW_ = w;
         requestedH_ = h;
         if (wmControlled_) return true; // don't fight the compositor
+        if (pinMinSize_) setGeometryConstraints(w, h); // experiment: min==content so a WM can't shrink below it
         setSize(w, h);
         if (debugResize_)
             d_stdout("[resize] request %ux%u -> cur %ux%u (wmC=%d honored=%d)", w, h, getWidth(), getHeight(),
@@ -241,6 +245,7 @@ public:
         if (isResizable()) fResizeHandle.hide();
 
         debugResize_ = dpfjs::getenvWithPrefix("DEBUG_RESIZE") != nullptr;
+        pinMinSize_  = dpfjs::getenvWithPrefix("PIN_MINSIZE") != nullptr;
 
         if (const char* p = dpfjs::getenvWithPrefix("SCREENSHOT_PATH"); p && *p) {
             screenshotPath_ = p;
