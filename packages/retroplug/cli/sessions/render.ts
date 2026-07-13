@@ -18,7 +18,7 @@
 // boot, so --song NAME / --song-index N promote a chosen project to the working song before booting
 // (decode → assign → re-encode → seed the fresh system). --list-songs prints the sav's song names.
 import { runSession, hostArgs } from "../session";
-import { encodeWav, interleaveStereoStreams, deinterleaveStereo } from "../wav";
+import { encodeWav, deinterleaveStereo } from "../wav";
 import { parseRenderArgs, type RenderOpts, type SplitMode } from "../renderArgs";
 import { syncDspFromStore } from "../../src/appHost";
 import { extensionLower, replaceExtension } from "../../src/pathUtil";
@@ -107,7 +107,7 @@ function resolveSongSeed(s: Session, o: RenderOpts): Uint8Array | undefined {
   const project = sav.projects[idx]!;
   sav.workingSong = project.song; // working song and project songs share the decoded Song shape
   sav.activeProjectIndex = idx;
-  console.log(`cli: song "${project.name || "(unnamed)"}" (slot ${idx}) → working song`);
+  console.log(`song "${project.name || "(unnamed)"}" (slot ${idx}) → working song`);
   // Seed unmodeled regions from the original sav when it's a full 128 KiB image (else author fresh).
   return encodeSav(sav, raw.length >= kSavSize ? raw : undefined);
 }
@@ -220,7 +220,7 @@ runSession((s) => {
   // --list-songs: print the sav's populated project slots and exit before building anything.
   if (o.listSongs) {
     const { path, sav } = readSav(s, o);
-    console.log(`cli: songs in ${path}:`);
+    console.log(`songs in ${path}:`);
     sav.projects.forEach((p, i) => { if (p) console.log(`  ${i}: ${p.name || "(unnamed)"}`); });
     if (sav.projects.every((p) => !p)) console.log("  (no named projects — only the working song)");
     return;
@@ -248,7 +248,7 @@ runSession((s) => {
   const sr = s.audio.sampleRate();
   const write = (name: string, bytes: Uint8Array) => {
     if (!s.backend.writeFile(name, bytes)) throw new Error(`render: write failed: ${name}`);
-    console.log(`cli: ${name}`);
+    console.log(`${name}`);
   };
   const base = outBase(o);
 
@@ -265,9 +265,13 @@ runSession((s) => {
   // Report the detected length + warn on a no-HFF fallback; shared by the mix and split auto-detect paths.
   const reportLength = (r: StopResult, endFrame: number) => {
     const lengthMs = Math.round(((endFrame - r.startFrame) / sr) * 1000);
-    console.log(`cli: length: ${lengthMs} ms (${endFrame - r.startFrame} frames @${sr}Hz) hff:${r.hff}`);
-    if (!r.hff) console.warn(`cli: no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
+    console.log(`length: ${lengthMs} ms (${endFrame - r.startFrame} frames @${sr}Hz) hff:${r.hff}`);
+    if (!r.hff) console.warn(`no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
   };
+
+  // Announce before the (possibly multi-minute) render so the CLI doesn't look hung while it works.
+  const how = autoDetect ? `detecting length (HFF, cap ${o.maxMs}ms)` : `${o.ms ?? 8000}ms`;
+  console.log(`rendering ${o.rom} → ${base}${o.split === "mix" ? "" : "_*"} (${how})…`);
 
   if (o.split === "mix") {
     if (autoDetect) {
@@ -280,7 +284,7 @@ runSession((s) => {
     const ms = o.ms ?? 8000;
     const pcm = s.audio.renderAudio(ms); // interleaved L/R float32
     write(base, encodeWav(pcm, sr, 2));
-    console.log(`cli: rendered ${o.rom} → ${base} (${ms}ms @${sr}Hz)`);
+    console.log(`rendered ${o.rom} → ${base} (${ms}ms @${sr}Hz)`);
     return;
   }
 
@@ -298,10 +302,9 @@ runSession((s) => {
   if (bufs.length === 0) throw new Error("render: renderAudioPerChannel returned no streams");
 
   if (platform === "gb") {
-    // GB channel streams are STEREO: one stereo WAV per channel + one combined multichannel WAV.
-    write(`${base}_multi.wav`, encodeWav(interleaveStereoStreams(bufs), sr, bufs.length * 2));
+    // GB channel streams are STEREO: one stereo WAV per channel.
     bufs.forEach((b, i) => write(`${base}_${GB_CHANNELS[i] ?? `ch${i}`}.wav`, encodeWav(b, sr, 2)));
-    console.log(`cli: GB ${bufs.length}-channel render (@${sr}Hz) → ${base}_*`);
+    console.log(`GB ${bufs.length}-channel render (@${sr}Hz) → ${base}_*`);
     return;
   }
 
@@ -315,5 +318,5 @@ runSession((s) => {
   for (let f = 0; f < frames; f++)
     for (let c = 0; c < mono.length; c++) combined[f * mono.length + c] = mono[c][f];
   write(`${base}_${o.split}.wav`, encodeWav(combined, sr, mono.length));
-  console.log(`cli: NES ${o.split} (${mono.length} streams @${sr}Hz) → ${base}_*`);
+  console.log(`NES ${o.split} (${mono.length} streams @${sr}Hz) → ${base}_*`);
 });
