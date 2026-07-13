@@ -12,7 +12,7 @@ jobs:
   linux:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The dpf.js submodule (and its nested submodules) use SSH URLs; the
           # runner has no SSH key. Init them ourselves after rewriting to HTTPS.
@@ -44,9 +44,9 @@ jobs:
           sudo install -m 0755 rgbasm rgblink rgbgfx rgbfix /usr/local/bin/
           rgbasm --version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Enable corepack (pnpm)
         run: corepack enable
@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: retroplug-linux-x86_64
           if-no-files-found: warn
@@ -111,7 +111,7 @@ jobs:
       # preinstalled vcpkg. RGBDS_DIR is set later once RGBDS is extracted.
       VCPKG_ROOT: C:\vcpkg
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: false
 
@@ -121,9 +121,9 @@ jobs:
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git submodule update --init --recursive
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Enable corepack (pnpm)
         run: corepack enable
@@ -144,7 +144,7 @@ jobs:
           "RGBDS_DIR=$env:RUNNER_TEMP\rgbds" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Cache vcpkg installed packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: C:\vcpkg\installed
           key: vcpkg-x64-windows-static-sdl2-libffi-${{ runner.os }}
@@ -166,7 +166,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: retroplug-windows-x86_64
           if-no-files-found: warn
@@ -182,7 +182,7 @@ jobs:
   macos:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: false
 
@@ -197,9 +197,9 @@ jobs:
           # Homebrew's keg-only libffi needs its pkg-config on the path.
           echo "PKG_CONFIG_PATH=$(brew --prefix libffi)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Enable corepack (pnpm)
         run: corepack enable
@@ -226,7 +226,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: retroplug-macos-arm64
           if-no-files-found: warn
