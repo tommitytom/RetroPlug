@@ -162,6 +162,9 @@ export interface AudioDriver {
   screenshot(id: number, path: string): boolean;
   setTransport(running: boolean): boolean;
   setBpm(bpm: number): boolean;
+  /** Set the host sample rate (Hz). Only takes effect BEFORE any system is built (baked into cores at
+   *  construct); returns false once a system exists or for a non-positive rate. */
+  setSampleRate(sampleRate: number): boolean;
 }
 
 // ─── The composition root a session drives (bootSession()). ──────────────────────────────────────────

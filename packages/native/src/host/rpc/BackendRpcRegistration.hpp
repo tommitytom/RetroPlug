@@ -54,13 +54,14 @@ void registerDspKernelRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::dspSetSystems>(e);
 }
 
-// --- harness: audio render / transport / MIDI + DSP profiling (14; CLI + tests only) ---
+// --- harness: audio render / transport / MIDI + DSP profiling (15; CLI + tests only) ---
 template <class Server>
 void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::renderAudio>(e);
     s.template addMethod<&EngineRpcService::renderAudioPerSystem>(e);
     s.template addMethod<&EngineRpcService::renderAudioPerChannel>(e);
     s.template addMethod<&EngineRpcService::sampleRate>(e);
+    s.template addMethod<&EngineRpcService::setSampleRate>(e);
     s.template addMethod<&EngineRpcService::setTransport>(e);
     s.template addMethod<&EngineRpcService::setBpm>(e);
     s.template addMethod<&EngineRpcService::stageMidiIn>(e);

@@ -53,6 +53,9 @@ public:
     std::vector<rfl::Bytestring> renderAudioPerChannel(std::uint32_t id, double ms);
     // The engine's audio sample rate (Hz), so callers can label WAV output correctly.
     double          sampleRate() const;
+    // Set the host sample rate (Hz). Baked into each core at construct, so it only takes effect BEFORE any
+    // system is built — rejected (false) once a system exists, since there's no resample-on-change today.
+    bool            setSampleRate(double sr);
     bool            setTransport(bool running);
     bool            setBpm(double bpm);
     bool            setAudioRouting(std::uint32_t mode);

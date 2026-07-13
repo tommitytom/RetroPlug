@@ -297,6 +297,14 @@ double EngineRpcService::sampleRate() const {
     return engine_.sampleRate();
 }
 
+bool EngineRpcService::setSampleRate(double sr) {
+    // Construct-time value: must land before any core is built. Reject a live change (no resample today) and
+    // any nonsensical rate. Direct engine write is safe here — a system-free engine has no audio thread.
+    if (sr <= 0.0 || engine_.systemCount() != 0) return false;
+    engine_.setSampleRate(sr);
+    return true;
+}
+
 bool EngineRpcService::setTransport(bool running) {
     invoker_.setTransport(running);  // transport is a queued op — applied now (direct) or on the audio thread
     return true;

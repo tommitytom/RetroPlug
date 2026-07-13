@@ -3,7 +3,7 @@
 // retroplug-cli binary (tjsc bytecode, see packages/native/CMakeLists.txt) and reached via the `render`
 // subcommand, so an end user with just the executable can:
 //
-//   retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--ms n]
+//   retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--ms n] [--sample-rate hz]
 //                              [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]
 //
 // A missing --sav auto-pairs the sibling <rom>.sav (native resolveSavPath). By default it presses Start
@@ -232,6 +232,10 @@ runSession((s) => {
   } else if (o.split === "channels" && platform !== "gb" && platform !== "nes") {
     throw new Error(`render: --split channels needs a Game Boy or NES ROM (got ${platform})`);
   }
+
+  // The sample rate is baked into each core at construct, so it MUST be set before buildSystem.
+  if (o.sampleRate !== undefined && !s.audio.setSampleRate(o.sampleRate))
+    throw new Error(`render: could not set sample rate to ${o.sampleRate}Hz`);
 
   const id = buildSystem(s, o, platform, resolveSongSeed(s, o));
 

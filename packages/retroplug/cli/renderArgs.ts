@@ -15,6 +15,7 @@ export interface RenderOpts {
   out?: string;
   ms?: number; // explicit fixed duration; undefined = auto (LSDj: render to the HFF stop) / 8000 default
   maxMs: number; // safety cap for LSDj length auto-detect (no-HFF fallback)
+  sampleRate?: number; // host render rate (Hz); undefined = engine default (44100). Must be set pre-build.
   split: SplitMode;
   bpm?: number;
   transport: boolean;
@@ -27,7 +28,7 @@ export interface RenderOpts {
 }
 
 export const RENDER_USAGE =
-  "usage: render <rom> [--sav f] [--state f] [--out f] [--ms n] [--max-ms n] " +
+  "usage: render <rom> [--sav f] [--state f] [--out f] [--ms n] [--max-ms n] [--sample-rate hz] " +
   "[--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start] " +
   "[--song name | --song-index n] [--list-songs]";
 
@@ -46,6 +47,7 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
   let out: string | undefined;
   let ms: number | undefined;
   let maxMs = 300000; // 5 min default cap for LSDj length auto-detect
+  let sampleRate: number | undefined;
   let split: SplitMode = "mix";
   let bpm: number | undefined;
   let transport = false;
@@ -69,6 +71,7 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
       case "--out": out = next(i, a); i++; break;
       case "--ms": ms = intValue(a, next(i, a)); i++; break;
       case "--max-ms": maxMs = intValue(a, next(i, a)); i++; break;
+      case "--sample-rate": sampleRate = intValue(a, next(i, a)); i++; break;
       case "--bpm": bpm = intValue(a, next(i, a)); i++; break;
       case "--split": {
         const v = next(i, a); i++;
@@ -100,5 +103,5 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
   if (!rom) throw new Error(`render: missing <rom>\n${RENDER_USAGE}`);
   if (song !== undefined && songIndex !== undefined)
     throw new Error("render: --song and --song-index are mutually exclusive");
-  return { rom, sav, state, out, ms, maxMs, split, bpm, transport, start, song, songIndex, listSongs };
+  return { rom, sav, state, out, ms, maxMs, sampleRate, split, bpm, transport, start, song, songIndex, listSongs };
 }

@@ -66,6 +66,9 @@ export interface AudioDriver {
   renderAudioPerChannel(id: number, ms: number): Float32Array[];
   /** The engine's audio sample rate (Hz) — thread into encodeWav so WAV headers are labelled correctly. */
   sampleRate(): number;
+  /** Set the host sample rate (Hz). Baked into cores at construct, so it only takes effect BEFORE any
+   *  system is built; returns false once a system exists (no resample-on-change) or for a non-positive rate. */
+  setSampleRate(sampleRate: number): boolean;
   setTransport(running: boolean): boolean;
   setBpm(bpm: number): boolean;
   /** Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
@@ -144,6 +147,7 @@ export function createAudioDriver(): AudioDriver {
       return bufs.map((b) => new Float32Array(b.slice().buffer));
     },
     sampleRate: () => call("sampleRate") as number,
+    setSampleRate: (sampleRate) => call("setSampleRate", sampleRate) as boolean,
     setTransport: (running) => call("setTransport", running) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
     stageMidiIn: (bytes) => call("stageMidiIn", ints(bytes)) as boolean,
