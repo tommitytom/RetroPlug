@@ -91,6 +91,7 @@ class PluginUI : public UI {
     // proven this window is ours to size (it's floating, not tiled). Gates the clamp latch below so a later
     // spurious compositor resize (a floating window shrunk on move) isn't mistaken for a tiling takeover.
     bool sizeHonored_ = false;
+    bool debugResize_ = false; // RETROPLUG_DEBUG_RESIZE: log every requestWindowSize / onResize (WM debugging)
 
     // SDL game-controller poller (reused from the legacy build). Ticked from uiIdle() on the UI thread; it
     // re-emits each transition onto the gamepad-* JS bus that useGamepadInput subscribes to. Inert
@@ -172,6 +173,9 @@ public:
         requestedH_ = h;
         if (wmControlled_) return true; // don't fight the compositor
         setSize(w, h);
+        if (debugResize_)
+            d_stdout("[resize] request %ux%u -> cur %ux%u (wmC=%d honored=%d)", w, h, getWidth(), getHeight(),
+                     (int)wmControlled_, (int)sizeHonored_);
         return wmControlled_;
     }
     bool isWindowSizeControlled() const { return wmControlled_; }
@@ -235,6 +239,8 @@ public:
             setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT);
         }
         if (isResizable()) fResizeHandle.hide();
+
+        debugResize_ = dpfjs::getenvWithPrefix("DEBUG_RESIZE") != nullptr;
 
         if (const char* p = dpfjs::getenvWithPrefix("SCREENSHOT_PATH"); p && *p) {
             screenshotPath_ = p;
@@ -361,6 +367,10 @@ protected:
         UI::onResize(ev); // base LVGLWidget::onResize → lv_display_set_resolution + repaint (free)
         const uint w = ev.size.getWidth();
         const uint h = ev.size.getHeight();
+        if (debugResize_)
+            d_stdout("[resize] onResize ev=%ux%u win=%ux%u (requested %ux%u wmC=%d honored=%d standalone=%d scale=%.2f)",
+                     w, h, getWidth(), getHeight(), requestedW_, requestedH_, (int)wmControlled_, (int)sizeHonored_,
+                     (int)getWindow().getApp().isStandalone(), getScaleFactor());
         // Latch once a requested size actually took: proof this window is ours to size (floating, not tiled).
         if (requestedW_ != 0 && requestedH_ != 0 && w == requestedW_ && h == requestedH_) sizeHonored_ = true;
 #ifdef DISTRHO_OS_LINUX
