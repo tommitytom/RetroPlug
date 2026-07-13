@@ -57,30 +57,30 @@ export function EmulatorTile({
     canvas.setBuffer(frame.pixels.slice().buffer, frame.width, frame.height);
   });
 
-  // The focus cue only distinguishes one tile from another, so a lone tile shows neither: no accent border
-  // (it would inset the full-window fill) and no dim.
+  // The focus cue only distinguishes one tile from another, so a lone tile shows neither: no accent
+  // border and no dim.
   const showBorder = focused && !single;
   const dim = !focused && !single;
 
   return (
-    <Box
-      onClick={onFocus}
-      style={{
-        width,
-        height,
-        "background-color": "#000000",
-        // Accent border on the focused tile — the visible focus cue (the dim is imperceptible on a
-        // near-black GB screen). Unfocused tiles are borderless + dimmed. Box keeps it square + flush.
-        "border-width": showBorder ? 2 : 0,
-        "border-color": "#4a86e8",
-      }}
-    >
+    <Box onClick={onFocus} style={{ width, height, "background-color": "#000000" }}>
       <CanvasAny ref={canvasRef} nearestNeighbor={true} innerAlign={LV_IMAGE_ALIGN_CONTAIN} style={{ width, height, "border-width": 0 }} />
       {dim && (
         <Box
           innerRef={dimTestId ? tagTestId(dimTestId) : undefined}
           align={{ type: LV_ALIGN_CENTER, pos: [0, 0] }}
           style={{ width, height, "background-color": "#000000", "background-opacity": 0.5 }}
+        />
+      )}
+      {showBorder && (
+        // Accent border on the focused tile — the visible focus cue (the dim is imperceptible on a
+        // near-black GB screen). Drawn as a transparent full-tile overlay layered OVER the Canvas, not
+        // a border-width on the container: an LVGL border insets the content box, which would shift the
+        // framebuffer child in by 2px. As an overlay the 2px stroke lands on the tile's outer ring,
+        // painted over the Canvas edge (a couple of rim pixels), so the picture never moves.
+        <Box
+          align={{ type: LV_ALIGN_CENTER, pos: [0, 0] }}
+          style={{ width, height, "background-opacity": 0, "border-width": 2, "border-color": "#4a86e8" }}
         />
       )}
     </Box>
