@@ -20,7 +20,7 @@ const START = 7; // GameboyButton::Start
 
 // The system's lsdj-sync pipeline at a given LsdjSyncMode (0 = Off, 1 = MidiSync). mode:0 must be
 // EXPLICIT — the role's schema defaults a bare config to MidiSync (clocking).
-const lsdjSync = (id: number, mode: number) => ({
+const lsdjSync = (id: number, mode: string) => ({
   systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
 });
 
@@ -81,11 +81,11 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
   audio.setTransport(true);
 
   // Negative: lsdj-sync Off -> the role emits no clock -> armed LSDj stays frozen -> silent.
-  expect(dsp.setSystems(lsdjSync(id, 0))).toBeTruthy();
+  expect(dsp.setSystems(lsdjSync(id, "off"))).toBeTruthy();
   const neg = rms(audio.renderAudio(600));
 
   // Positive: lsdj-sync MidiSync -> eachTick(24)->pushSerialIn(0xF8) is the only clock -> LSDj plays.
-  expect(dsp.setSystems(lsdjSync(id, 1))).toBeTruthy();
+  expect(dsp.setSystems(lsdjSync(id, "midiSync"))).toBeTruthy();
   const pos = rms(audio.renderAudio(3000));
 
   console.log(`[dsp-lsdj-midisync] neg=${neg.toFixed(5)} pos=${pos.toFixed(5)}`);

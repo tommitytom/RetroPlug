@@ -50,7 +50,7 @@ test("NES renders its 5 core channels individually (renderAudioPerChannel mode 3
     romPath: NES,
     roles: [
       { kind: "nes-n8-midi", config: {} },
-      { kind: "mesen", config: { channelExportMode: 3 } },
+      { kind: "mesen", config: { channelExportMode: "individualMono" } },
     ],
   });
   syncDspFromStore(project, dsp);

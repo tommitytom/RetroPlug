@@ -15,8 +15,8 @@ const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb"; // stock ROM support
 
 const emptySav = () => savFromJson(JSON.stringify({ workingSong: { formatVersion: 22 } }));
 
-const sysStruct = (id: number, mode: number) => ({
-  project: [{ kind: "midi-routing", config: { mode: 0 } }],
+const sysStruct = (id: number, mode: string) => ({
+  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
   systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
 });
 
@@ -48,7 +48,7 @@ test("the TS lsdj-sync MidiPassthrough role forwards raw MIDI to a real LSDj cor
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(sysStruct(id, 6))).toBeTruthy();
+  expect(dsp.setSystems(sysStruct(id, "midiPassthrough"))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen from the sav
 

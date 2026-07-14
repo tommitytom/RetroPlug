@@ -38,7 +38,7 @@ test("mGB renders non-silent audio from a MIDI chord (idle-silence control)", ()
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   expect(
     dsp.setSystems({
-      project: [{ kind: "midi-routing", config: { mode: 0 } }],
+      project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
       systems: [{ id, pipeline: [{ kind: "mgb", config: {} }] }],
     }),
   ).toBeTruthy();

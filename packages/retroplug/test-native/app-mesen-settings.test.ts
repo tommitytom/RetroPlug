@@ -23,10 +23,10 @@ test("a NES core boots with a non-default region seeded from its role config (co
 
   // adopt a saved NES system whose mesen role carries region PAL (2) → constructSystem forwards it as
   // the settings blob → MesenBackend decodes it → configureNes applies it before LoadRom.
-  project.systems.adopt({ romPath: NES, roles: [{ kind: "mesen", config: { region: 2, removeSpriteLimit: false } }] });
+  project.systems.adopt({ romPath: NES, roles: [{ kind: "mesen", config: { region: "pal", removeSpriteLimit: false } }] });
   const v = project.systems.view()[0];
   expect(v.platform).toBe("nes");
-  expect(v.roles.find((r) => r.kind === "mesen")?.config.region).toBe(2);
+  expect(v.roles.find((r) => r.kind === "mesen")?.config.region).toBe("pal");
 
   audio.renderAudio(500);
   expect(be.getFrame(v.id)?.published).toBeTruthy(); // booted + rendered
@@ -48,12 +48,12 @@ test("live NES knob edits reach the core: sprite-limit (live) + region (resets) 
   expect(be.getFrame(id)?.published).toBeTruthy();
 
   // Region change forces emu_->Reset() (RunFrame is bypassed). The core reboots and must render again.
-  expect(project.systems.setRoleConfig(id, "mesen", { region: 2 })).toBeTruthy(); // PAL
+  expect(project.systems.setRoleConfig(id, "mesen", { region: "pal" })).toBeTruthy(); // PAL
   audio.renderAudio(500);
   expect(be.getFrame(id)?.published).toBeTruthy(); // survived the reset
 
   // Re-sending the same region is a no-op (value-guarded — no spurious reset).
-  expect(project.systems.setRoleConfig(id, "mesen", { region: 2 })).toBeTruthy();
+  expect(project.systems.setRoleConfig(id, "mesen", { region: "pal" })).toBeTruthy();
   audio.renderAudio(200);
   expect(be.getFrame(id)?.published).toBeTruthy();
 });

@@ -8,12 +8,13 @@
 
 import type { KernelStructure } from "./dspKernel";
 import type { SystemView } from "./systemsStore";
+import type { MidiRouting } from "./settingsEnums";
 
 /** Build the kernel structure from the systems' roles + the project MIDI-routing mode.
  *  The project-scope `midi-routing` role is synthesized from `midiRouting` (it lives in the
  *  project settings, not on any system); each system's roles map straight into its pipeline,
  *  preserving order (the stored order is authoritative for positional routing). */
-export function projectKernelStructure(views: SystemView[], midiRouting: number): KernelStructure {
+export function projectKernelStructure(views: SystemView[], midiRouting: MidiRouting): KernelStructure {
   return {
     project: [{ kind: "midi-routing", config: { mode: midiRouting } }],
     systems: views.map((v) => ({ id: v.id, pipeline: v.roles })),

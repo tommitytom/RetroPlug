@@ -15,6 +15,7 @@
 import { composeAppStores, type StoreChannel, type AppStores } from "./appStores";
 import { createDspRuntime } from "./dspRuntime";
 import { syncDspFromStore } from "./appHost";
+import { LsdjSyncMode } from "./settingsEnums";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
@@ -121,8 +122,8 @@ const LSDJ_HOST_SYNC_LATENCY_MS = 33;
 g.__rp_syncLatencyMs = (): string => {
   let ms = 0;
   for (const s of project.systems.view()) {
-    const mode = (s.roles.find((r) => r.kind === "lsdj-sync")?.config as { mode?: number } | undefined)?.mode;
-    if (mode === 1 || mode === 2) ms = Math.max(ms, LSDJ_HOST_SYNC_LATENCY_MS);
+    const mode = (s.roles.find((r) => r.kind === "lsdj-sync")?.config as { mode?: LsdjSyncMode } | undefined)?.mode;
+    if (mode === LsdjSyncMode.MidiSync || mode === LsdjSyncMode.MidiSyncArduinoboy) ms = Math.max(ms, LSDJ_HOST_SYNC_LATENCY_MS);
   }
   return String(ms);
 };

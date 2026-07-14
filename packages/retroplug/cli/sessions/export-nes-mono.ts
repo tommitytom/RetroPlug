@@ -28,14 +28,14 @@ runSession((s) => {
   const prefix = hostArgs()[1] || "/tmp/nes-mono";
   if (!romPath) throw new Error("usage: export-nes-mono <rom.nes> [outPrefix]");
 
-  // Adopt with the "mesen" role in IndividualMono mode (mode 3) — capture engages at construct/onActivate,
+  // Adopt with the "mesen" role in individualMono mode — capture engages at construct/onActivate,
   // so it MUST be set here, not live. The host-MIDI role lets notes reach the APU. adopt is quiet → project
   // the store into the DSP runtime by hand (bootSession's onSystemsChange hook doesn't fire).
   s.project.systems.adopt({
     romPath,
     roles: [
       { kind: "nes-n8-midi", config: {} },
-      { kind: "mesen", config: { channelExportMode: 3 } },
+      { kind: "mesen", config: { channelExportMode: "individualMono" } },
     ],
   });
   syncDspFromStore(s.project, s.dsp);

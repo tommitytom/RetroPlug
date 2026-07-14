@@ -26,20 +26,20 @@ function view(id: number, roles: RoleInstance[]): SystemView {
 }
 
 test("projectKernelStructure: synthesizes the project midi-routing role from the routing mode", () => {
-  const s = projectKernelStructure([], 2);
-  expect(s.project).toEqual([{ kind: "midi-routing", config: { mode: 2 } }]);
+  const s = projectKernelStructure([], "oneChannelPerInstance");
+  expect(s.project).toEqual([{ kind: "midi-routing", config: { mode: "oneChannelPerInstance" } }]);
   expect(s.systems).toEqual([]);
 });
 
 test("projectKernelStructure: each system's pipeline mirrors its roles in order", () => {
   const a: RoleInstance[] = [
-    { kind: "sameboy", config: { model: 9 } },
-    { kind: "lsdj-sync", config: { mode: 1 } },
+    { kind: "sameboy", config: { model: "cgbC" } },
+    { kind: "lsdj-sync", config: { mode: "midiSync" } },
   ];
   const b: RoleInstance[] = [{ kind: "sameboy", config: {} }, { kind: "mgb", config: {} }];
-  const s = projectKernelStructure([view(1, a), view(2, b)], 0);
+  const s = projectKernelStructure([view(1, a), view(2, b)], "sendToAll");
 
-  expect(s.project).toEqual([{ kind: "midi-routing", config: { mode: 0 } }]);
+  expect(s.project).toEqual([{ kind: "midi-routing", config: { mode: "sendToAll" } }]);
   expect(s.systems).toEqual([
     { id: 1, pipeline: a }, // order preserved: system role first, then the feature role
     { id: 2, pipeline: b },

@@ -280,18 +280,18 @@ test("Audio Routing offers ChannelSplit only for a single system", () => {
 
   // One system: cycling past OnePerInstance(2) reaches ChannelSplit(3) — the "Channels (1 GB)" option.
   stores.project.systems.addSystem("/roms/a.gb");
-  stores.project.setAudioRouting(2);
+  stores.project.setAudioRouting("onePerInstance");
   expect(audioRow().label).toBe("Audio Routing: 1 Ch / Inst");
   audioRow().onSelect!();
-  expect(stores.project.settings().audioRouting).toBe(3);
+  expect(stores.project.settings().audioRouting).toBe("channelSplit");
   expect(audioRow().label).toBe("Audio Routing: Channels (1 GB)");
 
   // A second system drops ChannelSplit from the cycle, so stepping past OnePerInstance wraps to Stereo(0)
   // (native gates it too, so this is UX only — the three per-instance modes stay).
   stores.project.systems.addSystem("/roms/a.gb");
-  stores.project.setAudioRouting(2);
+  stores.project.setAudioRouting("onePerInstance");
   audioRow().onSelect!();
-  expect(stores.project.settings().audioRouting).toBe(0);
+  expect(stores.project.settings().audioRouting).toBe("stereo");
 });
 
 test("Link Group stays hidden for a NES peer (SameBoy serial link only); Replace / Remove still show", () => {
@@ -585,16 +585,16 @@ test("the LSDj submenu appears only for a system carrying an lsdj-sync role; its
   const lsdjItems = () =>
     submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-lsdj");
   const cfg = () =>
-    stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "lsdj-sync")!.config as { mode: number; tempoDivisor: number };
+    stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "lsdj-sync")!.config as { mode: string; tempoDivisor: number };
 
   const mode = findItem(lsdjItems(), "lsdj-mode")!;
   expect(mode.kind).toBe("cycler");
-  expect(mode.label).toBe("Mode: MIDI Sync"); // default mode 1
-  expect(cfg().mode).toBe(1);
+  expect(mode.label).toBe("Mode: MIDI Sync"); // default MidiSync
+  expect(cfg().mode).toBe("midiSync");
 
-  // Enter/onSelect steps the mode forward (1 → 2), applied through setRoleConfig (the live re-push path).
+  // Enter/onSelect steps the mode forward (MidiSync → MidiSyncArduinoboy), applied through setRoleConfig (the live re-push path).
   mode.onSelect!();
-  expect(cfg().mode).toBe(2);
+  expect(cfg().mode).toBe("midiSyncArduinoboy");
 
   // Tempo Divisor cycler steps 1 → 2 (index 0 → 1 in [1,2,4,8]).
   expect(findItem(lsdjItems(), "lsdj-divisor")!.label).toBe("Tempo Divisor: 1");
@@ -788,7 +788,7 @@ test("instance menu Save Project saves to the known path without browsing", asyn
   const anchored = stores.project.systems.view()[0];
 
   stores.project.save("/proj/p.rplg"); // establish a path (clears dirty)
-  stores.project.setLayout(3); // Grid — re-dirties the project so the save has an observable effect
+  stores.project.setLayout("grid"); // Grid — re-dirties the project so the save has an observable effect
   expect(stores.project.isDirty()).toBe(true);
 
   findItem(buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items, "inst-save")!.onSelect!();

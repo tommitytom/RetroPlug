@@ -135,7 +135,7 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
   expect(
     dsp.setSystems({
-      project: [{ kind: "midi-routing", config: { mode: 0 } }], // SendToAll → every system's mgb pipeline
+      project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }], // SendToAll → every system's mgb pipeline
       systems: ids.map((id) => ({ id, pipeline: [{ kind: "mgb", config: {} }] })),
     }),
   ).toBeTruthy();

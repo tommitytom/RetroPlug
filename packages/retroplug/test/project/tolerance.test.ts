@@ -15,7 +15,8 @@ test("additive tolerance: a config missing newer fields gets their defaults", ()
     systems: [{ platform: "gb", romPath: "/a.gb" }],
   });
   const cfg = parseConfig(raw);
-  expect(cfg.settings).toEqual({ layout: 2, midiRouting: 0, audioRouting: 0, zoom: 0 }); // defaults filled
+  // defaults filled; the v1 integer `layout: 2` migrates to its string value (v2→v3)
+  expect(cfg.settings).toEqual({ layout: "column", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0 });
   expect(cfg.systems[0]).toEqual({ platform: "gb", core: "sameboy", romPath: "/a.gb" }); // core backfilled (v1→v2)
 });
 
@@ -41,18 +42,19 @@ test("strict: unknown fields are stripped, known fields kept", () => {
   expect(sys.model).toBe(undefined); // per-system unknown stripped
   expect(sys.highpass).toBe(undefined);
   expect(sys.romPath).toBe("/a.gb"); // known field kept
-  // roles is a known field; a role's `config` is an open record, so its fields survive
-  expect(sys.roles).toEqual([{ kind: "lsdj-sync", config: { mode: 2, tempoDivisor: 1 } }]);
+  // roles is a known field; a role's `config` is an open record, so its fields survive (the v1 integer
+  // `mode: 2` migrates to its string value, v2→v3)
+  expect(sys.roles).toEqual([{ kind: "lsdj-sync", config: { mode: "midiSyncArduinoboy", tempoDivisor: 1 } }]);
 });
 
 test("coerces a malformed settings value + drops a garbage system entry", () => {
   const raw = JSON.stringify({
     schemaVersion: "1",
-    settings: { layout: 99, zoom: "bad" }, // out-of-range + wrong-type → clamped/defaulted
+    settings: { layout: 99, zoom: "bad" }, // unknown enum + wrong-type → defaulted
     systems: [{ platform: "gb", romPath: "/a.gb" }, 12345, null], // non-object entries dropped
   });
   const cfg = parseConfig(raw);
-  expect(cfg.settings.layout).toBe(3); // clamped to max
+  expect(cfg.settings.layout).toBe("auto"); // out-of-range int is unknown to the enum → default
   expect(cfg.settings.zoom).toBe(0); // wrong type → default
   expect(cfg.systems.length).toBe(1); // garbage entries dropped
   expect(cfg.systems[0].romPath).toBe("/a.gb");

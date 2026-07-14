@@ -36,7 +36,7 @@ test("a system adopted with fastBoot=false plays the GB boot chime (construct-ti
   const id = project.systems.adopt({
     embeddedRom: "mgb",
     roles: [
-      { kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: false } },
+      { kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: false } },
       { kind: "mgb", config: {} },
     ],
   })!;

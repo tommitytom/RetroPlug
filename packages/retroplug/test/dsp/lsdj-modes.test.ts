@@ -11,12 +11,12 @@ import type { MidiEvent } from "../../src/midiRouting";
 
 // A one-system project with the given lsdj-sync mode, plus SendToAll routing so system 1 receives every
 // host-MIDI event verbatim (channel nibble intact — MidiMap keys on it).
-function lsdj(mode: number, config: Record<string, unknown> = {}): DspKernel {
+function lsdj(mode: string, config: Record<string, unknown> = {}): DspKernel {
   const reg = new RoleRegistry();
   registerDspRoles(reg);
   const k = new DspKernel(reg);
   k.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: 0 } }],
+    project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
     systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode, ...config } }] }],
   });
   return k;
@@ -32,12 +32,12 @@ const bytes = (out: { serialIn: { byte: number }[] }): number[] => out.serialIn.
 const clocks = (out: { serialIn: { byte: number }[] }): number => out.serialIn.filter((s) => s.byte === 0xf8).length;
 
 test("MidiPassthrough forwards raw MIDI bytes verbatim to serial", () => {
-  const out = lsdj(6).processBlock({ ...baseDyn(), midiIn: [noteOn(0, 60)] });
+  const out = lsdj("midiPassthrough").processBlock({ ...baseDyn(), midiIn: [noteOn(0, 60)] });
   expect(bytes(out)).toEqual([0x90, 60, 100]);
 });
 
 test("MidiMap: ch0 NoteOn → row byte, matching NoteOff → 0xFE, ch1 → row+128 (lastRow persists across blocks)", () => {
-  const k = lsdj(3);
+  const k = lsdj("midiMap");
   expect(bytes(k.processBlock({ ...baseDyn(), midiIn: [noteOn(0, 5)] }))).toEqual([5]); // ch0 note 5 → row 5
   expect(bytes(k.processBlock({ ...baseDyn(), midiIn: [noteOff(0, 5)] }))).toEqual([0xfe]); // matching off → sentinel
   expect(bytes(k.processBlock({ ...baseDyn(), midiIn: [noteOff(0, 9)] }))).toEqual([]); // non-matching off → nothing
@@ -45,7 +45,7 @@ test("MidiMap: ch0 NoteOn → row byte, matching NoteOff → 0xFE, ch1 → row+1
 });
 
 test("MidiSyncArduinoboy: note 24 arms the clock behind a 0xFA bookend; note 25 stops it with 0xFC", () => {
-  const k = lsdj(2);
+  const k = lsdj("midiSyncArduinoboy");
   expect(k.processBlock({ ...baseDyn() }).serialIn.length).toBe(0); // idle: not playing, transport off
 
   // Note 24 arms play; transport rises this block → 0xFA first, then a full 24-tick clock (divisor 1).
@@ -64,13 +64,13 @@ test("MidiSyncArduinoboy: note 24 arms the clock behind a 0xFA bookend; note 25 
 
 test("MidiSyncArduinoboy: tempo divisor subdivides the clock; note >= 30 pushes a raw row byte", () => {
   // 24 / 2 = 12 ticks/beat (fresh kernel — no mid-stream resolution change).
-  expect(clocks(lsdj(2, { tempoDivisor: 2 }).processBlock({ ...baseDyn(), transport: true, midiIn: [noteOn(0, 24)] }))).toBe(12);
+  expect(clocks(lsdj("midiSyncArduinoboy", { tempoDivisor: 2 }).processBlock({ ...baseDyn(), transport: true, midiIn: [noteOn(0, 24)] }))).toBe(12);
   // note 40 → 40 - 30 = 10 (row passthrough is independent of the play flag).
-  expect(bytes(lsdj(2).processBlock({ ...baseDyn(), midiIn: [noteOn(0, 40)] }))).toEqual([10]);
+  expect(bytes(lsdj("midiSyncArduinoboy").processBlock({ ...baseDyn(), midiIn: [noteOn(0, 40)] }))).toEqual([10]);
 });
 
 test("KeyboardMidi: a note maps to its GB-serial-mangled PS/2 scancode; a cursor note gets the extended prefix", () => {
-  const k = lsdj(5);
+  const k = lsdj("keyboardMidi");
   // Every byte is mangled to LSDj's GB-serial form (reverse-low-7-bits, per keyjazz — toGbSerialByte).
   // note 48 (C-3 = NOTE_START): octave slides 4 → 0 (4× OCT_DN 0x05 → 0x50) then NOTE_MAP[0] 0x1A → 0x2C.
   expect(bytes(k.processBlock({ ...baseDyn(), midiIn: [noteOn(0, 48)] }))).toEqual([0x50, 0x50, 0x50, 0x50, 0x2c]);
@@ -80,14 +80,14 @@ test("KeyboardMidi: a note maps to its GB-serial-mangled PS/2 scancode; a cursor
 });
 
 test("the kernel prunes per-system scratch state: a removed-then-readded system starts fresh", () => {
-  const k = lsdj(2);
+  const k = lsdj("midiSyncArduinoboy");
   k.processBlock({ ...baseDyn(), transport: true, midiIn: [noteOn(0, 24)] }); // arm play + store prevTransport=true
 
   // Remove system 1 (prunes its state bag), then re-add it.
-  k.setSystems({ project: [{ kind: "midi-routing", config: { mode: 0 } }], systems: [] });
+  k.setSystems({ project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }], systems: [] });
   k.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: 0 } }],
-    systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: 2 } }] }],
+    project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
+    systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: "midiSyncArduinoboy" } }] }],
   });
 
   // Fresh state: play flag reset (no clock), and transport true reads as a fresh rising edge (0xFA).

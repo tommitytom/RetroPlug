@@ -7,6 +7,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
 import { K_PROJECT } from "../../src/projectConfig";
+import type { SystemLayout } from "../../src/settingsEnums";
 import { gbRom } from "../systems/fixtures";
 
 function newProject(be = new MockBackend("/cfg")) {
@@ -19,12 +20,12 @@ test("new: clears systems, settings, path and dirty", () => {
   const { be, project } = newProject();
   be.seed("/proj/a.gb", gbRom());
   project.systems.addSystem("/proj/a.gb");
-  project.setLayout(3);
+  project.setLayout("grid");
   expect(project.isDirty()).toBeTruthy();
 
   project.newProject();
   expect(project.systems.view().length).toBe(0);
-  expect(project.settings().layout).toBe(0);
+  expect(project.settings().layout).toBe("auto");
   expect(project.currentPath()).toBe("");
   expect(project.isDirty()).toBeFalsy();
 });
@@ -252,8 +253,8 @@ test("dirty: flips on a systems mutation or a settings change; clears on save/ne
   expect(project.isDirty()).toBeFalsy();
   expect(project.setZoom(4)).toBeTruthy(); // settings change → dirty
   expect(project.isDirty()).toBeTruthy();
-  expect(project.setLayout(99)).toBeFalsy(); // out of range → rejected, no change
-  expect(project.settings().layout).toBe(0);
+  expect(project.setLayout("bogus" as SystemLayout)).toBeFalsy(); // unknown value → rejected, no change
+  expect(project.settings().layout).toBe("auto");
 });
 
 test("setOnChange: the general observer fires on settings edits, save, and new", () => {

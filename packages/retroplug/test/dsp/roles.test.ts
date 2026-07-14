@@ -29,7 +29,7 @@ const baseDyn = (): BlockInput => ({
 test("mgb forwards each routed MIDI byte to its system's serial", () => {
   const k = kernel();
   k.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: 0 } }], // SendToAll
+    project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }], // SendToAll
     systems: [{ id: 1, pipeline: [{ kind: "mgb", config: {} }] }],
   });
   const out = k.processBlock({ ...baseDyn(), midiIn: [{ frame: 0, data: [0x90, 60, 100] }] });
@@ -43,7 +43,7 @@ test("mgb forwards each routed MIDI byte to its system's serial", () => {
 test("nes-n8-midi forwards each routed MIDI message to its system's core (emitCoreMidi)", () => {
   const k = kernel();
   k.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: 0 } }], // SendToAll
+    project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }], // SendToAll
     systems: [{ id: 1, pipeline: [{ kind: "nes-n8-midi", config: {} }] }],
   });
   const out = k.processBlock({ ...baseDyn(), midiIn: [{ frame: 0, data: [0x90, 60, 100] }] });
@@ -53,15 +53,15 @@ test("nes-n8-midi forwards each routed MIDI message to its system's core (emitCo
 });
 
 test("lsdj-sync MidiSync emits a 24-PPQN 0xF8 clock; Off emits nothing", () => {
-  const run = (mode: number) => {
+  const run = (mode: string) => {
     const k = kernel();
     k.setSystems({ systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }] });
     return k.processBlock({ ...baseDyn(), transport: true });
   };
 
-  const on = run(1); // MidiSync
+  const on = run("midiSync"); // MidiSync
   expect(on.serialIn.length).toBe(24);
   expect(on.serialIn.every((s) => s.system === 1 && s.byte === 0xf8)).toBeTruthy();
 
-  expect(run(0).serialIn.length).toBe(0); // Off
+  expect(run("off").serialIn.length).toBe(0); // Off
 });

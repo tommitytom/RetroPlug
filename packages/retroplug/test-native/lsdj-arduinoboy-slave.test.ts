@@ -29,8 +29,8 @@ const SLAVE_SONG = JSON.stringify({
 
 // A one-system project with the given lsdj-sync mode + SendToAll routing so system 1 receives every
 // host-MIDI event verbatim (the Arduinoboy control notes ride channel-agnostic).
-const sysStruct = (id: number, mode: number) => ({
-  project: [{ kind: "midi-routing", config: { mode: 0 } }],
+const sysStruct = (id: number, mode: string) => ({
+  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
   systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
 });
 
@@ -62,7 +62,7 @@ test("the TS lsdj-sync Arduinoboy-slave role plays a real LSDj on note-24, gates
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(sysStruct(id, 2))).toBeTruthy();
+  expect(dsp.setSystems(sysStruct(id, "midiSyncArduinoboy"))).toBeTruthy();
 
   audio.renderAudio(6000); // valid sav skips the self-test; still needs a few s to the song screen
 

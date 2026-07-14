@@ -6,6 +6,19 @@
 import type { AppStores } from "../../../src/appStores";
 import type { SystemView } from "../../../src/systemsStore";
 import type { ProjectSettings } from "../../../src/projectConfig";
+import {
+  LAYOUT_VALUES,
+  MIDI_ROUTING_VALUES,
+  AUDIO_ROUTING_VALUES,
+  MODEL_VALUES,
+  HIGHPASS_VALUES,
+  REGION_VALUES,
+  LSDJ_MODE_VALUES,
+  type SameBoyModel,
+  type SameBoyHighpass,
+  type ConsoleRegion,
+  type LsdjSyncMode,
+} from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES } from "../../../src/userConfig";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
@@ -106,11 +119,11 @@ function browseThen(ctx: MenuContext, opts: FileBrowserOpts, apply: (path: strin
 }
 
 /** The SameBoy core-role config for a system (model / highpass / linkGroupId / fastBoot), with defaults. */
-function sameboyConfig(sys: SystemView): { model: number; highpass: number; linkGroupId: number; fastBoot: boolean } {
+function sameboyConfig(sys: SystemView): { model: SameBoyModel; highpass: SameBoyHighpass; linkGroupId: number; fastBoot: boolean } {
   const c = (sys.roles.find((r) => r.kind === "sameboy")?.config ?? {}) as Record<string, unknown>;
   return {
-    model: typeof c.model === "number" ? c.model : 9,
-    highpass: typeof c.highpass === "number" ? c.highpass : 1,
+    model: typeof c.model === "string" ? (c.model as SameBoyModel) : "cgbC",
+    highpass: typeof c.highpass === "string" ? (c.highpass as SameBoyHighpass) : "accurate",
     linkGroupId: typeof c.linkGroupId === "number" ? c.linkGroupId : 0,
     fastBoot: c.fastBoot !== false,
   };
@@ -118,10 +131,10 @@ function sameboyConfig(sys: SystemView): { model: number; highpass: number; link
 
 /** The Mesen core-role config (region / removeSpriteLimit), with defaults. The role attaches to any
  *  Mesen system; the knobs are NES-only, so the menu gates the rows on platform === "nes". */
-function mesenConfig(sys: SystemView): { region: number; removeSpriteLimit: boolean } {
+function mesenConfig(sys: SystemView): { region: ConsoleRegion; removeSpriteLimit: boolean } {
   const c = (sys.roles.find((r) => r.kind === "mesen")?.config ?? {}) as Record<string, unknown>;
   return {
-    region: typeof c.region === "number" ? c.region : 0,
+    region: typeof c.region === "string" ? (c.region as ConsoleRegion) : "auto",
     removeSpriteLimit: c.removeSpriteLimit === true,
   };
 }
@@ -142,8 +155,8 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   if (sys.core === "sameboy") {
     const cfg = sameboyConfig(sys);
     items.push(
-      cycler("sys-model", "Model", MODEL_NAMES, cfg.model, (n) => systems.setRoleConfig(sys.id, "sameboy", { model: n })),
-      cycler("sys-highpass", "Highpass", HIGHPASS_NAMES, cfg.highpass, (n) => systems.setRoleConfig(sys.id, "sameboy", { highpass: n })),
+      cycler("sys-model", "Model", MODEL_NAMES, Math.max(0, MODEL_VALUES.indexOf(cfg.model)), (n) => systems.setRoleConfig(sys.id, "sameboy", { model: MODEL_VALUES[n] })),
+      cycler("sys-highpass", "Highpass", HIGHPASS_NAMES, Math.max(0, HIGHPASS_VALUES.indexOf(cfg.highpass)), (n) => systems.setRoleConfig(sys.id, "sameboy", { highpass: HIGHPASS_VALUES[n] })),
       cycler("sys-fastboot", "Fast Boot", OFF_ON, cfg.fastBoot ? 1 : 0, (n) => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: n === 1 })),
     );
   }
@@ -151,7 +164,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   if (sys.platform === "nes") {
     const cfg = mesenConfig(sys);
     items.push(
-      cycler("sys-nes-region", "Region", REGION_NAMES, cfg.region, (n) => systems.setRoleConfig(sys.id, "mesen", { region: n })),
+      cycler("sys-nes-region", "Region", REGION_NAMES, Math.max(0, REGION_VALUES.indexOf(cfg.region)), (n) => systems.setRoleConfig(sys.id, "mesen", { region: REGION_VALUES[n] })),
       cycler("sys-nes-spritelimit", "Remove Sprite Limit", OFF_ON, cfg.removeSpriteLimit ? 1 : 0, (n) =>
         systems.setRoleConfig(sys.id, "mesen", { removeSpriteLimit: n === 1 }),
       ),
@@ -203,10 +216,10 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
  *  syncDspFromStore), so they apply to the running behaviour on the next block — no dedicated RPC. */
 function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unknown>): MenuItem[] {
   const systems = ctx.stores.project.systems;
-  const mode = typeof cfg.mode === "number" ? cfg.mode : 1;
+  const mode = typeof cfg.mode === "string" ? (cfg.mode as LsdjSyncMode) : "midiSync";
   const divisor = typeof cfg.tempoDivisor === "number" ? cfg.tempoDivisor : 1;
   return [
-    cycler("lsdj-mode", "Mode", LSDJ_MODE_NAMES, mode, (n) => systems.setRoleConfig(sys.id, "lsdj-sync", { mode: n })),
+    cycler("lsdj-mode", "Mode", LSDJ_MODE_NAMES, Math.max(0, LSDJ_MODE_VALUES.indexOf(mode)), (n) => systems.setRoleConfig(sys.id, "lsdj-sync", { mode: LSDJ_MODE_VALUES[n] })),
     cycler("lsdj-divisor", "Tempo Divisor", LSDJ_DIVISORS.map(String), Math.max(0, LSDJ_DIVISORS.indexOf(divisor)), (n) =>
       systems.setRoleConfig(sys.id, "lsdj-sync", { tempoDivisor: LSDJ_DIVISORS[n] }),
     ),
@@ -236,14 +249,14 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   }
   items.push(sep("proj-sep0"));
   items.push(
-    cycler("proj-layout", "Layout", LAYOUT_NAMES, ctx.settings.layout, (n) => project.setLayout(n)),
+    cycler("proj-layout", "Layout", LAYOUT_NAMES, Math.max(0, LAYOUT_VALUES.indexOf(ctx.settings.layout)), (n) => project.setLayout(LAYOUT_VALUES[n])),
     { id: "proj-zoom", label: `Zoom: ${ctx.settings.zoom === 0 ? "Default" : `${ctx.settings.zoom}x`}`, kind: "cycler", keepOpen: true, onSelect: () => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, 1)), onCycle: (dir) => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, dir)) },
     sep("proj-sep1"),
-    cycler("proj-midi", "MIDI Routing", MIDI_ROUTING_NAMES, ctx.settings.midiRouting, (n) => project.setMidiRouting(n)),
-    // ChannelSplit (index 3) is single-system-only, so the cycler drops it with 0 or >1 systems (the
+    cycler("proj-midi", "MIDI Routing", MIDI_ROUTING_NAMES, Math.max(0, MIDI_ROUTING_VALUES.indexOf(ctx.settings.midiRouting)), (n) => project.setMidiRouting(MIDI_ROUTING_VALUES[n])),
+    // channelSplit (index 3) is single-system-only, so the cycler drops it with 0 or >1 systems (the
     // per-instance modes stay — they're the multi-system routes). Native is the authority and can't
     // mis-route regardless; this is UX only.
-    cycler("proj-audio", "Audio Routing", ctx.systems.length === 1 ? AUDIO_ROUTING_NAMES : AUDIO_ROUTING_NAMES.slice(0, 3), ctx.settings.audioRouting, (n) => project.setAudioRouting(n)),
+    cycler("proj-audio", "Audio Routing", ctx.systems.length === 1 ? AUDIO_ROUTING_NAMES : AUDIO_ROUTING_NAMES.slice(0, 3), Math.max(0, AUDIO_ROUTING_VALUES.indexOf(ctx.settings.audioRouting)), (n) => project.setAudioRouting(AUDIO_ROUTING_VALUES[n])),
   );
   return items;
 }

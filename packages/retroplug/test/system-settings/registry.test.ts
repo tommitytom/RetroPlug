@@ -35,30 +35,30 @@ test("systemRoleFor: the core registers a SameBoy and a Mesen system role", () =
   const sb = reg.systemRoleFor("sameboy");
   expect(sb?.kind).toBe("sameboy");
   expect(sb?.category).toBe("system");
-  expect(sb?.schema.parse({})).toEqual({ model: 9, highpass: 1, linkGroupId: 0, fastBoot: true });
+  expect(sb?.schema.parse({})).toEqual({ model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true });
 
   const mesen = reg.systemRoleFor("mesen");
   expect(mesen?.kind).toBe("mesen");
   expect(mesen?.category).toBe("system");
-  expect(mesen?.schema.parse({})).toEqual({ region: 0, removeSpriteLimit: false, channelExportMode: 0 });
+  expect(mesen?.schema.parse({})).toEqual({ region: "auto", removeSpriteLimit: false, channelExportMode: "mix" });
 });
 
-test("mesen schema: fills defaults + clamps an out-of-range region", () => {
+test("mesen schema: fills defaults + defaults an unknown region", () => {
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
   const mesen = reg.roleType("mesen")!;
-  expect(mesen.schema.parse({ region: 99 })).toEqual({ region: 4, removeSpriteLimit: false, channelExportMode: 0 });
-  expect(mesen.schema.parse({ removeSpriteLimit: true })).toEqual({ region: 0, removeSpriteLimit: true, channelExportMode: 0 });
+  expect(mesen.schema.parse({ region: 99 })).toEqual({ region: "auto", removeSpriteLimit: false, channelExportMode: "mix" });
+  expect(mesen.schema.parse({ removeSpriteLimit: true })).toEqual({ region: "auto", removeSpriteLimit: true, channelExportMode: "mix" });
 });
 
-test("schema: fills defaults + clamps out-of-range fields", () => {
+test("schema: fills defaults + defaults unknown enums, clamps numeric fields", () => {
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
   const sb = reg.roleType("sameboy")!;
-  expect(sb.schema.parse({})).toEqual({ model: 9, highpass: 1, linkGroupId: 0, fastBoot: true });
+  expect(sb.schema.parse({})).toEqual({ model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true });
   expect(sb.schema.parse({ model: 99, highpass: 5, linkGroupId: 999 })).toEqual({
-    model: 13,
-    highpass: 2,
+    model: "cgbC",
+    highpass: "accurate",
     linkGroupId: 255,
     fastBoot: true,
   });
@@ -79,18 +79,18 @@ test("defaultRoles: system role first, then provider-matched feature roles", () 
 
   const demo = reg.defaultRoles("sameboy", "gb", headerWithTitle("DEMO-GAME"));
   expect(demo).toEqual([
-    { kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: true } },
+    { kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true } },
     { kind: "demo-sync", config: { level: 1 } },
   ]);
 
   // A non-matching ROM gets only the backend system role.
   const plain = reg.defaultRoles("sameboy", "gb", headerWithTitle("ZELDA"));
   expect(plain).toEqual([
-    { kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: true } },
+    { kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true } },
   ]);
 
   // A NES system gets the Mesen system role (no feature provider registered in this reg → just it).
   expect(reg.defaultRoles("mesen", "nes", headerWithTitle("SMB3"))).toEqual([
-    { kind: "mesen", config: { region: 0, removeSpriteLimit: false, channelExportMode: 0 } },
+    { kind: "mesen", config: { region: "auto", removeSpriteLimit: false, channelExportMode: "mix" } },
   ]);
 });

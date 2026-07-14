@@ -51,7 +51,7 @@ test("NES renders its stereo-mod pins (renderAudioPerChannel): Pulse rings, TND/
     romPath: NES,
     roles: [
       { kind: "nes-n8-midi", config: {} },
-      { kind: "mesen", config: { channelExportMode: 1 } },
+      { kind: "mesen", config: { channelExportMode: "stereoModPins" } },
     ],
   });
   syncDspFromStore(project, dsp);

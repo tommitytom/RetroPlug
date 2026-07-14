@@ -76,11 +76,11 @@ test("the store's lsdj-sync role is the sole clock that makes an armed LSDj sing
 
   // Negative: lsdj-sync Off (via the store) → no clock → armed LSDj frozen → silent. No render
   // between setTransport(true) and this push, or the mode:1-default pipeline would clock + poison neg.
-  expect(project.systems.setRoleConfig(id, "lsdj-sync", { mode: 0 })).toBeTruthy();
+  expect(project.systems.setRoleConfig(id, "lsdj-sync", { mode: "off" })).toBeTruthy();
   const neg = rms(audio.renderAudio(600));
 
   // Positive: lsdj-sync MidiSync (via the store) → the kernel's 24-PPQN 0xF8 clock is the only clock.
-  expect(project.systems.setRoleConfig(id, "lsdj-sync", { mode: 1 })).toBeTruthy();
+  expect(project.systems.setRoleConfig(id, "lsdj-sync", { mode: "midiSync" })).toBeTruthy();
   const pos = rms(audio.renderAudio(3000));
 
   console.log(`[app-play-lsdj] neg=${neg.toFixed(5)} pos=${pos.toFixed(5)}`);

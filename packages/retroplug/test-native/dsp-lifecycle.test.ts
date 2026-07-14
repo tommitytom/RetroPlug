@@ -18,7 +18,7 @@ const NOTE = [0x90, 60, 100]; // C note-on
 
 // The kernel structure that lets host MIDI reach each mGB: midi-routing (SendToAll) → per-system mgb.
 const routingMgb = (ids: number[]) => ({
-  project: [{ kind: "midi-routing", config: { mode: 0 } }],
+  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
   systems: ids.map((id) => ({ id, pipeline: [{ kind: "mgb", config: {} }] })),
 });
 

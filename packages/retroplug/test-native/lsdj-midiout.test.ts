@@ -19,7 +19,7 @@ declare const __DSP_KERNEL_BUNDLE__: string;
 
 const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
 const START = 7; // GameboyButton::Start
-const MIDIOUT = 7; // LsdjSyncMode / lsdj-sync role mode
+const MIDIOUT = "midiOut"; // LsdjSyncMode / lsdj-sync role mode
 
 // A phrase of eight rows, each an audible note plus an `N` (NoteOn) command whose value is the MIDI note
 // to transmit — that command is what drives the MI.OUT NoteOn protocol. SYNC=MI.OUT so LSDj emits the
@@ -42,8 +42,8 @@ const MIDIOUT_SONG = JSON.stringify({
   },
 });
 
-const sysStruct = (id: number, mode: number) => ({
-  project: [{ kind: "midi-routing", config: { mode: 0 } }],
+const sysStruct = (id: number, mode: string) => ({
+  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
   systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
 });
 

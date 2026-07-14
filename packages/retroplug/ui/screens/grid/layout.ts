@@ -1,17 +1,13 @@
 // Pure grid layout math for the emulator grid, ported from the legacy shell (packages/ui/src/layout.ts +
 // SystemGrid.shapeFor). GB is 160×144 native; integer zoom (1..6) scales the tile linearly and LVGL's
 // nearest-neighbour upscales the framebuffer into it. `layout` matches ProjectSettings.layout
-// (0 Auto / 1 Row / 2 Column / 3 Grid).
+// ("auto" / "row" / "column" / "grid"; see settingsEnums).
+
+import { SystemLayout, LAYOUT_VALUES } from "../../../src/settingsEnums";
+export { SystemLayout, LAYOUT_VALUES };
 
 export const GB_NATIVE_W = 160;
 export const GB_NATIVE_H = 144;
-
-export enum SystemLayout {
-  Auto = 0,
-  Row = 1,
-  Column = 2,
-  Grid = 3,
-}
 
 export interface GridShape {
   cols: number;

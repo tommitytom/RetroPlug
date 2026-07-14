@@ -27,7 +27,7 @@ test("export: a real PKZIP of project.json + each core's savestate (+ SRAM for b
 
   project.systems.loadMgb(); // embedded → index 0
   project.systems.addSystem(rom); // file-backed battery cart → index 1
-  project.setLayout(3);
+  project.setLayout("grid");
 
   expect(project.export(song)).toBeTruthy();
   expect(be.fileExists(song)).toBeTruthy();
@@ -41,7 +41,7 @@ test("export: a real PKZIP of project.json + each core's savestate (+ SRAM for b
 
   // project.json re-parses to the thin config (embedded marker + relative ROM path).
   const doc = JSON.parse(dec.decode(be.unzip(archive)!.find((e) => e.name === "project.json")!.bytes));
-  expect(doc.settings.layout).toBe(3);
+  expect(doc.settings.layout).toBe("grid");
   expect(doc.systems.length).toBe(2);
   expect(doc.systems[0].embeddedRom).toBe("mgb");
   expect(doc.systems[1].romPath).toBe("a.gb"); // rebased relative, not embedded as a blob

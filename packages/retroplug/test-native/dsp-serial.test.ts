@@ -43,7 +43,7 @@ test("a DSP pushSerialIn (mgb role) in the render loop flips the core silent ↔
   // Add midi-routing (SendToAll) -> the chord reaches mGB's serial via pushSerialIn -> it plays.
   expect(
     dsp.setSystems({
-      project: [{ kind: "midi-routing", config: { mode: 0 } }],
+      project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
       systems: [{ id, pipeline: [{ kind: "mgb", config: {} }] }],
     }),
   ).toBeTruthy();
