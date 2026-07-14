@@ -274,6 +274,18 @@ if(WIN32 AND TARGET retroplug-jack)
     if(MSVC)
         target_link_options(retroplug-jack PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
     endif()
+elseif(APPLE AND TARGET retroplug-jack)
+    # No terminal window when the standalone is launched from Finder. DPF builds the JACK standalone as a
+    # bare Mach-O executable (bin/retroplug); double-clicking a bare executable in Finder opens it inside
+    # Terminal.app — the macOS analogue of the Windows console popup. Package it as a .app bundle instead:
+    # Finder / `open` launches it as a proper GUI app with no terminal, while running the binary inside the
+    # bundle (bin/retroplug.app/Contents/MacOS/retroplug) from a shell still prints stdout/stderr there — so
+    # console debugging still works. Same trade-off as the Windows /SUBSYSTEM:WINDOWS build above. The UI is
+    # compiled into the binary (rp_ui_bundle), so the bundle needs no external Resources.
+    set_target_properties(retroplug-jack PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "RetroPlug"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "co.tommitytom.retroplug")
 endif()
 
 # --- UI test harness -------------------------------------------------------------------------------
