@@ -1,20 +1,20 @@
 // Flag parser for the `retroplug-cli render` subcommand — kept pure (no Backend, no globals) so it is
 // unit-testable in the mock suite. render.ts imports parseRenderArgs and drives the render off the result.
 //
-//   render <rom> [--sav f] [--state f] [--out f] [--ms n] [--split mix|channels|pins|mono]
+//   render <rom> [--sav f] [--state f] [--out f] [--duration t] [--split mix|channels|pins]
 //                [--bpm n] [--transport] [--no-start] [--song name | --song-index n] [--list-songs]
 
-export type SplitMode = "mix" | "channels" | "pins" | "mono";
+export type SplitMode = "mix" | "channels" | "pins";
 
-const SPLIT_MODES: readonly SplitMode[] = ["mix", "channels", "pins", "mono"];
+const SPLIT_MODES: readonly SplitMode[] = ["mix", "channels", "pins"];
 
 export interface RenderOpts {
   rom: string;
   sav?: string;
   state?: string;
   out?: string;
-  ms?: number; // explicit fixed duration; undefined = auto (LSDj: render to the HFF stop) / 8000 default
-  maxMs: number; // safety cap for LSDj length auto-detect (no-HFF fallback)
+  durationMs?: number; // explicit fixed duration (ms); undefined = auto (LSDj: render to the HFF stop) / 8000 default
+  maxDurationMs: number; // safety cap for LSDj length auto-detect (no-HFF fallback), ms
   sampleRate?: number; // host render rate (Hz); undefined = engine default (44100). Must be set pre-build.
   split: SplitMode;
   bpm?: number;
@@ -38,7 +38,9 @@ export const RENDER_HELP = `usage: retroplug-cli render <rom> [options]
 
 Render a Game Boy (.gb/.gbc), NES (.nes) or GBA (.gba) ROM to a WAV file. The ROM is booted, Start is
 pressed so a saved song plays (LSDj / mGB), and the audio is written to disk. With a loaded LSDj .sav the
-song length is auto-detected (rendered up to the HFF stop) unless you pin a fixed length with --ms.
+song length is auto-detected (rendered up to the HFF stop) unless you pin a fixed length with --duration.
+
+Durations accept a unit: 500ms, 3s, 2m (decimals ok, e.g. 1.5s); a bare number is milliseconds.
 
 Arguments:
   <rom>                  Path to the ROM. A sibling <rom>.sav is loaded automatically if present.
@@ -47,16 +49,16 @@ Options:
   --sav <file>           Battery save (.sav) to load. Default: <rom>.sav next to the ROM, if it exists.
   --state <file>         Savestate to restore after boot (instead of a fresh boot).
   --out <file>           Output path. Default: <rom>.wav for a mix; <rom>_<stem>.wav for --split.
-  --ms <n>               Fixed render length in milliseconds. Turns OFF LSDj auto-length detection.
-                         Default: auto for a loaded LSDj sav, otherwise 8000.
-  --max-ms <n>           Safety cap for LSDj auto-length when no HFF stop is found. Default: 300000 (5 min).
+  --duration <time>      Fixed render length (e.g. 3s, 500ms, 2m). Turns OFF LSDj auto-length detection.
+                         Default: auto for a loaded LSDj sav, otherwise 8s.
+  --max-duration <time>  Safety cap for LSDj auto-length when no HFF stop is found. Default: 5m.
   --sample-rate <hz>     Output sample rate. Default: 44100. Higher rates resample the console's audio up
                          (larger WAV, same song); must be set before the ROM boots (it always is here).
   --split <mode>         What to write (default: mix):
-                           mix       one stereo WAV of the final mix
-                           channels  one WAV per sound channel (Game Boy: 4 stereo stems)
-                           pins      NES analog output pins — pulse, tnd, expansion (mono WAVs + combined)
-                           mono      NES core channels — square1/2, triangle, noise, dmc (mono + combined)
+                           mix       one WAV of the final mix (Game Boy: stereo; NES: mono)
+                           channels  one WAV per sound channel (Game Boy: 4 stereo stems;
+                                     NES: 5 mono core channels — square1/2, triangle, noise, dmc)
+                           pins      NES analog output pins — pulse, tnd, expansion (3 mono WAVs)
   --bpm <n>              Host tempo (BPM) for tempo-synced playback. Use with --transport.
   --transport            Run the host transport (play), so tempo-synced ROMs advance. Default: off.
   --no-start             Do NOT press Start on boot — render the raw boot/menu audio.
@@ -69,7 +71,7 @@ Examples:
   retroplug-cli render song.gbc                          # LSDj: auto-length stereo mix -> song.wav
   retroplug-cli render song.gbc --split channels         # 4 per-channel stereo stems
   retroplug-cli render song.gbc --song INTRO --out intro.wav
-  retroplug-cli render game.nes --split mono --ms 5000   # NES core channels, fixed 5s
+  retroplug-cli render game.nes --split channels --duration 5s   # NES core channels, fixed 5s
   retroplug-cli render song.gbc --sample-rate 96000      # render at 96 kHz`;
 
 function intValue(flag: string, raw: string | undefined): number {
@@ -79,14 +81,25 @@ function intValue(flag: string, raw: string | undefined): number {
   return n;
 }
 
+const DURATION_UNITS_MS: Record<string, number> = { ms: 1, s: 1000, m: 60000 };
+
+/** Parse a human duration ("500ms", "3s", "1.5m", or a bare number = ms) to a positive integer of ms. */
+function parseDuration(flag: string, raw: string): number {
+  const m = /^(\d+(?:\.\d+)?)(ms|s|m)?$/.exec(raw.trim());
+  const value = m ? Number(m[1]) * DURATION_UNITS_MS[m[2] ?? "ms"] : NaN;
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error(`render: ${flag} needs a time like 3s / 500ms / 2m (got ${raw})`);
+  return Math.round(value);
+}
+
 /** Parse a render argv (the tokens AFTER the `render` subcommand). Throws on bad usage. */
 export function parseRenderArgs(argv: string[]): RenderOpts {
   let rom: string | undefined;
   let sav: string | undefined;
   let state: string | undefined;
   let out: string | undefined;
-  let ms: number | undefined;
-  let maxMs = 300000; // 5 min default cap for LSDj length auto-detect
+  let durationMs: number | undefined;
+  let maxDurationMs = 300000; // 5 min default cap for LSDj length auto-detect
   let sampleRate: number | undefined;
   let split: SplitMode = "mix";
   let bpm: number | undefined;
@@ -109,8 +122,8 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
       case "--sav": sav = next(i, a); i++; break;
       case "--state": state = next(i, a); i++; break;
       case "--out": out = next(i, a); i++; break;
-      case "--ms": ms = intValue(a, next(i, a)); i++; break;
-      case "--max-ms": maxMs = intValue(a, next(i, a)); i++; break;
+      case "--duration": durationMs = parseDuration(a, next(i, a)); i++; break;
+      case "--max-duration": maxDurationMs = parseDuration(a, next(i, a)); i++; break;
       case "--sample-rate": sampleRate = intValue(a, next(i, a)); i++; break;
       case "--bpm": bpm = intValue(a, next(i, a)); i++; break;
       case "--split": {
@@ -143,5 +156,5 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
   if (!rom) throw new Error(`render: missing <rom> — ${RENDER_HINT}`);
   if (song !== undefined && songIndex !== undefined)
     throw new Error("render: --song and --song-index are mutually exclusive");
-  return { rom, sav, state, out, ms, maxMs, sampleRate, split, bpm, transport, start, song, songIndex, listSongs };
+  return { rom, sav, state, out, durationMs, maxDurationMs, sampleRate, split, bpm, transport, start, song, songIndex, listSongs };
 }

@@ -6,8 +6,8 @@ import { parseRenderArgs } from "../../cli/renderArgs";
 test("render args: bare <rom> yields the documented defaults", () => {
   const o = parseRenderArgs(["song.gb"]);
   expect(o.rom).toBe("song.gb");
-  expect(o.ms).toBe(undefined); // unset → auto (LSDj length) / 8000 default applied in render.ts
-  expect(o.maxMs).toBe(300000);
+  expect(o.durationMs).toBe(undefined); // unset → auto (LSDj length) / 8000 default applied in render.ts
+  expect(o.maxDurationMs).toBe(300000);
   expect(o.split).toBe("mix");
   expect(o.start).toBe(true); // auto-start playback by default
   expect(o.transport).toBe(false);
@@ -43,40 +43,49 @@ test("render args: --song-index rejects out-of-range / non-integer", () => {
 test("render args: every value + boolean flag parses", () => {
   const o = parseRenderArgs([
     "r.nes", "--sav", "s.sav", "--state", "s.ss0", "--out", "o.wav",
-    "--ms", "1200", "--max-ms", "60000", "--split", "mono", "--bpm", "128", "--transport", "--no-start",
+    "--duration", "1200ms", "--max-duration", "60s", "--split", "channels", "--bpm", "128", "--transport", "--no-start",
   ]);
   expect(o.rom).toBe("r.nes");
   expect(o.sav).toBe("s.sav");
   expect(o.state).toBe("s.ss0");
   expect(o.out).toBe("o.wav");
-  expect(o.ms).toBe(1200);
-  expect(o.maxMs).toBe(60000);
-  expect(o.split).toBe("mono");
+  expect(o.durationMs).toBe(1200);
+  expect(o.maxDurationMs).toBe(60000);
+  expect(o.split).toBe("channels");
   expect(o.bpm).toBe(128);
   expect(o.transport).toBe(true);
   expect(o.start).toBe(false);
 });
 
 test("render args: positional rom is order-independent among flags", () => {
-  const o = parseRenderArgs(["--split", "pins", "rom.nes", "--ms", "500"]);
+  const o = parseRenderArgs(["--split", "pins", "rom.nes", "--duration", "500ms"]);
   expect(o.rom).toBe("rom.nes");
   expect(o.split).toBe("pins");
-  expect(o.ms).toBe(500);
+  expect(o.durationMs).toBe(500);
 });
 
-test("render args: --split rejects an unknown mode", () => {
+test("render args: --split rejects an unknown mode (incl. the removed 'mono')", () => {
   expect(() => parseRenderArgs(["r.gb", "--split", "stereo"])).toThrow("--split");
+  expect(() => parseRenderArgs(["r.nes", "--split", "mono"])).toThrow("--split");
 });
 
-test("render args: --ms rejects a non-positive/non-integer value", () => {
-  expect(() => parseRenderArgs(["r.gb", "--ms", "0"])).toThrow("--ms");
-  expect(() => parseRenderArgs(["r.gb", "--ms", "1.5"])).toThrow("--ms");
-  expect(() => parseRenderArgs(["r.gb", "--ms", "x"])).toThrow("--ms");
+test("render args: --duration accepts ms / s / m units + a bare number (= ms)", () => {
+  expect(parseRenderArgs(["r.gb", "--duration", "3000ms"]).durationMs).toBe(3000);
+  expect(parseRenderArgs(["r.gb", "--duration", "3s"]).durationMs).toBe(3000);
+  expect(parseRenderArgs(["r.gb", "--duration", "3m"]).durationMs).toBe(180000);
+  expect(parseRenderArgs(["r.gb", "--duration", "1.5s"]).durationMs).toBe(1500);
+  expect(parseRenderArgs(["r.gb", "--duration", "500"]).durationMs).toBe(500); // bare = ms
 });
 
-test("render args: --max-ms parses + rejects a bad value", () => {
-  expect(parseRenderArgs(["r.gb", "--max-ms", "12000"]).maxMs).toBe(12000);
-  expect(() => parseRenderArgs(["r.gb", "--max-ms", "0"])).toThrow("--max-ms");
+test("render args: --duration rejects zero / non-numeric / unknown unit", () => {
+  expect(() => parseRenderArgs(["r.gb", "--duration", "0"])).toThrow("--duration");
+  expect(() => parseRenderArgs(["r.gb", "--duration", "x"])).toThrow("--duration");
+  expect(() => parseRenderArgs(["r.gb", "--duration", "3h"])).toThrow("--duration");
+});
+
+test("render args: --max-duration parses a unit value + rejects a bad one", () => {
+  expect(parseRenderArgs(["r.gb", "--max-duration", "2m"]).maxDurationMs).toBe(120000);
+  expect(() => parseRenderArgs(["r.gb", "--max-duration", "0s"])).toThrow("--max-duration");
 });
 
 test("render args: a missing rom throws usage", () => {

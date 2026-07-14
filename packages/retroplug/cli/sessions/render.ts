@@ -3,17 +3,17 @@
 // the dispatcher (cli/cli.ts, the bundle compiled into retroplug-cli) runs it under a booted session, so an
 // end user with just the executable can:
 //
-//   retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--ms n] [--sample-rate hz]
-//                              [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]
+//   retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--duration t] [--sample-rate hz]
+//                              [--split mix|channels|pins] [--bpm n] [--transport] [--no-start]
 //
 // A missing --sav auto-pairs the sibling <rom>.sav. By default it presses Start on boot so a saved song
-// (e.g. LSDj) actually plays — pass --no-start to render raw boot audio. The --split modes fold in the
-// per-channel/stem exports (GB 4 channels; NES 3 pins / 5 mono core stems). See RENDER_HELP in renderArgs.ts
-// for the full, user-facing flag reference (`render --help`).
+// (e.g. LSDj) actually plays — pass --no-start to render raw boot audio. --split writes per-stream WAVs
+// (no combined file): mix = one WAV (GB stereo / NES mono); channels = GB 4 stereo stems or NES 5 mono core
+// channels; pins = NES 3 mono analog pins. See RENDER_HELP in renderArgs.ts for the full flag reference.
 //
-// LSDj length auto-detect: when a valid LSDj sav is loaded (and no --ms is pinned), render to the song's
-// HFF stop (the APU master-enable NR52 going off — lsdpack's technique), report the length, and trim the
-// WAV to it. --ms forces a fixed duration; --max-ms caps the detection (no-HFF fallback).
+// LSDj length auto-detect: when a valid LSDj sav is loaded (and no --duration is pinned), render to the
+// song's HFF stop (the APU master-enable NR52 going off — lsdpack's technique), report the length, and trim
+// the WAV to it. --duration forces a fixed length; --max-duration caps the detection (no-HFF fallback).
 //
 // LSDj (GB) song selection: a .sav holds up to 32 named projects but LSDj only plays its WORKING song on
 // boot, so --song NAME / --song-index N promote a chosen project to the working song before booting
@@ -44,8 +44,8 @@ function isLsdjSav(bytes: Uint8Array): boolean {
 
 // Per-mode stream labels, matching each system's channelLayout() order.
 const GB_CHANNELS = ["pulse1", "pulse2", "wave", "noise"]; // SameBoySystem::channelLayout (stereo streams)
-const NES_PINS = ["pulse", "tnd", "expansion"]; // MesenNesSystem StereoModPins (mono streams)
-const NES_MONO = ["square1", "square2", "triangle", "noise", "dmc"]; // MesenNesSystem IndividualMono (mono)
+const NES_PINS = ["pulse", "tnd", "expansion"]; // MesenNesSystem StereoModPins (--split pins; mono streams)
+const NES_CHANNELS = ["square1", "square2", "triangle", "noise", "dmc"]; // MesenNesSystem IndividualMono (--split channels; mono)
 
 type Platform = "gb" | "nes" | "gba" | "other";
 
@@ -59,9 +59,10 @@ function platformOf(rom: string): Platform {
   }
 }
 
-/** NES channelExportMode for a split mode (pins=1, mono=3); "channels" aliases to pins on NES. */
+/** NES channelExportMode for a split mode: channels=3 (the 5 individual mono core channels),
+ *  pins=1 (the 3 analog output pins). Only meaningful for NES + a non-mix split. */
 function nesExportMode(split: SplitMode): number {
-  return split === "mono" ? 3 : 1;
+  return split === "channels" ? 3 : 1;
 }
 
 // --- LSDj song selection (GB only) ----------------------------------------------------------------
@@ -172,24 +173,19 @@ function leftLane(b: Float32Array, frames: number): Float32Array {
   return out;
 }
 
-/** Interleave N equal-length mono lanes into one N-channel interleaved buffer (the NES combined WAV). */
-function interleaveLanes(lanes: Float32Array[], frames: number, n: number): Float32Array {
-  const out = new Float32Array(frames * n);
-  for (let f = 0; f < frames; f++)
-    for (let c = 0; c < n; c++) out[f * n + c] = lanes[c][f];
-  return out;
-}
-
-/** Build the sink for the requested output shape: mix (1 stereo WAV), GB channels (N stereo WABs), or NES
- *  pins/mono (N mono WAVs + one combined N-channel WAV). Writers open on the first chunk once the stream
- *  count is known (from chunk.length) — opening truncates, so a re-render clobbers any stale file. */
+/** Build the sink for the requested output shape. Writers open on the first chunk once the stream count is
+ *  known (from chunk.length) — opening truncates, so a re-render clobbers any stale file.
+ *    mix       → 1 WAV: GB/GBA stereo, NES mono (its lanes are identical, so the left lane is lossless)
+ *    channels  → GB 4 stereo stems; NES 5 mono core channels
+ *    pins      → NES 3 mono analog pins
+ *  (No combined multi-channel WAV — split modes write per-stream files only.) */
 function buildSink(s: Session, o: RenderOpts, id: number, platform: Platform, sr: number, base: string): RenderSink {
   const renderChunk = o.split === "mix"
     ? (ms: number) => [s.audio.renderAudio(ms)]
     : (ms: number) => s.audio.renderAudioPerChannel(id, ms);
 
-  let writers: WavWriter[] | null = null; // per stream (mix=1 stereo; GB=N stereo; NES=N mono)
-  let combined: WavWriter | null = null; // NES only: the interleaved N-channel WAV
+  const nesMono = platform === "nes"; // NES streams (mix + per-channel) are mono in the left lane
+  let writers: WavWriter[] | null = null; // per stream (mix=1; GB channels=N stereo; NES=N mono)
   const paths: string[] = [];
   let summary = "";
 
@@ -201,16 +197,15 @@ function buildSink(s: Session, o: RenderOpts, id: number, platform: Platform, sr
   const ensure = (streamCount: number) => {
     if (writers) return;
     if (o.split === "mix") {
-      writers = [open(base, 2)];
+      writers = [open(base, nesMono ? 1 : 2)];
       summary = `rendered ${o.rom} → ${base} (@${sr}Hz)`;
     } else if (platform === "gb") {
       writers = Array.from({ length: streamCount }, (_, i) => open(`${base}_${GB_CHANNELS[i] ?? `ch${i}`}.wav`, 2));
       summary = `GB ${streamCount}-channel render (@${sr}Hz) → ${base}_*`;
     } else {
-      const names = o.split === "mono" ? NES_MONO : NES_PINS;
+      const names = o.split === "channels" ? NES_CHANNELS : NES_PINS;
       writers = Array.from({ length: streamCount }, (_, i) => open(`${base}_${names[i] ?? `ch${i}`}.wav`, 1));
-      combined = open(`${base}_${o.split}.wav`, streamCount); // one interleaved N-channel WAV
-      summary = `NES ${o.split} (${streamCount} streams @${sr}Hz) → ${base}_*`;
+      summary = `NES ${o.split} (${streamCount} mono streams @${sr}Hz) → ${base}_*`;
     }
   };
 
@@ -219,19 +214,16 @@ function buildSink(s: Session, o: RenderOpts, id: number, platform: Platform, sr
     emit(chunk, take) {
       ensure(chunk.length);
       if (o.split === "mix") {
-        writers![0].append(chunk[0].subarray(0, take * 2));
+        writers![0].append(nesMono ? leftLane(chunk[0], take) : chunk[0].subarray(0, take * 2));
       } else if (platform === "gb") {
         chunk.forEach((b, i) => writers![i].append(b.subarray(0, take * 2)));
       } else {
-        const lanes = chunk.map((b) => leftLane(b, take));
-        lanes.forEach((l, i) => writers![i].append(l));
-        combined!.append(interleaveLanes(lanes, take, lanes.length));
+        chunk.forEach((b, i) => writers![i].append(leftLane(b, take))); // NES per-channel streams are mono
       }
     },
     finishAll() {
       if (!writers) throw new Error("render: no audio was rendered");
       writers.forEach((w) => w.finish());
-      combined?.finish();
       paths.forEach((p) => console.log(p));
       console.log(summary);
     },
@@ -315,8 +307,8 @@ function runRender(s: Session, args: string[]): void {
   }
 
   // Validate split ↔ platform up front so a bad combo fails before we load anything.
-  if (o.split === "pins" || o.split === "mono") {
-    if (platform !== "nes") throw new Error(`render: --split ${o.split} is NES-only (got ${platform})`);
+  if (o.split === "pins") {
+    if (platform !== "nes") throw new Error(`render: --split pins is NES-only (got ${platform})`);
   } else if (o.split === "channels" && platform !== "gb" && platform !== "nes") {
     throw new Error(`render: --split channels needs a Game Boy or NES ROM (got ${platform})`);
   }
@@ -348,27 +340,27 @@ function runRender(s: Session, args: string[]): void {
     lsdjLoaded = !!raw && isLsdjSav(raw);
   }
   // Auto-detect applies to both mix and split (GB channels) — split just renders per-channel chunks.
-  const autoDetect = lsdjLoaded && o.start && o.ms === undefined;
+  const autoDetect = lsdjLoaded && o.start && o.durationMs === undefined;
 
   // Report the detected length + warn on a no-HFF fallback.
   const reportLength = (m: StopMarkers) => {
     const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
     console.log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);
-    if (!m.hff) console.warn(`no HFF stop within ${o.maxMs}ms — add an HFF to the song end for exact length`);
+    if (!m.hff) console.warn(`no HFF stop within ${o.maxDurationMs}ms — add an HFF to the song end for exact length`);
   };
 
   // Announce before the (possibly multi-minute) render so the CLI doesn't look hung while it works.
-  const how = autoDetect ? `detecting length (HFF, cap ${o.maxMs}ms)` : `${o.ms ?? 8000}ms`;
+  const how = autoDetect ? `detecting length (HFF, cap ${o.maxDurationMs}ms)` : `${o.durationMs ?? 8000}ms`;
   console.log(`rendering ${o.rom} → ${base}${o.split === "mix" ? "" : "_*"} (${how})…`);
 
   // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
   const sink = buildSink(s, o, id, platform, sr, base);
   if (autoDetect) {
-    const markers = driveAutoDetect(sink, s, id, o.maxMs);
+    const markers = driveAutoDetect(sink, s, id, o.maxDurationMs);
     sink.finishAll();
     reportLength(markers);
   } else {
-    driveFixed(sink, Math.floor(((o.ms ?? 8000) * sr) / 1000)); // exact target frame count
+    driveFixed(sink, Math.floor(((o.durationMs ?? 8000) * sr) / 1000)); // exact target frame count
     sink.finishAll();
   }
 }
