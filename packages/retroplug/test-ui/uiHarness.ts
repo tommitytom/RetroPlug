@@ -47,6 +47,8 @@ interface NativeUi {
   moveMouse(x: number, y: number): void;
   gamepadButton(name: string, press: boolean, pad?: number): void;
   gamepadAxis(axis: string, value: number, pad?: number): void;
+  fileDrop(paths: string, x: number, y: number): void;
+  romDir(): string;
   advance(ms: number): void;
 }
 
@@ -126,6 +128,14 @@ export const ui = {
     rp.gamepadButton(name, true, pad);
     rp.gamepadButton(name, false, pad);
   },
+  /** Emit a native file drop on the "file-drop" bus (the editor's PluginUI::uiFileDropped seam): the
+   *  newline-joined absolute paths + the window-space drop coordinate. Routes through App's drag-and-drop
+   *  handler exactly as an OS drop would. */
+  fileDrop(paths: string | string[], x: number, y: number): void {
+    rp.fileDrop(Array.isArray(paths) ? paths.join("\n") : paths, x, y);
+  },
+  /** The absolute resources/roms directory (so a test can drop a real, bootable ROM by path). */
+  romDir(): string { return rp.romDir(); },
   /** Advance the emulator by `ms` so tiles receive live frames (pump() only ticks LVGL). */
   advance(ms: number): void { rp.advance(ms); },
 };

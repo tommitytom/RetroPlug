@@ -79,3 +79,45 @@ export function getTileBounds(
   const h = tileHeight(zoom);
   return { x: col * w, y: row * h, w, h };
 }
+
+/** The largest integer zoom in `[MIN_ZOOM, cap]` whose grid fits `area`, so the whole grid stays
+ *  visible even when a tiling WM clamps the window below the size App asked for. The displayed zoom —
+ *  SystemGrid renders at this, and `hitTestTile` maps drop coordinates through it. */
+export function fitZoom(count: number, layout: SystemLayout, cap: number, area: { width: number; height: number }): number {
+  const shape = shapeFor(layout, Math.max(count, 1));
+  for (let z = Math.min(cap, MAX_ZOOM); z > MIN_ZOOM; z--) {
+    if (shape.cols * tileWidth(z) <= area.width && shape.rows * tileHeight(z) <= area.height) return z;
+  }
+  return MIN_ZOOM;
+}
+
+/** Map a window-pixel coordinate to the grid tile index under it, or `null` when it misses the grid
+ *  (outside the content area, or an empty cell in a partially-filled last row). Replicates SystemGrid's
+ *  layout exactly — the `fitZoom`-capped displayed zoom + the grid CENTERED in the window (SystemGrid's
+ *  align/justify-center) — so a dropped file lands on the tile it was visibly dropped onto. `projectZoom`
+ *  is the project's `settings.zoom`; `defaultZoom` the user default (used when the project zoom is out of
+ *  range), matching SystemGrid's `resolvedZoom`. */
+export function hitTestTile(
+  x: number,
+  y: number,
+  count: number,
+  layout: SystemLayout,
+  projectZoom: number,
+  defaultZoom: number,
+  windowSize: { width: number; height: number },
+): number | null {
+  if (count <= 0) return null;
+  const cap = projectZoom >= MIN_ZOOM && projectZoom <= MAX_ZOOM ? projectZoom : defaultZoom;
+  const zoom = fitZoom(count, layout, cap, windowSize);
+  const shape = shapeFor(layout, count);
+  const tw = tileWidth(zoom);
+  const th = tileHeight(zoom);
+  const gridW = shape.cols * tw;
+  const gridH = shape.rows * th;
+  // The grid is centered in the window (SystemGrid's outer Box) — offset the hit point into grid space.
+  const gx = x - (windowSize.width - gridW) / 2;
+  const gy = y - (windowSize.height - gridH) / 2;
+  if (gx < 0 || gy < 0 || gx >= gridW || gy >= gridH) return null;
+  const index = Math.floor(gy / th) * shape.cols + Math.floor(gx / tw);
+  return index >= 0 && index < count ? index : null;
+}

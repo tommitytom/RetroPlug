@@ -8,7 +8,7 @@
 //
 //   node scripts/run-ui-tests.mjs [slugFilter]
 
-import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync, copyFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
@@ -71,6 +71,11 @@ for (const { file, slug } of tests) {
   const outFile = join(OUT_DIR, `${slug}.js`);
   mkdirSync(dirname(outFile), { recursive: true });
   const cfgDir = mkdtempSync(join(tmpdir(), "rp-ui-"));
+  // Stage a real ROM in a WRITABLE temp dir so a file-drop test can load it by path and any sibling
+  // <rom>.rplg / .sav the load writes lands here (cleaned up with cfgDir), never polluting resources/.
+  const romsDir = join(cfgDir, "roms");
+  mkdirSync(romsDir, { recursive: true });
+  copyFileSync(join(REPO, "resources/roms/mGB.gb"), join(romsDir, "mGB.gb"));
 
   try {
     buildSync({
@@ -94,7 +99,7 @@ for (const { file, slug } of tests) {
   const run = spawnSync(HOST, ["--test", outFile], {
     stdio: "inherit",
     cwd: PKG,
-    env: { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfgDir },
+    env: { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfgDir, RETROPLUG_UI_TEST_ROMS: romsDir },
   });
   if (run.status !== 0) failures.push(slug);
   rmSync(cfgDir, { recursive: true, force: true });

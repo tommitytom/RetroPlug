@@ -106,6 +106,9 @@ public:
     // Arg shapes mirror PluginUI::pumpGamepad exactly: button [pad, name, press]; axis [pad, name, value].
     void gamepadButton(int pad, const std::string& name, bool press);
     void gamepadAxis(int pad, const std::string& name, double value);
+    // Synthesize the native file-drop bus (PluginUI::uiFileDropped): newline-joined paths + window-space
+    // drop coords. The App's useNativeEvent("file-drop") handler routes it (load / replace / load-sram).
+    void fileDropped(const std::string& pathsNewlineJoined, std::int32_t x, std::int32_t y);
 
     // Called by the __rp_tagTestId JS trampoline (UI ref hook).
     void recordTestId(const std::string& name, lv_obj_t* obj) { testIds_[name] = obj; }

@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <memory>
@@ -248,6 +249,26 @@ JSValue jsUiGamepadAxis(JSContext* ctx, JSValueConst, int argc, JSValueConst* ar
     catch (const std::exception& e) { JSValue err = JS_ThrowTypeError(ctx, "ui.gamepadAxis: %s", e.what()); JS_FreeCString(ctx, name); return err; }
 }
 
+// Synthesize the native file-drop bus (the editor's PluginUI::uiFileDropped seam): newline-joined paths +
+// window-space drop coords. Drives the App's useNativeEvent("file-drop") routing end to end.
+JSValue jsUiFileDrop(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "ui.fileDrop(paths[, x, y])");
+    const char* paths = JS_ToCString(ctx, argv[0]);
+    if (!paths) return JS_EXCEPTION;
+    int x = 0, y = 0;
+    if (argc >= 2 && !JS_IsUndefined(argv[1])) JS_ToInt32(ctx, &x, argv[1]);
+    if (argc >= 3 && !JS_IsUndefined(argv[2])) JS_ToInt32(ctx, &y, argv[2]);
+    try { coreOrThrow().fileDropped(paths, x, y); JS_FreeCString(ctx, paths); return JS_UNDEFINED; }
+    catch (const std::exception& e) { JSValue err = JS_ThrowTypeError(ctx, "ui.fileDrop: %s", e.what()); JS_FreeCString(ctx, paths); return err; }
+}
+
+// The resources/roms directory (RETROPLUG_UI_TEST_ROMS, set by run-ui-tests.mjs) so a test can drop a
+// real, bootable ROM by absolute path. Empty when unset.
+JSValue jsUiRomDir(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    const char* dir = std::getenv("RETROPLUG_UI_TEST_ROMS");
+    return JS_NewString(ctx, dir ? dir : "");
+}
+
 // Advance the emulator so tiles get live frames (the plugin's audio thread does this; pump() only ticks
 // LVGL). Drives the backend the UI reads over RPC.
 JSValue jsUiAdvance(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -277,6 +298,8 @@ void installUiNamespace(JSContext* ctx) {
         { "moveMouse",            { jsUiMoveMouse,            2 } },
         { "gamepadButton",        { jsUiGamepadButton,        2 } },
         { "gamepadAxis",          { jsUiGamepadAxis,          2 } },
+        { "fileDrop",             { jsUiFileDrop,             3 } },
+        { "romDir",               { jsUiRomDir,               0 } },
         { "advance",              { jsUiAdvance,              1 } },
     };
     JSValue global = JS_GetGlobalObject(ctx);

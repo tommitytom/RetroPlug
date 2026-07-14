@@ -409,4 +409,15 @@ void RenderCore::gamepadAxis(int pad, const std::string& name, double value) {
     pump(2);
 }
 
+void RenderCore::fileDropped(const std::string& paths, std::int32_t x, std::int32_t y) {
+    JSContext* ctx = engine_.getContext();
+    if (!ctx) return;
+    JSValue args[3] = { JS_NewStringLen(ctx, paths.data(), paths.size()),
+                        JS_NewInt32(ctx, x),
+                        JS_NewInt32(ctx, y) };
+    engine_.emit("file-drop", 3, args);
+    for (JSValue& v : args) JS_FreeValue(ctx, v);
+    pump(4);  // let the React handler + the store mutation (construct/replace over RPC) settle + re-render
+}
+
 } // namespace rpuigf

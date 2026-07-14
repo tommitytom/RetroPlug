@@ -114,6 +114,17 @@ export class FileSelection {
     return { kind: "error", path }; // "other" — fails cleanly
   }
 
+  /** Resolve the ROM for an already-known `.sav` (a DROPPED save, so there's no first browser): its
+   *  sibling ROM if there is one, else open the ROM-only browser and take what the user points at.
+   *  Returns the ROM path, or null on cancel / a non-ROM pick. The drag-and-drop twin of `pairSav`. */
+  async pairDroppedSav(sav: string): Promise<string | null> {
+    const sibling = this.systems.resolveSiblingRom(sav);
+    if (sibling) return sibling;
+    const rom = await this.backend.openFileBrowser({ title: "Select the ROM for this save", patterns: ROM_PATTERNS });
+    if (rom === null) return null;
+    return classifyKind(this.backend, rom) === "rom" ? rom : null;
+  }
+
   // A picked save: pair with its sibling ROM if there is one, else open the 2nd (ROM-only) browser and
   // pair with what the user points at.
   private async pairSav(sav: string): Promise<Pick> {

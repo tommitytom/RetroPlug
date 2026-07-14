@@ -16,19 +16,10 @@ import { EmulatorTile } from "./EmulatorTile";
 import { Menu } from "../menu/Menu";
 import type { MenuTree } from "../menu/menuTree";
 import type { SystemView } from "../../../src/systemsStore";
-import { SystemLayout, shapeFor, tileWidth, tileHeight } from "./layout";
+import { SystemLayout, shapeFor, tileWidth, tileHeight, fitZoom } from "./layout";
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 6;
-
-// The largest integer zoom in [1, cap] whose grid fits `area`, so the whole grid is always visible.
-function fitZoom(count: number, layout: SystemLayout, cap: number, area: { width: number; height: number }): number {
-  const shape = shapeFor(layout, Math.max(count, 1));
-  for (let z = Math.min(cap, MAX_ZOOM); z > MIN_ZOOM; z--) {
-    if (shape.cols * tileWidth(z) <= area.width && shape.rows * tileHeight(z) <= area.height) return z;
-  }
-  return MIN_ZOOM;
-}
 
 export function SystemGrid({
   menuSystemId,

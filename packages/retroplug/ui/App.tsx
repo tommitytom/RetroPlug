@@ -21,11 +21,12 @@ import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
-import { gridContentSize, resolveZoom, SystemLayout } from "./screens/grid/layout";
+import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
+import { resolveDropAction } from "../src/fileDrop";
 
 const KEY_ESCAPE = 0x1b;
 
@@ -126,6 +127,48 @@ export function App() {
     if (!press) return;
     if (closeGuard.active || modals.active) return;
     runAction(padToAction.get(name));
+  });
+
+  // Drag-and-drop: a dropped ROM / .sav / project routes by instance count. On the start screen or a
+  // single instance it loads as a project (the guarded "Load…" behaviour); in a multi-instance project it
+  // cold-boot replaces the tile under the cursor (falling back to the focused tile), or loads a bare .sav
+  // into that tile. The native editor pushes the OS drop onto the "file-drop" channel (newline-joined
+  // paths + window-space x/y); inert in the headless harness, which never emits it.
+  useNativeEvent("file-drop", (...args) => {
+    const paths = String(args[0] ?? "").split("\n").filter((p) => p.length > 0);
+    if (paths.length === 0) return;
+    const idx = hitTestTile(args[1] as number, args[2] as number, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    const action = resolveDropAction(
+      stores.backend,
+      {
+        count: systems.length,
+        targetId: idx != null ? systems[idx].id : stores.project.systems.focused(),
+        onTile: idx != null,
+        siblingRom: (sav) => stores.project.systems.resolveSiblingRom(sav),
+      },
+      paths,
+    );
+    switch (action.type) {
+      case "loadProject":
+        modals.loadProject(action.path);
+        break;
+      case "loadRom":
+        modals.loadRomAsProject(action.romPath, action.explicitSav);
+        break;
+      case "replace":
+        stores.project.systems.replaceSystem(action.id, action.romPath, action.explicitSav ? { explicitSav: action.explicitSav } : undefined);
+        break;
+      case "loadSram":
+        stores.project.systems.loadSram(action.id, action.sav);
+        break;
+      case "pairSav":
+        void stores.fileSelection.pairDroppedSav(action.sav).then((rom) => {
+          if (rom) modals.loadRomAsProject(rom, action.sav);
+        });
+        break;
+      case "ignore":
+        break;
+    }
   });
 
   // Game input: route keyboard/gamepad to the focused instance's joypad only while in play (a tile showing,
