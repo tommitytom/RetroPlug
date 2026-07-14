@@ -260,12 +260,18 @@ export class SystemsStore {
 
   /** Reconstruct system `id` in place from seed bytes: capture the source's spec, build a fresh core
    *  under a new id that swaps the old one (replaceId), and keep identity + focus. The seed (sramBytes
-   *  = cold-boot battery, stateBytes = boot from savestate) overrides what native would read from disk;
-   *  savPath stays the auto-save target. The shared body of reload / loadState / loadSram — the in-place
-   *  twin of duplicateSystem (which appends). */
-  private rebuildInPlace(id: number, seed: { sramBytes?: Uint8Array; stateBytes?: Uint8Array }): number | null {
+   *  = cold-boot battery, stateBytes = boot from savestate) overrides what native would read from disk.
+   *  `savPathOverride` repoints the auto-save target (New SRAM…); omitted, the system keeps its own. The
+   *  shared body of reload / loadState / loadSram / newSramAs — the in-place twin of duplicateSystem
+   *  (which appends). */
+  private rebuildInPlace(
+    id: number,
+    seed: { sramBytes?: Uint8Array; stateBytes?: Uint8Array },
+    savPathOverride?: string,
+  ): number | null {
     const src = findById(this.entries, id);
     if (!src) return null;
+    const override = savPathOverride ?? src.savPath;
     const systemRole = src.roles.find((r) => r.kind === src.core);
     const newId = allocSystemId();
     const ok = this.backend.constructSystem({
@@ -273,7 +279,7 @@ export class SystemsStore {
       platform: src.platform,
       core: src.core,
       embeddedRom: src.embeddedRom,
-      savPath: src.embeddedRom ? null : resolveSavPath(src.romPath, src.savSuffix, src.savPath),
+      savPath: src.embeddedRom ? null : resolveSavPath(src.romPath, src.savSuffix, override),
       statePath: null,
       sramBytes: seed.sramBytes,
       stateBytes: seed.stateBytes,
@@ -281,7 +287,7 @@ export class SystemsStore {
       settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
     }, newId);
     if (!ok) return null;
-    this.entries = replaceById(this.entries, id, { ...src, id: newId });
+    this.entries = replaceById(this.entries, id, { ...src, id: newId, savPath: override });
     if (this.focusedId === id) this.focusedId = newId;
     return this.committed(newId);
   }
@@ -333,6 +339,28 @@ export class SystemsStore {
   newSram(id: number): number | null {
     if (!findById(this.entries, id)) return null;
     return this.rebuildInPlace(id, { sramBytes: new Uint8Array(BLANK_SRAM_BYTES) });
+  }
+
+  /** "New SRAM…": cold-boot system `id` on a blank battery and repoint its auto-save target to the
+   *  user-picked `savPath`, then materialise that file — a fresh cartridge written to a NEW file the user
+   *  named, so the old `<rom>.sav` is only overwritten if they deliberately pick it (the save dialog makes
+   *  that explicit). The ROM is unchanged, so the system's settings/roles are preserved. Null for an absent
+   *  id or the embedded synth (no on-disk save). */
+  newSramAs(id: number, savPath: string): number | null {
+    const src = findById(this.entries, id);
+    if (!src || src.embeddedRom) return null;
+    // Normalise the pick the way construct does: "" when it's just the natural sibling, else the raw path.
+    const override = resolveSavOverride(src.romPath, src.savSuffix, savPath, (p) => this.backend.canonicalize(p));
+    const newId = this.rebuildInPlace(id, { sramBytes: new Uint8Array(BLANK_SRAM_BYTES) }, override);
+    if (newId === null) return null;
+    // Materialise the fresh save at the SAME path the core will auto-save to — resolveSavPath(…override),
+    // NOT the raw pick. They diverge when the pick normalises to "" (e.g. a duplicate instance, savSuffix≥2,
+    // whose pick equals the plain <rom>.sav): the target is <rom>-N.sav, so writing the raw pick would blank
+    // a sibling instance's real .sav. Keying both off the same resolve makes that impossible.
+    const savTarget = resolveSavPath(src.romPath, src.savSuffix, override);
+    const live = this.backend.readSram(newId);
+    if (live) this.backend.writeFileAtomic(savTarget, live);
+    return newId;
   }
 
   /** The sibling ROM for a picked `.sav`, or null — the pairing helper. */

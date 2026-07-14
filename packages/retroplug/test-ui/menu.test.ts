@@ -69,13 +69,14 @@ test("the menu navigates, selects an action, cycles a value, and expands a subme
   ui.pump(6);
   expect(ui.findByTextContaining("Link Group: 2") != null).toBeTruthy();
 
-  // Expand System — the per-instance Save/Load State + SRAM items appear inline, plus the pathless
-  // New SRAM (blank battery) + Reset (reboot) reconstruct actions.
+  // Expand System — the per-instance Save/Load State + SRAM items appear inline, plus the Reset (reboot)
+  // reconstruct action. ("New SRAM…" is a real-ROM-only file op, so it's absent for the embedded mGB synth
+  // used here; Load SRAM stays available.)
   expect(navTo("System")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(15);
   expect(ui.findByTextContaining("Save State") != null).toBeTruthy();
-  expect(ui.findByTextContaining("New SRAM") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Load SRAM") != null).toBeTruthy();
   expect(ui.findByTextContaining("Reset") != null).toBeTruthy();
 
   // Scroll-follow (the reported bug): with System expanded the menu overflows the window, so a lower row

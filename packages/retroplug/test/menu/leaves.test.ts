@@ -477,7 +477,7 @@ test("the embedded mGB synth omits the quick-save items (no on-disk ROM target)"
   expect(findItem(items, "sys-savestate")?.label).toBe("Save State As..."); // the "As…" browse variant remains
 });
 
-test("Save SRAM rows grey out for a battery-less cart; New / Load SRAM stay live", () => {
+test("Save SRAM + New SRAM hide/grey out for a battery-less cart; Load SRAM stays live", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const sysItems = (romPath: string) => {
@@ -486,11 +486,13 @@ test("Save SRAM rows grey out for a battery-less cart; New / Load SRAM stay live
     return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system");
   };
 
-  // Battery carts (GB MBC1+RAM+BATTERY, NES iNES battery flag): both Save-SRAM rows are live.
+  // Battery carts (GB MBC1+RAM+BATTERY, NES iNES battery flag): both Save-SRAM rows are live, and New SRAM…
+  // (a save-file op) is offered.
   be.seed("/roms/batt.gb", gbRomBattery());
   const gbBatt = sysItems("/roms/batt.gb");
   expect(findItem(gbBatt, "sys-quicksavesram")?.disabled).toBeFalsy();
   expect(findItem(gbBatt, "sys-savesram")?.disabled).toBeFalsy();
+  expect(findItem(gbBatt, "sys-newsram")).toBeTruthy();
   be.seed("/roms/batt.nes", nesRomBattery());
   const nesBatt = sysItems("/roms/batt.nes");
   expect(findItem(nesBatt, "sys-quicksavesram")?.disabled).toBeFalsy();
@@ -505,8 +507,9 @@ test("Save SRAM rows grey out for a battery-less cart; New / Load SRAM stay live
   const nesPlain = sysItems("/roms/plain.nes");
   expect(findItem(nesPlain, "sys-quicksavesram")?.disabled).toBe(true);
   expect(findItem(nesPlain, "sys-savesram")?.disabled).toBe(true);
-  // ...but New / Load SRAM stay live (they mutate the running core, not an on-disk .sav).
-  expect(findItem(nesPlain, "sys-newsram")?.disabled).toBeFalsy();
+  // ...and New SRAM… is hidden for a battery-less cart (it creates a save file — nothing to save here), like
+  // the Save-SRAM rows; Load SRAM stays live (it seeds the running core, not an on-disk artifact).
+  expect(findItem(nesPlain, "sys-newsram")).toBe(undefined);
   expect(findItem(nesPlain, "sys-loadsram")?.disabled).toBeFalsy();
 });
 
@@ -525,19 +528,25 @@ test("system Load SRAM... cold-boots the system with the picked file's SRAM", as
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(999));
 });
 
-test("system New SRAM cold-boots with a blank battery, no dialog", () => {
+test("system New SRAM... opens a save dialog, boots blank, and repoints to the chosen file (ROM's .sav untouched)", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  const { id, items } = systemMenu(be, stores);
+  const { id, items } = systemMenu(be, stores); // ROM /roms/a.gb (battery)
+  be.queueBrowse("/saves/fresh.sav");
 
   findItem(items, "sys-newsram")!.onSelect!();
+  await flush();
 
-  expect(be.fileBrowserCalls.length).toBe(0); // pathless — no browser opens
+  const last = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
+  expect(last.saving).toBe(true); // a save (create) dialog, not an open
+  expect(last.patterns.includes("*.sav")).toBeTruthy();
   const call = be.constructCalls[be.constructCalls.length - 1];
   expect(call.replaceId).toBe(id); // in-place replace
   const seed = new Uint8Array(call.sramBytes!);
   expect(seed.length).toBe(0x20000); // native truncates/zero-pads to the cart's real battery size
   expect(seed.every((b) => b === 0)).toBeTruthy(); // blank battery
+  expect(be.fileExists("/saves/fresh.sav")).toBe(true); // the fresh save was materialised at the pick
+  expect(be.fileExists("/roms/a.sav")).toBe(false); // the ROM's own <rom>.sav was NOT overwritten
 });
 
 test("system Reset reboots carrying the live battery, no dialog", () => {

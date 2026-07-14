@@ -176,14 +176,27 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   // Save/Load SRAM + State. The quick "Save SRAM"/"Save State" write to the ROM's sibling path with no
   // dialog (a real ROM only — the embedded synth has no on-disk target); the "As…" variants browse. The
   // store reads/writes the resolved path (the registry read is safe while playing; load reconstructs the
-  // core in place). New SRAM reboots with a blank battery — pathless, reconstructing in place (no live
-  // clearSram). The two Save-SRAM rows grey out for a battery-less cart (no save memory → only a stray
-  // empty .sav); New / Load SRAM stay live (they touch the running core, not an on-disk artifact).
+  // core in place). "New SRAM…" cold-boots a blank battery and repoints the auto-save target to a file you
+  // name, so it creates a fresh save rather than silently overwriting the ROM's own <rom>.sav; it's gated
+  // on a battery cart (a battery-less cart has no save to create — the dialog would produce nothing), like
+  // the Save-SRAM rows. Load SRAM reads a picked save into the live core (any cart). The two Save-SRAM rows
+  // grey out for a battery-less cart (no save memory → only a stray empty .sav).
   const romStem = stem(sys.romPath);
   const noSave = !sys.battery;
+  // The instance's own sibling .sav name (suffix-aware) — the sensible default target for its fresh save.
+  const sramName = sys.savSuffix >= 2 ? `${romStem}-${sys.savSuffix}.sav` : `${romStem}.sav`;
+  items.push(sep("sys-sep-state"));
+  if (sys.romPath && !noSave)
+    items.push(
+      action("sys-newsram", "New SRAM...", () =>
+        browseThen(
+          ctx,
+          { title: "New SRAM", patterns: SRAM_PATTERNS, saving: true, defaultName: sramName },
+          (p) => void systems.newSramAs(sys.id, p),
+        ),
+      ),
+    );
   items.push(
-    sep("sys-sep-state"),
-    action("sys-newsram", "New SRAM", () => void systems.newSram(sys.id)),
     action("sys-loadsram", "Load SRAM...", () =>
       browseThen(ctx, { title: "Load SRAM", patterns: SRAM_PATTERNS }, (p) => void systems.loadSram(sys.id, p)),
     ),

@@ -230,6 +230,53 @@ test("newSram: cold-boots in place with a blank (all-zero) battery", () => {
   expect(store.newSram(9999)).toBe(null); // absent -> no-op
 });
 
+test("newSramAs: cold-boots blank, repoints the auto-save target to the picked file, and materialises it", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  const a = store.addSystem("/roms/a.gb") as number;
+  expect(store.setGain(a, -6)).toBeTruthy(); // a per-system setting that must survive (the ROM is unchanged)
+  const newId = store.newSramAs(a, "/saves/fresh.sav");
+  expect(newId).toBeTruthy();
+  expect(newId === a).toBeFalsy();
+  const v = store.view();
+  expect(v.length).toBe(1); // in place — not appended
+  expect(v[0].id).toBe(newId);
+  expect(v[0].savPath).toBe("/saves/fresh.sav"); // auto-save target repointed to the picked file
+  expect(v[0].settings.gainDb).toBe(-6); // settings preserved across the rebuild
+  expect(store.focused()).toBe(newId);
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(a); // in-place replace
+  const seed = new Uint8Array(call.sramBytes!);
+  expect(seed.length).toBe(0x20000);
+  expect(seed.every((b) => b === 0)).toBeTruthy(); // blank battery
+  expect(be.fileExists("/saves/fresh.sav")).toBeTruthy(); // the fresh save was created at the pick
+  expect(be.fileExists("/roms/a.sav")).toBeFalsy(); // the ROM's own <rom>.sav was left untouched
+  expect(store.newSramAs(9999, "/saves/x.sav")).toBe(null); // absent -> no-op
+});
+
+test("newSramAs: the embedded synth (no on-disk save) is a no-op", () => {
+  const { store } = newStore();
+  const mgb = store.loadMgb() as number;
+  expect(store.newSramAs(mgb, "/saves/x.sav")).toBe(null);
+  expect(store.view()[0].id).toBe(mgb); // untouched
+});
+
+test("newSramAs: materialises to the instance's OWN auto-save target, never a sibling instance's .sav", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", "instance A's real save"); // A's on-disk save — must survive
+  const a = store.addSystem("/roms/a.gb") as number; // suffix 0 → auto-saves /roms/a.sav
+  const b = store.duplicateSystem(a) as number; // suffix 2 → auto-saves /roms/a-2.sav
+  expect(store.view().find((s) => s.id === b)!.savSuffix).toBe(2);
+  // On the duplicate, "New SRAM…" picking the plain sibling /roms/a.sav (the naive default) MUST NOT clobber
+  // A's save: resolveSavOverride collapses it to "", but the auto-save target is /roms/a-2.sav, so the fresh
+  // battery must land there — keyed off the same resolve as native, not the raw pick.
+  const newB = store.newSramAs(b, "/roms/a.sav");
+  expect(newB).toBeTruthy();
+  expect(be.fileExists("/roms/a-2.sav")).toBeTruthy(); // B's OWN target got the fresh save
+  expect(be.readFile("/roms/a.sav")).toEqual(new TextEncoder().encode("instance A's real save")); // A untouched
+});
+
 test("resolveSiblingRom: picks the sibling ROM, skipping a present non-ROM of the same stem", () => {
   const { be, store } = newStore();
   be.seed("/roms/game.gb", garbage()); // present but classifies unknown -> skipped
