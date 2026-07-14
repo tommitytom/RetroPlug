@@ -178,6 +178,23 @@ export class SystemsStore {
     return this.committed(built.id);
   }
 
+  /** Swap system `id`'s ROM for `romPath` in place, carrying its LIVE battery SRAM forward — the ROM
+   *  change that keeps your save (e.g. bumping LSDj to a new version without losing the song). Unlike
+   *  replaceSystem (fresh boot, sav from disk), this seeds the running SRAM as the new cart's cold-boot
+   *  battery. The new ROM is classified afresh, so platform/core/roles/battery follow it; identity + focus
+   *  are preserved. The auto-save target follows the new ROM (its sibling `<rom>.sav`, suffix 0), so — like
+   *  New SRAM / Load SRAM — the carried battery is what's saved there on the next battery write. Null when
+   *  `id` is absent or the ROM won't classify/build. */
+  swapRom(id: number, romPath: string): number | null {
+    if (!findById(this.entries, id)) return null;
+    const sramBytes = this.backend.readSram(id) ?? undefined;
+    const built = this.construct(romPath, "", 0, undefined, id, sramBytes);
+    if (!built) return null;
+    this.entries = replaceById(this.entries, id, built.entry);
+    if (this.focusedId === id) this.focusedId = built.id;
+    return this.committed(built.id);
+  }
+
   /** Clone a system's LIVE state into a fresh appended instance with its own suffix. Orchestrated in
    *  TS: pull the source's savestate from the registry (it includes SRAM), then build an INDEPENDENT
    *  core seeded from those bytes — the source's role config crosses as the construct settings blob so
@@ -484,6 +501,7 @@ export class SystemsStore {
     suffix: number,
     explicitSav: string | undefined,
     replaceId?: number,
+    sramBytes?: Uint8Array, // seed the cold-boot battery (swap-ROM-preserve-SRAM); undefined = native reads from disk
   ): { id: number; entry: SystemEntry } | null {
     let platform: Platform;
     if (embeddedRom) {
@@ -503,7 +521,7 @@ export class SystemsStore {
     // load-time hook can seed the spec — e.g. an empty LSDj sav — before the core is instantiated.
     const roles = this.defaultRoles(core, platform, romPath, embeddedRom);
     const spec = this.applyConstructHooks(
-      { romPath, platform, core, embeddedRom, savPath, statePath: null, replaceId },
+      { romPath, platform, core, embeddedRom, savPath, statePath: null, replaceId, sramBytes },
       roles,
     );
     if (!this.backend.constructSystem(spec, id)) return null;

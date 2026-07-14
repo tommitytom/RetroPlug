@@ -146,6 +146,9 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   // top with a separator below it.
   const items: MenuItem[] = [
     action("sys-reset", "Reset", () => void systems.reset(sys.id)),
+    // Swap the ROM in place but keep the running battery SRAM (e.g. an LSDj version bump that keeps the
+    // song). ROM-only browser; distinct from "Replace Instance", which cold-boots a fresh sav.
+    action("sys-swaprom", "Swap ROM (Preserve SRAM)...", () => void ctx.stores.fileSelection.browseSwap(sys.id)),
     sep("sys-sep-reset"),
     cycler("sys-reload", "Reload on ROM Change", OFF_ON, sys.settings.reloadOnRomChange ? 1 : 0, (n) =>
       systems.setReloadOnRomChange(sys.id, n === 1),

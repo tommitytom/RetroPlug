@@ -5,7 +5,8 @@
 //     between a sibling <rom>.rplg project and a fresh ROM, letting the caller apply
 //     the guarded reset+load.
 //   - browseAdd: append a new instance.
-//   - browseReplace(id): swap one instance in place.
+//   - browseReplace(id): swap one instance in place (fresh boot, sav from disk).
+//   - browseSwap(id): swap one instance's ROM in place, KEEPING its live SRAM.
 //
 // The dialog is the one intrinsically-async op (it waits on human input over DPF's
 // non-blocking browser), so the whole flow is plain async: each method resolves to its
@@ -34,6 +35,7 @@ export function classifyKind(backend: HostBackend, path: string): FileKind {
 export type SelectionOutcome =
   | { kind: "added"; system: number } // an add appended one
   | { kind: "replaced"; system: number } // a replace swapped one in place
+  | { kind: "swapped"; system: number } // a swap-ROM changed one in place, keeping its SRAM
   | { kind: "error"; path: string } // unreadable / not a ROM / bad pair target
   | { kind: "cancelled" }; // a dialog closed with no pick
 
@@ -89,6 +91,17 @@ export class FileSelection {
     const opts = pick.explicitSav ? { explicitSav: pick.explicitSav } : undefined;
     const newId = this.systems.replaceSystem(id, pick.rom, opts);
     return newId === null ? { kind: "error", path: pick.rom } : { kind: "replaced", system: newId };
+  }
+
+  /** "Swap ROM (Preserve SRAM)": browse a ROM (ROM-only — a `.sav` pick would contradict "keep the current
+   *  save") and swap system `id`'s ROM in place, carrying its live battery SRAM into the new cart. Stays in
+   *  the current project. Distinct from browseReplace, which cold-boots the picked ROM with its own on-disk sav. */
+  async browseSwap(id: number): Promise<SelectionOutcome> {
+    const path = await this.backend.openFileBrowser({ title: "Swap ROM (keep SRAM)", patterns: ROM_PATTERNS });
+    if (path === null) return { kind: "cancelled" };
+    if (classifyKind(this.backend, path) !== "rom") return { kind: "error", path };
+    const newId = this.systems.swapRom(id, path);
+    return newId === null ? { kind: "error", path } : { kind: "swapped", system: newId };
   }
 
   // Open the ROM-or-sav browser and resolve the pick to a concrete ROM (+ paired sav), running the 2nd

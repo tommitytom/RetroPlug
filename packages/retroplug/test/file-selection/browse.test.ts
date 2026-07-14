@@ -4,7 +4,7 @@
 // (ROM-only) browser inside the same Promise — no pending latch. The resolve-only
 // "Load…" branch lives in route.test.ts.
 import { test, expect } from "../../testing/harness";
-import { MockBackend } from "../../testing/mockBackend";
+import { MockBackend, sramBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { FileSelection } from "../../src/fileSelection";
 import { buildAppRegistry } from "../../src/appHost";
@@ -130,4 +130,41 @@ test("browseReplace: a cancelled dialog leaves the instance untouched", async ()
   const out = await fs.browseReplace(id);
   expect(out).toEqual({ kind: "cancelled" });
   expect(systems.view().find((s) => s.id === id)!.romPath).toBe(before);
+});
+
+test("browseSwap: opens a ROM-only browser and swaps in place, carrying the live SRAM", async () => {
+  const { be, fs, systems } = newFs();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.gb", gbRom());
+  const id = systems.addSystem("/roms/a.gb")!;
+  be.queueBrowse("/roms/b.gb");
+  const out = await fs.browseSwap(id);
+  expect(out.kind).toBe("swapped");
+  expect(systems.view().length).toBe(1); // in place — not appended
+  expect(be.fileBrowserCalls[be.fileBrowserCalls.length - 1].patterns.includes("*.sav")).toBeFalsy(); // ROM-only
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.replaceId).toBe(id); // swapped the target id
+  expect(spec.romPath).toBe("/roms/b.gb");
+  expect(new Uint8Array(spec.sramBytes!)).toEqual(sramBytesFor(id)); // the old battery crossed into the new cart
+});
+
+test("browseSwap: a non-ROM pick is an error and swaps nothing", async () => {
+  const { be, fs, systems } = newFs();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/notes.txt", "hello");
+  const id = systems.addSystem("/roms/a.gb")!;
+  be.queueBrowse("/notes.txt");
+  const out = await fs.browseSwap(id);
+  expect(out).toEqual({ kind: "error", path: "/notes.txt" });
+  expect(systems.view().find((s) => s.id === id)!.romPath).toBe("/roms/a.gb"); // untouched
+});
+
+test("browseSwap: a cancelled dialog leaves the instance untouched", async () => {
+  const { be, fs, systems } = newFs();
+  be.seed("/roms/a.gb", gbRom());
+  const id = systems.addSystem("/roms/a.gb")!;
+  be.queueBrowse(null);
+  const out = await fs.browseSwap(id);
+  expect(out).toEqual({ kind: "cancelled" });
+  expect(systems.view().find((s) => s.id === id)!.romPath).toBe("/roms/a.gb");
 });

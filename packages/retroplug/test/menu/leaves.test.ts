@@ -380,6 +380,25 @@ test("recent Locate on Disk relinks the entry to the picked path", async () => {
   expect(view.some((e) => e.path.endsWith("new.rplg"))).toBeTruthy();
 });
 
+test("system Swap ROM... opens a ROM-only browser and swaps in place, keeping the SRAM", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { id, items } = systemMenu(be, stores);
+  be.seed("/roms/new.gb", gbRom());
+  be.queueBrowse("/roms/new.gb");
+
+  expect(findItem(items, "sys-swaprom")?.label).toBe("Swap ROM (Preserve SRAM)...");
+  findItem(items, "sys-swaprom")!.onSelect!();
+  await flush();
+
+  const last = be.fileBrowserCalls[be.fileBrowserCalls.length - 1];
+  expect(last.patterns.includes("*.sav")).toBeFalsy(); // ROM-only browser (a .sav pick would fight "keep SRAM")
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(id); // swapped in place
+  expect(call.romPath).toBe("/roms/new.gb");
+  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(id)); // the live battery carried into the new ROM
+});
+
 test("system Save State... writes the live savestate to the picked path via a save dialog", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

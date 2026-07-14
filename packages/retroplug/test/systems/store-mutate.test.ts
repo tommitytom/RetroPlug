@@ -6,7 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";
-import { gbRom, gbaRom, garbage } from "./fixtures";
+import { gbRom, gbaRom, nesRom, lsdjRom, garbage } from "./fixtures";
 
 function newStore() {
   const be = new MockBackend("/cfg");
@@ -83,6 +83,65 @@ test("reload: swaps in place preserving identity, with a new id + focus", () => 
   expect(v[0].savSuffix).toBe(0);
   expect(store.focused()).toBe(newId); // focus followed the swap
   expect(store.reloadSystem(9999)).toBe(null); // absent -> no-op
+});
+
+test("swapRom: changes the ROM in place carrying the live battery, reclassifying the new ROM", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.nes", nesRom()); // a different platform, to prove the new ROM is classified afresh
+  const a = store.addSystem("/roms/a.gb") as number;
+  const newId = store.swapRom(a, "/roms/b.nes");
+  expect(newId).toBeTruthy();
+  expect(newId === a).toBeFalsy();
+  const v = store.view();
+  expect(v.length).toBe(1); // swapped, not appended
+  expect(v[0].id).toBe(newId);
+  expect(v[0].romPath).toBe("/roms/b.nes"); // the new ROM
+  expect(v[0].platform).toBe("nes"); // reclassified — platform/core follow the new cart
+  expect(v[0].savSuffix).toBe(0);
+  expect(store.focused()).toBe(newId); // focus followed the swap
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.replaceId).toBe(a); // in-place replace
+  expect(call.romPath).toBe("/roms/b.nes");
+  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(a)); // the OLD system's live battery carried forward
+  expect(call.stateBytes).toBe(undefined); // cold boot with the carried SRAM, no savestate
+  expect(store.swapRom(9999, "/roms/b.nes")).toBe(null); // absent id -> no-op
+  expect(store.swapRom(newId as number, "/roms/none.gb")).toBe(null); // unclassifiable ROM -> no-op, untouched
+  expect(store.view()[0].romPath).toBe("/roms/b.nes"); // the failed swap left the instance in place
+});
+
+test("swapRom: swapping a background (non-focused) instance leaves focus put", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/b.gb", gbRom());
+  be.seed("/roms/c.nes", nesRom());
+  const a = store.addSystem("/roms/a.gb") as number;
+  const b = store.addSystem("/roms/b.gb") as number;
+  expect(store.setFocus(b)).toBeTruthy();
+  const newA = store.swapRom(a, "/roms/c.nes");
+  expect(newA).toBeTruthy();
+  expect(store.focused()).toBe(b); // focus stayed on the untouched instance (the guard's false branch)
+  const v = store.view();
+  expect(v.find((s) => s.id === b)!.romPath).toBe("/roms/b.gb"); // b untouched
+  expect(v.find((s) => s.id === newA)!.romPath).toBe("/roms/c.nes"); // a was the one swapped
+});
+
+test("swapRom: an LSDj→LSDj swap carries the song forward — the seed-hook stands down for the live SRAM", () => {
+  const { be, store } = newStoreWithRoles(); // registry attaches the lsdj-sync role + its onConstruct seed hook
+  be.seed("/roms/v1.gb", lsdjRom());
+  be.seed("/roms/v2.gb", lsdjRom("LSDJV2")); // a fresh LSDj cart, no on-disk .sav
+  const a = store.addSystem("/roms/v1.gb") as number;
+  // The fresh v1 add seeds its own empty sav (savFromJson); count that so we can prove the SWAP adds none.
+  const seedsBeforeSwap = be.log.filter((e) => e === "savFromJson").length;
+  const newId = store.swapRom(a, "/roms/v2.gb");
+  expect(newId).toBeTruthy();
+  const call = be.constructCalls[be.constructCalls.length - 1];
+  expect(call.romPath).toBe("/roms/v2.gb");
+  // The carried live battery must survive: lsdjSeedSav sees spec.sramBytes set and stands down, so it does
+  // NOT overwrite it with an empty savFromJson("{}") seed. This is the whole point of the feature.
+  expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(a));
+  expect(be.log.filter((e) => e === "savFromJson").length).toBe(seedsBeforeSwap); // no empty-sav seed during the swap
+  expect(store.view()[0].roles.some((r) => r.kind === "lsdj-sync")).toBeTruthy(); // new cart re-sniffed as LSDj
 });
 
 test("saveState: dumps the system's published savestate to the picked path", () => {
