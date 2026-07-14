@@ -47,3 +47,6 @@ plans.md
 packages/retroplug/.test-build/
 packages/retroplug/.native-build/
 packages/retroplug/.ui-build/
+
+# macOS Finder metadata
+.DS_Store
