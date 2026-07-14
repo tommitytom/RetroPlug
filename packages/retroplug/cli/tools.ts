@@ -22,12 +22,15 @@ import { renderTool } from "./sessions/render";
 /** Every baked-in command. The ONLY place a new tool is registered. */
 export const tools: CliTool[] = [renderTool];
 
-/** The top-level command index, rendered from each tool's own name + summary (column-aligned). Pure — the
- *  dispatcher (cli/cli.ts) prints it for `retroplug-cli` / `--help`; kept here so it's testable in isolation. */
-export function topLevelHelp(list: CliTool[]): string {
+/** The top-level command index: a version banner + the tools' own name/summary (column-aligned). Pure — the
+ *  dispatcher (cli/cli.ts) supplies the banner and prints this for `retroplug-cli` / `--help`; kept here so
+ *  it's testable in isolation. */
+export function topLevelHelp(list: CliTool[], versionLine: string): string {
   const width = list.reduce((w, t) => Math.max(w, t.name.length), 0);
   const commands = list.map((t) => `  ${t.name.padEnd(width)}  ${t.summary}`).join("\n");
   return [
+    versionLine,
+    "",
     "usage: retroplug-cli <command> [args...]",
     "       retroplug-cli <session.js> [args...]   (run a TS-authored session by path)",
     "",
