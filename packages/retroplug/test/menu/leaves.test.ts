@@ -526,6 +526,7 @@ test("system Load SRAM... cold-boots the system with the picked file's SRAM", as
   const call = be.constructCalls[be.constructCalls.length - 1];
   expect(call.replaceId).toBe(id);
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(999));
+  expect(stores.project.systems.view()[0].savPath).toBe("/in/x.sav"); // auto-save target repointed to the load
 });
 
 test("system New SRAM... opens a save dialog, boots blank, and repoints to the chosen file (ROM's .sav untouched)", async () => {

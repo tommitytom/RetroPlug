@@ -180,7 +180,7 @@ test("loadState: reconstructs the system in place, booted from the file's bytes"
   expect(store.loadState(newId as number, "/nope.ss0")).toBe(null); // unreadable file -> no-op
 });
 
-test("loadSram: cold-boots the ROM in place with the file's SRAM", () => {
+test("loadSram: cold-boots the ROM in place with the file's SRAM and repoints the auto-save target to it", () => {
   const { be, store } = newStore();
   be.seed("/roms/a.gb", gbRom());
   be.seed("/saves/x.sav", sramBytesFor(999));
@@ -191,6 +191,18 @@ test("loadSram: cold-boots the ROM in place with the file's SRAM", () => {
   const call = be.constructCalls[be.constructCalls.length - 1];
   expect(call.replaceId).toBe(a);
   expect(new Uint8Array(call.sramBytes!)).toEqual(sramBytesFor(999));
+  expect(call.savPath).toBe("/saves/x.sav"); // native's auto-save target repointed to the loaded file
+  expect(store.view()[0].savPath).toBe("/saves/x.sav"); // ...and recorded on the entry (persisted in the project)
+});
+
+test("loadSram: loading the ROM's own natural sibling keeps the suffix target (override collapses to \"\")", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.sav", sramBytesFor(777)); // the ROM's natural sibling
+  const a = store.addSystem("/roms/a.gb") as number;
+  const newId = store.loadSram(a, "/roms/a.sav");
+  expect(newId).toBeTruthy();
+  expect(store.view()[0].savPath).toBe(""); // no redundant override — the suffix mechanism owns <rom>.sav
 });
 
 test("reset: reboots in place carrying the live battery, with a new id + focus", () => {

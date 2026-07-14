@@ -317,12 +317,20 @@ export class SystemsStore {
     return this.rebuildInPlace(id, { stateBytes: bytes });
   }
 
-  /** Load a battery SRAM file into system `id`: cold-boot the ROM in place with those bytes (as reload
-   *  does with the carried battery). Null when the file is unreadable or the build fails. */
+  /** Load a battery SRAM file into system `id`: cold-boot the ROM in place with those bytes AND repoint the
+   *  system's auto-save target to that file, so from now on it saves back to where it was loaded from (the
+   *  override is persisted in the project). A real ROM repoints; the embedded synth keeps its (null) target.
+   *  The override collapses to "" when the pick is just the ROM's natural sibling. Null when the file is
+   *  unreadable, `id` is absent, or the build fails. */
   loadSram(id: number, path: string): number | null {
     const bytes = this.backend.readFile(path);
     if (!bytes) return null;
-    return this.rebuildInPlace(id, { sramBytes: bytes });
+    const src = findById(this.entries, id);
+    if (!src) return null;
+    const override = src.embeddedRom
+      ? undefined // embedded synth has no on-disk save target to repoint
+      : resolveSavOverride(src.romPath, src.savSuffix, path, (p) => this.backend.canonicalize(p));
+    return this.rebuildInPlace(id, { sramBytes: bytes }, override);
   }
 
   /** Reboot system `id` in place, carrying its live battery SRAM forward — a hardware-style reset: the
