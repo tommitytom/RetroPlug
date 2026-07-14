@@ -50,7 +50,7 @@ Options:
   --state <file>         Savestate to restore after boot (instead of a fresh boot).
   --out <file>           Output path. Default: <rom>.wav for a mix; <rom>_<stem>.wav for --split.
   --duration <time>      Fixed render length (e.g. 3s, 500ms, 2m). Turns OFF LSDj auto-length detection.
-                         Default: auto for a loaded LSDj sav, otherwise 8s.
+                         Default: auto for a loaded LSDj sav, otherwise 5m.
   --max-duration <time>  Safety cap for LSDj auto-length when no HFF stop is found. Default: 5m.
   --sample-rate <hz>     Output sample rate. Default: 44100. Higher rates resample the console's audio up
                          (larger WAV, same song); must be set before the ROM boots (it always is here).

@@ -28,6 +28,7 @@ import { decodeSav, encodeSav, kSavSize } from "../../src/lsdj";
 import type { Session } from "../session";
 
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
+const DEFAULT_FIXED_MS = 5 * 60 * 1000; // fixed-render length when --duration is unset and no LSDj auto-detect (5 min)
 
 // LSDj song-length auto-detect: LSDj's HFF command stops the song by powering the APU off — a 0 write to
 // NR52 ($FF26), the sound master-enable register (bit 7). We poll it each render chunk and stop at the
@@ -350,7 +351,7 @@ function runRender(s: Session, args: string[]): void {
   };
 
   // Announce before the (possibly multi-minute) render so the CLI doesn't look hung while it works.
-  const how = autoDetect ? `detecting length (HFF, cap ${o.maxDurationMs}ms)` : `${o.durationMs ?? 8000}ms`;
+  const how = autoDetect ? `detecting length (HFF, cap ${o.maxDurationMs}ms)` : `${o.durationMs ?? DEFAULT_FIXED_MS}ms`;
   console.log(`rendering ${o.rom} → ${base}${o.split === "mix" ? "" : "_*"} (${how})…`);
 
   // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
@@ -360,7 +361,7 @@ function runRender(s: Session, args: string[]): void {
     sink.finishAll();
     reportLength(markers);
   } else {
-    driveFixed(sink, Math.floor(((o.durationMs ?? 8000) * sr) / 1000)); // exact target frame count
+    driveFixed(sink, Math.floor(((o.durationMs ?? DEFAULT_FIXED_MS) * sr) / 1000)); // exact target frame count
     sink.finishAll();
   }
 }
