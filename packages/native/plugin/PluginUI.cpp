@@ -382,6 +382,22 @@ protected:
         JS_FreeValue(ctx, global);
     }
 
+#if DISTRHO_UI_FILE_DROP
+    // A native OS file drop (drag-and-drop). Forward the newline-joined absolute paths + the view-local drop
+    // coordinate onto the JS "file-drop" bus, where the App's useNativeEvent("file-drop") handler routes it
+    // (load-as-project / replace-instance / load-sram). Delivered on the UI thread that pumps the JS loop, so
+    // a direct emit is safe. Enabled for both standalone and the DAW-hosted editor.
+    void uiFileDropped(const char* paths, double x, double y) override {
+        if (std::getenv("PUGL_DND_DEBUG"))
+            d_stdout("[dnd] uiFileDropped paths=<<%s>> at %.0f,%.0f", paths ? paths : "(null)", x, y);
+        JSContext* ctx = jsEngine.getContext();
+        if (!ctx || !paths || !*paths) return;
+        JSValue args[3] = {JS_NewString(ctx, paths), JS_NewFloat64(ctx, x), JS_NewFloat64(ctx, y)};
+        jsEngine.emit("file-drop", 3, args);
+        for (JSValue& v : args) JS_FreeValue(ctx, v);
+    }
+#endif
+
     void uiIdle() override {
         if (!windowTitleSet_) {
             windowTitleSet_ = true;

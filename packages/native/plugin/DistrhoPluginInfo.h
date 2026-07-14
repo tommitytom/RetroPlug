@@ -31,6 +31,11 @@
 // the plugin flag alone is a hard compile error.
 #define DISTRHO_UI_FILE_BROWSER        1
 
+// OS file drag-and-drop: enables the UI::uiFileDropped callback (the drag-and-drop ROM/SAV/project load).
+// The DGL side (DGL_USE_FILE_DROP) is auto-enabled by USE_FILE_BROWSER (see dgl/Base.hpp), so no extra
+// dpf_add_plugin flag is needed.
+#define DISTRHO_UI_FILE_DROP           1
+
 #define DISTRHO_PLUGIN_WANT_MIDI_INPUT  1
 #define DISTRHO_PLUGIN_WANT_MIDI_OUTPUT 1
 #define DISTRHO_PLUGIN_WANT_TIMEPOS     1
