@@ -1,15 +1,17 @@
-// retroplug-cli — a standalone txiki/QuickJS executable that runs a session
-// bundle over a REAL `Backend`. No Node at runtime: the binary embeds the txiki host + the emulator
-// cores, evals one pre-bundled session `.js` (authored in TypeScript, esbuild-bundled to JS by
-// tools/build-session.js), and returns its exit code.
+// retroplug-cli — a standalone txiki/QuickJS executable over a REAL `Backend`. No Node at runtime: the
+// binary embeds the txiki host + the emulator cores and returns the session's exit code.
 //
-//   retroplug-cli <session.js>
+//   retroplug-cli <command> [args...]     run a baked-in command (render, …) via the TS dispatcher
+//   retroplug-cli <session.js> [args...]  run a TS-authored session by path
+//
+// This launcher is deliberately dumb about commands: it evals the compiled-in root dispatcher bundle
+// (cli/cli.ts → rp_cli_bundle) for anything that isn't a `.js` file path, passing the FULL arg vector so
+// the TS side owns command routing + all help text. A `.js` argument is slurped and evaled directly (the
+// dispatcher is skipped). Commands are added in TS (cli/tools.ts) — never here.
 //
 // It binds the same JS surface the test host (src/main.cpp) and the plugin expose — the Backend over
-// globalThis[Symbol.for("plugin")].__rpcSend, console.log -> stdout, and globalThis.tjs.exit(code) —
-// so a session reuses the control-plane API (createRealBackend / ProjectStore /
-// createAudioDriver) unchanged. Deliberately a near-clone of src/main.cpp's host body; a shared
-// host-run helper can be factored later if a third entry point appears.
+// globalThis[Symbol.for("plugin")].__rpcSend, console.log -> stdout, and globalThis.tjs.exit(code).
+// Deliberately a near-clone of src/main.cpp's host body; a shared host-run helper can be factored later.
 
 #include <cstdint>
 #include <cstdio>
@@ -32,29 +34,20 @@
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
-// Subcommand bundles compiled into the binary (tjsc bytecode, see packages/native/CMakeLists.txt).
-// `render` runs cli/sessions/render.ts with no loose .js and no Node.
+// The root CLI dispatcher, compiled into the binary (tjsc bytecode of cli/cli.ts, see
+// packages/native/CMakeLists.txt). It owns command routing + all help; this launcher just evals it.
 extern "C" {
-extern const std::uint8_t  rp_render_bundle[];
-extern const std::uint32_t rp_render_bundle_size;
+extern const std::uint8_t  rp_cli_bundle[];
+extern const std::uint32_t rp_cli_bundle_size;
 }
 
 namespace {
 
-// A named, compiled-in session. argv[1] selecting a subcommand evals its bytecode instead of a file.
-struct Subcommand {
-    const char* name;
-    const std::uint8_t* bytecode;
-    const std::uint32_t* size;
-};
-const Subcommand kSubcommands[] = {
-    {"render", rp_render_bundle, &rp_render_bundle_size},
-};
-
-const Subcommand* findSubcommand(const char* name) {
-    for (const auto& sc : kSubcommands)
-        if (std::strcmp(sc.name, name) == 0) return &sc;
-    return nullptr;
+// True when `s` ends with `.js` — the launcher treats such an argv[1] as a session file path to eval
+// directly (skipping the dispatcher). Everything else is a command for the dispatcher.
+bool endsWithJs(const char* s) {
+    const std::size_t n = std::strlen(s);
+    return n >= 3 && std::strcmp(s + n - 3, ".js") == 0;
 }
 
 // The exit code the session reports through globalThis.tjs.exit(). One host per process,
@@ -81,20 +74,11 @@ std::string slurp(const std::string& path) {
 } // namespace
 
 int main(int argc, char** argv) try {
-    if (argc < 2 || argv[1][0] == '\0') {
-        std::fprintf(stderr,
-            "usage: retroplug-cli <command|session.js> [args...]\n"
-            "  render <rom> [--sav f] [--state f] [--out f] [--ms n] [--max-ms n] [--sample-rate hz]\n"
-            "               [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]\n"
-            "               [--song name | --song-index n] [--list-songs]\n"
-            "                       Render a ROM (+.sav/savestate) to WAV.\n"
-            "                       LSDj: --song picks a saved song; --list-songs lists them; a loaded\n"
-            "                       LSDj sav auto-detects length (renders to the HFF stop) unless --ms.\n"
-            "  <session.js> [args]  Run a JS based session by path\n");
-        return 2;
-    }
-    // A named subcommand (its session is compiled in) wins over a like-named file path.
-    const Subcommand* sub = findSubcommand(argv[1]);
+    // A `.js` argv[1] is a session file we eval directly; anything else (incl. no args) goes to the
+    // compiled-in dispatcher, which prints help and routes commands. The args exposed to JS start after
+    // the file path (argv[2..]) for a file, or include the command (argv[1..]) for the dispatcher.
+    const bool runFile = argc >= 2 && endsWithJs(argv[1]);
+    const int  argStart = runFile ? 2 : 1;
 
     TjsHostRuntime host;
     if (!host.init()) {
@@ -136,7 +120,7 @@ int main(int argc, char** argv) try {
         // cli/session.ts's hostArgs(). Hung off our own namespace object because txiki already defines
         // tjs.args as a read-only accessor.
         JSValue args = JS_NewArray(ctx);
-        for (int i = 2, j = 0; i < argc; ++i, ++j)
+        for (int i = argStart, j = 0; i < argc; ++i, ++j)
             JS_SetPropertyUint32(ctx, args, static_cast<uint32_t>(j), JS_NewString(ctx, argv[i]));
         JS_SetPropertyStr(ctx, ns, "args", args);
         JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
@@ -159,13 +143,14 @@ int main(int argc, char** argv) try {
 
     JS_FreeValue(ctx, global);
 
-    // A subcommand evals its compiled-in bytecode; otherwise argv[1] is a session .js path we slurp.
+    // A `.js` path is slurped + evaled; otherwise run the compiled-in dispatcher (it reads the command
+    // from the args we exposed above and prints help / routes it).
     int rc;
-    if (sub) {
-        rc = host.evalModuleBytecode(sub->bytecode, *sub->size);
-    } else {
+    if (runFile) {
         const std::string code = slurp(argv[1]);
         rc = host.evalModuleBuffer(code.data(), code.size(), argv[1]);
+    } else {
+        rc = host.evalModuleBytecode(rp_cli_bundle, rp_cli_bundle_size);
     }
     if (rc != 0) {
         std::fprintf(stderr, "session eval failed\n");

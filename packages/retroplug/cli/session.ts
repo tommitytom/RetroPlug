@@ -53,6 +53,12 @@ export function bootSession(): Session {
 // The host records the exit code through globalThis.tjs.exit (see cli/main.cpp).
 declare const tjs: { exit(code: number): void };
 
+/** Set the process exit code (via the host's tjs.exit). For entry points that finish WITHOUT booting a
+ *  session — e.g. the CLI dispatcher printing help — where runSession's boot+exit wrapper is overkill. */
+export function exitProcess(code: number): void {
+  tjs.exit(code);
+}
+
 /** The session's argument vector — everything after the session `.js` on the command line
  *  (`retroplug-cli <session.js> [args...]`). The CLI host hangs it off the
  *  Symbol.for("plugin") namespace (tjs.args is a read-only txiki accessor). Empty when absent. */

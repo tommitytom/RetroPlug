@@ -1,14 +1,15 @@
-// The `retroplug-cli render` subcommand — render a ROM (+ its battery .sav / a savestate) straight to
-// WAV from the command line, no script authoring, no Node. This session is COMPILED INTO the
-// retroplug-cli binary (tjsc bytecode, see packages/native/CMakeLists.txt) and reached via the `render`
-// subcommand, so an end user with just the executable can:
+// The `render` CLI tool — render a ROM (+ its battery .sav / a savestate) straight to WAV from the command
+// line, no script authoring, no Node. Exported as `renderTool` (a CliTool) and registered in cli/tools.ts;
+// the dispatcher (cli/cli.ts, the bundle compiled into retroplug-cli) runs it under a booted session, so an
+// end user with just the executable can:
 //
 //   retroplug-cli render <rom> [--sav f] [--state f] [--out f] [--ms n] [--sample-rate hz]
 //                              [--split mix|channels|pins|mono] [--bpm n] [--transport] [--no-start]
 //
-// A missing --sav auto-pairs the sibling <rom>.sav (native resolveSavPath). By default it presses Start
-// on boot so a saved song (e.g. LSDj) actually plays — pass --no-start to render raw boot audio. The
-// --split modes fold in the per-channel/stem exports (GB 4 channels; NES 3 pins / 5 mono core stems).
+// A missing --sav auto-pairs the sibling <rom>.sav. By default it presses Start on boot so a saved song
+// (e.g. LSDj) actually plays — pass --no-start to render raw boot audio. The --split modes fold in the
+// per-channel/stem exports (GB 4 channels; NES 3 pins / 5 mono core stems). See RENDER_HELP in renderArgs.ts
+// for the full, user-facing flag reference (`render --help`).
 //
 // LSDj length auto-detect: when a valid LSDj sav is loaded (and no --ms is pinned), render to the song's
 // HFF stop (the APU master-enable NR52 going off — lsdpack's technique), report the length, and trim the
@@ -17,9 +18,9 @@
 // LSDj (GB) song selection: a .sav holds up to 32 named projects but LSDj only plays its WORKING song on
 // boot, so --song NAME / --song-index N promote a chosen project to the working song before booting
 // (decode → assign → re-encode → seed the fresh system). --list-songs prints the sav's song names.
-import { runSession, hostArgs } from "../session";
 import { createWavWriter, type WavWriter } from "../wav";
-import { parseRenderArgs, type RenderOpts, type SplitMode } from "../renderArgs";
+import { parseRenderArgs, RENDER_SUMMARY, RENDER_HELP, type RenderOpts, type SplitMode } from "../renderArgs";
+import type { CliTool } from "../tools";
 import { syncDspFromStore } from "../../src/appHost";
 import { extensionLower, replaceExtension } from "../../src/pathUtil";
 import { siblingSavPath } from "../../src/savPaths";
@@ -34,7 +35,6 @@ const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Sta
 const NR52_ADDR = 0xff26;
 const NR52_ON = 0x80; // bit 7 = all-sound-on
 const DETECT_CHUNK_MS = 100; // poll granularity (≈ detection precision)
-const DETECT_ARM_MS = 2000; // window to confirm playback began (NR52 goes on) after Start
 const DETECT_OFF_CHUNKS = 2; // NR52 must read off this many consecutive chunks to count as the HFF stop
 
 /** A 128 KiB image carrying LSDj's 'jk' SRAM-init magic at 0x813E/0x813F — same check as lsdjSramSignature. */
@@ -280,7 +280,7 @@ function driveAutoDetect(sink: RenderSink, s: Session, id: number, maxMs: number
     if (!armed) {
       commit(chunk); // keep the lead-in from frame 0
       if (on) { armed = true; startFrame = frameBefore; } // playback began here
-      continue; // (still un-armed after DETECT_ARM_MS just means it hasn't started — keep going to the cap)
+      continue; // (still un-armed just means playback hasn't started yet — keep going to the cap)
     }
     if (!on) {
       held.push(chunk); // hold back — this may be the HFF tail
@@ -296,8 +296,8 @@ function driveAutoDetect(sink: RenderSink, s: Session, id: number, maxMs: number
   return { startFrame, endFrame: committed, hff: false };
 }
 
-runSession((s) => {
-  const o = parseRenderArgs(hostArgs());
+function runRender(s: Session, args: string[]): void {
+  const o = parseRenderArgs(args);
   const platform = platformOf(o.rom);
 
   // Song selection is an LSDj (GB) concept — reject it early on other platforms.
@@ -371,4 +371,13 @@ runSession((s) => {
     driveFixed(sink, Math.floor(((o.ms ?? 8000) * sr) / 1000)); // exact target frame count
     sink.finishAll();
   }
-});
+}
+
+/** The `render` CLI tool: name + summary for the top-level index, detailed --help, and the render body.
+ *  Registered in cli/tools.ts; the dispatcher (cli/cli.ts) runs it under a booted session. */
+export const renderTool: CliTool = {
+  name: "render",
+  summary: RENDER_SUMMARY,
+  help: RENDER_HELP,
+  run: runRender,
+};
