@@ -17,28 +17,26 @@ import { tools, topLevelHelp } from "./tools";
 
 const isHelpFlag = (a: string): boolean => a === "-h" || a === "--help";
 
-/** "RetroPlug v0.7.1" — version single-sourced from the native Version.hpp via the backend RPC (no boot). */
-function versionBanner(): string {
-  let version = "unknown";
-  try { version = createHostClient().version(); } catch { /* no RPC bridge — leave "unknown" */ }
-  return `RetroPlug v${version}`;
+/** The version, single-sourced from the native Version.hpp via the backend RPC (no session boot). */
+function appVersion(): string {
+  try { return createHostClient().version(); } catch { return "unknown"; } // no RPC bridge
 }
 
 const [cmd, ...rest] = hostArgs();
 if (cmd === "--version") {
-  console.log(versionBanner());
+  console.log(`v${appVersion()}`); // bare version, e.g. "v0.7.1"
   exitProcess(0);
 } else if (cmd === undefined) {
   // Bare `retroplug-cli`: show the index but signal misuse (nothing ran).
-  console.error(topLevelHelp(tools, versionBanner()));
+  console.error(topLevelHelp(tools, `RetroPlug v${appVersion()}`));
   exitProcess(2);
 } else if (isHelpFlag(cmd)) {
-  console.log(topLevelHelp(tools, versionBanner()));
+  console.log(topLevelHelp(tools, `RetroPlug v${appVersion()}`));
   exitProcess(0);
 } else {
   const tool = tools.find((t) => t.name === cmd);
   if (!tool) {
-    console.error(`retroplug-cli: unknown command '${cmd}'\n\n${topLevelHelp(tools, versionBanner())}`);
+    console.error(`retroplug-cli: unknown command '${cmd}'\n\n${topLevelHelp(tools, `RetroPlug v${appVersion()}`)}`);
     exitProcess(2);
   } else if (rest.some(isHelpFlag)) {
     console.log(tool.help);
