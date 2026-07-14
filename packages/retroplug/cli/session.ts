@@ -74,11 +74,11 @@ export function runSession(main: (s: Session) => void): void {
     main(bootSession());
     tjs.exit(0);
   } catch (e) {
-    // Print the message FIRST — QuickJS's Error.stack omits it, so a bare `.stack` loses the actual
-    // reason (e.g. a render flag-usage error). Then the stack, for debugging.
+    // Report just the message — these are user-facing usage / IO errors (bad flags, missing ROM, unreadable
+    // file), not crashes to debug, so no stack trace. (QuickJS's Error.stack omits the message anyway, so we
+    // read err.message directly rather than printing `.stack`.)
     const err = e as Error;
-    console.error(`cli: session failed: ${err?.message ?? e}`);
-    if (err?.stack) console.error(err.stack);
+    console.error(`ERROR: ${err?.message ?? e}`);
     tjs.exit(1);
   }
 }
