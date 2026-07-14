@@ -20,7 +20,7 @@ declare const __DSP_KERNEL_BUNDLE__: string;
 
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
 const START = 7; // GameboyButton::Start
-const MASTER_SYNC = 8; // LsdjSyncMode / lsdj-sync role mode
+const MASTER_SYNC = "masterSync"; // LsdjSyncMode / lsdj-sync role mode
 
 // SYNC=LSDj + a one-note phrase (the proven cell set from the link-cable tests) so LSDj plays and its
 // sequencer advances, driving the master-clock byte stream. No N commands (those are MI.OUT); plain notes.
@@ -35,8 +35,8 @@ const MASTER_SONG = JSON.stringify({
   },
 });
 
-const sysStruct = (id: number, mode: number) => ({
-  project: [{ kind: "midi-routing", config: { mode: 0 } }],
+const sysStruct = (id: number, mode: string) => ({
+  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
   systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
 });
 

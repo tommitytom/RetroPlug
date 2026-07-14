@@ -25,8 +25,8 @@ const MIDIMAP_SONG = JSON.stringify({
   },
 });
 
-const sysStruct = (id: number, mode: number) => ({
-  project: [{ kind: "midi-routing", config: { mode: 0 } }],
+const sysStruct = (id: number, mode: string) => ({
+  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
   systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
 });
 
@@ -58,7 +58,7 @@ test("the TS lsdj-sync MidiMap role maps MIDI notes to LSDj row bytes on a real 
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(sysStruct(id, 3))).toBeTruthy();
+  expect(dsp.setSystems(sysStruct(id, "midiMap"))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen from the sav
   const idle = rms(audio.renderAudio(500)); // no map notes → baseline

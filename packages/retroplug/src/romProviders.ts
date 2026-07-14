@@ -8,6 +8,7 @@
 // generic RoleRegistry is built around.
 
 import type { RoleRegistry, RomContext } from "./systemRoles";
+import { LsdjSyncMode } from "./settingsEnums";
 
 // The Game Boy cartridge title field is 0x134..0x143. Decode it to an uppercase ASCII
 // string, stopping at the first NUL — case-insensitive so both "LSDj-v9.4.2" and older
@@ -29,9 +30,9 @@ export function registerRomProviders(registry: RoleRegistry): void {
     rom.embeddedRom === "mgb" || title(rom.header).startsWith("MGB") ? [{ kind: "mgb", config: {} }] : [],
   );
 
-  // LSDj (stock or arduinoboy build) → the lsdj-sync role, defaulting to MidiSync (mode 1).
+  // LSDj (stock or arduinoboy build) → the lsdj-sync role, defaulting to MidiSync.
   registry.registerRomProvider((rom: RomContext) =>
-    title(rom.header).startsWith("LSDJ") ? [{ kind: "lsdj-sync", config: { mode: 1 } }] : [],
+    title(rom.header).startsWith("LSDJ") ? [{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }] : [],
   );
 
   // Any NES ROM → host-MIDI passthrough to the core (the always-attached N8 FIFO). Match the PLATFORM

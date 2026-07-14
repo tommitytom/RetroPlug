@@ -32,6 +32,15 @@ import {
   parseConfig,
   toAbsolute,
 } from "./projectConfig";
+import {
+  type SystemLayout,
+  type MidiRouting,
+  type AudioRouting,
+  LAYOUT_VALUES,
+  MIDI_ROUTING_VALUES,
+  AUDIO_ROUTING_VALUES,
+  audioRoutingToIndex,
+} from "./settingsEnums";
 import { scanMissingFiles, autoFindSiblings, relinkInConfig, type MissingFile } from "./projectMissing";
 import { PROJECT_JSON, sramKey, stateKey, partitionEntries } from "./projectBinaries";
 
@@ -61,8 +70,15 @@ function isZipProjectPath(path: string): boolean {
   return /\.rplg\.zip$/i.test(path);
 }
 
-// Inclusive upper bounds for the settings enums (native validates + rejects above).
-const SETTING_MAX = { layout: 3, midiRouting: 3, audioRouting: 3, zoom: 6 };
+// Inclusive upper bound for `zoom` (the one numeric setting; native validates + rejects above).
+const ZOOM_MAX = 6;
+
+// Allowed value tuples for the string-enum settings — an unknown value is rejected (native re-validates).
+const SETTING_VALUES = {
+  layout: LAYOUT_VALUES,
+  midiRouting: MIDI_ROUTING_VALUES,
+  audioRouting: AUDIO_ROUTING_VALUES,
+} as const;
 
 
 export class ProjectStore {
@@ -130,19 +146,22 @@ export class ProjectStore {
     if (!this.projectName) this.projectName = this.deriveName();
   }
 
-  setLayout(n: number): boolean {
-    return this.setSetting("layout", n);
+  setLayout(v: SystemLayout): boolean {
+    return this.setEnumSetting("layout", v);
   }
-  setMidiRouting(n: number): boolean {
-    return this.setSetting("midiRouting", n);
+  setMidiRouting(v: MidiRouting): boolean {
+    return this.setEnumSetting("midiRouting", v);
   }
-  setAudioRouting(n: number): boolean {
-    if (!this.setSetting("audioRouting", n)) return false;
+  setAudioRouting(v: AudioRouting): boolean {
+    if (!this.setEnumSetting("audioRouting", v)) return false;
     this.pushAudioRouting(); // the one project setting that reaches native audio (the MultiOutRouter)
     return true;
   }
   setZoom(n: number): boolean {
-    return this.setSetting("zoom", n);
+    if (n < 0 || n > ZOOM_MAX) return false; // out of range → reject (native does)
+    this.projectSettings = { ...this.projectSettings, zoom: n };
+    this.markDirty();
+    return true;
   }
 
   /** Empty project: tear down systems, reset settings/path, mark clean. */
@@ -386,17 +405,18 @@ export class ProjectStore {
     return { kind: "loaded", systems: this.systems.systems().length };
   }
 
-  private setSetting(key: keyof ProjectSettings, n: number): boolean {
-    if (n < 0 || n > SETTING_MAX[key]) return false; // out of range → reject (native does)
-    this.projectSettings = { ...this.projectSettings, [key]: n };
+  private setEnumSetting(key: "layout" | "midiRouting" | "audioRouting", value: string): boolean {
+    if (!(SETTING_VALUES[key] as readonly string[]).includes(value)) return false; // unknown → reject (native does)
+    this.projectSettings = { ...this.projectSettings, [key]: value } as ProjectSettings;
     this.markDirty();
     return true;
   }
 
   /** Push the current audio-routing mode to native — the one project setting that drives native audio
-   *  (the block runner's MultiOutRouter). Called on set / load / reset so native tracks the TS value. */
+   *  (the block runner's MultiOutRouter). Converts the string value to native's AudioRouting integer.
+   *  Called on set / load / reset so native tracks the TS value. */
   private pushAudioRouting(): void {
-    this.backend.setAudioRouting(this.projectSettings.audioRouting);
+    this.backend.setAudioRouting(audioRoutingToIndex(this.projectSettings.audioRouting));
   }
 
   private markDirty(): void {

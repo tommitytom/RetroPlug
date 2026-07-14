@@ -29,7 +29,7 @@ runSession((s) => {
     romPath,
     roles: [
       { kind: "nes-n8-midi", config: {} },
-      { kind: "mesen", config: { channelExportMode: 1 } },
+      { kind: "mesen", config: { channelExportMode: "stereoModPins" } },
     ],
   });
   syncDspFromStore(s.project, s.dsp);

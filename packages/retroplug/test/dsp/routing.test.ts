@@ -27,7 +27,7 @@ const baseDyn = (): BlockInput => ({
 test("OneChannelPerInstance routing sends each channel to its system, which mgb then serializes", () => {
   const k = kernel();
   k.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: 2 } }], // OneChannelPerInstance
+    project: [{ kind: "midi-routing", config: { mode: "oneChannelPerInstance" } }], // OneChannelPerInstance
     systems: [
       { id: 10, pipeline: [{ kind: "mgb", config: {} }] },
       { id: 20, pipeline: [{ kind: "mgb", config: {} }] },

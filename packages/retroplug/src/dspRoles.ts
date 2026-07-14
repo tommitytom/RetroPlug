@@ -6,8 +6,9 @@
 import type { RoleRegistry, ConstructCaps } from "./systemRoles";
 import type { ProjectBehavior, SystemBehavior, SystemCtx } from "./dspKernel";
 import type { ConstructSpec } from "./backend";
-import { z, clampedInt, boolField } from "./configSchema";
+import { z, clampedInt, boolField, enumField } from "./configSchema";
 import { routeBlockInto, MidiRouting } from "./midiRouting";
+import { LsdjSyncMode, LSDJ_MODE_VALUES, MIDI_ROUTING_VALUES } from "./settingsEnums";
 import {
   KEYBOARD_NOTE_START,
   KEYBOARD_LOW_START,
@@ -168,8 +169,8 @@ const masterSync: SystemBehavior = (c) => {
 // needs the host `keys` feed (a later phase). MidiSync's 0xF8 stream carries no 0xFA; the START-arm that
 // begins LSDj is a user action, not part of the clock (only Arduinoboy mode bookends with 0xFA/0xFC).
 const lsdjSync: SystemBehavior = (c) => {
-  switch (c.config.mode as number) {
-    case 1: { // MidiSync
+  switch (c.config.mode as LsdjSyncMode) {
+    case LsdjSyncMode.MidiSync: { // MidiSync
       // Optional auto-arm (autoStart): SYNC=MIDI LSDj only follows the clock once START has parked it in
       // "wait for MIDI" — normally a user action. When autoStart is set, tap START on the transport rise
       // (press ~2 blocks, then release) so LSDj starts with the host, the way a DAW user expects — and so
@@ -184,13 +185,13 @@ const lsdjSync: SystemBehavior = (c) => {
       c.eachTick(24 / divisor, (_t, off) => c.pushSerialIn(off, LSDJ_CLOCK));
       break;
     }
-    case 2: arduinoboy(c); break; // MidiSyncArduinoboy
-    case 3: midiMap(c); break; // MidiMap
-    case 5: keyboardMidi(c); break; // KeyboardMidi
-    case 6: forwardMidiToSerial(c); break; // MidiPassthrough
-    case 7: arduinoboyMaster(c); break; // ArduinoboyMaster / MIDIOUT
-    case 8: masterSync(c); break; // Master Sync (LSDj drives the host clock)
-    default: break;
+    case LsdjSyncMode.MidiSyncArduinoboy: arduinoboy(c); break;
+    case LsdjSyncMode.MidiMap: midiMap(c); break;
+    case LsdjSyncMode.KeyboardMidi: keyboardMidi(c); break;
+    case LsdjSyncMode.MidiPassthrough: forwardMidiToSerial(c); break;
+    case LsdjSyncMode.MidiOut: arduinoboyMaster(c); break; // ArduinoboyMaster / MIDIOUT
+    case LsdjSyncMode.MasterSync: masterSync(c); break; // LSDj drives the host clock
+    default: break; // Off / Keyboard emit nothing here
   }
 };
 
@@ -221,11 +222,11 @@ export function registerDspRoles(registry: RoleRegistry): void {
     kind: "lsdj-sync",
     category: "feature",
     scope: "system",
-    // mode: LsdjSyncMode (Off=0, MidiSync=1, … MidiOut=7, MasterSync=8). tempoDivisor subdivides the
+    // mode: LsdjSyncMode ("off", "midiSync", … "midiOut", "masterSync"). tempoDivisor subdivides the
     // 24-PPQN clock (24/divisor) for MidiSync + MidiSyncArduinoboy; the menu offers 1/2/4/8. autoStart
     // taps START on the host transport rise to auto-arm a SYNC=MIDI (MidiSync) cart — needed for a
     // headless DAW render, off by default so normal MidiSync keeps its manual-arm behaviour.
-    schema: z.object({ mode: clampedInt(0, 8, 1), tempoDivisor: clampedInt(1, 8, 1), autoStart: boolField(false) }),
+    schema: z.object({ mode: enumField(LSDJ_MODE_VALUES, "midiSync"), tempoDivisor: clampedInt(1, 8, 1), autoStart: boolField(false) }),
     dsp: lsdjSync,
     onConstruct: lsdjSeedSav,
   });
@@ -233,7 +234,7 @@ export function registerDspRoles(registry: RoleRegistry): void {
     kind: "midi-routing",
     category: "feature",
     scope: "project",
-    schema: z.object({ mode: clampedInt(0, 3, 0) }), // MidiRouting 0..3
+    schema: z.object({ mode: enumField(MIDI_ROUTING_VALUES, "sendToAll") }),
     dsp: midiRouting,
   });
 }

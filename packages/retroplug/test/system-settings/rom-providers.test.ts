@@ -36,8 +36,8 @@ test("a file-backed mGB cart attaches the mgb role by title", () => {
 test("LSDj attaches lsdj-sync (MidiSync default), case-insensitively", () => {
   const lower = registry().defaultRoles("sameboy", "gb", headerWithTitle("LSDj-v9.4.2"));
   expect(lower).toEqual([
-    { kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: true } },
-    { kind: "lsdj-sync", config: { mode: 1, tempoDivisor: 1, autoStart: false } }, // MidiSync @ 24 PPQN (divisor 1)
+    { kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true } },
+    { kind: "lsdj-sync", config: { mode: "midiSync", tempoDivisor: 1, autoStart: false } }, // MidiSync @ 24 PPQN (divisor 1)
   ]);
   // Older ROMs stamp an uppercase "LSDJ" title — must still match.
   const upper = registry().defaultRoles("sameboy", "gb", headerWithTitle("LSDJ"));

@@ -22,7 +22,7 @@ test("export: PKZIP of project.json + each system's state & sram, from the pump"
   be.seed("/proj/a.gb", gbRom());
   const mgbId = project.systems.loadMgb()!; // embedded, appended into empty → id 1
   const gbId = project.systems.addSystem("/proj/a.gb")!; // path-backed → id 2
-  project.setLayout(3);
+  project.setLayout("grid");
 
   expect(project.export("/proj/song.rplg.zip")).toBeTruthy();
 
@@ -44,7 +44,7 @@ test("export: PKZIP of project.json + each system's state & sram, from the pump"
   // project.json re-parses to the thin config (systems in order, ROM by path/marker).
   const cfgEntry = entries.find((e) => e.name === "project.json")!;
   const doc = JSON.parse(dec.decode(cfgEntry.bytes));
-  expect(doc.settings.layout).toBe(3);
+  expect(doc.settings.layout).toBe("grid");
   expect(doc.systems.length).toBe(2);
   expect(doc.systems[0].embeddedRom).toBe("mgb");
   expect(doc.systems[1].romPath).toBe("a.gb"); // rebased relative, NOT embedded as a blob

@@ -49,7 +49,7 @@ test("a SameBoy system auto-gets the sameboy system role + universal settings", 
   store.addSystem("/roms/a.gb");
   const v = store.view()[0];
   expect(v.settings).toEqual({ gainDb: 0, reloadOnRomChange: false });
-  expect(v.roles).toEqual([{ kind: "sameboy", config: { model: 9, highpass: 1, linkGroupId: 0, fastBoot: true } }]);
+  expect(v.roles).toEqual([{ kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true } }]);
 });
 
 test("a NES system auto-gets the mesen system role; editing region crosses to the emulator", () => {
@@ -58,14 +58,14 @@ test("a NES system auto-gets the mesen system role; editing region crosses to th
   const id = store.addSystem("/roms/g.nes") as number;
   const v = store.view()[0];
   expect(v.platform).toBe("nes");
-  expect(v.roles).toEqual([{ kind: "mesen", config: { region: 0, removeSpriteLimit: false, channelExportMode: 0 } }]);
+  expect(v.roles).toEqual([{ kind: "mesen", config: { region: "auto", removeSpriteLimit: false, channelExportMode: "mix" } }]);
 
-  expect(store.setRoleConfig(id, "mesen", { region: 2 })).toBeTruthy(); // PAL
-  expect(store.view()[0].roles[0].config.region).toBe(2);
+  expect(store.setRoleConfig(id, "mesen", { region: "pal" })).toBeTruthy(); // PAL
+  expect(store.view()[0].roles[0].config.region).toBe("pal");
   expect(be.applyRoleCalls[be.applyRoleCalls.length - 1]).toEqual({
     id,
     kind: "mesen",
-    config: { region: 2, removeSpriteLimit: false, channelExportMode: 0 }, // whole role config crosses (system-category)
+    config: { region: 2, removeSpriteLimit: false, channelExportMode: 0 }, // whole role config crosses (system-category, native-encoded)
   });
 });
 
@@ -74,17 +74,17 @@ test("setRoleConfig on a system role: updates, clamps, applies to the emulator, 
   be.seed("/roms/a.gb", gbRom());
   const id = store.addSystem("/roms/a.gb") as number;
   const before = changes();
-  expect(store.setRoleConfig(id, "sameboy", { model: 3 })).toBeTruthy();
-  expect(store.view()[0].roles[0].config.model).toBe(3);
+  expect(store.setRoleConfig(id, "sameboy", { model: "sgb" })).toBeTruthy();
+  expect(store.view()[0].roles[0].config.model).toBe("sgb");
   expect(be.applyRoleCalls[be.applyRoleCalls.length - 1]).toEqual({
     id,
     kind: "sameboy",
-    config: { model: 3, highpass: 1, linkGroupId: 0, fastBoot: true },
+    config: { model: 3, highpass: 1, linkGroupId: 0, fastBoot: true }, // native-encoded
   });
   expect(changes()).toBe(before + 1);
-  // out of range → clamped, not stored raw
+  // unknown enum → defaulted, not stored raw
   store.setRoleConfig(id, "sameboy", { model: 99 });
-  expect(store.view()[0].roles[0].config.model).toBe(13);
+  expect(store.view()[0].roles[0].config.model).toBe("cgbC");
   // absent role → false
   expect(store.setRoleConfig(id, "nope", { x: 1 })).toBeFalsy();
 });

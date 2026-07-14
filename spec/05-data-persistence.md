@@ -22,7 +22,7 @@ and **parses** it back. The model lives in
 | Type | Fields | Notes |
 |---|---|---|
 | `ProjectConfig` | `schemaVersion: string`, `settings`, `systems[]` | The root; `schemaVersion` is a legacy *string* (`"1"`) |
-| `ProjectSettings` | `layout 0-3`, `midiRouting 0-3`, `audioRouting 0-2`, `zoom 0-6` | Four scalar enums; `zoom 0` = inherit the user default |
+| `ProjectSettings` | `layout`, `midiRouting`, `audioRouting` (string enums; see [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), `zoom 0-6` | Three string enums + a `zoom` magnitude (`0` = inherit the user default). Native's numeric enums are recovered at the RPC/kernel boundary |
 | `SystemThin` | `platform`, `romPath?`, `savPath?`, `savSuffix?`, `embeddedRom?`, `settings?`, `roles?` | One serialized system |
 
 **"Thin"** means the model carries no binary blobs (ROM/SRAM/savestate/kit
@@ -146,7 +146,7 @@ JSON**, backed by two mechanisms:
 
 | Root | TS const |
 |---|---|
-| `.rplg` / DAW chunk | `K_PROJECT = 2` ([projectConfig.ts](../packages/retroplug/src/projectConfig.ts)) |
+| `.rplg` / DAW chunk | `K_PROJECT = 3` ([projectConfig.ts](../packages/retroplug/src/projectConfig.ts)) |
 | `config.json` | `USER_CONFIG_SCHEMA = 1` |
 | `bindings/*.json` | `BINDINGS_SCHEMA = 1` |
 | `recent.json` | `RECENT_SCHEMA = 2` |
@@ -163,11 +163,14 @@ JSON**, backed by two mechanisms:
    keyed by from-version, in [migrate.ts](../packages/retroplug/src/migrate.ts). On load
    `migrateRaw` applies the ordered chain from the file's stamp up to current, on the RAW
    object, **before** the (latest) zod schema validates. Steps must be idempotent-safe (an
-   unstamped file floors to current). The first real one is the project **v1→v2**
-   (`PROJECT_MIGRATIONS[1]`), which backfills each system's `core` from `platform`.
+   unstamped file floors to current). The project **v1→v2** (`PROJECT_MIGRATIONS[1]`)
+   backfills each system's `core` from `platform`; **v2→v3** (`PROJECT_MIGRATIONS[2]`)
+   rewrites the integer enum settings — the project `layout`/`midiRouting`/`audioRouting`
+   and the per-system role-config enums (`model`/`highpass`/`region`/`channelExportMode`/
+   lsdj `mode`) — to their string values ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)).
 
 Additive-only changes still need no step: the strict zod schemas fill a missing field from
-its `.default()` and **clamp** out-of-range scalars
+its `.default()` and **clamp** out-of-range scalars (an unknown string enum falls to its default)
 ([configSchema.ts](../packages/retroplug/src/configSchema.ts)), so an old file that only
 lacks a newly-added optional field validates as-is. The project `schemaVersion` is a
 **string** (old `.rplg` carried `"1.0"`); `parseProjectVersion` takes its leading integer,

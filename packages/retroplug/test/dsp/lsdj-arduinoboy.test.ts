@@ -136,8 +136,8 @@ test("lsdj-sync mode 7: kernel fans serialOut to the role, which decodes it to e
   registerDspRoles(reg);
   const k = new DspKernel(reg);
   k.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: 0 } }],
-    systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: 7 } }] }],
+    project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
+    systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: "midiOut" } }] }],
   });
   const frame = (cmd: number) => ({ system: 1, byte: 0x80 | (cmd & 0x7f) });
   const out = k.processBlock({
@@ -197,8 +197,8 @@ test("lsdj-sync mode 8: kernel fans serialOut to the master-sync role → clock 
   registerDspRoles(reg);
   const k = new DspKernel(reg);
   k.setSystems({
-    project: [{ kind: "midi-routing", config: { mode: 0 } }],
-    systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: 8 } }] }],
+    project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
+    systems: [{ id: 1, pipeline: [{ kind: "lsdj-sync", config: { mode: "masterSync" } }] }],
   });
   const out = k.processBlock({ ...baseDyn(), serialOut: [{ system: 1, byte: 5 }, { system: 1, byte: 6 }] });
   expect(out.midiOut.map((m) => m.data)).toEqual([[0x90, 5, 0x7f], [0xfa], [0xf8], [0xf8]]);

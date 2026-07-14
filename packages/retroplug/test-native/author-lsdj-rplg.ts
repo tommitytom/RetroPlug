@@ -15,6 +15,7 @@ import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
 import { savFromJson } from "../src/lsdjSav";
+import type { LsdjSyncMode } from "../src/settingsEnums";
 
 declare const __SCENARIO__: string;
 declare const __LSDJ_ROM__: string;
@@ -23,9 +24,9 @@ declare const __RPLG_OUT__: string;
 // A hard-panned pulse note per scenario. midi-* wait for the host's MIDI clock (SYNC=Midi, role MidiSync);
 // arduinoboy waits for note 24 to arm play (SYNC=Lsdj, role MidiSyncArduinoboy). The drift song is
 // percussive with one note per beat so every beat is a distinct transient the drift analyzer can pair.
-const SONGS: Record<string, { syncMode: string; mode: number; autoStart: boolean; song: unknown }> = {
+const SONGS: Record<string, { syncMode: string; mode: LsdjSyncMode; autoStart: boolean; song: unknown }> = {
   "midi-metro": {
-    syncMode: "Midi", mode: 1, autoStart: true,
+    syncMode: "Midi", mode: "midiSync", autoStart: true,
     song: {
       rows: [{ chains: [0] }],
       chains: [{ phrases: [0] }],
@@ -34,7 +35,7 @@ const SONGS: Record<string, { syncMode: string; mode: number; autoStart: boolean
     },
   },
   "arduinoboy-metro": {
-    syncMode: "Lsdj", mode: 2, autoStart: true, // START-tap arms the cart; note 24 in the .rpp enables play
+    syncMode: "Lsdj", mode: "midiSyncArduinoboy", autoStart: true, // START-tap arms the cart; note 24 in the .rpp enables play
     song: {
       rows: [{ chains: [0] }],
       chains: [{ phrases: [0] }],
@@ -43,7 +44,7 @@ const SONGS: Record<string, { syncMode: string; mode: number; autoStart: boolean
     },
   },
   "midi-drift": {
-    syncMode: "Midi", mode: 1, autoStart: true,
+    syncMode: "Midi", mode: "midiSync", autoStart: true,
     song: {
       rows: [{ chains: [0] }],
       chains: [{ phrases: [0] }],

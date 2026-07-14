@@ -45,4 +45,10 @@ export function stringField(def: string) {
   return z.preprocess((v) => (typeof v === "string" ? v : def), z.string());
 }
 
+/** A string-enum field: value must be one of `values`; missing/unknown → `def` (same tolerance as
+ *  clampedInt's clamp — a stale/garbage enum snaps to the default rather than failing the parse). */
+export function enumField<T extends readonly [string, ...string[]]>(values: T, def: T[number]) {
+  return z.enum(values).catch(def).default(def);
+}
+
 export { z };

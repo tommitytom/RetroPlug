@@ -9,7 +9,7 @@ import type { ProjectConfig } from "../../src/projectConfig";
 const NO_BLOBS = new Set<string>();
 
 function cfg(systems: ProjectConfig["systems"]): ProjectConfig {
-  return { schemaVersion: "1", settings: { layout: 0, midiRouting: 0, audioRouting: 0, zoom: 0 }, systems };
+  return { schemaVersion: "3", settings: { layout: "auto", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0 }, systems };
 }
 
 test("scan: a ROM is missing when its path is absent and no blob is embedded", () => {

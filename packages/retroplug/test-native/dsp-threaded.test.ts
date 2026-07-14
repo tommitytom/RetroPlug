@@ -12,6 +12,7 @@ import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFromJson } from "../src/lsdjSav";
+import { LsdjSyncMode } from "../src/settingsEnums";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -19,8 +20,8 @@ declare const __DSP_KERNEL_BUNDLE__: string;
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
 const START = 7; // GameboyButton::Start
 
-// The system's lsdj-sync pipeline at a given LsdjSyncMode (0 = Off, 1 = MidiSync).
-const lsdjSync = (id: number, mode: number) => ({
+// The system's lsdj-sync pipeline at a given LsdjSyncMode (Off / MidiSync).
+const lsdjSync = (id: number, mode: LsdjSyncMode) => ({
   systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
 });
 
@@ -61,7 +62,7 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(lsdjSync(id, 0))).toBeTruthy(); // structure known, clock off
+  expect(dsp.setSystems(lsdjSync(id, "off"))).toBeTruthy(); // structure known, clock off
 
   audio.renderAudio(6000); // reach the SONG screen from the sav (pull path)
   audio.pressButton(id, START, true); // arm SYNC=MIDI LSDj ("wait for MIDI clock")
@@ -84,7 +85,7 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
   };
 
   const neg = rmsWindow(150); // lsdj-sync Off → no clock → armed LSDj frozen → silent
-  expect(dsp.setSystems(lsdjSync(id, 1))).toBeTruthy(); // enqueue mode:1; applied on the audio thread
+  expect(dsp.setSystems(lsdjSync(id, "midiSync"))).toBeTruthy(); // enqueue MidiSync; applied on the audio thread
   const pos = rmsWindow(400); // the kernel's clock now advances LSDj → audible
 
   expect(audio.stopAudio()).toBeTruthy();

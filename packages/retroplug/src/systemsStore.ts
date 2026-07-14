@@ -26,6 +26,7 @@ import {
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
+import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
@@ -43,12 +44,6 @@ function allocSystemId(): number {
 // sizes). Each core's onActivate truncates or zero-pads it to the cart's real battery size (SameBoy via
 // GB_save_battery_size, Mesen via the NesSaveRam region), so any non-empty all-zero buffer blanks the SRAM.
 const BLANK_SRAM_BYTES = 0x20000;
-
-// The lsdj-sync modes that need native serial-out capture — both LSDj→host MIDI-out modes: MIDIOUT
-// ("MIDI Out", SYNC=MI.OUT) and Master Sync (SYNC=LSDJ). Kept in step with the LsdjSyncMode dispatch in
-// dspRoles.ts + LSDJ_MODE_NAMES in menuDefs.ts.
-const LSDJ_MIDIOUT_MODE = 7;
-const LSDJ_MASTERSYNC_MODE = 8;
 
 /** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
  *  the first `ROM_SNIFF_LEN` of them. Native never classifies. */
@@ -207,7 +202,7 @@ export class SystemsStore {
       savPath,
       statePath: null,
       stateBytes: state,
-      settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
+      settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
     }, newId);
     if (!ok) {
       console.warn(`[systems] duplicateSystem(${id}) failed (construct returned false) — no instance added`);
@@ -266,7 +261,7 @@ export class SystemsStore {
       sramBytes: seed.sramBytes,
       stateBytes: seed.stateBytes,
       replaceId: id,
-      settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
+      settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
     }, newId);
     if (!ok) return null;
     this.entries = replaceById(this.entries, id, { ...src, id: newId });
@@ -355,7 +350,7 @@ export class SystemsStore {
     const rt = this.registry?.roleType(roleKind);
     const merged = { ...e.roles[idx].config, ...partial };
     const config = rt ? rt.schema.parse(merged) : merged;
-    if (rt?.category === "system") this.backend.applyRoleConfig(id, roleKind, config);
+    if (rt?.category === "system") this.backend.applyRoleConfig(id, roleKind, roleConfigForNative(roleKind, config));
     const roles = e.roles.slice();
     roles[idx] = { kind: roleKind, config };
     this.entries = replaceById(this.entries, id, { ...e, roles });
@@ -453,7 +448,7 @@ export class SystemsStore {
       statePath: null,
       sramBytes: blobs?.sramBytes,
       stateBytes: blobs?.stateBytes,
-      settings: systemRole ? JSON.stringify(systemRole.config) : undefined,
+      settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
     }, roles);
     if (!this.backend.constructSystem(spec, id)) return null;
     // Stored settings/roles win; a config that omits them re-attaches defaults.
@@ -588,13 +583,14 @@ export class SystemsStore {
     return id;
   }
 
-  // Arm/disarm native serial-out capture (LSDj MI.OUT) for a system from its lsdj-sync mode. Called
-  // wherever a core is (re)built (committed/adopt — a fresh core defaults to unarmed) and when the mode
-  // changes (setRoleConfig). A no-op for a non-LSDj system (no lsdj-sync role → nothing to arm).
+  // Arm/disarm native serial-out capture (LSDj MI.OUT) for a system from its lsdj-sync mode. Both
+  // LSDj→host MIDI-out modes need it: MidiOut (SYNC=MI.OUT) and MasterSync (SYNC=LSDJ). Called wherever
+  // a core is (re)built (committed/adopt — a fresh core defaults to unarmed) and when the mode changes
+  // (setRoleConfig). A no-op for a non-LSDj system (no lsdj-sync role → nothing to arm).
   private syncSerialOutCapture(id: number): void {
     const lsdj = findById(this.entries, id)?.roles.find((r) => r.kind === "lsdj-sync");
     if (!lsdj) return;
-    const mode = (lsdj.config as { mode?: number }).mode;
-    this.backend.setSerialOutCapture(id, mode === LSDJ_MIDIOUT_MODE || mode === LSDJ_MASTERSYNC_MODE);
+    const mode = (lsdj.config as { mode?: LsdjSyncMode }).mode;
+    this.backend.setSerialOutCapture(id, mode === LsdjSyncMode.MidiOut || mode === LsdjSyncMode.MasterSync);
   }
 }

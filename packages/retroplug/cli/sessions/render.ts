@@ -25,6 +25,7 @@ import { syncDspFromStore } from "../../src/appHost";
 import { extensionLower, replaceExtension } from "../../src/pathUtil";
 import { siblingSavPath } from "../../src/savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../../src/lsdj";
+import type { ChannelExportMode } from "../../src/settingsEnums";
 import type { Session } from "../session";
 
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
@@ -59,9 +60,9 @@ function platformOf(rom: string): Platform {
   }
 }
 
-/** NES channelExportMode for a split mode (pins=1, mono=3); "channels" aliases to pins on NES. */
-function nesExportMode(split: SplitMode): number {
-  return split === "mono" ? 3 : 1;
+/** NES channelExportMode for a split mode; "channels" aliases to stereoModPins on NES. */
+function nesExportMode(split: SplitMode): ChannelExportMode {
+  return split === "mono" ? "individualMono" : "stereoModPins";
 }
 
 // --- LSDj song selection (GB only) ----------------------------------------------------------------

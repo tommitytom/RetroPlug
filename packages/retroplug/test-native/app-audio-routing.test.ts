@@ -48,7 +48,7 @@ test("audioRouting reaches native and playback survives a mode switch", () => {
   expect(be.setAudioRouting(3)).toBeTruthy(); // ChannelSplit (1 GB → 8 outs) — now accepted
   expect(be.setAudioRouting(4)).toBeFalsy(); // > ChannelSplit → rejected
   // Through the store (the real UI path — the menu cycler calls this), which pushes to native.
-  expect(project.setAudioRouting(1)).toBeTruthy();
+  expect(project.setAudioRouting("twoPerInstance")).toBeTruthy();
 
   // Playback survives the switch: under TwoPerInstance the single system routes to its own pair
   // (slot 0 → pair 0), which the stereo capture still hears.

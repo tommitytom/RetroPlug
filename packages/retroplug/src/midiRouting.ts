@@ -6,17 +6,15 @@
 // the app will eventually run; today it's the reference / conformance oracle
 // (the live per-block execution waits on the doc-04 scriptable runtime + RT-safety).
 
+import { MidiRouting, MIDI_ROUTING_VALUES } from "./settingsEnums";
+export { MidiRouting, MIDI_ROUTING_VALUES };
+
 /** Events with more than this many bytes are SysEx (native rides them on `dataExt`). */
 export const MIDI_DATA_SIZE = 4;
 
-/** Routing mode — mirrors native `MidiRouting` and `ProjectSettings.midiRouting` (0..3,
- *  clamped upstream). */
-export enum MidiRouting {
-  SendToAll = 0, // broadcast every event to every system; channel preserved
-  FourChannelsPerInstance = 1, // instance N receives channels 4N..4N+3
-  OneChannelPerInstance = 2, // instance N receives only channel N
-  MidiChannelToInstance = 3, // like OneChannelPerInstance, but the channel is rewritten to 0
-}
+// Routing mode is string-valued (see settingsEnums): SendToAll broadcasts every event to every system;
+// FourChannelsPerInstance gives instance N channels 4N..4N+3; OneChannelPerInstance gives instance N
+// only channel N; MidiChannelToInstance is OneChannelPerInstance with the channel rewritten to 0.
 
 /** A block MIDI event. `data` is the raw MIDI byte sequence (status + payload); `frame`
  *  is the sample offset within the block. Native's `size` is `data.length` here (JS

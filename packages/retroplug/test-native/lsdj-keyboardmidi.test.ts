@@ -38,8 +38,8 @@ const KEYBD_SONG = JSON.stringify({
   },
 });
 
-const sysStruct = (id: number, mode: number) => ({
-  project: [{ kind: "midi-routing", config: { mode: 0 } }],
+const sysStruct = (id: number, mode: string) => ({
+  project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
   systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode } }] }],
 });
 
@@ -72,7 +72,7 @@ test("KeyboardMidi: MIDI notes play live on a real LSDj via the PS/2-keyboard se
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(sysStruct(id, 5))).toBeTruthy();
+  expect(dsp.setSystems(sysStruct(id, "keyboardMidi"))).toBeTruthy();
 
   audio.renderAudio(6000); // reach the song screen
 

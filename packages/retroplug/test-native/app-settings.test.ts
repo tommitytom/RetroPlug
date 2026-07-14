@@ -61,11 +61,11 @@ test("live gain silences/restores a ringing mGB, and sameboy role config dispatc
 
   // --- sameboy system-role config: highpass is live, model triggers a restart. Both must dispatch
   // through applyRoleConfig and leave the system playing. ---
-  expect(project.systems.setRoleConfig(id, "sameboy", { highpass: 2 })).toBeTruthy(); // RemoveDcOffset, live
+  expect(project.systems.setRoleConfig(id, "sameboy", { highpass: "removeDcOffset" })).toBeTruthy(); // RemoveDcOffset, live
   const afterHighpass = rms(audio.renderAudio(500));
   expect(afterHighpass > 0.001).toBeTruthy(); // still ringing after a live filter change
 
-  expect(project.systems.setRoleConfig(id, "sameboy", { model: 1 })).toBeTruthy(); // DmgB → restartEmulator
+  expect(project.systems.setRoleConfig(id, "sameboy", { model: "dmgB" })).toBeTruthy(); // DmgB → restartEmulator
   audio.renderAudio(1500); // the core rebooted — warm it up again
   CHORD.forEach((m) => audio.stageMidiIn(m));
   const afterModel = rms(audio.renderAudio(1500));
