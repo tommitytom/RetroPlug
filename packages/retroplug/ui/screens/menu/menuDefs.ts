@@ -227,17 +227,23 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   return items;
 }
 
-/** The LSDj sync submenu — Mode + Tempo Divisor cyclers. Shown only for a system carrying an lsdj-sync
+/** The LSDj sync submenu — Mode + Tempo Divisor + Auto Start cyclers. Shown only for a system carrying an lsdj-sync
  *  role (a sniffed LSDj cart). Both edits re-push the DSP kernel structure (setRoleConfig → markDirty →
  *  syncDspFromStore), so they apply to the running behaviour on the next block — no dedicated RPC. */
 function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unknown>): MenuItem[] {
   const systems = ctx.stores.project.systems;
   const mode = typeof cfg.mode === "string" ? (cfg.mode as LsdjSyncMode) : "midiSync";
   const divisor = typeof cfg.tempoDivisor === "number" ? cfg.tempoDivisor : 1;
+  const autoStart = cfg.autoStart === true;
   return [
     cycler("lsdj-mode", "Mode", LSDJ_MODE_NAMES, Math.max(0, LSDJ_MODE_VALUES.indexOf(mode)), (n) => systems.setRoleConfig(sys.id, "lsdj-sync", { mode: LSDJ_MODE_VALUES[n] })),
     cycler("lsdj-divisor", "Tempo Divisor", LSDJ_DIVISORS.map(String), Math.max(0, LSDJ_DIVISORS.indexOf(divisor)), (n) =>
       systems.setRoleConfig(sys.id, "lsdj-sync", { tempoDivisor: LSDJ_DIVISORS[n] }),
+    ),
+    // Auto Start taps START on the host transport rise to auto-arm SYNC=MIDI carts (MidiSync /
+    // Arduinoboy) — off by default so the modes keep their manual-arm behaviour.
+    cycler("lsdj-autostart", "Auto Start", OFF_ON, autoStart ? 1 : 0, (n) =>
+      systems.setRoleConfig(sys.id, "lsdj-sync", { autoStart: n === 1 }),
     ),
   ];
 }

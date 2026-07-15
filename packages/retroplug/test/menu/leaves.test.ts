@@ -614,7 +614,7 @@ test("the LSDj submenu appears only for a system carrying an lsdj-sync role; its
   const lsdjItems = () =>
     submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-lsdj");
   const cfg = () =>
-    stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "lsdj-sync")!.config as { mode: string; tempoDivisor: number };
+    stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "lsdj-sync")!.config as { mode: string; tempoDivisor: number; autoStart: boolean };
 
   const mode = findItem(lsdjItems(), "lsdj-mode")!;
   expect(mode.kind).toBe("cycler");
@@ -628,6 +628,14 @@ test("the LSDj submenu appears only for a system carrying an lsdj-sync role; its
   // Tempo Divisor cycler steps 1 → 2 (index 0 → 1 in [1,2,4,8]).
   expect(findItem(lsdjItems(), "lsdj-divisor")!.label).toBe("Tempo Divisor: 1");
   findItem(lsdjItems(), "lsdj-divisor")!.onSelect!();
+  expect(cfg().tempoDivisor).toBe(2);
+
+  // Auto Start toggles off → on, applied live (and the earlier mode/divisor edits are preserved by the merge).
+  expect(findItem(lsdjItems(), "lsdj-autostart")!.label).toBe("Auto Start: Off"); // default off
+  expect(cfg().autoStart).toBe(false);
+  findItem(lsdjItems(), "lsdj-autostart")!.onSelect!();
+  expect(cfg().autoStart).toBe(true);
+  expect(cfg().mode).toBe("midiSyncArduinoboy"); // untouched by the autoStart edit
   expect(cfg().tempoDivisor).toBe(2);
 });
 
