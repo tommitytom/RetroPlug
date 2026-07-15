@@ -280,13 +280,42 @@ elseif(APPLE AND TARGET retroplug-jack)
     # bare Mach-O executable (bin/retroplug); double-clicking a bare executable in Finder opens it inside
     # Terminal.app — the macOS analogue of the Windows console popup. Package it as a .app bundle instead:
     # Finder / `open` launches it as a proper GUI app with no terminal, while running the binary inside the
-    # bundle (bin/retroplug.app/Contents/MacOS/retroplug) from a shell still prints stdout/stderr there — so
+    # bundle (bin/RetroPlug.app/Contents/MacOS/RetroPlug) from a shell still prints stdout/stderr there — so
     # console debugging still works. Same trade-off as the Windows /SUBSYSTEM:WINDOWS build above. The UI is
     # compiled into the binary (rp_ui_bundle), so the bundle needs no external Resources.
+    #
+    # OUTPUT_NAME is the bundle's on-disk name, which is what Finder / the Applications folder display — so
+    # override DPF's lowercase "retroplug" to the product-cased "RetroPlug" (RetroPlug.app). This runs after
+    # dpf_add_plugin, so it wins, and it only affects the standalone — the .vst3/.clap/.component bundle names
+    # (which DAWs key on) are untouched. CFBundleExecutable is derived from OUTPUT_NAME automatically.
     set_target_properties(retroplug-jack PROPERTIES
         MACOSX_BUNDLE TRUE
+        OUTPUT_NAME "RetroPlug"
         MACOSX_BUNDLE_BUNDLE_NAME "RetroPlug"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "co.tommitytom.retroplug")
+        MACOSX_BUNDLE_GUI_IDENTIFIER "net.tommitytom.retroplug")  # matches DISTRHO_PLUGIN_CLAP_ID + the AU bundle
+endif()
+
+# macOS: give the vst3/clap/vst bundles our CFBundleIdentifier. DPF generates the AU (.component) Info.plist
+# via DistrhoPluginExport, which correctly uses DISTRHO_PLUGIN_CLAP_ID (net.tommitytom.retroplug); but the
+# vst3/clap/vst bundles are configure_file'd from DPF's shared template, which hardcodes the framework
+# author's placeholder domain (studio.kx.distrho.<name>). Rather than fork the generic template, rewrite the
+# identifier post-build so every RetroPlug bundle is consistent under our domain. Keep this value in sync
+# with DISTRHO_PLUGIN_CLAP_ID (plugin/DistrhoPluginInfo.h) — the single source of truth for the AU + CLAP id.
+if(APPLE)
+    set(_rp_bundle_id "net.tommitytom.retroplug")
+    # target -> on-disk bundle dir (the vst2 target's bundle extension is .vst, not .vst2)
+    foreach(_pair "retroplug-vst3:retroplug.vst3" "retroplug-clap:retroplug.clap" "retroplug-vst2:retroplug.vst")
+        string(REPLACE ":" ";" _p "${_pair}")
+        list(GET _p 0 _tgt)
+        list(GET _p 1 _bundle)
+        if(TARGET ${_tgt})
+            add_custom_command(TARGET ${_tgt} POST_BUILD
+                COMMAND /usr/bin/plutil -replace CFBundleIdentifier -string "${_rp_bundle_id}"
+                        "${CMAKE_BINARY_DIR}/bin/${_bundle}/Contents/Info.plist"
+                COMMENT "Setting CFBundleIdentifier=${_rp_bundle_id} on ${_bundle}"
+                VERBATIM)
+        endif()
+    endforeach()
 endif()
 
 # --- UI test harness -------------------------------------------------------------------------------
