@@ -177,10 +177,19 @@ jobs:
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.dll
 
-  # Native arm64 build check (proven green). Universal + codesign/notarization
-  # and the AU target are future work.
+  # Native macOS build checks: arm64 (macos-14, proven green) + x86_64
+  # (macos-13, the last Intel runner). Universal + codesign/notarization and the
+  # AU target are future work.
   macos:
-    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-13
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -228,7 +237,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: retroplug-macos-arm64
+          name: retroplug-macos-${{ matrix.arch }}
           if-no-files-found: warn
           path: |
             build/bin/RetroPlug.app
