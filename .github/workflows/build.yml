@@ -231,7 +231,7 @@ jobs:
           name: retroplug-macos-arm64
           if-no-files-found: warn
           path: |
-            build/bin/retroplug.app
+            build/bin/RetroPlug.app
             build/bin/retroplug-cli
             build/bin/retroplug.clap
             build/bin/retroplug.vst3
