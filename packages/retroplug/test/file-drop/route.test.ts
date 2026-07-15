@@ -11,6 +11,7 @@ import { gbRom } from "../systems/fixtures";
 
 const ROM = "/roms/game.gb";
 const SAV = "/roms/game.sav";
+const RPLG = "/roms/game.rplg";
 
 function beWith(rom = true, sav = true): MockBackend {
   const be = new MockBackend("/cfg");
@@ -43,6 +44,32 @@ test("ROM on a multi-instance project, missed tile → replace the focused insta
   const be = beWith();
   // targetId is the focus fallback (onTile false); a ROM still replaces it.
   expect(resolveDropAction(be, ctx({ count: 2, targetId: 3, onTile: false }), [ROM])).toEqual({ type: "replace", id: 3, romPath: ROM });
+});
+
+test("ROM with a sibling <rom>.rplg (start screen) → loadProject that sibling, not a fresh ROM", () => {
+  const be = beWith();
+  be.seed(RPLG, "{}");
+  expect(resolveDropAction(be, ctx({ count: 0 }), [ROM])).toEqual({ type: "loadProject", path: RPLG });
+});
+
+test("ROM with a sibling <rom>.rplg on a single instance → loadProject that sibling", () => {
+  const be = beWith();
+  be.seed(RPLG, "{}");
+  expect(resolveDropAction(be, ctx({ count: 1, targetId: 5, onTile: true }), [ROM])).toEqual({ type: "loadProject", path: RPLG });
+});
+
+test("ROM + paired .sav ignores a sibling <rom>.rplg → fresh ROM with the paired sav", () => {
+  const be = beWith();
+  be.seed(RPLG, "{}");
+  // A paired save means "boot the ROM with this save", not "open the sibling project" (mirrors resolveLoad).
+  expect(resolveDropAction(be, ctx({ count: 0 }), [ROM, SAV])).toEqual({ type: "loadRom", romPath: ROM, explicitSav: SAV });
+});
+
+test("ROM with a sibling <rom>.rplg dropped onto a multi-instance tile → replace, not the sibling project", () => {
+  const be = beWith();
+  be.seed(RPLG, "{}");
+  // Replace-in-place stays in the current project — the sibling defer only applies to a new-project load.
+  expect(resolveDropAction(be, ctx({ count: 3, targetId: 7, onTile: true }), [ROM])).toEqual({ type: "replace", id: 7, romPath: ROM });
 });
 
 test("ROM + its .sav dropped together → paired explicitSav", () => {

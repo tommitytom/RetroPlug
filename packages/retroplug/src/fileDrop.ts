@@ -6,7 +6,9 @@
 //
 // The rules mirror the menu semantics:
 //   - a `.rplg` / `.rplg.zip` project file always loads as a project (it replaces everything anyway);
-//   - a ROM on the start screen or a single instance loads as a NEW project ("Load…");
+//   - a ROM on the start screen or a single instance loads as a NEW project ("Load…") — UNLESS a sibling
+//     `<rom>.rplg` exists (and no `.sav` was paired), in which case that project loads instead (mirrors
+//     FileSelection.resolveLoad; without this the load would silently defer to nothing — see resolveDropAction);
 //   - a ROM in a multi-instance project cold-boot REPLACES the target instance (the tile under the
 //     cursor, else the focused one) — the menu's "Replace Instance";
 //   - a bare `.sav` dropped onto a tile in a multi-instance project loads into THAT instance
@@ -14,6 +16,7 @@
 
 import type { HostBackend } from "./backend";
 import { classifyKind } from "./fileSelection";
+import { siblingRplgPath } from "./savPaths";
 
 /** A project file (thin `.rplg` or the export `.rplg.zip`) — classified by extension, like ProjectStore. */
 function isProjectPath(path: string): boolean {
@@ -63,9 +66,14 @@ export function resolveDropAction(backend: HostBackend, ctx: DropContext, paths:
     // Pair a lone ROM with a lone dropped `.sav`; a messier multi-drop just loads the first ROM.
     const explicitSav = roms.length === 1 && savs.length === 1 ? sav : undefined;
     const multi = ctx.count > 1 && ctx.targetId != null;
-    return multi
-      ? { type: "replace", id: ctx.targetId as number, romPath: rom, ...(explicitSav ? { explicitSav } : {}) }
-      : { type: "loadRom", romPath: rom, ...(explicitSav ? { explicitSav } : {}) };
+    // Replace-in-place (a ROM onto a multi-instance tile) stays in the current project — no sibling defer.
+    if (multi) return { type: "replace", id: ctx.targetId as number, romPath: rom, ...(explicitSav ? { explicitSav } : {}) };
+    // Load-as-new-project mirrors the menu's "Load…" (FileSelection.resolveLoad): with no paired save, a
+    // sibling `<rom>.rplg` means "open THAT project", not "new project from the ROM". Resolving it here is
+    // essential — `openRom` → `systems.loadRom` would otherwise defer to the sibling and build nothing,
+    // silently leaving an empty session.
+    if (!explicitSav && backend.fileExists(siblingRplgPath(rom))) return { type: "loadProject", path: siblingRplgPath(rom) };
+    return { type: "loadRom", romPath: rom, ...(explicitSav ? { explicitSav } : {}) };
   }
 
   if (sav) {
