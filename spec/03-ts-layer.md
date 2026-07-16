@@ -62,7 +62,7 @@ a self-contained synchronous JSON-RPC `call()`
 ([realBackend.ts:79](../packages/retroplug/src/realBackend.ts#L79)) omits null path
 fields (so native reads `nullopt`, not `""`) and attaches seed bytes only when present.
 This same adapter serves all three hosts — the difference is only which
-`BackendFacade` is bound behind `__rpcSend` (see doc 01/02).
+set of RPC facets is bound behind `__rpcSend` (see doc 01/02).
 
 ### `ConstructSpec` — the resolved-paths-only build request
 
@@ -444,24 +444,16 @@ and how the kernel runs on the bare context.
 
 ## Not yet built / deferred
 
-- **The plugin's two store graphs aren't unified.** The editor
-  ([`PluginUI`](../packages/native/plugin/PluginUI.cpp)) is wired and
-  mounts the React UI on the shared context, but its UI bundle composes one store graph
-  (`StoreProvider` → `composeAppStores`) while the control-plane bundle (`pluginControlPlane.ts`)
-  composes a separate one inline. Routing both through a single `composeAppStores` graph — so the
-  editor and the DAW get/setState path observe one model — is flagged in `appStores.ts` but not
-  done. (The `appStores.ts:14-17` comment still calls the plugin "headless", which is now stale.)
-- **Menu items marked deferred** in [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts):
-  the About panel, the keyboard/gamepad bindings **editor** UI, "Open Settings Folder", and
-  **LSDj Mode** (a feature role with no live-apply path today).
-- **Feature-role config is intentionally not wired to the live core** — a feature role's
-  behaviour is the TS DSP-kernel future, so its config stays pure TS by design. This is the
-  boundary working as intended, not a gap, but the live-apply UI seams above depend on it.
-- The `ui?` field on a `RoleType` (a role's own settings UI) is present in the model but not
-  yet consumed.
+- **The About panel** is the one menu item still marked deferred in
+  [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts). The keyboard/gamepad
+  bindings editor, Open Settings Folder, and the LSDj Mode submenu are all built.
+- The `ui?` field on a `RoleType` (a role's own settings render descriptor) is present in the
+  model but not yet consumed — it is the seam the deferred kit-patch UI will use.
 
-The broader feature gap against legacy and the switchover checklist live in **doc 07** —
-this list is only the TS-layer-local deferrals.
+The store graph is now **unified**: the plugin's control-plane bundle composes the one
+`composeAppStores` graph and publishes it on `globalThis[Symbol.for("plugin")]`, and the editor's
+`StoreProvider` reuses it — so the editor and the DAW get/setState path observe one model. The
+broader remaining feature gaps live in **doc 07**; this list is only the TS-layer-local deferrals.
 
 ---
 

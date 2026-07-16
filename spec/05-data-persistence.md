@@ -1,6 +1,6 @@
 # 05 — Data & Persistence
 
-How RetroPlug2 turns a live session into bytes on disk and back:
+How RetroPlug turns a live session into bytes on disk and back:
 the project model and the `.rplg` file, the plugin's DAW state chunk, the three
 per-user config files, the persistence policy (version stamps + raw-JSON
 migrations), the LSDj `.sav` codec, and the SRAM auto-save policy.
@@ -21,7 +21,7 @@ and **parses** it back. The model lives in
 
 | Type | Fields | Notes |
 |---|---|---|
-| `ProjectConfig` | `schemaVersion: string`, `settings`, `systems[]` | The root; `schemaVersion` is a legacy *string* (`"1"`) |
+| `ProjectConfig` | `schemaVersion: string`, `settings`, `systems[]` | The root; `schemaVersion` is a *string* (`"1"`) for historical reasons |
 | `ProjectSettings` | `layout`, `midiRouting`, `audioRouting` (string enums; see [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), `zoom 0-6` | Three string enums + a `zoom` magnitude (`0` = inherit the user default). Native's numeric enums are recovered at the RPC/kernel boundary |
 | `SystemThin` | `platform`, `romPath?`, `savPath?`, `savSuffix?`, `embeddedRom?`, `settings?`, `roles?` | One serialized system |
 
@@ -118,9 +118,9 @@ Three per-user, machine-global files live under `configDir()` (per-OS:
 `XDG_CONFIG_HOME`/`~/.config/retroplug`, `%APPDATA%\RetroPlug`, or
 `~/Library/Application Support/RetroPlug`; overridable via
 `RETROPLUG_USER_CONFIG_DIR` —
-[HostRpcService.cpp:23](../packages/native/src/HostRpcService.cpp#L23)).
-Each on-disk shape matches the legacy native file so a user's existing configs
-still load.
+[HostRpcService.cpp:23](../packages/native/src/host/rpc/HostRpcService.cpp#L23)).
+Each on-disk shape is version-stamped and forward-tolerant, so an older config
+still loads (migrated up if needed — see the version-stamp policy below).
 
 | File | Model | Stamp const | Shape |
 |---|---|---|---|
@@ -243,11 +243,11 @@ plane; the file-watch side ("watcher = C++, policy = TS") is covered in
 
 - **Standalone disk-wins reopen.** The standalone starts empty (or from
   `RETROPLUG_AUTOLOAD_PROJECT`); reopening the last-saved project from disk on
-  launch is not implemented. See [07-migration.md](07-migration.md).
+  launch is not implemented. See [07-remaining-work.md](07-remaining-work.md).
 - **Kit-patch persistence.** The thin config persists platform, paths, sav
   suffix/override, embedded-ROM marker, non-default universal settings, and
   roles; kit (sample-patch) state is not yet serialized. Rich per-system domains
-  are tracked in [07-migration.md](07-migration.md).
+  are tracked in [07-remaining-work.md](07-remaining-work.md).
 
 ## Key files
 

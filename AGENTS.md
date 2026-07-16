@@ -2,11 +2,11 @@
 
 Start with these — all short:
 
-- [README.md](README.md) — what RetroPlug2 is, how to build, project layout.
+- [README.md](README.md) — what RetroPlug is, how to build, project layout.
 - [spec/](spec/README.md) — the architecture (one doc per concern). The build lives
   in `packages/native/` (C++ host: `src/` core + `src/host/` layer + `plugin/`) +
   `packages/retroplug/` (TS/UI). The older **legacy** build has been removed;
-  [spec/07-migration.md](spec/07-migration.md) tracks the residual cleanup + feature gaps.
+  [spec/07-remaining-work.md](spec/07-remaining-work.md) tracks the residual cleanup + feature gaps.
 - [docs/lsdj.md](docs/lsdj.md) — the LSDj domain reference + how to test LSDj sync /
   DAW timing / audio quality headlessly.
 

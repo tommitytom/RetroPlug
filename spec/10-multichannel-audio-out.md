@@ -1,15 +1,15 @@
 # 10 — Multi-channel audio output (per-console channel stems)
 
-**Status: in progress — the host seam, the SameBoy GB tap, the CLI GB export, the plugin GB option, the
-NES stereo-mod pins, and the NES 5-individual-mono core stems (CLI) are built (§10 steps 1–6, minus the
-per-mapper expansion sub-channels, which remain).** This doc designs outputting the *individual console
-sound channels*
-of a single emulator instance instead of its mixed stereo — 8 outputs for a Game Boy (a stereo pair
-per channel), and 5-plus mono channels / the hardware "stereo-mod" pins for an NES. It is a design
-only; no code exists yet. It builds on [02-native-host.md](02-native-host.md) (the `Engine` /
-`BlockRunner` / `AudioRouter` seam and the `BackendFacade` RPC surface it extends),
-[05-data-persistence.md](05-data-persistence.md) (the project-level `audioRouting` setting it adds a
-value to), and [09-cli-debugging.md](09-cli-debugging.md) (the CLI render + WAV path it extends).
+**Status: built (§10 steps 1–6) — the host seam, the SameBoy GB tap, the CLI GB export, the plugin GB
+option, the NES stereo-mod pins, and the NES 5-individual-mono core stems are all in. The one open
+piece is the per-mapper expansion sub-channels (§3b / [07-remaining-work.md](07-remaining-work.md)).**
+This doc describes outputting the *individual console sound channels* of a single emulator instance
+instead of its mixed stereo — 8 outputs for a Game Boy (a stereo pair per channel), and 5 mono
+channels / the hardware "stereo-mod" pins for an NES. It builds on
+[02-native-host.md](02-native-host.md) (the `Engine` / `BlockRunner` / `AudioRouter` seam and the
+Backend RPC surface it extends), [05-data-persistence.md](05-data-persistence.md) (the project-level
+`audioRouting` setting it adds a value to), and [09-cli-debugging.md](09-cli-debugging.md) (the CLI
+render + WAV path it extends).
 
 The guiding constraint from the request: **make the single Game Boy → 8 outputs case excellent; do
 not generalize** the per-channel path to many instances (the existing per-instance routing modes
@@ -234,9 +234,9 @@ One native pull-path RPC feeds all three export shapes; the WAV writer needs no 
   `std::vector<rfl::Bytestring>` — GB: 4 stereo-interleaved buffers (the source of truth); NES: 5+ mono
   (stems) or 2–3 mono (pins + lumped expansion). Use the **synchronous control-thread pull** path (like
   `renderAudio`), not the free-running audio thread, so it stays deterministic for tests. Wire it the
-  standard way (EngineRpcService decl/impl → `BackendFacade` passthrough → one
-  `server.addMethod<…>()` → an `audioDriver.ts` wrapper returning `Float32Array[]`, mirroring
-  `renderAudioPerSystem`).
+  standard way (EngineRpcService decl/impl → one `addMethod<…>()` in the harness facet
+  ([BackendRpcRegistration.hpp](../packages/native/src/host/rpc/BackendRpcRegistration.hpp)) → an
+  `audioDriver.ts` wrapper returning `Float32Array[]`, mirroring `renderAudioPerSystem`).
 - **Three shapes — pure TS over the buffer set.** `encodeWav` ([wav.ts](../packages/retroplug/src))
   already derives `NumChannels`/`ByteRate`/`BlockAlign` from a `channels` arg, so N-channel output
   works with no writer change:
@@ -353,7 +353,7 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    `processBlockPerSystem`, single-system, keeping the kernel/MIDI pipeline) + `EngineRpcService::
    renderAudioPerChannel(id, ms)` (gated `systemCount()==1`, sized from the target's `channelLayout()`,
    returns one interleaved-stereo `Bytestring` per stream) + a `sampleRate()` query, all wired through
-   `BackendFacade` / `BackendRpcRegistration` and `audioDriver.ts`. `export-mgb-channels.ts` emits the 3
+   the harness facet (`BackendRpcRegistration`) and `audioDriver.ts`. `export-mgb-channels.ts` emits the 3
    shapes (`interleaveStereoStreams` → one 8-ch WAV; per-stream stereo → 4 WAVs; `deinterleaveStereo` →
    8 mono WAVs) at the real `sampleRate()`. Guards: `wav.test.ts` (8-channel encode/decode round-trip +
    the interleave/deinterleave helpers) and `app-play-mgb-channels.test.ts` (RPC shape + real channel

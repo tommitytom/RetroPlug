@@ -1,6 +1,6 @@
 # 04 — Roles & the DSP kernel
 
-Roles are how RetroPlug2 attaches *meaning* to a system without teaching the C++ cores anything.
+Roles are how RetroPlug attaches *meaning* to a system without teaching the C++ cores anything.
 A role is a `{ kind, config }` pair keyed by a string; the core treats `config` as an opaque
 per-kind blob. Everything specific to a system — a backend's emulator knobs, or an optional
 feature like LSDj sync or mGB passthrough — is a role, so the cores stay free of backend/LSDj/mGB
@@ -141,7 +141,7 @@ behaviours over the per-system context:
 | Role | Scope | Behaviour |
 |---|---|---|
 | `mgb` | system | forward every host-MIDI byte verbatim into the system's serial input |
-| `lsdj-sync` | system | dispatches on `config.mode` (LsdjSyncMode): MidiSync (24-PPQN `0xF8` clock, `tempoDivisor`-subdivided), MidiSyncArduinoboy (note-driven play/divisor + `0xFA`/`0xFC` transport bookends), MidiMap (row bytes + `0xFE`), KeyboardMidi (PS/2 scancodes), MidiPassthrough (raw bytes → serial); Off/Keyboard/ArduinoboyMaster emit nothing. Keeps cross-block scratch via `ctx.state`. Has the `lsdjSeedSav` `onConstruct` hook |
+| `lsdj-sync` | system | dispatches on `config.mode` (LsdjSyncMode): MidiSync (24-PPQN `0xF8` clock, `tempoDivisor`-subdivided), MidiSyncArduinoboy (note-driven play/divisor + `0xFA`/`0xFC` transport bookends), MidiMap (row bytes + `0xFE`), KeyboardMidi (PS/2 scancodes), MidiPassthrough (raw bytes → serial), MidiOut (ArduinoboyMaster: emulator serial-out → decode → `emitMidiOut`), MasterSync (LSDj self-clock → host MIDI); Off/Keyboard emit nothing. Keeps cross-block scratch via `ctx.state`. Has the `lsdjSeedSav` `onConstruct` hook |
 | `midi-routing` | project | fans the block's global `midiIn` into per-system inboxes, reusing the pure `routeBlock` decision ([midiRouting.ts](../packages/retroplug/src/midiRouting.ts)) |
 
 ## Which config reaches the live core
@@ -157,7 +157,7 @@ Two channels cross the RPC boundary to a running emulator, and no feature-role c
 [`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L329) merges the
 partial, re-parses through the role schema, and calls `backend.applyRoleConfig` **only when the role's
 `category === "system"`**. On the native side
-[`EngineRpcService::applyRoleConfig`](../packages/native/src/EngineRpcService.cpp#L111)
+[`EngineRpcService::applyRoleConfig`](../packages/native/src/host/rpc/EngineRpcService.cpp#L111)
 accepts `kind == "sameboy"` only, decodes the whole role config, and pushes Model/Highpass/LinkGroup/
 FastBoot as guarded config fields (an unchanged field is a no-op, so moving `highpass` never triggers
 a spurious model restart).
@@ -167,7 +167,7 @@ A **feature**-role config edit takes a different path: `setRoleConfig` updates T
 ([projectStore.ts:62](../packages/retroplug/src/projectStore.ts#L62)) → `syncDspFromStore`,
 re-pushing the whole `KernelStructure` (its config rides inside the JSON). The core is never told. (A
 menu/UI to *trigger* an LSDj-mode edit live is still a gap — see
-[07-migration.md](07-migration.md).)
+[07-remaining-work.md](07-remaining-work.md).)
 
 ## The DSP kernel
 
@@ -271,7 +271,7 @@ per structure change) and `processBlock(input)` (once per audio block).
 **Native runner** — `DspRuntime` (C++, see [02-native-host.md](02-native-host.md)) loads the bytecode
 (`loadKernel` = `JS_ReadObject` + `JS_EvalFunction`; re-loading hot-swaps the kernel), binds the three
 sink thunks, and drives `processBlock` per block.
-[`Engine::processBlock`](../packages/native/src/Engine.cpp#L74) wires it in: when the DSP
+[`Engine::processBlock`](../packages/native/src/host/engine/Engine.cpp#L74) wires it in: when the DSP
 stage is active it builds a `BlockInfo` at the block-start `ppq_`, runs the kernel, then fans the
 system-addressed sinks to cores — `serialIn_` → each addressed core's serial FIFO, `buttonOut_` →
 `pressButton` — before the block renders. The kernel's host `midiOut_` is drained by the plugin after
@@ -289,20 +289,17 @@ define), then `project.setOnSystemsChange(() => syncDspFromStore(project, dsp))`
 
 ## Not yet built / deferred
 
-Only the pieces below are open; the [07-migration.md](07-migration.md) doc is the authoritative
+Only the pieces below are open; the [07-remaining-work.md](07-remaining-work.md) doc is the authoritative
 inventory of remaining work.
 
-- **The two host-I/O LSDj modes.** `lsdj-sync` authors the four MIDI-in modes (MidiSyncArduinoboy,
-  MidiMap, KeyboardMidi, MidiPassthrough) plus MidiSync, backed by the `ctx.state` scratch bag and a
-  live-apply menu. Still open: raw **Keyboard** mode (needs the `keys` feed, below) and
-  **ArduinoboyMaster** MI.OUT (needs serial-out fed into the block, below).
-- **Keyboard behaviour.** The kernel carries a `keys` input and per-system filtering, but no built-in
-  role turns raw keys into serial (LSDj keyboard mode). The live `Engine` path currently feeds only
-  host MIDI into the kernel (`kNoButtons`/`kNoKeys`), so the `buttons`/`keys` ABI is present but not yet
-  marshalled from the running host.
-- **Host-out MIDI + serial-out-in.** The `emitMidiOut` sink exists but no built-in role drives it. The
-  ArduinoboyMaster MI.OUT direction (emulator serial-out → decode → host MIDI) additionally needs the
-  emulator's serial-*out* fed **into** the block, which the kernel input doesn't yet carry.
+- **Raw Keyboard mode is the one unbuilt LSDj sync mode.** `lsdj-sync` authors every other mode —
+  MidiSync, MidiSyncArduinoboy, MidiMap, KeyboardMidi, MidiPassthrough, and the two host-out
+  directions **MidiOut** (ArduinoboyMaster MI.OUT, `emulator serial-out → decode → emitMidiOut`) and
+  **MasterSync** — backed by the `ctx.state` scratch bag and a live-apply menu. Raw **Keyboard**
+  (mode 4) still emits nothing: it needs the per-block `keys` feed (below).
+- **Per-block buttons/keys aren't fed yet.** The kernel carries `buttons`/`keys` inputs and per-system
+  filtering, but the live `Engine` path feeds only host MIDI (`kNoButtons`/`kNoKeys`), so the ABI is
+  present but not marshalled from the running host — which is what blocks raw Keyboard mode.
 - **kit-patch UI-thread behaviour.** LSDj kit-patch runs entirely on the UI / control thread: it
   compiles the kit (over the native `KitCompiler` primitives) and writes the already-patched memory
   regions **into the core**. It has **no DSP-kernel component** and does not use the byte-sink ABI
@@ -336,9 +333,9 @@ TypeScript ([packages/retroplug/src/](../packages/retroplug/src/)):
 
 Native ([packages/native/src/](../packages/native/src/)):
 
-- [DspRuntime.hpp](../packages/native/src/DspRuntime.hpp) /
-  [DspRuntime.cpp](../packages/native/src/DspRuntime.cpp) — the bare-context runner + sink
+- [DspRuntime.hpp](../packages/native/src/host/dsp/DspRuntime.hpp) /
+  [DspRuntime.cpp](../packages/native/src/host/dsp/DspRuntime.cpp) — the bare-context runner + sink
   thunks.
-- [Engine.cpp](../packages/native/src/Engine.cpp#L74) — per-block wiring + sink-to-core fan.
-- [EngineRpcService.cpp](../packages/native/src/EngineRpcService.cpp#L111) — `applyRoleConfig`
+- [Engine.cpp](../packages/native/src/host/engine/Engine.cpp#L74) — per-block wiring + sink-to-core fan.
+- [EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp#L111) — `applyRoleConfig`
   (system-role only), `compileScript` / `dspLoadKernel` / `dspSetSystems`.
