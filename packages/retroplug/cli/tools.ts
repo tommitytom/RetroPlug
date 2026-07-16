@@ -32,7 +32,7 @@ export function topLevelHelp(list: CliTool[], versionLine: string): string {
     versionLine,
     "",
     "usage: retroplug-cli <command> [args...]",
-    "       retroplug-cli <session.js> [args...]   (run a TS-authored session by path)",
+    "       retroplug-cli <session.js> [args...]   (run a JavaScript session file by path)",
     "",
     "commands:",
     commands,

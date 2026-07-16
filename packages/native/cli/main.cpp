@@ -2,7 +2,7 @@
 // binary embeds the txiki host + the emulator cores and returns the session's exit code.
 //
 //   retroplug-cli <command> [args...]     run a baked-in command (render, …) via the TS dispatcher
-//   retroplug-cli <session.js> [args...]  run a TS-authored session by path
+//   retroplug-cli <session.js> [args...]  run a JavaScript session file by path
 //
 // This launcher is deliberately dumb about commands: it evals the compiled-in root dispatcher bundle
 // (cli/cli.ts → rp_cli_bundle) for anything that isn't a `.js` file path, passing the FULL arg vector so

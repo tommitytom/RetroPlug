@@ -36,9 +36,10 @@ const RENDER_HINT = "run 'retroplug-cli render --help' for the full options";
 /** The detailed `render --help` text (CliTool.help). Explains every flag, its default, and its constraints. */
 export const RENDER_HELP = `usage: retroplug-cli render <rom> [options]
 
-Render a Game Boy (.gb/.gbc), NES (.nes) or GBA (.gba) ROM to a WAV file. The ROM is booted, Start is
-pressed so a saved song plays (LSDj / mGB), and the audio is written to disk. With a loaded LSDj .sav the
-song length is auto-detected (rendered up to the HFF stop) unless you pin a fixed length with --duration.
+Render a Game Boy (.gb/.gbc), NES (.nes) or GBA (.gba) ROM to a WAV file. The ROM is booted and its audio
+is written to disk. For a saved LSDj song, Start is pressed so it begins playing (use --no-start to capture
+raw boot audio); mGB needs no such press, as it plays from incoming MIDI. With a loaded LSDj .sav the song
+length is auto-detected (rendered up to the HFF stop) unless you pin a fixed length with --duration.
 
 Durations accept a unit: 500ms, 3s, 2m (decimals ok, e.g. 1.5s); a bare number is milliseconds.
 
