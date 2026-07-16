@@ -1,0 +1,14 @@
+[submodule "deps/catch2"]
+	path = deps/catch2
+	url = https://github.com/catchorg/Catch2.git
+	branch = devel
+[submodule "deps/sameboy"]
+	path = deps/sameboy
+	url = https://github.com/LIJI32/SameBoy.git
+[submodule "deps/efsw"]
+	path = deps/efsw
+	url = https://github.com/SpartanJ/efsw.git
+[submodule "deps/dpf.js"]
+	path = deps/dpf.js
+	url = git@github.com:tommitytom/dpf.js.git
+	branch = main

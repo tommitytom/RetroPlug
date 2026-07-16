@@ -1,0 +1,270 @@
+name: build
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The dpf.js submodule (and its nested submodules) use SSH URLs; the
+          # runner has no SSH key. Init them ourselves after rewriting to HTTPS.
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libgl-dev libglu1-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxext-dev libxinerama-dev \
+            libdbus-1-dev libasound2-dev libjack-jackd2-dev \
+            libcurl4-openssl-dev libffi-dev libssl-dev \
+            libsdl2-dev \
+            xvfb
+
+      - name: Install RGBDS (boot-ROM assembler)
+        run: |
+          set -eux
+          tmp="$(mktemp -d)"; cd "$tmp"
+          curl -fsSL "https://github.com/gbdev/rgbds/releases/download/v1.0.1/rgbds-linux-x86_64.tar.xz" -o rgbds.tar.xz
+          tar -xJf rgbds.tar.xz
+          sudo install -m 0755 rgbasm rgblink rgbgfx rgbfix /usr/local/bin/
+          rgbasm --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          pnpm install --frozen-lockfile
+          # The UI bundle's react/react-reconciler/lvgljs-ui live in
+          # lv_binding_js's own workspace (deps/ is excluded from the root
+          # workspace), so it needs its own install (see AGENTS.md).
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Build
+        run: ./build.sh
+
+      - name: TS tests
+        run: pnpm test
+
+      - name: Native tests (real host + emulator cores)
+        run: pnpm test:native
+
+      - name: Plugin unit tests (Catch2)
+        run: pnpm test:plugin
+
+      - name: UI tests (headless LVGL)
+        run: pnpm test:ui
+
+      - name: Install plugin-format validators
+        run: |
+          set -eux
+          tmp="$(mktemp -d)"
+          cd "$tmp"
+          curl -fsSL "https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Linux.zip" -o pv.zip
+          unzip -q pv.zip
+          sudo install -m 0755 pluginval /usr/local/bin/pluginval
+          curl -fsSL "https://github.com/free-audio/clap-validator/releases/download/0.3.2/clap-validator-0.3.2-ubuntu-18.04.tar.gz" -o cv.tgz
+          tar -xzf cv.tgz
+          sudo install -m 0755 clap-validator /usr/local/bin/clap-validator
+          pluginval --version
+          clap-validator --version
+
+      - name: Validate plugins
+        run: xvfb-run -a pnpm validate
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-linux-x86_64
+          if-no-files-found: warn
+          path: |
+            build/bin/retroplug
+            build/bin/retroplug-cli
+            build/bin/retroplug.clap
+            build/bin/retroplug.vst3
+            build/bin/retroplug-vst2.so
+
+  windows:
+    runs-on: windows-2022
+    env:
+      # build.bat defaults VCPKG_ROOT to C:\code\vcpkg; point it at the runner's
+      # preinstalled vcpkg. RGBDS_DIR is set later once RGBDS is extracted.
+      VCPKG_ROOT: C:\vcpkg
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        shell: bash
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Install workspace deps (pnpm)
+        shell: bash
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Install RGBDS (boot-ROM assembler)
+        shell: pwsh
+        run: |
+          $ver = "v1.0.1"
+          Invoke-WebRequest "https://github.com/gbdev/rgbds/releases/download/$ver/rgbds-win64.zip" -OutFile rgbds.zip
+          Expand-Archive rgbds.zip -DestinationPath "$env:RUNNER_TEMP\rgbds"
+          # build.bat prepends %RGBDS_DIR% to PATH so find_program locates rgbasm/rgblink/rgbgfx.
+          "RGBDS_DIR=$env:RUNNER_TEMP\rgbds" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Cache vcpkg installed packages
+        uses: actions/cache@v6
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-static-sdl2-libffi-${{ runner.os }}
+
+      - name: Install vcpkg dependencies (x64-windows-static)
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install sdl2:x64-windows-static libffi:x64-windows-static
+
+      - name: Build
+        shell: cmd
+        run: build.bat
+
+      # test.bat enters the MSVC env itself (GitHub Actions does not persist the
+      # env build.bat set up into later steps) and runs the suites via pnpm.
+      - name: Test suites (ts / native / plugin / ui)
+        shell: cmd
+        run: test.bat
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-windows-x86_64
+          if-no-files-found: warn
+          path: |
+            build/bin/retroplug.exe
+            build/bin/retroplug-cli.exe
+            build/bin/retroplug.clap
+            build/bin/retroplug.vst3
+            build/bin/retroplug-vst2.dll
+
+  # Universal (arm64 + x86_64) macOS build on macos-14. Building both slices on
+  # every PR gives x86_64 compile coverage without a native Intel runner (the
+  # macos-13 Intel runners are effectively unavailable). Tests run against the
+  # native arm64 slice. Matches release.yml's universal recipe: libffi comes
+  # from the (universal) macOS SDK — do NOT `brew install libffi` (single-arch,
+  # would shadow it); SDL2 comes from the official universal framework.
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Install build dependencies (Homebrew)
+        run: brew install ninja pkg-config rgbds
+
+      - name: Install universal SDL2.framework
+        run: |
+          set -eux
+          ver="2.32.10"
+          tmp="$(mktemp -d)"
+          curl -fsSL "https://github.com/libsdl-org/SDL/releases/download/release-${ver}/SDL2-${ver}.dmg" -o "$tmp/SDL2.dmg"
+          hdiutil attach "$tmp/SDL2.dmg" -nobrowse -quiet -mountpoint "$tmp/mnt"
+          lipo -info "$tmp/mnt/SDL2.framework/SDL2"
+          mkdir -p "$HOME/Library/Frameworks"
+          cp -R "$tmp/mnt/SDL2.framework" "$HOME/Library/Frameworks/"
+          hdiutil detach "$tmp/mnt" -quiet
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Configure + build (universal)
+        run: |
+          set -eux
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DRETROPLUG_SDL2_FRAMEWORK=ON
+          cmake --build build -j"$(sysctl -n hw.ncpu)"
+
+      - name: Verify universal slices
+        run: |
+          set -eux
+          for f in build/bin/RetroPlug.app/Contents/MacOS/RetroPlug \
+                   build/bin/retroplug-cli \
+                   build/bin/retroplug.clap/Contents/MacOS/retroplug \
+                   build/bin/retroplug.vst3/Contents/MacOS/retroplug \
+                   build/bin/retroplug.component/Contents/MacOS/retroplug \
+                   build/bin/retroplug.vst/Contents/MacOS/retroplug; do
+            lipo -archs "$f" | grep -q x86_64
+            lipo -archs "$f" | grep -q arm64
+          done
+
+      - name: TS tests
+        run: pnpm test
+
+      - name: Native tests (real host + emulator cores)
+        run: pnpm test:native
+
+      - name: Plugin unit tests (Catch2)
+        run: pnpm test:plugin
+
+      - name: UI tests (headless LVGL)
+        run: pnpm test:ui
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-macos-universal
+          if-no-files-found: warn
+          path: |
+            build/bin/RetroPlug.app
+            build/bin/retroplug-cli
+            build/bin/retroplug.clap
+            build/bin/retroplug.vst3
+            build/bin/retroplug.component
+            build/bin/retroplug.vst

@@ -1,0 +1,119 @@
+#pragma once
+// Force-included via -include on Mesen TUs that pull in miniz.h. Mesen
+// vendors miniz v1.15 (2013); txiki vendors v3.1.0. The two have different
+// `mz_zip_archive` layouts and would corrupt memory if linked side-by-side
+// without isolation. Renaming Mesen's `mz_*` symbols to `mesen_mz_*` keeps
+// each library's calls bound to its own implementation.
+//
+// To regenerate: `grep -oE '\bmz_[a-zA-Z_0-9]+\b' miniz.h | sort -u | awk
+// '{ printf "#define %s mesen_%s\n", $1, $1 }'`
+
+#define mz_adler32 mesen_mz_adler32
+#define mz_alloc_func mesen_mz_alloc_func
+#define mz_bool mesen_mz_bool
+#define mz_compress mesen_mz_compress
+#define mz_compress2 mesen_mz_compress2
+#define mz_compressBound mesen_mz_compressBound
+#define mz_crc32 mesen_mz_crc32
+#define mz_deflate mesen_mz_deflate
+#define mz_deflateBound mesen_mz_deflateBound
+#define mz_deflateEnd mesen_mz_deflateEnd
+#define mz_deflateInit mesen_mz_deflateInit
+#define mz_deflateInit2 mesen_mz_deflateInit2
+#define mz_deflateReset mesen_mz_deflateReset
+#define mz_error mesen_mz_error
+#define mz_file_read_func mesen_mz_file_read_func
+#define mz_file_write_func mesen_mz_file_write_func
+#define mz_free mesen_mz_free
+#define mz_free_func mesen_mz_free_func
+#define mz_inflate mesen_mz_inflate
+#define mz_inflateEnd mesen_mz_inflateEnd
+#define mz_inflateInit mesen_mz_inflateInit
+#define mz_inflateInit2 mesen_mz_inflateInit2
+#define mz_int16 mesen_mz_int16
+#define mz_int64 mesen_mz_int64
+#define mz_internal_state mesen_mz_internal_state
+#define mz_realloc_func mesen_mz_realloc_func
+#define mz_stream mesen_mz_stream
+#define mz_stream_s mesen_mz_stream_s
+#define mz_streamp mesen_mz_streamp
+#define mz_uint mesen_mz_uint
+#define mz_uint16 mesen_mz_uint16
+#define mz_uint32 mesen_mz_uint32
+#define mz_uint64 mesen_mz_uint64
+#define mz_uint8 mesen_mz_uint8
+#define mz_ulong mesen_mz_ulong
+#define mz_uncompress mesen_mz_uncompress
+#define mz_version mesen_mz_version
+#define mz_zip_add_mem_to_archive_file_in_place mesen_mz_zip_add_mem_to_archive_file_in_place
+#define mz_zip_archive mesen_mz_zip_archive
+#define mz_zip_archive_file_stat mesen_mz_zip_archive_file_stat
+#define mz_zip_archive_tag mesen_mz_zip_archive_tag
+#define mz_zip_extract_archive_file_to_heap mesen_mz_zip_extract_archive_file_to_heap
+#define mz_zip_flags mesen_mz_zip_flags
+#define mz_zip_internal_state mesen_mz_zip_internal_state
+#define mz_zip_internal_state_tag mesen_mz_zip_internal_state_tag
+#define mz_zip_mode mesen_mz_zip_mode
+#define mz_zip_reader mesen_mz_zip_reader
+#define mz_zip_reader_end mesen_mz_zip_reader_end
+#define mz_zip_reader_extract_file_to_callback mesen_mz_zip_reader_extract_file_to_callback
+#define mz_zip_reader_extract_file_to_file mesen_mz_zip_reader_extract_file_to_file
+#define mz_zip_reader_extract_file_to_heap mesen_mz_zip_reader_extract_file_to_heap
+#define mz_zip_reader_extract_file_to_mem mesen_mz_zip_reader_extract_file_to_mem
+#define mz_zip_reader_extract_file_to_mem_no_alloc mesen_mz_zip_reader_extract_file_to_mem_no_alloc
+#define mz_zip_reader_extract_to_callback mesen_mz_zip_reader_extract_to_callback
+#define mz_zip_reader_extract_to_file mesen_mz_zip_reader_extract_to_file
+#define mz_zip_reader_extract_to_heap mesen_mz_zip_reader_extract_to_heap
+#define mz_zip_reader_extract_to_mem mesen_mz_zip_reader_extract_to_mem
+#define mz_zip_reader_extract_to_mem_no_alloc mesen_mz_zip_reader_extract_to_mem_no_alloc
+#define mz_zip_reader_file_stat mesen_mz_zip_reader_file_stat
+#define mz_zip_reader_get_filename mesen_mz_zip_reader_get_filename
+#define mz_zip_reader_get_num_files mesen_mz_zip_reader_get_num_files
+#define mz_zip_reader_init mesen_mz_zip_reader_init
+#define mz_zip_reader_init_file mesen_mz_zip_reader_init_file
+#define mz_zip_reader_init_mem mesen_mz_zip_reader_init_mem
+#define mz_zip_reader_is_file_a_directory mesen_mz_zip_reader_is_file_a_directory
+#define mz_zip_reader_is_file_encrypted mesen_mz_zip_reader_is_file_encrypted
+#define mz_zip_reader_locate_file mesen_mz_zip_reader_locate_file
+#define mz_zip_writer mesen_mz_zip_writer
+#define mz_zip_writer_add_file mesen_mz_zip_writer_add_file
+#define mz_zip_writer_add_from_zip_reader mesen_mz_zip_writer_add_from_zip_reader
+#define mz_zip_writer_add_mem mesen_mz_zip_writer_add_mem
+#define mz_zip_writer_add_mem_ex mesen_mz_zip_writer_add_mem_ex
+#define mz_zip_writer_end mesen_mz_zip_writer_end
+#define mz_zip_writer_finalize_archive mesen_mz_zip_writer_finalize_archive
+#define mz_zip_writer_finalize_heap_archive mesen_mz_zip_writer_finalize_heap_archive
+#define mz_zip_writer_init mesen_mz_zip_writer_init
+#define mz_zip_writer_init_file mesen_mz_zip_writer_init_file
+#define mz_zip_writer_init_from_reader mesen_mz_zip_writer_init_from_reader
+#define mz_zip_writer_init_heap mesen_mz_zip_writer_init_heap
+
+// tdefl_* (deflate) and tinfl_* (inflate) — also collide with txiki's miniz.
+#define tdefl_compress mesen_tdefl_compress
+#define tdefl_compress_buffer mesen_tdefl_compress_buffer
+#define tdefl_compress_mem_to_heap mesen_tdefl_compress_mem_to_heap
+#define tdefl_compress_mem_to_mem mesen_tdefl_compress_mem_to_mem
+#define tdefl_compress_mem_to_output mesen_tdefl_compress_mem_to_output
+#define tdefl_compressor mesen_tdefl_compressor
+#define tdefl_create_comp_flags_from_zip_params mesen_tdefl_create_comp_flags_from_zip_params
+#define tdefl_flush mesen_tdefl_flush
+#define tdefl_get_adler32 mesen_tdefl_get_adler32
+#define tdefl_get_prev_return_status mesen_tdefl_get_prev_return_status
+#define tdefl_init mesen_tdefl_init
+#define tdefl_put_buf_func_ptr mesen_tdefl_put_buf_func_ptr
+#define tdefl_status mesen_tdefl_status
+#define tdefl_write_image_to_png_file_in_memory mesen_tdefl_write_image_to_png_file_in_memory
+#define tdefl_write_image_to_png_file_in_memory_ex mesen_tdefl_write_image_to_png_file_in_memory_ex
+#define tinfl_bit_buf_t mesen_tinfl_bit_buf_t
+#define tinfl_decompress mesen_tinfl_decompress
+#define tinfl_decompress_mem_to_callback mesen_tinfl_decompress_mem_to_callback
+#define tinfl_decompress_mem_to_heap mesen_tinfl_decompress_mem_to_heap
+#define tinfl_decompress_mem_to_mem mesen_tinfl_decompress_mem_to_mem
+#define tinfl_decompressor mesen_tinfl_decompressor
+#define tinfl_decompressor_tag mesen_tinfl_decompressor_tag
+// tinfl_get_adler32 and tinfl_init are #defined as inline macros in miniz.h
+// itself, so renaming them here would just produce -Wmacro-redefined noise.
+// Leave them macro-defined.
+#define tinfl_huff_table mesen_tinfl_huff_table
+#define tinfl_put_buf_func_ptr mesen_tinfl_put_buf_func_ptr
+#define tinfl_status mesen_tinfl_status

@@ -1,0 +1,66 @@
+const path = require("path");
+const fs = require("fs");
+const {
+    esbuild,
+    REPO_ROOT,
+    reactNodePath,
+    uiAliases,
+    commonDefine,
+    bundleMainFields,
+    quickjsTarget,
+    writeDepfile,
+    WORKSPACE_NODE_MODULES,
+} = require("./esbuild-shared");
+
+// Args from CMake (or default to writing into ../build/ui/ for ad-hoc runs).
+//   node build-ui.js <bundle.js> [bundle.d] [ui-entry.tsx]
+// The UI entry is a consumer-owned build input (the framework doesn't hardcode
+// it); CMake passes the RetroPlug entry, ad-hoc runs default to it.
+// Bytecode compilation (bundle.js → bundle_data.c) is a separate step
+// driven by CMake via txiki's `tjsc` binary.
+const bundleArg = process.argv[2];
+const depArg    = process.argv[3];
+const entryArg  = process.argv[4];
+
+const bundlePath = bundleArg
+    ? path.resolve(bundleArg)
+    : path.resolve(REPO_ROOT, "build/ui/bundle.js");
+
+const entryPath = entryArg
+    ? path.resolve(entryArg)
+    : path.resolve(REPO_ROOT, "packages/ui/src/PluginUI.tsx");
+
+fs.mkdirSync(path.dirname(bundlePath), { recursive: true });
+
+esbuild
+    .build({
+        entryPoints: [entryPath],
+        bundle: true,
+        platform: "neutral",          // default format is ESM, which tjsc consumes
+        mainFields: bundleMainFields, // neutral has none by default; see esbuild-shared
+        target: quickjsTarget,
+        absWorkingDir: REPO_ROOT,     // native alias values resolve vs the working dir
+        external: ["tjs:path"],
+        jsx: "automatic",
+        outfile: bundlePath,
+        // react / react-reconciler / scheduler resolve from the dpf.js
+        // lv_binding_js node_modules; @msgpack (imported by the dpf.js-resident
+        // rpcpp client) and zod resolve from the consumer's node_modules.
+        nodePaths: [reactNodePath, WORKSPACE_NODE_MODULES],
+        alias: uiAliases,
+        define: commonDefine,
+        metafile: true,
+    })
+    .then((result) => {
+        console.log(`UI bundle built: ${bundlePath}`);
+
+        if (depArg) {
+            const depPath = path.resolve(depArg);
+            fs.mkdirSync(path.dirname(depPath), { recursive: true });
+            writeDepfile(depPath, bundlePath, result.metafile);
+        }
+    })
+    .catch((e) => {
+        console.error(e);
+        process.exit(1);
+    });

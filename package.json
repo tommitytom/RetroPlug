@@ -1,0 +1,49 @@
+{
+  "name": "retroplug2-ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "RetroPlug workspace root: the JS build toolchain (esbuild) and the runtime deps bundled into the UI.",
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=18.12"
+  },
+  "scripts": {
+    "configure": "cmake -S . -B build",
+    "build": "node scripts/cmake-build.js",
+    "build:cli-sdk": "node tools/build-cli-sdk.mjs",
+    "sync:evermidi": "tools/sync-cli-to-evermidi.sh",
+    "typecheck": "pnpm -r typecheck",
+    "test": "node scripts/cmake-build.js tjs-cli && node packages/retroplug/scripts/run-tests.mjs",
+    "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
+    "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node packages/retroplug/scripts/run-ui-tests.mjs",
+    "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-classid-test retroplug-audio-test && node packages/retroplug/scripts/run-plugin-tests.mjs",
+    "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
+    "profile": "tools/run-profile.sh stats",
+    "validate": "node scripts/cmake-build.js retroplug-clap retroplug-vst3 && tools/validate-plugins.sh",
+    "reaper:headless": "tools/run-reaper-headless.sh",
+    "reaper:mgb-smoke-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && tools/run-reaper-author.sh examples/reaper/mgb_smoke.rpp build tools/reaper-mgb-author.lua build/mgb.rplg.zip",
+    "reaper:mgb-smoke": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && tools/run-reaper-render.sh examples/reaper/mgb_smoke.rpp build/mgb.rplg.zip",
+    "reaper:analyze-smoke": "node scripts/cmake-build.js retroplug-cli retroplug-example-session && RETROPLUG_USER_CONFIG_DIR=/tmp/cli-analyze build/bin/retroplug-cli build/cli/analyze-mgb.js /tmp/cli-smoke.wav && tools/reaper-stage.sh /tmp/cli-smoke.wav",
+    "cli:export-mgb-channels": "node scripts/cmake-build.js retroplug-cli retroplug-example-session && RETROPLUG_USER_CONFIG_DIR=/tmp/cli-chan build/bin/retroplug-cli build/cli/export-mgb-channels.js /tmp/mgb-channels",
+    "cli:render-smoke": "node scripts/cmake-build.js retroplug-cli && RETROPLUG_USER_CONFIG_DIR=/tmp/cli-render build/bin/retroplug-cli render resources/roms/mGB.gb --out /tmp/render-smoke.wav --duration 500ms && node -e \"const b=require('fs').readFileSync('/tmp/render-smoke.wav');if(b.length<45||b.toString('ascii',0,4)!=='RIFF'||b.toString('ascii',8,12)!=='WAVE')throw new Error('not a valid WAV');console.log('cli:render-smoke OK ('+b.length+' bytes)')\"",
+    "cli:render-list-songs": "node scripts/cmake-build.js retroplug-cli && RETROPLUG_USER_CONFIG_DIR=/tmp/cli-render build/bin/retroplug-cli render resources/roms/mGB.gb --sav packages/retroplug/test/lsdj/savs/all.sav --list-songs | node -e \"const s=require('fs').readFileSync(0,'utf8');if(!/0: HAPPY BD/.test(s)||!/1: YOURULE/.test(s))throw new Error('missing expected song names in:\\n'+s);console.log('cli:render-list-songs OK')\"",
+    "reaper:analyze-lsdj-sync": "node scripts/cmake-build.js retroplug-cli retroplug-example-session && RETROPLUG_USER_CONFIG_DIR=/tmp/cli-analyze build/bin/retroplug-cli build/cli/analyze-lsdj-sync.js ../resources/roms/lsdj/lsdj9_4_2.gb /tmp/lsdj-sync-pattern && tools/reaper-stage.sh /tmp/lsdj-sync-pattern_sys0.wav /tmp/lsdj-sync-pattern_sys1.wav",
+    "reaper:lsdj-midi-metro-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js midi-metro && RP_SCENARIO=midi-metro tools/run-reaper-author.sh examples/reaper/lsdj_midi_metro.rpp build tools/reaper-lsdj-author.lua build/lsdj_midi-metro.rplg.zip",
+    "reaper:lsdj-midi-metro": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js midi-metro && tools/run-reaper-render.sh examples/reaper/lsdj_midi_metro.rpp build/lsdj_midi-metro.rplg.zip && tools/reaper-timing-analyze.py build/reaper-lsdj-midi-metro.wav",
+    "reaper:lsdj-arduinoboy-metro-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js arduinoboy-metro && RP_SCENARIO=arduinoboy-metro tools/run-reaper-author.sh examples/reaper/lsdj_arduinoboy_metro.rpp build tools/reaper-lsdj-author.lua build/lsdj_arduinoboy-metro.rplg.zip",
+    "reaper:lsdj-arduinoboy-metro": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js arduinoboy-metro && tools/run-reaper-render.sh examples/reaper/lsdj_arduinoboy_metro.rpp build/lsdj_arduinoboy-metro.rplg.zip && tools/reaper-timing-analyze.py build/reaper-lsdj-arduinoboy-metro.wav",
+    "reaper:lsdj-midi-drift-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js midi-drift && RP_SCENARIO=midi-drift tools/run-reaper-author.sh examples/reaper/lsdj_midi_drift.rpp build tools/reaper-lsdj-author.lua build/lsdj_midi-drift.rplg.zip",
+    "reaper:lsdj-midi-drift": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js midi-drift && tools/run-reaper-render.sh examples/reaper/lsdj_midi_drift.rpp build/lsdj_midi-drift.rplg.zip && tools/reaper-timing-analyze.py build/reaper-lsdj-midi-drift.wav --drift",
+    "reaper:editor": "node scripts/cmake-build.js retroplug-vst3 && tools/run-reaper-editor.sh",
+    "reaper:editor-reopen": "node scripts/cmake-build.js retroplug-vst3 && tools/run-reaper-editor-reopen.sh",
+    "reaper:editor-autoload": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && tools/run-reaper-editor-autoload.sh"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "^3.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "dpf.js": "link:./deps/dpf.js",
+    "esbuild": "^0.28"
+  }
+}

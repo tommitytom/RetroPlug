@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#
+# Query the LSDj manual index. Thin wrapper that activates `tools/.venv` and
+# forwards args to `tools/lsdj-manual.py search ...`.
+#
+# Usage:
+#   tools/lsdj-search "midi sync mode"
+#   tools/lsdj-search --mode vec "how do two units stay in time"
+#   tools/lsdj-search --show-images "PROJECT screen"
+#
+# Run `tools/lsdj-manual-setup.sh` once before first use.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PY="$ROOT/tools/.venv/bin/python3"
+
+if [ ! -x "$PY" ]; then
+    echo "error: tools/.venv is missing. Run tools/lsdj-manual-setup.sh first." >&2
+    exit 1
+fi
+
+exec "$PY" "$ROOT/tools/lsdj-manual.py" search "$@"

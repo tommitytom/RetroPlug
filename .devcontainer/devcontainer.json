@@ -1,0 +1,46 @@
+{
+  "name": "RetroPlug2",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "CONTAINER_APT_PROXY": "${localEnv:CONTAINER_APT_PROXY}"
+    }
+  },
+  "workspaceMount": "source=${localWorkspaceFolder}/..,target=/workspaces,type=bind,consistency=cached",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "shutdownAction": "none",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": false
+    }
+  },
+  // Claude Code state lives in /workspaces/.claude on the host (the workspace
+  // bind mount one level above the repo), so it survives rebuilds without a
+  // Docker volume. post-create.sh symlinks ~/.claude and ~/.claude.json to it.
+  "containerEnv": {
+    "TZ": "${localEnv:TZ}"
+  },
+  "runArgs": [
+    "--init",
+    "--shm-size=512m",
+    "--ulimit",
+    "memlock=-1:-1"
+  ],
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "twxs.cmake",
+        "anthropic.claude-code",
+        "ms-python.python"
+      ],
+      "settings": {
+        "cmake.configureOnOpen": false,
+        "cmake.generator": "Unix Makefiles"
+      }
+    }
+  }
+}

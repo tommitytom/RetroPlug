@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "reaper": {
+      "command": "tools/reaper-mcp-launch.sh"
+    }
+  }
+}
