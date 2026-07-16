@@ -177,19 +177,14 @@ jobs:
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.dll
 
-  # Native macOS build checks: arm64 (macos-14, proven green) + x86_64
-  # (macos-13, the last Intel runner). Universal + codesign/notarization and the
-  # AU target are future work.
+  # Universal (arm64 + x86_64) macOS build on macos-14. Building both slices on
+  # every PR gives x86_64 compile coverage without a native Intel runner (the
+  # macos-13 Intel runners are effectively unavailable). Tests run against the
+  # native arm64 slice. Matches release.yml's universal recipe: libffi comes
+  # from the (universal) macOS SDK — do NOT `brew install libffi` (single-arch,
+  # would shadow it); SDL2 comes from the official universal framework.
   macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-14
-            arch: arm64
-          - runner: macos-13
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
         with:
@@ -201,10 +196,19 @@ jobs:
           git submodule update --init --recursive
 
       - name: Install build dependencies (Homebrew)
+        run: brew install ninja pkg-config rgbds
+
+      - name: Install universal SDL2.framework
         run: |
-          brew install ninja pkg-config sdl2 libffi rgbds
-          # Homebrew's keg-only libffi needs its pkg-config on the path.
-          echo "PKG_CONFIG_PATH=$(brew --prefix libffi)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+          set -eux
+          ver="2.32.10"
+          tmp="$(mktemp -d)"
+          curl -fsSL "https://github.com/libsdl-org/SDL/releases/download/release-${ver}/SDL2-${ver}.dmg" -o "$tmp/SDL2.dmg"
+          hdiutil attach "$tmp/SDL2.dmg" -nobrowse -quiet -mountpoint "$tmp/mnt"
+          lipo -info "$tmp/mnt/SDL2.framework/SDL2"
+          mkdir -p "$HOME/Library/Frameworks"
+          cp -R "$tmp/mnt/SDL2.framework" "$HOME/Library/Frameworks/"
+          hdiutil detach "$tmp/mnt" -quiet
 
       - uses: actions/setup-node@v6
         with:
@@ -218,8 +222,26 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
 
-      - name: Build
-        run: ./build.sh
+      - name: Configure + build (universal)
+        run: |
+          set -eux
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DRETROPLUG_SDL2_FRAMEWORK=ON
+          cmake --build build -j"$(sysctl -n hw.ncpu)"
+
+      - name: Verify universal slices
+        run: |
+          set -eux
+          for f in build/bin/RetroPlug.app/Contents/MacOS/RetroPlug \
+                   build/bin/retroplug-cli \
+                   build/bin/retroplug.clap/Contents/MacOS/retroplug \
+                   build/bin/retroplug.vst3/Contents/MacOS/retroplug \
+                   build/bin/retroplug.component/Contents/MacOS/retroplug \
+                   build/bin/retroplug.vst/Contents/MacOS/retroplug; do
+            lipo -archs "$f" | grep -q x86_64
+            lipo -archs "$f" | grep -q arm64
+          done
 
       - name: TS tests
         run: pnpm test
@@ -237,7 +259,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: retroplug-macos-${{ matrix.arch }}
+          name: retroplug-macos-universal
           if-no-files-found: warn
           path: |
             build/bin/RetroPlug.app
