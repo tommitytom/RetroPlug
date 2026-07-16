@@ -318,6 +318,47 @@ if(APPLE)
     endforeach()
 endif()
 
+# macOS distribution: embed SDL2.framework into every SDL2-linked bundle.
+# ---------------------------------------------------------------------------
+# The framework build (RETROPLUG_SDL2_FRAMEWORK) links SDL2 by its install name
+# @rpath/SDL2.framework/Versions/A/SDL2 (GamepadManager + backend pull SDL2 into
+# the standalone AND every plugin format). Nothing on an end-user machine
+# provides that framework, so copy the (universal) framework into each bundle's
+# Contents/Frameworks and add an @loader_path/../Frameworks rpath to resolve it.
+# The embedded framework is re-signed with our Developer ID by the CI codesign
+# step (.github/workflows/release.yml). retroplug-cli links no SDL2, so it is
+# excluded. The dev build (pkg-config / Homebrew SDL2) needs none of this — the
+# machine already has SDL2 — so this is gated on RETROPLUG_SDL2_FRAMEWORK.
+if(APPLE AND RETROPLUG_SDL2_FRAMEWORK)
+    # ${SDL2_FRAMEWORK} is the .framework directory (find_library return, root
+    # CMakeLists). target -> on-disk bundle dir (vst2's extension is .vst).
+    foreach(_pair "retroplug-jack:RetroPlug.app" "retroplug-vst3:retroplug.vst3"
+                  "retroplug-clap:retroplug.clap" "retroplug-vst2:retroplug.vst"
+                  "retroplug-au:retroplug.component")
+        string(REPLACE ":" ";" _p "${_pair}")
+        list(GET _p 0 _tgt)
+        list(GET _p 1 _bundle)
+        if(TARGET ${_tgt})
+            # Resolve @rpath/SDL2.framework/... against the embedded copy. dyld
+            # tries each rpath in turn, so the build-machine's absolute framework
+            # rpath (added automatically by CMake) still works locally.
+            set_property(TARGET ${_tgt} APPEND PROPERTY
+                BUILD_RPATH "@loader_path/../Frameworks")
+            # cp -R preserves the framework's Versions/Current symlink structure
+            # (CMake's copy_directory would flatten it and break codesign).
+            add_custom_command(TARGET ${_tgt} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E rm -rf
+                        "${CMAKE_BINARY_DIR}/bin/${_bundle}/Contents/Frameworks/SDL2.framework"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                        "${CMAKE_BINARY_DIR}/bin/${_bundle}/Contents/Frameworks"
+                COMMAND /bin/cp -R "${SDL2_FRAMEWORK}"
+                        "${CMAKE_BINARY_DIR}/bin/${_bundle}/Contents/Frameworks/"
+                COMMENT "Embedding SDL2.framework into ${_bundle}"
+                VERBATIM)
+        endif()
+    endforeach()
+endif()
+
 # --- UI test harness -------------------------------------------------------------------------------
 # retroplug-ui-test boots the React UI on a headless software LVGL display
 # (RenderCore) driven by the BackendFacade RPC (UiHarness) — the counterpart of the

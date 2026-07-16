@@ -257,14 +257,35 @@ jobs:
             -s -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
 
-          # Sign every mach-o / bundle with the hardened runtime + secure timestamp.
-          for t in build/bin/retroplug.vst build/bin/retroplug-cli \
-                   build/bin/retroplug.clap build/bin/retroplug.vst3 \
-                   build/bin/retroplug.component build/bin/RetroPlug.app; do
-            codesign --force --deep --options runtime --timestamp \
-              --sign "$MACOS_SIGN_IDENTITY" "$t"
-            codesign --verify --strict --verbose=2 "$t"
+          # Sign inside-out with the hardened runtime + secure timestamp. Apple
+          # deprecates `--deep` for distribution signing (it re-signs nested code
+          # with the wrong flags/entitlements) — sign nested frameworks/dylibs
+          # first, then the enclosing bundle.
+          sign() {
+            codesign --force --options runtime --timestamp \
+              --sign "$MACOS_SIGN_IDENTITY" "$1"
+          }
+          sign_bundle() {
+            local bundle="$1"
+            # Nested code (e.g. an embedded SDL2.framework) must be signed
+            # before the outer bundle. No-op when Contents/Frameworks is absent.
+            if [ -d "$bundle/Contents/Frameworks" ]; then
+              find "$bundle/Contents/Frameworks" -type d -name '*.framework' \
+                -print0 | while IFS= read -r -d '' fw; do sign "$fw"; done
+              find "$bundle/Contents/Frameworks" -type f -name '*.dylib' \
+                -print0 | while IFS= read -r -d '' lib; do sign "$lib"; done
+            fi
+            sign "$bundle"
+          }
+          for b in build/bin/retroplug.vst build/bin/retroplug.clap \
+                   build/bin/retroplug.vst3 build/bin/retroplug.component \
+                   build/bin/RetroPlug.app; do
+            sign_bundle "$b"
+            codesign --verify --strict --verbose=2 "$b"
           done
+          # Bare Mach-O (no bundle): sign directly.
+          sign build/bin/retroplug-cli
+          codesign --verify --strict --verbose=2 build/bin/retroplug-cli
 
           # Notarize: zip everything, submit, wait, then staple the bundles.
           ditto -c -k --keepParent build/bin "$RUNNER_TEMP/notarize.zip"
