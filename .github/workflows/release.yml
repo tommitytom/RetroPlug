@@ -1,0 +1,321 @@
+name: release
+
+# Produces the downloadable artifacts users install. Unlike build.yml (which
+# proves each native arch builds + tests green on PRs), this packages release
+# archives and publishes a GitHub Release.
+#
+# macOS ships as a single UNIVERSAL (arm64 + x86_64) binary — the right thing to
+# hand users, since a plugin must match the HOST process arch (an Apple-Silicon
+# Mac running a DAW under Rosetta needs the x86_64 slice). Universal needs every
+# native dep fat: the emulator cores compile from source (fat automatically),
+# libffi comes from the macOS SDK (already universal), and SDL2 comes from the
+# official universal SDL2.framework (RETROPLUG_SDL2_FRAMEWORK=ON) fetched below.
+#
+# Codesigning + notarization are GATED on repo secrets (see the macos job). With
+# no secrets set the job still runs and produces an UNSIGNED universal build;
+# add the secrets to light up signing without touching this file.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version label for a manual release (e.g. v0.7.2). Defaults to the pushed tag.'
+        required: false
+      publish:
+        description: 'Create/update the GitHub Release (else just upload build artifacts)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # the release job needs this to create the GitHub Release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Tag on a tag push; the manual input otherwise. Consumed as the archive
+  # version label and the release name.
+  RP_VERSION: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libgl-dev libglu1-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxext-dev libxinerama-dev \
+            libdbus-1-dev libasound2-dev libjack-jackd2-dev \
+            libcurl4-openssl-dev libffi-dev libssl-dev \
+            libsdl2-dev
+
+      - name: Install RGBDS (boot-ROM assembler)
+        run: |
+          set -eux
+          tmp="$(mktemp -d)"; cd "$tmp"
+          curl -fsSL "https://github.com/gbdev/rgbds/releases/download/v1.0.1/rgbds-linux-x86_64.tar.xz" -o rgbds.tar.xz
+          tar -xJf rgbds.tar.xz
+          sudo install -m 0755 rgbasm rgblink rgbgfx rgbfix /usr/local/bin/
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+      - name: Install workspace deps (pnpm)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Package
+        run: |
+          set -eux
+          stage="retroplug-${RP_VERSION}-linux-x86_64"
+          mkdir -p "dist/$stage"
+          cp -a build/bin/retroplug build/bin/retroplug-cli \
+                build/bin/retroplug.clap build/bin/retroplug.vst3 \
+                build/bin/retroplug-vst2.so "dist/$stage/"
+          (cd dist && zip -ry "$stage.zip" "$stage")
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-linux-x86_64
+          if-no-files-found: error
+          path: dist/*.zip
+
+  windows:
+    runs-on: windows-2022
+    env:
+      VCPKG_ROOT: C:\vcpkg
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        shell: bash
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+      - name: Install workspace deps (pnpm)
+        shell: bash
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Install RGBDS (boot-ROM assembler)
+        shell: pwsh
+        run: |
+          $ver = "v1.0.1"
+          Invoke-WebRequest "https://github.com/gbdev/rgbds/releases/download/$ver/rgbds-win64.zip" -OutFile rgbds.zip
+          Expand-Archive rgbds.zip -DestinationPath "$env:RUNNER_TEMP\rgbds"
+          "RGBDS_DIR=$env:RUNNER_TEMP\rgbds" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Cache vcpkg installed packages
+        uses: actions/cache@v6
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-x64-windows-static-sdl2-libffi-${{ runner.os }}
+
+      - name: Install vcpkg dependencies (x64-windows-static)
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install sdl2:x64-windows-static libffi:x64-windows-static
+
+      - name: Build
+        shell: cmd
+        run: build.bat
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $stage = "retroplug-$env:RP_VERSION-windows-x86_64"
+          New-Item -ItemType Directory -Force -Path "dist\$stage" | Out-Null
+          Copy-Item build\bin\retroplug.exe,build\bin\retroplug-cli.exe,`
+                    build\bin\retroplug.clap,build\bin\retroplug.vst3,`
+                    build\bin\retroplug-vst2.dll -Destination "dist\$stage"
+          Compress-Archive -Path "dist\$stage\*" -DestinationPath "dist\$stage.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-windows-x86_64
+          if-no-files-found: error
+          path: dist/*.zip
+
+  macos:
+    runs-on: macos-14   # arm64 host; produces a universal arm64+x86_64 binary
+    # Job-level env can read secrets (step `if:` cannot). HAS_SIGNING drives the
+    # optional codesign/notarize steps; everything else runs regardless.
+    env:
+      HAS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' }}
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+      MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+      MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Install build dependencies (Homebrew)
+        run: |
+          # NB: do NOT install libffi — the macOS SDK ships a universal libffi
+          # (find_library resolves the .tbd); a single-arch Homebrew libffi would
+          # shadow it and break the x86_64 slice. rgbds is a build-time tool
+          # (arch-independent). SDL2 comes from the universal framework below,
+          # not Homebrew.
+          brew install ninja pkg-config rgbds
+
+      - name: Install universal SDL2.framework
+        run: |
+          set -eux
+          ver="2.32.10"
+          tmp="$(mktemp -d)"
+          curl -fsSL "https://github.com/libsdl-org/SDL/releases/download/release-${ver}/SDL2-${ver}.dmg" -o "$tmp/SDL2.dmg"
+          hdiutil attach "$tmp/SDL2.dmg" -nobrowse -quiet -mountpoint "$tmp/mnt"
+          lipo -info "$tmp/mnt/SDL2.framework/SDL2"   # expect: x86_64 arm64
+          mkdir -p "$HOME/Library/Frameworks"
+          cp -R "$tmp/mnt/SDL2.framework" "$HOME/Library/Frameworks/"
+          hdiutil detach "$tmp/mnt" -quiet
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+      - name: Install workspace deps (pnpm)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Configure + build (universal)
+        run: |
+          set -eux
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DRETROPLUG_SDL2_FRAMEWORK=ON
+          cmake --build build -j"$(sysctl -n hw.ncpu)"
+
+      - name: Verify universal slices
+        run: |
+          set -eux
+          for f in build/bin/RetroPlug.app/Contents/MacOS/RetroPlug \
+                   build/bin/retroplug-cli \
+                   build/bin/retroplug.clap/Contents/MacOS/retroplug \
+                   build/bin/retroplug.vst3/Contents/MacOS/retroplug \
+                   build/bin/retroplug.component/Contents/MacOS/retroplug \
+                   build/bin/retroplug.vst/Contents/MacOS/retroplug; do
+            lipo -archs "$f"
+            lipo -archs "$f" | grep -q x86_64
+            lipo -archs "$f" | grep -q arm64
+          done
+
+      - name: Codesign (Developer ID) + notarize
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          set -eu
+          KEYCHAIN="$RUNNER_TEMP/rp-signing.keychain-db"
+          KEYCHAIN_PWD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          # Sign every mach-o / bundle with the hardened runtime + secure timestamp.
+          for t in build/bin/retroplug.vst build/bin/retroplug-cli \
+                   build/bin/retroplug.clap build/bin/retroplug.vst3 \
+                   build/bin/retroplug.component build/bin/RetroPlug.app; do
+            codesign --force --deep --options runtime --timestamp \
+              --sign "$MACOS_SIGN_IDENTITY" "$t"
+            codesign --verify --strict --verbose=2 "$t"
+          done
+
+          # Notarize: zip everything, submit, wait, then staple the bundles.
+          ditto -c -k --keepParent build/bin "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --apple-id "$MACOS_NOTARY_APPLE_ID" \
+            --password "$MACOS_NOTARY_PASSWORD" \
+            --team-id "$MACOS_NOTARY_TEAM_ID" --wait
+          for b in build/bin/RetroPlug.app build/bin/retroplug.clap \
+                   build/bin/retroplug.vst3 build/bin/retroplug.component \
+                   build/bin/retroplug.vst; do
+            xcrun stapler staple "$b"
+          done
+
+      - name: Warn if unsigned
+        if: env.HAS_SIGNING != 'true'
+        run: |
+          echo "::warning title=Unsigned macOS build::MACOS_CERTIFICATE secret not set — producing an UNSIGNED universal build. Users will hit Gatekeeper. See release.yml for the required secrets."
+
+      - name: Package
+        run: |
+          set -eux
+          stage="retroplug-${RP_VERSION}-macos-universal"
+          mkdir -p "dist/$stage"
+          cp -a build/bin/RetroPlug.app build/bin/retroplug-cli \
+                build/bin/retroplug.clap build/bin/retroplug.vst3 \
+                build/bin/retroplug.component build/bin/retroplug.vst \
+                "dist/$stage/"
+          # ditto preserves bundle symlinks/codesign metadata that `zip` mangles.
+          (cd dist && ditto -c -k --keepParent "$stage" "$stage.zip")
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-macos-universal
+          if-no-files-found: error
+          path: dist/*.zip
+
+  release:
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-24.04
+    # Publish on any tag push, or on a manual run that opted in.
+    if: startsWith(github.ref, 'refs/tags/') || inputs.publish
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RP_VERSION }}
+          name: ${{ env.RP_VERSION }}
+          draft: true          # publish manually after a sanity check
+          generate_release_notes: true
+          files: artifacts/*.zip

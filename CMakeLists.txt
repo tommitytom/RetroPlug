@@ -98,6 +98,13 @@ endif()
 # add_subdirectory pulls in DPF (which defines dpf_add_plugin globally), LVGL,
 # txiki, msgpack-c, rpcpp, efsw, plus the lvgl-js-native + dpfjs::core targets.
 # Requires `pnpm install` before the first configure (node + the dpf.js link).
+# WebAssembly (txiki's WAMR runtime) is unused by RetroPlug and blocks universal
+# macOS builds: WAMR selects its SIMD target from a single configure-time arch,
+# so it can't emit both arm64 (NEON) and x86_64 slices from one tree. Disable it
+# for every build so dev / CI / release stay consistent. Set (non-FORCE) before
+# dpf.js is added so txiki's option() adopts it; -DBUILD_WITH_WASM=ON still wins.
+set(BUILD_WITH_WASM OFF CACHE BOOL "txiki WebAssembly/WAMR support")
+
 find_program(NODE_EXECUTABLE node REQUIRED)
 execute_process(
     COMMAND ${NODE_EXECUTABLE} -e "console.log(require.resolve('dpf.js/package.json'))"
