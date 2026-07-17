@@ -71,6 +71,25 @@ set_target_properties(retroplug-core PROPERTIES
     POSITION_INDEPENDENT_CODE ON   # linked into the plugin .so
 )
 
+# The render-worker bundle — src/render/worker.ts esbuilt to a global-code IIFE (NOT an ES module: the
+# RenderHost loads it on a BARE QuickJS runtime with no module loader) + tjsc'd to bytecode C array,
+# COMPILED INTO retroplug-backend so every consumer (plugin, test host, the parity test) can render on a
+# worker thread. tjsc WITHOUT -m yields global-code bytecode (JS_ReadObject + JS_EvalFunction); the symbol
+# name derives from the output stem → rp_render_worker_bundle[] + _size. Derived; never committed. Defined
+# before retroplug-backend so its sources can embed the array.
+set(RENDER_WORKER_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/render-worker-bundle.js")
+set(RENDER_WORKER_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/render-worker-bundle_data.c")
+set_source_files_properties(${RENDER_WORKER_BUNDLE_C} PROPERTIES GENERATED TRUE)
+add_custom_target(retroplug-render-worker-bundle
+    BYPRODUCTS ${RENDER_WORKER_BUNDLE_JS} ${RENDER_WORKER_BUNDLE_C} ${RENDER_WORKER_BUNDLE_C}.new
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/src/render/worker.ts ${RENDER_WORKER_BUNDLE_JS} iife
+    COMMAND ${_TJSC_COMMAND} -s -p rp_ -o ${RENDER_WORKER_BUNDLE_C}.new ${RENDER_WORKER_BUNDLE_JS}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RENDER_WORKER_BUNDLE_C}.new ${RENDER_WORKER_BUNDLE_C}
+    COMMENT "Bundling render worker (esbuild iife + global-code bytecode)"
+    VERBATIM)
+add_dependencies(retroplug-render-worker-bundle ${_TJSC_DEP})
+
 # retroplug-backend: the Backend as a static library — everything except a host
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
@@ -88,8 +107,11 @@ add_library(retroplug-backend STATIC
     src/system/mesen/MesenBackend.cpp       # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (DSP-side JS runtime)
     src/host/dsp/DspRuntime.cpp             # second bare QuickJS context — runs translator scripts
+    src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
+    ${RENDER_WORKER_BUNDLE_C}               # embedded render-worker bytecode (rp_render_worker_bundle)
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
 )
+add_dependencies(retroplug-backend retroplug-render-worker-bundle)  # the embedded worker bytecode must exist first
 
 target_include_directories(retroplug-backend PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -120,6 +142,17 @@ add_executable(retroplug-host src/main.cpp)
 target_link_libraries(retroplug-host PRIVATE retroplug-backend)
 
 set_target_properties(retroplug-host PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# retroplug-render-host-test: drives one RenderHost render from a JSON job spec, so a background/UI render
+# can be proven byte-identical to `retroplug-cli render`. EXCLUDE_FROM_ALL — built by name for the parity
+# check, not part of a normal build.
+add_executable(retroplug-render-host-test EXCLUDE_FROM_ALL test/render-host-main.cpp)
+target_link_libraries(retroplug-render-host-test PRIVATE retroplug-backend)
+set_target_properties(retroplug-render-host-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
