@@ -117,3 +117,11 @@ and `validate`. The LSDj-sync / DAW-timing / audio-quality matrix runs headlessl
 too — the real-Reaper
 `reaper:lsdj-*` renders + `tools/reaper-timing-analyze.py`; see
 [docs/lsdj.md](docs/lsdj.md).
+
+**UI/background rendering** (the `System > Render` menu; [spec/11-ui-rendering.md](spec/11-ui-rendering.md)):
+the CLI `render` command and the UI render share one library (`packages/retroplug/src/render/`), run offline
+by a bare-QuickJS `RenderHost` (own `Engine`) on a per-job thread (`RenderJobRegistry`). Verify with
+`retroplug-render-host-test` (built by name — `cmake --build build --target retroplug-render-host-test`): a
+`<job-json>` render is byte-identical to `retroplug-cli render`; `--registry <j>...` runs jobs concurrently;
+`--cancel <j>` aborts mid-render — build it in `build-tsan/` for the ThreadSanitizer pass. The UI-seam logic
+is `pnpm test render`; the tile badge is `pnpm test:ui render-badge`.
