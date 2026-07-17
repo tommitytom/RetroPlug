@@ -13,19 +13,6 @@ The runtime architecture is [01-architecture.md](01-architecture.md); nothing be
 
 Things a user could reasonably expect that aren't wired yet. None block shipping.
 
-### Native file watcher — ROM hot-reload / config live-reload is inert
-
-The design is "watcher = C++, policy = TS": native watches the config dir + `bindings/` and per-ROM
-mtimes and reports changed paths through `HostRpcService::drainChangedPaths()`; TS
-([fileWatcher.ts](../packages/retroplug/src/fileWatcher.ts) `FileWatcher.pump`) drains at idle and
-reloads systems whose ROM changed with `reloadOnRomChange` on. The **TS policy half is built +
-unit-tested**, but the **native half is a stub** — `drainChangedPaths()` returns `{}`
-([HostRpcService.cpp:155](../packages/native/src/host/rpc/HostRpcService.cpp#L155)), and the host
-links no watcher. So the "Reload on ROM Change" menu item stores/applies its preference but nothing
-triggers the reload. Closing it means adding a per-ROM mtime poll (and/or `deps/efsw` over the config
-dir) behind `drainChangedPaths`, then confirming `FileWatcher.pump` is driven from the plugin idle
-loop. (`deps/efsw` is vendored and kept for exactly this — it is not linked today.)
-
 ### Raw LSDj Keyboard mode (LsdjSyncMode 4)
 
 `lsdj-sync` implements every sync mode except raw **Keyboard**: MidiSync, MidiSyncArduinoboy,

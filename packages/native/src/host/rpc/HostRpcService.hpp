@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -9,11 +10,17 @@
 
 #include "host/rpc/BackendTypes.hpp"
 
+class NativeFileWatcher;
+
 // The fs / config / codec half of the Backend: std::filesystem + miniz + config-dir
-// resolution + LSDJ sav authoring. Pure and stateless — no Engine, no threads — so it's reusable
-// verbatim across hosts.
+// resolution + LSDJ sav authoring. Stateless and thread-free by default — reusable verbatim across
+// hosts — UNLESS a host calls enableWatching(), which spins up an efsw NativeFileWatcher so
+// drainChangedPaths / setWatchedRoms become live (the plugin does this; the test host + CLI don't).
 class HostRpcService {
 public:
+    HostRpcService();
+    ~HostRpcService();
+
     // --- filesystem ---
     std::optional<rfl::Bytestring> readFile(std::string path);
     bool writeFile(std::string path, rfl::Bytestring bytes);
@@ -28,7 +35,11 @@ public:
     bool rename(std::string from, std::string to);
     std::vector<std::string> listDir(std::string dir);
     bool deleteFile(std::string path);
-    std::vector<std::string> drainChangedPaths();  // no watcher yet — always empty
+    // The native side of the file watcher (spec/07). drainChangedPaths pulls the paths the efsw watcher
+    // saw since the last call (empty when watching isn't enabled); setWatchedRoms tells it which ROM
+    // files to watch (their parent dirs), recomputed by TS whenever the systems list changes.
+    std::vector<std::string> drainChangedPaths();
+    bool setWatchedRoms(std::vector<std::string> paths);
 
     // --- paths / config ---
     std::string canonicalize(std::string path);
@@ -39,4 +50,11 @@ public:
     // --- codec (miniz) ---
     rfl::Bytestring zip(std::vector<BackendZipInput> entries);
     std::vector<BackendZipEntry> unzip(rfl::Bytestring bytes);
+
+    // Host opt-in: start the efsw watcher over `configDir` (config.json + bindings/). Idempotent —
+    // a second call is ignored. Until called, drainChangedPaths returns {} and setWatchedRoms no-ops.
+    void enableWatching(std::string configDir);
+
+private:
+    std::unique_ptr<NativeFileWatcher> watcher_;  // null unless enableWatching() ran
 };
