@@ -95,7 +95,8 @@ see [05-data-persistence.md](05-data-persistence.md).)
 | `writeFileAtomic` | `(string, Bytestring) → bool` | tmp + rename ([`:94`](../packages/native/src/host/rpc/HostRpcService.cpp#L94)) |
 | `fileExists` / `rename` / `deleteFile` | `→ bool` | |
 | `listDir` | `(string dir) → vector<string>` | filenames only |
-| `drainChangedPaths` | `→ vector<string>` | **always empty** — no file watcher in this host ([`:133`](../packages/native/src/host/rpc/HostRpcService.cpp#L133)) |
+| `drainChangedPaths` | `→ vector<string>` | pull-drain of the efsw watcher (`NativeFileWatcher`); empty until a host calls `enableWatching` (the plugin does; this test host / CLI don't) ([`:155`](../packages/native/src/host/rpc/HostRpcService.cpp#L155)) |
+| `setWatchedRoms` | `(vector<string>) → bool` | register the ROM files to watch (parent dirs); recomputed by TS on every systems-list change. Config dir + `bindings/` are always watched |
 | `canonicalize` | `(string) → string` | `weakly_canonical`, falls back to input |
 | `configDir` | `→ string` | per-OS config path, computed in this TU (no config-persistence link) ([`:23`](../packages/native/src/host/rpc/HostRpcService.cpp#L23)) |
 | `zip` | `(vector<BackendZipInput>) → Bytestring` | miniz, no-copy add ([`:147`](../packages/native/src/host/rpc/HostRpcService.cpp#L147)) |

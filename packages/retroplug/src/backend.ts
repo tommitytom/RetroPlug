@@ -56,11 +56,17 @@ export interface Backend {
   deleteFile(path: string): boolean;
 
   /** The watched-file paths that changed since the last drain (empty when nothing did).
-   *  Native owns the watching — efsw over the config dir + `bindings/`, plus the per-ROM
-   *  mtime poll — and collects the changed paths; TS pulls + reacts at idle (re-read
-   *  config, refresh bindings, reload a system whose ROM changed). A pull-drain, so the
-   *  sync Backend stays sync. */
+   *  Native owns the watching — efsw over the config dir + `bindings/` (recursive) and over
+   *  each watched ROM's parent directory — and collects the changed paths; TS pulls + reacts
+   *  at idle (re-read config, refresh bindings, reload a system whose ROM changed). A
+   *  pull-drain, so the sync Backend stays sync. */
   drainChangedPaths(): string[];
+
+  /** Tell native which ROM files to watch for changes (their parent dirs are watched, events
+   *  filtered to these paths). Policy lives in TS: recompute + call this whenever the systems
+   *  list changes; the config dir + `bindings/` are always watched and need no registration.
+   *  A no-op until a host enables watching (the plugin does; the test host / CLI don't). */
+  setWatchedRoms(paths: string[]): void;
 
   // --- Paths (the OS-specific bits TS can't reproduce) --------------------
 
@@ -295,7 +301,7 @@ export interface Backend {
 export type HostBackend = Pick<
   Backend,
   | "readFile" | "writeFile" | "writeFileAtomic" | "appendFile" | "writeFileAt" | "fileExists" | "rename" | "listDir" | "deleteFile"
-  | "drainChangedPaths" | "canonicalize" | "readFilePrefix" | "configDir" | "version"
+  | "drainChangedPaths" | "setWatchedRoms" | "canonicalize" | "readFilePrefix" | "configDir" | "version"
   | "zip" | "unzip" | "savFromJson" | "openFileBrowser"
 >;
 

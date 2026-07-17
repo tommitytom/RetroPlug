@@ -19,8 +19,8 @@ The port is complete. RetroPlug is a single build: the older **legacy** build (t
 `Plugin*.cpp` DSP/UI, `packages/ui/`, `packages/cli/`, and the old generated RPC client) has been
 deleted, the transitional target suffix dropped, and the plugin identity reverted to the canonical
 `RetroPlug` strings. These docs describe that build in the present tense. What remains is
-**feature work, not migration** — a handful of gaps (the native file-watcher half, the raw LSDj
-Keyboard mode, NES per-mapper expansion sub-channels, the kit-patch UI rework) tracked in
+**feature work, not migration** — a handful of gaps (the raw LSDj Keyboard mode, NES per-mapper
+expansion sub-channels, the kit-patch UI rework) tracked in
 [07-remaining-work.md](07-remaining-work.md).
 
 ## The documents
@@ -34,7 +34,7 @@ Keyboard mode, NES per-mapper expansion sub-channels, the kit-patch UI rework) t
 | [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) | The role model (system-role vs feature-role) and the DSP role kernel: the byte-sink ABI, the drift-exact PPQ clock in JS, and store→kernel projection. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model and `.rplg` (thin vs export), DPF get/setState, the config schemas, the forward-tolerant-read + version-stamp policy, the LSDj sav codec, and SRAM auto-save. |
 | [06-build-test.md](06-build-test.md) | How the build works, the pnpm scripts, and the headless verification loop — which command proves which kind of change. The practical "how do I verify a change" doc. |
-| [07-remaining-work.md](07-remaining-work.md) | The remaining feature gaps now the port is complete: the native file-watcher half, the raw LSDj Keyboard mode, NES per-mapper expansion sub-channels, the kit-patch UI rework, the deferred items, and the code-comment cleanup follow-up. |
+| [07-remaining-work.md](07-remaining-work.md) | The remaining feature gaps now the port is complete: the raw LSDj Keyboard mode, NES per-mapper expansion sub-channels, the kit-patch UI rework, the deferred items, and the code-comment cleanup follow-up. |
 | [08-profiling.md](08-profiling.md) | **Built** (behind `RETROPLUG_PROFILE`, `pnpm profile`). A benchmark harness that profiles the DSP-thread JS runtime — allocations/GC — under an mGB + heavy-MIDI workload: the refcount-churn reframe, the off-RT `renderAudio` harness, in-process QuickJS allocator instrumentation, the agent-friendly tool tier, and CI gates. |
 | [09-cli-debugging.md](09-cli-debugging.md) | **Built** (the plumbing tier). The CLI as a scriptable ROM-test harness: the session runner + `Timeline` + WAV/screenshot output, the compiled-in `render` subcommand, and Mesen's compiled-in debugger (decoded APU/PPU state, CPU/memory peeks + poke, breakpoints, trace, profiler, cc65 labels) surfaced through the debug RPC facet so an agent can drive a real NES and assert on its state. |
 | [10-multichannel-audio-out.md](10-multichannel-audio-out.md) | **Built** (steps 1–6; per-mapper NES expansion sub-channels remain). Outputting the individual console sound channels of one instance: Game Boy → 8 outputs (a stereo pair per channel, via a tracked SameBoy tap), NES → 5 mono stems or the hardware "stereo-mod" pins (via a `NesSoundMixer` edit). One router/mode-driven host seam (`channelLayout()` + a lane-counted `finishBlock`), a GB-scoped `AudioRouting::ChannelSplit` plugin option, and a `renderAudioPerChannel` CLI RPC feeding multichannel / per-stereo / per-mono WAV export. |

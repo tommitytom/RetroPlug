@@ -14,3 +14,12 @@
 # Any real race elsewhere still surfaces; these only cover the readInto memcpy.
 race:MemorySnapshotTriple::readInto
 race:FrameBufferTriple::readInto
+
+# efsw (vendored, deps/efsw) internal teardown race: FileWatcherInotify's destructor
+# reads a status flag that its own watcher thread writes in handleAction as the thread
+# winds down, without full synchronization. BOTH racing frames are efsw-internal — our
+# NativeFileWatcher (which joins the thread via the efsw destructor, correctly ordered
+# after our own members) is not in either access. Upstream code we don't own; benign on
+# teardown. Scoped to the two named efsw functions so real races elsewhere still surface.
+race:efsw::FileWatcherInotify::~FileWatcherInotify
+race:efsw::FileWatcherInotify::handleAction

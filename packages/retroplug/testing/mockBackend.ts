@@ -80,8 +80,10 @@ export class MockBackend implements Backend {
   private sramOverrides = new Map<number, Uint8Array>();
 
   /** Paths queued by emitFileChange, drained by drainChangedPaths — simulates the
-   *  native watcher (efsw + ROM mtime poll) firing. */
+   *  native watcher (efsw) firing. */
   private changedPaths: string[] = [];
+  /** The last ROM set passed to setWatchedRoms — for tests asserting the policy wiring. */
+  watchedRoms: string[] = [];
   /** Entry lists passed to zip / archives passed to unzip, in order. */
   readonly zipCalls: ZipEntry[][] = [];
   readonly unzipCalls: Uint8Array[] = [];
@@ -208,6 +210,11 @@ export class MockBackend implements Backend {
     const out = this.changedPaths;
     this.changedPaths = [];
     return out;
+  }
+
+  setWatchedRoms(paths: string[]): void {
+    this.log.push("setWatchedRoms");
+    this.watchedRoms = [...paths];
   }
 
   readFilePrefix(path: string, length: number): Uint8Array | null {

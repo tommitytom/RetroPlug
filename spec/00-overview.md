@@ -140,7 +140,7 @@ the audio thread) — never shared. All of this is specified in
 | [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md) | The role model: system-role vs feature-role, the role registry, and the DSP kernel's per-system pipelines and byte-sink ABI. |
 | [05-data-persistence.md](05-data-persistence.md) | The project model + `.rplg`, DPF get/setState + autoload, config models, forward-tolerant reads + version stamps, the LSDj sav codec, SRAM auto-save. |
 | [06-build-test.md](06-build-test.md) | How the project builds, the pnpm scripts, the dpf.js seam, and the headless verification loop. |
-| [07-remaining-work.md](07-remaining-work.md) | The remaining feature gaps now the port is complete: the file-watcher half, the raw LSDj Keyboard mode, NES per-mapper expansion sub-channels, the kit-patch UI rework, and the deferred items. |
+| [07-remaining-work.md](07-remaining-work.md) | The remaining feature gaps now the port is complete: the raw LSDj Keyboard mode, NES per-mapper expansion sub-channels, the kit-patch UI rework, and the deferred items. |
 
 ## Key files
 
