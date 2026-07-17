@@ -85,15 +85,21 @@ jobs:
       - name: Build
         run: ./build.sh
 
-      - name: Package
+      - name: Package (one zip per target, each with the license bundle)
         run: |
           set -eux
-          stage="retroplug-${RP_VERSION}-linux-x86_64"
-          mkdir -p "dist/$stage"
-          cp -a build/bin/retroplug build/bin/retroplug-cli \
-                build/bin/retroplug.clap build/bin/retroplug.vst3 \
-                build/bin/retroplug-vst2.so "dist/$stage/"
-          (cd dist && zip -ry "$stage.zip" "$stage")
+          plat="linux-x86_64"
+          # artifact-in-build/bin : download-target-name
+          for entry in "retroplug:standalone" "retroplug.vst3:vst3" \
+                       "retroplug.clap:clap" "retroplug-vst2.so:vst2" \
+                       "retroplug-cli:cli"; do
+            art="${entry%%:*}"; tgt="${entry##*:}"
+            base="retroplug-${RP_VERSION}-${plat}-${tgt}"
+            mkdir -p "dist/$base/licenses"
+            cp -a "build/bin/$art" "dist/$base/"
+            cp packaging/licenses/*.txt "dist/$base/licenses/"
+            (cd dist && zip -ry "$base.zip" "$base")
+          done
 
       - uses: actions/upload-artifact@v7
         with:
@@ -150,15 +156,25 @@ jobs:
         shell: cmd
         run: build.bat
 
-      - name: Package
+      - name: Package (one zip per target, each with the license bundle)
         shell: pwsh
         run: |
-          $stage = "retroplug-$env:RP_VERSION-windows-x86_64"
-          New-Item -ItemType Directory -Force -Path "dist\$stage" | Out-Null
-          Copy-Item build\bin\RetroPlug.exe,build\bin\retroplug-cli.exe,`
-                    build\bin\RetroPlug.clap,build\bin\RetroPlug.vst3,`
-                    build\bin\RetroPlug.dll -Destination "dist\$stage"
-          Compress-Archive -Path "dist\$stage\*" -DestinationPath "dist\$stage.zip"
+          $plat = "windows-x86_64"
+          # artifact-in-build\bin -> download-target-name
+          $targets = [ordered]@{
+            "RetroPlug.exe"     = "standalone"
+            "RetroPlug.vst3"    = "vst3"
+            "RetroPlug.clap"    = "clap"
+            "RetroPlug.dll"     = "vst2"
+            "retroplug-cli.exe" = "cli"
+          }
+          foreach ($art in $targets.Keys) {
+            $base = "retroplug-$env:RP_VERSION-$plat-$($targets[$art])"
+            New-Item -ItemType Directory -Force -Path "dist\$base\licenses" | Out-Null
+            Copy-Item "build\bin\$art" -Destination "dist\$base" -Recurse
+            Copy-Item packaging\licenses\*.txt -Destination "dist\$base\licenses"
+            Compress-Archive -Path "dist\$base" -DestinationPath "dist\$base.zip"
+          }
 
       - uses: actions/upload-artifact@v7
         with:
@@ -327,17 +343,27 @@ jobs:
         run: |
           echo "::warning title=Unsigned macOS build::MACOS_CERTIFICATE secret not set — producing an UNSIGNED universal build. Users will hit Gatekeeper. See release.yml for the required secrets."
 
-      - name: Package
+      - name: Package (one zip per target, each with the license bundle)
         run: |
           set -eux
-          stage="retroplug-${RP_VERSION}-macos-universal"
-          mkdir -p "dist/$stage"
-          cp -a build/bin/RetroPlug.app build/bin/retroplug-cli \
-                build/bin/RetroPlug.clap build/bin/RetroPlug.vst3 \
-                build/bin/RetroPlug.component build/bin/RetroPlug.vst \
-                "dist/$stage/"
-          # ditto preserves bundle symlinks/codesign metadata that `zip` mangles.
-          (cd dist && ditto -c -k --keepParent "$stage" "$stage.zip")
+          plat="macos-universal"
+          # artifact-in-build/bin : download-target-name
+          for entry in "RetroPlug.app:standalone" "RetroPlug.vst3:vst3" \
+                       "RetroPlug.clap:clap" "RetroPlug.component:au" \
+                       "RetroPlug.vst:vst2" "retroplug-cli:cli"; do
+            art="${entry%%:*}"; tgt="${entry##*:}"
+            base="retroplug-${RP_VERSION}-${plat}-${tgt}"
+            mkdir -p "dist/$base/licenses"
+            cp -a "build/bin/$art" "dist/$base/"
+            cp packaging/licenses/*.txt "dist/$base/licenses/"
+            # ditto zips the bundle preserving symlinks. --noextattr/--norsrc drops
+            # extended attributes (incl. com.apple.provenance, which macOS 14 stamps
+            # on and `xattr -c` can't remove) so the zip carries no AppleDouble (._*)
+            # sidecars. Verified not to affect the code signature / staple ticket,
+            # which live in the Mach-O + Contents/_CodeSignature + a bundle file, not
+            # in xattrs (and it also usefully drops the quarantine flag).
+            (cd dist && ditto -c -k --keepParent --noextattr --norsrc "$base" "$base.zip")
+          done
 
       - uses: actions/upload-artifact@v7
         with:
