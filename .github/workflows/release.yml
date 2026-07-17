@@ -155,9 +155,9 @@ jobs:
         run: |
           $stage = "retroplug-$env:RP_VERSION-windows-x86_64"
           New-Item -ItemType Directory -Force -Path "dist\$stage" | Out-Null
-          Copy-Item build\bin\retroplug.exe,build\bin\retroplug-cli.exe,`
-                    build\bin\retroplug.clap,build\bin\retroplug.vst3,`
-                    build\bin\retroplug-vst2.dll -Destination "dist\$stage"
+          Copy-Item build\bin\RetroPlug.exe,build\bin\retroplug-cli.exe,`
+                    build\bin\RetroPlug.clap,build\bin\RetroPlug.vst3,`
+                    build\bin\RetroPlug.dll -Destination "dist\$stage"
           Compress-Archive -Path "dist\$stage\*" -DestinationPath "dist\$stage.zip"
 
       - uses: actions/upload-artifact@v7
@@ -232,10 +232,10 @@ jobs:
           set -eux
           for f in build/bin/RetroPlug.app/Contents/MacOS/RetroPlug \
                    build/bin/retroplug-cli \
-                   build/bin/retroplug.clap/Contents/MacOS/retroplug \
-                   build/bin/retroplug.vst3/Contents/MacOS/retroplug \
-                   build/bin/retroplug.component/Contents/MacOS/retroplug \
-                   build/bin/retroplug.vst/Contents/MacOS/retroplug; do
+                   build/bin/RetroPlug.clap/Contents/MacOS/retroplug \
+                   build/bin/RetroPlug.vst3/Contents/MacOS/retroplug \
+                   build/bin/RetroPlug.component/Contents/MacOS/retroplug \
+                   build/bin/RetroPlug.vst/Contents/MacOS/retroplug; do
             lipo -archs "$f"
             lipo -archs "$f" | grep -q x86_64
             lipo -archs "$f" | grep -q arm64
@@ -281,7 +281,7 @@ jobs:
           # and shipped. build/bin ALSO contains unsigned test/host helper binaries
           # (retroplug-ui-test, retroplug-host, …); they must never enter the
           # notarization archive or Apple rejects the WHOLE upload as Invalid.
-          BUNDLES="retroplug.vst retroplug.clap retroplug.vst3 retroplug.component RetroPlug.app"
+          BUNDLES="RetroPlug.vst RetroPlug.clap RetroPlug.vst3 RetroPlug.component RetroPlug.app"
           for b in $BUNDLES; do
             sign_bundle "build/bin/$b"
             codesign --verify --strict --verbose=2 "build/bin/$b"
@@ -333,8 +333,8 @@ jobs:
           stage="retroplug-${RP_VERSION}-macos-universal"
           mkdir -p "dist/$stage"
           cp -a build/bin/RetroPlug.app build/bin/retroplug-cli \
-                build/bin/retroplug.clap build/bin/retroplug.vst3 \
-                build/bin/retroplug.component build/bin/retroplug.vst \
+                build/bin/RetroPlug.clap build/bin/RetroPlug.vst3 \
+                build/bin/RetroPlug.component build/bin/RetroPlug.vst \
                 "dist/$stage/"
           # ditto preserves bundle symlinks/codesign metadata that `zip` mangles.
           (cd dist && ditto -c -k --keepParent "$stage" "$stage.zip")

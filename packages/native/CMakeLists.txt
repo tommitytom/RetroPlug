@@ -264,7 +264,14 @@ add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)
 # never emit import libraries on Linux/macOS, so this is Windows-specific. Give
 # the standalone's implib a distinct name; nothing links against it.
 if(WIN32 AND TARGET retroplug-jack)
-    set_target_properties(retroplug-jack PROPERTIES ARCHIVE_OUTPUT_NAME retroplug-jack)
+    # Product-cased exe (RetroPlug.exe) to match RetroPlug.app + the branded plugin
+    # bundles. Keep the implib named retroplug-jack: with OUTPUT_NAME "RetroPlug"
+    # link.exe would emit RetroPlug.lib, which on the case-insensitive Windows FS
+    # still collides with DPF's base "retroplug.lib" (LNK1149) — nothing links this
+    # implib anyway.
+    set_target_properties(retroplug-jack PROPERTIES
+        OUTPUT_NAME "RetroPlug"
+        ARCHIVE_OUTPUT_NAME retroplug-jack)
 
     # No console window when the standalone is launched directly. DPF's main() already attaches to a
     # parent console when there is one (AttachConsole(ATTACH_PARENT_PROCESS) in DistrhoPluginJACK.cpp),
@@ -286,13 +293,27 @@ elseif(APPLE AND TARGET retroplug-jack)
     #
     # OUTPUT_NAME is the bundle's on-disk name, which is what Finder / the Applications folder display — so
     # override DPF's lowercase "retroplug" to the product-cased "RetroPlug" (RetroPlug.app). This runs after
-    # dpf_add_plugin, so it wins, and it only affects the standalone — the .vst3/.clap/.component bundle names
-    # (which DAWs key on) are untouched. CFBundleExecutable is derived from OUTPUT_NAME automatically.
+    # dpf_add_plugin, so it wins. CFBundleExecutable is derived from OUTPUT_NAME automatically. (The plugin
+    # bundle DIRS are branded separately, post-build, further down — hosts key on the plugin's VST3 class /
+    # CLAP id / AU codes, not the bundle filename, so that rename is purely cosmetic.)
     set_target_properties(retroplug-jack PROPERTIES
         MACOSX_BUNDLE TRUE
         OUTPUT_NAME "RetroPlug"
         MACOSX_BUNDLE_BUNDLE_NAME "RetroPlug"
         MACOSX_BUNDLE_GUI_IDENTIFIER "net.tommitytom.retroplug")  # matches DISTRHO_PLUGIN_CLAP_ID + the AU bundle
+endif()
+
+# Windows: the single-file plugin outputs (CLAP + VST2 are plain modules there,
+# not bundle dirs) take the branded name straight from OUTPUT_NAME → RetroPlug.clap
+# / RetroPlug.dll. VST3 is a bundle DIR even on Windows, so it's branded via the
+# post-build rename below instead. Linux keeps the lowercase Unix names.
+if(WIN32)
+    if(TARGET retroplug-clap)
+        set_target_properties(retroplug-clap PROPERTIES OUTPUT_NAME "RetroPlug")  # RetroPlug.clap
+    endif()
+    if(TARGET retroplug-vst2)
+        set_target_properties(retroplug-vst2 PROPERTIES OUTPUT_NAME "RetroPlug")  # RetroPlug.dll
+    endif()
 endif()
 
 # macOS: give the vst3/clap/vst bundles our CFBundleIdentifier. DPF generates the AU (.component) Info.plist
@@ -354,6 +375,46 @@ if(APPLE AND RETROPLUG_SDL2_FRAMEWORK)
                 COMMAND /bin/cp -R "${SDL2_FRAMEWORK}"
                         "${CMAKE_BINARY_DIR}/bin/${_bundle}/Contents/Frameworks/"
                 COMMENT "Embedding SDL2.framework into ${_bundle}"
+                VERBATIM)
+        endif()
+    endforeach()
+endif()
+
+# Brand the on-disk plugin bundle NAMES to the product casing on the GUI platforms
+# (macOS + Windows — both case-insensitive filesystems). DPF hardcodes the lowercase
+# plugin name into each bundle's DIRECTORY path (bin/retroplug.vst3/…), which
+# OUTPUT_NAME can't override, so rename the outer directory post-build to RetroPlug.*.
+# Only the directory name changes — the inner binary + Info.plist (CFBundleExecutable)
+# stay "retroplug", so the code-signature / notarization seal (which covers Contents/,
+# not the directory name) and host loading (via CFBundleExecutable) are unaffected.
+# `cmake -E rename` is an idempotent no-op on later builds (source and dest are the
+# same inode on a case-insensitive FS). Linux stays lowercase (Unix convention +
+# case-sensitive FS); its single-file CLAP/VST2 — and Windows' — are branded via
+# OUTPUT_NAME above, so only the bundle DIRS need renaming here.
+if(APPLE OR WIN32)
+    set(_rp_renames "")
+    if(APPLE)
+        list(APPEND _rp_renames
+            "retroplug-vst3:retroplug.vst3:RetroPlug.vst3"
+            "retroplug-clap:retroplug.clap:RetroPlug.clap"
+            "retroplug-au:retroplug.component:RetroPlug.component"
+            "retroplug-vst2:retroplug.vst:RetroPlug.vst")
+    elseif(WIN32)
+        list(APPEND _rp_renames "retroplug-vst3:retroplug.vst3:RetroPlug.vst3")
+    endif()
+    foreach(_triple ${_rp_renames})
+        string(REPLACE ":" ";" _t "${_triple}")
+        list(GET _t 0 _tgt)
+        list(GET _t 1 _from)
+        list(GET _t 2 _to)
+        if(TARGET ${_tgt})
+            # Registered after the CFBundleIdentifier + SDL2-embed POST_BUILD steps
+            # above, so those run against the lowercase dir first, then this renames.
+            add_custom_command(TARGET ${_tgt} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E rename
+                        "${CMAKE_BINARY_DIR}/bin/${_from}"
+                        "${CMAKE_BINARY_DIR}/bin/${_to}"
+                COMMENT "Branding bundle name: ${_from} -> ${_to}"
                 VERBATIM)
         endif()
     endforeach()

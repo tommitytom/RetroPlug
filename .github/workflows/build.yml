@@ -173,11 +173,11 @@ jobs:
           name: retroplug-windows-x86_64
           if-no-files-found: warn
           path: |
-            build/bin/retroplug.exe
+            build/bin/RetroPlug.exe
             build/bin/retroplug-cli.exe
-            build/bin/retroplug.clap
-            build/bin/retroplug.vst3
-            build/bin/retroplug-vst2.dll
+            build/bin/RetroPlug.clap
+            build/bin/RetroPlug.vst3
+            build/bin/RetroPlug.dll
 
   # Universal (arm64 + x86_64) macOS build on macos-14. Building both slices on
   # every PR gives x86_64 compile coverage without a native Intel runner (the
@@ -237,10 +237,10 @@ jobs:
           set -eux
           for f in build/bin/RetroPlug.app/Contents/MacOS/RetroPlug \
                    build/bin/retroplug-cli \
-                   build/bin/retroplug.clap/Contents/MacOS/retroplug \
-                   build/bin/retroplug.vst3/Contents/MacOS/retroplug \
-                   build/bin/retroplug.component/Contents/MacOS/retroplug \
-                   build/bin/retroplug.vst/Contents/MacOS/retroplug; do
+                   build/bin/RetroPlug.clap/Contents/MacOS/retroplug \
+                   build/bin/RetroPlug.vst3/Contents/MacOS/retroplug \
+                   build/bin/RetroPlug.component/Contents/MacOS/retroplug \
+                   build/bin/RetroPlug.vst/Contents/MacOS/retroplug; do
             lipo -archs "$f" | grep -q x86_64
             lipo -archs "$f" | grep -q arm64
           done
@@ -266,7 +266,7 @@ jobs:
           path: |
             build/bin/RetroPlug.app
             build/bin/retroplug-cli
-            build/bin/retroplug.clap
-            build/bin/retroplug.vst3
-            build/bin/retroplug.component
-            build/bin/retroplug.vst
+            build/bin/RetroPlug.clap
+            build/bin/RetroPlug.vst3
+            build/bin/RetroPlug.component
+            build/bin/RetroPlug.vst
