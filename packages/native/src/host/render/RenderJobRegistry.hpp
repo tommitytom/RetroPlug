@@ -40,17 +40,22 @@ public:
     RenderJobRegistry& operator=(const RenderJobRegistry&) = delete;
 
     // Start a render on a dedicated thread. `jobJson` is the RenderOpts-shaped spec the worker consumes.
-    // `systemId` tags the job with its originating system (0 if none). Returns the new job id.
-    JobId start(std::uint32_t systemId, std::string jobJson);
+    // `owner` is an opaque token (the editor that started it) so a multi-instance host only shows its own
+    // jobs; `systemId` tags the job with its originating system (0 if none). Returns the new job id.
+    JobId start(const void* owner, std::uint32_t systemId, std::string jobJson);
 
     // Request cooperative cancellation (the worker aborts at the next chunk boundary). No-op if unknown.
     void cancel(JobId id);
 
-    // A thread-safe copy of every tracked job's status (for the per-frame UI poll).
-    std::vector<Status> snapshot() const;
+    // A thread-safe copy of the tracked jobs belonging to `owner` (for that editor's per-frame UI poll).
+    std::vector<Status> snapshot(const void* owner) const;
 
-    // Join + drop every job that has finished (Done / Error / Cancelled). Called periodically by the UI so
-    // terminal jobs don't accumulate; safe to call anytime (running jobs are left untouched).
+    // Join + drop one finished job (the UI dismisses a done/cancelled badge, or clears an error). No-op if
+    // the job is unknown or still running.
+    void dismiss(JobId id);
+
+    // Join + drop every job that has finished (Done / Error / Cancelled). Safe anytime (running jobs are
+    // left untouched); the destructor and a periodic sweep use it.
     void clearFinished();
 
     // A stable lowercase name for a state ("rendering" | "done" | "error" | "cancelled").
@@ -60,6 +65,7 @@ private:
     struct Job {
         Status status;
         std::string jobJson;
+        const void* owner = nullptr;  // the editor that started it; snapshot() filters on this
         std::atomic<bool> cancelRequested{false};
         std::atomic<bool> finished{false};
         std::thread thread;

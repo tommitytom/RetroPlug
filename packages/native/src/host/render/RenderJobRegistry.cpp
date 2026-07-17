@@ -15,7 +15,7 @@ RenderJobRegistry::~RenderJobRegistry() {
         if (job->thread.joinable()) job->thread.join();
 }
 
-RenderJobRegistry::JobId RenderJobRegistry::start(std::uint32_t systemId, std::string jobJson) {
+RenderJobRegistry::JobId RenderJobRegistry::start(const void* owner, std::uint32_t systemId, std::string jobJson) {
     std::lock_guard<std::mutex> lk(mutex_);
     const JobId id = nextId_++;
     auto job = std::make_unique<Job>();
@@ -23,6 +23,7 @@ RenderJobRegistry::JobId RenderJobRegistry::start(std::uint32_t systemId, std::s
     job->status.systemId = systemId;
     job->status.state = State::Rendering;
     job->jobJson = std::move(jobJson);
+    job->owner = owner;
     Job* raw = job.get(); // stable: the Job lives on the heap; a rehash moves the unique_ptr, not the object
     jobs_[id] = std::move(job);
     raw->thread = std::thread([this, raw] { runJob(raw); });
@@ -35,12 +36,24 @@ void RenderJobRegistry::cancel(JobId id) {
     if (it != jobs_.end()) it->second->cancelRequested.store(true, std::memory_order_relaxed);
 }
 
-std::vector<RenderJobRegistry::Status> RenderJobRegistry::snapshot() const {
+std::vector<RenderJobRegistry::Status> RenderJobRegistry::snapshot(const void* owner) const {
     std::lock_guard<std::mutex> lk(mutex_);
     std::vector<Status> out;
-    out.reserve(jobs_.size());
-    for (const auto& [id, job] : jobs_) out.push_back(job->status);
+    for (const auto& [id, job] : jobs_)
+        if (job->owner == owner) out.push_back(job->status);
     return out;
+}
+
+void RenderJobRegistry::dismiss(JobId id) {
+    std::thread toJoin;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        auto it = jobs_.find(id);
+        if (it == jobs_.end() || !it->second->finished.load(std::memory_order_acquire)) return;
+        toJoin = std::move(it->second->thread);
+        jobs_.erase(it);
+    }
+    if (toJoin.joinable()) toJoin.join();
 }
 
 void RenderJobRegistry::clearFinished() {

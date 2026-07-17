@@ -27,6 +27,7 @@ import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
 import { stem } from "../../../src/pathUtil";
 import { openPath } from "../../lvgl/openPath";
+import { startSystemRender } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
@@ -73,6 +74,7 @@ const ZIP_PATTERNS = ["*.rplg.zip"]; // exported project (PKZIP) — always `.rp
 const LOAD_PATTERNS = ["*.rplg", "*.rplg.zip"]; // load/locate accept either on-disk shape
 const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
 const SRAM_PATTERNS = ["*.sav"];
+const WAV_PATTERNS = ["*.wav"]; // render output
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
 function cycleInt(current: number, min: number, max: number, dir: 1 | -1): number {
@@ -224,6 +226,24 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${romStem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
     ),
   );
+
+  // Render to WAV — a background job on a fresh instance built from a COPY of the live SRAM/savestate (never
+  // the running core), like `retroplug-cli render`. The menu can close while it runs; progress + cancel show
+  // on the system tile. Only for on-disk ROMs; split modes gate on platform (channels = GB/NES, pins = NES).
+  if (sys.romPath) {
+    const renderDefault = `${romStem || "render"}.wav`;
+    const renderAction = (id: string, label: string, split: "mix" | "channels" | "pins") =>
+      action(id, label, () =>
+        browseThen(ctx, { title: label, patterns: WAV_PATTERNS, saving: true, defaultName: renderDefault }, (p) =>
+          void startSystemRender(ctx.stores.backend, sys, split, p),
+        ),
+      );
+    const renderChildren: MenuItem[] = [renderAction("sys-render-mix", "Render Mix...", "mix")];
+    if (sys.core === "sameboy" || sys.platform === "nes")
+      renderChildren.push(renderAction("sys-render-channels", "Render Channels...", "channels"));
+    if (sys.platform === "nes") renderChildren.push(renderAction("sys-render-pins", "Render Pins...", "pins"));
+    items.push(sep("sys-sep-render"), submenu("sys-render", "Render", renderChildren));
+  }
   return items;
 }
 

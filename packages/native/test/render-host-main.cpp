@@ -39,11 +39,11 @@ int runOne(const char* jobJson) {
 // Run N jobs concurrently through the registry; poll snapshots until all terminal. Returns 0 iff all Done.
 int runRegistry(const std::vector<std::string>& jobs) {
     RenderJobRegistry registry;
-    for (std::size_t i = 0; i < jobs.size(); ++i) registry.start(static_cast<std::uint32_t>(i + 1), jobs[i]);
+    for (std::size_t i = 0; i < jobs.size(); ++i) registry.start(nullptr, static_cast<std::uint32_t>(i + 1), jobs[i]);
 
     for (;;) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        auto snap = registry.snapshot();
+        auto snap = registry.snapshot(nullptr);
         std::size_t terminal = 0;
         for (const auto& s : snap)
             if (s.state != RenderJobRegistry::State::Rendering) ++terminal;
@@ -64,13 +64,13 @@ int runRegistry(const std::vector<std::string>& jobs) {
 // Start one (long) job, cancel it shortly after, assert it terminates "cancelled".
 int runCancel(const char* jobJson) {
     RenderJobRegistry registry;
-    RenderJobRegistry::JobId id = registry.start(1, jobJson);
+    RenderJobRegistry::JobId id = registry.start(nullptr, 1, jobJson);
     std::this_thread::sleep_for(std::chrono::milliseconds(300)); // let it get past boot into the render loop
     registry.cancel(id);
 
     for (;;) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        auto snap = registry.snapshot();
+        auto snap = registry.snapshot(nullptr);
         if (snap.empty()) break;
         const auto& s = snap.front();
         if (s.state != RenderJobRegistry::State::Rendering) {
