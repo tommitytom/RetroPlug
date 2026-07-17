@@ -107,6 +107,77 @@ jobs:
           if-no-files-found: error
           path: dist/*.zip
 
+  # Native arm64 Linux release build — the Raspberry Pi target (Pi 3/4/5, Zero 2,
+  # on the 64-bit Raspberry Pi OS). Same recipe as the `linux` job on a free arm64
+  # runner, with RGBDS built from source (no arm64 release binary is published).
+  linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libgl-dev libglu1-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxext-dev libxinerama-dev \
+            libdbus-1-dev libasound2-dev libjack-jackd2-dev \
+            libcurl4-openssl-dev libffi-dev libssl-dev \
+            libsdl2-dev \
+            bison libpng-dev
+
+      - name: Install RGBDS (boot-ROM assembler, built from source — no arm64 release)
+        run: |
+          set -eux
+          tmp="$(mktemp -d)"; cd "$tmp"
+          git clone --depth 1 --branch v1.0.1 https://github.com/gbdev/rgbds
+          cd rgbds
+          make -j"$(nproc)"
+          sudo install -m 0755 rgbasm rgblink rgbgfx rgbfix /usr/local/bin/
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+      - name: Install workspace deps (pnpm)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Package (one zip per target, each with the license bundle)
+        run: |
+          set -eux
+          plat="linux-aarch64"
+          # artifact-in-build/bin : download-target-name
+          for entry in "retroplug:standalone" "retroplug.vst3:vst3" \
+                       "retroplug.clap:clap" "retroplug-vst2.so:vst2" \
+                       "retroplug-cli:cli"; do
+            art="${entry%%:*}"; tgt="${entry##*:}"
+            base="retroplug-${RP_VERSION}-${plat}-${tgt}"
+            mkdir -p "dist/$base/licenses"
+            cp -a "build/bin/$art" "dist/$base/"
+            cp packaging/licenses/*.txt "dist/$base/licenses/"
+            (cd dist && zip -ry "$base.zip" "$base")
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-linux-aarch64
+          if-no-files-found: error
+          path: dist/*.zip
+
   windows:
     runs-on: windows-2022
     env:
@@ -372,7 +443,7 @@ jobs:
           path: dist/*.zip
 
   release:
-    needs: [linux, windows, macos]
+    needs: [linux, linux-arm64, windows, macos]
     runs-on: ubuntu-24.04
     # Publish on any tag push, or on a manual run that opted in.
     if: startsWith(github.ref, 'refs/tags/') || inputs.publish
