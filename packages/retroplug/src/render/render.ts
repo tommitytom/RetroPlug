@@ -28,7 +28,9 @@ import {
 } from "./types";
 
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
-const DEFAULT_FIXED_MS = 5 * 60 * 1000; // fixed-render length when no duration is pinned and no LSDj auto-detect (5 min)
+// A fixed (non-auto-detect) render runs for `durationMs` if pinned, else `maxDurationMs` — so "max duration"
+// bounds every render, not just the LSDj auto-length cap. maxDurationMs defaults to 300000 (5 min), so a
+// render with neither pinned is unchanged from the old fixed default.
 
 // LSDj song-length auto-detect: LSDj's HFF command stops the song by powering the APU off — a 0 write to
 // NR52 ($FF26), the sound master-enable register (bit 7). We poll it each render chunk and stop at the
@@ -348,7 +350,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   const autoDetect = lsdjLoaded && o.start && o.durationMs === undefined;
 
   // Announce before the (possibly multi-minute) render so callers don't look hung while it works.
-  const how = autoDetect ? `detecting length (HFF, cap ${o.maxDurationMs}ms)` : `${o.durationMs ?? DEFAULT_FIXED_MS}ms`;
+  const how = autoDetect ? `detecting length (HFF, cap ${o.maxDurationMs}ms)` : `${o.durationMs ?? o.maxDurationMs}ms`;
   log(`rendering ${o.rom} → ${base}${o.split === "mix" ? "" : "_*"} (${how})…`);
 
   // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
@@ -362,7 +364,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     hooks.onProgress?.(1);
     return { outputs, lengthMs, frames: m.endFrame - m.startFrame, hff: m.hff };
   }
-  driveFixed(sink, Math.floor(((o.durationMs ?? DEFAULT_FIXED_MS) * sr) / 1000), hooks); // exact target frame count
+  driveFixed(sink, Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000), hooks); // exact target frame count
   const outputs = sink.finishAll();
   hooks.onProgress?.(1);
   return { outputs };

@@ -42,5 +42,6 @@ export function serializeUserConfig(cfg: UserConfig): string {
     activeGamepadBindings: cfg.activeGamepadBindings,
     defaultZoom: cfg.defaultZoom,
     sramAutoSave: cfg.sramAutoSave,
+    render: cfg.render,
   });
 }

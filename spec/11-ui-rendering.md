@@ -78,8 +78,14 @@ so concurrent core construction can't race.
 - **`ui/lvgl/render.ts`** — `startSystemRender` snapshots the live `readSram`/`readState` to a temp file
   under `configDir` and calls `__rp_startRender`; `pickActiveRenderJob` selects a tile's badge job. Inert
   in the headless harness (no hooks bound).
-- **Menu** — `System > Render` → Render Mix / Channels / Pins (channels = GB/NES, pins = NES); on-disk ROMs
-  only (an embedded mGB has no path to reconstruct from — a v1 limit).
+- **Menu** — `System > Render` holds selectors — **Split** (Mix / Channels / Pins, gated on platform),
+  **Sample Rate** (44100 / 48000 / 96000), **Max Duration** (Left/Right ±1s, PageUp/PageDown ±30s) — persisted
+  in `userConfig.render`, plus one **Render…** action that applies them. On-disk ROMs only (an embedded mGB
+  has no path to reconstruct from — a v1 limit). The PageUp/PageDown coarse step rides a new
+  `MenuItem.onCoarseStep`, routed from Menu.tsx's raw `"key"` bus (the Shift modifier isn't delivered to the
+  menu; Page keys aren't LVGL-translated so they arrive there without stealing focus). "Max Duration" bounds
+  every render — `runRenderJob`'s fixed fallback is now `durationMs ?? maxDurationMs` (default 300000, so
+  default CLI output is unchanged).
 - **Tile** — [EmulatorTile.tsx](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx) polls
   `__rp_getRenderJobs()` on the existing per-frame event and draws a bottom progress + cancel badge;
   finished jobs are auto-dismissed.
@@ -89,15 +95,18 @@ so concurrent core construction can't race.
 - **Native parity/concurrency/cancel:** `retroplug-render-host-test` (built by name) — `<job-json>` proves
   byte-identity vs `retroplug-cli render`; `--registry <j>...` runs jobs concurrently; `--cancel <j>` aborts
   mid-render. Clean under ThreadSanitizer (`tools/run-sanitizer.sh thread`, built in `build-tsan/`).
-- **UI-seam logic:** `pnpm test render` — `startSystemRender` spec/snapshot + `pickActiveRenderJob`.
-- **Badge rendering:** `pnpm test:ui render-badge` — the tile badge on the real LVGL display.
+- **UI-seam logic:** `pnpm test render` — `startSystemRender` spec/snapshot, `pickActiveRenderJob`,
+  `validSplits`/`formatDuration`, and the `userConfig.render` setters/clamps.
+- **Badge + menu:** `pnpm test:ui render-badge` (tile badge) and `pnpm test:ui render-menu` (the Split /
+  Sample Rate / Max-Duration selectors + PageUp/PageDown coarse step + Render… → `__rp_startRender`), both on
+  the real LVGL display via a file-dropped ROM.
 
 ## Not yet built / deferred
 
 - **Project-level render** (all instances at once) — the registry + per-job-thread model already supports N
   concurrent jobs; only the "render the whole project" entry point is missing.
-- **Duration / tempo UI** — v1 uses the CLI defaults (LSDj auto-length, else 5-min fixed); no fixed-duration
-  or transport control in the menu yet.
+- **Tempo / transport UI** — no BPM/transport control in the menu (split, sample rate, and max duration are
+  now selectable; a pinned *fixed* duration separate from the max cap is not).
 - **Embedded-ROM render** (mGB with no on-disk path) — gated out; would need the `embeddedRom` marker
   threaded through the worker spec.
 - **Multi-instance-in-DAW badge on editor reopen** — a job's owner is the editor session, so a close/reopen

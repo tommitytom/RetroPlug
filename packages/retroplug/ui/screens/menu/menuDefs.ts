@@ -20,14 +20,15 @@ import {
   type LsdjSyncMode,
 } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
-import { SRAM_AUTO_SAVES } from "../../../src/userConfig";
+import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES } from "../../../src/userConfig";
+import type { SplitMode } from "../../../src/render";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
 import { stem } from "../../../src/pathUtil";
 import { openPath } from "../../lvgl/openPath";
-import { startSystemRender } from "../../lvgl/render";
+import { startSystemRender, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
@@ -81,6 +82,8 @@ function cycleInt(current: number, min: number, max: number, dir: 1 | -1): numbe
   if (dir > 0) return current >= max ? min : current + 1;
   return current <= min ? max : current - 1;
 }
+
+const SPLIT_LABELS: Record<SplitMode, string> = { mix: "Mix", channels: "Channels", pins: "Pins" };
 
 // --- item helpers -------------------------------------------------------------------------------------
 function action(id: string, label: string, onSelect: () => void, disabled = false): MenuItem {
@@ -229,19 +232,48 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
 
   // Render to WAV — a background job on a fresh instance built from a COPY of the live SRAM/savestate (never
   // the running core), like `retroplug-cli render`. The menu can close while it runs; progress + cancel show
-  // on the system tile. Only for on-disk ROMs; split modes gate on platform (channels = GB/NES, pins = NES).
+  // on the system tile. Split/sample-rate/max-duration are picked here (persisted in userConfig) and the one
+  // "Render..." action applies them. Only for on-disk ROMs. Split modes gate on platform.
   if (sys.romPath) {
-    const renderDefault = `${romStem || "render"}.wav`;
-    const renderAction = (id: string, label: string, split: "mix" | "channels" | "pins") =>
-      action(id, label, () =>
-        browseThen(ctx, { title: label, patterns: WAV_PATTERNS, saving: true, defaultName: renderDefault }, (p) =>
-          void startSystemRender(ctx.stores.backend, sys, split, p),
+    const userConfig = ctx.stores.userConfig;
+    const r = ctx.userConfig.render;
+    const splits = validSplits(sys);
+    const split = splits.includes(r.split) ? r.split : "mix"; // clamp a stored pins/channels to this platform
+    const rateIdx = Math.max(0, RENDER_SAMPLE_RATES.indexOf(r.sampleRate as never));
+    const setMaxDur = (delta: number) => userConfig.setRenderMaxDurationSec(r.maxDurationSec + delta);
+
+    const renderChildren: MenuItem[] = [
+      cycler("sys-render-split", "Split", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
+        userConfig.setRenderSplit(splits[n]),
+      ),
+      cycler("sys-render-rate", "Sample Rate", RENDER_SAMPLE_RATES.map((hz) => `${hz} Hz`), rateIdx, (n) =>
+        userConfig.setRenderSampleRate(RENDER_SAMPLE_RATES[n]),
+      ),
+      // Max Duration: Left/Right step ±1s, PageUp/PageDown jump ±30s (Menu.tsx routes onCoarseStep).
+      {
+        id: "sys-render-maxdur",
+        label: `Max Duration: ${formatDuration(r.maxDurationSec)}`,
+        kind: "cycler",
+        keepOpen: true,
+        onSelect: () => setMaxDur(1),
+        onCycle: (dir) => setMaxDur(dir),
+        onCoarseStep: (dir) => setMaxDur(dir * 30),
+      },
+      sep("sys-render-sep"),
+      action("sys-render-go", "Render...", () =>
+        browseThen(
+          ctx,
+          { title: "Render", patterns: WAV_PATTERNS, saving: true, defaultName: `${romStem || "render"}.wav` },
+          (p) =>
+            void startSystemRender(
+              ctx.stores.backend,
+              sys,
+              { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000 },
+              p,
+            ),
         ),
-      );
-    const renderChildren: MenuItem[] = [renderAction("sys-render-mix", "Render Mix...", "mix")];
-    if (sys.core === "sameboy" || sys.platform === "nes")
-      renderChildren.push(renderAction("sys-render-channels", "Render Channels...", "channels"));
-    if (sys.platform === "nes") renderChildren.push(renderAction("sys-render-pins", "Render Pins...", "pins"));
+      ),
+    ];
     items.push(sep("sys-sep-render"), submenu("sys-render", "Render", renderChildren));
   }
   return items;
