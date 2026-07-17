@@ -277,26 +277,49 @@ jobs:
             fi
             sign "$bundle"
           }
-          for b in build/bin/retroplug.vst build/bin/retroplug.clap \
-                   build/bin/retroplug.vst3 build/bin/retroplug.component \
-                   build/bin/RetroPlug.app; do
-            sign_bundle "$b"
-            codesign --verify --strict --verbose=2 "$b"
+          # The distributable set — the ONLY artifacts signed, notarized, stapled,
+          # and shipped. build/bin ALSO contains unsigned test/host helper binaries
+          # (retroplug-ui-test, retroplug-host, …); they must never enter the
+          # notarization archive or Apple rejects the WHOLE upload as Invalid.
+          BUNDLES="retroplug.vst retroplug.clap retroplug.vst3 retroplug.component RetroPlug.app"
+          for b in $BUNDLES; do
+            sign_bundle "build/bin/$b"
+            codesign --verify --strict --verbose=2 "build/bin/$b"
           done
           # Bare Mach-O (no bundle): sign directly.
           sign build/bin/retroplug-cli
           codesign --verify --strict --verbose=2 build/bin/retroplug-cli
 
-          # Notarize: zip everything, submit, wait, then staple the bundles.
-          ditto -c -k --keepParent build/bin "$RUNNER_TEMP/notarize.zip"
+          # Notarize ONLY the signed distributables: stage them (ditto preserves the
+          # signatures + bundle symlinks), zip, submit.
+          STAGE="$RUNNER_TEMP/notarize"
+          rm -rf "$STAGE"; mkdir -p "$STAGE"
+          for a in $BUNDLES retroplug-cli; do ditto "build/bin/$a" "$STAGE/$a"; done
+          ditto -c -k --keepParent "$STAGE" "$RUNNER_TEMP/notarize.zip"
+
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$MACOS_NOTARY_APPLE_ID" \
             --password "$MACOS_NOTARY_PASSWORD" \
-            --team-id "$MACOS_NOTARY_TEAM_ID" --wait
-          for b in build/bin/RetroPlug.app build/bin/retroplug.clap \
-                   build/bin/retroplug.vst3 build/bin/retroplug.component \
-                   build/bin/retroplug.vst; do
-            xcrun stapler staple "$b"
+            --team-id "$MACOS_NOTARY_TEAM_ID" \
+            --wait --output-format json > "$RUNNER_TEMP/notary.json"
+          cat "$RUNNER_TEMP/notary.json"
+          # notarytool submit exits 0 even when the result is Invalid — check the
+          # status ourselves and dump Apple's per-file rejection log on failure.
+          SUBMIT_ID="$(plutil -extract id raw -o - "$RUNNER_TEMP/notary.json")"
+          SUBMIT_STATUS="$(plutil -extract status raw -o - "$RUNNER_TEMP/notary.json")"
+          if [ "$SUBMIT_STATUS" != "Accepted" ]; then
+            echo "::error title=Notarization failed::status=$SUBMIT_STATUS — Apple's log follows"
+            xcrun notarytool log "$SUBMIT_ID" \
+              --apple-id "$MACOS_NOTARY_APPLE_ID" \
+              --password "$MACOS_NOTARY_PASSWORD" \
+              --team-id "$MACOS_NOTARY_TEAM_ID" || true
+            exit 1
+          fi
+
+          # Staple the ticket to each bundle (a bare Mach-O like retroplug-cli
+          # can't be stapled — it validates online via its notarization).
+          for b in $BUNDLES; do
+            xcrun stapler staple "build/bin/$b"
           done
 
       - name: Warn if unsigned
