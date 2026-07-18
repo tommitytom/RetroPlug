@@ -108,7 +108,7 @@ sleep 0.3
 openbox >/dev/null 2>&1 &
 WM_PID=$!
 sleep 0.2
-jackd -d dummy -r 44100 -p 1024 >/tmp/reaper-jackd.log 2>&1 &
+jackd -d dummy -r 44100 -p "${REAPER_JACK_PERIOD:-1024}" >/tmp/reaper-jackd.log 2>&1 &
 JACK_PID=$!
 sleep 0.4
 

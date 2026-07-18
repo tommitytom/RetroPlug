@@ -196,6 +196,23 @@ normal DAW behaviour).
   plugin works inside a DAW (not just `retroplug-cli`, which bypasses DPF).
   Headless plumbing: `tools/run-reaper-render.sh` (Xvfb + openbox + dummy jackd +
   EULA auto-dismiss). Regenerate the fixture with `pnpm reaper:mgb-author`.
+- **Host MIDI-in intra-block timing** — `pnpm reaper:mgb-midi-timing` proves a host
+  MIDI event keeps its intra-block **sample offset** through a real DAW render (the fix
+  that stopped SameBoy collapsing every serial byte to frame 0 —
+  `SameBoySystem::pushSerialIn`/`stepIfBelowTarget`). Rendered with a **large audio
+  block** (`REAPER_JACK_PERIOD=8192` → the plugin's `run(frames,…)` sees 8192-frame
+  blocks; the JACK dummy period *is* Reaper's offline render block size), so an offset
+  within a block is tens of ms and resolvable in the audio. The fixture
+  ([examples/reaper/mgb_midi_timing.rpp](../examples/reaper/mgb_midi_timing.rpp), authored by
+  [tools/reaper-mgb-timing-author.lua](../tools/reaper-mgb-timing-author.lua)) drops **two mGB
+  notes into one render block** (near its start + end, ~136 ms apart, placed after the DMG
+  boot so the boot burst can't contaminate onsets), plus a ReaSynth click hard-R coincident
+  with the late note. `reaper-timing-analyze.py --midi-timing` asserts L has **two** onsets at
+  the authored spacing and the late one aligns with the click. Under the frame-0 bug both notes
+  collapse to the block start → **one** merged onset ~136 ms early → FAIL (verified against a
+  deliberately-reverted build). Reaper delivers real sub-block offsets (unlike a block-quantizing
+  host), so this is the on-a-DAW counterpart to the `retroplug-audio-test` SameBoy serial-timing
+  unit checks. Not in CI. Regenerate with `pnpm reaper:mgb-midi-timing-author`.
 - **Arduinoboy startup-sync latency** — `pnpm reaper:lsdj-arduinoboy-metro`
   renders [examples/reaper/lsdj_arduinoboy_metro.rpp](../examples/reaper/lsdj_arduinoboy_metro.rpp)
   (LSDj hard-L on `MidiSyncArduinoboy`, a ReaSynth click hard-R, one note/quarter

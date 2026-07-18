@@ -91,7 +91,11 @@ openbox >/dev/null 2>&1 &
 WM_PID=$!
 sleep 0.2
 
-jackd -d dummy -r 44100 -p 1024 >/tmp/reaper-jackd.log 2>&1 &
+# The JACK dummy-device period == the block size Reaper's offline render hands the plugin's
+# run(frames,…) (empirically: every render block equals this period). Overridable so a timing
+# test can force large blocks (e.g. 8192) to make an intra-block MIDI offset resolvable.
+JACK_PERIOD="${REAPER_JACK_PERIOD:-1024}"
+jackd -d dummy -r 44100 -p "$JACK_PERIOD" >/tmp/reaper-jackd.log 2>&1 &
 JACK_PID=$!
 
 sleep 0.4
