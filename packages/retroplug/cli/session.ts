@@ -8,47 +8,12 @@
 // globalThis[Symbol.for("plugin")].__rpcSend and globalThis.tjs.exit(code); __DSP_KERNEL_BUNDLE__ is
 // injected at bundle time.
 
-import { createRealBackend } from "../src/realBackend";
-import { RecentStore } from "../src/recentStore";
-import { ProjectStore } from "../src/projectStore";
-import { createDspRuntime } from "../src/dspRuntime";
-import { createAudioDriver } from "../src/audioDriver";
-import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-import type { Backend } from "../src/backend";
-import type { RoleRegistry } from "../src/systemRoles";
-import type { DspRuntimeClient } from "../src/dspRuntime";
-import type { AudioDriver } from "../src/audioDriver";
-
-// The DSP role kernel source, baked in at bundle time (see tools/build-session.js). Any
-// session that renders audio needs it loaded into the DSP runtime before the first structural edit.
-declare const __DSP_KERNEL_BUNDLE__: string;
-
-/** Everything a session drives: the wired control plane over the real backend. */
-export interface Session {
-  backend: Backend;
-  registry: RoleRegistry;
-  recent: RecentStore;
-  project: ProjectStore;
-  dsp: DspRuntimeClient;
-  audio: AudioDriver;
-}
-
-/** Stand up the control plane the way every host does: build the registry, compose the
- *  store graph over the real backend, then load the DSP kernel BEFORE installing the store→DSP
- *  projection hook (the first systems mutation fires the hook, which needs the kernel already loaded). */
-export function bootSession(): Session {
-  const backend = createRealBackend();
-  const registry = buildAppRegistry();
-  const recent = new RecentStore(backend);
-  const project = new ProjectStore(backend, recent, registry);
-  const dsp = createDspRuntime();
-  const audio = createAudioDriver();
-
-  dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
-  project.setOnSystemsChange(() => syncDspFromStore(project, dsp));
-
-  return { backend, registry, recent, project, dsp, audio };
-}
+// bootSession + the Session type moved to src/bootSession.ts so the background render worker shares the
+// same boot path; re-exported here so every existing importer (test-native, sdk, sessions) is unchanged.
+export { bootSession } from "../src/bootSession";
+export type { Session } from "../src/bootSession";
+import { bootSession } from "../src/bootSession";
+import type { Session } from "../src/bootSession";
 
 // The host records the exit code through globalThis.tjs.exit (see cli/main.cpp).
 declare const tjs: { exit(code: number): void };

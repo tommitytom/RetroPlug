@@ -23,6 +23,7 @@
 #include "PluginShared.hpp"
 #include "ContextTargets.hpp"             // per-context routing for the __rp_* window hooks
 #include "host/input/GamepadManager.hpp" // SDL controller poll (shared UI-thread input)
+#include "host/render/RenderJobRegistry.hpp" // background render jobs (the __rp_*Render hooks)
 
 #include <chrono>
 #include <cstdint>
@@ -529,6 +530,66 @@ PluginUI* windowUiFromData(JSContext* ctx, JSValue* funcData) {
     return retroplug::contextTargetFromData<PluginUI>(ctx, funcData);
 }
 
+// Background render jobs, PROCESS-GLOBAL so a render survives its editor window closing (each job spins its
+// own RenderHost + Engine — nothing here references the live plugin). Jobs are tagged with the editor
+// (PluginUI*) that started them, so a multi-instance host only shows its own; the static's destructor
+// cancels + joins any still-running thread at process exit.
+retroplug::RenderJobRegistry g_renderJobs;
+
+// __rp_startRender(systemId, specJson): kick off a background render of a fresh system (the UI has already
+// snapshotted the live SRAM/savestate into the spec's sav/state path). Returns the job id.
+JSValue jsStartRender(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    PluginUI* ui = windowUiFromData(ctx, funcData);
+    if (!ui || argc < 2) return JS_NewInt64(ctx, 0);
+    std::uint32_t systemId = 0;
+    JS_ToUint32(ctx, &systemId, argv[0]);
+    const char* spec = JS_ToCString(ctx, argv[1]);
+    retroplug::RenderJobRegistry::JobId id =
+        g_renderJobs.start(ui, systemId, spec ? std::string(spec) : std::string());
+    if (spec) JS_FreeCString(ctx, spec);
+    return JS_NewInt64(ctx, static_cast<std::int64_t>(id));
+}
+
+// __rp_cancelRender(jobId): request cooperative cancellation of a running render.
+JSValue jsCancelRender(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue*) {
+    if (argc >= 1) {
+        std::int64_t id = 0;
+        JS_ToInt64(ctx, &id, argv[0]);
+        g_renderJobs.cancel(static_cast<retroplug::RenderJobRegistry::JobId>(id));
+    }
+    return JS_UNDEFINED;
+}
+
+// __rp_dismissRenderJob(jobId): drop a finished job (the UI dismisses a completed/errored badge).
+JSValue jsDismissRenderJob(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue*) {
+    if (argc >= 1) {
+        std::int64_t id = 0;
+        JS_ToInt64(ctx, &id, argv[0]);
+        g_renderJobs.dismiss(static_cast<retroplug::RenderJobRegistry::JobId>(id));
+    }
+    return JS_UNDEFINED;
+}
+
+// __rp_getRenderJobs(): this editor's render jobs as [{ id, systemId, state, progress, message }], for the
+// per-frame tile poll. state is "rendering" | "done" | "error" | "cancelled".
+JSValue jsGetRenderJobs(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSValue* funcData) {
+    JSValue arr = JS_NewArray(ctx);
+    PluginUI* ui = windowUiFromData(ctx, funcData);
+    if (!ui) return arr;
+    std::vector<retroplug::RenderJobRegistry::Status> jobs = g_renderJobs.snapshot(ui);
+    for (std::uint32_t i = 0; i < jobs.size(); ++i) {
+        const auto& s = jobs[i];
+        JSValue o = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, o, "id", JS_NewInt64(ctx, static_cast<std::int64_t>(s.id)));
+        JS_SetPropertyStr(ctx, o, "systemId", JS_NewUint32(ctx, s.systemId));
+        JS_SetPropertyStr(ctx, o, "state", JS_NewString(ctx, retroplug::RenderJobRegistry::stateName(s.state)));
+        JS_SetPropertyStr(ctx, o, "progress", JS_NewFloat64(ctx, s.progress));
+        JS_SetPropertyStr(ctx, o, "message", JS_NewString(ctx, s.message.c_str()));
+        JS_SetPropertyUint32(ctx, arr, i, o);
+    }
+    return arr;
+}
+
 JSValue jsSetWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
     PluginUI* ui = windowUiFromData(ctx, funcData);
     if (ui && argc >= 2) {
@@ -611,6 +672,10 @@ void installWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
     bind("__rp_quitWindow", jsQuitWindow, 0);
     bind("__rp_openPath", jsOpenPath, 1);
     bind("__rp_setWindowTitle", jsSetWindowTitle, 1);
+    bind("__rp_startRender", jsStartRender, 2);
+    bind("__rp_cancelRender", jsCancelRender, 1);
+    bind("__rp_dismissRenderJob", jsDismissRenderJob, 1);
+    bind("__rp_getRenderJobs", jsGetRenderJobs, 0);
     JS_FreeValue(ctx, g);
 }
 

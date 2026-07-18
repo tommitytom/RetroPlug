@@ -31,6 +31,8 @@
 #include "Core/Shared/SettingTypes.h"
 #include "Core/Shared/Video/VideoRenderer.h"
 #include "Utilities/FolderUtilities.h"
+
+#include "system/mesen/MesenGlobalInit.hpp"
 #include "Utilities/VirtualFile.h"
 
 namespace {
@@ -100,11 +102,9 @@ void MesenNesSystem::onActivate(double sampleRate) {
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
     gainSmoother_.clearToTargetValue();
 
-    // Mesen reads/writes config files relative to a "home folder". We don't
-    // need anything persistent right now; point it at /tmp so any incidental
-    // writes don't pollute the user's HOME.
-    FolderUtilities::SetHomeFolder("/tmp/retroplug-mesen");
-    MessageManager::SetOptions(false, true);
+    // Mesen's home folder + message options are process-global; set them once, thread-safely, so
+    // concurrent core construction on background render threads doesn't race (see MesenGlobalInit).
+    mesenGlobalInit();
 
     emu_ = std::make_unique<Emulator>();
     // enableShortcuts=false: the plugin drives input/transport itself and never

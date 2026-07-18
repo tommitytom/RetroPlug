@@ -20,13 +20,15 @@ import {
   type LsdjSyncMode,
 } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
-import { SRAM_AUTO_SAVES } from "../../../src/userConfig";
+import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES } from "../../../src/userConfig";
+import type { SplitMode } from "../../../src/render";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
 import { stem } from "../../../src/pathUtil";
 import { openPath } from "../../lvgl/openPath";
+import { startSystemRender, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
@@ -73,12 +75,15 @@ const ZIP_PATTERNS = ["*.rplg.zip"]; // exported project (PKZIP) — always `.rp
 const LOAD_PATTERNS = ["*.rplg", "*.rplg.zip"]; // load/locate accept either on-disk shape
 const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
 const SRAM_PATTERNS = ["*.sav"];
+const WAV_PATTERNS = ["*.wav"]; // render output
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
 function cycleInt(current: number, min: number, max: number, dir: 1 | -1): number {
   if (dir > 0) return current >= max ? min : current + 1;
   return current <= min ? max : current - 1;
 }
+
+const SPLIT_LABELS: Record<SplitMode, string> = { mix: "Mix", channels: "Channels", pins: "Pins" };
 
 // --- item helpers -------------------------------------------------------------------------------------
 function action(id: string, label: string, onSelect: () => void, disabled = false): MenuItem {
@@ -242,6 +247,53 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${romStem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
     ),
   );
+
+  // Render to WAV — a background job on a fresh instance built from a COPY of the live SRAM/savestate (never
+  // the running core), like `retroplug-cli render`. The menu can close while it runs; progress + cancel show
+  // on the system tile. Split/sample-rate/max-duration are picked here (persisted in userConfig) and the one
+  // "Render..." action applies them. Only for on-disk ROMs. Split modes gate on platform.
+  if (sys.romPath) {
+    const userConfig = ctx.stores.userConfig;
+    const r = ctx.userConfig.render;
+    const splits = validSplits(sys);
+    const split = splits.includes(r.split) ? r.split : "mix"; // clamp a stored pins/channels to this platform
+    const rateIdx = Math.max(0, RENDER_SAMPLE_RATES.indexOf(r.sampleRate as never));
+    const setMaxDur = (delta: number) => userConfig.setRenderMaxDurationSec(r.maxDurationSec + delta);
+
+    const renderChildren: MenuItem[] = [
+      cycler("sys-render-split", "Audio Routing", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
+        userConfig.setRenderSplit(splits[n]),
+      ),
+      cycler("sys-render-rate", "Sample Rate", RENDER_SAMPLE_RATES.map((hz) => `${hz} Hz`), rateIdx, (n) =>
+        userConfig.setRenderSampleRate(RENDER_SAMPLE_RATES[n]),
+      ),
+      // Max Duration: Left/Right step ±1s, PageUp/PageDown jump ±30s (Menu.tsx routes onCoarseStep).
+      {
+        id: "sys-render-maxdur",
+        label: `Max Duration: ${formatDuration(r.maxDurationSec)}`,
+        kind: "cycler",
+        keepOpen: true,
+        onSelect: () => setMaxDur(1),
+        onCycle: (dir) => setMaxDur(dir),
+        onCoarseStep: (dir) => setMaxDur(dir * 30),
+      },
+      sep("sys-render-sep"),
+      action("sys-render-go", "Render...", () =>
+        browseThen(
+          ctx,
+          { title: "Render", patterns: WAV_PATTERNS, saving: true, defaultName: `${romStem || "render"}.wav` },
+          (p) =>
+            void startSystemRender(
+              ctx.stores.backend,
+              sys,
+              { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000 },
+              p,
+            ),
+        ),
+      ),
+    ];
+    items.push(sep("sys-sep-render"), submenu("sys-render", "Render", renderChildren));
+  }
   return items;
 }
 

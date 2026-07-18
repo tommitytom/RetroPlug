@@ -30,6 +30,8 @@
 #include "Core/Shared/SettingTypes.h"
 #include "Core/Shared/Video/VideoRenderer.h"
 #include "Utilities/FolderUtilities.h"
+
+#include "system/mesen/MesenGlobalInit.hpp"
 #include "Utilities/VirtualFile.h"
 
 namespace {
@@ -111,10 +113,9 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
     gainSmoother_.clearToTargetValue();
 
-    // Shared with MesenNesSystem (NES). The home folder is per-process; both
-    // kinds coexist because their firmware filenames don't collide.
-    FolderUtilities::SetHomeFolder(kMesenHomeFolder);
-    MessageManager::SetOptions(false, true);
+    // Shared with MesenNesSystem (NES). The home folder is per-process; set it once, thread-safely, so
+    // concurrent core construction on background render threads doesn't race (see MesenGlobalInit).
+    mesenGlobalInit();
 
     installGbaBios(config_.biosPath);
 

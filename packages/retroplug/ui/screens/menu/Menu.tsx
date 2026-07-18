@@ -29,6 +29,8 @@ import {
   KEY_ESCAPE,
   KEY_BACKSPACE,
   KEY_ENTER,
+  KEY_PAGE_UP,
+  KEY_PAGE_DOWN,
   type MenuNav,
 } from "../../../src/keyCodes";
 import { setMenuModalActive } from "./menuModal";
@@ -258,9 +260,13 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       return;
     }
 
-    // 3. Idle: Enter arms the focused capture/prompt row; Backspace clears a focused capture row.
+    // 3. Idle: PageUp/PageDown drive a cycler's COARSE step (the arrows do the fine step via the LVGL keypad
+    //    path; Page keys aren't LVGL-translated so they only reach here). Then Enter arms a focused
+    //    capture/prompt row; Backspace clears a focused capture row.
     const focused = itemById(focusedIdRef.current);
     if (!focused) return;
+    if (code === KEY_PAGE_UP) return focused.onCoarseStep?.(1);
+    if (code === KEY_PAGE_DOWN) return focused.onCoarseStep?.(-1);
     if (focused.kind === "capture") {
       if (code === KEY_ENTER) setCapturing(focused.id);
       else if (code === KEY_BACKSPACE) focused.capture?.onClear();

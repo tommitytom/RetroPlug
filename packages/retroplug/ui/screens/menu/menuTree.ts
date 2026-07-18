@@ -25,7 +25,8 @@ export interface MenuItem {
   kind: MenuItemKind;
   children?: MenuItem[]; // present iff kind === "submenu"
   onSelect?: () => void; // action / cycler (Enter or click)
-  onCycle?: (dir: 1 | -1) => void; // cycler (Left/Right)
+  onCycle?: (dir: 1 | -1) => void; // cycler (Left/Right — fine step)
+  onCoarseStep?: (dir: 1 | -1) => void; // cycler (PageUp/PageDown — coarse step, e.g. the render duration jump)
   keepOpen?: boolean; // stay open after onSelect (cyclers)
   disabled?: boolean; // greyed + inert: skipped by nav, no-op on click (an unavailable-for-this-cart action)
   // present iff kind === "capture" — Enter arms the row, the next input binds (Backspace clears). `source`
