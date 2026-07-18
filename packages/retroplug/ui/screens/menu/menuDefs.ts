@@ -243,7 +243,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     const setMaxDur = (delta: number) => userConfig.setRenderMaxDurationSec(r.maxDurationSec + delta);
 
     const renderChildren: MenuItem[] = [
-      cycler("sys-render-split", "Split", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
+      cycler("sys-render-split", "Audio Routing", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
         userConfig.setRenderSplit(splits[n]),
       ),
       cycler("sys-render-rate", "Sample Rate", RENDER_SAMPLE_RATES.map((hz) => `${hz} Hz`), rateIdx, (n) =>
