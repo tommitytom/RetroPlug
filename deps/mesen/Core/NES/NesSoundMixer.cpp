@@ -179,10 +179,15 @@ void NesSoundMixer::UpdateCycleLength()
 		return;  // clock not known yet — the default _cycleLength holds until UpdateRates supplies one
 	}
 	double cycles = _latencyMs / 1000.0 * (double)_clockRate + 0.5;  // +0.5 = round-to-nearest
-	uint32_t c = (cycles <= (double)MinCycleLength) ? MinCycleLength : (uint32_t)cycles;
-	if(c < MinCycleLength) { c = MinCycleLength; }
-	if(c > MaxCycleLength) { c = MaxCycleLength; }
-	_cycleLength = c;
+	// Clamp as a DOUBLE before the cast: an out-of-range (or NaN) double->uint32_t cast is UB, and a
+	// corrupted/hand-edited apuLatencyMs can reach here unclamped (the raw project-adopt path skips the TS
+	// schema clamp). The `!(cycles > lo)` form also folds NaN to the floor.
+	if(!(cycles > (double)MinCycleLength)) {
+		cycles = (double)MinCycleLength;
+	} else if(cycles > (double)MaxCycleLength) {
+		cycles = (double)MaxCycleLength;
+	}
+	_cycleLength = (uint32_t)cycles;
 }
 
 void NesSoundMixer::UpdateRates(bool forceUpdate)
