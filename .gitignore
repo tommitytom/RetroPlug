@@ -43,3 +43,11 @@ packages/retroplug/.ui-build/
 
 # macOS Finder metadata
 .DS_Store
+
+# iOS AUv3 spike — derived outputs (ios/generate.sh + xcodegen)
+ios/generated/
+ios/.deps/
+ios/.build/
+ios/RetroPlugIOS.xcodeproj/
+ios/RetroPlugAU/Info.plist
+ios/RetroPlugApp/Info.plist

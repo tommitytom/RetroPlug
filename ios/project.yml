@@ -1,0 +1,138 @@
+# XcodeGen project for the iOS AUv3 spike. Regenerate with `xcodegen` after
+# editing. Run ./generate.sh FIRST (boot ROMs, embedded mGB ROM, reflect-cpp).
+#
+# Layout:
+#   RetroPlugKit  — dynamic framework: SameBoy core (C) + the minimal emulator
+#                   C++ (SystemBase/SameBoySystem/LinkGroup) + RetroPlugAudioUnit.
+#                   Shared by the app (in-process) and the extension.
+#   RetroPlugAU   — the AUv3 app extension ('aumu' / 'mgbs' / 'RPtm').
+#   RetroPlug     — SwiftUI container app + standalone MIDI-pad proof.
+name: RetroPlugIOS
+options:
+  bundleIdPrefix: com.toilville
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 72D54NN2X5     # Toilville LLC (paid team; switch to C9ST9QM58E for the free Personal Team)
+    SWIFT_VERSION: "5.9"
+    CLANG_CXX_LANGUAGE_STANDARD: gnu++20
+    GCC_C_LANGUAGE_STANDARD: gnu11
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  RetroPlugKit:
+    type: framework
+    platform: iOS
+    sources:
+      - path: RetroPlugKit
+      - path: generated
+        name: generated
+      # Minimal emulator core — deliberately excludes Project/Engine/QuickJS
+      # (phase 2) and Mesen/LSDj (later). See ios/README.md.
+      - path: ../packages/native/src/system/SystemBase.cpp
+        group: core
+      - path: ../packages/native/src/system/sameboy/SameBoySystem.cpp
+        group: core
+      - path: ../packages/native/src/system/sameboy/LinkGroup.cpp
+        group: core
+      # Vendored SameBoy core: GNU11 + GB_INTERNAL, warnings silenced
+      # (mirrors cmake/sameboy.cmake's non-Windows path).
+      - path: ../deps/sameboy/Core
+        group: sameboy
+        compilerFlags: "-w -DGB_INTERNAL"
+        excludes:
+          - "sm83_disassembler.c"
+          - "symbol_hash.c"
+          - "debugger.c"
+          - "cheat_search.c"
+    dependencies:
+      - sdk: AudioToolbox.framework
+      - sdk: AVFAudio.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug-spike.kit
+        DEFINES_MODULE: YES
+        GENERATE_INFOPLIST_FILE: YES
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/../packages/native/src"
+          - "$(SRCROOT)/../deps/sameboy/Core"
+          - "$(SRCROOT)/generated"
+          - "$(SRCROOT)/.deps/reflect-cpp/include"
+        # GB_VERSION must be a string literal for every SameBoy TU + consumer;
+        # generated/sameboy_version.h carries it (see generate.sh). The
+        # DISABLE defs are PUBLIC on desktop — they shape GB_gameboy_t, so
+        # every TU must agree.
+        OTHER_CFLAGS: "-include $(SRCROOT)/generated/sameboy_version.h"
+        OTHER_CPLUSPLUSFLAGS: "-include $(SRCROOT)/generated/sameboy_version.h"
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - "$(inherited)"
+          - "GB_DISABLE_TIMEKEEPING"
+          - "GB_DISABLE_DEBUGGER"
+
+  RetroPlugAU:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: RetroPlugAU
+    dependencies:
+      - target: RetroPlugKit
+        embed: false        # the parent app embeds the framework; the appex reaches it via rpath
+    info:
+      path: RetroPlugAU/Info.plist
+      properties:
+        CFBundleDisplayName: RetroPlug mGB
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.AudioUnit-UI
+          NSExtensionPrincipalClass: RetroPlugAU.AudioUnitViewController
+          NSExtensionAttributes:
+            AudioComponents:
+              - name: "tommitytom: RetroPlug mGB"
+                description: "RetroPlug mGB (iOS spike)"
+                manufacturer: RPtm
+                subtype: mgbs
+                type: aumu
+                version: 1
+                sandboxSafe: true
+                tags: [Synth]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug-spike.auv3
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../../Frameworks"
+
+  RetroPlug:
+    type: application
+    platform: iOS
+    sources:
+      - path: RetroPlugApp
+    dependencies:
+      - target: RetroPlugKit
+        embed: true
+      - target: RetroPlugAU
+        embed: true
+    info:
+      path: RetroPlugApp/Info.plist
+      properties:
+        CFBundleDisplayName: RetroPlug
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug-spike
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+schemes:
+  RetroPlug:
+    build:
+      targets:
+        RetroPlug: all
+    run:
+      config: Debug
