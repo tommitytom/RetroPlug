@@ -256,12 +256,20 @@ jobs:
           file build/bin/retroplug-sdl
           echo "Max GLIBC symbol version referenced:"
           objdump -T build/bin/retroplug-sdl | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -uV | tail -3
-          echo "Scanning for ARMv8.1+ LSE atomics (illegal on the Cortex-A53 handheld)..."
-          lse=$(objdump -d build/bin/retroplug-sdl \
-            | grep -owE 'cas|casa|casal|casl|casp|caspa|caspal|caspl|swp|swpa|swpal|swpl|ldadd|ldadda|ldaddal|ldaddl|ldclr|ldclra|ldclral|ldeor|ldeora|ldset|ldseta|ldsetal|stadd|staddl|stclr|stset|steor' \
-            | sort | uniq -c || true)
-          if [ -n "$lse" ]; then echo "FAIL: LSE atomics present:"; echo "$lse"; exit 1; fi
-          echo "OK: no LSE atomics (ARMv8.0-A safe)."
+          echo "Scanning for UNGUARDED ARMv8.1+ LSE atomics (illegal on the Cortex-A53 handheld)..."
+          # LSE atomics are only safe inside libgcc's __aarch64_* outline-atomics helpers, which pick an
+          # LL/SC path at runtime via __aarch64_have_lse_atomics (HWCAP) — so they never execute on an A53.
+          # Any LSE INLINE in real code (e.g. mimalloc built with -march=armv8.1-a) would SIGILL, so flag
+          # only LSE that appears outside an __aarch64_* function.
+          bad=$(objdump -d build/bin/retroplug-sdl | awk '
+            /^[0-9a-f]+ <.*>:/ { fn=$2; sub(/:$/,"",fn) }
+            {
+              n=split($0,a,"\t"); mn=""; if (n>=3){ split(a[3],b," "); mn=b[1] }
+              if (mn ~ /^(cas|casa|casal|casl|casp|caspa|caspal|caspl|swp|swpa|swpal|swpl|ldadd|ldadda|ldaddal|ldaddl|ldclr|ldclra|ldclral|ldeor|ldeora|ldeoral|ldset|ldseta|ldsetal|stadd|staddl|stclr|stclrl|stset|stsetl|steor|steorl)$/ && fn !~ /__aarch64_/)
+                print fn": "mn
+            }' | sort -u || true)
+          if [ -n "$bad" ]; then echo "FAIL: unguarded LSE atomics present:"; echo "$bad"; exit 1; fi
+          echo "OK: no unguarded LSE atomics (ARMv8.0-A safe)."
 
       - name: Upload retroplug-sdl
         if: always()
