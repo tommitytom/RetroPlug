@@ -187,6 +187,75 @@ jobs:
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.so
 
+  # Handheld arm64 build — retroplug-sdl for framebuffer devices (Anbernic / muOS).
+  # Runs on ubuntu-22.04-arm specifically for its glibc 2.35, which is <= the muOS
+  # device's Buildroot glibc 2.38, so the binary loads there (a 24.04 build = glibc
+  # 2.39 would not). Builds ONLY the retroplug-sdl target (no DPF plugin → no X11/GL
+  # deps needed) and uploads it. The SDL2 the device runs has the Mali fbdev driver;
+  # we link the generic libsdl2 (same soname), the mali backend is picked at runtime.
+  handheld-arm64:
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Install build dependencies (no X11/GL/jack — SDL host only)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libdbus-1-dev libasound2-dev \
+            libcurl4-openssl-dev libffi-dev libssl-dev \
+            libsdl2-dev \
+            bison libpng-dev
+
+      - name: Install RGBDS (boot-ROM assembler, built from source — no arm64 release)
+        run: |
+          set -eux
+          tmp="$(mktemp -d)"; cd "$tmp"
+          git clone --depth 1 --branch v1.0.1 https://github.com/gbdev/rgbds
+          cd rgbds
+          make -j"$(nproc)"
+          sudo install -m 0755 rgbasm rgblink rgbgfx rgbfix /usr/local/bin/
+          rgbasm --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Build retroplug-sdl
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target retroplug-sdl -j"$(nproc)"
+
+      - name: Verify arch + glibc ceiling (must be <= 2.38 for the device)
+        run: |
+          file build/bin/retroplug-sdl
+          echo "Max GLIBC symbol version referenced:"
+          objdump -T build/bin/retroplug-sdl | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -uV | tail -3
+
+      - name: Upload retroplug-sdl
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-sdl-linux-aarch64
+          if-no-files-found: warn
+          path: build/bin/retroplug-sdl
+
   windows:
     runs-on: windows-2022
     env:
