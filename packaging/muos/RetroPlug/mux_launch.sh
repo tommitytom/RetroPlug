@@ -19,6 +19,14 @@ APP_DIR="$(dirname "$0")"
 SETUP_APP "retroplug-sdl" ""
 SETUP_STAGE_OVERLAY
 
+# RetroPlug is a real-time emulator. muOS Applications default to the `powersave` governor, which pins the
+# Cortex-A53 at its minimum clock (~480 MHz) — too slow to sustain emulation + resampling + LVGL, so the
+# SDL audio callback misses its deadline and ALSA underruns (choppy / no sound). Force `performance`
+# (max clock) like the emulator launchers do; muOS restores the default governor when the app exits.
+for _g in /sys/devices/system/cpu/cpufreq/policy*/scaling_governor; do
+	[ -w "$_g" ] && echo performance >"$_g" 2>/dev/null
+done
+
 cd "$APP_DIR" || exit 1
 
 export SDL_AUDIODRIVER=alsa
