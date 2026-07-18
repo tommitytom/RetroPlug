@@ -187,7 +187,14 @@ void NesSoundMixer::UpdateCycleLength()
 	} else if(cycles > (double)MaxCycleLength) {
 		cycles = (double)MaxCycleLength;
 	}
-	_cycleLength = (uint32_t)cycles;
+	// The flush window MUST be a multiple of 4. A non-4-aligned window is silently fine in a normal render,
+	// but under the NES trace logger it pushes the APU frame-counter / DMC into a per-instruction Run() path
+	// that runs ~orders of magnitude slower (it hangs cli-trace). Snap down to the nearest multiple of 4 —
+	// inaudible (≤3 cycles ≈ 1.7µs) and MinCycleLength (64) is already 4-aligned so the floor holds.
+	_cycleLength = ((uint32_t)cycles) & ~3u;
+	if(_cycleLength < MinCycleLength) {
+		_cycleLength = MinCycleLength;
+	}
 }
 
 void NesSoundMixer::UpdateRates(bool forceUpdate)
