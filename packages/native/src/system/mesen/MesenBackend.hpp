@@ -16,6 +16,7 @@ struct MesenNesRoleConfig {
     std::uint32_t region            = 0;      // ConsoleRegion (Auto/Ntsc/Pal/Dendy/NtscJapan)
     bool          removeSpriteLimit = false;
     std::uint32_t channelExportMode = 0;      // 0 = Mix, 1 = pins, 3 = 5 mono (CLI-only; spec/10 §5/§5b)
+    double        apuLatencyMs      = 1.4;    // APU flush window as latency (ms); live. ~1.4ms ≈ 2500 cyc NTSC
 };
 
 // The Mesen core — one backend spanning multiple platforms. Dispatches on `spec.platform` to build the

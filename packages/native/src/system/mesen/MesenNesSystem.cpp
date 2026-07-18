@@ -143,12 +143,18 @@ void MesenNesSystem::onActivate(double sampleRate) {
         n8Role_ = std::make_unique<NesN8MidiRole>();
         n8Role_->onAttach(*nesConsole);
 
+        // Borrow the NES sound mixer for the live "mesen" knobs (APU flush window + per-channel capture).
+        // Held for the emulator's lifetime, nulled in onDeactivate before teardown.
+        nesMixer_ = nesConsole->GetSoundMixer();
+
+        // Seed the APU flush window (latency-ms knob → cycle count). Applies to the normal mix path too.
+        nesMixer_->SetLatencyMs(config_.apuLatencyMs);
+
         // Per-channel export (spec/10 §5/§5b): arm the sound mixer's tap so channelLayout() exposes the
         // per-mode streams to renderAudioPerChannel — mode 1 = 3 pins, mode 2 = pins + mix-reference
         // (native/test-only), mode 3 = the 5 individual core channels. (CLI-only; a normal Mix build never
         // touches this and stays byte-identical.)
         if (config_.channelExportMode >= 1) {
-            nesMixer_ = nesConsole->GetSoundMixer();
             nesMixer_->SetChannelCapture(config_.channelExportMode, static_cast<std::uint32_t>(sampleRate));
             channelCapture_ = true;
         }
@@ -232,6 +238,18 @@ void MesenNesSystem::setRegion(std::uint32_t region) {
         emu_->GetSettings()->GetNesConfig().Region = static_cast<ConsoleRegion>(region);
         emu_->Reset();
     }
+}
+
+void MesenNesSystem::setApuLatencyMs(double ms) {
+    if (config_.apuLatencyMs == ms) return;
+    config_.apuLatencyMs = ms;
+    // Live: the mixer converts ms→cycles against the region clock and re-thresholds the flush window.
+    // No reset — just a scalar change, safe on the audio thread (arrives via Engine::applyConfigField).
+    if (nesMixer_) nesMixer_->SetLatencyMs(ms);
+}
+
+std::uint32_t MesenNesSystem::apuFlushCycleLength() const {
+    return nesMixer_ ? nesMixer_->GetCycleLength() : 0;
 }
 
 void MesenNesSystem::pressButton(std::uint8_t button, bool down) {

@@ -16,7 +16,14 @@ enum class ConsoleRegion;
 class NesSoundMixer : public ISerializable
 {
 public:
-	static constexpr uint32_t CycleLength = 2500;
+	// RetroPlug: the APU flush window (CPU cycles the mixer batches channel deltas before flushing them
+	// through blip-buf into output samples) is now RUNTIME-controllable (_cycleLength) rather than a fixed
+	// constant, exposed as a live "APU latency (ms)" knob. The window duration (cycleLength / cpuClock) is
+	// the worst-case NES audio latency the batching adds. The delta buffer stays sized at a compile-time
+	// MaxCycleLength so SetLatencyMs is just a scalar re-threshold — no reallocation, RT-safe on the audio
+	// thread. MinCycleLength is a safety floor. Default _cycleLength ≈ the historical constant (2500).
+	static constexpr uint32_t MaxCycleLength = 12000;   // ~6.7ms @ NTSC; samples/flush << MaxSamplesPerFrame
+	static constexpr uint32_t MinCycleLength = 64;
 	static constexpr uint32_t BitsPerSample = 16;
 
 private:
@@ -35,8 +42,13 @@ private:
 	int16_t _previousOutputRight = 0;
 
 	vector<uint32_t> _timestamps;
-	int16_t _channelOutput[MaxChannelCount][CycleLength] = {};
+	int16_t _channelOutput[MaxChannelCount][MaxCycleLength] = {};
 	int16_t _currentOutput[MaxChannelCount] = {};
+
+	// RetroPlug runtime APU flush window. _latencyMs is the user-facing knob; _cycleLength is its
+	// conversion via the region CPU clock (recomputed in UpdateRates + SetLatencyMs). ~1.4ms ≈ 2500 cyc NTSC.
+	double   _latencyMs   = 1.4;
+	uint32_t _cycleLength = 2500;
 
 	blip_t* _blipBufLeft = nullptr;
 	blip_t* _blipBufRight = nullptr;
@@ -82,6 +94,7 @@ private:
 	// bypass the non-linear DAC, so they do NOT re-sum to the mix.
 	__forceinline void GetCoreChannelLevels(int16_t out[5]);
 	void CaptureStreams();                        // drain the stream blips → host mono rings
+	void UpdateCycleLength();                      // recompute _cycleLength from _latencyMs + the region clock
 	void EndFrame(uint32_t time);
 
 	void ProcessVsDualSystemAudio();
@@ -94,6 +107,11 @@ public:
 
 	void SetRegion(ConsoleRegion region);
 	void Reset();
+
+	// RetroPlug: set the APU flush window as a latency in milliseconds (converted to CPU cycles via the
+	// region clock, clamped to [MinCycleLength, MaxCycleLength]). Safe to call live on the audio thread.
+	void SetLatencyMs(double ms);
+	uint32_t GetCycleLength() const { return _cycleLength; }
 
 	void PlayAudioBuffer(uint32_t cycle);
 	void AddDelta(AudioChannel channel, uint32_t time, int16_t delta);

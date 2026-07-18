@@ -164,11 +164,36 @@ void NesSoundMixer::SetRegion(ConsoleRegion region)
 	UpdateRates(true);
 }
 
+void NesSoundMixer::SetLatencyMs(double ms)
+{
+	// RetroPlug: the flush window as a latency (ms). Store it; the actual cycle count depends on the
+	// region CPU clock, so defer to UpdateCycleLength (which also re-runs on a clock change via UpdateRates).
+	_latencyMs = ms;
+	UpdateCycleLength();
+}
+
+void NesSoundMixer::UpdateCycleLength()
+{
+	// cycleLength (CPU cycles) = latencySeconds * cpuClock. Region-correct + sample-rate-independent.
+	if(_clockRate == 0) {
+		return;  // clock not known yet — the default _cycleLength holds until UpdateRates supplies one
+	}
+	double cycles = _latencyMs / 1000.0 * (double)_clockRate + 0.5;  // +0.5 = round-to-nearest
+	uint32_t c = (cycles <= (double)MinCycleLength) ? MinCycleLength : (uint32_t)cycles;
+	if(c < MinCycleLength) { c = MinCycleLength; }
+	if(c > MaxCycleLength) { c = MaxCycleLength; }
+	_cycleLength = c;
+}
+
 void NesSoundMixer::UpdateRates(bool forceUpdate)
 {
 	uint32_t clockRate = NesConstants::GetClockRate(_console->GetRegion());
 	if(forceUpdate || _clockRate != clockRate) {
 		_clockRate = clockRate;
+
+		// RetroPlug: the flush window is stored as a latency (ms); its cycle count depends on this clock,
+		// so recompute it whenever the region/clock changes.
+		UpdateCycleLength();
 
 		blip_set_rates(_blipBufLeft, _clockRate, _sampleRate);
 		blip_set_rates(_blipBufRight, _clockRate, _sampleRate);
@@ -317,9 +342,14 @@ void NesSoundMixer::EndFrame(uint32_t time)
 		blip_end_frame(_streamBlip[k], time);
 	}
 
-	//Reset everything
+	//Reset everything. Only the dirtied columns [0, time] were written this window (AddDelta stamps <= the
+	//flush cycle `time`), so clear just that span per row — with _channelOutput now sized at MaxCycleLength,
+	//a full sizeof() memset every flush would cost the max regardless of the (smaller) runtime window.
 	_timestamps.clear();
-	memset(_channelOutput, 0, sizeof(_channelOutput));
+	uint32_t clearLen = (time < MaxCycleLength) ? (time + 1) : MaxCycleLength;
+	for(uint32_t j = 0; j < MaxChannelCount; j++) {
+		memset(_channelOutput[j], 0, clearLen * sizeof(int16_t));
+	}
 }
 
 void NesSoundMixer::CaptureStreams()

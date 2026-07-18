@@ -129,13 +129,28 @@ function sameboyConfig(sys: SystemView): { model: SameBoyModel; highpass: SameBo
   };
 }
 
-/** The Mesen core-role config (region / removeSpriteLimit), with defaults. The role attaches to any
- *  Mesen system; the knobs are NES-only, so the menu gates the rows on platform === "nes". */
-function mesenConfig(sys: SystemView): { region: ConsoleRegion; removeSpriteLimit: boolean } {
+// APU flush-window latency presets (ms) for the NES "APU Latency" cycler. The role config accepts any
+// value in [0.25, 6.0] (clampedNumber); the menu just offers a few sensible steps. 1.4ms ≈ the default.
+const APU_LATENCY_MS = [0.5, 1.0, 1.4, 3.0, 5.0];
+const APU_LATENCY_NAMES = ["0.5 ms", "1.0 ms", "1.4 ms", "3.0 ms", "5.0 ms"];
+
+/** Index of the preset nearest `ms`, so the cycler shows the current value even if it's off-grid. */
+function nearestApuLatencyIndex(ms: number): number {
+  let best = 0;
+  for (let i = 1; i < APU_LATENCY_MS.length; i++) {
+    if (Math.abs(APU_LATENCY_MS[i] - ms) < Math.abs(APU_LATENCY_MS[best] - ms)) best = i;
+  }
+  return best;
+}
+
+/** The Mesen core-role config (region / removeSpriteLimit / apuLatencyMs), with defaults. The role attaches
+ *  to any Mesen system; the knobs are NES-only, so the menu gates the rows on platform === "nes". */
+function mesenConfig(sys: SystemView): { region: ConsoleRegion; removeSpriteLimit: boolean; apuLatencyMs: number } {
   const c = (sys.roles.find((r) => r.kind === "mesen")?.config ?? {}) as Record<string, unknown>;
   return {
     region: typeof c.region === "string" ? (c.region as ConsoleRegion) : "auto",
     removeSpriteLimit: c.removeSpriteLimit === true,
+    apuLatencyMs: typeof c.apuLatencyMs === "number" ? c.apuLatencyMs : 1.4,
   };
 }
 
@@ -170,6 +185,9 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       cycler("sys-nes-region", "Region", REGION_NAMES, Math.max(0, REGION_VALUES.indexOf(cfg.region)), (n) => systems.setRoleConfig(sys.id, "mesen", { region: REGION_VALUES[n] })),
       cycler("sys-nes-spritelimit", "Remove Sprite Limit", OFF_ON, cfg.removeSpriteLimit ? 1 : 0, (n) =>
         systems.setRoleConfig(sys.id, "mesen", { removeSpriteLimit: n === 1 }),
+      ),
+      cycler("sys-nes-apu-latency", "APU Latency", APU_LATENCY_NAMES, nearestApuLatencyIndex(cfg.apuLatencyMs), (n) =>
+        systems.setRoleConfig(sys.id, "mesen", { apuLatencyMs: APU_LATENCY_MS[n] }),
       ),
     );
   }

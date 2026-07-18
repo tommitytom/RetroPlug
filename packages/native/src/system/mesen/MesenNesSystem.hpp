@@ -108,6 +108,11 @@ public:
     // removeSpriteLimit is a live PPU toggle; region reconfigures timing so it forces a reset.
     void setRemoveSpriteLimit(bool on);
     void setRegion(std::uint32_t region);
+    // APU flush window as a latency (ms) → NesSoundMixer::SetLatencyMs. Live, no reset (scalar re-threshold).
+    void setApuLatencyMs(double ms);
+    // The live APU flush window in CPU cycles (the mixer's conversion of apuLatencyMs against the region
+    // clock). 0 before onActivate. Exposed for tests / introspection.
+    std::uint32_t apuFlushCycleLength() const;
 
     // NES native resolution (256x240). Public so callers can construct a
     // FrameBufferTriple-sized read buffer without hard-coding the constant.

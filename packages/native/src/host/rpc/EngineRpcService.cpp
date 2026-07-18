@@ -127,6 +127,7 @@ bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string kind, std::
         const MesenNesRoleConfig c = MesenBackend::decodeMesenNesRoleConfig(config);
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesRegion), static_cast<double>(c.region));
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesRemoveSpriteLimit), c.removeSpriteLimit ? 1.0 : 0.0);
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesApuLatencyMs), c.apuLatencyMs);
         return true;
     }
     return false;

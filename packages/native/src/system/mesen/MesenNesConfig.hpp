@@ -30,6 +30,10 @@ struct MesenNesConfig {
     // Noise/DMC) as raw mono stems ("does not sum"). (2 = pins + a mix reference, native/test-only.) Set
     // at construct via the "mesen" role blob (capture engages in onActivate); there is no live toggle.
     std::uint32_t channelExportMode = 0;
+    // APU flush window expressed as a latency in milliseconds — the worst-case NES audio latency the
+    // resampler batching adds (window duration = cycleLength / cpuClock). Live-editable ("mesen" role knob);
+    // converted to CPU cycles by NesSoundMixer::SetLatencyMs. ~1.4ms ≈ the historical 2500-cycle window (NTSC).
+    double        apuLatencyMs      = 1.4;
     std::string   romPath;
     // See SameBoyConfig::savSuffix. 0 => owns `<rom>.sav`; N>=2 => `<rom>-N.sav`,
     // so duplicated / repeat-loaded instances don't clobber a shared sibling.

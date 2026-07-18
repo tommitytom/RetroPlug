@@ -269,6 +269,9 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
             case ConfigField::NesRemoveSpriteLimit:
                 mn->setRemoveSpriteLimit(value != 0.0);            // live — the PPU re-reads it per scanline
                 break;
+            case ConfigField::NesApuLatencyMs:
+                mn->setApuLatencyMs(value);                        // live — re-thresholds the APU flush window
+                break;
             default:
                 break;
         }

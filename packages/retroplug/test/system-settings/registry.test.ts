@@ -40,15 +40,15 @@ test("systemRoleFor: the core registers a SameBoy and a Mesen system role", () =
   const mesen = reg.systemRoleFor("mesen");
   expect(mesen?.kind).toBe("mesen");
   expect(mesen?.category).toBe("system");
-  expect(mesen?.schema.parse({})).toEqual({ region: "auto", removeSpriteLimit: false, channelExportMode: "mix" });
+  expect(mesen?.schema.parse({})).toEqual({ region: "auto", removeSpriteLimit: false, apuLatencyMs: 1.4, channelExportMode: "mix" });
 });
 
 test("mesen schema: fills defaults + defaults an unknown region", () => {
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
   const mesen = reg.roleType("mesen")!;
-  expect(mesen.schema.parse({ region: 99 })).toEqual({ region: "auto", removeSpriteLimit: false, channelExportMode: "mix" });
-  expect(mesen.schema.parse({ removeSpriteLimit: true })).toEqual({ region: "auto", removeSpriteLimit: true, channelExportMode: "mix" });
+  expect(mesen.schema.parse({ region: 99 })).toEqual({ region: "auto", removeSpriteLimit: false, apuLatencyMs: 1.4, channelExportMode: "mix" });
+  expect(mesen.schema.parse({ removeSpriteLimit: true })).toEqual({ region: "auto", removeSpriteLimit: true, apuLatencyMs: 1.4, channelExportMode: "mix" });
 });
 
 test("schema: fills defaults + defaults unknown enums, clamps numeric fields", () => {
@@ -91,6 +91,6 @@ test("defaultRoles: system role first, then provider-matched feature roles", () 
 
   // A NES system gets the Mesen system role (no feature provider registered in this reg → just it).
   expect(reg.defaultRoles("mesen", "nes", headerWithTitle("SMB3"))).toEqual([
-    { kind: "mesen", config: { region: "auto", removeSpriteLimit: false, channelExportMode: "mix" } },
+    { kind: "mesen", config: { region: "auto", removeSpriteLimit: false, apuLatencyMs: 1.4, channelExportMode: "mix" } },
   ]);
 });
