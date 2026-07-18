@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Plugin unit-test runner. Runs the Catch2 C++ test binaries in sequence:
+// Plugin unit-test runner. Runs the Catch2 C++ test binaries in a bounded parallel
+// pool (default half the logical threads; --jobs N / -j N / TEST_JOBS, =1 for serial):
 // the per-context window-hook routing (retroplug-plugin-test), the class-id
 // counter sync that keeps the DAW-hosted editor from rendering blank
 // (retroplug-classid-test), the per-channel audio taps (retroplug-audio-test),
@@ -13,9 +14,9 @@
 //   node scripts/run-plugin-tests.mjs [nameFilter]
 
 import { existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import { runPool, spawnBuffered, resolveJobs, stripJobsArgs, flush } from "./lib/testPool.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -24,7 +25,8 @@ const EXE = process.platform === "win32" ? ".exe" : "";
 
 const BINARIES = ["retroplug-plugin-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test"];
 
-const filter = process.argv[2];
+const jobs = resolveJobs();
+const filter = stripJobsArgs()[0];
 const selected = filter ? BINARIES.filter((b) => b.includes(filter)) : BINARIES;
 
 if (!selected.length) {
@@ -32,24 +34,22 @@ if (!selected.length) {
   process.exit(1);
 }
 
-const failures = [];
-for (const name of selected) {
+async function runOne(name) {
   const bin = join(BIN_DIR, name + EXE);
   if (!existsSync(bin)) {
-    console.error(
-      `${name} not found: ${bin}\n` +
-        `build it once:  cmake --build build --target ${name} -j`,
-    );
-    failures.push(name);
-    continue;
+    flush(name, `${name} not found: ${bin}\nbuild it once:  cmake --build build --target ${name} -j`);
+    return false;
   }
-  console.error(`\n# ${name}`);
-  const run = spawnSync(bin, [], { stdio: "inherit", cwd: REPO });
-  if (run.status !== 0) failures.push(name);
+  const run = await spawnBuffered(bin, [], { cwd: REPO });
+  flush(name, run.output);
+  return run.status === 0;
 }
+
+const results = await runPool(selected, runOne, { jobs });
+const failures = selected.filter((_, i) => results[i] === false);
 
 if (failures.length) {
   console.error(`\n# ${failures.length}/${selected.length} plugin test binary(ies) FAILED: ${failures.join(", ")}`);
   process.exit(1);
 }
-console.error(`\n# ${selected.length} plugin test binary(ies) passed`);
+console.error(`\n# ${selected.length} plugin test binary(ies) passed (jobs=${jobs})`);

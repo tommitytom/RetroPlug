@@ -4,16 +4,17 @@
 // the bundle on the retroplug-ui-test binary — which boots the React UI on a
 // headless software LVGL display (RenderCore) driven by the BackendFacade RPC (UiHarness).
 // The runner installs the `retroplug` (TAP) + `retroplug-ui` (ui.*) globals and reports the exit code.
-// One binary process per file.
+// One binary process per file, run in a bounded parallel pool (each process has its own in-process
+// software LVGL display, so no display contention; default half the logical threads, --jobs/TEST_JOBS, =1 serial).
 //
 //   node scripts/run-ui-tests.mjs [slugFilter]
 
 import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync, copyFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 import { tmpdir } from "node:os";
-import { buildSync } from "esbuild";
+import { build } from "esbuild";
+import { runPool, spawnBuffered, resolveJobs, stripJobsArgs, flush } from "./lib/testPool.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -38,7 +39,8 @@ if (!existsSync(HOST)) {
 // `import ... from "ui-harness"`.
 const UI_HARNESS = join(PKG, "test-ui/uiHarness.ts");
 
-const filter = process.argv[2];
+const jobs = resolveJobs();
+const filter = stripJobsArgs()[0];
 
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -66,8 +68,7 @@ if (!tests.length) {
   process.exit(1);
 }
 
-const failures = [];
-for (const { file, slug } of tests) {
+async function runOne({ file, slug }) {
   const outFile = join(OUT_DIR, `${slug}.js`);
   mkdirSync(dirname(outFile), { recursive: true });
   const cfgDir = mkdtempSync(join(tmpdir(), "rp-ui-"));
@@ -78,7 +79,7 @@ for (const { file, slug } of tests) {
   copyFileSync(join(REPO, "resources/roms/mGB.gb"), join(romsDir, "mGB.gb"));
 
   try {
-    buildSync({
+    await build({
       entryPoints: [file],
       bundle: true,
       format: "esm",
@@ -90,23 +91,25 @@ for (const { file, slug } of tests) {
       define: { "process.env.NODE_ENV": '"production"' },
     });
   } catch (e) {
-    console.error(`# BUILD FAILED: ${slug}\n${e?.message ?? e}`);
-    failures.push(slug);
+    flush(`BUILD FAILED: ${slug}`, `${e?.message ?? e}`);
     rmSync(cfgDir, { recursive: true, force: true });
-    continue;
+    return false;
   }
 
-  const run = spawnSync(HOST, ["--test", outFile], {
-    stdio: "inherit",
+  const run = await spawnBuffered(HOST, ["--test", outFile], {
     cwd: PKG,
     env: { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfgDir, RETROPLUG_UI_TEST_ROMS: romsDir },
   });
-  if (run.status !== 0) failures.push(slug);
+  flush(slug, run.output);
   rmSync(cfgDir, { recursive: true, force: true });
+  return run.status === 0;
 }
+
+const results = await runPool(tests, runOne, { jobs });
+const failures = tests.filter((_, i) => results[i] === false).map((t) => t.slug);
 
 if (failures.length) {
   console.error(`\n# ${failures.length}/${tests.length} UI test file(s) FAILED: ${failures.join(", ")}`);
   process.exit(1);
 }
-console.error(`\n# ${tests.length} UI test file(s) passed`);
+console.error(`\n# ${tests.length} UI test file(s) passed (jobs=${jobs})`);

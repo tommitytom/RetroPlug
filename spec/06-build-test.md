@@ -61,6 +61,15 @@ The TS runners live in `packages/retroplug/scripts/`; every runner discovers
 a nonzero exit on failure. Slugs accept slash or dash form and a directory prefix runs everything
 under it (e.g. `pnpm test paths` or `paths-rebase`).
 
+Runners execute their per-file (and, for `test:plugin`, per-binary) work in a **bounded parallel
+pool** — each unit is an isolated child process (its own `mkdtemp` config dir; UI runs an in-process
+software display), so concurrency is safe and needs no coordination. Concurrency defaults to **half
+the logical threads**; override with `--jobs N` / `-j N` on the runner or the `TEST_JOBS` env, and
+`TEST_JOBS=1` restores serial one-at-a-time output. Output is buffered per child and flushed as a
+labelled `# <slug>` block on completion (rather than live-interleaved). The shared pool/spawn helper
+is [scripts/lib/testPool.mjs](../packages/retroplug/scripts/lib/testPool.mjs). The `reaper:*` tiers
+stay serial — they share a single unnamed jackd server and a per-family Reaper config dir.
+
 | Tier | Backend under test | Command | Runner | Test dir |
 |---|---|---|---|---|
 | **mock TS** | [`testing/mockBackend.ts`](../packages/retroplug/testing/mockBackend.ts) (in-memory, no native, no emulator) | `pnpm test` | [run-tests.mjs](../packages/retroplug/scripts/run-tests.mjs) on the `tjs` binary | `test/` |
