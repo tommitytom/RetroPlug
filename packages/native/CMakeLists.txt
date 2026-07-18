@@ -95,7 +95,8 @@ add_dependencies(retroplug-render-worker-bundle ${_TJSC_DEP})
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
 add_library(retroplug-backend STATIC
-    src/host/rpc/HostRpcService.cpp         # fs / config / zip (pure, stateless)
+    src/host/rpc/HostRpcService.cpp         # fs / config / zip (+ opt-in efsw file watcher)
+    src/host/rpc/NativeFileWatcher.cpp      # efsw watcher behind drainChangedPaths / setWatchedRoms
     src/host/rpc/EngineRpcService.cpp       # emulator surface over Engine + Invoker + Factory
     src/host/rpc/DebugRpcService.cpp        # live-core inspection over Engine (CLI-only facet)
     src/host/rpc/AudioDriverRpcService.cpp  # background audio thread + observation atomics
@@ -126,9 +127,13 @@ target_include_directories(retroplug-backend PUBLIC
     #  miniz header dir, arrive PUBLIC from retroplug-core above.)
 )
 
+find_package(Threads REQUIRED)  # efsw-static needs pthreads on Linux (its CMake links it to the shared lib only)
+
 target_link_libraries(retroplug-backend PUBLIC
     retroplug-core      # Project + SystemBase + SameBoy/Mesen; PUBLIC-brings rpcpp + miniz
     tjs                 # txiki.js/QuickJS runtime (transitively brings qjs + libuv)
+    efsw-static         # NativeFileWatcher's filesystem watcher (PUBLIC-brings efsw/efsw.hpp include dir)
+    Threads::Threads
 )
 
 set_target_properties(retroplug-backend PROPERTIES
@@ -550,6 +555,41 @@ target_compile_definitions(retroplug-audio-test PRIVATE
     RP_N8_MIDI_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/n8-midi.nes")
 
 set_target_properties(retroplug-audio-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-watcher-test guards the native file watcher (NativeFileWatcher over efsw): config.json +
+# bindings/ recursive detection, registered-ROM parent-dir watches, and the unregistered-file filter.
+# Links retroplug-backend (which PUBLIC-brings NativeFileWatcher + efsw-static). Also `pnpm test:plugin`.
+add_executable(retroplug-watcher-test EXCLUDE_FROM_ALL
+    test/watcher/NativeFileWatcher.test.cpp)
+
+target_link_libraries(retroplug-watcher-test PRIVATE
+    retroplug-backend          # NativeFileWatcher + efsw-static
+    Catch2::Catch2WithMain)
+
+set_target_properties(retroplug-watcher-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-lottie-test proves the new ThorVG-backed <Lottie> capability: that lv_lottie
+# rasterizes animated vector frames on a headless software display (LV_USE_LOTTIE → ThorVG).
+# Links bare lvgl (which PRIVATE-brings lvgl_thorvg) + Catch2 — no JS engine needed. Also
+# `pnpm test:plugin`, on demand.
+add_executable(retroplug-lottie-test EXCLUDE_FROM_ALL
+    test/ui/LottieRender.test.cpp)
+
+target_link_libraries(retroplug-lottie-test PRIVATE
+    lvgl                       # lv_lottie + lvgl_thorvg (LV_USE_LOTTIE in the active lv_conf.h)
+    Catch2::Catch2WithMain)
+
+# The Lottie animation the test rasterizes (a real ~5 KB LVGL example asset).
+target_compile_definitions(retroplug-lottie-test PRIVATE
+    RP_LOTTIE_JSON_PATH="${DPFJS_PATH}/deps/lv_binding_js/deps/lvgl/examples/widgets/lottie/lv_example_lottie_approve.json")
+
+set_target_properties(retroplug-lottie-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

@@ -43,7 +43,7 @@ The methods, grouped by concern:
 
 | Group | Methods | What native does |
 |---|---|---|
-| **Filesystem** | `readFile` · `writeFile` · `writeFileAtomic` · `fileExists` · `rename` · `listDir` · `deleteFile` · `drainChangedPaths` | `std::filesystem` bytes; atomic temp+rename; a generic non-recursive readdir; the pull-drain of the native file watcher |
+| **Filesystem** | `readFile` · `writeFile` · `writeFileAtomic` · `fileExists` · `rename` · `listDir` · `deleteFile` · `drainChangedPaths` · `setWatchedRoms` | `std::filesystem` bytes; atomic temp+rename; a generic non-recursive readdir; the pull-drain of the native efsw file watcher + the ROM-set registration that feeds it |
 | **Paths** | `canonicalize` · `readFilePrefix` · `configDir` | `weakly_canonical` (the dedupe key); a header-only prefix read (ROM sniff without marshalling MBs); the per-OS config dir |
 | **Emulator lifecycle** | `constructSystem(spec, id)` · `removeSystem(id)` | Build/activate a core under a **TS-allocated id**; drop one. No `duplicate`/`reload` primitive — those are TS orchestration |
 | **File dialog** | `openFileBrowser(opts)` → `Promise` | Open the OS browser, resolve the picked path (the one async method) |
@@ -223,11 +223,14 @@ are validated by `isValidProfileName`
   Promise"*, no pending-mode latch. `SelectionOutcome` = `loaded | added | deferred | error
   | cancelled`.
 - **FileWatcher** — [`src/fileWatcher.ts`](../packages/retroplug/src/fileWatcher.ts):
-  the TS reaction to native's watchers. **"Watcher = C++, policy = TS."** `pump()` drains
+  the TS reaction to native's watcher. **"Watcher = C++, policy = TS."** `pump()` drains
   `backend.drainChangedPaths()` at idle and routes each: `config.json` → `userConfig.reload()`,
   `bindings/*.json` → a refresh signal, a system's ROM → `reloadSystem(id)` **when
-  `reloadOnRomChange` is on**. Native owns the efsw + mtime watching; TS owns what a change
-  *means*.
+  `reloadOnRomChange` is on**. Native (`NativeFileWatcher`, efsw) owns the watching — the config dir +
+  `bindings/` recursively, plus each ROM's parent dir (registered via `setWatchedRoms`, recomputed on
+  every systems change); TS owns what a change *means*. The plugin composes it in
+  [`pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) and drives `pump()` from the
+  UI idle loop (`__rp_pumpWatcher`).
 - **SramAutoSaver** — [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts):
   the loose-`.sav` mirror policy over `backend.readSram(id)` + `resolveSavPath`, gated on the
   `sramAutoSave` preference. `flushOnSave()` writes at save/quit; `pump()` is the Continuous

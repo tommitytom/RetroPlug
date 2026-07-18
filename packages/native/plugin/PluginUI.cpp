@@ -80,6 +80,7 @@ class PluginUI : public UI {
     std::chrono::steady_clock::time_point screenshotLast_{};
     bool windowTitleSet_ = false;
     bool allowClose_ = false; // set by requestQuit() so the re-entrant onClose() lets the window close
+    unsigned watcherPumpTick_ = 0; // throttles the file-watcher pump in uiIdle (efsw already coalesced)
 
     // Window geometry: the resize-grip fallback + tiling-WM clamp detection. Once a size comes back
     // different from what we asked (a Wayland/Hyprland tile), wmControlled_ latches true and we stop
@@ -407,6 +408,18 @@ protected:
         if (JSContext* ctx = jsEngine.getContext()) {
             jsEngine.emit("frame", 0, nullptr); // drives EmulatorTile's getFrame
             pumpGamepad(ctx);                   // poll controllers → the gamepad-* JS bus
+            // File watcher: drain native's changed paths + react (config live-reload / bindings refresh /
+            // ROM hot-reload). efsw already coalesced the changes on its own thread, so a low cadence (~1/15
+            // frames, a few Hz) is plenty and keeps stat/JS churn off the hot path. Inert if the control
+            // plane didn't define the hook (older bundle / headless).
+            if ((++watcherPumpTick_ % 15) == 0 && hasGlobalFunction(ctx, "__rp_pumpWatcher")) {
+                JSValue global = JS_GetGlobalObject(ctx);
+                JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_pumpWatcher");
+                JSValue ret    = JS_Call(ctx, fn, JS_UNDEFINED, 0, nullptr);
+                JS_FreeValue(ctx, ret);
+                JS_FreeValue(ctx, fn);
+                JS_FreeValue(ctx, global);
+            }
         }
         jsEngine.tick();                                               // pump the shared host's JS loop
         maybeWriteScreenshot();

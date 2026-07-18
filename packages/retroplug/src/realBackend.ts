@@ -108,6 +108,7 @@ export function createHostClient(): HostBackend {
     listDir: (dir) => call("listDir", dir) as string[],
     deleteFile: (path) => call("deleteFile", path) as boolean,
     drainChangedPaths: () => call("drainChangedPaths") as string[],
+    setWatchedRoms: (paths) => void call("setWatchedRoms", paths),
     canonicalize: (path) => call("canonicalize", path) as string,
     readFilePrefix: (path, length) => bytesOrNull(call("readFilePrefix", path, length)),
     configDir: () => call("configDir") as string,

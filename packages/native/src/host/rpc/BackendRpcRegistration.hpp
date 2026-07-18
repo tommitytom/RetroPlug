@@ -11,7 +11,7 @@
 #include "host/rpc/EngineRpcService.hpp"
 #include "host/rpc/HostRpcService.hpp"
 
-// --- host: filesystem / config / codec (16) ---
+// --- host: filesystem / config / codec (17) ---
 template <class Server>
 void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::readFile>(h);
@@ -24,6 +24,7 @@ void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::listDir>(h);
     s.template addMethod<&HostRpcService::deleteFile>(h);
     s.template addMethod<&HostRpcService::drainChangedPaths>(h);
+    s.template addMethod<&HostRpcService::setWatchedRoms>(h);
     s.template addMethod<&HostRpcService::canonicalize>(h);
     s.template addMethod<&HostRpcService::readFilePrefix>(h);
     s.template addMethod<&HostRpcService::configDir>(h);
@@ -114,7 +115,7 @@ void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
     s.template addMethod<&AudioDriverRpcService::drainReleased>(d);
 }
 
-// The full union (69 methods) + discovery — every facet mounted. Hosts that expose the whole surface
+// The full union (70 methods) + discovery — every facet mounted. Hosts that expose the whole surface
 // (the CLI + test host) use this; scoped hosts call the individual register functions they're allowed to.
 template <class Server>
 void registerAllBackendRpc(Server& s, HostRpcService& host, EngineRpcService& engine,

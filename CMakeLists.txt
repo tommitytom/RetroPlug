@@ -225,6 +225,20 @@ add_subdirectory(deps/enkiTS)
 add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/miniaudio)
 
+# --- efsw: cross-platform filesystem watcher backing the native file watcher
+# (NativeFileWatcher → HostRpcService::drainChangedPaths, spec/07). EXCLUDE_FROM_ALL so only the
+# static lib the plugin links (efsw-static) compiles — a build that never links it pays nothing.
+# efsw's own CMake links Threads::Threads to the shared lib only, so consumers of efsw-static add it
+# themselves (done on retroplug-backend). BUILD_TEST_APP / EFSW_INSTALL default OFF as a subproject.
+#
+# efsw only defines the efsw-static target we link when BUILD_STATIC_LIBS is ON. Its option() defaults
+# ON, but respects any pre-existing cache value — and this build dir persists across branch switches, so
+# a stale/global BUILD_STATIC_LIBS=OFF can linger and silently drop the target. Linking a non-existent
+# `efsw-static` then degrades to a bogus `-lefsw-static` link flag with NO include dir, so efsw/efsw.hpp
+# isn't found. Force it ON here so efsw-static always exists (BUILD_SHARED_LIBS stays OFF — static build).
+set(BUILD_STATIC_LIBS ON CACHE BOOL "Build efsw as a static library" FORCE)
+add_subdirectory(deps/efsw "${CMAKE_BINARY_DIR}/deps/efsw" EXCLUDE_FROM_ALL)
+
 # lvgl-js-native + the framework PIC settings now come from dpf.js (above).
 
 # --- mgb-rom: the mGB Game Boy MIDI-synth ROM, embedded in the binary ---------

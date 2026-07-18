@@ -9,6 +9,7 @@
 #include <system_error>
 
 #include "Version.hpp"
+#include "host/rpc/NativeFileWatcher.hpp"
 #include "util/MinizZip.hpp"
 
 namespace fs = std::filesystem;
@@ -63,6 +64,11 @@ std::size_t fileSizeOr(const std::string& path, std::size_t fallback) {
 }
 
 } // namespace
+
+// Out-of-line so the unique_ptr<NativeFileWatcher> member sees the complete type (it's forward-declared
+// in the header to keep efsw out of every HostRpcService includer).
+HostRpcService::HostRpcService() = default;
+HostRpcService::~HostRpcService() = default;
 
 std::optional<rfl::Bytestring> HostRpcService::readFile(std::string path) {
     auto bytes = slurp(path, fileSizeOr(path, 0));
@@ -153,7 +159,18 @@ bool HostRpcService::deleteFile(std::string path) {
 }
 
 std::vector<std::string> HostRpcService::drainChangedPaths() {
-    return {};
+    return watcher_ ? watcher_->drainChangedPaths() : std::vector<std::string>{};
+}
+
+bool HostRpcService::setWatchedRoms(std::vector<std::string> paths) {
+    if (!watcher_) return false;
+    watcher_->setWatchedRoms(paths);
+    return true;
+}
+
+void HostRpcService::enableWatching(std::string configDir) {
+    if (watcher_) return;  // idempotent
+    watcher_ = std::make_unique<NativeFileWatcher>(std::move(configDir));
 }
 
 std::string HostRpcService::canonicalize(std::string path) {

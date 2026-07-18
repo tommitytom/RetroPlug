@@ -15,6 +15,7 @@
 import { composeAppStores, type StoreChannel, type AppStores } from "./appStores";
 import { createDspRuntime } from "./dspRuntime";
 import { syncDspFromStore } from "./appHost";
+import { FileWatcher } from "./fileWatcher";
 import { LsdjSyncMode } from "./settingsEnums";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -77,8 +78,21 @@ const kernelOk = dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!);
 // re-renders the editor. composeAppStores already routed onChange / onFocusChange to the UI notify;
 // layer the DSP projection onto the structure signal without dropping that notify (focus changes, wired
 // to onFocusChange, re-render only — no DSP re-project).
+// The file watcher's TS policy half: drains native's changed paths and reacts (reload config, refresh
+// bindings, cold-boot a ROM-changed system with reloadOnRomChange on). A bindings change re-renders the
+// editor via the "bindings" notify. Driven from the UI idle loop through __rp_pumpWatcher below.
+const fileWatcher = new FileWatcher(stores.backend, stores.userConfig, project.systems, () => uiNotify.fn("bindings"));
+
+// Register the set of ROM files native should watch. Recomputed on every structural systems edit (the
+// list, and thus which ROMs exist, only changes there). Native always watches config.json + bindings/.
+const refreshWatchedRoms = (): void => {
+  const roms = project.systems.view().map((s) => s.romPath).filter((p): p is string => !!p);
+  stores.backend.setWatchedRoms(roms);
+};
+
 project.setOnSystemsChange(() => {
   syncDspFromStore(project, dsp);
+  refreshWatchedRoms();
   uiNotify.fn("systems");
 });
 
@@ -112,6 +126,12 @@ g.__rp_saveProjectB64 = (): string => {
 };
 
 g.__rp_newProject = (): void => project.newProject();
+
+// Drive the file watcher from the UI idle loop (PluginUI::uiIdle, throttled). Drains native's changed
+// paths and reacts; a no-op when nothing changed. Returns void — the host ignores the result.
+g.__rp_pumpWatcher = (): void => {
+  fileWatcher.pump();
+};
 
 // LSDj in a host-clocked sync mode (MidiSync / MidiSyncArduinoboy) locks its playback a fixed distance
 // behind the DAW clock — an emulator clock→sound latency, not a drift. Reporting it as plugin latency lets

@@ -106,6 +106,87 @@ jobs:
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.so
 
+  # Native arm64 Linux build — the Raspberry Pi target (Pi 3/4/5, Zero 2, on the
+  # 64-bit Raspberry Pi OS). Mirrors the `linux` job on a free arm64 runner; the
+  # whole tree already builds arm64 (the macOS job ships an arm64 slice), so this
+  # is mostly the same recipe with three swaps: the arm64 runner, RGBDS built
+  # from source (no arm64 release binary is published), and no plugin validators
+  # (pluginval / clap-validator ship x86_64-only Linux builds). The native / ui /
+  # plugin suites still run natively and are the real arm64 coverage.
+  linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends \
+            cmake ninja-build pkg-config \
+            libgl-dev libglu1-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxext-dev libxinerama-dev \
+            libdbus-1-dev libasound2-dev libjack-jackd2-dev \
+            libcurl4-openssl-dev libffi-dev libssl-dev \
+            libsdl2-dev \
+            bison libpng-dev
+
+      - name: Install RGBDS (boot-ROM assembler, built from source — no arm64 release)
+        run: |
+          set -eux
+          tmp="$(mktemp -d)"; cd "$tmp"
+          git clone --depth 1 --branch v1.0.1 https://github.com/gbdev/rgbds
+          cd rgbds
+          make -j"$(nproc)"
+          sudo install -m 0755 rgbasm rgblink rgbgfx rgbfix /usr/local/bin/
+          rgbasm --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+
+      - name: Build
+        run: ./build.sh
+
+      - name: TS tests
+        run: pnpm test
+
+      - name: Native tests (real host + emulator cores)
+        run: pnpm test:native
+
+      - name: Plugin unit tests (Catch2)
+        run: pnpm test:plugin
+
+      - name: UI tests (headless LVGL)
+        run: pnpm test:ui
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-linux-aarch64
+          if-no-files-found: warn
+          path: |
+            build/bin/retroplug
+            build/bin/retroplug-cli
+            build/bin/retroplug.clap
+            build/bin/retroplug.vst3
+            build/bin/retroplug-vst2.so
+
   windows:
     runs-on: windows-2022
     env:
