@@ -1,6 +1,6 @@
 // The redesigned System > Render submenu, end to end on the headless display. A file-dropped ROM (unlike
 // the embedded "Load mGB", it has a real romPath, so the Render submenu shows) lets us drive the selectors
-// and the single Render… action. Split / Sample Rate cycle on Left/Right; Max Duration steps ±1s on
+// and the single Render… action. Audio Routing (the split mode) / Sample Rate cycle on Left/Right; Max Duration steps ±1s on
 // Left/Right and ±30s on PageUp/PageDown (the coarse-step path added to Menu.tsx). Render… snapshots the
 // live state and calls __rp_startRender — spied here (the harness doesn't bind it), with the file browser
 // stubbed to return a path — so we assert the spec carries the picked split / sample rate / max duration.
@@ -55,18 +55,18 @@ test("render submenu: selectors cycle (arrows + PageUp/PageDown) and Render… a
   ui.tapKey(Key.Enter);
   ui.pump(10);
 
-  // The three selectors + the action are present.
-  expect(ui.findByTextContaining("Split:") != null).toBeTruthy();
+  // The three selectors + the action are present. (The split cycler is labelled "Audio Routing".)
+  expect(ui.findByTextContaining("Audio Routing:") != null).toBeTruthy();
   expect(ui.findByTextContaining("Sample Rate:") != null).toBeTruthy();
   expect(ui.findByTextContaining("Max Duration:") != null).toBeTruthy();
   expect(ui.findByTextContaining("Render...") != null).toBeTruthy();
 
-  // Split: Mix → Channels (mGB is sameboy, so channels is offered; pins is not).
-  expect(ui.findByTextContaining("Split: Mix") != null).toBeTruthy();
-  expect(navTo("Split:")).toBeTruthy();
+  // Audio Routing: Mix → Channels (mGB is sameboy, so channels is offered; pins is not).
+  expect(ui.findByTextContaining("Audio Routing: Mix") != null).toBeTruthy();
+  expect(navTo("Audio Routing:")).toBeTruthy();
   ui.tapKey(Key.Right);
   ui.pump(6);
-  expect(ui.findByTextContaining("Split: Channels") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Audio Routing: Channels") != null).toBeTruthy();
 
   // Sample Rate: 44100 → 48000.
   expect(ui.findByTextContaining("Sample Rate: 44100 Hz") != null).toBeTruthy();

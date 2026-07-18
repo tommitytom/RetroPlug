@@ -78,8 +78,9 @@ so concurrent core construction can't race.
 - **`ui/lvgl/render.ts`** — `startSystemRender` snapshots the live `readSram`/`readState` to a temp file
   under `configDir` and calls `__rp_startRender`; `pickActiveRenderJob` selects a tile's badge job. Inert
   in the headless harness (no hooks bound).
-- **Menu** — `System > Render` holds selectors — **Split** (Mix / Channels / Pins, gated on platform),
-  **Sample Rate** (44100 / 48000 / 96000), **Max Duration** (Left/Right ±1s, PageUp/PageDown ±30s) — persisted
+- **Menu** — `System > Render` holds selectors — **Audio Routing** (the split mode: Mix / Channels / Pins,
+  gated on platform), **Sample Rate** (44100 / 48000 / 96000), **Max Duration** (Left/Right ±1s,
+  PageUp/PageDown ±30s) — persisted
   in `userConfig.render`, plus one **Render…** action that applies them. On-disk ROMs only (an embedded mGB
   has no path to reconstruct from — a v1 limit). The PageUp/PageDown coarse step rides a new
   `MenuItem.onCoarseStep`, routed from Menu.tsx's raw `"key"` bus (the Shift modifier isn't delivered to the
