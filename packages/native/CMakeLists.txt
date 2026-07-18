@@ -266,6 +266,37 @@ add_custom_target(retroplug-ui-bundle
     VERBATIM)
 add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
 
+# --- retroplug-sdl: the SDL2 standalone for framebuffer handhelds (Anbernic / muOS) + plain Linux.
+# muOS has no X11 (fbdev + Mali EGL only), so the DPF/pugl JACK standalone can't run there. This host
+# reuses the WHOLE core — retroplug-backend (Engine + cores + txiki) + lvgl-js-native (the LVGL/React
+# bridge) + the SAME embedded cp/ui bundles the plugin links — and provides its own SDL2 window / audio /
+# input shell (sdl/main.cpp), bypassing DPF entirely. Modeled on retroplug-cli + retroplug-ui-test.
+add_executable(retroplug-sdl
+    sdl/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
+    ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
+    ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
+
+target_link_libraries(retroplug-sdl PRIVATE
+    lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
+    retroplug-backend             # Engine + cores + txiki host + rpcpp
+    PkgConfig::SDL2)              # window + present + audio + gamepad (found at root scope)
+
+target_include_directories(retroplug-sdl PRIVATE
+    # quickjs.h for the JS trampolines (lvgl-js-native PUBLIC-propagates the lv_binding_js render include
+    # dir, so "native/..." resolves transitively; retroplug-backend brings "host/..." + "dpfjs/...").
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs
+    # DistrhoUtils.hpp (header-only d_stderr logging) for GamepadManager.cpp — the one DPF header the
+    # shared gamepad poller pulls in; no DPF linkage.
+    ${DPFJS_PATH}/deps/dpf/distrho)
+
+add_dependencies(retroplug-sdl retroplug-cp-bundle retroplug-ui-bundle)  # embedded bundles must exist first
+
+set_target_properties(retroplug-sdl PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 # --- retroplug.{vst3,clap} + the jack standalone: the DPF plugin hosting the
 # Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
 # legacy `retroplug` (they coexist).
