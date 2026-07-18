@@ -140,15 +140,33 @@ struct AppState {
     // audio scratch (pre-sized to the device block, so the callback never allocates)
     std::vector<float> audioL, audioR;
     double sampleRate = 48000.0;
+
+    // Present only when LVGL actually redrew: the flush cb unions the changed area here; the loop skips
+    // the SDL texture upload + blit entirely on idle frames (a static menu → ~0% CPU instead of a full
+    // 640×480 upload every frame). dirty starts true so the first frame always shows.
+    bool dirty = true;
+    lv_area_t dirtyRect{0, 0, 0, 0};
 };
 
 AppState* g_app = nullptr;  // single instance
 
 // ---- LVGL glue (mirrors RenderCore's non-GL subset) -----------------------------------------------
 
-// No-op flush: in LV_DISPLAY_RENDER_MODE_DIRECT the draw buffer already holds the full rendered frame,
-// which the main loop uploads to the SDL texture. Just acknowledge so LVGL continues.
-void flushCb(lv_display_t* disp, const lv_area_t*, uint8_t*) { lv_display_flush_ready(disp); }
+// Flush: in LV_DISPLAY_RENDER_MODE_DIRECT the draw buffer already holds the full rendered frame; we just
+// record which region changed (union across the refresh's flush calls) so the loop uploads + presents
+// only that rect, and skips presenting entirely when nothing changed.
+void flushCb(lv_display_t* disp, const lv_area_t* area, uint8_t*) {
+    if (g_app && area) {
+        if (!g_app->dirty) { g_app->dirtyRect = *area; g_app->dirty = true; }
+        else {
+            g_app->dirtyRect.x1 = std::min(g_app->dirtyRect.x1, area->x1);
+            g_app->dirtyRect.y1 = std::min(g_app->dirtyRect.y1, area->y1);
+            g_app->dirtyRect.x2 = std::max(g_app->dirtyRect.x2, area->x2);
+            g_app->dirtyRect.y2 = std::max(g_app->dirtyRect.y2, area->y2);
+        }
+    }
+    lv_display_flush_ready(disp);
+}
 
 void keypadReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
     auto* a = static_cast<AppState*>(lv_indev_get_driver_data(indev));
@@ -666,7 +684,7 @@ bool setupSdl(AppState& a) {
     want.freq = static_cast<int>(a.sampleRate);
     want.format = AUDIO_F32SYS;
     want.channels = 2;
-    want.samples = 1024;
+    want.samples = 2048; // ~43ms at 48k — headroom so UI-thread jitter doesn't underrun ALSA
     want.callback = audioCb;
     want.userdata = &a;
     a.audioDev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
@@ -681,11 +699,19 @@ bool setupSdl(AppState& a) {
 }
 
 void present(AppState& a) {
-    SDL_UpdateTexture(a.texture, nullptr, a.drawBuf.data(),
-                      static_cast<int>(lv_draw_buf_width_to_stride(a.width, lv_display_get_color_format(a.display))));
-    SDL_RenderClear(a.renderer);
+    if (!a.dirty) return; // nothing redrew this frame — leave the screen as-is (huge idle CPU saving)
+    const int stride = static_cast<int>(lv_draw_buf_width_to_stride(a.width, lv_display_get_color_format(a.display)));
+    // Upload only the changed region (clamped) from the draw buffer; the streaming texture keeps the rest.
+    int x1 = std::max(0, (int)a.dirtyRect.x1), y1 = std::max(0, (int)a.dirtyRect.y1);
+    int x2 = std::min((int)a.width - 1, (int)a.dirtyRect.x2), y2 = std::min((int)a.height - 1, (int)a.dirtyRect.y2);
+    if (x2 >= x1 && y2 >= y1) {
+        SDL_Rect rect{x1, y1, x2 - x1 + 1, y2 - y1 + 1};
+        const std::uint8_t* src = a.drawBuf.data() + static_cast<std::size_t>(y1) * stride + static_cast<std::size_t>(x1) * 4;
+        SDL_UpdateTexture(a.texture, &rect, src, stride);
+    }
     SDL_RenderCopy(a.renderer, a.texture, nullptr, nullptr);
     SDL_RenderPresent(a.renderer);
+    a.dirty = false;
 }
 
 void handleEvents(AppState& a) {
