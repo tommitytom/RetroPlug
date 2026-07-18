@@ -292,6 +292,14 @@ target_include_directories(retroplug-sdl PRIVATE
 
 add_dependencies(retroplug-sdl retroplug-cp-bundle retroplug-ui-bundle)  # embedded bundles must exist first
 
+# Statically link libstdc++/libgcc on Linux so the binary doesn't depend on the target device's
+# libstdc++ version — handhelds (muOS/Buildroot) ship an unknown/older libstdc++. glibc stays dynamic
+# (linked ≤ the build's version); this only removes the C++ runtime version coupling. SDL2/ALSA/curl are
+# C, so there's no cross-boundary C++ ABI to share.
+if(UNIX AND NOT APPLE)
+    target_link_options(retroplug-sdl PRIVATE -static-libstdc++ -static-libgcc)
+endif()
+
 set_target_properties(retroplug-sdl PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON

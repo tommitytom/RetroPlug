@@ -210,6 +210,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -yqq --no-install-recommends \
             cmake ninja-build pkg-config \
+            gcc-12 g++-12 \
             libdbus-1-dev libasound2-dev \
             libcurl4-openssl-dev libffi-dev libssl-dev \
             libsdl2-dev \
@@ -238,8 +239,11 @@ jobs:
           pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
 
       - name: Build retroplug-sdl
+        # ubuntu-22.04's default GCC 11 can't compile txiki's `ada` (constexpr std::string needs GCC 12+);
+        # GCC 12 still targets the runner's glibc 2.35, so the device-glibc ceiling is preserved.
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12
           cmake --build build --target retroplug-sdl -j"$(nproc)"
 
       - name: Verify arch + glibc ceiling (must be <= 2.38 for the device)
