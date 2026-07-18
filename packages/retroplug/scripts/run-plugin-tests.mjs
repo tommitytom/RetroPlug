@@ -3,7 +3,8 @@
 // the per-context window-hook routing (retroplug-plugin-test), the class-id
 // counter sync that keeps the DAW-hosted editor from rendering blank
 // (retroplug-classid-test), the per-channel audio taps (retroplug-audio-test),
-// and the native file watcher (retroplug-watcher-test).
+// the native file watcher (retroplug-watcher-test), and the ThorVG-backed
+// Lottie rasterization behind the <Lottie> component (retroplug-lottie-test).
 //
 // A tiny runner (rather than chaining `build/bin/foo && …` in package.json) so
 // the suite is cross-platform: it appends `.exe` on Windows and spawns each
@@ -21,7 +22,7 @@ const REPO = resolve(PKG, "../..");
 const BIN_DIR = process.env.RETROPLUG_BIN_DIR || join(REPO, "build", "bin");
 const EXE = process.platform === "win32" ? ".exe" : "";
 
-const BINARIES = ["retroplug-plugin-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test"];
+const BINARIES = ["retroplug-plugin-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test"];
 
 const filter = process.argv[2];
 const selected = filter ? BINARIES.filter((b) => b.includes(filter)) : BINARIES;

@@ -540,3 +540,23 @@ set_target_properties(retroplug-watcher-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-lottie-test proves the new ThorVG-backed <Lottie> capability: that lv_lottie
+# rasterizes animated vector frames on a headless software display (LV_USE_LOTTIE → ThorVG).
+# Links bare lvgl (which PRIVATE-brings lvgl_thorvg) + Catch2 — no JS engine needed. Also
+# `pnpm test:plugin`, on demand.
+add_executable(retroplug-lottie-test EXCLUDE_FROM_ALL
+    test/ui/LottieRender.test.cpp)
+
+target_link_libraries(retroplug-lottie-test PRIVATE
+    lvgl                       # lv_lottie + lvgl_thorvg (LV_USE_LOTTIE in the active lv_conf.h)
+    Catch2::Catch2WithMain)
+
+# The Lottie animation the test rasterizes (a real ~5 KB LVGL example asset).
+target_compile_definitions(retroplug-lottie-test PRIVATE
+    RP_LOTTIE_JSON_PATH="${DPFJS_PATH}/deps/lv_binding_js/deps/lvgl/examples/widgets/lottie/lv_example_lottie_approve.json")
+
+set_target_properties(retroplug-lottie-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
