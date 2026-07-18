@@ -91,9 +91,9 @@ public:
     virtual void pressButton(std::uint8_t /*button*/, bool /*down*/) {}
 
     // Audio-thread: push one byte into the system's serial input (drained
-    // MSB-first over the link/serial port). Default no-op; a core with a
-    // serial port overrides it.
-    virtual void pushSerialIn(std::uint8_t /*byte*/) {}
+    // MSB-first over the link/serial port), scheduled at intra-block sample
+    // offset `frame`. Default no-op; a core with a serial port overrides it.
+    virtual void pushSerialIn(std::uint32_t /*frame*/, std::uint8_t /*byte*/) {}
 
     // Returns nullptr for systems without video (or before activation).
     virtual FrameBufferTriple* framebuffer() { return nullptr; }

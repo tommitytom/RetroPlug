@@ -62,8 +62,8 @@ bool Engine::setSystems(const std::vector<std::uint8_t>& json) {
     return dsp_.setSystems(json);
 }
 
-void Engine::stageMidi(std::vector<std::uint8_t> bytes) {
-    pendingMidi_.push_back({ 0, std::move(bytes) });
+void Engine::stageMidi(std::uint32_t frame, std::vector<std::uint8_t> bytes) {
+    pendingMidi_.push_back({ frame, std::move(bytes) });
 }
 
 void Engine::setBpm(double bpm) { bpm_ = bpm; }
@@ -84,7 +84,7 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         pendingSerialOut_.clear();  // last block's serial-out consumed by the kernel this block
         // serial-in sink → the addressed system's serial FIFO.
         for (const auto& sv : dsp_.serialIn_)
-            if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.byte);
+            if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.frame, sv.byte);
         // core-MIDI sink → the addressed core's onMidi (e.g. the NES N8 FIFO). One ::MidiEvent per entry;
         // an oversized message (> the inline data[4]) is skipped, matching the DAW-drain guard.
         for (const auto& cm : dsp_.coreMidi_) {

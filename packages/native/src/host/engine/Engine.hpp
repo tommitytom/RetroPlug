@@ -55,7 +55,8 @@ public:
     // --- DSP kernel ---
     bool loadKernel(const std::vector<std::uint8_t>& bytecode);   // sets the per-block DSP stage active
     bool setSystems(const std::vector<std::uint8_t>& json);
-    void stageMidi(std::vector<std::uint8_t> bytes);              // delivered on the next processBlock
+    void stageMidi(std::uint32_t frame, std::vector<std::uint8_t> bytes);  // delivered on the next processBlock, at intra-block `frame`
+    void stageMidi(std::vector<std::uint8_t> bytes) { stageMidi(0, std::move(bytes)); }  // frame-0 convenience (RPC/harness path)
 
     // --- transport (plain members; mutated only by the Engine's owning thread) ---
     void setBpm(double bpm);

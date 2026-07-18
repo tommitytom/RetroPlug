@@ -163,7 +163,7 @@ protected:
         for (uint32_t i = 0; i < midiEventCount; ++i) {
             const MidiEvent& e = midiEvents[i];
             if (e.size >= 1 && e.size <= 4)
-                engine_.stageMidi(std::vector<std::uint8_t>(e.data, e.data + e.size));
+                engine_.stageMidi(e.frame, std::vector<std::uint8_t>(e.data, e.data + e.size));
         }
 
         // One audio block: drain control-thread structural edits on the audio thread → set transport
