@@ -241,16 +241,27 @@ jobs:
       - name: Build retroplug-sdl
         # ubuntu-22.04's default GCC 11 can't compile txiki's `ada` (constexpr std::string needs GCC 12+);
         # GCC 12 still targets the runner's glibc 2.35, so the device-glibc ceiling is preserved.
+        # MI_NO_OPT_ARCH=ON: the vendored mimalloc force-enables -march=armv8.1-a on arm64, which emits LSE
+        # atomics (`casal`) the handheld's Cortex-A53 (ARMv8.0-A) lacks → SIGILL at its startup constructor.
+        # This off-switch keeps mimalloc at the ARMv8.0-A baseline. The CI runner is newer arm, so nothing
+        # else emits LSE by default (GCC uses runtime-dispatched outline-atomics).
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12
+            -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 \
+            -DMI_NO_OPT_ARCH=ON
           cmake --build build --target retroplug-sdl -j"$(nproc)"
 
-      - name: Verify arch + glibc ceiling (must be <= 2.38 for the device)
+      - name: Verify arch + glibc ceiling + ARMv8.0-A (no LSE) for the device
         run: |
           file build/bin/retroplug-sdl
           echo "Max GLIBC symbol version referenced:"
           objdump -T build/bin/retroplug-sdl | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -uV | tail -3
+          echo "Scanning for ARMv8.1+ LSE atomics (illegal on the Cortex-A53 handheld)..."
+          lse=$(objdump -d build/bin/retroplug-sdl \
+            | grep -owE 'cas|casa|casal|casl|casp|caspa|caspal|caspl|swp|swpa|swpal|swpl|ldadd|ldadda|ldaddal|ldaddl|ldclr|ldclra|ldclral|ldeor|ldeora|ldset|ldseta|ldsetal|stadd|staddl|stclr|stset|steor' \
+            | sort | uniq -c || true)
+          if [ -n "$lse" ]; then echo "FAIL: LSE atomics present:"; echo "$lse"; exit 1; fi
+          echo "OK: no LSE atomics (ARMv8.0-A safe)."
 
       - name: Upload retroplug-sdl
         if: always()
