@@ -86,7 +86,13 @@ const arduinoboy: SystemBehavior = (c) => {
     c.pushSerialIn(0, c.block.transport ? LSDJ_START : LSDJ_STOP);
     st.prevTransport = c.block.transport;
   }
-  if (st.playing) c.eachTick(24 / (st.divisor || 1), (_t, off) => c.pushSerialIn(off, LSDJ_CLOCK));
+  // Deliver each clock opportunistically (frame 0), NOT at its tick sample-offset. LSDj in Arduinoboy-slave
+  // mode toggles its serial-clock-enable (SC) between bytes, so the SameBoy offset gate — which holds a byte
+  // until its sample offset — misses LSDj's ready window and starves the clock (LSDj goes silent). eachTick
+  // still emits the tempo-correct NUMBER of clocks per block; only the intra-block delivery time is dropped
+  // (it was cosmetic before the host-MIDI offset gate landed). Host MIDI (forwardMidiToSerial) keeps its
+  // real frame for sample-accuracy — that path drives always-listening ROMs like mGB.
+  if (st.playing) c.eachTick(24 / (st.divisor || 1), () => c.pushSerialIn(0, LSDJ_CLOCK));
 };
 
 // MidiMap (== LsdjSyncRole handleMidiMap): NoteOn → a row byte LSDj reads as a SONG-row jump; a matching
