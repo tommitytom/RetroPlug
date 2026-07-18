@@ -213,6 +213,19 @@ normal DAW behaviour).
   deliberately-reverted build). Reaper delivers real sub-block offsets (unlike a block-quantizing
   host), so this is the on-a-DAW counterpart to the `retroplug-audio-test` SameBoy serial-timing
   unit checks. Not in CI. Regenerate with `pnpm reaper:mgb-midi-timing-author`.
+- **Host MIDI-in intra-block timing (NES)** — `pnpm reaper:n8-midi-timing` is the NES twin of the
+  above, proving the same property for the Mesen core (the fix that stopped `NesN8MidiRole` pushing
+  every byte into the N8 FIFO at the block start — it now queues `{offset,byte}` and releases them as
+  the ring's sample progress reaches each offset, gated in `MesenNesSystem::stepIfBelowTarget`, with a
+  `finishBlock` rebase for cross-block carry). Same two-notes-in-one-8192-block design + reused
+  `--midi-timing` analyzer. NES specifics ([tools/reaper-nes-timing-author.lua](../tools/reaper-nes-timing-author.lua),
+  NES `.rplg` from [tools/author-nes-rplg.js](../tools/author-nes-rplg.js) →
+  [test-native/author-nes-rplg.ts](../packages/retroplug/test-native/author-nes-rplg.ts)): drive **ch1
+  only** (ch2 of n8-midi is broken); a **priming note** before the measured pair (n8-midi drops its first
+  MIDI message); notes placed after the ~1 s boot; slightly wider tolerance (`--tol-ms 30`) for the ROM's
+  FIFO-poll jitter. FAILs (one merged onset) against a reverted build. The role-level gate/rebase is also
+  guarded deterministically by `NesN8MidiTiming.test.cpp` (no emulator). Not in CI. Regenerate with
+  `pnpm reaper:n8-midi-timing-author`.
 - **Arduinoboy startup-sync latency** — `pnpm reaper:lsdj-arduinoboy-metro`
   renders [examples/reaper/lsdj_arduinoboy_metro.rpp](../examples/reaper/lsdj_arduinoboy_metro.rpp)
   (LSDj hard-L on `MidiSyncArduinoboy`, a ReaSynth click hard-R, one note/quarter

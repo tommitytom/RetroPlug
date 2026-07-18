@@ -541,6 +541,7 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/EngineSampleRate.test.cpp   # host sample-rate change re-rates live cores
     test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
     test/audio/NesApuLatency.test.cpp   # runtime NES APU flush window (live apuLatencyMs knob)
+    test/audio/NesN8MidiTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
     test/audio/NesStems.test.cpp)    # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
 
 target_link_libraries(retroplug-audio-test PRIVATE

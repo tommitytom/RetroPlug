@@ -216,6 +216,8 @@ void MesenNesSystem::onSampleRateChanged(double sampleRate) {
 
 void MesenNesSystem::onReset() {
     if (emu_) emu_->Reset();
+    // Drop any queued host-MIDI bytes so stale notes don't fire after the reset.
+    if (n8Role_) n8Role_->clear();
 }
 
 void MesenNesSystem::setGainDb(float dB) {
@@ -322,15 +324,25 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // their own resampler path, so gating on the mix ring could leave a pin one
     // sample short (finishBlock would then truncate it). The pins are mutually
     // aligned, so stream 0's count is authoritative.
+    // Before each instruction, release any host-MIDI bytes whose intra-block sample offset the audio has
+    // reached, so the ROM can't read note N before its sample position. The ring drains from the FRONT, so
+    // its depth IS the output-block sample index (leftover from a prior block occupies indices [0, depth) —
+    // an event there simply fires ASAP). Gate on the SAME metric the loop uses (capture streams in pins
+    // mode, else the mix ring).
     if (channelCapture_ && nesMixer_) {
         while (nesMixer_->AvailableCaptureFrames() < framesNeeded) {
+            if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(nesMixer_->AvailableCaptureFrames()));
             cpu->Exec();
         }
     } else {
         while (audioDevice_->availableFrames() < framesNeeded) {
+            if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(audioDevice_->availableFrames()));
             cpu->Exec();
         }
     }
+    // Release anything due through the block end (offsets in [0, framesNeeded]); offsets past it carry to
+    // the next block via finishBlock's rebase.
+    if (n8Role_) n8Role_->pumpUntil(framesNeeded);
     return false;
 }
 
@@ -338,6 +350,10 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
     if (!activated_ || !emu_) return;
 
     const std::uint32_t blockSize = info.frames;
+
+    // Carry any host-MIDI byte that didn't fire this block (offset past the block end) into the next,
+    // shifting its offset back by the block length so it keeps its relative timing (mirrors SameBoy).
+    if (n8Role_) n8Role_->rebase(blockSize);
 
     if (channelCapture_ && laneCount >= 6) {
         // Pins mode: fan the mono pin streams (Pulse/TND/Expansion, +MixRef under mode 2) into their own L

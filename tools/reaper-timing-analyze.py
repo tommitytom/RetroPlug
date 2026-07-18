@@ -317,15 +317,15 @@ def analyze_midi_timing(path, from_ms, gap_ms, tol_ms):
     click_ms = click * 1000.0 / sr
     print(f"file: {path}")
     print(f"sample rate: {sr} Hz, duration: {len(left)/sr:.2f}s, window: >{from_ms:.0f} ms")
-    print(f"mGB (L) onsets:   {len(mgb)}  {[round(x, 1) for x in mgb_ms.tolist()]}")
+    print(f"core (L) onsets:  {len(mgb)}  {[round(x, 1) for x in mgb_ms.tolist()]}")
     print(f"Click (R) onsets: {len(click)}  {[round(x, 1) for x in click_ms.tolist()]}")
 
     ok = True
     if len(mgb) != 2:
         print()
-        print(f"FAIL: expected exactly 2 mGB onsets, saw {len(mgb)}")
+        print(f"FAIL: expected exactly 2 core onsets, saw {len(mgb)}")
         print("  a single merged onset is the frame-0-collapse signature (both notes at the block start);"
-              " 0 onsets means mGB never sounded (autoload / boot-window placement).")
+              " 0 onsets means the core never sounded (autoload / boot-window placement).")
         return 1
     if len(click) < 1:
         print("\nFAIL: no ReaSynth click detected (Click track / ReaSynth missing?)", file=sys.stderr)
@@ -335,14 +335,14 @@ def analyze_midi_timing(path, from_ms, gap_ms, tol_ms):
     print()
     print(f"note spacing:     {gap:7.2f} ms   (authored {gap_ms:.2f} ms)")
     if abs(gap - gap_ms) > tol_ms:
-        print(f"FAIL: mGB note spacing off by {gap - gap_ms:+.1f} ms (tol +/- {tol_ms:.0f})")
+        print(f"FAIL: core note spacing off by {gap - gap_ms:+.1f} ms (tol +/- {tol_ms:.0f})")
         print("  the two intra-block events did not land at their authored offsets.")
         ok = False
 
-    ref = float(mgb_ms[1] - click_ms[-1])   # late mGB note vs the coincident click
+    ref = float(mgb_ms[1] - click_ms[-1])   # late core note vs the coincident click
     print(f"late note vs click: {ref:+6.2f} ms   (authored coincident)")
     if abs(ref) > tol_ms:
-        print(f"FAIL: late mGB note is {ref:+.1f} ms from the click (tol +/- {tol_ms:.0f})")
+        print(f"FAIL: late core note is {ref:+.1f} ms from the click (tol +/- {tol_ms:.0f})")
         print("  its absolute position drifted from an independent plugin at the same instant.")
         ok = False
 

@@ -137,6 +137,12 @@ namespace rp {
 			_rxQueue.push(byte);
 		}
 
+		// Number of bytes waiting in the RX queue (not yet read by the ROM). For tests / introspection.
+		std::size_t rxCount() {
+			std::lock_guard<std::mutex> lock(_mutex);
+			return _rxQueue.size();
+		}
+
 	private:
 		// ----------------------------------------------------------------
 		// TX parser — called with _mutex held
