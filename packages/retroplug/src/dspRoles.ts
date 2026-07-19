@@ -20,6 +20,7 @@ import {
   toGbSerialByte,
 } from "./lsdjKeyboardMap";
 import { arduinoboyDecodeSerialOut, arduinoboyMasterSyncBlock, type ArduinoboyState, type MasterSyncState } from "./lsdjArduinoboy";
+import { RISA_PPQN, RISA_START, RISA_CLOCK, RISA_STOP, risaLocate, risaArmPacket } from "./risaSync";
 
 // Forward every host-MIDI byte verbatim into the system's serial input. This is both `mgb`
 // (== MgbPassthroughRole) and lsdj-sync's MidiPassthrough mode (== LsdjSyncRole handlePassthrough).
@@ -201,6 +202,41 @@ const lsdjSync: SystemBehavior = (c) => {
   }
 };
 
+// risa-sync (no config): drive risa's dormant N8-FIFO host-sync receive path from the DAW transport. Bytes
+// go over ctx.pushCoreBytes → the N8 FIFO (NOT MIDI — a raw byte protocol reusing MIDI status values; see
+// risaSync.ts). On a transport rise OR a ppqStart discontinuity (a DAW seek/loop) send a fresh arm+locate
+// (computed from ppqStart) then START; on a transport fall send STOP; while playing stream 24-PPQN clocks
+// at their real sample offsets (the FIFO has no serial gate, unlike SameBoy). Attached only to sync-capable
+// risa ROMs (the RISA-SYNC marker) by the rom provider. Coexists with nes-n8-midi note passthrough.
+const RISA_SEEK_TOL = 1e-3; // quarters — contiguous block edges meet exactly; a seek/loop jump far exceeds this.
+const risaSync: SystemBehavior = (c) => {
+  const st = c.state as { prevT?: boolean; ppqEnd?: number };
+  const b = c.block;
+  const playing = b.transport;
+  const prevT = st.prevT ?? false;
+
+  // Re-arm on a fresh start, or on a ppqStart discontinuity while playing — a seek/loop needs a new locate,
+  // and the arm gates risa's playback + discards the old position's queued clocks.
+  const seek = st.ppqEnd !== undefined && Math.abs(b.ppqStart - st.ppqEnd) > RISA_SEEK_TOL;
+  if (playing && (!prevT || seek)) {
+    c.pushCoreBytes(0, risaArmPacket(risaLocate(b.ppqStart))); // F9 52 songRow chainRow
+    c.pushCoreBytes(0, [RISA_START]); // FA
+  } else if (!playing && prevT) {
+    c.pushCoreBytes(0, [RISA_STOP]); // FC
+  }
+
+  if (playing) c.eachTick(RISA_PPQN, (_t, off) => c.pushCoreBytes(off, [RISA_CLOCK])); // F8 at 24 PPQN
+
+  // Predict the next contiguous block's ppqStart for seek detection (quarters this block spans).
+  st.prevT = playing;
+  if (playing) {
+    const samplesPerQuarter = (b.sampleRate * 60) / b.tempo;
+    st.ppqEnd = b.ppqStart + (samplesPerQuarter > 0 ? b.frames / samplesPerQuarter : 0);
+  } else {
+    st.ppqEnd = undefined;
+  }
+};
+
 // lsdj-sync load-time hook: a fresh LSDj cart with no SRAM runs a 12–15 s cartridge self-test on boot.
 // When nothing else will seed the battery (no savestate, no sram blob, no on-disk .sav for native to
 // load), hand it a valid empty sav — savFromJson stamps the jk/rb validity markers LSDj checks — so it
@@ -224,6 +260,9 @@ export function registerDspRoles(registry: RoleRegistry): void {
   // NES host-MIDI: forward routed MIDI to the core's onMidi (→ the always-attached N8 FIFO). Attached to
   // every NES ROM by the rom provider (romProviders.ts), mirroring the native always-on N8 role.
   registry.registerRole({ kind: "nes-n8-midi", category: "feature", scope: "system", schema: z.object({}), dsp: forwardMidiToCore });
+  // risa-sync: no config — drives risa's N8-FIFO host-sync receive path from the DAW transport (locate /
+  // start / 24-PPQN clock / stop over pushCoreBytes). Attached only to sync-capable risa ROMs.
+  registry.registerRole({ kind: "risa-sync", category: "feature", scope: "system", schema: z.object({}), dsp: risaSync });
   registry.registerRole({
     kind: "lsdj-sync",
     category: "feature",
