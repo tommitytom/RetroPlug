@@ -305,6 +305,7 @@ jobs:
           sudo apt-get install -yqq --no-install-recommends \
             cmake ninja-build pkg-config gcc-12 g++-12 \
             libdbus-1-dev libasound2-dev libcurl4-openssl-dev libffi-dev libssl-dev \
+            libsdl2-dev \
             bison libpng-dev
       - name: Install RGBDS (from source)
         run: |
