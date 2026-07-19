@@ -140,7 +140,9 @@ struct AppState {
     SDL_Texture*  texture = nullptr;
     SDL_AudioDeviceID audioDev = 0;
     retroplug::GamepadManager gamepad;
-    retroplug::MidiIo midi;   // RtMidi in/out (staged into the engine on the audio thread — wired next step)
+    retroplug::MidiIo midi;   // RtMidi in/out; drained into the Engine on the audio thread each block
+    std::vector<retroplug::MidiIo::Message> midiScratch;  // reused per block (no per-block alloc)
+    std::atomic<std::uint64_t> midiStaged{0};             // count staged into the Engine (headless self-test)
 
     std::uint32_t width = 640;
     std::uint32_t height = 480;
@@ -629,6 +631,16 @@ void audioCb(void* userdata, Uint8* stream, int len) {
     if (static_cast<int>(a->audioL.size()) < frames) { a->audioL.resize(frames); a->audioR.resize(frames); }
 
     a->invoker.drainInto(a->engine);
+    // Drain MIDI the RtMidi callback thread staged into the ring, and hand it to the Engine — we own it on
+    // this (audio) thread, exactly like PluginDSP::run stages host MIDI. Frame 0 for now: live hardware MIDI
+    // carries no sub-block timing worth preserving (a proper offset from the block clock is a later step).
+    a->midi.poll(a->midiScratch);
+    for (auto& m : a->midiScratch)
+        if (m.bytes.size() >= 1 && m.bytes.size() <= 3) {
+            a->engine.stageMidi(0, std::move(m.bytes));
+            a->midiStaged.fetch_add(1, std::memory_order_relaxed);
+        }
+
     a->engine.setBpm(120.0);
     a->engine.setTransport(true);
     a->engine.processBlock(static_cast<std::uint32_t>(frames), a->audioL.data(), a->audioR.data());
@@ -904,8 +916,7 @@ int main(int argc, char** argv) {
     if (!setupUi(app)) return 1;
 
     // Open MIDI (virtual in/out ports). Non-fatal: the host runs without MIDI if none is available. The
-    // audio thread will drain app.midi into the Engine per block (wired next step); for now the RtMidi
-    // callback logs received messages under RETROPLUG_MIDI_LOG.
+    // audio callback drains app.midi into the Engine per block (see audioCb); RETROPLUG_MIDI_LOG logs input.
     app.midi.open("RetroPlug");
 
     // Hand the Engine to the SDL audio thread (control-plane edits become push-only, drained per block)
@@ -917,6 +928,13 @@ int main(int argc, char** argv) {
     if (app.audioDev) SDL_PauseAudioDevice(app.audioDev, 0);
 
     std::fprintf(stderr, "[retroplug-sdl] running %ux%u @ %.0f Hz\n", app.width, app.height, app.sampleRate);
+
+    // Test hook: inject a MIDI message into the input ring (no hardware needed) to prove the audio-thread
+    // drain path (ring -> audioCb poll -> engine.stageMidi). The staged count is printed on exit.
+    if (std::getenv("RETROPLUG_SDL_MIDI_SELFTEST")) {
+        const std::uint8_t noteOn[3] = { 0x90, 60, 100 };  // ch1 NoteOn C4
+        app.midi.injectForTest(noteOn, 3);
+    }
 
     // Test hook: exercise a live audio reconfigure (device close/reopen + engine re-rate) headlessly.
     if (std::getenv("RETROPLUG_SDL_TEST_RECONFIG")) {
@@ -956,6 +974,10 @@ int main(int argc, char** argv) {
 
     // --- teardown: reclaim the Engine, unmount, drop SDL ---
     if (app.audioDev) { SDL_PauseAudioDevice(app.audioDev, 1); SDL_CloseAudioDevice(app.audioDev); }
+    if (std::getenv("RETROPLUG_SDL_MIDI_SELFTEST"))
+        std::fprintf(stderr, "[retroplug-sdl] MIDI self-test: staged %llu message(s) into the Engine\n",
+                     static_cast<unsigned long long>(app.midiStaged.load(std::memory_order_relaxed)));
+    app.midi.close();
     app.invoker.setAudioThreadOwns(false);
     app.invoker.drainInto(app.engine);
     app.invoker.reclaimReleased();

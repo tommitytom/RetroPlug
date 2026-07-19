@@ -46,6 +46,10 @@ public:
     // Send one short MIDI message out (from the audio thread each block — MI.OUT etc.). No-op if not open.
     void send(const std::uint8_t* data, std::size_t len);
 
+    // Test-only: push a message into the input ring as if RtMidi had received it (for headless verification
+    // of the drain path where there's no MIDI hardware). Not used in normal operation.
+    void injectForTest(const std::uint8_t* data, std::size_t len) { pushRing(data, len); }
+
 private:
     // The RtMidi input callback (static thunk → pushRing). Runs on RtMidi's thread.
     static void onMidiIn(double timeStamp, std::vector<unsigned char>* message, void* userData);
