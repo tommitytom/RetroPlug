@@ -8,7 +8,13 @@ import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuD
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { risaRom, nesRom } from "../systems/fixtures";
 import { savBytes } from "../risa/fixtures";
-import { normalizeSaveContainer, listSongs } from "../../src/risaSav";
+import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, CURRENT_LAYOUT } from "../../src/risaSav";
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
 
 function ctxOf(stores: AppStores): MenuContext {
   return {
@@ -67,6 +73,7 @@ test("each risa song row offers Delete + reorder, with Move disabled at the ends
   const songRows = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
 
   const first = submenuChildren(songRows, "risa-song-0");
+  expect(findItem(first, "risa-song-0-load")?.kind).toBe("action");
   expect(findItem(first, "risa-song-0-delete")?.kind).toBe("prompt");
   expect(findItem(first, "risa-song-0-up")?.disabled).toBe(true); // first song can't move up
   expect(findItem(first, "risa-song-0-down")?.disabled).toBeFalsy();
@@ -102,4 +109,39 @@ test("Move Down reorders the catalog end-to-end", () => {
   findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-down")!.onSelect!(); // HOU8 down one
   const spec = be.constructCalls[be.constructCalls.length - 1];
   expect(listSongs(new Uint8Array(spec.sramBytes!)).map((s) => s.name)).toEqual(["HOU", "HOU8", "DBZ", "DBZ2-F", "FUNK0"]);
+});
+
+test("Load expands the selected song into working memory end-to-end (current-layout catalog)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/song.nes", risaRom());
+  const id = stores.project.systems.addSystem("/roms/song.nes")!;
+  const battery = normalizeSaveContainer(savBytes("v2_blumarbl")).save; // current v2, one song: BLUMARBL
+  be.setSram(id, battery);
+  const sys = () => stores.project.systems.view().find((s) => s.id === id)!;
+  const songRows = submenuChildren(
+    submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys() }).items, "inst-risa"),
+    "risa-songs",
+  );
+
+  findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-load")!.onSelect!();
+
+  // The cold-booted core carries a battery whose working song (banks 0-3) is the expanded BLUMARBL, and
+  // whose catalog (banks 4-7) is unchanged.
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.replaceId).toBe(id);
+  const out = new Uint8Array(spec.sramBytes!);
+  expect(sameBytes(out.slice(0, 0x8000), expandRecordToWorking(recordBytesAt(battery, CURRENT_LAYOUT, 0)!))).toBe(true);
+  expect(sameBytes(out.slice(0x8000), battery.slice(0x8000))).toBe(true);
+});
+
+test("Load is a safe no-op on a legacy-layout catalog (no cold-boot)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { items } = risaSystem(be, stores); // seeds the legacy multi_legacy catalog
+  const songRows = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
+  const before = be.constructCalls.length;
+
+  findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-load")!.onSelect!();
+  expect(be.constructCalls.length).toBe(before); // loadSongToWorkingInSav returned null -> mutateSavBytes no-op
 });

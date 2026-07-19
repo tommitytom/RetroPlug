@@ -32,7 +32,11 @@ import { listProjects, decompressSlot, encodeLsdsngRaw, savSongName, savSongVers
 import { loadSongToWorking, deleteSongInSav, replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
 import { importSongFiles } from "../../../src/lsdjSongImport";
 import { listSongs } from "../../../src/risaSav";
-import { deleteSongInSav as deleteRisaSongInSav, moveSongInSav as moveRisaSongInSav } from "../../../src/risaSongOps";
+import {
+  deleteSongInSav as deleteRisaSongInSav,
+  moveSongInSav as moveRisaSongInSav,
+  loadSongToWorkingInSav,
+} from "../../../src/risaSongOps";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 import type { HostBackend } from "../../../src/backend";
@@ -609,9 +613,9 @@ function lsdjSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
 
 // --- risa Songs submenu (the RSAV catalog's saved songs) -------------------------------------------
 // Like LSDj Songs, risa songs are the BATTERY, not a ROM override: edits act on the live SRAM via
-// mutateSavBytes (readSram → byte-level catalog op → writeFileAtomic → loadSram cold-boot). Records are
-// opaque blobs (risaSongOps). M2 offers Delete + reorder; Load (needs the song-payload codec) and
-// Export/Replace/Add (need the kit-aware .risong format) come with later milestones.
+// mutateSavBytes (readSram → byte-level catalog op → writeFileAtomic → loadSram cold-boot). Delete +
+// reorder treat records as opaque; Load expands the record's payload into the working-song RAM (banks
+// 0-3) so the cold boot comes up on that song. Export/Replace/Add (need the kit-aware .risong) come later.
 function tryOp(fn: () => Uint8Array): Uint8Array | null {
   try {
     return fn();
@@ -626,6 +630,9 @@ function risaSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
   const last = songs.length - 1;
   const rows: MenuItem[] = songs.map((s, i) =>
     submenu(`risa-song-${s.index}`, `[${s.index}] ${s.name || `Song ${s.index}`}`, [
+      // Load the song into working memory + cold-boot so risa comes up showing it (loadSongToWorkingInSav
+      // never throws — it returns null on an unsupported battery, which mutateSavBytes treats as a no-op).
+      action(`risa-song-${s.index}-load`, "Load", () => mutateSavBytes(ctx, sys, (sav) => loadSongToWorkingInSav(sav, s.index))),
       action(`risa-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveRisaSongInSav(sav, s.index, s.index - 1))), i === 0),
       action(`risa-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveRisaSongInSav(sav, s.index, s.index + 1))), i === last),
       {

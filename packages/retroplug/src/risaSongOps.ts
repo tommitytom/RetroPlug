@@ -4,8 +4,9 @@
 // OPAQUE blobs — no song-payload round-trip (that model is lossy; mirrors the LSDj rule). The menu
 // edit cycle is: readSram -> op -> writeFileAtomic(.sav) -> loadSram (cold boot).
 //
-// M2 scope: delete / reorder / add-record / replace-record + record extraction (for export). The
-// .risong file format (kit-aware zip) and load-to-working (song-payload expansion) come later.
+// Delete / reorder / add-record / replace-record + record extraction (for export) treat records as
+// opaque; load-to-working expands a record's payload into the working-song RAM (banks 0-3) via the
+// song-payload codec (./risa/codec/working). The .risong file format (kit-aware zip) comes later.
 import {
   normalizeSaveContainer,
   chooseCatalogLayout,
@@ -14,6 +15,7 @@ import {
   deleteRecord,
   moveRecord,
   recordBytesAt,
+  expandRecordToWorking,
   CURRENT_LAYOUT,
   kSaveSize,
   type CatalogLayout,
@@ -78,4 +80,23 @@ export function addSongRecordToSav(rawSave: Uint8Array, record: Uint8Array): Uin
   const cat = parseCatalog(save, layout);
   writeRecord(save, cat.count, record, layout); // append past the last record
   return save;
+}
+
+/** Load the saved song at `index` into the working-song region (WRAM banks 0-3) of a fresh battery, so
+ *  a cold boot comes up showing it — the risa analog of LSDj loadSongToWorking. The catalog (banks 4-7)
+ *  is preserved. Returns null when there is no current-layout catalog, the slot is out of range, or the
+ *  record is malformed. Requires the CURRENT (v2 @0x8000) layout: the working song occupies banks 0-3,
+ *  which a legacy catalog (@0x6000, banks 3-7) overlaps — but the firmware migrates a legacy battery to
+ *  current on boot, so the live readSram the menu operates on is always current-layout. */
+export function loadSongToWorkingInSav(rawSave: Uint8Array, index: number): Uint8Array | null {
+  try {
+    const save = normalizeSaveContainer(rawSave).save; // a fresh copy — safe to mutate
+    if (chooseCatalogLayout(save) !== CURRENT_LAYOUT) return null; // the working song needs banks 0-3 free
+    const record = recordBytesAt(save, CURRENT_LAYOUT, index);
+    if (!record) return null;
+    save.set(expandRecordToWorking(record), 0); // overwrite banks 0-3; catalog banks 4-7 untouched
+    return save;
+  } catch {
+    return null; // unrecognized container / corrupt catalog / malformed record → leave the sav untouched
+  }
 }
