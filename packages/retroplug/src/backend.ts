@@ -193,6 +193,13 @@ export interface Backend {
    *  not the `enabled` ($4015) bit. */
   getApuState(id: number): ApuState;
 
+  /** Decoded per-channel state of the cart's expansion audio chip (VRC6/VRC7/Sunsoft-5B/Namco-163) —
+   *  the analogue of getApuState for mapper sound. `chip` is "none" when the cart has no expansion
+   *  audio (or the id is gone / core has no NES debug target). `volume` is normalized 0 (silent) .. 15
+   *  (loudest) across chips, so gate "audible" on `volume > 0` (plus `constantOutput === false` for
+   *  VRC6 pulses). */
+  getExpansionAudioState(id: number): ExpansionAudioState;
+
   /** The NES PPU's live timing + register state (scanline/cycle/frameCount + the $2000/$2001/$2002
    *  register bytes + scroll). Zeroed when the id is gone or the core has no PPU debug target
    *  (SameBoy/GBA). The tilemap/sprite/palette viewers are not exposed. */
@@ -330,7 +337,7 @@ export type EmulatorBackend = Pick<
 /** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */
 export type DebugBackend = Pick<
   Backend,
-  | "getApuState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
+  | "getApuState" | "getExpansionAudioState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
   | "stepInstruction" | "drainEvents" | "loadLabels" | "setCpuRegister" | "runUntilPc"
   | "setBreakpoints" | "runUntilBreak" | "setTrace" | "readTrace" | "stepInto" | "stepOver" | "stepOut"
   | "beginProfile" | "readProfile" | "disassemble" | "getCallStack"
@@ -429,6 +436,28 @@ export interface ApuState {
   triangle: ApuTriangleState;
   noise: ApuNoiseState;
   dmc: ApuDmcState;
+}
+
+/** One expansion-audio voice (`getExpansionAudioState`). Superset across chips: a field is populated
+ *  when meaningful and 0/false otherwise. `volume` is normalized 0 (silent) .. 15 (loudest) across all
+ *  chips; `period` is the chip-native pitch register. `constantOutput` (VRC6 "ignore duty" → DC/no
+ *  tone), `instrument` (VRC7 patch), and `volume` are the diagnostic fields. */
+export interface ExpansionAudioChannel {
+  enabled: boolean;
+  volume: number;          // 0 = silent .. 15 = loudest (uniform across chips)
+  outputLevel: number;     // live decoded output magnitude; 0 = silent right now
+  period: number;          // chip-native pitch (VRC6/5B timer, N163 18-bit, VRC7 fnum)
+  block: number;           // VRC7 octave 0-7 (0 for others)
+  duty: number;            // VRC6 pulse duty 0-7 (0 for others)
+  constantOutput: boolean; // VRC6 pulse "ignore duty" mode → DC, no tone
+  instrument: number;      // VRC7 patch 0=custom, 1-15 ROM (0 for others)
+}
+
+/** The decoded NES expansion-audio snapshot (`getExpansionAudioState`). `chip` is the active chip
+ *  ("none" when the cart has no expansion sound); `channels` are its voices in chip order. */
+export interface ExpansionAudioState {
+  chip: "none" | "vrc6" | "vrc7" | "s5b" | "n163" | string;
+  channels: ExpansionAudioChannel[];
 }
 
 /** The NES PPU state snapshot (`getPpuState`) — verbatim mirror of the native `rp::PpuState`.

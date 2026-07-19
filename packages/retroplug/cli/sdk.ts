@@ -27,6 +27,8 @@ export type {
   ApuTriangleState,
   ApuNoiseState,
   ApuDmcState,
+  ExpansionAudioState,
+  ExpansionAudioChannel,
   PpuState,
   CpuRegister,
   DebugEvent,

@@ -28,6 +28,7 @@ public:
     // getApuState/getPpuState/drainEvents need a Mesen NES debug target (empty on SameBoy/GBA); the CPU
     // peek + register/step reads are SystemBase virtuals (null/empty when a backend can't serve).
     rp::ApuState                 getApuState(std::uint32_t id);
+    rp::ExpansionAudioState       getExpansionAudioState(std::uint32_t id);
     rp::PpuState                 getPpuState(std::uint32_t id);
     std::optional<std::uint8_t>  readCpu(std::uint32_t id, std::uint32_t addr);
     bool                         writeCpu(std::uint32_t id, std::uint32_t addr, std::uint32_t value);

@@ -72,6 +72,28 @@ export interface ApuState {
   dmc: ApuDmcState;
 }
 
+/** One expansion-audio voice (`getExpansionAudioState`). Superset across chips — a field is populated
+ *  when meaningful and 0/false otherwise. `volume` is normalized 0 (silent) .. 15 (loudest) across all
+ *  chips; `period` is the chip-native pitch register. `constantOutput` (VRC6 "ignore duty" → DC/no
+ *  tone), `instrument` (VRC7 patch) and `volume` are the diagnostic fields. */
+export interface ExpansionAudioChannel {
+  enabled: boolean;
+  volume: number;
+  outputLevel: number;
+  period: number;
+  block: number;
+  duty: number;
+  constantOutput: boolean;
+  instrument: number;
+}
+
+/** The decoded NES expansion-audio snapshot (`getExpansionAudioState`). `chip` is the active chip
+ *  ("none" when the cart has no expansion sound); `channels` are its voices in chip order. */
+export interface ExpansionAudioState {
+  chip: "none" | "vrc6" | "vrc7" | "s5b" | "n163" | string;
+  channels: ExpansionAudioChannel[];
+}
+
 /** The NES PPU state snapshot (`getPpuState`). */
 export interface PpuState {
   scanline: number;
@@ -115,6 +137,9 @@ export interface Backend {
   fileExists(path: string): boolean;
   /** Decoded NES APU snapshot. NES-only (zeroed on other cores). */
   getApuState(id: number): ApuState;
+  /** Decoded NES expansion-audio snapshot (VRC6/VRC7/S5B/N163). `chip` is "none" without expansion
+   *  audio. `volume` is normalized 0 (silent) .. 15 (loudest) across chips. */
+  getExpansionAudioState(id: number): ExpansionAudioState;
   getPpuState(id: number): PpuState;
   /** Debugger-style single-byte read/write at a CPU address. */
   readCpu(id: number, addr: number): number | null;

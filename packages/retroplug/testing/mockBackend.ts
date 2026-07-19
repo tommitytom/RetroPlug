@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 import { savFromJson } from "../src/lsdj";
 
@@ -325,6 +325,11 @@ export class MockBackend implements Backend {
       noise: { enabled: false, period: 0, timer: 0, outputVolume: 0, frequency: 0, lengthCounter: 0, modeFlag: false, constantVolume: false, envelopeVolume: 0 },
       dmc: { enabled: false, sampleAddr: 0, sampleLength: 0, bytesRemaining: 0, period: 0, outputVolume: 0, loop: false, irqEnabled: false, sampleRate: 0 },
     };
+  }
+
+  getExpansionAudioState(_id: number): ExpansionAudioState {
+    this.log.push("getExpansionAudioState");
+    return { chip: "none", channels: [] };
   }
 
   getPpuState(_id: number): PpuState {

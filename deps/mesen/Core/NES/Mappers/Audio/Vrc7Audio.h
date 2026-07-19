@@ -5,6 +5,7 @@
 #include "NES/NesConsole.h"
 #include "Shared/Utilities/emu2413.h"
 #include "Shared/Utilities/Emu2413Serializer.h"
+#include "NES/NesExpansionAudioState.h"
 #include "Utilities/Serializer.h"
 
 class Vrc7Audio : public BaseExpansionAudio
@@ -88,5 +89,30 @@ public:
 				OPLL_writeReg(_opll, _currentReg, value);
 				break;
 		}
+	}
+
+	NesExpansionAudioState GetState()
+	{
+		// VRC7 exposes 6 of the OPLL's melodic channels. Read what the ROM
+		// programmed straight out of the register file: $3x = instrument|attenuation,
+		// $2x = key/block/fnum-hi, $1x = fnum-lo. ch_out[] is the live tone output.
+		NesExpansionAudioState state;
+		state.chip = "vrc7";
+		for(int ch = 0; ch < 6; ch++) {
+			uint8_t r1 = _opll->reg[0x10 + ch];
+			uint8_t r2 = _opll->reg[0x20 + ch];
+			uint8_t r3 = _opll->reg[0x30 + ch];
+			int16_t out = _opll->ch_out[ch];
+
+			NesExpansionAudioChannel c;
+			c.Enabled     = (r2 & 0x10) != 0;               // key-on bit
+			c.Instrument  = r3 >> 4;                         // patch (0 = custom)
+			c.Volume      = 15 - (r3 & 0x0F);                // reg is attenuation -> loud-scale
+			c.Period      = r1 | ((r2 & 0x01) << 8);         // 9-bit f-number
+			c.Block       = (r2 >> 1) & 0x07;                // octave
+			c.OutputLevel = (uint32_t)(out < 0 ? -out : out);
+			state.channels.push_back(c);
+		}
+		return state;
 	}
 };

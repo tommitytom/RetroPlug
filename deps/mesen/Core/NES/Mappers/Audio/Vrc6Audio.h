@@ -4,6 +4,7 @@
 #include "NES/Mappers/Audio/Vrc6Saw.h"
 #include "NES/APU/NesApu.h"
 #include "NES/NesConsole.h"
+#include "NES/NesExpansionAudioState.h"
 #include "Utilities/Serializer.h"
 
 class Vrc6Audio : public BaseExpansionAudio
@@ -74,5 +75,32 @@ public:
 				_saw.WriteReg(addr, value);
 				break;
 		}
+	}
+
+	NesExpansionAudioState GetState()
+	{
+		NesExpansionAudioState state;
+		state.chip = "vrc6";
+
+		auto pulse = [](Vrc6Pulse& p) {
+			NesExpansionAudioChannel c;
+			c.Enabled        = p.IsEnabled();
+			c.Volume         = p.GetRegVolume();       // 0-15, already loud-scale
+			c.OutputLevel    = p.GetVolume();
+			c.Period         = p.GetFrequency();
+			c.Duty           = p.GetDuty();
+			c.ConstantOutput = p.GetIgnoreDuty();      // "ignore duty" mode -> DC, no tone
+			return c;
+		};
+		state.channels.push_back(pulse(_pulse1));
+		state.channels.push_back(pulse(_pulse2));
+
+		NesExpansionAudioChannel saw;
+		saw.Enabled     = _saw.IsEnabled();
+		saw.Volume      = _saw.GetAccumulatorRate() >> 2;  // rate 0-63 -> ~0-15 for a comparable scale
+		saw.OutputLevel = _saw.GetVolume();
+		saw.Period      = _saw.GetFrequency();
+		state.channels.push_back(saw);
+		return state;
 	}
 };

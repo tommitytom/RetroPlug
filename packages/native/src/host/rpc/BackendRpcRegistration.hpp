@@ -85,6 +85,7 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
 template <class Server>
 void registerDebugRpc(Server& s, DebugRpcService& d) {
     s.template addMethod<&DebugRpcService::getApuState>(d);
+    s.template addMethod<&DebugRpcService::getExpansionAudioState>(d);
     s.template addMethod<&DebugRpcService::getPpuState>(d);
     s.template addMethod<&DebugRpcService::readCpu>(d);
     s.template addMethod<&DebugRpcService::writeCpu>(d);

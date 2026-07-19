@@ -14,6 +14,14 @@ rp::ApuState DebugRpcService::getApuState(std::uint32_t id) {
     return dbg->getApuState();
 }
 
+rp::ExpansionAudioState DebugRpcService::getExpansionAudioState(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
+    if (!dbg) return {};
+    return dbg->getExpansionAudioState();
+}
+
 rp::PpuState DebugRpcService::getPpuState(std::uint32_t id) {
     SystemBase* sys = engine_.findSystem(id);
     if (!sys) return {};

@@ -25,6 +25,7 @@
 #include "Core/Debugger/Breakpoint.h"
 #include "Core/NES/NesConsole.h"
 #include "Core/NES/NesCpu.h"
+#include "Core/NES/BaseMapper.h"
 #include "Core/NES/BaseNesPpu.h"
 #include "Core/NES/NesTypes.h"
 #include "Core/NES/APU/NesApu.h"
@@ -237,6 +238,33 @@ rp::ApuState MesenNesDebugSession::getApuState() {
     out.dmc.irqEnabled     = s.Dmc.IrqEnabled;
     out.dmc.sampleRate     = s.Dmc.SampleRate;
 
+    return out;
+}
+
+rp::ExpansionAudioState MesenNesDebugSession::getExpansionAudioState() {
+    // Pull the active mapper's decoded expansion-audio snapshot (empty/"none"
+    // when the cart has no expansion sound). Mirrors getApuState's console read.
+    rp::ExpansionAudioState out;
+    auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get());
+    if (!console) return out;
+    BaseMapper* mapper = console->GetMapper();
+    if (!mapper) return out;
+
+    NesExpansionAudioState s = mapper->GetExpansionAudioState();
+    out.chip = s.chip;
+    out.channels.reserve(s.channels.size());
+    for (const NesExpansionAudioChannel& c : s.channels) {
+        rp::ExpansionAudioChannel o;
+        o.enabled        = c.Enabled;
+        o.volume         = c.Volume;
+        o.outputLevel    = c.OutputLevel;
+        o.period         = c.Period;
+        o.block          = c.Block;
+        o.duty           = c.Duty;
+        o.constantOutput = c.ConstantOutput;
+        o.instrument     = c.Instrument;
+        out.channels.push_back(o);
+    }
     return out;
 }
 

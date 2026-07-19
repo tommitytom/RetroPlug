@@ -3,6 +3,7 @@
 #include "NES/NesConsole.h"
 #include "NES/APU/NesApu.h"
 #include "NES/APU/BaseExpansionAudio.h"
+#include "NES/NesExpansionAudioState.h"
 #include "Utilities/Serializer.h"
 
 class Namco163Audio : public BaseExpansionAudio
@@ -153,6 +154,26 @@ public:
 	uint8_t* GetInternalRam()
 	{
 		return _internalRam;
+	}
+
+	NesExpansionAudioState GetState()
+	{
+		// N163 enables GetNumberOfChannels()+1 voices, occupying the top slots
+		// (index 7 down to 7-N). Report all 8 hardware channels with an Enabled
+		// flag; the 18-bit frequency register is the pitch.
+		NesExpansionAudioState state;
+		state.chip = "n163";
+		uint8_t active = GetNumberOfChannels();
+		for(int ch = 0; ch < 8; ch++) {
+			int16_t out = _channelOutput[ch];
+			NesExpansionAudioChannel c;
+			c.Enabled     = !_disableSound && ch >= (7 - (int)active);
+			c.Volume      = GetVolume(ch);                            // 4-bit
+			c.OutputLevel = (uint32_t)(out < 0 ? -out : out);
+			c.Period      = GetFrequency(ch);                         // 18-bit
+			state.channels.push_back(c);
+		}
+		return state;
 	}
 
 	void WriteRegister(uint16_t addr, uint8_t value)
