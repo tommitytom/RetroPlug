@@ -22,6 +22,8 @@ export interface SongCatalog {
   load(sav: Uint8Array, index: number): Uint8Array | null;
   /** Delete a saved song. New bytes, or null on an invalid index. */
   delete(sav: Uint8Array, index: number): Uint8Array | null;
-  /** Reorder the catalog (optional — only consoles with a positional catalog, e.g. risa). */
+  /** Reorder the saved songs: move the one at list position `from` to position `to` (positions index into
+   *  `list()`, NOT slot numbers). New bytes, or null on an out-of-range / no-op move. Optional — only consoles
+   *  whose saved songs can be reordered implement it (risa's positional records; LSDj by swapping slots). */
   reorder?(sav: Uint8Array, from: number, to: number): Uint8Array | null;
 }

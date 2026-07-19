@@ -237,6 +237,34 @@ export function freeSong(savBytes: Uint8Array, slot: number): Uint8Array {
   return out;
 }
 
+/** Swap the two saved projects in `slotA` / `slotB` — their 8-char name, version byte, and block-ownership
+ *  tags in the alloc table (the compressed blocks themselves never move, only their owner tag), and the active
+ *  pointer if it referenced either slot. Since a saved project is a self-contained archive (nothing references
+ *  another by slot), this is a clean byte swap. Returns a new image (unchanged copy if a slot is out of range,
+ *  slotA === slotB, or the image has no 'jk' archive header). */
+export function swapProjectSlots(savBytes: Uint8Array, slotA: number, slotB: number): Uint8Array {
+  const out = savBytes.slice();
+  if (slotA === slotB || out.length < kSavSize) return out;
+  if (out[kInit] !== 0x6a /* 'j' */ || out[kInit + 1] !== 0x6b /* 'k' */) return out; // no archive
+  if (slotA < 0 || slotB < 0 || slotA >= kProjectCount || slotB >= kProjectCount) return out;
+  for (let i = 0; i < kNameLen; i++) {
+    const t = out[kProjectNames + slotA * kNameLen + i];
+    out[kProjectNames + slotA * kNameLen + i] = out[kProjectNames + slotB * kNameLen + i];
+    out[kProjectNames + slotB * kNameLen + i] = t;
+  }
+  const ver = out[kProjectVers + slotA];
+  out[kProjectVers + slotA] = out[kProjectVers + slotB];
+  out[kProjectVers + slotB] = ver;
+  for (let i = 0; i < kBlockCount; i++) {
+    const owner = out[kAllocTable + i];
+    if (owner === slotA) out[kAllocTable + i] = slotB;
+    else if (owner === slotB) out[kAllocTable + i] = slotA;
+  }
+  if (out[kActiveProj] === slotA) out[kActiveProj] = slotB;
+  else if (out[kActiveProj] === slotB) out[kActiveProj] = slotA;
+  return out;
+}
+
 /** Inject a raw 0x8000 song into `slot` at the byte level (compress → allocate free blocks → chain the
  *  block-jump pointers → stamp name/version/alloc), leaving the working song + other projects byte-identical.
  *  Returns a new image, or null if the sav is invalid or out of free blocks. Callers replacing an occupied

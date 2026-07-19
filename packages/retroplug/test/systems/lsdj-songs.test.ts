@@ -10,8 +10,8 @@ import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { savFrom, injectSong, decompressSlot, listProjects, encodeLsdsngRaw, loadSongToWorking } from "../../src/lsdjSav";
-import { deleteSongInSav, addLsdsngToSav, replaceSongInSav, importAllSongsFromSav } from "../../src/lsdjSongOps";
+import { savFrom, injectSong, decompressSlot, listProjects, encodeLsdsngRaw, loadSongToWorking, savSongVersion } from "../../src/lsdjSav";
+import { deleteSongInSav, addLsdsngToSav, replaceSongInSav, importAllSongsFromSav, moveSongInSav } from "../../src/lsdjSongOps";
 import { deepEqual } from "../lsdj/_assert";
 import { gbRomBattery } from "./fixtures";
 
@@ -76,6 +76,38 @@ test("deleteSongInSav clears the active pointer when it matched the deleted slot
   expect(deleteSongInSav(sav, 0)[0x8140]).toBe(3); // deleting a different slot leaves it
 });
 
+test("moveSongInSav swaps two saved songs by list position (slot contents + active pointer; blocks intact)", () => {
+  const sav = twoSongSav(); // AAA @ slot 0 (sentinel 0x11), BBB @ slot 3 (sentinel 0x22)
+  const a0 = decompressSlot(sav, 0)!;
+  const b3 = decompressSlot(sav, 3)!;
+  sav[0x8140] = 0; // active = the song at slot 0 (AAA)
+
+  // Move the first song (position 0) down → swap the two occupied slots (0 and 3).
+  const moved = moveSongInSav(sav, 0, 1)!;
+  expect(listProjects(moved).map((p) => `${p.slot}:${p.name}`)).toEqual(["0:BBB", "3:AAA"]); // names swapped
+  expect(savSongVersion(moved, 0)).toBe(2); // BBB's version rode along
+  expect(savSongVersion(moved, 3)).toBe(1); // AAA's version rode along
+  // The compressed blocks moved WITH the song (byte-identical, only their owner tag flipped).
+  deepEqual([...decompressSlot(moved, 0)!], [...b3], "slot 0 now holds BBB byte-exact");
+  deepEqual([...decompressSlot(moved, 3)!], [...a0], "slot 3 now holds AAA byte-exact");
+  expect(decompressSlot(moved, 0)![0x1730]).toBe(0x22); // BBB's sentinel
+  expect(decompressSlot(moved, 3)![0x1730]).toBe(0x11); // AAA's sentinel
+  expect(moved[0x8140]).toBe(3); // active pointer followed AAA from slot 0 → slot 3
+
+  // Swapping back restores the original ordering + active pointer.
+  const back = moveSongInSav(moved, 0, 1)!;
+  expect(listProjects(back).map((p) => `${p.slot}:${p.name}`)).toEqual(["0:AAA", "3:BBB"]);
+  expect(back[0x8140]).toBe(0);
+});
+
+test("moveSongInSav is a null no-op on an out-of-range position or from === to", () => {
+  const sav = twoSongSav(); // 2 occupied songs → valid list positions 0, 1
+  expect(moveSongInSav(sav, 0, 0)).toBe(null); // no-op
+  expect(moveSongInSav(sav, 0, 2)).toBe(null); // `to` out of range
+  expect(moveSongInSav(sav, 2, 1)).toBe(null); // `from` out of range
+  expect(moveSongInSav(sav, -1, 0)).toBe(null);
+});
+
 // --- store write-back path (what the menu does) -------------------------------------------------------
 function newStore() {
   const be = new MockBackend("/cfg");
@@ -109,6 +141,19 @@ test("Delete via the store path hands native the edited SAV (song removed)", () 
   expect(decompressSlot(spec.sramBytes!, 0)).toBe(null); // AAA deleted
   expect(listProjects(spec.sramBytes!).map((p) => p.slot)).toEqual([3]); // BBB kept
   expect(listProjects(be.readFile("/roms/song.sav")!).map((p) => p.slot)).toEqual([3]); // + on disk
+});
+
+test("Move (reorder) via the store path swaps the songs' slots end-to-end", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/song.gb", gbRomBattery());
+  const id = store.addSystem("/roms/song.gb")!;
+  be.setSram(id, twoSongSav());
+
+  mutate(be, store, id, "/roms/song.gb", (sav) => moveSongInSav(sav, 0, 1)); // Move Down on position 0
+
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(listProjects(spec.sramBytes!).map((p) => `${p.slot}:${p.name}`)).toEqual(["0:BBB", "3:AAA"]);
+  expect(listProjects(be.readFile("/roms/song.sav")!).map((p) => `${p.slot}:${p.name}`)).toEqual(["0:BBB", "3:AAA"]); // + on disk
 });
 
 test("Load via the store path boots from the loaded song; other slot untouched", () => {

@@ -649,8 +649,8 @@ function addSongFromDisk(ctx: MenuContext, sys: SystemView): void {
 // LSDj + risa songs are both the BATTERY, not a ROM override: edits act on the live SRAM via mutateSavBytes
 // (readSram → byte-level catalog op → writeFileAtomic → loadSram cold-boot). One generic songMenu renders
 // the structure over a SongCatalog — Load / Delete / reorder are its byte-ops; the console supplies the
-// file-dialog actions (Export/Replace/Add, which own their formats). Reorder rows show only when the catalog
-// is positional (risa).
+// file-dialog actions (Export/Replace/Add, which own their formats). Reorder (Move Up/Down) rows show only
+// when the catalog implements reorder — risa's positional records, or LSDj by swapping saved slots.
 interface SongMenuSpec {
   id: string; // row-id prefix, e.g. "lsdj" / "risa"
   catalog: SongCatalog;
@@ -672,8 +672,10 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
       action(`${spec.id}-song-${s.index}-replace`, "Replace from Disk...", () => spec.replaceSong(ctx, sys, s.index)),
     ];
     if (cat.reorder) {
-      items.push(action(`${spec.id}-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, s.index, s.index - 1)), i === 0));
-      items.push(action(`${spec.id}-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, s.index, s.index + 1)), i === last));
+      // reorder takes LIST POSITIONS (index into the rendered list), not the row's `index` — they coincide
+      // for a positional catalog (risa) but not for LSDj's sparse slot numbers.
+      items.push(action(`${spec.id}-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, i, i - 1)), i === 0));
+      items.push(action(`${spec.id}-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, i, i + 1)), i === last));
     }
     items.push({
       id: `${spec.id}-song-${s.index}-delete`,

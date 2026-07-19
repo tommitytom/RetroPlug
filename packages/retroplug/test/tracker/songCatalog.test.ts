@@ -14,7 +14,7 @@ test("resolveSongCatalog selects the catalog by marker role (undefined for a non
   expect(lsdjSongCatalog.markerRole).toBe("lsdj-sync");
   expect(risaSongCatalog.markerRole).toBe("risa");
   expect(risaSongCatalog.reorder != null).toBe(true); // risa is positional
-  expect(lsdjSongCatalog.reorder).toBe(undefined); // LSDj slots are fixed-index
+  expect(lsdjSongCatalog.reorder != null).toBe(true); // LSDj reorders by swapping saved slots
 });
 
 test("lsdj catalog lists projects + reads the active (working) song name", () => {
