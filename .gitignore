@@ -51,3 +51,6 @@ ios/.build/
 ios/RetroPlugIOS.xcodeproj/
 ios/RetroPlugAU/Info.plist
 ios/RetroPlugApp/Info.plist
+
+# Xcode per-user state
+xcuserdata/

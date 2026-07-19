@@ -29,8 +29,13 @@ targets:
     platform: iOS
     sources:
       - path: RetroPlugKit
+      # Only RetroPlugKit/ headers are framework API. Everything below is
+      # implementation detail — mark headers `project` so they stay out of
+      # the module map (the module verifier otherwise demands the umbrella
+      # header include every vendored SameBoy/boot-ROM header).
       - path: generated
         name: generated
+        headerVisibility: project
       # Minimal emulator core — deliberately excludes Project/Engine/QuickJS
       # (phase 2) and Mesen/LSDj (later). See ios/README.md.
       - path: ../packages/native/src/system/SystemBase.cpp
@@ -43,6 +48,7 @@ targets:
       # (mirrors cmake/sameboy.cmake's non-Windows path).
       - path: ../deps/sameboy/Core
         group: sameboy
+        headerVisibility: project
         compilerFlags: "-w -DGB_INTERNAL"
         excludes:
           - "sm83_disassembler.c"
@@ -78,6 +84,7 @@ targets:
     platform: iOS
     sources:
       - path: RetroPlugAU
+      - path: Shared
     dependencies:
       - target: RetroPlugKit
         embed: false        # the parent app embeds the framework; the appex reaches it via rpath
@@ -110,6 +117,7 @@ targets:
     platform: iOS
     sources:
       - path: RetroPlugApp
+      - path: Shared
     dependencies:
       - target: RetroPlugKit
         embed: true
@@ -120,10 +128,42 @@ targets:
       properties:
         CFBundleDisplayName: RetroPlug
         UILaunchScreen: {}
+        # All four orientations: with iPad multitasking (no UIRequiresFullScreen),
+        # anything less trips "All interface orientations must be supported".
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # Files-app access to Documents/ — dropping a ROM next to its .sav in
+        # Documents/roms is the only sandbox-legal way sibling-pairing works
+        # (a fileImporter security scope never covers directory siblings).
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        # Physical game controllers (App Store metadata; the GameController
+        # framework works without it).
+        GCSupportsControllerUserInteraction: true
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.toilville.retroplug.gb
+            UTTypeDescription: Game Boy ROM
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [gb]
+          - UTTypeIdentifier: com.toilville.retroplug.gbc
+            UTTypeDescription: Game Boy Color ROM
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [gbc]
+          - UTTypeIdentifier: com.toilville.retroplug.sav
+            UTTypeDescription: Game Boy Save (battery RAM)
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [sav]
+          - UTTypeIdentifier: com.toilville.retroplug.rplg
+            UTTypeDescription: RetroPlug Project
+            UTTypeConformsTo: [public.json]
+            UTTypeTagSpecification:
+              public.filename-extension: [rplg]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug-spike

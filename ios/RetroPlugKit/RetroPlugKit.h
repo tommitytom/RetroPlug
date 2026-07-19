@@ -7,3 +7,4 @@ FOUNDATION_EXPORT double RetroPlugKitVersionNumber;
 FOUNDATION_EXPORT const unsigned char RetroPlugKitVersionString[];
 
 #import <RetroPlugKit/RetroPlugAudioUnit.h>
+#import <RetroPlugKit/RetroPlugCoreBridge.h>
