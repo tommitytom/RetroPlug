@@ -21,7 +21,7 @@ import { saveProjectInteractive } from "./saveProjectInteractive";
 import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
 
 const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes"];
-const SRAM_PATTERNS = ["*.sav"];
+const SRAM_PATTERNS = ["*.sav", "*.srm"];
 
 // One overlay at a time: a discard confirm before a destructive New/Load, an OK notice, or the relink
 // prompt for a project that loaded with files missing.

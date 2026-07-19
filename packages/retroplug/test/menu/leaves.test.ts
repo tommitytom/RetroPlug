@@ -33,6 +33,7 @@ function ctxOf(stores: AppStores): MenuContext {
     // store mutation directly (a clean project has nothing to guard anyway).
     loadRomAsProject: (romPath: string, explicitSav?: string) =>
       stores.project.openRom(romPath, explicitSav ? { explicitSav } : undefined),
+    requestExit: () => {}, // App wires this to the native quit path; inert here.
   };
 }
 
@@ -893,4 +894,52 @@ test("appStores: a userConfig change also invalidates the bindings channel", () 
   stores.userConfig.setActiveKeyboardBindings("wasd");
   expect(fired.includes("userConfig")).toBeTruthy();
   expect(fired.includes("bindings")).toBeTruthy(); // resolved bindings depend on the active pointer
+});
+
+test("Settings -> Audio (standalone): cyclers stage a draft; Apply commits; label repaints, no live change until Apply", async () => {
+  // Fake the SDL host's audio seam: a mutable live cfg, __rp_setAudioConfig commits into it.
+  const live = { sampleRate: 48000, blockSize: 2048 };
+  const g = globalThis as {
+    __rp_isStandalone?: boolean;
+    __rp_getAudioConfig?: () => { sampleRate: number; blockSize: number };
+    __rp_setAudioConfig?: (r: number, b: number) => void;
+  };
+  g.__rp_isStandalone = true;
+  g.__rp_getAudioConfig = () => ({ ...live });
+  g.__rp_setAudioConfig = (r, b) => {
+    live.sampleRate = r;
+    live.blockSize = b;
+  };
+  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  resetAudioDraft(); // drop any draft leaked from a prior test in this file
+
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be, notify: () => {} });
+  const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+
+  // Fresh: labels mirror the live device; Apply is inert (no pending change).
+  let items = audioItems();
+  expect(findItem(items, "audio-rate")!.label).toBe("Sample Rate: 48000 Hz");
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 2048");
+  expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+
+  // Stage a block-size change (a Left step, 2048 -> 1024): the DRAFT label moves, the live device does NOT,
+  // and Apply becomes live.
+  findItem(items, "audio-block")!.onCycle!(-1);
+  items = audioItems(); // App re-renders on the draft bump; the test rebuilds to observe it
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 1024");
+  expect(live.blockSize).toBe(2048); // not applied yet
+  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
+
+  // Apply commits to the device; the draft re-seeds and Apply goes inert again.
+  findItem(items, "audio-apply")!.onSelect!();
+  expect(live.blockSize).toBe(1024);
+  items = audioItems();
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 1024");
+  expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+
+  resetAudioDraft();
+  delete g.__rp_isStandalone;
+  delete g.__rp_getAudioConfig;
+  delete g.__rp_setAudioConfig;
 });

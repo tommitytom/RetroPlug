@@ -38,6 +38,7 @@ import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import type { FileBrowserOpts } from "../../../src/backend";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty } from "./audioDraft";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -55,6 +56,35 @@ export interface MenuContext {
   newProject: () => void;
   loadProject: (path: string) => void;
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
+  /** Quit the standalone (unsaved-changes guarded). No-op in a DAW (the host owns the window). */
+  requestExit: () => void;
+}
+
+/** True only in a standalone host (the SDL handheld build or the DPF JACK standalone), which installs
+ *  __rp_isStandalone; a DAW-hosted editor and the headless harness leave it undefined. Gates the "Exit"
+ *  row — a DAW owns the plugin window, so it must not offer to quit. */
+function isStandalone(): boolean {
+  return (globalThis as { __rp_isStandalone?: boolean }).__rp_isStandalone === true;
+}
+
+// Standalone audio device config (the SDL host's sample-rate / block-size, for the Audio submenu). The
+// cyclers edit a DRAFT (audioDraft.ts) — nothing is applied until the "Apply" row commits it via
+// __rp_setAudioConfig (re-open device + persist). Absent in a DAW / the harness (hasAudioConfig() false).
+const AUDIO_RATES = [22050, 32000, 44100, 48000];
+const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
+function audioSettingsChildren(): MenuItem[] {
+  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048 };
+  const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
+  const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
+  const dirty = audioDraftDirty();
+  return [
+    // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
+    cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
+    cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
+    sep("audio-sep-apply"),
+    // Commit the staged rate/block to the device. Greyed (inert) until there's a pending change to apply.
+    action("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
+  ];
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -81,7 +111,7 @@ const PROJECT_PATTERNS = ["*.rplg"]; // thin project (raw JSON) — the Save tar
 const ZIP_PATTERNS = ["*.rplg.zip"]; // exported project (PKZIP) — always `.rplg.zip`
 const LOAD_PATTERNS = ["*.rplg", "*.rplg.zip"]; // load/locate accept either on-disk shape
 const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
-const SRAM_PATTERNS = ["*.sav"];
+const SRAM_PATTERNS = ["*.sav", "*.srm"];
 const WAV_PATTERNS = ["*.wav"]; // render output
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
@@ -796,6 +826,8 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
     submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
     submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
+    // Audio device (sample rate / block size) — standalone only, where the SDL host exposes the seam.
+    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }
@@ -893,6 +925,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       ...(lsdj ? [submenu("inst-lsdj", "LSDj", lsdjChildren(ctx, sys, lsdj.config))] : []),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
+      ...(isStandalone() ? [sep("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };
@@ -908,6 +941,7 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),
+      ...(isStandalone() ? [sep("start-sep-exit"), action("start-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };

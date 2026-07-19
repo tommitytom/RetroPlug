@@ -24,6 +24,7 @@ import { toggleLsdjDebug } from "./screens/grid/lsdjDebug";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
+import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
@@ -48,6 +49,11 @@ export function App() {
 
   const [menuOpen, setMenuOpen] = useState(true);
   const [menuSystemId, setMenuSystemId] = useState<number | null>(null);
+  // Standalone Audio submenu: the draft (staged rate/block) lives outside any store, so subscribe here to
+  // force a rebuild when a cycler stages a value — otherwise the label wouldn't repaint until the next
+  // unrelated render. Inert in a DAW / the harness (nothing ever emits).
+  const [, bumpAudioDraft] = useState(0);
+  useEffect(() => subscribeAudioDraft(() => bumpAudioDraft((n) => n + 1)), []);
 
   const empty = systems.length === 0;
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.
@@ -188,7 +194,16 @@ export function App() {
   useGameInput({ active: playing, focusedId: stores.project.systems.focused() });
   useGamepadInput({ active: playing, focusedId: stores.project.systems.focused() });
 
-  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject };
+  // Exit (standalone Exit menu row): route through the SAME native close path the window-close button
+  // uses — __rp_onCloseRequested raises the unsaved-changes prompt and vetoes when dirty; a clean project
+  // quits immediately via __rp_quitWindow. Inert in a DAW / the harness (neither global installed).
+  const requestExit = (): void => {
+    const g = globalThis as { __rp_onCloseRequested?: () => boolean; __rp_quitWindow?: () => void };
+    const veto = g.__rp_onCloseRequested?.() ?? false;
+    if (!veto) g.__rp_quitWindow?.();
+  };
+
+  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit };
 
   // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
   // the keypad. Save & Quit / Discard & Quit / Cancel — the guard drives the native quit + dismissal.

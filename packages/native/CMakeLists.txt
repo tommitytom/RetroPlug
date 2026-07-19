@@ -89,7 +89,11 @@ add_custom_target(retroplug-render-worker-bundle
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RENDER_WORKER_BUNDLE_C}.new ${RENDER_WORKER_BUNDLE_C}
     COMMENT "Bundling render worker (esbuild iife + global-code bytecode)"
     VERBATIM)
-add_dependencies(retroplug-render-worker-bundle ${_TJSC_DEP})
+# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
+# path (not a target) — the custom command's DEPENDS already tracks it.
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-render-worker-bundle ${_TJSC_DEP})
+endif()
 
 # retroplug-backend: the Backend as a static library — everything except a host
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
@@ -181,7 +185,11 @@ add_custom_target(retroplug-cli-bundle
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CLI_BUNDLE_C}.new ${CLI_BUNDLE_C}
     COMMENT "Bundling retroplug-cli dispatcher (esbuild + bytecode)"
     VERBATIM)
-add_dependencies(retroplug-cli-bundle ${_TJSC_DEP})
+# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
+# path (not a target) — the custom command's DEPENDS already tracks it.
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-cli-bundle ${_TJSC_DEP})
+endif()
 
 # retroplug-cli: the standalone runner — the backend lib + a main() that evals either the COMPILED-IN
 # dispatcher bundle (commands + help) or, when argv[1] is a `.js`, a session file by path. No Node at
@@ -246,7 +254,11 @@ add_custom_target(retroplug-cp-bundle ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CP_BUNDLE_C}.new ${CP_BUNDLE_C}
     COMMENT "Regenerating control-plane bundle (esbuild + bytecode)"
     VERBATIM)
-add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
+# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
+# path (not a target) — the custom command's DEPENDS already tracks it.
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
+endif()
 
 # The UI bundle: main.tsx → bytecode C array (React entry via build-ui.js). Derived; never
 # committed. Defined BEFORE the plugin so its FILES_UI can embed it; the UI-test binary below reuses the
@@ -264,7 +276,53 @@ add_custom_target(retroplug-ui-bundle
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${UI_BUNDLE_C}.new ${UI_BUNDLE_C}
     COMMENT "Regenerating UI bundle (esbuild + bytecode)"
     VERBATIM)
-add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
+# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
+# path (not a target) — the custom command's DEPENDS already tracks it.
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
+endif()
+
+# --- retroplug-sdl: the SDL2 standalone for framebuffer handhelds (Anbernic / muOS) + plain Linux.
+# muOS has no X11 (fbdev + Mali EGL only), so the DPF/pugl JACK standalone can't run there. This host
+# reuses the WHOLE core — retroplug-backend (Engine + cores + txiki) + lvgl-js-native (the LVGL/React
+# bridge) + the SAME embedded cp/ui bundles the plugin links — and provides its own SDL2 window / audio /
+# input shell (sdl/main.cpp), bypassing DPF entirely. Modeled on retroplug-cli + retroplug-ui-test.
+add_executable(retroplug-sdl
+    sdl/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
+    ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
+    ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
+
+target_link_libraries(retroplug-sdl PRIVATE
+    lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
+    retroplug-backend             # Engine + cores + txiki host + rpcpp
+    PkgConfig::SDL2)              # window + present + audio + gamepad (found at root scope)
+
+target_include_directories(retroplug-sdl PRIVATE
+    # quickjs.h for the JS trampolines (lvgl-js-native PUBLIC-propagates the lv_binding_js render include
+    # dir, so "native/..." resolves transitively; retroplug-backend brings "host/..." + "dpfjs/...").
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs
+    # DistrhoUtils.hpp (header-only d_stderr logging) for GamepadManager.cpp — the one DPF header the
+    # shared gamepad poller pulls in; no DPF linkage.
+    ${DPFJS_PATH}/deps/dpf/distrho)
+
+add_dependencies(retroplug-sdl retroplug-cp-bundle retroplug-ui-bundle)  # embedded bundles must exist first
+
+# Statically link libstdc++ on Linux so the binary doesn't depend on the target device's libstdc++
+# version — handhelds (muOS/Buildroot) may ship an older one. But DO NOT static-link libgcc: the C++
+# exception unwinder lives there, and a program that throws across a DSO boundary (we throw, and we load
+# SDL2) needs ONE shared unwinder. Statically embedding libgcc gives a second unwinder whose .eh_frame
+# registration collides with the system libgcc_s, corrupting unwinding into a SIGILL at startup on the
+# device (observed on muOS/Cortex-A53). libgcc_s stays dynamic (present on the device, ABI-stable). glibc
+# stays dynamic too (linked ≤ the build's version).
+if(UNIX AND NOT APPLE)
+    target_link_options(retroplug-sdl PRIVATE -static-libstdc++)
+endif()
+
+set_target_properties(retroplug-sdl PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 # --- retroplug.{vst3,clap} + the jack standalone: the DPF plugin hosting the
 # Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
