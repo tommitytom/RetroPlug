@@ -5,7 +5,7 @@
 // so the bounded scan is exercised).
 import { test, expect } from "../../testing/harness";
 import { risaRomFull } from "../systems/fixtures";
-import { RisaRom, bankToModel, deriveMetaFromBank, dpcmDecode } from "../../src/risa/rom";
+import { RisaRom, bankToModel, deriveMetaFromBank, dpcmDecode, assembleKitBank, isBankPopulated, type AssembleSlot } from "../../src/risa/rom";
 
 // The mirror offsets in risaRomFull (metaBase 0x30000 + 6-byte magic).
 const META = 0x30000 + 6;
@@ -58,6 +58,29 @@ test("setKit dual-writes the bank AND the metadata mirror (so the on-device list
   rom.clearKitBank(0);
   expect(rom.isKitPopulated(0)).toBe(false);
   expect(rom.bytes()[PRESENT + 0 * 16]).toBe(0); // mirror present bit cleared too
+});
+
+test("assembleKitBank packs slots (index/name/magic) and bankToModel is its inverse", () => {
+  const a: AssembleSlot = { dpcm: new Uint8Array(17).fill(0xaa), rate: 12, loop: false, name: "KIK" };
+  const b: AssembleSlot = { dpcm: new Uint8Array(33).fill(0x55), rate: 5, loop: true, name: "SN" };
+  const bank = assembleKitBank("drums", [a, null, b]); // slot 1 left empty (null)
+
+  expect(bank.length).toBe(0x2000);
+  expect(isBankPopulated(bank)).toBe(true); // 0xA5 magic stamped
+
+  const model = bankToModel(bank);
+  expect(model.name).toBe("DRUMS"); // uppercased, ≤6, filtered to A-Z0-9-
+  expect(model.slots[0]?.name).toBe("KIK");
+  expect(model.slots[0]?.rate).toBe(12);
+  expect(model.slots[0]?.loop).toBe(false);
+  expect(model.slots[0]?.addr).toBe(0); // first sample at offset 0
+  expect([...model.slots[0]!.dpcm]).toEqual([...a.dpcm]);
+  expect(model.slots[1]).toBe(null); // the null slot stayed empty — index preserved, NOT compacted
+  expect(model.slots[2]?.name).toBe("SN");
+  expect(model.slots[2]?.rate).toBe(5);
+  expect(model.slots[2]?.loop).toBe(true);
+  expect(model.slots[2]?.addr).toBe(1); // 64-byte-aligned after slot 0's 17 bytes → offset 64
+  expect([...model.slots[2]!.dpcm]).toEqual([...b.dpcm]);
 });
 
 test("dpcmDecode inverts the ±2 delta (LSB-first, <127/>0 guards)", () => {

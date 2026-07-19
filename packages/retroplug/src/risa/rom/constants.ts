@@ -13,6 +13,7 @@ export const KIT_BANK_SIZE = 0x2000; // one kit bank = 8 KB
 export const KIT_SAMPLE_REGION = 0x1ec0; // 7872 B of packed DPCM at the bank head
 export const KIT_NAME_OFFSET = 0x1ec0;
 export const KIT_NAME_SIZE = 16;
+export const KIT_NAME_MAX_CHARS = 6; // kit name is uppercased A-Z/0-9/'-', kept to ≤6 chars then NUL-padded
 export const KIT_SAMPLE_NAMES = 0x1ed0; // 16 × 3-char sample names
 export const KIT_SAMPLE_NAME_LEN = 3;
 export const KIT_INDEX_OFFSET = 0x1f00; // 16 × 4-byte index entries [addr, lenReg, rate, flags]

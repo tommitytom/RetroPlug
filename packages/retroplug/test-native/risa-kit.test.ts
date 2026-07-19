@@ -5,7 +5,7 @@
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { RisaRom, bankToModel, isBankPopulated, dpcmDecode } from "../src/risa/rom";
+import { RisaRom, bankToModel, isBankPopulated, dpcmDecode, assembleKitBank } from "../src/risa/rom";
 import { applyOverridesToRom, type RisaAssetOverride } from "../src/risaAssetsRole";
 import { encodeWav } from "../cli/wav";
 
@@ -13,8 +13,12 @@ const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
 const WAV = "/tmp/rp-risa-kit-src.wav";
 
 function writeTestWav(be: ReturnType<typeof createRealBackend>, path: string, frames = 8000): void {
+  writeSine(be, path, 220, frames);
+}
+
+function writeSine(be: ReturnType<typeof createRealBackend>, path: string, freq: number, frames: number): void {
   const pcm = new Float32Array(frames);
-  for (let i = 0; i < frames; i++) pcm[i] = Math.sin((i / 44100) * 2 * Math.PI * 220) * Math.exp(-i / 3000);
+  for (let i = 0; i < frames; i++) pcm[i] = Math.sin((i / 44100) * 2 * Math.PI * freq) * Math.exp(-i / 3000);
   if (!be.writeFile(path, encodeWav(pcm, 44100, 1))) throw new Error(`write failed: ${path}`);
 }
 
@@ -77,6 +81,37 @@ test("a compiled DMC kit splices into a real risa ROM (bank + mirror) and the RO
   expect(be.getFrame(21) != null).toBe(true);
   expect([...be.readFile(RISA_ROM)!]).toEqual([...base]);
   console.log(`[risa-kit] compiled kit spliced into risa ROM; patched image boots; on-disk .nes unchanged`);
+});
+
+test("assembleKitBank re-packs separately-compiled DPCM byte-identically to a whole-kit compileDmc", () => {
+  const be = createRealBackend();
+  const audio = createAudioDriver();
+  const WAV_A = "/tmp/rp-risa-parity-a.wav";
+  const WAV_B = "/tmp/rp-risa-parity-b.wav";
+  writeSine(be, WAV_A, 220, 6000);
+  writeSine(be, WAV_B, 440, 4000);
+
+  // A whole-kit compile of both samples together (native assemble).
+  const both = audio.compileDmc({
+    name: "DRUMS",
+    samples: [
+      { path: WAV_A, name: "AAA", rate: 12, effects: [] },
+      { path: WAV_B, name: "BBB", rate: 8, loop: true, effects: [] },
+    ],
+  });
+  expect(both.length).toBe(0x2000);
+
+  // Compile each sample ALONE, pull its DPCM, and re-pack with the TS assembler. Since encode() carries no
+  // cross-sample state, this must be byte-identical to the whole-kit compile above.
+  const a = bankToModel(audio.compileDmc({ name: "", samples: [{ path: WAV_A, name: "AAA", rate: 12, effects: [] }] })).slots[0]!;
+  const b = bankToModel(audio.compileDmc({ name: "", samples: [{ path: WAV_B, name: "BBB", rate: 8, loop: true, effects: [] }] })).slots[0]!;
+  const reassembled = assembleKitBank("DRUMS", [
+    { dpcm: a.dpcm, rate: a.rate, loop: a.loop, name: "AAA" },
+    { dpcm: b.dpcm, rate: b.rate, loop: b.loop, name: "BBB" },
+  ]);
+
+  expect([...reassembled]).toEqual([...both]); // the TS packer matches native RisaDmcCodec::assemble
+  console.log(`[risa-kit] assembleKitBank == compileDmc (${both.length}B, 2 samples) — byte-identical`);
 });
 
 test("the risa-assets kit override links a pre-built .rkit at construct (offline compile) and boots", () => {

@@ -5,8 +5,10 @@
 // from risa's tools/rom_patcher/src/{kit_bank_parser.js, kit_editor/decoder.js, rom_upgrade.js}.
 
 import {
+  KIT_BANK_SIZE,
   KIT_NAME_OFFSET,
   KIT_NAME_SIZE,
+  KIT_NAME_MAX_CHARS,
   KIT_SAMPLE_NAMES,
   KIT_SAMPLE_NAME_LEN,
   KIT_INDEX_OFFSET,
@@ -96,6 +98,66 @@ export function deriveMetaFromBank(bank: Uint8Array): {
     }
   }
   return { nameBytes, sampleNamesBytes, slotPresentBytes };
+}
+
+/** One slot to pack into a bank: its raw DPCM bytes + the index-entry metadata. */
+export interface AssembleSlot {
+  dpcm: Uint8Array;
+  rate: number; // PAL DPCM rate index 0..15
+  loop: boolean;
+  name: string; // 3-char sample name
+}
+
+// A 3-char, uppercased, right-space-padded sample name (native RisaDmcCodec writeSampleName).
+function writeSampleName(bank: Uint8Array, off: number, name: string): void {
+  for (let i = 0; i < KIT_SAMPLE_NAME_LEN; i++) {
+    const c = (i < name.length ? name[i] : " ").toUpperCase();
+    bank[off + i] = c.charCodeAt(0) & 0xff;
+  }
+}
+
+/** Pack DPCM slots into an 8 KB kit bank — the TS port of native `RisaDmcCodec::assemble`. Greedy 64-byte-
+ *  aligned packing into the 7872 B sample region, a 4-byte index entry per slot ([addr, lenReg, rate, flags]),
+ *  3-char sample names, the ≤6-char kit name, and the 0xA5 populated magic. A null slot stays EMPTY with its
+ *  index preserved (NOT compacted); a slot whose DPCM won't fit the remaining region is left empty. Because
+ *  the native per-sample encode carries no cross-sample state, this is byte-identical to compiling the same
+ *  samples together via compileDmc — so it losslessly re-packs existing slots' DPCM alongside a new one. */
+export function assembleKitBank(kitName: string, slots: (AssembleSlot | null)[]): Uint8Array {
+  const bank = new Uint8Array(KIT_BANK_SIZE);
+  // Sample-name region defaults to spaces (kit_bank_parser modelToBank).
+  bank.fill(0x20, KIT_SAMPLE_NAMES, KIT_SAMPLE_NAMES + KIT_SLOT_COUNT * KIT_SAMPLE_NAME_LEN);
+
+  let cursor = 0;
+  for (let slot = 0; slot < KIT_SLOT_COUNT; slot++) {
+    const idx = KIT_INDEX_OFFSET + slot * KIT_INDEX_ENTRY;
+    bank[idx] = KIT_SLOT_EMPTY; // default: empty entry [0xFF, 0, 0, 0]
+
+    const s = slot < slots.length ? slots[slot] : null;
+    if (!s || s.dpcm.length === 0) continue;
+
+    if (cursor % SAMPLE_ALIGN) cursor += SAMPLE_ALIGN - (cursor % SAMPLE_ALIGN);
+    if (cursor + s.dpcm.length > KIT_SAMPLE_REGION) continue; // doesn't fit — leave the slot empty
+
+    bank.set(s.dpcm, cursor);
+    bank[idx] = Math.floor(cursor / SAMPLE_ALIGN) & 0xff; // $4012 address
+    bank[idx + 1] = Math.floor((s.dpcm.length - 1) / LENGTH_STEP) & 0xff; // $4013 length reg
+    bank[idx + 2] = s.rate & 0x0f;
+    bank[idx + 3] = s.loop ? KIT_FLAG_LOOP : 0;
+    writeSampleName(bank, KIT_SAMPLE_NAMES + slot * KIT_SAMPLE_NAME_LEN, s.name);
+    cursor += s.dpcm.length;
+  }
+
+  // Kit name: uppercased, keep A-Z 0-9 '-', up to 6 chars, NUL-padded to KIT_NAME_SIZE.
+  let w = 0;
+  for (const ch of kitName) {
+    if (w >= KIT_NAME_MAX_CHARS) break;
+    const c = ch.toUpperCase();
+    if (/[A-Z0-9-]/.test(c)) bank[KIT_NAME_OFFSET + w++] = c.charCodeAt(0);
+  }
+  void KIT_NAME_SIZE;
+
+  bank[KIT_MAGIC_OFFSET] = KIT_MAGIC; // populated marker, stamped last
+  return bank;
 }
 
 /** Decode a DPCM byte stream to float32 audio in ~[-1, 1] — the exact inverse of the native ±2 delta

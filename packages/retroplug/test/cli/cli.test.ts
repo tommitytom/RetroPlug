@@ -23,3 +23,13 @@ test("cli: the real registry exposes render with a summary and non-empty help", 
   expect(render!.help.includes("--split")).toBeTruthy(); // the detailed help reached the tool
   expect(topLevelHelp(tools, "RetroPlug v0.0.0").includes(render!.summary)).toBeTruthy();
 });
+
+test("cli: the real registry exposes risa-rom with build-kit / theme / kit subcommands in its help", () => {
+  const risa = tools.find((t) => t.name === "risa-rom");
+  expect(risa !== undefined).toBeTruthy();
+  expect(risa!.summary.length > 0).toBeTruthy();
+  expect(risa!.help.includes("build-kit")).toBeTruthy();
+  expect(risa!.help.includes("import-theme")).toBeTruthy();
+  expect(risa!.help.includes("import-kit")).toBeTruthy();
+  expect(topLevelHelp(tools, "RetroPlug v0.0.0").includes("risa-rom")).toBeTruthy(); // auto-appears in the index
+});
