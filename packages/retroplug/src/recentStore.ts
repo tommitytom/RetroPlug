@@ -20,6 +20,8 @@ export interface RecentView {
   name: string;
   missing: boolean;
   label: string;
+  /** The project's working-song name at the time it was recorded, if known (a tracker cart's loaded song). */
+  song?: string;
 }
 
 export class RecentStore {
@@ -41,14 +43,15 @@ export class RecentStore {
       name: e.name,
       missing: !this.backend.fileExists(e.path),
       label: label(e),
+      song: e.song,
     }));
   }
 
-  /** Track `path` at the front. `name` sets an alias (empty keeps any existing
-   *  one). Returns whether the list changed. */
-  add(path: string, name = ""): boolean {
+  /** Track `path` at the front. `name` sets an alias (empty keeps any existing one); `song` sets the
+   *  working-song label (undefined keeps any existing one). Returns whether the list changed. */
+  add(path: string, name = "", song?: string): boolean {
     if (!path) return false;
-    return this.commit(addEntry(this.entries, this.canon(path), name));
+    return this.commit(addEntry(this.entries, this.canon(path), name, song));
   }
 
   /** Drop `path`. Returns false when it wasn't present. */

@@ -1068,7 +1068,8 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
 function recentChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.recent.length === 0) return [action("recent-none", "(No Recent Files)", () => {})];
   return ctx.recent.map((entry, i) =>
-    submenu(`recent-${i}`, entry.label, [
+    // Annotate with the working-song name when known (a tracker cart's loaded song): "project — SONG".
+    submenu(`recent-${i}`, entry.song ? `${entry.label} — ${entry.song}` : entry.label, [
       action(`recent-${i}-load`, entry.missing ? "Load (missing)" : "Load", () => ctx.loadProject(entry.path)),
       action(`recent-${i}-locate`, "Locate on Disk", () =>
         browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p)),
