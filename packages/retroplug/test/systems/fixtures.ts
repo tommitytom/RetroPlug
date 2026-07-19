@@ -108,6 +108,28 @@ export function risaRomFull(): Uint8Array {
   const chrOffset = 0x10 + PRG;
   for (let s = 0; s < 4; s++)
     for (let b = 0; b < 0x2000; b++) rom[chrOffset + s * 0x2000 + b] = (s * 13 + b) & 0xff;
+
+  // Kit region: banks 31..62 (kitOffset 0x3E010). One populated kit in slot 0 ("TEST" with a "KIK" sample),
+  // the other 15 index entries marked empty (0xFF). All 32 banks are otherwise zero (unpopulated).
+  const kitOffset = 0x10 + 31 * 0x2000;
+  rom[kitOffset + 0] = 0xff; // slot-0 DPCM data (1 byte)
+  rom.fill(0x20, kitOffset + 0x1ed0, kitOffset + 0x1ed0 + 16 * 3); // sample-names region = spaces
+  for (const [i, c] of Array.from("TEST").entries()) rom[kitOffset + 0x1ec0 + i] = c.charCodeAt(0); // kit name
+  for (const [i, c] of Array.from("KIK").entries()) rom[kitOffset + 0x1ed0 + i] = c.charCodeAt(0); // sample 0 name
+  rom.set([0, 0, 12, 0], kitOffset + 0x1f00); // index[0] = [addr 0, lenReg 0, rate 12, flags 0]
+  for (let slot = 1; slot < 16; slot++) rom[kitOffset + 0x1f00 + slot * 4] = 0xff; // empty index entries
+  rom[kitOffset + 0x1f40] = 0xa5; // populated magic
+
+  // Kit-metadata mirror, placed at 0x30000 — PAST both hint offsets (0x20010, 0x10010) so the locator's
+  // bounded scan is exercised (as in real risa 2.2.1). Magic + kit_names[32][16] + kit_sample_names[32][48]
+  // + kit_slot_present[32][16]; slot 0 mirrors the populated kit, the present sub-table is all 0/1.
+  const metaBase = 0x30000;
+  rom.set([0xa5, 0x5a, 0x4b, 0x54, 0x4d, 0x45], metaBase);
+  const base = metaBase + 6;
+  for (const [i, c] of Array.from("TEST").entries()) rom[base + i] = c.charCodeAt(0); // kit_names[0]
+  rom.fill(0x20, base + 512, base + 512 + 48); // kit_sample_names[0] = spaces
+  for (const [i, c] of Array.from("KIK").entries()) rom[base + 512 + i] = c.charCodeAt(0);
+  rom[base + 512 + 1536] = 1; // kit_slot_present[0][0] = 1 (the rest stay 0)
   return rom;
 }
 

@@ -21,6 +21,7 @@
 
 #include "kit/KitCompiler.hpp"       // rp::kit::KitCompiler (generic, compileKit) — heavy, so only in this TU
 #include "lsdj/LsdjKitCodec.hpp"     // rp::lsdj::LsdjKitCodec (the LSDJ nibble/16KB-bank codec)
+#include "risa/RisaDmcCodec.hpp"     // rp::risa::RisaDmcCodec (the risa NES-DPCM/8KB-bank codec)
 
 namespace {
 
@@ -330,6 +331,30 @@ rfl::Bytestring EngineRpcService::compileKit(KitCompileSpec spec) {
     // per-sample load failure just leaves that slot empty. The caller (CLI) validates by reading the
     // bank back, so no exception crosses the RPC boundary here.
     rp::lsdj::LsdjKitCodec codec(spec.name, std::move(specs));
+    rp::kit::CompiledKit kit = kitCompiler_->compile(codec);
+    return toBytestring(kit.bytes);
+}
+
+rfl::Bytestring EngineRpcService::compileDmc(RisaKitCompileSpec spec) {
+    // Reuse the same lazy compiler as compileKit — it's codec-agnostic (enkiTS pool + SampleCache).
+    if (!kitCompiler_) kitCompiler_ = std::make_unique<rp::kit::KitCompiler>();
+
+    std::vector<rp::risa::CompileDmcSampleSpec> specs;
+    specs.reserve(spec.samples.size());
+    for (auto& s : spec.samples) {
+        rp::risa::CompileDmcSampleSpec cs;
+        cs.path      = s.path;
+        cs.name      = s.name;
+        cs.offset    = s.offset.value_or(0);
+        cs.length    = s.length.value_or(0);
+        cs.effects   = s.effects;
+        cs.rate      = static_cast<std::uint8_t>(s.rate.value_or(12) & 0x0F);
+        cs.loop      = s.loop.value_or(false);
+        cs.normalize = s.normalize.value_or(true);
+        specs.push_back(std::move(cs));
+    }
+
+    rp::risa::RisaDmcCodec codec(spec.name, std::move(specs));
     rp::kit::CompiledKit kit = kitCompiler_->compile(codec);
     return toBytestring(kit.bytes);
 }

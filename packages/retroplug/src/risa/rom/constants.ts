@@ -6,7 +6,43 @@ export const HEADER_SIZE = 0x10;
 export const PRG_16K_SIZE = 0x4000;
 export const PRG_8K_SIZE = 0x2000;
 export const PRG_FIXED_SIZE = 0x2000; // the fixed bank (theme table lives here)
-export const KIT_BANK_COUNT = 32; // the 32 DPCM kit banks at the top of PRG (kits are deferred to M5)
+export const KIT_BANK_COUNT = 32; // the 32 DPCM kit banks at the top of PRG
+
+// --- Kit bank (DPCM) — tools/rom_patcher/src/kit_editor/constants.js ---
+export const KIT_BANK_SIZE = 0x2000; // one kit bank = 8 KB
+export const KIT_SAMPLE_REGION = 0x1ec0; // 7872 B of packed DPCM at the bank head
+export const KIT_NAME_OFFSET = 0x1ec0;
+export const KIT_NAME_SIZE = 16;
+export const KIT_SAMPLE_NAMES = 0x1ed0; // 16 × 3-char sample names
+export const KIT_SAMPLE_NAME_LEN = 3;
+export const KIT_INDEX_OFFSET = 0x1f00; // 16 × 4-byte index entries [addr, lenReg, rate, flags]
+export const KIT_INDEX_ENTRY = 4;
+export const KIT_SLOT_COUNT = 16;
+export const KIT_MAGIC = 0xa5; // "populated" marker
+export const KIT_MAGIC_OFFSET = 0x1f40;
+export const KIT_SLOT_EMPTY = 0xff;
+export const KIT_FLAG_LOOP = 0x01;
+export const SAMPLE_ALIGN = 64; // DPCM start-address granularity (addr reg = offset / 64)
+export const LENGTH_STEP = 16; // byte length = lenReg * 16 + 1
+
+// The resident kit-metadata MIRROR (a flat copy so the UI needn't page banks): a 6-byte magic then
+// kit_names[32][16] + kit_sample_names[32][48] + kit_slot_present[32][16]. Located by scan (the hints miss
+// in 2.2.1 — the mirror sits at 0x215EA); the slot-present sub-table must be all 0/1 to accept a candidate.
+export const KIT_META_MAGIC = [0xa5, 0x5a, 0x4b, 0x54, 0x4d, 0x45]; // "·ZKTME"
+export const KIT_META_NAMES_STRIDE = 16;
+export const KIT_META_SAMPLE_NAMES_STRIDE = 48; // 16 slots × 3
+export const KIT_META_SLOT_PRESENT_STRIDE = 16;
+export const KIT_META_NAMES_SIZE = 32 * 16;
+export const KIT_META_SAMPLE_NAMES_SIZE = 32 * 48;
+export const KIT_META_SLOT_PRESENT_SIZE = 32 * 16;
+export const KIT_META_TOTAL_SIZE = 6 + KIT_META_NAMES_SIZE + KIT_META_SAMPLE_NAMES_SIZE + KIT_META_SLOT_PRESENT_SIZE; // 2566
+export const KIT_META_HINT_OFFSETS = [HEADER_SIZE + 8 * PRG_16K_SIZE, HEADER_SIZE + 4 * PRG_16K_SIZE]; // 0x20010, 0x10010
+
+// PAL DPCM playback rates (Hz), index 0..15 (wav2dmc.py PAL_DPCM_RATES_HZ). Default index 12.
+export const PAL_DPCM_RATES_HZ = [
+  4177.4, 4696.63, 5261.41, 5579.22, 6023.94, 7044.94, 7917.18, 8397.01,
+  9446.63, 11233.8, 12595.5, 14089.89, 16965.4, 21315.52, 25191.0, 33252.09,
+];
 
 export const CHR_BANK_SIZE = 0x2000; // one font slot = one 8 KB CHR bank
 export const FONT_BANK_COUNT = 4;

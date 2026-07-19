@@ -82,6 +82,19 @@ export interface KitCompileSpec {
   rotate?: boolean;
 }
 
+/** One source sample for the risa DMC compiler: a kit sample plus the PAL DPCM playback-rate index (0..15,
+ *  default 12), a loop flag, and whether to peak-normalize into the 7-bit domain (default true). */
+export interface RisaDmcSampleSpec extends KitSampleSpec {
+  rate?: number;
+  loop?: boolean;
+  normalize?: boolean;
+}
+/** A whole risa DMC kit compile: a 6-char kit name + up to 16 samples. */
+export interface RisaKitCompileSpec {
+  name: string;
+  samples: RisaDmcSampleSpec[];
+}
+
 export interface AudioDriver {
   /** Enqueue a button transition (button = GameboyButton value; down = press/release). A
    *  press then release around a short render is a tap. */
@@ -102,6 +115,10 @@ export interface AudioDriver {
    *  effects + 4-bit pack, per-sample in parallel natively). A per-sample load failure leaves that slot
    *  empty rather than failing the whole kit — the caller validates by reading the bank back. */
   compileKit(spec: KitCompileSpec): Uint8Array;
+  /** Compile a risa NES-DPCM sample kit into an 8 KB kit bank (resample to the PAL DPCM rate + effects +
+   *  1-bit ±2 delta pack, per-sample in parallel natively). Same behaviour as compileKit — an unloadable
+   *  slot is left empty; the caller validates by reading the bank back. */
+  compileDmc(spec: RisaKitCompileSpec): Uint8Array;
   /** The engine's audio sample rate (Hz) — thread into encodeWav so WAV headers are labelled correctly. */
   sampleRate(): number;
   /** Set the host sample rate (Hz). Baked into cores at construct, so it only takes effect BEFORE any
@@ -185,6 +202,7 @@ export function createAudioDriver(): AudioDriver {
       return bufs.map((b) => new Float32Array(b.slice().buffer));
     },
     compileKit: (spec) => call("compileKit", spec) as Uint8Array, // the 16 KB kit bank, straight through
+    compileDmc: (spec) => call("compileDmc", spec) as Uint8Array, // the 8 KB risa DMC kit bank
     sampleRate: () => call("sampleRate") as number,
     setSampleRate: (sampleRate) => call("setSampleRate", sampleRate) as boolean,
     setTransport: (running) => call("setTransport", running) as boolean,

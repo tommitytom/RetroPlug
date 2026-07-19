@@ -30,6 +30,9 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/LsdjKitCodec.cpp
+    # risa NES-DPCM (DMC) codec — reuses the generic kit pipeline (r8brain resample + enkiTS), swaps the
+    # pack stage for 1-bit delta DPCM + an 8 KB kit bank.
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/risa/RisaDmcCodec.cpp
     # NOTE: the LSDj sav codec + model were removed — they are now pure TS
     # (packages/retroplug/src/lsdj), validated by frozen golden vectors. Only the
     # kit/sample pipeline (kit/* generic + lsdj/{Effects,KitUtil,LsdjKitCodec}) remains in C++.

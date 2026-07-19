@@ -2,6 +2,7 @@
 export * from "./rom";
 export * from "./theme";
 export * from "./font";
+export * from "./kit";
 export * from "./find";
 export * from "./constants";
 export * from "./types";
