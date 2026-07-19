@@ -31,11 +31,33 @@ bool MidiIo::open(const char* clientName) {
         return false;
     }
     std::fprintf(stderr, "[retroplug-sdl] MIDI: virtual ports '%s In' / '%s Out' open\n", name.c_str(), name.c_str());
+    openHardwareInputs(name);
     return true;
+}
+
+void MidiIo::openHardwareInputs(const std::string& clientName) {
+    try {
+        RtMidiIn probe(RtMidi::UNSPECIFIED, clientName);
+        const unsigned count = probe.getPortCount();
+        for (unsigned i = 0; i < count; ++i) {
+            const std::string portName = probe.getPortName(i);
+            if (portName.find(clientName) != std::string::npos) continue;  // our own virtual port
+            if (portName.find("Through") != std::string::npos) continue;    // ALSA MIDI-through (no hardware)
+            auto in = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, clientName);
+            in->ignoreTypes(true, false, true);
+            in->setCallback(&MidiIo::onMidiIn, this);
+            in->openPort(i, portName);
+            std::fprintf(stderr, "[retroplug-sdl] MIDI in: connected hardware port '%s'\n", portName.c_str());
+            hwIn_.push_back(std::move(in));
+        }
+    } catch (RtMidiError& e) {
+        std::fprintf(stderr, "[retroplug-sdl] MIDI: hardware-port scan failed: %s\n", e.what());
+    }
 }
 
 void MidiIo::close() {
     in_.reset();   // cancels the callback + closes the port
+    hwIn_.clear();
     out_.reset();
     head_.store(0, std::memory_order_relaxed);
     tail_.store(0, std::memory_order_relaxed);

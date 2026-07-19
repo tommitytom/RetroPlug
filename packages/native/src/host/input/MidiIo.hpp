@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 class RtMidiIn;
@@ -55,8 +56,13 @@ private:
     static void onMidiIn(double timeStamp, std::vector<unsigned char>* message, void* userData);
     void pushRing(const unsigned char* data, std::size_t len);
 
-    std::unique_ptr<RtMidiIn>  in_;
-    std::unique_ptr<RtMidiOut> out_;
+    // Open every current hardware input port (each its own RtMidiIn → the shared ring), skipping our own
+    // virtual port + ALSA "Through" ports. A virtual port alone doesn't receive from hardware controllers.
+    void openHardwareInputs(const std::string& clientName);
+
+    std::unique_ptr<RtMidiIn>               in_;    // our virtual input port
+    std::vector<std::unique_ptr<RtMidiIn>>  hwIn_;  // hardware input ports (USB-MIDI, etc.)
+    std::unique_ptr<RtMidiOut>              out_;    // our virtual output port
 
     // Fixed-capacity SPSC ring. The producer (callback thread) allocs into a slot's vector; the consumer
     // (audio thread) moves it out. Overflow drops the incoming message (a drained-every-block consumer never
