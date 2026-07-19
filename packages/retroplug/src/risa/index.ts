@@ -3,3 +3,4 @@
 // encodeSav / song ops) land in M2.
 export * from "./codec/sav";
 export * from "./romDetect";
+export * as runtime from "./runtime";
