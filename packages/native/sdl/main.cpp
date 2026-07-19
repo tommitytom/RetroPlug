@@ -36,6 +36,11 @@
 #include <unistd.h>
 #endif
 
+// We own main() (a plain console entry). On Windows/macOS SDL's <SDL.h> otherwise #defines main → SDL_main
+// and pulls in the SDL2main entry shim (which we don't link — only SDL2::SDL2). Defining SDL_MAIN_HANDLED
+// before the include keeps our main() intact on every platform; setupSdl() calls SDL_SetMainReady() to match.
+// (Harmless on Linux, where SDL never redefines main.)
+#define SDL_MAIN_HANDLED
 #include <SDL.h>
 
 extern "C" {
@@ -330,7 +335,18 @@ JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
 JSValue jsOpenPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc >= 1) {
         const char* p = JS_ToCString(ctx, argv[0]);
-        if (p && *p) { const std::string cmd = "xdg-open \"" + std::string(p) + "\" &"; (void)std::system(cmd.c_str()); }
+        if (p && *p) {
+            const std::string path(p);
+            // Open a file/folder in the OS file manager, per platform.
+#if defined(_WIN32)
+            const std::string cmd = "start \"\" \"" + path + "\"";        // cmd's start; "" = window title
+#elif defined(__APPLE__)
+            const std::string cmd = "open \"" + path + "\"";
+#else
+            const std::string cmd = "xdg-open \"" + path + "\" &";
+#endif
+            (void)std::system(cmd.c_str());
+        }
         if (p) JS_FreeCString(ctx, p);
     }
     return JS_UNDEFINED;
@@ -696,6 +712,7 @@ bool setupUi(AppState& a) {
 }
 
 bool setupSdl(AppState& a) {
+    SDL_SetMainReady(); // required when SDL_MAIN_HANDLED is set (see the <SDL.h> include note)
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "[retroplug-sdl] SDL_Init failed: %s\n", SDL_GetError());
         return false;
