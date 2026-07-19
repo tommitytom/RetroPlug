@@ -287,15 +287,26 @@ endif()
 # reuses the WHOLE core — retroplug-backend (Engine + cores + txiki) + lvgl-js-native (the LVGL/React
 # bridge) + the SAME embedded cp/ui bundles the plugin links — and provides its own SDL2 window / audio /
 # input shell (sdl/main.cpp), bypassing DPF entirely. Modeled on retroplug-cli + retroplug-ui-test.
+# RtMidi (deps/rtmidi submodule) — cross-platform MIDI I/O for the standalone (the plugin gets MIDI from
+# its DAW host instead, so only retroplug-sdl needs this). Static; ALSA on Linux (JACK off — the handheld
+# path is ALSA/PipeWire); RtMidi's own CMake selects the platform API + link libs. EXCLUDE_FROM_ALL so the
+# `rtmidi` target is built only because retroplug-sdl links it.
+set(RTMIDI_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
+set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
+
 add_executable(retroplug-sdl
     sdl/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (virtual + hardware ports)
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
 
 target_link_libraries(retroplug-sdl PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
     retroplug-backend             # Engine + cores + txiki host + rpcpp
+    rtmidi                        # cross-platform MIDI in/out (ALSA/CoreMIDI/WinMM)
     PkgConfig::SDL2)              # window + present + audio + gamepad (found at root scope)
 
 target_include_directories(retroplug-sdl PRIVATE

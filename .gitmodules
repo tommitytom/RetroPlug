@@ -12,3 +12,6 @@
 	path = deps/dpf.js
 	url = git@github.com:tommitytom/dpf.js.git
 	branch = main
+[submodule "deps/rtmidi"]
+	path = deps/rtmidi
+	url = https://github.com/thestk/rtmidi.git

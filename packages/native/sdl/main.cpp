@@ -52,6 +52,7 @@ extern "C" {
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
+#include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "system/CoreBackends.hpp"
 #include "system/SystemFactory.hpp"
@@ -139,6 +140,7 @@ struct AppState {
     SDL_Texture*  texture = nullptr;
     SDL_AudioDeviceID audioDev = 0;
     retroplug::GamepadManager gamepad;
+    retroplug::MidiIo midi;   // RtMidi in/out (staged into the engine on the audio thread — wired next step)
 
     std::uint32_t width = 640;
     std::uint32_t height = 480;
@@ -900,6 +902,11 @@ int main(int argc, char** argv) {
     }
 
     if (!setupUi(app)) return 1;
+
+    // Open MIDI (virtual in/out ports). Non-fatal: the host runs without MIDI if none is available. The
+    // audio thread will drain app.midi into the Engine per block (wired next step); for now the RtMidi
+    // callback logs received messages under RETROPLUG_MIDI_LOG.
+    app.midi.open("RetroPlug");
 
     // Hand the Engine to the SDL audio thread (control-plane edits become push-only, drained per block)
     // then start it. Mirrors PluginDSP::activate.
