@@ -41,6 +41,11 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
     };
     const nativeHook = g.__rp_openFileBrowser;
     g.__rp_openFileBrowser = (title, patterns, saving, defaultName) => {
+      // Opt-in: the host's OS dialog (where it provides one). Default: the in-app overlay.
+      if (stores.userConfig.config().useNativeFileDialogs && nativeHook) {
+        nativeHook(title, patterns, saving, defaultName);
+        return;
+      }
       void requestFileBrowser({
         title,
         patterns: String(patterns).split(" ").filter((s) => s.length > 0),
@@ -51,7 +56,7 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
     return () => {
       g.__rp_openFileBrowser = nativeHook;
     };
-  }, []);
+  }, [stores]);
 
   const req = getFileBrowserRequest();
   if (!req) return { active: false, tree: null, onClose: () => {} };
