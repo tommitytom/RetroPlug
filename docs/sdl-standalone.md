@@ -65,10 +65,23 @@ not feed SDL a `MOUSEMOTION` during an external drag; a stale/missed coord just 
 Desktop-only — the muOS handheld has no file manager. The JS routing (`resolveDropAction` + `hitTestTile`) is
 unchanged and already covered by `test-ui/file-drop.test.ts`.
 
-### P4 — Host transport / tempo
-Hardcoded `setBpm(120)` / `setTransport(true)` ([main.cpp:630](../packages/native/sdl/main.cpp#L630)). No
-external tempo/transport — LSDj sync-to-external won't lock. Tied to P1: derive BPM + start/stop from
-incoming MIDI clock once MIDI-in exists.
+### P4 — Host transport / tempo — ✅ DONE
+`audioCb` now derives the host transport from incoming MIDI real-time bytes instead of the old hardcoded
+`setBpm(120)`/`setTransport(true)`. A small audio-thread-only estimator (`MidiClockSync`) reads the drained
+MIDI: `0xF8` clock pulses feed a windowed 24-PPQN tempo estimate (BPM = 60·sr·pulses / (frames·24), measured
+in audio frames since RtMidi timestamps are discarded), and `0xFA`/`0xFB`/`0xFC` (start/continue/stop) plus a
+~0.5 s clock-presence timeout drive the playing flag — so a bare-clock master with no start/stop still plays.
+With **no** external clock it falls back to the prior free-running 120/playing, so non-sync use (mGB, un-synced
+LSDj) is unchanged. The real-time bytes are consumed for transport and not staged into the emulator; channel
+messages (notes/CC) still stage as before.
+
+This is all that's needed for **LSDj sync-to-external to lock**: the LSDj `MidiSync` role regenerates its `0xF8`
+serial clock from the Engine's tempo/transport via `eachTick`
+([dspRoles.ts](../packages/retroplug/src/dspRoles.ts), [PpqUtil.hpp](../packages/native/src/util/PpqUtil.hpp))
+— it never read the raw wire clock — so feeding `setBpm`/`setTransport` (exactly as
+[PluginDSP::run](../packages/native/plugin/PluginDSP.cpp#L152) does from the DAW's `TimePosition`) is the whole
+job. Verified headlessly via `RETROPLUG_SDL_TEST_CLOCK=<bpm>` (synthetic clock → derived BPM within ~0.2, plus
+stop + timeout-revert). Follow-up: MIDI clock has no sub-block frame offset (block-quantized, like MIDI-in).
 
 ### P5 — Multi-output audio routing
 SDL is stereo-only (the 2-arg `processBlock`). The per-channel stems / per-instance outputs (Audio Routing

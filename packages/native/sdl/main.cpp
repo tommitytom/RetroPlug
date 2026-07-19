@@ -82,6 +82,60 @@ using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec
 
 namespace {
 
+// Derives the host transport (BPM + playing) from incoming MIDI real-time bytes, so an external clock
+// master drives LSDj sync-to-external (the LSDj MidiSync role regenerates 0xF8 from Engine tempo/transport
+// via eachTick — it doesn't read the raw wire clock, so feeding setBpm/setTransport is all it takes).
+// Audio-thread-only: fed from audioCb, never touched elsewhere → plain members, no locking.
+//
+// Clock timing: RtMidi timestamps are discarded and messages arrive block-quantized, so we measure the
+// pulse rate in audio frames accumulated across blocks (24 PPQN): BPM = 60·sr·pulses / (frames·24). Playing
+// follows 0xFA/0xFB (start/continue) and 0xFC (stop), plus a ~0.5 s clock-presence timeout so a bare-clock
+// master with no start/stop still plays. With NO clock at all we fall back to a free-running 120/playing
+// (the standalone's prior always-on behaviour), so non-sync use (mGB, un-synced LSDj) is unchanged.
+struct MidiClockSync {
+    double sampleRate = 48000.0;
+    long long frameClock = 0;      // monotonic frames processed
+    long long lastClockFrame = 0;  // frameClock at the most recent 0xF8
+    long long windowFrames = 0;    // frames accumulated in the current tempo window
+    int  windowPulses = 0;         // 0xF8 count in the current window
+    double bpm = 120.0;            // last good estimate
+    bool active = false;           // clock seen within the timeout
+    bool stopped = false;          // explicit 0xFC latch (overrides clock presence)
+
+    static constexpr int    kWindowPulses = 24; // one quarter-note → a stable estimate ~2×/s
+    static constexpr double kTimeoutSec   = 0.5;
+
+    // One drained real-time byte. Returns true if it was a transport byte (so the caller skips staging it).
+    bool onByte(std::uint8_t status) {
+        switch (status) {
+            case 0xF8: active = true; lastClockFrame = frameClock; ++windowPulses; return true; // clock
+            case 0xFA: case 0xFB: active = true; stopped = false; lastClockFrame = frameClock; return true; // start/continue
+            case 0xFC: stopped = true; return true; // stop
+            default: return false;
+        }
+    }
+
+    // Call once per audio block, after that block's bytes, with the block's frame count.
+    void advance(long long frames) {
+        if (active) {
+            windowFrames += frames;
+            if (windowPulses >= kWindowPulses && windowFrames > 0) {
+                const double est = 60.0 * sampleRate * windowPulses / (static_cast<double>(windowFrames) * 24.0);
+                if (est >= 20.0 && est <= 999.0) bpm = est;
+                windowPulses = 0;
+                windowFrames = 0;
+            }
+            if (frameClock - lastClockFrame > static_cast<long long>(sampleRate * kTimeoutSec)) {
+                active = false; stopped = false; windowPulses = 0; windowFrames = 0; // master gone → free-run
+            }
+        }
+        frameClock += frames;
+    }
+
+    double outBpm() const { return active ? bpm : 120.0; }
+    bool   outPlaying() const { return active ? !stopped : true; }
+};
+
 // Whole-process state, reached by the LVGL indev read callbacks (via driver_data), the SDL audio
 // callback (via userdata), and the __rp_* window hooks (single instance → a file-scope pointer is fine,
 // unlike the plugin's per-context routing for multi-instance DAWs).
@@ -123,6 +177,7 @@ struct AppState {
     retroplug::MidiIo midi;   // RtMidi in/out; drained into the Engine on the audio thread each block
     std::vector<retroplug::MidiIo::Message> midiScratch;  // reused per block (no per-block alloc)
     std::atomic<std::uint64_t> midiStaged{0};             // count staged into the Engine (headless self-test)
+    MidiClockSync clockSync;                              // MIDI-clock → BPM/transport (audio thread only)
 
     std::uint32_t width = 640;
     std::uint32_t height = 480;
@@ -466,14 +521,20 @@ void audioCb(void* userdata, Uint8* stream, int len) {
     // this (audio) thread, exactly like PluginDSP::run stages host MIDI. Frame 0 for now: live hardware MIDI
     // carries no sub-block timing worth preserving (a proper offset from the block clock is a later step).
     a->midi.poll(a->midiScratch);
-    for (auto& m : a->midiScratch)
-        if (m.bytes.size() >= 1 && m.bytes.size() <= 3) {
-            a->engine.stageMidi(0, std::move(m.bytes));
-            a->midiStaged.fetch_add(1, std::memory_order_relaxed);
-        }
+    a->clockSync.sampleRate = a->sampleRate;
+    for (auto& m : a->midiScratch) {
+        if (m.bytes.empty() || m.bytes.size() > 3) continue;
+        // Real-time transport bytes (0xF8 clock / 0xFA start / 0xFB continue / 0xFC stop) drive the host
+        // transport, not the emulator — consume them here and don't stage them (the sync roles regenerate
+        // clock from Engine tempo/transport). Everything else (notes/CC/...) is staged as host MIDI in.
+        if (m.bytes.size() == 1 && a->clockSync.onByte(m.bytes[0])) continue;
+        a->engine.stageMidi(0, std::move(m.bytes));
+        a->midiStaged.fetch_add(1, std::memory_order_relaxed);
+    }
+    a->clockSync.advance(frames);
 
-    a->engine.setBpm(120.0);
-    a->engine.setTransport(true);
+    a->engine.setBpm(a->clockSync.outBpm());          // 120 free-run until an external clock master appears
+    a->engine.setTransport(a->clockSync.outPlaying()); // then locks to its tempo + start/stop
     a->engine.processBlock(static_cast<std::uint32_t>(frames), a->audioL.data(), a->audioR.data());
 
     // Kernel MIDI-out (LSDj MI.OUT / Master Sync / passthrough) → the RtMidi out port, then clear the block's
@@ -857,6 +918,25 @@ int main(int argc, char** argv) {
     // changes the guard doesn't veto, so the app exits on the first handleEvents (well before exitAfterFrames).
     if (std::getenv("RETROPLUG_SDL_TEST_QUIT")) {
         SDL_Event q; q.type = SDL_QUIT; SDL_PushEvent(&q);
+    }
+
+    // Test hook: drive the MIDI-clock → transport estimator with a synthetic clock at RETROPLUG_SDL_TEST_CLOCK
+    // BPM and report the derived tempo/transport (deterministic — no wall-clock dependence).
+    if (const char* env = std::getenv("RETROPLUG_SDL_TEST_CLOCK")) {
+        double target = std::atof(env);
+        if (target <= 0.0) target = 140.0;
+        MidiClockSync cs;
+        cs.sampleRate = app.sampleRate;
+        const long long framesPerPulse = static_cast<long long>(app.sampleRate * 60.0 / (target * 24.0));
+        for (int i = 0; i < 48; ++i) { cs.onByte(0xF8); cs.advance(framesPerPulse); } // 2 quarter-notes of clock
+        const double derived = cs.outBpm();
+        const bool playing = cs.outPlaying();
+        cs.onByte(0xFC); cs.advance(framesPerPulse);          // explicit stop
+        const bool afterStop = cs.outPlaying();
+        for (int i = 0; i < 64; ++i) cs.advance(framesPerPulse); // long clock silence → free-run revert
+        std::fprintf(stderr, "[retroplug-sdl] clock self-test: target=%.1f derived=%.1f playing=%d afterStop=%d "
+                     "afterTimeout(bpm=%.1f playing=%d)\n",
+                     target, derived, (int)playing, (int)afterStop, cs.outBpm(), (int)cs.outPlaying());
     }
 
     // --- the 60 fps loop: input → JS frame → LVGL render → present ---
