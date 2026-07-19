@@ -645,6 +645,12 @@ void audioCb(void* userdata, Uint8* stream, int len) {
     a->engine.setTransport(true);
     a->engine.processBlock(static_cast<std::uint32_t>(frames), a->audioL.data(), a->audioR.data());
 
+    // Kernel MIDI-out (LSDj MI.OUT / Master Sync / passthrough) → the RtMidi out port, then clear the block's
+    // queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW).
+    for (const auto& mo : a->engine.midiOut())
+        if (mo.data.size() >= 1 && mo.data.size() <= 3) a->midi.send(mo.data.data(), mo.data.size());
+    a->engine.clearMidiOut();
+
     auto* out = reinterpret_cast<float*>(stream);
     for (int i = 0; i < frames; ++i) { out[2 * i] = a->audioL[i]; out[2 * i + 1] = a->audioR[i]; }
 }
