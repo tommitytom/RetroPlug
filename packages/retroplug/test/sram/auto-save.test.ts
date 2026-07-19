@@ -198,3 +198,37 @@ test("an LSDj cart whose only diff from disk is the ticked clock is NOT dirty", 
   be.setSram(id, edited);
   expect(sramDirtyCount(be, systems.systems())).toBe(1);
 });
+
+// --- pump lifecycle: independent per-system change tracking + hash pruning on removal ------------------
+
+test("pump (Continuous) writes only the systems whose SRAM changed, per system", () => {
+  const { be, uc, systems, saver, id } = setup();
+  uc.setSramAutoSave("Continuous");
+  be.seed("/proj/b.gb", gbRom());
+  const id2 = systems.addSystem("/proj/b.gb")!;
+  be.setSram(id, bytes(1));
+  be.setSram(id2, bytes(2));
+  expect(saver.pump()).toBe(2); // both first-observed → both written
+  expect(saver.pump()).toBe(0); // neither changed → no writes
+  be.setSram(id2, bytes(3)); // only b changes
+  expect(saver.pump()).toBe(1); // only b written (a's persistent hash still matches)
+});
+
+test("pump prunes the persistent hash of a removed system (no stale-hash leak)", () => {
+  const { be, uc, systems, saver, id } = setup();
+  uc.setSramAutoSave("Continuous");
+  be.seed("/proj/b.gb", gbRom());
+  const id2 = systems.addSystem("/proj/b.gb")!;
+  be.setSram(id, bytes(1));
+  be.setSram(id2, bytes(2));
+  saver.pump(); // tracks a persistent hash for both systems
+  const hashes = (saver as unknown as { hashes: Map<number, number> }).hashes;
+  expect(hashes.has(id) && hashes.has(id2)).toBe(true);
+  expect(hashes.size).toBe(2);
+
+  systems.removeSystem(id2);
+  saver.pump(); // pruneDeadHashes drops the removed system's hash
+  expect(hashes.has(id2)).toBe(false); // pruned
+  expect(hashes.has(id)).toBe(true); // the survivor's hash stays
+  expect(hashes.size).toBe(1);
+});
