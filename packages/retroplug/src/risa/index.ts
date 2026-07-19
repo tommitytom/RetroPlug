@@ -1,6 +1,9 @@
 // risa (NES/MMC5 tracker) support — authoring/codec barrel. Mirrors ../lsdj/index.ts.
-// M1: the read-only save-catalog codec (list songs). The song model + write side (savFrom /
-// encodeSav / song ops) land in M2.
+// - codec/sav: the RSAV catalog (list/reorder/delete songs; records as opaque blobs).
+// - codec/record: the song-payload codec (a catalog record's payload <-> a structured RisaRecord).
+// - codec/working: expand a record into (and read it back from) the firmware working-song RAM image.
 export * from "./codec/sav";
+export * from "./codec/record";
+export * from "./codec/working";
 export * from "./romDetect";
 export * as runtime from "./runtime";

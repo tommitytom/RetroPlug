@@ -1,0 +1,43 @@
+{
+  "name": "BLUMARBL",
+  "version": 5,
+  "tempoBpm": 124,
+  "present": {
+    "songCells": 65,
+    "chains": 48,
+    "phrases": 118,
+    "aux": 118,
+    "instruments": 33,
+    "tables": 0,
+    "grooves": 0
+  },
+  "spot": {
+    "phrase": {
+      "idx": 0,
+      "row0": [
+        52,
+        0,
+        0,
+        0
+      ]
+    },
+    "instrument": {
+      "idx": 0,
+      "bytes": [
+        0,
+        6,
+        6,
+        0,
+        0,
+        0,
+        0,
+        255,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "length": 6905
+}

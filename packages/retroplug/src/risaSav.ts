@@ -1,5 +1,6 @@
 // Top-level risa save barrel — the import surface for the app/UI (menus, stores) and tests, mirroring
-// ./lsdjSav.ts. M1 exposes the read-only catalog reader; M2 adds the write-side song ops.
+// ./lsdjSav.ts. Exposes the catalog reader/writer plus the song-payload codec (record <-> model <->
+// working-RAM).
 export {
   listSongs,
   parseCatalog,
@@ -15,5 +16,12 @@ export {
   kSaveSize,
   CURRENT_LAYOUT,
   LEGACY_LAYOUT,
+  // song-payload codec (record <-> model <-> working-RAM)
+  decodeRecord,
+  encodeRecord,
+  writeWorking,
+  readWorking,
+  expandRecordToWorking,
+  initWorkingDefaults,
 } from "./risa";
-export type { RisaSongInfo, CatalogLayout } from "./risa";
+export type { RisaSongInfo, CatalogLayout, RisaRecord } from "./risa";

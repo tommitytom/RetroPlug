@@ -32,7 +32,7 @@ import { listProjects, decompressSlot, encodeLsdsngRaw, savSongName, savSongVers
 import { loadSongToWorking, deleteSongInSav, replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
 import { importSongFiles } from "../../../src/lsdjSongImport";
 import { listSongs } from "../../../src/risaSav";
-import { deleteSongInSav, moveSongInSav } from "../../../src/risaSongOps";
+import { deleteSongInSav as deleteRisaSongInSav, moveSongInSav as moveRisaSongInSav } from "../../../src/risaSongOps";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 import type { HostBackend } from "../../../src/backend";
@@ -626,8 +626,8 @@ function risaSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
   const last = songs.length - 1;
   const rows: MenuItem[] = songs.map((s, i) =>
     submenu(`risa-song-${s.index}`, `[${s.index}] ${s.name || `Song ${s.index}`}`, [
-      action(`risa-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveSongInSav(sav, s.index, s.index - 1))), i === 0),
-      action(`risa-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveSongInSav(sav, s.index, s.index + 1))), i === last),
+      action(`risa-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveRisaSongInSav(sav, s.index, s.index - 1))), i === 0),
+      action(`risa-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveRisaSongInSav(sav, s.index, s.index + 1))), i === last),
       {
         id: `risa-song-${s.index}-delete`,
         label: "Delete",
@@ -638,7 +638,7 @@ function risaSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
           hint: "Enter to delete  |  Esc to cancel",
           confirm: true,
           onConfirm: () => {
-            mutateSavBytes(ctx, sys, (sav) => tryOp(() => deleteSongInSav(sav, s.index)));
+            mutateSavBytes(ctx, sys, (sav) => tryOp(() => deleteRisaSongInSav(sav, s.index)));
             return null;
           },
         },
