@@ -76,13 +76,24 @@ modes 1-3, the plugin's 8 outputs via `processBlock(outputs, N)`) all collapse t
 options are inert. → Open a multichannel SDL device + the N-output `processBlock`. Low priority (matters only
 on desktop with a multichannel interface).
 
-### P6 — Window resize / zoom-to-grid + close guard
-`jsSetWindowSize` is a **no-op** ([main.cpp:446](../packages/native/sdl/main.cpp#L446)) — the window is fixed,
-so multi-instance grid growth + zoom changes don't resize it. And `SDL_QUIT` sets `running = false` directly
-([main.cpp:839](../packages/native/sdl/main.cpp#L839)), **bypassing the unsaved-changes guard**
-(`__rp_onCloseRequested`) — closing via the window button / Ctrl-C skips the save prompt (the Exit *menu* item
-does guard). → Implement `jsSetWindowSize` via `SDL_SetWindowSize`; route `SDL_QUIT` through
-`__rp_onCloseRequested`.
+### P6 — Window resize / zoom-to-grid + close guard — ✅ DONE
+**Resize:** `__rp_setWindowSize` now resizes the window to the grid (multi-instance growth / zoom / layout
+changes), mirroring the DPF standalone. Since SDL gives no platform resize callback, `resizeWindow` does inline
+what DPF's callback does for the plugin: `SDL_SetWindowSize` + `lv_display_set_resolution` + realloc the DIRECT
+draw buffer (`lv_display_set_buffers`) + recreate the STREAMING texture at the new size + emit the `"resize"`
+JS event so the UI re-lays-out. It's gated on **windowed vs fullscreen**: `__rp_isWindowSizeControlled` returns
+`true` for a fullscreen handheld (the WM owns a fixed panel → the UI fits via zoom, resize is inert) and `false`
+for a desktop window (ours to size → the App's fit-to-grid effect drives it).
+
+**Close guard:** `SDL_QUIT` (window button / WM / Ctrl-C) now routes through the unsaved-changes guard
+(`__rp_onCloseRequested`), a line-for-line mirror of [PluginUI::onClose](../packages/native/plugin/PluginUI.cpp#L352):
+a `true` (veto) return raises the save prompt and leaves the window open (the JS overlay calls `__rp_quitWindow`
+itself once the user confirms Save/Discard); a clean project quits immediately. Previously `SDL_QUIT` set
+`running = false` directly and lost unsaved work (only the Exit *menu* row guarded).
+
+Verified headlessly via the `RETROPLUG_SDL_TEST_RESIZE=WxH` and `RETROPLUG_SDL_TEST_QUIT` self-test hooks
+(resize reallocs + renders a full frame at the new size; a clean-project QUIT exits without veto) plus the
+existing `test-ui/resize.test.ts` + `test-ui/close-guard.test.ts` for the JS contract.
 
 ### N/A — DAW-only (listed for completeness)
 Parameters/automation, DPF state-chunk get/setState, latency reporting, per-output labels — plugin-in-DAW

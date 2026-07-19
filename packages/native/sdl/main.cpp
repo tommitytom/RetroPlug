@@ -127,6 +127,10 @@ struct AppState {
     std::uint32_t width = 640;
     std::uint32_t height = 480;
     bool running = true;
+    // Fullscreen (the handheld): the WM owns a fixed panel, so the UI fits its grid via zoom and
+    // __rp_setWindowSize is inert. Windowed (desktop): the window is ours to size, so it grows/shrinks to
+    // the grid like the DPF standalone. Set from the SDL_WINDOW_FULLSCREEN flag in setupSdl.
+    bool fullscreen = false;
 
     // audio scratch (pre-sized to the device block, so the callback never allocates)
     std::vector<float> audioL, audioR;
@@ -149,6 +153,11 @@ bool openAudio(AppState& a);
 void reconfigureAudio(AppState& a, int sampleRate, int blockSize);
 void loadAudioConfig(AppState& a);
 void saveAudioConfig(AppState& a);
+
+// Resize the window + everything that tracks its dimensions (the __rp_setWindowSize seam). Defined after the
+// LVGL glue; declared here so the window hook can call it. Runs on the UI thread (same as present), so the
+// texture/buffer/width swap is race-free.
+void resizeWindow(AppState& a, std::uint32_t w, std::uint32_t h);
 
 // ---- LVGL glue (mirrors RenderCore's non-GL subset) -----------------------------------------------
 
@@ -251,10 +260,22 @@ JSValue jsQuitWindow(JSContext*, JSValueConst, int, JSValueConst*) {
     if (g_app) g_app->running = false;
     return JS_UNDEFINED;
 }
-// Report the window as WM-controlled so the UI fits its grid via zoom instead of trying to resize a
-// fixed fullscreen handheld window.
-JSValue jsIsWindowSizeControlled(JSContext* ctx, JSValueConst, int, JSValueConst*) { return JS_NewBool(ctx, 1); }
-JSValue jsSetWindowSize(JSContext*, JSValueConst, int, JSValueConst*) { return JS_UNDEFINED; }
+// A fullscreen (handheld) window is WM-controlled → the UI fits its grid via zoom rather than resizing a
+// fixed panel. A desktop windowed session is ours to size, so the App's fit-to-grid effect drives resizes.
+JSValue jsIsWindowSizeControlled(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    return JS_NewBool(ctx, g_app ? g_app->fullscreen : 1);
+}
+// __rp_setWindowSize(w, h): grow/shrink the window to the grid (desktop only). Mirrors the DPF standalone,
+// where setSize() → the platform resize callback reallocs the LVGL buffer + emits "resize"; SDL gives us no
+// such callback, so resizeWindow does it all inline. Inert on a fullscreen handheld (the WM owns the panel).
+JSValue jsSetWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (!g_app || g_app->fullscreen || argc < 2) return JS_UNDEFINED;
+    std::uint32_t w = 0, h = 0;
+    JS_ToUint32(ctx, &w, argv[0]);
+    JS_ToUint32(ctx, &h, argv[1]);
+    if (w != 0 && h != 0 && (w != g_app->width || h != g_app->height)) resizeWindow(*g_app, w, h);
+    return JS_UNDEFINED;
+}
 JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (g_app && g_app->window && argc >= 1) {
         const char* t = JS_ToCString(ctx, argv[0]);
@@ -629,6 +650,7 @@ bool setupSdl(AppState& a) {
     }
     Uint32 winFlags = 0;
     if (std::getenv("RETROPLUG_SDL_FULLSCREEN")) winFlags |= SDL_WINDOW_FULLSCREEN;
+    a.fullscreen = (winFlags & SDL_WINDOW_FULLSCREEN) != 0; // gates the __rp_setWindowSize resize seam
     a.window = SDL_CreateWindow("RetroPlug", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                 a.width, a.height, winFlags);
     if (!a.window) { std::fprintf(stderr, "[retroplug-sdl] SDL_CreateWindow failed: %s\n", SDL_GetError()); return false; }
@@ -662,11 +684,65 @@ void present(AppState& a) {
     a.dirty = false;
 }
 
+// Resize the window and every dimension-tracking resource in lockstep: the SDL window, the LVGL display
+// resolution + its DIRECT-mode draw buffer, and the streaming SDL texture (a STREAMING texture can't resize
+// in place — recreate it). Then force a full-window redraw and tell the UI so it re-lays-out. This inlines
+// what DPF's platform resize callback does for the plugin (LVGL::recreateTextureData + emit "resize").
+void resizeWindow(AppState& a, std::uint32_t w, std::uint32_t h) {
+    if (!a.window || !a.display || !a.renderer) return;
+
+    SDL_SetWindowSize(a.window, static_cast<int>(w), static_cast<int>(h));
+
+    // LVGL display: set the new resolution, then re-point it at a freshly sized DIRECT buffer.
+    const lv_color_format_t cf = lv_display_get_color_format(a.display);
+    const std::uint32_t stride = lv_draw_buf_width_to_stride(w, cf);
+    a.drawBuf.assign(static_cast<std::size_t>(stride) * h, 0);
+    lv_display_set_resolution(a.display, w, h);
+    lv_display_set_buffers(a.display, a.drawBuf.data(), nullptr, a.drawBuf.size(), LV_DISPLAY_RENDER_MODE_DIRECT);
+
+    // SDL streaming texture: recreate at the new size (can't be resized in place).
+    if (a.texture) SDL_DestroyTexture(a.texture);
+    a.texture = SDL_CreateTexture(a.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                  static_cast<int>(w), static_cast<int>(h));
+
+    a.width = w;
+    a.height = h;
+    a.dirty = true; // present the whole new surface next frame (lv_timer_handler redraws into the new buffer)
+    a.dirtyRect = {0, 0, static_cast<std::int32_t>(w) - 1, static_cast<std::int32_t>(h) - 1};
+
+    if (JSContext* ctx = a.ui.getContext()) { // mirror PluginUI::onResize → the UI re-reads Dimensions.window
+        JSValue args[2] = {JS_NewUint32(ctx, w), JS_NewUint32(ctx, h)};
+        a.ui.emit("resize", 2, args);
+        JS_FreeValue(ctx, args[0]);
+        JS_FreeValue(ctx, args[1]);
+    }
+}
+
 void handleEvents(AppState& a) {
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
         switch (ev.type) {
-            case SDL_QUIT: a.running = false; break;
+            // OS window-close (window button / WM / Ctrl-C) → route through the unsaved-changes guard, exactly
+            // as the DPF standalone's PluginUI::onClose does (and the Exit menu row already does via JS). The
+            // JS guard returns true to veto (it raises the save prompt and later calls __rp_quitWindow itself
+            // once the user confirms Save/Discard); false = clean project, quit now. Without this, closing a
+            // dirty project by the window button would skip the prompt and lose work.
+            case SDL_QUIT: {
+                bool veto = false;
+                if (JSContext* ctx = a.ui.getContext()) {
+                    JSValue global = JS_GetGlobalObject(ctx);
+                    JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_onCloseRequested");
+                    if (JS_IsFunction(ctx, fn)) {
+                        JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 0, nullptr);
+                        veto = JS_ToBool(ctx, ret) == 1;
+                        JS_FreeValue(ctx, ret);
+                    }
+                    JS_FreeValue(ctx, fn);
+                    JS_FreeValue(ctx, global);
+                }
+                if (!veto) a.running = false;
+                break;
+            }
             // Desktop drag-and-drop → the "file-drop" JS bus (mirrors PluginUI::uiFileDropped). SDL2's
             // SDL_DropEvent carries no coordinates (the x/y fields are SDL3-only) and one path per event, so
             // we batch across begin→complete and read the cursor ourselves for the tile hit-test.
@@ -764,6 +840,25 @@ int main(int argc, char** argv) {
                      app.reqSampleRate, app.reqBlockSize, app.audioDev);
     }
 
+    // Test hook: exercise the window resize path (SDL window + LVGL display/buffer + texture) headlessly,
+    // the same call the __rp_setWindowSize seam makes. RETROPLUG_SDL_TEST_RESIZE=WxH.
+    if (const char* env = std::getenv("RETROPLUG_SDL_TEST_RESIZE")) {
+        int w = 0, h = 0;
+        if (std::sscanf(env, "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
+            resizeWindow(app, static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h));
+            int ww = 0, wh = 0;
+            SDL_GetWindowSize(app.window, &ww, &wh);
+            std::fprintf(stderr, "[retroplug-sdl] post-resize: state=%ux%u window=%dx%d buf=%zu\n",
+                         app.width, app.height, ww, wh, app.drawBuf.size());
+        }
+    }
+
+    // Test hook: push an OS-close (SDL_QUIT) so the close-guard path runs headlessly. With no unsaved
+    // changes the guard doesn't veto, so the app exits on the first handleEvents (well before exitAfterFrames).
+    if (std::getenv("RETROPLUG_SDL_TEST_QUIT")) {
+        SDL_Event q; q.type = SDL_QUIT; SDL_PushEvent(&q);
+    }
+
     // --- the 60 fps loop: input → JS frame → LVGL render → present ---
     long frame = 0;
     while (app.running) {
@@ -785,6 +880,8 @@ int main(int argc, char** argv) {
         const Uint32 dt = SDL_GetTicks() - t0;
         if (dt < 16) SDL_Delay(16 - dt); // ~60 fps
     }
+    if (std::getenv("RETROPLUG_SDL_TEST_QUIT"))
+        std::fprintf(stderr, "[retroplug-sdl] close-guard test: exited at frame %ld\n", frame);
 
     // --- teardown: reclaim the Engine, unmount, drop SDL ---
     if (app.audioDev) { SDL_PauseAudioDevice(app.audioDev, 1); SDL_CloseAudioDevice(app.audioDev); }
