@@ -45,6 +45,16 @@ export function subscribeFileBrowser(fn: () => void): () => void {
   return () => void listeners.delete(fn);
 }
 
+// Remember the directory across browses (so reopening resumes where you left off). The current directory of
+// an open browser IS this value; navigate() updates it. Seeded from `fallback` (the config dir) on first use.
+let lastDir: string | null = null;
+export function getLastBrowseDir(fallback: string): string {
+  return lastDir ?? fallback;
+}
+export function setLastBrowseDir(dir: string): void {
+  lastDir = dir;
+}
+
 // --- glob matching for the browser's pattern filter (e.g. "*.gb", "*.rplg.zip", "*.ss?") --------------
 export function globToRegExp(glob: string): RegExp {
   const body = glob
