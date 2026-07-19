@@ -9,15 +9,15 @@
 class NesConsole;
 
 // EverDrive N8 Pro FIFO emulator wrapper. Attaches to a NesConsole's memory
-// manager so the ROM's reads/writes at $40F0/$40F1 reach the FIFO; pumps
-// host MIDI bytes (delivered by the engine's MIDI dispatch → MesenNesSystem::onMidi)
-// into the FIFO's RX queue so n8-midi.nes's `midiRead()` polling loop sees
-// them.
+// manager so the ROM's reads/writes at $40F0/$40F1 reach the FIFO; sample-offset
+// schedules bytes into the FIFO's RX queue so the ROM's `$40F0` polling loop
+// sees them. Two feeds share the one queue: host MIDI (`onMidi`, MIDI-framed)
+// and a RAW byte stream (`pushBytes`, no framing/cap — e.g. a tracker's own
+// sync/locate protocol over the N8 transport).
 //
-// Currently the only Mesen-side "role". Always attached when MesenNesSystem
-// activates with a NES ROM — the FIFO is benign if the ROM never touches
-// $40F0/$40F1 (most NES homebrew). If non-N8 NES ROMs become a real concern,
-// gate attachment on an iNES mapper-byte sniffer.
+// Always attached when MesenNesSystem activates with a NES ROM — the FIFO is
+// benign if the ROM never touches $40F0/$40F1 (most NES homebrew). If non-N8
+// NES ROMs become a real concern, gate attachment on an iNES mapper-byte sniffer.
 class NesN8FifoRole {
 public:
     NesN8FifoRole();
@@ -36,9 +36,18 @@ public:
     // offset; order is preserved (the FIFO is order-sensitive — status byte then data bytes).
     void onMidi(const ::MidiEvent* events, std::uint32_t count);
 
+    // Audio-thread: QUEUE `count` RAW bytes tagged with `offset` (samples from block start), no MIDI
+    // framing and no length cap — for a byte protocol carried over the N8 transport (e.g. a tracker's
+    // host-sync locate/clock stream). Bytes stay contiguous + ordered; released by pumpUntil alongside
+    // any MIDI bytes, so raw + MIDI interleave by offset. `onMidi` is a thin MIDI-framed adapter over this.
+    void pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count);
+
     // Audio-thread: release every queued byte whose offset has been reached (offset <= sampleOffset)
     // into the FIFO, front-first. Called from MesenNesSystem's step loop with the current intra-block
-    // sample offset.
+    // sample offset. The queue is stable-sorted by offset on the first call after any enqueue (all
+    // enqueuing happens before the step loop), so bytes released front-first are in true sample order
+    // even when two feeds (MIDI + raw) interleave out of enqueue order — subsequent calls are a plain
+    // front-drain.
     void pumpUntil(std::uint32_t sampleOffset);
 
     // Audio-thread: at block end, shift still-queued offsets back by `frames` so a byte that didn't
@@ -46,7 +55,7 @@ public:
     void rebase(std::uint32_t frames);
 
     // Drop all queued (not-yet-delivered) bytes — on reset, to avoid stale MIDI after a state change.
-    void clear() { pending_.clear(); }
+    void clear() { pending_.clear(); needsSort_ = false; }
 
     // Introspection / tests.
     std::size_t pendingCount() const { return pending_.size(); }
@@ -63,5 +72,6 @@ private:
         std::uint8_t  byte;
     };
     std::deque<PendingByte> pending_;
+    bool                    needsSort_ = false;  // set on enqueue; pumpUntil stable-sorts by offset once
     rp::NesEverdriveFifo    fifo_;
 };

@@ -264,6 +264,13 @@ void MesenNesSystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     }
 }
 
+void MesenNesSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
+    // Raw bytes (a tracker's host-sync protocol) → the N8 FIFO, sample-offset scheduled like host MIDI.
+    if (n8Role_) {
+        n8Role_->pushBytes(frame, data, size);
+    }
+}
+
 namespace {
 NesController::Buttons toNesButton(std::uint8_t b) {
     switch (static_cast<NesButton>(b)) {

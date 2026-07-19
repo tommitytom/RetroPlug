@@ -53,6 +53,7 @@ public:
     // The role pushes bytes into the FIFO RX queue so the ROM's polling loop
     // sees them at the next read of $40F0.
     void onMidi(const ::MidiEvent* events, std::uint32_t count) override;
+    void pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size) override;
 
     // Audio-thread: queue a NES button transition. The byte is reinterpreted
     // as NesButton (Right/Left/Up/Down/A/B/Select/Start, positions 0..7).
