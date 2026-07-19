@@ -18,7 +18,7 @@ import { extensionLower } from "./pathUtil";
 import { siblingRplgPath } from "./savPaths";
 import { classifyRom, type SystemsStore } from "./systemsStore";
 
-export const ROM_OR_SAV_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sav"];
+export const ROM_OR_SAV_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sav", "*.srm"];
 export const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes"];
 
 /** What a picked file is: a ROM (any known format, by content), a `.sav` (by

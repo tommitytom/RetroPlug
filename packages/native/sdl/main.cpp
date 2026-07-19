@@ -33,6 +33,13 @@
 #include <fnmatch.h>
 #include <sys/stat.h>
 
+#if defined(__linux__)
+#include <atomic>
+#include <pthread.h>
+#include <sched.h>
+#include <unistd.h>
+#endif
+
 #include <SDL.h>
 
 extern "C" {
@@ -548,11 +555,39 @@ void pumpGamepad(AppState& a) {
     });
 }
 
+// ---- audio-thread scheduling (A53 real-time headroom) ----------------------------------------------
+#if defined(__linux__)
+// The audio path runs at ~1x realtime on the A53 (the SameBoy APU is ~92% of every block), so a
+// preempted or core-shared audio thread underruns → choppy sound. Give the audio thread a dedicated core
+// + real-time priority, and keep the UI/emulator-advancing work off that core. Best-effort: failures (no
+// RT permission when not root) are ignored — it just falls back to the default scheduling.
+void tuneAudioThread() {
+    const long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    if (ncpu > 1) {
+        cpu_set_t set; CPU_ZERO(&set); CPU_SET(ncpu - 1, &set); // pin to the last core
+        pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+    }
+    sched_param sp{}; sp.sched_priority = 80;
+    pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp);
+}
+void pinUiThreadAwayFromAudioCore() {
+    const long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    if (ncpu <= 2) return; // too few cores to segregate
+    cpu_set_t set; CPU_ZERO(&set);
+    for (long c = 0; c + 1 < ncpu; ++c) CPU_SET(c, &set); // all cores except the audio core (the last)
+    pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+}
+#endif
+
 // ---- audio ----------------------------------------------------------------------------------------
 // SDL calls this on its own audio thread. It owns the Engine while running (setAudioThreadOwns(true)),
 // so it drains the control-thread command ring each block then renders — mirrors PluginDSP::run.
 void audioCb(void* userdata, Uint8* stream, int len) {
     auto* a = static_cast<AppState*>(userdata);
+#if defined(__linux__)
+    static std::atomic<bool> tuned{false};
+    if (!tuned.exchange(true)) tuneAudioThread(); // once, on the real audio thread
+#endif
     const int frames = len / static_cast<int>(2 * sizeof(float));
     if (frames <= 0) { std::memset(stream, 0, len); return; }
     if (static_cast<int>(a->audioL.size()) < frames) { a->audioL.resize(frames); a->audioR.resize(frames); }
@@ -788,6 +823,9 @@ int main(int argc, char** argv) {
     // Hand the Engine to the SDL audio thread (control-plane edits become push-only, drained per block)
     // then start it. Mirrors PluginDSP::activate.
     app.invoker.setAudioThreadOwns(true);
+#if defined(__linux__)
+    pinUiThreadAwayFromAudioCore(); // keep the 60 fps UI/emulator work off the audio thread's core
+#endif
     if (app.audioDev) SDL_PauseAudioDevice(app.audioDev, 0);
 
     std::fprintf(stderr, "[retroplug-sdl] running %ux%u @ %.0f Hz\n", app.width, app.height, app.sampleRate);

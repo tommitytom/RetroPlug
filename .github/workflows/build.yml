@@ -250,10 +250,14 @@ jobs:
         # atomics (`casal`) the handheld's Cortex-A53 (ARMv8.0-A) lacks → SIGILL at its startup constructor.
         # This off-switch keeps mimalloc at the ARMv8.0-A baseline. The CI runner is newer arm, so nothing
         # else emits LSE by default (GCC uses runtime-dispatched outline-atomics).
+        # -mcpu=cortex-a53: tune the whole build (esp. the SameBoy APU, ~92% of the audio-thread cost) for
+        # the device's in-order A53 pipeline. It also fixes the ISA at ARMv8.0-A (no LSE) — a natural fit
+        # with MI_NO_OPT_ARCH=ON. Handheld job only (other arm targets, e.g. the Pi/A72, must not A53-pin).
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 \
-            -DMI_NO_OPT_ARCH=ON
+            -DMI_NO_OPT_ARCH=ON \
+            -DCMAKE_C_FLAGS="-mcpu=cortex-a53" -DCMAKE_CXX_FLAGS="-mcpu=cortex-a53"
           cmake --build build --target retroplug-sdl -j"$(nproc)"
 
       - name: Verify arch + glibc ceiling + ARMv8.0-A (no LSE) for the device
@@ -326,7 +330,8 @@ jobs:
         run: |
           cmake -S . -B build-prof -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DRETROPLUG_PROFILE=ON -DMI_NO_OPT_ARCH=ON \
-            -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12
+            -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12 \
+            -DCMAKE_C_FLAGS="-mcpu=cortex-a53" -DCMAKE_CXX_FLAGS="-mcpu=cortex-a53"
           cmake --build build-prof --target retroplug-host -j"$(nproc)"
           strip build-prof/bin/retroplug-host   # -g makes it ~290MB; the bench needs no symbols
           file build-prof/bin/retroplug-host

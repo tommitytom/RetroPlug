@@ -83,7 +83,7 @@ const PROJECT_PATTERNS = ["*.rplg"]; // thin project (raw JSON) — the Save tar
 const ZIP_PATTERNS = ["*.rplg.zip"]; // exported project (PKZIP) — always `.rplg.zip`
 const LOAD_PATTERNS = ["*.rplg", "*.rplg.zip"]; // load/locate accept either on-disk shape
 const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
-const SRAM_PATTERNS = ["*.sav"];
+const SRAM_PATTERNS = ["*.sav", "*.srm"];
 const WAV_PATTERNS = ["*.wav"]; // render output
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
