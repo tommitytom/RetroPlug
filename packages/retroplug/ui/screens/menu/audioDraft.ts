@@ -12,6 +12,7 @@
 export interface AudioCfg {
   sampleRate: number;
   blockSize: number;
+  outChannels: number; // 2 = stereo mix; 4/6/8 = wide stems for a multichannel device (per audioRouting)
 }
 
 let draft: AudioCfg | null = null;
@@ -23,11 +24,18 @@ function emit(): void {
 }
 
 function nativeGet(): AudioCfg | null {
-  const fn = (globalThis as { __rp_getAudioConfig?: () => AudioCfg }).__rp_getAudioConfig;
-  return typeof fn === "function" ? fn() : null;
+  const fn = (globalThis as { __rp_getAudioConfig?: () => Partial<AudioCfg> }).__rp_getAudioConfig;
+  if (typeof fn !== "function") return null;
+  const c = fn();
+  if (!c) return null;
+  return { sampleRate: c.sampleRate ?? 48000, blockSize: c.blockSize ?? 2048, outChannels: c.outChannels ?? 2 };
 }
-function nativeSet(sampleRate: number, blockSize: number): void {
-  (globalThis as { __rp_setAudioConfig?: (r: number, b: number) => void }).__rp_setAudioConfig?.(sampleRate, blockSize);
+function nativeSet(sampleRate: number, blockSize: number, outChannels: number): void {
+  (globalThis as { __rp_setAudioConfig?: (r: number, b: number, ch: number) => void }).__rp_setAudioConfig?.(
+    sampleRate,
+    blockSize,
+    outChannels,
+  );
 }
 
 /** Whether the SDL host exposes the audio-config seam (standalone only). Gates the whole submenu. */
@@ -45,7 +53,9 @@ export function getAudioDraft(): AudioCfg | null {
 export function audioDraftDirty(): boolean {
   const live = nativeGet();
   const d = getAudioDraft();
-  return !!live && !!d && (live.sampleRate !== d.sampleRate || live.blockSize !== d.blockSize);
+  return (
+    !!live && !!d && (live.sampleRate !== d.sampleRate || live.blockSize !== d.blockSize || live.outChannels !== d.outChannels)
+  );
 }
 
 /** Edit the draft (a cycler step). Notifies App so the labels repaint at once. */
@@ -60,7 +70,7 @@ export function setAudioDraft(next: Partial<AudioCfg>): void {
 export function applyAudioDraft(): void {
   const d = getAudioDraft();
   if (!d) return;
-  nativeSet(d.sampleRate, d.blockSize);
+  nativeSet(d.sampleRate, d.blockSize, d.outChannels);
   draft = nativeGet(); // the device may clamp/round; reflect what it took
   emit();
 }

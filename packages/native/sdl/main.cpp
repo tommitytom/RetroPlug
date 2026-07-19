@@ -187,11 +187,16 @@ struct AppState {
     // the grid like the DPF standalone. Set from the SDL_WINDOW_FULLSCREEN flag in setupSdl.
     bool fullscreen = false;
 
-    // audio scratch (pre-sized to the device block, so the callback never allocates)
-    std::vector<float> audioL, audioR;
+    // audio scratch: `numOutputs` planar channel buffers (pre-sized to the device block so the callback
+    // never allocates). The Engine renders planar + routes each system to its pair per audioRouting; we
+    // interleave into the SDL stream. numOutputs == reqOutChannels (device opened with allowed_changes=0).
+    std::vector<std::vector<float>> audioPlanar;
+    std::vector<float*>             audioPtrs;
+    int    numOutputs = 2;
     double sampleRate = 48000.0;   // obtained device rate (drives the Engine)
-    int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block, persisted to audio.cfg
+    int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block + channels, persisted to audio.cfg
     int    reqBlockSize  = 2048;
+    int    reqOutChannels = 2;     // 2 = stereo mix (default); 4/6/8 = wide stems for a multichannel device
 
     // Present only when LVGL actually redrew: the flush cb unions the changed area here; the loop skips
     // the SDL texture upload + blit entirely on idle frames (a static menu → ~0% CPU instead of a full
@@ -205,7 +210,7 @@ AppState* g_app = nullptr;  // single instance
 // Audio device (re)configuration — defined after audioCb (they reference it); declared here so the
 // __rp_setAudioConfig hook (bound earlier) can drive a live sample-rate / block-size change.
 bool openAudio(AppState& a);
-void reconfigureAudio(AppState& a, int sampleRate, int blockSize);
+void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels);
 void loadAudioConfig(AppState& a);
 void saveAudioConfig(AppState& a);
 
@@ -348,25 +353,28 @@ JSValue jsOpenPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     return JS_UNDEFINED;
 }
 
-// __rp_getAudioConfig(): { sampleRate, blockSize } — the live standalone audio device config, for the
-// Audio settings submenu to display the current values.
+// __rp_getAudioConfig(): { sampleRate, blockSize, outChannels } — the live standalone audio device config,
+// for the Audio settings submenu to display the current values.
 JSValue jsGetAudioConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     JSValue o = JS_NewObject(ctx);
     if (g_app) {
-        JS_SetPropertyStr(ctx, o, "sampleRate", JS_NewInt32(ctx, g_app->reqSampleRate));
-        JS_SetPropertyStr(ctx, o, "blockSize",  JS_NewInt32(ctx, g_app->reqBlockSize));
+        JS_SetPropertyStr(ctx, o, "sampleRate",  JS_NewInt32(ctx, g_app->reqSampleRate));
+        JS_SetPropertyStr(ctx, o, "blockSize",   JS_NewInt32(ctx, g_app->reqBlockSize));
+        JS_SetPropertyStr(ctx, o, "outChannels", JS_NewInt32(ctx, g_app->reqOutChannels));
     }
     return o;
 }
 
-// __rp_setAudioConfig(sampleRate, blockSize): re-open the audio device with new params on the fly (and
-// persist them). Reuses the deactivate→re-rate→reactivate handoff the plugin does for a host SR change.
+// __rp_setAudioConfig(sampleRate, blockSize, outChannels?): re-open the audio device with new params on the
+// fly (and persist them). Reuses the deactivate→re-rate→reactivate handoff the plugin does for a host SR
+// change. outChannels is optional (older UI bundles omit it) — 2/4/6/8; anything else keeps the current count.
 JSValue jsSetAudioConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (g_app && argc >= 2) {
-        int sr = 0, bs = 0;
+        int sr = 0, bs = 0, ch = g_app->reqOutChannels;
         JS_ToInt32(ctx, &sr, argv[0]);
         JS_ToInt32(ctx, &bs, argv[1]);
-        if (sr > 0 && bs > 0) reconfigureAudio(*g_app, sr, bs);
+        if (argc >= 3) { int c = 0; JS_ToInt32(ctx, &c, argv[2]); if (c >= 2 && c <= 8 && (c % 2) == 0) ch = c; }
+        if (sr > 0 && bs > 0) reconfigureAudio(*g_app, sr, bs, ch);
     }
     return JS_UNDEFINED;
 }
@@ -512,9 +520,11 @@ void audioCb(void* userdata, Uint8* stream, int len) {
     static std::atomic<bool> tuned{false};
     if (!tuned.exchange(true)) tuneAudioThread(); // once, on the real audio thread
 #endif
-    const int frames = len / static_cast<int>(2 * sizeof(float));
+    const int N = a->numOutputs;
+    const int frames = (N > 0) ? len / static_cast<int>(N * sizeof(float)) : 0;
     if (frames <= 0) { std::memset(stream, 0, len); return; }
-    if (static_cast<int>(a->audioL.size()) < frames) { a->audioL.resize(frames); a->audioR.resize(frames); }
+    if (static_cast<int>(a->audioPlanar[0].size()) < frames)
+        for (int c = 0; c < N; ++c) { a->audioPlanar[c].resize(frames); a->audioPtrs[c] = a->audioPlanar[c].data(); }
 
     a->invoker.drainInto(a->engine);
     // Drain MIDI the RtMidi callback thread staged into the ring, and hand it to the Engine — we own it on
@@ -535,7 +545,10 @@ void audioCb(void* userdata, Uint8* stream, int len) {
 
     a->engine.setBpm(a->clockSync.outBpm());          // 120 free-run until an external clock master appears
     a->engine.setTransport(a->clockSync.outPlaying()); // then locks to its tempo + start/stop
-    a->engine.processBlock(static_cast<std::uint32_t>(frames), a->audioL.data(), a->audioR.data());
+    // Multi-out: render into the N planar channel buffers; the Engine zeroes + routes each system to its
+    // pair per audioRouting (MultiOutRouter/ChannelSplitRouter). N=2 collapses every mode to the stereo mix
+    // (identical to the old 2-arg path). N=4/6/8 spreads stems across the device's pairs.
+    a->engine.processBlock(static_cast<std::uint32_t>(frames), a->audioPtrs.data(), static_cast<std::size_t>(N));
 
     // Kernel MIDI-out (LSDj MI.OUT / Master Sync / passthrough) → the RtMidi out port, then clear the block's
     // queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW).
@@ -544,7 +557,8 @@ void audioCb(void* userdata, Uint8* stream, int len) {
     a->engine.clearMidiOut();
 
     auto* out = reinterpret_cast<float*>(stream);
-    for (int i = 0; i < frames; ++i) { out[2 * i] = a->audioL[i]; out[2 * i + 1] = a->audioR[i]; }
+    for (int i = 0; i < frames; ++i)
+        for (int c = 0; c < N; ++c) out[i * N + c] = a->audioPlanar[c][i]; // planar → interleaved (frame-major)
 }
 
 // Open the SDL audio device at the requested rate/block + size the render scratch. No frequency-change
@@ -554,19 +568,21 @@ bool openAudio(AppState& a) {
     SDL_AudioSpec want{}, have{};
     want.freq = a.reqSampleRate;
     want.format = AUDIO_F32SYS;
-    want.channels = 2;
+    want.channels = static_cast<Uint8>(a.reqOutChannels);
     want.samples = static_cast<Uint16>(a.reqBlockSize);
     want.callback = audioCb;
     want.userdata = &a;
-    a.audioDev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+    a.audioDev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0); // allowed_changes=0 → have matches want (SDL converts to the hardware)
     if (a.audioDev == 0) {
-        std::fprintf(stderr, "[retroplug-sdl] SDL_OpenAudioDevice(%d Hz, %d frames) failed: %s (muted)\n",
-                     a.reqSampleRate, a.reqBlockSize, SDL_GetError());
+        std::fprintf(stderr, "[retroplug-sdl] SDL_OpenAudioDevice(%d Hz, %d frames, %d ch) failed: %s (muted)\n",
+                     a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, SDL_GetError());
         return false;
     }
     a.sampleRate = have.freq;
-    a.audioL.assign(have.samples, 0.0f);
-    a.audioR.assign(have.samples, 0.0f);
+    a.numOutputs = have.channels;
+    a.audioPlanar.assign(a.numOutputs, std::vector<float>(have.samples, 0.0f));
+    a.audioPtrs.resize(a.numOutputs);
+    for (int c = 0; c < a.numOutputs; ++c) a.audioPtrs[c] = a.audioPlanar[c].data();
     return true;
 }
 
@@ -574,15 +590,17 @@ std::string audioCfgPath(AppState& a) { return a.hostSvc.configDir() + "/audio.c
 
 void loadAudioConfig(AppState& a) {
     if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "r")) {
-        int sr = 0, bs = 0;
-        if (std::fscanf(f, "%d %d", &sr, &bs) == 2 && sr > 0 && bs > 0) { a.reqSampleRate = sr; a.reqBlockSize = bs; }
+        int sr = 0, bs = 0, ch = 0;
+        const int m = std::fscanf(f, "%d %d %d", &sr, &bs, &ch); // ch: optional 3rd field (older files have 2)
+        if (m >= 2 && sr > 0 && bs > 0) { a.reqSampleRate = sr; a.reqBlockSize = bs; }
+        if (m >= 3 && ch >= 2 && ch <= 8 && (ch % 2) == 0) a.reqOutChannels = ch;
         std::fclose(f);
     }
 }
 
 void saveAudioConfig(AppState& a) {
     if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "w")) {
-        std::fprintf(f, "%d %d\n", a.reqSampleRate, a.reqBlockSize);
+        std::fprintf(f, "%d %d %d\n", a.reqSampleRate, a.reqBlockSize, a.reqOutChannels);
         std::fclose(f);
     }
 }
@@ -590,20 +608,23 @@ void saveAudioConfig(AppState& a) {
 // Live audio reconfigure (the Audio settings submenu): stop the device, take the Engine back from the
 // audio thread, re-rate it, re-open at the new rate/block, hand it back — the plugin's deactivate →
 // setSampleRate → activate handoff. Then persist. Called on the UI thread.
-void reconfigureAudio(AppState& a, int sampleRate, int blockSize) {
-    if (sampleRate == a.reqSampleRate && blockSize == a.reqBlockSize && a.audioDev) return; // no-op
+void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels) {
+    if (sampleRate == a.reqSampleRate && blockSize == a.reqBlockSize && channels == a.reqOutChannels && a.audioDev)
+        return; // no-op
     if (a.audioDev) { SDL_PauseAudioDevice(a.audioDev, 1); SDL_CloseAudioDevice(a.audioDev); a.audioDev = 0; }
     a.invoker.setAudioThreadOwns(false);
     a.invoker.drainInto(a.engine);
     a.reqSampleRate = sampleRate;
     a.reqBlockSize  = blockSize;
+    a.reqOutChannels = channels;
     a.engine.setSampleRate(sampleRate); // re-rate live cores (safe — audio thread stopped)
     if (openAudio(a)) {
         a.invoker.setAudioThreadOwns(true);
         SDL_PauseAudioDevice(a.audioDev, 0);
     }
     saveAudioConfig(a);
-    std::fprintf(stderr, "[retroplug-sdl] audio reconfigured: %d Hz, %d frames\n", a.reqSampleRate, a.reqBlockSize);
+    std::fprintf(stderr, "[retroplug-sdl] audio reconfigured: %d Hz, %d frames, %d ch\n",
+                 a.reqSampleRate, a.reqBlockSize, a.reqOutChannels);
 }
 
 // ---- screenshot (headless proof) ------------------------------------------------------------------
@@ -896,9 +917,18 @@ int main(int argc, char** argv) {
 
     // Test hook: exercise a live audio reconfigure (device close/reopen + engine re-rate) headlessly.
     if (std::getenv("RETROPLUG_SDL_TEST_RECONFIG")) {
-        reconfigureAudio(app, 44100, 512);
+        reconfigureAudio(app, 44100, 512, app.reqOutChannels);
         std::fprintf(stderr, "[retroplug-sdl] post-reconfigure: %d Hz, %d frames, dev=%u\n",
                      app.reqSampleRate, app.reqBlockSize, app.audioDev);
+    }
+
+    // Test hook: reconfigure to a wide output (RETROPLUG_SDL_TEST_MULTIOUT=<N ch>) and report the obtained
+    // channel count — proves the N-channel device open + planar multi-out render + interleave stride.
+    if (const char* env = std::getenv("RETROPLUG_SDL_TEST_MULTIOUT")) {
+        const int ch = std::atoi(env);
+        reconfigureAudio(app, app.reqSampleRate, app.reqBlockSize, ch);
+        std::fprintf(stderr, "[retroplug-sdl] post-multiout: numOutputs=%d planarBufs=%zu dev=%u\n",
+                     app.numOutputs, app.audioPlanar.size(), app.audioDev);
     }
 
     // Test hook: exercise the window resize path (SDL window + LVGL display/buffer + texture) headlessly,

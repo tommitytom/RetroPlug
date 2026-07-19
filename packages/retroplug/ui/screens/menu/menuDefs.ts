@@ -72,17 +72,24 @@ function isStandalone(): boolean {
 // __rp_setAudioConfig (re-open device + persist). Absent in a DAW / the harness (hasAudioConfig() false).
 const AUDIO_RATES = [22050, 32000, 44100, 48000];
 const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
+// Output device channels: 2 = stereo mix; 4/6/8 open that many device channels so the project's Audio
+// Routing (2-Ch/Inst, 1-Ch/Inst, Channels) fans real stems out to a multichannel interface. Labelled by
+// pair count since routing works in stereo pairs.
+const AUDIO_CHANNELS = [2, 4, 6, 8];
+const AUDIO_CHANNEL_NAMES = ["Stereo", "4 (2 pairs)", "6 (3 pairs)", "8 (4 pairs)"];
 function audioSettingsChildren(): MenuItem[] {
-  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048 };
+  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048, outChannels: 2 };
   const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
   const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
+  const chIdx = Math.max(0, AUDIO_CHANNELS.indexOf(cfg.outChannels));
   const dirty = audioDraftDirty();
   return [
     // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
     cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
     cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
+    cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),
     sep("audio-sep-apply"),
-    // Commit the staged rate/block to the device. Greyed (inert) until there's a pending change to apply.
+    // Commit the staged rate/block/channels to the device. Greyed (inert) until there's a pending change.
     action("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
   ];
 }

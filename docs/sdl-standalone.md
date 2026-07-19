@@ -12,8 +12,9 @@ SDL2 drives those via its own video backend. **Goal: make `retroplug-sdl` the pr
 - Full control-plane + React/LVGL UI on one shared `TjsHostRuntime` (same graph as the plugin), embedded
   CP/UI bytecode bundles, the `__rp_mountUI` / `__rp_ready` boot.
 - SDL2 window; software blit of the LVGL buffer with dirty-region present; SDL drives GLES2 internally.
-- SDL audio callback → `engine.processBlock` (stereo); live sample-rate/block-size reconfigure (Settings →
-  Audio); `audio.cfg` persistence.
+- SDL audio callback → the multi-out `engine.processBlock` (2/4/6/8 device channels per the Out Channels
+  knob); MIDI-clock-derived transport; live sample-rate/block-size/channels reconfigure (Settings → Audio);
+  `audio.cfg` persistence.
 - Input: keyboard + mouse → LVGL indevs + the `key` bus; gamepad (`GamepadManager`) → menu nav + game input.
 - On-screen LVGL **file browser** (no dependence on OS dialogs), **Exit** menu row, `openPath`, window title.
 - Optional Linux RT audio thread (SCHED_FIFO + core affinity), for headroom on constrained devices.
@@ -83,11 +84,20 @@ serial clock from the Engine's tempo/transport via `eachTick`
 job. Verified headlessly via `RETROPLUG_SDL_TEST_CLOCK=<bpm>` (synthetic clock → derived BPM within ~0.2, plus
 stop + timeout-revert). Follow-up: MIDI clock has no sub-block frame offset (block-quantized, like MIDI-in).
 
-### P5 — Multi-output audio routing
-SDL is stereo-only (the 2-arg `processBlock`). The per-channel stems / per-instance outputs (Audio Routing
-modes 1-3, the plugin's 8 outputs via `processBlock(outputs, N)`) all collapse to stereo, so those menu
-options are inert. → Open a multichannel SDL device + the N-output `processBlock`. Low priority (matters only
-on desktop with a multichannel interface).
+### P5 — Multi-output audio routing — ✅ DONE
+`audioCb` now renders through the multi-out `Engine::processBlock(frames, float* const* outputs, N)` (the same
+overload + planar convention the plugin uses with its 8 outputs) into `N` planar buffers, then interleaves
+frame-major (`stream[i·N + c]`) into the SDL stream. `N` is the device's output-channel count, a new **Out
+Channels** knob in `Settings > Audio` (2 = stereo mix / 4 / 6 / 8 pairs), persisted as a third field in
+`audio.cfg` and re-opened live via the `__rp_setAudioConfig` seam (now `sr, bs, ch`). Default **2** is
+byte-identical to the old 2-arg stereo path (zero regression); 4/6/8 opens that many device channels so the
+project's **Audio Routing** modes (`2-Ch/Inst`, `1-Ch/Inst`, `Channels`) fan real stems to a multichannel
+interface. No routing plumbing was needed — `audioRouting` already reaches the SDL Engine via the existing
+`setAudioRouting` RPC; `Engine::processBlock` dispatches `MultiOutRouter`/`ChannelSplitRouter` off it, and with
+only 2 channels every mode collapses to pair 0 (why it was inert before). Low priority — matters only on
+desktop with a multichannel interface (a stereo device just has SDL fold the extra channels back down).
+Verified headlessly with `RETROPLUG_SDL_TEST_MULTIOUT=<N>` (opens N channels, N planar buffers, runs the
+interleave) + the `audio.cfg` round-trip.
 
 ### P6 — Window resize / zoom-to-grid + close guard — ✅ DONE
 **Resize:** `__rp_setWindowSize` now resizes the window to the grid (multi-instance growth / zoom / layout
