@@ -23,3 +23,33 @@ export function isRisaRomHeader(header: Uint8Array): boolean {
   if ((header[10] >> 4) !== 0x0a) return false;
   return true;
 }
+
+// The host-sync capability marker. Sync-capable risa ROMs embed the ASCII tag "RISA-SYNC" + a 1-byte
+// protocol version within the first 0x150 bytes of the .nes (the RomContext header prefix — ROLE_HEADER_LEN);
+// older builds omit it. The tag identifies risa's dormant, UI-less N8-FIFO receive path (F9-locate / FA / F8
+// / FC), which the `risa-sync` DSP role drives from the DAW transport.
+const RISA_SYNC_MARKER = "RISA-SYNC";
+const RISA_SYNC_SCAN_LEN = 0x150;
+
+/** The risa host-sync protocol version advertised in the ROM header prefix, or -1 if the marker is absent.
+ *  Scans the first 0x150 bytes for the ASCII "RISA-SYNC" tag; the byte immediately after it is the version
+ *  (0x01 today). Reads at most the header prefix, so the short RomContext header is enough. */
+export function risaSyncVersion(header: Uint8Array): number {
+  const limit = Math.min(header.length, RISA_SYNC_SCAN_LEN);
+  for (let i = 0; i + RISA_SYNC_MARKER.length < limit; i++) {
+    let hit = true;
+    for (let j = 0; j < RISA_SYNC_MARKER.length; j++) {
+      if (header[i + j] !== RISA_SYNC_MARKER.charCodeAt(j)) {
+        hit = false;
+        break;
+      }
+    }
+    if (hit) return header[i + RISA_SYNC_MARKER.length];
+  }
+  return -1;
+}
+
+/** True if the ROM advertises the risa host-sync receive path (any protocol version). */
+export function isRisaSyncRom(header: Uint8Array): boolean {
+  return risaSyncVersion(header) >= 0;
+}
