@@ -127,7 +127,13 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
     }
     // Copy each core's freshly-published frame/state/SRAM into the owned registry the control plane
     // reads through — the one place every driver funnels the block, so it covers all of them.
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanBegin(DSP_SPAN_PUBLISH);  // the audio->control-plane state pump (per-block frame + timed savestate)
+#endif
     registry_.publishAll(project_, frames, sampleRate_);
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanEnd();  // state-publish
+#endif
     if (transport_)
         ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
 }

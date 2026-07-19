@@ -51,6 +51,8 @@ enum DspSpanLabel : std::uint32_t {
     DSP_SPAN_MARSHAL   = 1,   // DspRuntime: C→JS input marshalling
     DSP_SPAN_JSCALL    = 2,   // DspRuntime: the JS_Call into the kernel's processBlock
     DSP_SPAN_APU       = 3,   // Engine: the SameBoy core/APU render (runBlock)
+    DSP_SPAN_PUBLISH   = 4,   // Engine: the state pump to the control plane (per-block frame copy +
+                              //   the coarse-interval savestate/SRAM republish — spiky, timer-gated)
     DSP_SPAN_ROLE_BASE = 16,  // JS kernel interns role kinds (mgb, midi-routing, …) from here up
 };
 
