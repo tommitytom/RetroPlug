@@ -22,6 +22,7 @@
     "profile": "tools/run-profile.sh stats",
     "validate": "node scripts/cmake-build.js retroplug-clap retroplug-vst3 && tools/validate-plugins.sh",
     "reaper:headless": "tools/run-reaper-headless.sh",
+    "reaper:all": "tools/run-reaper-suite.sh",
     "reaper:mgb-smoke-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && tools/run-reaper-author.sh examples/reaper/mgb_smoke.rpp build tools/reaper-mgb-author.lua build/mgb.rplg.zip",
     "reaper:mgb-smoke": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && tools/run-reaper-render.sh examples/reaper/mgb_smoke.rpp build/mgb.rplg.zip",
     "reaper:analyze-smoke": "node scripts/cmake-build.js retroplug-cli retroplug-example-session && RETROPLUG_USER_CONFIG_DIR=/tmp/cli-analyze build/bin/retroplug-cli build/cli/analyze-mgb.js /tmp/cli-smoke.wav && tools/reaper-stage.sh /tmp/cli-smoke.wav",

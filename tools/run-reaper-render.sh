@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 #
-# Render a Reaper project headlessly: Xvfb display + dummy JACK + isolated
-# config dir + RetroPlug VST3 on the plugin path. The plugin's autoload
-# hook picks up the optional .rplg fixture so the .RPP itself can stay a
-# generic template.
+# Render a Reaper project headlessly through the isolated harness (tools/reaper-env.sh:
+# Xvfb + openbox + dummy JACK + isolated config + RetroPlug VST3 symlink). The plugin's
+# autoload hook picks up the optional .rplg fixture so the .RPP itself can stay a generic
+# template.
 #
 # Usage:
 #   tools/run-reaper-render.sh PROJECT.RPP [AUTOLOAD.RPLG]
 #
-# PROJECT.RPP   reaper project to render (RENDER_FILE/RENDER_PATTERN in the
-#               project decides where the output WAV lands; the wrapper cds
-#               to the repo root so relative paths resolve there)
-# AUTOLOAD.RPLG optional; exported as RETROPLUG_AUTOLOAD_PROJECT so the
-#               plugin loads a preconfigured project at construction
+# PROJECT.RPP   reaper project to render (RENDER_FILE/RENDER_PATTERN in the project decides
+#               where the output WAV lands; the wrapper cds to the repo root so relative paths
+#               resolve there)
+# AUTOLOAD.RPLG optional; exported as RETROPLUG_AUTOLOAD_PROJECT so the plugin loads a
+#               preconfigured project at construction
+#
+# Isolation is keyed off RP_JOB_TAG (default: the project basename) so concurrent renders of
+# different projects don't collide — see tools/reaper-env.sh.
 #
 # Dependencies (one-time): xvfb, jackd2, libgtk-3-0t64 (Dockerfile).
 
@@ -31,117 +34,37 @@ if [ ! -f "$PROJECT" ]; then
     exit 1
 fi
 
-for cmd in Xvfb jackd reaper; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        echo "error: '$cmd' not installed" >&2
-        exit 1
-    fi
-done
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$REPO_DIR"
-
-# Isolated Reaper config under build/ so plugin scan caches + ini files
-# don't pollute the user's ~/.config/REAPER. Keeps the test reproducible
-# across hosts.
-REAPER_CFG="$REPO_DIR/build/reaper-cfg"
-mkdir -p "$REAPER_CFG"
-
-# Reaper Linux always scans ~/.vst3; point HOME at the isolated cfg dir
-# and symlink the build bundle there. VST3_PATH alone gets ignored by
-# Reaper unless the user manually re-scans in the prefs UI.
-# Which built VST3 to host (RETROPLUG_VST3_NAME overrides the legacy default so the
-# plugin renders through the same harness).
-VST3_NAME="${RETROPLUG_VST3_NAME:-retroplug}"
-export HOME="$REAPER_CFG"
-mkdir -p "$HOME/.vst3"
-ln -sfn "$REPO_DIR/build/bin/${VST3_NAME}.vst3" "$HOME/.vst3/${VST3_NAME}.vst3"
-
-# Autoload fixture (optional). The plugin's RETROPLUG_AUTOLOAD_PROJECT
-# hook reads this .rplg at construction and applies it as the initial
-# project — sidesteps DPF state-chunk authoring in the .RPP.
+# Autoload fixture (optional). The plugin's RETROPLUG_AUTOLOAD_PROJECT hook reads this .rplg at
+# construction and applies it as the initial project. Absolutize it FIRST: the plugin's readFile
+# resolves relative to the process cwd, and Reaper changes its cwd when it loads the project, so a
+# relative path wouldn't resolve at construction.
 if [ -n "$AUTOLOAD" ]; then
     if [ ! -f "$AUTOLOAD" ]; then
         echo "error: autoload fixture not found: $AUTOLOAD" >&2
         exit 1
     fi
-    # Absolutize: the plugin's readFile resolves relative to the process cwd, and Reaper changes its
-    # cwd when it loads the project, so a relative autoload path wouldn't resolve at construction.
     export RETROPLUG_AUTOLOAD_PROJECT="$(realpath "$AUTOLOAD")"
 fi
 
-# Force isolation from any host X11 / Wayland forwarding the devcontainer
-# may be doing. Without this, GTK inside Reaper prefers WAYLAND_DISPLAY
-# and reaches the user's host desktop instead of our Xvfb.
-unset WAYLAND_DISPLAY
-unset REMOTE_CONTAINERS_DISPLAY_SOCK
-export GDK_BACKEND=x11
-
-DISP=199
-while [ -e "/tmp/.X${DISP}-lock" ]; do DISP=$((DISP + 1)); done
-export DISPLAY=":${DISP}"
-
-Xvfb "$DISPLAY" -screen 0 1280x720x24 -nolisten tcp >/dev/null 2>&1 &
-XVFB_PID=$!
-sleep 0.3
-# openbox needed because Reaper's EULA dialog (and many plugin UIs) only
-# accept keyboard focus via _NET_ACTIVE_WINDOW, which Xvfb alone lacks.
-openbox >/dev/null 2>&1 &
-WM_PID=$!
-sleep 0.2
-
-# The JACK dummy-device period == the block size Reaper's offline render hands the plugin's
-# run(frames,…) (empirically: every render block equals this period). Overridable so a timing
-# test can force large blocks (e.g. 8192) to make an intra-block MIDI offset resolvable.
-JACK_PERIOD="${REAPER_JACK_PERIOD:-1024}"
-jackd -d dummy -r 44100 -p "$JACK_PERIOD" >/tmp/reaper-jackd.log 2>&1 &
-JACK_PID=$!
-
-sleep 0.4
-
-cleanup() {
-    [ -n "${REAPER_PID:-}" ] && kill "$REAPER_PID" 2>/dev/null || true
-    [ -n "${DISMISS_PID:-}" ] && kill "$DISMISS_PID" 2>/dev/null || true
-    kill "$JACK_PID" 2>/dev/null || true
-    kill "$WM_PID" 2>/dev/null || true
-    kill "$XVFB_PID" 2>/dev/null || true
-    wait 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
+# One isolated headless Reaper stack. Default the tag to the project basename so a bare single run
+# is self-consistent, while the parallel suite passes a distinct RP_JOB_TAG per scenario.
+: "${RP_JOB_TAG:=$(basename "$PROJECT" .rpp)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/reaper-env.sh"
+reaper_env_up
 
 echo "reaper render: DISPLAY=$DISPLAY project=$PROJECT autoload=${AUTOLOAD:-(none)}"
-echo "  HOME=$HOME (.vst3 symlink: $HOME/.vst3/${VST3_NAME}.vst3)"
-echo "  config=$REAPER_CFG"
+echo "  HOME=$HOME  config=$REAPER_CFG"
 
 reaper -cfgfile "$REAPER_CFG/reaper.ini" \
        -nosplash \
        -renderproject "$PROJECT" \
-       >/tmp/reaper-render.log 2>&1 &
+       >"$RP_LOG_DIR/reaper-render.log" 2>&1 &
 REAPER_PID=$!
-
-# Background daemon: dismiss the EULA + About dialogs that Reaper opens
-# from a fresh config dir. Polls for the duration of the render.
-for _ in $(seq 1 60); do
-    sleep 0.5
-    EULA=$(xdotool search --name "EVALUATION LICENSE" 2>/dev/null | head -1 || true)
-    if [ -n "$EULA" ]; then
-        xdotool windowactivate --sync "$EULA" 2>/dev/null || true
-        sleep 0.2
-        xdotool key Tab Tab Tab space
-    fi
-    ABOUT=$(xdotool search --name "^About REAPER" 2>/dev/null | head -1 || true)
-    if [ -n "$ABOUT" ]; then
-        xdotool windowactivate --sync "$ABOUT" 2>/dev/null || true
-        sleep 0.2
-        xdotool key Escape
-    fi
-done &
-DISMISS_PID=$!
 
 wait "$REAPER_PID"
 RC=$?
 
 echo "reaper exited: $RC"
-echo "  log: /tmp/reaper-render.log"
+echo "  log: $RP_LOG_DIR/reaper-render.log"
 exit $RC
