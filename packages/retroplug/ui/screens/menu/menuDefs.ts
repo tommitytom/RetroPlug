@@ -31,6 +31,7 @@ import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import type { FileBrowserOpts } from "../../../src/backend";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty } from "./audioDraft";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -59,26 +60,23 @@ function isStandalone(): boolean {
   return (globalThis as { __rp_isStandalone?: boolean }).__rp_isStandalone === true;
 }
 
-// Standalone audio device config (the SDL host's live sample-rate / block-size, for the Audio submenu).
-// Native seam: __rp_getAudioConfig() -> { sampleRate, blockSize }; __rp_setAudioConfig(rate, block)
-// re-opens the device on the fly + persists. Absent in a DAW / the harness (submenu hidden).
+// Standalone audio device config (the SDL host's sample-rate / block-size, for the Audio submenu). The
+// cyclers edit a DRAFT (audioDraft.ts) — nothing is applied until the "Apply" row commits it via
+// __rp_setAudioConfig (re-open device + persist). Absent in a DAW / the harness (hasAudioConfig() false).
 const AUDIO_RATES = [22050, 32000, 44100, 48000];
 const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
-interface AudioCfg { sampleRate: number; blockSize: number; }
-function getAudioCfg(): AudioCfg | null {
-  const fn = (globalThis as { __rp_getAudioConfig?: () => AudioCfg }).__rp_getAudioConfig;
-  return typeof fn === "function" ? fn() : null;
-}
-function setAudioCfg(sampleRate: number, blockSize: number): void {
-  (globalThis as { __rp_setAudioConfig?: (r: number, b: number) => void }).__rp_setAudioConfig?.(sampleRate, blockSize);
-}
 function audioSettingsChildren(): MenuItem[] {
-  const cfg = getAudioCfg() ?? { sampleRate: 48000, blockSize: 2048 };
+  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048 };
   const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
   const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
+  const dirty = audioDraftDirty();
   return [
-    cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioCfg(AUDIO_RATES[n], cfg.blockSize)),
-    cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioCfg(cfg.sampleRate, AUDIO_BLOCKS[n])),
+    // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
+    cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
+    cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
+    sep("audio-sep-apply"),
+    // Commit the staged rate/block to the device. Greyed (inert) until there's a pending change to apply.
+    action("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
   ];
 }
 
@@ -519,7 +517,7 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
     submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
     // Audio device (sample rate / block size) — standalone only, where the SDL host exposes the seam.
-    ...(isStandalone() && getAudioCfg() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
+    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }

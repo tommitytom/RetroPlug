@@ -23,6 +23,7 @@ import { SystemGrid } from "./screens/grid/SystemGrid";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
+import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
@@ -45,6 +46,11 @@ export function App() {
 
   const [menuOpen, setMenuOpen] = useState(true);
   const [menuSystemId, setMenuSystemId] = useState<number | null>(null);
+  // Standalone Audio submenu: the draft (staged rate/block) lives outside any store, so subscribe here to
+  // force a rebuild when a cycler stages a value — otherwise the label wouldn't repaint until the next
+  // unrelated render. Inert in a DAW / the harness (nothing ever emits).
+  const [, bumpAudioDraft] = useState(0);
+  useEffect(() => subscribeAudioDraft(() => bumpAudioDraft((n) => n + 1)), []);
 
   const empty = systems.length === 0;
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.
