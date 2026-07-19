@@ -59,6 +59,29 @@ function isStandalone(): boolean {
   return (globalThis as { __rp_isStandalone?: boolean }).__rp_isStandalone === true;
 }
 
+// Standalone audio device config (the SDL host's live sample-rate / block-size, for the Audio submenu).
+// Native seam: __rp_getAudioConfig() -> { sampleRate, blockSize }; __rp_setAudioConfig(rate, block)
+// re-opens the device on the fly + persists. Absent in a DAW / the harness (submenu hidden).
+const AUDIO_RATES = [22050, 32000, 44100, 48000];
+const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
+interface AudioCfg { sampleRate: number; blockSize: number; }
+function getAudioCfg(): AudioCfg | null {
+  const fn = (globalThis as { __rp_getAudioConfig?: () => AudioCfg }).__rp_getAudioConfig;
+  return typeof fn === "function" ? fn() : null;
+}
+function setAudioCfg(sampleRate: number, blockSize: number): void {
+  (globalThis as { __rp_setAudioConfig?: (r: number, b: number) => void }).__rp_setAudioConfig?.(sampleRate, blockSize);
+}
+function audioSettingsChildren(): MenuItem[] {
+  const cfg = getAudioCfg() ?? { sampleRate: 48000, blockSize: 2048 };
+  const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
+  const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
+  return [
+    cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioCfg(AUDIO_RATES[n], cfg.blockSize)),
+    cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioCfg(cfg.sampleRate, AUDIO_BLOCKS[n])),
+  ];
+}
+
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
 const MIDI_ROUTING_NAMES = ["Send to All", "4 Ch / Inst", "1 Ch / Inst", "Ch -> Inst"];
 // Index 3 (ChannelSplit) fans one Game Boy's 4 channels across the 8 outputs; offered only for a
@@ -495,6 +518,8 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
     submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
     submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
+    // Audio device (sample rate / block size) — standalone only, where the SDL host exposes the seam.
+    ...(isStandalone() && getAudioCfg() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }

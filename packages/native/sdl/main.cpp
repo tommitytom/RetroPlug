@@ -146,7 +146,9 @@ struct AppState {
 
     // audio scratch (pre-sized to the device block, so the callback never allocates)
     std::vector<float> audioL, audioR;
-    double sampleRate = 48000.0;
+    double sampleRate = 48000.0;   // obtained device rate (drives the Engine)
+    int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block, persisted to audio.cfg
+    int    reqBlockSize  = 2048;
 
     // Present only when LVGL actually redrew: the flush cb unions the changed area here; the loop skips
     // the SDL texture upload + blit entirely on idle frames (a static menu → ~0% CPU instead of a full
@@ -156,6 +158,13 @@ struct AppState {
 };
 
 AppState* g_app = nullptr;  // single instance
+
+// Audio device (re)configuration — defined after audioCb (they reference it); declared here so the
+// __rp_setAudioConfig hook (bound earlier) can drive a live sample-rate / block-size change.
+bool openAudio(AppState& a);
+void reconfigureAudio(AppState& a, int sampleRate, int blockSize);
+void loadAudioConfig(AppState& a);
+void saveAudioConfig(AppState& a);
 
 // ---- LVGL glue (mirrors RenderCore's non-GL subset) -----------------------------------------------
 
@@ -452,6 +461,29 @@ JSValue jsOpenPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     return JS_UNDEFINED;
 }
 
+// __rp_getAudioConfig(): { sampleRate, blockSize } — the live standalone audio device config, for the
+// Audio settings submenu to display the current values.
+JSValue jsGetAudioConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    JSValue o = JS_NewObject(ctx);
+    if (g_app) {
+        JS_SetPropertyStr(ctx, o, "sampleRate", JS_NewInt32(ctx, g_app->reqSampleRate));
+        JS_SetPropertyStr(ctx, o, "blockSize",  JS_NewInt32(ctx, g_app->reqBlockSize));
+    }
+    return o;
+}
+
+// __rp_setAudioConfig(sampleRate, blockSize): re-open the audio device with new params on the fly (and
+// persist them). Reuses the deactivate→re-rate→reactivate handoff the plugin does for a host SR change.
+JSValue jsSetAudioConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (g_app && argc >= 2) {
+        int sr = 0, bs = 0;
+        JS_ToInt32(ctx, &sr, argv[0]);
+        JS_ToInt32(ctx, &bs, argv[1]);
+        if (sr > 0 && bs > 0) reconfigureAudio(*g_app, sr, bs);
+    }
+    return JS_UNDEFINED;
+}
+
 // __rp_openFileBrowser(title, patterns, saving, defaultName): open the native on-screen picker. The pick
 // arrives later via __rp_onFileBrowserResult (matches the plugin's DPF dialog seam).
 JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -476,6 +508,8 @@ void installWindowHooks(JSContext* ctx) {
     bind("__rp_setWindowTitle", jsSetWindowTitle, 1);
     bind("__rp_openPath", jsOpenPath, 1);
     bind("__rp_openFileBrowser", jsOpenFileBrowser, 4);
+    bind("__rp_getAudioConfig", jsGetAudioConfig, 0);
+    bind("__rp_setAudioConfig", jsSetAudioConfig, 2);
     // Mark this as a standalone host so the UI shows the "Exit" menu row (a DAW hides it).
     JS_SetPropertyStr(ctx, g, "__rp_isStandalone", JS_NewBool(ctx, 1));
     JS_FreeValue(ctx, g);
@@ -601,6 +635,65 @@ void audioCb(void* userdata, Uint8* stream, int len) {
     for (int i = 0; i < frames; ++i) { out[2 * i] = a->audioL[i]; out[2 * i + 1] = a->audioR[i]; }
 }
 
+// Open the SDL audio device at the requested rate/block + size the render scratch. No frequency-change
+// flag → the device opens at exactly reqSampleRate (PipeWire resamples), so the value the UI shows is
+// truthful. Returns false (and the app runs muted) if the device won't open.
+bool openAudio(AppState& a) {
+    SDL_AudioSpec want{}, have{};
+    want.freq = a.reqSampleRate;
+    want.format = AUDIO_F32SYS;
+    want.channels = 2;
+    want.samples = static_cast<Uint16>(a.reqBlockSize);
+    want.callback = audioCb;
+    want.userdata = &a;
+    a.audioDev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+    if (a.audioDev == 0) {
+        std::fprintf(stderr, "[retroplug-sdl] SDL_OpenAudioDevice(%d Hz, %d frames) failed: %s (muted)\n",
+                     a.reqSampleRate, a.reqBlockSize, SDL_GetError());
+        return false;
+    }
+    a.sampleRate = have.freq;
+    a.audioL.assign(have.samples, 0.0f);
+    a.audioR.assign(have.samples, 0.0f);
+    return true;
+}
+
+std::string audioCfgPath(AppState& a) { return a.hostSvc.configDir() + "/audio.cfg"; }
+
+void loadAudioConfig(AppState& a) {
+    if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "r")) {
+        int sr = 0, bs = 0;
+        if (std::fscanf(f, "%d %d", &sr, &bs) == 2 && sr > 0 && bs > 0) { a.reqSampleRate = sr; a.reqBlockSize = bs; }
+        std::fclose(f);
+    }
+}
+
+void saveAudioConfig(AppState& a) {
+    if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "w")) {
+        std::fprintf(f, "%d %d\n", a.reqSampleRate, a.reqBlockSize);
+        std::fclose(f);
+    }
+}
+
+// Live audio reconfigure (the Audio settings submenu): stop the device, take the Engine back from the
+// audio thread, re-rate it, re-open at the new rate/block, hand it back — the plugin's deactivate →
+// setSampleRate → activate handoff. Then persist. Called on the UI thread.
+void reconfigureAudio(AppState& a, int sampleRate, int blockSize) {
+    if (sampleRate == a.reqSampleRate && blockSize == a.reqBlockSize && a.audioDev) return; // no-op
+    if (a.audioDev) { SDL_PauseAudioDevice(a.audioDev, 1); SDL_CloseAudioDevice(a.audioDev); a.audioDev = 0; }
+    a.invoker.setAudioThreadOwns(false);
+    a.invoker.drainInto(a.engine);
+    a.reqSampleRate = sampleRate;
+    a.reqBlockSize  = blockSize;
+    a.engine.setSampleRate(sampleRate); // re-rate live cores (safe — audio thread stopped)
+    if (openAudio(a)) {
+        a.invoker.setAudioThreadOwns(true);
+        SDL_PauseAudioDevice(a.audioDev, 0);
+    }
+    saveAudioConfig(a);
+    std::fprintf(stderr, "[retroplug-sdl] audio reconfigured: %d Hz, %d frames\n", a.reqSampleRate, a.reqBlockSize);
+}
+
 // ---- screenshot (headless proof) ------------------------------------------------------------------
 // Dump the display's composited draw buffer (the exact frame presented, including top-layer overlays
 // like the file browser) so a headless run (SDL_VIDEODRIVER=offscreen) can screenshot for a test.
@@ -715,23 +808,11 @@ bool setupSdl(AppState& a) {
                                   a.width, a.height);
     if (!a.texture) { std::fprintf(stderr, "[retroplug-sdl] SDL_CreateTexture failed: %s\n", SDL_GetError()); return false; }
 
-    // Audio: open before boot so the obtained rate seeds the Engine. The dummy driver (headless) still
-    // fires the callback, so the emulator advances even with no device.
-    SDL_AudioSpec want{}, have{};
-    want.freq = static_cast<int>(a.sampleRate);
-    want.format = AUDIO_F32SYS;
-    want.channels = 2;
-    want.samples = 2048; // ~43ms at 48k — headroom so UI-thread jitter doesn't underrun ALSA
-    want.callback = audioCb;
-    want.userdata = &a;
-    a.audioDev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
-    if (a.audioDev == 0) {
-        std::fprintf(stderr, "[retroplug-sdl] SDL_OpenAudioDevice failed: %s (continuing muted)\n", SDL_GetError());
-    } else {
-        a.sampleRate = have.freq;
-        a.audioL.assign(have.samples, 0.0f);
-        a.audioR.assign(have.samples, 0.0f);
-    }
+    // Audio: apply any persisted rate/block (the Audio settings submenu) then open before boot so the
+    // obtained rate seeds the Engine. The dummy driver (headless) still fires the callback, so the
+    // emulator advances even with no device.
+    loadAudioConfig(a);
+    openAudio(a);
     return true;
 }
 
@@ -829,6 +910,13 @@ int main(int argc, char** argv) {
     if (app.audioDev) SDL_PauseAudioDevice(app.audioDev, 0);
 
     std::fprintf(stderr, "[retroplug-sdl] running %ux%u @ %.0f Hz\n", app.width, app.height, app.sampleRate);
+
+    // Test hook: exercise a live audio reconfigure (device close/reopen + engine re-rate) headlessly.
+    if (std::getenv("RETROPLUG_SDL_TEST_RECONFIG")) {
+        reconfigureAudio(app, 44100, 512);
+        std::fprintf(stderr, "[retroplug-sdl] post-reconfigure: %d Hz, %d frames, dev=%u\n",
+                     app.reqSampleRate, app.reqBlockSize, app.audioDev);
+    }
 
     // Test hook: open the native file browser at a given dir (headless screenshot verification).
     if (const char* td = std::getenv("RETROPLUG_SDL_TEST_BROWSER")) {
