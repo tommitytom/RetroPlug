@@ -31,6 +31,8 @@ import { LsdjRom, decodeLsdpal, encodeLsdpal, KIT_COUNT } from "../../../src/lsd
 import { listProjects, decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
 import { loadSongToWorking, deleteSongInSav, replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
 import { importSongFiles } from "../../../src/lsdjSongImport";
+import { listSongs } from "../../../src/risaSav";
+import { deleteSongInSav, moveSongInSav } from "../../../src/risaSongOps";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 import type { HostBackend } from "../../../src/backend";
@@ -605,6 +607,52 @@ function lsdjSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
   return submenu("lsdj-songs", "Songs", [action("lsdj-song-add", "Add...", () => addSongFromDisk(ctx, sys)), sep("lsdj-song-add-sep"), ...rows]);
 }
 
+// --- risa Songs submenu (the RSAV catalog's saved songs) -------------------------------------------
+// Like LSDj Songs, risa songs are the BATTERY, not a ROM override: edits act on the live SRAM via
+// mutateSavBytes (readSram → byte-level catalog op → writeFileAtomic → loadSram cold-boot). Records are
+// opaque blobs (risaSongOps). M2 offers Delete + reorder; Load (needs the song-payload codec) and
+// Export/Replace/Add (need the kit-aware .risong format) come with later milestones.
+function tryOp(fn: () => Uint8Array): Uint8Array | null {
+  try {
+    return fn();
+  } catch {
+    return null; // out of range / malformed → leave the sav untouched
+  }
+}
+
+function risaSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
+  const bytes = ctx.stores.project.systems.readSram(sys.id);
+  const songs = bytes ? listSongs(bytes) : [];
+  const last = songs.length - 1;
+  const rows: MenuItem[] = songs.map((s, i) =>
+    submenu(`risa-song-${s.index}`, `[${s.index}] ${s.name || `Song ${s.index}`}`, [
+      action(`risa-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveSongInSav(sav, s.index, s.index - 1))), i === 0),
+      action(`risa-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveSongInSav(sav, s.index, s.index + 1))), i === last),
+      {
+        id: `risa-song-${s.index}-delete`,
+        label: "Delete",
+        kind: "prompt" as const,
+        keepOpen: true,
+        prompt: {
+          title: `Delete song "${s.name || `Song ${s.index}`}"?`,
+          hint: "Enter to delete  |  Esc to cancel",
+          confirm: true,
+          onConfirm: () => {
+            mutateSavBytes(ctx, sys, (sav) => tryOp(() => deleteSongInSav(sav, s.index)));
+            return null;
+          },
+        },
+      },
+    ]),
+  );
+  return submenu("risa-songs", "Songs", rows.length ? rows : [action("risa-song-none", "(no saved songs)", () => {}, true)]);
+}
+
+function risaChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
+  // M3 will add Kits / Themes / Fonts asset submenus here (mirroring lsdjAssetMenus).
+  return [risaSongMenu(ctx, sys)];
+}
+
 function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unknown>): MenuItem[] {
   const systems = ctx.stores.project.systems;
   const mode = typeof cfg.mode === "string" ? (cfg.mode as LsdjSyncMode) : "midiSync";
@@ -856,6 +904,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const systems = ctx.stores.project.systems;
   const multi = ctx.systems.length > 1; // Replace / Remove / Link Group are peer-only rows
   const lsdj = sys.roles.find((r) => r.kind === "lsdj-sync"); // present iff the ROM sniffed as LSDj
+  const risa = sys.roles.find((r) => r.kind === "risa"); // present iff the ROM sniffed as risa
   return {
     title: instanceTitle(ctx, sys),
     items: [
@@ -891,6 +940,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       sep("inst-sep1"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       ...(lsdj ? [submenu("inst-lsdj", "LSDj", lsdjChildren(ctx, sys, lsdj.config))] : []),
+      ...(risa ? [submenu("inst-risa", "risa", risaChildren(ctx, sys))] : []),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
       // Deferred: About panel.

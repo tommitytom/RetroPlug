@@ -75,6 +75,15 @@ export function nesRomBattery(): Uint8Array {
   return b;
 }
 
+/** A minimal ROM carrying the real risa 2.2.1 iNES 2.0 header fingerprint (NES 2.0, mapper 5 / MMC5,
+ *  battery, 512 KB PRG, 32 KB CHR, 64 KB PRG-NVRAM) so the risa ROM provider attaches the `risa` role.
+ *  Detection reads only the header; the body is padding (the mock ignores it). */
+export function risaRom(): Uint8Array {
+  const b = new Uint8Array(0x200); // >= ROLE_HEADER_LEN so the provider sees a full header prefix
+  b.set([0x4e, 0x45, 0x53, 0x1a, 0x20, 0x04, 0x53, 0x08, 0x00, 0x00, 0xa0], 0);
+  return b;
+}
+
 /** A present-but-not-a-ROM buffer (classifies "unknown"). */
 export function garbage(): Uint8Array {
   return new Uint8Array(0x8000); // all zero
