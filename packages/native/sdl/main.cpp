@@ -615,6 +615,16 @@ void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels) 
 // like the file browser) so a headless run (SDL_VIDEODRIVER=offscreen) can screenshot for a test.
 bool writeScreenshot(AppState& a, const std::string& path);
 
+// True if the rendered frame is a single flat colour (nothing drew) — the CI smoke's "the UI actually
+// rendered, not just booted" gate. Compares the draw buffer as 32-bit pixels against the first.
+bool frameIsBlank(const AppState& a) {
+    if (a.drawBuf.size() < 8) return true;
+    const auto* px = reinterpret_cast<const std::uint32_t*>(a.drawBuf.data());
+    const std::size_t n = a.drawBuf.size() / 4;
+    for (std::size_t i = 1; i < n; ++i) if (px[i] != px[0]) return false;
+    return true;
+}
+
 // ---- boot ------------------------------------------------------------------------------------------
 
 bool bootControlPlane(AppState& a) {
@@ -930,6 +940,8 @@ int main(int argc, char** argv) {
     }
 
     // --- the 60 fps loop: input → JS frame → LVGL render → present ---
+    const bool requireNonBlank = std::getenv("RETROPLUG_SDL_REQUIRE_NONBLANK") != nullptr;
+    bool nonBlankFail = false;
     long frame = 0;
     while (app.running) {
         const Uint32 t0 = SDL_GetTicks();
@@ -943,8 +955,13 @@ int main(int argc, char** argv) {
         lv_timer_handler();     // LVGL indev read + layout + render into drawBuf
         present(app);
 
-        if (!screenshotPath.empty() && exitAfterFrames > 0 && frame + 1 == exitAfterFrames)
-            writeScreenshot(app, screenshotPath);
+        if (exitAfterFrames > 0 && frame + 1 == exitAfterFrames) { // last frame: screenshot + non-blank gate
+            if (!screenshotPath.empty()) writeScreenshot(app, screenshotPath);
+            if (requireNonBlank && frameIsBlank(app)) {
+                nonBlankFail = true;
+                std::fprintf(stderr, "[retroplug-sdl] non-blank check FAILED: frame is flat (UI did not render)\n");
+            }
+        }
         if (exitAfterFrames > 0 && ++frame >= exitAfterFrames) app.running = false;
 
         const Uint32 dt = SDL_GetTicks() - t0;
@@ -973,7 +990,7 @@ int main(int argc, char** argv) {
     if (app.window) SDL_DestroyWindow(app.window);
     SDL_Quit();
     g_app = nullptr;
-    return 0;
+    return nonBlankFail ? 2 : 0; // exit 2 = the RETROPLUG_SDL_REQUIRE_NONBLANK gate failed (blank UI)
 }
 
 namespace {
