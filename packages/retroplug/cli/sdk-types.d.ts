@@ -127,6 +127,61 @@ export interface DebugEvent {
   cycle: number;
 }
 
+// ─── Debugger + profiler types (breakpoints / stepping / trace / profiling / disassembly). ──────────────
+
+/** A breakpoint to install via `setBreakpoints`. `type` is "execute" (break when PC enters `[start,end]`)
+ *  / "read" / "write" (break on a CPU access to the range). `end` defaults to `start`; `condition` is an
+ *  optional Mesen expression (e.g. "Y == 0"), empty for unconditional. */
+export interface Breakpoint {
+  type: "execute" | "read" | "write";
+  start: number;
+  end?: number;
+  condition?: string;
+}
+
+/** Result of a step (`stepInto`/`stepOver`/`stepOut`) or `runUntilBreak`. `broke` is false when nothing
+ *  fired (no debug target / cycle cap); `pc` is the triggering / new PC; `breakpointId` is the hit
+ *  breakpoint index, or -1 for a step / the cap. */
+export interface BreakInfo {
+  broke: boolean;
+  pc: number;
+  breakpointId: number;
+}
+
+/** One row of the execution trace (`readTrace`, most-recent first). `pc` is the instruction address;
+ *  `text` is the disassembly + register state Mesen logged for it. */
+export interface TraceLine {
+  pc: number;
+  text: string;
+}
+
+/** One function's profiler sample (`readProfile`). `address` is the ROM offset; `label` is the resolved
+ *  symbol (empty until `loadLabels`). `exclusiveCycles` is time in the function itself (the bottleneck
+ *  signal); `inclusiveCycles` counts callees too. */
+export interface ProfiledFunction {
+  address: number;
+  label: string;
+  exclusiveCycles: number;
+  inclusiveCycles: number;
+  callCount: number;
+  minCycles: number;
+  maxCycles: number;
+}
+
+/** One disassembled instruction (`disassemble`). `text` is the mnemonic + operands (symbol-resolved once
+ *  labels load); `bytes` is the machine bytes as hex. */
+export interface DisasmLine {
+  address: number;
+  text: string;
+  bytes: string;
+}
+
+/** One call-stack frame (`getCallStack`, outermost first). `label` is empty until `loadLabels`. */
+export interface CallFrame {
+  address: number;
+  label: string;
+}
+
 // ─── The backend: live-core reads + file I/O a ROM test uses (the full Backend has more; this is the
 //     ROM-testing subset). All reads are valid on the control thread with the audio thread NOT started. ──
 
@@ -147,10 +202,39 @@ export interface Backend {
   /** Read a whole memory region (region selector mirrors native `rp::MemoryType`). */
   readMemory(id: number, region: number): Uint8Array | null;
   getCpuRegisters(id: number): CpuRegister[];
-  /** APU/PPU register-write + event log for the last frame. */
+  /** Set a single 6502 register (a/x/y/sp/ps/pc) by name. */
+  setCpuRegister(id: number, name: string, value: number): boolean;
+  /** APU/PPU/mapper register-write + event log for the last frame (frame-scoped). */
   drainEvents(id: number): DebugEvent[];
-  /** Load a cc65 `.dbg` symbol file for named profiling / breakpoints / disassembly. */
+  /** Load a cc65 `.dbg` symbol file so profiling / breakpoints / disassembly / call stack show names. */
   loadLabels(id: number, path: string): boolean;
+
+  // ── Debugger: breakpoints, stepping, trace, disassembly, call stack (NES-only) ──
+  /** Run one 6502 instruction; returns the cycles it took. */
+  stepInstruction(id: number): number;
+  /** Install breakpoints (replaces any existing; empty array clears). Drive with runUntilBreak, not runMs. */
+  setBreakpoints(id: number, breakpoints: Breakpoint[]): boolean;
+  /** Step the CPU until a breakpoint fires or `maxCycles` elapses. */
+  runUntilBreak(id: number, maxCycles: number): BreakInfo;
+  /** Run until PC reaches `target` (or `maxCycles`) — a one-shot execute breakpoint. */
+  runUntilPc(id: number, target: number, maxCycles: number): boolean;
+  /** Source-level stepping. */
+  stepInto(id: number): BreakInfo;
+  stepOver(id: number): BreakInfo;
+  stepOut(id: number): BreakInfo;
+  /** Toggle the execution trace logger; read the captured rows with readTrace. */
+  setTrace(id: number, on: boolean): boolean;
+  readTrace(id: number, count: number): TraceLine[];
+  /** Disassemble `count` instructions from `addr` (symbol-resolved once labels load). */
+  disassemble(id: number, addr: number, count: number): DisasmLine[];
+  /** The current call stack (outermost first). */
+  getCallStack(id: number): CallFrame[];
+
+  // ── Profiler: per-function cycle counts (load labels first for names) ──
+  /** Start/reset function-level profiling. */
+  beginProfile(id: number): boolean;
+  /** Read the accumulated per-function samples (exclusive/inclusive cycles, call counts). */
+  readProfile(id: number): ProfiledFunction[];
 }
 
 // ─── Loading systems (Session.project.systems). ───────────────────────────────────────────────────────

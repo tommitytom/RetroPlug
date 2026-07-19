@@ -32,4 +32,11 @@ export type {
   PpuState,
   CpuRegister,
   DebugEvent,
+  // Debugger + profiler (breakpoints / stepping / trace / disassembly / call stack / profiling).
+  Breakpoint,
+  BreakInfo,
+  TraceLine,
+  ProfiledFunction,
+  DisasmLine,
+  CallFrame,
 } from "../src/backend";
