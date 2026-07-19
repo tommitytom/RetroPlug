@@ -109,6 +109,11 @@ struct AppState {
     lv_point_t mousePos{0, 0};
     bool       mouseDown = false;
 
+    // A desktop file drag-and-drop in progress: SDL delivers one SDL_DROPFILE per file between
+    // SDL_DROPBEGIN and SDL_DROPCOMPLETE, so we accumulate the paths here and emit one newline-joined
+    // "file-drop" on complete (matching PluginUI::uiFileDropped — resolveDropAction needs ROM+.sav together).
+    std::vector<std::string> dropBatch;
+
     // --- SDL shell ---
     SDL_Window*   window = nullptr;
     SDL_Renderer* renderer = nullptr;
@@ -662,6 +667,26 @@ void handleEvents(AppState& a) {
     while (SDL_PollEvent(&ev)) {
         switch (ev.type) {
             case SDL_QUIT: a.running = false; break;
+            // Desktop drag-and-drop → the "file-drop" JS bus (mirrors PluginUI::uiFileDropped). SDL2's
+            // SDL_DropEvent carries no coordinates (the x/y fields are SDL3-only) and one path per event, so
+            // we batch across begin→complete and read the cursor ourselves for the tile hit-test.
+            case SDL_DROPBEGIN: a.dropBatch.clear(); break;
+            case SDL_DROPFILE:
+                if (ev.drop.file) { a.dropBatch.emplace_back(ev.drop.file); SDL_free(ev.drop.file); }
+                break;
+            case SDL_DROPCOMPLETE:
+                if (JSContext* ctx = a.ui.getContext(); ctx && !a.dropBatch.empty()) {
+                    std::string joined;
+                    for (const std::string& p : a.dropBatch) { if (!joined.empty()) joined += '\n'; joined += p; }
+                    int mx = 0, my = 0;
+                    SDL_GetMouseState(&mx, &my); // window-pixel space — the coords hitTestTile expects (best-effort)
+                    JSValue args[3] = {JS_NewString(ctx, joined.c_str()),
+                                       JS_NewFloat64(ctx, mx), JS_NewFloat64(ctx, my)};
+                    a.ui.emit("file-drop", 3, args);
+                    for (JSValue& v : args) JS_FreeValue(ctx, v);
+                }
+                a.dropBatch.clear();
+                break;
             case SDL_KEYDOWN:
             case SDL_KEYUP: {
                 std::uint32_t lv, dpf;

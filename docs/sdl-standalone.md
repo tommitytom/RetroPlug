@@ -55,11 +55,15 @@ Design:
 [PluginDSP.cpp:178-186](../packages/native/plugin/PluginDSP.cpp#L178)). Hardware-verified: LSDj Master-Sync
 clock (`0xF8`) reaches `aseqdump`. `RETROPLUG_MIDI_LOG` dumps in + out bytes.
 
-### P3 — File drag-and-drop
-No `SDL_DROPFILE` handling. The file browser covers loading, but desktop drop (ROM/.sav/project → the App's
-`file-drop` channel: load / cold-boot-replace a tile / pair a `.sav`) is absent. → `SDL_DROPFILE` →
-`jsEngine.emit("file-drop", paths + x/y)`, mirror [PluginUI.cpp:389-398](../packages/native/plugin/PluginUI.cpp#L389).
-Trivial.
+### P3 — File drag-and-drop — ✅ DONE
+`handleEvents` translates SDL's drag-and-drop onto the App's `file-drop` channel (load / cold-boot-replace a
+tile / pair a `.sav`), mirroring [PluginUI.cpp:392-400](../packages/native/plugin/PluginUI.cpp#L392). SDL2's
+`SDL_DropEvent` carries no coordinates (`x`/`y` are SDL3-only) and one path per event, so the host batches
+`SDL_DROPFILE`s across `SDL_DROPBEGIN`→`SDL_DROPCOMPLETE` into one newline-joined string (so a ROM+`.sav` pair
+arrives together) and reads the cursor via `SDL_GetMouseState` for the tile hit-test (best-effort — the WM may
+not feed SDL a `MOUSEMOTION` during an external drag; a stale/missed coord just falls back to the focused tile).
+Desktop-only — the muOS handheld has no file manager. The JS routing (`resolveDropAction` + `hitTestTile`) is
+unchanged and already covered by `test-ui/file-drop.test.ts`.
 
 ### P4 — Host transport / tempo
 Hardcoded `setBpm(120)` / `setTransport(true)` ([main.cpp:630](../packages/native/sdl/main.cpp#L630)). No
