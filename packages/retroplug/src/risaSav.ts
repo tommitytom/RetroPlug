@@ -6,6 +6,12 @@ export {
   normalizeSaveContainer,
   chooseCatalogLayout,
   decodeSongName,
+  // write side (byte-level catalog ops)
+  writeRecord,
+  deleteRecord,
+  moveRecord,
+  recordBytesAt,
+  makeEmptySave,
   kSaveSize,
   CURRENT_LAYOUT,
   LEGACY_LAYOUT,

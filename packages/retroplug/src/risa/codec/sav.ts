@@ -49,6 +49,11 @@ function readU16(bytes: Uint8Array, off: number): number {
   return bytes[off] | (bytes[off + 1] << 8);
 }
 
+function writeU16(bytes: Uint8Array, off: number, value: number): void {
+  bytes[off] = value & 0xff;
+  bytes[off + 1] = (value >> 8) & 0xff;
+}
+
 /** Decode an 8-byte song name: ASCII up to the first NUL, right-trimmed; empty -> "UNTITLED".
  *  (record_codec.js decodeName / encodeName space-pad with 0x20.) */
 export function decodeSongName(bytes: Uint8Array): string {
@@ -154,4 +159,113 @@ export function listSongs(rawSave: Uint8Array): RisaSongInfo[] {
   } catch {
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Write side — byte-level catalog record ops. Faithful ports of risa's own
+// tools/rom_patcher save_manager/catalog.js {writeRecord,deleteRecord,moveRecord,makeEmptySave}.
+// All mutate a normalized 64 KB image in place for a given layout; the record chain stays tightly
+// packed (record[i+1] starts where record[i] ends) and the header count/used stay in sync. The
+// higher-level, container-aware, clone-and-return wrappers live in ../../risaSongOps.ts.
+// ---------------------------------------------------------------------------
+
+/** The raw bytes of each record in `layout`'s catalog, in walk order. */
+function catalogRecordBytes(save: Uint8Array, layout: CatalogLayout): Uint8Array[] {
+  const cat = parseCatalog(save, layout);
+  const out: Uint8Array[] = [];
+  let off = kSaveHeaderSize;
+  for (const rec of cat.records) {
+    const start = layout.offset + off;
+    out.push(save.slice(start, start + rec.length));
+    off += rec.length;
+  }
+  return out;
+}
+
+/** Raw bytes of the record at `index` (a whole record incl. its 16-byte header), or null if the slot
+ *  is out of range. Used by export + reorder. */
+export function recordBytesAt(save: Uint8Array, layout: CatalogLayout, index: number): Uint8Array | null {
+  const records = catalogRecordBytes(save, layout);
+  return index >= 0 && index < records.length ? records[index] : null;
+}
+
+/** Insert (index === count) or overwrite (index < count) a record at `index`. `record` must carry its
+ *  own length header (u16 @0 === record.length). Throws on a bad record, out-of-range index, a full
+ *  (255-song) catalog, or insufficient free space. */
+export function writeRecord(save: Uint8Array, index: number, record: Uint8Array, layout: CatalogLayout): void {
+  if (record.length < kRecHeader) throw new Error("Song record is too short");
+  if (readU16(record, 0) !== record.length) throw new Error("Song record length header does not match payload");
+
+  const cat = parseCatalog(save, layout);
+  if (index < 0 || index > cat.count) throw new Error("Song slot index is out of range");
+
+  const oldLen = index < cat.count ? cat.records[index].length : 0;
+  if (oldLen === 0 && cat.count === 0xff) throw new Error("RSAV catalog already contains 255 songs");
+  const newUsed = cat.used - oldLen + record.length;
+  if (newUsed > layout.size - kSaveHeaderSize) throw new Error("Not enough free .sav catalog space");
+
+  const usedStart = layout.offset + kSaveHeaderSize;
+  // Absolute offset of the slot being written: the existing record's start, or just past all records.
+  let insertOff = usedStart + cat.used;
+  if (index < cat.count) {
+    let acc = 0;
+    for (let i = 0; i < index; i++) acc += cat.records[i].length;
+    insertOff = usedStart + acc;
+  }
+  const tail = save.slice(insertOff + oldLen, usedStart + cat.used);
+  save.set(tail, insertOff + record.length);
+  save.set(record, insertOff);
+  save.fill(0, usedStart + newUsed, usedStart + cat.used);
+  writeU16(save, layout.offset + 6, newUsed);
+  if (oldLen === 0) save[layout.offset + 5] = cat.count + 1;
+}
+
+/** Remove the record at `index`, compacting the records after it. Throws if `index` is out of range. */
+export function deleteRecord(save: Uint8Array, index: number, layout: CatalogLayout): void {
+  const cat = parseCatalog(save, layout);
+  if (index < 0 || index >= cat.count) throw new Error("Song slot index is out of range");
+  const usedStart = layout.offset + kSaveHeaderSize;
+  let acc = 0;
+  for (let i = 0; i < index; i++) acc += cat.records[i].length;
+  const recStart = usedStart + acc;
+  const len = cat.records[index].length;
+  const tail = save.slice(recStart + len, usedStart + cat.used);
+  save.set(tail, recStart);
+  const newUsed = cat.used - len;
+  save.fill(0, usedStart + newUsed, usedStart + cat.used);
+  writeU16(save, layout.offset + 6, newUsed);
+  save[layout.offset + 5] = cat.count - 1;
+}
+
+/** Reorder: move the record at `fromIndex` to `toIndex`, re-packing the chain. No-op (returns false)
+ *  when the indices are equal; throws if either index is out of range (leaving `save` untouched). */
+export function moveRecord(save: Uint8Array, fromIndex: number, toIndex: number, layout: CatalogLayout): boolean {
+  const cat = parseCatalog(save, layout);
+  if (!Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex >= cat.count) {
+    throw new Error("Source song slot index is out of range");
+  }
+  if (!Number.isInteger(toIndex) || toIndex < 0 || toIndex >= cat.count) {
+    throw new Error("Target song slot index is out of range");
+  }
+  if (fromIndex === toIndex) return false;
+
+  const records = catalogRecordBytes(save, layout);
+  const [moved] = records.splice(fromIndex, 1);
+  records.splice(toIndex, 0, moved);
+
+  let off = layout.offset + kSaveHeaderSize;
+  for (const bytes of records) {
+    save.set(bytes, off);
+    off += bytes.length;
+  }
+  return true;
+}
+
+/** A blank 64 KB battery with an empty current (v2) RSAV catalog at 0x8000. */
+export function makeEmptySave(): Uint8Array {
+  const bytes = new Uint8Array(kSaveSize);
+  const r = CURRENT_LAYOUT.offset;
+  bytes.set(RSAV_MAGIC, r);
+  bytes[r + 4] = CURRENT_LAYOUT.version;
+  return bytes;
 }
