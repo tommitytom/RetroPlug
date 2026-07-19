@@ -5,7 +5,7 @@
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SongSettings } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
 
@@ -13,18 +13,17 @@ const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
 const START = 7; // GameboyButton::Start
 
 // Identical song to lsdj-sync-pattern; only syncMode differs.
-const songSav = (sync: string) => savFromJson(JSON.stringify({
+const songSav = (sync: SongSettings["syncMode"]) => savFrom({
   workingSong: {
-    formatVersion: 22,
     settings: { syncMode: sync },
     rows: [{ chains: [0] }],
     chains: [{ phrases: [0] }],
     phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 }, vibrato: { direction: "Up" }, sweep: 127 }],
   },
-}));
+});
 
-const construct = (be: ReturnType<typeof createRealBackend>, id: number, sync: string) =>
+const construct = (be: ReturnType<typeof createRealBackend>, id: number, sync: SongSettings["syncMode"]) =>
   be.constructSystem({
     romPath: LSDJ, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: songSav(sync),

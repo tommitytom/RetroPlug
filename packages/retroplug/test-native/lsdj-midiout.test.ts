@@ -12,7 +12,7 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -24,7 +24,7 @@ const MIDIOUT = "midiOut"; // LsdjSyncMode / lsdj-sync role mode
 // A phrase of eight rows, each an audible note plus an `N` (NoteOn) command whose value is the MIDI note
 // to transmit — that command is what drives the MI.OUT NoteOn protocol. SYNC=MI.OUT so LSDj emits the
 // Arduinoboy stream (clock + START on play, NoteOns from the N commands).
-const MIDIOUT_SONG = JSON.stringify({
+const MIDIOUT_SONG: SavInput = {
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "MidiOut" },
@@ -40,7 +40,7 @@ const MIDIOUT_SONG = JSON.stringify({
     ],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } }],
   },
-});
+};
 
 const sysStruct = (id: number, mode: string) => ({
   project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
@@ -68,7 +68,7 @@ test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI the ker
     embeddedRom: "",
     savPath: null,
     statePath: null,
-    sramBytes: savFromJson(MIDIOUT_SONG),
+    sramBytes: savFrom(MIDIOUT_SONG),
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();

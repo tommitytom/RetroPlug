@@ -51,6 +51,7 @@ public:
         input.offset     = spec_->offset;
         input.length     = spec_->length;
         input.effects    = spec_->effects;
+        input.rotate     = spec_->rotate;
         *out_ = KitUtil::compileSample(input);
     }
 

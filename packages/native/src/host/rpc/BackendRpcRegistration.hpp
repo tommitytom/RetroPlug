@@ -11,7 +11,7 @@
 #include "host/rpc/EngineRpcService.hpp"
 #include "host/rpc/HostRpcService.hpp"
 
-// --- host: filesystem / config / codec (17) ---
+// --- host: filesystem / config / codec (19) ---
 template <class Server>
 void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::readFile>(h);
@@ -31,6 +31,8 @@ void registerHostRpc(Server& s, HostRpcService& h) {
     s.template addMethod<&HostRpcService::version>(h);
     s.template addMethod<&HostRpcService::zip>(h);
     s.template addMethod<&HostRpcService::unzip>(h);
+    s.template addMethod<&HostRpcService::pngEncode>(h);
+    s.template addMethod<&HostRpcService::pngDecode>(h);
 }
 
 // --- emulator: lifecycle / snapshot reads / live config / input (11) ---
@@ -42,6 +44,7 @@ void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::applyRoleConfig>(e);
     s.template addMethod<&EngineRpcService::readState>(e);
     s.template addMethod<&EngineRpcService::readSram>(e);
+    s.template addMethod<&EngineRpcService::readRam>(e);
     s.template addMethod<&EngineRpcService::screenshot>(e);
     s.template addMethod<&EngineRpcService::getFrame>(e);
     s.template addMethod<&EngineRpcService::pressButton>(e);
@@ -57,12 +60,13 @@ void registerDspKernelRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::dspSetSystems>(e);
 }
 
-// --- harness: audio render / transport / MIDI + DSP profiling (15; CLI + tests only) ---
+// --- harness: audio render / transport / MIDI + DSP profiling + kit compile (16; CLI + tests only) ---
 template <class Server>
 void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::renderAudio>(e);
     s.template addMethod<&EngineRpcService::renderAudioPerSystem>(e);
     s.template addMethod<&EngineRpcService::renderAudioPerChannel>(e);
+    s.template addMethod<&EngineRpcService::compileKit>(e);
     s.template addMethod<&EngineRpcService::sampleRate>(e);
     s.template addMethod<&EngineRpcService::setSampleRate>(e);
     s.template addMethod<&EngineRpcService::setTransport>(e);
@@ -115,7 +119,7 @@ void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
     s.template addMethod<&AudioDriverRpcService::drainReleased>(d);
 }
 
-// The full union (70 methods) + discovery — every facet mounted. Hosts that expose the whole surface
+// The full union (72 methods) + discovery — every facet mounted. Hosts that expose the whole surface
 // (the CLI + test host) use this; scoped hosts call the individual register functions they're allowed to.
 template <class Server>
 void registerAllBackendRpc(Server& s, HostRpcService& host, EngineRpcService& engine,

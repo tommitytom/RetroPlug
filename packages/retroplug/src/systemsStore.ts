@@ -274,7 +274,9 @@ export class SystemsStore {
     const override = savPathOverride ?? src.savPath;
     const systemRole = src.roles.find((r) => r.kind === src.core);
     const newId = allocSystemId();
-    const ok = this.backend.constructSystem({
+    // Route through the load-time role hooks too, so a reload re-applies e.g. LSDj asset overrides
+    // (the patched effective ROM) — not just the fresh-load path.
+    const spec = this.applyConstructHooks({
       romPath: src.romPath,
       platform: src.platform,
       core: src.core,
@@ -285,7 +287,8 @@ export class SystemsStore {
       stateBytes: seed.stateBytes,
       replaceId: id,
       settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
-    }, newId);
+    }, src.roles);
+    const ok = this.backend.constructSystem(spec, newId);
     if (!ok) return null;
     this.entries = replaceById(this.entries, id, { ...src, id: newId, savPath: override });
     if (this.focusedId === id) this.focusedId = newId;
@@ -299,6 +302,12 @@ export class SystemsStore {
     const bytes = this.backend.readState(id);
     if (!bytes) return false;
     return this.backend.writeFileAtomic(path, bytes);
+  }
+
+  /** Read system `id`'s live battery SRAM (race-free snapshot). Null when nothing is published. Exposes the
+   *  emulator-facet read to callers holding only the store (e.g. the LSDj Songs menu decoding the sav). */
+  readSram(id: number): Uint8Array | null {
+    return this.backend.readSram(id);
   }
 
   /** Dump system `id`'s battery SRAM to `path`. False when the id has no SRAM published, or the write fails. */
@@ -606,7 +615,7 @@ export class SystemsStore {
     let s = spec;
     for (const r of roles) {
       const rt = this.registry.roleType(r.kind);
-      if (rt?.onConstruct) s = rt.onConstruct(s, this.backend);
+      if (rt?.onConstruct) s = rt.onConstruct(s, this.backend, r.config);
     }
     return s;
   }

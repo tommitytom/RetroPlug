@@ -27,6 +27,13 @@ import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsSto
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
 import { stem } from "../../../src/pathUtil";
+import { LsdjRom, decodeLsdpal, encodeLsdpal, KIT_COUNT } from "../../../src/lsdj/rom";
+import { listProjects, decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
+import { loadSongToWorking, deleteSongInSav, replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
+import { importSongFiles } from "../../../src/lsdjSongImport";
+import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
+import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
+import type { HostBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
@@ -300,6 +307,304 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
 /** The LSDj sync submenu — Mode + Tempo Divisor + Auto Start cyclers. Shown only for a system carrying an lsdj-sync
  *  role (a sniffed LSDj cart). Both edits re-push the DSP kernel structure (setRoleConfig → markDirty →
  *  syncDspFromStore), so they apply to the running behaviour on the next block — no dedicated RPC. */
+// --- LSDj asset submenus (Kits / Fonts / Palettes: export or non-destructively replace) --------------
+// The overrides never touch the base .gb — they ride the `lsdj-assets` role config and are applied to the
+// ROM in memory at construct (see lsdjAssetsRole.ts). The menu lists the BASE ROM's assets (memoised by
+// romPath — the tree rebuilds every render) and overlays the override state read live from role config.
+
+type AssetKind = "kit" | "palette" | "font";
+interface AssetSlot { slot: number; name: string }
+interface LsdjInventory { kit: AssetSlot[]; palette: AssetSlot[]; font: AssetSlot[] }
+
+const ASSET_META: Record<AssetKind, { title: string; patterns: string[]; ext: string }> = {
+  kit: { title: "Kits", patterns: ["*.kit"], ext: ".kit" },
+  palette: { title: "Palettes", patterns: ["*.lsdpal"], ext: ".lsdpal" },
+  font: { title: "Fonts", patterns: ["*.png"], ext: ".png" },
+};
+
+// Read + parse the base ROM's asset inventory once per romPath (the menu rebuilds every render).
+const lsdjInvCache = new Map<string, LsdjInventory | null>();
+function lsdjInventory(backend: HostBackend, romPath: string): LsdjInventory | null {
+  if (lsdjInvCache.has(romPath)) return lsdjInvCache.get(romPath) ?? null;
+  let inv: LsdjInventory | null = null;
+  const bytes = romPath ? backend.readFile(romPath) : null;
+  if (bytes) {
+    const rom = LsdjRom.fromBytes(bytes);
+    if (rom.isLsdj) {
+      inv = {
+        kit: rom.kits().filter((k) => k.valid).map((k) => ({ slot: k.index, name: k.name() || `Kit ${k.index}` })),
+        palette: rom.palettes().map((p) => ({ slot: p.index, name: p.name || `Palette ${p.index}` })),
+        font: rom.fonts().map((f) => ({ slot: f.index, name: f.name || `Font ${f.index}` })),
+      };
+    }
+  }
+  lsdjInvCache.set(romPath, inv);
+  return inv;
+}
+
+const lsdjOverrides = (sys: SystemView): LsdjAssetOverride[] =>
+  readOverrides(sys.roles.find((r) => r.kind === "lsdj-assets")?.config);
+
+// Export asset `kind`/`slot` to a picked file: the override bytes if replaced (already the file format),
+// else the base ROM's asset read straight out via the pure-TS module.
+function exportAsset(ctx: MenuContext, sys: SystemView, kind: AssetKind, slot: number, label: string): void {
+  const be = ctx.stores.backend;
+  const ov = lsdjOverrides(sys).find((o) => o.type === kind && o.slot === slot);
+  const defaultName = `${sanitizeName(label)}${ASSET_META[kind].ext}`;
+  browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: ASSET_META[kind].patterns, saving: true, defaultName }, (path) => {
+    // An overridden slot's current asset comes from the override (a palette re-encodes its inline colours;
+    // a kit/font copies its linked file); otherwise read it from the base ROM.
+    let bytes: Uint8Array | null = null;
+    if (ov) bytes = ov.type === "palette" && ov.colorSets ? encodeLsdpal(ov.name ?? "", ov.colorSets) : ov.path ? be.readFile(ov.path) : null;
+    if (!bytes) {
+      const rom = readLsdjRom(be, sys.romPath);
+      if (!rom) return;
+      if (kind === "kit") bytes = rom.exportKitFile(slot);
+      else if (kind === "palette") bytes = rom.exportPaletteFile(slot);
+      else {
+        const img = rom.exportFontImage(slot, true); // include the extended gfx tiles (64×120) — lossless
+        bytes = be.pngEncode(img.width, img.height, img.rgba);
+      }
+    }
+    if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
+  });
+}
+
+// Replace asset `kind`/`slot` from a picked file: validate by trial-applying to the base ROM (import*
+// throws on a bad file), record the override (raw file bytes, base64) in role config, and reload so it
+// takes effect. NON-DESTRUCTIVE — the base .gb is never written.
+function replaceAsset(ctx: MenuContext, sys: SystemView, kind: AssetKind, slot: number): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Replace ${kind} ${slot}`, patterns: ASSET_META[kind].patterns }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    const rom = readLsdjRom(be, sys.romPath);
+    if (!rom) return;
+    // The new override: PALETTES are stored inline as structured colours (never a file link); KITS/FONTS
+    // link to the file on disk by path. Validate by trial-applying to the base ROM (import* throws on a
+    // bad file / out-of-range slot) — leaving the real ROM untouched.
+    let entry: LsdjAssetOverride;
+    try {
+      if (kind === "kit") {
+        rom.importKitFile(slot, data);
+        entry = { type: "kit", slot, name: rom.kit(slot).name() || stem(path), path };
+      } else if (kind === "palette") {
+        const decoded = decodeLsdpal(data);
+        if (!decoded) return; // not a valid .lsdpal
+        rom.importPaletteFile(slot, data); // validates the slot is in range on this ROM
+        entry = { type: "palette", slot, name: decoded.name || stem(path), colorSets: decoded.colorSets };
+      } else {
+        const img = be.pngDecode(data);
+        if (!img) return; // not a decodable PNG
+        rom.importFontImage(slot, img);
+        entry = { type: "font", slot, name: stem(path), path };
+      }
+    } catch {
+      return; // invalid asset file (wrong size / bad image) → leave the ROM untouched
+    }
+    const overrides = lsdjOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot));
+    overrides.push(entry);
+    ctx.stores.project.systems.setRoleConfig(sys.id, "lsdj-assets", { overrides });
+    ctx.stores.project.systems.reloadSystem(sys.id); // rebuild → onConstruct re-patches the effective ROM
+  });
+}
+
+function removeOverride(ctx: MenuContext, sys: SystemView, kind: AssetKind, slot: number): void {
+  const overrides = lsdjOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot));
+  ctx.stores.project.systems.setRoleConfig(sys.id, "lsdj-assets", { overrides });
+  ctx.stores.project.systems.reloadSystem(sys.id);
+}
+
+// Non-destructively remove a kit from a slot: drop any existing kit override there, and — when the BASE
+// ROM has a kit in that slot — record an `erase` override so construct empties it. (A slot present only
+// because of a replace override just reverts to base-empty once that override is dropped.)
+function deleteKit(ctx: MenuContext, sys: SystemView, slot: number): void {
+  const inv = lsdjInventory(ctx.stores.backend, sys.romPath);
+  const baseValid = !!inv?.kit.some((k) => k.slot === slot);
+  const overrides = lsdjOverrides(sys).filter((o) => !(o.type === "kit" && o.slot === slot));
+  if (baseValid) overrides.push({ type: "kit", slot, name: "", erase: true });
+  ctx.stores.project.systems.setRoleConfig(sys.id, "lsdj-assets", { overrides });
+  ctx.stores.project.systems.reloadSystem(sys.id);
+}
+
+// Add a kit from disk into the first empty kit slot (a replace override on an unused slot).
+function addKit(ctx: MenuContext, sys: SystemView): void {
+  const inv = lsdjInventory(ctx.stores.backend, sys.romPath);
+  if (!inv) return;
+  const used = new Set(effectiveKits(inv.kit, lsdjOverrides(sys)).map((k) => k.slot));
+  let slot = 0;
+  while (slot < KIT_COUNT && used.has(slot)) slot++;
+  if (slot >= KIT_COUNT) return; // all kit slots full
+  replaceAsset(ctx, sys, "kit", slot);
+}
+
+// A safe filename fragment (mirrors the CLI's sanitize).
+const sanitizeName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") || "asset";
+const readLsdjRom = (be: HostBackend, romPath: string): LsdjRom | null => {
+  const bytes = romPath ? be.readFile(romPath) : null;
+  if (!bytes) return null;
+  const rom = LsdjRom.fromBytes(bytes);
+  return rom.isLsdj ? rom : null;
+};
+
+interface KitRow { slot: number; name: string; overridden: boolean }
+// The kit slots of the EFFECTIVE ROM (base + overrides): base-valid kits, plus slots added by a replace
+// override, minus slots emptied by an erase override. Sorted by slot.
+function effectiveKits(base: AssetSlot[], overrides: LsdjAssetOverride[]): KitRow[] {
+  const rows = new Map<number, KitRow>();
+  for (const s of base) rows.set(s.slot, { slot: s.slot, name: s.name, overridden: false });
+  for (const ov of overrides) {
+    if (ov.type !== "kit") continue;
+    if (ov.erase) rows.delete(ov.slot);
+    else rows.set(ov.slot, { slot: ov.slot, name: ov.name || `Kit ${ov.slot}`, overridden: true });
+  }
+  return [...rows.values()].sort((a, b) => a.slot - b.slot);
+}
+
+// One asset item: Export / Replace, plus Delete (kits only) + Remove Override (when overridden).
+function assetRow(ctx: MenuContext, sys: SystemView, kind: AssetKind, slot: number, name: string, overridden: boolean): MenuItem {
+  const label = `[${slot}] ${name}${overridden ? " *" : ""}`;
+  const items: MenuItem[] = [
+    action(`lsdj-${kind}-${slot}-export`, "Export...", () => exportAsset(ctx, sys, kind, slot, name)),
+    action(`lsdj-${kind}-${slot}-replace`, "Replace from Disk...", () => replaceAsset(ctx, sys, kind, slot)),
+  ];
+  if (kind === "kit") items.push(action(`lsdj-kit-${slot}-delete`, "Delete", () => deleteKit(ctx, sys, slot)));
+  if (overridden) items.push(action(`lsdj-${kind}-${slot}-remove`, "Remove Override", () => removeOverride(ctx, sys, kind, slot)));
+  return submenu(`lsdj-${kind}-${slot}`, label, items);
+}
+
+// Build the Kits/Fonts/Palettes submenus; empty when the ROM can't be read (e.g. headless). The Kits menu
+// leads with an "Add..." item (+ separator); each kit also gets a Delete.
+function lsdjAssetMenus(ctx: MenuContext, sys: SystemView): MenuItem[] {
+  const inv = lsdjInventory(ctx.stores.backend, sys.romPath);
+  if (!inv) return [];
+  const overrides = lsdjOverrides(sys);
+  const kits = submenu("lsdj-kits", ASSET_META.kit.title, [
+    action("lsdj-kit-add", "Add...", () => addKit(ctx, sys)),
+    sep("lsdj-kit-add-sep"),
+    ...effectiveKits(inv.kit, overrides).map((k) => assetRow(ctx, sys, "kit", k.slot, k.name, k.overridden)),
+  ]);
+  const others = (["font", "palette"] as AssetKind[]).map((kind) =>
+    submenu(`lsdj-${kind}s`, ASSET_META[kind].title, inv[kind].map((s) => {
+      const ov = overrides.find((o) => o.type === kind && o.slot === s.slot);
+      return assetRow(ctx, sys, kind, s.slot, ov?.name || s.name, !!ov);
+    })),
+  );
+  return [kits, ...others];
+}
+
+// --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
+// Songs are the battery, NOT a ROM override: edits act directly on the live SRAM (like LSDj's own FILE
+// screen). mutateSavBytes reads the live sav, applies a BYTE-LEVEL transform (never the lossy Song model —
+// see lsdjSongOps), writes the resolved .sav, and cold-boots the core from it (loadSram) — durable on disk
+// and reflected in the running LSDj. A no-op if there's no readable SRAM or the op returns null.
+function mutateSavBytes(ctx: MenuContext, sys: SystemView, fn: (sav: Uint8Array) => Uint8Array | null): void {
+  const systems = ctx.stores.project.systems;
+  const bytes = systems.readSram(sys.id);
+  if (!bytes) return;
+  const out = fn(bytes);
+  if (!out) return; // malformed / out of space → leave the system untouched
+  const target = resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath);
+  if (!ctx.stores.backend.writeFileAtomic(target, out)) return;
+  systems.loadSram(sys.id, target);
+}
+
+// Export the saved song in `slot` to a picked `.lsdsng` file (byte-exact — decompress the slot, re-wrap).
+function exportSong(ctx: MenuContext, sys: SystemView, slot: number, name: string): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Export song ${slot}`, patterns: ["*.lsdsng"], saving: true, defaultName: `${sanitizeName(name)}.lsdsng` }, (path) => {
+    const bytes = ctx.stores.project.systems.readSram(sys.id);
+    if (!bytes) return;
+    const raw = decompressSlot(bytes, slot);
+    if (!raw) return;
+    be.writeFileAtomic(path, encodeLsdsngRaw(savSongName(bytes, slot) || name, savSongVersion(bytes, slot), raw));
+  });
+}
+
+// Replace the song in `slot` from a picked `.lsdsng` or `.lsdprj` (byte-exact; a bad file leaves the sav
+// alone). A `.lsdprj` also imports its kits (see importLsdprj).
+function replaceSong(ctx: MenuContext, sys: SystemView, slot: number): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Replace song ${slot}`, patterns: ["*.lsdsng", "*.lsdprj"] }, (path) => {
+    if (path.toLowerCase().endsWith(".lsdprj")) {
+      importLsdprj(ctx, sys, path, slot);
+      return;
+    }
+    const data = be.readFile(path);
+    if (!data) return;
+    mutateSavBytes(ctx, sys, (sav) => replaceSongInSav(sav, slot, data));
+  });
+}
+
+// Import a `.lsdprj` (song + its kit banks). The song goes into a slot (targetSlot for Replace, else the
+// first free slot); its kits are deduped against the effective ROM and the missing ones are recorded as
+// lsdj-assets kit overrides that LINK the `.lsdprj` by path (+ ordinal), with the song's kit references
+// remapped to the assigned slots (all byte-level — the Song model can't hold 6-bit kit indices). One rebuild
+// (loadSram) applies the kit overrides → romBytes and boots the imported song from the .sav.
+function importLsdprj(ctx: MenuContext, sys: SystemView, path: string, targetSlot?: number): void {
+  const be = ctx.stores.backend;
+  const systems = ctx.stores.project.systems;
+  const file = be.readFile(path);
+  const liveSram = systems.readSram(sys.id);
+  const baseRom = sys.romPath ? be.readFile(sys.romPath) : null;
+  if (!file || !liveSram || !baseRom) return;
+
+  const overrides = lsdjOverrides(sys);
+  const effectiveRom = applyOverridesToRom(baseRom, overrides, be);
+  const plan = planLsdprjImport({ file, path, effectiveRom, overrides, liveSram, targetSlot });
+  if (!plan) return; // malformed file / out of kit or song slots
+
+  const target = resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath);
+  if (!be.writeFileAtomic(target, plan.savBytes)) return;
+  if (plan.addedKits > 0) systems.setRoleConfig(sys.id, "lsdj-assets", { overrides: plan.overrides });
+  systems.loadSram(sys.id, target); // one rebuild: kit overrides → romBytes + boot the imported song
+}
+
+// Add a song: a `.lsdsng`/`.lsdprj` into the first free slot (the same importer drag-and-drop uses), or all
+// songs from a `.sav`.
+function addSongFromDisk(ctx: MenuContext, sys: SystemView): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: "Add Song", patterns: ["*.lsdsng", "*.lsdprj", "*.sav"] }, (path) => {
+    if (path.toLowerCase().endsWith(".sav")) {
+      const data = be.readFile(path);
+      if (data) mutateSavBytes(ctx, sys, (sav) => importAllSongsFromSav(sav, data));
+    } else {
+      importSongFiles(be, ctx.stores.project.systems, sys, [path]);
+    }
+  });
+}
+
+// The Songs submenu: Add… (+ separator) then one row per occupied slot (Export / Replace / Delete).
+function lsdjSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
+  const bytes = ctx.stores.project.systems.readSram(sys.id);
+  const songs = bytes ? listProjects(bytes) : [];
+  const rows: MenuItem[] = songs.map((s) => {
+    const name = s.name || `Song ${s.slot}`;
+    return submenu(`lsdj-song-${s.slot}`, `[${s.slot}] ${name}`, [
+      // Load the slot into working memory + reset the emulator so it boots showing this song.
+      action(`lsdj-song-${s.slot}-load`, "Load...", () => mutateSavBytes(ctx, sys, (sav) => loadSongToWorking(sav, s.slot))),
+      action(`lsdj-song-${s.slot}-export`, "Export...", () => exportSong(ctx, sys, s.slot, s.name || `song${s.slot}`)),
+      action(`lsdj-song-${s.slot}-replace`, "Replace from Disk...", () => replaceSong(ctx, sys, s.slot)),
+      {
+        id: `lsdj-song-${s.slot}-delete`,
+        label: "Delete",
+        kind: "prompt" as const,
+        keepOpen: true,
+        prompt: {
+          title: `Delete song "${name}"?`,
+          hint: "Enter to delete  |  Esc to cancel",
+          confirm: true,
+          onConfirm: () => {
+            mutateSavBytes(ctx, sys, (sav) => deleteSongInSav(sav, s.slot));
+            return null;
+          },
+        },
+      },
+    ]);
+  });
+  return submenu("lsdj-songs", "Songs", [action("lsdj-song-add", "Add...", () => addSongFromDisk(ctx, sys)), sep("lsdj-song-add-sep"), ...rows]);
+}
+
 function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unknown>): MenuItem[] {
   const systems = ctx.stores.project.systems;
   const mode = typeof cfg.mode === "string" ? (cfg.mode as LsdjSyncMode) : "midiSync";
@@ -315,6 +620,11 @@ function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unk
     cycler("lsdj-autostart", "Auto Start", OFF_ON, autoStart ? 1 : 0, (n) =>
       systems.setRoleConfig(sys.id, "lsdj-sync", { autoStart: n === 1 }),
     ),
+    sep("lsdj-assets-sep"),
+    // Songs: manage the SAV's saved-song slots (export .lsdsng / replace / delete / add).
+    lsdjSongMenu(ctx, sys),
+    // Kits / Fonts / Palettes: export or non-destructively replace each asset (stored in the project).
+    ...lsdjAssetMenus(ctx, sys),
   ];
 }
 

@@ -22,7 +22,7 @@ function beWith(rom = true, sav = true): MockBackend {
 
 // A context with no sibling ROM by default; tests override the fields they exercise.
 function ctx(over: Partial<DropContext>): DropContext {
-  return { count: 0, targetId: null, onTile: false, siblingRom: () => null, ...over };
+  return { count: 0, targetId: null, onTile: false, targetIsLsdj: false, siblingRom: () => null, ...over };
 }
 
 test("ROM on the start screen → loadRom (new project)", () => {
@@ -129,4 +129,41 @@ test("siblingRom wired through the real SystemsStore.resolveSiblingRom pairs a d
   const systems = new SystemsStore(be);
   const out = resolveDropAction(be, ctx({ count: 0, siblingRom: (s) => systems.resolveSiblingRom(s) }), [SAV]);
   expect(out).toEqual({ type: "loadRom", romPath: ROM, explicitSav: SAV });
+});
+
+// --- song files (.lsdsng / .lsdprj) patch into an LSDj instance ---
+test("song files onto an LSDj instance → patchSongs with just the song paths", () => {
+  const be = new MockBackend("/cfg");
+  const out = resolveDropAction(be, ctx({ count: 2, targetId: 4, onTile: true, targetIsLsdj: true }), ["/s/a.lsdsng", "/s/b.lsdprj"]);
+  expect(out).toEqual({ type: "patchSongs", id: 4, paths: ["/s/a.lsdsng", "/s/b.lsdprj"] });
+});
+
+test("a mixed song + ROM drop onto an LSDj instance → patchSongs (ROM ignored)", () => {
+  const be = beWith();
+  const out = resolveDropAction(be, ctx({ count: 2, targetId: 4, onTile: true, targetIsLsdj: true }), [ROM, "/s/a.lsdsng"]);
+  expect(out).toEqual({ type: "patchSongs", id: 4, paths: ["/s/a.lsdsng"] });
+});
+
+test("song files onto a non-LSDj target → ignore", () => {
+  const be = new MockBackend("/cfg");
+  expect(resolveDropAction(be, ctx({ count: 2, targetId: 4, onTile: true, targetIsLsdj: false }), ["/s/a.lsdsng"])).toEqual({
+    type: "ignore",
+    reason: "song files need an LSDj instance",
+  });
+});
+
+test("song files on the start screen (no instance) → ignore", () => {
+  const be = new MockBackend("/cfg");
+  expect(resolveDropAction(be, ctx({ count: 0, targetIsLsdj: false }), ["/s/a.lsdprj"])).toEqual({
+    type: "ignore",
+    reason: "song files need an LSDj instance",
+  });
+});
+
+test("a project file still wins over song files", () => {
+  const be = new MockBackend("/cfg");
+  expect(resolveDropAction(be, ctx({ count: 2, targetId: 4, targetIsLsdj: true }), ["/s/a.lsdsng", "/p/x.rplg"])).toEqual({
+    type: "loadProject",
+    path: "/p/x.rplg",
+  });
 });

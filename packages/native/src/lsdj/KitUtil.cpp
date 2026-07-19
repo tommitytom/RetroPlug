@@ -23,11 +23,16 @@ void convertSamplerate(double inputSampleRate,
 
     constexpr std::size_t kInBufCapacity = 1024;
     r8b::CFixedBuffer<double> inBuf;
-    inBuf.alloc(static_cast<int>(buffer.size()));
+    // Sized to the fixed chunk, NOT the source length: the loop always fills/processes kInBufCapacity
+    // doubles (zero-padding a short tail), so a source shorter than one chunk would otherwise overflow.
+    inBuf.alloc(static_cast<int>(kInBufCapacity));
 
+    // MaxInLen MUST match the fixed block we actually feed (kInBufCapacity), not the source length: the
+    // loop always hands process() a full kInBufCapacity block (zero-padded), so a shorter MaxInLen would
+    // overflow r8brain's internal buffers on a source under one chunk.
     r8b::CPtrKeeper<r8b::CDSPResampler24*> resampler =
         new r8b::CDSPResampler24(inputSampleRate, outputSampleRate,
-                                 static_cast<int>(buffer.size()));
+                                 static_cast<int>(kInBufCapacity));
 
     const std::size_t targetSize =
         static_cast<std::size_t>(buffer.size() * (outputSampleRate / inputSampleRate));
@@ -138,7 +143,7 @@ std::vector<std::uint8_t> compileSample(const SampleInput& sample) {
     const std::size_t aligned = frameAlign(resampled.size());
     resampled.resize(aligned);
 
-    SampleUtil::convertScaledF32ToNibbles(resampled, out);
+    SampleUtil::convertScaledF32ToNibbles(resampled, out, sample.rotate);
     return out;
 }
 

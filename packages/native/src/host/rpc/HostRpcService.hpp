@@ -51,6 +51,12 @@ public:
     rfl::Bytestring zip(std::vector<BackendZipInput> entries);
     std::vector<BackendZipEntry> unzip(rfl::Bytestring bytes);
 
+    // --- codec (lodepng) --- generic PNG encode/decode over RGBA8888, so the TS asset layer (fonts) can
+    // round-trip .png files from both the CLI and the plugin UI. pngDecode returns nullopt on any decode
+    // failure (not a PNG, unsupported, truncated).
+    rfl::Bytestring pngEncode(PngImage image);
+    std::optional<PngImage> pngDecode(rfl::Bytestring bytes);
+
     // Host opt-in: start the efsw watcher over `configDir` (config.json + bindings/). Idempotent —
     // a second call is ignored. Until called, drainChangedPaths returns {} and setWatchedRoms no-ops.
     void enableWatching(std::string configDir);

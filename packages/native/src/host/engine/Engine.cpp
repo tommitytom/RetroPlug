@@ -193,6 +193,10 @@ std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
     return registry_.readSram(id);    // SRAM sliced from the published savestate, not a live read
 }
 
+std::optional<std::vector<std::uint8_t>> Engine::readRam(SystemId id) {
+    return registry_.readRam(id);     // the owned per-block WRAM copy — never walks Project / the live core
+}
+
 bool Engine::screenshot(SystemId id, const std::string& path) {
     // Encode the owned registry frame (a published copy) — no findSystem walk, no live-core read, so
     // it's safe while the audio thread plays. false until the core has rendered its first frame.

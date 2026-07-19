@@ -18,9 +18,10 @@ export interface CliTool {
 }
 
 import { renderTool } from "./sessions/render";
+import { lsdjRomTool } from "./sessions/lsdj-rom";
 
 /** Every baked-in command. The ONLY place a new tool is registered. */
-export const tools: CliTool[] = [renderTool];
+export const tools: CliTool[] = [renderTool, lsdjRomTool];
 
 /** The top-level command index: a version banner + the tools' own name/summary (column-aligned). Pure — the
  *  dispatcher (cli/cli.ts) supplies the banner and prints this for `retroplug-cli` / `--help`; kept here so

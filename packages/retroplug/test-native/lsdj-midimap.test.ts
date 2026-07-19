@@ -6,7 +6,7 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -14,7 +14,7 @@ declare const __DSP_KERNEL_BUNDLE__: string;
 const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
 
 // SYNC=MI.MAP + a one-note song at row 0 so a mapped row-0 byte has something to play.
-const MIDIMAP_SONG = JSON.stringify({
+const MIDIMAP_SONG: SavInput = {
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "MidiMap" },
@@ -23,7 +23,7 @@ const MIDIMAP_SONG = JSON.stringify({
     phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 }, vibrato: { direction: "Up" }, sweep: 127 }],
   },
-});
+};
 
 const sysStruct = (id: number, mode: string) => ({
   project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
@@ -54,7 +54,7 @@ test("the TS lsdj-sync MidiMap role maps MIDI notes to LSDj row bytes on a real 
     embeddedRom: "",
     savPath: null,
     statePath: null,
-    sramBytes: savFromJson(MIDIMAP_SONG),
+    sramBytes: savFrom(MIDIMAP_SONG),
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();

@@ -15,6 +15,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "node scripts/cmake-build.js tjs-cli && node packages/retroplug/scripts/run-tests.mjs",
     "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
+    "lsdj:gen-offsets": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/gen-lsdj-offsets.mjs",
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node packages/retroplug/scripts/run-ui-tests.mjs",
     "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-classid-test retroplug-audio-test retroplug-watcher-test retroplug-lottie-test && node packages/retroplug/scripts/run-plugin-tests.mjs",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",

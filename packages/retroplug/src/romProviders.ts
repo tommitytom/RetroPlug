@@ -30,9 +30,12 @@ export function registerRomProviders(registry: RoleRegistry): void {
     rom.embeddedRom === "mgb" || title(rom.header).startsWith("MGB") ? [{ kind: "mgb", config: {} }] : [],
   );
 
-  // LSDj (stock or arduinoboy build) → the lsdj-sync role, defaulting to MidiSync.
+  // LSDj (stock or arduinoboy build) → the lsdj-sync role (defaulting to MidiSync) plus the lsdj-assets
+  // role that carries any non-destructive kit/palette/font overrides (empty until the user replaces one).
   registry.registerRomProvider((rom: RomContext) =>
-    title(rom.header).startsWith("LSDJ") ? [{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }] : [],
+    title(rom.header).startsWith("LSDJ")
+      ? [{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }, { kind: "lsdj-assets", config: { overrides: [] } }]
+      : [],
   );
 
   // Any NES ROM → host-MIDI passthrough to the core (the always-attached N8 FIFO). Match the PLATFORM

@@ -13,6 +13,7 @@ import { useStores } from "../../stores/useStores";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
 import { Box } from "../../lvgl/Box";
 import { tagTestId } from "../../lvgl/StableSlot";
+import { LsdjOverlay } from "./LsdjOverlay";
 import { getRenderJobs, cancelRender, dismissRenderJob, pickActiveRenderJob, type RenderJobStatus } from "../../lvgl/render";
 
 const LV_IMAGE_ALIGN_CONTAIN = 14; // aspect-preserving nearest-neighbour scale
@@ -92,6 +93,10 @@ export function EmulatorTile({
           style={{ width, height, "background-color": "#000000", "background-opacity": 0.5 }}
         />
       )}
+      {/* Live LSDj runtime readout (screen + cursor / play / song row / tempo / version / per-channel
+          phrase). Renders nothing for a non-LSDj ROM, so it's mounted unconditionally; its per-frame
+          re-renders stay in this child subtree. */}
+      <LsdjOverlay systemId={systemId} width={width} testId="lsdj-overlay" />
       {showBorder && (
         // Accent border on the focused tile — the visible focus cue (the dim is imperceptible on a
         // near-black GB screen). Drawn as a transparent full-tile overlay layered OVER the Canvas, not

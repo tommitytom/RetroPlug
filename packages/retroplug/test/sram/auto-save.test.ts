@@ -7,7 +7,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, flushDirtySram, lsdjSramSignature, sramSignature } from "../../src/sramAutoSave";
-import { savFromJson } from "../../src/lsdj";
+import { savFrom } from "../../src/lsdj";
 import { gbRom } from "../systems/fixtures";
 
 const bytes = (...b: number[]) => new Uint8Array(b);
@@ -155,7 +155,7 @@ const WORK_HOURS = 0x3fb2; // a ticking work-clock byte — LSDj rewrites it eve
 const TEMPO = 0x3fb4; // a meaningful, modeled byte
 
 test("lsdjSramSignature ignores the ticking work-clock but catches a real edit", () => {
-  const orig = savFromJson(JSON.stringify({ workingSong: { settings: { tempo: 150 } } }));
+  const orig = savFrom({ workingSong: { settings: { tempo: 150 } } });
   expect(orig.length).toBe(0x20000);
 
   // A frame tick bumps the work clock (and its checksum) but changes nothing meaningful.
@@ -183,7 +183,7 @@ test("an LSDj cart whose only diff from disk is the ticked clock is NOT dirty", 
   be.seed("/proj/a.gb", gbRom());
   const id = systems.addSystem("/proj/a.gb")!;
 
-  const disk = savFromJson(JSON.stringify({ workingSong: { settings: { tempo: 150 } } }));
+  const disk = savFrom({ workingSong: { settings: { tempo: 150 } } });
   be.seed(SAV, disk); // the last saved .sav
   const live = disk.slice();
   live[WORK_HOURS] = (live[WORK_HOURS] + 3) & 0xff; // the clock has since ticked

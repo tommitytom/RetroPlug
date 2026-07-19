@@ -23,4 +23,4 @@ if (id == null) throw new Error(`loadRom failed for ${__NES_ROM__}`);
 
 const ok = project.export(__RPLG_OUT__);
 console.log(`[author-nes-rplg] ${ok ? "wrote" : "FAILED"} ${__RPLG_OUT__}`);
-(globalThis as { tjs: { exit(code: number): void } }).tjs.exit(ok ? 0 : 1);
+(globalThis as { tjs?: { exit(code: number): void } }).tjs?.exit(ok ? 0 : 1);

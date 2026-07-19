@@ -19,6 +19,7 @@ struct SystemBuildSpec {
     std::string               platform;      // "gb" | "nes" | "gba" — what the ROM is
     std::string               romPath;       // "" when embedded
     std::string               embeddedRom;   // marker, e.g. "mgb" ("" when file-backed)
+    std::vector<std::uint8_t> romBytes;      // effective ROM to load instead of slurping romPath (may be empty)
     std::vector<std::uint8_t> sram;          // battery RAM seed (may be empty)
     std::vector<std::uint8_t> savestate;     // savestate seed (may be empty)
     std::vector<std::uint8_t> settings;      // opaque per-backend config; the backend decodes it

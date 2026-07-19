@@ -13,7 +13,7 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -24,7 +24,7 @@ const MASTER_SYNC = "masterSync"; // LsdjSyncMode / lsdj-sync role mode
 
 // SYNC=LSDj + a one-note phrase (the proven cell set from the link-cable tests) so LSDj plays and its
 // sequencer advances, driving the master-clock byte stream. No N commands (those are MI.OUT); plain notes.
-const MASTER_SONG = JSON.stringify({
+const MASTER_SONG: SavInput = {
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "Lsdj" },
@@ -33,7 +33,7 @@ const MASTER_SONG = JSON.stringify({
     phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } }],
   },
-});
+};
 
 const sysStruct = (id: number, mode: string) => ({
   project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
@@ -60,7 +60,7 @@ test("Master Sync (mode 8): a stock LSDj in SYNC=LSDj clocks the host â€” byteâ†
     embeddedRom: "",
     savPath: null,
     statePath: null,
-    sramBytes: savFromJson(MASTER_SONG),
+    sramBytes: savFrom(MASTER_SONG),
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();

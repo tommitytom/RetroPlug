@@ -32,6 +32,7 @@ struct CompileSampleSpec {
     std::size_t             offset = 0; // skip the first N frames of the source
     std::size_t             length = 0; // 0 = use everything from offset
     std::vector<LsdjEffect> effects;
+    bool                    rotate = true; // LSDJ 9.2.0+ frame rotation (per target ROM version)
 };
 
 struct CompiledKit {

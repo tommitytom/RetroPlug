@@ -12,6 +12,7 @@
 import { RoleRegistry } from "./systemRoles";
 import { registerCoreRoles } from "./coreRoles";
 import { registerDspRoles } from "./dspRoles";
+import { registerLsdjAssetsRole } from "./lsdjAssetsRole";
 import { registerRomProviders } from "./romProviders";
 import { projectKernelStructure } from "./kernelProjection";
 import type { ProjectStore } from "./projectStore";
@@ -23,6 +24,7 @@ export function buildAppRegistry(): RoleRegistry {
   const registry = new RoleRegistry();
   registerCoreRoles(registry);
   registerDspRoles(registry);
+  registerLsdjAssetsRole(registry);
   registerRomProviders(registry);
   return registry;
 }

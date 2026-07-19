@@ -107,6 +107,9 @@ public:
     // --- live-state reads / direct mutation (valid only on the Engine's owning thread) ---
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);
     std::optional<std::vector<std::uint8_t>> readSram(SystemId id);
+    // Work RAM (WRAM), from the registry's per-block published copy — safe while the audio thread runs,
+    // and fresh EVERY block (unlike readState/readSram), so a runtime overlay tracks per-frame state.
+    std::optional<std::vector<std::uint8_t>> readRam(SystemId id);
     bool screenshot(SystemId id, const std::string& path);
     // The system's latest video frame (raw XRGB8888). Reads the concurrent FrameBufferTriple, so it is
     // safe while the audio thread writes; width/height are 0 (published false) for an unknown system.

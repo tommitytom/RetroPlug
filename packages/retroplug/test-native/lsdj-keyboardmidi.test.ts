@@ -17,7 +17,7 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -27,7 +27,7 @@ const START = 7; // GameboyButton::Start
 
 // SYNC=KEYBD + a sparse one-note song: START makes LSDj run (and poll the keyboard), but the song
 // itself is silent most of the time, so the keyboard notes are what fill each measured window.
-const KEYBD_SONG = JSON.stringify({
+const KEYBD_SONG: SavInput = {
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "Keyboard" },
@@ -36,7 +36,7 @@ const KEYBD_SONG = JSON.stringify({
     phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } }],
   },
-});
+};
 
 const sysStruct = (id: number, mode: string) => ({
   project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
@@ -68,7 +68,7 @@ test("KeyboardMidi: MIDI notes play live on a real LSDj via the PS/2-keyboard se
     embeddedRom: "",
     savPath: null,
     statePath: null,
-    sramBytes: savFromJson(KEYBD_SONG),
+    sramBytes: savFrom(KEYBD_SONG),
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();

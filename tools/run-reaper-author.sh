@@ -126,6 +126,10 @@ echo "reaper author: DISPLAY=$DISPLAY dest=$DEST lua=$AUTHOR_LUA"
 echo "  HOME=$HOME (.vst3 symlink: $HOME/.vst3/${VST3_NAME}.vst3)"
 [ -n "${RETROPLUG_AUTOLOAD_PROJECT:-}" ] && echo "  autoload=$RETROPLUG_AUTOLOAD_PROJECT"
 
+# The .rpp fixtures are gitignored (derived), and git can't track an empty dir, so on a fresh checkout
+# the destination directory doesn't exist — Main_SaveProjectEx would then silently write nothing. Create it.
+mkdir -p "$(dirname "$DEST")"
+
 # Author fresh: drop any prior artifact so the settle-poll below keys on THIS run's save, not a stale
 # file from a previous run.
 rm -f "$DEST"
