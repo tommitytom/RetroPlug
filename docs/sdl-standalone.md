@@ -23,7 +23,14 @@ thread, live audio reconfigure, and dirty-region present.
 
 ## Gaps vs the DPF/JACK standalone (to reach parity)
 
-### P1 — MIDI input (the big one)
+### P1 — MIDI input — ✅ DONE
+Implemented via RtMidi ([MidiIo](../packages/native/src/host/input/MidiIo.hpp)) — virtual `RetroPlug In`
+port + auto-opened hardware inputs → a lock-free ring drained in the audio callback → `engine.stageMidi`.
+Hardware-verified (virtual ports open on ALSA, keyboard input fixed). Follow-ups: hotplug (ports scanned once
+at startup) and a real sub-block frame offset (staged at frame 0 today).
+
+Original design notes below (kept for reference):
+
 No MIDI source at all (SDL2 has no MIDI). Blocks **mGB** (the GB MIDI synth is unplayable without it), NES
 MIDI-driven ROMs, and every LSDj MIDI-sync/map/passthrough mode. Plugin reference: `PluginDSP::run` stages
 host MIDI via `engine_.stageMidi(frame, bytes)` ([PluginDSP.cpp:163](../packages/native/plugin/PluginDSP.cpp#L163)).
@@ -43,10 +50,10 @@ Design:
   a hardware port (or defer).
 - Where there's genuinely no MIDI source, an on-screen keyboard is a later nicety.
 
-### P2 — MIDI output
-`engine.midiOut()` is never drained. Blocks LSDj **MI.OUT** / Master Sync / MIDI passthrough to external gear.
-→ Drain `engine.midiOut()` each block to an `RtMidiOut` port (same RtMidi seam as P1); mirror
-[PluginDSP.cpp:178-186](../packages/native/plugin/PluginDSP.cpp#L178).
+### P2 — MIDI output — ✅ DONE
+`audioCb` drains `engine.midiOut()` to the `RtMidiOut` virtual port each block (mirrors
+[PluginDSP.cpp:178-186](../packages/native/plugin/PluginDSP.cpp#L178)). Hardware-verified: LSDj Master-Sync
+clock (`0xF8`) reaches `aseqdump`. `RETROPLUG_MIDI_LOG` dumps in + out bytes.
 
 ### P3 — File drag-and-drop
 No `SDL_DROPFILE` handling. The file browser covers loading, but desktop drop (ROM/.sav/project → the App's
