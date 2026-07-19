@@ -72,6 +72,7 @@ private:
     std::atomic<std::size_t>       head_{0};  // consumer index (audio thread)
     std::atomic<std::size_t>       tail_{0};  // producer index (callback thread)
     std::uint64_t                  seq_ = 0;  // producer-only monotonic counter
+    bool                           log_ = false;  // RETROPLUG_MIDI_LOG: dump in + out bytes to stderr
 };
 
 }  // namespace retroplug

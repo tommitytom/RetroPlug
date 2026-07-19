@@ -14,6 +14,7 @@ MidiIo::~MidiIo() { close(); }
 
 bool MidiIo::open(const char* clientName) {
     const std::string name = clientName && *clientName ? clientName : "RetroPlug";
+    log_ = std::getenv("RETROPLUG_MIDI_LOG") != nullptr;  // set before the callback thread starts
     try {
         in_ = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, name);
         // Deliver NOTE/CC/etc. but ignore sysex + active-sensing; keep timing (MIDI clock) for a later
@@ -76,9 +77,9 @@ void MidiIo::pushRing(const unsigned char* data, std::size_t len) {
     ring_[t].bytes.assign(data, data + len);
     tail_.store(n, std::memory_order_release);
 
-    if (std::getenv("RETROPLUG_MIDI_LOG")) {
-        std::fprintf(stderr, "[retroplug-sdl] MIDI in:");
-        for (std::size_t i = 0; i < len; ++i) std::fprintf(stderr, " %02X", data[i]);
+    if (log_) {
+        std::fprintf(stderr, "[retroplug-sdl] MIDI in: ");
+        for (std::size_t i = 0; i < len; ++i) std::fprintf(stderr, "%02X ", data[i]);
         std::fprintf(stderr, "\n");
     }
 }
@@ -96,6 +97,11 @@ void MidiIo::poll(std::vector<Message>& out) {
 
 void MidiIo::send(const std::uint8_t* data, std::size_t len) {
     if (!out_ || len == 0) return;
+    if (log_) {
+        std::fprintf(stderr, "[retroplug-sdl] MIDI out: ");
+        for (std::size_t i = 0; i < len; ++i) std::fprintf(stderr, "%02X ", data[i]);
+        std::fprintf(stderr, "\n");
+    }
     try {
         out_->sendMessage(data, len);
     } catch (RtMidiError&) {
