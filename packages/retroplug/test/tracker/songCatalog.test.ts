@@ -4,6 +4,7 @@ import { test, expect } from "../../testing/harness";
 import { resolveSongCatalog, lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
 import { loadSongToWorkingInSav } from "../../src/risaSongOps";
 import { normalizeSaveContainer } from "../../src/risaSav";
+import { savFrom, type SavInput } from "../../src/lsdjSav";
 import { savBytes } from "../risa/fixtures";
 
 test("resolveSongCatalog selects the catalog by marker role (undefined for a non-tracker system)", () => {
@@ -14,6 +15,13 @@ test("resolveSongCatalog selects the catalog by marker role (undefined for a non
   expect(risaSongCatalog.markerRole).toBe("risa");
   expect(risaSongCatalog.reorder != null).toBe(true); // risa is positional
   expect(lsdjSongCatalog.reorder).toBe(undefined); // LSDj slots are fixed-index
+});
+
+test("lsdj catalog lists projects + reads the active (working) song name", () => {
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  const sav = savFrom({ activeProjectIndex: 0, projects: [{ name: "HELLO", version: 0, song }] } as SavInput);
+  expect(lsdjSongCatalog.list(sav).some((s) => s.index === 0 && s.name === "HELLO")).toBe(true);
+  expect(lsdjSongCatalog.workingName(sav)).toBe("HELLO");
 });
 
 test("risa catalog lists the RSAV catalog + reads the working-song name after a Load", () => {
