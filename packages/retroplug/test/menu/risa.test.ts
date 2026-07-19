@@ -64,7 +64,21 @@ test("the risa submenu appears only for a risa ROM and lists the catalog's songs
   const { items } = risaSystem(be, stores);
   expect(findItem(items(), "inst-risa")?.kind).toBe("submenu");
   const songs = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
-  expect(songs.map((s) => s.label)).toEqual(["[0] HOU8", "[1] HOU", "[2] DBZ", "[3] DBZ2-F", "[4] FUNK0"]);
+  // The Songs submenu leads with a top-level "Add..." (+ separator) — like LSDj; the song rows follow.
+  expect(findItem(songs, "risa-song-add")?.kind).toBe("action");
+  expect(songs.filter((s) => s.kind === "submenu").map((s) => s.label)).toEqual(["[0] HOU8", "[1] HOU", "[2] DBZ", "[3] DBZ2-F", "[4] FUNK0"]);
+});
+
+test("each risa song row now offers Load / Export / Replace / Delete (LSDj parity) plus reorder", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { items } = risaSystem(be, stores);
+  const row = submenuChildren(submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs"), "risa-song-2");
+  expect(findItem(row, "risa-song-2-load")?.kind).toBe("action");
+  expect(findItem(row, "risa-song-2-export")?.kind).toBe("action"); // NEW — parity with LSDj
+  expect(findItem(row, "risa-song-2-replace")?.kind).toBe("action"); // NEW — parity with LSDj
+  expect(findItem(row, "risa-song-2-delete")?.kind).toBe("prompt");
+  expect(findItem(row, "risa-song-2-up")?.kind).toBe("action"); // risa keeps reorder (catalog.reorder)
 });
 
 test("each risa song row offers Delete + reorder, with Move disabled at the ends", () => {

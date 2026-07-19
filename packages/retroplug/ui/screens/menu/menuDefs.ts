@@ -28,19 +28,15 @@ import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
 import { stem } from "../../../src/pathUtil";
 import { LsdjRom, decodeLsdpal, encodeLsdpal, KIT_COUNT } from "../../../src/lsdj/rom";
-import { listProjects, decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
-import { loadSongToWorking, deleteSongInSav, replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
+import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
+import { replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
 import { importSongFiles } from "../../../src/lsdjSongImport";
-import { listSongs } from "../../../src/risaSav";
-import {
-  deleteSongInSav as deleteRisaSongInSav,
-  moveSongInSav as moveRisaSongInSav,
-  loadSongToWorkingInSav,
-} from "../../../src/risaSongOps";
+import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav } from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_COUNT, KIT_BANK_SIZE, type RisaTheme } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
+import { lsdjSongCatalog, risaSongCatalog, type SongCatalog } from "../../../src/tracker";
 import type { HostBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, validSplits, formatDuration } from "../../lvgl/render";
@@ -763,42 +759,59 @@ function addSongFromDisk(ctx: MenuContext, sys: SystemView): void {
   });
 }
 
-// The Songs submenu: Add… (+ separator) then one row per occupied slot (Export / Replace / Delete).
-function lsdjSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
-  const bytes = ctx.stores.project.systems.readSram(sys.id);
-  const songs = bytes ? listProjects(bytes) : [];
-  const rows: MenuItem[] = songs.map((s) => {
-    const name = s.name || `Song ${s.slot}`;
-    return submenu(`lsdj-song-${s.slot}`, `[${s.slot}] ${name}`, [
-      // Load the slot into working memory + reset the emulator so it boots showing this song.
-      action(`lsdj-song-${s.slot}-load`, "Load...", () => mutateSavBytes(ctx, sys, (sav) => loadSongToWorking(sav, s.slot))),
-      action(`lsdj-song-${s.slot}-export`, "Export...", () => exportSong(ctx, sys, s.slot, s.name || `song${s.slot}`)),
-      action(`lsdj-song-${s.slot}-replace`, "Replace from Disk...", () => replaceSong(ctx, sys, s.slot)),
-      {
-        id: `lsdj-song-${s.slot}-delete`,
-        label: "Delete",
-        kind: "prompt" as const,
-        keepOpen: true,
-        prompt: {
-          title: `Delete song "${name}"?`,
-          hint: "Enter to delete  |  Esc to cancel",
-          confirm: true,
-          onConfirm: () => {
-            mutateSavBytes(ctx, sys, (sav) => deleteSongInSav(sav, s.slot));
-            return null;
-          },
-        },
-      },
-    ]);
-  });
-  return submenu("lsdj-songs", "Songs", [action("lsdj-song-add", "Add...", () => addSongFromDisk(ctx, sys)), sep("lsdj-song-add-sep"), ...rows]);
+// --- the shared Songs submenu (SongCatalog-driven) -------------------------------------------------
+// LSDj + risa songs are both the BATTERY, not a ROM override: edits act on the live SRAM via mutateSavBytes
+// (readSram → byte-level catalog op → writeFileAtomic → loadSram cold-boot). One generic songMenu renders
+// the structure over a SongCatalog — Load / Delete / reorder are its byte-ops; the console supplies the
+// file-dialog actions (Export/Replace/Add, which own their formats). Reorder rows show only when the catalog
+// is positional (risa).
+interface SongMenuSpec {
+  id: string; // row-id prefix, e.g. "lsdj" / "risa"
+  catalog: SongCatalog;
+  exportSong(ctx: MenuContext, sys: SystemView, index: number, name: string): void;
+  replaceSong(ctx: MenuContext, sys: SystemView, index: number): void;
+  addSong(ctx: MenuContext, sys: SystemView): void;
 }
 
-// --- risa Songs submenu (the RSAV catalog's saved songs) -------------------------------------------
-// Like LSDj Songs, risa songs are the BATTERY, not a ROM override: edits act on the live SRAM via
-// mutateSavBytes (readSram → byte-level catalog op → writeFileAtomic → loadSram cold-boot). Delete +
-// reorder treat records as opaque; Load expands the record's payload into the working-song RAM (banks
-// 0-3) so the cold boot comes up on that song. Export/Replace/Add (need the kit-aware .risong) come later.
+function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem {
+  const cat = spec.catalog;
+  const bytes = ctx.stores.project.systems.readSram(sys.id);
+  const songs = bytes ? cat.list(bytes) : [];
+  const last = songs.length - 1;
+  const rows: MenuItem[] = songs.map((s, i) => {
+    const name = s.name || `Song ${s.index}`;
+    const items: MenuItem[] = [
+      action(`${spec.id}-song-${s.index}-load`, "Load...", () => mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index))),
+      action(`${spec.id}-song-${s.index}-export`, "Export...", () => spec.exportSong(ctx, sys, s.index, name)),
+      action(`${spec.id}-song-${s.index}-replace`, "Replace from Disk...", () => spec.replaceSong(ctx, sys, s.index)),
+    ];
+    if (cat.reorder) {
+      items.push(action(`${spec.id}-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, s.index, s.index - 1)), i === 0));
+      items.push(action(`${spec.id}-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, s.index, s.index + 1)), i === last));
+    }
+    items.push({
+      id: `${spec.id}-song-${s.index}-delete`,
+      label: "Delete",
+      kind: "prompt" as const,
+      keepOpen: true,
+      prompt: {
+        title: `Delete song "${name}"?`,
+        hint: "Enter to delete  |  Esc to cancel",
+        confirm: true,
+        onConfirm: () => {
+          mutateSavBytes(ctx, sys, (sav) => cat.delete(sav, s.index));
+          return null;
+        },
+      },
+    });
+    return submenu(`${spec.id}-song-${s.index}`, `[${s.index}] ${name}`, items);
+  });
+  const body = rows.length ? rows : [action(`${spec.id}-song-none`, "(no saved songs)", () => {}, true)];
+  return submenu(`${spec.id}-songs`, "Songs", [action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys)), sep(`${spec.id}-song-add-sep`), ...body]);
+}
+
+// The throw→null wrapper for risa's catalog ops used by its file actions (LSDj's ops return null directly;
+// risa's byte-ops throw on a bad index / no space).
 function tryOp(fn: () => Uint8Array): Uint8Array | null {
   try {
     return fn();
@@ -807,44 +820,58 @@ function tryOp(fn: () => Uint8Array): Uint8Array | null {
   }
 }
 
-function risaSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
-  const bytes = ctx.stores.project.systems.readSram(sys.id);
-  const songs = bytes ? listSongs(bytes) : [];
-  const last = songs.length - 1;
-  const rows: MenuItem[] = songs.map((s, i) =>
-    submenu(`risa-song-${s.index}`, `[${s.index}] ${s.name || `Song ${s.index}`}`, [
-      // Load the song into working memory + cold-boot so risa comes up showing it (loadSongToWorkingInSav
-      // never throws — it returns null on an unsupported battery, which mutateSavBytes treats as a no-op).
-      action(`risa-song-${s.index}-load`, "Load", () => mutateSavBytes(ctx, sys, (sav) => loadSongToWorkingInSav(sav, s.index))),
-      action(`risa-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveRisaSongInSav(sav, s.index, s.index - 1))), i === 0),
-      action(`risa-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => tryOp(() => moveRisaSongInSav(sav, s.index, s.index + 1))), i === last),
-      {
-        id: `risa-song-${s.index}-delete`,
-        label: "Delete",
-        kind: "prompt" as const,
-        keepOpen: true,
-        prompt: {
-          title: `Delete song "${s.name || `Song ${s.index}`}"?`,
-          hint: "Enter to delete  |  Esc to cancel",
-          confirm: true,
-          onConfirm: () => {
-            mutateSavBytes(ctx, sys, (sav) => tryOp(() => deleteRisaSongInSav(sav, s.index)));
-            return null;
-          },
-        },
-      },
-    ]),
-  );
-  return submenu("risa-songs", "Songs", rows.length ? rows : [action("risa-song-none", "(no saved songs)", () => {}, true)]);
+// risa song file I/O: a `.risong` is the raw self-describing song record — the `.lsdsng` analog (song only,
+// no kits). Export writes songRecordBytes; Replace/Add inject the record via the byte-level catalog ops.
+function risaExportSong(ctx: MenuContext, sys: SystemView, index: number, name: string): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Export song ${index}`, patterns: ["*.risong"], saving: true, defaultName: `${sanitizeName(name)}.risong` }, (path) => {
+    const bytes = ctx.stores.project.systems.readSram(sys.id);
+    if (!bytes) return;
+    const record = songRecordBytes(bytes, index);
+    if (record) be.writeFileAtomic(path, record);
+  });
 }
+function risaReplaceSong(ctx: MenuContext, sys: SystemView, index: number): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Replace song ${index}`, patterns: ["*.risong"] }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    mutateSavBytes(ctx, sys, (sav) => tryOp(() => replaceSongRecordInSav(sav, index, data)));
+  });
+}
+function risaAddSong(ctx: MenuContext, sys: SystemView): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: "Add Song", patterns: ["*.risong"] }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    mutateSavBytes(ctx, sys, (sav) => tryOp(() => addSongRecordToSav(sav, data)));
+  });
+}
+
+const lsdjSongSpec: SongMenuSpec = { id: "lsdj", catalog: lsdjSongCatalog, exportSong, replaceSong, addSong: addSongFromDisk };
+const risaSongSpec: SongMenuSpec = { id: "risa", catalog: risaSongCatalog, exportSong: risaExportSong, replaceSong: risaReplaceSong, addSong: risaAddSong };
+
+// The per-console tracker menus, gated on the marker role the ROM provider attaches. The one place a new
+// tracker console's instance submenu is registered (its SongCatalog rides src/tracker).
+interface TrackerMenu {
+  id: string; // submenu id suffix + row prefix
+  markerRole: string;
+  label: string;
+  children(ctx: MenuContext, sys: SystemView): MenuItem[];
+}
+const TRACKER_MENUS: TrackerMenu[] = [
+  { id: "lsdj", markerRole: "lsdj-sync", label: "LSDj", children: lsdjChildren },
+  { id: "risa", markerRole: "risa", label: "risa", children: risaChildren },
+];
 
 function risaChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
-  // Songs (the battery) + the Themes / Fonts asset submenus (non-destructive ROM overrides). Kits are M5.
-  return [risaSongMenu(ctx, sys), ...risaAssetMenus(ctx, sys)];
+  // Songs (the battery) + the Themes / Fonts / Kits asset submenus (non-destructive ROM overrides).
+  return [songMenu(risaSongSpec, ctx, sys), ...risaAssetMenus(ctx, sys)];
 }
 
-function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unknown>): MenuItem[] {
+function lsdjChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
+  const cfg = sys.roles.find((r) => r.kind === "lsdj-sync")?.config ?? {};
   const mode = typeof cfg.mode === "string" ? (cfg.mode as LsdjSyncMode) : "midiSync";
   const divisor = typeof cfg.tempoDivisor === "number" ? cfg.tempoDivisor : 1;
   const autoStart = cfg.autoStart === true;
@@ -860,7 +887,7 @@ function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unk
     ),
     sep("lsdj-assets-sep"),
     // Songs: manage the SAV's saved-song slots (export .lsdsng / replace / delete / add).
-    lsdjSongMenu(ctx, sys),
+    songMenu(lsdjSongSpec, ctx, sys),
     // Kits / Fonts / Palettes: export or non-destructively replace each asset (stored in the project).
     ...lsdjAssetMenus(ctx, sys),
   ];
@@ -1093,8 +1120,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const sys = ctx.system!;
   const systems = ctx.stores.project.systems;
   const multi = ctx.systems.length > 1; // Replace / Remove / Link Group are peer-only rows
-  const lsdj = sys.roles.find((r) => r.kind === "lsdj-sync"); // present iff the ROM sniffed as LSDj
-  const risa = sys.roles.find((r) => r.kind === "risa"); // present iff the ROM sniffed as risa
+  // The tracker submenu (LSDj / risa / …) — one generic branch, gated on the marker role the ROM sniffed.
+  const tracker = TRACKER_MENUS.find((t) => sys.roles.some((r) => r.kind === t.markerRole));
   return {
     title: instanceTitle(ctx, sys),
     items: [
@@ -1129,8 +1156,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         : []),
       sep("inst-sep1"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
-      ...(lsdj ? [submenu("inst-lsdj", "LSDj", lsdjChildren(ctx, sys, lsdj.config))] : []),
-      ...(risa ? [submenu("inst-risa", "risa", risaChildren(ctx, sys))] : []),
+      ...(tracker ? [submenu(`inst-${tracker.id}`, tracker.label, tracker.children(ctx, sys))] : []),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
       // Deferred: About panel.

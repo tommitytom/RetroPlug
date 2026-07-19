@@ -13,6 +13,8 @@
 // Ported from tools/rom_patcher/src/save_manager/{catalog.js,constants.js,record_codec.js}. Mirrors
 // the module shape of ../../lsdj/codec/sav.ts (listSongs is the risa analog of LSDj listProjects).
 
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_MAGIC, SAVE_MAGIC_OFFSET, SONG_NAME_OFFSET, SONG_NAME_LEN } from "./constants";
+
 /** One saved song in the RSAV catalog — index + name, plus the record version and total byte length
  *  (both read cheaply from the record header, no payload decode). */
 export interface RisaSongInfo {
@@ -63,6 +65,22 @@ export function decodeSongName(bytes: Uint8Array): string {
     s += String.fromCharCode(bytes[i]);
   }
   return s.replace(/\s+$/, "") || kUntitled;
+}
+
+/** The name of the working song (the live song in WRAM banks 0-3), keyed by the 'N8T' magic at bank-1
+ *  0x1E80. null when the magic is absent (no working song) or the container is unrecognized. A cheap
+ *  header read, for recent-list / title display. */
+export function workingSongName(rawSave: Uint8Array): string | null {
+  let save: Uint8Array;
+  try {
+    save = normalizeSaveContainer(rawSave).save;
+  } catch {
+    return null; // unrecognized container size
+  }
+  const magicOff = BANK_DATA * WRAM_BANK_SIZE + SAVE_MAGIC_OFFSET;
+  for (let i = 0; i < SAVE_MAGIC.length; i++) if (save[magicOff + i] !== SAVE_MAGIC[i]) return null;
+  const nameOff = BANK_DATA * WRAM_BANK_SIZE + SONG_NAME_OFFSET;
+  return decodeSongName(save.subarray(nameOff, nameOff + SONG_NAME_LEN));
 }
 
 /** Normalize an on-disk container to the raw 64 KB battery image. Handles the 32 KB rescue dump

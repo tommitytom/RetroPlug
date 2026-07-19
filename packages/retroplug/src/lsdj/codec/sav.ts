@@ -169,6 +169,16 @@ export function decompressSlot(savBytes: Uint8Array, slot: number): Uint8Array |
 export function savSongName(savBytes: Uint8Array, slot: number): string {
   return readName(savBytes, kProjectNames + slot * kNameLen);
 }
+
+/** The name of the currently-loaded (working) song — the working song is a copy of the slot at
+ *  activeProjectIndex, so its name is that slot's. null when no project is active (0xff) or the sav is
+ *  too small. A cheap header read (no decompression), for recent-list / title display. */
+export function workingSongName(savBytes: Uint8Array): string | null {
+  if (savBytes.length <= kActiveProj) return null;
+  const idx = savBytes[kActiveProj];
+  if (idx === 0xff || idx >= 32) return null;
+  return savSongName(savBytes, idx) || null;
+}
 export function savSongVersion(savBytes: Uint8Array, slot: number): number {
   return savBytes[kProjectVers + slot];
 }
