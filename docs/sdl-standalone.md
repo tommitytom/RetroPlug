@@ -27,13 +27,25 @@ thread, live audio reconfigure, and dirty-region present.
 No MIDI source at all (SDL2 has no MIDI). Blocks **mGB** (the GB MIDI synth is unplayable without it), NES
 MIDI-driven ROMs, and every LSDj MIDI-sync/map/passthrough mode. Plugin reference: `PluginDSP::run` stages
 host MIDI via `engine_.stageMidi(frame, bytes)` ([PluginDSP.cpp:163](../packages/native/plugin/PluginDSP.cpp#L163)).
-→ Add a MIDI-in source: ALSA seq (Linux, incl. USB-MIDI) / CoreMIDI (mac) / WinMM (win), or RtMidi
-cross-platform; feed `engine.stageMidi` from a poll on/near the audio thread. Where there's no MIDI port,
-consider an on-screen keyboard.
+
+**Decision: RtMidi** (vendored), behind a thin `MidiIo` seam — cross-platform (ALSA seq / JACK on Linux,
+CoreMIDI on mac, WinMM/WinRT on Windows), small, permissively licensed, still maintained, and it supports
+**virtual ports** on ALSA/CoreMIDI. (PortMidi is older/C/polling and less maintained; a DIY per-OS
+implementation isn't worth it when RtMidi is exactly that abstraction.)
+
+Design:
+- **Input** — `RtMidiIn` callback (its own thread) pushes `{arrival, bytes}` into a lock-free SPSC ring; the
+  audio callback drains it at block start and stages via the existing control→audio MIDI ring (`stageMidiIn`,
+  NOT `stageMidi` directly — RtMidi is cross-thread). Frame offset can be approximate (live hardware MIDI
+  jitters anyway; block-quantized is fine).
+- **Ports** — create a virtual `RetroPlug` in+out port on Linux/mac (DAWs/controllers connect like the plugin
+  does in a host) and auto-connect hardware inputs (USB-MIDI on handhelds). Windows has no virtual ports → open
+  a hardware port (or defer).
+- Where there's genuinely no MIDI source, an on-screen keyboard is a later nicety.
 
 ### P2 — MIDI output
 `engine.midiOut()` is never drained. Blocks LSDj **MI.OUT** / Master Sync / MIDI passthrough to external gear.
-→ Drain `engine.midiOut()` each block to an out port; mirror
+→ Drain `engine.midiOut()` each block to an `RtMidiOut` port (same RtMidi seam as P1); mirror
 [PluginDSP.cpp:178-186](../packages/native/plugin/PluginDSP.cpp#L178).
 
 ### P3 — File drag-and-drop
@@ -64,6 +76,38 @@ does guard). → Implement `jsSetWindowSize` via `SDL_SetWindowSize`; route `SDL
 ### N/A — DAW-only (listed for completeness)
 Parameters/automation, DPF state-chunk get/setState, latency reporting, per-output labels — plugin-in-DAW
 concerns the standalone doesn't need.
+
+## Planned architecture decisions
+
+### Audio backend: SDL audio now → PortAudio (PipeWire) later
+Current audio is the SDL callback → `engine.processBlock`. The eventual target is a **PortAudio fork with
+native PipeWire support** (<https://github.com/tommitytom/portaudio/tree/pipewire>) — better latency + device
+handling than SDL's ALSA-compat path, especially on handhelds. To keep the swap mechanical, keep the audio
+backend behind the thin seam that's already mostly in place (`openAudio` / `audioCb` / `reconfigureAudio`
+handoff): both SDL and PortAudio are callback-based, so the swap is "implement the same 3 functions against
+PortAudio," selectable at build/config, with the RT-thread tuning + block-size reconfigure kept
+backend-agnostic. Nothing in the MIDI design (P1/P2) changes — the MIDI ring still drains in whichever audio
+callback is active. **Deferred** (after MIDI + the file browser).
+
+### File browser: make the in-app (React/LVGL) browser the default; keep native dialogs as a toggle
+Today the file browser is host-decided: the SDL host renders its own **C++ LVGL browser**
+([main.cpp](../packages/native/sdl/main.cpp) `fbOpen`/`fbPopulate`, `readdir` directly), while the DPF plugin
+installs `__rp_openFileBrowser` → a **native OS dialog**. The two are mutually exclusive per host and the SDL
+one is duplicated C++.
+
+**Decision:** make an **in-app React/LVGL file browser the default on every host**, and keep OS-native dialogs
+as an opt-in. This is cheap because the cross-host filesystem seam already exists — `backend.listDir(dir)`
+([backend.ts:53](../packages/retroplug/src/backend.ts#L53)) + `fileExists` are RPCs available in *all* hosts.
+Plan:
+- A **React file-browser overlay** (same pattern as the close-guard / project-modal overlays) driven by
+  `listDir` + `fileExists`, with pattern filtering + a save-name field. Renders in SDL *and* the plugin.
+- **`openFileBrowser(opts)` routing:** default → resolve via the React overlay; if
+  `userConfig.useNativeFileDialogs` is set **and** the host installs `__rp_openFileBrowser` → use the native
+  dialog (the current path). Native dialogs stay fully supported, just opt-in.
+- **Retire** the SDL C++ `FileBrowser` (the React browser replaces it); SDL keeps only `listDir`, which it
+  already provides. One browser implementation instead of two.
+
+Self-contained; independent of the MIDI/audio work.
 
 ## Performance notes (future work)
 
