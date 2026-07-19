@@ -997,8 +997,13 @@ int main(int argc, char** argv) {
     app.invoker.drainInto(app.engine);
     app.invoker.reclaimReleased();
 
+    // Tear the UI down in the order the LVGL lifecycle expects. Disable invalidation FIRST so the widget
+    // deletes below don't walk styles into freed memory (lv_obj_invalidate early-outs). Then detachDisplay()
+    // unmounts React + async-deletes every widget (and the window root); a single lv_timer_handler() flushes
+    // that async-delete queue. Do NOT lv_obj_clean(screen) beforehand — that deletes the same widgets
+    // synchronously, so the async deletes detachDisplay queued then run over freed objects (a UAF that
+    // survives on Linux's allocator but is a hard EXC_BAD_ACCESS on macOS / under MALLOC_PERTURB_).
     if (app.display) lv_display_enable_invalidation(app.display, false);
-    if (lv_obj_t* screen = lv_screen_active()) lv_obj_clean(screen);
     app.ui.detachDisplay();
     lv_timer_handler();
 
