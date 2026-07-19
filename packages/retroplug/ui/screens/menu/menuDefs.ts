@@ -37,6 +37,8 @@ import {
   moveSongInSav as moveRisaSongInSav,
   loadSongToWorkingInSav,
 } from "../../../src/risaSongOps";
+import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, type RisaTheme } from "../../../src/risa/rom";
+import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 import type { HostBackend } from "../../../src/backend";
@@ -499,6 +501,130 @@ function lsdjAssetMenus(ctx: MenuContext, sys: SystemView): MenuItem[] {
   return [kits, ...others];
 }
 
+// --- risa asset submenus (Themes / Fonts: export or non-destructively replace) -----------------------
+// The risa twin of the LSDj asset menus. Overrides ride the `risa-assets` role config and apply to the ROM
+// in memory at construct (risaAssetsRole.ts) — the base .nes is never written. THEMES are palette indices
+// stored INLINE (readable JSON, no file); FONTS LINK a .chr bank by path. Kits are deferred to M5.
+
+type RisaAssetKind = "theme" | "font";
+interface RisaInventory { theme: { slot: number; name: string; theme: RisaTheme }[]; font: { slot: number }[] }
+
+const RISA_ASSET_META: Record<RisaAssetKind, { title: string; patterns: string[]; ext: string }> = {
+  theme: { title: "Themes", patterns: ["*.rit"], ext: ".rit" },
+  font: { title: "Fonts", patterns: ["*.chr"], ext: ".chr" },
+};
+
+const risaInvCache = new Map<string, RisaInventory | null>();
+function risaInventory(backend: HostBackend, romPath: string): RisaInventory | null {
+  if (risaInvCache.has(romPath)) return risaInvCache.get(romPath) ?? null;
+  let inv: RisaInventory | null = null;
+  const bytes = romPath ? backend.readFile(romPath) : null;
+  if (bytes) {
+    const rom = RisaRom.fromBytes(bytes);
+    if (rom.isRisa) {
+      inv = {
+        theme: rom.themes().map((t) => ({ slot: t.slot, name: t.theme.name.trim() || `Theme ${t.slot}`, theme: t.theme })),
+        font: rom.fonts(),
+      };
+    }
+  }
+  risaInvCache.set(romPath, inv);
+  return inv;
+}
+
+const risaAssetOverrides = (sys: SystemView): RisaAssetOverride[] =>
+  readRisaOverrides(sys.roles.find((r) => r.kind === "risa-assets")?.config);
+
+const readRisaRomFor = (be: HostBackend, romPath: string): RisaRom | null => {
+  const bytes = romPath ? be.readFile(romPath) : null;
+  if (!bytes) return null;
+  const rom = RisaRom.fromBytes(bytes);
+  return rom.isRisa ? rom : null;
+};
+
+// Export theme/font `slot` to a picked file: the override's data if replaced, else the base ROM's asset.
+function exportRisaAsset(ctx: MenuContext, sys: SystemView, kind: RisaAssetKind, slot: number, label: string): void {
+  const be = ctx.stores.backend;
+  const ov = risaAssetOverrides(sys).find((o) => o.type === kind && o.slot === slot);
+  const defaultName = `${sanitizeName(label)}${RISA_ASSET_META[kind].ext}`;
+  browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: RISA_ASSET_META[kind].patterns, saving: true, defaultName }, (path) => {
+    let bytes: Uint8Array | null = null;
+    if (kind === "theme") {
+      // The theme comes from the inline override, or the base ROM decoded; emit a .rit (readable JSON).
+      let theme = ov?.theme ?? null;
+      if (!theme) {
+        const t = readRisaRomFor(be, sys.romPath)?.getTheme(slot);
+        if (t) theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
+      }
+      if (theme) bytes = new TextEncoder().encode(JSON.stringify(serializeRit(theme), null, 2) + "\n");
+    } else {
+      bytes = ov?.path ? be.readFile(ov.path) : (readRisaRomFor(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
+    }
+    if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
+  });
+}
+
+// Replace theme/font `slot` from a picked file: validate it, record the override (theme INLINE / font by
+// PATH) in role config, and reload so it takes effect. NON-DESTRUCTIVE — the base .nes is never written.
+function replaceRisaAsset(ctx: MenuContext, sys: SystemView, kind: RisaAssetKind, slot: number): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Replace ${kind} ${slot}`, patterns: RISA_ASSET_META[kind].patterns }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    let entry: RisaAssetOverride;
+    try {
+      if (kind === "theme") {
+        const { theme } = parseRit(JSON.parse(new TextDecoder().decode(data))); // throws on a bad .rit
+        entry = { type: "theme", slot, name: theme.name.trim() || stem(path), theme };
+      } else {
+        if (data.length !== 0x2000) return; // a .chr is exactly one 8 KB CHR bank
+        entry = { type: "font", slot, name: stem(path), path };
+      }
+    } catch {
+      return; // malformed .rit / unreadable → leave the ROM untouched
+    }
+    const overrides = risaAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot));
+    overrides.push(entry);
+    ctx.stores.project.systems.setRoleConfig(sys.id, "risa-assets", { overrides });
+    ctx.stores.project.systems.reloadSystem(sys.id); // rebuild → onConstruct re-patches the effective ROM
+  });
+}
+
+function removeRisaOverride(ctx: MenuContext, sys: SystemView, kind: RisaAssetKind, slot: number): void {
+  const overrides = risaAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot));
+  ctx.stores.project.systems.setRoleConfig(sys.id, "risa-assets", { overrides });
+  ctx.stores.project.systems.reloadSystem(sys.id);
+}
+
+// One asset item: Export / Replace, plus Remove Override when overridden.
+function risaAssetRow(ctx: MenuContext, sys: SystemView, kind: RisaAssetKind, slot: number, name: string, overridden: boolean): MenuItem {
+  const label = `[${slot}] ${name}${overridden ? " *" : ""}`;
+  const items: MenuItem[] = [
+    action(`risa-${kind}-${slot}-export`, "Export...", () => exportRisaAsset(ctx, sys, kind, slot, name)),
+    action(`risa-${kind}-${slot}-replace`, "Replace from Disk...", () => replaceRisaAsset(ctx, sys, kind, slot)),
+  ];
+  if (overridden) items.push(action(`risa-${kind}-${slot}-remove`, "Remove Override", () => removeRisaOverride(ctx, sys, kind, slot)));
+  return submenu(`risa-${kind}-${slot}`, label, items);
+}
+
+// Build the Themes/Fonts submenus; empty when the ROM can't be read (e.g. headless without a staged ROM).
+function risaAssetMenus(ctx: MenuContext, sys: SystemView): MenuItem[] {
+  const inv = risaInventory(ctx.stores.backend, sys.romPath);
+  if (!inv) return [];
+  const overrides = risaAssetOverrides(sys);
+  const themeName = (slot: number, base: string) => overrides.find((o) => o.type === "theme" && o.slot === slot)?.theme?.name?.trim() || base;
+  const themes = submenu("risa-themes", RISA_ASSET_META.theme.title,
+    inv.theme.map((t) => risaAssetRow(ctx, sys, "theme", t.slot, themeName(t.slot, t.name), overrides.some((o) => o.type === "theme" && o.slot === t.slot))),
+  );
+  const fonts = submenu("risa-fonts", RISA_ASSET_META.font.title,
+    inv.font.map((f) => {
+      const ov = overrides.find((o) => o.type === "font" && o.slot === f.slot);
+      return risaAssetRow(ctx, sys, "font", f.slot, ov?.name || `Font ${f.slot}`, !!ov);
+    }),
+  );
+  return [themes, fonts];
+}
+
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
 // Songs are the battery, NOT a ROM override: edits act directly on the live SRAM (like LSDj's own FILE
 // screen). mutateSavBytes reads the live sav, applies a BYTE-LEVEL transform (never the lossy Song model —
@@ -656,8 +782,8 @@ function risaSongMenu(ctx: MenuContext, sys: SystemView): MenuItem {
 }
 
 function risaChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
-  // M3 will add Kits / Themes / Fonts asset submenus here (mirroring lsdjAssetMenus).
-  return [risaSongMenu(ctx, sys)];
+  // Songs (the battery) + the Themes / Fonts asset submenus (non-destructive ROM overrides). Kits are M5.
+  return [risaSongMenu(ctx, sys), ...risaAssetMenus(ctx, sys)];
 }
 
 function lsdjChildren(ctx: MenuContext, sys: SystemView, cfg: Record<string, unknown>): MenuItem[] {

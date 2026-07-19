@@ -6,7 +6,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { risaRom, nesRom } from "../systems/fixtures";
+import { risaRom, risaRomFull, nesRom } from "../systems/fixtures";
 import { savBytes } from "../risa/fixtures";
 import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, CURRENT_LAYOUT } from "../../src/risaSav";
 
@@ -144,4 +144,48 @@ test("Load is a safe no-op on a legacy-layout catalog (no cold-boot)", () => {
 
   findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-load")!.onSelect!();
   expect(be.constructCalls.length).toBe(before); // loadSongToWorkingInSav returned null -> mutateSavBytes no-op
+});
+
+// A distinct romPath from the header-prefix risaRom() the Songs tests use — the asset inventory is memoised
+// by romPath, and a full ROM (theme table + CHR) is needed for RisaRom.isRisa.
+function risaAssetSystem(be: MockBackend, stores: AppStores): () => MenuItem[] {
+  be.seed("/roms/full.nes", risaRomFull());
+  const id = stores.project.systems.addSystem("/roms/full.nes")!;
+  return () => submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-risa");
+}
+
+test("the risa submenu shows Themes (16) + Fonts (4) asset submenus for a full ROM", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const risaKids = risaAssetSystem(be, stores);
+
+  const themes = submenuChildren(risaKids(), "risa-themes");
+  const fonts = submenuChildren(risaKids(), "risa-fonts");
+  expect(themes.length).toBe(16);
+  expect(fonts.length).toBe(4);
+  expect(themes[0].label).toBe("[0] TH0"); // decoded, space-trimmed theme name
+  expect(fonts[3].label).toBe("[3] Font 3");
+
+  // Each theme/font row offers Export + Replace (no Remove Override until one exists).
+  const t0 = submenuChildren(themes, "risa-theme-0");
+  expect(findItem(t0, "risa-theme-0-export")?.kind).toBe("action");
+  expect(findItem(t0, "risa-theme-0-replace")?.kind).toBe("action");
+  expect(findItem(t0, "risa-theme-0-remove")).toBe(undefined);
+});
+
+test("a theme override shows a * marker + a Remove Override row", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/full2.nes", risaRomFull());
+  const id = stores.project.systems.addSystem("/roms/full2.nes")!;
+  stores.project.systems.setRoleConfig(id, "risa-assets", {
+    overrides: [{ type: "theme", slot: 1, name: "NEON", theme: { name: "NEON", bg: "0x0D", normal: "0x30", shaded: "0x10", alternate: "0x20", status: "0x05", cursor: "0x15", selection: "0x25" } }],
+  });
+  const themes = submenuChildren(
+    submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-risa"),
+    "risa-themes",
+  );
+  expect(themes[1].label).toBe("[1] NEON *"); // override name + the * marker
+  const t1 = submenuChildren(themes, "risa-theme-1");
+  expect(findItem(t1, "risa-theme-1-remove")?.kind).toBe("action");
 });

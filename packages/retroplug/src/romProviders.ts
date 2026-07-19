@@ -45,9 +45,12 @@ export function registerRomProviders(registry: RoleRegistry): void {
     rom.platform === "nes" ? [{ kind: "nes-n8-midi", config: {} }] : [],
   );
 
-  // risa (the LSDj-style NES/MMC5 tracker) → the `risa` marker role that gates the Songs menu. Detected
-  // by its iNES 2.0 header fingerprint (MMC5 + 64 KB battery) since NES ROMs carry no title field.
+  // risa (the LSDj-style NES/MMC5 tracker) → the `risa` marker role that gates the Songs menu, plus the
+  // `risa-assets` role holding non-destructive theme/font ROM overrides. Detected by its iNES 2.0 header
+  // fingerprint (MMC5 + 64 KB battery) since NES ROMs carry no title field.
   registry.registerRomProvider((rom: RomContext) =>
-    rom.platform === "nes" && isRisaRomHeader(rom.header) ? [{ kind: "risa", config: {} }] : [],
+    rom.platform === "nes" && isRisaRomHeader(rom.header)
+      ? [{ kind: "risa", config: {} }, { kind: "risa-assets", config: { overrides: [] } }]
+      : [],
   );
 }
