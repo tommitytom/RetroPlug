@@ -16,6 +16,9 @@ import { syncDspFromStore } from "../appHost";
 import { extensionLower, replaceExtension } from "../pathUtil";
 import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
+import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
+import { loadSongToWorkingInSav } from "../risaSongOps";
+import { isRisaRomHeader } from "../risa";
 import type { ChannelExportMode } from "../settingsEnums";
 import {
   type Platform,
@@ -28,6 +31,8 @@ import {
 } from "./types";
 
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
+const NES_START = 7; // NesButton::Start (same index) ; NES_SELECT = 6. risa plays a song on SELECT+START.
+const NES_SELECT = 6;
 // A fixed (non-auto-detect) render runs for `durationMs` if pinned, else `maxDurationMs` — so "max duration"
 // bounds every render, not just the LSDj auto-length cap. maxDurationMs defaults to 300000 (5 min), so a
 // render with neither pinned is unchanged from the old fixed default.
@@ -66,6 +71,27 @@ function nesExportMode(split: SplitMode): ChannelExportMode {
   return split === "channels" ? "individualMono" : "stereoModPins";
 }
 
+/** True when `o.rom` is a risa cart (iNES header fingerprint) — gates the risa play gesture so generic NES
+ *  ROMs are left untouched (their audio, if any, plays without a synthetic button press). */
+function isRisaRom(ctx: RenderContext, o: RenderOpts): boolean {
+  const bytes = ctx.backend.readFile(o.rom);
+  return !!bytes && isRisaRomHeader(bytes.subarray(0, 16));
+}
+
+/** risa begins song playback on SELECT+START (a plain START first nudges it off an empty phrase context —
+ *  the sequence the runtime-reader test proved reliable). */
+function pressRisaPlay(ctx: RenderContext, id: number): void {
+  ctx.audio.pressButton(id, NES_START, true);
+  ctx.audio.renderAudio(100);
+  ctx.audio.pressButton(id, NES_START, false);
+  ctx.audio.renderAudio(100);
+  ctx.audio.pressButton(id, NES_SELECT, true);
+  ctx.audio.pressButton(id, NES_START, true);
+  ctx.audio.renderAudio(100);
+  ctx.audio.pressButton(id, NES_START, false);
+  ctx.audio.pressButton(id, NES_SELECT, false);
+}
+
 type Logger = (msg: string) => void;
 
 // --- LSDj song selection (GB only) ----------------------------------------------------------------
@@ -88,12 +114,19 @@ export function songList(sav: LsdjSav): string {
   return names.length ? names.join(", ") : "(no named projects)";
 }
 
-/** Resolve the requested project index (by songIndex or song name), promote it to the working song, and
- *  re-encode → the SRAM bytes to seed the system with. Returns undefined when no song flag. */
+/** Resolve a song-selection flag to the SRAM bytes that seed the fresh system with the chosen catalog song
+ *  promoted to the working song. Platform-aware: GB → LSDj projects, NES → risa catalog. Undefined when no
+ *  song flag is set. */
 function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): Uint8Array | undefined {
   if (o.song === undefined && o.songIndex === undefined) return undefined;
-  const { sav, raw } = readSav(ctx, o);
+  const platform = platformOf(o.rom);
+  if (platform === "gb") return resolveLsdjSongSeed(ctx, o, log, warn);
+  if (platform === "nes") return resolveRisaSongSeed(ctx, o, log, warn);
+  throw new Error(`render: --song/--song-index is a Game Boy (LSDj) / NES (risa) feature (got ${platform})`);
+}
 
+function resolveLsdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): Uint8Array {
+  const { sav, raw } = readSav(ctx, o);
   let idx: number;
   if (o.songIndex !== undefined) {
     idx = o.songIndex;
@@ -116,23 +149,61 @@ function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: L
   return encodeSav(sav, raw.length >= kSavSize ? raw : undefined);
 }
 
+// --- risa (NES) song selection ---------------------------------------------------------------------
+
+/** Read the raw risa battery a song flag needs (the given sav else the sibling <rom>.sav). */
+export function readRisaSav(ctx: RenderContext, o: RenderOpts): { path: string; raw: Uint8Array } {
+  const path = o.sav ?? siblingSavPath(o.rom);
+  const raw = ctx.backend.readFile(path);
+  if (!raw) throw new Error(`render: no sav to read songs from at ${path}`);
+  return { path, raw };
+}
+
+/** The risa catalog's saved songs (index + name), for --list-songs. */
+export function readRisaSongs(ctx: RenderContext, o: RenderOpts): { path: string; songs: RisaSongInfo[] } {
+  const { path, raw } = readRisaSav(ctx, o);
+  return { path, songs: risaListSongs(raw) };
+}
+
+const risaSongList = (songs: RisaSongInfo[]): string =>
+  songs.length ? songs.map((sg) => `${sg.index}: ${sg.name || "(unnamed)"}`).join(", ") : "(no saved songs)";
+
+function resolveRisaSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): Uint8Array {
+  const { raw } = readRisaSav(ctx, o);
+  const songs = risaListSongs(raw);
+  let idx: number;
+  if (o.songIndex !== undefined) {
+    idx = o.songIndex;
+    if (!songs.some((sg) => sg.index === idx)) throw new Error(`render: slot ${idx} is empty; songs: ${risaSongList(songs)}`);
+  } else {
+    const want = o.song!.trim().toUpperCase();
+    const hits = songs.filter((sg) => sg.name.trim().toUpperCase() === want);
+    if (hits.length === 0) throw new Error(`render: no song named "${o.song}"; songs: ${risaSongList(songs)}`);
+    if (hits.length > 1) warn(`render: ${hits.length} songs named "${o.song}"; using slot ${hits[0].index}`);
+    idx = hits[0].index;
+  }
+  // Promote the catalog song into the working banks (0-3), keeping the catalog (banks 4-7) intact. Requires a
+  // current-layout catalog — the firmware migrates legacy on boot, so a live-read battery is always current.
+  const seed = loadSongToWorkingInSav(raw, idx);
+  if (!seed) throw new Error(`render: could not load risa song ${idx} (needs a current-layout catalog)`);
+  log(`song "${songs.find((sg) => sg.index === idx)?.name || "(unnamed)"}" (slot ${idx}) → working song`);
+  return seed;
+}
+
 /** Build the single system + project it into the DSP runtime. `seed` (LSDj song bytes) forces the adopt
  *  path; a NES split mode arms construct-time capture; otherwise addSystem auto-detects. */
 function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed?: Uint8Array): number {
   let id: number | null;
-  if (seed) {
-    // Seed the fresh system from the chosen-song SRAM bytes (adopt takes raw bytes; addSystem doesn't).
-    ctx.project.systems.adopt({ romPath: o.rom }, { sramBytes: seed });
-    syncDspFromStore(ctx.project, ctx.dsp);
-    id = ctx.project.systems.view()[0]?.id ?? null;
-  } else if (platform === "nes" && o.split !== "mix") {
-    // NES per-channel capture engages at construct/onActivate, so channelExportMode MUST be set here.
-    // adopt is quiet → project the store by hand (bootSession's onSystemsChange hook doesn't fire).
-    ctx.project.systems.adopt({
-      romPath: o.rom,
-      savPath: o.sav,
-      roles: [{ kind: "mesen", config: { channelExportMode: nesExportMode(o.split) } }],
-    });
+  const nesSplit = platform === "nes" && o.split !== "mix";
+  if (seed || nesSplit) {
+    // A chosen-song seed (adopt takes raw SRAM bytes) and NES per-channel capture (channelExportMode engages
+    // at construct/onActivate) both go through adopt — combined here so `--song-index … --split channels`
+    // arms both. A seed replaces the sav; without one, pair the sav. adopt is quiet → project the store by
+    // hand (bootSession's onSystemsChange hook doesn't fire).
+    const spec: Parameters<typeof ctx.project.systems.adopt>[0] = { romPath: o.rom };
+    if (!seed && o.sav) spec.savPath = o.sav;
+    if (nesSplit) spec.roles = [{ kind: "mesen", config: { channelExportMode: nesExportMode(o.split) } }];
+    ctx.project.systems.adopt(spec, seed ? { sramBytes: seed } : undefined);
     syncDspFromStore(ctx.project, ctx.dsp);
     id = ctx.project.systems.view()[0]?.id ?? null;
   } else {
@@ -299,9 +370,9 @@ function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs
 /** Validate a resolved render request against its platform. Throws on a bad split/platform or song/platform
  *  combo so the caller fails before loading anything. (Shared by the CLI and the worker.) */
 export function validateRenderOpts(o: RenderOpts, platform: Platform): void {
-  // Song selection is an LSDj (GB) concept — reject it on other platforms.
-  if ((o.song !== undefined || o.songIndex !== undefined) && platform !== "gb")
-    throw new Error(`render: --song is a Game Boy (LSDj) feature (got ${platform})`);
+  // Song selection promotes a saved catalog song to the working song — LSDj (GB) + risa (NES) only.
+  if ((o.song !== undefined || o.songIndex !== undefined) && platform !== "gb" && platform !== "nes")
+    throw new Error(`render: --song/--song-index is a Game Boy (LSDj) / NES (risa) feature (got ${platform})`);
   if (o.split === "pins") {
     if (platform !== "nes") throw new Error(`render: --split pins is NES-only (got ${platform})`);
   } else if (o.split === "channels" && platform !== "gb" && platform !== "nes") {
@@ -334,6 +405,8 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     ctx.audio.pressButton(id, GB_START, true);
     ctx.audio.renderAudio(100);
     ctx.audio.pressButton(id, GB_START, false);
+  } else if (o.start && platform === "nes" && isRisaRom(ctx, o)) {
+    pressRisaPlay(ctx, id); // risa plays the working song on SELECT+START (generic NES ROMs are left alone)
   }
 
   const sr = ctx.audio.sampleRate();
