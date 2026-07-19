@@ -525,7 +525,7 @@ void installWindowHooks(JSContext* ctx) {
 // RenderCore::tapKey / PluginUI::onKeyboard. dpf is the DPF keycode the TS input layer expects.
 void feedKey(AppState& a, std::uint32_t lvKey, std::uint32_t dpf, bool press) {
     JSContext* ctx = a.ui.getContext();
-    if (press) a.keyQueue.push_back(lvKey);
+    if (press && lvKey != 0) a.keyQueue.push_back(lvKey);  // only real LVGL nav keys reach the keypad indev
     if (ctx) {
         JSValue args[2] = {JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press)};
         a.ui.emit("key", 2, args);
@@ -534,16 +534,38 @@ void feedKey(AppState& a, std::uint32_t lvKey, std::uint32_t dpf, bool press) {
     }
 }
 
-// Map an SDL keysym to (LVGL key, DPF keycode). Returns false for keys we don't translate.
+// Map an SDL keysym to (LVGL key, DPF keycode). The DPF code is what the TS input layer (keyCodes.ts)
+// expects on the "key" bus: arrows in the 0xE03x band, ShiftL/R at 0xE051/2, and — crucially — printable
+// keys carry their ASCII code verbatim (dpfCodeToKeyName does String.fromCharCode). Only the navigation
+// keys get a real LVGL keypad code (`lv`); everything else is bus-only (lv = 0) — game buttons, capture,
+// and app actions all live on the "key" bus, not the keypad. Returns false for keys we don't translate.
+//
+// This must cover every key the default bindings use (bindingMap.ts): dpad = arrows, A = Z, B = X,
+// Start = Enter, Select = ShiftL/ShiftR/Backspace — plus anything the user might rebind to. Previously only
+// arrows/Enter/Esc were mapped, so A/B/Select (and any letter/modifier binding) never reached the emulator
+// OR the key-capture editor.
 bool mapSdlKey(SDL_Keycode k, std::uint32_t& lv, std::uint32_t& dpf) {
+    lv = 0;
     switch (k) {
-        case SDLK_UP:     lv = LV_KEY_UP;    dpf = 0xE036; return true;
-        case SDLK_DOWN:   lv = LV_KEY_DOWN;  dpf = 0xE038; return true;
-        case SDLK_RIGHT:  lv = LV_KEY_RIGHT; dpf = 0xE037; return true;
-        case SDLK_LEFT:   lv = LV_KEY_LEFT;  dpf = 0xE035; return true;
-        case SDLK_RETURN: lv = LV_KEY_ENTER; dpf = 0x0D;   return true;
-        case SDLK_ESCAPE: lv = LV_KEY_ESC;   dpf = 0x1B;   return true;
-        default: return false;
+        case SDLK_UP:       lv = LV_KEY_UP;    dpf = 0xE036; return true;
+        case SDLK_DOWN:     lv = LV_KEY_DOWN;  dpf = 0xE038; return true;
+        case SDLK_RIGHT:    lv = LV_KEY_RIGHT; dpf = 0xE037; return true;
+        case SDLK_LEFT:     lv = LV_KEY_LEFT;  dpf = 0xE035; return true;
+        case SDLK_RETURN:   lv = LV_KEY_ENTER; dpf = 0x0D;   return true;
+        case SDLK_KP_ENTER: lv = LV_KEY_ENTER; dpf = 0x0D;   return true;
+        case SDLK_ESCAPE:   lv = LV_KEY_ESC;   dpf = 0x1B;   return true;
+        // Bus-only keys (no keypad nav): the GB Select defaults + editor keys.
+        case SDLK_LSHIFT:   dpf = 0xE051; return true;   // ShiftL
+        case SDLK_RSHIFT:   dpf = 0xE052; return true;   // ShiftR
+        case SDLK_BACKSPACE:dpf = 0x08;   return true;   // Backspace (Select default; clears a capture row)
+        case SDLK_TAB:      dpf = 0x09;   return true;   // Tab (default Cycle-Instances app action)
+        case SDLK_PAGEUP:   dpf = 0xE031; return true;   // menu coarse-step
+        case SDLK_PAGEDOWN: dpf = 0xE032; return true;
+        default:
+            // Printable ASCII (letters/digits/punctuation/space): SDL's keycode IS the ASCII code, which is
+            // exactly the DPF/DGL "key" bus convention. Covers A=Z, B=X and anything the user rebinds to.
+            if (k >= 0x20 && k <= 0x7e) { dpf = static_cast<std::uint32_t>(k); return true; }
+            return false;
     }
 }
 
