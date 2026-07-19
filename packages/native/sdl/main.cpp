@@ -29,10 +29,6 @@
 #include <string>
 #include <vector>
 
-#include <dirent.h>
-#include <fnmatch.h>
-#include <sys/stat.h>
-
 #if defined(__linux__)
 #include <atomic>
 #include <pthread.h>
@@ -86,25 +82,6 @@ using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec
 
 namespace {
 
-// A native on-screen file browser (there is no OS file dialog on a handheld). Renders on LVGL's top
-// layer — above the React UI, outside its tree — and is driven directly by the gamepad/keyboard, so it
-// never touches the React focus system. Answers the UI's __rp_openFileBrowser and reports back via
-// __rp_onFileBrowserResult (the resolver realBackend.ts installs).
-struct Entry { std::string name; bool isDir; };
-struct FileBrowser {
-    bool active = false;
-    lv_obj_t* overlay = nullptr;
-    lv_obj_t* list = nullptr;
-    lv_obj_t* titleLabel = nullptr;
-    std::string title;
-    std::string dir;
-    std::vector<std::string> patterns; // globs, e.g. {"*.gb","*.gbc"}; empty = all files
-    bool saving = false;
-    std::vector<Entry> entries;        // current dir contents (".." first)
-    std::vector<lv_obj_t*> rows;       // list buttons, parallel to entries
-    int sel = 0;
-};
-
 // Whole-process state, reached by the LVGL indev read callbacks (via driver_data), the SDL audio
 // callback (via userdata), and the __rp_* window hooks (single instance → a file-scope pointer is fine,
 // unlike the plugin's per-context routing for multi-instance DAWs).
@@ -131,8 +108,6 @@ struct AppState {
     std::deque<std::uint32_t> keyQueue;   // pending LVGL key codes (keypad indev)
     lv_point_t mousePos{0, 0};
     bool       mouseDown = false;
-
-    FileBrowser fb;   // native file-picker overlay (answers __rp_openFileBrowser)
 
     // --- SDL shell ---
     SDL_Window*   window = nullptr;
@@ -263,179 +238,6 @@ bool hasGlobalFunction(JSContext* ctx, const char* name) {
     return ok;
 }
 
-// ---- native file browser ---------------------------------------------------------------------------
-
-// Report the pick (or null on cancel) back to the UI via the resolver realBackend.ts installed.
-void fbResult(AppState& a, const char* path) {
-    JSContext* ctx = a.ui.getContext();
-    if (!ctx) return;
-    JSValue g  = JS_GetGlobalObject(ctx);
-    JSValue fn = JS_GetPropertyStr(ctx, g, "__rp_onFileBrowserResult");
-    if (JS_IsFunction(ctx, fn)) {
-        JSValue arg = path ? JS_NewString(ctx, path) : JS_NULL;
-        JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 1, &arg);
-        JS_FreeValue(ctx, ret);
-        JS_FreeValue(ctx, arg);
-    }
-    JS_FreeValue(ctx, fn);
-    JS_FreeValue(ctx, g);
-}
-
-bool fbMatches(const std::string& name, const std::vector<std::string>& pats) {
-    if (pats.empty()) return true;
-    for (const auto& p : pats)
-        if (fnmatch(p.c_str(), name.c_str(), FNM_CASEFOLD) == 0) return true;
-    return false;
-}
-
-void fbHighlight(AppState& a) {
-    for (int i = 0; i < (int)a.fb.rows.size(); ++i) {
-        lv_obj_t* r = a.fb.rows[i];
-        if (i == a.fb.sel) {
-            lv_obj_set_style_bg_color(r, lv_color_hex(0x1e5aa8), 0);
-            lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
-            lv_obj_scroll_to_view(r, LV_ANIM_OFF);
-        } else {
-            lv_obj_set_style_bg_opa(r, LV_OPA_TRANSP, 0);
-        }
-    }
-}
-
-void fbPopulate(AppState& a) {
-    if (a.fb.list) lv_obj_clean(a.fb.list);
-    a.fb.entries.clear();
-    a.fb.rows.clear();
-
-    if (a.fb.dir != "/") a.fb.entries.push_back({"..", true});
-
-    std::vector<Entry> dirs, files;
-    if (DIR* d = opendir(a.fb.dir.c_str())) {
-        while (struct dirent* e = readdir(d)) {
-            std::string n = e->d_name;
-            if (n == "." || n == ".." || (!n.empty() && n[0] == '.')) continue; // skip . .. hidden
-            struct stat st;
-            const std::string full = a.fb.dir + "/" + n;
-            const bool isdir = stat(full.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
-            if (isdir) dirs.push_back({n, true});
-            else if (fbMatches(n, a.fb.patterns)) files.push_back({n, false});
-        }
-        closedir(d);
-    }
-    const auto byName = [](const Entry& x, const Entry& y) { return x.name < y.name; };
-    std::sort(dirs.begin(), dirs.end(), byName);
-    std::sort(files.begin(), files.end(), byName);
-    a.fb.entries.insert(a.fb.entries.end(), dirs.begin(), dirs.end());
-    a.fb.entries.insert(a.fb.entries.end(), files.begin(), files.end());
-
-    for (const Entry& en : a.fb.entries) {
-        const char* icon = en.isDir ? LV_SYMBOL_DIRECTORY : LV_SYMBOL_FILE;
-        const std::string label = en.name + (en.isDir && en.name != ".." ? "/" : "");
-        lv_obj_t* btn = lv_list_add_button(a.fb.list, icon, label.c_str());
-        lv_obj_set_style_radius(btn, 0, 0);
-        lv_obj_set_style_border_width(btn, 0, 0);
-        a.fb.rows.push_back(btn);
-    }
-    a.fb.sel = 0;
-    if (a.fb.titleLabel)
-        lv_label_set_text(a.fb.titleLabel, (a.fb.title + "   " + a.fb.dir).c_str());
-    fbHighlight(a);
-}
-
-void fbClose(AppState& a) {
-    if (a.fb.overlay) { lv_obj_delete(a.fb.overlay); a.fb.overlay = nullptr; }
-    a.fb.list = nullptr; a.fb.titleLabel = nullptr;
-    a.fb.rows.clear(); a.fb.entries.clear();
-    a.fb.active = false;
-}
-
-void fbOpen(AppState& a, const char* title, const char* patternsStr, bool saving) {
-    if (a.fb.active) return; // one dialog at a time
-    a.fb.title  = (title && *title) ? title : "Select file";
-    a.fb.saving = saving;
-    a.fb.patterns.clear();
-    if (patternsStr) { // split on whitespace
-        std::string cur;
-        for (const char* p = patternsStr; *p; ++p) {
-            if (*p == ' ' || *p == '\t') { if (!cur.empty()) { a.fb.patterns.push_back(cur); cur.clear(); } }
-            else cur += *p;
-        }
-        if (!cur.empty()) a.fb.patterns.push_back(cur);
-    }
-    const auto isdir = [](const char* p) { struct stat st; return stat(p, &st) == 0 && S_ISDIR(st.st_mode); };
-    if (isdir("/mnt/mmc/ROMS")) a.fb.dir = "/mnt/mmc/ROMS";
-    else if (isdir("/mnt/mmc")) a.fb.dir = "/mnt/mmc";
-    else if (const char* h = std::getenv("HOME"); h && isdir(h)) a.fb.dir = h;
-    else a.fb.dir = "/";
-
-    lv_obj_t* top = lv_layer_top();
-    a.fb.overlay = lv_obj_create(top);
-    lv_obj_remove_style_all(a.fb.overlay);
-    lv_obj_set_size(a.fb.overlay, lv_pct(100), lv_pct(100));
-    lv_obj_set_style_bg_color(a.fb.overlay, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(a.fb.overlay, LV_OPA_COVER, 0);
-    lv_obj_set_flex_flow(a.fb.overlay, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_all(a.fb.overlay, 4, 0);
-
-    a.fb.titleLabel = lv_label_create(a.fb.overlay);
-    lv_obj_set_style_text_color(a.fb.titleLabel, lv_color_hex(0x4aa3ff), 0);
-    lv_label_set_long_mode(a.fb.titleLabel, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(a.fb.titleLabel, lv_pct(100));
-
-    a.fb.list = lv_list_create(a.fb.overlay);
-    lv_obj_set_width(a.fb.list, lv_pct(100));
-    lv_obj_set_flex_grow(a.fb.list, 1);
-    lv_obj_set_style_bg_color(a.fb.list, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_border_width(a.fb.list, 0, 0);
-    lv_obj_set_style_pad_all(a.fb.list, 0, 0);
-
-    a.fb.active = true;
-    fbPopulate(a);
-}
-
-void fbMove(AppState& a, int delta) {
-    if (a.fb.entries.empty()) return;
-    a.fb.sel = std::max(0, std::min((int)a.fb.entries.size() - 1, a.fb.sel + delta));
-    fbHighlight(a);
-}
-
-void fbActivate(AppState& a) {
-    if (a.fb.entries.empty()) return;
-    const Entry en = a.fb.entries[a.fb.sel];
-    if (en.name == "..") {
-        const auto slash = a.fb.dir.find_last_of('/');
-        a.fb.dir = (slash == 0 || slash == std::string::npos) ? "/" : a.fb.dir.substr(0, slash);
-        fbPopulate(a);
-        return;
-    }
-    const std::string full = (a.fb.dir == "/" ? std::string() : a.fb.dir) + "/" + en.name;
-    if (en.isDir) { a.fb.dir = full; fbPopulate(a); return; }
-    fbResult(a, full.c_str()); // a file — report + close
-    fbClose(a);
-}
-
-void fbCancel(AppState& a) { fbResult(a, nullptr); fbClose(a); }
-
-// Feed a gamepad button (raw SDL name) to the browser while it's open. Returns true (always consumes
-// input while active). dpad = move, A = enter/descend, B = up/cancel.
-void fbGamepad(AppState& a, const char* name, bool pressed) {
-    if (!pressed || !name) return;
-    if (!std::strcmp(name, "dpup"))        fbMove(a, -1);
-    else if (!std::strcmp(name, "dpdown")) fbMove(a, 1);
-    else if (!std::strcmp(name, "dpleft")) fbMove(a, -8); // page up
-    else if (!std::strcmp(name, "dpright"))fbMove(a, 8);  // page down
-    else if (!std::strcmp(name, "a"))      fbActivate(a);
-    else if (!std::strcmp(name, "b")) {
-        if (a.fb.dir != "/" && a.fb.dir != "/mnt/mmc" && a.fb.dir != "/mnt/mmc/ROMS") {
-            // go up a level (B doubles as "up"); cancel only at the start dir
-            const auto slash = a.fb.dir.find_last_of('/');
-            a.fb.dir = (slash == 0 || slash == std::string::npos) ? "/" : a.fb.dir.substr(0, slash);
-            fbPopulate(a);
-        } else {
-            fbCancel(a);
-        }
-    }
-}
-
 // ---- __rp_* window hooks (PluginUI's window-op seam, single-instance) ------------------------------
 // The UI optional-chains these, so anything we omit is simply inert. We provide the handful a handheld
 // standalone needs; the render-job hooks are left to a later milestone.
@@ -488,19 +290,6 @@ JSValue jsSetAudioConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
     return JS_UNDEFINED;
 }
 
-// __rp_openFileBrowser(title, patterns, saving, defaultName): open the native on-screen picker. The pick
-// arrives later via __rp_onFileBrowserResult (matches the plugin's DPF dialog seam).
-JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (!g_app || argc < 3) return JS_UNDEFINED;
-    const char* title    = JS_ToCString(ctx, argv[0]);
-    const char* patterns = JS_ToCString(ctx, argv[1]);
-    const int   saving   = JS_ToBool(ctx, argv[2]);
-    fbOpen(*g_app, title ? title : "", patterns ? patterns : "", saving == 1);
-    if (title) JS_FreeCString(ctx, title);
-    if (patterns) JS_FreeCString(ctx, patterns);
-    return JS_UNDEFINED;
-}
-
 void installWindowHooks(JSContext* ctx) {
     JSValue g = JS_GetGlobalObject(ctx);
     auto bind = [&](const char* name, JSCFunction* fn, int len) {
@@ -511,7 +300,6 @@ void installWindowHooks(JSContext* ctx) {
     bind("__rp_setWindowSize", jsSetWindowSize, 2);
     bind("__rp_setWindowTitle", jsSetWindowTitle, 1);
     bind("__rp_openPath", jsOpenPath, 1);
-    bind("__rp_openFileBrowser", jsOpenFileBrowser, 4);
     bind("__rp_getAudioConfig", jsGetAudioConfig, 0);
     bind("__rp_setAudioConfig", jsSetAudioConfig, 2);
     // Mark this as a standalone host so the UI shows the "Exit" menu row (a DAW hides it).
@@ -579,11 +367,6 @@ void pumpGamepad(AppState& a) {
     JSContext* ctx = a.ui.getContext();
     if (!ctx) return;
     a.gamepad.update([&a, ctx](const retroplug::GamepadEvent& ev) {
-        // While the native file browser is open it owns all input — drive it and never reach the React UI.
-        if (a.fb.active) {
-            if (ev.kind == retroplug::GamepadEvent::Kind::Button) fbGamepad(a, ev.button, ev.pressed);
-            return;
-        }
         switch (ev.kind) {
             case retroplug::GamepadEvent::Kind::Connected: {
                 JSValue args[2] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.name ? ev.name : "")};
@@ -881,21 +664,6 @@ void handleEvents(AppState& a) {
             case SDL_QUIT: a.running = false; break;
             case SDL_KEYDOWN:
             case SDL_KEYUP: {
-                // While the file browser is open, keyboard drives it (desktop testing) — not the React UI.
-                if (a.fb.active) {
-                    if (ev.type == SDL_KEYDOWN) {
-                        switch (ev.key.keysym.sym) {
-                            case SDLK_UP:     fbMove(a, -1); break;
-                            case SDLK_DOWN:   fbMove(a, 1); break;
-                            case SDLK_PAGEUP: fbMove(a, -8); break;
-                            case SDLK_PAGEDOWN: fbMove(a, 8); break;
-                            case SDLK_RETURN: fbActivate(a); break;
-                            case SDLK_ESCAPE: fbCancel(a); break;
-                            default: break;
-                        }
-                    }
-                    break;
-                }
                 std::uint32_t lv, dpf;
                 if (mapSdlKey(ev.key.keysym.sym, lv, dpf)) feedKey(a, lv, dpf, ev.type == SDL_KEYDOWN);
                 break;
@@ -969,13 +737,6 @@ int main(int argc, char** argv) {
         reconfigureAudio(app, 44100, 512);
         std::fprintf(stderr, "[retroplug-sdl] post-reconfigure: %d Hz, %d frames, dev=%u\n",
                      app.reqSampleRate, app.reqBlockSize, app.audioDev);
-    }
-
-    // Test hook: open the native file browser at a given dir (headless screenshot verification).
-    if (const char* td = std::getenv("RETROPLUG_SDL_TEST_BROWSER")) {
-        const char* pats = std::getenv("RETROPLUG_SDL_TEST_BROWSER_PATTERNS");
-        fbOpen(app, "Load ROM", pats ? pats : "*.cpp *.hpp *.md *.gb *.rplg", false);
-        if (*td == '/') { app.fb.dir = td; fbPopulate(app); }
     }
 
     // --- the 60 fps loop: input → JS frame → LVGL render → present ---

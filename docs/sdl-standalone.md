@@ -96,31 +96,21 @@ PortAudio," selectable at build/config, with the RT-thread tuning + block-size r
 backend-agnostic. Nothing in the MIDI design (P1/P2) changes — the MIDI ring still drains in whichever audio
 callback is active. **Deferred** (after MIDI + the file browser).
 
-### File browser: in-app (React/LVGL) browser is the default; native dialogs are a toggle — ✅ mostly done
-Implemented: the in-app browser ([fileBrowserMenu.ts](../packages/retroplug/ui/screens/menu/fileBrowserMenu.ts)
-rendered by the Menu component; open + save) is the default on every host, backed by the `listDir` RPC (dirs
-marked with a trailing `/`). `Settings > File Dialogs` toggles `userConfig.useNativeFileDialogs` (In-App / OS
-Native); `useFileBrowser` installs a JS `__rp_openFileBrowser` that opens the overlay and delegates to the
-host's OS dialog when the toggle is on. **Remaining (cleanup):** retire the now-redundant SDL C++ browser
-(`fbOpen`/`fbPopulate` in main.cpp) so "OS Native" on the handheld cleanly no-ops to in-app. Original notes:
+### File browser: in-app (React/LVGL) browser is the default; native dialogs are a toggle — ✅ DONE
+An **in-app React/LVGL file browser** ([fileBrowserMenu.ts](../packages/retroplug/ui/screens/menu/fileBrowserMenu.ts),
+rendered by the Menu component so it inherits all the keyboard/gamepad nav) is the default on **every host** —
+SDL *and* the DPF plugin — for both open and save (save adds a filename prompt). Backed by the cross-host
+`backend.listDir(dir)` RPC ([backend.ts:53](../packages/retroplug/src/backend.ts#L53)), which now marks
+directories with a trailing `/`.
 
-Make the in-app (React/LVGL) browser the default; keep native dialogs as a toggle:
-Today the file browser is host-decided: the SDL host renders its own **C++ LVGL browser**
-([main.cpp](../packages/native/sdl/main.cpp) `fbOpen`/`fbPopulate`, `readdir` directly), while the DPF plugin
-installs `__rp_openFileBrowser` → a **native OS dialog**. The two are mutually exclusive per host and the SDL
-one is duplicated C++.
-
-**Decision:** make an **in-app React/LVGL file browser the default on every host**, and keep OS-native dialogs
-as an opt-in. This is cheap because the cross-host filesystem seam already exists — `backend.listDir(dir)`
-([backend.ts:53](../packages/retroplug/src/backend.ts#L53)) + `fileExists` are RPCs available in *all* hosts.
-Plan:
-- A **React file-browser overlay** (same pattern as the close-guard / project-modal overlays) driven by
-  `listDir` + `fileExists`, with pattern filtering + a save-name field. Renders in SDL *and* the plugin.
-- **`openFileBrowser(opts)` routing:** default → resolve via the React overlay; if
-  `userConfig.useNativeFileDialogs` is set **and** the host installs `__rp_openFileBrowser` → use the native
-  dialog (the current path). Native dialogs stay fully supported, just opt-in.
-- **Retire** the SDL C++ `FileBrowser` (the React browser replaces it); SDL keeps only `listDir`, which it
-  already provides. One browser implementation instead of two.
+- **Routing** ([useFileBrowser.ts](../packages/retroplug/ui/lvgl/useFileBrowser.ts)): the UI installs a JS
+  `__rp_openFileBrowser` that opens the overlay, overriding any native host browser. `realBackend` still calls
+  that global hook + awaits `__rp_onFileBrowserResult`, so the browse crosses the control-plane↔UI **bundle
+  boundary via globalThis** (module singletons don't — that's the key subtlety).
+- **Toggle**: `Settings > File Dialogs` (In-App / OS Native) sets `userConfig.useNativeFileDialogs`; when on
+  *and* the host provides an OS dialog, the bridge delegates to it. On a host with no OS dialog it stays in-app.
+- The old **SDL C++ browser** (`fbOpen`/`fbPopulate` + its input gating in main.cpp) has been **removed** — one
+  browser implementation, and SDL keeps only `listDir`. Verified by `fileBrowser.test.ts` + the full UI suite.
 
 Self-contained; independent of the MIDI/audio work.
 
