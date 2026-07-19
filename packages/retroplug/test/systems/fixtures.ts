@@ -84,6 +84,33 @@ export function risaRom(): Uint8Array {
   return b;
 }
 
+/** A full-size synthetic risa ROM (16 + 512 KB PRG + 32 KB CHR = 0x88010) carrying a THEME_META_MAGIC
+ *  theme table (16 distinct themes) in the fixed bank + a distinct CHR region per font slot. Enough for
+ *  RisaRom.isRisa + theme/font read/patch (the on-ROM asset layer); the PRG body is otherwise zeros. */
+export function risaRomFull(): Uint8Array {
+  const PRG = 0x80000; // 32 × 16 KB
+  const CHR = 0x8000; // 4 × 8 KB
+  const rom = new Uint8Array(0x10 + PRG + CHR);
+  rom.set([0x4e, 0x45, 0x53, 0x1a, 0x20, 0x04, 0x53, 0x08, 0x00, 0x00, 0xa0], 0);
+
+  // Theme table at the fixed bank (lastPrgBank 63): magic + 16×7 records + 16×4 names.
+  const fixedOffset = 0x10 + 63 * 0x2000;
+  rom.set([0xa5, 0x5a, 0x54, 0x48, 0x4d, 0x45], fixedOffset);
+  const recordBase = fixedOffset + 6;
+  const namesOff = recordBase + 16 * 7;
+  for (let i = 0; i < 16; i++) {
+    for (let r = 0; r < 7; r++) rom[recordBase + i * 7 + r] = (i * 7 + r) & 0x3f; // distinct role indices
+    const nm = `TH${i.toString(16).toUpperCase()}`.slice(0, 4);
+    for (let c = 0; c < 4; c++) rom[namesOff + i * 4 + c] = c < nm.length ? nm.charCodeAt(c) : 0x20; // space-padded
+  }
+
+  // CHR: 4 × 8 KB slots, each filled with a slot-distinct pattern.
+  const chrOffset = 0x10 + PRG;
+  for (let s = 0; s < 4; s++)
+    for (let b = 0; b < 0x2000; b++) rom[chrOffset + s * 0x2000 + b] = (s * 13 + b) & 0xff;
+  return rom;
+}
+
 /** A present-but-not-a-ROM buffer (classifies "unknown"). */
 export function garbage(): Uint8Array {
   return new Uint8Array(0x8000); // all zero

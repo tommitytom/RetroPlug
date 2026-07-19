@@ -7,3 +7,4 @@ export * from "./codec/record";
 export * from "./codec/working";
 export * from "./romDetect";
 export * as runtime from "./runtime";
+export * as rom from "./rom";

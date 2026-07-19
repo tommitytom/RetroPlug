@@ -577,8 +577,8 @@ export interface ConstructSpec {
   replaceId?: number;
   /** Effective ROM bytes to load INSTEAD of slurping `romPath` — a load-time role's patched image (e.g.
    *  LSDj asset overrides applied non-destructively). `romPath` still travels (for the ROM watcher and
-   *  `.sav` resolution); only the loaded bytes differ. SameBoy (GB) honours it; Mesen ignores it. Rides
-   *  as a Uint8Array (rfl::Bytestring). */
+   *  `.sav` resolution); only the loaded bytes differ. Honoured by both SameBoy (GB) and Mesen (NES/GBA).
+   *  Rides as a Uint8Array (rfl::Bytestring). */
   romBytes?: Uint8Array;
   /** Seed SRAM bytes (a zip-import blob, a reload's carried battery, or a load-time role's
    *  synthesized sav). When set, native seeds from these instead of reading `savPath`; `savPath`
