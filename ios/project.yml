@@ -60,7 +60,7 @@ targets:
       - sdk: AVFAudio.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug-spike.kit
+        PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug.kit
         DEFINES_MODULE: YES
         GENERATE_INFOPLIST_FILE: YES
         HEADER_SEARCH_PATHS:
@@ -98,7 +98,7 @@ targets:
           NSExtensionAttributes:
             AudioComponents:
               - name: "tommitytom: RetroPlug mGB"
-                description: "RetroPlug mGB (iOS spike)"
+                description: "RetroPlug mGB synthesizer"
                 manufacturer: RPtm
                 subtype: mgbs
                 type: aumu
@@ -107,7 +107,7 @@ targets:
                 tags: [Synth]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug-spike.auv3
+        PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug.auv3
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/../../Frameworks"
@@ -128,6 +128,12 @@ targets:
       properties:
         CFBundleDisplayName: RetroPlug
         UILaunchScreen: {}
+        # Keep the synth audible when the app is backgrounded (the session is
+        # already .playback; the engine keeps rendering).
+        UIBackgroundModes: [audio]
+        # No networking, no crypto beyond the OS — skips the export-compliance
+        # questionnaire on every upload.
+        ITSAppUsesNonExemptEncryption: false
         # All four orientations: with iPad multitasking (no UIRequiresFullScreen),
         # anything less trips "All interface orientations must be supported".
         UISupportedInterfaceOrientations:
@@ -166,7 +172,7 @@ targets:
               public.filename-extension: [rplg]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug-spike
+        PRODUCT_BUNDLE_IDENTIFIER: com.toilville.retroplug
         TARGETED_DEVICE_FAMILY: "1,2"
 
 schemes:

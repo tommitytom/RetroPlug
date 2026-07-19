@@ -35,6 +35,9 @@
 NSErrorDomain const RPCoreBridgeErrorDomain = @"com.toilville.retroplug.CoreBridge";
 const NSUInteger RPScreenWidth  = sameboy::kPixelWidth;
 const NSUInteger RPScreenHeight = sameboy::kPixelHeight;
+const NSUInteger RPMidiChannelSettingCount = 17; // == kChannelSettingCount below
+const NSUInteger RPMidiOutVoiceCount       = 4;  // == kMidiOutVoiceCount below
+const NSUInteger RPMidiOutCcNumberCount    = 7;  // == kCcNumbersPerVoice below
 
 namespace {
 
@@ -55,6 +58,38 @@ constexpr NSInteger   kBusCount  = 1 + (NSInteger)kStemCount; // Mix + stems
 constexpr AUParameterAddress kParamSyncMode     = 0;
 constexpr AUParameterAddress kParamTempoDivisor = 1;
 constexpr AUParameterAddress kParamAutoStart    = 2;
+// Per-mode MIDI channel assignments: address = base + RPMidiChannelSetting.
+constexpr AUParameterAddress kParamChannelBase  = 16;
+
+constexpr std::size_t kChannelSettingCount = 17; // == RPMidiChannelSettingCount
+// The Arduinoboy firmware's factory defaults, 1-based like the editor GUI:
+// slave/master/keyboard/map on ch 1, mGB voices on 1–5, MI.OUT note + CC
+// channels on 1–4. Seeded into the parameters at init (the observer copies
+// them into RenderState::midiChannels).
+constexpr std::uint8_t kChannelDefaults[kChannelSettingCount] = {
+    1, 1, 1, 1,       // slave sync, master sync, keyboard, MIDI map
+    1, 2, 3, 4, 5,    // mGB PU1/PU2/WAV/NOI/POLY
+    1, 2, 3, 4,       // MI.OUT note (+ PC) channels per voice
+    1, 2, 3, 4,       // MI.OUT CC channels per voice
+};
+
+// MI.OUT CC matrix (the editor's CC Mode / CC SCALING / CC#0–6 grid): mode
+// and scaling per voice, then 7 CC numbers per voice
+// (address = base + voice * 7 + index).
+constexpr AUParameterAddress kParamCcModeBase    = 40; // + voice (0-3)
+constexpr AUParameterAddress kParamCcScalingBase = 44; // + voice (0-3)
+constexpr AUParameterAddress kParamCcNumberBase  = 48; // + voice*7 + index
+
+constexpr std::size_t kMidiOutVoiceCount = 4; // == RPMidiOutVoiceCount
+constexpr std::size_t kCcNumbersPerVoice = 7; // == RPMidiOutCcNumberCount
+
+// mGB base channel: 0 = use the five per-voice assignments (default); 1–12 =
+// the voices sit contiguously at base..base+4, so multiple DAW instances can
+// each take their own channel block with one knob.
+constexpr AUParameterAddress kParamMgbBaseChannel = 80;
+// Firmware factory defaults: CC mode 1 (hi-digit select), scaling on, and the
+// same seven CC numbers for every voice.
+constexpr std::uint8_t kCcNumberDefaults[kCcNumbersPerVoice] = {1, 2, 3, 7, 10, 11, 12};
 
 constexpr std::uint8_t kMidiClock      = 0xf8; // 24-PPQN realtime tick (LSDJ_CLOCK)
 constexpr std::uint8_t kMidiStart      = 0xfa; // transport start — Arduinoboy bookend
@@ -161,6 +196,18 @@ struct RenderState {
     std::atomic<std::uint8_t> syncMode{RPMidiSyncModeMgb};
     std::atomic<std::uint8_t> tempoDivisor{1}; // 1–8; 24/divisor ticks per quarter
     std::atomic<bool>         autoStart{false};
+    // Per-mode MIDI channel assignments (RPMidiChannelSetting order, 1-based
+    // 1–16). Zero-init here; init seeds the parameters from kChannelDefaults
+    // and the observer fills these before any render can run.
+    std::array<std::atomic<std::uint8_t>, kChannelSettingCount> midiChannels{};
+    // MI.OUT CC matrix (firmware playCC): per-voice mode / scaling flags and
+    // the 7 CC numbers per voice. Seeded like midiChannels — zero-init, then
+    // the parameter defaults flow in through the observer at init.
+    std::array<std::atomic<std::uint8_t>, kMidiOutVoiceCount> ccMode{};
+    std::array<std::atomic<std::uint8_t>, kMidiOutVoiceCount> ccScaling{};
+    std::array<std::atomic<std::uint8_t>, kMidiOutVoiceCount * kCcNumbersPerVoice> ccNumbers{};
+    // mGB base channel (0 = per-voice assignments; 1–12 = base..base+4).
+    std::atomic<std::uint8_t> mgbBaseChannel{0};
 
     // Host clock taps and the MIDI output sink, cached at allocate time per
     // the AUAudioUnit contract (calling the properties from the render thread
@@ -199,6 +246,22 @@ struct RenderState {
         std::uint8_t  pendingCmd   = 0;
 
         bool msStarted = false; // MasterSync: a run is in progress (0xFC owed on stop)
+
+        // GB Note Out (APU tap): per-voice sounding state, fed by the APU
+        // register-write log. freqRaw is the 11-bit period (pulse/wave) or
+        // the raw NR43 byte (noise); env is NRx2 (pulse/noise) or NR32
+        // (wave); bend14 is the last pitch bend sent on the voice's note
+        // channel (0x2000 = center); duty dedupes the CC70 stream.
+        struct NoteOutVoice {
+            int           note    = -1;   // sounding MIDI note (-1 = silent)
+            std::uint16_t freqRaw = 0;
+            std::uint8_t  env     = 0;
+            std::uint8_t  duty    = 0xff; // last NRx1 duty bits seen (pulse)
+            std::uint16_t bend14  = 0x2000;
+        };
+        NoteOutVoice noVoices[4];
+        std::uint8_t noNr51     = 0xff;  // last NR51 seen (0xff = not yet)
+        bool         noWaveDacOn = false; // NR30 bit 7
     } sync;
 };
 
@@ -232,12 +295,21 @@ void emitHostMidi(RenderState* state, AUEventSampleTime when,
     if (state->midiOutput) state->midiOutput(when, /*cable*/ 0, length, bytes);
 }
 
+// The 0-based channel nibble for one channel setting (the parameters carry
+// the editor GUI's 1-based 1–16 values).
+std::uint8_t midiChannelNibble(RenderState* state, std::size_t setting) {
+    const std::uint8_t v =
+        state->midiChannels[setting].load(std::memory_order_relaxed);
+    return (std::uint8_t)((v > 0 ? v - 1 : 0) & 0x0f);
+}
+
 // Arduinoboy MI.OUT byte protocol (port of lsdjArduinoboy.ts
 // arduinoboyDecodeByte — itself verbatim from the trash80 firmware):
 //   realtime 0x7D/0x7E/0x7F → 0xFA/0xFC/0xF8
 //   command  0x70..0x7C     → m = byte-0x70; the NEXT value byte completes it
-//     (m < 4 → NoteOn ch m, value 0 → NoteOff; m < 8 → CC ch m-4 with CC# = m,
-//      a documented simplification; m < 0xC → PC ch m-8)
+//     (m < 4 → NoteOn on voice m's note channel, value 0 → NoteOff; m < 8 →
+//      CC on voice m-4's CC channel through the CC matrix; m < 0xC → PC on
+//      voice m-8's note channel)
 //   value    0x00..0x6F     → completes a pending command (else ignored)
 void arduinoboyDecodeByte(RenderState* state, std::uint8_t byte,
                           AUEventSampleTime when) {
@@ -262,21 +334,51 @@ void arduinoboyDecodeByte(RenderState* state, std::uint8_t byte,
     const std::uint8_t m = st.pendingCmd;
     const std::uint8_t v = (std::uint8_t)(byte & 0x7f);
     st.pendingCmd = 0;
+    // Output channels come from the per-voice assignments (the editor's
+    // "Note MIDI CH" / "CC MIDI CH" columns); PC shares the note channel,
+    // matching the firmware's channel tables.
     if (m < 4) {
+        const std::uint8_t ch =
+            midiChannelNibble(state, RPMidiChannelSettingMidiOutNotePu1 + m);
         // value 0 → NoteOff. The firmware offs the channel's most-recent note;
         // without that running state, note 0 is the "channel quiet" signal.
         if (v == 0) {
-            const std::uint8_t out[3] = {(std::uint8_t)(0x80 | m), 0, 0};
+            const std::uint8_t out[3] = {(std::uint8_t)(0x80 | ch), 0, 0};
             emitHostMidi(state, when, out, 3);
         } else {
-            const std::uint8_t out[3] = {(std::uint8_t)(0x90 | m), v, 0x7f};
+            const std::uint8_t out[3] = {(std::uint8_t)(0x90 | ch), v, 0x7f};
             emitHostMidi(state, when, out, 3);
         }
     } else if (m < 8) {
-        const std::uint8_t out[3] = {(std::uint8_t)(0xb0 | (m - 4)), m, v};
+        // The CC matrix (firmware playCC, ported verbatim): multi mode routes
+        // the value's high digit to one of the voice's 7 CC numbers with the
+        // low nibble as the value; single mode sends the whole value on CC#0.
+        // Scaling stretches to the full 0–127 range (×8 multi, /111×127
+        // single); unscaled passes LSDj's byte through untouched — including
+        // multi mode's full byte, firmware quirk and all.
+        const std::size_t voice = m - 4;
+        const std::uint8_t ch =
+            midiChannelNibble(state, RPMidiChannelSettingMidiOutCcPu1 + voice);
+        const bool scaled =
+            state->ccScaling[voice].load(std::memory_order_relaxed) != 0;
+        std::uint8_t num, val = v;
+        if (state->ccMode[voice].load(std::memory_order_relaxed) != 0) {
+            if (scaled) val = (std::uint8_t)((v & 0x0f) * 8);
+            num = state->ccNumbers[voice * kCcNumbersPerVoice + ((v >> 4) & 0x07)]
+                      .load(std::memory_order_relaxed);
+        } else {
+            if (scaled) val = (std::uint8_t)(((float)v / 0x6f) * 0x7f);
+            num = state->ccNumbers[voice * kCcNumbersPerVoice]
+                      .load(std::memory_order_relaxed);
+        }
+        const std::uint8_t out[3] = {(std::uint8_t)(0xb0 | ch),
+                                     (std::uint8_t)(num & 0x7f),
+                                     (std::uint8_t)(val & 0x7f)};
         emitHostMidi(state, when, out, 3);
     } else if (m < 0x0c) {
-        const std::uint8_t out[2] = {(std::uint8_t)(0xc0 | (m - 8)), v};
+        const std::uint8_t ch =
+            midiChannelNibble(state, RPMidiChannelSettingMidiOutNotePu1 + (m - 8));
+        const std::uint8_t out[2] = {(std::uint8_t)(0xc0 | ch), v};
         emitHostMidi(state, when, out, 2);
     } // m >= 0x0C: undefined per the firmware; drop.
 }
@@ -305,10 +407,14 @@ void drainSerialOutToHost(RenderState* state, SameBoySystem* sys,
         }
         for (const auto& entry : log) {
             if (!st.msStarted) {
-                // First tick of a run: the byte is LSDj's song row → NoteOn,
-                // then transport start, then this byte's own clock tick.
+                // First tick of a run: the byte is LSDj's song row → NoteOn
+                // (on the master-sync channel assignment), then transport
+                // start, then this byte's own clock tick.
                 st.msStarted = true;
-                const std::uint8_t on[3] = {0x90, (std::uint8_t)(entry.second & 0x7f), 0x7f};
+                const std::uint8_t ch =
+                    midiChannelNibble(state, RPMidiChannelSettingMasterSync);
+                const std::uint8_t on[3] = {(std::uint8_t)(0x90 | ch),
+                                            (std::uint8_t)(entry.second & 0x7f), 0x7f};
                 emitHostMidi(state, when, on, 3);
                 const std::uint8_t start[1] = {kMidiStart};
                 emitHostMidi(state, when, start, 1);
@@ -340,29 +446,242 @@ void drainSerialOutToHost(RenderState* state, SameBoySystem* sys,
     }
 }
 
+// -- GB Note Out (APU tap) ----------------------------------------------------
+// The version-independent alternative to MI.OUT: instead of decoding what the
+// ROM chooses to transmit over serial (which only the MI.OUT-patched LSDj
+// builds do), decode what the sound hardware was told to play. LSDj commands
+// land as their hardware effects: new notes → NoteOn with an explicit NoteOff
+// for the voice's previous note, E (envelope) → CC7, O (pan) → CC10, duty →
+// CC70, P/L/V slides + vibrato → pitch bend (±2 semitones; farther → legato
+// retrigger). Works with any LSDj build, and any other ROM.
+
+// SameBoy GB_IO_* indices for the registers the decoder reads (redeclared
+// locally — this TU deliberately doesn't include <gb.h>).
+constexpr std::uint8_t kIoNR11 = 0x11, kIoNR12 = 0x12, kIoNR13 = 0x13, kIoNR14 = 0x14;
+constexpr std::uint8_t kIoNR21 = 0x16, kIoNR22 = 0x17, kIoNR23 = 0x18, kIoNR24 = 0x19;
+constexpr std::uint8_t kIoNR30 = 0x1a, kIoNR32 = 0x1c, kIoNR33 = 0x1d, kIoNR34 = 0x1e;
+constexpr std::uint8_t kIoNR42 = 0x21, kIoNR43 = 0x22, kIoNR44 = 0x23;
+constexpr std::uint8_t kIoNR51 = 0x25, kIoNR52 = 0x26;
+
+// The voice's current pitch as a fractional MIDI note. Pulse period →
+// 131072/(2048-p) Hz; wave → 65536/(2048-p) (one tone cycle per 32-sample
+// table, LSDj's convention); noise → the LFSR clock 524288/r/2^(s+1) — an
+// arbitrary but monotonic mapping, so noise "notes" track LSDj's pitches.
+double noteOutPitch(std::size_t v, std::uint16_t raw) {
+    double hz;
+    if (v == 3) {
+        const double r = (raw & 7) ? (double)(raw & 7) : 0.5;
+        hz = 524288.0 / r / std::exp2((double)(raw >> 4) + 1.0);
+    } else {
+        hz = (v == 2 ? 65536.0 : 131072.0) / (2048.0 - (double)(raw & 0x7ff));
+    }
+    return 69.0 + 12.0 * std::log2(hz / 440.0);
+}
+
+// Volume for CC7 / NoteOn velocity: pulse/noise from the NRx2 envelope
+// nibble, wave from the NR32 level bits (mute/100%/50%/25%).
+std::uint8_t noteOutVolume(std::size_t v, std::uint8_t env) {
+    if (v == 2) {
+        constexpr std::uint8_t kWaveLevel[4] = {0, 127, 64, 32};
+        return kWaveLevel[(env >> 5) & 3];
+    }
+    return (std::uint8_t)((env >> 4) * 127 / 15);
+}
+
+// A trigger only sounds when the voice's DAC is powered (pulse/noise: NRx2
+// upper 5 bits nonzero; wave: NR30 bit 7 and a nonzero NR32 level).
+bool noteOutDacOn(RenderState::SyncState& st, std::size_t v) {
+    if (v == 2) return st.noWaveDacOn && ((st.noVoices[2].env >> 5) & 3) != 0;
+    return (st.noVoices[v].env & 0xf8) != 0;
+}
+
+void noteOutNoteOff(RenderState* state, std::size_t v, AUEventSampleTime when) {
+    RenderState::SyncState::NoteOutVoice& voice = state->sync.noVoices[v];
+    if (voice.note < 0) return;
+    const std::uint8_t ch =
+        midiChannelNibble(state, RPMidiChannelSettingMidiOutNotePu1 + v);
+    const std::uint8_t off[3] = {(std::uint8_t)(0x80 | ch),
+                                 (std::uint8_t)voice.note, 0};
+    emitHostMidi(state, when, off, 3);
+    voice.note = -1;
+}
+
+void noteOutBendReset(RenderState* state, std::size_t v, AUEventSampleTime when) {
+    RenderState::SyncState::NoteOutVoice& voice = state->sync.noVoices[v];
+    if (voice.bend14 == 0x2000) return;
+    voice.bend14 = 0x2000;
+    const std::uint8_t ch =
+        midiChannelNibble(state, RPMidiChannelSettingMidiOutNotePu1 + v);
+    const std::uint8_t bend[3] = {(std::uint8_t)(0xe0 | ch), 0x00, 0x40};
+    emitHostMidi(state, when, bend, 3);
+}
+
+void noteOutCc(RenderState* state, std::size_t v, std::uint8_t cc,
+               std::uint8_t value, AUEventSampleTime when) {
+    const std::uint8_t ch =
+        midiChannelNibble(state, RPMidiChannelSettingMidiOutCcPu1 + v);
+    const std::uint8_t msg[3] = {(std::uint8_t)(0xb0 | ch), cc, value};
+    emitHostMidi(state, when, msg, 3);
+}
+
+void noteOutTrigger(RenderState* state, std::size_t v, AUEventSampleTime when) {
+    RenderState::SyncState::NoteOutVoice& voice = state->sync.noVoices[v];
+    noteOutNoteOff(state, v, when); // explicit off for the previous note
+    if (!noteOutDacOn(state->sync, v)) return; // trigger into a dead DAC = silence
+    const std::uint8_t vel =
+        std::max<std::uint8_t>(1, noteOutVolume(v, voice.env));
+    const int note =
+        std::clamp((int)std::lround(noteOutPitch(v, voice.freqRaw)), 0, 127);
+    noteOutBendReset(state, v, when);
+    const std::uint8_t ch =
+        midiChannelNibble(state, RPMidiChannelSettingMidiOutNotePu1 + v);
+    const std::uint8_t on[3] = {(std::uint8_t)(0x90 | ch), (std::uint8_t)note, vel};
+    emitHostMidi(state, when, on, 3);
+    voice.note = note;
+}
+
+// Frequency moved while sounding (LSDj P/L slides, vibrato): within ±2
+// semitones ride the pitch wheel; farther, retrigger legato.
+void noteOutSlide(RenderState* state, std::size_t v, AUEventSampleTime when) {
+    RenderState::SyncState::NoteOutVoice& voice = state->sync.noVoices[v];
+    if (voice.note < 0) return;
+    const double semis = noteOutPitch(v, voice.freqRaw) - (double)voice.note;
+    if (std::fabs(semis) > 2.0) { noteOutTrigger(state, v, when); return; }
+    const std::uint16_t bend = (std::uint16_t)std::clamp(
+        (int)std::lround(8192.0 + semis * 4096.0), 0, 16383);
+    if (bend == voice.bend14) return;
+    voice.bend14 = bend;
+    const std::uint8_t ch =
+        midiChannelNibble(state, RPMidiChannelSettingMidiOutNotePu1 + v);
+    const std::uint8_t msg[3] = {(std::uint8_t)(0xe0 | ch),
+                                 (std::uint8_t)(bend & 0x7f),
+                                 (std::uint8_t)(bend >> 7)};
+    emitHostMidi(state, when, msg, 3);
+}
+
+// Volume-register write: DAC powered down (or wave level 0) kills the note;
+// an audible level change while sounding lands as CC7.
+void noteOutEnvWrite(RenderState* state, std::size_t v, std::uint8_t value,
+                     AUEventSampleTime when) {
+    RenderState::SyncState::NoteOutVoice& voice = state->sync.noVoices[v];
+    const std::uint8_t prevVol = noteOutVolume(v, voice.env);
+    voice.env = value;
+    const std::uint8_t vol = noteOutVolume(v, value);
+    const bool dead = v == 2 ? vol == 0 : (value & 0xf8) == 0;
+    if (dead) { noteOutNoteOff(state, v, when); return; }
+    if (vol != prevVol) noteOutCc(state, v, 7, vol, when);
+}
+
+// Decode this block's captured APU register writes
+// (SameBoySystem::apuWriteLog_, cleared each prepareForBlock and filled while
+// stepping) into host MIDI.
+void drainApuNotesToHost(RenderState* state, SameBoySystem* sys,
+                         AUEventSampleTime when) {
+    RenderState::SyncState& st = state->sync;
+    for (const auto& w : sys->apuWriteLog_) {
+        switch (w.reg) {
+            // Pulse 1 / Pulse 2 / Wave period: low 8 bits in NRx3, high 3 in
+            // NRx4 (whose bit 7 is the trigger).
+            case kIoNR13: case kIoNR23: case kIoNR33: {
+                const std::size_t v = w.reg == kIoNR13 ? 0 : w.reg == kIoNR23 ? 1 : 2;
+                st.noVoices[v].freqRaw =
+                    (std::uint16_t)((st.noVoices[v].freqRaw & 0x0700) | w.value);
+                noteOutSlide(state, v, when);
+                break;
+            }
+            case kIoNR14: case kIoNR24: case kIoNR34: {
+                const std::size_t v = w.reg == kIoNR14 ? 0 : w.reg == kIoNR24 ? 1 : 2;
+                st.noVoices[v].freqRaw = (std::uint16_t)(
+                    (st.noVoices[v].freqRaw & 0x00ff) | ((w.value & 7) << 8));
+                if (w.value & 0x80) noteOutTrigger(state, v, when);
+                else noteOutSlide(state, v, when);
+                break;
+            }
+            // Pulse duty (NRx1 bits 6-7) → CC70, scaled across 0-126.
+            case kIoNR11: case kIoNR21: {
+                const std::size_t v = w.reg == kIoNR11 ? 0 : 1;
+                const std::uint8_t duty = (std::uint8_t)(w.value >> 6);
+                if (duty != st.noVoices[v].duty) {
+                    st.noVoices[v].duty = duty;
+                    noteOutCc(state, v, 70, (std::uint8_t)(duty * 42), when);
+                }
+                break;
+            }
+            case kIoNR12: noteOutEnvWrite(state, 0, w.value, when); break;
+            case kIoNR22: noteOutEnvWrite(state, 1, w.value, when); break;
+            case kIoNR32: noteOutEnvWrite(state, 2, w.value, when); break;
+            case kIoNR42: noteOutEnvWrite(state, 3, w.value, when); break;
+            case kIoNR30: // wave DAC power
+                st.noWaveDacOn = (w.value & 0x80) != 0;
+                if (!st.noWaveDacOn) noteOutNoteOff(state, 2, when);
+                break;
+            // Noise pitch is the whole NR43 byte; a change while sounding is
+            // a retune (LSDj noise slides) → legato retrigger.
+            case kIoNR43:
+                st.noVoices[3].freqRaw = w.value;
+                if (st.noVoices[3].note >= 0) noteOutTrigger(state, 3, when);
+                break;
+            case kIoNR44:
+                if (w.value & 0x80) noteOutTrigger(state, 3, when);
+                break;
+            // NR51 pan matrix → CC10 per changed voice (L=0 / both=64 /
+            // R=127); a voice with both bits cleared is muted → NoteOff.
+            case kIoNR51: {
+                const std::uint8_t prev = st.noNr51;
+                st.noNr51 = w.value;
+                for (std::size_t v = 0; v < 4; ++v) {
+                    const std::uint8_t bits = (std::uint8_t)(
+                        ((w.value >> v) & 1) | (((w.value >> (4 + v)) & 1) << 1));
+                    const std::uint8_t old = prev == 0xff
+                        ? (std::uint8_t)0xff
+                        : (std::uint8_t)(((prev >> v) & 1) |
+                                         (((prev >> (4 + v)) & 1) << 1));
+                    if (bits == old) continue;
+                    if (bits == 0) { noteOutNoteOff(state, v, when); continue; }
+                    noteOutCc(state, v, 10,
+                              bits == 2 ? 0 : bits == 1 ? 127 : 64, when);
+                }
+                break;
+            }
+            case kIoNR52: // APU master power-down silences everything
+                if (!(w.value & 0x80))
+                    for (std::size_t v = 0; v < 4; ++v)
+                        noteOutNoteOff(state, v, when);
+                break;
+            default: break; // sweep, length, wave RAM: no MIDI mapping (yet)
+        }
+    }
+}
+
 // The host-MIDI → link-port translator + host-clock walk, dispatched on the
 // sync mode. Runs once per quantum BEFORE the emulation triad so every pushed
 // byte lands in this block's serial pump. The iOS twin of the desktop
 // lsdjSync SystemBehavior (dspRoles.ts).
 void processSyncInput(RenderState* state, SameBoySystem* sys,
                       AUAudioFrameCount frameCount,
-                      const AURenderEvent* eventList) {
+                      const AURenderEvent* eventList,
+                      AUEventSampleTime when) {
     RenderState::SyncState& st = state->sync;
     const std::uint8_t mode = state->syncMode.load(std::memory_order_relaxed);
 
     // Mode flip → reset all per-mode translator state (matching the desktop,
     // where a config change rebuilds the role) and reseed the Arduinoboy
-    // divisor from the parameter.
+    // divisor from the parameter. Leaving Note Out first releases whatever
+    // its voices still hold, so the host isn't left with hanging notes.
     if (mode != st.lastMode) {
+        if (st.lastMode == RPMidiSyncModeNoteOut)
+            for (std::size_t v = 0; v < 4; ++v) noteOutNoteOff(state, v, when);
         st = RenderState::SyncState{};
         st.lastMode  = mode;
         st.abDivisor = state->tempoDivisor.load(std::memory_order_relaxed);
     }
 
     // MI.OUT / MasterSync read LSDJ's OUTGOING serial — keep the capture gate
-    // armed exactly while one of them is active.
+    // armed exactly while one of them is active. Note Out reads the APU
+    // register-write log instead; same gate pattern.
     sys->setSerialOutCapture(mode == RPMidiSyncModeMidiOut ||
                              mode == RPMidiSyncModeMasterSync);
+    sys->setApuWriteCapture(mode == RPMidiSyncModeNoteOut);
 
     const bool hostHasClock =
         state->musicalContext != nil && state->transportState != nil;
@@ -375,11 +694,39 @@ void processSyncInput(RenderState* state, SameBoySystem* sys,
         const std::uint8_t status = m.data[0];
         const std::uint8_t note   = m.length >= 2 ? m.data[1] : 0;
         switch (mode) {
-            case RPMidiSyncModeMgb:
-                // Verbatim byte passthrough — mGB parses MIDI itself.
-                for (std::uint16_t j = 0; j < m.length; ++j)
-                    sys->pushSerialIn(m.data[j]);
+            case RPMidiSyncModeMgb: {
+                // Byte passthrough — mGB parses MIDI itself. Channel-voice
+                // messages are first remapped per the mGB channel assignments
+                // (the editor's "mGB Midi Settings"): the configured input
+                // channel lands on mGB's fixed voice channel 1–5, anything
+                // unassigned drops. System bytes pass verbatim.
+                if (status < 0xf0) {
+                    // A nonzero base channel wins over the per-voice
+                    // assignments: the five voices sit contiguously at
+                    // base..base+4 (one knob per DAW instance).
+                    const std::uint8_t base =
+                        state->mgbBaseChannel.load(std::memory_order_relaxed);
+                    int target = -1;
+                    if (base > 0) {
+                        const int rel = (status & 0x0f) - (base - 1);
+                        if (rel >= 0 && rel < 5) target = rel;
+                    } else {
+                        for (std::size_t k = 0; k < 5 && target < 0; ++k) {
+                            if (midiChannelNibble(state, RPMidiChannelSettingMgbPu1 + k) ==
+                                (status & 0x0f))
+                                target = (int)k;
+                        }
+                    }
+                    if (target < 0) break;
+                    sys->pushSerialIn((std::uint8_t)((status & 0xf0) | target));
+                    for (std::uint16_t j = 1; j < m.length; ++j)
+                        sys->pushSerialIn(m.data[j]);
+                } else {
+                    for (std::uint16_t j = 0; j < m.length; ++j)
+                        sys->pushSerialIn(m.data[j]);
+                }
                 break;
+            }
             case RPMidiSyncModeMidiSync:
                 // External-clock fallback for transport-less hosts only — the
                 // walk below owns the tick stream when the host has one.
@@ -387,9 +734,12 @@ void processSyncInput(RenderState* state, SameBoySystem* sys,
                     sys->pushSerialIn(kMidiClock);
                 break;
             case RPMidiSyncModeMidiSyncArduinoboy:
-                // Input notes drive runtime state: 24/25 toggle the play flag,
-                // 26-29 set the divisor, 30+ push a raw row byte.
+                // Input notes (on the slave-sync channel assignment) drive
+                // runtime state: 24/25 toggle the play flag, 26-29 set the
+                // divisor, 30+ push a raw row byte.
                 if (!isNoteOnStatus(status)) break;
+                if ((status & 0x0f) !=
+                    midiChannelNibble(state, RPMidiChannelSettingArduinoboySlave)) break;
                 if      (note == 24) st.abPlaying = true;
                 else if (note == 25) st.abPlaying = false;
                 else if (note == 26) st.abDivisor = 1;
@@ -398,27 +748,34 @@ void processSyncInput(RenderState* state, SameBoySystem* sys,
                 else if (note == 29) st.abDivisor = 8;
                 else if (note >= 30) sys->pushSerialIn((std::uint8_t)(note - 30));
                 break;
-            case RPMidiSyncModeMidiMap:
+            case RPMidiSyncModeMidiMap: {
                 // NoteOn → a row byte LSDj reads as a SONG-row jump; the
                 // matching NoteOff sends the 0xFE handshake for the row most
-                // recently sounded.
+                // recently sounded. The map channel assignment carries rows
+                // 0–127, the channel above it rows 128–255.
+                const int mapBase =
+                    midiChannelNibble(state, RPMidiChannelSettingMidiMap);
                 if (isNoteOnStatus(status)) {
-                    const int row = midiMapRow(status & 0x0f, note);
+                    const int row = midiMapRow((status & 0x0f) - mapBase, note);
                     if (row >= 0) {
                         sys->pushSerialIn((std::uint8_t)(row & 0xff));
                         st.lastRow = row;
                     }
                 } else if (isNoteOffStatus(status)) {
-                    if (midiMapRow(status & 0x0f, note) == st.lastRow) {
+                    if (midiMapRow((status & 0x0f) - mapBase, note) == st.lastRow) {
                         sys->pushSerialIn(kMidiMapNoteOff);
                         st.lastRow = -1;
                     }
                 }
                 break;
+            }
             case RPMidiSyncModeKeyboardMidi: {
-                // MIDI NoteOns → LSDj PS/2 scancodes, sliding the octave
-                // cursor to track the incoming note.
+                // MIDI NoteOns (on the keyboard channel assignment) → LSDj
+                // PS/2 scancodes, sliding the octave cursor to track the
+                // incoming note.
                 if (!isNoteOnStatus(status)) break;
+                if ((status & 0x0f) !=
+                    midiChannelNibble(state, RPMidiChannelSettingKeyboard)) break;
                 if (note >= kKbNoteStart) {
                     const int n      = note - kKbNoteStart;
                     const int target = n / 12;
@@ -438,7 +795,7 @@ void processSyncInput(RenderState* state, SameBoySystem* sys,
                 break;
             }
             default:
-                break; // Off / midiOut / masterSync: host MIDI is dropped
+                break; // Off / midiOut / masterSync / noteOut: host MIDI is dropped
         }
     }
 
@@ -578,7 +935,7 @@ NSError* bridgeError(RPCoreBridgeError code, NSString* message) {
                                                   name:@"MIDI Mode"
                                                address:kParamSyncMode
                                                    min:0
-                                                   max:7
+                                                   max:8
                                                   unit:kAudioUnitParameterUnit_Indexed
                                               unitName:nil
                                                  flags:rw
@@ -586,7 +943,7 @@ NSError* bridgeError(RPCoreBridgeError code, NSString* message) {
                                               @"Off", @"mGB Notes", @"LSDj MIDI Sync",
                                               @"LSDj Arduinoboy Sync", @"LSDj MIDI Map",
                                               @"LSDj Keyboard MIDI", @"LSDj MIDI Out",
-                                              @"LSDj Master Sync"
+                                              @"LSDj Master Sync", @"GB Note Out"
                                           ]
                                    dependentParameters:nil];
     AUParameter* divisor =
@@ -611,13 +968,128 @@ NSError* bridgeError(RPCoreBridgeError code, NSString* message) {
                                                  flags:rw
                                           valueStrings:nil
                                    dependentParameters:nil];
-    _parameterTree = [AUParameterTree createTreeWithChildren:@[ mode, divisor, autoStart ]];
+    // Per-mode MIDI channel assignments (RPMidiChannelSetting order — the
+    // Arduinoboy Editor's per-application channel grid).
+    NSArray<NSString*>* chIds = @[
+        @"chSlaveSync", @"chMasterSync", @"chKeyboard", @"chMidiMap",
+        @"chMgbPu1", @"chMgbPu2", @"chMgbWav", @"chMgbNoi", @"chMgbPoly",
+        @"chMidiOutNotePu1", @"chMidiOutNotePu2", @"chMidiOutNoteWav", @"chMidiOutNoteNoi",
+        @"chMidiOutCcPu1", @"chMidiOutCcPu2", @"chMidiOutCcWav", @"chMidiOutCcNoi",
+    ];
+    NSArray<NSString*>* chNames = @[
+        @"Slave Sync Channel", @"Master Sync Channel", @"Keyboard Channel", @"MIDI Map Channel",
+        @"mGB PU1 Channel", @"mGB PU2 Channel", @"mGB WAV Channel", @"mGB NOI Channel", @"mGB POLY Channel",
+        @"MIDI Out PU1 Note Ch", @"MIDI Out PU2 Note Ch", @"MIDI Out WAV Note Ch", @"MIDI Out NOI Note Ch",
+        @"MIDI Out PU1 CC Ch", @"MIDI Out PU2 CC Ch", @"MIDI Out WAV CC Ch", @"MIDI Out NOI CC Ch",
+    ];
+    NSMutableArray<AUParameter*>* params =
+        [NSMutableArray arrayWithObjects:mode, divisor, autoStart, nil];
+    for (NSUInteger i = 0; i < RPMidiChannelSettingCount; ++i) {
+        [params addObject:[AUParameterTree
+            createParameterWithIdentifier:chIds[i]
+                                     name:chNames[i]
+                                  address:kParamChannelBase + i
+                                      min:1
+                                      max:16
+                                     unit:kAudioUnitParameterUnit_Indexed
+                                 unitName:nil
+                                    flags:rw
+                             valueStrings:nil
+                      dependentParameters:nil]];
+    }
+    // MI.OUT CC matrix: mode + scaling per voice, then the 7 CC numbers per
+    // voice (the editor's CC Mode / CC SCALING / CC#0–6 grid).
+    NSArray<NSString*>* voiceIds   = @[ @"Pu1", @"Pu2", @"Wav", @"Noi" ];
+    NSArray<NSString*>* voiceNames = @[ @"PU1", @"PU2", @"WAV", @"NOI" ];
+    for (NSUInteger vi = 0; vi < RPMidiOutVoiceCount; ++vi) {
+        [params addObject:[AUParameterTree
+            createParameterWithIdentifier:[NSString stringWithFormat:@"ccMode%@", voiceIds[vi]]
+                                     name:[NSString stringWithFormat:@"%@ CC Mode", voiceNames[vi]]
+                                  address:kParamCcModeBase + vi
+                                      min:0
+                                      max:1
+                                     unit:kAudioUnitParameterUnit_Indexed
+                                 unitName:nil
+                                    flags:rw
+                             valueStrings:@[ @"Single CC", @"7-CC Select" ]
+                      dependentParameters:nil]];
+        [params addObject:[AUParameterTree
+            createParameterWithIdentifier:[NSString stringWithFormat:@"ccScaling%@", voiceIds[vi]]
+                                     name:[NSString stringWithFormat:@"%@ CC Scaling", voiceNames[vi]]
+                                  address:kParamCcScalingBase + vi
+                                      min:0
+                                      max:1
+                                     unit:kAudioUnitParameterUnit_Boolean
+                                 unitName:nil
+                                    flags:rw
+                             valueStrings:nil
+                      dependentParameters:nil]];
+        for (NSUInteger n = 0; n < RPMidiOutCcNumberCount; ++n) {
+            [params addObject:[AUParameterTree
+                createParameterWithIdentifier:[NSString stringWithFormat:@"ccNum%@_%lu",
+                                               voiceIds[vi], (unsigned long)n]
+                                         name:[NSString stringWithFormat:@"%@ CC#%lu",
+                                               voiceNames[vi], (unsigned long)n]
+                                      address:kParamCcNumberBase + vi * RPMidiOutCcNumberCount + n
+                                          min:0
+                                          max:127
+                                         unit:kAudioUnitParameterUnit_Indexed
+                                     unitName:nil
+                                        flags:rw
+                                 valueStrings:nil
+                          dependentParameters:nil]];
+        }
+    }
+    // mGB base channel: one knob per DAW instance to move all five voices to
+    // their own channel block (0 = the per-voice assignments above).
+    [params addObject:[AUParameterTree
+        createParameterWithIdentifier:@"chMgbBase"
+                                 name:@"mGB Base Channel"
+                              address:kParamMgbBaseChannel
+                                  min:0
+                                  max:12
+                                 unit:kAudioUnitParameterUnit_Indexed
+                             unitName:nil
+                                flags:rw
+                         valueStrings:nil
+                  dependentParameters:nil]];
+    _parameterTree = [AUParameterTree createTreeWithChildren:params];
 
     RenderState* state = _state.get(); // raw capture — the tree must not retain self
     _parameterTree.implementorValueObserver = ^(AUParameter* param, AUValue value) {
+        if (param.address >= kParamChannelBase &&
+            param.address < kParamChannelBase + kChannelSettingCount) {
+            state->midiChannels[param.address - kParamChannelBase].store(
+                (std::uint8_t)std::clamp<AUValue>(value, 1, 16),
+                std::memory_order_relaxed);
+            return;
+        }
+        if (param.address >= kParamCcModeBase &&
+            param.address < kParamCcModeBase + kMidiOutVoiceCount) {
+            state->ccMode[param.address - kParamCcModeBase].store(
+                value >= 0.5f ? 1 : 0, std::memory_order_relaxed);
+            return;
+        }
+        if (param.address >= kParamCcScalingBase &&
+            param.address < kParamCcScalingBase + kMidiOutVoiceCount) {
+            state->ccScaling[param.address - kParamCcScalingBase].store(
+                value >= 0.5f ? 1 : 0, std::memory_order_relaxed);
+            return;
+        }
+        if (param.address >= kParamCcNumberBase &&
+            param.address < kParamCcNumberBase + kMidiOutVoiceCount * kCcNumbersPerVoice) {
+            state->ccNumbers[param.address - kParamCcNumberBase].store(
+                (std::uint8_t)std::clamp<AUValue>(value, 0, 127),
+                std::memory_order_relaxed);
+            return;
+        }
         switch (param.address) {
+            case kParamMgbBaseChannel:
+                state->mgbBaseChannel.store((std::uint8_t)std::clamp<AUValue>(value, 0, 12),
+                                            std::memory_order_relaxed);
+                break;
             case kParamSyncMode:
-                state->syncMode.store((std::uint8_t)std::clamp<AUValue>(value, 0, 7),
+                state->syncMode.store((std::uint8_t)std::clamp<AUValue>(value, 0, 8),
                                       std::memory_order_relaxed);
                 break;
             case kParamTempoDivisor:
@@ -630,7 +1102,29 @@ NSError* bridgeError(RPCoreBridgeError code, NSString* message) {
         }
     };
     _parameterTree.implementorValueProvider = ^AUValue(AUParameter* param) {
+        if (param.address >= kParamChannelBase &&
+            param.address < kParamChannelBase + kChannelSettingCount) {
+            return state->midiChannels[param.address - kParamChannelBase]
+                .load(std::memory_order_relaxed);
+        }
+        if (param.address >= kParamCcModeBase &&
+            param.address < kParamCcModeBase + kMidiOutVoiceCount) {
+            return state->ccMode[param.address - kParamCcModeBase]
+                .load(std::memory_order_relaxed);
+        }
+        if (param.address >= kParamCcScalingBase &&
+            param.address < kParamCcScalingBase + kMidiOutVoiceCount) {
+            return state->ccScaling[param.address - kParamCcScalingBase]
+                .load(std::memory_order_relaxed);
+        }
+        if (param.address >= kParamCcNumberBase &&
+            param.address < kParamCcNumberBase + kMidiOutVoiceCount * kCcNumbersPerVoice) {
+            return state->ccNumbers[param.address - kParamCcNumberBase]
+                .load(std::memory_order_relaxed);
+        }
         switch (param.address) {
+            case kParamMgbBaseChannel:
+                return state->mgbBaseChannel.load(std::memory_order_relaxed);
             case kParamSyncMode:     return state->syncMode.load(std::memory_order_relaxed);
             case kParamTempoDivisor: return state->tempoDivisor.load(std::memory_order_relaxed);
             case kParamAutoStart:    return state->autoStart.load(std::memory_order_relaxed) ? 1 : 0;
@@ -639,6 +1133,18 @@ NSError* bridgeError(RPCoreBridgeError code, NSString* message) {
     };
     mode.value    = RPMidiSyncModeMgb; // matches the RenderState defaults
     divisor.value = 1;
+    // Seed the channel assignments (the observer copies them into the render
+    // state's atomics, so no separate default path is needed).
+    for (NSUInteger i = 0; i < RPMidiChannelSettingCount; ++i)
+        [_parameterTree parameterWithAddress:kParamChannelBase + i].value = kChannelDefaults[i];
+    // CC matrix firmware defaults: multi mode, scaling on, CC#s 1/2/3/7/10/11/12.
+    for (NSUInteger vi = 0; vi < RPMidiOutVoiceCount; ++vi) {
+        [_parameterTree parameterWithAddress:kParamCcModeBase + vi].value    = RPMidiOutCcModeMulti;
+        [_parameterTree parameterWithAddress:kParamCcScalingBase + vi].value = 1;
+        for (NSUInteger n = 0; n < RPMidiOutCcNumberCount; ++n)
+            [_parameterTree parameterWithAddress:kParamCcNumberBase + vi * RPMidiOutCcNumberCount + n]
+                .value = kCcNumberDefaults[n];
+    }
 
     return self;
 }
@@ -768,7 +1274,8 @@ NSError* bridgeError(RPCoreBridgeError code, NSString* message) {
             // the sync mode (the desktop lsdj-sync role, ported native — see
             // processSyncInput). Before the triad so every pushed byte lands
             // in this block's serial pump.
-            processSyncInput(state, sys, frameCount, realtimeEventListHead);
+            processSyncInput(state, sys, frameCount, realtimeEventListHead,
+                             (AUEventSampleTime)timestamp->mSampleTime);
 
             // --- render the 8 stem lanes: the triad's split path (finishBlock
             // with 8 lanes fans channel k -> lanes 2k/2k+1, and publishes the
@@ -787,12 +1294,16 @@ NSError* bridgeError(RPCoreBridgeError code, NSString* message) {
 
             // MI.OUT / MasterSync: LSDJ's outgoing serial bytes were captured
             // into serialOutLog_ while stepping — decode them into host MIDI.
+            // Note Out decodes the APU register-write log the same way.
             const std::uint8_t outMode =
                 state->syncMode.load(std::memory_order_relaxed);
             if (outMode == RPMidiSyncModeMidiOut ||
                 outMode == RPMidiSyncModeMasterSync) {
                 drainSerialOutToHost(state, sys, outMode,
                                      (AUEventSampleTime)timestamp->mSampleTime);
+            } else if (outMode == RPMidiSyncModeNoteOut) {
+                drainApuNotesToHost(state, sys,
+                                    (AUEventSampleTime)timestamp->mSampleTime);
             }
 
             // Mix pair = sum of the stems. Each stem is highpassed per-channel
@@ -1060,6 +1571,33 @@ static NSData* RPDataForKey(NSDictionary* dict, NSString* key) {
     return YES;
 }
 
+- (BOOL)loadSram:(NSData*)sram error:(NSError**)error {
+    NSCAssert(NSThread.isMainThread, @"CoreBridge is main-thread-only");
+    RenderState* state = _state.get();
+    if (!state->system) {
+        if (error) *error = bridgeError(RPCoreBridgeErrorNoSystem, @"No emulator is running.");
+        return NO;
+    }
+    BypassGate gate(state);
+    if (!gate.acquired()) {
+        if (error) *error = bridgeError(RPCoreBridgeErrorGateTimeout,
+                                        @"The audio render thread did not yield.");
+        return NO;
+    }
+    const auto* p = static_cast<const std::uint8_t*>(sram.bytes);
+    std::vector<std::uint8_t> bytes(p, p + sram.length);
+    if (!state->system->loadSramBytes(bytes)) {
+        if (error) *error = bridgeError(RPCoreBridgeErrorSramRejected,
+                                        @"Battery RAM rejected — wrong size for this cartridge.");
+        return NO;
+    }
+    // The cart reads its save at boot (LSDj especially) — reboot so the new
+    // SRAM takes effect. Direct call is safe: the gate holds the render
+    // thread out, same as setModel's restartEmulator.
+    state->system->onReset();
+    return YES;
+}
+
 - (BOOL)setModel:(RPSameBoyModel)model error:(NSError**)error {
     NSCAssert(NSThread.isMainThread, @"CoreBridge is main-thread-only");
     RenderState* state = _state.get();
@@ -1141,6 +1679,39 @@ static NSData* RPDataForKey(NSDictionary* dict, NSString* key) {
 - (void)setSyncAutoStart:(BOOL)on {
     NSCAssert(NSThread.isMainThread, @"CoreBridge is main-thread-only");
     [_parameterTree parameterWithAddress:kParamAutoStart].value = on ? 1 : 0;
+}
+
+- (void)setMidiChannel:(NSUInteger)channel forSetting:(RPMidiChannelSetting)setting {
+    NSCAssert(NSThread.isMainThread, @"CoreBridge is main-thread-only");
+    if (setting >= kChannelSettingCount) return;
+    [_parameterTree parameterWithAddress:kParamChannelBase + setting].value =
+        (AUValue)std::clamp<NSUInteger>(channel, 1, 16);
+}
+
+- (void)setMgbBaseChannel:(NSUInteger)base {
+    NSCAssert(NSThread.isMainThread, @"CoreBridge is main-thread-only");
+    [_parameterTree parameterWithAddress:kParamMgbBaseChannel].value =
+        (AUValue)std::min<NSUInteger>(base, 12);
+}
+
+- (void)setMidiOutCcMode:(RPMidiOutCcMode)ccMode forVoice:(NSUInteger)voice {
+    NSCAssert(NSThread.isMainThread, @"CoreBridge is main-thread-only");
+    if (voice >= kMidiOutVoiceCount) return;
+    [_parameterTree parameterWithAddress:kParamCcModeBase + voice].value =
+        ccMode == RPMidiOutCcModeMulti ? 1 : 0;
+}
+
+- (void)setMidiOutCcScaling:(BOOL)scaled forVoice:(NSUInteger)voice {
+    NSCAssert(NSThread.isMainThread, @"CoreBridge is main-thread-only");
+    if (voice >= kMidiOutVoiceCount) return;
+    [_parameterTree parameterWithAddress:kParamCcScalingBase + voice].value = scaled ? 1 : 0;
+}
+
+- (void)setMidiOutCcNumber:(NSUInteger)cc atIndex:(NSUInteger)index forVoice:(NSUInteger)voice {
+    NSCAssert(NSThread.isMainThread, @"CoreBridge is main-thread-only");
+    if (voice >= kMidiOutVoiceCount || index >= kCcNumbersPerVoice) return;
+    [_parameterTree parameterWithAddress:kParamCcNumberBase + voice * kCcNumbersPerVoice + index]
+        .value = (AUValue)std::min<NSUInteger>(cc, 127);
 }
 
 - (BOOL)copyFrameInto:(uint32_t*)dst capacityPixels:(NSUInteger)capacity {

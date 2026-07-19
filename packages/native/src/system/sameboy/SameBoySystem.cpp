@@ -96,6 +96,15 @@ void channelAudioHandler(GB_gameboy_t* gb, const GB_sample_t* channels) {
     self(gb).writeChannelSamples(interleaved);
 }
 
+// APU register tap → the per-block write log (GB Note Out). Fires from
+// GB_apu_write inside GB_run, so audioFrameCount_ is the current in-block
+// offset; the gate keeps the log empty (no per-write cost) when no host
+// decoder is armed.
+void apuRegWriteHandler(GB_gameboy_t* gb, uint8_t reg, uint8_t value) {
+    SameBoySystem& s = self(gb);
+    if (s.apuWriteCaptureEnabled()) s.captureApuWrite(reg, value);
+}
+
 void loadBootRomHandler(GB_gameboy_t* gb, GB_boot_rom_t /*type*/) {
     auto& s = self(gb);
     GB_model_t model = toSameBoyModel(s.config_.model);
@@ -197,6 +206,7 @@ void SameBoySystem::onActivate(double sampleRate) {
     GB_set_vblank_callback(gb_, vblankHandler);
     GB_apu_set_sample_callback(gb_, audioHandler);
     GB_apu_set_channel_sample_callback(gb_, channelAudioHandler);
+    GB_apu_set_register_write_callback(gb_, apuRegWriteHandler);
     GB_set_serial_transfer_bit_start_callback(gb_, serialStart);
     GB_set_serial_transfer_bit_end_callback(gb_, serialEnd);
 
@@ -478,6 +488,10 @@ void SameBoySystem::captureSerialOutBit(bool bit) {
     serialOutLog_.emplace_back(audioFrameCount_, completed);
 }
 
+void SameBoySystem::captureApuWrite(std::uint8_t reg, std::uint8_t value) {
+    apuWriteLog_.push_back(ApuRegWrite{audioFrameCount_, reg, value});
+}
+
 bool SameBoySystem::nextSerialInBit() {
     if (serialIn_.empty()) return true; // idle high
 
@@ -605,6 +619,7 @@ void SameBoySystem::prepareForBlock(const AudioBlockInfo& info) {
 
     audioFrameCount_ = 0;
     serialOutLog_.clear();
+    apuWriteLog_.clear();
 }
 
 bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {

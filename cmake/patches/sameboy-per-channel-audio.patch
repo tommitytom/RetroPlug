@@ -1,5 +1,5 @@
 diff --git a/Core/apu.c b/Core/apu.c
-index caa5451..6c86e23 100644
+index caa5451..8529bf0 100644
 --- a/Core/apu.c
 +++ b/Core/apu.c
 @@ -313,9 +313,57 @@ static signed interference(GB_gameboy_t *gb)
@@ -85,7 +85,19 @@ index caa5451..6c86e23 100644
      assert(gb->apu_output.sample_callback);
      gb->apu_output.sample_callback(gb, &filtered_output);
      if (unlikely(gb->apu_output.output_file)) {
-@@ -2207,9 +2266,17 @@ void GB_apu_set_sample_callback(GB_gameboy_t *gb, GB_sample_callback_t callback)
+@@ -1681,6 +1740,11 @@ static void nr43_write(GB_gameboy_t *gb, uint8_t new)
+ 
+ void GB_apu_write(GB_gameboy_t *gb, uint8_t reg, uint8_t value)
+ {
++    /* RetroPlug APU register tap: report the raw write (original reg, before the
++       global-enable filter and the active-wave redirect below). */
++    if (gb->apu_output.register_write_callback) {
++        gb->apu_output.register_write_callback(gb, reg, value);
++    }
+     GB_apu_run(gb, true);
+     if (!gb->apu.global_enable && reg != GB_IO_NR52 && reg < GB_IO_WAV_START && (GB_is_cgb(gb) ||
+                                                                                 (
+@@ -2207,9 +2271,23 @@ void GB_apu_set_sample_callback(GB_gameboy_t *gb, GB_sample_callback_t callback)
      gb->apu_output.sample_callback = callback;
  }
  
@@ -96,6 +108,12 @@ index caa5451..6c86e23 100644
 +    memset(gb->apu_output.per_channel_highpass_diff, 0, sizeof(gb->apu_output.per_channel_highpass_diff));
 +}
 +
++/* RetroPlug APU register tap */
++void GB_apu_set_register_write_callback(GB_gameboy_t *gb, GB_apu_register_write_callback_t callback)
++{
++    gb->apu_output.register_write_callback = callback;
++}
++
  void GB_set_highpass_filter_mode(GB_gameboy_t *gb, GB_highpass_mode_t mode)
  {
      gb->apu_output.highpass_mode = mode;
@@ -104,10 +122,10 @@ index caa5451..6c86e23 100644
  
  void GB_set_interference_volume(GB_gameboy_t *gb, double volume)
 diff --git a/Core/apu.h b/Core/apu.h
-index 604931e..29a130c 100644
+index 604931e..422d244 100644
 --- a/Core/apu.h
 +++ b/Core/apu.h
-@@ -68,6 +68,11 @@ typedef struct
+@@ -68,6 +68,17 @@ typedef struct
  
  typedef void (*GB_sample_callback_t)(GB_gameboy_t *gb, GB_sample_t *sample);
  
@@ -116,10 +134,16 @@ index 604931e..29a130c 100644
 +   highpassed per-stem in the active highpass mode. See render() in apu.c. */
 +typedef void (*GB_channel_sample_callback_t)(GB_gameboy_t *gb, const GB_sample_t *channels);
 +
++/* RetroPlug APU register tap: fires on every APU register write (reg = the GB_IO_* index,
++   $10-$3F, as originally addressed — before the global-enable filter and the active-wave
++   redirect) so a host can derive note-on/off, pitch and pan events from what the sound
++   hardware is told to play. See GB_apu_write() in apu.c. */
++typedef void (*GB_apu_register_write_callback_t)(GB_gameboy_t *gb, uint8_t reg, uint8_t value);
++
  typedef struct
  {
      bool global_enable;
-@@ -203,9 +208,13 @@ typedef struct {
+@@ -203,9 +214,14 @@ typedef struct {
      GB_highpass_mode_t highpass_mode;
      double highpass_rate;
      GB_double_sample_t highpass_diff;
@@ -131,15 +155,17 @@ index 604931e..29a130c 100644
      GB_sample_callback_t sample_callback;
 -    
 +    GB_channel_sample_callback_t channel_sample_callback; // RetroPlug per-channel tap
++    GB_apu_register_write_callback_t register_write_callback; // RetroPlug APU register tap
 +
      double interference_volume;
      double interference_highpass;
      
-@@ -225,6 +234,7 @@ void GB_set_sample_rate_by_clocks(GB_gameboy_t *gb, double cycles_per_sample); /
+@@ -225,6 +241,8 @@ void GB_set_sample_rate_by_clocks(GB_gameboy_t *gb, double cycles_per_sample); /
  void GB_set_highpass_filter_mode(GB_gameboy_t *gb, GB_highpass_mode_t mode);
  void GB_set_interference_volume(GB_gameboy_t *gb, double volume);
  void GB_apu_set_sample_callback(GB_gameboy_t *gb, GB_sample_callback_t callback);
 +void GB_apu_set_channel_sample_callback(GB_gameboy_t *gb, GB_channel_sample_callback_t callback); // RetroPlug per-channel tap
++void GB_apu_set_register_write_callback(GB_gameboy_t *gb, GB_apu_register_write_callback_t callback); // RetroPlug APU register tap
  int GB_start_audio_recording(GB_gameboy_t *gb, const char *path, GB_audio_format_t format);
  int GB_stop_audio_recording(GB_gameboy_t *gb);
  uint8_t GB_get_channel_volume(GB_gameboy_t *gb, GB_channel_t channel);

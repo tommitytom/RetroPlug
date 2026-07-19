@@ -156,6 +156,14 @@ public:
     void setSerialOutCapture(bool on) { serialOutEnabled_ = on; }
     void captureSerialOutBit(bool bit);
 
+    // APU register-write capture (the SameBoy register tap) — the input for
+    // hosts that derive MIDI from what the sound hardware is told to play
+    // (the iOS "GB Note Out" mode) instead of from serial. Same gate pattern
+    // as the serial capture above.
+    bool apuWriteCaptureEnabled() const { return apuWriteEnabled_; }
+    void setApuWriteCapture(bool on) { apuWriteEnabled_ = on; }
+    void captureApuWrite(std::uint8_t reg, std::uint8_t value);
+
     // TODO: Not a fan of the public vars
 
     // Fields accessed by the C callbacks. Public for callback access only.
@@ -228,6 +236,17 @@ public:
     // when the byte→MIDI decoder doesn't yet translate a given LSDJ
     // output value. Cleared at block boundaries inside prepareForBlock.
     std::vector<std::pair<std::uint32_t, std::uint8_t>> serialOutLog_;
+
+    // APU register-write log: one entry per GB_apu_write while apuWriteEnabled_,
+    // keyed by the in-block sample offset (audioFrameCount_ at write time).
+    // Drained per block by the host's note decoder; cleared in prepareForBlock.
+    struct ApuRegWrite {
+        std::uint32_t offset; // samples from block start
+        std::uint8_t  reg;    // GB_IO_* index ($10-$3F)
+        std::uint8_t  value;
+    };
+    std::vector<ApuRegWrite> apuWriteLog_;
+    bool apuWriteEnabled_ = false; // armed via setApuWriteCapture()
 
 private:
     ExpSmoother gainSmoother_;

@@ -337,6 +337,43 @@ See [test/ts/gb/lsdj/arduinoboy_master.test.ts](../test/ts/gb/lsdj/arduinoboy_ma
 which authors SYNC=KEYBD + the `ArduinoboyMaster` role, presses START, and
 asserts thousands of captured bytes (the synthetic-clock + capture path).
 
+### GB Note Out — MIDI out without the aboy build (iOS-first)
+
+MI.OUT needs the aboy ROM because the *transmit code lives in the ROM* — stock
+LSDj never sends note data over serial, so no amount of host-side decoding can
+produce it. **GB Note Out** is the version-independent alternative: decode what
+the sound hardware is *told to play* instead of what the ROM chooses to
+transmit. Works with any LSDj build (stock or aboy) — and any other ROM.
+
+Plumbing: a SameBoy **APU register-write tap**
+(`GB_apu_set_register_write_callback`, part of the tracked
+[per-channel patch](../cmake/patches/sameboy-per-channel-audio.patch)) feeds
+`SameBoySystem::apuWriteLog_` (gated by `setApuWriteCapture`, cleared per
+block — the same shape as the serial-out capture above). Currently only the
+iOS AU consumes it (`RPMidiSyncModeNoteOut = 8`, decoder `drainApuNotesToHost`
+in [RetroPlugAudioUnit.mm](../ios/RetroPlugKit/RetroPlugAudioUnit.mm)); a
+desktop role would reuse the same log.
+
+The mapping — LSDj commands land as their hardware effects, on the MI.OUT
+per-voice note/CC channel assignments:
+
+| Hardware event | MIDI |
+| --- | --- |
+| NRx4 trigger (new note) | NoteOn — always after an explicit NoteOff for the voice's previous note (strictly mono per voice); velocity = envelope volume |
+| envelope volume write (`E` command) | CC7 (0 / DAC-off → NoteOff) |
+| NR51 pan write (`O` command) | CC10 (L=0 / center=64 / R=127; both bits cleared → NoteOff) |
+| pulse duty write | CC70 |
+| period write while sounding (`P`/`L`/`V`) | pitch bend, ±2 semitones; farther → legato retrigger |
+| APU power-off / mode switch | NoteOff for anything still sounding |
+
+Pitch: pulse `131072/(2048-p)` Hz, wave `65536/(2048-p)` (one tone cycle per
+32-sample table), noise a monotonic map of the NR43 LFSR clock.
+
+Limits (inherent — it reads what's *audible*, not the song data): tables/arps
+come out as fast real notes, WAV kicks as low notes, and pulse sweep drums
+report only their trigger pitch (the sweep runs inside the APU, invisible to
+register writes).
+
 ### Synthetic external-clock serial (subtle but load-bearing)
 
 LSDJ in MI.OUT (and KEYBD) uses the GB serial port in **external-clock** mode

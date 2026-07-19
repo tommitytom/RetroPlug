@@ -74,6 +74,20 @@ final class EmulatorController: ObservableObject {
             au.setMidiSyncMode(settings.syncMode)
             au.setSyncTempoDivisor(UInt(settings.syncTempoDivisor))
             au.setSyncAutoStart(settings.syncAutoStart)
+            for (i, channel) in settings.midiChannels.enumerated() {
+                guard let setting = RPMidiChannelSetting(rawValue: UInt8(i)) else { continue }
+                au.setMidiChannel(UInt(channel), for: setting)
+            }
+            au.setMgbBaseChannel(UInt(settings.mgbBaseChannel))
+            for voice in 0..<settings.midiOutCcModes.count {
+                au.setMidiOutCcMode(settings.midiOutCcModes[voice] == 0 ? .single : .multi,
+                                    forVoice: UInt(voice))
+                au.setMidiOutCcScaling(settings.midiOutCcScaling[voice], forVoice: UInt(voice))
+                for index in 0..<7 {
+                    au.setMidiOutCcNumber(UInt(settings.midiOutCcNumbers[voice * 7 + index]),
+                                          at: UInt(index), forVoice: UInt(voice))
+                }
+            }
             try? au.setModel(settings.model)
             status = "ready"
         } catch {
@@ -180,6 +194,54 @@ final class EmulatorController: ObservableObject {
         }
     }
 
+    // -- LSDj song manager ------------------------------------------------------
+
+    // The live cartridge SRAM, parsed as an LSDj save. Empty for non-LSDj carts
+    // (the parser refuses anything without the 'jk' marker).
+    func lsdjSongs() -> [LsdjSav.Song] {
+        guard let au = auUnit, let sram = au.saveSram() else { return [] }
+        return LsdjSav.songs(in: sram)
+    }
+
+    func lsdjActiveSlot() -> Int? {
+        guard let au = auUnit, let sram = au.saveSram() else { return nil }
+        return LsdjSav.activeSlot(in: sram)
+    }
+
+    // true = working memory matches the active slot's stored copy (safe to
+    // overwrite without asking); false/nil = dirty or unknowable — confirm.
+    func lsdjWorkingSongIsClean() -> Bool? {
+        guard let au = auUnit, let sram = au.saveSram() else { return nil }
+        return LsdjSav.workingSongIsClean(in: sram)
+    }
+
+    // Decompress a stored song into working memory and reboot into it. The
+    // archive is untouched; the working song is overwritten (same as LSDj's
+    // own LOAD, minus the "save changes?" prompt — the UI confirms first).
+    func loadLsdjSong(slot: Int) {
+        guard let au = auUnit, let sram = au.saveSram() else { return }
+        do {
+            try au.loadSram(LsdjSav.loadingSong(slot: slot, into: sram))
+            saveSramNow() // persist the new working song + active slot
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    // Manual .sav load: replace the running cart's battery RAM wholesale and
+    // reboot. Persists immediately so the sibling .sav matches what's running.
+    func loadSav(_ data: Data) {
+        guard let au = auUnit else { return }
+        do {
+            try au.loadSram(data)
+            saveSramNow()
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     // -- Input ----------------------------------------------------------------
 
     func press(_ button: RPGameboyButton, down: Bool) {
@@ -227,6 +289,34 @@ final class EmulatorController: ObservableObject {
     func apply(syncAutoStart: Bool) {
         settings.syncAutoStart = syncAutoStart
         auUnit?.setSyncAutoStart(syncAutoStart)
+    }
+
+    func apply(midiChannel: Int, for setting: RPMidiChannelSetting) {
+        let clamped = min(max(midiChannel, 1), 16)
+        settings.midiChannels[Int(setting.rawValue)] = clamped
+        auUnit?.setMidiChannel(UInt(clamped), for: setting)
+    }
+
+    func apply(mgbBaseChannel: Int) {
+        let clamped = min(max(mgbBaseChannel, 0), 12)
+        settings.mgbBaseChannel = clamped
+        auUnit?.setMgbBaseChannel(UInt(clamped))
+    }
+
+    func apply(midiOutCcMode: Int, voice: Int) {
+        settings.midiOutCcModes[voice] = midiOutCcMode == 0 ? 0 : 1
+        auUnit?.setMidiOutCcMode(midiOutCcMode == 0 ? .single : .multi, forVoice: UInt(voice))
+    }
+
+    func apply(midiOutCcScaling: Bool, voice: Int) {
+        settings.midiOutCcScaling[voice] = midiOutCcScaling
+        auUnit?.setMidiOutCcScaling(midiOutCcScaling, forVoice: UInt(voice))
+    }
+
+    func apply(midiOutCcNumber: Int, index: Int, voice: Int) {
+        let clamped = min(max(midiOutCcNumber, 0), 127)
+        settings.midiOutCcNumbers[voice * 7 + index] = clamped
+        auUnit?.setMidiOutCcNumber(UInt(clamped), at: UInt(index), forVoice: UInt(voice))
     }
 
     // -- MIDI (mGB pads) ------------------------------------------------------

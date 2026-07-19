@@ -21,6 +21,7 @@ typedef NS_ERROR_ENUM(RPCoreBridgeErrorDomain, RPCoreBridgeError) {
     RPCoreBridgeErrorNoSystem      = 2, // no emulator constructed yet
     RPCoreBridgeErrorGateTimeout   = 3, // render thread never yielded (should not happen)
     RPCoreBridgeErrorStateRejected = 4, // savestate refused (wrong ROM or model)
+    RPCoreBridgeErrorSramRejected  = 5, // battery RAM refused (wrong size for the cart)
 };
 
 // Game Boy LCD geometry. Frames are XRGB8888; in memory each pixel is
@@ -78,7 +79,64 @@ typedef NS_ENUM(uint8_t, RPMidiSyncMode) {
     // becomes one 0xF8 on the AU's MIDI output (plus row NoteOn + 0xFA at run
     // start, 0xFC on the idle flood) so the host can follow LSDj's tempo.
     RPMidiSyncModeMasterSync = 7,
+    // GB Note Out (APU tap): MIDI is derived from the emulated sound hardware
+    // itself — channel triggers become NoteOn (with an explicit NoteOff for
+    // the voice's previous note), frequency slides become pitch bend, and
+    // envelope / pan / duty writes become CCs. Works with ANY LSDj build (or
+    // any ROM at all) — no MI.OUT-patched ROM needed — because it reads what
+    // the APU is told to play, not what the ROM chooses to transmit over
+    // serial. Uses the MI.OUT per-voice note/CC channel assignments.
+    RPMidiSyncModeNoteOut = 8,
 };
+
+// Per-mode MIDI channel assignments — the software twin of the Arduinoboy
+// Editor's per-application channel settings (stored in EEPROM on the real
+// hardware). Channels are 1-based (1–16) like the editor GUI. Raw values are
+// AU parameter address offsets (kParamChannelBase + raw) — keep them stable.
+typedef NS_ENUM(uint8_t, RPMidiChannelSetting) {
+    // LSDj slave sync (midiSyncArduinoboy): the channel whose NoteOns carry
+    // the note-24+ control protocol.
+    RPMidiChannelSettingArduinoboySlave = 0,
+    // LSDj master sync: the channel of the song-row NoteOn at run start.
+    RPMidiChannelSettingMasterSync      = 1,
+    // keyboardMidi: the channel whose notes become PS/2 scancodes.
+    RPMidiChannelSettingKeyboard        = 2,
+    // midiMap: NoteOns on this channel jump rows 0–127; the next channel up
+    // carries rows 128–255.
+    RPMidiChannelSettingMidiMap         = 3,
+    // mGB: the input channel remapped to each of mGB's five fixed voices
+    // (PU1/PU2/WAV/NOI/POLY = mGB channels 1–5). Unassigned channels drop.
+    RPMidiChannelSettingMgbPu1          = 4,
+    RPMidiChannelSettingMgbPu2          = 5,
+    RPMidiChannelSettingMgbWav          = 6,
+    RPMidiChannelSettingMgbNoi          = 7,
+    RPMidiChannelSettingMgbPoly         = 8,
+    // midiOut (MI.OUT): the output channel for each GB voice's notes (and
+    // program changes), then for each voice's CCs — the editor's
+    // "Note MIDI CH" / "CC MIDI CH" columns.
+    RPMidiChannelSettingMidiOutNotePu1  = 9,
+    RPMidiChannelSettingMidiOutNotePu2  = 10,
+    RPMidiChannelSettingMidiOutNoteWav  = 11,
+    RPMidiChannelSettingMidiOutNoteNoi  = 12,
+    RPMidiChannelSettingMidiOutCcPu1    = 13,
+    RPMidiChannelSettingMidiOutCcPu2    = 14,
+    RPMidiChannelSettingMidiOutCcWav    = 15,
+    RPMidiChannelSettingMidiOutCcNoi    = 16,
+};
+FOUNDATION_EXPORT const NSUInteger RPMidiChannelSettingCount; // 17
+
+// MI.OUT CC matrix (the editor's "CC Mode" / "CC SCALING" / CC#0–6 grid),
+// configured per GB voice (0=PU1, 1=PU2, 2=WAV, 3=NOI). Ported verbatim from
+// the firmware's playCC.
+typedef NS_ENUM(uint8_t, RPMidiOutCcMode) {
+    // The whole 0–111 command value goes out on CC#0.
+    RPMidiOutCcModeSingle = 0,
+    // The value's high digit picks one of CC#0–6; the low nibble is the
+    // value. The firmware factory default.
+    RPMidiOutCcModeMulti  = 1,
+};
+FOUNDATION_EXPORT const NSUInteger RPMidiOutVoiceCount;    // 4 (PU1/PU2/WAV/NOI)
+FOUNDATION_EXPORT const NSUInteger RPMidiOutCcNumberCount; // 7 CC#s per voice
 
 // Mirrors SameBoyModel (system/sameboy/SameBoyConfig.hpp).
 typedef NS_ENUM(uint32_t, RPSameBoyModel) {
@@ -124,6 +182,12 @@ typedef NS_ENUM(uint32_t, RPSameBoyModel) {
 - (nullable NSData *)saveState;
 - (BOOL)loadState:(NSData *)state error:(NSError **)error;
 
+// Replace the running cartridge's battery RAM wholesale (a manual .sav load
+// or an LSDj song-manager swap), then reset — LSDj (like most carts) only
+// reads its save at boot. Rejected when no system is loaded or the image
+// doesn't match the cartridge's battery size.
+- (BOOL)loadSram:(NSData *)sram error:(NSError **)error;
+
 // Rebuilds the emulator on the new model (SRAM survives, savestate cannot).
 // Also becomes the default for subsequently loaded ROMs.
 - (BOOL)setModel:(RPSameBoyModel)model error:(NSError **)error;
@@ -149,6 +213,22 @@ typedef NS_ENUM(uint32_t, RPSameBoyModel) {
 - (void)setMidiSyncMode:(RPMidiSyncMode)mode;
 - (void)setSyncTempoDivisor:(NSUInteger)divisor; // 1–8; 24/divisor ticks per quarter
 - (void)setSyncAutoStart:(BOOL)on;               // tap START on transport rise (midiSync)
+- (void)setMidiChannel:(NSUInteger)channel       // 1–16, per the editor GUI
+            forSetting:(RPMidiChannelSetting)setting;
+
+// mGB base channel: 0 = use the five per-voice assignments (default); 1–12 =
+// the voices sit contiguously at base..base+4, so each plugin instance can
+// take its own channel block with one setting.
+- (void)setMgbBaseChannel:(NSUInteger)base;
+
+// MI.OUT CC matrix, per voice (0–3 = PU1/PU2/WAV/NOI). Scaling stretches the
+// value to the full MIDI range (×8 in multi mode, /111×127 in single mode);
+// unscaled passes LSDj's byte through untouched, firmware-style.
+- (void)setMidiOutCcMode:(RPMidiOutCcMode)ccMode forVoice:(NSUInteger)voice;
+- (void)setMidiOutCcScaling:(BOOL)scaled forVoice:(NSUInteger)voice;
+- (void)setMidiOutCcNumber:(NSUInteger)cc        // 0–127
+                   atIndex:(NSUInteger)index     // 0–6 (CC#0–6)
+                  forVoice:(NSUInteger)voice;
 
 // -- Video -------------------------------------------------------------------
 

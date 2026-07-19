@@ -7,8 +7,8 @@ usable Game Boy player (ROM library, touch controls, game controllers,
 battery saves, savestates).
 
 **What this is NOT (yet):** no Engine/QuickJS control plane or project layer,
-no LSDj `.sav` tooling, no Mesen (NES/GBA), and the AUv3 extension's own view
-is still a placeholder label. See the phase list at the bottom.
+no Mesen (NES/GBA), and the AUv3 extension's own view is still a placeholder
+label. See the phase list at the bottom.
 
 ## Prerequisites
 
@@ -60,13 +60,17 @@ Management.
 - **Saves** — battery SRAM is written on eject/load-over and when the app
   backgrounds; savestates get one slot per ROM. mGB's synth settings live in
   cartridge RAM and persist the same way.
+- **LSDj songs** — the running cart's SRAM is parsed as an LSDj save (song
+  list, active slot, working-song-dirty check), with a song manager sheet to
+  load a stored song into working memory and a manual `.sav` load that
+  replaces battery RAM wholesale.
 - **Screen** — a `CADisplayLink` pulls the emulator's latest frame from a
   lock-free triple buffer and blits it to a `CALayer` (`GameBoyScreenView`,
   shared with the extension target) — SwiftUI's view graph stays out of the
   60 Hz loop.
-- **Settings** — SameBoy model (Auto/DMG/SGB/CGB/AGB…), fast boot, gain, and
-  the MIDI sync mode; persisted in `UserDefaults` and pushed into the AU on
-  launch.
+- **Settings** — SameBoy model (Auto/DMG/SGB/CGB/AGB…), fast boot, gain, the
+  MIDI sync mode, and the active mode's channel assignments / CC matrix (see
+  below); persisted in `UserDefaults` and pushed into the AU on launch.
 
 ## The audio unit
 
@@ -85,6 +89,50 @@ Management.
   DAW). Exposed as AU parameters (sync mode / tempo divisor / auto-start) so
   DAW hosts can automate them; the desktop `keyboard` mode (host key feed) is
   the only one without an iOS twin.
+- **Arduinoboy Editor parity** — the per-application settings the hardware
+  stores in EEPROM (and the maxpat Editor configures over SysEx) are AU
+  parameters here, seeded with the firmware factory defaults and persisted in
+  the host project via `fullState`:
+  - **per-mode MIDI channels** (`RPMidiChannelSetting`, addresses 16–32):
+    slave sync / master sync / keyboard / MIDI map channel (map channel plays
+    rows 0–127, the next channel up 128–255), the five mGB voice channels
+    (input remapped to mGB's fixed PU1/PU2/WAV/NOI/POLY; unassigned channels
+    drop), and MI.OUT's per-voice note (+ PC) and CC channels — shared by
+    Note Out.
+  - **mGB base channel** (address 80): 0 = the five per-voice assignments;
+    1–12 = the voices sit contiguously at base..base+4, so multiple DAW
+    instances each take their own channel block with one knob.
+  - **MI.OUT CC matrix** (addresses 40–75, firmware `playCC` verbatim): per
+    voice a CC mode (single CC vs. the LSDj `X` value's high digit selecting
+    one of seven CC numbers), a scaling flag (×8 multi / ÷111×127 single —
+    off passes LSDj's byte through untouched, firmware quirks included), and
+    the seven assignable CC numbers (defaults 1/2/3/7/10/11/12 — chosen
+    upstream so MI.OUT output drives an mGB instance's pulse width, envelope,
+    sweep, and pan directly).
+- **GB Note Out (APU tap)** — one iOS-first mode beyond desktop parity: MIDI
+  out from **any** LSDj build (or any ROM at all), no MI.OUT-patched
+  "Arduinoboy" ROM required. MI.OUT only exists in the special aboy builds
+  because the transmit code lives in the ROM; Note Out sidesteps that by
+  decoding what the emulated sound hardware is *told to play* instead of what
+  the ROM chooses to transmit. A SameBoy register-write tap (part of the
+  tracked per-channel patch) logs every APU register write; the render block
+  turns them into MIDI on the MI.OUT per-voice note/CC channel assignments:
+  - channel **triggers → NoteOn**, always preceded by an explicit NoteOff for
+    the voice's previous note (the four voice streams are strictly mono);
+    velocity comes from the envelope volume. Notes release on envelope-0,
+    DAC power-off, NR51 mute, APU power-off, and on leaving the mode.
+  - **envelope volume → CC7** (LSDj `E` command / instrument envelope),
+    **panning → CC10** (`O` command: L=0 / center=64 / R=127),
+    **pulse duty → CC70**, and **slides/vibrato → pitch bend** (`P`/`L`/`V`
+    commands, ±2 semitones; a slide past that retriggers legato).
+  - pitch mapping: pulse `131072/(2048-p)` Hz, wave `65536/(2048-p)` (one
+    tone cycle per 32-sample table), noise a monotonic map of NR43 so noise
+    pitches still track.
+
+  Caveat: it reads what's *audible*, not the song data — tables/arps arrive
+  as fast real notes, WAV kicks as low notes, and pulse sweep drums report
+  only their trigger pitch (the sweep runs inside the APU, invisible to
+  register writes). That's inherent to the approach.
 - **`fullState`** — ROM, SRAM, savestate, and settings round-trip through the
   host's session save/restore.
 
@@ -128,6 +176,8 @@ plus `deps/sameboy/Core/*.c`. Everything else in `ios/` is new:
   `.rplg` decode), `PlayerSettings`, `ControllerInput`, `Views/`
 - `RetroPlugAU/` — the extension (factory + placeholder view)
 - `Shared/GameBoyScreenView.swift` — the LCD, used by both targets
+- `Shared/LsdjSav.swift` — the LSDj `.sav` parser (song list, active slot,
+  working-song load) behind the song manager
 
 ## Phases from here
 

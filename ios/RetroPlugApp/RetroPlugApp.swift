@@ -3,6 +3,7 @@
 // loads .gb/.gbc ROMs or the embedded mGB synth, renders the LCD, and hosts
 // the audio unit in-process via AVAudioEngine (see EmulatorController).
 import SwiftUI
+import UIKit
 
 struct RootView: View {
     @EnvironmentObject var emu: EmulatorController
@@ -16,21 +17,24 @@ struct RootView: View {
             }
         }
         .task { await emu.start() }
+        // Battery RAM must survive the app being killed in the background.
+        // Notification instead of scenePhase onChange: the two-parameter
+        // onChange is iOS 17+, the single-parameter one warns there, and the
+        // deployment target is 16 — this form is clean on both.
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIApplication.didEnterBackgroundNotification)) { _ in
+            emu.saveSramNow()
+        }
     }
 }
 
 @main
 struct RetroPlugApp: App {
     @StateObject private var emu = EmulatorController()
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(emu)
-        }
-        .onChange(of: scenePhase) { _, phase in
-            // Battery RAM must survive the app being killed in the background.
-            if phase == .background { emu.saveSramNow() }
         }
     }
 }

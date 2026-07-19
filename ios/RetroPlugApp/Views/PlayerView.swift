@@ -6,6 +6,7 @@ import SwiftUI
 struct PlayerView: View {
     @EnvironmentObject var emu: EmulatorController
     @State private var showSettings = false
+    @State private var showLsdjSongs = false
 
     private var title: String {
         switch emu.loaded {
@@ -57,6 +58,8 @@ struct PlayerView: View {
                     Button("Save State", systemImage: "square.and.arrow.down") { emu.saveState() }
                     Button("Load State", systemImage: "square.and.arrow.up") { emu.loadState() }
                     Button("Save Battery (SRAM)", systemImage: "battery.100") { emu.saveSramNow() }
+                    Divider()
+                    Button("LSDj Songs…", systemImage: "music.note.list") { showLsdjSongs = true }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -71,6 +74,10 @@ struct PlayerView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheet(settings: emu.settings)
+                .environmentObject(emu)
+        }
+        .sheet(isPresented: $showLsdjSongs) {
+            LsdjSongsSheet()
                 .environmentObject(emu)
         }
     }
