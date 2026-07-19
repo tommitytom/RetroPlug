@@ -198,13 +198,17 @@ export class MockBackend implements Backend {
   listDir(dir: string): string[] {
     this.log.push("listDir");
     const parent = this.canonicalize(dir);
-    const out: string[] = [];
+    const prefix = parent === "/" ? "/" : parent + "/";
+    // Immediate children: a direct file, or a subdirectory (marked with a trailing '/', matching the native
+    // listDir contract) inferred from any deeper file path under `parent`.
+    const names = new Set<string>();
     for (const key of this.files.keys()) {
-      const slash = key.lastIndexOf("/");
-      const keyParent = slash <= 0 ? "/" : key.slice(0, slash);
-      if (keyParent === parent) out.push(key.slice(slash + 1));
+      if (!key.startsWith(prefix)) continue;
+      const rest = key.slice(prefix.length);
+      const slash = rest.indexOf("/");
+      names.add(slash < 0 ? rest : rest.slice(0, slash) + "/");
     }
-    return out.sort();
+    return [...names].sort();
   }
 
   deleteFile(path: string): boolean {
