@@ -87,6 +87,17 @@ constexpr std::size_t kCcNumbersPerVoice = 7; // == RPMidiOutCcNumberCount
 // the voices sit contiguously at base..base+4, so multiple DAW instances can
 // each take their own channel block with one knob.
 constexpr AUParameterAddress kParamMgbBaseChannel = 80;
+// MIDI note → joypad. The extension sandbox never receives GameController
+// (MFi) events, so notes are the only joypad a DAW host can drive. Notes
+// base..base+7 on the joypad channel map straight onto RPGameboyButton order
+// (Right, Left, Up, Down, A, B, Select, Start); channel 0 disables. Active in
+// every sync mode and consumed before the mode translators, so an
+// overlapping mGB/map channel never double-handles a button note.
+constexpr AUParameterAddress kParamJoypadChannel  = 81; // 0 = Off; 1–16
+constexpr AUParameterAddress kParamJoypadBaseNote = 82; // 0–120
+constexpr std::uint8_t kJoypadDefaultChannel  = 16; // clear of the ch 1–5 mode defaults
+constexpr std::uint8_t kJoypadDefaultBaseNote = 36; // C2
+constexpr std::size_t  kJoypadButtonCount     = 8;
 // Firmware factory defaults: CC mode 1 (hi-digit select), scaling on, and the
 // same seven CC numbers for every voice.
 constexpr std::uint8_t kCcNumberDefaults[kCcNumbersPerVoice] = {1, 2, 3, 7, 10, 11, 12};
@@ -208,6 +219,10 @@ struct RenderState {
     std::array<std::atomic<std::uint8_t>, kMidiOutVoiceCount * kCcNumbersPerVoice> ccNumbers{};
     // mGB base channel (0 = per-voice assignments; 1–12 = base..base+4).
     std::atomic<std::uint8_t> mgbBaseChannel{0};
+    // MIDI note → joypad channel (0 = off) and base note (see the kParam
+    // comments above). Init values match the parameter defaults seeded at init.
+    std::atomic<std::uint8_t> joypadChannel{kJoypadDefaultChannel};
+    std::atomic<std::uint8_t> joypadBaseNote{kJoypadDefaultBaseNote};
 
     // Host clock taps and the MIDI output sink, cached at allocate time per
     // the AUAudioUnit contract (calling the properties from the render thread
