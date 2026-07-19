@@ -102,9 +102,25 @@ Root [package.json](../package.json). Each builds its CMake target(s) first, the
 | `validate` | `-clap` + `-vst3` | `clap-validator` + `pluginval` against the built binaries via the shared [validate-plugins.sh](../tools/validate-plugins.sh) ([:22](../package.json#L22)). |
 | `reaper:mgb-smoke-author` | `-vst3` | Authors + bakes the `.rplg` fixture for the Reaper render. |
 | `reaper:mgb-smoke` | `-vst3` | Renders [mgb_smoke.rpp](../examples/reaper/mgb_smoke.rpp) through real Reaper — end-to-end DAW proof. |
+| `reaper:all` | `-vst3` | Builds + authors once, then runs the **whole** Reaper leg — all 6 audio renders + 3 editor checks — **concurrently**, with a PASS/FAIL summary ([run-reaper-suite.sh](../tools/run-reaper-suite.sh)). |
 
 `pnpm test` runs the mock-backend TS suite; the native, UI, plugin, and Reaper tiers are invoked
 explicitly by their own scripts.
+
+### Running the Reaper leg in parallel
+
+Each Reaper check boots its own headless stack (Xvfb + openbox + dummy JACK + isolated Reaper
+config + the built VST3). Individually those are the `reaper:*` scripts; to run the entire leg at
+once, `pnpm reaper:all` fans all nine out concurrently. The shared bring-up/tear-down lives in one
+sourced helper, [tools/reaper-env.sh](../tools/reaper-env.sh), which keys every otherwise-shared
+resource off `RP_JOB_TAG` — a **uniquely named JACK server** (`jackd -n` + `JACK_DEFAULT_SERVER`,
+the thing that actually lets two Reapers coexist), a per-tag config dir, a `-displayfd`-allocated
+Xvfb display, and per-tag logs (under `build/reaper-cfg-<tag>/logs/`). A bare `reaper:*` run
+defaults the tag to the scenario, so single runs are unchanged. Offline render is sample-accurate
+and wall-clock-independent, so parallel scheduling never changes a rendered sample (the WAV's PCM
+data is byte-identical run-to-run; only Reaper's BWF header timestamp differs). Cap concurrency with
+`RP_SUITE_JOBS` (default 8); skip the rebuild + fixture regen with `RP_SUITE_NO_BUILD=1`. Not in CI
+— it needs a full DAW + X stack.
 
 ## The dpf.js seam
 

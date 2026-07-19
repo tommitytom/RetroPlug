@@ -13,7 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 
 type RpcSend = (request: unknown) => unknown;
@@ -152,6 +152,7 @@ export function createDebugClient(): DebugBackend {
   const call = makeCall();
   return {
     getApuState: (id) => call("getApuState", id) as ApuState,
+    getExpansionAudioState: (id) => call("getExpansionAudioState", id) as ExpansionAudioState,
     getPpuState: (id) => call("getPpuState", id) as PpuState,
     readCpu: (id, addr) => call("readCpu", id, addr) as number | null,
     writeCpu: (id, addr, value) => call("writeCpu", id, addr, value) as boolean,
