@@ -469,6 +469,8 @@ void installWindowHooks(JSContext* ctx) {
     bind("__rp_setWindowTitle", jsSetWindowTitle, 1);
     bind("__rp_openPath", jsOpenPath, 1);
     bind("__rp_openFileBrowser", jsOpenFileBrowser, 4);
+    // Mark this as a standalone host so the UI shows the "Exit" menu row (a DAW hides it).
+    JS_SetPropertyStr(ctx, g, "__rp_isStandalone", JS_NewBool(ctx, 1));
     JS_FreeValue(ctx, g);
 }
 
@@ -792,7 +794,8 @@ int main(int argc, char** argv) {
 
     // Test hook: open the native file browser at a given dir (headless screenshot verification).
     if (const char* td = std::getenv("RETROPLUG_SDL_TEST_BROWSER")) {
-        fbOpen(app, "Load ROM", "*.cpp *.hpp *.md *.gb *.rplg", false);
+        const char* pats = std::getenv("RETROPLUG_SDL_TEST_BROWSER_PATTERNS");
+        fbOpen(app, "Load ROM", pats ? pats : "*.cpp *.hpp *.md *.gb *.rplg", false);
         if (*td == '/') { app.fb.dir = td; fbPopulate(app); }
     }
 

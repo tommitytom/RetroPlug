@@ -48,6 +48,15 @@ export interface MenuContext {
   newProject: () => void;
   loadProject: (path: string) => void;
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
+  /** Quit the standalone (unsaved-changes guarded). No-op in a DAW (the host owns the window). */
+  requestExit: () => void;
+}
+
+/** True only in a standalone host (the SDL handheld build or the DPF JACK standalone), which installs
+ *  __rp_isStandalone; a DAW-hosted editor and the headless harness leave it undefined. Gates the "Exit"
+ *  row — a DAW owns the plugin window, so it must not offer to quit. */
+function isStandalone(): boolean {
+  return (globalThis as { __rp_isStandalone?: boolean }).__rp_isStandalone === true;
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -583,6 +592,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       ...(lsdj ? [submenu("inst-lsdj", "LSDj", lsdjChildren(ctx, sys, lsdj.config))] : []),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
+      ...(isStandalone() ? [sep("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };
@@ -598,6 +608,7 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),
+      ...(isStandalone() ? [sep("start-sep-exit"), action("start-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };

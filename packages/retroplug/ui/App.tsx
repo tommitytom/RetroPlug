@@ -176,7 +176,16 @@ export function App() {
   useGameInput({ active: playing, focusedId: stores.project.systems.focused() });
   useGamepadInput({ active: playing, focusedId: stores.project.systems.focused() });
 
-  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject };
+  // Exit (standalone Exit menu row): route through the SAME native close path the window-close button
+  // uses — __rp_onCloseRequested raises the unsaved-changes prompt and vetoes when dirty; a clean project
+  // quits immediately via __rp_quitWindow. Inert in a DAW / the harness (neither global installed).
+  const requestExit = (): void => {
+    const g = globalThis as { __rp_onCloseRequested?: () => boolean; __rp_quitWindow?: () => void };
+    const veto = g.__rp_onCloseRequested?.() ?? false;
+    if (!veto) g.__rp_quitWindow?.();
+  };
+
+  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit };
 
   // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
   // the keypad. Save & Quit / Discard & Quit / Cancel — the guard drives the native quit + dismissal.

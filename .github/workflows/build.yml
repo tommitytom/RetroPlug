@@ -2,6 +2,11 @@ name: build
 
 on:
   workflow_dispatch:
+    inputs:
+      profile:
+        description: "Also build the arm64 RETROPLUG_PROFILE host (retroplug-host) for on-device profiling"
+        type: boolean
+        default: false
   pull_request:
   push:
     branches: [main]
@@ -278,6 +283,58 @@ jobs:
           name: retroplug-sdl-linux-aarch64
           if-no-files-found: warn
           path: build/bin/retroplug-sdl
+
+  # On-device profiling host — arm64 retroplug-host built with RETROPLUG_PROFILE (the DSP-thread allocator
+  # counters + per-role trace spans, spec/08). Runs the deterministic dsp-bench (off-RT renderAudio) to
+  # measure JS-kernel vs C++-APU µs and xRT headroom ON the A53. Manual-only (workflow_dispatch profile=true)
+  # since it's a dev tool + a full separate build tree.
+  profile-host-arm64:
+    if: github.event_name == 'workflow_dispatch' && inputs.profile
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+      - name: Init submodules (rewrite SSH -> HTTPS; all repos are public)
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends \
+            cmake ninja-build pkg-config gcc-12 g++-12 \
+            libdbus-1-dev libasound2-dev libcurl4-openssl-dev libffi-dev libssl-dev \
+            bison libpng-dev
+      - name: Install RGBDS (from source)
+        run: |
+          set -eux
+          tmp="$(mktemp -d)"; cd "$tmp"
+          git clone --depth 1 --branch v1.0.1 https://github.com/gbdev/rgbds
+          cd rgbds && make -j"$(nproc)" && sudo install -m 0755 rgbasm rgblink rgbgfx rgbfix /usr/local/bin/
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Enable corepack (pnpm)
+        run: corepack enable
+      - name: Install workspace deps (pnpm)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
+      - name: Build retroplug-host (RETROPLUG_PROFILE)
+        run: |
+          cmake -S . -B build-prof -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DRETROPLUG_PROFILE=ON -DMI_NO_OPT_ARCH=ON \
+            -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12
+          cmake --build build-prof --target retroplug-host -j"$(nproc)"
+          file build-prof/bin/retroplug-host
+      - name: Upload retroplug-host (profiling)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: retroplug-host-profile-aarch64
+          if-no-files-found: warn
+          path: build-prof/bin/retroplug-host
 
   windows:
     runs-on: windows-2022
