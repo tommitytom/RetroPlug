@@ -328,6 +328,7 @@ jobs:
             -DRETROPLUG_PROFILE=ON -DMI_NO_OPT_ARCH=ON \
             -DCMAKE_C_COMPILER=gcc-12 -DCMAKE_CXX_COMPILER=g++-12
           cmake --build build-prof --target retroplug-host -j"$(nproc)"
+          strip build-prof/bin/retroplug-host   # -g makes it ~290MB; the bench needs no symbols
           file build-prof/bin/retroplug-host
       - name: Upload retroplug-host (profiling)
         if: always()
