@@ -15,14 +15,14 @@ class NesSoundMixer;
 class MesenAudioDevice;
 class MesenVideoDevice;
 class MesenNesDebugSession;
-class NesN8MidiRole;
+class NesN8FifoRole;
 
 // NES system, via the Mesen backend. Mirrors SameBoySystem's shape: per-block
 // onProcess drives the emulator until enough samples are queued in
 // MesenAudioDevice, then drains them into the planar L/R outs with smoothed
 // gain. Native NES resolution: 256x240. Audio runs at the host sample rate
 // (Mesen's SoundMixer resamples internally). Input arrives as NesButton; host
-// MIDI is forwarded to the N8 FIFO (NesN8MidiRole).
+// MIDI is forwarded to the N8 FIFO (NesN8FifoRole).
 class MesenNesSystem final : public SystemBase {
 public:
     MesenNesSystem(SystemId id,
@@ -125,7 +125,7 @@ private:
     std::unique_ptr<Emulator>         emu_;
     std::shared_ptr<MesenAudioDevice> audioDevice_;
     std::shared_ptr<MesenVideoDevice> videoDevice_;
-    std::unique_ptr<NesN8MidiRole>    n8Role_;
+    std::unique_ptr<NesN8FifoRole>    n8Role_;
     std::unique_ptr<MesenNesDebugSession> debugSession_;
     FrameBufferTriple                 frames_{kPixelWidth, kPixelHeight};
     bool                              activated_      = false;

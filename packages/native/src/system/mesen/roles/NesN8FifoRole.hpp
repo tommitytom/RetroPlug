@@ -18,10 +18,10 @@ class NesConsole;
 // activates with a NES ROM — the FIFO is benign if the ROM never touches
 // $40F0/$40F1 (most NES homebrew). If non-N8 NES ROMs become a real concern,
 // gate attachment on an iNES mapper-byte sniffer.
-class NesN8MidiRole {
+class NesN8FifoRole {
 public:
-    NesN8MidiRole();
-    ~NesN8MidiRole();
+    NesN8FifoRole();
+    ~NesN8FifoRole();
 
     // Register the FIFO with `console`'s memory manager so memory accesses at
     // $40F0/$40F1 are routed through it. Called once, on the audio thread,

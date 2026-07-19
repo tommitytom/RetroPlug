@@ -1,24 +1,24 @@
-#include "system/mesen/roles/NesN8MidiRole.hpp"
+#include "system/mesen/roles/NesN8FifoRole.hpp"
 
 #include <cstdio>
 
 #include "Core/NES/NesConsole.h"
 #include "Core/NES/NesMemoryManager.h"
 
-NesN8MidiRole::NesN8MidiRole() = default;
-NesN8MidiRole::~NesN8MidiRole() = default;
+NesN8FifoRole::NesN8FifoRole() = default;
+NesN8FifoRole::~NesN8FifoRole() = default;
 
-void NesN8MidiRole::onAttach(NesConsole& console) {
+void NesN8FifoRole::onAttach(NesConsole& console) {
     auto* memMgr = console.GetMemoryManager();
     if (!memMgr) {
-        std::fprintf(stderr, "[NesN8MidiRole] no memory manager available; attach failed\n");
+        std::fprintf(stderr, "[NesN8FifoRole] no memory manager available; attach failed\n");
         return;
     }
     memMgr->RegisterIODevice(&fifo_);
-    std::fprintf(stderr, "[NesN8MidiRole] FIFO attached at $40F0/$40F1\n");
+    std::fprintf(stderr, "[NesN8FifoRole] FIFO attached at $40F0/$40F1\n");
 }
 
-void NesN8MidiRole::onMidi(const ::MidiEvent* events, std::uint32_t count) {
+void NesN8FifoRole::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     if (events == nullptr || count == 0) return;
     for (std::uint32_t i = 0; i < count; ++i) {
         const auto& ev = events[i];
@@ -32,14 +32,14 @@ void NesN8MidiRole::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     }
 }
 
-void NesN8MidiRole::pumpUntil(std::uint32_t sampleOffset) {
+void NesN8FifoRole::pumpUntil(std::uint32_t sampleOffset) {
     while (!pending_.empty() && pending_.front().offset <= sampleOffset) {
         fifo_.pushByte(pending_.front().byte);
         pending_.pop_front();
     }
 }
 
-void NesN8MidiRole::rebase(std::uint32_t frames) {
+void NesN8FifoRole::rebase(std::uint32_t frames) {
     for (auto& e : pending_) {
         e.offset = (e.offset > frames) ? e.offset - frames : 0;
     }

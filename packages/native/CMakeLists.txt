@@ -46,7 +46,7 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesDebugSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8MidiRole.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8FifoRole.cpp
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull
     # the full lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
@@ -548,7 +548,7 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/EngineSampleRate.test.cpp   # host sample-rate change re-rates live cores
     test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
     test/audio/NesApuLatency.test.cpp   # runtime NES APU flush window (live apuLatencyMs knob)
-    test/audio/NesN8MidiTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
+    test/audio/NesN8FifoTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
     test/audio/NesEverdriveFifo.test.cpp  # Edio status protocol leaves no stale byte to desync MIDI parsing
     test/audio/NesStems.test.cpp)    # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
 

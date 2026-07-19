@@ -1,4 +1,4 @@
-// Guards NES host-MIDI intra-block timing: NesN8MidiRole now QUEUES each event's bytes tagged with the
+// Guards NES host-MIDI intra-block timing: NesN8FifoRole now QUEUES each event's bytes tagged with the
 // event's sample offset (ev.frame) and releases them into the N8 FIFO only once the block's sample
 // progress reaches that offset (MesenNesSystem::stepIfBelowTarget drives pumpUntil). Previously every byte
 // was pushed at the block start (frame-0 collapse) — the NES equivalent of the SameBoy serial fix.
@@ -11,7 +11,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "system/mesen/roles/NesN8MidiRole.hpp"
+#include "system/mesen/roles/NesN8FifoRole.hpp"
 #include "transport/MidiTypes.hpp"
 
 namespace {
@@ -29,7 +29,7 @@ namespace {
 } // namespace
 
 TEST_CASE("NES N8 MIDI bytes release at their intra-block offset, in order", "[audio][nes]") {
-    NesN8MidiRole role;
+    NesN8FifoRole role;
 
     // Two events in one block: A near the start (offset 100), B near the end (offset 7000).
     const ::MidiEvent a = noteOn(100, 60);
@@ -66,7 +66,7 @@ TEST_CASE("NES N8 MIDI bytes release at their intra-block offset, in order", "[a
 }
 
 TEST_CASE("NES N8 MIDI offsets past the block end rebase into the next block", "[audio][nes]") {
-    NesN8MidiRole role;
+    NesN8FifoRole role;
     constexpr std::uint32_t kFrames = 512;
 
     // An event scheduled 100 samples into the NEXT block (offset = frames + 100).
@@ -90,7 +90,7 @@ TEST_CASE("NES N8 MIDI offsets past the block end rebase into the next block", "
 }
 
 TEST_CASE("NES N8 MIDI already-due offsets clamp to 0 on rebase and clear() drops the queue", "[audio][nes]") {
-    NesN8MidiRole role;
+    NesN8FifoRole role;
     constexpr std::uint32_t kFrames = 512;
 
     // Offset within this block that didn't fire (e.g. the ROM/audio never advanced there): rebase clamps
