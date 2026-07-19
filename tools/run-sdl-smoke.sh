@@ -37,6 +37,14 @@ run() {
     LOG="$TMP/$name.log"
     if ! env "$@" RETROPLUG_SDL_EXIT_AFTER_FRAMES="$frames" "$BIN" >"$LOG" 2>&1; then
         cat "$LOG" >&2
+        # On a crash, capture a backtrace (lldb on macOS / gdb on Linux) to make CI failures diagnosable.
+        if command -v lldb >/dev/null 2>&1; then
+            echo "--- lldb backtrace ($name) ---" >&2
+            env "$@" RETROPLUG_SDL_EXIT_AFTER_FRAMES="$frames" lldb --batch -o run -k "bt all" -k quit -- "$BIN" >&2 2>&1 || true
+        elif command -v gdb >/dev/null 2>&1; then
+            echo "--- gdb backtrace ($name) ---" >&2
+            env "$@" RETROPLUG_SDL_EXIT_AFTER_FRAMES="$frames" gdb -batch -ex run -ex "thread apply all bt" --args "$BIN" >&2 2>&1 || true
+        fi
         fail "$name: binary exited non-zero"
     fi
 }
