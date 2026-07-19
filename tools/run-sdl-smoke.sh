@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
 # Headless smoke for the SDL2 standalone (retroplug-sdl). Boots the FULL React/LVGL UI over the real
-# Engine with no display server (SDL_VIDEODRIVER=offscreen) and no audio hardware (SDL_AUDIODRIVER=dummy),
-# then exercises the standalone-only seams the plugin/JACK harnesses can't reach: on-screen render, the
-# MIDI-clock transport estimator, multi-output audio, window resize, and the close guard.
+# Engine with no display server and no audio hardware (SDL's `dummy` video + audio drivers — `dummy` is
+# always compiled in, unlike `offscreen`, which the macOS libsdl.org framework omits), then exercises the
+# standalone-only seams the plugin/JACK harnesses can't reach: on-screen render, the MIDI-clock transport
+# estimator, multi-output audio, window resize, and the close guard.
 #
 # CI-friendly: needs neither Xvfb nor JACK (unlike tools/run-standalone.sh, which drives retroplug-jack).
 # Each check is a separate short process; a non-zero exit or a missing marker fails the smoke.
@@ -23,7 +24,7 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-export SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy
+export SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
