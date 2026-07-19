@@ -50,6 +50,7 @@ extern "C" {
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
 #include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
 #include "host/rpc/BackendRpcRegistration.hpp"
+#include "host/ui/SoftwareLvglDisplay.hpp"   // shared LvInputState + display/indev scaffold (also used by test/ui)
 #include "system/CoreBackends.hpp"
 #include "system/SystemFactory.hpp"
 #include "TypedRpcServer.h"
@@ -158,10 +159,8 @@ struct AppState {
     lv_indev_t*   keypad = nullptr;
     lv_indev_t*   pointer = nullptr;
 
-    // synthetic input state the indev read callbacks pull from
-    std::deque<std::uint32_t> keyQueue;   // pending LVGL key codes (keypad indev)
-    lv_point_t mousePos{0, 0};
-    bool       mouseDown = false;
+    // synthetic input state the shared keypad/pointer indev read callbacks pull from (driver_data == &input)
+    retroplug::ui::LvInputState input;
 
     // A desktop file drag-and-drop in progress: SDL delivers one SDL_DROPFILE per file between
     // SDL_DROPBEGIN and SDL_DROPCOMPLETE, so we accumulate the paths here and emit one newline-joined
@@ -237,24 +236,8 @@ void flushCb(lv_display_t* disp, const lv_area_t* area, uint8_t*) {
     lv_display_flush_ready(disp);
 }
 
-void keypadReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
-    auto* a = static_cast<AppState*>(lv_indev_get_driver_data(indev));
-    if (a && !a->keyQueue.empty()) {
-        data->state = LV_INDEV_STATE_PRESSED;
-        data->key   = a->keyQueue.front();
-        a->keyQueue.pop_front();
-        data->continue_reading = !a->keyQueue.empty();
-    } else {
-        data->state = LV_INDEV_STATE_RELEASED;
-    }
-}
-
-void pointerReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
-    auto* a = static_cast<AppState*>(lv_indev_get_driver_data(indev));
-    if (!a) { data->state = LV_INDEV_STATE_RELEASED; return; }
-    data->point = a->mousePos;
-    data->state = a->mouseDown ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-}
+// Keypad + pointer indev read callbacks live in host/ui/SoftwareLvglDisplay.hpp (shared with the test
+// harness). AppState embeds retroplug::ui::LvInputState and hands &input to both indevs as driver_data.
 
 // LVGL's tick source: real wall-clock ms so timers/animations run in real time.
 std::uint32_t sdlTicksCb(void) { return SDL_GetTicks(); }
@@ -402,7 +385,7 @@ void installWindowHooks(JSContext* ctx) {
 // RenderCore::tapKey / PluginUI::onKeyboard. dpf is the DPF keycode the TS input layer expects.
 void feedKey(AppState& a, std::uint32_t lvKey, std::uint32_t dpf, bool press) {
     JSContext* ctx = a.ui.getContext();
-    if (press && lvKey != 0) a.keyQueue.push_back(lvKey);  // only real LVGL nav keys reach the keypad indev
+    if (press && lvKey != 0) a.input.keyQueue.push_back(lvKey);  // only real LVGL nav keys reach the keypad indev
     if (ctx) {
         JSValue args[2] = {JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press)};
         a.ui.emit("key", 2, args);
@@ -676,25 +659,14 @@ bool setupUi(AppState& a) {
     lv_init();
     lv_tick_set_cb(sdlTicksCb);
 
-    a.display = lv_display_create(a.width, a.height);
-    if (!a.display) return false;
-    const lv_color_format_t cf = lv_display_get_color_format(a.display);
-    const std::uint32_t stride = lv_draw_buf_width_to_stride(a.width, cf);
-    a.drawBuf.assign(static_cast<std::size_t>(stride) * a.height, 0);
-    lv_display_set_buffers(a.display, a.drawBuf.data(), nullptr, a.drawBuf.size(), LV_DISPLAY_RENDER_MODE_DIRECT);
-    lv_display_set_flush_cb(a.display, flushCb);
-
-    a.group = lv_group_create();
-    lv_group_set_default(a.group);
-    a.keypad = lv_indev_create();
-    lv_indev_set_type(a.keypad, LV_INDEV_TYPE_KEYPAD);
-    lv_indev_set_read_cb(a.keypad, keypadReadCb);
-    lv_indev_set_driver_data(a.keypad, &a);
-    lv_indev_set_group(a.keypad, a.group);
-    a.pointer = lv_indev_create();
-    lv_indev_set_type(a.pointer, LV_INDEV_TYPE_POINTER);
-    lv_indev_set_read_cb(a.pointer, pointerReadCb);
-    lv_indev_set_driver_data(a.pointer, &a);
+    // Display + indevs: the shared software-LVGL scaffold (host/ui/SoftwareLvglDisplay.hpp), also used by the
+    // headless test harness. SDL supplies its own dirty-tracking flush (present() uploads only the changed rect).
+    auto sd = retroplug::ui::createSoftwareDisplay(a.width, a.height, a.drawBuf, flushCb, &a.input);
+    if (!sd.display) return false;
+    a.display = sd.display;
+    a.group   = sd.group;
+    a.keypad  = sd.keypad;
+    a.pointer = sd.pointer;
 
     if (!a.ui.init()) { std::fprintf(stderr, "[retroplug-sdl] LvglJsEngine init failed\n"); return false; }
 
@@ -707,20 +679,8 @@ bool setupUi(AppState& a) {
     }
     a.ui.attachDisplay(); // → __rp_mountUI
 
-    // Black out the screen + strip the theme chrome, and make the React-tree root track the screen (100%)
-    // — same as PluginUI so nothing draws a border / inset / scrollbar.
-    if (lv_obj_t* screen = lv_screen_active()) {
-        lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(screen, 0, 0);
-        lv_obj_set_style_radius(screen, 0, 0);
-        lv_obj_set_style_pad_all(screen, 0, 0);
-        lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
-    }
-    if (lv_obj_t* win = GetWindowInstance()) {
-        lv_obj_set_style_width(win, lv_pct(100), 0);
-        lv_obj_set_style_height(win, lv_pct(100), 0);
-    }
+    // Black screen, stripped chrome, root pinned to 100% — same as PluginUI (shared with the test harness).
+    retroplug::ui::applyChromelessScreen();
     if (ctx) installWindowHooks(ctx);
     return true;
 }
@@ -851,11 +811,11 @@ void handleEvents(AppState& a) {
                 if (mapSdlKey(ev.key.keysym.sym, lv, dpf)) feedKey(a, lv, dpf, ev.type == SDL_KEYDOWN);
                 break;
             }
-            case SDL_MOUSEMOTION: a.mousePos = {ev.motion.x, ev.motion.y}; break;
+            case SDL_MOUSEMOTION: a.input.mousePos = {ev.motion.x, ev.motion.y}; break;
             case SDL_MOUSEBUTTONDOWN:
             case SDL_MOUSEBUTTONUP:
-                a.mousePos = {ev.button.x, ev.button.y};
-                a.mouseDown = ev.type == SDL_MOUSEBUTTONDOWN;
+                a.input.mousePos = {ev.button.x, ev.button.y};
+                a.input.mouseDown = ev.type == SDL_MOUSEBUTTONDOWN;
                 break;
             default: break;
         }

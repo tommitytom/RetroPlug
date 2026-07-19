@@ -38,31 +38,10 @@ std::uint32_t g_tickMs = 0;
 std::uint32_t tickCb() { return g_tickMs; }
 
 // No-op flush: the draw buffer already holds the rendered pixels; there's no GL texture / window to
-// push to. Just acknowledge so LVGL continues.
+// push to. Just acknowledge so LVGL continues. (The indev read callbacks + display/group scaffold are
+// shared with the SDL host — see host/ui/SoftwareLvglDisplay.hpp.)
 void flushCb(lv_display_t* disp, const lv_area_t*, uint8_t*) {
     lv_display_flush_ready(disp);
-}
-
-// Keypad indev: pop one queued LVGL key code per read (PRESSED while queued, then RELEASED), like
-// dpf-widgets' keyBuffer. Drives menu focus-group nav.
-void keypadReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
-    auto* c = static_cast<RenderCore*>(lv_indev_get_driver_data(indev));
-    if (c && !c->keyQueue().empty()) {
-        data->state = LV_INDEV_STATE_PRESSED;
-        data->key   = c->keyQueue().front();
-        c->keyQueue().pop_front();
-        data->continue_reading = !c->keyQueue().empty();
-    } else {
-        data->state = LV_INDEV_STATE_RELEASED;
-    }
-}
-
-// Pointer indev: report the core's synthetic cursor position + button state.
-void pointerReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
-    auto* c = static_cast<RenderCore*>(lv_indev_get_driver_data(indev));
-    if (!c) { data->state = LV_INDEV_STATE_RELEASED; return; }
-    data->point = c->mousePos();
-    data->state = c->mouseDown() ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
 
 // Collect every live lv_obj under `o` (depth-first). The QUERIES below walk the live tree rather than
@@ -141,45 +120,21 @@ bool RenderCore::init() {
     lv_init(); // idempotent in v9
     lv_tick_set_cb(tickCb);
 
-    display_ = lv_display_create(width_, height_);
-    if (!display_) return false;
-
-    const lv_color_format_t cf = lv_display_get_color_format(display_);
-    const std::uint32_t stride = lv_draw_buf_width_to_stride(width_, cf);
-    drawBuf_.assign(static_cast<std::size_t>(stride) * height_, 0);
-    lv_display_set_buffers(display_, drawBuf_.data(), nullptr, drawBuf_.size(),
-                           LV_DISPLAY_RENDER_MODE_DIRECT);
-    lv_display_set_flush_cb(display_, flushCb);
-
-    group_ = lv_group_create();
-    lv_group_set_default(group_);
-    keypad_ = lv_indev_create();
-    lv_indev_set_type(keypad_, LV_INDEV_TYPE_KEYPAD);
-    lv_indev_set_read_cb(keypad_, keypadReadCb);
-    lv_indev_set_driver_data(keypad_, this);
-    lv_indev_set_group(keypad_, group_);
-    pointer_ = lv_indev_create();
-    lv_indev_set_type(pointer_, LV_INDEV_TYPE_POINTER);
-    lv_indev_set_read_cb(pointer_, pointerReadCb);
-    lv_indev_set_driver_data(pointer_, this);
+    // Display + indevs: the shared software-LVGL scaffold (host/ui/SoftwareLvglDisplay.hpp), also used by
+    // the SDL host. Test-side flush is a no-op (we snapshot on demand).
+    auto sd = retroplug::ui::createSoftwareDisplay(width_, height_, drawBuf_, flushCb, &input_);
+    if (!sd.display) return false;
+    display_ = sd.display;
+    group_   = sd.group;
+    keypad_  = sd.keypad;
+    pointer_ = sd.pointer;
 
     // --- JS engine ----------------------------------------------------------
     if (!engine_.init()) return false;
 
-    // Match PluginUI: black screen + strip the theme's rounded border/padding and the scrollable
-    // flag, so the headless snapshot is chrome-free the same way the plugin's window is.
-    if (lv_obj_t* scr = lv_screen_active()) {
-        lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), 0);
-        lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(scr, 0, 0);
-        lv_obj_set_style_radius(scr, 0, 0);
-        lv_obj_set_style_pad_all(scr, 0, 0);
-        lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
-    }
-    if (lv_obj_t* win = GetWindowInstance()) {
-        lv_obj_set_style_width(win, lv_pct(100), 0);
-        lv_obj_set_style_height(win, lv_pct(100), 0);
-    }
+    // Match PluginUI: black screen, stripped chrome, root pinned to 100% — so the headless snapshot is
+    // chrome-free the same way the plugin's window is.
+    retroplug::ui::applyChromelessScreen();
 
     engine_.setParamWriteCallback([](uint32_t, float) {});
     engine_.registerParameter(0, "gain");
@@ -333,7 +288,7 @@ WidgetInfo RenderCore::widgetInfo(lv_obj_t* obj) const {
 }
 
 void RenderCore::tapKey(std::uint32_t lvKey) {
-    keyQueue_.push_back(lvKey);
+    input_.keyQueue.push_back(lvKey);
     // Mirror PluginUI: also fire the JS "key" channel (press then release) for handlers that live there
     // (prompt/capture/Esc/game input). LVGL key code -> DPF key code (the value input.ts expects).
     std::uint32_t dpf;
@@ -369,11 +324,11 @@ void RenderCore::clickAt(std::int32_t x, std::int32_t y) {
         engine_.emit("mouse", 4, args);
         for (JSValue& v : args) JS_FreeValue(ctx, v);
     };
-    mousePos_  = { x, y };
-    mouseDown_ = true;
+    input_.mousePos  = { x, y };
+    input_.mouseDown = true;
     emitMouse(true);
     pump(2);  // register the press at (x,y)
-    mouseDown_ = false;
+    input_.mouseDown = false;
     emitMouse(false);
     pump(2);  // release -> LVGL fires CLICKED -> onClick
 }
@@ -382,8 +337,8 @@ void RenderCore::clickAt(std::int32_t x, std::int32_t y) {
 // so LVGL fires LV_EVENT_HOVER_LEAVE on the old object + LV_EVENT_HOVER_OVER on the new → LV_STATE_HOVERED
 // toggles + any onHoveredStyle applies. Mirrors the real plugin's onMotion path; no "mouse" button event.
 void RenderCore::moveMouse(std::int32_t x, std::int32_t y) {
-    mouseDown_ = false;
-    mousePos_  = { x, y };
+    input_.mouseDown = false;
+    input_.mousePos  = { x, y };
     pump(2);  // let the indev read + LVGL hover-process the new released position
 }
 
