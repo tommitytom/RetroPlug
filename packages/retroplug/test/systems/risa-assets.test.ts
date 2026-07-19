@@ -96,6 +96,58 @@ test("a wrong-size .chr font override is skipped (leaves the ROM unpatched)", ()
   expect(slot0[0]).toBe(0); // base slot-0 pattern byte (s*13+0 = 0), not 0x00-filled by a bad override
 });
 
+test("a kit override LINKS a .rkit bank by path and splices it (bank + mirror) into the effective ROM", () => {
+  const { be, store } = newStore();
+  const base = risaRomFull();
+  be.seed("/roms/song.nes", base);
+  const id = store.addSystem("/roms/song.nes")!;
+
+  // A real populated 8 KB DMC bank: the fixture's own slot-0 "TEST" kit (what Export would produce).
+  const bank = RisaRom.fromBytes(base).getKitBank(0)!;
+  be.seed("/kits/drums.rkit", bank);
+  store.setRoleConfig(id, "risa-assets", { overrides: [{ type: "kit", slot: 5, name: "DRUMS", path: "/kits/drums.rkit" }] });
+  store.reloadSystem(id);
+
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.romBytes != null).toBeTruthy();
+  const patched = RisaRom.fromBytes(spec.romBytes!);
+  expect([...patched.getKitBank(5)!]).toEqual([...bank]); // bank spliced verbatim
+  expect(patched.isKitPopulated(5)).toBe(true);
+  expect(patched.kits().some((k) => k.slot === 5)).toBe(true); // mirror consistent → a re-parse lists it
+  expect([...be.readFile("/roms/song.nes")!]).toEqual([...base]); // on-disk .nes untouched
+});
+
+test("an erase kit override empties the base kit slot in the effective ROM", () => {
+  const { be, store } = newStore();
+  const base = risaRomFull();
+  be.seed("/roms/song.nes", base);
+  const id = store.addSystem("/roms/song.nes")!;
+  expect(RisaRom.fromBytes(base).isKitPopulated(0)).toBe(true); // the fixture has a base kit in slot 0
+
+  store.setRoleConfig(id, "risa-assets", { overrides: [{ type: "kit", slot: 0, name: "", erase: true }] });
+  store.reloadSystem(id);
+
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.romBytes != null).toBeTruthy();
+  expect(RisaRom.fromBytes(spec.romBytes!).isKitPopulated(0)).toBe(false); // cleared, not linked
+  expect([...be.readFile("/roms/song.nes")!]).toEqual([...base]);
+});
+
+test("a wrong-size .rkit kit override is skipped (leaves the base kit intact)", () => {
+  const { be, store } = newStore();
+  const base = risaRomFull();
+  be.seed("/roms/song.nes", base);
+  const id = store.addSystem("/roms/song.nes")!;
+
+  be.seed("/kits/bad.rkit", new Uint8Array(0x1000)); // half a bank — rejected by applyOne
+  store.setRoleConfig(id, "risa-assets", { overrides: [{ type: "kit", slot: 0, name: "bad", path: "/kits/bad.rkit" }] });
+  store.reloadSystem(id);
+
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  const patched = RisaRom.fromBytes(spec.romBytes ?? be.readFile("/roms/song.nes")!);
+  expect(patched.isKitPopulated(0)).toBe(true); // base kit intact, not zeroed by a bad override
+});
+
 test("Remove Override reverts the next construct to the base ROM (no romBytes)", () => {
   const { be, store } = newStore();
   be.seed("/roms/song.nes", risaRomFull());

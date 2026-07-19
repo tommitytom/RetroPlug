@@ -37,7 +37,7 @@ import {
   moveSongInSav as moveRisaSongInSav,
   loadSongToWorkingInSav,
 } from "../../../src/risaSongOps";
-import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, type RisaTheme } from "../../../src/risa/rom";
+import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_COUNT, KIT_BANK_SIZE, type RisaTheme } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
@@ -501,17 +501,24 @@ function lsdjAssetMenus(ctx: MenuContext, sys: SystemView): MenuItem[] {
   return [kits, ...others];
 }
 
-// --- risa asset submenus (Themes / Fonts: export or non-destructively replace) -----------------------
+// --- risa asset submenus (Themes / Fonts / Kits: export or non-destructively replace) ----------------
 // The risa twin of the LSDj asset menus. Overrides ride the `risa-assets` role config and apply to the ROM
 // in memory at construct (risaAssetsRole.ts) — the base .nes is never written. THEMES are palette indices
-// stored INLINE (readable JSON, no file); FONTS LINK a .chr bank by path. Kits are deferred to M5.
+// stored INLINE (readable JSON, no file); FONTS LINK a .chr bank by path; KITS LINK a pre-built 8 KB `.rkit`
+// DMC bank by path (compilation is offline — the plugin can't reach compileDmc — so a kit override just
+// splices a ready-made bank, as risa's Export produces).
 
-type RisaAssetKind = "theme" | "font";
-interface RisaInventory { theme: { slot: number; name: string; theme: RisaTheme }[]; font: { slot: number }[] }
+type RisaAssetKind = "theme" | "font" | "kit";
+interface RisaInventory {
+  theme: { slot: number; name: string; theme: RisaTheme }[];
+  font: { slot: number }[];
+  kit: { slot: number; name: string }[];
+}
 
 const RISA_ASSET_META: Record<RisaAssetKind, { title: string; patterns: string[]; ext: string }> = {
   theme: { title: "Themes", patterns: ["*.rit"], ext: ".rit" },
   font: { title: "Fonts", patterns: ["*.chr"], ext: ".chr" },
+  kit: { title: "Kits", patterns: ["*.rkit"], ext: ".rkit" },
 };
 
 const risaInvCache = new Map<string, RisaInventory | null>();
@@ -525,6 +532,7 @@ function risaInventory(backend: HostBackend, romPath: string): RisaInventory | n
       inv = {
         theme: rom.themes().map((t) => ({ slot: t.slot, name: t.theme.name.trim() || `Theme ${t.slot}`, theme: t.theme })),
         font: rom.fonts(),
+        kit: rom.kits().map((k) => ({ slot: k.slot, name: k.name })),
       };
     }
   }
@@ -557,6 +565,9 @@ function exportRisaAsset(ctx: MenuContext, sys: SystemView, kind: RisaAssetKind,
         if (t) theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
       }
       if (theme) bytes = new TextEncoder().encode(JSON.stringify(serializeRit(theme), null, 2) + "\n");
+    } else if (kind === "kit") {
+      // The linked bank if overridden, else the base ROM's 8 KB DMC bank — either is a ready-to-link .rkit.
+      bytes = ov?.path ? be.readFile(ov.path) : (readRisaRomFor(be, sys.romPath)?.getKitBank(slot) ?? null);
     } else {
       bytes = ov?.path ? be.readFile(ov.path) : (readRisaRomFor(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
     }
@@ -576,6 +587,9 @@ function replaceRisaAsset(ctx: MenuContext, sys: SystemView, kind: RisaAssetKind
       if (kind === "theme") {
         const { theme } = parseRit(JSON.parse(new TextDecoder().decode(data))); // throws on a bad .rit
         entry = { type: "theme", slot, name: theme.name.trim() || stem(path), theme };
+      } else if (kind === "kit") {
+        if (data.length !== KIT_BANK_SIZE || !isBankPopulated(data)) return; // a .rkit is exactly one populated 8 KB DMC bank
+        entry = { type: "kit", slot, name: bankToModel(data).name.trim() || stem(path), path };
       } else {
         if (data.length !== 0x2000) return; // a .chr is exactly one 8 KB CHR bank
         entry = { type: "font", slot, name: stem(path), path };
@@ -596,18 +610,56 @@ function removeRisaOverride(ctx: MenuContext, sys: SystemView, kind: RisaAssetKi
   ctx.stores.project.systems.reloadSystem(sys.id);
 }
 
-// One asset item: Export / Replace, plus Remove Override when overridden.
+// The kit slots of the EFFECTIVE ROM (base + overrides): base-populated kits, plus slots added by a replace
+// override, minus slots emptied by an erase override. Sorted by slot (mirrors LSDj's effectiveKits).
+function risaEffectiveKits(base: { slot: number; name: string }[], overrides: RisaAssetOverride[]): KitRow[] {
+  const rows = new Map<number, KitRow>();
+  for (const s of base) rows.set(s.slot, { slot: s.slot, name: s.name, overridden: false });
+  for (const ov of overrides) {
+    if (ov.type !== "kit") continue;
+    if (ov.erase) rows.delete(ov.slot);
+    else rows.set(ov.slot, { slot: ov.slot, name: ov.name || `Kit ${ov.slot}`, overridden: true });
+  }
+  return [...rows.values()].sort((a, b) => a.slot - b.slot);
+}
+
+// Non-destructively remove a kit: drop any existing kit override, and — when the BASE ROM has a kit in that
+// slot — record an `erase` override so construct empties it. (A slot present only via a replace override
+// just reverts to base-empty once that override is dropped.)
+function deleteRisaKit(ctx: MenuContext, sys: SystemView, slot: number): void {
+  const inv = risaInventory(ctx.stores.backend, sys.romPath);
+  const basePopulated = !!inv?.kit.some((k) => k.slot === slot);
+  const overrides = risaAssetOverrides(sys).filter((o) => !(o.type === "kit" && o.slot === slot));
+  if (basePopulated) overrides.push({ type: "kit", slot, name: "", erase: true });
+  ctx.stores.project.systems.setRoleConfig(sys.id, "risa-assets", { overrides });
+  ctx.stores.project.systems.reloadSystem(sys.id);
+}
+
+// Add a kit from disk into the first empty kit slot (a replace override on an unused slot).
+function addRisaKit(ctx: MenuContext, sys: SystemView): void {
+  const inv = risaInventory(ctx.stores.backend, sys.romPath);
+  if (!inv) return;
+  const used = new Set(risaEffectiveKits(inv.kit, risaAssetOverrides(sys)).map((k) => k.slot));
+  let slot = 0;
+  while (slot < KIT_BANK_COUNT && used.has(slot)) slot++;
+  if (slot >= KIT_BANK_COUNT) return; // all kit slots full
+  replaceRisaAsset(ctx, sys, "kit", slot);
+}
+
+// One asset item: Export / Replace, plus Delete (kits only) + Remove Override when overridden.
 function risaAssetRow(ctx: MenuContext, sys: SystemView, kind: RisaAssetKind, slot: number, name: string, overridden: boolean): MenuItem {
   const label = `[${slot}] ${name}${overridden ? " *" : ""}`;
   const items: MenuItem[] = [
     action(`risa-${kind}-${slot}-export`, "Export...", () => exportRisaAsset(ctx, sys, kind, slot, name)),
     action(`risa-${kind}-${slot}-replace`, "Replace from Disk...", () => replaceRisaAsset(ctx, sys, kind, slot)),
   ];
+  if (kind === "kit") items.push(action(`risa-kit-${slot}-delete`, "Delete", () => deleteRisaKit(ctx, sys, slot)));
   if (overridden) items.push(action(`risa-${kind}-${slot}-remove`, "Remove Override", () => removeRisaOverride(ctx, sys, kind, slot)));
   return submenu(`risa-${kind}-${slot}`, label, items);
 }
 
-// Build the Themes/Fonts submenus; empty when the ROM can't be read (e.g. headless without a staged ROM).
+// Build the Themes/Fonts/Kits submenus; empty when the ROM can't be read (e.g. headless without a staged
+// ROM). The Kits menu leads with an "Add..." item (+ separator); each kit also gets a Delete.
 function risaAssetMenus(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const inv = risaInventory(ctx.stores.backend, sys.romPath);
   if (!inv) return [];
@@ -622,7 +674,12 @@ function risaAssetMenus(ctx: MenuContext, sys: SystemView): MenuItem[] {
       return risaAssetRow(ctx, sys, "font", f.slot, ov?.name || `Font ${f.slot}`, !!ov);
     }),
   );
-  return [themes, fonts];
+  const kits = submenu("risa-kits", RISA_ASSET_META.kit.title, [
+    action("risa-kit-add", "Add...", () => addRisaKit(ctx, sys)),
+    sep("risa-kit-add-sep"),
+    ...risaEffectiveKits(inv.kit, overrides).map((k) => risaAssetRow(ctx, sys, "kit", k.slot, k.name, k.overridden)),
+  ]);
+  return [themes, fonts, kits];
 }
 
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------

@@ -6,6 +6,7 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RisaRom, bankToModel, isBankPopulated, dpcmDecode } from "../src/risa/rom";
+import { applyOverridesToRom, type RisaAssetOverride } from "../src/risaAssetsRole";
 import { encodeWav } from "../cli/wav";
 
 const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
@@ -76,4 +77,38 @@ test("a compiled DMC kit splices into a real risa ROM (bank + mirror) and the RO
   expect(be.getFrame(21) != null).toBe(true);
   expect([...be.readFile(RISA_ROM)!]).toEqual([...base]);
   console.log(`[risa-kit] compiled kit spliced into risa ROM; patched image boots; on-disk .nes unchanged`);
+});
+
+test("the risa-assets kit override links a pre-built .rkit at construct (offline compile) and boots", () => {
+  const be = createRealBackend();
+  const audio = createAudioDriver();
+  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-kit link: no ROM at ${RISA_ROM}`); return; }
+  writeTestWav(be, WAV);
+
+  // Compile a bank OFFLINE (the plugin can't reach compileDmc) and persist it as a .rkit — exactly what the
+  // Kits menu's "Export..." writes and "Replace from Disk..." later links.
+  const bank = audio.compileDmc({ name: "DRUMS", samples: [{ path: WAV, name: "KIK", rate: 12, effects: [] }] });
+  const KIT = "/tmp/rp-risa-kit.rkit";
+  expect(be.writeFileAtomic(KIT, bank)).toBe(true);
+
+  // The risa-assets role folds the LINKED bank into the base ROM in memory (the onConstruct path: read the
+  // .rkit by path via caps.readFile → setKit → romBytes), leaving the base .nes on disk untouched.
+  const base = be.readFile(RISA_ROM)!;
+  const overrides: RisaAssetOverride[] = [{ type: "kit", slot: 0, name: "DRUMS", path: KIT }];
+  const patched = applyOverridesToRom(base, overrides, be);
+  expect(patched !== base).toBe(true);
+  const rom = RisaRom.fromBytes(patched);
+  expect([...rom.getKitBank(0)!]).toEqual([...bank]); // bank linked from disk, byte-for-byte
+  expect(rom.kits().some((k) => k.slot === 0 && k.name === "DRUMS")).toBe(true); // mirror-consistent
+
+  // Mesen boots from the patched bytes (the romBytes channel); on-disk .nes + .rkit unchanged.
+  expect(be.constructSystem({
+    romPath: RISA_ROM, platform: "nes", core: "mesen", embeddedRom: "",
+    savPath: null, statePath: null, romBytes: patched,
+  }, 22)).toBeTruthy();
+  audio.renderAudio(600);
+  expect(be.getFrame(22) != null).toBe(true);
+  expect([...be.readFile(RISA_ROM)!]).toEqual([...base]);
+  expect([...be.readFile(KIT)!]).toEqual([...bank]);
+  console.log(`[risa-kit] .rkit linked by path at construct; patched image boots; on-disk .nes + .rkit unchanged`);
 });
