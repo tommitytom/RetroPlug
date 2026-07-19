@@ -14,7 +14,7 @@
 class Engine;
 class SystemFactory;
 class QueuedInvoker;
-namespace rp::lsdj { class KitCompiler; }  // fwd: lazy, kept out of the header (enkiTS/r8brain heavy)
+namespace rp::kit { class KitCompiler; }  // fwd: lazy, kept out of the header (enkiTS/r8brain heavy)
 
 // The emulator surface (lifecycle / reads / DSP kernel / MIDI / transport) as a THIN RPC layer over
 // (SystemFactory + Engine + the one Invoker). No threading branches: every mutation just pushes onto
@@ -100,5 +100,5 @@ private:
     std::vector<float>       scratchL_;  // renderAudio pull-path scratch (control thread)
     std::vector<float>       scratchR_;
     std::vector<RpcMidiOut> accumMidiOut_;  // kernel MIDI-out gathered across a render window (drainMidiOut)
-    std::unique_ptr<rp::lsdj::KitCompiler> kitCompiler_;  // lazy: built on first compileKit (enkiTS pool)
+    std::unique_ptr<rp::kit::KitCompiler> kitCompiler_;  // lazy: built on first compileKit (enkiTS pool)
 };

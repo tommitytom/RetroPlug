@@ -22,13 +22,17 @@ endif()
 
 add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/project/Project.cpp
+    # Console-neutral kit pipeline: the async compiler + decoded-audio cache are
+    # codec-agnostic (KitCodec.hpp). Per-console packing lives in a codec (LSDj
+    # below; risa NES-DPCM planned).
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/SampleCache.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/KitCompiler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/LsdjKitCodec.cpp
     # NOTE: the LSDj sav codec + model were removed — they are now pure TS
     # (packages/retroplug/src/lsdj), validated by frozen golden vectors. Only the
-    # kit/sample pipeline (Effects/KitUtil/SampleCache/KitCompiler) remains in C++.
+    # kit/sample pipeline (kit/* generic + lsdj/{Effects,KitUtil,LsdjKitCodec}) remains in C++.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp
