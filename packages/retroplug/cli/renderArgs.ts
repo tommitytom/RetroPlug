@@ -34,7 +34,8 @@ Arguments:
 Options:
   --sav <file>           Battery save (.sav) to load. Default: <rom>.sav next to the ROM, if it exists.
   --state <file>         Savestate to restore after boot (instead of a fresh boot).
-  --out <file>           Output path. Default: <rom>.wav for a mix; <rom>_<stem>.wav for --split.
+  --out <file>           Output path. Default: the working/selected song's name for an LSDj/risa cart, else
+                         the ROM name — <name>.wav for a mix; <name>_<channel>.wav for --split.
   --duration <time>      Fixed render length (e.g. 3s, 500ms, 2m). Turns OFF LSDj auto-length detection.
                          Default: auto for a loaded LSDj sav, otherwise 5m.
   --max-duration <time>  Safety cap for LSDj auto-length when no HFF stop is found. Default: 5m.

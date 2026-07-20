@@ -26,7 +26,7 @@ import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
-import { stem } from "../../../src/pathUtil";
+import { stem, dirname } from "../../../src/pathUtil";
 import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
 import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
 import { replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
@@ -53,7 +53,7 @@ import {
 } from "../../../src/tracker";
 import type { HostBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
-import { startSystemRender, validSplits, formatDuration } from "../../lvgl/render";
+import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
@@ -303,17 +303,27 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
         onCoarseStep: (dir) => setMaxDur(dir * 30),
       },
       sep("sys-render-sep"),
+      // Default the filename to the loaded cart's working song (LSDj/risa) and open in the last-used render
+      // folder (else next to the ROM); remember wherever the user saves for next time.
       action("sys-render-go", "Render...", () =>
         browseThen(
           ctx,
-          { title: "Render", patterns: WAV_PATTERNS, saving: true, defaultName: `${romStem || "render"}.wav` },
-          (p) =>
+          {
+            title: "Render",
+            patterns: WAV_PATTERNS,
+            saving: true,
+            defaultName: `${sanitizeName(renderBaseName(ctx.stores.backend, sys))}.wav`,
+            startDir: ctx.userConfig.render.lastDir || dirname(sys.romPath),
+          },
+          (p) => {
+            ctx.stores.userConfig.setRenderLastDir(dirname(p));
             void startSystemRender(
               ctx.stores.backend,
               sys,
               { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000 },
               p,
-            ),
+            );
+          },
         ),
       ),
     ];

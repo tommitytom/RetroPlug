@@ -5,6 +5,8 @@
 
 import type { SystemView } from "../../src/systemsStore";
 import type { SplitMode } from "../../src/render";
+import { resolveSongCatalog } from "../../src/tracker";
+import { stem } from "../../src/pathUtil";
 
 /** The backend methods startSystemRender needs — all on the plugin's control-plane channel (host +
  *  emulator facets), so it accepts either Backend or the narrower ControlPlaneBackend structurally. */
@@ -69,6 +71,17 @@ export function startSystemRender(backend: RenderBackend, sys: SystemView, req: 
 
   const id = hooks.__rp_startRender(sys.id, JSON.stringify(spec));
   return id > 0 ? id : null;
+}
+
+/** The base filename a render should default to: the loaded tracker cart's WORKING song name (LSDj / risa),
+ *  else the ROM's stem. A non-tracker ROM has no song catalog (resolveSongCatalog → undefined), so it falls
+ *  back to the ROM name — same synchronous read ProjectStore.currentSong() uses for the recents label. The
+ *  caller sanitizes it into a filename (song names can carry spaces). */
+export function renderBaseName(backend: Pick<RenderBackend, "readSram">, sys: SystemView): string {
+  const catalog = resolveSongCatalog(sys.roles); // undefined for a non-tracker ROM
+  const sram = catalog ? backend.readSram(sys.id) : null; // control-plane snapshot read
+  const song = sram ? catalog!.workingName(sram) : null; // pure byte parse of the header name
+  return song || stem(sys.romPath) || "render";
 }
 
 /** Request cancellation of a running render (cooperative — aborts at the next chunk). */

@@ -4,9 +4,11 @@
 
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
-import { startSystemRender, pickActiveRenderJob, validSplits, formatDuration, type RenderJobStatus } from "../../ui/lvgl/render";
+import { startSystemRender, renderBaseName, pickActiveRenderJob, validSplits, formatDuration, type RenderJobStatus } from "../../ui/lvgl/render";
+import { outBase, type RenderOpts } from "../../src/render";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { RENDER_MAX_DURATION_MAX_SEC, RENDER_MAX_DURATION_MIN_SEC } from "../../src/userConfig";
+import { savFrom, type SavInput } from "../../src/lsdjSav";
 import type { SystemView } from "../../src/systemsStore";
 
 /** A minimal SystemView carrying only the fields startSystemRender reads. */
@@ -88,6 +90,35 @@ test("startSystemRender: no hook bound (headless) → inert null", () => {
   g.__rp_startRender = prev;
 });
 
+test("renderBaseName: tracker cart → the working song name; non-tracker / no battery → the ROM stem", () => {
+  const backend = new MockBackend("/config");
+  // An LSDj sav whose active (working) project is named HELLO (same fixture shape as tracker/songCatalog).
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  const sav = savFrom({ activeProjectIndex: 0, projects: [{ name: "HELLO", version: 0, song }] } as SavInput);
+  backend.setSram(1, sav);
+
+  // lsdj-sync marker role + battery bytes → resolveSongCatalog → the working song name.
+  expect(renderBaseName(backend, sysView({ id: 1, romPath: "/roms/lsdj.gb", roles: [{ kind: "lsdj-sync", config: {} }] }))).toBe("HELLO");
+  // A non-tracker ROM (no marker role) → the ROM stem (no sram read at all).
+  expect(renderBaseName(backend, sysView({ id: 2, romPath: "/roms/mGB.gb", roles: [] }))).toBe("mGB");
+  // A tracker role but no battery bytes (readSram null) → falls back to the ROM stem.
+  expect(renderBaseName(backend, sysView({ id: 3, romPath: "/roms/lsdj.gb", roles: [{ kind: "lsdj-sync", config: {} }] }))).toBe("lsdj");
+});
+
+test("outBase: song name without --out (sanitized), ROM-derived when null, --out always wins", () => {
+  const opts = (over: Partial<RenderOpts>): RenderOpts => ({ rom: "/roms/song.gb", split: "mix", ...over } as unknown as RenderOpts);
+  // No --out → the sanitized song name next to the ROM (spaces become _).
+  expect(outBase(opts({}), "COOL SONG")).toBe("/roms/COOL_SONG.wav");
+  // No --out, no song (non-tracker) → the old ROM-derived default, byte-identical.
+  expect(outBase(opts({}), null)).toBe("/roms/song.wav");
+  // Split, no --out → a prefix (per-channel files append _<channel>.wav downstream).
+  expect(outBase(opts({ split: "channels" }), "COOL")).toBe("/roms/COOL");
+  expect(outBase(opts({ split: "channels" }), null)).toBe("/roms/song");
+  // --out always wins: mix keeps it verbatim; split trims a trailing .wav to a prefix.
+  expect(outBase(opts({ out: "/x/o.wav" }), "COOL")).toBe("/x/o.wav");
+  expect(outBase(opts({ split: "channels", out: "/x/o.wav" }), "COOL")).toBe("/x/o");
+});
+
 test("pickActiveRenderJob: prefers the in-progress render, ignores other systems + terminal jobs", () => {
   const jobs: RenderJobStatus[] = [
     { id: 1, systemId: 9, state: "rendering", progress: 0.5, message: "" }, // other system
@@ -147,9 +178,15 @@ test("userConfig render setters: validate + clamp, persist through the store", (
   store.setRenderMaxDurationSec(0); // under the floor → clamped
   expect(store.render().maxDurationSec).toBe(RENDER_MAX_DURATION_MIN_SEC);
 
+  expect(store.render().lastDir).toBe(""); // default: no remembered render folder yet
+  expect(store.setRenderLastDir("/music/out")).toBe(true);
+  expect(store.render().lastDir).toBe("/music/out");
+  expect(store.setRenderLastDir("/music/out")).toBe(false); // unchanged → no-op
+
   // Persisted: a fresh store over the same backend reads the saved render block back.
   const reloaded = new UserConfigStore(backend);
   reloaded.load();
   expect(reloaded.render().split).toBe("channels");
   expect(reloaded.render().sampleRate).toBe(48000);
+  expect(reloaded.render().lastDir).toBe("/music/out"); // the remembered dir round-trips through config.json
 });

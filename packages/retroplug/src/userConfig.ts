@@ -22,6 +22,7 @@ export interface RenderSettings {
   split: SplitMode; // clamped to the system's platform when a render actually starts
   sampleRate: number; // one of RENDER_SAMPLE_RATES
   maxDurationSec: number; // bounds every render (LSDj auto-length cap + the fixed-render length)
+  lastDir: string; // last-used render output directory (seeds the Render save dialog); "" until first render
 }
 
 // A missing/garbage `render` block becomes {} so the child fields fill their own defaults (the preprocess
@@ -32,6 +33,7 @@ const renderSchema = z.preprocess(
     split: enumField(RENDER_SPLITS, "mix"),
     sampleRate: z.preprocess((v) => (RENDER_SAMPLE_RATES.includes(v as never) ? v : 44100), z.number()),
     maxDurationSec: clampedInt(RENDER_MAX_DURATION_MIN_SEC, RENDER_MAX_DURATION_MAX_SEC, 300),
+    lastDir: stringField(""),
   }),
 );
 

@@ -29,7 +29,7 @@ interface Reply {
 // native dialog is ever in flight, so one module-level pending slot suffices (shared across every
 // createHostClient on this context). When the hook is absent (the headless UI harness) the browser is
 // inert and every browse resolves null, exactly as the window-size hooks no-op there.
-type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string) => void;
+type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string, startDir: string) => void;
 
 let pendingBrowse: ((path: string | null) => void) | null = null;
 let browseResolverInstalled = false;
@@ -51,7 +51,7 @@ function browseFile(opts: FileBrowserOpts): Promise<string | null> {
   installBrowseResolver();
   return new Promise<string | null>((resolve) => {
     pendingBrowse = resolve;
-    hook(opts.title, opts.patterns.join(" "), !!opts.saving, opts.defaultName ?? "");
+    hook(opts.title, opts.patterns.join(" "), !!opts.saving, opts.defaultName ?? "", opts.startDir ?? "");
   });
 }
 

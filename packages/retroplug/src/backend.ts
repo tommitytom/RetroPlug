@@ -580,6 +580,9 @@ export interface FileBrowserOpts {
   saving?: boolean;
   /** A suggested filename for a save dialog (e.g. `"project.rplg"`); ignored when opening. */
   defaultName?: string;
+  /** Directory the dialog opens in (DPF's FileBrowserOptions.startDir). Absent/empty → the OS default (CWD).
+   *  Used to reopen a dialog where the user last saved (currently the render dialog). */
+  startDir?: string;
 }
 
 /** What TS hands the native builder: concrete paths only — everything is resolved

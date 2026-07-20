@@ -186,11 +186,13 @@ public:
     // `patterns` is a whitespace-separated glob list (DPF's FileBrowserOptions.fileFilterPatterns).
     // Non-blocking: the pick arrives later on uiFileBrowserSelected. Called via the __rp_openFileBrowser
     // seam. One dialog is ever in flight (the TS FileSelection flow awaits sequentially).
-    void requestFileBrowser(const char* title, const char* patterns, bool saving, const char* defaultName) {
+    void requestFileBrowser(const char* title, const char* patterns, bool saving, const char* defaultName,
+                            const char* startDir) {
         FileBrowserOptions opts;
         opts.title  = (title && *title) ? title : "Open";
         opts.saving = saving;
         if (defaultName && *defaultName) opts.defaultName = defaultName;
+        if (startDir && *startDir) opts.startDir = startDir; // reopen where the user last saved (render dialog)
         if (patterns && *patterns) opts.fileFilterPatterns = patterns;
         openFileBrowser(opts);
     }
@@ -634,8 +636,9 @@ JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
     return JS_UNDEFINED;
 }
 
-// __rp_openFileBrowser(title, patterns, saving, defaultName): open the native OS dialog. patterns is a
-// whitespace-separated glob list. The result comes back later via the UI's uiFileBrowserSelected override.
+// __rp_openFileBrowser(title, patterns, saving, defaultName, startDir): open the native OS dialog. patterns
+// is a whitespace-separated glob list; startDir (optional, 5th arg) is the folder to open in. The result
+// comes back later via the UI's uiFileBrowserSelected override.
 JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
     PluginUI* ui = windowUiFromData(ctx, funcData);
     if (ui && argc >= 4) {
@@ -643,11 +646,13 @@ JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* 
         const char* patterns    = JS_ToCString(ctx, argv[1]);
         const int   saving      = JS_ToBool(ctx, argv[2]);
         const char* defaultName = JS_ToCString(ctx, argv[3]);
+        const char* startDir    = (argc >= 5) ? JS_ToCString(ctx, argv[4]) : nullptr;
         ui->requestFileBrowser(title ? title : "", patterns ? patterns : "", saving == 1,
-                               defaultName ? defaultName : "");
+                               defaultName ? defaultName : "", startDir ? startDir : "");
         if (title) JS_FreeCString(ctx, title);
         if (patterns) JS_FreeCString(ctx, patterns);
         if (defaultName) JS_FreeCString(ctx, defaultName);
+        if (startDir) JS_FreeCString(ctx, startDir);
     }
     return JS_UNDEFINED;
 }
@@ -668,7 +673,7 @@ void installWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
     };
     bind("__rp_setWindowSize", jsSetWindowSize, 2);
     bind("__rp_isWindowSizeControlled", jsIsWindowSizeControlled, 0);
-    bind("__rp_openFileBrowser", jsOpenFileBrowser, 4);
+    bind("__rp_openFileBrowser", jsOpenFileBrowser, 5);
     bind("__rp_quitWindow", jsQuitWindow, 0);
     bind("__rp_openPath", jsOpenPath, 1);
     bind("__rp_setWindowTitle", jsSetWindowTitle, 1);

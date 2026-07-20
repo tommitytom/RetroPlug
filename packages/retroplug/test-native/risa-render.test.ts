@@ -10,6 +10,7 @@ import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
 import { runRenderJob, readRisaSongs, decodeWav, type RenderContext, type RenderOpts } from "../src/render";
+import { dirname, joinPath } from "../src/pathUtil";
 import { savBytes } from "../test/risa/fixtures";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -57,4 +58,16 @@ test("render --song-index promotes a risa catalog song to working + renders non-
   const level = rms(wav.pcm);
   console.log(`[risa-render] --song-index 0 (BLUMARBL) → ${wav.pcm.length} samples @${wav.sampleRate}Hz, RMS ${level.toFixed(4)}`);
   expect(level > 0.001).toBe(true); // the promoted working song actually plays (SELECT+START gesture)
+});
+
+test("render without --out defaults the output filename to the song's name (not the ROM name)", () => {
+  const be = createRealBackend();
+  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy();
+  // No --out: outBase derives the name from the selected song (BLUMARBL), next to the ROM — not risa-pal.wav.
+  const res = runRenderJob(newCtx(be), baseOpts({ songIndex: 0, durationMs: 300 }));
+  const expected = joinPath(dirname(RISA_ROM), "BLUMARBL.wav");
+  expect(res.outputs).toEqual([expected]);
+  expect(be.fileExists(expected)).toBe(true);
+  be.deleteFile(expected); // don't leave the derived WAV next to the source ROM
 });

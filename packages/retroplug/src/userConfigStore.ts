@@ -114,6 +114,12 @@ export class UserConfigStore {
     return this.commitRender({ maxDurationSec: clamped });
   }
 
+  /** Remember the last-used render output directory — the System > Render save dialog seeds its start folder
+   *  from this next time. Any string (an empty one clears it); a no-op when unchanged. */
+  setRenderLastDir(dir: string): boolean {
+    return this.commitRender({ lastDir: dir });
+  }
+
   private commitRender(patch: Partial<RenderSettings>): boolean {
     return this.commit({ ...this.current, render: { ...this.current.render, ...patch } });
   }

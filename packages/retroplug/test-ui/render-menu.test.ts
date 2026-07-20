@@ -26,7 +26,7 @@ function maxDurationSec(): number {
 test("render submenu: selectors cycle (arrows + PageUp/PageDown) and Render… applies them", () => {
   const g = globalThis as {
     __rp_startRender?: (id: number, spec: string) => number;
-    __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string) => void;
+    __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string, sd?: string) => void;
     __rp_onFileBrowserResult?: (path: string | null) => void;
   };
   let captured: Captured | null = null;
@@ -34,8 +34,13 @@ test("render submenu: selectors cycle (arrows + PageUp/PageDown) and Render… a
     captured = { systemId, spec: JSON.parse(spec) };
     return 1;
   };
-  // Stub the native file dialog to immediately resolve a path (the UI's realBackend installs the callback).
-  g.__rp_openFileBrowser = () => g.__rp_onFileBrowserResult?.("/tmp/uitest-render.wav");
+  // Stub the native file dialog: record the default filename + start dir it was opened with, then resolve a
+  // fixed path (the UI's realBackend installs the callback).
+  const browseOpens: { defaultName: string; startDir: string }[] = [];
+  g.__rp_openFileBrowser = (_t, _p, _s, d, sd) => {
+    browseOpens.push({ defaultName: d, startDir: sd ?? "" });
+    g.__rp_onFileBrowserResult?.("/tmp/uitest-render.wav");
+  };
 
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
@@ -102,6 +107,28 @@ test("render submenu: selectors cycle (arrows + PageUp/PageDown) and Render… a
   expect(cap.spec.sampleRate).toBe(48000);
   expect(cap.spec.maxDurationMs).toBe(picked * 1000);
   expect(cap.spec.out).toBe("/tmp/uitest-render.wav");
+
+  // Task 1: mGB is not a tracker cart → the default filename is the ROM stem. Task 2: the first open seeds a
+  // start folder (the ROM's own directory) even before anything is remembered.
+  expect(browseOpens.length).toBe(1);
+  expect(browseOpens[0].defaultName).toBe("mGB.wav");
+  expect(browseOpens[0].startDir.length > 0).toBeTruthy();
+
+  // Render again → the dialog reopens in the last-used folder (dirname of the first pick = /tmp), proving the
+  // output directory is remembered between dialog opens.
+  ui.tapKey(Key.Esc);
+  ui.pump(10);
+  expect(navTo("System")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+  expect(navTo("Render")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+  expect(navTo("Render...")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+  expect(browseOpens.length).toBe(2);
+  expect(browseOpens[1].startDir).toBe("/tmp");
 
   delete g.__rp_startRender;
   delete g.__rp_openFileBrowser;

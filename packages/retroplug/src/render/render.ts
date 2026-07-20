@@ -13,12 +13,13 @@
 // re-encode → seed the fresh system).
 import { createWavWriter, type WavWriter } from "./wav";
 import { syncDspFromStore } from "../appHost";
-import { extensionLower, replaceExtension } from "../pathUtil";
+import { extensionLower, dirname, stem, joinPath } from "../pathUtil";
 import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
 import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
 import { loadSongToWorkingInSav } from "../risaSongOps";
 import { isRisaRomHeader } from "../risa";
+import { lsdjSongCatalog, risaSongCatalog } from "../tracker";
 import type { ChannelExportMode } from "../settingsEnums";
 import {
   type Platform,
@@ -117,10 +118,17 @@ export function songList(sav: LsdjSav): string {
   return names.length ? names.join(", ") : "(no named projects)";
 }
 
+/** A chosen-song seed (raw SRAM promoting the catalog song to the working song) plus the selected song's
+ *  name — the name defaults the output filename when --song/--song-index is used. */
+interface SongSeed {
+  seed: Uint8Array;
+  name: string | null;
+}
+
 /** Resolve a song-selection flag to the SRAM bytes that seed the fresh system with the chosen catalog song
  *  promoted to the working song. Platform-aware: GB → LSDj projects, NES → risa catalog. Undefined when no
  *  song flag is set. */
-function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): Uint8Array | undefined {
+function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SongSeed | undefined {
   if (o.song === undefined && o.songIndex === undefined) return undefined;
   const platform = platformOf(o.rom);
   if (platform === "gb") return resolveLsdjSongSeed(ctx, o, log, warn);
@@ -128,7 +136,7 @@ function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: L
   throw new Error(`render: --song/--song-index is a Game Boy (LSDj) / NES (risa) feature (got ${platform})`);
 }
 
-function resolveLsdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): Uint8Array {
+function resolveLsdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SongSeed {
   const { sav, raw } = readSav(ctx, o);
   let idx: number;
   if (o.songIndex !== undefined) {
@@ -149,7 +157,7 @@ function resolveLsdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, war
   sav.activeProjectIndex = idx;
   log(`song "${project.name || "(unnamed)"}" (slot ${idx}) → working song`);
   // Seed unmodeled regions from the original sav when it's a full 128 KiB image (else author fresh).
-  return encodeSav(sav, raw.length >= kSavSize ? raw : undefined);
+  return { seed: encodeSav(sav, raw.length >= kSavSize ? raw : undefined), name: project.name || null };
 }
 
 // --- risa (NES) song selection ---------------------------------------------------------------------
@@ -171,7 +179,7 @@ export function readRisaSongs(ctx: RenderContext, o: RenderOpts): { path: string
 const risaSongList = (songs: RisaSongInfo[]): string =>
   songs.length ? songs.map((sg) => `${sg.index}: ${sg.name || "(unnamed)"}`).join(", ") : "(no saved songs)";
 
-function resolveRisaSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): Uint8Array {
+function resolveRisaSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SongSeed {
   const { raw } = readRisaSav(ctx, o);
   const songs = risaListSongs(raw);
   let idx: number;
@@ -189,8 +197,9 @@ function resolveRisaSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, war
   // current-layout catalog — the firmware migrates legacy on boot, so a live-read battery is always current.
   const seed = loadSongToWorkingInSav(raw, idx);
   if (!seed) throw new Error(`render: could not load risa song ${idx} (needs a current-layout catalog)`);
-  log(`song "${songs.find((sg) => sg.index === idx)?.name || "(unnamed)"}" (slot ${idx}) → working song`);
-  return seed;
+  const name = songs.find((sg) => sg.index === idx)?.name || null;
+  log(`song "${name || "(unnamed)"}" (slot ${idx}) → working song`);
+  return { seed, name };
 }
 
 /** Build the single system + project it into the DSP runtime. `seed` (LSDj song bytes) forces the adopt
@@ -220,11 +229,28 @@ function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed
   return id;
 }
 
-/** The WAV output base: --out (as given for mix, or as a prefix for split) else derived from the ROM. */
-function outBase(o: RenderOpts): string {
-  if (o.split === "mix") return o.out ?? replaceExtension(o.rom, ".wav");
-  if (o.out) return o.out.toLowerCase().endsWith(".wav") ? o.out.slice(0, -4) : o.out;
-  return replaceExtension(o.rom, "");
+/** The working song's name for a tracker cart (LSDj/risa), read straight from the sav — defaults the output
+ *  filename when neither --out nor a --song selection is given. Null for a non-tracker ROM / no sav (→ ROM
+ *  name). Uses the same catalog readers the UI's recents label + renderBaseName use. */
+function currentSongName(ctx: RenderContext, o: RenderOpts, platform: Platform): string | null {
+  const raw = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
+  if (!raw) return null;
+  if (platform === "gb") return isLsdjSav(raw) ? lsdjSongCatalog.workingName(raw) : null;
+  if (platform === "nes") return risaSongCatalog.workingName(raw); // self-guards on the N8T magic
+  return null;
+}
+
+// A safe filename fragment for a song-derived output name (mirrors the CLI sanitize in lsdj-rom/risa-rom).
+const sanitizeRenderName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
+
+/** The WAV output base. With --out: the given path (mix) or a prefix (split, a trailing .wav trimmed).
+ *  Without it: the working/selected SONG name for a tracker cart (LSDj/risa) else the ROM stem, written next
+ *  to the ROM — so `songName === null` is byte-identical to the old ROM-derived default. Exported for tests. */
+export function outBase(o: RenderOpts, songName: string | null): string {
+  if (o.out) return o.split === "mix" ? o.out : o.out.toLowerCase().endsWith(".wav") ? o.out.slice(0, -4) : o.out;
+  const clean = songName ? sanitizeRenderName(songName) : "";
+  const base = joinPath(dirname(o.rom), clean || stem(o.rom));
+  return o.split === "mix" ? `${base}.wav` : base;
 }
 
 // --- streaming render: pump 100 ms chunks straight into per-output WavWriters (no whole-song buffer) ---
@@ -430,14 +456,18 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   if (o.sampleRate !== undefined && !ctx.audio.setSampleRate(o.sampleRate))
     throw new Error(`render: could not set sample rate to ${o.sampleRate}Hz`);
 
-  const id = buildSystem(ctx, o, platform, resolveSongSeed(ctx, o, log, warn));
+  const seed = resolveSongSeed(ctx, o, log, warn);
+  const id = buildSystem(ctx, o, platform, seed?.seed);
 
   ctx.audio.renderAudio(1500); // settle boot (past the mGB/LSDj splash) before driving playback
   if (o.bpm) ctx.audio.setBpm(o.bpm);
   if (o.transport) ctx.audio.setTransport(true);
 
   const sr = ctx.audio.sampleRate();
-  const base = outBase(o);
+  // Default the filename to the SONG: the selected song when --song/--song-index is used, else the sav's
+  // working song. --out overrides both, so skip the sav read then.
+  const songName = o.out ? null : seed ? seed.name : currentSongName(ctx, o, platform);
+  const base = outBase(o, songName);
 
   // LSDj length auto-detect: when a valid LSDj sav is loaded and the user didn't pin a duration, render to
   // the HFF stop (NR52→0) instead of a fixed window, report the length, and trim the silent tail.
