@@ -15,6 +15,8 @@ import { registerDspRoles } from "./dspRoles";
 import { registerLsdjAssetsRole } from "./lsdjAssetsRole";
 import { registerRisaRole } from "./risaRole";
 import { registerRisaAssetsRole } from "./risaAssetsRole";
+import { registerEverMidiRole } from "./evermidiRole";
+import { registerEverMidiAssetsRole } from "./evermidiAssetsRole";
 import { registerRomProviders } from "./romProviders";
 import { projectKernelStructure } from "./kernelProjection";
 import type { ProjectStore } from "./projectStore";
@@ -29,6 +31,8 @@ export function buildAppRegistry(): RoleRegistry {
   registerLsdjAssetsRole(registry);
   registerRisaRole(registry);
   registerRisaAssetsRole(registry);
+  registerEverMidiRole(registry);
+  registerEverMidiAssetsRole(registry);
   registerRomProviders(registry);
   return registry;
 }

@@ -34,6 +34,8 @@ import { importSongFiles } from "../../../src/lsdjSongImport";
 import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav } from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
+import { EverMidiRom } from "../../../src/evermidi/rom";
+import { readOverrides as readEverMidiOverrides, type EverMidiAssetOverride } from "../../../src/evermidiAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 import {
@@ -44,6 +46,7 @@ import {
   risaSongCatalog,
   lsdjAssetCatalog,
   risaAssetCatalog,
+  evermidiAssetCatalog,
   type SongCatalog,
   type AssetCatalog,
   type AssetSlotRow,
@@ -564,6 +567,67 @@ function replaceRisaAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo
 const lsdjAssetSpec: AssetMenuSpec = { id: "lsdj", catalog: lsdjAssetCatalog, exportAsset, replaceAsset };
 const risaAssetSpec: AssetMenuSpec = { id: "risa", catalog: risaAssetCatalog, exportAsset: exportRisaAsset, replaceAsset: replaceRisaAsset };
 
+// --- EverMIDI asset file actions (Export/Replace own the .rkit/.chr formats) ---------------------------
+// EverMIDI has no themes (no ROM theme table yet) — just the baked DMC kit + the CHR font, both LINKED by
+// path (a pre-built 8 KB .rkit / .chr bank, read at construct). Mirrors the risa actions minus themes.
+const everMidiAssetOverrides = (sys: SystemView): EverMidiAssetOverride[] =>
+  readEverMidiOverrides(sys.roles.find((r) => r.kind === "evermidi-assets")?.config);
+
+const readEverMidiRomFor = (be: HostBackend, romPath: string): EverMidiRom | null => {
+  const bytes = romPath ? be.readFile(romPath) : null;
+  if (!bytes) return null;
+  const rom = EverMidiRom.fromBytes(bytes);
+  return rom.isEverMidi ? rom : null;
+};
+
+// Export kit/font `slot` to a picked file: the override's linked bank if replaced, else the base ROM's asset.
+function exportEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void {
+  const be = ctx.stores.backend;
+  const kind = type.kind;
+  const ov = everMidiAssetOverrides(sys).find((o) => o.type === kind && o.slot === slot);
+  const defaultName = `${sanitizeName(label)}${type.ext}`;
+  browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: type.patterns, saving: true, defaultName }, (path) => {
+    let bytes: Uint8Array | null = null;
+    if (kind === "kit") {
+      // The linked bank if overridden, else the base ROM's 8 KB DMC bank — either is a ready-to-link .rkit.
+      bytes = ov?.path ? be.readFile(ov.path) : (readEverMidiRomFor(be, sys.romPath)?.getKitBank(slot) ?? null);
+    } else {
+      bytes = ov?.path ? be.readFile(ov.path) : (readEverMidiRomFor(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
+    }
+    if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
+  });
+}
+
+// Replace kit/font `slot` from a picked file: validate it, record the override (by PATH) in role config, and
+// reload so it takes effect. NON-DESTRUCTIVE — the base .nes is never written.
+function replaceEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
+  const be = ctx.stores.backend;
+  const kind = type.kind;
+  browseThen(ctx, { title: `Replace ${kind} ${slot}`, patterns: type.patterns }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    let entry: EverMidiAssetOverride;
+    if (kind === "kit") {
+      if (data.length !== KIT_BANK_SIZE || !isBankPopulated(data)) return; // a .rkit is exactly one populated 8 KB DMC bank
+      entry = { type: "kit", slot, name: bankToModel(data).name.trim() || stem(path), path };
+    } else {
+      if (data.length !== 0x2000) return; // a .chr is exactly one 8 KB CHR bank
+      entry = { type: "font", slot, name: stem(path), path };
+    }
+    writeOverrides(ctx, sys, "evermidi-assets", [
+      ...everMidiAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot)),
+      entry,
+    ]);
+  });
+}
+
+const everMidiAssetSpec: AssetMenuSpec = {
+  id: "evermidi",
+  catalog: evermidiAssetCatalog,
+  exportAsset: exportEverMidiAsset,
+  replaceAsset: replaceEverMidiAsset,
+};
+
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
 // Songs are the battery, NOT a ROM override: edits act directly on the live SRAM (like LSDj's own FILE
 // screen). mutateSavBytes reads the live sav, applies a BYTE-LEVEL transform (never the lossy Song model —
@@ -744,19 +808,25 @@ const risaSongSpec: SongMenuSpec = { id: "risa", catalog: risaSongCatalog, expor
 // the integration itself (id/label/markerRole/songs/assets) rides src/tracker (the one place a console is
 // registered).
 interface TrackerUi {
-  song: SongMenuSpec;
+  song?: SongMenuSpec; // omitted for asset-only consoles (e.g. EverMIDI) — no Songs submenu is built
   asset: AssetMenuSpec;
   extras?(ctx: MenuContext, sys: SystemView): MenuItem[];
 }
 const TRACKER_UI: Record<string, TrackerUi> = {
   lsdj: { song: lsdjSongSpec, asset: lsdjAssetSpec, extras: lsdjExtras },
   risa: { song: risaSongSpec, asset: risaAssetSpec },
+  evermidi: { asset: everMidiAssetSpec },
 };
 
-// One tracker's instance-submenu children: its extras (if any), the shared Songs menu, then its asset menus.
+// One tracker's instance-submenu children: its extras (if any), the shared Songs menu (only if the console
+// has a song battery), then its asset menus.
 function trackerChildren(t: TrackerIntegration, ctx: MenuContext, sys: SystemView): MenuItem[] {
   const ui = TRACKER_UI[t.id];
-  return [...(ui.extras ? ui.extras(ctx, sys) : []), songMenu(ui.song, ctx, sys), ...assetMenu(ui.asset, ctx, sys)];
+  return [
+    ...(ui.extras ? ui.extras(ctx, sys) : []),
+    ...(ui.song ? [songMenu(ui.song, ctx, sys)] : []),
+    ...assetMenu(ui.asset, ctx, sys),
+  ];
 }
 
 // LSDj's sync cyclers (Mode / Tempo Divisor / Auto Start) + a separator — the one per-console tracker extra

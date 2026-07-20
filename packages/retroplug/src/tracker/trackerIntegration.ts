@@ -9,6 +9,7 @@ import { lsdjSongCatalog } from "./lsdjSongCatalog";
 import { risaSongCatalog } from "./risaSongCatalog";
 import { lsdjAssetCatalog } from "./lsdjAssetCatalog";
 import { risaAssetCatalog } from "./risaAssetCatalog";
+import { evermidiAssetCatalog } from "./evermidiAssetCatalog";
 
 export interface TrackerIntegration {
   /** Row-id prefix + instance-submenu id suffix, e.g. "lsdj" / "risa". */
@@ -17,7 +18,9 @@ export interface TrackerIntegration {
   readonly label: string;
   /** The role kind the ROM provider attaches that identifies this console (the menu gate). */
   readonly markerRole: string;
-  readonly songs: SongCatalog;
+  /** The song catalog (the battery), if this console has one. Asset-only consoles (e.g. EverMIDI, a MIDI
+   *  synth with no song battery) omit it — the shared Songs menu is then simply not built. */
+  readonly songs?: SongCatalog;
   readonly assets: AssetCatalog;
 }
 
@@ -37,5 +40,14 @@ export const risaIntegration: TrackerIntegration = {
   assets: risaAssetCatalog,
 };
 
+// EverMIDI: an NES MIDI synth (not a tracker), so it has NO song battery — only ROM assets (a baked DMC kit
+// + the CHR font). An asset-only integration: `songs` is omitted, so only the asset submenus are built.
+export const everMidiIntegration: TrackerIntegration = {
+  id: "evermidi",
+  label: "EverMIDI",
+  markerRole: "evermidi",
+  assets: evermidiAssetCatalog,
+};
+
 /** Every registered tracker integration. The one place a new tracker console is added. */
-export const TRACKER_INTEGRATIONS: TrackerIntegration[] = [lsdjIntegration, risaIntegration];
+export const TRACKER_INTEGRATIONS: TrackerIntegration[] = [lsdjIntegration, risaIntegration, everMidiIntegration];

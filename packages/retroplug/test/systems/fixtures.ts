@@ -133,6 +133,40 @@ export function risaRomFull(): Uint8Array {
   return rom;
 }
 
+/** A full-size synthetic EverMIDI ROM (16 + 32 KB PRG + 8 KB CHR = 0xA010, NROM) carrying the "EVERMIDI"
+ *  marker at the ROM head + one populated DMC kit at $C000 (PRG offset 0x4000) + a distinct CHR font region.
+ *  Enough for EverMidiRom.isEverMidi + kit/font read/patch; the PRG body is otherwise zeros. */
+export function everMidiRom(): Uint8Array {
+  const PRG = 0x8000; // 2 × 16 KB (NROM, 32 KB)
+  const CHR = 0x2000; // 1 × 8 KB
+  const rom = new Uint8Array(0x10 + PRG + CHR);
+  rom.set([0x4e, 0x45, 0x53, 0x1a], 0); // "NES\x1A"
+  rom[4] = 0x02; // 2 × 16 KB PRG
+  rom[5] = 0x01; // 1 × 8 KB CHR
+  rom[6] = 0x01; // vertical mirroring, mapper 0 (NROM)
+
+  // The EVERMIDI detection marker at the ROM head ($8000 = file offset 0x10), as the SIG segment bakes it.
+  const MARK = "EVERMIDI";
+  for (let i = 0; i < MARK.length; i++) rom[0x10 + i] = MARK.charCodeAt(i);
+  rom[0x10 + MARK.length] = 0x01; // version 1
+
+  // One populated DMC kit at $C000 (PRG offset 0x4000): a "TEST" kit with a "KIK" sample-0 name, one index
+  // entry, the other 15 empty (0xFF), and the 0xA5 populated magic — the same 8 KB bank layout risa uses.
+  const kitOffset = 0x10 + 0x4000;
+  rom[kitOffset + 0] = 0xff; // slot-0 DPCM data (1 byte)
+  rom.fill(0x20, kitOffset + 0x1ed0, kitOffset + 0x1ed0 + 16 * 3); // sample-names region = spaces
+  for (const [i, c] of Array.from("TEST").entries()) rom[kitOffset + 0x1ec0 + i] = c.charCodeAt(0); // kit name
+  for (const [i, c] of Array.from("KIK").entries()) rom[kitOffset + 0x1ed0 + i] = c.charCodeAt(0); // sample 0 name
+  rom.set([0, 0, 12, 0], kitOffset + 0x1f00); // index[0] = [addr 0, lenReg 0, rate 12, flags 0]
+  for (let slot = 1; slot < 16; slot++) rom[kitOffset + 0x1f00 + slot * 4] = 0xff; // empty index entries
+  rom[kitOffset + 0x1f40] = 0xa5; // populated magic
+
+  // CHR: one 8 KB font slot, filled with a distinct pattern (for font read/patch tests).
+  const chrOffset = 0x10 + PRG;
+  for (let b = 0; b < CHR; b++) rom[chrOffset + b] = (b * 7 + 3) & 0xff;
+  return rom;
+}
+
 /** A present-but-not-a-ROM buffer (classifies "unknown"). */
 export function garbage(): Uint8Array {
   return new Uint8Array(0x8000); // all zero

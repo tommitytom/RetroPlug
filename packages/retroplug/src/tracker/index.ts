@@ -16,6 +16,7 @@ export { lsdjSongCatalog } from "./lsdjSongCatalog";
 export { risaSongCatalog } from "./risaSongCatalog";
 export { lsdjAssetCatalog } from "./lsdjAssetCatalog";
 export { risaAssetCatalog } from "./risaAssetCatalog";
+export { evermidiAssetCatalog } from "./evermidiAssetCatalog";
 
 /** The tracker integration for a system, resolved from its attached roles (the first role whose kind is an
  *  integration's markerRole). undefined for a non-tracker system. */
