@@ -174,6 +174,48 @@ export function everMidiRom(): Uint8Array {
   return rom;
 }
 
+/** A full-size synthetic EverMIDI BANKING ROM (16 + 256 KB PRG + 8 KB CHR, mapper 69 / FME-7) carrying the
+ *  "EVERMIDI" marker + theme table + one populated DMC kit in slot 0, with slots 1..15 reserved (unpopulated)
+ *  — the multi-kit twin of everMidiRom(). The banking header (PRG 16 × 16 KB, mapper != 0) drives
+ *  EverMidiRom.kitBankCapacity() to 16, so the assets menu goes addable/16-slot. Kit slot k sits at PRG
+ *  offset 0x4000 + k*0x2000 (banks 2..17), the same as the real nes-banked.cfg. */
+export function everMidiMultiKitRom(): Uint8Array {
+  const PRG = 0x40000; // 16 × 16 KB (256 KB banking build)
+  const CHR = 0x2000; // 1 × 8 KB
+  const rom = new Uint8Array(0x10 + PRG + CHR);
+  rom.set([0x4e, 0x45, 0x53, 0x1a], 0); // "NES\x1A"
+  rom[4] = 0x10; // 16 × 16 KB PRG (256 KB)
+  rom[5] = 0x01; // 1 × 8 KB CHR
+  rom[6] = 0x51; // vertical mirroring, mapper 69 low nibble (Sunsoft 5B / FME-7)
+  rom[7] = 0x40; // mapper 69 high nibble
+
+  const MARK = "EVERMIDI";
+  for (let i = 0; i < MARK.length; i++) rom[0x10 + i] = MARK.charCodeAt(i);
+  rom[0x10 + MARK.length] = 0x01; // version 1
+
+  // Theme table in the code region (same layout as everMidiRom()).
+  const themeOffset = 0x100;
+  rom.set([0xa5, 0x5a, 0x54, 0x48, 0x4d, 0x45], themeOffset); // THEME_META_MAGIC
+  rom.set([0x0d, 0x30, 0x00, 0x10, 0x30, 0x21, 0x11], themeOffset + 6); // record 0
+  rom.set([0x44, 0x46, 0x4c, 0x54], themeOffset + 6 + 7); // name "DFLT"
+
+  // Kit slot 0 populated at bank 2 (PRG offset 0x4000). Slots 1..15 (banks 3..17) stay unpopulated (their
+  // magic byte is 0x00 ≠ 0xA5), matching the real ROM's reserved-fill banks.
+  const kitOffset = 0x10 + 0x4000;
+  rom[kitOffset + 0] = 0xff; // slot-0 DPCM data (1 byte)
+  rom.fill(0x20, kitOffset + 0x1ed0, kitOffset + 0x1ed0 + 16 * 3); // sample-names region = spaces
+  for (const [i, c] of Array.from("TEST").entries()) rom[kitOffset + 0x1ec0 + i] = c.charCodeAt(0); // kit name
+  for (const [i, c] of Array.from("KIK").entries()) rom[kitOffset + 0x1ed0 + i] = c.charCodeAt(0); // sample 0 name
+  rom.set([0, 0, 12, 0], kitOffset + 0x1f00); // index[0] = [addr 0, lenReg 0, rate 12, flags 0]
+  for (let slot = 1; slot < 16; slot++) rom[kitOffset + 0x1f00 + slot * 4] = 0xff; // empty index entries
+  rom[kitOffset + 0x1f40] = 0xa5; // populated magic (slot 0 only)
+
+  // CHR: one 8 KB font slot, distinct pattern.
+  const chrOffset = 0x10 + PRG;
+  for (let b = 0; b < CHR; b++) rom[chrOffset + b] = (b * 7 + 3) & 0xff;
+  return rom;
+}
+
 /** A present-but-not-a-ROM buffer (classifies "unknown"). */
 export function garbage(): Uint8Array {
   return new Uint8Array(0x8000); // all zero

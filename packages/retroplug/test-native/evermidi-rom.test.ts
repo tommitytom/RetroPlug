@@ -9,9 +9,18 @@
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
+import { bootSession } from "../cli/session";
+import { Timeline, renderTimeline } from "../cli/timeline";
 import { EverMidiRom } from "../src/evermidi/rom";
 
 const EVERMIDI_ROM = "/workspaces/evermidi/rom/n8-midi.nes";
+// The plain-banking FME-7 build (mapper 69, no expansion audio): 16 switchable DMC kit banks. Skips cleanly
+// if `make -C /workspaces/evermidi/rom all-mappers` hasn't been run.
+const EVERMIDI_FME7 = "/workspaces/evermidi/rom/n8-midi-fme7.nes";
+const KIT_MAGIC_ADDR = 0xdf40; // $C000 + $1F40: the risa-kit present marker in the bank mapped at $C000
+const CC_STATUS_CH5 = 0xb4; // Control Change, MIDI channel 5 (the DMC channel)
+const CC_DMC_BANK = 14;
+const CC_DMC_LOOP = 4;
 
 test("constructSystem romBytes boots an EverMIDI (Mesen) system over a nonexistent romPath", () => {
   const be = createRealBackend();
@@ -96,4 +105,70 @@ test("the baked theme sets the background palette; a theme override changes it",
   expect(pal1[1]).toBe(0x11); // ...and its text color
   expect([...be.readFile(EVERMIDI_ROM)!]).toEqual([...base]); // on-disk .nes untouched
   console.log(`[evermidi-rom] baked theme applied ($3F00/$3F01); override changes the palette`);
+});
+
+// The multi-kit runtime path, end-to-end on a REAL Mesen NES core: MIDI CC 14 (CC_DMC_BANK) selects one of
+// the FME-7 build's 16 switchable 8K kit banks by remapping the $C000 window and reloading the kit index.
+// Uses the FME-7 build (plain banking, NO expansion audio — the base APU alone). Only slot 0 is baked
+// (tr909); slots 1..15 are reserved (fill $FF), so slot 1 is the "empty bank" case.
+test("FME-7 multi-kit: CC 14 switches the $C000 kit bank on a real core (magic byte follows)", () => {
+  const s = bootSession();
+  if (!s.backend.fileExists(EVERMIDI_FME7)) { console.log(`# SKIP evermidi multi-kit: no ROM at ${EVERMIDI_FME7}`); return; }
+
+  // The banking header drives the derived capacity to 16 (NROM would be 1).
+  expect(EverMidiRom.fromBytes(s.backend.readFile(EVERMIDI_FME7)!).kitBankCapacity()).toBe(16);
+
+  const id = s.project.systems.addSystem(EVERMIDI_FME7);
+  if (id == null) throw new Error("addSystem failed");
+
+  let atBoot = -1, atBank1 = -1, backAt0 = -1;
+  const tl = new Timeline()
+    .at(300, (ss) => (atBoot = ss.backend.readCpu(id, KIT_MAGIC_ADDR) ?? -1)) // boot bank = slot 0 (baked)
+    .midi(360, [CC_STATUS_CH5, CC_DMC_BANK, 1]) // select kit bank 1 (reserved/empty)
+    .at(440, (ss) => (atBank1 = ss.backend.readCpu(id, KIT_MAGIC_ADDR) ?? -1))
+    .midi(500, [CC_STATUS_CH5, CC_DMC_BANK, 0]) // back to kit bank 0
+    .at(580, (ss) => (backAt0 = ss.backend.readCpu(id, KIT_MAGIC_ADDR) ?? -1));
+  renderTimeline(s, tl, { durationMs: 800, warmupMs: 1100 });
+  s.project.systems.removeSystem(id);
+
+  expect(atBoot).toBe(0xa5); // slot 0 carries the baked tr909 kit
+  expect(atBank1).toBe(0xff); // reserved bank 1 is unpopulated fill — a different bank is now mapped
+  expect(backAt0).toBe(0xa5); // switching back re-maps the baked kit
+  console.log(`[evermidi-rom] FME-7 CC 14 bank switch on a real core: $DF40 A5 -> FF -> A5`);
+});
+
+// The RetroPlug override path all the way to sound: fold a .rkit into (reserved) kit slot 1 via the
+// evermidi-assets role → the effective romBytes → a real core boots it → CC 14 selects bank 1 → the
+// override-populated bank is now mapped ($DF40 = 0xA5) and a ch5 note plays it.
+test("FME-7 multi-kit: a .rkit override into slot 1 becomes selectable + plays", () => {
+  const s = bootSession();
+  if (!s.backend.fileExists(EVERMIDI_FME7)) { console.log(`# SKIP evermidi multi-kit override: no ROM at ${EVERMIDI_FME7}`); return; }
+
+  const id = s.project.systems.addSystem(EVERMIDI_FME7);
+  if (id == null) throw new Error("addSystem failed");
+
+  // A valid populated 8K .rkit bank: reuse the base ROM's baked slot-0 bank, staged on disk.
+  const rkit = EverMidiRom.fromBytes(s.backend.readFile(EVERMIDI_FME7)!).getKitBank(0)!;
+  const rkitPath = "/tmp/evermidi-multikit-slot1.rkit";
+  s.backend.writeFileAtomic(rkitPath, rkit);
+
+  // Link it into slot 1 (reserved on the base ROM) and reload — the role folds it into the effective ROM.
+  s.project.systems.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "kit", slot: 1, name: "HATS", path: rkitPath }] });
+  const id2 = s.project.systems.reloadSystem(id);
+  if (id2 == null) throw new Error("reloadSystem failed");
+
+  let magicAtBank1 = -1;
+  let dmcEnabled = false;
+  const tl = new Timeline()
+    .midi(200, [CC_STATUS_CH5, CC_DMC_BANK, 1]) // select the now-populated slot 1
+    .at(300, (ss) => (magicAtBank1 = ss.backend.readCpu(id2, KIT_MAGIC_ADDR) ?? -1))
+    .midi(320, [CC_STATUS_CH5, CC_DMC_LOOP, 127]) // loop so playback is observable mid-render
+    .noteOn(340, 0, { channel: 5, velocity: 127 }) // ch5 note 0 -> slot-0 sample of the (now populated) bank 1
+    .at(600, (ss) => (dmcEnabled = ss.backend.getApuState(id2).dmc.enabled));
+  renderTimeline(s, tl, { durationMs: 900, warmupMs: 1100 });
+  s.project.systems.removeSystem(id2);
+
+  expect(magicAtBank1).toBe(0xa5); // the override bank is populated + mapped at $C000
+  expect(dmcEnabled).toBe(true); // ...and it actually plays
+  console.log(`[evermidi-rom] FME-7 .rkit override into slot 1: selectable via CC 14 and audible`);
 });

@@ -49,6 +49,9 @@ export interface AssetCatalog {
   readonly types: AssetTypeInfo[];
   /** The base ROM's slots for one asset type (name-fallbacks applied) — [] when the ROM can't be parsed. */
   baseSlots(romBytes: Uint8Array, kind: string): AssetSlot[];
+  /** Optional per-ROM override of `types` — for a console whose `addable`/`maxSlots` depend on the cart
+   *  (e.g. EverMIDI: single-kit on NROM, addable/16 on a banking build). Defaults to `types` when absent. */
+  resolveTypes?(romBytes: Uint8Array): AssetTypeInfo[];
 }
 
 /** The effective slots of one asset type: base slots overlaid with the override list. A `kind` override with

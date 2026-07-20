@@ -2,7 +2,7 @@
 // font, prove setKit/setChrFontSlot splice ONLY the intended bytes (byte-diff), and that isEverMidi accepts a
 // full ROM but rejects a marker-less / truncated / garbage buffer. No emulator or real ROM needed.
 import { test, expect } from "../../testing/harness";
-import { everMidiRom, nesRom, garbage } from "../systems/fixtures";
+import { everMidiRom, everMidiMultiKitRom, nesRom, garbage } from "../systems/fixtures";
 import { EverMidiRom } from "../../src/evermidi/rom";
 import { serializeRit, parseRit } from "../../src/risa/rom";
 
@@ -53,6 +53,41 @@ test("clearKitBank empties the slot (drops the populated magic)", () => {
   expect(rom.isKitPopulated(0)).toBe(true);
   rom.clearKitBank(0);
   expect(rom.isKitPopulated(0)).toBe(false);
+});
+
+test("NROM is single-kit: capacity 1, no free slot, out-of-range setKit is a no-op", () => {
+  const rom = EverMidiRom.fromBytes(everMidiRom());
+  expect(rom.kitBankCapacity()).toBe(1);
+  expect(rom.firstFreeKitIndex()).toBe(-1); // slot 0 populated, capacity 1 → nothing free
+  const before = rom.bytes().slice();
+  const bank = new Uint8Array(0x2000).fill(0x77);
+  bank[0x1f40] = 0xa5;
+  rom.setKit(5, bank); // beyond capacity — ignored
+  expect(changedOffsets(before, rom.bytes()).length).toBe(0);
+  expect(rom.isKitPopulated(5)).toBe(false);
+});
+
+test("a banking ROM exposes 16 kit banks: capacity 16, first free is slot 1, setKit(5) adds a bank", () => {
+  const rom = EverMidiRom.fromBytes(everMidiMultiKitRom());
+  expect(rom.isEverMidi).toBe(true);
+  expect(rom.kitBankCapacity()).toBe(16);
+  // Only slot 0 is baked; the rest are reserved/empty.
+  expect(rom.kitCount()).toBe(1);
+  expect(rom.kits().map((k) => k.slot)).toEqual([0]);
+  expect(rom.firstFreeKitIndex()).toBe(1);
+
+  // Splice a distinct populated bank into slot 5 — only that bank's 8 KB changes.
+  const before = rom.bytes().slice();
+  const bank = new Uint8Array(0x2000).fill(0x99);
+  for (const [i, c] of Array.from("DRUM").entries()) bank[0x1ec0 + i] = c.charCodeAt(0); // kit name
+  bank[0x1f40] = 0xa5; // populated
+  rom.setKit(5, bank);
+
+  const slot5Off = 0x10 + 0x4000 + 5 * 0x2000;
+  for (const off of changedOffsets(before, rom.bytes())) expect(off >= slot5Off && off < slot5Off + 0x2000).toBe(true);
+  expect(rom.isKitPopulated(5)).toBe(true);
+  expect(rom.kits().map((k) => k.slot)).toEqual([0, 5]);
+  expect(rom.firstFreeKitIndex()).toBe(1); // slot 1 still free
 });
 
 test("fonts: getChrFontSlot reads the slot, setChrFontSlot splices only that 8 KB bank", () => {

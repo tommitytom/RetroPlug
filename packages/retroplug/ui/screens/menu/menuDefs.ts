@@ -409,7 +409,9 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
   const bytes = assetRomBytes(ctx.stores.backend, sys.romPath);
   if (!bytes) return [];
   const overrides = overridesFor(sys, spec.catalog.assetRole);
-  return spec.catalog.types.map((type) => {
+  // A catalog may refine its types per-ROM (EverMIDI: single-kit on NROM, addable/16 on a banking cart).
+  const types = spec.catalog.resolveTypes ? spec.catalog.resolveTypes(bytes) : spec.catalog.types;
+  return types.map((type) => {
     const rows = effectiveAssets(spec.catalog.baseSlots(bytes, type.kind), overrides, type.kind, type.noun);
     const children: MenuItem[] = [];
     if (type.addable) {

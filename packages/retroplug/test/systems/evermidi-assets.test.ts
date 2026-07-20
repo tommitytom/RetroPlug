@@ -14,7 +14,7 @@ import { registerEverMidiAssetsRole } from "../../src/evermidiAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 import { EverMidiRom } from "../../src/evermidi/rom";
 import { decodeThemeFromRom } from "../../src/risa/rom";
-import { everMidiRom } from "./fixtures";
+import { everMidiRom, everMidiMultiKitRom } from "./fixtures";
 
 const THEME_NEON = {
   name: "NEON",
@@ -85,6 +85,25 @@ test("a kit override LINKS a .rkit bank by path and splices it into the effectiv
   const patched = EverMidiRom.fromBytes(spec.romBytes!);
   expect([...patched.getKitBank(0)!]).toEqual([...bank]); // bank spliced verbatim
   expect(patched.isKitPopulated(0)).toBe(true);
+  expect([...be.readFile("/roms/synth.nes")!]).toEqual([...base]); // on-disk .nes untouched
+});
+
+test("a banking ROM takes a kit override into a high slot; the base kit is preserved", () => {
+  const { be, store } = newStore();
+  const base = everMidiMultiKitRom(); // mapper 69 (FME-7) → 16 switchable kit banks
+  be.seed("/roms/synth.nes", base);
+  const id = store.addSystem("/roms/synth.nes")!;
+
+  const bank = populatedBank(0x33);
+  be.seed("/kits/hats.rkit", bank);
+  store.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "kit", slot: 5, name: "HATS", path: "/kits/hats.rkit" }] });
+  store.reloadSystem(id);
+
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.romBytes != null).toBeTruthy();
+  const patched = EverMidiRom.fromBytes(spec.romBytes!);
+  expect([...patched.getKitBank(5)!]).toEqual([...bank]); // spliced into bank 5
+  expect(patched.kits().map((k) => k.slot)).toEqual([0, 5]); // base slot 0 kept, slot 5 added
   expect([...be.readFile("/roms/synth.nes")!]).toEqual([...base]); // on-disk .nes untouched
 });
 

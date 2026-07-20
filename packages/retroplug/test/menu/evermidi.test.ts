@@ -6,7 +6,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { everMidiRom, nesRom } from "../systems/fixtures";
+import { everMidiRom, everMidiMultiKitRom, nesRom } from "../systems/fixtures";
 import { EverMidiRom } from "../../src/evermidi/rom";
 
 function ctxOf(stores: AppStores): MenuContext {
@@ -113,6 +113,32 @@ test("the Kits + Fonts submenus list the base ROM's assets with Export/Replace (
   const frows = submenuChildren(fonts, "evermidi-font-0");
   expect(findItem(frows, "evermidi-font-0-export")?.kind).toBe("action");
   expect(findItem(frows, "evermidi-font-0-replace")?.kind).toBe("action");
+});
+
+test("a banking ROM makes Kits addable (Add... + per-kit Delete) and shows a high-slot override row", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/synthbank.nes", everMidiMultiKitRom()); // mapper 69 (FME-7) → 16 switchable kit banks
+  const id = stores.project.systems.addSystem("/roms/synthbank.nes")!;
+  const kitsOf = () =>
+    submenuChildren(
+      submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-evermidi"),
+      "evermidi-kits",
+    );
+
+  // Kits is now addable (16 banks): leads with Add..., and the base kit row gains a Delete.
+  expect(findItem(kitsOf(), "evermidi-kit-add")?.kind).toBe("action");
+  expect(kitsOf().find((k) => k.id === "evermidi-kit-0")!.label).toBe("[0] TEST");
+  expect(findItem(submenuChildren(kitsOf(), "evermidi-kit-0"), "evermidi-kit-0-delete")?.kind).toBe("action");
+
+  // A linked override into slot 5 adds a second row [5] HATS * alongside the base kit.
+  be.seed("/kits/hats.rkit", EverMidiRom.fromBytes(everMidiMultiKitRom()).getKitBank(0)!); // a real populated bank
+  stores.project.systems.setRoleConfig(id, "evermidi-assets", {
+    overrides: [{ type: "kit", slot: 5, name: "HATS", path: "/kits/hats.rkit" }],
+  });
+  expect(kitsOf().find((k) => k.id === "evermidi-kit-0")).toBeTruthy(); // base kit still present
+  expect(kitsOf().find((k) => k.id === "evermidi-kit-5")!.label).toBe("[5] HATS *");
+  expect(findItem(submenuChildren(kitsOf(), "evermidi-kit-5"), "evermidi-kit-5-remove")?.kind).toBe("action");
 });
 
 test("a linked kit override shows a * marker + a Remove Override row", () => {

@@ -27,9 +27,13 @@ import {
   type RisaTheme,
 } from "../../risa/rom";
 
-// EverMIDI bakes one DPCM kit bank at CPU $C000 = PRG offset 0x4000 (the KIT region in evermidi/rom/nes.cfg).
+// EverMIDI bakes kit slot 0 at CPU $C000 = PRG offset 0x4000 (the KIT region in evermidi/rom/nes*.cfg). On a
+// banking build the switchable window at $C000-$DFFF steps through 8K PRG banks 2..17, so slot k sits at
+// 0x4000 + k*0x2000 (contiguous with slot 0) — the same arithmetic as risa's kitBankOffset.
 const KIT_CPU_OFFSET = 0x4000;
-const KIT_COUNT = 1; // one baked kit on NROM (multi-kit needs the expansion-mapper CC_DMC_BANK ROM work)
+// Banking builds (VRC6/VRC7/S5B/FME-7/N163) carry up to 16 switchable kit banks (the ROM's CC_DMC_BANK +
+// nes-banked.cfg); NROM has no PRG banking, so its $C000 kit is fixed and it stays single-kit.
+const EVERMIDI_MAX_KITS = 16;
 // EverMIDI bakes a single risa-format theme (its UI is one 2-color screen). The 7-role record uses the
 // same theme.ts codec as risa; the table lives in RODATA (the code region, before the kit).
 const EVERMIDI_THEME_COUNT = 1;
@@ -46,18 +50,36 @@ function computeLayout(bytes: Uint8Array): Layout | null {
   const prgSize = bytes[4] * PRG_16K_SIZE;
   const chrSize = bytes[5] * CHR_BANK_SIZE;
   const kitOffset = HEADER_SIZE + KIT_CPU_OFFSET;
-  if (kitOffset + KIT_BANK_SIZE > HEADER_SIZE + prgSize) return null; // the kit must fit inside PRG
+  if (kitOffset + KIT_BANK_SIZE > HEADER_SIZE + prgSize) return null; // slot 0 must fit inside PRG
   return { kitOffset, chrOffset: HEADER_SIZE + prgSize, chrSize };
+}
+
+/** The iNES mapper number (low nibble in byte 6, high nibble in byte 7, NES 2.0 hi bits in byte 8). */
+function readMapper(bytes: Uint8Array): number {
+  return (bytes[6] >> 4) | (bytes[7] & 0xf0) | ((bytes[8] & 0x0f) << 8);
+}
+
+/** How many DMC kit banks this ROM can switch among: 1 on NROM (mapper 0 — fixed $C000, no banking), else
+ *  the number of 8K kit banks the PRG holds (all banks minus the 2 code banks + 1 fixed reset/vectors bank),
+ *  capped at 16 to match the ROM's CC_DMC_BANK range. Mapper-agnostic among the banking builds. */
+function computeKitCapacity(bytes: Uint8Array): number {
+  if (bytes.length < HEADER_SIZE) return 1;
+  if (readMapper(bytes) === 0) return 1;
+  const prg8kBanks = bytes[4] * 2;
+  const kitBanks = prg8kBanks - 2 /* code */ - 1 /* fixed reset/vectors */;
+  return Math.max(1, Math.min(EVERMIDI_MAX_KITS, kitBanks));
 }
 
 export class EverMidiRom {
   private readonly layout: Layout | null;
   private readonly markerOk: boolean;
   private readonly themeMetaOffset: number; // -1 when absent
+  private readonly kitCapacity: number; // switchable kit banks (1 on NROM, up to 16 on a banking build)
 
   private constructor(private readonly rom: Uint8Array) {
     this.markerOk = isEverMidiRomHeader(rom);
     this.layout = computeLayout(rom);
+    this.kitCapacity = computeKitCapacity(rom);
     // Locate the risa-format theme table by its magic, scanning the code region ($8000-$BFFF, before
     // the kit bank) so a coincidental magic in the DPCM bytes can't match.
     this.themeMetaOffset =
@@ -149,35 +171,47 @@ export class EverMidiRom {
     return Array.from({ length: this.chrFontSlotCount }, (_v, slot) => ({ slot }));
   }
 
-  // --- Kits (DPCM) — one bank on NROM, no metadata mirror ---------------------------------------------
+  // --- Kits (DPCM) — 1 bank on NROM, up to 16 switchable banks on a banking build, no metadata mirror ---
+  /** Number of switchable kit banks: 1 on NROM (fixed $C000), up to 16 on a banking build (derived from
+   *  the iNES mapper + PRG geometry). Bounds every kit accessor and the assets menu's Add.../slot count. */
+  kitBankCapacity(): number {
+    return this.kitCapacity;
+  }
+
   private kitBankOffset(idx: number): number {
     return this.layout!.kitOffset + idx * KIT_BANK_SIZE;
   }
 
   /** The raw 8 KB kit bank at `idx`, or null if out of range / no kit region. */
   getKitBank(idx: number): Uint8Array | null {
-    if (!this.layout || idx < 0 || idx >= KIT_COUNT) return null;
+    if (!this.layout || idx < 0 || idx >= this.kitCapacity) return null;
     const off = this.kitBankOffset(idx);
     return this.rom.slice(off, off + KIT_BANK_SIZE);
   }
 
   /** True if kit bank `idx` is populated (its 0xA5 magic is set). */
   isKitPopulated(idx: number): boolean {
-    if (!this.layout || idx < 0 || idx >= KIT_COUNT) return false;
+    if (!this.layout || idx < 0 || idx >= this.kitCapacity) return false;
     return this.rom[this.kitBankOffset(idx) + KIT_MAGIC_OFFSET] === KIT_MAGIC;
   }
 
   kitCount(): number {
     let n = 0;
-    for (let i = 0; i < KIT_COUNT; i++) if (this.isKitPopulated(i)) n++;
+    for (let i = 0; i < this.kitCapacity; i++) if (this.isKitPopulated(i)) n++;
     return n;
+  }
+
+  /** The first unpopulated kit slot within capacity (for Add...), or -1 when all slots are full. */
+  firstFreeKitIndex(): number {
+    for (let i = 0; i < this.kitCapacity; i++) if (!this.isKitPopulated(i)) return i;
+    return -1;
   }
 
   /** The populated kits, for a menu inventory (slot + decoded name). */
   kits(): { slot: number; name: string; model: KitModel }[] {
     if (!this.layout) return [];
     const out: { slot: number; name: string; model: KitModel }[] = [];
-    for (let i = 0; i < KIT_COUNT; i++) {
+    for (let i = 0; i < this.kitCapacity; i++) {
       if (!this.isKitPopulated(i)) continue;
       const model = bankToModel(this.getKitBank(i)!);
       out.push({ slot: i, name: model.name || `Kit ${i}`, model });
@@ -187,7 +221,7 @@ export class EverMidiRom {
 
   /** Splice a whole 8 KB kit bank into slot `idx`. */
   setKitBank(idx: number, bank: Uint8Array): void {
-    if (!this.layout || idx < 0 || idx >= KIT_COUNT) return;
+    if (!this.layout || idx < 0 || idx >= this.kitCapacity) return;
     this.rom.set(bank.subarray(0, KIT_BANK_SIZE), this.kitBankOffset(idx));
   }
 
