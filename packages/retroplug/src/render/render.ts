@@ -79,17 +79,20 @@ function isRisaRom(ctx: RenderContext, o: RenderOpts): boolean {
 }
 
 /** risa begins song playback on SELECT+START (a plain START first nudges it off an empty phrase context —
- *  the sequence the runtime-reader test proved reliable). */
-function pressRisaPlay(ctx: RenderContext, id: number): void {
+ *  the sequence the runtime-reader test proved reliable). The two prep renders are pre-song and discarded;
+ *  the SELECT+START render — where the song begins — is CAPTURED through the sink and returned as the
+ *  recording's lead-in, so the opening frames aren't lost. */
+function pressRisaPlay(ctx: RenderContext, sink: RenderSink, id: number): Float32Array[][] {
   ctx.audio.pressButton(id, NES_START, true);
-  ctx.audio.renderAudio(100);
+  sink.renderChunk(DETECT_CHUNK_MS); // prep: nudge off an empty phrase context (pre-song, discarded)
   ctx.audio.pressButton(id, NES_START, false);
-  ctx.audio.renderAudio(100);
+  sink.renderChunk(DETECT_CHUNK_MS); // prep (discarded)
   ctx.audio.pressButton(id, NES_SELECT, true);
   ctx.audio.pressButton(id, NES_START, true);
-  ctx.audio.renderAudio(100);
+  const head = sink.renderChunk(DETECT_CHUNK_MS); // the song starts here — capture it as the lead-in
   ctx.audio.pressButton(id, NES_START, false);
   ctx.audio.pressButton(id, NES_SELECT, false);
+  return [head];
 }
 
 type Logger = (msg: string) => void;
@@ -306,16 +309,20 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
 }
 
 /** Fixed-duration render: stream exactly `targetFrames` frames (trim the last chunk), so the output is
- *  byte-identical to a single renderAudio(ms) of the same length for any sample rate / ms. */
-function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks): void {
+ *  byte-identical to a single renderAudio(ms) of the same length for any sample rate / ms. `leadIn` is the
+ *  captured play-gesture audio (the song's opening frames) — committed first so the recording's head isn't
+ *  lost, trimmed against the target like any other chunk. */
+function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): void {
   let done = 0;
-  while (done < targetFrames) {
-    if (hooks.isCancelled?.()) throw new RenderCancelled();
-    const chunk = sink.renderChunk(DETECT_CHUNK_MS);
+  const emit = (chunk: Float32Array[]) => {
     if (chunk.length === 0) throw new Error("render: chunk render returned no streams");
     const take = Math.min(chunk[0].length / 2, targetFrames - done);
-    sink.emit(chunk, take);
-    done += take;
+    if (take > 0) { sink.emit(chunk, take); done += take; }
+  };
+  for (const chunk of leadIn) { if (done >= targetFrames) break; emit(chunk); }
+  while (done < targetFrames) {
+    if (hooks.isCancelled?.()) throw new RenderCancelled();
+    emit(sink.renderChunk(DETECT_CHUNK_MS));
     hooks.onProgress?.(done / targetFrames);
   }
 }
@@ -324,7 +331,7 @@ function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks):
  *  master-enable going high→low, sustained ≥DETECT_OFF_CHUNKS). Holds back the current contiguous off-streak
  *  (≤DETECT_OFF_CHUNKS whole chunks) so committed frames end exactly at the stop; a reset flushes them in
  *  order. Caps at maxMs (no-HFF fallback → keep everything). */
-function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs: number, hooks: RenderHooks): StopMarkers {
+function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): StopMarkers {
   let total = 0; // frames rendered (committed + held)
   let committed = 0; // frames streamed to disk
   let elapsed = 0;
@@ -337,6 +344,16 @@ function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs
     sink.emit(chunk, frames);
     committed += frames;
   };
+
+  // The captured play gesture: the song began on the Start press, so commit its frames from 0 and arm now
+  // (the HFF tail-detection below still ends the song at the right place). startFrame stays 0 — the whole
+  // committed output is song, so the reported length includes this head.
+  for (const chunk of leadIn) {
+    commit(chunk);
+    total += chunk[0].length / 2;
+    elapsed += DETECT_CHUNK_MS;
+    armed = true;
+  }
 
   while (elapsed < maxMs) {
     if (hooks.isCancelled?.()) throw new RenderCancelled();
@@ -380,6 +397,24 @@ export function validateRenderOpts(o: RenderOpts, platform: Platform): void {
   }
 }
 
+/** Auto-start playback and CAPTURE the song's opening frames through the sink. The song begins the moment
+ *  Start is pressed, so the button-hold render (needed to register the press) must be captured as the
+ *  recording's head — not discarded, which drops the first ~100 ms. Returns the captured lead-in chunks (in
+ *  the sink's mix/split shape); empty when o.start is off or the platform has no play gesture. */
+function pressPlay(ctx: RenderContext, sink: RenderSink, o: RenderOpts, id: number, platform: Platform): Float32Array[][] {
+  if (!o.start) return [];
+  if (platform === "gb") {
+    // LSDj/mGB begin on the Start press; hold it across one captured chunk to register the press, then
+    // release (Start is a play toggle — the song keeps running once the release lands next block).
+    ctx.audio.pressButton(id, GB_START, true);
+    const head = sink.renderChunk(DETECT_CHUNK_MS);
+    ctx.audio.pressButton(id, GB_START, false);
+    return [head];
+  }
+  if (platform === "nes" && isRisaRom(ctx, o)) return pressRisaPlay(ctx, sink, id); // generic NES ROMs untouched
+  return [];
+}
+
 /** Boot a fresh system from the request and stream its audio to WAV. Returns the written paths (+ the
  *  detected length for an LSDj auto-detect render). Host-neutral — the CLI and the render worker both call
  *  this; hooks default to console logging with no progress/cancel. Does NOT handle --list-songs (a query,
@@ -400,14 +435,6 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   ctx.audio.renderAudio(1500); // settle boot (past the mGB/LSDj splash) before driving playback
   if (o.bpm) ctx.audio.setBpm(o.bpm);
   if (o.transport) ctx.audio.setTransport(true);
-  if (o.start && platform === "gb") {
-    // Press Start so a saved song begins playing (LSDj boots to a menu, silent until Start).
-    ctx.audio.pressButton(id, GB_START, true);
-    ctx.audio.renderAudio(100);
-    ctx.audio.pressButton(id, GB_START, false);
-  } else if (o.start && platform === "nes" && isRisaRom(ctx, o)) {
-    pressRisaPlay(ctx, id); // risa plays the working song on SELECT+START (generic NES ROMs are left alone)
-  }
 
   const sr = ctx.audio.sampleRate();
   const base = outBase(o);
@@ -428,8 +455,13 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
 
   // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
   const sink = buildSink(ctx, o, id, platform, sr, base, log);
+
+  // Auto-start playback, capturing the song's opening frames as the recording's head (see pressPlay). The
+  // sink exists first so the button-hold render is captured in the right mix/split shape, not discarded.
+  const leadIn = pressPlay(ctx, sink, o, id, platform);
+
   if (autoDetect) {
-    const m = driveAutoDetect(sink, ctx, id, o.maxDurationMs, hooks);
+    const m = driveAutoDetect(sink, ctx, id, o.maxDurationMs, hooks, leadIn);
     const outputs = sink.finishAll();
     const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
     log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);
@@ -437,7 +469,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     hooks.onProgress?.(1);
     return { outputs, lengthMs, frames: m.endFrame - m.startFrame, hff: m.hff };
   }
-  driveFixed(sink, Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000), hooks); // exact target frame count
+  driveFixed(sink, Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000), hooks, leadIn); // exact target frame count
   const outputs = sink.finishAll();
   hooks.onProgress?.(1);
   return { outputs };
