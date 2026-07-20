@@ -150,6 +150,13 @@ export function everMidiRom(): Uint8Array {
   for (let i = 0; i < MARK.length; i++) rom[0x10 + i] = MARK.charCodeAt(i);
   rom[0x10 + MARK.length] = 0x01; // version 1
 
+  // A risa-format theme table in the code region (before the kit at 0x4010), at a fixed offset for tests.
+  // Magic + one 7-role record (bg,normal,shaded,alternate,status,cursor,selection) + a 4-char name.
+  const themeOffset = 0x100;
+  rom.set([0xa5, 0x5a, 0x54, 0x48, 0x4d, 0x45], themeOffset); // THEME_META_MAGIC
+  rom.set([0x0d, 0x30, 0x00, 0x10, 0x30, 0x21, 0x11], themeOffset + 6); // record 0
+  rom.set([0x44, 0x46, 0x4c, 0x54], themeOffset + 6 + 7); // name "DFLT"
+
   // One populated DMC kit at $C000 (PRG offset 0x4000): a "TEST" kit with a "KIK" sample-0 name, one index
   // entry, the other 15 empty (0xFF), and the 0xA5 populated magic — the same 8 KB bank layout risa uses.
   const kitOffset = 0x10 + 0x4000;

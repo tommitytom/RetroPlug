@@ -50,8 +50,45 @@ test("the EverMIDI submenu appears only for an EverMIDI ROM, is asset-only (no S
   expect(findItem(items(), "inst-evermidi")?.kind).toBe("submenu");
   const kids = submenuChildren(items(), "inst-evermidi");
   expect(findItem(kids, "evermidi-songs")).toBe(undefined); // no song battery → no Songs submenu
+  expect(findItem(kids, "evermidi-themes")?.kind).toBe("submenu");
   expect(findItem(kids, "evermidi-kits")?.kind).toBe("submenu");
   expect(findItem(kids, "evermidi-fonts")?.kind).toBe("submenu");
+});
+
+test("the Themes submenu lists the baked theme with Export/Replace (no Remove until overridden)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const items = everMidiItems(be, stores);
+  const themes = submenuChildren(submenuChildren(items(), "inst-evermidi"), "evermidi-themes");
+  expect(themes.length).toBe(1);
+  expect(themes[0].label).toBe("[0] DFLT"); // decoded, space-trimmed theme name
+  const t0 = submenuChildren(themes, "evermidi-theme-0");
+  expect(findItem(t0, "evermidi-theme-0-export")?.kind).toBe("action");
+  expect(findItem(t0, "evermidi-theme-0-replace")?.kind).toBe("action");
+  expect(findItem(t0, "evermidi-theme-0-remove")).toBe(undefined);
+});
+
+test("a theme override shows a * marker + a Remove Override row", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/synth3.nes", everMidiRom());
+  const id = stores.project.systems.addSystem("/roms/synth3.nes")!;
+  stores.project.systems.setRoleConfig(id, "evermidi-assets", {
+    overrides: [
+      {
+        type: "theme",
+        slot: 0,
+        name: "NEON",
+        theme: { name: "NEON", bg: "0x0D", normal: "0x30", shaded: "0x10", alternate: "0x20", status: "0x05", cursor: "0x15", selection: "0x25" },
+      },
+    ],
+  });
+  const themes = submenuChildren(
+    submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-evermidi"),
+    "evermidi-themes",
+  );
+  expect(themes[0].label).toBe("[0] NEON *");
+  expect(findItem(submenuChildren(themes, "evermidi-theme-0"), "evermidi-theme-0-remove")?.kind).toBe("action");
 });
 
 test("the Kits + Fonts submenus list the base ROM's assets with Export/Replace (no Add/Delete — Replace-only)", () => {

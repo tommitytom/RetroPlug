@@ -17,13 +17,22 @@ import {
   KIT_MAGIC,
   KIT_MAGIC_OFFSET,
   CHR_BANK_SIZE,
+  THEME_META_MAGIC,
+  THEME_RECORD_SIZE,
+  THEME_NAME_SIZE,
   bankToModel,
+  decodeThemeFromRom,
+  findMagicInRange,
   type KitModel,
+  type RisaTheme,
 } from "../../risa/rom";
 
 // EverMIDI bakes one DPCM kit bank at CPU $C000 = PRG offset 0x4000 (the KIT region in evermidi/rom/nes.cfg).
 const KIT_CPU_OFFSET = 0x4000;
 const KIT_COUNT = 1; // one baked kit on NROM (multi-kit needs the expansion-mapper CC_DMC_BANK ROM work)
+// EverMIDI bakes a single risa-format theme (its UI is one 2-color screen). The 7-role record uses the
+// same theme.ts codec as risa; the table lives in RODATA (the code region, before the kit).
+const EVERMIDI_THEME_COUNT = 1;
 
 interface Layout {
   kitOffset: number;
@@ -44,10 +53,15 @@ function computeLayout(bytes: Uint8Array): Layout | null {
 export class EverMidiRom {
   private readonly layout: Layout | null;
   private readonly markerOk: boolean;
+  private readonly themeMetaOffset: number; // -1 when absent
 
   private constructor(private readonly rom: Uint8Array) {
     this.markerOk = isEverMidiRomHeader(rom);
     this.layout = computeLayout(rom);
+    // Locate the risa-format theme table by its magic, scanning the code region ($8000-$BFFF, before
+    // the kit bank) so a coincidental magic in the DPCM bytes can't match.
+    this.themeMetaOffset =
+      this.layout != null ? findMagicInRange(rom, THEME_META_MAGIC, HEADER_SIZE, KIT_CPU_OFFSET) : -1;
   }
 
   /** Wrap a ROM image (cloned, so patches never touch the caller's buffer). */
@@ -66,6 +80,46 @@ export class EverMidiRom {
   /** The (possibly patched) image to feed to romBytes. */
   bytes(): Uint8Array {
     return this.rom;
+  }
+
+  // --- Themes (NES palette) — one risa-format theme, applied to the bg/text colors at boot -----------
+  /** True if the theme table's magic was located in the code region. */
+  get hasThemes(): boolean {
+    return this.themeMetaOffset >= 0;
+  }
+  get themeCount(): number {
+    return EVERMIDI_THEME_COUNT;
+  }
+
+  /** The raw on-ROM bytes of theme `idx`: a 7-byte record + 4-byte name. Null if there's no theme table. */
+  getTheme(idx: number): { recordBytes: Uint8Array; nameBytes: Uint8Array } | null {
+    if (!this.hasThemes) return null;
+    const recordBase = this.themeMetaOffset + THEME_META_MAGIC.length;
+    const namesOff = recordBase + EVERMIDI_THEME_COUNT * THEME_RECORD_SIZE;
+    return {
+      recordBytes: this.rom.slice(recordBase + idx * THEME_RECORD_SIZE, recordBase + (idx + 1) * THEME_RECORD_SIZE),
+      nameBytes: this.rom.slice(namesOff + idx * THEME_NAME_SIZE, namesOff + (idx + 1) * THEME_NAME_SIZE),
+    };
+  }
+
+  /** Splice theme `idx`'s record (7 bytes) + name (4 bytes) in place. No-op if there's no theme table. */
+  setTheme(idx: number, recordBytes: Uint8Array, nameBytes: Uint8Array): void {
+    if (!this.hasThemes) return;
+    const recordBase = this.themeMetaOffset + THEME_META_MAGIC.length;
+    const namesOff = recordBase + EVERMIDI_THEME_COUNT * THEME_RECORD_SIZE;
+    this.rom.set(recordBytes.subarray(0, THEME_RECORD_SIZE), recordBase + idx * THEME_RECORD_SIZE);
+    this.rom.set(nameBytes.subarray(0, THEME_NAME_SIZE), namesOff + idx * THEME_NAME_SIZE);
+  }
+
+  /** The decoded themes, for a menu inventory (empty when there's no theme table). */
+  themes(): { slot: number; theme: RisaTheme }[] {
+    if (!this.hasThemes) return [];
+    const out: { slot: number; theme: RisaTheme }[] = [];
+    for (let i = 0; i < EVERMIDI_THEME_COUNT; i++) {
+      const t = this.getTheme(i)!;
+      out.push({ slot: i, theme: decodeThemeFromRom(t.recordBytes, t.nameBytes) });
+    }
+    return out;
   }
 
   // --- Fonts (CHR) ------------------------------------------------------------------------------------

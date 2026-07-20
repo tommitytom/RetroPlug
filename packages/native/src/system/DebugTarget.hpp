@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <rfl/Bytestring.hpp>
 
 namespace rp {
 
@@ -181,7 +182,9 @@ struct ExpansionAudioState {
 // scroll; `videoRamAddr`/`tmpVideoRamAddr` are the current/temp VRAM addresses
 // (v/t); `writeToggle` is the $2005/$2006 first/second-write latch (w);
 // `spriteRamAddr` is the OAM address ($2003). This is the flat state only — the
-// tilemap / sprite / palette VIEWERS (caller-allocated buffers) are not exposed.
+// tilemap / sprite VIEWERS (caller-allocated buffers) are not exposed. `paletteRam` is
+// the 32-byte palette RAM ($3F00-$3F1F): [0] = universal background color, then the bg /
+// sprite palettes (each a 6-bit NES index) — enough to read a ROM's applied bg/text colors.
 struct PpuState {
     std::int32_t  scanline        = 0;
     std::uint32_t cycle           = 0;
@@ -194,6 +197,7 @@ struct PpuState {
     std::uint16_t tmpVideoRamAddr = 0;      // temp VRAM address (t)
     bool          writeToggle     = false;  // $2005/$2006 write latch (w)
     std::uint8_t  spriteRamAddr   = 0;      // $2003 OAM address
+    rfl::Bytestring paletteRam;             // 32-byte palette RAM ($3F00-$3F1F)
 };
 
 // One Mesen event-viewer event (a register read/write, NMI, IRQ, DMA read,

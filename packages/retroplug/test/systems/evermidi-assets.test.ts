@@ -13,7 +13,13 @@ import { registerEverMidiRole } from "../../src/evermidiRole";
 import { registerEverMidiAssetsRole } from "../../src/evermidiAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 import { EverMidiRom } from "../../src/evermidi/rom";
+import { decodeThemeFromRom } from "../../src/risa/rom";
 import { everMidiRom } from "./fixtures";
+
+const THEME_NEON = {
+  name: "NEON",
+  bg: "0x0D", normal: "0x30", shaded: "0x10", alternate: "0x20", status: "0x05", cursor: "0x15", selection: "0x25",
+};
 
 function newStore() {
   const be = new MockBackend("/cfg");
@@ -40,6 +46,27 @@ test("an EverMIDI system attaches an empty evermidi-assets role and constructs w
   expect(id).toBeTruthy();
   expect(store.view()[0].roles.map((r) => r.kind).includes("evermidi-assets")).toBeTruthy();
   expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined); // no overrides → base ROM
+});
+
+test("a theme override is stored INLINE (no path) and applied to the effective ROM", () => {
+  const { be, store } = newStore();
+  const base = everMidiRom();
+  be.seed("/roms/synth.nes", base);
+  const id = store.addSystem("/roms/synth.nes")!;
+
+  const override = { type: "theme", slot: 0, name: "NEON", theme: THEME_NEON };
+  store.setRoleConfig(id, "evermidi-assets", { overrides: [override] });
+  store.reloadSystem(id);
+
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.romBytes != null).toBeTruthy();
+  expect((override as Record<string, unknown>).path).toBe(undefined); // inline — no file link
+
+  const patched = EverMidiRom.fromBytes(spec.romBytes!);
+  const back = decodeThemeFromRom(patched.getTheme(0)!.recordBytes, patched.getTheme(0)!.nameBytes);
+  expect(back.name).toBe("NEON");
+  expect(back.selection).toBe("0x25");
+  expect([...be.readFile("/roms/synth.nes")!]).toEqual([...base]); // on-disk .nes untouched
 });
 
 test("a kit override LINKS a .rkit bank by path and splices it into the effective ROM", () => {

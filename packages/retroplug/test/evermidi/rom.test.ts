@@ -4,9 +4,11 @@
 import { test, expect } from "../../testing/harness";
 import { everMidiRom, nesRom, garbage } from "../systems/fixtures";
 import { EverMidiRom } from "../../src/evermidi/rom";
+import { serializeRit, parseRit } from "../../src/risa/rom";
 
 const KIT_OFFSET = 0x10 + 0x4000; // the baked kit at $C000
 const CHR_OFFSET = 0x10 + 0x8000; // CHR follows the 32 KB PRG
+const THEME_OFFSET = 0x100; // the theme table in everMidiRom() (code region, before the kit)
 
 /** The set of byte offsets that differ between two equal-length buffers. */
 function changedOffsets(a: Uint8Array, b: Uint8Array): number[] {
@@ -68,4 +70,43 @@ test("fonts: getChrFontSlot reads the slot, setChrFontSlot splices only that 8 K
   const changed = changedOffsets(before, rom.bytes());
   for (const off of changed) expect(off >= CHR_OFFSET && off < CHR_OFFSET + 0x2000).toBe(true);
   expect(Array.from(rom.getChrFontSlot(0)!)).toEqual(Array.from(bank));
+});
+
+test("themes() decodes the baked theme located by the magic scan", () => {
+  const rom = EverMidiRom.fromBytes(everMidiRom());
+  expect(rom.hasThemes).toBe(true);
+  expect(rom.themeCount).toBe(1);
+  const themes = rom.themes();
+  expect(themes.length).toBe(1);
+  expect(themes[0].slot).toBe(0);
+  expect(themes[0].theme.bg).toBe("0x0D");
+  expect(themes[0].theme.normal).toBe("0x30");
+  expect(themes[0].theme.name).toBe("DFLT");
+});
+
+test("setTheme splices only the 7-byte record + 4-byte name for that slot", () => {
+  const rom = EverMidiRom.fromBytes(everMidiRom());
+  const before = rom.bytes().slice();
+
+  const rec = new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
+  const name = new Uint8Array([0x5a, 0x5a, 0x5a, 0x5a]); // "ZZZZ"
+  rom.setTheme(0, rec, name);
+
+  const changed = changedOffsets(before, rom.bytes());
+  const recStart = THEME_OFFSET + 6; // after the 6-byte magic
+  const nameStart = recStart + 7; // after the single record
+  for (const off of changed) {
+    const inRec = off >= recStart && off < recStart + 7;
+    const inName = off >= nameStart && off < nameStart + 4;
+    expect(inRec || inName).toBe(true);
+  }
+  expect(changed.length).toBe(11); // all 7 + 4 differ from the seed
+  const back = rom.getTheme(0)!;
+  expect(Array.from(back.recordBytes)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  expect(Array.from(back.nameBytes)).toEqual([0x5a, 0x5a, 0x5a, 0x5a]);
+});
+
+test("a theme round-trips through the .rit shape", () => {
+  const t = EverMidiRom.fromBytes(everMidiRom()).themes()[0].theme;
+  expect(parseRit(serializeRit(t)).theme).toEqual(t);
 });

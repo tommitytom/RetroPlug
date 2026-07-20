@@ -60,3 +60,40 @@ test("a kit + font patched into the ROM in memory boots (the on-disk .nes is unt
   expect([...be.readFile(EVERMIDI_ROM)!]).toEqual([...base]);
   console.log(`[evermidi-rom] patched-in-memory kit+font ROM boots; on-disk .nes unchanged`);
 });
+
+test("the baked theme sets the background palette; a theme override changes it", () => {
+  const be = createRealBackend();
+  const audio = createAudioDriver();
+  if (!be.fileExists(EVERMIDI_ROM)) { console.log(`# SKIP evermidi-rom theme: no ROM at ${EVERMIDI_ROM}`); return; }
+
+  const base = be.readFile(EVERMIDI_ROM)!;
+
+  // The ROM applies theme 0 at boot: $3F00 = bg ($0D), $3F01 = text ($30) — the baked DFLT theme.
+  expect(be.constructSystem({
+    romPath: EVERMIDI_ROM, platform: "nes", core: "mesen", embeddedRom: "",
+    savPath: null, statePath: null, romBytes: base,
+  }, 13)).toBeTruthy();
+  audio.renderAudio(4000); // let the reset + sysInit palette write run
+  const pal0 = be.getPpuState(13).paletteRam;
+  expect(pal0[0]).toBe(0x0d); // $3F00 universal background
+  expect(pal0[1]).toBe(0x30); // $3F01 text color
+
+  // Override the theme's bg + text (in memory) → the ROM reads the patched table and applies it.
+  const rom = EverMidiRom.fromBytes(base);
+  const t = rom.getTheme(0)!;
+  const rec = t.recordBytes.slice();
+  rec[0] = 0x21; // bg
+  rec[1] = 0x11; // text
+  rom.setTheme(0, rec, t.nameBytes);
+
+  expect(be.constructSystem({
+    romPath: EVERMIDI_ROM, platform: "nes", core: "mesen", embeddedRom: "",
+    savPath: null, statePath: null, romBytes: rom.bytes(),
+  }, 14)).toBeTruthy();
+  audio.renderAudio(4000);
+  const pal1 = be.getPpuState(14).paletteRam;
+  expect(pal1[0]).toBe(0x21); // the override's bg is what the ROM applied
+  expect(pal1[1]).toBe(0x11); // ...and its text color
+  expect([...be.readFile(EVERMIDI_ROM)!]).toEqual([...base]); // on-disk .nes untouched
+  console.log(`[evermidi-rom] baked theme applied ($3F00/$3F01); override changes the palette`);
+});

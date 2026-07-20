@@ -580,7 +580,7 @@ const readEverMidiRomFor = (be: HostBackend, romPath: string): EverMidiRom | nul
   return rom.isEverMidi ? rom : null;
 };
 
-// Export kit/font `slot` to a picked file: the override's linked bank if replaced, else the base ROM's asset.
+// Export theme/kit/font `slot` to a picked file: the override's data if replaced, else the base ROM's asset.
 function exportEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void {
   const be = ctx.stores.backend;
   const kind = type.kind;
@@ -588,7 +588,15 @@ function exportEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeI
   const defaultName = `${sanitizeName(label)}${type.ext}`;
   browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: type.patterns, saving: true, defaultName }, (path) => {
     let bytes: Uint8Array | null = null;
-    if (kind === "kit") {
+    if (kind === "theme") {
+      // The theme comes from the inline override, or the base ROM decoded; emit a .rit (readable JSON).
+      let theme = ov?.theme ?? null;
+      if (!theme) {
+        const t = readEverMidiRomFor(be, sys.romPath)?.getTheme(slot);
+        if (t) theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
+      }
+      if (theme) bytes = new TextEncoder().encode(JSON.stringify(serializeRit(theme), null, 2) + "\n");
+    } else if (kind === "kit") {
       // The linked bank if overridden, else the base ROM's 8 KB DMC bank — either is a ready-to-link .rkit.
       bytes = ov?.path ? be.readFile(ov.path) : (readEverMidiRomFor(be, sys.romPath)?.getKitBank(slot) ?? null);
     } else {
@@ -598,8 +606,8 @@ function exportEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeI
   });
 }
 
-// Replace kit/font `slot` from a picked file: validate it, record the override (by PATH) in role config, and
-// reload so it takes effect. NON-DESTRUCTIVE — the base .nes is never written.
+// Replace theme/kit/font `slot` from a picked file: validate it, record the override (theme INLINE / font +
+// kit by PATH) in role config, and reload so it takes effect. NON-DESTRUCTIVE — the base .nes is never written.
 function replaceEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
   const be = ctx.stores.backend;
   const kind = type.kind;
@@ -607,12 +615,19 @@ function replaceEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetType
     const data = be.readFile(path);
     if (!data) return;
     let entry: EverMidiAssetOverride;
-    if (kind === "kit") {
-      if (data.length !== KIT_BANK_SIZE || !isBankPopulated(data)) return; // a .rkit is exactly one populated 8 KB DMC bank
-      entry = { type: "kit", slot, name: bankToModel(data).name.trim() || stem(path), path };
-    } else {
-      if (data.length !== 0x2000) return; // a .chr is exactly one 8 KB CHR bank
-      entry = { type: "font", slot, name: stem(path), path };
+    try {
+      if (kind === "theme") {
+        const { theme } = parseRit(JSON.parse(new TextDecoder().decode(data))); // throws on a bad .rit
+        entry = { type: "theme", slot, name: theme.name.trim() || stem(path), theme };
+      } else if (kind === "kit") {
+        if (data.length !== KIT_BANK_SIZE || !isBankPopulated(data)) return; // a .rkit is exactly one populated 8 KB DMC bank
+        entry = { type: "kit", slot, name: bankToModel(data).name.trim() || stem(path), path };
+      } else {
+        if (data.length !== 0x2000) return; // a .chr is exactly one 8 KB CHR bank
+        entry = { type: "font", slot, name: stem(path), path };
+      }
+    } catch {
+      return; // malformed .rit / unreadable → leave the ROM untouched
     }
     writeOverrides(ctx, sys, "evermidi-assets", [
       ...everMidiAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot)),

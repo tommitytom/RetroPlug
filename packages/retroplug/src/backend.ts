@@ -477,6 +477,8 @@ export interface PpuState {
   tmpVideoRamAddr: number;
   writeToggle: boolean;
   spriteRamAddr: number;
+  /** 32-byte palette RAM ($3F00-$3F1F): [0] = universal background color, [1..] the bg/sprite palettes. */
+  paletteRam: Uint8Array;
 }
 
 /** One named CPU register (`getCpuRegisters`). `value` is zero-extended to 32 bits; `bits` is the real
