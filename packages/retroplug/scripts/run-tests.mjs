@@ -2,7 +2,8 @@
 // Test runner. For each test/**/*.test.ts: bundle it with esbuild
 // (QuickJS/es2020 target, types stripped), then run the bundle on the
 // standalone txiki.js runtime (`tjs run`). Aggregates TAP; exits nonzero on any
-// failure. One tjs process per file = per-file isolation.
+// failure. One tjs process per file = per-file isolation; files run in a bounded
+// parallel pool (default half the logical threads; --jobs N / -j N / TEST_JOBS, =1 serial).
 //
 // Decoupled from the C++/plugin build: needs only the `tjs` binary (built once
 // from the vendored txiki) + esbuild from the workspace. No retroplug-cli, no
@@ -15,10 +16,10 @@
 // tests under it.
 
 import { readdirSync, mkdirSync, existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
-import { buildSync } from "esbuild";
+import { build } from "esbuild";
+import { runPool, spawnBuffered, resolveJobs, stripJobsArgs, flush } from "./lib/testPool.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -42,7 +43,8 @@ if (!existsSync(TJS)) {
   process.exit(1);
 }
 
-const filter = process.argv[2];
+const jobs = resolveJobs();
+const filter = stripJobsArgs()[0];
 
 function walk(dir, out = []) {
   if (!existsSync(dir)) return out;
@@ -70,13 +72,12 @@ if (!tests.length) {
   process.exit(1);
 }
 
-const failures = [];
-for (const { file, slug } of tests) {
+async function runOne({ file, slug }) {
   const outFile = join(OUT_DIR, `${slug}.js`);
   mkdirSync(dirname(outFile), { recursive: true });
 
   try {
-    buildSync({
+    await build({
       entryPoints: [file],
       bundle: true,
       format: "esm",
@@ -87,17 +88,20 @@ for (const { file, slug } of tests) {
       define: { "process.env.NODE_ENV": '"production"' },
     });
   } catch (e) {
-    console.error(`# BUILD FAILED: ${slug}\n${e?.message ?? e}`);
-    failures.push(slug);
-    continue;
+    flush(`BUILD FAILED: ${slug}`, `${e?.message ?? e}`);
+    return false;
   }
 
-  const run = spawnSync(TJS, ["run", outFile], { stdio: "inherit", cwd: PKG });
-  if (run.status !== 0) failures.push(slug);
+  const run = await spawnBuffered(TJS, ["run", outFile], { cwd: PKG });
+  flush(slug, run.output);
+  return run.status === 0;
 }
+
+const results = await runPool(tests, runOne, { jobs });
+const failures = tests.filter((_, i) => results[i] === false).map((t) => t.slug);
 
 if (failures.length) {
   console.error(`\n# ${failures.length}/${tests.length} test file(s) FAILED: ${failures.join(", ")}`);
   process.exit(1);
 }
-console.error(`\n# ${tests.length} test file(s) passed`);
+console.error(`\n# ${tests.length} test file(s) passed (jobs=${jobs})`);

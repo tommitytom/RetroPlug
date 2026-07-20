@@ -7,8 +7,9 @@
 // baked-in synth whose bytes never reach TS) — the same "meaning lives in TS" split the
 // generic RoleRegistry is built around.
 
-import type { RoleRegistry, RomContext } from "./systemRoles";
+import type { RoleRegistry, RomContext, RoleInstance } from "./systemRoles";
 import { LsdjSyncMode } from "./settingsEnums";
+import { isRisaRomHeader, isRisaSyncRom } from "./risa";
 
 // The Game Boy cartridge title field is 0x134..0x143. Decode it to an uppercase ASCII
 // string, stopping at the first NUL — case-insensitive so both "LSDj-v9.4.2" and older
@@ -30,9 +31,12 @@ export function registerRomProviders(registry: RoleRegistry): void {
     rom.embeddedRom === "mgb" || title(rom.header).startsWith("MGB") ? [{ kind: "mgb", config: {} }] : [],
   );
 
-  // LSDj (stock or arduinoboy build) → the lsdj-sync role, defaulting to MidiSync.
+  // LSDj (stock or arduinoboy build) → the lsdj-sync role (defaulting to MidiSync) plus the lsdj-assets
+  // role that carries any non-destructive kit/palette/font overrides (empty until the user replaces one).
   registry.registerRomProvider((rom: RomContext) =>
-    title(rom.header).startsWith("LSDJ") ? [{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }] : [],
+    title(rom.header).startsWith("LSDJ")
+      ? [{ kind: "lsdj-sync", config: { mode: LsdjSyncMode.MidiSync } }, { kind: "lsdj-assets", config: { overrides: [] } }]
+      : [],
   );
 
   // Any NES ROM → host-MIDI passthrough to the core (the always-attached N8 FIFO). Match the PLATFORM
@@ -40,4 +44,16 @@ export function registerRomProviders(registry: RoleRegistry): void {
   registry.registerRomProvider((rom: RomContext) =>
     rom.platform === "nes" ? [{ kind: "nes-n8-midi", config: {} }] : [],
   );
+
+  // risa (the LSDj-style NES/MMC5 tracker) → the `risa` marker role that gates the Songs menu, plus the
+  // `risa-assets` role holding non-destructive theme/font ROM overrides. Detected by its iNES 2.0 header
+  // fingerprint (MMC5 + 64 KB battery) since NES ROMs carry no title field. A sync-capable build (the
+  // "RISA-SYNC" header marker) additionally gets the `risa-sync` DSP role that drives its N8-FIFO host-sync
+  // receive path from the DAW transport; older risa builds without the marker are unaffected.
+  registry.registerRomProvider((rom: RomContext): RoleInstance[] => {
+    if (rom.platform !== "nes" || !isRisaRomHeader(rom.header)) return [];
+    const roles: RoleInstance[] = [{ kind: "risa", config: {} }, { kind: "risa-assets", config: { overrides: [] } }];
+    if (isRisaSyncRom(rom.header)) roles.push({ kind: "risa-sync", config: {} });
+    return roles;
+  });
 }

@@ -140,6 +140,35 @@ struct ApuState {
     ApuDmcState      dmc;
 };
 
+// -- NES expansion audio state ----------------------------------------------
+//
+// Decoded live state of the cart's expansion audio chip (VRC6/VRC7/Sunsoft-5B/
+// Namco-163) — the analogue of ApuState for the mapper sound hardware, whose
+// registers are also write-only. `chip` names the active chip ("none" when the
+// cart has no expansion audio); `channels` holds its voices in chip order.
+//
+// The per-channel struct is a superset — a field is populated when meaningful
+// for the chip and left 0/false otherwise. `volume` is NORMALIZED to 0 (silent)
+// .. 15 (loudest) across all chips so "silent means low volume" reads the same
+// everywhere; `period` stays the chip-native pitch register. See the three
+// diagnostic fields: `constantOutput` (VRC6 "ignore duty" mode → DC/no tone),
+// `instrument` (VRC7 patch), and the normalized `volume`.
+struct ExpansionAudioChannel {
+    bool          enabled        = false;  // channel enabled / keyed on
+    std::uint8_t  volume         = 0;      // normalized 0=silent .. 15=loudest
+    std::uint32_t outputLevel    = 0;      // live decoded output magnitude (0 = silent right now)
+    std::uint32_t period         = 0;      // chip-native pitch reg (VRC6/5B timer, N163 18-bit, VRC7 fnum)
+    std::uint8_t  block          = 0;      // VRC7 octave 0-7 (0 for other chips)
+    std::uint8_t  duty           = 0;      // VRC6 pulse duty 0-7 (0 for other chips)
+    bool          constantOutput = false;  // VRC6 pulse "ignore duty" mode bit → DC, no tone
+    std::uint8_t  instrument     = 0;      // VRC7 patch 0=custom,1-15 ROM (0 for other chips)
+};
+
+struct ExpansionAudioState {
+    std::string chip;                                   // "none"|"vrc6"|"vrc7"|"s5b"|"n163"
+    std::vector<ExpansionAudioChannel> channels;        // in the chip's channel order
+};
+
 // -- NES PPU state ----------------------------------------------------------
 //
 // A snapshot of the NES PPU's live timing + register state, mirroring a curated
@@ -230,6 +259,13 @@ public:
     // so this is the way to observe what a MIDI-driven ROM did to the sound
     // chip. Call after advancing the emulator.
     virtual ApuState getApuState() = 0;
+
+    // Snapshot the cart's expansion audio chip (VRC6/VRC7/Sunsoft-5B/Namco-163)
+    // decoded per-channel state. Like getApuState, the registers are write-only,
+    // so this is how a test observes what a MIDI-driven ROM programmed into the
+    // expansion sound chip. Default {} (chip "none") for backends / carts with
+    // no expansion audio. Call after advancing the emulator.
+    virtual ExpansionAudioState getExpansionAudioState() { return {}; }
 
     // Snapshot the NES PPU's live timing + register state (scanline/cycle/
     // frameCount + the $2000/$2001/$2002 register bytes + scroll). Call after

@@ -193,7 +193,9 @@ bool NesApu::NeedToRun(uint32_t currentCycle)
 void NesApu::Exec()
 {
 	_currentCycle++;
-	if(_currentCycle == NesSoundMixer::CycleLength - 1) {
+	// RetroPlug: the flush window is runtime-controllable (a live "APU latency" knob). >= (not ==) so a
+	// live *decrease* still flushes promptly instead of waiting for a threshold _currentCycle already passed.
+	if(_currentCycle >= _mixer->GetCycleLength() - 1) {
 		EndFrame();
 	} else if(NeedToRun(_currentCycle)) {
 		Run();

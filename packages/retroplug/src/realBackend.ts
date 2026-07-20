@@ -13,7 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, FileBrowserOpts, FrameData, HostBackend, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 
 type RpcSend = (request: unknown) => unknown;
@@ -88,6 +88,7 @@ const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> =>
   if (spec.savPath != null) p.savPath = spec.savPath;
   if (spec.statePath != null) p.statePath = spec.statePath;
   if (spec.replaceId !== undefined) p.replaceId = spec.replaceId;
+  if (spec.romBytes) p.romBytes = spec.romBytes;
   if (spec.sramBytes) p.sramBytes = spec.sramBytes;
   if (spec.stateBytes) p.stateBytes = spec.stateBytes;
   if (spec.settings != null) p.settings = spec.settings;
@@ -115,6 +116,8 @@ export function createHostClient(): HostBackend {
     version: () => call("version") as string,
     zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries)), // {name, bytes: Uint8Array} matches BackendZipInput
     unzip: (bytes) => (call("unzip", bytes) as ZipEntry[] | null) ?? null,
+    pngEncode: (width, height, rgba) => bytesOrNull(call("pngEncode", { width, height, rgba })), // PngImage DTO
+    pngDecode: (bytes) => (call("pngDecode", bytes) as PngImageData | null) ?? null,
     savFromJson: (json) => savFromJsonTs(json), // pure-TS codec (was a native RPC round-trip)
     openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts), // async UI-direct native hook, not RPC
   };
@@ -134,6 +137,7 @@ export function createEmulatorClient(): EmulatorBackend {
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
     readState: (id) => bytesOrNull(call("readState", id)),
     readSram: (id) => bytesOrNull(call("readSram", id)),
+    readRam: (id) => bytesOrNull(call("readRam", id)),
     getFrame: (id): FrameData | null => {
       const r = call("getFrame", id) as { width: number; height: number; published: boolean; data?: Uint8Array } | null;
       if (r == null || r.width === 0) return null; // no such system / no framebuffer
@@ -148,6 +152,7 @@ export function createDebugClient(): DebugBackend {
   const call = makeCall();
   return {
     getApuState: (id) => call("getApuState", id) as ApuState,
+    getExpansionAudioState: (id) => call("getExpansionAudioState", id) as ExpansionAudioState,
     getPpuState: (id) => call("getPpuState", id) as PpuState,
     readCpu: (id, addr) => call("readCpu", id, addr) as number | null,
     writeCpu: (id, addr, value) => call("writeCpu", id, addr, value) as boolean,

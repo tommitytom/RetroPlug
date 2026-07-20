@@ -48,6 +48,53 @@ export interface DspTraceSpan {
   t1: number;
 }
 
+// LSDJ kit-compile effects (mirror the native rp::lsdj tagged union; discriminated on `type`). Applied
+// per sample: gain (normalize/scale) + filter (RBJ biquad) run before resampling, dither after — matching
+// the native ordering. Passed verbatim to the compileKit RPC where reflect-cpp decodes the tagged union.
+export type KitGainEffect = { type: "gain"; normalize?: boolean; gain?: number };
+export type KitFilterEffect = {
+  type: "filter";
+  filterType?: "LowPass" | "HighPass" | "BandPass" | "BandStop" | "Peak" | "LowShelf" | "HighShelf" | "AllPass";
+  frequency?: number;
+  q?: number;
+  gain?: number;
+};
+export type KitDitherEffect = {
+  type: "dither";
+  ditherType?: "HighPassTPDF" | "ShapedTPDF" | "ErrorDiffusion" | "JJN" | "SierraLite";
+};
+export type KitEffect = KitGainEffect | KitFilterEffect | KitDitherEffect;
+
+/** One source sample for compileKit: a source audio file (WAV/MP3/FLAC, decoded natively), a 3-char slot
+ *  name, an optional source-frame window, and an effect chain. */
+export interface KitSampleSpec {
+  path: string;
+  name: string;
+  offset?: number;
+  length?: number;
+  effects: KitEffect[];
+}
+/** A whole-kit compile: a 6-char kit name + up to 15 samples. `rotate` = the LSDj 9.2.0+ frame rotation,
+ *  set from the target ROM's version (omitted → true / 9.2.0+). */
+export interface KitCompileSpec {
+  name: string;
+  samples: KitSampleSpec[];
+  rotate?: boolean;
+}
+
+/** One source sample for the risa DMC compiler: a kit sample plus the PAL DPCM playback-rate index (0..15,
+ *  default 12), a loop flag, and whether to peak-normalize into the 7-bit domain (default true). */
+export interface RisaDmcSampleSpec extends KitSampleSpec {
+  rate?: number;
+  loop?: boolean;
+  normalize?: boolean;
+}
+/** A whole risa DMC kit compile: a 6-char kit name + up to 16 samples. */
+export interface RisaKitCompileSpec {
+  name: string;
+  samples: RisaDmcSampleSpec[];
+}
+
 export interface AudioDriver {
   /** Enqueue a button transition (button = GameboyButton value; down = press/release). A
    *  press then release around a short render is a tap. */
@@ -64,6 +111,14 @@ export interface AudioDriver {
    *  buffer per stream in its `channelLayout()` (Game Boy = 4: Pulse 1, Pulse 2, Wave, Noise). Empty
    *  unless the project holds exactly ONE system (the split router isolates a single core's channels). */
   renderAudioPerChannel(id: number, ms: number): Float32Array[];
+  /** Compile an LSDJ sample kit from source audio files into a 16 KB kit bank (resample to the GB rate +
+   *  effects + 4-bit pack, per-sample in parallel natively). A per-sample load failure leaves that slot
+   *  empty rather than failing the whole kit — the caller validates by reading the bank back. */
+  compileKit(spec: KitCompileSpec): Uint8Array;
+  /** Compile a risa NES-DPCM sample kit into an 8 KB kit bank (resample to the PAL DPCM rate + effects +
+   *  1-bit ±2 delta pack, per-sample in parallel natively). Same behaviour as compileKit — an unloadable
+   *  slot is left empty; the caller validates by reading the bank back. */
+  compileDmc(spec: RisaKitCompileSpec): Uint8Array;
   /** The engine's audio sample rate (Hz) — thread into encodeWav so WAV headers are labelled correctly. */
   sampleRate(): number;
   /** Set the host sample rate (Hz). Baked into cores at construct, so it only takes effect BEFORE any
@@ -146,6 +201,8 @@ export function createAudioDriver(): AudioDriver {
       // One interleaved-f32 buffer per channel stream; slice() 4-byte-aligns each.
       return bufs.map((b) => new Float32Array(b.slice().buffer));
     },
+    compileKit: (spec) => call("compileKit", spec) as Uint8Array, // the 16 KB kit bank, straight through
+    compileDmc: (spec) => call("compileDmc", spec) as Uint8Array, // the 8 KB risa DMC kit bank
     sampleRate: () => call("sampleRate") as number,
     setSampleRate: (sampleRate) => call("setSampleRate", sampleRate) as boolean,
     setTransport: (running) => call("setTransport", running) as boolean,

@@ -23,9 +23,12 @@ test("trace logger captures the instruction stream + the step trio advances a re
   // Enable the trace logger early, accumulate rows across the render, then read + single-step at the end.
   let enabled = false;
   let rows: TraceLine[] = [];
-  let into: BreakInfo | null = null;
-  let over: BreakInfo | null = null;
-  let out: BreakInfo | null = null;
+  // `null as BreakInfo | null` (not `: BreakInfo | null = null`) so the type stays the union at the reads
+  // below — these are assigned inside the Timeline callbacks, which TS can't see running, and a plain
+  // `= null` would narrow the reads to `null` (then `!= null` → `never`).
+  let into = null as BreakInfo | null;
+  let over = null as BreakInfo | null;
+  let out = null as BreakInfo | null;
 
   const tl = new Timeline()
     .at(10, (sess) => (enabled = sess.backend.setTrace(id, true)))

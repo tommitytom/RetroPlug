@@ -62,8 +62,8 @@ bool Engine::setSystems(const std::vector<std::uint8_t>& json) {
     return dsp_.setSystems(json);
 }
 
-void Engine::stageMidi(std::vector<std::uint8_t> bytes) {
-    pendingMidi_.push_back({ 0, std::move(bytes) });
+void Engine::stageMidi(std::uint32_t frame, std::vector<std::uint8_t> bytes) {
+    pendingMidi_.push_back({ frame, std::move(bytes) });
 }
 
 void Engine::setBpm(double bpm) { bpm_ = bpm; }
@@ -84,7 +84,7 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         pendingSerialOut_.clear();  // last block's serial-out consumed by the kernel this block
         // serial-in sink → the addressed system's serial FIFO.
         for (const auto& sv : dsp_.serialIn_)
-            if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.byte);
+            if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.frame, sv.byte);
         // core-MIDI sink → the addressed core's onMidi (e.g. the NES N8 FIFO). One ::MidiEvent per entry;
         // an oversized message (> the inline data[4]) is skipped, matching the DAW-drain guard.
         for (const auto& cm : dsp_.coreMidi_) {
@@ -96,6 +96,13 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
                 for (std::size_t j = 0; j < cm.data.size(); ++j) ev.data[j] = cm.data[j];
                 t->onMidi(&ev, 1);
             }
+        }
+        // raw core-bytes sink → the addressed core's byte device (e.g. the NES N8 FIFO). Un-framed: no
+        // MidiEvent, so NO length cap — a byte protocol (a tracker's host sync) can exceed 4 bytes.
+        for (const auto& cb : dsp_.coreBytes_) {
+            if (cb.data.empty()) continue;
+            if (SystemBase* t = project_.findSystem(cb.system))
+                t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size());
         }
         // role-generated button presses → the addressed core.
         for (const auto& bo : dsp_.buttonOut_)
@@ -193,6 +200,10 @@ std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
     return registry_.readSram(id);    // SRAM sliced from the published savestate, not a live read
 }
 
+std::optional<std::vector<std::uint8_t>> Engine::readRam(SystemId id) {
+    return registry_.readRam(id);     // the owned per-block WRAM copy — never walks Project / the live core
+}
+
 bool Engine::screenshot(SystemId id, const std::string& path) {
     // Encode the owned registry frame (a published copy) — no findSystem walk, no live-core read, so
     // it's safe while the audio thread plays. false until the core has rendered its first frame.
@@ -268,6 +279,9 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
                 break;
             case ConfigField::NesRemoveSpriteLimit:
                 mn->setRemoveSpriteLimit(value != 0.0);            // live — the PPU re-reads it per scanline
+                break;
+            case ConfigField::NesApuLatencyMs:
+                mn->setApuLatencyMs(value);                        // live — re-thresholds the APU flush window
                 break;
             default:
                 break;

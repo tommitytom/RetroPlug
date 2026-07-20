@@ -4,28 +4,13 @@
 //   render <rom> [--sav f] [--state f] [--out f] [--duration t] [--split mix|channels|pins]
 //                [--bpm n] [--transport] [--no-start] [--song name | --song-index n] [--list-songs]
 
-export type SplitMode = "mix" | "channels" | "pins";
+// The render request contract (RenderOpts) + SplitMode live in the shared render library; parseRenderArgs
+// is the CLI-only front that produces a RenderOpts from argv. Re-exported so existing importers/tests keep
+// resolving them from here.
+import { type RenderOpts, type SplitMode } from "../src/render/types";
+export type { RenderOpts, SplitMode };
 
 const SPLIT_MODES: readonly SplitMode[] = ["mix", "channels", "pins"];
-
-export interface RenderOpts {
-  rom: string;
-  sav?: string;
-  state?: string;
-  out?: string;
-  durationMs?: number; // explicit fixed duration (ms); undefined = auto (LSDj: render to the HFF stop) / 8000 default
-  maxDurationMs: number; // safety cap for LSDj length auto-detect (no-HFF fallback), ms
-  sampleRate?: number; // host render rate (Hz); undefined = engine default (44100). Must be set pre-build.
-  split: SplitMode;
-  bpm?: number;
-  transport: boolean;
-  start: boolean; // auto-start playback on boot (press Start); default true
-  // LSDj song selection (GB only). A sav holds up to 32 named projects but only plays its working song;
-  // these promote a chosen project to the working song before boot. song / songIndex are exclusive.
-  song?: string; // by name (case-insensitive, ≤8 chars)
-  songIndex?: number; // by slot 0–31
-  listSongs: boolean; // print the sav's song names and exit
-}
 
 /** One-line summary for the top-level command index (CliTool.summary). */
 export const RENDER_SUMMARY = "Render a ROM/SAV to a WAV file (full mix or per-channel stems)";
@@ -63,9 +48,9 @@ Options:
   --bpm <n>              Host tempo (BPM) for tempo-synced playback. Use with --transport.
   --transport            Run the host transport (play), so tempo-synced ROMs advance. Default: off.
   --no-start             Do NOT press Start on boot — render the raw boot/menu audio.
-  --song <name>          LSDj: promote a saved song to the working song by name (≤8 chars, case-insensitive).
-  --song-index <0-31>    LSDj: promote a saved song by its slot number instead of by name.
-  --list-songs           LSDj: print the .sav's saved song names and exit (renders nothing).
+  --song <name>          LSDj / risa: promote a saved song to the working song by name (case-insensitive).
+  --song-index <0-31>    LSDj / risa: promote a saved song by its slot number instead of by name.
+  --list-songs           LSDj / risa: print the sav's saved song names and exit (renders nothing).
   -h, --help             Show this help and exit.
 
 Examples:

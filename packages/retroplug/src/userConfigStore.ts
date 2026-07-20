@@ -5,7 +5,18 @@
 // input (matching native UserConfig::setDefaultZoom / setSramMirror).
 
 import type { HostBackend } from "./backend";
-import { DEFAULT_USER_CONFIG, SRAM_AUTO_SAVES, type SramAutoSave, type UserConfig } from "./userConfig";
+import {
+  DEFAULT_USER_CONFIG,
+  RENDER_MAX_DURATION_MAX_SEC,
+  RENDER_MAX_DURATION_MIN_SEC,
+  RENDER_SAMPLE_RATES,
+  RENDER_SPLITS,
+  SRAM_AUTO_SAVES,
+  type RenderSettings,
+  type SramAutoSave,
+  type UserConfig,
+} from "./userConfig";
+import type { SplitMode } from "./render";
 import { parseUserConfig, serializeUserConfig } from "./userConfigSerialization";
 
 const CONFIG_FILE = "config.json";
@@ -55,6 +66,9 @@ export class UserConfigStore {
   sramAutoSave(): SramAutoSave {
     return this.current.sramAutoSave;
   }
+  render(): RenderSettings {
+    return { ...this.current.render };
+  }
 
   /** Set the active keyboard binding profile (a plain name; profile-name format
    *  validation lands with the profiles increment). Returns whether it changed. */
@@ -78,6 +92,30 @@ export class UserConfigStore {
   setSramAutoSave(mode: SramAutoSave): boolean {
     if (!SRAM_AUTO_SAVES.includes(mode)) return false;
     return this.commit({ ...this.current, sramAutoSave: mode });
+  }
+
+  // --- render-menu selections (System > Render) ---
+
+  /** Set the render split mode. Rejects an unknown mode. */
+  setRenderSplit(split: SplitMode): boolean {
+    if (!RENDER_SPLITS.includes(split)) return false;
+    return this.commitRender({ split });
+  }
+
+  /** Set the render output sample rate. Rejects a rate not in RENDER_SAMPLE_RATES. */
+  setRenderSampleRate(sampleRate: number): boolean {
+    if (!RENDER_SAMPLE_RATES.includes(sampleRate as never)) return false;
+    return this.commitRender({ sampleRate });
+  }
+
+  /** Set the max render duration (seconds), clamped to [MIN, MAX]. Always applies the clamped value. */
+  setRenderMaxDurationSec(sec: number): boolean {
+    const clamped = Math.max(RENDER_MAX_DURATION_MIN_SEC, Math.min(RENDER_MAX_DURATION_MAX_SEC, Math.round(sec)));
+    return this.commitRender({ maxDurationSec: clamped });
+  }
+
+  private commitRender(patch: Partial<RenderSettings>): boolean {
+    return this.commit({ ...this.current, render: { ...this.current.render, ...patch } });
   }
 
   private filePath(): string {

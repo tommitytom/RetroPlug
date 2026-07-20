@@ -15,14 +15,14 @@ class NesSoundMixer;
 class MesenAudioDevice;
 class MesenVideoDevice;
 class MesenNesDebugSession;
-class NesN8MidiRole;
+class NesN8FifoRole;
 
 // NES system, via the Mesen backend. Mirrors SameBoySystem's shape: per-block
 // onProcess drives the emulator until enough samples are queued in
 // MesenAudioDevice, then drains them into the planar L/R outs with smoothed
 // gain. Native NES resolution: 256x240. Audio runs at the host sample rate
 // (Mesen's SoundMixer resamples internally). Input arrives as NesButton; host
-// MIDI is forwarded to the N8 FIFO (NesN8MidiRole).
+// MIDI is forwarded to the N8 FIFO (NesN8FifoRole).
 class MesenNesSystem final : public SystemBase {
 public:
     MesenNesSystem(SystemId id,
@@ -53,6 +53,7 @@ public:
     // The role pushes bytes into the FIFO RX queue so the ROM's polling loop
     // sees them at the next read of $40F0.
     void onMidi(const ::MidiEvent* events, std::uint32_t count) override;
+    void pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size) override;
 
     // Audio-thread: queue a NES button transition. The byte is reinterpreted
     // as NesButton (Right/Left/Up/Down/A/B/Select/Start, positions 0..7).
@@ -108,6 +109,11 @@ public:
     // removeSpriteLimit is a live PPU toggle; region reconfigures timing so it forces a reset.
     void setRemoveSpriteLimit(bool on);
     void setRegion(std::uint32_t region);
+    // APU flush window as a latency (ms) → NesSoundMixer::SetLatencyMs. Live, no reset (scalar re-threshold).
+    void setApuLatencyMs(double ms);
+    // The live APU flush window in CPU cycles (the mixer's conversion of apuLatencyMs against the region
+    // clock). 0 before onActivate. Exposed for tests / introspection.
+    std::uint32_t apuFlushCycleLength() const;
 
     // NES native resolution (256x240). Public so callers can construct a
     // FrameBufferTriple-sized read buffer without hard-coding the constant.
@@ -120,7 +126,7 @@ private:
     std::unique_ptr<Emulator>         emu_;
     std::shared_ptr<MesenAudioDevice> audioDevice_;
     std::shared_ptr<MesenVideoDevice> videoDevice_;
-    std::unique_ptr<NesN8MidiRole>    n8Role_;
+    std::unique_ptr<NesN8FifoRole>    n8Role_;
     std::unique_ptr<MesenNesDebugSession> debugSession_;
     FrameBufferTriple                 frames_{kPixelWidth, kPixelHeight};
     bool                              activated_      = false;
@@ -128,9 +134,10 @@ private:
     ExpSmoother                       gainSmoother_;
     std::vector<float>                stereoAccum_;   // sized lazily to 2*blockSize
 
-    // Per-channel export — spec/10 §5 (pins) + §5b (individual mono). nesMixer_ is owned by emu_'s
-    // NesConsole; valid only while activated + channelCapture_. chanAccum_ holds the per-stream mono drain
-    // each block: 3 pins (mode 1), 4 with the mix-reference (mode 2), or 5 core channels (mode 3).
+    // nesMixer_ is owned by emu_'s NesConsole and borrowed for the whole activated lifetime (nulled in
+    // onDeactivate) — used by the live APU-latency knob (all NES systems) AND per-channel capture (spec/10
+    // §5 pins / §5b individual mono). chanAccum_ holds the per-stream mono drain each block: 3 pins (mode 1),
+    // 4 with the mix-reference (mode 2), or 5 core channels (mode 3).
     static constexpr std::size_t      kMaxChannelStreams = 5;
     NesSoundMixer*                    nesMixer_ = nullptr;
     bool                              channelCapture_ = false;

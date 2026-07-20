@@ -74,12 +74,14 @@ test("the System submenu shows NES core knobs for a NES system, and the SameBoy 
   expect(findItem(gbSys, "sys-model")).toBeTruthy();
   expect(findItem(gbSys, "sys-nes-region")).toBe(undefined);
   expect(findItem(gbSys, "sys-nes-spritelimit")).toBe(undefined);
+  expect(findItem(gbSys, "sys-nes-apu-latency")).toBe(undefined);
 
-  // NES: Region + Remove Sprite Limit present (defaults read through), SameBoy knobs absent.
+  // NES: Region + Remove Sprite Limit + APU Latency present (defaults read through), SameBoy knobs absent.
   be.seed("/roms/g.nes", nesRom());
   const nesSys = systemMenuFor(stores.project.systems.addSystem("/roms/g.nes")!);
   expect(findItem(nesSys, "sys-nes-region")?.label).toBe("Region: Auto");
   expect(findItem(nesSys, "sys-nes-spritelimit")?.label).toBe("Remove Sprite Limit: Off");
+  expect(findItem(nesSys, "sys-nes-apu-latency")?.label).toBe("APU Latency: 1.4 ms");
   expect(findItem(nesSys, "sys-model")).toBe(undefined);
 });
 

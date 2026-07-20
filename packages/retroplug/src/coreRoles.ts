@@ -6,7 +6,7 @@
 // mirror the native enums (SameBoyConfig.hpp: model 0..13, highpass 0..2, linkGroupId 0..255).
 
 import type { RoleRegistry } from "./systemRoles";
-import { z, clampedInt, boolField, enumField } from "./configSchema";
+import { z, clampedInt, clampedNumber, boolField, enumField } from "./configSchema";
 import { MODEL_VALUES, HIGHPASS_VALUES, REGION_VALUES, CHANNEL_EXPORT_VALUES } from "./settingsEnums";
 
 /** Register the built-in core-config system roles into `registry`. */
@@ -34,6 +34,9 @@ export function registerCoreRoles(registry: RoleRegistry): void {
     schema: z.object({
       region: enumField(REGION_VALUES, "auto"), // ConsoleRegion: auto / ntsc / pal / dendy / ntscJapan
       removeSpriteLimit: boolField(false),
+      // APU flush window as a latency in ms (the worst-case NES audio latency the resampler batching adds).
+      // Live knob; native converts ms→CPU cycles per region clock. ~1.4ms ≈ the historical 2500-cycle window.
+      apuLatencyMs: clampedNumber(0.25, 6.0, 1.4),
       // CLI-only per-channel export mode (spec/10 §5/§5b): mix, stereoModPins (Pulse | TND + Expansion),
       // individualMono (5 core channels). Set at construct (via adopt) — the settings menu doesn't surface
       // it. Additive. (pinsPlusRef = pins + a mix reference, native/test-only.)

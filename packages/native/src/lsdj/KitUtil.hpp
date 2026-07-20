@@ -57,6 +57,7 @@ struct SampleInput {
     std::size_t             offset     = 0;   // skip the first N frames
     std::size_t             length     = 0;   // 0 = use everything from offset
     std::vector<LsdjEffect> effects;          // gain, filter, dither
+    bool                    rotate     = true; // LSDJ 9.2.0+ frame rotation; false for a pre-9.2.0 target
 };
 
 // Resample + apply effects + 4-bit nibble-pack one sample. Output is the

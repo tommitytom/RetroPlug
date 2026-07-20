@@ -171,6 +171,13 @@ export interface Backend {
   /** The battery-backed SRAM region for system `id`, or `null`. */
   readSram(id: number): Uint8Array | null;
 
+  /** The system's work RAM (WRAM) for `id`, or `null` when the id is gone / the core has no RAM region.
+   *  Unlike `readState`/`readSram`, this is republished from the live core EVERY block, so it tracks
+   *  per-frame runtime state (e.g. the LSDj playback position an overlay reads). Read from the race-free
+   *  snapshot triple-buffer, so it is safe to poll while the core plays — and it is on the control-plane
+   *  (emulator) facet, unlike the live-core `readMemory` below. */
+  readRam(id: number): Uint8Array | null;
+
   /** The system's latest video frame for display, or `null` when the id is gone / has no framebuffer.
    *  `published` is false (and `pixels` empty) until the core has rendered a frame. Read from the
    *  race-free framebuffer triple-buffer, so it is safe to poll while the core plays. */
@@ -185,6 +192,13 @@ export interface Backend {
    *  APU debug target (SameBoy/GBA). Gate "is a note sounding" on `period > 0 && envelopeVolume > 0`,
    *  not the `enabled` ($4015) bit. */
   getApuState(id: number): ApuState;
+
+  /** Decoded per-channel state of the cart's expansion audio chip (VRC6/VRC7/Sunsoft-5B/Namco-163) —
+   *  the analogue of getApuState for mapper sound. `chip` is "none" when the cart has no expansion
+   *  audio (or the id is gone / core has no NES debug target). `volume` is normalized 0 (silent) .. 15
+   *  (loudest) across chips, so gate "audible" on `volume > 0` (plus `constantOutput === false` for
+   *  VRC6 pulses). */
+  getExpansionAudioState(id: number): ExpansionAudioState;
 
   /** The NES PPU's live timing + register state (scanline/cycle/frameCount + the $2000/$2001/$2002
    *  register bytes + scroll). Zeroed when the id is gone or the core has no PPU debug target
@@ -281,6 +295,14 @@ export interface Backend {
   /** Inflate a PKZIP archive back to its entries, or `null` when it isn't a valid zip. */
   unzip(bytes: Uint8Array): ZipEntry[] | null;
 
+  /** Encode a raw RGBA8888 image (`width*height*4` bytes, row-major) to PNG bytes, or `null` on failure.
+   *  Backed by native lodepng; used by the LSDj font import/export (src/lsdj/rom) — the tile↔pixel
+   *  mapping stays in TS, this is just the codec so it works from the plugin as well as the CLI. */
+  pngEncode(width: number, height: number, rgba: Uint8Array): Uint8Array | null;
+
+  /** Decode PNG bytes to a raw RGBA8888 image, or `null` when it isn't a decodable PNG. */
+  pngDecode(bytes: Uint8Array): PngImageData | null;
+
   // --- LSDj sav codec -----------------------------------------------------
 
   /** Encode an LSDj `.sav` image from a JSON `Sav` model (lenient — unset cells default). Backed by
@@ -302,20 +324,20 @@ export type HostBackend = Pick<
   Backend,
   | "readFile" | "writeFile" | "writeFileAtomic" | "appendFile" | "writeFileAt" | "fileExists" | "rename" | "listDir" | "deleteFile"
   | "drainChangedPaths" | "setWatchedRoms" | "canonicalize" | "readFilePrefix" | "configDir" | "version"
-  | "zip" | "unzip" | "savFromJson" | "openFileBrowser"
+  | "zip" | "unzip" | "pngEncode" | "pngDecode" | "savFromJson" | "openFileBrowser"
 >;
 
 /** Emulator lifecycle / live config / input / snapshot reads — bound by the plugin, UI, CLI, test host. */
 export type EmulatorBackend = Pick<
   Backend,
   | "constructSystem" | "removeSystem" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
-  | "setAudioRouting" | "pressButton" | "readState" | "readSram" | "getFrame"
+  | "setAudioRouting" | "pressButton" | "readState" | "readSram" | "readRam" | "getFrame"
 >;
 
 /** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */
 export type DebugBackend = Pick<
   Backend,
-  | "getApuState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
+  | "getApuState" | "getExpansionAudioState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
   | "stepInstruction" | "drainEvents" | "loadLabels" | "setCpuRegister" | "runUntilPc"
   | "setBreakpoints" | "runUntilBreak" | "setTrace" | "readTrace" | "stepInto" | "stepOver" | "stepOut"
   | "beginProfile" | "readProfile" | "disassemble" | "getCallStack"
@@ -331,6 +353,14 @@ export type ControlPlaneBackend = HostBackend & EmulatorBackend;
 export interface ZipEntry {
   name: string;
   bytes: Uint8Array;
+}
+
+/** A raw RGBA8888 image (`rgba` is `width*height*4` bytes, row-major, top-to-bottom) — the output of
+ *  `pngDecode` and the shape the LSDj font layer maps to/from tiles. */
+export interface PngImageData {
+  width: number;
+  height: number;
+  rgba: Uint8Array;
 }
 
 /** One system's video frame for display: raw XRGB8888 pixels (`width*height*4` bytes — the LVGL
@@ -406,6 +436,28 @@ export interface ApuState {
   triangle: ApuTriangleState;
   noise: ApuNoiseState;
   dmc: ApuDmcState;
+}
+
+/** One expansion-audio voice (`getExpansionAudioState`). Superset across chips: a field is populated
+ *  when meaningful and 0/false otherwise. `volume` is normalized 0 (silent) .. 15 (loudest) across all
+ *  chips; `period` is the chip-native pitch register. `constantOutput` (VRC6 "ignore duty" → DC/no
+ *  tone), `instrument` (VRC7 patch), and `volume` are the diagnostic fields. */
+export interface ExpansionAudioChannel {
+  enabled: boolean;
+  volume: number;          // 0 = silent .. 15 = loudest (uniform across chips)
+  outputLevel: number;     // live decoded output magnitude; 0 = silent right now
+  period: number;          // chip-native pitch (VRC6/5B timer, N163 18-bit, VRC7 fnum)
+  block: number;           // VRC7 octave 0-7 (0 for others)
+  duty: number;            // VRC6 pulse duty 0-7 (0 for others)
+  constantOutput: boolean; // VRC6 pulse "ignore duty" mode → DC, no tone
+  instrument: number;      // VRC7 patch 0=custom, 1-15 ROM (0 for others)
+}
+
+/** The decoded NES expansion-audio snapshot (`getExpansionAudioState`). `chip` is the active chip
+ *  ("none" when the cart has no expansion sound); `channels` are its voices in chip order. */
+export interface ExpansionAudioState {
+  chip: "none" | "vrc6" | "vrc7" | "s5b" | "n163" | string;
+  channels: ExpansionAudioChannel[];
 }
 
 /** The NES PPU state snapshot (`getPpuState`) — verbatim mirror of the native `rp::PpuState`.
@@ -552,6 +604,11 @@ export interface ConstructSpec {
   /** When set, swap this existing SystemId in place (load / replace); otherwise the
    *  new system is appended. */
   replaceId?: number;
+  /** Effective ROM bytes to load INSTEAD of slurping `romPath` — a load-time role's patched image (e.g.
+   *  LSDj asset overrides applied non-destructively). `romPath` still travels (for the ROM watcher and
+   *  `.sav` resolution); only the loaded bytes differ. Honoured by both SameBoy (GB) and Mesen (NES/GBA).
+   *  Rides as a Uint8Array (rfl::Bytestring). */
+  romBytes?: Uint8Array;
   /** Seed SRAM bytes (a zip-import blob, a reload's carried battery, or a load-time role's
    *  synthesized sav). When set, native seeds from these instead of reading `savPath`; `savPath`
    *  remains the auto-save target. Rides the RPC bridge as a Uint8Array (rfl::Bytestring). */

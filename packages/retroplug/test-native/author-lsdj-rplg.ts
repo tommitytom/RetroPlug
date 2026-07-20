@@ -14,7 +14,7 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SavInput, type SongSettings } from "../src/lsdjSav";
 import type { LsdjSyncMode } from "../src/settingsEnums";
 
 declare const __SCENARIO__: string;
@@ -24,7 +24,7 @@ declare const __RPLG_OUT__: string;
 // A hard-panned pulse note per scenario. midi-* wait for the host's MIDI clock (SYNC=Midi, role MidiSync);
 // arduinoboy waits for note 24 to arm play (SYNC=Lsdj, role MidiSyncArduinoboy). The drift song is
 // percussive with one note per beat so every beat is a distinct transient the drift analyzer can pair.
-const SONGS: Record<string, { syncMode: string; mode: LsdjSyncMode; autoStart: boolean; song: unknown }> = {
+const SONGS: Record<string, { syncMode: SongSettings["syncMode"]; mode: LsdjSyncMode; autoStart: boolean; song: NonNullable<SavInput["workingSong"]> }> = {
   "midi-metro": {
     syncMode: "Midi", mode: "midiSync", autoStart: true,
     song: {
@@ -59,7 +59,7 @@ const SONGS: Record<string, { syncMode: string; mode: LsdjSyncMode; autoStart: b
 const scenario = SONGS[__SCENARIO__];
 if (!scenario) throw new Error(`unknown scenario: ${__SCENARIO__}`);
 
-const sav = savFromJson(JSON.stringify({ workingSong: { formatVersion: 22, settings: { syncMode: scenario.syncMode }, ...(scenario.song as object) } }));
+const sav = savFrom({ workingSong: { settings: { syncMode: scenario.syncMode }, ...scenario.song } });
 
 const be = createRealBackend();
 const audio = createAudioDriver();
@@ -77,4 +77,4 @@ audio.renderAudio(6000); // boot to the song screen from the sav (the savestate 
 
 const ok = project.export(__RPLG_OUT__);
 console.log(`[author-lsdj-rplg] ${__SCENARIO__}: ${ok ? "wrote" : "FAILED"} ${__RPLG_OUT__}`);
-(globalThis as { tjs: { exit(code: number): void } }).tjs.exit(ok ? 0 : 1);
+(globalThis as { tjs?: { exit(code: number): void } }).tjs?.exit(ok ? 0 : 1);

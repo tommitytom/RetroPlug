@@ -11,7 +11,7 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "../src/lsdjSav";
 import { LsdjSyncMode } from "../src/settingsEnums";
 
 declare const __RESOURCES_DIR__: string;
@@ -26,7 +26,7 @@ const lsdjSync = (id: number, mode: LsdjSyncMode) => ({
 });
 
 // SYNC=MIDI + a C note on a hard-panned pulse (the proven flagship cell set).
-const SYNC_MIDI_SONG = JSON.stringify({
+const SYNC_MIDI_SONG: SavInput = {
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "Midi" },
@@ -35,7 +35,7 @@ const SYNC_MIDI_SONG = JSON.stringify({
     phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 }, vibrato: { direction: "Up" }, sweep: 127 }],
   },
-});
+};
 
 test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via the command queue", () => {
   const be = createRealBackend();
@@ -48,7 +48,7 @@ test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via t
   const audio = createAudioDriver();
 
   // --- setup (single-threaded, before the audio thread) ---
-  const sav = savFromJson(SYNC_MIDI_SONG);
+  const sav = savFrom(SYNC_MIDI_SONG);
   const id = 1; // TS owns the id counter; this direct-backend test picks its own (fresh host per file)
   expect(be.constructSystem({
     romPath: LSDJ,

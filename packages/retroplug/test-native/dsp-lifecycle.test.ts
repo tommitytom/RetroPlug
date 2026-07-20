@@ -9,11 +9,12 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
+import type { ConstructSpec } from "../src/backend";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
 // An embedded mGB (no ROM file) — the simplest sounding Game Boy the host can build on demand.
-const MGB = { romPath: "", embeddedRom: "mgb", savPath: null, statePath: null };
+const MGB: ConstructSpec = { romPath: "", platform: "gb", core: "sameboy", embeddedRom: "mgb", savPath: null, statePath: null };
 const NOTE = [0x90, 60, 100]; // C note-on
 
 // The kernel structure that lets host MIDI reach each mGB: midi-routing (SendToAll) → per-system mgb.

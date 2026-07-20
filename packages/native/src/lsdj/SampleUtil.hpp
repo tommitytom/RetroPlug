@@ -76,8 +76,11 @@ inline void convertNibblesToF32WithRotation(const std::vector<std::uint8_t>& inp
 // position (i+1) % 32 inside its frame; values are inverted (stored = 0xF -
 // amp). Both quirks are needed for byte-exact compatibility with kits built
 // by the LSDJ project's own kit tool.
+// `rotate` applies the LSDJ 9.2.0+ rightward frame rotation; pass false for a pre-9.2.0 target ROM (whose
+// playback engine expects un-rotated frames), so import is byte-correct for the actual LSDj version.
 inline void convertScaledF32ToNibbles(const std::vector<float>& input,
-                                      std::vector<std::uint8_t>& output) {
+                                      std::vector<std::uint8_t>& output,
+                                      bool rotate = true) {
     const std::size_t numChunks = input.size() / SAMPLES_PER_FRAME;
     output.resize(numChunks * BYTES_PER_FRAME);
 
@@ -87,12 +90,19 @@ inline void convertScaledF32ToNibbles(const std::vector<float>& input,
     for (std::size_t chunk = 0; chunk < numChunks; ++chunk) {
         std::uint8_t samples[SAMPLES_PER_FRAME];
 
-        // Rotation: sample i goes to position (i+1)%32. Position 0 gets the
-        // last sample wrapped around, so the encoded frame is "rotated
-        // rightward by one" compared to the source.
-        samples[0] = 0xF - static_cast<std::uint8_t>(src[SAMPLES_PER_FRAME - 1]);
-        for (std::size_t i = 1; i < SAMPLES_PER_FRAME; ++i) {
-            samples[i] = 0xF - static_cast<std::uint8_t>(src[i - 1]);
+        if (rotate) {
+            // Rotation: sample i goes to position (i+1)%32. Position 0 gets the
+            // last sample wrapped around, so the encoded frame is "rotated
+            // rightward by one" compared to the source.
+            samples[0] = 0xF - static_cast<std::uint8_t>(src[SAMPLES_PER_FRAME - 1]);
+            for (std::size_t i = 1; i < SAMPLES_PER_FRAME; ++i) {
+                samples[i] = 0xF - static_cast<std::uint8_t>(src[i - 1]);
+            }
+        } else {
+            // Un-rotated (pre-9.2.0): sample i stays at position i.
+            for (std::size_t i = 0; i < SAMPLES_PER_FRAME; ++i) {
+                samples[i] = 0xF - static_cast<std::uint8_t>(src[i]);
+            }
         }
 
         for (std::size_t i = 0; i < BYTES_PER_FRAME; ++i) {

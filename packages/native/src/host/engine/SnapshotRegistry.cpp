@@ -7,9 +7,9 @@
 #include "system/SystemBase.hpp"
 #include "system/MemoryType.hpp"   // rp::MemoryType::Sram
 
-// Write [len:4 LE][payload] into a state triple's next slot and publish it. `payload`/`len` must fit
-// the triple (prefix + len <= triple size) — checked by the callers. Matches SystemBase's own layout.
-void SnapshotRegistry::writeState(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len) {
+// Write [len:4 LE][payload] into a triple's next slot and publish it. `payload`/`len` must fit the
+// triple (prefix + len <= triple size) — checked by the callers. Matches SystemBase's own layout.
+void SnapshotRegistry::writeSized(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len) {
     std::uint8_t* slot = triple.writeSlot();
     const std::uint32_t len32 = static_cast<std::uint32_t>(len);
     std::memcpy(slot, &len32, sizeof(len32));
@@ -62,7 +62,7 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
     const std::size_t cap     = sys.stateSnapshotCapacity();
     if (bootLen > 0 && cap >= bootLen && cap <= kMaxStateBytes) {
         s->state = std::make_unique<MemorySnapshotTriple>(kStateLenPrefix + cap);
-        writeState(*s->state, savestate.data(), bootLen);
+        writeSized(*s->state, savestate.data(), bootLen);
     }
 
     // SRAM has two sources. SameBoy exposes its cart RAM as a region WITHIN the savestate (same layout
@@ -84,6 +84,20 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
             std::memcpy(s->sram->writeSlot(), sram.data(), sram.size());
             s->sram->publish();
         }
+    }
+
+    // WRAM (work RAM): seed from the live core's region so a read right after construct works. Published
+    // EVERY block by publishAll (unlike the coarse savestate/SRAM) so a runtime overlay sees per-frame
+    // playback state. getMemory here is on the control thread before the handoff — safe, like
+    // saveStateBytes above. The slot carries a length prefix + max-WRAM capacity (NOT sized to the live
+    // region) so a live model switch that RESIZES the region — SameBoy DMG 8 KB ↔ CGB 32 KB — republishes
+    // into the SAME slot every block instead of freezing it: buffers are only (re)allocated here on the
+    // control thread, never on the block thread. A core without a Ram region / one over the cap → no
+    // triple → readRam stays null.
+    rp::MemoryAccessor ram = sys.getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
+    if (ram.valid() && ram.size() <= kMaxRamBytes) {
+        s->ram = std::make_unique<MemorySnapshotTriple>(kRamLenPrefix + kMaxRamBytes);
+        writeSized(*s->ram, ram.data(), ram.size());   // [len:4 LE][wram]
     }
 
     s->id.store(id, std::memory_order_release);   // publish the slot LAST — the block thread may now match it
@@ -110,6 +124,18 @@ void SnapshotRegistry::publishAll(const Project& project, std::uint32_t frames, 
             }
         }
 
+        // WRAM every block (cheap, ~KB): copy the live core's work RAM into the owned triple. The read
+        // is safe here — publishAll is the tail of processBlock on the block thread, which owns the core.
+        // This is what makes a per-frame runtime overlay (e.g. LSDj playback position) possible, vs the
+        // coarse savestate below. The slot carries a length prefix + headroom, so a live model switch that
+        // RESIZES the region (SameBoy DMG 8 KB ↔ CGB 32 KB) republishes at its NEW size instead of freezing;
+        // only a region that would overflow the capacity is skipped.
+        if (s->ram) {
+            rp::MemoryAccessor ram = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
+            if (ram.valid() && ram.size() + kRamLenPrefix <= s->ram->size())
+                writeSized(*s->ram, ram.data(), ram.size());
+        }
+
         // State + SRAM on the coarse interval — the core only republishes its savestate every ~0.5s,
         // so per-block copies would be redundant. Matches publishStateSnapshot's cadence.
         s->sampleAccum += frames;
@@ -121,7 +147,7 @@ void SnapshotRegistry::publishAll(const Project& project, std::uint32_t frames, 
             // grown Mesen savestate still fits; only a capture that would overflow it is skipped —
             // NOT the old exact-size (==) match, which froze every variable-size republish.
             if (publishScratch_.size() + kStateLenPrefix <= s->state->size())
-                writeState(*s->state, publishScratch_.data(), publishScratch_.size());
+                writeSized(*s->state, publishScratch_.data(), publishScratch_.size());
             // SameBoy SRAM slice (payload-relative offset within the fresh savestate).
             if (s->sram && !s->sramFromCore &&
                 static_cast<std::size_t>(s->sramOffset) + s->sram->size() <= publishScratch_.size()) {
@@ -181,6 +207,19 @@ std::optional<std::vector<std::uint8_t>> SnapshotRegistry::readSram(SystemId id)
     return out;
 }
 
+std::optional<std::vector<std::uint8_t>> SnapshotRegistry::readRam(SystemId id) {
+    Slot* s = find(id);
+    if (!s || !s->ram) return std::nullopt;
+    const std::size_t slotSize = s->ram->size();
+    if (ramReadScratch_.size() < slotSize) ramReadScratch_.resize(slotSize);
+    if (!s->ram->readInto(ramReadScratch_.data(), slotSize)) return std::nullopt;
+    std::uint32_t len = 0;
+    std::memcpy(&len, ramReadScratch_.data(), sizeof(len));
+    if (len == 0 || static_cast<std::size_t>(len) + kRamLenPrefix > slotSize) return std::nullopt;
+    return std::vector<std::uint8_t>(ramReadScratch_.begin() + kRamLenPrefix,
+                                     ramReadScratch_.begin() + kRamLenPrefix + len);
+}
+
 void SnapshotRegistry::release(SystemId id) {
     if (id == 0) return;
     Slot* s = find(id);
@@ -192,6 +231,7 @@ void SnapshotRegistry::release(SystemId id) {
     s->frame.reset();
     s->state.reset();
     s->sram.reset();
+    s->ram.reset();
     s->width = s->height = 0;
     s->sramOffset = 0;
     s->sramFromCore = false;

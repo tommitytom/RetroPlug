@@ -42,7 +42,10 @@ MesenNesRoleConfig MesenBackend::decodeMesenNesRoleConfig(const std::string& jso
 
 std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSpec& spec,
                                                 double sampleRate) {
-    std::vector<std::uint8_t> romBytes = slurpAll(spec.romPath);
+    // TS-supplied effective ROM (e.g. risa asset overrides applied non-destructively) takes precedence over
+    // reading romPath — mirroring SameBoyBackend. cfg.romPath below keeps the on-disk path for the watcher +
+    // .sav resolution; only the loaded bytes differ. The per-platform RomFormat gate below still sniffs it.
+    std::vector<std::uint8_t> romBytes = spec.romBytes.empty() ? slurpAll(spec.romPath) : spec.romBytes;
     if (romBytes.empty()) return nullptr;
 
     // Dispatch on the platform: one Mesen core, two systems. The RomFormat gate confirms the bytes
@@ -62,6 +65,7 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
         cfg.region = role.region;
         cfg.removeSpriteLimit = role.removeSpriteLimit;
         cfg.channelExportMode = role.channelExportMode;
+        cfg.apuLatencyMs = role.apuLatencyMs;
         return bootMesen(std::make_unique<MesenNesSystem>(id, std::move(cfg), std::move(romBytes)),
                          sampleRate);
     }

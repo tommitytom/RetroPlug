@@ -6,21 +6,20 @@
 //   retroplug-cli build/cli/analyze-lsdj-sync.js <lsdjRom> [outPrefix]
 import { runSession, hostArgs } from "../session";
 import { encodeWav } from "../wav";
-import { savFromJson } from "../../src/lsdjSav";
+import { savFrom, type SongSettings } from "../../src/lsdjSav";
 
 const START = 7; // GameboyButton::Start
 
 // row 0 → chain 00 → phrase 00, one C note on a hard-panned pulse; SYNC=LSDJ on both.
-const songSav = (sync: string) => savFromJson(JSON.stringify({
+const songSav = (sync: SongSettings["syncMode"]) => savFrom({
   workingSong: {
-    formatVersion: 22,
     settings: { syncMode: sync },
     rows: [{ chains: [0] }],
     chains: [{ phrases: [0] }],
     phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 }, vibrato: { direction: "Up" }, sweep: 127 }],
   },
-}));
+});
 
 runSession((s) => {
   const [romPath, outPrefix] = hostArgs();
@@ -29,7 +28,7 @@ runSession((s) => {
 
   // Link-cable sync is pure GB serial ferrying in the block runner — construct both cores directly,
   // link them, and drive; no DSP kernel needed.
-  const construct = (id: number, sync: string) => s.backend.constructSystem({
+  const construct = (id: number, sync: SongSettings["syncMode"]) => s.backend.constructSystem({
     romPath, platform: "gb", core: "sameboy", embeddedRom: "",
     savPath: null, statePath: null, sramBytes: songSav(sync),
   }, id);

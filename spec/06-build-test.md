@@ -61,6 +61,15 @@ The TS runners live in `packages/retroplug/scripts/`; every runner discovers
 a nonzero exit on failure. Slugs accept slash or dash form and a directory prefix runs everything
 under it (e.g. `pnpm test paths` or `paths-rebase`).
 
+Runners execute their per-file (and, for `test:plugin`, per-binary) work in a **bounded parallel
+pool** — each unit is an isolated child process (its own `mkdtemp` config dir; UI runs an in-process
+software display), so concurrency is safe and needs no coordination. Concurrency defaults to **half
+the logical threads**; override with `--jobs N` / `-j N` on the runner or the `TEST_JOBS` env, and
+`TEST_JOBS=1` restores serial one-at-a-time output. Output is buffered per child and flushed as a
+labelled `# <slug>` block on completion (rather than live-interleaved). The shared pool/spawn helper
+is [scripts/lib/testPool.mjs](../packages/retroplug/scripts/lib/testPool.mjs). The `reaper:*` tiers
+stay serial — they share a single unnamed jackd server and a per-family Reaper config dir.
+
 | Tier | Backend under test | Command | Runner | Test dir |
 |---|---|---|---|---|
 | **mock TS** | [`testing/mockBackend.ts`](../packages/retroplug/testing/mockBackend.ts) (in-memory, no native, no emulator) | `pnpm test` | [run-tests.mjs](../packages/retroplug/scripts/run-tests.mjs) on the `tjs` binary | `test/` |
@@ -93,9 +102,25 @@ Root [package.json](../package.json). Each builds its CMake target(s) first, the
 | `validate` | `-clap` + `-vst3` | `clap-validator` + `pluginval` against the built binaries via the shared [validate-plugins.sh](../tools/validate-plugins.sh) ([:22](../package.json#L22)). |
 | `reaper:mgb-smoke-author` | `-vst3` | Authors + bakes the `.rplg` fixture for the Reaper render. |
 | `reaper:mgb-smoke` | `-vst3` | Renders [mgb_smoke.rpp](../examples/reaper/mgb_smoke.rpp) through real Reaper — end-to-end DAW proof. |
+| `reaper:all` | `-vst3` | Builds + authors once, then runs the **whole** Reaper leg — all 6 audio renders + 3 editor checks — **concurrently**, with a PASS/FAIL summary ([run-reaper-suite.sh](../tools/run-reaper-suite.sh)). |
 
 `pnpm test` runs the mock-backend TS suite; the native, UI, plugin, and Reaper tiers are invoked
 explicitly by their own scripts.
+
+### Running the Reaper leg in parallel
+
+Each Reaper check boots its own headless stack (Xvfb + openbox + dummy JACK + isolated Reaper
+config + the built VST3). Individually those are the `reaper:*` scripts; to run the entire leg at
+once, `pnpm reaper:all` fans all nine out concurrently. The shared bring-up/tear-down lives in one
+sourced helper, [tools/reaper-env.sh](../tools/reaper-env.sh), which keys every otherwise-shared
+resource off `RP_JOB_TAG` — a **uniquely named JACK server** (`jackd -n` + `JACK_DEFAULT_SERVER`,
+the thing that actually lets two Reapers coexist), a per-tag config dir, a `-displayfd`-allocated
+Xvfb display, and per-tag logs (under `build/reaper-cfg-<tag>/logs/`). A bare `reaper:*` run
+defaults the tag to the scenario, so single runs are unchanged. Offline render is sample-accurate
+and wall-clock-independent, so parallel scheduling never changes a rendered sample (the WAV's PCM
+data is byte-identical run-to-run; only Reaper's BWF header timestamp differs). Cap concurrency with
+`RP_SUITE_JOBS` (default 8); skip the rebuild + fixture regen with `RP_SUITE_NO_BUILD=1`. Not in CI
+— it needs a full DAW + X stack.
 
 ## The dpf.js seam
 

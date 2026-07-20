@@ -27,8 +27,9 @@ export interface Compressed {
 
 /**
  * Decompress one project's song from the block area (kBlockCount*kBlockSize
- * bytes), starting at 0-based `startBlock`, following jumps. Returns the
- * 0x8000-byte song. Throws if malformed / wrong size.
+ * bytes), starting at 0-based `startBlock`, FOLLOWING block jumps (the in-sav
+ * archive, where a project's blocks are scattered and the jump byte is the
+ * absolute next block). Returns the 0x8000-byte song. Throws if malformed.
  */
 export function decompressProject(blockArea: Uint8Array, startBlock: number): Uint8Array {
   const out = new Uint8Array(kSongBytes);
@@ -83,6 +84,62 @@ export function decompressProject(blockArea: Uint8Array, startBlock: number): Ui
 
   if (o !== kSongBytes) throw new Error("decompressed song is not 0x8000 bytes");
   return out;
+}
+
+/**
+ * Decompress a STANDALONE song stream (a `.lsdsng`/`.lsdprj` body) — blocks are
+ * laid out SEQUENTIALLY in file order, so a block-switch (`E0 XX`) just means
+ * "continue to the next file block" and the `XX` hint is ignored (lsdpatch's
+ * reader overwrites it). Returns the 0x8000-byte song plus `blocksUsed` (where
+ * any trailing data, e.g. a `.lsdprj`'s kit banks, begins). Throws if malformed.
+ */
+export function decompressSongStream(body: Uint8Array): { song: Uint8Array; blocksUsed: number } {
+  const out = new Uint8Array(kSongBytes);
+  let o = 0;
+  const push = (v: number): void => {
+    if (o >= kSongBytes) throw new Error("decompress overflowed 0x8000 bytes");
+    out[o++] = v & 0xff;
+  };
+
+  let block = 0;
+  for (;;) {
+    let pos = block * kBlockSize;
+    if (pos >= body.length) throw new Error("song stream ran out of blocks");
+    const rd = (): number => {
+      if (pos >= body.length) throw new Error("song stream read past end");
+      return body[pos++];
+    };
+    let step = 0; // 0 = keep going, 1 = next block, 2 = EOF
+    while (step === 0) {
+      const byte = rd();
+      if (byte === RLE) {
+        const b = rd();
+        if (b === RLE) push(RLE);
+        else {
+          const c = rd();
+          for (let k = 0; k < c; k++) push(b);
+        }
+      } else if (byte === SA) {
+        const a = rd();
+        if (a === SA) push(SA);
+        else if (a === DEFAULT_WAVE_BYTE) {
+          const c = rd();
+          for (let k = 0; k < c; k++) for (let j = 0; j < 16; j++) push(DEFAULT_WAVE[j]);
+        } else if (a === DEFAULT_INSTR_BYTE) {
+          const c = rd();
+          for (let k = 0; k < c; k++) for (let j = 0; j < 16; j++) push(DEFAULT_INSTRUMENT[j]);
+        } else if (a === kEofBlock) step = 2;
+        else step = 1; // block switch — advance sequentially, ignore the hint byte
+      } else {
+        push(byte);
+      }
+    }
+    if (step === 2) break;
+    block++;
+  }
+
+  if (o !== kSongBytes) throw new Error("decompressed song is not 0x8000 bytes");
+  return { song: out, blocksUsed: block + 1 };
 }
 
 /**

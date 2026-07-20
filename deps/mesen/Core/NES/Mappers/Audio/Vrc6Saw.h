@@ -76,4 +76,9 @@ public:
 			return _accumulator >> 3;
 		}
 	}
+
+	// Decoded register state (for the host's getExpansionAudioState readout).
+	bool IsEnabled() { return _enabled; }
+	uint8_t GetAccumulatorRate() { return _accumulatorRate; }
+	uint16_t GetFrequency() { return _frequency; }
 };

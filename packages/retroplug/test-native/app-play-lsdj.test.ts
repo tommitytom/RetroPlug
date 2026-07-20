@@ -12,7 +12,7 @@ import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -21,7 +21,7 @@ const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb";
 const START = 7; // GameboyButton::Start
 
 // SYNC=MIDI + chain0 -> phrase0 -> a C note on a hard-panned pulse (the proven flagship cell set).
-const SYNC_MIDI_SONG = JSON.stringify({
+const SYNC_MIDI_SONG: SavInput = {
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "Midi" },
@@ -30,7 +30,7 @@ const SYNC_MIDI_SONG = JSON.stringify({
     phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 }, vibrato: { direction: "Up" }, sweep: 127 }],
   },
-});
+};
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -56,7 +56,7 @@ test("the store's lsdj-sync role is the sole clock that makes an armed LSDj sing
   // Boot LSDj from the authored SYNC=MIDI sav via the store's load seam. `adopt` reads the real
   // header, so the ROM provider attaches lsdj-sync (mode 1 default). `adopt` is quiet, so push the
   // initial structure explicitly; then install the hook so later setRoleConfig edits re-push.
-  const sav = savFromJson(SYNC_MIDI_SONG);
+  const sav = savFrom(SYNC_MIDI_SONG);
   const id = project.systems.adopt({ romPath: LSDJ }, { sramBytes: sav })!;
   expect(typeof id).toBe("number");
   expect(project.systems.view()[0].roles.map((r) => r.kind).includes("lsdj-sync")).toBeTruthy();

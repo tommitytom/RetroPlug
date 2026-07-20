@@ -20,6 +20,7 @@ import { useProjectModals } from "./lvgl/useProjectModals";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
+import { toggleLsdjDebug } from "./screens/grid/lsdjDebug";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
@@ -27,8 +28,10 @@ import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
 import { resolveDropAction } from "../src/fileDrop";
+import { importSongFiles } from "../src/lsdjSongImport";
 
 const KEY_ESCAPE = 0x1b;
+const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
 
 export function App() {
   const stores = useStores();
@@ -117,6 +120,7 @@ export function App() {
       if (modals.active) return void modals.onClose();
     }
     if (closeGuard.active || modals.active) return; // an overlay owns input; actions don't fire under it
+    if (key === KEY_BACKTICK) return void toggleLsdjDebug(); // dev: show/hide the LSDj runtime readout
     runAction(keyToAction.get(key));
   });
   // Gamepad app actions. Overlays (close prompt / project modal) render a <Menu>, so they're cancelled by the
@@ -138,12 +142,15 @@ export function App() {
     const paths = String(args[0] ?? "").split("\n").filter((p) => p.length > 0);
     if (paths.length === 0) return;
     const idx = hitTestTile(args[1] as number, args[2] as number, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    const targetId = idx != null ? systems[idx].id : stores.project.systems.focused();
+    const target = systems.find((s) => s.id === targetId);
     const action = resolveDropAction(
       stores.backend,
       {
         count: systems.length,
-        targetId: idx != null ? systems[idx].id : stores.project.systems.focused(),
+        targetId,
         onTile: idx != null,
+        targetIsLsdj: !!target?.roles.find((r) => r.kind === "lsdj-sync"),
         siblingRom: (sav) => stores.project.systems.resolveSiblingRom(sav),
       },
       paths,
@@ -161,6 +168,11 @@ export function App() {
       case "loadSram":
         stores.project.systems.loadSram(action.id, action.sav);
         break;
+      case "patchSongs": {
+        const sys = systems.find((s) => s.id === action.id);
+        if (sys) importSongFiles(stores.backend, stores.project.systems, sys, action.paths);
+        break;
+      }
       case "pairSav":
         void stores.fileSelection.pairDroppedSav(action.sav).then((rom) => {
           if (rom) modals.loadRomAsProject(rom, action.sav);

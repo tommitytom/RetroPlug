@@ -22,23 +22,31 @@ endif()
 
 add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/project/Project.cpp
+    # Console-neutral kit pipeline: the async compiler + decoded-audio cache are
+    # codec-agnostic (KitCodec.hpp). Per-console packing lives in a codec (LSDj
+    # below; risa NES-DPCM planned).
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/SampleCache.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/KitCompiler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/LsdjKitCodec.cpp
+    # risa NES-DPCM (DMC) codec — reuses the generic kit pipeline (r8brain resample + enkiTS), swaps the
+    # pack stage for 1-bit delta DPCM + an 8 KB kit bank.
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/risa/RisaDmcCodec.cpp
     # NOTE: the LSDj sav codec + model were removed — they are now pure TS
     # (packages/retroplug/src/lsdj), validated by frozen golden vectors. Only the
-    # kit/sample pipeline (Effects/KitUtil/SampleCache/KitCompiler) remains in C++.
+    # kit/sample pipeline (kit/* generic + lsdj/{Effects,KitUtil,LsdjKitCodec}) remains in C++.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/sameboy/LinkGroup.cpp
     ${_rpcore_sbs}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesSystem.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGlobalInit.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesDebugSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8MidiRole.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8FifoRole.cpp
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull
     # the full lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
@@ -71,6 +79,25 @@ set_target_properties(retroplug-core PROPERTIES
     POSITION_INDEPENDENT_CODE ON   # linked into the plugin .so
 )
 
+# The render-worker bundle — src/render/worker.ts esbuilt to a global-code IIFE (NOT an ES module: the
+# RenderHost loads it on a BARE QuickJS runtime with no module loader) + tjsc'd to bytecode C array,
+# COMPILED INTO retroplug-backend so every consumer (plugin, test host, the parity test) can render on a
+# worker thread. tjsc WITHOUT -m yields global-code bytecode (JS_ReadObject + JS_EvalFunction); the symbol
+# name derives from the output stem → rp_render_worker_bundle[] + _size. Derived; never committed. Defined
+# before retroplug-backend so its sources can embed the array.
+set(RENDER_WORKER_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/render-worker-bundle.js")
+set(RENDER_WORKER_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/render-worker-bundle_data.c")
+set_source_files_properties(${RENDER_WORKER_BUNDLE_C} PROPERTIES GENERATED TRUE)
+add_custom_target(retroplug-render-worker-bundle
+    BYPRODUCTS ${RENDER_WORKER_BUNDLE_JS} ${RENDER_WORKER_BUNDLE_C} ${RENDER_WORKER_BUNDLE_C}.new
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-session.js
+            ${CMAKE_SOURCE_DIR}/packages/retroplug/src/render/worker.ts ${RENDER_WORKER_BUNDLE_JS} iife
+    COMMAND ${_TJSC_COMMAND} -s -p rp_ -o ${RENDER_WORKER_BUNDLE_C}.new ${RENDER_WORKER_BUNDLE_JS}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RENDER_WORKER_BUNDLE_C}.new ${RENDER_WORKER_BUNDLE_C}
+    COMMENT "Bundling render worker (esbuild iife + global-code bytecode)"
+    VERBATIM)
+add_dependencies(retroplug-render-worker-bundle ${_TJSC_DEP})
+
 # retroplug-backend: the Backend as a static library — everything except a host
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
 # Engine/Backend/DspRuntime. Includes + links are PUBLIC so consumers inherit them.
@@ -89,8 +116,12 @@ add_library(retroplug-backend STATIC
     src/system/mesen/MesenBackend.cpp       # Mesen builder — NES + GBA (HLE BIOS), dispatched on platform
     src/host/dsp/ScriptCompiler.cpp         # bare-QuickJS bytecode compiler (DSP-side JS runtime)
     src/host/dsp/DspRuntime.cpp             # second bare QuickJS context — runs translator scripts
+    src/host/render/RenderHost.cpp          # bare-QuickJS render host (own Engine, runs the worker bundle)
+    src/host/render/RenderJobRegistry.cpp   # background render jobs — one worker thread each, cancellable
+    ${RENDER_WORKER_BUNDLE_C}               # embedded render-worker bytecode (rp_render_worker_bundle)
     ${DPFJS_PATH}/src/dpfjs/host/TjsHostRuntime.cpp  # shared txiki host (dpf.js)
 )
+add_dependencies(retroplug-backend retroplug-render-worker-bundle)  # the embedded worker bytecode must exist first
 
 target_include_directories(retroplug-backend PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -125,6 +156,17 @@ add_executable(retroplug-host src/main.cpp)
 target_link_libraries(retroplug-host PRIVATE retroplug-backend)
 
 set_target_properties(retroplug-host PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
+# retroplug-render-host-test: drives one RenderHost render from a JSON job spec, so a background/UI render
+# can be proven byte-identical to `retroplug-cli render`. EXCLUDE_FROM_ALL — built by name for the parity
+# check, not part of a normal build.
+add_executable(retroplug-render-host-test EXCLUDE_FROM_ALL test/render-host-main.cpp)
+target_link_libraries(retroplug-render-host-test PRIVATE retroplug-backend)
+set_target_properties(retroplug-render-host-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
@@ -504,6 +546,10 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/ChannelSplit.test.cpp
     test/audio/EngineChannelSplit.test.cpp
     test/audio/EngineSampleRate.test.cpp   # host sample-rate change re-rates live cores
+    test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
+    test/audio/NesApuLatency.test.cpp   # runtime NES APU flush window (live apuLatencyMs knob)
+    test/audio/NesN8FifoTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
+    test/audio/NesEverdriveFifo.test.cpp  # Edio status protocol leaves no stale byte to desync MIDI parsing
     test/audio/NesStems.test.cpp)    # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
 
 target_link_libraries(retroplug-audio-test PRIVATE
@@ -535,6 +581,26 @@ target_link_libraries(retroplug-watcher-test PRIVATE
     Catch2::Catch2WithMain)
 
 set_target_properties(retroplug-watcher-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-lottie-test proves the new ThorVG-backed <Lottie> capability: that lv_lottie
+# rasterizes animated vector frames on a headless software display (LV_USE_LOTTIE → ThorVG).
+# Links bare lvgl (which PRIVATE-brings lvgl_thorvg) + Catch2 — no JS engine needed. Also
+# `pnpm test:plugin`, on demand.
+add_executable(retroplug-lottie-test EXCLUDE_FROM_ALL
+    test/ui/LottieRender.test.cpp)
+
+target_link_libraries(retroplug-lottie-test PRIVATE
+    lvgl                       # lv_lottie + lvgl_thorvg (LV_USE_LOTTIE in the active lv_conf.h)
+    Catch2::Catch2WithMain)
+
+# The Lottie animation the test rasterizes (a real ~5 KB LVGL example asset).
+target_compile_definitions(retroplug-lottie-test PRIVATE
+    RP_LOTTIE_JSON_PATH="${DPFJS_PATH}/deps/lv_binding_js/deps/lvgl/examples/widgets/lottie/lv_example_lottie_approve.json")
+
+set_target_properties(retroplug-lottie-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

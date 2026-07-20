@@ -51,9 +51,12 @@ public:
     // SameBoyUtil.cpp:149-163).
     void pressButton(std::uint8_t button, bool down) override;
 
-    // Queue a raw byte for the GB serial port. Drained MSB-first by
-    // nextSerialInBit() / the slave-mode pump in stepIfBelowTarget().
-    void pushSerialIn(std::uint8_t byte) override { serialIn_.push_back(byte); }
+    // Queue a raw byte for the GB serial port, scheduled at sample offset
+    // `frame` within the block. Drained MSB-first by nextSerialInBit() / the
+    // slave-mode pump in stepIfBelowTarget(), neither before `frame` is reached.
+    void pushSerialIn(std::uint32_t frame, std::uint8_t byte) override {
+        serialIn_.push_back({ frame, byte });
+    }
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
 
@@ -214,12 +217,20 @@ public:
     // at the top of onProcess.
     std::vector<::MidiEvent> pendingMidi_;
 
-    // Bytes queued by roles for the GB serial port. Drained one bit at a
-    // time (MSB first) by `nextSerialInBit()` from the SameBoy serial-end
-    // callback. `serialBitsRemaining_` counts how many bits are left in the
-    // current front byte (8 → fresh byte, 0 → next call pops & reloads).
-    std::deque<std::uint8_t> serialIn_;
-    int                      serialBitsRemaining_ = 0;
+    // Bytes queued by roles / host MIDI-in for the GB serial port, each tagged
+    // with the sample offset it should not be delivered before. Drained one bit
+    // at a time (MSB first) by `nextSerialInBit()` from the SameBoy serial-end
+    // callback, or whole-byte by the slave-mode pump in stepIfBelowTarget() —
+    // both gated on `offset <= audioFrameCount_` so a burst of host MIDI keeps
+    // its intra-block timing instead of collapsing to the block start.
+    // `serialBitsRemaining_` counts how many bits are left in the current front
+    // byte (8 → fresh byte, 0 → next call pops & reloads).
+    struct PendingSerial {
+        std::uint32_t offset;   // samples from block start
+        std::uint8_t  byte;
+    };
+    std::deque<PendingSerial> serialIn_;
+    int                       serialBitsRemaining_ = 0;
 
     // Outgoing-serial byte accumulator. Bits arrive MSB-first from the GB;
     // on every 8th bit the assembled byte is appended to serialOutLog_ for the

@@ -45,6 +45,11 @@ protected:
 	{
 		_audio->Reset();
 	}
+
+	NesExpansionAudioState GetExpansionAudioState() override
+	{
+		return _audio ? _audio->GetState() : NesExpansionAudioState{};
+	}
 	
 	void Serialize(Serializer& s) override
 	{

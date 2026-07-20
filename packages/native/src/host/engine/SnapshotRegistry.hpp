@@ -58,6 +58,7 @@ public:
     Frame readFrame(SystemId id);
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);   // whole savestate
     std::optional<std::vector<std::uint8_t>> readSram(SystemId id);    // SRAM (savestate slice or live core)
+    std::optional<std::vector<std::uint8_t>> readRam(SystemId id);     // work RAM (WRAM), published EVERY block
 
     // Free a slot when its system is deleted (control thread). Idempotent (no-op for an unknown id).
     void release(SystemId id);
@@ -70,6 +71,7 @@ private:
         std::unique_ptr<FrameBufferTriple>    frame;
         std::unique_ptr<MemorySnapshotTriple> state;          // [len:4 LE][savestate][headroom tail]
         std::unique_ptr<MemorySnapshotTriple> sram;
+        std::unique_ptr<MemorySnapshotTriple> ram;            // work RAM (WRAM), republished every block
         std::uint32_t                         sramOffset = 0;     // SRAM slice offset within the savestate
         bool                                  sramFromCore = false; // SRAM published live (saveSramBytes), not sliced
         std::uint64_t                         sampleAccum = 0;    // samples since the last state/sram publish
@@ -79,7 +81,9 @@ private:
     // variable-size (Mesen) savestate stays tear-free in one publish and the slot can carry headroom
     // (mirrors SystemBase's own snapshot triple). SameBoy's fixed-size savestate uses the same layout.
     static constexpr std::size_t kStateLenPrefix = 4;
+    static constexpr std::size_t kRamLenPrefix   = 4;               // WRAM slot mirrors the state layout: [len:4 LE][wram]
     static constexpr std::size_t kMaxSramBytes   = 4 * 1024 * 1024;  // sanity bound on one battery image
+    static constexpr std::size_t kMaxRamBytes    = 64 * 1024;        // WRAM cap: fits GB 8/32 KB + NES 2 KB; a larger region (GBA EWRAM) is skipped → readRam null
 
     // Generous: RetroPlug never approaches this, but tests share one Project across a file's cases
     // so slots accumulate. A full pool fails the construct (logged) rather than corrupting.
@@ -90,12 +94,14 @@ private:
     Slot* find(SystemId id);
     Slot* findFree();
 
-    // Write [len:4 LE][payload] into a state triple's next slot and publish it (prefix + len must fit
-    // the triple; callers check). The one place the state-slot layout is written — claim + publishAll.
-    static void writeState(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len);
+    // Write [len:4 LE][payload] into a triple's next slot and publish it (prefix + len must fit the
+    // triple; callers check). The one place the len-prefixed slot layout is written — the state slot
+    // (claim + publishAll) and the WRAM slot (claim + every-block publishAll) share it.
+    static void writeSized(MemorySnapshotTriple& triple, const std::uint8_t* payload, std::size_t len);
 
     std::array<Slot, kMaxSlots> slots_;
     std::vector<std::uint8_t>   publishScratch_;    // block-thread reuse for readStateSnapshot
     std::vector<std::uint8_t>   sramScratch_;       // block-thread reuse for a live saveSramBytes() copy
     std::vector<std::uint8_t>   stateReadScratch_;  // control-thread reuse for readState (strips the prefix)
+    std::vector<std::uint8_t>   ramReadScratch_;    // control-thread reuse for readRam (strips the prefix)
 };

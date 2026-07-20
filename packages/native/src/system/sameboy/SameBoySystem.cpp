@@ -493,13 +493,17 @@ void SameBoySystem::captureApuWrite(std::uint8_t reg, std::uint8_t value) {
 }
 
 bool SameBoySystem::nextSerialInBit() {
-    if (serialIn_.empty()) return true; // idle high
-
     if (serialBitsRemaining_ == 0) {
+        // At a byte boundary: only begin shifting the front byte once its
+        // scheduled offset is reached. Idle-high until then (and when empty).
+        // Once a byte has started, finish it — never abandon mid-shift.
+        if (serialIn_.empty() || serialIn_.front().offset > audioFrameCount_) {
+            return true; // idle high
+        }
         serialBitsRemaining_ = 8;
     }
 
-    const std::uint8_t byte = serialIn_.front();
+    const std::uint8_t byte = serialIn_.front().byte;
     const int bitIndex = serialBitsRemaining_ - 1; // MSB-first: 7..0
     const bool bit = ((byte >> bitIndex) & 1u) != 0;
 
@@ -643,10 +647,13 @@ bool SameBoySystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // 8 calls = one delivered byte. Only push when SC bit 7 is set (the GB is
     // ready) AND bit 0 is clear (external clock = slave). Linked GBs route
     // bits via serialBitFromPeer/Broadcast instead, so skip when peers exist.
-    if (linkPeers_.empty() && !serialIn_.empty()) {
+    // Gate on the front byte's offset so host MIDI keeps its intra-block timing;
+    // the inner loop lets a run of due bytes drain across successive GB_run steps.
+    if (linkPeers_.empty() && !serialIn_.empty() &&
+        serialIn_.front().offset <= audioFrameCount_) {
         const std::uint8_t sc = GB_safe_read_memory(gb_, 0xFF02);
         if ((sc & 0x80) && !(sc & 0x01)) {
-            const std::uint8_t byte = serialIn_.front();
+            const std::uint8_t byte = serialIn_.front().byte;
             serialIn_.pop_front();
             for (int b = 7; b >= 0; --b) {
                 GB_serial_set_data_bit(gb_, ((byte >> b) & 1u) != 0);
@@ -673,6 +680,12 @@ void SameBoySystem::finishBlock(const AudioBlockInfo& info, float* const* outs, 
     // their offsets back so the relative ordering (and timing) is preserved.
     for (auto& pb : pendingButtons_) {
         pb.offset = (pb.offset > frames) ? pb.offset - frames : 0;
+    }
+
+    // Same rebase for serial bytes scheduled past this block's end (a byte whose
+    // offset is beyond `frames`, or one the GB wasn't ready to clock in yet).
+    for (auto& sv : serialIn_) {
+        sv.offset = (sv.offset > frames) ? sv.offset - frames : 0;
     }
 
     // Sum into the planar outputs with ONE smoothed gain per frame — the same g

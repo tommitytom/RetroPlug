@@ -6,6 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
+import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
 
 // A GB header (0x150 bytes) carrying an ASCII cartridge title at 0x134.
@@ -19,6 +20,7 @@ function registry(): RoleRegistry {
   const reg = new RoleRegistry();
   registerCoreRoles(reg); // sameboy system role
   registerDspRoles(reg); // mgb / lsdj-sync / midi-routing role types (schemas)
+  registerLsdjAssetsRole(reg); // lsdj-assets role type (schema)
   registerRomProviders(reg); // the providers under test
   return reg;
 }
@@ -33,15 +35,16 @@ test("a file-backed mGB cart attaches the mgb role by title", () => {
   expect(roles.map((r) => r.kind)).toEqual(["sameboy", "mgb"]);
 });
 
-test("LSDj attaches lsdj-sync (MidiSync default), case-insensitively", () => {
+test("LSDj attaches lsdj-sync (MidiSync default) + lsdj-assets, case-insensitively", () => {
   const lower = registry().defaultRoles("sameboy", "gb", headerWithTitle("LSDj-v9.4.2"));
   expect(lower).toEqual([
     { kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true } },
     { kind: "lsdj-sync", config: { mode: "midiSync", tempoDivisor: 1, autoStart: false } }, // MidiSync @ 24 PPQN (divisor 1)
+    { kind: "lsdj-assets", config: { overrides: [] } }, // empty asset-override manifest until the user replaces one
   ]);
   // Older ROMs stamp an uppercase "LSDJ" title — must still match.
   const upper = registry().defaultRoles("sameboy", "gb", headerWithTitle("LSDJ"));
-  expect(upper.map((r) => r.kind)).toEqual(["sameboy", "lsdj-sync"]);
+  expect(upper.map((r) => r.kind)).toEqual(["sameboy", "lsdj-sync", "lsdj-assets"]);
 });
 
 test("an unrelated GB cart gets only the sameboy system role", () => {
