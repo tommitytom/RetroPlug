@@ -17,11 +17,12 @@ import type { LoadOutcome } from "../../src/projectStore";
 import type { MissingFile } from "../../src/projectMissing";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import { basename } from "../../src/pathUtil";
+import { SAV_PATTERNS } from "../../src/savPaths";
 import { saveProjectInteractive } from "./saveProjectInteractive";
 import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
 
 const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes"];
-const SRAM_PATTERNS = ["*.sav"];
+const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm battery saves
 
 // One overlay at a time: a discard confirm before a destructive New/Load, an OK notice, or the relink
 // prompt for a project that loaded with files missing.

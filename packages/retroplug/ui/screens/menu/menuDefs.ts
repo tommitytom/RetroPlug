@@ -25,7 +25,7 @@ import type { SplitMode } from "../../../src/render";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
-import { resolveSavPath, siblingPath } from "../../../src/savPaths";
+import { resolveSavPath, siblingPath, SAV_PATTERNS } from "../../../src/savPaths";
 import { stem, dirname, joinPath, shortenMiddle } from "../../../src/pathUtil";
 import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
 import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
@@ -100,7 +100,7 @@ const PROJECT_PATTERNS = ["*.rplg"]; // thin project (raw JSON) — the Save tar
 const ZIP_PATTERNS = ["*.rplg.zip"]; // exported project (PKZIP) — always `.rplg.zip`
 const LOAD_PATTERNS = ["*.rplg", "*.rplg.zip"]; // load/locate accept either on-disk shape
 const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
-const SRAM_PATTERNS = ["*.sav"];
+const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm — battery saves (some NES/risa carts use .srm)
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
 function cycleInt(current: number, min: number, max: number, dir: 1 | -1): number {
