@@ -16,6 +16,9 @@ declare const __DSP_KERNEL_BUNDLE__: string;
 
 const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
 const SAV = "/tmp/rp-risa-render.srm";
+// A real risa song whose last track HFFs at the end (~59 s) — the only demo sav here that stops rather than
+// loops, so it's the fixture that proves seq_mode → STOPPED end-detection over the real core.
+const ECOLI_SRM = "/workspaces/resources/roms/risa/ecoli_soul.srm";
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -72,4 +75,22 @@ test("render auto-detects risa song length via seq_mode (HFF stop) over the real
   expect((res.frames ?? 0) > 0).toBe(true);
   const wav = decodeWav(be.readFile(out)!);
   expect(rms(wav.pcm) > 0.001).toBe(true); // real song audio, whether it HFF-stops or hits the cap
+});
+
+test("render auto-detects a real risa song's HFF stop (hff true) and trims to it over the real core", () => {
+  const be = createRealBackend();
+  if (!be.fileExists(RISA_ROM) || !be.fileExists(ECOLI_SRM)) {
+    console.log(`# SKIP risa-render: missing ${RISA_ROM} or ${ECOLI_SRM}`);
+    return;
+  }
+  const out = "/tmp/rp-risa-ecoli.wav";
+  // ecoli_soul's working song HFFs its last track at the end → seq_mode STOPPED; auto-detect must end there,
+  // not at the cap. The cap sits just past the song so a regression (never detecting the stop) is visible.
+  const res = runRenderJob(newCtx(be), baseOpts({ sav: ECOLI_SRM, maxDurationMs: 65000, out }));
+  console.log(`[risa-render] ecoli_soul auto-detect: hff=${res.hff} lengthMs=${res.lengthMs} frames=${res.frames}`);
+  expect(res.hff).toBe(true); // the song's HFF end drove seq_mode → STOPPED, detected over the real core
+  expect(res.lengthMs! > 55000 && res.lengthMs! < 63000).toBe(true); // ~59 s, well under the 65 s cap
+  const wav = decodeWav(be.readFile(out)!);
+  expect(wav.pcm.length).toBe(res.frames); // the WAV is trimmed exactly to the detected stop (no silent tail)
+  expect(rms(wav.pcm) > 0.001).toBe(true);
 });
