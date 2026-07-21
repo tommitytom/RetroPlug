@@ -184,20 +184,102 @@ function mesenConfig(sys: SystemView): { region: ConsoleRegion; removeSpriteLimi
 }
 
 // --- child builders -----------------------------------------------------------------------------------
+// Build the System > Render submenu (a WAV background job on a COPY of the live SRAM/savestate — never the
+// running core, like `retroplug-cli render`). NO dialog at render time: the output folder, filename,
+// on-exists policy, and routing/rate/duration are explicit rows, and "Render" writes straight to
+// <Output Dir>/<Filename>.wav (a prefix + _<channel> for splits). Only built for on-disk ROMs.
+function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
+  const userConfig = ctx.stores.userConfig;
+  const r = ctx.userConfig.render;
+  const splits = validSplits(sys);
+  const split = splits.includes(r.split) ? r.split : "mix"; // clamp a stored pins/channels to this platform
+  const rateIdx = Math.max(0, RENDER_SAMPLE_RATES.indexOf(r.sampleRate as never));
+  const setMaxDur = (delta: number) => userConfig.setRenderMaxDurationSec(r.maxDurationSec + delta);
+  // Effective output folder (persisted "Output Dir", else next to the ROM) + current filename (a session
+  // override the user typed, else re-derived from the loaded song each time the menu opens).
+  const effectiveDir = r.outputDir || dirname(sys.romPath);
+  const curName = userConfig.renderFilename(sys.id) ?? sanitizeName(renderBaseName(ctx.stores.backend, sys));
+  const onExistsIdx = Math.max(0, RENDER_ON_EXISTS.indexOf(r.onExists));
+
+  const renderChildren: MenuItem[] = [
+    // Output Dir: a native FOLDER picker (our DPF fork). The chosen folder persists to userConfig; the long
+    // path is middle-elided to fit the row. keepOpen so the menu stays up to keep configuring after picking.
+    {
+      id: "sys-render-dir",
+      label: `Output Dir: ${shortenMiddle(effectiveDir, 28)}`,
+      kind: "action",
+      keepOpen: true,
+      onSelect: () =>
+        browseThen(ctx, { title: "Output Dir", patterns: [], directory: true, startDir: effectiveDir }, (p) =>
+          userConfig.setRenderOutputDir(p),
+        ),
+    },
+    // Filename: an editable text prompt seeded with the derived name; the typed value is remembered for this
+    // session only (setRenderFilename), re-derived next time the menu opens.
+    {
+      id: "sys-render-filename",
+      label: `Filename: ${curName}`,
+      kind: "prompt",
+      keepOpen: true,
+      prompt: {
+        title: "Render filename:",
+        initial: curName,
+        filter: isFilenameChar,
+        onConfirm: (v: string) => {
+          userConfig.setRenderFilename(sys.id, sanitizeName(v));
+          return null;
+        },
+      },
+    },
+    cycler("sys-render-ifexists", "If Exists", ["Overwrite", "Rename"], onExistsIdx, (n) =>
+      userConfig.setRenderOnExists(RENDER_ON_EXISTS[n]),
+    ),
+    sep("sys-render-sep-opts"),
+    cycler("sys-render-split", "Audio Routing", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
+      userConfig.setRenderSplit(splits[n]),
+    ),
+    cycler("sys-render-rate", "Sample Rate", RENDER_SAMPLE_RATES.map((hz) => `${hz} Hz`), rateIdx, (n) =>
+      userConfig.setRenderSampleRate(RENDER_SAMPLE_RATES[n]),
+    ),
+    // Max Duration: Left/Right step ±1s, PageUp/PageDown jump ±30s (Menu.tsx routes onCoarseStep).
+    {
+      id: "sys-render-maxdur",
+      label: `Max Duration: ${formatDuration(r.maxDurationSec)}`,
+      kind: "cycler",
+      keepOpen: true,
+      onSelect: () => setMaxDur(1),
+      onCycle: (dir) => setMaxDur(dir),
+      onCoarseStep: (dir) => setMaxDur(dir * 30),
+    },
+    sep("sys-render-sep"),
+    // Render: no dialog. Writes to <dir>/<name>.wav (the render lib trims .wav to a prefix for splits).
+    action(
+      "sys-render-go",
+      "Render",
+      () =>
+        void startSystemRender(
+          ctx.stores.backend,
+          sys,
+          { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000, onExists: r.onExists },
+          joinPath(effectiveDir, `${curName}.wav`),
+        ),
+    ),
+  ];
+  return submenu("sys-render", "Render", renderChildren);
+}
+
 function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
-  // Reset reboots carrying the battery — pathless, reconstructing in place (no live GB_reset). Sits at the
-  // top with a separator below it.
-  const items: MenuItem[] = [
-    action("sys-reset", "Reset", () => void systems.reset(sys.id)),
-    // Swap the ROM in place but keep the running battery SRAM (e.g. an LSDj version bump that keeps the
-    // song). ROM-only browser; distinct from "Replace Instance", which cold-boots a fresh sav.
-    action("sys-swaprom", "Swap ROM (Preserve SRAM)...", () => void ctx.stores.fileSelection.browseSwap(sys.id)),
+  // Reset reboots carrying the battery — pathless, reconstructing in place (no live GB_reset). It leads the
+  // menu; the Render submenu (a WAV background job) sits right below it, then a separator.
+  const items: MenuItem[] = [action("sys-reset", "Reset", () => void systems.reset(sys.id))];
+  if (sys.romPath) items.push(renderSubmenu(ctx, sys));
+  items.push(
     sep("sys-sep-reset"),
     cycler("sys-reload", "Reload on ROM Change", OFF_ON, sys.settings.reloadOnRomChange ? 1 : 0, (n) =>
       systems.setReloadOnRomChange(sys.id, n === 1),
     ),
-  ];
+  );
   // SameBoy-only core knobs.
   if (sys.core === "sameboy") {
     const cfg = sameboyConfig(sys);
@@ -233,6 +315,10 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   // The instance's own sibling .sav name (suffix-aware) — the sensible default target for its fresh save.
   const sramName = sys.savSuffix >= 2 ? `${romStem}-${sys.savSuffix}.sav` : `${romStem}.sav`;
   items.push(sep("sys-sep-state"));
+  // Swap the ROM in place but keep the running battery SRAM (e.g. an LSDj version bump that keeps the song).
+  // ROM-only browser; distinct from "Replace Instance", which cold-boots a fresh sav. Sits just above the
+  // New/Load SRAM rows.
+  items.push(action("sys-swaprom", "Swap ROM (Preserve SRAM)...", () => void ctx.stores.fileSelection.browseSwap(sys.id)));
   if (sys.romPath && !noSave)
     items.push(
       action("sys-newsram", "New SRAM...", () =>
@@ -271,86 +357,6 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${romStem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
     ),
   );
-
-  // Render to WAV, a background job on a fresh instance built from a COPY of the live SRAM/savestate (never
-  // the running core), like `retroplug-cli render`. NO dialog at render time: the output folder, filename,
-  // routing/rate/duration, and on-exists policy are explicit rows, and "Render" writes straight to
-  // <Output Dir>/<Filename>.wav (a prefix + _<channel> for splits). Only for on-disk ROMs; splits gate on platform.
-  if (sys.romPath) {
-    const userConfig = ctx.stores.userConfig;
-    const r = ctx.userConfig.render;
-    const splits = validSplits(sys);
-    const split = splits.includes(r.split) ? r.split : "mix"; // clamp a stored pins/channels to this platform
-    const rateIdx = Math.max(0, RENDER_SAMPLE_RATES.indexOf(r.sampleRate as never));
-    const setMaxDur = (delta: number) => userConfig.setRenderMaxDurationSec(r.maxDurationSec + delta);
-    // Effective output folder (persisted "Output Dir", else next to the ROM) + current filename (a session
-    // override the user typed, else re-derived from the loaded song each time the menu opens).
-    const effectiveDir = r.outputDir || dirname(sys.romPath);
-    const curName = userConfig.renderFilename(sys.id) ?? sanitizeName(renderBaseName(ctx.stores.backend, sys));
-    const onExistsIdx = Math.max(0, RENDER_ON_EXISTS.indexOf(r.onExists));
-
-    const renderChildren: MenuItem[] = [
-      // Output Dir: a native FOLDER picker (our DPF fork). The chosen folder persists to userConfig; the long
-      // path is middle-elided to fit the row. keepOpen so the menu stays up to keep configuring after picking.
-      {
-        id: "sys-render-dir",
-        label: `Output Dir: ${shortenMiddle(effectiveDir, 28)}`,
-        kind: "action",
-        keepOpen: true,
-        onSelect: () =>
-          browseThen(ctx, { title: "Output Dir", patterns: [], directory: true, startDir: effectiveDir }, (p) =>
-            userConfig.setRenderOutputDir(p),
-          ),
-      },
-      // Filename: an editable text prompt seeded with the derived name; the typed value is remembered for this
-      // session only (setRenderFilename), re-derived next time the menu opens.
-      {
-        id: "sys-render-filename",
-        label: `Filename: ${curName}`,
-        kind: "prompt",
-        keepOpen: true,
-        prompt: {
-          title: "Render filename:",
-          initial: curName,
-          filter: isFilenameChar,
-          onConfirm: (v: string) => {
-            userConfig.setRenderFilename(sys.id, sanitizeName(v));
-            return null;
-          },
-        },
-      },
-      cycler("sys-render-split", "Audio Routing", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
-        userConfig.setRenderSplit(splits[n]),
-      ),
-      cycler("sys-render-rate", "Sample Rate", RENDER_SAMPLE_RATES.map((hz) => `${hz} Hz`), rateIdx, (n) =>
-        userConfig.setRenderSampleRate(RENDER_SAMPLE_RATES[n]),
-      ),
-      // Max Duration: Left/Right step ±1s, PageUp/PageDown jump ±30s (Menu.tsx routes onCoarseStep).
-      {
-        id: "sys-render-maxdur",
-        label: `Max Duration: ${formatDuration(r.maxDurationSec)}`,
-        kind: "cycler",
-        keepOpen: true,
-        onSelect: () => setMaxDur(1),
-        onCycle: (dir) => setMaxDur(dir),
-        onCoarseStep: (dir) => setMaxDur(dir * 30),
-      },
-      cycler("sys-render-ifexists", "If Exists", ["Overwrite", "Rename"], onExistsIdx, (n) =>
-        userConfig.setRenderOnExists(RENDER_ON_EXISTS[n]),
-      ),
-      sep("sys-render-sep"),
-      // Render Now: no dialog. Writes to <dir>/<name>.wav (the render lib trims .wav to a prefix for splits).
-      action("sys-render-go", "Render Now", () =>
-        void startSystemRender(
-          ctx.stores.backend,
-          sys,
-          { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000, onExists: r.onExists },
-          joinPath(effectiveDir, `${curName}.wav`),
-        ),
-      ),
-    ];
-    items.push(sep("sys-sep-render"), submenu("sys-render", "Render", renderChildren));
-  }
   return items;
 }
 

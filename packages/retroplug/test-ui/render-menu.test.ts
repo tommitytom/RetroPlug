@@ -1,8 +1,8 @@
 // The redesigned System > Render submenu, end to end on the headless display. A file-dropped mGB (a real
 // romPath, non-tracker → the filename derives to the ROM stem "mGB") drives the new explicit rows:
-//   Output Dir (a native FOLDER picker), Filename (derived), Audio Routing / Sample Rate / Max Duration,
-//   If Exists (Overwrite/Rename), and a dialog-less "Render Now".
-// The file browser is stubbed; we assert the Output Dir opens in DIRECTORY mode and that "Render Now" writes
+//   Output Dir (a native FOLDER picker), Filename (derived), If Exists (Overwrite/Rename),
+//   Audio Routing / Sample Rate / Max Duration, and a dialog-less "Render".
+// The file browser is stubbed; we assert the Output Dir opens in DIRECTORY mode and that "Render" writes
 // to <outputDir>/<filename>.wav with the chosen routing / rate / on-exists policy — no dialog at render time.
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
@@ -18,7 +18,7 @@ interface BrowseOpen {
   startDir: string;
 }
 
-test("render submenu: Output Dir folder-picks, and Render Now writes <dir>/<name>.wav (no dialog)", () => {
+test("render submenu: Output Dir folder-picks, and Render writes <dir>/<name>.wav (no dialog)", () => {
   const g = globalThis as {
     __rp_startRender?: (id: number, spec: string) => number;
     __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string, sd: string, dir: boolean) => void;
@@ -61,7 +61,6 @@ test("render submenu: Output Dir folder-picks, and Render Now writes <dir>/<name
   expect(ui.findByTextContaining("Sample Rate:") != null).toBeTruthy();
   expect(ui.findByTextContaining("Max Duration:") != null).toBeTruthy();
   expect(ui.findByTextContaining("If Exists: Overwrite") != null).toBeTruthy();
-  expect(ui.findByTextContaining("Render Now") != null).toBeTruthy();
 
   // Output Dir → a DIRECTORY picker; the chosen folder shows next to the row.
   expect(navTo("Output Dir:")).toBeTruthy();
@@ -71,6 +70,12 @@ test("render submenu: Output Dir folder-picks, and Render Now writes <dir>/<name
   expect(opens[0].title).toBe("Output Dir");
   expect(opens[0].directory).toBe(true); // the render "Output Dir" is a folder picker, not a file dialog
   expect(ui.findByTextContaining("Output Dir: /tmp/renders") != null).toBeTruthy();
+
+  // If Exists: Overwrite → Rename (sits right below Filename, above the routing rows).
+  expect(navTo("If Exists:")).toBeTruthy();
+  ui.tapKey(Key.Right);
+  ui.pump(6);
+  expect(ui.findByTextContaining("If Exists: Rename") != null).toBeTruthy();
 
   // Audio Routing: Mix → Channels (mGB is sameboy, so channels is offered).
   expect(navTo("Audio Routing:")).toBeTruthy();
@@ -84,19 +89,14 @@ test("render submenu: Output Dir folder-picks, and Render Now writes <dir>/<name
   ui.pump(6);
   expect(ui.findByTextContaining("Sample Rate: 48000 Hz") != null).toBeTruthy();
 
-  // If Exists: Overwrite → Rename.
-  expect(navTo("If Exists:")).toBeTruthy();
-  ui.tapKey(Key.Right);
-  ui.pump(6);
-  expect(ui.findByTextContaining("If Exists: Rename") != null).toBeTruthy();
-
-  // Render Now → dialog-less; __rp_startRender fires with the composed path + the chosen options. No extra
-  // browser open (still just the one Output Dir dialog).
-  expect(navTo("Render Now")).toBeTruthy();
+  // Render → dialog-less; __rp_startRender fires with the composed path + the chosen options. No extra
+  // browser open (still just the one Output Dir dialog). Focus is on Sample Rate (above the Render action),
+  // so this down-only navTo lands on the child action, not the parent "Render" submenu row above it.
+  expect(navTo("Render")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(10);
 
-  expect(opens.length).toBe(1); // Render Now opened NO dialog
+  expect(opens.length).toBe(1); // Render opened NO dialog
   expect(captured != null).toBeTruthy();
   const cap = captured!;
   expect(cap.spec.out).toBe("/tmp/renders/mGB.wav"); // <Output Dir>/<Filename>.wav
