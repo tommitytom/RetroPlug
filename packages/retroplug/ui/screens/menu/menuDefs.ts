@@ -31,7 +31,7 @@ import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
 import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
 import { replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
 import { importSongFiles } from "../../../src/lsdjSongImport";
-import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav } from "../../../src/risaSongOps";
+import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav, workingSongRecord, saveWorkingToCatalog } from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
@@ -705,6 +705,10 @@ interface SongMenuSpec {
   exportSong(ctx: MenuContext, sys: SystemView, index: number, name: string): void;
   replaceSong(ctx: MenuContext, sys: SystemView, index: number): void;
   addSong(ctx: MenuContext, sys: SystemView): void;
+  // The synthetic working-song row's actions (only for a console whose catalog reports an unsaved working
+  // song — risa). Export writes the working song to disk; saveToCatalog promotes it to a real saved slot.
+  exportWorking?(ctx: MenuContext, sys: SystemView, name: string): void;
+  saveWorkingToCatalog?(ctx: MenuContext, sys: SystemView): void;
 }
 
 function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem {
@@ -743,7 +747,26 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     return submenu(`${spec.id}-song-${s.index}`, `[${s.index}] ${name}`, items);
   });
   const body = rows.length ? rows : [action(`${spec.id}-song-none`, "(no saved songs)", () => {}, true)];
-  return submenu(`${spec.id}-songs`, "Songs", [action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys)), sep(`${spec.id}-song-add-sep`), ...body]);
+  // The live working song, when the catalog reports it UNSAVED (not linked to any listed slot) — surfaced as
+  // a synthetic top row so a cart whose song lives only in working memory isn't invisible. It's not a catalog
+  // index, so it gets its own actions (Save to Catalog / Export), never Load/Delete/reorder.
+  const working = bytes ? cat.workingSong?.(bytes) : null;
+  const workingRows: MenuItem[] = [];
+  if (working) {
+    const wName = working.name || "Working Song";
+    const wItems: MenuItem[] = [];
+    if (spec.saveWorkingToCatalog)
+      wItems.push(action(`${spec.id}-song-working-save`, "Save to Catalog", () => spec.saveWorkingToCatalog!(ctx, sys)));
+    if (spec.exportWorking)
+      wItems.push(action(`${spec.id}-song-working-export`, "Export...", () => spec.exportWorking!(ctx, sys, wName)));
+    workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName}`, wItems), sep(`${spec.id}-song-working-sep`));
+  }
+  return submenu(`${spec.id}-songs`, "Songs", [
+    ...workingRows,
+    action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys)),
+    sep(`${spec.id}-song-add-sep`),
+    ...body,
+  ]);
 }
 
 // The throw→null wrapper for risa's catalog ops used by its file actions (LSDj's ops return null directly;
@@ -783,9 +806,32 @@ function risaAddSong(ctx: MenuContext, sys: SystemView): void {
     mutateSavBytes(ctx, sys, (sav) => tryOp(() => addSongRecordToSav(sav, data)));
   });
 }
+// The synthetic working-song row's actions. Export writes the LIVE working song (banks 0-3, encoded as a
+// record) to a `.risong`; Save to Catalog promotes it into a new saved slot + links it, so it stops being
+// unsaved and moves into the numbered list.
+function risaExportWorking(ctx: MenuContext, sys: SystemView, name: string): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: "Export working song", patterns: ["*.risong"], saving: true, defaultName: `${sanitizeName(name)}.risong` }, (path) => {
+    const bytes = ctx.stores.project.systems.readSram(sys.id);
+    if (!bytes) return;
+    const record = workingSongRecord(bytes);
+    if (record) be.writeFileAtomic(path, record);
+  });
+}
+function risaSaveWorking(ctx: MenuContext, sys: SystemView): void {
+  mutateSavBytes(ctx, sys, (sav) => tryOp(() => saveWorkingToCatalog(sav)));
+}
 
 const lsdjSongSpec: SongMenuSpec = { id: "lsdj", catalog: lsdjSongCatalog, exportSong, replaceSong, addSong: addSongFromDisk };
-const risaSongSpec: SongMenuSpec = { id: "risa", catalog: risaSongCatalog, exportSong: risaExportSong, replaceSong: risaReplaceSong, addSong: risaAddSong };
+const risaSongSpec: SongMenuSpec = {
+  id: "risa",
+  catalog: risaSongCatalog,
+  exportSong: risaExportSong,
+  replaceSong: risaReplaceSong,
+  addSong: risaAddSong,
+  exportWorking: risaExportWorking,
+  saveWorkingToCatalog: risaSaveWorking,
+};
 
 // The per-console UI bindings for a tracker integration: the file-dialog specs (Songs + assets, which own
 // file formats) plus any per-console extras not yet unified (LSDj's sync cyclers). Keyed by integration id;
