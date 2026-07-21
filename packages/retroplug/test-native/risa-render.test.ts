@@ -58,3 +58,18 @@ test("render --song-index promotes a risa catalog song to working + renders non-
   console.log(`[risa-render] --song-index 0 (BLUMARBL) → ${wav.pcm.length} samples @${wav.sampleRate}Hz, RMS ${level.toFixed(4)}`);
   expect(level > 0.001).toBe(true); // the promoted working song actually plays (SELECT+START gesture)
 });
+
+test("render auto-detects risa song length via seq_mode (HFF stop) over the real core", () => {
+  const be = createRealBackend();
+  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy();
+  const out = "/tmp/rp-risa-autodetect.wav";
+  // No durationMs → the risa auto-detect path: render to the seq_mode STOPPED edge, capped at maxDurationMs.
+  // (A looping song caps out with hff:false; either way the auto-detect path reports a length + real audio.)
+  const res = runRenderJob(newCtx(be), baseOpts({ songIndex: 0, maxDurationMs: 3000, out }));
+  console.log(`[risa-render] auto-detect: hff=${res.hff} lengthMs=${res.lengthMs} frames=${res.frames}`);
+  expect(res.lengthMs !== undefined).toBe(true); // the auto-detect path engaged (a fixed render reports none)
+  expect((res.frames ?? 0) > 0).toBe(true);
+  const wav = decodeWav(be.readFile(out)!);
+  expect(rms(wav.pcm) > 0.001).toBe(true); // real song audio, whether it HFF-stops or hits the cap
+});
