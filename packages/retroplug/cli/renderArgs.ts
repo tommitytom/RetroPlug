@@ -35,7 +35,7 @@ Options:
   --sav <file>           Battery save (.sav) to load. Default: <rom>.sav next to the ROM, if it exists.
   --state <file>         Savestate to restore after boot (instead of a fresh boot).
   --out <file>           Output path. Default: the working/selected song's name for an LSDj/risa cart, else
-                         the ROM name — <name>.wav for a mix; <name>_<channel>.wav for --split.
+                         the ROM name; <name>.wav for a mix, <name>_<channel>.wav for --split.
   --duration <time>      Fixed render length (e.g. 3s, 500ms, 2m). Turns OFF LSDj auto-length detection.
                          Default: auto for a loaded LSDj sav, otherwise 5m.
   --max-duration <time>  Safety cap for LSDj auto-length when no HFF stop is found. Default: 5m.
@@ -44,11 +44,11 @@ Options:
   --split <mode>         What to write (default: mix):
                            mix       one WAV of the final mix (Game Boy: stereo; NES: mono)
                            channels  one WAV per sound channel (Game Boy: 4 stereo stems;
-                                     NES: 5 mono core channels — square1/2, triangle, noise, dmc)
-                           pins      NES analog output pins — pulse, tnd, expansion (3 mono WAVs)
+                                     NES: 5 mono core channels: square1/2, triangle, noise, dmc)
+                           pins      NES analog output pins: pulse, tnd, expansion (3 mono WAVs)
   --bpm <n>              Host tempo (BPM) for tempo-synced playback. Use with --transport.
   --transport            Run the host transport (play), so tempo-synced ROMs advance. Default: off.
-  --no-start             Do NOT press Start on boot — render the raw boot/menu audio.
+  --no-start             Do NOT press Start on boot; render the raw boot/menu audio.
   --song <name>          LSDj / risa: promote a saved song to the working song by name (case-insensitive).
   --song-index <0-31>    LSDj / risa: promote a saved song by its slot number instead of by name.
   --list-songs           LSDj / risa: print the sav's saved song names and exit (renders nothing).
