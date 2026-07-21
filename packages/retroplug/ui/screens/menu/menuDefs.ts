@@ -55,6 +55,7 @@ import type { HostBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
+import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
 import type { MenuItem, MenuTree } from "./menuTree";
 
@@ -119,6 +120,12 @@ function submenu(id: string, label: string, children: MenuItem[]): MenuItem {
 }
 function sep(id: string): MenuItem {
   return { id, label: "", kind: "separator" };
+}
+
+/** "Save Project", with a trailing " *" when the project or any battery SRAM is unsaved (the same signal the
+ *  close guard asks). The star is the file's established "modified" marker (cf. the asset-override rows). */
+function saveProjectLabel(ctx: MenuContext): string {
+  return `Save Project${hasUnsavedChanges(ctx.stores.backend, ctx.stores.project) ? " *" : ""}`;
 }
 
 /** A value-cycler row: label shows `prefix: names[current]`, Enter/Right step forward, Left back. */
@@ -835,7 +842,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.systems.length > 0) {
     // Save writes to the known path when there is one (else Save As covers it). Save As / Export browse
     // for a target; each store method already takes a resolved path.
-    if (project.currentPath()) items.push(action("proj-save", "Save Project", () => project.save(project.currentPath())));
+    if (project.currentPath()) items.push(action("proj-save", saveProjectLabel(ctx), () => project.save(project.currentPath())));
     items.push(action("proj-saveas", "Save Project As...", () =>
       browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) => project.save(p)),
     ));
@@ -1058,9 +1065,14 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       // "Load…" is a project-level op (load the sibling project / new project from the ROM) — it never
       // swaps this instance. Swapping a single instance in place is "Replace Instance".
       action("inst-load", "Load...", () => runLoad(ctx)),
-      action("inst-save", "Save Project", () => void saveProjectInteractive(ctx.stores)),
+      action("inst-save", saveProjectLabel(ctx), () => void saveProjectInteractive(ctx.stores)),
       action("inst-new", "New Project", () => ctx.newProject()),
       submenu("inst-recent", "Recent", recentChildren(ctx)),
+      // The tracker submenu (LSDj / risa) sits right under Recent, fenced by a separator on each side (the
+      // one above here, and inst-sep-top below). Only present when the cart sniffed a tracker.
+      ...(tracker
+        ? [sep("inst-sep-tracker"), submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))]
+        : []),
       sep("inst-sep-top"),
       action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd(sys.id)),
       action("inst-dup", "Duplicate Instance", () => {
@@ -1086,7 +1098,6 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         : []),
       sep("inst-sep1"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
-      ...(tracker ? [submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))] : []),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
       // Deferred: About panel.

@@ -837,6 +837,24 @@ test("instance menu Save Project saves to the known path without browsing", asyn
   expect(stores.project.currentPath()).toBe("/proj/p.rplg");
 });
 
+test("instance menu Save Project shows a * marker only while there are unsaved changes", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  stores.project.systems.loadMgb(); // embedded synth: no romPath, so its battery is never counted SRAM-dirty
+  const anchored = () => stores.project.systems.view()[0];
+  const saveLabel = () => findItem(buildInstanceMenu({ ...ctxOf(stores), system: anchored() }).items, "inst-save")!.label;
+
+  // Save to a path for a clean baseline (loadMgb dirtied the project) → no star, star purely tracks the project.
+  stores.project.save("/proj/p.rplg");
+  expect(stores.project.isDirty()).toBe(false);
+  expect(saveLabel()).toBe("Save Project");
+
+  // A settings edit re-dirties the project → the row wears a star until the next save.
+  stores.project.setLayout("grid");
+  expect(stores.project.isDirty()).toBe(true);
+  expect(saveLabel()).toBe("Save Project *");
+});
+
 test("instance menu Save Project opens Save-As for a never-saved project", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
