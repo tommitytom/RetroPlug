@@ -10,6 +10,7 @@ import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadToAction, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery } from "../systems/fixtures";
+import { savFrom, type SavInput } from "../../src/lsdjSav";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
@@ -136,6 +137,21 @@ test("composeWindowTitle: version + project (no ROM), dropping empty segments", 
   expect(composeWindowTitle("0.6.2", "")).toBe("RetroPlug v0.6.2"); // nameless project → version only
   expect(composeWindowTitle("", "Song")).toBe("RetroPlug - Song"); // no version → bare base
   expect(composeWindowTitle("", "")).toBe("RetroPlug");
+  // A tracker cart label ("<song> - <ROM name>") supersedes the project name; a null cart falls back to it.
+  expect(composeWindowTitle("0.6.2", "Proj", "MYSONG - LSDj v9.4.2")).toBe("RetroPlug v0.6.2 - MYSONG - LSDj v9.4.2");
+  expect(composeWindowTitle("0.6.2", "Proj", null)).toBe("RetroPlug v0.6.2 - Proj");
+});
+
+test("instance title for a tracker cart shows the working song + the ROM's own name (not the filename)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // A file named "cool.gb" whose cartridge title is "LSDJ-V9.4.2" — the title must reflect the internal name.
+  be.seed("/roms/cool.gb", lsdjRom("LSDJ-V9.4.2"));
+  const id = stores.project.systems.addSystem("/roms/cool.gb")!;
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  be.setSram(id, savFrom({ activeProjectIndex: 0, projects: [{ name: "MYSONG", version: 0, song }] } as SavInput));
+  const sys = stores.project.systems.view()[0];
+  expect(buildInstanceMenu({ ...ctxOf(stores), version: "0.6.2", system: sys }).title).toBe("RetroPlug v0.6.2 - MYSONG - LSDj v9.4.2");
 });
 
 test("instance title shows a distinct project + ROM, and 'mGB' for the embedded synth", () => {

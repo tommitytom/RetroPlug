@@ -23,7 +23,7 @@ import { SystemGrid } from "./screens/grid/SystemGrid";
 import { toggleLsdjDebug } from "./screens/grid/lsdjDebug";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
-import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
+import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel, type MenuContext } from "./screens/menu/menuDefs";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
@@ -57,9 +57,12 @@ export function App() {
   const padToAction = useMemo(() => buildGamepadToAction(bindings.gamepadActions), [bindings.gamepadActions]);
   const resolvedZoom = resolveZoom(settings.zoom, userConfig.defaultZoom);
 
-  // The standalone OS window title: version + project name (re-renders on the project channel, which fires
-  // on load / adopt / rename / new). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).
-  const windowTitle = composeWindowTitle(version, stores.project.name());
+  // The standalone OS window title: version + the focused tracker cart's "<song> - <ROM name>" when one is
+  // loaded (LSDj / risa), else the project name. Re-renders on the project channel (load / adopt / rename /
+  // new / focus / song-load). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).
+  const focusedSys = systems.find((s) => s.id === stores.project.systems.focused());
+  const cartLabel = focusedSys ? trackerCartLabel(stores.backend, focusedSys) : null;
+  const windowTitle = composeWindowTitle(version, stores.project.name(), cartLabel);
 
   // Menu-open invariant on empty transitions: empty → the start menu (always open); first system → close.
   useEffect(() => {

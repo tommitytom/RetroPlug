@@ -51,7 +51,7 @@ test("render: defaults + a v1 render.lastDir migrates to outputDir (v1→v2)", (
   // A v1-stamped config with the OLD render.lastDir carries forward to outputDir; the old key is stripped.
   const cfg = parseUserConfig(JSON.stringify({ schemaVersion: 1, render: { lastDir: "/music/out" } }))!;
   expect(cfg.render.outputDir).toBe("/music/out"); // migrated
-  expect((cfg.render as Record<string, unknown>).lastDir).toBe(undefined); // unknown key stripped by zod
+  expect((cfg.render as unknown as Record<string, unknown>).lastDir).toBe(undefined); // unknown key stripped by zod
 });
 
 // --- store ---

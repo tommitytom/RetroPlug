@@ -51,7 +51,7 @@ import {
   type AssetTypeInfo,
   type TrackerIntegration,
 } from "../../../src/tracker";
-import type { HostBackend } from "../../../src/backend";
+import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
@@ -1032,19 +1032,49 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
 
 // --- top-level builders -------------------------------------------------------------------------------
 
-/** The standalone OS window title: "RetroPlug v<version> - <project>" (no ROM name). Empty segments are
- *  dropped, so a nameless project shows just "RetroPlug v<version>". */
-export function composeWindowTitle(version: string, project: string): string {
-  const base = version ? `RetroPlug v${version}` : "RetroPlug";
-  return project ? `${base} - ${project}` : base;
+/** The ROM's own internal name is a full-file scan (LSDj title / risa "RISA V" marker); cache it per
+ *  romPath so the per-render title composition doesn't re-scan a 512 KB ROM. A given path's ROM is stable
+ *  (the asset caches make the same assumption). */
+const cartRomNameCache = new Map<string, string | null>();
+function cartRomName(backend: Pick<HostBackend, "readFile">, tracker: TrackerIntegration, romPath: string): string | null {
+  const key = `${tracker.id}:${romPath}`;
+  if (cartRomNameCache.has(key)) return cartRomNameCache.get(key) ?? null;
+  const rom = romPath ? backend.readFile(romPath) : null;
+  const name = rom ? tracker.romName(rom) : null;
+  cartRomNameCache.set(key, name);
+  return name;
 }
 
-/** The instance-menu title: "RetroPlug v<version> - <project> - <rom>". ROM name = the file stem, or
- *  "mGB" for the embedded synth (romPath === ""). Empty segments are dropped, and the ROM is omitted when
- *  it equals the project name (the common case where the name was seeded from the ROM) so it isn't shown
- *  twice. */
+/** The title subtitle for a tracker cart (LSDj / risa): the WORKING song name, then the ROM's OWN name (its
+ *  internal title / version marker, NOT the on-disk filename) — e.g. "MYSONG - LSDj v9.4.2". Either piece is
+ *  dropped when absent (no song loaded / an unversioned ROM). null for a non-tracker system, so the caller
+ *  keeps its default project/rom-stem title. */
+export function trackerCartLabel(backend: Pick<ControlPlaneBackend, "readFile" | "readSram">, sys: SystemView): string | null {
+  const tracker = resolveTracker(sys.roles);
+  if (!tracker) return null;
+  const romName = cartRomName(backend, tracker, sys.romPath);
+  const sram = backend.readSram(sys.id);
+  const song = sram ? tracker.songs.workingName(sram) : null;
+  const segs = [song, romName].filter((s): s is string => !!s);
+  return segs.length ? segs.join(" - ") : null;
+}
+
+/** The standalone OS window title: "RetroPlug v<version> - <subtitle>". The subtitle is the tracker cart
+ *  label ("<song> - <ROM name>") when given, else the project name; empty segments are dropped, so a
+ *  nameless project shows just "RetroPlug v<version>". */
+export function composeWindowTitle(version: string, project: string, cart?: string | null): string {
+  const base = version ? `RetroPlug v${version}` : "RetroPlug";
+  const subtitle = cart || project; // a tracker cart's "song - ROM name" supersedes the project name
+  return subtitle ? `${base} - ${subtitle}` : base;
+}
+
+/** The instance-menu title. For a tracker cart: "RetroPlug v<version> - <song> - <ROM name>" (the cart's
+ *  own name, not the filename). Otherwise "RetroPlug v<version> - <project> - <rom>", where ROM = the file
+ *  stem (or "mGB" for the embedded synth), dropped when it equals the project name so it isn't shown twice. */
 function instanceTitle(ctx: MenuContext, sys: SystemView): string {
   const base = ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug";
+  const cart = trackerCartLabel(ctx.stores.backend, sys);
+  if (cart) return `${base} - ${cart}`;
   const project = ctx.stores.project.name();
   const rom = sys.embedded ? "mGB" : stem(sys.romPath);
   const segs = [base];
