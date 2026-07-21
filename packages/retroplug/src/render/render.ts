@@ -13,7 +13,7 @@
 // re-encode → seed the fresh system).
 import { createWavWriter, type WavWriter } from "./wav";
 import { syncDspFromStore } from "../appHost";
-import { extensionLower, dirname, stem, joinPath } from "../pathUtil";
+import { extensionLower, dirname, stem, joinPath, uniqueBase } from "../pathUtil";
 import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
 import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
@@ -253,6 +253,25 @@ export function outBase(o: RenderOpts, songName: string | null): string {
   return o.split === "mix" ? `${base}.wav` : base;
 }
 
+/** The WAV file paths a render will write for `prefix` (a base WITHOUT the extension), mirroring buildSink's
+ *  naming: mix → one `<prefix>.wav`; split → one `<prefix>_<channel>.wav` per stream. Used by the "rename"
+ *  policy to detect a collision on any of the mode's outputs. */
+function renderOutputPaths(o: RenderOpts, platform: Platform, prefix: string): string[] {
+  if (o.split === "mix") return [`${prefix}.wav`];
+  const names = platform === "gb" ? GB_CHANNELS : o.split === "channels" ? NES_CHANNELS : NES_PINS;
+  return names.map((n) => `${prefix}_${n}.wav`);
+}
+
+/** Apply the "If Exists" policy to a resolved base. "overwrite" (default) clobbers; "rename" bumps to the
+ *  first `<name>_N` whose outputs don't yet exist (checking every file the mode would write). */
+function resolveOnExists(ctx: RenderContext, o: RenderOpts, platform: Platform, base: string): string {
+  if (o.onExists !== "rename") return base;
+  const isMix = o.split === "mix";
+  const prefix = isMix && base.toLowerCase().endsWith(".wav") ? base.slice(0, -4) : base;
+  const unique = uniqueBase(prefix, (p) => renderOutputPaths(o, platform, p).some((f) => ctx.backend.fileExists(f)));
+  return isMix ? `${unique}.wav` : unique;
+}
+
 // --- streaming render: pump 100 ms chunks straight into per-output WavWriters (no whole-song buffer) ---
 
 interface StopMarkers {
@@ -467,7 +486,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // Default the filename to the SONG: the selected song when --song/--song-index is used, else the sav's
   // working song. --out overrides both, so skip the sav read then.
   const songName = o.out ? null : seed ? seed.name : currentSongName(ctx, o, platform);
-  const base = outBase(o, songName);
+  const base = resolveOnExists(ctx, o, platform, outBase(o, songName));
 
   // LSDj length auto-detect: when a valid LSDj sav is loaded and the user didn't pin a duration, render to
   // the HFF stop (NR52→0) instead of a fixed window, report the length, and trim the silent tail.

@@ -15,6 +15,8 @@ import {
   replaceFilename,
   joinPath,
   isAbsolute,
+  shortenMiddle,
+  uniqueBase,
 } from "../../src/pathUtil";
 
 test("dirname: everything before the last separator", () => {
@@ -74,4 +76,22 @@ test("isAbsolute: leading slash or a drive letter", () => {
   expect(isAbsolute("roms/x.gb")).toBeFalsy();
   expect(isAbsolute("./x.gb")).toBeFalsy();
   expect(isAbsolute("")).toBeFalsy();
+});
+
+test("shortenMiddle: elides the middle with … keeping start + end, no-op when it fits", () => {
+  expect(shortenMiddle("/home/me/music", 28)).toBe("/home/me/music"); // fits → unchanged
+  const long = "/home/me/very/deeply/nested/output/folder";
+  const short = shortenMiddle(long, 28);
+  expect(short.length).toBe(28);
+  expect(short.includes("…")).toBeTruthy();
+  expect(long.startsWith(short.slice(0, short.indexOf("…")))).toBeTruthy(); // head is a real prefix
+  expect(long.endsWith(short.slice(short.indexOf("…") + 1))).toBeTruthy(); // tail is a real suffix
+  expect(shortenMiddle("abcdefghij", 5)).toBe("ab…ij"); // exact budget split (end keeps the extra)
+});
+
+test("uniqueBase: base when free, else base_2, base_3, …", () => {
+  expect(uniqueBase("song", () => false)).toBe("song"); // nothing taken
+  const taken = new Set(["song", "song_2"]);
+  expect(uniqueBase("song", (c) => taken.has(c))).toBe("song_3"); // skips the taken ones
+  expect(uniqueBase("song", (c) => c === "song")).toBe("song_2"); // only the base taken
 });

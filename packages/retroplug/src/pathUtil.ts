@@ -86,3 +86,26 @@ export function joinPath(dir: string, name: string): string {
 export function isAbsolute(p: string): boolean {
   return /^([a-zA-Z]:[\\/]|[\\/])/.test(p);
 }
+
+/** Shorten `s` (e.g. a long directory path) to at most `maxLen` characters by eliding the middle with a
+ *  single `…`, keeping the start and end — for display in the narrow menu. A no-op when it already fits.
+ *  The end (the target folder) keeps the extra character on an odd budget. */
+export function shortenMiddle(s: string, maxLen: number): string {
+  if (maxLen <= 1) return s.length > maxLen ? "…" : s;
+  if (s.length <= maxLen) return s;
+  const budget = maxLen - 1; // one char for the ellipsis
+  const tail = Math.ceil(budget / 2);
+  const head = budget - tail;
+  return s.slice(0, head) + "…" + (tail > 0 ? s.slice(s.length - tail) : "");
+}
+
+/** The first of `base`, `base_2`, `base_3`, … for which `isTaken` returns false — the "If Exists: Rename"
+ *  render policy. `isTaken(candidate)` reports whether an output for that base already exists (the caller
+ *  checks `<base>.wav`, or the split's `<base>_<channel>.wav` files). Pure — the caller owns the fs check. */
+export function uniqueBase(base: string, isTaken: (candidate: string) => boolean): string {
+  if (!isTaken(base)) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base}_${n}`;
+    if (!isTaken(candidate)) return candidate;
+  }
+}

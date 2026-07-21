@@ -20,13 +20,13 @@ import {
   type LsdjSyncMode,
 } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
-import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES } from "../../../src/userConfig";
+import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
 import type { SplitMode } from "../../../src/render";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath } from "../../../src/savPaths";
-import { stem, dirname } from "../../../src/pathUtil";
+import { stem, dirname, joinPath, shortenMiddle } from "../../../src/pathUtil";
 import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
 import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
 import { replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
@@ -100,7 +100,6 @@ const ZIP_PATTERNS = ["*.rplg.zip"]; // exported project (PKZIP) — always `.rp
 const LOAD_PATTERNS = ["*.rplg", "*.rplg.zip"]; // load/locate accept either on-disk shape
 const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
 const SRAM_PATTERNS = ["*.sav"];
-const WAV_PATTERNS = ["*.wav"]; // render output
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
 function cycleInt(current: number, min: number, max: number, dir: 1 | -1): number {
@@ -273,10 +272,10 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     ),
   );
 
-  // Render to WAV — a background job on a fresh instance built from a COPY of the live SRAM/savestate (never
-  // the running core), like `retroplug-cli render`. The menu can close while it runs; progress + cancel show
-  // on the system tile. Split/sample-rate/max-duration are picked here (persisted in userConfig) and the one
-  // "Render..." action applies them. Only for on-disk ROMs. Split modes gate on platform.
+  // Render to WAV, a background job on a fresh instance built from a COPY of the live SRAM/savestate (never
+  // the running core), like `retroplug-cli render`. NO dialog at render time: the output folder, filename,
+  // routing/rate/duration, and on-exists policy are explicit rows, and "Render" writes straight to
+  // <Output Dir>/<Filename>.wav (a prefix + _<channel> for splits). Only for on-disk ROMs; splits gate on platform.
   if (sys.romPath) {
     const userConfig = ctx.stores.userConfig;
     const r = ctx.userConfig.render;
@@ -284,8 +283,42 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
     const split = splits.includes(r.split) ? r.split : "mix"; // clamp a stored pins/channels to this platform
     const rateIdx = Math.max(0, RENDER_SAMPLE_RATES.indexOf(r.sampleRate as never));
     const setMaxDur = (delta: number) => userConfig.setRenderMaxDurationSec(r.maxDurationSec + delta);
+    // Effective output folder (persisted "Output Dir", else next to the ROM) + current filename (a session
+    // override the user typed, else re-derived from the loaded song each time the menu opens).
+    const effectiveDir = r.outputDir || dirname(sys.romPath);
+    const curName = userConfig.renderFilename(sys.id) ?? sanitizeName(renderBaseName(ctx.stores.backend, sys));
+    const onExistsIdx = Math.max(0, RENDER_ON_EXISTS.indexOf(r.onExists));
 
     const renderChildren: MenuItem[] = [
+      // Output Dir: a native FOLDER picker (our DPF fork). The chosen folder persists to userConfig; the long
+      // path is middle-elided to fit the row. keepOpen so the menu stays up to keep configuring after picking.
+      {
+        id: "sys-render-dir",
+        label: `Output Dir: ${shortenMiddle(effectiveDir, 28)}`,
+        kind: "action",
+        keepOpen: true,
+        onSelect: () =>
+          browseThen(ctx, { title: "Output Dir", patterns: [], directory: true, startDir: effectiveDir }, (p) =>
+            userConfig.setRenderOutputDir(p),
+          ),
+      },
+      // Filename: an editable text prompt seeded with the derived name; the typed value is remembered for this
+      // session only (setRenderFilename), re-derived next time the menu opens.
+      {
+        id: "sys-render-filename",
+        label: `Filename: ${curName}`,
+        kind: "prompt",
+        keepOpen: true,
+        prompt: {
+          title: "Render filename:",
+          initial: curName,
+          filter: isFilenameChar,
+          onConfirm: (v: string) => {
+            userConfig.setRenderFilename(sys.id, sanitizeName(v));
+            return null;
+          },
+        },
+      },
       cycler("sys-render-split", "Audio Routing", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
         userConfig.setRenderSplit(splits[n]),
       ),
@@ -302,28 +335,17 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
         onCycle: (dir) => setMaxDur(dir),
         onCoarseStep: (dir) => setMaxDur(dir * 30),
       },
+      cycler("sys-render-ifexists", "If Exists", ["Overwrite", "Rename"], onExistsIdx, (n) =>
+        userConfig.setRenderOnExists(RENDER_ON_EXISTS[n]),
+      ),
       sep("sys-render-sep"),
-      // Default the filename to the loaded cart's working song (LSDj/risa) and open in the last-used render
-      // folder (else next to the ROM); remember wherever the user saves for next time.
-      action("sys-render-go", "Render...", () =>
-        browseThen(
-          ctx,
-          {
-            title: "Render",
-            patterns: WAV_PATTERNS,
-            saving: true,
-            defaultName: `${sanitizeName(renderBaseName(ctx.stores.backend, sys))}.wav`,
-            startDir: ctx.userConfig.render.lastDir || dirname(sys.romPath),
-          },
-          (p) => {
-            ctx.stores.userConfig.setRenderLastDir(dirname(p));
-            void startSystemRender(
-              ctx.stores.backend,
-              sys,
-              { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000 },
-              p,
-            );
-          },
+      // Render Now: no dialog. Writes to <dir>/<name>.wav (the render lib trims .wav to a prefix for splits).
+      action("sys-render-go", "Render Now", () =>
+        void startSystemRender(
+          ctx.stores.backend,
+          sys,
+          { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000, onExists: r.onExists },
+          joinPath(effectiveDir, `${curName}.wav`),
         ),
       ),
     ];
@@ -430,6 +452,9 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
 
 // A safe filename fragment (mirrors the CLI's sanitize).
 const sanitizeName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") || "asset";
+// Per-keystroke filter for the render Filename prompt: block path separators / dodgy chars at entry (a
+// space is allowed and folded to "_" by sanitizeName on confirm).
+const isFilenameChar = (ch: string): boolean => /^[A-Za-z0-9 ._-]$/.test(ch);
 const readLsdjRom = (be: HostBackend, romPath: string): LsdjRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
   if (!bytes) return null;

@@ -90,7 +90,7 @@ test("startSystemRender: no hook bound (headless) → inert null", () => {
   g.__rp_startRender = prev;
 });
 
-test("renderBaseName: tracker cart → the working song name; non-tracker / no battery → the ROM stem", () => {
+test("renderBaseName: song name → SAV basename → ROM stem, in priority order", () => {
   const backend = new MockBackend("/config");
   // An LSDj sav whose active (working) project is named HELLO (same fixture shape as tracker/songCatalog).
   const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
@@ -99,10 +99,14 @@ test("renderBaseName: tracker cart → the working song name; non-tracker / no b
 
   // lsdj-sync marker role + battery bytes → resolveSongCatalog → the working song name.
   expect(renderBaseName(backend, sysView({ id: 1, romPath: "/roms/lsdj.gb", roles: [{ kind: "lsdj-sync", config: {} }] }))).toBe("HELLO");
-  // A non-tracker ROM (no marker role) → the ROM stem (no sram read at all).
+  // A non-tracker ROM whose sibling .sav name matches the ROM → the ROM stem.
   expect(renderBaseName(backend, sysView({ id: 2, romPath: "/roms/mGB.gb", roles: [] }))).toBe("mGB");
-  // A tracker role but no battery bytes (readSram null) → falls back to the ROM stem.
+  // A tracker role but no battery bytes (readSram null) → SAV/ROM stem (sibling sav → same as ROM here).
   expect(renderBaseName(backend, sysView({ id: 3, romPath: "/roms/lsdj.gb", roles: [{ kind: "lsdj-sync", config: {} }] }))).toBe("lsdj");
+  // A non-tracker cart with a CUSTOM loaded sav → the sav's basename (differs from the ROM stem).
+  expect(renderBaseName(backend, sysView({ id: 4, romPath: "/roms/game.gb", roles: [], savPath: "/saves/MYSAVE.sav" }))).toBe("MYSAVE");
+  // A battery-less cart → the ROM stem (no sav to name it after).
+  expect(renderBaseName(backend, sysView({ id: 5, romPath: "/roms/demo.gb", roles: [], battery: false }))).toBe("demo");
 });
 
 test("outBase: song name without --out (sanitized), ROM-derived when null, --out always wins", () => {
@@ -178,15 +182,39 @@ test("userConfig render setters: validate + clamp, persist through the store", (
   store.setRenderMaxDurationSec(0); // under the floor → clamped
   expect(store.render().maxDurationSec).toBe(RENDER_MAX_DURATION_MIN_SEC);
 
-  expect(store.render().lastDir).toBe(""); // default: no remembered render folder yet
-  expect(store.setRenderLastDir("/music/out")).toBe(true);
-  expect(store.render().lastDir).toBe("/music/out");
-  expect(store.setRenderLastDir("/music/out")).toBe(false); // unchanged → no-op
+  expect(store.render().outputDir).toBe(""); // default: no chosen render folder yet
+  expect(store.setRenderOutputDir("/music/out")).toBe(true);
+  expect(store.render().outputDir).toBe("/music/out");
+  expect(store.setRenderOutputDir("/music/out")).toBe(false); // unchanged → no-op
+
+  expect(store.render().onExists).toBe("overwrite"); // default policy
+  expect(store.setRenderOnExists("rename")).toBe(true);
+  expect(store.render().onExists).toBe("rename");
+  expect(store.setRenderOnExists("bogus" as never)).toBe(false); // unknown mode rejected
 
   // Persisted: a fresh store over the same backend reads the saved render block back.
   const reloaded = new UserConfigStore(backend);
   reloaded.load();
   expect(reloaded.render().split).toBe("channels");
   expect(reloaded.render().sampleRate).toBe(48000);
-  expect(reloaded.render().lastDir).toBe("/music/out"); // the remembered dir round-trips through config.json
+  expect(reloaded.render().outputDir).toBe("/music/out"); // round-trips through config.json
+  expect(reloaded.render().onExists).toBe("rename");
+});
+
+test("userConfig render filename override: session-only, per-system, fires onChange, not persisted", () => {
+  const backend = new MockBackend("/config");
+  let changes = 0;
+  const store = new UserConfigStore(backend, () => changes++);
+  store.load();
+
+  expect(store.renderFilename(1)).toBe(undefined); // no override → caller re-derives
+  store.setRenderFilename(1, "MY_TAKE");
+  expect(store.renderFilename(1)).toBe("MY_TAKE");
+  expect(store.renderFilename(2)).toBe(undefined); // per-system
+  expect(changes > 0).toBeTruthy(); // repaints the menu
+
+  // NOT persisted: a fresh store over the same backend does not see it (config.json never carried it).
+  const reloaded = new UserConfigStore(backend);
+  reloaded.load();
+  expect(reloaded.renderFilename(1)).toBe(undefined);
 });

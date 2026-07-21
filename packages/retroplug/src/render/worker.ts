@@ -31,6 +31,7 @@ function normalize(spec: RenderJobSpec): RenderOpts {
     maxDurationMs: spec.maxDurationMs ?? 300000,
     sampleRate: spec.sampleRate,
     split: (spec.split as SplitMode) ?? "mix",
+    onExists: spec.onExists ?? "overwrite",
     bpm: spec.bpm,
     transport: spec.transport ?? false,
     start: spec.start ?? true,
