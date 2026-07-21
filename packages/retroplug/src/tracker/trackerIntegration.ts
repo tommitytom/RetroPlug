@@ -41,7 +41,7 @@ export const lsdjIntegration: TrackerIntegration = {
 
 export const risaIntegration: TrackerIntegration = {
   id: "risa",
-  label: "risa",
+  label: "Risa",
   markerRole: "risa",
   songs: risaSongCatalog,
   assets: risaAssetCatalog,
