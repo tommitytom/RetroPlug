@@ -49,6 +49,15 @@ export DISPLAY=":${DISP}"
 Xvfb "$DISPLAY" -screen 0 1024x768x24 -nolisten tcp >/dev/null 2>&1 &
 XVFB_PID=$!
 
+# Self-heal orphaned JACK shm: a hard-killed jackd (e.g. from the reaper suite) leaks its
+# /dev/shm/jack-shm-registry slot, and 8 leaks wedge every new jackd with "Too many servers already
+# active". Purge it only when no jackd is live, so we never disturb a running server.
+if ! pgrep -u "$(id -u)" -x jackd >/dev/null 2>&1; then
+    uid="$(id -u)"
+    rm -f "/dev/shm/jack-shm-registry" "/dev/shm/jack-${uid}-"* "/dev/shm/jack_sem.${uid}_"* 2>/dev/null || true
+    rm -rf "/dev/shm/jack_db-${uid}" 2>/dev/null || true
+fi
+
 jackd -d dummy -r 44100 -p 1024 >/tmp/retroplug-jackd.log 2>&1 &
 JACK_PID=$!
 
