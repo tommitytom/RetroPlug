@@ -218,3 +218,23 @@ test("userConfig render filename override: session-only, per-system, fires onCha
   reloaded.load();
   expect(reloaded.renderFilename(1)).toBe(undefined);
 });
+
+test("userConfig render Output-Dir override: session-only, per-system, fires onChange, never the config default", () => {
+  const backend = new MockBackend("/config");
+  let changes = 0;
+  const store = new UserConfigStore(backend, () => changes++);
+  store.load();
+
+  expect(store.renderDir(1)).toBe(undefined); // no override → the menu falls back to the Settings default / sav dir
+  store.setRenderDir(1, "/tmp/take-a");
+  expect(store.renderDir(1)).toBe("/tmp/take-a");
+  expect(store.renderDir(2)).toBe(undefined); // per-system
+  expect(changes > 0).toBeTruthy(); // repaints the menu
+  expect(store.render().outputDir).toBe(""); // the per-session Output Dir NEVER writes the Settings default
+
+  // NOT persisted, and independent of the Settings default: reload sees neither the override nor a default.
+  const reloaded = new UserConfigStore(backend);
+  reloaded.load();
+  expect(reloaded.renderDir(1)).toBe(undefined);
+  expect(reloaded.render().outputDir).toBe("");
+});

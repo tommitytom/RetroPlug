@@ -25,7 +25,7 @@ export interface RenderSettings {
   split: SplitMode; // clamped to the system's platform when a render actually starts
   sampleRate: number; // one of RENDER_SAMPLE_RATES
   maxDurationSec: number; // bounds every render (LSDj auto-length cap + the fixed-render length)
-  outputDir: string; // the render output folder (the System > Render "Output Dir"); "" = next to the ROM
+  outputDir: string; // the Settings "Default Render Dir"; "" = unset → derive from the .sav folder (else the ROM folder)
   onExists: RenderOnExists; // overwrite the target file, or write to the next free "<name>_N"
 }
 

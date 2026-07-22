@@ -928,3 +928,60 @@ test("appStores: a userConfig change also invalidates the bindings channel", () 
   expect(fired.includes("userConfig")).toBeTruthy();
   expect(fired.includes("bindings")).toBeTruthy(); // resolved bindings depend on the active pointer
 });
+
+test("Settings Default Render Dir: unset by default, Set persists to config, Clear resets (disabled when unset)", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const settings = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+  const renderDir = () => submenuChildren(settings(), "set-render-dir");
+
+  // Unset by default → the label reads "(unset)" and Clear is disabled.
+  expect(findItem(settings(), "set-render-dir")?.label).toBe("Default Render Dir: (unset)");
+  expect(findItem(renderDir(), "set-render-dir-clear")?.disabled).toBe(true);
+
+  // Set... opens a FOLDER picker, persists to render.outputDir, and the label reflects it.
+  be.queueBrowse("/music/out");
+  findItem(renderDir(), "set-render-dir-set")!.onSelect!();
+  await flush();
+  expect(stores.userConfig.config().render.outputDir).toBe("/music/out");
+  expect(findItem(settings(), "set-render-dir")?.label).toBe("Default Render Dir: /music/out");
+  expect(findItem(renderDir(), "set-render-dir-clear")?.disabled).toBeFalsy();
+
+  // Clear → back to unset.
+  findItem(renderDir(), "set-render-dir-clear")!.onSelect!();
+  expect(stores.userConfig.config().render.outputDir).toBe("");
+});
+
+test("render Output Dir: defaults to the .sav / ROM folder; Settings then a session pick override it (never config)", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const dirRow = (id: number) => {
+    const sys = stores.project.systems.view().find((s) => s.id === id)!;
+    const sysMenu = submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system");
+    return findItem(submenuChildren(sysMenu, "sys-render"), "sys-render-dir")!;
+  };
+
+  // A battery cart whose .sav lives in a DIFFERENT folder than the ROM → the default is the .sav's folder.
+  be.seed("/roms/game.gb", gbRomBattery());
+  be.seed("/saves/mysong.sav", "battery");
+  const battId = stores.project.systems.addSystem("/roms/game.gb", { explicitSav: "/saves/mysong.sav" })!;
+  expect(dirRow(battId).label).toBe("Output Dir: /saves"); // the .sav's folder, not /roms
+
+  // A non-battery cart → the default is the ROM's own folder.
+  be.seed("/carts/tune.nes", nesRom());
+  const nesId = stores.project.systems.addSystem("/carts/tune.nes")!;
+  expect(dirRow(nesId).label).toBe("Output Dir: /carts");
+
+  // A Settings default overrides the derived folder for every cart.
+  stores.userConfig.setRenderOutputDir("/music/out");
+  expect(dirRow(battId).label).toBe("Output Dir: /music/out");
+  expect(dirRow(nesId).label).toBe("Output Dir: /music/out");
+
+  // Picking in the render submenu is a per-SESSION override (wins), per-system, and does NOT touch config.
+  be.queueBrowse("/tmp/session");
+  dirRow(battId).onSelect!();
+  await flush();
+  expect(dirRow(battId).label).toBe("Output Dir: /tmp/session"); // session override wins for this cart
+  expect(dirRow(nesId).label).toBe("Output Dir: /music/out"); // other systems still see the Settings default
+  expect(stores.userConfig.config().render.outputDir).toBe("/music/out"); // Settings default untouched
+});

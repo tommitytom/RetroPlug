@@ -195,6 +195,12 @@ function mesenConfig(sys: SystemView): { region: ConsoleRegion; removeSpriteLimi
 // running core, like `retroplug-cli render`). NO dialog at render time: the output folder, filename,
 // on-exists policy, and routing/rate/duration are explicit rows, and "Render" writes straight to
 // <Output Dir>/<Filename>.wav (a prefix + _<channel> for splits). Only built for on-disk ROMs.
+// The render folder to default to when neither a session override nor the Settings "Default Render Dir" is
+// set: the folder the system's .sav lives in (a battery cart), else the ROM's own folder.
+function renderDefaultDir(sys: SystemView): string {
+  return sys.battery ? dirname(resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath)) : dirname(sys.romPath);
+}
+
 function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
   const userConfig = ctx.stores.userConfig;
   const r = ctx.userConfig.render;
@@ -202,9 +208,10 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
   const split = splits.includes(r.split) ? r.split : "mix"; // clamp a stored pins/channels to this platform
   const rateIdx = Math.max(0, RENDER_SAMPLE_RATES.indexOf(r.sampleRate as never));
   const setMaxDur = (delta: number) => userConfig.setRenderMaxDurationSec(r.maxDurationSec + delta);
-  // Effective output folder (persisted "Output Dir", else next to the ROM) + current filename (a session
-  // override the user typed, else re-derived from the loaded song each time the menu opens).
-  const effectiveDir = r.outputDir || dirname(sys.romPath);
+  // Effective output folder: a per-session override the user picked in this menu, else the Settings "Default
+  // Render Dir", else the folder the .sav is in (a battery cart) or the ROM's folder. Filename: a session
+  // override the user typed, else re-derived from the loaded song each time the menu opens.
+  const effectiveDir = userConfig.renderDir(sys.id) ?? (r.outputDir || renderDefaultDir(sys));
   const curName = userConfig.renderFilename(sys.id) ?? sanitizeName(renderBaseName(ctx.stores.backend, sys));
   const onExistsIdx = Math.max(0, RENDER_ON_EXISTS.indexOf(r.onExists));
 
@@ -217,8 +224,9 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
       kind: "action",
       keepOpen: true,
       onSelect: () =>
+        // A per-session override (setRenderDir) — deliberately NOT the persisted Settings default.
         browseThen(ctx, { title: "Output Dir", patterns: [], directory: true, startDir: effectiveDir }, (p) =>
-          userConfig.setRenderOutputDir(p),
+          userConfig.setRenderDir(sys.id, p),
         ),
     },
     // Filename: an editable text prompt seeded with the derived name; the typed value is remembered for this
@@ -1038,9 +1046,21 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
 function settingsChildren(ctx: MenuContext): MenuItem[] {
   const userConfig = ctx.stores.userConfig;
   const sramIdx = Math.max(0, SRAM_AUTO_SAVES.indexOf(ctx.userConfig.sramAutoSave));
+  // The persisted default render folder (System > Render seeds its Output Dir from this; "" = unset →
+  // each cart falls back to its .sav / ROM folder). Set via a native folder picker; Clear returns to unset.
+  const defaultDir = ctx.userConfig.render.outputDir;
+  const renderDirItem = submenu("set-render-dir", `Default Render Dir: ${defaultDir ? shortenMiddle(defaultDir, 28) : "(unset)"}`, [
+    action("set-render-dir-set", "Set...", () =>
+      browseThen(ctx, { title: "Default Render Dir", patterns: [], directory: true, startDir: defaultDir }, (p) =>
+        userConfig.setRenderOutputDir(p),
+      ),
+    ),
+    action("set-render-dir-clear", "Clear", () => userConfig.setRenderOutputDir(""), !defaultDir),
+  ]);
   return [
     cycler("set-sram", "SRAM Auto-Save", SRAM_AUTO_SAVES.map((m) => SRAM_AUTO_SAVE_LABELS[m] ?? m), sramIdx, (n) => userConfig.setSramAutoSave(SRAM_AUTO_SAVES[n])),
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
+    renderDirItem,
     submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
     submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),

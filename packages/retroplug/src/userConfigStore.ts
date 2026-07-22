@@ -31,6 +31,10 @@ export class UserConfigStore {
   // Render menu re-derives the default from the loaded song each time; this just remembers a name the user
   // typed for the current session. Keyed by system id; changing it fires onChange so the menu label repaints.
   private renderFilenames = new Map<number, string>();
+  // Per-system render OUTPUT-DIR overrides — session-only, deliberately NOT persisted. The Render menu's
+  // "Output Dir" row writes here (never config.json), so it defaults to the Settings "Default Render Dir"
+  // (else the .sav / ROM folder) but a per-session change never disturbs that saved default.
+  private renderDirs = new Map<number, string>();
 
   constructor(private readonly backend: HostBackend, private readonly onChange: () => void = () => {}) {}
 
@@ -120,8 +124,8 @@ export class UserConfigStore {
     return this.commitRender({ maxDurationSec: clamped });
   }
 
-  /** Set the render output directory (the System > Render "Output Dir"). Any string ("" = next to the ROM);
-   *  a no-op when unchanged. */
+  /** Set the persisted Settings "Default Render Dir". Any string ("" = unset → the Render menu derives from
+   *  the .sav / ROM folder); a no-op when unchanged. NOT the per-session Render "Output Dir" (see setRenderDir). */
   setRenderOutputDir(dir: string): boolean {
     return this.commitRender({ outputDir: dir });
   }
@@ -144,6 +148,21 @@ export class UserConfigStore {
    *  menu label repaints. */
   setRenderFilename(systemId: number, name: string): void {
     this.renderFilenames.set(systemId, name);
+    this.onChange();
+  }
+
+  // --- session-only render output-dir override (see renderDirs above) ---
+
+  /** The user's chosen render Output Dir for `systemId` this session, or undefined (→ the caller falls back
+   *  to the Settings default, else the .sav / ROM folder). */
+  renderDir(systemId: number): string | undefined {
+    return this.renderDirs.get(systemId);
+  }
+
+  /** Remember a chosen render Output Dir for `systemId` (session-only, NOT persisted — never touches the
+   *  Settings "Default Render Dir"). Fires onChange so the menu label repaints. */
+  setRenderDir(systemId: number, dir: string): void {
+    this.renderDirs.set(systemId, dir);
     this.onChange();
   }
 
