@@ -18,6 +18,14 @@ test("resolveRisaLayout resolves a known version and rejects an unknown one", ()
   expect(supportedRisaVersions().includes("2.2.1")).toBeTruthy();
 });
 
+test("resolveRisaLayout aliases 2.2.0 to the 2.2.1 layout (shared internal-RAM addresses)", () => {
+  const aliased = resolveRisaLayout("2.2.0");
+  expect(aliased != null).toBeTruthy();
+  expect(aliased!.version).toBe("2.2.0"); // keeps the ROM's real version label
+  expect(aliased!.seqMode).toBe(resolveRisaLayout("2.2.1")!.seqMode); // borrows 2.2.1's addresses
+  expect(supportedRisaVersions().includes("2.2.0")).toBeTruthy();
+});
+
 test("decodeRisaState degrades to unsupported for a null layout or an undersized snapshot", () => {
   expect(decodeRisaState(new Uint8Array(0x800), null).supported).toBeFalsy();
   expect(decodeRisaState(new Uint8Array(4), layout).supported).toBeFalsy(); // can't cover the addresses
