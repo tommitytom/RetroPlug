@@ -130,7 +130,7 @@ function buildModal(
   // relink: one "Locate …" per missing file (the store auto-resolves folder-mates, so one pick often
   // clears the rest), then Cancel.
   const items = pending.missing.map((m, i) =>
-    btn(`relink-${i}`, `Locate ${basename(m.path) || m.itemKind}…`, () =>
+    btn(`relink-${i}`, `Locate ${basename(m.path) || m.itemKind}...`, () =>
       void stores.backend
         .openFileBrowser({ title: `Locate ${basename(m.path) || m.itemKind}`, patterns: m.itemKind === "rom" ? ROM_PATTERNS : SRAM_PATTERNS })
         .then((p) => {

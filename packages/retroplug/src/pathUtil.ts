@@ -90,13 +90,16 @@ export function isAbsolute(p: string): boolean {
 /** Shorten `s` (e.g. a long directory path) to at most `maxLen` characters by eliding the middle with a
  *  single `…`, keeping the start and end — for display in the narrow menu. A no-op when it already fits.
  *  The end (the target folder) keeps the extra character on an odd budget. */
+// ASCII "..." for the elision marker: the LVGL menu font has no "…" (U+2026) glyph (it renders as a tofu
+// box), and ".." would read as the parent-directory token inside a path.
+const ELLIPSIS = "...";
 export function shortenMiddle(s: string, maxLen: number): string {
-  if (maxLen <= 1) return s.length > maxLen ? "…" : s;
   if (s.length <= maxLen) return s;
-  const budget = maxLen - 1; // one char for the ellipsis
+  if (maxLen <= ELLIPSIS.length) return s.slice(0, Math.max(0, maxLen)); // no room for head+tail — hard-truncate
+  const budget = maxLen - ELLIPSIS.length;
   const tail = Math.ceil(budget / 2);
   const head = budget - tail;
-  return s.slice(0, head) + "…" + (tail > 0 ? s.slice(s.length - tail) : "");
+  return s.slice(0, head) + ELLIPSIS + (tail > 0 ? s.slice(s.length - tail) : "");
 }
 
 /** The first of `base`, `base_2`, `base_3`, … for which `isTaken` returns false — the "If Exists: Rename"

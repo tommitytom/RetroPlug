@@ -78,15 +78,15 @@ test("isAbsolute: leading slash or a drive letter", () => {
   expect(isAbsolute("")).toBeFalsy();
 });
 
-test("shortenMiddle: elides the middle with … keeping start + end, no-op when it fits", () => {
+test("shortenMiddle: elides the middle with ASCII ... keeping start + end, no-op when it fits", () => {
   expect(shortenMiddle("/home/me/music", 28)).toBe("/home/me/music"); // fits → unchanged
   const long = "/home/me/very/deeply/nested/output/folder";
   const short = shortenMiddle(long, 28);
   expect(short.length).toBe(28);
-  expect(short.includes("…")).toBeTruthy();
-  expect(long.startsWith(short.slice(0, short.indexOf("…")))).toBeTruthy(); // head is a real prefix
-  expect(long.endsWith(short.slice(short.indexOf("…") + 1))).toBeTruthy(); // tail is a real suffix
-  expect(shortenMiddle("abcdefghij", 5)).toBe("ab…ij"); // exact budget split (end keeps the extra)
+  expect(short.includes("...")).toBeTruthy();
+  expect(long.startsWith(short.slice(0, short.indexOf("...")))).toBeTruthy(); // head is a real prefix
+  expect(long.endsWith(short.slice(short.indexOf("...") + 3))).toBeTruthy(); // tail is a real suffix
+  expect(shortenMiddle("abcdefghij", 5)).toBe("a...j"); // exact budget split (end keeps the extra)
 });
 
 test("uniqueBase: base when free, else base_2, base_3, …", () => {
