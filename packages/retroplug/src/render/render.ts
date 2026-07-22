@@ -1,12 +1,14 @@
 // The shared render orchestration: boot a fresh system from a ROM (+ its battery .sav / a savestate) and
-// stream its audio to WAV — full mix or per-channel/per-pin stems, with LSDj song-length auto-detection.
+// stream its audio to WAV — full mix or per-channel/per-pin stems, with tracker song-length auto-detection.
 // Host-neutral: it drives a RenderContext (the CLI's Session or the worker's control plane) and reports
 // through RenderHooks. The CLI `render` command (cli/sessions/render.ts) and the background render worker
 // both call runRenderJob; improving this file improves both.
 //
-// LSDj length auto-detect: when a valid LSDj sav is loaded (and no fixed duration is pinned), render to the
-// song's HFF stop (the APU master-enable NR52 going off — lsdpack's technique), report the length, and trim
-// the output to it. A pinned duration forces a fixed length; maxDurationMs caps the detection.
+// Song-length auto-detect: when a supported tracker is loaded (and no fixed duration is pinned), render to
+// the song's HFF stop, report the length, and trim the output to it. LSDj (GB) detects the stop via the APU
+// master-enable NR52 going off (lsdpack's technique); risa (NES) via its sequencer flag hitting
+// SEQ_MODE_STOPPED (read through the pure runtime reader). A pinned duration forces a fixed length;
+// maxDurationMs caps the detection.
 //
 // LSDj (GB) song selection: a .sav holds up to 32 named projects but LSDj only plays its WORKING song on
 // boot, so song / songIndex promote a chosen project to the working song before booting (decode → assign →
@@ -18,7 +20,7 @@ import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
 import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
 import { loadSongToWorkingInSav } from "../risaSongOps";
-import { isRisaRomHeader } from "../risa";
+import { isRisaRomHeader, runtime as risaRuntime } from "../risa";
 import { lsdjSongCatalog, risaSongCatalog } from "../tracker";
 import type { ChannelExportMode } from "../settingsEnums";
 import {
@@ -372,11 +374,11 @@ function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks, 
   }
 }
 
-/** LSDj auto-detect render: stream chunk-by-chunk, polling NR52 ($FF26), and stop at the HFF (the APU
- *  master-enable going high→low, sustained ≥DETECT_OFF_CHUNKS). Holds back the current contiguous off-streak
- *  (≤DETECT_OFF_CHUNKS whole chunks) so committed frames end exactly at the stop; a reset flushes them in
- *  order. Caps at maxMs (no-HFF fallback → keep everything). */
-function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): StopMarkers {
+/** Length auto-detect render: stream chunk-by-chunk, polling `isPlaying` (LSDj's NR52 / risa's seq_mode),
+ *  and stop at the HFF (the probe going true→false, sustained ≥DETECT_OFF_CHUNKS). Holds back the current
+ *  contiguous off-streak (≤DETECT_OFF_CHUNKS whole chunks) so committed frames end exactly at the stop; a
+ *  reset flushes them in order. Caps at maxMs (no-HFF fallback → keep everything). */
+function driveAutoDetect(sink: RenderSink, isPlaying: () => boolean, maxMs: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): StopMarkers {
   let total = 0; // frames rendered (committed + held)
   let committed = 0; // frames streamed to disk
   let elapsed = 0;
@@ -409,7 +411,7 @@ function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs
     elapsed += DETECT_CHUNK_MS;
     hooks.onProgress?.(Math.min(elapsed / maxMs, 0.99)); // upper bound — the HFF stop usually lands well before the cap
 
-    const on = ((ctx.backend.readCpu(id, NR52_ADDR) ?? 0) & NR52_ON) !== 0;
+    const on = isPlaying();
     if (!armed) {
       commit(chunk); // keep the lead-in from frame 0
       if (on) { armed = true; startFrame = frameBefore; } // playback began here
@@ -427,6 +429,31 @@ function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs
   }
   for (const c of held) commit(c); // cap reached, no confirmed stop → keep everything
   return { startFrame, endFrame: committed, hff: false };
+}
+
+/** The "is the song still playing" probe for length auto-detect, or null when `o.rom` isn't a supported
+ *  tracker (so the render uses a fixed duration instead). LSDj (GB) reads NR52 — the APU master-enable an
+ *  HFF powers off; risa (NES) reads seq_mode through the pure runtime reader — SEQ_MODE_STOPPED when the
+ *  last track HFFs. Both go true while sounding, false at the author's HFF stop. */
+function buildPlayingProbe(ctx: RenderContext, o: RenderOpts, id: number, platform: Platform): (() => boolean) | null {
+  if (platform === "gb") {
+    const raw = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
+    if (!raw || !isLsdjSav(raw)) return null;
+    return () => ((ctx.backend.readCpu(id, NR52_ADDR) ?? 0) & NR52_ON) !== 0;
+  }
+  if (platform === "nes") {
+    const rom = ctx.backend.readFile(o.rom);
+    if (!rom || !isRisaRomHeader(rom.subarray(0, 16))) return null; // generic NES ROMs: no end-detect
+    const layout = risaRuntime.resolveRisaLayout(risaRuntime.identifyRisaVersion(rom));
+    if (!layout) return null; // risa build with no committed symbol snapshot → fixed render
+    // readRam is the per-block WRAM snapshot (safe while the core plays). If it's momentarily unavailable,
+    // report "playing" so a read gap never trims the song early — the maxMs cap still bounds the render.
+    return () => {
+      const ram = ctx.backend.readRam(id);
+      return ram ? risaRuntime.decodeRisaState(ram, layout).playing : true;
+    };
+  }
+  return null;
 }
 
 /** Validate a resolved render request against its platform. Throws on a bad split/platform or song/platform
@@ -488,15 +515,12 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   const songName = o.out ? null : seed ? seed.name : currentSongName(ctx, o, platform);
   const base = resolveOnExists(ctx, o, platform, outBase(o, songName));
 
-  // LSDj length auto-detect: when a valid LSDj sav is loaded and the user didn't pin a duration, render to
-  // the HFF stop (NR52→0) instead of a fixed window, report the length, and trim the silent tail.
-  let lsdjLoaded = false;
-  if (platform === "gb") {
-    const raw = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
-    lsdjLoaded = !!raw && isLsdjSav(raw);
-  }
+  // Song-length auto-detect: when the ROM is a supported tracker (LSDj on GB, risa on NES) and the user
+  // didn't pin a duration, render to the HFF stop instead of a fixed window, report the length, and trim
+  // the silent tail. buildPlayingProbe returns null for anything else → a fixed render.
+  const isPlaying = buildPlayingProbe(ctx, o, id, platform);
   // Auto-detect applies to both mix and split (GB channels) — split just renders per-channel chunks.
-  const autoDetect = lsdjLoaded && o.start && o.durationMs === undefined;
+  const autoDetect = isPlaying !== null && o.start && o.durationMs === undefined;
 
   // Announce before the (possibly multi-minute) render so callers don't look hung while it works.
   const how = autoDetect ? `detecting length (HFF, cap ${o.maxDurationMs}ms)` : `${o.durationMs ?? o.maxDurationMs}ms`;
@@ -510,7 +534,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   const leadIn = pressPlay(ctx, sink, o, id, platform);
 
   if (autoDetect) {
-    const m = driveAutoDetect(sink, ctx, id, o.maxDurationMs, hooks, leadIn);
+    const m = driveAutoDetect(sink, isPlaying!, o.maxDurationMs, hooks, leadIn);
     const outputs = sink.finishAll();
     const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
     log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);

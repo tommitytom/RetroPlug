@@ -22,9 +22,10 @@ const RENDER_HINT = "run 'retroplug-cli render --help' for the full options";
 export const RENDER_HELP = `usage: retroplug-cli render <rom> [options]
 
 Render a Game Boy (.gb/.gbc), NES (.nes) or GBA (.gba) ROM to a WAV file. The ROM is booted and its audio
-is written to disk. For a saved LSDj song, Start is pressed so it begins playing (use --no-start to capture
-raw boot audio); mGB needs no such press, as it plays from incoming MIDI. With a loaded LSDj .sav the song
-length is auto-detected (rendered up to the HFF stop) unless you pin a fixed length with --duration.
+is written to disk. For a saved LSDj / risa song, Start is pressed so it begins playing (use --no-start to
+capture raw boot audio); mGB needs no such press, as it plays from incoming MIDI. With a loaded LSDj (Game
+Boy) or risa (NES) sav the song length is auto-detected (rendered up to the HFF stop) unless you pin a fixed
+length with --duration.
 
 Durations accept a unit: 500ms, 3s, 2m (decimals ok, e.g. 1.5s); a bare number is milliseconds.
 
@@ -36,9 +37,9 @@ Options:
   --state <file>         Savestate to restore after boot (instead of a fresh boot).
   --out <file>           Output path. Default: the working/selected song's name for an LSDj/risa cart, else
                          the ROM name; <name>.wav for a mix, <name>_<channel>.wav for --split.
-  --duration <time>      Fixed render length (e.g. 3s, 500ms, 2m). Turns OFF LSDj auto-length detection.
-                         Default: auto for a loaded LSDj sav, otherwise 5m.
-  --max-duration <time>  Safety cap for LSDj auto-length when no HFF stop is found. Default: 5m.
+  --duration <time>      Fixed render length (e.g. 3s, 500ms, 2m). Turns OFF song-length auto-detection.
+                         Default: auto for a loaded LSDj / risa sav, otherwise 5m.
+  --max-duration <time>  Safety cap for song-length auto-detect when no HFF stop is found. Default: 5m.
   --sample-rate <hz>     Output sample rate. Default: 44100. Higher rates resample the console's audio up
                          (larger WAV, same song); must be set before the ROM boots (it always is here).
   --split <mode>         What to write (default: mix):
