@@ -416,7 +416,7 @@ function driveAutoDetect(sink: RenderSink, isPlaying: () => boolean, maxMs: numb
  *  tracker (so the render uses a fixed duration instead). LSDj (GB) reads NR52 — the APU master-enable an
  *  HFF powers off; risa (NES) reads seq_mode through the pure runtime reader — SEQ_MODE_STOPPED when the
  *  last track HFFs. Both go true while sounding, false at the author's HFF stop. */
-function buildPlayingProbe(ctx: RenderContext, o: RenderOpts, id: number, platform: Platform): (() => boolean) | null {
+function buildPlayingProbe(ctx: RenderContext, o: RenderOpts, id: number, platform: Platform, warn: Logger): (() => boolean) | null {
   if (platform === "gb") {
     const raw = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
     if (!raw || !isLsdjSav(raw)) return null;
@@ -425,8 +425,17 @@ function buildPlayingProbe(ctx: RenderContext, o: RenderOpts, id: number, platfo
   if (platform === "nes") {
     const rom = ctx.backend.readFile(o.rom);
     if (!rom || !isRisaRomHeader(rom.subarray(0, 16))) return null; // generic NES ROMs: no end-detect
-    const layout = risaRuntime.resolveRisaLayout(risaRuntime.identifyRisaVersion(rom));
-    if (!layout) return null; // risa build with no committed symbol snapshot → fixed render
+    const version = risaRuntime.identifyRisaVersion(rom);
+    const layout = risaRuntime.resolveRisaLayout(version);
+    if (!layout) {
+      // A risa cart whose version has no internal-RAM layout: the reader can't find seq_mode, so we fall
+      // back to a fixed render — but say why, or it just looks like the song never stops (it can't be seen
+      // to stop). Only these versions expose the addresses song-length auto-detect needs.
+      warn(`render: risa ${version ?? "(unrecognized version)"} has no runtime layout — song-length ` +
+        `auto-detect unavailable (supported: ${risaRuntime.supportedRisaVersions().join(", ")}); ` +
+        `rendering a fixed ${o.durationMs ?? o.maxDurationMs}ms`);
+      return null;
+    }
     // readRam is the per-block WRAM snapshot (safe while the core plays). If it's momentarily unavailable,
     // report "playing" so a read gap never trims the song early — the maxMs cap still bounds the render.
     return () => {
@@ -499,7 +508,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // Song-length auto-detect: when the ROM is a supported tracker (LSDj on GB, risa on NES) and the user
   // didn't pin a duration, render to the HFF stop instead of a fixed window, report the length, and trim
   // the silent tail. buildPlayingProbe returns null for anything else → a fixed render.
-  const isPlaying = buildPlayingProbe(ctx, o, id, platform);
+  const isPlaying = buildPlayingProbe(ctx, o, id, platform, warn);
   // Auto-detect applies to both mix and split (GB channels) — split just renders per-channel chunks.
   const autoDetect = isPlaying !== null && o.start && o.durationMs === undefined;
 
