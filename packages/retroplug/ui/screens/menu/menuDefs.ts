@@ -195,6 +195,14 @@ function mesenConfig(sys: SystemView): { region: ConsoleRegion; removeSpriteLimi
 // running core, like `retroplug-cli render`). NO dialog at render time: the output folder, filename,
 // on-exists policy, and routing/rate/duration are explicit rows, and "Render" writes straight to
 // <Output Dir>/<Filename>.wav (a prefix + _<channel> for splits). Only built for on-disk ROMs.
+// Compose a "<prefix><dir>" menu label that stays on ONE line: the path is middle-elided so the whole label
+// (plus the " >" LVGL appends to a submenu row) fits before it wraps. The budget is prefix-aware — a fixed
+// path budget overflowed for a long prefix like "Default Render Dir: ", wrapping the row.
+const DIR_LABEL_MAX = 38; // total label chars that fit on a row at the default window width (leaves room for " >")
+function dirLabel(prefix: string, dir: string): string {
+  return `${prefix}${shortenMiddle(dir, Math.max(6, DIR_LABEL_MAX - prefix.length))}`;
+}
+
 // The render folder to default to when neither a session override nor the Settings "Default Render Dir" is
 // set: the folder the system's .sav lives in (a battery cart), else the ROM's own folder.
 function renderDefaultDir(sys: SystemView): string {
@@ -220,7 +228,7 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
     // path is middle-elided to fit the row. keepOpen so the menu stays up to keep configuring after picking.
     {
       id: "sys-render-dir",
-      label: `Output Dir: ${shortenMiddle(effectiveDir, 28)}`,
+      label: dirLabel("Output Dir: ", effectiveDir),
       kind: "action",
       keepOpen: true,
       onSelect: () =>
@@ -1049,7 +1057,7 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
   // The persisted default render folder (System > Render seeds its Output Dir from this; "" = unset →
   // each cart falls back to its .sav / ROM folder). Set via a native folder picker; Clear returns to unset.
   const defaultDir = ctx.userConfig.render.outputDir;
-  const renderDirItem = submenu("set-render-dir", `Default Render Dir: ${defaultDir ? shortenMiddle(defaultDir, 28) : "(unset)"}`, [
+  const renderDirItem = submenu("set-render-dir", dirLabel("Default Render Dir: ", defaultDir || "(unset)"), [
     action("set-render-dir-set", "Set...", () =>
       browseThen(ctx, { title: "Default Render Dir", patterns: [], directory: true, startDir: defaultDir }, (p) =>
         userConfig.setRenderOutputDir(p),
