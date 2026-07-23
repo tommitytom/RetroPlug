@@ -39,7 +39,7 @@ Options:
                          the ROM name; <name>.wav for a mix, <name>_<channel>.wav for --split.
   --duration <time>      Fixed render length (e.g. 3s, 500ms, 2m). Turns OFF song-length auto-detection.
                          Default: auto for a loaded LSDj / risa sav, otherwise 5m.
-  --max-duration <time>  Safety cap for song-length auto-detect when no HFF stop is found. Default: 5m.
+  --max-duration <time>  Safety cap for song-length auto-detect when no HFF stop is found. Default: 10m.
   --sample-rate <hz>     Output sample rate. Default: 44100. Higher rates resample the console's audio up
                          (larger WAV, same song); must be set before the ROM boots (it always is here).
   --split <mode>         What to write (default: mix):
@@ -87,7 +87,7 @@ export function parseRenderArgs(argv: string[]): RenderOpts {
   let state: string | undefined;
   let out: string | undefined;
   let durationMs: number | undefined;
-  let maxDurationMs = 300000; // 5 min default cap for LSDj length auto-detect
+  let maxDurationMs = 600000; // 10 min default cap for LSDj length auto-detect
   let sampleRate: number | undefined;
   let split: SplitMode = "mix";
   let bpm: number | undefined;

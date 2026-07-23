@@ -37,8 +37,8 @@ const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Sta
 const NES_START = 7; // NesButton::Start (same index) ; NES_SELECT = 6. risa plays a song on SELECT+START.
 const NES_SELECT = 6;
 // A fixed (non-auto-detect) render runs for `durationMs` if pinned, else `maxDurationMs` — so "max duration"
-// bounds every render, not just the LSDj auto-length cap. maxDurationMs defaults to 300000 (5 min), so a
-// render with neither pinned is unchanged from the old fixed default.
+// bounds every render, not just the LSDj auto-length cap. maxDurationMs defaults to 600000 (10 min) at the
+// CLI / worker seams, so a render with neither pinned falls back to that cap.
 
 // LSDj song-length auto-detect: LSDj's HFF command stops the song by powering the APU off — a 0 write to
 // NR52 ($FF26), the sound master-enable register (bit 7). We poll it each render chunk and stop at the

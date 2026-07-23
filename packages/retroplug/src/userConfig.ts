@@ -36,7 +36,7 @@ const renderSchema = z.preprocess(
   z.object({
     split: enumField(RENDER_SPLITS, "mix"),
     sampleRate: z.preprocess((v) => (RENDER_SAMPLE_RATES.includes(v as never) ? v : 44100), z.number()),
-    maxDurationSec: clampedInt(RENDER_MAX_DURATION_MIN_SEC, RENDER_MAX_DURATION_MAX_SEC, 300),
+    maxDurationSec: clampedInt(RENDER_MAX_DURATION_MIN_SEC, RENDER_MAX_DURATION_MAX_SEC, 600), // 10 min
     outputDir: stringField(""),
     onExists: enumField(RENDER_ON_EXISTS, "overwrite"),
   }),
