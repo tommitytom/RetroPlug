@@ -1,7 +1,7 @@
 // The redesigned System > Render submenu, end to end on the headless display. A file-dropped mGB (a real
 // romPath, non-tracker → the filename derives to the ROM stem "mGB") drives the new explicit rows:
 //   Output Dir (a native FOLDER picker), Filename (derived), If Exists (Overwrite/Rename),
-//   Audio Routing / Sample Rate / Max Duration, and a dialog-less "Render".
+//   Split / Sample Rate / Max Duration, and a dialog-less "Render".
 // The file browser is stubbed; we assert the Output Dir opens in DIRECTORY mode and that "Render" writes
 // to <outputDir>/<filename>.wav with the chosen routing / rate / on-exists policy — no dialog at render time.
 
@@ -57,7 +57,7 @@ test("render submenu: Output Dir folder-picks, and Render writes <dir>/<name>.wa
   // All the new rows are present, and the filename defaulted to the ROM stem ("mGB", non-tracker).
   expect(ui.findByTextContaining("Output Dir:") != null).toBeTruthy();
   expect(ui.findByTextContaining("Filename: mGB") != null).toBeTruthy();
-  expect(ui.findByTextContaining("Audio Routing:") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Split:") != null).toBeTruthy();
   expect(ui.findByTextContaining("Sample Rate:") != null).toBeTruthy();
   expect(ui.findByTextContaining("Max Duration:") != null).toBeTruthy();
   expect(ui.findByTextContaining("If Exists: Overwrite") != null).toBeTruthy();
@@ -77,11 +77,11 @@ test("render submenu: Output Dir folder-picks, and Render writes <dir>/<name>.wa
   ui.pump(6);
   expect(ui.findByTextContaining("If Exists: Rename") != null).toBeTruthy();
 
-  // Audio Routing: Mix → Channels (mGB is sameboy, so channels is offered).
-  expect(navTo("Audio Routing:")).toBeTruthy();
+  // Split: Mix → Channels (mGB is sameboy, so channels is offered).
+  expect(navTo("Split:")).toBeTruthy();
   ui.tapKey(Key.Right);
   ui.pump(6);
-  expect(ui.findByTextContaining("Audio Routing: Channels") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Split: Channels") != null).toBeTruthy();
 
   // Sample Rate: 44100 → 48000.
   expect(navTo("Sample Rate:")).toBeTruthy();

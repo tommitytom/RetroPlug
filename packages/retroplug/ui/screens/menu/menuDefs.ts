@@ -258,7 +258,7 @@ function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
       userConfig.setRenderOnExists(RENDER_ON_EXISTS[n]),
     ),
     sep("sys-render-sep-opts"),
-    cycler("sys-render-split", "Audio Routing", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
+    cycler("sys-render-split", "Split", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
       userConfig.setRenderSplit(splits[n]),
     ),
     cycler("sys-render-rate", "Sample Rate", RENDER_SAMPLE_RATES.map((hz) => `${hz} Hz`), rateIdx, (n) =>
