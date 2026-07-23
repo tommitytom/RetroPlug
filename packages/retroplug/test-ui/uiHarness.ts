@@ -44,6 +44,7 @@ interface NativeUi {
   focused(): WidgetInfo | null;
   tapKey(lvKey: number): void;
   clickAt(x: number, y: number): void;
+  rightClick(x: number, y: number): void;
   moveMouse(x: number, y: number): void;
   gamepadButton(name: string, press: boolean, pad?: number): void;
   gamepadAxis(axis: string, value: number, pad?: number): void;
@@ -116,6 +117,8 @@ export const ui = {
   tapKey(lvKey: number): void { rp.tapKey(lvKey); },
   /** Click (press+release) at absolute (x,y) → the widget's onClick. */
   clickAt(x: number, y: number): void { rp.clickAt(x, y); },
+  /** Emit a RIGHT-button "mouse" bus press+release at (x,y) — drives the App's right-click open-menu path. */
+  rightClick(x: number, y: number): void { rp.rightClick(x, y); },
   /** Move the (unpressed) pointer to absolute (x,y) → LVGL hover on the widget under it. */
   moveMouse(x: number, y: number): void { rp.moveMouse(x, y); },
   /** Emit one SDL controller button transition on the "gamepad-button" bus (name = SDL canonical, e.g.

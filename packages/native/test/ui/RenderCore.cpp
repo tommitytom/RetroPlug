@@ -378,6 +378,24 @@ void RenderCore::clickAt(std::int32_t x, std::int32_t y) {
     pump(2);  // release -> LVGL fires CLICKED -> onClick
 }
 
+// Emit a RIGHT-button press+release on the "mouse" bus at (x,y) — the seam the App's right-click "open the
+// instance menu" handler reads. Deliberately does NOT drive the LVGL pointer (no mouseDown_): a right click
+// isn't the primary click, so it must not fire a tile's LVGL onClick — only the bus event matters here.
+void RenderCore::rightClickAt(std::int32_t x, std::int32_t y) {
+    JSContext* ctx = engine_.getContext();
+    if (!ctx) return;
+    auto emitMouse = [&](bool press) {
+        JSValue args[4] = { JS_NewUint32(ctx, 2 /* DPF kMouseButtonRight */), JS_NewBool(ctx, press),
+                            JS_NewFloat64(ctx, x), JS_NewFloat64(ctx, y) };
+        engine_.emit("mouse", 4, args);
+        for (JSValue& v : args) JS_FreeValue(ctx, v);
+    };
+    emitMouse(true);
+    pump(2);  // let the App handler open + React re-render the menu
+    emitMouse(false);
+    pump(2);
+}
+
 // Move the (unpressed) pointer to (x,y). The pointer indev reads the released cursor at the new position,
 // so LVGL fires LV_EVENT_HOVER_LEAVE on the old object + LV_EVENT_HOVER_OVER on the new → LV_STATE_HOVERED
 // toggles + any onHoveredStyle applies. Mirrors the real plugin's onMotion path; no "mouse" button event.

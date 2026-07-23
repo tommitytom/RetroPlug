@@ -224,6 +224,14 @@ JSValue jsUiMoveMouse(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.moveMouse: %s", e.what()); }
 }
 
+JSValue jsUiRightClick(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    int x = 0, y = 0;
+    if (argc < 2) return JS_ThrowTypeError(ctx, "ui.rightClick(x, y)");
+    if (JS_ToInt32(ctx, &x, argv[0]) < 0 || JS_ToInt32(ctx, &y, argv[1]) < 0) return JS_EXCEPTION;
+    try { coreOrThrow().rightClickAt(x, y); return JS_UNDEFINED; }
+    catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.rightClick: %s", e.what()); }
+}
+
 // Inject the native gamepad buses. JS arg order is caller-friendly (name, press[, pad]); the core reorders
 // to the bus shape (pad, name, press). pad defaults to 0 (a single virtual controller).
 JSValue jsUiGamepadButton(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -295,6 +303,7 @@ void installUiNamespace(JSContext* ctx) {
         { "focused",              { jsUiFocused,              0 } },
         { "tapKey",               { jsUiTapKey,               1 } },
         { "clickAt",              { jsUiClickAt,              2 } },
+        { "rightClick",           { jsUiRightClick,           2 } },
         { "moveMouse",            { jsUiMoveMouse,            2 } },
         { "gamepadButton",        { jsUiGamepadButton,        2 } },
         { "gamepadAxis",          { jsUiGamepadAxis,          2 } },

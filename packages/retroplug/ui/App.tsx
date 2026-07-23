@@ -32,6 +32,7 @@ import { importSongFiles } from "../src/lsdjSongImport";
 
 const KEY_ESCAPE = 0x1b;
 const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
+const MOUSE_BUTTON_RIGHT = 2; // DPF kMouseButtonRight (left=1, right=2, middle=3) — the "mouse" bus button field
 
 export function App() {
   const stores = useStores();
@@ -134,6 +135,23 @@ export function App() {
     if (!press) return;
     if (closeGuard.active || modals.active) return;
     runAction(padToAction.get(name));
+  });
+
+  // Right-click an instance → open its menu (anchored to the clicked tile, which also becomes focused). The
+  // native editor emits the "mouse" bus as [button, press, x, y]; a left click already focuses/opens rows via
+  // LVGL, so we act only on the right button. Ignored on the start screen (its menu is always open) and while
+  // a capture/prompt or a full-window overlay owns input.
+  useNativeEvent("mouse", (...args) => {
+    const button = args[0] as number;
+    const press = args[1] as boolean;
+    if (button !== MOUSE_BUTTON_RIGHT || !press) return;
+    if (empty || isMenuModalActive() || closeGuard.active || modals.active) return;
+    const idx = hitTestTile(args[2] as number, args[3] as number, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    if (idx == null) return; // must land on an instance
+    const targetId = systems[idx].id;
+    stores.project.systems.setFocus(targetId); // focus the right-clicked instance, then anchor its menu
+    setMenuSystemId(targetId);
+    setMenuOpen(true);
   });
 
   // Drag-and-drop: a dropped ROM / .sav / project routes by instance count. On the start screen or a
