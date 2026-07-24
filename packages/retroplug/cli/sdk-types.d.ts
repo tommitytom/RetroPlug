@@ -194,11 +194,23 @@ export interface CallFrame {
 // ─── The backend: live-core reads + file I/O a ROM test uses (the full Backend has more; this is the
 //     ROM-testing subset). All reads are valid on the control thread with the audio thread NOT started. ──
 
+/** A decoded RGBA8888 image (`pngDecode`); `rgba` is `width*height*4` bytes, row-major, top-to-bottom. */
+export interface PngImageData {
+  width: number;
+  height: number;
+  rgba: Uint8Array;
+}
+
 export interface Backend {
   /** Write `bytes` to `path` (e.g. persist a rendered WAV). */
   writeFile(path: string, bytes: Uint8Array): boolean;
   writeFileAtomic(path: string, bytes: Uint8Array): boolean;
   fileExists(path: string): boolean;
+  readFile(path: string): Uint8Array | null;
+  /** Encode an RGBA8888 buffer to PNG bytes (native lodepng); null on failure. Used by the spectrogram. */
+  pngEncode(width: number, height: number, rgba: Uint8Array): Uint8Array | null;
+  /** Decode PNG bytes to RGBA8888; null if not a valid/supported PNG. */
+  pngDecode(bytes: Uint8Array): PngImageData | null;
   /** Decoded NES APU snapshot. NES-only (zeroed on other cores). */
   getApuState(id: number): ApuState;
   /** Decoded NES expansion-audio snapshot (VRC6/VRC7/S5B/N163). `chip` is "none" without expansion
@@ -374,3 +386,119 @@ export declare function expect(actual: unknown): {
   toBeFalsy(): void;
   toThrow(match?: string | RegExp): void;
 };
+
+// ─── DSP core (F2): FFT, windows, magnitude spectrum over interleaved-stereo @44100 render output. ──────
+
+export declare const DEFAULT_SAMPLE_RATE: number;
+export type WindowType = "hann" | "hamming" | "blackman" | "rect";
+export interface Spectrum {
+  freqs: Float32Array;
+  mag: Float32Array;
+  sampleRate: number;
+  binHz: number;
+}
+/** Smallest power of two >= n. */
+export declare function nextPow2(n: number): number;
+/** In-place radix-2 FFT; `re`/`im` must be the same power-of-two length. */
+export declare function fft(re: Float64Array, im: Float64Array): void;
+/** Window coefficients of length `n` (periodic form). */
+export declare function windowCoeffs(type: WindowType, n: number): Float64Array;
+/** De-interleave 2-channel PCM to mono (default: L+R average). */
+export declare function toMono(pcm: Float32Array, opts?: { channel?: "left" | "right" | "mix" }): Float32Array;
+/** A mono window of `n` samples starting at `startMs`, from interleaved-stereo PCM (zero-filled past end). */
+export declare function window(pcm: Float32Array, startMs: number, n: number, sampleRate?: number): Float32Array;
+/** Windowed magnitude spectrum of a mono signal (Hann by default), bins 0..N/2. */
+export declare function magnitudeSpectrum(x: Float32Array, opts?: { window?: WindowType; sampleRate?: number }): Spectrum;
+
+// ─── Pitch detection (F3): FFT + Harmonic Product Spectrum. Prefer decoded Hz (F1) when available. ──────
+
+export interface PitchResult {
+  hz: number;          // fundamental Hz; 0 when no confident pitch
+  cents: number;       // signed cents from the nearest equal-tempered note; NaN when hz==0
+  confidence: number;  // 0..1
+  harmonics: number;   // how many harmonics reinforced the estimate
+}
+/** Signed cents of a measured vs expected frequency: 1200*log2(m/e). NOT octave-folded (catches octave errors). */
+export declare function centsError(measuredHz: number, expectedHz: number): number;
+/** Fundamental via FFT + HPS. Low default fmin so octave errors are detected, not filtered. Reliable for
+ *  2A03 pulse/triangle + harmonic tones; a strongly inharmonic FM timbre (VRC7) can lock onto a partial, so
+ *  for expansion-audio tuning prefer the decoded Hz (getExpansionAudioState().frequency). */
+export declare function detectPitch(x: Float32Array, opts?: { sampleRate?: number; fmin?: number; fmax?: number; harmonics?: number }): PitchResult;
+
+// ─── Timbre / quality metrics (F5). ────────────────────────────────────────────────────────────────────
+
+/** Magnitude-weighted mean frequency in Hz ("brightness"). */
+export declare function spectralCentroid(x: Float32Array, sampleRate?: number): number;
+/** Sum of the magnitudes at the first `n` harmonics of `f0`. */
+export declare function harmonicEnergy(x: Float32Array, f0: number, n?: number, sampleRate?: number): number;
+/** Total harmonic distortion at `f0`: sqrt(sum(H2..Hn^2)) / H1. */
+export declare function thd(x: Float32Array, f0: number, n?: number, sampleRate?: number): number;
+/** Noise-floor level in dB: 20*log10(median/peak). Lower = cleaner. */
+export declare function noiseFloorDb(x: Float32Array, sampleRate?: number): number;
+/** Absolute spectral power in the [loHz, hiHz] band, in dB. */
+export declare function bandEnergyDb(x: Float32Array, loHz: number, hiHz: number, sampleRate?: number): number;
+
+// ─── Spectrogram (F4): STFT + a magma-style PNG via the host's native pngEncode. Inputs are MONO. ───────
+
+export interface StftOpts {
+  fftSize?: number;
+  hopMs?: number;
+  sampleRate?: number;
+  window?: WindowType;
+}
+export interface Stft {
+  times: Float32Array;
+  freqs: Float32Array;
+  magDb: Float32Array[];
+  binHz: number;
+}
+export interface SpectrogramOpts extends StftOpts {
+  fmax?: number;
+  logFreq?: boolean;
+  db?: [number, number];
+  width?: number;
+  height?: number;
+}
+export interface RgbaImage { width: number; height: number; rgba: Uint8Array; }
+export interface PngWriter {
+  pngEncode(width: number, height: number, rgba: Uint8Array): Uint8Array | null;
+  writeFile(path: string, bytes: Uint8Array): boolean;
+}
+/** STFT of a MONO signal; magDb normalized so the loudest bin is 0 dB. Bridge from a render with toMono. */
+export declare function stft(mono: Float32Array, opts?: StftOpts): Stft;
+/** Render a MONO signal's spectrogram to an RGBA image (time X, frequency Y, low at bottom). Pure. */
+export declare function spectrogramImage(mono: Float32Array, opts?: SpectrogramOpts): RgbaImage;
+/** Render a MONO signal's spectrogram and write it as a PNG via the host's native pngEncode. */
+export declare function writeSpectrogramPng(backend: PngWriter, mono: Float32Array, path: string, opts?: SpectrogramOpts): boolean;
+
+// ─── Expansion-audio register decode (F6): the drainEvents write log -> programmed per-voice values. ────
+
+export type ExpansionChip = "vrc6" | "vrc7" | "s5b" | "n163";
+export interface Vrc6VoiceWrite {
+  channel: number; kind: "pulse" | "saw"; freqReg: number; enabled: boolean;
+  volume: number; duty: number; ignoreDuty: boolean; freqShift: number; haltAudio: boolean;
+}
+export interface Vrc7VoiceWrite { channel: number; fnum: number; block: number; key: boolean; inst: number; volume: number; }
+export interface S5bVoiceWrite { channel: number; period: number; volume: number; toneEnabled: boolean; }
+export interface N163VoiceWrite {
+  channel: number; enabled: boolean; freqReg: number; waveLen: number; waveAddr: number; volume: number; numChannels: number;
+}
+export interface DecodedExpansionWrites {
+  vrc6?: Vrc6VoiceWrite[];
+  vrc7?: Vrc7VoiceWrite[];
+  s5b?: S5bVoiceWrite[];
+  n163?: N163VoiceWrite[];
+}
+/** Reconstruct the final programmed expansion-audio registers from a drainEvents write log. Pairs with F1. */
+export declare function decodeExpansionWrites(events: DebugEvent[], chip: ExpansionChip): DecodedExpansionWrites;
+
+// ─── Tuning / timbre assertions (F7): built on F1 (decoded Hz) + F3 (detectPitch). Throw on failure. ────
+
+/** Assert a measured pitch is within `tolCents` of `expectedHz` (feed decoded Hz F1 or detectPitch F3). */
+export declare function assertInTune(measuredHz: number, expectedHz: number, opts?: { tolCents?: number }): void;
+/** Detect a mono buffer's pitch and assert it is within `tolCents` of `expectedHz`. */
+export declare function assertPitchInTune(mono: Float32Array, expectedHz: number, opts?: { tolCents?: number; sampleRate?: number; fmin?: number; fmax?: number; minConfidence?: number }): void;
+/** A stable spectral fingerprint (normalized log-band dB vector) for golden-audio regression. */
+export declare function spectralFingerprint(mono: Float32Array, opts?: { bands?: number; sampleRate?: number; fmin?: number; fmax?: number }): number[];
+/** Assert a render's fingerprint has not drifted from `golden` by more than `tol` dB in any band. */
+export declare function assertFingerprint(mono: Float32Array, golden: number[], tol?: number, opts?: { bands?: number; sampleRate?: number; fmin?: number; fmax?: number }): void;
