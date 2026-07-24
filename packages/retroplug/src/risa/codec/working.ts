@@ -33,9 +33,15 @@ import {
   INST_TYPE_PULSE,
   INST_TYPE_NOISE,
   INST_TYPE_DMC,
+  INST_TYPE_ZSAW,
   INST_TYPE_FIELD,
   INST_LAST_FIELD,
   INST_DMC_KIT_FIELD,
+  INST_ZSAW_TIMBRE_FIELD,
+  INST_ZSAW_MARKER_FIELD,
+  INST_ZSAW_MARKER,
+  ZSAW_TIMBRE_SAW_00,
+  ZSAW_TIMBRE_SAW_7F,
   INST_ENV_A_FIELD,
   INST_ENV_D_FIELD,
   INST_ENV_R_FIELD,
@@ -149,7 +155,17 @@ export function initWorkingDefaults(): Uint8Array {
 
 /** Apply the firmware's post-load instrument migrations in place (src/seq_data_save.c save_migrate_*):
  *  <v4 moves the DMC kit index from byte 7 to byte 10; <v7 re-encodes pulse/noise volume envelopes to
- *  attack/decay/release. A no-op for a v7 record. */
+ *  attack/decay/release; then every load normalizes legacy WAVE instruments to Z-Saw. Only the last of
+ *  those runs for a v7 record.
+ *
+ *  The Z-Saw pass is NOT version-gated, matching risa (save_normalize_zsaw_instruments, called
+ *  unconditionally): a v7 record written by a 2.2.x build carries WAVE instruments under the same type
+ *  byte Z-Saw now uses, so the marker at byte 11 is the only thing that can tell them apart. Idempotent -
+ *  an already-marked instrument is skipped.
+ *
+ *  It matters here because the firmware only normalizes on ITS OWN load paths (boot materialize + catalog
+ *  load). Songs > Load writes working RAM directly under a running core, so without this a pre-2.3.0 song
+ *  with WAVE instruments would be misread as Z-Saw until the next reset. */
 function migrateInstruments(w: Uint8Array, version: number): void {
   const dmcMove = version < SAVE_RECORD_VERSION_V4;
   const envUpgrade = version < SAVE_RECORD_VERSION_V7;
@@ -157,6 +173,16 @@ function migrateInstruments(w: Uint8Array, version: number): void {
     const p = instBase(idx);
     const type = w[p + INST_TYPE_FIELD];
     if (type === 0xff) continue;
+    if (type === INST_TYPE_ZSAW && w[p + INST_ZSAW_MARKER_FIELD] !== INST_ZSAW_MARKER) {
+      // Legacy WAVE: byte 11 was its sound selector (0 = display 1, 1 = display 2), which maps onto the
+      // two saw timbres. The envelope is reset to Z-Saw's fixed default, then the marker claims the record.
+      w[p + INST_ZSAW_TIMBRE_FIELD] =
+        w[p + INST_ZSAW_MARKER_FIELD] & 1 ? ZSAW_TIMBRE_SAW_7F : ZSAW_TIMBRE_SAW_00;
+      w[p + INST_ENV_A_FIELD] = 0x88;
+      w[p + INST_ENV_D_FIELD] = 0x00;
+      w[p + INST_ENV_R_FIELD] = 0x00;
+      w[p + INST_ZSAW_MARKER_FIELD] = INST_ZSAW_MARKER;
+    }
     if (dmcMove && type === INST_TYPE_DMC) {
       w[p + INST_DMC_KIT_FIELD] = w[p + INST_LAST_FIELD];
       w[p + INST_LAST_FIELD] = TABLE_EMPTY;
