@@ -216,8 +216,9 @@ void MesenNesSystem::onSampleRateChanged(double sampleRate) {
 
 void MesenNesSystem::onReset() {
     if (emu_) emu_->Reset();
-    // Drop any queued host-MIDI bytes so stale notes don't fire after the reset.
-    if (n8Role_) n8Role_->clear();
+    // Drop bytes in flight so stale notes / sync clocks don't fire after the reset. BOTH queues: bytes
+    // already delivered into the FIFO would otherwise be read by the freshly reset ROM.
+    if (n8Role_) n8Role_->flushAll();
 }
 
 void MesenNesSystem::setGainDb(float dB) {
@@ -264,10 +265,11 @@ void MesenNesSystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     }
 }
 
-void MesenNesSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
+void MesenNesSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size,
+                                   bool flush) {
     // Raw bytes (a tracker's host-sync protocol) → the N8 FIFO, sample-offset scheduled like host MIDI.
     if (n8Role_) {
-        n8Role_->pushBytes(frame, data, size);
+        n8Role_->pushBytes(frame, data, size, flush);
     }
 }
 
@@ -596,6 +598,9 @@ bool MesenNesSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     ss.write(reinterpret_cast<const char*>(bytes.data()),
              static_cast<std::streamsize>(bytes.size()));
     ss.seekg(0);
+    // The restored ROM is at an unrelated point in the byte stream, so anything queued or delivered for
+    // the pre-load one is stale — a host-sync clock read after the jump would advance the wrong position.
+    if (n8Role_) n8Role_->flushAll();
     return emu_->GetSaveStateManager()->LoadState(ss);
 }
 

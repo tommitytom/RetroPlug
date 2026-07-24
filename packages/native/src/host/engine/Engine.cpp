@@ -102,7 +102,7 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         for (const auto& cb : dsp_.coreBytes_) {
             if (cb.data.empty()) continue;
             if (SystemBase* t = project_.findSystem(cb.system))
-                t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size());
+                t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size(), cb.flush);
         }
         // role-generated button presses → the addressed core.
         for (const auto& bo : dsp_.buttonOut_)

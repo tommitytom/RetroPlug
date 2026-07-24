@@ -99,7 +99,9 @@ public:
     struct SerialIn  { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint8_t byte = 0; };
     struct MidiOut   { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
     struct CoreMidi  { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
-    struct CoreBytes { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
+    // `flush` marks a barrier message: the device drops whatever it still holds before taking these
+    // bytes (risa's host-sync arm, which must not be preceded by clocks for the position it replaces).
+    struct CoreBytes { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; bool flush = false; };
     struct ButtonOut { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint32_t button = 0; bool down = false; };
 
     DspRuntime();

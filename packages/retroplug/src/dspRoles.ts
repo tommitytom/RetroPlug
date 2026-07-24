@@ -204,10 +204,19 @@ const lsdjSync: SystemBehavior = (c) => {
 
 // risa-sync (no config): drive risa's dormant N8-FIFO host-sync receive path from the DAW transport. Bytes
 // go over ctx.pushCoreBytes → the N8 FIFO (NOT MIDI — a raw byte protocol reusing MIDI status values; see
-// risaSync.ts). On a transport rise OR a ppqStart discontinuity (a DAW seek/loop) send a fresh arm+locate
-// (computed from ppqStart) then START; on a transport fall send STOP; while playing stream 24-PPQN clocks
-// at their real sample offsets (the FIFO has no serial gate, unlike SameBoy). Attached only to sync-capable
-// risa ROMs (the RISA-SYNC marker) by the rom provider. Coexists with nes-n8-midi note passthrough.
+// risaSync.ts). On a transport rise OR a ppqStart discontinuity (a DAW seek/loop) send a fresh 5-byte
+// arm+locate (computed from ppqStart) then START; on a transport fall send STOP; while playing stream
+// 24-PPQN clocks at their real sample offsets (the FIFO has no serial gate, unlike SameBoy). Attached only
+// to sync-capable risa ROMs (the RISAxyz marker) by the rom provider. Coexists with nes-n8-midi passthrough.
+//
+// Two rules from risa's protocol doc shape this beyond "arm, start, clock, stop":
+//  - The arm FLUSHES the FIFO. It's a barrier: clocks queued for the old position must not arrive after
+//    a re-locate, so the flush drops both undelivered and delivered-but-unread bytes.
+//  - No clock for the ARMED position. risa performs one priming sequencer tick itself when it applies the
+//    locate, so the target row triggers immediately; an F8 for that same clock would double-advance it.
+//    The arm therefore points the clock stream at armedClock + 1: "the next F8 is the first clock after
+//    the locate". That also covers an exact loop back to the same position, where eachTick's own resync
+//    (which only fires on a jump of more than a tick) would leave the counter past the block and emit none.
 const RISA_SEEK_TOL = 1e-3; // quarters — contiguous block edges meet exactly; a seek/loop jump far exceeds this.
 const risaSync: SystemBehavior = (c) => {
   const st = c.state as { prevT?: boolean; ppqEnd?: number };
@@ -219,8 +228,10 @@ const risaSync: SystemBehavior = (c) => {
   // and the arm gates risa's playback + discards the old position's queued clocks.
   const seek = st.ppqEnd !== undefined && Math.abs(b.ppqStart - st.ppqEnd) > RISA_SEEK_TOL;
   if (playing && (!prevT || seek)) {
-    c.pushCoreBytes(0, risaArmPacket(risaLocate(b.ppqStart))); // F9 52 songRow chainRow
+    const loc = risaLocate(b.ppqStart);
+    c.pushCoreBytes(0, risaArmPacket(loc), true); // F9 52 songRow chainRow tickOffset, flushing the FIFO
     c.pushCoreBytes(0, [RISA_START]); // FA
+    c.setNextTick(loc.absoluteClock + 1); // risa primes the armed clock itself; we resume after it
   } else if (!playing && prevT) {
     c.pushCoreBytes(0, [RISA_STOP]); // FC
   }
