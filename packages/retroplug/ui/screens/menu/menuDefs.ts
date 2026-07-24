@@ -411,6 +411,16 @@ function assetRomBytes(be: HostBackend, romPath: string): Uint8Array | null {
   return bytes;
 }
 
+// A detected tracker cart whose embedded version this build has no layout for is DETECTED but not driveable
+// (the Songs/Assets rows read that layout). We grey the submenu out as "(Unsupported Version)" rather than
+// hiding it, so it's clear the cart IS a tracker we just don't support this version of. LSDj drives every
+// version (no predicate); risa only the versions with a bundled layout.
+function trackerVersionSupported(t: TrackerIntegration, be: HostBackend, romPath: string): boolean {
+  if (!t.isVersionSupported) return true;
+  const rom = assetRomBytes(be, romPath);
+  return !rom || t.isVersionSupported(rom); // unreadable ROM -> can't disprove support; leave the submenu live
+}
+
 // The override list off a system's `*-assets` role config (console-agnostic — the generic rows only read
 // type/slot/name/erase; the file-actions read the typed list for their console-specific fields).
 const overridesFor = (sys: SystemView, role: string): AssetOverride[] =>
@@ -1175,7 +1185,12 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       // The tracker submenu (LSDj / risa) sits right under Recent, fenced by a separator on each side (the
       // one above here, and inst-sep-top below). Only present when the cart sniffed a tracker.
       ...(tracker
-        ? [sep("inst-sep-tracker"), submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))]
+        ? [
+            sep("inst-sep-tracker"),
+            trackerVersionSupported(tracker, ctx.stores.backend, sys.romPath)
+              ? submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))
+              : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
+          ]
         : []),
       sep("inst-sep-top"),
       action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd(sys.id)),

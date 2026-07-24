@@ -6,7 +6,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { risaRom, risaRomFull, nesRom } from "../systems/fixtures";
+import { risaRom, risaRomFull, nesRom, setRisaVersionMarker } from "../systems/fixtures";
 import { RisaRom } from "../../src/risa/rom";
 import { savBytes } from "../risa/fixtures";
 import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, decodeRecord, CURRENT_LAYOUT, kSaveSize } from "../../src/risaSav";
@@ -84,6 +84,24 @@ test("the risa submenu appears only for a risa ROM and lists the catalog's songs
   // The Songs submenu leads with a top-level "Add..." (+ separator) — like LSDj; the song rows follow.
   expect(findItem(songs, "risa-song-add")?.kind).toBe("action");
   expect(songs.filter((s) => s.kind === "submenu").map((s) => s.label)).toEqual(["[0] HOU8", "[1] HOU", "[2] DBZ", "[3] DBZ2-F", "[4] FUNK0"]);
+});
+
+test("an unsupported risa version greys the submenu out as a disabled '(Unsupported Version)' row", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+
+  // A risa cart whose embedded version has no bundled RAM layout (e.g. a future release we don't ship offsets
+  // for yet). The `risa` role still attaches (header fingerprint), so the cart is DETECTED - but not driveable.
+  const rom = risaRom();
+  setRisaVersionMarker(rom, "9.9.9"); // an unknown version → resolveRisaLayout() → null → unsupported
+  be.seed("/roms/future.nes", rom);
+  const id = stores.project.systems.addSystem("/roms/future.nes")!;
+  const sys = stores.project.systems.view().find((s) => s.id === id)!;
+
+  const item = findItem(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-risa")!;
+  expect(item.kind).toBe("action"); // a disabled leaf, NOT the Songs/Assets submenu
+  expect(item.label).toBe("Risa (Unsupported Version)");
+  expect(item.disabled).toBe(true);
 });
 
 test("each risa song row now offers Load / Export / Replace / Delete (LSDj parity) plus reorder", () => {
