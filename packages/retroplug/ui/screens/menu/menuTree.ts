@@ -37,6 +37,9 @@ export interface MenuItem {
   // button or stick flick. `onCapture` receives the resolved token (key name / SDL button name / axis token).
   capture?: { source?: "keyboard" | "gamepad"; onCapture: (name: string) => void; onClear: () => void };
   prompt?: PromptSpec; // present iff kind === "prompt"
+  warn?: boolean; // paint the label in a warning colour (yellow) — e.g. a recent entry whose file is missing
+  onRename?: PromptSpec; // F2 on the focused row opens this text prompt (recent-entry rename)
+  onDelete?: () => void; // Del on the focused row invokes this (recent-entry removal)
 }
 
 export interface MenuTree {

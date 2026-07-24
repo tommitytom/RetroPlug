@@ -1087,32 +1087,34 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
 
 function recentChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.recent.length === 0) return [action("recent-none", "(No Recent Files)", () => {})];
-  return ctx.recent.map((entry, i) =>
-    // Lead with the working-song name when known (a tracker cart's loaded song), then the project: "SONG -
-    // project". ASCII " - " (the LVGL font has no emdash glyph), matching the tracker window-title order.
-    submenu(`recent-${i}`, entry.song ? `${entry.song} - ${entry.label}` : entry.label, [
-      action(`recent-${i}-load`, entry.missing ? "Load (missing)" : "Load", () => ctx.loadProject(entry.path)),
-      action(`recent-${i}-locate`, "Locate on Disk", () =>
-        browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p)),
-      ),
-      {
-        id: `recent-${i}-rename`,
-        label: "Rename...",
-        kind: "prompt",
-        keepOpen: true,
-        prompt: {
-          title: `Rename "${entry.label}" to:`,
-          initial: entry.label,
-          onConfirm: (v: string) => {
-            const name = v.trim();
-            if (!name) return "Name cannot be empty.";
-            return ctx.stores.project.renameProject(entry.path, name) ? null : "Rename failed.";
-          },
+  return ctx.recent.map((entry, i) => {
+    // A single action row (no nested submenu): Enter loads the project — or Locates it when its file is
+    // gone. The management verbs are hotkeys the Menu drives off these fields: F2 (onRename) / Del
+    // (onDelete). Label leads with the working-song name when known (a tracker cart's loaded song), then
+    // the project: "SONG - project", ASCII " - " (the LVGL font has no emdash glyph), matching the tracker
+    // window-title order. A missing entry is drawn yellow (warn) with a trailing " [!]".
+    const base = entry.song ? `${entry.song} - ${entry.label}` : entry.label;
+    const row: MenuItem = {
+      id: `recent-${i}`,
+      label: entry.missing ? `${base} [!]` : base,
+      kind: "action",
+      warn: entry.missing,
+      onSelect: entry.missing
+        ? () => browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p))
+        : () => ctx.loadProject(entry.path),
+      onDelete: () => ctx.stores.recent.remove(entry.path),
+      onRename: {
+        title: `Rename "${entry.label}" to:`,
+        initial: entry.label,
+        onConfirm: (v: string) => {
+          const name = v.trim();
+          if (!name) return "Name cannot be empty.";
+          return ctx.stores.project.renameProject(entry.path, name) ? null : "Rename failed.";
         },
       },
-      action(`recent-${i}-remove`, "Remove from List", () => ctx.stores.recent.remove(entry.path)),
-    ]),
-  );
+    };
+    return row;
+  });
 }
 
 // --- top-level builders -------------------------------------------------------------------------------

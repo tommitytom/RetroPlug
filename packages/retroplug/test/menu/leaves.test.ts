@@ -103,6 +103,8 @@ test("the Recent submenu appears on BOTH the start and instance menus", () => {
 test("a recent tracker entry's label leads with the song, then the project (ASCII separator)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
+  be.seed("/music/proj.rplg", "PK"); // on disk → not missing (no " [!]" marker)
+  be.seed("/music/plain.rplg", "PK");
   stores.recent.add("/music/proj.rplg", "MyProject", "GRUB"); // a tracker cart: project alias + working song
   stores.recent.add("/music/plain.rplg", "Plain"); // no song
 
@@ -114,6 +116,35 @@ test("a recent tracker entry's label leads with the song, then the project (ASCI
   expect(findItem(rows, "recent-0")?.label).toBe("Plain");
 });
 
+test("recent entries are flat action rows: present loads + can be deleted, missing warns + relinks", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/here/present.rplg", "PK"); // an on-disk project
+  stores.recent.add("/here/present.rplg", "Present");
+  stores.recent.add("/gone/away.rplg", "Away"); // never seeded → missing
+
+  let rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
+  const present = findItem(rows, "recent-1")!; // most-recent-first: [0]=Away (missing), [1]=Present
+  const missing = findItem(rows, "recent-0")!;
+
+  // A present entry is a plain action row (no submenu, no warn, no marker), carrying the hotkey callbacks.
+  expect(present.kind).toBe("action");
+  expect(present.warn).toBeFalsy();
+  expect(present.label).toBe("Present");
+  expect(typeof present.onDelete).toBe("function");
+  expect(typeof present.onRename).toBe("object");
+
+  // A missing entry warns (yellow) with a trailing " [!]".
+  expect(missing.warn).toBe(true);
+  expect(missing.label).toBe("Away [!]");
+
+  // Del (onDelete) drops the entry from the list.
+  present.onDelete!();
+  rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
+  expect(stores.recent.view().some((e) => e.path.endsWith("present.rplg"))).toBe(false);
+  expect(findItem(rows, "recent-0")?.label).toBe("Away [!]"); // only the missing one remains
+});
+
 test("a recent entry's Rename prompt renames the project (edits the file + recents alias)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
@@ -121,11 +152,11 @@ test("a recent entry's Rename prompt renames the project (edits the file + recen
   stores.project.systems.loadRom("/roms/a.gb");
   stores.project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg in recents, name "a", open project
 
-  const row = submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent"), "recent-0");
-  const rename = findItem(row, "recent-0-rename")!;
-  expect(rename.kind).toBe("prompt");
-  expect(rename.prompt!.onConfirm("  ")).toBe("Name cannot be empty."); // blank → error keeps it open
-  expect(rename.prompt!.onConfirm("My Song")).toBe(null); // success closes it
+  // The recent entry is a single action row; its Rename prompt rides F2 (the onRename field), not a child.
+  const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
+  const rename = findItem(rows, "recent-0")!.onRename!;
+  expect(rename.onConfirm("  ")).toBe("Name cannot be empty."); // blank → error keeps it open
+  expect(rename.onConfirm("My Song")).toBe(null); // success closes it
 
   expect(stores.project.name()).toBe("My Song");
   expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song");
@@ -403,9 +434,10 @@ test("recent Locate on Disk relinks the entry to the picked path", async () => {
   be.queueBrowse("/found/new.rplg");
 
   const recent = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
-  findItem(recent, "recent-0")!; // the entry submenu exists
-  const entrySub = submenuChildren(recent, "recent-0");
-  findItem(entrySub, "recent-0-locate")!.onSelect!();
+  const row = findItem(recent, "recent-0")!; // a single action row (no nested submenu)
+  expect(row.warn).toBe(true); // missing → yellow
+  expect(row.label.endsWith(" [!]")).toBeTruthy(); // missing marker
+  row.onSelect!(); // a missing entry's select action is Locate on Disk
   await flush();
 
   const view = stores.recent.view();
@@ -825,6 +857,7 @@ test("New Project / Load Project / recent Load route through the guarded ctx ops
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/a.gb", gbRom());
   stores.project.systems.addSystem("/roms/a.gb"); // a system → the Project submenu shows New Project
+  be.seed("/music/song.rplg", "PK"); // present on disk → its select action is Load (not Locate)
   stores.recent.add("/music/song.rplg", "Song");
   be.seed("/picked/proj.rplg", "PK");
   be.queueBrowse("/picked/proj.rplg");
@@ -843,9 +876,10 @@ test("New Project / Load Project / recent Load route through the guarded ctx ops
   await flush();
   expect(calls).toEqual(["new", "load:/picked/proj.rplg"]);
 
-  // A recent entry's Load also routes through ctx.loadProject (was a fire-and-forget project.load).
-  const recentRow = submenuChildren(submenuChildren(buildStartMenu(ctx).items, "start-recent"), "recent-0");
-  findItem(recentRow, "recent-0-load")!.onSelect!();
+  // A recent entry's Load also routes through ctx.loadProject (was a fire-and-forget project.load). The
+  // entry is a single action row now, so its onSelect IS the load.
+  const recentRows = submenuChildren(buildStartMenu(ctx).items, "start-recent");
+  findItem(recentRows, "recent-0")!.onSelect!();
   expect(calls).toEqual(["new", "load:/picked/proj.rplg", "load:/music/song.rplg"]);
 });
 
