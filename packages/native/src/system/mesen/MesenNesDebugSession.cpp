@@ -259,10 +259,13 @@ rp::ExpansionAudioState MesenNesDebugSession::getExpansionAudioState() {
         o.volume         = c.Volume;
         o.outputLevel    = c.OutputLevel;
         o.period         = c.Period;
+        o.frequency      = c.Frequency;
         o.block          = c.Block;
         o.duty           = c.Duty;
         o.constantOutput = c.ConstantOutput;
         o.instrument     = c.Instrument;
+        o.waveLength     = c.WaveLength;
+        o.activeChannels = c.ActiveChannels;
         out.channels.push_back(o);
     }
     return out;

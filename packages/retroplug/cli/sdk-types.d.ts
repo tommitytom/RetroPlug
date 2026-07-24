@@ -74,17 +74,24 @@ export interface ApuState {
 
 /** One expansion-audio voice (`getExpansionAudioState`). Superset across chips — a field is populated
  *  when meaningful and 0/false otherwise. `volume` is normalized 0 (silent) .. 15 (loudest) across all
- *  chips; `period` is the chip-native pitch register. `constantOutput` (VRC6 "ignore duty" → DC/no
- *  tone), `instrument` (VRC7 patch) and `volume` are the diagnostic fields. */
+ *  chips; `period` is the chip-native pitch register. `frequency` is the decoded output pitch in Hz (the
+ *  expansion analogue of `ApuSquareState.frequency`) - computed from the pitch register regardless of
+ *  audibility, so gate "sounding" on `enabled`/`volume` and read `frequency` for "what pitch"; it is 0
+ *  only when the pitch is undefined (a zero timer/fnum). `waveLength`/`activeChannels` are N163-only
+ *  cross-check terms (0 for other chips). `constantOutput` (VRC6 "ignore duty" → DC/no tone),
+ *  `instrument` (VRC7 patch) and `volume` are the diagnostic fields. */
 export interface ExpansionAudioChannel {
   enabled: boolean;
   volume: number;
   outputLevel: number;
   period: number;
+  frequency: number;
   block: number;
   duty: number;
   constantOutput: boolean;
   instrument: number;
+  waveLength: number;
+  activeChannels: number;
 }
 
 /** The decoded NES expansion-audio snapshot (`getExpansionAudioState`). `chip` is the active chip

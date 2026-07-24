@@ -81,4 +81,5 @@ public:
 	bool IsEnabled() { return _enabled; }
 	uint8_t GetAccumulatorRate() { return _accumulatorRate; }
 	uint16_t GetFrequency() { return _frequency; }
+	uint8_t GetFrequencyShift() { return _frequencyShift; }
 };

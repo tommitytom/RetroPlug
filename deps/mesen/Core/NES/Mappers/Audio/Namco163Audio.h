@@ -3,6 +3,7 @@
 #include "NES/NesConsole.h"
 #include "NES/APU/NesApu.h"
 #include "NES/APU/BaseExpansionAudio.h"
+#include "NES/NesConstants.h"
 #include "NES/NesExpansionAudioState.h"
 #include "Utilities/Serializer.h"
 
@@ -164,13 +165,24 @@ public:
 		NesExpansionAudioState state;
 		state.chip = "n163";
 		uint8_t active = GetNumberOfChannels();
+		// N163 time-multiplexes numCh = active+1 voices, servicing each once per
+		// 15*numCh CPU cycles, and its phase accumulator wraps every (waveLen << 16),
+		// so pitch = freqReg * clk / (15 * 65536 * waveLen * numCh). waveLen (4..256)
+		// and numCh (1..8) are always non-zero, so freqReg==0 is the only 0 case.
+		double clk = NesConstants::GetClockRate(NesApu::GetApuRegion(_console));
+		uint8_t numCh = active + 1;
 		for(int ch = 0; ch < 8; ch++) {
 			int16_t out = _channelOutput[ch];
+			uint32_t freq = GetFrequency(ch);
+			uint16_t waveLen = GetWaveLength(ch);
 			NesExpansionAudioChannel c;
-			c.Enabled     = !_disableSound && ch >= (7 - (int)active);
-			c.Volume      = GetVolume(ch);                            // 4-bit
-			c.OutputLevel = (uint32_t)(out < 0 ? -out : out);
-			c.Period      = GetFrequency(ch);                         // 18-bit
+			c.Enabled        = !_disableSound && ch >= (7 - (int)active);
+			c.Volume         = GetVolume(ch);                         // 4-bit
+			c.OutputLevel    = (uint32_t)(out < 0 ? -out : out);
+			c.Period         = freq;                                  // 18-bit
+			c.Frequency      = freq * clk / (15.0 * 65536.0 * waveLen * numCh);
+			c.WaveLength     = waveLen;                               // active wave samples
+			c.ActiveChannels = numCh;                                 // enabled voice count
 			state.channels.push_back(c);
 		}
 		return state;

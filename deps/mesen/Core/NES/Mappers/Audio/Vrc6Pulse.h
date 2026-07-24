@@ -77,4 +77,5 @@ public:
 	uint8_t GetDuty() { return _dutyCycle; }
 	bool GetIgnoreDuty() { return _ignoreDuty; }
 	uint16_t GetFrequency() { return _frequency; }
+	uint8_t GetFrequencyShift() { return _frequencyShift; }
 };

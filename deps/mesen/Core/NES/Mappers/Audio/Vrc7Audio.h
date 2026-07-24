@@ -104,12 +104,19 @@ public:
 			uint8_t r3 = _opll->reg[0x30 + ch];
 			int16_t out = _opll->ch_out[ch];
 
+			uint32_t fnum = r1 | ((r2 & 0x01) << 8);         // 9-bit f-number
+			uint8_t block = (r2 >> 1) & 0x07;                // octave 0-7
+
 			NesExpansionAudioChannel c;
 			c.Enabled     = (r2 & 0x10) != 0;               // key-on bit
 			c.Instrument  = r3 >> 4;                         // patch (0 = custom)
 			c.Volume      = 15 - (r3 & 0x0F);                // reg is attenuation -> loud-scale
-			c.Period      = r1 | ((r2 & 0x01) << 8);         // 9-bit f-number
-			c.Block       = (r2 >> 1) & 0x07;                // octave
+			c.Period      = fnum;
+			c.Block       = block;
+			// OPLL phase gen: pitch = fnum * fsam / 2^(19 - block), fsam = 49716 Hz
+			// (OpllSampleRate). Region-independent - the OPLL runs on its own clock,
+			// so this must NOT be scaled by the NES CPU clock. fnum==0 -> undefined (0).
+			c.Frequency   = fnum ? fnum * (double)Vrc7Audio::OpllSampleRate / (double)(1u << (19 - block)) : 0.0;
 			c.OutputLevel = (uint32_t)(out < 0 ? -out : out);
 			state.channels.push_back(c);
 		}
