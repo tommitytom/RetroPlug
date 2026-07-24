@@ -11,7 +11,7 @@
 #include "system/mesen/MesenVideoDevice.hpp"
 #include "system/mesen/MesenNesDebugSession.hpp"
 #include "system/mesen/NesEverdriveFifo.hpp"
-#include "system/mesen/roles/NesN8MidiRole.hpp"
+#include "system/mesen/roles/NesN8FifoRole.hpp"
 
 #include "Core/NES/Input/NesController.h"
 #include "Core/NES/NesConsole.h"
@@ -137,10 +137,10 @@ void MesenNesSystem::onActivate(double sampleRate) {
     videoDevice_->setFramebuffer(&frames_);
     emu_->GetVideoRenderer()->RegisterRenderingDevice(videoDevice_.get());
 
-    // Always-attach the N8 FIFO role on NES — see NesN8MidiRole.hpp's docs
+    // Always-attach the N8 FIFO role on NES — see NesN8FifoRole.hpp's docs
     // for the rationale (FIFO is benign if the ROM doesn't touch $40F0/$40F1).
     if (auto* nesConsole = dynamic_cast<NesConsole*>(emu_->GetConsole().get())) {
-        n8Role_ = std::make_unique<NesN8MidiRole>();
+        n8Role_ = std::make_unique<NesN8FifoRole>();
         n8Role_->onAttach(*nesConsole);
 
         // Borrow the NES sound mixer for the live "mesen" knobs (APU flush window + per-channel capture).
@@ -261,6 +261,13 @@ void MesenNesSystem::pressButton(std::uint8_t button, bool down) {
 void MesenNesSystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     if (n8Role_) {
         n8Role_->onMidi(events, count);
+    }
+}
+
+void MesenNesSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size) {
+    // Raw bytes (a tracker's host-sync protocol) → the N8 FIFO, sample-offset scheduled like host MIDI.
+    if (n8Role_) {
+        n8Role_->pushBytes(frame, data, size);
     }
 }
 

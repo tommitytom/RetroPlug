@@ -14,7 +14,7 @@
 class Engine;
 class SystemFactory;
 class QueuedInvoker;
-namespace rp::lsdj { class KitCompiler; }  // fwd: lazy, kept out of the header (enkiTS/r8brain heavy)
+namespace rp::kit { class KitCompiler; }  // fwd: lazy, kept out of the header (enkiTS/r8brain heavy)
 
 // The emulator surface (lifecycle / reads / DSP kernel / MIDI / transport) as a THIN RPC layer over
 // (SystemFactory + Engine + the one Invoker). No threading branches: every mutation just pushes onto
@@ -59,6 +59,10 @@ public:
     // plugin never binds this). Resample (r8brain) + effects + 4-bit nibble-pack per sample, fanned across
     // an enkiTS pool by the owned KitCompiler; a per-sample load failure just leaves that slot empty.
     rfl::Bytestring compileKit(KitCompileSpec spec);
+    // Compile a risa NES-DPCM sample kit → an 8 KB kit bank (harness/tooling only). Same generic pipeline
+    // as compileKit (reuses the lazy kitCompiler_) but drives the DMC codec: r8brain resample to the PAL
+    // DPCM rate + 1-bit ±2 delta encode + 64-byte-aligned pack.
+    rfl::Bytestring compileDmc(RisaKitCompileSpec spec);
     // The engine's audio sample rate (Hz), so callers can label WAV output correctly.
     double          sampleRate() const;
     // Set the host sample rate (Hz). Baked into each core at construct, so it only takes effect BEFORE any
@@ -100,5 +104,5 @@ private:
     std::vector<float>       scratchL_;  // renderAudio pull-path scratch (control thread)
     std::vector<float>       scratchR_;
     std::vector<RpcMidiOut> accumMidiOut_;  // kernel MIDI-out gathered across a render window (drainMidiOut)
-    std::unique_ptr<rp::lsdj::KitCompiler> kitCompiler_;  // lazy: built on first compileKit (enkiTS pool)
+    std::unique_ptr<rp::kit::KitCompiler> kitCompiler_;  // lazy: built on first compileKit (enkiTS pool)
 };

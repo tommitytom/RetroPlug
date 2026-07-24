@@ -16,6 +16,9 @@ import { syncDspFromStore } from "../appHost";
 import { extensionLower, replaceExtension } from "../pathUtil";
 import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
+import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
+import { loadSongToWorkingInSav } from "../risaSongOps";
+import { isRisaRomHeader } from "../risa";
 import type { ChannelExportMode } from "../settingsEnums";
 import {
   type Platform,
@@ -28,6 +31,8 @@ import {
 } from "./types";
 
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
+const NES_START = 7; // NesButton::Start (same index) ; NES_SELECT = 6. risa plays a song on SELECT+START.
+const NES_SELECT = 6;
 // A fixed (non-auto-detect) render runs for `durationMs` if pinned, else `maxDurationMs` — so "max duration"
 // bounds every render, not just the LSDj auto-length cap. maxDurationMs defaults to 300000 (5 min), so a
 // render with neither pinned is unchanged from the old fixed default.
@@ -66,6 +71,30 @@ function nesExportMode(split: SplitMode): ChannelExportMode {
   return split === "channels" ? "individualMono" : "stereoModPins";
 }
 
+/** True when `o.rom` is a risa cart (iNES header fingerprint) — gates the risa play gesture so generic NES
+ *  ROMs are left untouched (their audio, if any, plays without a synthetic button press). */
+function isRisaRom(ctx: RenderContext, o: RenderOpts): boolean {
+  const bytes = ctx.backend.readFile(o.rom);
+  return !!bytes && isRisaRomHeader(bytes.subarray(0, 16));
+}
+
+/** risa begins song playback on SELECT+START (a plain START first nudges it off an empty phrase context —
+ *  the sequence the runtime-reader test proved reliable). The two prep renders are pre-song and discarded;
+ *  the SELECT+START render — where the song begins — is CAPTURED through the sink and returned as the
+ *  recording's lead-in, so the opening frames aren't lost. */
+function pressRisaPlay(ctx: RenderContext, sink: RenderSink, id: number): Float32Array[][] {
+  ctx.audio.pressButton(id, NES_START, true);
+  sink.renderChunk(DETECT_CHUNK_MS); // prep: nudge off an empty phrase context (pre-song, discarded)
+  ctx.audio.pressButton(id, NES_START, false);
+  sink.renderChunk(DETECT_CHUNK_MS); // prep (discarded)
+  ctx.audio.pressButton(id, NES_SELECT, true);
+  ctx.audio.pressButton(id, NES_START, true);
+  const head = sink.renderChunk(DETECT_CHUNK_MS); // the song starts here — capture it as the lead-in
+  ctx.audio.pressButton(id, NES_START, false);
+  ctx.audio.pressButton(id, NES_SELECT, false);
+  return [head];
+}
+
 type Logger = (msg: string) => void;
 
 // --- LSDj song selection (GB only) ----------------------------------------------------------------
@@ -88,12 +117,19 @@ export function songList(sav: LsdjSav): string {
   return names.length ? names.join(", ") : "(no named projects)";
 }
 
-/** Resolve the requested project index (by songIndex or song name), promote it to the working song, and
- *  re-encode → the SRAM bytes to seed the system with. Returns undefined when no song flag. */
+/** Resolve a song-selection flag to the SRAM bytes that seed the fresh system with the chosen catalog song
+ *  promoted to the working song. Platform-aware: GB → LSDj projects, NES → risa catalog. Undefined when no
+ *  song flag is set. */
 function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): Uint8Array | undefined {
   if (o.song === undefined && o.songIndex === undefined) return undefined;
-  const { sav, raw } = readSav(ctx, o);
+  const platform = platformOf(o.rom);
+  if (platform === "gb") return resolveLsdjSongSeed(ctx, o, log, warn);
+  if (platform === "nes") return resolveRisaSongSeed(ctx, o, log, warn);
+  throw new Error(`render: --song/--song-index is a Game Boy (LSDj) / NES (risa) feature (got ${platform})`);
+}
 
+function resolveLsdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): Uint8Array {
+  const { sav, raw } = readSav(ctx, o);
   let idx: number;
   if (o.songIndex !== undefined) {
     idx = o.songIndex;
@@ -116,23 +152,61 @@ function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: L
   return encodeSav(sav, raw.length >= kSavSize ? raw : undefined);
 }
 
+// --- risa (NES) song selection ---------------------------------------------------------------------
+
+/** Read the raw risa battery a song flag needs (the given sav else the sibling <rom>.sav). */
+export function readRisaSav(ctx: RenderContext, o: RenderOpts): { path: string; raw: Uint8Array } {
+  const path = o.sav ?? siblingSavPath(o.rom);
+  const raw = ctx.backend.readFile(path);
+  if (!raw) throw new Error(`render: no sav to read songs from at ${path}`);
+  return { path, raw };
+}
+
+/** The risa catalog's saved songs (index + name), for --list-songs. */
+export function readRisaSongs(ctx: RenderContext, o: RenderOpts): { path: string; songs: RisaSongInfo[] } {
+  const { path, raw } = readRisaSav(ctx, o);
+  return { path, songs: risaListSongs(raw) };
+}
+
+const risaSongList = (songs: RisaSongInfo[]): string =>
+  songs.length ? songs.map((sg) => `${sg.index}: ${sg.name || "(unnamed)"}`).join(", ") : "(no saved songs)";
+
+function resolveRisaSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): Uint8Array {
+  const { raw } = readRisaSav(ctx, o);
+  const songs = risaListSongs(raw);
+  let idx: number;
+  if (o.songIndex !== undefined) {
+    idx = o.songIndex;
+    if (!songs.some((sg) => sg.index === idx)) throw new Error(`render: slot ${idx} is empty; songs: ${risaSongList(songs)}`);
+  } else {
+    const want = o.song!.trim().toUpperCase();
+    const hits = songs.filter((sg) => sg.name.trim().toUpperCase() === want);
+    if (hits.length === 0) throw new Error(`render: no song named "${o.song}"; songs: ${risaSongList(songs)}`);
+    if (hits.length > 1) warn(`render: ${hits.length} songs named "${o.song}"; using slot ${hits[0].index}`);
+    idx = hits[0].index;
+  }
+  // Promote the catalog song into the working banks (0-3), keeping the catalog (banks 4-7) intact. Requires a
+  // current-layout catalog — the firmware migrates legacy on boot, so a live-read battery is always current.
+  const seed = loadSongToWorkingInSav(raw, idx);
+  if (!seed) throw new Error(`render: could not load risa song ${idx} (needs a current-layout catalog)`);
+  log(`song "${songs.find((sg) => sg.index === idx)?.name || "(unnamed)"}" (slot ${idx}) → working song`);
+  return seed;
+}
+
 /** Build the single system + project it into the DSP runtime. `seed` (LSDj song bytes) forces the adopt
  *  path; a NES split mode arms construct-time capture; otherwise addSystem auto-detects. */
 function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed?: Uint8Array): number {
   let id: number | null;
-  if (seed) {
-    // Seed the fresh system from the chosen-song SRAM bytes (adopt takes raw bytes; addSystem doesn't).
-    ctx.project.systems.adopt({ romPath: o.rom }, { sramBytes: seed });
-    syncDspFromStore(ctx.project, ctx.dsp);
-    id = ctx.project.systems.view()[0]?.id ?? null;
-  } else if (platform === "nes" && o.split !== "mix") {
-    // NES per-channel capture engages at construct/onActivate, so channelExportMode MUST be set here.
-    // adopt is quiet → project the store by hand (bootSession's onSystemsChange hook doesn't fire).
-    ctx.project.systems.adopt({
-      romPath: o.rom,
-      savPath: o.sav,
-      roles: [{ kind: "mesen", config: { channelExportMode: nesExportMode(o.split) } }],
-    });
+  const nesSplit = platform === "nes" && o.split !== "mix";
+  if (seed || nesSplit) {
+    // A chosen-song seed (adopt takes raw SRAM bytes) and NES per-channel capture (channelExportMode engages
+    // at construct/onActivate) both go through adopt — combined here so `--song-index … --split channels`
+    // arms both. A seed replaces the sav; without one, pair the sav. adopt is quiet → project the store by
+    // hand (bootSession's onSystemsChange hook doesn't fire).
+    const spec: Parameters<typeof ctx.project.systems.adopt>[0] = { romPath: o.rom };
+    if (!seed && o.sav) spec.savPath = o.sav;
+    if (nesSplit) spec.roles = [{ kind: "mesen", config: { channelExportMode: nesExportMode(o.split) } }];
+    ctx.project.systems.adopt(spec, seed ? { sramBytes: seed } : undefined);
     syncDspFromStore(ctx.project, ctx.dsp);
     id = ctx.project.systems.view()[0]?.id ?? null;
   } else {
@@ -235,16 +309,20 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
 }
 
 /** Fixed-duration render: stream exactly `targetFrames` frames (trim the last chunk), so the output is
- *  byte-identical to a single renderAudio(ms) of the same length for any sample rate / ms. */
-function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks): void {
+ *  byte-identical to a single renderAudio(ms) of the same length for any sample rate / ms. `leadIn` is the
+ *  captured play-gesture audio (the song's opening frames) — committed first so the recording's head isn't
+ *  lost, trimmed against the target like any other chunk. */
+function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): void {
   let done = 0;
-  while (done < targetFrames) {
-    if (hooks.isCancelled?.()) throw new RenderCancelled();
-    const chunk = sink.renderChunk(DETECT_CHUNK_MS);
+  const emit = (chunk: Float32Array[]) => {
     if (chunk.length === 0) throw new Error("render: chunk render returned no streams");
     const take = Math.min(chunk[0].length / 2, targetFrames - done);
-    sink.emit(chunk, take);
-    done += take;
+    if (take > 0) { sink.emit(chunk, take); done += take; }
+  };
+  for (const chunk of leadIn) { if (done >= targetFrames) break; emit(chunk); }
+  while (done < targetFrames) {
+    if (hooks.isCancelled?.()) throw new RenderCancelled();
+    emit(sink.renderChunk(DETECT_CHUNK_MS));
     hooks.onProgress?.(done / targetFrames);
   }
 }
@@ -253,7 +331,7 @@ function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks):
  *  master-enable going high→low, sustained ≥DETECT_OFF_CHUNKS). Holds back the current contiguous off-streak
  *  (≤DETECT_OFF_CHUNKS whole chunks) so committed frames end exactly at the stop; a reset flushes them in
  *  order. Caps at maxMs (no-HFF fallback → keep everything). */
-function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs: number, hooks: RenderHooks): StopMarkers {
+function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): StopMarkers {
   let total = 0; // frames rendered (committed + held)
   let committed = 0; // frames streamed to disk
   let elapsed = 0;
@@ -266,6 +344,16 @@ function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs
     sink.emit(chunk, frames);
     committed += frames;
   };
+
+  // The captured play gesture: the song began on the Start press, so commit its frames from 0 and arm now
+  // (the HFF tail-detection below still ends the song at the right place). startFrame stays 0 — the whole
+  // committed output is song, so the reported length includes this head.
+  for (const chunk of leadIn) {
+    commit(chunk);
+    total += chunk[0].length / 2;
+    elapsed += DETECT_CHUNK_MS;
+    armed = true;
+  }
 
   while (elapsed < maxMs) {
     if (hooks.isCancelled?.()) throw new RenderCancelled();
@@ -299,14 +387,32 @@ function driveAutoDetect(sink: RenderSink, ctx: RenderContext, id: number, maxMs
 /** Validate a resolved render request against its platform. Throws on a bad split/platform or song/platform
  *  combo so the caller fails before loading anything. (Shared by the CLI and the worker.) */
 export function validateRenderOpts(o: RenderOpts, platform: Platform): void {
-  // Song selection is an LSDj (GB) concept — reject it on other platforms.
-  if ((o.song !== undefined || o.songIndex !== undefined) && platform !== "gb")
-    throw new Error(`render: --song is a Game Boy (LSDj) feature (got ${platform})`);
+  // Song selection promotes a saved catalog song to the working song — LSDj (GB) + risa (NES) only.
+  if ((o.song !== undefined || o.songIndex !== undefined) && platform !== "gb" && platform !== "nes")
+    throw new Error(`render: --song/--song-index is a Game Boy (LSDj) / NES (risa) feature (got ${platform})`);
   if (o.split === "pins") {
     if (platform !== "nes") throw new Error(`render: --split pins is NES-only (got ${platform})`);
   } else if (o.split === "channels" && platform !== "gb" && platform !== "nes") {
     throw new Error(`render: --split channels needs a Game Boy or NES ROM (got ${platform})`);
   }
+}
+
+/** Auto-start playback and CAPTURE the song's opening frames through the sink. The song begins the moment
+ *  Start is pressed, so the button-hold render (needed to register the press) must be captured as the
+ *  recording's head — not discarded, which drops the first ~100 ms. Returns the captured lead-in chunks (in
+ *  the sink's mix/split shape); empty when o.start is off or the platform has no play gesture. */
+function pressPlay(ctx: RenderContext, sink: RenderSink, o: RenderOpts, id: number, platform: Platform): Float32Array[][] {
+  if (!o.start) return [];
+  if (platform === "gb") {
+    // LSDj/mGB begin on the Start press; hold it across one captured chunk to register the press, then
+    // release (Start is a play toggle — the song keeps running once the release lands next block).
+    ctx.audio.pressButton(id, GB_START, true);
+    const head = sink.renderChunk(DETECT_CHUNK_MS);
+    ctx.audio.pressButton(id, GB_START, false);
+    return [head];
+  }
+  if (platform === "nes" && isRisaRom(ctx, o)) return pressRisaPlay(ctx, sink, id); // generic NES ROMs untouched
+  return [];
 }
 
 /** Boot a fresh system from the request and stream its audio to WAV. Returns the written paths (+ the
@@ -329,12 +435,6 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   ctx.audio.renderAudio(1500); // settle boot (past the mGB/LSDj splash) before driving playback
   if (o.bpm) ctx.audio.setBpm(o.bpm);
   if (o.transport) ctx.audio.setTransport(true);
-  if (o.start && platform === "gb") {
-    // Press Start so a saved song begins playing (LSDj boots to a menu, silent until Start).
-    ctx.audio.pressButton(id, GB_START, true);
-    ctx.audio.renderAudio(100);
-    ctx.audio.pressButton(id, GB_START, false);
-  }
 
   const sr = ctx.audio.sampleRate();
   const base = outBase(o);
@@ -355,8 +455,13 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
 
   // Stream PCM straight to the WAV files as it renders (bounded memory) rather than buffering the whole song.
   const sink = buildSink(ctx, o, id, platform, sr, base, log);
+
+  // Auto-start playback, capturing the song's opening frames as the recording's head (see pressPlay). The
+  // sink exists first so the button-hold render is captured in the right mix/split shape, not discarded.
+  const leadIn = pressPlay(ctx, sink, o, id, platform);
+
   if (autoDetect) {
-    const m = driveAutoDetect(sink, ctx, id, o.maxDurationMs, hooks);
+    const m = driveAutoDetect(sink, ctx, id, o.maxDurationMs, hooks, leadIn);
     const outputs = sink.finishAll();
     const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
     log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);
@@ -364,7 +469,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     hooks.onProgress?.(1);
     return { outputs, lengthMs, frames: m.endFrame - m.startFrame, hff: m.hff };
   }
-  driveFixed(sink, Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000), hooks); // exact target frame count
+  driveFixed(sink, Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000), hooks, leadIn); // exact target frame count
   const outputs = sink.finishAll();
   hooks.onProgress?.(1);
   return { outputs };

@@ -16,10 +16,12 @@ export const RECENT_SCHEMA = 2;
  *  additive; the seam is here so the first breaking one is a one-line add. */
 const RECENT_MIGRATIONS: MigrationMap = {};
 
-// One recent entry: a non-empty path + a display alias (defaulting to "").
+// One recent entry: a non-empty path + a display alias (defaulting to "") + an optional working-song label
+// (additive since the 1→2 schema, so old files without it still load — no migration step needed).
 const recentEntrySchema = z.object({
   path: z.string().min(1),
   name: z.string().catch("").default(""),
+  song: z.string().optional(),
 });
 
 /** Parse recent.json text into entries, capped to `max`. Never throws: malformed
@@ -43,7 +45,7 @@ export function parseRecent(json: string, max = MAX_ENTRIES): RecentEntry[] {
   for (const raw of entries) {
     const r = recentEntrySchema.safeParse(raw);
     if (r.success) {
-      out.push({ path: r.data.path, name: r.data.name });
+      out.push(r.data.song !== undefined ? { path: r.data.path, name: r.data.name, song: r.data.song } : { path: r.data.path, name: r.data.name });
       if (out.length >= max) break;
     }
   }
@@ -54,6 +56,6 @@ export function parseRecent(json: string, max = MAX_ENTRIES): RecentEntry[] {
 export function serializeRecent(entries: RecentEntry[]): string {
   return JSON.stringify({
     schemaVersion: RECENT_SCHEMA,
-    entries: entries.map((e) => ({ path: e.path, name: e.name })),
+    entries: entries.map((e) => (e.song !== undefined ? { path: e.path, name: e.name, song: e.song } : { path: e.path, name: e.name })),
   });
 }

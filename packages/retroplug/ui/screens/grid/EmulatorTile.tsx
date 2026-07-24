@@ -14,6 +14,7 @@ import { useNativeEvent } from "../../lvgl/useNativeEvent";
 import { Box } from "../../lvgl/Box";
 import { tagTestId } from "../../lvgl/StableSlot";
 import { LsdjOverlay } from "./LsdjOverlay";
+import { RisaOverlay } from "./RisaOverlay";
 import { getRenderJobs, cancelRender, dismissRenderJob, pickActiveRenderJob, type RenderJobStatus } from "../../lvgl/render";
 
 const LV_IMAGE_ALIGN_CONTAIN = 14; // aspect-preserving nearest-neighbour scale
@@ -97,6 +98,9 @@ export function EmulatorTile({
           phrase). Renders nothing for a non-LSDj ROM, so it's mounted unconditionally; its per-frame
           re-renders stay in this child subtree. */}
       <LsdjOverlay systemId={systemId} width={width} testId="lsdj-overlay" />
+      {/* The risa twin — a live NES-tracker readout (screen + cursor / mode / tempo / version / per-track
+          phrase). Renders nothing for a non-risa ROM, so it too is mounted unconditionally. */}
+      <RisaOverlay systemId={systemId} width={width} testId="risa-overlay" />
       {showBorder && (
         // Accent border on the focused tile — the visible focus cue (the dim is imperceptible on a
         // near-black GB screen). Drawn as a transparent full-tile overlay layered OVER the Canvas, not

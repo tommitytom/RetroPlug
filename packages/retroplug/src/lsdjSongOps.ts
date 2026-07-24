@@ -4,7 +4,7 @@
 // round-trip WITH a template (the original bytes); stored projects re-encoded without one lose ~300 bytes
 // each (silently — the decoded model still matches, but LSDj plays the raw bytes), which corrupted
 // instruments/tables on Load/Delete/Add. Byte-level keeps every untouched song exactly as it was.
-import { decompressSlot, injectSong, freeSong, freeSongSlot, savSongName, savSongVersion, loadSongToWorking } from "./lsdjSav";
+import { decompressSlot, injectSong, freeSong, freeSongSlot, savSongName, savSongVersion, loadSongToWorking, listProjects, swapProjectSlots } from "./lsdjSav";
 import { decodeLsdsngRaw } from "./lsdj/codec/lsdsng";
 
 const kProjectCount = 32;
@@ -21,6 +21,17 @@ export function deleteSongInSav(sav: Uint8Array, slot: number): Uint8Array {
   const out = freeSong(sav, slot);
   if (out[kActiveProj] === slot) out[kActiveProj] = 0xff;
   return out;
+}
+
+/** Reorder saved songs by list POSITION: swap the songs at positions `from` and `to` in the slot-sorted
+ *  saved-song list (what the menu shows) — NOT slot numbers. LSDj addresses songs by a fixed slot number, so
+ *  this swaps the two slots' contents (name / version / block-ownership tags) and follows the active pointer;
+ *  the compressed blocks never move. Null (a no-op) when either position is out of range or from === to. Used
+ *  by the shared song menu's Move Up/Down (which passes adjacent positions). */
+export function moveSongInSav(sav: Uint8Array, from: number, to: number): Uint8Array | null {
+  const slots = listProjects(sav).map((p) => p.slot); // occupied slots, sorted by slot number
+  if (from < 0 || to < 0 || from >= slots.length || to >= slots.length || from === to) return null;
+  return swapProjectSlots(sav, slots[from], slots[to]);
 }
 
 /** Import a single `.lsdsng` into the first free slot (byte-exact) and load it into working memory so the

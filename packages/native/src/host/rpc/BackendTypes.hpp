@@ -37,6 +37,21 @@ struct KitSampleSpec {
 // (rfl::Bytestring) ready to drop into a ROM slot.
 struct KitCompileSpec { std::string name; std::vector<KitSampleSpec> samples; std::optional<bool> rotate; };
 
+// One source sample for the risa NES-DPCM kit compiler (harness-facet compileDmc): the same source/window/
+// effects as a kit sample, plus the DMC playback-rate index (0..15 into the PAL rate table), a loop flag,
+// and a 7-bit peak-normalize flag. Mirrors rp::risa::CompileDmcSampleSpec.
+struct RisaDmcSampleSpec {
+    std::string                       path;
+    std::string                       name;
+    std::optional<std::uint32_t>      offset;
+    std::optional<std::uint32_t>      length;
+    std::vector<rp::lsdj::LsdjEffect> effects;
+    std::optional<std::uint32_t>      rate;      // PAL DPCM rate index 0..15 (default 12)
+    std::optional<bool>               loop;
+    std::optional<bool>               normalize; // 7-bit peak-normalize (default true)
+};
+struct RisaKitCompileSpec { std::string name; std::vector<RisaDmcSampleSpec> samples; };
+
 // Monotonic audio-capture snapshot published by the background audio thread (energy = sum of
 // squared samples, frames = total). A control-thread reader diffs two snapshots for a windowed RMS.
 struct AudioCaptured { double energy; std::uint64_t frames; };

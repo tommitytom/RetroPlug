@@ -48,9 +48,9 @@ Options:
   --bpm <n>              Host tempo (BPM) for tempo-synced playback. Use with --transport.
   --transport            Run the host transport (play), so tempo-synced ROMs advance. Default: off.
   --no-start             Do NOT press Start on boot — render the raw boot/menu audio.
-  --song <name>          LSDj: promote a saved song to the working song by name (≤8 chars, case-insensitive).
-  --song-index <0-31>    LSDj: promote a saved song by its slot number instead of by name.
-  --list-songs           LSDj: print the .sav's saved song names and exit (renders nothing).
+  --song <name>          LSDj / risa: promote a saved song to the working song by name (case-insensitive).
+  --song-index <0-31>    LSDj / risa: promote a saved song by its slot number instead of by name.
+  --list-songs           LSDj / risa: print the sav's saved song names and exit (renders nothing).
   -h, --help             Show this help and exit.
 
 Examples:

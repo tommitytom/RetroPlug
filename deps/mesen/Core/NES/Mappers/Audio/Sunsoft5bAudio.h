@@ -3,6 +3,7 @@
 #include "NES/NesConsole.h"
 #include "NES/APU/NesApu.h"
 #include "NES/APU/BaseExpansionAudio.h"
+#include "NES/NesExpansionAudioState.h"
 #include "Utilities/Serializer.h"
 
 class Sunsoft5bAudio : public BaseExpansionAudio
@@ -129,5 +130,20 @@ public:
 				}
 				break;
 		}
+	}
+
+	NesExpansionAudioState GetState()
+	{
+		NesExpansionAudioState state;
+		state.chip = "s5b";
+		for(int ch = 0; ch < 3; ch++) {
+			NesExpansionAudioChannel c;
+			c.Enabled     = IsToneEnabled(ch);
+			c.Volume      = _registers[8 + ch] & 0x0F;   // 4-bit, loud-scale
+			c.OutputLevel = GetVolume(ch);               // LUT amplitude
+			c.Period      = GetPeriod(ch);               // 12-bit tone period
+			state.channels.push_back(c);
+		}
+		return state;
 	}
 };

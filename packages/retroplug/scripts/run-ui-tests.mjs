@@ -82,6 +82,11 @@ async function runOne({ file, slug }) {
   for (const src of [join(REPO, "resources/roms/lsdj/lsdj9_4_2.gb"), join(REPO, "../resources/roms/lsdj/lsdj9_4_2.gb")]) {
     if (existsSync(src)) { copyFileSync(src, join(romsDir, "lsdj9_4_2.gb")); break; }
   }
+  // Stage a built risa ROM too when present (RISA_ROM env, resources, or the sibling risa source tree) —
+  // the risa-overlay test drops it; absent, that test SKIPs.
+  for (const src of [process.env.RISA_ROM, join(REPO, "resources/roms/risa/risa.nes"), "/workspaces/risa-v2.2.1-source/build/risa-pal.nes"]) {
+    if (src && existsSync(src)) { copyFileSync(src, join(romsDir, "risa.nes")); break; }
+  }
 
   try {
     await build({

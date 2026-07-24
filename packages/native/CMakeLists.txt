@@ -22,13 +22,20 @@ endif()
 
 add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/project/Project.cpp
+    # Console-neutral kit pipeline: the async compiler + decoded-audio cache are
+    # codec-agnostic (KitCodec.hpp). Per-console packing lives in a codec (LSDj
+    # below; risa NES-DPCM planned).
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/SampleCache.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/kit/KitCompiler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/Effects.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitUtil.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/SampleCache.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/KitCompiler.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lsdj/LsdjKitCodec.cpp
+    # risa NES-DPCM (DMC) codec — reuses the generic kit pipeline (r8brain resample + enkiTS), swaps the
+    # pack stage for 1-bit delta DPCM + an 8 KB kit bank.
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/risa/RisaDmcCodec.cpp
     # NOTE: the LSDj sav codec + model were removed — they are now pure TS
     # (packages/retroplug/src/lsdj), validated by frozen golden vectors. Only the
-    # kit/sample pipeline (Effects/KitUtil/SampleCache/KitCompiler) remains in C++.
+    # kit/sample pipeline (kit/* generic + lsdj/{Effects,KitUtil,LsdjKitCodec}) remains in C++.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp
@@ -39,7 +46,7 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesDebugSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8MidiRole.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8FifoRole.cpp
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull
     # the full lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
@@ -610,7 +617,8 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/EngineSampleRate.test.cpp   # host sample-rate change re-rates live cores
     test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
     test/audio/NesApuLatency.test.cpp   # runtime NES APU flush window (live apuLatencyMs knob)
-    test/audio/NesN8MidiTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
+    test/audio/NesN8FifoTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
+    test/audio/NesEverdriveFifo.test.cpp  # Edio status protocol leaves no stale byte to desync MIDI parsing
     test/audio/NesStems.test.cpp)    # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
 
 target_link_libraries(retroplug-audio-test PRIVATE

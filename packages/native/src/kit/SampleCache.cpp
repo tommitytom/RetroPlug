@@ -1,4 +1,4 @@
-#include "lsdj/SampleCache.hpp"
+#include "kit/SampleCache.hpp"
 
 #include <cstdio>
 #include <fstream>
@@ -18,7 +18,7 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio.h>
 
-namespace rp::lsdj {
+namespace rp::kit {
 
 namespace {
 
@@ -106,4 +106,4 @@ void SampleCache::erase(const std::string& path) {
     cache_.erase(path);
 }
 
-} // namespace rp::lsdj
+} // namespace rp::kit

@@ -101,6 +101,7 @@ public:
     struct SerialIn  { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint8_t byte = 0; };
     struct MidiOut   { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
     struct CoreMidi  { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
+    struct CoreBytes { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
     struct ButtonOut { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint32_t button = 0; bool down = false; };
 
     DspRuntime();
@@ -155,6 +156,7 @@ public:
     std::vector<SerialIn>  serialIn_;   // pushSerialIn sink
     std::vector<MidiOut>   midiOut_;    // emitMidiOut sink (host MIDI-out → DAW)
     std::vector<CoreMidi>  coreMidi_;   // emitCoreMidi sink (MIDI-in → the core's onMidi)
+    std::vector<CoreBytes> coreBytes_;  // pushCoreBytes sink (raw bytes → the core's device byte-input, no framing)
     std::vector<ButtonOut> buttonOut_;  // pressButton sink
 
 private:

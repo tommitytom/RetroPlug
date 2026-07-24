@@ -67,6 +67,7 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::renderAudioPerSystem>(e);
     s.template addMethod<&EngineRpcService::renderAudioPerChannel>(e);
     s.template addMethod<&EngineRpcService::compileKit>(e);
+    s.template addMethod<&EngineRpcService::compileDmc>(e);
     s.template addMethod<&EngineRpcService::sampleRate>(e);
     s.template addMethod<&EngineRpcService::setSampleRate>(e);
     s.template addMethod<&EngineRpcService::setTransport>(e);
@@ -85,6 +86,7 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
 template <class Server>
 void registerDebugRpc(Server& s, DebugRpcService& d) {
     s.template addMethod<&DebugRpcService::getApuState>(d);
+    s.template addMethod<&DebugRpcService::getExpansionAudioState>(d);
     s.template addMethod<&DebugRpcService::getPpuState>(d);
     s.template addMethod<&DebugRpcService::readCpu>(d);
     s.template addMethod<&DebugRpcService::writeCpu>(d);

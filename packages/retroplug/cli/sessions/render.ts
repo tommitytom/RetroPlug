@@ -13,16 +13,26 @@
 import { parseRenderArgs, RENDER_SUMMARY, RENDER_HELP, type RenderOpts } from "../renderArgs";
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
-import { platformOf, readSav, runRenderJob } from "../../src/render";
+import { platformOf, readSav, readRisaSongs, runRenderJob } from "../../src/render";
 
-/** --list-songs: print the sav's populated project slots and exit (renders nothing). GB (LSDj) only. */
+/** --list-songs: print the sav's populated song slots and exit (renders nothing). GB (LSDj) + NES (risa). */
 function listSongs(s: Session, o: RenderOpts): void {
-  if (platformOf(o.rom) !== "gb")
-    throw new Error(`render: --list-songs is a Game Boy (LSDj) feature (got ${platformOf(o.rom)})`);
-  const { path, sav } = readSav(s, o);
-  console.log(`songs in ${path}:`);
-  sav.projects.forEach((p, i) => { if (p) console.log(`  ${i}: ${p.name || "(unnamed)"}`); });
-  if (sav.projects.every((p) => !p)) console.log("  (no named projects — only the working song)");
+  const platform = platformOf(o.rom);
+  if (platform === "gb") {
+    const { path, sav } = readSav(s, o);
+    console.log(`songs in ${path}:`);
+    sav.projects.forEach((p, i) => { if (p) console.log(`  ${i}: ${p.name || "(unnamed)"}`); });
+    if (sav.projects.every((p) => !p)) console.log("  (no named projects — only the working song)");
+    return;
+  }
+  if (platform === "nes") {
+    const { path, songs } = readRisaSongs(s, o);
+    console.log(`songs in ${path}:`);
+    if (!songs.length) console.log("  (no saved songs in the catalog)");
+    for (const song of songs) console.log(`  ${song.index}: ${song.name || "(unnamed)"}`);
+    return;
+  }
+  throw new Error(`render: --list-songs is a Game Boy (LSDj) / NES (risa) feature (got ${platform})`);
 }
 
 function runRender(s: Session, args: string[]): void {

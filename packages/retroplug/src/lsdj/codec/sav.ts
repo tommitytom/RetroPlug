@@ -169,6 +169,16 @@ export function decompressSlot(savBytes: Uint8Array, slot: number): Uint8Array |
 export function savSongName(savBytes: Uint8Array, slot: number): string {
   return readName(savBytes, kProjectNames + slot * kNameLen);
 }
+
+/** The name of the currently-loaded (working) song — the working song is a copy of the slot at
+ *  activeProjectIndex, so its name is that slot's. null when no project is active (0xff) or the sav is
+ *  too small. A cheap header read (no decompression), for recent-list / title display. */
+export function workingSongName(savBytes: Uint8Array): string | null {
+  if (savBytes.length <= kActiveProj) return null;
+  const idx = savBytes[kActiveProj];
+  if (idx === 0xff || idx >= 32) return null;
+  return savSongName(savBytes, idx) || null;
+}
 export function savSongVersion(savBytes: Uint8Array, slot: number): number {
   return savBytes[kProjectVers + slot];
 }
@@ -224,6 +234,34 @@ export function freeSongSlot(savBytes: Uint8Array): number {
 export function freeSong(savBytes: Uint8Array, slot: number): Uint8Array {
   const out = savBytes.slice();
   for (let i = 0; i < kBlockCount; i++) if (out[kAllocTable + i] === slot) out[kAllocTable + i] = kEmptyBlock;
+  return out;
+}
+
+/** Swap the two saved projects in `slotA` / `slotB` — their 8-char name, version byte, and block-ownership
+ *  tags in the alloc table (the compressed blocks themselves never move, only their owner tag), and the active
+ *  pointer if it referenced either slot. Since a saved project is a self-contained archive (nothing references
+ *  another by slot), this is a clean byte swap. Returns a new image (unchanged copy if a slot is out of range,
+ *  slotA === slotB, or the image has no 'jk' archive header). */
+export function swapProjectSlots(savBytes: Uint8Array, slotA: number, slotB: number): Uint8Array {
+  const out = savBytes.slice();
+  if (slotA === slotB || out.length < kSavSize) return out;
+  if (out[kInit] !== 0x6a /* 'j' */ || out[kInit + 1] !== 0x6b /* 'k' */) return out; // no archive
+  if (slotA < 0 || slotB < 0 || slotA >= kProjectCount || slotB >= kProjectCount) return out;
+  for (let i = 0; i < kNameLen; i++) {
+    const t = out[kProjectNames + slotA * kNameLen + i];
+    out[kProjectNames + slotA * kNameLen + i] = out[kProjectNames + slotB * kNameLen + i];
+    out[kProjectNames + slotB * kNameLen + i] = t;
+  }
+  const ver = out[kProjectVers + slotA];
+  out[kProjectVers + slotA] = out[kProjectVers + slotB];
+  out[kProjectVers + slotB] = ver;
+  for (let i = 0; i < kBlockCount; i++) {
+    const owner = out[kAllocTable + i];
+    if (owner === slotA) out[kAllocTable + i] = slotB;
+    else if (owner === slotB) out[kAllocTable + i] = slotA;
+  }
+  if (out[kActiveProj] === slotA) out[kActiveProj] = slotB;
+  else if (out[kActiveProj] === slotB) out[kActiveProj] = slotA;
   return out;
 }
 

@@ -70,4 +70,11 @@ public:
 			return _step <= _dutyCycle ? _volume : 0;
 		}
 	}
+
+	// Decoded register state (for the host's getExpansionAudioState readout).
+	bool IsEnabled() { return _enabled; }
+	uint8_t GetRegVolume() { return _volume; }
+	uint8_t GetDuty() { return _dutyCycle; }
+	bool GetIgnoreDuty() { return _ignoreDuty; }
+	uint16_t GetFrequency() { return _frequency; }
 };

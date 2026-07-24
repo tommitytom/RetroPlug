@@ -3,6 +3,7 @@
 #include "pch.h"
 #include "NES/INesMemoryHandler.h"
 #include "NES/NesTypes.h"
+#include "NES/NesExpansionAudioState.h"
 #include "NES/RomData.h"
 #include "Debugger/DebugTypes.h"
 #include "Shared/Emulator.h"
@@ -192,7 +193,11 @@ protected:
 
 public:
 	static constexpr uint32_t NametableSize = 0x400;
-	
+
+	// Decoded live state of the cart's expansion audio chip (empty/"none" for
+	// carts without one). Overridden by the audio mappers (VRC6/VRC7/FME7/N163).
+	virtual NesExpansionAudioState GetExpansionAudioState() { return {}; }
+
 	void Initialize(NesConsole* console, RomData &romData);
 	void InitSpecificMapper(RomData& romData);
 

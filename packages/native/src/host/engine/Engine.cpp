@@ -97,6 +97,13 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
                 t->onMidi(&ev, 1);
             }
         }
+        // raw core-bytes sink → the addressed core's byte device (e.g. the NES N8 FIFO). Un-framed: no
+        // MidiEvent, so NO length cap — a byte protocol (a tracker's host sync) can exceed 4 bytes.
+        for (const auto& cb : dsp_.coreBytes_) {
+            if (cb.data.empty()) continue;
+            if (SystemBase* t = project_.findSystem(cb.system))
+                t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size());
+        }
         // role-generated button presses → the addressed core.
         for (const auto& bo : dsp_.buttonOut_)
             if (SystemBase* t = project_.findSystem(bo.system))

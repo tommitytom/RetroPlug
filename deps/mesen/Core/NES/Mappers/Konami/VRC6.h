@@ -281,4 +281,9 @@ public:
 	VRC6(VRCVariant model) : _model(model)
 	{
 	}
+
+	NesExpansionAudioState GetExpansionAudioState() override
+	{
+		return _audio ? _audio->GetState() : NesExpansionAudioState{};
+	}
 };
