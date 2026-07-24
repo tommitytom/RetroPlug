@@ -27,9 +27,15 @@ GB_model_t toSameBoyModel(SameBoyModel model) {
     switch (model) {
         case SameBoyModel::DmgB:   return GB_MODEL_DMG_B;
         case SameBoyModel::Mgb:    return GB_MODEL_MGB;
-        case SameBoyModel::Sgb:    return GB_MODEL_SGB_NTSC_NO_SFC;
-        case SameBoyModel::SgbPal: return GB_MODEL_SGB_PAL_NO_SFC;
-        case SameBoyModel::Sgb2:   return GB_MODEL_SGB2_NO_SFC;
+        // Use the HLE (Super Famicom emulated) SGB models, NOT the *_NO_SFC
+        // variants. The NO_SFC models assume an external SNES emulator reads the
+        // GB screen buffer directly, so SameBoy never composites a frame into
+        // gb->screen (our pixel output) — the screen stays blank. The HLE models
+        // run SameBoy's own SGB command handling and render into gb->screen. We
+        // force GB_BORDER_NEVER in onActivate so the output stays 160x144.
+        case SameBoyModel::Sgb:    return GB_MODEL_SGB_NTSC;
+        case SameBoyModel::SgbPal: return GB_MODEL_SGB_PAL;
+        case SameBoyModel::Sgb2:   return GB_MODEL_SGB2;
         case SameBoyModel::Cgb0:   return GB_MODEL_CGB_0;
         case SameBoyModel::CgbA:   return GB_MODEL_CGB_A;
         case SameBoyModel::CgbB:   return GB_MODEL_CGB_B;
@@ -47,9 +53,9 @@ std::string_view findBootRom(GB_model_t model, bool fastBoot) {
     switch (model) {
         case GB_MODEL_DMG_B:           return std::string_view((const char*)dmg_boot, dmg_boot_len);
         case GB_MODEL_MGB:             return std::string_view((const char*)mgb_boot, mgb_boot_len);
-        case GB_MODEL_SGB_NTSC_NO_SFC:
-        case GB_MODEL_SGB_PAL_NO_SFC:  return std::string_view((const char*)sgb_boot, sgb_boot_len);
-        case GB_MODEL_SGB2_NO_SFC:     return std::string_view((const char*)sgb2_boot, sgb2_boot_len);
+        case GB_MODEL_SGB_NTSC:
+        case GB_MODEL_SGB_PAL:         return std::string_view((const char*)sgb_boot, sgb_boot_len);
+        case GB_MODEL_SGB2:            return std::string_view((const char*)sgb2_boot, sgb2_boot_len);
         case GB_MODEL_CGB_0:           return std::string_view((const char*)cgb0_boot, cgb0_boot_len);
         case GB_MODEL_AGB:
         case GB_MODEL_GBP:             return std::string_view((const char*)agb_boot, agb_boot_len);
@@ -188,6 +194,13 @@ void SameBoySystem::onActivate(double sampleRate) {
     gb_ = GB_alloc();
     GB_init(gb_, toSameBoyModel(config_.model));
     GB_set_user_data(gb_, this);
+
+    // The SGB models render through SameBoy's SGB compositor, which by default
+    // draws the 256x224 Super Game Boy border. Force GB_BORDER_NEVER so the
+    // output is the plain 160x144 GB screen — matching frames_ (a wider buffer
+    // would overflow it). No-op for the non-SGB models (they never composite a
+    // border unless GB_BORDER_ALWAYS, which we don't set).
+    GB_set_border_mode(gb_, GB_BORDER_NEVER);
 
     GB_set_sample_rate(gb_, static_cast<unsigned>(sampleRate));
     GB_set_pixels_output(gb_, frames_.writeSlot());
