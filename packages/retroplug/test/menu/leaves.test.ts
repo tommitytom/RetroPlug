@@ -100,6 +100,20 @@ test("the Recent submenu appears on BOTH the start and instance menus", () => {
   expect(findItem(inst, "inst-recent")?.kind).toBe("submenu");
 });
 
+test("a recent tracker entry's label leads with the song, then the project (ASCII separator)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  stores.recent.add("/music/proj.rplg", "MyProject", "GRUB"); // a tracker cart: project alias + working song
+  stores.recent.add("/music/plain.rplg", "Plain"); // no song
+
+  const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
+  // "SONG - project" order, ASCII " - " (the LVGL font has no emdash glyph).
+  expect(findItem(rows, "recent-1")?.label).toBe("GRUB - MyProject");
+  expect(findItem(rows, "recent-1")?.label.includes("—")).toBe(false); // never the emdash
+  // A non-tracker entry (no song) is just the project name.
+  expect(findItem(rows, "recent-0")?.label).toBe("Plain");
+});
+
 test("a recent entry's Rename prompt renames the project (edits the file + recents alias)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
