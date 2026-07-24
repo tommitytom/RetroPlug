@@ -322,7 +322,10 @@ target_include_directories(retroplug-sdl PRIVATE
     ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs
     # DistrhoUtils.hpp (header-only d_stderr logging) for GamepadManager.cpp — the one DPF header the
     # shared gamepad poller pulls in; no DPF linkage.
-    ${DPFJS_PATH}/deps/dpf/distrho)
+    ${DPFJS_PATH}/deps/dpf/distrho
+    # portable-file-dialogs (header-only): the OS-native file picker backing __rp_openFileBrowser. No link
+    # libs on Linux/macOS (it fork/execs zenity/kdialog/osascript); Windows pulls comdlg32/ole32 via its header.
+    ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
 
 add_dependencies(retroplug-sdl retroplug-cp-bundle retroplug-ui-bundle)  # embedded bundles must exist first
 

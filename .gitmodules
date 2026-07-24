@@ -15,3 +15,6 @@
 [submodule "deps/rtmidi"]
 	path = deps/rtmidi
 	url = https://github.com/thestk/rtmidi.git
+[submodule "deps/portable-file-dialogs"]
+	path = deps/portable-file-dialogs
+	url = https://github.com/samhocevar/portable-file-dialogs.git
