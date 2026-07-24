@@ -14,6 +14,7 @@ import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuD
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import type { SystemView } from "../../src/systemsStore";
 import { savFrom, injectSong, listProjects, isLsdjSav } from "../../src/lsdjSav";
+import { sameBytes } from "../_bytes";
 import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
 import { gbRomBattery, risaRom } from "../systems/fixtures";
 import { savBytes } from "../risa/fixtures";
@@ -153,6 +154,27 @@ test("applyImport appends only the checked risa songs into the live catalog", ()
 
   expect(applyImport(stores, subset)).toBe(true);
   expect(listSongs(lastSram(be)).map((s) => s.name)).toEqual(["HOU8", "HOU", "DBZ", "DBZ2-F", "FUNK0", "HOU8", "DBZ"]);
+});
+
+test("applyImport preserves the target's existing songs AND live working song (end to end)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/song.gb", lsdjRom1M());
+  const id = stores.project.systems.addSystem("/roms/song.gb")!;
+  // Target: one existing saved song ("MINE") + a DISTINCT unsaved working song a clobber would destroy.
+  const working = savFrom({ workingSong: { settings: { tempo: 200 } } }).subarray(0, 0x8000).slice();
+  let target = injectSong(savFrom({}), 0, "MINE", 9, savFrom({}).subarray(0, 0x8000).slice())!;
+  target = target.slice();
+  target.set(working, 0);
+  be.setSram(id, target);
+
+  const sys = stores.project.systems.view().find((s) => s.id === id)!;
+  const pick = planImport(sys, lsdjSource()) as PickState;
+  expect(applyImport(stores, { ...pick, checked: new Set([1]) })).toBe(true); // import BBB only
+
+  const out = lastSram(be);
+  expect(listProjects(out).map((p) => p.name)).toEqual(["MINE", "BBB"]); // existing kept + only BBB added
+  expect(sameBytes(out.subarray(0, 0x8000), working)).toBe(true); // the user's working song survived the import
 });
 
 test("applyImport with nothing checked is a no-op (no write)", () => {

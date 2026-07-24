@@ -62,26 +62,25 @@ export function replaceSongInSav(sav: Uint8Array, slot: number, file: Uint8Array
 }
 
 /** Copy the songs at the given SOURCE slots from `src` into `sav`'s free slots (byte-exact), until `sav`
- *  fills, and load the first imported song into working memory so the reboot shows it. Slots that are empty
- *  in `src` are skipped. */
+ *  fills. Slots empty in `src` are skipped. The live WORKING song (offset 0) and every existing saved song
+ *  are left byte-for-byte untouched — an import only fills free slots, never clobbers the user's current
+ *  song or overwrites occupied slots. Neither input buffer is mutated (injectSong returns fresh images). */
 export function importSongsFromSav(sav: Uint8Array, src: Uint8Array, slots: number[]): Uint8Array {
   let out = sav;
-  let firstSlot = -1;
   for (const s of slots) {
     const raw = decompressSlot(src, s);
     if (!raw) continue;
     const slot = freeSongSlot(out);
-    if (slot < 0) break; // target full
+    if (slot < 0) break; // target full — stop; everything already imported stays, nothing is overwritten
     const injected = injectSong(out, slot, savSongName(src, s), savSongVersion(src, s), raw);
     if (!injected) break;
     out = injected;
-    if (firstSlot < 0) firstSlot = slot;
   }
-  return firstSlot >= 0 ? (loadSongToWorking(out, firstSlot) ?? out) : out;
+  return out;
 }
 
-/** Copy every occupied song from `src` into `sav`'s free slots (byte-exact), until `sav` fills, and load the
- *  first imported song into working memory so the reboot shows it. */
+/** Copy every occupied song from `src` into `sav`'s free slots (byte-exact), until `sav` fills. Preserves
+ *  the working song + existing saved songs (see importSongsFromSav). */
 export function importAllSongsFromSav(sav: Uint8Array, src: Uint8Array): Uint8Array {
   return importSongsFromSav(sav, src, Array.from({ length: kProjectCount }, (_, s) => s));
 }
