@@ -10,9 +10,11 @@ import {
   normalizeSaveContainer,
   chooseCatalogLayout,
   decodeSongName,
+  workingSongInfo,
   CURRENT_LAYOUT,
   kSaveSize,
 } from "../../src/risaSav";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_MAGIC_OFFSET, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
 import goldV2 from "./golden/v2_blumarbl.json";
 import goldLegacy from "./golden/legacy_4xtreme.json";
 import goldMulti from "./golden/multi_legacy.json";
@@ -24,6 +26,22 @@ test("listSongs reads the current (v2 @0x8000) catalog and matches the oracle", 
   expect(songs[0].name).toBe("BLUMARBL");
   expect(songs[0].version).toBe(5);
   expect(songs[0].length).toBe(6905);
+});
+
+test("workingSongInfo reads the live working song's name + unsaved flag (curEntry 0xFF = unsaved)", () => {
+  const magicOff = BANK_DATA * WRAM_BANK_SIZE + SAVE_MAGIC_OFFSET;
+  const curOff = BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET;
+  const saved = normalizeSaveContainer(savBytes("v2_blumarbl")).save; // curEntry 0x00 → linked to slot 0 (saved)
+  expect(workingSongInfo(saved)).toEqual({ name: "BLUMARBL", unsaved: false });
+
+  const unsaved = saved.slice();
+  unsaved[curOff] = 0xff; // no linked catalog slot → the working song is unsaved
+  expect(workingSongInfo(unsaved)).toEqual({ name: "BLUMARBL", unsaved: true });
+
+  const noMagic = saved.slice();
+  noMagic[magicOff] = 0; // clear the 'N8T' magic → no working song
+  expect(workingSongInfo(noMagic)).toBe(null);
+  expect(workingSongInfo(new Uint8Array(10))).toBe(null); // unrecognized container size
 });
 
 test("listSongs falls back to the legacy (v1 @0x6000) catalog used by the demo .srm files", () => {

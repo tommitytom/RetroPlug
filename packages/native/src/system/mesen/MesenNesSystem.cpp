@@ -385,6 +385,20 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
     } else {
         assert(laneCount == 2); // mixed stereo (default single stereo stream)
         (void)laneCount;
+        // If per-channel capture is armed but this block was driven through the MIX path (renderAudio, not
+        // renderAudioPerChannel — e.g. a split render's boot settle), the capture streams still filled from
+        // the APU tap and nothing else drains them. Drain + discard them so they stay bounded: otherwise
+        // they accumulate, and a later renderAudioPerChannel finds enough buffered frames to satisfy the
+        // block WITHOUT stepping the CPU — the core stalls (input never reaches it, no fresh audio comes).
+        if (channelCapture_ && nesMixer_) {
+            if (const std::uint32_t avail = nesMixer_->AvailableCaptureFrames(); avail > 0) {
+                auto& discard = chanAccum_[0]; // reuse a per-stream scratch; the mix path doesn't fan it out
+                if (discard.size() < avail) discard.assign(avail, 0.0f);
+                const std::size_t nStreams = channelLayout().size();
+                for (std::size_t k = 0; k < nStreams; ++k)
+                    nesMixer_->DrainChannel(static_cast<std::uint32_t>(k), discard.data(), avail);
+            }
+        }
         if (stereoAccum_.size() < std::size_t(blockSize) * 2) {
             stereoAccum_.assign(std::size_t(blockSize) * 2, 0.0f);
         }

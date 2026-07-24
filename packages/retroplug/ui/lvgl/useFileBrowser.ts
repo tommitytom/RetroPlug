@@ -36,21 +36,24 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
   // prior native hook lets the useNativeFileDialogs toggle delegate to the OS dialog later (step 2).
   useEffect(() => {
     const g = globalThis as {
-      __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string) => void;
+      __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string, sd: string, dir: boolean) => void;
       __rp_onFileBrowserResult?: (path: string | null) => void;
     };
     const nativeHook = g.__rp_openFileBrowser;
-    g.__rp_openFileBrowser = (title, patterns, saving, defaultName) => {
+    g.__rp_openFileBrowser = (title, patterns, saving, defaultName, startDir, directory) => {
       // Opt-in: the host's OS dialog (where it provides one). Default: the in-app overlay.
       if (stores.userConfig.config().useNativeFileDialogs && nativeHook) {
-        nativeHook(title, patterns, saving, defaultName);
+        nativeHook(title, patterns, saving, defaultName, startDir, directory);
         return;
       }
+      if (startDir && startDir.length > 0) setLastBrowseDir(startDir); // open where the caller asked (e.g. the render Output Dir)
       void requestFileBrowser({
         title,
         patterns: String(patterns).split(" ").filter((s) => s.length > 0),
         saving: !!saving,
         defaultName,
+        startDir,
+        directory: !!directory,
       }).then((path) => g.__rp_onFileBrowserResult?.(path ?? null));
     };
     return () => {

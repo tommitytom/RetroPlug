@@ -17,7 +17,7 @@ import {
   makeEmptySave,
   CURRENT_LAYOUT,
 } from "../../src/risaSav";
-import { songRecordBytes, deleteSongInSav, moveSongInSav, replaceSongRecordInSav, addSongRecordToSav, loadSongToWorkingInSav } from "../../src/risaSongOps";
+import { songRecordBytes, deleteSongInSav, moveSongInSav, replaceSongRecordInSav, addSongRecordToSav, loadSongToWorkingInSav, importSongsFromSav } from "../../src/risaSongOps";
 import { sameBytes } from "../_bytes";
 
 const battery = (key: "v2_blumarbl" | "multi_legacy" | "legacy_4xtreme") => normalizeSaveContainer(savBytes(key)).save;
@@ -116,6 +116,66 @@ test("addSongRecordToSav's blank-catalog init preserves a live working song (ban
   expect(listSongs(after).map((s) => s.name)).toEqual(["BLUMARBL"]);
   expect(sameBytes(after.slice(0, 0x8000), working)).toBe(true); // the live working song survived
   parseCatalog(after, CURRENT_LAYOUT);
+});
+
+// --- importSongsFromSav (the Songs "Add from .sav" subset importer): append-only, never clobber ---------
+
+test("import appends only the SELECTED source records + keeps every existing record byte-identical", () => {
+  const target = v2Multi(); // 5 songs
+  const before = [0, 1, 2, 3, 4].map((i) => recAt(target, i));
+  const src = battery("multi_legacy"); // a LEGACY (v1) source → the cross-version import path
+  const after = importSongsFromSav(target, src, [0, 2]); // HOU8 + DBZ
+  expect(listSongs(after).map((s) => s.name)).toEqual(["HOU8", "HOU", "DBZ", "DBZ2-F", "FUNK0", "HOU8", "DBZ"]);
+  for (let i = 0; i < 5; i++) expect(sameBytes(recAt(after, i), before[i])).toBe(true); // existing 5 untouched
+  expect(sameBytes(recAt(after, 5), songRecordBytes(src, 0)!)).toBe(true); // appended == the source record
+  expect(sameBytes(recAt(after, 6), songRecordBytes(src, 2)!)).toBe(true);
+  expect(chooseCatalogLayout(after)).toEqual(CURRENT_LAYOUT); // target stays v2 despite the v1 source
+  parseCatalog(after, CURRENT_LAYOUT); // used/count in sync
+});
+
+test("import leaves the live working song (banks 0-3) byte-identical", () => {
+  const target = v2Multi();
+  target.set(expandRecordToWorking(blumarblRecord()), 0); // a live working song
+  const working = target.slice(0, 0x8000);
+  const after = importSongsFromSav(target, battery("multi_legacy"), [0, 1, 2]);
+  expect(sameBytes(after.slice(0, 0x8000), working)).toBe(true); // banks 0-3 untouched by the import
+  parseCatalog(after, CURRENT_LAYOUT);
+});
+
+test("import mutates neither the source nor the target buffer", () => {
+  const target = v2Multi();
+  const tBefore = target.slice();
+  const src = battery("multi_legacy");
+  const sBefore = src.slice();
+  importSongsFromSav(target, src, [0, 1]);
+  expect(sameBytes(target, tBefore)).toBe(true); // the target we passed is untouched (a fresh image is returned)
+  expect(sameBytes(src, sBefore)).toBe(true); // the source is read-only
+});
+
+test("import skips out-of-range source indices without error", () => {
+  const after = importSongsFromSav(v2Multi(), battery("multi_legacy"), [0, 99, 2]); // 99 out of range
+  expect(listSongs(after).map((s) => s.name)).toEqual(["HOU8", "HOU", "DBZ", "DBZ2-F", "FUNK0", "HOU8", "DBZ"]);
+  parseCatalog(after, CURRENT_LAYOUT);
+});
+
+test("import into a FULL catalog is a safe best-effort no-op: no throw, existing records byte-identical", () => {
+  // Fill a v2 catalog until the next append won't fit (the exact overflow the reviewer flagged: it used to
+  // THROW mid-batch and discard everything, wiping songs that already fit).
+  let full = v2Multi();
+  const rec = blumarblRecord();
+  try {
+    for (let i = 0; i < 512; i++) full = addSongRecordToSav(full, rec); // stops when writeRecord throws
+  } catch {
+    /* full — `full` holds the last image that fit */
+  }
+  const before = listSongs(full);
+  const beforeBytes = before.map((_, i) => recAt(full, i));
+  // A multi-song import into the full catalog: best-effort fill must not throw and must not touch a byte
+  // of any existing record.
+  const after = importSongsFromSav(full, battery("multi_legacy"), [0, 1, 2, 3, 4]);
+  expect(listSongs(after).length >= before.length).toBe(true); // never LOSES songs
+  for (let i = 0; i < before.length; i++) expect(sameBytes(recAt(after, i), beforeBytes[i])).toBe(true); // existing intact
+  parseCatalog(after, CURRENT_LAYOUT); // still a valid catalog
 });
 
 // --- a long SEQUENTIAL chain: no cumulative drift, working song never clobbered -------------------------

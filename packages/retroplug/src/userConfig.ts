@@ -17,11 +17,16 @@ export const RENDER_SPLITS = ["mix", "channels", "pins"] as const;
 export const RENDER_SAMPLE_RATES = [44100, 48000, 96000] as const;
 export const RENDER_MAX_DURATION_MIN_SEC = 5;
 export const RENDER_MAX_DURATION_MAX_SEC = 1800; // 30 min cap
+/** What "Render" does when the target file already exists: clobber it, or write to the next free name. */
+export const RENDER_ON_EXISTS = ["overwrite", "rename"] as const;
+export type RenderOnExists = (typeof RENDER_ON_EXISTS)[number];
 
 export interface RenderSettings {
   split: SplitMode; // clamped to the system's platform when a render actually starts
   sampleRate: number; // one of RENDER_SAMPLE_RATES
   maxDurationSec: number; // bounds every render (LSDj auto-length cap + the fixed-render length)
+  outputDir: string; // the Settings "Default Render Dir"; "" = unset → derive from the .sav folder (else the ROM folder)
+  onExists: RenderOnExists; // overwrite the target file, or write to the next free "<name>_N"
 }
 
 // A missing/garbage `render` block becomes {} so the child fields fill their own defaults (the preprocess
@@ -31,7 +36,9 @@ const renderSchema = z.preprocess(
   z.object({
     split: enumField(RENDER_SPLITS, "mix"),
     sampleRate: z.preprocess((v) => (RENDER_SAMPLE_RATES.includes(v as never) ? v : 44100), z.number()),
-    maxDurationSec: clampedInt(RENDER_MAX_DURATION_MIN_SEC, RENDER_MAX_DURATION_MAX_SEC, 300),
+    maxDurationSec: clampedInt(RENDER_MAX_DURATION_MIN_SEC, RENDER_MAX_DURATION_MAX_SEC, 600), // 10 min
+    outputDir: stringField(""),
+    onExists: enumField(RENDER_ON_EXISTS, "overwrite"),
   }),
 );
 

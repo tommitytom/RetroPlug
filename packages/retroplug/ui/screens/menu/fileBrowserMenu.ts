@@ -34,11 +34,18 @@ export function buildFileBrowserMenu(
 ): MenuTree {
   const entries = listDir(dir);
   const dirs = entries.filter((e) => e.endsWith("/")).sort((a, b) => a.localeCompare(b));
-  const files = entries
-    .filter((e) => !e.endsWith("/") && matchesPatterns(e, opts.patterns))
-    .sort((a, b) => a.localeCompare(b));
+  // A folder picker (opts.directory, e.g. the render Output Dir) navigates subdirectories only — no files.
+  const files = opts.directory
+    ? []
+    : entries.filter((e) => !e.endsWith("/") && matchesPatterns(e, opts.patterns)).sort((a, b) => a.localeCompare(b));
 
   const items: MenuItem[] = [];
+
+  // Folder-pick mode: a row that selects the CURRENT directory. Navigate into subdirs, then choose here.
+  if (opts.directory) {
+    items.push({ id: "fb-choose-dir", label: `[Choose this folder]`, kind: "action", keepOpen: true, onSelect: () => h.pick(dir) });
+    items.push({ id: "fb-sep-dir", label: "", kind: "separator" });
+  }
 
   // Save mode: a filename prompt (pre-filled with the suggested default) at the top. Confirm → pick the path.
   if (opts.saving) {
@@ -75,7 +82,7 @@ export function buildFileBrowserMenu(
   for (const f of files)
     items.push({ id: `fb-f-${f}`, label: f, kind: "action", keepOpen: true, onSelect: () => h.pick(joinPath(dir, f)) });
 
-  if (dirs.length === 0 && files.length === 0)
+  if (!opts.directory && dirs.length === 0 && files.length === 0)
     items.push({ id: "fb-empty", label: opts.saving ? "(empty)" : "(no matching files)", kind: "action", keepOpen: true, disabled: true });
 
   return { title: `${opts.title} — ${dir}`, items };

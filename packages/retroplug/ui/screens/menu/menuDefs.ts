@@ -20,18 +20,18 @@ import {
   type LsdjSyncMode,
 } from "../../../src/settingsEnums";
 import type { UserConfig } from "../../../src/userConfig";
-import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES } from "../../../src/userConfig";
+import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
 import type { SplitMode } from "../../../src/render";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
-import { resolveSavPath, siblingPath } from "../../../src/savPaths";
-import { stem } from "../../../src/pathUtil";
+import { resolveSavPath, siblingPath, SAV_PATTERNS, isSavPath } from "../../../src/savPaths";
+import { stem, dirname, joinPath, shortenMiddle } from "../../../src/pathUtil";
 import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
 import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
-import { replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
+import { replaceSongInSav } from "../../../src/lsdjSongOps";
 import { importSongFiles } from "../../../src/lsdjSongImport";
-import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav } from "../../../src/risaSongOps";
+import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav, workingSongRecord, saveWorkingToCatalog } from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
@@ -51,10 +51,11 @@ import {
   type AssetTypeInfo,
   type TrackerIntegration,
 } from "../../../src/tracker";
-import type { HostBackend } from "../../../src/backend";
+import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
-import { startSystemRender, validSplits, formatDuration } from "../../lvgl/render";
+import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
+import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty } from "./audioDraft";
 import type { MenuItem, MenuTree } from "./menuTree";
@@ -76,6 +77,9 @@ export interface MenuContext {
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
   /** Quit the standalone (unsaved-changes guarded). No-op in a DAW (the host owns the window). */
   requestExit: () => void;
+  // Open the Songs "import from a .sav" picker (validate the source against the cart's console, then show a
+  // checkbox list) — owned by useSongImport, wired from App like the project modals.
+  beginSongImport: (sys: SystemView, source: Uint8Array) => void;
 }
 
 /** True only in a standalone host (the SDL handheld build or the DPF JACK standalone), which installs
@@ -136,8 +140,7 @@ const PROJECT_PATTERNS = ["*.rplg"]; // thin project (raw JSON) — the Save tar
 const ZIP_PATTERNS = ["*.rplg.zip"]; // exported project (PKZIP) — always `.rplg.zip`
 const LOAD_PATTERNS = ["*.rplg", "*.rplg.zip"]; // load/locate accept either on-disk shape
 const STATE_PATTERNS = ["*.ss?"]; // slot-numbered savestates (.ss0..ss9), matching legacy
-const SRAM_PATTERNS = ["*.sav", "*.srm"];
-const WAV_PATTERNS = ["*.wav"]; // render output
+const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm — battery saves (some NES/risa carts use .srm)
 
 /** Wrap `current` within [min, max]: +1 past max → min, -1 below min → max. */
 function cycleInt(current: number, min: number, max: number, dir: 1 | -1): number {
@@ -157,6 +160,12 @@ function submenu(id: string, label: string, children: MenuItem[]): MenuItem {
 }
 function sep(id: string): MenuItem {
   return { id, label: "", kind: "separator" };
+}
+
+/** "Save Project", with a trailing " *" when the project or any battery SRAM is unsaved (the same signal the
+ *  close guard asks). The star is the file's established "modified" marker (cf. the asset-override rows). */
+function saveProjectLabel(ctx: MenuContext): string {
+  return `Save Project${hasUnsavedChanges(ctx.stores.backend, ctx.stores.project) ? " *" : ""}`;
 }
 
 /** A value-cycler row: label shows `prefix: names[current]`, Enter/Right step forward, Left back. */
@@ -222,20 +231,118 @@ function mesenConfig(sys: SystemView): { region: ConsoleRegion; removeSpriteLimi
 }
 
 // --- child builders -----------------------------------------------------------------------------------
+// Build the System > Render submenu (a WAV background job on a COPY of the live SRAM/savestate — never the
+// running core, like `retroplug-cli render`). NO dialog at render time: the output folder, filename,
+// on-exists policy, and routing/rate/duration are explicit rows, and "Render" writes straight to
+// <Output Dir>/<Filename>.wav (a prefix + _<channel> for splits). Only built for on-disk ROMs.
+// Compose a "<prefix><dir>" menu label that stays on ONE line: the path is middle-elided so the whole label
+// (plus the " >" LVGL appends to a submenu row) fits before it wraps. The budget is prefix-aware — a fixed
+// path budget overflowed for a long prefix like "Default Render Dir: ", wrapping the row.
+const DIR_LABEL_MAX = 38; // total label chars that fit on a row at the default window width (leaves room for " >")
+function dirLabel(prefix: string, dir: string): string {
+  return `${prefix}${shortenMiddle(dir, Math.max(6, DIR_LABEL_MAX - prefix.length))}`;
+}
+
+// The render folder to default to when neither a session override nor the Settings "Default Render Dir" is
+// set: the folder the system's .sav lives in (a battery cart), else the ROM's own folder.
+function renderDefaultDir(sys: SystemView): string {
+  return sys.battery ? dirname(resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath)) : dirname(sys.romPath);
+}
+
+function renderSubmenu(ctx: MenuContext, sys: SystemView): MenuItem {
+  const userConfig = ctx.stores.userConfig;
+  const r = ctx.userConfig.render;
+  const splits = validSplits(sys);
+  const split = splits.includes(r.split) ? r.split : "mix"; // clamp a stored pins/channels to this platform
+  const rateIdx = Math.max(0, RENDER_SAMPLE_RATES.indexOf(r.sampleRate as never));
+  const setMaxDur = (delta: number) => userConfig.setRenderMaxDurationSec(r.maxDurationSec + delta);
+  // Effective output folder: a per-session override the user picked in this menu, else the Settings "Default
+  // Render Dir", else the folder the .sav is in (a battery cart) or the ROM's folder. Filename: a session
+  // override the user typed, else re-derived from the loaded song each time the menu opens.
+  const effectiveDir = userConfig.renderDir(sys.id) ?? (r.outputDir || renderDefaultDir(sys));
+  const curName = userConfig.renderFilename(sys.id) ?? sanitizeName(renderBaseName(ctx.stores.backend, sys));
+  const onExistsIdx = Math.max(0, RENDER_ON_EXISTS.indexOf(r.onExists));
+
+  const renderChildren: MenuItem[] = [
+    // Output Dir: a native FOLDER picker (our DPF fork). The chosen folder persists to userConfig; the long
+    // path is middle-elided to fit the row. keepOpen so the menu stays up to keep configuring after picking.
+    {
+      id: "sys-render-dir",
+      label: dirLabel("Output Dir: ", effectiveDir),
+      kind: "action",
+      keepOpen: true,
+      onSelect: () =>
+        // A per-session override (setRenderDir) — deliberately NOT the persisted Settings default.
+        browseThen(ctx, { title: "Output Dir", patterns: [], directory: true, startDir: effectiveDir }, (p) =>
+          userConfig.setRenderDir(sys.id, p),
+        ),
+    },
+    // Filename: an editable text prompt seeded with the derived name; the typed value is remembered for this
+    // session only (setRenderFilename), re-derived next time the menu opens.
+    {
+      id: "sys-render-filename",
+      label: `Filename: ${curName}`,
+      kind: "prompt",
+      keepOpen: true,
+      prompt: {
+        title: "Render filename:",
+        initial: curName,
+        filter: isFilenameChar,
+        onConfirm: (v: string) => {
+          userConfig.setRenderFilename(sys.id, sanitizeName(v));
+          return null;
+        },
+      },
+    },
+    cycler("sys-render-ifexists", "If Exists", ["Overwrite", "Rename"], onExistsIdx, (n) =>
+      userConfig.setRenderOnExists(RENDER_ON_EXISTS[n]),
+    ),
+    sep("sys-render-sep-opts"),
+    cycler("sys-render-split", "Split", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
+      userConfig.setRenderSplit(splits[n]),
+    ),
+    cycler("sys-render-rate", "Sample Rate", RENDER_SAMPLE_RATES.map((hz) => `${hz} Hz`), rateIdx, (n) =>
+      userConfig.setRenderSampleRate(RENDER_SAMPLE_RATES[n]),
+    ),
+    // Max Duration: Left/Right step ±1s, PageUp/PageDown jump ±30s (Menu.tsx routes onCoarseStep).
+    {
+      id: "sys-render-maxdur",
+      label: `Max Duration: ${formatDuration(r.maxDurationSec)}`,
+      kind: "cycler",
+      keepOpen: true,
+      onSelect: () => setMaxDur(1),
+      onCycle: (dir) => setMaxDur(dir),
+      onCoarseStep: (dir) => setMaxDur(dir * 30),
+    },
+    sep("sys-render-sep"),
+    // Render: no dialog. Writes to <dir>/<name>.wav (the render lib trims .wav to a prefix for splits).
+    action(
+      "sys-render-go",
+      "Render",
+      () =>
+        void startSystemRender(
+          ctx.stores.backend,
+          sys,
+          { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000, onExists: r.onExists },
+          joinPath(effectiveDir, `${curName}.wav`),
+        ),
+    ),
+  ];
+  return submenu("sys-render", "Render", renderChildren);
+}
+
 function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const systems = ctx.stores.project.systems;
-  // Reset reboots carrying the battery — pathless, reconstructing in place (no live GB_reset). Sits at the
-  // top with a separator below it.
-  const items: MenuItem[] = [
-    action("sys-reset", "Reset", () => void systems.reset(sys.id)),
-    // Swap the ROM in place but keep the running battery SRAM (e.g. an LSDj version bump that keeps the
-    // song). ROM-only browser; distinct from "Replace Instance", which cold-boots a fresh sav.
-    action("sys-swaprom", "Swap ROM (Preserve SRAM)...", () => void ctx.stores.fileSelection.browseSwap(sys.id)),
+  // Reset reboots carrying the battery — pathless, reconstructing in place (no live GB_reset). It leads the
+  // menu; the Render submenu (a WAV background job) sits right below it, then a separator.
+  const items: MenuItem[] = [action("sys-reset", "Reset", () => void systems.reset(sys.id))];
+  if (sys.romPath) items.push(renderSubmenu(ctx, sys));
+  items.push(
     sep("sys-sep-reset"),
     cycler("sys-reload", "Reload on ROM Change", OFF_ON, sys.settings.reloadOnRomChange ? 1 : 0, (n) =>
       systems.setReloadOnRomChange(sys.id, n === 1),
     ),
-  ];
+  );
   // SameBoy-only core knobs.
   if (sys.core === "sameboy") {
     const cfg = sameboyConfig(sys);
@@ -271,6 +378,10 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
   // The instance's own sibling .sav name (suffix-aware) — the sensible default target for its fresh save.
   const sramName = sys.savSuffix >= 2 ? `${romStem}-${sys.savSuffix}.sav` : `${romStem}.sav`;
   items.push(sep("sys-sep-state"));
+  // Swap the ROM in place but keep the running battery SRAM (e.g. an LSDj version bump that keeps the song).
+  // ROM-only browser; distinct from "Replace Instance", which cold-boots a fresh sav. Sits just above the
+  // New/Load SRAM rows.
+  items.push(action("sys-swaprom", "Swap ROM (Preserve SRAM)...", () => void ctx.stores.fileSelection.browseSwap(sys.id)));
   if (sys.romPath && !noSave)
     items.push(
       action("sys-newsram", "New SRAM...", () =>
@@ -309,53 +420,6 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       browseThen(ctx, { title: "Save State", patterns: STATE_PATTERNS, saving: true, defaultName: `${romStem || "savestate"}.ss0` }, (p) => systems.saveState(sys.id, p)),
     ),
   );
-
-  // Render to WAV — a background job on a fresh instance built from a COPY of the live SRAM/savestate (never
-  // the running core), like `retroplug-cli render`. The menu can close while it runs; progress + cancel show
-  // on the system tile. Split/sample-rate/max-duration are picked here (persisted in userConfig) and the one
-  // "Render..." action applies them. Only for on-disk ROMs. Split modes gate on platform.
-  if (sys.romPath) {
-    const userConfig = ctx.stores.userConfig;
-    const r = ctx.userConfig.render;
-    const splits = validSplits(sys);
-    const split = splits.includes(r.split) ? r.split : "mix"; // clamp a stored pins/channels to this platform
-    const rateIdx = Math.max(0, RENDER_SAMPLE_RATES.indexOf(r.sampleRate as never));
-    const setMaxDur = (delta: number) => userConfig.setRenderMaxDurationSec(r.maxDurationSec + delta);
-
-    const renderChildren: MenuItem[] = [
-      cycler("sys-render-split", "Audio Routing", splits.map((s) => SPLIT_LABELS[s]), splits.indexOf(split), (n) =>
-        userConfig.setRenderSplit(splits[n]),
-      ),
-      cycler("sys-render-rate", "Sample Rate", RENDER_SAMPLE_RATES.map((hz) => `${hz} Hz`), rateIdx, (n) =>
-        userConfig.setRenderSampleRate(RENDER_SAMPLE_RATES[n]),
-      ),
-      // Max Duration: Left/Right step ±1s, PageUp/PageDown jump ±30s (Menu.tsx routes onCoarseStep).
-      {
-        id: "sys-render-maxdur",
-        label: `Max Duration: ${formatDuration(r.maxDurationSec)}`,
-        kind: "cycler",
-        keepOpen: true,
-        onSelect: () => setMaxDur(1),
-        onCycle: (dir) => setMaxDur(dir),
-        onCoarseStep: (dir) => setMaxDur(dir * 30),
-      },
-      sep("sys-render-sep"),
-      action("sys-render-go", "Render...", () =>
-        browseThen(
-          ctx,
-          { title: "Render", patterns: WAV_PATTERNS, saving: true, defaultName: `${romStem || "render"}.wav` },
-          (p) =>
-            void startSystemRender(
-              ctx.stores.backend,
-              sys,
-              { split, sampleRate: r.sampleRate, maxDurationMs: r.maxDurationSec * 1000 },
-              p,
-            ),
-        ),
-      ),
-    ];
-    items.push(sep("sys-sep-render"), submenu("sys-render", "Render", renderChildren));
-  }
   return items;
 }
 
@@ -385,6 +449,16 @@ function assetRomBytes(be: HostBackend, romPath: string): Uint8Array | null {
   const bytes = romPath ? be.readFile(romPath) : null;
   assetRomCache.set(romPath, bytes);
   return bytes;
+}
+
+// A detected tracker cart whose embedded version this build has no layout for is DETECTED but not driveable
+// (the Songs/Assets rows read that layout). We grey the submenu out as "(Unsupported Version)" rather than
+// hiding it, so it's clear the cart IS a tracker we just don't support this version of. LSDj drives every
+// version (no predicate); risa only the versions with a bundled layout.
+function trackerVersionSupported(t: TrackerIntegration, be: HostBackend, romPath: string): boolean {
+  if (!t.isVersionSupported) return true;
+  const rom = assetRomBytes(be, romPath);
+  return !rom || t.isVersionSupported(rom); // unreadable ROM -> can't disprove support; leave the submenu live
 }
 
 // The override list off a system's `*-assets` role config (console-agnostic — the generic rows only read
@@ -457,6 +531,9 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
 
 // A safe filename fragment (mirrors the CLI's sanitize).
 const sanitizeName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") || "asset";
+// Per-keystroke filter for the render Filename prompt: block path separators / dodgy chars at entry (a
+// space is allowed and folded to "_" by sanitizeName on confirm).
+const isFilenameChar = (ch: string): boolean => /^[A-Za-z0-9 ._-]$/.test(ch);
 const readLsdjRom = (be: HostBackend, romPath: string): LsdjRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
   if (!bytes) return null;
@@ -668,14 +745,14 @@ function importLsdprj(ctx: MenuContext, sys: SystemView, path: string, targetSlo
   systems.loadSram(sys.id, target); // one rebuild: kit overrides → romBytes + boot the imported song
 }
 
-// Add a song: a `.lsdsng`/`.lsdprj` into the first free slot (the same importer drag-and-drop uses), or all
-// songs from a `.sav`.
+// Add a song: a `.lsdsng`/`.lsdprj` into the first free slot (the same importer drag-and-drop uses), or a
+// selection of songs from a `.sav`/`.srm` (the checkbox picker, validated against the cart's console).
 function addSongFromDisk(ctx: MenuContext, sys: SystemView): void {
   const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Add Song", patterns: ["*.lsdsng", "*.lsdprj", "*.sav"] }, (path) => {
-    if (path.toLowerCase().endsWith(".sav")) {
+  browseThen(ctx, { title: "Add Song", patterns: ["*.lsdsng", "*.lsdprj", ...SAV_PATTERNS] }, (path) => {
+    if (isSavPath(path)) {
       const data = be.readFile(path);
-      if (data) mutateSavBytes(ctx, sys, (sav) => importAllSongsFromSav(sav, data));
+      if (data) ctx.beginSongImport(sys, data);
     } else {
       importSongFiles(be, ctx.stores.project.systems, sys, [path]);
     }
@@ -694,6 +771,10 @@ interface SongMenuSpec {
   exportSong(ctx: MenuContext, sys: SystemView, index: number, name: string): void;
   replaceSong(ctx: MenuContext, sys: SystemView, index: number): void;
   addSong(ctx: MenuContext, sys: SystemView): void;
+  // The synthetic working-song row's actions (only for a console whose catalog reports an unsaved working
+  // song — risa). Export writes the working song to disk; saveToCatalog promotes it to a real saved slot.
+  exportWorking?(ctx: MenuContext, sys: SystemView, name: string): void;
+  saveWorkingToCatalog?(ctx: MenuContext, sys: SystemView): void;
 }
 
 function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem {
@@ -706,7 +787,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     const items: MenuItem[] = [
       action(`${spec.id}-song-${s.index}-load`, "Load...", () => mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index))),
       action(`${spec.id}-song-${s.index}-export`, "Export...", () => spec.exportSong(ctx, sys, s.index, name)),
-      action(`${spec.id}-song-${s.index}-replace`, "Replace from Disk...", () => spec.replaceSong(ctx, sys, s.index)),
+      action(`${spec.id}-song-${s.index}-replace`, "Replace...", () => spec.replaceSong(ctx, sys, s.index)),
     ];
     if (cat.reorder) {
       // reorder takes LIST POSITIONS (index into the rendered list), not the row's `index` — they coincide
@@ -732,7 +813,26 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     return submenu(`${spec.id}-song-${s.index}`, `[${s.index}] ${name}`, items);
   });
   const body = rows.length ? rows : [action(`${spec.id}-song-none`, "(no saved songs)", () => {}, true)];
-  return submenu(`${spec.id}-songs`, "Songs", [action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys)), sep(`${spec.id}-song-add-sep`), ...body]);
+  // The live working song, when the catalog reports it UNSAVED (not linked to any listed slot) — surfaced as
+  // a synthetic top row so a cart whose song lives only in working memory isn't invisible. It's not a catalog
+  // index, so it gets its own actions (Save to Catalog / Export), never Load/Delete/reorder.
+  const working = bytes ? cat.workingSong?.(bytes) : null;
+  const workingRows: MenuItem[] = [];
+  if (working) {
+    const wName = working.name || "Working Song";
+    const wItems: MenuItem[] = [];
+    if (spec.saveWorkingToCatalog)
+      wItems.push(action(`${spec.id}-song-working-save`, "Save to Catalog", () => spec.saveWorkingToCatalog!(ctx, sys)));
+    if (spec.exportWorking)
+      wItems.push(action(`${spec.id}-song-working-export`, "Export...", () => spec.exportWorking!(ctx, sys, wName)));
+    workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName}`, wItems), sep(`${spec.id}-song-working-sep`));
+  }
+  return submenu(`${spec.id}-songs`, "Songs", [
+    ...workingRows,
+    action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys)),
+    sep(`${spec.id}-song-add-sep`),
+    ...body,
+  ]);
 }
 
 // The throw→null wrapper for risa's catalog ops used by its file actions (LSDj's ops return null directly;
@@ -766,15 +866,39 @@ function risaReplaceSong(ctx: MenuContext, sys: SystemView, index: number): void
 }
 function risaAddSong(ctx: MenuContext, sys: SystemView): void {
   const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Add Song", patterns: ["*.risong"] }, (path) => {
+  browseThen(ctx, { title: "Add Song", patterns: ["*.risong", ...SAV_PATTERNS] }, (path) => {
     const data = be.readFile(path);
     if (!data) return;
-    mutateSavBytes(ctx, sys, (sav) => tryOp(() => addSongRecordToSav(sav, data)));
+    if (isSavPath(path)) ctx.beginSongImport(sys, data); // a whole .sav/.srm → the checkbox picker
+    else mutateSavBytes(ctx, sys, (sav) => tryOp(() => addSongRecordToSav(sav, data))); // a single .risong record
   });
+}
+// The synthetic working-song row's actions. Export writes the LIVE working song (banks 0-3, encoded as a
+// record) to a `.risong`; Save to Catalog promotes it into a new saved slot + links it, so it stops being
+// unsaved and moves into the numbered list.
+function risaExportWorking(ctx: MenuContext, sys: SystemView, name: string): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: "Export working song", patterns: ["*.risong"], saving: true, defaultName: `${sanitizeName(name)}.risong` }, (path) => {
+    const bytes = ctx.stores.project.systems.readSram(sys.id);
+    if (!bytes) return;
+    const record = workingSongRecord(bytes);
+    if (record) be.writeFileAtomic(path, record);
+  });
+}
+function risaSaveWorking(ctx: MenuContext, sys: SystemView): void {
+  mutateSavBytes(ctx, sys, (sav) => tryOp(() => saveWorkingToCatalog(sav)));
 }
 
 const lsdjSongSpec: SongMenuSpec = { id: "lsdj", catalog: lsdjSongCatalog, exportSong, replaceSong, addSong: addSongFromDisk };
-const risaSongSpec: SongMenuSpec = { id: "risa", catalog: risaSongCatalog, exportSong: risaExportSong, replaceSong: risaReplaceSong, addSong: risaAddSong };
+const risaSongSpec: SongMenuSpec = {
+  id: "risa",
+  catalog: risaSongCatalog,
+  exportSong: risaExportSong,
+  replaceSong: risaReplaceSong,
+  addSong: risaAddSong,
+  exportWorking: risaExportWorking,
+  saveWorkingToCatalog: risaSaveWorking,
+};
 
 // The per-console UI bindings for a tracker integration: the file-dialog specs (Songs + assets, which own
 // file formats) plus any per-console extras not yet unified (LSDj's sync cyclers). Keyed by integration id;
@@ -831,7 +955,7 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.systems.length > 0) {
     // Save writes to the known path when there is one (else Save As covers it). Save As / Export browse
     // for a target; each store method already takes a resolved path.
-    if (project.currentPath()) items.push(action("proj-save", "Save Project", () => project.save(project.currentPath())));
+    if (project.currentPath()) items.push(action("proj-save", saveProjectLabel(ctx), () => project.save(project.currentPath())));
     items.push(action("proj-saveas", "Save Project As...", () =>
       browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) => project.save(p)),
     ));
@@ -981,9 +1105,21 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
 function settingsChildren(ctx: MenuContext): MenuItem[] {
   const userConfig = ctx.stores.userConfig;
   const sramIdx = Math.max(0, SRAM_AUTO_SAVES.indexOf(ctx.userConfig.sramAutoSave));
+  // The persisted default render folder (System > Render seeds its Output Dir from this; "" = unset →
+  // each cart falls back to its .sav / ROM folder). Set via a native folder picker; Clear returns to unset.
+  const defaultDir = ctx.userConfig.render.outputDir;
+  const renderDirItem = submenu("set-render-dir", dirLabel("Default Render Dir: ", defaultDir || "(unset)"), [
+    action("set-render-dir-set", "Set...", () =>
+      browseThen(ctx, { title: "Default Render Dir", patterns: [], directory: true, startDir: defaultDir }, (p) =>
+        userConfig.setRenderOutputDir(p),
+      ),
+    ),
+    action("set-render-dir-clear", "Clear", () => userConfig.setRenderOutputDir(""), !defaultDir),
+  ]);
   return [
     cycler("set-sram", "SRAM Auto-Save", SRAM_AUTO_SAVES.map((m) => SRAM_AUTO_SAVE_LABELS[m] ?? m), sramIdx, (n) => userConfig.setSramAutoSave(SRAM_AUTO_SAVES[n])),
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
+    renderDirItem,
     submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
     submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
     // In-app browser (default) vs the host's OS file dialog. On a host with no OS dialog it just stays in-app.
@@ -996,48 +1132,81 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
 
 function recentChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.recent.length === 0) return [action("recent-none", "(No Recent Files)", () => {})];
-  return ctx.recent.map((entry, i) =>
-    // Annotate with the working-song name when known (a tracker cart's loaded song): "project — SONG".
-    submenu(`recent-${i}`, entry.song ? `${entry.label} — ${entry.song}` : entry.label, [
-      action(`recent-${i}-load`, entry.missing ? "Load (missing)" : "Load", () => ctx.loadProject(entry.path)),
-      action(`recent-${i}-locate`, "Locate on Disk", () =>
-        browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p)),
-      ),
-      {
-        id: `recent-${i}-rename`,
-        label: "Rename...",
-        kind: "prompt",
-        keepOpen: true,
-        prompt: {
-          title: `Rename "${entry.label}" to:`,
-          initial: entry.label,
-          onConfirm: (v: string) => {
-            const name = v.trim();
-            if (!name) return "Name cannot be empty.";
-            return ctx.stores.project.renameProject(entry.path, name) ? null : "Rename failed.";
-          },
+  return ctx.recent.map((entry, i) => {
+    // A single action row (no nested submenu): Enter loads the project — or Locates it when its file is
+    // gone. The management verbs are hotkeys the Menu drives off these fields: F2 (onRename) / Del
+    // (onDelete). Label leads with the working-song name when known (a tracker cart's loaded song), then
+    // the project: "SONG - project", ASCII " - " (the LVGL font has no emdash glyph), matching the tracker
+    // window-title order. A missing entry is drawn yellow (warn) with a trailing " [!]".
+    const base = entry.song ? `${entry.song} - ${entry.label}` : entry.label;
+    const row: MenuItem = {
+      id: `recent-${i}`,
+      label: entry.missing ? `${base} [!]` : base,
+      kind: "action",
+      warn: entry.missing,
+      onSelect: entry.missing
+        ? () => browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p))
+        : () => ctx.loadProject(entry.path),
+      onDelete: () => ctx.stores.recent.remove(entry.path),
+      onRename: {
+        title: `Rename "${entry.label}" to:`,
+        initial: entry.label,
+        onConfirm: (v: string) => {
+          const name = v.trim();
+          if (!name) return "Name cannot be empty.";
+          return ctx.stores.project.renameProject(entry.path, name) ? null : "Rename failed.";
         },
       },
-      action(`recent-${i}-remove`, "Remove from List", () => ctx.stores.recent.remove(entry.path)),
-    ]),
-  );
+    };
+    return row;
+  });
 }
 
 // --- top-level builders -------------------------------------------------------------------------------
 
-/** The standalone OS window title: "RetroPlug v<version> - <project>" (no ROM name). Empty segments are
- *  dropped, so a nameless project shows just "RetroPlug v<version>". */
-export function composeWindowTitle(version: string, project: string): string {
-  const base = version ? `RetroPlug v${version}` : "RetroPlug";
-  return project ? `${base} - ${project}` : base;
+/** The ROM's own internal name is a full-file scan (LSDj title / risa "RISA V" marker); cache it per
+ *  romPath so the per-render title composition doesn't re-scan a 512 KB ROM. A given path's ROM is stable
+ *  (the asset caches make the same assumption). */
+const cartRomNameCache = new Map<string, string | null>();
+function cartRomName(backend: Pick<HostBackend, "readFile">, tracker: TrackerIntegration, romPath: string): string | null {
+  const key = `${tracker.id}:${romPath}`;
+  if (cartRomNameCache.has(key)) return cartRomNameCache.get(key) ?? null;
+  const rom = romPath ? backend.readFile(romPath) : null;
+  const name = rom ? tracker.romName(rom) : null;
+  cartRomNameCache.set(key, name);
+  return name;
 }
 
-/** The instance-menu title: "RetroPlug v<version> - <project> - <rom>". ROM name = the file stem, or
- *  "mGB" for the embedded synth (romPath === ""). Empty segments are dropped, and the ROM is omitted when
- *  it equals the project name (the common case where the name was seeded from the ROM) so it isn't shown
- *  twice. */
+/** The title subtitle for a tracker cart (LSDj / risa): the WORKING song name, then the ROM's OWN name (its
+ *  internal title / version marker, NOT the on-disk filename) — e.g. "MYSONG - LSDj v9.4.2". Either piece is
+ *  dropped when absent (no song loaded / an unversioned ROM). null for a non-tracker system, so the caller
+ *  keeps its default project/rom-stem title. */
+export function trackerCartLabel(backend: Pick<ControlPlaneBackend, "readFile" | "readSram">, sys: SystemView): string | null {
+  const tracker = resolveTracker(sys.roles);
+  if (!tracker) return null;
+  const romName = cartRomName(backend, tracker, sys.romPath);
+  const sram = backend.readSram(sys.id);
+  const song = sram ? tracker.songs.workingName(sram) : null;
+  const segs = [song, romName].filter((s): s is string => !!s);
+  return segs.length ? segs.join(" - ") : null;
+}
+
+/** The standalone OS window title: "RetroPlug v<version> - <subtitle>". The subtitle is the tracker cart
+ *  label ("<song> - <ROM name>") when given, else the project name; empty segments are dropped, so a
+ *  nameless project shows just "RetroPlug v<version>". */
+export function composeWindowTitle(version: string, project: string, cart?: string | null): string {
+  const base = version ? `RetroPlug v${version}` : "RetroPlug";
+  const subtitle = cart || project; // a tracker cart's "song - ROM name" supersedes the project name
+  return subtitle ? `${base} - ${subtitle}` : base;
+}
+
+/** The instance-menu title. For a tracker cart: "RetroPlug v<version> - <song> - <ROM name>" (the cart's
+ *  own name, not the filename). Otherwise "RetroPlug v<version> - <project> - <rom>", where ROM = the file
+ *  stem (or "mGB" for the embedded synth), dropped when it equals the project name so it isn't shown twice. */
 function instanceTitle(ctx: MenuContext, sys: SystemView): string {
   const base = ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug";
+  const cart = trackerCartLabel(ctx.stores.backend, sys);
+  if (cart) return `${base} - ${cart}`;
   const project = ctx.stores.project.name();
   const rom = sys.embedded ? "mGB" : stem(sys.romPath);
   const segs = [base];
@@ -1058,9 +1227,19 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       // "Load…" is a project-level op (load the sibling project / new project from the ROM) — it never
       // swaps this instance. Swapping a single instance in place is "Replace Instance".
       action("inst-load", "Load...", () => runLoad(ctx)),
-      action("inst-save", "Save Project", () => void saveProjectInteractive(ctx.stores)),
+      action("inst-save", saveProjectLabel(ctx), () => void saveProjectInteractive(ctx.stores)),
       action("inst-new", "New Project", () => ctx.newProject()),
       submenu("inst-recent", "Recent", recentChildren(ctx)),
+      // The tracker submenu (LSDj / risa) sits right under Recent, fenced by a separator on each side (the
+      // one above here, and inst-sep-top below). Only present when the cart sniffed a tracker.
+      ...(tracker
+        ? [
+            sep("inst-sep-tracker"),
+            trackerVersionSupported(tracker, ctx.stores.backend, sys.romPath)
+              ? submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))
+              : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
+          ]
+        : []),
       sep("inst-sep-top"),
       action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd(sys.id)),
       action("inst-dup", "Duplicate Instance", () => {
@@ -1086,7 +1265,6 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
         : []),
       sep("inst-sep1"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
-      ...(tracker ? [submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))] : []),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
       ...(isStandalone() ? [sep("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),

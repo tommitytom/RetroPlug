@@ -27,9 +27,10 @@ interface Reply {
 // __rp_openFileBrowser hook on the shared globalThis and, once settled, gets __rp_onFileBrowserResult back.
 // This crosses the control-plane↔UI bundle boundary via globalThis (module singletons do NOT — each bundle
 // gets its own). The hook is installed by the UI (the in-app React/LVGL browser — see useFileBrowser) which
-// overrides any native host browser; a native OS dialog is an opt-in the UI routes to. Absent (headless
-// harness) → every browse resolves null.
-type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string) => void;
+// overrides any native host browser; a native OS dialog is an opt-in the UI routes to. Only one browse is
+// ever in flight, so one module-level pending slot suffices. Absent (headless harness) → every browse
+// resolves null. startDir opens the browser at that directory; directory picks a folder (the render Output Dir).
+type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string, startDir: string, directory: boolean) => void;
 
 let pendingBrowse: ((path: string | null) => void) | null = null;
 let browseResolverInstalled = false;
@@ -51,7 +52,7 @@ function browseFile(opts: FileBrowserOpts): Promise<string | null> {
   installBrowseResolver();
   return new Promise<string | null>((resolve) => {
     pendingBrowse = resolve;
-    hook(opts.title, opts.patterns.join(" "), !!opts.saving, opts.defaultName ?? "");
+    hook(opts.title, opts.patterns.join(" "), !!opts.saving, opts.defaultName ?? "", opts.startDir ?? "", !!opts.directory);
   });
 }
 

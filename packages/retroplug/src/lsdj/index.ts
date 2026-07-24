@@ -6,7 +6,7 @@
 // `savToJson` decodes a .sav back to the model (never exposed to TS natively).
 export * from "./model";
 export { decodeSong, encodeSong } from "./codec/song";
-export { encodeSav, decodeSav, kSavSize, listProjects, freeSongSlot, freeSong, injectSong, swapProjectSlots, decompressSlot, savSongName, savSongVersion, loadSongToWorking, type SavProjectInfo } from "./codec/sav";
+export { encodeSav, decodeSav, kSavSize, listProjects, isLsdjSav, freeSongSlot, freeSong, injectSong, swapProjectSlots, decompressSlot, savSongName, savSongVersion, loadSongToWorking, type SavProjectInfo } from "./codec/sav";
 export { encodeLsdsng, decodeLsdsng, decodeLsdsngRaw, encodeLsdsngRaw } from "./codec/lsdsng";
 export { decodeLsdprj, encodeLsdprj, lsdprjKitBank, usedKitIndices, remapSongKits, type Lsdprj } from "./codec/lsdprj";
 export { compressProject, decompressProject } from "./codec/rle";

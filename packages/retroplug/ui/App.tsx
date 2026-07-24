@@ -18,13 +18,14 @@ import { useWindowSize, requestWindowSize, isWindowSizeControlled, setWindowTitl
 import { useCloseGuard } from "./lvgl/useCloseGuard";
 import { useProjectModals } from "./lvgl/useProjectModals";
 import { useFileBrowser } from "./lvgl/useFileBrowser";
+import { useSongImport } from "./lvgl/useSongImport";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
 import { toggleLsdjDebug } from "./screens/grid/lsdjDebug";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
-import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
+import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel, type MenuContext } from "./screens/menu/menuDefs";
 import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
@@ -34,6 +35,7 @@ import { importSongFiles } from "../src/lsdjSongImport";
 
 const KEY_ESCAPE = 0x1b;
 const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
+const MOUSE_BUTTON_RIGHT = 2; // DPF kMouseButtonRight (left=1, right=2, middle=3) — the "mouse" bus button field
 
 export function App() {
   const stores = useStores();
@@ -47,6 +49,7 @@ export function App() {
   const closeGuard = useCloseGuard(stores);
   const modals = useProjectModals(stores);
   const browser = useFileBrowser(stores); // in-app file browser overlay (openFileBrowser)
+  const songImport = useSongImport(stores);
   const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title
 
   const [menuOpen, setMenuOpen] = useState(true);
@@ -59,15 +62,18 @@ export function App() {
 
   const empty = systems.length === 0;
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.
-  const playing = !empty && !menuOpen && !closeGuard.active && !modals.active && !browser.active;
+  const playing = !empty && !menuOpen && !closeGuard.active && !modals.active && !browser.active && !songImport.active;
   // App-action lookups (open menu / cycle instances), rebuilt only when the bindings change.
   const keyToAction = useMemo(() => buildKeyToAction(bindings.keyboardActions), [bindings.keyboardActions]);
   const padToAction = useMemo(() => buildGamepadToAction(bindings.gamepadActions), [bindings.gamepadActions]);
   const resolvedZoom = resolveZoom(settings.zoom, userConfig.defaultZoom);
 
-  // The standalone OS window title: version + project name (re-renders on the project channel, which fires
-  // on load / adopt / rename / new). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).
-  const windowTitle = composeWindowTitle(version, stores.project.name());
+  // The standalone OS window title: version + the focused tracker cart's "<song> - <ROM name>" when one is
+  // loaded (LSDj / risa), else the project name. Re-renders on the project channel (load / adopt / rename /
+  // new / focus / song-load). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).
+  const focusedSys = systems.find((s) => s.id === stores.project.systems.focused());
+  const cartLabel = focusedSys ? trackerCartLabel(stores.backend, focusedSys) : null;
+  const windowTitle = composeWindowTitle(version, stores.project.name(), cartLabel);
 
   // Menu-open invariant on empty transitions: empty → the start menu (always open); first system → close.
   useEffect(() => {
@@ -78,8 +84,8 @@ export function App() {
   // Idle: point the keypad at the sink when the grid shows without a menu. Not while a modal overlay owns
   // the keypad (close prompt / project modal) — else closing the menu to raise one steals its focus.
   useEffect(() => {
-    if (!empty && !menuOpen && !closeGuard.active && !modals.active && !browser.active && sink) setKeyboardGroup(sink);
-  }, [empty, menuOpen, sink, closeGuard.active, modals.active, browser.active]);
+    if (!empty && !menuOpen && !closeGuard.active && !modals.active && !browser.active && !songImport.active && sink) setKeyboardGroup(sink);
+  }, [empty, menuOpen, sink, closeGuard.active, modals.active, browser.active, songImport.active]);
 
   // Fit the window to the grid when the instance count / zoom / layout changes. Deliberately NOT reactive to
   // windowSize: re-asserting the size on every observed resize fights a host/compositor that reverts our
@@ -127,8 +133,9 @@ export function App() {
       if (browser.active) return void browser.onClose();
       if (closeGuard.active) return void closeGuard.onCancel();
       if (modals.active) return void modals.onClose();
+      if (songImport.active) return void songImport.onClose();
     }
-    if (closeGuard.active || modals.active || browser.active) return; // an overlay owns input; actions don't fire under it
+    if (closeGuard.active || modals.active || browser.active || songImport.active) return; // an overlay owns input; actions don't fire under it
     if (key === KEY_BACKTICK) return void toggleLsdjDebug(); // dev: show/hide the LSDj runtime readout
     runAction(keyToAction.get(key));
   });
@@ -138,8 +145,25 @@ export function App() {
     const name = args[1] as string;
     const press = args[2] as boolean;
     if (!press) return;
-    if (closeGuard.active || modals.active || browser.active) return;
+    if (closeGuard.active || modals.active || browser.active || songImport.active) return;
     runAction(padToAction.get(name));
+  });
+
+  // Right-click an instance → open its menu (anchored to the clicked tile, which also becomes focused). The
+  // native editor emits the "mouse" bus as [button, press, x, y]; a left click already focuses/opens rows via
+  // LVGL, so we act only on the right button. Ignored on the start screen (its menu is always open) and while
+  // a capture/prompt or a full-window overlay owns input.
+  useNativeEvent("mouse", (...args) => {
+    const button = args[0] as number;
+    const press = args[1] as boolean;
+    if (button !== MOUSE_BUTTON_RIGHT || !press) return;
+    if (empty || isMenuModalActive() || closeGuard.active || modals.active || songImport.active) return;
+    const idx = hitTestTile(args[2] as number, args[3] as number, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    if (idx == null) return; // must land on an instance
+    const targetId = systems[idx].id;
+    stores.project.systems.setFocus(targetId); // focus the right-clicked instance, then anchor its menu
+    setMenuSystemId(targetId);
+    setMenuOpen(true);
   });
 
   // Drag-and-drop: a dropped ROM / .sav / project routes by instance count. On the start screen or a
@@ -206,7 +230,7 @@ export function App() {
     if (!veto) g.__rp_quitWindow?.();
   };
 
-  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit };
+  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: songImport.begin };
 
   // In-app file browser (openFileBrowser): a full-window overlay above everything, owning input. A browse can
   // be raised from a menu OR from a modal (relink → Locate), so it takes precedence. onClose (Esc/B) cancels.
@@ -245,6 +269,16 @@ export function App() {
     return (
       <Box style={{ width, height, "background-color": "#000000" }}>
         <Menu width={width} height={height} zoom={resolvedZoom} tree={modals.modal} onClose={modals.onClose} />
+      </Box>
+    );
+  }
+
+  // Song-import overlay (validate a source .sav, then the checkbox picker) — same full-window pattern.
+  if (songImport.active && songImport.modal) {
+    const { width, height } = windowSize;
+    return (
+      <Box style={{ width, height, "background-color": "#000000" }}>
+        <Menu width={width} height={height} zoom={resolvedZoom} tree={songImport.modal} onClose={songImport.onClose} />
       </Box>
     );
   }

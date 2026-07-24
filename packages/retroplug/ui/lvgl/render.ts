@@ -4,7 +4,10 @@
 // harness where the hooks are absent, exactly like openPath / the file browser.
 
 import type { SystemView } from "../../src/systemsStore";
-import type { SplitMode } from "../../src/render";
+import type { SplitMode, OnExists } from "../../src/render";
+import { resolveSongCatalog } from "../../src/tracker";
+import { stem } from "../../src/pathUtil";
+import { resolveSavPath } from "../../src/savPaths";
 
 /** The backend methods startSystemRender needs — all on the plugin's control-plane channel (host +
  *  emulator facets), so it accepts either Backend or the narrower ControlPlaneBackend structurally. */
@@ -38,6 +41,7 @@ export interface RenderRequest {
   split: SplitMode;
   sampleRate?: number; // undefined = engine default (44100)
   maxDurationMs?: number; // bounds the render (LSDj auto-length cap + fixed-render length)
+  onExists?: OnExists; // "overwrite" (default) or "rename" to the next free name
 }
 
 /** Snapshot the live system's persisted state (its battery SRAM, or a savestate if the cart has no battery)
@@ -49,6 +53,7 @@ export function startSystemRender(backend: RenderBackend, sys: SystemView, req: 
   const spec: Record<string, unknown> = { rom: sys.romPath, out: outPath, split: req.split };
   if (req.sampleRate !== undefined) spec.sampleRate = req.sampleRate;
   if (req.maxDurationMs !== undefined) spec.maxDurationMs = req.maxDurationMs;
+  if (req.onExists !== undefined) spec.onExists = req.onExists;
 
   // A fresh boot from the CURRENT state (not the on-disk sibling .sav): copy the live SRAM / savestate to a
   // temp file the render worker's own Engine loads by path.
@@ -69,6 +74,18 @@ export function startSystemRender(backend: RenderBackend, sys: SystemView, req: 
 
   const id = hooks.__rp_startRender(sys.id, JSON.stringify(spec));
   return id > 0 ? id : null;
+}
+
+/** The base filename a render should default to, in priority order: the loaded tracker cart's WORKING song
+ *  name (LSDj / risa) → the loaded SAV's basename (a battery cart) → the ROM's stem. A non-tracker ROM has
+ *  no song catalog (resolveSongCatalog → undefined); a battery cart's sav name is usually the ROM stem but
+ *  differs when a custom .sav is loaded. The caller sanitizes it into a filename (names can carry spaces). */
+export function renderBaseName(backend: Pick<RenderBackend, "readSram">, sys: SystemView): string {
+  const catalog = resolveSongCatalog(sys.roles); // undefined for a non-tracker ROM
+  const sram = catalog ? backend.readSram(sys.id) : null; // control-plane snapshot read
+  const song = sram ? catalog!.workingName(sram) : null; // pure byte parse of the header name
+  const savName = sys.battery ? stem(resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath)) : null;
+  return song || savName || stem(sys.romPath) || "render";
 }
 
 /** Request cancellation of a running render (cooperative — aborts at the next chunk). */
