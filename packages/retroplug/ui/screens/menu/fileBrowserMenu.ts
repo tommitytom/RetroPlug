@@ -85,5 +85,5 @@ export function buildFileBrowserMenu(
   if (!opts.directory && dirs.length === 0 && files.length === 0)
     items.push({ id: "fb-empty", label: opts.saving ? "(empty)" : "(no matching files)", kind: "action", keepOpen: true, disabled: true });
 
-  return { title: `${opts.title} — ${dir}`, items };
+  return { title: `${opts.title}: ${dir}`, items };
 }

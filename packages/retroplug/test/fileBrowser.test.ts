@@ -40,7 +40,7 @@ test("buildFileBrowserMenu (open): dirs navigate, files pattern-filtered + picka
     pick: (p) => (picked = p),
   });
 
-  expect(tree.title).toBe("Load — /roms");
+  expect(tree.title).toBe("Load: /roms");
   const ids = tree.items.map((i) => i.id);
   expect(ids.includes("fb-up")).toBeTruthy(); // parent nav (not at root)
   expect(ids.includes("fb-d-sub")).toBeTruthy(); // the subdirectory
