@@ -747,7 +747,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     const items: MenuItem[] = [
       action(`${spec.id}-song-${s.index}-load`, "Load...", () => mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index))),
       action(`${spec.id}-song-${s.index}-export`, "Export...", () => spec.exportSong(ctx, sys, s.index, name)),
-      action(`${spec.id}-song-${s.index}-replace`, "Replace from Disk...", () => spec.replaceSong(ctx, sys, s.index)),
+      action(`${spec.id}-song-${s.index}-replace`, "Replace...", () => spec.replaceSong(ctx, sys, s.index)),
     ];
     if (cat.reorder) {
       // reorder takes LIST POSITIONS (index into the rendered list), not the row's `index` — they coincide
