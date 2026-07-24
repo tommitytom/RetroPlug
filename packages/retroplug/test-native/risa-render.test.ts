@@ -75,6 +75,22 @@ test("render without --out defaults the output filename to the song's name (not 
   be.deleteFile(expected); // don't leave the derived WAV next to the source ROM
 });
 
+test("render onExists 'rename' writes the next free name instead of clobbering", () => {
+  const be = createRealBackend();
+  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy();
+  const first = joinPath(dirname(RISA_ROM), "BLUMARBL.wav");
+  const second = joinPath(dirname(RISA_ROM), "BLUMARBL_2.wav");
+  be.deleteFile(first); be.deleteFile(second); // clean slate
+
+  runRenderJob(newCtx(be), baseOpts({ songIndex: 0, durationMs: 300 })); // 1st → BLUMARBL.wav (overwrite default)
+  const r2 = runRenderJob(newCtx(be), baseOpts({ songIndex: 0, durationMs: 300, onExists: "rename" }));
+  expect(r2.outputs).toEqual([second]); // target exists → renamed, not clobbered
+  expect(be.fileExists(first)).toBe(true); // the first render is left intact
+  expect(be.fileExists(second)).toBe(true);
+  be.deleteFile(first); be.deleteFile(second);
+});
+
 test("render auto-detects risa song length via seq_mode (HFF stop) over the real core", () => {
   const be = createRealBackend();
   if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }

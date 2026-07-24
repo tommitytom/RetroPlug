@@ -332,7 +332,7 @@ WidgetInfo RenderCore::widgetInfo(lv_obj_t* obj) const {
     return wi;
 }
 
-void RenderCore::tapKey(std::uint32_t lvKey) {
+void RenderCore::tapKey(std::uint32_t lvKey, std::uint32_t mod) {
     keyQueue_.push_back(lvKey);
     // Mirror PluginUI: also fire the JS "key" channel (press then release) for handlers that live there
     // (prompt/capture/Esc/game input). LVGL key code -> DPF key code (the value input.ts expects).
@@ -349,10 +349,9 @@ void RenderCore::tapKey(std::uint32_t lvKey) {
     JSContext* ctx = engine_.getContext();
     auto emitKey = [&](bool press) {
         if (!ctx) return;
-        JSValue args[2] = { JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press) };
-        engine_.emit("key", 2, args);
-        JS_FreeValue(ctx, args[0]);
-        JS_FreeValue(ctx, args[1]);
+        JSValue args[3] = { JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press), JS_NewUint32(ctx, mod) };
+        engine_.emit("key", 3, args);
+        for (JSValue& v : args) JS_FreeValue(ctx, v);
     };
     emitKey(true);
     pump(2);  // keypad indev: PRESSED then RELEASED through lv_timer_handler
@@ -376,6 +375,24 @@ void RenderCore::clickAt(std::int32_t x, std::int32_t y) {
     mouseDown_ = false;
     emitMouse(false);
     pump(2);  // release -> LVGL fires CLICKED -> onClick
+}
+
+// Emit a RIGHT-button press+release on the "mouse" bus at (x,y) — the seam the App's right-click "open the
+// instance menu" handler reads. Deliberately does NOT drive the LVGL pointer (no mouseDown_): a right click
+// isn't the primary click, so it must not fire a tile's LVGL onClick — only the bus event matters here.
+void RenderCore::rightClickAt(std::int32_t x, std::int32_t y) {
+    JSContext* ctx = engine_.getContext();
+    if (!ctx) return;
+    auto emitMouse = [&](bool press) {
+        JSValue args[4] = { JS_NewUint32(ctx, 2 /* DPF kMouseButtonRight */), JS_NewBool(ctx, press),
+                            JS_NewFloat64(ctx, x), JS_NewFloat64(ctx, y) };
+        engine_.emit("mouse", 4, args);
+        for (JSValue& v : args) JS_FreeValue(ctx, v);
+    };
+    emitMouse(true);
+    pump(2);  // let the App handler open + React re-render the menu
+    emitMouse(false);
+    pump(2);
 }
 
 // Move the (unpressed) pointer to (x,y). The pointer indev reads the released cursor at the new position,

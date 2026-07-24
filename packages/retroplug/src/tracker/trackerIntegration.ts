@@ -9,6 +9,8 @@ import { lsdjSongCatalog } from "./lsdjSongCatalog";
 import { risaSongCatalog } from "./risaSongCatalog";
 import { lsdjAssetCatalog } from "./lsdjAssetCatalog";
 import { risaAssetCatalog } from "./risaAssetCatalog";
+import { identifyLsdj } from "../lsdj/runtime/identify";
+import { identifyRisaVersion } from "../risa/runtime/identify";
 
 export interface TrackerIntegration {
   /** Row-id prefix + instance-submenu id suffix, e.g. "lsdj" / "risa". */
@@ -19,6 +21,10 @@ export interface TrackerIntegration {
   readonly markerRole: string;
   readonly songs: SongCatalog;
   readonly assets: AssetCatalog;
+  /** The cart's OWN name — its internal ROM title / embedded version marker, NOT the on-disk filename
+   *  (e.g. "LSDj v9.4.2" from the GB cartridge title, "risa v2.2.1" from the PRG "RISA V" marker). null
+   *  when the ROM bytes carry no recognisable version. */
+  romName(rom: Uint8Array): string | null;
 }
 
 export const lsdjIntegration: TrackerIntegration = {
@@ -27,14 +33,22 @@ export const lsdjIntegration: TrackerIntegration = {
   markerRole: "lsdj-sync",
   songs: lsdjSongCatalog,
   assets: lsdjAssetCatalog,
+  romName: (rom) => {
+    const v = identifyLsdj(rom); // parses the GB cartridge title at 0x134 ("LSDJ-Vx.y.z")
+    return v ? `LSDj v${v.major}.${v.minor}.${v.patchLabel}${v.build ? ` ${v.build}` : ""}` : null;
+  },
 };
 
 export const risaIntegration: TrackerIntegration = {
   id: "risa",
-  label: "risa",
+  label: "Risa",
   markerRole: "risa",
   songs: risaSongCatalog,
   assets: risaAssetCatalog,
+  romName: (rom) => {
+    const v = identifyRisaVersion(rom); // scans the PRG for the ASCII "RISA V<major>.<minor>.<patch>" marker
+    return v ? `risa v${v}` : null;
+  },
 };
 
 /** Every registered tracker integration. The one place a new tracker console is added. */

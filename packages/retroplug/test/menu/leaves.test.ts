@@ -10,6 +10,7 @@ import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadToAction, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery } from "../systems/fixtures";
+import { savFrom, type SavInput } from "../../src/lsdjSav";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
@@ -136,6 +137,21 @@ test("composeWindowTitle: version + project (no ROM), dropping empty segments", 
   expect(composeWindowTitle("0.6.2", "")).toBe("RetroPlug v0.6.2"); // nameless project → version only
   expect(composeWindowTitle("", "Song")).toBe("RetroPlug - Song"); // no version → bare base
   expect(composeWindowTitle("", "")).toBe("RetroPlug");
+  // A tracker cart label ("<song> - <ROM name>") supersedes the project name; a null cart falls back to it.
+  expect(composeWindowTitle("0.6.2", "Proj", "MYSONG - LSDj v9.4.2")).toBe("RetroPlug v0.6.2 - MYSONG - LSDj v9.4.2");
+  expect(composeWindowTitle("0.6.2", "Proj", null)).toBe("RetroPlug v0.6.2 - Proj");
+});
+
+test("instance title for a tracker cart shows the working song + the ROM's own name (not the filename)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // A file named "cool.gb" whose cartridge title is "LSDJ-V9.4.2" — the title must reflect the internal name.
+  be.seed("/roms/cool.gb", lsdjRom("LSDJ-V9.4.2"));
+  const id = stores.project.systems.addSystem("/roms/cool.gb")!;
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  be.setSram(id, savFrom({ activeProjectIndex: 0, projects: [{ name: "MYSONG", version: 0, song }] } as SavInput));
+  const sys = stores.project.systems.view()[0];
+  expect(buildInstanceMenu({ ...ctxOf(stores), version: "0.6.2", system: sys }).title).toBe("RetroPlug v0.6.2 - MYSONG - LSDj v9.4.2");
 });
 
 test("instance title shows a distinct project + ROM, and 'mGB' for the embedded synth", () => {
@@ -837,6 +853,24 @@ test("instance menu Save Project saves to the known path without browsing", asyn
   expect(stores.project.currentPath()).toBe("/proj/p.rplg");
 });
 
+test("instance menu Save Project shows a * marker only while there are unsaved changes", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  stores.project.systems.loadMgb(); // embedded synth: no romPath, so its battery is never counted SRAM-dirty
+  const anchored = () => stores.project.systems.view()[0];
+  const saveLabel = () => findItem(buildInstanceMenu({ ...ctxOf(stores), system: anchored() }).items, "inst-save")!.label;
+
+  // Save to a path for a clean baseline (loadMgb dirtied the project) → no star, star purely tracks the project.
+  stores.project.save("/proj/p.rplg");
+  expect(stores.project.isDirty()).toBe(false);
+  expect(saveLabel()).toBe("Save Project");
+
+  // A settings edit re-dirties the project → the row wears a star until the next save.
+  stores.project.setLayout("grid");
+  expect(stores.project.isDirty()).toBe(true);
+  expect(saveLabel()).toBe("Save Project *");
+});
+
 test("instance menu Save Project opens Save-As for a never-saved project", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
@@ -893,4 +927,61 @@ test("appStores: a userConfig change also invalidates the bindings channel", () 
   stores.userConfig.setActiveKeyboardBindings("wasd");
   expect(fired.includes("userConfig")).toBeTruthy();
   expect(fired.includes("bindings")).toBeTruthy(); // resolved bindings depend on the active pointer
+});
+
+test("Settings Default Render Dir: unset by default, Set persists to config, Clear resets (disabled when unset)", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const settings = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+  const renderDir = () => submenuChildren(settings(), "set-render-dir");
+
+  // Unset by default → the label reads "(unset)" and Clear is disabled.
+  expect(findItem(settings(), "set-render-dir")?.label).toBe("Default Render Dir: (unset)");
+  expect(findItem(renderDir(), "set-render-dir-clear")?.disabled).toBe(true);
+
+  // Set... opens a FOLDER picker, persists to render.outputDir, and the label reflects it.
+  be.queueBrowse("/music/out");
+  findItem(renderDir(), "set-render-dir-set")!.onSelect!();
+  await flush();
+  expect(stores.userConfig.config().render.outputDir).toBe("/music/out");
+  expect(findItem(settings(), "set-render-dir")?.label).toBe("Default Render Dir: /music/out");
+  expect(findItem(renderDir(), "set-render-dir-clear")?.disabled).toBeFalsy();
+
+  // Clear → back to unset.
+  findItem(renderDir(), "set-render-dir-clear")!.onSelect!();
+  expect(stores.userConfig.config().render.outputDir).toBe("");
+});
+
+test("render Output Dir: defaults to the .sav / ROM folder; Settings then a session pick override it (never config)", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const dirRow = (id: number) => {
+    const sys = stores.project.systems.view().find((s) => s.id === id)!;
+    const sysMenu = submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system");
+    return findItem(submenuChildren(sysMenu, "sys-render"), "sys-render-dir")!;
+  };
+
+  // A battery cart whose .sav lives in a DIFFERENT folder than the ROM → the default is the .sav's folder.
+  be.seed("/roms/game.gb", gbRomBattery());
+  be.seed("/saves/mysong.sav", "battery");
+  const battId = stores.project.systems.addSystem("/roms/game.gb", { explicitSav: "/saves/mysong.sav" })!;
+  expect(dirRow(battId).label).toBe("Output Dir: /saves"); // the .sav's folder, not /roms
+
+  // A non-battery cart → the default is the ROM's own folder.
+  be.seed("/carts/tune.nes", nesRom());
+  const nesId = stores.project.systems.addSystem("/carts/tune.nes")!;
+  expect(dirRow(nesId).label).toBe("Output Dir: /carts");
+
+  // A Settings default overrides the derived folder for every cart.
+  stores.userConfig.setRenderOutputDir("/music/out");
+  expect(dirRow(battId).label).toBe("Output Dir: /music/out");
+  expect(dirRow(nesId).label).toBe("Output Dir: /music/out");
+
+  // Picking in the render submenu is a per-SESSION override (wins), per-system, and does NOT touch config.
+  be.queueBrowse("/tmp/session");
+  dirRow(battId).onSelect!();
+  await flush();
+  expect(dirRow(battId).label).toBe("Output Dir: /tmp/session"); // session override wins for this cart
+  expect(dirRow(nesId).label).toBe("Output Dir: /music/out"); // other systems still see the Settings default
+  expect(stores.userConfig.config().render.outputDir).toBe("/music/out"); // Settings default untouched
 });

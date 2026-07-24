@@ -187,10 +187,11 @@ public:
     // Non-blocking: the pick arrives later on uiFileBrowserSelected. Called via the __rp_openFileBrowser
     // seam. One dialog is ever in flight (the TS FileSelection flow awaits sequentially).
     void requestFileBrowser(const char* title, const char* patterns, bool saving, const char* defaultName,
-                            const char* startDir) {
+                            const char* startDir, bool directory) {
         FileBrowserOptions opts;
         opts.title  = (title && *title) ? title : "Open";
         opts.saving = saving;
+        opts.directory = directory; // pick a FOLDER (our DPF fork; Linux + macOS) — the render "Output Dir"
         if (defaultName && *defaultName) opts.defaultName = defaultName;
         if (startDir && *startDir) opts.startDir = startDir; // reopen where the user last saved (render dialog)
         if (patterns && *patterns) opts.fileFilterPatterns = patterns;
@@ -466,10 +467,11 @@ protected:
     bool onKeyboard(const KeyboardEvent& ev) override {
         UI::onKeyboard(ev); // base → LVGL keypad indev (menu arrow nav / Enter)
         if (JSContext* ctx = jsEngine.getContext()) {
-            JSValue args[2] = {JS_NewUint32(ctx, ev.key), JS_NewBool(ctx, ev.press)};
-            jsEngine.emit("key", 2, args); // the App's Esc handler + any key policy reads this
-            JS_FreeValue(ctx, args[0]);
-            JS_FreeValue(ctx, args[1]);
+            // key is the unshifted code point (DPF gives 'a' for the A key regardless of Shift); pass mod so
+            // the prompt text-input can apply Shift → uppercase itself. @see kModifierShift.
+            JSValue args[3] = {JS_NewUint32(ctx, ev.key), JS_NewBool(ctx, ev.press), JS_NewUint32(ctx, ev.mod)};
+            jsEngine.emit("key", 3, args); // the App's Esc handler + any key policy reads this
+            for (JSValue& v : args) JS_FreeValue(ctx, v);
         }
         return true;
     }
@@ -636,9 +638,10 @@ JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
     return JS_UNDEFINED;
 }
 
-// __rp_openFileBrowser(title, patterns, saving, defaultName, startDir): open the native OS dialog. patterns
-// is a whitespace-separated glob list; startDir (optional, 5th arg) is the folder to open in. The result
-// comes back later via the UI's uiFileBrowserSelected override.
+// __rp_openFileBrowser(title, patterns, saving, defaultName, startDir, directory): open the native OS
+// dialog. patterns is a whitespace-separated glob list; startDir (optional, 5th arg) is the folder to open
+// in; directory (optional, 6th arg) picks a FOLDER instead of a file. The result comes back later via the
+// UI's uiFileBrowserSelected override.
 JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
     PluginUI* ui = windowUiFromData(ctx, funcData);
     if (ui && argc >= 4) {
@@ -647,8 +650,9 @@ JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* 
         const int   saving      = JS_ToBool(ctx, argv[2]);
         const char* defaultName = JS_ToCString(ctx, argv[3]);
         const char* startDir    = (argc >= 5) ? JS_ToCString(ctx, argv[4]) : nullptr;
+        const int   directory   = (argc >= 6) ? JS_ToBool(ctx, argv[5]) : 0;
         ui->requestFileBrowser(title ? title : "", patterns ? patterns : "", saving == 1,
-                               defaultName ? defaultName : "", startDir ? startDir : "");
+                               defaultName ? defaultName : "", startDir ? startDir : "", directory == 1);
         if (title) JS_FreeCString(ctx, title);
         if (patterns) JS_FreeCString(ctx, patterns);
         if (defaultName) JS_FreeCString(ctx, defaultName);
@@ -673,7 +677,7 @@ void installWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
     };
     bind("__rp_setWindowSize", jsSetWindowSize, 2);
     bind("__rp_isWindowSizeControlled", jsIsWindowSizeControlled, 0);
-    bind("__rp_openFileBrowser", jsOpenFileBrowser, 5);
+    bind("__rp_openFileBrowser", jsOpenFileBrowser, 6);
     bind("__rp_quitWindow", jsQuitWindow, 0);
     bind("__rp_openPath", jsOpenPath, 1);
     bind("__rp_setWindowTitle", jsSetWindowTitle, 1);

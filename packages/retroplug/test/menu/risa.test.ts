@@ -9,7 +9,13 @@ import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { risaRom, risaRomFull, nesRom } from "../systems/fixtures";
 import { RisaRom } from "../../src/risa/rom";
 import { savBytes } from "../risa/fixtures";
-import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, CURRENT_LAYOUT } from "../../src/risaSav";
+import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, decodeRecord, CURRENT_LAYOUT, kSaveSize } from "../../src/risaSav";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
+
+// A leaf that browses (Export) fires openFileBrowser fire-and-forget; flush the microtask chain it kicks off.
+const flush = async () => {
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+};
 
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
@@ -39,16 +45,27 @@ function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
 // The 5-song legacy catalog (HOU8, HOU, DBZ, DBZ2-F, FUNK0), normalized to the 64 KB image readSram returns.
 const CATALOG = () => normalizeSaveContainer(savBytes("multi_legacy")).save;
 
-function risaSystem(be: MockBackend, stores: AppStores): { id: number; items: () => MenuItem[] } {
+function risaSystem(be: MockBackend, stores: AppStores, battery: Uint8Array = CATALOG()): { id: number; items: () => MenuItem[] } {
   be.seed("/roms/song.nes", risaRom());
   const id = stores.project.systems.addSystem("/roms/song.nes")!;
-  be.setSram(id, CATALOG()); // what readSram returns → what the Songs submenu lists
+  be.setSram(id, battery); // what readSram returns → what the Songs submenu lists
   const items = () => {
     const sys = stores.project.systems.view().find((s) => s.id === id)!;
     return buildInstanceMenu({ ...ctxOf(stores), system: sys }).items;
   };
   return { id, items };
 }
+
+// A current-v2 battery whose live working song ("BLUMARBL") is UNSAVED (curEntry 0xFF); optionally with the
+// catalog wiped so it mimics let_go.srm (a song that lives only in working memory).
+function unsavedWorkingBattery(emptyCatalog = false): Uint8Array {
+  const b = normalizeSaveContainer(savBytes("v2_blumarbl")).save;
+  b[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = 0xff; // unlink the working song → unsaved
+  if (emptyCatalog) b.fill(0, CURRENT_LAYOUT.offset, kSaveSize); // no saved songs (banks 0-3 kept)
+  return b;
+}
+const workingRow = (items: () => MenuItem[]): MenuItem[] =>
+  submenuChildren(submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs"), "risa-song-working");
 
 test("the risa submenu appears only for a risa ROM and lists the catalog's songs", () => {
   const be = new MockBackend("/cfg");
@@ -259,4 +276,60 @@ test("Delete on a base kit records an erase override and empties the effective s
   const spec = be.constructCalls[be.constructCalls.length - 1];
   expect(spec.replaceId).toBe(id);
   expect(RisaRom.fromBytes(spec.romBytes!).isKitPopulated(0)).toBe(false);
+});
+
+test("an UNSAVED working song is surfaced as a synthetic [working] top row with Save to Catalog + Export", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { items } = risaSystem(be, stores, unsavedWorkingBattery());
+
+  const songs = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
+  const working = songs.find((s) => s.id === "risa-song-working");
+  expect(working?.kind).toBe("submenu");
+  expect(working?.label).toBe("[working] BLUMARBL"); // the live working-song name, surfaced at the top
+  const w = workingRow(items);
+  expect(findItem(w, "risa-song-working-save")?.kind).toBe("action"); // promote to a real slot
+  expect(findItem(w, "risa-song-working-export")?.kind).toBe("action"); // write to a .risong
+  // No Load/Delete/reorder — it's the live working song, not a catalog index.
+  expect(findItem(w, "risa-song-working-load")).toBe(undefined);
+  expect(findItem(w, "risa-song-working-delete")).toBe(undefined);
+});
+
+test("a SAVED working song shows NO synthetic row (it's already listed as its slot)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // Plain v2_blumarbl: curEntry 0x00 → the working song is saved as slot 0.
+  const { items } = risaSystem(be, stores, normalizeSaveContainer(savBytes("v2_blumarbl")).save);
+
+  const songs = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
+  expect(songs.find((s) => s.id === "risa-song-working")).toBe(undefined); // no duplicate row
+  expect(songs.filter((s) => s.kind === "submenu").map((s) => s.label)).toEqual(["[0] BLUMARBL"]);
+});
+
+test("Save to Catalog promotes the working song end-to-end (readSram -> op -> construct)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // let_go-style: an unsaved working song with an empty catalog → invisible until saved.
+  const { id, items } = risaSystem(be, stores, unsavedWorkingBattery(true));
+  expect(listSongs(new Uint8Array(be.readSram(id)!)).length).toBe(0); // nothing saved yet
+
+  findItem(workingRow(items), "risa-song-working-save")!.onSelect!();
+
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.replaceId).toBe(id);
+  expect(listSongs(new Uint8Array(spec.sramBytes!)).map((s) => s.name)).toEqual(["BLUMARBL"]); // now a real slot
+});
+
+test("Export... on the working row writes the working song as a .risong", async () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { items } = risaSystem(be, stores, unsavedWorkingBattery(true));
+  be.queueBrowse("/out/working.risong"); // the save-dialog pick
+
+  findItem(workingRow(items), "risa-song-working-export")!.onSelect!();
+  await flush();
+
+  const written = be.readFile("/out/working.risong");
+  expect(written != null).toBe(true);
+  expect(decodeRecord(written!).name).toBe("BLUMARBL"); // the live working song, encoded as a record
 });

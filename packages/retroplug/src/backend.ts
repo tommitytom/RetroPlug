@@ -583,6 +583,10 @@ export interface FileBrowserOpts {
   /** Directory the dialog opens in (DPF's FileBrowserOptions.startDir). Absent/empty → the OS default (CWD).
    *  Used to reopen a dialog where the user last saved (currently the render dialog). */
   startDir?: string;
+  /** Pick a FOLDER instead of a file (DPF's FileBrowserOptions.directory — our DPF fork). `patterns`/
+   *  `defaultName` are then ignored. Supported on Linux + macOS; on Windows the OS opens a file dialog
+   *  (the caller takes the dirname). Used by the render "Output Dir". */
+  directory?: boolean;
 }
 
 /** What TS hands the native builder: concrete paths only — everything is resolved

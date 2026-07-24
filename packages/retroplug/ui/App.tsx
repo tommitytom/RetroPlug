@@ -23,7 +23,7 @@ import { SystemGrid } from "./screens/grid/SystemGrid";
 import { toggleLsdjDebug } from "./screens/grid/lsdjDebug";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
-import { buildInstanceMenu, buildStartMenu, composeWindowTitle, type MenuContext } from "./screens/menu/menuDefs";
+import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel, type MenuContext } from "./screens/menu/menuDefs";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
@@ -32,6 +32,7 @@ import { importSongFiles } from "../src/lsdjSongImport";
 
 const KEY_ESCAPE = 0x1b;
 const KEY_BACKTICK = 0x60; // ` — toggles the LSDj runtime debug overlay (a developer aid, off by default)
+const MOUSE_BUTTON_RIGHT = 2; // DPF kMouseButtonRight (left=1, right=2, middle=3) — the "mouse" bus button field
 
 export function App() {
   const stores = useStores();
@@ -57,9 +58,12 @@ export function App() {
   const padToAction = useMemo(() => buildGamepadToAction(bindings.gamepadActions), [bindings.gamepadActions]);
   const resolvedZoom = resolveZoom(settings.zoom, userConfig.defaultZoom);
 
-  // The standalone OS window title: version + project name (re-renders on the project channel, which fires
-  // on load / adopt / rename / new). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).
-  const windowTitle = composeWindowTitle(version, stores.project.name());
+  // The standalone OS window title: version + the focused tracker cart's "<song> - <ROM name>" when one is
+  // loaded (LSDj / risa), else the project name. Re-renders on the project channel (load / adopt / rename /
+  // new / focus / song-load). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).
+  const focusedSys = systems.find((s) => s.id === stores.project.systems.focused());
+  const cartLabel = focusedSys ? trackerCartLabel(stores.backend, focusedSys) : null;
+  const windowTitle = composeWindowTitle(version, stores.project.name(), cartLabel);
 
   // Menu-open invariant on empty transitions: empty → the start menu (always open); first system → close.
   useEffect(() => {
@@ -131,6 +135,23 @@ export function App() {
     if (!press) return;
     if (closeGuard.active || modals.active) return;
     runAction(padToAction.get(name));
+  });
+
+  // Right-click an instance → open its menu (anchored to the clicked tile, which also becomes focused). The
+  // native editor emits the "mouse" bus as [button, press, x, y]; a left click already focuses/opens rows via
+  // LVGL, so we act only on the right button. Ignored on the start screen (its menu is always open) and while
+  // a capture/prompt or a full-window overlay owns input.
+  useNativeEvent("mouse", (...args) => {
+    const button = args[0] as number;
+    const press = args[1] as boolean;
+    if (button !== MOUSE_BUTTON_RIGHT || !press) return;
+    if (empty || isMenuModalActive() || closeGuard.active || modals.active) return;
+    const idx = hitTestTile(args[2] as number, args[3] as number, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
+    if (idx == null) return; // must land on an instance
+    const targetId = systems[idx].id;
+    stores.project.systems.setFocus(targetId); // focus the right-clicked instance, then anchor its menu
+    setMenuSystemId(targetId);
+    setMenuOpen(true);
   });
 
   // Drag-and-drop: a dropped ROM / .sav / project routes by instance count. On the start screen or a

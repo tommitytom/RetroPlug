@@ -15,7 +15,7 @@
 // re-encode → seed the fresh system).
 import { createWavWriter, type WavWriter } from "./wav";
 import { syncDspFromStore } from "../appHost";
-import { extensionLower, dirname, stem, joinPath } from "../pathUtil";
+import { extensionLower, dirname, stem, joinPath, uniqueBase } from "../pathUtil";
 import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
 import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
@@ -37,8 +37,8 @@ const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Sta
 const NES_START = 7; // NesButton::Start (same index) ; NES_SELECT = 6. risa plays a song on SELECT+START.
 const NES_SELECT = 6;
 // A fixed (non-auto-detect) render runs for `durationMs` if pinned, else `maxDurationMs` — so "max duration"
-// bounds every render, not just the LSDj auto-length cap. maxDurationMs defaults to 300000 (5 min), so a
-// render with neither pinned is unchanged from the old fixed default.
+// bounds every render, not just the LSDj auto-length cap. maxDurationMs defaults to 600000 (10 min) at the
+// CLI / worker seams, so a render with neither pinned falls back to that cap.
 
 // LSDj song-length auto-detect: LSDj's HFF command stops the song by powering the APU off — a 0 write to
 // NR52 ($FF26), the sound master-enable register (bit 7). We poll it each render chunk and stop at the
@@ -253,6 +253,25 @@ export function outBase(o: RenderOpts, songName: string | null): string {
   const clean = songName ? sanitizeRenderName(songName) : "";
   const base = joinPath(dirname(o.rom), clean || stem(o.rom));
   return o.split === "mix" ? `${base}.wav` : base;
+}
+
+/** The WAV file paths a render will write for `prefix` (a base WITHOUT the extension), mirroring buildSink's
+ *  naming: mix → one `<prefix>.wav`; split → one `<prefix>_<channel>.wav` per stream. Used by the "rename"
+ *  policy to detect a collision on any of the mode's outputs. */
+function renderOutputPaths(o: RenderOpts, platform: Platform, prefix: string): string[] {
+  if (o.split === "mix") return [`${prefix}.wav`];
+  const names = platform === "gb" ? GB_CHANNELS : o.split === "channels" ? NES_CHANNELS : NES_PINS;
+  return names.map((n) => `${prefix}_${n}.wav`);
+}
+
+/** Apply the "If Exists" policy to a resolved base. "overwrite" (default) clobbers; "rename" bumps to the
+ *  first `<name>_N` whose outputs don't yet exist (checking every file the mode would write). */
+function resolveOnExists(ctx: RenderContext, o: RenderOpts, platform: Platform, base: string): string {
+  if (o.onExists !== "rename") return base;
+  const isMix = o.split === "mix";
+  const prefix = isMix && base.toLowerCase().endsWith(".wav") ? base.slice(0, -4) : base;
+  const unique = uniqueBase(prefix, (p) => renderOutputPaths(o, platform, p).some((f) => ctx.backend.fileExists(f)));
+  return isMix ? `${unique}.wav` : unique;
 }
 
 // --- streaming render: pump 100 ms chunks straight into per-output WavWriters (no whole-song buffer) ---
@@ -503,7 +522,7 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   // Default the filename to the SONG: the selected song when --song/--song-index is used, else the sav's
   // working song. --out overrides both, so skip the sav read then.
   const songName = o.out ? null : seed ? seed.name : currentSongName(ctx, o, platform);
-  const base = outBase(o, songName);
+  const base = resolveOnExists(ctx, o, platform, outBase(o, songName));
 
   // Song-length auto-detect: when the ROM is a supported tracker (LSDj on GB, risa on NES) and the user
   // didn't pin a duration, render to the HFF stop instead of a fixed window, report the length, and trim

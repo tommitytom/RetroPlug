@@ -8,10 +8,13 @@ import { test, expect } from "../../testing/harness";
 import {
   siblingPath,
   siblingSavPath,
+  siblingSavCandidates,
   siblingRplgPath,
   resolveSavPath,
   nextFreeSavSuffix,
   siblingRomCandidates,
+  isSavPath,
+  SAV_PATTERNS,
 } from "../../src/savPaths";
 
 test("siblingSavPath: suffix 0/1 replace the extension, ≥2 disambiguate the filename", () => {
@@ -21,6 +24,15 @@ test("siblingSavPath: suffix 0/1 replace the extension, ≥2 disambiguate the fi
   expect(siblingSavPath("/d/game.gb", 2)).toBe("/d/game-2.sav");
   expect(siblingSavPath("/d/game.gb", 3)).toBe("/d/game-3.sav");
   expect(siblingSavPath("")).toBe(""); // empty romPath → empty
+});
+
+test("siblingSavCandidates: .sav then .srm, honouring the suffix; isSavPath / SAV_PATTERNS accept both", () => {
+  expect(siblingSavCandidates("/d/game.nes")).toEqual(["/d/game.sav", "/d/game.srm"]);
+  expect(siblingSavCandidates("/d/game.nes", 2)).toEqual(["/d/game-2.sav", "/d/game-2.srm"]);
+  expect(isSavPath("/d/game.SAV")).toBe(true); // case-insensitive
+  expect(isSavPath("/d/game.srm")).toBe(true);
+  expect(isSavPath("/d/game.nes")).toBe(false);
+  expect(SAV_PATTERNS).toEqual(["*.sav", "*.srm"]);
 });
 
 test("siblingPath: the generic ext helper (also used for savestates)", () => {

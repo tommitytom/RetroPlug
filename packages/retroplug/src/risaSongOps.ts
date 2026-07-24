@@ -16,10 +16,13 @@ import {
   moveRecord,
   recordBytesAt,
   expandRecordToWorking,
+  encodeRecord,
+  readWorking,
   CURRENT_LAYOUT,
   kSaveSize,
   type CatalogLayout,
 } from "./risa";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "./risa/codec/constants";
 
 /** Normalize to a fresh, editable 64 KB image + the catalog layout present in it. Throws if there is
  *  no valid RSAV catalog to edit. */
@@ -99,4 +102,31 @@ export function loadSongToWorkingInSav(rawSave: Uint8Array, index: number): Uint
   } catch {
     return null; // unrecognized container / corrupt catalog / malformed record → leave the sav untouched
   }
+}
+
+/** The live WORKING song (WRAM banks 0-3) encoded as a catalog record — the source for exporting or saving
+ *  the working song. null when the container is unrecognized. (readWorking reads banks 0-3 straight off the
+ *  64 KB image; encodeRecord serializes it into a self-describing record, same as a catalog entry.) */
+export function workingSongRecord(rawSave: Uint8Array): Uint8Array | null {
+  let save: Uint8Array;
+  try {
+    save = normalizeSaveContainer(rawSave).save;
+  } catch {
+    return null;
+  }
+  return encodeRecord(readWorking(save));
+}
+
+/** Save the live working song into the catalog as a new slot, and link the working song to it (set the
+ *  'current entry' byte to the new index) so it is no longer "unsaved". Appends the working record past the
+ *  last catalog entry (initializing a blank v2 catalog first if there is none, keeping banks 0-3). Returns
+ *  the new 64 KB image. Throws on a malformed working song / full catalog (the menu wraps it in tryOp). */
+export function saveWorkingToCatalog(rawSave: Uint8Array): Uint8Array {
+  const save = normalizeSaveContainer(rawSave).save; // a fresh copy — safe to mutate
+  const record = encodeRecord(readWorking(save));
+  const before = chooseCatalogLayout(save);
+  const newIndex = before ? parseCatalog(save, before).count : 0; // the slot the append will land in
+  const out = addSongRecordToSav(save, record); // appends (+ inits a v2 catalog when absent), keeps banks 0-3
+  out[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = newIndex & 0xff; // link working → the new slot
+  return out;
 }

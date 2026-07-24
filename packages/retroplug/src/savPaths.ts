@@ -9,7 +9,20 @@
 // `siblingRomCandidates` returns the ordered path list — the systems domain wires
 // the live-systems ownership + Backend reads on top.
 
-import { dirname, stem, joinPath, replaceExtension, replaceFilename } from "./pathUtil";
+import { dirname, stem, joinPath, replaceExtension, replaceFilename, extensionLower } from "./pathUtil";
+
+/** Battery-save file extensions, most-preferred first. `.sav` is the default write target across
+ *  GB/NES/GBA; `.srm` is the alternative some NES/risa saves ship with, so it's accepted when pairing a
+ *  ROM to its battery and when loading SRAM (but new saves are still written as `.sav`). */
+export const SAV_EXTS = [".sav", ".srm"] as const;
+
+/** File-dialog globs for a battery save (`.sav` / `.srm`). */
+export const SAV_PATTERNS: string[] = SAV_EXTS.map((ext) => `*${ext}`);
+
+/** True when `path`'s extension is a recognised battery-save extension (`.sav` / `.srm`). */
+export function isSavPath(path: string): boolean {
+  return (SAV_EXTS as readonly string[]).includes(extensionLower(path));
+}
 
 /** `<rom>` + `ext` for suffix 0/1, or `<rom-stem>-<N><ext>` for suffix ≥ 2. Empty
  *  romPath → empty. `ext` includes the dot (e.g. `".sav"`, `".ss0"`). */
@@ -22,6 +35,12 @@ export function siblingPath(romPath: string, suffix: number, ext: string): strin
 /** The battery-save sibling: `<rom>.sav` (suffix 0/1) or `<rom>-N.sav` (≥ 2). */
 export function siblingSavPath(romPath: string, suffix = 0): string {
   return siblingPath(romPath, suffix, ".sav");
+}
+
+/** The battery-save sibling CANDIDATES, most-preferred first: `<rom>.sav` then `<rom>.srm` (+ suffix),
+ *  for pairing a ROM to an existing on-disk battery. The caller keeps the first that exists. */
+export function siblingSavCandidates(romPath: string, suffix = 0): string[] {
+  return SAV_EXTS.map((ext) => siblingPath(romPath, suffix, ext));
 }
 
 /** The auto-written project sibling `<rom>.rplg` (suffix-independent). */

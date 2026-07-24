@@ -34,7 +34,10 @@ import {
   type MenuNav,
 } from "../../../src/keyCodes";
 import { setMenuModalActive } from "./menuModal";
+import { applyCasing } from "./promptCasing";
 import type { MenuItem, MenuTree, PromptSpec } from "./menuTree";
+
+const MOD_SHIFT = 1 << 0; // DPF modifier mask bit for Shift (mirrors Base.hpp kModifierShift), on the "key" bus
 
 const CAPTURE_COLOR = "#ffb74d"; // orange, matching the legacy capture-armed row
 const DISABLED_COLOR = "#666666"; // greyed text for an inert (unavailable-for-this-cart) row
@@ -228,6 +231,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   useNativeEvent("key", (...args) => {
     const code = args[0] as number;
     const press = args[1] as boolean;
+    const mod = (args[2] as number) ?? 0;
     if (!press) return;
     const itemById = (id: string): MenuItem | undefined => flatRef.current.find((f) => f.item.id === id)?.item;
 
@@ -239,7 +243,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       if (prompt.spec.confirm) return; // yes/no dialog: only Enter/Esc
       if (code === KEY_BACKSPACE) return setPrompt({ ...prompt, value: prompt.value.slice(0, -1), error: "" });
       if (code >= 0x20 && code <= 0x7e) {
-        const ch = String.fromCharCode(code);
+        // DPF's key code is unshifted (always lowercase for letters); apply Shift / the prompt's casing here.
+        const ch = applyCasing(String.fromCharCode(code), (mod & MOD_SHIFT) !== 0, prompt.spec.casing);
         if (!prompt.spec.filter || prompt.spec.filter(ch)) {
           setPrompt({ ...prompt, value: (prompt.value + ch).slice(0, 48), error: "" });
         }

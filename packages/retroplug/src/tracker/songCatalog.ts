@@ -18,6 +18,12 @@ export interface SongCatalog {
   list(sav: Uint8Array): SongInfo[];
   /** The currently-loaded (working) song's name, for recents / titles. null when none / unsaved. */
   workingName(sav: Uint8Array): string | null;
+  /** The live WORKING song when it is UNSAVED — not represented by any listed catalog slot — so the Songs
+   *  menu can surface it as a synthetic row (some carts ship the song only in working memory). null when the
+   *  working song is already saved, absent, or the console has no separate working-song region. Optional —
+   *  only consoles whose working song can exist outside the saved list implement it (risa; LSDj does not,
+   *  since its working song is a copy of a saved slot addressed by activeProjectIndex). */
+  workingSong?(sav: Uint8Array): { name: string } | null;
   /** Load a saved song into working memory (+ mark it active). New bytes, or null on an empty slot. */
   load(sav: Uint8Array, index: number): Uint8Array | null;
   /** Delete a saved song. New bytes, or null on an invalid index. */

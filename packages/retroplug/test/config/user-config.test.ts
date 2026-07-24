@@ -43,6 +43,17 @@ test("serialize: stamps the schema version and round-trips through parse", () =>
   expect(parseUserConfig(serializeUserConfig(DEFAULT_USER_CONFIG))).toEqual(DEFAULT_USER_CONFIG);
 });
 
+test("render: defaults + a v1 render.lastDir migrates to outputDir (v1→v2)", () => {
+  const def = parseUserConfig("{}")!;
+  expect(def.render.outputDir).toBe(""); // no chosen folder yet
+  expect(def.render.onExists).toBe("overwrite"); // default policy
+
+  // A v1-stamped config with the OLD render.lastDir carries forward to outputDir; the old key is stripped.
+  const cfg = parseUserConfig(JSON.stringify({ schemaVersion: 1, render: { lastDir: "/music/out" } }))!;
+  expect(cfg.render.outputDir).toBe("/music/out"); // migrated
+  expect((cfg.render as unknown as Record<string, unknown>).lastDir).toBe(undefined); // unknown key stripped by zod
+});
+
 // --- store ---
 
 function newStore() {
