@@ -55,8 +55,8 @@ export const risaIntegration: TrackerIntegration = {
     const v = identifyRisaVersion(rom); // scans the PRG for the ASCII "RISA V<major>.<minor>.<patch>" marker
     return v ? `risa v${v}` : null;
   },
-  // Only versions with a bundled RAM layout (2.2.0 / 2.2.1) are driveable; an unknown / unmarked version
-  // resolves no layout. See supportedRisaVersions() in ../risa/runtime/layout.
+  // Only versions with a bundled RAM layout (2.2.0 / 2.2.1 / 2.3.0) are driveable; an unknown / unmarked
+  // version resolves no layout. See supportedRisaVersions() in ../risa/runtime/layout.
   isVersionSupported: (rom) => resolveRisaLayout(identifyRisaVersion(rom)) !== null,
 };
 
