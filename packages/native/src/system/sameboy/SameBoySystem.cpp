@@ -14,12 +14,20 @@ extern "C" {
 
 #include "system/sameboy/bootroms/agb_boot.h"
 #include "system/sameboy/bootroms/cgb_boot.h"
-#include "system/sameboy/bootroms/cgb_boot_fast.h"
 #include "system/sameboy/bootroms/cgb0_boot.h"
 #include "system/sameboy/bootroms/dmg_boot.h"
 #include "system/sameboy/bootroms/mgb_boot.h"
 #include "system/sameboy/bootroms/sgb_boot.h"
 #include "system/sameboy/bootroms/sgb2_boot.h"
+// RetroPlug's silent + flashless fast boot ROMs (cmake/bootroms/), one per model
+// family. Selected by findBootRom when the system's fastBoot flag is set.
+#include "system/sameboy/bootroms/agb_boot_fast.h"
+#include "system/sameboy/bootroms/cgb_boot_fast.h"
+#include "system/sameboy/bootroms/cgb0_boot_fast.h"
+#include "system/sameboy/bootroms/dmg_boot_fast.h"
+#include "system/sameboy/bootroms/mgb_boot_fast.h"
+#include "system/sameboy/bootroms/sgb_boot_fast.h"
+#include "system/sameboy/bootroms/sgb2_boot_fast.h"
 
 namespace {
 
@@ -50,20 +58,24 @@ GB_model_t toSameBoyModel(SameBoyModel model) {
 }
 
 std::string_view findBootRom(GB_model_t model, bool fastBoot) {
+    // `fastBoot` selects RetroPlug's silent + flashless fast boot ROM for every
+    // model (no chime, no white flash, LCD left off until the game turns it on);
+    // otherwise the stock SameBoy boot ROM runs.
+    auto sv = [](const unsigned char* p, std::size_t n) {
+        return std::string_view((const char*)p, n);
+    };
     switch (model) {
-        case GB_MODEL_DMG_B:           return std::string_view((const char*)dmg_boot, dmg_boot_len);
-        case GB_MODEL_MGB:             return std::string_view((const char*)mgb_boot, mgb_boot_len);
+        case GB_MODEL_DMG_B:   return fastBoot ? sv(dmg_boot_fast,  dmg_boot_fast_len)  : sv(dmg_boot,  dmg_boot_len);
+        case GB_MODEL_MGB:     return fastBoot ? sv(mgb_boot_fast,  mgb_boot_fast_len)  : sv(mgb_boot,  mgb_boot_len);
         case GB_MODEL_SGB_NTSC:
-        case GB_MODEL_SGB_PAL:         return std::string_view((const char*)sgb_boot, sgb_boot_len);
-        case GB_MODEL_SGB2:            return std::string_view((const char*)sgb2_boot, sgb2_boot_len);
-        case GB_MODEL_CGB_0:           return std::string_view((const char*)cgb0_boot, cgb0_boot_len);
+        case GB_MODEL_SGB_PAL: return fastBoot ? sv(sgb_boot_fast,  sgb_boot_fast_len)  : sv(sgb_boot,  sgb_boot_len);
+        case GB_MODEL_SGB2:    return fastBoot ? sv(sgb2_boot_fast, sgb2_boot_fast_len) : sv(sgb2_boot, sgb2_boot_len);
+        case GB_MODEL_CGB_0:   return fastBoot ? sv(cgb0_boot_fast, cgb0_boot_fast_len) : sv(cgb0_boot, cgb0_boot_len);
         case GB_MODEL_AGB:
-        case GB_MODEL_GBP:             return std::string_view((const char*)agb_boot, agb_boot_len);
+        case GB_MODEL_GBP:     return fastBoot ? sv(agb_boot_fast,  agb_boot_fast_len)  : sv(agb_boot,  agb_boot_len);
         default:
             // CGB-A/B/C/D/E share the stock CGB boot ROM.
-            if (fastBoot)
-                return std::string_view((const char*)cgb_boot_fast, cgb_boot_fast_len);
-            return std::string_view((const char*)cgb_boot, cgb_boot_len);
+            return fastBoot ? sv(cgb_boot_fast, cgb_boot_fast_len) : sv(cgb_boot, cgb_boot_len);
     }
 }
 
