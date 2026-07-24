@@ -3,6 +3,7 @@
 // working-RAM).
 export {
   listSongs,
+  isRisaSav,
   parseCatalog,
   normalizeSaveContainer,
   chooseCatalogLayout,

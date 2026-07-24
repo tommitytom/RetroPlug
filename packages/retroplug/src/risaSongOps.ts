@@ -85,6 +85,18 @@ export function addSongRecordToSav(rawSave: Uint8Array, record: Uint8Array): Uin
   return save;
 }
 
+/** Copy the songs at the given SOURCE catalog `indices` from `src` into `target`, appended as new slots
+ *  (byte-exact records). Indices whose record can't be read are skipped. Returns the new 64 KB image. */
+export function importSongsFromSav(target: Uint8Array, src: Uint8Array, indices: number[]): Uint8Array {
+  let out = target;
+  for (const i of indices) {
+    const record = songRecordBytes(src, i);
+    if (!record) continue; // out of range / malformed → skip
+    out = addSongRecordToSav(out, record);
+  }
+  return out;
+}
+
 /** Load the saved song at `index` into the working-song region (WRAM banks 0-3) of a fresh battery, so
  *  a cold boot comes up showing it — the risa analog of LSDj loadSongToWorking. The catalog (banks 4-7)
  *  is preserved. Returns null when there is no current-layout catalog, the slot is out of range, or the

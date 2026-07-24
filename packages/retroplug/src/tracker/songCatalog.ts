@@ -14,8 +14,15 @@ export interface SongInfo {
 export interface SongCatalog {
   /** The role kind that identifies this console on a system (the menu-gate marker, e.g. "lsdj-sync"/"risa"). */
   readonly markerRole: string;
-  /** The saved songs in the catalog (index + name) — a cheap header-only walk; [] when there's no catalog. */
+  /** The saved songs in the catalog (index + name) — a cheap header-only walk; [] when there's no catalog.
+   *  Works on ANY sav image (not just the loaded system's), so it also enumerates an import source. */
   list(sav: Uint8Array): SongInfo[];
+  /** True when `bytes` is a valid, readable save of THIS console — the gate for importing songs from it (a
+   *  wrong-console / corrupt buffer is rejected). Format-version tolerant: any parseable save passes. */
+  isValidSav(bytes: Uint8Array): boolean;
+  /** Copy the songs at the given SOURCE `indices` (into `source`'s `list()`) into `target`, byte-exact.
+   *  Returns the new image, or null when nothing could be imported. Used by the Songs menu's sav importer. */
+  importSongs(target: Uint8Array, source: Uint8Array, indices: number[]): Uint8Array | null;
   /** The currently-loaded (working) song's name, for recents / titles. null when none / unsaved. */
   workingName(sav: Uint8Array): string | null;
   /** The live WORKING song when it is UNSAVED — not represented by any listed catalog slot — so the Songs

@@ -25,11 +25,11 @@ import type { SplitMode } from "../../../src/render";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
-import { resolveSavPath, siblingPath, SAV_PATTERNS } from "../../../src/savPaths";
+import { resolveSavPath, siblingPath, SAV_PATTERNS, isSavPath } from "../../../src/savPaths";
 import { stem, dirname, joinPath, shortenMiddle } from "../../../src/pathUtil";
 import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
 import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
-import { replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
+import { replaceSongInSav } from "../../../src/lsdjSongOps";
 import { importSongFiles } from "../../../src/lsdjSongImport";
 import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav, workingSongRecord, saveWorkingToCatalog } from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
@@ -74,6 +74,9 @@ export interface MenuContext {
   newProject: () => void;
   loadProject: (path: string) => void;
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
+  // Open the Songs "import from a .sav" picker (validate the source against the cart's console, then show a
+  // checkbox list) — owned by useSongImport, wired from App like the project modals.
+  beginSongImport: (sys: SystemView, source: Uint8Array) => void;
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -705,14 +708,14 @@ function importLsdprj(ctx: MenuContext, sys: SystemView, path: string, targetSlo
   systems.loadSram(sys.id, target); // one rebuild: kit overrides → romBytes + boot the imported song
 }
 
-// Add a song: a `.lsdsng`/`.lsdprj` into the first free slot (the same importer drag-and-drop uses), or all
-// songs from a `.sav`.
+// Add a song: a `.lsdsng`/`.lsdprj` into the first free slot (the same importer drag-and-drop uses), or a
+// selection of songs from a `.sav`/`.srm` (the checkbox picker, validated against the cart's console).
 function addSongFromDisk(ctx: MenuContext, sys: SystemView): void {
   const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Add Song", patterns: ["*.lsdsng", "*.lsdprj", "*.sav"] }, (path) => {
-    if (path.toLowerCase().endsWith(".sav")) {
+  browseThen(ctx, { title: "Add Song", patterns: ["*.lsdsng", "*.lsdprj", ...SAV_PATTERNS] }, (path) => {
+    if (isSavPath(path)) {
       const data = be.readFile(path);
-      if (data) mutateSavBytes(ctx, sys, (sav) => importAllSongsFromSav(sav, data));
+      if (data) ctx.beginSongImport(sys, data);
     } else {
       importSongFiles(be, ctx.stores.project.systems, sys, [path]);
     }
@@ -826,10 +829,11 @@ function risaReplaceSong(ctx: MenuContext, sys: SystemView, index: number): void
 }
 function risaAddSong(ctx: MenuContext, sys: SystemView): void {
   const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Add Song", patterns: ["*.risong"] }, (path) => {
+  browseThen(ctx, { title: "Add Song", patterns: ["*.risong", ...SAV_PATTERNS] }, (path) => {
     const data = be.readFile(path);
     if (!data) return;
-    mutateSavBytes(ctx, sys, (sav) => tryOp(() => addSongRecordToSav(sav, data)));
+    if (isSavPath(path)) ctx.beginSongImport(sys, data); // a whole .sav/.srm → the checkbox picker
+    else mutateSavBytes(ctx, sys, (sav) => tryOp(() => addSongRecordToSav(sav, data))); // a single .risong record
   });
 }
 // The synthetic working-song row's actions. Export writes the LIVE working song (banks 0-3, encoded as a

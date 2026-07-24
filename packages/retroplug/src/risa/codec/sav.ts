@@ -145,6 +145,19 @@ export function chooseCatalogLayout(save: Uint8Array): CatalogLayout | null {
   return null;
 }
 
+/** True when `bytes` is a recognizable risa battery carrying a valid RSAV catalog (current v2 @0x8000 or
+ *  legacy v1 @0x6000) — the gate for "is this a risa sav we can read songs from". Tolerant of the container
+ *  wrappers normalizeSaveContainer accepts (32 KB rescue / 64 KB / 65 KB .srm tail / Pocket). */
+export function isRisaSav(bytes: Uint8Array): boolean {
+  let save: Uint8Array;
+  try {
+    save = normalizeSaveContainer(bytes).save;
+  } catch {
+    return false;
+  }
+  return chooseCatalogLayout(save) !== null;
+}
+
 /** Strict catalog parse of a normalized 64 KB image for the given layout. Validates magic, version,
  *  the used-byte bound, each record's length + bounds, and that the record walk lands exactly at
  *  0x100 + used. Throws on any violation. (Faithful port of catalog.js parseCatalog.) */

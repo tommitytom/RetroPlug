@@ -17,6 +17,7 @@ import { useNativeEvent } from "./lvgl/useNativeEvent";
 import { useWindowSize, requestWindowSize, isWindowSizeControlled, setWindowTitle } from "./lvgl/useWindowSize";
 import { useCloseGuard } from "./lvgl/useCloseGuard";
 import { useProjectModals } from "./lvgl/useProjectModals";
+import { useSongImport } from "./lvgl/useSongImport";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
@@ -45,6 +46,7 @@ export function App() {
   const windowSize = useWindowSize();
   const closeGuard = useCloseGuard(stores);
   const modals = useProjectModals(stores);
+  const songImport = useSongImport(stores);
   const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title
 
   const [menuOpen, setMenuOpen] = useState(true);
@@ -52,7 +54,7 @@ export function App() {
 
   const empty = systems.length === 0;
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.
-  const playing = !empty && !menuOpen && !closeGuard.active && !modals.active;
+  const playing = !empty && !menuOpen && !closeGuard.active && !modals.active && !songImport.active;
   // App-action lookups (open menu / cycle instances), rebuilt only when the bindings change.
   const keyToAction = useMemo(() => buildKeyToAction(bindings.keyboardActions), [bindings.keyboardActions]);
   const padToAction = useMemo(() => buildGamepadToAction(bindings.gamepadActions), [bindings.gamepadActions]);
@@ -74,8 +76,8 @@ export function App() {
   // Idle: point the keypad at the sink when the grid shows without a menu. Not while a modal overlay owns
   // the keypad (close prompt / project modal) — else closing the menu to raise one steals its focus.
   useEffect(() => {
-    if (!empty && !menuOpen && !closeGuard.active && !modals.active && sink) setKeyboardGroup(sink);
-  }, [empty, menuOpen, sink, closeGuard.active, modals.active]);
+    if (!empty && !menuOpen && !closeGuard.active && !modals.active && !songImport.active && sink) setKeyboardGroup(sink);
+  }, [empty, menuOpen, sink, closeGuard.active, modals.active, songImport.active]);
 
   // Fit the window to the grid when the instance count / zoom / layout changes. Deliberately NOT reactive to
   // windowSize: re-asserting the size on every observed resize fights a host/compositor that reverts our
@@ -122,8 +124,9 @@ export function App() {
     if (key === KEY_ESCAPE) {
       if (closeGuard.active) return void closeGuard.onCancel();
       if (modals.active) return void modals.onClose();
+      if (songImport.active) return void songImport.onClose();
     }
-    if (closeGuard.active || modals.active) return; // an overlay owns input; actions don't fire under it
+    if (closeGuard.active || modals.active || songImport.active) return; // an overlay owns input; actions don't fire under it
     if (key === KEY_BACKTICK) return void toggleLsdjDebug(); // dev: show/hide the LSDj runtime readout
     runAction(keyToAction.get(key));
   });
@@ -133,7 +136,7 @@ export function App() {
     const name = args[1] as string;
     const press = args[2] as boolean;
     if (!press) return;
-    if (closeGuard.active || modals.active) return;
+    if (closeGuard.active || modals.active || songImport.active) return;
     runAction(padToAction.get(name));
   });
 
@@ -145,7 +148,7 @@ export function App() {
     const button = args[0] as number;
     const press = args[1] as boolean;
     if (button !== MOUSE_BUTTON_RIGHT || !press) return;
-    if (empty || isMenuModalActive() || closeGuard.active || modals.active) return;
+    if (empty || isMenuModalActive() || closeGuard.active || modals.active || songImport.active) return;
     const idx = hitTestTile(args[2] as number, args[3] as number, systems.length, settings.layout as SystemLayout, settings.zoom, userConfig.defaultZoom, windowSize);
     if (idx == null) return; // must land on an instance
     const targetId = systems[idx].id;
@@ -209,7 +212,7 @@ export function App() {
   useGameInput({ active: playing, focusedId: stores.project.systems.focused() });
   useGamepadInput({ active: playing, focusedId: stores.project.systems.focused() });
 
-  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject };
+  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, beginSongImport: songImport.begin };
 
   // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
   // the keypad. Save & Quit / Discard & Quit / Cancel — the guard drives the native quit + dismissal.
@@ -237,6 +240,16 @@ export function App() {
     return (
       <Box style={{ width, height, "background-color": "#000000" }}>
         <Menu width={width} height={height} zoom={resolvedZoom} tree={modals.modal} onClose={modals.onClose} />
+      </Box>
+    );
+  }
+
+  // Song-import overlay (validate a source .sav, then the checkbox picker) — same full-window pattern.
+  if (songImport.active && songImport.modal) {
+    const { width, height } = windowSize;
+    return (
+      <Box style={{ width, height, "background-color": "#000000" }}>
+        <Menu width={width} height={height} zoom={resolvedZoom} tree={songImport.modal} onClose={songImport.onClose} />
       </Box>
     );
   }

@@ -61,12 +61,13 @@ export function replaceSongInSav(sav: Uint8Array, slot: number, file: Uint8Array
   return injectSong(freeSong(sav, slot), slot, parsed.name, parsed.version, parsed.songBytes);
 }
 
-/** Copy every occupied song from `src` into `sav`'s free slots (byte-exact), until `sav` fills, and load the
- *  first imported song into working memory so the reboot shows it. */
-export function importAllSongsFromSav(sav: Uint8Array, src: Uint8Array): Uint8Array {
+/** Copy the songs at the given SOURCE slots from `src` into `sav`'s free slots (byte-exact), until `sav`
+ *  fills, and load the first imported song into working memory so the reboot shows it. Slots that are empty
+ *  in `src` are skipped. */
+export function importSongsFromSav(sav: Uint8Array, src: Uint8Array, slots: number[]): Uint8Array {
   let out = sav;
   let firstSlot = -1;
-  for (let s = 0; s < kProjectCount; s++) {
+  for (const s of slots) {
     const raw = decompressSlot(src, s);
     if (!raw) continue;
     const slot = freeSongSlot(out);
@@ -77,4 +78,10 @@ export function importAllSongsFromSav(sav: Uint8Array, src: Uint8Array): Uint8Ar
     if (firstSlot < 0) firstSlot = slot;
   }
   return firstSlot >= 0 ? (loadSongToWorking(out, firstSlot) ?? out) : out;
+}
+
+/** Copy every occupied song from `src` into `sav`'s free slots (byte-exact), until `sav` fills, and load the
+ *  first imported song into working memory so the reboot shows it. */
+export function importAllSongsFromSav(sav: Uint8Array, src: Uint8Array): Uint8Array {
+  return importSongsFromSav(sav, src, Array.from({ length: kProjectCount }, (_, s) => s));
 }

@@ -34,6 +34,7 @@ function ctxOf(stores: AppStores): MenuContext {
     // store mutation directly (a clean project has nothing to guard anyway).
     loadRomAsProject: (romPath: string, explicitSav?: string) =>
       stores.project.openRom(romPath, explicitSav ? { explicitSav } : undefined),
+    beginSongImport: () => {},
   };
 }
 
