@@ -26,12 +26,21 @@ test("resolveRisaLayout aliases 2.2.0 to the 2.2.1 layout (shared internal-RAM a
   expect(supportedRisaVersions().includes("2.2.0")).toBeTruthy();
 });
 
-test("resolveRisaLayout rejects risa versions whose internal-RAM layout differs from 2.2.1", () => {
-  // Probed against real cores (test-native/risa-220-layout covers 2.2.0): only 2.2.0/2.2.1 share the
-  // layout. These older builds + the 2.3.0 sync build moved the BSS/ZP variables, so decoding them with
-  // the 2.2.1 addresses is garbage — resolve to null (graceful fallback) rather than alias them.
-  for (const v of ["0.9.1", "1.0.0", "2.0.0", "2.1.0", "2.3.0"]) expect(resolveRisaLayout(v)).toBe(null);
-  expect(supportedRisaVersions().sort()).toEqual(["2.2.0", "2.2.1"]);
+test("resolveRisaLayout rejects risa versions with no bundled layout", () => {
+  // Probed against real cores (test-native/risa-220-layout covers 2.2.0): only 2.2.0/2.2.1 share a
+  // layout. These older builds moved the BSS/ZP variables, so decoding them with the 2.2.1 addresses is
+  // garbage — resolve to null (graceful fallback) rather than alias them.
+  for (const v of ["0.9.1", "1.0.0", "2.0.0", "2.1.0"]) expect(resolveRisaLayout(v)).toBe(null);
+  expect(supportedRisaVersions().sort()).toEqual(["2.2.0", "2.2.1", "2.3.0"]);
+});
+
+test("2.3.0 resolves its OWN layout, not an alias to 2.2.1", () => {
+  // cc65 moved every variable the reader tracks between the two builds; certified against the released
+  // ROM in test-native/risa-230-layout.
+  const l = resolveRisaLayout("2.3.0");
+  expect(l != null).toBeTruthy();
+  expect(l!.version).toBe("2.3.0");
+  expect(l!.seqMode !== resolveRisaLayout("2.2.1")!.seqMode).toBeTruthy();
 });
 
 test("decodeRisaState degrades to unsupported for a null layout or an undersized snapshot", () => {
