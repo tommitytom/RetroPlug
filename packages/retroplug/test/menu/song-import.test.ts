@@ -143,7 +143,7 @@ test("applyImport writes only the checked LSDj songs into the live battery", () 
   const pick = planImport(sys(), lsdjSource()) as PickState;
   const subset: PickState = { ...pick, checked: new Set([0, 2]) }; // AAA + CCC, skip BBB
 
-  expect(applyImport(stores, subset)).toBe(true);
+  expect(applyImport(stores, subset)).toEqual({ requested: 2, imported: 2 });
   expect(listProjects(lastSram(be)).map((p) => p.name)).toEqual(["AAA", "CCC"]); // BBB not imported
 });
 
@@ -152,7 +152,7 @@ test("applyImport appends only the checked risa songs into the live catalog", ()
   const pick = planImport(sys(), RISA_CATALOG()) as PickState;
   const subset: PickState = { ...pick, checked: new Set([0, 2]) }; // HOU8 + DBZ
 
-  expect(applyImport(stores, subset)).toBe(true);
+  expect(applyImport(stores, subset)).toEqual({ requested: 2, imported: 2 });
   expect(listSongs(lastSram(be)).map((s) => s.name)).toEqual(["HOU8", "HOU", "DBZ", "DBZ2-F", "FUNK0", "HOU8", "DBZ"]);
 });
 
@@ -170,18 +170,34 @@ test("applyImport preserves the target's existing songs AND live working song (e
 
   const sys = stores.project.systems.view().find((s) => s.id === id)!;
   const pick = planImport(sys, lsdjSource()) as PickState;
-  expect(applyImport(stores, { ...pick, checked: new Set([1]) })).toBe(true); // import BBB only
+  expect(applyImport(stores, { ...pick, checked: new Set([1]) }).imported).toBe(1); // import BBB only
 
   const out = lastSram(be);
   expect(listProjects(out).map((p) => p.name)).toEqual(["MINE", "BBB"]); // existing kept + only BBB added
   expect(sameBytes(out.subarray(0, 0x8000), working)).toBe(true); // the user's working song survived the import
 });
 
+test("applyImport reports a PARTIAL import when the target fills up (imported < requested)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/song.gb", lsdjRom1M());
+  const id = stores.project.systems.addSystem("/roms/song.gb")!;
+  let target = savFrom({});
+  for (let i = 0; i < 31; i++) target = injectSong(target, i, `S${i}`, 1, savFrom({}).subarray(0, 0x8000).slice())!; // 31/32 used
+  be.setSram(id, target);
+
+  const sys = stores.project.systems.view().find((s) => s.id === id)!;
+  const pick = planImport(sys, lsdjSource()) as PickState; // 3 source songs, but only 1 free slot
+  const res = applyImport(stores, { ...pick, checked: new Set([0, 1, 2]) });
+  expect(res).toEqual({ requested: 3, imported: 1 }); // one landed, the caller surfaces the shortfall
+  expect(listProjects(lastSram(be)).length).toBe(32); // filled to capacity, existing 31 intact + 1 imported
+});
+
 test("applyImport with nothing checked is a no-op (no write)", () => {
   const { be, stores, sys } = lsdjSystem();
   const pick = planImport(sys(), lsdjSource()) as PickState;
   const before = be.constructCalls.length;
-  expect(applyImport(stores, { ...pick, checked: new Set() })).toBe(false);
+  expect(applyImport(stores, { ...pick, checked: new Set() })).toEqual({ requested: 0, imported: 0 });
   expect(be.constructCalls.length).toBe(before); // no rebuild → nothing written
 });
 

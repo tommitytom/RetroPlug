@@ -47,19 +47,32 @@ export function planImport(sys: SystemView, source: Uint8Array): ImportPending {
 }
 
 /** Import the checked songs into the live battery (readSram -> catalog.importSongs -> write .sav -> cold
- *  boot), the mutateSavBytes cycle done off `stores`. Returns whether it wrote. */
-export function applyImport(stores: AppStores, pick: PickState): boolean {
+/** The outcome of an import: how many of the `requested` (checked) songs actually landed in the battery.
+ *  `imported < requested` means the target filled up (a partial import) — the caller surfaces that. */
+export interface ImportResult {
+  requested: number;
+  imported: number;
+}
+
+/** Import the checked songs into the live battery (readSram -> catalog.importSongs -> write .sav -> cold
+ *  boot), the mutateSavBytes cycle done off `stores`. `imported` counts the songs the catalog actually
+ *  gained (import is best-effort fill: a full target keeps what fit) — 0 when nothing was written. */
+export function applyImport(stores: AppStores, pick: PickState): ImportResult {
   const indices = pick.songs.map((s) => s.index).filter((i) => pick.checked.has(i)); // keep source order
-  if (indices.length === 0) return false;
+  const requested = indices.length;
+  if (requested === 0) return { requested, imported: 0 };
   const systems = stores.project.systems;
   const target = systems.readSram(pick.sys.id);
-  if (!target) return false;
+  if (!target) return { requested, imported: 0 };
+  const before = pick.cat.list(target).length;
   const out = pick.cat.importSongs(target, pick.source, indices);
-  if (!out) return false;
+  if (!out) return { requested, imported: 0 };
+  const imported = pick.cat.list(out).length - before; // songs the catalog actually gained
+  if (imported <= 0) return { requested, imported: 0 }; // nothing landed → don't write / reboot needlessly
   const savPath = resolveSavPath(pick.sys.romPath, pick.sys.savSuffix, pick.sys.savPath);
-  if (!stores.backend.writeFileAtomic(savPath, out)) return false;
+  if (!stores.backend.writeFileAtomic(savPath, out)) return { requested, imported: 0 };
   systems.loadSram(pick.sys.id, savPath);
-  return true;
+  return { requested, imported };
 }
 
 /** Build the overlay tree for `pending`. Song rows and the buttons are keepOpen (the overlay owns its own

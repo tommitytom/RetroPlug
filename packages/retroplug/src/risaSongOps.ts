@@ -86,13 +86,20 @@ export function addSongRecordToSav(rawSave: Uint8Array, record: Uint8Array): Uin
 }
 
 /** Copy the songs at the given SOURCE catalog `indices` from `src` into `target`, appended as new slots
- *  (byte-exact records). Indices whose record can't be read are skipped. Returns the new 64 KB image. */
+ *  (byte-exact records). Best-effort fill, matching the LSDj sibling: a record that can't be read (bad
+ *  index) OR won't fit (the catalog is full / out of space) is SKIPPED, not fatal — every song that fits is
+ *  still imported. addSongRecordToSav works on a fresh copy and writeRecord's space check throws before any
+ *  write, so a skipped record leaves `out` byte-identical (no partial corruption). */
 export function importSongsFromSav(target: Uint8Array, src: Uint8Array, indices: number[]): Uint8Array {
   let out = target;
   for (const i of indices) {
     const record = songRecordBytes(src, i);
     if (!record) continue; // out of range / malformed → skip
-    out = addSongRecordToSav(out, record);
+    try {
+      out = addSongRecordToSav(out, record);
+    } catch {
+      // no room for THIS record (full / out of catalog space) — keep what already fit, try the rest
+    }
   }
   return out;
 }

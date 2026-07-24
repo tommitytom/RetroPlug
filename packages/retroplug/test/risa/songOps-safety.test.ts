@@ -158,6 +158,26 @@ test("import skips out-of-range source indices without error", () => {
   parseCatalog(after, CURRENT_LAYOUT);
 });
 
+test("import into a FULL catalog is a safe best-effort no-op: no throw, existing records byte-identical", () => {
+  // Fill a v2 catalog until the next append won't fit (the exact overflow the reviewer flagged: it used to
+  // THROW mid-batch and discard everything, wiping songs that already fit).
+  let full = v2Multi();
+  const rec = blumarblRecord();
+  try {
+    for (let i = 0; i < 512; i++) full = addSongRecordToSav(full, rec); // stops when writeRecord throws
+  } catch {
+    /* full — `full` holds the last image that fit */
+  }
+  const before = listSongs(full);
+  const beforeBytes = before.map((_, i) => recAt(full, i));
+  // A multi-song import into the full catalog: best-effort fill must not throw and must not touch a byte
+  // of any existing record.
+  const after = importSongsFromSav(full, battery("multi_legacy"), [0, 1, 2, 3, 4]);
+  expect(listSongs(after).length >= before.length).toBe(true); // never LOSES songs
+  for (let i = 0; i < before.length; i++) expect(sameBytes(recAt(after, i), beforeBytes[i])).toBe(true); // existing intact
+  parseCatalog(after, CURRENT_LAYOUT); // still a valid catalog
+});
+
 // --- a long SEQUENTIAL chain: no cumulative drift, working song never clobbered -------------------------
 
 test("a long chain of v2 catalog edits keeps the catalog parseable + the working song byte-identical", () => {

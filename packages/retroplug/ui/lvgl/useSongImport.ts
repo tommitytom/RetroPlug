@@ -44,7 +44,17 @@ export function useSongImport(stores: AppStores): SongImport {
 
   const apply = (): void => {
     if (pending?.kind !== "pick") return;
-    applyImport(stores, pending);
+    const { requested, imported } = applyImport(stores, pending);
+    // A full import closes the picker; a partial / failed one (the target filled up) surfaces a notice so
+    // the user isn't told it succeeded when songs were dropped.
+    if (imported < requested) {
+      setPending({
+        kind: "notice",
+        title: imported === 0 ? "Nothing imported" : "Import incomplete",
+        body: imported === 0 ? "The save is full — no songs were imported." : `Imported ${imported} of ${requested} songs; the save filled up.`,
+      });
+      return;
+    }
     setPending(null);
   };
 
