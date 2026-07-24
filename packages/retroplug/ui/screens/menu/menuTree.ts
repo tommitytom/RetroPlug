@@ -15,7 +15,10 @@ export interface PromptSpec {
   initial?: string; // seeds the field (e.g. Rename pre-fills the current name)
   hint?: string; // status-line default; a built-in is used when omitted
   confirm?: boolean; // yes/no dialog — no text field
-  filter?: (ch: string) => boolean; // per-keystroke character filter (e.g. profile-name chars)
+  // Letter-case policy for typed characters: "mixed" (default) respects Shift (Shift+a → "A"); "upper"
+  // forces every letter to uppercase regardless of Shift (LSDj / risa song names are uppercase-only).
+  casing?: "mixed" | "upper";
+  filter?: (ch: string) => boolean; // per-keystroke character filter (e.g. profile-name chars); sees the CASED char
   onConfirm: (value: string) => string | null;
 }
 

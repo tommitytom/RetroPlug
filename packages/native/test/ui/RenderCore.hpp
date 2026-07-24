@@ -99,7 +99,7 @@ public:
     void drainJs() { engine_.tick(); } // pump the JS event loop (no render step)
 
     // -- input driving ------------------------------------------------------
-    void tapKey(std::uint32_t lvKey);           // LV_KEY_UP/DOWN/LEFT/RIGHT/ENTER/ESC
+    void tapKey(std::uint32_t lvKey, std::uint32_t mod = 0); // LV_KEY_*; mod = DPF modifier mask (Shift=1)
     void clickAt(std::int32_t x, std::int32_t y);// press+release at absolute (x,y)
     void rightClickAt(std::int32_t x, std::int32_t y);// emit a right-button "mouse" bus press+release at (x,y)
     void moveMouse(std::int32_t x, std::int32_t y);// move the (unpressed) pointer → LVGL hover at (x,y)

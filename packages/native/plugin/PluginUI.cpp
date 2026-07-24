@@ -467,10 +467,11 @@ protected:
     bool onKeyboard(const KeyboardEvent& ev) override {
         UI::onKeyboard(ev); // base → LVGL keypad indev (menu arrow nav / Enter)
         if (JSContext* ctx = jsEngine.getContext()) {
-            JSValue args[2] = {JS_NewUint32(ctx, ev.key), JS_NewBool(ctx, ev.press)};
-            jsEngine.emit("key", 2, args); // the App's Esc handler + any key policy reads this
-            JS_FreeValue(ctx, args[0]);
-            JS_FreeValue(ctx, args[1]);
+            // key is the unshifted code point (DPF gives 'a' for the A key regardless of Shift); pass mod so
+            // the prompt text-input can apply Shift → uppercase itself. @see kModifierShift.
+            JSValue args[3] = {JS_NewUint32(ctx, ev.key), JS_NewBool(ctx, ev.press), JS_NewUint32(ctx, ev.mod)};
+            jsEngine.emit("key", 3, args); // the App's Esc handler + any key policy reads this
+            for (JSValue& v : args) JS_FreeValue(ctx, v);
         }
         return true;
     }

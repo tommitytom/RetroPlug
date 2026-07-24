@@ -204,7 +204,9 @@ JSValue jsUiFocused(JSContext* ctx, JSValueConst, int, JSValueConst*) {
 JSValue jsUiTapKey(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     int key = 0;
     if (argc < 1 || JS_ToInt32(ctx, &key, argv[0]) < 0) return JS_EXCEPTION;
-    try { coreOrThrow().tapKey(static_cast<std::uint32_t>(key)); return JS_UNDEFINED; }
+    int mod = 0; // optional DPF modifier mask (Shift=1) — lets a test type an uppercase char
+    if (argc >= 2 && JS_ToInt32(ctx, &mod, argv[1]) < 0) return JS_EXCEPTION;
+    try { coreOrThrow().tapKey(static_cast<std::uint32_t>(key), static_cast<std::uint32_t>(mod)); return JS_UNDEFINED; }
     catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.tapKey: %s", e.what()); }
 }
 
@@ -301,7 +303,7 @@ void installUiNamespace(JSContext* ctx) {
         { "findByTextContaining", { jsUiFindByTextContaining, 1 } },
         { "findFirstByType",      { jsUiFindFirstByType,      1 } },
         { "focused",              { jsUiFocused,              0 } },
-        { "tapKey",               { jsUiTapKey,               1 } },
+        { "tapKey",               { jsUiTapKey,               2 } },
         { "clickAt",              { jsUiClickAt,              2 } },
         { "rightClick",           { jsUiRightClick,           2 } },
         { "moveMouse",            { jsUiMoveMouse,            2 } },

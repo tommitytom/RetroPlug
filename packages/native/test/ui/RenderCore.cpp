@@ -332,7 +332,7 @@ WidgetInfo RenderCore::widgetInfo(lv_obj_t* obj) const {
     return wi;
 }
 
-void RenderCore::tapKey(std::uint32_t lvKey) {
+void RenderCore::tapKey(std::uint32_t lvKey, std::uint32_t mod) {
     keyQueue_.push_back(lvKey);
     // Mirror PluginUI: also fire the JS "key" channel (press then release) for handlers that live there
     // (prompt/capture/Esc/game input). LVGL key code -> DPF key code (the value input.ts expects).
@@ -349,10 +349,9 @@ void RenderCore::tapKey(std::uint32_t lvKey) {
     JSContext* ctx = engine_.getContext();
     auto emitKey = [&](bool press) {
         if (!ctx) return;
-        JSValue args[2] = { JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press) };
-        engine_.emit("key", 2, args);
-        JS_FreeValue(ctx, args[0]);
-        JS_FreeValue(ctx, args[1]);
+        JSValue args[3] = { JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press), JS_NewUint32(ctx, mod) };
+        engine_.emit("key", 3, args);
+        for (JSValue& v : args) JS_FreeValue(ctx, v);
     };
     emitKey(true);
     pump(2);  // keypad indev: PRESSED then RELEASED through lv_timer_handler
