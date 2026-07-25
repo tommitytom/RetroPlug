@@ -147,11 +147,20 @@ directories with a trailing `/`.
   boundary via globalThis** (module singletons don't — that's the key subtlety).
 - **Toggle**: `Settings > File Dialogs` (In-App / OS Native) sets `userConfig.useNativeFileDialogs`; when on
   *and* the host provides an OS dialog, the bridge delegates to it. On a host with no OS dialog it stays in-app.
-  The SDL host supplies one via **portable-file-dialogs** (`deps/portable-file-dialogs`, header-only): `main.cpp`
-  binds `__rp_openFileBrowser` to an async zenity/kdialog (Linux) / IFileDialog (Windows) / Cocoa (macOS) picker,
-  polled each frame and delivered back through `__rp_onFileBrowserResult`. The bind is gated on
-  `pfd::settings::available()`, so a helper-less host (the muOS handheld, a bare container) leaves the hook
-  unbound and the toggle transparently stays in-app. Headless proof: `RETROPLUG_SDL_DIALOG_SELFTEST=<path>`.
+  The OS dialog is **portable-file-dialogs** (`deps/portable-file-dialogs`, header-only) behind a shared helper,
+  [`NativeFileDialog`](../packages/native/src/host/ui/NativeFileDialog.hpp) — used by **both** the SDL host and
+  the DPF plugin/standalone, so they behave identically. Each host binds `__rp_openFileBrowser` to an async
+  zenity/kdialog (Linux) / IFileDialog (Windows) / Cocoa (macOS) picker, polls it from its UI loop (the SDL
+  frame loop / the plugin's `uiIdle`), and delivers the pick through `__rp_onFileBrowserResult`. The bind is
+  gated on `NativeFileDialog::available()`, so a helper-less host (the muOS handheld, a bare container) leaves
+  the hook unbound and the toggle transparently stays in-app.
+  - The **DPF plugin** previously backed this with DPF's own `openFileBrowser`, which could bind the hook yet
+    never surface a dialog when hosted in a DAW (the reported "OS Native stays in-app" bug) — now it uses the
+    same pfd picker. `USE_FILE_BROWSER` stays enabled only because it auto-enables `DGL_USE_FILE_DROP` (the
+    drag-and-drop `uiFileDropped` path); the DPF dialog itself is no longer called.
+  - Headless proof of the full pfd round-trip (request→helper→parse→deliver):
+    `RETROPLUG_SDL_DIALOG_SELFTEST=1` with a helper in `PATH` (a stub `zenity`/`kdialog` that prints a path
+    works) → the log shows `helper available` then `picked '<path>'`.
 - The old **SDL C++ browser** (`fbOpen`/`fbPopulate` + its input gating in main.cpp) has been **removed** — one
   browser implementation, and SDL keeps only `listDir`. Verified by `fileBrowser.test.ts` + the full UI suite.
 

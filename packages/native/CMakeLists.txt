@@ -350,7 +350,8 @@ set_target_properties(retroplug-sdl PROPERTIES
 # legacy `retroplug` (they coexist).
 dpf_add_plugin(retroplug
     TARGETS clap vst3 vst2 au jack  # au is macOS-only (DPF gates it to APPLE; a no-op elsewhere)
-    USE_FILE_BROWSER                    # native OS file dialog (matches DISTRHO_UI_FILE_BROWSER)
+    USE_FILE_BROWSER                    # keeps DGL_USE_FILE_DROP on for drag-and-drop (uiFileDropped); the
+                                        # OS file *dialog* itself is now portable-file-dialogs, not DPF's browser
     FILES_DSP
         plugin/PluginDSP.cpp
         ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
@@ -365,6 +366,9 @@ dpf_add_plugin(retroplug
 # dpf-widgets/generic resolves "LVGL.hpp".
 target_include_directories(retroplug BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
 target_include_directories(retroplug PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
+# portable-file-dialogs (header-only): the OS-native picker backing __rp_openFileBrowser (via NativeFileDialog),
+# shared with retroplug-sdl. No link libs on Linux/macOS; Windows pulls comdlg32/ole32 through its header.
+target_include_directories(retroplug PUBLIC ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
 
 target_link_libraries(retroplug PUBLIC
     retroplug-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
