@@ -512,3 +512,37 @@ WHERE THE PLAN IS VAGUE BUT MUST BE CONCRETE
 - M0 "load a risa `.nes`": no source for the ROM or `.lbl` is named — the actual blocker.
 - "MesenBackend honors romBytes": must resolve whether `MesenNesSystem::onActivate` reads `rom_` bytes or `cfg.romPath`; the plan defers this to "verify" yet still calls the change trivial.
 - risa detection (§10 #5): romProviders currently see only a short header prefix (LSDj uses `readFilePrefix(0x150)`), but `"RISA V"` requires a whole-PRG scan — the concrete mechanism (how many bytes TS sees) is undecided, yet M1 depends on it.
+
+---
+
+## Supporting a new risa release
+
+Most of the integration is version-agnostic and needs nothing: the iNES-header fingerprint, the
+save-catalog + song-record codec (gated on the record version in the data, not the app version), and the
+ROM asset layer (kits / themes / fonts are located by magic scan, so they survive layout shifts). What
+IS per-version is the **runtime RAM layout** - cc65 reshuffles the BSS/ZP addresses on every build, so a
+release with no bundled snapshot resolves no layout and the whole tracker submenu greys out as
+"(Unsupported Version)", taking Songs, Kits, Themes, Fonts, the live overlay and render song-length
+auto-detect with it.
+
+1. **Build the release from source** to get its label files. Needs cc65 (source-built - distro 2.19 is
+   too old, see M0 above) and python3; `make all` writes `build/risa-pal.lbl` + `build/ntsc/risa-ntsc.lbl`.
+   The shipped tree may need a lowercase `kits/psr150.rik` copy on a case-sensitive filesystem.
+2. **Generate the snapshot**: `RISA_SRC=<tree> RISA_VERSION=<x.y.z> node
+   packages/retroplug/scripts/gen-risa-symbols.mjs`. It merges - older versions stay - and fails loudly if
+   a symbol moved between the PAL and NTSC builds.
+3. **Certify it against the RELEASED ROM.** A local build is *not* byte-identical to the developer's
+   binary (a different cc65 build reshuffles codegen), so the label file alone doesn't prove the addresses
+   fit the ROM users run. Copy `test-native/risa-230-layout.test.ts`: it boots the released ROM and
+   asserts the decode is coherent and advances. Wrong addresses decode as garbage and fail there.
+
+Two things to check in the release's own source rather than assume:
+
+- **`SAVE_RECORD_VERSION` / `SAVE_MAGIC_VER`** (`src/seq_data.h`, `tools/rom_patcher/src/save_manager/`).
+  Both were unchanged through 2.3.0. A bump means codec work.
+- **Instrument type reuse.** 2.3.0 repurposed type 4 from WAVE to Z-Saw *within the same record version*,
+  discriminated only by a marker byte - see `migrateInstruments` in `src/risa/codec/working.ts`. Diffing
+  `src/seq_data.h`'s `INST_*` block against the previous release catches this class of change.
+
+Host sync (2.3.0 and later) needs nothing per-version: the `RISAxyz` marker carries the version, and the
+role attaches on its presence.
