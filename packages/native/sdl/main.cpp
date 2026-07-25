@@ -223,6 +223,10 @@ bool openAudio(AppState& a);
 void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels);
 void loadAudioConfig(AppState& a);
 void saveAudioConfig(AppState& a);
+// MIDI device (re)selection — declared here so the __rp_setMidiInput/Output hooks (bound earlier) can drive a
+// live device change; defined next to reconfigureAudio (it pauses the audio callback the same way).
+void reconfigureMidi(AppState& a, bool input, const std::string& name);
+void loadMidiConfig(AppState& a);
 
 // Resize the window + everything that tracks its dimensions (the __rp_setWindowSize seam). Defined after the
 // LVGL glue; declared here so the window hook can call it. Runs on the UI thread (same as present), so the
@@ -429,6 +433,45 @@ JSValue jsSetAudioConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
     return JS_UNDEFINED;
 }
 
+// __rp_getMidiConfig(): { inputs: string[], outputs: string[], selectedInput, selectedOutput } — the live
+// hardware MIDI ports + the current device selection, for the Settings > MIDI pickers. "" selection = the
+// default (All Devices for input, None for output). Standalone-only; absent in the plugin (DAW routes MIDI).
+JSValue jsGetMidiConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    JSValue o = JS_NewObject(ctx);
+    if (g_app) {
+        auto toArray = [&](const std::vector<std::string>& names) {
+            JSValue a = JS_NewArray(ctx);
+            for (std::uint32_t i = 0; i < names.size(); ++i)
+                JS_SetPropertyUint32(ctx, a, i, JS_NewString(ctx, names[i].c_str()));
+            return a;
+        };
+        JS_SetPropertyStr(ctx, o, "inputs",  toArray(g_app->midi.listInputs()));
+        JS_SetPropertyStr(ctx, o, "outputs", toArray(g_app->midi.listOutputs()));
+        JS_SetPropertyStr(ctx, o, "selectedInput",  JS_NewString(ctx, g_app->midi.inputSelection().c_str()));
+        JS_SetPropertyStr(ctx, o, "selectedOutput", JS_NewString(ctx, g_app->midi.outputSelection().c_str()));
+    }
+    return o;
+}
+
+// __rp_setMidiInput(name) / __rp_setMidiOutput(name): choose a hardware device by port name (empty string =
+// the default). Applies immediately (reconnects the RtMidi port) + persists to midi.cfg.
+JSValue jsSetMidiInput(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (g_app && argc >= 1) {
+        const char* s = JS_ToCString(ctx, argv[0]);
+        reconfigureMidi(*g_app, true, s ? s : "");
+        if (s) JS_FreeCString(ctx, s);
+    }
+    return JS_UNDEFINED;
+}
+JSValue jsSetMidiOutput(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (g_app && argc >= 1) {
+        const char* s = JS_ToCString(ctx, argv[0]);
+        reconfigureMidi(*g_app, false, s ? s : "");
+        if (s) JS_FreeCString(ctx, s);
+    }
+    return JS_UNDEFINED;
+}
+
 void installWindowHooks(JSContext* ctx) {
     JSValue g = JS_GetGlobalObject(ctx);
     auto bind = [&](const char* name, JSCFunction* fn, int len) {
@@ -441,6 +484,11 @@ void installWindowHooks(JSContext* ctx) {
     bind("__rp_openPath", jsOpenPath, 1);
     bind("__rp_getAudioConfig", jsGetAudioConfig, 0);
     bind("__rp_setAudioConfig", jsSetAudioConfig, 2);
+    // MIDI device selection (Settings > MIDI). RtMidi is compiled into retroplug-sdl, so the seam always
+    // exists here; the plugin never binds these (hasMidiConfig() is false there → the submenu is hidden).
+    bind("__rp_getMidiConfig", jsGetMidiConfig, 0);
+    bind("__rp_setMidiInput", jsSetMidiInput, 1);
+    bind("__rp_setMidiOutput", jsSetMidiOutput, 1);
     // The OS-native file dialog — only where a desktop helper exists (zenity/kdialog/…). Where none does
     // (the muOS handheld, a bare container) we DON'T bind it: useFileBrowser sees no nativeHook and the
     // "File Dialogs: OS Native" toggle transparently stays in-app. The self-test forces the bind to prove it.
@@ -660,6 +708,32 @@ void saveAudioConfig(AppState& a) {
     }
 }
 
+// The chosen MIDI input/output device names (Settings > MIDI), one per line (names contain spaces, so this is
+// line-based, not %s). An empty line = the default sentinel (All Devices / None).
+std::string midiCfgPath(AppState& a) { return a.hostSvc.configDir() + "/midi.cfg"; }
+
+void loadMidiConfig(AppState& a) {
+    if (FILE* f = std::fopen(midiCfgPath(a).c_str(), "r")) {
+        char line[512];
+        std::string in, out;
+        if (std::fgets(line, sizeof line, f)) in = line;
+        if (std::fgets(line, sizeof line, f)) out = line;
+        std::fclose(f);
+        auto trimEol = [](std::string& s) { while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back(); };
+        trimEol(in);
+        trimEol(out);
+        a.midi.setInputSelection(in);   // stored now; applied when midi.open() connects the ports
+        a.midi.setOutputSelection(out);
+    }
+}
+
+void saveMidiConfig(AppState& a) {
+    if (FILE* f = std::fopen(midiCfgPath(a).c_str(), "w")) {
+        std::fprintf(f, "%s\n%s\n", a.midi.inputSelection().c_str(), a.midi.outputSelection().c_str());
+        std::fclose(f);
+    }
+}
+
 // Live audio reconfigure (the Audio settings submenu): stop the device, take the Engine back from the
 // audio thread, re-rate it, re-open at the new rate/block, hand it back — the plugin's deactivate →
 // setSampleRate → activate handoff. Then persist. Called on the UI thread.
@@ -680,6 +754,19 @@ void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels) 
     saveAudioConfig(a);
     std::fprintf(stderr, "[retroplug-sdl] audio reconfigured: %d Hz, %d frames, %d ch\n",
                  a.reqSampleRate, a.reqBlockSize, a.reqOutChannels);
+}
+
+// Live MIDI device reselection (Settings > MIDI). Reconnects the RtMidi port on the UI thread while the audio
+// callback (which calls midi.poll/send) is locked out, so mutating the ports races nothing — the audio-thread
+// analog of reconfigureAudio's engine handoff. A brief audio glitch on a manual device change is expected.
+void reconfigureMidi(AppState& a, bool input, const std::string& name) {
+    if (a.audioDev) SDL_LockAudioDevice(a.audioDev);
+    if (input) a.midi.setInputSelection(name);
+    else       a.midi.setOutputSelection(name);
+    if (a.audioDev) SDL_UnlockAudioDevice(a.audioDev);
+    saveMidiConfig(a);
+    std::fprintf(stderr, "[retroplug-sdl] MIDI %s device -> '%s'\n", input ? "input" : "output",
+                 name.empty() ? (input ? "All Devices" : "None") : name.c_str());
 }
 
 // ---- screenshot (headless proof) ------------------------------------------------------------------
@@ -950,7 +1037,16 @@ int main(int argc, char** argv) {
 
     // Open MIDI (virtual in/out ports). Non-fatal: the host runs without MIDI if none is available. The
     // audio callback drains app.midi into the Engine per block (see audioCb); RETROPLUG_MIDI_LOG logs input.
+    // Apply any persisted device selection (Settings > MIDI) first, so open() connects the chosen device(s)
+    // rather than the auto-all-inputs / virtual-only-output default.
+    loadMidiConfig(app);
     app.midi.open("RetroPlug");
+
+    // Test/diagnostic hook: dump the enumerated hardware MIDI devices then continue.
+    if (std::getenv("RETROPLUG_SDL_MIDI_LIST")) {
+        for (const auto& n : app.midi.listInputs())  std::fprintf(stderr, "[retroplug-sdl] MIDI in device:  '%s'\n", n.c_str());
+        for (const auto& n : app.midi.listOutputs()) std::fprintf(stderr, "[retroplug-sdl] MIDI out device: '%s'\n", n.c_str());
+    }
 
     // Hand the Engine to the SDL audio thread (control-plane edits become push-only, drained per block)
     // then start it. Mirrors PluginDSP::activate.

@@ -661,6 +661,23 @@ set_target_properties(retroplug-watcher-test PROPERTIES
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+# retroplug-midi-test guards the MIDI device-selection policy (Settings > MIDI): the pure, RtMidi-free
+# helpers in MidiIo.hpp (hardwarePortIndices / matchPortIndex) that decide which hardware ports to open for a
+# given selection. Header-only helpers → links just Catch2 (no RtMidi, no backend). Also `pnpm test:plugin`.
+add_executable(retroplug-midi-test EXCLUDE_FROM_ALL
+    test/midi/MidiPortSelect.test.cpp)
+
+target_link_libraries(retroplug-midi-test PRIVATE
+    Catch2::Catch2WithMain)
+
+target_include_directories(retroplug-midi-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
+
+set_target_properties(retroplug-midi-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 # retroplug-lottie-test proves the new ThorVG-backed <Lottie> capability: that lv_lottie
 # rasterizes animated vector frames on a headless software display (LV_USE_LOTTIE → ThorVG).
 # Links bare lvgl (which PRIVATE-brings lvgl_thorvg) + Catch2 — no JS engine needed. Also

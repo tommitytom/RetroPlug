@@ -27,6 +27,7 @@ import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel, type MenuContext } from "./screens/menu/menuDefs";
 import { subscribeAudioDraft } from "./screens/menu/audioDraft";
+import { subscribeMidi } from "./screens/menu/midiDevices";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
@@ -59,6 +60,10 @@ export function App() {
   // unrelated render. Inert in a DAW / the harness (nothing ever emits).
   const [, bumpAudioDraft] = useState(0);
   useEffect(() => subscribeAudioDraft(() => bumpAudioDraft((n) => n + 1)), []);
+  // Standalone MIDI submenu: same story — the device selection lives in the native host, so a pick emits
+  // here to repaint the "Input/Output Device" labels immediately. Inert in a DAW / the harness.
+  const [, bumpMidi] = useState(0);
+  useEffect(() => subscribeMidi(() => bumpMidi((n) => n + 1)), []);
 
   const empty = systems.length === 0;
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.

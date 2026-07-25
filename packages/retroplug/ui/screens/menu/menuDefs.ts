@@ -58,6 +58,7 @@ import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty } from "./audioDraft";
+import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -113,6 +114,33 @@ function audioSettingsChildren(): MenuItem[] {
     sep("audio-sep-apply"),
     // Commit the staged rate/block/channels to the device. Greyed (inert) until there's a pending change.
     action("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
+  ];
+}
+
+// Standalone-only MIDI device pickers (Settings > MIDI), gated on hasMidiConfig(). Unlike Audio, a pick
+// applies immediately (setMidiInput/Output → the native host reconnects the port + persists). Input defaults
+// to "All Devices" (every hardware input, the historical behavior); output to "None" (virtual port only). A
+// saved device that isn't currently present is still shown, marked "(not connected)", and stays selected.
+function deviceCyclerNames(devices: string[], selected: string, allLabel: string): { names: string[]; index: number } {
+  const names = [allLabel, ...devices];
+  if (selected === "") return { names, index: 0 };
+  const i = devices.indexOf(selected);
+  if (i >= 0) return { names, index: i + 1 };
+  // Selected device not present: append it so the label still reflects the choice (re-applied on reconnect).
+  names.push(`${selected} (not connected)`);
+  return { names, index: names.length - 1 };
+}
+
+function midiSettingsChildren(): MenuItem[] {
+  const cfg = getMidiConfig() ?? { inputs: [], outputs: [], selectedInput: "", selectedOutput: "" };
+  const inp = deviceCyclerNames(cfg.inputs, cfg.selectedInput, "All Devices");
+  const out = deviceCyclerNames(cfg.outputs, cfg.selectedOutput, "None");
+  // Cycler index 0 = the default sentinel ("" selection); any other index maps back to the device name.
+  const inName = (n: number) => (n === 0 ? "" : cfg.inputs[n - 1] ?? cfg.selectedInput);
+  const outName = (n: number) => (n === 0 ? "" : cfg.outputs[n - 1] ?? cfg.selectedOutput);
+  return [
+    cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),
+    cycler("midi-output", "Output Device", out.names, out.index, (n) => setMidiOutput(outName(n))),
   ];
 }
 
@@ -1126,6 +1154,8 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     cycler("set-native-dialogs", "File Dialogs", ["In-App", "OS Native"], ctx.userConfig.useNativeFileDialogs ? 1 : 0, (n) => userConfig.setUseNativeFileDialogs(n === 1)),
     // Audio device (sample rate / block size) — standalone only, where the SDL host exposes the seam.
     ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
+    // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
+    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }

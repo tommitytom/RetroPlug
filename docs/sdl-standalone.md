@@ -26,9 +26,9 @@ thread, live audio reconfigure, and dirty-region present.
 
 ### P1 — MIDI input — ✅ DONE
 Implemented via RtMidi ([MidiIo](../packages/native/src/host/input/MidiIo.hpp)) — virtual `RetroPlug In`
-port + auto-opened hardware inputs → a lock-free ring drained in the audio callback → `engine.stageMidi`.
+port + selected hardware input(s) → a lock-free ring drained in the audio callback → `engine.stageMidi`.
 Hardware-verified (virtual ports open on ALSA, keyboard input fixed). Follow-ups: hotplug (ports scanned once
-at startup) and a real sub-block frame offset (staged at frame 0 today).
+at startup, and re-scanned on a device pick) and a real sub-block frame offset (staged at frame 0 today).
 
 Original design notes below (kept for reference):
 
@@ -53,8 +53,21 @@ Design:
 
 ### P2 — MIDI output — ✅ DONE
 `audioCb` drains `engine.midiOut()` to the `RtMidiOut` virtual port each block (mirrors
-[PluginDSP.cpp:178-186](../packages/native/plugin/PluginDSP.cpp#L178)). Hardware-verified: LSDj Master-Sync
-clock (`0xF8`) reaches `aseqdump`. `RETROPLUG_MIDI_LOG` dumps in + out bytes.
+[PluginDSP.cpp:178-186](../packages/native/plugin/PluginDSP.cpp#L178)) and mirrors it to the selected
+hardware output port, if any. Hardware-verified: LSDj Master-Sync clock (`0xF8`) reaches `aseqdump`.
+`RETROPLUG_MIDI_LOG` dumps in + out bytes.
+
+### MIDI device selection — ✅ DONE
+`Settings > MIDI` picks which hardware **Input Device** the host listens to (default *All Devices* = every
+hardware input, the historical behavior) and which hardware **Output Device** it sends to (default *None* =
+the virtual port only; a pick sends to that port **in addition** to the always-open virtual `RetroPlug Out`).
+`MidiIo` enumerates ports without opening them (`listInputs`/`listOutputs`, skipping our own virtual port +
+ALSA `Through`); the pure `hardwarePortIndices`/`matchPortIndex` helpers decide which port(s) to open (guarded
+by `retroplug-midi-test`). Selection is a UI-driven native runtime setting, exactly like the Audio submenu: the
+`__rp_getMidiConfig` / `__rp_setMidiInput` / `__rp_setMidiOutput` hooks (bound only in the SDL host, so the
+plugin — which gets MIDI from the DAW — hides the submenu), reconnected live behind an audio-device lock and
+persisted by device name to `midi.cfg`. A saved device that isn't currently present is shown `(not connected)`
+and re-applied on reconnect. `RETROPLUG_SDL_MIDI_LIST` dumps the enumerated device names.
 
 ### P3 — File drag-and-drop — ✅ DONE
 `handleEvents` translates SDL's drag-and-drop onto the App's `file-drop` channel (load / cold-boot-replace a

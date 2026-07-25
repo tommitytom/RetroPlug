@@ -13,7 +13,8 @@ MidiIo::MidiIo() = default;
 MidiIo::~MidiIo() { close(); }
 
 bool MidiIo::open(const char* clientName) {
-    const std::string name = clientName && *clientName ? clientName : "RetroPlug";
+    clientName_ = clientName && *clientName ? clientName : "RetroPlug";
+    const std::string& name = clientName_;
     log_ = std::getenv("RETROPLUG_MIDI_LOG") != nullptr;  // set before the callback thread starts
     try {
         in_ = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, name);
@@ -32,34 +33,97 @@ bool MidiIo::open(const char* clientName) {
         return false;
     }
     std::fprintf(stderr, "[retroplug-sdl] MIDI: virtual ports '%s In' / '%s Out' open\n", name.c_str(), name.c_str());
-    openHardwareInputs(name);
+    openHardwareInputs();
+    openHardwareOutput();
     return true;
 }
 
-void MidiIo::openHardwareInputs(const std::string& clientName) {
+// Names of the hardware input/output ports currently present (skipping our own virtual port + ALSA "Through").
+static std::vector<std::string> probePortNames(bool input, const std::string& clientName) {
+    std::vector<std::string> names;
     try {
-        RtMidiIn probe(RtMidi::UNSPECIFIED, clientName);
-        const unsigned count = probe.getPortCount();
-        for (unsigned i = 0; i < count; ++i) {
-            const std::string portName = probe.getPortName(i);
-            if (portName.find(clientName) != std::string::npos) continue;  // our own virtual port
-            if (portName.find("Through") != std::string::npos) continue;    // ALSA MIDI-through (no hardware)
-            auto in = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, clientName);
+        if (input) {
+            RtMidiIn probe(RtMidi::UNSPECIFIED, clientName);
+            const unsigned count = probe.getPortCount();
+            for (unsigned i = 0; i < count; ++i) names.push_back(probe.getPortName(i));
+        } else {
+            RtMidiOut probe(RtMidi::UNSPECIFIED, clientName);
+            const unsigned count = probe.getPortCount();
+            for (unsigned i = 0; i < count; ++i) names.push_back(probe.getPortName(i));
+        }
+    } catch (RtMidiError&) {
+        return {};  // no MIDI system
+    }
+    return names;
+}
+
+// Filter a raw port-name list to just the hardware ports (the pure helper decides which to keep).
+static std::vector<std::string> hardwarePortNames(const std::vector<std::string>& raw, const std::string& clientName) {
+    std::vector<std::string> out;
+    for (std::size_t i : hardwarePortIndices(raw, clientName)) out.push_back(raw[i]);
+    return out;
+}
+
+std::vector<std::string> MidiIo::listInputs() const { return hardwarePortNames(probePortNames(true, clientName_), clientName_); }
+std::vector<std::string> MidiIo::listOutputs() const { return hardwarePortNames(probePortNames(false, clientName_), clientName_); }
+
+void MidiIo::openHardwareInputs() {
+    hwIn_.clear();
+    const std::vector<std::string> names = probePortNames(true, clientName_);
+    // Empty selection = All Devices (every hardware input); else just the one whose name matches.
+    std::vector<std::size_t> open;
+    if (selectedIn_.empty())
+        open = hardwarePortIndices(names, clientName_);
+    else if (auto idx = matchPortIndex(names, clientName_, selectedIn_))
+        open.push_back(*idx);
+    for (std::size_t i : open) {
+        try {
+            auto in = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, clientName_);
             in->ignoreTypes(true, false, true);
             in->setCallback(&MidiIo::onMidiIn, this);
-            in->openPort(i, portName);
-            std::fprintf(stderr, "[retroplug-sdl] MIDI in: connected hardware port '%s'\n", portName.c_str());
+            in->openPort(static_cast<unsigned>(i), names[i]);
+            std::fprintf(stderr, "[retroplug-sdl] MIDI in: connected hardware port '%s'\n", names[i].c_str());
             hwIn_.push_back(std::move(in));
+        } catch (RtMidiError& e) {
+            std::fprintf(stderr, "[retroplug-sdl] MIDI: input open failed for '%s': %s\n", names[i].c_str(), e.what());
         }
-    } catch (RtMidiError& e) {
-        std::fprintf(stderr, "[retroplug-sdl] MIDI: hardware-port scan failed: %s\n", e.what());
     }
+}
+
+void MidiIo::openHardwareOutput() {
+    hwOut_.reset();
+    if (selectedOut_.empty()) return;  // None = virtual output only
+    const std::vector<std::string> names = probePortNames(false, clientName_);
+    auto idx = matchPortIndex(names, clientName_, selectedOut_);
+    if (!idx) {  // saved device not currently present — remembered, re-applied on reconnect
+        std::fprintf(stderr, "[retroplug-sdl] MIDI out: selected port '%s' not present\n", selectedOut_.c_str());
+        return;
+    }
+    try {
+        hwOut_ = std::make_unique<RtMidiOut>(RtMidi::UNSPECIFIED, clientName_);
+        hwOut_->openPort(static_cast<unsigned>(*idx), names[*idx]);
+        std::fprintf(stderr, "[retroplug-sdl] MIDI out: connected hardware port '%s'\n", names[*idx].c_str());
+    } catch (RtMidiError& e) {
+        std::fprintf(stderr, "[retroplug-sdl] MIDI: output open failed for '%s': %s\n", selectedOut_.c_str(), e.what());
+        hwOut_.reset();
+    }
+}
+
+void MidiIo::setInputSelection(const std::string& name) {
+    selectedIn_ = name;
+    if (in_) openHardwareInputs();  // apply live (host pauses audio around this)
+}
+
+void MidiIo::setOutputSelection(const std::string& name) {
+    selectedOut_ = name;
+    if (out_) openHardwareOutput();
 }
 
 void MidiIo::close() {
     in_.reset();   // cancels the callback + closes the port
     hwIn_.clear();
     out_.reset();
+    hwOut_.reset();
     head_.store(0, std::memory_order_relaxed);
     tail_.store(0, std::memory_order_relaxed);
 }
@@ -104,6 +168,7 @@ void MidiIo::send(const std::uint8_t* data, std::size_t len) {
     }
     try {
         out_->sendMessage(data, len);
+        if (hwOut_) hwOut_->sendMessage(data, len);  // mirror to the selected hardware output, if any
     } catch (RtMidiError&) {
         // A transient send failure (port gone) shouldn't take down the audio thread.
     }
