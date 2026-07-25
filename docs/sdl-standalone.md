@@ -152,12 +152,16 @@ directories with a trailing `/`.
   the DPF plugin/standalone, so they behave identically. Each host binds `__rp_openFileBrowser` to an async
   zenity/kdialog (Linux) / IFileDialog (Windows) / Cocoa (macOS) picker, polls it from its UI loop (the SDL
   frame loop / the plugin's `uiIdle`), and delivers the pick through `__rp_onFileBrowserResult`. The bind is
-  gated on `NativeFileDialog::available()`, so a helper-less host (the muOS handheld, a bare container) leaves
-  the hook unbound and the toggle transparently stays in-app.
-  - The **DPF plugin** previously backed this with DPF's own `openFileBrowser`, which could bind the hook yet
-    never surface a dialog when hosted in a DAW (the reported "OS Native stays in-app" bug) — now it uses the
-    same pfd picker. `USE_FILE_BROWSER` stays enabled only because it auto-enables `DGL_USE_FILE_DROP` (the
-    drag-and-drop `uiFileDropped` path); the DPF dialog itself is no longer called.
+  gated per host on `NativeFileDialog::available()`:
+  - **SDL** has no other OS dialog, so a helper-less host (the muOS handheld, a bare container) leaves the
+    hook unbound and the toggle transparently stays in-app.
+  - The **DPF plugin/standalone** always binds the hook and chooses at call time: pfd when a helper exists
+    (it surfaces reliably even in a DAW-hosted editor, where DPF's own browser could bind the hook yet never
+    show a dialog — the reported bug), else **DPF's own `openFileBrowser`**, which needs no helper
+    (xdg-desktop-portal / libsofd X11) and works in the standalone. So a helper-less desktop keeps a working
+    OS dialog instead of silently dropping to in-app. `USE_FILE_BROWSER` stays enabled for this fallback
+    *and* because it auto-enables `DGL_USE_FILE_DROP` (drag-and-drop). Only a DAW-hosted editor on a
+    helper-less host has no OS dialog (in-app) - no worse than before.
   - Headless proof of the full pfd round-trip (request→helper→parse→deliver):
     `RETROPLUG_SDL_DIALOG_SELFTEST=1` with a helper in `PATH` (a stub `zenity`/`kdialog` that prints a path
     works) → the log shows `helper available` then `picked '<path>'`.

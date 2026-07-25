@@ -187,16 +187,31 @@ public:
     }
     bool isWindowSizeControlled() const { return wmControlled_; }
 
-    // Open the OS-native file dialog for the UI (the menu's Load / Save / Export / Locate items). Backed by
-    // portable-file-dialogs (NativeFileDialog) — the SAME picker the SDL host uses — rather than DPF's own
-    // browser, which could bind the hook yet never surface a dialog when hosted in a DAW. `patterns` is a
-    // whitespace-separated glob list; `directory` picks a FOLDER (the render "Output Dir"); `saving` seeds
-    // the save name with defaultName. Non-blocking: the pick arrives later, polled in uiIdle → the
-    // uiFileBrowserSelected resolver. One dialog is ever in flight (the TS FileSelection flow awaits sequentially).
+    // Open the OS-native file dialog for the UI (the menu's Load / Save / Export / Locate items). Two backends:
+    //  - portable-file-dialogs (NativeFileDialog), the SAME picker the SDL host uses, WHEN a desktop helper
+    //    (zenity/kdialog/…) exists. It surfaces reliably even in a DAW-hosted editor, where DPF's own browser
+    //    could bind the hook yet never show a dialog (the reported bug).
+    //  - else DPF's built-in openFileBrowser, which needs NO helper (xdg-desktop-portal / libsofd X11) and
+    //    works in the standalone. So a helper-less host keeps a working OS dialog instead of silently
+    //    dropping to the in-app browser (the regression a hard availability gate caused).
+    // `patterns` is a whitespace-separated glob list; `directory` picks a FOLDER (the render "Output Dir");
+    // `saving` seeds the save name with defaultName. Non-blocking either way: the pick arrives later via
+    // uiFileBrowserSelected (pfd is polled in uiIdle; DPF calls it directly). One dialog is ever in flight.
     void requestFileBrowser(const char* title, const char* patterns, bool saving, const char* defaultName,
                             const char* startDir, bool directory) {
-        nativeDialog_.request(title ? title : "", patterns ? patterns : "", saving,
-                              defaultName ? defaultName : "", startDir ? startDir : "", directory);
+        if (retroplug::ui::NativeFileDialog::available()) {
+            nativeDialog_.request(title ? title : "", patterns ? patterns : "", saving,
+                                  defaultName ? defaultName : "", startDir ? startDir : "", directory);
+            return;
+        }
+        FileBrowserOptions opts;
+        opts.title  = (title && *title) ? title : "Open";
+        opts.saving = saving;
+        opts.directory = directory; // pick a FOLDER (our DPF fork; Linux + macOS) — the render "Output Dir"
+        if (defaultName && *defaultName) opts.defaultName = defaultName;
+        if (startDir && *startDir) opts.startDir = startDir;
+        if (patterns && *patterns) opts.fileFilterPatterns = patterns;
+        openFileBrowser(opts);
     }
 
     // Close the standalone window for real — called from the UI via the __rp_quitWindow seam once the
@@ -683,10 +698,10 @@ void installWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
     };
     bind("__rp_setWindowSize", jsSetWindowSize, 2);
     bind("__rp_isWindowSizeControlled", jsIsWindowSizeControlled, 0);
-    // The OS-native dialog — only where a desktop helper exists (zenity/kdialog/…). Where none does, we skip
-    // the bind: useFileBrowser sees no nativeHook and the "File Dialogs: OS Native" toggle stays in-app.
-    if (retroplug::ui::NativeFileDialog::available())
-        bind("__rp_openFileBrowser", jsOpenFileBrowser, 6);
+    // Always bound: requestFileBrowser picks pfd or DPF's own browser at call time, and DPF's needs no
+    // helper — so "File Dialogs: OS Native" gives a real OS dialog on every desktop host, not just ones
+    // with zenity/kdialog. (The DAW-hosted-with-no-helper corner is the one weak spot, no worse than before.)
+    bind("__rp_openFileBrowser", jsOpenFileBrowser, 6);
     bind("__rp_quitWindow", jsQuitWindow, 0);
     bind("__rp_openPath", jsOpenPath, 1);
     bind("__rp_setWindowTitle", jsSetWindowTitle, 1);

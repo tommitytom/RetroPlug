@@ -26,9 +26,10 @@
 // window. PluginUI drives setSize to fit the grid + detects a tiling clamp in onResize.
 #define DISTRHO_UI_USER_RESIZABLE      1
 
-// Kept on primarily because it auto-enables DGL_USE_FILE_DROP (drag-and-drop, DISTRHO_UI_FILE_DROP below).
-// The OS file *dialog* itself is now portable-file-dialogs (NativeFileDialog), NOT DPF's UI::openFileBrowser
-// — that proved unreliable when hosted. Requires USE_FILE_BROWSER on the dpf_add_plugin call in CMakeLists.txt.
+// Enables UI::openFileBrowser + the uiFileBrowserSelected callback. requestFileBrowser prefers
+// portable-file-dialogs (NativeFileDialog) where a desktop helper exists, and falls back to this DPF browser
+// (helper-free: xdg-desktop-portal / libsofd) otherwise. Also auto-enables DGL_USE_FILE_DROP (drag-and-drop,
+// DISTRHO_UI_FILE_DROP below). Requires USE_FILE_BROWSER on the dpf_add_plugin call in CMakeLists.txt.
 #define DISTRHO_UI_FILE_BROWSER        1
 
 // OS file drag-and-drop: enables the UI::uiFileDropped callback (the drag-and-drop ROM/SAV/project load).

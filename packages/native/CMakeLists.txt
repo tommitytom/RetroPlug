@@ -350,8 +350,8 @@ set_target_properties(retroplug-sdl PROPERTIES
 # legacy `retroplug` (they coexist).
 dpf_add_plugin(retroplug
     TARGETS clap vst3 vst2 au jack  # au is macOS-only (DPF gates it to APPLE; a no-op elsewhere)
-    USE_FILE_BROWSER                    # keeps DGL_USE_FILE_DROP on for drag-and-drop (uiFileDropped); the
-                                        # OS file *dialog* itself is now portable-file-dialogs, not DPF's browser
+    USE_FILE_BROWSER                    # DPF's own (helper-free) file dialog is the fallback when no pfd helper
+                                        # exists; also auto-enables DGL_USE_FILE_DROP for drag-and-drop (uiFileDropped)
     FILES_DSP
         plugin/PluginDSP.cpp
         ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
