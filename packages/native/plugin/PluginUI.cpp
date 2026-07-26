@@ -24,6 +24,7 @@
 #include "ContextTargets.hpp"             // per-context routing for the __rp_* window hooks
 #include "host/input/GamepadManager.hpp" // SDL controller poll (shared UI-thread input)
 #include "host/render/RenderJobRegistry.hpp" // background render jobs (the __rp_*Render hooks)
+#include "host/ui/NativeFileDialog.hpp"   // OS-native file picker (pfd) — shared with the SDL host
 
 #include <chrono>
 #include <cstdint>
@@ -99,6 +100,10 @@ class PluginUI : public UI {
     // re-emits each transition onto the gamepad-* JS bus that useGamepadInput subscribes to. Inert
     // (ok()==false, update() a no-op) when SDL_INIT_GAMECONTROLLER fails — e.g. headless CI with no device.
     retroplug::GamepadManager gamepad_;
+
+    // The in-flight OS-native file dialog (pfd), opened by requestFileBrowser and polled in uiIdle. Shared
+    // with the SDL host so both surface the same picker.
+    retroplug::ui::NativeFileDialog nativeDialog_;
 
     void maybeWriteScreenshot() {
         if (screenshotPath_.empty()) return;
@@ -182,18 +187,29 @@ public:
     }
     bool isWindowSizeControlled() const { return wmControlled_; }
 
-    // Open the native OS file dialog for the UI (the menu's Load / Save / Export / Locate items).
-    // `patterns` is a whitespace-separated glob list (DPF's FileBrowserOptions.fileFilterPatterns).
-    // Non-blocking: the pick arrives later on uiFileBrowserSelected. Called via the __rp_openFileBrowser
-    // seam. One dialog is ever in flight (the TS FileSelection flow awaits sequentially).
+    // Open the OS-native file dialog for the UI (the menu's Load / Save / Export / Locate items). Two backends:
+    //  - portable-file-dialogs (NativeFileDialog), the SAME picker the SDL host uses, WHEN a desktop helper
+    //    (zenity/kdialog/…) exists. It surfaces reliably even in a DAW-hosted editor, where DPF's own browser
+    //    could bind the hook yet never show a dialog (the reported bug).
+    //  - else DPF's built-in openFileBrowser, which needs NO helper (xdg-desktop-portal / libsofd X11) and
+    //    works in the standalone. So a helper-less host keeps a working OS dialog instead of silently
+    //    dropping to the in-app browser (the regression a hard availability gate caused).
+    // `patterns` is a whitespace-separated glob list; `directory` picks a FOLDER (the render "Output Dir");
+    // `saving` seeds the save name with defaultName. Non-blocking either way: the pick arrives later via
+    // uiFileBrowserSelected (pfd is polled in uiIdle; DPF calls it directly). One dialog is ever in flight.
     void requestFileBrowser(const char* title, const char* patterns, bool saving, const char* defaultName,
                             const char* startDir, bool directory) {
+        if (retroplug::ui::NativeFileDialog::available()) {
+            nativeDialog_.request(title ? title : "", patterns ? patterns : "", saving,
+                                  defaultName ? defaultName : "", startDir ? startDir : "", directory);
+            return;
+        }
         FileBrowserOptions opts;
         opts.title  = (title && *title) ? title : "Open";
         opts.saving = saving;
         opts.directory = directory; // pick a FOLDER (our DPF fork; Linux + macOS) — the render "Output Dir"
         if (defaultName && *defaultName) opts.defaultName = defaultName;
-        if (startDir && *startDir) opts.startDir = startDir; // reopen where the user last saved (render dialog)
+        if (startDir && *startDir) opts.startDir = startDir;
         if (patterns && *patterns) opts.fileFilterPatterns = patterns;
         openFileBrowser(opts);
     }
@@ -369,9 +385,11 @@ protected:
         return !veto;
     }
 
-    // The native OS file dialog's result (null/empty filename = cancel). Deliver it into JS by calling the
+    // The OS file dialog's result (null/empty filename = cancel). Deliver it into JS by calling the
     // __rp_onFileBrowserResult resolver the real Backend registered — same shared context, same UI thread
     // that pumps the JS loop, so a direct call is safe (the awaiting Promise settles on the next tick).
+    // Now driven by the NativeFileDialog (pfd) poll in uiIdle rather than DPF's browser, but kept as the DPF
+    // override too (USE_FILE_BROWSER stays on for drag-and-drop) so DPF never routes a stray pick elsewhere.
     void uiFileBrowserSelected(const char* filename) override {
         JSContext* ctx = jsEngine.getContext();
         if (!ctx) return;
@@ -411,6 +429,9 @@ protected:
         if (JSContext* ctx = jsEngine.getContext()) {
             jsEngine.emit("frame", 0, nullptr); // drives EmulatorTile's getFrame
             pumpGamepad(ctx);                   // poll controllers → the gamepad-* JS bus
+            // Deliver a finished OS file-dialog pick (async; cancel = empty). uiFileBrowserSelected resolves
+            // the awaiting JS Promise via __rp_onFileBrowserResult (empty c-string → null → cancel).
+            nativeDialog_.poll([this](const std::string& pick) { uiFileBrowserSelected(pick.c_str()); });
             // File watcher: drain native's changed paths + react (config live-reload / bindings refresh /
             // ROM hot-reload). efsw already coalesced the changes on its own thread, so a low cadence (~1/15
             // frames, a few Hz) is plenty and keeps stat/JS churn off the hot path. Inert if the control
@@ -677,6 +698,9 @@ void installWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
     };
     bind("__rp_setWindowSize", jsSetWindowSize, 2);
     bind("__rp_isWindowSizeControlled", jsIsWindowSizeControlled, 0);
+    // Always bound: requestFileBrowser picks pfd or DPF's own browser at call time, and DPF's needs no
+    // helper — so "File Dialogs: OS Native" gives a real OS dialog on every desktop host, not just ones
+    // with zenity/kdialog. (The DAW-hosted-with-no-helper corner is the one weak spot, no worse than before.)
     bind("__rp_openFileBrowser", jsOpenFileBrowser, 6);
     bind("__rp_quitWindow", jsQuitWindow, 0);
     bind("__rp_openPath", jsOpenPath, 1);

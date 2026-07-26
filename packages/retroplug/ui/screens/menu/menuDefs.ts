@@ -57,6 +57,8 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty } from "./audioDraft";
+import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -74,9 +76,72 @@ export interface MenuContext {
   newProject: () => void;
   loadProject: (path: string) => void;
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
+  /** Quit the standalone (unsaved-changes guarded). No-op in a DAW (the host owns the window). */
+  requestExit: () => void;
   // Open the Songs "import from a .sav" picker (validate the source against the cart's console, then show a
   // checkbox list) — owned by useSongImport, wired from App like the project modals.
   beginSongImport: (sys: SystemView, source: Uint8Array) => void;
+}
+
+/** True only in a standalone host (the SDL handheld build or the DPF JACK standalone), which installs
+ *  __rp_isStandalone; a DAW-hosted editor and the headless harness leave it undefined. Gates the "Exit"
+ *  row — a DAW owns the plugin window, so it must not offer to quit. */
+function isStandalone(): boolean {
+  return (globalThis as { __rp_isStandalone?: boolean }).__rp_isStandalone === true;
+}
+
+// Standalone audio device config (the SDL host's sample-rate / block-size, for the Audio submenu). The
+// cyclers edit a DRAFT (audioDraft.ts) — nothing is applied until the "Apply" row commits it via
+// __rp_setAudioConfig (re-open device + persist). Absent in a DAW / the harness (hasAudioConfig() false).
+const AUDIO_RATES = [22050, 32000, 44100, 48000];
+const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
+// Output device channels: 2 = stereo mix; 4/6/8 open that many device channels so the project's Audio
+// Routing (2-Ch/Inst, 1-Ch/Inst, Channels) fans real stems out to a multichannel interface. Labelled by
+// pair count since routing works in stereo pairs.
+const AUDIO_CHANNELS = [2, 4, 6, 8];
+const AUDIO_CHANNEL_NAMES = ["Stereo", "4 (2 pairs)", "6 (3 pairs)", "8 (4 pairs)"];
+function audioSettingsChildren(): MenuItem[] {
+  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048, outChannels: 2 };
+  const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
+  const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
+  const chIdx = Math.max(0, AUDIO_CHANNELS.indexOf(cfg.outChannels));
+  const dirty = audioDraftDirty();
+  return [
+    // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
+    cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
+    cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
+    cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),
+    sep("audio-sep-apply"),
+    // Commit the staged rate/block/channels to the device. Greyed (inert) until there's a pending change.
+    action("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
+  ];
+}
+
+// Standalone-only MIDI device pickers (Settings > MIDI), gated on hasMidiConfig(). Unlike Audio, a pick
+// applies immediately (setMidiInput/Output → the native host reconnects the port + persists). Input defaults
+// to "All Devices" (every hardware input, the historical behavior); output to "None" (virtual port only). A
+// saved device that isn't currently present is still shown, marked "(not connected)", and stays selected.
+function deviceCyclerNames(devices: string[], selected: string, allLabel: string): { names: string[]; index: number } {
+  const names = [allLabel, ...devices];
+  if (selected === "") return { names, index: 0 };
+  const i = devices.indexOf(selected);
+  if (i >= 0) return { names, index: i + 1 };
+  // Selected device not present: append it so the label still reflects the choice (re-applied on reconnect).
+  names.push(`${selected} (not connected)`);
+  return { names, index: names.length - 1 };
+}
+
+function midiSettingsChildren(): MenuItem[] {
+  const cfg = getMidiConfig() ?? { inputs: [], outputs: [], selectedInput: "", selectedOutput: "" };
+  const inp = deviceCyclerNames(cfg.inputs, cfg.selectedInput, "All Devices");
+  const out = deviceCyclerNames(cfg.outputs, cfg.selectedOutput, "None");
+  // Cycler index 0 = the default sentinel ("" selection); any other index maps back to the device name.
+  const inName = (n: number) => (n === 0 ? "" : cfg.inputs[n - 1] ?? cfg.selectedInput);
+  const outName = (n: number) => (n === 0 ? "" : cfg.outputs[n - 1] ?? cfg.selectedOutput);
+  return [
+    cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),
+    cycler("midi-output", "Output Device", out.names, out.index, (n) => setMidiOutput(outName(n))),
+  ];
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -1085,6 +1150,12 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     renderDirItem,
     submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
     submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
+    // In-app browser (default) vs the host's OS file dialog. On a host with no OS dialog it just stays in-app.
+    cycler("set-native-dialogs", "File Dialogs", ["In-App", "OS Native"], ctx.userConfig.useNativeFileDialogs ? 1 : 0, (n) => userConfig.setUseNativeFileDialogs(n === 1)),
+    // Audio device (sample rate / block size) — standalone only, where the SDL host exposes the seam.
+    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
+    // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
+    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }
@@ -1226,6 +1297,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
+      ...(isStandalone() ? [sep("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };
@@ -1241,6 +1313,7 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),
+      ...(isStandalone() ? [sep("start-sep-exit"), action("start-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };

@@ -58,6 +58,7 @@ export interface UserConfig {
   defaultZoom: number; // 1..6; a fresh project with zoom == 0 inherits this
   sramAutoSave: SramAutoSave;
   render: RenderSettings; // System > Render menu selections
+  useNativeFileDialogs: boolean; // false = the in-app browser (default); true = the host's OS file dialog
 }
 
 /** Validates + defaults + clamps a (possibly partial/stale) config.json object. Strict:
@@ -69,6 +70,7 @@ export const userConfigSchema = z.object({
   defaultZoom: clampedInt(1, 6, 3),
   sramAutoSave: z.enum(SRAM_AUTO_SAVES).catch("OnProjectSave").default("OnProjectSave"),
   render: renderSchema,
+  useNativeFileDialogs: z.boolean().catch(false).default(false), // additive → no migration
 });
 
 export const DEFAULT_USER_CONFIG: UserConfig = userConfigSchema.parse({}) as UserConfig;

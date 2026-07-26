@@ -6,6 +6,10 @@
 /build-asan/
 # profiling build dir (tools/run-profile.sh)
 /build-prof/
+# aarch64 cross-build dirs + sysroot (leftover build artifacts)
+/build-arm/
+/build-arm-prof/
+/.arm64/
 
 # cmake temp files that remain around
 CMakeFiles/

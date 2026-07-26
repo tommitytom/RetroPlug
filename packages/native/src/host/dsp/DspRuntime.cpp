@@ -255,6 +255,7 @@ DspRuntime::DspRuntime() {
     traceName(DSP_SPAN_MARSHAL, "marshal");
     traceName(DSP_SPAN_JSCALL, "js-call");
     traceName(DSP_SPAN_APU, "apu-render");
+    traceName(DSP_SPAN_PUBLISH, "state-publish");
 #endif
     JS_FreeValue(ctx_, global);
 }

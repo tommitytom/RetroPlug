@@ -45,7 +45,9 @@ export function parseUserConfig(json: string): UserConfig | null {
   return userConfigSchema.parse(migrated) as UserConfig;
 }
 
-/** Serialize config.json text, stamping the current schema version (native field order). */
+/** Serialize config.json text, stamping the current schema version. Every schema field must appear here:
+ *  commit() diffs two serializations to detect a real change, so a field omitted below can never be
+ *  toggled or persisted (it round-trips through parse's default forever). */
 export function serializeUserConfig(cfg: UserConfig): string {
   return JSON.stringify({
     schemaVersion: USER_CONFIG_SCHEMA,
@@ -53,6 +55,7 @@ export function serializeUserConfig(cfg: UserConfig): string {
     activeGamepadBindings: cfg.activeGamepadBindings,
     defaultZoom: cfg.defaultZoom,
     sramAutoSave: cfg.sramAutoSave,
+    useNativeFileDialogs: cfg.useNativeFileDialogs,
     render: cfg.render,
   });
 }

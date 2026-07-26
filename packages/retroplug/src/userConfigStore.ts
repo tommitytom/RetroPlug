@@ -104,6 +104,11 @@ export class UserConfigStore {
     return this.commit({ ...this.current, sramAutoSave: mode });
   }
 
+  /** Use the host's OS file dialog instead of the in-app browser (where the host provides one). */
+  setUseNativeFileDialogs(on: boolean): boolean {
+    return this.commit({ ...this.current, useNativeFileDialogs: on });
+  }
+
   // --- render-menu selections (System > Render) ---
 
   /** Set the render split mode. Rejects an unknown mode. */

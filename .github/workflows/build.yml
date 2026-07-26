@@ -76,6 +76,9 @@ jobs:
       - name: UI tests (headless LVGL)
         run: pnpm test:ui
 
+      - name: SDL standalone smoke (headless, no Xvfb)
+        run: pnpm sdl:smoke
+
       - name: Install plugin-format validators
         run: |
           set -eux
@@ -337,6 +340,9 @@ jobs:
 
       - name: UI tests (headless LVGL)
         run: pnpm test:ui
+
+      - name: SDL standalone smoke (headless)
+        run: pnpm sdl:smoke
 
       - name: Upload artifacts
         if: always()
