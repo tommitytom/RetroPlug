@@ -18,7 +18,7 @@ import {
   savSongName,
 } from "../../src/lsdjSav";
 import { workingSongName } from "../../src/lsdj/codec/sav";
-import { deleteSongInSav, addLsdsngToSav, replaceSongInSav, importAllSongsFromSav, moveSongInSav } from "../../src/lsdjSongOps";
+import { deleteSongInSav, addLsdsngToSav, replaceSongInSav, importAllSongsFromSav, importSongsFromSav, moveSongInSav } from "../../src/lsdjSongOps";
 import { sameBytes, firstDiff } from "../_bytes";
 
 // all.sav: two REAL multi-block stored projects — [0] "HAPPY BD", [1] "YOURULE" (each 0x8000 decompressed).
@@ -80,6 +80,67 @@ test("importAllSongsFromSav copies both corpus songs into a fresh sav byte-exact
   expect(sameBytes(decompressSlot(dst, 0)!, hb)).toBe(true);
   expect(sameBytes(decompressSlot(dst, 1)!, yr)).toBe(true);
   decodeSav(dst);
+});
+
+// --- importSongsFromSav (the Songs "Add from .sav" subset importer): never clobber the user's data --------
+
+// A target battery with one SAVED song (slot 0 "MINE") plus a DISTINCT UNSAVED working song — the case a
+// clobber would destroy: importing must leave both untouched.
+function targetWithWorking(): { sav: Uint8Array; working: Uint8Array; saved0: Uint8Array } {
+  let sav = injectSong(savFrom({}), 0, "MINE", 9, rawSong(88))!; // saved slot 0
+  const working = rawSong(200); // an unsaved edit live in working memory, unlike any saved slot
+  sav = sav.slice();
+  sav.set(working, 0); // working region [0,0x8000) = the unsaved song
+  return { sav, working, saved0: decompressSlot(sav, 0)! };
+}
+
+test("import copies only the SELECTED source songs into free slots + re-decodes", () => {
+  const src = ALL(); // [0] HAPPY BD, [1] YOURULE
+  const yr = decompressSlot(src, 1)!;
+  const { sav } = targetWithWorking();
+  const after = importSongsFromSav(sav, src, [1]); // import YOURULE only
+  expect(listProjects(after).map((p) => p.name)).toEqual(["MINE", "YOURULE"]); // MINE kept, only YOURULE added
+  expect(sameBytes(decompressSlot(after, 1)!, yr)).toBe(true); // imported song byte-exact (first free slot = 1)
+  decodeSav(after);
+});
+
+test("import leaves the live WORKING song + every existing saved song byte-identical (no clobber)", () => {
+  const { sav, working, saved0 } = targetWithWorking();
+  const after = importSongsFromSav(sav, ALL(), [0, 1]); // import both corpus songs
+  expect(sameBytes(after.subarray(0, 0x8000), working)).toBe(true); // working memory NOT overwritten
+  expect(sameBytes(decompressSlot(after, 0)!, saved0)).toBe(true); // the existing saved song untouched
+  expect(after[0x8140]).toBe(sav[0x8140]); // the active-project pointer is left alone
+  expect(listProjects(after).map((p) => p.name)).toEqual(["MINE", "HAPPY BD", "YOURULE"]);
+  decodeSav(after);
+});
+
+test("import mutates NEITHER input buffer (source + target both byte-identical after)", () => {
+  const src = ALL();
+  const srcBefore = src.slice();
+  const { sav } = targetWithWorking();
+  const tgtBefore = sav.slice();
+  importSongsFromSav(sav, src, [0, 1]);
+  expect(sameBytes(src, srcBefore)).toBe(true); // the source sav is read-only
+  expect(sameBytes(sav, tgtBefore)).toBe(true); // the target we passed is untouched (a fresh image is returned)
+});
+
+test("import into an ALMOST-FULL target fills the last slot then STOPS — no overwrite, no corruption", () => {
+  let sav = savFrom({});
+  for (let i = 0; i < 31; i++) sav = injectSong(sav, i, `S${i}`, 1, rawSong(40 + i))!; // 31 of 32 slots used
+  const existing = Array.from({ length: 31 }, (_, i) => decompressSlot(sav, i)!);
+  const src = ALL(); // 2 songs, but only ONE free slot (31) remains
+  const after = importSongsFromSav(sav, src, [0, 1]);
+  expect(listProjects(after).length).toBe(32); // filled to capacity, not beyond
+  for (let i = 0; i < 31; i++) expect(sameBytes(decompressSlot(after, i)!, existing[i])).toBe(true); // all 31 intact
+  expect(sameBytes(decompressSlot(after, 31)!, decompressSlot(src, 0)!)).toBe(true); // HAPPY BD took the last slot
+  decodeSav(after); // the over-capacity drop left a valid image
+});
+
+test("import skips empty/out-of-range source slots without error", () => {
+  const src = ALL(); // only slots 0,1 occupied
+  const after = importSongsFromSav(savFrom({}), src, [5, 0, 99, 1]); // 5 + 99 are empty/out of range
+  expect(listProjects(after).map((p) => p.name)).toEqual(["HAPPY BD", "YOURULE"]); // only the real ones imported
+  decodeSav(after);
 });
 
 // --- a long SEQUENTIAL chain: an untouched anchor survives arbitrary churn --------------------------------

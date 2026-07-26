@@ -16,12 +16,14 @@ function newFs() {
   return { be, systems, fs };
 }
 
-test("classifyKind: ROM by content, .sav by extension, else other", () => {
+test("classifyKind: ROM by content, .sav/.srm by extension, else other", () => {
   const be = new MockBackend("/cfg");
   be.seed("/roms/a.gb", gbRom());
   expect(classifyKind(be, "/roms/a.gb")).toBe("rom");
   be.seed("/roms/save.sav", "battery");
   expect(classifyKind(be, "/roms/save.sav")).toBe("sav"); // not a ROM, .sav extension
+  be.seed("/roms/save.srm", "battery");
+  expect(classifyKind(be, "/roms/save.srm")).toBe("sav"); // some NES/risa saves use .srm
   be.seed("/roms/notes.txt", "hello");
   expect(classifyKind(be, "/roms/notes.txt")).toBe("other");
   expect(classifyKind(be, "/roms/missing.gb")).toBe("other"); // absent → not a ROM, not .sav

@@ -21,6 +21,8 @@ function ctxOf(stores: AppStores): MenuContext {
     newProject: () => {},
     loadProject: () => {},
     loadRomAsProject: () => {},
+    beginSongImport: () => {},
+    requestExit: () => {},
   };
 }
 const findItem = (items: MenuItem[], id: string) => items.find((i) => i.id === id);

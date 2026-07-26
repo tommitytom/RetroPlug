@@ -118,7 +118,10 @@ composed its own store again); not in CI. Then the `tools/run-sanitizer.sh` thre
 and `validate`. The LSDj-sync / DAW-timing / audio-quality matrix runs headlessly
 too — the real-Reaper
 `reaper:lsdj-*` renders + `tools/reaper-timing-analyze.py`; see
-[docs/lsdj.md](docs/lsdj.md). To run the **whole** Reaper leg (all 6 renders + 3
+[docs/lsdj.md](docs/lsdj.md). `reaper:risa-sync` is the NES/risa twin of the LSDj drift
+render (same `--drift` analyzer, whose labels are therefore tracker-neutral): risa host sync
+is driven by the DAW **transport** alone, so that project carries no MIDI item at all.
+To run the **whole** Reaper leg (all 7 renders + 3
 editor checks) at once, `pnpm reaper:all` fans them out concurrently
 ([tools/run-reaper-suite.sh](tools/run-reaper-suite.sh)); each job is isolated by
 `RP_JOB_TAG` via the sourced [tools/reaper-env.sh](tools/reaper-env.sh) (uniquely named

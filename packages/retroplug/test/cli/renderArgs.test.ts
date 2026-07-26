@@ -7,7 +7,7 @@ test("render args: bare <rom> yields the documented defaults", () => {
   const o = parseRenderArgs(["song.gb"]);
   expect(o.rom).toBe("song.gb");
   expect(o.durationMs).toBe(undefined); // unset → auto (LSDj length) / 8000 default applied in render.ts
-  expect(o.maxDurationMs).toBe(300000);
+  expect(o.maxDurationMs).toBe(600000); // 10 min default cap
   expect(o.split).toBe("mix");
   expect(o.start).toBe(true); // auto-start playback by default
   expect(o.transport).toBe(false);

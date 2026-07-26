@@ -125,3 +125,53 @@ test("writeWorking/readWorking round-trip real aux notes into the shared WRAM la
   expect(w[auxBase]).toBe(0x24);
   expect(w[auxBase + 3]).toBe(0x30);
 });
+
+// --- legacy WAVE -> Z-Saw normalization ----------------------------------------------------------------
+// Instrument type 4 was WAVE up to 2.2.x and is Z-Saw from 2.3.0, in records of the SAME version (v7), so
+// the marker byte at 11 is the only discriminator. risa normalizes on its own load paths; Songs > Load
+// writes working RAM directly under a running core, so writeWorking has to do the same or a pre-2.3.0
+// song's WAVE instruments read as Z-Saw garbage until the next reset.
+
+// A record whose instrument 0 is type 4 with `byte11` in the legacy WAVE sound-selector slot.
+function recordWithType4(byte11: number): ReturnType<typeof decodeRecord> {
+  const rec = decodeRecord(recordBytes("raver_v7"));
+  const inst = new Uint8Array(12);
+  inst[6] = 4; // INST_TYPE_ZSAW / legacy WAVE
+  inst[11] = byte11;
+  rec.instruments[0] = inst;
+  return rec;
+}
+
+test("writeWorking converts a legacy WAVE instrument to Z-Saw (marker, timbre, default envelope)", () => {
+  for (const [byte11, timbre] of [[0, 0], [1, 1], [3, 1], [2, 0]] as const) {
+    const w = writeWorking(recordWithType4(byte11));
+    const inst = Array.from(w.slice(INST0, INST0 + 12));
+    expect(inst[6]).toBe(4); // still type 4
+    expect(inst[11]).toBe(0xa5); // claimed by the Z-Saw marker
+    expect(inst[0]).toBe(timbre); // sound selector's low bit picks the saw timbre
+    expect([inst[1], inst[2], inst[10]]).toEqual([0x88, 0x00, 0x00]); // Z-Saw's fixed default envelope
+  }
+});
+
+test("writeWorking leaves an already-marked Z-Saw instrument alone (idempotent)", () => {
+  const rec = recordWithType4(0xa5);
+  const inst = rec.instruments[0]!;
+  inst[0] = 4; // triangle timbre
+  inst[1] = 0x42; // a hand-set envelope the normalizer must not stomp
+  const w = writeWorking(rec);
+  expect(Array.from(w.slice(INST0, INST0 + 12))).toEqual(Array.from(inst));
+
+  // And running it again over the already-converted image changes nothing further.
+  const once = writeWorking(recordWithType4(1));
+  const twice = writeWorking(readWorking(once));
+  expect(Array.from(twice.slice(INST0, INST0 + 12))).toEqual(Array.from(once.slice(INST0, INST0 + 12)));
+});
+
+test("normalization is scoped to type 4 - other instrument types are untouched", () => {
+  const rec = decodeRecord(recordBytes("raver_v7"));
+  const inst = new Uint8Array(12);
+  inst[6] = 3; // DMC
+  inst[11] = 0x07; // would be the WAVE sound selector, but this isn't type 4
+  rec.instruments[0] = inst;
+  expect(Array.from(writeWorking(rec).slice(INST0, INST0 + 12))).toEqual(Array.from(inst));
+});

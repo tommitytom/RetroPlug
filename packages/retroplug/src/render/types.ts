@@ -11,6 +11,9 @@ export type SplitMode = "mix" | "channels" | "pins";
 
 export type Platform = "gb" | "nes" | "gba" | "other";
 
+/** Target-exists policy for a render: clobber the file, or write to the next free "<name>_N". */
+export type OnExists = "overwrite" | "rename";
+
 /** A fully-resolved render request. The CLI's parseRenderArgs produces one; the worker builds one from a
  *  job spec. Paths (`rom`/`sav`/`state`/`out`) are whatever the host can open — real files for the CLI,
  *  host-provided paths for the worker. */
@@ -23,6 +26,7 @@ export interface RenderOpts {
   maxDurationMs: number; // safety cap for LSDj length auto-detect (no-HFF fallback), ms
   sampleRate?: number; // host render rate (Hz); undefined = engine default (44100). Must be set pre-build.
   split: SplitMode;
+  onExists?: OnExists; // when the target file exists: "overwrite" (default) or "rename" to the next free name
   bpm?: number;
   transport: boolean;
   start: boolean; // auto-start playback on boot (press Start); default true

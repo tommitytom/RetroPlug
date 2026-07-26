@@ -65,6 +65,12 @@ set_target_properties(mesen PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON
+    # LTO for optimized configs only (Debug stays fast to build). Intra-mesen cross-TU inlining across the
+    # hot CPU/PPU/APU stepping loop, which is ~99% of the audio-thread cost. Measured ~10% faster NES core
+    # on the Cortex-A53 handheld (nes-bench: xRT 0.83 -> 0.92 over plain -O3). The single biggest safe lever
+    # for NES perf there — JS is ~0.5% of the block, the emulator core dominates. Free at runtime.
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
+    INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON
 )
 
 if(WIN32)

@@ -13,7 +13,7 @@
 // Ported from tools/rom_patcher/src/save_manager/{catalog.js,constants.js,record_codec.js}. Mirrors
 // the module shape of ../../lsdj/codec/sav.ts (listSongs is the risa analog of LSDj listProjects).
 
-import { BANK_DATA, WRAM_BANK_SIZE, SAVE_MAGIC, SAVE_MAGIC_OFFSET, SONG_NAME_OFFSET, SONG_NAME_LEN } from "./constants";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_MAGIC, SAVE_MAGIC_OFFSET, SONG_NAME_OFFSET, SONG_NAME_LEN, SAVE_CURRENT_ENTRY_OFFSET } from "./constants";
 
 /** One saved song in the RSAV catalog — index + name, plus the record version and total byte length
  *  (both read cheaply from the record header, no payload decode). */
@@ -83,6 +83,30 @@ export function workingSongName(rawSave: Uint8Array): string | null {
   return decodeSongName(save.subarray(nameOff, nameOff + SONG_NAME_LEN));
 }
 
+/** The live working song (WRAM banks 0-3): its name + whether it is UNSAVED — i.e. not linked to any saved
+ *  catalog slot (the 'current entry' byte at bank-1 0x1e94 is 0xFF). null when there's no working song (the
+ *  'N8T' magic is absent) or the container is unrecognized. The 'unsaved' flag drives the Songs menu's
+ *  synthetic working-song row: some shipped batteries carry the artist's song only in working memory (never
+ *  saved to the catalog), so it would otherwise never appear in the saved-song list. */
+export function workingSongInfo(rawSave: Uint8Array): { name: string; unsaved: boolean } | null {
+  let save: Uint8Array;
+  try {
+    save = normalizeSaveContainer(rawSave).save;
+  } catch {
+    return null; // unrecognized container size
+  }
+  // A legacy (v1 @0x6000) catalog overlaps the working-song region (banks 0-3), so those bytes aren't a
+  // valid working song. Live batteries are always the current (v2) layout — the firmware migrates a legacy
+  // one on boot — so this only skips artificial legacy inputs (mirrors loadSongToWorkingInSav's requirement).
+  if (chooseCatalogLayout(save) === LEGACY_LAYOUT) return null;
+  const magicOff = BANK_DATA * WRAM_BANK_SIZE + SAVE_MAGIC_OFFSET;
+  for (let i = 0; i < SAVE_MAGIC.length; i++) if (save[magicOff + i] !== SAVE_MAGIC[i]) return null;
+  const nameOff = BANK_DATA * WRAM_BANK_SIZE + SONG_NAME_OFFSET;
+  const name = decodeSongName(save.subarray(nameOff, nameOff + SONG_NAME_LEN));
+  const unsaved = save[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] === 0xff;
+  return { name, unsaved };
+}
+
 /** Normalize an on-disk container to the raw 64 KB battery image. Handles the 32 KB rescue dump
  *  (zero-extended), the plain 64 KB image, the 65 KB emulator/.srm tail variant, and the 256 KB
  *  Analogue Pocket wrapper (save is the first 64 KB). Throws on an unrecognized length. */
@@ -119,6 +143,19 @@ export function chooseCatalogLayout(save: Uint8Array): CatalogLayout | null {
   if (hasCatalogAt(save, CURRENT_LAYOUT)) return CURRENT_LAYOUT;
   if (hasCatalogAt(save, LEGACY_LAYOUT)) return LEGACY_LAYOUT;
   return null;
+}
+
+/** True when `bytes` is a recognizable risa battery carrying a valid RSAV catalog (current v2 @0x8000 or
+ *  legacy v1 @0x6000) — the gate for "is this a risa sav we can read songs from". Tolerant of the container
+ *  wrappers normalizeSaveContainer accepts (32 KB rescue / 64 KB / 65 KB .srm tail / Pocket). */
+export function isRisaSav(bytes: Uint8Array): boolean {
+  let save: Uint8Array;
+  try {
+    save = normalizeSaveContainer(bytes).save;
+  } catch {
+    return false;
+  }
+  return chooseCatalogLayout(save) !== null;
 }
 
 /** Strict catalog parse of a normalized 64 KB image for the given layout. Validates magic, version,

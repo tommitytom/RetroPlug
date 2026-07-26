@@ -102,7 +102,7 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         for (const auto& cb : dsp_.coreBytes_) {
             if (cb.data.empty()) continue;
             if (SystemBase* t = project_.findSystem(cb.system))
-                t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size());
+                t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size(), cb.flush);
         }
         // role-generated button presses → the addressed core.
         for (const auto& bo : dsp_.buttonOut_)
@@ -134,7 +134,13 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
     }
     // Copy each core's freshly-published frame/state/SRAM into the owned registry the control plane
     // reads through — the one place every driver funnels the block, so it covers all of them.
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanBegin(DSP_SPAN_PUBLISH);  // the audio->control-plane state pump (per-block frame + timed savestate)
+#endif
     registry_.publishAll(project_, frames, sampleRate_);
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanEnd();  // state-publish
+#endif
     if (transport_)
         ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
 }

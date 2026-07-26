@@ -5,8 +5,17 @@
 import { RISA_SYMBOLS } from "./symbols.generated";
 import type { RisaLayout } from "./types";
 
-function layoutFrom(version: string): RisaLayout {
-  const s = RISA_SYMBOLS[version];
+// Some risa releases share an identical internal-RAM layout — cc65 didn't move the BSS/ZP variables the
+// reader tracks between those builds — so rather than duplicate a symbol table (and need that version's
+// label file), alias the version to the one whose snapshot we have. 2.2.0 → 2.2.1 is verified empirically:
+// decoding a live 2.2.0 core with the 2.2.1 addresses yields a coherent state — seq_mode, tempo, screen,
+// and per-track playback positions all decode and advance correctly (test-native/risa-220-layout).
+const VERSION_ALIASES: Record<string, string> = { "2.2.0": "2.2.1" };
+
+// `version` is the ROM's real version (what a RisaState reports); `symbolsKey` is the snapshot the
+// addresses come from — the same as `version` unless it was resolved through VERSION_ALIASES.
+function layoutFrom(symbolsKey: string, version: string = symbolsKey): RisaLayout {
+  const s = RISA_SYMBOLS[symbolsKey];
   return {
     version,
     seqMode: s.seq_mode,
@@ -28,13 +37,17 @@ function layoutFrom(version: string): RisaLayout {
   };
 }
 
-/** The layout for `version` (e.g. "2.2.1"), or null if that version has no committed symbol snapshot. */
+/** The layout for `version` (e.g. "2.2.1"), or null if that version has neither a committed symbol
+ *  snapshot nor an alias to one. An aliased version keeps its own label but borrows the addresses. */
 export function resolveRisaLayout(version: string | null): RisaLayout | null {
-  if (version && version in RISA_SYMBOLS) return layoutFrom(version);
+  if (!version) return null;
+  if (version in RISA_SYMBOLS) return layoutFrom(version);
+  const alias = VERSION_ALIASES[version];
+  if (alias && alias in RISA_SYMBOLS) return layoutFrom(alias, version);
   return null;
 }
 
-/** Every risa version we have a symbol snapshot for. */
+/** Every risa version the reader supports — a committed symbol snapshot or an alias to one. */
 export function supportedRisaVersions(): string[] {
-  return Object.keys(RISA_SYMBOLS);
+  return [...Object.keys(RISA_SYMBOLS), ...Object.keys(VERSION_ALIASES)];
 }

@@ -14,20 +14,19 @@
 // inside the same Promise — no pending-mode latch, no out-of-band event correlation.
 
 import type { HostBackend } from "./backend";
-import { extensionLower } from "./pathUtil";
-import { siblingRplgPath } from "./savPaths";
+import { siblingRplgPath, isSavPath, SAV_PATTERNS } from "./savPaths";
 import { classifyRom, type SystemsStore } from "./systemsStore";
 
-export const ROM_OR_SAV_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sav"];
+export const ROM_OR_SAV_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", ...SAV_PATTERNS];
 export const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes"];
 
-/** What a picked file is: a ROM (any known format, by content), a `.sav` (by
- *  extension, since it isn't a ROM), or something else. */
+/** What a picked file is: a ROM (any known format, by content), a battery save (`.sav`/`.srm`, by
+ *  extension since it isn't a ROM), or something else. */
 export type FileKind = "rom" | "sav" | "other";
 
 export function classifyKind(backend: HostBackend, path: string): FileKind {
   if (classifyRom(backend, path) !== "unknown") return "rom";
-  if (extensionLower(path) === ".sav") return "sav";
+  if (isSavPath(path)) return "sav";
   return "other";
 }
 
@@ -107,7 +106,7 @@ export class FileSelection {
   // Open the ROM-or-sav browser and resolve the pick to a concrete ROM (+ paired sav), running the 2nd
   // ROM-only browser for an unpaired `.sav`. No store mutation — the shared front half of every op.
   private async pickRom(): Promise<Pick> {
-    const path = await this.backend.openFileBrowser({ title: "Open ROM or .sav", patterns: ROM_OR_SAV_PATTERNS });
+    const path = await this.backend.openFileBrowser({ title: "Open ROM or Save", patterns: ROM_OR_SAV_PATTERNS });
     if (path === null) return { kind: "cancelled" };
     if (classifyKind(this.backend, path) === "sav") return this.pairSav(path);
     if (classifyKind(this.backend, path) === "rom") return { kind: "rom", rom: path };

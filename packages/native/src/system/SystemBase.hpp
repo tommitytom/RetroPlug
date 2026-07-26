@@ -90,7 +90,10 @@ public:
     // Audio-thread: push `size` RAW bytes into the core's device byte-input, scheduled at intra-block
     // sample offset `frame` — no MIDI framing / length cap. The cross-core analog of pushSerialIn for a
     // byte transport (the NES routes it to the N8 FIFO); default no-op for cores without one.
-    virtual void pushCoreBytes(std::uint32_t /*frame*/, const std::uint8_t* /*data*/, std::size_t /*size*/) {}
+    // `flush` discards whatever the device still holds first, for a protocol message that is a barrier
+    // (risa's host-sync arm) rather than a continuation of the stream.
+    virtual void pushCoreBytes(std::uint32_t /*frame*/, const std::uint8_t* /*data*/, std::size_t /*size*/,
+                               bool /*flush*/ = false) {}
 
     // Audio-thread: enqueue a button transition.
     virtual void pressButton(std::uint8_t /*button*/, bool /*down*/) {}

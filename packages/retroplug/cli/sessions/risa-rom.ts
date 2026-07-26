@@ -437,7 +437,7 @@ const RISA_ROM_HELP = [
   "  (themes are risa's .rit palette-role JSON; fonts are raw 8 KB NES CHR banks; kits are 8 KB DPCM banks)",
   "",
   "build-kit / import-sample flags:  --rate N (PAL DPCM index 0-15, default 12)  --loop  --no-normalize",
-  "                     --gain X  --filter LowPass|HighPass|…  --cutoff HZ  --q Q   (no dither — DMC is 1-bit)",
+  "                     --gain X  --filter LowPass|HighPass|...  --cutoff HZ  --q Q   (no dither; DMC is 1-bit)",
   "",
   "ONE schema for patch (whole ROM) and build-kit (a single, slotless kit entry). Every entry either",
   "BUILDS/IMPORTS from a file or TWEAKS metadata; `slot` = the asset index.",

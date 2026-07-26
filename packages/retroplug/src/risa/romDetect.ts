@@ -24,32 +24,46 @@ export function isRisaRomHeader(header: Uint8Array): boolean {
   return true;
 }
 
-// The host-sync capability marker. Sync-capable risa ROMs embed the ASCII tag "RISA-SYNC" + a 1-byte
-// protocol version within the first 0x150 bytes of the .nes (the RomContext header prefix — ROLE_HEADER_LEN);
-// older builds omit it. The tag identifies risa's dormant, UI-less N8-FIFO receive path (F9-locate / FA / F8
-// / FC), which the `risa-sync` DSP role drives from the DAW transport.
-const RISA_SYNC_MARKER = "RISA-SYNC";
-const RISA_SYNC_SCAN_LEN = 0x150;
+// The host-sync capability marker. Every normal risa build from 2.3.0 on embeds the ASCII tag "RISAxyz"
+// within the first 0x150 bytes of the .nes (the RomContext header prefix, ROLE_HEADER_LEN), where xyz are
+// the three version digits: 2.3.0 ships "RISA230". risa generates it from APP_VERSION_TEXT, so the marker
+// both identifies the dormant, UI-less N8-FIFO receive path (F9-locate / FA / F8 / FC) that the `risa-sync`
+// DSP role drives from the DAW transport, AND stamps the version - readable from the header prefix alone,
+// unlike the "RISA V<x.y.z>" tag identifyRisaVersion() scans for, which sits deep in the PRG.
+//
+// Pre-2.3.0 releases carry no marker and have no receive path, so they simply don't get the role. (An
+// early prototype used a "RISA-SYNC" tag and a 4-byte arm packet; 2.3.0 rejects that arm outright, so
+// there is one protocol, not two.)
+const RISA_MARKER = "RISA";
+const RISA_MARKER_DIGITS = 3;
+const RISA_MARKER_SCAN_LEN = 0x150;
 
-/** The risa host-sync protocol version advertised in the ROM header prefix, or -1 if the marker is absent.
- *  Scans the first 0x150 bytes for the ASCII "RISA-SYNC" tag; the byte immediately after it is the version
- *  (0x01 today). Reads at most the header prefix, so the short RomContext header is enough. */
-export function risaSyncVersion(header: Uint8Array): number {
-  const limit = Math.min(header.length, RISA_SYNC_SCAN_LEN);
-  for (let i = 0; i + RISA_SYNC_MARKER.length < limit; i++) {
+/** The app version advertised in the ROM header prefix as "RISAxyz" (e.g. "2.3.0"), or null when the
+ *  marker is absent - a pre-2.3.0 build, or not risa at all. Reads at most the header prefix, so the
+ *  short RomContext header is enough; identifyRisaVersion() is the whole-ROM equivalent for older carts. */
+export function risaMarkerVersion(header: Uint8Array): string | null {
+  const limit = Math.min(header.length, RISA_MARKER_SCAN_LEN);
+  const end = limit - RISA_MARKER.length - RISA_MARKER_DIGITS;
+  for (let i = 0; i <= end; i++) {
     let hit = true;
-    for (let j = 0; j < RISA_SYNC_MARKER.length; j++) {
-      if (header[i + j] !== RISA_SYNC_MARKER.charCodeAt(j)) {
+    for (let j = 0; j < RISA_MARKER.length; j++) {
+      if (header[i + j] !== RISA_MARKER.charCodeAt(j)) {
         hit = false;
         break;
       }
     }
-    if (hit) return header[i + RISA_SYNC_MARKER.length];
+    if (!hit) continue;
+    const d = i + RISA_MARKER.length;
+    // Exactly three ASCII digits, one per version component.
+    if (header[d] < 0x30 || header[d] > 0x39) continue;
+    if (header[d + 1] < 0x30 || header[d + 1] > 0x39) continue;
+    if (header[d + 2] < 0x30 || header[d + 2] > 0x39) continue;
+    return `${header[d] - 0x30}.${header[d + 1] - 0x30}.${header[d + 2] - 0x30}`;
   }
-  return -1;
+  return null;
 }
 
-/** True if the ROM advertises the risa host-sync receive path (any protocol version). */
+/** True if the ROM advertises the risa host-sync receive path. */
 export function isRisaSyncRom(header: Uint8Array): boolean {
-  return risaSyncVersion(header) >= 0;
+  return risaMarkerVersion(header) !== null;
 }

@@ -1,7 +1,7 @@
 // risa ROM detection (M2 UI plumbing): the iNES-header fingerprint + the provider that attaches the
 // `risa` marker role. Pure-TS (no core) — mirrors how the LSDj provider is exercised via the registry.
 import { test, expect } from "../../testing/harness";
-import { isRisaRomHeader, isRisaSyncRom, risaSyncVersion } from "../../src/risa";
+import { isRisaRomHeader, isRisaSyncRom, risaMarkerVersion } from "../../src/risa";
 import { buildAppRegistry } from "../../src/appHost";
 
 // The real risa 2.2.1 iNES 2.0 header (bytes 0..15): NES2.0, mapper 5, battery, 512KB PRG, 32KB CHR,
@@ -36,26 +36,39 @@ test("the risa ROM provider attaches the `risa` marker role to a risa ROM only",
   expect(nromRoles.includes("nes-n8-midi")).toBeTruthy();
 });
 
-// --- host-sync capability marker ("RISA-SYNC" + version byte in the header prefix) ---------------------
+// --- host-sync capability marker ("RISAxyz" in the header prefix) -------------------------------------
 
-// A full 0x150 RomContext header prefix: the 16-byte iNES header + the ASCII "RISA-SYNC" tag and a version
-// byte at `at` (16 in the real ROMs — right after the header).
-function withSyncMarker(base: Uint8Array, version = 0x01, at = 16): Uint8Array {
-  const marker = "RISA-SYNC";
+// A full 0x150 RomContext header prefix: the 16-byte iNES header + the ASCII "RISAxyz" version tag at `at`
+// (16 in the real ROMs, right after the header).
+function withSyncMarker(base: Uint8Array, version = "2.3.0", at = 16): Uint8Array {
+  const marker = "RISA" + version.split(".").join("");
   const h = new Uint8Array(0x150);
   h.set(base.subarray(0, Math.min(base.length, 0x150)), 0);
   for (let i = 0; i < marker.length; i++) h[at + i] = marker.charCodeAt(i);
-  h[at + marker.length] = version;
   return h;
 }
 
-test("risaSyncVersion reads the RISA-SYNC marker's version byte; -1 / false when absent", () => {
-  expect(risaSyncVersion(withSyncMarker(RISA_HEADER, 0x01))).toBe(0x01);
-  expect(risaSyncVersion(withSyncMarker(RISA_HEADER, 0x02))).toBe(0x02);
-  expect(risaSyncVersion(withSyncMarker(RISA_HEADER, 0x01, 100))).toBe(0x01); // found anywhere in the prefix
-  expect(risaSyncVersion(RISA_HEADER)).toBe(-1); // a bare 16-byte header carries no marker
+test("risaMarkerVersion reads the RISAxyz version; null / false when absent", () => {
+  expect(risaMarkerVersion(withSyncMarker(RISA_HEADER, "2.3.0"))).toBe("2.3.0");
+  expect(risaMarkerVersion(withSyncMarker(RISA_HEADER, "2.4.1"))).toBe("2.4.1");
+  expect(risaMarkerVersion(withSyncMarker(RISA_HEADER, "2.3.0", 100))).toBe("2.3.0"); // found anywhere in the prefix
+  expect(risaMarkerVersion(RISA_HEADER)).toBe(null); // a bare 16-byte header carries no marker
   expect(isRisaSyncRom(withSyncMarker(RISA_HEADER))).toBeTruthy();
   expect(isRisaSyncRom(RISA_HEADER)).toBeFalsy();
+});
+
+test("risaMarkerVersion needs three digits, so a bare 'RISA' string is not a marker", () => {
+  // The literal "RISA V2.2.1" a pre-2.3.0 PRG carries would otherwise read as a marker.
+  const noDigits = new Uint8Array(0x150);
+  noDigits.set(RISA_HEADER, 0);
+  for (let i = 0; i < 6; i++) noDigits[16 + i] = "RISA V".charCodeAt(i);
+  expect(risaMarkerVersion(noDigits)).toBe(null);
+
+  // Two digits then a non-digit is likewise rejected (a truncated / unrelated hit).
+  const twoDigits = new Uint8Array(0x150);
+  twoDigits.set(RISA_HEADER, 0);
+  for (let i = 0; i < 7; i++) twoDigits[16 + i] = "RISA23-".charCodeAt(i);
+  expect(risaMarkerVersion(twoDigits)).toBe(null);
 });
 
 test("the provider attaches risa-sync only to a marker-bearing risa ROM", () => {

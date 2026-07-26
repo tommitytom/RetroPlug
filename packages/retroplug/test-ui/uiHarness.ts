@@ -42,8 +42,9 @@ interface NativeUi {
   findByTextContaining(substr: string): WidgetInfo | null;
   findFirstByType(compType: number): WidgetInfo | null;
   focused(): WidgetInfo | null;
-  tapKey(lvKey: number): void;
+  tapKey(lvKey: number, mod?: number): void;
   clickAt(x: number, y: number): void;
+  rightClick(x: number, y: number): void;
   moveMouse(x: number, y: number): void;
   gamepadButton(name: string, press: boolean, pad?: number): void;
   gamepadAxis(axis: string, value: number, pad?: number): void;
@@ -66,6 +67,11 @@ export const CompType = {
 // LVGL key codes for tapKey (mirror LV_KEY_*).
 export const Key = {
   Up: 17, Down: 18, Right: 19, Left: 20, Esc: 27, Enter: 10,
+} as const;
+
+// DPF keyboard modifier mask bits (mirror Base.hpp Modifier), for tapKey's `mod` arg.
+export const Mod = {
+  Shift: 1 << 0, Control: 1 << 1, Alt: 1 << 2, Super: 1 << 3,
 } as const;
 
 // lv_obj state bits (mirror LVGL 9.x lv_state_t in lv_obj_style.h), for WidgetInfo.state assertions.
@@ -112,10 +118,13 @@ export const ui = {
   findFirstByType(compType: number): WidgetInfo | null { return rp.findFirstByType(compType); },
   /** The widget currently focused in the keypad group, or null. */
   focused(): WidgetInfo | null { return rp.focused(); },
-  /** Tap an LVGL key (see Key) — drives focus-group nav + activation. */
-  tapKey(lvKey: number): void { rp.tapKey(lvKey); },
+  /** Tap an LVGL key (see Key) — drives focus-group nav + activation. `mod` is the DPF modifier mask
+   *  (see Mod) mirrored on the "key" bus, so a test can type a Shift-held (uppercase) character. */
+  tapKey(lvKey: number, mod = 0): void { rp.tapKey(lvKey, mod); },
   /** Click (press+release) at absolute (x,y) → the widget's onClick. */
   clickAt(x: number, y: number): void { rp.clickAt(x, y); },
+  /** Emit a RIGHT-button "mouse" bus press+release at (x,y) — drives the App's right-click open-menu path. */
+  rightClick(x: number, y: number): void { rp.rightClick(x, y); },
   /** Move the (unpressed) pointer to absolute (x,y) → LVGL hover on the widget under it. */
   moveMouse(x: number, y: number): void { rp.moveMouse(x, y); },
   /** Emit one SDL controller button transition on the "gamepad-button" bus (name = SDL canonical, e.g.

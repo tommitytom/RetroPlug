@@ -12,7 +12,7 @@
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
-import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix } from "./savPaths";
+import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
 import {
   type SystemEntry,
   findById,
@@ -557,9 +557,13 @@ export class SystemsStore {
       platform = fmt;
     }
     const core = defaultCoreFor(platform);
-    const override = resolveSavOverride(romPath, suffix, explicitSav ?? "", (p) =>
+    let override = resolveSavOverride(romPath, suffix, explicitSav ?? "", (p) =>
       this.backend.canonicalize(p),
     );
+    // With no explicit pick, auto-adopt an existing `<rom>.srm` battery sibling when there's no `<rom>.sav`
+    // (some NES/risa saves use the .srm extension) — so we load from and auto-save back to it, rather than
+    // deriving a stray new `<rom>.sav` next to it.
+    if (!override && !explicitSav && !embeddedRom) override = this.adoptExistingSavSibling(romPath, suffix);
     const savPath = embeddedRom ? null : resolveSavPath(romPath, suffix, override);
     const id = allocSystemId();
     // Roles are known before the build (a pure function of core/platform/header), so a role's
@@ -585,6 +589,16 @@ export class SystemsStore {
         roles,
       },
     };
+  }
+
+  // The battery save to adopt for a freshly-built system when the caller didn't pick one: keep deriving
+  // `<rom>.sav` (return "" = no override) if it exists or nothing does; adopt a non-.sav sibling (e.g.
+  // `<rom>.srm`) as an explicit override only when the .sav is absent but that alternative is present.
+  private adoptExistingSavSibling(romPath: string, suffix: number): string {
+    const [savCand, ...alts] = siblingSavCandidates(romPath, suffix);
+    if (this.backend.fileExists(savCand)) return ""; // <rom>.sav present → derive as usual
+    for (const cand of alts) if (this.backend.fileExists(cand)) return cand; // e.g. <rom>.srm → adopt it
+    return ""; // nothing on disk → default to <rom>.sav for new saves
   }
 
   // The default roles for a freshly-built system: the core's config role + any feature

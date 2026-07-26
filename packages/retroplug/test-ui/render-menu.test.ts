@@ -1,32 +1,27 @@
-// The redesigned System > Render submenu, end to end on the headless display. A file-dropped ROM (unlike
-// the embedded "Load mGB", it has a real romPath, so the Render submenu shows) lets us drive the selectors
-// and the single Render… action. Audio Routing (the split mode) / Sample Rate cycle on Left/Right; Max Duration steps ±1s on
-// Left/Right and ±30s on PageUp/PageDown (the coarse-step path added to Menu.tsx). Render… snapshots the
-// live state and calls __rp_startRender — spied here (the harness doesn't bind it), with the file browser
-// stubbed to return a path — so we assert the spec carries the picked split / sample rate / max duration.
+// The redesigned System > Render submenu, end to end on the headless display. A file-dropped mGB (a real
+// romPath, non-tracker → the filename derives to the ROM stem "mGB") drives the new explicit rows:
+//   Output Dir (a native FOLDER picker), Filename (derived), If Exists (Overwrite/Rename),
+//   Split / Sample Rate / Max Duration, and a dialog-less "Render".
+// The file browser is stubbed; we assert the Output Dir opens in DIRECTORY mode and that "Render" writes
+// to <outputDir>/<filename>.wav with the chosen routing / rate / on-exists policy — no dialog at render time.
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
 
-const PAGE_UP = 0xe031; // DPF kKeyPageUp — reaches the raw "key" bus (not LVGL-translated)
-const PAGE_DOWN = 0xe032;
-
 interface Captured {
   systemId: number;
-  spec: { split: string; sampleRate?: number; maxDurationMs?: number; out: string };
+  spec: { split: string; sampleRate?: number; maxDurationMs?: number; onExists?: string; out: string };
 }
 
-/** Read the "Max Duration: M:SS" row's seconds, or -1 if absent. */
-function maxDurationSec(): number {
-  const w = ui.findByTextContaining("Max Duration:");
-  if (!w) return -1;
-  const m = /Max Duration:\s*(\d+):(\d{2})/.exec(w.text);
-  return m ? Number(m[1]) * 60 + Number(m[2]) : -1;
+interface BrowseOpen {
+  title: string;
+  directory: boolean;
+  startDir: string;
 }
 
-test("render submenu: selectors cycle (arrows + PageUp/PageDown) and Render… applies them", () => {
+test("render submenu: Output Dir folder-picks, and Render writes <dir>/<name>.wav (no dialog)", () => {
   const g = globalThis as {
     __rp_startRender?: (id: number, spec: string) => number;
-    __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string) => void;
+    __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string, sd: string, dir: boolean) => void;
     __rp_onFileBrowserResult?: (path: string | null) => void;
   };
   let captured: Captured | null = null;
@@ -34,13 +29,17 @@ test("render submenu: selectors cycle (arrows + PageUp/PageDown) and Render… a
     captured = { systemId, spec: JSON.parse(spec) };
     return 1;
   };
-  // Stub the native file dialog to immediately resolve a path (the UI's realBackend installs the callback).
-  g.__rp_openFileBrowser = () => g.__rp_onFileBrowserResult?.("/tmp/uitest-render.wav");
+  // Stub the native browser: record each open (title / directory-mode / startDir), then resolve a folder.
+  const opens: BrowseOpen[] = [];
+  g.__rp_openFileBrowser = (title, _p, _s, _d, sd, dir) => {
+    opens.push({ title, directory: dir, startDir: sd });
+    g.__rp_onFileBrowserResult?.("/tmp/renders");
+  };
 
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
 
-  // Drop a real ROM file → a disk-backed system (has a romPath, so Render shows).
+  // Drop a real ROM → a disk-backed system (has a romPath, so Render shows). mGB is not a tracker cart.
   ui.fileDrop(ui.romDir() + "/mGB.gb", 0, 0);
   ui.pump(30);
   expect(ui.findByTestId("tile-0") != null).toBeTruthy();
@@ -55,53 +54,55 @@ test("render submenu: selectors cycle (arrows + PageUp/PageDown) and Render… a
   ui.tapKey(Key.Enter);
   ui.pump(10);
 
-  // The three selectors + the action are present. (The split cycler is labelled "Audio Routing".)
-  expect(ui.findByTextContaining("Audio Routing:") != null).toBeTruthy();
+  // All the new rows are present, and the filename defaulted to the ROM stem ("mGB", non-tracker).
+  expect(ui.findByTextContaining("Output Dir:") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Filename: mGB") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Split:") != null).toBeTruthy();
   expect(ui.findByTextContaining("Sample Rate:") != null).toBeTruthy();
   expect(ui.findByTextContaining("Max Duration:") != null).toBeTruthy();
-  expect(ui.findByTextContaining("Render...") != null).toBeTruthy();
+  expect(ui.findByTextContaining("If Exists: Overwrite") != null).toBeTruthy();
 
-  // Audio Routing: Mix → Channels (mGB is sameboy, so channels is offered; pins is not).
-  expect(ui.findByTextContaining("Audio Routing: Mix") != null).toBeTruthy();
-  expect(navTo("Audio Routing:")).toBeTruthy();
+  // Output Dir → a DIRECTORY picker; the chosen folder shows next to the row.
+  expect(navTo("Output Dir:")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+  expect(opens.length).toBe(1);
+  expect(opens[0].title).toBe("Output Dir");
+  expect(opens[0].directory).toBe(true); // the render "Output Dir" is a folder picker, not a file dialog
+  expect(ui.findByTextContaining("Output Dir: /tmp/renders") != null).toBeTruthy();
+
+  // If Exists: Overwrite → Rename (sits right below Filename, above the routing rows).
+  expect(navTo("If Exists:")).toBeTruthy();
   ui.tapKey(Key.Right);
   ui.pump(6);
-  expect(ui.findByTextContaining("Audio Routing: Channels") != null).toBeTruthy();
+  expect(ui.findByTextContaining("If Exists: Rename") != null).toBeTruthy();
+
+  // Split: Mix → Channels (mGB is sameboy, so channels is offered).
+  expect(navTo("Split:")).toBeTruthy();
+  ui.tapKey(Key.Right);
+  ui.pump(6);
+  expect(ui.findByTextContaining("Split: Channels") != null).toBeTruthy();
 
   // Sample Rate: 44100 → 48000.
-  expect(ui.findByTextContaining("Sample Rate: 44100 Hz") != null).toBeTruthy();
   expect(navTo("Sample Rate:")).toBeTruthy();
   ui.tapKey(Key.Right);
   ui.pump(6);
   expect(ui.findByTextContaining("Sample Rate: 48000 Hz") != null).toBeTruthy();
 
-  // Max Duration: Left/Right = ±1s; PageUp/PageDown = ±30s.
-  expect(navTo("Max Duration:")).toBeTruthy();
-  const base = maxDurationSec();
-  expect(base > 0).toBeTruthy();
-  ui.tapKey(Key.Right);
-  ui.pump(6);
-  expect(maxDurationSec()).toBe(base + 1); // fine step
-  ui.tapKey(PAGE_UP);
-  ui.pump(6);
-  expect(maxDurationSec()).toBe(base + 31); // coarse +30
-  ui.tapKey(PAGE_DOWN);
-  ui.pump(6);
-  expect(maxDurationSec()).toBe(base + 1); // coarse -30 back
-
-  const picked = maxDurationSec();
-
-  // Render… → file browser stub resolves → __rp_startRender fires with the picked options.
-  expect(navTo("Render...")).toBeTruthy();
+  // Render → dialog-less; __rp_startRender fires with the composed path + the chosen options. No extra
+  // browser open (still just the one Output Dir dialog). Focus is on Sample Rate (above the Render action),
+  // so this down-only navTo lands on the child action, not the parent "Render" submenu row above it.
+  expect(navTo("Render")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(10);
 
+  expect(opens.length).toBe(1); // Render opened NO dialog
   expect(captured != null).toBeTruthy();
   const cap = captured!;
+  expect(cap.spec.out).toBe("/tmp/renders/mGB.wav"); // <Output Dir>/<Filename>.wav
   expect(cap.spec.split).toBe("channels");
   expect(cap.spec.sampleRate).toBe(48000);
-  expect(cap.spec.maxDurationMs).toBe(picked * 1000);
-  expect(cap.spec.out).toBe("/tmp/uitest-render.wav");
+  expect(cap.spec.onExists).toBe("rename");
 
   delete g.__rp_startRender;
   delete g.__rp_openFileBrowser;

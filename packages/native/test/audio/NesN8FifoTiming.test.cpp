@@ -173,3 +173,71 @@ TEST_CASE("NES N8 raw pushBytes past the block end rebases into the next block",
     CHECK(role.fifoRxCount() == 1);
     CHECK(role.readFifoByte() == 0xFA);
 }
+
+// --- barrier flush -------------------------------------------------------------------------------------
+// risa's host-sync arm (F9 52 ss cc tt) is a BARRIER, not a continuation: it re-points the sequencer, so
+// clocks queued for the position being left must never reach the ROM. That needs BOTH queues emptied -
+// the not-yet-released pending bytes AND the ones already sitting in the FIFO's RX queue unread. Clearing
+// only the former (what clear() does) still lets the ROM read stale clocks straight after a locate.
+
+TEST_CASE("a flushing pushBytes drops undelivered AND delivered-but-unread bytes", "[audio][nes]") {
+    NesN8FifoRole role;
+
+    // Three clocks: two already released into the FIFO, one still pending.
+    const std::uint8_t clock = 0xF8;
+    role.pushBytes(0, &clock, 1);
+    role.pushBytes(10, &clock, 1);
+    role.pushBytes(5000, &clock, 1);
+    role.pumpUntil(10);
+    CHECK(role.fifoRxCount() == 2);   // delivered, unread by the ROM
+    CHECK(role.pendingCount() == 1);  // still queued for later in the block
+
+    // The arm arrives. Everything before it is discarded, and only the arm's own bytes remain.
+    const std::uint8_t arm[] = { 0xF9, 0x52, 0x01, 0x02, 0x18 };
+    role.pushBytes(20, arm, sizeof(arm), /*flush=*/true);
+    CHECK(role.fifoRxCount() == 0);   // the stale delivered clocks are gone
+    CHECK(role.pendingCount() == 5);  // only the 5-byte arm is in flight
+
+    role.pumpUntil(20);
+    CHECK(role.readFifoByte() == 0xF9);
+    CHECK(role.readFifoByte() == 0x52);
+    CHECK(role.readFifoByte() == 0x01);
+    CHECK(role.readFifoByte() == 0x02);
+    CHECK(role.readFifoByte() == 0x18);
+    CHECK(role.readFifoByte() == -1);  // and nothing else
+}
+
+TEST_CASE("a non-flushing pushBytes leaves the stream intact", "[audio][nes]") {
+    NesN8FifoRole role;
+
+    const std::uint8_t clock = 0xF8;
+    role.pushBytes(0, &clock, 1);
+    role.pumpUntil(0);
+    CHECK(role.fifoRxCount() == 1);
+
+    const std::uint8_t start = 0xFA;
+    role.pushBytes(10, &start, 1);  // flush defaults off: a continuation, not a barrier
+    CHECK(role.fifoRxCount() == 1);  // the earlier clock still waits for the ROM
+    role.pumpUntil(10);
+    CHECK(role.readFifoByte() == 0xF8);
+    CHECK(role.readFifoByte() == 0xFA);
+}
+
+TEST_CASE("flushAll empties both queues, unlike clear", "[audio][nes]") {
+    NesN8FifoRole role;
+    const std::uint8_t bytes[] = { 0xF8, 0xF8 };
+
+    role.pushBytes(0, bytes, 2);
+    role.pushBytes(5000, bytes, 2);
+    role.pumpUntil(0);
+    CHECK(role.fifoRxCount() == 2);
+    CHECK(role.pendingCount() == 2);
+
+    role.clear();  // pending only - the delivered bytes survive, which is why reset needs flushAll
+    CHECK(role.pendingCount() == 0);
+    CHECK(role.fifoRxCount() == 2);
+
+    role.flushAll();
+    CHECK(role.fifoRxCount() == 0);
+    CHECK(role.readFifoByte() == -1);
+}
