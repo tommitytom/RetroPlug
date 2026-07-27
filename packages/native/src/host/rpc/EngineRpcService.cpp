@@ -377,6 +377,11 @@ bool EngineRpcService::setTransport(bool running) {
     return true;
 }
 
+bool EngineRpcService::setPpq(double ppq) {
+    invoker_.setPpq(ppq);  // queued like transport, so a locate lands between blocks not mid-block
+    return true;
+}
+
 bool EngineRpcService::setBpm(double bpm) {
     if (bpm <= 0.0) return false;
     invoker_.setBpm(bpm);
