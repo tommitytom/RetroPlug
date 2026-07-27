@@ -564,8 +564,21 @@ core that block, with its intra-block frame.
 RETROPLUG_SYNC_TRACE=/tmp/risa-sync.log <your DAW>
 ```
 
-It is inert unless the variable is set, allocates nothing on the audio thread (fixed-size records in a
-pre-reserved buffer), and writes the file at exit. A second plugin instance writes `<path>.2`.
+It is inert unless the variable is set and allocates nothing on the audio thread (fixed-size records in
+a pre-allocated ring, published with one atomic increment). A background thread appends to the file
+every 200 ms, so the trace survives a host that exits abruptly, is killed, or unloads a sandboxed
+plugin process - a trace that only landed at teardown would be missing on exactly the runs worth
+diagnosing. A second plugin instance writes `<path>.2`.
+
+On startup it prints a confirmation line to stderr:
+
+```
+[sync-trace] recording to /tmp/risa-sync.log (flushing every 200 ms)
+```
+
+If that line doesn't appear, the plugin process never saw the variable - check that it was exported
+into the environment the DAW itself was launched from (a desktop launcher won't inherit a shell's
+export), and that the plugin binary is the one you rebuilt.
 
 Reading it: `F9 52 ss cc tt` is an arm+locate, `FA` a start, `F8` a clock, `FC` a stop. Lines are
 marked `<<START` / `<<STOP` on a transport edge and `<<PPQ-JUMP` when the playhead didn't continue from
