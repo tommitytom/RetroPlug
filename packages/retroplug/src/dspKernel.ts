@@ -8,6 +8,7 @@
 
 import type { MidiEvent } from "./midiRouting";
 import type { RoleInstance, RoleRegistry } from "./systemRoles";
+import { walkTicks } from "./ppqClock";
 
 /** Per-block transport/timing context (mirrors native AudioBlockInfo / DspBlockInfo). */
 export interface BlockInfo {
@@ -163,31 +164,10 @@ export function emptySinks(): Sinks {
 // (packages/native/src/util/PpqUtil.hpp): the caller-owned `nextTick` persists across blocks so the
 // clock is drift-free at block edges (each tick fires exactly once, no double/miss); a >1-tick
 // transport jump (seek/loop/start) resyncs.
-export function walkTicks(
-  block: BlockInfo,
-  resolution: number,
-  nextTick: number,
-  cb: (tick: number, off: number) => void,
-): number {
-  if (!block.transport || block.frames === 0 || resolution === 0 || block.tempo <= 0) return nextTick;
-
-  const beatLenSamples = (block.sampleRate * 60) / block.tempo;
-  const beatLenSamplesRes = beatLenSamples / resolution;
-  const ppqRes = block.ppqStart * resolution;
-  const framePpqLen = (block.frames / beatLenSamples) * resolution;
-  const framePpqEnd = ppqRes + framePpqLen;
-
-  if (nextTick < ppqRes - 1 || nextTick > framePpqEnd + 1) nextTick = Math.ceil(ppqRes);
-
-  while (nextTick < framePpqEnd) {
-    let offset = beatLenSamplesRes * (nextTick - ppqRes);
-    if (offset < 0) offset = 0;
-    if (offset >= block.frames) offset = block.frames - 1;
-    cb(nextTick, Math.trunc(offset)); // native casts the offset to uint32 (truncates toward zero)
-    nextTick++;
-  }
-  return nextTick;
-}
+// walkTicks — the drift-exact 24-PPQN clock — now lives in ./ppqClock (dependency-free so the headless
+// retroplug-cli `linksync` host bridge can reuse the identical clock). Imported at the top for internal
+// use; re-exported here so existing callers (`import { walkTicks } from "./dspKernel"`) are unchanged.
+export { walkTicks };
 
 /** One resolved system-scope pipeline stage: its behaviour + the PERSISTENT ctx it runs against
  *  (built once in `setSystems`; `processBlock` only mutates what the ctx's fields point at). */
