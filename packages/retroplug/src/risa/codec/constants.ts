@@ -39,12 +39,24 @@ export const FX_NONE = 0;
 export const INST_TYPE_PULSE = 0;
 export const INST_TYPE_NOISE = 2;
 export const INST_TYPE_DMC = 3;
+// Type 4 was WAVE up to 2.2.x and is Z-Saw from 2.3.0. The record version can't tell them apart (both
+// appear in v7 records), so risa distinguishes them by a marker byte instead - see ZSAW_MARKER below.
+export const INST_TYPE_ZSAW = 4;
 export const INST_TYPE_FIELD = 6; // byte offset of type within a 12-byte instrument
 export const INST_LAST_FIELD = 7; // table_idx (TABLE_EMPTY for none) — also legacy DMC kit index (<v4)
 export const INST_DMC_KIT_FIELD = 10; // DMC kit index (v4+)
 export const INST_ENV_A_FIELD = 1;
 export const INST_ENV_D_FIELD = 2;
 export const INST_ENV_R_FIELD = 10;
+
+// Z-Saw (2.3.0+) reuses byte 11, which a legacy WAVE instrument used as its sound selector, as a marker:
+// 0xA5 means "already a Z-Saw", anything else means a legacy WAVE record needing conversion. Byte 0 then
+// carries the timbre (0 = saw 00, 1 = saw 7F, 2/3 = square, 4 = triangle). src/seq_data.h + gen_zsaw_tables.py.
+export const INST_ZSAW_TIMBRE_FIELD = 0;
+export const INST_ZSAW_MARKER_FIELD = 11;
+export const INST_ZSAW_MARKER = 0xa5;
+export const ZSAW_TIMBRE_SAW_00 = 0;
+export const ZSAW_TIMBRE_SAW_7F = 1;
 
 // --- Working-RAM (banks 0..3) layout — src/seq_data.h ---
 export const WRAM_BANK_SIZE = 0x2000;

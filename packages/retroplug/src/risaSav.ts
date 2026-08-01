@@ -3,10 +3,12 @@
 // working-RAM).
 export {
   listSongs,
+  isRisaSav,
   parseCatalog,
   normalizeSaveContainer,
   chooseCatalogLayout,
   decodeSongName,
+  workingSongInfo,
   // write side (byte-level catalog ops)
   writeRecord,
   deleteRecord,

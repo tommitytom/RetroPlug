@@ -148,7 +148,12 @@ std::vector<std::string> HostRpcService::listDir(std::string dir) {
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(dir, ec)) {
         if (ec) break;
-        out.push_back(entry.path().filename().string());
+        std::string name = entry.path().filename().string();
+        // Mark directories with a trailing '/' so callers can distinguish them without a second stat (the
+        // file browser needs this). std::error_code overload → a broken symlink just reads as a file.
+        std::error_code dec;
+        if (entry.is_directory(dec) && !dec) name += '/';
+        out.push_back(std::move(name));
     }
     return out;
 }

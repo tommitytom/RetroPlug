@@ -10,8 +10,11 @@ import {
   addSongRecordToSav,
   replaceSongRecordInSav,
   songRecordBytes,
+  workingSongRecord,
+  saveWorkingToCatalog,
 } from "../../src/risaSongOps";
-import { listSongs, chooseCatalogLayout, normalizeSaveContainer, kSaveSize } from "../../src/risaSav";
+import { listSongs, chooseCatalogLayout, normalizeSaveContainer, workingSongInfo, decodeRecord, CURRENT_LAYOUT, kSaveSize } from "../../src/risaSav";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
 
 function sameBytes(a: Uint8Array, b: Uint8Array, label: string): void {
   expect(a.length).toBe(b.length);
@@ -85,4 +88,24 @@ test("replaceSongRecordInSav rejects a record whose length header lies", () => {
   const bad = XTREME().slice();
   bad[0] = (bad[0] + 1) & 0xff; // corrupt the u16 length header so it != byte length
   expect(() => replaceSongRecordInSav(MULTI(), 1, bad)).toThrow();
+});
+
+test("workingSongRecord encodes the LIVE working song as a catalog record (name preserved)", () => {
+  const rec = workingSongRecord(savBytes("v2_blumarbl"));
+  expect(rec != null).toBe(true);
+  expect(decodeRecord(rec!).name).toBe("BLUMARBL"); // banks 0-3 → a self-describing record
+  expect(workingSongRecord(new Uint8Array(123))).toBe(null); // unrecognized container → null
+});
+
+test("saveWorkingToCatalog promotes an unsaved working song into a new saved slot + links it", () => {
+  // Mimic a let_go-style battery: a real working song, unsaved (curEntry 0xFF), with an EMPTY catalog.
+  const base = normalizeSaveContainer(savBytes("v2_blumarbl")).save;
+  base[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = 0xff; // unlink the working song
+  base.fill(0, CURRENT_LAYOUT.offset, kSaveSize); // wipe the catalog (banks 4-7); banks 0-3 (the song) untouched
+  expect(listSongs(base).length).toBe(0);
+  expect(workingSongInfo(base)).toEqual({ name: "BLUMARBL", unsaved: true });
+
+  const out = saveWorkingToCatalog(base);
+  expect(names(out)).toEqual(["BLUMARBL"]); // the working song is now a real saved slot
+  expect(workingSongInfo(out)).toEqual({ name: "BLUMARBL", unsaved: false }); // linked → no longer "unsaved"
 });

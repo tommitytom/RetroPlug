@@ -4,6 +4,7 @@ import { test, expect } from "../../testing/harness";
 import { resolveSongCatalog, lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
 import { loadSongToWorkingInSav } from "../../src/risaSongOps";
 import { normalizeSaveContainer } from "../../src/risaSav";
+import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
 import { savFrom, type SavInput } from "../../src/lsdjSav";
 import { savBytes } from "../risa/fixtures";
 
@@ -31,4 +32,17 @@ test("risa catalog lists the RSAV catalog + reads the working-song name after a 
   const loaded = loadSongToWorkingInSav(battery, 0)!;
   expect(loaded).toBeTruthy();
   expect(risaSongCatalog.workingName(loaded)).toBe("BLUMARBL");
+});
+
+test("risaSongCatalog.workingSong surfaces ONLY an unsaved working song; LSDj has no working-song accessor", () => {
+  const curOff = BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET;
+  const saved = normalizeSaveContainer(savBytes("v2_blumarbl")).save; // curEntry 0 → the working song is saved
+  expect(risaSongCatalog.workingSong!(saved)).toBe(null); // already a listed slot → no synthetic row
+
+  const unsaved = saved.slice();
+  unsaved[curOff] = 0xff; // unlink → the working song is unsaved
+  expect(risaSongCatalog.workingSong!(unsaved)).toEqual({ name: "BLUMARBL" });
+
+  // LSDj deliberately does not implement it (its working song is a copy of a saved slot).
+  expect(lsdjSongCatalog.workingSong).toBe(undefined);
 });

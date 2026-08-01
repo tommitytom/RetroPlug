@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Run the whole headless-Reaper leg CONCURRENTLY: build + author once, then fan out all nine
-# checks (6 audio renders + 3 editor snapshots) in parallel and print a PASS/FAIL summary.
+# checks (7 audio renders + 3 editor snapshots) in parallel and print a PASS/FAIL summary.
 #
 # Each check runs through the isolated harness (tools/reaper-env.sh) with a distinct RP_JOB_TAG,
 # so they don't share a JACK server, a Reaper config dir, an Xvfb display, or log files — which is
@@ -32,7 +32,7 @@ mkdir -p "$RESULTS_DIR"
 # optional scenario env (the lsdj author lua keys off RP_SCENARIO), and the analyzer command.
 declare -A AUTHOR_LUA FIXTURE RPP WAV JACKP SCEN_ENV ANALYZE
 
-RENDER_SCENARIOS=(mgb-smoke mgb-midi-timing n8-midi-timing lsdj-midi-metro lsdj-arduinoboy-metro lsdj-midi-drift)
+RENDER_SCENARIOS=(mgb-smoke mgb-midi-timing n8-midi-timing lsdj-midi-metro lsdj-arduinoboy-metro lsdj-midi-drift risa-sync)
 
 AUTHOR_LUA[mgb-smoke]="tools/reaper-mgb-author.lua"
 FIXTURE[mgb-smoke]="build/mgb.rplg.zip"
@@ -78,6 +78,16 @@ WAV[lsdj-midi-drift]="build/reaper-lsdj-midi-drift.wav"
 JACKP[lsdj-midi-drift]="1024"
 SCEN_ENV[lsdj-midi-drift]="RP_SCENARIO=midi-drift"
 ANALYZE[lsdj-midi-drift]='tools/reaper-timing-analyze.py build/reaper-lsdj-midi-drift.wav --drift'
+
+# risa host sync: no MIDI item at all - the DAW TRANSPORT is the whole input, turned into risa's
+# arm / start / 24-PPQN clock / stop byte stream by the risa-sync role. One noise hit per beat, so
+# --drift pairs every beat to its click.
+AUTHOR_LUA[risa-sync]="tools/reaper-risa-author.lua"
+FIXTURE[risa-sync]="build/risa.rplg.zip"
+RPP[risa-sync]="examples/reaper/risa_sync.rpp"
+WAV[risa-sync]="build/reaper-risa-sync.wav"
+JACKP[risa-sync]="1024"
+ANALYZE[risa-sync]='tools/reaper-timing-analyze.py build/reaper-risa-sync.wav --drift'
 
 # Editor scenarios: name -> the standalone script (each already self-judges).
 declare -A EDITOR_SCRIPT
@@ -145,6 +155,7 @@ if [ "${RP_SUITE_NO_BUILD:-0}" != "1" ]; then
     echo "[suite] regenerating autoload fixtures …"
     node tools/author-rplg.js            >"$RESULTS_DIR/fixture-mgb.log" 2>&1 || { echo "[suite] mgb fixture failed" >&2; exit 1; }
     node tools/author-nes-rplg.js        >"$RESULTS_DIR/fixture-nes.log" 2>&1 || { echo "[suite] nes fixture failed" >&2; exit 1; }
+    node tools/author-risa-rplg.js       >"$RESULTS_DIR/fixture-risa.log" 2>&1 || { echo "[suite] risa fixture failed" >&2; exit 1; }
     for s in midi-metro arduinoboy-metro midi-drift; do
         node tools/author-lsdj-rplg.js "$s" >"$RESULTS_DIR/fixture-lsdj-$s.log" 2>&1 || { echo "[suite] lsdj $s fixture failed" >&2; exit 1; }
     done

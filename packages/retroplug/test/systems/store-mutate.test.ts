@@ -42,6 +42,30 @@ test("duplicate: appends a clone with a fresh suffix + concrete auto-save path",
   expect(new Uint8Array(call.stateBytes!)).toEqual(stateBytesFor(a as number));
 });
 
+test("addSystem adopts an existing <rom>.srm battery when there is no <rom>.sav (NES/risa)", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/tune.nes", nesRom());
+  be.seed("/roms/tune.srm", "battery"); // only a .srm sibling on disk, no .sav
+  store.addSystem("/roms/tune.nes");
+  expect(be.constructCalls[be.constructCalls.length - 1].savPath).toBe("/roms/tune.srm"); // loaded + auto-saved there
+  expect(store.view()[0].savPath).toBe("/roms/tune.srm"); // recorded as an override (persisted in the project)
+});
+
+test("addSystem prefers <rom>.sav over <rom>.srm, and derives .sav when neither exists", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.nes", nesRom());
+  be.seed("/roms/a.sav", "battery");
+  be.seed("/roms/a.srm", "battery"); // both present → the .sav wins
+  store.addSystem("/roms/a.nes");
+  expect(be.constructCalls[be.constructCalls.length - 1].savPath).toBe("/roms/a.sav");
+  expect(store.view()[0].savPath).toBe(""); // derived, no override
+
+  be.seed("/roms/b.nes", nesRom()); // neither .sav nor .srm
+  store.addSystem("/roms/b.nes");
+  expect(be.constructCalls[be.constructCalls.length - 1].savPath).toBe("/roms/b.sav"); // the default write target
+  expect(store.view()[1].savPath).toBe("");
+});
+
 test("duplicate: an absent id is a no-op", () => {
   const { store } = newStore();
   expect(store.duplicateSystem(999)).toBe(null);

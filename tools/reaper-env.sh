@@ -104,6 +104,19 @@ reaper_env_down() {
     wait 2>/dev/null || true
 }
 
+# Reap orphaned JACK shared-memory state. jackd registers each server in /dev/shm/jack-shm-registry
+# (+ a jack-<uid>-<slot> segment); a clean exit frees its slot, but a hard kill — SIGKILL, a container
+# stopped mid-run, anything that skips reaper_env_down's trap — leaks it. The registry caps at 8
+# servers, so 8 leaked slots wedge EVERY future jackd with "Too many servers already active", breaking
+# the reaper suite and the standalone screenshot alike. Purge the orphaned state, but ONLY when no
+# jackd is live for this user, so a concurrent parallel job's running server is never disturbed.
+reaper_jack_gc() {
+    pgrep -u "$(id -u)" -x jackd >/dev/null 2>&1 && return 0 # a server is live → its shm is in use
+    local uid; uid="$(id -u)"
+    rm -f "/dev/shm/jack-shm-registry" "/dev/shm/jack-${uid}-"* "/dev/shm/jack_sem.${uid}_"* 2>/dev/null || true
+    rm -rf "/dev/shm/jack_db-${uid}" 2>/dev/null || true
+}
+
 reaper_env_up() {
     if [ -z "${RP_JOB_TAG:-}" ]; then
         echo "reaper-env: RP_JOB_TAG must be set before reaper_env_up" >&2
@@ -112,6 +125,7 @@ reaper_env_up() {
     for cmd in Xvfb openbox jackd reaper xdotool; do
         command -v "$cmd" >/dev/null 2>&1 || { echo "reaper-env: missing '$cmd'" >&2; return 127; }
     done
+    reaper_jack_gc # self-heal stale JACK registry left by a prior hard-killed run before we start ours
 
     cd "$RP_REPO_DIR"
 

@@ -15,7 +15,10 @@ export interface PromptSpec {
   initial?: string; // seeds the field (e.g. Rename pre-fills the current name)
   hint?: string; // status-line default; a built-in is used when omitted
   confirm?: boolean; // yes/no dialog — no text field
-  filter?: (ch: string) => boolean; // per-keystroke character filter (e.g. profile-name chars)
+  // Letter-case policy for typed characters: "mixed" (default) respects Shift (Shift+a → "A"); "upper"
+  // forces every letter to uppercase regardless of Shift (LSDj / risa song names are uppercase-only).
+  casing?: "mixed" | "upper";
+  filter?: (ch: string) => boolean; // per-keystroke character filter (e.g. profile-name chars); sees the CASED char
   onConfirm: (value: string) => string | null;
 }
 
@@ -34,6 +37,9 @@ export interface MenuItem {
   // button or stick flick. `onCapture` receives the resolved token (key name / SDL button name / axis token).
   capture?: { source?: "keyboard" | "gamepad"; onCapture: (name: string) => void; onClear: () => void };
   prompt?: PromptSpec; // present iff kind === "prompt"
+  warn?: boolean; // paint the label in a warning colour (yellow) — e.g. a recent entry whose file is missing
+  onRename?: PromptSpec; // F2 on the focused row opens this text prompt (recent-entry rename)
+  onDelete?: () => void; // Del on the focused row invokes this (recent-entry removal)
 }
 
 export interface MenuTree {

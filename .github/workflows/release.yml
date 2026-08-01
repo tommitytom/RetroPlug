@@ -82,8 +82,12 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
 
+      # RETROPLUG_MESEN_LTO: LTO the Mesen NES core, ~10% faster on the Cortex-A53 handheld.
+      # Off by default because it makes every binary that links mesen re-run codegen over
+      # ~430 objects, which is brutal on the dev loop; shipped builds want it, so every
+      # release job passes it (see the root CMakeLists).
       - name: Build
-        run: ./build.sh
+        run: ./build.sh -DRETROPLUG_MESEN_LTO=ON
 
       - name: Package (one zip per target, each with the license bundle)
         run: |
@@ -153,8 +157,9 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
 
+      # LTO the Mesen core for the shipped build (see the linux job).
       - name: Build
-        run: ./build.sh
+        run: ./build.sh -DRETROPLUG_MESEN_LTO=ON
 
       - name: Package (one zip per target, each with the license bundle)
         run: |
@@ -223,9 +228,10 @@ jobs:
         run: |
           & "$env:VCPKG_ROOT\vcpkg.exe" install sdl2:x64-windows-static libffi:x64-windows-static
 
+      # LTO the Mesen core for the shipped build (see the linux job).
       - name: Build
         shell: cmd
-        run: build.bat
+        run: build.bat -DRETROPLUG_MESEN_LTO=ON
 
       - name: Package (one zip per target, each with the license bundle)
         shell: pwsh
@@ -306,12 +312,14 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
 
+      # RETROPLUG_MESEN_LTO: LTO the Mesen core for the shipped build (see the linux job).
       - name: Configure + build (universal)
         run: |
           set -eux
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DRETROPLUG_SDL2_FRAMEWORK=ON
+            -DRETROPLUG_SDL2_FRAMEWORK=ON \
+            -DRETROPLUG_MESEN_LTO=ON
           cmake --build build -j"$(sysctl -n hw.ncpu)"
 
       - name: Verify universal slices

@@ -47,9 +47,10 @@ export interface Backend {
   /** Move/rename `from` to `to`. Returns false on failure. */
   rename(from: string, to: string): boolean;
 
-  /** The entry names directly under `dir` (files + subdirectories, not recursive), or an
-   *  empty list when `dir` is absent. Generic readdir — filtering (e.g. `.json` profiles)
-   *  is the caller's job. */
+  /** The entry names directly under `dir` (not recursive), or an empty list when `dir` is absent.
+   *  Subdirectories carry a trailing `/` (so a caller — the file browser — can tell them from files
+   *  without a second stat); files do not. Generic readdir — filtering (e.g. `.json` profiles) is the
+   *  caller's job. */
   listDir(dir: string): string[];
 
   /** Delete the file at `path`. Returns false when it isn't present. */
@@ -580,6 +581,13 @@ export interface FileBrowserOpts {
   saving?: boolean;
   /** A suggested filename for a save dialog (e.g. `"project.rplg"`); ignored when opening. */
   defaultName?: string;
+  /** Directory the dialog opens in (DPF's FileBrowserOptions.startDir). Absent/empty → the OS default (CWD).
+   *  Used to reopen a dialog where the user last saved (currently the render dialog). */
+  startDir?: string;
+  /** Pick a FOLDER instead of a file (DPF's FileBrowserOptions.directory — our DPF fork). `patterns`/
+   *  `defaultName` are then ignored. Supported on Linux + macOS; on Windows the OS opens a file dialog
+   *  (the caller takes the dirname). Used by the render "Output Dir". */
+  directory?: boolean;
 }
 
 /** What TS hands the native builder: concrete paths only — everything is resolved

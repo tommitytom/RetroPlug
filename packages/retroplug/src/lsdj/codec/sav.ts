@@ -54,6 +54,12 @@ export function listProjects(savBytes: Uint8Array): SavProjectInfo[] {
   return out.sort((a, b) => a.slot - b.slot);
 }
 
+/** True when `bytes` is a full 128 KiB LSDj battery carrying the 'jk' SRAM-init magic — the cheap gate for
+ *  "is this an LSDj sav" (the same check listProjects uses), without decompressing anything. */
+export function isLsdjSav(bytes: Uint8Array): boolean {
+  return bytes.length >= kSavSize && bytes[kInit] === 0x6a /* 'j' */ && bytes[kInit + 1] === 0x6b /* 'k' */;
+}
+
 /** Decode a 128 KiB (or 32 KiB early-SRAM) sav image. Throws if malformed. */
 export function decodeSav(savBytes: Uint8Array): Sav {
   // Early LSDj used a 32 KiB SRAM: the whole image is the working-memory song,

@@ -81,7 +81,15 @@ export function nesRomBattery(): Uint8Array {
 export function risaRom(): Uint8Array {
   const b = new Uint8Array(0x200); // >= ROLE_HEADER_LEN so the provider sees a full header prefix
   b.set([0x4e, 0x45, 0x53, 0x1a, 0x20, 0x04, 0x53, 0x08, 0x00, 0x00, 0xa0], 0);
+  setRisaVersionMarker(b, "2.2.1"); // a supported version, so the tracker submenu is live (not greyed out)
   return b;
+}
+
+/** Write the ASCII "RISA V<version>" marker identifyRisaVersion() scans for, at a fixed PRG offset (0x20,
+ *  clear of the iNES header). Lets a synthetic fixture pose as a specific risa app version. */
+export function setRisaVersionMarker(rom: Uint8Array, version: string): void {
+  const s = `RISA V${version}`;
+  for (let i = 0; i < s.length; i++) rom[0x20 + i] = s.charCodeAt(i);
 }
 
 /** A full-size synthetic risa ROM (16 + 512 KB PRG + 32 KB CHR = 0x88010) carrying a THEME_META_MAGIC
@@ -92,6 +100,7 @@ export function risaRomFull(): Uint8Array {
   const CHR = 0x8000; // 4 × 8 KB
   const rom = new Uint8Array(0x10 + PRG + CHR);
   rom.set([0x4e, 0x45, 0x53, 0x1a, 0x20, 0x04, 0x53, 0x08, 0x00, 0x00, 0xa0], 0);
+  setRisaVersionMarker(rom, "2.2.1"); // a supported version → the tracker submenu is live
 
   // Theme table at the fixed bank (lastPrgBank 63): magic + 16×7 records + 16×4 names.
   const fixedOffset = 0x10 + 63 * 0x2000;

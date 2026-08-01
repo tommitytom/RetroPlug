@@ -512,3 +512,90 @@ WHERE THE PLAN IS VAGUE BUT MUST BE CONCRETE
 - M0 "load a risa `.nes`": no source for the ROM or `.lbl` is named — the actual blocker.
 - "MesenBackend honors romBytes": must resolve whether `MesenNesSystem::onActivate` reads `rom_` bytes or `cfg.romPath`; the plan defers this to "verify" yet still calls the change trivial.
 - risa detection (§10 #5): romProviders currently see only a short header prefix (LSDj uses `readFilePrefix(0x150)`), but `"RISA V"` requires a whole-PRG scan — the concrete mechanism (how many bytes TS sees) is undecided, yet M1 depends on it.
+
+---
+
+## Supporting a new risa release
+
+Most of the integration is version-agnostic and needs nothing: the iNES-header fingerprint, the
+save-catalog + song-record codec (gated on the record version in the data, not the app version), and the
+ROM asset layer (kits / themes / fonts are located by magic scan, so they survive layout shifts). What
+IS per-version is the **runtime RAM layout** - cc65 reshuffles the BSS/ZP addresses on every build, so a
+release with no bundled snapshot resolves no layout and the whole tracker submenu greys out as
+"(Unsupported Version)", taking Songs, Kits, Themes, Fonts, the live overlay and render song-length
+auto-detect with it.
+
+1. **Build the release from source** to get its label files. Needs cc65 (source-built - distro 2.19 is
+   too old, see M0 above) and python3; `make all` writes `build/risa-pal.lbl` + `build/ntsc/risa-ntsc.lbl`.
+   The shipped tree may need a lowercase `kits/psr150.rik` copy on a case-sensitive filesystem.
+2. **Generate the snapshot**: `RISA_SRC=<tree> RISA_VERSION=<x.y.z> node
+   packages/retroplug/scripts/gen-risa-symbols.mjs`. It merges - older versions stay - and fails loudly if
+   a symbol moved between the PAL and NTSC builds.
+3. **Certify it against the RELEASED ROM.** A local build is *not* byte-identical to the developer's
+   binary (a different cc65 build reshuffles codegen), so the label file alone doesn't prove the addresses
+   fit the ROM users run. Copy `test-native/risa-230-layout.test.ts`: it boots the released ROM and
+   asserts the decode is coherent and advances. Wrong addresses decode as garbage and fail there.
+
+Two things to check in the release's own source rather than assume:
+
+- **`SAVE_RECORD_VERSION` / `SAVE_MAGIC_VER`** (`src/seq_data.h`, `tools/rom_patcher/src/save_manager/`).
+  Both were unchanged through 2.3.0. A bump means codec work.
+- **Instrument type reuse.** 2.3.0 repurposed type 4 from WAVE to Z-Saw *within the same record version*,
+  discriminated only by a marker byte - see `migrateInstruments` in `src/risa/codec/working.ts`. Diffing
+  `src/seq_data.h`'s `INST_*` block against the previous release catches this class of change.
+
+Host sync (2.3.0 and later) needs nothing per-version: the `RISAxyz` marker carries the version, and the
+role attaches on its presence.
+
+---
+
+## Diagnosing a host-sync problem that only appears in a DAW
+
+The headless checks (`dsp-risa-sync`, `dsp-risa-sync-grid`, `dsp-risa-sync-locate`) drive a clean,
+synthetic transport. A real DAW does things they don't: it may not drop the transport flag when you
+expect, may report a playhead that jitters or jumps, may idle the plugin between blocks. When sync
+misbehaves in a host but not in the harness, that difference is the thing to look at.
+
+`RETROPLUG_SYNC_TRACE` records both halves of the seam, one line per audio block: what the HOST
+reported (frames, sample rate, tempo, ppqStart, transport flag) and every byte the kernel pushed to the
+core that block, with its intra-block frame.
+
+```
+RETROPLUG_SYNC_TRACE=/tmp/risa-sync.log <your DAW>
+```
+
+It is inert unless the variable is set and allocates nothing on the audio thread (fixed-size records in
+a pre-allocated ring, published with one atomic increment). A background thread appends to the file
+every 200 ms, so the trace survives a host that exits abruptly, is killed, or unloads a sandboxed
+plugin process - a trace that only landed at teardown would be missing on exactly the runs worth
+diagnosing. A second plugin instance writes `<path>.2`.
+
+On startup it prints a confirmation line to stderr:
+
+```
+[sync-trace] recording to /tmp/risa-sync.log (flushing every 200 ms)
+```
+
+If that line doesn't appear, the plugin process never saw the variable - check that it was exported
+into the environment the DAW itself was launched from (a desktop launcher won't inherit a shell's
+export), and that the plugin binary is the one you rebuilt.
+
+Reading it: `F9 52 ss cc tt` is an arm+locate, `FA` a start, `F8` a clock, `FC` a stop. Lines are
+marked `<<START` / `<<STOP` on a transport edge and `<<PPQ-JUMP` when the playhead didn't continue from
+where the previous block should have left it. A healthy stop-and-replay looks like:
+
+```
+   156  1024  44100.0 120.000     1.999819 0 <<STOP  | 0:FC
+   187  1024  44100.0 120.000     0.000000 1 <<START | 0:F952000000FA 918:F8
+```
+
+An arm, a start, then a continuous clock stream. Things worth looking for:
+
+- **No `<<STOP` line at all** when you stopped: the host never reported the transport falling, so no
+  `FC` went out and the core was never told to stop.
+- **`<<START` with no arm packet on the line**: the role didn't consider it a fresh start, so risa was
+  never re-located.
+- **Repeated arm packets while playing**: the playhead is jittering past the seek tolerance and every
+  block is re-locating.
+- **A `<<START` whose ppqStart isn't where you locked the playhead**: the host is reporting a different
+  position from the one it displays.

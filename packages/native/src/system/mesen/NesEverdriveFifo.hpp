@@ -168,6 +168,16 @@ namespace rp {
 			return _rxQueue.size();
 		}
 
+		// Drop every DELIVERED-but-unread byte. A host-sync arm is a barrier: the ROM must not read
+		// clocks queued for the position it just left, and those bytes are already past the pending
+		// queue and sitting here. Leaves the TX parser state alone - only the emulator->NES direction
+		// is being re-pointed.
+		void clearRx() {
+			std::lock_guard<std::mutex> lock(_mutex);
+			std::queue<uint8_t> empty;
+			_rxQueue.swap(empty);
+		}
+
 	private:
 		// ----------------------------------------------------------------
 		// TX parser — called with _mutex held

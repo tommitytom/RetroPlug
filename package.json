@@ -17,7 +17,8 @@
     "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
     "lsdj:gen-offsets": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/gen-lsdj-offsets.mjs",
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node packages/retroplug/scripts/run-ui-tests.mjs",
-    "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-classid-test retroplug-audio-test retroplug-watcher-test retroplug-lottie-test && node packages/retroplug/scripts/run-plugin-tests.mjs",
+    "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-classid-test retroplug-audio-test retroplug-watcher-test retroplug-lottie-test retroplug-midi-test && node packages/retroplug/scripts/run-plugin-tests.mjs",
+    "sdl:smoke": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-smoke.sh",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
     "profile": "tools/run-profile.sh stats",
     "validate": "node scripts/cmake-build.js retroplug-clap retroplug-vst3 && tools/validate-plugins.sh",
@@ -40,6 +41,8 @@
     "reaper:lsdj-arduinoboy-metro": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js arduinoboy-metro && tools/run-reaper-render.sh examples/reaper/lsdj_arduinoboy_metro.rpp build/lsdj_arduinoboy-metro.rplg.zip && tools/reaper-timing-analyze.py build/reaper-lsdj-arduinoboy-metro.wav",
     "reaper:lsdj-midi-drift-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js midi-drift && RP_SCENARIO=midi-drift tools/run-reaper-author.sh examples/reaper/lsdj_midi_drift.rpp build tools/reaper-lsdj-author.lua build/lsdj_midi-drift.rplg.zip",
     "reaper:lsdj-midi-drift": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-lsdj-rplg.js midi-drift && tools/run-reaper-render.sh examples/reaper/lsdj_midi_drift.rpp build/lsdj_midi-drift.rplg.zip && tools/reaper-timing-analyze.py build/reaper-lsdj-midi-drift.wav --drift",
+    "reaper:risa-sync-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-risa-rplg.js && tools/run-reaper-author.sh examples/reaper/risa_sync.rpp build tools/reaper-risa-author.lua build/risa.rplg.zip",
+    "reaper:risa-sync": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-risa-rplg.js && tools/run-reaper-render.sh examples/reaper/risa_sync.rpp build/risa.rplg.zip && tools/reaper-timing-analyze.py build/reaper-risa-sync.wav --drift",
     "reaper:editor": "node scripts/cmake-build.js retroplug-vst3 && tools/run-reaper-editor.sh",
     "reaper:editor-reopen": "node scripts/cmake-build.js retroplug-vst3 && tools/run-reaper-editor-reopen.sh",
     "reaper:editor-autoload": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && tools/run-reaper-editor-autoload.sh"

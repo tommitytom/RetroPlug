@@ -40,7 +40,10 @@ public:
     // framing and no length cap — for a byte protocol carried over the N8 transport (e.g. a tracker's
     // host-sync locate/clock stream). Bytes stay contiguous + ordered; released by pumpUntil alongside
     // any MIDI bytes, so raw + MIDI interleave by offset. `onMidi` is a thin MIDI-framed adapter over this.
-    void pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count);
+    //
+    // `flush` empties BOTH queues first (see flushAll) — for a protocol message that is a barrier, like
+    // risa's host-sync arm: bytes queued for the position being left must not reach the ROM after it.
+    void pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count, bool flush = false);
 
     // Audio-thread: release every queued byte whose offset has been reached (offset <= sampleOffset)
     // into the FIFO, front-first. Called from MesenNesSystem's step loop with the current intra-block
@@ -56,6 +59,11 @@ public:
 
     // Drop all queued (not-yet-delivered) bytes — on reset, to avoid stale MIDI after a state change.
     void clear() { pending_.clear(); needsSort_ = false; }
+
+    // Drop BOTH queues: the not-yet-delivered bytes AND the delivered-but-unread ones sitting in the
+    // FIFO's RX queue. `clear()` alone leaves the latter, which the ROM would still read. Used on a
+    // barrier message, on core reset, and on savestate load — anywhere the byte stream is discontinuous.
+    void flushAll() { clear(); fifo_.clearRx(); }
 
     // Introspection / tests.
     std::size_t pendingCount() const { return pending_.size(); }
