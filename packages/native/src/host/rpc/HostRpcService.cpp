@@ -10,6 +10,7 @@
 
 #include "Version.hpp"
 #include "host/rpc/NativeFileWatcher.hpp"
+#include "native/core/img/png/lodepng.h"
 #include "util/MinizZip.hpp"
 
 namespace fs = std::filesystem;
@@ -147,7 +148,12 @@ std::vector<std::string> HostRpcService::listDir(std::string dir) {
     std::error_code ec;
     for (const auto& entry : fs::directory_iterator(dir, ec)) {
         if (ec) break;
-        out.push_back(entry.path().filename().string());
+        std::string name = entry.path().filename().string();
+        // Mark directories with a trailing '/' so callers can distinguish them without a second stat (the
+        // file browser needs this). std::error_code overload → a broken symlink just reads as a file.
+        std::error_code dec;
+        if (entry.is_directory(dec) && !dec) name += '/';
+        out.push_back(std::move(name));
     }
     return out;
 }
@@ -201,4 +207,33 @@ std::vector<BackendZipEntry> HostRpcService::unzip(rfl::Bytestring bytes) {
     for (const auto& name : r.names())
         out.push_back({ name, toBytestring(r.read(name)) });
     return out;
+}
+
+rfl::Bytestring HostRpcService::pngEncode(PngImage image) {
+    const std::size_t need = static_cast<std::size_t>(image.width) * image.height * 4;
+    if (image.rgba.size() < need) return {};  // caller passed too few bytes — refuse rather than read OOB
+    unsigned char* png = nullptr;
+    std::size_t pngSize = 0;
+    const unsigned err = lodepng_encode32(&png, &pngSize,
+                                          reinterpret_cast<const unsigned char*>(image.rgba.data()),
+                                          image.width, image.height);
+    rfl::Bytestring out;
+    if (err == 0 && png != nullptr) {
+        const auto* p = reinterpret_cast<const std::byte*>(png);
+        out = rfl::Bytestring(p, p + pngSize);
+    }
+    std::free(png);  // lodepng malloc's the buffer regardless of our copy
+    return out;
+}
+
+std::optional<PngImage> HostRpcService::pngDecode(rfl::Bytestring bytes) {
+    unsigned char* rgba = nullptr;
+    unsigned w = 0, h = 0;
+    const unsigned err = lodepng_decode32(&rgba, &w, &h,
+                                          reinterpret_cast<const unsigned char*>(bytes.data()), bytes.size());
+    if (err != 0 || rgba == nullptr) { std::free(rgba); return std::nullopt; }
+    const auto* p = reinterpret_cast<const std::byte*>(rgba);
+    PngImage img{ w, h, rfl::Bytestring(p, p + static_cast<std::size_t>(w) * h * 4) };
+    std::free(rgba);
+    return img;
 }

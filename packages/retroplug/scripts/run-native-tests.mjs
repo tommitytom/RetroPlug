@@ -4,16 +4,17 @@
 // — which exposes a REAL Backend (fs/config/codec) over globalThis[Symbol.for("plugin")].
 // Each file gets a fresh temp dir as RETROPLUG_USER_CONFIG_DIR (isolated real disk), also
 // injected into the bundle as __CONFIG_DIR__ so tests can assert against it. Pass/fail from
-// exit code; one host process per file.
+// exit code; one host process per file, run in a bounded parallel pool (default half the
+// logical threads; override with --jobs N / -j N / TEST_JOBS, =1 for serial).
 //
-//   node scripts/run-native-tests.mjs [slugFilter]
+//   node scripts/run-native-tests.mjs [slugFilter] [--jobs N]
 
 import { readdirSync, mkdirSync, existsSync, mkdtempSync, rmSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, relative } from "node:path";
 import { tmpdir } from "node:os";
-import { buildSync } from "esbuild";
+import { build, buildSync } from "esbuild";
+import { runPool, spawnBuffered, resolveJobs, stripJobsArgs, flush } from "./lib/testPool.mjs";
 
 const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = resolve(PKG, "../..");
@@ -40,7 +41,8 @@ if (!existsSync(HOST)) {
   process.exit(1);
 }
 
-const filter = process.argv[2];
+const jobs = resolveJobs();
+const filter = stripJobsArgs()[0];
 
 // Build the DSP role kernel once as a self-contained IIFE and inject its SOURCE into every test
 // (like __RESOURCES_DIR__ below). A test compiles+loads it into the native DSP runtime — the real
@@ -82,8 +84,7 @@ if (!tests.length) {
   process.exit(1);
 }
 
-const failures = [];
-for (const { file, slug } of tests) {
+async function runOne({ file, slug }) {
   const outFile = join(OUT_DIR, `${slug}.js`);
   mkdirSync(dirname(outFile), { recursive: true });
   // Forward slashes so the injected __CONFIG_DIR__ matches the native backend's
@@ -93,7 +94,7 @@ for (const { file, slug } of tests) {
   const cfgDir = mkdtempSync(join(tmpdir(), "rp-")).replaceAll("\\", "/");
 
   try {
-    buildSync({
+    await build({
       entryPoints: [file],
       bundle: true,
       format: "esm",
@@ -110,23 +111,25 @@ for (const { file, slug } of tests) {
       },
     });
   } catch (e) {
-    console.error(`# BUILD FAILED: ${slug}\n${e?.message ?? e}`);
-    failures.push(slug);
+    flush(`BUILD FAILED: ${slug}`, `${e?.message ?? e}`);
     rmSync(cfgDir, { recursive: true, force: true });
-    continue;
+    return false;
   }
 
-  const run = spawnSync(HOST, [outFile], {
-    stdio: "inherit",
+  const run = await spawnBuffered(HOST, [outFile], {
     cwd: PKG,
     env: { ...process.env, RETROPLUG_USER_CONFIG_DIR: cfgDir },
   });
-  if (run.status !== 0) failures.push(slug);
+  flush(slug, run.output);
   rmSync(cfgDir, { recursive: true, force: true });
+  return run.status === 0;
 }
+
+const results = await runPool(tests, runOne, { jobs });
+const failures = tests.filter((_, i) => results[i] === false).map((t) => t.slug);
 
 if (failures.length) {
   console.error(`\n# ${failures.length}/${tests.length} native test file(s) FAILED: ${failures.join(", ")}`);
   process.exit(1);
 }
-console.error(`\n# ${tests.length} native test file(s) passed`);
+console.error(`\n# ${tests.length} native test file(s) passed (jobs=${jobs})`);

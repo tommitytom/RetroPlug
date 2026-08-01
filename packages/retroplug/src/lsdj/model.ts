@@ -282,4 +282,7 @@ export type SongRow = z.infer<typeof SongRowSchema>;
 export type Song = z.infer<typeof SongSchema>;
 export type StoredProject = z.infer<typeof StoredProjectSchema>;
 export type Sav = z.infer<typeof SavSchema>;
+// The lenient AUTHORING input: every field optional (unset cells default, `.prefault`/`.default`). This
+// is what savFrom() accepts — an object literal type-checked against the model, no JSON round-trip.
+export type SavInput = z.input<typeof SavSchema>;
 export type Command = (typeof CommandNames)[number];

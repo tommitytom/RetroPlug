@@ -1,0 +1,114 @@
+// risa runtime reader — pure unit tests (field mapping, accessor semantics, sentinels, version resolve,
+// ROM version scan). The end-to-end proof that the generated addresses match real risa is the native
+// test-native/risa-runtime; here we exercise the decode logic over synthetic RAM.
+import { test, expect } from "../../testing/harness";
+import {
+  decodeRisaState,
+  resolveRisaLayout,
+  supportedRisaVersions,
+  identifyRisaVersion,
+} from "../../src/risa/runtime";
+
+const layout = resolveRisaLayout("2.2.1")!;
+
+test("resolveRisaLayout resolves a known version and rejects an unknown one", () => {
+  expect(resolveRisaLayout("2.2.1") != null).toBeTruthy();
+  expect(resolveRisaLayout("1.0.0")).toBe(null);
+  expect(resolveRisaLayout(null)).toBe(null);
+  expect(supportedRisaVersions().includes("2.2.1")).toBeTruthy();
+});
+
+test("resolveRisaLayout aliases 2.2.0 to the 2.2.1 layout (shared internal-RAM addresses)", () => {
+  const aliased = resolveRisaLayout("2.2.0");
+  expect(aliased != null).toBeTruthy();
+  expect(aliased!.version).toBe("2.2.0"); // keeps the ROM's real version label
+  expect(aliased!.seqMode).toBe(resolveRisaLayout("2.2.1")!.seqMode); // borrows 2.2.1's addresses
+  expect(supportedRisaVersions().includes("2.2.0")).toBeTruthy();
+});
+
+test("resolveRisaLayout rejects risa versions with no bundled layout", () => {
+  // Probed against real cores (test-native/risa-220-layout covers 2.2.0): only 2.2.0/2.2.1 share a
+  // layout. These older builds moved the BSS/ZP variables, so decoding them with the 2.2.1 addresses is
+  // garbage — resolve to null (graceful fallback) rather than alias them.
+  for (const v of ["0.9.1", "1.0.0", "2.0.0", "2.1.0"]) expect(resolveRisaLayout(v)).toBe(null);
+  expect(supportedRisaVersions().sort()).toEqual(["2.2.0", "2.2.1", "2.3.0"]);
+});
+
+test("2.3.0 resolves its OWN layout, not an alias to 2.2.1", () => {
+  // cc65 moved every variable the reader tracks between the two builds; certified against the released
+  // ROM in test-native/risa-230-layout.
+  const l = resolveRisaLayout("2.3.0");
+  expect(l != null).toBeTruthy();
+  expect(l!.version).toBe("2.3.0");
+  expect(l!.seqMode !== resolveRisaLayout("2.2.1")!.seqMode).toBeTruthy();
+});
+
+test("decodeRisaState degrades to unsupported for a null layout or an undersized snapshot", () => {
+  expect(decodeRisaState(new Uint8Array(0x800), null).supported).toBeFalsy();
+  expect(decodeRisaState(new Uint8Array(4), layout).supported).toBeFalsy(); // can't cover the addresses
+});
+
+test("decodeRisaState maps global + per-track fields, the last-row fallback, and 0xFF sentinels", () => {
+  const ram = new Uint8Array(0x800);
+  ram[layout.seqMode] = 1; // song
+  ram[layout.seqActive] = 0b00101; // tracks 0 and 2 active
+  ram[layout.bpm] = 128; // u16 LE = 128
+  ram[layout.currentScreen] = 2; // song
+  ram[layout.cursorRow] = 3;
+  ram[layout.cursorCol] = 4;
+  ram[layout.uiTrack] = 1;
+  ram[layout.kitActive] = 5;
+
+  // track 0: last song row is 0xFF → seq_get_song_row falls back to the live row (7); real positions.
+  ram[layout.songLastRow + 0] = 0xff;
+  ram[layout.songRow + 0] = 7;
+  ram[layout.chainId + 0] = 2;
+  ram[layout.chainRow + 0] = 1;
+  ram[layout.phraseId + 0] = 10;
+  ram[layout.phraseLastRow + 0] = 5;
+  ram[layout.note + 0] = 60;
+  ram[layout.lastInst + 0] = 3;
+  // track 1: all 0xFF → every position reads null (parked/inactive).
+  for (const base of [layout.songLastRow, layout.songRow, layout.chainId, layout.chainRow, layout.phraseId, layout.phraseLastRow, layout.note, layout.lastInst]) ram[base + 1] = 0xff;
+  // track 2: last song row present (4) → used directly (no fallback to the live 9).
+  ram[layout.songLastRow + 2] = 4;
+  ram[layout.songRow + 2] = 9;
+
+  const s = decodeRisaState(ram, layout);
+  expect(s.supported).toBeTruthy();
+  expect(s.playing).toBeTruthy();
+  expect(s.mode).toBe("song");
+  expect(s.bpm).toBe(128);
+  expect(s.fourX).toBeFalsy();
+  expect(s.screen).toBe("song");
+  expect(s.cursor).toEqual({ row: 3, col: 4 });
+  expect(s.uiTrack).toBe(1);
+  expect(s.kitActive).toBe(5);
+
+  expect(s.tracks[0]).toEqual({ active: true, songRow: 7, chainId: 2, chainRow: 1, phraseId: 10, phraseRow: 5, note: 60, instrument: 3 });
+  expect(s.tracks[1].active).toBeFalsy();
+  expect(s.tracks[1].chainId).toBe(null); // 0xFF → null
+  expect(s.tracks[1].phraseRow).toBe(null);
+  expect(s.tracks[2].active).toBeTruthy();
+  expect(s.tracks[2].songRow).toBe(4); // last-row present → no fallback
+});
+
+test("decodeRisaState reads the 4x tempo sentinel and a stopped state", () => {
+  const ram = new Uint8Array(0x800);
+  ram[layout.bpm] = 296 & 0xff; // 0x28
+  ram[layout.bpm + 1] = 296 >> 8; // 0x01  → u16 296 = TEMPO_MODE_4X
+  const s = decodeRisaState(ram, layout);
+  expect(s.fourX).toBeTruthy();
+  expect(s.bpm).toBe(null); // 4x mode reports no numeric BPM
+  expect(s.playing).toBeFalsy(); // seq_mode 0 → stopped
+  expect(s.mode).toBe("stopped");
+});
+
+test("identifyRisaVersion scans the PRG for the RISA V marker", () => {
+  const rom = new Uint8Array(0x400);
+  rom.set([0x4e, 0x45, 0x53, 0x1a], 0); // iNES header
+  const marker = "RISA V2.2.1";
+  for (let i = 0; i < marker.length; i++) rom[0x123 + i] = marker.charCodeAt(i); // buried in the PRG
+  expect(identifyRisaVersion(rom)).toBe("2.2.1");
+  expect(identifyRisaVersion(new Uint8Array(0x100))).toBe(null); // no marker
+});

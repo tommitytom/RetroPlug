@@ -23,6 +23,8 @@
 #include "PluginShared.hpp"
 #include "ContextTargets.hpp"             // per-context routing for the __rp_* window hooks
 #include "host/input/GamepadManager.hpp" // SDL controller poll (shared UI-thread input)
+#include "host/render/RenderJobRegistry.hpp" // background render jobs (the __rp_*Render hooks)
+#include "host/ui/NativeFileDialog.hpp"   // OS-native file picker (pfd) — shared with the SDL host
 
 #include <chrono>
 #include <cstdint>
@@ -98,6 +100,10 @@ class PluginUI : public UI {
     // re-emits each transition onto the gamepad-* JS bus that useGamepadInput subscribes to. Inert
     // (ok()==false, update() a no-op) when SDL_INIT_GAMECONTROLLER fails — e.g. headless CI with no device.
     retroplug::GamepadManager gamepad_;
+
+    // The in-flight OS-native file dialog (pfd), opened by requestFileBrowser and polled in uiIdle. Shared
+    // with the SDL host so both surface the same picker.
+    retroplug::ui::NativeFileDialog nativeDialog_;
 
     void maybeWriteScreenshot() {
         if (screenshotPath_.empty()) return;
@@ -181,15 +187,29 @@ public:
     }
     bool isWindowSizeControlled() const { return wmControlled_; }
 
-    // Open the native OS file dialog for the UI (the menu's Load / Save / Export / Locate items).
-    // `patterns` is a whitespace-separated glob list (DPF's FileBrowserOptions.fileFilterPatterns).
-    // Non-blocking: the pick arrives later on uiFileBrowserSelected. Called via the __rp_openFileBrowser
-    // seam. One dialog is ever in flight (the TS FileSelection flow awaits sequentially).
-    void requestFileBrowser(const char* title, const char* patterns, bool saving, const char* defaultName) {
+    // Open the OS-native file dialog for the UI (the menu's Load / Save / Export / Locate items). Two backends:
+    //  - portable-file-dialogs (NativeFileDialog), the SAME picker the SDL host uses, WHEN a desktop helper
+    //    (zenity/kdialog/…) exists. It surfaces reliably even in a DAW-hosted editor, where DPF's own browser
+    //    could bind the hook yet never show a dialog (the reported bug).
+    //  - else DPF's built-in openFileBrowser, which needs NO helper (xdg-desktop-portal / libsofd X11) and
+    //    works in the standalone. So a helper-less host keeps a working OS dialog instead of silently
+    //    dropping to the in-app browser (the regression a hard availability gate caused).
+    // `patterns` is a whitespace-separated glob list; `directory` picks a FOLDER (the render "Output Dir");
+    // `saving` seeds the save name with defaultName. Non-blocking either way: the pick arrives later via
+    // uiFileBrowserSelected (pfd is polled in uiIdle; DPF calls it directly). One dialog is ever in flight.
+    void requestFileBrowser(const char* title, const char* patterns, bool saving, const char* defaultName,
+                            const char* startDir, bool directory) {
+        if (retroplug::ui::NativeFileDialog::available()) {
+            nativeDialog_.request(title ? title : "", patterns ? patterns : "", saving,
+                                  defaultName ? defaultName : "", startDir ? startDir : "", directory);
+            return;
+        }
         FileBrowserOptions opts;
         opts.title  = (title && *title) ? title : "Open";
         opts.saving = saving;
+        opts.directory = directory; // pick a FOLDER (our DPF fork; Linux + macOS) — the render "Output Dir"
         if (defaultName && *defaultName) opts.defaultName = defaultName;
+        if (startDir && *startDir) opts.startDir = startDir;
         if (patterns && *patterns) opts.fileFilterPatterns = patterns;
         openFileBrowser(opts);
     }
@@ -365,9 +385,11 @@ protected:
         return !veto;
     }
 
-    // The native OS file dialog's result (null/empty filename = cancel). Deliver it into JS by calling the
+    // The OS file dialog's result (null/empty filename = cancel). Deliver it into JS by calling the
     // __rp_onFileBrowserResult resolver the real Backend registered — same shared context, same UI thread
     // that pumps the JS loop, so a direct call is safe (the awaiting Promise settles on the next tick).
+    // Now driven by the NativeFileDialog (pfd) poll in uiIdle rather than DPF's browser, but kept as the DPF
+    // override too (USE_FILE_BROWSER stays on for drag-and-drop) so DPF never routes a stray pick elsewhere.
     void uiFileBrowserSelected(const char* filename) override {
         JSContext* ctx = jsEngine.getContext();
         if (!ctx) return;
@@ -407,6 +429,9 @@ protected:
         if (JSContext* ctx = jsEngine.getContext()) {
             jsEngine.emit("frame", 0, nullptr); // drives EmulatorTile's getFrame
             pumpGamepad(ctx);                   // poll controllers → the gamepad-* JS bus
+            // Deliver a finished OS file-dialog pick (async; cancel = empty). uiFileBrowserSelected resolves
+            // the awaiting JS Promise via __rp_onFileBrowserResult (empty c-string → null → cancel).
+            nativeDialog_.poll([this](const std::string& pick) { uiFileBrowserSelected(pick.c_str()); });
             // File watcher: drain native's changed paths + react (config live-reload / bindings refresh /
             // ROM hot-reload). efsw already coalesced the changes on its own thread, so a low cadence (~1/15
             // frames, a few Hz) is plenty and keeps stat/JS churn off the hot path. Inert if the control
@@ -463,10 +488,11 @@ protected:
     bool onKeyboard(const KeyboardEvent& ev) override {
         UI::onKeyboard(ev); // base → LVGL keypad indev (menu arrow nav / Enter)
         if (JSContext* ctx = jsEngine.getContext()) {
-            JSValue args[2] = {JS_NewUint32(ctx, ev.key), JS_NewBool(ctx, ev.press)};
-            jsEngine.emit("key", 2, args); // the App's Esc handler + any key policy reads this
-            JS_FreeValue(ctx, args[0]);
-            JS_FreeValue(ctx, args[1]);
+            // key is the unshifted code point (DPF gives 'a' for the A key regardless of Shift); pass mod so
+            // the prompt text-input can apply Shift → uppercase itself. @see kModifierShift.
+            JSValue args[3] = {JS_NewUint32(ctx, ev.key), JS_NewBool(ctx, ev.press), JS_NewUint32(ctx, ev.mod)};
+            jsEngine.emit("key", 3, args); // the App's Esc handler + any key policy reads this
+            for (JSValue& v : args) JS_FreeValue(ctx, v);
         }
         return true;
     }
@@ -529,6 +555,66 @@ PluginUI* windowUiFromData(JSContext* ctx, JSValue* funcData) {
     return retroplug::contextTargetFromData<PluginUI>(ctx, funcData);
 }
 
+// Background render jobs, PROCESS-GLOBAL so a render survives its editor window closing (each job spins its
+// own RenderHost + Engine — nothing here references the live plugin). Jobs are tagged with the editor
+// (PluginUI*) that started them, so a multi-instance host only shows its own; the static's destructor
+// cancels + joins any still-running thread at process exit.
+retroplug::RenderJobRegistry g_renderJobs;
+
+// __rp_startRender(systemId, specJson): kick off a background render of a fresh system (the UI has already
+// snapshotted the live SRAM/savestate into the spec's sav/state path). Returns the job id.
+JSValue jsStartRender(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    PluginUI* ui = windowUiFromData(ctx, funcData);
+    if (!ui || argc < 2) return JS_NewInt64(ctx, 0);
+    std::uint32_t systemId = 0;
+    JS_ToUint32(ctx, &systemId, argv[0]);
+    const char* spec = JS_ToCString(ctx, argv[1]);
+    retroplug::RenderJobRegistry::JobId id =
+        g_renderJobs.start(ui, systemId, spec ? std::string(spec) : std::string());
+    if (spec) JS_FreeCString(ctx, spec);
+    return JS_NewInt64(ctx, static_cast<std::int64_t>(id));
+}
+
+// __rp_cancelRender(jobId): request cooperative cancellation of a running render.
+JSValue jsCancelRender(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue*) {
+    if (argc >= 1) {
+        std::int64_t id = 0;
+        JS_ToInt64(ctx, &id, argv[0]);
+        g_renderJobs.cancel(static_cast<retroplug::RenderJobRegistry::JobId>(id));
+    }
+    return JS_UNDEFINED;
+}
+
+// __rp_dismissRenderJob(jobId): drop a finished job (the UI dismisses a completed/errored badge).
+JSValue jsDismissRenderJob(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue*) {
+    if (argc >= 1) {
+        std::int64_t id = 0;
+        JS_ToInt64(ctx, &id, argv[0]);
+        g_renderJobs.dismiss(static_cast<retroplug::RenderJobRegistry::JobId>(id));
+    }
+    return JS_UNDEFINED;
+}
+
+// __rp_getRenderJobs(): this editor's render jobs as [{ id, systemId, state, progress, message }], for the
+// per-frame tile poll. state is "rendering" | "done" | "error" | "cancelled".
+JSValue jsGetRenderJobs(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSValue* funcData) {
+    JSValue arr = JS_NewArray(ctx);
+    PluginUI* ui = windowUiFromData(ctx, funcData);
+    if (!ui) return arr;
+    std::vector<retroplug::RenderJobRegistry::Status> jobs = g_renderJobs.snapshot(ui);
+    for (std::uint32_t i = 0; i < jobs.size(); ++i) {
+        const auto& s = jobs[i];
+        JSValue o = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, o, "id", JS_NewInt64(ctx, static_cast<std::int64_t>(s.id)));
+        JS_SetPropertyStr(ctx, o, "systemId", JS_NewUint32(ctx, s.systemId));
+        JS_SetPropertyStr(ctx, o, "state", JS_NewString(ctx, retroplug::RenderJobRegistry::stateName(s.state)));
+        JS_SetPropertyStr(ctx, o, "progress", JS_NewFloat64(ctx, s.progress));
+        JS_SetPropertyStr(ctx, o, "message", JS_NewString(ctx, s.message.c_str()));
+        JS_SetPropertyUint32(ctx, arr, i, o);
+    }
+    return arr;
+}
+
 JSValue jsSetWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
     PluginUI* ui = windowUiFromData(ctx, funcData);
     if (ui && argc >= 2) {
@@ -573,8 +659,10 @@ JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
     return JS_UNDEFINED;
 }
 
-// __rp_openFileBrowser(title, patterns, saving, defaultName): open the native OS dialog. patterns is a
-// whitespace-separated glob list. The result comes back later via the UI's uiFileBrowserSelected override.
+// __rp_openFileBrowser(title, patterns, saving, defaultName, startDir, directory): open the native OS
+// dialog. patterns is a whitespace-separated glob list; startDir (optional, 5th arg) is the folder to open
+// in; directory (optional, 6th arg) picks a FOLDER instead of a file. The result comes back later via the
+// UI's uiFileBrowserSelected override.
 JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
     PluginUI* ui = windowUiFromData(ctx, funcData);
     if (ui && argc >= 4) {
@@ -582,11 +670,14 @@ JSValue jsOpenFileBrowser(JSContext* ctx, JSValueConst, int argc, JSValueConst* 
         const char* patterns    = JS_ToCString(ctx, argv[1]);
         const int   saving      = JS_ToBool(ctx, argv[2]);
         const char* defaultName = JS_ToCString(ctx, argv[3]);
+        const char* startDir    = (argc >= 5) ? JS_ToCString(ctx, argv[4]) : nullptr;
+        const int   directory   = (argc >= 6) ? JS_ToBool(ctx, argv[5]) : 0;
         ui->requestFileBrowser(title ? title : "", patterns ? patterns : "", saving == 1,
-                               defaultName ? defaultName : "");
+                               defaultName ? defaultName : "", startDir ? startDir : "", directory == 1);
         if (title) JS_FreeCString(ctx, title);
         if (patterns) JS_FreeCString(ctx, patterns);
         if (defaultName) JS_FreeCString(ctx, defaultName);
+        if (startDir) JS_FreeCString(ctx, startDir);
     }
     return JS_UNDEFINED;
 }
@@ -607,10 +698,17 @@ void installWindowSizeHooks(JSContext* ctx, PluginUI* ui) {
     };
     bind("__rp_setWindowSize", jsSetWindowSize, 2);
     bind("__rp_isWindowSizeControlled", jsIsWindowSizeControlled, 0);
-    bind("__rp_openFileBrowser", jsOpenFileBrowser, 4);
+    // Always bound: requestFileBrowser picks pfd or DPF's own browser at call time, and DPF's needs no
+    // helper — so "File Dialogs: OS Native" gives a real OS dialog on every desktop host, not just ones
+    // with zenity/kdialog. (The DAW-hosted-with-no-helper corner is the one weak spot, no worse than before.)
+    bind("__rp_openFileBrowser", jsOpenFileBrowser, 6);
     bind("__rp_quitWindow", jsQuitWindow, 0);
     bind("__rp_openPath", jsOpenPath, 1);
     bind("__rp_setWindowTitle", jsSetWindowTitle, 1);
+    bind("__rp_startRender", jsStartRender, 2);
+    bind("__rp_cancelRender", jsCancelRender, 1);
+    bind("__rp_dismissRenderJob", jsDismissRenderJob, 1);
+    bind("__rp_getRenderJobs", jsGetRenderJobs, 0);
     JS_FreeValue(ctx, g);
 }
 

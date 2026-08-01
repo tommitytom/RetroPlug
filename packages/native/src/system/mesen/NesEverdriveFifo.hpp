@@ -6,6 +6,8 @@
 #include <fstream>
 #include <filesystem>
 #include <cstdint>
+#include <cstdlib>
+#include <cstdio>
 #include <string>
 #include <functional>
 
@@ -21,6 +23,14 @@
 // are correct.
 
 namespace rp {
+
+	// Diagnostic: set RP_FIFO_TRACE=1 to log the exact byte stream the ROM
+	// reads at $40F0, host-MIDI pushes, and per-command response sizes. Used to
+	// investigate the N8 MIDI "priming" behaviour.
+	inline bool fifoTraceEnabled() {
+		static const bool on = (std::getenv("RP_FIFO_TRACE") != nullptr);
+		return on;
+	}
 
 	// -----------------------------------------------------------------------
 	// Command codes (NES SDK / Edio protocol)
@@ -84,6 +94,17 @@ namespace rp {
 		// Loaded directory listing (from CMD_F_DIR_LD)
 		std::vector<EdioDirRecord> _dirRecords;
 
+		// ----- Edio command status --------------------------------------
+		// Real N8 Edio commands (FOPN/FCLOSE/DIR_LD/…) do NOT auto-emit a
+		// status word; they set an internal result that the ROM retrieves with
+		// a *separate* CMD_STATUS query (the SDK's `ed_check_status`). We mirror
+		// that: commands store `_lastStatus`, and only CMD_STATUS emits it.
+		// Auto-emitting here instead (the old behaviour) left the CMD_STATUS
+		// reply's 2 bytes unread in the RX FIFO — and the high byte 0xA5 is a
+		// valid MIDI status (Poly-Aftertouch, ch5), which desynced n8-midi's
+		// MIDI parser and caused the "first message is ignored" priming quirk.
+		uint8_t _lastStatus = 0;
+
 	public:
 		// Set the host path that represents the SD card root ("/").
 		// Must be called before the NES ROM runs any SD commands.
@@ -109,6 +130,8 @@ namespace rp {
 				if (!_rxQueue.empty()) {
 					uint8_t val = _rxQueue.front();
 					_rxQueue.pop();
+					if (fifoTraceEnabled())
+						std::fprintf(stderr, "[fifo] rd  %02X (rem=%zu)\n", val, _rxQueue.size());
 					return val;
 				}
 				return 0xFF;
@@ -135,6 +158,24 @@ namespace rp {
 		void pushByte(uint8_t byte) {
 			std::lock_guard<std::mutex> lock(_mutex);
 			_rxQueue.push(byte);
+			if (fifoTraceEnabled())
+				std::fprintf(stderr, "[fifo] midi %02X (depth=%zu)\n", byte, _rxQueue.size());
+		}
+
+		// Number of bytes waiting in the RX queue (not yet read by the ROM). For tests / introspection.
+		std::size_t rxCount() {
+			std::lock_guard<std::mutex> lock(_mutex);
+			return _rxQueue.size();
+		}
+
+		// Drop every DELIVERED-but-unread byte. A host-sync arm is a barrier: the ROM must not read
+		// clocks queued for the position it just left, and those bytes are already past the pending
+		// queue and sitting here. Leaves the TX parser state alone - only the emulator->NES direction
+		// is being re-pointed.
+		void clearRx() {
+			std::lock_guard<std::mutex> lock(_mutex);
+			std::queue<uint8_t> empty;
+			_rxQueue.swap(empty);
 		}
 
 	private:
@@ -189,13 +230,17 @@ namespace rp {
 		// ----------------------------------------------------------------
 		void beginCommand(uint8_t cmd) {
 			switch (cmd) {
-			// No parameters — execute immediately
+			// No parameters — execute immediately. Reset the parser to WaitHeader0
+			// so the NEXT command's header ('+') is recognised — otherwise the
+			// parser is left mid-command (WaitCmdInv) and the following command
+			// (e.g. any op after the ubiquitous CMD_STATUS query) is dropped.
 			case CMD_STATUS:
 			case CMD_DISK_INIT:
 			case CMD_F_FCLOSE:
 			case CMD_F_DIR_SIZE:
 				_paramBytesNeeded = 0;
 				executeCommand(cmd);
+				_parseState = ParseState::WaitHeader0;
 				return;
 
 			// Fixed-size parameters
@@ -279,6 +324,7 @@ namespace rp {
 		// Execute a fully-received command
 		// ----------------------------------------------------------------
 		void executeCommand(uint8_t cmd) {
+			const std::size_t before = _rxQueue.size();
 			switch (cmd) {
 			case CMD_STATUS:      execStatus();    break;
 			case CMD_DISK_INIT:   execDiskInit();  break;
@@ -296,13 +342,23 @@ namespace rp {
 			case CMD_FPG_CFG:     /* init stub — no response */ break;
 			default: break;
 			}
+			if (fifoTraceEnabled())
+				std::fprintf(stderr, "[fifo] cmd=%02X resp+=%zu (depth=%zu)\n",
+				             cmd, _rxQueue.size() - before, _rxQueue.size());
 		}
 
 		// ----------------------------------------------------------------
 		// Helpers
 		// ----------------------------------------------------------------
 
-		// Push a 16-bit status word: 0xA500 | errorCode
+		// Record the result of the last Edio command. The ROM reads it later via
+		// a CMD_STATUS query (execStatus) — commands must NOT emit it themselves.
+		void setStatus(uint8_t errorCode) {
+			_lastStatus = errorCode;
+		}
+
+		// Push a 16-bit status word: 0xA500 | errorCode. Only emitted in reply to
+		// a CMD_STATUS query (see setStatus's rationale).
 		void pushStatus(uint8_t errorCode = 0) {
 			_rxQueue.push(static_cast<uint8_t>(errorCode)); // low byte
 			_rxQueue.push(0xA5);                            // high byte
@@ -383,13 +439,13 @@ namespace rp {
 		// ----------------------------------------------------------------
 
 		void execStatus() {
-			// CMD_STATUS with no prior operation — just report OK
-			pushStatus(0);
+			// Emit the stored result of the last command (0 if none yet).
+			pushStatus(_lastStatus);
 		}
 
 		void execDiskInit() {
 			// Always succeeds for the host filesystem
-			pushStatus(0);
+			setStatus(0);
 		}
 
 		void execDirLoad() {
@@ -402,7 +458,7 @@ namespace rp {
 
 			std::error_code ec;
 			if (!std::filesystem::exists(dir, ec) || !std::filesystem::is_directory(dir, ec)) {
-				pushStatus(0x05); // FAT_NO_PATH
+				setStatus(0x05); // FAT_NO_PATH
 				return;
 			}
 
@@ -414,7 +470,7 @@ namespace rp {
 				return a.name < b.name;
 			});
 
-			pushStatus(0);
+			setStatus(0);
 		}
 
 		void execDirSize() {
@@ -450,7 +506,7 @@ namespace rp {
 			std::string nesPath = readParamString(1);
 
 			if (nesPath.empty()) {
-				pushStatus(0x03); // ERR_NULL_PATH
+				setStatus(0x03); // ERR_NULL_PATH
 				return;
 			}
 
@@ -467,11 +523,11 @@ namespace rp {
 			_openFile.open(_openFilePath, flags);
 
 			if (!_openFile.is_open()) {
-				pushStatus(0x04); // FAT_NO_FILE
+				setStatus(0x04); // FAT_NO_FILE
 				return;
 			}
 
-			pushStatus(0);
+			setStatus(0);
 		}
 
 		void execFileRead() {
@@ -509,12 +565,12 @@ namespace rp {
 				remaining -= std::min(remaining, ACK_BLOCK);
 			}
 
-			pushStatus(0);
+			setStatus(0);
 		}
 
 		void execFileClose() {
 			_openFile.close();
-			pushStatus(0);
+			setStatus(0);
 		}
 
 		void execFileSetPtr() {
@@ -522,7 +578,7 @@ namespace rp {
 			_filePtr = readParamU32(0);
 			_openFile.seekg(_filePtr);
 			_openFile.seekp(_filePtr);
-			pushStatus(0);
+			setStatus(0);
 		}
 
 		void execFileInfo() {
@@ -549,7 +605,7 @@ namespace rp {
 
 			std::error_code ec;
 			std::filesystem::create_directories(hostPath, ec);
-			pushStatus(ec ? uint8_t(0x07) : uint8_t(0));
+			setStatus(ec ? uint8_t(0x07) : uint8_t(0));
 		}
 
 		void execFileDel() {
@@ -559,7 +615,7 @@ namespace rp {
 
 			std::error_code ec;
 			std::filesystem::remove(hostPath, ec);
-			pushStatus(ec ? uint8_t(0x04) : uint8_t(0));
+			setStatus(ec ? uint8_t(0x04) : uint8_t(0));
 		}
 	};
 }

@@ -58,7 +58,24 @@ The rules below are the parts that don't fit those.
   `cmake --build build --target <t> -j$(nproc)` — always pass `-j`, the default is
   a single-threaded slog. `build.bat` enters vcvars64 + the tool PATH and runs the
   `cl` + vcpkg-`x64-windows-static` configure (overridable via `VCPKG_ROOT` /
-  `RGBDS_DIR` / `NODE_DIR`).
+  `RGBDS_DIR` / `NODE_DIR`). Both scripts pass any `-D<var>=<value>` straight
+  through to the configure (and force one, so the entry lands on an existing tree).
+- **Mesen LTO is opt-in (`-DRETROPLUG_MESEN_LTO=ON`), and that is deliberate.** It
+  buys ~10% on the NES core (Cortex-A53: xRT 0.83 -> 0.92), but it turns every mesen
+  object into LTO bitcode, so each of the *nine* binaries linking that static lib
+  re-runs codegen over ~430 objects. Measured cost of a one-line `.cpp` edit: **1m05s
+  wall / 26m51s CPU with it on, 2.4s / 6.6s with it off** — same single compile, the
+  rest is eight full LTO links. So it's OFF by default and every `release.yml` job
+  passes it ON; shipped builds keep the speedup, the dev loop doesn't pay for it.
+  Toggling the option recompiles mesen (~45 s). If you see mesen scroll past on every
+  build (the repeated `emu2413.cpp` warnings), that's LTO link-time codegen, not a
+  stale-dependency bug — `[NN%] Built target mesen` prints whether or not it did work.
+- **`retroplug-sdl` is `EXCLUDE_FROM_ALL` while the SDL standalone is WIP**, so it's
+  out of the default build and therefore off CI (which builds `all`). Build it by name
+  — `cmake --build build --target retroplug-sdl -j$(nproc)`, or `pnpm sdl:smoke`, which
+  does that then runs the headless smoke. To put it back on CI, drop the flag in
+  [packages/native/CMakeLists.txt](packages/native/CMakeLists.txt) and restore the
+  `pnpm sdl:smoke` steps in `build.yml` (linux + macos).
 - **Never commit derived artifacts** — the embedded bundle C arrays
   (`build/native/*bundle_data.c`).
 - **Config migrations (versioned, raw-JSON).** Persistence is TS-owned. Every serialized
@@ -118,4 +135,20 @@ composed its own store again); not in CI. Then the `tools/run-sanitizer.sh` thre
 and `validate`. The LSDj-sync / DAW-timing / audio-quality matrix runs headlessly
 too — the real-Reaper
 `reaper:lsdj-*` renders + `tools/reaper-timing-analyze.py`; see
-[docs/lsdj.md](docs/lsdj.md).
+[docs/lsdj.md](docs/lsdj.md). `reaper:risa-sync` is the NES/risa twin of the LSDj drift
+render (same `--drift` analyzer, whose labels are therefore tracker-neutral): risa host sync
+is driven by the DAW **transport** alone, so that project carries no MIDI item at all.
+To run the **whole** Reaper leg (all 7 renders + 3
+editor checks) at once, `pnpm reaper:all` fans them out concurrently
+([tools/run-reaper-suite.sh](tools/run-reaper-suite.sh)); each job is isolated by
+`RP_JOB_TAG` via the sourced [tools/reaper-env.sh](tools/reaper-env.sh) (uniquely named
+JACK server + per-tag config dir / display / logs), which is also what makes the
+individual `reaper:*` scripts safe to run in parallel.
+
+**UI/background rendering** (the `System > Render` menu; [spec/11-ui-rendering.md](spec/11-ui-rendering.md)):
+the CLI `render` command and the UI render share one library (`packages/retroplug/src/render/`), run offline
+by a bare-QuickJS `RenderHost` (own `Engine`) on a per-job thread (`RenderJobRegistry`). Verify with
+`retroplug-render-host-test` (built by name — `cmake --build build --target retroplug-render-host-test`): a
+`<job-json>` render is byte-identical to `retroplug-cli render`; `--registry <j>...` runs jobs concurrently;
+`--cancel <j>` aborts mid-render — build it in `build-tsan/` for the ThreadSanitizer pass. The UI-seam logic
+is `pnpm test render`; the tile badge is `pnpm test:ui render-badge`.

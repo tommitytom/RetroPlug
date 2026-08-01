@@ -74,6 +74,7 @@ export interface Sinks {
   serialIn: { system: number; frame: number; byte: number }[];
   midiOut: { system: number; frame: number; data: number[] }[];
   coreMidi: { system: number; frame: number; data: number[] }[];
+  coreBytes: { system: number; frame: number; data: number[]; flush?: boolean }[];
   buttons: { system: number; frame: number; button: number; down: boolean }[];
 }
 
@@ -85,6 +86,7 @@ export interface SinkTarget {
   pushSerialIn(system: number, frame: number, byte: number): void;
   emitMidiOut(system: number, frame: number, data: number[]): void;
   emitCoreMidi(system: number, frame: number, data: number[]): void;
+  pushCoreBytes(system: number, frame: number, data: number[], flush?: boolean): void;
   pressButton(system: number, frame: number, button: number, down: boolean): void;
   reset?(): void;
 }
@@ -97,6 +99,7 @@ export class CollectingSink implements SinkTarget {
     this.sinks.serialIn.length = 0;
     this.sinks.midiOut.length = 0;
     this.sinks.coreMidi.length = 0;
+    this.sinks.coreBytes.length = 0;
     this.sinks.buttons.length = 0;
   }
   pushSerialIn(system: number, frame: number, byte: number): void {
@@ -107,6 +110,9 @@ export class CollectingSink implements SinkTarget {
   }
   emitCoreMidi(system: number, frame: number, data: number[]): void {
     this.sinks.coreMidi.push({ system, frame, data });
+  }
+  pushCoreBytes(system: number, frame: number, data: number[], flush?: boolean): void {
+    this.sinks.coreBytes.push(flush ? { system, frame, data, flush } : { system, frame, data });
   }
   pressButton(system: number, frame: number, button: number, down: boolean): void {
     this.sinks.buttons.push({ system, frame, button, down });
@@ -132,8 +138,19 @@ export interface SystemCtx {
   pushSerialIn(frame: number, byte: number): void;
   emitMidiOut(frame: number, data: number[]): void;
   emitCoreMidi(frame: number, data: number[]): void;
+  /** Push raw bytes into the core's device byte-input (the NES N8 FIFO), no framing/length cap —
+   *  for a byte protocol carried over the transport (a tracker's host-sync locate/clock stream).
+   *  `flush` drops every byte the FIFO still holds — both not-yet-delivered and delivered-but-unread —
+   *  before these are enqueued, so a re-locate isn't preceded by clocks queued for the old position. */
+  pushCoreBytes(frame: number, data: number[], flush?: boolean): void;
   pressButton(button: number, down: boolean): void;
   eachTick(resolution: number, cb: (tick: number, off: number) => void): void;
+  /** Force the tick this system's next `eachTick` starts from, overriding the drift-free counter it
+   *  normally carries across blocks. For a role that has just repositioned the core itself (risa's
+   *  host-sync arm names the clock it locates to), so the clock stream resumes from a known tick rather
+   *  than wherever the previous block left off. `eachTick`'s own resync only triggers on a jump of more
+   *  than a tick, so an exact loop back to the same position would otherwise emit no clocks at all. */
+  setNextTick(tick: number): void;
 }
 
 export type SystemBehavior = (ctx: SystemCtx) => void;
@@ -156,7 +173,7 @@ export interface DspTracer {
 }
 
 export function emptySinks(): Sinks {
-  return { serialIn: [], midiOut: [], coreMidi: [], buttons: [] };
+  return { serialIn: [], midiOut: [], coreMidi: [], coreBytes: [], buttons: [] };
 }
 
 // Walk the PPQ ticks that fall in this block at `resolution` ticks/quarter, calling cb(tick, off)
@@ -397,11 +414,13 @@ export class DspKernel {
       pushSerialIn: (frame, byte) => this.sink.pushSerialIn(id, frame, byte),
       emitMidiOut: (frame, data) => this.sink.emitMidiOut(id, frame, data),
       emitCoreMidi: (frame, data) => this.sink.emitCoreMidi(id, frame, data),
+      pushCoreBytes: (frame, data, flush) => this.sink.pushCoreBytes(id, frame, data, flush),
       pressButton: (button, down) => this.sink.pressButton(id, 0, button, down),
       eachTick: (resolution, cb) => {
         const nt = this.tick.get(id) ?? 0;
         this.tick.set(id, walkTicks(this.block, resolution, nt, cb));
       },
+      setNextTick: (tick) => this.tick.set(id, tick),
     };
   }
 

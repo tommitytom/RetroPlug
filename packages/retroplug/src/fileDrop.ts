@@ -17,6 +17,7 @@
 import type { HostBackend } from "./backend";
 import { classifyKind } from "./fileSelection";
 import { siblingRplgPath } from "./savPaths";
+import { isSongPath } from "./lsdjSongImport";
 
 /** A project file (thin `.rplg` or the export `.rplg.zip`) — classified by extension, like ProjectStore. */
 function isProjectPath(path: string): boolean {
@@ -31,6 +32,7 @@ export type DropAction =
   | { type: "loadRom"; romPath: string; explicitSav?: string }
   | { type: "replace"; id: number; romPath: string; explicitSav?: string }
   | { type: "loadSram"; id: number; sav: string }
+  | { type: "patchSongs"; id: number; paths: string[] }
   | { type: "pairSav"; sav: string }
   | { type: "ignore"; reason: string };
 
@@ -42,6 +44,8 @@ export interface DropContext {
   /** True iff `targetId` is an actual tile the drop hit (not the focus fallback) — gates whether a
    *  bare `.sav` loads into that instance vs. is treated as a project load. */
   onTile: boolean;
+  /** True iff the target instance is an LSDj cart — gates song-file patching. */
+  targetIsLsdj: boolean;
   /** Resolve a `.sav`'s sibling ROM, or null — `SystemsStore.resolveSiblingRom`. Injected to keep this
    *  module store-free. */
   siblingRom: (savPath: string) => string | null;
@@ -56,6 +60,14 @@ export function resolveDropAction(backend: HostBackend, ctx: DropContext, paths:
   // A project file wins outright — loading a project rebuilds the whole session regardless of count.
   const project = files.find(isProjectPath);
   if (project) return { type: "loadProject", path: project };
+
+  // Song files (.lsdsng/.lsdprj) patch into the target LSDj instance — added to free slots, one reboot.
+  // Any non-song files in a mixed drop are ignored. Requires an LSDj target (else a no-op).
+  const songs = files.filter(isSongPath);
+  if (songs.length > 0) {
+    if (ctx.targetIsLsdj && ctx.targetId != null) return { type: "patchSongs", id: ctx.targetId, paths: songs };
+    return { type: "ignore", reason: "song files need an LSDj instance" };
+  }
 
   const roms = files.filter((p) => classifyKind(backend, p) === "rom");
   const savs = files.filter((p) => classifyKind(backend, p) === "sav");

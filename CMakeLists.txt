@@ -68,6 +68,16 @@ if(RETROPLUG_PROFILE)
     add_compile_options(-g -fno-omit-frame-pointer)
 endif()
 
+# --- LTO on the Mesen NES core: ~10% faster on the Cortex-A53 handheld, but it costs the dev loop
+# dearly, so it's opt-in and the release workflow turns it on (see deps/mesen/CMakeLists.txt).
+#
+# Mesen's ~430 objects become LTO bitcode, and EVERY binary that links the static lib re-runs codegen
+# over all of them: retroplug{,-cli,-host,-ui-test,-sdl} + the four plugin variants. Changing a single
+# .cpp measured 1m05s wall / 26m51s CPU with it on, ~15s / ~3m with it off — the compile is one file
+# either way, the rest is eight full LTO links. Off by default so `./build.sh` stays quick; release.yml
+# passes -DRETROPLUG_MESEN_LTO=ON so shipped binaries keep the speedup.
+option(RETROPLUG_MESEN_LTO "LTO the Mesen NES core (~10% faster, much slower links; on for releases)" OFF)
+
 # tell LVGL where to find its config file. Set before add_subdirectory(dpf.js)
 # so RetroPlug's lv_conf.h wins over the framework's default (CACHE no-FORCE).
 set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/packages/native/src/lv_conf.h" CACHE PATH "")
@@ -230,6 +240,13 @@ target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/
 # static lib the plugin links (efsw-static) compiles — a build that never links it pays nothing.
 # efsw's own CMake links Threads::Threads to the shared lib only, so consumers of efsw-static add it
 # themselves (done on retroplug-backend). BUILD_TEST_APP / EFSW_INSTALL default OFF as a subproject.
+#
+# efsw only defines the efsw-static target we link when BUILD_STATIC_LIBS is ON. Its option() defaults
+# ON, but respects any pre-existing cache value — and this build dir persists across branch switches, so
+# a stale/global BUILD_STATIC_LIBS=OFF can linger and silently drop the target. Linking a non-existent
+# `efsw-static` then degrades to a bogus `-lefsw-static` link flag with NO include dir, so efsw/efsw.hpp
+# isn't found. Force it ON here so efsw-static always exists (BUILD_SHARED_LIBS stays OFF — static build).
+set(BUILD_STATIC_LIBS ON CACHE BOOL "Build efsw as a static library" FORCE)
 add_subdirectory(deps/efsw "${CMAKE_BINARY_DIR}/deps/efsw" EXCLUDE_FROM_ALL)
 
 # lvgl-js-native + the framework PIC settings now come from dpf.js (above).

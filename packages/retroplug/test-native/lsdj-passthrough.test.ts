@@ -6,14 +6,14 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
 
 const LSDJ = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_4_2.gb"; // stock ROM supports MidiPassthrough
 
-const emptySav = () => savFromJson(JSON.stringify({ workingSong: { formatVersion: 22 } }));
+const emptySav = () => savFrom({ workingSong: { formatVersion: 22 } });
 
 const sysStruct = (id: number, mode: string) => ({
   project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],

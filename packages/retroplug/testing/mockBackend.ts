@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, FileBrowserOpts, FrameData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 import { savFromJson } from "../src/lsdj";
 
@@ -78,6 +78,9 @@ export class MockBackend implements Backend {
   /** Test-driven SRAM content per system (setSram), overriding the deterministic
    *  default — lets a test model SRAM changing over time (dedup vs write). */
   private sramOverrides = new Map<number, Uint8Array>();
+  /** Test-driven WRAM content per system (setRam) — lets a mock-tier test feed the LSDj runtime reader
+   *  a synthetic WRAM snapshot. Absent → readRam returns null (the mock has no real core). */
+  private ramOverrides = new Map<number, Uint8Array>();
 
   /** Paths queued by emitFileChange, drained by drainChangedPaths — simulates the
    *  native watcher (efsw) firing. */
@@ -107,6 +110,10 @@ export class MockBackend implements Backend {
 
   /** Drive a system's live SRAM content (what readSram returns), overriding the
    *  deterministic default — lets a test model SRAM changing between flushes. */
+  setRam(id: number, bytes: Uint8Array): void {
+    this.ramOverrides.set(id, new Uint8Array(bytes));
+  }
+
   setSram(id: number, bytes: Uint8Array): void {
     this.sramOverrides.set(id, new Uint8Array(bytes));
   }
@@ -191,13 +198,17 @@ export class MockBackend implements Backend {
   listDir(dir: string): string[] {
     this.log.push("listDir");
     const parent = this.canonicalize(dir);
-    const out: string[] = [];
+    const prefix = parent === "/" ? "/" : parent + "/";
+    // Immediate children: a direct file, or a subdirectory (marked with a trailing '/', matching the native
+    // listDir contract) inferred from any deeper file path under `parent`.
+    const names = new Set<string>();
     for (const key of this.files.keys()) {
-      const slash = key.lastIndexOf("/");
-      const keyParent = slash <= 0 ? "/" : key.slice(0, slash);
-      if (keyParent === parent) out.push(key.slice(slash + 1));
+      if (!key.startsWith(prefix)) continue;
+      const rest = key.slice(prefix.length);
+      const slash = rest.indexOf("/");
+      names.add(slash < 0 ? rest : rest.slice(0, slash) + "/");
     }
-    return out.sort();
+    return [...names].sort();
   }
 
   deleteFile(path: string): boolean {
@@ -254,10 +265,10 @@ export class MockBackend implements Backend {
   constructSystem(spec: ConstructSpec, id: number): boolean {
     this.log.push("constructSystem");
     this.constructCalls.push(spec);
-    // Build only when a real ROM is available: an embedded marker, or seeded ROM
-    // bytes that classify as a known format (mirrors native's slurp + reject).
+    // Build only when a real ROM is available: an embedded marker, TS-supplied effective ROM bytes
+    // (romBytes wins, as native does), or the on-disk romPath — classified to a known format.
     if (!spec.embeddedRom) {
-      const bytes = this.files.get(this.canonicalize(spec.romPath));
+      const bytes = spec.romBytes ?? this.files.get(this.canonicalize(spec.romPath));
       if (!bytes || detectPlatform(bytes) === "unknown") return false;
     }
     if (spec.replaceId !== undefined) this.systems.delete(spec.replaceId); // swap in place
@@ -288,6 +299,13 @@ export class MockBackend implements Backend {
     return this.systems.has(id) ? sramBytesFor(id) : null;
   }
 
+  readRam(id: number): Uint8Array | null {
+    this.log.push("readRam");
+    const override = this.ramOverrides.get(id);
+    if (override) return new Uint8Array(override);
+    return null; // the mock has no real core → no WRAM unless a test set one
+  }
+
   getFrame(id: number): FrameData | null {
     this.log.push("getFrame");
     // The mock never advances a real core, so a live system reports GB dimensions but no published
@@ -311,6 +329,11 @@ export class MockBackend implements Backend {
       noise: { enabled: false, period: 0, timer: 0, outputVolume: 0, frequency: 0, lengthCounter: 0, modeFlag: false, constantVolume: false, envelopeVolume: 0 },
       dmc: { enabled: false, sampleAddr: 0, sampleLength: 0, bytesRemaining: 0, period: 0, outputVolume: 0, loop: false, irqEnabled: false, sampleRate: 0 },
     };
+  }
+
+  getExpansionAudioState(_id: number): ExpansionAudioState {
+    this.log.push("getExpansionAudioState");
+    return { chip: "none", channels: [] };
   }
 
   getPpuState(_id: number): PpuState {
@@ -462,6 +485,28 @@ export class MockBackend implements Backend {
     // The LSDj codec is now pure TS, so the mock runs the REAL encoder — a valid
     // 128 KiB `jk`/`rb`-stamped image, no native host needed.
     return savFromJson(json);
+  }
+
+  // A trivial lossless RGBA container (magic "RPNG" + w + h + raw rgba) — NOT real PNG. Like the mock
+  // zip/unzip, it just needs round-trip fidelity so pure tests can exercise the font tile↔rgba mapping;
+  // decoding a real .png file is covered by the test-native suite (real lodepng host).
+  pngEncode(width: number, height: number, rgba: Uint8Array): Uint8Array | null {
+    this.log.push("pngEncode");
+    if (rgba.length < width * height * 4) return null;
+    const parts: number[] = [0x52, 0x50, 0x4e, 0x47]; // "RPNG"
+    pushU32(parts, width);
+    pushU32(parts, height);
+    return new Uint8Array([...parts, ...rgba.subarray(0, width * height * 4)]);
+  }
+
+  pngDecode(bytes: Uint8Array): PngImageData | null {
+    this.log.push("pngDecode");
+    if (bytes.length < 12 || bytes[0] !== 0x52 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
+    const width = readU32(bytes, 4);
+    const height = readU32(bytes, 8);
+    const rgba = bytes.slice(12, 12 + width * height * 4);
+    if (rgba.length < width * height * 4) return null;
+    return { width, height, rgba };
   }
 
   removeSystem(id: number): boolean {

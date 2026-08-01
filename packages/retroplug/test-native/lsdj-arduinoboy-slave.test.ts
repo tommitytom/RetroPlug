@@ -7,7 +7,7 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -16,7 +16,7 @@ declare const __DSP_KERNEL_BUNDLE__: string;
 const ABOY = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb";
 
 // SYNC=LSDj (Arduinoboy slave) + a one-note song on a hard-panned pulse (the proven cell set).
-const SLAVE_SONG = JSON.stringify({
+const SLAVE_SONG: SavInput = {
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "Lsdj" },
@@ -25,7 +25,7 @@ const SLAVE_SONG = JSON.stringify({
     phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 }, vibrato: { direction: "Up" }, sweep: 127 }],
   },
-});
+};
 
 // A one-system project with the given lsdj-sync mode + SendToAll routing so system 1 receives every
 // host-MIDI event verbatim (the Arduinoboy control notes ride channel-agnostic).
@@ -58,7 +58,7 @@ test("the TS lsdj-sync Arduinoboy-slave role plays a real LSDj on note-24, gates
     embeddedRom: "",
     savPath: null,
     statePath: null,
-    sramBytes: savFromJson(SLAVE_SONG),
+    sramBytes: savFrom(SLAVE_SONG),
   }, id)).toBeTruthy();
 
   expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();

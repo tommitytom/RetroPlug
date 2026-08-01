@@ -17,6 +17,7 @@ import type { ControlPlaneBackend, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
+import { resolveSongCatalog } from "./tracker";
 import { dirname, stem } from "./pathUtil";
 import { siblingRplgPath } from "./savPaths";
 import {
@@ -146,6 +147,18 @@ export class ProjectStore {
     if (!this.projectName) this.projectName = this.deriveName();
   }
 
+  // The primary system's working-song name (a tracker cart's loaded song), for the recents label. undefined
+  // for a non-tracker system or when there's no readable SRAM. Primary = focused, else first.
+  private currentSong(): string | undefined {
+    const list = this.systems.systems();
+    const primary = list.find((s) => s.id === this.systems.focused()) ?? list[0];
+    if (!primary) return undefined;
+    const catalog = resolveSongCatalog(primary.roles);
+    if (!catalog) return undefined;
+    const sram = this.backend.readSram(primary.id);
+    return sram ? catalog.workingName(sram) ?? undefined : undefined;
+  }
+
   setLayout(v: SystemLayout): boolean {
     return this.setEnumSetting("layout", v);
   }
@@ -193,7 +206,7 @@ export class ProjectStore {
     const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
     if (!this.backend.writeFile(path, enc.encode(json))) return false;
-    this.recent.add(path, this.projectName); // seed the recents display name (Save-As keeps it, not the file stem)
+    this.recent.add(path, this.projectName, this.currentSong()); // seed the recents display name (Save-As keeps it, not the file stem)
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -214,7 +227,7 @@ export class ProjectStore {
       this.save(path);
       return;
     }
-    this.recent.add(path, this.projectName);
+    this.recent.add(path, this.projectName, this.currentSong());
     this.path = path;
     this.onChangeCb();
   }
@@ -278,7 +291,7 @@ export class ProjectStore {
     });
     const archive = this.backend.zip(entries);
     if (!archive || !this.backend.writeFileAtomic(path, archive)) return false;
-    this.recent.add(path, this.projectName);
+    this.recent.add(path, this.projectName, this.currentSong());
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -397,7 +410,7 @@ export class ProjectStore {
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     this.pushAudioRouting(); // apply the loaded project's routing to native audio
     this.projectName = cfg.name || this.deriveName(); // stored name wins; an old nameless .rplg derives one
-    if (path) this.recent.add(path, this.projectName); // in-memory loads (plugin state chunk) pass "" — no recents entry
+    if (path) this.recent.add(path, this.projectName, this.currentSong()); // in-memory loads (plugin state chunk) pass "" — no recents entry
     this.path = path;
     this.dirty = false;
     this.onSystemsChange(); // push the rebuilt systems (the adopt path is quiet)

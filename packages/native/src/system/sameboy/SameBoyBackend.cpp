@@ -47,6 +47,11 @@ std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, const SystemBuild
         const auto rom = rp::embeddedRom(spec.embeddedRom);
         if (rom.empty()) return nullptr;  // unknown marker
         romBytes.assign(rom.begin(), rom.end());
+    } else if (!spec.romBytes.empty()) {
+        // TS-supplied effective ROM (e.g. LSDj asset overrides applied non-destructively): use it instead
+        // of reading romPath, but still sniff it. cfg.romPath below keeps the on-disk path for the watcher.
+        romBytes = spec.romBytes;
+        if (detectRomFormat(romBytes) != RomFormat::Gb) return nullptr;
     } else {
         // File-backed: slurp the full ROM and sniff. SameBoy-only gate here.
         romBytes = slurpAll(spec.romPath);

@@ -12,7 +12,7 @@
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
-import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix } from "./savPaths";
+import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
 import {
   type SystemEntry,
   findById,
@@ -274,7 +274,9 @@ export class SystemsStore {
     const override = savPathOverride ?? src.savPath;
     const systemRole = src.roles.find((r) => r.kind === src.core);
     const newId = allocSystemId();
-    const ok = this.backend.constructSystem({
+    // Route through the load-time role hooks too, so a reload re-applies e.g. LSDj asset overrides
+    // (the patched effective ROM) — not just the fresh-load path.
+    const spec = this.applyConstructHooks({
       romPath: src.romPath,
       platform: src.platform,
       core: src.core,
@@ -285,7 +287,8 @@ export class SystemsStore {
       stateBytes: seed.stateBytes,
       replaceId: id,
       settings: systemRole ? JSON.stringify(roleConfigForNative(systemRole.kind, systemRole.config)) : undefined,
-    }, newId);
+    }, src.roles);
+    const ok = this.backend.constructSystem(spec, newId);
     if (!ok) return null;
     this.entries = replaceById(this.entries, id, { ...src, id: newId, savPath: override });
     if (this.focusedId === id) this.focusedId = newId;
@@ -299,6 +302,12 @@ export class SystemsStore {
     const bytes = this.backend.readState(id);
     if (!bytes) return false;
     return this.backend.writeFileAtomic(path, bytes);
+  }
+
+  /** Read system `id`'s live battery SRAM (race-free snapshot). Null when nothing is published. Exposes the
+   *  emulator-facet read to callers holding only the store (e.g. the LSDj Songs menu decoding the sav). */
+  readSram(id: number): Uint8Array | null {
+    return this.backend.readSram(id);
   }
 
   /** Dump system `id`'s battery SRAM to `path`. False when the id has no SRAM published, or the write fails. */
@@ -548,9 +557,13 @@ export class SystemsStore {
       platform = fmt;
     }
     const core = defaultCoreFor(platform);
-    const override = resolveSavOverride(romPath, suffix, explicitSav ?? "", (p) =>
+    let override = resolveSavOverride(romPath, suffix, explicitSav ?? "", (p) =>
       this.backend.canonicalize(p),
     );
+    // With no explicit pick, auto-adopt an existing `<rom>.srm` battery sibling when there's no `<rom>.sav`
+    // (some NES/risa saves use the .srm extension) — so we load from and auto-save back to it, rather than
+    // deriving a stray new `<rom>.sav` next to it.
+    if (!override && !explicitSav && !embeddedRom) override = this.adoptExistingSavSibling(romPath, suffix);
     const savPath = embeddedRom ? null : resolveSavPath(romPath, suffix, override);
     const id = allocSystemId();
     // Roles are known before the build (a pure function of core/platform/header), so a role's
@@ -576,6 +589,16 @@ export class SystemsStore {
         roles,
       },
     };
+  }
+
+  // The battery save to adopt for a freshly-built system when the caller didn't pick one: keep deriving
+  // `<rom>.sav` (return "" = no override) if it exists or nothing does; adopt a non-.sav sibling (e.g.
+  // `<rom>.srm`) as an explicit override only when the .sav is absent but that alternative is present.
+  private adoptExistingSavSibling(romPath: string, suffix: number): string {
+    const [savCand, ...alts] = siblingSavCandidates(romPath, suffix);
+    if (this.backend.fileExists(savCand)) return ""; // <rom>.sav present → derive as usual
+    for (const cand of alts) if (this.backend.fileExists(cand)) return cand; // e.g. <rom>.srm → adopt it
+    return ""; // nothing on disk → default to <rom>.sav for new saves
   }
 
   // The default roles for a freshly-built system: the core's config role + any feature
@@ -606,7 +629,7 @@ export class SystemsStore {
     let s = spec;
     for (const r of roles) {
       const rt = this.registry.roleType(r.kind);
-      if (rt?.onConstruct) s = rt.onConstruct(s, this.backend);
+      if (rt?.onConstruct) s = rt.onConstruct(s, this.backend, r.config);
     }
     return s;
   }

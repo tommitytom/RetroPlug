@@ -6,16 +6,20 @@
 // tile is dimmed by a translucent black overlay — the lvgl-js way, since opacity on a Canvas is dropped
 // (only Image widgets route it) and opacity units are 0..1 floats (0.5 = LV_OPA_50).
 
-import { useRef } from "react";
-import { Canvas } from "lvgljs-ui";
+import { useRef, useState } from "react";
+import { Canvas, Text } from "lvgljs-ui";
 
 import { useStores } from "../../stores/useStores";
 import { useNativeEvent } from "../../lvgl/useNativeEvent";
 import { Box } from "../../lvgl/Box";
 import { tagTestId } from "../../lvgl/StableSlot";
+import { LsdjOverlay } from "./LsdjOverlay";
+import { RisaOverlay } from "./RisaOverlay";
+import { getRenderJobs, cancelRender, dismissRenderJob, pickActiveRenderJob, type RenderJobStatus } from "../../lvgl/render";
 
 const LV_IMAGE_ALIGN_CONTAIN = 14; // aspect-preserving nearest-neighbour scale
 const LV_ALIGN_CENTER = 0x09;
+const LV_ALIGN_BOTTOM_MID = 0x05;
 
 // lvgljs-ui's Canvas type doesn't expose a ref prop; cast to reach setBuffer.
 const CanvasAny = Canvas as any;
@@ -47,7 +51,25 @@ export function EmulatorTile({
   const { backend } = useStores();
   const canvasRef = useRef<CanvasHandle | null>(null);
 
+  // The active background render badge for this system (or null). Updated only when it meaningfully changes
+  // (state, or ~2% progress) so the per-frame poll doesn't re-render every tick.
+  const [renderJob, setRenderJob] = useState<RenderJobStatus | null>(null);
+  const renderKey = useRef("");
+
   useNativeEvent("frame", () => {
+    // Background-render badge: poll this system's jobs, auto-dismiss the finished ones, and surface the
+    // active render (or a lingering error). getRenderJobs() is inert (empty) in the headless harness.
+    const jobs = getRenderJobs();
+    for (const j of jobs)
+      if (j.systemId === systemId && (j.state === "done" || j.state === "cancelled"))
+        dismissRenderJob(j.id); // the render finished (file written) — drop the job, vanish the badge
+    const active = pickActiveRenderJob(jobs, systemId);
+    const key = active ? `${active.id}:${active.state}:${Math.round(active.progress * 50)}` : "";
+    if (key !== renderKey.current) {
+      renderKey.current = key;
+      setRenderJob(active);
+    }
+
     const frame = backend.getFrame(systemId);
     if (!frame || !frame.published) return;
     const canvas = canvasRef.current;
@@ -72,6 +94,13 @@ export function EmulatorTile({
           style={{ width, height, "background-color": "#000000", "background-opacity": 0.5 }}
         />
       )}
+      {/* Live LSDj runtime readout (screen + cursor / play / song row / tempo / version / per-channel
+          phrase). Renders nothing for a non-LSDj ROM, so it's mounted unconditionally; its per-frame
+          re-renders stay in this child subtree. */}
+      <LsdjOverlay systemId={systemId} width={width} testId="lsdj-overlay" />
+      {/* The risa twin — a live NES-tracker readout (screen + cursor / mode / tempo / version / per-track
+          phrase). Renders nothing for a non-risa ROM, so it too is mounted unconditionally. */}
+      <RisaOverlay systemId={systemId} width={width} testId="risa-overlay" />
       {showBorder && (
         // Accent border on the focused tile — the visible focus cue (the dim is imperceptible on a
         // near-black GB screen). Drawn as a transparent full-tile overlay layered OVER the Canvas, not
@@ -83,6 +112,43 @@ export function EmulatorTile({
           style={{ width, height, "background-opacity": 0, "border-width": 2, "border-color": "#4a86e8" }}
         />
       )}
+      {renderJob && (
+        // Background-render badge along the tile's bottom: a progress fill under a status label. Tap while
+        // rendering to cancel; tap an error to dismiss. (The click also bubbles to focus the tile — harmless.)
+        <Box
+          onClick={() => (renderJob.state === "rendering" ? cancelRender(renderJob.id) : dismissRenderJob(renderJob.id))}
+          align={{ type: LV_ALIGN_BOTTOM_MID, pos: [0, 0] }}
+          style={{
+            width,
+            height: renderBarH(height),
+            "background-color": renderJob.state === "rendering" ? "#101010" : "#7f1d1d",
+            "background-opacity": 0.75,
+          }}
+        >
+          {renderJob.state === "rendering" && (
+            <Box
+              style={{
+                width: Math.max(0, Math.min(width, Math.round(width * renderJob.progress))),
+                height: renderBarH(height),
+                "background-color": "#4a86e8",
+              }}
+            />
+          )}
+          <Text style={{ "text-color": "#ffffff", "font-size": renderFont(height), width, height: renderBarH(height) }}>
+            {renderJob.state === "rendering"
+              ? ` ${Math.round(renderJob.progress * 100)}%  rendering (tap to cancel)`
+              : " render failed (tap to dismiss)"}
+          </Text>
+        </Box>
+      )}
     </Box>
   );
+}
+
+/** The render badge bar height / font, scaled to the tile (kept readable on a small tile). */
+function renderBarH(height: number): number {
+  return Math.max(10, Math.round(height * 0.16));
+}
+function renderFont(height: number): number {
+  return Math.max(8, Math.round(renderBarH(height) * 0.62));
 }

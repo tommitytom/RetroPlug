@@ -16,4 +16,4 @@ const id = project.systems.loadMgb();
 const ok = id != null && project.export(__RPLG_OUT__);
 console.log(`[author-mgb-rplg] ${ok ? "wrote" : "FAILED"} ${__RPLG_OUT__}`);
 
-(globalThis as { tjs: { exit(code: number): void } }).tjs.exit(ok ? 0 : 1);
+(globalThis as { tjs?: { exit(code: number): void } }).tjs?.exit(ok ? 0 : 1);

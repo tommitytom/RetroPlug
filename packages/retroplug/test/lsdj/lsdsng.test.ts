@@ -1,0 +1,65 @@
+// The .lsdsng single-song codec (codec/lsdsng.ts) + the header-only listProjects (codec/sav.ts). Proven
+// three ways: a self-authored round-trip, interop against a real lsdpatch-exported DONK.115.lsdsng (a
+// different compressor), and round-tripping real songs pulled out of the existing .sav fixtures.
+import { test, expect } from "../../testing/harness";
+import { deepEqual } from "./_assert";
+import { savBytes } from "./fixtures";
+import { savFrom } from "../../src/lsdj";
+import { decodeSav } from "../../src/lsdj/codec/sav";
+import { listProjects } from "../../src/lsdj/codec/sav";
+import { encodeLsdsng, decodeLsdsng } from "../../src/lsdj/codec/lsdsng";
+
+declare function atob(s: string): string;
+function b64(s: string): Uint8Array {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// A real lsdpatch-exported .lsdsng (name "DONK", version 0x73), the user-pointed example file.
+const DONK = "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gMAAB4/A/weAwAAHj8D/B4DAAAePwP8HgMAAB4/A/weAwAAHj/7+7+/u/v+AAQEQEBEBAI7d7d3d3e3egRISESESEhGNzNzM3MzczYIzwCMFMoy8wMsEzLyDQzM0NDMzQ4urwLsFq4RUwEQFVODwoMD/EAL///8C////Av///wL///8ZwP8HMsD/BxnA/wcCwP8nAsD/BwLA///A///A///A///A///A///A/10ZwP8HMsD/BxnA/wcC////Av///wL///8C////Av///wLA///A///A///A/yY5////OcD/Kwb///8GwP87HMD/BwbA/w85wP8nOf///zn///85wP8XHAP//xwD//8cA8D/Fhn///8Z////GcD/Fxz///8PwP8POcD/CxzA/wcQwP8HHP///xD///8Q////EP///xzA/wcMwP8nHP///wj///8O////DsD/Czn///85////A////wPA/w8HwP8LOf///zn///85////OcD/CzzA/wc8////PP///zz///88////PMD/HwTA/w85////Of///zn///85wP8jOf///zn///85wP8HOf85/zn/Of85/znA/wU5/zn/Of85/zn/OcD/BTn//8A5CcD/BBnA/w8Z/xn/Gf8Z/xn/GcD//8D//8D//8D/OHJi4AkAAMAADQPg/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+test("decodeLsdsng reads a real lsdpatch .lsdsng (name/version/song)", () => {
+  const file = b64(DONK);
+  expect((file.length - 9) % 512).toBe(0);
+  const proj = decodeLsdsng(file);
+  expect(proj.name).toBe("DONK");
+  expect(proj.version).toBe(0x73);
+  expect(proj.song.formatVersion).toBeTruthy(); // decoded to a real song
+});
+
+test("encodeLsdsng → decodeLsdsng round-trips a song from a real .sav", () => {
+  const sav = decodeSav(savBytes("all"));
+  const idx = sav.projects.findIndex((p) => p != null);
+  expect(idx >= 0).toBeTruthy();
+  const proj = sav.projects[idx]!;
+  const file = encodeLsdsng(proj);
+  expect((file.length - 9) % 512).toBe(0);
+  const back = decodeLsdsng(file);
+  expect(back.name).toBe(proj.name);
+  expect(back.version).toBe(proj.version);
+  deepEqual(back.song, proj.song, "song round-trip");
+});
+
+test("a re-encoded DONK is byte-stable and model-stable", () => {
+  const proj = decodeLsdsng(b64(DONK));
+  const re = encodeLsdsng(proj);
+  deepEqual(decodeLsdsng(re).song, proj.song, "DONK model round-trip");
+});
+
+test("listProjects reports the occupied slots without decompressing", () => {
+  const bytes = savBytes("all");
+  const decoded = decodeSav(bytes);
+  const expected = decoded.projects.map((p, i) => (p ? { slot: i, name: p.name } : null)).filter(Boolean);
+  deepEqual(listProjects(bytes), expected, "listProjects vs decodeSav occupancy");
+});
+
+test("listProjects returns [] for a blank / non-LSDj buffer", () => {
+  expect(listProjects(new Uint8Array(0x20000)).length).toBe(0); // no 'jk' magic
+  expect(listProjects(new Uint8Array(0x8000)).length).toBe(0); // early 32 KiB image
+});
+
+test("a fresh authored sav has no saved projects", () => {
+  expect(listProjects(savFrom({})).length).toBe(0);
+});

@@ -32,7 +32,7 @@ test("add: re-adding an existing path moves it to the front (dedupe)", () => {
 
 test("add: caps at max, dropping the oldest", () => {
   let l: RecentEntry[] = [];
-  for (let i = 0; i < 12; i++) l = addEntry(l, `/p${i}`, "", 10);
+  for (let i = 0; i < 12; i++) l = addEntry(l, `/p${i}`, "", undefined, 10);
   expect(l.length).toBe(10);
   expect(l[0].path).toBe("/p11"); // newest
   expect(l[9].path).toBe("/p2"); // /p0, /p1 dropped
@@ -44,6 +44,18 @@ test("add: preserves an existing alias on re-add unless a new name is given", ()
   expect(l[0].name).toBe("My Song");
   l = addEntry(l, "/a", "Renamed"); // explicit name -> overrides
   expect(l[0].name).toBe("Renamed");
+});
+
+test("add: sets the working-song label; undefined on re-add preserves it; rename keeps it", () => {
+  let l = addEntry([], "/a", "", "INTRO");
+  expect(l[0].song).toBe("INTRO");
+  l = addEntry(l, "/a", "Alias"); // no song arg → keep the existing song
+  expect(l[0].song).toBe("INTRO");
+  expect(l[0].name).toBe("Alias");
+  l = renameEntry(l, "/a", "Renamed"); // rename preserves the song
+  expect(l[0].song).toBe("INTRO");
+  l = addEntry(l, "/a", "", "OUTRO"); // a fresh song value overrides
+  expect(l[0].song).toBe("OUTRO");
 });
 
 test("rename: sets the alias; empty clears it", () => {

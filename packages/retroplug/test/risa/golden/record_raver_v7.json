@@ -1,0 +1,43 @@
+{
+  "name": "RAVER",
+  "version": 7,
+  "tempoBpm": 140,
+  "present": {
+    "songCells": 35,
+    "chains": 20,
+    "phrases": 19,
+    "aux": 0,
+    "instruments": 17,
+    "tables": 2,
+    "grooves": 0
+  },
+  "spot": {
+    "phrase": {
+      "idx": 0,
+      "row0": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "instrument": {
+      "idx": 0,
+      "bytes": [
+        0,
+        48,
+        0,
+        1,
+        0,
+        0,
+        3,
+        255,
+        0,
+        0,
+        18,
+        0
+      ]
+    }
+  },
+  "length": 1649
+}

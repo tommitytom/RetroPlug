@@ -10,7 +10,7 @@ import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
-import { savFromJson } from "../src/lsdjSav";
+import { savFrom, type SavInput } from "../src/lsdjSav";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -26,7 +26,7 @@ const lsdjSync = (id: number, mode: string) => ({
 
 // SYNC=MIDI + chain0 -> phrase0 -> a C note on a hard-panned pulse (the proven cell set). The codec
 // pads every fixed array to full length; syncMode:"Midi" now writes the real LSDj byte 3.
-const SYNC_MIDI_SONG = JSON.stringify({
+const SYNC_MIDI_SONG: SavInput = {
   workingSong: {
     formatVersion: 22,
     settings: { syncMode: "Midi" },
@@ -35,7 +35,7 @@ const SYNC_MIDI_SONG = JSON.stringify({
     phrases: [{ notes: [1], instruments: [0] }],
     instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 }, vibrato: { direction: "Up" }, sweep: 127 }],
   },
-});
+};
 
 const rms = (a: Float32Array): number => {
   let s = 0;
@@ -54,7 +54,7 @@ test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an ar
   const audio = createAudioDriver();
 
   // Real LSDj, authored SYNC=MIDI song, constructed bare (no C++ roles) so the kernel is the only clock.
-  const sav = savFromJson(SYNC_MIDI_SONG);
+  const sav = savFrom(SYNC_MIDI_SONG);
   const id = 1; // TS owns the id counter; this direct-backend test picks its own (fresh host per file)
   expect(be.constructSystem({
     romPath: LSDJ,

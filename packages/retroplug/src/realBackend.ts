@@ -13,7 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, FileBrowserOpts, FrameData, HostBackend, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 
 type RpcSend = (request: unknown) => unknown;
@@ -23,13 +23,14 @@ interface Reply {
 }
 
 // --- file dialog (async, UI-direct) ------------------------------------------------------------------
-// openFileBrowser is the ONE async Backend method, and it does NOT ride the RPC bridge: the editor
-// (PluginUI) hangs __rp_openFileBrowser on the shared context — like __rp_setWindowSize — and,
-// once the OS dialog settles, calls __rp_onFileBrowserResult back, both on the single UI thread. Only one
-// native dialog is ever in flight, so one module-level pending slot suffices (shared across every
-// createHostClient on this context). When the hook is absent (the headless UI harness) the browser is
-// inert and every browse resolves null, exactly as the window-size hooks no-op there.
-type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string) => void;
+// openFileBrowser is the ONE async Backend method, and it does NOT ride the RPC bridge: it calls the
+// __rp_openFileBrowser hook on the shared globalThis and, once settled, gets __rp_onFileBrowserResult back.
+// This crosses the control-plane↔UI bundle boundary via globalThis (module singletons do NOT — each bundle
+// gets its own). The hook is installed by the UI (the in-app React/LVGL browser — see useFileBrowser) which
+// overrides any native host browser; a native OS dialog is an opt-in the UI routes to. Only one browse is
+// ever in flight, so one module-level pending slot suffices. Absent (headless harness) → every browse
+// resolves null. startDir opens the browser at that directory; directory picks a folder (the render Output Dir).
+type OpenBrowserHook = (title: string, patterns: string, saving: boolean, defaultName: string, startDir: string, directory: boolean) => void;
 
 let pendingBrowse: ((path: string | null) => void) | null = null;
 let browseResolverInstalled = false;
@@ -46,12 +47,12 @@ function installBrowseResolver(): void {
 
 function browseFile(opts: FileBrowserOpts): Promise<string | null> {
   const hook = (globalThis as Record<string, unknown>).__rp_openFileBrowser as OpenBrowserHook | undefined;
-  if (typeof hook !== "function") return Promise.resolve(null); // no editor window (e.g. the headless harness)
-  if (pendingBrowse) return Promise.resolve(null); // one dialog at a time
+  if (typeof hook !== "function") return Promise.resolve(null); // no browser installed (e.g. the headless harness)
+  if (pendingBrowse) return Promise.resolve(null); // one at a time
   installBrowseResolver();
   return new Promise<string | null>((resolve) => {
     pendingBrowse = resolve;
-    hook(opts.title, opts.patterns.join(" "), !!opts.saving, opts.defaultName ?? "");
+    hook(opts.title, opts.patterns.join(" "), !!opts.saving, opts.defaultName ?? "", opts.startDir ?? "", !!opts.directory);
   });
 }
 
@@ -88,6 +89,7 @@ const specParams = (spec: ConstructSpec, id: number): Record<string, unknown> =>
   if (spec.savPath != null) p.savPath = spec.savPath;
   if (spec.statePath != null) p.statePath = spec.statePath;
   if (spec.replaceId !== undefined) p.replaceId = spec.replaceId;
+  if (spec.romBytes) p.romBytes = spec.romBytes;
   if (spec.sramBytes) p.sramBytes = spec.sramBytes;
   if (spec.stateBytes) p.stateBytes = spec.stateBytes;
   if (spec.settings != null) p.settings = spec.settings;
@@ -115,8 +117,10 @@ export function createHostClient(): HostBackend {
     version: () => call("version") as string,
     zip: (entries: ZipEntry[]) => bytesOrNull(call("zip", entries)), // {name, bytes: Uint8Array} matches BackendZipInput
     unzip: (bytes) => (call("unzip", bytes) as ZipEntry[] | null) ?? null,
+    pngEncode: (width, height, rgba) => bytesOrNull(call("pngEncode", { width, height, rgba })), // PngImage DTO
+    pngDecode: (bytes) => (call("pngDecode", bytes) as PngImageData | null) ?? null,
     savFromJson: (json) => savFromJsonTs(json), // pure-TS codec (was a native RPC round-trip)
-    openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts), // async UI-direct native hook, not RPC
+    openFileBrowser: (opts: FileBrowserOpts) => browseFile(opts), // async UI-direct hook, not RPC (see above)
   };
 }
 
@@ -134,6 +138,7 @@ export function createEmulatorClient(): EmulatorBackend {
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
     readState: (id) => bytesOrNull(call("readState", id)),
     readSram: (id) => bytesOrNull(call("readSram", id)),
+    readRam: (id) => bytesOrNull(call("readRam", id)),
     getFrame: (id): FrameData | null => {
       const r = call("getFrame", id) as { width: number; height: number; published: boolean; data?: Uint8Array } | null;
       if (r == null || r.width === 0) return null; // no such system / no framebuffer
@@ -148,6 +153,7 @@ export function createDebugClient(): DebugBackend {
   const call = makeCall();
   return {
     getApuState: (id) => call("getApuState", id) as ApuState,
+    getExpansionAudioState: (id) => call("getExpansionAudioState", id) as ExpansionAudioState,
     getPpuState: (id) => call("getPpuState", id) as PpuState,
     readCpu: (id, addr) => call("readCpu", id, addr) as number | null,
     writeCpu: (id, addr, value) => call("writeCpu", id, addr, value) as boolean,

@@ -10,6 +10,7 @@
 #include "system/AudioRouting.hpp"
 
 #include "host/dsp/DspRuntime.hpp"
+#include "host/engine/HostSyncTrace.hpp"
 #include "host/engine/SnapshotRegistry.hpp"
 
 struct AudioRouter;  // BlockRunner.hpp — the per-block bus-placement policy (used by ref below)
@@ -21,6 +22,7 @@ enum class ConfigField : std::uint8_t {
     Model = 2, Highpass = 3, LinkGroup = 4, FastBoot = 5,     // SameBoy
     NesRegion = 6, NesRemoveSpriteLimit = 7,                  // Mesen (NES)
     SerialOutCapture = 8,                                     // SameBoy (LSDj MI.OUT)
+    NesApuLatencyMs = 9,                                      // Mesen (NES) — APU flush window as latency (ms)
 };
 
 // One system's video frame, read from its lock-free FrameBufferTriple. `data` is raw XRGB8888
@@ -55,11 +57,15 @@ public:
     // --- DSP kernel ---
     bool loadKernel(const std::vector<std::uint8_t>& bytecode);   // sets the per-block DSP stage active
     bool setSystems(const std::vector<std::uint8_t>& json);
-    void stageMidi(std::vector<std::uint8_t> bytes);              // delivered on the next processBlock
+    void stageMidi(std::uint32_t frame, std::vector<std::uint8_t> bytes);  // delivered on the next processBlock, at intra-block `frame`
+    void stageMidi(std::vector<std::uint8_t> bytes) { stageMidi(0, std::move(bytes)); }  // frame-0 convenience (RPC/harness path)
 
     // --- transport (plain members; mutated only by the Engine's owning thread) ---
     void setBpm(double bpm);
     void setTransport(bool playing);
+    // Move the host playhead. A DAW does this on every locate: stop-and-rewind, a loop wrap,
+    // or a click in the timeline. Roles see it as a ppqStart discontinuity in the next block.
+    void setPpq(double ppq);
     // Which output pairs each system routes to (Stereo = all → pair 0). Plain member, like transport.
     void setAudioRouting(AudioRouting mode);
 
@@ -105,6 +111,9 @@ public:
     // --- live-state reads / direct mutation (valid only on the Engine's owning thread) ---
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);
     std::optional<std::vector<std::uint8_t>> readSram(SystemId id);
+    // Work RAM (WRAM), from the registry's per-block published copy — safe while the audio thread runs,
+    // and fresh EVERY block (unlike readState/readSram), so a runtime overlay tracks per-frame state.
+    std::optional<std::vector<std::uint8_t>> readRam(SystemId id);
     bool screenshot(SystemId id, const std::string& path);
     // The system's latest video frame (raw XRGB8888). Reads the concurrent FrameBufferTriple, so it is
     // safe while the audio thread writes; width/height are 0 (published false) for an unknown system.
@@ -141,6 +150,7 @@ private:
     double bpm_       = 120.0;
     bool   transport_ = false;
     double ppq_       = 0.0;
+    HostSyncTrace syncTrace_;  // inert unless RETROPLUG_SYNC_TRACE is set
 
     AudioRouting audioRouting_ = AudioRouting::Stereo;  // output-pair placement; Stereo = all → pair 0
 };

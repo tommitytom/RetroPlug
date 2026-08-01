@@ -15,10 +15,10 @@ const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
 const id = project.systems.addSystem(__ROM_PATH__);
 if (id == null) {
   console.log(`[author-ext-rom-rplg] FAILED to add system from ${__ROM_PATH__}`);
-  (globalThis as { tjs: { exit(code: number): void } }).tjs.exit(1);
+  (globalThis as { tjs?: { exit(code: number): void } }).tjs?.exit(1);
 }
 project.systems.setReloadOnRomChange(id as number, true);
 const ok = project.save(__RPLG_OUT__);
 console.log(`[author-ext-rom-rplg] ${ok ? "wrote" : "FAILED"} ${__RPLG_OUT__} (system ${id})`);
 
-(globalThis as { tjs: { exit(code: number): void } }).tjs.exit(ok ? 0 : 1);
+(globalThis as { tjs?: { exit(code: number): void } }).tjs?.exit(ok ? 0 : 1);

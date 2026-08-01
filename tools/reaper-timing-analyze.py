@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Measure LSDj sync timing against a reference click from a stereo WAV.
+Measure a tracker's sync timing against a reference click from a stereo WAV.
 
-Left channel  = LSDj output (panned hard-left in the .RPP)
+Left channel  = the core's output (panned hard-left in the .RPP)
 Right channel = ReaSynth click track, one note per quarter beat at
                 Reaper's transport BPM
 
@@ -12,8 +12,10 @@ Two modes:
              Compares LSDj's first onset to the click's first onset
              (a single number). See the long note below.
 
-  --drift    per-beat drift over time — reaper-lsdj-midi-drift
-             Pairs every LSDj noise click to its reference beat and
+  --drift    per-beat drift over time — reaper-lsdj-midi-drift and
+             reaper-risa-sync (risa host sync over the N8 FIFO, where
+             the DAW transport rather than a MIDI item is the input).
+             Pairs every core noise click to its reference beat and
              reports how the offset evolves over a long (e.g. 1 h) render:
              mean / median / max-abs / stddev, a per-minute trend table,
              and a linear accumulation slope (ms drift per minute). Fails
@@ -72,6 +74,13 @@ DRIFT_TOLERANCE_MS    = 50.0    # max abs per-beat drift before FAIL
 DRIFT_ENV_RATE_HZ     = 4000    # decimated-envelope rate (0.25 ms resolution)
 DRIFT_MAX_UNMATCHED   = 0.01    # >1% unmatched beats -> FAIL (rate mismatch / dropouts)
 DRIFT_READ_CHUNK      = 1 << 20 # frames per WAV read (~4 MB/ch at 16-bit)
+
+# --midi-timing mode defaults (overridable on the CLI). Proves host MIDI-in keeps its intra-block
+# sample offset: two mGB notes in one large render block should land ~MT_GAP_MS apart (collapse to
+# frame 0 would merge them), and the late one should align with a coincident ReaSynth click.
+MT_FROM_MS = 2000.0   # ignore everything before this (the mGB DMG-boot burst); notes are placed ~3 s in
+MT_GAP_MS  = 136.05   # authored spacing of the two mGB notes (6000 samples @ 44.1 kHz)
+MT_TOL_MS  = 25.0     # pass window: << the ~136/158 ms collapse signal, >> the ~2 ms detector error
 
 
 def load_stereo(path):
@@ -206,14 +215,14 @@ def analyze_drift(path):
 
     lsdj  = onsets_from_envelope(env_l, env_rate)  # seconds
     click = onsets_from_envelope(env_r, env_rate)
-    print(f"LSDj (L) onsets:  {len(lsdj)}")
+    print(f"core (L) onsets:  {len(lsdj)}")
     print(f"Click (R) onsets: {len(click)}")
     if len(click) < 2:
         print("ERROR: no/too-few click events — was the .RPP authored with the "
               "Click track / ReaSynth?", file=sys.stderr)
         return 1
     if len(lsdj) == 0:
-        print("ERROR: no LSDj audio detected — check the .rplg autoload (SYNC=MIDI "
+        print("ERROR: no core audio detected — check the .rplg autoload (SYNC=MIDI "
               "armed) and that the host transport plays from t=0", file=sys.stderr)
         return 1
 
@@ -221,7 +230,7 @@ def analyze_drift(path):
     window = 0.5 * beat
     print(f"beat interval: {beat*1000:.2f} ms ({60.0/beat:.2f} BPM)")
 
-    # Pair each click beat to the nearest LSDj onset within +/- half a beat.
+    # Pair each click beat to the nearest core onset within +/- half a beat.
     idx = np.searchsorted(lsdj, click)
     drift, matched_t, missed = [], [], 0
     for c, i in zip(click, idx):
@@ -236,16 +245,16 @@ def analyze_drift(path):
             matched_t.append(c)
     drift = np.array(drift)
     matched_t = np.array(matched_t)
-    # LSDj onsets that never paired to a beat (extra/spurious hits).
+    # Core onsets that never paired to a beat (extra/spurious hits).
     extra = max(0, len(lsdj) - len(drift))
 
     unmatched_frac = missed / len(click)
     print()
     print(f"matched beats:    {len(drift)} / {len(click)}")
     print(f"missed beats:     {missed}  ({unmatched_frac*100:.2f}%)")
-    print(f"extra LSDj hits:  {extra}")
+    print(f"extra core hits:  {extra}")
     if len(drift) == 0:
-        print("ERROR: no LSDj onset paired to a click beat — LSDj and the click "
+        print("ERROR: no core onset paired to a click beat — the core and the click "
               "fire at incompatible rates (check groove / step spacing in "
               "lsdj_midi_drift.test.ts)", file=sys.stderr)
         return 1
@@ -280,7 +289,7 @@ def analyze_drift(path):
               f"{DRIFT_TOLERANCE_MS:.0f} ms")
         fail = True
     if unmatched_frac > DRIFT_MAX_UNMATCHED:
-        print(f"FAIL: {unmatched_frac*100:.2f}% of beats unmatched — LSDj is "
+        print(f"FAIL: {unmatched_frac*100:.2f}% of beats unmatched — the core is "
               f"dropping clocks or running at the wrong rate")
         fail = True
     if fail:
@@ -289,13 +298,86 @@ def analyze_drift(path):
     return 0
 
 
+def analyze_midi_timing(path, from_ms, gap_ms, tol_ms):
+    """Intra-block MIDI-offset accuracy (reaper:mgb-midi-timing).
+
+    L = mGB (two notes authored into ONE large render block, near its start and end).
+    R = ReaSynth click, one note coincident with the LATE mGB note.
+
+    Honoured  → L has two onsets ~gap_ms apart, and the late one aligns with the click.
+    Collapsed → both mGB notes fire at the block start: one merged L onset, ~gap_ms BEFORE the click.
+    """
+    sr, left, right = load_stereo(path)
+    # Blank the pre-window (the mGB boot burst) so only the two authored notes survive on L.
+    guard = int(from_ms / 1000.0 * sr)
+    left  = left.copy();  left[:guard]  = 0.0
+    right = right.copy(); right[:guard] = 0.0
+
+    mgb   = find_onsets(left,  sr)
+    click = find_onsets(right, sr)
+    mgb_ms   = mgb   * 1000.0 / sr
+    click_ms = click * 1000.0 / sr
+    print(f"file: {path}")
+    print(f"sample rate: {sr} Hz, duration: {len(left)/sr:.2f}s, window: >{from_ms:.0f} ms")
+    print(f"core (L) onsets:  {len(mgb)}  {[round(x, 1) for x in mgb_ms.tolist()]}")
+    print(f"Click (R) onsets: {len(click)}  {[round(x, 1) for x in click_ms.tolist()]}")
+
+    ok = True
+    if len(mgb) != 2:
+        print()
+        print(f"FAIL: expected exactly 2 core onsets, saw {len(mgb)}")
+        print("  a single merged onset is the frame-0-collapse signature (both notes at the block start);"
+              " 0 onsets means the core never sounded (autoload / boot-window placement).")
+        return 1
+    if len(click) < 1:
+        print("\nFAIL: no ReaSynth click detected (Click track / ReaSynth missing?)", file=sys.stderr)
+        return 1
+
+    gap = float(mgb_ms[1] - mgb_ms[0])
+    print()
+    print(f"note spacing:     {gap:7.2f} ms   (authored {gap_ms:.2f} ms)")
+    if abs(gap - gap_ms) > tol_ms:
+        print(f"FAIL: core note spacing off by {gap - gap_ms:+.1f} ms (tol +/- {tol_ms:.0f})")
+        print("  the two intra-block events did not land at their authored offsets.")
+        ok = False
+
+    ref = float(mgb_ms[1] - click_ms[-1])   # late core note vs the coincident click
+    print(f"late note vs click: {ref:+6.2f} ms   (authored coincident)")
+    if abs(ref) > tol_ms:
+        print(f"FAIL: late core note is {ref:+.1f} ms from the click (tol +/- {tol_ms:.0f})")
+        print("  its absolute position drifted from an independent plugin at the same instant.")
+        ok = False
+
+    print()
+    print("PASS" if ok else "FAIL")
+    return 0 if ok else 1
+
+
 def main():
-    args = [a for a in sys.argv[1:] if a != "--drift"]
-    if len(args) != 1:
-        print(f"usage: {sys.argv[0]} [--drift] STEREO.wav", file=sys.stderr)
+    flags = {"--drift", "--midi-timing"}
+    argv = sys.argv[1:]
+    from_ms, gap_ms, tol_ms = MT_FROM_MS, MT_GAP_MS, MT_TOL_MS
+    positional = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--from-ms", "--gap-ms", "--tol-ms"):
+            val = float(argv[i + 1]); i += 2
+            if a == "--from-ms": from_ms = val
+            elif a == "--gap-ms": gap_ms = val
+            else: tol_ms = val
+            continue
+        if a not in flags:
+            positional.append(a)
+        i += 1
+    if len(positional) != 1:
+        print(f"usage: {sys.argv[0]} [--drift | --midi-timing [--from-ms N --gap-ms N --tol-ms N]] STEREO.wav",
+              file=sys.stderr)
         return 2
-    path = args[0]
-    if "--drift" in sys.argv[1:]:
+    path = positional[0]
+    if "--midi-timing" in argv:
+        return analyze_midi_timing(path, from_ms, gap_ms, tol_ms)
+    if "--drift" in argv:
         return analyze_drift(path)
     sr, left, right = load_stereo(path)
     n = len(left)
@@ -304,7 +386,7 @@ def main():
 
     lsdj_onsets  = find_onsets(left,  sr)
     click_onsets = find_onsets(right, sr)
-    print(f"LSDj (L) onsets:  {len(lsdj_onsets)}")
+    print(f"core (L) onsets:  {len(lsdj_onsets)}")
     print(f"Click (R) onsets: {len(click_onsets)}")
 
     if len(click_onsets) == 0:

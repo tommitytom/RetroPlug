@@ -53,18 +53,21 @@ export interface RoleType {
   /** A load-time hook: transform the resolved `ConstructSpec` just before the core is instantiated
    *  (after paths + any seed blobs are resolved). ADDITIVE by contract — seed data that is otherwise
    *  absent (e.g. a fresh LSDj cart gets a valid empty sav), never clobber what's already there.
-   *  Runs only for roles actually attached to the system, so it's inherently ROM-gated. */
-  onConstruct?(spec: ConstructSpec, caps: ConstructCaps): ConstructSpec;
+   *  Runs only for roles actually attached to the system, so it's inherently ROM-gated. `config` is this
+   *  role's own config (e.g. an LSDj asset-override list). */
+  onConstruct?(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec;
   /** DEFERRED: a UI-thread behavior (control-plane, e.g. kit-patch) + settings render descriptor. */
   ui?: unknown;
 }
 
-/** The narrow Backend slice a load-time `onConstruct` hook may use: synthesize an LSDj SRAM image,
- *  and check whether native will find a real sav on disk to load. The full `Backend` satisfies this
- *  structurally, so the store passes itself. */
+/** The narrow Backend slice a load-time `onConstruct` hook may use: synthesize an LSDj SRAM image, check
+ *  whether native will find a real sav on disk, read the base ROM (to patch it), and decode a PNG (for an
+ *  LSDj font override). The full `Backend` satisfies this structurally, so the store passes itself. */
 export interface ConstructCaps {
   savFromJson(json: string): Uint8Array;
   fileExists(path: string): boolean;
+  readFile(path: string): Uint8Array | null;
+  pngDecode(bytes: Uint8Array): { width: number; height: number; rgba: Uint8Array } | null;
 }
 
 /** What a ROM provider inspects to decide feature roles: the platform + core, the ROM

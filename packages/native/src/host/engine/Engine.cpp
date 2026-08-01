@@ -62,18 +62,22 @@ bool Engine::setSystems(const std::vector<std::uint8_t>& json) {
     return dsp_.setSystems(json);
 }
 
-void Engine::stageMidi(std::vector<std::uint8_t> bytes) {
-    pendingMidi_.push_back({ 0, std::move(bytes) });
+void Engine::stageMidi(std::uint32_t frame, std::vector<std::uint8_t> bytes) {
+    pendingMidi_.push_back({ frame, std::move(bytes) });
 }
 
 void Engine::setBpm(double bpm) { bpm_ = bpm; }
 void Engine::setTransport(bool playing) { transport_ = playing; }
+void Engine::setPpq(double ppq) { ppq_ = ppq < 0.0 ? 0.0 : ppq; }
 void Engine::setAudioRouting(AudioRouting mode) { audioRouting_ = mode; }
 
 // Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
 // (delivered this block); `dInfo`/`AudioBlockInfo` are both built at the block-start `ppq_`, and
 // `ppq_` advances only after — so the kernel's walkTicks and the cores see the same block-start ppq.
 void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router) {
+    // Diagnostic only, and off unless RETROPLUG_SYNC_TRACE names a file: capture what the HOST reports
+    // this block, so a DAW-only sync fault can be read back afterwards (see HostSyncTrace).
+    const bool tracing = syncTrace_.beginBlock(frames, sampleRate_, bpm_, ppq_, transport_);
     if (dspActive_) {
 #ifdef RETROPLUG_PROFILE
         dsp_.spanBegin(DSP_SPAN_KERNEL);  // the whole DSP-kernel stage (marshal + JS + sink fan-out)
@@ -84,7 +88,7 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         pendingSerialOut_.clear();  // last block's serial-out consumed by the kernel this block
         // serial-in sink → the addressed system's serial FIFO.
         for (const auto& sv : dsp_.serialIn_)
-            if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.byte);
+            if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.frame, sv.byte);
         // core-MIDI sink → the addressed core's onMidi (e.g. the NES N8 FIFO). One ::MidiEvent per entry;
         // an oversized message (> the inline data[4]) is skipped, matching the DAW-drain guard.
         for (const auto& cm : dsp_.coreMidi_) {
@@ -96,6 +100,14 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
                 for (std::size_t j = 0; j < cm.data.size(); ++j) ev.data[j] = cm.data[j];
                 t->onMidi(&ev, 1);
             }
+        }
+        // raw core-bytes sink → the addressed core's byte device (e.g. the NES N8 FIFO). Un-framed: no
+        // MidiEvent, so NO length cap — a byte protocol (a tracker's host sync) can exceed 4 bytes.
+        for (const auto& cb : dsp_.coreBytes_) {
+            if (cb.data.empty()) continue;
+            if (tracing) for (std::uint8_t b : cb.data) syncTrace_.byte(cb.frame, b);
+            if (SystemBase* t = project_.findSystem(cb.system))
+                t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size(), cb.flush);
         }
         // role-generated button presses → the addressed core.
         for (const auto& bo : dsp_.buttonOut_)
@@ -127,7 +139,14 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
     }
     // Copy each core's freshly-published frame/state/SRAM into the owned registry the control plane
     // reads through — the one place every driver funnels the block, so it covers all of them.
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanBegin(DSP_SPAN_PUBLISH);  // the audio->control-plane state pump (per-block frame + timed savestate)
+#endif
     registry_.publishAll(project_, frames, sampleRate_);
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanEnd();  // state-publish
+#endif
+    if (tracing) syncTrace_.endBlock();
     if (transport_)
         ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
 }
@@ -191,6 +210,10 @@ std::optional<std::vector<std::uint8_t>> Engine::readState(SystemId id) {
 
 std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
     return registry_.readSram(id);    // SRAM sliced from the published savestate, not a live read
+}
+
+std::optional<std::vector<std::uint8_t>> Engine::readRam(SystemId id) {
+    return registry_.readRam(id);     // the owned per-block WRAM copy — never walks Project / the live core
 }
 
 bool Engine::screenshot(SystemId id, const std::string& path) {
@@ -268,6 +291,9 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
                 break;
             case ConfigField::NesRemoveSpriteLimit:
                 mn->setRemoveSpriteLimit(value != 0.0);            // live — the PPU re-reads it per scanline
+                break;
+            case ConfigField::NesApuLatencyMs:
+                mn->setApuLatencyMs(value);                        // live — re-thresholds the APU flush window
                 break;
             default:
                 break;

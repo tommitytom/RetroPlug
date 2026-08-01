@@ -18,6 +18,15 @@ map, Arduinoboy protocol, manual lookup) are build-agnostic.
 
 ## Authoring LSDj state in TypeScript (canonical)
 
+> **API note (the examples below are partly stale).** There is no `emu` harness object today —
+> `emu.loadRom` / `emu.chord` / `emu.tap` / `emu.runMs*` / `emu.drainSerial` don't exist. The real
+> native-tier primitives (see any `packages/retroplug/test-native/*.test.ts`) are `createRealBackend()`
+> + `createAudioDriver()`: author the sav with `savFromJson(...)` (a real export), boot with
+> `backend.constructSystem({ romPath, platform:"gb", core:"sameboy", sramBytes: sav }, id)`, drive with
+> `audio.renderAudio(ms)` + `audio.pressButton(id, 7, down)`, read WRAM with
+> `backend.readMemory(id, MemoryRegion.Ram)` — all in the single-threaded direct-render regime (never
+> `audio.startAudio()`). The sav-authoring shape shown here is still accurate.
+
 The LSDj-driving tests used to navigate the UI with fragile `SELECT/A`+arrow
 chords in JSON `--script` files to build song/sync state. That state is just
 bytes in the `.sav`, so tests now **author it directly** with the sav codec and
@@ -69,6 +78,168 @@ DAW fixtures), `loadRplg(path)` (inverse of `saveRplg`: rebuild the project from
 a `.rplg`, config + per-system savestate, exactly as the plugin does on load —
 use it to round-trip a fixture in-harness and reproduce what a DAW sees on
 reload), `patchKit(sys, slot, name, samples)` (compile + queue a kit).
+
+## LSDj runtime state (live WRAM reader)
+
+Reading LSDj's *transient* playback/UI state — is-playing (per channel), the song/chain/
+phrase number + row each channel is on, the active screen, the cursor, the tempo — is a
+separate concern from the sav codec above (that decodes the *saved song*; this reads the
+live Game Boy **WRAM**, `0xC000+`, region `MemoryRegion.Ram`). The pure-TS reader lives at
+[packages/retroplug/src/lsdj/runtime/](../packages/retroplug/src/lsdj/runtime/):
+
+```ts
+import { LsdjReader } from "./lsdj/runtime";
+const reader = LsdjReader.fromHeader(romHeaderPrefix); // identify version from the 0x134 title
+const state = reader.read(wramBytes);                  // -> LsdjState (supported:false when unresolved)
+// state.playing, state.channels.pu1.{phrase,phraseRow,chain,chainRow,songRow}, state.songRow,
+// state.screen ("song"|"chain"|…|"unknown"), state.cursor, state.tempo
+```
+
+- **Offsets (layered).** WRAM addresses split into a POSITIONAL block (playing flags +
+  phrase/chain/song per channel) and a DRIFTING block (tempo/screen/cursors). Sources, in
+  resolution precedence:
+  - [driftLayouts.generated.ts](../packages/retroplug/src/lsdj/runtime/driftLayouts.generated.ts)
+    — the **FULL per-field drift layout** (CURRENT_SCREEN + TEMPO + all five per-screen cursors),
+    detected field-by-field on a real core, **v4.3.0+** (422 builds). AUTHORITATIVE. The drifting
+    block is **not rigid**: screen and the tight song/chain/phrase/instrument cursor cluster shift
+    together, but TEMPO and the TABLE cursor drift independently (e.g. 8.5.1's real tempo is
+    `0xC537`, not the shift-predicted `0xC526`), so a single shift can't reproduce it.
+  - [legacyOffsets.generated.ts](../packages/retroplug/src/lsdj/runtime/legacyOffsets.generated.ts)
+    — the old `ecs` `OffsetLookupData` ported to `version → [active, phraseRows, chainRows,
+    songRows, songCursorCol, songCursorRow]`, giving exact POSITIONS + SONG cursor for
+    **v4.0.0–9.2.x**.
+  - [driftShifts.generated.ts](../packages/retroplug/src/lsdj/runtime/driftShifts.generated.ts)
+    — the older rigid per-version SHIFT of the drifting block vs the LSDisJ 9.2.L reference,
+    v8.2.1–9.4.2; a FALLBACK for any build not in driftLayouts.
+  - a modern positional band for versions past the legacy table (9.2-letter builds, 9.3+).
+  - Cross-validated: the full detector reproduces the LSDisJ 9.2.L labels exactly (its `9.2.L`
+    row matches `REF_DRIFT` byte-for-byte), and for versions in both the legacy and shift tables
+    `songCursorCol − 0x41E` equals the shift. Coverage summary: **positions + song cursor
+    v4.0.0+; screen + tempo + per-screen cursors v4.3.0+**. Residual gaps: v4.0.0–4.2.x carry a
+    bare `LSDJ` title (unidentifiable → `supported:false`); the phrase#·chain# NUMBER registers
+    for the v4.3.0–4.9.5 relocated block stay `null` (their row still decodes) — detecting them
+    needs playback and is unreliable across that range.
+- **Provenance.** Seeded from the [rbong/LSDisJ](https://github.com/rbong/LSDisJ)
+  disassembly (`.sym`/`.inc`) cross-validated against the old RetroPlug `ecs`
+  `OffsetLookupData` — the two agree byte-for-byte (e.g. `224=0xC0E0` playing flags,
+  `512=0xC200` song rows). Prior art: [GBPresenter](https://github.com/YourFriendJimmy/gbpresenter).
+- **Regenerating the table.** `pnpm lsdj:gen-offsets [filterSubstrings]` boots each corpus ROM
+  on `retroplug-host` and runs `detectDriftLayout` (in [detect.ts](../packages/retroplug/src/lsdj/runtime/detect.ts)):
+  it authors a 4-channel song at the ROM's **era sav-format** (the companion sav's `0x7FFF`
+  byte — an authored song boots to SONG and navigates on every era, unlike a companion sav on
+  some builds), finds CURRENT_SCREEN via the SONG→CHAIN→PHRASE→INSTRUMENT→TABLE enum walk, TEMPO
+  via a **two-boot differential** (a distinctive tempo, picked closest to the screen among the
+  BPM mirrors), and each cursor via **cross-axis-independent** d-pad probing (a byte that moves
+  on DOWN but not RIGHT — rejecting time and per-keypress counters). Runs MERGE into the table,
+  so a filtered subset (`… gen-lsdj-offsets.mjs 6_9_0,8_5_1`) only updates the keys it covers.
+- **Read paths.** Headless/CLI/harness: `readMemory(id, MemoryRegion.Ram)` (live core, direct-
+  render regime). Running plugin: `backend.readRam(id)` — the SnapshotRegistry per-block WRAM
+  triple on the emulator facet, safe while audio plays (the CLI-only debug `readMemory` is not
+  on the plugin channel). The live overlay
+  ([LsdjOverlay.tsx](../packages/retroplug/ui/screens/grid/LsdjOverlay.tsx) +
+  [useLsdjRuntime.ts](../packages/retroplug/ui/screens/grid/useLsdjRuntime.ts)) reads `readRam`
+  each frame and renders the state over the emulator tile.
+
+Tests: [test/lsdj/runtime.test.ts](../packages/retroplug/test/lsdj/runtime.test.ts) +
+[test/lsdj/detect.test.ts](../packages/retroplug/test/lsdj/detect.test.ts) (pure-TS — the reader
++ a fake-driver unit for both the scalar and full-layout detectors),
+[test-native/lsdj-runtime.test.ts](../packages/retroplug/test-native/lsdj-runtime.test.ts) +
+[lsdj-wram-seam.test.ts](../packages/retroplug/test-native/lsdj-wram-seam.test.ts) +
+[lsdj-old-drift.test.ts](../packages/retroplug/test-native/lsdj-old-drift.test.ts) (live-core
+reader on old builds) +
+[lsdj-drift-detect.test.ts](../packages/retroplug/test-native/lsdj-drift-detect.test.ts)
+(live-core detector, with the non-rigid tempo/table ground-truth cross-checks).
+
+## LSDj ROM assets (kits / palettes / fonts)
+
+The *static* assets baked into the `.gb` ROM — sample **kits**, **palettes**, **fonts** — are a
+third concern, distinct from the `.sav` song codec and the live WRAM reader. Unlike the sav (a full
+model round-trip), a ROM is mostly opaque program code, so the module is a **view/patcher over the
+raw bytes**: it reads the asset sections out and patches editable metadata *in place*, leaving
+everything else byte-identical. Pure TS at
+[packages/retroplug/src/lsdj/rom/](../packages/retroplug/src/lsdj/rom/):
+
+```ts
+import { LsdjRom } from "./lsdj/rom";               // or: import { rom } from "./lsdj"
+const r = LsdjRom.fromBytes(gbBytes);               // clones; version via the 0x134 title
+r.kit(0).name();                                    // "TR-606"; .sampleName(i), .sampleData(i) -> Float32Array PCM
+r.kit(0).setName("MYKIT");                          // metadata patch (kit/sample rename)
+r.palettes()[0].setColor(set, color, { r, g, b }); // 6 palettes × 5 sets × 4 RGB555 colours
+r.fonts()[0].setTile(i, px64);                      // 3 fonts × 71 GB-2bpp 8×8 tiles
+backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
+```
+
+- **Layout.** ROM = 1 MiB / 64 banks × `0x4000`. Kits are bank-indexed (`KIT_LOOKUP`, 51 slots): a
+  16-entry `u16le` offset table (entry 0 = `0x4060` valid magic; entries 1.. = each sample's end),
+  15 × 3-char sample names at `0x22`, a 6-char kit name at `0x52`, 4-bit nibble PCM from `0x60`.
+  **Palettes** = bank-1 `PALETTE_CHECK` − `count×40`, where `count` is version-derived (9.4.2 has **7**,
+  not a fixed 6). **Fonts** = bank-30 `FONT_HEADER_CHECK` — the fixed font header (`01 47 02..`), stable
+  even when the user's **custom glyphs** overwrote the tiles (the old glyph-tile marker broke on custom
+  fonts). **Names**: font names, palette names + the palette count all derive from the bank-27 "grayscale
+  palette names" landmark (`names.ts`, ported from lsdpatch). Scope is extract + metadata patch + sample
+  import.
+- **Nibble encoding.** Kit sample PCM is 4-bit, stored **inverted** (`stored = 0xF - amp`) and, for
+  **LSDj 9.2.0+**, with each 32-sample frame **rotated right by one** (GB wave-refresh-bug compensation).
+  Both decode (`kit.sampleData()`) and encode (`compileKit`'s `rotate`) gate on the ROM version, so import
+  is byte-correct for any version — `LsdjRom.rotatesSamples` (true for 9.2.0+) drives both. Byte-exact with
+  the LSDj tool's own kits.
+- **Sample import = native.** Resample (r8brain, anti-aliased), effects (gain/normalize, RBJ filter,
+  TPDF dither), and 4-bit pack happen in **C++** (`packages/native/src/lsdj/KitCompiler` +
+  `KitUtil`/`SampleUtil`), fanned across an enkiTS pool per sample, decoding WAV/MP3/FLAC via miniaudio.
+  Exposed as the **harness-facet** RPC `compileKit` (CLI/test-host only, never the plugin) on
+  `AudioDriver`. The pure-TS `rom` module orchestrates: whole-kit builds take the returned 16 KB bank
+  directly; single-sample imports splice the compiled bytes beside existing samples' **raw** bytes and
+  rebuild the offset table (`buildKitBank`), budget-checked against `0x3fa0`.
+- **Asset files (community formats, lsdpatch-compatible).** Whole assets interchange as the standard
+  files: **`.lsdpal`** palettes (4-char name + the 40-byte palette body), **`.png`** fonts (an 8-tile-wide
+  greyscale image — 64×72 for the 71 main tiles, 64×120 for the **extended** layout that also carries the
+  **46 graphics tiles shared by all 3 fonts**; pixel ↔ shade by luminance, `LsdjRom.import/exportFontImage`
+  maps tiles ↔ RGBA and regenerates the inverted/shaded tile variants), and **`.kit`** sample kits (a raw
+  16 KB bank, copied verbatim). The **PNG codec is native** — `pngEncode`/`pngDecode` on the **host facet**
+  (`HostRpcService`, lodepng), *alongside* `zip`/`unzip` and registered by the plugin as well as the CLI, so
+  font import/export works from a future plugin UI, not just the CLI. `.lsdpal`/`.kit` need no codec (raw
+  byte copies). The `rom` module stays pure: fonts flow as `{width,height,rgba}`, the caller does the PNG
+  bytes.
+- **CLI.** `retroplug-cli lsdj-rom info <rom> [--json]` (inventory incl. kit / palette / font **names**;
+  `--json` omits the bulky font-tile arrays), `extract <rom> <outDir> [--rate N]`
+  (each kit sample → mono WAV + `rom.json`), `patch <rom> <manifest.json> <out>` (the primary editing verb —
+  see the schema below), `build-kit <kit.json> <out.kit> [--no-rotate]` (compile a `.kit` **file** from a
+  single slotless kit entry — no ROM; place it with `import-kit`; rotation baked at build time, default on),
+  `import-sample <rom> <kit> <audio> [--name/--slot/--out + effect flags]` (compile one + splice),
+  `remove-sample <rom> <kit> <slot>`, and the asset-file verbs `export-palette`/`import-palette`,
+  `export-font`/`import-font` (`--gfx` for the extended set), `export-kit`/`import-kit`.
+  Tool: [cli/sessions/lsdj-rom.ts](../packages/retroplug/cli/sessions/lsdj-rom.ts).
+- **One manifest schema for every editing verb.** `patch` reads a manifest of `kits`/`palettes`/`fonts`
+  entries; `build-kit` reads a **single, slotless kit entry** from that same shape. Each entry either
+  **builds/imports from a file** or **tweaks metadata** — `slot` = the asset index; a kit is a build
+  (`"build": [paths | {file,name,effects}]`), a `.kit` import (`"file"`), and/or a metadata tweak (`"name"`,
+  `"samples": [{index,name}]` renames); a palette is a `.lsdpal` `"file"` or `set/color/rgb`; a font is a
+  `.png` `"file"` (gfx auto-detected by height) or `tile/pixels`. `build` = compile-from-audio, `samples` =
+  renames (the one word that used to mean both is now split). `patch` is fail-fast and only writes on full
+  success. This one schema replaces the old separate `edits.json`/`spec.json`.
+- **UI (non-destructive overrides).** The plugin's **LSDj** menu has a **Kits / Fonts / Palettes** submenu;
+  each asset can be **Export…**'d (`.kit`/`.lsdpal`/`.png`) or **Replace from Disk…**'d. A replacement is
+  **never baked into the `.gb`** — it's recorded as an override in the per-system **`lsdj-assets` role**:
+  **kits/fonts (binary) LINK to the file on disk by path** (never embedded bytes — mirroring how the project
+  references its ROM/sav), while **palettes are stored INLINE as structured colours** (`colorSets` — just
+  RGB, no file/binary needed). Applied to the base ROM **in memory at construct** via that role's
+  `onConstruct` hook (reads the linked kit/font file / re-encodes the inline palette → patches →
+  `ConstructSpec.romBytes`, the SameBoy load channel). So
+  `effective ROM = base ROM + overrides`, rebuilt on every load; the override manifest persists in the
+  `.rplg` (role config, additive — no migration). A moved/deleted asset file just skips that override. Menu
+  + role live in
+  [ui/screens/menu/menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts) `lsdjAssetMenus` +
+  [src/lsdjAssetsRole.ts](../packages/retroplug/src/lsdjAssetsRole.ts). (Applied at construct/reload — live
+  in-place patching of a running core is a planned follow-up.)
+
+Tests: [test/lsdj/rom.test.ts](../packages/retroplug/test/lsdj/rom.test.ts) (pure — decode incl.
+invert+rotation, patch round-trips, `buildKitBank`/budget, font tile↔RGBA mapping + variant regen,
+`.lsdpal`/`.kit` file round-trips on synthetic buffers) +
+[test-native/lsdj-rom.test.ts](../packages/retroplug/test-native/lsdj-rom.test.ts) (real
+`lsdj9_4_2.gb`: read TR-606 + 7 palettes + 3 fonts; surgical kit-rename round-trip; `compileKit` an
+authored WAV; import-sample splice into TR-606 preserving the other samples; importing real `7.png`/
+`BLSD.png`/`0D-BLOO.lsdpal`/`DONK.kit` through the native codec; and the `build-kit`→`import-kit` and
+`patch`-manifest verbs driven through the real CLI tool — each patched ROM boots).
 
 ## Driving the LSDj UI (only when authoring can't)
 
@@ -196,6 +367,36 @@ normal DAW behaviour).
   plugin works inside a DAW (not just `retroplug-cli`, which bypasses DPF).
   Headless plumbing: `tools/run-reaper-render.sh` (Xvfb + openbox + dummy jackd +
   EULA auto-dismiss). Regenerate the fixture with `pnpm reaper:mgb-author`.
+- **Host MIDI-in intra-block timing** — `pnpm reaper:mgb-midi-timing` proves a host
+  MIDI event keeps its intra-block **sample offset** through a real DAW render (the fix
+  that stopped SameBoy collapsing every serial byte to frame 0 —
+  `SameBoySystem::pushSerialIn`/`stepIfBelowTarget`). Rendered with a **large audio
+  block** (`REAPER_JACK_PERIOD=8192` → the plugin's `run(frames,…)` sees 8192-frame
+  blocks; the JACK dummy period *is* Reaper's offline render block size), so an offset
+  within a block is tens of ms and resolvable in the audio. The fixture
+  ([examples/reaper/mgb_midi_timing.rpp](../examples/reaper/mgb_midi_timing.rpp), authored by
+  [tools/reaper-mgb-timing-author.lua](../tools/reaper-mgb-timing-author.lua)) drops **two mGB
+  notes into one render block** (near its start + end, ~136 ms apart, placed after the DMG
+  boot so the boot burst can't contaminate onsets), plus a ReaSynth click hard-R coincident
+  with the late note. `reaper-timing-analyze.py --midi-timing` asserts L has **two** onsets at
+  the authored spacing and the late one aligns with the click. Under the frame-0 bug both notes
+  collapse to the block start → **one** merged onset ~136 ms early → FAIL (verified against a
+  deliberately-reverted build). Reaper delivers real sub-block offsets (unlike a block-quantizing
+  host), so this is the on-a-DAW counterpart to the `retroplug-audio-test` SameBoy serial-timing
+  unit checks. Not in CI. Regenerate with `pnpm reaper:mgb-midi-timing-author`.
+- **Host MIDI-in intra-block timing (NES)** — `pnpm reaper:n8-midi-timing` is the NES twin of the
+  above, proving the same property for the Mesen core (the fix that stopped `NesN8MidiRole` pushing
+  every byte into the N8 FIFO at the block start — it now queues `{offset,byte}` and releases them as
+  the ring's sample progress reaches each offset, gated in `MesenNesSystem::stepIfBelowTarget`, with a
+  `finishBlock` rebase for cross-block carry). Same two-notes-in-one-8192-block design + reused
+  `--midi-timing` analyzer. NES specifics ([tools/reaper-nes-timing-author.lua](../tools/reaper-nes-timing-author.lua),
+  NES `.rplg` from [tools/author-nes-rplg.js](../tools/author-nes-rplg.js) →
+  [test-native/author-nes-rplg.ts](../packages/retroplug/test-native/author-nes-rplg.ts)): drive **ch1
+  only** (ch2 of n8-midi is broken); a **priming note** before the measured pair (n8-midi drops its first
+  MIDI message); notes placed after the ~1 s boot; slightly wider tolerance (`--tol-ms 30`) for the ROM's
+  FIFO-poll jitter. FAILs (one merged onset) against a reverted build. The role-level gate/rebase is also
+  guarded deterministically by `NesN8MidiTiming.test.cpp` (no emulator). Not in CI. Regenerate with
+  `pnpm reaper:n8-midi-timing-author`.
 - **Arduinoboy startup-sync latency** — `pnpm reaper:lsdj-arduinoboy-metro`
   renders [examples/reaper/lsdj_arduinoboy_metro.rpp](../examples/reaper/lsdj_arduinoboy_metro.rpp)
   (LSDj hard-L on `MidiSyncArduinoboy`, a ReaSynth click hard-R, one note/quarter

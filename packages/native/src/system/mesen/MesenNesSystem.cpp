@@ -11,7 +11,7 @@
 #include "system/mesen/MesenVideoDevice.hpp"
 #include "system/mesen/MesenNesDebugSession.hpp"
 #include "system/mesen/NesEverdriveFifo.hpp"
-#include "system/mesen/roles/NesN8MidiRole.hpp"
+#include "system/mesen/roles/NesN8FifoRole.hpp"
 
 #include "Core/NES/Input/NesController.h"
 #include "Core/NES/NesConsole.h"
@@ -31,6 +31,8 @@
 #include "Core/Shared/SettingTypes.h"
 #include "Core/Shared/Video/VideoRenderer.h"
 #include "Utilities/FolderUtilities.h"
+
+#include "system/mesen/MesenGlobalInit.hpp"
 #include "Utilities/VirtualFile.h"
 
 namespace {
@@ -100,11 +102,9 @@ void MesenNesSystem::onActivate(double sampleRate) {
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
     gainSmoother_.clearToTargetValue();
 
-    // Mesen reads/writes config files relative to a "home folder". We don't
-    // need anything persistent right now; point it at /tmp so any incidental
-    // writes don't pollute the user's HOME.
-    FolderUtilities::SetHomeFolder("/tmp/retroplug-mesen");
-    MessageManager::SetOptions(false, true);
+    // Mesen's home folder + message options are process-global; set them once, thread-safely, so
+    // concurrent core construction on background render threads doesn't race (see MesenGlobalInit).
+    mesenGlobalInit();
 
     emu_ = std::make_unique<Emulator>();
     // enableShortcuts=false: the plugin drives input/transport itself and never
@@ -137,18 +137,24 @@ void MesenNesSystem::onActivate(double sampleRate) {
     videoDevice_->setFramebuffer(&frames_);
     emu_->GetVideoRenderer()->RegisterRenderingDevice(videoDevice_.get());
 
-    // Always-attach the N8 FIFO role on NES — see NesN8MidiRole.hpp's docs
+    // Always-attach the N8 FIFO role on NES — see NesN8FifoRole.hpp's docs
     // for the rationale (FIFO is benign if the ROM doesn't touch $40F0/$40F1).
     if (auto* nesConsole = dynamic_cast<NesConsole*>(emu_->GetConsole().get())) {
-        n8Role_ = std::make_unique<NesN8MidiRole>();
+        n8Role_ = std::make_unique<NesN8FifoRole>();
         n8Role_->onAttach(*nesConsole);
+
+        // Borrow the NES sound mixer for the live "mesen" knobs (APU flush window + per-channel capture).
+        // Held for the emulator's lifetime, nulled in onDeactivate before teardown.
+        nesMixer_ = nesConsole->GetSoundMixer();
+
+        // Seed the APU flush window (latency-ms knob → cycle count). Applies to the normal mix path too.
+        nesMixer_->SetLatencyMs(config_.apuLatencyMs);
 
         // Per-channel export (spec/10 §5/§5b): arm the sound mixer's tap so channelLayout() exposes the
         // per-mode streams to renderAudioPerChannel — mode 1 = 3 pins, mode 2 = pins + mix-reference
         // (native/test-only), mode 3 = the 5 individual core channels. (CLI-only; a normal Mix build never
         // touches this and stays byte-identical.)
         if (config_.channelExportMode >= 1) {
-            nesMixer_ = nesConsole->GetSoundMixer();
             nesMixer_->SetChannelCapture(config_.channelExportMode, static_cast<std::uint32_t>(sampleRate));
             channelCapture_ = true;
         }
@@ -210,6 +216,9 @@ void MesenNesSystem::onSampleRateChanged(double sampleRate) {
 
 void MesenNesSystem::onReset() {
     if (emu_) emu_->Reset();
+    // Drop bytes in flight so stale notes / sync clocks don't fire after the reset. BOTH queues: bytes
+    // already delivered into the FIFO would otherwise be read by the freshly reset ROM.
+    if (n8Role_) n8Role_->flushAll();
 }
 
 void MesenNesSystem::setGainDb(float dB) {
@@ -234,6 +243,18 @@ void MesenNesSystem::setRegion(std::uint32_t region) {
     }
 }
 
+void MesenNesSystem::setApuLatencyMs(double ms) {
+    if (config_.apuLatencyMs == ms) return;
+    config_.apuLatencyMs = ms;
+    // Live: the mixer converts ms→cycles against the region clock and re-thresholds the flush window.
+    // No reset — just a scalar change, safe on the audio thread (arrives via Engine::applyConfigField).
+    if (nesMixer_) nesMixer_->SetLatencyMs(ms);
+}
+
+std::uint32_t MesenNesSystem::apuFlushCycleLength() const {
+    return nesMixer_ ? nesMixer_->GetCycleLength() : 0;
+}
+
 void MesenNesSystem::pressButton(std::uint8_t button, bool down) {
     pendingButtons_.push_back({ button, down });
 }
@@ -241,6 +262,14 @@ void MesenNesSystem::pressButton(std::uint8_t button, bool down) {
 void MesenNesSystem::onMidi(const ::MidiEvent* events, std::uint32_t count) {
     if (n8Role_) {
         n8Role_->onMidi(events, count);
+    }
+}
+
+void MesenNesSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size,
+                                   bool flush) {
+    // Raw bytes (a tracker's host-sync protocol) → the N8 FIFO, sample-offset scheduled like host MIDI.
+    if (n8Role_) {
+        n8Role_->pushBytes(frame, data, size, flush);
     }
 }
 
@@ -304,15 +333,25 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // their own resampler path, so gating on the mix ring could leave a pin one
     // sample short (finishBlock would then truncate it). The pins are mutually
     // aligned, so stream 0's count is authoritative.
+    // Before each instruction, release any host-MIDI bytes whose intra-block sample offset the audio has
+    // reached, so the ROM can't read note N before its sample position. The ring drains from the FRONT, so
+    // its depth IS the output-block sample index (leftover from a prior block occupies indices [0, depth) —
+    // an event there simply fires ASAP). Gate on the SAME metric the loop uses (capture streams in pins
+    // mode, else the mix ring).
     if (channelCapture_ && nesMixer_) {
         while (nesMixer_->AvailableCaptureFrames() < framesNeeded) {
+            if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(nesMixer_->AvailableCaptureFrames()));
             cpu->Exec();
         }
     } else {
         while (audioDevice_->availableFrames() < framesNeeded) {
+            if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(audioDevice_->availableFrames()));
             cpu->Exec();
         }
     }
+    // Release anything due through the block end (offsets in [0, framesNeeded]); offsets past it carry to
+    // the next block via finishBlock's rebase.
+    if (n8Role_) n8Role_->pumpUntil(framesNeeded);
     return false;
 }
 
@@ -320,6 +359,10 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
     if (!activated_ || !emu_) return;
 
     const std::uint32_t blockSize = info.frames;
+
+    // Carry any host-MIDI byte that didn't fire this block (offset past the block end) into the next,
+    // shifting its offset back by the block length so it keeps its relative timing (mirrors SameBoy).
+    if (n8Role_) n8Role_->rebase(blockSize);
 
     if (channelCapture_ && laneCount >= 6) {
         // Pins mode: fan the mono pin streams (Pulse/TND/Expansion, +MixRef under mode 2) into their own L
@@ -344,6 +387,20 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
     } else {
         assert(laneCount == 2); // mixed stereo (default single stereo stream)
         (void)laneCount;
+        // If per-channel capture is armed but this block was driven through the MIX path (renderAudio, not
+        // renderAudioPerChannel — e.g. a split render's boot settle), the capture streams still filled from
+        // the APU tap and nothing else drains them. Drain + discard them so they stay bounded: otherwise
+        // they accumulate, and a later renderAudioPerChannel finds enough buffered frames to satisfy the
+        // block WITHOUT stepping the CPU — the core stalls (input never reaches it, no fresh audio comes).
+        if (channelCapture_ && nesMixer_) {
+            if (const std::uint32_t avail = nesMixer_->AvailableCaptureFrames(); avail > 0) {
+                auto& discard = chanAccum_[0]; // reuse a per-stream scratch; the mix path doesn't fan it out
+                if (discard.size() < avail) discard.assign(avail, 0.0f);
+                const std::size_t nStreams = channelLayout().size();
+                for (std::size_t k = 0; k < nStreams; ++k)
+                    nesMixer_->DrainChannel(static_cast<std::uint32_t>(k), discard.data(), avail);
+            }
+        }
         if (stereoAccum_.size() < std::size_t(blockSize) * 2) {
             stereoAccum_.assign(std::size_t(blockSize) * 2, 0.0f);
         }
@@ -541,6 +598,9 @@ bool MesenNesSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     ss.write(reinterpret_cast<const char*>(bytes.data()),
              static_cast<std::streamsize>(bytes.size()));
     ss.seekg(0);
+    // The restored ROM is at an unrelated point in the byte stream, so anything queued or delivered for
+    // the pre-load one is stale — a host-sync clock read after the jump would advance the wrong position.
+    if (n8Role_) n8Role_->flushAll();
     return emu_->GetSaveStateManager()->LoadState(ss);
 }
 

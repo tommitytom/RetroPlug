@@ -136,6 +136,39 @@ JSValue emitCoreMidi(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValue
     return JS_UNDEFINED;
 }
 
+// pushCoreBytes(system, frame, [b0, b1, …], flush?) — the RAW-bytes-to-core sink; appends
+// {system, frame, bytes, flush}. The un-framed twin of emitCoreMidi: no length cap (the caller fans these
+// straight to the core's byte device — the NES N8 FIFO — with no MidiEvent frame), for a byte protocol
+// carried over the transport. A truthy `flush` makes the message a barrier: the device drops what it still
+// holds before taking these bytes.
+JSValue pushCoreBytes(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueConst* argv) {
+    DspRuntime* rt = self(ctx);
+    if (!rt || argc < 3) return JS_UNDEFINED;
+
+    std::int32_t system = 0, frame = 0;
+    JS_ToInt32(ctx, &system, argv[0]);
+    JS_ToInt32(ctx, &frame, argv[1]);
+    const bool flush = argc > 3 && JS_ToBool(ctx, argv[3]) > 0;
+
+    std::int64_t len = 0;
+    if (JS_GetLength(ctx, argv[2], &len) < 0) return JS_UNDEFINED;
+
+    DspRuntime::CoreBytes ev;
+    ev.system = static_cast<std::uint32_t>(system);
+    ev.frame = static_cast<std::uint32_t>(frame);
+    ev.flush = flush;
+    ev.data.reserve(static_cast<std::size_t>(len));
+    for (std::int64_t i = 0; i < len; ++i) {
+        JSValue e = JS_GetPropertyUint32(ctx, argv[2], static_cast<std::uint32_t>(i));
+        std::int32_t b = 0;
+        JS_ToInt32(ctx, &b, e);
+        JS_FreeValue(ctx, e);
+        ev.data.push_back(static_cast<std::uint8_t>(b & 0xff));
+    }
+    rt->coreBytes_.push_back(std::move(ev));
+    return JS_UNDEFINED;
+}
+
 // pressButton(system, frame, button, down) — the role-generated button sink; appends the transition
 // to buttonOut_. (Distinct from a host UI tap, which the render loop delivers to a core directly.)
 JSValue pressButton(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueConst* argv) {
@@ -209,6 +242,7 @@ DspRuntime::DspRuntime() {
     JS_SetPropertyStr(ctx_, global, "pushSerialIn", JS_NewCFunction(ctx_, pushSerialIn, "pushSerialIn", 3));
     JS_SetPropertyStr(ctx_, global, "emitMidiOut", JS_NewCFunction(ctx_, emitMidiOut, "emitMidiOut", 3));
     JS_SetPropertyStr(ctx_, global, "emitCoreMidi", JS_NewCFunction(ctx_, emitCoreMidi, "emitCoreMidi", 3));
+    JS_SetPropertyStr(ctx_, global, "pushCoreBytes", JS_NewCFunction(ctx_, pushCoreBytes, "pushCoreBytes", 4));
     JS_SetPropertyStr(ctx_, global, "pressButton", JS_NewCFunction(ctx_, pressButton, "pressButton", 4));
 #ifdef RETROPLUG_PROFILE
     // Per-role runtime tracing (spec/08-profiling.md Tier B): bind the span thunks + name the fixed
@@ -221,6 +255,7 @@ DspRuntime::DspRuntime() {
     traceName(DSP_SPAN_MARSHAL, "marshal");
     traceName(DSP_SPAN_JSCALL, "js-call");
     traceName(DSP_SPAN_APU, "apu-render");
+    traceName(DSP_SPAN_PUBLISH, "state-publish");
 #endif
     JS_FreeValue(ctx_, global);
 }
@@ -278,6 +313,7 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
     serialIn_.clear();
     midiOut_.clear();
     coreMidi_.clear();
+    coreBytes_.clear();
     buttonOut_.clear();
     if (!loaded_) return;
     JS_UpdateStackTop(rt_);  // re-anchor for the calling thread (see loadKernel)

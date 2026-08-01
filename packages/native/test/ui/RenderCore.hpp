@@ -27,6 +27,7 @@ extern "C" {
 }
 
 #include "dpfjs/LvglJsEngine.hpp"
+#include "host/ui/SoftwareLvglDisplay.hpp" // shared LvInputState + display/indev scaffold (also used by sdl/)
 
 namespace rpuigf {
 
@@ -99,8 +100,9 @@ public:
     void drainJs() { engine_.tick(); } // pump the JS event loop (no render step)
 
     // -- input driving ------------------------------------------------------
-    void tapKey(std::uint32_t lvKey);           // LV_KEY_UP/DOWN/LEFT/RIGHT/ENTER/ESC
+    void tapKey(std::uint32_t lvKey, std::uint32_t mod = 0); // LV_KEY_*; mod = DPF modifier mask (Shift=1)
     void clickAt(std::int32_t x, std::int32_t y);// press+release at absolute (x,y)
+    void rightClickAt(std::int32_t x, std::int32_t y);// emit a right-button "mouse" bus press+release at (x,y)
     void moveMouse(std::int32_t x, std::int32_t y);// move the (unpressed) pointer → LVGL hover at (x,y)
     // Synthesize the native SDL-poll buses so a test can drive gamepad input (menu nav / game routing).
     // Arg shapes mirror PluginUI::pumpGamepad exactly: button [pad, name, press]; axis [pad, name, value].
@@ -112,11 +114,6 @@ public:
 
     // Called by the __rp_tagTestId JS trampoline (UI ref hook).
     void recordTestId(const std::string& name, lv_obj_t* obj) { testIds_[name] = obj; }
-
-    // Read callbacks reach these via lv_indev_get_driver_data(indev) == this.
-    std::deque<std::uint32_t>& keyQueue() { return keyQueue_; }
-    lv_point_t mousePos() const { return mousePos_; }
-    bool mouseDown() const { return mouseDown_; }
 
 private:
     void installTestIdHook();  // adds globalThis.__rp_tagTestId
@@ -130,10 +127,8 @@ private:
     lv_indev_t* keypad_ = nullptr;
     lv_indev_t* pointer_ = nullptr;
 
-    // Synthetic input state, read by the indev read callbacks.
-    std::deque<std::uint32_t> keyQueue_;   // pending LVGL key codes
-    lv_point_t mousePos_ = { 0, 0 };
-    bool mouseDown_ = false;
+    // Synthetic input state, read by the shared keypad/pointer indev callbacks (driver_data == &input_).
+    retroplug::ui::LvInputState input_;
 
     LvglJsEngine engine_;
 

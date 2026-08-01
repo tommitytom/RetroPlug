@@ -87,13 +87,21 @@ public:
     // Audio-thread MIDI delivery.
     virtual void onMidi(const ::MidiEvent* /*events*/, std::uint32_t /*count*/) {}
 
+    // Audio-thread: push `size` RAW bytes into the core's device byte-input, scheduled at intra-block
+    // sample offset `frame` — no MIDI framing / length cap. The cross-core analog of pushSerialIn for a
+    // byte transport (the NES routes it to the N8 FIFO); default no-op for cores without one.
+    // `flush` discards whatever the device still holds first, for a protocol message that is a barrier
+    // (risa's host-sync arm) rather than a continuation of the stream.
+    virtual void pushCoreBytes(std::uint32_t /*frame*/, const std::uint8_t* /*data*/, std::size_t /*size*/,
+                               bool /*flush*/ = false) {}
+
     // Audio-thread: enqueue a button transition.
     virtual void pressButton(std::uint8_t /*button*/, bool /*down*/) {}
 
     // Audio-thread: push one byte into the system's serial input (drained
-    // MSB-first over the link/serial port). Default no-op; a core with a
-    // serial port overrides it.
-    virtual void pushSerialIn(std::uint8_t /*byte*/) {}
+    // MSB-first over the link/serial port), scheduled at intra-block sample
+    // offset `frame`. Default no-op; a core with a serial port overrides it.
+    virtual void pushSerialIn(std::uint32_t /*frame*/, std::uint8_t /*byte*/) {}
 
     // Returns nullptr for systems without video (or before activation).
     virtual FrameBufferTriple* framebuffer() { return nullptr; }

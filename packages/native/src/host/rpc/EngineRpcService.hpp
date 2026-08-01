@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -13,6 +14,7 @@
 class Engine;
 class SystemFactory;
 class QueuedInvoker;
+namespace rp::kit { class KitCompiler; }  // fwd: lazy, kept out of the header (enkiTS/r8brain heavy)
 
 // The emulator surface (lifecycle / reads / DSP kernel / MIDI / transport) as a THIN RPC layer over
 // (SystemFactory + Engine + the one Invoker). No threading branches: every mutation just pushes onto
@@ -21,6 +23,7 @@ class QueuedInvoker;
 class EngineRpcService {
 public:
     EngineRpcService(Engine& engine, SystemFactory& factory, QueuedInvoker& invoker);
+    ~EngineRpcService();   // out-of-line: kitCompiler_ holds a fwd-declared KitCompiler
 
     // --- emulator lifecycle / reads ---
     // (duplicate + reload live in the TS SystemsStore as constructSystem-with-state orchestration.)
@@ -30,6 +33,7 @@ public:
     bool applyRoleConfig(std::uint32_t id, std::string kind, std::string config);
     std::optional<rfl::Bytestring> readState(std::uint32_t id);
     std::optional<rfl::Bytestring> readSram(std::uint32_t id);
+    std::optional<rfl::Bytestring> readRam(std::uint32_t id);   // work RAM (WRAM), per-block published copy
     bool screenshot(std::uint32_t id, std::string path);
     RpcFrame getFrame(std::uint32_t id);
 
@@ -51,12 +55,21 @@ public:
     // PCM (Game Boy = 4: Pulse 1/Pulse 2/Wave/Noise). Single-system only (empty if systemCount() != 1 or
     // `id` is unknown) — the per-channel router keys off streamIndex, not slot. Marshals to Uint8Array[].
     std::vector<rfl::Bytestring> renderAudioPerChannel(std::uint32_t id, double ms);
+    // Compile an LSDJ sample kit from source audio files → a 16 KB kit bank (harness/tooling only; the
+    // plugin never binds this). Resample (r8brain) + effects + 4-bit nibble-pack per sample, fanned across
+    // an enkiTS pool by the owned KitCompiler; a per-sample load failure just leaves that slot empty.
+    rfl::Bytestring compileKit(KitCompileSpec spec);
+    // Compile a risa NES-DPCM sample kit → an 8 KB kit bank (harness/tooling only). Same generic pipeline
+    // as compileKit (reuses the lazy kitCompiler_) but drives the DMC codec: r8brain resample to the PAL
+    // DPCM rate + 1-bit ±2 delta encode + 64-byte-aligned pack.
+    rfl::Bytestring compileDmc(RisaKitCompileSpec spec);
     // The engine's audio sample rate (Hz), so callers can label WAV output correctly.
     double          sampleRate() const;
     // Set the host sample rate (Hz). Baked into each core at construct, so it only takes effect BEFORE any
     // system is built — rejected (false) once a system exists, since there's no resample-on-change today.
     bool            setSampleRate(double sr);
     bool            setTransport(bool running);
+    bool            setPpq(double ppq);
     bool            setBpm(double bpm);
     bool            setAudioRouting(std::uint32_t mode);
     bool            stageMidiIn(std::vector<std::uint8_t> bytes);
@@ -92,4 +105,5 @@ private:
     std::vector<float>       scratchL_;  // renderAudio pull-path scratch (control thread)
     std::vector<float>       scratchR_;
     std::vector<RpcMidiOut> accumMidiOut_;  // kernel MIDI-out gathered across a render window (drainMidiOut)
+    std::unique_ptr<rp::kit::KitCompiler> kitCompiler_;  // lazy: built on first compileKit (enkiTS pool)
 };

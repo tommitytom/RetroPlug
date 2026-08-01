@@ -11,11 +11,22 @@ import { migrateRaw, readNumericVersion, type MigrationMap, type RawObject } fro
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file stamped
  *  newer than this is refused on load, one stamped older is migrated (below). */
-export const USER_CONFIG_SCHEMA = 1;
+export const USER_CONFIG_SCHEMA = 2;
 
-/** Raw-JSON migrations keyed by from-version (see migrate.ts). Empty — config.json hasn't
- *  taken a breaking bump; the seam is here so the first one is a one-line add. */
-const USER_CONFIG_MIGRATIONS: MigrationMap = {};
+/** v1→v2: `render.lastDir` was renamed to `render.outputDir`. Carry the value forward so a
+ *  remembered folder survives the rename; zod then strips the leftover `lastDir` (unknown key).
+ *  Idempotent — only fills `outputDir` when it's absent. */
+function userConfigV1toV2(raw: RawObject): RawObject {
+  const render = raw.render;
+  if (render && typeof render === "object" && !Array.isArray(render)) {
+    const r = render as RawObject;
+    if (r.outputDir == null && typeof r.lastDir === "string") r.outputDir = r.lastDir;
+  }
+  return raw;
+}
+
+/** Raw-JSON migrations keyed by from-version (see migrate.ts). */
+const USER_CONFIG_MIGRATIONS: MigrationMap = { 1: userConfigV1toV2 };
 
 /** Parse config.json text. Returns null when the text can't be trusted (malformed JSON,
  *  a non-object root, or a newer schema stamp) — the caller retains its current config.
@@ -34,7 +45,9 @@ export function parseUserConfig(json: string): UserConfig | null {
   return userConfigSchema.parse(migrated) as UserConfig;
 }
 
-/** Serialize config.json text, stamping the current schema version (native field order). */
+/** Serialize config.json text, stamping the current schema version. Every schema field must appear here:
+ *  commit() diffs two serializations to detect a real change, so a field omitted below can never be
+ *  toggled or persisted (it round-trips through parse's default forever). */
 export function serializeUserConfig(cfg: UserConfig): string {
   return JSON.stringify({
     schemaVersion: USER_CONFIG_SCHEMA,
@@ -42,5 +55,7 @@ export function serializeUserConfig(cfg: UserConfig): string {
     activeGamepadBindings: cfg.activeGamepadBindings,
     defaultZoom: cfg.defaultZoom,
     sramAutoSave: cfg.sramAutoSave,
+    useNativeFileDialogs: cfg.useNativeFileDialogs,
+    render: cfg.render,
   });
 }
