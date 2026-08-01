@@ -72,8 +72,6 @@ struct SameBoyConfig {
     SameBoyColorCorrection    colorCorrection = SameBoyColorCorrection::Disabled;
     SameBoyDmgPalette         dmgPalette      = SameBoyDmgPalette::Grey;
     double                    lightTemperature = 0.0;  // -1 cool .. +1 warm, CGB only
-    bool                      backgroundEnabled = true;
-    bool                      objectsEnabled    = true;
     // When true, the UI thread watches `romPath` and triggers a reload
     // (preserving current SRAM, dropping savestate) when the file changes.
     // No-op when `romPath` is empty (embed-only project).

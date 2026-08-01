@@ -361,22 +361,6 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
                 sb->applyDisplayConfig();
             }
             break;
-        case ConfigField::BackgroundEnabled: {
-            const bool on = value != 0.0;
-            if (sb->config_.backgroundEnabled != on) {
-                sb->config_.backgroundEnabled = on;
-                sb->applyDisplayConfig();
-            }
-            break;
-        }
-        case ConfigField::ObjectsEnabled: {
-            const bool on = value != 0.0;
-            if (sb->config_.objectsEnabled != on) {
-                sb->config_.objectsEnabled = on;
-                sb->applyDisplayConfig();
-            }
-            break;
-        }
         default:
             break;  // the universal fields (Gain / ReloadOnRomChange) were handled above
     }

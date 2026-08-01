@@ -90,8 +90,6 @@ test("setRoleConfig on a system role: updates, clamps, applies to the emulator, 
       colorCorrection: 0,
       dmgPalette: 0,
       lightTemperature: 0,
-      backgroundEnabled: true,
-      objectsEnabled: true,
     },
   });
   expect(changes()).toBe(before + 1);

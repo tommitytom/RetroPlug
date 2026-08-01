@@ -1084,29 +1084,59 @@ test("render Output Dir: defaults to the .sav / ROM folder; Settings then a sess
   expect(stores.userConfig.config().render.outputDir).toBe("/music/out"); // Settings default untouched
 });
 
-test("the SameBoy display rows cycle their role config, and are GB-only", () => {
+test("the SameBoy display rows cycle their role config, gated by model and GB-only", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/a.gb", gbRom());
   const id = stores.project.systems.addSystem("/roms/a.gb")!;
 
-  const row = (itemId: string) => {
+  const items = () => {
     const sys = stores.project.systems.view().find((s) => s.id === id)!;
-    return findItem(submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system"), itemId)!;
+    return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system");
   };
+  const row = (itemId: string) => findItem(items(), itemId)!;
   const cfg = () =>
     stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "sameboy")!.config as Record<string, unknown>;
+  const setModel = (m: string) => stores.project.systems.setRoleConfig(id, "sameboy", { model: m });
 
   // Defaults reproduce what the core did before these were configurable, so adding the rows can't
   // change how an existing project looks.
   expect(cfg().colorCorrection).toBe("disabled");
   expect(cfg().dmgPalette).toBe("grey");
   expect(cfg().lightTemperature).toBe(0);
-  expect(cfg().backgroundEnabled).toBe(true);
-  expect(cfg().objectsEnabled).toBe(true);
 
-  // Every row is an arrow-steppable cycler that keeps the menu open, like the knobs above it.
-  for (const rid of ["sys-color-correction", "sys-dmg-palette", "sys-light-temp", "sys-bg-layer", "sys-obj-layer"]) {
+  // --- the model gate ---------------------------------------------------------------------------
+  // Default model is cgbC, so the CGB rows show and the DMG palette does not. Each row is only ever
+  // offered where the core will actually use it (GB_is_cgb one way, its negation the other).
+  expect(findItem(items(), "sys-color-correction")).toBeTruthy();
+  expect(findItem(items(), "sys-light-temp")).toBeTruthy();
+  expect(findItem(items(), "sys-dmg-palette")).toBe(undefined);
+
+  // `auto` is a CGB model here — RetroPlug resolves it to CGB-C — so it keeps the CGB rows. This is
+  // the case a naive "auto might be DMG" gate would get wrong.
+  setModel("auto");
+  expect(findItem(items(), "sys-color-correction")).toBeTruthy();
+  expect(findItem(items(), "sys-dmg-palette")).toBe(undefined);
+
+  // Every DMG-rendering model gets the palette row and loses the CGB pair — MGB and the Super Game
+  // Boys render in DMG mode too, so gating on dmgB alone would hide a control that works.
+  for (const m of ["dmgB", "mgb", "sgb", "sgbPal", "sgb2"]) {
+    setModel(m);
+    expect(findItem(items(), "sys-dmg-palette")).toBeTruthy();
+    expect(findItem(items(), "sys-color-correction")).toBe(undefined);
+    expect(findItem(items(), "sys-light-temp")).toBe(undefined);
+  }
+  // ...and every CGB-family model the reverse.
+  for (const m of ["cgb0", "cgbA", "cgbB", "cgbC", "cgbD", "cgbE", "agb", "gbp"]) {
+    setModel(m);
+    expect(findItem(items(), "sys-dmg-palette")).toBe(undefined);
+    expect(findItem(items(), "sys-color-correction")).toBeTruthy();
+    expect(findItem(items(), "sys-light-temp")).toBeTruthy();
+  }
+
+  // --- the CGB rows (model is back on a CGB one) -------------------------------------------------
+  setModel("cgbC");
+  for (const rid of ["sys-color-correction", "sys-light-temp"]) {
     expect(row(rid).kind).toBe("cycler");
     expect(row(rid).keepOpen).toBeTruthy();
   }
@@ -1122,12 +1152,6 @@ test("the SameBoy display rows cycle their role config, and are GB-only", () => 
   expect(cfg().colorCorrection).toBe("modernAccurate");
   row("sys-color-correction").onCycle!(1);
   expect(cfg().colorCorrection).toBe("disabled");
-
-  // Palette likewise.
-  expect(row("sys-dmg-palette").label).toBe("DMG Palette: Grey");
-  row("sys-dmg-palette").onCycle!(1);
-  expect(cfg().dmgPalette).toBe("dmg");
-  expect(row("sys-dmg-palette").label).toBe("DMG Palette: DMG");
 
   // Light temperature is a cycler over a continuous value: it stores the double, and the row reflects it.
   expect(row("sys-light-temp").label).toBe("Light Temp: Neutral");
@@ -1146,25 +1170,37 @@ test("the SameBoy display rows cycle their role config, and are GB-only", () => 
   // ...and it is NOT silently rewritten just by being displayed.
   expect(cfg().lightTemperature).toBe(0.73);
 
-  // The layer toggles are plain 2-value cyclers.
-  row("sys-bg-layer").onCycle!(1);
-  expect(cfg().backgroundEnabled).toBe(false);
-  expect(row("sys-bg-layer").label).toBe("Background: Off");
-  row("sys-obj-layer").onCycle!(1);
-  expect(cfg().objectsEnabled).toBe(false);
-
   // Out of range is clamped by the schema, not passed to the core.
   stores.project.systems.setRoleConfig(id, "sameboy", { lightTemperature: 99 });
   expect(cfg().lightTemperature).toBe(1);
   stores.project.systems.setRoleConfig(id, "sameboy", { lightTemperature: -99 });
   expect(cfg().lightTemperature).toBe(-1);
 
+  // --- the DMG row ------------------------------------------------------------------------------
+  setModel("dmgB");
+  expect(row("sys-dmg-palette").kind).toBe("cycler");
+  expect(row("sys-dmg-palette").label).toBe("DMG Palette: Grey");
+  row("sys-dmg-palette").onCycle!(1);
+  expect(cfg().dmgPalette).toBe("dmg");
+  expect(row("sys-dmg-palette").label).toBe("DMG Palette: DMG");
+  row("sys-dmg-palette").onCycle!(-1); // wraps backwards to the last palette
+  expect(cfg().dmgPalette).toBe("grey");
+
+  // Hiding a row doesn't discard its value: switch to CGB and back, and the palette is as it was.
+  row("sys-dmg-palette").onCycle!(1);
+  row("sys-dmg-palette").onCycle!(1);
+  expect(cfg().dmgPalette).toBe("mgb");
+  setModel("cgbC");
+  expect(findItem(items(), "sys-dmg-palette")).toBe(undefined);
+  setModel("dmgB");
+  expect(row("sys-dmg-palette").label).toBe("DMG Palette: MGB");
+
   // NES carries no display rows — they're SameBoy knobs, and the mesen role has no such fields.
   be.seed("/roms/a.nes", nesRom());
   const nesId = stores.project.systems.addSystem("/roms/a.nes")!;
   const nesSys = stores.project.systems.view().find((s) => s.id === nesId)!;
   const nesItems = submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: nesSys }).items, "inst-system");
-  for (const rid of ["sys-color-correction", "sys-dmg-palette", "sys-light-temp", "sys-bg-layer", "sys-obj-layer"]) {
+  for (const rid of ["sys-color-correction", "sys-dmg-palette", "sys-light-temp"]) {
     expect(findItem(nesItems, rid)).toBe(undefined);
   }
 });

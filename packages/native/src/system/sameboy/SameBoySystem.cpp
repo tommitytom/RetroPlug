@@ -518,13 +518,12 @@ void SameBoySystem::applyHighpassMode() {
 
 // The whole display group in one pass. Called at boot (onActivate, after GB_init) and again whenever
 // any one of the knobs moves — they're cheap setters, and re-applying an unchanged one is a no-op in
-// the core, so there's no value in a per-field entry point. All four take effect on the NEXT rendered
+// the core, so there's no value in a per-field entry point. All take effect on the NEXT rendered
 // frame; none needs a restart.
 //
-// Correction and palette are mutually exclusive in practice: the core applies correction only on a
-// CGB-family model and the DMG palette only in DMG rendering, so whichever doesn't match the running
-// model simply sits unused. We push both regardless and let the core decide, which is also what keeps
-// `model: auto` honest (the applicable one isn't known until the ROM is sniffed).
+// Correction and palette are mutually exclusive: the core gates both on GB_is_cgb (model >=
+// GB_MODEL_CGB_0), correction one way and the DMG palette the other, so whichever doesn't match the
+// running model sits unused. We push both regardless and let the core decide.
 void SameBoySystem::applyDisplayConfig() {
     if (!gb_) return;
 
@@ -554,9 +553,10 @@ void SameBoySystem::applyDisplayConfig() {
     if (temp > 1.0) temp = 1.0;
     GB_set_light_temperature(gb_, temp);
 
-    // Note the polarity flip: the config says "enabled", the core takes "disabled".
-    GB_set_background_rendering_disabled(gb_, !config_.backgroundEnabled);
-    GB_set_object_rendering_disabled(gb_, !config_.objectsEnabled);
+    // Both layers always render. These are SameBoy debug hooks with no UI behind them; setting them
+    // explicitly (rather than trusting GB_init's zeroing) is the behaviour this code has always had.
+    GB_set_background_rendering_disabled(gb_, false);
+    GB_set_object_rendering_disabled(gb_, false);
 }
 
 void SameBoySystem::pressButton(std::uint8_t button, bool down) {

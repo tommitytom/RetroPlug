@@ -161,8 +161,6 @@ export function sameboyRoleConfig(overrides: Record<string, unknown> = {}): Reco
     colorCorrection: "disabled",
     dmgPalette: "grey",
     lightTemperature: 0,
-    backgroundEnabled: true,
-    objectsEnabled: true,
     ...overrides,
   };
 }

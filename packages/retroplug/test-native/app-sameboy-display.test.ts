@@ -1,13 +1,12 @@
-// The SameBoy display knobs (the "sameboy" role's colorCorrection / dmgPalette / lightTemperature /
-// backgroundEnabled / objectsEnabled) reach the LIVE core and change the pixels it renders — driven
-// through the stores, read back over getFrame. The analogue of app-settings.test.ts, which proves the
-// audio knobs the same way.
+// The SameBoy display knobs (the "sameboy" role's colorCorrection / dmgPalette / lightTemperature)
+// reach the LIVE core and change the pixels it renders — driven through the stores, read back over
+// getFrame. The analogue of app-settings.test.ts, which proves the audio knobs the same way.
 //
-// It also pins the model-dependence the menu comments claim, which is the part that's easy to get
-// wrong: the core applies colour correction and light temperature only on a CGB-family model (both
-// live in GB_convert_rgb15, which GB_palette_changed skips for non-CGB), and the DMG palette only in
-// DMG rendering. So each knob is asserted on the model where it bites AND on the one where it must
-// not — a change that "works" on both would mean we'd started colouring frames ourselves.
+// It also pins the model split the MENU relies on to decide which rows to show: the core applies
+// colour correction and light temperature only when GB_is_cgb (both live in GB_convert_rgb15, which
+// GB_palette_changed skips for non-CGB) and the DMG palette only when it isn't. Each knob is asserted
+// on the model where it bites AND on the one where it must not, so if that split ever moved, the menu
+// would be hiding the wrong row and this fails rather than the UI quietly going wrong.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
@@ -106,27 +105,8 @@ test("sameboy display knobs change the live core's rendered pixels, on the model
   expect(project.systems.setRoleConfig(id, "sameboy", { colorCorrection: "disabled" })).toBeTruthy();
   expect(differingFraction(base, settle())).toBe(0);
 
-  // --- layer toggles (model-independent — they gate the PPU, not the palette) -------------------
-  // mGB's screen is nearly all black (channel means ~12/255), so killing the background clears its
-  // text and not much else: ~5% of pixels, roughly a thousand of them. Threshold well under that but
-  // well over noise, so this stays a statement about the layer actually going away.
-  expect(project.systems.setRoleConfig(id, "sameboy", { backgroundEnabled: false })).toBeTruthy();
-  const noBg = settle();
-  const bgDiff = differingFraction(base, noBg);
-  console.log(`[sameboy-display] background off differs=${(bgDiff * 100).toFixed(1)}%`);
-  expect(bgDiff > 0.01).toBeTruthy();
-  expect(project.systems.setRoleConfig(id, "sameboy", { backgroundEnabled: true })).toBeTruthy();
-  expect(differingFraction(base, settle())).toBe(0);
-
-  // Objects too. mGB may or may not use sprites, so this only asserts the round trip is clean — the
-  // point is that the toggle reaches the core and doesn't corrupt the frame.
-  expect(project.systems.setRoleConfig(id, "sameboy", { objectsEnabled: false })).toBeTruthy();
-  settle();
-  expect(project.systems.setRoleConfig(id, "sameboy", { objectsEnabled: true })).toBeTruthy();
-  expect(differingFraction(base, settle())).toBe(0);
-
   // --- the DMG palette does NOT apply on a CGB core -------------------------------------------
-  // The core's own gate, and the reason the menu shows both rows for any Game Boy instead of guessing.
+  // The core's own gate, and the reason the menu hides this row on a CGB model.
   expect(project.systems.setRoleConfig(id, "sameboy", { dmgPalette: "dmg" })).toBeTruthy();
   expect(differingFraction(base, settle())).toBe(0);
   expect(project.systems.setRoleConfig(id, "sameboy", { dmgPalette: "grey" })).toBeTruthy();

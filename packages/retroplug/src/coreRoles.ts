@@ -24,10 +24,10 @@ export function registerCoreRoles(registry: RoleRegistry): void {
   //
   // The display group is additive and every default reproduces what the core did when these were
   // hardcoded (SameBoySystem.cpp), so an existing project loads pixel-identical and needs no migration.
-  // Which ones actually bite depends on the running model, and the core decides that, not us: colour
-  // correction and light temperature are CGB-only, the palette is DMG-only, and `model: auto` isn't
-  // known until the ROM is sniffed. So the menu offers all of them for any Game Boy and lets the
-  // inapplicable one lie inert - that beats a gate that guesses wrong on `auto`.
+  // Which one bites is decided by the model, and the split is exact rather than a guess: the core
+  // applies colour correction and light temperature only when GB_is_cgb (model >= GB_MODEL_CGB_0) and
+  // the DMG palette only when it isn't. `auto` is not ambiguous here - RetroPlug maps it to CGB-C
+  // (toSameBoyModel), so it counts as CGB. The menu gates the palette row on that (menuDefs.ts).
   registry.registerRole({
     kind: "sameboy",
     category: "system",
@@ -41,9 +41,6 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       dmgPalette: enumField(DMG_PALETTE_VALUES, "grey"),
       // Ambient light tint, CGB only. SameBoy's own range: -1 (cool/blue) .. +1 (warm/red), 0 neutral.
       lightTemperature: clampedNumber(-1, 1, 0),
-      // Per-layer render kills. Debug hooks in SameBoy, but useful for isolating a tracker's visuals.
-      backgroundEnabled: boolField(true),
-      objectsEnabled: boolField(true),
     }),
   });
 

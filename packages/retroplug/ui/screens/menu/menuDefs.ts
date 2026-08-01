@@ -165,6 +165,14 @@ const DMG_PALETTE_NAMES = ["Grey", "DMG", "MGB", "GBL"];
 // nearestIndex() to the closest row.
 const LIGHT_TEMP_STEPS = [-1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1];
 const LIGHT_TEMP_NAMES = ["Cool 100%", "Cool 80%", "Cool 60%", "Cool 40%", "Cool 20%", "Neutral", "Warm 20%", "Warm 40%", "Warm 60%", "Warm 80%", "Warm 100%"];
+
+// The models that render in DMG mode, i.e. the ones the DMG palette applies to. Mirrors the core's own
+// split: GB_is_cgb is `model >= GB_MODEL_CGB_0`, and everything below that (DMG, the Game Boy Pocket,
+// and the three Super Game Boys) takes its colours from GB_update_dmg_palette instead of the CGB
+// palette RAM. `auto` is NOT one of them - RetroPlug resolves it to CGB-C (toSameBoyModel), so it gets
+// the CGB rows. Colour correction and light temperature are shown on exactly the complement.
+const DMG_MODELS: readonly SameBoyModel[] = ["dmgB", "mgb", "sgb", "sgbPal", "sgb2"];
+const isDmgModel = (m: SameBoyModel): boolean => DMG_MODELS.includes(m);
 const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSave: "On Save", Continuous: "Continuous" };
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
@@ -246,8 +254,6 @@ function sameboyConfig(sys: SystemView): {
   colorCorrection: SameBoyColorCorrection;
   dmgPalette: SameBoyDmgPalette;
   lightTemperature: number;
-  backgroundEnabled: boolean;
-  objectsEnabled: boolean;
 } {
   const c = (sys.roles.find((r) => r.kind === "sameboy")?.config ?? {}) as Record<string, unknown>;
   return {
@@ -258,8 +264,6 @@ function sameboyConfig(sys: SystemView): {
     colorCorrection: typeof c.colorCorrection === "string" ? (c.colorCorrection as SameBoyColorCorrection) : "disabled",
     dmgPalette: typeof c.dmgPalette === "string" ? (c.dmgPalette as SameBoyDmgPalette) : "grey",
     lightTemperature: typeof c.lightTemperature === "number" ? c.lightTemperature : 0,
-    backgroundEnabled: c.backgroundEnabled !== false,
-    objectsEnabled: c.objectsEnabled !== false,
   };
 }
 
@@ -410,28 +414,27 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       cycler("sys-highpass", "Highpass", HIGHPASS_NAMES, Math.max(0, HIGHPASS_VALUES.indexOf(cfg.highpass)), (n) => systems.setRoleConfig(sys.id, "sameboy", { highpass: HIGHPASS_VALUES[n] })),
       cycler("sys-fastboot", "Fast Boot", OFF_ON, cfg.fastBoot ? 1 : 0, (n) => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: n === 1 })),
     );
-    // Display. All five are live — the core applies them to the next rendered frame, no restart.
-    // Colour correction + light temperature only bite on a CGB-family core and the palette only in DMG
-    // rendering, but `model: auto` means we can't know which until the ROM is sniffed, so all are always
-    // offered and the inapplicable one sits inert rather than vanishing from the menu.
-    items.push(
-      sep("sys-sep-display"),
-      cycler("sys-color-correction", "Color Correction", COLOR_CORRECTION_NAMES, Math.max(0, COLOR_CORRECTION_VALUES.indexOf(cfg.colorCorrection)), (n) =>
-        systems.setRoleConfig(sys.id, "sameboy", { colorCorrection: COLOR_CORRECTION_VALUES[n] }),
-      ),
-      cycler("sys-dmg-palette", "DMG Palette", DMG_PALETTE_NAMES, Math.max(0, DMG_PALETTE_VALUES.indexOf(cfg.dmgPalette)), (n) =>
-        systems.setRoleConfig(sys.id, "sameboy", { dmgPalette: DMG_PALETTE_VALUES[n] }),
-      ),
-      cycler("sys-light-temp", "Light Temp", LIGHT_TEMP_NAMES, nearestIndex(LIGHT_TEMP_STEPS, cfg.lightTemperature), (n) =>
-        systems.setRoleConfig(sys.id, "sameboy", { lightTemperature: LIGHT_TEMP_STEPS[n] }),
-      ),
-      cycler("sys-bg-layer", "Background", OFF_ON, cfg.backgroundEnabled ? 1 : 0, (n) =>
-        systems.setRoleConfig(sys.id, "sameboy", { backgroundEnabled: n === 1 }),
-      ),
-      cycler("sys-obj-layer", "Objects", OFF_ON, cfg.objectsEnabled ? 1 : 0, (n) =>
-        systems.setRoleConfig(sys.id, "sameboy", { objectsEnabled: n === 1 }),
-      ),
-    );
+    // Display. Live — the core applies these to the next rendered frame, no restart. Each row is shown
+    // only on the models where the core will actually use it: it gates colour correction and light
+    // temperature on GB_is_cgb and the DMG palette on the negation, so exactly one of the two groups
+    // applies to any given model. See isDmgModel.
+    items.push(sep("sys-sep-display"));
+    if (isDmgModel(cfg.model)) {
+      items.push(
+        cycler("sys-dmg-palette", "DMG Palette", DMG_PALETTE_NAMES, Math.max(0, DMG_PALETTE_VALUES.indexOf(cfg.dmgPalette)), (n) =>
+          systems.setRoleConfig(sys.id, "sameboy", { dmgPalette: DMG_PALETTE_VALUES[n] }),
+        ),
+      );
+    } else {
+      items.push(
+        cycler("sys-color-correction", "Color Correction", COLOR_CORRECTION_NAMES, Math.max(0, COLOR_CORRECTION_VALUES.indexOf(cfg.colorCorrection)), (n) =>
+          systems.setRoleConfig(sys.id, "sameboy", { colorCorrection: COLOR_CORRECTION_VALUES[n] }),
+        ),
+        cycler("sys-light-temp", "Light Temp", LIGHT_TEMP_NAMES, nearestIndex(LIGHT_TEMP_STEPS, cfg.lightTemperature), (n) =>
+          systems.setRoleConfig(sys.id, "sameboy", { lightTemperature: LIGHT_TEMP_STEPS[n] }),
+        ),
+      );
+    }
   }
   // NES-only core knobs (the "mesen" role also attaches to GBA, so gate on platform, not core).
   if (sys.platform === "nes") {

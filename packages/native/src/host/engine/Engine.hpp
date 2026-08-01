@@ -26,7 +26,6 @@ enum class ConfigField : std::uint8_t {
     // SameBoy display group — all live (they land on the next rendered frame), all routed through
     // SameBoySystem::applyDisplayConfig.
     ColorCorrection = 10, DmgPalette = 11, LightTemperature = 12,
-    BackgroundEnabled = 13, ObjectsEnabled = 14,
 };
 
 // One system's video frame, read from its lock-free FrameBufferTriple. `data` is raw XRGB8888
