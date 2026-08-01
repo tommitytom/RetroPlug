@@ -1,0 +1,33 @@
+name: bridge-tests
+
+# Fast, build-free check for the linksync host bridge (the RetroPlug -> hardware LSDj-sync relay).
+# The bridge core is pure TypeScript with no external deps, so it runs directly on Node's built-in
+# test runner with native type-stripping (Node >= 22.18) — no pnpm install, no C++/txiki build.
+# The heavier native/UI/plugin suites stay in build.yml.
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: bridge-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node-bridge:
+    name: linksync bridge (node --test)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run bridge tests
+        working-directory: packages/retroplug/cli/sessions
+        run: node --test linksyncBridge.test.ts linksync.test.ts
