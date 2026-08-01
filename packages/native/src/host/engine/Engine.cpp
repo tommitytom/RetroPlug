@@ -336,6 +336,47 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
         case ConfigField::SerialOutCapture:
             sb->setSerialOutCapture(value != 0.0);  // live — arms LSDj MI.OUT serial-out capture
             break;
+        // The display group. Each is value-guarded like the knobs above (the store re-sends the whole
+        // role config on every edit, so an unguarded apply would re-push all five on every keystroke)
+        // and then re-pushes the group, which is a handful of cheap core setters.
+        case ConfigField::ColorCorrection: {
+            const auto cc = static_cast<SameBoyColorCorrection>(static_cast<std::uint32_t>(value));
+            if (sb->config_.colorCorrection != cc) {
+                sb->config_.colorCorrection = cc;
+                sb->applyDisplayConfig();
+            }
+            break;
+        }
+        case ConfigField::DmgPalette: {
+            const auto p = static_cast<SameBoyDmgPalette>(static_cast<std::uint32_t>(value));
+            if (sb->config_.dmgPalette != p) {
+                sb->config_.dmgPalette = p;
+                sb->applyDisplayConfig();
+            }
+            break;
+        }
+        case ConfigField::LightTemperature:
+            if (sb->config_.lightTemperature != value) {
+                sb->config_.lightTemperature = value;
+                sb->applyDisplayConfig();
+            }
+            break;
+        case ConfigField::BackgroundEnabled: {
+            const bool on = value != 0.0;
+            if (sb->config_.backgroundEnabled != on) {
+                sb->config_.backgroundEnabled = on;
+                sb->applyDisplayConfig();
+            }
+            break;
+        }
+        case ConfigField::ObjectsEnabled: {
+            const bool on = value != 0.0;
+            if (sb->config_.objectsEnabled != on) {
+                sb->config_.objectsEnabled = on;
+                sb->applyDisplayConfig();
+            }
+            break;
+        }
         default:
             break;  // the universal fields (Gain / ReloadOnRomChange) were handled above
     }

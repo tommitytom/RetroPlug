@@ -77,5 +77,10 @@ std::unique_ptr<SystemBase> SameBoyBackend::build(SystemId id, const SystemBuild
     cfg.highpass = static_cast<SameBoyHighpass>(role.highpass);
     cfg.linkGroupId = static_cast<std::uint8_t>(role.linkGroupId);
     cfg.fastBoot = role.fastBoot;
+    cfg.colorCorrection = static_cast<SameBoyColorCorrection>(role.colorCorrection);
+    cfg.dmgPalette = static_cast<SameBoyDmgPalette>(role.dmgPalette);
+    cfg.lightTemperature = role.lightTemperature;
+    cfg.backgroundEnabled = role.backgroundEnabled;
+    cfg.objectsEnabled = role.objectsEnabled;
     return buildSameBoy(id, std::move(cfg), std::move(romBytes), sampleRate);
 }

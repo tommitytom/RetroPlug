@@ -54,6 +54,27 @@ export type SameBoyModel = (typeof MODEL_VALUES)[number];
 export const HIGHPASS_VALUES = ["off", "accurate", "removeDcOffset"] as const;
 export type SameBoyHighpass = (typeof HIGHPASS_VALUES)[number];
 
+// SameBoy CGB colour correction — index == GB_color_correction_mode_t (Core/display.h). Acts on the
+// 15-bit -> RGB conversion, so it only bites on a CGB-family model; a DMG/MGB core ignores it.
+// `disabled` is the historical RetroPlug behaviour (raw, oversaturated) and stays the default so no
+// existing project changes appearance.
+export const COLOR_CORRECTION_VALUES = [
+  "disabled",
+  "correctCurves",
+  "modernBalanced",
+  "modernBoostContrast",
+  "reduceContrast",
+  "lowContrast",
+  "modernAccurate",
+] as const;
+export type SameBoyColorCorrection = (typeof COLOR_CORRECTION_VALUES)[number];
+
+// SameBoy DMG palette — the four built-ins SameBoy exports (Core/display.h). The mirror image of
+// colour correction: it only bites in DMG rendering, and a CGB-family core ignores it. `grey` is
+// SameBoy's own fallback when no palette is set (GB_update_dmg_palette), i.e. today's behaviour.
+export const DMG_PALETTE_VALUES = ["grey", "dmg", "mgb", "gbl"] as const;
+export type SameBoyDmgPalette = (typeof DMG_PALETTE_VALUES)[number];
+
 // NES console region (ConsoleRegion 0..4).
 export const REGION_VALUES = ["auto", "ntsc", "pal", "dendy", "ntscJapan"] as const;
 export type ConsoleRegion = (typeof REGION_VALUES)[number];
@@ -99,7 +120,12 @@ export function audioRoutingToIndex(v: AudioRouting): number {
 // "system"-category roles cross to native's reflect-cpp structs (SameBoyRoleConfig / MesenNesRoleConfig);
 // lsdj-sync is a pure-TS DSP role, so its `mode` string never needs an int here.
 const ROLE_NATIVE_ENUMS: Record<string, Record<string, readonly string[]>> = {
-  sameboy: { model: MODEL_VALUES, highpass: HIGHPASS_VALUES },
+  sameboy: {
+    model: MODEL_VALUES,
+    highpass: HIGHPASS_VALUES,
+    colorCorrection: COLOR_CORRECTION_VALUES,
+    dmgPalette: DMG_PALETTE_VALUES,
+  },
   mesen: { region: REGION_VALUES, channelExportMode: CHANNEL_EXPORT_VALUES },
 };
 

@@ -14,8 +14,12 @@ import {
   HIGHPASS_VALUES,
   REGION_VALUES,
   LSDJ_MODE_VALUES,
+  COLOR_CORRECTION_VALUES,
+  DMG_PALETTE_VALUES,
   type SameBoyModel,
   type SameBoyHighpass,
+  type SameBoyColorCorrection,
+  type SameBoyDmgPalette,
   type ConsoleRegion,
   type LsdjSyncMode,
 } from "../../../src/settingsEnums";
@@ -152,6 +156,15 @@ const AUDIO_ROUTING_NAMES = ["Stereo", "2 Ch / Inst", "1 Ch / Inst", "Channels (
 const LAYOUT_NAMES = ["Auto", "Row", "Column", "Grid"];
 const MODEL_NAMES = ["Auto", "DMG-B", "MGB", "SGB", "SGB PAL", "SGB2", "CGB-0", "CGB-A", "CGB-B", "CGB-C", "CGB-D", "CGB-E", "AGB", "GBP"];
 const HIGHPASS_NAMES = ["Off", "Accurate", "DC-Block"];
+// SameBoy display knobs (the "sameboy" role). Index == the value tuple in settingsEnums.
+const COLOR_CORRECTION_NAMES = ["Off", "Correct Curves", "Balanced", "Boost Contrast", "Reduce Contrast", "Low Contrast", "Accurate"];
+const DMG_PALETTE_NAMES = ["Grey", "DMG", "MGB", "GBL"];
+// Light temperature is a continuous -1..1 in the core; the menu has cyclers, not sliders, so offer it
+// as 11 steps over the full range. Upstream's own slider is 21 steps, which is a lot of key presses
+// for a tint. Stored as the double, so a value that came from elsewhere still round-trips through
+// nearestIndex() to the closest row.
+const LIGHT_TEMP_STEPS = [-1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1];
+const LIGHT_TEMP_NAMES = ["Cool 100%", "Cool 80%", "Cool 60%", "Cool 40%", "Cool 20%", "Neutral", "Warm 20%", "Warm 40%", "Warm 60%", "Warm 80%", "Warm 100%"];
 const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSave: "On Save", Continuous: "Continuous" };
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
@@ -222,14 +235,31 @@ function browseThen(ctx: MenuContext, opts: FileBrowserOpts, apply: (path: strin
   });
 }
 
-/** The SameBoy core-role config for a system (model / highpass / linkGroupId / fastBoot), with defaults. */
-function sameboyConfig(sys: SystemView): { model: SameBoyModel; highpass: SameBoyHighpass; linkGroupId: number; fastBoot: boolean } {
+/** The SameBoy core-role config for a system (model / highpass / link group / fast boot + the display
+ *  group), with defaults. Every display default matches the core's own, so a project saved before those
+ *  knobs existed reads back as the appearance it was saved with. */
+function sameboyConfig(sys: SystemView): {
+  model: SameBoyModel;
+  highpass: SameBoyHighpass;
+  linkGroupId: number;
+  fastBoot: boolean;
+  colorCorrection: SameBoyColorCorrection;
+  dmgPalette: SameBoyDmgPalette;
+  lightTemperature: number;
+  backgroundEnabled: boolean;
+  objectsEnabled: boolean;
+} {
   const c = (sys.roles.find((r) => r.kind === "sameboy")?.config ?? {}) as Record<string, unknown>;
   return {
     model: typeof c.model === "string" ? (c.model as SameBoyModel) : "cgbC",
     highpass: typeof c.highpass === "string" ? (c.highpass as SameBoyHighpass) : "accurate",
     linkGroupId: typeof c.linkGroupId === "number" ? c.linkGroupId : 0,
     fastBoot: c.fastBoot !== false,
+    colorCorrection: typeof c.colorCorrection === "string" ? (c.colorCorrection as SameBoyColorCorrection) : "disabled",
+    dmgPalette: typeof c.dmgPalette === "string" ? (c.dmgPalette as SameBoyDmgPalette) : "grey",
+    lightTemperature: typeof c.lightTemperature === "number" ? c.lightTemperature : 0,
+    backgroundEnabled: c.backgroundEnabled !== false,
+    objectsEnabled: c.objectsEnabled !== false,
   };
 }
 
@@ -238,11 +268,12 @@ function sameboyConfig(sys: SystemView): { model: SameBoyModel; highpass: SameBo
 const APU_LATENCY_MS = [0.5, 1.0, 1.4, 3.0, 5.0];
 const APU_LATENCY_NAMES = ["0.5 ms", "1.0 ms", "1.4 ms", "3.0 ms", "5.0 ms"];
 
-/** Index of the preset nearest `ms`, so the cycler shows the current value even if it's off-grid. */
-function nearestApuLatencyIndex(ms: number): number {
+/** Index of the preset in `presets` nearest `v`, so a cycler over a continuous value still shows the
+ *  current setting even when it's off-grid (a project written by an older build, or by hand). */
+function nearestIndex(presets: readonly number[], v: number): number {
   let best = 0;
-  for (let i = 1; i < APU_LATENCY_MS.length; i++) {
-    if (Math.abs(APU_LATENCY_MS[i] - ms) < Math.abs(APU_LATENCY_MS[best] - ms)) best = i;
+  for (let i = 1; i < presets.length; i++) {
+    if (Math.abs(presets[i] - v) < Math.abs(presets[best] - v)) best = i;
   }
   return best;
 }
@@ -379,6 +410,28 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       cycler("sys-highpass", "Highpass", HIGHPASS_NAMES, Math.max(0, HIGHPASS_VALUES.indexOf(cfg.highpass)), (n) => systems.setRoleConfig(sys.id, "sameboy", { highpass: HIGHPASS_VALUES[n] })),
       cycler("sys-fastboot", "Fast Boot", OFF_ON, cfg.fastBoot ? 1 : 0, (n) => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: n === 1 })),
     );
+    // Display. All five are live — the core applies them to the next rendered frame, no restart.
+    // Colour correction + light temperature only bite on a CGB-family core and the palette only in DMG
+    // rendering, but `model: auto` means we can't know which until the ROM is sniffed, so all are always
+    // offered and the inapplicable one sits inert rather than vanishing from the menu.
+    items.push(
+      sep("sys-sep-display"),
+      cycler("sys-color-correction", "Color Correction", COLOR_CORRECTION_NAMES, Math.max(0, COLOR_CORRECTION_VALUES.indexOf(cfg.colorCorrection)), (n) =>
+        systems.setRoleConfig(sys.id, "sameboy", { colorCorrection: COLOR_CORRECTION_VALUES[n] }),
+      ),
+      cycler("sys-dmg-palette", "DMG Palette", DMG_PALETTE_NAMES, Math.max(0, DMG_PALETTE_VALUES.indexOf(cfg.dmgPalette)), (n) =>
+        systems.setRoleConfig(sys.id, "sameboy", { dmgPalette: DMG_PALETTE_VALUES[n] }),
+      ),
+      cycler("sys-light-temp", "Light Temp", LIGHT_TEMP_NAMES, nearestIndex(LIGHT_TEMP_STEPS, cfg.lightTemperature), (n) =>
+        systems.setRoleConfig(sys.id, "sameboy", { lightTemperature: LIGHT_TEMP_STEPS[n] }),
+      ),
+      cycler("sys-bg-layer", "Background", OFF_ON, cfg.backgroundEnabled ? 1 : 0, (n) =>
+        systems.setRoleConfig(sys.id, "sameboy", { backgroundEnabled: n === 1 }),
+      ),
+      cycler("sys-obj-layer", "Objects", OFF_ON, cfg.objectsEnabled ? 1 : 0, (n) =>
+        systems.setRoleConfig(sys.id, "sameboy", { objectsEnabled: n === 1 }),
+      ),
+    );
   }
   // NES-only core knobs (the "mesen" role also attaches to GBA, so gate on platform, not core).
   if (sys.platform === "nes") {
@@ -388,7 +441,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       cycler("sys-nes-spritelimit", "Remove Sprite Limit", OFF_ON, cfg.removeSpriteLimit ? 1 : 0, (n) =>
         systems.setRoleConfig(sys.id, "mesen", { removeSpriteLimit: n === 1 }),
       ),
-      cycler("sys-nes-apu-latency", "APU Latency", APU_LATENCY_NAMES, nearestApuLatencyIndex(cfg.apuLatencyMs), (n) =>
+      cycler("sys-nes-apu-latency", "APU Latency", APU_LATENCY_NAMES, nearestIndex(APU_LATENCY_MS, cfg.apuLatencyMs), (n) =>
         systems.setRoleConfig(sys.id, "mesen", { apuLatencyMs: APU_LATENCY_MS[n] }),
       ),
     );

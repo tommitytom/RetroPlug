@@ -20,6 +20,13 @@ struct SameBoyRoleConfig {
     std::uint32_t highpass    = static_cast<std::uint32_t>(SameBoyHighpass::Accurate);
     std::uint32_t linkGroupId = 0;
     bool          fastBoot    = true;
+    // Display knobs. Defaults reproduce the pre-configurable hardcoded behaviour, so a project saved
+    // before these existed decodes (DefaultIfMissing) to exactly what it used to render.
+    std::uint32_t colorCorrection   = static_cast<std::uint32_t>(SameBoyColorCorrection::Disabled);
+    std::uint32_t dmgPalette        = static_cast<std::uint32_t>(SameBoyDmgPalette::Grey);
+    double        lightTemperature  = 0.0;
+    bool          backgroundEnabled = true;
+    bool          objectsEnabled    = true;
 };
 
 // Builds a real SameBoySystem (Game Boy). The only place SameBoyConfig is constructed on the

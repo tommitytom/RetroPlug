@@ -9,7 +9,7 @@ import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { z, clampedInt } from "../../src/configSchema";
-import { gbRom, nesRom } from "../systems/fixtures";
+import { gbRom, nesRom, sameboyRoleConfig } from "../systems/fixtures";
 
 // A GB ROM (valid logo for classification) carrying a cartridge title at 0x134.
 function gbRomWithTitle(title: string): Uint8Array {
@@ -49,7 +49,7 @@ test("a SameBoy system auto-gets the sameboy system role + universal settings", 
   store.addSystem("/roms/a.gb");
   const v = store.view()[0];
   expect(v.settings).toEqual({ gainDb: 0, reloadOnRomChange: false });
-  expect(v.roles).toEqual([{ kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true } }]);
+  expect(v.roles).toEqual([{ kind: "sameboy", config: sameboyRoleConfig() }]);
 });
 
 test("a NES system auto-gets the mesen system role; editing region crosses to the emulator", () => {
@@ -76,10 +76,23 @@ test("setRoleConfig on a system role: updates, clamps, applies to the emulator, 
   const before = changes();
   expect(store.setRoleConfig(id, "sameboy", { model: "sgb" })).toBeTruthy();
   expect(store.view()[0].roles[0].config.model).toBe("sgb");
+  // Native-encoded: every string enum in the role has become its ordinal (model "sgb" → 3,
+  // highpass "accurate" → 1, colorCorrection "disabled" → 0, dmgPalette "grey" → 0), and the
+  // non-enum fields pass through as-is. That mapping is roleConfigForNative's whole job.
   expect(be.applyRoleCalls[be.applyRoleCalls.length - 1]).toEqual({
     id,
     kind: "sameboy",
-    config: { model: 3, highpass: 1, linkGroupId: 0, fastBoot: true }, // native-encoded
+    config: {
+      model: 3,
+      highpass: 1,
+      linkGroupId: 0,
+      fastBoot: true,
+      colorCorrection: 0,
+      dmgPalette: 0,
+      lightTemperature: 0,
+      backgroundEnabled: true,
+      objectsEnabled: true,
+    },
   });
   expect(changes()).toBe(before + 1);
   // unknown enum → defaulted, not stored raw

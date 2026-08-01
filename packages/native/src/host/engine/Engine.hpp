@@ -23,6 +23,10 @@ enum class ConfigField : std::uint8_t {
     NesRegion = 6, NesRemoveSpriteLimit = 7,                  // Mesen (NES)
     SerialOutCapture = 8,                                     // SameBoy (LSDj MI.OUT)
     NesApuLatencyMs = 9,                                      // Mesen (NES) — APU flush window as latency (ms)
+    // SameBoy display group — all live (they land on the next rendered frame), all routed through
+    // SameBoySystem::applyDisplayConfig.
+    ColorCorrection = 10, DmgPalette = 11, LightTemperature = 12,
+    BackgroundEnabled = 13, ObjectsEnabled = 14,
 };
 
 // One system's video frame, read from its lock-free FrameBufferTriple. `data` is raw XRGB8888

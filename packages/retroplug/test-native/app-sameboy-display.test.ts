@@ -1,0 +1,165 @@
+// The SameBoy display knobs (the "sameboy" role's colorCorrection / dmgPalette / lightTemperature /
+// backgroundEnabled / objectsEnabled) reach the LIVE core and change the pixels it renders — driven
+// through the stores, read back over getFrame. The analogue of app-settings.test.ts, which proves the
+// audio knobs the same way.
+//
+// It also pins the model-dependence the menu comments claim, which is the part that's easy to get
+// wrong: the core applies colour correction and light temperature only on a CGB-family model (both
+// live in GB_convert_rgb15, which GB_palette_changed skips for non-CGB), and the DMG palette only in
+// DMG rendering. So each knob is asserted on the model where it bites AND on the one where it must
+// not — a change that "works" on both would mean we'd started colouring frames ourselves.
+import { test, expect } from "../testing/harness";
+import { createRealBackend } from "../src/realBackend";
+import { createAudioDriver } from "../src/audioDriver";
+import { RecentStore } from "../src/recentStore";
+import { ProjectStore } from "../src/projectStore";
+import { buildAppRegistry } from "../src/appHost";
+
+// Frame pixels are XRGB8888 little-endian, i.e. bytes B,G,R,X (Engine.hpp EngineFrame).
+const B = 0, G = 1, R = 2;
+
+/** Mean of each colour channel across the frame. Aggregate rather than per-pixel, so an assertion
+ *  says something about the whole picture and not one arbitrary texel. */
+function channelMeans(px: Uint8Array): { r: number; g: number; b: number } {
+  let r = 0, g = 0, b = 0;
+  const n = px.length / 4;
+  for (let i = 0; i < px.length; i += 4) {
+    b += px[i + B];
+    g += px[i + G];
+    r += px[i + R];
+  }
+  return { r: r / n, g: g / n, b: b / n };
+}
+
+/** Fraction of pixels whose RGB differs between two frames. */
+function differingFraction(a: Uint8Array, b: Uint8Array): number {
+  let diff = 0;
+  const n = a.length / 4;
+  for (let i = 0; i < a.length; i += 4) {
+    if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) diff++;
+  }
+  return n ? diff / n : 0;
+}
+
+test("sameboy display knobs change the live core's rendered pixels, on the models where they apply", () => {
+  const be = createRealBackend();
+  const registry = buildAppRegistry();
+  const recent = new RecentStore(be);
+  const project = new ProjectStore(be, recent, registry);
+  const audio = createAudioDriver();
+
+  const id = project.systems.loadMgb()!;
+  expect(typeof id).toBe("number");
+
+  // Advance far enough to boot the GB and settle mGB's screen, then re-read after every edit so the
+  // core has rendered fresh vblanks with the new setting (a GB frame is ~16.7 ms).
+  const settle = (ms = 200) => {
+    audio.renderAudio(ms);
+    const f = be.getFrame(id)!;
+    expect(f.published).toBeTruthy();
+    return new Uint8Array(f.pixels); // copy: getFrame hands back the published buffer
+  };
+
+  audio.renderAudio(1500);
+  const base = settle();
+
+  // mGB's screen is static once booted, so any later difference is attributable to the knob and not to
+  // animation. Assert that rather than assume it — if mGB ever gains a blinking element, this fails
+  // loudly here instead of making the real assertions flaky.
+  expect(differingFraction(base, settle())).toBe(0);
+
+  // --- light temperature (CGB: the default model is cgbC) --------------------------------------
+  // Warm scales green and blue down and leaves red alone (temperature_tint), so the red:blue ratio
+  // must rise. This is the knob that bites even on a near-monochrome screen, because it's a multiply
+  // applied after colour correction rather than a palette remap.
+  const cold = channelMeans(base);
+  expect(project.systems.setRoleConfig(id, "sameboy", { lightTemperature: 1 })).toBeTruthy();
+  const warmFrame = settle();
+  const warm = channelMeans(warmFrame);
+  console.log(`[sameboy-display] neutral r=${cold.r.toFixed(1)} g=${cold.g.toFixed(1)} b=${cold.b.toFixed(1)}`);
+  console.log(`[sameboy-display] warm    r=${warm.r.toFixed(1)} g=${warm.g.toFixed(1)} b=${warm.b.toFixed(1)}`);
+  expect(differingFraction(base, warmFrame) > 0).toBeTruthy();
+  expect(warm.b < cold.b).toBeTruthy(); // blue crushed
+  expect(warm.r >= cold.r).toBeTruthy(); // red untouched (light_r == 1 for temperature >= 0)
+
+  // Cool is the mirror image: blue is left alone and red is pulled down.
+  expect(project.systems.setRoleConfig(id, "sameboy", { lightTemperature: -1 })).toBeTruthy();
+  const coolTint = channelMeans(settle());
+  console.log(`[sameboy-display] cool    r=${coolTint.r.toFixed(1)} g=${coolTint.g.toFixed(1)} b=${coolTint.b.toFixed(1)}`);
+  expect(coolTint.r < cold.r).toBeTruthy();
+
+  // Back to neutral, and the frame must return to exactly the baseline — the knob is reversible, not a
+  // one-way filter baked into the buffer.
+  expect(project.systems.setRoleConfig(id, "sameboy", { lightTemperature: 0 })).toBeTruthy();
+  expect(differingFraction(base, settle())).toBe(0);
+
+  // --- colour correction (CGB) -----------------------------------------------------------------
+  // Every non-disabled mode must actually redraw. Asserted per mode so a mis-mapped ordinal (the enum
+  // is a straight cast to GB_color_correction_mode_t) can't hide behind a sibling that happens to work.
+  for (const mode of ["correctCurves", "modernBalanced", "modernBoostContrast", "reduceContrast", "lowContrast", "modernAccurate"]) {
+    expect(project.systems.setRoleConfig(id, "sameboy", { colorCorrection: mode })).toBeTruthy();
+    const f = settle();
+    const d = differingFraction(base, f);
+    console.log(`[sameboy-display] correction=${mode} differs=${(d * 100).toFixed(1)}%`);
+    expect(d > 0).toBeTruthy();
+  }
+  expect(project.systems.setRoleConfig(id, "sameboy", { colorCorrection: "disabled" })).toBeTruthy();
+  expect(differingFraction(base, settle())).toBe(0);
+
+  // --- layer toggles (model-independent — they gate the PPU, not the palette) -------------------
+  // mGB's screen is nearly all black (channel means ~12/255), so killing the background clears its
+  // text and not much else: ~5% of pixels, roughly a thousand of them. Threshold well under that but
+  // well over noise, so this stays a statement about the layer actually going away.
+  expect(project.systems.setRoleConfig(id, "sameboy", { backgroundEnabled: false })).toBeTruthy();
+  const noBg = settle();
+  const bgDiff = differingFraction(base, noBg);
+  console.log(`[sameboy-display] background off differs=${(bgDiff * 100).toFixed(1)}%`);
+  expect(bgDiff > 0.01).toBeTruthy();
+  expect(project.systems.setRoleConfig(id, "sameboy", { backgroundEnabled: true })).toBeTruthy();
+  expect(differingFraction(base, settle())).toBe(0);
+
+  // Objects too. mGB may or may not use sprites, so this only asserts the round trip is clean — the
+  // point is that the toggle reaches the core and doesn't corrupt the frame.
+  expect(project.systems.setRoleConfig(id, "sameboy", { objectsEnabled: false })).toBeTruthy();
+  settle();
+  expect(project.systems.setRoleConfig(id, "sameboy", { objectsEnabled: true })).toBeTruthy();
+  expect(differingFraction(base, settle())).toBe(0);
+
+  // --- the DMG palette does NOT apply on a CGB core -------------------------------------------
+  // The core's own gate, and the reason the menu shows both rows for any Game Boy instead of guessing.
+  expect(project.systems.setRoleConfig(id, "sameboy", { dmgPalette: "dmg" })).toBeTruthy();
+  expect(differingFraction(base, settle())).toBe(0);
+  expect(project.systems.setRoleConfig(id, "sameboy", { dmgPalette: "grey" })).toBeTruthy();
+
+  // --- switch to DMG: now the palette bites and the CGB-only knobs don't -----------------------
+  expect(project.systems.setRoleConfig(id, "sameboy", { model: "dmgB" })).toBeTruthy();
+  audio.renderAudio(1500); // the core restarted — reboot + settle
+  const dmgBase = settle();
+
+  expect(project.systems.setRoleConfig(id, "sameboy", { dmgPalette: "dmg" })).toBeTruthy();
+  const green = settle();
+  const greenMeans = channelMeans(green);
+  console.log(`[sameboy-display] dmg palette r=${greenMeans.r.toFixed(1)} g=${greenMeans.g.toFixed(1)} b=${greenMeans.b.toFixed(1)}`);
+  expect(differingFraction(dmgBase, green) > 0).toBeTruthy();
+  // GB_PALETTE_DMG is green-dominant at every one of its five entries, so the mean must be too.
+  expect(greenMeans.g > greenMeans.r).toBeTruthy();
+  expect(greenMeans.g > greenMeans.b).toBeTruthy();
+
+  // MGB and GBL are distinct built-ins, not aliases.
+  expect(project.systems.setRoleConfig(id, "sameboy", { dmgPalette: "mgb" })).toBeTruthy();
+  const mgb = settle();
+  expect(differingFraction(green, mgb) > 0).toBeTruthy();
+  expect(project.systems.setRoleConfig(id, "sameboy", { dmgPalette: "gbl" })).toBeTruthy();
+  expect(differingFraction(mgb, settle()) > 0).toBeTruthy();
+
+  // Back to grey == the DMG baseline.
+  expect(project.systems.setRoleConfig(id, "sameboy", { dmgPalette: "grey" })).toBeTruthy();
+  expect(differingFraction(dmgBase, settle())).toBe(0);
+
+  // Light temperature and colour correction are inert here — GB_palette_changed returns early for a
+  // non-CGB core, so neither reaches the frame.
+  expect(project.systems.setRoleConfig(id, "sameboy", { lightTemperature: 1 })).toBeTruthy();
+  expect(differingFraction(dmgBase, settle())).toBe(0);
+  expect(project.systems.setRoleConfig(id, "sameboy", { colorCorrection: "modernAccurate" })).toBeTruthy();
+  expect(differingFraction(dmgBase, settle())).toBe(0);
+});

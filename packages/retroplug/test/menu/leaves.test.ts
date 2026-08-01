@@ -1083,3 +1083,88 @@ test("render Output Dir: defaults to the .sav / ROM folder; Settings then a sess
   expect(dirRow(nesId).label).toBe("Output Dir: /music/out"); // other systems still see the Settings default
   expect(stores.userConfig.config().render.outputDir).toBe("/music/out"); // Settings default untouched
 });
+
+test("the SameBoy display rows cycle their role config, and are GB-only", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  const id = stores.project.systems.addSystem("/roms/a.gb")!;
+
+  const row = (itemId: string) => {
+    const sys = stores.project.systems.view().find((s) => s.id === id)!;
+    return findItem(submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system"), itemId)!;
+  };
+  const cfg = () =>
+    stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "sameboy")!.config as Record<string, unknown>;
+
+  // Defaults reproduce what the core did before these were configurable, so adding the rows can't
+  // change how an existing project looks.
+  expect(cfg().colorCorrection).toBe("disabled");
+  expect(cfg().dmgPalette).toBe("grey");
+  expect(cfg().lightTemperature).toBe(0);
+  expect(cfg().backgroundEnabled).toBe(true);
+  expect(cfg().objectsEnabled).toBe(true);
+
+  // Every row is an arrow-steppable cycler that keeps the menu open, like the knobs above it.
+  for (const rid of ["sys-color-correction", "sys-dmg-palette", "sys-light-temp", "sys-bg-layer", "sys-obj-layer"]) {
+    expect(row(rid).kind).toBe("cycler");
+    expect(row(rid).keepOpen).toBeTruthy();
+  }
+
+  // Colour correction steps through its 7 modes in settingsEnums order and wraps.
+  expect(row("sys-color-correction").label).toBe("Color Correction: Off");
+  row("sys-color-correction").onCycle!(1);
+  expect(cfg().colorCorrection).toBe("correctCurves");
+  expect(row("sys-color-correction").label).toBe("Color Correction: Correct Curves");
+  row("sys-color-correction").onCycle!(-1);
+  expect(cfg().colorCorrection).toBe("disabled");
+  row("sys-color-correction").onCycle!(-1); // wraps backwards to the last mode
+  expect(cfg().colorCorrection).toBe("modernAccurate");
+  row("sys-color-correction").onCycle!(1);
+  expect(cfg().colorCorrection).toBe("disabled");
+
+  // Palette likewise.
+  expect(row("sys-dmg-palette").label).toBe("DMG Palette: Grey");
+  row("sys-dmg-palette").onCycle!(1);
+  expect(cfg().dmgPalette).toBe("dmg");
+  expect(row("sys-dmg-palette").label).toBe("DMG Palette: DMG");
+
+  // Light temperature is a cycler over a continuous value: it stores the double, and the row reflects it.
+  expect(row("sys-light-temp").label).toBe("Light Temp: Neutral");
+  row("sys-light-temp").onCycle!(1);
+  expect(cfg().lightTemperature).toBe(0.2);
+  expect(row("sys-light-temp").label).toBe("Light Temp: Warm 20%");
+  row("sys-light-temp").onCycle!(-1);
+  row("sys-light-temp").onCycle!(-1);
+  expect(cfg().lightTemperature).toBe(-0.2);
+  expect(row("sys-light-temp").label).toBe("Light Temp: Cool 20%");
+
+  // An off-grid value (hand-edited project, or one written by a build with different steps) still shows
+  // the nearest row rather than falling back to index 0 — that's what nearestIndex is for.
+  stores.project.systems.setRoleConfig(id, "sameboy", { lightTemperature: 0.73 });
+  expect(row("sys-light-temp").label).toBe("Light Temp: Warm 80%");
+  // ...and it is NOT silently rewritten just by being displayed.
+  expect(cfg().lightTemperature).toBe(0.73);
+
+  // The layer toggles are plain 2-value cyclers.
+  row("sys-bg-layer").onCycle!(1);
+  expect(cfg().backgroundEnabled).toBe(false);
+  expect(row("sys-bg-layer").label).toBe("Background: Off");
+  row("sys-obj-layer").onCycle!(1);
+  expect(cfg().objectsEnabled).toBe(false);
+
+  // Out of range is clamped by the schema, not passed to the core.
+  stores.project.systems.setRoleConfig(id, "sameboy", { lightTemperature: 99 });
+  expect(cfg().lightTemperature).toBe(1);
+  stores.project.systems.setRoleConfig(id, "sameboy", { lightTemperature: -99 });
+  expect(cfg().lightTemperature).toBe(-1);
+
+  // NES carries no display rows — they're SameBoy knobs, and the mesen role has no such fields.
+  be.seed("/roms/a.nes", nesRom());
+  const nesId = stores.project.systems.addSystem("/roms/a.nes")!;
+  const nesSys = stores.project.systems.view().find((s) => s.id === nesId)!;
+  const nesItems = submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: nesSys }).items, "inst-system");
+  for (const rid of ["sys-color-correction", "sys-dmg-palette", "sys-light-temp", "sys-bg-layer", "sys-obj-layer"]) {
+    expect(findItem(nesItems, rid)).toBe(undefined);
+  }
+});

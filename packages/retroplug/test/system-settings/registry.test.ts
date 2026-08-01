@@ -7,6 +7,7 @@ import { test, expect } from "../../testing/harness";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { z, clampedInt } from "../../src/configSchema";
+import { sameboyRoleConfig } from "../systems/fixtures";
 
 // A ROM header (0x150 bytes) carrying an ASCII cartridge title at 0x134.
 function headerWithTitle(title: string): Uint8Array {
@@ -35,7 +36,7 @@ test("systemRoleFor: the core registers a SameBoy and a Mesen system role", () =
   const sb = reg.systemRoleFor("sameboy");
   expect(sb?.kind).toBe("sameboy");
   expect(sb?.category).toBe("system");
-  expect(sb?.schema.parse({})).toEqual({ model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true });
+  expect(sb?.schema.parse({})).toEqual(sameboyRoleConfig());
 
   const mesen = reg.systemRoleFor("mesen");
   expect(mesen?.kind).toBe("mesen");
@@ -55,13 +56,10 @@ test("schema: fills defaults + defaults unknown enums, clamps numeric fields", (
   const reg = new RoleRegistry();
   registerCoreRoles(reg);
   const sb = reg.roleType("sameboy")!;
-  expect(sb.schema.parse({})).toEqual({ model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true });
-  expect(sb.schema.parse({ model: 99, highpass: 5, linkGroupId: 999 })).toEqual({
-    model: "cgbC",
-    highpass: "accurate",
-    linkGroupId: 255,
-    fastBoot: true,
-  });
+  expect(sb.schema.parse({})).toEqual(sameboyRoleConfig());
+  expect(sb.schema.parse({ model: 99, highpass: 5, linkGroupId: 999 })).toEqual(
+    sameboyRoleConfig({ linkGroupId: 255 }),
+  );
 });
 
 test("a fake feature extension registers a role + a ROM provider", () => {
@@ -79,14 +77,14 @@ test("defaultRoles: system role first, then provider-matched feature roles", () 
 
   const demo = reg.defaultRoles("sameboy", "gb", headerWithTitle("DEMO-GAME"));
   expect(demo).toEqual([
-    { kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true } },
+    { kind: "sameboy", config: sameboyRoleConfig() },
     { kind: "demo-sync", config: { level: 1 } },
   ]);
 
   // A non-matching ROM gets only the backend system role.
   const plain = reg.defaultRoles("sameboy", "gb", headerWithTitle("ZELDA"));
   expect(plain).toEqual([
-    { kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true } },
+    { kind: "sameboy", config: sameboyRoleConfig() },
   ]);
 
   // A NES system gets the Mesen system role (no feature provider registered in this reg → just it).

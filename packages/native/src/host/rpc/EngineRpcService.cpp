@@ -128,6 +128,11 @@ bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string kind, std::
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Highpass), static_cast<double>(c.highpass));
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LinkGroup), static_cast<double>(c.linkGroupId));
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::FastBoot), c.fastBoot ? 1.0 : 0.0);
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::ColorCorrection), static_cast<double>(c.colorCorrection));
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::DmgPalette), static_cast<double>(c.dmgPalette));
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LightTemperature), c.lightTemperature);
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::BackgroundEnabled), c.backgroundEnabled ? 1.0 : 0.0);
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::ObjectsEnabled), c.objectsEnabled ? 1.0 : 0.0);
         return true;
     }
     if (kind == "mesen") {

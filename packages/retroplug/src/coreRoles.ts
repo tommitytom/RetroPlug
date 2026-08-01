@@ -7,12 +7,27 @@
 
 import type { RoleRegistry } from "./systemRoles";
 import { z, clampedInt, clampedNumber, boolField, enumField } from "./configSchema";
-import { MODEL_VALUES, HIGHPASS_VALUES, REGION_VALUES, CHANNEL_EXPORT_VALUES } from "./settingsEnums";
+import {
+  MODEL_VALUES,
+  HIGHPASS_VALUES,
+  REGION_VALUES,
+  CHANNEL_EXPORT_VALUES,
+  COLOR_CORRECTION_VALUES,
+  DMG_PALETTE_VALUES,
+} from "./settingsEnums";
 
 /** Register the built-in core-config system roles into `registry`. */
 export function registerCoreRoles(registry: RoleRegistry): void {
-  // SameBoy: model / highpass / link group / fast boot. model + highpass are string enums; the native
-  // reflect-cpp SameBoyRoleConfig takes their integer ordinals (converted at the boundary, settingsEnums).
+  // SameBoy: model / highpass / link group / fast boot, plus the display knobs below. model, highpass,
+  // colorCorrection and dmgPalette are string enums; the native reflect-cpp SameBoyRoleConfig takes
+  // their integer ordinals (converted at the boundary, settingsEnums).
+  //
+  // The display group is additive and every default reproduces what the core did when these were
+  // hardcoded (SameBoySystem.cpp), so an existing project loads pixel-identical and needs no migration.
+  // Which ones actually bite depends on the running model, and the core decides that, not us: colour
+  // correction and light temperature are CGB-only, the palette is DMG-only, and `model: auto` isn't
+  // known until the ROM is sniffed. So the menu offers all of them for any Game Boy and lets the
+  // inapplicable one lie inert - that beats a gate that guesses wrong on `auto`.
   registry.registerRole({
     kind: "sameboy",
     category: "system",
@@ -21,6 +36,14 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       highpass: enumField(HIGHPASS_VALUES, "accurate"),
       linkGroupId: clampedInt(0, 255, 0),
       fastBoot: boolField(true),
+      // --- display ---
+      colorCorrection: enumField(COLOR_CORRECTION_VALUES, "disabled"),
+      dmgPalette: enumField(DMG_PALETTE_VALUES, "grey"),
+      // Ambient light tint, CGB only. SameBoy's own range: -1 (cool/blue) .. +1 (warm/red), 0 neutral.
+      lightTemperature: clampedNumber(-1, 1, 0),
+      // Per-layer render kills. Debug hooks in SameBoy, but useful for isolating a tracker's visuals.
+      backgroundEnabled: boolField(true),
+      objectsEnabled: boolField(true),
     }),
   });
 

@@ -58,8 +58,12 @@ test("a stop, a rewind and a mid-song jump each land risa on the row the arm nam
       audio.renderAudio(10);
       const s = runtime.decodeRisaState(be.readRam(id)!, layout);
       if (s.playing) {
+        // An inactive track reads every position back as null (reader.ts). Those samples carry no
+        // position to settle on, so skip them rather than letting a null join a run.
         const t = s.tracks[TRACK_NOISE];
-        seen.push({ songRow: t.songRow, chainRow: t.chainRow, phraseRow: t.phraseRow });
+        if (t.songRow !== null && t.chainRow !== null && t.phraseRow !== null) {
+          seen.push({ songRow: t.songRow, chainRow: t.chainRow, phraseRow: t.phraseRow });
+        }
       }
     }
     audio.setTransport(false);
