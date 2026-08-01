@@ -1243,11 +1243,11 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
   return ctx.recent.map((entry, i) => {
     // A single action row (no nested submenu): Enter loads the project — or Locates it when its file is
     // gone; Del (onDelete) drops it, a hotkey the Menu drives off that field. Label leads with the
-    // working-song name when known (a tracker cart's loaded song), then the project: "SONG - project",
-    // ASCII " - " (the LVGL font has no emdash glyph), matching the tracker window-title order. The project
-    // half is whatever ProjectStore.displayName resolved when the entry was recorded - the name the user
-    // gave the project, else one derived from its systems. A missing entry is drawn yellow (warn) with a
-    // trailing " [!]".
+    // working-song name when known (a tracker cart's loaded song), then the project half: "SONG - project",
+    // ASCII " - " (the LVGL font has no emdash glyph), matching the tracker window-title order. That half is
+    // whatever ProjectStore.recentName resolved when the entry was recorded - the name the user gave the
+    // project, else its cart's "<sav> - <rom>" identity, so a nameless entry reads "SONG - sav - rom". A
+    // missing entry is drawn yellow (warn) with a trailing " [!]".
     const base = entry.song ? `${entry.song} - ${entry.label}` : entry.label;
     const row: MenuItem = {
       id: `recent-${i}`,

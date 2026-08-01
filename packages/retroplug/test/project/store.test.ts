@@ -8,7 +8,7 @@ import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
 import { K_PROJECT } from "../../src/projectConfig";
 import type { SystemLayout } from "../../src/settingsEnums";
-import { gbRom } from "../systems/fixtures";
+import { gbRom, gbRomBattery } from "../systems/fixtures";
 
 function newProject(be = new MockBackend("/cfg")) {
   const recent = new RecentStore(be);
@@ -87,7 +87,34 @@ test("project name: the derived display name follows the primary system (a paire
   project.systems.loadRom("/roms/lsdj.gb", { explicitSav: "/saves/mysong.sav" }); // paired override
   project.adoptRomProject("/roms/lsdj.gb");
   expect(project.displayName()).toBe("mysong"); // the sav stem, not "lsdj"
-  expect(recent.view()[0].label).toBe("mysong");
+  // The recents entry names the cart in full: the loaded sav, then the ROM.
+  expect(recent.view()[0].label).toBe("mysong - lsdj");
+});
+
+test("recents name: a battery cart's own sibling sav collapses into the ROM name; a suffixed one doesn't", () => {
+  const { be, recent, project } = newProject();
+  be.seed("/roms/a.gb", gbRomBattery());
+  project.systems.addSystem("/roms/a.gb"); // suffix 0 → /roms/a.sav, the ROM's own sibling
+  project.save("/roms/a.rplg");
+  expect(recent.view()[0].label).toBe("a"); // "a - a" collapsed to one segment
+
+  // A second instance of the same ROM takes /roms/a-2.sav — a distinct file, so it earns its own segment.
+  const id = project.systems.addSystem("/roms/a.gb")!;
+  project.systems.setFocus(id);
+  project.save("/roms/two.rplg");
+  expect(recent.view()[0].label).toBe("a-2 - a");
+});
+
+test("recents name: a battery-less cart names the ROM alone; the project's own name replaces both", () => {
+  const { be, recent, project } = newProject();
+  be.seed("/roms/game.gb", gbRom()); // no battery, no sav to speak of
+  project.systems.addSystem("/roms/game.gb");
+  project.save("/roms/game.rplg");
+  expect(recent.view()[0].label).toBe("game");
+
+  project.setName("My Song"); // a named project shows THAT instead of the sav / ROM pair
+  project.save("/roms/game.rplg");
+  expect(recent.view()[0].label).toBe("My Song");
 });
 
 test("setName: names the project, persists on save, restores on load, and clears back to derived", () => {

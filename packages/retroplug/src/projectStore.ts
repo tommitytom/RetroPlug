@@ -15,11 +15,12 @@
 
 import type { ControlPlaneBackend, ZipEntry } from "./backend";
 import { SystemsStore } from "./systemsStore";
+import type { SystemEntry } from "./systemsList";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
 import { resolveSongCatalog } from "./tracker";
 import { dirname, stem } from "./pathUtil";
-import { siblingRplgPath } from "./savPaths";
+import { siblingRplgPath, resolveSavPath } from "./savPaths";
 import {
   type ProjectConfig,
   type ProjectSettings,
@@ -149,20 +150,41 @@ export class ProjectStore {
     return this.dirty;
   }
 
-  // The name derived from the system instances: the primary system's paired-sav override stem, else its rom
-  // stem, minus the extension - "the sav name, or the rom name if there's no [explicit] sav". Primary =
-  // focused, else first. Empty (embedded / no systems) yields "", leaving the recents basename fallback.
-  private deriveName(): string {
+  // The system every derived name speaks for: the focused one, else the first. undefined with no systems.
+  private primarySystem(): SystemEntry | undefined {
     const list = this.systems.systems();
-    const primary = list.find((s) => s.id === this.systems.focused()) ?? list[0];
+    return list.find((s) => s.id === this.systems.focused()) ?? list[0];
+  }
+
+  // The name derived from the system instances: the primary system's paired-sav override stem, else its rom
+  // stem, minus the extension - "the sav name, or the rom name if there's no [explicit] sav". Empty
+  // (embedded / no systems) yields "", leaving the recents basename fallback.
+  private deriveName(): string {
+    const primary = this.primarySystem();
     return primary ? stem(primary.savPath || primary.romPath || "") : "";
   }
 
+  // The name a recents entry is recorded under: the project's own name when it has one, else the primary
+  // cart's identity, "<sav> - <rom>" (the LOADED sav's stem then the ROM's). The sav segment needs a sav to
+  // speak for - an explicit override, or the suffix-derived sibling of a battery cart - and collapses away
+  // when its stem is just the ROM's (the usual case), so the pair only shows when the sav really is a
+  // distinct file: a paired override, or a duplicated instance's `<rom>-N.sav`. Empty for an embedded cart
+  // (no paths at all), which leaves the recents basename fallback to label it. The working-song name is
+  // recorded separately (`currentSong`) and leads the composed label.
+  private recentName(): string {
+    if (this.projectName) return this.projectName;
+    const primary = this.primarySystem();
+    if (!primary) return "";
+    const rom = stem(primary.romPath || "");
+    const hasSav = !!primary.savPath || primary.battery;
+    const sav = hasSav ? stem(resolveSavPath(primary.romPath, primary.savSuffix, primary.savPath)) : "";
+    return [sav, rom].filter((s, i, all) => s && all.indexOf(s) === i).join(" - ");
+  }
+
   // The primary system's working-song name (a tracker cart's loaded song), for the recents label. undefined
-  // for a non-tracker system or when there's no readable SRAM. Primary = focused, else first.
+  // for a non-tracker system or when there's no readable SRAM.
   private currentSong(): string | undefined {
-    const list = this.systems.systems();
-    const primary = list.find((s) => s.id === this.systems.focused()) ?? list[0];
+    const primary = this.primarySystem();
     if (!primary) return undefined;
     const catalog = resolveSongCatalog(primary.roles);
     if (!catalog) return undefined;
@@ -216,7 +238,7 @@ export class ProjectStore {
     const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName); // blank name → omitted
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
     if (!this.backend.writeFile(path, enc.encode(json))) return false;
-    this.recent.add(path, this.displayName(), this.currentSong()); // the recents label - derived unless the user named it
+    this.recent.add(path, this.recentName(), this.currentSong()); // the recents label - the cart's identity unless the user named it
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -236,7 +258,7 @@ export class ProjectStore {
       this.save(path);
       return;
     }
-    this.recent.add(path, this.displayName(), this.currentSong());
+    this.recent.add(path, this.recentName(), this.currentSong());
     this.path = path;
     this.onChangeCb();
   }
@@ -258,7 +280,7 @@ export class ProjectStore {
     });
     const archive = this.backend.zip(entries);
     if (!archive || !this.backend.writeFileAtomic(path, archive)) return false;
-    this.recent.add(path, this.displayName(), this.currentSong());
+    this.recent.add(path, this.recentName(), this.currentSong());
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -377,7 +399,7 @@ export class ProjectStore {
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     this.pushAudioRouting(); // apply the loaded project's routing to native audio
     this.projectName = cfg.name ?? ""; // only a name the user gave the project is stored; blank = unnamed
-    if (path) this.recent.add(path, this.displayName(), this.currentSong()); // in-memory loads (plugin state chunk) pass "" - no recents entry
+    if (path) this.recent.add(path, this.recentName(), this.currentSong()); // in-memory loads (plugin state chunk) pass "" - no recents entry
     this.path = path;
     this.dirty = false;
     this.onSystemsChange(); // push the rebuilt systems (the adopt path is quiet)

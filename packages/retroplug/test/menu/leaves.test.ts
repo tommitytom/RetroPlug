@@ -118,6 +118,26 @@ test("a recent tracker entry's label leads with the song, then the project (ASCI
   expect(findItem(rows, "recent-0")?.label).toBe("Plain");
 });
 
+test("a recent entry names the cart in full: song - sav - rom, with a project name replacing the sav/rom pair", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/cool.gb", lsdjRom("LSDJ-V9.4.2"));
+  be.seed("/saves/mysong.sav", "battery");
+  stores.project.systems.loadRom("/roms/cool.gb", { explicitSav: "/saves/mysong.sav" }); // a paired sav
+  const id = stores.project.systems.view()[0].id;
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  be.setSram(id, savFrom({ activeProjectIndex: 0, projects: [{ name: "MYSONG", version: 0, song }] } as SavInput));
+  stores.project.save("/proj/x.rplg");
+
+  const rowLabel = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent"), "recent-0")?.label;
+  expect(rowLabel()).toBe("MYSONG - mysong - cool"); // working song, loaded sav, ROM
+
+  // Naming the project drops the cart's sav / ROM segments; the working song still leads.
+  stores.project.setName("Album Cut");
+  stores.project.save("/proj/x.rplg");
+  expect(rowLabel()).toBe("MYSONG - Album Cut");
+});
+
 test("recent entries are flat action rows: present loads + can be deleted, missing warns + relinks", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
