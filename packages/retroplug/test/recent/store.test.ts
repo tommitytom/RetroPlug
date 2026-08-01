@@ -85,15 +85,6 @@ test("remove: found removes + persists + notifies; absent is a no-op", () => {
   expect(writes()).toBe(writesBefore); // no write
 });
 
-test("rename: found sets the alias + persists; absent is a no-op", () => {
-  const { store } = newStore();
-  store.load();
-  store.add("/a.rplg", "");
-  expect(store.rename("/a.rplg", "Nice")).toBeTruthy();
-  expect(store.view()[0].label).toBe("Nice");
-  expect(store.rename("/missing.rplg", "x")).toBeFalsy();
-});
-
 test("relink: repoints a moved project + persists; absent is a no-op", () => {
   const { be, store } = newStore();
   store.load();
@@ -102,7 +93,7 @@ test("relink: repoints a moved project + persists; absent is a no-op", () => {
   expect(store.relink("/old/song.rplg", "/new/song.rplg")).toBeTruthy();
   const v = store.view();
   expect(v[0].path).toBe("/new/song.rplg");
-  expect(v[0].label).toBe("Keep"); // alias survives the relink
+  expect(v[0].label).toBe("Keep"); // the recorded name survives the relink
   expect(v[0].missing).toBeFalsy();
   expect(store.relink("/nope.rplg", "/x.rplg")).toBeFalsy();
 });

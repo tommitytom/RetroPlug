@@ -56,48 +56,67 @@ test("adoptRomProject: a fresh ROM open writes the sibling .rplg and enters rece
   const onDisk = be.readText("/roms/a.rplg")!;
   expect(onDisk[0]).toBe("{"); // thin raw JSON, not a "PK" zip
   expect(JSON.parse(onDisk).systems[0].romPath).toBe("a.gb"); // rebased relative to the .rplg folder
-  expect(JSON.parse(onDisk).name).toBe("a"); // the seeded name is persisted
+  expect(JSON.parse(onDisk).name).toBe(undefined); // no name on the file - the project is unnamed
   expect(recent.view().map((v) => v.path)).toEqual(["/roms/a.rplg"]);
-  expect(recent.view()[0].label).toBe("a"); // recents shows the name (rom stem), not "a.rplg"
-  expect(project.name()).toBe("a");
+  expect(recent.view()[0].label).toBe("a"); // recents shows the DERIVED name (rom stem), not "a.rplg"
+  expect(project.name()).toBe(""); // nothing typed under Project > Name
   expect(project.currentPath()).toBe("/roms/a.rplg");
   expect(project.isDirty()).toBeFalsy(); // the on-disk sibling matches the load
 });
 
-test("project name: persisted on save, restored on reload, and kept across Save-As", () => {
-  const { be, project } = newProject();
+test("project name: blank by default - the display name is derived from the systems, never written to the .rplg", () => {
+  const { be, recent, project } = newProject();
   be.seed("/roms/a.gb", gbRom());
   project.systems.loadRom("/roms/a.gb");
-  project.adoptRomProject("/roms/a.gb"); // seeds name "a", writes /roms/a.rplg
-  expect(project.name()).toBe("a");
+  project.adoptRomProject("/roms/a.gb"); // writes /roms/a.rplg
 
-  project.newProject();
-  expect(project.name()).toBe(""); // torn down
+  expect(project.name()).toBe(""); // the project has no name of its own
+  expect(project.displayName()).toBe("a"); // derived from the sole system (its rom stem)
+  expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe(undefined); // NOT persisted
+  expect(recent.view()[0].label).toBe("a"); // the recents entry shows the derived name
 
-  project.load("/roms/a.rplg"); // reload restores the stored name
-  expect(project.name()).toBe("a");
-
-  project.save("/roms/renamed.rplg"); // Save-As keeps the seeded name (not the new filename)
-  expect(project.name()).toBe("a");
-  expect(JSON.parse(be.readText("/roms/renamed.rplg")!).name).toBe("a");
+  project.save("/roms/copy.rplg"); // Save-As: still nameless on disk, still labelled by the system
+  expect(JSON.parse(be.readText("/roms/copy.rplg")!).name).toBe(undefined);
+  expect(recent.view()[0].label).toBe("a");
 });
 
-test("project name: a paired sav names the project from the sav stem", () => {
+test("project name: the derived display name follows the primary system (a paired sav wins over the rom)", () => {
   const { be, recent, project } = newProject();
   be.seed("/roms/lsdj.gb", gbRom());
   be.seed("/saves/mysong.sav", "battery");
   project.systems.loadRom("/roms/lsdj.gb", { explicitSav: "/saves/mysong.sav" }); // paired override
   project.adoptRomProject("/roms/lsdj.gb");
-  expect(project.name()).toBe("mysong"); // the sav stem, not "lsdj"
+  expect(project.displayName()).toBe("mysong"); // the sav stem, not "lsdj"
   expect(recent.view()[0].label).toBe("mysong");
 });
 
-test("project name: a nameless (pre-feature) .rplg derives its name from the first system on load", () => {
-  const { be, project } = newProject();
+test("setName: names the project, persists on save, restores on load, and clears back to derived", () => {
+  const { be, recent, project } = newProject();
   be.seed("/roms/a.gb", gbRom());
-  be.seed("/roms/old.rplg", JSON.stringify({ schemaVersion: "1", systems: [{ platform: "gb", romPath: "a.gb" }] }));
-  expect(project.load("/roms/old.rplg")).toEqual({ kind: "loaded", systems: 1 });
-  expect(project.name()).toBe("a"); // no stored name → derived from the system's rom stem
+  project.systems.loadRom("/roms/a.gb");
+  project.adoptRomProject("/roms/a.gb");
+
+  expect(project.setName("  My Song  ")).toBeTruthy(); // trimmed
+  expect(project.name()).toBe("My Song");
+  expect(project.displayName()).toBe("My Song"); // the user's name beats the derived one
+  expect(project.setName("My Song")).toBeFalsy(); // unchanged → no-op
+  expect(project.isDirty()).toBeTruthy(); // needs a save to persist
+
+  project.save("/roms/a.rplg");
+  expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song"); // NOW it's on the .rplg
+  expect(recent.view()[0].label).toBe("My Song");
+
+  project.newProject();
+  expect(project.name()).toBe(""); // torn down
+  project.load("/roms/a.rplg");
+  expect(project.name()).toBe("My Song"); // restored from the file
+
+  expect(project.setName("   ")).toBeTruthy(); // blank clears it
+  expect(project.name()).toBe("");
+  expect(project.displayName()).toBe("a"); // back to the derived name
+  project.save("/roms/a.rplg");
+  expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe(undefined); // and off the file again
+  expect(recent.view()[0].label).toBe("a");
 });
 
 test("adoptRomProject: an existing sibling .rplg is tracked, never overwritten, and stays dirty", () => {
@@ -123,64 +142,6 @@ test("adoptRomProject: an embedded ROM (no path) is a no-op — nothing written 
   project.adoptRomProject("");
   expect(recent.view().length).toBe(0);
   expect(be.log.includes("writeFile")).toBeFalsy();
-});
-
-test("renameProject: edits the .rplg name, updates recents, syncs the open project, sticks on reload", () => {
-  const { be, recent, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
-  project.systems.loadRom("/roms/a.gb");
-  project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg, name "a", current project
-  expect(project.name()).toBe("a");
-
-  expect(project.renameProject("/roms/a.rplg", "My Song")).toBeTruthy();
-  expect(project.name()).toBe("My Song"); // live sync (it IS the open project)
-  expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song"); // persisted in the file
-  expect(recent.view()[0].label).toBe("My Song"); // recents shows it
-
-  project.newProject();
-  project.load("/roms/a.rplg"); // reload restores the renamed name from the file
-  expect(project.name()).toBe("My Song");
-});
-
-test("renameProject: renames a non-open recent project without touching the open one", () => {
-  const { be, recent, project } = newProject();
-  be.seed("/roms/b.gb", gbRom());
-  be.seed("/roms/b.rplg", JSON.stringify({ schemaVersion: "1", name: "b", systems: [{ platform: "gb", romPath: "b.gb" }] }));
-  recent.add("/roms/b.rplg", "b"); // in recents, but not the open project
-
-  be.seed("/roms/a.gb", gbRom());
-  project.systems.loadRom("/roms/a.gb");
-  project.adoptRomProject("/roms/a.gb"); // open project = /roms/a.rplg, name "a"
-
-  expect(project.renameProject("/roms/b.rplg", "Other")).toBeTruthy();
-  expect(JSON.parse(be.readText("/roms/b.rplg")!).name).toBe("Other"); // b's file edited
-  expect(recent.view().find((v) => v.path === "/roms/b.rplg")!.label).toBe("Other");
-  expect(project.name()).toBe("a"); // the OPEN project is untouched
-});
-
-test("renameProject: rewrites project.json inside an export .rplg.zip", () => {
-  const { be, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
-  project.systems.addSystem("/roms/a.gb");
-  expect(project.export("/out/proj.rplg.zip")).toBeTruthy();
-
-  expect(project.renameProject("/out/proj.rplg.zip", "Zipped")).toBeTruthy();
-  project.newProject();
-  project.load("/out/proj.rplg.zip"); // reload the archive → the renamed name is stored inside
-  expect(project.name()).toBe("Zipped");
-});
-
-test("renameProject: a blank name is rejected; a missing file still updates the alias (best-effort)", () => {
-  const { be, recent, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
-  project.systems.loadRom("/roms/a.gb");
-  project.adoptRomProject("/roms/a.gb");
-  expect(project.renameProject("/roms/a.rplg", "   ")).toBeFalsy(); // blank → no-op
-  expect(project.name()).toBe("a");
-
-  recent.add("/gone/x.rplg", "x"); // in recents, no file on disk
-  expect(project.renameProject("/gone/x.rplg", "Renamed")).toBeFalsy(); // file not written
-  expect(recent.view().find((v) => v.path === "/gone/x.rplg")!.label).toBe("Renamed"); // alias still set
 });
 
 test("save then load: round-trips the systems (rebuilt over the real store)", () => {

@@ -1,14 +1,14 @@
-// The Recent submenu's per-row hotkeys, end to end on the headless display. Each recent entry is now a
-// single action row (Enter loads); F2 renames it and Del removes it. This proves the Menu's key wiring
-// reaches the row's onRename / onDelete (the piece the pure-TS menu tests can't exercise). We seed a recent
-// by saving a freshly loaded mGB through the stubbed Save-As browser, then drive F2 / Del on the entry.
+// The Recent submenu's per-row hotkey, end to end on the headless display. Each recent entry is a single
+// action row (Enter loads); Del removes it. This proves the Menu's key wiring reaches the row's onDelete
+// (the piece the pure-TS menu tests can't exercise). We seed a recent by saving a freshly loaded mGB
+// through the stubbed Save-As browser, then drive Del on the entry. Naming a project is NOT a per-entry
+// verb - it lives under Project > Name (project-name.test.ts).
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
 
-const KEY_F2 = 0xe001; // DPF kKeyF1 + 1
 const KEY_DELETE = 0x7f; // DPF Delete
 
-test("Recent rows: F2 opens the rename prompt, Del removes the entry", () => {
+test("Recent rows: Del removes the entry", () => {
   const g = globalThis as {
     __rp_openFileBrowser?: (t: string, p: string, s: boolean, d: string, sd: string, dir: boolean) => void;
     __rp_onFileBrowserResult?: (path: string | null) => void;
@@ -39,16 +39,8 @@ test("Recent rows: F2 opens the rename prompt, Del removes the entry", () => {
   ui.pump(6);
   ui.tapKey(Key.Down); // move onto the first recent row
   ui.pump(6);
-  const entryLabel = ui.focused()!.text; // the row's label (project-name / file stem), captured to assert removal
+  const entryLabel = ui.focused()!.text; // the row's label (project name / file stem), captured to assert removal
   expect(entryLabel.length > 0).toBeTruthy();
-
-  // F2 → the rename prompt overlay opens (its title is `Rename "<name>" to:`).
-  ui.tapKey(KEY_F2);
-  ui.pump(6);
-  expect(ui.findByTextContaining("Rename") != null).toBeTruthy();
-  ui.tapKey(Key.Esc); // cancel the prompt; the menu stays open, focus still on the row
-  ui.pump(6);
-  expect(ui.findByTextContaining("Rename")).toBe(null);
 
   // Del → the entry is removed; the Recent submenu (still expanded) falls back to its empty placeholder.
   ui.tapKey(KEY_DELETE);

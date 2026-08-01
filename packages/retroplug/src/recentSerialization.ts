@@ -16,7 +16,7 @@ export const RECENT_SCHEMA = 2;
  *  additive; the seam is here so the first breaking one is a one-line add. */
 const RECENT_MIGRATIONS: MigrationMap = {};
 
-// One recent entry: a non-empty path + a display alias (defaulting to "") + an optional working-song label
+// One recent entry: a non-empty path + a display name (defaulting to "") + an optional working-song label
 // (additive since the 1→2 schema, so old files without it still load — no migration step needed).
 const recentEntrySchema = z.object({
   path: z.string().min(1),

@@ -107,7 +107,7 @@ test("a recent tracker entry's label leads with the song, then the project (ASCI
   const stores = composeAppStores({ backend: be });
   be.seed("/music/proj.rplg", "PK"); // on disk → not missing (no " [!]" marker)
   be.seed("/music/plain.rplg", "PK");
-  stores.recent.add("/music/proj.rplg", "MyProject", "GRUB"); // a tracker cart: project alias + working song
+  stores.recent.add("/music/proj.rplg", "MyProject", "GRUB"); // a tracker cart: project name + working song
   stores.recent.add("/music/plain.rplg", "Plain"); // no song
 
   const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
@@ -134,7 +134,6 @@ test("recent entries are flat action rows: present loads + can be deleted, missi
   expect(present.warn).toBeFalsy();
   expect(present.label).toBe("Present");
   expect(typeof present.onDelete).toBe("function");
-  expect(typeof present.onRename).toBe("object");
 
   // A missing entry warns (yellow) with a trailing " [!]".
   expect(missing.warn).toBe(true);
@@ -147,21 +146,37 @@ test("recent entries are flat action rows: present loads + can be deleted, missi
   expect(findItem(rows, "recent-0")?.label).toBe("Away [!]"); // only the missing one remains
 });
 
-test("a recent entry's Rename prompt renames the project (edits the file + recents alias)", () => {
+test("Project > Name sets the project's own name; blank shows the derived one and clears back to it", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/a.gb", gbRom());
   stores.project.systems.loadRom("/roms/a.gb");
-  stores.project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg in recents, name "a", open project
+  stores.project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg in recents, unnamed, open project
 
-  // The recent entry is a single action row; its Rename prompt rides F2 (the onRename field), not a child.
-  const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
-  const rename = findItem(rows, "recent-0")!.onRename!;
-  expect(rename.onConfirm("  ")).toBe("Name cannot be empty."); // blank → error keeps it open
-  expect(rename.onConfirm("My Song")).toBe(null); // success closes it
+  const nameRow = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project"), "proj-name")!;
+  // Unnamed: the row shows the name derived from the instance, flagged as automatic.
+  expect(nameRow().label).toBe("Name: a (auto)");
+  expect(nameRow().prompt!.initial).toBe(""); // the field starts empty, not pre-filled with the derived name
 
+  expect(nameRow().prompt!.onConfirm("My Song")).toBe(null); // confirming closes the prompt
   expect(stores.project.name()).toBe("My Song");
+  expect(nameRow().label).toBe("Name: My Song");
+  expect(nameRow().prompt!.initial).toBe("My Song"); // re-opening pre-fills the current name
+
+  expect(nameRow().prompt!.onConfirm("")).toBe(null); // empty clears it
+  expect(stores.project.name()).toBe("");
+  expect(nameRow().label).toBe("Name: a (auto)");
+
+  // The name is only on the .rplg once saved, and only while the user has one set.
+  stores.project.setName("My Song");
+  stores.project.save("/roms/a.rplg");
   expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song");
+});
+
+test("Project > Name is absent with no systems (nothing to name yet)", () => {
+  const stores = composeAppStores({ backend: new MockBackend("/cfg") });
+  const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project");
+  expect(findItem(rows, "proj-name")).toBe(undefined);
 });
 
 test("menu titles: start shows the version; instance adds project + ROM (deduped when equal)", () => {

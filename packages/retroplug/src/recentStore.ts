@@ -6,15 +6,15 @@
 // actually change the list.
 
 import type { HostBackend } from "./backend";
-import { addEntry, removeEntry, renameEntry, relinkEntry, label, type RecentEntry } from "./recentList";
+import { addEntry, removeEntry, relinkEntry, label, type RecentEntry } from "./recentList";
 import { parseRecent, serializeRecent } from "./recentSerialization";
 
 const RECENT_FILE = "recent.json";
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-/** A recent entry as the UI sees it: canonical path, alias, whether the file
- *  still exists, and the resolved display label. */
+/** A recent entry as the UI sees it: canonical path, recorded name, whether the
+ *  file still exists, and the resolved display label. */
 export interface RecentView {
   path: string;
   name: string;
@@ -47,8 +47,9 @@ export class RecentStore {
     }));
   }
 
-  /** Track `path` at the front. `name` sets an alias (empty keeps any existing one); `song` sets the
-   *  working-song label (undefined keeps any existing one). Returns whether the list changed. */
+  /** Track `path` at the front. `name` is the project's display name (empty keeps any existing one);
+   *  `song` sets the working-song label (undefined keeps any existing one). Returns whether the list
+   *  changed. */
   add(path: string, name = "", song?: string): boolean {
     if (!path) return false;
     return this.commit(addEntry(this.entries, this.canon(path), name, song));
@@ -59,14 +60,6 @@ export class RecentStore {
     const p = this.canon(path);
     if (!this.has(p)) return false;
     return this.commit(removeEntry(this.entries, p));
-  }
-
-  /** Set `path`'s alias (empty clears). Returns false when it wasn't present. */
-  rename(path: string, name: string): boolean {
-    const p = this.canon(path);
-    if (!this.has(p)) return false;
-    this.commit(renameEntry(this.entries, p, name));
-    return true;
   }
 
   /** Repoint a moved project from `oldPath` to `newPath`. Returns false when

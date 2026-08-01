@@ -182,12 +182,23 @@ missing files, and holds `pendingLoad` for `relink` or `commit`
 `pushAudioRouting()` → `backend.setAudioRouting`
 ([projectStore.ts:278](../packages/retroplug/src/projectStore.ts#L278)).
 
+The project **name** is two-tier. `name()` is the project's own name - blank unless the user
+typed one under `Project` > `Name` (`setName`, which marks the project dirty), and the ONLY
+one persisted (`buildConfig` omits a blank `name`, so a nameless `.rplg` carries no field).
+`displayName()` is what gets SHOWN - that name when set, else `deriveName()`: the primary
+system's `savPath` stem, else its `romPath` stem (primary = focused, else first). Every
+recents record (`save` / `export` / `adoptRomProject` / load `commit`) passes `displayName()`
+as the entry's name, and the window / menu titles read it too - so a nameless project is
+labelled by its instance without that label ever reaching disk.
+
 ### RecentStore — [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts)
 
 A `RecentEntry[]` (`{ path, name }`) most-recent-first, capped at `MAX_ENTRIES = 10`
 ([recentList.ts:13](../packages/retroplug/src/recentList.ts#L13)). Incoming paths are
 canonicalized via `backend.canonicalize` (the dedupe key); `view()` computes live `missing` +
-`label`. `commit(next)` ([recentStore.ts:91](../packages/retroplug/src/recentStore.ts#L91))
+`label` (the recorded `name`, else the basename minus the project extension). `name` is
+whatever `ProjectStore.displayName()` resolved when the entry was recorded - there is no
+per-entry rename; the UI's only naming verb is `Project` > `Name`. `commit(next)` ([recentStore.ts:91](../packages/retroplug/src/recentStore.ts#L91))
 serializes and skips both write and notify when identical. Persists atomically to
 `<configDir>/recent.json`.
 

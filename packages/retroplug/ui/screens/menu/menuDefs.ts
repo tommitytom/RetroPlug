@@ -1048,6 +1048,27 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     ));
   }
   items.push(sep("proj-sep0"));
+  // The project's own name - blank until the user types one here, and only then persisted in the .rplg.
+  // Blank shows what the recents entry / titles fall back to: the name derived from the systems (the primary
+  // cart's sav/rom stem). Clearing the field restores that fallback.
+  if (ctx.systems.length > 0) {
+    const own = project.name();
+    items.push({
+      id: "proj-name",
+      label: `Name: ${own || `${project.displayName() || "(None)"} (auto)`}`,
+      kind: "prompt",
+      keepOpen: true,
+      prompt: {
+        title: "Project name:",
+        hint: "Enter to set  |  empty to use the instance name  |  Esc to cancel",
+        initial: own,
+        onConfirm: (v: string) => {
+          project.setName(v);
+          return null;
+        },
+      },
+    });
+  }
   items.push(
     cycler("proj-layout", "Layout", LAYOUT_NAMES, Math.max(0, LAYOUT_VALUES.indexOf(ctx.settings.layout)), (n) => project.setLayout(LAYOUT_VALUES[n])),
     { id: "proj-zoom", label: `Zoom: ${ctx.settings.zoom === 0 ? "Default" : `${ctx.settings.zoom}x`}`, kind: "cycler", keepOpen: true, onSelect: () => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, 1)), onCycle: (dir) => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, dir)) },
@@ -1220,10 +1241,12 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.recent.length === 0) return [action("recent-none", "(No Recent Files)", () => {})];
   return ctx.recent.map((entry, i) => {
     // A single action row (no nested submenu): Enter loads the project — or Locates it when its file is
-    // gone. The management verbs are hotkeys the Menu drives off these fields: F2 (onRename) / Del
-    // (onDelete). Label leads with the working-song name when known (a tracker cart's loaded song), then
-    // the project: "SONG - project", ASCII " - " (the LVGL font has no emdash glyph), matching the tracker
-    // window-title order. A missing entry is drawn yellow (warn) with a trailing " [!]".
+    // gone; Del (onDelete) drops it, a hotkey the Menu drives off that field. Label leads with the
+    // working-song name when known (a tracker cart's loaded song), then the project: "SONG - project",
+    // ASCII " - " (the LVGL font has no emdash glyph), matching the tracker window-title order. The project
+    // half is whatever ProjectStore.displayName resolved when the entry was recorded - the name the user
+    // gave the project, else one derived from its systems. A missing entry is drawn yellow (warn) with a
+    // trailing " [!]".
     const base = entry.song ? `${entry.song} - ${entry.label}` : entry.label;
     const row: MenuItem = {
       id: `recent-${i}`,
@@ -1234,15 +1257,6 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
         ? () => browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p))
         : () => ctx.loadProject(entry.path),
       onDelete: () => ctx.stores.recent.remove(entry.path),
-      onRename: {
-        title: `Rename "${entry.label}" to:`,
-        initial: entry.label,
-        onConfirm: (v: string) => {
-          const name = v.trim();
-          if (!name) return "Name cannot be empty.";
-          return ctx.stores.project.renameProject(entry.path, name) ? null : "Rename failed.";
-        },
-      },
     };
     return row;
   });
@@ -1293,7 +1307,7 @@ function instanceTitle(ctx: MenuContext, sys: SystemView): string {
   const base = ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug";
   const cart = trackerCartLabel(ctx.stores.backend, sys);
   if (cart) return `${base} - ${cart}`;
-  const project = ctx.stores.project.name();
+  const project = ctx.stores.project.displayName(); // the user's name, else the one derived from the systems
   const rom = sys.embedded ? "mGB" : stem(sys.romPath);
   const segs = [base];
   if (project) segs.push(project);

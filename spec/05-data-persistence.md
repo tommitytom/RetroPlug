@@ -21,7 +21,7 @@ and **parses** it back. The model lives in
 
 | Type | Fields | Notes |
 |---|---|---|
-| `ProjectConfig` | `schemaVersion: string`, `settings`, `systems[]` | The root; `schemaVersion` is a *string* (`"1"`) for historical reasons |
+| `ProjectConfig` | `schemaVersion: string`, `name?`, `settings`, `systems[]` | The root; `schemaVersion` is a *string* (`"1"`) for historical reasons. `name` is present ONLY when the user named the project (`Project` > `Name`); the display name a nameless project shows is derived from its systems at runtime and never written (see [03-ts-layer.md](03-ts-layer.md)) |
 | `ProjectSettings` | `layout`, `midiRouting`, `audioRouting` (string enums; see [settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)), `zoom 0-6` | Three string enums + a `zoom` magnitude (`0` = inherit the user default). Native's numeric enums are recovered at the RPC/kernel boundary |
 | `SystemThin` | `platform`, `romPath?`, `savPath?`, `savSuffix?`, `embeddedRom?`, `settings?`, `roles?` | One serialized system |
 
@@ -126,7 +126,7 @@ still loads (migrated up if needed — see the version-stamp policy below).
 |---|---|---|---|
 | `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug/src/userConfig.ts)) | `USER_CONFIG_SCHEMA = 1` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave }` |
 | `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad, keyboardActions, gamepadActions }` (one profile per file; the `*Actions` sections — Open Menu / Cycle Instances — seed to defaults when missing) |
-| `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name }] }`, most-recent-first, capped at 10 |
+| `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name, song? }] }`, most-recent-first, capped at 10. `name` is the project's display name as of the last record (its own name, else the one derived from its systems) |
 
 One deliberate rename: the TS layer's `sramAutoSave` field is native's
 `sramMirror` key ("mirror" reads from the plugin's side; "auto save" fits both

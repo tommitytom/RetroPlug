@@ -86,7 +86,7 @@ export class ProjectStore {
   readonly systems: SystemsStore;
   private projectSettings: ProjectSettings = { ...DEFAULT_SETTINGS };
   private path = "";
-  private projectName = ""; // display name; seeded from the primary system's sav/rom stem, persisted in the .rplg
+  private projectName = ""; // the USER-set name (Project > Name); blank unless typed, persisted in the .rplg
   private dirty = false;
   private pendingLoad: { cfg: ProjectConfig; path: string; blobs: Map<string, Uint8Array> } | null = null;
   private onSystemsChange: () => void = () => {};
@@ -126,25 +126,36 @@ export class ProjectStore {
   currentPath(): string {
     return this.path;
   }
-  /** The project's display name (seeded from the primary system's sav/rom stem, persisted in the .rplg). */
+  /** The project's own name - what the user typed under Project > Name, "" when they haven't. The only
+   *  name persisted in the .rplg; a derived one never is (see `displayName`). */
   name(): string {
     return this.projectName;
+  }
+  /** The name to SHOW (recents entry, window / menu titles): the user's name when set, else one derived
+   *  from the live systems. Never written to the .rplg - a nameless project stays nameless on disk. */
+  displayName(): string {
+    return this.projectName || this.deriveName();
+  }
+  /** Set (or clear, with a blank value) the project's own name. Marks the project dirty, so the next save
+   *  persists it. Returns whether the name actually changed. */
+  setName(name: string): boolean {
+    const trimmed = name.trim();
+    if (trimmed === this.projectName) return false;
+    this.projectName = trimmed;
+    this.markDirty(); // fires onChangeCb - titles + the menu label follow
+    return true;
   }
   isDirty(): boolean {
     return this.dirty;
   }
 
-  // The name to seed from: the primary system's paired-sav override stem, else its rom stem, minus the
-  // extension — "the sav name, or the rom name if there's no [explicit] sav". Primary = focused, else first.
-  // Empty (embedded / no systems) yields "", leaving the recents basename fallback to label it.
+  // The name derived from the system instances: the primary system's paired-sav override stem, else its rom
+  // stem, minus the extension - "the sav name, or the rom name if there's no [explicit] sav". Primary =
+  // focused, else first. Empty (embedded / no systems) yields "", leaving the recents basename fallback.
   private deriveName(): string {
     const list = this.systems.systems();
     const primary = list.find((s) => s.id === this.systems.focused()) ?? list[0];
     return primary ? stem(primary.savPath || primary.romPath || "") : "";
-  }
-  // Seed the name from the primary system if it doesn't have one yet (a no-op once named).
-  private ensureName(): void {
-    if (!this.projectName) this.projectName = this.deriveName();
   }
 
   // The primary system's working-song name (a tracker cart's loaded song), for the recents label. undefined
@@ -190,7 +201,7 @@ export class ProjectStore {
   }
 
   /** Open a ROM as a fresh project: reset to empty, build the ROM as the sole system, then adopt its
-   *  `<rom>.rplg` sibling (name + recents + current path). The "new project from a ROM" op — what the start
+   *  `<rom>.rplg` sibling (recents + current path). The "new project from a ROM" op - what the start
    *  menu does from empty, reusable when a project is already open. The caller resolves the ROM-vs-project
    *  branch first (FileSelection.resolveLoad), so `loadRom`'s sibling-project defer never fires here. */
   openRom(romPath: string, opts?: { explicitSav?: string }): void {
@@ -202,11 +213,10 @@ export class ProjectStore {
   /** Save a thin `.rplg` (raw JSON, paths rebased relative to its folder). Records it
    *  in recents + as the current project, and marks clean. */
   save(path: string): boolean {
-    this.ensureName(); // a manually-built project (New Project + Add) gets named at its first save
-    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
+    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName); // blank name → omitted
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
     if (!this.backend.writeFile(path, enc.encode(json))) return false;
-    this.recent.add(path, this.projectName, this.currentSong()); // seed the recents display name (Save-As keeps it, not the file stem)
+    this.recent.add(path, this.displayName(), this.currentSong()); // the recents label - derived unless the user named it
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -222,55 +232,13 @@ export class ProjectStore {
   adoptRomProject(romPath: string): void {
     if (!romPath) return; // embedded ROMs (mgb) have no on-disk sibling to track
     const path = siblingRplgPath(romPath);
-    this.projectName = this.deriveName(); // this ROM defines the project's name (its sav/rom stem)
     if (!this.backend.fileExists(path)) {
       this.save(path);
       return;
     }
-    this.recent.add(path, this.projectName, this.currentSong());
+    this.recent.add(path, this.displayName(), this.currentSong());
     this.path = path;
     this.onChangeCb();
-  }
-
-  /** Rename the project at `path`: edit its persisted `name` (the source of truth), refresh the recents
-   *  display alias, and sync the live name when it's the open project. Works on a thin `.rplg` or an
-   *  export `.rplg.zip`. A blank name is rejected. When the file can't be read/written the alias is still
-   *  updated (best-effort) so the entry shows the chosen name; the on-disk name would re-seed on next
-   *  save. Returns whether the file itself was rewritten. */
-  renameProject(path: string, name: string): boolean {
-    const trimmed = name.trim();
-    if (!path || !trimmed) return false;
-    const wrote = this.writeProjectName(path, trimmed);
-    this.recent.rename(path, trimmed); // update the recents display alias (fires its onChange)
-    if (this.path && this.backend.canonicalize(path) === this.backend.canonicalize(this.path)) {
-      this.projectName = trimmed; // keep the open project's live name in sync
-      this.onChangeCb();
-    }
-    return wrote;
-  }
-
-  // Edit ONLY the `name` field of a project file on disk, leaving everything else (paths, systems,
-  // settings) byte-identical. Thin `.rplg` = a JSON field swap; export `.rplg.zip` = rewrite its
-  // project.json entry. Returns false when the file is unreadable / unparseable / unwritable.
-  private writeProjectName(path: string, name: string): boolean {
-    const bytes = this.backend.readFile(path);
-    if (!bytes) return false;
-    if (!isZipProjectPath(path)) {
-      const doc = parseJsonObject(dec.decode(bytes));
-      if (!doc) return false;
-      doc.name = name;
-      return this.backend.writeFile(path, enc.encode(JSON.stringify(doc)));
-    }
-    const entries = this.backend.unzip(bytes);
-    if (!entries) return false;
-    const out: ZipEntry[] = entries.map((e) => {
-      if (e.name !== PROJECT_JSON) return e;
-      const doc = parseJsonObject(dec.decode(e.bytes)) ?? {};
-      doc.name = name;
-      return { name: e.name, bytes: enc.encode(JSON.stringify(doc)) };
-    });
-    const archive = this.backend.zip(out);
-    return !!archive && this.backend.writeFileAtomic(path, archive);
   }
 
   /** Export a portable `.rplg` PKZIP: the thin project.json + each live system's
@@ -278,7 +246,6 @@ export class ProjectStore {
    *  every entry; native only compresses. Records it in recents + as the current
    *  project, and marks clean. Returns false on a compression / write failure. */
   export(path: string): boolean {
-    this.ensureName();
     const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
     const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
@@ -291,7 +258,7 @@ export class ProjectStore {
     });
     const archive = this.backend.zip(entries);
     if (!archive || !this.backend.writeFileAtomic(path, archive)) return false;
-    this.recent.add(path, this.projectName, this.currentSong());
+    this.recent.add(path, this.displayName(), this.currentSong());
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -302,7 +269,7 @@ export class ProjectStore {
    *  writes, but WITHOUT the recents/currentPath/dirty side-effects a host save has. Paths are left
    *  absolute (`baseDir=""`), so `loadBytes` round-trips them with no rebase. */
   exportBytes(): Uint8Array | null {
-    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName || this.deriveName());
+    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
     const json = serializeConfig(cfg, "", (p) => this.backend.canonicalize(p));
     const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
     this.systems.systems().forEach((sys, i) => {
@@ -409,8 +376,8 @@ export class ProjectStore {
     });
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     this.pushAudioRouting(); // apply the loaded project's routing to native audio
-    this.projectName = cfg.name || this.deriveName(); // stored name wins; an old nameless .rplg derives one
-    if (path) this.recent.add(path, this.projectName, this.currentSong()); // in-memory loads (plugin state chunk) pass "" — no recents entry
+    this.projectName = cfg.name ?? ""; // only a name the user gave the project is stored; blank = unnamed
+    if (path) this.recent.add(path, this.displayName(), this.currentSong()); // in-memory loads (plugin state chunk) pass "" - no recents entry
     this.path = path;
     this.dirty = false;
     this.onSystemsChange(); // push the rebuilt systems (the adopt path is quiet)

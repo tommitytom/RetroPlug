@@ -6,7 +6,8 @@
 export interface RecentEntry {
   /** Canonical path — the dedupe key. Canonicalization happens in the store. */
   path: string;
-  /** Display alias; empty means derive the label from the path basename. */
+  /** Display name recorded when the entry was last added: the project's own name when the user gave it one,
+   *  else one derived from its systems (ProjectStore.displayName). Empty falls back to the path basename. */
   name: string;
   /** The project's working-song name at open/save time (a tracker cart's loaded song), if known. Shown
    *  alongside the label. Resolved by the tracker layer (src/tracker) when the entry is recorded. */
@@ -16,9 +17,9 @@ export interface RecentEntry {
 export const MAX_ENTRIES = 10;
 
 /** Prepend `path` (dedup by path, moving an existing entry to the front) and cap
- *  to `max`. An empty `name` preserves any existing entry's alias, so a rename
- *  survives a re-add; a non-empty `name` overrides it. `song` sets the working-song
- *  label; `undefined` preserves any existing one. */
+ *  to `max`. An empty `name` preserves any existing entry's name (a nameless project
+ *  keeps whatever it was last recorded as); a non-empty `name` overrides it. `song`
+ *  sets the working-song label; `undefined` preserves any existing one. */
 export function addEntry(list: RecentEntry[], path: string, name: string, song?: string, max = MAX_ENTRIES): RecentEntry[] {
   const existing = list.find((e) => e.path === path);
   const keepName = name || existing?.name || "";
@@ -32,12 +33,7 @@ export function removeEntry(list: RecentEntry[], path: string): RecentEntry[] {
   return list.filter((e) => e.path !== path);
 }
 
-/** Set the alias of the entry at `path` (empty clears it). Keeps its song label. */
-export function renameEntry(list: RecentEntry[], path: string, name: string): RecentEntry[] {
-  return list.map((e) => (e.path === path ? { ...e, name } : e));
-}
-
-/** Repoint `oldPath` to `newPath` in place (keeping its position + alias), then
+/** Repoint `oldPath` to `newPath` in place (keeping its position + name), then
  *  drop any other entry that now collides with `newPath` (the relinked one
  *  wins). A missing `oldPath` leaves the list unchanged. */
 export function relinkEntry(list: RecentEntry[], oldPath: string, newPath: string): RecentEntry[] {
@@ -45,14 +41,14 @@ export function relinkEntry(list: RecentEntry[], oldPath: string, newPath: strin
   if (idx < 0) return list;
   const out: RecentEntry[] = [];
   list.forEach((e, i) => {
-    if (i === idx) out.push({ ...e, path: newPath }); // keep alias + song
+    if (i === idx) out.push({ ...e, path: newPath }); // keep name + song
     else if (e.path !== newPath) out.push(e); // drop a pre-existing collision
   });
   return out;
 }
 
-/** The label to show: the alias if set, else the path's basename with the project extension stripped
- *  (so an alias-less entry reads `game`, not `game.rplg`). */
+/** The label to show: the recorded name if there is one, else the path's basename with the project
+ *  extension stripped (so a nameless entry reads `game`, not `game.rplg`). */
 export function label(entry: RecentEntry): string {
   return entry.name.trim() || stripProjectExt(basename(entry.path));
 }

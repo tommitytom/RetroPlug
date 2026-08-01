@@ -45,6 +45,9 @@ download the latest version.
   the `System` menu.
 - **For LSDj**, an additional `LSDj` menu appears once an LSDj cart is detected,
   letting you set the sync mode (see [LSDj Integration](#lsdj-integration)).
+- **Name your project** under `Project` > `Name` - it's what the window title and the
+  `Recent` list show. Leave it empty (the default) and the name follows the loaded
+  instance instead: the sav's name, or the ROM's if you haven't loaded a sav.
 
 Each instance's `System` menu also lets you reset, swap the ROM while keeping the
 running SRAM, and load/save SRAM and save states. Game Boy systems expose the
@@ -132,7 +135,9 @@ The `Settings` menu covers:
 - **Open Settings Folder** - opens the folder holding your configuration.
 
 Recent projects are available under the `Recent` menu, where you can re-load, relocate
-a moved project, rename it, or remove it from the list.
+a moved project, or remove it from the list. Entries are listed by project name, which
+is the name you gave the project under `Project` > `Name` - or, if you haven't named it,
+the name of the cart it holds.
 
 ## Command Line
 The build also produces `retroplug-cli` (in `build/bin/`), a self-contained

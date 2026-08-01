@@ -74,11 +74,12 @@ export function App() {
   const resolvedZoom = resolveZoom(settings.zoom, userConfig.defaultZoom);
 
   // The standalone OS window title: version + the focused tracker cart's "<song> - <ROM name>" when one is
-  // loaded (LSDj / risa), else the project name. Re-renders on the project channel (load / adopt / rename /
-  // new / focus / song-load). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).
+  // loaded (LSDj / risa), else the project's display name (its own name, else the one derived from the
+  // systems). Re-renders on the project channel (load / adopt / name / new / focus / song-load). Pushed to
+  // native via the __rp_setWindowTitle seam (inert elsewhere).
   const focusedSys = systems.find((s) => s.id === stores.project.systems.focused());
   const cartLabel = focusedSys ? trackerCartLabel(stores.backend, focusedSys) : null;
-  const windowTitle = composeWindowTitle(version, stores.project.name(), cartLabel);
+  const windowTitle = composeWindowTitle(version, stores.project.displayName(), cartLabel);
 
   // Menu-open invariant on empty transitions: empty → the start menu (always open); first system → close.
   useEffect(() => {
