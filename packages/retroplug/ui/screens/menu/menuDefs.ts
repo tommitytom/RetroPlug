@@ -1053,9 +1053,10 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   // cart's sav/rom stem). Clearing the field restores that fallback.
   if (ctx.systems.length > 0) {
     const own = project.name();
+    const derived = project.displayName(); // == own when set; "" for an embedded cart (nothing to derive from)
     items.push({
       id: "proj-name",
-      label: `Name: ${own || `${project.displayName() || "(None)"} (auto)`}`,
+      label: `Name: ${own || (derived ? `${derived} (auto)` : "(None)")}`,
       kind: "prompt",
       keepOpen: true,
       prompt: {

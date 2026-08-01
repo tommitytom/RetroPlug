@@ -173,10 +173,14 @@ test("Project > Name sets the project's own name; blank shows the derived one an
   expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song");
 });
 
-test("Project > Name is absent with no systems (nothing to name yet)", () => {
+test("Project > Name is absent with no systems; reads (None) when there's nothing to derive from", () => {
   const stores = composeAppStores({ backend: new MockBackend("/cfg") });
-  const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project");
-  expect(findItem(rows, "proj-name")).toBe(undefined);
+  const rows = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project");
+  expect(findItem(rows(), "proj-name")).toBe(undefined); // nothing to name yet
+
+  // The embedded mGB has no on-disk path, so no name can be derived from it.
+  stores.project.systems.loadMgb();
+  expect(findItem(rows(), "proj-name")!.label).toBe("Name: (None)");
 });
 
 test("menu titles: start shows the version; instance adds project + ROM (deduped when equal)", () => {
