@@ -8,8 +8,13 @@ rem   build.bat              # incremental build
 rem   build.bat --clean      # remove build\ first, then full configure + build
 rem   build.bat --tests      # (re)configure with BUILD_TESTING=ON so the
 rem                          # Catch2 unit tests build too (off by default)
+rem   build.bat -D<var>=<v>  # extra cache entries for the configure, e.g.
+rem                          # -DRETROPLUG_MESEN_LTO=ON (what release.yml passes)
 rem
 rem Flags combine, e.g. build.bat --clean --tests
+rem
+rem Any -D forces a configure even when build\ already exists, so the entry
+rem lands on an already-configured tree.
 rem
 rem Unlike build.sh, Windows needs the MSVC x64 dev environment plus the
 rem Ninja + cl + vcpkg-static configure this project uses (SameBoy is isolated
@@ -24,6 +29,7 @@ cd /d "%~dp0"
 rem ---- args ----------------------------------------------------------------
 set "CLEAN=0"
 set "TESTS=0"
+set "EXTRA_ARGS="
 :argloop
 if "%~1"=="" goto argdone
 if /i "%~1"=="--clean" goto arg_clean
@@ -31,6 +37,9 @@ if /i "%~1"=="--tests" goto arg_tests
 if /i "%~1"=="--with-tests" goto arg_tests
 if /i "%~1"=="-h" goto help
 if /i "%~1"=="--help" goto help
+rem Anything starting with -D is passed straight through to the configure.
+set "ARG=%~1"
+if "%ARG:~0,2%"=="-D" goto arg_define
 echo error: unknown argument: %~1 1>&2
 exit /b 1
 :arg_clean
@@ -39,6 +48,10 @@ shift
 goto argloop
 :arg_tests
 set "TESTS=1"
+shift
+goto argloop
+:arg_define
+set "EXTRA_ARGS=%EXTRA_ARGS% %ARG%"
 shift
 goto argloop
 :argdone
@@ -100,13 +113,14 @@ if not exist build set "BUILD_EXISTED=0"
 set "DO_CONFIGURE=0"
 if "%BUILD_EXISTED%"=="0" set "DO_CONFIGURE=1"
 if "%TESTS%"=="1" set "DO_CONFIGURE=1"
+if not "%EXTRA_ARGS%"=="" set "DO_CONFIGURE=1"
 
 if "%DO_CONFIGURE%"=="1" (
-    echo ==^> Configuring ^(-DCMAKE_BUILD_TYPE=Release %TESTING_ARG%^)
+    echo ==^> Configuring ^(-DCMAKE_BUILD_TYPE=Release %TESTING_ARG%%EXTRA_ARGS%^)
     cmake -S . -B build -G Ninja ^
         -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl ^
         -DCMAKE_BUILD_TYPE=Release ^
-        %TESTING_ARG% ^
+        %TESTING_ARG%%EXTRA_ARGS% ^
         -DCMAKE_TOOLCHAIN_FILE="%RP_VCPKG%\scripts\buildsystems\vcpkg.cmake" ^
         -DVCPKG_TARGET_TRIPLET=x64-windows-static
     if errorlevel 1 (
@@ -134,6 +148,8 @@ echo   build.bat              # incremental build
 echo   build.bat --clean      # remove build\ first, then full configure + build
 echo   build.bat --tests      # (re)configure with BUILD_TESTING=ON so the
 echo                          # Catch2 unit tests build too (off by default)
+echo   build.bat -D^<var^>=^<v^>  # extra cache entries for the configure, e.g.
+echo                          # -DRETROPLUG_MESEN_LTO=ON (what release.yml passes)
 echo.
 echo Flags combine, e.g. build.bat --clean --tests
 exit /b 0
