@@ -197,6 +197,18 @@ struct AppState {
     // the grid like the DPF standalone. Set from the SDL_WINDOW_FULLSCREEN flag in setupSdl.
     bool fullscreen = false;
 
+    // Window-geometry ownership — mirrors PluginUI's wmControlled_ / sizeHonored_ / requestedW/H latch, so the
+    // resizable SDL window behaves like the DPF standalone under a tiling WM (Wayland/Hyprland). wmControlled
+    // starts true for fullscreen; it also latches true when the compositor hands us a size we never asked for
+    // (a tile) before any requested size was ever honored — then we stop driving SDL_SetWindowSize and the UI
+    // fits its grid via zoom instead. sizeHonored proves the window is floating (a request took), which vetoes
+    // the clamp latch so a spurious compositor resize isn't mistaken for a tiling takeover.
+    bool          wmControlled = false;
+    bool          sizeHonored = false;
+    std::uint32_t requestedW = 0;   // last size asked of the WM (the clamp-detection baseline)
+    std::uint32_t requestedH = 0;
+    bool          debugResize = false;  // RETROPLUG_DEBUG_RESIZE: log every request / WM resize (WM debugging)
+
     // audio scratch: `numOutputs` planar channel buffers (pre-sized to the device block so the callback
     // never allocates). The Engine renders planar + routes each system to its pair per audioRouting; we
     // interleave into the SDL stream. numOutputs == reqOutChannels (device opened with allowed_changes=0).
@@ -231,7 +243,7 @@ void loadMidiConfig(AppState& a);
 // Resize the window + everything that tracks its dimensions (the __rp_setWindowSize seam). Defined after the
 // LVGL glue; declared here so the window hook can call it. Runs on the UI thread (same as present), so the
 // texture/buffer/width swap is race-free.
-void resizeWindow(AppState& a, std::uint32_t w, std::uint32_t h);
+void requestWindowSize(AppState& a, std::uint32_t w, std::uint32_t h);
 
 // ---- LVGL glue (mirrors RenderCore's non-GL subset) -----------------------------------------------
 
@@ -318,20 +330,22 @@ JSValue jsQuitWindow(JSContext*, JSValueConst, int, JSValueConst*) {
     if (g_app) g_app->running = false;
     return JS_UNDEFINED;
 }
-// A fullscreen (handheld) window is WM-controlled → the UI fits its grid via zoom rather than resizing a
-// fixed panel. A desktop windowed session is ours to size, so the App's fit-to-grid effect drives resizes.
+// A WM-controlled window (a fullscreen handheld, or a window a tiling compositor tiled) → the UI fits its grid
+// via zoom rather than resizing. A floating desktop window is ours to size, so the App's fit-to-grid effect
+// drives resizes. Mirrors PluginUI::isWindowSizeControlled — the latch that keeps us from fighting the WM.
 JSValue jsIsWindowSizeControlled(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-    return JS_NewBool(ctx, g_app ? g_app->fullscreen : 1);
+    return JS_NewBool(ctx, g_app ? g_app->wmControlled : 1);
 }
-// __rp_setWindowSize(w, h): grow/shrink the window to the grid (desktop only). Mirrors the DPF standalone,
-// where setSize() → the platform resize callback reallocs the LVGL buffer + emits "resize"; SDL gives us no
-// such callback, so resizeWindow does it all inline. Inert on a fullscreen handheld (the WM owns the panel).
+// __rp_setWindowSize(w, h): grow/shrink the window to the grid. Mirrors the DPF standalone, where setSize() →
+// the platform resize callback reallocs the LVGL buffer + emits "resize"; SDL gives us no such callback, so
+// requestWindowSize asks the WM and the SDL_WINDOWEVENT_SIZE_CHANGED handler does the realloc. Inert once the
+// WM owns geometry (a fullscreen handheld, or a tiling compositor) — requestWindowSize handles that.
 JSValue jsSetWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (!g_app || g_app->fullscreen || argc < 2) return JS_UNDEFINED;
+    if (!g_app || argc < 2) return JS_UNDEFINED;
     std::uint32_t w = 0, h = 0;
     JS_ToUint32(ctx, &w, argv[0]);
     JS_ToUint32(ctx, &h, argv[1]);
-    if (w != 0 && h != 0 && (w != g_app->width || h != g_app->height)) resizeWindow(*g_app, w, h);
+    if (w != 0 && h != 0) requestWindowSize(*g_app, w, h);
     return JS_UNDEFINED;
 }
 JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -867,16 +881,28 @@ bool setupUi(AppState& a) {
 
 bool setupSdl(AppState& a) {
     SDL_SetMainReady(); // required when SDL_MAIN_HANDLED is set (see the <SDL.h> include note)
+    // A stable application name → the Wayland app_id / X11 WM_CLASS, so a tiling WM's window rules can target
+    // RetroPlug (e.g. Hyprland `windowrulev2 = tile, class:(RetroPlug)`). Set before SDL_Init.
+    SDL_SetHint(SDL_HINT_APP_NAME, "RetroPlug");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "[retroplug-sdl] SDL_Init failed: %s\n", SDL_GetError());
         return false;
     }
-    Uint32 winFlags = 0;
-    if (std::getenv("RETROPLUG_SDL_FULLSCREEN")) winFlags |= SDL_WINDOW_FULLSCREEN;
-    a.fullscreen = (winFlags & SDL_WINDOW_FULLSCREEN) != 0; // gates the __rp_setWindowSize resize seam
+    a.fullscreen = std::getenv("RETROPLUG_SDL_FULLSCREEN") != nullptr;
+    // Resizable (not a fixed-size toplevel) so a tiling WM tiles the window instead of auto-floating it, and a
+    // floating window can be dragged to any size — the DPF standalone is resizable for exactly this reason. A
+    // fullscreen handheld ignores the flag. The min-size floor mirrors the plugin's setGeometryConstraints.
+    Uint32 winFlags = a.fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_RESIZABLE;
     a.window = SDL_CreateWindow("RetroPlug", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                 a.width, a.height, winFlags);
     if (!a.window) { std::fprintf(stderr, "[retroplug-sdl] SDL_CreateWindow failed: %s\n", SDL_GetError()); return false; }
+    SDL_SetWindowMinimumSize(a.window, 480, 432);
+    // Seed the geometry-ownership state: fullscreen is WM-controlled from the start; arm the clamp baseline with
+    // the initial size so the FIRST compositor resize that differs (a tile) is recognised as a WM takeover.
+    a.wmControlled = a.fullscreen;
+    a.requestedW = a.width;
+    a.requestedH = a.height;
+    a.debugResize = std::getenv("RETROPLUG_DEBUG_RESIZE") != nullptr;
     a.renderer = SDL_CreateRenderer(a.window, -1, SDL_RENDERER_SOFTWARE);
     if (!a.renderer) { std::fprintf(stderr, "[retroplug-sdl] SDL_CreateRenderer failed: %s\n", SDL_GetError()); return false; }
     a.texture = SDL_CreateTexture(a.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
@@ -907,14 +933,16 @@ void present(AppState& a) {
     a.dirty = false;
 }
 
-// Resize the window and every dimension-tracking resource in lockstep: the SDL window, the LVGL display
-// resolution + its DIRECT-mode draw buffer, and the streaming SDL texture (a STREAMING texture can't resize
-// in place — recreate it). Then force a full-window redraw and tell the UI so it re-lays-out. This inlines
-// what DPF's platform resize callback does for the plugin (LVGL::recreateTextureData + emit "resize").
-void resizeWindow(AppState& a, std::uint32_t w, std::uint32_t h) {
+// Adopt an actual window size — resize every dimension-tracking resource in lockstep: the SDL window (only
+// when WE initiated it; a WM-driven change already sized the window), the LVGL display resolution + its
+// DIRECT-mode draw buffer, and the streaming SDL texture (a STREAMING texture can't resize in place —
+// recreate it). Then force a full-window redraw and tell the UI so it re-lays-out. This inlines what DPF's
+// platform resize callback does for the plugin (LVGL::recreateTextureData + emit "resize").
+void applyWindowSize(AppState& a, std::uint32_t w, std::uint32_t h, bool fromWm) {
     if (!a.window || !a.display || !a.renderer) return;
+    if (w == a.width && h == a.height && a.texture) return; // already at this size — nothing to realloc
 
-    SDL_SetWindowSize(a.window, static_cast<int>(w), static_cast<int>(h));
+    if (!fromWm) SDL_SetWindowSize(a.window, static_cast<int>(w), static_cast<int>(h)); // ask the WM
 
     // LVGL display: set the new resolution, then re-point it at a freshly sized DIRECT buffer.
     const lv_color_format_t cf = lv_display_get_color_format(a.display);
@@ -939,6 +967,39 @@ void resizeWindow(AppState& a, std::uint32_t w, std::uint32_t h) {
         JS_FreeValue(ctx, args[0]);
         JS_FreeValue(ctx, args[1]);
     }
+}
+
+// The __rp_setWindowSize seam: the UI asks the WM for a w×h window (grow/shrink to the grid). Mirrors
+// PluginUI::requestWindowSize — record the request as the clamp baseline, but don't fight a WM that owns
+// geometry (a tiling compositor or a fullscreen handheld); there the UI fits its grid via zoom instead.
+void requestWindowSize(AppState& a, std::uint32_t w, std::uint32_t h) {
+    a.requestedW = w; // recorded even when WM-controlled, so onWindowSizeChanged can still latch sizeHonored
+    a.requestedH = h;
+    if (a.wmControlled) {
+        if (a.debugResize)
+            std::fprintf(stderr, "[retroplug-sdl] resize request %ux%u ignored (WM owns geometry)\n", w, h);
+        return;
+    }
+    applyWindowSize(a, w, h, /*fromWm=*/false);
+}
+
+// SDL_WINDOWEVENT_SIZE_CHANGED: the actual window size changed (our SDL_SetWindowSize, a user drag, or a
+// tiling-WM tile). Mirrors PluginUI::onResize — latch sizeHonored when the WM grants a size we asked for
+// (proof the window is floating, ours to size), and detect a tiling takeover: a size we never requested,
+// before any request was ever honored, means the compositor owns geometry, so latch wmControlled and stop
+// driving SDL_SetWindowSize (fullscreen is already wmControlled). Then adopt the new size.
+void onWindowSizeChanged(AppState& a, std::uint32_t w, std::uint32_t h) {
+    if (a.requestedW != 0 && a.requestedH != 0 && w == a.requestedW && h == a.requestedH) a.sizeHonored = true;
+    if (!a.wmControlled && !a.sizeHonored && a.requestedW != 0 && a.requestedH != 0 &&
+        (w != a.requestedW || h != a.requestedH)) {
+        a.wmControlled = true;
+        if (a.debugResize)
+            std::fprintf(stderr, "[retroplug-sdl] WM owns geometry (tiled): got %ux%u, never asked for it\n", w, h);
+    }
+    if (a.debugResize)
+        std::fprintf(stderr, "[retroplug-sdl] onResize %ux%u (req %ux%u wmC=%d honored=%d)\n", w, h, a.requestedW,
+                     a.requestedH, (int)a.wmControlled, (int)a.sizeHonored);
+    applyWindowSize(a, w, h, /*fromWm=*/true);
 }
 
 void handleEvents(AppState& a) {
@@ -992,6 +1053,13 @@ void handleEvents(AppState& a) {
                 if (mapSdlKey(ev.key.keysym.sym, lv, dpf)) feedKey(a, lv, dpf, ev.type == SDL_KEYDOWN);
                 break;
             }
+            // The WM/user resized the window (a drag-grip resize, or a tiling compositor tiling us) → adopt the
+            // new size + run the tiling-clamp detection. SIZE_CHANGED fires for both API- and WM-driven changes.
+            case SDL_WINDOWEVENT:
+                if (ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+                    onWindowSizeChanged(a, static_cast<std::uint32_t>(ev.window.data1),
+                                        static_cast<std::uint32_t>(ev.window.data2));
+                break;
             case SDL_MOUSEMOTION: a.input.mousePos = {ev.motion.x, ev.motion.y}; break;
             case SDL_MOUSEBUTTONDOWN:
             case SDL_MOUSEBUTTONUP:
@@ -1086,7 +1154,7 @@ int main(int argc, char** argv) {
     if (const char* env = std::getenv("RETROPLUG_SDL_TEST_RESIZE")) {
         int w = 0, h = 0;
         if (std::sscanf(env, "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
-            resizeWindow(app, static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h));
+            requestWindowSize(app, static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h));
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
             std::fprintf(stderr, "[retroplug-sdl] post-resize: state=%ux%u window=%dx%d buf=%zu\n",
