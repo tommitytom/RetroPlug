@@ -135,6 +135,20 @@ plugin and standalone). The string enum values (`Off` / `OnProjectSave` /
 `__rp_*` UI seam are documented in [03-ts-layer.md](03-ts-layer.md); this doc
 covers only their on-disk shapes.
 
+## How every root is written
+
+All four JSON roots — the three files above **and** the project config (thin
+`.rplg`, the `project.json` inside an export zip, and the DPF state chunk) —
+serialize through `stringifyConfig`
+([configSchema.ts](../packages/retroplug/src/configSchema.ts)): 2-space indent,
+one field per line, trailing newline, with short primitive arrays kept inline
+(`"A": ["Z", "z"]` rather than four lines). The files are meant to be read,
+hand-edited and diffed. Reads are whitespace-indifferent, so a file written by an
+older compact build still loads unchanged, and nothing depends on the exact
+bytes (the dirty-check in `userConfigStore` / `recentStore` compares two
+serializations, both from this function). RPC payloads — role config, the DSP
+system struct, a render spec — are not files and stay compact `JSON.stringify`.
+
 ## Persistence policy (the precise statement)
 
 Persistence is TS-owned (native does no version checking — the TS constants are the
