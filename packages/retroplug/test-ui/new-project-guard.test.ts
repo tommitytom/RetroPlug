@@ -30,6 +30,9 @@ test("New Project prompts on unsaved changes; Esc keeps, Don't Save discards", (
   expect(ui.findByTextContaining("Unsaved changes") != null).toBeTruthy();
   expect(ui.findByTextContaining("Don't Save") != null).toBeTruthy();
   expect(ui.findByTextContaining("Cancel") != null).toBeTruthy();
+  // The same "what is unsaved" readout the close prompt shows, greyed + skipped so focus starts on Save.
+  expect(ui.findByText("Project: (not saved yet)") != null).toBeTruthy();
+  expect(ui.focused()!.text).toBe("Save");
 
   // Esc cancels → the project + its tile survive.
   ui.tapKey(Key.Esc);

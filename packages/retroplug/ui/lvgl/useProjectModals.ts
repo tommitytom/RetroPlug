@@ -20,6 +20,7 @@ import { basename } from "../../src/pathUtil";
 import { SAV_PATTERNS } from "../../src/savPaths";
 import { loadSongInPrimary } from "../../src/tracker";
 import { saveProjectInteractive } from "./saveProjectInteractive";
+import { unsavedRows } from "./unsavedRows";
 import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
 
 const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes"];
@@ -129,9 +130,12 @@ function buildModal(
 
   if (pending.kind === "confirm") {
     const { proceed } = pending;
+    // Leads with WHAT is unsaved (the project file + each dirty battery's target .sav), greyed and skipped
+    // by nav, so the user can see what Save writes / Don't Save throws away. Same block as the close guard.
     return {
       title: "Unsaved changes",
       items: [
+        ...unsavedRows(stores.backend, stores.project),
         btn("discard-save", "Save", () => void saveProjectInteractive(stores).then((saved) => saved && proceed())),
         btn("discard-nosave", "Don't Save", proceed),
         btn("discard-cancel", "Cancel", onClose),

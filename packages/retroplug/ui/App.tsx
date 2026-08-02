@@ -20,6 +20,7 @@ import { useProjectModals } from "./lvgl/useProjectModals";
 import { useFileBrowser } from "./lvgl/useFileBrowser";
 import { useSongImport } from "./lvgl/useSongImport";
 import { useSongWatch } from "./lvgl/useSongWatch";
+import { unsavedRows } from "./lvgl/unsavedRows";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
@@ -252,12 +253,16 @@ export function App() {
   }
 
   // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
-  // the keypad. Save & Quit / Discard & Quit / Cancel — the guard drives the native quit + dismissal.
+  // the keypad. It leads with WHAT is unsaved (the project file + each dirty battery's target .sav, greyed
+  // and nav-skipped), then Save & Quit / Discard & Quit / Cancel - the guard drives the native quit +
+  // dismissal. The list is built here rather than latched when the prompt opened, so a battery the cart
+  // writes while it's up shows on the next render.
   if (closeGuard.active) {
     const { width, height } = windowSize;
     const closeTree: MenuTree = {
       title: "Unsaved changes",
       items: [
+        ...unsavedRows(stores.backend, stores.project),
         { id: "close-save", label: "Save & Quit", kind: "action", keepOpen: true, onSelect: closeGuard.onSave },
         { id: "close-discard", label: "Discard & Quit", kind: "action", keepOpen: true, onSelect: closeGuard.onDiscard },
         { id: "close-cancel", label: "Cancel", kind: "action", keepOpen: true, onSelect: closeGuard.onCancel },

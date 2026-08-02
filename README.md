@@ -48,6 +48,9 @@ download the latest version.
 - **Name your project** under `Project` > `Name` - it's what the window title and the
   `Recent` list show. Leave it empty (the default) and the name follows the loaded
   instance instead: its sav and ROM.
+- **Nothing is lost silently.** Quitting, or starting / loading another project, with
+  unsaved work asks first and lists what is unsaved: the project file, and any cart
+  whose battery differs from its `.sav` (naming the file it would write).
 
 Each instance's `System` menu also lets you reset, swap the ROM while keeping the
 running SRAM, and load/save SRAM and save states. Game Boy systems expose the

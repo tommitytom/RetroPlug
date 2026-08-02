@@ -6,7 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { UserConfigStore } from "../../src/userConfigStore";
-import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, flushDirtySram, lsdjSramSignature, sramSignature } from "../../src/sramAutoSave";
+import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, dirtySramTargets, flushDirtySram, lsdjSramSignature, sramSignature } from "../../src/sramAutoSave";
 import { savFrom } from "../../src/lsdj";
 import { gbRom } from "../systems/fixtures";
 
@@ -120,6 +120,20 @@ test("sramDirtyCount: dirty when the live battery has no matching .sav; clean on
   expect(sramDirtyCount(be, list)).toBe(0); // matches → clean
   be.setSram(id, bytes(9, 9)); // an in-game battery write
   expect(sramDirtyCount(be, list)).toBe(1); // differs from disk → dirty again
+});
+
+test("dirtySramTargets: names the .sav each dirty battery writes, flagging one that isn't on disk yet", () => {
+  const { be, systems, id } = setup();
+  const list = systems.systems();
+  // Fresh system: a live battery with no .sav beside it - a save would CREATE the file.
+  expect(dirtySramTargets(be, list)).toEqual([{ id, savPath: SAV, isNew: true }]);
+
+  be.seed(SAV, be.readSram(id)!); // mirrored
+  expect(dirtySramTargets(be, list)).toEqual([]);
+
+  be.setSram(id, bytes(9, 9)); // an in-game battery write: the file exists but differs
+  expect(dirtySramTargets(be, list)).toEqual([{ id, savPath: SAV, isNew: false }]);
+  expect(sramDirtyCount(be, list)).toBe(dirtySramTargets(be, list).length); // the count IS the list length
 });
 
 test("flushDirtySram: writes each dirty battery to its sibling .sav, then it's clean", () => {

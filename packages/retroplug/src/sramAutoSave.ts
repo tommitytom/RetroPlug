@@ -83,38 +83,46 @@ export interface SramTarget {
   savPath: string; // the paired-save override ("" = the suffix sibling)
 }
 
-// Whether a system's LIVE battery differs MEANINGFULLY from the sibling `.sav` on disk — the
-// "unsaved SRAM" signal. Uses sramSignature, which normalises LSDj's per-frame working-RAM churn
-// (the ticking clock) away so a just-booted LSDj cart isn't reported dirty; non-LSDj batteries use a
-// whole-SRAM hash. Embedded ROMs (no romPath) and empty batteries are never dirty; a missing `.sav`
-// with a non-empty battery is.
-function sramTargetDirty(backend: ControlPlaneBackend, s: SramTarget): boolean {
-  if (!s.romPath) return false;
-  const savPath = resolveSavPath(s.romPath, s.savSuffix, s.savPath);
-  if (!savPath) return false;
-  const live = backend.readSram(s.id);
-  if (!live || live.length === 0) return false;
-  const disk = backend.readFile(savPath);
-  if (!disk) return true; // no .sav yet, but the battery has content
-  return sramSignature(live) !== sramSignature(disk);
+/** One system whose live battery is unsaved: which system, the `.sav` a save would write, and whether
+ *  that file doesn't exist yet (vs existing but differing). The detail the unsaved-changes prompt lists. */
+export interface DirtySram {
+  id: number;
+  savPath: string;
+  isNew: boolean;
+}
+
+/** Every system whose LIVE battery differs MEANINGFULLY from its `.sav` on disk - the "unsaved SRAM"
+ *  signal, with the target path + whether it's a new file. Uses sramSignature, which normalises LSDj's
+ *  per-frame working-RAM churn (the ticking clock) away so a just-booted LSDj cart isn't reported dirty;
+ *  non-LSDj batteries use a whole-SRAM hash. Embedded ROMs (no romPath) and empty batteries are never
+ *  dirty; a missing `.sav` with a non-empty battery is. */
+export function dirtySramTargets(backend: ControlPlaneBackend, systems: SramTarget[]): DirtySram[] {
+  const out: DirtySram[] = [];
+  for (const s of systems) {
+    if (!s.romPath) continue;
+    const savPath = resolveSavPath(s.romPath, s.savSuffix, s.savPath);
+    if (!savPath) continue;
+    const live = backend.readSram(s.id);
+    if (!live || live.length === 0) continue;
+    const disk = backend.readFile(savPath);
+    if (!disk) out.push({ id: s.id, savPath, isNew: true }); // no .sav yet, but the battery has content
+    else if (sramSignature(live) !== sramSignature(disk)) out.push({ id: s.id, savPath, isNew: false });
+  }
+  return out;
 }
 
 /** How many systems have a live battery that differs from its on-disk `.sav`. */
 export function sramDirtyCount(backend: ControlPlaneBackend, systems: SramTarget[]): number {
-  let n = 0;
-  for (const s of systems) if (sramTargetDirty(backend, s)) n++;
-  return n;
+  return dirtySramTargets(backend, systems).length;
 }
 
 /** Write every dirty system's live battery to its sibling `.sav` (UNGATED — an explicit "save on close",
  *  unlike the auto-save mirror which respects the Off preference). Returns the number written. */
 export function flushDirtySram(backend: ControlPlaneBackend, systems: SramTarget[]): number {
   let n = 0;
-  for (const s of systems) {
-    if (!sramTargetDirty(backend, s)) continue;
-    const savPath = resolveSavPath(s.romPath, s.savSuffix, s.savPath);
-    const live = backend.readSram(s.id);
-    if (savPath && live && backend.writeFile(savPath, live)) n++;
+  for (const t of dirtySramTargets(backend, systems)) {
+    const live = backend.readSram(t.id);
+    if (live && backend.writeFile(t.savPath, live)) n++;
   }
   return n;
 }

@@ -372,6 +372,20 @@ change unless a tiling WM owns geometry (`isWindowSizeControlled()`). It drives
 `useGameInput({ active: !empty && !menuOpen, focusedId })` and renders `<Menu>` (empty) or
 `<SystemGrid>`.
 
+**The unsaved-changes prompts.** Two of them - the standalone's close guard
+([`useCloseGuard`](../packages/retroplug/ui/lvgl/useCloseGuard.ts), rendered by App) and the
+New / Load discard confirm ([`useProjectModals`](../packages/retroplug/ui/lvgl/useProjectModals.ts))
+- both lead with WHAT is unsaved before their buttons:
+[`unsavedRows`](../packages/retroplug/ui/lvgl/unsavedRows.ts) maps
+`unsavedChanges(backend, project)` ([src/unsavedChanges.ts](../packages/retroplug/src/unsavedChanges.ts))
+to one `disabled` row per item - `"Project: song.rplg"` / `"Project: (not saved yet)"`,
+`"Battery: lsdj.sav"` (+ `" (new file)"` when the target doesn't exist yet) - closed by a
+separator. Menu greys disabled rows and skips them in nav, so Enter still lands on the first
+button. The rows are built at tree-build time (not latched when the prompt opened), so a battery
+the cart writes while the prompt is up shows on the next render; that costs the same battery scan
+the menu's Save-Project label already pays. The yes/no gate stays `hasUnsavedChanges`, which
+short-circuits on the project flag precisely because it runs on every menu rebuild.
+
 ### The grid — [`screens/grid/`](../packages/retroplug/ui/screens/grid)
 
 - [`SystemGrid.tsx`](../packages/retroplug/ui/screens/grid/SystemGrid.tsx) renders one
