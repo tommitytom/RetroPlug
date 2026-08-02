@@ -359,7 +359,7 @@ function buildSink(ctx: RenderContext, o: RenderOpts, id: number, platform: Plat
  *  byte-identical to a single renderAudio(ms) of the same length for any sample rate / ms. `leadIn` is the
  *  captured play-gesture audio (the song's opening frames) — committed first so the recording's head isn't
  *  lost, trimmed against the target like any other chunk. */
-function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): void {
+function driveFixed(sink: RenderSink, targetFrames: number, sr: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): void {
   let done = 0;
   const emit = (chunk: Float32Array[]) => {
     if (chunk.length === 0) throw new Error("render: chunk render returned no streams");
@@ -370,7 +370,7 @@ function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks, 
   while (done < targetFrames) {
     if (hooks.isCancelled?.()) throw new RenderCancelled();
     emit(sink.renderChunk(DETECT_CHUNK_MS));
-    hooks.onProgress?.(done / targetFrames);
+    hooks.onRendered?.((done / sr) * 1000); // committed audio so far (the last chunk is trimmed to the target)
   }
 }
 
@@ -378,7 +378,7 @@ function driveFixed(sink: RenderSink, targetFrames: number, hooks: RenderHooks, 
  *  and stop at the HFF (the probe going true→false, sustained ≥DETECT_OFF_CHUNKS). Holds back the current
  *  contiguous off-streak (≤DETECT_OFF_CHUNKS whole chunks) so committed frames end exactly at the stop; a
  *  reset flushes them in order. Caps at maxMs (no-HFF fallback → keep everything). */
-function driveAutoDetect(sink: RenderSink, isPlaying: () => boolean, maxMs: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): StopMarkers {
+function driveAutoDetect(sink: RenderSink, isPlaying: () => boolean, maxMs: number, sr: number, hooks: RenderHooks, leadIn: Float32Array[][] = []): StopMarkers {
   let total = 0; // frames rendered (committed + held)
   let committed = 0; // frames streamed to disk
   let elapsed = 0;
@@ -409,7 +409,9 @@ function driveAutoDetect(sink: RenderSink, isPlaying: () => boolean, maxMs: numb
     const frameBefore = total;
     total += chunk[0].length / 2;
     elapsed += DETECT_CHUNK_MS;
-    hooks.onProgress?.(Math.min(elapsed / maxMs, 0.99)); // upper bound — the HFF stop usually lands well before the cap
+    // Rendered audio so far, counting the held off-streak: monotonic, and at most DETECT_OFF_CHUNKS ahead
+    // of what lands on disk (a confirmed HFF stop discards those held chunks).
+    hooks.onRendered?.((total / sr) * 1000);
 
     const on = isPlaying();
     if (!armed) {
@@ -543,16 +545,17 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   const leadIn = pressPlay(ctx, sink, o, id, platform);
 
   if (autoDetect) {
-    const m = driveAutoDetect(sink, isPlaying!, o.maxDurationMs, hooks, leadIn);
+    const m = driveAutoDetect(sink, isPlaying!, o.maxDurationMs, sr, hooks, leadIn);
     const outputs = sink.finishAll();
     const lengthMs = Math.round(((m.endFrame - m.startFrame) / sr) * 1000);
     log(`length: ${lengthMs} ms (${m.endFrame - m.startFrame} frames @${sr}Hz) hff:${m.hff}`);
     if (!m.hff) warn(`no HFF stop within ${o.maxDurationMs}ms — add an HFF to the song end for exact length`);
-    hooks.onProgress?.(1);
+    hooks.onRendered?.(lengthMs); // settle on the length actually written (the held tail is trimmed off)
     return { outputs, lengthMs, frames: m.endFrame - m.startFrame, hff: m.hff };
   }
-  driveFixed(sink, Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000), hooks, leadIn); // exact target frame count
+  const targetFrames = Math.floor(((o.durationMs ?? o.maxDurationMs) * sr) / 1000); // exact target frame count
+  driveFixed(sink, targetFrames, sr, hooks, leadIn);
   const outputs = sink.finishAll();
-  hooks.onProgress?.(1);
+  hooks.onRendered?.(Math.round((targetFrames / sr) * 1000));
   return { outputs };
 }

@@ -131,6 +131,29 @@ test("risa render auto-detects the HFF stop (seq_mode) and trims to the song len
   expect(rms(wav.pcm) > 0.05).toBe(true); // the captured audio is the song, not silence
 });
 
+test("the render reports the audio duration rendered so far, not a fraction of the cap", () => {
+  sim.playing = false;
+  sim.playFrames = 0;
+  const { ctx } = mockCtx();
+
+  // What the tile badge counts. The cap is CAP_MS but the song stops at SONG_MS, so a fraction-of-cap
+  // "progress" could only ever crawl to ~36% before the render finished - hence a duration instead.
+  const reported: number[] = [];
+  const res = runRenderJob(ctx, opts({}), { log: () => {}, warn: () => {}, onRendered: (ms) => reported.push(ms) });
+
+  const stream = reported.slice(0, -1); // the per-chunk reports; the last one settles (below)
+  expect(stream.length > 0).toBe(true);
+  for (let i = 1; i < stream.length; i++) expect(stream[i] >= stream[i - 1]).toBe(true); // never goes backwards
+  // Real audio time: the first report is the captured play gesture plus one 100 ms render chunk.
+  expect(Math.round(stream[0])).toBe(200);
+  // The stream runs a little past the song (the held off-chunks that prove the HFF stop are rendered audio
+  // too), then the final report settles on the length actually written to the WAV.
+  expect(stream[stream.length - 1] >= res.lengthMs!).toBe(true);
+  expect(stream[stream.length - 1] - res.lengthMs! <= 200).toBe(true);
+  expect(reported[reported.length - 1]).toBe(res.lengthMs);
+  expect(Math.abs(res.lengthMs! - SONG_MS) <= 150).toBe(true);
+});
+
 test("a risa song that never HFFs falls back to the maxDuration cap (hff false)", () => {
   sim.playing = false;
   sim.playFrames = 0;

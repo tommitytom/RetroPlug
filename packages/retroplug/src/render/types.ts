@@ -47,9 +47,9 @@ export interface RenderContext {
 }
 
 /** Host callbacks. All optional so the CLI passes none (logging defaults to console, no progress/cancel).
- *  The worker wires onProgress/isCancelled to native thunks and routes log/warn to the host. */
+ *  The worker wires onRendered/isCancelled to native thunks and routes log/warn to the host. */
 export interface RenderHooks {
-  onProgress?(fraction: number): void; // 0..1, called per rendered chunk (auto-detect reports elapsed/cap)
+  onRendered?(ms: number): void; // audio duration rendered so far (ms), called per rendered chunk
   isCancelled?(): boolean; // polled per chunk; when true the render aborts with RenderCancelled
   log?(msg: string): void; // informational output (defaults to console.log)
   warn?(msg: string): void; // warnings (defaults to console.warn)
