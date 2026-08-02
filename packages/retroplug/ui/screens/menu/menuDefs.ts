@@ -1246,7 +1246,7 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
     // working-song name when known (a tracker cart's loaded song), then the project half: "SONG - project",
     // ASCII " - " (the LVGL font has no emdash glyph), matching the tracker window-title order. That half is
     // whatever ProjectStore.recentName resolved when the entry was recorded - the name the user gave the
-    // project, else its cart's "<sav> - <rom>" identity, so a nameless entry reads "SONG - sav - rom". A
+    // project, else its cart's "<sav.ext> - <rom>" identity, so a nameless entry reads "SONG - sav - rom". A
     // missing entry is drawn yellow (warn) with a trailing " [!]".
     const base = entry.song ? `${entry.song} - ${entry.label}` : entry.label;
     const row: MenuItem = {

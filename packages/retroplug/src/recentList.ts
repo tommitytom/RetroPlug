@@ -7,7 +7,7 @@ export interface RecentEntry {
   /** Canonical path — the dedupe key. Canonicalization happens in the store. */
   path: string;
   /** Display name recorded when the entry was last added: the project's own name when the user gave it one,
-   *  else its primary cart's "<sav> - <rom>" identity (ProjectStore.recentName). Empty falls back to the
+   *  else its primary cart's "<sav.ext> - <rom>" identity (ProjectStore.recentName). Empty falls back to the
    *  path basename. */
   name: string;
   /** The project's working-song name at open/save time (a tracker cart's loaded song), if known. Shown

@@ -130,7 +130,7 @@ test("a recent entry names the cart in full: song - sav - rom, with a project na
   stores.project.save("/proj/x.rplg");
 
   const rowLabel = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent"), "recent-0")?.label;
-  expect(rowLabel()).toBe("MYSONG - mysong - cool"); // working song, loaded sav, ROM
+  expect(rowLabel()).toBe("MYSONG - mysong.sav - cool"); // working song, loaded sav (with extension), ROM
 
   // Naming the project drops the cart's sav / ROM segments; the working song still leads.
   stores.project.setName("Album Cut");

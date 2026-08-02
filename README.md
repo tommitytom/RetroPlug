@@ -136,8 +136,9 @@ The `Settings` menu covers:
 
 Recent projects are available under the `Recent` menu, where you can re-load, relocate
 a moved project, or remove it from the list. Each entry reads
-`song - sav - ROM` - the song loaded in the cart (LSDj / risa), the sav, and the ROM -
-dropping whichever of those it doesn't have. If you named the project under
+`song - sav - ROM` - the song loaded in the cart (LSDj / risa), the sav file (named in
+full, so a `.sav` and a `.srm` are told apart), and the ROM - dropping whichever of
+those it doesn't have. If you named the project under
 `Project` > `Name`, that name is shown in place of the sav and ROM.
 
 ## Command Line

@@ -87,8 +87,8 @@ test("project name: the derived display name follows the primary system (a paire
   project.systems.loadRom("/roms/lsdj.gb", { explicitSav: "/saves/mysong.sav" }); // paired override
   project.adoptRomProject("/roms/lsdj.gb");
   expect(project.displayName()).toBe("mysong"); // the sav stem, not "lsdj"
-  // The recents entry names the cart in full: the loaded sav, then the ROM.
-  expect(recent.view()[0].label).toBe("mysong - lsdj");
+  // The recents entry names the cart in full: the loaded sav (with its extension), then the ROM.
+  expect(recent.view()[0].label).toBe("mysong.sav - lsdj");
 });
 
 test("recents name: a battery cart's own sibling sav collapses into the ROM name; a suffixed one doesn't", () => {
@@ -102,7 +102,16 @@ test("recents name: a battery cart's own sibling sav collapses into the ROM name
   const id = project.systems.addSystem("/roms/a.gb")!;
   project.systems.setFocus(id);
   project.save("/roms/two.rplg");
-  expect(recent.view()[0].label).toBe("a-2 - a");
+  expect(recent.view()[0].label).toBe("a-2.sav - a");
+});
+
+test("recents name: the sav segment carries its own extension, so a .srm reads as one", () => {
+  const { be, recent, project } = newProject();
+  be.seed("/roms/lsdj.gb", gbRom());
+  be.seed("/saves/other.srm", "battery");
+  project.systems.addSystem("/roms/lsdj.gb", { explicitSav: "/saves/other.srm" });
+  project.save("/proj/p.rplg");
+  expect(recent.view()[0].label).toBe("other.srm - lsdj");
 });
 
 test("recents name: a battery-less cart names the ROM alone; the project's own name replaces both", () => {

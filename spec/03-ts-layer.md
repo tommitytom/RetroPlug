@@ -188,9 +188,10 @@ one persisted (`buildConfig` omits a blank `name`, so a nameless `.rplg` carries
 `displayName()` is what the window / menu titles SHOW - that name when set, else `deriveName()`:
 the primary system's `savPath` stem, else its `romPath` stem (primary = focused, else first).
 The recents entry gets a fuller derivation, `recentName()`: the project's own name when set,
-else the primary cart's identity `"<sav> - <rom>"` - the loaded sav's stem (an explicit override,
-or a battery cart's suffix-derived sibling) then the ROM's, collapsed to one segment when the
-stems match (the usual `<rom>.sav` case) and empty for an embedded cart. Every recents record
+else the primary cart's identity `"<sav.ext> - <rom>"` - the loaded sav's FILENAME, extension and
+all (an explicit override, or a battery cart's suffix-derived sibling), then the ROM's stem,
+collapsed to one segment when the stems match (the usual `<rom>.sav` case) and empty for an
+embedded cart. Every recents record
 (`save` / `export` / `adoptRomProject` / load `commit`) passes it alongside `currentSong()`, so
 the menu composes `"SONG - sav - rom"` (or `"SONG - project name"`) - and none of it reaches disk.
 
