@@ -820,6 +820,24 @@ test("Keyboard Bindings: 8 GB + 3 app-action rows; capture rebinds write-through
   expect(stores.bindings.loadProfile(active)!.gamepad).toEqual(defaultBindingMap().gamepad);
 });
 
+test("Keyboard Bindings: a bound space reads \"Space\", including a profile holding the raw character", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const active = stores.userConfig.config().activeKeyboardBindings;
+
+  // What the capture row now hands over for the space bar (Menu's dpfCodeToKeyName).
+  findItem(keyboardBindings(stores), "bind-A")!.capture!.onCapture("Space");
+  expect(stores.bindings.loadProfile(active)!.keyboard.A).toEqual(["Space"]);
+  expect(findItem(keyboardBindings(stores), "bind-A")!.label).toBe("A: Space");
+  expect(buildKeyToButton(stores.bindings.resolvedBindings().keyboard).get(0x20)).toBe(BUTTON_VALUE.A);
+
+  // A profile written before Space had a name: the raw " " still binds, and still reads as the word.
+  const map = stores.bindings.loadProfile(active)!;
+  stores.bindings.saveProfile(active, { ...map, keyboard: { ...map.keyboard, B: [" "] } });
+  expect(findItem(keyboardBindings(stores), "bind-B")!.label).toBe("B: Space");
+  expect(buildKeyToButton(stores.bindings.resolvedBindings().keyboard).get(0x20)).toBe(BUTTON_VALUE.B);
+});
+
 // The Settings → Gamepad Bindings submenu — the gamepad twin of the keyboard editor.
 function gamepadBindings(stores: AppStores): MenuItem[] {
   const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");

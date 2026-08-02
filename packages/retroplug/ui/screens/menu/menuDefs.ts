@@ -27,6 +27,7 @@ import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
 import type { SplitMode } from "../../../src/render";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
+import { keyDisplayName } from "../../../src/keyCodes";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath, SAV_PATTERNS, isSavPath } from "../../../src/savPaths";
@@ -1121,6 +1122,11 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
   const actionsKey: "keyboardActions" | "gamepadActions" = channel === "keyboard" ? "keyboardActions" : "gamepadActions";
   const actMap = ctx.bindings[actionsKey]; // resolved active app-action map
 
+  // The bound-names half of a row label ("-" when unbound). Gamepad names are the raw SDL names and show
+  // as-is; keyboard names get their display form, so a space reads "Space" rather than an invisible glyph.
+  const shown = (names: string[] | undefined) =>
+    names?.length ? (channel === "keyboard" ? names.map(keyDisplayName) : names).join(", ") : "-";
+
   const withChannel = (m: BindingMap, chan: Record<string, string[]>): BindingMap =>
     channel === "keyboard" ? { ...m, keyboard: chan } : { ...m, gamepad: chan };
   const write = (edit: (m: BindingMap) => BindingMap) => {
@@ -1169,7 +1175,7 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
 
   const captureRows: MenuItem[] = GB_BUTTONS.map((btn) => ({
     id: `${idp}-${btn}`,
-    label: `${btn}: ${chMap[btn]?.length ? chMap[btn].join(", ") : "-"}`,
+    label: `${btn}: ${shown(chMap[btn])}`,
     kind: "capture" as const,
     keepOpen: true,
     capture: {
@@ -1183,7 +1189,7 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
   // row, written into the actions section. The "<label>: " head is kept so Menu's "Press a key/button…" swap works.
   const actionRows: MenuItem[] = APP_ACTION_ROWS.map((a) => ({
     id: `${idp}-act-${a.id}`,
-    label: `${a.label}: ${actMap[a.id]?.length ? actMap[a.id].join(", ") : "-"}`,
+    label: `${a.label}: ${shown(actMap[a.id])}`,
     kind: "capture" as const,
     keepOpen: true,
     capture: {
