@@ -11,6 +11,7 @@ import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadT
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery } from "../systems/fixtures";
 import { savFrom, type SavInput } from "../../src/lsdjSav";
+import { lsdjSongCatalog } from "../../src/tracker";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
@@ -136,6 +137,40 @@ test("a recent entry names the cart in full: song - sav - rom, with a project na
   stores.project.setName("Album Cut");
   stores.project.save("/proj/x.rplg");
   expect(rowLabel()).toBe("MYSONG - Album Cut");
+});
+
+test("Songs > Load records the newly loaded song as its own recent row; picking a row asks for that song back", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/cool.gb", lsdjRom("LSDJ-V9.4.2"));
+  stores.project.systems.loadRom("/roms/cool.gb");
+  const id = stores.project.systems.view()[0].id;
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  const sav = (active: number) =>
+    savFrom({ activeProjectIndex: active, projects: [{ name: "GRUB", version: 0, song }, { name: "INTRO", version: 0, song }] } as SavInput);
+  be.setSram(id, sav(0)); // GRUB is the working song
+  stores.project.save("/proj/x.rplg"); // one row so far: GRUB
+
+  // LSDj > Songs > [1] INTRO > Load... - records by name, so it doesn't depend on the rebuilt core having
+  // published a fresh battery snapshot yet.
+  const sys = stores.project.systems.view()[0];
+  const inst = buildInstanceMenu({ ...ctxOf(stores), system: sys }).items;
+  const songs = submenuChildren(submenuChildren(submenuChildren(inst, "inst-lsdj"), "lsdj-songs"), "lsdj-song-1");
+  findItem(songs, "lsdj-song-1-load")!.onSelect!();
+  expect(lsdjSongCatalog.workingName(be.readFile("/roms/cool.sav")!)).toBe("INTRO"); // and it really loaded
+
+  const rows = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
+  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool", "GRUB - cool"]); // a row each, newest first
+
+  // Picking the GRUB row reopens the project AND asks for that song back.
+  const asked: [string, string | undefined][] = [];
+  const ctx = { ...ctxOf(stores), loadProject: (p: string, s?: string) => asked.push([p, s]) };
+  findItem(submenuChildren(buildStartMenu(ctx).items, "start-recent"), "recent-1")!.onSelect!();
+  expect(asked).toEqual([["/proj/x.rplg", "GRUB"]]);
+
+  // Del takes out just that song's row.
+  findItem(rows(), "recent-1")!.onDelete!();
+  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool"]);
 });
 
 test("recent entries are flat action rows: present loads + can be deleted, missing warns + relinks", () => {

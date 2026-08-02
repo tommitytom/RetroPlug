@@ -19,6 +19,7 @@ import { useCloseGuard } from "./lvgl/useCloseGuard";
 import { useProjectModals } from "./lvgl/useProjectModals";
 import { useFileBrowser } from "./lvgl/useFileBrowser";
 import { useSongImport } from "./lvgl/useSongImport";
+import { useSongWatch } from "./lvgl/useSongWatch";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
@@ -51,6 +52,7 @@ export function App() {
   const modals = useProjectModals(stores);
   const browser = useFileBrowser(stores); // in-app file browser overlay (openFileBrowser)
   const songImport = useSongImport(stores);
+  useSongWatch(stores); // records the focused cart's song in Recent when it changes (incl. loads made inside the cart)
   const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title
 
   const [menuOpen, setMenuOpen] = useState(true);

@@ -195,14 +195,26 @@ embedded cart. Every recents record
 (`save` / `export` / `adoptRomProject` / load `commit`) passes it alongside `currentSong()`, so
 the menu composes `"SONG - sav - rom"` (or `"SONG - project name"`) - and none of it reaches disk.
 
+**Song rows.** Recents holds one row per SONG a project has had loaded, so a song change records a
+row rather than rewriting one: `recordSong(name)` adds it (a known song - the Songs menu's Load
+names what it just loaded, no need to wait on a battery snapshot), and `recordCurrentSong()` is
+`recordSong` over `currentSong()` - the signal for a load RetroPlug didn't make, i.e. the user
+picking a song on LSDj's / risa's own file screen. Nothing else can see that, so the UI polls it:
+[`useSongWatch`](../packages/retroplug/ui/lvgl/useSongWatch.ts) calls `recordCurrentSong()` every
+~30 render frames. No memo is needed - `RecentStore.add` no-ops (no write, no notify) while the
+answer is unchanged. Editor-driven like the file watcher: a DAW instance with its editor closed
+records nothing until it's opened.
+
 ### RecentStore — [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts)
 
-A `RecentEntry[]` (`{ path, name }`) most-recent-first, capped at `MAX_ENTRIES = 10`
-([recentList.ts:13](../packages/retroplug/src/recentList.ts#L13)). Incoming paths are
-canonicalized via `backend.canonicalize` (the dedupe key); `view()` computes live `missing` +
-`label` (the recorded `name`, else the basename minus the project extension). `name` is
-whatever `ProjectStore.recentName()` resolved when the entry was recorded - there is no
-per-entry rename; the UI's only naming verb is `Project` > `Name`. `commit(next)` ([recentStore.ts:91](../packages/retroplug/src/recentStore.ts#L91))
+A `RecentEntry[]` (`{ path, name, song? }`) most-recent-first, capped at `MAX_ENTRIES = 10`
+([recentList.ts](../packages/retroplug/src/recentList.ts)). The dedupe key is `entryKey` =
+canonical path + song, so ONE project holds a row per song it has had loaded (a non-tracker
+project keeps its single songless row); `remove(path, song)` drops one row and `relink` repoints
+every row of the moved file. Incoming paths are canonicalized via `backend.canonicalize`;
+`view()` computes live `missing` + `label` (the recorded `name`, else the basename minus the
+project extension). `name` is whatever `ProjectStore.recentName()` resolved when the entry was
+recorded - there is no per-entry rename; the UI's only naming verb is `Project` > `Name`. `commit(next)` ([recentStore.ts:91](../packages/retroplug/src/recentStore.ts#L91))
 serializes and skips both write and notify when identical. Persists atomically to
 `<configDir>/recent.json`.
 

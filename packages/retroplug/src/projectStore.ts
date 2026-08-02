@@ -152,8 +152,7 @@ export class ProjectStore {
 
   // The system every derived name speaks for: the focused one, else the first. undefined with no systems.
   private primarySystem(): SystemEntry | undefined {
-    const list = this.systems.systems();
-    return list.find((s) => s.id === this.systems.focused()) ?? list[0];
+    return this.systems.primary();
   }
 
   // The name derived from the system instances: the primary system's paired-sav override stem, else its rom
@@ -192,6 +191,25 @@ export class ProjectStore {
     if (!catalog) return undefined;
     const sram = this.backend.readSram(primary.id);
     return sram ? catalog.workingName(sram) ?? undefined : undefined;
+  }
+
+  /** Record `song` as a recents row for the open project. Recents holds one row per song, so this adds a row
+   *  the first time a song is seen and moves its row to the front when you come back to it. Nothing to
+   *  record without a project path (never saved) or a song name. Returns whether the list changed. Used
+   *  where the song is KNOWN - the Songs menu's Load names the song it just loaded, with no need to wait for
+   *  the rebuilt core to publish a fresh battery snapshot. */
+  recordSong(song: string): boolean {
+    if (!this.path || !song) return false;
+    return this.recent.add(this.path, this.recentName(), song);
+  }
+
+  /** `recordSong` for whatever the focused cart currently has loaded - the song-change signal for a load we
+   *  DIDN'T make: the user picking a song on LSDj's / risa's own file screen. Cheap to call on a timer, which
+   *  is how the UI drives it: it re-reads the live battery, and RecentStore.add no-ops (no write, no notify)
+   *  while the answer is unchanged. Returns whether the list changed. */
+  recordCurrentSong(): boolean {
+    const song = this.currentSong();
+    return song ? this.recordSong(song) : false;
   }
 
   setLayout(v: SystemLayout): boolean {

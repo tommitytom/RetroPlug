@@ -42,6 +42,7 @@ import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../.
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 import {
   resolveTracker,
+  mutateLiveSav,
   effectiveAssets,
   readAssetOverrides,
   lsdjSongCatalog,
@@ -78,7 +79,9 @@ export interface MenuContext {
   // Destructive project ops, guarded (unsaved-changes prompt) + outcome-aware (incompatible / relink /
   // error) by useProjectModals — the menu drives these instead of project.newProject / project.load.
   newProject: () => void;
-  loadProject: (path: string) => void;
+  /** `song` (a recent row's) is loaded into the cart once the project lands - reopening that song, not just
+   *  the project. Omitted (Load Project… / a file drop) leaves whatever song the project's sav carries. */
+  loadProject: (path: string, song?: string) => void;
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
   /** Quit the standalone (unsaved-changes guarded). No-op in a DAW (the host owns the window). */
   requestExit: () => void;
@@ -764,18 +767,11 @@ const risaAssetSpec: AssetMenuSpec = { id: "risa", catalog: risaAssetCatalog, ex
 
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
 // Songs are the battery, NOT a ROM override: edits act directly on the live SRAM (like LSDj's own FILE
-// screen). mutateSavBytes reads the live sav, applies a BYTE-LEVEL transform (never the lossy Song model —
-// see lsdjSongOps), writes the resolved .sav, and cold-boots the core from it (loadSram) — durable on disk
-// and reflected in the running LSDj. A no-op if there's no readable SRAM or the op returns null.
+// screen) via mutateLiveSav (src/tracker/liveSav) - read the live sav, apply a BYTE-LEVEL transform (never
+// the lossy Song model - see lsdjSongOps), write the resolved .sav, cold-boot the core from it. Durable on
+// disk and reflected in the running LSDj. A no-op if there's no readable SRAM or the op returns null.
 function mutateSavBytes(ctx: MenuContext, sys: SystemView, fn: (sav: Uint8Array) => Uint8Array | null): void {
-  const systems = ctx.stores.project.systems;
-  const bytes = systems.readSram(sys.id);
-  if (!bytes) return;
-  const out = fn(bytes);
-  if (!out) return; // malformed / out of space → leave the system untouched
-  const target = resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath);
-  if (!ctx.stores.backend.writeFileAtomic(target, out)) return;
-  systems.loadSram(sys.id, target);
+  mutateLiveSav(ctx.stores.backend, ctx.stores.project.systems, sys, fn);
 }
 
 // Export the saved song in `slot` to a picked `.lsdsng` file (byte-exact — decompress the slot, re-wrap).
@@ -869,7 +865,14 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
   const rows: MenuItem[] = songs.map((s, i) => {
     const name = s.name || `Song ${s.index}`;
     const items: MenuItem[] = [
-      action(`${spec.id}-song-${s.index}-load`, "Load...", () => mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index))),
+      // Load, then record this song in recents right away - by NAME, since we know which one we just loaded
+      // and needn't wait for the rebuilt core to publish a battery snapshot. The song watcher would catch it
+      // on its next tick anyway (that's what covers a load made from INSIDE the cart), but a menu load is a
+      // deliberate act: its row should be at the top of Recent before the user gets back there.
+      action(`${spec.id}-song-${s.index}-load`, "Load...", () => {
+        mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index));
+        ctx.stores.project.recordSong(s.name);
+      }),
       action(`${spec.id}-song-${s.index}-export`, "Export...", () => spec.exportSong(ctx, sys, s.index, name)),
       action(`${spec.id}-song-${s.index}-replace`, "Replace...", () => spec.replaceSong(ctx, sys, s.index)),
     ];
@@ -1241,13 +1244,14 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
 function recentChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.recent.length === 0) return [action("recent-none", "(No Recent Files)", () => {})];
   return ctx.recent.map((entry, i) => {
-    // A single action row (no nested submenu): Enter loads the project — or Locates it when its file is
-    // gone; Del (onDelete) drops it, a hotkey the Menu drives off that field. Label leads with the
-    // working-song name when known (a tracker cart's loaded song), then the project half: "SONG - project",
-    // ASCII " - " (the LVGL font has no emdash glyph), matching the tracker window-title order. That half is
-    // whatever ProjectStore.recentName resolved when the entry was recorded - the name the user gave the
-    // project, else its cart's "<sav.ext> - <rom>" identity, so a nameless entry reads "SONG - sav - rom". A
-    // missing entry is drawn yellow (warn) with a trailing " [!]".
+    // A single action row (no nested submenu): Enter loads the project WITH this row's song - or Locates it
+    // when its file is gone; Del (onDelete) drops just this row, a hotkey the Menu drives off that field. A
+    // project holds one row per song it has had loaded, so picking a row is "reopen that song". Label leads
+    // with the song, then the project half: "SONG - project", ASCII " - " (the LVGL font has no emdash
+    // glyph), matching the tracker window-title order. That half is whatever ProjectStore.recentName
+    // resolved when the entry was recorded - the name the user gave the project, else its cart's
+    // "<sav.ext> - <rom>" identity, so a nameless entry reads "SONG - sav - rom". A missing entry is drawn
+    // yellow (warn) with a trailing " [!]".
     const base = entry.song ? `${entry.song} - ${entry.label}` : entry.label;
     const row: MenuItem = {
       id: `recent-${i}`,
@@ -1256,8 +1260,8 @@ function recentChildren(ctx: MenuContext): MenuItem[] {
       warn: entry.missing,
       onSelect: entry.missing
         ? () => browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p))
-        : () => ctx.loadProject(entry.path),
-      onDelete: () => ctx.stores.recent.remove(entry.path),
+        : () => ctx.loadProject(entry.path, entry.song),
+      onDelete: () => ctx.stores.recent.remove(entry.path, entry.song),
     };
     return row;
   });

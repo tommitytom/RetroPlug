@@ -10,7 +10,7 @@
 // overlay is a plain MenuTree (data), rebuilt each render from the pending state, so its handlers never
 // go stale. Mirrors useCloseGuard's Save/Discard/Cancel flow via the shared saveProjectInteractive.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import type { LoadOutcome } from "../../src/projectStore";
@@ -18,6 +18,7 @@ import type { MissingFile } from "../../src/projectMissing";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import { basename } from "../../src/pathUtil";
 import { SAV_PATTERNS } from "../../src/savPaths";
+import { loadSongInPrimary } from "../../src/tracker";
 import { saveProjectInteractive } from "./saveProjectInteractive";
 import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
 
@@ -40,8 +41,9 @@ export interface ProjectModals {
   onClose: () => void;
   /** Start a new project, guarding unsaved changes first. */
   newProject: () => void;
-  /** Load `path`, guarding unsaved changes first and surfacing the outcome. */
-  loadProject: (path: string) => void;
+  /** Load `path`, guarding unsaved changes first and surfacing the outcome. `song` (a recent row's) is
+   *  loaded into the cart once the project lands, so picking a song row reopens that song. */
+  loadProject: (path: string, song?: string) => void;
   /** Open `romPath` as a fresh project (with an optional paired sav), guarding unsaved changes first. */
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
 }
@@ -49,11 +51,21 @@ export interface ProjectModals {
 export function useProjectModals(stores: AppStores): ProjectModals {
   const [pending, setPending] = useState<PendingModal | null>(null);
   const project = stores.project;
+  // The song a recent row asked for, held until its load actually lands. A ref (not state) because it must
+  // survive the relink round-trip - locate the missing ROM, and the song still gets loaded - without
+  // re-rendering anything itself.
+  const pendingSong = useRef<string>("");
 
   // A load result → the next overlay: loaded clears; incompatible/error notify; missing offers relink.
   const handleOutcome = (outcome: LoadOutcome): void => {
+    // Every completed load funnels through here (including one finished by a relink), so this is the one
+    // place the requested song can be applied. A load that didn't land drops it - except "missing", which
+    // is still in flight awaiting the relink.
+    const song = pendingSong.current;
+    if (outcome.kind !== "missing") pendingSong.current = "";
     switch (outcome.kind) {
       case "loaded":
+        if (song) loadSongInPrimary(stores.backend, project.systems, song); // reopen the row's song
         setPending(null);
         break;
       case "incompatible":
@@ -80,7 +92,11 @@ export function useProjectModals(stores: AppStores): ProjectModals {
       project.newProject();
     });
 
-  const loadProject = (path: string): void => guard(() => handleOutcome(project.load(path)));
+  const loadProject = (path: string, song?: string): void =>
+    guard(() => {
+      pendingSong.current = song ?? "";
+      handleOutcome(project.load(path));
+    });
 
   const loadRomAsProject = (romPath: string, explicitSav?: string): void =>
     guard(() => {
@@ -90,7 +106,10 @@ export function useProjectModals(stores: AppStores): ProjectModals {
 
   const onClose = (): void =>
     setPending((p) => {
-      if (p?.kind === "relink") project.cancelLoad(); // abandoning the relink drops the held load
+      if (p?.kind === "relink") {
+        project.cancelLoad(); // abandoning the relink drops the held load
+        pendingSong.current = ""; // …and the song it was going to open
+      }
       return null;
     });
 

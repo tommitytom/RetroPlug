@@ -141,6 +141,13 @@ full, so a `.sav` and a `.srm` are told apart), and the ROM - dropping whichever
 those it doesn't have. If you named the project under
 `Project` > `Name`, that name is shown in place of the sav and ROM.
 
+The list tracks **songs**, not just projects: whenever the loaded song changes, that song
+gets its own entry, so a project you have worked on in three songs has a row for each of
+them (never a duplicate - returning to a song just moves its row back to the top). It
+doesn't matter how you changed song, from the `Songs` menu or on the cart's own file
+screen - RetroPlug watches what the focused cart has loaded either way. Picking a song
+entry reopens the project **with that song loaded**; `Delete` removes just that one row.
+
 ## Command Line
 The build also produces `retroplug-cli` (in `build/bin/`), a self-contained
 command-line tool for rendering ROMs to audio without opening a DAW or the UI. It runs

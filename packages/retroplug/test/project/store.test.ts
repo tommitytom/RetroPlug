@@ -6,14 +6,37 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
+import { buildAppRegistry } from "../../src/appHost";
 import { K_PROJECT } from "../../src/projectConfig";
 import type { SystemLayout } from "../../src/settingsEnums";
-import { gbRom, gbRomBattery } from "../systems/fixtures";
+import { gbRom, gbRomBattery, lsdjRom } from "../systems/fixtures";
+import { savFrom, type SavInput } from "../../src/lsdjSav";
 
 function newProject(be = new MockBackend("/cfg")) {
   const recent = new RecentStore(be);
   const project = new ProjectStore(be, recent);
   return { be, recent, project };
+}
+
+// The same, with the real role registry - a system only gets its tracker role (and so a song catalog) when
+// the store can derive roles from the ROM header.
+function newTrackerProject() {
+  const be = new MockBackend("/cfg");
+  const recent = new RecentStore(be);
+  return { be, recent, project: new ProjectStore(be, recent, buildAppRegistry()) };
+}
+
+// An LSDj battery holding two saved songs, with `active` loaded into working memory. Swapping this into a
+// system's SRAM is how a test plays the user loading a song from inside the cart.
+const SONG = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+function lsdjSav(active: number): Uint8Array {
+  return savFrom({
+    activeProjectIndex: active,
+    projects: [
+      { name: "GRUB", version: 0, song: SONG },
+      { name: "INTRO", version: 0, song: SONG },
+    ],
+  } as SavInput);
 }
 
 test("new: clears systems, settings, path and dirty", () => {
@@ -124,6 +147,38 @@ test("recents name: a battery-less cart names the ROM alone; the project's own n
   project.setName("My Song"); // a named project shows THAT instead of the sav / ROM pair
   project.save("/roms/game.rplg");
   expect(recent.view()[0].label).toBe("My Song");
+});
+
+test("recordCurrentSong: a song change adds a row, coming back moves it up, unchanged is a no-op", () => {
+  const { be, recent, project } = newTrackerProject();
+  be.seed("/roms/lsdj.gb", lsdjRom("LSDJ-V9.4.2"));
+  const id = project.systems.addSystem("/roms/lsdj.gb")!;
+  be.setSram(id, lsdjSav(0)); // GRUB is the working song
+
+  expect(project.recordCurrentSong()).toBeFalsy(); // never saved: no path to record against
+  expect(recent.view().length).toBe(0);
+
+  project.save("/proj/x.rplg"); // the save records the (project, GRUB) row itself
+  expect(recent.view().map((v) => v.song)).toEqual(["GRUB"]);
+  expect(project.recordCurrentSong()).toBeFalsy(); // nothing changed -> no row, no write
+
+  be.setSram(id, lsdjSav(1)); // the user loads INTRO from inside LSDj
+  expect(project.recordCurrentSong()).toBeTruthy();
+  expect(recent.view().map((v) => v.song)).toEqual(["INTRO", "GRUB"]); // a row each, newest first
+
+  be.setSram(id, lsdjSav(0)); // ...and back to GRUB
+  expect(project.recordCurrentSong()).toBeTruthy();
+  expect(recent.view().map((v) => v.song)).toEqual(["GRUB", "INTRO"]); // moved up, NOT duplicated
+  expect(recent.view()[0].label).toBe("lsdj"); // the project half is the cart, as for any row
+});
+
+test("recordCurrentSong: nothing to record for a non-tracker cart", () => {
+  const { be, recent, project } = newTrackerProject();
+  be.seed("/roms/game.gb", gbRomBattery()); // a battery cart, but no song catalog
+  project.systems.addSystem("/roms/game.gb");
+  project.save("/proj/x.rplg");
+  expect(project.recordCurrentSong()).toBeFalsy();
+  expect(recent.view().map((v) => v.song)).toEqual([undefined]);
 });
 
 test("setName: names the project, persists on save, restores on load, and clears back to derived", () => {

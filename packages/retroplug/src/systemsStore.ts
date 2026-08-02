@@ -108,6 +108,11 @@ export class SystemsStore {
   focused(): number {
     return this.focusedId;
   }
+  /** The system anything project-wide speaks for - the focused one, else the first. undefined when empty.
+   *  The recents name / song and the song watcher all read this one instance. */
+  primary(): SystemEntry | undefined {
+    return this.entries.find((e) => e.id === this.focusedId) ?? this.entries[0];
+  }
   isDirty(): boolean {
     return this.dirty;
   }
