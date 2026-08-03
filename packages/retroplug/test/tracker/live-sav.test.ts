@@ -6,21 +6,24 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";
-import { mutateLiveSav, loadSongByName, loadSongInPrimary, lsdjSongCatalog } from "../../src/tracker";
+import { mutateLiveSav, loadSongByName, loadSongInPrimary, lsdjSongCatalog, songLoadWouldDiscard, songLoadByNameWouldDiscard } from "../../src/tracker";
 import { lsdjRom, gbRomBattery } from "../systems/fixtures";
-import { savFrom, type SavInput } from "../../src/lsdjSav";
+import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
 
 const SONG = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
 
-// An LSDj battery with GRUB + INTRO saved and `active` loaded into working memory.
+// An LSDj battery with GRUB + INTRO saved and `active` genuinely loaded into working memory. savFrom alone
+// only sets the active POINTER, leaving working memory as the model's default - which reads as uncommitted
+// work (correctly: it matches no slot). Copying the song in is what a real cart looks like after a load.
 function lsdjSav(active: number): Uint8Array {
-  return savFrom({
+  const sav = savFrom({
     activeProjectIndex: active,
     projects: [
       { name: "GRUB", version: 0, song: SONG },
       { name: "INTRO", version: 0, song: SONG },
     ],
   } as SavInput);
+  return loadSongToWorking(sav, active) ?? sav;
 }
 
 // A live LSDj system with GRUB working. The store carries the role registry, so the cart resolves a song
@@ -130,4 +133,57 @@ test("mutateLiveSav: a declining transform writes no backup either", () => {
   const { be, systems, sys } = newCart();
   expect(mutateLiveSav(be, systems, sys(), () => null)).toBeFalsy();
   expect(be.readFile("/roms/lsdj.sav.bak")).toBe(null);
+});
+
+test("mutateLiveSav: a backup that CANNOT be written never blocks the edit", () => {
+  const { be, systems, sys } = newCart();
+  // The RPC layer throws on a backend error (makeCall turns an error reply into an exception), so this is
+  // what a read-only ROM folder looks like from here. The safety net must not become the failure.
+  const realWriteFile = be.writeFile.bind(be);
+  be.writeFile = (path: string, data: Uint8Array) => {
+    if (path.endsWith(".bak")) throw new Error("EROFS: read-only file system");
+    return realWriteFile(path, data);
+  };
+
+  expect(mutateLiveSav(be, systems, sys(), (sav) => lsdjSongCatalog.load(sav, 1))).toBeTruthy();
+  expect(lsdjSongCatalog.workingName(be.readFile("/roms/lsdj.sav")!)).toBe("INTRO"); // the edit still landed
+  expect(be.readFile("/roms/lsdj.sav.bak")).toBe(null); // just without a backup
+});
+
+// --- the guard's decision, shared by the Songs menu and the Recent list ------------------------------
+// Both destroy the working song through the same catalog.load, so both ask the same question here rather
+// than each deciding for itself.
+
+test("songLoadWouldDiscard: true only when the working song is committed nowhere", () => {
+  const { be, systems, sys } = newCart();
+  expect(songLoadWouldDiscard(systems, sys())).toBe(false); // GRUB working == its slot
+
+  const edited = be.readSram(sys().id)!.slice();
+  edited[0x100] ^= 0xff;
+  be.setSram(sys().id, edited);
+  expect(songLoadWouldDiscard(systems, sys())).toBe(true);
+});
+
+test("songLoadWouldDiscard: a non-tracker cart never prompts (no positive signal, no warning)", () => {
+  const be = new MockBackend("/cfg");
+  const systems = new SystemsStore(be, () => {}, buildAppRegistry());
+  be.seed("/roms/plain.gb", gbRomBattery());
+  const id = systems.addSystem("/roms/plain.gb")!;
+  be.setSram(id, new Uint8Array(0x2000).fill(7));
+  expect(songLoadWouldDiscard(systems, systems.systems()[0])).toBe(false);
+});
+
+test("songLoadByNameWouldDiscard: re-picking the song you are ON never prompts", () => {
+  const { be, systems, sys } = newCart();
+  const edited = be.readSram(sys().id)!.slice();
+  edited[0x100] ^= 0xff; // dirty, so the plain guard WOULD fire
+  be.setSram(sys().id, edited);
+  expect(songLoadWouldDiscard(systems, sys())).toBe(true);
+
+  // ...but loadSongByName no-ops for the loaded song, so it destroys nothing and must stay silent.
+  expect(songLoadByNameWouldDiscard(systems, sys(), "GRUB")).toBe(false);
+  // A DIFFERENT song would really load, so the warning stands.
+  expect(songLoadByNameWouldDiscard(systems, sys(), "INTRO")).toBe(true);
+  // A song that isn't there loads nothing either.
+  expect(songLoadByNameWouldDiscard(systems, sys(), "NOSUCH")).toBe(false);
 });

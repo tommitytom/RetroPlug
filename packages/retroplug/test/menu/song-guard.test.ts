@@ -9,7 +9,8 @@ import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { lsdjRom } from "../systems/fixtures";
 import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
 import { lsdjSongCatalog } from "../../src/tracker";
-import { savSongName, decompressSlot } from "../../src/lsdj/codec/sav";
+import { savSongName, decompressSlot, freeSongSlot, injectSong } from "../../src/lsdj/codec/sav";
+import { canSaveWorkingToCatalog } from "../../src/lsdjSongOps";
 
 const findItem = (items: MenuItem[], id: string): MenuItem | undefined => items.find((i) => i.id === id);
 const submenuChildren = (items: MenuItem[], id: string): MenuItem[] => findItem(items, id)?.children ?? [];
@@ -110,4 +111,82 @@ test("Replace confirms before touching a saved slot", () => {
   expect(replace.kind).toBe("prompt");
   expect(replace.prompt!.confirm).toBe(true);
   expect(replace.prompt!.title).toBe('Replace saved song "INTRO"?');
+});
+
+// --- the UNLINKED LSDj path: no name to inherit, so the guard has to ask for one ---------------------
+
+// A working song that matches no slot AND names none: LSDj keeps names on the stored project, not in the
+// song, so committing this needs a name from the user.
+function unlinkedDirtySav(): Uint8Array {
+  const s = loadSongToWorking(twoSongSav(), 0)!;
+  s[0x100] ^= 0xff; // matches no slot
+  s[0x8140] = 0xff; // and names none
+  return s;
+}
+
+test("an unlinked working song turns Save & Load into a name prompt", () => {
+  const { songRow } = cart(unlinkedDirtySav());
+  const save = findItem(findItem(songRow(1), "lsdj-song-1-load")!.children!, "lsdj-song-1-load-save")!;
+  expect(save.kind).toBe("prompt");
+  expect(save.prompt!.title).toBe("Save working song as:");
+  expect(save.prompt!.initial).toBe("UNTITLED");
+  // LSDj song names are uppercase-only, so the field cases as you type rather than rejecting letters.
+  expect(save.prompt!.casing).toBe("upper");
+  expect(save.prompt!.filter!("A")).toBe(true);
+  expect(save.prompt!.filter!("7")).toBe(true);
+  expect(save.prompt!.filter!(" ")).toBe(true);
+  expect(save.prompt!.filter!("/")).toBe(false);
+});
+
+test("the name prompt refuses an empty name and keeps itself open", () => {
+  const { songRow, savOnDisk } = cart(unlinkedDirtySav());
+  const save = findItem(findItem(songRow(1), "lsdj-song-1-load")!.children!, "lsdj-song-1-load-save")!;
+  // A non-null return is the error channel: the overlay stays up, shown red, and nothing was written.
+  expect(save.prompt!.onConfirm("   ")).toBe("name required");
+  expect(save.prompt!.onConfirm("///")).toBe("name required"); // filtered down to nothing
+  expect(savOnDisk()).toBe(null);
+});
+
+test("the name prompt commits under the typed name, then loads - still one cold boot", () => {
+  const { be, songRow, savOnDisk } = cart(unlinkedDirtySav());
+  const edited = unlinkedDirtySav().slice(0, 0x8000);
+  const writesBefore = be.constructCalls.length;
+  const save = findItem(findItem(songRow(1), "lsdj-song-1-load")!.children!, "lsdj-song-1-load-save")!;
+
+  expect(save.prompt!.onConfirm("my song!")).toBe(null); // null closes the overlay = success
+
+  const out = savOnDisk()!;
+  // Cased + filtered + clamped to LSDj's 8 chars.
+  expect(lsdjSongCatalog.list(out).some((s) => s.name === "MY SONG")).toBe(true);
+  expect(lsdjSongCatalog.list(out).length).toBe(3); // a new slot, the two originals untouched
+  expect([...decompressSlot(out, 2)!]).toEqual([...edited]); // the work survived
+  expect(lsdjSongCatalog.workingName(out)).toBe("INTRO"); // and the picked song is loaded
+  expect(be.constructCalls.length - writesBefore).toBe(1);
+});
+
+test("a full catalog offers no save, and says why instead of failing on click", () => {
+  // A GENUINELY full catalog (real songs injected until no slot is free), not a hand-poked alloc table:
+  // freeSongSlot has to find nothing while every listed slot still decompresses.
+  let full = loadSongToWorking(twoSongSav(), 0)!;
+  for (;;) {
+    const slot = freeSongSlot(full);
+    if (slot < 0) break;
+    const next = injectSong(full, slot, `S${slot}`, 0, full.slice(0, 0x8000));
+    if (!next) break; // out of block budget - full enough either way
+    full = next;
+  }
+  // Fill FIRST, edit after: filling with the working song would make it match one of the new slots, and
+  // the guard would (correctly) never appear.
+  full[0x100] ^= 0xff; // matches no slot
+  full[0x8140] = 0xff; // and names none - so it is the working song that has nowhere to go
+  expect(canSaveWorkingToCatalog(full)).toBe(false);
+
+  const { songRow } = cart(full);
+  const children = findItem(songRow(1), "lsdj-song-1-load")!.children!;
+  expect(findItem(children, "lsdj-song-1-load-save")).toBe(undefined);
+  const unavailable = findItem(children, "lsdj-song-1-load-save-unavailable")!;
+  expect(unavailable.label).toBe("Save Working Song & Load (no free slot)");
+  expect(unavailable.disabled).toBe(true);
+  // Discarding is still offered - the user is not trapped.
+  expect(findItem(children, "lsdj-song-1-load-discard")?.kind).toBe("action");
 });

@@ -53,9 +53,17 @@ export function mutateLiveSav(
   if (!out) return false;
   const target = resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath);
   // Back up the PRE-MUTATION LIVE battery, not the on-disk file: that is the state actually being
-  // destroyed, and under the OnProjectSave preference the on-disk copy can be much older. Best-effort -
-  // a backup that can't be written must never block the edit the user asked for.
-  backend.writeFile(backupSavPath(target), bytes);
+  // destroyed, and under the OnProjectSave preference the on-disk copy can be much older.
+  //
+  // Genuinely best-effort, hence the catch: the RPC layer THROWS on a backend error (makeCall turns an
+  // error reply into an exception), so an unwritable directory - a ROM on read-only media, say - would
+  // otherwise propagate out of here and break the edit the user actually asked for. A safety net is not
+  // allowed to be the thing that breaks the feature.
+  try {
+    backend.writeFile(backupSavPath(target), bytes);
+  } catch {
+    // no backup this time; the edit still goes ahead
+  }
   if (!backend.writeFileAtomic(target, out)) return false;
   return systems.loadSram(sys.id, target) !== null;
 }

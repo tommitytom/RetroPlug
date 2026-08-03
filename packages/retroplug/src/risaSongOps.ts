@@ -175,7 +175,15 @@ export function workingSongDirty(rawSave: Uint8Array): boolean {
   // stamping 'current entry', so a song loaded from the Songs menu sits here with content identical to the
   // slot it came from. Asking "is it committed anywhere" rather than "does it name a slot" is what stops
   // the prompt firing after every single load - which would train people to dismiss it.
-  const count = parseCatalog(save, layout).count;
+  //
+  // parseCatalog throws on a malformed catalog, and this runs on every menu build, so it degrades to "no
+  // match found" rather than taking the menu down - which is also the safe answer: it warns.
+  let count: number;
+  try {
+    count = parseCatalog(save, layout).count;
+  } catch {
+    return true;
+  }
   for (let i = 0; i < count; i++) if (matchesSlot(save, i)) return false;
   return true;
 }

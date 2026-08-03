@@ -5,7 +5,7 @@
 // the other direction, where the cost is silent data loss.
 //
 // Live-cart stability (the clock ticking under a running core) is the twin of this file in
-// test-native/lsdj-working-dirty.test.ts.
+// test-native/tracker-working-dirty.test.ts.
 import { test, expect } from "../../testing/harness";
 import { lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
 import { savBytes as lsdjSav } from "../lsdj/fixtures";
@@ -98,4 +98,37 @@ test("risa: an edit is caught whether or not the working song names a slot", () 
   const editedUnlinked = normalizeSaveContainer(loaded).save;
   editedUnlinked[0x40] ^= 0xff;
   expect(risaSongCatalog.workingSongDirty!(editedUnlinked)).toBe(true);
+});
+
+// --- robustness: this runs on EVERY menu build, so it must never throw --------------------------------
+// decompressProject (LSDj) and parseCatalog (risa) both throw on malformed input, and a battery can be
+// corrupt, hand-edited, or simply not the console we think it is. A throw here would take the whole menu
+// down; the safe degraded answer is "dirty", which warns rather than silently discarding.
+
+test("lsdj: a corrupt or undersized battery answers instead of throwing", () => {
+  const good = loadSongToWorking(lsdjSav("all"), 0)!;
+
+  // An alloc table claiming slots whose blocks hold no valid stream.
+  const corruptBlocks = good.slice();
+  for (let i = 0; i < 191; i++) corruptBlocks[0x8100 + i] = i % 32;
+  corruptBlocks[0x8140] = 0xff;
+  expect(typeof lsdjSongCatalog.workingSongDirty!(corruptBlocks)).toBe("boolean");
+
+  // An active pointer naming a slot that owns nothing.
+  const danglingActive = good.slice();
+  danglingActive[0x8140] = 31; // no blocks are tagged 31 in this fixture
+  expect(lsdjSongCatalog.workingSongDirty!(danglingActive)).toBe(true);
+
+  // Too small to be a sav at all: no signal, so no warning.
+  expect(lsdjSongCatalog.workingSongDirty!(new Uint8Array(16))).toBe(false);
+  expect(lsdjSongCatalog.workingSongDirty!(new Uint8Array(0))).toBe(false);
+});
+
+test("risa: an unrecognized container or legacy layout answers instead of throwing", () => {
+  // Not a risa container size at all.
+  expect(risaSongCatalog.workingSongDirty!(new Uint8Array(123))).toBe(false);
+  // A 64 KB buffer with no RSAV catalog: parseCatalog would throw on the unlinked scan.
+  expect(typeof risaSongCatalog.workingSongDirty!(new Uint8Array(0x10000))).toBe("boolean");
+  // Legacy layout overlaps the working-song banks, so there is nothing meaningful to compare.
+  expect(risaSongCatalog.workingSongDirty!(risaSav("legacy_4xtreme"))).toBe(false);
 });

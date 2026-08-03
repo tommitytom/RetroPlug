@@ -228,7 +228,15 @@ export function workingSongDirty(savBytes: Uint8Array): boolean {
 // after a load; test-native/tracker-working-dirty guards both, so a build that does churn shows up as a
 // failing test rather than as a prompt nobody can turn off.
 function matchesSlot(savBytes: Uint8Array, slot: number): boolean {
-  const stored = decompressSlot(savBytes, slot);
+  // decompressProject THROWS on a slot whose blocks don't decode (a corrupt or hand-edited alloc table can
+  // claim blocks that hold no valid stream). This runs on every menu build, so it must degrade to "no
+  // match" rather than take the menu down - and "no match" is also the safe answer: it warns.
+  let stored: Uint8Array | null;
+  try {
+    stored = decompressSlot(savBytes, slot);
+  } catch {
+    return false;
+  }
   if (!stored) return false;
   const working = savBytes.subarray(kWorkingSong, kSongBytes);
   return working.length === stored.length && working.every((b, i) => b === stored[i]);
