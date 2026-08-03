@@ -41,6 +41,27 @@ float dbToLin(float dB) {
     return dB > -90.0f ? std::pow(10.0f, dB * 0.05f) : 0.0f;
 }
 
+// Core makeup gain, applied on top of the user's gainDb trim so a NES sits at the same level as a
+// Game Boy. NOT a taste knob: the 2A03 mixer is UNIPOLAR (GetOutputVolume sums non-negative terms to
+// a ceiling of 4999, x4 = 19996 in NesSoundMixer::EndFrame), so once blip_buf's highpass strips the
+// DC a sustained tone can only swing +/-9998 - half the numeric range is DC that never reaches the
+// output. SameBoy's DAC is bipolar and uses all of its +/-16320. Hence the gap (~5 dB measured over
+// six LSDj songs against three risa songs).
+//
+// The value is forced: 32767/19996 = 1.639 is the largest makeup that can never clip the 2A03, and at
+// that gain the sustained ceiling becomes 9998 * 1.639 = 16384, which IS SameBoy's 16320. The maximum
+// safe gain and the level-matching gain are the same number.
+//
+// Safe for the 2A03, VRC6, N163, FDS and MMC5 squares. Sunsoft 5B and MMC5 PCM clip past it, but both
+// already wrap Mesen's `int16_t currentOutput = GetOutputVolume() * 4` upstream of us. Mesen's GBA path
+// subtracts its bias before scaling, so it is already bipolar at +/-16384 and gets NO makeup.
+constexpr float kNesMakeupDb = 4.29f;
+
+// The makeup must not lift a trim-to-mute off zero, so the -90 dB kill is tested on the USER value.
+float nesGain(float userDb) {
+    return userDb > -90.0f ? dbToLin(userDb + kNesMakeupDb) : 0.0f;
+}
+
 // NES NTSC palette (matches the legacy Mesen integration so colors don't
 // drift between old and new builds).
 constexpr uint32_t kNesPalette[64] = {
@@ -82,7 +103,7 @@ MesenNesSystem::MesenNesSystem(SystemId id,
       config_(std::move(config)),
       rom_(std::move(romBytes)) {
     gainSmoother_.setTimeConstant(0.020f);
-    gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
+    gainSmoother_.setTargetValue(nesGain(config_.gainDb));
 }
 
 MesenNesSystem::~MesenNesSystem() {
@@ -99,7 +120,7 @@ void MesenNesSystem::onActivate(double sampleRate) {
     sampleRate_  = sampleRate;
 
     gainSmoother_.setSampleRate(static_cast<float>(sampleRate));
-    gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
+    gainSmoother_.setTargetValue(nesGain(config_.gainDb));
     gainSmoother_.clearToTargetValue();
 
     // Mesen's home folder + message options are process-global; set them once, thread-safely, so
@@ -223,7 +244,7 @@ void MesenNesSystem::onReset() {
 
 void MesenNesSystem::setGainDb(float dB) {
     config_.gainDb = dB;
-    gainSmoother_.setTargetValue(dbToLin(dB));
+    gainSmoother_.setTargetValue(nesGain(dB));
 }
 
 void MesenNesSystem::setRemoveSpriteLimit(bool on) {
