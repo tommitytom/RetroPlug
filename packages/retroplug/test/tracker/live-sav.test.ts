@@ -93,3 +93,41 @@ test("loadSongInPrimary: targets the focused system, and declines with no system
   const empty = new SystemsStore(new MockBackend("/cfg"), () => {}, buildAppRegistry());
   expect(loadSongInPrimary(be, empty, "INTRO")).toBeFalsy();
 });
+
+// --- the rolling backup -----------------------------------------------------------------------------
+// Every destructive battery edit goes through mutateLiveSav, so backing up there covers Load / Replace /
+// Delete / Add / reorder at once - including any op added later that forgets to think about it. It is the
+// last line of defence when a confirm is dismissed, or a path grows that never raises one.
+
+test("mutateLiveSav: writes a <sav>.bak of the PRE-EDIT battery before overwriting the .sav", () => {
+  const { be, systems, sys } = newCart();
+  const before = be.readSram(sys().id)!; // GRUB working
+
+  expect(mutateLiveSav(be, systems, sys(), (sav) => lsdjSongCatalog.load(sav, 1))).toBeTruthy();
+
+  // The .sav is the NEW state...
+  expect(lsdjSongCatalog.workingName(be.readFile("/roms/lsdj.sav")!)).toBe("INTRO");
+  // ...and the backup is exactly what was there before, so the discarded working song is recoverable.
+  const bak = be.readFile("/roms/lsdj.sav.bak");
+  expect(bak != null).toBeTruthy();
+  expect([...bak!]).toEqual([...before]);
+  expect(lsdjSongCatalog.workingName(bak!)).toBe("GRUB");
+});
+
+test("mutateLiveSav: the backup is the LIVE battery, not the stale copy on disk", () => {
+  const { be, systems, sys } = newCart();
+  // Simulate the OnProjectSave default: an older mirror on disk while the live battery has moved on.
+  be.writeFile("/roms/lsdj.sav", lsdjSav(1));
+  const live = be.readSram(sys().id)!; // still GRUB working
+
+  expect(mutateLiveSav(be, systems, sys(), (sav) => lsdjSongCatalog.load(sav, 1))).toBeTruthy();
+
+  // Backing up the file would have preserved the stale INTRO state and lost the live one.
+  expect([...be.readFile("/roms/lsdj.sav.bak")!]).toEqual([...live]);
+});
+
+test("mutateLiveSav: a declining transform writes no backup either", () => {
+  const { be, systems, sys } = newCart();
+  expect(mutateLiveSav(be, systems, sys(), () => null)).toBeFalsy();
+  expect(be.readFile("/roms/lsdj.sav.bak")).toBe(null);
+});

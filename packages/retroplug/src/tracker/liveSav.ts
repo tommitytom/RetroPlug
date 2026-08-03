@@ -21,13 +21,26 @@ export interface LiveSavTarget {
   roles: RoleInstance[];
 }
 
-type SavBackend = Pick<ControlPlaneBackend, "writeFileAtomic">;
+type SavBackend = Pick<ControlPlaneBackend, "writeFileAtomic" | "writeFile">;
 type SavSystems = Pick<SystemsStore, "readSram" | "loadSram">;
 type FocusedSystems = SavSystems & Pick<SystemsStore, "primary">;
 
+/** The rolling backup a destructive battery edit leaves behind - `<sav>.bak`, one per cart, overwritten
+ *  each time. Every op here (Load / Replace / Delete / Add / reorder) overwrites the `.sav` in place with
+ *  no undo, and Load in particular destroys the working song in RAM AND on disk, so this is the last line
+ *  of defence when a confirm is dismissed or a path grows that forgets to raise one. */
+export function backupSavPath(savPath: string): string {
+  return savPath + ".bak";
+}
+
 /** Apply a byte-level transform to `sys`'s live battery and boot the cart from the result. A no-op (false)
  *  when there's no readable SRAM, the transform declines (null - malformed input / no space / bad index),
- *  or the `.sav` can't be written; the running system is left untouched in every one of those cases. */
+ *  or the `.sav` can't be written; the running system is left untouched in every one of those cases.
+ *
+ *  Fully SYNCHRONOUS, and that is load-bearing: the Continuous SRAM auto-save pump (useSramAutoSave) runs
+ *  on the frame tick, so single-threaded JS means it can never observe the half-applied state between the
+ *  write and the cold boot. `loadSram` also allocates a NEW system id, so the pump's cached hash for the
+ *  old id is pruned and the next tick re-seeds from the file just written rather than clobbering it. */
 export function mutateLiveSav(
   backend: SavBackend,
   systems: SavSystems,
@@ -39,6 +52,10 @@ export function mutateLiveSav(
   const out = fn(bytes);
   if (!out) return false;
   const target = resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath);
+  // Back up the PRE-MUTATION LIVE battery, not the on-disk file: that is the state actually being
+  // destroyed, and under the OnProjectSave preference the on-disk copy can be much older. Best-effort -
+  // a backup that can't be written must never block the edit the user asked for.
+  backend.writeFile(backupSavPath(target), bytes);
   if (!backend.writeFileAtomic(target, out)) return false;
   return systems.loadSram(sys.id, target) !== null;
 }
@@ -65,4 +82,30 @@ export function loadSongByName(backend: SavBackend, systems: SavSystems, sys: Li
 export function loadSongInPrimary(backend: SavBackend, systems: FocusedSystems, name: string): boolean {
   const sys = systems.primary();
   return sys ? loadSongByName(backend, systems, sys, name) : false;
+}
+
+/** Would loading a DIFFERENT song into `sys` discard work that exists in no saved slot? The one place the
+ *  UI asks "should I warn about this", so the Songs menu and the Recent list can't drift apart - both
+ *  destroy the working song through the same `catalog.load`.
+ *
+ *  False whenever we cannot be certain: no tracker cart, unreadable battery, or a console whose catalog
+ *  doesn't implement the predicate. Warning only on a positive signal is the point - see the
+ *  `workingSongDirty` contract in ./songCatalog. */
+export function songLoadWouldDiscard(systems: SavSystems, sys: LiveSavTarget): boolean {
+  const catalog = resolveSongCatalog(sys.roles);
+  if (!catalog?.workingSongDirty) return false;
+  const sram = systems.readSram(sys.id);
+  return sram ? catalog.workingSongDirty(sram) : false;
+}
+
+/** `songLoadWouldDiscard`, but skipped when `name` is ALREADY the working song - loading the song you are
+ *  on is `loadSongByName`'s documented no-op, so it destroys nothing and must never prompt. The recents
+ *  path's gate (the menu addresses songs by index and checks the index instead). */
+export function songLoadByNameWouldDiscard(systems: SavSystems, sys: LiveSavTarget, name: string): boolean {
+  const catalog = resolveSongCatalog(sys.roles);
+  if (!catalog) return false;
+  const sram = systems.readSram(sys.id);
+  if (!sram || catalog.workingName(sram) === name) return false; // no-op load: nothing to lose
+  if (!catalog.list(sram).some((s) => s.name === name)) return false; // nothing to load either
+  return songLoadWouldDiscard(systems, sys);
 }

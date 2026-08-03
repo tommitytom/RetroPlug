@@ -14,4 +14,12 @@ export { lsdjSongCatalog } from "./lsdjSongCatalog";
 export { risaSongCatalog } from "./risaSongCatalog";
 export { lsdjAssetCatalog } from "./lsdjAssetCatalog";
 export { risaAssetCatalog } from "./risaAssetCatalog";
-export { mutateLiveSav, loadSongByName, loadSongInPrimary, type LiveSavTarget } from "./liveSav";
+export {
+  mutateLiveSav,
+  loadSongByName,
+  loadSongInPrimary,
+  songLoadWouldDiscard,
+  songLoadByNameWouldDiscard,
+  backupSavPath,
+  type LiveSavTarget,
+} from "./liveSav";
