@@ -43,13 +43,15 @@ test("lsdj: an edit to working memory IS caught, and an unlinked working song is
   edited[0x100] ^= 0xff;
   expect(lsdjSongCatalog.workingSongDirty!(edited)).toBe(true);
 
-  // Unlinked but the CONTENT still lives in a slot: not lost work, so no warning. "Is it committed
-  // anywhere" beats "does it name a slot" - the latter would fire after loads that lose nothing.
-  const unlinkedButSaved = loaded.slice();
-  unlinkedButSaved[0x8140] = 0xff;
-  expect(lsdjSongCatalog.workingSongDirty!(unlinkedButSaved)).toBe(false);
+  // Unlinked is dirty for LSDj, WITHOUT scanning the catalog for a matching slot - unlike risa's twin,
+  // which needs that scan because its load leaves the working song unlinked. LSDj's load always stamps
+  // activeProjectIndex, so unlinked means a fresh sav or a deleted active slot: the content really is gone.
+  // The scan cost 74 ms on a full 32-song sav on a per-menu-build path, to suppress a prompt in a case
+  // LSDj does not produce. Both a pristine and an edited working song answer dirty here.
+  const unlinkedPristine = loaded.slice();
+  unlinkedPristine[0x8140] = 0xff;
+  expect(lsdjSongCatalog.workingSongDirty!(unlinkedPristine)).toBe(true);
 
-  // Unlinked AND edited: committed nowhere, so it really would be lost.
   const unlinkedAndEdited = edited.slice();
   unlinkedAndEdited[0x8140] = 0xff;
   expect(lsdjSongCatalog.workingSongDirty!(unlinkedAndEdited)).toBe(true);
@@ -108,11 +110,18 @@ test("risa: an edit is caught whether or not the working song names a slot", () 
 test("lsdj: a corrupt or undersized battery answers instead of throwing", () => {
   const good = loadSongToWorking(lsdjSav("all"), 0)!;
 
-  // An alloc table claiming slots whose blocks hold no valid stream.
-  const corruptBlocks = good.slice();
-  for (let i = 0; i < 191; i++) corruptBlocks[0x8100 + i] = i % 32;
-  corruptBlocks[0x8140] = 0xff;
-  expect(typeof lsdjSongCatalog.workingSongDirty!(corruptBlocks)).toBe("boolean");
+  // Block data that decompressProject THROWS on (verified: "decompress overflowed 0x8000 bytes"). Both
+  // paths must land on DIRTY, because a slot that cannot be read cannot vouch for the working song.
+  // Asserting the DIRECTION is the point: "fail toward warning" is the contract, and a weaker check like
+  // `typeof x === "boolean"` holds just as well when a decode failure silently reports clean - which would
+  // discard the song with no prompt, the one outcome that costs the user work.
+  const linkedCorrupt = good.slice(); // activeProjectIndex still names slot 0
+  linkedCorrupt.fill(0, 0x8200); // wipe the block area
+  expect(lsdjSongCatalog.workingSongDirty!(linkedCorrupt)).toBe(true);
+
+  const unlinkedCorrupt = linkedCorrupt.slice();
+  unlinkedCorrupt[0x8140] = 0xff; // now the SCAN runs, and every slot it tries throws
+  expect(lsdjSongCatalog.workingSongDirty!(unlinkedCorrupt)).toBe(true);
 
   // An active pointer naming a slot that owns nothing.
   const danglingActive = good.slice();
@@ -125,10 +134,20 @@ test("lsdj: a corrupt or undersized battery answers instead of throwing", () => 
 });
 
 test("risa: an unrecognized container or legacy layout answers instead of throwing", () => {
-  // Not a risa container size at all.
+  // Not a risa container size at all, and a 64 KB buffer carrying no RSAV catalog: both stop at the
+  // layout gate, so there is no catalog to reason about and nothing to warn about.
   expect(risaSongCatalog.workingSongDirty!(new Uint8Array(123))).toBe(false);
-  // A 64 KB buffer with no RSAV catalog: parseCatalog would throw on the unlinked scan.
-  expect(typeof risaSongCatalog.workingSongDirty!(new Uint8Array(0x10000))).toBe("boolean");
+  expect(risaSongCatalog.workingSongDirty!(new Uint8Array(0x10000))).toBe(false);
   // Legacy layout overlaps the working-song banks, so there is nothing meaningful to compare.
   expect(risaSongCatalog.workingSongDirty!(risaSav("legacy_4xtreme"))).toBe(false);
+});
+
+test("risa: a catalog that fails to PARSE degrades to dirty (fail toward warning)", () => {
+  // Reaches the unlinked scan and throws inside it, which the earlier layout-gate cases never do: valid
+  // RSAV magic + version so chooseCatalogLayout accepts it, an unlinked working song so the scan runs, and
+  // a record walk that parseCatalog rejects (a count claiming more records than `used` can hold).
+  const save = normalizeSaveContainer(risaSav("v2_blumarbl")).save;
+  save[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = 0xff;
+  save[0x8000 + 5] = 0xff; // count = 255, far beyond the used-byte region
+  expect(risaSongCatalog.workingSongDirty!(save)).toBe(true);
 });

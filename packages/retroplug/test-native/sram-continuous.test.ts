@@ -47,8 +47,7 @@ test("Continuous mirrors a live battery to its .sav with no explicit save", () =
 
   // Continuous: first observation seeds against the file we just wrote (identical), so no write...
   userConfig.setSramAutoSave("Continuous");
-  const first = saver.pump();
-  console.log(`[continuous] first tick wrote ${first} system(s)`);
+  expect(saver.pump()).toBe(0);
 
   // ...and a steady, playing cart keeps costing nothing. This is the raw-hash fast path doing its job; if
   // the battery churned every frame this would write on every tick and the 2s poll would be a disk grinder.

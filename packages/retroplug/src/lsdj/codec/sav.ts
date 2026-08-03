@@ -205,11 +205,14 @@ export function workingSongDirty(savBytes: Uint8Array): boolean {
   const slot = activeSlot(savBytes);
   if (slot >= 0) return !matchesSlot(savBytes, slot);
 
-  // UNLINKED (activeProjectIndex 0xff). Usually genuinely lost work - a fresh sav, or a song whose slot was
-  // deleted - but ask "is this content committed anywhere" rather than assume, so a working song that does
-  // still exist in some slot never triggers a warning. The scan stops at the first match, and only runs on
-  // this uncommon path.
-  for (const p of listProjects(savBytes)) if (matchesSlot(savBytes, p.slot)) return false;
+  // UNLINKED (activeProjectIndex 0xff): committed nowhere, so it would be lost. No catalog scan here, and
+  // that is a deliberate difference from risa's twin. risa NEEDS a scan because its host-side load leaves
+  // the working song unlinked, so "unlinked" there routinely means "byte-identical to the slot it came
+  // from" and scanning is what stops a prompt after every load. LSDj's load always stamps
+  // activeProjectIndex, so unlinked here means a fresh sav or a deleted active slot - in both of which the
+  // content really is gone. Scanning anyway measured 74 ms on a full 32-song sav (every slot RLE-
+  // decompressed) on a path that runs on every instance-menu build; all it could buy was suppressing a rare
+  // spurious prompt, which is a bad trade against four frames of stalled UI.
   return true;
 }
 

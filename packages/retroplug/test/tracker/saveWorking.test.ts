@@ -10,6 +10,7 @@ import { loadSongToWorking, decompressSlot, savSongName } from "../../src/lsdj/c
 import { saveWorkingToCatalog, canSaveWorkingToCatalog } from "../../src/lsdjSongOps";
 import { saveWorkingToCatalog as risaSaveWorking, loadSongToWorkingInSav, workingSongSlot } from "../../src/risaSongOps";
 import { sameBytes } from "../_bytes";
+import { normalizeSaveContainer } from "../../src/risaSav";
 
 test("lsdj: saving a LINKED working song updates its own slot and clears the dirty flag", () => {
   const sav = lsdjSav("all");
@@ -90,4 +91,36 @@ test("risa: saving an UNLINKED working song appends a new slot and links it", ()
   expect(risaSongCatalog.list(saved).length).toBe(count + 1);
   expect(workingSongSlot(saved)).toBe(count); // linked to the slot it landed in
   expect(risaSongCatalog.workingSongDirty!(saved)).toBe(false);
+});
+
+test("lsdj: an unlinked save with no name declines rather than creating a blank-named slot", () => {
+  const sav = lsdjSav("all");
+  const unlinked = loadSongToWorking(sav, lsdjSongCatalog.list(sav)[0].index)!;
+  unlinked[0x100] ^= 0xff;
+  unlinked[0x8140] = 0xff;
+  // A song saved under a blank name is barely findable in the list again, so refuse instead.
+  expect(saveWorkingToCatalog(unlinked)).toBe(null);
+  expect(saveWorkingToCatalog(unlinked, "")).toBe(null);
+  // A LINKED song still needs no name - it inherits its slot's.
+  const linked = loadSongToWorking(sav, lsdjSongCatalog.list(sav)[0].index)!;
+  linked[0x100] ^= 0xff;
+  expect(saveWorkingToCatalog(linked) != null).toBe(true);
+});
+
+test("risa: a legacy-layout catalog is never updated in place (append or nothing)", () => {
+  // A legacy catalog lives at 0x6000 and does not reserve bank 1, so the 'current entry' offset there holds
+  // arbitrary working-song bytes. Treating that as a record index would overwrite a legacy record at a
+  // meaningless position - the in-place branch must decline and leave every existing record intact.
+  const legacy = normalizeSaveContainer(risaSav("multi_legacy")).save;
+  legacy[0x2000 + 0x1e94] = 2; // a plausible-looking "current entry" that means nothing here
+  const before = risaSongCatalog.list(legacy).map((s) => s.name);
+
+  let after: string[];
+  try {
+    after = risaSongCatalog.list(risaSaveWorking(legacy)).map((s) => s.name);
+  } catch {
+    after = before; // declining outright is also acceptable - what matters is no in-place clobber
+  }
+  // Every original song survives, in order. An append may add one on the end; nothing may be overwritten.
+  expect(after.slice(0, before.length)).toEqual(before);
 });

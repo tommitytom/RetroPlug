@@ -47,18 +47,40 @@ export function songRecordBytes(rawSave: Uint8Array, index: number): Uint8Array 
   return recordBytesAt(save, layout, index);
 }
 
+// risa's catalog is POSITIONAL: delete compacts and move re-packs, so every index above the edit shifts.
+// The working song's 'current entry' byte is one of those indices, and the record ops (deleteRecord /
+// moveRecord, which stay pure) don't know about it - so it has to be re-pointed here, or it silently comes
+// to name a DIFFERENT song. That matters twice over: saveWorkingToCatalog overwrites the slot it names
+// (destroying an unrelated song), and workingSongDirty compares against it (warning about the wrong one).
+// LSDj has always done the equivalent - see deleteSongInSav clearing kActiveProj and swapProjectSlots
+// following it - because it addresses fixed slot numbers; risa needs it precisely because it doesn't.
+const CURRENT_ENTRY = BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET;
+
 /** Delete the song at `index`, compacting the catalog. Returns the new 64 KB battery image. */
 export function deleteSongInSav(rawSave: Uint8Array, index: number): Uint8Array {
   const { save, layout } = editable(rawSave);
   deleteRecord(save, index, layout);
+  const cur = save[CURRENT_ENTRY];
+  // The linked song itself is gone -> unlinked (matching LSDj). Anything above it shifted down by one.
+  if (cur !== 0xff) save[CURRENT_ENTRY] = cur === index ? 0xff : cur > index ? cur - 1 : cur;
   return save;
 }
 
 /** Reorder: move the song at `from` to `to`. Returns the new 64 KB image (unchanged if from === to). */
 export function moveSongInSav(rawSave: Uint8Array, from: number, to: number): Uint8Array {
   const { save, layout } = editable(rawSave);
-  moveRecord(save, from, to, layout);
+  if (!moveRecord(save, from, to, layout)) return save; // from === to: nothing moved, nothing to re-point
+  const cur = save[CURRENT_ENTRY];
+  if (cur !== 0xff) save[CURRENT_ENTRY] = remapAfterMove(cur, from, to);
   return save;
+}
+
+/** Where index `cur` ends up after the record at `from` is spliced out and re-inserted at `to`. */
+function remapAfterMove(cur: number, from: number, to: number): number {
+  if (cur === from) return to; // the moved record itself
+  if (from < cur && cur <= to) return cur - 1; // moved down past it: it shifts up
+  if (to <= cur && cur < from) return cur + 1; // moved up past it: it shifts down
+  return cur; // outside the disturbed span
 }
 
 /** Overwrite the song at `index` with `record` (a whole record carrying its own length header). */
@@ -136,6 +158,27 @@ export function workingSongRecord(rawSave: Uint8Array): Uint8Array | null {
   return encodeRecord(readWorking(save));
 }
 
+/** Whether `saveWorkingToCatalog` has room for the working song - the cheap pre-flight behind the Songs
+ *  menu's disabled state, so the "save my work first" offer is never made when it would silently fail.
+ *  A LINKED song updates in place and only needs the size delta; an unlinked one needs a whole record's
+ *  worth of free space. Encoding the working song is the same work `saveWorkingToCatalog` would do, but the
+ *  menu asks this once per build, not per row. */
+export function canSaveWorkingToCatalog(rawSave: Uint8Array): boolean {
+  try {
+    const save = normalizeSaveContainer(rawSave).save;
+    const layout = chooseCatalogLayout(save);
+    if (!layout) return true; // no catalog yet: saving initializes a blank v2 one, which always fits
+    if (layout !== CURRENT_LAYOUT) return false; // legacy: saveWorkingToCatalog refuses to touch it
+    const record = encodeRecord(readWorking(save));
+    const cat = parseCatalog(save, layout);
+    const cur = save[CURRENT_ENTRY];
+    const replacing = cur !== 0xff && cur < cat.count ? cat.records[cur].length : 0;
+    return cat.free + replacing >= record.length;
+  } catch {
+    return false;
+  }
+}
+
 /** The catalog slot the working song is linked to, or -1 when UNLINKED (the 'current entry' byte is 0xff -
  *  a song that has never been saved). Unlinked working content exists nowhere else in the battery. */
 export function workingSongSlot(rawSave: Uint8Array): number {
@@ -203,9 +246,13 @@ function matchesSlot(save: Uint8Array, index: number): boolean {
     return false;
   }
   // expandRecordToWorking returns the whole banks-0..3 image, which is exactly the span
-  // loadSongToWorkingInSav overwrites - so its own length is the region to compare.
+  // loadSongToWorkingInSav overwrites - so its own length is the region to compare. SKIP the 'current
+  // entry' byte: it sits inside banks 0-3 but describes the LINK, not the song, and a fresh expansion
+  // always leaves it 0xff while a linked battery carries its slot number. Including it made the raw
+  // compare miss by exactly that one byte on every genuinely-clean cart, so the canonical fallback ran
+  // every single time - measured at roughly twice the intended cost, over a byte that is not song content.
   const working = save.subarray(0, expanded.length);
-  if (working.length === expanded.length && working.every((b, i) => b === expanded[i])) return true;
+  if (working.length === expanded.length && working.every((b, i) => i === CURRENT_ENTRY || b === expanded[i])) return true;
   try {
     const cw = encodeRecord(readWorking(save));
     const cs = encodeRecord(readWorking(expanded));
@@ -228,8 +275,14 @@ export function saveWorkingToCatalog(rawSave: Uint8Array): Uint8Array {
   const record = encodeRecord(readWorking(save));
   const before = chooseCatalogLayout(save);
 
+  // In-place only on the CURRENT layout, like every other function that reads this byte (workingSongDirty
+  // above, workingSongInfo in the codec). A legacy catalog sits at 0x6000 and does NOT reserve bank 1, so
+  // the 'current entry' offset there is just working-song bytes - an arbitrary value. Using it as a record
+  // INDEX would overwrite a legacy record at a meaningless position; the append path below at least lands
+  // at a valid cat.count. Live SRAM is always current-layout (the firmware migrates on boot), so this only
+  // guards artificial input - but it guards it in the direction that cannot corrupt a catalog.
   const current = save[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET];
-  if (before && current !== 0xff && current < parseCatalog(save, before).count) {
+  if (before === CURRENT_LAYOUT && current !== 0xff && current < parseCatalog(save, before).count) {
     writeRecord(save, current, record, before); // in-place: the slot the user has been editing
     return save;
   }

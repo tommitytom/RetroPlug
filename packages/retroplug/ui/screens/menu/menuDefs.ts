@@ -41,7 +41,14 @@ import {
 } from "../../../src/lsdjSongOps";
 import { activeSlot as lsdjActiveSlot } from "../../../src/lsdj/codec/sav";
 import { importSongFiles } from "../../../src/lsdjSongImport";
-import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav, workingSongRecord, saveWorkingToCatalog } from "../../../src/risaSongOps";
+import {
+  songRecordBytes,
+  replaceSongRecordInSav,
+  addSongRecordToSav,
+  workingSongRecord,
+  saveWorkingToCatalog,
+  canSaveWorkingToCatalog as canRisaSaveWorking,
+} from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
@@ -1119,6 +1126,7 @@ const risaSongSpec: SongMenuSpec = {
   exportWorking: risaExportWorking,
   saveWorkingToCatalog: risaSaveWorking,
   commitWorking: risaCommitWorking,
+  canCommitWorking: canRisaSaveWorking,
 };
 
 // The per-console UI bindings for a tracker integration: the file-dialog specs (Songs + assets, which own

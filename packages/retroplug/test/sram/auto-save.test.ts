@@ -264,19 +264,21 @@ test("pump: the raw-hash gate does not change the semantic verdict for an LSDj c
   be.setSram(id, sav.slice());
   expect(saver.pump()).toBe(0);
 
-  // A raw change that the SEMANTIC signature considers meaningless (the ticking clock) still must not
-  // write - the gate lets it through, and lsdjSramSignature makes the real call, exactly as before.
+  // A raw change the SEMANTIC signature calls meaningless must STILL not write. This is the case the gate
+  // could break: the raw hash sees a difference and lets it through, and lsdjSramSignature has to make the
+  // real call exactly as it did before. Same clock bytes the signature's own test uses.
   const ticked = sav.slice();
-  ticked[0x8000 - 1] = (ticked[0x8000 - 1] + 1) & 0xff; // volatile working-RAM byte the model doesn't carry
+  ticked[WORK_HOURS] = (ticked[WORK_HOURS] + 7) & 0xff;
+  ticked[0x3fb9] = (ticked[0x3fb9] + 7) & 0xff; // totalTimeChecksum
+  expect(hashBytes(ticked) === hashBytes(sav)).toBeFalsy(); // the gate really does see a change...
   be.setSram(id, ticked);
-  const wroteOnTick = saver.pump();
+  expect(saver.pump()).toBe(0); // ...and the semantic signature still says "nothing to save"
 
-  // A real edit always writes.
-  const edited = sav.slice();
-  edited[0x8140] = 0xff; // active-project pointer: modelled, so semantically meaningful
+  // A modelled byte IS meaningful, so it writes.
+  const edited = ticked.slice();
+  edited[TEMPO] = 90;
   be.setSram(id, edited);
   expect(saver.pump()).toBe(1);
-  expect(wroteOnTick === 0 || wroteOnTick === 1).toBeTruthy(); // whichever the signature says, consistently
 });
 
 test("pump: a cold-booted system re-seeds from disk instead of writing its old snapshot back", () => {
@@ -295,4 +297,34 @@ test("pump: a cold-booted system re-seeds from disk instead of writing its old s
 
   expect(saver.pump()).toBe(0); // first observation matches disk → seed, no write
   expect([...be.readFile(SAV)!]).toEqual([9, 9, 9]); // the edit survived the tick
+});
+
+test("pump(limit) examines at most `limit` systems per tick, round-robin over them all", () => {
+  const be = new MockBackend("/config");
+  const uc = new UserConfigStore(be);
+  uc.setSramAutoSave("Continuous");
+  const systems = new SystemsStore(be);
+  const saver = new SramAutoSaver(be, systems, uc);
+  be.seed("/proj/a.gb", gbRom());
+  be.seed("/proj/b.gb", gbRom());
+  be.seed("/proj/c.gb", gbRom());
+  const ids = ["/proj/a.gb", "/proj/b.gb", "/proj/c.gb"].map((p) => systems.addSystem(p)!);
+  ids.forEach((id, i) => be.setSram(id, bytes(i + 1)));
+
+  // Each tick writes exactly ONE system - the per-frame budget the UI relies on.
+  expect(saver.pump(1)).toBe(1);
+  expect(saver.pump(1)).toBe(1);
+  expect(saver.pump(1)).toBe(1);
+  // ...and after a full cycle every system has reached disk, so nothing is starved.
+  expect([...be.readFile("/proj/a.sav")!]).toEqual([1]);
+  expect([...be.readFile("/proj/b.sav")!]).toEqual([2]);
+  expect([...be.readFile("/proj/c.sav")!]).toEqual([3]);
+
+  // Steady state costs no writes, and the cursor keeps moving rather than sticking on one system.
+  expect(saver.pump(1) + saver.pump(1) + saver.pump(1)).toBe(0);
+
+  // A change on the LAST system is still picked up within one full cycle.
+  be.setSram(ids[2], bytes(9));
+  expect(saver.pump(1) + saver.pump(1) + saver.pump(1)).toBe(1);
+  expect([...be.readFile("/proj/c.sav")!]).toEqual([9]);
 });

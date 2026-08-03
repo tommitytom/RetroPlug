@@ -31,6 +31,7 @@ export function useSramAutoSave(stores: AppStores): void {
   useNativeEvent("frame", () => {
     if (++ticks.current < POLL_FRAMES) return;
     ticks.current = 0;
-    saver.current!.pump();
+    // One system per tick: bounded per-frame work, so a multi-cart project can't stall a frame.
+    saver.current!.pump(1);
   });
 }

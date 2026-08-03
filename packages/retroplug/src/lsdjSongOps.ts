@@ -32,7 +32,11 @@ export function saveWorkingToCatalog(sav: Uint8Array, name?: string): Uint8Array
   const linked = active !== 0xff && active < kProjectCount;
   const slot = linked ? active : freeSongSlot(sav);
   if (slot < 0) return null; // catalog full
-  const slotName = linked ? savSongName(sav, slot) : (name ?? "");
+  // Enforce the "name required" contract rather than silently creating a blank-named slot: a song the user
+  // can't find in the list later is barely better than one that was discarded. The menu's prompt rejects an
+  // empty name before it gets here, so this only catches a direct caller.
+  if (!linked && !name) return null;
+  const slotName = linked ? savSongName(sav, slot) : name!;
   const version = linked ? savSongVersion(sav, slot) : 0;
   const injected = injectSong(freeSong(sav, slot), slot, slotName, version, working);
   if (!injected) return null; // doesn't fit the block budget - leave the sav untouched

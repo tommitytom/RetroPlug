@@ -138,6 +138,8 @@ export class SramAutoSaver {
   // When the raw bytes DO move we fall through to the semantic signature, which still decides whether the
   // change is meaningful. Pump-only; flushOnSave always does the full comparison.
   private rawHashes = new Map<number, number>();
+  // Round-robin position for pump(limit), so a bounded tick still services every system over time.
+  private cursor = 0;
 
   constructor(
     private readonly backend: ControlPlaneBackend,
@@ -162,13 +164,23 @@ export class SramAutoSaver {
    *  hash (no write when unchanged). A no-op unless the preference is Continuous — Off /
    *  OnProjectSave leave the loose `.sav` to flushOnSave. The caller throttles the
    *  cadence. Returns the number of systems written this tick. */
-  pump(): number {
+  /** `limit` caps how many systems are examined this tick, round-robin across calls. Even the SKIP path
+   *  costs a ~10 ms whole-battery hash on the plugin's JIT-less runtime, so a 4-cart project would spend
+   *  ~40 ms in one frame - a visible stall - if every tick examined everything. The UI passes 1 to keep
+   *  per-frame work bounded; each cart is then still mirrored within a few seconds, against a feature that
+   *  previously did nothing at all. Callers wanting a full sweep (tests, an explicit flush) omit it. */
+  pump(limit = Infinity): number {
     if (this.userConfig.sramAutoSave() !== "Continuous") return 0;
     this.pruneDeadHashes();
+    const all = this.systems.systems();
+    if (all.length === 0) return 0;
+    const take = Math.min(all.length, limit);
     let written = 0;
-    for (const sys of this.systems.systems()) {
+    for (let n = 0; n < take; n++) {
+      const sys = all[(this.cursor + n) % all.length];
       if (this.flushSystem(sys.id, sys.romPath, sys.savSuffix, sys.savPath, true)) written++;
     }
+    this.cursor = (this.cursor + take) % all.length;
     return written;
   }
 
@@ -183,11 +195,13 @@ export class SramAutoSaver {
 
     // Cheap gate (pump only): if not one byte of the battery moved since last tick, nothing can need
     // writing, and we skip the semantic signature's codec round-trip entirely. Only valid once this system
-    // has been seen before - a first observation still has to consult the file on disk.
-    if (persistent && this.hashes.has(id)) {
-      const raw = hashBytes(savBytes);
-      if (this.rawHashes.get(id) === raw) return false;
-      this.rawHashes.set(id, raw);
+    // has been seen before - a first observation still has to consult the file on disk. Hashing 128 KB is
+    // itself ~10 ms on the plugin's JIT-less runtime, so `raw` is computed AT MOST ONCE per call and reused
+    // to reseed below rather than recomputed over the same unmutated buffer.
+    let raw: number | null = null;
+    if (persistent) {
+      raw = hashBytes(savBytes);
+      if (this.hashes.has(id) && this.rawHashes.get(id) === raw) return false;
     }
 
     const lastHash = persistent ? this.hashes.get(id) ?? null : null;
@@ -198,7 +212,7 @@ export class SramAutoSaver {
     if (decision.write && !this.backend.writeFile(savPath, savBytes)) return false; // retry next time
     if (persistent) {
       this.hashes.set(id, decision.hash);
-      this.rawHashes.set(id, hashBytes(savBytes)); // seed/refresh the cheap gate for the next tick
+      this.rawHashes.set(id, raw!); // seed/refresh the cheap gate for the next tick
     }
     return decision.write;
   }
