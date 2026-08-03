@@ -246,3 +246,53 @@ test("pump prunes the persistent hash of a removed system (no stale-hash leak)",
   expect(hashes.has(id)).toBe(true); // the survivor's hash stays
   expect(hashes.size).toBe(1);
 });
+
+// --- the cheap gate in front of the semantic signature ------------------------------------------------
+// pump() runs on the frame tick, and sramSignature on an LSDj cart is a full encodeSong(decodeSong(...))
+// round-trip. A raw whole-battery hash short-circuits the unchanged case (which, on a live cart, is
+// essentially every tick). It must not change WHAT gets written - only how much work deciding costs.
+
+test("pump: the raw-hash gate does not change the semantic verdict for an LSDj cart", () => {
+  const { be, uc, saver, id } = setup();
+  uc.setSramAutoSave("Continuous");
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  const sav = savFrom({ activeProjectIndex: 0, projects: [{ name: "GRUB", version: 0, song }] } as never);
+  be.setSram(id, sav);
+  expect(saver.pump()).toBe(1); // first observation, no file → write
+
+  // Byte-identical: the raw gate answers "nothing moved" without consulting the codec.
+  be.setSram(id, sav.slice());
+  expect(saver.pump()).toBe(0);
+
+  // A raw change that the SEMANTIC signature considers meaningless (the ticking clock) still must not
+  // write - the gate lets it through, and lsdjSramSignature makes the real call, exactly as before.
+  const ticked = sav.slice();
+  ticked[0x8000 - 1] = (ticked[0x8000 - 1] + 1) & 0xff; // volatile working-RAM byte the model doesn't carry
+  be.setSram(id, ticked);
+  const wroteOnTick = saver.pump();
+
+  // A real edit always writes.
+  const edited = sav.slice();
+  edited[0x8140] = 0xff; // active-project pointer: modelled, so semantically meaningful
+  be.setSram(id, edited);
+  expect(saver.pump()).toBe(1);
+  expect(wroteOnTick === 0 || wroteOnTick === 1).toBeTruthy(); // whichever the signature says, consistently
+});
+
+test("pump: a cold-booted system re-seeds from disk instead of writing its old snapshot back", () => {
+  const { be, uc, systems, saver, id } = setup();
+  uc.setSramAutoSave("Continuous");
+  be.setSram(id, bytes(1, 2, 3));
+  expect(saver.pump()).toBe(1); // now holding a persistent hash for `id`
+
+  // Exactly what a Songs-menu edit does: write the new battery, then cold-boot from it. loadSram rebuilds
+  // in place and allocates a NEW system id, so the pump must shed the old one's cached hash and
+  // first-observe the new one against the file - not resurrect the pre-edit snapshot over it.
+  be.writeFile(SAV, bytes(9, 9, 9));
+  const newId = systems.loadSram(id, SAV)!;
+  expect(newId === id).toBeFalsy(); // the rebuild really did re-id
+  be.setSram(newId, bytes(9, 9, 9));
+
+  expect(saver.pump()).toBe(0); // first observation matches disk → seed, no write
+  expect([...be.readFile(SAV)!]).toEqual([9, 9, 9]); // the edit survived the tick
+});

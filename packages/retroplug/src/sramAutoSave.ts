@@ -131,6 +131,13 @@ export class SramAutoSaver {
   // Persistent per-system hash of the last-written SRAM, used by pump() so the Continuous
   // idle-tick only writes on change. flushOnSave() uses a fresh (null) hash instead.
   private hashes = new Map<number, number>();
+  // Raw whole-battery hash of what each system looked like last tick — the cheap gate in front of the
+  // semantic signature. sramSignature on an LSDj cart is a full encodeSong(decodeSong(...)) round-trip over
+  // 32 KB, and the Continuous pump asks per system every couple of seconds; measured on a live cart the
+  // battery does not move at all during playback, so this hash answers "nothing to do" nearly every time.
+  // When the raw bytes DO move we fall through to the semantic signature, which still decides whether the
+  // change is meaningful. Pump-only; flushOnSave always does the full comparison.
+  private rawHashes = new Map<number, number>();
 
   constructor(
     private readonly backend: ControlPlaneBackend,
@@ -174,20 +181,35 @@ export class SramAutoSaver {
     const savBytes = this.backend.readSram(id);
     if (!savBytes || savBytes.length === 0) return false;
 
+    // Cheap gate (pump only): if not one byte of the battery moved since last tick, nothing can need
+    // writing, and we skip the semantic signature's codec round-trip entirely. Only valid once this system
+    // has been seen before - a first observation still has to consult the file on disk.
+    if (persistent && this.hashes.has(id)) {
+      const raw = hashBytes(savBytes);
+      if (this.rawHashes.get(id) === raw) return false;
+      this.rawHashes.set(id, raw);
+    }
+
     const lastHash = persistent ? this.hashes.get(id) ?? null : null;
     // The on-disk file is only needed for the first-observation seed check.
     const onDisk = lastHash === null ? this.backend.readFile(savPath) : null;
     const decision = decideAutoSave(savBytes, lastHash, onDisk);
 
     if (decision.write && !this.backend.writeFile(savPath, savBytes)) return false; // retry next time
-    if (persistent) this.hashes.set(id, decision.hash);
+    if (persistent) {
+      this.hashes.set(id, decision.hash);
+      this.rawHashes.set(id, hashBytes(savBytes)); // seed/refresh the cheap gate for the next tick
+    }
     return decision.write;
   }
 
   // Drop persistent hashes for systems that no longer exist (ids are monotonic, so this
-  // only sheds removed/reloaded ones).
+  // only sheds removed/reloaded ones). A cold boot (reload / loadSram / a Songs-menu edit) allocates a NEW
+  // id, so its state is shed here and the next tick re-seeds from the file on disk rather than writing a
+  // stale snapshot back over it.
   private pruneDeadHashes(): void {
     const live = new Set(this.systems.systems().map((s) => s.id));
     for (const id of this.hashes.keys()) if (!live.has(id)) this.hashes.delete(id);
+    for (const id of this.rawHashes.keys()) if (!live.has(id)) this.rawHashes.delete(id);
   }
 }

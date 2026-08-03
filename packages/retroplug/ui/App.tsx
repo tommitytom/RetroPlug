@@ -20,6 +20,7 @@ import { useProjectModals } from "./lvgl/useProjectModals";
 import { useFileBrowser } from "./lvgl/useFileBrowser";
 import { useSongImport } from "./lvgl/useSongImport";
 import { useSongWatch } from "./lvgl/useSongWatch";
+import { useSramAutoSave } from "./lvgl/useSramAutoSave";
 import { unsavedRows } from "./lvgl/unsavedRows";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
@@ -54,6 +55,7 @@ export function App() {
   const browser = useFileBrowser(stores); // in-app file browser overlay (openFileBrowser)
   const songImport = useSongImport(stores);
   useSongWatch(stores); // records the focused cart's song in Recent when it changes (incl. loads made inside the cart)
+  useSramAutoSave(stores); // mirrors each battery to its .sav under the Continuous preference (no-op otherwise)
   const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title
 
   const [menuOpen, setMenuOpen] = useState(true);
