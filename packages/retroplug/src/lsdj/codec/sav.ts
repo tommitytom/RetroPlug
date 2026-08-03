@@ -189,6 +189,51 @@ export function savSongVersion(savBytes: Uint8Array, slot: number): number {
   return savBytes[kProjectVers + slot];
 }
 
+/** The slot the working song was loaded from, or -1 when it is UNLINKED (activeProjectIndex 0xff - a
+ *  never-saved song, or one whose slot was deleted). Unlinked working content exists nowhere else. */
+export function activeSlot(savBytes: Uint8Array): number {
+  if (savBytes.length <= kActiveProj) return -1;
+  const idx = savBytes[kActiveProj];
+  return idx === 0xff || idx >= kProjectCount ? -1 : idx;
+}
+
+/** True when the working song holds content committed to no saved slot - what a Load would destroy. */
+export function workingSongDirty(savBytes: Uint8Array): boolean {
+  if (savBytes.length < kSavSize) return false; // not a full sav - nothing we can reason about
+
+  // The active slot first: the common case, and one comparison answers it.
+  const slot = activeSlot(savBytes);
+  if (slot >= 0) return !matchesSlot(savBytes, slot);
+
+  // UNLINKED (activeProjectIndex 0xff). Usually genuinely lost work - a fresh sav, or a song whose slot was
+  // deleted - but ask "is this content committed anywhere" rather than assume, so a working song that does
+  // still exist in some slot never triggers a warning. The scan stops at the first match, and only runs on
+  // this uncommon path.
+  for (const p of listProjects(savBytes)) if (matchesSlot(savBytes, p.slot)) return false;
+  return true;
+}
+
+// Does working memory hold what loading `slot` would put there? A RAW byte compare, deliberately - no
+// canonicalisation, even though lsdjSramSignature normalises through the Song model for its own purposes.
+//
+// The model is a lossless byte round-trip only WITH a template (see the block comment above); stored
+// projects don't get one, so `encodeSong(decodeSong(x))` zeroes ~300 bytes per song. Letting that decide
+// would mean an edit landing in any of those bytes reads as "clean" and the song is destroyed with no
+// warning - a false negative, which is the one failure mode that costs the user work. A false positive
+// merely shows a prompt. The asymmetry decides it. (risa canonicalises instead, because ITS working<->record
+// round-trip is documented byte-exact and it must absorb pre-v7 record migrations - see risaSongOps.)
+//
+// The obvious objection is LSDj's per-frame working-RAM churn. Measured on a live cart, not one byte of the
+// battery moves across 30s of playback, and every song in the fixture corpus compares equal immediately
+// after a load; test-native/tracker-working-dirty guards both, so a build that does churn shows up as a
+// failing test rather than as a prompt nobody can turn off.
+function matchesSlot(savBytes: Uint8Array, slot: number): boolean {
+  const stored = decompressSlot(savBytes, slot);
+  if (!stored) return false;
+  const working = savBytes.subarray(kWorkingSong, kSongBytes);
+  return working.length === stored.length && working.every((b, i) => b === stored[i]);
+}
+
 /** Load a stored song into working memory (offset 0) + mark it the active project — LSDj's FILE-screen
  *  load, byte-exact (no model). Returns a new image, or null if the slot is empty. */
 export function loadSongToWorking(savBytes: Uint8Array, slot: number): Uint8Array | null {

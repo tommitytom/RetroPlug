@@ -136,14 +136,96 @@ export function workingSongRecord(rawSave: Uint8Array): Uint8Array | null {
   return encodeRecord(readWorking(save));
 }
 
-/** Save the live working song into the catalog as a new slot, and link the working song to it (set the
- *  'current entry' byte to the new index) so it is no longer "unsaved". Appends the working record past the
- *  last catalog entry (initializing a blank v2 catalog first if there is none, keeping banks 0-3). Returns
- *  the new 64 KB image. Throws on a malformed working song / full catalog (the menu wraps it in tryOp). */
+/** The catalog slot the working song is linked to, or -1 when UNLINKED (the 'current entry' byte is 0xff -
+ *  a song that has never been saved). Unlinked working content exists nowhere else in the battery. */
+export function workingSongSlot(rawSave: Uint8Array): number {
+  try {
+    const save = normalizeSaveContainer(rawSave).save;
+    const idx = save[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET];
+    return idx === 0xff ? -1 : idx;
+  } catch {
+    return -1;
+  }
+}
+
+/** True when the working song holds content committed to no catalog slot - what a Load would destroy.
+ *  The risa twin of lsdj's workingSongDirty, and deliberately the same shape.
+ *
+ *  The question asked is "does working RAM differ from what loading the linked slot would put there", so
+ *  the stored side is run through `expandRecordToWorking` - the exact transform loadSongToWorkingInSav
+ *  applies. Raw bytes first (complete + cheap), then a canonical record compare as a tiebreak: records
+ *  older than v7 get in-place migrations on expand, so the raw images legitimately differ from a
+ *  freshly-read v7 record, and `readWorking(writeWorking(...))` is documented byte-exact against a
+ *  canonical v7 (see risa/codec/working.ts). A codec throw leaves the raw verdict, erring toward warning. */
+export function workingSongDirty(rawSave: Uint8Array): boolean {
+  let save: Uint8Array;
+  try {
+    save = normalizeSaveContainer(rawSave).save;
+  } catch {
+    return false; // unrecognized container - nothing we can reason about
+  }
+  const layout = chooseCatalogLayout(save);
+  if (layout !== CURRENT_LAYOUT) return false; // legacy layout overlaps banks 0-3
+
+  // The linked slot first: the common case, and a single comparison answers it.
+  const slot = workingSongSlot(save);
+  if (slot >= 0) return !matchesSlot(save, slot);
+
+  // UNLINKED. Not automatically lost work: risa's host-side load copies a record into working RAM without
+  // stamping 'current entry', so a song loaded from the Songs menu sits here with content identical to the
+  // slot it came from. Asking "is it committed anywhere" rather than "does it name a slot" is what stops
+  // the prompt firing after every single load - which would train people to dismiss it.
+  const count = parseCatalog(save, layout).count;
+  for (let i = 0; i < count; i++) if (matchesSlot(save, i)) return false;
+  return true;
+}
+
+// Does working RAM hold what loading catalog slot `index` would put there? Raw bytes first (complete and
+// cheap), then a canonical record compare as a tiebreak: records older than v7 get in-place migrations on
+// expand, so the raw images legitimately differ from a freshly-read v7 record, and
+// readWorking(writeWorking(...)) is documented byte-exact against a canonical v7 (risa/codec/working.ts).
+// A codec throw reports "no match", which errs toward warning.
+function matchesSlot(save: Uint8Array, index: number): boolean {
+  const record = recordBytesAt(save, CURRENT_LAYOUT, index);
+  if (!record) return false;
+  let expanded: Uint8Array;
+  try {
+    expanded = expandRecordToWorking(record);
+  } catch {
+    return false;
+  }
+  // expandRecordToWorking returns the whole banks-0..3 image, which is exactly the span
+  // loadSongToWorkingInSav overwrites - so its own length is the region to compare.
+  const working = save.subarray(0, expanded.length);
+  if (working.length === expanded.length && working.every((b, i) => b === expanded[i])) return true;
+  try {
+    const cw = encodeRecord(readWorking(save));
+    const cs = encodeRecord(readWorking(expanded));
+    return cw.length === cs.length && cw.every((b, i) => b === cs[i]);
+  } catch {
+    return false;
+  }
+}
+
+/** Save the live working song into the catalog and link the working song to it (set the 'current entry'
+ *  byte) so it is no longer "unsaved". Returns the new 64 KB image. Throws on a malformed working song /
+ *  full catalog (the menu wraps it in tryOp).
+ *
+ *  Two cases, mirroring lsdjSongOps.saveWorkingToCatalog:
+ *   - LINKED ('current entry' names a slot): UPDATE that slot in place. Appending here would leave a stale
+ *     duplicate of the song the user has been editing, which is the opposite of what "save my work" means.
+ *   - UNLINKED (0xff): append past the last catalog entry, initializing a blank v2 catalog when absent. */
 export function saveWorkingToCatalog(rawSave: Uint8Array): Uint8Array {
   const save = normalizeSaveContainer(rawSave).save; // a fresh copy — safe to mutate
   const record = encodeRecord(readWorking(save));
   const before = chooseCatalogLayout(save);
+
+  const current = save[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET];
+  if (before && current !== 0xff && current < parseCatalog(save, before).count) {
+    writeRecord(save, current, record, before); // in-place: the slot the user has been editing
+    return save;
+  }
+
   const newIndex = before ? parseCatalog(save, before).count : 0; // the slot the append will land in
   const out = addSongRecordToSav(save, record); // appends (+ inits a v2 catalog when absent), keeps banks 0-3
   out[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = newIndex & 0xff; // link working → the new slot
