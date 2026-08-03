@@ -111,9 +111,10 @@ test("each risa song row now offers Load / Export / Replace / Delete (LSDj parit
   const stores = composeAppStores({ backend: be });
   const { items } = risaSystem(be, stores);
   const row = submenuChildren(submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs"), "risa-song-2");
-  expect(findItem(row, "risa-song-2-load")?.kind).toBe("action");
+  expect(findItem(row, "risa-song-2-load")?.kind).toBe("action"); // plain: this cart's working song is clean
   expect(findItem(row, "risa-song-2-export")?.kind).toBe("action"); // NEW — parity with LSDj
-  expect(findItem(row, "risa-song-2-replace")?.kind).toBe("action"); // NEW — parity with LSDj
+  // Replace overwrites a SAVED slot with no undo, so it confirms first — like Delete beside it.
+  expect(findItem(row, "risa-song-2-replace")?.kind).toBe("prompt");
   expect(findItem(row, "risa-song-2-delete")?.kind).toBe("prompt");
   expect(findItem(row, "risa-song-2-up")?.kind).toBe("action"); // risa keeps reorder (catalog.reorder)
 });
@@ -176,7 +177,12 @@ test("Load expands the selected song into working memory end-to-end (current-lay
     "risa-songs",
   );
 
-  findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-load")!.onSelect!();
+  // This fixture's working song genuinely differs from its slot 0 record (a real cart dumped mid-edit), so
+  // Load is the guarded submenu rather than a bare action - go through "Discard & Load", which is the same
+  // byte-op the unguarded row runs.
+  const loadRow = findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-load")!;
+  expect(loadRow.kind).toBe("submenu");
+  findItem(loadRow.children!, "risa-song-0-load-discard")!.onSelect!();
 
   // The cold-booted core carries a battery whose working song (banks 0-3) is the expanded BLUMARBL, and
   // whose catalog (banks 4-7) is unchanged.

@@ -34,7 +34,12 @@ import { resolveSavPath, siblingPath, SAV_PATTERNS, isSavPath } from "../../../s
 import { stem, dirname, joinPath, shortenMiddle } from "../../../src/pathUtil";
 import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
 import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
-import { replaceSongInSav } from "../../../src/lsdjSongOps";
+import {
+  replaceSongInSav,
+  saveWorkingToCatalog as lsdjSaveWorkingToCatalog,
+  canSaveWorkingToCatalog,
+} from "../../../src/lsdjSongOps";
+import { activeSlot as lsdjActiveSlot } from "../../../src/lsdj/codec/sav";
 import { importSongFiles } from "../../../src/lsdjSongImport";
 import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav, workingSongRecord, saveWorkingToCatalog } from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
@@ -622,6 +627,11 @@ const sanitizeName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") |
 // Per-keystroke filter for the render Filename prompt: block path separators / dodgy chars at entry (a
 // space is allowed and folded to "_" by sanitizeName on confirm).
 const isFilenameChar = (ch: string): boolean => /^[A-Za-z0-9 ._-]$/.test(ch);
+// LSDj song names are 8 chars from its own font: uppercase letters, digits and space. Distinct from
+// sanitizeName above, which builds a FILENAME (lowercase + dots are fine there, not here). The prompt
+// pairs this with casing:"upper", so the field already shows what will be stored.
+const isSongNameChar = (ch: string): boolean => /^[A-Z0-9 ]$/.test(ch);
+const toSongName = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9 ]/g, "").trim().slice(0, 8);
 const readLsdjRom = (be: HostBackend, romPath: string): LsdjRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
   if (!bytes) return null;
@@ -771,8 +781,10 @@ const risaAssetSpec: AssetMenuSpec = { id: "risa", catalog: risaAssetCatalog, ex
 // screen) via mutateLiveSav (src/tracker/liveSav) - read the live sav, apply a BYTE-LEVEL transform (never
 // the lossy Song model - see lsdjSongOps), write the resolved .sav, cold-boot the core from it. Durable on
 // disk and reflected in the running LSDj. A no-op if there's no readable SRAM or the op returns null.
-function mutateSavBytes(ctx: MenuContext, sys: SystemView, fn: (sav: Uint8Array) => Uint8Array | null): void {
-  mutateLiveSav(ctx.stores.backend, ctx.stores.project.systems, sys, fn);
+// Returns whether the edit landed, so a caller that CHAINS edits (save the working song, then load another)
+// can stop when the first one declined rather than discarding work the save didn't actually preserve.
+function mutateSavBytes(ctx: MenuContext, sys: SystemView, fn: (sav: Uint8Array) => Uint8Array | null): boolean {
+  return mutateLiveSav(ctx.stores.backend, ctx.stores.project.systems, sys, fn);
 }
 
 // Export the saved song in `slot` to a picked `.lsdsng` file (byte-exact — decompress the slot, re-wrap).
@@ -856,6 +868,84 @@ interface SongMenuSpec {
   // song — risa). Export writes the working song to disk; saveToCatalog promotes it to a real saved slot.
   exportWorking?(ctx: MenuContext, sys: SystemView, name: string): void;
   saveWorkingToCatalog?(ctx: MenuContext, sys: SystemView): void;
+  // Commit the live working song into the catalog - the pure byte-op behind "Save Working Song & Load",
+  // which is the only answer to the discard prompt that PRESERVES the work. Null = declined (full catalog
+  // / malformed working song), which the menu surfaces as a disabled row rather than an action that fails.
+  // `name` arrives only when `workingNeedsName` asked for one. Omitted by a console with no such op.
+  commitWorking?(sav: Uint8Array, name?: string): Uint8Array | null;
+  // True when the working song has no name to inherit and the user must supply one. LSDj keeps names on the
+  // stored project rather than in the song, so an UNLINKED working song genuinely has none; risa's working
+  // song carries its own, and a LINKED LSDj song inherits its slot's - both answer false and save outright.
+  workingNeedsName?(sav: Uint8Array): boolean;
+  // Cheap "is there anywhere to put it" test, so the menu can grey the row instead of offering a save that
+  // fails. Deliberately NOT `commitWorking(sav) === null`: that compresses the whole song, and the answer is
+  // needed once per menu build (the guard is identical on every song row). Omitted = assume yes.
+  canCommitWorking?(sav: Uint8Array): boolean;
+}
+
+// The "Load..." row when loading would discard uncommitted work: a submenu whose children are the two real
+// answers, with Esc/Back as cancel. The first child is an inert line naming the casualty, so the warning is
+// visible without having to read the option labels - the same "say what is unsaved" convention the
+// unsaved-changes prompt follows. (A submenu rather than PromptSpec because there are three answers and
+// PromptSpec carries two.)
+function loadGuard(
+  spec: SongMenuSpec,
+  ctx: MenuContext,
+  sys: SystemView,
+  sav: Uint8Array,
+  workingLabel: string,
+  song: { index: number; name: string },
+  doLoad: () => void,
+): MenuItem {
+  const idp = `${spec.id}-song-${song.index}-load`;
+
+  // Commit + load as ONE byte-level mutation, not two chained ones. mutateLiveSav cold-boots the core and
+  // `loadSram` allocates a NEW system id, so a second call against the SystemView captured here would read
+  // a dead id and silently do nothing - discarding the very work the user asked to save. One transform also
+  // makes it atomic: either both land or the sav is untouched. Mirrors addLsdsngToSav's add-then-load.
+  const saveAndLoad = (name?: string): boolean => {
+    const ok = mutateSavBytes(ctx, sys, (bytes) => {
+      const saved = spec.commitWorking?.(bytes, name);
+      return saved ? spec.catalog.load(saved, song.index) : null;
+    });
+    if (ok) ctx.stores.project.recordSong(song.name);
+    return ok;
+  };
+
+  const saveRow = ((): MenuItem => {
+    if (!spec.commitWorking || !(spec.canCommitWorking?.(sav) ?? true)) {
+      // Not offerable: no such op, or the catalog can't take it (full). Say why rather than fail on click.
+      return action(`${idp}-save-unavailable`, "Save Working Song & Load (no free slot)", () => {}, true);
+    }
+    if (!spec.workingNeedsName?.(sav)) {
+      return action(`${idp}-save`, "Save Working Song & Load", () => void saveAndLoad());
+    }
+    return {
+      id: `${idp}-save`,
+      label: "Save Working Song & Load...",
+      kind: "prompt",
+      keepOpen: true,
+      prompt: {
+        title: "Save working song as:",
+        initial: "UNTITLED",
+        hint: "Enter to save + load  |  Esc to cancel",
+        casing: "upper",
+        filter: isSongNameChar,
+        onConfirm: (value) => {
+          const name = toSongName(value);
+          if (!name) return "name required";
+          return saveAndLoad(name) ? null : "couldn't save the working song";
+        },
+      },
+    };
+  })();
+
+  return submenu(idp, "Load...", [
+    action(`${idp}-warn`, `"${workingLabel}" has unsaved changes`, () => {}, true),
+    sep(`${idp}-warn-sep`),
+    saveRow,
+    action(`${idp}-discard`, "Discard & Load", doLoad),
+  ]);
 }
 
 function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem {
@@ -863,19 +953,47 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
   const bytes = ctx.stores.project.systems.readSram(sys.id);
   const songs = bytes ? cat.list(bytes) : [];
   const last = songs.length - 1;
+  // Would loading ANY song discard uncommitted work? One question per menu build, not per row - it's a
+  // property of the working song, not of the row you're pointing at. Loading the song you're already on
+  // still overwrites working memory from the stored slot, so every row is guarded, including that one.
+  const discards = bytes ? (cat.workingSongDirty?.(bytes) ?? false) : false;
+  const workingLabel = (bytes ? cat.workingName(bytes) : null) || "the working song";
+
   const rows: MenuItem[] = songs.map((s, i) => {
     const name = s.name || `Song ${s.index}`;
+    // Load, then record this song in recents right away - by NAME, since we know which one we just loaded
+    // and needn't wait for the rebuilt core to publish a battery snapshot. The song watcher would catch it
+    // on its next tick anyway (that's what covers a load made from INSIDE the cart), but a menu load is a
+    // deliberate act: its row should be at the top of Recent before the user gets back there.
+    const doLoad = (): void => {
+      mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index));
+      ctx.stores.project.recordSong(s.name);
+    };
     const items: MenuItem[] = [
-      // Load, then record this song in recents right away - by NAME, since we know which one we just loaded
-      // and needn't wait for the rebuilt core to publish a battery snapshot. The song watcher would catch it
-      // on its next tick anyway (that's what covers a load made from INSIDE the cart), but a menu load is a
-      // deliberate act: its row should be at the top of Recent before the user gets back there.
-      action(`${spec.id}-song-${s.index}-load`, "Load...", () => {
-        mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index));
-        ctx.stores.project.recordSong(s.name);
-      }),
+      // Clean working song: load outright - a confirm that fires when nothing would be lost is worse than
+      // none, because it trains people to dismiss it. Dirty: a submenu of the two ways forward, where
+      // backing out (Esc) IS the cancel. A submenu rather than a yes/no prompt because there are three
+      // answers and PromptSpec only carries two.
+      discards ? loadGuard(spec, ctx, sys, bytes!, workingLabel, s, doLoad) : action(`${spec.id}-song-${s.index}-load`, "Load...", doLoad),
       action(`${spec.id}-song-${s.index}-export`, "Export...", () => spec.exportSong(ctx, sys, s.index, name)),
-      action(`${spec.id}-song-${s.index}-replace`, "Replace...", () => spec.replaceSong(ctx, sys, s.index)),
+      // Replace overwrites a SAVED slot - the durable copy, gone with no undo - so it always confirms,
+      // whatever the working song's state. Confirm first, then browse: the picker is the console's own
+      // (it owns the file formats), and a cancel there simply does nothing.
+      {
+        id: `${spec.id}-song-${s.index}-replace`,
+        label: "Replace...",
+        kind: "prompt" as const,
+        keepOpen: true,
+        prompt: {
+          title: `Replace saved song "${name}"?`,
+          hint: "Enter to pick a file  |  Esc to cancel",
+          confirm: true,
+          onConfirm: () => {
+            spec.replaceSong(ctx, sys, s.index);
+            return null;
+          },
+        },
+      },
     ];
     if (cat.reorder) {
       // reorder takes LIST POSITIONS (index into the rendered list), not the row's `index` — they coincide
@@ -977,7 +1095,21 @@ function risaSaveWorking(ctx: MenuContext, sys: SystemView): void {
   mutateSavBytes(ctx, sys, (sav) => tryOp(() => saveWorkingToCatalog(sav)));
 }
 
-const lsdjSongSpec: SongMenuSpec = { id: "lsdj", catalog: lsdjSongCatalog, exportSong, replaceSong, addSong: addSongFromDisk };
+// risa's working song carries its own name, so it never needs one asked for - `workingNeedsName` is simply
+// absent (false) and the menu offers a plain "Save Working Song & Load".
+const risaCommitWorking = (sav: Uint8Array): Uint8Array | null => tryOp(() => saveWorkingToCatalog(sav));
+
+const lsdjSongSpec: SongMenuSpec = {
+  id: "lsdj",
+  catalog: lsdjSongCatalog,
+  exportSong,
+  replaceSong,
+  addSong: addSongFromDisk,
+  commitWorking: lsdjSaveWorkingToCatalog,
+  // Only an UNLINKED LSDj working song needs a name: a linked one inherits its slot's.
+  workingNeedsName: (sav) => lsdjActiveSlot(sav) < 0,
+  canCommitWorking: canSaveWorkingToCatalog,
+};
 const risaSongSpec: SongMenuSpec = {
   id: "risa",
   catalog: risaSongCatalog,
@@ -986,6 +1118,7 @@ const risaSongSpec: SongMenuSpec = {
   addSong: risaAddSong,
   exportWorking: risaExportWorking,
   saveWorkingToCatalog: risaSaveWorking,
+  commitWorking: risaCommitWorking,
 };
 
 // The per-console UI bindings for a tracker integration: the file-dialog specs (Songs + assets, which own

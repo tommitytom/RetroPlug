@@ -10,7 +10,7 @@ import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadToAction, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery } from "../systems/fixtures";
-import { savFrom, type SavInput } from "../../src/lsdjSav";
+import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
 import { lsdjSongCatalog } from "../../src/tracker";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
@@ -148,7 +148,10 @@ test("Songs > Load records the newly loaded song as its own recent row; picking 
   const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
   const sav = (active: number) =>
     savFrom({ activeProjectIndex: active, projects: [{ name: "GRUB", version: 0, song }, { name: "INTRO", version: 0, song }] } as SavInput);
-  be.setSram(id, sav(0)); // GRUB is the working song
+  // Load GRUB into working memory rather than just pointing at it, so the cart is in the state a real one
+  // would be: working song == its slot, nothing uncommitted. Otherwise Load is the unsaved-work guard
+  // (covered in menu/song-guard) instead of the plain row this test is about.
+  be.setSram(id, loadSongToWorking(sav(0), 0)!);
   stores.project.save("/proj/x.rplg"); // one row so far: GRUB
 
   // LSDj > Songs > [1] INTRO > Load... - records by name, so it doesn't depend on the rebuilt core having
