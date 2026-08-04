@@ -26,25 +26,25 @@ test("Settings > File Dialogs cycler actually toggles In-App <-> OS Native", () 
   ui.tapKey(Key.Enter);
   ui.pump(8);
 
-  // Starts at the default (In-App).
-  expect(labelOf("File Dialogs")).toBe("File Dialogs: In-App");
+  // Starts at the default (OS Native).
+  expect(labelOf("File Dialogs")).toBe("File Dialogs: OS Native");
 
-  // Enter steps it forward → OS Native.
+  // Enter wraps it forward → In-App.
   expect(navTo("File Dialogs")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(8);
-  expect(labelOf("File Dialogs")).toBe("File Dialogs: OS Native");
+  expect(labelOf("File Dialogs")).toBe("File Dialogs: In-App");
 
-  // Enter again wraps back → In-App (proves it's a live two-way toggle, not a one-shot write).
+  // Enter again steps back → OS Native (proves it's a live two-way toggle, not a one-shot write).
   ui.tapKey(Key.Enter);
   ui.pump(8);
-  expect(labelOf("File Dialogs")).toBe("File Dialogs: In-App");
+  expect(labelOf("File Dialogs")).toBe("File Dialogs: OS Native");
 
   // Left/Right cycle it too.
   ui.tapKey(Key.Right);
   ui.pump(8);
-  expect(labelOf("File Dialogs")).toBe("File Dialogs: OS Native");
+  expect(labelOf("File Dialogs")).toBe("File Dialogs: In-App");
   ui.tapKey(Key.Left);
   ui.pump(8);
-  expect(labelOf("File Dialogs")).toBe("File Dialogs: In-App");
+  expect(labelOf("File Dialogs")).toBe("File Dialogs: OS Native");
 });
