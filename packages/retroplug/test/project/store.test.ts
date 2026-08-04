@@ -110,22 +110,22 @@ test("project name: the derived display name follows the primary system (a paire
   project.systems.loadRom("/roms/lsdj.gb", { explicitSav: "/saves/mysong.sav" }); // paired override
   project.adoptRomProject("/roms/lsdj.gb");
   expect(project.displayName()).toBe("mysong"); // the sav stem, not "lsdj"
-  // The recents entry names the cart in full: the loaded sav (with its extension), then the ROM.
-  expect(recent.view()[0].label).toBe("mysong.sav - lsdj");
+  // The recents entry names the cart in full: the loaded sav (with its extension), then the bracketed ROM.
+  expect(recent.view()[0].label).toBe("mysong.sav [lsdj]");
 });
 
-test("recents name: a battery cart's own sibling sav collapses into the ROM name; a suffixed one doesn't", () => {
+test("recents name: a battery cart's own sibling sav is still named in full, same as a suffixed one", () => {
   const { be, recent, project } = newProject();
   be.seed("/roms/a.gb", gbRomBattery());
   project.systems.addSystem("/roms/a.gb"); // suffix 0 → /roms/a.sav, the ROM's own sibling
   project.save("/roms/a.rplg");
-  expect(recent.view()[0].label).toBe("a"); // "a - a" collapsed to one segment
+  expect(recent.view()[0].label).toBe("a.sav [a]"); // NOT collapsed to the bare stem - every cart reads alike
 
-  // A second instance of the same ROM takes /roms/a-2.sav — a distinct file, so it earns its own segment.
+  // A second instance of the same ROM takes /roms/a-2.sav — a distinct file, named the same way.
   const id = project.systems.addSystem("/roms/a.gb")!;
   project.systems.setFocus(id);
   project.save("/roms/two.rplg");
-  expect(recent.view()[0].label).toBe("a-2.sav - a");
+  expect(recent.view()[0].label).toBe("a-2.sav [a]");
 });
 
 test("recents name: the sav segment carries its own extension, so a .srm reads as one", () => {
@@ -134,7 +134,7 @@ test("recents name: the sav segment carries its own extension, so a .srm reads a
   be.seed("/saves/other.srm", "battery");
   project.systems.addSystem("/roms/lsdj.gb", { explicitSav: "/saves/other.srm" });
   project.save("/proj/p.rplg");
-  expect(recent.view()[0].label).toBe("other.srm - lsdj");
+  expect(recent.view()[0].label).toBe("other.srm [lsdj]");
 });
 
 test("recents name: a battery-less cart names the ROM alone; the project's own name replaces both", () => {
@@ -169,7 +169,7 @@ test("recordCurrentSong: a song change adds a row, coming back moves it up, unch
   be.setSram(id, lsdjSav(0)); // ...and back to GRUB
   expect(project.recordCurrentSong()).toBeTruthy();
   expect(recent.view().map((v) => v.song)).toEqual(["GRUB", "INTRO"]); // moved up, NOT duplicated
-  expect(recent.view()[0].label).toBe("lsdj"); // the project half is the cart, as for any row
+  expect(recent.view()[0].label).toBe("lsdj.sav [lsdj]"); // the project half is the cart, as for any row
 });
 
 test("recordCurrentSong: nothing to record for a non-tracker cart", () => {

@@ -164,13 +164,14 @@ export class ProjectStore {
   }
 
   // The name a recents entry is recorded under: the project's own name when it has one, else the primary
-  // cart's identity, "<sav.ext> - <rom>" - the LOADED sav's FILENAME (extension and all, so `.sav` vs `.srm`
-  // reads off the label) then the ROM's stem. The sav segment needs a sav to speak for - an explicit
-  // override, or the suffix-derived sibling of a battery cart - and collapses away when its stem is just the
-  // ROM's (the usual case), so the pair only shows when the sav really is a distinct file: a paired
-  // override, or a duplicated instance's `<rom>-N.sav`. Empty for an embedded cart (no paths at all), which
-  // leaves the recents basename fallback to label it. The working-song name is recorded separately
-  // (`currentSong`) and leads the composed label.
+  // cart's identity, "<sav.ext> [<rom>]" - the LOADED sav's FILENAME (extension and all, so `.sav` vs `.srm`
+  // reads off the label) then the ROM's stem, bracketed so the pair groups visually against the working-song
+  // name the menu puts in front of it ("SONG - mysongs.sav [LSDj-v5.3.0]"). The sav segment needs a sav to
+  // speak for - an explicit override, or the suffix-derived sibling of a battery cart - and is named in full
+  // even when its stem is just the ROM's (the usual `<rom>.sav` case), so every cart reads the same way.
+  // A cart with no battery and no override has no sav to name, so it's the bare ROM stem; an embedded cart
+  // (no paths at all) is empty, which leaves the recents basename fallback to label it. The working-song
+  // name is recorded separately (`currentSong`) and leads the composed label.
   private recentName(): string {
     if (this.projectName) return this.projectName;
     const primary = this.primarySystem();
@@ -178,8 +179,8 @@ export class ProjectStore {
     const rom = stem(primary.romPath || "");
     const hasSav = !!primary.savPath || primary.battery;
     const savPath = hasSav ? resolveSavPath(primary.romPath, primary.savSuffix, primary.savPath) : "";
-    const sav = savPath && stem(savPath) !== rom ? basename(savPath) : ""; // the ROM's own sibling collapses
-    return [sav, rom].filter(Boolean).join(" - ");
+    const sav = savPath ? basename(savPath) : "";
+    return sav && rom ? `${sav} [${rom}]` : sav || rom;
   }
 
   // The primary system's working-song name (a tracker cart's loaded song), for the recents label. undefined

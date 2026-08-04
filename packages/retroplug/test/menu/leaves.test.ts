@@ -119,7 +119,7 @@ test("a recent tracker entry's label leads with the song, then the project (ASCI
   expect(findItem(rows, "recent-0")?.label).toBe("Plain");
 });
 
-test("a recent entry names the cart in full: song - sav - rom, with a project name replacing the sav/rom pair", () => {
+test("a recent entry names the cart in full: song - sav [rom], with a project name replacing the sav/rom pair", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/cool.gb", lsdjRom("LSDJ-V9.4.2"));
@@ -131,7 +131,7 @@ test("a recent entry names the cart in full: song - sav - rom, with a project na
   stores.project.save("/proj/x.rplg");
 
   const rowLabel = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent"), "recent-0")?.label;
-  expect(rowLabel()).toBe("MYSONG - mysong.sav - cool"); // working song, loaded sav (with extension), ROM
+  expect(rowLabel()).toBe("MYSONG - mysong.sav [cool]"); // working song, loaded sav (with extension), ROM
 
   // Naming the project drops the cart's sav / ROM segments; the working song still leads.
   stores.project.setName("Album Cut");
@@ -163,7 +163,7 @@ test("Songs > Load records the newly loaded song as its own recent row; picking 
   expect(lsdjSongCatalog.workingName(be.readFile("/roms/cool.sav")!)).toBe("INTRO"); // and it really loaded
 
   const rows = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
-  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool", "GRUB - cool"]); // a row each, newest first
+  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool.sav [cool]", "GRUB - cool.sav [cool]"]); // a row each, newest first
 
   // Picking the GRUB row reopens the project AND asks for that song back.
   const asked: [string, string | undefined][] = [];
@@ -173,7 +173,7 @@ test("Songs > Load records the newly loaded song as its own recent row; picking 
 
   // Del takes out just that song's row.
   findItem(rows(), "recent-1")!.onDelete!();
-  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool"]);
+  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool.sav [cool]"]);
 });
 
 test("recent entries are flat action rows: present loads + can be deleted, missing warns + relinks", () => {

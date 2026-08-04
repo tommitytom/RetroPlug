@@ -188,12 +188,14 @@ one persisted (`buildConfig` omits a blank `name`, so a nameless `.rplg` carries
 `displayName()` is what the window / menu titles SHOW - that name when set, else `deriveName()`:
 the primary system's `savPath` stem, else its `romPath` stem (primary = focused, else first).
 The recents entry gets a fuller derivation, `recentName()`: the project's own name when set,
-else the primary cart's identity `"<sav.ext> - <rom>"` - the loaded sav's FILENAME, extension and
-all (an explicit override, or a battery cart's suffix-derived sibling), then the ROM's stem,
-collapsed to one segment when the stems match (the usual `<rom>.sav` case) and empty for an
-embedded cart. Every recents record
+else the primary cart's identity `"<sav.ext> [<rom>]"` - the loaded sav's FILENAME, extension and
+all (an explicit override, or a battery cart's suffix-derived sibling), then the ROM's stem in
+brackets. The sav is named in full even when its stem is just the ROM's (the usual `<rom>.sav`
+case), so every cart reads the same way; a cart with no battery and no override has no sav to
+name and is the bare ROM stem, and an embedded cart is empty. Every recents record
 (`save` / `export` / `adoptRomProject` / load `commit`) passes it alongside `currentSong()`, so
-the menu composes `"SONG - sav - rom"` (or `"SONG - project name"`) - and none of it reaches disk.
+the menu composes `"SONG - mysongs.sav [LSDj-v5.3.0]"` (or `"SONG - project name"`) - and none of
+it reaches disk.
 
 **Song rows.** Recents holds one row per SONG a project has had loaded, so a song change records a
 row rather than rewriting one: `recordSong(name)` adds it (a known song - the Songs menu's Load

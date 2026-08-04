@@ -126,7 +126,7 @@ still loads (migrated up if needed — see the version-stamp policy below).
 |---|---|---|---|
 | `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug/src/userConfig.ts)) | `USER_CONFIG_SCHEMA = 1` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave }` |
 | `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad, keyboardActions, gamepadActions }` (one profile per file; the `*Actions` sections — Open Menu / Cycle Instances — seed to defaults when missing) |
-| `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name, song? }] }`, most-recent-first, capped at 10. Keyed by path + `song`, so one project holds a row per song it has had loaded. `name` is the project's name as of the last record: its own name when set, else its primary cart's `"<sav.ext> - <rom>"` identity |
+| `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name, song? }] }`, most-recent-first, capped at 10. Keyed by path + `song`, so one project holds a row per song it has had loaded. `name` is the project's name as of the last record: its own name when set, else its primary cart's `"<sav.ext> [<rom>]"` identity |
 
 One deliberate rename: the TS layer's `sramAutoSave` field is native's
 `sramMirror` key ("mirror" reads from the plugin's side; "auto save" fits both
