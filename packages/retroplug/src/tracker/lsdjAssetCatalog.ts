@@ -21,7 +21,7 @@ export const lsdjAssetCatalog: AssetCatalog = {
     if (kind === "font") return rom.fonts().map((f) => ({ slot: f.index, name: f.name || `Font ${f.index}` }));
     return [];
   },
-  // The role's own patcher — the loose AssetOverride entries ARE the typed ones (the menu builds them; the
+  // The role's own patcher. The loose AssetOverride entries ARE the typed ones (the menu builds them; the
   // extra fields ride through structurally).
   applyOverrides(romBytes: Uint8Array, overrides: AssetOverride[], caps: ConstructCaps, onSkip): Uint8Array {
     return applyOverridesToRom(romBytes, overrides as LsdjAssetOverride[], caps, onSkip);

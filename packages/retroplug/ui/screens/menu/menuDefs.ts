@@ -551,7 +551,7 @@ function assetRomBytes(be: HostBackend, romPath: string): Uint8Array | null {
   assetRomCache.set(romPath, bytes);
   return bytes;
 }
-// Drop a cached base ROM — the file on disk no longer matches what we parsed (Patch ROM in Place rewrote it).
+// Drop a cached base ROM: the file on disk no longer matches what we parsed (Patch ROM in Place rewrote it).
 // Without this the asset submenus keep listing the PRE-patch slots and Delete's base-slot test reads stale.
 const invalidateAssetRom = (romPath: string): void => void assetRomCache.delete(romPath);
 
@@ -635,44 +635,58 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
 
 // --- baking the overrides into the ROM ----------------------------------------------------------------
 // The overrides are deliberately non-destructive, which leaves the project depending on asset files spread
-// around the disk (a `.lsdprj` import is the sharpest case — every kit it brought in links back to that one
+// around the disk (a `.lsdprj` import is the sharpest case: every kit it brought in links back to that one
 // file). These two rows make the cart self-contained by writing out the EFFECTIVE ROM, the exact image
 // construct already hands the core: in place (and the now-redundant overrides leave the .rplg), or to a
 // file of the user's choosing (the project untouched).
 
-// The effective ROM + the overrides that couldn't be applied ("kit 5"), or null when the base can't be read.
-// Reads the base FRESH rather than through assetRomBytes: this feeds a write, so it must not race a cache
-// seeded before someone edited the ROM underneath us.
-function bakeRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): { bytes: Uint8Array; skipped: string[] } | null {
+// The effective ROM, the overrides that couldn't be applied ("kit 5"), and whether the patcher RECOGNISED the
+// image at all; null when the base can't be read. Reads the base FRESH rather than through assetRomBytes:
+// this feeds a write, so it must not race a cache seeded before someone edited the ROM underneath us.
+//
+// `recognised` is reference identity, and that is exactly what it means: both patchers bail with `return
+// baseBytes` when the image isn't their console's (a swapped-out file, an LSDj build too old to parse), while
+// a recognised one always comes back as a fresh clone from rom.bytes(). That bail happens BEFORE the
+// per-override loop, so it reports no skips - it is silently "applied nothing", which the caller must not
+// mistake for success.
+function bakeRom(
+  spec: AssetMenuSpec,
+  ctx: MenuContext,
+  sys: SystemView,
+): { bytes: Uint8Array; skipped: string[]; recognised: boolean } | null {
   const base = sys.romPath ? ctx.stores.backend.readFile(sys.romPath) : null;
   if (!base) return null;
   const skipped: string[] = [];
   const bytes = spec.catalog.applyOverrides(base, overridesFor(sys, spec.catalog.assetRole), ctx.stores.backend, (ov) =>
     skipped.push(`${ov.type} ${ov.slot}`),
   );
-  return { bytes, skipped };
+  return { bytes, skipped, recognised: bytes !== base };
 }
 
 // Overwrite the base ROM with the effective image and drop the (now baked-in) overrides. Returns null on
-// success, else the message the confirm overlay shows in red — the one irreversible write here, so it is
-// STRICT: an override that can't be applied aborts before anything is written, rather than quietly baking a
-// ROM that's missing it and then discarding the link the user could still have repaired.
+// success, else the message the confirm overlay shows in red. This is the one irreversible write here, and
+// clearing the list throws away links the user may still be able to repair, so it is STRICT: it aborts before
+// writing anything unless the whole list genuinely made it into the image.
 function patchRomInPlace(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): string | null {
   const baked = bakeRom(spec, ctx, sys);
   if (!baked) return "Could not read the ROM";
+  // Nothing was applied: the ROM on disk isn't one this console's patcher can read. Baking would write the
+  // base back over itself and then drop every override, so refuse instead.
+  if (!baked.recognised) return `Could not patch ${basename(sys.romPath)} - unrecognised ROM image`;
   if (baked.skipped.length) return `Could not apply ${baked.skipped.join(", ")} - fix or remove first`;
   if (!ctx.stores.backend.writeFileAtomic(sys.romPath, baked.bytes)) return `Could not write ${basename(sys.romPath)}`;
   invalidateAssetRom(sys.romPath);
   // No reloadSystem: the effective ROM is byte-identical to what the core is already running, so a cold boot
   // would cost the playback position and buy nothing. setRoleConfig re-renders the menu + marks the project
-  // dirty on its own (a feature role is pure TS — see SystemsStore.setRoleConfig).
+  // dirty on its own (a feature role is pure TS - see SystemsStore.setRoleConfig).
   ctx.stores.project.systems.setRoleConfig(sys.id, spec.catalog.assetRole, { overrides: [] });
   return null;
 }
 
 // Write the effective ROM to a picked file. Best-effort (unlike the in-place bake): what lands is what the
-// core is playing right now, and nothing on disk or in the project is at risk. Silent on failure, like every
-// other Export... row.
+// core is playing right now - including the case where the patcher recognised nothing and that IS the base
+// ROM. Nothing on disk or in the project is at risk, so it stays silent on failure like every other
+// Export... row.
 function exportPatchedRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): void {
   const defaultName = `${stem(sys.romPath)}-patched${extension(sys.romPath)}`;
   browseThen(ctx, { title: "Export Patched ROM", patterns: ROM_PATTERNS, saving: true, defaultName }, (path) => {

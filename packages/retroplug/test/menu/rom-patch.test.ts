@@ -1,4 +1,4 @@
-// Baking the asset overrides into the ROM — the tracker submenu's two whole-ROM rows (Patch ROM in Place /
+// Baking the asset overrides into the ROM: the tracker submenu's two whole-ROM rows (Patch ROM in Place /
 // Export Patched ROM...), built once for both consoles off the AssetMenuSpec. The overrides are otherwise
 // non-destructive (folded onto the base ROM in memory at construct), which leaves a project depending on asset
 // files spread around the disk; these rows write the EFFECTIVE ROM out so the cart stands alone. Same harness
@@ -10,6 +10,7 @@ import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { LsdjRom, ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
+import { lsdjAssetCatalog } from "../../src/tracker";
 import { gbRomBattery, risaRomFull } from "../systems/fixtures";
 
 // A row that browses (Export) fires openFileBrowser fire-and-forget; flush the microtask chain it kicks off.
@@ -40,7 +41,7 @@ function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
 }
 
-// The 1 MiB LSDj image menu/lsdj-assets.test.ts uses: GB logo + battery header, a version title (→ the provider
+// The 1 MiB LSDj image menu/lsdj-assets.test.ts uses: GB logo + battery header, a version title (the provider
 // attaches lsdj-sync), and a 2-palette block whose names are all "ABCD".
 function lsdjRom1M(): Uint8Array {
   const b = new Uint8Array(ROM_SIZE);
@@ -55,7 +56,7 @@ function lsdjRom1M(): Uint8Array {
   return b;
 }
 
-// A palette override — INLINE colours, so it applies with no linked file on disk (the simplest thing to bake).
+// A palette override with INLINE colours, so it applies with no linked file on disk (the simplest thing to bake).
 const NEON = { type: "palette", slot: 1, name: "NEON", colorSets: [{ colors: [{ r: 31, g: 0, b: 31 }] }] };
 
 // The sole system's tracker-submenu children, re-queried by index so it survives an id swap.
@@ -104,7 +105,7 @@ test("Patch ROM in Place bakes the overrides into the ROM on disk and clears the
   // The override is gone from the project (it's in the ROM now), and the rows grey out again.
   expect(overridesOf(stores)).toEqual([]);
   expect(findItem(kids(), "lsdj-patch-rom")?.disabled).toBe(true);
-  // The palette row keeps the name but loses its * — it reads the REPATCHED base ROM (the menu's rom cache
+  // The palette row keeps the name but loses its *, reading the REPATCHED base ROM (the menu's rom cache
   // was evicted; without that it would still be parsing the pre-patch bytes).
   expect(findItem(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1")?.label).toBe("[1] NEON");
   // No cold boot: the effective ROM is byte-identical to what the core is already running.
@@ -117,17 +118,49 @@ test("the baked ROM is byte-identical to the image construct was already handing
   const kids = lsdjKids(be, stores, "/roms/same.gb");
   const id = stores.project.systems.view()[0].id;
   stores.project.systems.setRoleConfig(id, "lsdj-assets", { overrides: [NEON] });
-  stores.project.systems.reloadSystem(id); // construct folds the override in → the EFFECTIVE image
+  stores.project.systems.reloadSystem(id); // construct folds the override in -> the EFFECTIVE image
   const effective = new Uint8Array(be.constructCalls[be.constructCalls.length - 1].romBytes!);
 
   findItem(kids(), "lsdj-patch-rom")!.prompt!.onConfirm("");
 
-  // What baking wrote IS that image — which is why no cold boot is needed after it.
+  // What baking wrote IS that image, which is why no cold boot is needed after it.
   expect(sameBytes(be.readFile("/roms/same.gb")!, effective)).toBe(true);
-  // And the cart now stands alone: a fresh system on it needs no override, so construct passes the file
-  // through untouched (no romBytes) — nothing left pointing at an asset file on disk.
-  stores.project.systems.addSystem("/roms/same.gb");
-  expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined);
+  // And the cart now stands alone: the asset sits in the ROM's OWN base slots, so it needs no override (and
+  // no asset file on disk) to come back.
+  expect(lsdjAssetCatalog.baseSlots(be.readFile("/roms/same.gb")!, "palette")[1].name).toBe("NEON");
+});
+
+test("Patch ROM in Place refuses when the patcher doesn't recognise the ROM (it would clear the list for nothing)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // A GB image titled bare "LSDJ" (no version): the provider still attaches lsdj-sync + lsdj-assets on the
+  // title prefix, so the submenu is live, but LsdjRom.isLsdj is false. The patcher bails BEFORE its
+  // per-override loop, so it reports no skips - "applied nothing" must not read as success. Reachable
+  // whenever the file at romPath is no longer the one the overrides were recorded against.
+  const rom = lsdjRom1M();
+  for (let i = 0; i < 12; i++) rom[0x134 + i] = i < 4 ? "LSDJ".charCodeAt(i) : 0;
+  be.seed("/roms/bare.gb", rom);
+  const id = stores.project.systems.addSystem("/roms/bare.gb")!;
+  const kids = () => submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view()[0] }).items, "inst-lsdj");
+  stores.project.systems.setRoleConfig(id, "lsdj-assets", { overrides: [NEON] });
+
+  const err = findItem(kids(), "lsdj-patch-rom")!.prompt!.onConfirm("");
+  expect(err != null).toBe(true);
+  expect(err!.includes("bare.gb")).toBe(true);
+  expect(sameBytes(be.readFile("/roms/bare.gb")!, rom)).toBe(true); // nothing written
+  expect(overridesOf(stores).length).toBe(1); // and the override kept, so the link survives
+});
+
+test("a failed write leaves the override list intact (the clear happens only after the ROM lands)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const kids = lsdjKids(be, stores, "/roms/ro.gb");
+  stores.project.systems.setRoleConfig(stores.project.systems.view()[0].id, "lsdj-assets", { overrides: [NEON] });
+  be.writeFileAtomic = () => false; // a read-only ROM / full disk, as systems/lsdj-lsdprj-safety.test.ts does
+
+  const err = findItem(kids(), "lsdj-patch-rom")!.prompt!.onConfirm("");
+  expect(err).toBe("Could not write ro.gb");
+  expect(overridesOf(stores).length).toBe(1);
 });
 
 test("Patch ROM in Place refuses (and writes nothing) when an override can't be applied", () => {
@@ -135,7 +168,7 @@ test("Patch ROM in Place refuses (and writes nothing) when an override can't be 
   const stores = composeAppStores({ backend: be });
   const kids = lsdjKids(be, stores, "/roms/broken.gb");
   const base = be.readFile("/roms/broken.gb")!;
-  // A kit override whose linked file has been moved/deleted — construct would silently skip it, but baking it
+  // A kit override whose linked file has been moved/deleted. Construct would silently skip it, but baking it
   // out would discard a link the user could still repair.
   const overrides = [NEON, { type: "kit", slot: 3, name: "GONE", path: "/kits/missing.kit" }];
   stores.project.systems.setRoleConfig(stores.project.systems.view()[0].id, "lsdj-assets", { overrides });

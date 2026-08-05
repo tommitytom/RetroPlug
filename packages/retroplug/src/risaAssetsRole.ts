@@ -92,7 +92,7 @@ function applyOne(rom: RisaRom, ov: RisaAssetOverride, caps: ConstructCaps): voi
 
 /** Fold a list of overrides onto base ROM bytes, returning the patched image (per-override try/catch so a
  *  bad entry just skips). Returns the base unchanged if it isn't a risa image. `onSkip` sees every entry that
- *  couldn't be applied — a load can shrug those off, but a caller BAKING the result into the ROM on disk (the
+ *  couldn't be applied. A load can shrug those off, but a caller BAKING the result into the ROM on disk (the
  *  menu's Patch ROM in Place) has to know it would be dropping a link. */
 export function applyOverridesToRom(
   baseBytes: Uint8Array,

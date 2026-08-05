@@ -21,7 +21,7 @@ export const risaAssetCatalog: AssetCatalog = {
     if (kind === "kit") return rom.kits().map((k) => ({ slot: k.slot, name: k.name || `Kit ${k.slot}` }));
     return [];
   },
-  // The role's own patcher — the loose AssetOverride entries ARE the typed ones (the menu builds them; the
+  // The role's own patcher. The loose AssetOverride entries ARE the typed ones (the menu builds them; the
   // extra fields ride through structurally).
   applyOverrides(romBytes: Uint8Array, overrides: AssetOverride[], caps: ConstructCaps, onSkip): Uint8Array {
     return applyOverridesToRom(romBytes, overrides as RisaAssetOverride[], caps, onSkip);

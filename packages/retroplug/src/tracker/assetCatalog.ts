@@ -52,7 +52,7 @@ export interface AssetCatalog {
   baseSlots(romBytes: Uint8Array, kind: string): AssetSlot[];
   /** Fold this console's override list onto base ROM bytes → the EFFECTIVE image (what construct hands the
    *  core). The same patcher the `*-assets` role runs at load, exposed so the menu can bake that image out to
-   *  disk. `onSkip` reports an entry that couldn't be applied (moved/deleted linked file, malformed asset) —
+   *  disk. `onSkip` reports an entry that couldn't be applied (moved/deleted linked file, malformed asset):
    *  the ones a load silently drops. Returns the base unchanged when it isn't this console's ROM. */
   applyOverrides(
     romBytes: Uint8Array,
