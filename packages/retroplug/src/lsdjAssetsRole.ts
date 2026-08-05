@@ -81,15 +81,24 @@ function applyOne(rom: LsdjRom, ov: LsdjAssetOverride, caps: ConstructCaps): voi
 
 /** Fold a list of overrides onto base ROM bytes, returning the patched image (per-override try/catch so a
  *  bad entry just skips). Shared by the construct hook and callers needing the effective ROM (e.g. the menu
- *  deduping a `.lsdprj`'s kits). Returns the base unchanged if it isn't an LSDj image. */
-export function applyOverridesToRom(baseBytes: Uint8Array, overrides: LsdjAssetOverride[], caps: ConstructCaps): Uint8Array {
+ *  deduping a `.lsdprj`'s kits). Returns the base unchanged if it isn't an LSDj image. `onSkip` sees every
+ *  entry that couldn't be applied — a load can shrug those off, but a caller BAKING the result into the ROM
+ *  on disk (the menu's Patch ROM in Place) has to know it would be dropping a link. */
+export function applyOverridesToRom(
+  baseBytes: Uint8Array,
+  overrides: LsdjAssetOverride[],
+  caps: ConstructCaps,
+  onSkip?: (ov: LsdjAssetOverride, message: string) => void,
+): Uint8Array {
   const rom = LsdjRom.fromBytes(baseBytes);
   if (!rom.isLsdj) return baseBytes;
   for (const ov of overrides) {
     try {
       applyOne(rom, ov, caps);
     } catch (e) {
-      console.log(`[lsdj-assets] skipped ${ov.type} slot ${ov.slot}: ${(e as Error).message}`);
+      const message = (e as Error).message;
+      console.log(`[lsdj-assets] skipped ${ov.type} slot ${ov.slot}: ${message}`);
+      onSkip?.(ov, message);
     }
   }
   return rom.bytes();

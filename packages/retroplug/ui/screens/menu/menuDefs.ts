@@ -31,7 +31,8 @@ import { keyDisplayName } from "../../../src/keyCodes";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
 import { resolveSavPath, siblingPath, SAV_PATTERNS, isSavPath } from "../../../src/savPaths";
-import { stem, dirname, joinPath, shortenMiddle } from "../../../src/pathUtil";
+import { stem, dirname, basename, extension, joinPath, shortenMiddle } from "../../../src/pathUtil";
+import { ROM_PATTERNS } from "../../../src/fileSelection";
 import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
 import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
 import {
@@ -550,6 +551,9 @@ function assetRomBytes(be: HostBackend, romPath: string): Uint8Array | null {
   assetRomCache.set(romPath, bytes);
   return bytes;
 }
+// Drop a cached base ROM — the file on disk no longer matches what we parsed (Patch ROM in Place rewrote it).
+// Without this the asset submenus keep listing the PRE-patch slots and Delete's base-slot test reads stale.
+const invalidateAssetRom = (romPath: string): void => void assetRomCache.delete(romPath);
 
 // A detected tracker cart whose embedded version this build has no layout for is DETECTED but not driveable
 // (the Songs/Assets rows read that layout). We grey the submenu out as "(Unsupported Version)" rather than
@@ -627,6 +631,77 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
     children.push(...rows.map((row) => assetRow(spec, ctx, sys, type, row)));
     return submenu(`${spec.id}-${type.kind}s`, type.title, children);
   });
+}
+
+// --- baking the overrides into the ROM ----------------------------------------------------------------
+// The overrides are deliberately non-destructive, which leaves the project depending on asset files spread
+// around the disk (a `.lsdprj` import is the sharpest case — every kit it brought in links back to that one
+// file). These two rows make the cart self-contained by writing out the EFFECTIVE ROM, the exact image
+// construct already hands the core: in place (and the now-redundant overrides leave the .rplg), or to a
+// file of the user's choosing (the project untouched).
+
+// The effective ROM + the overrides that couldn't be applied ("kit 5"), or null when the base can't be read.
+// Reads the base FRESH rather than through assetRomBytes: this feeds a write, so it must not race a cache
+// seeded before someone edited the ROM underneath us.
+function bakeRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): { bytes: Uint8Array; skipped: string[] } | null {
+  const base = sys.romPath ? ctx.stores.backend.readFile(sys.romPath) : null;
+  if (!base) return null;
+  const skipped: string[] = [];
+  const bytes = spec.catalog.applyOverrides(base, overridesFor(sys, spec.catalog.assetRole), ctx.stores.backend, (ov) =>
+    skipped.push(`${ov.type} ${ov.slot}`),
+  );
+  return { bytes, skipped };
+}
+
+// Overwrite the base ROM with the effective image and drop the (now baked-in) overrides. Returns null on
+// success, else the message the confirm overlay shows in red — the one irreversible write here, so it is
+// STRICT: an override that can't be applied aborts before anything is written, rather than quietly baking a
+// ROM that's missing it and then discarding the link the user could still have repaired.
+function patchRomInPlace(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): string | null {
+  const baked = bakeRom(spec, ctx, sys);
+  if (!baked) return "Could not read the ROM";
+  if (baked.skipped.length) return `Could not apply ${baked.skipped.join(", ")} - fix or remove first`;
+  if (!ctx.stores.backend.writeFileAtomic(sys.romPath, baked.bytes)) return `Could not write ${basename(sys.romPath)}`;
+  invalidateAssetRom(sys.romPath);
+  // No reloadSystem: the effective ROM is byte-identical to what the core is already running, so a cold boot
+  // would cost the playback position and buy nothing. setRoleConfig re-renders the menu + marks the project
+  // dirty on its own (a feature role is pure TS — see SystemsStore.setRoleConfig).
+  ctx.stores.project.systems.setRoleConfig(sys.id, spec.catalog.assetRole, { overrides: [] });
+  return null;
+}
+
+// Write the effective ROM to a picked file. Best-effort (unlike the in-place bake): what lands is what the
+// core is playing right now, and nothing on disk or in the project is at risk. Silent on failure, like every
+// other Export... row.
+function exportPatchedRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): void {
+  const defaultName = `${stem(sys.romPath)}-patched${extension(sys.romPath)}`;
+  browseThen(ctx, { title: "Export Patched ROM", patterns: ROM_PATTERNS, saving: true, defaultName }, (path) => {
+    const baked = bakeRom(spec, ctx, sys);
+    if (baked) ctx.stores.backend.writeFileAtomic(path, baked.bytes);
+  });
+}
+
+// The two bake rows, greyed when there's nothing to bake. Both live at the tracker submenu's root (they're
+// whole-ROM ops, not per-asset-type), below the asset submenus.
+function romPatchRows(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem[] {
+  const none = overridesFor(sys, spec.catalog.assetRole).length === 0;
+  return [
+    sep(`${spec.id}-patch-sep`),
+    {
+      id: `${spec.id}-patch-rom`,
+      label: "Patch ROM in Place",
+      kind: "prompt" as const,
+      keepOpen: true,
+      disabled: none,
+      prompt: {
+        title: `Overwrite ${basename(sys.romPath)} with the patched ROM?`,
+        hint: "Enter to patch  |  Esc to cancel",
+        confirm: true,
+        onConfirm: () => patchRomInPlace(spec, ctx, sys),
+      },
+    },
+    action(`${spec.id}-export-patched-rom`, "Export Patched ROM...", () => exportPatchedRom(spec, ctx, sys), none),
+  ];
 }
 
 // A safe filename fragment (mirrors the CLI's sanitize).
@@ -1143,10 +1218,16 @@ const TRACKER_UI: Record<string, TrackerUi> = {
   risa: { song: risaSongSpec, asset: risaAssetSpec },
 };
 
-// One tracker's instance-submenu children: its extras (if any), the shared Songs menu, then its asset menus.
+// One tracker's instance-submenu children: its extras (if any), the shared Songs menu, its asset menus, then
+// the whole-ROM bake rows.
 function trackerChildren(t: TrackerIntegration, ctx: MenuContext, sys: SystemView): MenuItem[] {
   const ui = TRACKER_UI[t.id];
-  return [...(ui.extras ? ui.extras(ctx, sys) : []), songMenu(ui.song, ctx, sys), ...assetMenu(ui.asset, ctx, sys)];
+  return [
+    ...(ui.extras ? ui.extras(ctx, sys) : []),
+    songMenu(ui.song, ctx, sys),
+    ...assetMenu(ui.asset, ctx, sys),
+    ...romPatchRows(ui.asset, ctx, sys),
+  ];
 }
 
 // LSDj's sync cyclers (Mode / Tempo Divisor / Auto Start) + a separator — the one per-console tracker extra

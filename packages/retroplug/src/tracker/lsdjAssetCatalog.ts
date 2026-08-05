@@ -1,8 +1,10 @@
 // The LSDj implementation of AssetCatalog — the base-ROM asset parse (relocated verbatim from the menu's old
 // lsdjInventory). No overrides here (that's the role config, read live at the menu) and no memoization (the UI
 // caches the file read). The file-dialog Export/Replace stay in the menu (they own the .kit/.lsdpal/.png formats).
-import type { AssetCatalog, AssetSlot } from "./assetCatalog";
+import type { AssetCatalog, AssetSlot, AssetOverride } from "./assetCatalog";
+import type { ConstructCaps } from "../systemRoles";
 import { LsdjRom, KIT_COUNT } from "../lsdj/rom";
+import { applyOverridesToRom, type LsdjAssetOverride } from "../lsdjAssetsRole";
 
 export const lsdjAssetCatalog: AssetCatalog = {
   assetRole: "lsdj-assets",
@@ -18,5 +20,10 @@ export const lsdjAssetCatalog: AssetCatalog = {
     if (kind === "palette") return rom.palettes().map((p) => ({ slot: p.index, name: p.name || `Palette ${p.index}` }));
     if (kind === "font") return rom.fonts().map((f) => ({ slot: f.index, name: f.name || `Font ${f.index}` }));
     return [];
+  },
+  // The role's own patcher — the loose AssetOverride entries ARE the typed ones (the menu builds them; the
+  // extra fields ride through structurally).
+  applyOverrides(romBytes: Uint8Array, overrides: AssetOverride[], caps: ConstructCaps, onSkip): Uint8Array {
+    return applyOverridesToRom(romBytes, overrides as LsdjAssetOverride[], caps, onSkip);
   },
 };
