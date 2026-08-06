@@ -7,7 +7,7 @@
 // Bump these three numbers to release a new version; everything else follows.
 #define RETROPLUG_VERSION_MAJOR 0
 #define RETROPLUG_VERSION_MINOR 7
-#define RETROPLUG_VERSION_MICRO 3
+#define RETROPLUG_VERSION_MICRO 4
 
 // Stringized "MAJOR.MINOR.MICRO" (e.g. "0.6.2"). Two-step expansion so the
 // macro *values* are stringized, not their names.
