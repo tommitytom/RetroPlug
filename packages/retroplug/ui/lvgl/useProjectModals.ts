@@ -10,7 +10,7 @@
 // overlay is a plain MenuTree (data), rebuilt each render from the pending state, so its handlers never
 // go stale. Mirrors useCloseGuard's Save/Discard/Cancel flow via the shared saveProjectInteractive.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { AppStores } from "../../src/appStores";
 import type { LoadOutcome } from "../../src/projectStore";
@@ -18,7 +18,9 @@ import type { MissingFile } from "../../src/projectMissing";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import { basename } from "../../src/pathUtil";
 import { SAV_PATTERNS } from "../../src/savPaths";
+import { loadSongInPrimary, songLoadByNameWouldDiscard, resolveSongCatalog } from "../../src/tracker";
 import { saveProjectInteractive } from "./saveProjectInteractive";
+import { unsavedRows } from "./unsavedRows";
 import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
 
 const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes"];
@@ -29,7 +31,10 @@ const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm battery saves
 type PendingModal =
   | { kind: "confirm"; proceed: () => void }
   | { kind: "notice"; title: string; body: string }
-  | { kind: "relink"; missing: MissingFile[] };
+  | { kind: "relink"; missing: MissingFile[] }
+  // A recent SONG row's load, when the cart it lands on holds uncommitted working-song work. The row asked
+  // to open song X; silently destroying song Y on the way is not what was agreed to.
+  | { kind: "songDiscard"; song: string; working: string; proceed: () => void };
 
 export interface ProjectModals {
   /** The overlay to render (null = nothing showing). */
@@ -40,8 +45,9 @@ export interface ProjectModals {
   onClose: () => void;
   /** Start a new project, guarding unsaved changes first. */
   newProject: () => void;
-  /** Load `path`, guarding unsaved changes first and surfacing the outcome. */
-  loadProject: (path: string) => void;
+  /** Load `path`, guarding unsaved changes first and surfacing the outcome. `song` (a recent row's) is
+   *  loaded into the cart once the project lands, so picking a song row reopens that song. */
+  loadProject: (path: string, song?: string) => void;
   /** Open `romPath` as a fresh project (with an optional paired sav), guarding unsaved changes first. */
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
 }
@@ -49,13 +55,42 @@ export interface ProjectModals {
 export function useProjectModals(stores: AppStores): ProjectModals {
   const [pending, setPending] = useState<PendingModal | null>(null);
   const project = stores.project;
+  // The song a recent row asked for, held until its load actually lands. A ref (not state) because it must
+  // survive the relink round-trip - locate the missing ROM, and the song still gets loaded - without
+  // re-rendering anything itself.
+  const pendingSong = useRef<string>("");
 
   // A load result → the next overlay: loaded clears; incompatible/error notify; missing offers relink.
   const handleOutcome = (outcome: LoadOutcome): void => {
+    // Every completed load funnels through here (including one finished by a relink), so this is the one
+    // place the requested song can be applied. A load that didn't land drops it - except "missing", which
+    // is still in flight awaiting the relink.
+    const song = pendingSong.current;
+    if (outcome.kind !== "missing") pendingSong.current = "";
     switch (outcome.kind) {
-      case "loaded":
+      case "loaded": {
+        // The Songs menu's Load is guarded in menuDefs; this is the OTHER way a song load happens, and it
+        // destroys the working song exactly the same way (both go through catalog.load → mutateLiveSav).
+        // A missing SRAM snapshot right after the rebuild answers "not dirty", so the worst case is a load
+        // that proceeds unprompted - never a prompt when nothing is at stake.
+        const sys = song ? project.systems.primary() : null;
+        if (song && sys && songLoadByNameWouldDiscard(project.systems, sys, song)) {
+          const working = resolveSongCatalog(sys.roles)?.workingName(project.systems.readSram(sys.id)!) || "the working song";
+          setPending({
+            kind: "songDiscard",
+            song,
+            working,
+            proceed: () => {
+              loadSongInPrimary(stores.backend, project.systems, song);
+              setPending(null);
+            },
+          });
+          break; // keep the overlay up - the load waits on the answer
+        }
+        if (song) loadSongInPrimary(stores.backend, project.systems, song); // reopen the row's song
         setPending(null);
         break;
+      }
       case "incompatible":
         setPending({ kind: "notice", title: "Incompatible Project", body: "Saved by a newer version of RetroPlug." });
         break;
@@ -80,7 +115,11 @@ export function useProjectModals(stores: AppStores): ProjectModals {
       project.newProject();
     });
 
-  const loadProject = (path: string): void => guard(() => handleOutcome(project.load(path)));
+  const loadProject = (path: string, song?: string): void =>
+    guard(() => {
+      pendingSong.current = song ?? "";
+      handleOutcome(project.load(path));
+    });
 
   const loadRomAsProject = (romPath: string, explicitSav?: string): void =>
     guard(() => {
@@ -90,7 +129,10 @@ export function useProjectModals(stores: AppStores): ProjectModals {
 
   const onClose = (): void =>
     setPending((p) => {
-      if (p?.kind === "relink") project.cancelLoad(); // abandoning the relink drops the held load
+      if (p?.kind === "relink") {
+        project.cancelLoad(); // abandoning the relink drops the held load
+        pendingSong.current = ""; // …and the song it was going to open
+      }
       return null;
     });
 
@@ -110,12 +152,29 @@ function buildModal(
 
   if (pending.kind === "confirm") {
     const { proceed } = pending;
+    // Leads with WHAT is unsaved (the project file + each dirty battery's target .sav), greyed and skipped
+    // by nav, so the user can see what Save writes / Don't Save throws away. Same block as the close guard.
     return {
       title: "Unsaved changes",
       items: [
+        ...unsavedRows(stores.backend, stores.project),
         btn("discard-save", "Save", () => void saveProjectInteractive(stores).then((saved) => saved && proceed())),
         btn("discard-nosave", "Don't Save", proceed),
         btn("discard-cancel", "Cancel", onClose),
+      ],
+    };
+  }
+
+  if (pending.kind === "songDiscard") {
+    const { proceed, song, working } = pending;
+    // No "save first" here (unlike the Songs menu): the cart has only just booted, so this is a plain
+    // proceed-or-cancel. Cancel leaves the project loaded showing whatever song the cart came up on.
+    return {
+      title: "Unsaved song",
+      items: [
+        btn("song-discard-what", `"${working}" has unsaved changes`, () => {}),
+        btn("song-discard-go", `Discard & load "${song}"`, proceed),
+        btn("song-discard-cancel", "Keep current song", onClose),
       ],
     };
   }

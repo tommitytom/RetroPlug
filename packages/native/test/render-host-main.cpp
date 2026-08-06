@@ -25,13 +25,13 @@ using retroplug::RenderJobRegistry;
 
 int runOne(const char* jobJson) {
     retroplug::RenderHost host;
-    double lastProgress = -1.0;
+    double lastRenderedMs = -1.0;
     retroplug::RenderHost::Result r = host.run(
         jobJson,
-        [&lastProgress](double f) { lastProgress = f; },
+        [&lastRenderedMs](double ms) { lastRenderedMs = ms; },
         [] { return false; });
-    std::fprintf(stderr, "render-host-test: status=%s progress=%.3f message=%s outputs=%zu\n",
-                 r.status.c_str(), lastProgress, r.message.c_str(), r.outputs.size());
+    std::fprintf(stderr, "render-host-test: status=%s rendered=%.0fms message=%s outputs=%zu\n",
+                 r.status.c_str(), lastRenderedMs, r.message.c_str(), r.outputs.size());
     for (const std::string& p : r.outputs) std::fprintf(stderr, "  out: %s\n", p.c_str());
     return r.ok() ? 0 : 1;
 }
@@ -50,9 +50,9 @@ int runRegistry(const std::vector<std::string>& jobs) {
         if (terminal == snap.size()) {
             int rc = 0;
             for (const auto& s : snap) {
-                std::fprintf(stderr, "job %llu (sys %u): %s progress=%.3f outputs=%zu %s\n",
+                std::fprintf(stderr, "job %llu (sys %u): %s rendered=%.0fms outputs=%zu %s\n",
                              (unsigned long long)s.id, s.systemId, RenderJobRegistry::stateName(s.state),
-                             s.progress, s.outputs.size(), s.message.c_str());
+                             s.renderedMs, s.outputs.size(), s.message.c_str());
                 if (s.state != RenderJobRegistry::State::Done) rc = 1;
             }
             registry.clearFinished();
@@ -74,8 +74,8 @@ int runCancel(const char* jobJson) {
         if (snap.empty()) break;
         const auto& s = snap.front();
         if (s.state != RenderJobRegistry::State::Rendering) {
-            std::fprintf(stderr, "cancel: job %llu ended %s (progress=%.3f)\n",
-                         (unsigned long long)s.id, RenderJobRegistry::stateName(s.state), s.progress);
+            std::fprintf(stderr, "cancel: job %llu ended %s (rendered=%.0fms)\n",
+                         (unsigned long long)s.id, RenderJobRegistry::stateName(s.state), s.renderedMs);
             return s.state == RenderJobRegistry::State::Cancelled ? 0 : 1;
         }
     }

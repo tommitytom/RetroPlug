@@ -23,7 +23,7 @@ export interface RenderJobStatus {
   id: number;
   systemId: number;
   state: "rendering" | "done" | "error" | "cancelled";
-  progress: number; // 0..1
+  renderedMs: number; // audio rendered so far (ms); on a finished job, the length written
   message: string; // error detail (state === "error")
 }
 
@@ -129,4 +129,13 @@ export function pickActiveRenderJob(jobs: readonly RenderJobStatus[], systemId: 
     if (!active || (active.state !== "rendering" && j.state === "rendering")) active = j;
   }
   return active;
+}
+
+/** The tile badge's text for a job: how much audio has been rendered so far, and what tapping does. There is
+ *  deliberately NO percentage - a tracker render runs to the song's HFF stop, whose position isn't known
+ *  until it lands, so the only honest number is the duration rendered. Doubles as the tile's re-render key
+ *  (it changes once a second), so it must depend on nothing but the job. */
+export function renderBadgeLabel(job: RenderJobStatus): string {
+  if (job.state !== "rendering") return " render failed (tap to dismiss)";
+  return ` rendering ${formatDuration(job.renderedMs / 1000)} (tap to cancel)`;
 }

@@ -4,7 +4,7 @@
 // request arrives as JSON in globalThis[Symbol.for("plugin")].args[0]; the worker boots a control plane,
 // runs the shared render library, and reports progress / cancellation / completion back through native
 // thunks the RenderHost binds:
-//   __rp_reportRenderProgress(fraction)  — 0..1, per rendered chunk
+//   __rp_reportRenderedMs(ms)            - audio rendered so far, per rendered chunk
 //   __rp_isRenderCancelled(): boolean    — polled per chunk; true aborts the render
 //   __rp_renderResult(status, message, outputsJson) — "done" | "cancelled" | "error"
 // (all optional-chained so the same bundle stays runnable under a plain host that binds none of them).
@@ -12,7 +12,7 @@
 import { bootSession } from "../bootSession";
 import { runRenderJob, RenderCancelled, type RenderOpts, type SplitMode } from "./index";
 
-declare const __rp_reportRenderProgress: ((fraction: number) => void) | undefined;
+declare const __rp_reportRenderedMs: ((ms: number) => void) | undefined;
 declare const __rp_isRenderCancelled: (() => boolean) | undefined;
 declare const __rp_renderResult: ((status: string, message: string, outputs: string[]) => void) | undefined;
 
@@ -62,7 +62,7 @@ function main(): void {
   const session = bootSession(); // structurally satisfies RenderContext (backend / project / dsp / audio)
   try {
     const result = runRenderJob(session, opts, {
-      onProgress: (f) => __rp_reportRenderProgress?.(f),
+      onRendered: (ms) => __rp_reportRenderedMs?.(ms),
       isCancelled: () => __rp_isRenderCancelled?.() ?? false,
     });
     __rp_renderResult?.("done", "", result.outputs);

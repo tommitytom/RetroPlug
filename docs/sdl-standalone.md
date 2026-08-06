@@ -158,10 +158,11 @@ PortAudio," selectable at build/config, with the RT-thread tuning + block-size r
 backend-agnostic. Nothing in the MIDI design (P1/P2) changes — the MIDI ring still drains in whichever audio
 callback is active. **Deferred** (after MIDI + the file browser).
 
-### File browser: in-app (React/LVGL) browser is the default; native dialogs are a toggle — ✅ DONE
+### File browser: the OS dialog is the default; the in-app browser is a toggle — ✅ DONE
 An **in-app React/LVGL file browser** ([fileBrowserMenu.ts](../packages/retroplug/ui/screens/menu/fileBrowserMenu.ts),
-rendered by the Menu component so it inherits all the keyboard/gamepad nav) is the default on **every host** —
-SDL *and* the DPF plugin — for both open and save (save adds a filename prompt). Backed by the cross-host
+rendered by the Menu component so it inherits all the keyboard/gamepad nav) is available on **every host** —
+SDL *and* the DPF plugin — for both open and save (save adds a filename prompt), and is what a host with no
+OS dialog helper falls back to. Backed by the cross-host
 `backend.listDir(dir)` RPC ([backend.ts:53](../packages/retroplug/src/backend.ts#L53)), which now marks
 directories with a trailing `/`.
 
@@ -169,8 +170,9 @@ directories with a trailing `/`.
   `__rp_openFileBrowser` that opens the overlay, overriding any native host browser. `realBackend` still calls
   that global hook + awaits `__rp_onFileBrowserResult`, so the browse crosses the control-plane↔UI **bundle
   boundary via globalThis** (module singletons don't — that's the key subtlety).
-- **Toggle**: `Settings > File Dialogs` (In-App / OS Native) sets `userConfig.useNativeFileDialogs`; when on
-  *and* the host provides an OS dialog, the bridge delegates to it. On a host with no OS dialog it stays in-app.
+- **Toggle**: `Settings > File Dialogs` (In-App / OS Native) sets `userConfig.useNativeFileDialogs`, which
+  **defaults to OS Native**; when on *and* the host provides an OS dialog, the bridge delegates to it. On a
+  host with no OS dialog it stays in-app, so the default is safe everywhere.
   The OS dialog is **portable-file-dialogs** (`deps/portable-file-dialogs`, header-only) behind a shared helper,
   [`NativeFileDialog`](../packages/native/src/host/ui/NativeFileDialog.hpp) — used by **both** the SDL host and
   the DPF plugin/standalone, so they behave identically. Each host binds `__rp_openFileBrowser` to an async

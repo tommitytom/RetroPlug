@@ -12,7 +12,7 @@ export type MenuItemKind = "action" | "submenu" | "separator" | "cycler" | "capt
  *  the overlay open (shown red), or null to close it — the single success/failure channel. */
 export interface PromptSpec {
   title: string;
-  initial?: string; // seeds the field (e.g. Rename pre-fills the current name)
+  initial?: string; // seeds the field (e.g. the project-name row pre-fills the current name)
   hint?: string; // status-line default; a built-in is used when omitted
   confirm?: boolean; // yes/no dialog — no text field
   // Letter-case policy for typed characters: "mixed" (default) respects Shift (Shift+a → "A"); "upper"
@@ -38,7 +38,6 @@ export interface MenuItem {
   capture?: { source?: "keyboard" | "gamepad"; onCapture: (name: string) => void; onClear: () => void };
   prompt?: PromptSpec; // present iff kind === "prompt"
   warn?: boolean; // paint the label in a warning colour (yellow) — e.g. a recent entry whose file is missing
-  onRename?: PromptSpec; // F2 on the focused row opens this text prompt (recent-entry rename)
   onDelete?: () => void; // Del on the focused row invokes this (recent-entry removal)
 }
 

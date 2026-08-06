@@ -15,7 +15,7 @@ import { Box } from "../../lvgl/Box";
 import { tagTestId } from "../../lvgl/StableSlot";
 import { LsdjOverlay } from "./LsdjOverlay";
 import { RisaOverlay } from "./RisaOverlay";
-import { getRenderJobs, cancelRender, dismissRenderJob, pickActiveRenderJob, type RenderJobStatus } from "../../lvgl/render";
+import { getRenderJobs, cancelRender, dismissRenderJob, pickActiveRenderJob, renderBadgeLabel, type RenderJobStatus } from "../../lvgl/render";
 
 const LV_IMAGE_ALIGN_CONTAIN = 14; // aspect-preserving nearest-neighbour scale
 const LV_ALIGN_CENTER = 0x09;
@@ -51,8 +51,8 @@ export function EmulatorTile({
   const { backend } = useStores();
   const canvasRef = useRef<CanvasHandle | null>(null);
 
-  // The active background render badge for this system (or null). Updated only when it meaningfully changes
-  // (state, or ~2% progress) so the per-frame poll doesn't re-render every tick.
+  // The active background render badge for this system (or null). Updated only when its LABEL changes (so
+  // once a second while rendering) rather than on every per-frame poll.
   const [renderJob, setRenderJob] = useState<RenderJobStatus | null>(null);
   const renderKey = useRef("");
 
@@ -64,7 +64,7 @@ export function EmulatorTile({
       if (j.systemId === systemId && (j.state === "done" || j.state === "cancelled"))
         dismissRenderJob(j.id); // the render finished (file written) — drop the job, vanish the badge
     const active = pickActiveRenderJob(jobs, systemId);
-    const key = active ? `${active.id}:${active.state}:${Math.round(active.progress * 50)}` : "";
+    const key = active ? `${active.id}:${renderBadgeLabel(active)}` : "";
     if (key !== renderKey.current) {
       renderKey.current = key;
       setRenderJob(active);
@@ -113,7 +113,7 @@ export function EmulatorTile({
         />
       )}
       {renderJob && (
-        // Background-render badge along the tile's bottom: a progress fill under a status label. Tap while
+        // Background-render badge along the tile's bottom: how much audio has been rendered so far. Tap while
         // rendering to cancel; tap an error to dismiss. (The click also bubbles to focus the tile — harmless.)
         <Box
           onClick={() => (renderJob.state === "rendering" ? cancelRender(renderJob.id) : dismissRenderJob(renderJob.id))}
@@ -125,19 +125,8 @@ export function EmulatorTile({
             "background-opacity": 0.75,
           }}
         >
-          {renderJob.state === "rendering" && (
-            <Box
-              style={{
-                width: Math.max(0, Math.min(width, Math.round(width * renderJob.progress))),
-                height: renderBarH(height),
-                "background-color": "#4a86e8",
-              }}
-            />
-          )}
           <Text style={{ "text-color": "#ffffff", "font-size": renderFont(height), width, height: renderBarH(height) }}>
-            {renderJob.state === "rendering"
-              ? ` ${Math.round(renderJob.progress * 100)}%  rendering (tap to cancel)`
-              : " render failed (tap to dismiss)"}
+            {renderBadgeLabel(renderJob)}
           </Text>
         </Box>
       )}

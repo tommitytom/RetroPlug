@@ -85,13 +85,30 @@ test("remove: found removes + persists + notifies; absent is a no-op", () => {
   expect(writes()).toBe(writesBefore); // no write
 });
 
-test("rename: found sets the alias + persists; absent is a no-op", () => {
+test("add: one row per song, and re-adding the current song is a genuine no-op (no write, no notify)", () => {
+  const { be, store, changes } = newStore();
+  store.load();
+  expect(store.add("/proj/a.rplg", "cart", "GRUB")).toBeTruthy();
+  expect(store.add("/proj/a.rplg", "cart", "INTRO")).toBeTruthy(); // same project, second song
+  expect(store.view().map((v) => v.song)).toEqual(["INTRO", "GRUB"]);
+
+  // The song watcher calls add on a timer: while nothing changed it must not write or notify.
+  const writes = () => be.log.filter((m) => m === "writeFileAtomic").length;
+  const [writesBefore, changesBefore] = [writes(), changes()];
+  expect(store.add("/proj/a.rplg", "cart", "INTRO")).toBeFalsy();
+  expect(writes()).toBe(writesBefore);
+  expect(changes()).toBe(changesBefore);
+});
+
+test("remove: drops one song row of a project, leaving its others", () => {
   const { store } = newStore();
   store.load();
-  store.add("/a.rplg", "");
-  expect(store.rename("/a.rplg", "Nice")).toBeTruthy();
-  expect(store.view()[0].label).toBe("Nice");
-  expect(store.rename("/missing.rplg", "x")).toBeFalsy();
+  store.add("/proj/a.rplg", "cart", "GRUB");
+  store.add("/proj/a.rplg", "cart", "INTRO");
+  expect(store.remove("/proj/a.rplg", "GRUB")).toBeTruthy();
+  expect(store.view().map((v) => v.song)).toEqual(["INTRO"]);
+  expect(store.remove("/proj/a.rplg", "GRUB")).toBeFalsy(); // already gone
+  expect(store.remove("/proj/a.rplg")).toBeFalsy(); // the songless row was never there
 });
 
 test("relink: repoints a moved project + persists; absent is a no-op", () => {
@@ -102,7 +119,7 @@ test("relink: repoints a moved project + persists; absent is a no-op", () => {
   expect(store.relink("/old/song.rplg", "/new/song.rplg")).toBeTruthy();
   const v = store.view();
   expect(v[0].path).toBe("/new/song.rplg");
-  expect(v[0].label).toBe("Keep"); // alias survives the relink
+  expect(v[0].label).toBe("Keep"); // the recorded name survives the relink
   expect(v[0].missing).toBeFalsy();
   expect(store.relink("/nope.rplg", "/x.rplg")).toBeFalsy();
 });

@@ -595,7 +595,7 @@ JSValue jsDismissRenderJob(JSContext* ctx, JSValueConst, int argc, JSValueConst*
     return JS_UNDEFINED;
 }
 
-// __rp_getRenderJobs(): this editor's render jobs as [{ id, systemId, state, progress, message }], for the
+// __rp_getRenderJobs(): this editor's render jobs as [{ id, systemId, state, renderedMs, message }], for the
 // per-frame tile poll. state is "rendering" | "done" | "error" | "cancelled".
 JSValue jsGetRenderJobs(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSValue* funcData) {
     JSValue arr = JS_NewArray(ctx);
@@ -608,7 +608,7 @@ JSValue jsGetRenderJobs(JSContext* ctx, JSValueConst, int, JSValueConst*, int, J
         JS_SetPropertyStr(ctx, o, "id", JS_NewInt64(ctx, static_cast<std::int64_t>(s.id)));
         JS_SetPropertyStr(ctx, o, "systemId", JS_NewUint32(ctx, s.systemId));
         JS_SetPropertyStr(ctx, o, "state", JS_NewString(ctx, retroplug::RenderJobRegistry::stateName(s.state)));
-        JS_SetPropertyStr(ctx, o, "progress", JS_NewFloat64(ctx, s.progress));
+        JS_SetPropertyStr(ctx, o, "renderedMs", JS_NewFloat64(ctx, s.renderedMs));
         JS_SetPropertyStr(ctx, o, "message", JS_NewString(ctx, s.message.c_str()));
         JS_SetPropertyUint32(ctx, arr, i, o);
     }

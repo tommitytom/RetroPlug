@@ -10,7 +10,8 @@ import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadToAction, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery } from "../systems/fixtures";
-import { savFrom, type SavInput } from "../../src/lsdjSav";
+import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
+import { lsdjSongCatalog } from "../../src/tracker";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
@@ -107,7 +108,7 @@ test("a recent tracker entry's label leads with the song, then the project (ASCI
   const stores = composeAppStores({ backend: be });
   be.seed("/music/proj.rplg", "PK"); // on disk → not missing (no " [!]" marker)
   be.seed("/music/plain.rplg", "PK");
-  stores.recent.add("/music/proj.rplg", "MyProject", "GRUB"); // a tracker cart: project alias + working song
+  stores.recent.add("/music/proj.rplg", "MyProject", "GRUB"); // a tracker cart: project name + working song
   stores.recent.add("/music/plain.rplg", "Plain"); // no song
 
   const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
@@ -116,6 +117,63 @@ test("a recent tracker entry's label leads with the song, then the project (ASCI
   expect(findItem(rows, "recent-1")?.label.includes("—")).toBe(false); // never the emdash
   // A non-tracker entry (no song) is just the project name.
   expect(findItem(rows, "recent-0")?.label).toBe("Plain");
+});
+
+test("a recent entry names the cart in full: song - sav [rom], with a project name replacing the sav/rom pair", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/cool.gb", lsdjRom("LSDJ-V9.4.2"));
+  be.seed("/saves/mysong.sav", "battery");
+  stores.project.systems.loadRom("/roms/cool.gb", { explicitSav: "/saves/mysong.sav" }); // a paired sav
+  const id = stores.project.systems.view()[0].id;
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  be.setSram(id, savFrom({ activeProjectIndex: 0, projects: [{ name: "MYSONG", version: 0, song }] } as SavInput));
+  stores.project.save("/proj/x.rplg");
+
+  const rowLabel = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent"), "recent-0")?.label;
+  expect(rowLabel()).toBe("MYSONG - mysong.sav [cool]"); // working song, loaded sav (with extension), ROM
+
+  // Naming the project drops the cart's sav / ROM segments; the working song still leads.
+  stores.project.setName("Album Cut");
+  stores.project.save("/proj/x.rplg");
+  expect(rowLabel()).toBe("MYSONG - Album Cut");
+});
+
+test("Songs > Load records the newly loaded song as its own recent row; picking a row asks for that song back", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/cool.gb", lsdjRom("LSDJ-V9.4.2"));
+  stores.project.systems.loadRom("/roms/cool.gb");
+  const id = stores.project.systems.view()[0].id;
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  const sav = (active: number) =>
+    savFrom({ activeProjectIndex: active, projects: [{ name: "GRUB", version: 0, song }, { name: "INTRO", version: 0, song }] } as SavInput);
+  // Load GRUB into working memory rather than just pointing at it, so the cart is in the state a real one
+  // would be: working song == its slot, nothing uncommitted. Otherwise Load is the unsaved-work guard
+  // (covered in menu/song-guard) instead of the plain row this test is about.
+  be.setSram(id, loadSongToWorking(sav(0), 0)!);
+  stores.project.save("/proj/x.rplg"); // one row so far: GRUB
+
+  // LSDj > Songs > [1] INTRO > Load... - records by name, so it doesn't depend on the rebuilt core having
+  // published a fresh battery snapshot yet.
+  const sys = stores.project.systems.view()[0];
+  const inst = buildInstanceMenu({ ...ctxOf(stores), system: sys }).items;
+  const songs = submenuChildren(submenuChildren(submenuChildren(inst, "inst-lsdj"), "lsdj-songs"), "lsdj-song-1");
+  findItem(songs, "lsdj-song-1-load")!.onSelect!();
+  expect(lsdjSongCatalog.workingName(be.readFile("/roms/cool.sav")!)).toBe("INTRO"); // and it really loaded
+
+  const rows = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
+  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool.sav [cool]", "GRUB - cool.sav [cool]"]); // a row each, newest first
+
+  // Picking the GRUB row reopens the project AND asks for that song back.
+  const asked: [string, string | undefined][] = [];
+  const ctx = { ...ctxOf(stores), loadProject: (p: string, s?: string) => asked.push([p, s]) };
+  findItem(submenuChildren(buildStartMenu(ctx).items, "start-recent"), "recent-1")!.onSelect!();
+  expect(asked).toEqual([["/proj/x.rplg", "GRUB"]]);
+
+  // Del takes out just that song's row.
+  findItem(rows(), "recent-1")!.onDelete!();
+  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool.sav [cool]"]);
 });
 
 test("recent entries are flat action rows: present loads + can be deleted, missing warns + relinks", () => {
@@ -134,7 +192,6 @@ test("recent entries are flat action rows: present loads + can be deleted, missi
   expect(present.warn).toBeFalsy();
   expect(present.label).toBe("Present");
   expect(typeof present.onDelete).toBe("function");
-  expect(typeof present.onRename).toBe("object");
 
   // A missing entry warns (yellow) with a trailing " [!]".
   expect(missing.warn).toBe(true);
@@ -147,21 +204,41 @@ test("recent entries are flat action rows: present loads + can be deleted, missi
   expect(findItem(rows, "recent-0")?.label).toBe("Away [!]"); // only the missing one remains
 });
 
-test("a recent entry's Rename prompt renames the project (edits the file + recents alias)", () => {
+test("Project > Name sets the project's own name; blank shows the derived one and clears back to it", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/a.gb", gbRom());
   stores.project.systems.loadRom("/roms/a.gb");
-  stores.project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg in recents, name "a", open project
+  stores.project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg in recents, unnamed, open project
 
-  // The recent entry is a single action row; its Rename prompt rides F2 (the onRename field), not a child.
-  const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
-  const rename = findItem(rows, "recent-0")!.onRename!;
-  expect(rename.onConfirm("  ")).toBe("Name cannot be empty."); // blank → error keeps it open
-  expect(rename.onConfirm("My Song")).toBe(null); // success closes it
+  const nameRow = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project"), "proj-name")!;
+  // Unnamed: the row shows the name derived from the instance, flagged as automatic.
+  expect(nameRow().label).toBe("Name: a (auto)");
+  expect(nameRow().prompt!.initial).toBe(""); // the field starts empty, not pre-filled with the derived name
 
+  expect(nameRow().prompt!.onConfirm("My Song")).toBe(null); // confirming closes the prompt
   expect(stores.project.name()).toBe("My Song");
+  expect(nameRow().label).toBe("Name: My Song");
+  expect(nameRow().prompt!.initial).toBe("My Song"); // re-opening pre-fills the current name
+
+  expect(nameRow().prompt!.onConfirm("")).toBe(null); // empty clears it
+  expect(stores.project.name()).toBe("");
+  expect(nameRow().label).toBe("Name: a (auto)");
+
+  // The name is only on the .rplg once saved, and only while the user has one set.
+  stores.project.setName("My Song");
+  stores.project.save("/roms/a.rplg");
   expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song");
+});
+
+test("Project > Name is absent with no systems; reads (None) when there's nothing to derive from", () => {
+  const stores = composeAppStores({ backend: new MockBackend("/cfg") });
+  const rows = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project");
+  expect(findItem(rows(), "proj-name")).toBe(undefined); // nothing to name yet
+
+  // The embedded mGB has no on-disk path, so no name can be derived from it.
+  stores.project.systems.loadMgb();
+  expect(findItem(rows(), "proj-name")!.label).toBe("Name: (None)");
 });
 
 test("menu titles: start shows the version; instance adds project + ROM (deduped when equal)", () => {
@@ -744,6 +821,24 @@ test("Keyboard Bindings: 8 GB + 3 app-action rows; capture rebinds write-through
   expect(stores.bindings.resolvedBindings().keyboard.A).toEqual(defaultBindingMap().keyboard.A);
   expect(stores.bindings.resolvedBindings().keyboardActions.OpenMenu).toEqual(["Escape"]); // action reset too
   expect(stores.bindings.loadProfile(active)!.gamepad).toEqual(defaultBindingMap().gamepad);
+});
+
+test("Keyboard Bindings: a bound space reads \"Space\", including a profile holding the raw character", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const active = stores.userConfig.config().activeKeyboardBindings;
+
+  // What the capture row now hands over for the space bar (Menu's dpfCodeToKeyName).
+  findItem(keyboardBindings(stores), "bind-A")!.capture!.onCapture("Space");
+  expect(stores.bindings.loadProfile(active)!.keyboard.A).toEqual(["Space"]);
+  expect(findItem(keyboardBindings(stores), "bind-A")!.label).toBe("A: Space");
+  expect(buildKeyToButton(stores.bindings.resolvedBindings().keyboard).get(0x20)).toBe(BUTTON_VALUE.A);
+
+  // A profile written before Space had a name: the raw " " still binds, and still reads as the word.
+  const map = stores.bindings.loadProfile(active)!;
+  stores.bindings.saveProfile(active, { ...map, keyboard: { ...map.keyboard, B: [" "] } });
+  expect(findItem(keyboardBindings(stores), "bind-B")!.label).toBe("B: Space");
+  expect(buildKeyToButton(stores.bindings.resolvedBindings().keyboard).get(0x20)).toBe(BUTTON_VALUE.B);
 });
 
 // The Settings → Gamepad Bindings submenu — the gamepad twin of the keyboard editor.
