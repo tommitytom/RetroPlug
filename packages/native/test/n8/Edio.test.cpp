@@ -4,16 +4,21 @@
 // MIDI path needs a real N8). Mirrors test/midi/MidiPortSelect.test.cpp (a header-level, backend-free guard).
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <memory>
+#include <thread>
 #include <vector>
 
 #include "host/n8/Edio.hpp"
+#include "host/n8/N8Link.hpp"
 #include "host/n8/N8Menu.hpp"
 
 using retroplug::Edio;
 using retroplug::ISerialPort;
+using retroplug::N8Link;
 using retroplug::N8Menu;
 
 namespace {
@@ -214,4 +219,98 @@ TEST_CASE("fileClose sends CMD_F_FCLOSE then polls status", "[n8]") {
         0x2B, 0xD4, 0x10, 0xEF,  // checkStatus -> CMD_STATUS frame
     };
     REQUIRE(port.written == expected);
+}
+
+// --- N8Link: the host serial thread + ring + timed scheduler (standalone/plugin forward) ---
+
+namespace {
+// A serial port that captures writes into a TEST-OWNED buffer, so it outlives N8Link's port (disconnect()
+// destroys the port; the buffer survives + is safely readable after the join happens-before).
+struct N8FakePort : ISerialPort {
+    std::vector<std::uint8_t>& written;
+    std::deque<std::uint8_t>   toRead;
+    explicit N8FakePort(std::vector<std::uint8_t>& w) : written(w) {}
+    std::size_t write(const std::uint8_t* d, std::size_t n) override {
+        written.insert(written.end(), d, d + n);
+        return n;
+    }
+    std::size_t read(std::uint8_t* b, std::size_t n, int) override {
+        std::size_t i = 0;
+        while (i < n && !toRead.empty()) { b[i++] = toRead.front(); toRead.pop_front(); }
+        return i;
+    }
+    void flushInput() override {}
+};
+
+template <class Pred>
+bool waitUntil(Pred pred, int ms = 1000) {
+    for (int i = 0; i < ms && !pred(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    return pred();
+}
+
+// Factory: capture writes into `out` (test-owned), priming the handshake reply on each opened port.
+N8Link::PortFactory captureFactory(std::vector<std::uint8_t>& out, std::uint16_t status = 0xA500) {
+    return [&out, status](const std::string&) -> std::unique_ptr<ISerialPort> {
+        auto f = std::make_unique<N8FakePort>(out);
+        f->toRead.push_back(static_cast<std::uint8_t>(status & 0xFF));
+        f->toRead.push_back(static_cast<std::uint8_t>(status >> 8));
+        return f;
+    };
+}
+}  // namespace
+
+TEST_CASE("N8Link forwards a pushed MIDI message to the serial port via fifoWR", "[n8]") {
+    std::vector<std::uint8_t> captured;
+    N8Link                    link(captureFactory(captured));
+    REQUIRE(link.connect("fake"));
+    REQUIRE(link.isConnected());
+    link.setLookaheadMs(0);
+
+    const std::uint8_t midi[] = {0x90, 0x3C, 0x7F};
+    link.push(0, midi, sizeof(midi), 48000.0);
+    REQUIRE(waitUntil([&] { return link.bytesForwarded() >= 3; }));
+    link.disconnect();  // joins the serial thread -> `captured` is complete + safe to read
+
+    const std::vector<std::uint8_t> expected = {
+        0x2B, 0xD4, 0x10, 0xEF,  // connect(): CMD_STATUS handshake
+        0x2B, 0xD4, 0x1A, 0xE5, 0x00, 0x00, 0x81, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x90, 0x3C, 0x7F,  // fifoWR
+    };
+    REQUIRE(captured == expected);
+}
+
+TEST_CASE("N8Link forwards multiple messages in FIFO order", "[n8]") {
+    std::vector<std::uint8_t> captured;
+    N8Link                    link(captureFactory(captured));
+    REQUIRE(link.connect("fake"));
+    link.setLookaheadMs(0);
+
+    const std::uint8_t on[]  = {0x90, 0x3C, 0x7F};
+    const std::uint8_t off[] = {0x80, 0x3C, 0x00};
+    link.push(0, on, sizeof(on), 48000.0);
+    link.push(0, off, sizeof(off), 48000.0);
+    REQUIRE(waitUntil([&] { return link.bytesForwarded() >= 6; }));
+    link.disconnect();
+
+    const std::vector<std::uint8_t> expected = {
+        0x2B, 0xD4, 0x10, 0xEF,  // handshake
+        0x2B, 0xD4, 0x1A, 0xE5, 0x00, 0x00, 0x81, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x90, 0x3C, 0x7F,  // note-on
+        0x2B, 0xD4, 0x1A, 0xE5, 0x00, 0x00, 0x81, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x80, 0x3C, 0x00,  // note-off
+    };
+    REQUIRE(captured == expected);
+}
+
+TEST_CASE("N8Link connect fails cleanly on a bad handshake", "[n8]") {
+    std::vector<std::uint8_t> captured;
+    N8Link                    link(captureFactory(captured, 0x1234));  // wrong high byte
+    REQUIRE_FALSE(link.connect("fake"));
+    REQUIRE_FALSE(link.isConnected());
+    REQUIRE_FALSE(link.lastError().empty());
+}
+
+TEST_CASE("N8Link push is a no-op when not connected", "[n8]") {
+    std::vector<std::uint8_t> captured;
+    N8Link                    link(captureFactory(captured));
+    const std::uint8_t        m[] = {0x90, 0x3C, 0x7F};
+    link.push(0, m, sizeof(m), 48000.0);  // not connected -> dropped
+    REQUIRE(link.bytesForwarded() == 0);
 }

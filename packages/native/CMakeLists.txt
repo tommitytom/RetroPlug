@@ -331,6 +331,9 @@ add_executable(retroplug-sdl EXCLUDE_FROM_ALL
     sdl/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (virtual + hardware ports)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp               # N8 Pro serial client (Settings > N8)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Link.cpp             # host serial thread -> physical N8 (MIDI forward)
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
 
@@ -338,6 +341,7 @@ target_link_libraries(retroplug-sdl PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
     retroplug-backend             # Engine + cores + txiki host + rpcpp
     rtmidi                        # cross-platform MIDI in/out (ALSA/CoreMIDI/WinMM)
+    serial                        # wjwwood/serial -> Everdrive N8 Pro (cmake/serial.cmake)
     PkgConfig::SDL2)              # window + present + audio + gamepad (found at root scope)
 
 target_include_directories(retroplug-sdl PRIVATE
@@ -709,10 +713,13 @@ set_target_properties(retroplug-midi-test PROPERTIES
 add_executable(retroplug-n8-test EXCLUDE_FROM_ALL
     test/n8/Edio.test.cpp
     src/host/n8/Edio.cpp
-    src/host/n8/N8Menu.cpp)
+    src/host/n8/N8Menu.cpp
+    src/host/n8/N8Link.cpp)
 
+find_package(Threads REQUIRED)
 target_link_libraries(retroplug-n8-test PRIVATE
-    Catch2::Catch2WithMain)
+    Catch2::Catch2WithMain
+    Threads::Threads)              # N8Link's serial thread
 
 target_include_directories(retroplug-n8-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/n8/Edio.hpp

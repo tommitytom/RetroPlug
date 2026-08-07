@@ -82,6 +82,7 @@ import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
+import { hasN8, getN8Config, setN8Port, connectN8, setN8Lookahead } from "./n8Devices";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -166,6 +167,39 @@ function midiSettingsChildren(): MenuItem[] {
   return [
     cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),
     cycler("midi-output", "Output Device", out.names, out.index, (n) => setMidiOutput(outName(n))),
+  ];
+}
+
+// Standalone-only "stream to a physical Everdrive N8 Pro" submenu (Settings > N8 Pro), gated on hasN8().
+// Pick a serial port (auto-detecting the N8), Connect to open the link, tune the timed-release lookahead;
+// the native host reconnects the port + persists (n8.cfg) on the spot. Status is a read-only row.
+const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
+function n8SettingsChildren(): MenuItem[] {
+  const cfg = getN8Config() ?? { ports: [], selectedPort: "", connected: false, enabled: false, lookaheadMs: 0, bytes: 0, error: "" };
+  // Port cycler: index 0 = "(auto-detect)" (empty selection); the rest are the enumerated ports, N8 tagged.
+  const portValues = cfg.ports.map((p) => p.port);
+  const names = ["(auto-detect)", ...cfg.ports.map((p) => (p.isN8 ? `${p.port} [N8]` : p.port))];
+  let index = 0;
+  if (cfg.selectedPort !== "") {
+    const i = portValues.indexOf(cfg.selectedPort);
+    if (i >= 0) index = i + 1;
+    else { names.push(`${cfg.selectedPort} (not connected)`); index = names.length - 1; }
+  }
+  const portName = (n: number) => (n === 0 ? "" : portValues[n - 1] ?? cfg.selectedPort);
+  const laIdx = Math.max(0, N8_LOOKAHEADS.indexOf(cfg.lookaheadMs));
+  const status = cfg.enabled
+    ? cfg.connected
+      ? `Streaming (${cfg.bytes} bytes)`
+      : cfg.error
+        ? `Error: ${cfg.error}`
+        : "Connecting..."
+    : "Off";
+  return [
+    cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n))),
+    action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled)),
+    cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx, (n) => setN8Lookahead(N8_LOOKAHEADS[n])),
+    sep("n8-sep-status"),
+    action("n8-status", `Status: ${status}`, () => {}, true),  // read-only status row
   ];
 }
 
@@ -1605,6 +1639,7 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
     // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
     ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
+    ...(isStandalone() && hasN8() ? [submenu("set-n8", "N8 Pro", n8SettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }

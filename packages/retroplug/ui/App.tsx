@@ -31,6 +31,7 @@ import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./scree
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel, type MenuContext } from "./screens/menu/menuDefs";
 import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import { subscribeMidi } from "./screens/menu/midiDevices";
+import { subscribeN8 } from "./screens/menu/n8Devices";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
@@ -69,6 +70,10 @@ export function App() {
   // here to repaint the "Input/Output Device" labels immediately. Inert in a DAW / the harness.
   const [, bumpMidi] = useState(0);
   useEffect(() => subscribeMidi(() => bumpMidi((n) => n + 1)), []);
+  // Standalone N8 submenu (Settings > N8 Pro): the serial-link state lives natively, so a port/connect/
+  // lookahead change emits here to repaint its labels immediately. Inert in a DAW / the harness.
+  const [, bumpN8] = useState(0);
+  useEffect(() => subscribeN8(() => bumpN8((n) => n + 1)), []);
 
   const empty = systems.length === 0;
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.
