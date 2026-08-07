@@ -31,6 +31,14 @@ export interface SongCatalog {
    *  only consoles whose working song can exist outside the saved list implement it (risa; LSDj does not,
    *  since its working song is a copy of a saved slot addressed by activeProjectIndex). */
   workingSong?(sav: Uint8Array): { name: string } | null;
+  /** True when the working song holds content that exists in NO saved slot - exactly what `load` (and a
+   *  cart reboot into another song) destroys, and the gate for the Songs menu's confirm. Distinct from
+   *  `workingSong` above: that asks "is it worth its own row", this asks "would discarding it lose work".
+   *  Two cases are dirty: an UNLINKED working song (no catalog slot claims it), and one linked to a slot
+   *  whose CONTENT it no longer matches (the common case - load a song, edit for an hour, load another).
+   *  Optional - a console that can't tell omits it, and the caller then never prompts (a prompt that fires
+   *  when nothing would be lost is worse than none, since users learn to dismiss it). */
+  workingSongDirty?(sav: Uint8Array): boolean;
   /** Load a saved song into working memory (+ mark it active). New bytes, or null on an empty slot. */
   load(sav: Uint8Array, index: number): Uint8Array | null;
   /** Delete a saved song. New bytes, or null on an invalid index. */

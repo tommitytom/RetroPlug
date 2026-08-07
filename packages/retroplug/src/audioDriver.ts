@@ -125,6 +125,10 @@ export interface AudioDriver {
    *  system is built; returns false once a system exists (no resample-on-change) or for a non-positive rate. */
   setSampleRate(sampleRate: number): boolean;
   setTransport(running: boolean): boolean;
+  /** Move the host playhead (quarter notes). A DAW locates on every stop-and-rewind, loop wrap, or
+   *  timeline click; roles see it as a ppqStart discontinuity. Without this a test can only ever let
+   *  ppq accumulate, so "resume where we paused" is expressible but "rewind and play again" is not. */
+  setPpq(ppq: number): boolean;
   setBpm(bpm: number): boolean;
   /** Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
    *  The kernel's midi-routing behaviour fans it to systems; with no routing role it reaches none. */
@@ -206,6 +210,7 @@ export function createAudioDriver(): AudioDriver {
     sampleRate: () => call("sampleRate") as number,
     setSampleRate: (sampleRate) => call("setSampleRate", sampleRate) as boolean,
     setTransport: (running) => call("setTransport", running) as boolean,
+    setPpq: (ppq) => call("setPpq", ppq) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
     stageMidiIn: (bytes) => call("stageMidiIn", ints(bytes)) as boolean,
     drainMidiOut: () =>

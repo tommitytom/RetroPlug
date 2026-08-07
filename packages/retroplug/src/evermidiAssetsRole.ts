@@ -101,6 +101,7 @@ export function applyOverridesToRom(
   baseBytes: Uint8Array,
   overrides: EverMidiAssetOverride[],
   caps: ConstructCaps,
+  onSkip?: (ov: EverMidiAssetOverride, message: string) => void,
 ): Uint8Array {
   const rom = EverMidiRom.fromBytes(baseBytes);
   if (!rom.isEverMidi) return baseBytes;
@@ -108,7 +109,9 @@ export function applyOverridesToRom(
     try {
       applyOne(rom, ov, caps);
     } catch (e) {
-      console.log(`[evermidi-assets] skipped ${ov.type} slot ${ov.slot}: ${(e as Error).message}`);
+      const msg = (e as Error).message;
+      if (onSkip) onSkip(ov, msg);
+      else console.log(`[evermidi-assets] skipped ${ov.type} slot ${ov.slot}: ${msg}`);
     }
   }
   return rom.bytes();

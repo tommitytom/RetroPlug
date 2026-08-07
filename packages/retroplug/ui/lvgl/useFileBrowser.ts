@@ -41,7 +41,9 @@ export function useFileBrowser(stores: AppStores): FileBrowserOverlay {
     };
     const nativeHook = g.__rp_openFileBrowser;
     g.__rp_openFileBrowser = (title, patterns, saving, defaultName, startDir, directory) => {
-      // Opt-in: the host's OS dialog (where it provides one). Default: the in-app overlay.
+      // Default: the host's OS dialog. It falls through to the in-app overlay both when the user has opted
+      // out and when the host binds no native hook at all (no desktop dialog helper), so this is safe
+      // everywhere - a helper-less host just keeps the browser it always had.
       if (stores.userConfig.config().useNativeFileDialogs && nativeHook) {
         nativeHook(title, patterns, saving, defaultName, startDir, directory);
         return;

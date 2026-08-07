@@ -36,6 +36,29 @@ enum class SameBoyHighpass : std::uint32_t {
     RemoveDcOffset = 2,
 };
 
+// CGB colour correction. Mirrors SameBoy's GB_color_correction_mode_t ordinal-for-ordinal, so the
+// cast in applyDisplayConfig is direct. Only affects a CGB-family core (it acts on the 15-bit ->
+// RGB conversion); a DMG/MGB core ignores it. `Disabled` is the historical RetroPlug setting.
+enum class SameBoyColorCorrection : std::uint32_t {
+    Disabled            = 0,
+    CorrectCurves       = 1,
+    ModernBalanced      = 2,  // SameBoy's own default (was EMULATE_HARDWARE)
+    ModernBoostContrast = 3,  // (was PRESERVE_BRIGHTNESS)
+    ReduceContrast      = 4,
+    LowContrast         = 5,
+    ModernAccurate      = 6,
+};
+
+// DMG palette. NOT a SameBoy enum — the core takes a GB_palette_t pointer, so this indexes the four
+// built-ins it exports (GB_PALETTE_GREY / _DMG / _MGB / _GBL). Only affects DMG rendering. `Grey` is
+// what the core falls back to when no palette is set, i.e. RetroPlug's historical appearance.
+enum class SameBoyDmgPalette : std::uint32_t {
+    Grey = 0,
+    Dmg  = 1,
+    Mgb  = 2,
+    Gbl  = 3,
+};
+
 struct SameBoyConfig {
     // On-disk variant discriminator (`"kind":"sameboy"`).
     using Tag = rfl::Literal<"sameboy">;
@@ -43,6 +66,12 @@ struct SameBoyConfig {
     SameBoyModel              model    = SameBoyModel::CgbC;
     SameBoyHighpass           highpass = SameBoyHighpass::Accurate;
     bool                      fastBoot = true;
+    // --- display knobs (TS "sameboy" role; see coreRoles.ts) ---------------
+    // Every default below reproduces what SameBoySystem hardcoded before these were configurable, so
+    // an old project renders identically. All are live — none needs a core restart.
+    SameBoyColorCorrection    colorCorrection = SameBoyColorCorrection::Disabled;
+    SameBoyDmgPalette         dmgPalette      = SameBoyDmgPalette::Grey;
+    double                    lightTemperature = 0.0;  // -1 cool .. +1 warm, CGB only
     // When true, the UI thread watches `romPath` and triggers a reload
     // (preserving current SRAM, dropping savestate) when the file changes.
     // No-op when `romPath` is empty (embed-only project).

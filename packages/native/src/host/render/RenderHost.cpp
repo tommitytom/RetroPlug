@@ -69,10 +69,10 @@ JSValue rpcSendThunk(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv,
     return (*fn)(ctx, argv[0]);
 }
 
-JSValue progressThunk(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    double f = 0;
-    if (argc >= 1) JS_ToFloat64(ctx, &f, argv[0]);
-    if (RenderHost* h = hostOf(ctx)) h->onProgress(f);
+JSValue renderedThunk(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    double ms = 0;
+    if (argc >= 1) JS_ToFloat64(ctx, &ms, argv[0]);
+    if (RenderHost* h = hostOf(ctx)) h->onRendered(ms);
     return JS_UNDEFINED;
 }
 
@@ -192,7 +192,7 @@ RenderHost::RenderHost() {
     JSValue global = JS_GetGlobalObject(ctx_);
     JS_SetPropertyStr(ctx_, global, "__rp_writeStdout", JS_NewCFunction(ctx_, stdoutThunk, "__rp_writeStdout", 1));
     JS_SetPropertyStr(ctx_, global, "__rp_writeStderr", JS_NewCFunction(ctx_, stderrThunk, "__rp_writeStderr", 1));
-    JS_SetPropertyStr(ctx_, global, "__rp_reportRenderProgress", JS_NewCFunction(ctx_, progressThunk, "__rp_reportRenderProgress", 1));
+    JS_SetPropertyStr(ctx_, global, "__rp_reportRenderedMs", JS_NewCFunction(ctx_, renderedThunk, "__rp_reportRenderedMs", 1));
     JS_SetPropertyStr(ctx_, global, "__rp_isRenderCancelled", JS_NewCFunction(ctx_, cancelThunk, "__rp_isRenderCancelled", 0));
     JS_SetPropertyStr(ctx_, global, "__rp_renderResult", JS_NewCFunction(ctx_, resultThunk, "__rp_renderResult", 3));
     JS_FreeValue(ctx_, global);
@@ -209,8 +209,8 @@ RenderHost::~RenderHost() {
     }
 }
 
-RenderHost::Result RenderHost::run(const std::string& jobJson, ProgressFn onProgress, CancelFn isCancelled) {
-    progressFn_ = std::move(onProgress);
+RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRendered, CancelFn isCancelled) {
+    renderedFn_ = std::move(onRendered);
     cancelFn_ = std::move(isCancelled);
     result_ = Result{};
 
@@ -291,8 +291,8 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, ProgressFn onProg
     return result_;
 }
 
-void RenderHost::onProgress(double fraction) {
-    if (progressFn_) progressFn_(fraction);
+void RenderHost::onRendered(double ms) {
+    if (renderedFn_) renderedFn_(ms);
 }
 
 bool RenderHost::onCancelQuery() {

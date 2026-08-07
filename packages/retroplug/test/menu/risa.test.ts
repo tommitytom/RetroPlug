@@ -11,6 +11,7 @@ import { RisaRom } from "../../src/risa/rom";
 import { savBytes } from "../risa/fixtures";
 import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, decodeRecord, CURRENT_LAYOUT, kSaveSize } from "../../src/risaSav";
 import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
+import { risaSongCatalog } from "../../src/tracker";
 
 // A leaf that browses (Export) fires openFileBrowser fire-and-forget; flush the microtask chain it kicks off.
 const flush = async () => {
@@ -111,9 +112,10 @@ test("each risa song row now offers Load / Export / Replace / Delete (LSDj parit
   const stores = composeAppStores({ backend: be });
   const { items } = risaSystem(be, stores);
   const row = submenuChildren(submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs"), "risa-song-2");
-  expect(findItem(row, "risa-song-2-load")?.kind).toBe("action");
+  expect(findItem(row, "risa-song-2-load")?.kind).toBe("action"); // plain: this cart's working song is clean
   expect(findItem(row, "risa-song-2-export")?.kind).toBe("action"); // NEW — parity with LSDj
-  expect(findItem(row, "risa-song-2-replace")?.kind).toBe("action"); // NEW — parity with LSDj
+  // Replace overwrites a SAVED slot with no undo, so it confirms first — like Delete beside it.
+  expect(findItem(row, "risa-song-2-replace")?.kind).toBe("prompt");
   expect(findItem(row, "risa-song-2-delete")?.kind).toBe("prompt");
   expect(findItem(row, "risa-song-2-up")?.kind).toBe("action"); // risa keeps reorder (catalog.reorder)
 });
@@ -176,7 +178,12 @@ test("Load expands the selected song into working memory end-to-end (current-lay
     "risa-songs",
   );
 
-  findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-load")!.onSelect!();
+  // This fixture's working song genuinely differs from its slot 0 record (a real cart dumped mid-edit), so
+  // Load is the guarded submenu rather than a bare action - go through "Discard & Load", which is the same
+  // byte-op the unguarded row runs.
+  const loadRow = findItem(submenuChildren(songRows, "risa-song-0"), "risa-song-0-load")!;
+  expect(loadRow.kind).toBe("submenu");
+  findItem(loadRow.children!, "risa-song-0-load-discard")!.onSelect!();
 
   // The cold-booted core carries a battery whose working song (banks 0-3) is the expanded BLUMARBL, and
   // whose catalog (banks 4-7) is unchanged.
@@ -352,4 +359,36 @@ test("Export... on the working row writes the working song as a .risong", async 
   const written = be.readFile("/out/working.risong");
   expect(written != null).toBe(true);
   expect(decodeRecord(written!).name).toBe("BLUMARBL"); // the live working song, encoded as a record
+});
+
+test("risa's Load guard offers a plain save (its working song carries its own name)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // A current-v2 cart dumped mid-edit: its working song matches no catalog slot. (The default fixture is
+  // legacy-layout, whose working-song banks the catalog overlaps - correctly never guarded.)
+  const { items } = risaSystem(be, stores, unsavedWorkingBattery());
+  const load = findItem(submenuChildren(submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs"), "risa-song-0"), "risa-song-0-load")!;
+  expect(load.kind).toBe("submenu");
+  expect(findItem(load.children!, "risa-song-0-load-warn")?.disabled).toBe(true);
+  // Unlike LSDj, no name prompt: risa stores the song's name inside the record itself.
+  const save = findItem(load.children!, "risa-song-0-load-save")!;
+  expect(save.kind).toBe("action");
+  expect(save.label).toBe("Save Working Song & Load");
+  expect(findItem(load.children!, "risa-song-0-load-discard")?.kind).toBe("action");
+});
+
+test("risa Save & Load commits the working song then loads, in one cold boot", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const { items, id } = risaSystem(be, stores, unsavedWorkingBattery());
+  const before = risaSongCatalog.list(be.readSram(id)!).length;
+  const writesBefore = be.constructCalls.length;
+
+  const load = findItem(submenuChildren(submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs"), "risa-song-0"), "risa-song-0-load")!;
+  findItem(load.children!, "risa-song-0-load-save")!.onSelect!();
+
+  const out = new Uint8Array(be.constructCalls[be.constructCalls.length - 1].sramBytes!);
+  expect(risaSongCatalog.list(out).length).toBe(before + 1); // the working song became a new slot
+  expect(risaSongCatalog.workingSongDirty!(out)).toBe(false); // nothing left uncommitted
+  expect(be.constructCalls.length - writesBefore).toBe(1); // save+load is ONE byte-op
 });

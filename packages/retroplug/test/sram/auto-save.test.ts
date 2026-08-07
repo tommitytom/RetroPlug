@@ -6,7 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { UserConfigStore } from "../../src/userConfigStore";
-import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, flushDirtySram, lsdjSramSignature, sramSignature } from "../../src/sramAutoSave";
+import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, dirtySramTargets, flushDirtySram, lsdjSramSignature, sramSignature } from "../../src/sramAutoSave";
 import { savFrom } from "../../src/lsdj";
 import { gbRom } from "../systems/fixtures";
 
@@ -122,6 +122,20 @@ test("sramDirtyCount: dirty when the live battery has no matching .sav; clean on
   expect(sramDirtyCount(be, list)).toBe(1); // differs from disk → dirty again
 });
 
+test("dirtySramTargets: names the .sav each dirty battery writes, flagging one that isn't on disk yet", () => {
+  const { be, systems, id } = setup();
+  const list = systems.systems();
+  // Fresh system: a live battery with no .sav beside it - a save would CREATE the file.
+  expect(dirtySramTargets(be, list)).toEqual([{ id, savPath: SAV, isNew: true }]);
+
+  be.seed(SAV, be.readSram(id)!); // mirrored
+  expect(dirtySramTargets(be, list)).toEqual([]);
+
+  be.setSram(id, bytes(9, 9)); // an in-game battery write: the file exists but differs
+  expect(dirtySramTargets(be, list)).toEqual([{ id, savPath: SAV, isNew: false }]);
+  expect(sramDirtyCount(be, list)).toBe(dirtySramTargets(be, list).length); // the count IS the list length
+});
+
 test("flushDirtySram: writes each dirty battery to its sibling .sav, then it's clean", () => {
   const { be, systems, id } = setup();
   be.setSram(id, bytes(4, 5, 6));
@@ -231,4 +245,86 @@ test("pump prunes the persistent hash of a removed system (no stale-hash leak)",
   expect(hashes.has(id2)).toBe(false); // pruned
   expect(hashes.has(id)).toBe(true); // the survivor's hash stays
   expect(hashes.size).toBe(1);
+});
+
+// --- the cheap gate in front of the semantic signature ------------------------------------------------
+// pump() runs on the frame tick, and sramSignature on an LSDj cart is a full encodeSong(decodeSong(...))
+// round-trip. A raw whole-battery hash short-circuits the unchanged case (which, on a live cart, is
+// essentially every tick). It must not change WHAT gets written - only how much work deciding costs.
+
+test("pump: the raw-hash gate does not change the semantic verdict for an LSDj cart", () => {
+  const { be, uc, saver, id } = setup();
+  uc.setSramAutoSave("Continuous");
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  const sav = savFrom({ activeProjectIndex: 0, projects: [{ name: "GRUB", version: 0, song }] } as never);
+  be.setSram(id, sav);
+  expect(saver.pump()).toBe(1); // first observation, no file → write
+
+  // Byte-identical: the raw gate answers "nothing moved" without consulting the codec.
+  be.setSram(id, sav.slice());
+  expect(saver.pump()).toBe(0);
+
+  // A raw change the SEMANTIC signature calls meaningless must STILL not write. This is the case the gate
+  // could break: the raw hash sees a difference and lets it through, and lsdjSramSignature has to make the
+  // real call exactly as it did before. Same clock bytes the signature's own test uses.
+  const ticked = sav.slice();
+  ticked[WORK_HOURS] = (ticked[WORK_HOURS] + 7) & 0xff;
+  ticked[0x3fb9] = (ticked[0x3fb9] + 7) & 0xff; // totalTimeChecksum
+  expect(hashBytes(ticked) === hashBytes(sav)).toBeFalsy(); // the gate really does see a change...
+  be.setSram(id, ticked);
+  expect(saver.pump()).toBe(0); // ...and the semantic signature still says "nothing to save"
+
+  // A modelled byte IS meaningful, so it writes.
+  const edited = ticked.slice();
+  edited[TEMPO] = 90;
+  be.setSram(id, edited);
+  expect(saver.pump()).toBe(1);
+});
+
+test("pump: a cold-booted system re-seeds from disk instead of writing its old snapshot back", () => {
+  const { be, uc, systems, saver, id } = setup();
+  uc.setSramAutoSave("Continuous");
+  be.setSram(id, bytes(1, 2, 3));
+  expect(saver.pump()).toBe(1); // now holding a persistent hash for `id`
+
+  // Exactly what a Songs-menu edit does: write the new battery, then cold-boot from it. loadSram rebuilds
+  // in place and allocates a NEW system id, so the pump must shed the old one's cached hash and
+  // first-observe the new one against the file - not resurrect the pre-edit snapshot over it.
+  be.writeFile(SAV, bytes(9, 9, 9));
+  const newId = systems.loadSram(id, SAV)!;
+  expect(newId === id).toBeFalsy(); // the rebuild really did re-id
+  be.setSram(newId, bytes(9, 9, 9));
+
+  expect(saver.pump()).toBe(0); // first observation matches disk → seed, no write
+  expect([...be.readFile(SAV)!]).toEqual([9, 9, 9]); // the edit survived the tick
+});
+
+test("pump(limit) examines at most `limit` systems per tick, round-robin over them all", () => {
+  const be = new MockBackend("/config");
+  const uc = new UserConfigStore(be);
+  uc.setSramAutoSave("Continuous");
+  const systems = new SystemsStore(be);
+  const saver = new SramAutoSaver(be, systems, uc);
+  be.seed("/proj/a.gb", gbRom());
+  be.seed("/proj/b.gb", gbRom());
+  be.seed("/proj/c.gb", gbRom());
+  const ids = ["/proj/a.gb", "/proj/b.gb", "/proj/c.gb"].map((p) => systems.addSystem(p)!);
+  ids.forEach((id, i) => be.setSram(id, bytes(i + 1)));
+
+  // Each tick writes exactly ONE system - the per-frame budget the UI relies on.
+  expect(saver.pump(1)).toBe(1);
+  expect(saver.pump(1)).toBe(1);
+  expect(saver.pump(1)).toBe(1);
+  // ...and after a full cycle every system has reached disk, so nothing is starved.
+  expect([...be.readFile("/proj/a.sav")!]).toEqual([1]);
+  expect([...be.readFile("/proj/b.sav")!]).toEqual([2]);
+  expect([...be.readFile("/proj/c.sav")!]).toEqual([3]);
+
+  // Steady state costs no writes, and the cursor keeps moving rather than sticking on one system.
+  expect(saver.pump(1) + saver.pump(1) + saver.pump(1)).toBe(0);
+
+  // A change on the LAST system is still picked up within one full cycle.
+  be.setSram(ids[2], bytes(9));
+  expect(saver.pump(1) + saver.pump(1) + saver.pump(1)).toBe(1);
+  expect([...be.readFile("/proj/c.sav")!]).toEqual([9]);
 });

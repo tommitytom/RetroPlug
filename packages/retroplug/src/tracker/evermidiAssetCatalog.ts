@@ -3,8 +3,10 @@
 // but up to 16 SWITCHABLE banks on a banking build (VRC6/VRC7/S5B/FME-7/N163). So the kit type is ROM-aware
 // (resolveTypes): Replace-only on NROM, addable/16 on a banking cart. Themes/fonts stay single-slot.
 // The file-dialog Export/Replace stay in the menu (they own the .rit/.rkit/.chr formats).
-import type { AssetCatalog, AssetSlot, AssetTypeInfo } from "./assetCatalog";
+import type { AssetCatalog, AssetSlot, AssetTypeInfo, AssetOverride } from "./assetCatalog";
+import type { ConstructCaps } from "../systemRoles";
 import { EverMidiRom } from "../evermidi/rom";
+import { applyOverridesToRom, type EverMidiAssetOverride } from "../evermidiAssetsRole";
 
 const THEME_TYPE: AssetTypeInfo = { kind: "theme", title: "Themes", noun: "Theme", patterns: ["*.rit"], ext: ".rit", addable: false, maxSlots: 0 };
 const FONT_TYPE: AssetTypeInfo = { kind: "font", title: "Fonts", noun: "Font", patterns: ["*.chr"], ext: ".chr", addable: false, maxSlots: 0 };
@@ -33,5 +35,8 @@ export const evermidiAssetCatalog: AssetCatalog = {
     if (kind === "kit") return rom.kits().map((k) => ({ slot: k.slot, name: k.name || `Kit ${k.slot}` }));
     if (kind === "font") return rom.fonts().map((f) => ({ slot: f.slot, name: `Font ${f.slot}` }));
     return [];
+  },
+  applyOverrides(romBytes: Uint8Array, overrides: AssetOverride[], caps: ConstructCaps, onSkip): Uint8Array {
+    return applyOverridesToRom(romBytes, overrides as EverMidiAssetOverride[], caps, onSkip);
   },
 };

@@ -10,7 +10,8 @@ import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { buildKeyToButton, buildGamepadToButton, buildKeyToAction, buildGamepadToAction, BUTTON_VALUE } from "../../src/keyCodes";
 import { defaultBindingMap } from "../../src/bindingMap";
 import { gbRom, gbRomBattery, lsdjRom, nesRom, nesRomBattery } from "../systems/fixtures";
-import { savFrom, type SavInput } from "../../src/lsdjSav";
+import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
+import { lsdjSongCatalog } from "../../src/tracker";
 
 // A leaf's onSelect fires a FileSelection call fire-and-forget; flush the microtask chain it kicks off
 // (openFileBrowser resolve → pairing → the store mutation / runLoad .then). A handful of turns settles it.
@@ -107,7 +108,7 @@ test("a recent tracker entry's label leads with the song, then the project (ASCI
   const stores = composeAppStores({ backend: be });
   be.seed("/music/proj.rplg", "PK"); // on disk → not missing (no " [!]" marker)
   be.seed("/music/plain.rplg", "PK");
-  stores.recent.add("/music/proj.rplg", "MyProject", "GRUB"); // a tracker cart: project alias + working song
+  stores.recent.add("/music/proj.rplg", "MyProject", "GRUB"); // a tracker cart: project name + working song
   stores.recent.add("/music/plain.rplg", "Plain"); // no song
 
   const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
@@ -116,6 +117,63 @@ test("a recent tracker entry's label leads with the song, then the project (ASCI
   expect(findItem(rows, "recent-1")?.label.includes("—")).toBe(false); // never the emdash
   // A non-tracker entry (no song) is just the project name.
   expect(findItem(rows, "recent-0")?.label).toBe("Plain");
+});
+
+test("a recent entry names the cart in full: song - sav [rom], with a project name replacing the sav/rom pair", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/cool.gb", lsdjRom("LSDJ-V9.4.2"));
+  be.seed("/saves/mysong.sav", "battery");
+  stores.project.systems.loadRom("/roms/cool.gb", { explicitSav: "/saves/mysong.sav" }); // a paired sav
+  const id = stores.project.systems.view()[0].id;
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  be.setSram(id, savFrom({ activeProjectIndex: 0, projects: [{ name: "MYSONG", version: 0, song }] } as SavInput));
+  stores.project.save("/proj/x.rplg");
+
+  const rowLabel = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent"), "recent-0")?.label;
+  expect(rowLabel()).toBe("MYSONG - mysong.sav [cool]"); // working song, loaded sav (with extension), ROM
+
+  // Naming the project drops the cart's sav / ROM segments; the working song still leads.
+  stores.project.setName("Album Cut");
+  stores.project.save("/proj/x.rplg");
+  expect(rowLabel()).toBe("MYSONG - Album Cut");
+});
+
+test("Songs > Load records the newly loaded song as its own recent row; picking a row asks for that song back", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/cool.gb", lsdjRom("LSDJ-V9.4.2"));
+  stores.project.systems.loadRom("/roms/cool.gb");
+  const id = stores.project.systems.view()[0].id;
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  const sav = (active: number) =>
+    savFrom({ activeProjectIndex: active, projects: [{ name: "GRUB", version: 0, song }, { name: "INTRO", version: 0, song }] } as SavInput);
+  // Load GRUB into working memory rather than just pointing at it, so the cart is in the state a real one
+  // would be: working song == its slot, nothing uncommitted. Otherwise Load is the unsaved-work guard
+  // (covered in menu/song-guard) instead of the plain row this test is about.
+  be.setSram(id, loadSongToWorking(sav(0), 0)!);
+  stores.project.save("/proj/x.rplg"); // one row so far: GRUB
+
+  // LSDj > Songs > [1] INTRO > Load... - records by name, so it doesn't depend on the rebuilt core having
+  // published a fresh battery snapshot yet.
+  const sys = stores.project.systems.view()[0];
+  const inst = buildInstanceMenu({ ...ctxOf(stores), system: sys }).items;
+  const songs = submenuChildren(submenuChildren(submenuChildren(inst, "inst-lsdj"), "lsdj-songs"), "lsdj-song-1");
+  findItem(songs, "lsdj-song-1-load")!.onSelect!();
+  expect(lsdjSongCatalog.workingName(be.readFile("/roms/cool.sav")!)).toBe("INTRO"); // and it really loaded
+
+  const rows = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
+  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool.sav [cool]", "GRUB - cool.sav [cool]"]); // a row each, newest first
+
+  // Picking the GRUB row reopens the project AND asks for that song back.
+  const asked: [string, string | undefined][] = [];
+  const ctx = { ...ctxOf(stores), loadProject: (p: string, s?: string) => asked.push([p, s]) };
+  findItem(submenuChildren(buildStartMenu(ctx).items, "start-recent"), "recent-1")!.onSelect!();
+  expect(asked).toEqual([["/proj/x.rplg", "GRUB"]]);
+
+  // Del takes out just that song's row.
+  findItem(rows(), "recent-1")!.onDelete!();
+  expect(rows().map((r) => r.label)).toEqual(["INTRO - cool.sav [cool]"]);
 });
 
 test("recent entries are flat action rows: present loads + can be deleted, missing warns + relinks", () => {
@@ -134,7 +192,6 @@ test("recent entries are flat action rows: present loads + can be deleted, missi
   expect(present.warn).toBeFalsy();
   expect(present.label).toBe("Present");
   expect(typeof present.onDelete).toBe("function");
-  expect(typeof present.onRename).toBe("object");
 
   // A missing entry warns (yellow) with a trailing " [!]".
   expect(missing.warn).toBe(true);
@@ -147,21 +204,41 @@ test("recent entries are flat action rows: present loads + can be deleted, missi
   expect(findItem(rows, "recent-0")?.label).toBe("Away [!]"); // only the missing one remains
 });
 
-test("a recent entry's Rename prompt renames the project (edits the file + recents alias)", () => {
+test("Project > Name sets the project's own name; blank shows the derived one and clears back to it", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/a.gb", gbRom());
   stores.project.systems.loadRom("/roms/a.gb");
-  stores.project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg in recents, name "a", open project
+  stores.project.adoptRomProject("/roms/a.gb"); // /roms/a.rplg in recents, unnamed, open project
 
-  // The recent entry is a single action row; its Rename prompt rides F2 (the onRename field), not a child.
-  const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-recent");
-  const rename = findItem(rows, "recent-0")!.onRename!;
-  expect(rename.onConfirm("  ")).toBe("Name cannot be empty."); // blank → error keeps it open
-  expect(rename.onConfirm("My Song")).toBe(null); // success closes it
+  const nameRow = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project"), "proj-name")!;
+  // Unnamed: the row shows the name derived from the instance, flagged as automatic.
+  expect(nameRow().label).toBe("Name: a (auto)");
+  expect(nameRow().prompt!.initial).toBe(""); // the field starts empty, not pre-filled with the derived name
 
+  expect(nameRow().prompt!.onConfirm("My Song")).toBe(null); // confirming closes the prompt
   expect(stores.project.name()).toBe("My Song");
+  expect(nameRow().label).toBe("Name: My Song");
+  expect(nameRow().prompt!.initial).toBe("My Song"); // re-opening pre-fills the current name
+
+  expect(nameRow().prompt!.onConfirm("")).toBe(null); // empty clears it
+  expect(stores.project.name()).toBe("");
+  expect(nameRow().label).toBe("Name: a (auto)");
+
+  // The name is only on the .rplg once saved, and only while the user has one set.
+  stores.project.setName("My Song");
+  stores.project.save("/roms/a.rplg");
   expect(JSON.parse(be.readText("/roms/a.rplg")!).name).toBe("My Song");
+});
+
+test("Project > Name is absent with no systems; reads (None) when there's nothing to derive from", () => {
+  const stores = composeAppStores({ backend: new MockBackend("/cfg") });
+  const rows = () => submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project");
+  expect(findItem(rows(), "proj-name")).toBe(undefined); // nothing to name yet
+
+  // The embedded mGB has no on-disk path, so no name can be derived from it.
+  stores.project.systems.loadMgb();
+  expect(findItem(rows(), "proj-name")!.label).toBe("Name: (None)");
 });
 
 test("menu titles: start shows the version; instance adds project + ROM (deduped when equal)", () => {
@@ -746,6 +823,24 @@ test("Keyboard Bindings: 8 GB + 3 app-action rows; capture rebinds write-through
   expect(stores.bindings.loadProfile(active)!.gamepad).toEqual(defaultBindingMap().gamepad);
 });
 
+test("Keyboard Bindings: a bound space reads \"Space\", including a profile holding the raw character", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const active = stores.userConfig.config().activeKeyboardBindings;
+
+  // What the capture row now hands over for the space bar (Menu's dpfCodeToKeyName).
+  findItem(keyboardBindings(stores), "bind-A")!.capture!.onCapture("Space");
+  expect(stores.bindings.loadProfile(active)!.keyboard.A).toEqual(["Space"]);
+  expect(findItem(keyboardBindings(stores), "bind-A")!.label).toBe("A: Space");
+  expect(buildKeyToButton(stores.bindings.resolvedBindings().keyboard).get(0x20)).toBe(BUTTON_VALUE.A);
+
+  // A profile written before Space had a name: the raw " " still binds, and still reads as the word.
+  const map = stores.bindings.loadProfile(active)!;
+  stores.bindings.saveProfile(active, { ...map, keyboard: { ...map.keyboard, B: [" "] } });
+  expect(findItem(keyboardBindings(stores), "bind-B")!.label).toBe("B: Space");
+  expect(buildKeyToButton(stores.bindings.resolvedBindings().keyboard).get(0x20)).toBe(BUTTON_VALUE.B);
+});
+
 // The Settings → Gamepad Bindings submenu — the gamepad twin of the keyboard editor.
 function gamepadBindings(stores: AppStores): MenuItem[] {
   const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
@@ -1082,4 +1177,125 @@ test("render Output Dir: defaults to the .sav / ROM folder; Settings then a sess
   expect(dirRow(battId).label).toBe("Output Dir: /tmp/session"); // session override wins for this cart
   expect(dirRow(nesId).label).toBe("Output Dir: /music/out"); // other systems still see the Settings default
   expect(stores.userConfig.config().render.outputDir).toBe("/music/out"); // Settings default untouched
+});
+
+test("the SameBoy display rows cycle their role config, gated by model and GB-only", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/a.gb", gbRom());
+  const id = stores.project.systems.addSystem("/roms/a.gb")!;
+
+  const items = () => {
+    const sys = stores.project.systems.view().find((s) => s.id === id)!;
+    return submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: sys }).items, "inst-system");
+  };
+  const row = (itemId: string) => findItem(items(), itemId)!;
+  const cfg = () =>
+    stores.project.systems.view().find((s) => s.id === id)!.roles.find((r) => r.kind === "sameboy")!.config as Record<string, unknown>;
+  const setModel = (m: string) => stores.project.systems.setRoleConfig(id, "sameboy", { model: m });
+
+  // Defaults reproduce what the core did before these were configurable, so adding the rows can't
+  // change how an existing project looks.
+  expect(cfg().colorCorrection).toBe("disabled");
+  expect(cfg().dmgPalette).toBe("grey");
+  expect(cfg().lightTemperature).toBe(0);
+
+  // --- the model gate ---------------------------------------------------------------------------
+  // Default model is cgbC, so the CGB rows show and the DMG palette does not. Each row is only ever
+  // offered where the core will actually use it (GB_is_cgb one way, its negation the other).
+  expect(findItem(items(), "sys-color-correction")).toBeTruthy();
+  expect(findItem(items(), "sys-light-temp")).toBeTruthy();
+  expect(findItem(items(), "sys-dmg-palette")).toBe(undefined);
+
+  // `auto` is a CGB model here — RetroPlug resolves it to CGB-C — so it keeps the CGB rows. This is
+  // the case a naive "auto might be DMG" gate would get wrong.
+  setModel("auto");
+  expect(findItem(items(), "sys-color-correction")).toBeTruthy();
+  expect(findItem(items(), "sys-dmg-palette")).toBe(undefined);
+
+  // Every DMG-rendering model gets the palette row and loses the CGB pair — MGB and the Super Game
+  // Boys render in DMG mode too, so gating on dmgB alone would hide a control that works.
+  for (const m of ["dmgB", "mgb", "sgb", "sgbPal", "sgb2"]) {
+    setModel(m);
+    expect(findItem(items(), "sys-dmg-palette")).toBeTruthy();
+    expect(findItem(items(), "sys-color-correction")).toBe(undefined);
+    expect(findItem(items(), "sys-light-temp")).toBe(undefined);
+  }
+  // ...and every CGB-family model the reverse.
+  for (const m of ["cgb0", "cgbA", "cgbB", "cgbC", "cgbD", "cgbE", "agb", "gbp"]) {
+    setModel(m);
+    expect(findItem(items(), "sys-dmg-palette")).toBe(undefined);
+    expect(findItem(items(), "sys-color-correction")).toBeTruthy();
+    expect(findItem(items(), "sys-light-temp")).toBeTruthy();
+  }
+
+  // --- the CGB rows (model is back on a CGB one) -------------------------------------------------
+  setModel("cgbC");
+  for (const rid of ["sys-color-correction", "sys-light-temp"]) {
+    expect(row(rid).kind).toBe("cycler");
+    expect(row(rid).keepOpen).toBeTruthy();
+  }
+
+  // Colour correction steps through its 7 modes in settingsEnums order and wraps.
+  expect(row("sys-color-correction").label).toBe("Color Correction: Off");
+  row("sys-color-correction").onCycle!(1);
+  expect(cfg().colorCorrection).toBe("correctCurves");
+  expect(row("sys-color-correction").label).toBe("Color Correction: Correct Curves");
+  row("sys-color-correction").onCycle!(-1);
+  expect(cfg().colorCorrection).toBe("disabled");
+  row("sys-color-correction").onCycle!(-1); // wraps backwards to the last mode
+  expect(cfg().colorCorrection).toBe("modernAccurate");
+  row("sys-color-correction").onCycle!(1);
+  expect(cfg().colorCorrection).toBe("disabled");
+
+  // Light temperature is a cycler over a continuous value: it stores the double, and the row reflects it.
+  expect(row("sys-light-temp").label).toBe("Light Temp: Neutral");
+  row("sys-light-temp").onCycle!(1);
+  expect(cfg().lightTemperature).toBe(0.2);
+  expect(row("sys-light-temp").label).toBe("Light Temp: Warm 20%");
+  row("sys-light-temp").onCycle!(-1);
+  row("sys-light-temp").onCycle!(-1);
+  expect(cfg().lightTemperature).toBe(-0.2);
+  expect(row("sys-light-temp").label).toBe("Light Temp: Cool 20%");
+
+  // An off-grid value (hand-edited project, or one written by a build with different steps) still shows
+  // the nearest row rather than falling back to index 0 — that's what nearestIndex is for.
+  stores.project.systems.setRoleConfig(id, "sameboy", { lightTemperature: 0.73 });
+  expect(row("sys-light-temp").label).toBe("Light Temp: Warm 80%");
+  // ...and it is NOT silently rewritten just by being displayed.
+  expect(cfg().lightTemperature).toBe(0.73);
+
+  // Out of range is clamped by the schema, not passed to the core.
+  stores.project.systems.setRoleConfig(id, "sameboy", { lightTemperature: 99 });
+  expect(cfg().lightTemperature).toBe(1);
+  stores.project.systems.setRoleConfig(id, "sameboy", { lightTemperature: -99 });
+  expect(cfg().lightTemperature).toBe(-1);
+
+  // --- the DMG row ------------------------------------------------------------------------------
+  setModel("dmgB");
+  expect(row("sys-dmg-palette").kind).toBe("cycler");
+  expect(row("sys-dmg-palette").label).toBe("DMG Palette: Grey");
+  row("sys-dmg-palette").onCycle!(1);
+  expect(cfg().dmgPalette).toBe("dmg");
+  expect(row("sys-dmg-palette").label).toBe("DMG Palette: DMG");
+  row("sys-dmg-palette").onCycle!(-1); // wraps backwards to the last palette
+  expect(cfg().dmgPalette).toBe("grey");
+
+  // Hiding a row doesn't discard its value: switch to CGB and back, and the palette is as it was.
+  row("sys-dmg-palette").onCycle!(1);
+  row("sys-dmg-palette").onCycle!(1);
+  expect(cfg().dmgPalette).toBe("mgb");
+  setModel("cgbC");
+  expect(findItem(items(), "sys-dmg-palette")).toBe(undefined);
+  setModel("dmgB");
+  expect(row("sys-dmg-palette").label).toBe("DMG Palette: MGB");
+
+  // NES carries no display rows — they're SameBoy knobs, and the mesen role has no such fields.
+  be.seed("/roms/a.nes", nesRom());
+  const nesId = stores.project.systems.addSystem("/roms/a.nes")!;
+  const nesSys = stores.project.systems.view().find((s) => s.id === nesId)!;
+  const nesItems = submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: nesSys }).items, "inst-system");
+  for (const rid of ["sys-color-correction", "sys-dmg-palette", "sys-light-temp"]) {
+    expect(findItem(nesItems, rid)).toBe(undefined);
+  }
 });

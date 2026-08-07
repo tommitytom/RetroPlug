@@ -8,6 +8,7 @@ import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
+import { sameboyRoleConfig } from "../systems/fixtures";
 
 // A GB header (0x150 bytes) carrying an ASCII cartridge title at 0x134.
 function headerWithTitle(title: string): Uint8Array {
@@ -38,7 +39,7 @@ test("a file-backed mGB cart attaches the mgb role by title", () => {
 test("LSDj attaches lsdj-sync (MidiSync default) + lsdj-assets, case-insensitively", () => {
   const lower = registry().defaultRoles("sameboy", "gb", headerWithTitle("LSDj-v9.4.2"));
   expect(lower).toEqual([
-    { kind: "sameboy", config: { model: "cgbC", highpass: "accurate", linkGroupId: 0, fastBoot: true } },
+    { kind: "sameboy", config: sameboyRoleConfig() },
     { kind: "lsdj-sync", config: { mode: "midiSync", tempoDivisor: 1, autoStart: false } }, // MidiSync @ 24 PPQN (divisor 1)
     { kind: "lsdj-assets", config: { overrides: [] } }, // empty asset-override manifest until the user replaces one
   ]);

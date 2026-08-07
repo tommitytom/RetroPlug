@@ -17,7 +17,7 @@ import {
   makeEmptySave,
   CURRENT_LAYOUT,
 } from "../../src/risaSav";
-import { songRecordBytes, deleteSongInSav, moveSongInSav, replaceSongRecordInSav, addSongRecordToSav, loadSongToWorkingInSav, importSongsFromSav } from "../../src/risaSongOps";
+import { songRecordBytes, deleteSongInSav, moveSongInSav, replaceSongRecordInSav, addSongRecordToSav, loadSongToWorkingInSav, importSongsFromSav, workingSongSlot, saveWorkingToCatalog, workingSongRecord } from "../../src/risaSongOps";
 import { sameBytes } from "../_bytes";
 
 const battery = (key: "v2_blumarbl" | "multi_legacy" | "legacy_4xtreme") => normalizeSaveContainer(savBytes(key)).save;
@@ -251,4 +251,95 @@ test("empty and single-song catalogs handle delete/move/load safely", () => {
   const gone = deleteSongInSav(one, 0); // delete the last remaining record
   expect(listSongs(gone).length).toBe(0);
   parseCatalog(gone, CURRENT_LAYOUT); // count/used zeroed consistently
+});
+
+// --- the working song's catalog link survives a positional edit ---------------------------------------
+// risa's catalog is positional: delete compacts and move re-packs, so indices above the edit shift. The
+// working song's 'current entry' byte is one of those indices. If it isn't re-pointed it comes to name a
+// DIFFERENT song, and saveWorkingToCatalog then overwrites that unrelated song in place - silent data loss
+// reachable by ordinary menu use (save -> add -> delete an earlier song -> save again).
+
+const CUR = 0x2000 + 0x1e94;
+
+function v2WithSongs(): Uint8Array {
+  // Three distinct records so a shift is observable by NAME.
+  let sav = normalizeSaveContainer(savBytes("v2_blumarbl")).save;
+  const rec = songRecordBytes(sav, 0)!;
+  sav = addSongRecordToSav(sav, rec);
+  sav = addSongRecordToSav(sav, rec);
+  return sav;
+}
+
+test("deleting an EARLIER song re-points the working song's link (it must not slide onto a neighbour)", () => {
+  const sav = v2WithSongs();
+  sav[CUR] = 2; // the working song is the one saved in slot 2
+  const target = songRecordBytes(sav, 2)!;
+
+  const after = deleteSongInSav(sav, 0); // everything above 0 shifts down one
+
+  expect(workingSongSlot(after)).toBe(1); // 2 -> 1, still the SAME song
+  expect([...songRecordBytes(after, workingSongSlot(after))!]).toEqual([...target]);
+});
+
+test("deleting the linked song itself unlinks the working song rather than aiming it elsewhere", () => {
+  const sav = v2WithSongs();
+  sav[CUR] = 1;
+  const after = deleteSongInSav(sav, 1);
+  expect(workingSongSlot(after)).toBe(-1); // unlinked, exactly like LSDj clears activeProjectIndex
+});
+
+test("deleting a LATER song leaves the link alone", () => {
+  const sav = v2WithSongs();
+  sav[CUR] = 0;
+  expect(workingSongSlot(deleteSongInSav(sav, 2))).toBe(0);
+});
+
+test("reordering follows the working song's link through the move", () => {
+  const sav = v2WithSongs();
+
+  // The moved record itself.
+  const a = sav.slice(); a[CUR] = 0;
+  expect(workingSongSlot(moveSongInSav(a, 0, 2))).toBe(2);
+
+  // Moved from below to above it: it shifts up one.
+  const b = sav.slice(); b[CUR] = 2;
+  expect(workingSongSlot(moveSongInSav(b, 0, 2))).toBe(1);
+
+  // Moved from above to below it: it shifts down one.
+  const c = sav.slice(); c[CUR] = 0;
+  expect(workingSongSlot(moveSongInSav(c, 2, 0))).toBe(1);
+
+  // Outside the disturbed span: untouched.
+  const d = sav.slice(); d[CUR] = 2;
+  expect(workingSongSlot(moveSongInSav(d, 0, 1))).toBe(2);
+});
+
+test("an UNLINKED working song stays unlinked through delete and move", () => {
+  const sav = v2WithSongs();
+  sav[CUR] = 0xff;
+  expect(workingSongSlot(deleteSongInSav(sav, 0))).toBe(-1);
+  expect(workingSongSlot(moveSongInSav(sav, 0, 2))).toBe(-1);
+});
+
+test("save-then-delete-then-save does NOT overwrite an unrelated song (the regression this guards)", () => {
+  // The stale index must stay IN RANGE for this to bite - an out-of-range one harmlessly falls through to
+  // the append path. Three songs, working linked to 1, delete 0: count drops to 2 and a stale 1 is still
+  // < 2, so the in-place branch would fire on whatever slid into index 1.
+  const sav = v2WithSongs();
+  sav[CUR] = 1;
+  const linkedSong = songRecordBytes(sav, 1)!;
+  const bystander = songRecordBytes(sav, 2)!; // this is what shifts into index 1
+
+  const afterDelete = deleteSongInSav(sav, 0);
+  expect([...songRecordBytes(afterDelete, 1)!]).toEqual([...bystander]); // it really did slide into 1
+  expect(workingSongSlot(afterDelete)).toBe(0); // and the link followed its own song down to 0
+  expect([...songRecordBytes(afterDelete, 0)!]).toEqual([...linkedSong]);
+
+  const afterSave = saveWorkingToCatalog(afterDelete);
+  // The bystander is untouched: it was never the working song, and nothing may overwrite it.
+  expect([...songRecordBytes(afterSave, 1)!]).toEqual([...bystander]);
+  // The working song is linked to a slot that genuinely holds it.
+  const slot = workingSongSlot(afterSave);
+  expect(slot >= 0).toBe(true);
+  expect([...songRecordBytes(afterSave, slot)!]).toEqual([...workingSongRecord(afterSave)!]);
 });

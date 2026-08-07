@@ -32,7 +32,6 @@ import {
   KEY_PAGE_UP,
   KEY_PAGE_DOWN,
   KEY_DELETE,
-  KEY_F2,
   type MenuNav,
 } from "../../../src/keyCodes";
 import { setMenuModalActive } from "./menuModal";
@@ -273,9 +272,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     //    capture/prompt row; Backspace clears a focused capture row.
     const focused = itemById(focusedIdRef.current);
     if (!focused) return;
-    // Per-row hotkeys (a recent entry opts in): F2 opens its rename prompt, Del invokes its delete.
-    if (code === KEY_F2 && focused.onRename)
-      return setPrompt({ spec: focused.onRename, value: focused.onRename.initial ?? "", error: "" });
+    // Per-row hotkey (a recent entry opts in): Del invokes its delete.
     if (code === KEY_DELETE && focused.onDelete) return focused.onDelete();
     if (code === KEY_PAGE_UP) return focused.onCoarseStep?.(1);
     if (code === KEY_PAGE_DOWN) return focused.onCoarseStep?.(-1);

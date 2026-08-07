@@ -546,3 +546,56 @@ Two things to check in the release's own source rather than assume:
 
 Host sync (2.3.0 and later) needs nothing per-version: the `RISAxyz` marker carries the version, and the
 role attaches on its presence.
+
+---
+
+## Diagnosing a host-sync problem that only appears in a DAW
+
+The headless checks (`dsp-risa-sync`, `dsp-risa-sync-grid`, `dsp-risa-sync-locate`) drive a clean,
+synthetic transport. A real DAW does things they don't: it may not drop the transport flag when you
+expect, may report a playhead that jitters or jumps, may idle the plugin between blocks. When sync
+misbehaves in a host but not in the harness, that difference is the thing to look at.
+
+`RETROPLUG_SYNC_TRACE` records both halves of the seam, one line per audio block: what the HOST
+reported (frames, sample rate, tempo, ppqStart, transport flag) and every byte the kernel pushed to the
+core that block, with its intra-block frame.
+
+```
+RETROPLUG_SYNC_TRACE=/tmp/risa-sync.log <your DAW>
+```
+
+It is inert unless the variable is set and allocates nothing on the audio thread (fixed-size records in
+a pre-allocated ring, published with one atomic increment). A background thread appends to the file
+every 200 ms, so the trace survives a host that exits abruptly, is killed, or unloads a sandboxed
+plugin process - a trace that only landed at teardown would be missing on exactly the runs worth
+diagnosing. A second plugin instance writes `<path>.2`.
+
+On startup it prints a confirmation line to stderr:
+
+```
+[sync-trace] recording to /tmp/risa-sync.log (flushing every 200 ms)
+```
+
+If that line doesn't appear, the plugin process never saw the variable - check that it was exported
+into the environment the DAW itself was launched from (a desktop launcher won't inherit a shell's
+export), and that the plugin binary is the one you rebuilt.
+
+Reading it: `F9 52 ss cc tt` is an arm+locate, `FA` a start, `F8` a clock, `FC` a stop. Lines are
+marked `<<START` / `<<STOP` on a transport edge and `<<PPQ-JUMP` when the playhead didn't continue from
+where the previous block should have left it. A healthy stop-and-replay looks like:
+
+```
+   156  1024  44100.0 120.000     1.999819 0 <<STOP  | 0:FC
+   187  1024  44100.0 120.000     0.000000 1 <<START | 0:F952000000FA 918:F8
+```
+
+An arm, a start, then a continuous clock stream. Things worth looking for:
+
+- **No `<<STOP` line at all** when you stopped: the host never reported the transport falling, so no
+  `FC` went out and the core was never told to stop.
+- **`<<START` with no arm packet on the line**: the role didn't consider it a fresh start, so risa was
+  never re-located.
+- **Repeated arm packets while playing**: the playhead is jittering past the seek tolerance and every
+  block is re-locating.
+- **A `<<START` whose ppqStart isn't where you locked the playhead**: the host is reporting a different
+  position from the one it displays.

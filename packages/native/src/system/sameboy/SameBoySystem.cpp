@@ -200,9 +200,7 @@ void SameBoySystem::onActivate(double sampleRate) {
     GB_set_serial_transfer_bit_start_callback(gb_, serialStart);
     GB_set_serial_transfer_bit_end_callback(gb_, serialEnd);
 
-    GB_set_background_rendering_disabled(gb_, false);
-    GB_set_object_rendering_disabled(gb_, false);
-    GB_set_color_correction_mode(gb_, GB_COLOR_CORRECTION_DISABLED);
+    applyDisplayConfig();  // colour correction / palette / light temperature / layer toggles
     applyHighpassMode();
 
     GB_load_rom_from_buffer(gb_, rom_.data(), rom_.size());
@@ -516,6 +514,49 @@ void SameBoySystem::applyHighpassMode() {
         case SameBoyHighpass::RemoveDcOffset: mode = GB_HIGHPASS_REMOVE_DC_OFFSET; break;
     }
     GB_set_highpass_filter_mode(gb_, mode);
+}
+
+// The whole display group in one pass. Called at boot (onActivate, after GB_init) and again whenever
+// any one of the knobs moves — they're cheap setters, and re-applying an unchanged one is a no-op in
+// the core, so there's no value in a per-field entry point. All take effect on the NEXT rendered
+// frame; none needs a restart.
+//
+// Correction and palette are mutually exclusive: the core gates both on GB_is_cgb (model >=
+// GB_MODEL_CGB_0), correction one way and the DMG palette the other, so whichever doesn't match the
+// running model sits unused. We push both regardless and let the core decide.
+void SameBoySystem::applyDisplayConfig() {
+    if (!gb_) return;
+
+    // The enum is ordinal-identical to GB_color_correction_mode_t, so this is a straight cast. Clamped
+    // rather than trusted: the value crosses from TS, and an out-of-range mode would index the core's
+    // internal tables. ModernAccurate is the highest defined mode.
+    auto cc = static_cast<std::uint32_t>(config_.colorCorrection);
+    if (cc > static_cast<std::uint32_t>(SameBoyColorCorrection::ModernAccurate))
+        cc = static_cast<std::uint32_t>(SameBoyColorCorrection::Disabled);
+    GB_set_color_correction_mode(gb_, static_cast<GB_color_correction_mode_t>(cc));
+
+    // The core keeps the POINTER, not a copy (display.c: gb->dmg_palette = palette), so these must be
+    // the core's own statics — never a local or a member that could outlive/move.
+    const GB_palette_t* palette = &GB_PALETTE_GREY;
+    switch (config_.dmgPalette) {
+        case SameBoyDmgPalette::Grey: palette = &GB_PALETTE_GREY; break;
+        case SameBoyDmgPalette::Dmg:  palette = &GB_PALETTE_DMG;  break;
+        case SameBoyDmgPalette::Mgb:  palette = &GB_PALETTE_MGB;  break;
+        case SameBoyDmgPalette::Gbl:  palette = &GB_PALETTE_GBL;  break;
+    }
+    GB_set_palette(gb_, palette);
+
+    // SameBoy's own frontends bound this to [-1, 1] (SDL/main.c maps a 0..20 slider through
+    // (v - 10) / 10). Outside that, temperature_tint's sqrt(0.75 - t) goes imaginary.
+    double temp = config_.lightTemperature;
+    if (!(temp >= -1.0)) temp = -1.0;  // NaN-safe: an unordered compare falls to the clamp
+    if (temp > 1.0) temp = 1.0;
+    GB_set_light_temperature(gb_, temp);
+
+    // Both layers always render. These are SameBoy debug hooks with no UI behind them; setting them
+    // explicitly (rather than trusting GB_init's zeroing) is the behaviour this code has always had.
+    GB_set_background_rendering_disabled(gb_, false);
+    GB_set_object_rendering_disabled(gb_, false);
 }
 
 void SameBoySystem::pressButton(std::uint8_t button, bool down) {

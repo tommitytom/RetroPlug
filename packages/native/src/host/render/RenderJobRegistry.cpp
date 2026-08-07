@@ -88,9 +88,9 @@ void RenderJobRegistry::runJob(Job* job) {
 
     RenderHost::Result r = host.run(
         job->jobJson,
-        [this, job](double f) {
+        [this, job](double ms) {
             std::lock_guard<std::mutex> lk(mutex_);
-            job->status.progress = f;
+            job->status.renderedMs = ms;
         },
         [job] { return job->cancelRequested.load(std::memory_order_relaxed); });
 
@@ -99,8 +99,7 @@ void RenderJobRegistry::runJob(Job* job) {
         job->status.outputs = r.outputs;
         job->status.message = r.message;
         if (r.status == "done") {
-            job->status.state = State::Done;
-            job->status.progress = 1.0;
+            job->status.state = State::Done; // renderedMs keeps the worker's last report: the length written
         } else if (r.status == "cancelled") {
             job->status.state = State::Cancelled;
         } else {

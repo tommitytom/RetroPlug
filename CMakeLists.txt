@@ -68,6 +68,16 @@ if(RETROPLUG_PROFILE)
     add_compile_options(-g -fno-omit-frame-pointer)
 endif()
 
+# --- LTO on the Mesen NES core: ~10% faster on the Cortex-A53 handheld, but it costs the dev loop
+# dearly, so it's opt-in and the release workflow turns it on (see deps/mesen/CMakeLists.txt).
+#
+# Mesen's ~430 objects become LTO bitcode, and EVERY binary that links the static lib re-runs codegen
+# over all of them: retroplug{,-cli,-host,-ui-test,-sdl} + the four plugin variants. Changing a single
+# .cpp measured 1m05s wall / 26m51s CPU with it on, ~15s / ~3m with it off — the compile is one file
+# either way, the rest is eight full LTO links. Off by default so `./build.sh` stays quick; release.yml
+# passes -DRETROPLUG_MESEN_LTO=ON so shipped binaries keep the speedup.
+option(RETROPLUG_MESEN_LTO "LTO the Mesen NES core (~10% faster, much slower links; on for releases)" OFF)
+
 # tell LVGL where to find its config file. Set before add_subdirectory(dpf.js)
 # so RetroPlug's lv_conf.h wins over the framework's default (CACHE no-FORCE).
 set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/packages/native/src/lv_conf.h" CACHE PATH "")

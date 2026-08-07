@@ -45,6 +45,12 @@ download the latest version.
   the `System` menu.
 - **For LSDj**, an additional `LSDj` menu appears once an LSDj cart is detected,
   letting you set the sync mode (see [LSDj Integration](#lsdj-integration)).
+- **Name your project** under `Project` > `Name` - it's what the window title and the
+  `Recent` list show. Leave it empty (the default) and the name follows the loaded
+  instance instead: its sav and ROM.
+- **Nothing is lost silently.** Quitting, or starting / loading another project, with
+  unsaved work asks first and lists what is unsaved: the project file, and any cart
+  whose battery differs from its `.sav` (naming the file it would write).
 
 Each instance's `System` menu also lets you reset, swap the ROM while keeping the
 running SRAM, and load/save SRAM and save states. Game Boy systems expose the
@@ -132,7 +138,18 @@ The `Settings` menu covers:
 - **Open Settings Folder** - opens the folder holding your configuration.
 
 Recent projects are available under the `Recent` menu, where you can re-load, relocate
-a moved project, rename it, or remove it from the list.
+a moved project, or remove it from the list. Each entry reads
+`song - sav - ROM` - the song loaded in the cart (LSDj / risa), the sav file (named in
+full, so a `.sav` and a `.srm` are told apart), and the ROM - dropping whichever of
+those it doesn't have. If you named the project under
+`Project` > `Name`, that name is shown in place of the sav and ROM.
+
+The list tracks **songs**, not just projects: whenever the loaded song changes, that song
+gets its own entry, so a project you have worked on in three songs has a row for each of
+them (never a duplicate - returning to a song just moves its row back to the top). It
+doesn't matter how you changed song, from the `Songs` menu or on the cart's own file
+screen - RetroPlug watches what the focused cart has loaded either way. Picking a song
+entry reopens the project **with that song loaded**; `Delete` removes just that one row.
 
 ## Command Line
 The build also produces `retroplug-cli` (in `build/bin/`), a self-contained

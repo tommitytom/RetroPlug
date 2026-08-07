@@ -65,13 +65,23 @@ set_target_properties(mesen PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
     POSITION_INDEPENDENT_CODE ON
-    # LTO for optimized configs only (Debug stays fast to build). Intra-mesen cross-TU inlining across the
-    # hot CPU/PPU/APU stepping loop, which is ~99% of the audio-thread cost. Measured ~10% faster NES core
-    # on the Cortex-A53 handheld (nes-bench: xRT 0.83 -> 0.92 over plain -O3). The single biggest safe lever
-    # for NES perf there — JS is ~0.5% of the block, the emulator core dominates. Free at runtime.
-    INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
-    INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON
 )
+
+# LTO for optimized configs only (Debug stays fast to build). Intra-mesen cross-TU inlining across the
+# hot CPU/PPU/APU stepping loop, which is ~99% of the audio-thread cost. Measured ~10% faster NES core
+# on the Cortex-A53 handheld (nes-bench: xRT 0.83 -> 0.92 over plain -O3). The single biggest safe lever
+# for NES perf there — JS is ~0.5% of the block, the emulator core dominates. Free at runtime.
+#
+# Not free at BUILD time, though: it makes every mesen object LTO bitcode, so each of the nine binaries
+# that link this lib re-runs codegen over all ~430 of them. That's why it's opt-in (RETROPLUG_MESEN_LTO,
+# declared in the root CMakeLists) rather than always-on — release.yml turns it on so shipped binaries
+# get the speedup, and the dev loop doesn't pay for it. Toggling the option recompiles mesen.
+if(RETROPLUG_MESEN_LTO)
+    set_target_properties(mesen PROPERTIES
+        INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
+        INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON
+    )
+endif()
 
 if(WIN32)
     # Mesen's Win32 code assumes the UNICODE API (wchar_t buffers + GetComputerName,

@@ -8,7 +8,7 @@ import { SystemsStore } from "../../src/systemsStore";
 import { RoleRegistry } from "../../src/systemRoles";
 import { registerCoreRoles } from "../../src/coreRoles";
 import { buildConfig, serializeConfig, parseConfig, DEFAULT_SETTINGS } from "../../src/projectConfig";
-import { gbRom, nesRom } from "../systems/fixtures";
+import { gbRom, nesRom, sameboyRoleConfig } from "../systems/fixtures";
 
 const identity = (p: string) => p;
 function reg(): RoleRegistry {
@@ -28,7 +28,7 @@ test("customized settings + role round-trip through build → serialize → pars
   const cfg = buildConfig(DEFAULT_SETTINGS, s1.systems());
   expect(cfg.systems[0].settings).toEqual({ gainDb: -6 }); // reload default omitted
   expect(cfg.systems[0].roles).toEqual([
-    { kind: "sameboy", config: { model: "sgb", highpass: "accurate", linkGroupId: 0, fastBoot: true } },
+    { kind: "sameboy", config: sameboyRoleConfig({ model: "sgb" }) },
   ]);
 
   const back = parseConfig(serializeConfig(cfg, "", identity));

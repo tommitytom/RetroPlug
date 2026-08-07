@@ -77,6 +77,14 @@ void QueuedInvoker::setTransport(bool playing) {
     maybeFlush();
 }
 
+void QueuedInvoker::setPpq(double ppq) {
+    DspCommand c;
+    c.kind = DspCommand::Kind::SetPpq;
+    c.setPpq = { ppq };
+    commands_.tryPush(c);
+    maybeFlush();
+}
+
 void QueuedInvoker::setAudioRouting(std::uint8_t mode) {
     DspCommand c;
     c.kind = DspCommand::Kind::SetAudioRouting;
@@ -123,6 +131,9 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 break;
             case DspCommand::Kind::SetTransport:
                 engine.setTransport(cmd.setTransport.value);
+                break;
+            case DspCommand::Kind::SetPpq:
+                engine.setPpq(cmd.setPpq.value);
                 break;
             case DspCommand::Kind::SetAudioRouting:
                 engine.setAudioRouting(static_cast<AudioRouting>(cmd.setAudioRouting.mode));

@@ -6,6 +6,7 @@
 // is effectiveAssets. The per-console FILE actions (Export/Replace — which own file formats + the file dialog)
 // stay in the UI menu layer, exactly like SongCatalog's Export/Replace/Add. Concrete catalogs:
 // ./lsdjAssetCatalog, ./risaAssetCatalog; resolution rides ./trackerIntegration (resolveAssetCatalog).
+import type { ConstructCaps } from "../systemRoles";
 
 /** A base-ROM asset slot: its index + a display name (name-fallbacks already applied). */
 export interface AssetSlot {
@@ -52,6 +53,17 @@ export interface AssetCatalog {
   /** Optional per-ROM override of `types` — for a console whose `addable`/`maxSlots` depend on the cart
    *  (e.g. EverMIDI: single-kit on NROM, addable/16 on a banking build). Defaults to `types` when absent. */
   resolveTypes?(romBytes: Uint8Array): AssetTypeInfo[];
+
+  /** Fold this console's override list onto base ROM bytes → the EFFECTIVE image (what construct hands the
+   *  core). The same patcher the `*-assets` role runs at load, exposed so the menu can bake that image out to
+   *  disk. `onSkip` reports an entry that couldn't be applied (moved/deleted linked file, malformed asset):
+   *  the ones a load silently drops. Returns the base unchanged when it isn't this console's ROM. */
+  applyOverrides(
+    romBytes: Uint8Array,
+    overrides: AssetOverride[],
+    caps: ConstructCaps,
+    onSkip?: (ov: AssetOverride, message: string) => void,
+  ): Uint8Array;
 }
 
 /** The effective slots of one asset type: base slots overlaid with the override list. A `kind` override with

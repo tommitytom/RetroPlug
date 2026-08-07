@@ -182,12 +182,41 @@ missing files, and holds `pendingLoad` for `relink` or `commit`
 `pushAudioRouting()` → `backend.setAudioRouting`
 ([projectStore.ts:278](../packages/retroplug/src/projectStore.ts#L278)).
 
+The project **name** is two-tier. `name()` is the project's own name - blank unless the user
+typed one under `Project` > `Name` (`setName`, which marks the project dirty), and the ONLY
+one persisted (`buildConfig` omits a blank `name`, so a nameless `.rplg` carries no field).
+`displayName()` is what the window / menu titles SHOW - that name when set, else `deriveName()`:
+the primary system's `savPath` stem, else its `romPath` stem (primary = focused, else first).
+The recents entry gets a fuller derivation, `recentName()`: the project's own name when set,
+else the primary cart's identity `"<sav.ext> [<rom>]"` - the loaded sav's FILENAME, extension and
+all (an explicit override, or a battery cart's suffix-derived sibling), then the ROM's stem in
+brackets. The sav is named in full even when its stem is just the ROM's (the usual `<rom>.sav`
+case), so every cart reads the same way; a cart with no battery and no override has no sav to
+name and is the bare ROM stem, and an embedded cart is empty. Every recents record
+(`save` / `export` / `adoptRomProject` / load `commit`) passes it alongside `currentSong()`, so
+the menu composes `"SONG - mysongs.sav [LSDj-v5.3.0]"` (or `"SONG - project name"`) - and none of
+it reaches disk.
+
+**Song rows.** Recents holds one row per SONG a project has had loaded, so a song change records a
+row rather than rewriting one: `recordSong(name)` adds it (a known song - the Songs menu's Load
+names what it just loaded, no need to wait on a battery snapshot), and `recordCurrentSong()` is
+`recordSong` over `currentSong()` - the signal for a load RetroPlug didn't make, i.e. the user
+picking a song on LSDj's / risa's own file screen. Nothing else can see that, so the UI polls it:
+[`useSongWatch`](../packages/retroplug/ui/lvgl/useSongWatch.ts) calls `recordCurrentSong()` every
+~30 render frames. No memo is needed - `RecentStore.add` no-ops (no write, no notify) while the
+answer is unchanged. Editor-driven like the file watcher: a DAW instance with its editor closed
+records nothing until it's opened.
+
 ### RecentStore — [`src/recentStore.ts`](../packages/retroplug/src/recentStore.ts)
 
-A `RecentEntry[]` (`{ path, name }`) most-recent-first, capped at `MAX_ENTRIES = 10`
-([recentList.ts:13](../packages/retroplug/src/recentList.ts#L13)). Incoming paths are
-canonicalized via `backend.canonicalize` (the dedupe key); `view()` computes live `missing` +
-`label`. `commit(next)` ([recentStore.ts:91](../packages/retroplug/src/recentStore.ts#L91))
+A `RecentEntry[]` (`{ path, name, song? }`) most-recent-first, capped at `MAX_ENTRIES = 10`
+([recentList.ts](../packages/retroplug/src/recentList.ts)). The dedupe key is `entryKey` =
+canonical path + song, so ONE project holds a row per song it has had loaded (a non-tracker
+project keeps its single songless row); `remove(path, song)` drops one row and `relink` repoints
+every row of the moved file. Incoming paths are canonicalized via `backend.canonicalize`;
+`view()` computes live `missing` + `label` (the recorded `name`, else the basename minus the
+project extension). `name` is whatever `ProjectStore.recentName()` resolved when the entry was
+recorded - there is no per-entry rename; the UI's only naming verb is `Project` > `Name`. `commit(next)` ([recentStore.ts:91](../packages/retroplug/src/recentStore.ts#L91))
 serializes and skips both write and notify when identical. Persists atomically to
 `<configDir>/recent.json`.
 
@@ -344,6 +373,20 @@ keys don't leak into the clickable tiles. The window is fit to the grid on insta
 change unless a tiling WM owns geometry (`isWindowSizeControlled()`). It drives
 `useGameInput({ active: !empty && !menuOpen, focusedId })` and renders `<Menu>` (empty) or
 `<SystemGrid>`.
+
+**The unsaved-changes prompts.** Two of them - the standalone's close guard
+([`useCloseGuard`](../packages/retroplug/ui/lvgl/useCloseGuard.ts), rendered by App) and the
+New / Load discard confirm ([`useProjectModals`](../packages/retroplug/ui/lvgl/useProjectModals.ts))
+- both lead with WHAT is unsaved before their buttons:
+[`unsavedRows`](../packages/retroplug/ui/lvgl/unsavedRows.ts) maps
+`unsavedChanges(backend, project)` ([src/unsavedChanges.ts](../packages/retroplug/src/unsavedChanges.ts))
+to one `disabled` row per item - `"Project: song.rplg"` / `"Project: (not saved yet)"`,
+`"Battery: lsdj.sav"` (+ `" (new file)"` when the target doesn't exist yet) - closed by a
+separator. Menu greys disabled rows and skips them in nav, so Enter still lands on the first
+button. The rows are built at tree-build time (not latched when the prompt opened), so a battery
+the cart writes while the prompt is up shows on the next render; that costs the same battery scan
+the menu's Save-Project label already pays. The yes/no gate stays `hasUnsavedChanges`, which
+short-circuits on the project flag precisely because it runs on every menu rebuild.
 
 ### The grid — [`screens/grid/`](../packages/retroplug/ui/screens/grid)
 

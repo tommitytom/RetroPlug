@@ -19,6 +19,9 @@ import { useCloseGuard } from "./lvgl/useCloseGuard";
 import { useProjectModals } from "./lvgl/useProjectModals";
 import { useFileBrowser } from "./lvgl/useFileBrowser";
 import { useSongImport } from "./lvgl/useSongImport";
+import { useSongWatch } from "./lvgl/useSongWatch";
+import { useSramAutoSave } from "./lvgl/useSramAutoSave";
+import { unsavedRows } from "./lvgl/unsavedRows";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
@@ -51,6 +54,8 @@ export function App() {
   const modals = useProjectModals(stores);
   const browser = useFileBrowser(stores); // in-app file browser overlay (openFileBrowser)
   const songImport = useSongImport(stores);
+  useSongWatch(stores); // records the focused cart's song in Recent when it changes (incl. loads made inside the cart)
+  useSramAutoSave(stores); // mirrors each battery to its .sav under the Continuous preference (no-op otherwise)
   const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title
 
   const [menuOpen, setMenuOpen] = useState(true);
@@ -74,11 +79,12 @@ export function App() {
   const resolvedZoom = resolveZoom(settings.zoom, userConfig.defaultZoom);
 
   // The standalone OS window title: version + the focused tracker cart's "<song> - <ROM name>" when one is
-  // loaded (LSDj / risa), else the project name. Re-renders on the project channel (load / adopt / rename /
-  // new / focus / song-load). Pushed to native via the __rp_setWindowTitle seam (inert elsewhere).
+  // loaded (LSDj / risa), else the project's display name (its own name, else the one derived from the
+  // systems). Re-renders on the project channel (load / adopt / name / new / focus / song-load). Pushed to
+  // native via the __rp_setWindowTitle seam (inert elsewhere).
   const focusedSys = systems.find((s) => s.id === stores.project.systems.focused());
   const cartLabel = focusedSys ? trackerCartLabel(stores.backend, focusedSys) : null;
-  const windowTitle = composeWindowTitle(version, stores.project.name(), cartLabel);
+  const windowTitle = composeWindowTitle(version, stores.project.displayName(), cartLabel);
 
   // Menu-open invariant on empty transitions: empty → the start menu (always open); first system → close.
   useEffect(() => {
@@ -249,12 +255,16 @@ export function App() {
   }
 
   // Unsaved-changes prompt on window close (standalone): a full-window overlay above everything, owning
-  // the keypad. Save & Quit / Discard & Quit / Cancel — the guard drives the native quit + dismissal.
+  // the keypad. It leads with WHAT is unsaved (the project file + each dirty battery's target .sav, greyed
+  // and nav-skipped), then Save & Quit / Discard & Quit / Cancel - the guard drives the native quit +
+  // dismissal. The list is built here rather than latched when the prompt opened, so a battery the cart
+  // writes while it's up shows on the next render.
   if (closeGuard.active) {
     const { width, height } = windowSize;
     const closeTree: MenuTree = {
       title: "Unsaved changes",
       items: [
+        ...unsavedRows(stores.backend, stores.project),
         { id: "close-save", label: "Save & Quit", kind: "action", keepOpen: true, onSelect: closeGuard.onSave },
         { id: "close-discard", label: "Discard & Quit", kind: "action", keepOpen: true, onSelect: closeGuard.onDiscard },
         { id: "close-cancel", label: "Cancel", kind: "action", keepOpen: true, onSelect: closeGuard.onCancel },

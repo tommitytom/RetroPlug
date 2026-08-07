@@ -229,3 +229,21 @@ export function everMidiMultiKitRom(): Uint8Array {
 export function garbage(): Uint8Array {
   return new Uint8Array(0x8000); // all zero
 }
+
+/** The "sameboy" system role's config as the schema fills it, with `overrides` applied on top.
+ *
+ *  Tests that assert a whole role config go through here rather than spelling the object out, so an
+ *  ADDITIVE schema change (a new knob with a default) doesn't have to be pasted into every assertion.
+ *  A non-additive change should still break them — that's the point of pinning the shape at all. */
+export function sameboyRoleConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    model: "cgbC",
+    highpass: "accurate",
+    linkGroupId: 0,
+    fastBoot: true,
+    colorCorrection: "disabled",
+    dmgPalette: "grey",
+    lightTemperature: 0,
+    ...overrides,
+  };
+}

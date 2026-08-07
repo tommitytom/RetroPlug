@@ -1,6 +1,6 @@
 // The LSDj implementation of SongCatalog — thin wrappers over the existing pure ops (no logic here).
 import type { SongCatalog } from "./songCatalog";
-import { listProjects, workingSongName, isLsdjSav } from "../lsdj/codec/sav";
+import { listProjects, workingSongName, isLsdjSav, workingSongDirty } from "../lsdj/codec/sav";
 import { loadSongToWorking, deleteSongInSav, moveSongInSav, importSongsFromSav } from "../lsdjSongOps";
 
 export const lsdjSongCatalog: SongCatalog = {
@@ -10,6 +10,9 @@ export const lsdjSongCatalog: SongCatalog = {
   // indices are source SLOT numbers (LSDj's list index === slot); import copies them into free target slots.
   importSongs: (target, source, indices) => importSongsFromSav(target, source, indices),
   workingName: (sav) => workingSongName(sav),
+  // No workingSong(): LSDj's working song is always a copy of a slot (addressed by activeProjectIndex), so
+  // it never needs its own row. It CAN still hold uncommitted edits, which is what workingSongDirty asks.
+  workingSongDirty: (sav) => workingSongDirty(sav),
   load: (sav, index) => loadSongToWorking(sav, index),
   delete: (sav, index) => deleteSongInSav(sav, index),
   // reorder swaps two saved songs' slot contents (LSDj addresses songs by a fixed slot number, so a

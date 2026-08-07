@@ -9,7 +9,7 @@ interface FakeJob {
   id: number;
   systemId: number;
   state: "rendering" | "done" | "error" | "cancelled";
-  progress: number;
+  renderedMs: number;
   message: string;
 }
 
@@ -20,16 +20,16 @@ type RenderGlobals = {
 };
 
 // One job per candidate system id, so whichever id mGB lands on, its tile matches.
-function jobsInState(state: FakeJob["state"], progress: number, message = ""): FakeJob[] {
-  return [0, 1, 2, 3, 4].map((sid) => ({ id: 900 + sid, systemId: sid, state, progress, message }));
+function jobsInState(state: FakeJob["state"], renderedMs: number, message = ""): FakeJob[] {
+  return [0, 1, 2, 3, 4].map((sid) => ({ id: 900 + sid, systemId: sid, state, renderedMs, message }));
 }
 
-test("the render badge shows progress / error on a tile and clears when the job finishes", () => {
+test("the render badge shows the rendered duration / error on a tile and clears when the job finishes", () => {
   const g = globalThis as RenderGlobals;
   const dismissed: number[] = [];
   g.__rp_cancelRender = () => {};
   g.__rp_dismissRenderJob = (id) => dismissed.push(id);
-  g.__rp_getRenderJobs = () => jobsInState("rendering", 0.42);
+  g.__rp_getRenderJobs = () => jobsInState("rendering", 42_000);
 
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
@@ -38,19 +38,21 @@ test("the render badge shows progress / error on a tile and clears when the job 
   ui.pump(30);
   expect(ui.findByTestId("tile-0") != null).toBeTruthy();
 
-  // Rendering: the per-frame poll surfaces the progress badge.
+  // Rendering: the per-frame poll surfaces the badge, counting the audio rendered so far (no percentage -
+  // a tracker render's true length isn't known until its HFF stop lands).
   ui.pump(10);
   expect(ui.findByTextContaining("rendering") != null).toBeTruthy();
-  expect(ui.findByTextContaining("42%") != null).toBeTruthy();
+  expect(ui.findByTextContaining("0:42") != null).toBeTruthy();
+  expect(ui.findByTextContaining("%")).toBe(null);
 
   // Error: the badge switches to the failure message.
-  g.__rp_getRenderJobs = () => jobsInState("error", 0.42, "boom");
+  g.__rp_getRenderJobs = () => jobsInState("error", 42_000, "boom");
   ui.pump(10);
   expect(ui.findByTextContaining("render failed") != null).toBeTruthy();
   expect(ui.findByTextContaining("rendering")).toBe(null);
 
   // Done: the tile dismisses the job and the badge clears.
-  g.__rp_getRenderJobs = () => jobsInState("done", 1);
+  g.__rp_getRenderJobs = () => jobsInState("done", 42_100);
   ui.pump(10);
   expect(dismissed.length > 0).toBeTruthy();
   expect(ui.findByTextContaining("render failed")).toBe(null);

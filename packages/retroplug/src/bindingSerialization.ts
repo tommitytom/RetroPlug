@@ -5,6 +5,7 @@
 // / non-object / newer-than-us yield null (the caller keeps its current value).
 
 import { bindingMapSchema, type BindingMap } from "./bindingMap";
+import { stringifyConfig } from "./configSchema";
 import { migrateRaw, readNumericVersion, type MigrationMap, type RawObject } from "./migrate";
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file stamped
@@ -36,7 +37,7 @@ export function parseBindingMap(json: string): BindingMap | null {
  *  app-action sections). Emitting keyboardActions/gamepadActions is load-bearing: the editor re-serializes on
  *  every rebind, so omitting them would silently strip a user's customized Open Menu / Cycle bindings. */
 export function serializeBindingMap(map: BindingMap): string {
-  return JSON.stringify({
+  return stringifyConfig({
     schemaVersion: BINDINGS_SCHEMA,
     name: map.name,
     keyboard: map.keyboard,
