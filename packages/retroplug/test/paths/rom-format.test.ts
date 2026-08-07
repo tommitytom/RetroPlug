@@ -1,8 +1,13 @@
-// detectPlatform — classify a ROM by magic bytes (not extension), a faithful
-// port of packages/native/src/system/RomFormat.hpp. Priority is NES → GBA → GB →
+// detectPlatform - classify a ROM by magic bytes, a faithful port of
+// packages/native/src/system/RomFormat.hpp. Priority is NES → GBA → GB → Sega →
 // unknown (first match wins), and short/empty buffers are unknown via the length
 // guards. The logo byte-arrays here are transcribed independently from the C++ so
 // a wrong copy in the implementation is caught.
+//
+// The Sega tier is the only one that consults the file extension, and only where the
+// content genuinely can't decide: which machine an unfilled region nibble means, and
+// (as the last tier of all) a file carrying no magic anywhere. The precedence tests at
+// the bottom are the ones that matter - an extension must never beat real content.
 import { test, expect } from "../../testing/harness";
 import { detectPlatform } from "../../src/platform";
 
@@ -22,10 +27,21 @@ const GB_LOGO = [
   0xbb, 0xbb, 0x67, 0x63, 0x6e, 0x0e, 0xec, 0xcc, 0xdd, 0xdc, 0x99, 0x9f, 0xbb, 0xb9, 0x33, 0x3e,
 ];
 
+// Sega 8-bit header magic "TMR SEGA", at the END of a bank rather than the file start.
+const SEGA_MAGIC = [0x54, 0x4d, 0x52, 0x20, 0x53, 0x45, 0x47, 0x41];
+
 // A zero-filled buffer of `len` with `bytes` written at `at`.
 function buf(len: number, at: number, bytes: number[]): Uint8Array {
   const b = new Uint8Array(len);
   b.set(bytes, at);
+  return b;
+}
+
+// A Sega ROM image with its 16-byte header at `at`: the magic, then `region` as the high nibble of the
+// header's last byte (magic + 0xF) - 4 = SMS Export, 6 = GG Export, 0 = an unfilled homebrew field.
+function segaRom(at: number, region: number, len = 0x20000): Uint8Array {
+  const b = buf(len, at, SEGA_MAGIC);
+  b[at + 0xf] = (region << 4) | 0x0c; // low nibble is the ROM-size code, which we never read
   return b;
 }
 
@@ -65,4 +81,64 @@ test("priority: NES beats a GB logo, GBA beats a GB logo", () => {
   const gbaOverGb = buf(0x8000, 0x104, GB_LOGO);
   gbaOverGb.set(GBA_LOGO, 0x04);
   expect(detectPlatform(gbaOverGb)).toBe("gba");
+});
+
+// --- Sega 8-bit (Master System / Game Gear) ---------------------------------
+
+test("sega: TMR SEGA at each bank-end offset", () => {
+  // $7FF0 is the usual spot; $1FF0/$3FF0 are where an 8 KB/16 KB cart puts it.
+  expect(detectPlatform(segaRom(0x7ff0, 4))).toBe("sms");
+  expect(detectPlatform(segaRom(0x3ff0, 4))).toBe("sms");
+  expect(detectPlatform(segaRom(0x1ff0, 4))).toBe("sms");
+});
+
+test("sega: a copier-headered dump shifts the header by 0x200 and still classifies", () => {
+  // Mesen strips a 512-byte copier header at load (SmsConsole.cpp), so these boot fine - they must
+  // classify too, or a ROM that runs perfectly would be rejected as "not a ROM".
+  expect(detectPlatform(segaRom(0x7ff0 + 0x200, 4))).toBe("sms");
+  expect(detectPlatform(segaRom(0x1ff0 + 0x200, 6))).toBe("gg");
+});
+
+test("sega: the region nibble picks the machine", () => {
+  expect(detectPlatform(segaRom(0x7ff0, 3))).toBe("sms"); // SMS Japan
+  expect(detectPlatform(segaRom(0x7ff0, 4))).toBe("sms"); // SMS Export
+  expect(detectPlatform(segaRom(0x7ff0, 5))).toBe("gg"); // GG Japan
+  expect(detectPlatform(segaRom(0x7ff0, 6))).toBe("gg"); // GG Export
+  expect(detectPlatform(segaRom(0x7ff0, 7))).toBe("gg"); // GG International
+});
+
+test("sega: an unfilled region nibble defers to the extension, then defaults to sms", () => {
+  // Homebrew that never filled the field in. Nothing in the content can decide, so the extension does.
+  expect(detectPlatform(segaRom(0x7ff0, 0), ".gg")).toBe("gg");
+  expect(detectPlatform(segaRom(0x7ff0, 0), ".sms")).toBe("sms");
+  // No extension either → Master System, which is what Mesen does for any extension that isn't .gg.
+  expect(detectPlatform(segaRom(0x7ff0, 0))).toBe("sms");
+  expect(detectPlatform(segaRom(0x7ff0, 0), ".bin")).toBe("sms");
+});
+
+test("sega: a headerless ROM classifies from the extension alone", () => {
+  // Plenty of SMS/GG homebrew ships with no header at all. This is the last tier, reached only after
+  // every content tier declines.
+  expect(detectPlatform(new Uint8Array(0x8000), ".sms")).toBe("sms");
+  expect(detectPlatform(new Uint8Array(0x8000), ".gg")).toBe("gg");
+  expect(detectPlatform(new Uint8Array(0x8000), ".gb")).toBe("unknown"); // not a Sega extension
+  expect(detectPlatform(new Uint8Array(0x8000))).toBe("unknown"); // no extension offered
+});
+
+test("sega: the header must be reachable in the buffer that was read", () => {
+  // The cheap 0x134-byte first tier can never see a $7FF0 header - that's exactly why classifyRom
+  // reads a second, deeper tier. A truncated buffer must decline rather than guess.
+  expect(detectPlatform(segaRom(0x7ff0, 4).subarray(0, 0x134))).toBe("unknown");
+  expect(detectPlatform(segaRom(0x7ff0, 4).subarray(0, 0x7ff0 + 7))).toBe("unknown"); // one byte short
+});
+
+test("precedence: real content always beats the extension", () => {
+  // The whole point of the extension tiers is that they are LAST. A mislabelled file still classifies
+  // by what it actually is - otherwise a .nes renamed to .sms would be handed to the wrong core.
+  expect(detectPlatform(buf(0x8000, 0, NES_MAGIC), ".sms")).toBe("nes");
+  expect(detectPlatform(buf(0x8000, 0x104, GB_LOGO), ".gg")).toBe("gb");
+  expect(detectPlatform(buf(0x8000, 0x04, GBA_LOGO), ".sms")).toBe("gba");
+  // And a real region nibble beats a contradicting extension too.
+  expect(detectPlatform(segaRom(0x7ff0, 6), ".sms")).toBe("gg");
+  expect(detectPlatform(segaRom(0x7ff0, 4), ".gg")).toBe("sms");
 });

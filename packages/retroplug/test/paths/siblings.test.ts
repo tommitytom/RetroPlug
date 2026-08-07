@@ -72,12 +72,14 @@ test("nextFreeSavSuffix: skip to 2, then grow past owned + on-disk slots", () =>
   expect(nextFreeSavSuffix("/d/game.gb", owned([0, 2]), onDisk([3]))).toBe(4);
 });
 
-test("siblingRomCandidates: exact stem first, all four extensions in order", () => {
+test("siblingRomCandidates: exact stem first, every ROM extension in order", () => {
   expect(siblingRomCandidates("/roms/game.sav")).toEqual([
     "/roms/game.gb",
     "/roms/game.gbc",
     "/roms/game.gba",
     "/roms/game.nes",
+    "/roms/game.sms",
+    "/roms/game.gg",
   ]);
 });
 
@@ -87,10 +89,14 @@ test("siblingRomCandidates: a -<digits> slot also probes the base stem, after th
     "/roms/game-2.gbc",
     "/roms/game-2.gba",
     "/roms/game-2.nes",
+    "/roms/game-2.sms",
+    "/roms/game-2.gg",
     "/roms/game.gb",
     "/roms/game.gbc",
     "/roms/game.gba",
     "/roms/game.nes",
+    "/roms/game.sms",
+    "/roms/game.gg",
   ]);
 });
 
@@ -101,6 +107,8 @@ test("siblingRomCandidates: only a purely-numeric suffix adds the base stem", ()
     "/roms/game-2a.gbc",
     "/roms/game-2a.gba",
     "/roms/game-2a.nes",
+    "/roms/game-2a.sms",
+    "/roms/game-2a.gg",
   ]);
   // dangling dash (nothing after it) → no base stem
   expect(siblingRomCandidates("/roms/game-.sav")).toEqual([
@@ -108,9 +116,18 @@ test("siblingRomCandidates: only a purely-numeric suffix adds the base stem", ()
     "/roms/game-.gbc",
     "/roms/game-.gba",
     "/roms/game-.nes",
+    "/roms/game-.sms",
+    "/roms/game-.gg",
   ]);
 });
 
 test("siblingRomCandidates: no directory yields bare relative candidates", () => {
-  expect(siblingRomCandidates("game.sav")).toEqual(["game.gb", "game.gbc", "game.gba", "game.nes"]);
+  expect(siblingRomCandidates("game.sav")).toEqual([
+    "game.gb",
+    "game.gbc",
+    "game.gba",
+    "game.nes",
+    "game.sms",
+    "game.gg",
+  ]);
 });

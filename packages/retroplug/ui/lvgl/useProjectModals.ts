@@ -23,7 +23,7 @@ import { saveProjectInteractive } from "./saveProjectInteractive";
 import { unsavedRows } from "./unsavedRows";
 import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
 
-const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes"];
+const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sms", "*.gg"];
 const SRAM_PATTERNS = SAV_PATTERNS; // .sav / .srm battery saves
 
 // One overlay at a time: a discard confirm before a destructive New/Load, an OK notice, or the relink

@@ -19,11 +19,23 @@ struct MesenNesRoleConfig {
     double        apuLatencyMs      = 1.4;    // APU flush window as latency (ms); live. ~1.4ms ≈ 2500 cyc NTSC
 };
 
+// The SMS/GG slice of that same TS "mesen" role. A separate struct rather than more fields on the one
+// above: reflect-cpp decodes each tolerantly (DefaultIfMissing), so one JSON blob can feed both, and a
+// per-platform struct keeps NES knobs from reading as if they meant something on a Master System.
+struct MesenSmsRoleConfig {
+    // Route the YM2413 (FM) at all. Load-bearing rather than cosmetic: Mesen models $F2 as a MUX, and
+    // its PSG branch memsets the buffer, so a tracker that writes $F2 = $01 at boot is SILENT on the
+    // PSG until this is off. Which side to default to is still an open question - this is the knob that
+    // lets it be answered by ear.
+    bool enableFm = true;
+};
+
 // The Mesen core — one backend spanning multiple platforms. Dispatches on `spec.platform` to build the
-// right Mesen system (NES or GBA): slurp the ROM, gate on the platform's magic, seed SRAM/savestate,
-// and onActivate (which boots the core, or fails gracefully on a bad ROM). GBA runs on Mesen's HLE
-// boot ROM (biosPath left empty). For NES the opaque settings blob carries the "mesen" role knobs
-// (region / remove-sprite-limit); GBA has none yet. An unknown platform or a mismatched ROM → nullptr.
+// right Mesen system (NES, GBA, or Master System / Game Gear): slurp the ROM, gate on the platform's
+// magic, seed SRAM/savestate, and onActivate (which boots the core, or fails gracefully on a bad ROM).
+// GBA runs on Mesen's HLE boot ROM (biosPath left empty). The opaque settings blob carries the "mesen"
+// role knobs - region / remove-sprite-limit for NES, enableFm for SMS/GG; GBA has none yet. An unknown
+// platform or a mismatched ROM → nullptr.
 class MesenBackend final : public SystemBackend {
 public:
     std::unique_ptr<SystemBase> build(SystemId id, const SystemBuildSpec& spec,
@@ -32,4 +44,7 @@ public:
     // Parse the TS "mesen" role-config JSON (forward-tolerant: an absent field takes its default).
     // The single place that JSON is decoded — shared by live applyRoleConfig + the NES construct blob.
     static MesenNesRoleConfig decodeMesenNesRoleConfig(const std::string& json);
+
+    // The SMS/GG twin of the above, over the same JSON blob.
+    static MesenSmsRoleConfig decodeMesenSmsRoleConfig(const std::string& json);
 };

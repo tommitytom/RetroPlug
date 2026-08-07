@@ -710,13 +710,54 @@ tap is worth much less if the PSG is muted whenever FM is on.
   Interleave, or do not bother.) `dsp-threaded` passes consistently. The fix is a poll-until
   condition rather than a fixed sleep, and it is unrelated to SMS.
 
+### The classification tiers, as built
+
+Open questions 3 and 4 are settled and shipped. The shape is content-first with the extension used
+only where content genuinely cannot decide, which turned out to be two distinct places rather than
+the one the question anticipated:
+
+| tier | decides | source |
+|---|---|---|
+| 1-3 | nes / gba / gb | magic, unchanged |
+| 4 | this is a Sega 8-bit ROM | `TMR SEGA` at `$1FF0`/`$3FF0`/`$7FF0`, each also probed at `+$200` for a copier header |
+| 4a | which machine | `$7FFF` region nibble (3,4 = sms; 5,6,7 = gg); if unfilled, the extension; failing that, sms |
+| 5 | headerless homebrew | the extension alone, `.sms`/`.gg` |
+
+Both extension consultations are guarded independently, and each was proven live by its own negative
+control: removing tier 5 fails only the headerless assertion, removing 4a's tiebreak fails only the
+unfilled-nibble assertion, and everything else stays green in both. Without that, either tier could
+have been dead code - both vendored ROMs carry a filled-in header, so the happy path proves nothing
+about either fallback.
+
+**`ROM_SNIFF_LEN` and `ROLE_HEADER_LEN` are both unchanged.** Raising them to `0x8000` would have
+made every GB/NES/GBA classify pay 33 KB to find a logo in the first `0x134` bytes. Instead
+`classifyRom` reads twice: the cheap prefix first, and the deep read only for a file that tier
+already declined. `readFilePrefix` resizes to `gcount()` (`HostRpcService.cpp:52-59`), so
+over-asking on a short file is safe, and `pickSiblingRom` tests `exists` before `classify`, so
+widening `ROM_EXTS` does not multiply deep reads.
+
+**Two divergences from the Tier 1 table worth recording:**
+
+- **Item 11 said `RomFormat::Sms` *and* `RomFormat::Gg`. Only `Sms` was added.** Native does not
+  re-decide the machine: that policy lives in `platform.ts` and arrives as `spec.platform`.
+  Mirroring it in C++ would create two sources of truth that could disagree, and the only question
+  native needs answered is "are these bytes Sega 8-bit rather than something else". The `MesenBackend`
+  gate is correspondingly **not** an exact match - it accepts `Sms` *or* `Unknown` and rejects only a
+  positive `Nes`/`Gb`/`Gba`, because the extension fallback admits headerless ROMs that an
+  exact-match gate would accept in the UI and then fail at construct with no diagnostic.
+- **Item 17 said battery needs "both halves". The TS half needed no change at all.**
+  `romHasBattery` already ends in `return true` for any platform that is not nes/gb, which is the
+  right answer: the Sega header carries no battery bit, and smsggdj is a battery cart. It got a
+  comment and a test pinning that, not a code change. The native half (`saveSramBytes`, the
+  unconditional 32 KB `SmsCartRam`) is still open.
+
 1. ~~**Does smsggdj use the YM2413?**~~ **ANSWERED: yes, heavily** - and the answer is worse than either branch this question anticipated. See "FM resolved" below.
 
 2. **IN or IN24?** IN24 (divisor 6, 24 PPQN) is the DAW-shaped answer and matches the existing ares-link-sync / RP2040 bridge contract, but caps at 450 BPM NTSC / 375 PAL (3 clocks per frame before the mod-4 counter aliases) and at one row per frame (`engine.asm:742-750` has no loop). IN (divisor 1) gives 1:1 row control but the host must choose the row rate itself. This decides the role's tick resolution. A product question, not a technical one.
 
-3. **Does `detectRomFormat` get an extension fallback?** The only genuinely undecided design point in the native seam, and it is a contract change (`RomFormat.hpp:6-11`), not an addition. Given the verified header data, the recommended shape: the content tier stays authoritative and unchanged for gb/nes/gba/sms/gg; the extension tier is consulted **only** when content returns `"unknown"`. That preserves the mislabelled-`.gb`-is-really-`.nes` guarantee while letting headerless SMS in. It changes `classifyRom`'s signature (`systemsStore.ts:50-51`) and the `readFilePrefix` doc contract (`backend.ts:82`), and it makes `classifyKind` (`fileSelection.ts:27`) start calling arbitrary `.sms`-named files ROMs.
+3. ~~**Does `detectRomFormat` get an extension fallback?**~~ **ANSWERED: yes, as the last tier only.** See "The classification tiers, as built" below.
 
-4. **How do the two sniff lengths grow?** `ROM_SNIFF_LEN = 0x134` and `ROLE_HEADER_LEN = 0x150` both to `0x8000` for everyone, or a second offset-targeted read? The former is a ~100x read amplification on a path that also runs per sibling-ROM candidate. This also gates whether an `sms-sync` marker provider has any bytes to match on.
+4. ~~**How do the two sniff lengths grow?**~~ **ANSWERED: neither grows; `classifyRom` reads twice.** See below. `ROLE_HEADER_LEN` is untouched, so an `sms-sync` marker provider still has no bytes to match on and must attach by platform, as `nes-n8-midi` does.
 
 5. **Stems: mono or stereo, and is FM in scope?** Stereo matches the GB decision (`spec/10` section 2), is **required** for GG fidelity given `GameGearPanningReg`, and at exactly 4 stereo streams is the only layout that fits the 8-output plugin `ChannelSplit` path. Mono matches the NES precedent and halves the lane count. Separately: mix-only FM is free (it already lands in the stereo stream `MesenAudioDevice` receives); FM as one lumped stem; or 9 individual tone voices. In rhythm mode, do BD/HH/SD/TOM/CYM get their own streams or fold into one? 4 PSG + 9 FM = 13 streams fits under `kMaxLanes`; 4 + 14 does not. **Recommend stereo, PSG only initially.**
 

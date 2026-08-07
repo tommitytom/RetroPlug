@@ -44,16 +44,24 @@ export function registerCoreRoles(registry: RoleRegistry): void {
     }),
   });
 
-  // Mesen: keyed by core ("mesen"), so this ONE role attaches to any Mesen system (NES today, GBA
-  // later). The knobs are NES-only for now — region (ConsoleRegion 0..4) + remove-sprite-limit — and
-  // the settings menu gates them on platform === "nes" (menuDefs.ts). GBA carries them as inert bytes
-  // until it gets its own knobs, at which point the schema grows.
+  // Mesen: keyed by core ("mesen"), so this ONE role attaches to any Mesen system (NES, GBA, SMS/GG).
+  // The knobs are per-platform and the settings menu gates each group on `platform` (menuDefs.ts): the
+  // first three are NES-only, enableFm is SMS/GG-only, and GBA has none of its own yet - it carries
+  // them all as inert bytes until it does, at which point the schema grows again.
+  //
+  // Native decodes this one blob into a per-platform struct (MesenNesRoleConfig / MesenSmsRoleConfig),
+  // each reflect-cpp DefaultIfMissing-tolerant, so a field that means nothing on a platform is simply
+  // never read there.
   registry.registerRole({
     kind: "mesen",
     category: "system",
     schema: z.object({
       region: enumField(REGION_VALUES, "auto"), // ConsoleRegion: auto / ntsc / pal / dendy / ntscJapan
       removeSpriteLimit: boolField(false),
+      // SMS/GG: route the YM2413 (FM). Applied at construct (configureSms runs before LoadRom). Not a
+      // cosmetic toggle - Mesen models the $F2 audio-control port as a MUX whose PSG branch memsets the
+      // buffer, so a tracker that writes $F2 = $01 at boot goes silent on the PSG with this on.
+      enableFm: boolField(true),
       // APU flush window as a latency in ms (the worst-case NES audio latency the resampler batching adds).
       // Live knob; native converts ms→CPU cycles per region clock. ~1.4ms ≈ the historical 2500-cycle window.
       apuLatencyMs: clampedNumber(0.25, 6.0, 1.4),

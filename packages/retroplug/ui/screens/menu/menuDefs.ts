@@ -299,14 +299,21 @@ function nearestIndex(presets: readonly number[], v: number): number {
   return best;
 }
 
-/** The Mesen core-role config (region / removeSpriteLimit / apuLatencyMs), with defaults. The role attaches
- *  to any Mesen system; the knobs are NES-only, so the menu gates the rows on platform === "nes". */
-function mesenConfig(sys: SystemView): { region: ConsoleRegion; removeSpriteLimit: boolean; apuLatencyMs: number } {
+/** The Mesen core-role config, with defaults. The role attaches to any Mesen system but its knobs are
+ *  per-platform, so the menu gates each group on `platform`: region / removeSpriteLimit / apuLatencyMs
+ *  on "nes", enableFm on "sms" and "gg". */
+function mesenConfig(sys: SystemView): {
+  region: ConsoleRegion;
+  removeSpriteLimit: boolean;
+  apuLatencyMs: number;
+  enableFm: boolean;
+} {
   const c = (sys.roles.find((r) => r.kind === "mesen")?.config ?? {}) as Record<string, unknown>;
   return {
     region: typeof c.region === "string" ? (c.region as ConsoleRegion) : "auto",
     removeSpriteLimit: c.removeSpriteLimit === true,
     apuLatencyMs: typeof c.apuLatencyMs === "number" ? c.apuLatencyMs : 1.4,
+    enableFm: c.enableFm !== false, // default ON, matching the schema + MesenSmsConfig
   };
 }
 
@@ -463,6 +470,16 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       ),
       cycler("sys-nes-apu-latency", "APU Latency", APU_LATENCY_NAMES, nearestIndex(APU_LATENCY_MS, cfg.apuLatencyMs), (n) =>
         systems.setRoleConfig(sys.id, "mesen", { apuLatencyMs: APU_LATENCY_MS[n] }),
+      ),
+    );
+  }
+  // SMS/GG-only core knobs (same "mesen" role, gated on platform for the same reason as above).
+  // FM Audio is applied at construct, so flipping it reboots the core (configureSms runs before LoadRom).
+  if (sys.platform === "sms" || sys.platform === "gg") {
+    const cfg = mesenConfig(sys);
+    items.push(
+      cycler("sys-sms-fm", "FM Audio", OFF_ON, cfg.enableFm ? 1 : 0, (n) =>
+        systems.setRoleConfig(sys.id, "mesen", { enableFm: n === 1 }),
       ),
     );
   }

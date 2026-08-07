@@ -74,13 +74,13 @@ export function nextFreeSavSuffix(
   return n;
 }
 
-const ROM_EXTS = [".gb", ".gbc", ".gba", ".nes"];
+const ROM_EXTS = [".gb", ".gbc", ".gba", ".nes", ".sms", ".gg"];
 
 /** The ordered ROM paths to probe when pairing a picked `.sav`, mirroring
  *  findSiblingRom: the save's own stem first, then — only when the stem ends in
  *  `-<digits>` (a duplicate slot) — the base stem; each crossed with `.gb/.gbc/
- *  .gba/.nes` (stem-outer, ext-inner). The caller keeps the first candidate that
- *  exists AND content-validates as a real ROM. */
+ *  .gba/.nes/.sms/.gg` (stem-outer, ext-inner). The caller keeps the first
+ *  candidate that exists AND content-validates as a real ROM. */
 export function siblingRomCandidates(savPath: string): string[] {
   const dir = dirname(savPath);
   const s = stem(savPath);

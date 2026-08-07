@@ -17,8 +17,8 @@ import type { HostBackend } from "./backend";
 import { siblingRplgPath, isSavPath, SAV_PATTERNS } from "./savPaths";
 import { classifyRom, type SystemsStore } from "./systemsStore";
 
-export const ROM_OR_SAV_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", ...SAV_PATTERNS];
-export const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes"];
+export const ROM_OR_SAV_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sms", "*.gg", ...SAV_PATTERNS];
+export const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sms", "*.gg"];
 
 /** What a picked file is: a ROM (any known format, by content), a battery save (`.sav`/`.srm`, by
  *  extension since it isn't a ROM), or something else. */

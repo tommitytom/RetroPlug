@@ -48,6 +48,15 @@ test("romHasBattery: GBA and short headers never wrongly grey a save", () => {
   expect(romHasBattery(new Uint8Array(4), "gb")).toBe(false); // too short for $147
 });
 
+test("romHasBattery: SMS/GG default on - nothing in the header says otherwise", () => {
+  // Sega 8-bit carts carry NO battery bit: the cart either wires up SRAM or it doesn't, and the ROM
+  // can't say which. Pinned because smsggdj IS a battery cart and its songs live in that SRAM, so a
+  // regression to `false` here would grey out the only rows that can save a user's work.
+  expect(romHasBattery(new Uint8Array(0x8000), "sms")).toBe(true);
+  expect(romHasBattery(new Uint8Array(0x8000), "gg")).toBe(true);
+  expect(romHasBattery(new Uint8Array(0), "sms")).toBe(true); // even with no header read at all
+});
+
 test("SystemView.battery is derived from the ROM header at construct", () => {
   const be = new MockBackend("/cfg");
   be.seed("/roms/plain.nes", nesRom());
