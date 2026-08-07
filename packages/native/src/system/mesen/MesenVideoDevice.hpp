@@ -3,6 +3,7 @@
 #include "Core/Shared/Interfaces/IRenderingDevice.h"
 #include "Core/Shared/RenderedFrame.h"
 
+#include <atomic>
 #include <cstdint>
 
 class FrameBufferTriple;
@@ -29,6 +30,21 @@ public:
     void Reset() override {}
     void SetExclusiveFullscreenMode(bool, void*) override {}
 
+    // Dimensions of the last frame Mesen handed us, BEFORE the min-clamp in
+    // UpdateFrame. Diagnostic only: the clamp means a core whose overscan
+    // config disagrees with the triple's size produces a silently wrong picture
+    // rather than an error, so this is the only way to see the disagreement.
+    // Zero until the first frame arrives.
+    //
+    // Relaxed atomics because UpdateFrame runs on whichever thread is driving
+    // emulation while these accessors are public to anyone. Relaxed is enough:
+    // the two values are independent diagnostics that order nothing else, and a
+    // reader that catches a half-updated pair sees a stale value, not garbage.
+    std::uint32_t lastFrameWidth()  const { return lastW_.load(std::memory_order_relaxed); }
+    std::uint32_t lastFrameHeight() const { return lastH_.load(std::memory_order_relaxed); }
+
 private:
-    FrameBufferTriple* fb_ = nullptr;
+    FrameBufferTriple*         fb_ = nullptr;
+    std::atomic<std::uint32_t> lastW_{0};
+    std::atomic<std::uint32_t> lastH_{0};
 };

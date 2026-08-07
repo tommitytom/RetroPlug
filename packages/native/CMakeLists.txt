@@ -46,7 +46,9 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesDebugSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenSmsSystem.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8FifoRole.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/SmsSyncRole.cpp
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull
     # the full lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
@@ -630,7 +632,8 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/NesApuLatency.test.cpp   # runtime NES APU flush window (live apuLatencyMs knob)
     test/audio/NesN8FifoTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
     test/audio/NesEverdriveFifo.test.cpp  # Edio status protocol leaves no stale byte to desync MIDI parsing
-    test/audio/NesStems.test.cpp)    # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
+    test/audio/NesStems.test.cpp     # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
+    test/audio/SmsAudio.test.cpp)    # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
 
 target_link_libraries(retroplug-audio-test PRIVATE
     retroplug-backend          # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
@@ -643,7 +646,13 @@ target_include_directories(retroplug-audio-test PRIVATE
 # the n8-midi NES ROM the NesStems pin test drives (a ch1 note supplies real APU signal).
 target_compile_definitions(retroplug-audio-test PRIVATE
     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
-    RP_N8_MIDI_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/n8-midi.nes")
+    RP_N8_MIDI_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/n8-midi.nes"
+    # smsggdj (MIT, (c) Seb Tomczak / little-scale) in both cartridge shapes. The
+    # SMS and GG builds differ in visible geometry and video config, so both are
+    # needed to guard the overscan setup. resources/ never ships (release.yml
+    # packages build/bin plus the license bundle), so these are test-only.
+    RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
+    RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
 
 set_target_properties(retroplug-audio-test PROPERTIES
     CXX_STANDARD 20
