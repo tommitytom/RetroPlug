@@ -1176,7 +1176,7 @@ int main(int argc, char** argv) {
 
     // Restore the persisted N8 link (Settings > N8): reconnect the physical cart if it was left enabled.
     loadN8Config(app);
-    if (app.n8Enabled && !app.n8Port.empty()) app.n8Link.connect(app.n8Port);
+    if (app.n8Enabled) connectN8(app, true);  // reconnect the persisted link (logs the result)
 
     // Test/diagnostic hook: dump the enumerated hardware MIDI devices then continue.
     if (std::getenv("RETROPLUG_SDL_MIDI_LIST")) {
