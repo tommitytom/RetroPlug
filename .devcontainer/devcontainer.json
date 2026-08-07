@@ -21,13 +21,24 @@
   "containerEnv": {
     "TZ": "${localEnv:TZ}"
   },
+  // Pass through the physical hardware attached to the host so agents can drive it:
+  //   --device=/dev/ttyACM0  the Everdrive N8 Pro's USB-serial port (VID:PID 38df:0017,
+  //                          cdc_acm on the host) -> `retroplug-cli n8-bridge`.
+  //   --device=/dev/snd      all ALSA cards, incl. the Zoom L6 (card id "L6") that has the
+  //                          2A03 audio pins on channels 1-2 -> `arecord -D hw:L6` capture.
+  // These nodes come in root-owned; postStartCommand opens them to the vscode user. If a
+  // device is absent (e.g. N8 unplugged) the container start fails on the missing --device,
+  // so unplugging means temporarily removing that line + rebuilding.
   "runArgs": [
     "--init",
     "--shm-size=512m",
     "--ulimit",
-    "memlock=-1:-1"
+    "memlock=-1:-1",
+    "--device=/dev/ttyACM0",
+    "--device=/dev/snd"
   ],
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "sudo chmod a+rw /dev/ttyACM0 2>/dev/null; sudo chmod -R a+rw /dev/snd 2>/dev/null; true",
   "customizations": {
     "vscode": {
       "extensions": [

@@ -105,6 +105,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	openbox \
 	# --- Audio inspection (for examining WAV outputs from retroplug-cli) ---
 	ffmpeg \
+	# --- ALSA capture (arecord): record the real 2A03 output off the Zoom L6
+	# (--device=/dev/snd passthrough) to A/B against retroplug-cli render ----
+	alsa-utils \
 	# --- VCS ---------------------------------------------------------------
 	git \
 	git-lfs \
