@@ -108,6 +108,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	# --- ALSA capture (arecord): record the real 2A03 output off the Zoom L6
 	# (--device=/dev/snd passthrough) to A/B against retroplug-cli render ----
 	alsa-utils \
+	# --- V4L2 probe (v4l2-ctl): inspect the USB capture card carrying the NES
+	# video feed (--device=/dev/video0); ffmpeg does the actual frame grabs ---
+	v4l-utils \
 	# --- VCS ---------------------------------------------------------------
 	git \
 	git-lfs \
