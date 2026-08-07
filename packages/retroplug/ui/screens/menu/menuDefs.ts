@@ -1218,12 +1218,33 @@ function risaSaveWorking(ctx: MenuContext, sys: SystemView): void {
 // absent (false) and the menu offers a plain "Save Working Song & Load".
 const risaCommitWorking = (sav: Uint8Array): Uint8Array | null => tryOp(() => saveWorkingToCatalog(sav));
 
+// The LSDj working-song row's actions. The row shows only for a LINKED working song (see lsdjSongCatalog),
+// so both of these inherit the active slot's name + version - LSDj keeps those on the stored project rather
+// than in the song, so a detached working song has neither.
+function lsdjExportWorking(ctx: MenuContext, sys: SystemView, name: string): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: "Export working song", patterns: ["*.lsdsng"], saving: true, defaultName: `${sanitizeName(name)}.lsdsng` }, (path) => {
+    const bytes = ctx.stores.project.systems.readSram(sys.id);
+    if (!bytes) return;
+    const slot = lsdjActiveSlot(bytes);
+    if (slot < 0) return;
+    // The LIVE working song (the first 0x8000), not the stored slot - exporting the edits is the point.
+    be.writeFileAtomic(path, encodeLsdsngRaw(savSongName(bytes, slot) || name, savSongVersion(bytes, slot), bytes.slice(0, 0x8000)));
+  });
+}
+function lsdjSaveWorking(ctx: MenuContext, sys: SystemView): void {
+  // No name argument: the row is linked-only, so saveWorkingToCatalog overwrites its slot and keeps its name.
+  mutateSavBytes(ctx, sys, (sav) => lsdjSaveWorkingToCatalog(sav));
+}
+
 const lsdjSongSpec: SongMenuSpec = {
   id: "lsdj",
   catalog: lsdjSongCatalog,
   exportSong,
   replaceSong,
   addSong: addSongFromDisk,
+  exportWorking: lsdjExportWorking,
+  saveWorkingToCatalog: lsdjSaveWorking,
   commitWorking: lsdjSaveWorkingToCatalog,
   // Only an UNLINKED LSDj working song needs a name: a linked one inherits its slot's.
   workingNeedsName: (sav) => lsdjActiveSlot(sav) < 0,

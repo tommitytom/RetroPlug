@@ -47,7 +47,19 @@ test("risaSongCatalog.workingSong reports name + LINK state, and leaves the show
   expect(risaSongCatalog.workingSong!(unlinked)).toEqual({ name: "BLUMARBL", linked: false });
   expect(risaSongCatalog.workingSongDirty!(unlinked)).toBe(false); // committed to slot 0 → no row, no prompt
 
-  // LSDj deliberately does not implement it (its working song is a copy of a saved slot, and an unlinked one
-  // has no name to show - LSDj keeps names on the stored project, not in the song).
-  expect(lsdjSongCatalog.workingSong).toBe(undefined);
+});
+
+test("lsdjSongCatalog.workingSong names the active slot; an UNLINKED working song has no name, so no row", () => {
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  const sav = savFrom({ activeProjectIndex: 0, projects: [{ name: "HELLO", version: 0, song }] } as SavInput);
+  // Linked: it borrows slot 0's name, and reports linked so saving overwrites that slot.
+  expect(lsdjSongCatalog.workingSong!(sav)).toEqual({ name: "HELLO", linked: true });
+
+  // Unlinked: LSDj keeps names on the stored project, so there is genuinely nothing to label a row with -
+  // the one place its answer differs from risa, and for a reason in the format rather than in the rule.
+  const unlinked = sav.slice();
+  unlinked[0x8140] = 0xff;
+  expect(lsdjSongCatalog.workingSong!(unlinked)).toBe(null);
+  // It is still dirty, so the load guard (which CAN ask for a name) still warns before destroying it.
+  expect(lsdjSongCatalog.workingSongDirty!(unlinked)).toBe(true);
 });
