@@ -133,11 +133,11 @@ int runN8Bridge(int argc, char** argv) {
     std::printf("Connected to Everdrive N8 Pro on %s\n", portName.c_str());
 
     MidiIo midi;
+    midi.setInputSelection(midiIn);  // "" = all hardware inputs; set before open() so it's applied once
     if (!midi.open("RetroPlug N8")) {
         std::fprintf(stderr, "error: no MIDI system available\n");
         return 1;
     }
-    midi.setInputSelection(midiIn);  // "" = all hardware inputs
     if (midiIn.empty())
         std::puts("MIDI input: all hardware inputs");
     else
