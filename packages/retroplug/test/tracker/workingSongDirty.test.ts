@@ -82,22 +82,24 @@ test("risa: an edit is caught whether or not the working song names a slot", () 
   const first = risaSongCatalog.list(sav)[0];
   const loaded = loadSongToWorkingInSav(sav, first.index)!;
 
-  // risa's load leaves 'current entry' at 0xff, so this is the unlinked path - and it must still be clean,
+  // risa's load links 'current entry' to the slot it came from, so this is the linked path - and it is clean,
   // because the content is exactly what slot `first.index` holds.
-  expect(workingSongSlot(loaded)).toBe(-1);
+  expect(workingSongSlot(loaded)).toBe(first.index);
   expect(risaSongCatalog.workingSongDirty!(loaded)).toBe(false);
 
-  const linked = loaded.slice();
-  linked[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = first.index;
-  expect(risaSongCatalog.workingSongDirty!(linked)).toBe(false);
+  // The unlinked path must reach the same verdict by a different route: no slot NAMED, but the catalog scan
+  // finds one whose content matches. (Batteries still arrive in this state from an imported .sav.)
+  const unlinked = loaded.slice();
+  unlinked[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = 0xff;
+  expect(risaSongCatalog.workingSongDirty!(unlinked)).toBe(false);
 
   // Poke a song byte in bank 0 (chains) - a real edit the firmware would see. Caught on both paths: the
   // linked one compares against its own slot, the unlinked one finds no slot that matches.
-  const editedLinked = normalizeSaveContainer(linked).save;
+  const editedLinked = normalizeSaveContainer(loaded).save;
   editedLinked[0x40] ^= 0xff;
   expect(risaSongCatalog.workingSongDirty!(editedLinked)).toBe(true);
 
-  const editedUnlinked = normalizeSaveContainer(loaded).save;
+  const editedUnlinked = normalizeSaveContainer(unlinked).save;
   editedUnlinked[0x40] ^= 0xff;
   expect(risaSongCatalog.workingSongDirty!(editedUnlinked)).toBe(true);
 });
@@ -134,12 +136,22 @@ test("lsdj: a corrupt or undersized battery answers instead of throwing", () => 
 });
 
 test("risa: an unrecognized container or legacy layout answers instead of throwing", () => {
-  // Not a risa container size at all, and a 64 KB buffer carrying no RSAV catalog: both stop at the
-  // layout gate, so there is no catalog to reason about and nothing to warn about.
+  // Not a risa container size at all, and a blank 64 KB buffer: no catalog AND no working song ('N8T'
+  // magic absent), so there is nothing to lose and nothing to warn about.
   expect(risaSongCatalog.workingSongDirty!(new Uint8Array(123))).toBe(false);
   expect(risaSongCatalog.workingSongDirty!(new Uint8Array(0x10000))).toBe(false);
   // Legacy layout overlaps the working-song banks, so there is nothing meaningful to compare.
   expect(risaSongCatalog.workingSongDirty!(risaSav("legacy_4xtreme"))).toBe(false);
+});
+
+test("risa: a working song with NO catalog at all is dirty - it is committed nowhere by definition", () => {
+  // The let_go.srm shape: a cart carrying the artist's song only in working memory. Absent a catalog there
+  // is no slot it could have been saved to, so it must warn on load and earn its synthetic Songs row - the
+  // distinction between "no catalog" (dirty) and "legacy catalog" (unreasonable-about) that the shared
+  // layout gate used to flatten into one answer.
+  const save = normalizeSaveContainer(risaSav("v2_blumarbl")).save;
+  save.fill(0, 0x8000); // wipe the catalog, keep the live working song in banks 0-3
+  expect(risaSongCatalog.workingSongDirty!(save)).toBe(true);
 });
 
 test("risa: a catalog that fails to PARSE degrades to dirty (fail toward warning)", () => {

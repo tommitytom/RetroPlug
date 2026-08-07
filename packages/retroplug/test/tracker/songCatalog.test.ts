@@ -34,15 +34,32 @@ test("risa catalog lists the RSAV catalog + reads the working-song name after a 
   expect(risaSongCatalog.workingName(loaded)).toBe("BLUMARBL");
 });
 
-test("risaSongCatalog.workingSong surfaces ONLY an unsaved working song; LSDj has no working-song accessor", () => {
+test("risaSongCatalog.workingSong reports name + LINK state, and leaves the show/hide call to workingSongDirty", () => {
   const curOff = BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET;
-  const saved = normalizeSaveContainer(savBytes("v2_blumarbl")).save; // curEntry 0 → the working song is saved
-  expect(risaSongCatalog.workingSong!(saved)).toBe(null); // already a listed slot → no synthetic row
+  const saved = normalizeSaveContainer(savBytes("v2_blumarbl")).save; // curEntry 0 → linked to slot 0
+  expect(risaSongCatalog.workingSong!(saved)).toEqual({ name: "BLUMARBL", linked: true });
 
-  const unsaved = saved.slice();
-  unsaved[curOff] = 0xff; // unlink → the working song is unsaved
-  expect(risaSongCatalog.workingSong!(unsaved)).toEqual({ name: "BLUMARBL" });
+  // Unlinking changes the LINK state it reports - and nothing else. It does not claim the song is worth a
+  // row: on a battery whose working song IS slot 0 (what a Load leaves behind), the content is still
+  // committed, and workingSongDirty - the row's actual gate - says so.
+  const unlinked = loadSongToWorkingInSav(saved, 0)!;
+  unlinked[curOff] = 0xff;
+  expect(risaSongCatalog.workingSong!(unlinked)).toEqual({ name: "BLUMARBL", linked: false });
+  expect(risaSongCatalog.workingSongDirty!(unlinked)).toBe(false); // committed to slot 0 → no row, no prompt
 
-  // LSDj deliberately does not implement it (its working song is a copy of a saved slot).
-  expect(lsdjSongCatalog.workingSong).toBe(undefined);
+});
+
+test("lsdjSongCatalog.workingSong names the active slot; an UNLINKED working song has no name, so no row", () => {
+  const song = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
+  const sav = savFrom({ activeProjectIndex: 0, projects: [{ name: "HELLO", version: 0, song }] } as SavInput);
+  // Linked: it borrows slot 0's name, and reports linked so saving overwrites that slot.
+  expect(lsdjSongCatalog.workingSong!(sav)).toEqual({ name: "HELLO", linked: true });
+
+  // Unlinked: LSDj keeps names on the stored project, so there is genuinely nothing to label a row with -
+  // the one place its answer differs from risa, and for a reason in the format rather than in the rule.
+  const unlinked = sav.slice();
+  unlinked[0x8140] = 0xff;
+  expect(lsdjSongCatalog.workingSong!(unlinked)).toBe(null);
+  // It is still dirty, so the load guard (which CAN ask for a name) still warns before destroying it.
+  expect(lsdjSongCatalog.workingSongDirty!(unlinked)).toBe(true);
 });

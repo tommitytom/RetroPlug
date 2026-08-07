@@ -1,6 +1,6 @@
 // The LSDj implementation of SongCatalog — thin wrappers over the existing pure ops (no logic here).
 import type { SongCatalog } from "./songCatalog";
-import { listProjects, workingSongName, isLsdjSav, workingSongDirty } from "../lsdj/codec/sav";
+import { listProjects, workingSongName, isLsdjSav, workingSongDirty, activeSlot, savSongName } from "../lsdj/codec/sav";
 import { loadSongToWorking, deleteSongInSav, moveSongInSav, importSongsFromSav } from "../lsdjSongOps";
 
 export const lsdjSongCatalog: SongCatalog = {
@@ -10,8 +10,17 @@ export const lsdjSongCatalog: SongCatalog = {
   // indices are source SLOT numbers (LSDj's list index === slot); import copies them into free target slots.
   importSongs: (target, source, indices) => importSongsFromSav(target, source, indices),
   workingName: (sav) => workingSongName(sav),
-  // No workingSong(): LSDj's working song is always a copy of a slot (addressed by activeProjectIndex), so
-  // it never needs its own row. It CAN still hold uncommitted edits, which is what workingSongDirty asks.
+  // A LINKED working song borrows its slot's name (LSDj stores names on the stored project, not in the song)
+  // and reports linked, so saving overwrites that slot rather than claiming a new one.
+  //
+  // An UNLINKED one gets no row at all. That is not the risa rule with a different answer, it is the same
+  // rule meeting a different fact: an unlinked LSDj working song has NO name anywhere to label a row with,
+  // where risa's carries its own. It is still dirty, so the load guard still warns before destroying it -
+  // and the guard, unlike a row, can ask for a name (see `workingNeedsName` in the menu).
+  workingSong: (sav) => {
+    const slot = activeSlot(sav);
+    return slot < 0 ? null : { name: savSongName(sav, slot), linked: true };
+  },
   workingSongDirty: (sav) => workingSongDirty(sav),
   load: (sav, index) => loadSongToWorking(sav, index),
   delete: (sav, index) => deleteSongInSav(sav, index),

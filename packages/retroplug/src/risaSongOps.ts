@@ -18,7 +18,9 @@ import {
   expandRecordToWorking,
   encodeRecord,
   readWorking,
+  workingSongInfo,
   CURRENT_LAYOUT,
+  LEGACY_LAYOUT,
   kSaveSize,
   type CatalogLayout,
 } from "./risa";
@@ -139,6 +141,13 @@ export function loadSongToWorkingInSav(rawSave: Uint8Array, index: number): Uint
     const record = recordBytesAt(save, CURRENT_LAYOUT, index);
     if (!record) return null;
     save.set(expandRecordToWorking(record), 0); // overwrite banks 0-3; catalog banks 4-7 untouched
+    // Link the working song to the slot it came from, exactly as the cart's own Load does
+    // (ui_lds.c lds_execute -> lds_write_current_entry(entry)). It has to be AFTER the splice, which lands a
+    // record's 0xFF over this byte. Skipping it leaves the working song orphaned from the slot it IS, and
+    // everything downstream then reads that as "committed nowhere": the host offers to save a byte-identical
+    // copy (appending a duplicate), the cart's FILE list shows no '>' against the loaded song, and an in-cart
+    // SAVE no longer pre-selects its slot - so risa appends the duplicate itself, without the host involved.
+    save[CURRENT_ENTRY] = index & 0xff;
     return save;
   } catch {
     return null; // unrecognized container / corrupt catalog / malformed record → leave the sav untouched
@@ -208,7 +217,13 @@ export function workingSongDirty(rawSave: Uint8Array): boolean {
     return false; // unrecognized container - nothing we can reason about
   }
   const layout = chooseCatalogLayout(save);
-  if (layout !== CURRENT_LAYOUT) return false; // legacy layout overlaps banks 0-3
+  // A LEGACY catalog sits at 0x6000, overlapping banks 0-3, so those bytes are not a working song to reason
+  // about. NO catalog is a different answer, not the same one: banks 0-3 are a perfectly good working song,
+  // there is simply nowhere it could have been saved - so it is committed nowhere by definition. That's the
+  // let_go.srm shape (a cart carrying the artist's song only in working memory), and reporting it clean hid
+  // it from the Songs menu entirely once the synthetic row moved onto this gate.
+  if (layout === LEGACY_LAYOUT) return false;
+  if (!layout) return workingSongInfo(save) != null; // no catalog: dirty iff there IS a working song ('N8T')
 
   // The linked slot first: the common case, and a single comparison answers it.
   const slot = workingSongSlot(save);
@@ -287,8 +302,41 @@ export function saveWorkingToCatalog(rawSave: Uint8Array): Uint8Array {
     return save;
   }
 
+  // UNLINKED, but the content may still already BE a saved slot - in which case appending would grow a
+  // byte-identical duplicate, the very thing the linked branch above exists to avoid. So adopt the slot that
+  // already holds it and stop. loadSongToWorkingInSav now stamps the link, so this is the belt to that
+  // fix's braces: it covers batteries that arrive unlinked from elsewhere (a song imported from someone
+  // else's .sav, or one loaded before the stamp existed). The scan is the same one workingSongDirty runs,
+  // and this is a one-click user action rather than a per-menu-build path, so its cost is affordable here.
+  if (before === CURRENT_LAYOUT && current === 0xff) {
+    const count = parseCatalog(save, before).count;
+    for (let i = 0; i < count; i++) {
+      if (matchesSlot(save, i)) {
+        save[CURRENT_ENTRY] = i & 0xff;
+        return save;
+      }
+    }
+  }
+
   const newIndex = before ? parseCatalog(save, before).count : 0; // the slot the append will land in
   const out = addSongRecordToSav(save, record); // appends (+ inits a v2 catalog when absent), keeps banks 0-3
   out[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = newIndex & 0xff; // link working → the new slot
   return out;
+}
+
+/** Commit the live working song into the catalog slot at `index` (overwriting it) and link the working song
+ *  there. The op behind "Save Changes to [N] NAME": an UNLINKED working song has no slot of its own, so if
+ *  it plainly came from one - it carries that slot's name - the user needs a way to save back over it, or
+ *  their only option is appending a second song under the same name.
+ *
+ *  Deliberately separate from saveWorkingToCatalog, which picks its own target: this overwrites a slot the
+ *  USER picked. Names are 8 chars and not unique, so which same-named slot a detached working song came from
+ *  is not something to infer - the menu offers the candidates and this executes the choice. Throws on a bad
+ *  index / malformed working song / a non-current layout (the menu wraps it in tryOp). */
+export function saveWorkingToSlot(rawSave: Uint8Array, index: number): Uint8Array {
+  const { save, layout } = editable(rawSave);
+  if (layout !== CURRENT_LAYOUT) throw new Error("saveWorkingToSlot needs the current catalog layout");
+  writeRecord(save, index, encodeRecord(readWorking(save)), layout); // throws on an out-of-range index
+  save[CURRENT_ENTRY] = index & 0xff;
+  return save;
 }

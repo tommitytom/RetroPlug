@@ -6,6 +6,7 @@
 // from ./trackerIntegration without an import cycle through here.
 
 export type { SongCatalog, SongInfo } from "./songCatalog";
+export { workingSongTargets } from "./songCatalog";
 export type { AssetCatalog, AssetSlot, AssetSlotRow, AssetOverride, AssetTypeInfo } from "./assetCatalog";
 export { effectiveAssets, readAssetOverrides } from "./assetCatalog";
 export type { TrackerIntegration } from "./trackerIntegration";

@@ -2,7 +2,15 @@
 // throw on a bad index (unlike LSDj's), so they're wrapped to the catalog's null-on-failure contract.
 import type { SongCatalog } from "./songCatalog";
 import { listSongs, workingSongName, workingSongInfo, isRisaSav } from "../risa/codec/sav";
-import { loadSongToWorkingInSav, deleteSongInSav, moveSongInSav, importSongsFromSav, workingSongDirty } from "../risaSongOps";
+import {
+  loadSongToWorkingInSav,
+  deleteSongInSav,
+  moveSongInSav,
+  importSongsFromSav,
+  workingSongDirty,
+  workingSongSlot,
+  saveWorkingToSlot,
+} from "../risaSongOps";
 
 const tryOp = (fn: () => Uint8Array): Uint8Array | null => {
   try {
@@ -18,16 +26,16 @@ export const risaSongCatalog: SongCatalog = {
   isValidSav: (bytes) => isRisaSav(bytes),
   importSongs: (target, source, indices) => tryOp(() => importSongsFromSav(target, source, indices)),
   workingName: (sav) => workingSongName(sav),
-  // Surface the working song ONLY when it's unsaved (not linked to a catalog slot); a saved working song is
-  // already listed as its slot, so it would just duplicate a row.
+  // Name + link state only; workingSongDirty below is what decides whether the row is shown at all (see the
+  // SongCatalog contract). `unsaved` deliberately isn't consulted here: it reports the LINK byte, and a
+  // song can be linked and still hold an hour of unsaved edits.
   workingSong: (sav) => {
     const info = workingSongInfo(sav);
-    return info && info.unsaved ? { name: info.name } : null;
+    return info ? { name: info.name, linked: workingSongSlot(sav) >= 0 } : null;
   },
-  // Broader than workingSong above: that reports only an UNLINKED song (worth its own row), this also
-  // catches one linked to a slot whose content it no longer matches - the common "edited for an hour" case.
   workingSongDirty: (sav) => workingSongDirty(sav),
   load: (sav, index) => loadSongToWorkingInSav(sav, index),
+  saveWorkingToSlot: (sav, index) => tryOp(() => saveWorkingToSlot(sav, index)),
   delete: (sav, index) => tryOp(() => deleteSongInSav(sav, index)),
   reorder: (sav, from, to) => tryOp(() => moveSongInSav(sav, from, to)),
 };
