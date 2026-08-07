@@ -323,3 +323,20 @@ export function saveWorkingToCatalog(rawSave: Uint8Array): Uint8Array {
   out[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = newIndex & 0xff; // link working → the new slot
   return out;
 }
+
+/** Commit the live working song into the catalog slot at `index` (overwriting it) and link the working song
+ *  there. The op behind "Save Changes to [N] NAME": an UNLINKED working song has no slot of its own, so if
+ *  it plainly came from one - it carries that slot's name - the user needs a way to save back over it, or
+ *  their only option is appending a second song under the same name.
+ *
+ *  Deliberately separate from saveWorkingToCatalog, which picks its own target: this overwrites a slot the
+ *  USER picked. Names are 8 chars and not unique, so which same-named slot a detached working song came from
+ *  is not something to infer - the menu offers the candidates and this executes the choice. Throws on a bad
+ *  index / malformed working song / a non-current layout (the menu wraps it in tryOp). */
+export function saveWorkingToSlot(rawSave: Uint8Array, index: number): Uint8Array {
+  const { save, layout } = editable(rawSave);
+  if (layout !== CURRENT_LAYOUT) throw new Error("saveWorkingToSlot needs the current catalog layout");
+  writeRecord(save, index, encodeRecord(readWorking(save)), layout); // throws on an out-of-range index
+  save[CURRENT_ENTRY] = index & 0xff;
+  return save;
+}

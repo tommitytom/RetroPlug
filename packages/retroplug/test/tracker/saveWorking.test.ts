@@ -3,7 +3,7 @@
 // every other saved song must be untouched. If saving didn't actually clear the dirty flag, the user
 // would save, be prompted again, and reasonably conclude the save did nothing.
 import { test, expect } from "../../testing/harness";
-import { lsdjSongCatalog, risaSongCatalog } from "../../src/tracker";
+import { lsdjSongCatalog, risaSongCatalog, workingSongTargets, type SongCatalog } from "../../src/tracker";
 import { savBytes as lsdjSav } from "../lsdj/fixtures";
 import { savBytes as risaSav } from "../risa/fixtures";
 import { loadSongToWorking, decompressSlot, savSongName } from "../../src/lsdj/codec/sav";
@@ -100,6 +100,39 @@ test("risa: saving an UNLINKED working song appends a new slot and links it", ()
   expect(risaSongCatalog.list(saved).length).toBe(count + 1);
   expect(workingSongSlot(saved)).toBe(count); // linked to the slot it landed in
   expect(risaSongCatalog.workingSongDirty!(saved)).toBe(false);
+});
+
+test("risa: saveWorkingToSlot overwrites the slot the user picked and links the working song there", () => {
+  const sav = risaSav("v2_blumarbl");
+  const first = risaSongCatalog.list(sav)[0];
+  const detached = loadSongToWorkingInSav(sav, first.index)!;
+  detached[0x2000 + 0x1e94] = 0xff; // the link was lost...
+  detached[0x40] ^= 0xff; // ...and the song edited since: same name as slot 0, different content
+  expect(workingSongTargets(risaSongCatalog, detached).map((s) => s.index)).toEqual([first.index]);
+
+  const count = risaSongCatalog.list(detached).length;
+  const saved = risaSongCatalog.saveWorkingToSlot!(detached, first.index)!;
+  expect(risaSongCatalog.list(saved).length).toBe(count); // overwritten, not appended
+  expect(workingSongSlot(saved)).toBe(first.index);
+  expect(risaSongCatalog.workingSongDirty!(saved)).toBe(false);
+  // The edit really did land in the stored song, not just in working memory.
+  expect(risaSongCatalog.load(saved, first.index)![0x40]).toBe(detached[0x40]);
+});
+
+test("workingSongTargets matches by name only, case/padding-insensitively, and is console-agnostic", () => {
+  // It reads nothing but `workingName` + `list`, so a stub pins the matching rule itself rather than any
+  // one console's bytes. A working song no saved song shares a name with has no overwrite target, and the
+  // menu is then right to offer only "Save as New Song".
+  const stub = (working: string | null, names: string[]): SongCatalog =>
+    ({ workingName: () => working, list: () => names.map((name, index) => ({ index, name })) }) as unknown as SongCatalog;
+  const sav = new Uint8Array(0);
+
+  expect(workingSongTargets(stub("ECOLISOL", ["DBZ", "ECOLISOL", "FUNK0"]), sav)).toEqual([{ index: 1, name: "ECOLISOL" }]);
+  expect(workingSongTargets(stub("ecolisol ", ["ECOLISOL "]), sav)).toEqual([{ index: 0, name: "ECOLISOL " }]);
+  expect(workingSongTargets(stub("ECOLISOL", ["DBZ", "FUNK0"]), sav)).toEqual([]); // nothing to overwrite
+  expect(workingSongTargets(stub(null, ["DBZ"]), sav)).toEqual([]); // no name to match on
+  // Names are 8 chars and NOT unique. Both are offered; nothing picks between them.
+  expect(workingSongTargets(stub("DBZ", ["DBZ", "FUNK0", "DBZ"]), sav).map((s) => s.index)).toEqual([0, 2]);
 });
 
 test("risa: saving an UNLINKED working song that a slot ALREADY holds adopts that slot, never duplicates", () => {

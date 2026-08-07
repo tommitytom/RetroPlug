@@ -341,6 +341,31 @@ test("a LINKED working song with edits gets the row too, offering 'Save Changes'
   expect(findItem(workingRow(items), "risa-song-working-save")?.label).toBe("Save Changes");
 });
 
+test("an unlinked working song whose NAME matches a slot offers to overwrite it, not just append", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // The reported state: a battery whose link was lost (a Load written before Load stamped it) and whose song
+  // has since been edited. "Save as New Song" is a correct offer but a poor only-offer - taking it grows a
+  // second song under the same name, which is the duplicate the user set out to avoid.
+  const detached = loadSongToWorkingInSav(normalizeSaveContainer(savBytes("v2_blumarbl")).save, 0)!;
+  detached[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = 0xff; // link lost
+  detached[0x40] ^= 0xff; // and edited since
+  const { id, items } = risaSystem(be, stores, detached);
+
+  const w = workingRow(items);
+  const overwrite = findItem(w, "risa-song-working-save-0")!;
+  expect(overwrite.label).toBe("Save Changes to [0] BLUMARBL"); // names the slot; nothing is guessed
+  expect(findItem(w, "risa-song-working-save")?.label).toBe("Save as New Song"); // still offered, second
+
+  // Taking it writes the working song over slot 0 and links there: one song, not two.
+  overwrite.onSelect!();
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.replaceId).toBe(id);
+  const out = new Uint8Array(spec.sramBytes!);
+  expect(listSongs(out).map((s) => s.name)).toEqual(["BLUMARBL"]);
+  expect(risaSongCatalog.workingSongDirty!(out)).toBe(false); // committed, so the row drops
+});
+
 test("a working song a slot already holds shows NO row - the duplicate the old link-byte gate invited", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

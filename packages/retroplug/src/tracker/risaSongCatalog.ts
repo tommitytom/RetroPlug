@@ -2,7 +2,15 @@
 // throw on a bad index (unlike LSDj's), so they're wrapped to the catalog's null-on-failure contract.
 import type { SongCatalog } from "./songCatalog";
 import { listSongs, workingSongName, workingSongInfo, isRisaSav } from "../risa/codec/sav";
-import { loadSongToWorkingInSav, deleteSongInSav, moveSongInSav, importSongsFromSav, workingSongDirty, workingSongSlot } from "../risaSongOps";
+import {
+  loadSongToWorkingInSav,
+  deleteSongInSav,
+  moveSongInSav,
+  importSongsFromSav,
+  workingSongDirty,
+  workingSongSlot,
+  saveWorkingToSlot,
+} from "../risaSongOps";
 
 const tryOp = (fn: () => Uint8Array): Uint8Array | null => {
   try {
@@ -27,6 +35,7 @@ export const risaSongCatalog: SongCatalog = {
   },
   workingSongDirty: (sav) => workingSongDirty(sav),
   load: (sav, index) => loadSongToWorkingInSav(sav, index),
+  saveWorkingToSlot: (sav, index) => tryOp(() => saveWorkingToSlot(sav, index)),
   delete: (sav, index) => tryOp(() => deleteSongInSav(sav, index)),
   reorder: (sav, from, to) => tryOp(() => moveSongInSav(sav, from, to)),
 };

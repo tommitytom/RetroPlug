@@ -61,6 +61,7 @@ import {
   readAssetOverrides,
   lsdjSongCatalog,
   risaSongCatalog,
+  workingSongTargets,
   lsdjAssetCatalog,
   risaAssetCatalog,
   type SongCatalog,
@@ -1125,6 +1126,20 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
   if (working) {
     const wName = working.name || "Working Song";
     const wItems: MenuItem[] = [];
+    // An UNLINKED working song names no slot, so saving it can only append - and when a saved song already
+    // carries its name, that append is a second "ECOLISOL" next to the first, which is the duplicate this
+    // whole row exists to avoid. Offer those same-named slots as explicit overwrite targets first. Advisory,
+    // never automatic: 8-char names aren't unique and overwriting a saved song has no undo, so the menu lists
+    // the candidates by slot and the user picks. (A LINKED song already knows its slot and skips all this.)
+    if (!working.linked && cat.saveWorkingToSlot) {
+      for (const t of workingSongTargets(cat, bytes!)) {
+        wItems.push(
+          action(`${spec.id}-song-working-save-${t.index}`, `Save Changes to [${t.index}] ${t.name}`, () => {
+            mutateSavBytes(ctx, sys, (sav) => cat.saveWorkingToSlot!(sav, t.index));
+          }),
+        );
+      }
+    }
     // Name the save by what it does, since the row now shows in both states and the two differ in a way the
     // user cares about: a LINKED song overwrites the slot it came from, an unlinked one grows the catalog.
     if (spec.saveWorkingToCatalog)

@@ -11,6 +11,21 @@ export interface SongInfo {
   name: string;
 }
 
+/** The saved songs an UNLINKED working song plausibly came from: those sharing its name. A working song with
+ *  no link names no slot, so if the user has been editing one that was loaded before the link was recorded
+ *  (or imported from someone else's sav), the only save on offer is "append a new song" - which grows a
+ *  second entry under the same name, the exact duplicate the menu is trying to avoid. These are the slots
+ *  worth offering to overwrite instead.
+ *
+ *  Advisory, never automatic. Names are short and not unique, and overwriting a saved song has no undo, so
+ *  the menu shows the candidates and the user picks; nothing here decides on their behalf. Built from
+ *  `workingName` + `list`, so it needs no per-console support beyond what a SongCatalog already has. */
+export function workingSongTargets(cat: SongCatalog, sav: Uint8Array): SongInfo[] {
+  const name = cat.workingName(sav)?.trim().toUpperCase();
+  if (!name) return [];
+  return cat.list(sav).filter((s) => s.name.trim().toUpperCase() === name);
+}
+
 export interface SongCatalog {
   /** The role kind that identifies this console on a system (the menu-gate marker, e.g. "lsdj-sync"/"risa"). */
   readonly markerRole: string;
@@ -50,6 +65,10 @@ export interface SongCatalog {
   load(sav: Uint8Array, index: number): Uint8Array | null;
   /** Delete a saved song. New bytes, or null on an invalid index. */
   delete(sav: Uint8Array, index: number): Uint8Array | null;
+  /** Commit the live working song INTO the saved song at `index`, overwriting it, and link the working song
+   *  there. New bytes, or null when the slot / working song won't take it. Only meaningful for a console
+   *  whose working song can be detached from the catalog; see `workingSongTargets` for who calls it. */
+  saveWorkingToSlot?(sav: Uint8Array, index: number): Uint8Array | null;
   /** Reorder the saved songs: move the one at list position `from` to position `to` (positions index into
    *  `list()`, NOT slot numbers). New bytes, or null on an out-of-range / no-op move. Optional — only consoles
    *  whose saved songs can be reordered implement it (risa's positional records; LSDj by swapping slots). */
