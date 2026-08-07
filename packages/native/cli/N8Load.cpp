@@ -33,7 +33,10 @@ void printUsage() {
         "  <rom.nes>          upload this local ROM to the N8 SD and boot it\n"
         "  --sd-path <path>   instead, boot a ROM already on the N8 SD card, by its SD path\n"
         "  --serial <port>    use this serial port (default: auto-detect the N8, VID:PID 38df:0017)\n"
-        "  -h, --help         show this help");
+        "  -h, --help         show this help\n"
+        "\n"
+        "  Run this from the N8 file-browser menu. If the install fails with 'out of memory' (a dirty\n"
+        "  menu heap after a prior failed load), power-cycle the console to a fresh menu and retry.");
 }
 
 std::string baseName(const std::string& path) {
@@ -122,8 +125,17 @@ int runN8Load(int argc, char** argv) {
 
     N8Menu menu(edio);
     try {
+        // Confirm the menu is actually running before anything else (a running game won't answer '*t').
         std::printf("Handshaking with the N8 menu...\n");
-        menu.test();
+        try {
+            menu.test();
+        } catch (const std::exception& e) {
+            std::fprintf(stderr,
+                         "error: the N8 menu isn't responding (%s).\n"
+                         "       Is a game already running? Power-cycle the console to the menu, then retry.\n",
+                         e.what());
+            return 1;
+        }
 
         std::string bootPath = sdPath;
         if (bootPath.empty()) {

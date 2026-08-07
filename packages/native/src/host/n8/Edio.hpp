@@ -75,6 +75,9 @@ public:
     // Read timeout (ms) threaded into ISerialPort::read (handshake + menu replies). fifoWR never reads.
     void setReadTimeout(int ms) { timeoutMs_ = ms; }
 
+    // Drop any buffered input (e.g. reboot garbage before polling the menu). Best-effort.
+    void flushInput();
+
 private:
     void txCMD(std::uint8_t cmd);
     void tx8(std::uint8_t v);

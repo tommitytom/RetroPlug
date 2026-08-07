@@ -50,6 +50,8 @@ void Edio::rxData(std::uint8_t* data, std::size_t size) {
     }
 }
 
+void Edio::flushInput() { port_.flushInput(); }
+
 std::uint8_t Edio::rx8() {
     std::uint8_t b;
     rxData(&b, 1);
