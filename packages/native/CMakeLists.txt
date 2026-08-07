@@ -314,7 +314,9 @@ option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli n8-bridge subcommand (links 
 if(RETROPLUG_N8_BRIDGE)
     target_sources(retroplug-cli PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Bridge.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Load.cpp                # `n8-load`: menu-driven ROM load over USB
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp        # on-device menu command channel
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp)  # RtMidi in/out seam (shared with retroplug-sdl)
     target_link_libraries(retroplug-cli PRIVATE serial rtmidi)
@@ -706,7 +708,8 @@ set_target_properties(retroplug-midi-test PROPERTIES
 # (the live serial + MIDI path needs a real N8). Also `pnpm test:n8`.
 add_executable(retroplug-n8-test EXCLUDE_FROM_ALL
     test/n8/Edio.test.cpp
-    src/host/n8/Edio.cpp)
+    src/host/n8/Edio.cpp
+    src/host/n8/N8Menu.cpp)
 
 target_link_libraries(retroplug-n8-test PRIVATE
     Catch2::Catch2WithMain)

@@ -50,10 +50,25 @@ void Edio::rxData(std::uint8_t* data, std::size_t size) {
     }
 }
 
+std::uint8_t Edio::rx8() {
+    std::uint8_t b;
+    rxData(&b, 1);
+    return b;
+}
+
 std::uint16_t Edio::rx16() {
     std::uint8_t b[2];
     rxData(b, 2);
     return static_cast<std::uint16_t>(b[0] | (b[1] << 8));
+}
+
+void Edio::fifoTxString(const std::string& s) {
+    const std::uint8_t len[2] = {
+        static_cast<std::uint8_t>(s.size()),
+        static_cast<std::uint8_t>(s.size() >> 8),
+    };
+    fifoWR(len, 2);
+    fifoWR(reinterpret_cast<const std::uint8_t*>(s.data()), s.size());
 }
 
 int Edio::getStatus() {
@@ -86,6 +101,55 @@ void Edio::memWR(std::int32_t addr, const std::uint8_t* data, std::size_t size) 
 
 void Edio::fifoWR(const std::uint8_t* data, std::size_t size) {
     memWR(ADDR_FIFO, data, size);
+}
+
+void Edio::txString(const std::string& s) {
+    tx16(static_cast<std::uint32_t>(s.size()));
+    txData(reinterpret_cast<const std::uint8_t*>(s.data()), s.size());
+}
+
+void Edio::txDataACK(const std::uint8_t* data, std::size_t size) {
+    std::size_t offset = 0;
+    while (size > 0) {
+        const std::uint8_t ack = rx8();  // the device gates each block with a 0 ack byte
+        if (ack != 0) {
+            char msg[48];
+            std::snprintf(msg, sizeof(msg), "Edio: tx ack error 0x%02X", ack);
+            throw std::runtime_error(msg);
+        }
+        const std::size_t block = std::min<std::size_t>(size, ACK_BLOCK_SIZE);
+        txData(data + offset, block);
+        offset += block;
+        size   -= block;
+    }
+}
+
+void Edio::checkStatus() {
+    const int resp = getStatus();  // sends CMD_STATUS, verifies the 0xA5xx frame, returns the low byte
+    if (resp != 0) {
+        char msg[48];
+        std::snprintf(msg, sizeof(msg), "Edio: operation error 0x%02X", resp);
+        throw std::runtime_error(msg);
+    }
+}
+
+void Edio::fileOpen(const std::string& path, std::uint8_t mode) {
+    txCMD(CMD_F_FOPN);
+    tx8(mode);
+    txString(path);
+    checkStatus();
+}
+
+void Edio::fileWrite(const std::uint8_t* data, std::size_t size) {
+    txCMD(CMD_F_FWR);
+    tx32(static_cast<std::uint32_t>(size));
+    txDataACK(data, size);
+    checkStatus();
+}
+
+void Edio::fileClose() {
+    txCMD(CMD_F_FCLOSE);
+    checkStatus();
 }
 
 }  // namespace retroplug

@@ -10,9 +10,11 @@
 #include <vector>
 
 #include "host/n8/Edio.hpp"
+#include "host/n8/N8Menu.hpp"
 
 using retroplug::Edio;
 using retroplug::ISerialPort;
+using retroplug::N8Menu;
 
 namespace {
 
@@ -102,4 +104,114 @@ TEST_CASE("connect throws when the device does not answer (read timeout)", "[n8]
     FakeSerialPort port;  // no queued reply => read returns 0 => timeout
     Edio           edio(port);
     REQUIRE_THROWS(edio.connect());
+}
+
+// The expected CMD_MEM_WR frame targeting ADDR_FIFO for a given payload (what fifoWR emits).
+static std::vector<std::uint8_t> memWrFifo(const std::vector<std::uint8_t>& payload) {
+    std::vector<std::uint8_t> f = {0x2B, 0xD4, 0x1A, 0xE5, 0x00, 0x00, 0x81, 0x01};  // frame + ADDR_FIFO LE
+    const std::uint32_t n = static_cast<std::uint32_t>(payload.size());
+    f.push_back(n & 0xFF); f.push_back((n >> 8) & 0xFF); f.push_back((n >> 16) & 0xFF); f.push_back((n >> 24) & 0xFF);
+    f.push_back(0x00);  // exec
+    f.insert(f.end(), payload.begin(), payload.end());
+    return f;
+}
+static void append(std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b) { a.insert(a.end(), b.begin(), b.end()); }
+
+TEST_CASE("fifoTxString emits a 2-byte LE length then the bytes, each as a FIFO write", "[n8]") {
+    FakeSerialPort port;
+    Edio           edio(port);
+    edio.fifoTxString("ab");
+    std::vector<std::uint8_t> expected;
+    append(expected, memWrFifo({0x02, 0x00}));  // length = 2, little-endian
+    append(expected, memWrFifo({'a', 'b'}));    // the string bytes
+    REQUIRE(port.written == expected);
+}
+
+TEST_CASE("N8Menu::test sends '*t' to the FIFO and accepts 'k'", "[n8]") {
+    FakeSerialPort port;
+    port.toRead.push_back('k');
+    Edio   edio(port);
+    N8Menu menu(edio);
+    menu.test();
+    REQUIRE(port.written == memWrFifo({'*', 't'}));
+}
+
+TEST_CASE("N8Menu::test throws on a non-'k' reply", "[n8]") {
+    FakeSerialPort port;
+    port.toRead.push_back('x');
+    Edio   edio(port);
+    REQUIRE_THROWS(N8Menu(edio).test());
+}
+
+TEST_CASE("N8Menu::appInstall sends '*n' + length-prefixed path, returns the map index", "[n8]") {
+    FakeSerialPort port;
+    port.toRead.push_back(0x00);         // status = ok
+    port.toRead.push_back(0x07);         // map index low
+    port.toRead.push_back(0x00);         // map index high
+    Edio   edio(port);
+    N8Menu menu(edio);
+    const int idx = menu.appInstall("x");
+    REQUIRE(idx == 7);
+    std::vector<std::uint8_t> expected;
+    append(expected, memWrFifo({'*', 'n'}));
+    append(expected, memWrFifo({0x01, 0x00}));  // path length = 1
+    append(expected, memWrFifo({'x'}));
+    REQUIRE(port.written == expected);
+}
+
+TEST_CASE("N8Menu::appInstall throws on a non-zero install status", "[n8]") {
+    FakeSerialPort port;
+    port.toRead.push_back(0x05);  // FR_NO_PATH
+    Edio edio(port);
+    REQUIRE_THROWS(N8Menu(edio).appInstall("bad/path.nes"));
+}
+
+TEST_CASE("N8Menu::appStart sends '*s'", "[n8]") {
+    FakeSerialPort port;
+    Edio   edio(port);
+    N8Menu menu(edio);
+    menu.appStart();
+    REQUIRE(port.written == memWrFifo({'*', 's'}));
+}
+
+TEST_CASE("fileOpen sends CMD_F_FOPN + mode + length-prefixed path, then polls status", "[n8]") {
+    FakeSerialPort port;
+    port.queueStatus(0xA500);  // checkStatus poll -> ok
+    Edio edio(port);
+    edio.fileOpen("ab", Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH);
+    const std::vector<std::uint8_t> expected = {
+        0x2B, 0xD4, 0xC9, 0x36,  // frame CMD_F_FOPN (0xC9 ^ 0xFF = 0x36)
+        0x8A,                    // mode = FA_WRITE|FA_CREATE_ALWAYS|FS_MAKEPATH
+        0x02, 0x00,              // path length = 2 (tx16)
+        'a', 'b',                // path bytes
+        0x2B, 0xD4, 0x10, 0xEF,  // checkStatus -> CMD_STATUS frame
+    };
+    REQUIRE(port.written == expected);
+}
+
+TEST_CASE("fileWrite sends CMD_F_FWR + length, one ack-gated block, then polls status", "[n8]") {
+    FakeSerialPort port;
+    port.toRead.push_back(0x00);  // txDataACK: ack byte for the first (only) block
+    port.queueStatus(0xA500);     // checkStatus poll -> ok
+    Edio edio(port);
+    edio.fileWrite(std::vector<std::uint8_t>{0xDE, 0xAD});
+    const std::vector<std::uint8_t> expected = {
+        0x2B, 0xD4, 0xCC, 0x33,  // frame CMD_F_FWR (0xCC ^ 0xFF = 0x33)
+        0x02, 0x00, 0x00, 0x00,  // length = 2 (tx32)
+        0xDE, 0xAD,              // the block (after the ack byte was read)
+        0x2B, 0xD4, 0x10, 0xEF,  // checkStatus -> CMD_STATUS frame
+    };
+    REQUIRE(port.written == expected);
+}
+
+TEST_CASE("fileClose sends CMD_F_FCLOSE then polls status", "[n8]") {
+    FakeSerialPort port;
+    port.queueStatus(0xA500);
+    Edio edio(port);
+    edio.fileClose();
+    const std::vector<std::uint8_t> expected = {
+        0x2B, 0xD4, 0xCE, 0x31,  // frame CMD_F_FCLOSE (0xCE ^ 0xFF = 0x31)
+        0x2B, 0xD4, 0x10, 0xEF,  // checkStatus -> CMD_STATUS frame
+    };
+    REQUIRE(port.written == expected);
 }
