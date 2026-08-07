@@ -18,13 +18,19 @@ test("loadSongToWorkingInSav splices the expanded song into banks 0-3 and keeps 
   expect(out).toBeTruthy();
   expect(out!.length).toBe(0x10000);
 
-  // Banks 0-3 == the expanded record; catalog banks 4-7 == the input's, untouched.
+  // Banks 0-3 == the expanded record, EXCEPT the 'current entry' link byte (see below); catalog banks 4-7 ==
+  // the input's, untouched.
   const expectedWorking = expandRecordToWorking(recordBytesAt(input, CURRENT_LAYOUT, 0)!);
-  expect(sameBytes(out!.slice(0, 0x8000), expectedWorking)).toBe(true);
+  const working = out!.slice(0, 0x8000);
+  expect(working.every((b, i) => i === 0x3e94 || b === expectedWorking[i])).toBe(true);
   expect(sameBytes(out!.slice(0x8000), input.slice(0x8000))).toBe(true);
 
   // The working-song 'N8T' magic is stamped so a cold boot accepts it (bank 1 0x1E80).
   expect(Array.from(out!.slice(0x3e80, 0x3e84))).toEqual([0x4e, 0x38, 0x54, 0x0c]);
+  // And the working song is LINKED to the slot it came from (bank 1 0x1E94), as the cart's own Load does - a
+  // fresh record expansion carries 0xFF there, so this is the one byte that differs from it.
+  expect(expectedWorking[0x3e94]).toBe(0xff);
+  expect(out![0x3e94]).toBe(0);
 });
 
 test("loadSongToWorkingInSav does not mutate the caller's input buffer", () => {

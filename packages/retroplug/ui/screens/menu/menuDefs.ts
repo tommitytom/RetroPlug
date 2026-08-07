@@ -1115,19 +1115,27 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     return submenu(`${spec.id}-song-${s.index}`, `[${s.index}] ${name}`, items);
   });
   const body = rows.length ? rows : [action(`${spec.id}-song-none`, "(no saved songs)", () => {}, true)];
-  // The live working song, when the catalog reports it UNSAVED (not linked to any listed slot) — surfaced as
-  // a synthetic top row so a cart whose song lives only in working memory isn't invisible. It's not a catalog
-  // index, so it gets its own actions (Save to Catalog / Export), never Load/Delete/reorder.
-  const working = bytes ? cat.workingSong?.(bytes) : null;
+  // The live working song, surfaced as a synthetic top row when (and only when) it holds work no saved slot
+  // has (`discards`, the same content-level question the load guard asks). That covers both a cart whose song
+  // lives only in working memory and the far commoner "loaded a song and edited it" state; a working song
+  // that merely matches a slot gets no row, because it is already listed AS that slot. It's not a catalog
+  // index, so it gets its own actions (save / Export), never Load/Delete/reorder.
+  const working = discards && bytes ? cat.workingSong?.(bytes) : null;
   const workingRows: MenuItem[] = [];
   if (working) {
     const wName = working.name || "Working Song";
     const wItems: MenuItem[] = [];
+    // Name the save by what it does, since the row now shows in both states and the two differ in a way the
+    // user cares about: a LINKED song overwrites the slot it came from, an unlinked one grows the catalog.
     if (spec.saveWorkingToCatalog)
-      wItems.push(action(`${spec.id}-song-working-save`, "Save to Catalog", () => spec.saveWorkingToCatalog!(ctx, sys)));
+      wItems.push(
+        action(`${spec.id}-song-working-save`, working.linked ? "Save Changes" : "Save as New Song", () => spec.saveWorkingToCatalog!(ctx, sys)),
+      );
     if (spec.exportWorking)
       wItems.push(action(`${spec.id}-song-working-export`, "Export...", () => spec.exportWorking!(ctx, sys, wName)));
-    workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName}`, wItems), sep(`${spec.id}-song-working-sep`));
+    // "(unsaved)" is what separates this row from the identically-named slot row below it when the song is
+    // linked - without it the two read as two songs rather than one song and its uncommitted edits.
+    workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName} (unsaved)`, wItems), sep(`${spec.id}-song-working-sep`));
   }
   return submenu(`${spec.id}-songs`, "Songs", [
     ...workingRows,

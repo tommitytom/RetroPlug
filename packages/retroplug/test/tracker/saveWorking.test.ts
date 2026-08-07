@@ -63,13 +63,22 @@ test("lsdj: a full catalog reports it can't take an unlinked song rather than fa
   expect(saveWorkingToCatalog(unlinked, "NOPE")).toBe(null);
 });
 
-test("risa: saving a LINKED working song updates in place instead of appending a duplicate", () => {
+test("risa: Load links the working song to the slot it came from (the cart's own Load does the same)", () => {
   const sav = risaSav("v2_blumarbl");
   const first = risaSongCatalog.list(sav)[0];
   const loaded = loadSongToWorkingInSav(sav, first.index)!;
-  const linked = loaded.slice();
-  linked[0x2000 + 0x1e94] = first.index; // link to the slot it came from
-  expect(risaSongCatalog.workingSongDirty!(linked)).toBe(false);
+  // Without this the working song is orphaned from the slot it IS, and a save appends a byte-identical
+  // duplicate - the state the whole working-song row used to be gated on.
+  expect(workingSongSlot(loaded)).toBe(first.index);
+  expect(risaSongCatalog.workingSongDirty!(loaded)).toBe(false); // nothing to lose, so no row and no prompt
+});
+
+test("risa: saving a LINKED working song updates in place instead of appending a duplicate", () => {
+  const sav = risaSav("v2_blumarbl");
+  const first = risaSongCatalog.list(sav)[0];
+  const linked = loadSongToWorkingInSav(sav, first.index)!; // Load links it
+  linked[0x40] ^= 0xff; // edited for an hour: linked, but no longer what the slot holds
+  expect(risaSongCatalog.workingSongDirty!(linked)).toBe(true);
 
   const count = risaSongCatalog.list(linked).length;
   const saved = risaSaveWorking(linked);
@@ -82,14 +91,27 @@ test("risa: saving a LINKED working song updates in place instead of appending a
 test("risa: saving an UNLINKED working song appends a new slot and links it", () => {
   const sav = risaSav("v2_blumarbl");
   const loaded = loadSongToWorkingInSav(sav, risaSongCatalog.list(sav)[0].index)!;
-  expect(workingSongSlot(loaded)).toBe(-1); // load leaves it unlinked
-  loaded[0x40] ^= 0xff; // and edited, so it matches no slot: genuinely uncommitted work
+  loaded[0x2000 + 0x1e94] = 0xff; // arrived unlinked (an imported .sav, or a pre-stamp battery)...
+  loaded[0x40] ^= 0xff; // ...and edited, so it matches no slot: genuinely uncommitted work
   expect(risaSongCatalog.workingSongDirty!(loaded)).toBe(true);
 
   const count = risaSongCatalog.list(loaded).length;
   const saved = risaSaveWorking(loaded);
   expect(risaSongCatalog.list(saved).length).toBe(count + 1);
   expect(workingSongSlot(saved)).toBe(count); // linked to the slot it landed in
+  expect(risaSongCatalog.workingSongDirty!(saved)).toBe(false);
+});
+
+test("risa: saving an UNLINKED working song that a slot ALREADY holds adopts that slot, never duplicates", () => {
+  const sav = risaSav("v2_blumarbl");
+  const first = risaSongCatalog.list(sav)[0];
+  const orphan = loadSongToWorkingInSav(sav, first.index)!;
+  orphan[0x2000 + 0x1e94] = 0xff; // unlinked, but the content IS slot 0 - appending would clone it
+  const count = risaSongCatalog.list(orphan).length;
+
+  const saved = risaSaveWorking(orphan);
+  expect(risaSongCatalog.list(saved).length).toBe(count); // no new song
+  expect(workingSongSlot(saved)).toBe(first.index); // adopted the slot that already held it
   expect(risaSongCatalog.workingSongDirty!(saved)).toBe(false);
 });
 

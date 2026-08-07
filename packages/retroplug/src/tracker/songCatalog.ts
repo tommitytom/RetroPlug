@@ -25,17 +25,24 @@ export interface SongCatalog {
   importSongs(target: Uint8Array, source: Uint8Array, indices: number[]): Uint8Array | null;
   /** The currently-loaded (working) song's name, for recents / titles. null when none / unsaved. */
   workingName(sav: Uint8Array): string | null;
-  /** The live WORKING song when it is UNSAVED — not represented by any listed catalog slot — so the Songs
-   *  menu can surface it as a synthetic row (some carts ship the song only in working memory). null when the
-   *  working song is already saved, absent, or the console has no separate working-song region. Optional —
-   *  only consoles whose working song can exist outside the saved list implement it (risa; LSDj does not,
-   *  since its working song is a copy of a saved slot addressed by activeProjectIndex). */
-  workingSong?(sav: Uint8Array): { name: string } | null;
+  /** DESCRIBE the live working song, for the Songs menu's synthetic row: its display name, and whether it is
+   *  LINKED to a saved slot (which decides whether saving updates that slot or creates a new song). Null when
+   *  there is no readable working song.
+   *
+   *  It does NOT decide whether the row is shown - `workingSongDirty` below does, and the menu calls this
+   *  only once that has said yes. Splitting it that way is deliberate: the two questions were previously
+   *  answered from different facts, and the row asked the wrong one. Gating on the LINK byte alone put a
+   *  "[working] BLUMARBL" row next to an identical "[0] BLUMARBL" after every host-side load (content the
+   *  same, link cleared), while the case that actually matters - linked, and edited for an hour - got no row
+   *  at all. Content decides both, so the row now appears exactly when there is work to lose.
+   *
+   *  Optional: only consoles with a separate, readable working-song region implement it (risa). */
+  workingSong?(sav: Uint8Array): { name: string; linked: boolean } | null;
   /** True when the working song holds content that exists in NO saved slot - exactly what `load` (and a
-   *  cart reboot into another song) destroys, and the gate for the Songs menu's confirm. Distinct from
-   *  `workingSong` above: that asks "is it worth its own row", this asks "would discarding it lose work".
-   *  Two cases are dirty: an UNLINKED working song (no catalog slot claims it), and one linked to a slot
-   *  whose CONTENT it no longer matches (the common case - load a song, edit for an hour, load another).
+   *  cart reboot into another song) destroys. The gate for BOTH the Songs menu's load confirm and its
+   *  synthetic working-song row. Two cases are dirty: an UNLINKED working song that no catalog slot claims,
+   *  and one linked to a slot whose CONTENT it no longer matches (the common case - load a song, edit for an
+   *  hour, load another).
    *  Optional - a console that can't tell omits it, and the caller then never prompts (a prompt that fires
    *  when nothing would be lost is worse than none, since users learn to dismiss it). */
   workingSongDirty?(sav: Uint8Array): boolean;
