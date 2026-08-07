@@ -18,3 +18,6 @@
 [submodule "deps/portable-file-dialogs"]
 	path = deps/portable-file-dialogs
 	url = https://github.com/samhocevar/portable-file-dialogs.git
+[submodule "deps/serial"]
+	path = deps/serial
+	url = https://github.com/wjwwood/serial.git

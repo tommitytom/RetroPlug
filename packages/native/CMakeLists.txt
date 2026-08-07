@@ -294,14 +294,32 @@ endif()
 # reuses the WHOLE core — retroplug-backend (Engine + cores + txiki) + lvgl-js-native (the LVGL/React
 # bridge) + the SAME embedded cp/ui bundles the plugin links — and provides its own SDL2 window / audio /
 # input shell (sdl/main.cpp), bypassing DPF entirely. Modeled on retroplug-cli + retroplug-ui-test.
-# RtMidi (deps/rtmidi submodule) — cross-platform MIDI I/O for the standalone (the plugin gets MIDI from
-# its DAW host instead, so only retroplug-sdl needs this). Static; ALSA on Linux (JACK off — the handheld
-# path is ALSA/PipeWire); RtMidi's own CMake selects the platform API + link libs. EXCLUDE_FROM_ALL so the
-# `rtmidi` target is built only because retroplug-sdl links it.
+# RtMidi (deps/rtmidi submodule) — cross-platform MIDI I/O for live-MIDI hosts: the SDL standalone and the
+# CLI n8-bridge (the plugin gets MIDI from its DAW host instead). Static; ALSA on Linux (JACK off — the
+# handheld path is ALSA/PipeWire); RtMidi's own CMake selects the platform API + link libs. EXCLUDE_FROM_ALL
+# so the `rtmidi` target is built only because a target links it (retroplug-sdl, or retroplug-cli when
+# RETROPLUG_N8_BRIDGE is ON — see below).
 set(RTMIDI_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
 set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
+
+# --- retroplug-cli n8-bridge: live MIDI -> Everdrive N8 Pro over USB ----------------------------------
+# The `n8-bridge` subcommand (cli/N8Bridge.cpp + src/host/n8/) pipes live MIDI straight to a physical N8
+# Pro running EverMIDI, so a controller / DAW plays the real NES. It needs RtMidi (live MIDI in, the
+# `rtmidi` target above), wjwwood/serial (the `serial` target from cmake/serial.cmake), and the standalone
+# MidiIo seam. ON by default; turn OFF to keep retroplug-cli (and thus the CI `all` build) free of the
+# RtMidi/serial deps (ALSA dev headers on Linux) — the subcommand then just prints a "not built" notice.
+option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli n8-bridge subcommand (links RtMidi + serial)" ON)
+if(RETROPLUG_N8_BRIDGE)
+    target_sources(retroplug-cli PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Bridge.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp)  # RtMidi in/out seam (shared with retroplug-sdl)
+    target_link_libraries(retroplug-cli PRIVATE serial rtmidi)
+    target_compile_definitions(retroplug-cli PRIVATE RETROPLUG_N8_BRIDGE)
+endif()
 
 # EXCLUDE_FROM_ALL: the standalone is still a work in progress, so it stays out of the default `all`
 # target and therefore out of CI (which builds `all`). Build it by name, like the Catch2 test binaries:
@@ -678,6 +696,25 @@ target_include_directories(retroplug-midi-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
 
 set_target_properties(retroplug-midi-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-n8-test guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact
+# krikzz CMD_MEM_WR byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status
+# word. Compiles Edio.cpp against a capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware
+# (the live serial + MIDI path needs a real N8). Also `pnpm test:n8`.
+add_executable(retroplug-n8-test EXCLUDE_FROM_ALL
+    test/n8/Edio.test.cpp
+    src/host/n8/Edio.cpp)
+
+target_link_libraries(retroplug-n8-test PRIVATE
+    Catch2::Catch2WithMain)
+
+target_include_directories(retroplug-n8-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/n8/Edio.hpp
+
+set_target_properties(retroplug-n8-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

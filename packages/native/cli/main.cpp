@@ -23,6 +23,10 @@
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
+#ifdef RETROPLUG_N8_BRIDGE
+#include "N8Bridge.hpp"  // `n8-bridge` subcommand: live MIDI -> Everdrive N8 Pro over USB (own loop)
+#endif
+
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/BackendRpcRegistration.hpp"
@@ -74,6 +78,19 @@ std::string slurp(const std::string& path) {
 } // namespace
 
 int main(int argc, char** argv) try {
+    // `n8-bridge` is a live-hardware subcommand: it opens real MIDI + serial ports and runs its own
+    // unbounded loop, so it can't ride the bounded QuickJS pump the TS dispatcher uses. Handle it here,
+    // before the `.js` / dispatcher fallthrough. Compiled in only when the bridge deps are linked.
+    if (argc >= 2 && std::strcmp(argv[1], "n8-bridge") == 0) {
+#ifdef RETROPLUG_N8_BRIDGE
+        return retroplug::runN8Bridge(argc, argv);
+#else
+        std::fprintf(stderr, "n8-bridge: this build was compiled without N8 bridge support "
+                             "(-DRETROPLUG_N8_BRIDGE=OFF)\n");
+        return 1;
+#endif
+    }
+
     // A `.js` argv[1] is a session file we eval directly; anything else (incl. no args) goes to the
     // compiled-in dispatcher, which prints help and routes commands. The args exposed to JS start after
     // the file path (argv[2..]) for a file, or include the command (argv[1..]) for the dispatcher.
