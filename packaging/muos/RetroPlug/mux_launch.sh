@@ -31,5 +31,13 @@ cd "$APP_DIR" || exit 1
 
 export SDL_AUDIODRIVER=alsa
 
+# The handheld is a fixed framebuffer panel with no window manager, so run FULLSCREEN. Without this the
+# resizable window (added for desktop tiling WMs) treats itself as a floating window and shrinks its SDL
+# surface to the grid size (e.g. 480x432 for one Game Boy) — leaving the rest of the 640x480 screen
+# uncovered. Fullscreen makes __rp_isWindowSizeControlled report true, so the UI fits the grid via zoom
+# into the full panel instead of driving SDL_SetWindowSize. (Verified on-device: onResize stays 640x480,
+# wmC=1, vs 480x432 without it.)
+export RETROPLUG_SDL_FULLSCREEN=1
+
 # Log to the app folder (writable, on the SD card) so a launch can be diagnosed over SSH.
 ./retroplug-sdl --width 640 --height 480 >"$APP_DIR/retroplug.log" 2>&1
