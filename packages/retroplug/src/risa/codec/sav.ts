@@ -85,9 +85,11 @@ export function workingSongName(rawSave: Uint8Array): string | null {
 
 /** The live working song (WRAM banks 0-3): its name + whether it is UNSAVED — i.e. not linked to any saved
  *  catalog slot (the 'current entry' byte at bank-1 0x1e94 is 0xFF). null when there's no working song (the
- *  'N8T' magic is absent) or the container is unrecognized. The 'unsaved' flag drives the Songs menu's
- *  synthetic working-song row: some shipped batteries carry the artist's song only in working memory (never
- *  saved to the catalog), so it would otherwise never appear in the saved-song list. */
+ *  'N8T' magic is absent) or the container is unrecognized.
+ *
+ *  'unsaved' is the raw LINK state, nothing more. It is NOT the test for "is there work to lose" - a linked
+ *  song can hold an hour of edits, and an unlinked one can be byte-identical to a slot. That question is
+ *  ../../risaSongOps workingSongDirty, which compares content; this is a cheap header read. */
 export function workingSongInfo(rawSave: Uint8Array): { name: string; unsaved: boolean } | null {
   let save: Uint8Array;
   try {
