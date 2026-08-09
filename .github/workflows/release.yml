@@ -60,7 +60,7 @@ jobs:
             cmake ninja-build pkg-config \
             libgl-dev libglu1-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxext-dev libxinerama-dev \
-            libdbus-1-dev libasound2-dev libjack-jackd2-dev \
+            libdbus-1-dev libasound2-dev libjack-jackd2-dev libpipewire-0.3-dev \
             libcurl4-openssl-dev libffi-dev libssl-dev \
             libsdl2-dev
 
@@ -133,7 +133,7 @@ jobs:
             cmake ninja-build pkg-config \
             libgl-dev libglu1-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev libxi-dev libxext-dev libxinerama-dev \
-            libdbus-1-dev libasound2-dev libjack-jackd2-dev \
+            libdbus-1-dev libasound2-dev libjack-jackd2-dev libpipewire-0.3-dev \
             libcurl4-openssl-dev libffi-dev libssl-dev \
             libsdl2-dev \
             bison libpng-dev

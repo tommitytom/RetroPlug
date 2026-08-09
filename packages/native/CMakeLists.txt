@@ -303,6 +303,18 @@ set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
 set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
 
+# PortAudio (deps/portaudio submodule, `pipewire` branch) — the standalone's audio backend, replacing the SDL
+# audio device/callback for better latency + device handling than SDL's ALSA-compat path (the plugin uses its
+# DAW host's audio, so only retroplug-sdl needs this). Static; JACK off like rtmidi — the `portaudio` CMake
+# auto-selects ALSA (dev present via rtmidi) and, where libpipewire-0.3 is found, the native PipeWire host API
+# (PA_USE_PIPEWIRE is a cmake_dependent_option keyed on PIPEWIRE_FOUND, so it cleanly falls back to ALSA).
+# EXCLUDE_FROM_ALL so `portaudio` builds only because retroplug-sdl links it.
+set(PA_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(PA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(PA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(PA_USE_JACK OFF CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_SOURCE_DIR}/deps/portaudio ${CMAKE_BINARY_DIR}/portaudio EXCLUDE_FROM_ALL)
+
 # EXCLUDE_FROM_ALL: the standalone is still a work in progress, so it stays out of the default `all`
 # target and therefore out of CI (which builds `all`). Build it by name, like the Catch2 test binaries:
 #   cmake --build build --target retroplug-sdl -j$(nproc)     (or `pnpm sdl:smoke`, which does this first)
@@ -318,7 +330,8 @@ target_link_libraries(retroplug-sdl PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
     retroplug-backend             # Engine + cores + txiki host + rpcpp
     rtmidi                        # cross-platform MIDI in/out (ALSA/CoreMIDI/WinMM)
-    PkgConfig::SDL2)              # window + present + audio + gamepad (found at root scope)
+    portaudio                     # audio backend (PipeWire/ALSA on Linux); replaces SDL audio
+    PkgConfig::SDL2)              # window + present + gamepad (audio now via PortAudio; found at root scope)
 
 target_include_directories(retroplug-sdl PRIVATE
     # quickjs.h for the JS trampolines (lvgl-js-native PUBLIC-propagates the lv_binding_js render include
@@ -329,7 +342,9 @@ target_include_directories(retroplug-sdl PRIVATE
     ${DPFJS_PATH}/deps/dpf/distrho
     # portable-file-dialogs (header-only): the OS-native file picker backing __rp_openFileBrowser. No link
     # libs on Linux/macOS (it fork/execs zenity/kdialog/osascript); Windows pulls comdlg32/ole32 via its header.
-    ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
+    ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs
+    # portaudio.h (the `portaudio` target doesn't export its include dir for a subdirectory build).
+    ${CMAKE_SOURCE_DIR}/deps/portaudio/include)
 
 add_dependencies(retroplug-sdl retroplug-cp-bundle retroplug-ui-bundle)  # embedded bundles must exist first
 

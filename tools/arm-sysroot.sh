@@ -16,7 +16,7 @@ arm="$repo/.arm64"
 sysroot="$arm/sysroot"
 base_url="https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04-base-arm64.tar.gz"
 # The device libs (mirrors .github/workflows/build.yml handheld-arm64 / profile-host-arm64 apt lines).
-pkgs=(libsdl2-dev libasound2-dev libdbus-1-dev libcurl4-openssl-dev libffi-dev libssl-dev libpng-dev zlib1g-dev)
+pkgs=(libsdl2-dev libasound2-dev libpipewire-0.3-dev libdbus-1-dev libcurl4-openssl-dev libffi-dev libssl-dev libpng-dev zlib1g-dev)
 
 for tool in proot qemu-aarch64-static curl dpkg-deb python3; do
     command -v "$tool" >/dev/null || { echo "!! missing required tool: $tool" >&2; exit 1; }

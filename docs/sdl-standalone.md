@@ -148,15 +148,26 @@ concerns the standalone doesn't need.
 
 ## Planned architecture decisions
 
-### Audio backend: SDL audio now → PortAudio (PipeWire) later
-Current audio is the SDL callback → `engine.processBlock`. The eventual target is a **PortAudio fork with
-native PipeWire support** (<https://github.com/tommitytom/portaudio/tree/pipewire>) — better latency + device
-handling than SDL's ALSA-compat path, especially on handhelds. To keep the swap mechanical, keep the audio
-backend behind the thin seam that's already mostly in place (`openAudio` / `audioCb` / `reconfigureAudio`
-handoff): both SDL and PortAudio are callback-based, so the swap is "implement the same 3 functions against
-PortAudio," selectable at build/config, with the RT-thread tuning + block-size reconfigure kept
-backend-agnostic. Nothing in the MIDI design (P1/P2) changes — the MIDI ring still drains in whichever audio
-callback is active. **Deferred** (after MIDI + the file browser).
+### Audio backend: PortAudio (PipeWire) — ✅ DONE
+Audio is driven by a **PortAudio fork with a native PipeWire host API**
+(<https://github.com/tommitytom/portaudio/tree/pipewire>, vendored as the `deps/portaudio` submodule on the
+`pipewire` branch) — better latency + device handling than SDL's ALSA-compat path, especially on the handheld.
+PortAudio is `add_subdirectory`'d next to rtmidi in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)
+(static, JACK off) and links only into `retroplug-sdl`; its CMake auto-selects the **PipeWire** host API where
+`libpipewire-0.3` is found (added to the host + the arm64 sysroot via
+[tools/arm-sysroot.sh](../tools/arm-sysroot.sh)) and falls back to **ALSA** otherwise
+(`cmake_dependent_option(PA_USE_PIPEWIRE … ON PIPEWIRE_FOUND OFF)`). SDL still owns the window/video/gamepad;
+only `SDL_INIT_AUDIO` + the SDL device/callback are gone.
+
+The seam mirrors the old SDL one: `renderAudioBlock` (the shared body — drain the command ring, MIDI in +
+`MidiClockSync`, `engine.processBlock` into the planar buffers, MIDI out, planar→interleaved) is called by the
+PortAudio stream callback (`paCallback`) or, when no device opens, by a **fallback pump thread** at the block
+cadence — the one-for-one replacement for SDL's `dummy` driver, so the emulator still advances headlessly and
+`pnpm sdl:smoke`'s transport/multi-out checks pass. `openAudio`→`Pa_OpenStream`, `reconfigureAudio`→
+`Pa_Stop/Close/Open/Start`, and `reconfigureMidi`→`Pa_Stop/Start` (PortAudio has no `SDL_LockAudioDevice`), all
+keeping the exact `invoker.setAudioThreadOwns` handoff. Nothing in the MIDI design (P1/P2) changed. The muOS
+launcher's `SDL_AUDIODRIVER=alsa` is now moot for audio. Verified: host build links `libpipewire-0.3` +
+`libasound`, the smoke is green, and it runs on the Anbernic.
 
 ### File browser: the OS dialog is the default; the in-app browser is a toggle — ✅ DONE
 An **in-app React/LVGL file browser** ([fileBrowserMenu.ts](../packages/retroplug/ui/screens/menu/fileBrowserMenu.ts),

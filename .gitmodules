@@ -18,3 +18,7 @@
 [submodule "deps/portable-file-dialogs"]
 	path = deps/portable-file-dialogs
 	url = https://github.com/samhocevar/portable-file-dialogs.git
+[submodule "deps/portaudio"]
+	path = deps/portaudio
+	url = https://github.com/tommitytom/portaudio.git
+	branch = pipewire
