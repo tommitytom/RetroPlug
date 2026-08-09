@@ -210,9 +210,12 @@ void SameBoySystem::onActivate(double sampleRate) {
     // The SGB models render through SameBoy's SGB compositor, which by default
     // draws the 256x224 Super Game Boy border. Force GB_BORDER_NEVER so the
     // output is the plain 160x144 GB screen — matching frames_ (a wider buffer
-    // would overflow it). No-op for the non-SGB models (they never composite a
-    // border unless GB_BORDER_ALWAYS, which we don't set).
-    GB_set_border_mode(gb_, GB_BORDER_NEVER);
+    // would overflow it). Scoped to the SGB models: only they composite a border,
+    // and touching border_mode on the others is needless (their default already
+    // yields 160x144) and perturbs the core's frame bookkeeping.
+    if (GB_is_sgb(gb_)) {
+        GB_set_border_mode(gb_, GB_BORDER_NEVER);
+    }
 
     GB_set_sample_rate(gb_, static_cast<unsigned>(sampleRate));
     GB_set_pixels_output(gb_, frames_.writeSlot());
