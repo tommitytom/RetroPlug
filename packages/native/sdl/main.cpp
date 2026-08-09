@@ -709,9 +709,13 @@ void audioCb(void* userdata, Uint8* stream, int len) {
     a->clockSync.sampleRate = a->sampleRate;
     for (auto& m : a->midiScratch) {
         if (m.bytes.empty()) continue;
-        // Forward the raw MIDI to a connected physical N8 (no-op + near-free when not connected). Frame 0 -
-        // the standalone stages at frame 0 anyway; the N8Link serial thread does the timed release + USB write.
-        a->n8Link.push(0, m.bytes.data(), m.bytes.size(), a->sampleRate);
+        // Forward raw MIDI to a connected physical N8 (no-op + near-free when disconnected). Frame 0 - the
+        // standalone stages at frame 0 anyway; the N8Link serial thread does the timed release + USB write.
+        // EXCEPT single-byte System Real-Time (>= 0xF8: clock/start/stop): those are transport, not note
+        // data. The sync roles regenerate whatever each core needs, and risa's generated F8 stream reaches
+        // the N8 via the Engine core-byte mirror - so raw-forwarding them here too would double-clock it.
+        if (!(m.bytes.size() == 1 && m.bytes[0] >= 0xF8))
+            a->n8Link.push(0, m.bytes.data(), m.bytes.size(), a->sampleRate);
         if (m.bytes.size() > 3) continue;
         // Real-time transport bytes (0xF8 clock / 0xFA start / 0xFB continue / 0xFC stop) drive the host
         // transport, not the emulator — consume them here and don't stage them (the sync roles regenerate
@@ -1158,6 +1162,16 @@ int main(int argc, char** argv) {
 
     if (!setupSdl(app)) return 1;
     if (!bootControlPlane(app)) return 1;
+
+    // Mirror the Engine's generated core-byte stream (a tracker's host sync - risa's arm/clock/stop) to a
+    // connected physical N8, so the real cart stays in lock-step with the emulated core. No-op + near-free
+    // until an N8 is connected. The frame offset preserves each clock's intra-block timing via N8Link's
+    // timed-release scheduler. (The emulated-FIFO `flush` barrier isn't replayed: the physical arm byte
+    // carries that semantic to the cart itself, and at the default 0 ms lookahead the link ring is ~empty.)
+    app.engine.setCoreByteSink([a = &app](std::uint32_t frame, const std::uint8_t* data,
+                                          std::size_t size, bool /*flush*/) {
+        a->n8Link.push(frame, data, size, a->sampleRate);
+    });
 
     // Autoload a .rplg project before the audio thread takes the Engine (structural build runs direct).
     if (!autoloadPath.empty()) {

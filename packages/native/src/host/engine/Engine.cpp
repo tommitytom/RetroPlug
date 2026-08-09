@@ -106,6 +106,9 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         for (const auto& cb : dsp_.coreBytes_) {
             if (cb.data.empty()) continue;
             if (tracing) for (std::uint8_t b : cb.data) syncTrace_.byte(cb.frame, b);
+            // Mirror the message to any external sink (the standalone's physical-N8 link) BEFORE the core
+            // dispatch, so the real cart receives byte-identical data to the emulated FIFO. No-op unless set.
+            if (coreByteSink_) coreByteSink_(cb.frame, cb.data.data(), cb.data.size(), cb.flush);
             if (SystemBase* t = project_.findSystem(cb.system))
                 t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size(), cb.flush);
         }

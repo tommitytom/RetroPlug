@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -83,6 +84,16 @@ public:
     const std::vector<DspRuntime::MidiOut>& midiOut() const { return dsp_.midiOut_; }
     void clearMidiOut() { dsp_.midiOut_.clear(); }
 
+    // An optional observer of the raw core-bytes sink (a tracker's host-sync protocol), invoked once
+    // per message on the audio thread at the point those bytes fan to the addressed core. The standalone
+    // sets it to MIRROR the generated risa sync stream to a physical Everdrive N8 (via N8Link), so the
+    // real cart stays in lock-step with the emulated core. Null everywhere else (plugin / CLI / tests),
+    // where it is a no-op. `frame` is the intra-block sample offset; `flush` is the arm-barrier flag.
+    void setCoreByteSink(std::function<void(std::uint32_t frame, const std::uint8_t* data,
+                                            std::size_t size, bool flush)> sink) {
+        coreByteSink_ = std::move(sink);
+    }
+
     // --- DSP-runtime allocation/GC profiling (spec/08-profiling.md) ---
     // Forward to the bare JS runtime's counters. Valid only on the Engine's owning thread (the
     // renderAudio pull path); no-op / enabled=false in a non-RETROPLUG_PROFILE build.
@@ -154,6 +165,9 @@ private:
     bool   transport_ = false;
     double ppq_       = 0.0;
     HostSyncTrace syncTrace_;  // inert unless RETROPLUG_SYNC_TRACE is set
+    // Optional external mirror of the core-bytes stream (set by the standalone to reach a physical N8);
+    // null in every other host. Called on the audio thread, so the target must be RT-safe (N8Link is).
+    std::function<void(std::uint32_t, const std::uint8_t*, std::size_t, bool)> coreByteSink_;
 
     AudioRouting audioRouting_ = AudioRouting::Stereo;  // output-pair placement; Stereo = all → pair 0
 };
