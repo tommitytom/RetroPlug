@@ -320,7 +320,8 @@ if(RETROPLUG_N8_BRIDGE)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/RisaSyncTranslator.cpp  # MIDI clock -> risa arm/clock/stop
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/SerialRpcService.cpp    # serial byte-transport RPC facet (TS N8 seam)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp)  # RtMidi in/out seam (shared with retroplug-sdl)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (shared with retroplug-sdl)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiRpcService.cpp) # live-MIDI-input RPC facet (TS bridge seam)
     target_link_libraries(retroplug-cli PRIVATE serial rtmidi)
     target_compile_definitions(retroplug-cli PRIVATE RETROPLUG_N8_BRIDGE)
 endif()

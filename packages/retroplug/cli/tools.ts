@@ -13,6 +13,10 @@ export interface CliTool {
   summary: string;
   /** The full `retroplug-cli <name> --help` text — flags, defaults, examples. */
   help: string;
+  /** A long-running tool (e.g. a live MIDI bridge): it calls keepAlive() + sets up an event-driven loop and
+   *  returns, and the dispatcher does NOT auto-exit it (runLongSession) — the native pump runs it until
+   *  tjs.exit / Ctrl-C. Omit / false for a normal batch command. */
+  longRunning?: boolean;
   /** Run the tool against a booted control plane, given its own args (everything after the command name). */
   run(s: Session, args: string[]): void;
 }
@@ -22,9 +26,10 @@ import { lsdjRomTool } from "./sessions/lsdj-rom";
 import { risaRomTool } from "./sessions/risa-rom";
 import { everMidiRomTool } from "./sessions/evermidi-rom";
 import { n8LoadTool } from "./sessions/n8-load";
+import { n8BridgeTool, n8SyncTool } from "./sessions/n8-bridge";
 
 /** Every baked-in command. The ONLY place a new tool is registered. */
-export const tools: CliTool[] = [renderTool, lsdjRomTool, risaRomTool, everMidiRomTool, n8LoadTool];
+export const tools: CliTool[] = [renderTool, lsdjRomTool, risaRomTool, everMidiRomTool, n8LoadTool, n8BridgeTool, n8SyncTool];
 
 /** The top-level command index: a version banner + the tools' own name/summary (column-aligned). Pure — the
  *  dispatcher (cli/cli.ts) supplies the banner and prints this for `retroplug-cli` / `--help`; kept here so

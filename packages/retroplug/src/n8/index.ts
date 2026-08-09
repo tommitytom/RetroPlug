@@ -21,6 +21,7 @@ export {
 } from "./edio";
 export type { N8DirEntry } from "./edio";
 export { N8Menu } from "./n8Menu";
+export { RisaSyncTranslator } from "./risaSyncTranslator";
 export { loadRom, dumpSram, writeSramDirect, baseName } from "./n8Load";
 export type { LoadOptions, LoadResult } from "./n8Load";
 export type { SerialTransport, OpenSerialPort, SerialPortInfo, SerialClient } from "./transport";

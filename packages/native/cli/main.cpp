@@ -13,6 +13,8 @@
 // globalThis[Symbol.for("plugin")].__rpcSend, console.log -> stdout, and globalThis.tjs.exit(code).
 // Deliberately a near-clone of src/main.cpp's host body; a shared host-run helper can be factored later.
 
+#include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -20,13 +22,15 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
 #ifdef RETROPLUG_N8_BRIDGE
 #include "N8Bridge.hpp"  // `n8-bridge` subcommand: live MIDI -> Everdrive N8 Pro over USB (own loop)
 #include "N8Sync.hpp"    // `n8-sync` subcommand: MIDI transport -> risa host sync on the N8 (own loop)
-#include "host/n8/SerialRpcService.hpp"  // the serial byte-transport facet the TS N8 stack rides on
+#include "host/n8/SerialRpcService.hpp"    // the serial byte-transport facet the TS N8 stack rides on
+#include "host/input/MidiRpcService.hpp"   // the live-MIDI-input facet the TS bridges poll
 #endif
 
 #include "host/engine/Engine.hpp"
@@ -68,6 +72,20 @@ JSValue jsExit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     g_exit.set = true;
     return JS_UNDEFINED;
 }
+
+// A long-running session (a live MIDI bridge) calls globalThis.__rp_keepAlive() during setup to opt out of
+// the bounded batch pump: the launcher then pumps until tjs.exit or Ctrl-C, so the session can react to MIDI
+// indefinitely. Set on the single JS thread; read by the pump loop.
+bool g_keepAlive = false;
+JSValue jsKeepAlive(JSContext*, JSValueConst, int, JSValueConst*) {
+    g_keepAlive = true;
+    return JS_UNDEFINED;
+}
+
+// Ctrl-C stops a long-running session (and any batch command). The handler must be async-signal-safe, so it
+// only flips a sig_atomic_t; the pump loop checks it and exits 0.
+volatile std::sig_atomic_t g_sigint = 0;
+void onSigint(int) { g_sigint = 1; }
 
 std::string slurp(const std::string& path) {
     std::ifstream in(path);
@@ -135,12 +153,14 @@ int main(int argc, char** argv) try {
     registerAllBackendRpc(server, hostSvc, engineSvc, debugSvc, driver);
 
 #ifdef RETROPLUG_N8_BRIDGE
-    // The serial byte-transport facet (CLI-only): the thin native seam the TS N8 stack (Edio framing,
-    // menu commands, ROM/save orchestration in packages/retroplug/src/n8) rides on. Deliberately kept
-    // out of registerAllBackendRpc so the plugin/test hosts don't drag in the `serial` dep; mounted here
-    // alongside the other N8 subcommands.
+    // The serial + MIDI-input transport facets (CLI-only): the thin native seams the TS N8 stack (Edio
+    // framing, menu, ROM/save orchestration + the live MIDI bridges in packages/retroplug/src/n8) rides on.
+    // Deliberately kept out of registerAllBackendRpc so the plugin/test hosts don't drag in serial/rtmidi;
+    // mounted here alongside the other N8 subcommands.
     retroplug::SerialRpcService serialSvc;
     retroplug::registerSerialRpc(server, serialSvc);
+    retroplug::MidiRpcService midiSvc;
+    retroplug::registerMidiRpc(server, midiSvc);
 #endif
 
     JSValue global = JS_GetGlobalObject(ctx);
@@ -180,6 +200,10 @@ int main(int argc, char** argv) try {
         JS_FreeValue(ctx, tjsObj);
     }
 
+    // globalThis.__rp_keepAlive — a long-running session (MIDI bridge) calls it to switch the pump from the
+    // bounded batch backstop to run-until-exit (see the pump loop below).
+    JS_SetPropertyStr(ctx, global, "__rp_keepAlive", JS_NewCFunction(ctx, jsKeepAlive, "__rp_keepAlive", 0));
+
     JS_FreeValue(ctx, global);
 
     // A `.js` path is slurped + evaled; otherwise run the compiled-in dispatcher (it reads the command
@@ -196,15 +220,26 @@ int main(int argc, char** argv) try {
         return 1;
     }
 
-    // Drive the job loop until the session runs and calls tjs.exit (ES modules evaluate async in
-    // QuickJS, so the module body itself runs here). Bounded.
-    for (int i = 0; i < 20000 && !g_exit.set; ++i) host.pump();
+    std::signal(SIGINT, onSigint);
 
-    if (!g_exit.set) {
+    // Drive the job loop. ES modules evaluate async in QuickJS, so the module body (the dispatcher + the tool)
+    // runs during these pumps. A normal command runs to completion + calls tjs.exit within the bounded
+    // backstop; a long-running session calls __rp_keepAlive() during setup, which drops us into the unbounded
+    // loop below so it can react to MIDI until tjs.exit or Ctrl-C.
+    for (int i = 0; i < 20000 && !g_exit.set && !g_sigint && !g_keepAlive; ++i) host.pump();
+
+    if (g_keepAlive) {
+        // Long-running session (e.g. a live MIDI bridge): pump until it exits or Ctrl-C. The 250us cadence
+        // matches the native bridge loop; the session's own setInterval poll fires as the loop pumps.
+        while (!g_exit.set && !g_sigint) {
+            host.pump();
+            std::this_thread::sleep_for(std::chrono::microseconds(250));
+        }
+    } else if (!g_exit.set && !g_sigint) {
         std::fprintf(stderr, "session did not complete (tjs.exit never called)\n");
         return 1;
     }
-    return g_exit.code;
+    return g_exit.set ? g_exit.code : 0;  // a Ctrl-C (g_sigint) without tjs.exit is a clean exit 0
 } catch (const std::exception& e) {
     std::fprintf(stderr, "error: %s\n", e.what());
     return 1;

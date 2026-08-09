@@ -11,7 +11,7 @@
 //   <unknown>                     → error + the index (exit 2)
 // Help/version/error paths print and exit WITHOUT booting a session (bootSession compiles+loads the DSP
 // kernel — wasted work for a help print), so only a real tool run pays that cost.
-import { hostArgs, runSession, exitProcess } from "./session";
+import { hostArgs, runSession, runLongSession, exitProcess } from "./session";
 import { createHostClient } from "../src/realBackend";
 import { tools, topLevelHelp } from "./tools";
 
@@ -41,6 +41,10 @@ if (cmd === "--version") {
   } else if (rest.some(isHelpFlag)) {
     console.log(tool.help);
     exitProcess(0);
+  } else if (tool.longRunning) {
+    // A long-running tool (live MIDI bridge) sets up an event loop + keepAlive() and returns; the native
+    // pump runs it until tjs.exit / Ctrl-C, so it must NOT be auto-exited.
+    runLongSession((s) => tool.run(s, rest));
   } else {
     // Only now boot the control plane. runSession reports the exit code (0, or 1 on a thrown error).
     runSession((s) => tool.run(s, rest));

@@ -203,6 +203,26 @@ export function createSerialClient(): SerialClient {
   };
 }
 
+/** A live-MIDI-input client (mounted CLI-only today): the MIDI twin of createSerialClient, for the TS N8
+ *  bridges. `poll()` drains the messages queued since the last call (each = raw bytes; MIDI carries no
+ *  timing). Synchronous like every other facet. `listInputs` returns [] on a host that didn't mount it. */
+export interface MidiInputClient {
+  listInputs(): string[];
+  /** Open a virtual "<clientName> In/Out" + the selected hardware input ("" = all inputs). False if no MIDI system. */
+  open(clientName: string, input: string): boolean;
+  poll(): Uint8Array[];
+  close(): void;
+}
+export function createMidiClient(): MidiInputClient {
+  const call = makeCall();
+  return {
+    listInputs: () => (call("midiListInputs") as string[] | undefined) ?? [],
+    open: (clientName, input) => call("midiOpen", clientName, input) as boolean,
+    poll: () => ((call("midiPoll") as { bytes: Uint8Array }[] | undefined) ?? []).map((m) => m.bytes),
+    close: () => void call("midiClose"),
+  };
+}
+
 /** Build the native Backend. By default all three facets (the CLI's full surface); pass `{debug:false}`
  *  for the control-plane surface (fs + emulator only) the plugin/UI store graph runs on. Throws if no
  *  native RPC surface is bound. */
