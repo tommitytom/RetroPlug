@@ -1172,11 +1172,8 @@ behave wrongly.
 
 ### Tier 3, unstarted
 
-- **smsggdj tracker integration** - the big one, and the gate that held it ("get sync working first")
-  has lifted. Needs a real SMDJ4 codec in `src/` (RLE plus a reader; the fixture writer in
-  `test-native/smsSyncSong.ts` is store-raw and test-only), and a resolution to the WRAM-versus-sav
-  interface mismatch in section 11 caveat 1. Re-read `songCatalog.ts` before designing: main reworked
-  it substantially after this document was written.
+- **smsggdj tracker integration** - **the RetroPlug half is BUILT; the ROM half is not.** See
+  "Tracker integration, as built" below.
 - **PSG 4-stem tap** - structurally *easier* than NES. The four `channelOutput` values already exist
   in `SmsPsg.cpp` and are summed with plain `int16` addition, so the stems re-sum exactly, with no
   "does not sum" caveat like the NES pins. And 4 stereo streams is exactly 8 lanes, which drives the
@@ -1188,7 +1185,69 @@ behave wrongly.
 - **Full debug session**, **`SYNC: OUT`**, **FM stems**, **per-mapper work** - all optional, all
   unstarted.
 
+### Tracker integration, as built (songs)
+
+`TRACKER_INTEGRATIONS` has its third console. What ships: the SMDJ4 codec (`src/smsggdj/codec/`), the
+`SongCatalog`, the Songs submenu with `.smdj4` Export / Replace / Add, per-song recents, and
+`retroplug-cli render --song / --song-index / --list-songs`.
+
+**The structural problem and how it was removed.** The shared spine (`mutateLiveSav`) is read SRAM ->
+byte transform -> write `.sav` -> cold boot. LSDj and risa keep the working song IN the battery so a
+cold boot restores it; smsggdj's is the live 6,912-byte WRAM block at `$C000` and it boots blank on
+purpose (`song_new`, main.asm:238). Poking WRAM is not an option for the plugin: `writeCpu` is on the
+**debug facet**, and `ControlPlaneBackend` is documented as "debug-free at the type level"; it is also
+a live-core write, unsafe while the audio thread runs.
+
+So `load` NAMES a slot in a new superblock byte and the CART loads it at boot. The spine is untouched
+(`load` is still `(sav, index) => new sav`), no native seam is added, and the same byte supplies the
+"currently loaded slot" the format lacked - which is what makes `workingName` / `workingSong`
+answerable and closes caveat 1 in section 11.
+
+Encoding is **slot + 1, 0 = none**, not the raw slot: the byte lives in reserved space that every
+older save leaves `$00`, so a raw number would make all of them claim slot 0 and, once the cart
+autoloads, boot into it.
+
+**`workingSongDirty` is deliberately not implemented**, because it asks whether the working song's
+CONTENT differs from its slot and that content is in WRAM. The interface documents omitting it, and
+`songLoadWouldDiscard` then never prompts. **Consequence for release notes: on SMS/GG, Load does not
+warn before discarding unsaved edits.** Closing it needs a WRAM-aware extension - `readRam` is on the
+control plane, so the data is reachable; only the `(sav) => boolean` signature is in the way.
+
+Both codecs were certified against smsggdj's own tools and then frozen, the discipline used for the
+LSDj codec against liblsdj: `rleCompress` is byte-identical to `tools/rle.js` (the real demo song packs
+6,912 -> 722) with cross-decode both ways, and container placement matches `tools/smdj4.js buildSav`
+across 1-4 songs, sparse and store-raw, the bank bump, both SRAM-FULL cases and 8/16/32 KB carts.
+
+#### What is left: the ROM half
+
+**Blocked on a smsggdj build that maintains the byte.** `isVersionSupported` returns false below
+v0.46, so today the vendored v0.45 correctly greys the submenu out rather than offering rows whose
+Load would do nothing. The change is scoped:
+
+- `song_save` / `song_load` (`src/engine.asm:4210-4263`): after `rle_song_save` / `rle_song_load`
+  report success, write `prj_slot + 1` to the superblock at SRAM `$8007` (bank 0, `$FFFC = $08`),
+  BEFORE the existing `xor a / ld ($FFFC),a` restore.
+- Boot (`src/main.asm:224`): where `song_new` is called unconditionally, read that byte and
+  `song_load` the named slot instead when it is non-zero, falling back to `song_new` on zero or a
+  failed load. That preserves "a first power-on should make sound" for every existing save.
+- `SAVEFORMAT.md` (superblock table) and `tools/smdj4.js` (self-test).
+
+Roughly 45-50 bytes of Z80. **The ROM has 149 bytes free of 131,072 (0.11%)**, so it fits, but not by
+much - worth knowing before adding anything else. The open question is boot ORDER: `song_load` calls
+`engine_stop` + `smp_abort` and currently runs long after `editor_init`, so whether it is safe at the
+`song_new` call site needs the ROM author's judgement rather than a guess.
+
+Two things found while building it, both pre-existing and unrelated to this work:
+
+- **The Makefile's Game Gear region stamp needs bash.** `printf '\x6c'` is dash-undefined; under
+  `/bin/sh` -> dash it writes the four literal characters, the `xxd` check fails, and the rule deletes
+  the `.gg`. `make SHELL=/bin/bash` works. Everywhere `/bin/sh` is bash this is invisible.
+- Building it needs `wla-dx` (not packaged; builds from source in a minute), Pillow, and `xxd`. A
+  clean build reproduces the vendored v0.45 ROMs byte-for-byte apart from the embedded git-hash build
+  stamp and its checksum.
+
 ### Suggested order
 
-All three defects are closed. Next is tracker integration - the actual feature, and the one whose gate
-has lifted. The Tier 2 remainder below is polish that can follow it in any order.
+All three defects are closed and the tracker integration's RetroPlug half is built. Next is the ROM
+half above, which unblocks the end-to-end test and turns the Songs menu on. Then assets, then the Tier
+2 polish in any order.
