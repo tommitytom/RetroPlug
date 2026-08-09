@@ -44,6 +44,18 @@ void SmsFmAudio::Run()
 
 bool SmsFmAudio::IsPsgAudioMuted()
 {
+	// RetroPlug: the mux below is a hardware-model choice, not a fact, so it is
+	// gated. Mesen models the Japanese SMS; a Mark III with the FM add-on sums
+	// the two, and smsggdj's own source says real hardware and SMSPlus sum while
+	// Emulicious muxes. For a tracker that plays three PSG voices plus noise
+	// ALONGSIDE FM, muxing silently costs it four channels the moment FM is
+	// switched on. Only the PSG half is gated: SmsFmAudio::MixAudio's own
+	// _audioControl check still decides when FM is heard, so "FM off" still
+	// means off.
+	if(!_emu->GetSettings()->GetSmsConfig().FmMutesPsg) {
+		return false;
+	}
+
 	//PSG is muted when 1 or 2
 	//This only works on the Japanese SMS - not on Mark III consoles
 	return _audioControl == 0x01 || _audioControl == 0x02;

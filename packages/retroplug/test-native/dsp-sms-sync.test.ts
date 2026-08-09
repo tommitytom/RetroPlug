@@ -109,9 +109,10 @@ function syncState(be: ReturnType<typeof createRealBackend>, id: number): SyncSt
 let nextSystemId = 1;
 
 // Boot smsggdj with the metronome fixture and poke the song into the running core.
-// `enableFm: false` is not optional here: smsggdj writes $F2 = $01 when its FM option is on, and Mesen
-// models $F2 as a mux whose PSG branch memsets the buffer, so an FM-routed core renders silence no
-// matter how well the sync works. The fixture's OPTIONS block sets fm_on = 0 as well.
+// `enableFm: false` keeps the YM2413 out of the mix entirely, so these guards measure the PSG
+// metronome and nothing else. It used to be load-bearing for a worse reason - Mesen muxed $F2 and an
+// FM-enabled cart rendered silence - which the vendored SmsFmAudio change fixed (sms-fm.test.ts). The
+// fixture's OPTIONS block sets fm_on = 0 as well.
 function boot(syncMode: number, m: Machine) {
   const be = createRealBackend();
   const audio = createAudioDriver();

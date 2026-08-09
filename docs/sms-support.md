@@ -697,15 +697,21 @@ mux like Mesen and lose the PSG; sum like real hardware, which needs a vendored
 choice as a role knob and let the user pick. This also reshapes Tier 3's stem work - a PSG 4-stem
 tap is worth much less if the PSG is muted whenever FM is on.
 
-**STILL OPEN, and it has since become user-facing rather than theoretical.** `System > FM Audio`
-(`menuDefs.ts:479-486`) now puts that switch in front of the user, defaulted ON to match hardware -
-so on an FM-enabled smsggdj the default position is the silent one, and the audible position is the
-one labelled OFF. Every fixture and guard in the tree forces `enableFm: false`
-(`author-sms-rplg.ts`, `dsp-sms-sync*.test.ts`, `SmsAudio.test.cpp`), which is a strong hint: a
-workaround every single caller has to apply is not a workaround, it is a default in the wrong place.
+**ANSWERED AND FIXED: the FM path was never broken, the MUX was.** The re-measure this section
+called for was run, and it settles every part of it. The matrix, one PSG-instrument song and one
+FM-instrument song, `enableFm` (ours) against the cart's own `fm_on`:
 
-**But re-reading the core makes the "silence" observation above look confounded, and that should be
-settled before anyone designs a fix.** The full `$F2` truth table is:
+| | PSG song | FM song |
+|---|---|---|
+| `enableFm=0`, cart FM off | 0.051 | 0.000 |
+| `enableFm=1`, cart FM off | 0.051 | 0.000 |
+| `enableFm=1`, cart FM **on** | **0.000** | **0.008** |
+| `enableFm=0`, cart FM on | 0.051 | 0.000 |
+
+So **FM was audible all along** (row 3, right column - the YM2413 reaches the mix, exactly as the
+`MixAudio` reading above predicted), and the earlier `peak = 0` was indeed confounded: that probe
+measured a PSG-instrument song under the mux, which is row 3 left, a genuine and total silence. The
+`$F2` truth table explains all four rows:
 
 | `_audioControl` | PSG | FM |
 |---|---|---|
@@ -714,21 +720,27 @@ settled before anyone designs a fix.** The full `$F2` truth table is:
 | 2 | muted | muted (genuine silence) |
 | 3 | audible | audible |
 
-(`SmsFmAudio.cpp:45-50` for the PSG half, `:78-82` for the FM half.) smsggdj writes `$F2 = $01`, which
-selects **FM audible / PSG muted** - the documented Japanese-SMS mux, and emphatically not silence.
-Two more things point the same way: `SmsFmAudio::MixAudio` calls `Run()` itself (`:76`), so FM catches
-up lazily exactly as the PSG does and our `RunFrame`-bypassing step loop cannot starve it; and its
-output is added into the already-resampled mix through the ordinary `IAudioProvider` loop
-(`SoundMixer.cpp:99-101`), a path with nothing SMS-specific in it.
+(`SmsFmAudio.cpp:45-50` for the PSG half, `:78-82` for the FM half.) smsggdj writes `$F2 = $01`, so on
+stock Mesen turning FM on costs it three tone voices plus noise.
 
-So the expected behaviour with FM on is "FM instead of PSG", and the `peak = 0` measurement above is
-not explained by the mux. The likeliest confounder is what that early probe was measuring: smsggdj
-boots with **no song loaded** and `song_new` makes no sound on its own, so a bare boot is silent
-whatever the audio path does - and the poke-the-song-into-WRAM technique that the current fixtures use
-did not exist yet. **Next step is a re-measure, not a redesign:** boot with the metronome fixture, FM
-on, and compare `enableFm` true against false. If FM is audible, the only real defect is the menu
-default and the answer is cheap. If it is still silent with a song playing, the three-way question
-above stands.
+**The fix is to sum rather than mux**, which is what real hardware, SMSPlus and a Mark III with the FM
+add-on all do per smsggdj's own source, and what a music tool wants regardless. It is gated rather than
+hardcoded: `SmsConfig::FmMutesPsg` (new, **defaults true** so stock behaviour is unchanged for anything
+that does not set it) is consulted by `SmsFmAudio::IsPsgAudioMuted`, and `configureSms` sets it false.
+Only the PSG half is gated - `MixAudio`'s own `_audioControl` check still decides when FM is heard, so
+"FM off" still means off in both directions.
+
+`System > FM Audio` now means what it says: ON gives PSG **and** FM, OFF gives PSG only.
+
+**Guarded by `test-native/sms-fm.test.ts`**, and the shape of that guard is the point. An FM-only song
+is audible under BOTH models - the mux picks FM, the sum includes it - so it cannot tell them apart. It
+takes a song playing PSG on T1 and FM on T2 *at once*: under the mux that collapses to the FM-only
+level, under summing it has to carry both. Measured 0.0537 both / 0.0179 FM-only / 0.0512 PSG-only.
+Negative control run: restoring `FmMutesPsg = true` fails the PSG-survives and the both-sound cases and
+leaves the FM-only case passing, which is exactly the discrimination claimed.
+
+What this does NOT change: FM on still makes the audio path cadence-dependent (H3 above), so the sync
+fixtures keep `enableFm: false` - now for that reason alone, not because they must.
 
 ### Two smaller corrections from the same pass
 
@@ -1019,7 +1031,7 @@ which is a pixel-perfect fit for the existing grid tile.
 
 4. ~~**How do the two sniff lengths grow?**~~ **ANSWERED: neither grows; `classifyRom` reads twice.** See below. `ROLE_HEADER_LEN` is untouched - but the conclusion drawn from that here was WRONG: `defaultRoles` reads the deeper `SEGA_SNIFF_LEN` prefix for sms/gg (`systemsStore.ts:633`), so the marker provider matches on `SMSGGDJ` after all and does NOT attach by platform. That mattered: attaching by platform would have driven Player 2's button lines in every SMS game.
 
-5. **Stems: mono or stereo, and is FM in scope?** *(still open, and now entangled with the FM mux question below)* Stereo matches the GB decision (`spec/10` section 2), is **required** for GG fidelity given `GameGearPanningReg`, and at exactly 4 stereo streams is the only layout that fits the 8-output plugin `ChannelSplit` path. Mono matches the NES precedent and halves the lane count. Separately: mix-only FM is free (it already lands in the stereo stream `MesenAudioDevice` receives); FM as one lumped stem; or 9 individual tone voices. In rhythm mode, do BD/HH/SD/TOM/CYM get their own streams or fold into one? 4 PSG + 9 FM = 13 streams fits under `kMaxLanes`; 4 + 14 does not. **Recommend stereo, PSG only initially.**
+5. **Stems: mono or stereo, and is FM in scope?** *(still open. No longer entangled with the FM mux question - the PSG is no longer muted when FM is on, so a PSG 4-stem tap keeps its value.)* Stereo matches the GB decision (`spec/10` section 2), is **required** for GG fidelity given `GameGearPanningReg`, and at exactly 4 stereo streams is the only layout that fits the 8-output plugin `ChannelSplit` path. Mono matches the NES precedent and halves the lane count. Separately: mix-only FM is free (it already lands in the stereo stream `MesenAudioDevice` receives); FM as one lumped stem; or 9 individual tone voices. In rhythm mode, do BD/HH/SD/TOM/CYM get their own streams or fold into one? 4 PSG + 9 FM = 13 streams fits under `kMaxLanes`; 4 + 14 does not. **Recommend stereo, PSG only initially.**
 
 6. ~~**What PDC value for `sms-sync`?**~~ **ANSWERED: none, measured.** `__rp_syncLatencyMs` stays unchanged, exactly as `risa-sync` shipped. Both the real-Reaper render and its headless twin now pass `--drift`, and the ROM's own row counter puts the systematic offset under a video frame with no stable sign across runs - so there is no constant to compensate, only the frame quantisation that PDC cannot touch. See "The Reaper leg exists, and the sync is on the grid".
 
@@ -1108,11 +1120,12 @@ binaries) and `pnpm reaper:all` (12 checks) are green.
 Ordered by how badly. These are not missing features - they are things a user can reach today that
 behave wrongly.
 
-1. **`System > FM Audio` produces silence when turned on.** Defaulted ON to match hardware, so on an
-   FM-enabled smsggdj the default is the silent position. See "FM resolved, and it opens a worse
-   question" - and note the re-measure that should come first, because the original observation looks
-   confounded by a probe that had no song loaded. Cheap to settle, and the answer decides whether this
-   is a one-line default change or the three-way mux-versus-sum question.
+1. ~~**`System > FM Audio` produces silence when turned on.**~~ **FIXED.** It was the `$F2` mux, not
+   the FM path: stock Mesen zeroes the PSG buffer when a ROM enables FM, so an FM-on smsggdj lost three
+   tone voices plus noise. RetroPlug now sums, behind `SmsConfig::FmMutesPsg` (default true, so stock
+   Mesen behaviour is unchanged for anything that does not opt out). Guarded by
+   `test-native/sms-fm.test.ts`. See "FM resolved, and it opens a worse question" for the matrix and
+   the negative control.
 2. **A project saved before a role existed can never gain it.** Stored roles win over defaults
    (`systemsStore.ts:516`: `config.roles && config.roles.length ? config.roles : this.defaultRoles(...)`),
    there is no UI that shows which roles are attached, and no way to attach one. Met in practice: a
@@ -1155,7 +1168,7 @@ behave wrongly.
   "does not sum" caveat like the NES pins. And 4 stereo streams is exactly 8 lanes, which drives the
   existing `ChannelSplit` router with zero new plumbing: **SMS/GG would be the first non-GB console
   usable in the plugin split.** Note the interaction with the FM question - a PSG tap is worth much
-  less if the PSG is muted whenever FM is on.
+  less if the PSG is muted whenever FM is on - which it no longer is, so the tap keeps its full value.
 - **Z80 CPU-state virtuals** - ~80 lines, no core edits, largely free now that the step loop already
   holds the `SmsCpu*`.
 - **Full debug session**, **`SYNC: OUT`**, **FM stems**, **per-mapper work** - all optional, all
@@ -1163,5 +1176,5 @@ behave wrongly.
 
 ### Suggested order
 
-FM silence, then the role-migration gap, then tracker integration. The first two are small and both
-are cases of the product misleading the user; the third is the actual feature.
+FM silence is done. Next: the role-migration gap (small, and the product misleads the user until it is
+fixed), then tracker integration - the actual feature, and the one whose gate has lifted.

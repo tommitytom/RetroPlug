@@ -44,10 +44,12 @@ const be = createRealBackend();
 const audio = createAudioDriver();
 const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
 
-// enableFm MUST be false. smsggdj writes $F2 = $01 when its own FM option is on, and Mesen models $F2
-// as a mux whose PSG branch memsets the buffer - an FM-routed core renders silence however well the
-// sync works. Passed as a role config so it lands at CONSTRUCT: configureSms runs before LoadRom, so a
-// later applyRoleConfig would not take. The battery's OPTIONS block sets the ROM's own fm_on = 0 too.
+// `enableFm: false` is no longer REQUIRED - the vendored SmsFmAudio change makes FM sum with the PSG
+// instead of muting it (see sms-fm.test.ts) - but it is kept, for a different reason: with FM off the
+// YM2413 provider contributes nothing to the mix at all, so the drift render measures the PSG
+// metronome alone. The battery's OPTIONS block sets the ROM's own fm_on = 0 to match. Passed as a role
+// config so it lands at CONSTRUCT: configureSms runs before LoadRom, so a later applyRoleConfig would
+// not take.
 const id = project.systems.adopt(
   {
     romPath: __SMS_ROM__,

@@ -82,13 +82,22 @@ void configureSms(Emulator& emu, bool gameGear, bool enableFm) {
     cfg.ChannelVolumes[2] = 100;
     cfg.ChannelVolumes[3] = 100;
 
-    // The YM2413. Two costs when on, both real: SmsFmAudio is a separate
-    // IAudioProvider that force-fits its OPLL stream into whatever the PSG
-    // flush produced (so the cadence becomes an accuracy knob - see
-    // stepIfBelowTarget), and Mesen models port $F2 as a MUX, so a ROM that
-    // enables FM has its PSG output zeroed. See MesenSmsConfig::enableFm.
+    // The YM2413. One real cost when on: SmsFmAudio is a separate IAudioProvider
+    // that force-fits its OPLL stream into whatever the PSG flush produced, so
+    // the cadence becomes an accuracy knob (see stepIfBelowTarget).
     cfg.EnableFmAudio  = enableFm;
     cfg.FmAudioVolume  = 100;
+
+    // SUM the two rather than muxing, which is the vendored SmsFmAudio change.
+    // Stock Mesen models the Japanese SMS: writing $F2 = $01 selects FM and
+    // ZEROES the PSG buffer. smsggdj writes exactly that whenever its own FM
+    // option is on, so on stock Mesen turning FM on costs it three tone voices
+    // plus noise - measured as literal silence for a PSG-instrument song
+    // (rms 0.051 -> 0.000), while an FM-instrument song played fine. A Mark III
+    // with the FM add-on sums, and so does real hardware per the smsggdj source.
+    // A music tool wants both audible; an accuracy-first frontend might not,
+    // which is why the field exists rather than the mux being deleted.
+    cfg.FmMutesPsg     = false;
 
     // Defaults to None, which is worse than "no input": with no device
     // constructed, SmsControlManager::UpdateControlDevices' size() > 0 guard
