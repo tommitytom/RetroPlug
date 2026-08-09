@@ -1165,7 +1165,7 @@ test("Settings -> Audio > Driver (standalone): cycler stages the host API; Apply
 
   // Apply commits the staged driver as the 4th arg (rate/block/channels unchanged).
   findItem(items, "audio-apply")!.onSelect!();
-  expect(applied.at(-1)).toEqual([48000, 2048, 2, "PipeWire"]);
+  expect(applied[applied.length - 1]).toEqual([48000, 2048, 2, "PipeWire"]);
   expect(live.driver).toBe("PipeWire");
   items = audioItems();
   expect(findItem(items, "audio-driver")!.label).toBe("Driver: PipeWire");
