@@ -27,6 +27,7 @@
 #include "N8Bridge.hpp"  // `n8-bridge` subcommand: live MIDI -> Everdrive N8 Pro over USB (own loop)
 #include "N8Load.hpp"    // `n8-load` subcommand: load + boot a ROM on the N8 over USB (menu-driven)
 #include "N8Sync.hpp"    // `n8-sync` subcommand: MIDI transport -> risa host sync on the N8 (own loop)
+#include "host/n8/SerialRpcService.hpp"  // the serial byte-transport facet the TS N8 stack rides on
 #endif
 
 #include "host/engine/Engine.hpp"
@@ -140,6 +141,15 @@ int main(int argc, char** argv) try {
     rpcpp::QuickJSTransport transport(ctx, [](JSContext*, JSValue) {});
     BackendRpcServer server(transport, rpcpp::QuickJSCodec{ctx});
     registerAllBackendRpc(server, hostSvc, engineSvc, debugSvc, driver);
+
+#ifdef RETROPLUG_N8_BRIDGE
+    // The serial byte-transport facet (CLI-only): the thin native seam the TS N8 stack (Edio framing,
+    // menu commands, ROM/save orchestration in packages/retroplug/src/n8) rides on. Deliberately kept
+    // out of registerAllBackendRpc so the plugin/test hosts don't drag in the `serial` dep; mounted here
+    // alongside the other N8 subcommands.
+    retroplug::SerialRpcService serialSvc;
+    retroplug::registerSerialRpc(server, serialSvc);
+#endif
 
     JSValue global = JS_GetGlobalObject(ctx);
 
