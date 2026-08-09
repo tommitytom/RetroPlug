@@ -328,7 +328,7 @@ On a transport rise, hold the current level and begin counting from the next tic
 
 **Set-and-hold, never pulse.** A level must survive at least one full frame poll to be guaranteed observed; a press+release collapsed into one block would be invisible. The counter model sidesteps this naturally, which is also why the LSDj Arduinoboy failure mode (`dspRoles.ts:90-96`) cannot occur here: there is no readiness window on a level.
 
-**PDC.** `__rp_syncLatencyMs` (`pluginControlPlane.ts:99-107`) currently knows only `lsdj-sync` in `MidiSync`/`MidiSyncArduinoboy` at a measured 33 ms. `sms-sync` needs an entry or SMS renders land off-grid exactly as LSDj did before that constant was added. **`risa-sync` is already missing from that table** despite `reaper:risa-sync` shipping in `RENDER_SCENARIOS` (`tools/run-reaper-suite.sh:35`), so the same fix covers both. Also note `updateLatency()` only runs on load / activate / autoload (`PluginDSP.cpp:129,139,252`), so a runtime sync-mode change does not re-report PDC.
+**PDC.** `__rp_syncLatencyMs` (`pluginControlPlane.ts:99-107`) knows only `lsdj-sync` in `MidiSync`/`MidiSyncArduinoboy` at a measured 33 ms; `risa-sync` has no entry either. This design pass assumed `sms-sync` would need one. **Measurement says otherwise** - see "The Reaper leg exists, and the sync is on the grid": the render lands on the grid with no entry, because unlike LSDj's serial path there is no fixed pipeline delay to remove, only video-frame quantisation that PDC cannot compensate. Note also that `updateLatency()` only runs on load / activate / autoload (`PluginDSP.cpp:129,139,252`), so a runtime sync-mode change would not re-report PDC anyway.
 
 #### Out of scope: `SYNC: MIDI` takeover
 
@@ -350,7 +350,7 @@ Delta over the naive `MesenGbaSystem` clone. Both share the same ~400 lines of `
 | Catch2 sync/cadence/exactness guard (**not a clone**, section 2.8) | ~250 | 1 to 1.5 days |
 | test ROMs into `resources/roms/` | - | 0.25 day plus a licensing note |
 | `reaper:sms-sync` render leg | 1 script + 1 lua + 1 `.rpp` | 0.5 to 1 day |
-| PDC entry (`sms-sync` and the missing `risa-sync`) | +6 | plus a measurement pass |
+| PDC entry (`sms-sync` and the missing `risa-sync`) | 0 | a measurement pass showed none is needed |
 
 **Effort delta: 4 to 5 days on top of the 4 to 5 the naive clone would take, so Tier 1 is 8 to 10 days.** That is up from the design pass's own +2 to +3 estimate, and the increase is concentrated in the three places it did not cost: the TH input path, the guard that cannot be a clone, and the teardown fix.
 
@@ -448,7 +448,7 @@ Both prove the queue contract (gate at offset, release in sorted order, rebase p
 
 **The ROM problem.** `RP_MGB_ROM_PATH` / `RP_N8_MIDI_ROM_PATH` (`packages/native/CMakeLists.txt:645-646`) point at `${CMAKE_SOURCE_DIR}/resources/roms/`, which contains only `mGB.gb`, `n8-midi.nes`, `n8-midi-vrc6.nes`, `n8-midi.dbg`. **The smsggdj ROMs are not in the repo**: they are at `/workspaces/resources/roms/smsggdj/smsggdj_v0_45.{sms,gg}`, the sibling tree. The first scoping pass's `RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj/..."` points at a path that does not exist. Two options with very different verification value: **vendor the ROMs** into `resources/roms/` as mGB and n8-midi are, so the guard runs in CI (`pnpm test:plugin` is a CI step, `build.yml:74,176`); or use the sibling-tree pattern, in which case it skips silently exactly as `tools/author-risa-rplg.js:24-27` does (`console.log("SKIP"); process.exit(0)`, so `pnpm reaper:all` reports `risa-sync` green on a resource-less checkout). **Vendor them.** They are MIT (`/workspaces/smsggdj/LICENSE`, (c) 2026 Seb Tomczak / little-scale), 131,072 bytes each, and `release.yml:92-112,164-177,236-253` packages only `build/bin` plus the license bundle, so `resources/` never ships and no `THIRD-PARTY-NOTICES.txt` row is needed.
 
-**The Reaper leg, and what it cannot do.** A `reaper:sms-sync` render leg clones `reaper:risa-sync` almost exactly: an author script + a `.lua` + an `examples/reaper/sms_sync.rpp` + `--drift` analysis, wired into `RENDER_SCENARIOS` at `tools/run-reaper-suite.sh:35` (currently 7 scenarios). But `tools/reaper-timing-analyze.py` works on audio-envelope onset detection, and the existing tolerances are `--tol-ms 25` (mgb), `--tol-ms 30` (n8), ~50 ms for drift. **At 48 kHz, 25 ms is 1200 samples.** A Reaper leg cannot resolve 0.4 samples and cannot even resolve NES's 67. Its real job is drift (does the error accumulate over 60 s) and gross regression (did sync die). It is necessary and it is not sufficient; only assertions 1-3 above prove the accuracy figure.
+**The Reaper leg, and what it cannot do.** A `reaper:sms-sync` render leg clones `reaper:risa-sync` almost exactly: an author script + a `.lua` + an `examples/reaper/sms_sync.rpp` + `--drift` analysis, wired into `RENDER_SCENARIOS` at `tools/run-reaper-suite.sh:35`. But `tools/reaper-timing-analyze.py` works on audio-envelope onset detection, and the existing tolerances are `--tol-ms 25` (mgb), `--tol-ms 30` (n8), ~50 ms for drift. **At 48 kHz, 25 ms is 1200 samples.** A Reaper leg cannot resolve 0.4 samples and cannot even resolve NES's 67. Its real job is drift (does the error accumulate over 60 s) and gross regression (did sync die). It is necessary and it is not sufficient; only assertions 1-3 above prove the accuracy figure.
 
 **One more thing the leg needs that nothing budgets: the ROM must be driven into `SYNC: IN` through its own UI first.** `$DD` is untouched at boot; the ROM is not in a slave sync mode until the user sets it. That is a scripted button sequence in the fixture, not a config flag.
 
@@ -538,7 +538,7 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 | **18** | **Native guards in `retroplug-audio-test`** | `packages/native/test/audio/Sms*.test.cpp`, `packages/native/CMakeLists.txt:618-651` | **medium** | low | **Highest value per line in the document, and it cannot be a clone.** Section 2.8. Six assertions nothing else covers: non-silent PSG output over a real ROM (catches item 3a, which a boot smoke test passes while silent); a held level still asserted after a `RunFrame` (catches items 7/8 - `app-cores.test.ts` cannot, it reads only `be.getFrame(id)?.published` at `:40`, and `app-input.test.ts:18-19` hardcodes `GameboyButton` and is mGB-only); 40 construct/destruct cycles without a segfault (catches item 10); **block exactness**; **gate-metric fidelity**; **cadence invariance**. The last three are a new test shape needing a live `SmsConsole` in a Catch2 binary, plus H5 determinism pinning. Extend the existing binary, do not add one - the binary list is duplicated in `package.json:20` **and** `packages/retroplug/scripts/run-plugin-tests.mjs:27`, both listing six. `NesStems.test.cpp` is the precedent for driving a real ROM. |
 | 19 | Vendor the test ROMs | `resources/roms/` | trivial | low | `smsggdj_v0_45.{sms,gg}`, 131,072 bytes each, currently only at `/workspaces/resources/roms/smsggdj/`. Without them item 18 skips silently like `tools/author-risa-rplg.js:24-27` and CI proves nothing. MIT, `/workspaces/smsggdj/LICENSE`. `resources/` never ships (`release.yml`), so no notices row. |
 | 20 | The boot-and-render legs | `packages/retroplug/test-native/app-cores.test.ts` | trivial | low | `bootsAndRenders(SMS, "sms", warmupMs)` and the `"gg"` twin, mirroring `:49-50`. **Source from `__REPO_RESOURCES_DIR__`, not `__RESOURCES_DIR__`**, or they silently skip on CI exactly as GBA does. |
-| 21 | `sms-sync` role + `SmsSyncRole` | `dspRoles.ts`, `romProviders.ts`, `mesen/roles/SmsSyncRole.{hpp,cpp}`, `pluginControlPlane.ts:99-107` | **medium** | **medium** | Section 2.4. `SmsSyncRole` is `NesN8FifoRole` minus `flushAll`; the TS role is `risaSync` with a level encoder instead of a byte protocol. Add the PDC entry, and the missing `risa-sync` one while you are there. Needs item 12 first, or the marker role has zero header bytes to match on. |
+| 21 | `sms-sync` role + `SmsSyncRole` | `dspRoles.ts`, `romProviders.ts`, `mesen/roles/SmsSyncRole.{hpp,cpp}`, `pluginControlPlane.ts:99-107` | **medium** | **medium** | Section 2.4. `SmsSyncRole` is `NesN8FifoRole` minus `flushAll`; the TS role is `risaSync` with a level encoder instead of a byte protocol. No PDC entry after all - measured, see the Reaper section. Needs item 12 first, or the marker role has zero header bytes to match on. |
 | 22 | Verification legs the plan must actually run | - | small | low | `pnpm -r typecheck` (`package.json:14`) is in **no** workflow step (`build.yml:67-77,169-179,333-343` run only `test` / `test:native` / `test:plugin` / `test:ui`), and item 11's `DEFAULT_CORE` change is a hard compile error nothing else catches. Plus `tools/run-sanitizer.sh` (`thread` for `mesenGlobalInit()` under concurrent construction on `RenderJobRegistry` worker threads, and for item 3b's audio-thread allocations). **Note ASan will NOT catch item 10.** |
 
 ---
@@ -797,7 +797,7 @@ cases constructs OVER the previous system instead of making a second (two boots 
 WRAM, which is what gave it away). And a system left alive keeps playing into the next case's mix, so
 a negative control that should read silence reads the previous case's song.
 
-### The Reaper leg exists, and it says PDC is the wrong tool
+### The Reaper leg exists, and the sync is on the grid
 
 `pnpm reaper:sms-sync` (+ `-author`) now render smsggdj through a real DAW transport and run the
 `--drift` analyzer, the same shape as `reaper:risa-sync`. Getting there needed the fixture to become
@@ -805,7 +805,8 @@ percussive: `instr_default` holds its note (HLD 1), so hits merged into a drone 
 2 onsets in 3 s instead of 6. The envelope byte layout came out of the manual rather than guesswork -
 an instrument record is `[type, VOL, (ATK << 4) | DCY, HLD, ...]`, corroborated by the `E` command
 (`Exy` sets ATK = x, DCY = y). Note the manual's own "pluck" (ATK 0 / HLD 0 / DCY 3) is still a drone
-at this beat spacing; sweeping gave clean separation at DCY 0/1/2, and DCY 2 has the best level.
+at this beat spacing. The envelope turned out not to be the lever at all - see the sawtooth section
+below, where a `CMD_KILL` on the following row is what actually ends the note.
 
 The `.rplg` also has to carry a **savestate**, not just a battery. smsggdj does not autoload, so a
 project holding only SRAM restores an empty working song and renders silence. The author script pokes
@@ -814,42 +815,77 @@ no input at all and the transport's first clock starts it on the grid.
 
 **Measured, 30 s at 120 bpm, 60 beats:**
 
-| | |
-|---|---|
-| matched / missed / extra | 60 / 0 / 0 |
-| detected tempo | 119.97 BPM |
-| drift mean | -5.34 ms |
-| drift median | +5.11 ms |
-| drift stddev | 31.31 ms |
-| peak abs | 97.53 ms |
+| | real Reaper | headless twin |
+|---|---|---|
+| matched / missed / extra | 60 / 0 / 0 | 60 / 0 / 0 |
+| detected tempo | 119.97 BPM | 119.97 BPM |
+| drift mean | +9.74 ms | +16.17 ms |
+| drift stddev | 4.95 ms | 4.98 ms |
+| peak abs | 17.96 ms | 24.44 ms |
 
-**So no PDC constant ships, and now for a measured reason rather than an unmeasurable one.** PDC
-compensates a fixed latency. The mean here is about 5 ms - there is essentially no constant offset to
-remove - and the spread is what fails the 50 ms tolerance. Per-beat values show why: drift climbs
-roughly +1 ms per beat for 8 to 12 beats, then ONE beat lands about 95 ms early and it resets. A
-sawtooth, not jitter:
+Both PASS the 50 ms tolerance, and `sms-sync` is now in `RENDER_SCENARIOS`
+(`tools/run-reaper-suite.sh`), so `pnpm reaper:all` covers it.
+
+#### The 97 ms sawtooth was the measurement, not the sync
+
+Getting to those numbers took a correction worth recording, because the first version of this leg
+produced a completely convincing wrong answer. It reported peak drift 97.53 ms, stddev 31.31, mean
+-5.34 - with 60/60 beats matched and the tempo tracking - and the per-beat series looked like a
+textbook defect: drift climbing about +1 ms per beat for 8 to 12 beats, then one beat landing about
+95 ms early and resetting.
 
 ```
  +4.7  +8.2  +8.5  +8.5  +8.7  +9.0  +9.5 +10.5 +12.7 +13.7
 +13.7  -4.2 -97.5  -2.2  -0.2  +1.0  +1.0  +1.0 -94.3  +1.2
 ```
 
-Core-onset spacing is 498.39 ms mean but 404 to 597 ms range (sd 44.69), against a click track at
-499.87 ms mean, sd 0.96. So the DAW grid is solid and the cart's own beat placement is what wanders.
-That is a real defect to chase, not a latency to compensate, and it is worth chasing given the whole
-point of this work is sample-accurate sync.
+The headless twin (`test-native/dsp-sms-sync-drift.test.ts`) is what settled it, by measuring the same
+30 s two ways at once: the rendered audio through the analyzer's onset rule, and **the ROM's own phrase
+row counter**, polled every 256 frames straight out of WRAM with no detector anywhere near it. The
+audio reproduced the sawtooth at 91.5 ms. The row counter over that very same audio was flat to
++/-10 ms, with row spacing alternating cleanly between 116.10 and 133.51 ms about a mean of 125.03
+against an ideal 125.00. **The sequencer had been on the grid the whole time.**
 
-**The leg is deliberately NOT in `RENDER_SCENARIOS`** (`tools/run-reaper-suite.sh:35`), so
-`pnpm reaper:all` stays green. Add it once the sawtooth is understood; until then it is a diagnostic
-you run by hand, and it correctly fails.
+The artifact: the fixture's note rang about 405 ms of a 500 ms beat (identical at DCY 0, 1 and 2 - the
+envelope was never what ended it), and its stepped decay crossed and re-crossed the analyzer's
+20%-of-peak threshold. When a re-crossing landed inside the detector's 100 ms `MIN_SPACING_MS` window
+ahead of the next hit, the real onset was discarded as too close and the spurious one kept - so the
+beat read about 95 ms early. Raw rising edges: 67 for 60 beats. Both renders agreed at ~95 ms because
+both ran the same fixture through the same detector, which is exactly why agreement between them was
+not evidence.
 
-Not yet ruled out, in rough order of suspicion: the ROM samples its sync lines once per video frame,
-so consumption is frame-quantised however precisely the levels are delivered (delivery itself was
-measured accurate to about one sample); the IN24 divide-by-6 means a row needs 6 clocks, which at
-120 bpm is 7.5 frames, so the row boundary walks against the frame grid; and the mod-4 counter loses
-anything beyond 3 clocks between polls, which should not bite at this tempo but has not been
-instrumented. Splitting DAW from core would need the headless twin of this render, which the ad-hoc
-onset detector in `dsp-sms-sync` is not good enough to provide over 30 s.
+The fix is one byte per beat: `CMD_KILL` on the row after the hit, cutting it to about 140 ms and
+leaving an unambiguous gap. Raw edges drop to exactly 60 and peak drift to 18-24 ms. The kill has to
+land on a LATER row - `xc_klater` (`engine.asm:2020`) writes `STG_KILL` over the envelope stage
+immediately, so a same-row `K` pre-empts the attack and the channel is silent, which is what a first
+attempt at this measured and misread as "the command encoding is wrong".
+
+Two things the headless twin now asserts, and it needs both: the row-counter residual (the actual sync
+claim) and that the audio yields exactly one rising edge per beat (what stops the fixture drifting back
+into a shape its own measurement cannot read).
+
+**A `.rpp` gotcha that will cost you a run.** Reaper serializes the plugin's own state into the project
+file, so an `examples/reaper/*.rpp` carries the fixture it was authored with. Re-running
+`node tools/author-sms-rplg.js` and rendering does NOT pick up a changed fixture: the restored plugin
+state wins over `RETROPLUG_AUTOLOAD_PROJECT`, and the render comes back byte-identical - the same drift
+numbers to two decimal places, which reads as "the fix did nothing" rather than "the fix was not
+loaded". Re-run `pnpm reaper:sms-sync-author` after any fixture change. This is the same class as the
+stale-class-id failure already noted below, and it is quieter.
+
+#### What is left is the video frame, and it does not accumulate
+
+The residual wobble is the protocol's floor, not slop. IN24 puts a row every 125 ms and the ROM
+consumes clocks once per video frame, so a row lands after either 7 or 8 NTSC frames - 116.10 or
+133.51 ms - either side of the ideal 125. The DAW cannot place a row between frames. What matters is
+that it does not accumulate, and it does not: anchored on row 0, no row over 30 s strays more than
+about 20 ms, and the mean spacing holds 125.03 against 125.00.
+
+**Still no PDC constant, and now for a well-measured reason.** The row counter's mean offset is small
+and does not hold a sign across runs (-4.9 to +6.2 ms over nine runs, mean about +1 ms), because it
+depends on where the arm landed within a video frame. The larger means in the table above are measured
+at the audio and include the instrument's attack plus the detector's threshold lag, neither of which is
+plugin latency to compensate. A constant below one video frame, when the inherent quantisation is a
+full frame, would be fitting noise.
 
 2. **IN or IN24?** IN24 (divisor 6, 24 PPQN) is the DAW-shaped answer and matches the existing ares-link-sync / RP2040 bridge contract, but caps at 450 BPM NTSC / 375 PAL (3 clocks per frame before the mod-4 counter aliases) and at one row per frame (`engine.asm:742-750` has no loop). IN (divisor 1) gives 1:1 row control but the host must choose the row rate itself. This decides the role's tick resolution. A product question, not a technical one.
 
@@ -859,7 +895,7 @@ onset detector in `dsp-sms-sync` is not good enough to provide over 30 s.
 
 5. **Stems: mono or stereo, and is FM in scope?** Stereo matches the GB decision (`spec/10` section 2), is **required** for GG fidelity given `GameGearPanningReg`, and at exactly 4 stereo streams is the only layout that fits the 8-output plugin `ChannelSplit` path. Mono matches the NES precedent and halves the lane count. Separately: mix-only FM is free (it already lands in the stereo stream `MesenAudioDevice` receives); FM as one lumped stem; or 9 individual tone voices. In rhythm mode, do BD/HH/SD/TOM/CYM get their own streams or fold into one? 4 PSG + 9 FM = 13 streams fits under `kMaxLanes`; 4 + 14 does not. **Recommend stereo, PSG only initially.**
 
-6. **What PDC value for `sms-sync`** - STILL OPEN, and deliberately so. No PDC entry ships with the role: `__rp_syncLatencyMs` is unchanged, exactly as `risa-sync` shipped. The value has to come from a `tools/reaper-timing-analyze.py --drift` render, and an invented constant would be worse than none - it would shift every SMS render off the grid by a made-up amount and read as a bug in the sync path rather than in the PDC number. Note also that the drift analyzer needs one distinct transient per beat, which the current fixture does NOT produce (see "The sms-sync role, as built"), so the Reaper leg needs a percussive song before it can measure anything.
+6. ~~**What PDC value for `sms-sync`?**~~ **ANSWERED: none, measured.** `__rp_syncLatencyMs` stays unchanged, exactly as `risa-sync` shipped. Both the real-Reaper render and its headless twin now pass `--drift`, and the ROM's own row counter puts the systematic offset under a video frame with no stable sign across runs - so there is no constant to compensate, only the frame quantisation that PDC cannot touch. See "The Reaper leg exists, and the sync is on the grid".
 
 6b. *(original wording)* **What PDC value for `sms-sync`** (and, separately, for the already-missing `risa-sync`)? The LSDj 33 ms was measured, not derived. Needs a `tools/reaper-timing-analyze.py` pass against a real render once the leg exists. Note residual 6 in section 2.7: the ROM's poll phase within a frame is variable, so the value must be measured rather than computed from the frame rate.
 

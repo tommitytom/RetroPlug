@@ -42,6 +42,24 @@ export const SMS_ROWS_PER_BEAT = 4;
 // The metronome note. Mid-range so it is unambiguous against silence in an onset detector.
 const HIT_NOTE = 0x0d;
 const HIT_INSTR = 0x00; // instrument 0, left at instr_default
+// The note is cut one row after it fires, and that single byte is the difference between a drift
+// render that measures sync and one that measures its own detector.
+//
+// Left to ring, the instrument sounds for ~405 ms of a 500 ms beat whatever its envelope is set to
+// (measured identical at DCY 0, 1 and 2). Its stepped decay then crosses and re-crosses the analyzer's
+// threshold, and when a re-crossing lands inside the detector's 100 ms min-spacing window ahead of the
+// next hit it REPLACES that hit: the real onset is discarded as too close, and the beat reads ~95 ms
+// early. That produced a convincing 91-97 ms sawtooth in both the Reaper render and its headless twin,
+// while the ROM's own row counter over the same audio was flat to +/-10 ms - a defect entirely in the
+// measurement. Cutting the note leaves a ~140 ms hit in a 500 ms beat, so the envelope is unambiguously
+// down long before the next onset: raw rising edges drop from 67 to exactly 60, and peak drift from
+// 91.5 ms to 24 ms.
+//
+// The kill has to land on a LATER row, not on the note itself. `xc_klater` (engine.asm:2020) writes
+// STG_KILL over the envelope stage immediately, so a same-row K pre-empts the attack and the note never
+// reaches peak - the channel is silent, which is exactly what a first attempt at this measured.
+const KILL_CMD = 1; // CMD_KILL (engine.asm:39) - "K: cut after param ticks"
+const KILL_AFTER_ROWS = 1;
 
 // The metronome instrument. instr_default sustains (HLD 1), so consecutive hits merge into a
 // continuous tone rather than discrete beats - measured as a steady 0.072 RMS yielding 2 detected
@@ -52,11 +70,8 @@ const HIT_INSTR = 0x00; // instrument 0, left at instr_default
 // sets ATK = x, DCY = y"). instr_default's `0, $0F, $03, $01` reads as TONE / VOL F / ATK 0 DCY 3 /
 // HLD 1, matching its own comment exactly.
 //
-// DCY 2 was chosen by measurement, not by the manual's labelling. The manual calls ATK 0 / HLD 0 /
-// DCY 3 "a pluck", but at this beat spacing DCY 3 still decays too slowly to separate - it measured a
-// single onset, same as the sustaining default. Sweeping DCY with HLD 0 gave 10 clean, evenly-spaced
-// onsets at 0, 1 and 2, and DCY 2 has the highest level of those (0.059 RMS against 0.029 at DCY 0),
-// so it is both separable and the easiest for an onset detector to find above the noise floor.
+// DCY 2 is the loudest of the fast settings (0.059 RMS against 0.029 at DCY 0), which is all it is
+// chosen for now that KILL_CMD rather than the envelope is what ends the note.
 const INSTR_ATK = 0;
 const INSTR_DCY = 2;
 const INSTR_HLD = 0;
@@ -110,9 +125,11 @@ function blankSongBlock(): Uint8Array {
 export function buildMetronomeBlock(): Uint8Array {
   const b = blankSongBlock();
 
-  // Phrase 0: a note on every 4th step, the rest left empty.
+  // Phrase 0: a note on every 4th step, each cut on the following step. The kill rides an otherwise
+  // empty step ($FF instrument), which runs its command without retriggering anything.
   for (let step = 0; step < STEPS_PER_PHRASE; step += SMS_ROWS_PER_BEAT) {
     b.set([HIT_NOTE, HIT_INSTR, 0x00, 0x00], P_PHRASES + step * 4);
+    b.set([0x00, 0xff, KILL_CMD, 0x00], P_PHRASES + (step + KILL_AFTER_ROWS) * 4);
   }
 
   // Chain 0: phrase 0, sixteen times over (phrase#, transpose).
