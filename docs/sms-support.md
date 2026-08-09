@@ -1,10 +1,23 @@
 # Adding Sega Master System / Game Gear via the vendored Mesen core
 
-**Scoping document: prospective work, none of it implemented.** Third pass. Two decisions from the repo owner are folded in as settled (two sibling platforms; sample-accurate stepping is mandatory), and every claim from the previous pass that an empirical probe overturned is corrected in place rather than left standing.
+**Status: Tier 1 is BUILT and green. Tier 2 is partial, Tier 3 is not started.** Jump to
+[section 12](#12-where-this-stands-and-what-is-left) for what is actually left; everything before it is the
+scoping document that produced the work, kept because its measurements and negative controls are the
+record of why each piece is shaped the way it is.
+
+Read the tier tables in sections 5-7 as the ORIGINAL plan, not as a to-do list - section 12 supersedes
+them. Sections written after the fact are titled "..., as built" and are the ones that describe the tree.
+
+Originally a scoping document, third pass. Two decisions from the repo owner are folded in as settled
+(two sibling platforms; sample-accurate stepping is mandatory), and every claim from an earlier pass that
+an empirical probe overturned is corrected in place rather than left standing.
 
 ---
 
 ## 1. Bottom line
+
+*(Written before the work. The estimate below is left as it stood; what actually shipped is in
+[section 12](#12-where-this-stands-and-what-is-left).)*
 
 **Tier 1 (boots, renders, makes sound, takes input, and syncs sample-accurately) is 8 to 10 days, not the 4 to 5 the previous pass estimated. Tier 1 + Tier 2 is three to four weeks of calendar. Tier 3 (stems, roles, tracker) is a quarter, and most of it is optional.**
 
@@ -315,7 +328,16 @@ This delivers true sample accuracy at the `IN` instruction because `SmsControlle
 
 The GG build reads `$01` directly, PC4 = TL bit 4, PC5 = TR bit 5, PC6 = TH bit 6 (`engine.asm:564-573`). With Edit 3 the host drives PC5 and PC6 from the same offset-gated drain and leaves PC4 high so `PC4 AND PC5` reduces to PC5, matching GGSYNC.md's note that for a direct bridge connection pin 6 may remain unconnected. The ROM holds `$02 = $FF` at rest and while slaved, so every sync pin is on the input side of the new mask.
 
+**BUILT, with one deliberate deviation: PC4 and PC5 are driven TOGETHER, not PC5 alone.** Leaving PC4 to its pull-up does work on the emulator and for a direct bridge, but a stock crossed Gear-to-Gear cable carries bit 0 on both pins, so driving only one would behave differently on hardware depending on the cable. Driving both costs nothing and matches what a GG-to-GG master does. See "Game Gear sync, as built".
+
 #### The TS role: `sms-sync`
+
+**This subsection is the design as PREDICTED, and the state machine below is not what shipped - see
+"The sms-sync role, as built" for the real one.** The MIDI-shaped START / CONTINUE / CLOCK / STOP
+machine described here came from the reference hardware bridge, which receives actual MIDI; the DAW
+role receives a transport flag and a tick stream instead, so it reduced to "while `block.transport`,
+advance the counter once per tick". No arm, no start or stop message, no seek handling. The
+predictions about `walkTicks`, set-and-hold and the absent locate all held.
 
 A near-clone of `risaSync` (`dspRoles.ts:221-249`), attached by ROM marker in `romProviders.ts`. It needs no new kernel machinery: `walkTicks` (`dspKernel.ts:183-207`) already yields drift-free per-tick sample offsets, `block.transport` gives the edges, `ppqStart` discontinuity gives seek detection, and `setNextTick` re-phases after one. State machine, mirroring the reference encoder at `/workspaces/smsggdj/adapter/src/sync_protocol.c` exactly:
 
@@ -556,7 +578,7 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 | Real-core Mesen legs | `test-native/app-mesen-persistence.test.ts`, `app-mesen-settings.test.ts` | small | low | The natural home for SMS and GG construct-blob + live-knob proofs, mirroring the NES rows. |
 | Per-platform button labels | `menuDefs.ts:1327` (`GB_BUTTONS`) | medium | low | Cosmetic but now motivated by H9: SMS Start is Pause/NMI, GG Start is a real Start. Bindings are one global keyboard profile plus one global gamepad profile (`bindingsStore.ts:115-127`), not per system, so keep the 8 wire names as storage keys and add a display-label map driven off the focused system's platform (SMS: A -> "Button 2", B -> "Button 1", Start -> "Pause", Select hidden; GG: Start -> "Start"). Forking the profile schema would be a `spec/05` version bump for no functional gain. |
 | `reaper:sms-sync` render leg | `tools/run-reaper-suite.sh:35` + author script + `.lua` + `.rpp` fixture | medium | medium | Clones `reaper:risa-sync`. **Must script the ROM into `SYNC: IN` through its own UI first** - `$DD` is untouched at boot. Resolves ~25 ms at best (section 2.8), so it is a drift and gross-regression guard, not an accuracy proof. Known failure mode: a stale `.rpp` embedding an old VST3 class id so Reaper loads the FX offline (silent render, not an error). Never CI. |
-| CLI + docs + release checklist | `cli/renderArgs.ts:24,59-63`, `cli/timeline.ts:14`, `cli/sdk-types.d.ts:346`, `SystemFactory.hpp:19`, `CoreBackends.hpp:6`, `SystemBase.hpp:23-24,194,211,290-291,362`, `SnapshotRegistry.hpp:86`, `systemsStore.ts:43-45`, `DebugRpcService.{cpp,hpp}` (14 "null on SameBoy/GBA" comments), `spec/00:4,91`, `spec/01:362`, `spec/03:77`, `spec/04:35`, `spec/05:33`, `spec/07:26-29,48`, `spec/09:230`, `spec/README:39-40`, `README.md:166`, `docs/sdl-standalone.md:35`, `RELEASE_TESTING.md:35-41` | small | low | `renderArgs.ts:24` still says "Render a Game Boy (.gb/.gbc), or NES (.nes) ROM" - it never got `.gba`, so fix both. `RELEASE_TESTING.md:35-41` needs SMS **and** GG rows in the manual ROM-kinds checklist. **Stale independent of SMS, fix while you are in there:** `spec/04:34-35` claims "there is exactly one system-role today (sameboy); Mesen exposes no natively-consumed knobs yet" (the NES region / sprite-limit / apuLatencyMs work invalidated it); `spec/05:32` says "`core` is deliberately not stored" while `:181` documents the migration that stores it; `spec/06`'s target table omits `retroplug-sdl` / `-watcher-test` / `-midi-test` / `-lottie-test` / `-render-host-test`, `:193` cites a `BUILD_CLI` block at `CMakeLists.txt:554-574` in a file that is now 312 lines, and it says "6 renders + 3 editor checks" where `run-reaper-suite.sh:35` lists 7 (8 with `sms-sync`); `romProviders.ts:2` cites `sameboy/RomSniffer.cpp` which does not exist; `AGENTS.md` names four Catch2 binaries where `package.json:20` and `run-plugin-tests.mjs:27` list six. |
+| CLI + docs + release checklist | `cli/renderArgs.ts:24,59-63`, `cli/timeline.ts:14`, `cli/sdk-types.d.ts:346`, `SystemFactory.hpp:19`, `CoreBackends.hpp:6`, `SystemBase.hpp:23-24,194,211,290-291,362`, `SnapshotRegistry.hpp:86`, `systemsStore.ts:43-45`, `DebugRpcService.{cpp,hpp}` (14 "null on SameBoy/GBA" comments), `spec/00:4,91`, `spec/01:362`, `spec/03:77`, `spec/04:35`, `spec/05:33`, `spec/07:26-29,48`, `spec/09:230`, `spec/README:39-40`, `README.md:166`, `docs/sdl-standalone.md:35`, `RELEASE_TESTING.md:35-41` | small | low | `renderArgs.ts:24` still says "Render a Game Boy (.gb/.gbc), or NES (.nes) ROM" - it never got `.gba`, so fix both. `RELEASE_TESTING.md:35-41` needs SMS **and** GG rows in the manual ROM-kinds checklist. **Stale independent of SMS, fix while you are in there:** `spec/04:34-35` claims "there is exactly one system-role today (sameboy); Mesen exposes no natively-consumed knobs yet" (the NES region / sprite-limit / apuLatencyMs work invalidated it); `spec/05:32` says "`core` is deliberately not stored" while `:181` documents the migration that stores it; `spec/06`'s target table omits `retroplug-sdl` / `-watcher-test` / `-midi-test` / `-lottie-test` / `-render-host-test`, `:193` cites a `BUILD_CLI` block at `CMakeLists.txt:554-574` in a file that is now 312 lines, and it says "6 renders + 3 editor checks" where `run-reaper-suite.sh:35` now lists 9 (`sms-sync` and `gg-sync` both landed); `romProviders.ts:2` cites `sameboy/RomSniffer.cpp` which does not exist; `AGENTS.md` names four Catch2 binaries where `package.json:20` and `run-plugin-tests.mjs:27` list six. |
 | Tile geometry (recommend: **do not** do this) | `ui/screens/grid/layout.ts:9-10,28-34` | large | medium | `GB_NATIVE_W/H = 160/144` is the only tile sizing, and NES 256x240 and GBA 240x160 have letterboxed via `LV_IMAGE_ALIGN_CONTAIN` for a year. Per-system means the grid stops being a uniform lattice and ripples into `gridContentSize` / `getTileBounds` / `fitZoom` / `hitTestTile`, `App.tsx:109`, `main.tsx:47` (which must agree with App or the window bounces on first frame), `test/file-drop/hit-test.test.ts`, and the three `reaper:editor*` checks. Pre-existing wart. D1 helps here: Game Gear at 160x144 is a pixel-perfect fit for the existing tile once `GameGearOverscan` is set, so only Master System is affected. |
 
 ---
@@ -578,6 +600,10 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 ---
 
 ## 8. Suggested first commit
+
+*(Delivered as planned, across four commits: the native system + audio guards, the host-driven port
+levels, the TS wiring, then the sync role. The sequencing note below held - the Catch2 route really was
+the only way to land and validate the native half first.)*
 
 **`MesenSmsConfig.hpp` + `MesenSmsSystem.{hpp,cpp}` + `CMakeLists.txt:48` + `resources/roms/smsggdj_v0_45.{sms,gg}` + `SmsAudio.test.cpp` in `retroplug-audio-test`.**
 
@@ -670,6 +696,39 @@ mux like Mesen and lose the PSG; sum like real hardware, which needs a vendored
 `IsPsgAudioMuted` change and diverges from upstream Mesen for every other SMS game; or expose the
 choice as a role knob and let the user pick. This also reshapes Tier 3's stem work - a PSG 4-stem
 tap is worth much less if the PSG is muted whenever FM is on.
+
+**STILL OPEN, and it has since become user-facing rather than theoretical.** `System > FM Audio`
+(`menuDefs.ts:479-486`) now puts that switch in front of the user, defaulted ON to match hardware -
+so on an FM-enabled smsggdj the default position is the silent one, and the audible position is the
+one labelled OFF. Every fixture and guard in the tree forces `enableFm: false`
+(`author-sms-rplg.ts`, `dsp-sms-sync*.test.ts`, `SmsAudio.test.cpp`), which is a strong hint: a
+workaround every single caller has to apply is not a workaround, it is a default in the wrong place.
+
+**But re-reading the core makes the "silence" observation above look confounded, and that should be
+settled before anyone designs a fix.** The full `$F2` truth table is:
+
+| `_audioControl` | PSG | FM |
+|---|---|---|
+| 0 | audible | muted |
+| 1 | **muted** | **audible** |
+| 2 | muted | muted (genuine silence) |
+| 3 | audible | audible |
+
+(`SmsFmAudio.cpp:45-50` for the PSG half, `:78-82` for the FM half.) smsggdj writes `$F2 = $01`, which
+selects **FM audible / PSG muted** - the documented Japanese-SMS mux, and emphatically not silence.
+Two more things point the same way: `SmsFmAudio::MixAudio` calls `Run()` itself (`:76`), so FM catches
+up lazily exactly as the PSG does and our `RunFrame`-bypassing step loop cannot starve it; and its
+output is added into the already-resampled mix through the ordinary `IAudioProvider` loop
+(`SoundMixer.cpp:99-101`), a path with nothing SMS-specific in it.
+
+So the expected behaviour with FM on is "FM instead of PSG", and the `peak = 0` measurement above is
+not explained by the mux. The likeliest confounder is what that early probe was measuring: smsggdj
+boots with **no song loaded** and `song_new` makes no sound on its own, so a bare boot is silent
+whatever the audio path does - and the poke-the-song-into-WRAM technique that the current fixtures use
+did not exist yet. **Next step is a re-measure, not a redesign:** boot with the metronome fixture, FM
+on, and compare `enableFm` true against false. If FM is audible, the only real defect is the menu
+default and the answer is cheap. If it is still silent with a song playing, the three-way question
+above stands.
 
 ### Two smaller corrections from the same pass
 
@@ -954,23 +1013,23 @@ loopback bit for bit after the standard GG init, which the guard asserts directl
 One thing GG does NOT need: a tile-geometry change. `GameGearOverscan{48,48,48,48}` crops to 160x144,
 which is a pixel-perfect fit for the existing grid tile.
 
-2. **IN or IN24?** IN24 (divisor 6, 24 PPQN) is the DAW-shaped answer and matches the existing ares-link-sync / RP2040 bridge contract, but caps at 450 BPM NTSC / 375 PAL (3 clocks per frame before the mod-4 counter aliases) and at one row per frame (`engine.asm:742-750` has no loop). IN (divisor 1) gives 1:1 row control but the host must choose the row rate itself. This decides the role's tick resolution. A product question, not a technical one.
+2. ~~**IN or IN24?**~~ **ANSWERED: IN24, shipped.** The role clocks at 24 PPQN and the measured ceiling matched the derivation (449 BPM NTSC, asserted in `test/dsp/sms-sync.test.ts` rather than hardcoded). Original reasoning: IN24 (divisor 6, 24 PPQN) is the DAW-shaped answer and matches the existing ares-link-sync / RP2040 bridge contract, but caps at 450 BPM NTSC / 375 PAL (3 clocks per frame before the mod-4 counter aliases) and at one row per frame (`engine.asm:742-750` has no loop). IN (divisor 1) gives 1:1 row control but the host must choose the row rate itself. This decides the role's tick resolution. A product question, not a technical one.
 
 3. ~~**Does `detectRomFormat` get an extension fallback?**~~ **ANSWERED: yes, as the last tier only.** See "The classification tiers, as built" below.
 
-4. ~~**How do the two sniff lengths grow?**~~ **ANSWERED: neither grows; `classifyRom` reads twice.** See below. `ROLE_HEADER_LEN` is untouched, so an `sms-sync` marker provider still has no bytes to match on and must attach by platform, as `nes-n8-midi` does.
+4. ~~**How do the two sniff lengths grow?**~~ **ANSWERED: neither grows; `classifyRom` reads twice.** See below. `ROLE_HEADER_LEN` is untouched - but the conclusion drawn from that here was WRONG: `defaultRoles` reads the deeper `SEGA_SNIFF_LEN` prefix for sms/gg (`systemsStore.ts:633`), so the marker provider matches on `SMSGGDJ` after all and does NOT attach by platform. That mattered: attaching by platform would have driven Player 2's button lines in every SMS game.
 
-5. **Stems: mono or stereo, and is FM in scope?** Stereo matches the GB decision (`spec/10` section 2), is **required** for GG fidelity given `GameGearPanningReg`, and at exactly 4 stereo streams is the only layout that fits the 8-output plugin `ChannelSplit` path. Mono matches the NES precedent and halves the lane count. Separately: mix-only FM is free (it already lands in the stereo stream `MesenAudioDevice` receives); FM as one lumped stem; or 9 individual tone voices. In rhythm mode, do BD/HH/SD/TOM/CYM get their own streams or fold into one? 4 PSG + 9 FM = 13 streams fits under `kMaxLanes`; 4 + 14 does not. **Recommend stereo, PSG only initially.**
+5. **Stems: mono or stereo, and is FM in scope?** *(still open, and now entangled with the FM mux question below)* Stereo matches the GB decision (`spec/10` section 2), is **required** for GG fidelity given `GameGearPanningReg`, and at exactly 4 stereo streams is the only layout that fits the 8-output plugin `ChannelSplit` path. Mono matches the NES precedent and halves the lane count. Separately: mix-only FM is free (it already lands in the stereo stream `MesenAudioDevice` receives); FM as one lumped stem; or 9 individual tone voices. In rhythm mode, do BD/HH/SD/TOM/CYM get their own streams or fold into one? 4 PSG + 9 FM = 13 streams fits under `kMaxLanes`; 4 + 14 does not. **Recommend stereo, PSG only initially.**
 
 6. ~~**What PDC value for `sms-sync`?**~~ **ANSWERED: none, measured.** `__rp_syncLatencyMs` stays unchanged, exactly as `risa-sync` shipped. Both the real-Reaper render and its headless twin now pass `--drift`, and the ROM's own row counter puts the systematic offset under a video frame with no stable sign across runs - so there is no constant to compensate, only the frame quantisation that PDC cannot touch. See "The Reaper leg exists, and the sync is on the grid".
 
 6b. *(original wording)* **What PDC value for `sms-sync`** (and, separately, for the already-missing `risa-sync`)? The LSDj 33 ms was measured, not derived. Needs a `tools/reaper-timing-analyze.py` pass against a real render once the leg exists. Note residual 6 in section 2.7: the ROM's poll phase within a frame is variable, so the value must be measured rather than computed from the frame rate.
 
-7. **`SmsControlManager::SetExternalInput` versus `IInputProvider` versus the `$3F` hijack?** The external-input mask is 3 lines and immune to the per-frame clobber but is a real (if tiny) vendored addition; `IInputProvider` is reversible and upstream-friendly but still needs a TH model that stock Mesen does not have; the `$3F` hijack is zero edits and verified working but fires `LatchHorizontalCounter` on every counter increment and collides with the ROM's own `out ($3F),$FF` on stop. Owner's call on how much vendored surface is acceptable. Section 2.4 recommends the mask.
+7. ~~**`SmsControlManager::SetExternalInput` versus `IInputProvider` versus the `$3F` hijack?**~~ **ANSWERED: the mask, plus a second one for Game Gear.** `SetExternalInput` shipped for SMS, and the GG EXT port needed its own edit in `SmsMemoryManager` (see "Game Gear sync, as built"). Total vendored surface for sync: two files, both filling in acknowledged `//TODOSMS` stubs, both inert until a host drives a line. Original framing: the external-input mask is 3 lines and immune to the per-frame clobber but is a real (if tiny) vendored addition; `IInputProvider` is reversible and upstream-friendly but still needs a TH model that stock Mesen does not have; the `$3F` hijack is zero edits and verified working but fires `LatchHorizontalCounter` on every counter increment and collides with the ROM's own `out ($3F),$FF` on stop. Owner's call on how much vendored surface is acceptable. Section 2.4 recommends the mask.
 
-8. **Is `SYNC: OUT` wanted?** Polling `ControlPort` in the fine phase of the step loop gives sample-accurate OUT detection with no core edit (Tier 3), but only export SMS hardware can drive the port and Mesen's japan/overseas model option is an open `//TODOSMS` (`SmsControlManager.cpp:104`).
+8. **Is `SYNC: OUT` wanted?** *(still open)* Polling `ControlPort` in the fine phase of the step loop gives sample-accurate OUT detection with no core edit (Tier 3), but only export SMS hardware can drive the port and Mesen's japan/overseas model option is an open `//TODOSMS` (`SmsControlManager.cpp:104`).
 
-9. **Is a debug session wanted?** GBA set the precedent of none, and `spec/09:230` already documents the degradation. SMS would be the second console in that hole, though Tier 3's Z80 CPU-state virtuals fall out nearly free from D2's step loop.
+9. **Is a debug session wanted?** *(still open)* GBA set the precedent of none, and `spec/09:230` already documents the degradation. SMS would be the second console in that hole, though Tier 3's Z80 CPU-state virtuals fall out nearly free from D2's step loop.
 
 10. **Does `MemoryType` grow a CRAM tag?** Wire-format addition (`MemoryType.hpp:39-53`, `backend.ts:561-573`, `cli/sdk-types.d.ts:202`). Cheap now, awkward later.
 
@@ -1006,12 +1065,16 @@ which is a pixel-perfect fit for the existing grid tile.
 
 ## 11. What SMS/GG support would NOT get
 
+*(Written before the work, and still the right framing. Tier 1 has since shipped, so the list below is
+now a description of the tree rather than a prediction - with one correction: `sms-sync` works on BOTH
+machines, Game Gear included, which this section assumed would not happen.)*
+
 **Blunt version: even with sample-accurate sync, Tier 1 + Tier 2 ships an emulator with a clock input, not a RetroPlug system.**
 
 RetroPlug's actual value is the tracker spine: `SongCatalog` / `AssetCatalog` / marker roles / the runtime WRAM overlay / the `retroplug-cli <x>-rom` verb family. After three to four weeks, SMS and GG would have:
 
-- **A working sample-accurate sync leg** (that is the change from the previous pass; `sms-sync` is now Tier 1 item 21, not a Tier 3 aspiration).
-- **No songs menu, no assets menu.** `TRACKER_INTEGRATIONS` (`trackerIntegration.ts:65`) gets no entry. No Load/Export/Replace/Delete/Add, no kits, no palettes, no fonts.
+- **A working sample-accurate sync leg**, on BOTH machines (`sms-sync` was Tier 1 item 21, not a Tier 3 aspiration, and Game Gear came with it rather than being cut).
+- **No songs menu, no assets menu.** `TRACKER_INTEGRATIONS` (`trackerIntegration.ts:65`) is still `[lsdj, risa]`. No Load/Export/Replace/Delete/Add, no kits, no palettes, no fonts.
 - **No MIDI.** `onMidi` / `pushSerialIn` stay default no-ops (`SystemBase.hpp:88-104`). `SYNC: MIDI` takeover is explicitly out of scope (section 2.4): the Z80 is the clock master of a bit-banged shift-in sampling DAT within ~3 microseconds of its own port write, which needs an in-core write-callback peripheral, not host scheduling.
 - **No `SYNC: OUT`.** Tier 3, cheap (one `ControlPort` read per instruction in the fine phase, no core edit), but not in this scope.
 - **No stems** unless Tier 3 lands, so no `System > Render` split; `validSplits` returns `["mix"]`.
@@ -1022,8 +1085,83 @@ RetroPlug's actual value is the tracker spine: `SongCatalog` / `AssetCatalog` / 
 
 Three caveats before treating that as a plan:
 
-1. **The directory has no "currently loaded slot" field**, and the SRAM window is superblock + directory + heap plus a separate 10-byte OPTIONS block at `$BF60`. `SongCatalog.workingName` is **required**, and `workingSongDirty` drives the recents-per-song rows and the destructive-load confirm. If the live song lives in console work RAM, this needs a runtime RAM overlay via `backend.readRam` (the LSDj reader pattern), not pure sav parsing.
+1. **The directory has no "currently loaded slot" field**, and the SRAM window is superblock + directory + heap plus a separate 10-byte OPTIONS block at `$BF60`. `SongCatalog.workingName` is **required**, and `workingSongDirty` drives the recents-per-song rows and the destructive-load confirm. **This is now settled rather than conditional: the live song DOES live in console work RAM, and the layout is known.** smsggdj lays its working song out at `$C000` byte-for-byte as the SMDJ4 save block - phrases at +`$100`, chains and song at +`$E00`, sixteen `instr_default` records at +`$1500`, all located by signature and exercised every test run by `pokeMetronomeIntoWram` (`test-native/smsSyncSong.ts`). So a save-block offset IS a WRAM offset, and the runtime RAM overlay via `backend.readRam` (the LSDj reader pattern) is required, not optional. The structural consequence for the integration is concrete: `SongCatalog.load(sav, index)` returns new **sav** bytes, but loading a song here has to write **WRAM**. That interface mismatch is the design work, and it is not addressed by any existing integration.
 2. **The format is still moving.** SMDJ4 is "v0.30+" with an existing SMDJ3 -> SMDJ4 migration tool. RetroPlug's tracker integrations are version-pinned by design (risa carries `isVersionSupported` gated on a bundled per-version RAM layout, `trackerIntegration.ts:59-61`). You would be signing up for that versioning burden against a moving target from day one.
 3. **It is a separate project.** The comparable risa integration was 69 commits, 445 file-touches, +17,577 / -1,435. Scope it after generic SMS/GG emulation lands and after the format settles.
 
 **Recommended shape:** Tier 1 + Tier 2 as a self-contained "SMS and GG play, and sync sample-accurately" milestone at three to four weeks, with the test ROMs vendored so the guards actually run in CI (unlike GBA's). Then decide on stems - materially more attractive now that 4 stereo PSG streams fit the plugin `ChannelSplit` path - and smsggdj as separate, independently-justified projects.
+
+*(That shape held. Tier 1 landed as its own milestone with the ROMs vendored; stems and the tracker
+remain separate and unstarted. See section 12.)*
+
+---
+
+## 12. Where this stands, and what is left
+
+Current as of the Game Gear sync commit. **Tier 1: done.** All 22 items, both machines, with the
+guards described in "The sms-sync role, as built", "The Reaper leg exists, and the sync is on the
+grid" and "Game Gear sync, as built". `pnpm test` (103 files), `test:native` (84), `test:plugin` (6
+binaries) and `pnpm reaper:all` (12 checks) are green.
+
+### Defects: the product currently lies to the user
+
+Ordered by how badly. These are not missing features - they are things a user can reach today that
+behave wrongly.
+
+1. **`System > FM Audio` produces silence when turned on.** Defaulted ON to match hardware, so on an
+   FM-enabled smsggdj the default is the silent position. See "FM resolved, and it opens a worse
+   question" - and note the re-measure that should come first, because the original observation looks
+   confounded by a probe that had no song loaded. Cheap to settle, and the answer decides whether this
+   is a one-line default change or the three-way mux-versus-sum question.
+2. **A project saved before a role existed can never gain it.** Stored roles win over defaults
+   (`systemsStore.ts:516`: `config.roles && config.roles.length ? config.roles : this.defaultRoles(...)`),
+   there is no UI that shows which roles are attached, and no way to attach one. Met in practice: a
+   `.rplg` authored before `sms-sync` existed loads, boots, arms, shows WAIT, and ignores the DAW
+   forever, with nothing anywhere saying why. **Not SMS-specific** - the identical trap is armed for
+   any project predating `risa-sync`. Fixable as a migration step, since role providers are pure
+   functions of the ROM: re-run them on load and union in role kinds the stored list has never seen,
+   while still honouring roles the user actively removed.
+3. **`defaultCoreFor` still reads `nes || gba`** (`EngineRpcService.cpp:48-52`), so a platform-only
+   wire spec routes SMS/GG to SameBoy and returns nullptr. Latent - TS always sends `core` explicitly -
+   and a one-line fix. Already Tier 2's first row; repeated here because it is a defect, not a feature.
+
+### Tier 2 remainder
+
+- **Region / Revision knobs are unreachable.** `Engine::applyConfigField` dispatches through
+  `dynamic_cast<MesenNesSystem*>` (`Engine.cpp:287`), so an SMS system fails the cast. Harmless
+  **only because** the SMS menu exposes FM Audio alone (which is applied at construct, not through
+  this path) - the moment a second row is added it silently no-ops with a live-looking cycler. Region
+  is additionally special: `SmsConsole::UpdateRegion` is private and only reachable from `RunFrame`,
+  which the sample-accurate loop bypasses, so it must be construct-time or omitted.
+- **Button labels are Game Boy names.** H9 makes this more than cosmetic: SMS Start is Pause/NMI, GG
+  Start is a real Start, and A/B are buttons 2/1.
+- **No SMS/GG rows in `app-mesen-persistence` / `app-mesen-settings`** - the construct-blob and
+  live-knob proofs where NES has them.
+- **Documentation is silent.** Zero mentions of SMS/GG in `README.md`, `RELEASE_TESTING.md` or
+  `spec/`. `renderArgs.ts:24` still says "Render a Game Boy (.gb/.gbc), or NES (.nes) ROM" - it never
+  got `.gba` either, so fix both.
+- **`pressButtonAt`** (sample-offset button presses). Generic Tier 2 item; not needed for sync, which
+  rides `pushCoreBytes`.
+
+### Tier 3, unstarted
+
+- **smsggdj tracker integration** - the big one, and the gate that held it ("get sync working first")
+  has lifted. Needs a real SMDJ4 codec in `src/` (RLE plus a reader; the fixture writer in
+  `test-native/smsSyncSong.ts` is store-raw and test-only), and a resolution to the WRAM-versus-sav
+  interface mismatch in section 11 caveat 1. Re-read `songCatalog.ts` before designing: main reworked
+  it substantially after this document was written.
+- **PSG 4-stem tap** - structurally *easier* than NES. The four `channelOutput` values already exist
+  in `SmsPsg.cpp` and are summed with plain `int16` addition, so the stems re-sum exactly, with no
+  "does not sum" caveat like the NES pins. And 4 stereo streams is exactly 8 lanes, which drives the
+  existing `ChannelSplit` router with zero new plumbing: **SMS/GG would be the first non-GB console
+  usable in the plugin split.** Note the interaction with the FM question - a PSG tap is worth much
+  less if the PSG is muted whenever FM is on.
+- **Z80 CPU-state virtuals** - ~80 lines, no core edits, largely free now that the step loop already
+  holds the `SmsCpu*`.
+- **Full debug session**, **`SYNC: OUT`**, **FM stems**, **per-mapper work** - all optional, all
+  unstarted.
+
+### Suggested order
+
+FM silence, then the role-migration gap, then tracker integration. The first two are small and both
+are cases of the product misleading the user; the third is the actual feature.
