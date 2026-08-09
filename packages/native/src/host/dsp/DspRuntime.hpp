@@ -51,6 +51,8 @@ enum DspSpanLabel : std::uint32_t {
     DSP_SPAN_MARSHAL   = 1,   // DspRuntime: C→JS input marshalling
     DSP_SPAN_JSCALL    = 2,   // DspRuntime: the JS_Call into the kernel's processBlock
     DSP_SPAN_APU       = 3,   // Engine: the SameBoy core/APU render (runBlock)
+    DSP_SPAN_PUBLISH   = 4,   // Engine: the state pump to the control plane (per-block frame copy +
+                              //   the coarse-interval savestate/SRAM republish — spiky, timer-gated)
     DSP_SPAN_ROLE_BASE = 16,  // JS kernel interns role kinds (mgb, midi-routing, …) from here up
 };
 
@@ -99,7 +101,9 @@ public:
     struct SerialIn  { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint8_t byte = 0; };
     struct MidiOut   { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
     struct CoreMidi  { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
-    struct CoreBytes { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; };
+    // `flush` marks a barrier message: the device drops whatever it still holds before taking these
+    // bytes (risa's host-sync arm, which must not be preceded by clocks for the position it replaces).
+    struct CoreBytes { std::uint32_t system = 0; std::uint32_t frame = 0; std::vector<std::uint8_t> data; bool flush = false; };
     struct ButtonOut { std::uint32_t system = 0; std::uint32_t frame = 0; std::uint32_t button = 0; bool down = false; };
 
     DspRuntime();

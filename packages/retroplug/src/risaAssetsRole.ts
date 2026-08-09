@@ -91,15 +91,24 @@ function applyOne(rom: RisaRom, ov: RisaAssetOverride, caps: ConstructCaps): voi
 }
 
 /** Fold a list of overrides onto base ROM bytes, returning the patched image (per-override try/catch so a
- *  bad entry just skips). Returns the base unchanged if it isn't a risa image. */
-export function applyOverridesToRom(baseBytes: Uint8Array, overrides: RisaAssetOverride[], caps: ConstructCaps): Uint8Array {
+ *  bad entry just skips). Returns the base unchanged if it isn't a risa image. `onSkip` sees every entry that
+ *  couldn't be applied. A load can shrug those off, but a caller BAKING the result into the ROM on disk (the
+ *  menu's Patch ROM in Place) has to know it would be dropping a link. */
+export function applyOverridesToRom(
+  baseBytes: Uint8Array,
+  overrides: RisaAssetOverride[],
+  caps: ConstructCaps,
+  onSkip?: (ov: RisaAssetOverride, message: string) => void,
+): Uint8Array {
   const rom = RisaRom.fromBytes(baseBytes);
   if (!rom.isRisa) return baseBytes;
   for (const ov of overrides) {
     try {
       applyOne(rom, ov, caps);
     } catch (e) {
-      console.log(`[risa-assets] skipped ${ov.type} slot ${ov.slot}: ${(e as Error).message}`);
+      const message = (e as Error).message;
+      console.log(`[risa-assets] skipped ${ov.type} slot ${ov.slot}: ${message}`);
+      onSkip?.(ov, message);
     }
   }
   return rom.bytes();

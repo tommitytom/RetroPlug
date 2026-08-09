@@ -8,7 +8,7 @@
 // without touching the live audio-thread cores.
 //
 // One-shot: construct, run() once, destroy. run() blocks for the whole render. Only console +
-// TextEncoder/TextDecoder + the RPC / progress / cancel / result thunks are bound (the render path needs
+// TextEncoder/TextDecoder + the RPC / rendered / cancel / result thunks are bound (the render path needs
 // nothing else from the runtime). See ClassIdSpace note: bare QuickJS with no fresh native-class
 // registration, so the multi-txiki-runtime class-id hazard does not apply here.
 
@@ -24,7 +24,7 @@ namespace retroplug {
 
 class RenderHost {
 public:
-    using ProgressFn = std::function<void(double)>;  // render progress fraction, 0..1
+    using RenderedFn = std::function<void(double)>;  // audio rendered so far, in milliseconds
     using CancelFn   = std::function<bool()>;         // polled per chunk; true aborts the render
 
     struct Result {
@@ -40,13 +40,13 @@ public:
     RenderHost& operator=(const RenderHost&) = delete;
 
     // Render one job. `jobJson` is a RenderOpts-shaped spec (at least {"rom":"...","out":"..."}); the worker
-    // fills the CLI defaults for anything omitted. onProgress / isCancelled are optional. Returns the
+    // fills the CLI defaults for anything omitted. onRendered / isCancelled are optional. Returns the
     // worker's reported result (status "error" with a message on any internal failure).
-    Result run(const std::string& jobJson, ProgressFn onProgress = {}, CancelFn isCancelled = {});
+    Result run(const std::string& jobJson, RenderedFn onRendered = {}, CancelFn isCancelled = {});
 
     // Called by the bound JS thunks (which recover the host via the JS context opaque). Public so the
     // free-function thunks in the .cpp can reach them; not part of the external API.
-    void onProgress(double fraction);
+    void onRendered(double ms);
     bool onCancelQuery();
     void onResult(std::string status, std::string message, std::vector<std::string> outputs);
     void onStdout(const char* text);
@@ -56,7 +56,7 @@ private:
     JSRuntime* rt_ = nullptr;
     JSContext* ctx_ = nullptr;
 
-    ProgressFn progressFn_;
+    RenderedFn renderedFn_;
     CancelFn   cancelFn_;
     Result     result_;
 };

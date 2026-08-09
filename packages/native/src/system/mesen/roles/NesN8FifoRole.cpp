@@ -19,8 +19,11 @@ void NesN8FifoRole::onAttach(NesConsole& console) {
     std::fprintf(stderr, "[NesN8FifoRole] FIFO attached at $40F0/$40F1\n");
 }
 
-void NesN8FifoRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count) {
+void NesN8FifoRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count, bool flush) {
     if (data == nullptr || count == 0) return;
+    // A barrier message drops everything still in flight first, in BOTH queues, so it can't be preceded
+    // by bytes belonging to the stream position it replaces.
+    if (flush) flushAll();
     // Queue (don't deliver) each byte at `offset`. Contiguous + ordered, so pumpUntil releases the whole
     // run together once its offset is reached. No framing/cap — the raw twin of onMidi.
     for (std::size_t b = 0; b < count; ++b) {

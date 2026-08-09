@@ -14,7 +14,7 @@ import { defaultCoreFor, type Platform, type Core } from "./platform";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
 import { commonSettingsSchema, type CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
-import { z, clampedInt, stringField, enumField } from "./configSchema";
+import { z, clampedInt, stringField, enumField, stringifyConfig } from "./configSchema";
 import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
 import {
   type SystemLayout,
@@ -264,7 +264,7 @@ function mapSystemPaths(cfg: ProjectConfig, fn: (path: string) => string): void 
 export function serializeConfig(cfg: ProjectConfig, baseDir: string, canonicalize: (p: string) => string): string {
   const out: ProjectConfig = { ...cfg, settings: { ...cfg.settings }, systems: cfg.systems.map((s) => ({ ...s })) };
   if (baseDir) mapSystemPaths(out, (p) => rebaseToRelative(p, baseDir, canonicalize));
-  return JSON.stringify(out);
+  return stringifyConfig(out);
 }
 
 /** Parse config JSON with the zod schemas: migrate an older raw shape up to current

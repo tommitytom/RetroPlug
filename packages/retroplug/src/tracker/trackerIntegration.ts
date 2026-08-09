@@ -3,6 +3,7 @@
 // resolved from a system's roles by its markerRole. The menu builds the Songs + asset submenus generically
 // over these; the file-dialog actions (which own file formats) stay per-console in the UI. New consoles add
 // one entry to TRACKER_INTEGRATIONS — the single extension point.
+import type { RoleInstance } from "../systemRoles";
 import type { SongCatalog } from "./songCatalog";
 import type { AssetCatalog } from "./assetCatalog";
 import { lsdjSongCatalog } from "./lsdjSongCatalog";
@@ -55,10 +56,26 @@ export const risaIntegration: TrackerIntegration = {
     const v = identifyRisaVersion(rom); // scans the PRG for the ASCII "RISA V<major>.<minor>.<patch>" marker
     return v ? `risa v${v}` : null;
   },
-  // Only versions with a bundled RAM layout (2.2.0 / 2.2.1) are driveable; an unknown / unmarked version
-  // resolves no layout. See supportedRisaVersions() in ../risa/runtime/layout.
+  // Only versions with a bundled RAM layout (2.2.0 / 2.2.1 / 2.3.0) are driveable; an unknown / unmarked
+  // version resolves no layout. See supportedRisaVersions() in ../risa/runtime/layout.
   isVersionSupported: (rom) => resolveRisaLayout(identifyRisaVersion(rom)) !== null,
 };
 
 /** Every registered tracker integration. The one place a new tracker console is added. */
 export const TRACKER_INTEGRATIONS: TrackerIntegration[] = [lsdjIntegration, risaIntegration];
+
+/** The tracker integration for a system, resolved from its attached roles (the first role whose kind is an
+ *  integration's markerRole). undefined for a non-tracker system. */
+export function resolveTracker(roles: RoleInstance[]): TrackerIntegration | undefined {
+  return TRACKER_INTEGRATIONS.find((t) => roles.some((r) => r.kind === t.markerRole));
+}
+
+/** The song catalog for a system (convenience over resolveTracker) - used by the recent list. */
+export function resolveSongCatalog(roles: RoleInstance[]): SongCatalog | undefined {
+  return resolveTracker(roles)?.songs;
+}
+
+/** The asset catalog for a system (convenience over resolveTracker). */
+export function resolveAssetCatalog(roles: RoleInstance[]): AssetCatalog | undefined {
+  return resolveTracker(roles)?.assets;
+}

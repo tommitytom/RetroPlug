@@ -26,6 +26,8 @@ export const KEY_BACKSPACE = 0x08;
 export const KEY_TAB = 0x09;
 export const KEY_ENTER = 0x0d;
 export const KEY_ESCAPE = 0x1b;
+export const KEY_DELETE = 0x7f;
+export const KEY_SPACE = 0x20;
 export const KEY_PAGE_UP = 0xe031;
 export const KEY_PAGE_DOWN = 0xe032;
 export const KEY_LEFT = 0xe035;
@@ -37,12 +39,15 @@ export const KEY_SHIFT_R = 0xe052;
 
 // Symbolic key name (as stored in bindings JSON) → DPF code. Single-char ASCII names are resolved by
 // charCodeAt in resolveKeyName, so only the named keys need an entry (Return is a synonym of Enter).
+// Space is the one printable key with no visible glyph, so it gets a word rather than the ASCII fallback
+// (which would store + show a literal " " — an apparently unbound row).
 const KEY_NAME_TO_DPF: Record<string, number> = {
   Backspace: KEY_BACKSPACE,
   Tab: KEY_TAB,
   Enter: KEY_ENTER,
   Return: KEY_ENTER,
   Escape: KEY_ESCAPE,
+  Space: KEY_SPACE,
   Left: KEY_LEFT,
   Up: KEY_UP,
   Right: KEY_RIGHT,
@@ -65,6 +70,7 @@ const DPF_TO_KEY_NAME: Record<number, string> = {
   [KEY_TAB]: "Tab",
   [KEY_ENTER]: "Enter",
   [KEY_ESCAPE]: "Escape",
+  [KEY_SPACE]: "Space",
   [KEY_LEFT]: "Left",
   [KEY_UP]: "Up",
   [KEY_RIGHT]: "Right",
@@ -80,6 +86,14 @@ export function dpfCodeToKeyName(code: number): string | null {
   if (code in DPF_TO_KEY_NAME) return DPF_TO_KEY_NAME[code];
   if (code >= 0x20 && code <= 0x7e) return String.fromCharCode(code);
   return null;
+}
+
+/** A stored key name → the name to SHOW in the bindings editor. Canonicalises through the two tables, so a
+ *  profile that stored the raw " " (written before Space had a name) still reads "Space" rather than looking
+ *  unbound. Names that don't resolve pass through unchanged. */
+export function keyDisplayName(name: string): string {
+  const code = resolveKeyName(name);
+  return code === null ? name : (dpfCodeToKeyName(code) ?? name);
 }
 
 /** Invert a resolved keyboard binding map (GB-button-name → key-name[]) into a DPF-code → button-value

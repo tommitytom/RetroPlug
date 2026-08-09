@@ -10,6 +10,7 @@
 #include "system/AudioRouting.hpp"
 
 #include "host/dsp/DspRuntime.hpp"
+#include "host/engine/HostSyncTrace.hpp"
 #include "host/engine/SnapshotRegistry.hpp"
 
 struct AudioRouter;  // BlockRunner.hpp — the per-block bus-placement policy (used by ref below)
@@ -22,6 +23,9 @@ enum class ConfigField : std::uint8_t {
     NesRegion = 6, NesRemoveSpriteLimit = 7,                  // Mesen (NES)
     SerialOutCapture = 8,                                     // SameBoy (LSDj MI.OUT)
     NesApuLatencyMs = 9,                                      // Mesen (NES) — APU flush window as latency (ms)
+    // SameBoy display group — all live (they land on the next rendered frame), all routed through
+    // SameBoySystem::applyDisplayConfig.
+    ColorCorrection = 10, DmgPalette = 11, LightTemperature = 12,
 };
 
 // One system's video frame, read from its lock-free FrameBufferTriple. `data` is raw XRGB8888
@@ -62,6 +66,9 @@ public:
     // --- transport (plain members; mutated only by the Engine's owning thread) ---
     void setBpm(double bpm);
     void setTransport(bool playing);
+    // Move the host playhead. A DAW does this on every locate: stop-and-rewind, a loop wrap,
+    // or a click in the timeline. Roles see it as a ppqStart discontinuity in the next block.
+    void setPpq(double ppq);
     // Which output pairs each system routes to (Stereo = all → pair 0). Plain member, like transport.
     void setAudioRouting(AudioRouting mode);
 
@@ -146,6 +153,7 @@ private:
     double bpm_       = 120.0;
     bool   transport_ = false;
     double ppq_       = 0.0;
+    HostSyncTrace syncTrace_;  // inert unless RETROPLUG_SYNC_TRACE is set
 
     AudioRouting audioRouting_ = AudioRouting::Stereo;  // output-pair placement; Stereo = all → pair 0
 };

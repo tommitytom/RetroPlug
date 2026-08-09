@@ -1,8 +1,11 @@
 // Confirm-on-close, end to end on the headless display. The editor's native onClose() calls
 // __rp_onCloseRequested; this test drives that seam directly (same JS context as the UI bundle, like
 // resize.test.ts spies __rp_setWindowSize). A clean project lets the close through; once a tile is added
-// (project dirty) the request is vetoed and the Save/Discard/Cancel overlay appears. Esc cancels; Discard
-// & Quit calls __rp_quitWindow (spied here — natively it closes the window).
+// (project dirty) the request is vetoed and the Save/Discard/Cancel overlay appears, listing WHAT is
+// unsaved. Esc cancels; Discard & Quit calls __rp_quitWindow (spied here - natively it closes the window).
+//
+// mGB is the embedded synth (no ROM path, so no battery target), so the list here is the project row
+// alone; the battery rows are covered by test/unsaved/rows.test.ts and test-native/app-unsaved-changes.
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
 
@@ -36,6 +39,11 @@ test("close is vetoed with unsaved changes; Esc cancels, Discard quits", () => {
   expect(ui.findByTextContaining("Discard & Quit") != null).toBeTruthy();
   expect(ui.findByTextContaining("Cancel") != null).toBeTruthy();
   expect(quitCalls).toBe(0); // nothing closed yet
+
+  // It says WHAT is unsaved: this project has never been saved, and the readout row is skipped by nav -
+  // focus lands on the first BUTTON, which is what the Down+Enter discard below relies on.
+  expect(ui.findByText("Project: (not saved yet)") != null).toBeTruthy();
+  expect(ui.focused()!.text).toBe("Save & Quit");
 
   // Esc cancels the prompt (window stays open, project untouched).
   ui.tapKey(Key.Esc);

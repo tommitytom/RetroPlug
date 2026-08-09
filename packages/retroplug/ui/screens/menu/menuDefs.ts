@@ -14,8 +14,12 @@ import {
   HIGHPASS_VALUES,
   REGION_VALUES,
   LSDJ_MODE_VALUES,
+  COLOR_CORRECTION_VALUES,
+  DMG_PALETTE_VALUES,
   type SameBoyModel,
   type SameBoyHighpass,
+  type SameBoyColorCorrection,
+  type SameBoyDmgPalette,
   type ConsoleRegion,
   type LsdjSyncMode,
 } from "../../../src/settingsEnums";
@@ -23,25 +27,41 @@ import type { UserConfig } from "../../../src/userConfig";
 import { SRAM_AUTO_SAVES, RENDER_SAMPLE_RATES, RENDER_ON_EXISTS } from "../../../src/userConfig";
 import type { SplitMode } from "../../../src/render";
 import { defaultBindingMap, type BindingMap } from "../../../src/bindingMap";
+import { keyDisplayName } from "../../../src/keyCodes";
 import { isValidProfileName, isValidProfileChar } from "../../../src/bindingsStore";
 import type { RecentView } from "../../../src/recentStore";
-import { resolveSavPath, siblingPath, SAV_PATTERNS } from "../../../src/savPaths";
-import { stem, dirname, joinPath, shortenMiddle } from "../../../src/pathUtil";
+import { resolveSavPath, siblingPath, SAV_PATTERNS, isSavPath } from "../../../src/savPaths";
+import { stem, dirname, basename, extension, joinPath, shortenMiddle } from "../../../src/pathUtil";
+import { ROM_PATTERNS } from "../../../src/fileSelection";
 import { LsdjRom, decodeLsdpal, encodeLsdpal } from "../../../src/lsdj/rom";
 import { decompressSlot, encodeLsdsngRaw, savSongName, savSongVersion } from "../../../src/lsdjSav";
-import { replaceSongInSav, importAllSongsFromSav } from "../../../src/lsdjSongOps";
+import {
+  replaceSongInSav,
+  saveWorkingToCatalog as lsdjSaveWorkingToCatalog,
+  canSaveWorkingToCatalog,
+} from "../../../src/lsdjSongOps";
+import { activeSlot as lsdjActiveSlot } from "../../../src/lsdj/codec/sav";
 import { importSongFiles } from "../../../src/lsdjSongImport";
-import { songRecordBytes, replaceSongRecordInSav, addSongRecordToSav, workingSongRecord, saveWorkingToCatalog } from "../../../src/risaSongOps";
+import {
+  songRecordBytes,
+  replaceSongRecordInSav,
+  addSongRecordToSav,
+  workingSongRecord,
+  saveWorkingToCatalog,
+  canSaveWorkingToCatalog as canRisaSaveWorking,
+} from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 import {
   resolveTracker,
+  mutateLiveSav,
   effectiveAssets,
   readAssetOverrides,
   lsdjSongCatalog,
   risaSongCatalog,
+  workingSongTargets,
   lsdjAssetCatalog,
   risaAssetCatalog,
   type SongCatalog,
@@ -57,6 +77,8 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty } from "./audioDraft";
+import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -72,8 +94,76 @@ export interface MenuContext {
   // Destructive project ops, guarded (unsaved-changes prompt) + outcome-aware (incompatible / relink /
   // error) by useProjectModals — the menu drives these instead of project.newProject / project.load.
   newProject: () => void;
-  loadProject: (path: string) => void;
+  /** `song` (a recent row's) is loaded into the cart once the project lands - reopening that song, not just
+   *  the project. Omitted (Load Project… / a file drop) leaves whatever song the project's sav carries. */
+  loadProject: (path: string, song?: string) => void;
   loadRomAsProject: (romPath: string, explicitSav?: string) => void;
+  /** Quit the standalone (unsaved-changes guarded). No-op in a DAW (the host owns the window). */
+  requestExit: () => void;
+  // Open the Songs "import from a .sav" picker (validate the source against the cart's console, then show a
+  // checkbox list) — owned by useSongImport, wired from App like the project modals.
+  beginSongImport: (sys: SystemView, source: Uint8Array) => void;
+}
+
+/** True only in a standalone host (the SDL handheld build or the DPF JACK standalone), which installs
+ *  __rp_isStandalone; a DAW-hosted editor and the headless harness leave it undefined. Gates the "Exit"
+ *  row — a DAW owns the plugin window, so it must not offer to quit. */
+function isStandalone(): boolean {
+  return (globalThis as { __rp_isStandalone?: boolean }).__rp_isStandalone === true;
+}
+
+// Standalone audio device config (the SDL host's sample-rate / block-size, for the Audio submenu). The
+// cyclers edit a DRAFT (audioDraft.ts) — nothing is applied until the "Apply" row commits it via
+// __rp_setAudioConfig (re-open device + persist). Absent in a DAW / the harness (hasAudioConfig() false).
+const AUDIO_RATES = [22050, 32000, 44100, 48000];
+const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
+// Output device channels: 2 = stereo mix; 4/6/8 open that many device channels so the project's Audio
+// Routing (2-Ch/Inst, 1-Ch/Inst, Channels) fans real stems out to a multichannel interface. Labelled by
+// pair count since routing works in stereo pairs.
+const AUDIO_CHANNELS = [2, 4, 6, 8];
+const AUDIO_CHANNEL_NAMES = ["Stereo", "4 (2 pairs)", "6 (3 pairs)", "8 (4 pairs)"];
+function audioSettingsChildren(): MenuItem[] {
+  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048, outChannels: 2 };
+  const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
+  const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
+  const chIdx = Math.max(0, AUDIO_CHANNELS.indexOf(cfg.outChannels));
+  const dirty = audioDraftDirty();
+  return [
+    // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
+    cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
+    cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
+    cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),
+    sep("audio-sep-apply"),
+    // Commit the staged rate/block/channels to the device. Greyed (inert) until there's a pending change.
+    action("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
+  ];
+}
+
+// Standalone-only MIDI device pickers (Settings > MIDI), gated on hasMidiConfig(). Unlike Audio, a pick
+// applies immediately (setMidiInput/Output → the native host reconnects the port + persists). Input defaults
+// to "All Devices" (every hardware input, the historical behavior); output to "None" (virtual port only). A
+// saved device that isn't currently present is still shown, marked "(not connected)", and stays selected.
+function deviceCyclerNames(devices: string[], selected: string, allLabel: string): { names: string[]; index: number } {
+  const names = [allLabel, ...devices];
+  if (selected === "") return { names, index: 0 };
+  const i = devices.indexOf(selected);
+  if (i >= 0) return { names, index: i + 1 };
+  // Selected device not present: append it so the label still reflects the choice (re-applied on reconnect).
+  names.push(`${selected} (not connected)`);
+  return { names, index: names.length - 1 };
+}
+
+function midiSettingsChildren(): MenuItem[] {
+  const cfg = getMidiConfig() ?? { inputs: [], outputs: [], selectedInput: "", selectedOutput: "" };
+  const inp = deviceCyclerNames(cfg.inputs, cfg.selectedInput, "All Devices");
+  const out = deviceCyclerNames(cfg.outputs, cfg.selectedOutput, "None");
+  // Cycler index 0 = the default sentinel ("" selection); any other index maps back to the device name.
+  const inName = (n: number) => (n === 0 ? "" : cfg.inputs[n - 1] ?? cfg.selectedInput);
+  const outName = (n: number) => (n === 0 ? "" : cfg.outputs[n - 1] ?? cfg.selectedOutput);
+  return [
+    cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),
+    cycler("midi-output", "Output Device", out.names, out.index, (n) => setMidiOutput(outName(n))),
+  ];
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -84,6 +174,23 @@ const AUDIO_ROUTING_NAMES = ["Stereo", "2 Ch / Inst", "1 Ch / Inst", "Channels (
 const LAYOUT_NAMES = ["Auto", "Row", "Column", "Grid"];
 const MODEL_NAMES = ["Auto", "DMG-B", "MGB", "SGB", "SGB PAL", "SGB2", "CGB-0", "CGB-A", "CGB-B", "CGB-C", "CGB-D", "CGB-E", "AGB", "GBP"];
 const HIGHPASS_NAMES = ["Off", "Accurate", "DC-Block"];
+// SameBoy display knobs (the "sameboy" role). Index == the value tuple in settingsEnums.
+const COLOR_CORRECTION_NAMES = ["Off", "Correct Curves", "Balanced", "Boost Contrast", "Reduce Contrast", "Low Contrast", "Accurate"];
+const DMG_PALETTE_NAMES = ["Grey", "DMG", "MGB", "GBL"];
+// Light temperature is a continuous -1..1 in the core; the menu has cyclers, not sliders, so offer it
+// as 11 steps over the full range. Upstream's own slider is 21 steps, which is a lot of key presses
+// for a tint. Stored as the double, so a value that came from elsewhere still round-trips through
+// nearestIndex() to the closest row.
+const LIGHT_TEMP_STEPS = [-1, -0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8, 1];
+const LIGHT_TEMP_NAMES = ["Cool 100%", "Cool 80%", "Cool 60%", "Cool 40%", "Cool 20%", "Neutral", "Warm 20%", "Warm 40%", "Warm 60%", "Warm 80%", "Warm 100%"];
+
+// The models that render in DMG mode, i.e. the ones the DMG palette applies to. Mirrors the core's own
+// split: GB_is_cgb is `model >= GB_MODEL_CGB_0`, and everything below that (DMG, the Game Boy Pocket,
+// and the three Super Game Boys) takes its colours from GB_update_dmg_palette instead of the CGB
+// palette RAM. `auto` is NOT one of them - RetroPlug resolves it to CGB-C (toSameBoyModel), so it gets
+// the CGB rows. Colour correction and light temperature are shown on exactly the complement.
+const DMG_MODELS: readonly SameBoyModel[] = ["dmgB", "mgb", "sgb", "sgbPal", "sgb2"];
+const isDmgModel = (m: SameBoyModel): boolean => DMG_MODELS.includes(m);
 const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSave: "On Save", Continuous: "Continuous" };
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
@@ -154,14 +261,27 @@ function browseThen(ctx: MenuContext, opts: FileBrowserOpts, apply: (path: strin
   });
 }
 
-/** The SameBoy core-role config for a system (model / highpass / linkGroupId / fastBoot), with defaults. */
-function sameboyConfig(sys: SystemView): { model: SameBoyModel; highpass: SameBoyHighpass; linkGroupId: number; fastBoot: boolean } {
+/** The SameBoy core-role config for a system (model / highpass / link group / fast boot + the display
+ *  group), with defaults. Every display default matches the core's own, so a project saved before those
+ *  knobs existed reads back as the appearance it was saved with. */
+function sameboyConfig(sys: SystemView): {
+  model: SameBoyModel;
+  highpass: SameBoyHighpass;
+  linkGroupId: number;
+  fastBoot: boolean;
+  colorCorrection: SameBoyColorCorrection;
+  dmgPalette: SameBoyDmgPalette;
+  lightTemperature: number;
+} {
   const c = (sys.roles.find((r) => r.kind === "sameboy")?.config ?? {}) as Record<string, unknown>;
   return {
     model: typeof c.model === "string" ? (c.model as SameBoyModel) : "cgbC",
     highpass: typeof c.highpass === "string" ? (c.highpass as SameBoyHighpass) : "accurate",
     linkGroupId: typeof c.linkGroupId === "number" ? c.linkGroupId : 0,
     fastBoot: c.fastBoot !== false,
+    colorCorrection: typeof c.colorCorrection === "string" ? (c.colorCorrection as SameBoyColorCorrection) : "disabled",
+    dmgPalette: typeof c.dmgPalette === "string" ? (c.dmgPalette as SameBoyDmgPalette) : "grey",
+    lightTemperature: typeof c.lightTemperature === "number" ? c.lightTemperature : 0,
   };
 }
 
@@ -170,11 +290,12 @@ function sameboyConfig(sys: SystemView): { model: SameBoyModel; highpass: SameBo
 const APU_LATENCY_MS = [0.5, 1.0, 1.4, 3.0, 5.0];
 const APU_LATENCY_NAMES = ["0.5 ms", "1.0 ms", "1.4 ms", "3.0 ms", "5.0 ms"];
 
-/** Index of the preset nearest `ms`, so the cycler shows the current value even if it's off-grid. */
-function nearestApuLatencyIndex(ms: number): number {
+/** Index of the preset in `presets` nearest `v`, so a cycler over a continuous value still shows the
+ *  current setting even when it's off-grid (a project written by an older build, or by hand). */
+function nearestIndex(presets: readonly number[], v: number): number {
   let best = 0;
-  for (let i = 1; i < APU_LATENCY_MS.length; i++) {
-    if (Math.abs(APU_LATENCY_MS[i] - ms) < Math.abs(APU_LATENCY_MS[best] - ms)) best = i;
+  for (let i = 1; i < presets.length; i++) {
+    if (Math.abs(presets[i] - v) < Math.abs(presets[best] - v)) best = i;
   }
   return best;
 }
@@ -311,6 +432,27 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       cycler("sys-highpass", "Highpass", HIGHPASS_NAMES, Math.max(0, HIGHPASS_VALUES.indexOf(cfg.highpass)), (n) => systems.setRoleConfig(sys.id, "sameboy", { highpass: HIGHPASS_VALUES[n] })),
       cycler("sys-fastboot", "Fast Boot", OFF_ON, cfg.fastBoot ? 1 : 0, (n) => systems.setRoleConfig(sys.id, "sameboy", { fastBoot: n === 1 })),
     );
+    // Display. Live — the core applies these to the next rendered frame, no restart. Each row is shown
+    // only on the models where the core will actually use it: it gates colour correction and light
+    // temperature on GB_is_cgb and the DMG palette on the negation, so exactly one of the two groups
+    // applies to any given model. See isDmgModel.
+    items.push(sep("sys-sep-display"));
+    if (isDmgModel(cfg.model)) {
+      items.push(
+        cycler("sys-dmg-palette", "DMG Palette", DMG_PALETTE_NAMES, Math.max(0, DMG_PALETTE_VALUES.indexOf(cfg.dmgPalette)), (n) =>
+          systems.setRoleConfig(sys.id, "sameboy", { dmgPalette: DMG_PALETTE_VALUES[n] }),
+        ),
+      );
+    } else {
+      items.push(
+        cycler("sys-color-correction", "Color Correction", COLOR_CORRECTION_NAMES, Math.max(0, COLOR_CORRECTION_VALUES.indexOf(cfg.colorCorrection)), (n) =>
+          systems.setRoleConfig(sys.id, "sameboy", { colorCorrection: COLOR_CORRECTION_VALUES[n] }),
+        ),
+        cycler("sys-light-temp", "Light Temp", LIGHT_TEMP_NAMES, nearestIndex(LIGHT_TEMP_STEPS, cfg.lightTemperature), (n) =>
+          systems.setRoleConfig(sys.id, "sameboy", { lightTemperature: LIGHT_TEMP_STEPS[n] }),
+        ),
+      );
+    }
   }
   // NES-only core knobs (the "mesen" role also attaches to GBA, so gate on platform, not core).
   if (sys.platform === "nes") {
@@ -320,7 +462,7 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       cycler("sys-nes-spritelimit", "Remove Sprite Limit", OFF_ON, cfg.removeSpriteLimit ? 1 : 0, (n) =>
         systems.setRoleConfig(sys.id, "mesen", { removeSpriteLimit: n === 1 }),
       ),
-      cycler("sys-nes-apu-latency", "APU Latency", APU_LATENCY_NAMES, nearestApuLatencyIndex(cfg.apuLatencyMs), (n) =>
+      cycler("sys-nes-apu-latency", "APU Latency", APU_LATENCY_NAMES, nearestIndex(APU_LATENCY_MS, cfg.apuLatencyMs), (n) =>
         systems.setRoleConfig(sys.id, "mesen", { apuLatencyMs: APU_LATENCY_MS[n] }),
       ),
     );
@@ -410,6 +552,9 @@ function assetRomBytes(be: HostBackend, romPath: string): Uint8Array | null {
   assetRomCache.set(romPath, bytes);
   return bytes;
 }
+// Drop a cached base ROM: the file on disk no longer matches what we parsed (Patch ROM in Place rewrote it).
+// Without this the asset submenus keep listing the PRE-patch slots and Delete's base-slot test reads stale.
+const invalidateAssetRom = (romPath: string): void => void assetRomCache.delete(romPath);
 
 // A detected tracker cart whose embedded version this build has no layout for is DETECTED but not driveable
 // (the Songs/Assets rows read that layout). We grey the submenu out as "(Unsupported Version)" rather than
@@ -489,11 +634,101 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
   });
 }
 
+// --- baking the overrides into the ROM ----------------------------------------------------------------
+// The overrides are deliberately non-destructive, which leaves the project depending on asset files spread
+// around the disk (a `.lsdprj` import is the sharpest case: every kit it brought in links back to that one
+// file). These two rows make the cart self-contained by writing out the EFFECTIVE ROM, the exact image
+// construct already hands the core: in place (and the now-redundant overrides leave the .rplg), or to a
+// file of the user's choosing (the project untouched).
+
+// The effective ROM, the overrides that couldn't be applied ("kit 5"), and whether the patcher RECOGNISED the
+// image at all; null when the base can't be read. Reads the base FRESH rather than through assetRomBytes:
+// this feeds a write, so it must not race a cache seeded before someone edited the ROM underneath us.
+//
+// `recognised` is reference identity, and that is exactly what it means: both patchers bail with `return
+// baseBytes` when the image isn't their console's (a swapped-out file, an LSDj build too old to parse), while
+// a recognised one always comes back as a fresh clone from rom.bytes(). That bail happens BEFORE the
+// per-override loop, so it reports no skips - it is silently "applied nothing", which the caller must not
+// mistake for success.
+function bakeRom(
+  spec: AssetMenuSpec,
+  ctx: MenuContext,
+  sys: SystemView,
+): { bytes: Uint8Array; skipped: string[]; recognised: boolean } | null {
+  const base = sys.romPath ? ctx.stores.backend.readFile(sys.romPath) : null;
+  if (!base) return null;
+  const skipped: string[] = [];
+  const bytes = spec.catalog.applyOverrides(base, overridesFor(sys, spec.catalog.assetRole), ctx.stores.backend, (ov) =>
+    skipped.push(`${ov.type} ${ov.slot}`),
+  );
+  return { bytes, skipped, recognised: bytes !== base };
+}
+
+// Overwrite the base ROM with the effective image and drop the (now baked-in) overrides. Returns null on
+// success, else the message the confirm overlay shows in red. This is the one irreversible write here, and
+// clearing the list throws away links the user may still be able to repair, so it is STRICT: it aborts before
+// writing anything unless the whole list genuinely made it into the image.
+function patchRomInPlace(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): string | null {
+  const baked = bakeRom(spec, ctx, sys);
+  if (!baked) return "Could not read the ROM";
+  // Nothing was applied: the ROM on disk isn't one this console's patcher can read. Baking would write the
+  // base back over itself and then drop every override, so refuse instead.
+  if (!baked.recognised) return `Could not patch ${basename(sys.romPath)} - unrecognised ROM image`;
+  if (baked.skipped.length) return `Could not apply ${baked.skipped.join(", ")} - fix or remove first`;
+  if (!ctx.stores.backend.writeFileAtomic(sys.romPath, baked.bytes)) return `Could not write ${basename(sys.romPath)}`;
+  invalidateAssetRom(sys.romPath);
+  // No reloadSystem: the effective ROM is byte-identical to what the core is already running, so a cold boot
+  // would cost the playback position and buy nothing. setRoleConfig re-renders the menu + marks the project
+  // dirty on its own (a feature role is pure TS - see SystemsStore.setRoleConfig).
+  ctx.stores.project.systems.setRoleConfig(sys.id, spec.catalog.assetRole, { overrides: [] });
+  return null;
+}
+
+// Write the effective ROM to a picked file. Best-effort (unlike the in-place bake): what lands is what the
+// core is playing right now - including the case where the patcher recognised nothing and that IS the base
+// ROM. Nothing on disk or in the project is at risk, so it stays silent on failure like every other
+// Export... row.
+function exportPatchedRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): void {
+  const defaultName = `${stem(sys.romPath)}-patched${extension(sys.romPath)}`;
+  browseThen(ctx, { title: "Export Patched ROM", patterns: ROM_PATTERNS, saving: true, defaultName }, (path) => {
+    const baked = bakeRom(spec, ctx, sys);
+    if (baked) ctx.stores.backend.writeFileAtomic(path, baked.bytes);
+  });
+}
+
+// The two bake rows, greyed when there's nothing to bake. Both live at the tracker submenu's root (they're
+// whole-ROM ops, not per-asset-type), below the asset submenus.
+function romPatchRows(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem[] {
+  const none = overridesFor(sys, spec.catalog.assetRole).length === 0;
+  return [
+    sep(`${spec.id}-patch-sep`),
+    {
+      id: `${spec.id}-patch-rom`,
+      label: "Patch ROM in Place",
+      kind: "prompt" as const,
+      keepOpen: true,
+      disabled: none,
+      prompt: {
+        title: `Overwrite ${basename(sys.romPath)} with the patched ROM?`,
+        hint: "Enter to patch  |  Esc to cancel",
+        confirm: true,
+        onConfirm: () => patchRomInPlace(spec, ctx, sys),
+      },
+    },
+    action(`${spec.id}-export-patched-rom`, "Export Patched ROM...", () => exportPatchedRom(spec, ctx, sys), none),
+  ];
+}
+
 // A safe filename fragment (mirrors the CLI's sanitize).
 const sanitizeName = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") || "asset";
 // Per-keystroke filter for the render Filename prompt: block path separators / dodgy chars at entry (a
 // space is allowed and folded to "_" by sanitizeName on confirm).
 const isFilenameChar = (ch: string): boolean => /^[A-Za-z0-9 ._-]$/.test(ch);
+// LSDj song names are 8 chars from its own font: uppercase letters, digits and space. Distinct from
+// sanitizeName above, which builds a FILENAME (lowercase + dots are fine there, not here). The prompt
+// pairs this with casing:"upper", so the field already shows what will be stored.
+const isSongNameChar = (ch: string): boolean => /^[A-Z0-9 ]$/.test(ch);
+const toSongName = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9 ]/g, "").trim().slice(0, 8);
 const readLsdjRom = (be: HostBackend, romPath: string): LsdjRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
   if (!bytes) return null;
@@ -640,18 +875,13 @@ const risaAssetSpec: AssetMenuSpec = { id: "risa", catalog: risaAssetCatalog, ex
 
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
 // Songs are the battery, NOT a ROM override: edits act directly on the live SRAM (like LSDj's own FILE
-// screen). mutateSavBytes reads the live sav, applies a BYTE-LEVEL transform (never the lossy Song model —
-// see lsdjSongOps), writes the resolved .sav, and cold-boots the core from it (loadSram) — durable on disk
-// and reflected in the running LSDj. A no-op if there's no readable SRAM or the op returns null.
-function mutateSavBytes(ctx: MenuContext, sys: SystemView, fn: (sav: Uint8Array) => Uint8Array | null): void {
-  const systems = ctx.stores.project.systems;
-  const bytes = systems.readSram(sys.id);
-  if (!bytes) return;
-  const out = fn(bytes);
-  if (!out) return; // malformed / out of space → leave the system untouched
-  const target = resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath);
-  if (!ctx.stores.backend.writeFileAtomic(target, out)) return;
-  systems.loadSram(sys.id, target);
+// screen) via mutateLiveSav (src/tracker/liveSav) - read the live sav, apply a BYTE-LEVEL transform (never
+// the lossy Song model - see lsdjSongOps), write the resolved .sav, cold-boot the core from it. Durable on
+// disk and reflected in the running LSDj. A no-op if there's no readable SRAM or the op returns null.
+// Returns whether the edit landed, so a caller that CHAINS edits (save the working song, then load another)
+// can stop when the first one declined rather than discarding work the save didn't actually preserve.
+function mutateSavBytes(ctx: MenuContext, sys: SystemView, fn: (sav: Uint8Array) => Uint8Array | null): boolean {
+  return mutateLiveSav(ctx.stores.backend, ctx.stores.project.systems, sys, fn);
 }
 
 // Export the saved song in `slot` to a picked `.lsdsng` file (byte-exact — decompress the slot, re-wrap).
@@ -705,14 +935,14 @@ function importLsdprj(ctx: MenuContext, sys: SystemView, path: string, targetSlo
   systems.loadSram(sys.id, target); // one rebuild: kit overrides → romBytes + boot the imported song
 }
 
-// Add a song: a `.lsdsng`/`.lsdprj` into the first free slot (the same importer drag-and-drop uses), or all
-// songs from a `.sav`.
+// Add a song: a `.lsdsng`/`.lsdprj` into the first free slot (the same importer drag-and-drop uses), or a
+// selection of songs from a `.sav`/`.srm` (the checkbox picker, validated against the cart's console).
 function addSongFromDisk(ctx: MenuContext, sys: SystemView): void {
   const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Add Song", patterns: ["*.lsdsng", "*.lsdprj", "*.sav"] }, (path) => {
-    if (path.toLowerCase().endsWith(".sav")) {
+  browseThen(ctx, { title: "Add Song", patterns: ["*.lsdsng", "*.lsdprj", ...SAV_PATTERNS] }, (path) => {
+    if (isSavPath(path)) {
       const data = be.readFile(path);
-      if (data) mutateSavBytes(ctx, sys, (sav) => importAllSongsFromSav(sav, data));
+      if (data) ctx.beginSongImport(sys, data);
     } else {
       importSongFiles(be, ctx.stores.project.systems, sys, [path]);
     }
@@ -735,6 +965,84 @@ interface SongMenuSpec {
   // song — risa). Export writes the working song to disk; saveToCatalog promotes it to a real saved slot.
   exportWorking?(ctx: MenuContext, sys: SystemView, name: string): void;
   saveWorkingToCatalog?(ctx: MenuContext, sys: SystemView): void;
+  // Commit the live working song into the catalog - the pure byte-op behind "Save Working Song & Load",
+  // which is the only answer to the discard prompt that PRESERVES the work. Null = declined (full catalog
+  // / malformed working song), which the menu surfaces as a disabled row rather than an action that fails.
+  // `name` arrives only when `workingNeedsName` asked for one. Omitted by a console with no such op.
+  commitWorking?(sav: Uint8Array, name?: string): Uint8Array | null;
+  // True when the working song has no name to inherit and the user must supply one. LSDj keeps names on the
+  // stored project rather than in the song, so an UNLINKED working song genuinely has none; risa's working
+  // song carries its own, and a LINKED LSDj song inherits its slot's - both answer false and save outright.
+  workingNeedsName?(sav: Uint8Array): boolean;
+  // Cheap "is there anywhere to put it" test, so the menu can grey the row instead of offering a save that
+  // fails. Deliberately NOT `commitWorking(sav) === null`: that compresses the whole song, and the answer is
+  // needed once per menu build (the guard is identical on every song row). Omitted = assume yes.
+  canCommitWorking?(sav: Uint8Array): boolean;
+}
+
+// The "Load..." row when loading would discard uncommitted work: a submenu whose children are the two real
+// answers, with Esc/Back as cancel. The first child is an inert line naming the casualty, so the warning is
+// visible without having to read the option labels - the same "say what is unsaved" convention the
+// unsaved-changes prompt follows. (A submenu rather than PromptSpec because there are three answers and
+// PromptSpec carries two.)
+function loadGuard(
+  spec: SongMenuSpec,
+  ctx: MenuContext,
+  sys: SystemView,
+  sav: Uint8Array,
+  workingLabel: string,
+  song: { index: number; name: string },
+  doLoad: () => void,
+): MenuItem {
+  const idp = `${spec.id}-song-${song.index}-load`;
+
+  // Commit + load as ONE byte-level mutation, not two chained ones. mutateLiveSav cold-boots the core and
+  // `loadSram` allocates a NEW system id, so a second call against the SystemView captured here would read
+  // a dead id and silently do nothing - discarding the very work the user asked to save. One transform also
+  // makes it atomic: either both land or the sav is untouched. Mirrors addLsdsngToSav's add-then-load.
+  const saveAndLoad = (name?: string): boolean => {
+    const ok = mutateSavBytes(ctx, sys, (bytes) => {
+      const saved = spec.commitWorking?.(bytes, name);
+      return saved ? spec.catalog.load(saved, song.index) : null;
+    });
+    if (ok) ctx.stores.project.recordSong(song.name);
+    return ok;
+  };
+
+  const saveRow = ((): MenuItem => {
+    if (!spec.commitWorking || !(spec.canCommitWorking?.(sav) ?? true)) {
+      // Not offerable: no such op, or the catalog can't take it (full). Say why rather than fail on click.
+      return action(`${idp}-save-unavailable`, "Save Working Song & Load (no free slot)", () => {}, true);
+    }
+    if (!spec.workingNeedsName?.(sav)) {
+      return action(`${idp}-save`, "Save Working Song & Load", () => void saveAndLoad());
+    }
+    return {
+      id: `${idp}-save`,
+      label: "Save Working Song & Load...",
+      kind: "prompt",
+      keepOpen: true,
+      prompt: {
+        title: "Save working song as:",
+        initial: "UNTITLED",
+        hint: "Enter to save + load  |  Esc to cancel",
+        casing: "upper",
+        filter: isSongNameChar,
+        onConfirm: (value) => {
+          const name = toSongName(value);
+          if (!name) return "name required";
+          return saveAndLoad(name) ? null : "couldn't save the working song";
+        },
+      },
+    };
+  })();
+
+  return submenu(idp, "Load...", [
+    action(`${idp}-warn`, `"${workingLabel}" has unsaved changes`, () => {}, true),
+    sep(`${idp}-warn-sep`),
+    saveRow,
+    action(`${idp}-discard`, "Discard & Load", doLoad),
+  ]);
 }
 
 function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem {
@@ -742,12 +1050,47 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
   const bytes = ctx.stores.project.systems.readSram(sys.id);
   const songs = bytes ? cat.list(bytes) : [];
   const last = songs.length - 1;
+  // Would loading ANY song discard uncommitted work? One question per menu build, not per row - it's a
+  // property of the working song, not of the row you're pointing at. Loading the song you're already on
+  // still overwrites working memory from the stored slot, so every row is guarded, including that one.
+  const discards = bytes ? (cat.workingSongDirty?.(bytes) ?? false) : false;
+  const workingLabel = (bytes ? cat.workingName(bytes) : null) || "the working song";
+
   const rows: MenuItem[] = songs.map((s, i) => {
     const name = s.name || `Song ${s.index}`;
+    // Load, then record this song in recents right away - by NAME, since we know which one we just loaded
+    // and needn't wait for the rebuilt core to publish a battery snapshot. The song watcher would catch it
+    // on its next tick anyway (that's what covers a load made from INSIDE the cart), but a menu load is a
+    // deliberate act: its row should be at the top of Recent before the user gets back there.
+    const doLoad = (): void => {
+      mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index));
+      ctx.stores.project.recordSong(s.name);
+    };
     const items: MenuItem[] = [
-      action(`${spec.id}-song-${s.index}-load`, "Load...", () => mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index))),
+      // Clean working song: load outright - a confirm that fires when nothing would be lost is worse than
+      // none, because it trains people to dismiss it. Dirty: a submenu of the two ways forward, where
+      // backing out (Esc) IS the cancel. A submenu rather than a yes/no prompt because there are three
+      // answers and PromptSpec only carries two.
+      discards ? loadGuard(spec, ctx, sys, bytes!, workingLabel, s, doLoad) : action(`${spec.id}-song-${s.index}-load`, "Load...", doLoad),
       action(`${spec.id}-song-${s.index}-export`, "Export...", () => spec.exportSong(ctx, sys, s.index, name)),
-      action(`${spec.id}-song-${s.index}-replace`, "Replace from Disk...", () => spec.replaceSong(ctx, sys, s.index)),
+      // Replace overwrites a SAVED slot - the durable copy, gone with no undo - so it always confirms,
+      // whatever the working song's state. Confirm first, then browse: the picker is the console's own
+      // (it owns the file formats), and a cancel there simply does nothing.
+      {
+        id: `${spec.id}-song-${s.index}-replace`,
+        label: "Replace...",
+        kind: "prompt" as const,
+        keepOpen: true,
+        prompt: {
+          title: `Replace saved song "${name}"?`,
+          hint: "Enter to pick a file  |  Esc to cancel",
+          confirm: true,
+          onConfirm: () => {
+            spec.replaceSong(ctx, sys, s.index);
+            return null;
+          },
+        },
+      },
     ];
     if (cat.reorder) {
       // reorder takes LIST POSITIONS (index into the rendered list), not the row's `index` — they coincide
@@ -773,19 +1116,41 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     return submenu(`${spec.id}-song-${s.index}`, `[${s.index}] ${name}`, items);
   });
   const body = rows.length ? rows : [action(`${spec.id}-song-none`, "(no saved songs)", () => {}, true)];
-  // The live working song, when the catalog reports it UNSAVED (not linked to any listed slot) — surfaced as
-  // a synthetic top row so a cart whose song lives only in working memory isn't invisible. It's not a catalog
-  // index, so it gets its own actions (Save to Catalog / Export), never Load/Delete/reorder.
-  const working = bytes ? cat.workingSong?.(bytes) : null;
+  // The live working song, surfaced as a synthetic top row when (and only when) it holds work no saved slot
+  // has (`discards`, the same content-level question the load guard asks). That covers both a cart whose song
+  // lives only in working memory and the far commoner "loaded a song and edited it" state; a working song
+  // that merely matches a slot gets no row, because it is already listed AS that slot. It's not a catalog
+  // index, so it gets its own actions (save / Export), never Load/Delete/reorder.
+  const working = discards && bytes ? cat.workingSong?.(bytes) : null;
   const workingRows: MenuItem[] = [];
   if (working) {
     const wName = working.name || "Working Song";
     const wItems: MenuItem[] = [];
+    // An UNLINKED working song names no slot, so saving it can only append - and when a saved song already
+    // carries its name, that append is a second "ECOLISOL" next to the first, which is the duplicate this
+    // whole row exists to avoid. Offer those same-named slots as explicit overwrite targets first. Advisory,
+    // never automatic: 8-char names aren't unique and overwriting a saved song has no undo, so the menu lists
+    // the candidates by slot and the user picks. (A LINKED song already knows its slot and skips all this.)
+    if (!working.linked && cat.saveWorkingToSlot) {
+      for (const t of workingSongTargets(cat, bytes!)) {
+        wItems.push(
+          action(`${spec.id}-song-working-save-${t.index}`, `Save Changes to [${t.index}] ${t.name}`, () => {
+            mutateSavBytes(ctx, sys, (sav) => cat.saveWorkingToSlot!(sav, t.index));
+          }),
+        );
+      }
+    }
+    // Name the save by what it does, since the row now shows in both states and the two differ in a way the
+    // user cares about: a LINKED song overwrites the slot it came from, an unlinked one grows the catalog.
     if (spec.saveWorkingToCatalog)
-      wItems.push(action(`${spec.id}-song-working-save`, "Save to Catalog", () => spec.saveWorkingToCatalog!(ctx, sys)));
+      wItems.push(
+        action(`${spec.id}-song-working-save`, working.linked ? "Save Changes" : "Save as New Song", () => spec.saveWorkingToCatalog!(ctx, sys)),
+      );
     if (spec.exportWorking)
       wItems.push(action(`${spec.id}-song-working-export`, "Export...", () => spec.exportWorking!(ctx, sys, wName)));
-    workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName}`, wItems), sep(`${spec.id}-song-working-sep`));
+    // "(unsaved)" is what separates this row from the identically-named slot row below it when the song is
+    // linked - without it the two read as two songs rather than one song and its uncommitted edits.
+    workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName} (unsaved)`, wItems), sep(`${spec.id}-song-working-sep`));
   }
   return submenu(`${spec.id}-songs`, "Songs", [
     ...workingRows,
@@ -826,10 +1191,11 @@ function risaReplaceSong(ctx: MenuContext, sys: SystemView, index: number): void
 }
 function risaAddSong(ctx: MenuContext, sys: SystemView): void {
   const be = ctx.stores.backend;
-  browseThen(ctx, { title: "Add Song", patterns: ["*.risong"] }, (path) => {
+  browseThen(ctx, { title: "Add Song", patterns: ["*.risong", ...SAV_PATTERNS] }, (path) => {
     const data = be.readFile(path);
     if (!data) return;
-    mutateSavBytes(ctx, sys, (sav) => tryOp(() => addSongRecordToSav(sav, data)));
+    if (isSavPath(path)) ctx.beginSongImport(sys, data); // a whole .sav/.srm → the checkbox picker
+    else mutateSavBytes(ctx, sys, (sav) => tryOp(() => addSongRecordToSav(sav, data))); // a single .risong record
   });
 }
 // The synthetic working-song row's actions. Export writes the LIVE working song (banks 0-3, encoded as a
@@ -848,7 +1214,42 @@ function risaSaveWorking(ctx: MenuContext, sys: SystemView): void {
   mutateSavBytes(ctx, sys, (sav) => tryOp(() => saveWorkingToCatalog(sav)));
 }
 
-const lsdjSongSpec: SongMenuSpec = { id: "lsdj", catalog: lsdjSongCatalog, exportSong, replaceSong, addSong: addSongFromDisk };
+// risa's working song carries its own name, so it never needs one asked for - `workingNeedsName` is simply
+// absent (false) and the menu offers a plain "Save Working Song & Load".
+const risaCommitWorking = (sav: Uint8Array): Uint8Array | null => tryOp(() => saveWorkingToCatalog(sav));
+
+// The LSDj working-song row's actions. The row shows only for a LINKED working song (see lsdjSongCatalog),
+// so both of these inherit the active slot's name + version - LSDj keeps those on the stored project rather
+// than in the song, so a detached working song has neither.
+function lsdjExportWorking(ctx: MenuContext, sys: SystemView, name: string): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: "Export working song", patterns: ["*.lsdsng"], saving: true, defaultName: `${sanitizeName(name)}.lsdsng` }, (path) => {
+    const bytes = ctx.stores.project.systems.readSram(sys.id);
+    if (!bytes) return;
+    const slot = lsdjActiveSlot(bytes);
+    if (slot < 0) return;
+    // The LIVE working song (the first 0x8000), not the stored slot - exporting the edits is the point.
+    be.writeFileAtomic(path, encodeLsdsngRaw(savSongName(bytes, slot) || name, savSongVersion(bytes, slot), bytes.slice(0, 0x8000)));
+  });
+}
+function lsdjSaveWorking(ctx: MenuContext, sys: SystemView): void {
+  // No name argument: the row is linked-only, so saveWorkingToCatalog overwrites its slot and keeps its name.
+  mutateSavBytes(ctx, sys, (sav) => lsdjSaveWorkingToCatalog(sav));
+}
+
+const lsdjSongSpec: SongMenuSpec = {
+  id: "lsdj",
+  catalog: lsdjSongCatalog,
+  exportSong,
+  replaceSong,
+  addSong: addSongFromDisk,
+  exportWorking: lsdjExportWorking,
+  saveWorkingToCatalog: lsdjSaveWorking,
+  commitWorking: lsdjSaveWorkingToCatalog,
+  // Only an UNLINKED LSDj working song needs a name: a linked one inherits its slot's.
+  workingNeedsName: (sav) => lsdjActiveSlot(sav) < 0,
+  canCommitWorking: canSaveWorkingToCatalog,
+};
 const risaSongSpec: SongMenuSpec = {
   id: "risa",
   catalog: risaSongCatalog,
@@ -857,6 +1258,8 @@ const risaSongSpec: SongMenuSpec = {
   addSong: risaAddSong,
   exportWorking: risaExportWorking,
   saveWorkingToCatalog: risaSaveWorking,
+  commitWorking: risaCommitWorking,
+  canCommitWorking: canRisaSaveWorking,
 };
 
 // The per-console UI bindings for a tracker integration: the file-dialog specs (Songs + assets, which own
@@ -873,10 +1276,16 @@ const TRACKER_UI: Record<string, TrackerUi> = {
   risa: { song: risaSongSpec, asset: risaAssetSpec },
 };
 
-// One tracker's instance-submenu children: its extras (if any), the shared Songs menu, then its asset menus.
+// One tracker's instance-submenu children: its extras (if any), the shared Songs menu, its asset menus, then
+// the whole-ROM bake rows.
 function trackerChildren(t: TrackerIntegration, ctx: MenuContext, sys: SystemView): MenuItem[] {
   const ui = TRACKER_UI[t.id];
-  return [...(ui.extras ? ui.extras(ctx, sys) : []), songMenu(ui.song, ctx, sys), ...assetMenu(ui.asset, ctx, sys)];
+  return [
+    ...(ui.extras ? ui.extras(ctx, sys) : []),
+    songMenu(ui.song, ctx, sys),
+    ...assetMenu(ui.asset, ctx, sys),
+    ...romPatchRows(ui.asset, ctx, sys),
+  ];
 }
 
 // LSDj's sync cyclers (Mode / Tempo Divisor / Auto Start) + a separator — the one per-console tracker extra
@@ -923,6 +1332,28 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
     ));
   }
   items.push(sep("proj-sep0"));
+  // The project's own name - blank until the user types one here, and only then persisted in the .rplg.
+  // Blank shows what the recents entry / titles fall back to: the name derived from the systems (the primary
+  // cart's sav/rom stem). Clearing the field restores that fallback.
+  if (ctx.systems.length > 0) {
+    const own = project.name();
+    const derived = project.displayName(); // == own when set; "" for an embedded cart (nothing to derive from)
+    items.push({
+      id: "proj-name",
+      label: `Name: ${own || (derived ? `${derived} (auto)` : "(None)")}`,
+      kind: "prompt",
+      keepOpen: true,
+      prompt: {
+        title: "Project name:",
+        hint: "Enter to set  |  empty to use the instance name  |  Esc to cancel",
+        initial: own,
+        onConfirm: (v: string) => {
+          project.setName(v);
+          return null;
+        },
+      },
+    });
+  }
   items.push(
     cycler("proj-layout", "Layout", LAYOUT_NAMES, Math.max(0, LAYOUT_VALUES.indexOf(ctx.settings.layout)), (n) => project.setLayout(LAYOUT_VALUES[n])),
     { id: "proj-zoom", label: `Zoom: ${ctx.settings.zoom === 0 ? "Default" : `${ctx.settings.zoom}x`}`, kind: "cycler", keepOpen: true, onSelect: () => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, 1)), onCycle: (dir) => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, dir)) },
@@ -970,6 +1401,11 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
 
   const actionsKey: "keyboardActions" | "gamepadActions" = channel === "keyboard" ? "keyboardActions" : "gamepadActions";
   const actMap = ctx.bindings[actionsKey]; // resolved active app-action map
+
+  // The bound-names half of a row label ("-" when unbound). Gamepad names are the raw SDL names and show
+  // as-is; keyboard names get their display form, so a space reads "Space" rather than an invisible glyph.
+  const shown = (names: string[] | undefined) =>
+    names?.length ? (channel === "keyboard" ? names.map(keyDisplayName) : names).join(", ") : "-";
 
   const withChannel = (m: BindingMap, chan: Record<string, string[]>): BindingMap =>
     channel === "keyboard" ? { ...m, keyboard: chan } : { ...m, gamepad: chan };
@@ -1019,7 +1455,7 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
 
   const captureRows: MenuItem[] = GB_BUTTONS.map((btn) => ({
     id: `${idp}-${btn}`,
-    label: `${btn}: ${chMap[btn]?.length ? chMap[btn].join(", ") : "-"}`,
+    label: `${btn}: ${shown(chMap[btn])}`,
     kind: "capture" as const,
     keepOpen: true,
     capture: {
@@ -1033,7 +1469,7 @@ function bindingsChildren(ctx: MenuContext, channel: BindingsChannel): MenuItem[
   // row, written into the actions section. The "<label>: " head is kept so Menu's "Press a key/button…" swap works.
   const actionRows: MenuItem[] = APP_ACTION_ROWS.map((a) => ({
     id: `${idp}-act-${a.id}`,
-    label: `${a.label}: ${actMap[a.id]?.length ? actMap[a.id].join(", ") : "-"}`,
+    label: `${a.label}: ${shown(actMap[a.id])}`,
     kind: "capture" as const,
     keepOpen: true,
     capture: {
@@ -1081,37 +1517,40 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     renderDirItem,
     submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
     submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
+    // The host's OS file dialog (default) vs the in-app browser. On a host with no OS dialog it stays in-app.
+    cycler("set-native-dialogs", "File Dialogs", ["In-App", "OS Native"], ctx.userConfig.useNativeFileDialogs ? 1 : 0, (n) => userConfig.setUseNativeFileDialogs(n === 1)),
+    // Audio device (sample rate / block size) — standalone only, where the SDL host exposes the seam.
+    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
+    // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
+    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }
 
 function recentChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.recent.length === 0) return [action("recent-none", "(No Recent Files)", () => {})];
-  return ctx.recent.map((entry, i) =>
-    // Annotate with the working-song name when known (a tracker cart's loaded song): "project — SONG".
-    submenu(`recent-${i}`, entry.song ? `${entry.label} — ${entry.song}` : entry.label, [
-      action(`recent-${i}-load`, entry.missing ? "Load (missing)" : "Load", () => ctx.loadProject(entry.path)),
-      action(`recent-${i}-locate`, "Locate on Disk", () =>
-        browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p)),
-      ),
-      {
-        id: `recent-${i}-rename`,
-        label: "Rename...",
-        kind: "prompt",
-        keepOpen: true,
-        prompt: {
-          title: `Rename "${entry.label}" to:`,
-          initial: entry.label,
-          onConfirm: (v: string) => {
-            const name = v.trim();
-            if (!name) return "Name cannot be empty.";
-            return ctx.stores.project.renameProject(entry.path, name) ? null : "Rename failed.";
-          },
-        },
-      },
-      action(`recent-${i}-remove`, "Remove from List", () => ctx.stores.recent.remove(entry.path)),
-    ]),
-  );
+  return ctx.recent.map((entry, i) => {
+    // A single action row (no nested submenu): Enter loads the project WITH this row's song - or Locates it
+    // when its file is gone; Del (onDelete) drops just this row, a hotkey the Menu drives off that field. A
+    // project holds one row per song it has had loaded, so picking a row is "reopen that song". Label leads
+    // with the song, then the project half: "SONG - project", ASCII " - " (the LVGL font has no emdash
+    // glyph), matching the tracker window-title order. That half is whatever ProjectStore.recentName
+    // resolved when the entry was recorded - the name the user gave the project, else its cart's
+    // "<sav.ext> [<rom>]" identity, so a nameless entry reads "SONG - mysongs.sav [LSDj-v5.3.0]". A missing
+    // entry is drawn yellow (warn) with a trailing " [!]".
+    const base = entry.song ? `${entry.song} - ${entry.label}` : entry.label;
+    const row: MenuItem = {
+      id: `recent-${i}`,
+      label: entry.missing ? `${base} [!]` : base,
+      kind: "action",
+      warn: entry.missing,
+      onSelect: entry.missing
+        ? () => browseThen(ctx, { title: "Locate Project", patterns: LOAD_PATTERNS }, (p) => ctx.stores.recent.relink(entry.path, p))
+        : () => ctx.loadProject(entry.path, entry.song),
+      onDelete: () => ctx.stores.recent.remove(entry.path, entry.song),
+    };
+    return row;
+  });
 }
 
 // --- top-level builders -------------------------------------------------------------------------------
@@ -1159,7 +1598,7 @@ function instanceTitle(ctx: MenuContext, sys: SystemView): string {
   const base = ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug";
   const cart = trackerCartLabel(ctx.stores.backend, sys);
   if (cart) return `${base} - ${cart}`;
-  const project = ctx.stores.project.name();
+  const project = ctx.stores.project.displayName(); // the user's name, else the one derived from the systems
   const rom = sys.embedded ? "mGB" : stem(sys.romPath);
   const segs = [base];
   if (project) segs.push(project);
@@ -1219,6 +1658,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
+      ...(isStandalone() ? [sep("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };
@@ -1234,6 +1674,7 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),
+      ...(isStandalone() ? [sep("start-sep-exit"), action("start-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
   };

@@ -7,12 +7,27 @@
 
 import type { RoleRegistry } from "./systemRoles";
 import { z, clampedInt, clampedNumber, boolField, enumField } from "./configSchema";
-import { MODEL_VALUES, HIGHPASS_VALUES, REGION_VALUES, CHANNEL_EXPORT_VALUES } from "./settingsEnums";
+import {
+  MODEL_VALUES,
+  HIGHPASS_VALUES,
+  REGION_VALUES,
+  CHANNEL_EXPORT_VALUES,
+  COLOR_CORRECTION_VALUES,
+  DMG_PALETTE_VALUES,
+} from "./settingsEnums";
 
 /** Register the built-in core-config system roles into `registry`. */
 export function registerCoreRoles(registry: RoleRegistry): void {
-  // SameBoy: model / highpass / link group / fast boot. model + highpass are string enums; the native
-  // reflect-cpp SameBoyRoleConfig takes their integer ordinals (converted at the boundary, settingsEnums).
+  // SameBoy: model / highpass / link group / fast boot, plus the display knobs below. model, highpass,
+  // colorCorrection and dmgPalette are string enums; the native reflect-cpp SameBoyRoleConfig takes
+  // their integer ordinals (converted at the boundary, settingsEnums).
+  //
+  // The display group is additive and every default reproduces what the core did when these were
+  // hardcoded (SameBoySystem.cpp), so an existing project loads pixel-identical and needs no migration.
+  // Which one bites is decided by the model, and the split is exact rather than a guess: the core
+  // applies colour correction and light temperature only when GB_is_cgb (model >= GB_MODEL_CGB_0) and
+  // the DMG palette only when it isn't. `auto` is not ambiguous here - RetroPlug maps it to CGB-C
+  // (toSameBoyModel), so it counts as CGB. The menu gates the palette row on that (menuDefs.ts).
   registry.registerRole({
     kind: "sameboy",
     category: "system",
@@ -21,6 +36,11 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       highpass: enumField(HIGHPASS_VALUES, "accurate"),
       linkGroupId: clampedInt(0, 255, 0),
       fastBoot: boolField(true),
+      // --- display ---
+      colorCorrection: enumField(COLOR_CORRECTION_VALUES, "disabled"),
+      dmgPalette: enumField(DMG_PALETTE_VALUES, "grey"),
+      // Ambient light tint, CGB only. SameBoy's own range: -1 (cool/blue) .. +1 (warm/red), 0 neutral.
+      lightTemperature: clampedNumber(-1, 1, 0),
     }),
   });
 

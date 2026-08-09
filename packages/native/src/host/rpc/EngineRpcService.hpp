@@ -69,6 +69,7 @@ public:
     // system is built — rejected (false) once a system exists, since there's no resample-on-change today.
     bool            setSampleRate(double sr);
     bool            setTransport(bool running);
+    bool            setPpq(double ppq);
     bool            setBpm(double bpm);
     bool            setAudioRouting(std::uint32_t mode);
     bool            stageMidiIn(std::vector<std::uint8_t> bytes);

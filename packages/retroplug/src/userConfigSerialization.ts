@@ -7,6 +7,7 @@
 // snapshot on parse error").
 
 import { userConfigSchema, type UserConfig } from "./userConfig";
+import { stringifyConfig } from "./configSchema";
 import { migrateRaw, readNumericVersion, type MigrationMap, type RawObject } from "./migrate";
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file stamped
@@ -45,14 +46,17 @@ export function parseUserConfig(json: string): UserConfig | null {
   return userConfigSchema.parse(migrated) as UserConfig;
 }
 
-/** Serialize config.json text, stamping the current schema version (native field order). */
+/** Serialize config.json text, stamping the current schema version. Every schema field must appear here:
+ *  commit() diffs two serializations to detect a real change, so a field omitted below can never be
+ *  toggled or persisted (it round-trips through parse's default forever). */
 export function serializeUserConfig(cfg: UserConfig): string {
-  return JSON.stringify({
+  return stringifyConfig({
     schemaVersion: USER_CONFIG_SCHEMA,
     activeKeyboardBindings: cfg.activeKeyboardBindings,
     activeGamepadBindings: cfg.activeGamepadBindings,
     defaultZoom: cfg.defaultZoom,
     sramAutoSave: cfg.sramAutoSave,
+    useNativeFileDialogs: cfg.useNativeFileDialogs,
     render: cfg.render,
   });
 }

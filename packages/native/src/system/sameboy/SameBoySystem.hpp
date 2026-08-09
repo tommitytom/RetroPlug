@@ -115,6 +115,12 @@ public:
     // `onActivate` and from the SetHighpass command handler.
     void applyHighpassMode();
 
+    // Push the whole `config_` display group (colour correction, DMG palette, light temperature,
+    // background/object rendering) into the core. Safe to call at runtime — every one lands on the
+    // next rendered frame, so no restart. Called from `onActivate` and from the display config
+    // handlers in Engine::applyConfigField.
+    void applyDisplayConfig();
+
     // SystemBase virtuals — see base class for contracts.
     const std::string&        romPath() const override          { return config_.romPath; }
     std::uint32_t             savSuffix() const override         { return config_.savSuffix; }

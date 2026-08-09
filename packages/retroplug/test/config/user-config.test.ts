@@ -108,6 +108,24 @@ test("setSramAutoSave: accepts a known mode, rejects an unknown one", () => {
   expect(store.sramAutoSave()).toBe("Off");
 });
 
+test("setUseNativeFileDialogs: toggles both ways, persists, and notifies (regression: was omitted from serialize)", () => {
+  const { be, store, changed } = newStore();
+  expect(store.config().useNativeFileDialogs).toBe(true); // default: the host's OS dialog
+  // The bug: serialize dropped this field, so commit() saw the change as a no-op and it never flipped.
+  expect(store.setUseNativeFileDialogs(false)).toBeTruthy(); // a real change, not a no-op
+  expect(store.config().useNativeFileDialogs).toBe(false);
+  expect(changed()).toBe(1);
+  expect(parseUserConfig(be.readText(CONFIG)!)!.useNativeFileDialogs).toBe(false); // persisted + round-trips
+  expect(store.setUseNativeFileDialogs(true)).toBeTruthy(); // and back
+  expect(store.config().useNativeFileDialogs).toBe(true);
+  expect(changed()).toBe(2);
+});
+
+test("serialize includes useNativeFileDialogs (a non-default value survives a round-trip)", () => {
+  const cfg = { ...DEFAULT_USER_CONFIG, useNativeFileDialogs: false };
+  expect(parseUserConfig(serializeUserConfig(cfg))).toEqual(cfg);
+});
+
 test("setActive*: persist the active profile names", () => {
   const { be, store } = newStore();
   expect(store.setActiveKeyboardBindings("wasd")).toBeTruthy();

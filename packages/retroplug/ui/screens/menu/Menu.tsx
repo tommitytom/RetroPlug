@@ -31,6 +31,7 @@ import {
   KEY_ENTER,
   KEY_PAGE_UP,
   KEY_PAGE_DOWN,
+  KEY_DELETE,
   type MenuNav,
 } from "../../../src/keyCodes";
 import { setMenuModalActive } from "./menuModal";
@@ -41,6 +42,7 @@ const MOD_SHIFT = 1 << 0; // DPF modifier mask bit for Shift (mirrors Base.hpp k
 
 const CAPTURE_COLOR = "#ffb74d"; // orange, matching the legacy capture-armed row
 const DISABLED_COLOR = "#666666"; // greyed text for an inert (unavailable-for-this-cart) row
+const WARN_COLOR = "#ffd54f"; // yellow — a warning row (a recent entry whose file is missing)
 const GAMEPAD_CAPTURE_AXIS = 0.6; // a stick must pass this (past the play threshold) to bind as an axis token
 // Mouse-hover bar: a dimmer navy than the focus bar (#14243f), so the row under the pointer reads as
 // highlighted but subordinate to the keyboard-selected row. A pre-dimmed colour at full opacity (a
@@ -270,6 +272,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     //    capture/prompt row; Backspace clears a focused capture row.
     const focused = itemById(focusedIdRef.current);
     if (!focused) return;
+    // Per-row hotkey (a recent entry opts in): Del invokes its delete.
+    if (code === KEY_DELETE && focused.onDelete) return focused.onDelete();
     if (code === KEY_PAGE_UP) return focused.onCoarseStep?.(1);
     if (code === KEY_PAGE_DOWN) return focused.onCoarseStep?.(-1);
     if (focused.kind === "capture") {
@@ -453,7 +457,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
               }}
               style={{
                 width: "100%",
-                "text-color": item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : isFocused ? "#4fc3f7" : "#ffffff",
+                "text-color": item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : item.warn ? WARN_COLOR : isFocused ? "#4fc3f7" : "#ffffff",
                 "background-color": "#14243f", // full-width highlight bar on the focused row
                 "background-opacity": isFocused ? 255 : 0,
                 "font-size": itemFont,

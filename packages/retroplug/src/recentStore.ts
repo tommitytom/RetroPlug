@@ -1,20 +1,21 @@
 // RecentStore: the recent-projects list as the app uses it. Ties the pure list
-// logic + serialization to the Backend — canonicalizes incoming paths (the
-// dedupe key), computes each entry's `missing` flag from the live filesystem,
-// persists to <configDir>/recent.json atomically, and fires onChange so the UI
-// can re-render. All mutations are no-ops (no write, no notify) when they don't
-// actually change the list.
+// logic + serialization to the Backend - canonicalizes incoming paths (half the
+// dedupe key, the song being the other half), computes each entry's `missing` flag
+// from the live filesystem, persists to <configDir>/recent.json atomically, and fires
+// onChange so the UI can re-render. All mutations are no-ops (no write, no notify)
+// when they don't actually change the list - which is what lets the song watcher call
+// `add` on a timer.
 
 import type { HostBackend } from "./backend";
-import { addEntry, removeEntry, renameEntry, relinkEntry, label, type RecentEntry } from "./recentList";
+import { addEntry, removeEntry, relinkEntry, entryKey, label, type RecentEntry } from "./recentList";
 import { parseRecent, serializeRecent } from "./recentSerialization";
 
 const RECENT_FILE = "recent.json";
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
-/** A recent entry as the UI sees it: canonical path, alias, whether the file
- *  still exists, and the resolved display label. */
+/** A recent entry as the UI sees it: canonical path, recorded name, whether the
+ *  file still exists, and the resolved display label. */
 export interface RecentView {
   path: string;
   name: string;
@@ -47,38 +48,35 @@ export class RecentStore {
     }));
   }
 
-  /** Track `path` at the front. `name` sets an alias (empty keeps any existing one); `song` sets the
-   *  working-song label (undefined keeps any existing one). Returns whether the list changed. */
+  /** Track the (`path`, `song`) row at the front - one row per song a project has had loaded. `name` is
+   *  the project's display name (empty keeps that row's existing one). Returns whether the list changed
+   *  (false when that row was already at the front unchanged - no write, no notify). */
   add(path: string, name = "", song?: string): boolean {
     if (!path) return false;
     return this.commit(addEntry(this.entries, this.canon(path), name, song));
   }
 
-  /** Drop `path`. Returns false when it wasn't present. */
-  remove(path: string): boolean {
+  /** Drop the (`path`, `song`) row, leaving that project's other songs. Returns false when absent. */
+  remove(path: string, song?: string): boolean {
     const p = this.canon(path);
-    if (!this.has(p)) return false;
-    return this.commit(removeEntry(this.entries, p));
+    if (!this.hasKey(entryKey(p, song))) return false;
+    return this.commit(removeEntry(this.entries, p, song));
   }
 
-  /** Set `path`'s alias (empty clears). Returns false when it wasn't present. */
-  rename(path: string, name: string): boolean {
-    const p = this.canon(path);
-    if (!this.has(p)) return false;
-    this.commit(renameEntry(this.entries, p, name));
-    return true;
-  }
-
-  /** Repoint a moved project from `oldPath` to `newPath`. Returns false when
+  /** Repoint a moved project from `oldPath` to `newPath` - every row of that project. Returns false when
    *  `oldPath` wasn't present. */
   relink(oldPath: string, newPath: string): boolean {
     const op = this.canon(oldPath);
-    if (!this.has(op)) return false;
+    if (!this.hasPath(op)) return false;
     this.commit(relinkEntry(this.entries, op, this.canon(newPath)));
     return true;
   }
 
-  private has(canonPath: string): boolean {
+  private hasKey(key: string): boolean {
+    return this.entries.some((e) => entryKey(e.path, e.song) === key);
+  }
+
+  private hasPath(canonPath: string): boolean {
     return this.entries.some((e) => e.path === canonPath);
   }
 

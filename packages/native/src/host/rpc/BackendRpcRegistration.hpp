@@ -71,6 +71,7 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::sampleRate>(e);
     s.template addMethod<&EngineRpcService::setSampleRate>(e);
     s.template addMethod<&EngineRpcService::setTransport>(e);
+    s.template addMethod<&EngineRpcService::setPpq>(e);
     s.template addMethod<&EngineRpcService::setBpm>(e);
     s.template addMethod<&EngineRpcService::stageMidiIn>(e);
     s.template addMethod<&EngineRpcService::drainMidiOut>(e);

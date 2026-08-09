@@ -58,6 +58,7 @@ export interface UserConfig {
   defaultZoom: number; // 1..6; a fresh project with zoom == 0 inherits this
   sramAutoSave: SramAutoSave;
   render: RenderSettings; // System > Render menu selections
+  useNativeFileDialogs: boolean; // true = the host's OS file dialog (default); false = the in-app browser
 }
 
 /** Validates + defaults + clamps a (possibly partial/stale) config.json object. Strict:
@@ -69,6 +70,10 @@ export const userConfigSchema = z.object({
   defaultZoom: clampedInt(1, 6, 3),
   sramAutoSave: z.enum(SRAM_AUTO_SAVES).catch("OnProjectSave").default("OnProjectSave"),
   render: renderSchema,
+  // Defaults ON: the OS picker is what people expect of a desktop app, and a host that provides none leaves
+  // the hook unbound so this transparently falls back to the in-app browser (NativeFileDialog::available()).
+  // A config.json predating the field therefore adopts the OS dialog; one written since carries its own value.
+  useNativeFileDialogs: z.boolean().catch(true).default(true), // additive → no migration
 });
 
 export const DEFAULT_USER_CONFIG: UserConfig = userConfigSchema.parse({}) as UserConfig;

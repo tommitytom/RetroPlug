@@ -45,15 +45,16 @@ download the latest version.
   the `System` menu.
 - **For LSDj**, an additional `LSDj` menu appears once an LSDj cart is detected,
   letting you set the sync mode (see [LSDj Integration](#lsdj-integration)).
-
-Each instance's `System` menu also lets you reset, swap the ROM while keeping the
-running SRAM, and load/save SRAM and save states. Game Boy systems expose the
-SameBoy model, high-pass filter and fast-boot; NES systems expose region and the
-sprite-limit override.
+- **Name your project** under `Project` > `Name` - it's what the window title and the
+  `Recent` list show. Leave it empty (the default) and the name follows the loaded
+  instance instead: its sav and ROM.
+- **Nothing is lost silently.** Quitting, or starting / loading another project, with
+  unsaved work asks first and lists what is unsaved: the project file, and any cart
+  whose battery differs from its `.sav` (naming the file it would write).
 
 ## Multiple Instances
 You can load several systems in a single window and work with them side by side -
-handy for running multiple copies of LSDj, or a mix of Game Boy and NES. From an
+handy for running multiple copies of LSDj (linked with virtual link cables), or a mix of Game Boy and NES (currently not linkable). From an
 instance's menu:
 
 - **Add Instance** - load another ROM into a new instance.
@@ -131,9 +132,6 @@ The `Settings` menu covers:
   menu - no config files to hand-edit.
 - **Open Settings Folder** - opens the folder holding your configuration.
 
-Recent projects are available under the `Recent` menu, where you can re-load, relocate
-a moved project, rename it, or remove it from the list.
-
 ## Command Line
 The build also produces `retroplug-cli` (in `build/bin/`), a self-contained
 command-line tool for rendering ROMs to audio without opening a DAW or the UI. It runs
@@ -152,7 +150,7 @@ song begins playing (pass `--no-start` to capture raw boot audio); mGB needs no 
 press, as it plays from incoming MIDI. A sibling `<rom>.sav` is loaded automatically
 if present. Highlights:
 
-- **Automatic length** - with a loaded LSDj `.sav` the song length is detected and the
+- **Automatic length** - with a loaded LSDj `.sav` the song length is detected if you have an `HFF` command at the end, and the
   render trimmed to it, or pin a fixed length with `--duration 3s` (`ms` / `s` / `m`).
 - **Per-channel stems** - `--split channels` writes one WAV per sound channel (Game
   Boy: 4 stereo stems; NES: 5 mono core channels), and `--split pins` writes the NES

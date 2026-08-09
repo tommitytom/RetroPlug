@@ -17,7 +17,7 @@ import {
   makeEmptySave,
   CURRENT_LAYOUT,
 } from "../../src/risaSav";
-import { songRecordBytes, deleteSongInSav, moveSongInSav, replaceSongRecordInSav, addSongRecordToSav, loadSongToWorkingInSav } from "../../src/risaSongOps";
+import { songRecordBytes, deleteSongInSav, moveSongInSav, replaceSongRecordInSav, addSongRecordToSav, loadSongToWorkingInSav, importSongsFromSav, workingSongSlot, saveWorkingToCatalog, workingSongRecord } from "../../src/risaSongOps";
 import { sameBytes } from "../_bytes";
 
 const battery = (key: "v2_blumarbl" | "multi_legacy" | "legacy_4xtreme") => normalizeSaveContainer(savBytes(key)).save;
@@ -118,6 +118,66 @@ test("addSongRecordToSav's blank-catalog init preserves a live working song (ban
   parseCatalog(after, CURRENT_LAYOUT);
 });
 
+// --- importSongsFromSav (the Songs "Add from .sav" subset importer): append-only, never clobber ---------
+
+test("import appends only the SELECTED source records + keeps every existing record byte-identical", () => {
+  const target = v2Multi(); // 5 songs
+  const before = [0, 1, 2, 3, 4].map((i) => recAt(target, i));
+  const src = battery("multi_legacy"); // a LEGACY (v1) source → the cross-version import path
+  const after = importSongsFromSav(target, src, [0, 2]); // HOU8 + DBZ
+  expect(listSongs(after).map((s) => s.name)).toEqual(["HOU8", "HOU", "DBZ", "DBZ2-F", "FUNK0", "HOU8", "DBZ"]);
+  for (let i = 0; i < 5; i++) expect(sameBytes(recAt(after, i), before[i])).toBe(true); // existing 5 untouched
+  expect(sameBytes(recAt(after, 5), songRecordBytes(src, 0)!)).toBe(true); // appended == the source record
+  expect(sameBytes(recAt(after, 6), songRecordBytes(src, 2)!)).toBe(true);
+  expect(chooseCatalogLayout(after)).toEqual(CURRENT_LAYOUT); // target stays v2 despite the v1 source
+  parseCatalog(after, CURRENT_LAYOUT); // used/count in sync
+});
+
+test("import leaves the live working song (banks 0-3) byte-identical", () => {
+  const target = v2Multi();
+  target.set(expandRecordToWorking(blumarblRecord()), 0); // a live working song
+  const working = target.slice(0, 0x8000);
+  const after = importSongsFromSav(target, battery("multi_legacy"), [0, 1, 2]);
+  expect(sameBytes(after.slice(0, 0x8000), working)).toBe(true); // banks 0-3 untouched by the import
+  parseCatalog(after, CURRENT_LAYOUT);
+});
+
+test("import mutates neither the source nor the target buffer", () => {
+  const target = v2Multi();
+  const tBefore = target.slice();
+  const src = battery("multi_legacy");
+  const sBefore = src.slice();
+  importSongsFromSav(target, src, [0, 1]);
+  expect(sameBytes(target, tBefore)).toBe(true); // the target we passed is untouched (a fresh image is returned)
+  expect(sameBytes(src, sBefore)).toBe(true); // the source is read-only
+});
+
+test("import skips out-of-range source indices without error", () => {
+  const after = importSongsFromSav(v2Multi(), battery("multi_legacy"), [0, 99, 2]); // 99 out of range
+  expect(listSongs(after).map((s) => s.name)).toEqual(["HOU8", "HOU", "DBZ", "DBZ2-F", "FUNK0", "HOU8", "DBZ"]);
+  parseCatalog(after, CURRENT_LAYOUT);
+});
+
+test("import into a FULL catalog is a safe best-effort no-op: no throw, existing records byte-identical", () => {
+  // Fill a v2 catalog until the next append won't fit (the exact overflow the reviewer flagged: it used to
+  // THROW mid-batch and discard everything, wiping songs that already fit).
+  let full = v2Multi();
+  const rec = blumarblRecord();
+  try {
+    for (let i = 0; i < 512; i++) full = addSongRecordToSav(full, rec); // stops when writeRecord throws
+  } catch {
+    /* full — `full` holds the last image that fit */
+  }
+  const before = listSongs(full);
+  const beforeBytes = before.map((_, i) => recAt(full, i));
+  // A multi-song import into the full catalog: best-effort fill must not throw and must not touch a byte
+  // of any existing record.
+  const after = importSongsFromSav(full, battery("multi_legacy"), [0, 1, 2, 3, 4]);
+  expect(listSongs(after).length >= before.length).toBe(true); // never LOSES songs
+  for (let i = 0; i < before.length; i++) expect(sameBytes(recAt(after, i), beforeBytes[i])).toBe(true); // existing intact
+  parseCatalog(after, CURRENT_LAYOUT); // still a valid catalog
+});
+
 // --- a long SEQUENTIAL chain: no cumulative drift, working song never clobbered -------------------------
 
 test("a long chain of v2 catalog edits keeps the catalog parseable + the working song byte-identical", () => {
@@ -191,4 +251,95 @@ test("empty and single-song catalogs handle delete/move/load safely", () => {
   const gone = deleteSongInSav(one, 0); // delete the last remaining record
   expect(listSongs(gone).length).toBe(0);
   parseCatalog(gone, CURRENT_LAYOUT); // count/used zeroed consistently
+});
+
+// --- the working song's catalog link survives a positional edit ---------------------------------------
+// risa's catalog is positional: delete compacts and move re-packs, so indices above the edit shift. The
+// working song's 'current entry' byte is one of those indices. If it isn't re-pointed it comes to name a
+// DIFFERENT song, and saveWorkingToCatalog then overwrites that unrelated song in place - silent data loss
+// reachable by ordinary menu use (save -> add -> delete an earlier song -> save again).
+
+const CUR = 0x2000 + 0x1e94;
+
+function v2WithSongs(): Uint8Array {
+  // Three distinct records so a shift is observable by NAME.
+  let sav = normalizeSaveContainer(savBytes("v2_blumarbl")).save;
+  const rec = songRecordBytes(sav, 0)!;
+  sav = addSongRecordToSav(sav, rec);
+  sav = addSongRecordToSav(sav, rec);
+  return sav;
+}
+
+test("deleting an EARLIER song re-points the working song's link (it must not slide onto a neighbour)", () => {
+  const sav = v2WithSongs();
+  sav[CUR] = 2; // the working song is the one saved in slot 2
+  const target = songRecordBytes(sav, 2)!;
+
+  const after = deleteSongInSav(sav, 0); // everything above 0 shifts down one
+
+  expect(workingSongSlot(after)).toBe(1); // 2 -> 1, still the SAME song
+  expect([...songRecordBytes(after, workingSongSlot(after))!]).toEqual([...target]);
+});
+
+test("deleting the linked song itself unlinks the working song rather than aiming it elsewhere", () => {
+  const sav = v2WithSongs();
+  sav[CUR] = 1;
+  const after = deleteSongInSav(sav, 1);
+  expect(workingSongSlot(after)).toBe(-1); // unlinked, exactly like LSDj clears activeProjectIndex
+});
+
+test("deleting a LATER song leaves the link alone", () => {
+  const sav = v2WithSongs();
+  sav[CUR] = 0;
+  expect(workingSongSlot(deleteSongInSav(sav, 2))).toBe(0);
+});
+
+test("reordering follows the working song's link through the move", () => {
+  const sav = v2WithSongs();
+
+  // The moved record itself.
+  const a = sav.slice(); a[CUR] = 0;
+  expect(workingSongSlot(moveSongInSav(a, 0, 2))).toBe(2);
+
+  // Moved from below to above it: it shifts up one.
+  const b = sav.slice(); b[CUR] = 2;
+  expect(workingSongSlot(moveSongInSav(b, 0, 2))).toBe(1);
+
+  // Moved from above to below it: it shifts down one.
+  const c = sav.slice(); c[CUR] = 0;
+  expect(workingSongSlot(moveSongInSav(c, 2, 0))).toBe(1);
+
+  // Outside the disturbed span: untouched.
+  const d = sav.slice(); d[CUR] = 2;
+  expect(workingSongSlot(moveSongInSav(d, 0, 1))).toBe(2);
+});
+
+test("an UNLINKED working song stays unlinked through delete and move", () => {
+  const sav = v2WithSongs();
+  sav[CUR] = 0xff;
+  expect(workingSongSlot(deleteSongInSav(sav, 0))).toBe(-1);
+  expect(workingSongSlot(moveSongInSav(sav, 0, 2))).toBe(-1);
+});
+
+test("save-then-delete-then-save does NOT overwrite an unrelated song (the regression this guards)", () => {
+  // The stale index must stay IN RANGE for this to bite - an out-of-range one harmlessly falls through to
+  // the append path. Three songs, working linked to 1, delete 0: count drops to 2 and a stale 1 is still
+  // < 2, so the in-place branch would fire on whatever slid into index 1.
+  const sav = v2WithSongs();
+  sav[CUR] = 1;
+  const linkedSong = songRecordBytes(sav, 1)!;
+  const bystander = songRecordBytes(sav, 2)!; // this is what shifts into index 1
+
+  const afterDelete = deleteSongInSav(sav, 0);
+  expect([...songRecordBytes(afterDelete, 1)!]).toEqual([...bystander]); // it really did slide into 1
+  expect(workingSongSlot(afterDelete)).toBe(0); // and the link followed its own song down to 0
+  expect([...songRecordBytes(afterDelete, 0)!]).toEqual([...linkedSong]);
+
+  const afterSave = saveWorkingToCatalog(afterDelete);
+  // The bystander is untouched: it was never the working song, and nothing may overwrite it.
+  expect([...songRecordBytes(afterSave, 1)!]).toEqual([...bystander]);
+  // The working song is linked to a slot that genuinely holds it.
+  const slot = workingSongSlot(afterSave);
+  expect(slot >= 0).toBe(true);
+  expect([...songRecordBytes(afterSave, slot)!]).toEqual([...workingSongRecord(afterSave)!]);
 });

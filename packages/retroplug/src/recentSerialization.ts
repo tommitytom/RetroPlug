@@ -4,7 +4,7 @@
 // a zod schema (each entry defaulted/coerced; malformed ones skipped). Reads stay
 // tolerant: absent / garbage / newer-than-us all yield an empty list.
 
-import { z } from "./configSchema";
+import { z, stringifyConfig } from "./configSchema";
 import { migrateRaw, readNumericVersion, type MigrationMap, type RawObject } from "./migrate";
 import { MAX_ENTRIES, type RecentEntry } from "./recentList";
 
@@ -16,7 +16,7 @@ export const RECENT_SCHEMA = 2;
  *  additive; the seam is here so the first breaking one is a one-line add. */
 const RECENT_MIGRATIONS: MigrationMap = {};
 
-// One recent entry: a non-empty path + a display alias (defaulting to "") + an optional working-song label
+// One recent entry: a non-empty path + a display name (defaulting to "") + an optional working-song label
 // (additive since the 1→2 schema, so old files without it still load — no migration step needed).
 const recentEntrySchema = z.object({
   path: z.string().min(1),
@@ -54,7 +54,7 @@ export function parseRecent(json: string, max = MAX_ENTRIES): RecentEntry[] {
 
 /** Serialize entries to recent.json text, stamping the current schema version. */
 export function serializeRecent(entries: RecentEntry[]): string {
-  return JSON.stringify({
+  return stringifyConfig({
     schemaVersion: RECENT_SCHEMA,
     entries: entries.map((e) => (e.song !== undefined ? { path: e.path, name: e.name, song: e.song } : { path: e.path, name: e.name })),
   });

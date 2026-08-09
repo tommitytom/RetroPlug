@@ -37,7 +37,7 @@ Host-neutral TypeScript, consumed by **both** the CLI `render` command and the b
 - `render.ts` — `runRenderJob(ctx, opts, hooks)`: builds the system, resolves the length (LSDj HFF
   auto-detect via NR52, or a fixed duration), streams per-chunk PCM to WAV (mix / channels / pins).
 - `types.ts` — `RenderOpts` (the request), `RenderContext` (`{ backend, project, dsp, audio }` — the CLI's
-  `Session` satisfies it structurally), `RenderHooks` (`onProgress` / `isCancelled` / `log` / `warn`, all
+  `Session` satisfies it structurally), `RenderHooks` (`onRendered` / `isCancelled` / `log` / `warn`, all
   optional so the CLI passes none), `RenderCancelled`.
 - `wav.ts` — the streaming RIFF/PCM16 codec (moved from `cli/wav.ts`, which now re-exports it).
 - `worker.ts` — the background session entry (below).
@@ -54,10 +54,10 @@ without `-m`, embedded in `retroplug-backend`). It reproduces the CLI's `main()`
 `TjsHostRuntime`; the render path is a synchronous, pull-based loop, so none of txiki's event loop is
 needed. Beyond the ES standard library the only shims are `console` + a minimal UTF-8
 `TextEncoder`/`TextDecoder` (the two Web globals the control plane touches at load) and the
-`__rpcSend` + progress/cancel/result thunks the worker reports through. Bare QuickJS also sidesteps the
+`__rpcSend` + rendered/cancel/result thunks the worker reports through. Bare QuickJS also sidesteps the
 multi-txiki-runtime class-id hazard entirely.
 
-`run(jobJson, onProgress, isCancelled)` blocks for the whole render on the calling thread; ROM is loaded
+`run(jobJson, onRendered, isCancelled)` blocks for the whole render on the calling thread; ROM is loaded
 by path, SRAM/savestate ride as bytes. Output is **byte-identical** to `retroplug-cli render`.
 
 ## RenderJobRegistry — concurrent, cancellable jobs (`.../RenderJobRegistry.*`)
@@ -76,8 +76,8 @@ so concurrent core construction can't race.
   `__rp_cancelRender(jobId)`, `__rp_dismissRenderJob(jobId)`, `__rp_getRenderJobs()`. See
   [03-ts-layer.md](03-ts-layer.md) for the `__rp_*` pattern.
 - **`ui/lvgl/render.ts`** — `startSystemRender` snapshots the live `readSram`/`readState` to a temp file
-  under `configDir` and calls `__rp_startRender`; `pickActiveRenderJob` selects a tile's badge job. Inert
-  in the headless harness (no hooks bound).
+  under `configDir` and calls `__rp_startRender`; `pickActiveRenderJob` selects a tile's badge job and
+  `renderBadgeLabel` writes its text. Inert in the headless harness (no hooks bound).
 - **Menu** — `System > Render` holds selectors — **Audio Routing** (the split mode: Mix / Channels / Pins,
   gated on platform), **Sample Rate** (44100 / 48000 / 96000), **Max Duration** (Left/Right ±1s,
   PageUp/PageDown ±30s) — persisted
@@ -88,8 +88,12 @@ so concurrent core construction can't race.
   every render — `runRenderJob`'s fixed fallback is now `durationMs ?? maxDurationMs` (default 300000, so
   default CLI output is unchanged).
 - **Tile** — [EmulatorTile.tsx](../packages/retroplug/ui/screens/grid/EmulatorTile.tsx) polls
-  `__rp_getRenderJobs()` on the existing per-frame event and draws a bottom progress + cancel badge;
-  finished jobs are auto-dismissed.
+  `__rp_getRenderJobs()` on the existing per-frame event and draws a bottom badge counting the audio
+  rendered so far (`rendering 0:42 (tap to cancel)`); finished jobs are auto-dismissed. Deliberately **not**
+  a percentage: an auto-detect render ends at the song's HFF stop, so the only bound available up front is
+  `maxDurationMs` - a safety cap usually far longer than the song, which made the old fill bar creep to ~10%
+  and finish. The reported number is therefore rendered milliseconds end to end (`onRendered` ->
+  `__rp_reportRenderedMs` -> `RenderJobRegistry::Status::renderedMs`), settling on the length written.
 
 ## Verification
 
@@ -97,7 +101,9 @@ so concurrent core construction can't race.
   byte-identity vs `retroplug-cli render`; `--registry <j>...` runs jobs concurrently; `--cancel <j>` aborts
   mid-render. Clean under ThreadSanitizer (`tools/run-sanitizer.sh thread`, built in `build-tsan/`).
 - **UI-seam logic:** `pnpm test render` — `startSystemRender` spec/snapshot, `pickActiveRenderJob`,
-  `validSplits`/`formatDuration`, and the `userConfig.render` setters/clamps.
+  `renderBadgeLabel`, `validSplits`/`formatDuration`, the `userConfig.render` setters/clamps, and (in
+  `risa-autodetect`) that `onRendered` reports real audio time: monotonic, stepping by the render chunk,
+  settling on the length written.
 - **Badge + menu:** `pnpm test:ui render-badge` (tile badge) and `pnpm test:ui render-menu` (the Split /
   Sample Rate / Max-Duration selectors + PageUp/PageDown coarse step + Render… → `__rp_startRender`), both on
   the real LVGL display via a file-dropped ROM.

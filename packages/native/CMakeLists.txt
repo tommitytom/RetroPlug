@@ -96,7 +96,11 @@ add_custom_target(retroplug-render-worker-bundle
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RENDER_WORKER_BUNDLE_C}.new ${RENDER_WORKER_BUNDLE_C}
     COMMENT "Bundling render worker (esbuild iife + global-code bytecode)"
     VERBATIM)
-add_dependencies(retroplug-render-worker-bundle ${_TJSC_DEP})
+# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
+# path (not a target) — the custom command's DEPENDS already tracks it.
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-render-worker-bundle ${_TJSC_DEP})
+endif()
 
 # retroplug-backend: the Backend as a static library — everything except a host
 # entry point, so both the test host (retroplug-host) and the DPF plugin compose the SAME
@@ -188,7 +192,11 @@ add_custom_target(retroplug-cli-bundle
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CLI_BUNDLE_C}.new ${CLI_BUNDLE_C}
     COMMENT "Bundling retroplug-cli dispatcher (esbuild + bytecode)"
     VERBATIM)
-add_dependencies(retroplug-cli-bundle ${_TJSC_DEP})
+# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
+# path (not a target) — the custom command's DEPENDS already tracks it.
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-cli-bundle ${_TJSC_DEP})
+endif()
 
 # retroplug-cli: the standalone runner — the backend lib + a main() that evals either the COMPILED-IN
 # dispatcher bundle (commands + help) or, when argv[1] is a `.js`, a session file by path. No Node at
@@ -253,7 +261,11 @@ add_custom_target(retroplug-cp-bundle ALL
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CP_BUNDLE_C}.new ${CP_BUNDLE_C}
     COMMENT "Regenerating control-plane bundle (esbuild + bytecode)"
     VERBATIM)
-add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
+# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
+# path (not a target) — the custom command's DEPENDS already tracks it.
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
+endif()
 
 # The UI bundle: main.tsx → bytecode C array (React entry via build-ui.js). Derived; never
 # committed. Defined BEFORE the plugin so its FILES_UI can embed it; the UI-test binary below reuses the
@@ -271,14 +283,79 @@ add_custom_target(retroplug-ui-bundle
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${UI_BUNDLE_C}.new ${UI_BUNDLE_C}
     COMMENT "Regenerating UI bundle (esbuild + bytecode)"
     VERBATIM)
-add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
+# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
+# path (not a target) — the custom command's DEPENDS already tracks it.
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
+endif()
+
+# --- retroplug-sdl: the SDL2 standalone for framebuffer handhelds (Anbernic / muOS) + plain Linux.
+# muOS has no X11 (fbdev + Mali EGL only), so the DPF/pugl JACK standalone can't run there. This host
+# reuses the WHOLE core — retroplug-backend (Engine + cores + txiki) + lvgl-js-native (the LVGL/React
+# bridge) + the SAME embedded cp/ui bundles the plugin links — and provides its own SDL2 window / audio /
+# input shell (sdl/main.cpp), bypassing DPF entirely. Modeled on retroplug-cli + retroplug-ui-test.
+# RtMidi (deps/rtmidi submodule) — cross-platform MIDI I/O for the standalone (the plugin gets MIDI from
+# its DAW host instead, so only retroplug-sdl needs this). Static; ALSA on Linux (JACK off — the handheld
+# path is ALSA/PipeWire); RtMidi's own CMake selects the platform API + link libs. EXCLUDE_FROM_ALL so the
+# `rtmidi` target is built only because retroplug-sdl links it.
+set(RTMIDI_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
+set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
+
+# EXCLUDE_FROM_ALL: the standalone is still a work in progress, so it stays out of the default `all`
+# target and therefore out of CI (which builds `all`). Build it by name, like the Catch2 test binaries:
+#   cmake --build build --target retroplug-sdl -j$(nproc)     (or `pnpm sdl:smoke`, which does this first)
+# Drop the flag to put it back in the default build and on CI.
+add_executable(retroplug-sdl EXCLUDE_FROM_ALL
+    sdl/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (virtual + hardware ports)
+    ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
+    ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
+
+target_link_libraries(retroplug-sdl PRIVATE
+    lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
+    retroplug-backend             # Engine + cores + txiki host + rpcpp
+    rtmidi                        # cross-platform MIDI in/out (ALSA/CoreMIDI/WinMM)
+    PkgConfig::SDL2)              # window + present + audio + gamepad (found at root scope)
+
+target_include_directories(retroplug-sdl PRIVATE
+    # quickjs.h for the JS trampolines (lvgl-js-native PUBLIC-propagates the lv_binding_js render include
+    # dir, so "native/..." resolves transitively; retroplug-backend brings "host/..." + "dpfjs/...").
+    ${DPFJS_PATH}/deps/lv_binding_js/deps/txiki/deps/quickjs
+    # DistrhoUtils.hpp (header-only d_stderr logging) for GamepadManager.cpp — the one DPF header the
+    # shared gamepad poller pulls in; no DPF linkage.
+    ${DPFJS_PATH}/deps/dpf/distrho
+    # portable-file-dialogs (header-only): the OS-native file picker backing __rp_openFileBrowser. No link
+    # libs on Linux/macOS (it fork/execs zenity/kdialog/osascript); Windows pulls comdlg32/ole32 via its header.
+    ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
+
+add_dependencies(retroplug-sdl retroplug-cp-bundle retroplug-ui-bundle)  # embedded bundles must exist first
+
+# Statically link libstdc++ on Linux so the binary doesn't depend on the target device's libstdc++
+# version — handhelds (muOS/Buildroot) may ship an older one. But DO NOT static-link libgcc: the C++
+# exception unwinder lives there, and a program that throws across a DSO boundary (we throw, and we load
+# SDL2) needs ONE shared unwinder. Statically embedding libgcc gives a second unwinder whose .eh_frame
+# registration collides with the system libgcc_s, corrupting unwinding into a SIGILL at startup on the
+# device (observed on muOS/Cortex-A53). libgcc_s stays dynamic (present on the device, ABI-stable). glibc
+# stays dynamic too (linked ≤ the build's version).
+if(UNIX AND NOT APPLE)
+    target_link_options(retroplug-sdl PRIVATE -static-libstdc++)
+endif()
+
+set_target_properties(retroplug-sdl PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 # --- retroplug.{vst3,clap} + the jack standalone: the DPF plugin hosting the
 # Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
 # legacy `retroplug` (they coexist).
 dpf_add_plugin(retroplug
     TARGETS clap vst3 vst2 au jack  # au is macOS-only (DPF gates it to APPLE; a no-op elsewhere)
-    USE_FILE_BROWSER                    # native OS file dialog (matches DISTRHO_UI_FILE_BROWSER)
+    USE_FILE_BROWSER                    # DPF's own (helper-free) file dialog is the fallback when no pfd helper
+                                        # exists; also auto-enables DGL_USE_FILE_DROP for drag-and-drop (uiFileDropped)
     FILES_DSP
         plugin/PluginDSP.cpp
         ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
@@ -293,6 +370,9 @@ dpf_add_plugin(retroplug
 # dpf-widgets/generic resolves "LVGL.hpp".
 target_include_directories(retroplug BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
 target_include_directories(retroplug PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
+# portable-file-dialogs (header-only): the OS-native picker backing __rp_openFileBrowser (via NativeFileDialog),
+# shared with retroplug-sdl. No link libs on Linux/macOS; Windows pulls comdlg32/ole32 through its header.
+target_include_directories(retroplug PUBLIC ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
 
 target_link_libraries(retroplug PUBLIC
     retroplug-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
@@ -582,6 +662,23 @@ target_link_libraries(retroplug-watcher-test PRIVATE
     Catch2::Catch2WithMain)
 
 set_target_properties(retroplug-watcher-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-midi-test guards the MIDI device-selection policy (Settings > MIDI): the pure, RtMidi-free
+# helpers in MidiIo.hpp (hardwarePortIndices / matchPortIndex) that decide which hardware ports to open for a
+# given selection. Header-only helpers → links just Catch2 (no RtMidi, no backend). Also `pnpm test:plugin`.
+add_executable(retroplug-midi-test EXCLUDE_FROM_ALL
+    test/midi/MidiPortSelect.test.cpp)
+
+target_link_libraries(retroplug-midi-test PRIVATE
+    Catch2::Catch2WithMain)
+
+target_include_directories(retroplug-midi-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
+
+set_target_properties(retroplug-midi-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

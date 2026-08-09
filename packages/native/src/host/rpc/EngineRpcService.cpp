@@ -128,6 +128,9 @@ bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string kind, std::
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::Highpass), static_cast<double>(c.highpass));
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LinkGroup), static_cast<double>(c.linkGroupId));
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::FastBoot), c.fastBoot ? 1.0 : 0.0);
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::ColorCorrection), static_cast<double>(c.colorCorrection));
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::DmgPalette), static_cast<double>(c.dmgPalette));
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::LightTemperature), c.lightTemperature);
         return true;
     }
     if (kind == "mesen") {
@@ -374,6 +377,11 @@ bool EngineRpcService::setSampleRate(double sr) {
 
 bool EngineRpcService::setTransport(bool running) {
     invoker_.setTransport(running);  // transport is a queued op — applied now (direct) or on the audio thread
+    return true;
+}
+
+bool EngineRpcService::setPpq(double ppq) {
+    invoker_.setPpq(ppq);  // queued like transport, so a locate lands between blocks not mid-block
     return true;
 }
 

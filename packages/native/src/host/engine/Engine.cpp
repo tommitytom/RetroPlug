@@ -68,12 +68,16 @@ void Engine::stageMidi(std::uint32_t frame, std::vector<std::uint8_t> bytes) {
 
 void Engine::setBpm(double bpm) { bpm_ = bpm; }
 void Engine::setTransport(bool playing) { transport_ = playing; }
+void Engine::setPpq(double ppq) { ppq_ = ppq < 0.0 ? 0.0 : ppq; }
 void Engine::setAudioRouting(AudioRouting mode) { audioRouting_ = mode; }
 
 // Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
 // (delivered this block); `dInfo`/`AudioBlockInfo` are both built at the block-start `ppq_`, and
 // `ppq_` advances only after — so the kernel's walkTicks and the cores see the same block-start ppq.
 void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router) {
+    // Diagnostic only, and off unless RETROPLUG_SYNC_TRACE names a file: capture what the HOST reports
+    // this block, so a DAW-only sync fault can be read back afterwards (see HostSyncTrace).
+    const bool tracing = syncTrace_.beginBlock(frames, sampleRate_, bpm_, ppq_, transport_);
     if (dspActive_) {
 #ifdef RETROPLUG_PROFILE
         dsp_.spanBegin(DSP_SPAN_KERNEL);  // the whole DSP-kernel stage (marshal + JS + sink fan-out)
@@ -101,8 +105,9 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         // MidiEvent, so NO length cap — a byte protocol (a tracker's host sync) can exceed 4 bytes.
         for (const auto& cb : dsp_.coreBytes_) {
             if (cb.data.empty()) continue;
+            if (tracing) for (std::uint8_t b : cb.data) syncTrace_.byte(cb.frame, b);
             if (SystemBase* t = project_.findSystem(cb.system))
-                t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size());
+                t->pushCoreBytes(cb.frame, cb.data.data(), cb.data.size(), cb.flush);
         }
         // role-generated button presses → the addressed core.
         for (const auto& bo : dsp_.buttonOut_)
@@ -134,7 +139,14 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
     }
     // Copy each core's freshly-published frame/state/SRAM into the owned registry the control plane
     // reads through — the one place every driver funnels the block, so it covers all of them.
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanBegin(DSP_SPAN_PUBLISH);  // the audio->control-plane state pump (per-block frame + timed savestate)
+#endif
     registry_.publishAll(project_, frames, sampleRate_);
+#ifdef RETROPLUG_PROFILE
+    dsp_.spanEnd();  // state-publish
+#endif
+    if (tracing) syncTrace_.endBlock();
     if (transport_)
         ppq_ += (bpm_ / 60.0) * (static_cast<double>(frames) / sampleRate_);
 }
@@ -323,6 +335,31 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
             break;
         case ConfigField::SerialOutCapture:
             sb->setSerialOutCapture(value != 0.0);  // live — arms LSDj MI.OUT serial-out capture
+            break;
+        // The display group. Each is value-guarded like the knobs above (the store re-sends the whole
+        // role config on every edit, so an unguarded apply would re-push all five on every keystroke)
+        // and then re-pushes the group, which is a handful of cheap core setters.
+        case ConfigField::ColorCorrection: {
+            const auto cc = static_cast<SameBoyColorCorrection>(static_cast<std::uint32_t>(value));
+            if (sb->config_.colorCorrection != cc) {
+                sb->config_.colorCorrection = cc;
+                sb->applyDisplayConfig();
+            }
+            break;
+        }
+        case ConfigField::DmgPalette: {
+            const auto p = static_cast<SameBoyDmgPalette>(static_cast<std::uint32_t>(value));
+            if (sb->config_.dmgPalette != p) {
+                sb->config_.dmgPalette = p;
+                sb->applyDisplayConfig();
+            }
+            break;
+        }
+        case ConfigField::LightTemperature:
+            if (sb->config_.lightTemperature != value) {
+                sb->config_.lightTemperature = value;
+                sb->applyDisplayConfig();
+            }
             break;
         default:
             break;  // the universal fields (Gain / ReloadOnRomChange) were handled above

@@ -4,7 +4,7 @@
 
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
-import { startSystemRender, renderBaseName, pickActiveRenderJob, validSplits, formatDuration, type RenderJobStatus } from "../../ui/lvgl/render";
+import { startSystemRender, renderBaseName, pickActiveRenderJob, renderBadgeLabel, validSplits, formatDuration, type RenderJobStatus } from "../../ui/lvgl/render";
 import { outBase, type RenderOpts } from "../../src/render";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { RENDER_MAX_DURATION_MAX_SEC, RENDER_MAX_DURATION_MIN_SEC } from "../../src/userConfig";
@@ -125,9 +125,9 @@ test("outBase: song name without --out (sanitized), ROM-derived when null, --out
 
 test("pickActiveRenderJob: prefers the in-progress render, ignores other systems + terminal jobs", () => {
   const jobs: RenderJobStatus[] = [
-    { id: 1, systemId: 9, state: "rendering", progress: 0.5, message: "" }, // other system
-    { id: 2, systemId: 3, state: "done", progress: 1, message: "" }, // terminal
-    { id: 3, systemId: 3, state: "rendering", progress: 0.2, message: "" }, // the one
+    { id: 1, systemId: 9, state: "rendering", renderedMs: 5000, message: "" }, // other system
+    { id: 2, systemId: 3, state: "done", renderedMs: 12000, message: "" }, // terminal
+    { id: 3, systemId: 3, state: "rendering", renderedMs: 2000, message: "" }, // the one
   ];
   const picked = pickActiveRenderJob(jobs, 3);
   expect(picked != null && picked.id === 3).toBeTruthy();
@@ -135,7 +135,7 @@ test("pickActiveRenderJob: prefers the in-progress render, ignores other systems
 
 test("pickActiveRenderJob: surfaces a lingering error when nothing is rendering", () => {
   const jobs: RenderJobStatus[] = [
-    { id: 5, systemId: 3, state: "error", progress: 0.1, message: "boom" },
+    { id: 5, systemId: 3, state: "error", renderedMs: 1000, message: "boom" },
   ];
   const picked = pickActiveRenderJob(jobs, 3);
   expect(picked != null && picked.state === "error" && picked.message === "boom").toBeTruthy();
@@ -143,10 +143,21 @@ test("pickActiveRenderJob: surfaces a lingering error when nothing is rendering"
 
 test("pickActiveRenderJob: nothing for a system with only finished jobs", () => {
   const jobs: RenderJobStatus[] = [
-    { id: 6, systemId: 3, state: "done", progress: 1, message: "" },
-    { id: 7, systemId: 3, state: "cancelled", progress: 0.3, message: "" },
+    { id: 6, systemId: 3, state: "done", renderedMs: 12000, message: "" },
+    { id: 7, systemId: 3, state: "cancelled", renderedMs: 3000, message: "" },
   ];
   expect(pickActiveRenderJob(jobs, 3)).toBe(null);
+});
+
+test("renderBadgeLabel: the elapsed rendered duration while rendering, the failure otherwise", () => {
+  const job = (over: Partial<RenderJobStatus>): RenderJobStatus =>
+    ({ id: 1, systemId: 3, state: "rendering", renderedMs: 0, message: "", ...over });
+  // The badge counts the audio rendered so far - never a percentage of the max-duration cap, which for a
+  // tracker render is only a safety bound and says nothing about how far along the song is.
+  expect(renderBadgeLabel(job({ renderedMs: 0 }))).toBe(" rendering 0:00 (tap to cancel)");
+  expect(renderBadgeLabel(job({ renderedMs: 42_000 }))).toBe(" rendering 0:42 (tap to cancel)");
+  expect(renderBadgeLabel(job({ renderedMs: 65_400 }))).toBe(" rendering 1:05 (tap to cancel)"); // sub-second truncates
+  expect(renderBadgeLabel(job({ state: "error", message: "boom" }))).toBe(" render failed (tap to dismiss)");
 });
 
 test("validSplits: gates channels/pins on platform", () => {

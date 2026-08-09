@@ -76,6 +76,10 @@ jobs:
       - name: UI tests (headless LVGL)
         run: pnpm test:ui
 
+      # The SDL standalone is a work in progress and deliberately off CI: the target is
+      # EXCLUDE_FROM_ALL, and `pnpm sdl:smoke` is not run here. Re-add the step (and drop
+      # the EXCLUDE_FROM_ALL in packages/native/CMakeLists.txt) when it's ready.
+
       - name: Install plugin-format validators
         run: |
           set -eux
@@ -337,6 +341,8 @@ jobs:
 
       - name: UI tests (headless LVGL)
         run: pnpm test:ui
+
+      # SDL standalone: off CI while it's a work in progress (see the linux job).
 
       - name: Upload artifacts
         if: always()

@@ -85,9 +85,11 @@ export function workingSongName(rawSave: Uint8Array): string | null {
 
 /** The live working song (WRAM banks 0-3): its name + whether it is UNSAVED — i.e. not linked to any saved
  *  catalog slot (the 'current entry' byte at bank-1 0x1e94 is 0xFF). null when there's no working song (the
- *  'N8T' magic is absent) or the container is unrecognized. The 'unsaved' flag drives the Songs menu's
- *  synthetic working-song row: some shipped batteries carry the artist's song only in working memory (never
- *  saved to the catalog), so it would otherwise never appear in the saved-song list. */
+ *  'N8T' magic is absent) or the container is unrecognized.
+ *
+ *  'unsaved' is the raw LINK state, nothing more. It is NOT the test for "is there work to lose" - a linked
+ *  song can hold an hour of edits, and an unlinked one can be byte-identical to a slot. That question is
+ *  ../../risaSongOps workingSongDirty, which compares content; this is a cheap header read. */
 export function workingSongInfo(rawSave: Uint8Array): { name: string; unsaved: boolean } | null {
   let save: Uint8Array;
   try {
@@ -143,6 +145,19 @@ export function chooseCatalogLayout(save: Uint8Array): CatalogLayout | null {
   if (hasCatalogAt(save, CURRENT_LAYOUT)) return CURRENT_LAYOUT;
   if (hasCatalogAt(save, LEGACY_LAYOUT)) return LEGACY_LAYOUT;
   return null;
+}
+
+/** True when `bytes` is a recognizable risa battery carrying a valid RSAV catalog (current v2 @0x8000 or
+ *  legacy v1 @0x6000) — the gate for "is this a risa sav we can read songs from". Tolerant of the container
+ *  wrappers normalizeSaveContainer accepts (32 KB rescue / 64 KB / 65 KB .srm tail / Pocket). */
+export function isRisaSav(bytes: Uint8Array): boolean {
+  let save: Uint8Array;
+  try {
+    save = normalizeSaveContainer(bytes).save;
+  } catch {
+    return false;
+  }
+  return chooseCatalogLayout(save) !== null;
 }
 
 /** Strict catalog parse of a normalized 64 KB image for the given layout. Validates magic, version,

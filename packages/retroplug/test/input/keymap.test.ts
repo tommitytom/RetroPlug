@@ -3,7 +3,7 @@
 // -input hook indexes per keystroke. Values mirror native InputTypes.hpp (Right=0 … Start=7).
 import { test, expect } from "../../testing/harness";
 import { defaultBindingMap } from "../../src/bindingMap";
-import { resolveKeyName, dpfCodeToKeyName, buildKeyToButton, buildKeyToAction, BUTTON_VALUE } from "../../src/keyCodes";
+import { resolveKeyName, dpfCodeToKeyName, keyDisplayName, buildKeyToButton, buildKeyToAction, BUTTON_VALUE } from "../../src/keyCodes";
 
 test("resolveKeyName: named keys, single-char codepoints, unknown → null", () => {
   expect(resolveKeyName("Right")).toBe(0xe037);
@@ -13,6 +13,8 @@ test("resolveKeyName: named keys, single-char codepoints, unknown → null", () 
   expect(resolveKeyName("ShiftL")).toBe(0xe051);
   expect(resolveKeyName("Z")).toBe(0x5a);
   expect(resolveKeyName("z")).toBe(0x7a); // case preserved
+  expect(resolveKeyName("Space")).toBe(0x20);
+  expect(resolveKeyName(" ")).toBe(0x20); // a profile written before Space had a name
   expect(resolveKeyName("Nonsense")).toBe(null);
 });
 
@@ -46,14 +48,23 @@ test("dpfCodeToKeyName: named codes, printable ASCII, unknown → null", () => {
   expect(dpfCodeToKeyName(0xe052)).toBe("ShiftR");
   expect(dpfCodeToKeyName(0x51)).toBe("Q"); // printable ASCII
   expect(dpfCodeToKeyName(0x7a)).toBe("z"); // case preserved
+  expect(dpfCodeToKeyName(0x20)).toBe("Space"); // the word, not the invisible glyph
   expect(dpfCodeToKeyName(0x00)).toBe(null); // NUL — below printable range
   expect(dpfCodeToKeyName(0xe099)).toBe(null); // unknown named-band code
 });
 
 test("dpfCodeToKeyName ∘ resolveKeyName: a captured key round-trips to its code", () => {
-  for (const code of [0x0d, 0x1b, 0x08, 0x09, 0xe035, 0xe036, 0xe037, 0xe038, 0xe051, 0xe052, 0x51, 0x7a]) {
+  for (const code of [0x0d, 0x1b, 0x08, 0x09, 0x20, 0xe035, 0xe036, 0xe037, 0xe038, 0xe051, 0xe052, 0x51, 0x7a]) {
     expect(resolveKeyName(dpfCodeToKeyName(code)!)).toBe(code);
   }
+});
+
+test("keyDisplayName: a stored raw space still shows as Space; other names pass through", () => {
+  expect(keyDisplayName(" ")).toBe("Space"); // the pre-Space profiles the bindings editor has to render
+  expect(keyDisplayName("Space")).toBe("Space");
+  expect(keyDisplayName("Z")).toBe("Z");
+  expect(keyDisplayName("Return")).toBe("Enter"); // canonicalised, like a fresh capture would store it
+  expect(keyDisplayName("Nonsense")).toBe("Nonsense"); // unresolvable — shown as-is
 });
 
 test("buildKeyToButton: unknown button names + unresolvable keys are skipped", () => {

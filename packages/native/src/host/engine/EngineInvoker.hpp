@@ -46,6 +46,7 @@ public:
     void stageMidi(std::vector<std::uint8_t> bytes);
     void setBpm(double bpm);
     void setTransport(bool playing);
+    void setPpq(double ppq);
     void setAudioRouting(std::uint8_t mode);
     void applyConfigField(SystemId id, std::uint8_t field, double value);
     void pressButton(SystemId id, std::uint8_t button, bool down);

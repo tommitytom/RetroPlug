@@ -29,7 +29,7 @@ public:
         JobId id = 0;
         std::uint32_t systemId = 0;         // the source system this render came from (for the tile badge)
         State state = State::Rendering;
-        double progress = 0.0;              // 0..1
+        double renderedMs = 0.0;            // audio rendered so far, in milliseconds
         std::string message;                // error detail (state == Error)
         std::vector<std::string> outputs;   // WAV paths written (state == Done)
     };

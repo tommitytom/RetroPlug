@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Measure LSDj sync timing against a reference click from a stereo WAV.
+Measure a tracker's sync timing against a reference click from a stereo WAV.
 
-Left channel  = LSDj output (panned hard-left in the .RPP)
+Left channel  = the core's output (panned hard-left in the .RPP)
 Right channel = ReaSynth click track, one note per quarter beat at
                 Reaper's transport BPM
 
@@ -12,8 +12,10 @@ Two modes:
              Compares LSDj's first onset to the click's first onset
              (a single number). See the long note below.
 
-  --drift    per-beat drift over time — reaper-lsdj-midi-drift
-             Pairs every LSDj noise click to its reference beat and
+  --drift    per-beat drift over time — reaper-lsdj-midi-drift and
+             reaper-risa-sync (risa host sync over the N8 FIFO, where
+             the DAW transport rather than a MIDI item is the input).
+             Pairs every core noise click to its reference beat and
              reports how the offset evolves over a long (e.g. 1 h) render:
              mean / median / max-abs / stddev, a per-minute trend table,
              and a linear accumulation slope (ms drift per minute). Fails
@@ -213,14 +215,14 @@ def analyze_drift(path):
 
     lsdj  = onsets_from_envelope(env_l, env_rate)  # seconds
     click = onsets_from_envelope(env_r, env_rate)
-    print(f"LSDj (L) onsets:  {len(lsdj)}")
+    print(f"core (L) onsets:  {len(lsdj)}")
     print(f"Click (R) onsets: {len(click)}")
     if len(click) < 2:
         print("ERROR: no/too-few click events — was the .RPP authored with the "
               "Click track / ReaSynth?", file=sys.stderr)
         return 1
     if len(lsdj) == 0:
-        print("ERROR: no LSDj audio detected — check the .rplg autoload (SYNC=MIDI "
+        print("ERROR: no core audio detected — check the .rplg autoload (SYNC=MIDI "
               "armed) and that the host transport plays from t=0", file=sys.stderr)
         return 1
 
@@ -228,7 +230,7 @@ def analyze_drift(path):
     window = 0.5 * beat
     print(f"beat interval: {beat*1000:.2f} ms ({60.0/beat:.2f} BPM)")
 
-    # Pair each click beat to the nearest LSDj onset within +/- half a beat.
+    # Pair each click beat to the nearest core onset within +/- half a beat.
     idx = np.searchsorted(lsdj, click)
     drift, matched_t, missed = [], [], 0
     for c, i in zip(click, idx):
@@ -243,16 +245,16 @@ def analyze_drift(path):
             matched_t.append(c)
     drift = np.array(drift)
     matched_t = np.array(matched_t)
-    # LSDj onsets that never paired to a beat (extra/spurious hits).
+    # Core onsets that never paired to a beat (extra/spurious hits).
     extra = max(0, len(lsdj) - len(drift))
 
     unmatched_frac = missed / len(click)
     print()
     print(f"matched beats:    {len(drift)} / {len(click)}")
     print(f"missed beats:     {missed}  ({unmatched_frac*100:.2f}%)")
-    print(f"extra LSDj hits:  {extra}")
+    print(f"extra core hits:  {extra}")
     if len(drift) == 0:
-        print("ERROR: no LSDj onset paired to a click beat — LSDj and the click "
+        print("ERROR: no core onset paired to a click beat — the core and the click "
               "fire at incompatible rates (check groove / step spacing in "
               "lsdj_midi_drift.test.ts)", file=sys.stderr)
         return 1
@@ -287,7 +289,7 @@ def analyze_drift(path):
               f"{DRIFT_TOLERANCE_MS:.0f} ms")
         fail = True
     if unmatched_frac > DRIFT_MAX_UNMATCHED:
-        print(f"FAIL: {unmatched_frac*100:.2f}% of beats unmatched — LSDj is "
+        print(f"FAIL: {unmatched_frac*100:.2f}% of beats unmatched — the core is "
               f"dropping clocks or running at the wrong rate")
         fail = True
     if fail:
@@ -384,7 +386,7 @@ def main():
 
     lsdj_onsets  = find_onsets(left,  sr)
     click_onsets = find_onsets(right, sr)
-    print(f"LSDj (L) onsets:  {len(lsdj_onsets)}")
+    print(f"core (L) onsets:  {len(lsdj_onsets)}")
     print(f"Click (R) onsets: {len(click_onsets)}")
 
     if len(click_onsets) == 0:
