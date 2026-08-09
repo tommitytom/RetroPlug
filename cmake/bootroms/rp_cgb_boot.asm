@@ -230,9 +230,16 @@ ENDC
 IF DEF(AGB)
     inc b
 ENDC
-    ; jp (not jr) BootGame: RP_FAST removes boot code above, which moves this past
-    ; jr's 127-byte reach from BootGame ($00FE) in the shorter layouts (e.g. CGB0).
+    ; Keep the stock `jr BootGame` wherever it still reaches: switching to `jp`
+    ; shifts this handoff by one byte / a few cycles, and LSDj's master-sync start
+    ; detection is sensitive enough to that to break (native lsdj-mastersync). Only
+    ; the CGB0 layout (RP_FAST removes the wave-RAM init above too) pushes the target
+    ; past jr's 127-byte reach, so jp is used there alone.
+IF DEF(CGB0)
     jp BootGame
+ELSE
+    jr BootGame
+ENDC
 
 HDMAData:
 MACRO hdma_data ; source, destination, length
