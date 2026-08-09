@@ -511,9 +511,12 @@ export class SystemsStore {
     // Prefer the persisted core (v2+); fall back to auto-derive for a pre-migration/hand-built entry.
     const core = config.core ?? defaultCoreFor(platform);
     const savPath = embeddedRom ? null : resolveSavPath(romPath, savSuffix, override);
-    // Stored roles win; a config that omits them re-attaches defaults. Known before the build so a
-    // role's load-time hook can seed the spec (e.g. an empty LSDj sav) before instantiation.
-    const roles = config.roles && config.roles.length ? config.roles : this.defaultRoles(core, platform, romPath, embeddedRom);
+    // Stored roles win, but a role kind they PREDATE is added (see withMissingFeatureRoles); a config
+    // that omits them entirely re-attaches defaults. Known before the build so a role's load-time hook
+    // can seed the spec (e.g. an empty LSDj sav) before instantiation.
+    const roles = config.roles && config.roles.length
+      ? this.withMissingFeatureRoles(config.roles, core, platform, romPath, embeddedRom)
+      : this.defaultRoles(core, platform, romPath, embeddedRom);
     // The core-config "system" role (kind === core) carries the emulator config; pass it as the
     // construct-time settings blob so a loaded non-default model/highpass is applied AT build, not via
     // a post-construct restart that would nuke the just-restored savestate.
@@ -634,6 +637,57 @@ export class SystemsStore {
     const header =
       romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, prefixLen) ?? new Uint8Array() : new Uint8Array();
     return this.registry.defaultRoles(core, platform, header, embeddedRom);
+  }
+
+  /** `stored`, plus any FEATURE role today's providers suggest for this ROM whose kind is missing.
+   *
+   *  Without this a project can never acquire a role that shipped after it was saved: the stored list
+   *  won wholesale, so providers only ran for a project storing none. That is not a hypothetical - an
+   *  smsggdj `.rplg` written before `sms-sync` existed loaded, booted, armed, showed WAIT and ignored
+   *  the DAW transport forever, with nothing in the UI or logs naming the cause. Every future feature
+   *  role would have inherited the same trap, and `risa-sync` already had.
+   *
+   *  Safe because a stored list is NOT a curated selection. `setRoleConfig` only edits a role's config;
+   *  there is no removeRole anywhere in the codebase, so a stored list is simply what the providers
+   *  produced when the project was created. Adding what they suggest now cannot override a user's
+   *  decision, because no such decision is expressible. **If a "remove role" affordance is ever added
+   *  that stops being true** - this would resurrect a removed role - and it will need a tombstone in the
+   *  project schema. There is nothing to tombstone today.
+   *
+   *  Three deliberate limits:
+   *
+   *  - **Feature roles only.** The core-config role (kind === core) is skipped, because adopt reads the
+   *    construct-time `settings` blob from the STORED roles: synthesising one here would start passing
+   *    schema defaults where `undefined` is passed today and native applies its own.
+   *  - **A stored role is never touched**, so a configured sync mode or a kit override survives.
+   *  - **Appended, not merged in place.** `kernelProjection` maps this array straight to the DSP
+   *    pipeline in order, and `defaultRoles` itself emits core-role-then-providers, so appending
+   *    reproduces the order a freshly added system would have.
+   *
+   *  A stored kind that is no longer registered is left alone rather than pruned: `DspKernel` already
+   *  skips unknown kinds when building the pipeline, so it is inert, and dropping it would silently
+   *  discard state belonging to a build the user might go back to.
+   *
+   *  No schema change and no version bump: the file is read as written, and the augmented list only
+   *  reaches disk if the user saves - at which point the project self-heals. */
+  private withMissingFeatureRoles(
+    stored: RoleInstance[],
+    core: Core,
+    platform: Platform,
+    romPath: string,
+    embeddedRom: string,
+  ): RoleInstance[] {
+    if (!this.registry) return stored;
+    const have = new Set(stored.map((r) => r.kind));
+    // `kind !== core` IS the system-role test: defaultRoles emits it only via systemRoleFor(core), so
+    // this excludes exactly that one entry. Testing `category === "feature"` instead would look more
+    // explicit and be subtly worse - a provider suggesting a kind whose RoleType is not registered
+    // would be dropped here while a freshly added system still received it, so the two paths would
+    // disagree for a partially-wired registry.
+    const missing = this.defaultRoles(core, platform, romPath, embeddedRom).filter(
+      (r) => r.kind !== core && !have.has(r.kind),
+    );
+    return missing.length ? [...stored, ...missing] : stored;
   }
 
   // Whether this cart has battery-backed save memory, derived from the ROM header (embedded/missing → false).

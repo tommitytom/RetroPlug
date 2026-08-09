@@ -1126,14 +1126,20 @@ behave wrongly.
    Mesen behaviour is unchanged for anything that does not opt out). Guarded by
    `test-native/sms-fm.test.ts`. See "FM resolved, and it opens a worse question" for the matrix and
    the negative control.
-2. **A project saved before a role existed can never gain it.** Stored roles win over defaults
-   (`systemsStore.ts:516`: `config.roles && config.roles.length ? config.roles : this.defaultRoles(...)`),
-   there is no UI that shows which roles are attached, and no way to attach one. Met in practice: a
-   `.rplg` authored before `sms-sync` existed loads, boots, arms, shows WAIT, and ignores the DAW
-   forever, with nothing anywhere saying why. **Not SMS-specific** - the identical trap is armed for
-   any project predating `risa-sync`. Fixable as a migration step, since role providers are pure
-   functions of the ROM: re-run them on load and union in role kinds the stored list has never seen,
-   while still honouring roles the user actively removed.
+2. ~~**A project saved before a role existed can never gain it.**~~ **FIXED.** Stored roles won
+   wholesale, so providers only ever ran for a project storing none: a `.rplg` authored before
+   `sms-sync` existed loaded, booted, armed, showed WAIT and ignored the DAW forever, with nothing
+   saying why. `adopt` now appends any provider-suggested role whose kind the stored list is missing
+   (`SystemsStore.withMissingFeatureRoles`), so an older project behaves as though it were created
+   today - which also repairs the identical trap for anything predating `risa-sync` or `lsdj-assets`.
+   NOT a migration step, despite first appearing to be one: `migrate.ts` steps are pure `(raw) => raw`
+   JSON transforms with no backend, and providers need the ROM's header bytes. No schema change and no
+   version bump either; the augmented list only reaches disk when the user next saves, at which point
+   the project self-heals. Guarded by `test/systems/store-role-union.test.ts` (store logic) and
+   `test-native/project-role-union.test.ts` (the real load path, which then runs the transport and
+   asserts the sequencer moves). **Forward hazard:** the union is only safe because no role can be
+   removed - `setRoleConfig` edits config and there is no `removeRole` anywhere - so whoever adds a
+   removal affordance must add a tombstone or this will resurrect removed roles.
 3. **`defaultCoreFor` still reads `nes || gba`** (`EngineRpcService.cpp:48-52`), so a platform-only
    wire spec routes SMS/GG to SameBoy and returns nullptr. Latent - TS always sends `core` explicitly -
    and a one-line fix. Already Tier 2's first row; repeated here because it is a defect, not a feature.
@@ -1155,6 +1161,10 @@ behave wrongly.
   got `.gba` either, so fix both.
 - **`pressButtonAt`** (sample-offset button presses). Generic Tier 2 item; not needed for sync, which
   rides `pushCoreBytes`.
+- **Nothing shows which roles a system has.** The union above stops a stale project from being
+  *broken*, but the diagnosis that took reading the project file by hand is still not available from
+  inside the app. A read-only role list in the system menu would have turned that evening into a
+  glance. Deliberately out of the union slice; still worth doing.
 
 ### Tier 3, unstarted
 
@@ -1176,5 +1186,5 @@ behave wrongly.
 
 ### Suggested order
 
-FM silence is done. Next: the role-migration gap (small, and the product misleads the user until it is
-fixed), then tracker integration - the actual feature, and the one whose gate has lifted.
+FM silence and the role-migration gap are both done. Next: `defaultCoreFor` if you want the last defect
+closed (a one-liner), then tracker integration - the actual feature, and the one whose gate has lifted.

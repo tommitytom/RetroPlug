@@ -58,6 +58,7 @@ function songBlock(voices: Voices): Uint8Array {
   // TONE default, so the PSG half needs nothing. The FM half is a second phrase, chain and channel.
   const b = buildMetronomeBlock();
 
+  b[P_INSTR + 0 * 16] = TYPE_TONE; // already the metronome's default; written so the PSG half is explicit
   b[P_INSTR + 1 * 16] = TYPE_FM;
   b[P_INSTR + 1 * 16 + FM_PROG_OFFSET] = FM_PROG;
 
