@@ -383,6 +383,11 @@ dpf_add_plugin(retroplug
                                         # exists; also auto-enables DGL_USE_FILE_DROP for drag-and-drop (uiFileDropped)
     FILES_DSP
         plugin/PluginDSP.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Link.cpp            # host serial thread -> physical N8 (streaming)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp             # N8 Pro serial client
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp # serial-port factory + listSerialPorts
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp           # shared N8 link + config + n8.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp          # binds the __rp_*N8* config hooks
         ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     FILES_UI
         plugin/PluginUI.cpp
@@ -402,7 +407,8 @@ target_include_directories(retroplug PUBLIC ${CMAKE_SOURCE_DIR}/deps/portable-fi
 target_link_libraries(retroplug PUBLIC
     retroplug-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
     lvgl-js-native                # LVGL + LvglJsEngine + lv_binding_js + lodepng (the editor)
-    dpfjs::core)                  # DPF Plugin + UI base
+    dpfjs::core                   # DPF Plugin + UI base
+    serial)                       # wjwwood/serial -> physical Everdrive N8 Pro (Settings > N8, all formats)
 
 target_compile_definitions(retroplug PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 

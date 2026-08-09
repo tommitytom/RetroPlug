@@ -170,9 +170,11 @@ function midiSettingsChildren(): MenuItem[] {
   ];
 }
 
-// Standalone-only "stream to a physical Everdrive N8 Pro" submenu (Settings > N8 Pro), gated on hasN8().
-// Pick a serial port (auto-detecting the N8), Connect to open the link, tune the timed-release lookahead;
-// the native host reconnects the port + persists (n8.cfg) on the spot. Status is a read-only row.
+// "Stream to a physical Everdrive N8 Pro" submenu (Settings > N8 Pro), gated on hasN8() alone - available in
+// BOTH the SDL standalone and the DAW plugin (driving a real NES from the DAW is the point; unlike the
+// Audio/MIDI device pickers, which the DAW owns and stay standalone-only). Pick a serial port (auto-detecting
+// the N8), Connect to open the link, tune the timed-release lookahead; the native host reconnects the port +
+// persists (n8.cfg) on the spot. Status is a read-only row.
 const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
 function n8SettingsChildren(): MenuItem[] {
   const cfg = getN8Config() ?? { ports: [], selectedPort: "", connected: false, enabled: false, lookaheadMs: 0, bytes: 0, error: "" };
@@ -1639,7 +1641,7 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
     // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
     ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
-    ...(isStandalone() && hasN8() ? [submenu("set-n8", "N8 Pro", n8SettingsChildren())] : []),
+    ...(hasN8() ? [submenu("set-n8", "N8 Pro", n8SettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }
