@@ -3,11 +3,12 @@
 ; RetroPlug-owned copy of deps/sameboy/BootROMs/cgb_boot.asm
 ;   (submodule commit 208ba4afabffab9edde416f2dbb8ae459e34adb8).
 ; Identical to upstream except: when RP_FAST is defined (RetroPlug's silent +
-; flashless fast boot), the boot chime, the LCD-on, and the boot-time vblank
-; waits are skipped so the model boots as fast as possible with no beep and no
-; white flash. The LCD is left off at handoff (the game turns it on itself);
-; every other handoff behavior, including CGB colorization, is unchanged.
-; If SameBoy's boot ROM changes upstream, re-sync this copy by hand.
+; flashless fast boot) it (1) skips the boot chime and (2) blacks out palette 0
+; colour 0 so the (already fast) boot screen shows black instead of white. The
+; LCD, the vblank waits, and every other detail stay exactly as the stock fast
+; boot, so the game inherits an identical startup state and timing — only the
+; white flash and the beep are removed. If SameBoy's boot ROM changes upstream,
+; re-sync this copy by hand.
 
 include "sameboot.inc"
 
@@ -189,13 +190,21 @@ ENDC
     dec c
     jr nz, .expandPalettesLoop
 
+IF DEF(RP_FAST)
+    ; Flashless boot: black out palette 0 colour 0 (what the blank FAST screen shows)
+    ; so turning the LCD on displays black, not white. The LCD stays on and the boot
+    ; timing is otherwise identical to the stock fast boot, so the game inherits the
+    ; same startup state (a shorter/altered boot shifts e.g. mGB's startup timeline).
+    ld hl, hBgPalettes
+    xor a
+    ld [hli], a
+    ld [hl], a
+ENDC
     call LoadPalettesFromHRAM
 
-IF !DEF(RP_FAST)
-    ; Turn on LCD (skipped under RP_FAST: leaving it off avoids the white flash)
+    ; Turn on LCD
     ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON
     ldh [rLCDC], a
-ENDC
 
 IF !DEF(FAST)
     call DoIntroAnimation
@@ -230,16 +239,7 @@ ENDC
 IF DEF(AGB)
     inc b
 ENDC
-    ; Keep the stock `jr BootGame` wherever it still reaches: switching to `jp`
-    ; shifts this handoff by one byte / a few cycles, and LSDj's master-sync start
-    ; detection is sensitive enough to that to break (native lsdj-mastersync). Only
-    ; the CGB0 layout (RP_FAST removes the wave-RAM init above too) pushes the target
-    ; past jr's 127-byte reach, so jp is used there alone.
-IF DEF(CGB0)
-    jp BootGame
-ELSE
     jr BootGame
-ENDC
 
 HDMAData:
 MACRO hdma_data ; source, destination, length
@@ -984,9 +984,7 @@ EmulateDMG:
 .nothingDown
     ld a, b
 .paletteFromKeys
-IF !DEF(RP_FAST)
-    call WaitFrame ; skipped under RP_FAST (LCD off ⇒ no vblank to wait for)
-ENDC
+    call WaitFrame
     call LoadPalettesFromIndex
     ld a, 4
     ; Set the final values for DMG mode
@@ -1122,9 +1120,7 @@ ClearVRAMViaHDMA:
     ldh [rVBK], a
     ld hl, HDMAData
 _ClearVRAMViaHDMA:
-IF !DEF(RP_FAST)
-    call WaitFrame ; Wait for vblank (skipped under RP_FAST; GDMA is fine with the LCD off)
-ENDC
+    call WaitFrame ; Wait for vblank
     ld c, LOW(rHDMA1)
     ld b, 5
 .loop
@@ -1261,9 +1257,7 @@ ReplaceColorInAllPalettes:
 
 LoadDMGTilemap:
     push af
-IF !DEF(RP_FAST)
-    call WaitFrame ; skipped under RP_FAST (LCD off ⇒ no vblank to wait for)
-ENDC
+    call WaitFrame
     ld a, $19                           ; Trademark symbol tile ID
     ld [_SCRN0 + 8 * SCRN_VX_B + 16], a ; ... put in the superscript position
     ld hl, _SCRN0 + 9 * SCRN_VX_B + 15  ; Bottom right corner of the logo
