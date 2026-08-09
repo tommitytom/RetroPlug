@@ -632,7 +632,8 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/NesN8FifoTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
     test/audio/NesEverdriveFifo.test.cpp  # Edio status protocol leaves no stale byte to desync MIDI parsing
     test/audio/NesStems.test.cpp     # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
-    test/audio/SmsAudio.test.cpp)    # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
+    test/audio/SmsAudio.test.cpp     # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
+    test/audio/SameBoyModels.test.cpp)   # every SameBoyModel (incl. SGB variants) boots + renders
 
 target_link_libraries(retroplug-audio-test PRIVATE
     retroplug-backend          # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
