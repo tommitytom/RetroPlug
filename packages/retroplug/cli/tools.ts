@@ -21,10 +21,10 @@ import { renderTool } from "./sessions/render";
 import { lsdjRomTool } from "./sessions/lsdj-rom";
 import { risaRomTool } from "./sessions/risa-rom";
 import { everMidiRomTool } from "./sessions/evermidi-rom";
-import { n8Tool } from "./sessions/n8";
+import { n8LoadTool } from "./sessions/n8-load";
 
 /** Every baked-in command. The ONLY place a new tool is registered. */
-export const tools: CliTool[] = [renderTool, lsdjRomTool, risaRomTool, everMidiRomTool, n8Tool];
+export const tools: CliTool[] = [renderTool, lsdjRomTool, risaRomTool, everMidiRomTool, n8LoadTool];
 
 /** The top-level command index: a version banner + the tools' own name/summary (column-aligned). Pure — the
  *  dispatcher (cli/cli.ts) supplies the banner and prints this for `retroplug-cli` / `--help`; kept here so

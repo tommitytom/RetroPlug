@@ -314,7 +314,6 @@ option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli n8-bridge subcommand (links 
 if(RETROPLUG_N8_BRIDGE)
     target_sources(retroplug-cli PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Bridge.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Load.cpp                # `n8-load`: menu-driven ROM load over USB
         ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Sync.cpp               # `n8-sync`: MIDI transport -> risa host sync
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp        # on-device menu command channel
