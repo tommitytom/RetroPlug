@@ -797,7 +797,59 @@ cases constructs OVER the previous system instead of making a second (two boots 
 WRAM, which is what gave it away). And a system left alive keeps playing into the next case's mix, so
 a negative control that should read silence reads the previous case's song.
 
-**No PDC entry ships.** See the note under open question 6.
+### The Reaper leg exists, and it says PDC is the wrong tool
+
+`pnpm reaper:sms-sync` (+ `-author`) now render smsggdj through a real DAW transport and run the
+`--drift` analyzer, the same shape as `reaper:risa-sync`. Getting there needed the fixture to become
+percussive: `instr_default` holds its note (HLD 1), so hits merged into a drone the analyzer read as
+2 onsets in 3 s instead of 6. The envelope byte layout came out of the manual rather than guesswork -
+an instrument record is `[type, VOL, (ATK << 4) | DCY, HLD, ...]`, corroborated by the `E` command
+(`Exy` sets ATK = x, DCY = y). Note the manual's own "pluck" (ATK 0 / HLD 0 / DCY 3) is still a drone
+at this beat spacing; sweeping gave clean separation at DCY 0/1/2, and DCY 2 has the best level.
+
+The `.rplg` also has to carry a **savestate**, not just a battery. smsggdj does not autoload, so a
+project holding only SRAM restores an empty working song and renders silence. The author script pokes
+the song into the running core, taps Play to park the ROM in WAIT, and exports - so the render needs
+no input at all and the transport's first clock starts it on the grid.
+
+**Measured, 30 s at 120 bpm, 60 beats:**
+
+| | |
+|---|---|
+| matched / missed / extra | 60 / 0 / 0 |
+| detected tempo | 119.97 BPM |
+| drift mean | -5.34 ms |
+| drift median | +5.11 ms |
+| drift stddev | 31.31 ms |
+| peak abs | 97.53 ms |
+
+**So no PDC constant ships, and now for a measured reason rather than an unmeasurable one.** PDC
+compensates a fixed latency. The mean here is about 5 ms - there is essentially no constant offset to
+remove - and the spread is what fails the 50 ms tolerance. Per-beat values show why: drift climbs
+roughly +1 ms per beat for 8 to 12 beats, then ONE beat lands about 95 ms early and it resets. A
+sawtooth, not jitter:
+
+```
+ +4.7  +8.2  +8.5  +8.5  +8.7  +9.0  +9.5 +10.5 +12.7 +13.7
++13.7  -4.2 -97.5  -2.2  -0.2  +1.0  +1.0  +1.0 -94.3  +1.2
+```
+
+Core-onset spacing is 498.39 ms mean but 404 to 597 ms range (sd 44.69), against a click track at
+499.87 ms mean, sd 0.96. So the DAW grid is solid and the cart's own beat placement is what wanders.
+That is a real defect to chase, not a latency to compensate, and it is worth chasing given the whole
+point of this work is sample-accurate sync.
+
+**The leg is deliberately NOT in `RENDER_SCENARIOS`** (`tools/run-reaper-suite.sh:35`), so
+`pnpm reaper:all` stays green. Add it once the sawtooth is understood; until then it is a diagnostic
+you run by hand, and it correctly fails.
+
+Not yet ruled out, in rough order of suspicion: the ROM samples its sync lines once per video frame,
+so consumption is frame-quantised however precisely the levels are delivered (delivery itself was
+measured accurate to about one sample); the IN24 divide-by-6 means a row needs 6 clocks, which at
+120 bpm is 7.5 frames, so the row boundary walks against the frame grid; and the mod-4 counter loses
+anything beyond 3 clocks between polls, which should not bite at this tempo but has not been
+instrumented. Splitting DAW from core would need the headless twin of this render, which the ad-hoc
+onset detector in `dsp-sms-sync` is not good enough to provide over 30 s.
 
 2. **IN or IN24?** IN24 (divisor 6, 24 PPQN) is the DAW-shaped answer and matches the existing ares-link-sync / RP2040 bridge contract, but caps at 450 BPM NTSC / 375 PAL (3 clocks per frame before the mod-4 counter aliases) and at one row per frame (`engine.asm:742-750` has no loop). IN (divisor 1) gives 1:1 row control but the host must choose the row rate itself. This decides the role's tick resolution. A product question, not a technical one.
 

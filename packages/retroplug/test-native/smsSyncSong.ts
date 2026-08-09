@@ -30,8 +30,8 @@ const CHAIN_ENTRIES = 16;
 // The ROM's own new-song defaults. An EMPTY phrase step is `00 FF 00 00` - note 0 is a real note
 // (A-2), so it is the $FF INSTRUMENT that marks a step as silent, not the note byte.
 const EMPTY_STEP = [0x00, 0xff, 0x00, 0x00];
-// instr_default (editor.asm:3638): TONE, vol $0F, ATK 0 / HLD 1 / DCY 3. Audible as-is, which is why
-// this fixture needs no instrument authoring at all.
+// instr_default (editor.asm:3638): TONE, vol $0F, ATK 0 / HLD 1 / DCY 3. The two envelope bytes are
+// overridden below - see INSTR_DCY.
 const INSTR_DEFAULT = [0, 0x0f, 0x03, 0x01, 0, 0, 0, 0, 0, 0xff, 1, 0, 0, 0, 0, 0];
 // A table row is `$FF 00 00 00` - $FF meaning "no volume change".
 const EMPTY_TABLE_ROW = [0xff, 0x00, 0x00, 0x00];
@@ -43,17 +43,23 @@ export const SMS_ROWS_PER_BEAT = 4;
 const HIT_NOTE = 0x0d;
 const HIT_INSTR = 0x00; // instrument 0, left at instr_default
 
-// A note on what this fixture does NOT do: the hits are not separated by a note cut, so consecutive
-// rows re-trigger instr_default into a near-continuous tone rather than discrete beats. That was
-// measured, not assumed - a steady 0.072 RMS yielding 2 detected onsets in 3 s instead of one per
-// beat. The obvious fix, a K (CMD_KILL) command on each hit row, silences the channel outright at
-// every parameter value swept (0..5), so its phrase encoding is not simply the CMD_KILL enum and
-// working that out is not worth it here.
+// The metronome instrument. instr_default sustains (HLD 1), so consecutive hits merge into a
+// continuous tone rather than discrete beats - measured as a steady 0.072 RMS yielding 2 detected
+// onsets in 3 s where 6 were expected. HLD 0 is what separates them.
 //
-// It does not need to be fixed for the headless guards, because those read the ROM's own phrase-step
-// counter rather than listening: position is a direct statement about the sequencer advancing, where
-// audio level is a proxy that cannot tell a running song from one stuck note. A render that wants
-// per-beat transients (the drift analyzer) will need this revisited.
+// The envelope byte layout was worked out from the manual rather than guessed: an instrument record is
+// [type, VOL, (ATK << 4) | DCY, HLD, ...], which the `E` command corroborates (MANUAL.md:366 - "Exy
+// sets ATK = x, DCY = y"). instr_default's `0, $0F, $03, $01` reads as TONE / VOL F / ATK 0 DCY 3 /
+// HLD 1, matching its own comment exactly.
+//
+// DCY 2 was chosen by measurement, not by the manual's labelling. The manual calls ATK 0 / HLD 0 /
+// DCY 3 "a pluck", but at this beat spacing DCY 3 still decays too slowly to separate - it measured a
+// single onset, same as the sustaining default. Sweeping DCY with HLD 0 gave 10 clean, evenly-spaced
+// onsets at 0, 1 and 2, and DCY 2 has the highest level of those (0.059 RMS against 0.029 at DCY 0),
+// so it is both separable and the easiest for an onset detector to find above the noise floor.
+const INSTR_ATK = 0;
+const INSTR_DCY = 2;
+const INSTR_HLD = 0;
 
 // --- SMDJ4 .sav geometry (SAVEFORMAT.md "SMDJ4: compressed directory + heap") ---
 const MAGIC4 = [0x53, 0x4d, 0x44, 0x4a, 0x34]; // "SMDJ4"
@@ -88,7 +94,11 @@ function blankSongBlock(): Uint8Array {
   fillPattern(b, P_PHRASES, NUM_PHRASES * STEPS_PER_PHRASE, EMPTY_STEP);
   b.fill(0xff, P_CHAINS, P_CHAINS + NUM_CHAINS * CHAIN_ENTRIES * 2); // chains + song are $FF
   b.fill(0xff, P_SONG, P_SONG + SONG_ROWS * 4);
-  for (let i = 0; i < 16; i++) b.set(INSTR_DEFAULT, P_INSTR + i * 16);
+  for (let i = 0; i < 16; i++) {
+    b.set(INSTR_DEFAULT, P_INSTR + i * 16);
+    b[P_INSTR + i * 16 + 2] = (INSTR_ATK << 4) | INSTR_DCY; // percussive: see INSTR_DCY
+    b[P_INSTR + i * 16 + 3] = INSTR_HLD;
+  }
   fillPattern(b, P_TABLES, 256, EMPTY_TABLE_ROW);
   void P_WAVE;
   void P_GROOVES;
