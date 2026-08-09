@@ -3,13 +3,12 @@
 ; RetroPlug-owned copy of deps/sameboy/BootROMs/sgb_boot.asm
 ;   (submodule commit 208ba4afabffab9edde416f2dbb8ae459e34adb8).
 ; Identical to upstream except: when RP_FAST is defined (RetroPlug's silent +
-; flashless fast boot), the LCD-on and the SNES packet-handshake loop (whose
-; per-command `halt` waits on vblank, which never fires with the LCD off) are
-; skipped, jumping straight to the DMG-compat sound-register writes (NR14 bit7
-; clear ⇒ silent) and the register handoff. The SGB border/palette packets are
-; not sent — fine because the host forces GB_BORDER_NEVER. The LCD is left off
-; at handoff (the game turns it on itself).
-; If SameBoy's boot ROM changes upstream, re-sync this copy by hand.
+; flashless fast boot), the SNES packet-handshake loop is skipped (fine — the
+; host forces GB_BORDER_NEVER), the DMG-compat sound-register writes stay silent
+; (NR14 bit7 clear), and the boot hands off with the LCD ON showing black (black
+; BG palette) rather than the white flash. Keeping the LCD on means the game
+; inherits the stock startup state. If SameBoy's boot ROM changes upstream,
+; re-sync this copy by hand.
 
 include "sameboot.inc"
 
@@ -164,8 +163,19 @@ ENDC
     ldh [c], a
 
     ; Init BG palette
+IF DEF(RP_FAST)
+    ld a, $FF ; all four shades black — flashless boot shows black, not white
+ELSE
     ld a, %11_11_11_00
+ENDC
     ldh [rBGP], a
+
+IF DEF(RP_FAST)
+    ; Turn the LCD on (the packet handshake above was skipped) so the game inherits
+    ; an LCD-on handoff like the stock boot — no startup shift, and black not white.
+    ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON
+    ldh [rLCDC], a
+ENDC
 
 ; Set registers to match the original SGB boot
 IF DEF(SGB2)

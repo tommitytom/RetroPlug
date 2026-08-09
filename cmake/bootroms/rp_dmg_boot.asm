@@ -3,11 +3,11 @@
 ; RetroPlug-owned copy of deps/sameboy/BootROMs/dmg_boot.asm
 ;   (submodule commit 208ba4afabffab9edde416f2dbb8ae459e34adb8).
 ; Identical to upstream except: when RP_FAST is defined (RetroPlug's silent +
-; flashless fast boot), the LCD-on, the logo scroll animation, the two boot
-; chimes, and the ~1 s wait are skipped, jumping straight to the register
-; handoff so the model boots instantly with no beep and no flash. The LCD is
-; left off at handoff (the game turns it on itself).
-; If SameBoy's boot ROM changes upstream, re-sync this copy by hand.
+; flashless fast boot), the logo scroll animation, the two boot chimes, and the
+; ~1 s wait are skipped so the model boots instantly with no beep and no flash.
+; The LCD is still turned ON, showing black (black BG palette) instead of the
+; logo, so the game inherits the stock LCD-on handoff and its startup isn't
+; shifted. If SameBoy's boot ROM changes upstream, re-sync this copy by hand.
 
 include "sameboot.inc"
 
@@ -85,7 +85,16 @@ Start:
     ld a, 30
     ldh [rSCY], a
 
-IF !DEF(RP_FAST)
+IF DEF(RP_FAST)
+    ; Flashless fast boot: skip the logo scroll, the chimes and the ~1 s wait, but
+    ; still hand off with the LCD ON (like the stock boot) so the game inherits the
+    ; same display state and doesn't have its startup shifted. Black BG palette so
+    ; the on-screen result is black, not the logo — no white flash.
+    ld a, $FF ; all four shades black
+    ldh [rBGP], a
+    ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON
+    ldh [rLCDC], a
+ELSE
     ; Turn on LCD
     ld a, LCDCF_ON | LCDCF_BLK01 | LCDCF_BGON
     ldh [rLCDC], a
