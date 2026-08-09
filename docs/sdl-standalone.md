@@ -102,7 +102,8 @@ stop + timeout-revert). Follow-up: MIDI clock has no sub-block frame offset (blo
 overload + planar convention the plugin uses with its 8 outputs) into `N` planar buffers, then interleaves
 frame-major (`stream[i·N + c]`) into the SDL stream. `N` is the device's output-channel count, a new **Out
 Channels** knob in `Settings > Audio` (2 = stereo mix / 4 / 6 / 8 pairs), persisted as a third field in
-`audio.cfg` and re-opened live via the `__rp_setAudioConfig` seam (now `sr, bs, ch`). Default **2** is
+`audio.cfg` and re-opened live via the `__rp_setAudioConfig` seam (now `sr, bs, ch, driver` — see the Driver
+picker below). Default **2** is
 byte-identical to the old 2-arg stereo path (zero regression); 4/6/8 opens that many device channels so the
 project's **Audio Routing** modes (`2-Ch/Inst`, `1-Ch/Inst`, `Channels`) fan real stems to a multichannel
 interface. No routing plumbing was needed — `audioRouting` already reaches the SDL Engine via the existing
@@ -153,11 +154,24 @@ Audio is driven by a **PortAudio fork with a native PipeWire host API**
 (<https://github.com/tommitytom/portaudio/tree/pipewire>, vendored as the `deps/portaudio` submodule on the
 `pipewire` branch) — better latency + device handling than SDL's ALSA-compat path, especially on the handheld.
 PortAudio is `add_subdirectory`'d next to rtmidi in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)
-(static, JACK off) and links only into `retroplug-sdl`; its CMake auto-selects the **PipeWire** host API where
+(static) and links only into `retroplug-sdl`; its CMake auto-selects the **PipeWire** host API where
 `libpipewire-0.3` is found (added to the host + the arm64 sysroot via
 [tools/arm-sysroot.sh](../tools/arm-sysroot.sh)) and falls back to **ALSA** otherwise
 (`cmake_dependent_option(PA_USE_PIPEWIRE … ON PIPEWIRE_FOUND OFF)`). SDL still owns the window/video/gamepad;
 only `SDL_INIT_AUDIO` + the SDL device/callback are gone.
+
+**Driver picker (`Settings > Audio > Driver`).** The Audio submenu's first row is a driver cycler that
+enumerates the host APIs PortAudio actually registered — **Auto** (the default: prefer PipeWire, else the
+platform default = raw ALSA) plus each compiled-in host API with a usable output device. Because the list is
+enumerated natively (`__rp_getAudioConfig` returns `{…, driver, drivers}`), the picker automatically shows only
+what the build offers: **PipeWire + ALSA** on the handheld, plus **JACK** on a build made with
+`-DRETROPLUG_SDL_JACK=ON`. A pick stages into the Audio draft and commits with the same **Apply** as
+rate/block/channels (one stream reopen), persisted as a 4th `audio.cfg` field (the `PaHostApiTypeId`, `-1` =
+Auto). A selected-but-unavailable host API falls back to Auto at open time (never silence). **Pulse/sndio/OSS
+stay force-off** (`libsdl2-dev` drags in their dev libs, and the handheld doesn't ship the runtime `.so`s);
+**JACK is opt-in** for the same reason — it needs `libjack.so.0` at runtime, which a PipeWire-only desktop
+(no pipewire-jack/jackd) and the handheld lack, so it's off by default and gated behind `RETROPLUG_SDL_JACK`
+(the arm sysroot has no libjack dev, so the handheld cross build is JACK-free even with the flag).
 
 The seam mirrors the old SDL one: `renderAudioBlock` (the shared body — drain the command ring, MIDI in +
 `MidiClockSync`, `engine.processBlock` into the planar buffers, MIDI out, planar→interleaved) is called by the

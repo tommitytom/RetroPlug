@@ -77,7 +77,7 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
-import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty } from "./audioDraft";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
 import type { MenuItem, MenuTree } from "./menuTree";
 
@@ -123,13 +123,18 @@ const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
 const AUDIO_CHANNELS = [2, 4, 6, 8];
 const AUDIO_CHANNEL_NAMES = ["Stereo", "4 (2 pairs)", "6 (3 pairs)", "8 (4 pairs)"];
 function audioSettingsChildren(): MenuItem[] {
-  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048, outChannels: 2 };
+  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048, outChannels: 2, driver: "Auto" };
   const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
   const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
   const chIdx = Math.max(0, AUDIO_CHANNELS.indexOf(cfg.outChannels));
+  // The driver list ("Auto" + each compiled-in/available host API) is enumerated natively, so the picker shows
+  // exactly what the build/runtime offers (PipeWire+ALSA on the handheld; +JACK on a -DRETROPLUG_SDL_JACK build).
+  const drivers = getAudioDrivers();
+  const driverIdx = Math.max(0, drivers.indexOf(cfg.driver));
   const dirty = audioDraftDirty();
   return [
     // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
+    cycler("audio-driver", "Driver", drivers, driverIdx, (n) => setAudioDraft({ driver: drivers[n] })),
     cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
     cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
     cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),

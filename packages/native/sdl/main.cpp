@@ -226,6 +226,8 @@ struct AppState {
     int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block + channels, persisted to audio.cfg
     int    reqBlockSize  = 2048;
     int    reqOutChannels = 2;     // 2 = stereo mix (default); 4/6/8 = wide stems for a multichannel device
+    int    reqHostApi = -1;        // chosen PortAudio host API (PaHostApiTypeId: paPipeWire/paALSA/paJACK/...);
+                                   // -1 = Auto (prefer PipeWire, else default). Persisted to audio.cfg.
 
     // Present only when LVGL actually redrew: the flush cb unions the changed area here; the loop skips
     // the SDL texture upload + blit entirely on idle frames (a static menu → ~0% CPU instead of a full
@@ -239,7 +241,7 @@ AppState* g_app = nullptr;  // single instance
 // Audio device (re)configuration — defined after audioCb (they reference it); declared here so the
 // __rp_setAudioConfig hook (bound earlier) can drive a live sample-rate / block-size change.
 bool openAudio(AppState& a);
-void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels);
+void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, int hostApi);
 void loadAudioConfig(AppState& a);
 void saveAudioConfig(AppState& a);
 // MIDI device (re)selection — declared here so the __rp_setMidiInput/Output hooks (bound earlier) can drive a
@@ -428,28 +430,62 @@ void pollFileDialog(AppState& a) {
     });
 }
 
-// __rp_getAudioConfig(): { sampleRate, blockSize, outChannels } — the live standalone audio device config,
-// for the Audio settings submenu to display the current values.
+// The PortAudio host APIs usable for output right now — each registered host API (ALSA/PipeWire/JACK/...) that
+// has a valid default output device. Drives the Settings > Audio > Driver picker; `type` is a PaHostApiTypeId
+// (what AppState::reqHostApi stores + audio.cfg persists). Depends on the runtime, so it's recomputed on read.
+struct HostApiEntry { std::string name; int type; };
+std::vector<HostApiEntry> availableHostApis() {
+    std::vector<HostApiEntry> out;
+    for (PaHostApiIndex i = 0; i < Pa_GetHostApiCount(); ++i) {
+        const PaHostApiInfo* h = Pa_GetHostApiInfo(i);
+        if (h && h->defaultOutputDevice != paNoDevice) out.push_back({ h->name, static_cast<int>(h->type) });
+    }
+    return out;
+}
+
+// __rp_getAudioConfig(): { sampleRate, blockSize, outChannels, driver, drivers } — the live standalone audio
+// device config, for the Audio settings submenu to display the current values. `drivers` is "Auto" plus each
+// available host API name; `driver` is the selected name ("Auto" when reqHostApi is -1, or when the persisted
+// host API isn't currently available — which is exactly when openAudio falls back to Auto anyway).
 JSValue jsGetAudioConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     JSValue o = JS_NewObject(ctx);
     if (g_app) {
         JS_SetPropertyStr(ctx, o, "sampleRate",  JS_NewInt32(ctx, g_app->reqSampleRate));
         JS_SetPropertyStr(ctx, o, "blockSize",   JS_NewInt32(ctx, g_app->reqBlockSize));
         JS_SetPropertyStr(ctx, o, "outChannels", JS_NewInt32(ctx, g_app->reqOutChannels));
+        const std::vector<HostApiEntry> apis = availableHostApis();
+        JSValue arr = JS_NewArray(ctx);
+        JS_SetPropertyUint32(ctx, arr, 0, JS_NewString(ctx, "Auto"));
+        std::string selected = "Auto";
+        for (std::uint32_t i = 0; i < apis.size(); ++i) {
+            JS_SetPropertyUint32(ctx, arr, i + 1, JS_NewString(ctx, apis[i].name.c_str()));
+            if (apis[i].type == g_app->reqHostApi) selected = apis[i].name;
+        }
+        JS_SetPropertyStr(ctx, o, "drivers", arr);
+        JS_SetPropertyStr(ctx, o, "driver",  JS_NewString(ctx, selected.c_str()));
     }
     return o;
 }
 
-// __rp_setAudioConfig(sampleRate, blockSize, outChannels?): re-open the audio device with new params on the
-// fly (and persist them). Reuses the deactivate→re-rate→reactivate handoff the plugin does for a host SR
+// __rp_setAudioConfig(sampleRate, blockSize, outChannels?, driver?): re-open the audio device with new params on
+// the fly (and persist them). Reuses the deactivate→re-rate→reactivate handoff the plugin does for a host SR
 // change. outChannels is optional (older UI bundles omit it) — 2/4/6/8; anything else keeps the current count.
+// driver is optional — "Auto"/"" = the default (PipeWire-preferred) selection, else a host API name from
+// __rp_getAudioConfig().drivers (matched to its PaHostApiTypeId); an unknown name keeps the current driver.
 JSValue jsSetAudioConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (g_app && argc >= 2) {
-        int sr = 0, bs = 0, ch = g_app->reqOutChannels;
+        int sr = 0, bs = 0, ch = g_app->reqOutChannels, ha = g_app->reqHostApi;
         JS_ToInt32(ctx, &sr, argv[0]);
         JS_ToInt32(ctx, &bs, argv[1]);
         if (argc >= 3) { int c = 0; JS_ToInt32(ctx, &c, argv[2]); if (c >= 2 && c <= 8 && (c % 2) == 0) ch = c; }
-        if (sr > 0 && bs > 0) reconfigureAudio(*g_app, sr, bs, ch);
+        if (argc >= 4) {
+            const char* s = JS_ToCString(ctx, argv[3]);
+            const std::string name = s ? s : "";
+            if (s) JS_FreeCString(ctx, s);
+            if (name.empty() || name == "Auto") ha = -1;
+            else for (const HostApiEntry& e : availableHostApis()) if (e.name == name) { ha = e.type; break; }
+        }
+        if (sr > 0 && bs > 0) reconfigureAudio(*g_app, sr, bs, ch, ha);
     }
     return JS_UNDEFINED;
 }
@@ -737,16 +773,25 @@ bool openAudio(AppState& a) {
         }
     }
 
-    // Prefer the native PipeWire host API (the fork's paPipeWire) over PortAudio's default host API, which on
-    // Linux resolves to raw ALSA. Fall back to the default device when PipeWire isn't present or has no device
-    // (e.g. over SSH with no session — then raw ALSA / muted).
+    // Choose the output device by host API. Auto (reqHostApi < 0): prefer the native PipeWire host API (the
+    // fork's paPipeWire) over PortAudio's default host API, which on Linux resolves to raw ALSA, else the
+    // platform default. Otherwise honor the picked host API (Settings > Audio > Driver), falling back to Auto
+    // when it's absent / has no output device (e.g. over SSH with no session — then raw ALSA / muted).
+    auto hostApiDefaultOut = [](PaHostApiTypeId type) -> PaDeviceIndex {
+        const PaHostApiIndex idx = Pa_HostApiTypeIdToHostApiIndex(type);
+        if (idx < 0) return paNoDevice;
+        const PaHostApiInfo* hi = Pa_GetHostApiInfo(idx);
+        return (hi && hi->defaultOutputDevice != paNoDevice) ? hi->defaultOutputDevice : paNoDevice;
+    };
     PaDeviceIndex dev = paNoDevice;
-    const PaHostApiIndex pw = Pa_HostApiTypeIdToHostApiIndex(paPipeWire);
-    if (pw >= 0) {
-        const PaHostApiInfo* hi = Pa_GetHostApiInfo(pw);
-        if (hi && hi->defaultOutputDevice != paNoDevice) dev = hi->defaultOutputDevice;
+    if (a.reqHostApi >= 0) {
+        dev = hostApiDefaultOut(static_cast<PaHostApiTypeId>(a.reqHostApi));
+        if (dev == paNoDevice)
+            std::fprintf(stderr, "[retroplug-sdl] audio: requested host API type=%d unavailable, using Auto\n",
+                         a.reqHostApi);
     }
-    if (dev == paNoDevice) dev = Pa_GetDefaultOutputDevice();
+    if (dev == paNoDevice) dev = hostApiDefaultOut(paPipeWire); // Auto: prefer PipeWire
+    if (dev == paNoDevice) dev = Pa_GetDefaultOutputDevice();   // else the platform default
     if (dev == paNoDevice) {
         std::fprintf(stderr, "[retroplug-sdl] PortAudio: no default output device (muted)\n");
         a.audioStream = nullptr;
@@ -778,17 +823,19 @@ std::string audioCfgPath(AppState& a) { return a.hostSvc.configDir() + "/audio.c
 
 void loadAudioConfig(AppState& a) {
     if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "r")) {
-        int sr = 0, bs = 0, ch = 0;
-        const int m = std::fscanf(f, "%d %d %d", &sr, &bs, &ch); // ch: optional 3rd field (older files have 2)
+        int sr = 0, bs = 0, ch = 0, ha = -1;
+        // ch: optional 3rd field (older files have 2); ha: optional 4th (older files omit the host API).
+        const int m = std::fscanf(f, "%d %d %d %d", &sr, &bs, &ch, &ha);
         if (m >= 2 && sr > 0 && bs > 0) { a.reqSampleRate = sr; a.reqBlockSize = bs; }
         if (m >= 3 && ch >= 2 && ch <= 8 && (ch % 2) == 0) a.reqOutChannels = ch;
+        if (m >= 4) a.reqHostApi = ha; // -1 = Auto; any other value is a PaHostApiTypeId (openAudio validates it)
         std::fclose(f);
     }
 }
 
 void saveAudioConfig(AppState& a) {
     if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "w")) {
-        std::fprintf(f, "%d %d %d\n", a.reqSampleRate, a.reqBlockSize, a.reqOutChannels);
+        std::fprintf(f, "%d %d %d %d\n", a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, a.reqHostApi);
         std::fclose(f);
     }
 }
@@ -822,10 +869,11 @@ void saveMidiConfig(AppState& a) {
 // Live audio reconfigure (the Audio settings submenu): stop the device, take the Engine back from the
 // audio thread, re-rate it, re-open at the new rate/block, hand it back — the plugin's deactivate →
 // setSampleRate → activate handoff. Then persist. Called on the UI thread.
-void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels) {
+void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, int hostApi) {
     if (sampleRate == a.reqSampleRate && blockSize == a.reqBlockSize && channels == a.reqOutChannels &&
+        hostApi == a.reqHostApi &&
         (a.audioStream || a.audioPumpRun.load(std::memory_order_acquire)))
-        return; // no-op — same params + audio already active (real stream or fallback pump)
+        return; // no-op — same params (incl. driver) + audio already active (real stream or fallback pump)
     stopAudio(a);                                     // Pa_StopStream (joins the callback) or stop+join the pump
     if (a.audioStream) { Pa_CloseStream(a.audioStream); a.audioStream = nullptr; }
     a.invoker.setAudioThreadOwns(false);
@@ -833,13 +881,14 @@ void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels) 
     a.reqSampleRate = sampleRate;
     a.reqBlockSize  = blockSize;
     a.reqOutChannels = channels;
+    a.reqHostApi = hostApi;
     a.engine.setSampleRate(sampleRate); // re-rate live cores (safe — audio stopped)
     openAudio(a);                       // opens a real stream, or leaves it muted (numOutputs still sized)
     a.invoker.setAudioThreadOwns(true);
     startAudio(a);                      // Pa_StartStream, or start the headless fallback pump
     saveAudioConfig(a);
-    std::fprintf(stderr, "[retroplug-sdl] audio reconfigured: %d Hz, %d frames, %d ch\n",
-                 a.reqSampleRate, a.reqBlockSize, a.reqOutChannels);
+    std::fprintf(stderr, "[retroplug-sdl] audio reconfigured: %d Hz, %d frames, %d ch (driver type=%d)\n",
+                 a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, a.reqHostApi);
 }
 
 // Live MIDI device reselection (Settings > MIDI). Briefly stops audio so the callback / pump isn't mid
@@ -1211,7 +1260,7 @@ int main(int argc, char** argv) {
 
     // Test hook: exercise a live audio reconfigure (device close/reopen + engine re-rate) headlessly.
     if (std::getenv("RETROPLUG_SDL_TEST_RECONFIG")) {
-        reconfigureAudio(app, 44100, 512, app.reqOutChannels);
+        reconfigureAudio(app, 44100, 512, app.reqOutChannels, app.reqHostApi);
         std::fprintf(stderr, "[retroplug-sdl] post-reconfigure: %d Hz, %d frames, stream=%s\n",
                      app.reqSampleRate, app.reqBlockSize, app.audioStream ? "open" : "muted");
     }
@@ -1220,7 +1269,7 @@ int main(int argc, char** argv) {
     // channel count — proves the N-channel device open + planar multi-out render + interleave stride.
     if (const char* env = std::getenv("RETROPLUG_SDL_TEST_MULTIOUT")) {
         const int ch = std::atoi(env);
-        reconfigureAudio(app, app.reqSampleRate, app.reqBlockSize, ch);
+        reconfigureAudio(app, app.reqSampleRate, app.reqBlockSize, ch, app.reqHostApi);
         std::fprintf(stderr, "[retroplug-sdl] post-multiout: numOutputs=%d planarBufs=%zu stream=%s\n",
                      app.numOutputs, app.audioPlanar.size(), app.audioStream ? "open" : "muted");
     }
