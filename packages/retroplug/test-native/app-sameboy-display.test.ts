@@ -112,6 +112,11 @@ test("sameboy display knobs change the live core's rendered pixels, on the model
   expect(project.systems.setRoleConfig(id, "sameboy", { dmgPalette: "grey" })).toBeTruthy();
 
   // --- switch to DMG: now the palette bites and the CGB-only knobs don't -----------------------
+  // Fast boot leaves mGB running (not on a stable boot screen) at capture time, and the DMG
+  // palette knob is not pixel-reversible against mGB's live UI. Pin slow boot for the DMG leg so the
+  // palette reversibility checks compare a stable screen (this is what DMG did before it gained a fast
+  // boot ROM). fastBoot must be set BEFORE the model switch — the model restart reads the current value.
+  expect(project.systems.setRoleConfig(id, "sameboy", { fastBoot: false })).toBeTruthy();
   expect(project.systems.setRoleConfig(id, "sameboy", { model: "dmgB" })).toBeTruthy();
   audio.renderAudio(1500); // the core restarted — reboot + settle
   const dmgBase = settle();

@@ -14,12 +14,20 @@ extern "C" {
 
 #include "system/sameboy/bootroms/agb_boot.h"
 #include "system/sameboy/bootroms/cgb_boot.h"
-#include "system/sameboy/bootroms/cgb_boot_fast.h"
 #include "system/sameboy/bootroms/cgb0_boot.h"
 #include "system/sameboy/bootroms/dmg_boot.h"
 #include "system/sameboy/bootroms/mgb_boot.h"
 #include "system/sameboy/bootroms/sgb_boot.h"
 #include "system/sameboy/bootroms/sgb2_boot.h"
+// RetroPlug's silent + flashless fast boot ROMs (cmake/bootroms/), one per model
+// family. Selected by findBootRom when the system's fastBoot flag is set.
+#include "system/sameboy/bootroms/agb_boot_fast.h"
+#include "system/sameboy/bootroms/cgb_boot_fast.h"
+#include "system/sameboy/bootroms/cgb0_boot_fast.h"
+#include "system/sameboy/bootroms/dmg_boot_fast.h"
+#include "system/sameboy/bootroms/mgb_boot_fast.h"
+#include "system/sameboy/bootroms/sgb_boot_fast.h"
+#include "system/sameboy/bootroms/sgb2_boot_fast.h"
 
 namespace {
 
@@ -27,9 +35,15 @@ GB_model_t toSameBoyModel(SameBoyModel model) {
     switch (model) {
         case SameBoyModel::DmgB:   return GB_MODEL_DMG_B;
         case SameBoyModel::Mgb:    return GB_MODEL_MGB;
-        case SameBoyModel::Sgb:    return GB_MODEL_SGB_NTSC_NO_SFC;
-        case SameBoyModel::SgbPal: return GB_MODEL_SGB_PAL_NO_SFC;
-        case SameBoyModel::Sgb2:   return GB_MODEL_SGB2_NO_SFC;
+        // Use the HLE (Super Famicom emulated) SGB models, NOT the *_NO_SFC
+        // variants. The NO_SFC models assume an external SNES emulator reads the
+        // GB screen buffer directly, so SameBoy never composites a frame into
+        // gb->screen (our pixel output) — the screen stays blank. The HLE models
+        // run SameBoy's own SGB command handling and render into gb->screen. We
+        // force GB_BORDER_NEVER in onActivate so the output stays 160x144.
+        case SameBoyModel::Sgb:    return GB_MODEL_SGB_NTSC;
+        case SameBoyModel::SgbPal: return GB_MODEL_SGB_PAL;
+        case SameBoyModel::Sgb2:   return GB_MODEL_SGB2;
         case SameBoyModel::Cgb0:   return GB_MODEL_CGB_0;
         case SameBoyModel::CgbA:   return GB_MODEL_CGB_A;
         case SameBoyModel::CgbB:   return GB_MODEL_CGB_B;
@@ -44,20 +58,24 @@ GB_model_t toSameBoyModel(SameBoyModel model) {
 }
 
 std::string_view findBootRom(GB_model_t model, bool fastBoot) {
+    // `fastBoot` selects RetroPlug's silent + flashless fast boot ROM for every
+    // model (no chime, no white flash, LCD left off until the game turns it on);
+    // otherwise the stock SameBoy boot ROM runs.
+    auto sv = [](const unsigned char* p, std::size_t n) {
+        return std::string_view((const char*)p, n);
+    };
     switch (model) {
-        case GB_MODEL_DMG_B:           return std::string_view((const char*)dmg_boot, dmg_boot_len);
-        case GB_MODEL_MGB:             return std::string_view((const char*)mgb_boot, mgb_boot_len);
-        case GB_MODEL_SGB_NTSC_NO_SFC:
-        case GB_MODEL_SGB_PAL_NO_SFC:  return std::string_view((const char*)sgb_boot, sgb_boot_len);
-        case GB_MODEL_SGB2_NO_SFC:     return std::string_view((const char*)sgb2_boot, sgb2_boot_len);
-        case GB_MODEL_CGB_0:           return std::string_view((const char*)cgb0_boot, cgb0_boot_len);
+        case GB_MODEL_DMG_B:   return fastBoot ? sv(dmg_boot_fast,  dmg_boot_fast_len)  : sv(dmg_boot,  dmg_boot_len);
+        case GB_MODEL_MGB:     return fastBoot ? sv(mgb_boot_fast,  mgb_boot_fast_len)  : sv(mgb_boot,  mgb_boot_len);
+        case GB_MODEL_SGB_NTSC:
+        case GB_MODEL_SGB_PAL: return fastBoot ? sv(sgb_boot_fast,  sgb_boot_fast_len)  : sv(sgb_boot,  sgb_boot_len);
+        case GB_MODEL_SGB2:    return fastBoot ? sv(sgb2_boot_fast, sgb2_boot_fast_len) : sv(sgb2_boot, sgb2_boot_len);
+        case GB_MODEL_CGB_0:   return fastBoot ? sv(cgb0_boot_fast, cgb0_boot_fast_len) : sv(cgb0_boot, cgb0_boot_len);
         case GB_MODEL_AGB:
-        case GB_MODEL_GBP:             return std::string_view((const char*)agb_boot, agb_boot_len);
+        case GB_MODEL_GBP:     return fastBoot ? sv(agb_boot_fast,  agb_boot_fast_len)  : sv(agb_boot,  agb_boot_len);
         default:
             // CGB-A/B/C/D/E share the stock CGB boot ROM.
-            if (fastBoot)
-                return std::string_view((const char*)cgb_boot_fast, cgb_boot_fast_len);
-            return std::string_view((const char*)cgb_boot, cgb_boot_len);
+            return fastBoot ? sv(cgb_boot_fast, cgb_boot_fast_len) : sv(cgb_boot, cgb_boot_len);
     }
 }
 
@@ -188,6 +206,16 @@ void SameBoySystem::onActivate(double sampleRate) {
     gb_ = GB_alloc();
     GB_init(gb_, toSameBoyModel(config_.model));
     GB_set_user_data(gb_, this);
+
+    // The SGB models render through SameBoy's SGB compositor, which by default
+    // draws the 256x224 Super Game Boy border. Force GB_BORDER_NEVER so the
+    // output is the plain 160x144 GB screen — matching frames_ (a wider buffer
+    // would overflow it). Scoped to the SGB models: only they composite a border,
+    // and touching border_mode on the others is needless (their default already
+    // yields 160x144) and perturbs the core's frame bookkeeping.
+    if (GB_is_sgb(gb_)) {
+        GB_set_border_mode(gb_, GB_BORDER_NEVER);
+    }
 
     GB_set_sample_rate(gb_, static_cast<unsigned>(sampleRate));
     GB_set_pixels_output(gb_, frames_.writeSlot());
