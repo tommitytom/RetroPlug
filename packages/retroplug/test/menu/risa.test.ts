@@ -12,6 +12,7 @@ import { savBytes } from "../risa/fixtures";
 import { normalizeSaveContainer, listSongs, expandRecordToWorking, recordBytesAt, decodeRecord, CURRENT_LAYOUT, kSaveSize } from "../../src/risaSav";
 import { BANK_DATA, WRAM_BANK_SIZE, SAVE_CURRENT_ENTRY_OFFSET } from "../../src/risa/codec/constants";
 import { risaSongCatalog } from "../../src/tracker";
+import { loadSongToWorkingInSav } from "../../src/risaSongOps";
 
 // A leaf that browses (Export) fires openFileBrowser fire-and-forget; flush the microtask chain it kicks off.
 const flush = async () => {
@@ -59,11 +60,13 @@ function risaSystem(be: MockBackend, stores: AppStores, battery: Uint8Array = CA
   return { id, items };
 }
 
-// A current-v2 battery whose live working song ("BLUMARBL") is UNSAVED (curEntry 0xFF); optionally with the
-// catalog wiped so it mimics let_go.srm (a song that lives only in working memory).
+// A current-v2 battery whose live working song ("BLUMARBL") is UNLINKED (curEntry 0xFF). The fixture is a
+// real cart dumped mid-edit, so its working song also differs from its slot 0 record - i.e. it is committed
+// NOWHERE, which is what the synthetic row is gated on. Optionally with the catalog wiped so it mimics
+// let_go.srm (a song that lives only in working memory).
 function unsavedWorkingBattery(emptyCatalog = false): Uint8Array {
   const b = normalizeSaveContainer(savBytes("v2_blumarbl")).save;
-  b[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = 0xff; // unlink the working song → unsaved
+  b[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = 0xff; // unlink the working song
   if (emptyCatalog) b.fill(0, CURRENT_LAYOUT.offset, kSaveSize); // no saved songs (banks 0-3 kept)
   return b;
 }
@@ -186,11 +189,13 @@ test("Load expands the selected song into working memory end-to-end (current-lay
   findItem(loadRow.children!, "risa-song-0-load-discard")!.onSelect!();
 
   // The cold-booted core carries a battery whose working song (banks 0-3) is the expanded BLUMARBL, and
-  // whose catalog (banks 4-7) is unchanged.
+  // whose catalog (banks 4-7) is unchanged. The one byte that differs from a bare record expansion is the
+  // 'current entry' link at 0x3E94, which Load stamps with the slot it came from (0), as the cart does.
   const spec = be.constructCalls[be.constructCalls.length - 1];
   expect(spec.replaceId).toBe(id);
   const out = new Uint8Array(spec.sramBytes!);
-  expect(sameBytes(out.slice(0, 0x8000), expandRecordToWorking(recordBytesAt(battery, CURRENT_LAYOUT, 0)!))).toBe(true);
+  const expected = expandRecordToWorking(recordBytesAt(battery, CURRENT_LAYOUT, 0)!);
+  expect(out.slice(0, 0x8000).every((b, i) => (i === 0x3e94 ? b === 0 : b === expected[i]))).toBe(true);
   expect(sameBytes(out.slice(0x8000), battery.slice(0x8000))).toBe(true);
 });
 
@@ -305,7 +310,7 @@ test("Delete on a base kit records an erase override and empties the effective s
   expect(RisaRom.fromBytes(spec.romBytes!).isKitPopulated(0)).toBe(false);
 });
 
-test("an UNSAVED working song is surfaced as a synthetic [working] top row with Save to Catalog + Export", () => {
+test("an UNLINKED working song committed nowhere gets a [working] row offering 'Save as New Song' + Export", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const { items } = risaSystem(be, stores, unsavedWorkingBattery());
@@ -313,24 +318,66 @@ test("an UNSAVED working song is surfaced as a synthetic [working] top row with 
   const songs = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
   const working = songs.find((s) => s.id === "risa-song-working");
   expect(working?.kind).toBe("submenu");
-  expect(working?.label).toBe("[working] BLUMARBL"); // the live working-song name, surfaced at the top
+  expect(working?.label).toBe("[working] BLUMARBL (unsaved)"); // the live working-song name, surfaced at the top
   const w = workingRow(items);
-  expect(findItem(w, "risa-song-working-save")?.kind).toBe("action"); // promote to a real slot
+  // Unlinked: saving grows the catalog, and the label says so.
+  expect(findItem(w, "risa-song-working-save")?.label).toBe("Save as New Song");
   expect(findItem(w, "risa-song-working-export")?.kind).toBe("action"); // write to a .risong
   // No Load/Delete/reorder — it's the live working song, not a catalog index.
   expect(findItem(w, "risa-song-working-load")).toBe(undefined);
   expect(findItem(w, "risa-song-working-delete")).toBe(undefined);
 });
 
-test("a SAVED working song shows NO synthetic row (it's already listed as its slot)", () => {
+test("a LINKED working song with edits gets the row too, offering 'Save Changes' (it overwrites its slot)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  // Plain v2_blumarbl: curEntry 0x00 → the working song is saved as slot 0.
+  // Plain v2_blumarbl: curEntry 0x00, so the working song names slot 0 - but the cart was dumped mid-edit, so
+  // its content no longer matches that slot. Gating the row on the link byte hid this state entirely, which
+  // is backwards: it is the commonest way to have work worth saving.
   const { items } = risaSystem(be, stores, normalizeSaveContainer(savBytes("v2_blumarbl")).save);
 
   const songs = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
-  expect(songs.find((s) => s.id === "risa-song-working")).toBe(undefined); // no duplicate row
+  expect(songs.find((s) => s.id === "risa-song-working")?.label).toBe("[working] BLUMARBL (unsaved)");
+  expect(findItem(workingRow(items), "risa-song-working-save")?.label).toBe("Save Changes");
+});
+
+test("an unlinked working song whose NAME matches a slot offers to overwrite it, not just append", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // The reported state: a battery whose link was lost (a Load written before Load stamped it) and whose song
+  // has since been edited. "Save as New Song" is a correct offer but a poor only-offer - taking it grows a
+  // second song under the same name, which is the duplicate the user set out to avoid.
+  const detached = loadSongToWorkingInSav(normalizeSaveContainer(savBytes("v2_blumarbl")).save, 0)!;
+  detached[BANK_DATA * WRAM_BANK_SIZE + SAVE_CURRENT_ENTRY_OFFSET] = 0xff; // link lost
+  detached[0x40] ^= 0xff; // and edited since
+  const { id, items } = risaSystem(be, stores, detached);
+
+  const w = workingRow(items);
+  const overwrite = findItem(w, "risa-song-working-save-0")!;
+  expect(overwrite.label).toBe("Save Changes to [0] BLUMARBL"); // names the slot; nothing is guessed
+  expect(findItem(w, "risa-song-working-save")?.label).toBe("Save as New Song"); // still offered, second
+
+  // Taking it writes the working song over slot 0 and links there: one song, not two.
+  overwrite.onSelect!();
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect(spec.replaceId).toBe(id);
+  const out = new Uint8Array(spec.sramBytes!);
+  expect(listSongs(out).map((s) => s.name)).toEqual(["BLUMARBL"]);
+  expect(risaSongCatalog.workingSongDirty!(out)).toBe(false); // committed, so the row drops
+});
+
+test("a working song a slot already holds shows NO row - the duplicate the old link-byte gate invited", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // Exactly the state a Songs > Load leaves behind: working memory holds slot 0's song, byte for byte.
+  const loaded = loadSongToWorkingInSav(normalizeSaveContainer(savBytes("v2_blumarbl")).save, 0)!;
+  const { items } = risaSystem(be, stores, loaded);
+
+  const songs = submenuChildren(submenuChildren(items(), "inst-risa"), "risa-songs");
+  expect(songs.find((s) => s.id === "risa-song-working")).toBe(undefined); // no second BLUMARBL to save
   expect(songs.filter((s) => s.kind === "submenu").map((s) => s.label)).toEqual(["[0] BLUMARBL"]);
+  // And with nothing to lose, Load is a plain action rather than the discard guard.
+  expect(findItem(submenuChildren(songs, "risa-song-0"), "risa-song-0-load")?.kind).toBe("action");
 });
 
 test("Save to Catalog promotes the working song end-to-end (readSram -> op -> construct)", () => {

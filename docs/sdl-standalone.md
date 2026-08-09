@@ -113,13 +113,24 @@ Verified headlessly with `RETROPLUG_SDL_TEST_MULTIOUT=<N>` (opens N channels, N 
 interleave) + the `audio.cfg` round-trip.
 
 ### P6 — Window resize / zoom-to-grid + close guard — ✅ DONE
-**Resize:** `__rp_setWindowSize` now resizes the window to the grid (multi-instance growth / zoom / layout
-changes), mirroring the DPF standalone. Since SDL gives no platform resize callback, `resizeWindow` does inline
-what DPF's callback does for the plugin: `SDL_SetWindowSize` + `lv_display_set_resolution` + realloc the DIRECT
-draw buffer (`lv_display_set_buffers`) + recreate the STREAMING texture at the new size + emit the `"resize"`
-JS event so the UI re-lays-out. It's gated on **windowed vs fullscreen**: `__rp_isWindowSizeControlled` returns
-`true` for a fullscreen handheld (the WM owns a fixed panel → the UI fits via zoom, resize is inert) and `false`
-for a desktop window (ours to size → the App's fit-to-grid effect drives it).
+**Resize:** `__rp_setWindowSize` resizes the window to the grid (multi-instance growth / zoom / layout
+changes), mirroring the DPF standalone. Since SDL gives no platform resize callback, this splits into the DPF
+`requestWindowSize` / `onResize` pair: `requestWindowSize` (the seam) records the request + `SDL_SetWindowSize`s
+the window; `SDL_WINDOWEVENT_SIZE_CHANGED` → `onWindowSizeChanged` reallocs (`lv_display_set_resolution` +
+realloc the DIRECT draw buffer + recreate the STREAMING texture) + emits the `"resize"` JS event so the UI
+re-lays-out.
+
+**Tiling-WM parity (Wayland/Hyprland):** the window is created **`SDL_WINDOW_RESIZABLE`** with a
+`SDL_SetWindowMinimumSize(480,432)` floor (mirroring the plugin's `setGeometryConstraints`), so a tiling
+compositor **tiles it like any other window instead of auto-floating a fixed-size toplevel** — a floating one
+can still be drag-resized, and Hyprland's `togglefloating` flips between the two. `__rp_isWindowSizeControlled`
+now returns a dynamic `wmControlled` (was just `fullscreen`): it's `true` for a fullscreen handheld, and it
+**latches `true`** when the compositor hands us a size we never requested before any request was honored (a
+tile) — exactly `PluginUI::onResize`'s clamp detection, guarded by a `sizeHonored` latch so a floating window
+that *did* honor our sizes isn't mistaken for a tiled one. When `wmControlled`, the UI fits its grid via zoom
+and we stop driving `SDL_SetWindowSize` (don't fight the compositor). A stable `SDL_HINT_APP_NAME` ("RetroPlug")
+sets the Wayland app_id / X11 WM_CLASS so window rules can target it. `RETROPLUG_DEBUG_RESIZE` logs every
+request / WM resize.
 
 **Close guard:** `SDL_QUIT` (window button / WM / Ctrl-C) now routes through the unsaved-changes guard
 (`__rp_onCloseRequested`), a line-for-line mirror of [PluginUI::onClose](../packages/native/plugin/PluginUI.cpp#L352):

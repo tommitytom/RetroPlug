@@ -70,12 +70,11 @@ The rules below are the parts that don't fit those.
   Toggling the option recompiles mesen (~45 s). If you see mesen scroll past on every
   build (the repeated `emu2413.cpp` warnings), that's LTO link-time codegen, not a
   stale-dependency bug — `[NN%] Built target mesen` prints whether or not it did work.
-- **`retroplug-sdl` is `EXCLUDE_FROM_ALL` while the SDL standalone is WIP**, so it's
-  out of the default build and therefore off CI (which builds `all`). Build it by name
-  — `cmake --build build --target retroplug-sdl -j$(nproc)`, or `pnpm sdl:smoke`, which
-  does that then runs the headless smoke. To put it back on CI, drop the flag in
-  [packages/native/CMakeLists.txt](packages/native/CMakeLists.txt) and restore the
-  `pnpm sdl:smoke` steps in `build.yml` (linux + macos).
+- **`retroplug-sdl` is in the default build** — `build.sh` builds it, and CI covers it
+  (CI builds `all`). It needs nothing extra installed: SDL2 is already REQUIRED at root
+  scope for every plugin variant, and rtmidi is an in-tree submodule. `pnpm sdl:smoke`
+  builds it by name then runs the headless smoke; that smoke is still NOT a CI step, so
+  CI proves it compiles + links, not that it runs.
 - **Never commit derived artifacts** — the embedded bundle C arrays
   (`build/native/*bundle_data.c`).
 - **Config migrations (versioned, raw-JSON).** Persistence is TS-owned. Every serialized
