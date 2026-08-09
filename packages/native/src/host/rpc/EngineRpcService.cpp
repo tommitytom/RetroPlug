@@ -45,9 +45,15 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
 }
 
 // The default core for a platform — the fallback when the wire spec omits `core`. TS always sends
-// both (derived via defaultCoreFor), so this only backstops a caller that sends platform alone.
+// both (derived via its own defaultCoreFor), so this only backstops a caller that sends platform alone.
+//
+// MIRRORS `DEFAULT_CORE` in packages/retroplug/src/platform.ts, and unlike that one it has no compiler
+// holding it to the platform list: DEFAULT_CORE is a `Record<Platform, Core>`, so adding a Platform
+// member is a hard TS error, whereas a missing case here just silently falls through to SameBoy and
+// the construct returns nullptr with no diagnostic. That is exactly how "sms"/"gg" were left behind
+// when they landed. app-cores.test.ts drives every platform through this path with `core` omitted.
 std::string defaultCoreFor(const std::string& platform) {
-    if (platform == "nes" || platform == "gba") return "mesen";
+    if (platform == "nes" || platform == "gba" || platform == "sms" || platform == "gg") return "mesen";
     return "sameboy";  // "gb" (and unknown/absent) → SameBoy
 }
 

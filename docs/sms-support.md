@@ -569,7 +569,7 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 
 | Item | Files | Effort | Risk | Why |
 |---|---|---|---|---|
-| `defaultCoreFor` backstop | `EngineRpcService.cpp:48-52` | trivial | low | `if (platform == "nes" \|\| platform == "gba") return "mesen";` needs `"sms"` and `"gg"`. TS always sends core explicitly, but omitting this makes a platform-only wire spec silently route SMS to SameBoy and return nullptr. `BackendTypes.hpp:76` enumerates the platform strings in a doc comment. |
+| ~~`defaultCoreFor` backstop~~ **DONE** | `EngineRpcService.cpp:48-52` | trivial | low | `if (platform == "nes" \|\| platform == "gba") return "mesen";` needed `"sms"` and `"gg"`. TS always sends core explicitly, but omitting this makes a platform-only wire spec silently route SMS to SameBoy and return nullptr. `BackendTypes.hpp:76` enumerates the platform strings in a doc comment. |
 | `pressButtonAt` overload | `SystemBase.hpp`, `Engine.cpp:115`, `DspRuntime.cpp`, `dspKernel.ts:438`, `dspKernelBundle`, `SystemCtx` type | small | low | Section 2.4. Additive overload with a forwarding default, so `SameBoySystem` / `MesenNesSystem` / `MesenGbaSystem` behaviour is bit-for-bit unchanged and SameBoy's load-bearing 10 ms synthesized spacing survives. Closes the three dead lines. Not needed for SMS sync (which rides `pushCoreBytes`), but it is the generic fix and only two role call sites use `ctx.pressButton` today (`dspRoles.ts:72-73,187-188`). |
 | Settings-menu gating | `menuDefs.ts:456-467` | trivial | low | NES knob rows are gated on `sys.platform === "nes"`; SMS and GG each need their own gate or they inherit nothing (and must not inherit NES-only rows). |
 | Render library | `src/render/render.ts:61-69`, `src/render/types.ts:12` | small | low | `platformOf` classifies by **file extension** here, unlike the store's magic-byte `classifyRom`. Convenient for SMS/GG (extension is what Mesen wants anyway) and it makes D1 trivial on this path; worth a comment. Without a case, `.sms` falls to `"other"`: mix render works, no auto-start gesture (`:494-498`) and no song-end probe (`:440-467`). |
@@ -1140,9 +1140,13 @@ behave wrongly.
    asserts the sequencer moves). **Forward hazard:** the union is only safe because no role can be
    removed - `setRoleConfig` edits config and there is no `removeRole` anywhere - so whoever adds a
    removal affordance must add a tombstone or this will resurrect removed roles.
-3. **`defaultCoreFor` still reads `nes || gba`** (`EngineRpcService.cpp:48-52`), so a platform-only
-   wire spec routes SMS/GG to SameBoy and returns nullptr. Latent - TS always sends `core` explicitly -
-   and a one-line fix. Already Tier 2's first row; repeated here because it is a defect, not a feature.
+3. ~~**`defaultCoreFor` still reads `nes || gba`**~~ **FIXED** (`EngineRpcService.cpp`). It mirrors TS's
+   `DEFAULT_CORE` but with no compiler holding it to the platform list - `DEFAULT_CORE` is a
+   `Record<Platform, Core>`, so a new member is a hard TS error there, while a missing case in C++ just
+   falls through to SameBoy and the construct returns nullptr with no diagnostic. Which is exactly how
+   it rotted. `app-cores.test.ts` now drives every platform through the fallback with `core` omitted,
+   so the next platform cannot repeat it; the negative control (restoring `nes || gba`) fails that
+   case.
 
 ### Tier 2 remainder
 
@@ -1186,5 +1190,5 @@ behave wrongly.
 
 ### Suggested order
 
-FM silence and the role-migration gap are both done. Next: `defaultCoreFor` if you want the last defect
-closed (a one-liner), then tracker integration - the actual feature, and the one whose gate has lifted.
+All three defects are closed. Next is tracker integration - the actual feature, and the one whose gate
+has lifted. The Tier 2 remainder below is polish that can follow it in any order.

@@ -73,8 +73,8 @@ struct BackendConstructSpec {
     std::uint32_t                            id;        // TS owns the id counter; native never allocates
     std::string                              romPath;
     std::string                              embeddedRom;
-    std::optional<std::string>               platform;  // TS Platform ("gb"/"nes"/"gba"); which system a multi-platform core builds
-    std::optional<std::string>               core;      // TS Core ("sameboy"/"mesen"); the factory registry key
+    std::optional<std::string>               platform;  // TS Platform ("gb"/"nes"/"gba"/"sms"/"gg"); which system a multi-platform core builds
+    std::optional<std::string>               core;      // TS Core ("sameboy"/"mesen"); the factory registry key. Absent → defaultCoreFor(platform)
     std::optional<std::string>               savPath;
     std::optional<std::string>               statePath;
     std::optional<std::uint32_t>             replaceId;
