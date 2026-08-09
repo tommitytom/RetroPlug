@@ -312,7 +312,13 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCL
 set(PA_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(PA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(PA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+# We want ONLY PipeWire (native) + ALSA (fallback). PortAudio auto-enables every host API whose dev libs it
+# finds, and libsdl2-dev drags in libpulse-dev + libsndio-dev — so without these the binary ends up NEEDing
+# libpulse / libsndio.so.7, which the muOS device doesn't ship (it failed to load there). Force them off.
 set(PA_USE_JACK OFF CACHE BOOL "" FORCE)
+set(PA_USE_SNDIO OFF CACHE BOOL "" FORCE)
+set(PA_USE_PULSEAUDIO OFF CACHE BOOL "" FORCE)
+set(PA_USE_OSS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/portaudio ${CMAKE_BINARY_DIR}/portaudio EXCLUDE_FROM_ALL)
 
 # EXCLUDE_FROM_ALL: the standalone is still a work in progress, so it stays out of the default `all`

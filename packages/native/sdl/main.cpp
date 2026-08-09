@@ -728,7 +728,25 @@ bool openAudio(AppState& a) {
     a.audioPtrs.resize(a.numOutputs);
     for (int c = 0; c < a.numOutputs; ++c) a.audioPtrs[c] = a.audioPlanar[c].data();
 
-    const PaDeviceIndex dev = Pa_GetDefaultOutputDevice();
+    // One-time diagnostic: which host APIs PortAudio registered + their default output (RETROPLUG_DEBUG_AUDIO).
+    if (std::getenv("RETROPLUG_DEBUG_AUDIO")) {
+        for (PaHostApiIndex i = 0; i < Pa_GetHostApiCount(); ++i) {
+            const PaHostApiInfo* h = Pa_GetHostApiInfo(i);
+            if (h) std::fprintf(stderr, "[retroplug-sdl] host API %d: %s (type=%d, devices=%d, defaultOut=%d)\n",
+                                i, h->name, (int)h->type, h->deviceCount, h->defaultOutputDevice);
+        }
+    }
+
+    // Prefer the native PipeWire host API (the fork's paPipeWire) over PortAudio's default host API, which on
+    // Linux resolves to raw ALSA. Fall back to the default device when PipeWire isn't present or has no device
+    // (e.g. over SSH with no session — then raw ALSA / muted).
+    PaDeviceIndex dev = paNoDevice;
+    const PaHostApiIndex pw = Pa_HostApiTypeIdToHostApiIndex(paPipeWire);
+    if (pw >= 0) {
+        const PaHostApiInfo* hi = Pa_GetHostApiInfo(pw);
+        if (hi && hi->defaultOutputDevice != paNoDevice) dev = hi->defaultOutputDevice;
+    }
+    if (dev == paNoDevice) dev = Pa_GetDefaultOutputDevice();
     if (dev == paNoDevice) {
         std::fprintf(stderr, "[retroplug-sdl] PortAudio: no default output device (muted)\n");
         a.audioStream = nullptr;

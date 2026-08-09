@@ -29,7 +29,12 @@ done
 
 cd "$APP_DIR" || exit 1
 
-export SDL_AUDIODRIVER=alsa
+# Audio is PortAudio now (native PipeWire host API, ALSA fallback), not SDL. PortAudio reaches the muOS
+# PipeWire daemon via its socket at $XDG_RUNTIME_DIR/pipewire-0 (the device runs pipewire at /run/pipewire-0),
+# so point XDG_RUNTIME_DIR there when the session hasn't already set it. Without it PortAudio falls back to a
+# raw ALSA device (hw:...) instead of PipeWire. (Verified on-device: audio: PortAudio [PipeWire] 'Built-in
+# Audio Stereo' with this set.)
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run}"
 
 # The handheld is a fixed framebuffer panel with no window manager, so run FULLSCREEN. Without this the
 # resizable window (added for desktop tiling WMs) treats itself as a floating window and shrinks its SDL
