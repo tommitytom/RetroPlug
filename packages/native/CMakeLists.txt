@@ -315,8 +315,10 @@ if(RETROPLUG_N8_BRIDGE)
     target_sources(retroplug-cli PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Bridge.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Load.cpp                # `n8-load`: menu-driven ROM load over USB
+        ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Sync.cpp               # `n8-sync`: MIDI transport -> risa host sync
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp        # on-device menu command channel
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/RisaSyncTranslator.cpp  # MIDI clock -> risa arm/clock/stop
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp)  # RtMidi in/out seam (shared with retroplug-sdl)
     target_link_libraries(retroplug-cli PRIVATE serial rtmidi)
@@ -708,13 +710,15 @@ set_target_properties(retroplug-midi-test PROPERTIES
 
 # retroplug-n8-test guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact
 # krikzz CMD_MEM_WR byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status
-# word. Compiles Edio.cpp against a capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware
-# (the live serial + MIDI path needs a real N8). Also `pnpm test:n8`.
+# word; the N8Link forward path; and the RisaSyncTranslator (MIDI transport -> risa host-sync bytes).
+# Compiles those against a capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware (the live
+# serial + MIDI path needs a real N8). Also `pnpm test:n8`.
 add_executable(retroplug-n8-test EXCLUDE_FROM_ALL
     test/n8/Edio.test.cpp
     src/host/n8/Edio.cpp
     src/host/n8/N8Menu.cpp
-    src/host/n8/N8Link.cpp)
+    src/host/n8/N8Link.cpp
+    src/host/n8/RisaSyncTranslator.cpp)
 
 find_package(Threads REQUIRED)
 target_link_libraries(retroplug-n8-test PRIVATE

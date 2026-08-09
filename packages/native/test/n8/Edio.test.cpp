@@ -4,10 +4,12 @@
 // MIDI path needs a real N8). Mirrors test/midi/MidiPortSelect.test.cpp (a header-level, backend-free guard).
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <initializer_list>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -15,11 +17,13 @@
 #include "host/n8/Edio.hpp"
 #include "host/n8/N8Link.hpp"
 #include "host/n8/N8Menu.hpp"
+#include "host/n8/RisaSyncTranslator.hpp"
 
 using retroplug::Edio;
 using retroplug::ISerialPort;
 using retroplug::N8Link;
 using retroplug::N8Menu;
+using retroplug::RisaSyncTranslator;
 
 namespace {
 
@@ -313,4 +317,102 @@ TEST_CASE("N8Link push is a no-op when not connected", "[n8]") {
     const std::uint8_t        m[] = {0x90, 0x3C, 0x7F};
     link.push(0, m, sizeof(m), 48000.0);  // not connected -> dropped
     REQUIRE(link.bytesForwarded() == 0);
+}
+
+// -----------------------------------------------------------------------------------------------------
+// RisaSyncTranslator: MIDI clock/transport -> risa host-sync bytes. The pure, testable half of `n8-sync`
+// (the live RtMidi/serial loop needs a real N8). The expected byte packets are cross-checked against the
+// golden pure-TS role test, packages/retroplug/test/dsp/risa-sync.test.ts.
+// -----------------------------------------------------------------------------------------------------
+namespace {
+// Feed one MIDI message into the translator, appending any risa output to `out` (which is NOT cleared).
+void feed(RisaSyncTranslator& t, std::initializer_list<std::uint8_t> msg, std::vector<std::uint8_t>& out) {
+    const std::vector<std::uint8_t> m(msg);
+    t.onMessage(m.data(), m.size(), out);
+}
+std::size_t countByte(const std::vector<std::uint8_t>& v, std::uint8_t b) {
+    std::size_t c = 0;
+    for (auto x : v) if (x == b) ++c;
+    return c;
+}
+}  // namespace
+
+TEST_CASE("RisaSyncTranslator armPacket matches the risaSync.ts locate mapping", "[n8]") {
+    using A = std::array<std::uint8_t, 5>;
+    // Golden values from test/dsp/risa-sync.test.ts (ppq*24 = absoluteClock).
+    REQUIRE(RisaSyncTranslator::armPacket(0)    == A{0xF9, 0x52, 0x00, 0x00, 0x00}); // top
+    REQUIRE(RisaSyncTranslator::armPacket(1536) == A{0xF9, 0x52, 0x01, 0x00, 0x00}); // ppq 64
+    REQUIRE(RisaSyncTranslator::armPacket(120)  == A{0xF9, 0x52, 0x00, 0x01, 0x18}); // ppq 5 -> tick 24
+    REQUIRE(RisaSyncTranslator::armPacket(95)   == A{0xF9, 0x52, 0x00, 0x00, 0x5F}); // last grid position
+}
+
+TEST_CASE("RisaSyncTranslator Start arms from the top then streams 23 clocks", "[n8]") {
+    RisaSyncTranslator        t;
+    std::vector<std::uint8_t> out;
+
+    feed(t, {0xFA}, out);  // MIDI Start
+    // Arm+locate at the top (barrier) then FA - exactly risaSync.ts's transport-rise packet.
+    REQUIRE(out == std::vector<std::uint8_t>{0xF9, 0x52, 0x00, 0x00, 0x00, 0xFA});
+    REQUIRE(t.playing());
+
+    // 24 clocks in the first quarter, but risa primes the armed clock itself, so only 23 F8 are emitted.
+    out.clear();
+    for (int i = 0; i < 24; ++i) feed(t, {0xF8}, out);
+    REQUIRE(out == std::vector<std::uint8_t>(23, 0xF8));
+
+    // A second quarter re-arms nothing and streams all 24.
+    out.clear();
+    for (int i = 0; i < 24; ++i) feed(t, {0xF8}, out);
+    REQUIRE(out == std::vector<std::uint8_t>(24, 0xF8));
+}
+
+TEST_CASE("RisaSyncTranslator Stop emits FC and gates further clocks", "[n8]") {
+    RisaSyncTranslator        t;
+    std::vector<std::uint8_t> out;
+
+    feed(t, {0xFA}, out);
+    for (int i = 0; i < 5; ++i) feed(t, {0xF8}, out);
+    out.clear();
+
+    feed(t, {0xFC}, out);  // Stop
+    REQUIRE(out == std::vector<std::uint8_t>{0xFC});
+    REQUIRE_FALSE(t.playing());
+
+    // Clocks after a stop are ignored (transport-gated), no bytes emitted.
+    out.clear();
+    for (int i = 0; i < 8; ++i) feed(t, {0xF8}, out);
+    REQUIRE(out.empty());
+}
+
+TEST_CASE("RisaSyncTranslator Continue arms from the Song Position", "[n8]") {
+    RisaSyncTranslator        t;
+    std::vector<std::uint8_t> out;
+
+    // Song Position Pointer -> 256 sixteenths = 1536 clocks (ppq 64). F2 lsb msb, 14-bit: 256 = 0x0100.
+    feed(t, {0xF2, 0x00, 0x02}, out);
+    REQUIRE(out.empty());               // SPP itself emits nothing
+    REQUIRE(t.absoluteClock() == 1536);
+
+    feed(t, {0xFB}, out);               // Continue -> arm at the current position
+    REQUIRE(out == std::vector<std::uint8_t>{0xF9, 0x52, 0x01, 0x00, 0x00, 0xFA});
+    REQUIRE(t.playing());
+}
+
+TEST_CASE("RisaSyncTranslator ignores non-transport MIDI and stopped clocks", "[n8]") {
+    RisaSyncTranslator        t;
+    std::vector<std::uint8_t> out;
+
+    feed(t, {0x90, 0x3C, 0x7F}, out);   // note-on
+    feed(t, {0xB0, 0x07, 0x64}, out);   // CC volume
+    feed(t, {0xF8}, out);               // clock while stopped
+    REQUIRE(out.empty());
+    REQUIRE_FALSE(t.playing());
+
+    // After a start, note-on still emits nothing but clocks flow.
+    feed(t, {0xFA}, out);
+    out.clear();
+    feed(t, {0x90, 0x40, 0x7F}, out);
+    REQUIRE(out.empty());
+    for (int i = 0; i < 3; ++i) feed(t, {0xF8}, out);
+    REQUIRE(countByte(out, 0xF8) == 2); // 3 clocks, first (armed) suppressed
 }

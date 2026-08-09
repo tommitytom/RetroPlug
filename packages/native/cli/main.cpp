@@ -26,6 +26,7 @@
 #ifdef RETROPLUG_N8_BRIDGE
 #include "N8Bridge.hpp"  // `n8-bridge` subcommand: live MIDI -> Everdrive N8 Pro over USB (own loop)
 #include "N8Load.hpp"    // `n8-load` subcommand: load + boot a ROM on the N8 over USB (menu-driven)
+#include "N8Sync.hpp"    // `n8-sync` subcommand: MIDI transport -> risa host sync on the N8 (own loop)
 #endif
 
 #include "host/engine/Engine.hpp"
@@ -96,6 +97,15 @@ int main(int argc, char** argv) try {
         return retroplug::runN8Load(argc, argv);
 #else
         std::fprintf(stderr, "n8-load: this build was compiled without N8 bridge support "
+                             "(-DRETROPLUG_N8_BRIDGE=OFF)\n");
+        return 1;
+#endif
+    }
+    if (argc >= 2 && std::strcmp(argv[1], "n8-sync") == 0) {
+#ifdef RETROPLUG_N8_BRIDGE
+        return retroplug::runN8Sync(argc, argv);
+#else
+        std::fprintf(stderr, "n8-sync: this build was compiled without N8 bridge support "
                              "(-DRETROPLUG_N8_BRIDGE=OFF)\n");
         return 1;
 #endif
