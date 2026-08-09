@@ -9,7 +9,7 @@ import type { AudioDriver } from "../audioDriver";
 
 export type SplitMode = "mix" | "channels" | "pins";
 
-export type Platform = "gb" | "nes" | "gba" | "other";
+export type Platform = "gb" | "nes" | "gba" | "sms" | "gg" | "other";
 
 /** Target-exists policy for a render: clobber the file, or write to the next free "<name>_N". */
 export type OnExists = "overwrite" | "rename";

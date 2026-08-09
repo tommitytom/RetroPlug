@@ -46,7 +46,9 @@ add_library(retroplug-core STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenNesDebugSession.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenVideoDevice.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenGbaSystem.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/MesenSmsSystem.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/NesN8FifoRole.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/system/mesen/roles/SmsSyncRole.cpp
     # lodepng (vendored under lv_binding_js): one PNG encoder, compiled directly so consumers don't pull
     # the full lvgl-js-native static lib for it.
     ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
@@ -321,11 +323,11 @@ set(PA_USE_PULSEAUDIO OFF CACHE BOOL "" FORCE)
 set(PA_USE_OSS OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/portaudio ${CMAKE_BINARY_DIR}/portaudio EXCLUDE_FROM_ALL)
 
-# EXCLUDE_FROM_ALL: the standalone is still a work in progress, so it stays out of the default `all`
-# target and therefore out of CI (which builds `all`). Build it by name, like the Catch2 test binaries:
-#   cmake --build build --target retroplug-sdl -j$(nproc)     (or `pnpm sdl:smoke`, which does this first)
-# Drop the flag to put it back in the default build and on CI.
-add_executable(retroplug-sdl EXCLUDE_FROM_ALL
+# Part of the default `all` target, so build.sh builds it and CI covers it. Its deps are in-tree submodules
+# (rtmidi + portaudio) or already required (SDL2 at root scope for gamepad input); PortAudio adds no new
+# system lib to build — ALSA is present via rtmidi, and libpipewire-0.3 (if installed) just upgrades it to the
+# native PipeWire host API, else it falls back to ALSA.
+add_executable(retroplug-sdl
     sdl/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (virtual + hardware ports)
@@ -651,7 +653,8 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/NesApuLatency.test.cpp   # runtime NES APU flush window (live apuLatencyMs knob)
     test/audio/NesN8FifoTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
     test/audio/NesEverdriveFifo.test.cpp  # Edio status protocol leaves no stale byte to desync MIDI parsing
-    test/audio/NesStems.test.cpp)    # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
+    test/audio/NesStems.test.cpp     # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
+    test/audio/SmsAudio.test.cpp)    # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
 
 target_link_libraries(retroplug-audio-test PRIVATE
     retroplug-backend          # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
@@ -664,7 +667,13 @@ target_include_directories(retroplug-audio-test PRIVATE
 # the n8-midi NES ROM the NesStems pin test drives (a ch1 note supplies real APU signal).
 target_compile_definitions(retroplug-audio-test PRIVATE
     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
-    RP_N8_MIDI_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/n8-midi.nes")
+    RP_N8_MIDI_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/n8-midi.nes"
+    # smsggdj (MIT, (c) Seb Tomczak / little-scale) in both cartridge shapes. The
+    # SMS and GG builds differ in visible geometry and video config, so both are
+    # needed to guard the overscan setup. resources/ never ships (release.yml
+    # packages build/bin plus the license bundle), so these are test-only.
+    RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
+    RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
 
 set_target_properties(retroplug-audio-test PROPERTIES
     CXX_STANDARD 20

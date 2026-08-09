@@ -64,6 +64,8 @@ export function platformOf(rom: string): Platform {
     case ".gbc": return "gb";
     case ".nes": return "nes";
     case ".gba": return "gba";
+    case ".sms": return "sms";
+    case ".gg": return "gg";
     default: return "other";
   }
 }

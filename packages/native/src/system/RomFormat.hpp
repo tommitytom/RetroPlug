@@ -3,24 +3,34 @@
 #include <cstdint>
 #include <vector>
 
-// Detect the platform a given ROM targets — Game Boy, NES, or GBA. Called by
-// any caller that needs to gate "is this actually a ROM?" before constructing
-// a system (and to route it to the core that runs that platform). Uses magic
-// bytes, not the file extension, so a mislabelled .gb that's really a .nes
-// still classifies correctly — and a totally unrelated file (a .sh script,
-// say) is rejected cleanly instead of being fed to a core as garbage.
+// Detect the platform a given ROM targets - Game Boy, NES, GBA, or Sega 8-bit.
+// Called by any caller that needs to gate "is this actually a ROM?" before
+// constructing a system (and to route it to the core that runs that platform).
+// Uses magic bytes, not the file extension, so a mislabelled .gb that's really
+// a .nes still classifies correctly - and a totally unrelated file (a .sh
+// script, say) is rejected cleanly instead of being fed to a core as garbage.
 
 enum class RomFormat : std::uint8_t {
     Unknown = 0,  // bytes don't look like any supported ROM
     Gb      = 1,  // Game Boy / Game Boy Color (DMG/CGB)
     Nes     = 2,  // NES (iNES header)
     Gba     = 3,  // Game Boy Advance (Nintendo logo at $0004..$009F)
+    Sms     = 4,  // Sega 8-bit: Master System OR Game Gear ("TMR SEGA" header)
 };
+
+// Note that Sms covers BOTH Sega machines rather than splitting them. Nothing
+// here re-decides Master System vs Game Gear: that policy lives in TS
+// (platform.ts, which weighs the header's region nibble against the file
+// extension), and the answer arrives as spec.platform. Duplicating it here
+// would give two sources of truth that could disagree, and the one native
+// actually needs - "are these bytes a Sega 8-bit ROM rather than something
+// else entirely" - is answered by the magic alone.
 
 // Returns Nes if `bytes` starts with the iNES magic ("NES\x1A").
 // Returns Gba if `bytes` contains the GBA Nintendo logo at offset $0004.
 // Returns Gb if `bytes` contains the Game Boy Nintendo logo at offset
-// $0104. Returns Unknown otherwise. Empty / short buffers are Unknown.
+// $0104. Returns Sms if it carries "TMR SEGA" at a bank-end header offset.
+// Returns Unknown otherwise. Empty / short buffers are Unknown.
 inline RomFormat detectRomFormat(const std::vector<std::uint8_t>& bytes) {
     // iNES: 'N','E','S',0x1A at offset 0
     if (bytes.size() >= 4 &&
@@ -68,6 +78,30 @@ inline RomFormat detectRomFormat(const std::vector<std::uint8_t>& bytes) {
             if (bytes[kLogoOffset + i] != kNintendoLogo[i]) { match = false; break; }
         }
         if (match) return RomFormat::Gb;
+    }
+
+    // Sega 8-bit: "TMR SEGA" at the END of a bank rather than the file start.
+    // $7FF0 is the usual spot; $1FF0/$3FF0 are where an 8 KB/16 KB cart puts
+    // it. Each is doubled by the +$200 copier-header variant Mesen strips at
+    // load (SmsConsole.cpp: `(size % 0x400) == 0x200`) - such a ROM boots
+    // fine, so it has to classify too.
+    //
+    // Unlike the Nintendo logos this magic is NOT required by any boot ROM, so
+    // plenty of homebrew omits it. That's why MesenBackend's SMS gate accepts
+    // Unknown as well as Sms: see the comment there.
+    static constexpr std::uint8_t kSegaMagic[] = { 'T', 'M', 'R', ' ', 'S', 'E', 'G', 'A' };
+    constexpr std::size_t kSegaMagicSize   = sizeof(kSegaMagic);
+    constexpr std::size_t kSegaCopierSkip  = 0x200;
+    constexpr std::size_t kSegaBaseOffsets[] = { 0x7FF0, 0x3FF0, 0x1FF0 };
+    for (const std::size_t base : kSegaBaseOffsets) {
+        for (const std::size_t off : { base, base + kSegaCopierSkip }) {
+            if (bytes.size() < off + kSegaMagicSize) continue;
+            bool match = true;
+            for (std::size_t i = 0; i < kSegaMagicSize; ++i) {
+                if (bytes[off + i] != kSegaMagic[i]) { match = false; break; }
+            }
+            if (match) return RomFormat::Sms;
+        }
     }
 
     return RomFormat::Unknown;

@@ -21,6 +21,7 @@ import {
 } from "./lsdjKeyboardMap";
 import { arduinoboyDecodeSerialOut, arduinoboyMasterSyncBlock, type ArduinoboyState, type MasterSyncState } from "./lsdjArduinoboy";
 import { RISA_PPQN, RISA_START, RISA_CLOCK, RISA_STOP, risaLocate, risaArmPacket } from "./risaSync";
+import { SMS_SYNC_PPQN, SMS_SYNC_COUNTER_MOD, smsSyncLevels } from "./smsSync";
 
 // Forward every host-MIDI byte verbatim into the system's serial input. This is both `mgb`
 // (== MgbPassthroughRole) and lsdj-sync's MidiPassthrough mode (== LsdjSyncRole handlePassthrough).
@@ -248,6 +249,36 @@ const risaSync: SystemBehavior = (c) => {
   }
 };
 
+// sms-sync (no config): clock smsggdj from the DAW transport by driving a 2-bit counter onto controller
+// port 2's TR + TH lines. The payload crossing ctx.pushCoreBytes is a LEVEL WORD, not a protocol byte -
+// MesenSmsSystem routes it to SmsSyncRole, which holds it on the port until the next one. See smsSync.ts
+// for the encoding and the ROM references.
+//
+// Much smaller than risaSync above, and every absence is the protocol's rather than a shortcut:
+//
+//   No arm, no flush. The ROM latches the live line state on its OWN Play and sits in WAIT until the
+//   first host clock (engine.asm:383-388), so it self-synchronises and a stale level cannot count. A
+//   held level has no undelivered-stream hazard either, so SmsSyncRole ignores the flush flag.
+//
+//   No start or stop message. Stop is implicit: stop clocking and the ROM's per-frame delta goes to 0.
+//
+//   No setNextTick and no seek detection, because there is nothing to relocate. The ROM sees only
+//   deltas, so a DAW seek does NOT move the song - the transport drives tempo, start and stop but not
+//   position. That is a genuine product difference from risa-sync and lsdj-sync, not an omission here.
+//
+// The counter is free-running and its absolute value is irrelevant (the ROM diffs it), so it is never
+// reset - only advanced, one step per tick, at the tick's own sample offset.
+const smsSync: SystemBehavior = (c) => {
+  if (!c.block.transport) return;
+  const st = c.state as { counter?: number };
+  let counter = st.counter ?? 0;
+  c.eachTick(SMS_SYNC_PPQN, (_t, off) => {
+    counter = (counter + 1) % SMS_SYNC_COUNTER_MOD;
+    c.pushCoreBytes(off, [smsSyncLevels(counter)]);
+  });
+  st.counter = counter;
+};
+
 // lsdj-sync load-time hook: a fresh LSDj cart with no SRAM runs a 12–15 s cartridge self-test on boot.
 // When nothing else will seed the battery (no savestate, no sram blob, no on-disk .sav for native to
 // load), hand it a valid empty sav — savFromJson stamps the jk/rb validity markers LSDj checks — so it
@@ -274,6 +305,10 @@ export function registerDspRoles(registry: RoleRegistry): void {
   // risa-sync: no config — drives risa's N8-FIFO host-sync receive path from the DAW transport (locate /
   // start / 24-PPQN clock / stop over pushCoreBytes). Attached only to sync-capable risa ROMs.
   registry.registerRole({ kind: "risa-sync", category: "feature", scope: "system", schema: z.object({}), dsp: risaSync });
+  // sms-sync: no config - clocks smsggdj by holding a 2-bit counter on controller port 2 (TR + TH) at
+  // 24 PPQN. Attached only to smsggdj (the SMSGGDJ marker), NOT to every SMS ROM: these are Player 2's
+  // button lines, so an unconditional attach would inject phantom P2 presses into any game.
+  registry.registerRole({ kind: "sms-sync", category: "feature", scope: "system", schema: z.object({}), dsp: smsSync });
   registry.registerRole({
     kind: "lsdj-sync",
     category: "feature",

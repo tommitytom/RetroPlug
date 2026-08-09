@@ -9,6 +9,7 @@ enum class SystemKind : std::uint32_t {
     SameBoy  = 0,
     MesenNes = 1,  // NES, via the Mesen backend
     MesenGba = 2,  // GBA, via the Mesen backend
+    MesenSms = 3,  // Master System AND Game Gear, via the Mesen backend
 };
 
 // One output stream a system can emit (SystemBase::channelLayout()). The default layout is a single

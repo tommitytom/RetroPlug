@@ -32,7 +32,7 @@ mkdir -p "$RESULTS_DIR"
 # optional scenario env (the lsdj author lua keys off RP_SCENARIO), and the analyzer command.
 declare -A AUTHOR_LUA FIXTURE RPP WAV JACKP SCEN_ENV ANALYZE
 
-RENDER_SCENARIOS=(mgb-smoke mgb-midi-timing n8-midi-timing lsdj-midi-metro lsdj-arduinoboy-metro lsdj-midi-drift risa-sync)
+RENDER_SCENARIOS=(mgb-smoke mgb-midi-timing n8-midi-timing lsdj-midi-metro lsdj-arduinoboy-metro lsdj-midi-drift risa-sync sms-sync)
 
 AUTHOR_LUA[mgb-smoke]="tools/reaper-mgb-author.lua"
 FIXTURE[mgb-smoke]="build/mgb.rplg.zip"
@@ -88,6 +88,17 @@ RPP[risa-sync]="examples/reaper/risa_sync.rpp"
 WAV[risa-sync]="build/reaper-risa-sync.wav"
 JACKP[risa-sync]="1024"
 ANALYZE[risa-sync]='tools/reaper-timing-analyze.py build/reaper-risa-sync.wav --drift'
+
+# smsggdj host sync: like risa-sync, no MIDI item - the DAW TRANSPORT is the whole input, turned into a
+# 2-bit counter on controller port 2 by the sms-sync role. The headless twin of this render is
+# test-native/dsp-sms-sync-drift, which measures the ROM's row counter directly; this one is the only
+# check that a real DAW drives it.
+AUTHOR_LUA[sms-sync]="tools/reaper-sms-author.lua"
+FIXTURE[sms-sync]="build/sms.rplg.zip"
+RPP[sms-sync]="examples/reaper/sms_sync.rpp"
+WAV[sms-sync]="build/reaper-sms-sync.wav"
+JACKP[sms-sync]="1024"
+ANALYZE[sms-sync]='tools/reaper-timing-analyze.py build/reaper-sms-sync.wav --drift'
 
 # Editor scenarios: name -> the standalone script (each already self-judges).
 declare -A EDITOR_SCRIPT
@@ -156,6 +167,7 @@ if [ "${RP_SUITE_NO_BUILD:-0}" != "1" ]; then
     node tools/author-rplg.js            >"$RESULTS_DIR/fixture-mgb.log" 2>&1 || { echo "[suite] mgb fixture failed" >&2; exit 1; }
     node tools/author-nes-rplg.js        >"$RESULTS_DIR/fixture-nes.log" 2>&1 || { echo "[suite] nes fixture failed" >&2; exit 1; }
     node tools/author-risa-rplg.js       >"$RESULTS_DIR/fixture-risa.log" 2>&1 || { echo "[suite] risa fixture failed" >&2; exit 1; }
+    node tools/author-sms-rplg.js        >"$RESULTS_DIR/fixture-sms.log" 2>&1 || { echo "[suite] sms fixture failed" >&2; exit 1; }
     for s in midi-metro arduinoboy-metro midi-drift; do
         node tools/author-lsdj-rplg.js "$s" >"$RESULTS_DIR/fixture-lsdj-$s.log" 2>&1 || { echo "[suite] lsdj $s fixture failed" >&2; exit 1; }
     done

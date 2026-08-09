@@ -51,6 +51,17 @@ set "TESTS=1"
 shift
 goto argloop
 :arg_define
+rem cmd tokenises an unquoted FOO=BAR on the '=', so `-Dvar=value` passed without
+rem quotes arrives as two args: (-Dvar) (value). Rejoin them when this -D token
+rem carries no '=' of its own, so `build.bat -DFOO=ON` behaves like the quoted form
+rem and matches build.sh (which needs no such handling). Uses a label, not an
+rem if(...) block, because %~1 inside a block expands before the shift takes effect.
+set "ARG=%~1"
+echo(%ARG% | findstr /C:"=" >nul
+if not errorlevel 1 goto arg_define_add
+shift
+set "ARG=%ARG%=%~1"
+:arg_define_add
 set "EXTRA_ARGS=%EXTRA_ARGS% %ARG%"
 shift
 goto argloop
