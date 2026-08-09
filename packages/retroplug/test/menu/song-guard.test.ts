@@ -39,6 +39,7 @@ function cart(sram: Uint8Array) {
     loadProject: () => {},
     loadRomAsProject: () => {},
     requestExit: () => {},
+    openLsdjHd: () => {},
     beginSongImport: () => {},
   });
   const songRow = (index: number): MenuItem[] => {
