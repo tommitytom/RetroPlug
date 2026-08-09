@@ -146,6 +146,12 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   const flatRef = useRef<FlatEntry[]>(flat);
   flatRef.current = flat;
   const visibleKey = flat.map((f) => f.item.id).join(",");
+  // Rebuild the keypad group whenever the FOCUSABLE set changes, not just the visible set. A row toggling
+  // disabled<->enabled in place (e.g. the Audio "Apply" row once the draft is dirty) keeps the same visibleKey,
+  // so keying the group rebuild on visibleKey alone would never add the newly-enabled row to the LVGL group —
+  // arrow / gamepad nav then can't reach it (Down stops at the last row that WAS focusable). This mirrors the
+  // orderedRefs / focusTarget filter (separators + disabled excluded).
+  const focusableKey = flat.map((f) => (f.item.kind === "separator" || f.item.disabled ? "" : f.item.id)).join(",");
 
   const orderedRefs = useCallback(
     () =>
@@ -166,7 +172,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     return id ? refsByIdRef.current.get(id) : undefined;
   }, []);
 
-  const focus = useFocusGroup(orderedRefs, { deps: [visibleKey], focusTarget });
+  const focus = useFocusGroup(orderedRefs, { deps: [focusableKey], focusTarget });
 
   const activate = useCallback(
     (item: MenuItem) => {

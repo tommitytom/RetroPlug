@@ -21,3 +21,7 @@
 [submodule "deps/serial"]
 	path = deps/serial
 	url = https://github.com/wjwwood/serial.git
+[submodule "deps/portaudio"]
+	path = deps/portaudio
+	url = https://github.com/tommitytom/portaudio.git
+	branch = pipewire

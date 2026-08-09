@@ -16,25 +16,32 @@ namespace rp {
 //
 // Per-system support matrix (concrete subclasses):
 //
-//   MemoryType     SameBoy (GB)     NES (Mesen)        GBA (Mesen)
-//   ------------   --------------   ----------------   ------------------
-//   Ram            DIRECT_ACCESS_   NesInternalRam     GbaIntWorkRam (IWRAM)
+//   MemoryType     SameBoy (GB)     NES (Mesen)        GBA (Mesen)          SMS/GG (Mesen)
+//   ------------   --------------   ----------------   ------------------   --------------
+//   Ram            DIRECT_ACCESS_   NesInternalRam     GbaIntWorkRam (IWRAM) SmsWorkRam
 //                   RAM (WRAM)
-//   Rom            DIRECT_ACCESS_   NesPrgRom          GbaPrgRom
+//   Rom            DIRECT_ACCESS_   NesPrgRom          GbaPrgRom            SmsPrgRom
 //                   ROM
-//   Sram           DIRECT_ACCESS_   NesSaveRam         GbaSaveRam
+//   Sram           DIRECT_ACCESS_   NesSaveRam         GbaSaveRam           SmsCartRam
 //                   CART_RAM
-//   Vram           DIRECT_ACCESS_   NesChrRam (or      GbaVideoRam
+//   Vram           DIRECT_ACCESS_   NesChrRam (or      GbaVideoRam          SmsVideoRam
 //                   VRAM             NesChrRom if no
 //                                    CHR-RAM on cart)
-//   IORegisters    DIRECT_ACCESS_   (unsupported)      (unsupported)
+//   IORegisters    DIRECT_ACCESS_   (unsupported)      (unsupported)        (unsupported)
 //                   IO
-//   HRam           DIRECT_ACCESS_   (unsupported)      (unsupported)
+//   HRam           DIRECT_ACCESS_   (unsupported)      (unsupported)        (unsupported)
 //                   HRAM
-//   OAM            DIRECT_ACCESS_   NesSpriteRam       GbaSpriteRam
-//                   OAM
-//   NametableRam   (unsupported)    NesNametableRam    (unsupported)
-//   ExtWorkRam     (unsupported)    (unsupported)      GbaExtWorkRam (EWRAM)
+//   OAM            DIRECT_ACCESS_   NesSpriteRam       GbaSpriteRam         (unsupported -
+//                   OAM                                                      sprites live
+//                                                                            in VRAM)
+//   NametableRam   (unsupported)    NesNametableRam    (unsupported)        (unsupported)
+//   ExtWorkRam     (unsupported)    (unsupported)      GbaExtWorkRam (EWRAM) (unsupported)
+//
+// Mesen exposes two more SMS regions with no tag here: SmsBootRom and the VDP's
+// colour RAM. Adding either means adding an enum member, and these integer
+// values are the RPC wire byte (mirrored in backend.ts and cli/sdk-types.d.ts)
+// with kMemoryTypeCount sizing SystemBase::StateRegionTable - so it is a
+// wire-format change, not a local one.
 //
 // The integer values double as the wire byte used in subscribe / getMemory
 // RPC calls; keep them stable.

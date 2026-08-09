@@ -10,6 +10,7 @@
 #include "system/SystemBase.hpp"
 #include "system/mesen/MesenGbaSystem.hpp"
 #include "system/mesen/MesenNesSystem.hpp"
+#include "system/mesen/MesenSmsSystem.hpp"
 
 namespace {
 
@@ -24,7 +25,8 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
 // Shared Mesen boot tail (mirrors SameBoyBackend::buildSameBoy): activate the core, reject the build
 // if Mesen's LoadRom failed (a corrupt ROM that passed the magic gate) rather than adopting a dead
 // system, then opt into the live snapshot plane so the control plane's readState/readSram see fresh
-// bytes instead of the boot seed frozen forever. `T` is MesenNesSystem or MesenGbaSystem.
+// bytes instead of the boot seed frozen forever. `T` is MesenNesSystem, MesenGbaSystem or
+// MesenSmsSystem.
 template <typename T>
 std::unique_ptr<SystemBase> bootMesen(std::unique_ptr<T> sys, double sampleRate) {
     sys->onActivate(sampleRate);
@@ -38,6 +40,11 @@ std::unique_ptr<SystemBase> bootMesen(std::unique_ptr<T> sys, double sampleRate)
 MesenNesRoleConfig MesenBackend::decodeMesenNesRoleConfig(const std::string& json) {
     const auto r = rfl::json::read<MesenNesRoleConfig, rfl::DefaultIfMissing>(json);
     return r ? r.value() : MesenNesRoleConfig{};  // unparseable → all defaults (a no-op apply)
+}
+
+MesenSmsRoleConfig MesenBackend::decodeMesenSmsRoleConfig(const std::string& json) {
+    const auto r = rfl::json::read<MesenSmsRoleConfig, rfl::DefaultIfMissing>(json);
+    return r ? r.value() : MesenSmsRoleConfig{};  // unparseable → all defaults (a no-op apply)
 }
 
 std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSpec& spec,
@@ -78,6 +85,33 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
         cfg.savestate = spec.savestate;
         // biosPath left empty → HLE boot ROM; skipBootScreen stays the default (true).
         return bootMesen(std::make_unique<MesenGbaSystem>(id, std::move(cfg), std::move(romBytes)),
+                         sampleRate);
+    }
+
+    // Master System / Game Gear - ONE system class, the platform string picks the machine.
+    if (spec.platform == "sms" || spec.platform == "gg") {
+        // Deliberately NOT an exact-match gate like the two above. The Sega magic is not required by
+        // any boot ROM, so headerless homebrew is legitimate and TS admits it on the strength of the
+        // file extension (platform.ts). An == RomFormat::Sms gate here would accept such a ROM in the
+        // UI and then fail the construct with no diagnostic. What this still catches - and all it needs
+        // to - is bytes that are positively SOMETHING ELSE, which is the mislabelled-ROM case the gate
+        // exists for. Content wins whenever it says anything, exactly as it does in TS.
+        const RomFormat fmt = detectRomFormat(romBytes);
+        if (fmt != RomFormat::Sms && fmt != RomFormat::Unknown) return nullptr;
+        MesenSmsConfig cfg;
+        cfg.romPath = spec.romPath;
+        cfg.sram = spec.sram;
+        cfg.savestate = spec.savestate;
+        // The machine, which is the whole difference between the two platforms here. It reaches Mesen
+        // as the staged file's EXTENSION (stageRom), because SmsConsole::LoadRom picks its model from
+        // that and nothing else.
+        cfg.gameGear = (spec.platform == "gg");
+        // configureSms runs before LoadRom, so a loaded non-default FM setting has to be applied AT
+        // construct - same reason the NES branch above passes region through the settings blob.
+        const std::string settings(spec.settings.begin(), spec.settings.end());
+        cfg.enableFm = settings.empty() ? MesenSmsRoleConfig{}.enableFm
+                                        : decodeMesenSmsRoleConfig(settings).enableFm;
+        return bootMesen(std::make_unique<MesenSmsSystem>(id, std::move(cfg), std::move(romBytes)),
                          sampleRate);
     }
 

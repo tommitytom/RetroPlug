@@ -12,6 +12,9 @@ void MesenVideoDevice::UpdateFrame(RenderedFrame& frame) {
     const std::uint32_t fbH = fb_->height();
     if (frame.Width == 0 || frame.Height == 0) return;
 
+    lastW_.store(frame.Width, std::memory_order_relaxed);
+    lastH_.store(frame.Height, std::memory_order_relaxed);
+
     // If Mesen ever hands us a frame at an unexpected size (NTSC filter, scale)
     // copy the intersecting region; the triple-buffer was sized from the
     // base NES resolution at construction.

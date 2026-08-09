@@ -11,8 +11,10 @@
 // (PluginDSP.cpp:406-458), with every path derived by the pure kernels.
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
-import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
+import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
+
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
+import { extensionLower } from "./pathUtil";
 import {
   type SystemEntry,
   findById,
@@ -45,10 +47,21 @@ function allocSystemId(): number {
 // GB_save_battery_size, Mesen via the NesSaveRam region), so any non-empty all-zero buffer blanks the SRAM.
 const BLANK_SRAM_BYTES = 0x20000;
 
-/** Classify a ROM's platform from its header only — the one place ROM bytes enter TS, and just
- *  the first `ROM_SNIFF_LEN` of them. Native never classifies. */
+/** Classify a ROM's platform from its header only - the one place ROM bytes enter TS. Native never
+ *  classifies.
+ *
+ *  Two tiers, because the Nintendo headers sit at the START of the file while a Sega 8-bit header sits
+ *  at the end of the first bank ($7FF0, or $81F0 with a copier header). Reading that far on every
+ *  classify would make GB/NES/GBA - the overwhelmingly common case - pay 33 KB to find a logo in the
+ *  first 0x134 bytes. So the deep read happens only for a file the cheap tier already declined, which
+ *  is SMS/GG ROMs and genuine non-ROMs. `readFilePrefix` truncates to the real file size, so asking for
+ *  more than a file holds is safe. */
 export function classifyRom(backend: HostBackend, romPath: string): Platform | "unknown" {
-  return detectPlatform(backend.readFilePrefix(romPath, ROM_SNIFF_LEN) ?? new Uint8Array());
+  const head = backend.readFilePrefix(romPath, ROM_SNIFF_LEN) ?? new Uint8Array();
+  const fast = detectPlatform(head);
+  if (fast !== "unknown") return fast;
+  const deep = backend.readFilePrefix(romPath, SEGA_SNIFF_LEN) ?? new Uint8Array();
+  return detectPlatform(deep, extensionLower(romPath));
 }
 
 /** A system as the UI sees it: identity + live `focused`/`missing` flags + the
@@ -609,10 +622,17 @@ export class SystemsStore {
   // The default roles for a freshly-built system: the core's config role + any feature
   // roles the registry's providers suggest for this ROM's header. Empty when no registry
   // is wired (back-compat) or for an embedded ROM (no file to sniff).
+  //
+  // Sega ROMs get the DEEPER prefix, because nothing identifying lives near the start of one: no
+  // title field, and the header itself sits at the end of a bank. smsggdj's marker is at $3640, so a
+  // ROLE_HEADER_LEN read would leave the provider nothing to match on and force `sms-sync` to attach
+  // to every SMS cart - which it must not, since it drives Player 2's button lines. This is one read
+  // at construct, not on the classify path.
   private defaultRoles(core: Core, platform: Platform, romPath: string, embeddedRom: string): RoleInstance[] {
     if (!this.registry) return [];
+    const prefixLen = platform === "sms" || platform === "gg" ? SEGA_SNIFF_LEN : ROLE_HEADER_LEN;
     const header =
-      romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array() : new Uint8Array();
+      romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, prefixLen) ?? new Uint8Array() : new Uint8Array();
     return this.registry.defaultRoles(core, platform, header, embeddedRom);
   }
 

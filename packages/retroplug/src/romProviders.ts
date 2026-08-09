@@ -11,6 +11,7 @@ import type { RoleRegistry, RomContext, RoleInstance } from "./systemRoles";
 import { LsdjSyncMode } from "./settingsEnums";
 import { isRisaRomHeader, isRisaSyncRom } from "./risa";
 import { isEverMidiRomHeader } from "./evermidi/romDetect";
+import { isSmsggdjRom } from "./smsSync";
 
 // The Game Boy cartridge title field is 0x134..0x143. Decode it to an uppercase ASCII
 // string, stopping at the first NUL — case-insensitive so both "LSDj-v9.4.2" and older
@@ -44,6 +45,16 @@ export function registerRomProviders(registry: RoleRegistry): void {
   // (core is "mesen"); always-on, mirroring the native role — benign for a ROM that ignores $40F0.
   registry.registerRomProvider((rom: RomContext) =>
     rom.platform === "nes" ? [{ kind: "nes-n8-midi", config: {} }] : [],
+  );
+
+  // smsggdj (the LSDj-style Master System tracker) → the `sms-sync` role that clocks it from the DAW
+  // transport over controller port 2. Matched on the ROM's build MARKER, not the platform: those are
+  // Player 2's button lines, so attaching this to every SMS cart would inject phantom presses into any
+  // game that reads the port. Master System only - the Game Gear build reads its EXT port ($01), which
+  // stock Mesen models as a bare loopback with no host input path, so a `.gg` cart gets no role rather
+  // than one that silently does nothing.
+  registry.registerRomProvider((rom: RomContext) =>
+    rom.platform === "sms" && isSmsggdjRom(rom.header) ? [{ kind: "sms-sync", config: {} }] : [],
   );
 
   // risa (the LSDj-style NES/MMC5 tracker) → the `risa` marker role that gates the Songs menu, plus the

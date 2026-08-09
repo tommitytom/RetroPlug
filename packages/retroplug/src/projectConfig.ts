@@ -88,7 +88,8 @@ const roleInstanceSchema = z.object({
 // Structural identity — the ROM's platform + the emulator backend. Both REQUIRED: a valid
 // system always has them, and a migration backfills any pre-v2 file (see projectV1toV2).
 // An entry missing/with an invalid value fails the strict parse and is dropped in parseConfig.
-const platformSchema = z.enum(["gb", "nes", "gba"]);
+// Additive: no pre-existing file can carry "sms"/"gg", so widening the enum needs no migration step.
+const platformSchema = z.enum(["gb", "nes", "gba", "sms", "gg"]);
 const coreSchema = z.enum(["sameboy", "mesen"]);
 
 // A serialized system: structural fields (platform/core) required; asset paths + overrides

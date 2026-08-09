@@ -19,6 +19,8 @@
 // setup mirrors packages/native/test/ui/RenderCore.cpp; the boot mirrors plugin/PluginDSP.cpp.
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -27,6 +29,7 @@
 #include <deque>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if defined(__linux__)
@@ -42,6 +45,10 @@
 // (Harmless on Linux, where SDL never redefines main.)
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+
+#include <portaudio.h>   // audio backend (deps/portaudio, pipewire branch) — replaces SDL audio
+
+#include <rfl/json.hpp>  // audio.json / midi.json (device settings), tolerant JSON like the role-config crossing
 
 extern "C" {
 #include "lvgl.h"
@@ -186,7 +193,9 @@ struct AppState {
     SDL_Window*   window = nullptr;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture*  texture = nullptr;
-    SDL_AudioDeviceID audioDev = 0;
+    PaStream*     audioStream = nullptr;       // PortAudio output stream (null when muted → headless fallback)
+    std::thread   audioPump;                   // headless fallback pump thread (no device); see audioPumpLoop
+    std::atomic<bool> audioPumpRun{false};
     retroplug::GamepadManager gamepad;
     retroplug::MidiIo midi;   // RtMidi in/out; drained into the Engine on the audio thread each block
     std::vector<retroplug::MidiIo::Message> midiScratch;  // reused per block (no per-block alloc)
@@ -216,6 +225,18 @@ struct AppState {
     // the grid like the DPF standalone. Set from the SDL_WINDOW_FULLSCREEN flag in setupSdl.
     bool fullscreen = false;
 
+    // Window-geometry ownership — mirrors PluginUI's wmControlled_ / sizeHonored_ / requestedW/H latch, so the
+    // resizable SDL window behaves like the DPF standalone under a tiling WM (Wayland/Hyprland). wmControlled
+    // starts true for fullscreen; it also latches true when the compositor hands us a size we never asked for
+    // (a tile) before any requested size was ever honored — then we stop driving SDL_SetWindowSize and the UI
+    // fits its grid via zoom instead. sizeHonored proves the window is floating (a request took), which vetoes
+    // the clamp latch so a spurious compositor resize isn't mistaken for a tiling takeover.
+    bool          wmControlled = false;
+    bool          sizeHonored = false;
+    std::uint32_t requestedW = 0;   // last size asked of the WM (the clamp-detection baseline)
+    std::uint32_t requestedH = 0;
+    bool          debugResize = false;  // RETROPLUG_DEBUG_RESIZE: log every request / WM resize (WM debugging)
+
     // audio scratch: `numOutputs` planar channel buffers (pre-sized to the device block so the callback
     // never allocates). The Engine renders planar + routes each system to its pair per audioRouting; we
     // interleave into the SDL stream. numOutputs == reqOutChannels (device opened with allowed_changes=0).
@@ -223,9 +244,12 @@ struct AppState {
     std::vector<float*>             audioPtrs;
     int    numOutputs = 2;
     double sampleRate = 48000.0;   // obtained device rate (drives the Engine)
-    int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block + channels, persisted to audio.cfg
-    int    reqBlockSize  = 2048;
+    int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block + channels, persisted to audio.json
+    int    reqBlockSize  = 512;    // low-latency default; low-power devices (the handheld) pass a bigger buffer
+                                   // via --block-size (e.g. 4096) so the audio callback keeps its deadline
     int    reqOutChannels = 2;     // 2 = stereo mix (default); 4/6/8 = wide stems for a multichannel device
+    int    reqHostApi = -1;        // chosen PortAudio host API (PaHostApiTypeId: paPipeWire/paALSA/paJACK/...);
+                                   // -1 = Auto (prefer PipeWire, else default). Persisted to audio.json.
 
     // Present only when LVGL actually redrew: the flush cb unions the changed area here; the loop skips
     // the SDL texture upload + blit entirely on idle frames (a static menu → ~0% CPU instead of a full
@@ -239,7 +263,7 @@ AppState* g_app = nullptr;  // single instance
 // Audio device (re)configuration — defined after audioCb (they reference it); declared here so the
 // __rp_setAudioConfig hook (bound earlier) can drive a live sample-rate / block-size change.
 bool openAudio(AppState& a);
-void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels);
+void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, int hostApi);
 void loadAudioConfig(AppState& a);
 void saveAudioConfig(AppState& a);
 // MIDI device (re)selection — declared here so the __rp_setMidiInput/Output hooks (bound earlier) can drive a
@@ -252,7 +276,7 @@ void loadMidiConfig(AppState& a);
 // Resize the window + everything that tracks its dimensions (the __rp_setWindowSize seam). Defined after the
 // LVGL glue; declared here so the window hook can call it. Runs on the UI thread (same as present), so the
 // texture/buffer/width swap is race-free.
-void resizeWindow(AppState& a, std::uint32_t w, std::uint32_t h);
+void requestWindowSize(AppState& a, std::uint32_t w, std::uint32_t h);
 
 // ---- LVGL glue (mirrors RenderCore's non-GL subset) -----------------------------------------------
 
@@ -339,20 +363,22 @@ JSValue jsQuitWindow(JSContext*, JSValueConst, int, JSValueConst*) {
     if (g_app) g_app->running = false;
     return JS_UNDEFINED;
 }
-// A fullscreen (handheld) window is WM-controlled → the UI fits its grid via zoom rather than resizing a
-// fixed panel. A desktop windowed session is ours to size, so the App's fit-to-grid effect drives resizes.
+// A WM-controlled window (a fullscreen handheld, or a window a tiling compositor tiled) → the UI fits its grid
+// via zoom rather than resizing. A floating desktop window is ours to size, so the App's fit-to-grid effect
+// drives resizes. Mirrors PluginUI::isWindowSizeControlled — the latch that keeps us from fighting the WM.
 JSValue jsIsWindowSizeControlled(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-    return JS_NewBool(ctx, g_app ? g_app->fullscreen : 1);
+    return JS_NewBool(ctx, g_app ? g_app->wmControlled : 1);
 }
-// __rp_setWindowSize(w, h): grow/shrink the window to the grid (desktop only). Mirrors the DPF standalone,
-// where setSize() → the platform resize callback reallocs the LVGL buffer + emits "resize"; SDL gives us no
-// such callback, so resizeWindow does it all inline. Inert on a fullscreen handheld (the WM owns the panel).
+// __rp_setWindowSize(w, h): grow/shrink the window to the grid. Mirrors the DPF standalone, where setSize() →
+// the platform resize callback reallocs the LVGL buffer + emits "resize"; SDL gives us no such callback, so
+// requestWindowSize asks the WM and the SDL_WINDOWEVENT_SIZE_CHANGED handler does the realloc. Inert once the
+// WM owns geometry (a fullscreen handheld, or a tiling compositor) — requestWindowSize handles that.
 JSValue jsSetWindowSize(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (!g_app || g_app->fullscreen || argc < 2) return JS_UNDEFINED;
+    if (!g_app || argc < 2) return JS_UNDEFINED;
     std::uint32_t w = 0, h = 0;
     JS_ToUint32(ctx, &w, argv[0]);
     JS_ToUint32(ctx, &h, argv[1]);
-    if (w != 0 && h != 0 && (w != g_app->width || h != g_app->height)) resizeWindow(*g_app, w, h);
+    if (w != 0 && h != 0) requestWindowSize(*g_app, w, h);
     return JS_UNDEFINED;
 }
 JSValue jsSetWindowTitle(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
@@ -428,28 +454,62 @@ void pollFileDialog(AppState& a) {
     });
 }
 
-// __rp_getAudioConfig(): { sampleRate, blockSize, outChannels } — the live standalone audio device config,
-// for the Audio settings submenu to display the current values.
+// The PortAudio host APIs usable for output right now — each registered host API (ALSA/PipeWire/JACK/...) that
+// has a valid default output device. Drives the Settings > Audio > Driver picker; `type` is a PaHostApiTypeId
+// (what AppState::reqHostApi stores + audio.json persists). Depends on the runtime, so it's recomputed on read.
+struct HostApiEntry { std::string name; int type; };
+std::vector<HostApiEntry> availableHostApis() {
+    std::vector<HostApiEntry> out;
+    for (PaHostApiIndex i = 0; i < Pa_GetHostApiCount(); ++i) {
+        const PaHostApiInfo* h = Pa_GetHostApiInfo(i);
+        if (h && h->defaultOutputDevice != paNoDevice) out.push_back({ h->name, static_cast<int>(h->type) });
+    }
+    return out;
+}
+
+// __rp_getAudioConfig(): { sampleRate, blockSize, outChannels, driver, drivers } — the live standalone audio
+// device config, for the Audio settings submenu to display the current values. `drivers` is "Auto" plus each
+// available host API name; `driver` is the selected name ("Auto" when reqHostApi is -1, or when the persisted
+// host API isn't currently available — which is exactly when openAudio falls back to Auto anyway).
 JSValue jsGetAudioConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     JSValue o = JS_NewObject(ctx);
     if (g_app) {
         JS_SetPropertyStr(ctx, o, "sampleRate",  JS_NewInt32(ctx, g_app->reqSampleRate));
         JS_SetPropertyStr(ctx, o, "blockSize",   JS_NewInt32(ctx, g_app->reqBlockSize));
         JS_SetPropertyStr(ctx, o, "outChannels", JS_NewInt32(ctx, g_app->reqOutChannels));
+        const std::vector<HostApiEntry> apis = availableHostApis();
+        JSValue arr = JS_NewArray(ctx);
+        JS_SetPropertyUint32(ctx, arr, 0, JS_NewString(ctx, "Auto"));
+        std::string selected = "Auto";
+        for (std::uint32_t i = 0; i < apis.size(); ++i) {
+            JS_SetPropertyUint32(ctx, arr, i + 1, JS_NewString(ctx, apis[i].name.c_str()));
+            if (apis[i].type == g_app->reqHostApi) selected = apis[i].name;
+        }
+        JS_SetPropertyStr(ctx, o, "drivers", arr);
+        JS_SetPropertyStr(ctx, o, "driver",  JS_NewString(ctx, selected.c_str()));
     }
     return o;
 }
 
-// __rp_setAudioConfig(sampleRate, blockSize, outChannels?): re-open the audio device with new params on the
-// fly (and persist them). Reuses the deactivate→re-rate→reactivate handoff the plugin does for a host SR
+// __rp_setAudioConfig(sampleRate, blockSize, outChannels?, driver?): re-open the audio device with new params on
+// the fly (and persist them). Reuses the deactivate→re-rate→reactivate handoff the plugin does for a host SR
 // change. outChannels is optional (older UI bundles omit it) — 2/4/6/8; anything else keeps the current count.
+// driver is optional — "Auto"/"" = the default (PipeWire-preferred) selection, else a host API name from
+// __rp_getAudioConfig().drivers (matched to its PaHostApiTypeId); an unknown name keeps the current driver.
 JSValue jsSetAudioConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (g_app && argc >= 2) {
-        int sr = 0, bs = 0, ch = g_app->reqOutChannels;
+        int sr = 0, bs = 0, ch = g_app->reqOutChannels, ha = g_app->reqHostApi;
         JS_ToInt32(ctx, &sr, argv[0]);
         JS_ToInt32(ctx, &bs, argv[1]);
         if (argc >= 3) { int c = 0; JS_ToInt32(ctx, &c, argv[2]); if (c >= 2 && c <= 8 && (c % 2) == 0) ch = c; }
-        if (sr > 0 && bs > 0) reconfigureAudio(*g_app, sr, bs, ch);
+        if (argc >= 4) {
+            const char* s = JS_ToCString(ctx, argv[3]);
+            const std::string name = s ? s : "";
+            if (s) JS_FreeCString(ctx, s);
+            if (name.empty() || name == "Auto") ha = -1;
+            else for (const HostApiEntry& e : availableHostApis()) if (e.name == name) { ha = e.type; break; }
+        }
+        if (sr > 0 && bs > 0) reconfigureAudio(*g_app, sr, bs, ch, ha);
     }
     return JS_UNDEFINED;
 }
@@ -475,7 +535,7 @@ JSValue jsGetMidiConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
 }
 
 // __rp_setMidiInput(name) / __rp_setMidiOutput(name): choose a hardware device by port name (empty string =
-// the default). Applies immediately (reconnects the RtMidi port) + persists to midi.cfg.
+// the default). Applies immediately (reconnects the RtMidi port) + persists to midi.json.
 JSValue jsSetMidiInput(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (g_app && argc >= 1) {
         const char* s = JS_ToCString(ctx, argv[0]);
@@ -637,28 +697,24 @@ void pinUiThreadAwayFromAudioCore() {
 }
 #endif
 
-// ---- audio ----------------------------------------------------------------------------------------
-// SDL calls this on its own audio thread. It owns the Engine while running (setAudioThreadOwns(true)),
-// so it drains the control-thread command ring each block then renders — mirrors PluginDSP::run.
-void audioCb(void* userdata, Uint8* stream, int len) {
-    auto* a = static_cast<AppState*>(userdata);
-#if defined(__linux__)
-    static std::atomic<bool> tuned{false};
-    if (!tuned.exchange(true)) tuneAudioThread(); // once, on the real audio thread
-#endif
-    const int N = a->numOutputs;
-    const int frames = (N > 0) ? len / static_cast<int>(N * sizeof(float)) : 0;
-    if (frames <= 0) { std::memset(stream, 0, len); return; }
-    if (static_cast<int>(a->audioPlanar[0].size()) < frames)
-        for (int c = 0; c < N; ++c) { a->audioPlanar[c].resize(frames); a->audioPtrs[c] = a->audioPlanar[c].data(); }
+// ---- audio (PortAudio) ----------------------------------------------------------------------------
+// PortAudio (deps/portaudio, `pipewire` branch) drives audio — the native PipeWire host API where available,
+// else ALSA. The callback owns the Engine while running (setAudioThreadOwns(true)): it drains the control-
+// thread command ring each block then renders, exactly as PluginDSP::run does. renderAudioBlock is the shared
+// body called by BOTH the PortAudio callback and the headless fallback pump (below).
+void renderAudioBlock(AppState& a, float* out, int frames) {
+    const int N = a.numOutputs;
+    if (frames <= 0 || N <= 0) return;
+    if (static_cast<int>(a.audioPlanar[0].size()) < frames)
+        for (int c = 0; c < N; ++c) { a.audioPlanar[c].resize(frames); a.audioPtrs[c] = a.audioPlanar[c].data(); }
 
-    a->invoker.drainInto(a->engine);
+    a.invoker.drainInto(a.engine);
     // Drain MIDI the RtMidi callback thread staged into the ring, and hand it to the Engine — we own it on
     // this (audio) thread, exactly like PluginDSP::run stages host MIDI. Frame 0 for now: live hardware MIDI
     // carries no sub-block timing worth preserving (a proper offset from the block clock is a later step).
-    a->midi.poll(a->midiScratch);
-    a->clockSync.sampleRate = a->sampleRate;
-    for (auto& m : a->midiScratch) {
+    a.midi.poll(a.midiScratch);
+    a.clockSync.sampleRate = a.sampleRate;
+    for (auto& m : a.midiScratch) {
         if (m.bytes.empty()) continue;
         // Forward raw MIDI to a connected physical N8 (no-op + near-free when disconnected). Frame 0 - the
         // standalone stages at frame 0 anyway; the N8Link serial thread does the timed release + USB write.
@@ -666,135 +722,245 @@ void audioCb(void* userdata, Uint8* stream, int len) {
         // data. The sync roles regenerate whatever each core needs, and risa's generated F8 stream reaches
         // the N8 via the Engine core-byte mirror - so raw-forwarding them here too would double-clock it.
         if (!(m.bytes.size() == 1 && m.bytes[0] >= 0xF8))
-            a->n8Host.link().push(0, m.bytes.data(), m.bytes.size(), a->sampleRate);
+            a.n8Host.link().push(0, m.bytes.data(), m.bytes.size(), a.sampleRate);
         if (m.bytes.size() > 3) continue;
         // Real-time transport bytes (0xF8 clock / 0xFA start / 0xFB continue / 0xFC stop) drive the host
         // transport, not the emulator — consume them here and don't stage them (the sync roles regenerate
         // clock from Engine tempo/transport). Everything else (notes/CC/...) is staged as host MIDI in.
-        if (m.bytes.size() == 1 && a->clockSync.onByte(m.bytes[0])) continue;
-        a->engine.stageMidi(0, std::move(m.bytes));
-        a->midiStaged.fetch_add(1, std::memory_order_relaxed);
+        if (m.bytes.size() == 1 && a.clockSync.onByte(m.bytes[0])) continue;
+        a.engine.stageMidi(0, std::move(m.bytes));
+        a.midiStaged.fetch_add(1, std::memory_order_relaxed);
     }
-    a->clockSync.advance(frames);
+    a.clockSync.advance(frames);
 
-    a->engine.setBpm(a->clockSync.outBpm());          // 120 free-run until an external clock master appears
-    a->engine.setTransport(a->clockSync.outPlaying()); // then locks to its tempo + start/stop
+    a.engine.setBpm(a.clockSync.outBpm());          // 120 free-run until an external clock master appears
+    a.engine.setTransport(a.clockSync.outPlaying()); // then locks to its tempo + start/stop
     // Multi-out: render into the N planar channel buffers; the Engine zeroes + routes each system to its
     // pair per audioRouting (MultiOutRouter/ChannelSplitRouter). N=2 collapses every mode to the stereo mix
     // (identical to the old 2-arg path). N=4/6/8 spreads stems across the device's pairs.
-    a->engine.processBlock(static_cast<std::uint32_t>(frames), a->audioPtrs.data(), static_cast<std::size_t>(N));
+    a.engine.processBlock(static_cast<std::uint32_t>(frames), a.audioPtrs.data(), static_cast<std::size_t>(N));
 
     // Kernel MIDI-out (LSDj MI.OUT / Master Sync / passthrough) → the RtMidi out port, then clear the block's
     // queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW).
-    for (const auto& mo : a->engine.midiOut())
-        if (mo.data.size() >= 1 && mo.data.size() <= 3) a->midi.send(mo.data.data(), mo.data.size());
-    a->engine.clearMidiOut();
+    for (const auto& mo : a.engine.midiOut())
+        if (mo.data.size() >= 1 && mo.data.size() <= 3) a.midi.send(mo.data.data(), mo.data.size());
+    a.engine.clearMidiOut();
 
-    auto* out = reinterpret_cast<float*>(stream);
     for (int i = 0; i < frames; ++i)
-        for (int c = 0; c < N; ++c) out[i * N + c] = a->audioPlanar[c][i]; // planar → interleaved (frame-major)
+        for (int c = 0; c < N; ++c) out[i * N + c] = a.audioPlanar[c][i]; // planar → interleaved (frame-major)
 }
 
-// Open the SDL audio device at the requested rate/block + size the render scratch. No frequency-change
-// flag → the device opens at exactly reqSampleRate (PipeWire resamples), so the value the UI shows is
-// truthful. Returns false (and the app runs muted) if the device won't open.
-bool openAudio(AppState& a) {
-    SDL_AudioSpec want{}, have{};
-    want.freq = a.reqSampleRate;
-    want.format = AUDIO_F32SYS;
-    want.channels = static_cast<Uint8>(a.reqOutChannels);
-    want.samples = static_cast<Uint16>(a.reqBlockSize);
-    want.callback = audioCb;
-    want.userdata = &a;
-    a.audioDev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0); // allowed_changes=0 → have matches want (SDL converts to the hardware)
-    if (a.audioDev == 0) {
-        std::fprintf(stderr, "[retroplug-sdl] SDL_OpenAudioDevice(%d Hz, %d frames, %d ch) failed: %s (muted)\n",
-                     a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, SDL_GetError());
-        return false;
+// The PortAudio stream callback (its own RT thread) — paFloat32 interleaved, numOutputs channels.
+int paCallback(const void* /*in*/, void* output, unsigned long frameCount, const PaStreamCallbackTimeInfo*,
+               PaStreamCallbackFlags, void* userData) {
+    auto* a = static_cast<AppState*>(userData);
+#if defined(__linux__)
+    static std::atomic<bool> tuned{false};
+    if (!tuned.exchange(true)) tuneAudioThread(); // once, on the real audio thread
+#endif
+    renderAudioBlock(*a, static_cast<float*>(output), static_cast<int>(frameCount));
+    return paContinue;
+}
+
+// Headless fallback: when no PortAudio device opens (CI / offscreen / no audio server), pump the engine at the
+// block cadence into a throwaway buffer on our own thread — so the emulator still advances and the smoke's
+// transport / multi-out checks run. This is the role SDL's `dummy` audio driver played (PortAudio has no null
+// device). Owns the Engine like the real callback (the host sets audioThreadOwns(true) around start/stop).
+void audioPumpLoop(AppState& a) {
+    std::vector<float> buf;
+    while (a.audioPumpRun.load(std::memory_order_acquire)) {
+        const int frames = a.reqBlockSize > 0 ? a.reqBlockSize : 1024;
+        buf.assign(static_cast<std::size_t>(frames) * (a.numOutputs > 0 ? a.numOutputs : 1), 0.0f);
+        renderAudioBlock(a, buf.data(), frames);
+        const double secs = a.sampleRate > 0 ? frames / a.sampleRate : frames / 48000.0;
+        std::this_thread::sleep_for(std::chrono::duration<double>(secs)); // approximate realtime (clock/BPM sanity)
     }
-    a.sampleRate = have.freq;
-    a.numOutputs = have.channels;
-    a.audioPlanar.assign(a.numOutputs, std::vector<float>(have.samples, 0.0f));
+}
+
+// Start / stop whichever audio path is active: the real PortAudio stream, or the headless fallback pump.
+void startAudio(AppState& a) {
+    if (a.audioStream) { Pa_StartStream(a.audioStream); return; }
+    a.audioPumpRun.store(true, std::memory_order_release);
+    a.audioPump = std::thread(audioPumpLoop, std::ref(a));
+}
+void stopAudio(AppState& a) {
+    if (a.audioStream) { Pa_StopStream(a.audioStream); return; } // blocks until the callback returns (joins it)
+    if (a.audioPump.joinable()) { a.audioPumpRun.store(false, std::memory_order_release); a.audioPump.join(); }
+}
+
+// Open a PortAudio output stream at the requested rate/block + size the render scratch. numOutputs / sampleRate
+// / the planar buffers are ALWAYS set (even when muted) so the Engine + the multi-out self-test behave with no
+// device. Returns true if a real stream opened; false = muted (startAudio then runs the fallback pump).
+bool openAudio(AppState& a) {
+    a.numOutputs = a.reqOutChannels;   // PortAudio opens exactly what we ask
+    a.sampleRate = a.reqSampleRate;
+    a.audioPlanar.assign(a.numOutputs, std::vector<float>(a.reqBlockSize, 0.0f));
     a.audioPtrs.resize(a.numOutputs);
     for (int c = 0; c < a.numOutputs; ++c) a.audioPtrs[c] = a.audioPlanar[c].data();
+
+    // One-time diagnostic: which host APIs PortAudio registered + their default output (RETROPLUG_DEBUG_AUDIO).
+    if (std::getenv("RETROPLUG_DEBUG_AUDIO")) {
+        for (PaHostApiIndex i = 0; i < Pa_GetHostApiCount(); ++i) {
+            const PaHostApiInfo* h = Pa_GetHostApiInfo(i);
+            if (h) std::fprintf(stderr, "[retroplug-sdl] host API %d: %s (type=%d, devices=%d, defaultOut=%d)\n",
+                                i, h->name, (int)h->type, h->deviceCount, h->defaultOutputDevice);
+        }
+    }
+
+    // Choose the output device by host API. Auto (reqHostApi < 0): prefer the native PipeWire host API (the
+    // fork's paPipeWire) over PortAudio's default host API, which on Linux resolves to raw ALSA, else the
+    // platform default. Otherwise honor the picked host API (Settings > Audio > Driver), falling back to Auto
+    // when it's absent / has no output device (e.g. over SSH with no session — then raw ALSA / muted).
+    auto hostApiDefaultOut = [](PaHostApiTypeId type) -> PaDeviceIndex {
+        const PaHostApiIndex idx = Pa_HostApiTypeIdToHostApiIndex(type);
+        if (idx < 0) return paNoDevice;
+        const PaHostApiInfo* hi = Pa_GetHostApiInfo(idx);
+        return (hi && hi->defaultOutputDevice != paNoDevice) ? hi->defaultOutputDevice : paNoDevice;
+    };
+    PaDeviceIndex dev = paNoDevice;
+    if (a.reqHostApi >= 0) {
+        dev = hostApiDefaultOut(static_cast<PaHostApiTypeId>(a.reqHostApi));
+        if (dev == paNoDevice)
+            std::fprintf(stderr, "[retroplug-sdl] audio: requested host API type=%d unavailable, using Auto\n",
+                         a.reqHostApi);
+    }
+    if (dev == paNoDevice) dev = hostApiDefaultOut(paPipeWire); // Auto: prefer PipeWire
+    if (dev == paNoDevice) dev = Pa_GetDefaultOutputDevice();   // else the platform default
+    if (dev == paNoDevice) {
+        std::fprintf(stderr, "[retroplug-sdl] PortAudio: no default output device (muted)\n");
+        a.audioStream = nullptr;
+        return false;
+    }
+    PaStreamParameters out{};
+    out.device = dev;
+    out.channelCount = a.reqOutChannels;
+    out.sampleFormat = paFloat32; // interleaved float, frame-major (what renderAudioBlock writes)
+    out.suggestedLatency = Pa_GetDeviceInfo(dev)->defaultLowOutputLatency;
+    out.hostApiSpecificStreamInfo = nullptr;
+    const PaError err = Pa_OpenStream(&a.audioStream, nullptr, &out, a.reqSampleRate,
+                                      static_cast<unsigned long>(a.reqBlockSize), paNoFlag, paCallback, &a);
+    if (err != paNoError) {
+        std::fprintf(stderr, "[retroplug-sdl] Pa_OpenStream(%d Hz, %d frames, %d ch) failed: %s (muted)\n",
+                     a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, Pa_GetErrorText(err));
+        a.audioStream = nullptr;
+        return false;
+    }
+    if (const PaStreamInfo* info = Pa_GetStreamInfo(a.audioStream)) a.sampleRate = info->sampleRate;
+    const PaDeviceInfo* di = Pa_GetDeviceInfo(dev);
+    std::fprintf(stderr, "[retroplug-sdl] audio: PortAudio [%s] '%s' %d Hz, %d frames, %d ch\n",
+                 di ? Pa_GetHostApiInfo(di->hostApi)->name : "?", di ? di->name : "?",
+                 static_cast<int>(a.sampleRate), a.reqBlockSize, a.numOutputs);
     return true;
 }
 
-std::string audioCfgPath(AppState& a) { return a.hostSvc.configDir() + "/audio.cfg"; }
-
-void loadAudioConfig(AppState& a) {
-    if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "r")) {
-        int sr = 0, bs = 0, ch = 0;
-        const int m = std::fscanf(f, "%d %d %d", &sr, &bs, &ch); // ch: optional 3rd field (older files have 2)
-        if (m >= 2 && sr > 0 && bs > 0) { a.reqSampleRate = sr; a.reqBlockSize = bs; }
-        if (m >= 3 && ch >= 2 && ch <= 8 && (ch % 2) == 0) a.reqOutChannels = ch;
+// audio.json / midi.json are NATIVE-owned device settings, read here at startup (setupSdl) before
+// bootControlPlane brings up the JS runtime that owns config.json — so they can't live in the TS config, and
+// they're standalone-only anyway (the plugin gets audio/MIDI from its DAW). They're small reflect-cpp JSON
+// blobs, decoded tolerantly (DefaultIfMissing) exactly like the per-system role config that crosses to native
+// (a missing/garbage field takes the struct default). Whole file into a string (empty if unreadable).
+std::string slurpTextFile(const std::string& path) {
+    std::string out;
+    if (FILE* f = std::fopen(path.c_str(), "rb")) {
+        char buf[4096];
+        size_t n;
+        while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
         std::fclose(f);
     }
+    return out;
+}
+void writeTextFile(const std::string& path, const std::string& text) {
+    if (FILE* f = std::fopen(path.c_str(), "wb")) {
+        std::fwrite(text.data(), 1, text.size(), f);
+        std::fclose(f);
+    }
+}
+
+// The standalone audio device settings. hostApi is a PaHostApiTypeId (-1 = Auto). Defaults here mirror the
+// AppState defaults so a partial/absent file lands on the same values.
+struct AudioCfgJson {
+    int sampleRate = 48000;
+    int blockSize = 512;
+    int outChannels = 2;
+    int hostApi = -1; // PaHostApiTypeId; -1 = Auto (prefer PipeWire, else default)
+};
+
+std::string audioCfgPath(AppState& a) { return a.hostSvc.configDir() + "/audio.json"; }
+
+void loadAudioConfig(AppState& a) {
+    const std::string json = slurpTextFile(audioCfgPath(a));
+    if (json.empty()) return; // absent/unreadable → keep the compiled-in / --block-size-seeded defaults
+    const auto r = rfl::json::read<AudioCfgJson, rfl::DefaultIfMissing>(json);
+    if (!r) return; // unparseable → keep defaults
+    const AudioCfgJson c = r.value();
+    if (c.sampleRate > 0) a.reqSampleRate = c.sampleRate;
+    if (c.blockSize > 0) a.reqBlockSize = c.blockSize;
+    if (c.outChannels >= 2 && c.outChannels <= 8 && (c.outChannels % 2) == 0) a.reqOutChannels = c.outChannels;
+    a.reqHostApi = c.hostApi; // -1 = Auto; any other value is a PaHostApiTypeId (openAudio validates it)
 }
 
 void saveAudioConfig(AppState& a) {
-    if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "w")) {
-        std::fprintf(f, "%d %d %d\n", a.reqSampleRate, a.reqBlockSize, a.reqOutChannels);
-        std::fclose(f);
-    }
+    const AudioCfgJson c{ a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, a.reqHostApi };
+    writeTextFile(audioCfgPath(a), rfl::json::write(c) + "\n");
 }
 
-// The chosen MIDI input/output device names (Settings > MIDI), one per line (names contain spaces, so this is
-// line-based, not %s). An empty line = the default sentinel (All Devices / None).
-std::string midiCfgPath(AppState& a) { return a.hostSvc.configDir() + "/midi.cfg"; }
+// The chosen MIDI input/output device names (Settings > MIDI). "" = the default sentinel (All Devices for
+// input, None for output).
+struct MidiCfgJson {
+    std::string input;
+    std::string output;
+};
+
+std::string midiCfgPath(AppState& a) { return a.hostSvc.configDir() + "/midi.json"; }
 
 void loadMidiConfig(AppState& a) {
-    if (FILE* f = std::fopen(midiCfgPath(a).c_str(), "r")) {
-        char line[512];
-        std::string in, out;
-        if (std::fgets(line, sizeof line, f)) in = line;
-        if (std::fgets(line, sizeof line, f)) out = line;
-        std::fclose(f);
-        auto trimEol = [](std::string& s) { while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back(); };
-        trimEol(in);
-        trimEol(out);
-        a.midi.setInputSelection(in);   // stored now; applied when midi.open() connects the ports
-        a.midi.setOutputSelection(out);
-    }
+    const std::string json = slurpTextFile(midiCfgPath(a));
+    if (json.empty()) return;
+    const auto r = rfl::json::read<MidiCfgJson, rfl::DefaultIfMissing>(json);
+    if (!r) return;
+    const MidiCfgJson c = r.value();
+    a.midi.setInputSelection(c.input);   // stored now; applied when midi.open() connects the ports
+    a.midi.setOutputSelection(c.output);
 }
 
 void saveMidiConfig(AppState& a) {
-    if (FILE* f = std::fopen(midiCfgPath(a).c_str(), "w")) {
-        std::fprintf(f, "%s\n%s\n", a.midi.inputSelection().c_str(), a.midi.outputSelection().c_str());
-        std::fclose(f);
-    }
+    const MidiCfgJson c{ a.midi.inputSelection(), a.midi.outputSelection() };
+    writeTextFile(midiCfgPath(a), rfl::json::write(c) + "\n");
 }
 
 // Live audio reconfigure (the Audio settings submenu): stop the device, take the Engine back from the
 // audio thread, re-rate it, re-open at the new rate/block, hand it back — the plugin's deactivate →
 // setSampleRate → activate handoff. Then persist. Called on the UI thread.
-void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels) {
-    if (sampleRate == a.reqSampleRate && blockSize == a.reqBlockSize && channels == a.reqOutChannels && a.audioDev)
-        return; // no-op
-    if (a.audioDev) { SDL_PauseAudioDevice(a.audioDev, 1); SDL_CloseAudioDevice(a.audioDev); a.audioDev = 0; }
+void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, int hostApi) {
+    if (sampleRate == a.reqSampleRate && blockSize == a.reqBlockSize && channels == a.reqOutChannels &&
+        hostApi == a.reqHostApi &&
+        (a.audioStream || a.audioPumpRun.load(std::memory_order_acquire)))
+        return; // no-op — same params (incl. driver) + audio already active (real stream or fallback pump)
+    stopAudio(a);                                     // Pa_StopStream (joins the callback) or stop+join the pump
+    if (a.audioStream) { Pa_CloseStream(a.audioStream); a.audioStream = nullptr; }
     a.invoker.setAudioThreadOwns(false);
     a.invoker.drainInto(a.engine);
     a.reqSampleRate = sampleRate;
     a.reqBlockSize  = blockSize;
     a.reqOutChannels = channels;
-    a.engine.setSampleRate(sampleRate); // re-rate live cores (safe — audio thread stopped)
-    if (openAudio(a)) {
-        a.invoker.setAudioThreadOwns(true);
-        SDL_PauseAudioDevice(a.audioDev, 0);
-    }
+    a.reqHostApi = hostApi;
+    a.engine.setSampleRate(sampleRate); // re-rate live cores (safe — audio stopped)
+    openAudio(a);                       // opens a real stream, or leaves it muted (numOutputs still sized)
+    a.invoker.setAudioThreadOwns(true);
+    startAudio(a);                      // Pa_StartStream, or start the headless fallback pump
     saveAudioConfig(a);
-    std::fprintf(stderr, "[retroplug-sdl] audio reconfigured: %d Hz, %d frames, %d ch\n",
-                 a.reqSampleRate, a.reqBlockSize, a.reqOutChannels);
+    std::fprintf(stderr, "[retroplug-sdl] audio reconfigured: %d Hz, %d frames, %d ch (driver type=%d)\n",
+                 a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, a.reqHostApi);
 }
 
-// Live MIDI device reselection (Settings > MIDI). Reconnects the RtMidi port on the UI thread while the audio
-// callback (which calls midi.poll/send) is locked out, so mutating the ports races nothing — the audio-thread
-// analog of reconfigureAudio's engine handoff. A brief audio glitch on a manual device change is expected.
+// Live MIDI device reselection (Settings > MIDI). Briefly stops audio so the callback / pump isn't mid
+// poll/send while we reconnect the RtMidi ports — PortAudio has no SDL_LockAudioDevice equivalent, and
+// Pa_StopStream joins the callback, so mutating the ports races nothing. A brief audio gap on a manual device
+// change is expected (rare action) — the audio-thread analog of reconfigureAudio's handoff.
 void reconfigureMidi(AppState& a, bool input, const std::string& name) {
-    if (a.audioDev) SDL_LockAudioDevice(a.audioDev);
+    stopAudio(a);
     if (input) a.midi.setInputSelection(name);
     else       a.midi.setOutputSelection(name);
-    if (a.audioDev) SDL_UnlockAudioDevice(a.audioDev);
+    startAudio(a);
     saveMidiConfig(a);
     std::fprintf(stderr, "[retroplug-sdl] MIDI %s device -> '%s'\n", input ? "input" : "output",
                  name.empty() ? (input ? "All Devices" : "None") : name.c_str());
@@ -903,25 +1069,40 @@ bool setupUi(AppState& a) {
 
 bool setupSdl(AppState& a) {
     SDL_SetMainReady(); // required when SDL_MAIN_HANDLED is set (see the <SDL.h> include note)
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
+    // A stable application name → the Wayland app_id / X11 WM_CLASS, so a tiling WM's window rules can target
+    // RetroPlug (e.g. Hyprland `windowrulev2 = tile, class:(RetroPlug)`). Set before SDL_Init.
+    SDL_SetHint(SDL_HINT_APP_NAME, "RetroPlug");
+    // Audio is PortAudio now (not SDL) — init only video + gamepad here.
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "[retroplug-sdl] SDL_Init failed: %s\n", SDL_GetError());
         return false;
     }
-    Uint32 winFlags = 0;
-    if (std::getenv("RETROPLUG_SDL_FULLSCREEN")) winFlags |= SDL_WINDOW_FULLSCREEN;
-    a.fullscreen = (winFlags & SDL_WINDOW_FULLSCREEN) != 0; // gates the __rp_setWindowSize resize seam
+    a.fullscreen = std::getenv("RETROPLUG_SDL_FULLSCREEN") != nullptr;
+    // Resizable (not a fixed-size toplevel) so a tiling WM tiles the window instead of auto-floating it, and a
+    // floating window can be dragged to any size — the DPF standalone is resizable for exactly this reason. A
+    // fullscreen handheld ignores the flag. The min-size floor mirrors the plugin's setGeometryConstraints.
+    Uint32 winFlags = a.fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_RESIZABLE;
     a.window = SDL_CreateWindow("RetroPlug", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                 a.width, a.height, winFlags);
     if (!a.window) { std::fprintf(stderr, "[retroplug-sdl] SDL_CreateWindow failed: %s\n", SDL_GetError()); return false; }
+    SDL_SetWindowMinimumSize(a.window, 480, 432);
+    // Seed the geometry-ownership state: fullscreen is WM-controlled from the start; arm the clamp baseline with
+    // the initial size so the FIRST compositor resize that differs (a tile) is recognised as a WM takeover.
+    a.wmControlled = a.fullscreen;
+    a.requestedW = a.width;
+    a.requestedH = a.height;
+    a.debugResize = std::getenv("RETROPLUG_DEBUG_RESIZE") != nullptr;
     a.renderer = SDL_CreateRenderer(a.window, -1, SDL_RENDERER_SOFTWARE);
     if (!a.renderer) { std::fprintf(stderr, "[retroplug-sdl] SDL_CreateRenderer failed: %s\n", SDL_GetError()); return false; }
     a.texture = SDL_CreateTexture(a.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
                                   a.width, a.height);
     if (!a.texture) { std::fprintf(stderr, "[retroplug-sdl] SDL_CreateTexture failed: %s\n", SDL_GetError()); return false; }
 
-    // Audio: apply any persisted rate/block (the Audio settings submenu) then open before boot so the
-    // obtained rate seeds the Engine. The dummy driver (headless) still fires the callback, so the
-    // emulator advances even with no device.
+    // Audio: init PortAudio, apply any persisted rate/block (the Audio settings submenu), then open the stream
+    // before boot so the obtained rate seeds the Engine. Where no device opens (headless), openAudio leaves it
+    // muted and startAudio runs the fallback pump so the emulator still advances (see audioPumpLoop).
+    if (const PaError pe = Pa_Initialize(); pe != paNoError)
+        std::fprintf(stderr, "[retroplug-sdl] Pa_Initialize failed: %s (running muted)\n", Pa_GetErrorText(pe));
     loadAudioConfig(a);
     openAudio(a);
     return true;
@@ -943,14 +1124,16 @@ void present(AppState& a) {
     a.dirty = false;
 }
 
-// Resize the window and every dimension-tracking resource in lockstep: the SDL window, the LVGL display
-// resolution + its DIRECT-mode draw buffer, and the streaming SDL texture (a STREAMING texture can't resize
-// in place — recreate it). Then force a full-window redraw and tell the UI so it re-lays-out. This inlines
-// what DPF's platform resize callback does for the plugin (LVGL::recreateTextureData + emit "resize").
-void resizeWindow(AppState& a, std::uint32_t w, std::uint32_t h) {
+// Adopt an actual window size — resize every dimension-tracking resource in lockstep: the SDL window (only
+// when WE initiated it; a WM-driven change already sized the window), the LVGL display resolution + its
+// DIRECT-mode draw buffer, and the streaming SDL texture (a STREAMING texture can't resize in place —
+// recreate it). Then force a full-window redraw and tell the UI so it re-lays-out. This inlines what DPF's
+// platform resize callback does for the plugin (LVGL::recreateTextureData + emit "resize").
+void applyWindowSize(AppState& a, std::uint32_t w, std::uint32_t h, bool fromWm) {
     if (!a.window || !a.display || !a.renderer) return;
+    if (w == a.width && h == a.height && a.texture) return; // already at this size — nothing to realloc
 
-    SDL_SetWindowSize(a.window, static_cast<int>(w), static_cast<int>(h));
+    if (!fromWm) SDL_SetWindowSize(a.window, static_cast<int>(w), static_cast<int>(h)); // ask the WM
 
     // LVGL display: set the new resolution, then re-point it at a freshly sized DIRECT buffer.
     const lv_color_format_t cf = lv_display_get_color_format(a.display);
@@ -975,6 +1158,39 @@ void resizeWindow(AppState& a, std::uint32_t w, std::uint32_t h) {
         JS_FreeValue(ctx, args[0]);
         JS_FreeValue(ctx, args[1]);
     }
+}
+
+// The __rp_setWindowSize seam: the UI asks the WM for a w×h window (grow/shrink to the grid). Mirrors
+// PluginUI::requestWindowSize — record the request as the clamp baseline, but don't fight a WM that owns
+// geometry (a tiling compositor or a fullscreen handheld); there the UI fits its grid via zoom instead.
+void requestWindowSize(AppState& a, std::uint32_t w, std::uint32_t h) {
+    a.requestedW = w; // recorded even when WM-controlled, so onWindowSizeChanged can still latch sizeHonored
+    a.requestedH = h;
+    if (a.wmControlled) {
+        if (a.debugResize)
+            std::fprintf(stderr, "[retroplug-sdl] resize request %ux%u ignored (WM owns geometry)\n", w, h);
+        return;
+    }
+    applyWindowSize(a, w, h, /*fromWm=*/false);
+}
+
+// SDL_WINDOWEVENT_SIZE_CHANGED: the actual window size changed (our SDL_SetWindowSize, a user drag, or a
+// tiling-WM tile). Mirrors PluginUI::onResize — latch sizeHonored when the WM grants a size we asked for
+// (proof the window is floating, ours to size), and detect a tiling takeover: a size we never requested,
+// before any request was ever honored, means the compositor owns geometry, so latch wmControlled and stop
+// driving SDL_SetWindowSize (fullscreen is already wmControlled). Then adopt the new size.
+void onWindowSizeChanged(AppState& a, std::uint32_t w, std::uint32_t h) {
+    if (a.requestedW != 0 && a.requestedH != 0 && w == a.requestedW && h == a.requestedH) a.sizeHonored = true;
+    if (!a.wmControlled && !a.sizeHonored && a.requestedW != 0 && a.requestedH != 0 &&
+        (w != a.requestedW || h != a.requestedH)) {
+        a.wmControlled = true;
+        if (a.debugResize)
+            std::fprintf(stderr, "[retroplug-sdl] WM owns geometry (tiled): got %ux%u, never asked for it\n", w, h);
+    }
+    if (a.debugResize)
+        std::fprintf(stderr, "[retroplug-sdl] onResize %ux%u (req %ux%u wmC=%d honored=%d)\n", w, h, a.requestedW,
+                     a.requestedH, (int)a.wmControlled, (int)a.sizeHonored);
+    applyWindowSize(a, w, h, /*fromWm=*/true);
 }
 
 void handleEvents(AppState& a) {
@@ -1028,6 +1244,13 @@ void handleEvents(AppState& a) {
                 if (mapSdlKey(ev.key.keysym.sym, lv, dpf)) feedKey(a, lv, dpf, ev.type == SDL_KEYDOWN);
                 break;
             }
+            // The WM/user resized the window (a drag-grip resize, or a tiling compositor tiling us) → adopt the
+            // new size + run the tiling-clamp detection. SIZE_CHANGED fires for both API- and WM-driven changes.
+            case SDL_WINDOWEVENT:
+                if (ev.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+                    onWindowSizeChanged(a, static_cast<std::uint32_t>(ev.window.data1),
+                                        static_cast<std::uint32_t>(ev.window.data2));
+                break;
             case SDL_MOUSEMOTION: a.input.mousePos = {ev.motion.x, ev.motion.y}; break;
             case SDL_MOUSEBUTTONDOWN:
             case SDL_MOUSEBUTTONUP:
@@ -1057,6 +1280,10 @@ int main(int argc, char** argv) {
         if (arg == "--autoload" && i + 1 < argc) autoloadPath = argv[++i];
         else if (arg == "--width" && i + 1 < argc) app.width = static_cast<std::uint32_t>(std::atoi(argv[++i]));
         else if (arg == "--height" && i + 1 < argc) app.height = static_cast<std::uint32_t>(std::atoi(argv[++i]));
+        // Default audio block size (frames). The compiled-in default is 512 (low latency); a low-power device
+        // passes a bigger buffer here (the muOS launcher uses 4096) so the callback keeps its deadline. Parsed
+        // before setupSdl → loadAudioConfig, so a saved audio.json (an explicit Settings > Audio pick) still wins.
+        else if (arg == "--block-size" && i + 1 < argc) { const int b = std::atoi(argv[++i]); if (b > 0) app.reqBlockSize = b; }
         else if (arg == "--screenshot" && i + 1 < argc) screenshotPath = argv[++i];
     }
 
@@ -1100,13 +1327,13 @@ int main(int argc, char** argv) {
         for (const auto& n : app.midi.listOutputs()) std::fprintf(stderr, "[retroplug-sdl] MIDI out device: '%s'\n", n.c_str());
     }
 
-    // Hand the Engine to the SDL audio thread (control-plane edits become push-only, drained per block)
-    // then start it. Mirrors PluginDSP::activate.
+    // Hand the Engine to the audio thread (control-plane edits become push-only, drained per block) then start
+    // it. Mirrors PluginDSP::activate. startAudio runs the PortAudio stream, or the fallback pump when muted.
     app.invoker.setAudioThreadOwns(true);
 #if defined(__linux__)
     pinUiThreadAwayFromAudioCore(); // keep the 60 fps UI/emulator work off the audio thread's core
 #endif
-    if (app.audioDev) SDL_PauseAudioDevice(app.audioDev, 0);
+    startAudio(app);
 
     std::fprintf(stderr, "[retroplug-sdl] running %ux%u @ %.0f Hz\n", app.width, app.height, app.sampleRate);
 
@@ -1119,18 +1346,18 @@ int main(int argc, char** argv) {
 
     // Test hook: exercise a live audio reconfigure (device close/reopen + engine re-rate) headlessly.
     if (std::getenv("RETROPLUG_SDL_TEST_RECONFIG")) {
-        reconfigureAudio(app, 44100, 512, app.reqOutChannels);
-        std::fprintf(stderr, "[retroplug-sdl] post-reconfigure: %d Hz, %d frames, dev=%u\n",
-                     app.reqSampleRate, app.reqBlockSize, app.audioDev);
+        reconfigureAudio(app, 44100, 512, app.reqOutChannels, app.reqHostApi);
+        std::fprintf(stderr, "[retroplug-sdl] post-reconfigure: %d Hz, %d frames, stream=%s\n",
+                     app.reqSampleRate, app.reqBlockSize, app.audioStream ? "open" : "muted");
     }
 
     // Test hook: reconfigure to a wide output (RETROPLUG_SDL_TEST_MULTIOUT=<N ch>) and report the obtained
     // channel count — proves the N-channel device open + planar multi-out render + interleave stride.
     if (const char* env = std::getenv("RETROPLUG_SDL_TEST_MULTIOUT")) {
         const int ch = std::atoi(env);
-        reconfigureAudio(app, app.reqSampleRate, app.reqBlockSize, ch);
-        std::fprintf(stderr, "[retroplug-sdl] post-multiout: numOutputs=%d planarBufs=%zu dev=%u\n",
-                     app.numOutputs, app.audioPlanar.size(), app.audioDev);
+        reconfigureAudio(app, app.reqSampleRate, app.reqBlockSize, ch, app.reqHostApi);
+        std::fprintf(stderr, "[retroplug-sdl] post-multiout: numOutputs=%d planarBufs=%zu stream=%s\n",
+                     app.numOutputs, app.audioPlanar.size(), app.audioStream ? "open" : "muted");
     }
 
     // Test hook: exercise the window resize path (SDL window + LVGL display/buffer + texture) headlessly,
@@ -1138,7 +1365,7 @@ int main(int argc, char** argv) {
     if (const char* env = std::getenv("RETROPLUG_SDL_TEST_RESIZE")) {
         int w = 0, h = 0;
         if (std::sscanf(env, "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
-            resizeWindow(app, static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h));
+            requestWindowSize(app, static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h));
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
             std::fprintf(stderr, "[retroplug-sdl] post-resize: state=%ux%u window=%dx%d buf=%zu\n",
@@ -1204,7 +1431,9 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[retroplug-sdl] close-guard test: exited at frame %ld\n", frame);
 
     // --- teardown: reclaim the Engine, unmount, drop SDL ---
-    if (app.audioDev) { SDL_PauseAudioDevice(app.audioDev, 1); SDL_CloseAudioDevice(app.audioDev); }
+    stopAudio(app); // Pa_StopStream (joins the callback) or stop+join the fallback pump
+    if (app.audioStream) { Pa_CloseStream(app.audioStream); app.audioStream = nullptr; }
+    Pa_Terminate();
     if (std::getenv("RETROPLUG_SDL_MIDI_SELFTEST"))
         std::fprintf(stderr, "[retroplug-sdl] MIDI self-test: staged %llu message(s) into the Engine\n",
                      static_cast<unsigned long long>(app.midiStaged.load(std::memory_order_relaxed)));

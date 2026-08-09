@@ -267,9 +267,17 @@ export class MockBackend implements Backend {
     this.constructCalls.push(spec);
     // Build only when a real ROM is available: an embedded marker, TS-supplied effective ROM bytes
     // (romBytes wins, as native does), or the on-disk romPath — classified to a known format.
+    //
+    // The SMS/GG carve-out mirrors MesenBackend's gate, and has to: the Sega magic is optional, so
+    // headerless homebrew reaches construct with bytes that classify as "unknown". Native accepts those
+    // (rejecting only bytes that are positively another platform), and a stricter mock would fail every
+    // headerless-ROM store test against a backend that would really have built it.
     if (!spec.embeddedRom) {
       const bytes = spec.romBytes ?? this.files.get(this.canonicalize(spec.romPath));
-      if (!bytes || detectPlatform(bytes) === "unknown") return false;
+      if (!bytes) return false;
+      const fmt = detectPlatform(bytes);
+      const sega = spec.platform === "sms" || spec.platform === "gg";
+      if (fmt === "unknown" ? !sega : sega && fmt !== "sms" && fmt !== "gg") return false;
     }
     if (spec.replaceId !== undefined) this.systems.delete(spec.replaceId); // swap in place
     this.systems.set(id, {  // TS owns the id counter; the mock just records under the given id

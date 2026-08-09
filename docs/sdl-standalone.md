@@ -14,7 +14,7 @@ SDL2 drives those via its own video backend. **Goal: make `retroplug-sdl` the pr
 - SDL2 window; software blit of the LVGL buffer with dirty-region present; SDL drives GLES2 internally.
 - SDL audio callback → the multi-out `engine.processBlock` (2/4/6/8 device channels per the Out Channels
   knob); MIDI-clock-derived transport; live sample-rate/block-size/channels reconfigure (Settings → Audio);
-  `audio.cfg` persistence.
+  `audio.json` persistence.
 - Input: keyboard + mouse → LVGL indevs + the `key` bus; gamepad (`GamepadManager`) → menu nav + game input.
 - On-screen LVGL **file browser** (no dependence on OS dialogs), **Exit** menu row, `openPath`, window title.
 - Optional Linux RT audio thread (SCHED_FIFO + core affinity), for headroom on constrained devices.
@@ -66,7 +66,7 @@ ALSA `Through`); the pure `hardwarePortIndices`/`matchPortIndex` helpers decide 
 by `retroplug-midi-test`). Selection is a UI-driven native runtime setting, exactly like the Audio submenu: the
 `__rp_getMidiConfig` / `__rp_setMidiInput` / `__rp_setMidiOutput` hooks (bound only in the SDL host, so the
 plugin — which gets MIDI from the DAW — hides the submenu), reconnected live behind an audio-device lock and
-persisted by device name to `midi.cfg`. A saved device that isn't currently present is shown `(not connected)`
+persisted by device name to `midi.json`. A saved device that isn't currently present is shown `(not connected)`
 and re-applied on reconnect. `RETROPLUG_SDL_MIDI_LIST` dumps the enumerated device names.
 
 ### P3 — File drag-and-drop — ✅ DONE
@@ -101,8 +101,9 @@ stop + timeout-revert). Follow-up: MIDI clock has no sub-block frame offset (blo
 `audioCb` now renders through the multi-out `Engine::processBlock(frames, float* const* outputs, N)` (the same
 overload + planar convention the plugin uses with its 8 outputs) into `N` planar buffers, then interleaves
 frame-major (`stream[i·N + c]`) into the SDL stream. `N` is the device's output-channel count, a new **Out
-Channels** knob in `Settings > Audio` (2 = stereo mix / 4 / 6 / 8 pairs), persisted as a third field in
-`audio.cfg` and re-opened live via the `__rp_setAudioConfig` seam (now `sr, bs, ch`). Default **2** is
+Channels** knob in `Settings > Audio` (2 = stereo mix / 4 / 6 / 8 pairs), persisted in `audio.json` and
+re-opened live via the `__rp_setAudioConfig` seam (`sr, bs, ch, driver` — see the Driver picker below).
+Default **2** is
 byte-identical to the old 2-arg stereo path (zero regression); 4/6/8 opens that many device channels so the
 project's **Audio Routing** modes (`2-Ch/Inst`, `1-Ch/Inst`, `Channels`) fan real stems to a multichannel
 interface. No routing plumbing was needed — `audioRouting` already reaches the SDL Engine via the existing
@@ -110,16 +111,27 @@ interface. No routing plumbing was needed — `audioRouting` already reaches the
 only 2 channels every mode collapses to pair 0 (why it was inert before). Low priority — matters only on
 desktop with a multichannel interface (a stereo device just has SDL fold the extra channels back down).
 Verified headlessly with `RETROPLUG_SDL_TEST_MULTIOUT=<N>` (opens N channels, N planar buffers, runs the
-interleave) + the `audio.cfg` round-trip.
+interleave) + the `audio.json` round-trip.
 
 ### P6 — Window resize / zoom-to-grid + close guard — ✅ DONE
-**Resize:** `__rp_setWindowSize` now resizes the window to the grid (multi-instance growth / zoom / layout
-changes), mirroring the DPF standalone. Since SDL gives no platform resize callback, `resizeWindow` does inline
-what DPF's callback does for the plugin: `SDL_SetWindowSize` + `lv_display_set_resolution` + realloc the DIRECT
-draw buffer (`lv_display_set_buffers`) + recreate the STREAMING texture at the new size + emit the `"resize"`
-JS event so the UI re-lays-out. It's gated on **windowed vs fullscreen**: `__rp_isWindowSizeControlled` returns
-`true` for a fullscreen handheld (the WM owns a fixed panel → the UI fits via zoom, resize is inert) and `false`
-for a desktop window (ours to size → the App's fit-to-grid effect drives it).
+**Resize:** `__rp_setWindowSize` resizes the window to the grid (multi-instance growth / zoom / layout
+changes), mirroring the DPF standalone. Since SDL gives no platform resize callback, this splits into the DPF
+`requestWindowSize` / `onResize` pair: `requestWindowSize` (the seam) records the request + `SDL_SetWindowSize`s
+the window; `SDL_WINDOWEVENT_SIZE_CHANGED` → `onWindowSizeChanged` reallocs (`lv_display_set_resolution` +
+realloc the DIRECT draw buffer + recreate the STREAMING texture) + emits the `"resize"` JS event so the UI
+re-lays-out.
+
+**Tiling-WM parity (Wayland/Hyprland):** the window is created **`SDL_WINDOW_RESIZABLE`** with a
+`SDL_SetWindowMinimumSize(480,432)` floor (mirroring the plugin's `setGeometryConstraints`), so a tiling
+compositor **tiles it like any other window instead of auto-floating a fixed-size toplevel** — a floating one
+can still be drag-resized, and Hyprland's `togglefloating` flips between the two. `__rp_isWindowSizeControlled`
+now returns a dynamic `wmControlled` (was just `fullscreen`): it's `true` for a fullscreen handheld, and it
+**latches `true`** when the compositor hands us a size we never requested before any request was honored (a
+tile) — exactly `PluginUI::onResize`'s clamp detection, guarded by a `sizeHonored` latch so a floating window
+that *did* honor our sizes isn't mistaken for a tiled one. When `wmControlled`, the UI fits its grid via zoom
+and we stop driving `SDL_SetWindowSize` (don't fight the compositor). A stable `SDL_HINT_APP_NAME` ("RetroPlug")
+sets the Wayland app_id / X11 WM_CLASS so window rules can target it. `RETROPLUG_DEBUG_RESIZE` logs every
+request / WM resize.
 
 **Close guard:** `SDL_QUIT` (window button / WM / Ctrl-C) now routes through the unsaved-changes guard
 (`__rp_onCloseRequested`), a line-for-line mirror of [PluginUI::onClose](../packages/native/plugin/PluginUI.cpp#L352):
@@ -137,15 +149,39 @@ concerns the standalone doesn't need.
 
 ## Planned architecture decisions
 
-### Audio backend: SDL audio now → PortAudio (PipeWire) later
-Current audio is the SDL callback → `engine.processBlock`. The eventual target is a **PortAudio fork with
-native PipeWire support** (<https://github.com/tommitytom/portaudio/tree/pipewire>) — better latency + device
-handling than SDL's ALSA-compat path, especially on handhelds. To keep the swap mechanical, keep the audio
-backend behind the thin seam that's already mostly in place (`openAudio` / `audioCb` / `reconfigureAudio`
-handoff): both SDL and PortAudio are callback-based, so the swap is "implement the same 3 functions against
-PortAudio," selectable at build/config, with the RT-thread tuning + block-size reconfigure kept
-backend-agnostic. Nothing in the MIDI design (P1/P2) changes — the MIDI ring still drains in whichever audio
-callback is active. **Deferred** (after MIDI + the file browser).
+### Audio backend: PortAudio (PipeWire) — ✅ DONE
+Audio is driven by a **PortAudio fork with a native PipeWire host API**
+(<https://github.com/tommitytom/portaudio/tree/pipewire>, vendored as the `deps/portaudio` submodule on the
+`pipewire` branch) — better latency + device handling than SDL's ALSA-compat path, especially on the handheld.
+PortAudio is `add_subdirectory`'d next to rtmidi in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)
+(static) and links only into `retroplug-sdl`; its CMake auto-selects the **PipeWire** host API where
+`libpipewire-0.3` is found (added to the host + the arm64 sysroot via
+[tools/arm-sysroot.sh](../tools/arm-sysroot.sh)) and falls back to **ALSA** otherwise
+(`cmake_dependent_option(PA_USE_PIPEWIRE … ON PIPEWIRE_FOUND OFF)`). SDL still owns the window/video/gamepad;
+only `SDL_INIT_AUDIO` + the SDL device/callback are gone.
+
+**Driver picker (`Settings > Audio > Driver`).** The Audio submenu's first row is a driver cycler that
+enumerates the host APIs PortAudio actually registered — **Auto** (the default: prefer PipeWire, else the
+platform default = raw ALSA) plus each compiled-in host API with a usable output device. Because the list is
+enumerated natively (`__rp_getAudioConfig` returns `{…, driver, drivers}`), the picker automatically shows only
+what the build offers: **PipeWire + ALSA** on the handheld, plus **JACK** on a build made with
+`-DRETROPLUG_SDL_JACK=ON`. A pick stages into the Audio draft and commits with the same **Apply** as
+rate/block/channels (one stream reopen), persisted in `audio.json` as `hostApi` (the `PaHostApiTypeId`, `-1` =
+Auto). A selected-but-unavailable host API falls back to Auto at open time (never silence). **Pulse/sndio/OSS
+stay force-off** (`libsdl2-dev` drags in their dev libs, and the handheld doesn't ship the runtime `.so`s);
+**JACK is opt-in** for the same reason — it needs `libjack.so.0` at runtime, which a PipeWire-only desktop
+(no pipewire-jack/jackd) and the handheld lack, so it's off by default and gated behind `RETROPLUG_SDL_JACK`
+(the arm sysroot has no libjack dev, so the handheld cross build is JACK-free even with the flag).
+
+The seam mirrors the old SDL one: `renderAudioBlock` (the shared body — drain the command ring, MIDI in +
+`MidiClockSync`, `engine.processBlock` into the planar buffers, MIDI out, planar→interleaved) is called by the
+PortAudio stream callback (`paCallback`) or, when no device opens, by a **fallback pump thread** at the block
+cadence — the one-for-one replacement for SDL's `dummy` driver, so the emulator still advances headlessly and
+`pnpm sdl:smoke`'s transport/multi-out checks pass. `openAudio`→`Pa_OpenStream`, `reconfigureAudio`→
+`Pa_Stop/Close/Open/Start`, and `reconfigureMidi`→`Pa_Stop/Start` (PortAudio has no `SDL_LockAudioDevice`), all
+keeping the exact `invoker.setAudioThreadOwns` handoff. Nothing in the MIDI design (P1/P2) changed. The muOS
+launcher's `SDL_AUDIODRIVER=alsa` is now moot for audio. Verified: host build links `libpipewire-0.3` +
+`libasound`, the smoke is green, and it runs on the Anbernic.
 
 ### File browser: the OS dialog is the default; the in-app browser is a toggle — ✅ DONE
 An **in-app React/LVGL file browser** ([fileBrowserMenu.ts](../packages/retroplug/ui/screens/menu/fileBrowserMenu.ts),

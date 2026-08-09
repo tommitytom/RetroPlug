@@ -84,7 +84,37 @@ uint8_t SmsControlManager::InternalReadPort(uint8_t port)
 			value &= device->ReadRam(port);
 		}
 	}
+
+	// RetroPlug: fold in the host-driven external levels. This is the single
+	// funnel every port line passes through (ReadPort, GetTh and GetTr all call
+	// it), and it already uses the devices' active-low AND semantics, so one
+	// mask here makes TH, TR and TL all driveable. Idle 0xFF is a no-op.
+	value &= _extInput[port & 1];
+
 	return value;
+}
+
+void SmsControlManager::UpdateInputState()
+{
+	// RetroPlug: BaseControlManager::UpdateInputState() calls
+	// device->ClearState() + SetStateFromInput() on every poll, which reads
+	// from host KeyMappings and would wipe any bits the host set via
+	// SetBitValue. SmsConsole::ProcessEndOfFrame() calls this once per video
+	// frame, so a held button survives less than one frame without this
+	// override. The host (CLI script / JS bridge / DAW plugin) is the source of
+	// truth for input; Mesen's own keyboard-polling path is unused, so do not
+	// re-enable the base call looking for keyboard input - there is none to
+	// find, and restoring it silently breaks held buttons again.
+	//
+	// It also keeps KeyManager::RefreshKeyState() off the audio thread, where
+	// the base call would run it ~60 times a second.
+	//
+	// Unlike GbaControlManager (Core/GBA/GbaControlManager.cpp), which must
+	// refresh its derived _state.ActiveKeys cache here, SmsControlManager
+	// caches nothing: ReadPort reads the devices live. So the body is empty.
+	// MesenSmsSystem::prepareForBlock fires ProcessEvent(InputPolled, Sms)
+	// itself, as the NES and GBA systems do.
+	//BaseControlManager::UpdateInputState();
 }
 
 uint8_t SmsControlManager::ReadPort(uint8_t port)

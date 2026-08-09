@@ -1099,6 +1099,8 @@ test("Settings -> Audio (standalone): cyclers stage a draft; Apply commits; labe
   let items = audioItems();
   expect(findItem(items, "audio-rate")!.label).toBe("Sample Rate: 48000 Hz");
   expect(findItem(items, "audio-block")!.label).toBe("Block Size: 2048");
+  // The Driver row defaults to "Auto" when the host exposes no driver list (this fake omits `drivers`).
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: Auto");
   expect(findItem(items, "audio-apply")!.disabled).toBe(true);
 
   // Stage a block-size change (a Left step, 2048 -> 1024): the DRAFT label moves, the live device does NOT,
@@ -1114,6 +1116,59 @@ test("Settings -> Audio (standalone): cyclers stage a draft; Apply commits; labe
   expect(live.blockSize).toBe(1024);
   items = audioItems();
   expect(findItem(items, "audio-block")!.label).toBe("Block Size: 1024");
+  expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+
+  resetAudioDraft();
+  delete g.__rp_isStandalone;
+  delete g.__rp_getAudioConfig;
+  delete g.__rp_setAudioConfig;
+});
+
+test("Settings -> Audio > Driver (standalone): cycler stages the host API; Apply commits it as __rp_setAudioConfig's 4th arg", async () => {
+  // Fake the SDL host's audio seam WITH a driver list. The setter records all four args so we can prove the
+  // chosen driver rides Apply alongside rate/block/channels.
+  const applied: Array<[number, number, number, string]> = [];
+  const live = { sampleRate: 48000, blockSize: 2048, outChannels: 2, driver: "Auto", drivers: ["Auto", "PipeWire", "ALSA"] };
+  const g = globalThis as {
+    __rp_isStandalone?: boolean;
+    __rp_getAudioConfig?: () => typeof live;
+    __rp_setAudioConfig?: (r: number, b: number, ch: number, d: string) => void;
+  };
+  g.__rp_isStandalone = true;
+  g.__rp_getAudioConfig = () => ({ ...live });
+  g.__rp_setAudioConfig = (r, b, ch, d) => {
+    live.sampleRate = r;
+    live.blockSize = b;
+    live.outChannels = ch;
+    live.driver = d;
+    applied.push([r, b, ch, d]);
+  };
+  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  resetAudioDraft(); // drop any draft leaked from a prior test in this file
+
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be, notify: () => {} });
+  const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+
+  // Fresh: the driver reads the live host API (Auto); Apply is inert.
+  let items = audioItems();
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: Auto");
+  expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+
+  // Step the driver cycler forward (Auto -> PipeWire): the DRAFT label moves, the device is NOT reconfigured,
+  // and Apply becomes live.
+  findItem(items, "audio-driver")!.onCycle!(1);
+  items = audioItems();
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PipeWire");
+  expect(applied.length).toBe(0); // staged only
+  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
+
+  // Apply commits the staged driver as the 4th arg (rate/block/channels unchanged).
+  findItem(items, "audio-apply")!.onSelect!();
+  expect(applied[applied.length - 1]).toEqual([48000, 2048, 2, "PipeWire"]);
+  expect(live.driver).toBe("PipeWire");
+  items = audioItems();
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PipeWire");
   expect(findItem(items, "audio-apply")!.disabled).toBe(true);
 
   resetAudioDraft();

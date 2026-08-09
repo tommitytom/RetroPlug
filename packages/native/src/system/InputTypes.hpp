@@ -62,3 +62,34 @@ enum class GbaButton : std::uint8_t {
     R      = 9,
     Count  = 10,
 };
+
+// Master System / Game Gear buttons. Position-aligned with the other kinds
+// (Right=0..Start=7) so the shared name table keeps working, but the pad only
+// has six of them: a d-pad plus two face buttons. Two consequences worth
+// knowing before wiring anything to this enum:
+//
+//   Select has no hardware equivalent at all. MesenSmsSystem::pressButton
+//   drops it rather than folding it onto a face button, or a Select tap would
+//   spuriously fire button 2.
+//
+//   Start is not a pad button on either machine. On Master System it is the
+//   console's Pause switch, which drives the Z80 NMI (deps/mesen/Core/SMS/
+//   SmsVdp.cpp:600-602); on Game Gear the same bit reads as Start at port $00
+//   bit 7 (SmsMemoryManager.cpp:456-464). One wire byte, two behaviours - the
+//   settings UI wants different labels per platform even though this enum is
+//   shared.
+//
+// Mesen's own SmsController::Buttons is ordered {Up=0, Down, Left, Right, B,
+// A, Pause} (deps/mesen/Core/SMS/Input/SmsController.h:58), so the remap in
+// MesenSmsSystem is an explicit switch, not a cast.
+enum class SmsButton : std::uint8_t {
+    Right  = 0,
+    Left   = 1,
+    Up     = 2,
+    Down   = 3,
+    A      = 4,
+    B      = 5,
+    Select = 6,   // no SMS/GG equivalent; dropped at apply time
+    Start  = 7,   // -> Pause (SMS: NMI; GG: Start)
+    Count  = 8,
+};
