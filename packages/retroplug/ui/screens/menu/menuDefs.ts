@@ -54,6 +54,15 @@ import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, b
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
+// Aliased: `replaceSong` and `addSong` are already taken here by the LSDj row helpers.
+import {
+  readSongBlock as readSmdjSongBlock,
+  readSongEcho as readSmdjSongEcho,
+  wrapSong as wrapSmdjSong,
+  unwrapSong as unwrapSmdjSong,
+  replaceSong as replaceSmdjSong,
+  addSong as addSmdjSong,
+} from "../../../src/smsggdj/codec/sav";
 import {
   resolveTracker,
   mutateLiveSav,
@@ -64,6 +73,8 @@ import {
   workingSongTargets,
   lsdjAssetCatalog,
   risaAssetCatalog,
+  smsggdjSongCatalog,
+  smsggdjAssetCatalog,
   type SongCatalog,
   type AssetCatalog,
   type AssetSlotRow,
@@ -1279,6 +1290,63 @@ const risaSongSpec: SongMenuSpec = {
   canCommitWorking: canRisaSaveWorking,
 };
 
+// --- smsggdj Songs file actions (the `.smdj4` single-song unit tools/savetool.html speaks) ------------
+// A `.smdj4` is a 16-byte header (magic + block checksum + the echo settings, which live in the
+// DIRECTORY entry rather than the song) followed by the verbatim 6,912-byte block. Uncompressed on
+// purpose: a single song on disk has no space pressure, and staying raw means the file IS what the cart
+// holds in work RAM.
+function smsggdjExportSong(ctx: MenuContext, sys: SystemView, index: number, name: string): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Export song ${index}`, patterns: ["*.smdj4"], saving: true, defaultName: `${sanitizeName(name)}.smdj4` }, (path) => {
+    const sav = ctx.stores.project.systems.readSram(sys.id);
+    if (!sav) return;
+    const block = readSmdjSongBlock(sav, index);
+    if (!block) return; // free slot / failed its checksum: nothing honest to write
+    const file = wrapSmdjSong(block, readSmdjSongEcho(sav, index) ?? undefined);
+    if (file) be.writeFileAtomic(path, file);
+  });
+}
+function smsggdjReplaceSong(ctx: MenuContext, sys: SystemView, index: number): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Replace song ${index}`, patterns: ["*.smdj4"] }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    const song = unwrapSmdjSong(data); // rejects a wrong magic / length / checksum rather than importing junk
+    if (!song) return;
+    mutateSavBytes(ctx, sys, (sav) => replaceSmdjSong(sav, index, song.block, song.echo));
+  });
+}
+function smsggdjAddSong(ctx: MenuContext, sys: SystemView): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: "Add Song", patterns: ["*.smdj4", ...SAV_PATTERNS] }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    if (isSavPath(path)) {
+      ctx.beginSongImport(sys, data); // a whole .sav/.srm -> the checkbox picker
+      return;
+    }
+    const song = unwrapSmdjSong(data);
+    if (!song) return;
+    const name = path.replace(/^.*[\\/]/, "").replace(/\.smdj4$/i, "").slice(0, 8).toUpperCase();
+    mutateSavBytes(ctx, sys, (sav) => addSmdjSong(sav, song.block, name));
+  });
+}
+const smsggdjSongSpec: SongMenuSpec = {
+  id: "smsggdj",
+  catalog: smsggdjSongCatalog,
+  exportSong: smsggdjExportSong,
+  replaceSong: smsggdjReplaceSong,
+  addSong: smsggdjAddSong,
+  // No working-song rows: this cart's working song is work RAM, so the catalog reports no unsaved
+  // working song to export or promote. See smsggdjSongCatalog.
+};
+const smsggdjAssetSpec: AssetMenuSpec = {
+  id: "smsggdj",
+  catalog: smsggdjAssetCatalog,
+  exportAsset: () => {},
+  replaceAsset: () => {},
+}; // `types: []`, so assetMenu renders nothing and neither action is reachable
+
 // The per-console UI bindings for a tracker integration: the file-dialog specs (Songs + assets, which own
 // file formats) plus any per-console extras not yet unified (LSDj's sync cyclers). Keyed by integration id;
 // the integration itself (id/label/markerRole/songs/assets) rides src/tracker (the one place a console is
@@ -1291,6 +1359,7 @@ interface TrackerUi {
 const TRACKER_UI: Record<string, TrackerUi> = {
   lsdj: { song: lsdjSongSpec, asset: lsdjAssetSpec, extras: lsdjExtras },
   risa: { song: risaSongSpec, asset: risaAssetSpec },
+  smsggdj: { song: smsggdjSongSpec, asset: smsggdjAssetSpec },
 };
 
 // One tracker's instance-submenu children: its extras (if any), the shared Songs menu, its asset menus, then

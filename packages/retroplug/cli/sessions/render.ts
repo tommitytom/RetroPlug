@@ -13,9 +13,10 @@
 import { parseRenderArgs, RENDER_SUMMARY, RENDER_HELP, type RenderOpts } from "../renderArgs";
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
-import { platformOf, readSav, readRisaSongs, runRenderJob } from "../../src/render";
+import { platformOf, readSav, readRisaSongs, readSmsggdjSongs, runRenderJob } from "../../src/render";
 
-/** --list-songs: print the sav's populated song slots and exit (renders nothing). GB (LSDj) + NES (risa). */
+/** --list-songs: print the sav's populated song slots and exit (renders nothing). GB (LSDj), NES (risa),
+ *  SMS/GG (smsggdj). */
 function listSongs(s: Session, o: RenderOpts): void {
   const platform = platformOf(o.rom);
   if (platform === "gb") {
@@ -32,7 +33,16 @@ function listSongs(s: Session, o: RenderOpts): void {
     for (const song of songs) console.log(`  ${song.index}: ${song.name || "(unnamed)"}`);
     return;
   }
-  throw new Error(`render: --list-songs is a Game Boy (LSDj) / NES (risa) feature (got ${platform})`);
+  if (platform === "sms" || platform === "gg") {
+    const { path, songs } = readSmsggdjSongs(s, o);
+    console.log(`songs in ${path}:`);
+    if (!songs.length) console.log("  (no saved songs in the catalog)");
+    for (const song of songs) console.log(`  ${song.index}: ${song.name || "(unnamed)"}`);
+    return;
+  }
+  throw new Error(
+    `render: --list-songs is a Game Boy (LSDj) / NES (risa) / Master System + Game Gear (smsggdj) feature (got ${platform})`,
+  );
 }
 
 function runRender(s: Session, args: string[]): void {

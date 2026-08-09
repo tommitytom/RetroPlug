@@ -340,3 +340,55 @@ export function buildSav(
   });
   return rebuild(sav, detached, -1);
 }
+
+// --- the `.smdj4` single-song file ---------------------------------------------
+//
+// The interchange unit tools/savetool.html exports and accepts: a 16-byte header carrying the magic,
+// the block checksum and the echo settings, followed by the verbatim 6,912-byte block. NOT RLE - a
+// single song on disk has no space pressure, and staying uncompressed means the file is the same thing
+// the cart holds in work RAM.
+
+/** `.smdj4` header length; the block starts here. */
+export const SMDJ4_SONG_HEADER_LEN = 16;
+/** A whole `.smdj4` file. */
+export const SMDJ4_SONG_FILE_LEN = SMDJ4_SONG_HEADER_LEN + SMDJ4_BLOCK_LEN;
+
+/** Wrap a block as a `.smdj4` file, byte-compatible with tools/smdj4.js `wrapSmdj4`. */
+export function wrapSong(block: Uint8Array, echo?: Uint8Array): Uint8Array | null {
+  if (block.length !== SMDJ4_BLOCK_LEN) return null;
+  const out = new Uint8Array(SMDJ4_SONG_FILE_LEN);
+  MAGIC.forEach((m, i) => (out[i] = m));
+  setU16(out, 5, blockChecksum(block));
+  if (echo) out.set(echo.subarray(0, ECHO_LEN), 7);
+  out.set(block, SMDJ4_SONG_HEADER_LEN);
+  return out;
+}
+
+/** Unwrap a `.smdj4` file. Null unless the magic, the length AND the stored checksum all agree - the
+ *  same three refusals the cart makes on a directory entry, applied to a file the user picked. */
+export function unwrapSong(bytes: Uint8Array): { block: Uint8Array; echo: Uint8Array } | null {
+  if (bytes.length !== SMDJ4_SONG_FILE_LEN) return null;
+  if (!MAGIC.every((m, i) => bytes[i] === m)) return null;
+  const block = bytes.subarray(SMDJ4_SONG_HEADER_LEN).slice();
+  if (blockChecksum(block) !== u16(bytes, 5)) return null;
+  return { block, echo: bytes.subarray(7, 7 + ECHO_LEN).slice() };
+}
+
+/** A slot's echo settings (mode, taps, reductions, stereo, transposes) - they live in the DIRECTORY
+ *  entry rather than the block, so an export has to fetch them separately to travel with the song. */
+export function readSongEcho(sav: Uint8Array, slot: number): Uint8Array | null {
+  if (!isSmsggdjSav(sav) || slot < 0 || slot >= entryCount(sav)) return null;
+  const e = entryAt(slot);
+  if (sav[e + E_VALID] !== VALID) return null;
+  return sav.subarray(e + E_ECHO, e + E_ECHO + ECHO_LEN).slice();
+}
+
+/** Overwrite one slot's song, keeping its NAME (the user replaced the music in a named slot, not the
+ *  slot itself). Re-lays the heap, since the new block may pack to a different size. */
+export function replaceSong(sav: Uint8Array, slot: number, block: Uint8Array, echo?: Uint8Array): Uint8Array | null {
+  if (block.length !== SMDJ4_BLOCK_LEN) return null;
+  const songs = detachAll(sav);
+  if (slot < 0 || slot >= songs.length) return null;
+  songs[slot] = { block: block.slice(), name: songs[slot].name, echo: echo ? echo.slice() : songs[slot].echo };
+  return rebuild(sav, songs, curSlot(sav));
+}
