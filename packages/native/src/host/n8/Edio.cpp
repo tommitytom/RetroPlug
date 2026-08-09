@@ -64,6 +64,57 @@ std::uint16_t Edio::rx16() {
     return static_cast<std::uint16_t>(b[0] | (b[1] << 8));
 }
 
+std::uint32_t Edio::rx32() {
+    std::uint8_t b[4];
+    rxData(b, 4);
+    return static_cast<std::uint32_t>(b[0]) | (static_cast<std::uint32_t>(b[1]) << 8) |
+           (static_cast<std::uint32_t>(b[2]) << 16) | (static_cast<std::uint32_t>(b[3]) << 24);
+}
+
+std::string Edio::rxString() {
+    const std::uint16_t n = rx16();
+    std::string s(n, '\0');
+    if (n) rxData(reinterpret_cast<std::uint8_t*>(&s[0]), n);
+    return s;
+}
+
+std::vector<N8DirEntry> Edio::listDir(const std::string& path) {
+    // Load the directory into the N8's buffer (sorted), then pull all records in one range read.
+    txCMD(CMD_F_DIR_LD);
+    tx8(1);            // sorted
+    txString(path);
+    checkStatus();
+
+    txCMD(CMD_F_DIR_SIZE);
+    const int count = rx16();
+
+    std::vector<N8DirEntry> out;
+    if (count <= 0) return out;
+    out.reserve(static_cast<std::size_t>(count));
+
+    txCMD(CMD_F_DIR_GET);
+    tx16(0);            // start index
+    tx16(static_cast<std::uint32_t>(count));
+    tx16(255);          // max name length
+    for (int i = 0; i < count; ++i) {
+        const std::uint8_t resp = rx8();
+        if (resp != 0) {
+            char msg[48];
+            std::snprintf(msg, sizeof(msg), "Edio: dir read error 0x%02X", resp);
+            throw std::runtime_error(msg);
+        }
+        N8DirEntry e;
+        e.size = rx32();
+        rx16();  // date (unused)
+        rx16();  // time (unused)
+        const std::uint8_t attrib = rx8();
+        e.name = rxString();
+        e.isDir = (attrib & 0x10) != 0;  // FatFs AM_DIR
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
 void Edio::fifoTxString(const std::string& s) {
     const std::uint8_t len[2] = {
         static_cast<std::uint8_t>(s.size()),
@@ -99,6 +150,15 @@ void Edio::memWR(std::int32_t addr, const std::uint8_t* data, std::size_t size) 
     tx32(static_cast<std::uint32_t>(size));
     tx8(0);              // exec flag
     txData(data, size);  // fire-and-forget: no status read (a failed FIFO write is silent, by design)
+}
+
+void Edio::memRD(std::int32_t addr, std::uint8_t* data, std::size_t size) {
+    if (size == 0) return;
+    txCMD(CMD_MEM_RD);
+    tx32(static_cast<std::uint32_t>(addr));
+    tx32(static_cast<std::uint32_t>(size));
+    tx8(0);              // exec flag
+    rxData(data, size);  // blocks until all bytes arrive (or throws on timeout)
 }
 
 void Edio::fifoWR(const std::uint8_t* data, std::size_t size) {

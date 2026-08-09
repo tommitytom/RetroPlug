@@ -7,6 +7,13 @@
 
 namespace retroplug {
 
+// One SD-card directory entry (from listDir).
+struct N8DirEntry {
+    std::string   name;
+    std::uint32_t size = 0;
+    bool          isDir = false;
+};
+
 // The only serial surface Edio touches - one virtual per used serial::Serial call. The concrete impl
 // (WjwwoodSerialPort) wraps deps/serial; the framing unit test injects a capturing fake. read() returns
 // the number of bytes actually read (may be < size on a timeout); timeoutMs is per-call, matching
@@ -28,11 +35,17 @@ class Edio {
 public:
     // Protocol constants (krikzz Edio). Public so the framing test can assert against them.
     static constexpr std::uint8_t CMD_STATUS    = 0x10;   // connect handshake / status poll
+    static constexpr std::uint8_t CMD_MEM_RD    = 0x19;   // read bytes from a device address
     static constexpr std::uint8_t CMD_MEM_WR    = 0x1A;   // write bytes to a device address
+    static constexpr std::uint8_t CMD_F_DIR_LD  = 0xC5;   // load a directory into the N8 buffer (sorted)
+    static constexpr std::uint8_t CMD_F_DIR_SIZE = 0xC6;  // number of records in the loaded directory
+    static constexpr std::uint8_t CMD_F_DIR_GET = 0xC8;   // pull a range of directory records
     static constexpr std::uint8_t CMD_F_FOPN    = 0xC9;   // open a file on the SD card
     static constexpr std::uint8_t CMD_F_FWR     = 0xCC;   // write bytes to the open file
     static constexpr std::uint8_t CMD_F_FCLOSE  = 0xCE;   // close the open file
+    static constexpr std::int32_t ADDR_SRM      = 0x1000000; // cart battery RAM (SRAM/PRG-NVRAM); a game's .srm
     static constexpr std::int32_t ADDR_FIFO     = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
+    static constexpr std::size_t  SIZE_SRM_GAME = 0x10000;   // 64 KB — max battery RAM a game uses (risa: 64 KB)
     static constexpr int          ACK_BLOCK_SIZE = 1024;  // fileWrite ack granularity
     // File-open mode flags (FatFs).
     static constexpr std::uint8_t FA_WRITE        = 0x02;
@@ -56,9 +69,17 @@ public:
     // Write `size` bytes to a device address via CMD_MEM_WR (fire-and-forget).
     void memWR(std::int32_t addr, const std::uint8_t* data, std::size_t size);
 
+    // Read `size` bytes from a device address via CMD_MEM_RD (blocks; throws on timeout). Used to write a
+    // game's battery save into ADDR_SRM and read it back to verify.
+    void memRD(std::int32_t addr, std::uint8_t* data, std::size_t size);
+
     // Write a length-prefixed string to the cart FIFO: a 2-byte little-endian length, then the bytes.
     // How the on-device menu receives a path argument (edlink DeviceIO.FifoTxString).
     void fifoTxString(const std::string& s);
+
+    // List an SD-card directory (sorted). Loads the dir into the N8 buffer then pulls every record. Throws
+    // std::runtime_error on a bad path / device status. For discovering exact SD paths + reading saves.
+    std::vector<N8DirEntry> listDir(const std::string& path);
 
     // SD-card file API (subset, for uploading a ROM). fileOpen(path, FA_WRITE|FA_CREATE_ALWAYS|FS_MAKEPATH)
     // -> fileWrite(bytes) -> fileClose(). Each throws std::runtime_error on a non-zero device status.
@@ -71,6 +92,7 @@ public:
     // USB). Throw std::runtime_error on timeout. Used by the menu command layer (N8Menu).
     std::uint8_t  rx8();
     std::uint16_t rx16();
+    std::uint32_t rx32();
 
     // Read timeout (ms) threaded into ISerialPort::read (handshake + menu replies). fifoWR never reads.
     void setReadTimeout(int ms) { timeoutMs_ = ms; }
@@ -87,6 +109,7 @@ private:
     void txString(const std::string& s);                        // tx16(len) + bytes
     void txDataACK(const std::uint8_t* data, std::size_t size); // ack byte (0=ok) per ACK_BLOCK_SIZE block
     void rxData(std::uint8_t* data, std::size_t size);          // blocks; throws on timeout
+    std::string rxString();                                     // rx16(len) + bytes
     void checkStatus();                                         // poll CMD_STATUS; throw if low byte != 0
 
     ISerialPort& port_;
