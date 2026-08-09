@@ -407,6 +407,27 @@ std::uint32_t MesenSmsSystem::coreFrameHeight() const {
     return videoDevice_ ? videoDevice_->lastFrameHeight() : 0;
 }
 
+std::optional<std::uint8_t> MesenSmsSystem::readCpuByte(std::uint32_t addr) const {
+    SmsConsole* console = smsConsole();
+    if (!console) return std::nullopt;
+    SmsMemoryManager* mm = console->GetMemoryManager();
+    if (!mm) return std::nullopt;
+    // Banking-aware, side-effect-free read of the Z80 address space.
+    return mm->DebugRead(static_cast<std::uint16_t>(addr));
+}
+
+bool MesenSmsSystem::writeCpuByte(std::uint32_t addr, std::uint8_t value) {
+    SmsConsole* console = smsConsole();
+    if (!console) return false;
+    SmsMemoryManager* mm = console->GetMemoryManager();
+    if (!mm) return false;
+    // Debugger-style write into the Z80 address space, the twin of readCpuByte's
+    // DebugRead. Unlike the NES's DebugWrite there is no side-effect flag to
+    // pass - SmsMemoryManager::DebugWrite is already the no-side-effects path.
+    mm->DebugWrite(static_cast<std::uint16_t>(addr), value);
+    return true;
+}
+
 std::uint32_t MesenSmsSystem::intraBlockSamplePos() const {
     SmsConsole* console = smsConsole();
     if (!console || masterRate_ == 0) return blockCarry_;

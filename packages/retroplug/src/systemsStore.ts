@@ -12,6 +12,7 @@
 
 import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend";
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
+
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
 import { extensionLower } from "./pathUtil";
 import {
@@ -621,10 +622,17 @@ export class SystemsStore {
   // The default roles for a freshly-built system: the core's config role + any feature
   // roles the registry's providers suggest for this ROM's header. Empty when no registry
   // is wired (back-compat) or for an embedded ROM (no file to sniff).
+  //
+  // Sega ROMs get the DEEPER prefix, because nothing identifying lives near the start of one: no
+  // title field, and the header itself sits at the end of a bank. smsggdj's marker is at $3640, so a
+  // ROLE_HEADER_LEN read would leave the provider nothing to match on and force `sms-sync` to attach
+  // to every SMS cart - which it must not, since it drives Player 2's button lines. This is one read
+  // at construct, not on the classify path.
   private defaultRoles(core: Core, platform: Platform, romPath: string, embeddedRom: string): RoleInstance[] {
     if (!this.registry) return [];
+    const prefixLen = platform === "sms" || platform === "gg" ? SEGA_SNIFF_LEN : ROLE_HEADER_LEN;
     const header =
-      romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array() : new Uint8Array();
+      romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, prefixLen) ?? new Uint8Array() : new Uint8Array();
     return this.registry.defaultRoles(core, platform, header, embeddedRom);
   }
 

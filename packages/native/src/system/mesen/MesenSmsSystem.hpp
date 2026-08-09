@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -111,6 +112,16 @@ public:
     // ExtWorkRam. Colour RAM and the boot ROM have no rp::MemoryType tag - see
     // the matrix comment in system/MemoryType.hpp.
     rp::MemoryAccessor getMemory(rp::MemoryType type, rp::AccessType access) override;
+
+    // Side-effect-free reads/writes of the Z80 address space, via SmsMemoryManager's DebugRead /
+    // DebugWrite - the same banking-aware pair MesenNesSystem uses on the 6502 side. The base returns
+    // "unsupported" for both, so without these an SMS write is silently a no-op rather than an error.
+    //
+    // The write side is what lets a test author a tracker's WORKING song directly: smsggdj lays its
+    // song out in WRAM byte-for-byte as the SMDJ4 save block, and boots blank (`song_new`), so poking
+    // the handful of bytes that differ is far more robust than driving its file browser blind.
+    std::optional<std::uint8_t> readCpuByte(std::uint32_t addr) const override;
+    bool                        writeCpuByte(std::uint32_t addr, std::uint8_t value) override;
 
     // SystemBase virtuals - see base class for contracts. fastBoot() is
     // deliberately NOT overridden: Mesen's SmsConfig has no boot-screen skip,

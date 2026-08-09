@@ -753,6 +753,52 @@ widening `ROM_EXTS` does not multiply deep reads.
 
 1. ~~**Does smsggdj use the YM2413?**~~ **ANSWERED: yes, heavily** - and the answer is worse than either branch this question anticipated. See "FM resolved" below.
 
+### The sms-sync role, as built - and what it cost to prove
+
+Shipped: `smsSync.ts` (the level encoding + the smsggdj marker), the `sms-sync` DSP role, and
+marker-gated attachment. The role is ~12 lines; almost everything below is about the GUARD, which is
+where the work actually was.
+
+**Attachment is gated on the ROM's `SMSGGDJ` marker ($3640), not the platform.** This is correctness,
+not tidiness: the transport drives `$DD` bits 2/3/7, which are Player 2's TL, TR and TH lines, and
+every SMS game reads that port. `nes-n8-midi` gets away with attaching to every NES ROM because the
+N8 FIFO is a memory-mapped port non-N8 carts ignore; a controller port has no such luxury. Since the
+marker is past `ROLE_HEADER_LEN`, `defaultRoles` now reads `SEGA_SNIFF_LEN` for sms/gg - one deeper
+read at construct, not on the classify path.
+
+**Game Gear gets no role at all.** `SmsMemoryManager::ReadGameGearPort` case 1 is a bare loopback
+(`return _state.GgExtData;`, marked `//TODOSMS`), and `GGSYNC.md` confirms the GG build reads `$01`
+rather than `$DD`. So GG sync is dead in this tree whatever TS does, and a role that silently did
+nothing would be worse than none.
+
+**The fixture needed a native addition.** smsggdj deliberately does not autoload a save (`song_new`
+boots blank; main.asm:238: "a first power-on should make sound"), so the metronome has to be written
+into the RUNNING core. `writeCpuByte` was NES-only - the `SystemBase` base returns "unsupported", so
+SMS writes silently no-opped. `MesenSmsSystem` now implements `readCpuByte`/`writeCpuByte` over
+`SmsMemoryManager::DebugRead`/`DebugWrite`. Worth it beyond the test: smsggdj lays its working song
+out in WRAM byte-for-byte as the SMDJ4 save block (phrases +$100, chains+song +$E00, sixteen
+`instr_default` records +$1500, all located by signature), so a save-block offset IS a WRAM offset
+and poking ~50 bytes is far more robust than driving the ROM's file browser blind.
+
+**The guard reads the ROM's phrase-step counter, not its audio level.** This was forced by the
+frozen-counter negative control, which is exactly what such a control is for. A role that emits
+levels without ADVANCING the counter still delivers one clock - the arm transition - so the ROM plays
+a single row and holds it, reading as 0.0296 RMS against 0.0718 running. An RMS threshold passes
+that. Onset counting failed too: `instr_default` sustains, so consecutive hits merge into a drone
+(measured: steady 0.072, 2 detected onsets in 3 s instead of 6). A `K` (CMD_KILL) command on each hit
+silences the channel at every parameter swept (0..5), so its phrase encoding is not simply the
+`CMD_KILL` enum. The phrase-step counter at WRAM `$1B02` settles it: it advanced 4 rows per 500 ms at
+120 bpm, exactly IN24's four rows per quarter, so the guard asserts **24 rows in 3 s (+/-2)** and is a
+tempo check as well as a liveness one. Measured: 0 rows unclocked, 23 with the role.
+
+Two test-harness traps cost real time and are worth recording, because both present as "the feature
+is broken" rather than "the test is wrong". System ids are a per-host space, so reusing one across
+cases constructs OVER the previous system instead of making a second (two boots produced byte-identical
+WRAM, which is what gave it away). And a system left alive keeps playing into the next case's mix, so
+a negative control that should read silence reads the previous case's song.
+
+**No PDC entry ships.** See the note under open question 6.
+
 2. **IN or IN24?** IN24 (divisor 6, 24 PPQN) is the DAW-shaped answer and matches the existing ares-link-sync / RP2040 bridge contract, but caps at 450 BPM NTSC / 375 PAL (3 clocks per frame before the mod-4 counter aliases) and at one row per frame (`engine.asm:742-750` has no loop). IN (divisor 1) gives 1:1 row control but the host must choose the row rate itself. This decides the role's tick resolution. A product question, not a technical one.
 
 3. ~~**Does `detectRomFormat` get an extension fallback?**~~ **ANSWERED: yes, as the last tier only.** See "The classification tiers, as built" below.
@@ -761,7 +807,9 @@ widening `ROM_EXTS` does not multiply deep reads.
 
 5. **Stems: mono or stereo, and is FM in scope?** Stereo matches the GB decision (`spec/10` section 2), is **required** for GG fidelity given `GameGearPanningReg`, and at exactly 4 stereo streams is the only layout that fits the 8-output plugin `ChannelSplit` path. Mono matches the NES precedent and halves the lane count. Separately: mix-only FM is free (it already lands in the stereo stream `MesenAudioDevice` receives); FM as one lumped stem; or 9 individual tone voices. In rhythm mode, do BD/HH/SD/TOM/CYM get their own streams or fold into one? 4 PSG + 9 FM = 13 streams fits under `kMaxLanes`; 4 + 14 does not. **Recommend stereo, PSG only initially.**
 
-6. **What PDC value for `sms-sync`** (and, separately, for the already-missing `risa-sync`)? The LSDj 33 ms was measured, not derived. Needs a `tools/reaper-timing-analyze.py` pass against a real render once the leg exists. Note residual 6 in section 2.7: the ROM's poll phase within a frame is variable, so the value must be measured rather than computed from the frame rate.
+6. **What PDC value for `sms-sync`** - STILL OPEN, and deliberately so. No PDC entry ships with the role: `__rp_syncLatencyMs` is unchanged, exactly as `risa-sync` shipped. The value has to come from a `tools/reaper-timing-analyze.py --drift` render, and an invented constant would be worse than none - it would shift every SMS render off the grid by a made-up amount and read as a bug in the sync path rather than in the PDC number. Note also that the drift analyzer needs one distinct transient per beat, which the current fixture does NOT produce (see "The sms-sync role, as built"), so the Reaper leg needs a percussive song before it can measure anything.
+
+6b. *(original wording)* **What PDC value for `sms-sync`** (and, separately, for the already-missing `risa-sync`)? The LSDj 33 ms was measured, not derived. Needs a `tools/reaper-timing-analyze.py` pass against a real render once the leg exists. Note residual 6 in section 2.7: the ROM's poll phase within a frame is variable, so the value must be measured rather than computed from the frame rate.
 
 7. **`SmsControlManager::SetExternalInput` versus `IInputProvider` versus the `$3F` hijack?** The external-input mask is 3 lines and immune to the per-frame clobber but is a real (if tiny) vendored addition; `IInputProvider` is reversible and upstream-friendly but still needs a TH model that stock Mesen does not have; the `$3F` hijack is zero edits and verified working but fires `LatchHorizontalCounter` on every counter increment and collides with the ROM's own `out ($3F),$FF` on stop. Owner's call on how much vendored surface is acceptable. Section 2.4 recommends the mask.
 
