@@ -55,6 +55,8 @@ extern "C" {
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
 #include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
 #include "host/n8/N8Link.hpp"                // host serial thread -> physical Everdrive N8 Pro (MIDI forward)
+#include "host/n8/N8Host.hpp"                // shared N8 link + config + n8.cfg (also used by the DAW plugin)
+#include "host/n8/N8Hooks.hpp"               // binds the __rp_*N8* config hooks (shared with the plugin)
 #include "host/n8/WjwwoodSerialPort.hpp"     // the serial-port factory + listSerialPorts for the N8 picker
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/ui/SoftwareLvglDisplay.hpp"   // shared LvInputState + display/indev scaffold (also used by test/ui)
@@ -191,13 +193,20 @@ struct AppState {
     std::atomic<std::uint64_t> midiStaged{0};             // count staged into the Engine (headless self-test)
     MidiClockSync clockSync;                              // MIDI-clock → BPM/transport (audio thread only)
 
-    // Physical Everdrive N8 Pro link (Settings > N8): a host serial thread streams the polled MIDI to the real
-    // cart on a timed schedule (audioCb pushes; the thread does the USB I/O). n8Port/n8Enabled persist to n8.cfg.
-    retroplug::N8Link n8Link{[](const std::string& p) -> std::unique_ptr<retroplug::ISerialPort> {
-        return std::make_unique<retroplug::WjwwoodSerialPort>(p);
-    }};
-    std::string n8Port;          // selected serial port (persisted; used by connect)
-    bool        n8Enabled = false;  // user's "stream to the N8" toggle (persisted)
+    // Physical Everdrive N8 Pro link (Settings > N8): a host serial thread streams the polled MIDI + generated
+    // sync bytes to the real cart on a timed schedule (audioCb pushes; the thread does the USB I/O). The port +
+    // enabled toggle + lookahead persist to n8.cfg. N8Host wraps the link + config and is shared with the DAW
+    // plugin (bindN8Hooks exposes it to the same Settings > N8 UI in both).
+    retroplug::N8Host n8Host{
+        [](const std::string& p) -> std::unique_ptr<retroplug::ISerialPort> {
+            return std::make_unique<retroplug::WjwwoodSerialPort>(p);
+        },
+        [] {
+            std::vector<retroplug::N8PortDto> ports;
+            for (const auto& p : retroplug::listSerialPorts()) ports.push_back({p.port, p.isN8});
+            return ports;
+        },
+        hostSvc.configDir()};
 
     std::uint32_t width = 640;
     std::uint32_t height = 480;
@@ -237,12 +246,8 @@ void saveAudioConfig(AppState& a);
 // live device change; defined next to reconfigureAudio (it pauses the audio callback the same way).
 void reconfigureMidi(AppState& a, bool input, const std::string& name);
 void loadMidiConfig(AppState& a);
-// N8 hardware link (Settings > N8) — declared here so the __rp_connectN8/setN8Port hooks (bound earlier) can
-// drive it; defined next to reconfigureMidi.
-void connectN8(AppState& a, bool enable);
-void setN8Port(AppState& a, const std::string& port);
-void saveN8Config(AppState& a);
-void loadN8Config(AppState& a);
+// The N8 link (Settings > N8) is now an N8Host member (connect/setPort/persist live there); the __rp_*N8*
+// hooks are bound via the shared retroplug::bindN8Hooks — no SDL-local functions to forward-declare.
 
 // Resize the window + everything that tracks its dimensions (the __rp_setWindowSize seam). Defined after the
 // LVGL glue; declared here so the window hook can call it. Runs on the UI thread (same as present), so the
@@ -488,56 +493,6 @@ JSValue jsSetMidiOutput(JSContext* ctx, JSValueConst, int argc, JSValueConst* ar
     return JS_UNDEFINED;
 }
 
-// __rp_getN8Config(): { ports: [{port, isN8}], selectedPort, connected, enabled, lookaheadMs, bytes, error } —
-// the live serial ports + the N8 link state, for Settings > N8. Standalone-only (the plugin gets MIDI from the
-// DAW; a physical-cart target there is a later, per-system feature).
-JSValue jsGetN8Config(JSContext* ctx, JSValueConst, int, JSValueConst*) {
-    JSValue o = JS_NewObject(ctx);
-    if (g_app) {
-        JSValue arr = JS_NewArray(ctx);
-        std::uint32_t i = 0;
-        for (const auto& p : retroplug::listSerialPorts()) {
-            JSValue e = JS_NewObject(ctx);
-            JS_SetPropertyStr(ctx, e, "port", JS_NewString(ctx, p.port.c_str()));
-            JS_SetPropertyStr(ctx, e, "isN8", JS_NewBool(ctx, p.isN8));
-            JS_SetPropertyUint32(ctx, arr, i++, e);
-        }
-        JS_SetPropertyStr(ctx, o, "ports", arr);
-        JS_SetPropertyStr(ctx, o, "selectedPort", JS_NewString(ctx, g_app->n8Port.c_str()));
-        JS_SetPropertyStr(ctx, o, "connected", JS_NewBool(ctx, g_app->n8Link.isConnected()));
-        JS_SetPropertyStr(ctx, o, "enabled", JS_NewBool(ctx, g_app->n8Enabled));
-        JS_SetPropertyStr(ctx, o, "lookaheadMs", JS_NewInt32(ctx, g_app->n8Link.lookaheadMs()));
-        JS_SetPropertyStr(ctx, o, "bytes", JS_NewInt64(ctx, static_cast<int64_t>(g_app->n8Link.bytesForwarded())));
-        JS_SetPropertyStr(ctx, o, "error", JS_NewString(ctx, g_app->n8Link.lastError().c_str()));
-    }
-    return o;
-}
-
-// __rp_setN8Port(name): pick the serial port (persisted; reconnects if currently streaming).
-JSValue jsSetN8Port(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_app && argc >= 1) {
-        const char* s = JS_ToCString(ctx, argv[0]);
-        setN8Port(*g_app, s ? s : "");
-        if (s) JS_FreeCString(ctx, s);
-    }
-    return JS_UNDEFINED;
-}
-// __rp_connectN8(enabled): open/close the link to the selected port + arm/disarm the audio-thread forward.
-JSValue jsConnectN8(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_app && argc >= 1) connectN8(*g_app, JS_ToBool(ctx, argv[0]) != 0);
-    return JS_UNDEFINED;
-}
-// __rp_setN8Lookahead(ms): the timed-release latency the serial thread applies (persisted).
-JSValue jsSetN8Lookahead(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
-    if (g_app && argc >= 1) {
-        int32_t ms = 0;
-        JS_ToInt32(ctx, &ms, argv[0]);
-        g_app->n8Link.setLookaheadMs(ms < 0 ? 0 : ms);
-        saveN8Config(*g_app);
-    }
-    return JS_UNDEFINED;
-}
-
 void installWindowHooks(JSContext* ctx) {
     JSValue g = JS_GetGlobalObject(ctx);
     auto bind = [&](const char* name, JSCFunction* fn, int len) {
@@ -555,12 +510,8 @@ void installWindowHooks(JSContext* ctx) {
     bind("__rp_getMidiConfig", jsGetMidiConfig, 0);
     bind("__rp_setMidiInput", jsSetMidiInput, 1);
     bind("__rp_setMidiOutput", jsSetMidiOutput, 1);
-    // Physical Everdrive N8 Pro streaming (Settings > N8). Standalone-only, same gating as the MIDI picker
-    // (hasN8() is a typeof check on these; the plugin never binds them).
-    bind("__rp_getN8Config", jsGetN8Config, 0);
-    bind("__rp_setN8Port", jsSetN8Port, 1);
-    bind("__rp_connectN8", jsConnectN8, 1);
-    bind("__rp_setN8Lookahead", jsSetN8Lookahead, 1);
+    // Physical Everdrive N8 Pro streaming (Settings > N8) is bound separately via retroplug::bindN8Hooks (the
+    // shared helper the DAW plugin also uses), right after this call - it needs the AppState's N8Host.
     // The OS-native file dialog — only where a desktop helper exists (zenity/kdialog/…). Where none does
     // (the muOS handheld, a bare container) we DON'T bind it: useFileBrowser sees no nativeHook and the
     // "File Dialogs: OS Native" toggle transparently stays in-app. The self-test forces the bind to prove it.
@@ -715,7 +666,7 @@ void audioCb(void* userdata, Uint8* stream, int len) {
         // data. The sync roles regenerate whatever each core needs, and risa's generated F8 stream reaches
         // the N8 via the Engine core-byte mirror - so raw-forwarding them here too would double-clock it.
         if (!(m.bytes.size() == 1 && m.bytes[0] >= 0xF8))
-            a->n8Link.push(0, m.bytes.data(), m.bytes.size(), a->sampleRate);
+            a->n8Host.link().push(0, m.bytes.data(), m.bytes.size(), a->sampleRate);
         if (m.bytes.size() > 3) continue;
         // Real-time transport bytes (0xF8 clock / 0xFA start / 0xFB continue / 0xFC stop) drive the host
         // transport, not the emulator — consume them here and don't stage them (the sync roles regenerate
@@ -849,61 +800,7 @@ void reconfigureMidi(AppState& a, bool input, const std::string& name) {
                  name.empty() ? (input ? "All Devices" : "None") : name.c_str());
 }
 
-// --- N8 hardware link (Settings > N8) -------------------------------------------------------------------
-// n8.cfg: 3 lines - selected serial port, lookahead-ms, enabled(0/1). Machine-global, standalone-only.
-std::string n8CfgPath(AppState& a) { return a.hostSvc.configDir() + "/n8.cfg"; }
-
-void saveN8Config(AppState& a) {
-    if (FILE* f = std::fopen(n8CfgPath(a).c_str(), "w")) {
-        std::fprintf(f, "%s\n%d\n%d\n", a.n8Port.c_str(), a.n8Link.lookaheadMs(), a.n8Enabled ? 1 : 0);
-        std::fclose(f);
-    }
-}
-
-void loadN8Config(AppState& a) {
-    if (FILE* f = std::fopen(n8CfgPath(a).c_str(), "r")) {
-        char line[512];
-        std::string port;
-        int la = 10, en = 0;
-        if (std::fgets(line, sizeof line, f)) {
-            port = line;
-            while (!port.empty() && (port.back() == '\n' || port.back() == '\r')) port.pop_back();
-        }
-        if (std::fgets(line, sizeof line, f)) la = std::atoi(line);
-        if (std::fgets(line, sizeof line, f)) en = std::atoi(line);
-        std::fclose(f);
-        a.n8Port = port;
-        a.n8Link.setLookaheadMs(la < 0 ? 0 : la);
-        a.n8Enabled = (en != 0);
-    }
-}
-
-// Open/close the N8 link on the UI thread. No audio lock: N8Link::push (audio thread) is lock-free and touches
-// only atomics + the SPSC ring - disjoint from connect/disconnect, which manage the serial thread + Edio. The
-// connect handshake (~300 ms) blocks only the UI thread, not audio.
-void connectN8(AppState& a, bool enable) {
-    if (enable) {
-        if (a.n8Port.empty()) a.n8Port = retroplug::findN8Port();  // auto-pick the attached N8, if any
-        a.n8Enabled = true;
-        if (!a.n8Port.empty()) a.n8Link.connect(a.n8Port);
-    } else {
-        a.n8Enabled = false;
-        a.n8Link.disconnect();
-    }
-    saveN8Config(a);
-    std::fprintf(stderr, "[retroplug-sdl] N8 %s (port '%s')%s\n", enable ? "connect" : "disconnect",
-                 a.n8Port.c_str(), (enable && !a.n8Link.isConnected()) ? " - FAILED" : "");
-}
-
-void setN8Port(AppState& a, const std::string& port) {
-    const bool wasStreaming = a.n8Link.isConnected();
-    a.n8Port = port;
-    if (wasStreaming) {  // switch the live connection to the newly-chosen port
-        a.n8Link.disconnect();
-        if (!port.empty()) a.n8Link.connect(port);
-    }
-    saveN8Config(a);
-}
+// (The N8 link + config + n8.cfg persistence now live in retroplug::N8Host, shared with the DAW plugin.)
 
 // ---- screenshot (headless proof) ------------------------------------------------------------------
 // Dump the display's composited draw buffer (the exact frame presented, including top-layer overlays
@@ -987,6 +884,9 @@ bool setupUi(AppState& a) {
     // Black screen, stripped chrome, root pinned to 100% — same as PluginUI (shared with the test harness).
     retroplug::ui::applyChromelessScreen();
     if (ctx) installWindowHooks(ctx);
+    // The N8 config hooks (Settings > N8) - bound via the shared helper (same one the plugin uses), carrying
+    // this AppState's N8Host. Standalone-only, same gating as the MIDI picker (hasN8() is a typeof check).
+    if (ctx) retroplug::bindN8Hooks(ctx, a.n8Host);
 
     // Headless proof of the OS-dialog seam. Reports whether __rp_openFileBrowser is bound + whether a desktop
     // helper is available; if one is (a real or a fake zenity/kdialog in PATH), it drives a real pfd request
@@ -1170,7 +1070,7 @@ int main(int argc, char** argv) {
     // carries that semantic to the cart itself, and at the default 0 ms lookahead the link ring is ~empty.)
     app.engine.setCoreByteSink([a = &app](std::uint32_t frame, const std::uint8_t* data,
                                           std::size_t size, bool /*flush*/) {
-        a->n8Link.push(frame, data, size, a->sampleRate);
+        a->n8Host.link().push(frame, data, size, a->sampleRate);
     });
 
     // Autoload a .rplg project before the audio thread takes the Engine (structural build runs direct).
@@ -1189,8 +1089,10 @@ int main(int argc, char** argv) {
     app.midi.open("RetroPlug");
 
     // Restore the persisted N8 link (Settings > N8): reconnect the physical cart if it was left enabled.
-    loadN8Config(app);
-    if (app.n8Enabled) connectN8(app, true);  // reconnect the persisted link (logs the result)
+    app.n8Host.restore();  // load n8.cfg + reconnect the persisted link
+    if (const auto c = app.n8Host.getConfig(); c.enabled)
+        std::fprintf(stderr, "[retroplug-sdl] N8 restore: port '%s'%s\n", c.selectedPort.c_str(),
+                     c.connected ? "" : " - not connected");
 
     // Test/diagnostic hook: dump the enumerated hardware MIDI devices then continue.
     if (std::getenv("RETROPLUG_SDL_MIDI_LIST")) {

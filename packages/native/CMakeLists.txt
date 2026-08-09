@@ -333,6 +333,8 @@ add_executable(retroplug-sdl EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp               # N8 Pro serial client (Settings > N8)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Link.cpp             # host serial thread -> physical N8 (MIDI forward)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp             # shared N8 link + config + n8.cfg (also the plugin)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp           # binds the __rp_*N8* config hooks (shared)
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
 
@@ -713,8 +715,10 @@ set_target_properties(retroplug-midi-test PROPERTIES
 # `pnpm test:n8`.
 add_executable(retroplug-n8-test EXCLUDE_FROM_ALL
     test/n8/Edio.test.cpp
+    test/n8/N8Host.test.cpp
     src/host/n8/Edio.cpp
-    src/host/n8/N8Link.cpp)
+    src/host/n8/N8Link.cpp
+    src/host/n8/N8Host.cpp)
 
 find_package(Threads REQUIRED)
 target_link_libraries(retroplug-n8-test PRIVATE
