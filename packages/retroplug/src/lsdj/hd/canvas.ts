@@ -45,7 +45,11 @@ function packColor(r: number, g: number, b: number): number {
 
 // LSDj stores 4 colours per set but only treats 0 and 3 as the editable pair, blending between them for
 // the middle shade - the original read exactly those two as `first`/`second` (Rom.h getPalette) and
-// derived pixel value 1 as their average. Pixel 3 is unused by the font and falls back to `first`.
+// derived pixel value 1 as their average.
+//
+// NOTE the two 3s here are unrelated. This `pixel` is a 2bpp SHADE (0..3), and shade 3 falling through to
+// `first` is what the original did for `fill` (Rom.h getPixelColor's `default:`). Font glyphs never reach
+// here with a 3, because the glyph bake folds it to 2 first - see rebuildAtlas.
 function colorForPixel(set: RomColorSet, pixel: number): number {
   const first = set.colors[0];
   const second = set.colors[3];
@@ -131,6 +135,13 @@ export class LsdjHdCanvas {
         const base = (variant * FONT_GLYPH_COUNT + glyph) * TILE_PIXELS;
         for (let i = 0; i < TILE_PIXELS; i++) {
           let pixel = src ? src[i] : 0;
+          // LSDj's fonts spell a glyph's solid body as 2bpp value 3 and never use 2 (a real cartridge
+          // font histograms as 0 / 1 / 0 / 3). The original folded 3 down to 2 as it read the tile out of
+          // the ROM (Rom.h getTilePixel), so every colour lookup downstream only ever saw 0..2; the fold
+          // lives here instead because ../rom/font.ts hands back the raw shades. Without it the glyph
+          // body takes colorForPixel's `default:` branch and renders in the BACKGROUND colour, which
+          // makes normal-coloured text invisible and other colour-sets solid blocks.
+          if (pixel === 3) pixel = 2;
           if (dimmed && pixel === 2) pixel = 1;
           atlas[base + i] = colorForPixel(set, pixel);
         }

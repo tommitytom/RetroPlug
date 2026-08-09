@@ -13,11 +13,19 @@ import type { RomColorSet, RomFontTile } from "../../src/lsdj/rom/types";
 
 // ---- synthetic assets ------------------------------------------------------------
 
-// 71 tiles whose pixels are all the glyph index mod 4 - enough to make the canvas ready and to prove the
-// atlas is indexed by glyph, without needing a real cartridge.
+// 71 tiles, using the shades a REAL LSDj font uses: 0 for background, 3 for the glyph body, 1 for the
+// occasional anti-aliased pixel. Shade 2 never appears on a real cartridge (dumping lsdj9_4_2.gb gives a
+// per-font histogram of 0/1/2/3 = 3075/182/0/1287), so a synthetic font that leans on 2 would hide the
+// fold that turns 3 into the foreground colour.
 function testFont(): RomFontTile[] {
   const tiles: RomFontTile[] = [];
-  for (let t = 0; t < FONT_GLYPH_COUNT; t++) tiles.push(new Array(64).fill(t % 4));
+  for (let t = 0; t < FONT_GLYPH_COUNT; t++) {
+    // A 4x4 block of body pixels in the tile's top-left, one shade-1 pixel, rest background.
+    const px = new Array(64).fill(0);
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) px[y * 8 + x] = 3;
+    px[63] = 1;
+    tiles.push(px);
+  }
   return tiles;
 }
 
@@ -222,6 +230,24 @@ test("canvas: flush repaints everything once, then only what changed", () => {
   // Rebuilding the atlas invalidates the painted surface, so the next flush is full again.
   c.setPalette(testPalette());
   expect(c.flush()).toBe(40);
+});
+
+test("canvas: a glyph's body (shade 3) paints in the colour-set's FOREGROUND, not the background", () => {
+  // The regression that made the whole view render as solid bars: LSDj spells a glyph body as shade 3,
+  // and without folding that to 2 it lands on colorForPixel's `default:` branch = the background colour.
+  // Normal-coloured text then vanishes into the background and every other colour-set becomes a block.
+  const c = makeCanvas(1, 1);
+  c.drawTile(0, 0, FontTiles.A, ColorSets.Selection);
+  c.flush();
+
+  const px = c.getPixels();
+  expect(px[0] >>> 0).toBe(0xff001e00); // body pixel = colour 3 of set 3, the foreground
+  expect(px[4] >>> 0).toBe(0xff1e0000); // background pixel = colour 0 of set 3
+  expect(px[63] >>> 0).toBe(0xff0f0f00); // the shade-1 pixel = their blend
+
+  // And the background colour a fill() paints must actually differ from the glyph body, or text drawn in
+  // that same colour-set would be invisible.
+  expect(px[0] !== px[4]).toBeTruthy();
 });
 
 test("canvas: pixels come out as opaque XRGB8888 words, blending the middle shade", () => {

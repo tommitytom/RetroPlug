@@ -12,16 +12,24 @@ import { test, expect, ui, navTo, Key } from "ui-harness";
 
 const LSDJ = () => ui.romDir() + "/lsdj9_4_2.gb";
 
-/** How many distinct colours the display is showing. An unpainted (or all-black) screen is 1; a drawn
- *  LSDj grid is many, since the palette's colour-sets and the blended mid shade all appear. */
+/** How many distinct colours the display shows (capped, so it stops early).
+ *
+ *  This proves the canvas received PIXELS - the failure mode where the render loop throws every frame and
+ *  leaves the widget tree perfectly intact, so every findByTestId assertion below still passes.
+ *
+ *  It deliberately does NOT try to prove the glyphs have the right SHAPE. Rendering every text cell as a
+ *  solid block still puts 6 colours on screen against a correct render's 8, and the obvious pixel
+ *  statistics don't separate them either (max scanline colour-transitions measures 207 broken vs 265
+ *  correct - the sparse mid-shade pixels swamp the signal). That check belongs where it can be exact:
+ *  test/lsdj/hd.test.ts asserts the shade -> colour mapping on a known glyph and fails outright if the
+ *  font shades are mapped wrong. */
 function distinctColors(): number {
   const { pixels } = ui.snapshot();
   const px = new Uint32Array(pixels);
   const seen = new Set<number>();
-  // Sample rather than walk every pixel - enough to tell "painted" from "blank" without the cost.
   for (let i = 0; i < px.length; i += 97) {
     seen.add(px[i] >>> 0);
-    if (seen.size > 8) break;
+    if (seen.size > 4) break;
   }
   return seen.size;
 }
@@ -59,9 +67,9 @@ test("the LSDj HD player opens from the instance menu and Esc returns to the gri
   expect(ui.findByTestId("tile-0")).toBe(null);
   // It found a supported cart, so it drew the canvas rather than the fallback message.
   expect(ui.findByTestId("lsdj-hd-unsupported")).toBe(null);
-  // And it actually PAINTED: the song / chain / phrase grid puts several palette colours on screen. A
-  // renderer that threw on every frame would leave this at 1 (the black background) with every widget
-  // assertion above still passing.
+  // And it actually PAINTED: a drawn grid puts the palette's colour-sets plus the blended mid shade on
+  // screen. A render loop that throws every frame leaves this at 1 (the black background) with every
+  // widget assertion above still passing.
   expect(distinctColors() > 2).toBeTruthy();
 
   // Esc is the universal back - the grid returns.
