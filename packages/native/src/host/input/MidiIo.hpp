@@ -71,7 +71,7 @@ public:
     // Choose which hardware device to use, by port name; applied immediately if open() has run. An empty input
     // selection means "All Devices" (open every hardware input, the default); an empty output selection means
     // "None" (the virtual output only, the default). A name that isn't currently present is remembered and
-    // re-applied on the next open()/reconnect. Persisted by the host (midi.cfg).
+    // re-applied on the next open()/reconnect. Persisted by the host (midi.json).
     void setInputSelection(const std::string& name);
     void setOutputSelection(const std::string& name);
     const std::string& inputSelection() const { return selectedIn_; }

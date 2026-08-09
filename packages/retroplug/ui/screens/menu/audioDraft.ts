@@ -1,7 +1,7 @@
 // Standalone-only pending audio-device config for the Settings > Audio submenu. The cyclers edit this
 // DRAFT (never the live device); an explicit "Apply" row commits it via __rp_setAudioConfig, which re-opens
 // the SDL audio device on the fly + persists (see packages/native/sdl/main.cpp). Kept out of any persisted
-// store — it's ephemeral UI state mirroring the native audio.cfg.
+// store — it's ephemeral UI state mirroring the native audio.json.
 //
 // Why a tiny subscribable and not a store: the audio config lives in native (SDL host), not in a TS store,
 // so a cycler edit here has nothing to notify App with — the menu would only repaint on the NEXT unrelated

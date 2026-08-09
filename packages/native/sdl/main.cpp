@@ -48,6 +48,8 @@
 
 #include <portaudio.h>   // audio backend (deps/portaudio, pipewire branch) — replaces SDL audio
 
+#include <rfl/json.hpp>  // audio.json / midi.json (device settings), tolerant JSON like the role-config crossing
+
 extern "C" {
 #include "lvgl.h"
 }
@@ -223,12 +225,12 @@ struct AppState {
     std::vector<float*>             audioPtrs;
     int    numOutputs = 2;
     double sampleRate = 48000.0;   // obtained device rate (drives the Engine)
-    int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block + channels, persisted to audio.cfg
+    int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block + channels, persisted to audio.json
     int    reqBlockSize  = 512;    // low-latency default; low-power devices (the handheld) pass a bigger buffer
                                    // via --block-size (e.g. 4096) so the audio callback keeps its deadline
     int    reqOutChannels = 2;     // 2 = stereo mix (default); 4/6/8 = wide stems for a multichannel device
     int    reqHostApi = -1;        // chosen PortAudio host API (PaHostApiTypeId: paPipeWire/paALSA/paJACK/...);
-                                   // -1 = Auto (prefer PipeWire, else default). Persisted to audio.cfg.
+                                   // -1 = Auto (prefer PipeWire, else default). Persisted to audio.json.
 
     // Present only when LVGL actually redrew: the flush cb unions the changed area here; the loop skips
     // the SDL texture upload + blit entirely on idle frames (a static menu → ~0% CPU instead of a full
@@ -433,7 +435,7 @@ void pollFileDialog(AppState& a) {
 
 // The PortAudio host APIs usable for output right now — each registered host API (ALSA/PipeWire/JACK/...) that
 // has a valid default output device. Drives the Settings > Audio > Driver picker; `type` is a PaHostApiTypeId
-// (what AppState::reqHostApi stores + audio.cfg persists). Depends on the runtime, so it's recomputed on read.
+// (what AppState::reqHostApi stores + audio.json persists). Depends on the runtime, so it's recomputed on read.
 struct HostApiEntry { std::string name; int type; };
 std::vector<HostApiEntry> availableHostApis() {
     std::vector<HostApiEntry> out;
@@ -512,7 +514,7 @@ JSValue jsGetMidiConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
 }
 
 // __rp_setMidiInput(name) / __rp_setMidiOutput(name): choose a hardware device by port name (empty string =
-// the default). Applies immediately (reconnects the RtMidi port) + persists to midi.cfg.
+// the default). Applies immediately (reconnects the RtMidi port) + persists to midi.json.
 JSValue jsSetMidiInput(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (g_app && argc >= 1) {
         const char* s = JS_ToCString(ctx, argv[0]);
@@ -820,51 +822,78 @@ bool openAudio(AppState& a) {
     return true;
 }
 
-std::string audioCfgPath(AppState& a) { return a.hostSvc.configDir() + "/audio.cfg"; }
-
-void loadAudioConfig(AppState& a) {
-    if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "r")) {
-        int sr = 0, bs = 0, ch = 0, ha = -1;
-        // ch: optional 3rd field (older files have 2); ha: optional 4th (older files omit the host API).
-        const int m = std::fscanf(f, "%d %d %d %d", &sr, &bs, &ch, &ha);
-        if (m >= 2 && sr > 0 && bs > 0) { a.reqSampleRate = sr; a.reqBlockSize = bs; }
-        if (m >= 3 && ch >= 2 && ch <= 8 && (ch % 2) == 0) a.reqOutChannels = ch;
-        if (m >= 4) a.reqHostApi = ha; // -1 = Auto; any other value is a PaHostApiTypeId (openAudio validates it)
+// audio.json / midi.json are NATIVE-owned device settings, read here at startup (setupSdl) before
+// bootControlPlane brings up the JS runtime that owns config.json — so they can't live in the TS config, and
+// they're standalone-only anyway (the plugin gets audio/MIDI from its DAW). They're small reflect-cpp JSON
+// blobs, decoded tolerantly (DefaultIfMissing) exactly like the per-system role config that crosses to native
+// (a missing/garbage field takes the struct default). Whole file into a string (empty if unreadable).
+std::string slurpTextFile(const std::string& path) {
+    std::string out;
+    if (FILE* f = std::fopen(path.c_str(), "rb")) {
+        char buf[4096];
+        size_t n;
+        while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) out.append(buf, n);
         std::fclose(f);
     }
+    return out;
+}
+void writeTextFile(const std::string& path, const std::string& text) {
+    if (FILE* f = std::fopen(path.c_str(), "wb")) {
+        std::fwrite(text.data(), 1, text.size(), f);
+        std::fclose(f);
+    }
+}
+
+// The standalone audio device settings. hostApi is a PaHostApiTypeId (-1 = Auto). Defaults here mirror the
+// AppState defaults so a partial/absent file lands on the same values.
+struct AudioCfgJson {
+    int sampleRate = 48000;
+    int blockSize = 512;
+    int outChannels = 2;
+    int hostApi = -1; // PaHostApiTypeId; -1 = Auto (prefer PipeWire, else default)
+};
+
+std::string audioCfgPath(AppState& a) { return a.hostSvc.configDir() + "/audio.json"; }
+
+void loadAudioConfig(AppState& a) {
+    const std::string json = slurpTextFile(audioCfgPath(a));
+    if (json.empty()) return; // absent/unreadable → keep the compiled-in / --block-size-seeded defaults
+    const auto r = rfl::json::read<AudioCfgJson, rfl::DefaultIfMissing>(json);
+    if (!r) return; // unparseable → keep defaults
+    const AudioCfgJson c = r.value();
+    if (c.sampleRate > 0) a.reqSampleRate = c.sampleRate;
+    if (c.blockSize > 0) a.reqBlockSize = c.blockSize;
+    if (c.outChannels >= 2 && c.outChannels <= 8 && (c.outChannels % 2) == 0) a.reqOutChannels = c.outChannels;
+    a.reqHostApi = c.hostApi; // -1 = Auto; any other value is a PaHostApiTypeId (openAudio validates it)
 }
 
 void saveAudioConfig(AppState& a) {
-    if (FILE* f = std::fopen(audioCfgPath(a).c_str(), "w")) {
-        std::fprintf(f, "%d %d %d %d\n", a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, a.reqHostApi);
-        std::fclose(f);
-    }
+    const AudioCfgJson c{ a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, a.reqHostApi };
+    writeTextFile(audioCfgPath(a), rfl::json::write(c) + "\n");
 }
 
-// The chosen MIDI input/output device names (Settings > MIDI), one per line (names contain spaces, so this is
-// line-based, not %s). An empty line = the default sentinel (All Devices / None).
-std::string midiCfgPath(AppState& a) { return a.hostSvc.configDir() + "/midi.cfg"; }
+// The chosen MIDI input/output device names (Settings > MIDI). "" = the default sentinel (All Devices for
+// input, None for output).
+struct MidiCfgJson {
+    std::string input;
+    std::string output;
+};
+
+std::string midiCfgPath(AppState& a) { return a.hostSvc.configDir() + "/midi.json"; }
 
 void loadMidiConfig(AppState& a) {
-    if (FILE* f = std::fopen(midiCfgPath(a).c_str(), "r")) {
-        char line[512];
-        std::string in, out;
-        if (std::fgets(line, sizeof line, f)) in = line;
-        if (std::fgets(line, sizeof line, f)) out = line;
-        std::fclose(f);
-        auto trimEol = [](std::string& s) { while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back(); };
-        trimEol(in);
-        trimEol(out);
-        a.midi.setInputSelection(in);   // stored now; applied when midi.open() connects the ports
-        a.midi.setOutputSelection(out);
-    }
+    const std::string json = slurpTextFile(midiCfgPath(a));
+    if (json.empty()) return;
+    const auto r = rfl::json::read<MidiCfgJson, rfl::DefaultIfMissing>(json);
+    if (!r) return;
+    const MidiCfgJson c = r.value();
+    a.midi.setInputSelection(c.input);   // stored now; applied when midi.open() connects the ports
+    a.midi.setOutputSelection(c.output);
 }
 
 void saveMidiConfig(AppState& a) {
-    if (FILE* f = std::fopen(midiCfgPath(a).c_str(), "w")) {
-        std::fprintf(f, "%s\n%s\n", a.midi.inputSelection().c_str(), a.midi.outputSelection().c_str());
-        std::fclose(f);
-    }
+    const MidiCfgJson c{ a.midi.inputSelection(), a.midi.outputSelection() };
+    writeTextFile(midiCfgPath(a), rfl::json::write(c) + "\n");
 }
 
 // Live audio reconfigure (the Audio settings submenu): stop the device, take the Engine back from the
@@ -1217,7 +1246,7 @@ int main(int argc, char** argv) {
         else if (arg == "--height" && i + 1 < argc) app.height = static_cast<std::uint32_t>(std::atoi(argv[++i]));
         // Default audio block size (frames). The compiled-in default is 512 (low latency); a low-power device
         // passes a bigger buffer here (the muOS launcher uses 4096) so the callback keeps its deadline. Parsed
-        // before setupSdl → loadAudioConfig, so a saved audio.cfg (an explicit Settings > Audio pick) still wins.
+        // before setupSdl → loadAudioConfig, so a saved audio.json (an explicit Settings > Audio pick) still wins.
         else if (arg == "--block-size" && i + 1 < argc) { const int b = std::atoi(argv[++i]); if (b > 0) app.reqBlockSize = b; }
         else if (arg == "--screenshot" && i + 1 < argc) screenshotPath = argv[++i];
     }

@@ -14,7 +14,7 @@ SDL2 drives those via its own video backend. **Goal: make `retroplug-sdl` the pr
 - SDL2 window; software blit of the LVGL buffer with dirty-region present; SDL drives GLES2 internally.
 - SDL audio callback → the multi-out `engine.processBlock` (2/4/6/8 device channels per the Out Channels
   knob); MIDI-clock-derived transport; live sample-rate/block-size/channels reconfigure (Settings → Audio);
-  `audio.cfg` persistence.
+  `audio.json` persistence.
 - Input: keyboard + mouse → LVGL indevs + the `key` bus; gamepad (`GamepadManager`) → menu nav + game input.
 - On-screen LVGL **file browser** (no dependence on OS dialogs), **Exit** menu row, `openPath`, window title.
 - Optional Linux RT audio thread (SCHED_FIFO + core affinity), for headroom on constrained devices.
@@ -66,7 +66,7 @@ ALSA `Through`); the pure `hardwarePortIndices`/`matchPortIndex` helpers decide 
 by `retroplug-midi-test`). Selection is a UI-driven native runtime setting, exactly like the Audio submenu: the
 `__rp_getMidiConfig` / `__rp_setMidiInput` / `__rp_setMidiOutput` hooks (bound only in the SDL host, so the
 plugin — which gets MIDI from the DAW — hides the submenu), reconnected live behind an audio-device lock and
-persisted by device name to `midi.cfg`. A saved device that isn't currently present is shown `(not connected)`
+persisted by device name to `midi.json`. A saved device that isn't currently present is shown `(not connected)`
 and re-applied on reconnect. `RETROPLUG_SDL_MIDI_LIST` dumps the enumerated device names.
 
 ### P3 — File drag-and-drop — ✅ DONE
@@ -101,9 +101,9 @@ stop + timeout-revert). Follow-up: MIDI clock has no sub-block frame offset (blo
 `audioCb` now renders through the multi-out `Engine::processBlock(frames, float* const* outputs, N)` (the same
 overload + planar convention the plugin uses with its 8 outputs) into `N` planar buffers, then interleaves
 frame-major (`stream[i·N + c]`) into the SDL stream. `N` is the device's output-channel count, a new **Out
-Channels** knob in `Settings > Audio` (2 = stereo mix / 4 / 6 / 8 pairs), persisted as a third field in
-`audio.cfg` and re-opened live via the `__rp_setAudioConfig` seam (now `sr, bs, ch, driver` — see the Driver
-picker below). Default **2** is
+Channels** knob in `Settings > Audio` (2 = stereo mix / 4 / 6 / 8 pairs), persisted in `audio.json` and
+re-opened live via the `__rp_setAudioConfig` seam (`sr, bs, ch, driver` — see the Driver picker below).
+Default **2** is
 byte-identical to the old 2-arg stereo path (zero regression); 4/6/8 opens that many device channels so the
 project's **Audio Routing** modes (`2-Ch/Inst`, `1-Ch/Inst`, `Channels`) fan real stems to a multichannel
 interface. No routing plumbing was needed — `audioRouting` already reaches the SDL Engine via the existing
@@ -111,7 +111,7 @@ interface. No routing plumbing was needed — `audioRouting` already reaches the
 only 2 channels every mode collapses to pair 0 (why it was inert before). Low priority — matters only on
 desktop with a multichannel interface (a stereo device just has SDL fold the extra channels back down).
 Verified headlessly with `RETROPLUG_SDL_TEST_MULTIOUT=<N>` (opens N channels, N planar buffers, runs the
-interleave) + the `audio.cfg` round-trip.
+interleave) + the `audio.json` round-trip.
 
 ### P6 — Window resize / zoom-to-grid + close guard — ✅ DONE
 **Resize:** `__rp_setWindowSize` resizes the window to the grid (multi-instance growth / zoom / layout
@@ -166,7 +166,7 @@ platform default = raw ALSA) plus each compiled-in host API with a usable output
 enumerated natively (`__rp_getAudioConfig` returns `{…, driver, drivers}`), the picker automatically shows only
 what the build offers: **PipeWire + ALSA** on the handheld, plus **JACK** on a build made with
 `-DRETROPLUG_SDL_JACK=ON`. A pick stages into the Audio draft and commits with the same **Apply** as
-rate/block/channels (one stream reopen), persisted as a 4th `audio.cfg` field (the `PaHostApiTypeId`, `-1` =
+rate/block/channels (one stream reopen), persisted in `audio.json` as `hostApi` (the `PaHostApiTypeId`, `-1` =
 Auto). A selected-but-unavailable host API falls back to Auto at open time (never silence). **Pulse/sndio/OSS
 stay force-off** (`libsdl2-dev` drags in their dev libs, and the handheld doesn't ship the runtime `.so`s);
 **JACK is opt-in** for the same reason — it needs `libjack.so.0` at runtime, which a PipeWire-only desktop
