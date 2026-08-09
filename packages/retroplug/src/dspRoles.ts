@@ -21,7 +21,7 @@ import {
 } from "./lsdjKeyboardMap";
 import { arduinoboyDecodeSerialOut, arduinoboyMasterSyncBlock, type ArduinoboyState, type MasterSyncState } from "./lsdjArduinoboy";
 import { RISA_PPQN, RISA_START, RISA_CLOCK, RISA_STOP, risaLocate, risaArmPacket } from "./risaSync";
-import { SMS_SYNC_PPQN, SMS_SYNC_COUNTER_MOD, smsSyncLevels } from "./smsSync";
+import { SMS_SYNC_PPQN, SMS_SYNC_COUNTER_MOD, syncLevelsFor, type SmsSyncMachine } from "./smsSync";
 
 // Forward every host-MIDI byte verbatim into the system's serial input. This is both `mgb`
 // (== MgbPassthroughRole) and lsdj-sync's MidiPassthrough mode (== LsdjSyncRole handlePassthrough).
@@ -249,10 +249,16 @@ const risaSync: SystemBehavior = (c) => {
   }
 };
 
-// sms-sync (no config): clock smsggdj from the DAW transport by driving a 2-bit counter onto controller
-// port 2's TR + TH lines. The payload crossing ctx.pushCoreBytes is a LEVEL WORD, not a protocol byte -
-// MesenSmsSystem routes it to SmsSyncRole, which holds it on the port until the next one. See smsSync.ts
-// for the encoding and the ROM references.
+// sms-sync: clock smsggdj from the DAW transport by driving a 2-bit counter onto its sync lines. The
+// payload crossing ctx.pushCoreBytes is a LEVEL WORD, not a protocol byte - MesenSmsSystem routes it to
+// SmsSyncRole, which holds it on the port until the next one. See smsSync.ts for the encoding and the
+// ROM references.
+//
+// `machine` picks the wire format: "sms" (default) drives controller port 2's TR + TH, "gg" drives the
+// EXT parallel port's PC4/PC5 + PC6. One role rather than two because the PROTOCOL is identical - same
+// counter, same once-per-frame delta, same arm, same absence of a locate - and only the bit positions
+// move. The provider sets it from the ROM's platform; the native side picks its own sink from the
+// system it was built for, so this config drives the encoding alone.
 //
 // Much smaller than risaSync above, and every absence is the protocol's rather than a shortcut:
 //
@@ -271,10 +277,11 @@ const risaSync: SystemBehavior = (c) => {
 const smsSync: SystemBehavior = (c) => {
   if (!c.block.transport) return;
   const st = c.state as { counter?: number };
+  const levels = syncLevelsFor((c.config as { machine?: SmsSyncMachine }).machine ?? "sms");
   let counter = st.counter ?? 0;
   c.eachTick(SMS_SYNC_PPQN, (_t, off) => {
     counter = (counter + 1) % SMS_SYNC_COUNTER_MOD;
-    c.pushCoreBytes(off, [smsSyncLevels(counter)]);
+    c.pushCoreBytes(off, [levels(counter)]);
   });
   st.counter = counter;
 };
@@ -308,7 +315,15 @@ export function registerDspRoles(registry: RoleRegistry): void {
   // sms-sync: no config - clocks smsggdj by holding a 2-bit counter on controller port 2 (TR + TH) at
   // 24 PPQN. Attached only to smsggdj (the SMSGGDJ marker), NOT to every SMS ROM: these are Player 2's
   // button lines, so an unconditional attach would inject phantom P2 presses into any game.
-  registry.registerRole({ kind: "sms-sync", category: "feature", scope: "system", schema: z.object({}), dsp: smsSync });
+  // `machine` is additive with a default, so no migration step: an existing project stamped before it
+  // existed parses as "sms", which is what those projects were.
+  registry.registerRole({
+    kind: "sms-sync",
+    category: "feature",
+    scope: "system",
+    schema: z.object({ machine: z.enum(["sms", "gg"]).default("sms") }),
+    dsp: smsSync,
+  });
   registry.registerRole({
     kind: "lsdj-sync",
     category: "feature",

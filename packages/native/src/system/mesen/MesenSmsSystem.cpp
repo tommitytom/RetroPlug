@@ -274,7 +274,7 @@ void MesenSmsSystem::onActivate(double sampleRate) {
         // Cache once: setExternalInput is on the sync path and must not
         // dynamic_cast per event on the audio thread.
         controlManager_ = dynamic_cast<SmsControlManager*>(console->GetControlManager());
-        if (controlManager_) syncRole_.onAttach(*controlManager_);
+        if (controlManager_) syncRole_.onAttach(*controlManager_, console->GetMemoryManager(), config_.gameGear);
     }
 
     // Restore persisted battery RAM / savestate. Write directly into the
@@ -396,6 +396,15 @@ std::uint32_t MesenSmsSystem::availableFrames() const {
 }
 
 void MesenSmsSystem::setExternalInput(std::uint8_t port, std::uint8_t levels) {
+    // Same sink split as SmsSyncRole::pumpUntil, deliberately: this is the direct (unscheduled) entry
+    // point, and the two disagreeing would mean a test could pass against a path the role never takes.
+    // `port` is ignored on Game Gear - the EXT parallel port is not one of the two controller ports.
+    if (config_.gameGear) {
+        if (SmsConsole* console = smsConsole()) {
+            if (SmsMemoryManager* mm = console->GetMemoryManager()) mm->SetGgExternalInput(levels);
+        }
+        return;
+    }
     if (controlManager_) controlManager_->SetExternalInput(port, levels);
 }
 

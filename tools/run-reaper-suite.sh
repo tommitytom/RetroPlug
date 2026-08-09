@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Run the whole headless-Reaper leg CONCURRENTLY: build + author once, then fan out all nine
-# checks (7 audio renders + 3 editor snapshots) in parallel and print a PASS/FAIL summary.
+# Run the whole headless-Reaper leg CONCURRENTLY: build + author once, then fan out all twelve
+# checks (9 audio renders + 3 editor snapshots) in parallel and print a PASS/FAIL summary.
 #
 # Each check runs through the isolated harness (tools/reaper-env.sh) with a distinct RP_JOB_TAG,
 # so they don't share a JACK server, a Reaper config dir, an Xvfb display, or log files — which is
@@ -10,7 +10,7 @@
 # and wall-clock-independent, so parallel scheduling can't change the audio.
 #
 # Usage:
-#   tools/run-reaper-suite.sh                 # build + author + run all 9
+#   tools/run-reaper-suite.sh                 # build + author + run all 12
 #   RP_SUITE_JOBS=4 tools/run-reaper-suite.sh # cap concurrency at 4 (default: 8)
 #   RP_SUITE_NO_BUILD=1 tools/run-reaper-suite.sh   # skip the vst3 build + fixture regen
 #
@@ -32,7 +32,7 @@ mkdir -p "$RESULTS_DIR"
 # optional scenario env (the lsdj author lua keys off RP_SCENARIO), and the analyzer command.
 declare -A AUTHOR_LUA FIXTURE RPP WAV JACKP SCEN_ENV ANALYZE
 
-RENDER_SCENARIOS=(mgb-smoke mgb-midi-timing n8-midi-timing lsdj-midi-metro lsdj-arduinoboy-metro lsdj-midi-drift risa-sync sms-sync)
+RENDER_SCENARIOS=(mgb-smoke mgb-midi-timing n8-midi-timing lsdj-midi-metro lsdj-arduinoboy-metro lsdj-midi-drift risa-sync sms-sync gg-sync)
 
 AUTHOR_LUA[mgb-smoke]="tools/reaper-mgb-author.lua"
 FIXTURE[mgb-smoke]="build/mgb.rplg.zip"
@@ -99,6 +99,17 @@ RPP[sms-sync]="examples/reaper/sms_sync.rpp"
 WAV[sms-sync]="build/reaper-sms-sync.wav"
 JACKP[sms-sync]="1024"
 ANALYZE[sms-sync]='tools/reaper-timing-analyze.py build/reaper-sms-sync.wav --drift'
+
+# The Game Gear twin. Same project shape and the same author lua (REAPER_AUTHOR_STEM picks the stem);
+# what differs is entirely below the DAW - the GG build reads its EXT parallel port ($01/PC4-PC6)
+# rather than controller port 2, through the vendored SmsMemoryManager direction mask.
+AUTHOR_LUA[gg-sync]="tools/reaper-sms-author.lua"
+FIXTURE[gg-sync]="build/gg.rplg.zip"
+RPP[gg-sync]="examples/reaper/gg_sync.rpp"
+WAV[gg-sync]="build/reaper-gg-sync.wav"
+JACKP[gg-sync]="1024"
+SCEN_ENV[gg-sync]="REAPER_AUTHOR_STEM=reaper-gg-sync"
+ANALYZE[gg-sync]='tools/reaper-timing-analyze.py build/reaper-gg-sync.wav --drift'
 
 # Editor scenarios: name -> the standalone script (each already self-judges).
 declare -A EDITOR_SCRIPT
@@ -168,6 +179,8 @@ if [ "${RP_SUITE_NO_BUILD:-0}" != "1" ]; then
     node tools/author-nes-rplg.js        >"$RESULTS_DIR/fixture-nes.log" 2>&1 || { echo "[suite] nes fixture failed" >&2; exit 1; }
     node tools/author-risa-rplg.js       >"$RESULTS_DIR/fixture-risa.log" 2>&1 || { echo "[suite] risa fixture failed" >&2; exit 1; }
     node tools/author-sms-rplg.js        >"$RESULTS_DIR/fixture-sms.log" 2>&1 || { echo "[suite] sms fixture failed" >&2; exit 1; }
+    node tools/author-sms-rplg.js resources/roms/smsggdj_v0_45.gg \
+                                         >"$RESULTS_DIR/fixture-gg.log"  2>&1 || { echo "[suite] gg fixture failed"  >&2; exit 1; }
     for s in midi-metro arduinoboy-metro midi-drift; do
         node tools/author-lsdj-rplg.js "$s" >"$RESULTS_DIR/fixture-lsdj-$s.log" 2>&1 || { echo "[suite] lsdj $s fixture failed" >&2; exit 1; }
     done

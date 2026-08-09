@@ -4,6 +4,7 @@
 #include <deque>
 
 class SmsControlManager;
+class SmsMemoryManager;
 
 // Host-transport sync for the Master System controller-port transport. The DAW-side role hands this
 // a level byte tagged with an intra-block sample offset; this releases it onto the emulated
@@ -25,6 +26,11 @@ class SmsControlManager;
 //     // TL (bit 2) stays high, so the ROM's "TR AND TL" reduces to TR, which is what a straight
 //     // 3-wire cable produces and the case the AND was written for.
 //
+// GAME GEAR CARRIES THE SAME COUNTER ON DIFFERENT PINS, so the level word differs and the sink does
+// too (see onAttach). The GG build reads the EXT parallel port $01, whose bits are PC0-PC6, with
+// counter bit 0 = PC4 AND PC5 and counter bit 1 = PC6 (smsggdj GGSYNC.md). This class is agnostic:
+// the encoding is the TS role's job, and only the destination is decided here.
+//
 // The counter state machine itself (START -> 0, CLOCK -> +1 while running, STOP -> freeze, not
 // reset) lives in the TS role, mirroring the reference hardware bridge at
 // /workspaces/smsggdj/adapter/src/sync_protocol.c. This class only schedules and applies.
@@ -35,10 +41,21 @@ class SmsControlManager;
 // hazard - a DAW seek is just a counter that keeps counting.
 class SmsSyncRole {
 public:
-    // Bind to the console's control manager. Called once, on the audio thread, from
-    // MesenSmsSystem::onActivate after the manager pointer has been cached.
-    void onAttach(SmsControlManager& controlManager) { controlManager_ = &controlManager; }
-    void onDetach() { controlManager_ = nullptr; clear(); }
+    // Bind to the console's managers. Called once, on the audio thread, from
+    // MesenSmsSystem::onActivate after the pointers have been cached.
+    //
+    // `gameGear` picks the SINK, because the two machines carry the same counter on different
+    // hardware. Master System reads controller port 2 ($DD), so the level goes to the control
+    // manager's external-input mask. Game Gear has dedicated link I/O and its build reads the EXT
+    // parallel port ($01 / PC0-PC6) instead, whose bits map straight to the pins - so the level goes
+    // to the memory manager. Which machine is not something the DAW-side role has to know for
+    // ROUTING (only for the bit layout it encodes); the system already knows, so it decides here.
+    void onAttach(SmsControlManager& controlManager, SmsMemoryManager* memoryManager, bool gameGear) {
+        controlManager_ = &controlManager;
+        memoryManager_ = memoryManager;
+        gameGear_ = gameGear;
+    }
+    void onDetach() { controlManager_ = nullptr; memoryManager_ = nullptr; clear(); }
 
     // Audio-thread: QUEUE each byte in `data` as a level tagged with `offset` (samples from block
     // start). Released by pumpUntil once the block's emulated position reaches that offset.
@@ -81,4 +98,6 @@ private:
     bool                     needsSort_    = false;  // set on enqueue; pumpUntil stable-sorts once
     std::uint8_t             lastApplied_  = 0xFF;   // idle: every line released
     SmsControlManager*       controlManager_ = nullptr;
+    SmsMemoryManager*        memoryManager_  = nullptr;  // Game Gear EXT port sink; null on SMS
+    bool                     gameGear_       = false;
 };

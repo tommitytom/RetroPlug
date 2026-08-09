@@ -26,14 +26,24 @@ import {
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
-const ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
+// Both machines, because the sync PROTOCOL is shared and only the pins differ: SMS carries the
+// counter on controller port 2 ($DD), Game Gear on the EXT parallel port ($01). Running every guard
+// twice is what keeps the GG path from being the one that quietly rots - it is the newer of the two
+// and the one whose emulation had to be vendored (SmsMemoryManager's $02 direction mask).
+const MACHINES = [
+  { machine: "sms", platform: "sms", rom: __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms" },
+  { machine: "gg", platform: "gg", rom: __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.gg" },
+] as const;
+type Machine = (typeof MACHINES)[number];
 
 // smsggdj's Play/Stop. The manual lists both "2 hold + 1 tap" and the PAUSE button; PAUSE is one press
 // and maps to the shared wire byte 7 (SmsButton::Start -> the console's Pause switch / Z80 NMI).
 const PAUSE = 7;
 
 // This system's pipeline: the sync role, or nothing at all (the negative control).
-const withSync = (id: number) => ({ systems: [{ id, pipeline: [{ kind: "sms-sync", config: {} }] }] });
+const withSync = (id: number, m: Machine) => ({
+  systems: [{ id, pipeline: [{ kind: "sms-sync", config: { machine: m.machine } }] }],
+});
 const noRoles = (id: number) => ({ systems: [{ id, pipeline: [] }] });
 
 const rms = (a: Float32Array): number => {
@@ -102,13 +112,13 @@ let nextSystemId = 1;
 // `enableFm: false` is not optional here: smsggdj writes $F2 = $01 when its FM option is on, and Mesen
 // models $F2 as a mux whose PSG branch memsets the buffer, so an FM-routed core renders silence no
 // matter how well the sync works. The fixture's OPTIONS block sets fm_on = 0 as well.
-function boot(syncMode: number) {
+function boot(syncMode: number, m: Machine) {
   const be = createRealBackend();
   const audio = createAudioDriver();
   const id = nextSystemId++;
   const ok = be.constructSystem({
-    romPath: ROM,
-    platform: "sms",
+    romPath: m.rom,
+    platform: m.platform,
     core: "mesen",
     embeddedRom: "",
     savPath: null,
@@ -131,117 +141,119 @@ function pressPlay(audio: ReturnType<typeof createAudioDriver>, id: number): voi
   audio.renderAudio(100);
 }
 
-test("GUARD A: the authored song plays on the ROM's own transport, with sync OFF", () => {
-  // Proves the fixture end to end - SMDJ4 image, OPTIONS block, WRAM layout, instrument defaults and
-  // the metronome pattern - with ZERO sync involved. If this fails, nothing below is about sync.
-  const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP dsp-sms-sync: missing ${ROM}`);
-    return;
-  }
-  const { be: be2, audio, id } = boot(SMS_SYNC_OFF);
+for (const m of MACHINES) {
+  test(`${m.machine.toUpperCase()}: GUARD A: the authored song plays on the ROM's own transport, with sync OFF`, () => {
+    // Proves the fixture end to end - SMDJ4 image, OPTIONS block, WRAM layout, instrument defaults and
+    // the metronome pattern - with ZERO sync involved. If this fails, nothing below is about sync.
+    const be = createRealBackend();
+    if (!be.fileExists(m.rom)) {
+      console.log(`# SKIP dsp-sms-sync ${m.machine}: missing ${m.rom}`);
+      return;
+    }
+    const { be: be2, audio, id } = boot(SMS_SYNC_OFF, m);
 
-  const idleRows = rowsAdvanced(be2, audio, id, 500, 3);
-  const idle = rms(audio.renderAudio(500)); // poked but not started
-  pressPlay(audio, id);
-  const playRows = rowsAdvanced(be2, audio, id, 500, 6);
-  const playing = rms(audio.renderAudio(500));
+    const idleRows = rowsAdvanced(be2, audio, id, 500, 3);
+    const idle = rms(audio.renderAudio(500)); // poked but not started
+    pressPlay(audio, id);
+    const playRows = rowsAdvanced(be2, audio, id, 500, 6);
+    const playing = rms(audio.renderAudio(500));
 
-  console.log(`[dsp-sms-sync] guardA idle=${idle.toFixed(5)}/${idleRows}rows playing=${playing.toFixed(5)}/${playRows}rows`);
-  expect(idleRows).toBe(0); // a loaded song does not advance until asked
-  expect(idle < 0.001).toBeTruthy(); // ...and makes no sound
-  expect(playing > 0.001).toBeTruthy(); // the ROM's own clock plays it
-  expect(playRows > 0).toBeTruthy(); // and its sequencer runs
-  expect(be2.removeSystem(id)).toBeTruthy(); // leave the mix silent for the next case
-});
+    console.log(`[dsp-sms-sync ${m.machine}] guardA idle=${idle.toFixed(5)}/${idleRows}rows playing=${playing.toFixed(5)}/${playRows}rows`);
+    expect(idleRows).toBe(0); // a loaded song does not advance until asked
+    expect(idle < 0.001).toBeTruthy(); // ...and makes no sound
+    expect(playing > 0.001).toBeTruthy(); // the ROM's own clock plays it
+    expect(playRows > 0).toBeTruthy(); // and its sequencer runs
+    expect(be2.removeSystem(id)).toBeTruthy(); // leave the mix silent for the next case
+  });
 
-test("GUARD B: the sms-sync role in the DSP kernel is the sole clock that makes smsggdj play", () => {
-  const be0 = createRealBackend();
-  if (!be0.fileExists(ROM)) {
-    console.log(`# SKIP dsp-sms-sync: missing ${ROM}`);
-    return;
-  }
-  const { be, audio, id } = boot(SMS_SYNC_IN24);
-  const dsp = createDspRuntime();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
+  test(`${m.machine.toUpperCase()}: GUARD B: the sms-sync role in the DSP kernel is the sole clock that makes smsggdj play`, () => {
+    const be0 = createRealBackend();
+    if (!be0.fileExists(m.rom)) {
+      console.log(`# SKIP dsp-sms-sync ${m.machine}: missing ${m.rom}`);
+      return;
+    }
+    const { be, audio, id } = boot(SMS_SYNC_IN24, m);
+    const dsp = createDspRuntime();
+    expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
 
-  // The fixture's OPTIONS block really did reach the ROM: config_load ran at boot and took IN24.
-  // Without this the negative control below would pass for the wrong reason (a ROM that is simply
-  // stopped looks exactly like one that is armed and unclocked).
-  expect(syncState(be, id)?.mode).toBe(SMS_SYNC_IN24);
+    // The fixture's OPTIONS block really did reach the ROM: config_load ran at boot and took IN24.
+    // Without this the negative control below would pass for the wrong reason (a ROM that is simply
+    // stopped looks exactly like one that is armed and unclocked).
+    expect(syncState(be, id)?.mode).toBe(SMS_SYNC_IN24);
 
-  pressPlay(audio, id); // arms: latches the lines, sets sync_wait, shows WAIT
-  audio.renderAudio(200);
-  const armed = syncState(be, id)!;
-  console.log(`[dsp-sms-sync] armed: wait=${armed.wait} last=${armed.last} acc=${armed.acc}`);
-  expect(armed.wait).toBe(1); // WAIT: armed, holding for the first host clock
-  expect(armed.acc).toBe(5); // the divisor-1 head start, so the first clock plays row 0 (engine.asm:377)
-  expect(armed.last).toBe(3); // latched from the idle lines (0xFF = both counter bits high = 3)
+    pressPlay(audio, id); // arms: latches the lines, sets sync_wait, shows WAIT
+    audio.renderAudio(200);
+    const armed = syncState(be, id)!;
+    console.log(`[dsp-sms-sync ${m.machine}] armed: wait=${armed.wait} last=${armed.last} acc=${armed.acc}`);
+    expect(armed.wait).toBe(1); // WAIT: armed, holding for the first host clock
+    expect(armed.acc).toBe(5); // the divisor-1 head start, so the first clock plays row 0 (engine.asm:377)
+    expect(armed.last).toBe(3); // latched from the idle lines (0xFF = both counter bits high = 3)
 
-  audio.setBpm(120);
-  audio.setTransport(true);
+    audio.setBpm(120);
+    audio.setTransport(true);
 
-  // Negative: no role -> no levels -> the counter never moves -> `(current - last) & 3` stays 0 and the
-  // ROM sits in WAIT, even though it is armed and the DAW transport is running. This ALSO proves
-  // config_load applied the fixture's sync_mode: with sync OFF the ROM would already be playing here,
-  // which is exactly what Guard A shows.
-  expect(dsp.setSystems(noRoles(id))).toBeTruthy();
-  const negRows = rowsAdvanced(be, audio, id, 500, 6);
-  const neg = rms(audio.renderAudio(500));
-  expect(syncState(be, id)?.wait).toBe(1); // still WAIT - nothing clocked it
+    // Negative: no role -> no levels -> the counter never moves -> `(current - last) & 3` stays 0 and the
+    // ROM sits in WAIT, even though it is armed and the DAW transport is running. This ALSO proves
+    // config_load applied the fixture's sync_mode: with sync OFF the ROM would already be playing here,
+    // which is exactly what Guard A shows.
+    expect(dsp.setSystems(noRoles(id))).toBeTruthy();
+    const negRows = rowsAdvanced(be, audio, id, 500, 6);
+    const neg = rms(audio.renderAudio(500));
+    expect(syncState(be, id)?.wait).toBe(1); // still WAIT - nothing clocked it
 
-  // Positive: the role steps the counter at 24 PPQN -> the ROM recovers clocks -> the sequencer runs.
-  expect(dsp.setSystems(withSync(id))).toBeTruthy();
-  const posRows = rowsAdvanced(be, audio, id, 500, 6);
-  const pos = rms(audio.renderAudio(500));
+    // Positive: the role steps the counter at 24 PPQN -> the ROM recovers clocks -> the sequencer runs.
+    expect(dsp.setSystems(withSync(id, m))).toBeTruthy();
+    const posRows = rowsAdvanced(be, audio, id, 500, 6);
+    const pos = rms(audio.renderAudio(500));
 
-  // 3 s at 120 bpm is 6 beats, and IN24 puts 4 rows in each, so 24 rows. Checking the RATE rather than
-  // just "it moved" makes this a tempo check too: a role clocking at the wrong PPQN would still make
-  // noise, and would still advance, but not by this much.
-  console.log(`[dsp-sms-sync] guardB neg=${neg.toFixed(5)}/${negRows}rows pos=${pos.toFixed(5)}/${posRows}rows`);
-  expect(negRows).toBe(0); // armed, transport running, unclocked -> the sequencer never moves
-  expect(neg < 0.001).toBeTruthy(); // and it is silent
-  expect(pos > 0.001).toBeTruthy(); // the kernel's level stream advances smsggdj -> audible
-  expect(Math.abs(posRows - 24) <= 2).toBeTruthy(); // ~24 rows: one clock stream at the DAW's tempo
-  expect(syncState(be, id)?.wait).toBe(0); // WAIT -> PLAY, flipped by the role's first clock
-  expect(be.removeSystem(id)).toBeTruthy();
-});
+    // 3 s at 120 bpm is 6 beats, and IN24 puts 4 rows in each, so 24 rows. Checking the RATE rather than
+    // just "it moved" makes this a tempo check too: a role clocking at the wrong PPQN would still make
+    // noise, and would still advance, but not by this much.
+    console.log(`[dsp-sms-sync ${m.machine}] guardB neg=${neg.toFixed(5)}/${negRows}rows pos=${pos.toFixed(5)}/${posRows}rows`);
+    expect(negRows).toBe(0); // armed, transport running, unclocked -> the sequencer never moves
+    expect(neg < 0.001).toBeTruthy(); // and it is silent
+    expect(pos > 0.001).toBeTruthy(); // the kernel's level stream advances smsggdj -> audible
+    expect(Math.abs(posRows - 24) <= 2).toBeTruthy(); // ~24 rows: one clock stream at the DAW's tempo
+    expect(syncState(be, id)?.wait).toBe(0); // WAIT -> PLAY, flipped by the role's first clock
+    expect(be.removeSystem(id)).toBeTruthy();
+  });
 
-test("stopping the DAW transport stops the song, and restarting it resumes", () => {
-  const be0 = createRealBackend();
-  if (!be0.fileExists(ROM)) {
-    console.log(`# SKIP dsp-sms-sync: missing ${ROM}`);
-    return;
-  }
-  const { be, audio, id } = boot(SMS_SYNC_IN24);
-  const dsp = createDspRuntime();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems(withSync(id))).toBeTruthy();
+  test(`${m.machine.toUpperCase()}: stopping the DAW transport stops the song, and restarting it resumes`, () => {
+    const be0 = createRealBackend();
+    if (!be0.fileExists(m.rom)) {
+      console.log(`# SKIP dsp-sms-sync ${m.machine}: missing ${m.rom}`);
+      return;
+    }
+    const { be, audio, id } = boot(SMS_SYNC_IN24, m);
+    const dsp = createDspRuntime();
+    expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
+    expect(dsp.setSystems(withSync(id, m))).toBeTruthy();
 
-  pressPlay(audio, id);
-  audio.setBpm(120);
-  audio.setTransport(true);
-  const play = rms(audio.renderAudio(3000));
+    pressPlay(audio, id);
+    audio.setBpm(120);
+    audio.setTransport(true);
+    const play = rms(audio.renderAudio(3000));
 
-  // There is no stop MESSAGE in this protocol - the clocks simply cease, so the ROM's per-frame delta
-  // goes to 0 and it STALLS. Note that stalling is not silence: the tracker holds whatever note was
-  // sounding when the clocks stopped, so a small steady level remains (measured ~2% of the running
-  // level). Asserting a hard zero here would be asserting something false about how a tracker stops,
-  // so the check is that the metronome stopped ADVANCING, by a wide margin.
-  audio.setTransport(false);
-  audio.renderAudio(500); // let the transport change settle
-  const stoppedRows = rowsAdvanced(be, audio, id, 500, 6);
-  const stopped = rms(audio.renderAudio(500));
+    // There is no stop MESSAGE in this protocol - the clocks simply cease, so the ROM's per-frame delta
+    // goes to 0 and it STALLS. Note that stalling is not silence: the tracker holds whatever note was
+    // sounding when the clocks stopped, so a small steady level remains (measured ~2% of the running
+    // level). Asserting a hard zero here would be asserting something false about how a tracker stops,
+    // so the check is that the metronome stopped ADVANCING, by a wide margin.
+    audio.setTransport(false);
+    audio.renderAudio(500); // let the transport change settle
+    const stoppedRows = rowsAdvanced(be, audio, id, 500, 6);
+    const stopped = rms(audio.renderAudio(500));
 
-  audio.setTransport(true);
-  const againRows = rowsAdvanced(be, audio, id, 500, 6);
-  const again = rms(audio.renderAudio(500));
+    audio.setTransport(true);
+    const againRows = rowsAdvanced(be, audio, id, 500, 6);
+    const again = rms(audio.renderAudio(500));
 
-  console.log(`[dsp-sms-sync] play=${play.toFixed(5)} stopped=${stopped.toFixed(5)}/${stoppedRows}rows again=${again.toFixed(5)}/${againRows}rows`);
-  expect(play > 0.001).toBeTruthy();
-  expect(stoppedRows).toBe(0); // no clocks -> the sequencer stops dead
-  expect(stopped < play / 10).toBeTruthy(); // what is left is a held note, not a running song
-  expect(againRows > 0).toBeTruthy(); // clocks resume -> so does the song
-  expect(again > play / 2).toBeTruthy();
-  expect(be.removeSystem(id)).toBeTruthy();
-});
+    console.log(`[dsp-sms-sync ${m.machine}] play=${play.toFixed(5)} stopped=${stopped.toFixed(5)}/${stoppedRows}rows again=${again.toFixed(5)}/${againRows}rows`);
+    expect(play > 0.001).toBeTruthy();
+    expect(stoppedRows).toBe(0); // no clocks -> the sequencer stops dead
+    expect(stopped < play / 10).toBeTruthy(); // what is left is a held note, not a running song
+    expect(againRows > 0).toBeTruthy(); // clocks resume -> so does the song
+    expect(again > play / 2).toBeTruthy();
+    expect(be.removeSystem(id)).toBeTruthy();
+  });
+}

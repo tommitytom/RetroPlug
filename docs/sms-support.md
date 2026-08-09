@@ -249,7 +249,7 @@ Three functional lines. It makes TH (`0x80`), TR (`0x08`) and TL (`0x04`) all de
 
 With Edit 1 in place this is no longer strictly needed **for sync**, but it is needed for ordinary buttons and it is the right place to get `RefreshKeyState` off the audio thread. The reversible alternative is an `IInputProvider` (`Core/Shared/Interfaces/IInputProvider.h`) registered via `BaseControlManager::RegisterInputProvider`, which runs after the clear (`BaseControlManager.cpp:170-175`) and survives `UpdateControlDevices`'s device recreation.
 
-**Edit 3 (required only for `.gg`, ~5 lines) - the Game Gear EXT port is a bare loopback.** `SmsMemoryManager.cpp:396` stores `_state.GgExtData = value & 0x7F` and `:467` returns it verbatim, both flagged `//TODOSMS GG - input/output ext port`. `_state.GgExtConfig` (`$02` direction, 1 = input) is stored and never consulted on read. `$04`, the serial receive register, is a literal `return 0xFF` (`:470`). smsggdj's GG startup writes `$02=$FF` then `$01=$FF` (`engine.asm:420-421`), so `sync_read`'s `in a,($01)` (`engine.asm:564`) returns a constant `0x7F` forever: counter pinned at 3, `sync_in_delta` = 0. Measured on the real `.gg`: `write $01=0xAA -> read $01=0x2A`, pure loopback; ROM decodes counter=3 and nothing external can change it. **GG sync is dead in stock Mesen.** Minimal honest fix, filling in an acknowledged stub:
+**Edit 3 (required only for `.gg`, ~5 lines) - the Game Gear EXT port is a bare loopback.** `SmsMemoryManager.cpp:396` stores `_state.GgExtData = value & 0x7F` and `:467` returns it verbatim, both flagged `//TODOSMS GG - input/output ext port`. `_state.GgExtConfig` (`$02` direction, 1 = input) is stored and never consulted on read. `$04`, the serial receive register, is a literal `return 0xFF` (`:470`). smsggdj's GG startup writes `$02=$FF` then `$01=$FF` (`engine.asm:420-421`), so `sync_read`'s `in a,($01)` (`engine.asm:564`) returns a constant `0x7F` forever: counter pinned at 3, `sync_in_delta` = 0. Measured on the real `.gg`: `write $01=0xAA -> read $01=0x2A`, pure loopback; ROM decodes counter=3 and nothing external can change it. **GG sync is dead in stock Mesen.** (BUILT - see "Game Gear sync, as built". The estimate below held: the shipped edit is the direction mask, and the idle read is bit-identical to stock.) Minimal honest fix, filling in an acknowledged stub:
 
 ```cpp
 // SmsMemoryManagerState: uint8_t GgExtInput = 0xFF;   // externally driven levels (pull-ups high)
@@ -526,7 +526,7 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 | 6 | `SmsButton` + `toSmsButton` remap | `InputTypes.hpp`, `MesenSmsSystem.cpp` | trivial | low | Position-aligned Right=0..Start=7 like `GbaButton:52`. Mesen's native order is `{Up=0,Down,Left,Right,B,A,Pause}` (`Input/SmsController.h:58`) so an explicit switch is required as at `MesenGbaSystem.cpp:202-219`. Start -> `Pause`; **Select -> early return**, not `default: return A`, or Select spuriously fires button 2. Per H9, `Pause` on port 0 drives the Z80 NMI on SMS (`SmsVdp.cpp:600-602`) and reads as Start at `$00` bit 7 on GG (`SmsMemoryManager.cpp:456-464`), so the two platforms want different labels even though the wire byte is shared. |
 | **7** | **Vendored: `SmsControlManager::SetExternalInput`** | `deps/mesen/Core/SMS/SmsControlManager.{h,cpp}` | small | **high** | **New, and on the critical path.** Section 2.4. Without it the sync counter degenerates to mod-2 and presents as an intermittent double-tempo bug rather than a dead line. 3 functional lines at `InternalReadPort`, plus a `// RetroPlug:` marker (there is no configure-time patch guard for `deps/mesen`, so the marker is the only inventory). |
 | 8 | Vendored: `SmsControlManager::UpdateInputState` override | `deps/mesen/Core/SMS/SmsControlManager.{h,cpp}` | small | medium | **Confirmed empirically twice.** No override exists (full header read; GBA has one at `GbaControlManager.h:28`), so `SmsVdp.cpp:654` -> `SmsConsole.cpp:171` -> `BaseControlManager.cpp:158-176` runs `ClearState()` + `SetStateFromInput()` and wipes every bit set via `SetBitValue`, plus `KeyManager::RefreshKeyState()` on the audio thread. Probe: `post-frame Right still pressed = 0`, every run; device `shared_ptr` unchanged, so it is the clear not recreation. Same bug patched at `GbaControlManager.cpp:24-37`. No `ActiveKeys` cache to refresh, so the body is empty plus a comment. Item 7 makes sync immune to this; ordinary buttons are not. |
-| 9 | **Vendored: GG EXT input model** (`.gg` only) | `deps/mesen/Core/SMS/SmsMemoryManager.{h,cpp}`, `SmsTypes.h` | small | medium | Section 2.4 Edit 3. `$01` is a bare loopback (`:396` write, `:467` read, both `//TODOSMS`), `$02` direction is stored and never consulted, `$04` serial rx is `return 0xFF` (`:470`). Measured: `write $01=0xAA -> read $01=0x2A`; GG sync is dead in stock Mesen. ~5 lines, fills an acknowledged stub, no regression (`GgExtInput = 0xFF` reproduces today's pull-up-high behaviour). |
+| 9 | ~~**Vendored: GG EXT input model**~~ **DONE** (`.gg` only) | `deps/mesen/Core/SMS/SmsMemoryManager.{h,cpp}`, `SmsTypes.h` | small | medium | Section 2.4 Edit 3. `$01` is a bare loopback (`:396` write, `:467` read, both `//TODOSMS`), `$02` direction is stored and never consulted, `$04` serial rx is `return 0xFF` (`:470`). Measured: `write $01=0xAA -> read $01=0x2A`; GG sync is dead in stock Mesen. ~5 lines, fills an acknowledged stub, no regression (`GgExtInput = 0xFF` reproduces today's pull-up-high behaviour). |
 | 10 | **Host-side: teardown `Stop(false, true, false)`** | `MesenSmsSystem::onDeactivate` | small | **high** | Bottom line (a). `Emulator::Stop` is public at `Emulator.h:148`; `preventRecentGameSave=true` is load-bearing both for the disk write and for H10's serialize-path blip overrun. **ASan does not catch this** (both frames in the uninstrumented `libmesen.a`), so prove it with 40 construct/destruct cycles in Catch2, 5 runs. Measured 5/5 clean with `Stop`, 3/5 crashes without. |
 | 11 | `RomFormat::Sms` **and** `RomFormat::Gg` + `detectRomFormat` **and** `platform.ts detectPlatform` | `packages/native/src/system/RomFormat.hpp:13-18`, `packages/retroplug/src/platform.ts:15,21-25,35,62-70` | small | **high** | **One item in two languages, one commit.** `platform.ts:11-12` and `RomFormat.hpp:6-11` state they are deliberately mirrored; if they diverge, `classifyRom` says `"sms"`, TS calls `constructSystem`, and `MesenBackend`'s gate returns nullptr - a failed load with no diagnostic. Probe `$7FF0`/`$3FF0`/`$1FF0` for `TMR SEGA`, discriminate on `$7FFF` (`0x4c` SMS / `0x6c` GG), and handle the 512-byte copier header Mesen strips (`SmsConsole.cpp:38-42`, `size % 0x400 == 0x200`) which shifts every offset. D1 makes the `$7FFF` discriminator load-bearing rather than informational. Headerless SMS and all SG-1000 fail. `DEFAULT_CORE` is a `Record<Platform, Core>` (`platform.ts:21`) and is a hard compile error the instant `Platform` gains a member; two members, two rows. |
 | 12 | Two sniff lengths, not one | `platform.ts:35`, `systemsStore.ts:32` | small | medium | `ROM_SNIFF_LEN = 0x134` is all `classifyRom` reads (`systemsStore.ts:50`, `backend.readFilePrefix`). **`ROLE_HEADER_LEN = 0x150` is a second, independent constant**, and it is the buffer fed to both `romHasBattery` (`:624`) and the ROM-provider registry (`:615`) - which is what an `sms-sync` marker role would have to match on. A `$7FF0` header is 32 KB past both. Either raise them (a ~100x read amplification on a path that also runs per `siblingRomCandidates` probe) or add a second offset-targeted read. Update the `platform.ts:1-12` header comment, which currently promises the opposite of what SMS will do. |
@@ -766,10 +766,11 @@ N8 FIFO is a memory-mapped port non-N8 carts ignore; a controller port has no su
 marker is past `ROLE_HEADER_LEN`, `defaultRoles` now reads `SEGA_SNIFF_LEN` for sms/gg - one deeper
 read at construct, not on the classify path.
 
-**Game Gear gets no role at all.** `SmsMemoryManager::ReadGameGearPort` case 1 is a bare loopback
-(`return _state.GgExtData;`, marked `//TODOSMS`), and `GGSYNC.md` confirms the GG build reads `$01`
-rather than `$DD`. So GG sync is dead in this tree whatever TS does, and a role that silently did
-nothing would be worse than none.
+**Game Gear got no role at first, and now does.** `SmsMemoryManager::ReadGameGearPort` case 1 was a
+bare loopback (`return _state.GgExtData;`, marked `//TODOSMS`), and `GGSYNC.md` confirms the GG build
+reads `$01` rather than `$DD` - so GG sync was dead in this tree whatever TS did, and a role that
+silently did nothing would have been worse than none. That is fixed; see "Game Gear sync, as built"
+below. The role now attaches on both machines, tagged with which one.
 
 **The fixture needed a native addition.** smsggdj deliberately does not autoload a save (`song_new`
 boots blank; main.asm:238: "a first power-on should make sound"), so the metronome has to be written
@@ -886,6 +887,72 @@ depends on where the arm landed within a video frame. The larger means in the ta
 at the audio and include the instrument's attack plus the detector's threshold lag, neither of which is
 plugin latency to compensate. A constant below one video frame, when the inherent quantisation is a
 full frame, would be fitting noise.
+
+### Game Gear sync, as built
+
+GG sync works, on the same terms as SMS. Everything above about the protocol - the 2-bit counter, the
+once-per-frame `(current - last) & 3`, arm-latches-the-level, no locate, the mod-4 aliasing ceiling -
+holds unchanged, because it is the same code in the same ROM. **Only the pins move.**
+
+| | Master System | Game Gear |
+|---|---|---|
+| ROM reads | `$DD` (controller port 2) | `$01` (EXT parallel, PC0-PC6) |
+| counter bit 0 | TR (bit 3), ANDed with TL | PC4 AND PC5 (bits 4, 5) |
+| counter bit 1 | TH (bit 7) | PC6 (bit 6) |
+| idle word | `0xFF` | `0x7F` |
+| native sink | `SmsControlManager::SetExternalInput` | `SmsMemoryManager::SetGgExternalInput` |
+
+So it is ONE role with two encoders, not two protocols: `sms-sync`'s config gained
+`machine: "sms" | "gg"`, which the provider sets from the ROM's platform. Additive with a default, so
+no migration step - a project stamped before it existed parses as `"sms"`, which is what those
+projects were. `syncLevelsFor` (`smsSync.ts`) is the single place the two wire formats are chosen
+between, and the native `SmsSyncRole` picks its sink from the system it was built for rather than
+being told, so the TS config drives the encoding alone.
+
+#### The vendored Mesen edit, and why it is small
+
+Stock `ReadGameGearPort` case 1 returned `_state.GgExtData` unconditionally - what the ROM itself last
+wrote - so nothing external could ever be read. smsggdj's GG build decodes its counter from PC4-PC6
+there, which meant the counter was pinned at whatever the startup latch left and the delta was
+permanently 0: armed, willing, and silent forever.
+
+The fix honours the `$02` direction mask that Mesen already stores and never consulted. Per Sega's
+Game Gear Hardware Reference Manual, `$02` bits 6-0 are the directions for PC6-PC0 with **1 = input**
+(bit 7 is the PC6 falling-edge NMI disable, not a direction, hence the `0x7F`):
+
+```cpp
+uint8_t inputs = _state.GgExtConfig & 0x7F;
+return (uint8_t)((_state.GgExtData & ~inputs) | (_ggExtInput & inputs));
+```
+
+An input pin reads the external level, an output pin still reads back the latch. Two properties worth
+noting: it fills in an acknowledged `//TODOSMS` stub rather than inventing behaviour, and **it is
+inert until a host drives a pin** - with `_ggExtInput` idling at `0x7F` the read reproduces the stock
+loopback bit for bit after the standard GG init, which the guard asserts directly.
+
+#### What guards it
+
+- **`retroplug-audio-test`** - a synthetic `.gg` ROM that sets `$02`, then polls `$01` into work RAM,
+  so the assertion is about what an actual `IN` returns rather than about emulator state. Three
+  sections: all-input (every counter level arrives and holds across frames), `$8F` (GGSYNC.md's sync-OUT
+  mask - the host pulls everything low and the three output pins must still read the latched 1s, so
+  `0x70` rather than `0x00` or `0x7F`), and `$7F` vs `$FF` (bit 7 is the NMI disable, so they must
+  behave identically). **Negative control run:** reverting the read to the stock loopback fails 8 of
+  those assertions, including counters 0-2 - counter 3 correctly still passes, because `0x7F` *is* the
+  idle value.
+- **`pnpm test dsp/sms-sync`** - the GG encoding, that it touches no pin outside PC4-PC6, and that both
+  machines carry the *same counter sequence* on their different pins (the property that justifies one
+  role rather than two; if it ever fails, they should split).
+- **`pnpm test:native dsp-sms-sync` + `dsp-sms-sync-drift`** - every guard runs twice, once per
+  machine. Not redundancy: the two take different sinks through different vendored edits, so measuring
+  only one would leave the other's timing asserted by analogy.
+- **`pnpm reaper:gg-sync`** - a real DAW render, in `RENDER_SCENARIOS` alongside `sms-sync`. Measured
+  peak 18.21 ms, stddev 4.90, 60/60 beats matched, against SMS's 17.96 / 4.95. The headless twin reads
+  20.46 ms peak with row spacing 116.10 / 133.51 about a mean of 124.97 - the same video-frame
+  quantisation, so the same conclusion applies and GG gets no PDC entry either.
+
+One thing GG does NOT need: a tile-geometry change. `GameGearOverscan{48,48,48,48}` crops to 160x144,
+which is a pixel-perfect fit for the existing grid tile.
 
 2. **IN or IN24?** IN24 (divisor 6, 24 PPQN) is the DAW-shaped answer and matches the existing ares-link-sync / RP2040 bridge contract, but caps at 450 BPM NTSC / 375 PAL (3 clocks per frame before the mod-4 counter aliases) and at one row per frame (`engine.asm:742-750` has no loop). IN (divisor 1) gives 1:1 row control but the host must choose the row rate itself. This decides the role's tick resolution. A product question, not a technical one.
 
