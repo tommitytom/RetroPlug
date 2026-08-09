@@ -304,21 +304,17 @@ set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
 set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
 
-# --- retroplug-cli n8-bridge: live MIDI -> Everdrive N8 Pro over USB ----------------------------------
-# The `n8-bridge` subcommand (cli/N8Bridge.cpp + src/host/n8/) pipes live MIDI straight to a physical N8
-# Pro running EverMIDI, so a controller / DAW plays the real NES. It needs RtMidi (live MIDI in, the
-# `rtmidi` target above), wjwwood/serial (the `serial` target from cmake/serial.cmake), and the standalone
-# MidiIo seam. ON by default; turn OFF to keep retroplug-cli (and thus the CI `all` build) free of the
-# RtMidi/serial deps (ALSA dev headers on Linux) — the subcommand then just prints a "not built" notice.
-option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli n8-bridge subcommand (links RtMidi + serial)" ON)
+# --- retroplug-cli N8 transport facets: serial + live MIDI -> the TS N8 stack ------------------------
+# The N8 tools (n8-load / n8-bridge / n8-sync) are all TS now (packages/retroplug/src/n8 + cli/sessions/):
+# native only provides the thin transport facets they ride on - the serial byte transport (SerialRpcService
+# over wjwwood/serial) and the live-MIDI-input facet (MidiRpcService over RtMidi). No C++ Edio/menu/translator
+# here anymore (the TS edio.ts + risaSyncTranslator.ts replace them). ON by default; turn OFF to keep
+# retroplug-cli (and thus the CI `all` build) free of the RtMidi/serial deps (ALSA dev headers on Linux) -
+# the N8 tools then just fail to find a device.
+option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli N8 transport facets (links RtMidi + serial)" ON)
 if(RETROPLUG_N8_BRIDGE)
     target_sources(retroplug-cli PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Bridge.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/cli/N8Sync.cpp               # `n8-sync`: MIDI transport -> risa host sync
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp        # on-device menu command channel
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/RisaSyncTranslator.cpp  # MIDI clock -> risa arm/clock/stop
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/SerialRpcService.cpp    # serial byte-transport RPC facet (TS N8 seam)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/SerialRpcService.cpp   # serial byte-transport RPC facet (TS N8 seam)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (shared with retroplug-sdl)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiRpcService.cpp) # live-MIDI-input RPC facet (TS bridge seam)
@@ -711,15 +707,14 @@ set_target_properties(retroplug-midi-test PROPERTIES
 
 # retroplug-n8-test guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact
 # krikzz CMD_MEM_WR byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status
-# word; the N8Link forward path; and the RisaSyncTranslator (MIDI transport -> risa host-sync bytes).
-# Compiles those against a capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware (the live
-# serial + MIDI path needs a real N8). Also `pnpm test:n8`.
+# word; plus the N8Link forward path (the SDL standalone's realtime serial thread). Compiles those against a
+# capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware. The menu + risa-sync translation live
+# in TS now (packages/retroplug src/n8, `pnpm test n8`); only Edio + N8Link remain C++ (the SDL path). Also
+# `pnpm test:n8`.
 add_executable(retroplug-n8-test EXCLUDE_FROM_ALL
     test/n8/Edio.test.cpp
     src/host/n8/Edio.cpp
-    src/host/n8/N8Menu.cpp
-    src/host/n8/N8Link.cpp
-    src/host/n8/RisaSyncTranslator.cpp)
+    src/host/n8/N8Link.cpp)
 
 find_package(Threads REQUIRED)
 target_link_libraries(retroplug-n8-test PRIVATE

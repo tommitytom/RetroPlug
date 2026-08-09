@@ -27,8 +27,6 @@
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
 #ifdef RETROPLUG_N8_BRIDGE
-#include "N8Bridge.hpp"  // `n8-bridge` subcommand: live MIDI -> Everdrive N8 Pro over USB (own loop)
-#include "N8Sync.hpp"    // `n8-sync` subcommand: MIDI transport -> risa host sync on the N8 (own loop)
 #include "host/n8/SerialRpcService.hpp"    // the serial byte-transport facet the TS N8 stack rides on
 #include "host/input/MidiRpcService.hpp"   // the live-MIDI-input facet the TS bridges poll
 #endif
@@ -98,29 +96,10 @@ std::string slurp(const std::string& path) {
 } // namespace
 
 int main(int argc, char** argv) try {
-    // `n8-bridge` is a live-hardware subcommand: it opens real MIDI + serial ports and runs its own
-    // unbounded loop, so it can't ride the bounded QuickJS pump the TS dispatcher uses. Handle it here,
-    // before the `.js` / dispatcher fallthrough. Compiled in only when the bridge deps are linked.
-    if (argc >= 2 && std::strcmp(argv[1], "n8-bridge") == 0) {
-#ifdef RETROPLUG_N8_BRIDGE
-        return retroplug::runN8Bridge(argc, argv);
-#else
-        std::fprintf(stderr, "n8-bridge: this build was compiled without N8 bridge support "
-                             "(-DRETROPLUG_N8_BRIDGE=OFF)\n");
-        return 1;
-#endif
-    }
-    // `n8-load` is NOT intercepted here: it's a TS tool now (cli/sessions/n8-load.ts), a linear script that
-    // rides the bounded QuickJS pump + the serial byte-transport facet. It routes through the dispatcher below.
-    if (argc >= 2 && std::strcmp(argv[1], "n8-sync") == 0) {
-#ifdef RETROPLUG_N8_BRIDGE
-        return retroplug::runN8Sync(argc, argv);
-#else
-        std::fprintf(stderr, "n8-sync: this build was compiled without N8 bridge support "
-                             "(-DRETROPLUG_N8_BRIDGE=OFF)\n");
-        return 1;
-#endif
-    }
+    // n8-load / n8-bridge / n8-sync are all TS tools now (cli/sessions/n8-*.ts) over the serial + MIDI
+    // transport facets: n8-load is a linear script, and the two bridges opt into the launcher's long-running
+    // pump (globalThis.__rp_keepAlive) so they ride it instead of a native loop. Nothing to intercept here -
+    // they route through the dispatcher below.
 
     // A `.js` argv[1] is a session file we eval directly; anything else (incl. no args) goes to the
     // compiled-in dispatcher, which prints help and routes commands. The args exposed to JS start after

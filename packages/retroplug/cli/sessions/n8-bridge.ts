@@ -1,9 +1,9 @@
-// `retroplug-cli n8-bridge-ts` / `n8-sync-ts` - stream live MIDI to a physical Everdrive N8 Pro over USB,
-// entirely in TS. `n8-bridge-ts` forwards raw MIDI to the cart FIFO (for the EverMIDI ROM); `n8-sync-ts`
-// translates a MIDI clock/transport into risa host-sync bytes (via the pure-TS RisaSyncTranslator). Both are
-// long-running: they open the serial (createN8) + MIDI (createMidiClient) facets, call keepAlive(), and run
-// an event-driven poll loop (setInterval) until Ctrl-C - the native launcher pumps it (see cli/main.cpp).
-// Shipped under -ts names while the native n8-bridge/n8-sync still own theirs (reclaimed once HW-verified).
+// `retroplug-cli n8-bridge` / `n8-sync` - stream live MIDI to a physical Everdrive N8 Pro over USB, entirely
+// in TS (these replaced the native subcommands). `n8-bridge` forwards raw MIDI to the cart FIFO (for the
+// EverMIDI ROM); `n8-sync` translates a MIDI clock/transport into risa host-sync bytes (via the pure-TS
+// RisaSyncTranslator). Both are long-running: they open the serial (createN8) + MIDI (createMidiClient)
+// facets, call keepAlive(), and run an event-driven poll loop (setInterval) until Ctrl-C - the native
+// launcher pumps it (see cli/main.cpp).
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import { keepAlive, exitProcess } from "../session";
@@ -95,7 +95,7 @@ const COMMON_FLAGS = [
 ];
 
 const BRIDGE_HELP = [
-  "usage: retroplug-cli n8-bridge-ts [--list] [--midi-in <name>] [--serial <port>] [--lookahead-ms <N>]",
+  "usage: retroplug-cli n8-bridge [--list] [--midi-in <name>] [--serial <port>] [--lookahead-ms <N>]",
   "",
   "  Stream live MIDI straight to a physical Everdrive N8 Pro's cart FIFO over USB, so a controller / DAW",
   "  plays the real NES (for the EverMIDI ROM). Runs until Ctrl-C.",
@@ -104,7 +104,7 @@ const BRIDGE_HELP = [
 ].join("\n");
 
 const SYNC_HELP = [
-  "usage: retroplug-cli n8-sync-ts [--list] [--midi-in <name>] [--serial <port>] [--lookahead-ms <N>]",
+  "usage: retroplug-cli n8-sync [--list] [--midi-in <name>] [--serial <port>] [--lookahead-ms <N>]",
   "",
   "  Turn an incoming MIDI clock/transport (Start/Continue/Stop + 24-PPQN clock, optional Song Position)",
   "  into risa's host-sync protocol on a physical N8, so a risa cart plays locked to the DAW. Runs until",
@@ -114,8 +114,8 @@ const SYNC_HELP = [
 ].join("\n");
 
 export const n8BridgeTool: CliTool = {
-  name: "n8-bridge-ts",
-  summary: "stream live MIDI to a physical Everdrive N8 Pro over USB (TS)",
+  name: "n8-bridge",
+  summary: "stream live MIDI to a physical Everdrive N8 Pro over USB",
   help: BRIDGE_HELP,
   longRunning: true,
   run(_s: Session, args: string[]): void {
@@ -131,8 +131,8 @@ export const n8BridgeTool: CliTool = {
 };
 
 export const n8SyncTool: CliTool = {
-  name: "n8-sync-ts",
-  summary: "drive risa host-sync on a physical Everdrive N8 Pro from a MIDI clock (TS)",
+  name: "n8-sync",
+  summary: "drive risa host-sync on a physical Everdrive N8 Pro from a MIDI clock",
   help: SYNC_HELP,
   longRunning: true,
   run(_s: Session, args: string[]): void {
