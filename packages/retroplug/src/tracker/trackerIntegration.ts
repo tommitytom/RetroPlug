@@ -10,6 +10,9 @@ import { lsdjSongCatalog } from "./lsdjSongCatalog";
 import { risaSongCatalog } from "./risaSongCatalog";
 import { lsdjAssetCatalog } from "./lsdjAssetCatalog";
 import { risaAssetCatalog } from "./risaAssetCatalog";
+import { smsggdjSongCatalog } from "./smsggdjSongCatalog";
+import { smsggdjAssetCatalog } from "./smsggdjAssetCatalog";
+import { identifySmsggdjVersion, supportsCurSlot } from "../smsggdj/romDetect";
 import { identifyLsdj } from "../lsdj/runtime/identify";
 import { identifyRisaVersion } from "../risa/runtime/identify";
 import { resolveRisaLayout } from "../risa/runtime/layout";
@@ -61,8 +64,25 @@ export const risaIntegration: TrackerIntegration = {
   isVersionSupported: (rom) => resolveRisaLayout(identifyRisaVersion(rom)) !== null,
 };
 
+export const smsggdjIntegration: TrackerIntegration = {
+  id: "smsggdj",
+  label: "SMSGGDJ",
+  markerRole: "sms-sync", // overloaded as the menu gate, as LSDj overloads lsdj-sync
+  songs: smsggdjSongCatalog,
+  assets: smsggdjAssetCatalog, // empty for now; the ROM-asset half is its own slice
+  romName: (rom) => {
+    const v = identifySmsggdjVersion(rom); // scans for the version string near the SMSGGDJ marker
+    return v ? `smsggdj v${v}` : null;
+  },
+  // Songs are loaded by naming a slot in the save and letting the CART load it on the way up, because
+  // this tracker's working song lives in work RAM and cannot be restored by a cold boot alone. A build
+  // that does not honour that byte would show a full Songs menu whose Load did nothing, so it reports
+  // unsupported and the menu greys out instead.
+  isVersionSupported: (rom) => supportsCurSlot(identifySmsggdjVersion(rom)),
+};
+
 /** Every registered tracker integration. The one place a new tracker console is added. */
-export const TRACKER_INTEGRATIONS: TrackerIntegration[] = [lsdjIntegration, risaIntegration];
+export const TRACKER_INTEGRATIONS: TrackerIntegration[] = [lsdjIntegration, risaIntegration, smsggdjIntegration];
 
 /** The tracker integration for a system, resolved from its attached roles (the first role whose kind is an
  *  integration's markerRole). undefined for a non-tracker system. */
