@@ -303,11 +303,10 @@ set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
 set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
 
-# EXCLUDE_FROM_ALL: the standalone is still a work in progress, so it stays out of the default `all`
-# target and therefore out of CI (which builds `all`). Build it by name, like the Catch2 test binaries:
-#   cmake --build build --target retroplug-sdl -j$(nproc)     (or `pnpm sdl:smoke`, which does this first)
-# Drop the flag to put it back in the default build and on CI.
-add_executable(retroplug-sdl EXCLUDE_FROM_ALL
+# Part of the default `all` target, so build.sh builds it and CI covers it. Its deps are already
+# unconditional: SDL2 is REQUIRED at root scope (every plugin variant links it for gamepad input) and
+# rtmidi is an in-tree submodule, so nothing new has to be installed to build this.
+add_executable(retroplug-sdl
     sdl/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (virtual + hardware ports)
