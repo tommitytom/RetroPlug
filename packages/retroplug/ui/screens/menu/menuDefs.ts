@@ -123,7 +123,7 @@ const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
 const AUDIO_CHANNELS = [2, 4, 6, 8];
 const AUDIO_CHANNEL_NAMES = ["Stereo", "4 (2 pairs)", "6 (3 pairs)", "8 (4 pairs)"];
 function audioSettingsChildren(): MenuItem[] {
-  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048, outChannels: 2, driver: "Auto" };
+  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto" };
   const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
   const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
   const chIdx = Math.max(0, AUDIO_CHANNELS.indexOf(cfg.outChannels));

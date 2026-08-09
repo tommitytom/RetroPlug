@@ -224,7 +224,8 @@ struct AppState {
     int    numOutputs = 2;
     double sampleRate = 48000.0;   // obtained device rate (drives the Engine)
     int    reqSampleRate = 48000;  // requested (UI-configurable) rate + block + channels, persisted to audio.cfg
-    int    reqBlockSize  = 2048;
+    int    reqBlockSize  = 512;    // low-latency default; low-power devices (the handheld) pass a bigger buffer
+                                   // via --block-size (e.g. 4096) so the audio callback keeps its deadline
     int    reqOutChannels = 2;     // 2 = stereo mix (default); 4/6/8 = wide stems for a multichannel device
     int    reqHostApi = -1;        // chosen PortAudio host API (PaHostApiTypeId: paPipeWire/paALSA/paJACK/...);
                                    // -1 = Auto (prefer PipeWire, else default). Persisted to audio.cfg.
@@ -1214,6 +1215,10 @@ int main(int argc, char** argv) {
         if (arg == "--autoload" && i + 1 < argc) autoloadPath = argv[++i];
         else if (arg == "--width" && i + 1 < argc) app.width = static_cast<std::uint32_t>(std::atoi(argv[++i]));
         else if (arg == "--height" && i + 1 < argc) app.height = static_cast<std::uint32_t>(std::atoi(argv[++i]));
+        // Default audio block size (frames). The compiled-in default is 512 (low latency); a low-power device
+        // passes a bigger buffer here (the muOS launcher uses 4096) so the callback keeps its deadline. Parsed
+        // before setupSdl → loadAudioConfig, so a saved audio.cfg (an explicit Settings > Audio pick) still wins.
+        else if (arg == "--block-size" && i + 1 < argc) { const int b = std::atoi(argv[++i]); if (b > 0) app.reqBlockSize = b; }
         else if (arg == "--screenshot" && i + 1 < argc) screenshotPath = argv[++i];
     }
 

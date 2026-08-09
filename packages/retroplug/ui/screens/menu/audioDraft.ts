@@ -34,7 +34,7 @@ function nativeGet(): AudioCfg | null {
   if (!c) return null;
   return {
     sampleRate: c.sampleRate ?? 48000,
-    blockSize: c.blockSize ?? 2048,
+    blockSize: c.blockSize ?? 512,
     outChannels: c.outChannels ?? 2,
     driver: c.driver ?? "Auto",
   };
