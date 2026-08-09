@@ -307,31 +307,31 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCL
 
 # PortAudio (deps/portaudio submodule, `pipewire` branch) — the standalone's audio backend, replacing the SDL
 # audio device/callback for better latency + device handling than SDL's ALSA-compat path (the plugin uses its
-# DAW host's audio, so only retroplug-sdl needs this). Static; the `portaudio` CMake auto-selects ALSA (dev
-# present via rtmidi) and, where libpipewire-0.3 is found, the native PipeWire host API (PA_USE_PIPEWIRE is a
-# cmake_dependent_option keyed on PIPEWIRE_FOUND, so it cleanly falls back to ALSA). The Settings > Audio >
-# Driver picker lists whatever host APIs end up compiled in here. EXCLUDE_FROM_ALL so `portaudio` builds only
-# because retroplug-sdl links it.
+# DAW host's audio, so only retroplug-sdl needs this). Static. The `portaudio` CMake auto-selects ALSA (dev
+# present via rtmidi), the native PipeWire host API where libpipewire-0.3 is found, and JACK where jack dev is
+# found. The Settings > Audio > Driver picker lists whatever host APIs end up compiled in here. EXCLUDE_FROM_ALL
+# so `portaudio` builds only because retroplug-sdl links it.
 set(PA_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(PA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(PA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-# We want PipeWire (native) + ALSA (fallback) by default. PortAudio auto-enables every host API whose dev libs
-# it finds, and libsdl2-dev drags in libpulse-dev + libsndio-dev — so without these the binary ends up NEEDing
+# We want PipeWire (native) + ALSA (fallback) + JACK. PortAudio auto-enables every host API whose dev libs it
+# finds, and libsdl2-dev drags in libpulse-dev + libsndio-dev — so without these the binary ends up NEEDing
 # libpulse / libsndio.so.7, which the muOS device doesn't ship (it failed to load there). Force them off.
 set(PA_USE_SNDIO OFF CACHE BOOL "" FORCE)
 set(PA_USE_PULSEAUDIO OFF CACHE BOOL "" FORCE)
 set(PA_USE_OSS OFF CACHE BOOL "" FORCE)
-# JACK is opt-in: it makes the binary NEED libjack.so.0 at runtime, which a PipeWire-only desktop (no
-# pipewire-jack/jackd) and the muOS handheld don't ship — so enabling it by default would break startup there.
-# With the flag ON we clear the cached value so PortAudio's own cmake_dependent_option(PA_USE_JACK ... ON
-# JACK_FOUND OFF) auto-enables it where find_package(JACK) succeeds (and stays off where it doesn't — e.g. the
-# arm sysroot has no libjack dev, so the handheld cross build is JACK-free by construction even with the flag).
-option(RETROPLUG_SDL_JACK "Compile the PortAudio JACK host API into retroplug-sdl (needs libjack at build + libjack.so.0 at runtime)" OFF)
-if(RETROPLUG_SDL_JACK)
-    unset(PA_USE_JACK CACHE)
-else()
-    set(PA_USE_JACK OFF CACHE BOOL "" FORCE)
-endif()
+# dlopen the Linux audio backends (ALSA / PipeWire / JACK) instead of hard-linking them, so retroplug-sdl has NO
+# audio lib in its DT_NEEDED: each backend is loaded lazily and, if its lib (or daemon) is absent, that host API
+# is simply omitted from the Driver menu instead of blocking startup (the backends' *_Initialize soft-fail:
+# *hostApi=NULL + paNoError, which Pa_Initialize skips). This restores the launch-anywhere behaviour the old SDL
+# audio path had (SDL dlopens its backends too) and makes JACK safe to compile in by default. libSDL2 stays
+# linked — it's the window/input shell. `unset` clears any stale cached PA_USE_JACK so the fork's
+# cmake_dependent_option re-decides on JACK_FOUND (on wherever jack dev is present; the arm sysroot has none, so
+# the handheld build is simply JACK-less — and it launches fine regardless).
+set(PA_ALSA_DYNAMIC ON CACHE BOOL "" FORCE)
+set(PA_JACK_DYNAMIC ON CACHE BOOL "" FORCE)
+set(PA_PIPEWIRE_DYNAMIC ON CACHE BOOL "" FORCE)
+unset(PA_USE_JACK CACHE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/portaudio ${CMAKE_BINARY_DIR}/portaudio EXCLUDE_FROM_ALL)
 
 # Part of the default `all` target, so build.sh builds it and CI covers it. Its deps are in-tree submodules

@@ -154,24 +154,33 @@ Audio is driven by a **PortAudio fork with a native PipeWire host API**
 (<https://github.com/tommitytom/portaudio/tree/pipewire>, vendored as the `deps/portaudio` submodule on the
 `pipewire` branch) — better latency + device handling than SDL's ALSA-compat path, especially on the handheld.
 PortAudio is `add_subdirectory`'d next to rtmidi in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)
-(static) and links only into `retroplug-sdl`; its CMake auto-selects the **PipeWire** host API where
-`libpipewire-0.3` is found (added to the host + the arm64 sysroot via
-[tools/arm-sysroot.sh](../tools/arm-sysroot.sh)) and falls back to **ALSA** otherwise
-(`cmake_dependent_option(PA_USE_PIPEWIRE … ON PIPEWIRE_FOUND OFF)`). SDL still owns the window/video/gamepad;
-only `SDL_INIT_AUDIO` + the SDL device/callback are gone.
+(static) and links only into `retroplug-sdl`; its CMake compiles the **ALSA**, **PipeWire**, and **JACK** host
+APIs (wherever each one's dev headers are found — PipeWire from `libpipewire-0.3`, added to the host + the arm64
+sysroot via [tools/arm-sysroot.sh](../tools/arm-sysroot.sh)). SDL still owns the window/video/gamepad; only
+`SDL_INIT_AUDIO` + the SDL device/callback are gone.
+
+**Backends are dlopen'd, not hard-linked.** The three Linux backends are compiled with `PA_ALSA_DYNAMIC` /
+`PA_PIPEWIRE_DYNAMIC` / `PA_JACK_DYNAMIC`, so `libasound` / `libpipewire-0.3` / `libjack` are **loaded at runtime
+with `dlopen`** rather than being `DT_NEEDED` entries — `readelf -d build/bin/retroplug-sdl` shows no audio lib
+(only `libSDL2`; `libasound` remains only via rtmidi, which is universal). Each backend's `*_Initialize`
+soft-fails (`*hostApi = NULL` + `paNoError`, which `Pa_Initialize` skips — an *error* return would abort all
+audio) when its lib or daemon is absent, so **the binary launches anywhere** and simply omits the missing
+backend from the Driver menu. This restores the launch-anywhere behaviour of the old SDL-audio path (SDL dlopens
+its backends too), which the hard-linked PortAudio build had regressed — a PipeWire-less desktop no longer fails
+to start. The dynamic loading lives in the fork (`src/hostapi/{alsa,jack,pipewire}/…`, mirroring PortAudio's own
+`PA_ALSA_DYNAMIC` pattern); `PA_*_SONAME` env vars override the soname (used to test absence). `libSDL2` stays
+hard-linked — it's the window/input shell.
 
 **Driver picker (`Settings > Audio > Driver`).** The Audio submenu's first row is a driver cycler that
 enumerates the host APIs PortAudio actually registered — **Auto** (the default: prefer PipeWire, else the
-platform default = raw ALSA) plus each compiled-in host API with a usable output device. Because the list is
-enumerated natively (`__rp_getAudioConfig` returns `{…, driver, drivers}`), the picker automatically shows only
-what the build offers: **PipeWire + ALSA** on the handheld, plus **JACK** on a build made with
-`-DRETROPLUG_SDL_JACK=ON`. A pick stages into the Audio draft and commits with the same **Apply** as
-rate/block/channels (one stream reopen), persisted in `audio.json` as `hostApi` (the `PaHostApiTypeId`, `-1` =
-Auto). A selected-but-unavailable host API falls back to Auto at open time (never silence). **Pulse/sndio/OSS
-stay force-off** (`libsdl2-dev` drags in their dev libs, and the handheld doesn't ship the runtime `.so`s);
-**JACK is opt-in** for the same reason — it needs `libjack.so.0` at runtime, which a PipeWire-only desktop
-(no pipewire-jack/jackd) and the handheld lack, so it's off by default and gated behind `RETROPLUG_SDL_JACK`
-(the arm sysroot has no libjack dev, so the handheld cross build is JACK-free even with the flag).
+platform default = raw ALSA) plus each host API with a usable output device. Because the list is enumerated
+natively (`__rp_getAudioConfig` returns `{…, driver, drivers}`), the picker shows exactly what's present at
+runtime: **JACK** only when a JACK server is up, **PipeWire** only when the daemon is running, and so on. A pick
+stages into the Audio draft and commits with the same **Apply** as rate/block/channels (one stream reopen),
+persisted in `audio.json` as `hostApi` (the `PaHostApiTypeId`, `-1` = Auto). A selected-but-unavailable host API
+falls back to Auto at open time (never silence). **JACK is on by default** now that it's dlopen'd (no launch
+penalty); **Pulse/sndio/OSS stay force-off** (`libsdl2-dev` drags in their dev libs and they'd bloat the driver
+list).
 
 The seam mirrors the old SDL one: `renderAudioBlock` (the shared body — drain the command ring, MIDI in +
 `MidiClockSync`, `engine.processBlock` into the planar buffers, MIDI out, planar→interleaved) is called by the
