@@ -1177,6 +1177,68 @@ test("Settings -> Audio > Driver (standalone): cycler stages the host API; Apply
   delete g.__rp_setAudioConfig;
 });
 
+test("Settings -> Audio > Output Device (standalone): lists the driver's devices, resets on driver change, Apply commits it as the 5th arg", async () => {
+  const applied: Array<[number, number, number, string, string]> = [];
+  const live = {
+    sampleRate: 48000,
+    blockSize: 2048,
+    outChannels: 2,
+    driver: "Auto",
+    device: "",
+    drivers: ["Auto", "PipeWire", "ALSA"],
+    devicesByDriver: { Auto: ["Speakers", "HDMI"], PipeWire: ["Speakers", "HDMI"], ALSA: ["default"] } as Record<string, string[]>,
+  };
+  const g = globalThis as {
+    __rp_isStandalone?: boolean;
+    __rp_getAudioConfig?: () => typeof live;
+    __rp_setAudioConfig?: (r: number, b: number, ch: number, d: string, dev: string) => void;
+  };
+  g.__rp_isStandalone = true;
+  g.__rp_getAudioConfig = () => ({ ...live });
+  g.__rp_setAudioConfig = (r, b, ch, d, dev) => {
+    live.sampleRate = r;
+    live.blockSize = b;
+    live.outChannels = ch;
+    live.driver = d;
+    live.device = dev;
+    applied.push([r, b, ch, d, dev]);
+  };
+  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  resetAudioDraft();
+
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be, notify: () => {} });
+  const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+
+  // Fresh: Default (the host API default).
+  let items = audioItems();
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default");
+
+  // Step the device cycler → the first device in the Auto driver's list. Staged, device NOT reconfigured.
+  findItem(items, "audio-device")!.onCycle!(1);
+  items = audioItems();
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Speakers");
+  expect(applied.length).toBe(0);
+  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
+
+  // Changing the Driver resets the device to Default (a device isn't valid across host APIs).
+  findItem(items, "audio-driver")!.onCycle!(1);
+  items = audioItems();
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PipeWire");
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default");
+
+  // Pick a device under the new driver, Apply → device rides the 5th arg.
+  findItem(items, "audio-device")!.onCycle!(1);
+  findItem(audioItems(), "audio-apply")!.onSelect!();
+  expect(applied[applied.length - 1]).toEqual([48000, 2048, 2, "PipeWire", "Speakers"]);
+  expect(live.device).toBe("Speakers");
+
+  resetAudioDraft();
+  delete g.__rp_isStandalone;
+  delete g.__rp_getAudioConfig;
+  delete g.__rp_setAudioConfig;
+});
+
 test("Settings Default Render Dir: unset by default, Set persists to config, Clear resets (disabled when unset)", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

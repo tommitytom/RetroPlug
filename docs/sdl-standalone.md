@@ -182,6 +182,16 @@ falls back to Auto at open time (never silence). **JACK is on by default** now t
 penalty); **Pulse/sndio/OSS stay force-off** (`libsdl2-dev` drags in their dev libs and they'd bloat the driver
 list).
 
+**Output Device picker (`Settings > Audio > Output Device`).** Below Driver, a second cycler picks a specific
+output within the selected driver — **Default** (the host API's default output, = the prior behaviour) plus each
+output-capable device of that host API (a PipeWire sink, an HDMI out, a USB DAC, …). The list is enumerated
+natively per host API (`__rp_getAudioConfig` also returns `device` + `devicesByDriver`), so it tracks the
+*draft* Driver, and changing the Driver resets the device to Default (a device isn't valid across host APIs).
+Selected/persisted **by name** (`audio.json` `outputDevice`; PortAudio indices aren't stable across runs) and
+resolved within the chosen host API at open time — a name that's gone falls back to the host API default (never
+silence). `openAudio` picks it via `findOutputDeviceByName` over `effectiveHostApiIndex`; `RETROPLUG_DEBUG_AUDIO`
+lists every output device.
+
 The seam mirrors the old SDL one: `renderAudioBlock` (the shared body — drain the command ring, MIDI in +
 `MidiClockSync`, `engine.processBlock` into the planar buffers, MIDI out, planar→interleaved) is called by the
 PortAudio stream callback (`paCallback`) or, when no device opens, by a **fallback pump thread** at the block
