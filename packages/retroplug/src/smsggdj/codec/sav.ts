@@ -251,13 +251,23 @@ function rebuild(template: Uint8Array, songs: DetachedSong[], cur: number): Uint
   return out;
 }
 
-/** Every valid song, detached. Stops at the first unreadable entry for the same reason `listSongs`
- *  does - a hole means corruption, and rebuilding past it would silently renumber the survivors. */
-function detachAll(sav: Uint8Array): DetachedSong[] {
+/** Every song the directory claims, detached - or NULL when any one of them will not decode.
+ *
+ *  Refusing the whole image is the entire point, and the failure it prevents is severe. `listSongs`
+ *  already stops at a structural hole (a cleared valid byte), so every entry it hands back is a song the
+ *  directory says exists. If one of those then fails its checksum or its RLE stream, that is PAYLOAD
+ *  corruption - it condemns that one song and says nothing whatever about the entries after it.
+ *
+ *  So this must not do what a `break` would: detach the prefix and let `rebuild` lay out an image from
+ *  it. That image is perfectly well-formed, `rebuild` returns it happily, and the caller writes it
+ *  straight over the user's `.sav` - turning one flipped checksum byte into the silent deletion of every
+ *  song stored after it, during an edit aimed at a completely different slot. One bad byte may cost the
+ *  user that one song; it may never cost them the rest of the cart. */
+function detachAll(sav: Uint8Array): DetachedSong[] | null {
   const out: DetachedSong[] = [];
   for (const s of listSongs(sav)) {
     const d = detach(sav, s.index);
-    if (!d) break;
+    if (!d) return null;
     out.push(d);
   }
   return out;
@@ -268,7 +278,7 @@ function detachAll(sav: Uint8Array): DetachedSong[] {
  *  with the survivors, and clears if the deleted song WAS the loaded one. */
 export function deleteSong(sav: Uint8Array, slot: number): Uint8Array | null {
   const songs = detachAll(sav);
-  if (slot < 0 || slot >= songs.length) return null;
+  if (!songs || slot < 0 || slot >= songs.length) return null;
   const cur = curSlot(sav);
   const nextCur = cur < 0 || cur === slot ? -1 : cur > slot ? cur - 1 : cur;
   songs.splice(slot, 1);
@@ -279,7 +289,7 @@ export function deleteSong(sav: Uint8Array, slot: number): Uint8Array | null {
  *  out-of-range or no-op move. The loaded marker tracks the MOVED song, not the position. */
 export function reorderSongs(sav: Uint8Array, from: number, to: number): Uint8Array | null {
   const songs = detachAll(sav);
-  if (from === to || from < 0 || to < 0 || from >= songs.length || to >= songs.length) return null;
+  if (!songs || from === to || from < 0 || to < 0 || from >= songs.length || to >= songs.length) return null;
   const cur = curSlot(sav);
   const [moved] = songs.splice(from, 1);
   songs.splice(to, 0, moved);
@@ -298,6 +308,10 @@ export function reorderSongs(sav: Uint8Array, from: number, to: number): Uint8Ar
 export function importSongs(target: Uint8Array, source: Uint8Array, indices: number[]): Uint8Array | null {
   if (!isSmsggdjSav(target) || !isSmsggdjSav(source)) return null;
   const songs = detachAll(target);
+  if (!songs) return null; // the TARGET is corrupt: importing would rebuild it minus the unreadable tail
+  // The SOURCE is a different matter - it is someone else's file, the user ticked specific songs in it,
+  // and a bad one there costs them nothing they own. Skip those and import the rest; the caller compares
+  // counts and reports an incomplete import.
   const add = indices.map((i) => detach(source, i)).filter((s): s is DetachedSong => s !== null);
   if (!add.length) return null;
   return rebuild(target, [...songs, ...add], curSlot(target));
@@ -307,6 +321,7 @@ export function importSongs(target: Uint8Array, source: Uint8Array, indices: num
 export function addSong(sav: Uint8Array, block: Uint8Array, name: string): Uint8Array | null {
   if (!isSmsggdjSav(sav) || block.length !== SMDJ4_BLOCK_LEN) return null;
   const songs = detachAll(sav);
+  if (!songs) return null;
   const nameBytes = new Uint8Array(NAME_LEN);
   for (let i = 0; i < NAME_LEN && i < name.length; i++) nameBytes[i] = name.charCodeAt(i) & 0xff;
   songs.push({ block: block.slice(), name: nameBytes, echo: new Uint8Array(ECHO_LEN) });
@@ -374,6 +389,30 @@ export function unwrapSong(bytes: Uint8Array): { block: Uint8Array; echo: Uint8A
   return { block, echo: bytes.subarray(7, 7 + ECHO_LEN).slice() };
 }
 
+/** A slot's STORED block checksum, straight from its directory entry - no decode. Null when the slot is
+ *  free or out of range. Lets a caller ask "is this block already saved somewhere?" for the price of a
+ *  16-bit read per slot, decoding only the one entry whose sum matches. */
+export function storedChecksum(sav: Uint8Array, slot: number): number | null {
+  if (!isSmsggdjSav(sav) || slot < 0 || slot >= entryCount(sav)) return null;
+  const e = entryAt(slot);
+  return sav[e + E_VALID] === VALID ? u16(sav, e + E_SUM) : null;
+}
+
+/** Does `block` already exist, byte for byte, as a saved song? The question behind "would this edit lose
+ *  work" for a cart whose working song is work RAM: if the live block is one of the saved ones, the reboot
+ *  costs nothing. Checksums narrow it to a candidate, and only that candidate is decoded - a false match
+ *  on a 16-bit sum is possible, so the full compare is what decides. */
+export function isSongSaved(sav: Uint8Array, block: Uint8Array): boolean {
+  if (block.length !== SMDJ4_BLOCK_LEN) return false;
+  const want = blockChecksum(block);
+  for (const s of listSongs(sav)) {
+    if (storedChecksum(sav, s.index) !== want) continue;
+    const saved = readSongBlock(sav, s.index);
+    if (saved && saved.every((b, i) => b === block[i])) return true;
+  }
+  return false;
+}
+
 /** A slot's echo settings (mode, taps, reductions, stereo, transposes) - they live in the DIRECTORY
  *  entry rather than the block, so an export has to fetch them separately to travel with the song. */
 export function readSongEcho(sav: Uint8Array, slot: number): Uint8Array | null {
@@ -388,7 +427,7 @@ export function readSongEcho(sav: Uint8Array, slot: number): Uint8Array | null {
 export function replaceSong(sav: Uint8Array, slot: number, block: Uint8Array, echo?: Uint8Array): Uint8Array | null {
   if (block.length !== SMDJ4_BLOCK_LEN) return null;
   const songs = detachAll(sav);
-  if (slot < 0 || slot >= songs.length) return null;
+  if (!songs || slot < 0 || slot >= songs.length) return null;
   songs[slot] = { block: block.slice(), name: songs[slot].name, echo: echo ? echo.slice() : songs[slot].echo };
   return rebuild(sav, songs, curSlot(sav));
 }

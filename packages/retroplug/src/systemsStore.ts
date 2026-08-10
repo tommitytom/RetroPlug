@@ -328,6 +328,14 @@ export class SystemsStore {
     return this.backend.readSram(id);
   }
 
+  /** Read system `id`'s live work RAM (the same race-free published snapshot `readSram` serves, for the
+   *  other region). Null when nothing is published. Needed by consoles whose WORKING SONG lives outside
+   *  the battery - smsggdj keeps its in work RAM - so the Songs menu can tell whether a battery edit's
+   *  cold boot would throw away real work. */
+  readRam(id: number): Uint8Array | null {
+    return this.backend.readRam(id);
+  }
+
   /** Dump system `id`'s battery SRAM to `path`. False when the id has no SRAM published, or the write fails. */
   saveSram(id: number, path: string): boolean {
     const bytes = this.backend.readSram(id);

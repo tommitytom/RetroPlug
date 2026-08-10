@@ -22,7 +22,10 @@ export interface LiveSavTarget {
 }
 
 type SavBackend = Pick<ControlPlaneBackend, "writeFileAtomic" | "writeFile">;
-type SavSystems = Pick<SystemsStore, "readSram" | "loadSram">;
+// `readRam` is OPTIONAL on the seam: only a console whose working song lives outside the battery needs
+// it, and keeping it optional means the mock stores and the recents path don't have to grow a region
+// they never look at.
+type SavSystems = Pick<SystemsStore, "readSram" | "loadSram"> & { readRam?(id: number): Uint8Array | null };
 type FocusedSystems = SavSystems & Pick<SystemsStore, "primary">;
 
 /** The rolling backup a destructive battery edit leaves behind - `<sav>.bak`, one per cart, overwritten
@@ -103,7 +106,25 @@ export function songLoadWouldDiscard(systems: SavSystems, sys: LiveSavTarget): b
   const catalog = resolveSongCatalog(sys.roles);
   if (!catalog?.workingSongDirty) return false;
   const sram = systems.readSram(sys.id);
-  return sram ? catalog.workingSongDirty(sram) : false;
+  // Work RAM only matters to a console that keeps its working song there, and reading it is a snapshot
+  // copy, so don't pay for it otherwise.
+  const ram = catalog.workingSongOutsideBattery ? (systems.readRam?.(sys.id) ?? undefined) : undefined;
+  return sram ? catalog.workingSongDirty(sram, ram) : false;
+}
+
+/** Would ANY battery edit - Delete, Replace, Move, Add, Import, not just Load - discard unsaved work?
+ *
+ *  `mutateLiveSav` always ends in a cold boot, and for a console whose working song lives outside the
+ *  image (see `workingSongOutsideBattery`) that boot destroys it no matter which op caused it. The shared
+ *  Songs menu was built when only LSDj and risa existed, and for both of those the reboot is harmless
+ *  because the working song is part of the bytes being rewritten - so Load was the only guarded row and
+ *  Delete/Move/Add got no confirm at all. On smsggdj that silence is a straight path to losing an hour's
+ *  work by reordering a list.
+ *
+ *  False for the other two consoles by construction, so this adds no friction where the reboot is free. */
+export function savEditWouldDiscard(systems: SavSystems, sys: LiveSavTarget): boolean {
+  const catalog = resolveSongCatalog(sys.roles);
+  return catalog?.workingSongOutsideBattery ? songLoadWouldDiscard(systems, sys) : false;
 }
 
 /** `songLoadWouldDiscard`, but skipped when `name` is ALREADY the working song - loading the song you are

@@ -1211,11 +1211,50 @@ Encoding is **slot + 1, 0 = none**, not the raw slot: the byte lives in reserved
 older save leaves `$00`, so a raw number would make all of them claim slot 0 and, once the cart
 autoloads, boot into it.
 
-**`workingSongDirty` is deliberately not implemented**, because it asks whether the working song's
-CONTENT differs from its slot and that content is in WRAM. The interface documents omitting it, and
-`songLoadWouldDiscard` then never prompts. **Consequence for release notes: on SMS/GG, Load does not
-warn before discarding unsaved edits.** Closing it needs a WRAM-aware extension - `readRam` is on the
-control plane, so the data is reachable; only the `(sav) => boolean` signature is in the way.
+#### Every battery edit is destructive here, not just Load
+
+`workingSongDirty` was originally left unimplemented, on the grounds that it asks whether the working
+song's CONTENT differs from its slot and that content is in WRAM, which a `(sav) => boolean` cannot
+see. That was contract-correct but it scoped the hazard too narrowly, and a review pass found the
+bigger half: **`mutateLiveSav` always ends in a cold boot, so on this console Delete, Replace, Move
+Up/Down, Add and Import destroy the working song exactly as thoroughly as Load does** - and unlike
+Load, those five had no confirm at all. The shared Songs menu guarded Load alone because for LSDj and
+risa the working song is *inside* the image being rewritten, so their reboot restores it. That
+assumption was invisible until a third console broke it.
+
+The `.bak` rolling backup does not cover this. It snapshots the battery, which for smsggdj structurally
+never contained the working song.
+
+Two additions close it, both in the shared layer rather than special-cased per console:
+
+- **`SongCatalog.workingSongDirty(sav, ram?)`** takes the live work RAM. smsggdj answers by asking
+  whether the live block matches any saved song (`isSongSaved`, checksum-narrowed so at most one slot
+  is decoded). Without `ram` it answers *clean*: "cannot tell" has to look like "nothing to lose", or
+  the menu prompts forever.
+- **`SongCatalog.workingSongOutsideBattery`** declares the console-level fact. `savEditWouldDiscard`
+  (`src/tracker/liveSav.ts`) is `flag && dirty`, and is false for LSDj and risa by construction, so
+  this adds no friction where the reboot is free.
+
+The menu then warns on all six ops: Delete and Replace extend their existing confirm, Move Up/Down and
+Add gain one *only* when work would be lost (reordering is otherwise cheap and repeated, and a prompt
+on every nudge is how prompts get dismissed unread), and the import picker shows an inline line rather
+than stacking a dialog on a dialog.
+
+One residual, and it is why this still wants the ROM change: with no boot-time autoload the cart has no
+way to know a freshly booted blank song is blank, so it reads as dirty. Once the cart autoloads
+`cur_slot`, a fresh boot matches the slot it came from and stays silent.
+
+**One corrupt song may never cost the user the rest of the cart.** `detachAll` returns null rather than
+a prefix when any listed entry fails to decode, so every mutating op refuses. The alternative looks
+harmless and is not: `listSongs` stops at a structural hole, so an entry it returns that then fails its
+checksum is *payload* corruption and says nothing about the entries after it. Detaching what it could
+would hand `rebuild` a short list, and `rebuild` lays out a perfectly well-formed image from it - which
+`mutateLiveSav` writes straight over the user's `.sav`. One flipped byte would become the silent
+deletion of every song stored after it, during an edit aimed at a different slot. Confirmed by
+execution before the fix: a three-song cart with one bad checksum, `deleteSong(sav, 0)` returned an
+image containing zero songs. The import SOURCE goes the other way on purpose - a bad song in someone
+else's file is skipped, since refusing the whole import would deny the good songs to protect a cart
+that is not at risk.
 
 Both codecs were certified against smsggdj's own tools and then frozen, the discipline used for the
 LSDj codec against liblsdj: `rleCompress` is byte-identical to `tools/rle.js` (the real demo song packs

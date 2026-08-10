@@ -15,15 +15,22 @@
 //
 // That byte also supplies the "currently loaded slot" the format previously lacked, which is what makes
 // `workingName` / `workingSong` answerable at all.
+//
+// The same fact has a sharper edge than it first appears: because the cold boot is what makes ANY edit
+// take effect, and the working song is not in the image, EVERY battery op here destroys it - not just
+// `load`. See `workingSongOutsideBattery` below, which is how the shared Songs menu learns to warn about
+// Delete and Move Up as well.
 import type { SongCatalog } from "./songCatalog";
 import {
   listSongs,
   isSmsggdjSav,
+  isSongSaved,
   curSlot,
   setCurSlot,
   deleteSong,
   reorderSongs,
   importSongs,
+  SMDJ4_BLOCK_LEN,
 } from "../smsggdj/codec/sav";
 
 export const smsggdjSongCatalog: SongCatalog = {
@@ -51,15 +58,24 @@ export const smsggdjSongCatalog: SongCatalog = {
     return name === undefined ? null : { name, linked: true };
   },
 
-  // `workingSongDirty` is DELIBERATELY absent. It asks whether the working song's CONTENT differs from
-  // its saved slot, and that content is in work RAM, which a `(sav) => boolean` predicate cannot see.
-  // The interface documents exactly this case ("a console that can't tell omits it, and the caller then
-  // never prompts"), so omitting is the contract-correct answer rather than a shortcut - a confirm that
-  // fired when nothing would be lost is worse than none, because users learn to dismiss it.
+  // Every battery edit on this console cold-boots the cart, and the working song is not in the battery,
+  // so it does not come back. Delete, Move Up and Add destroy an hour's work exactly as thoroughly as
+  // Load does. The other two consoles are immune - their working song rides along inside the image - so
+  // the shared menu guarded Load alone, and that assumption had to become explicit rather than implied.
+  workingSongOutsideBattery: true,
+
+  // Answerable only WITH work RAM, which is why the interface grew the second parameter. Without it we
+  // say clean: "I cannot tell" has to look like "nothing to lose", because a prompt that fires when
+  // nothing would be lost trains people to dismiss the one that matters.
   //
-  // The consequence is real and belongs in the release notes: on SMS/GG, Load does not warn before
-  // discarding unsaved edits. Closing it needs a WRAM-aware extension to the interface; `readRam` is on
-  // the control-plane facet, so the data is reachable - only the signature is in the way.
+  // Dirty means the live block matches NO saved song - the contract's own words, and the right test for
+  // a console with no link byte to consult. Once the cart autoloads its currently-loaded slot at boot, a
+  // freshly booted cart matches the slot it came from and stays silent; before that it has no way to
+  // know a blank song is blank, which is one more reason the Songs menu is gated on that ROM.
+  workingSongDirty: (sav, ram) => {
+    if (!ram || ram.length < SMDJ4_BLOCK_LEN || !isSmsggdjSav(sav)) return false;
+    return !isSongSaved(sav, ram.subarray(0, SMDJ4_BLOCK_LEN));
+  },
 
   // Naming the slot is the whole of `load`; mutateLiveSav's cold boot is what makes the cart act on it.
   load: (sav, index) => setCurSlot(sav, index),

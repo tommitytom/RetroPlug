@@ -6,7 +6,8 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";
-import { mutateLiveSav, loadSongByName, loadSongInPrimary, lsdjSongCatalog, songLoadWouldDiscard, songLoadByNameWouldDiscard } from "../../src/tracker";
+import { mutateLiveSav, loadSongByName, loadSongInPrimary, lsdjSongCatalog, songLoadWouldDiscard, songLoadByNameWouldDiscard, savEditWouldDiscard } from "../../src/tracker";
+import { buildSav, SMDJ4_BLOCK_LEN } from "../../src/smsggdj/codec/sav";
 import { lsdjRom, gbRomBattery } from "../systems/fixtures";
 import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
 
@@ -171,6 +172,69 @@ test("songLoadWouldDiscard: a non-tracker cart never prompts (no positive signal
   const id = systems.addSystem("/roms/plain.gb")!;
   be.setSram(id, new Uint8Array(0x2000).fill(7));
   expect(songLoadWouldDiscard(systems, systems.systems()[0])).toBe(false);
+});
+
+// --- the OTHER five ops, on a console whose working song is not in the battery ----------------------
+
+/** A live smsggdj cart: a .sms carrying the build marker, with a two-song SMDJ4 battery and a synthetic
+ *  work-RAM block - the region the cart actually composes in, and which no `.sav` ever contains. */
+function newSmsCart() {
+  const be = new MockBackend("/cfg");
+  const systems = new SystemsStore(be, () => {}, buildAppRegistry());
+  const rom = new Uint8Array(0x8200);
+  rom.set([0x54, 0x4d, 0x52, 0x20, 0x53, 0x45, 0x47, 0x41], 0x7ff0); // "TMR SEGA"
+  rom[0x7ff0 + 0xf] = 0x40; // region nibble 4 -> SMS
+  for (let i = 0; i < "SMSGGDJ".length; i++) rom[0x3640 + i] = "SMSGGDJ".charCodeAt(i);
+  be.seed("/roms/smsggdj.sms", rom);
+  const id = systems.addSystem("/roms/smsggdj.sms")!;
+  const block = (tag: number): Uint8Array => {
+    const b = new Uint8Array(SMDJ4_BLOCK_LEN);
+    for (let i = 0; i < SMDJ4_BLOCK_LEN; i += 4) b.set([tag, 0xff, 0, 0], i);
+    return b;
+  };
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], 32 * 1024)!);
+  const setWorking = (b: Uint8Array): void => {
+    const ram = new Uint8Array(8192);
+    ram.set(b, 0);
+    be.setRam(id, ram);
+  };
+  return { be, systems, sys: () => systems.systems()[0], block, setWorking };
+}
+
+test("savEditWouldDiscard: a battery edit warns on the console whose working song is NOT in the battery", () => {
+  // The gap the review found. mutateLiveSav always ends in a cold boot; for LSDj and risa that is free
+  // because the working song is inside the bytes being rewritten, so the shared menu guarded Load alone.
+  // Here the working song is work RAM and the reboot destroys it, so Delete / Move / Add / Import /
+  // Replace are every bit as destructive as Load and have to ask first.
+  const { systems, sys, block, setWorking } = newSmsCart();
+
+  setWorking(block(2)); // working song IS the saved BETA - the reboot costs nothing
+  expect(savEditWouldDiscard(systems, sys())).toBe(false);
+
+  const edited = block(2);
+  edited[9] ^= 0xff; // ...now edited, and in no slot
+  setWorking(edited);
+  expect(savEditWouldDiscard(systems, sys())).toBe(true);
+  expect(songLoadWouldDiscard(systems, sys())).toBe(true); // Load agrees, off the same signal
+});
+
+test("savEditWouldDiscard: with no work RAM published it stays silent rather than guessing", () => {
+  // The mock publishes no WRAM until a test sets one, which is exactly the "cannot tell" case. A prompt
+  // fired on no evidence is the one that teaches people to dismiss prompts.
+  const { systems, sys } = newSmsCart();
+  expect(savEditWouldDiscard(systems, sys())).toBe(false);
+});
+
+test("savEditWouldDiscard: LSDj is never warned, because its reboot restores the working song", () => {
+  // The reason this is a per-console flag and not a blanket confirm. GRUB is dirty here - the LOAD guard
+  // fires - yet a Delete rewrites the .sav with working memory intact and the cold boot brings it back,
+  // so warning about it would be false.
+  const { be, systems, sys } = newCart();
+  const edited = be.readSram(sys().id)!.slice();
+  edited[0x100] ^= 0xff;
+  be.setSram(sys().id, edited);
+  expect(songLoadWouldDiscard(systems, sys())).toBe(true);
+  expect(savEditWouldDiscard(systems, sys())).toBe(false);
 });
 
 test("songLoadByNameWouldDiscard: re-picking the song you are ON never prompts", () => {

@@ -58,9 +58,23 @@ export interface SongCatalog {
    *  synthetic working-song row. Two cases are dirty: an UNLINKED working song that no catalog slot claims,
    *  and one linked to a slot whose CONTENT it no longer matches (the common case - load a song, edit for an
    *  hour, load another).
+   *  `ram` is the system's live WORK RAM, for consoles that keep the working song there instead of in the
+   *  battery (smsggdj). It is absent when the caller has no system to read - an import source, a sav on
+   *  disk - and a catalog that needs it must then answer false, since "I cannot tell" and "nothing to
+   *  lose" have to collapse to the same silence.
+   *
    *  Optional - a console that can't tell omits it, and the caller then never prompts (a prompt that fires
    *  when nothing would be lost is worse than none, since users learn to dismiss it). */
-  workingSongDirty?(sav: Uint8Array): boolean;
+  workingSongDirty?(sav: Uint8Array, ram?: Uint8Array): boolean;
+  /** True when the working song lives OUTSIDE the battery image, so the cold boot that every battery edit
+   *  ends in destroys it - Delete and Move Up as surely as Load.
+   *
+   *  Absent (the default) means the working song is part of the image: LSDj keeps it at offset 0, risa in
+   *  its own region, so rewriting the `.sav` around a song edit carries it through the reboot untouched
+   *  and only an explicit `load` overwrites it. That is why the shared menu historically guarded Load
+   *  alone. smsggdj breaks the assumption - its working song is work RAM at $C000 and appears nowhere in
+   *  the file - so for it EVERY battery edit is destructive, and the menu has to say so. */
+  readonly workingSongOutsideBattery?: boolean;
   /** Load a saved song into working memory (+ mark it active). New bytes, or null on an empty slot. */
   load(sav: Uint8Array, index: number): Uint8Array | null;
   /** Delete a saved song. New bytes, or null on an invalid index. */

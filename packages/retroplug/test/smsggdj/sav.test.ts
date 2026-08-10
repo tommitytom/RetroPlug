@@ -19,6 +19,7 @@ import {
   importSongs,
   addSong,
   renameSong,
+  replaceSong,
   buildSav,
 } from "../../src/smsggdj/codec/sav";
 
@@ -65,6 +66,53 @@ test("a slot whose checksum does not match is refused, not loaded", () => {
   corrupt[e + 6] ^= 0xff; // stored checksum, low byte
   expect(readSongBlock(corrupt, 0)).toBe(null);
   expect(listSongs(corrupt).length).toBe(1); // still LISTED - one bad song is not a broken cart
+});
+
+test("one corrupt song makes every EDIT refuse, instead of rebuilding the cart without it", () => {
+  // The worst bug this codec can have, and the reason detachAll returns null rather than a prefix.
+  // Every op below rebuilds the image from the songs it managed to detach, and `rebuild` produces a
+  // perfectly well-formed cart from a SHORT list - which the caller then writes over the user's .sav.
+  // Detaching what it could would therefore turn one flipped checksum byte into the silent deletion of
+  // every song stored after it, during an edit aimed at a completely different slot.
+  const sav = buildSav(
+    [
+      { block: sparse(1), name: "ONE" },
+      { block: sparse(2), name: "TWO" },
+      { block: sparse(3), name: "THREE" },
+    ],
+    CART,
+  )!;
+  const bad = sav.slice();
+  bad[32 + 1 * 32 + 6] ^= 0x01; // entry 1's stored checksum: TWO no longer decodes
+
+  expect(names(bad)).toEqual(["ONE", "TWO", "THREE"]); // the directory still claims all three
+  expect(readSongBlock(bad, 0)).toEqual(sparse(1)); // ...and the OTHER two still read fine
+  expect(readSongBlock(bad, 2)).toEqual(sparse(3));
+
+  // Every mutating op refuses. Naming them individually is the point: each one used to return an image
+  // that had quietly dropped THREE, and each is reachable from a different Songs-menu row.
+  expect(deleteSong(bad, 0)).toBe(null); // deleting a song that is not even the corrupt one
+  expect(addSong(bad, sparse(9), "NINE")).toBe(null);
+  expect(reorderSongs(bad, 0, 2)).toBe(null);
+  expect(replaceSong(bad, 0, sparse(9))).toBe(null);
+  expect(importSongs(bad, sav, [0])).toBe(null); // a corrupt TARGET refuses the import
+
+  // Renaming is exempt by construction - it edits the directory entry in place and never re-lays the
+  // heap, so it cannot drop anything.
+  expect(names(renameSong(bad, 0, "ALPHA")!)).toEqual(["ALPHA", "TWO", "THREE"]);
+});
+
+test("a corrupt song in the IMPORT SOURCE is skipped, not fatal", () => {
+  // The mirror case, and it goes the other way on purpose: the source is someone else's file, the user
+  // ticked specific songs in it, and a bad one there costs them nothing they own. Refusing the whole
+  // import would deny them the good songs to protect a cart that is not at risk.
+  const src = buildSav([{ block: sparse(1), name: "ONE" }, { block: sparse(2), name: "TWO" }], CART)!;
+  const badSrc = src.slice();
+  badSrc[32 + 1 * 32 + 6] ^= 0x01; // TWO no longer decodes
+  const target = buildSav([{ block: sparse(8), name: "HOST" }], CART)!;
+
+  expect(names(importSongs(target, badSrc, [0, 1])!)).toEqual(["HOST", "ONE"]); // ONE lands, TWO skipped
+  expect(importSongs(target, badSrc, [1])).toBe(null); // nothing importable at all
 });
 
 test("a non-SMDJ4 buffer is rejected rather than parsed as an empty cart", () => {

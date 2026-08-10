@@ -1081,8 +1081,15 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
   // Would loading ANY song discard uncommitted work? One question per menu build, not per row - it's a
   // property of the working song, not of the row you're pointing at. Loading the song you're already on
   // still overwrites working memory from the stored slot, so every row is guarded, including that one.
-  const discards = bytes ? (cat.workingSongDirty?.(bytes) ?? false) : false;
+  const ram = cat.workingSongOutsideBattery ? (ctx.stores.project.systems.readRam(sys.id) ?? undefined) : undefined;
+  const discards = bytes ? (cat.workingSongDirty?.(bytes, ram) ?? false) : false;
   const workingLabel = (bytes ? cat.workingName(bytes) : null) || "the working song";
+  // Every row below rewrites the battery and cold-boots the cart. On a console whose working song lives
+  // OUTSIDE the battery that boot destroys it, so Delete / Replace / Move are as destructive as Load -
+  // the assumption that only Load could lose work was LSDj's and risa's, not a universal one. When it
+  // holds, this is false and nothing below changes.
+  const rebootDiscards = (cat.workingSongOutsideBattery ?? false) && discards;
+  const rebootWarning = ` ${workingLabel} has unsaved changes and the cart will restart - they will be lost.`;
 
   const rows: MenuItem[] = songs.map((s, i) => {
     const name = s.name || `Song ${s.index}`;
@@ -1110,7 +1117,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
         kind: "prompt" as const,
         keepOpen: true,
         prompt: {
-          title: `Replace saved song "${name}"?`,
+          title: `Replace saved song "${name}"?${rebootDiscards ? rebootWarning : ""}`,
           hint: "Enter to pick a file  |  Esc to cancel",
           confirm: true,
           onConfirm: () => {
@@ -1123,8 +1130,34 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     if (cat.reorder) {
       // reorder takes LIST POSITIONS (index into the rendered list), not the row's `index` — they coincide
       // for a positional catalog (risa) but not for LSDj's sparse slot numbers.
-      items.push(action(`${spec.id}-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, i, i - 1)), i === 0));
-      items.push(action(`${spec.id}-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, i, i + 1)), i === last));
+      // Reordering normally gets no confirm, and shouldn't: it is cheap, reversible and repeated, so a
+      // prompt on every nudge would be pure friction. When the reboot costs the working song it is
+      // neither cheap nor reversible, so it gains one for exactly that case and no other.
+      const move = (dir: "up" | "down", to: number, disabled: boolean): MenuItem => {
+        const label = dir === "up" ? "Move Up" : "Move Down";
+        const id = `${spec.id}-song-${s.index}-${dir}`;
+        const run = (): void => {
+          mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, i, to));
+        };
+        if (disabled || !rebootDiscards) return action(id, label, run, disabled);
+        return {
+          id,
+          label,
+          kind: "prompt" as const,
+          keepOpen: true,
+          prompt: {
+            title: `${label}?${rebootWarning}`,
+            hint: "Enter to continue  |  Esc to cancel",
+            confirm: true,
+            onConfirm: () => {
+              run();
+              return null;
+            },
+          },
+        };
+      };
+      items.push(move("up", i - 1, i === 0));
+      items.push(move("down", i + 1, i === last));
     }
     items.push({
       id: `${spec.id}-song-${s.index}-delete`,
@@ -1132,7 +1165,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
       kind: "prompt" as const,
       keepOpen: true,
       prompt: {
-        title: `Delete song "${name}"?`,
+        title: `Delete song "${name}"?${rebootDiscards ? rebootWarning : ""}`,
         hint: "Enter to delete  |  Esc to cancel",
         confirm: true,
         onConfirm: () => {
@@ -1180,12 +1213,27 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     // linked - without it the two read as two songs rather than one song and its uncommitted edits.
     workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName} (unsaved)`, wItems), sep(`${spec.id}-song-working-sep`));
   }
-  return submenu(`${spec.id}-songs`, "Songs", [
-    ...workingRows,
-    action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys)),
-    sep(`${spec.id}-song-add-sep`),
-    ...body,
-  ]);
+  // Add reaches the battery too, so it reboots as well - the file picker it opens makes that easy to
+  // forget. Confirm BEFORE browsing: cancelling in the picker then costs nothing, and a prompt after the
+  // user has already chosen a file reads as a second, redundant question.
+  const addRow = rebootDiscards
+    ? {
+        id: `${spec.id}-song-add`,
+        label: "Add...",
+        kind: "prompt" as const,
+        keepOpen: true,
+        prompt: {
+          title: `Add a song?${rebootWarning}`,
+          hint: "Enter to pick a file  |  Esc to cancel",
+          confirm: true,
+          onConfirm: () => {
+            spec.addSong(ctx, sys);
+            return null;
+          },
+        },
+      }
+    : action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys));
+  return submenu(`${spec.id}-songs`, "Songs", [...workingRows, addRow, sep(`${spec.id}-song-add-sep`), ...body]);
 }
 
 // The throw→null wrapper for risa's catalog ops used by its file actions (LSDj's ops return null directly;

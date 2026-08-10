@@ -3,6 +3,8 @@
 import { test, expect } from "../../testing/harness";
 import { resolveSongCatalog, resolveTracker } from "../../src/tracker";
 import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
+import { lsdjSongCatalog } from "../../src/tracker/lsdjSongCatalog";
+import { risaSongCatalog } from "../../src/tracker/risaSongCatalog";
 import { smsggdjIntegration } from "../../src/tracker/trackerIntegration";
 import { buildSav, curSlot, SMDJ4_BLOCK_LEN } from "../../src/smsggdj/codec/sav";
 import { identifySmsggdjVersion, supportsCurSlot } from "../../src/smsggdj/romDetect";
@@ -64,12 +66,36 @@ test("load names the slot rather than moving the song, because the cart does the
   expect(smsggdjSongCatalog.load(sav, 5)).toBe(null); // no such song
 });
 
-test("workingSongDirty is absent, so the menu never prompts on a signal it cannot have", () => {
-  // Deliberate: the predicate asks whether the working song's CONTENT differs from its slot, and that
-  // content is in work RAM, which a (sav) => boolean cannot see. The interface documents omitting it,
-  // and songLoadWouldDiscard returns false when it is missing - a confirm that fires when nothing would
-  // be lost is worse than none.
-  expect(smsggdjSongCatalog.workingSongDirty).toBe(undefined);
+test("workingSongDirty needs work RAM, and says CLEAN when it has none", () => {
+  // The predicate asks whether the working song's content exists in no saved slot, and on this console
+  // that content is work RAM - so the interface passes it in. Without it the honest answer is false:
+  // "I cannot tell" has to look like "nothing to lose", or the menu prompts on every edit forever.
+  const sav = twoSongs();
+  expect(smsggdjSongCatalog.workingSongDirty!(sav)).toBe(false); // no ram argument at all
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, new Uint8Array(16))).toBe(false); // too short to hold a song
+});
+
+test("a working song that matches a saved slot is clean; one that matches none is dirty", () => {
+  const sav = twoSongs();
+  const ram = new Uint8Array(8192); // SMS work RAM; the song block is at its base
+
+  ram.set(song(2), 0); // exactly BETA
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
+
+  ram[5] ^= 0xff; // ...now edited, and saved nowhere
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(true);
+
+  ram.set(song(1), 0); // exactly ALPHA - a different slot, still saved
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
+});
+
+test("the working song is declared OUTSIDE the battery, which is what guards the other five ops", () => {
+  // The flag the shared Songs menu reads. LSDj and risa leave it unset because their working song is
+  // part of the image a battery edit rewrites, so their cold boot restores it and only Load is
+  // destructive. Here every edit is, and the menu has to know that without special-casing the console.
+  expect(smsggdjSongCatalog.workingSongOutsideBattery).toBe(true);
+  expect(lsdjSongCatalog.workingSongOutsideBattery).toBe(undefined);
+  expect(risaSongCatalog.workingSongOutsideBattery).toBe(undefined);
 });
 
 test("delete and reorder keep the loaded marker pointing at its own song", () => {

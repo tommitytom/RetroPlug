@@ -18,6 +18,11 @@ export interface PickState {
   source: Uint8Array;
   songs: SongInfo[];
   checked: Set<number>;
+  /** Set when importing will cold-boot the cart away from unsaved work (a console whose working song
+   *  lives outside the battery). Shown in the picker rather than raised as a second prompt: the picker's
+   *  own "Import (N)" button is already the confirmation step, and stacking a dialog on a dialog is how
+   *  warnings get dismissed unread. */
+  warning?: string;
 }
 // A dismissible error/info notice (invalid sav / no songs).
 export interface NoticeState {
@@ -36,14 +41,14 @@ export interface ImportHandlers {
 
 /** Validate a source sav against a system's console and produce the initial pending state: a `pick` (all
  *  songs checked) when it's a readable save of the same console with songs, else a `notice`. */
-export function planImport(sys: SystemView, source: Uint8Array): ImportPending {
+export function planImport(sys: SystemView, source: Uint8Array, warning?: string): ImportPending {
   const tracker = resolveTracker(sys.roles);
   if (!tracker) return { kind: "notice", title: "Cannot import", body: "This system has no song catalog." };
   const cat = tracker.songs;
   if (!cat.isValidSav(source)) return { kind: "notice", title: "Cannot import", body: `Not a valid ${tracker.label} save.` };
   const songs = cat.list(source);
   if (songs.length === 0) return { kind: "notice", title: "Cannot import", body: "No songs found in that save." };
-  return { kind: "pick", sys, cat, source, songs, checked: new Set(songs.map((s) => s.index)) };
+  return { kind: "pick", sys, cat, source, songs, checked: new Set(songs.map((s) => s.index)), ...(warning ? { warning } : {}) };
 }
 
 /** Import the checked songs into the live battery (readSram -> catalog.importSongs -> write .sav -> cold
@@ -92,6 +97,7 @@ export function buildImportModal(pending: ImportPending, h: ImportHandlers): Men
   }));
   const controls: MenuItem[] = [
     { id: "import-sep", label: "", kind: "separator" },
+    ...(pending.warning ? [{ id: "import-warning", label: pending.warning, kind: "action" as const, keepOpen: true, disabled: true, onSelect: () => {} }] : []),
     { id: "import-all", label: allChecked ? "Select None" : "Select All", kind: "action", keepOpen: true, onSelect: h.toggleAll },
     { id: "import-do", label: `Import (${pending.checked.size})`, kind: "action", keepOpen: true, onSelect: h.apply, ...(pending.checked.size === 0 ? { disabled: true } : {}) },
     { id: "import-cancel", label: "Cancel", kind: "action", keepOpen: true, onSelect: h.onClose },
