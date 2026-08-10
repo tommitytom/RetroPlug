@@ -179,11 +179,14 @@ test("canvas: text, hexNumber and number land on the right cells in the right co
   expect(readText(c, 0, 3, 2)).toBe("3A");
   expect(colorSetAt(c, 0, 3)).toBe(ColorSets.Shaded);
 
-  // Unpadded: a single digit below 0x0F, but 0x0F itself still pads (the original's `>= 15` threshold).
+  // Unpadded: one digit for anything below 0x10, INCLUDING 0x0F (the original padded that one, an
+  // off-by-one that numbered the last chain step "0F" in a column of single digits).
   c.hexNumber(0, 4, 0x0c, ColorSets.Normal, false);
   expect(readText(c, 0, 4, 2)).toBe("C_");
   c.hexNumber(4, 4, 0x0f, ColorSets.Normal, false);
-  expect(readText(c, 4, 4, 2)).toBe("0F");
+  expect(readText(c, 4, 4, 2)).toBe("F_");
+  c.hexNumber(8, 4, 0x10, ColorSets.Normal, false); // needs both digits
+  expect(readText(c, 8, 4, 2)).toBe("10");
 
   c.number(0, 5, 7, ColorSets.Normal);
   expect(readText(c, 0, 5, 3)).toBe("007");
@@ -344,6 +347,47 @@ test("renderMode2: the cursor only highlights while the cart is on the song scre
   const c = makeCanvas();
   renderMode2(c, song, makeState({ screen: "phrase", cursor: { col: 0, row: 0 } }), noKits);
   expect(colorSetAt(c, 2 + 1, 2)).toBe(ColorSets.Normal);
+});
+
+test("renderMode2: chain step numbers are single digits all the way to F", () => {
+  const c = makeCanvas();
+  renderMode2(c, emptySong(), makeState(), noKits);
+  // The step column for channel 0's chain block sits at x = CHAIN_OFFSET_X, y = 2.
+  expect(readText(c, 17, 2 + 14, 2)).toBe("E_");
+  expect(readText(c, 17, 2 + 15, 2)).toBe("F_"); // was "0F" - the original's pad off-by-one
+});
+
+test("renderMode2: an all-zero bookmark block is uninitialised, not 16 bookmarks on row 0", () => {
+  const song = emptySong();
+  for (let ch = 0; ch < 4; ch++) song.rows[0].chains[ch] = 0x20 + ch;
+
+  // The shape 58 songs in the corpus have: channel 0 padded with 0xFF, the rest left zeroed. Reading the
+  // zeros literally shaded row 0 of channels 1-3 on songs where LSDj itself shows nothing.
+  for (let i = 0; i < 16; i++) song.bookmarks[i] = 0xff;
+  for (let i = 16; i < 64; i++) song.bookmarks[i] = 0x00;
+
+  const c = makeCanvas();
+  renderMode2(c, song, makeState(), noKits);
+  for (let ch = 0; ch < 4; ch++) expect(colorSetAt(c, 2 + ch * 3 + 1, 2)).toBe(ColorSets.Normal);
+});
+
+test("renderMode2: a real bookmark still shades its row, including one on row 0", () => {
+  const song = emptySong();
+  for (let ch = 0; ch < 4; ch++) {
+    song.rows[0].chains[ch] = 0x20 + ch;
+    song.rows[5].chains[ch] = 0x30 + ch;
+  }
+  // liblsdj writes one slot per bookmarked row and pads the rest with 0xFF, so a genuine row-0 bookmark
+  // reads "00 ff ff ..." - which the all-zero guard above must not swallow.
+  song.bookmarks[0] = 0x00;
+  song.bookmarks[16] = 0x05;
+
+  const c = makeCanvas();
+  renderMode2(c, song, makeState(), noKits);
+  expect(colorSetAt(c, 2 + 1, 2)).toBe(ColorSets.Shaded); // ch0 row 0 bookmarked
+  expect(colorSetAt(c, 2 + 1, 2 + 5)).toBe(ColorSets.Normal); // ch0 row 5 not
+  expect(colorSetAt(c, 2 + 3 + 1, 2 + 5)).toBe(ColorSets.Shaded); // ch1 row 5 bookmarked
+  expect(colorSetAt(c, 2 + 3 + 1, 2)).toBe(ColorSets.Normal); // ch1 row 0 not
 });
 
 test("renderMode2: chain block lists phrase indices and transpositions", () => {

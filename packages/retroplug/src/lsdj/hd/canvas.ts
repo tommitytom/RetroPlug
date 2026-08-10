@@ -236,13 +236,14 @@ export class LsdjHdCanvas {
     }
   }
 
-  /** A byte in hex. `pad` forces two digits; without it, small values render as a single digit. (The
-   *  original's threshold is `value >= 15`, so 0x0F renders padded either way - preserved.) */
+  /** A byte in hex. `pad` forces two digits; without it, anything below 0x10 renders as a single digit.
+   *  (The original's threshold was `value >= 15`, an off-by-one that padded 0x0F to "0F" - which showed
+   *  up as the last chain step being numbered "0F" among single-digit 0..E.) */
   hexNumber(x: number, y: number, value: number, colorSet: ColorSets, pad = true, dimmed = false): void {
     const v = value & 0xff;
     const hi = HEX_DIGITS.charCodeAt(v >> 4);
     const lo = HEX_DIGITS.charCodeAt(v & 0xf);
-    if (v >= 15 || pad) {
+    if (v >= 16 || pad) {
       this.drawTile(x, y, findTile(hi), colorSet, dimmed);
       this.drawTile(x + 1, y, findTile(lo), colorSet, dimmed);
     } else {

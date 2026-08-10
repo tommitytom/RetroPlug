@@ -40,9 +40,28 @@ const NO_POS = 0xff;
 const pos = (v: number | null): number => (v == null ? NO_POS : v);
 
 /** Bookmarked song rows shade differently. LSDj stores 16 bookmark slots per channel, each holding a row
- *  index (0xFF = empty), in the 0x40-byte bookmarks block. */
+ *  index, in the 0x40-byte bookmarks block; 0xFF is an empty slot.
+ *
+ *  A block that is ENTIRELY zero is uninitialised, not sixteen bookmarks on row 0. Some LSDj versions
+ *  only fill channel 0's block with 0xFF and leave the other three zeroed: across the 579-song test
+ *  corpus, 58 songs are FF/00/00/00 and 29 are 00/00/00/00, and lsdj9_1_0-develop.sav has genuine
+ *  bookmarks in channel 0 (01 03 05 07 09 0b 10 14, then 0xFF padding) alongside three all-zero blocks.
+ *  Reading those zeros literally is what shaded row 0 of channels 1-3 on songs where LSDj itself shows
+ *  nothing. liblsdj's own rule has this bug, so the old C++ player did too.
+ *
+ *  This does NOT lose a real bookmark on row 0: liblsdj writes one slot per row and pads the rest with
+ *  0xFF, so a genuine row-0 bookmark reads `00 ff ff ...` and the block is not all-zero. */
 function isRowBookmarked(song: Song, channel: number, row: number): boolean {
   const base = channel * 16;
+  let allZero = true;
+  for (let i = 0; i < 16; i++) {
+    if (song.bookmarks[base + i] !== 0) {
+      allZero = false;
+      break;
+    }
+  }
+  if (allZero) return false;
+
   for (let i = 0; i < 16; i++) if (song.bookmarks[base + i] === row) return true;
   return false;
 }
