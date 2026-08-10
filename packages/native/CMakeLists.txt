@@ -780,10 +780,15 @@ add_executable(retroplug-n8-test EXCLUDE_FROM_ALL
 find_package(Threads REQUIRED)
 target_link_libraries(retroplug-n8-test PRIVATE
     Catch2::Catch2WithMain
+    reflectcpp::reflectcpp         # rfl::json - parse the shared Edio golden (twins edio.test.ts)
     Threads::Threads)              # N8Link's serial thread
 
 target_include_directories(retroplug-n8-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/n8/Edio.hpp
+
+# The shared Edio framing golden both this gtest and edio.test.ts assert against (single source, no drift).
+target_compile_definitions(retroplug-n8-test PRIVATE
+    EDIO_GOLDEN_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/n8/edio-golden.json")
 
 set_target_properties(retroplug-n8-test PROPERTIES
     CXX_STANDARD 20

@@ -1,42 +1,61 @@
-// Guards the TS Everdrive N8 Pro protocol framing (src/n8/edio.ts) without hardware: a FakeSerialPort
-// captures every byte Edio writes, so we assert fifoWR / the file API emit the exact krikzz command stream
-// and the connect handshake accepts / rejects the 0xA5 status word. The TS twin of the native gtest
-// packages/native/test/n8/Edio.test.cpp - the same vectors, so both stay byte-identical.
+// Guards the TS Everdrive N8 Pro protocol framing (src/n8/edio.ts) without hardware. The write-vector cases
+// live in the SHARED golden (edio-golden.json), which the native gtest (packages/native/test/n8/Edio.test.cpp)
+// asserts against too - so any framing change in either impl fails the other's test until both + the golden
+// agree. This file additionally covers the TS-side semantics the golden doesn't (return values, throws, the
+// N8TimeoutError type, directory decode).
 import { test, expect } from "../../testing/harness";
-import { Edio, N8TimeoutError, ADDR_SRM, FA_WRITE, FA_CREATE_ALWAYS, FS_MAKEPATH } from "../../src/n8/edio";
+import { Edio, N8TimeoutError, ADDR_SRM } from "../../src/n8/edio";
 import { FakeSerialPort } from "../../src/n8/fakeSerial";
+import goldenJson from "./edio-golden.json";
 
-const u32le = (n: number): number[] => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff];
+interface GoldenCase {
+  id: string;
+  op: string;
+  args?: { bytes?: string; str?: string; path?: string; mode?: number; addr?: number; size?: number };
+  reads?: string;
+  writes: string;
+}
+const golden = goldenJson as unknown as { cases: GoldenCase[] };
 
-// The CMD_MEM_WR frame targeting ADDR_FIFO for a payload (what fifoWR emits). Mirrors memWrFifo in the gtest.
-const memWrFifo = (payload: number[]): number[] => [
-  0x2b, 0xd4, 0x1a, 0xe5, // frame '+', 0xD4, CMD_MEM_WR, ^0xFF
-  0x00, 0x00, 0x81, 0x01, // ADDR_FIFO = 0x01810000, little-endian
-  ...u32le(payload.length),
-  0x00, // exec flag
-  ...payload,
-];
-const CMD_STATUS_FRAME = [0x2b, 0xd4, 0x10, 0xef]; // 0x10 ^ 0xFF = 0xEF
+const fromHex = (h: string): number[] => {
+  const out: number[] = [];
+  for (let i = 0; i + 1 < h.length; i += 2) out.push(parseInt(h.slice(i, i + 2), 16));
+  return out;
+};
 
-test("fifoWR emits the exact krikzz CMD_MEM_WR frame to ADDR_FIFO", () => {
+// Drive one golden case against a fresh Edio and return the bytes it wrote. Reads are pre-queued so a
+// status/ack-polling op completes. Throws on an unknown op so a new golden op can't silently pass.
+function driveGolden(c: GoldenCase): number[] {
   const port = new FakeSerialPort();
-  new Edio(port).fifoWR(new Uint8Array([0x90, 0x3c, 0x7f])); // note-on, middle C, velocity 127
-  expect(port.written).toEqual(memWrFifo([0x90, 0x3c, 0x7f]));
-});
-
-test("fifoWR on empty input writes nothing", () => {
-  const port = new FakeSerialPort();
-  new Edio(port).fifoWR(new Uint8Array([]));
-  expect(port.written).toEqual([]);
-});
-
-test("connect flushes, sends CMD_STATUS, and accepts a 0xA5xx reply", () => {
-  const port = new FakeSerialPort();
-  port.queueStatus(0xa500); // high byte 0xA5, status 0 = OK
+  if (c.reads) port.queueBytes(...fromHex(c.reads));
   const edio = new Edio(port);
-  expect(edio.connect()).toBe(0);
+  const a = c.args ?? {};
+  switch (c.op) {
+    case "fifoWR": edio.fifoWR(new Uint8Array(fromHex(a.bytes ?? ""))); break;
+    case "fifoTxString": edio.fifoTxString(a.str ?? ""); break;
+    case "connect": edio.connect(); break;
+    case "fileOpen": edio.fileOpen(a.path ?? "", a.mode ?? 0); break;
+    case "fileWrite": edio.fileWrite(new Uint8Array(fromHex(a.bytes ?? ""))); break;
+    case "fileClose": edio.fileClose(); break;
+    case "memRD": edio.memRD(a.addr ?? 0, a.size ?? 0); break;
+    default: throw new Error(`edio golden: unknown op '${c.op}'`);
+  }
+  return port.written;
+}
+
+for (const c of golden.cases) {
+  test(`edio framing (shared golden): ${c.id}`, () => {
+    expect(driveGolden(c)).toEqual(fromHex(c.writes));
+  });
+}
+
+// --- TS-side semantics (not framing; stays per-language) --------------------------------------------
+
+test("connect flushes and returns 0 on a 0xA500 (OK) reply", () => {
+  const port = new FakeSerialPort();
+  port.queueStatus(0xa500);
+  expect(new Edio(port).connect()).toBe(0);
   expect(port.flushed).toBe(true);
-  expect(port.written).toEqual(CMD_STATUS_FRAME);
 });
 
 test("connect surfaces the low status byte", () => {
@@ -48,72 +67,24 @@ test("connect surfaces the low status byte", () => {
 test("connect throws on a non-0xA5 status word", () => {
   const port = new FakeSerialPort();
   port.queueStatus(0x1234); // wrong high byte
-  const edio = new Edio(port);
-  expect(() => edio.connect()).toThrow();
+  expect(() => new Edio(port).connect()).toThrow();
 });
 
-test("connect throws (timeout) when the device does not answer", () => {
+test("connect throws N8TimeoutError when the device does not answer", () => {
   const port = new FakeSerialPort(); // no queued reply => read returns 0 => timeout
-  const edio = new Edio(port);
   let err: unknown;
   try {
-    edio.connect();
+    new Edio(port).connect();
   } catch (e) {
     err = e;
   }
   expect(err instanceof N8TimeoutError).toBe(true);
 });
 
-test("fifoTxString emits a 2-byte LE length then the bytes, each as a FIFO write", () => {
-  const port = new FakeSerialPort();
-  new Edio(port).fifoTxString("ab");
-  expect(port.written).toEqual([...memWrFifo([0x02, 0x00]), ...memWrFifo([0x61, 0x62])]);
-});
-
-test("fileOpen sends CMD_F_FOPN + mode + length-prefixed path, then polls status", () => {
-  const port = new FakeSerialPort();
-  port.queueStatus(0xa500); // checkStatus poll -> ok
-  new Edio(port).fileOpen("ab", FA_WRITE | FA_CREATE_ALWAYS | FS_MAKEPATH);
-  expect(port.written).toEqual([
-    0x2b, 0xd4, 0xc9, 0x36, // frame CMD_F_FOPN (0xC9 ^ 0xFF = 0x36)
-    0x8a, // mode = FA_WRITE|FA_CREATE_ALWAYS|FS_MAKEPATH
-    0x02, 0x00, // path length = 2 (tx16)
-    0x61, 0x62, // 'a', 'b'
-    ...CMD_STATUS_FRAME,
-  ]);
-});
-
-test("fileWrite sends CMD_F_FWR + length, one ack-gated block, then polls status", () => {
-  const port = new FakeSerialPort();
-  port.queueBytes(0x00); // txDataACK: ack byte for the first (only) block
-  port.queueStatus(0xa500); // checkStatus poll -> ok
-  new Edio(port).fileWrite(new Uint8Array([0xde, 0xad]));
-  expect(port.written).toEqual([
-    0x2b, 0xd4, 0xcc, 0x33, // frame CMD_F_FWR (0xCC ^ 0xFF = 0x33)
-    0x02, 0x00, 0x00, 0x00, // length = 2 (tx32)
-    0xde, 0xad, // the block (after the ack byte was read)
-    ...CMD_STATUS_FRAME,
-  ]);
-});
-
-test("fileClose sends CMD_F_FCLOSE then polls status", () => {
-  const port = new FakeSerialPort();
-  port.queueStatus(0xa500);
-  new Edio(port).fileClose();
-  expect(port.written).toEqual([0x2b, 0xd4, 0xce, 0x31, ...CMD_STATUS_FRAME]); // 0xCE ^ 0xFF = 0x31
-});
-
-test("memRD sends CMD_MEM_RD to the address and returns the bytes read", () => {
+test("memRD returns the bytes read from the address", () => {
   const port = new FakeSerialPort();
   port.queueBytes(0xde, 0xad, 0xbe, 0xef);
-  const out = new Edio(port).memRD(ADDR_SRM, 4);
-  expect(Array.from(out)).toEqual([0xde, 0xad, 0xbe, 0xef]);
-  expect(port.written).toEqual([
-    0x2b, 0xd4, 0x19, 0xe6, // frame CMD_MEM_RD (0x19 ^ 0xFF = 0xE6)
-    ...u32le(ADDR_SRM), // 0x00, 0x00, 0x00, 0x01
-    0x04, 0x00, 0x00, 0x00, // size = 4
-    0x00, // exec flag
-  ]);
+  expect(Array.from(new Edio(port).memRD(ADDR_SRM, 4))).toEqual([0xde, 0xad, 0xbe, 0xef]);
 });
 
 test("listDir decodes the sorted directory records (file + subdir)", () => {

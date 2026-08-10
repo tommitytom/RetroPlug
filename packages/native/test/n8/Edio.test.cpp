@@ -1,7 +1,8 @@
-// Guards the Everdrive N8 Pro protocol framing (Edio) without hardware: a FakeSerialPort captures every
-// byte Edio writes, so we assert fifoWR emits the exact krikzz command stream and the connect handshake
-// accepts / rejects the 0xA5 status word. This is the CI-able half of the N8 bridge (the live serial +
-// MIDI path needs a real N8). Mirrors test/midi/MidiPortSelect.test.cpp (a header-level, backend-free guard).
+// Guards the Everdrive N8 Pro protocol framing (Edio) without hardware. The write-vector cases live in the
+// SHARED golden (packages/retroplug/test/n8/edio-golden.json), which the TS twin (edio.test.ts) asserts
+// against too - so a framing change in either impl fails the other's test until both + the golden agree. This
+// file additionally covers the C++-side semantics the golden doesn't (connect return/throw) and the N8Link
+// forward path (the standalone/plugin's realtime serial thread), which has no TS twin.
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
@@ -9,10 +10,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <initializer_list>
+#include <fstream>
+#include <iterator>
 #include <memory>
+#include <optional>
+#include <string>
 #include <thread>
 #include <vector>
+
+#include <rfl.hpp>
+#include <rfl/json.hpp>
 
 #include "host/n8/Edio.hpp"
 #include "host/n8/N8Link.hpp"
@@ -51,130 +58,105 @@ struct FakeSerialPort : ISerialPort {
     }
 };
 
+std::vector<std::uint8_t> fromHex(const std::string& h) {
+    std::vector<std::uint8_t> out;
+    out.reserve(h.size() / 2);
+    for (std::size_t i = 0; i + 1 < h.size(); i += 2)
+        out.push_back(static_cast<std::uint8_t>(std::stoul(h.substr(i, 2), nullptr, 16)));
+    return out;
+}
+
+// The shared golden schema (edio-golden.json). Field names match the JSON keys; every field the golden
+// omits per op is std::optional.
+struct EdioArgs {
+    std::optional<std::string>  bytes;
+    std::optional<std::string>  str;
+    std::optional<std::string>  path;
+    std::optional<int>          mode;
+    std::optional<std::int64_t> addr;
+    std::optional<int>          size;
+};
+struct EdioCase {
+    std::string                id;
+    std::string                op;
+    std::optional<EdioArgs>    args;
+    std::optional<std::string> reads;
+    std::string                writes;
+};
+struct EdioGolden {
+    std::vector<EdioCase> cases;
+};
+
 }  // namespace
 
-TEST_CASE("fifoWR emits the exact krikzz CMD_MEM_WR frame to ADDR_FIFO", "[n8]") {
-    FakeSerialPort port;
-    Edio           edio(port);
+TEST_CASE("Edio framing matches the shared golden (twins edio.test.ts)", "[n8]") {
+    std::ifstream f(EDIO_GOLDEN_PATH);
+    REQUIRE(f.good());
+    const std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 
-    const std::vector<std::uint8_t> midi = {0x90, 0x3C, 0x7F};  // note-on, middle C, velocity 127
-    edio.fifoWR(midi);
+    const auto parsed = rfl::json::read<EdioGolden>(text);
+    REQUIRE(parsed);
+    const EdioGolden g = parsed.value();
+    REQUIRE_FALSE(g.cases.empty());
 
-    // frame('+', '+'^0xFF, CMD_MEM_WR, CMD_MEM_WR^0xFF) | addr LE | len LE | exec | payload
-    const std::vector<std::uint8_t> expected = {
-        0x2B, 0xD4, 0x1A, 0xE5,  // '+' , 0xD4 , 0x1A , 0xE5
-        0x00, 0x00, 0x81, 0x01,  // ADDR_FIFO = 0x01810000, little-endian
-        0x03, 0x00, 0x00, 0x00,  // len = 3, little-endian
-        0x00,                    // exec flag
-        0x90, 0x3C, 0x7F,        // the MIDI bytes
-    };
-    REQUIRE(port.written == expected);
+    for (const EdioCase& c : g.cases) {
+        FakeSerialPort port;
+        if (c.reads)
+            for (std::uint8_t b : fromHex(*c.reads)) port.toRead.push_back(b);
+        Edio           edio(port);
+        const EdioArgs a = c.args.value_or(EdioArgs{});
+
+        if (c.op == "fifoWR") {
+            edio.fifoWR(fromHex(a.bytes.value_or("")));
+        } else if (c.op == "fifoTxString") {
+            edio.fifoTxString(a.str.value_or(""));
+        } else if (c.op == "connect") {
+            edio.connect();
+        } else if (c.op == "fileOpen") {
+            edio.fileOpen(a.path.value_or(""), static_cast<std::uint8_t>(a.mode.value_or(0)));
+        } else if (c.op == "fileWrite") {
+            edio.fileWrite(fromHex(a.bytes.value_or("")));
+        } else if (c.op == "fileClose") {
+            edio.fileClose();
+        } else if (c.op == "memRD") {
+            std::vector<std::uint8_t> buf(static_cast<std::size_t>(a.size.value_or(0)));
+            if (!buf.empty()) edio.memRD(static_cast<std::int32_t>(a.addr.value_or(0)), buf.data(), buf.size());
+        } else {
+            FAIL("unknown golden op: " << c.op);
+        }
+
+        INFO("golden case: " << c.id);
+        REQUIRE(port.written == fromHex(c.writes));
+    }
 }
 
-TEST_CASE("fifoWR on empty input writes nothing", "[n8]") {
-    FakeSerialPort port;
-    Edio           edio(port);
-    edio.fifoWR(std::vector<std::uint8_t>{});
-    REQUIRE(port.written.empty());
-}
+// --- C++-side semantics (not framing; no TS twin needed here) ---------------------------------------
 
-TEST_CASE("connect flushes, sends CMD_STATUS, and accepts a 0xA5xx reply", "[n8]") {
+TEST_CASE("connect flushes and returns 0 on a 0xA500 (OK) reply", "[n8]") {
     FakeSerialPort port;
-    port.queueStatus(0xA500);  // high byte 0xA5, status 0 = OK
-    Edio edio(port);
-
-    const int status = edio.connect();
-    REQUIRE(status == 0);
+    port.queueStatus(0xA500);
+    REQUIRE(Edio(port).connect() == 0);
     REQUIRE(port.flushed);
-    // The only bytes written are the CMD_STATUS frame (0x10 ^ 0xFF = 0xEF).
-    const std::vector<std::uint8_t> expected = {0x2B, 0xD4, 0x10, 0xEF};
-    REQUIRE(port.written == expected);
 }
 
 TEST_CASE("connect surfaces the low status byte", "[n8]") {
     FakeSerialPort port;
     port.queueStatus(0xA5C3);  // high byte OK, status code 0xC3
-    Edio edio(port);
-    REQUIRE(edio.connect() == 0xC3);
+    REQUIRE(Edio(port).connect() == 0xC3);
 }
 
 TEST_CASE("connect throws on a non-0xA5 status word", "[n8]") {
     FakeSerialPort port;
     port.queueStatus(0x1234);  // wrong high byte
-    Edio edio(port);
-    REQUIRE_THROWS(edio.connect());
+    REQUIRE_THROWS(Edio(port).connect());
 }
 
 TEST_CASE("connect throws when the device does not answer (read timeout)", "[n8]") {
     FakeSerialPort port;  // no queued reply => read returns 0 => timeout
-    Edio           edio(port);
-    REQUIRE_THROWS(edio.connect());
+    REQUIRE_THROWS(Edio(port).connect());
 }
 
-// The expected CMD_MEM_WR frame targeting ADDR_FIFO for a given payload (what fifoWR emits).
-static std::vector<std::uint8_t> memWrFifo(const std::vector<std::uint8_t>& payload) {
-    std::vector<std::uint8_t> f = {0x2B, 0xD4, 0x1A, 0xE5, 0x00, 0x00, 0x81, 0x01};  // frame + ADDR_FIFO LE
-    const std::uint32_t n = static_cast<std::uint32_t>(payload.size());
-    f.push_back(n & 0xFF); f.push_back((n >> 8) & 0xFF); f.push_back((n >> 16) & 0xFF); f.push_back((n >> 24) & 0xFF);
-    f.push_back(0x00);  // exec
-    f.insert(f.end(), payload.begin(), payload.end());
-    return f;
-}
-static void append(std::vector<std::uint8_t>& a, const std::vector<std::uint8_t>& b) { a.insert(a.end(), b.begin(), b.end()); }
-
-TEST_CASE("fifoTxString emits a 2-byte LE length then the bytes, each as a FIFO write", "[n8]") {
-    FakeSerialPort port;
-    Edio           edio(port);
-    edio.fifoTxString("ab");
-    std::vector<std::uint8_t> expected;
-    append(expected, memWrFifo({0x02, 0x00}));  // length = 2, little-endian
-    append(expected, memWrFifo({'a', 'b'}));    // the string bytes
-    REQUIRE(port.written == expected);
-}
-
-TEST_CASE("fileOpen sends CMD_F_FOPN + mode + length-prefixed path, then polls status", "[n8]") {
-    FakeSerialPort port;
-    port.queueStatus(0xA500);  // checkStatus poll -> ok
-    Edio edio(port);
-    edio.fileOpen("ab", Edio::FA_WRITE | Edio::FA_CREATE_ALWAYS | Edio::FS_MAKEPATH);
-    const std::vector<std::uint8_t> expected = {
-        0x2B, 0xD4, 0xC9, 0x36,  // frame CMD_F_FOPN (0xC9 ^ 0xFF = 0x36)
-        0x8A,                    // mode = FA_WRITE|FA_CREATE_ALWAYS|FS_MAKEPATH
-        0x02, 0x00,              // path length = 2 (tx16)
-        'a', 'b',                // path bytes
-        0x2B, 0xD4, 0x10, 0xEF,  // checkStatus -> CMD_STATUS frame
-    };
-    REQUIRE(port.written == expected);
-}
-
-TEST_CASE("fileWrite sends CMD_F_FWR + length, one ack-gated block, then polls status", "[n8]") {
-    FakeSerialPort port;
-    port.toRead.push_back(0x00);  // txDataACK: ack byte for the first (only) block
-    port.queueStatus(0xA500);     // checkStatus poll -> ok
-    Edio edio(port);
-    edio.fileWrite(std::vector<std::uint8_t>{0xDE, 0xAD});
-    const std::vector<std::uint8_t> expected = {
-        0x2B, 0xD4, 0xCC, 0x33,  // frame CMD_F_FWR (0xCC ^ 0xFF = 0x33)
-        0x02, 0x00, 0x00, 0x00,  // length = 2 (tx32)
-        0xDE, 0xAD,              // the block (after the ack byte was read)
-        0x2B, 0xD4, 0x10, 0xEF,  // checkStatus -> CMD_STATUS frame
-    };
-    REQUIRE(port.written == expected);
-}
-
-TEST_CASE("fileClose sends CMD_F_FCLOSE then polls status", "[n8]") {
-    FakeSerialPort port;
-    port.queueStatus(0xA500);
-    Edio edio(port);
-    edio.fileClose();
-    const std::vector<std::uint8_t> expected = {
-        0x2B, 0xD4, 0xCE, 0x31,  // frame CMD_F_FCLOSE (0xCE ^ 0xFF = 0x31)
-        0x2B, 0xD4, 0x10, 0xEF,  // checkStatus -> CMD_STATUS frame
-    };
-    REQUIRE(port.written == expected);
-}
-
-// --- N8Link: the host serial thread + ring + timed scheduler (standalone/plugin forward) ---
+// --- N8Link: the host serial thread + ring + timed scheduler (standalone/plugin forward; no TS twin) ---
 
 namespace {
 // A serial port that captures writes into a TEST-OWNED buffer, so it outlives N8Link's port (disconnect()
