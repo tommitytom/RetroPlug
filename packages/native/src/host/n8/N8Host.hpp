@@ -5,7 +5,9 @@
 #include <string>
 #include <vector>
 
+#include "host/n8/Edio.hpp"        // Edio (control-op protocol), ISerialPort
 #include "host/n8/N8Link.hpp"
+#include "host/n8/N8SdWorker.hpp"
 
 namespace retroplug {
 
@@ -56,14 +58,35 @@ public:
     // Load n8.cfg (port / lookahead / enabled) and reconnect if it was enabled. Call once at host startup.
     void restore();
 
+    // --- SD-card / menu control ops (Settings > N8 Pro). Each runs on the N8SdWorker's background thread:
+    // it pauses streaming (link_.disconnect()), borrows the one serial port, drives a C++ Edio, then (for
+    // Dump/Restore) resumes streaming. Fire-and-forget; the UI polls sdStatus(). A no-op if a job is already
+    // in flight. All paths are absolute local files (from the OS file dialog). ---
+
+    // Upload a local ROM to usb-games/<name> and boot it via the on-device menu (needs the cart at its menu).
+    // Leaves streaming stopped (a new ROM is now running).
+    void startLoadRom(const std::string& romPath);
+    // Read the 64 KB cart battery and write it to destPath. Works on a running game; resumes streaming after.
+    void startDumpSram(const std::string& destPath);
+    // Write a local .srm straight to cart SRAM (running game) + verify. Resumes streaming after.
+    void startRestoreSram(const std::string& srmPath);
+
+    N8SdStatusDto sdStatus() { return sdWorker_.status(); }
+
 private:
     void save();
 
-    N8Link      link_;
-    PortLister  lister_;
-    std::string configDir_;
-    std::string port_;
-    bool        enabled_ = false;
+    // Build a worker job that borrows the port from link_ (pausing streaming), opens a control Edio, runs
+    // `op(edio, progress)`, then resumes streaming iff reconnectAfter (a thrown op always resumes streaming).
+    N8SdWorker::Job controlJob(bool reconnectAfter, std::function<void(Edio&, N8SdWorker::Progress&)> op);
+
+    N8Link::PortFactory factory_;    // FIRST: kept so the SD worker can open a control port (link_ has its own copy)
+    N8Link              link_;
+    PortLister          lister_;
+    std::string         configDir_;
+    std::string         port_;
+    bool                enabled_ = false;
+    N8SdWorker          sdWorker_;   // LAST: destroyed first, so its thread joins while link_ + factory_ are alive
 };
 
 }  // namespace retroplug

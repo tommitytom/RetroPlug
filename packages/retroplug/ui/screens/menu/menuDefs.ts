@@ -83,6 +83,7 @@ import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
 import { hasN8, getN8Config, setN8Port, connectN8, setN8Lookahead } from "./n8Devices";
+import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -175,13 +176,27 @@ function midiSettingsChildren(): MenuItem[] {
   ];
 }
 
-// "Stream to a physical Everdrive N8 Pro" submenu (Settings > N8 Pro), gated on hasN8() alone - available in
-// BOTH the SDL standalone and the DAW plugin (driving a real NES from the DAW is the point; unlike the
-// Audio/MIDI device pickers, which the DAW owns and stay standalone-only). Pick a serial port (auto-detecting
-// the N8), Connect to open the link, tune the timed-release lookahead; the native host reconnects the port +
-// persists (n8.cfg) on the spot. Status is a read-only row.
+// "Everdrive N8 Pro" submenu (Settings > N8 Pro), gated on hasN8() alone - available in BOTH the SDL
+// standalone and the DAW plugin (driving a real NES from the DAW is the point; unlike the Audio/MIDI device
+// pickers, which the DAW owns and stay standalone-only). Streaming: pick a serial port (auto-detecting the
+// N8), Connect to open the link, tune the timed-release lookahead; the native host reconnects + persists
+// (n8.cfg) on the spot. SD ops (Load ROM / Dump / Restore SRAM): long native worker jobs that pause
+// streaming, borrow the port, and report progress on the read-only SD row (useN8SdWatch keeps it live). One
+// job at a time - every action is disabled while one runs.
 const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
-function n8SettingsChildren(): MenuItem[] {
+
+// The read-only SD-op status line: progress while busy, else the last result / error, else Ready.
+function n8SdLabel(sd: N8SdStatus): string {
+  if (sd.busy) {
+    const pct = sd.bytesTotal > 0 ? ` ${Math.floor((sd.bytesDone / sd.bytesTotal) * 100)}%` : "";
+    return `${sd.phase || "Working"}${pct}`;
+  }
+  if (sd.error) return `Error: ${sd.error}`;
+  if (sd.done && sd.result) return sd.result;
+  return "Ready";
+}
+
+function n8SettingsChildren(ctx: MenuContext): MenuItem[] {
   const cfg = getN8Config() ?? { ports: [], selectedPort: "", connected: false, enabled: false, lookaheadMs: 0, bytes: 0, error: "" };
   // Port cycler: index 0 = "(auto-detect)" (empty selection); the rest are the enumerated ports, N8 tagged.
   const portValues = cfg.ports.map((p) => p.port);
@@ -201,13 +216,32 @@ function n8SettingsChildren(): MenuItem[] {
         ? `Error: ${cfg.error}`
         : "Connecting..."
     : "Off";
-  return [
+
+  const sd = getN8SdStatus(); // null on a host without the SD seam; non-null implies the ops are available
+  const busy = sd?.busy ?? false; // one SD job at a time -> disable every action (incl. Connect) while it runs
+  const items: MenuItem[] = [
     cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n))),
-    action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled)),
+    action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled), busy),
     cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx, (n) => setN8Lookahead(N8_LOOKAHEADS[n])),
     sep("n8-sep-status"),
-    action("n8-status", `Status: ${status}`, () => {}, true),  // read-only status row
+    action("n8-status", `Status: ${status}`, () => {}, true),  // read-only streaming status row
   ];
+
+  if (sd) {
+    // Each op browses a local file then kicks off the native worker. Load ROM needs the cart at its menu;
+    // Dump/Restore act on the running game's battery (see n8SdOps.ts / N8Host).
+    items.push(
+      sep("n8-sep-sd"),
+      action("n8-load-rom", "Load ROM to N8...", () =>
+        browseThen(ctx, { title: "Load ROM to N8", patterns: ROM_PATTERNS }, n8LoadRom), busy),
+      action("n8-dump-sram", "Dump SRAM to file...", () =>
+        browseThen(ctx, { title: "Dump N8 SRAM", patterns: ["*.srm", "*.sav"], saving: true, defaultName: "n8.srm" }, n8DumpSram), busy),
+      action("n8-restore-sram", "Restore SRAM from file...", () =>
+        browseThen(ctx, { title: "Restore N8 SRAM", patterns: ["*.srm", "*.sav"] }, n8RestoreSram), busy),
+      action("n8-sd-status", `SD: ${n8SdLabel(sd)}`, () => {}, true),  // read-only SD-op status row
+    );
+  }
+  return items;
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -1663,7 +1697,7 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
     // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
     ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
-    ...(hasN8() ? [submenu("set-n8", "N8 Pro", n8SettingsChildren())] : []),
+    ...(hasN8() ? [submenu("set-n8", "N8 Pro", n8SettingsChildren(ctx))] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }

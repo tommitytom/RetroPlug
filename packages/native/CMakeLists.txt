@@ -366,6 +366,8 @@ add_executable(retroplug-sdl
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Link.cpp             # host serial thread -> physical N8 (MIDI forward)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp             # shared N8 link + config + n8.cfg (also the plugin)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp           # binds the __rp_*N8* config hooks (shared)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp             # on-device menu (*t/*n/*s) for SD ops (shared)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8SdWorker.cpp         # background worker: ROM upload / SRAM dump+restore
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
 
@@ -421,7 +423,9 @@ dpf_add_plugin(retroplug
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp             # N8 Pro serial client
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp # serial-port factory + listSerialPorts
         ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp           # shared N8 link + config + n8.cfg
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp          # binds the __rp_*N8* config hooks
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp          # binds the __rp_*N8* config + SD-op hooks
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp           # on-device menu (*t/*n/*s) for SD ops
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8SdWorker.cpp       # background worker: ROM upload / SRAM dump+restore
         ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     FILES_UI
         plugin/PluginUI.cpp
@@ -757,16 +761,21 @@ set_target_properties(retroplug-midi-test PROPERTIES
 
 # retroplug-n8-test guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact
 # krikzz CMD_MEM_WR byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status
-# word; plus the N8Link forward path (the SDL standalone's realtime serial thread). Compiles those against a
-# capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware. The menu + risa-sync translation live
-# in TS now (packages/retroplug src/n8, `pnpm test n8`); only Edio + N8Link remain C++ (the SDL path). Also
+# word; plus the N8Link forward path (the SDL standalone's realtime serial thread) and the N8SdWorker SD /
+# menu control ops (ROM upload / SRAM dump+restore + the connection manager that pauses streaming). Compiles
+# those against a capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware. The CLI's risa-sync
+# translation lives in TS (packages/retroplug src/n8, `pnpm test n8`); the C++ Edio/N8Link/N8Menu twin backs
+# the realtime + UI paths (the native worker can't run the single-threaded TS stack off the UI thread). Also
 # `pnpm test:n8`.
 add_executable(retroplug-n8-test EXCLUDE_FROM_ALL
     test/n8/Edio.test.cpp
     test/n8/N8Host.test.cpp
+    test/n8/N8SdWorker.test.cpp
     src/host/n8/Edio.cpp
     src/host/n8/N8Link.cpp
-    src/host/n8/N8Host.cpp)
+    src/host/n8/N8Host.cpp
+    src/host/n8/N8Menu.cpp
+    src/host/n8/N8SdWorker.cpp)
 
 find_package(Threads REQUIRED)
 target_link_libraries(retroplug-n8-test PRIVATE

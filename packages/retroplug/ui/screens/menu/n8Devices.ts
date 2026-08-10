@@ -1,9 +1,11 @@
-// Standalone-only "stream to a physical Everdrive N8 Pro" config for the Settings > N8 submenu. Mirrors
-// midiDevices.ts: the state lives in the native SDL host (the serial connection + lookahead + persisted
+// "Stream to a physical Everdrive N8 Pro" config for the Settings > N8 submenu, available in BOTH the SDL
+// standalone and the DAW plugin (bindN8Hooks binds the __rp_*N8* hooks in each host over its own N8Host).
+// Mirrors midiDevices.ts: the state lives in the native host (the serial connection + lookahead + persisted
 // n8.cfg), not a TS store, so this is a subscribable, not a store. Picks/toggles apply immediately (the host
 // (re)connects the serial port + persists on the spot); App subscribes (subscribeN8) so the labels track the
-// new value at once. The seam is absent in a DAW / the headless harness (hasN8() is false -> submenu hidden).
-// See __rp_getN8Config / __rp_setN8Port / __rp_connectN8 / __rp_setN8Lookahead in packages/native/sdl/main.cpp.
+// new value at once. The seam is present in both hosts and absent only in the headless harness (hasN8() then
+// false -> submenu hidden). See __rp_getN8Config / __rp_setN8Port / __rp_connectN8 / __rp_setN8Lookahead, bound
+// by bindN8Hooks (packages/native/src/host/n8/N8Hooks.cpp) from both sdl/main.cpp and plugin/PluginDSP.cpp.
 
 export interface N8Port {
   port: string; // OS serial port name (/dev/ttyACM0, COM3, ...)
@@ -34,7 +36,7 @@ type N8Globals = {
   __rp_setN8Lookahead?: (ms: number) => void;
 };
 
-/** Whether the SDL host exposes the N8 seam (standalone only). Gates the whole submenu. */
+/** Whether the host exposes the N8 seam (SDL standalone or DAW plugin). Gates the whole submenu. */
 export function hasN8(): boolean {
   return typeof (globalThis as N8Globals).__rp_getN8Config === "function";
 }

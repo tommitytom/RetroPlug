@@ -73,6 +73,51 @@ JSValue jsSetN8Lookahead(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
     return JS_UNDEFINED;
 }
 
+// SD / menu control ops. Each takes one local-path string and kicks off the background N8SdWorker job (a
+// no-op while another job runs); the UI polls __rp_getN8SdStatus for progress. The path is read/written
+// natively on the worker thread.
+JSValue jsN8LoadRom(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    N8Host* h = hostFromData(ctx, funcData);
+    if (h && argc >= 1) {
+        if (const char* s = JS_ToCString(ctx, argv[0])) { h->startLoadRom(s); JS_FreeCString(ctx, s); }
+    }
+    return JS_UNDEFINED;
+}
+
+JSValue jsN8DumpSram(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    N8Host* h = hostFromData(ctx, funcData);
+    if (h && argc >= 1) {
+        if (const char* s = JS_ToCString(ctx, argv[0])) { h->startDumpSram(s); JS_FreeCString(ctx, s); }
+    }
+    return JS_UNDEFINED;
+}
+
+JSValue jsN8RestoreSram(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    N8Host* h = hostFromData(ctx, funcData);
+    if (h && argc >= 1) {
+        if (const char* s = JS_ToCString(ctx, argv[0])) { h->startRestoreSram(s); JS_FreeCString(ctx, s); }
+    }
+    return JS_UNDEFINED;
+}
+
+JSValue jsGetN8SdStatus(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSValue* funcData) {
+    JSValue o = JS_NewObject(ctx);
+    N8Host* h = hostFromData(ctx, funcData);
+    if (h) {
+        const N8SdStatusDto s = h->sdStatus();
+        JS_SetPropertyStr(ctx, o, "busy", JS_NewBool(ctx, s.busy));
+        JS_SetPropertyStr(ctx, o, "op", JS_NewString(ctx, s.op.c_str()));
+        JS_SetPropertyStr(ctx, o, "bytesDone", JS_NewInt64(ctx, static_cast<std::int64_t>(s.bytesDone)));
+        JS_SetPropertyStr(ctx, o, "bytesTotal", JS_NewInt64(ctx, static_cast<std::int64_t>(s.bytesTotal)));
+        JS_SetPropertyStr(ctx, o, "phase", JS_NewString(ctx, s.phase.c_str()));
+        JS_SetPropertyStr(ctx, o, "done", JS_NewBool(ctx, s.done));
+        JS_SetPropertyStr(ctx, o, "error", JS_NewString(ctx, s.error.c_str()));
+        JS_SetPropertyStr(ctx, o, "result", JS_NewString(ctx, s.result.c_str()));
+        JS_SetPropertyStr(ctx, o, "version", JS_NewInt64(ctx, static_cast<std::int64_t>(s.version)));
+    }
+    return o;
+}
+
 bool hasGlobalFn(JSContext* ctx, const char* name) {
     JSValue    g   = JS_GetGlobalObject(ctx);
     JSValue    fn  = JS_GetPropertyStr(ctx, g, name);
@@ -98,6 +143,10 @@ void bindN8Hooks(JSContext* ctx, N8Host& host) {
     bind("__rp_setN8Port", jsSetN8Port, 1);
     bind("__rp_connectN8", jsConnectN8, 1);
     bind("__rp_setN8Lookahead", jsSetN8Lookahead, 1);
+    bind("__rp_n8LoadRom", jsN8LoadRom, 1);
+    bind("__rp_n8DumpSram", jsN8DumpSram, 1);
+    bind("__rp_n8RestoreSram", jsN8RestoreSram, 1);
+    bind("__rp_getN8SdStatus", jsGetN8SdStatus, 0);
     JS_FreeValue(ctx, g);
 }
 
