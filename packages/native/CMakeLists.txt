@@ -790,6 +790,24 @@ set_target_properties(retroplug-n8-test PROPERTIES
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+# retroplug-n8-hwtest: a manual hardware harness (NOT CI) that drives the real N8 SD/menu ops through the
+# same native N8Host + N8SdWorker the Settings > N8 Pro menu uses, over a real /dev/ttyACM0 (adds the real
+# WjwwoodSerialPort + `serial`). EXCLUDE_FROM_ALL; build by name: cmake --build build --target retroplug-n8-hwtest.
+add_executable(retroplug-n8-hwtest EXCLUDE_FROM_ALL
+    test/n8/n8-sd-hwtest.cpp
+    src/host/n8/Edio.cpp
+    src/host/n8/N8Link.cpp
+    src/host/n8/N8Host.cpp
+    src/host/n8/N8Menu.cpp
+    src/host/n8/N8SdWorker.cpp
+    src/host/n8/WjwwoodSerialPort.cpp)
+target_link_libraries(retroplug-n8-hwtest PRIVATE serial Threads::Threads)
+target_include_directories(retroplug-n8-hwtest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+set_target_properties(retroplug-n8-hwtest PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 # retroplug-lottie-test proves the new ThorVG-backed <Lottie> capability: that lv_lottie
 # rasterizes animated vector frames on a headless software display (LV_USE_LOTTIE → ThorVG).
 # Links bare lvgl (which PRIVATE-brings lvgl_thorvg) + Catch2 — no JS engine needed. Also
