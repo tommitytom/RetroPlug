@@ -179,6 +179,20 @@ export interface Backend {
    *  (emulator) facet, unlike the live-core `readMemory` below. */
   readRam(id: number): Uint8Array | null;
 
+  /** Poke bytes INTO system `id`'s work RAM. `offset` indexes the same region `readRam` returns, so a
+   *  read-modify-write round-trips with no coordinate conversion. Returns false when the id is gone, the
+   *  core has no writable RAM region, or the write would run past the end.
+   *
+   *  Queued and applied between audio blocks, so it is safe to call while the core PLAYS - which is what
+   *  separates it from the debug facet's `writeCpu` (a live-core poke, valid only when the audio thread
+   *  is stopped). That is why this one is on the control plane and that one is not.
+   *
+   *  IT CAN CONFUSE A RUNNING PROGRAM, and no guard here prevents that: the emulated code has its own
+   *  invariants over those bytes (cached pointers, checksums, a sequencer mid-row) and this walks right
+   *  past them. Bounds are the only refusal, because a write past the region is a host crash rather than
+   *  a confused ROM. Treat it as the debugger-style tool it is. */
+  writeRam(id: number, offset: number, bytes: Uint8Array): boolean;
+
   /** The system's latest video frame for display, or `null` when the id is gone / has no framebuffer.
    *  `published` is false (and `pixels` empty) until the core has rendered a frame. Read from the
    *  race-free framebuffer triple-buffer, so it is safe to poll while the core plays. */
@@ -332,7 +346,7 @@ export type HostBackend = Pick<
 export type EmulatorBackend = Pick<
   Backend,
   | "constructSystem" | "removeSystem" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
-  | "setAudioRouting" | "pressButton" | "readState" | "readSram" | "readRam" | "getFrame"
+  | "setAudioRouting" | "pressButton" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
 >;
 
 /** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */

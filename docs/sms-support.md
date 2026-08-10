@@ -1194,9 +1194,13 @@ behave wrongly.
 **The structural problem and how it was removed.** The shared spine (`mutateLiveSav`) is read SRAM ->
 byte transform -> write `.sav` -> cold boot. LSDj and risa keep the working song IN the battery so a
 cold boot restores it; smsggdj's is the live 6,912-byte WRAM block at `$C000` and it boots blank on
-purpose (`song_new`, main.asm:238). Poking WRAM is not an option for the plugin: `writeCpu` is on the
-**debug facet**, and `ControlPlaneBackend` is documented as "debug-free at the type level"; it is also
-a live-core write, unsafe while the audio thread runs.
+purpose (`song_new`, main.asm:238).
+
+At the time this was built there was no way to write a running core's RAM from the plugin: `writeCpu`
+is on the **debug facet**, and `ControlPlaneBackend` is "debug-free at the type level". **That has
+since changed** - `writeRam` is now a control-plane operation (see below), so the ROM change is no
+longer the only route. It is still the shipped one, and still the cheaper one; the section below says
+what the alternative would cost.
 
 So `load` NAMES a slot in a new superblock byte and the CART loads it at boot. The spine is untouched
 (`load` is still `(sav, index) => new sav`), no native seam is added, and the same byte supplies the
@@ -1217,6 +1221,30 @@ Both codecs were certified against smsggdj's own tools and then frozen, the disc
 LSDj codec against liblsdj: `rleCompress` is byte-identical to `tools/rle.js` (the real demo song packs
 6,912 -> 722) with cross-decode both ways, and container placement matches `tools/smdj4.js buildSav`
 across 1-4 songs, sparse and store-raw, the bank bump, both SRAM-FULL cases and 8/16/32 KB carts.
+
+#### `writeRam` makes the ROM change optional
+
+`writeRam(id, offset, bytes)` (`EmulatorBackend`) is the write counterpart of `readRam`, in the same
+coordinates: region offset 0 IS CPU `$C000`, so a 6,912-byte song block goes in with one call.
+Demonstrated end to end by `test-native/sms-live-song-load.test.ts` - a song decoded from a real SMDJ4
+battery, written into a cart that is PLAYING, which keeps sequencing across the swap with no reboot and
+no ROM change.
+
+So songs could be loaded on v0.45 today. What that route still needs, and why it is not what shipped:
+
+- **A `SongCatalog` extension.** `load` is `(sav, index) => new sav` - pure, no I/O. A live write is I/O
+  and belongs in the `liveSav` layer, so it needs an optional "load into the core" hook rather than
+  reusing `load`.
+- **Catalog edits still cold-boot.** `mutateLiveSav` reconstructs the core after delete / reorder / add,
+  which on this cart means the working song is gone. The live route would have to snapshot WRAM before
+  and restore it after - doable, more moving parts.
+- **It races the cart.** Replacing the song block under a running tracker walks past whatever
+  invariants the engine holds over those bytes. Fine to toy with, and the test shows it recovers, but
+  a boot-time load has no such hazard.
+
+The `cur_slot` byte also fixes a genuine hole in SMDJ4 (no "currently loaded slot" field) that benefits
+`savetool.html` and Everdrive users, which `writeRam` does nothing for. Hence: ROM change still
+recommended, `writeRam` available if you would rather not touch the tracker.
 
 #### What is left: the ROM half
 

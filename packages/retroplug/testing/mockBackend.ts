@@ -314,6 +314,17 @@ export class MockBackend implements Backend {
     return null; // the mock has no real core → no WRAM unless a test set one
   }
 
+  /** Mirrors the native contract: write into the SAME buffer readRam returns, refuse out-of-bounds, and
+   *  refuse when there is no RAM at all (the mock has none until a test calls setRam). */
+  writeRam(id: number, offset: number, bytes: Uint8Array): boolean {
+    this.log.push("writeRam");
+    const ram = this.ramOverrides.get(id);
+    if (!ram || !bytes.length) return false;
+    if (offset < 0 || offset + bytes.length > ram.length) return false;
+    ram.set(bytes, offset);
+    return true;
+  }
+
   getFrame(id: number): FrameData | null {
     this.log.push("getFrame");
     // The mock never advances a real core, so a live system reports GB dimensions but no published

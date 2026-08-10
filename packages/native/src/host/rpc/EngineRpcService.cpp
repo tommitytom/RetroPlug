@@ -170,6 +170,23 @@ std::optional<rfl::Bytestring> EngineRpcService::readRam(std::uint32_t id) {
     return toBytestring(*bytes);
 }
 
+bool EngineRpcService::writeRam(std::uint32_t id, std::uint32_t offset, rfl::Bytestring bytes) {
+    // Queued through the invoker (flushed inline when quiescent, applied on the audio thread while it
+    // runs), so a host can poke a PLAYING core.
+    //
+    // But NOT accepted optimistically the way pressButton is, and the difference matters. A dropped
+    // key edge is a lost keypress; a dropped 6,912-byte write is a caller that believes it loaded a
+    // song. So the answerable failures are answered HERE, synchronously, from the published snapshot
+    // (race-free, no live-core read): unknown id, no writable RAM, out of bounds. The queued apply
+    // re-checks bounds anyway, because the region could in principle change between the two.
+    if (bytes.empty()) return false;
+    const std::size_t ram = engine_.ramSize(id);
+    if (ram == 0 || static_cast<std::size_t>(offset) + bytes.size() > ram) return false;
+    const auto* p = reinterpret_cast<const std::uint8_t*>(bytes.data());
+    invoker_.writeRam(id, offset, std::vector<std::uint8_t>(p, p + bytes.size()));
+    return true;
+}
+
 bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {
     // Encodes the owned registry frame (a published copy) — safe while the audio thread runs, no guard.
     return engine_.screenshot(id, path);
