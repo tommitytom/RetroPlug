@@ -446,6 +446,45 @@ test("renderMode2: an O command draws L/R panning rather than a hex value", () =
   expect(readText(c, x + 10, 3, 2)).toBe("L_"); // left only
 });
 
+test("renderMode2: the grid is wide enough that nothing is clipped, incl. kit rows in the last column", () => {
+  // The original was hard-coded to 97 columns and lost the command value off the right edge of the 4th
+  // channel's phrase column whenever that row held a kit instrument. Drive exactly that case: a kit
+  // instrument on every channel, so all four phrase columns render at their widest.
+  const song = emptySong();
+  song.instruments[0] = { type: "kit", name: "", panning: "LeftRight", kit1: 1, kit2: 2 } as never;
+  song.phrases[0] = {
+    notes: new Array(16).fill(0x12),
+    instruments: new Array(16).fill(0),
+    commands: new Array(16).fill("H"),
+    commandValues: new Array(16).fill(0xab),
+  };
+  song.chains[0] = { phrases: new Array(16).fill(0), transpositions: new Array(16).fill(0) };
+  for (let ch = 0; ch < 4; ch++) song.rows[0].chains[ch] = 0;
+
+  const channels = { pu1: channel(), pu2: channel(), wav: channel(), noi: channel() };
+  for (const name of CHANNELS) channels[name] = channel({ playing: true, songRow: 0, chainRow: 0, phraseRow: 0 });
+
+  const c = makeCanvas();
+  c.resetDropped();
+  renderMode2(c, song, makeState({ playing: true, channels }), () => "SMP");
+  expect(c.droppedTiles).toBe(0);
+
+  // And the last column's command value really is on screen, at the far right.
+  const lastColumnX = 32 + 17 * 3 + 2;
+  expect(readText(c, lastColumnX + 12, 2, 2)).toBe("AB");
+  expect(lastColumnX + 13 < HD_COLS).toBeTruthy();
+});
+
+test("renderMode2: a too-narrow grid reports the clipping rather than silently losing tiles", () => {
+  // The guard on the guard: droppedTiles must actually count, or the test above proves nothing.
+  const c = new LsdjHdCanvas(HD_COLS - 4, HD_ROWS);
+  c.setFont(testFont());
+  c.setPalette(testPalette());
+  c.resetDropped();
+  renderMode2(c, emptySong(), makeState(), noKits);
+  expect(c.droppedTiles > 0).toBeTruthy();
+});
+
 test("renderMode2: advancing one playback row repaints only a handful of tiles", () => {
   const song = emptySong();
   song.rows[0].chains[0] = 0x00;

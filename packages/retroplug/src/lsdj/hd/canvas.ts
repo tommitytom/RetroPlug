@@ -84,6 +84,7 @@ export class LsdjHdCanvas {
   private tx = 0;
   private ty = 0;
   private readonly translationStack: number[] = [];
+  private dropped = 0;
 
   constructor(cols: number, rows: number) {
     this.cols = cols;
@@ -192,10 +193,23 @@ export class LsdjHdCanvas {
   }
 
   private put(col: number, row: number, atlasIndex: number): void {
-    // Out-of-range tiles are dropped, as in the original (which logged and skipped). renderMode2's 4th
-    // phrase column overflows the right edge by up to two tiles on kit-instrument rows.
-    if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) return;
+    // Out-of-range tiles are dropped, as in the original (which logged and skipped). Counted so a layout
+    // that silently loses content off an edge is a test failure rather than something you only notice by
+    // squinting at a screenshot - see the "nothing is clipped" case in test/lsdj/hd.test.ts.
+    if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) {
+      this.dropped++;
+      return;
+    }
     this.tiles[row * this.cols + col] = atlasIndex;
+  }
+
+  /** Draws that fell outside the grid since the last resetDropped(). Should be 0 for a fitting layout. */
+  get droppedTiles(): number {
+    return this.dropped;
+  }
+
+  resetDropped(): void {
+    this.dropped = 0;
   }
 
   fill(x: number, y: number, w: number, h: number, colorSet: ColorSets, paletteIdx: number): void {

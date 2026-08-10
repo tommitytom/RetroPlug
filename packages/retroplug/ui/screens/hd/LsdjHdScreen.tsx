@@ -17,7 +17,12 @@ import { Box } from "../../lvgl/Box";
 import { tagTestId } from "../../lvgl/StableSlot";
 import { useLsdjHdSession } from "./useLsdjHdSession";
 
-const LV_IMAGE_ALIGN_CONTAIN = 14; // aspect-preserving nearest-neighbour scale
+// lv_image.h's inner-align enum. CONTAIN scales the image to the largest size that FITS the widget,
+// keeping aspect (letterboxing); COVER keeps aspect but FILLS the widget, cropping the overflow. They sit
+// next to each other and are easy to swap by accident: CENTER is 9, then _AUTO_TRANSFORM 10, STRETCH 11,
+// TILE 12, CONTAIN 13, COVER 14. Using 14 here is what cropped the sides on a narrow window and the top
+// and bottom on a tall one.
+const LV_IMAGE_ALIGN_CONTAIN = 13;
 const LV_ALIGN_CENTER = 0x09;
 
 // lvgljs-ui's Canvas type doesn't expose a ref prop; cast to reach setBuffer (as EmulatorTile does).

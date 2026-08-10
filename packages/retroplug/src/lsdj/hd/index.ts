@@ -6,9 +6,5 @@
 
 export { LsdjHdCanvas, TILE_WIDTH, TILE_HEIGHT } from "./canvas";
 export { ColorSets, FontTiles, findTile, findNumberTile, formatNote, getCommandTile } from "./tiles";
-export { renderMode2, renderSongData, renderChainData, renderPhraseData } from "./render";
+export { renderMode2, renderSongData, renderChainData, renderPhraseData, HD_COLS, HD_ROWS } from "./render";
 export type { KitSampleNameLookup } from "./render";
-
-/** The HD grid the old player used: 776x576 px = 97x72 tiles. */
-export const HD_COLS = 97;
-export const HD_ROWS = 72;

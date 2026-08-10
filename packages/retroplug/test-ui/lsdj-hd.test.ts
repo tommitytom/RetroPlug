@@ -8,7 +8,7 @@
 //   - Esc closes it and the grid comes back.
 // SKIPs when no LSDj ROM was staged (a large external asset - see run-ui-tests.mjs).
 
-import { test, expect, ui, navTo, Key } from "ui-harness";
+import { test, expect, ui, navTo, Key, type UiSnapshot } from "ui-harness";
 
 const LSDJ = () => ui.romDir() + "/lsdj9_4_2.gb";
 
@@ -23,15 +23,29 @@ const LSDJ = () => ui.romDir() + "/lsdj9_4_2.gb";
  *  correct - the sparse mid-shade pixels swamp the signal). That check belongs where it can be exact:
  *  test/lsdj/hd.test.ts asserts the shade -> colour mapping on a known glyph and fails outright if the
  *  font shades are mapped wrong. */
-function distinctColors(): number {
-  const { pixels } = ui.snapshot();
-  const px = new Uint32Array(pixels);
+// snapshot().pixels is a Uint8Array of ARGB8888 BYTES (B,G,R,A in memory), width*height*4 - not a word
+// array. Index it by byte.
+const rgbAt = (s: UiSnapshot, x: number, y: number): number => {
+  const i = (y * s.width + x) * 4;
+  return (s.pixels[i] << 16) | (s.pixels[i + 1] << 8) | s.pixels[i + 2];
+};
+
+function distinctColors(s: UiSnapshot): number {
   const seen = new Set<number>();
-  for (let i = 0; i < px.length; i += 97) {
-    seen.add(px[i] >>> 0);
-    if (seen.size > 4) break;
+  for (let y = 0; y < s.height; y += 7) {
+    for (let x = 0; x < s.width; x += 7) {
+      seen.add(rgbAt(s, x, y));
+      if (seen.size > 4) return seen.size;
+    }
   }
   return seen.size;
+}
+
+/** Whether scanline `y` is a single flat colour. */
+function rowIsFlat(s: UiSnapshot, y: number): boolean {
+  const first = rgbAt(s, 0, y);
+  for (let x = 1; x < s.width; x++) if (rgbAt(s, x, y) !== first) return false;
+  return true;
 }
 
 test("the LSDj HD player opens from the instance menu and Esc returns to the grid", () => {
@@ -67,10 +81,21 @@ test("the LSDj HD player opens from the instance menu and Esc returns to the gri
   expect(ui.findByTestId("tile-0")).toBe(null);
   // It found a supported cart, so it drew the canvas rather than the fallback message.
   expect(ui.findByTestId("lsdj-hd-unsupported")).toBe(null);
+  const snap = ui.snapshot();
+
   // And it actually PAINTED: a drawn grid puts the palette's colour-sets plus the blended mid shade on
   // screen. A render loop that throws every frame leaves this at 1 (the black background) with every
   // widget assertion above still passing.
-  expect(distinctColors() > 2).toBeTruthy();
+  expect(distinctColors(snap) > 2).toBeTruthy();
+
+  // The view SCALES TO FIT the window instead of being cropped by it. The harness display is 480x432
+  // (aspect 1.111) and the HD grid is 792x576 (aspect 1.375) - wider - so fitting it leaves flat
+  // letterbox bands top and bottom, and the middle carries content. Filling the window instead (LVGL's
+  // COVER, which is what the inner-align constant used to select) would crop the left and right edges
+  // away and leave no flat bands at all.
+  expect(rowIsFlat(snap, 0)).toBeTruthy();
+  expect(rowIsFlat(snap, snap.height - 1)).toBeTruthy();
+  expect(rowIsFlat(snap, Math.floor(snap.height / 2))).toBeFalsy();
 
   // Esc is the universal back - the grid returns.
   ui.tapKey(Key.Esc);

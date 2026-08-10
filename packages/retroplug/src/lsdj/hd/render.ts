@@ -23,6 +23,17 @@ const PHRASE_OFFSET_X = CHAIN_OFFSET_X + 15;
 const PHRASE_WIDTH = 17;
 const CHAIN_BLOCK_HEIGHT = 18;
 
+// The widest a phrase row gets: a KIT instrument shifts the command column right by 2, putting the
+// command value at local x 12..13. Non-kit rows stop at 11.
+const PHRASE_ROW_TILES = 14;
+
+/** The grid the HD view needs, in tiles. The width is set by the LAST phrase column: its body starts at
+ *  PHRASE_OFFSET_X + 3 * PHRASE_WIDTH + 2 and runs PHRASE_ROW_TILES wide. The original was hard-coded to
+ *  97 columns (776 px), two short - so a kit-instrument row in the 4th channel's phrase column had its
+ *  command value clipped off the right edge (the old canvas logged "out of range" and dropped the tile). */
+export const HD_COLS = PHRASE_OFFSET_X + PHRASE_WIDTH * 3 + 2 + PHRASE_ROW_TILES;
+export const HD_ROWS = 72;
+
 // LSDj parks a stopped channel's position registers at 0xFF; the TS reader surfaces that as null, so the
 // comparisons below (which the original made against the raw byte) go through this.
 const NO_POS = 0xff;
