@@ -19,6 +19,10 @@ export * as runtime from "./runtime";
 // The ROM asset module (read/patch kits, palettes, fonts in a .gb image) — likewise namespaced.
 export * as rom from "./rom";
 
+// Playback position for a controller surface: observed from a live cart, or predicted from the song
+// when there is no cart to read (a real Game Boy over an Arduinoboy) — likewise namespaced.
+export * as playback from "./playback";
+
 import { SavSchema, type SavInput } from "./model";
 import { encodeSav, decodeSav } from "./codec/sav";
 

@@ -100,6 +100,28 @@ Two consequences worth pulling out:
   together give the whole arithmetic: chain length = slots before the first null, row duration =
   slots x 96 ticks, advance one row per chain end, wrap at the end of the song.
 
+### 2.6 RESULT: dead reckoning is exact at row level
+
+M0 is built and measured. [`PredictedLsdjModel`](../packages/retroplug/src/lsdj/playback/predict.ts) runs
+the rules above against a real cart in
+[lsdj-playback-differential.test.ts](../packages/retroplug/test-native/lsdj-playback-differential.test.ts),
+driven byte-for-byte off the same clock:
+
+```
+offset +0: 100.0% over 2400 comparisons
+  pu1: 100.0%   pu2: 100.0%   wav: 100.0%   noi: 100.0%
+```
+
+600 ticks, several song wraps, with pu2 deliberately diverging from the other three. **No disagreement
+at all.** The test sweeps alignment offsets rather than assuming one, which is how it found that the
+cart spends the launch byte as its first tick (the peak sat at +1 until the model accounted for it -
+independently corroborated by B2's first step landing at tick 5 and B3's first row change at 95).
+
+So for the hardware path the honest answer to "how blind are we" is: **not blind at all about position,
+as long as the player does not touch the handheld.** What remains unknowable is unchanged (4.3) - device
+navigation, a manual START, live edits, and the state at connect. Those are detectable by nothing in the
+protocol, which is what the optional re-anchor (4.4) exists for.
+
 ---
 
 ## 3. The device: Launchpad Pro [MK3]
