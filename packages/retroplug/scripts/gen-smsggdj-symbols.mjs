@@ -30,7 +30,17 @@ const OUT = new URL("../src/smsggdj/runtime/symbols.generated.ts", import.meta.u
 // echo_mode are the per-song metadata SMDJ4 keeps in the DIRECTORY ENTRY rather than the block
 // (src/rle.asm:34 "metadata, not in the block"), which is exactly why the layout is needed at all.
 // song_edited is the cart's own dirty flag; prj_slot is which slot PROJECT is pointing at.
-const WANT = ["wave_ram", "phrase_pool", "song_name", "echo_mode", "song_edited", "prj_slot"];
+const WANT = [
+  "wave_ram", "phrase_pool", "song_name", "echo_mode", "song_edited", "prj_slot",
+  // Engine state, for the parts of the cart's own `load_rebase` a host-side load has to reproduce when
+  // it lands WHILE THE TRANSPORT IS RUNNING. load_rebase `ret z`s on play_state, so all of this is
+  // inert for a load made while stopped - which is the common case and needs none of it.
+  "play_state", "eng_len", "live_q", "groove_sel", "groove_pos",
+  // PSG shadow attenuations (0 loud .. $F silent), one per channel. Not needed to LOAD a song -
+  // they are here so a test can certify the echo address by what the engine actually drives,
+  // rather than by how loud the mix happens to be in a given window.
+  "psg_vols",
+];
 
 // The echo settings are EIGHT separate `db`s that the ROM copies as one run
 // (`ld hl, echo_mode / ld bc, 8 / ldir` in rle_song_save), and SMDJ4 stores them as one 8-byte field in

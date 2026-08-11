@@ -6,7 +6,7 @@ import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
 import { lsdjSongCatalog } from "../../src/tracker/lsdjSongCatalog";
 import { risaSongCatalog } from "../../src/tracker/risaSongCatalog";
 import { smsggdjIntegration } from "../../src/tracker/trackerIntegration";
-import { buildSav, curSlot, SMDJ4_BLOCK_LEN } from "../../src/smsggdj/codec/sav";
+import { buildSav, curSlot, SMDJ4_BLOCK_LEN, songLengthRows, sanitizeEcho } from "../../src/smsggdj/codec/sav";
 import { resolveSmsggdjLayout, supportedSmsggdjVersions } from "../../src/smsggdj/runtime/layout";
 import { identifySmsggdjVersion, supportsCurSlot } from "../../src/smsggdj/romDetect";
 
@@ -173,6 +173,58 @@ test("liveLoad returns the block AND the metadata SMDJ4 keeps outside it", () =>
 
   // Every write must land inside the 8 KB region, or writeRam refuses it and the load half-applies.
   for (const w of writes) expect(w.offset + w.bytes.length <= 0x2000).toBe(true);
+});
+
+test("liveLoad reproduces load_rebase only when the transport is RUNNING", () => {
+  // The cart's own load_rebase opens with `ret z` on play_state, so a load made while stopped needs none
+  // of it. While playing it matters and is not a passing glitch: eng_len is the wrap point, so a song
+  // loaded under a running transport without it loops at the PREVIOUS song's length indefinitely.
+  const sav = buildSav([{ block: song(1), name: "ALPHA" }], CART)!;
+  const layout = resolveSmsggdjLayout("0.45")!;
+  const offsets = (ram?: Uint8Array) => new Set(smsggdjIntegration.liveLoad!(rom("0.45"), sav, 0, ram)!.map((w) => w.offset));
+
+  const stopped = new Uint8Array(8192); // play_state = 0
+  expect(offsets(stopped).has(layout.engLen)).toBe(false);
+  expect(offsets(stopped).has(layout.liveQ)).toBe(false);
+  expect(offsets(undefined).has(layout.engLen)).toBe(false); // no RAM at all: assume stopped, write less
+
+  const playing = new Uint8Array(8192);
+  playing[layout.playState] = 1;
+  const w = smsggdjIntegration.liveLoad!(rom("0.45"), sav, 0, playing)!;
+  const at = (off: number) => w.find((x) => x.offset === off);
+  expect(at(layout.engLen) != null).toBe(true);
+  expect(at(layout.liveQ)!.bytes).toEqual(new Uint8Array(layout.liveQLen).fill(0xff)); // stale cells cleared
+});
+
+test("songLengthRows follows the cart's own scan, including its minimum of 1", () => {
+  // engine.asm:2282-2308: scan the 128x4 grid backwards for the last byte that is not $FF, then
+  // ceil(bytes / 4), floored at 1. A zero would stall the sequencer, so an empty song is one row long.
+  const empty = new Uint8Array(SMDJ4_BLOCK_LEN).fill(0xff);
+  expect(songLengthRows(empty)).toBe(1);
+
+  const one = new Uint8Array(SMDJ4_BLOCK_LEN).fill(0xff);
+  one[0x1300] = 0; // a chain in row 0, column 0
+  expect(songLengthRows(one)).toBe(1);
+
+  const four = new Uint8Array(SMDJ4_BLOCK_LEN).fill(0xff);
+  four[0x1300 + 3 * 4] = 0; // row 3
+  expect(songLengthRows(four)).toBe(4);
+
+  const full = new Uint8Array(SMDJ4_BLOCK_LEN).fill(0xff);
+  full[0x1300 + 511] = 0; // the very last byte of the grid
+  expect(songLengthRows(full)).toBe(128);
+});
+
+test("echo is sanitized the way the cart sanitizes it, so a bad entry cannot reach the engine", () => {
+  // echo_sanitize (engine.asm:982-1011) runs after the cart's OWN load. Skipping it would let a corrupt
+  // or foreign directory entry put an out-of-range mode or a zero delay tap into the live engine.
+  expect(sanitizeEcho(Uint8Array.of(9, 0, 99, 0xff, 0xff, 7, 0, 0))).toEqual(
+    Uint8Array.of(0, 1, 15, 0x0f, 0x0f, 1, 0, 0),
+  );
+  // A legal set passes through untouched, transposes included - every signed byte is valid there.
+  const ok = Uint8Array.of(2, 4, 8, 2, 4, 0, 0xf4, 0x0c);
+  expect(sanitizeEcho(ok)).toEqual(ok);
+  expect(sanitizeEcho(ok) === ok).toBe(false); // a NEW array: the caller's directory bytes are never mutated
 });
 
 test("liveLoad declines rather than guessing", () => {

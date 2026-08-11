@@ -1335,12 +1335,51 @@ clears. Reassuringly, a local build of v0.45 differs from the vendored ROM in on
 git-hash build stamp at `$0009-$0010` and the header checksum at `$7FFA` - so no code moved; but the
 test is what makes that a fact rather than an assumption.
 
+#### What the cart does around a load, and what the host reproduces
+
+The obvious worry is that a live poke skips the bookkeeping the cart's own `song_load` does. Reading it
+narrows that down a lot:
+
+- **`load_rebase` opens with `ret z` on `play_state`**, so a load made while the transport is STOPPED
+  needs none of it. That is the common case for a menu Load.
+- While PLAYING it does three things that matter, and leaving them undone is not a passing glitch:
+  `eng_len` is the wrap point, so the sequencer would loop at the *previous* song's length indefinitely;
+  queued LIVE cells address the old song's grid; and an empty groove in the new song stalls the clock.
+  `liveLoad` reproduces exactly these three, gated on reading `play_state` out of the same work-RAM
+  snapshot. `songLengthRows` ports the ROM's own scan, and the cart independently agrees with it -
+  `sms-layout` asserts the cart's freshly-computed `eng_len` is 8 for the fixture before the host writes
+  anything, then that a load under a running transport moves it to 2.
+- **`echo_sanitize`** is now applied host-side before the echo bytes are written, so a corrupt or foreign
+  directory entry cannot put an out-of-range mode or a zero delay tap into the live engine.
+- **`load_carry_post`** (the CONT beat-carry, which replants the carried phrase in the reserved
+  phrase 51 / chain 39) is deliberately NOT reproduced. That is a musical feature of the cart's own CONT
+  load, and synthesizing it from the host would be re-implementing the tracker.
+- **`engine_stop` is not called, and a reset is not the answer either.** A reset would fix all of the
+  above by brute force, but it throws away exactly what makes the live path worth having (no reboot, no
+  `.sav` write, working song intact) and reintroduces the boot race, since `song_new` blanks work RAM on
+  the way up. Stopping the engine properly is also more than a zeroed byte - `engine_stop` releases the
+  sync lines, clears the live queues and quiesces the channels - so poking `play_state` would be a worse
+  imitation than not stopping at all.
+
 Still true, and still the reason the ROM change is worth having: a live load is **volatile**. It
 survives no power cycle and no project reload, and only `cur_slot` gives the format a durable record
-that `savetool.html` and Everdrive users can see. Also unchanged: the cart's own `song_load` runs
-`engine_stop` / `echo_sanitize` / `load_rebase`, and a live load skips all three - loading mid-playback
-may glitch a note. Reaching those from the host means re-implementing the ROM's load and inviting quiet
-divergence, so it is deliberately not done.
+that `savetool.html` and Everdrive users can see.
+
+##### A note on measuring this
+
+The first version of the echo certification compared total RMS between runs and was **not
+reproducible**: `writeRam` lands between blocks, so the echo ring's contents at the moment of the change
+vary, and the same three modes swung between -43% and +99% of baseline across repeats. The test now
+polls `psg_vols` for *which channels the engine drives*, which is a binary rather than a magnitude:
+
+```
+off:   T1=0 T2=f T3=f     T2/T3 never sound
+mode1: T1=0 T2=2 T3=f     echo on T2 only
+mode2: T1=0 T2=2 T3=4     echo on T2 and T3
+```
+
+Identical on every run, and a far more exact statement of what `echo_mode` means. Worth remembering for
+any future SMS audio assertion: compare what the engine *did*, not how loud the window came out.
 
 #### The ROM half, still worth doing
 

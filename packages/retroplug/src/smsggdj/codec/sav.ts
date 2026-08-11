@@ -418,6 +418,50 @@ export function isSongSaved(sav: Uint8Array, block: Uint8Array): boolean {
   return false;
 }
 
+// --- fields WITHIN the song block, for a host-side load ------------------------
+// Offsets into the 6,912-byte block (SAVEFORMAT.md's table). They are block-relative and therefore a
+// property of the FORMAT, not of a build - unlike the work-RAM variables, which move with the linker.
+
+const SONG_OFF = 0x1300; // 128 rows x 4 chain numbers, $FF = empty
+const SONG_LEN = 512;
+const GROOVE_OFF = 0x1a00; // 16 grooves x 16 tick bytes
+const GROOVE_STRIDE = 16;
+
+/** The song's length in ROWS, by the cart's own rule (`load_rebase`, engine.asm:2282-2308): scan the
+ *  grid backwards for the last byte that is not $FF, then `ceil(bytes / 4)`, minimum 1. A song of
+ *  nothing but empty rows is one row long, not zero - a zero would stall the sequencer.
+ *
+ *  Needed because the engine caches this in `eng_len`: a song loaded UNDER a running transport without
+ *  it keeps wrapping at the previous song's length, which is permanent, not a glitch that settles. */
+export function songLengthRows(block: Uint8Array): number {
+  let remaining = SONG_LEN;
+  for (let i = SONG_OFF + SONG_LEN - 1; remaining > 0; i--, remaining--) {
+    if (block[i] !== 0xff) break;
+  }
+  return Math.max(1, (remaining + 3) >> 2);
+}
+
+/** True when the groove at `sel` is empty, i.e. its first tick is 0. The cart falls back to groove 0 in
+ *  that case, because an empty groove gives the clock nothing to advance on. */
+export function isGrooveEmpty(block: Uint8Array, sel: number): boolean {
+  const at = GROOVE_OFF + sel * GROOVE_STRIDE;
+  return at + 1 > block.length || block[at] === 0;
+}
+
+/** `echo_sanitize` (engine.asm:982-1011), applied to a directory entry's 8 echo bytes before they are
+ *  written into a running cart. The cart runs this after its OWN load, so a host-side load that skipped
+ *  it could leave out-of-range values a corrupt or foreign save carried - mode 3+, a zero delay tap -
+ *  live in the engine. Pure, and returns a NEW array. */
+export function sanitizeEcho(echo: Uint8Array): Uint8Array {
+  const out = echo.slice();
+  if (out[0] >= 3) out[0] = 0; // mode: 0 off, 1 = T2, 2 = T2+T3
+  for (const tap of [1, 2]) out[tap] = out[tap] === 0 ? 1 : out[tap] >= 16 ? 15 : out[tap]; // 1..15 rows
+  out[3] &= 0x0f; // red1
+  out[4] &= 0x0f; // red2
+  out[5] &= 1; // stereo
+  return out; // tsp1/tsp2 are signed semitones - every byte is a legal value
+}
+
 /** A slot's RAW 8 name bytes, padding and all. `listSongs` trims for display; a host-side load has to
  *  write the cart's `song_name` verbatim, because trimming would leave stale characters behind it. */
 export function readSongName(sav: Uint8Array, slot: number): Uint8Array | null {

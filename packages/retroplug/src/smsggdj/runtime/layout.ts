@@ -35,6 +35,14 @@ function layoutFrom(symbolsKey: string, version: string = symbolsKey): SmsggdjLa
     echoLen: s.echo_len,
     edited: s.song_edited,
     slot: s.prj_slot,
+    playState: s.play_state,
+    engLen: s.eng_len,
+    liveQ: s.live_q,
+    liveQLen: s.live_q_len,
+    grooveSel: s.groove_sel,
+    groovePos: s.groove_pos,
+    psgVols: s.psg_vols,
+    psgVolsLen: s.psg_vols_len,
   };
 }
 

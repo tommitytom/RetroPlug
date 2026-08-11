@@ -23,6 +23,18 @@ export interface SmsggdjSymbols {
   song_edited_len: number;
   prj_slot: number;
   prj_slot_len: number;
+  play_state: number;
+  play_state_len: number;
+  eng_len: number;
+  eng_len_len: number;
+  live_q: number;
+  live_q_len: number;
+  groove_sel: number;
+  groove_sel_len: number;
+  groove_pos: number;
+  groove_pos_len: number;
+  psg_vols: number;
+  psg_vols_len: number;
   echo_len: number;
 }
 
@@ -40,6 +52,18 @@ export const SMSGGDJ_SYMBOLS: Record<string, SmsggdjSymbols> = {
     song_edited_len: 0x1,
     prj_slot: 0x1d58,
     prj_slot_len: 0x1,
+    play_state: 0x1b00,
+    play_state_len: 0x1,
+    eng_len: 0x1b0b,
+    eng_len_len: 0x1,
+    live_q: 0x1c7a,
+    live_q_len: 0x4,
+    groove_sel: 0x1b0c,
+    groove_sel_len: 0x1,
+    groove_pos: 0x1b08,
+    groove_pos_len: 0x1,
+    psg_vols: 0x1f4c,
+    psg_vols_len: 0x4,
     echo_len: 0x8,
   },
 };

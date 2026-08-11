@@ -94,7 +94,9 @@ export function loadSongLive(backend: SavBackend, systems: SavSystems, sys: Live
   const rom = backend.readFile(sys.romPath);
   const sram = systems.readSram(sys.id);
   if (!rom || !sram) return false;
-  const writes = tracker.liveLoad(rom, sram, index);
+  // The CURRENT work RAM, so liveLoad can see whether the transport is running - the cart's own load
+  // does different work in that case, and reproducing it needs to know.
+  const writes = tracker.liveLoad(rom, sram, index, systems.readRam?.(sys.id) ?? undefined);
   if (!writes?.length) return false;
   for (const w of writes) {
     if (!systems.writeRam(sys.id, w.offset, w.bytes)) return false;

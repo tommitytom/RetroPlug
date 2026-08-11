@@ -14,7 +14,7 @@ import { smsggdjSongCatalog } from "./smsggdjSongCatalog";
 import { smsggdjAssetCatalog } from "./smsggdjAssetCatalog";
 import { identifySmsggdjVersion } from "../smsggdj/romDetect";
 import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
-import { readSongBlock, readSongName, readSongEcho } from "../smsggdj/codec/sav";
+import { readSongBlock, readSongName, readSongEcho, sanitizeEcho, songLengthRows, isGrooveEmpty } from "../smsggdj/codec/sav";
 import { identifyLsdj } from "../lsdj/runtime/identify";
 import { identifyRisaVersion } from "../risa/runtime/identify";
 import { resolveRisaLayout } from "../risa/runtime/layout";
@@ -52,7 +52,7 @@ export interface TrackerIntegration {
    *
    *  Stays PURE: it returns writes, it does not perform them. `loadSongLive` (./liveSav) applies them,
    *  which keeps this testable without a core and keeps I/O out of the console-specific layer. */
-  liveLoad?(rom: Uint8Array, sav: Uint8Array, index: number): RamWrite[] | null;
+  liveLoad?(rom: Uint8Array, sav: Uint8Array, index: number, ram?: Uint8Array): RamWrite[] | null;
 }
 
 /** One contiguous poke into a system's work RAM: `offset` indexes the same region `readRam` returns. */
@@ -109,7 +109,7 @@ export const smsggdjIntegration: TrackerIntegration = {
   // The block alone is not enough: SMDJ4 keeps the NAME and the ECHO settings in the directory entry
   // (src/rle.asm:34 - "metadata, not in the block"), and echo is audible, so loading without it would
   // play the new song through the old song's delay taps.
-  liveLoad: (rom, sav, index) => {
+  liveLoad: (rom, sav, index, ram) => {
     const layout = resolveSmsggdjLayout(identifySmsggdjVersion(rom));
     if (!layout) return null;
     const block = readSongBlock(sav, index); // null on a free slot / bad checksum / malformed stream
@@ -118,8 +118,10 @@ export const smsggdjIntegration: TrackerIntegration = {
     const writes: RamWrite[] = [{ offset: layout.song, bytes: block }];
     const name = readSongName(sav, index);
     if (name) writes.push({ offset: layout.name, bytes: name.subarray(0, layout.nameLen) });
+    // Sanitized exactly as the cart sanitizes after its own load, so a corrupt or foreign directory
+    // entry cannot put an out-of-range echo mode or a zero delay tap into the live engine.
     const echo = readSongEcho(sav, index);
-    if (echo) writes.push({ offset: layout.echo, bytes: echo.subarray(0, layout.echoLen) });
+    if (echo) writes.push({ offset: layout.echo, bytes: sanitizeEcho(echo.subarray(0, layout.echoLen)) });
     // The cart clears this on its own load ("loaded block matches the slot: clean"), and leaving it set
     // would tell the cart the freshly loaded song has unsaved edits.
     writes.push({ offset: layout.edited, bytes: Uint8Array.of(0) });
@@ -127,6 +129,26 @@ export const smsggdjIntegration: TrackerIntegration = {
     // to a slot, then press LOAD) rather than writing it, and its legacy meaning is a 6-slot SMDJ3 index
     // that the PROJECT screen may still clamp - so pointing it at a directory index up to 31 risks a
     // confused UI for no real gain. It stays in the layout because it costs nothing to know.
+
+    // --- the cart's `load_rebase`, for a load that lands while the transport is RUNNING --------------
+    // load_rebase opens with `ret z` on play_state, so a load made while stopped needs none of this and
+    // gets none of it. While playing, the engine is caching state derived from the OLD song, and leaving
+    // it is not a passing glitch: eng_len is the wrap point, so the sequencer would loop at the previous
+    // song's length forever. Three effects are reproduced; the fourth, load_carry_post's CONT beat-carry
+    // (which replants the carried phrase in the reserved slots), is NOT - that is a musical feature of
+    // the cart's own CONT load, and synthesizing it from out here would be re-implementing the tracker.
+    if (ram && ram.length > layout.playState && ram[layout.playState] !== 0) {
+      writes.push({ offset: layout.engLen, bytes: Uint8Array.of(songLengthRows(block)) });
+      // Queued LIVE cells address the old song's grid, and a pending chain-end stop would fire against
+      // the carried chain.
+      writes.push({ offset: layout.liveQ, bytes: new Uint8Array(layout.liveQLen).fill(0xff) });
+      // An empty groove gives the clock nothing to advance on, so the cart falls back to groove 0.
+      const sel = ram[layout.grooveSel];
+      if (isGrooveEmpty(block, sel)) {
+        writes.push({ offset: layout.grooveSel, bytes: Uint8Array.of(0) });
+        writes.push({ offset: layout.groovePos, bytes: Uint8Array.of(0) });
+      }
+    }
     return writes;
   },
 };
