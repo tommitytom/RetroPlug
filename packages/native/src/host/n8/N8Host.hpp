@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -85,7 +86,7 @@ private:
     PortLister          lister_;
     std::string         configDir_;
     std::string         port_;
-    bool                enabled_ = false;
+    std::atomic<bool>   enabled_{false};  // atomic: a successful ROM load clears it from the worker thread (below)
     N8SdWorker          sdWorker_;   // LAST: destroyed first, so its thread joins while link_ + factory_ are alive
 };
 

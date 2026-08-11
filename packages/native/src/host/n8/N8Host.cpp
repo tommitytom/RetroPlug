@@ -143,7 +143,7 @@ N8SdWorker::Job N8Host::controlJob(bool reconnectAfter, std::function<void(Edio&
 void N8Host::startLoadRom(const std::string& romPath) {
     if (sdWorker_.busy()) return;
     // reconnectAfter=false: a successful load boots a NEW ROM, so the old stream is stale - leave it stopped.
-    sdWorker_.start("load", controlJob(false, [romPath](Edio& edio, N8SdWorker::Progress& p) {
+    sdWorker_.start("load", controlJob(false, [this, romPath](Edio& edio, N8SdWorker::Progress& p) {
         p.phase("Reading ROM");
         const std::vector<std::uint8_t> rom = readFileBytes(romPath);
         if (rom.empty()) throw std::runtime_error("ROM file is empty: " + romPath);
@@ -166,6 +166,13 @@ void N8Host::startLoadRom(const std::string& romPath) {
         const int mapIndex = menu.appInstall(bootPath);  // menu parses iNES + sources the core from SD
         menu.appStart();
         p.result("Booted " + name + " (map " + std::to_string(mapIndex) + ") - streaming stopped");
+        // The old stream died with the previous ROM (controlJob left link_ disconnected + doesn't reconnect a
+        // load), so commit that: clear the enabled toggle + persist. Without this, enabled_ stays true with the
+        // link down, so the Status row reads a forever "Connecting..." and a restart would try to resume a dead
+        // stream. Race-free here: config writers (connect/setPort/setLookahead) are gated on the worker being
+        // busy, which we still are; enabled_ is atomic; and this only runs on success (a throw skips it).
+        enabled_.store(false, std::memory_order_relaxed);
+        save();
     }));
 }
 

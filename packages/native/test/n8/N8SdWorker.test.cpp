@@ -157,10 +157,12 @@ TEST_CASE("N8Host.startDumpSram reads 64 KB and writes the file", "[n8sd]") {
     REQUIRE(out == pattern);
 }
 
-TEST_CASE("N8Host.startLoadRom drives the menu and leaves streaming stopped", "[n8sd]") {
-    // The exact read sequence for a small ROM (see Edio.cpp): connect, '*t'->'k', fileOpen status,
-    // fileWrite ack + status, fileClose status, appInstall status + map index (5).
+TEST_CASE("N8Host.startLoadRom drives the menu and stops streaming (link + enabled)", "[n8sd]") {
+    // Two sessions in call order: the streaming connect, then the load control op (the exact read sequence for
+    // a small ROM, see Edio.cpp: connect, '*t'->'k', fileOpen status, fileWrite ack + status, fileClose status,
+    // appInstall status + map index 5). No third session: a load doesn't reconnect (the old stream is stale).
     auto queues = std::make_shared<std::deque<std::deque<std::uint8_t>>>();
+    queues->push_back(HANDSHAKE);  // connect(true): start streaming first, so the load has a live link to stop
     queues->push_back(handshakePlus({
         0x6b,             // menu.test '*t' -> 'k'
         0x00, 0xA5,       // fileOpen checkStatus
@@ -173,6 +175,9 @@ TEST_CASE("N8Host.startLoadRom drives the menu and leaves streaming stopped", "[
 
     N8Host host(scriptedFactory(queues), listerWith({{"/dev/fake", true}}), tempDir());
     host.setPort("/dev/fake");
+    host.connect(true);  // streaming on: enabled + connected
+    REQUIRE(host.getConfig().connected);
+    REQUIRE(host.getConfig().enabled);
     const std::string rom = (std::filesystem::path(tempDir()) / "test.nes").string();
     writeFile(rom, std::vector<std::uint8_t>(100, 0x11));
 
@@ -182,7 +187,10 @@ TEST_CASE("N8Host.startLoadRom drives the menu and leaves streaming stopped", "[
     REQUIRE(s.error.empty());
     REQUIRE(s.op == "load");
     REQUIRE(s.result.find("map 5") != std::string::npos);
-    REQUIRE_FALSE(host.getConfig().connected);  // a load boots a new ROM -> streaming stays stopped
+    // A load boots a new ROM, so the old stream is stale: the link stays down AND the enabled toggle clears (so
+    // the Status row reads "Off", not a forever "Connecting..."). Both are persisted to n8.cfg.
+    REQUIRE_FALSE(host.getConfig().connected);
+    REQUIRE_FALSE(host.getConfig().enabled);
 }
 
 TEST_CASE("N8Host.startRestoreSram writes then verifies the readback", "[n8sd]") {
