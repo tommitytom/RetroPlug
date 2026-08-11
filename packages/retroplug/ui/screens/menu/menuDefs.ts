@@ -1540,18 +1540,25 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     ),
     action("set-render-dir-clear", "Clear", () => userConfig.setRenderOutputDir(""), !defaultDir),
   ]);
+  // Device pickers (Audio + MIDI) lead the menu: standalone-only, where the SDL host exposes the audio /
+  // RtMidi seams (a DAW-hosted editor / the headless harness has neither). The separator under them is
+  // emitted only when at least one is present, so a DAW build doesn't open on a stray leading rule.
+  const deviceRows: MenuItem[] = [
+    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
+    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
+  ];
   return [
+    ...deviceRows,
+    ...(deviceRows.length ? [sep("set-sep-devices")] : []),
+    // The input-binding editors sit right below the device pickers, with their own separator under them.
+    submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
+    submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
+    sep("set-sep-bindings"),
     cycler("set-sram", "SRAM Auto-Save", SRAM_AUTO_SAVES.map((m) => SRAM_AUTO_SAVE_LABELS[m] ?? m), sramIdx, (n) => userConfig.setSramAutoSave(SRAM_AUTO_SAVES[n])),
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
     renderDirItem,
-    submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
-    submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
     // The host's OS file dialog (default) vs the in-app browser. On a host with no OS dialog it stays in-app.
     cycler("set-native-dialogs", "File Dialogs", ["In-App", "OS Native"], ctx.userConfig.useNativeFileDialogs ? 1 : 0, (n) => userConfig.setUseNativeFileDialogs(n === 1)),
-    // Audio device (sample rate / block size) — standalone only, where the SDL host exposes the seam.
-    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
-    // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
-    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }

@@ -1063,6 +1063,47 @@ test("Settings -> Open Settings Folder reveals the config dir via the native sea
   delete (globalThis as { __rp_openPath?: unknown }).__rp_openPath;
 });
 
+test("Settings menu order (off-standalone): Keyboard/Gamepad bindings lead + a separator; no device rows", () => {
+  const stores = composeAppStores({ backend: new MockBackend("/cfg") });
+  const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+  // No standalone host -> the Audio/MIDI device pickers (and the separator under them) are absent, so the
+  // bindings editors lead. Their separator is always present (it always has rows above and below).
+  expect(settings.map((i) => i.id)).toEqual([
+    "set-keybindings",
+    "set-gamepad-bindings",
+    "set-sep-bindings",
+    "set-sram",
+    "set-defzoom",
+    "set-render-dir",
+    "set-native-dialogs",
+    "set-open-folder",
+  ]);
+});
+
+test("Settings menu order (standalone): Audio + MIDI lead, separator, then the bindings editors + separator", () => {
+  const g = globalThis as Record<string, unknown>;
+  g.__rp_isStandalone = true;
+  g.__rp_getAudioConfig = () => ({ sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", drivers: ["Auto"], device: "", devicesByDriver: {} });
+  g.__rp_getMidiConfig = () => ({ inputs: [], outputs: [], selectedInput: "", selectedOutput: "" });
+  try {
+    const stores = composeAppStores({ backend: new MockBackend("/cfg") });
+    const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+    // Device pickers lead, then a separator, then the bindings editors, then their separator.
+    expect(settings.map((i) => i.id).slice(0, 6)).toEqual([
+      "set-audio",
+      "set-midi",
+      "set-sep-devices",
+      "set-keybindings",
+      "set-gamepad-bindings",
+      "set-sep-bindings",
+    ]);
+  } finally {
+    delete g.__rp_isStandalone;
+    delete g.__rp_getAudioConfig;
+    delete g.__rp_getMidiConfig;
+  }
+});
+
 test("appStores: a userConfig change also invalidates the bindings channel", () => {
   const be = new MockBackend("/cfg");
   const fired: string[] = [];
