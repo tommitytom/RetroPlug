@@ -12,6 +12,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
@@ -23,6 +24,9 @@
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "system/CoreBackends.hpp"
 #include "system/SystemFactory.hpp"
+#include "host/n8/N8Host.hpp"             // physical Everdrive N8 link + config (shared with the SDL standalone)
+#include "host/n8/N8Hooks.hpp"            // binds the __rp_*N8* config hooks (shared)
+#include "host/n8/WjwwoodSerialPort.hpp"  // the serial-port factory + listSerialPorts for the N8 picker
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
@@ -48,6 +52,19 @@ class PluginDSP : public Plugin {
     QueuedInvoker    invoker_{engine_, engine_.registry()};
     HostRpcService   hostSvc_;
     EngineRpcService engineSvc_{engine_, factory_, invoker_};
+    // Physical Everdrive N8 Pro streaming (Settings > N8) - the SAME N8Host the SDL standalone uses. The
+    // core-byte sink (risa host sync) + the run() MIDI tap push to n8Host_.link() on the audio thread; the
+    // config UI drives connect/setPort through bindN8Hooks. hostSvc_ (above) provides the n8.cfg dir.
+    retroplug::N8Host n8Host_{
+        [](const std::string& p) -> std::unique_ptr<retroplug::ISerialPort> {
+            return std::make_unique<retroplug::WjwwoodSerialPort>(p);
+        },
+        [] {
+            std::vector<retroplug::N8PortDto> ports;
+            for (const auto& p : retroplug::listSerialPorts()) ports.push_back({p.port, p.isN8});
+            return ports;
+        },
+        hostSvc_.configDir()};
     std::unique_ptr<rpcpp::QuickJSTransport> transport_;
     std::unique_ptr<PluginRpcServer>     server_;
     bool jsReady_ = false;
@@ -162,7 +179,14 @@ protected:
         // because run() owns the Engine while active). Short messages only; SysEx deferred.
         for (uint32_t i = 0; i < midiEventCount; ++i) {
             const MidiEvent& e = midiEvents[i];
-            if (e.size >= 1 && e.size <= 4)
+            if (e.size < 1) continue;
+            // Forward raw MIDI to a connected physical N8 (no-op when disconnected). Skip single-byte System
+            // Real-Time (>= 0xF8: clock/start/stop): those are transport, and risa's generated clock already
+            // reaches the N8 via the Engine core-byte mirror - raw-forwarding them too would double-clock it.
+            // e.frame preserves the DAW's intra-block timing (the N8Link scheduler releases on it).
+            if (!(e.size == 1 && e.data[0] >= 0xF8))
+                n8Host_.link().push(e.frame, e.data, e.size, getSampleRate());
+            if (e.size <= 4)
                 engine_.stageMidi(e.frame, std::vector<std::uint8_t>(e.data, e.data + e.size));
         }
 
@@ -244,6 +268,17 @@ private:
         // setWatchedRoms). The TS FileWatcher.pump() drains it from the UI idle loop (__rp_pumpWatcher).
         // Only the plugin enables this — the test host / CLI leave drainChangedPaths inert.
         hostSvc_.enableWatching(hostSvc_.configDir());
+
+        // Physical Everdrive N8 Pro (Settings > N8): mirror the Engine's generated core-byte stream (risa's
+        // arm/clock/stop host sync) to a connected cart, expose the config hooks to the shared UI, and restore
+        // the persisted link. The sink fires during processBlock on the audio thread; push is lock-free and a
+        // no-op until an N8 is connected. Same N8Host + hooks the SDL standalone uses - so the plugin drives a
+        // real NES from the DAW transport, in lock-step with the emulated core.
+        engine_.setCoreByteSink([this](std::uint32_t frame, const std::uint8_t* data, std::size_t size, bool) {
+            n8Host_.link().push(frame, data, size, getSampleRate());
+        });
+        retroplug::bindN8Hooks(ctx, n8Host_);
+        n8Host_.restore();
 
         // Headless seed: reaper -renderproject sets RETROPLUG_AUTOLOAD_PROJECT to a .rplg path.
         if (const char* autoload = std::getenv("RETROPLUG_AUTOLOAD_PROJECT")) {

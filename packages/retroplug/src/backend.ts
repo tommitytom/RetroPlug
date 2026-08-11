@@ -455,17 +455,24 @@ export interface ApuState {
 
 /** One expansion-audio voice (`getExpansionAudioState`). Superset across chips: a field is populated
  *  when meaningful and 0/false otherwise. `volume` is normalized 0 (silent) .. 15 (loudest) across all
- *  chips; `period` is the chip-native pitch register. `constantOutput` (VRC6 "ignore duty" → DC/no
- *  tone), `instrument` (VRC7 patch), and `volume` are the diagnostic fields. */
+ *  chips; `period` is the chip-native pitch register. `frequency` is the decoded output pitch in Hz
+ *  (the expansion analogue of `ApuSquareState.frequency`) - computed from the pitch register regardless
+ *  of audibility, so gate "sounding" on `enabled`/`volume` and read `frequency` for "what pitch"; it is
+ *  0 only when the pitch is undefined (a zero timer/fnum). `waveLength`/`activeChannels` are N163-only
+ *  cross-check terms (0 for other chips). `constantOutput` (VRC6 "ignore duty" → DC/no tone),
+ *  `instrument` (VRC7 patch), and `volume` are the diagnostic fields. */
 export interface ExpansionAudioChannel {
   enabled: boolean;
   volume: number;          // 0 = silent .. 15 = loudest (uniform across chips)
   outputLevel: number;     // live decoded output magnitude; 0 = silent right now
   period: number;          // chip-native pitch (VRC6/5B timer, N163 18-bit, VRC7 fnum)
+  frequency: number;       // decoded output pitch in Hz (0 when undefined)
   block: number;           // VRC7 octave 0-7 (0 for others)
   duty: number;            // VRC6 pulse duty 0-7 (0 for others)
   constantOutput: boolean; // VRC6 pulse "ignore duty" mode → DC, no tone
   instrument: number;      // VRC7 patch 0=custom, 1-15 ROM (0 for others)
+  waveLength: number;      // N163: active wave length in samples (0 for others)
+  activeChannels: number;  // N163: enabled channel count 1-8 (0 for others)
 }
 
 /** The decoded NES expansion-audio snapshot (`getExpansionAudioState`). `chip` is the active chip
@@ -492,6 +499,8 @@ export interface PpuState {
   tmpVideoRamAddr: number;
   writeToggle: boolean;
   spriteRamAddr: number;
+  /** 32-byte palette RAM ($3F00-$3F1F): [0] = universal background color, [1..] the bg/sprite palettes. */
+  paletteRam: Uint8Array;
 }
 
 /** One named CPU register (`getCpuRegisters`). `value` is zero-extended to 32 bits; `bits` is the real

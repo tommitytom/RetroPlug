@@ -1,6 +1,6 @@
 // Standalone-only MIDI device selection for the Settings > MIDI submenu. Mirrors audioDraft.ts, but a device
 // pick APPLIES IMMEDIATELY (like the bindings "Profile" cycler) rather than staging a draft behind an Apply
-// row - there is one value per direction, and the native host reconnects the RtMidi port + persists (midi.cfg)
+// row - there is one value per direction, and the native host reconnects the RtMidi port + persists (midi.json)
 // on the spot. See __rp_getMidiConfig / __rp_setMidiInput / __rp_setMidiOutput in packages/native/sdl/main.cpp.
 //
 // Why a subscribable and not a store: the selection lives in native (SDL host), not a TS store, so a pick here

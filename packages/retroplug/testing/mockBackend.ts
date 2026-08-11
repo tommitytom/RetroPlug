@@ -360,6 +360,7 @@ export class MockBackend implements Backend {
     return {
       scanline: 0, cycle: 0, frameCount: 0, control: 0, mask: 0, status: 0,
       scrollX: 0, videoRamAddr: 0, tmpVideoRamAddr: 0, writeToggle: false, spriteRamAddr: 0,
+      paletteRam: new Uint8Array(32),
     };
   }
 

@@ -4,6 +4,7 @@
 #include "NES/Mappers/Audio/Vrc6Saw.h"
 #include "NES/APU/NesApu.h"
 #include "NES/NesConsole.h"
+#include "NES/NesConstants.h"
 #include "NES/NesExpansionAudioState.h"
 #include "Utilities/Serializer.h"
 
@@ -82,12 +83,20 @@ public:
 		NesExpansionAudioState state;
 		state.chip = "vrc6";
 
-		auto pulse = [](Vrc6Pulse& p) {
+		// The three voices share a $9003 frequency-shift (0/4/8) that right-shifts
+		// the timer reload, so pitch = clk / (steps * ((freq >> shift) + 1)) with
+		// 16 duty steps for a pulse and 14 for the saw. clk is the region CPU clock
+		// (each voice's Clock() runs once per CPU cycle) - the same accessor the
+		// 2A03 SquareChannel uses. The +1 reload keeps the divisor >= 1 (no /0).
+		double clk = NesConstants::GetClockRate(NesApu::GetApuRegion(_console));
+
+		auto pulse = [clk](Vrc6Pulse& p) {
 			NesExpansionAudioChannel c;
 			c.Enabled        = p.IsEnabled();
 			c.Volume         = p.GetRegVolume();       // 0-15, already loud-scale
 			c.OutputLevel    = p.GetVolume();
 			c.Period         = p.GetFrequency();
+			c.Frequency      = clk / (16.0 * ((p.GetFrequency() >> p.GetFrequencyShift()) + 1));
 			c.Duty           = p.GetDuty();
 			c.ConstantOutput = p.GetIgnoreDuty();      // "ignore duty" mode -> DC, no tone
 			return c;
@@ -100,6 +109,7 @@ public:
 		saw.Volume      = _saw.GetAccumulatorRate() >> 2;  // rate 0-63 -> ~0-15 for a comparable scale
 		saw.OutputLevel = _saw.GetVolume();
 		saw.Period      = _saw.GetFrequency();
+		saw.Frequency   = clk / (14.0 * ((_saw.GetFrequency() >> _saw.GetFrequencyShift()) + 1));
 		state.channels.push_back(saw);
 		return state;
 	}

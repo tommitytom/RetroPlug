@@ -34,10 +34,17 @@ test("trace logger captures the instruction stream + the step trio advances a re
     .at(10, (sess) => (enabled = sess.backend.setTrace(id, true)))
     .at(300, (sess) => {
       rows = sess.backend.readTrace(id, 16);
+      sess.backend.setTrace(id, false); // rows captured; a trace row per instruction is slow over a run
       into = sess.backend.stepInto(id);
       over = sess.backend.stepOver(id);
+      // Before stepOut, make sure the CPU is INSIDE a subroutine: from the top-level idle loop stepOut has
+      // no return frame and grinds the full ~50M-cycle cap (minutes). stepInto over a JSR pushes a return
+      // address (SP drops), so step until SP falls below its current value — ROM-agnostic, no hardcoded
+      // subroutine address. The idle loop polls the FIFO via a JSR, so this descends within a few steps.
+      const sp = () => sess.backend.getCpuRegisters(id).find((r) => r.name === "sp")!.value;
+      const spTop = sp();
+      for (let i = 0; i < 256 && sp() >= spTop; i++) sess.backend.stepInto(id);
       out = sess.backend.stepOut(id);
-      sess.backend.setTrace(id, false);
     });
   renderTimeline(s, tl, { durationMs: 400, warmupMs: 1000 });
 

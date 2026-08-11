@@ -259,10 +259,13 @@ rp::ExpansionAudioState MesenNesDebugSession::getExpansionAudioState() {
         o.volume         = c.Volume;
         o.outputLevel    = c.OutputLevel;
         o.period         = c.Period;
+        o.frequency      = c.Frequency;
         o.block          = c.Block;
         o.duty           = c.Duty;
         o.constantOutput = c.ConstantOutput;
         o.instrument     = c.Instrument;
+        o.waveLength     = c.WaveLength;
+        o.activeChannels = c.ActiveChannels;
         out.channels.push_back(o);
     }
     return out;
@@ -315,6 +318,14 @@ rp::PpuState MesenNesDebugSession::getPpuState() {
     status |= s.StatusFlags.Sprite0Hit     ? 0x40 : 0;
     status |= s.StatusFlags.VerticalBlank  ? 0x80 : 0;
     out.status = status;
+
+    // Palette RAM ($3F00-$3F1F): read the 32 entries (ReadPaletteRam normalizes the
+    // $10/$14/$18/$1C mirrors), so [0] is the applied universal background color and
+    // [1] the first bg-palette color — enough to read a ROM's applied bg/text colors.
+    std::uint8_t pal[32];
+    for (std::uint16_t i = 0; i < 32; ++i) pal[i] = ppu->ReadPaletteRam(i);
+    const auto* palBytes = reinterpret_cast<const std::byte*>(pal);
+    out.paletteRam = rfl::Bytestring(palBytes, palBytes + 32);
 
     return out;
 }

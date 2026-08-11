@@ -10,6 +10,7 @@
 import type { RoleRegistry, RomContext, RoleInstance } from "./systemRoles";
 import { LsdjSyncMode } from "./settingsEnums";
 import { isRisaRomHeader, isRisaSyncRom } from "./risa";
+import { isEverMidiRomHeader } from "./evermidi/romDetect";
 import { isSmsggdjRom } from "./smsSync";
 
 // The Game Boy cartridge title field is 0x134..0x143. Decode it to an uppercase ASCII
@@ -71,4 +72,14 @@ export function registerRomProviders(registry: RoleRegistry): void {
     if (isRisaSyncRom(rom.header)) roles.push({ kind: "risa-sync", config: {} });
     return roles;
   });
+
+  // EverMIDI (the NES MIDI synth) → the `evermidi` marker role that gates its asset menu, plus the
+  // `evermidi-assets` role holding non-destructive DMC-kit/CHR-font ROM overrides. Detected by the
+  // "EVERMIDI" ASCII marker baked into the ROM head (NROM has no distinguishing header). It has no song
+  // battery, so there is no song marker — the tracker integration is asset-only.
+  registry.registerRomProvider((rom: RomContext): RoleInstance[] =>
+    rom.platform === "nes" && isEverMidiRomHeader(rom.header)
+      ? [{ kind: "evermidi", config: {} }, { kind: "evermidi-assets", config: { overrides: [] } }]
+      : [],
+  );
 }

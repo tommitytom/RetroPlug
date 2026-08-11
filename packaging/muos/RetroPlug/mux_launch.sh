@@ -29,7 +29,12 @@ done
 
 cd "$APP_DIR" || exit 1
 
-export SDL_AUDIODRIVER=alsa
+# Audio is PortAudio now (native PipeWire host API, ALSA fallback), not SDL. PortAudio reaches the muOS
+# PipeWire daemon via its socket at $XDG_RUNTIME_DIR/pipewire-0 (the device runs pipewire at /run/pipewire-0),
+# so point XDG_RUNTIME_DIR there when the session hasn't already set it. Without it PortAudio falls back to a
+# raw ALSA device (hw:...) instead of PipeWire. (Verified on-device: audio: PortAudio [PipeWire] 'Built-in
+# Audio Stereo' with this set.)
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run}"
 
 # The handheld is a fixed framebuffer panel with no window manager, so run FULLSCREEN. Without this the
 # resizable window (added for desktop tiling WMs) treats itself as a floating window and shrinks its SDL
@@ -39,5 +44,11 @@ export SDL_AUDIODRIVER=alsa
 # wmC=1, vs 480x432 without it.)
 export RETROPLUG_SDL_FULLSCREEN=1
 
+# The compiled-in default audio block size is 512 frames (low latency, for desktops). The Cortex-A53 handheld
+# can't sustain emulation + resampling + LVGL inside that deadline, so the audio callback underruns (choppy
+# sound). Pass a big buffer here; it only seeds the default, so a user's own Settings > Audio pick (persisted to
+# audio.json) still overrides it.
+BLOCK_SIZE=4096
+
 # Log to the app folder (writable, on the SD card) so a launch can be diagnosed over SSH.
-./retroplug-sdl --width 640 --height 480 >"$APP_DIR/retroplug.log" 2>&1
+./retroplug-sdl --width 640 --height 480 --block-size "$BLOCK_SIZE" >"$APP_DIR/retroplug.log" 2>&1

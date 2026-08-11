@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <rfl/Bytestring.hpp>
 
 namespace rp {
 
@@ -150,18 +151,27 @@ struct ApuState {
 // The per-channel struct is a superset — a field is populated when meaningful
 // for the chip and left 0/false otherwise. `volume` is NORMALIZED to 0 (silent)
 // .. 15 (loudest) across all chips so "silent means low volume" reads the same
-// everywhere; `period` stays the chip-native pitch register. See the three
-// diagnostic fields: `constantOutput` (VRC6 "ignore duty" mode → DC/no tone),
-// `instrument` (VRC7 patch), and the normalized `volume`.
+// everywhere; `period` stays the chip-native pitch register. `frequency` is the
+// DECODED output pitch in Hz, derived from each chip's clocking model - the
+// expansion-audio analogue of `ApuSquareState.frequency`. Like that field it is
+// computed from the pitch register regardless of audibility (gate "sounding" on
+// `enabled`/`volume`, read `frequency` for "what pitch"); it is 0 only when the
+// pitch is undefined (a zero timer/fnum). `waveLength`/`activeChannels` are N163-
+// only cross-check terms (0 for the other chips). See the three diagnostic fields:
+// `constantOutput` (VRC6 "ignore duty" mode → DC/no tone), `instrument` (VRC7
+// patch), and the normalized `volume`.
 struct ExpansionAudioChannel {
     bool          enabled        = false;  // channel enabled / keyed on
     std::uint8_t  volume         = 0;      // normalized 0=silent .. 15=loudest
     std::uint32_t outputLevel    = 0;      // live decoded output magnitude (0 = silent right now)
     std::uint32_t period         = 0;      // chip-native pitch reg (VRC6/5B timer, N163 18-bit, VRC7 fnum)
+    double        frequency      = 0.0;    // decoded output pitch in Hz (0 when undefined)
     std::uint8_t  block          = 0;      // VRC7 octave 0-7 (0 for other chips)
     std::uint8_t  duty           = 0;      // VRC6 pulse duty 0-7 (0 for other chips)
     bool          constantOutput = false;  // VRC6 pulse "ignore duty" mode bit → DC, no tone
     std::uint8_t  instrument     = 0;      // VRC7 patch 0=custom,1-15 ROM (0 for other chips)
+    std::uint16_t waveLength     = 0;      // N163: active wave length in samples (0 for other chips)
+    std::uint8_t  activeChannels = 0;      // N163: enabled channel count 1-8 (0 for other chips)
 };
 
 struct ExpansionAudioState {
@@ -181,7 +191,9 @@ struct ExpansionAudioState {
 // scroll; `videoRamAddr`/`tmpVideoRamAddr` are the current/temp VRAM addresses
 // (v/t); `writeToggle` is the $2005/$2006 first/second-write latch (w);
 // `spriteRamAddr` is the OAM address ($2003). This is the flat state only — the
-// tilemap / sprite / palette VIEWERS (caller-allocated buffers) are not exposed.
+// tilemap / sprite VIEWERS (caller-allocated buffers) are not exposed. `paletteRam` is
+// the 32-byte palette RAM ($3F00-$3F1F): [0] = universal background color, then the bg /
+// sprite palettes (each a 6-bit NES index) — enough to read a ROM's applied bg/text colors.
 struct PpuState {
     std::int32_t  scanline        = 0;
     std::uint32_t cycle           = 0;
@@ -194,6 +206,7 @@ struct PpuState {
     std::uint16_t tmpVideoRamAddr = 0;      // temp VRAM address (t)
     bool          writeToggle     = false;  // $2005/$2006 write latch (w)
     std::uint8_t  spriteRamAddr   = 0;      // $2003 OAM address
+    rfl::Bytestring paletteRam;             // 32-byte palette RAM ($3F00-$3F1F)
 };
 
 // One Mesen event-viewer event (a register read/write, NMI, IRQ, DMA read,

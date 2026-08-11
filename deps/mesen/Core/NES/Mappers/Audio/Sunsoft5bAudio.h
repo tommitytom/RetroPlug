@@ -3,6 +3,7 @@
 #include "NES/NesConsole.h"
 #include "NES/APU/NesApu.h"
 #include "NES/APU/BaseExpansionAudio.h"
+#include "NES/NesConstants.h"
 #include "NES/NesExpansionAudioState.h"
 #include "Utilities/Serializer.h"
 
@@ -136,12 +137,18 @@ public:
 	{
 		NesExpansionAudioState state;
 		state.chip = "s5b";
+		// The PSG tone timer is clocked at CPU/2 (the _processTick divide-by-2) and
+		// the square completes one cycle every 16 toneStep advances, so the output
+		// pitch is clk / (32 * period). period==0 -> undefined (report 0, not inf).
+		double clk = NesConstants::GetClockRate(NesApu::GetApuRegion(_console));
 		for(int ch = 0; ch < 3; ch++) {
 			NesExpansionAudioChannel c;
+			uint16_t period = GetPeriod(ch);
 			c.Enabled     = IsToneEnabled(ch);
 			c.Volume      = _registers[8 + ch] & 0x0F;   // 4-bit, loud-scale
 			c.OutputLevel = GetVolume(ch);               // LUT amplitude
-			c.Period      = GetPeriod(ch);               // 12-bit tone period
+			c.Period      = period;                      // 12-bit tone period
+			c.Frequency   = period ? clk / (32.0 * period) : 0.0;
 			state.channels.push_back(c);
 		}
 		return state;

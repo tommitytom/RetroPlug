@@ -14,6 +14,7 @@
 // a UI-direct native hook rather than the RPC bridge (see below).
 
 import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transport";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 
 type RpcSend = (request: unknown) => unknown;
@@ -177,6 +178,49 @@ export function createDebugClient(): DebugBackend {
     readProfile: (id) => call("readProfile", id) as ProfiledFunction[],
     disassemble: (id, addr, count) => call("disassemble", id, addr, count) as DisasmLine[],
     getCallStack: (id) => call("getCallStack", id) as CallFrame[],
+  };
+}
+
+/** The serial byte-transport facet (mounted CLI-only today): the thin native seam the TS N8 stack (Edio
+ *  framing, menu commands, ROM/save orchestration in ./n8) rides on. Synchronous like every other facet -
+ *  a blocking read stalls only the calling (control) thread, never audio. Bytes cross as Uint8Array. Throws
+ *  if no native RPC surface is bound; `listPorts` returns [] on a host that didn't mount the facet. */
+export function createSerialClient(): SerialClient {
+  const call = makeCall();
+  return {
+    listPorts: () => (call("serialListPorts") as SerialPortInfo[] | undefined) ?? [],
+    open: (port: string): OpenSerialPort => {
+      const handle = call("serialOpen", port) as number;
+      if (handle < 0) throw new Error(`cannot open serial port: ${port}`);
+      return {
+        port,
+        write: (data: Uint8Array) => call("serialWrite", handle, data) as number,
+        read: (size: number, timeoutMs: number) =>
+          (call("serialRead", handle, size, timeoutMs) as Uint8Array | undefined) ?? new Uint8Array(0),
+        flushInput: () => void call("serialFlush", handle),
+        close: () => void call("serialClose", handle),
+      };
+    },
+  };
+}
+
+/** A live-MIDI-input client (mounted CLI-only today): the MIDI twin of createSerialClient, for the TS N8
+ *  bridges. `poll()` drains the messages queued since the last call (each = raw bytes; MIDI carries no
+ *  timing). Synchronous like every other facet. `listInputs` returns [] on a host that didn't mount it. */
+export interface MidiInputClient {
+  listInputs(): string[];
+  /** Open a virtual "<clientName> In/Out" + the selected hardware input ("" = all inputs). False if no MIDI system. */
+  open(clientName: string, input: string): boolean;
+  poll(): Uint8Array[];
+  close(): void;
+}
+export function createMidiClient(): MidiInputClient {
+  const call = makeCall();
+  return {
+    listInputs: () => (call("midiListInputs") as string[] | undefined) ?? [],
+    open: (clientName, input) => call("midiOpen", clientName, input) as boolean,
+    poll: () => ((call("midiPoll") as { bytes: Uint8Array }[] | undefined) ?? []).map((m) => m.bytes),
+    close: () => void call("midiClose"),
   };
 }
 

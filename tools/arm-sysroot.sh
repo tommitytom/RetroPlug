@@ -16,7 +16,7 @@ arm="$repo/.arm64"
 sysroot="$arm/sysroot"
 base_url="https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04-base-arm64.tar.gz"
 # The device libs (mirrors .github/workflows/build.yml handheld-arm64 / profile-host-arm64 apt lines).
-pkgs=(libsdl2-dev libasound2-dev libdbus-1-dev libcurl4-openssl-dev libffi-dev libssl-dev libpng-dev zlib1g-dev)
+pkgs=(libsdl2-dev libasound2-dev libpipewire-0.3-dev libdbus-1-dev libcurl4-openssl-dev libffi-dev libssl-dev libpng-dev zlib1g-dev)
 
 for tool in proot qemu-aarch64-static curl dpkg-deb python3; do
     command -v "$tool" >/dev/null || { echo "!! missing required tool: $tool" >&2; exit 1; }
@@ -52,6 +52,23 @@ for deb in "$sysroot"/var/cache/apt/archives/*.deb; do
 done
 echo "    extracted $n packages"
 rm -f "$sysroot"/var/cache/apt/archives/*.deb "$sysroot/root/fetch.sh"
+
+# The device runs PipeWire 1.0.x, but jammy ships libpipewire 0.3.48 — whose headers predate
+# `pw_buffer.requested` (added 0.3.49) and whose .so lacks symbols (e.g. pw_stream_get_time_n) that the
+# PortAudio fork's PipeWire backend uses, so retroplug-sdl won't cross-build against it. Overlay the noble
+# (24.04) arm64 libpipewire/libspa 1.0.x -dev + runtime .so on top: 1.0.x is ABI-compatible with the device's
+# 1.0.4 at runtime, and the overlaid .so is only a link stub (the device's own libpipewire resolves it at run
+# time) — the binary's glibc floor stays 2.38 (pinned by the toolchain headers), unaffected by these debs.
+pw_ver="1.0.5-1ubuntu3.3"
+pw_pool="http://ports.ubuntu.com/ubuntu-ports/pool/main/p/pipewire"
+echo "==> overlaying noble libpipewire/libspa $pw_ver (jammy's 0.3.48 is too old for the PortAudio PipeWire backend)"
+pw_tmp="$arm/pw-overlay"; rm -rf "$pw_tmp"; mkdir -p "$pw_tmp"
+for f in libpipewire-0.3-dev libpipewire-0.3-0t64 libspa-0.2-dev; do
+    deb="${f}_${pw_ver}_arm64.deb"
+    curl -fsSL "$pw_pool/$deb" -o "$pw_tmp/$deb"
+    dpkg-deb -x "$pw_tmp/$deb" "$sysroot"
+done
+rm -rf "$pw_tmp"
 
 echo "==> relativizing absolute .so symlinks (so the cross-linker stays inside the sysroot)"
 python3 - "$sysroot" <<'PY'

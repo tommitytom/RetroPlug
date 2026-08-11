@@ -296,22 +296,82 @@ endif()
 # reuses the WHOLE core — retroplug-backend (Engine + cores + txiki) + lvgl-js-native (the LVGL/React
 # bridge) + the SAME embedded cp/ui bundles the plugin links — and provides its own SDL2 window / audio /
 # input shell (sdl/main.cpp), bypassing DPF entirely. Modeled on retroplug-cli + retroplug-ui-test.
-# RtMidi (deps/rtmidi submodule) — cross-platform MIDI I/O for the standalone (the plugin gets MIDI from
-# its DAW host instead, so only retroplug-sdl needs this). Static; ALSA on Linux (JACK off — the handheld
-# path is ALSA/PipeWire); RtMidi's own CMake selects the platform API + link libs. EXCLUDE_FROM_ALL so the
-# `rtmidi` target is built only because retroplug-sdl links it.
+# RtMidi (deps/rtmidi submodule) — cross-platform MIDI I/O for live-MIDI hosts: the SDL standalone and the
+# CLI n8-bridge (the plugin gets MIDI from its DAW host instead). Static; ALSA on Linux (JACK off — the
+# handheld path is ALSA/PipeWire); RtMidi's own CMake selects the platform API + link libs. EXCLUDE_FROM_ALL
+# so the `rtmidi` target is built only because a target links it (retroplug-sdl, or retroplug-cli when
+# RETROPLUG_N8_BRIDGE is ON — see below).
 set(RTMIDI_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
 set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
 
-# Part of the default `all` target, so build.sh builds it and CI covers it. Its deps are already
-# unconditional: SDL2 is REQUIRED at root scope (every plugin variant links it for gamepad input) and
-# rtmidi is an in-tree submodule, so nothing new has to be installed to build this.
+# --- retroplug-cli N8 transport facets: serial + live MIDI -> the TS N8 stack ------------------------
+# The N8 tools (n8-load / n8-bridge / n8-sync) are all TS now (packages/retroplug/src/n8 + cli/sessions/):
+# native only provides the thin transport facets they ride on - the serial byte transport (SerialRpcService
+# over wjwwood/serial) and the live-MIDI-input facet (MidiRpcService over RtMidi). No C++ Edio/menu/translator
+# here anymore (the TS edio.ts + risaSyncTranslator.ts replace them). ON by default; turn OFF to keep
+# retroplug-cli (and thus the CI `all` build) free of the RtMidi/serial deps (ALSA dev headers on Linux) -
+# the N8 tools then just fail to find a device.
+option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli N8 transport facets (links RtMidi + serial)" ON)
+if(RETROPLUG_N8_BRIDGE)
+    target_sources(retroplug-cli PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/SerialRpcService.cpp   # serial byte-transport RPC facet (TS N8 seam)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (shared with retroplug-sdl)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiRpcService.cpp) # live-MIDI-input RPC facet (TS bridge seam)
+    target_link_libraries(retroplug-cli PRIVATE serial rtmidi)
+    target_compile_definitions(retroplug-cli PRIVATE RETROPLUG_N8_BRIDGE)
+endif()
+
+# PortAudio (deps/portaudio submodule, `pipewire` branch) — the standalone's audio backend, replacing the SDL
+# audio device/callback for better latency + device handling than SDL's ALSA-compat path (the plugin uses its
+# DAW host's audio, so only retroplug-sdl needs this). Static. The `portaudio` CMake auto-selects ALSA (dev
+# present via rtmidi), the native PipeWire host API where libpipewire-0.3 is found, and JACK where jack dev is
+# found. The Settings > Audio > Driver picker lists whatever host APIs end up compiled in here. EXCLUDE_FROM_ALL
+# so `portaudio` builds only because retroplug-sdl links it.
+set(PA_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(PA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(PA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+# We want PipeWire (native) + ALSA (fallback) + JACK. PortAudio auto-enables every host API whose dev libs it
+# finds, and libsdl2-dev drags in libpulse-dev + libsndio-dev — so without these the binary ends up NEEDing
+# libpulse / libsndio.so.7, which the muOS device doesn't ship (it failed to load there). Force them off.
+set(PA_USE_SNDIO OFF CACHE BOOL "" FORCE)
+set(PA_USE_PULSEAUDIO OFF CACHE BOOL "" FORCE)
+set(PA_USE_OSS OFF CACHE BOOL "" FORCE)
+# Load the three Linux backends with dlopen rather than linking them, so none of libasound.so.2 /
+# libpipewire-0.3.so.0 / libjack.so.0 is a DT_NEEDED entry on retroplug-sdl. Compiling a backend in no longer
+# means the binary refuses to START where that lib is absent (a PipeWire-less desktop, a JACK-less box, the
+# muOS handheld); a missing lib now just omits that one host API from the Settings > Audio > Driver picker and
+# leaves the rest working (the backends' *_Initialize soft-fail: *hostApi=NULL + paNoError, which Pa_Initialize
+# skips). This is the runtime half of the same problem the PA_USE_* force-offs above solve at compile time, and
+# it's why those are still needed: dlopen only helps for backends we actually want. libSDL2 stays linked — it's
+# the window/input shell.
+set(PA_ALSA_DYNAMIC ON CACHE BOOL "" FORCE)
+set(PA_PIPEWIRE_DYNAMIC ON CACHE BOOL "" FORCE)
+set(PA_JACK_DYNAMIC ON CACHE BOOL "" FORCE)
+# With no launch penalty left, JACK needs no opt-in flag: `unset` clears any stale cached PA_USE_JACK so the
+# fork's cmake_dependent_option(PA_USE_JACK ... ON JACK_FOUND OFF) re-decides on JACK_FOUND — compiled in
+# wherever jack dev headers are present, and absent by construction where they aren't (the arm sysroot has
+# none, so the handheld build is simply JACK-less, and it launches fine regardless).
+unset(PA_USE_JACK CACHE)
+add_subdirectory(${CMAKE_SOURCE_DIR}/deps/portaudio ${CMAKE_BINARY_DIR}/portaudio EXCLUDE_FROM_ALL)
+
+# Part of the default `all` target, so build.sh builds it and CI covers it. Its deps are in-tree submodules
+# (rtmidi + portaudio) or already required (SDL2 at root scope for gamepad input); PortAudio adds no new
+# system lib to build — ALSA is present via rtmidi, and libpipewire-0.3 (if installed) just upgrades it to the
+# native PipeWire host API, else it falls back to ALSA.
 add_executable(retroplug-sdl
     sdl/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (virtual + hardware ports)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp               # N8 Pro serial client (Settings > N8)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Link.cpp             # host serial thread -> physical N8 (MIDI forward)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp             # shared N8 link + config + n8.cfg (also the plugin)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp           # binds the __rp_*N8* config hooks (shared)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp             # on-device menu (*t/*n/*s) for SD ops (shared)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8SdWorker.cpp         # background worker: ROM upload / SRAM dump+restore
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
 
@@ -319,7 +379,9 @@ target_link_libraries(retroplug-sdl PRIVATE
     lvgl-js-native                # LvglJsEngine + lvgl + lv_binding_js native + lodepng
     retroplug-backend             # Engine + cores + txiki host + rpcpp
     rtmidi                        # cross-platform MIDI in/out (ALSA/CoreMIDI/WinMM)
-    PkgConfig::SDL2)              # window + present + audio + gamepad (found at root scope)
+    portaudio                     # audio backend (PipeWire/ALSA on Linux); replaces SDL audio
+    serial                        # wjwwood/serial -> Everdrive N8 Pro (cmake/serial.cmake)
+    PkgConfig::SDL2)              # window + present + gamepad (audio now via PortAudio; found at root scope)
 
 target_include_directories(retroplug-sdl PRIVATE
     # quickjs.h for the JS trampolines (lvgl-js-native PUBLIC-propagates the lv_binding_js render include
@@ -330,7 +392,9 @@ target_include_directories(retroplug-sdl PRIVATE
     ${DPFJS_PATH}/deps/dpf/distrho
     # portable-file-dialogs (header-only): the OS-native file picker backing __rp_openFileBrowser. No link
     # libs on Linux/macOS (it fork/execs zenity/kdialog/osascript); Windows pulls comdlg32/ole32 via its header.
-    ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
+    ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs
+    # portaudio.h (the `portaudio` target doesn't export its include dir for a subdirectory build).
+    ${CMAKE_SOURCE_DIR}/deps/portaudio/include)
 
 add_dependencies(retroplug-sdl retroplug-cp-bundle retroplug-ui-bundle)  # embedded bundles must exist first
 
@@ -359,6 +423,13 @@ dpf_add_plugin(retroplug
                                         # exists; also auto-enables DGL_USE_FILE_DROP for drag-and-drop (uiFileDropped)
     FILES_DSP
         plugin/PluginDSP.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Link.cpp            # host serial thread -> physical N8 (streaming)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp             # N8 Pro serial client
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp # serial-port factory + listSerialPorts
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp           # shared N8 link + config + n8.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp          # binds the __rp_*N8* config + SD-op hooks
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp           # on-device menu (*t/*n/*s) for SD ops
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8SdWorker.cpp       # background worker: ROM upload / SRAM dump+restore
         ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     FILES_UI
         plugin/PluginUI.cpp
@@ -378,7 +449,8 @@ target_include_directories(retroplug PUBLIC ${CMAKE_SOURCE_DIR}/deps/portable-fi
 target_link_libraries(retroplug PUBLIC
     retroplug-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
     lvgl-js-native                # LVGL + LvglJsEngine + lv_binding_js + lodepng (the editor)
-    dpfjs::core)                  # DPF Plugin + UI base
+    dpfjs::core                   # DPF Plugin + UI base
+    serial)                       # wjwwood/serial -> physical Everdrive N8 Pro (Settings > N8, all formats)
 
 target_compile_definitions(retroplug PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
 
@@ -632,7 +704,8 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/NesN8FifoTiming.test.cpp   # host MIDI-in keeps its intra-block offset into the N8 FIFO
     test/audio/NesEverdriveFifo.test.cpp  # Edio status protocol leaves no stale byte to desync MIDI parsing
     test/audio/NesStems.test.cpp     # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
-    test/audio/SmsAudio.test.cpp)    # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
+    test/audio/SmsAudio.test.cpp     # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
+    test/audio/SameBoyModels.test.cpp)   # every SameBoyModel (incl. SGB variants) boots + renders
 
 target_link_libraries(retroplug-audio-test PRIVATE
     retroplug-backend          # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
@@ -686,6 +759,60 @@ target_include_directories(retroplug-midi-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
 
 set_target_properties(retroplug-midi-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-n8-test guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact
+# krikzz CMD_MEM_WR byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status
+# word; plus the N8Link forward path (the SDL standalone's realtime serial thread) and the N8SdWorker SD /
+# menu control ops (ROM upload / SRAM dump+restore + the connection manager that pauses streaming). Compiles
+# those against a capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware. The CLI's risa-sync
+# translation lives in TS (packages/retroplug src/n8, `pnpm test n8`); the C++ Edio/N8Link/N8Menu twin backs
+# the realtime + UI paths (the native worker can't run the single-threaded TS stack off the UI thread). Also
+# `pnpm test:n8`.
+add_executable(retroplug-n8-test EXCLUDE_FROM_ALL
+    test/n8/Edio.test.cpp
+    test/n8/N8Host.test.cpp
+    test/n8/N8SdWorker.test.cpp
+    src/host/n8/Edio.cpp
+    src/host/n8/N8Link.cpp
+    src/host/n8/N8Host.cpp
+    src/host/n8/N8Menu.cpp
+    src/host/n8/N8SdWorker.cpp)
+
+find_package(Threads REQUIRED)
+target_link_libraries(retroplug-n8-test PRIVATE
+    Catch2::Catch2WithMain
+    reflectcpp::reflectcpp         # rfl::json - parse the shared Edio golden (twins edio.test.ts)
+    Threads::Threads)              # N8Link's serial thread
+
+target_include_directories(retroplug-n8-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/n8/Edio.hpp
+
+# The shared Edio framing golden both this gtest and edio.test.ts assert against (single source, no drift).
+target_compile_definitions(retroplug-n8-test PRIVATE
+    EDIO_GOLDEN_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/n8/edio-golden.json")
+
+set_target_properties(retroplug-n8-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-n8-hwtest: a manual hardware harness (NOT CI) that drives the real N8 SD/menu ops through the
+# same native N8Host + N8SdWorker the Settings > N8 Pro menu uses, over a real /dev/ttyACM0 (adds the real
+# WjwwoodSerialPort + `serial`). EXCLUDE_FROM_ALL; build by name: cmake --build build --target retroplug-n8-hwtest.
+add_executable(retroplug-n8-hwtest EXCLUDE_FROM_ALL
+    test/n8/n8-sd-hwtest.cpp
+    src/host/n8/Edio.cpp
+    src/host/n8/N8Link.cpp
+    src/host/n8/N8Host.cpp
+    src/host/n8/N8Menu.cpp
+    src/host/n8/N8SdWorker.cpp
+    src/host/n8/WjwwoodSerialPort.cpp)
+target_link_libraries(retroplug-n8-hwtest PRIVATE serial Threads::Threads)
+target_include_directories(retroplug-n8-hwtest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+set_target_properties(retroplug-n8-hwtest PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

@@ -52,6 +52,8 @@ import {
 } from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
+import { EverMidiRom } from "../../../src/evermidi/rom";
+import { readOverrides as readEverMidiOverrides, type EverMidiAssetOverride } from "../../../src/evermidiAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 // Aliased: `replaceSong` and `addSong` are already taken here by the LSDj row helpers.
@@ -76,6 +78,7 @@ import {
   risaAssetCatalog,
   smsggdjSongCatalog,
   smsggdjAssetCatalog,
+  evermidiAssetCatalog,
   type SongCatalog,
   type AssetCatalog,
   type AssetSlotRow,
@@ -89,8 +92,10 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
-import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty } from "./audioDraft";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
+import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
+import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -115,6 +120,8 @@ export interface MenuContext {
   // Open the Songs "import from a .sav" picker (validate the source against the cart's console, then show a
   // checkbox list) — owned by useSongImport, wired from App like the project modals.
   beginSongImport: (sys: SystemView, source: Uint8Array) => void;
+  /** Show the LSDj HD player for a system (a full-window view; Esc closes it). Owned by App. */
+  openLsdjHd: (systemId: number) => void;
 }
 
 /** True only in a standalone host (the SDL handheld build or the DPF JACK standalone), which installs
@@ -135,19 +142,32 @@ const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
 const AUDIO_CHANNELS = [2, 4, 6, 8];
 const AUDIO_CHANNEL_NAMES = ["Stereo", "4 (2 pairs)", "6 (3 pairs)", "8 (4 pairs)"];
 function audioSettingsChildren(): MenuItem[] {
-  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 2048, outChannels: 2 };
+  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", device: "" };
   const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
   const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
   const chIdx = Math.max(0, AUDIO_CHANNELS.indexOf(cfg.outChannels));
+  // The driver list ("Auto" + each compiled-in/available host API) is enumerated natively, so the picker shows
+  // exactly what the build/runtime offers (PipeWire+ALSA on the handheld, which has no jack dev to compile against;
+  // +JACK on a desktop build, and only when libjack.so.0 is actually there to dlopen).
+  const drivers = getAudioDrivers();
+  const driverIdx = Math.max(0, drivers.indexOf(cfg.driver));
+  // Output devices of the SELECTED driver (host API), with "Default" (= the host API default) at index 0. The
+  // list tracks the DRAFT driver; changing the driver resets the device (a device isn't valid across host APIs).
+  const dev = deviceCyclerNames(getAudioDevices(cfg.driver), cfg.device, "Default");
+  const devName = (n: number) => (n === 0 ? "" : getAudioDevices(cfg.driver)[n - 1] ?? cfg.device);
   const dirty = audioDraftDirty();
   return [
     // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
+    cycler("audio-driver", "Driver", drivers, driverIdx, (n) => setAudioDraft({ driver: drivers[n], device: "" })),
+    cycler("audio-device", "Output Device", dev.names, dev.index, (n) => setAudioDraft({ device: devName(n) })),
     cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
     cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
     cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),
     sep("audio-sep-apply"),
-    // Commit the staged rate/block/channels to the device. Greyed (inert) until there's a pending change.
-    action("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
+    // Commit the staged rate/block/channels/driver/device to the device. Greyed (inert) until a pending change.
+    // keepOpen: stay in the Audio submenu after applying (it re-seeds the draft, so Apply just greys out) rather
+    // than closing the whole menu — you often tweak several settings in a row.
+    { ...action("audio-apply", "Apply", () => applyAudioDraft(), !dirty), keepOpen: true },
   ];
 }
 
@@ -176,6 +196,89 @@ function midiSettingsChildren(): MenuItem[] {
     cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),
     cycler("midi-output", "Output Device", out.names, out.index, (n) => setMidiOutput(outName(n))),
   ];
+}
+
+// "Everdrive N8 Pro" submenu (in the instance menu's tracker block, beside risa/LSDj - it drives a real
+// NES), available in BOTH the SDL standalone and the DAW plugin. The submenu shows only when a physical N8 is
+// actually detected (a serial port with the cart's USB VID:PID, n8Detected below) - no hardware, no menu.
+// Streaming: pick a serial port (auto-detecting the N8), Connect to open the link, tune the timed-release
+// lookahead; the native host reconnects + persists (n8.cfg) on the spot. SD ops (Load ROM / Dump / Restore
+// SRAM): long native worker jobs that pause streaming, borrow the port, and report progress on the read-only
+// SD row (useN8SdWatch keeps it live). Those appear only once the link is up (see the gate below). One job at
+// a time - every action is disabled while one runs.
+const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
+
+// A physical N8 counts as "here" only when one is actually enumerated (a serial port flagged isN8 by its USB
+// VID:PID). null cfg = the host lacks the seam (headless harness). Gates whether the whole submenu renders.
+function n8Detected(cfg: N8Config | null): boolean {
+  return !!cfg && cfg.ports.some((p) => p.isN8);
+}
+
+// The read-only SD-op status line: progress while busy, else the last result / error, else Ready.
+function n8SdLabel(sd: N8SdStatus): string {
+  if (sd.busy) {
+    const pct = sd.bytesTotal > 0 ? ` ${Math.floor((sd.bytesDone / sd.bytesTotal) * 100)}%` : "";
+    return `${sd.phase || "Working"}${pct}`;
+  }
+  if (sd.error) return `Error: ${sd.error}`;
+  if (sd.done && sd.result) return sd.result;
+  return "Ready";
+}
+
+function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
+  // Port cycler: index 0 = "(auto-detect)" (empty selection); the rest are the DETECTED N8 ports only. A plain
+  // serial port can't be an Everdrive, so we don't offer it (the cart is identified by its USB VID:PID). A
+  // persisted selection that isn't currently enumerated is still shown, tagged "(not detected)", so it never
+  // silently vanishes.
+  const n8Ports = cfg.ports.filter((p) => p.isN8);
+  const portValues = n8Ports.map((p) => p.port);
+  const names = ["(auto-detect)", ...portValues];
+  let index = 0;
+  if (cfg.selectedPort !== "") {
+    const i = portValues.indexOf(cfg.selectedPort);
+    if (i >= 0) index = i + 1;
+    else { names.push(`${cfg.selectedPort} (not detected)`); index = names.length - 1; }
+  }
+  const portName = (n: number) => (n === 0 ? "" : portValues[n - 1] ?? cfg.selectedPort);
+  const laIdx = Math.max(0, N8_LOOKAHEADS.indexOf(cfg.lookaheadMs));
+  const status = cfg.enabled
+    ? cfg.connected
+      ? `Streaming (${cfg.bytes} bytes)`
+      : cfg.error
+        ? `Error: ${cfg.error}`
+        : "Connecting..."
+    : "Off";
+
+  const sd = getN8SdStatus(); // null on a host without the SD seam; non-null implies the ops are available
+  const busy = sd?.busy ?? false; // one SD job at a time -> disable every action (incl. Connect) while it runs
+  const items: MenuItem[] = [
+    cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n))),
+    action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled), busy),
+    cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx, (n) => setN8Lookahead(N8_LOOKAHEADS[n])),
+    sep("n8-sep-status"),
+    action("n8-status", `Status: ${status}`, () => {}, true),  // read-only streaming status row
+  ];
+
+  // The SD-card ops (Load ROM / Dump / Restore SRAM) borrow the streaming link's serial port, so they only make
+  // sense once it's up: show them only while connected - or while a job runs. A job momentarily tears the link
+  // down to borrow the port, so `connected` blips false mid-job; `busy` keeps the block (and its live progress
+  // row) put. After a ROM load the link stays down on purpose (a new game booted, streaming stopped), so the
+  // block hides again until you reconnect. Absent entirely without the SD seam (headless harness -> sd null).
+  if (sd && (cfg.connected || busy)) {
+    // Each op browses a local file then kicks off the native worker. Load ROM needs the cart at its menu;
+    // Dump/Restore act on the running game's battery (see n8SdOps.ts / N8Host).
+    items.push(
+      sep("n8-sep-sd"),
+      action("n8-load-rom", "Load ROM to N8...", () =>
+        browseThen(ctx, { title: "Load ROM to N8", patterns: ROM_PATTERNS }, n8LoadRom), busy),
+      action("n8-dump-sram", "Dump SRAM to file...", () =>
+        browseThen(ctx, { title: "Dump N8 SRAM", patterns: ["*.srm", "*.sav"], saving: true, defaultName: "n8.srm" }, n8DumpSram), busy),
+      action("n8-restore-sram", "Restore SRAM from file...", () =>
+        browseThen(ctx, { title: "Restore N8 SRAM", patterns: ["*.srm", "*.sav"] }, n8RestoreSram), busy),
+      action("n8-sd-status", `SD: ${n8SdLabel(sd)}`, () => {}, true),  // read-only SD-op status row
+    );
+  }
+  return items;
 }
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
@@ -651,7 +754,9 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
   const bytes = assetRomBytes(ctx.stores.backend, sys.romPath);
   if (!bytes) return [];
   const overrides = overridesFor(sys, spec.catalog.assetRole);
-  return spec.catalog.types.map((type) => {
+  // A catalog may refine its types per-ROM (EverMIDI: single-kit on NROM, addable/16 on a banking cart).
+  const types = spec.catalog.resolveTypes ? spec.catalog.resolveTypes(bytes) : spec.catalog.types;
+  return types.map((type) => {
     const rows = effectiveAssets(spec.catalog.baseSlots(bytes, type.kind), overrides, type.kind, type.noun);
     const children: MenuItem[] = [];
     if (type.addable) {
@@ -901,6 +1006,82 @@ function replaceRisaAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo
 
 const lsdjAssetSpec: AssetMenuSpec = { id: "lsdj", catalog: lsdjAssetCatalog, exportAsset, replaceAsset };
 const risaAssetSpec: AssetMenuSpec = { id: "risa", catalog: risaAssetCatalog, exportAsset: exportRisaAsset, replaceAsset: replaceRisaAsset };
+
+// --- EverMIDI asset file actions (Export/Replace own the .rkit/.chr formats) ---------------------------
+// EverMIDI has no themes (no ROM theme table yet) — just the baked DMC kit + the CHR font, both LINKED by
+// path (a pre-built 8 KB .rkit / .chr bank, read at construct). Mirrors the risa actions minus themes.
+const everMidiAssetOverrides = (sys: SystemView): EverMidiAssetOverride[] =>
+  readEverMidiOverrides(sys.roles.find((r) => r.kind === "evermidi-assets")?.config);
+
+const readEverMidiRomFor = (be: HostBackend, romPath: string): EverMidiRom | null => {
+  const bytes = romPath ? be.readFile(romPath) : null;
+  if (!bytes) return null;
+  const rom = EverMidiRom.fromBytes(bytes);
+  return rom.isEverMidi ? rom : null;
+};
+
+// Export theme/kit/font `slot` to a picked file: the override's data if replaced, else the base ROM's asset.
+function exportEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void {
+  const be = ctx.stores.backend;
+  const kind = type.kind;
+  const ov = everMidiAssetOverrides(sys).find((o) => o.type === kind && o.slot === slot);
+  const defaultName = `${sanitizeName(label)}${type.ext}`;
+  browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: type.patterns, saving: true, defaultName }, (path) => {
+    let bytes: Uint8Array | null = null;
+    if (kind === "theme") {
+      // The theme comes from the inline override, or the base ROM decoded; emit a .rit (readable JSON).
+      let theme = ov?.theme ?? null;
+      if (!theme) {
+        const t = readEverMidiRomFor(be, sys.romPath)?.getTheme(slot);
+        if (t) theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
+      }
+      if (theme) bytes = new TextEncoder().encode(JSON.stringify(serializeRit(theme), null, 2) + "\n");
+    } else if (kind === "kit") {
+      // The linked bank if overridden, else the base ROM's 8 KB DMC bank — either is a ready-to-link .rkit.
+      bytes = ov?.path ? be.readFile(ov.path) : (readEverMidiRomFor(be, sys.romPath)?.getKitBank(slot) ?? null);
+    } else {
+      bytes = ov?.path ? be.readFile(ov.path) : (readEverMidiRomFor(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
+    }
+    if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
+  });
+}
+
+// Replace theme/kit/font `slot` from a picked file: validate it, record the override (theme INLINE / font +
+// kit by PATH) in role config, and reload so it takes effect. NON-DESTRUCTIVE — the base .nes is never written.
+function replaceEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
+  const be = ctx.stores.backend;
+  const kind = type.kind;
+  browseThen(ctx, { title: `Replace ${kind} ${slot}`, patterns: type.patterns }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    let entry: EverMidiAssetOverride;
+    try {
+      if (kind === "theme") {
+        const { theme } = parseRit(JSON.parse(new TextDecoder().decode(data))); // throws on a bad .rit
+        entry = { type: "theme", slot, name: theme.name.trim() || stem(path), theme };
+      } else if (kind === "kit") {
+        if (data.length !== KIT_BANK_SIZE || !isBankPopulated(data)) return; // a .rkit is exactly one populated 8 KB DMC bank
+        entry = { type: "kit", slot, name: bankToModel(data).name.trim() || stem(path), path };
+      } else {
+        if (data.length !== 0x2000) return; // a .chr is exactly one 8 KB CHR bank
+        entry = { type: "font", slot, name: stem(path), path };
+      }
+    } catch {
+      return; // malformed .rit / unreadable → leave the ROM untouched
+    }
+    writeOverrides(ctx, sys, "evermidi-assets", [
+      ...everMidiAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot)),
+      entry,
+    ]);
+  });
+}
+
+const everMidiAssetSpec: AssetMenuSpec = {
+  id: "evermidi",
+  catalog: evermidiAssetCatalog,
+  exportAsset: exportEverMidiAsset,
+  replaceAsset: replaceEverMidiAsset,
+};
 
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
 // Songs are the battery, NOT a ROM override: edits act directly on the live SRAM (like LSDj's own FILE
@@ -1407,7 +1588,7 @@ const smsggdjAssetSpec: AssetMenuSpec = {
 // the integration itself (id/label/markerRole/songs/assets) rides src/tracker (the one place a console is
 // registered).
 interface TrackerUi {
-  song: SongMenuSpec;
+  song?: SongMenuSpec; // omitted for asset-only consoles (e.g. EverMIDI) — no Songs submenu is built
   asset: AssetMenuSpec;
   extras?(ctx: MenuContext, sys: SystemView): MenuItem[];
 }
@@ -1415,15 +1596,16 @@ const TRACKER_UI: Record<string, TrackerUi> = {
   lsdj: { song: lsdjSongSpec, asset: lsdjAssetSpec, extras: lsdjExtras },
   risa: { song: risaSongSpec, asset: risaAssetSpec },
   smsggdj: { song: smsggdjSongSpec, asset: smsggdjAssetSpec },
+  evermidi: { asset: everMidiAssetSpec },
 };
 
-// One tracker's instance-submenu children: its extras (if any), the shared Songs menu, its asset menus, then
-// the whole-ROM bake rows.
+// One tracker's instance-submenu children: its extras (if any), the shared Songs menu (only if the
+// console has a song battery), its asset menus, then the whole-ROM bake rows.
 function trackerChildren(t: TrackerIntegration, ctx: MenuContext, sys: SystemView): MenuItem[] {
   const ui = TRACKER_UI[t.id];
   return [
     ...(ui.extras ? ui.extras(ctx, sys) : []),
-    songMenu(ui.song, ctx, sys),
+    ...(ui.song ? [songMenu(ui.song, ctx, sys)] : []),
     ...assetMenu(ui.asset, ctx, sys),
     ...romPatchRows(ui.asset, ctx, sys),
   ];
@@ -1447,6 +1629,9 @@ function lsdjExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
     cycler("lsdj-autostart", "Auto Start", OFF_ON, autoStart ? 1 : 0, (n) =>
       systems.setRoleConfig(sys.id, "lsdj-sync", { autoStart: n === 1 }),
     ),
+    // The HD player: song + all four chains + all four phrases on one full-window screen, in the cart's
+    // own font and palette. The cart keeps playing and stays playable underneath; Esc returns to the grid.
+    action("lsdj-hd", "HD Player", () => ctx.openLsdjHd(sys.id)),
     sep("lsdj-assets-sep"),
   ];
 }
@@ -1652,18 +1837,25 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     ),
     action("set-render-dir-clear", "Clear", () => userConfig.setRenderOutputDir(""), !defaultDir),
   ]);
+  // Device pickers (Audio + MIDI) lead the menu: standalone-only, where the SDL host exposes the audio /
+  // RtMidi seams (a DAW-hosted editor / the headless harness has neither). The separator under them is
+  // emitted only when at least one is present, so a DAW build doesn't open on a stray leading rule.
+  const deviceRows: MenuItem[] = [
+    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
+    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
+  ];
   return [
+    ...deviceRows,
+    ...(deviceRows.length ? [sep("set-sep-devices")] : []),
+    // The input-binding editors sit right below the device pickers, with their own separator under them.
+    submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
+    submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
+    sep("set-sep-bindings"),
     cycler("set-sram", "SRAM Auto-Save", SRAM_AUTO_SAVES.map((m) => SRAM_AUTO_SAVE_LABELS[m] ?? m), sramIdx, (n) => userConfig.setSramAutoSave(SRAM_AUTO_SAVES[n])),
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
     renderDirItem,
-    submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
-    submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
     // The host's OS file dialog (default) vs the in-app browser. On a host with no OS dialog it stays in-app.
     cycler("set-native-dialogs", "File Dialogs", ["In-App", "OS Native"], ctx.userConfig.useNativeFileDialogs ? 1 : 0, (n) => userConfig.setUseNativeFileDialogs(n === 1)),
-    // Audio device (sample rate / block size) — standalone only, where the SDL host exposes the seam.
-    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
-    // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
-    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }
@@ -1719,8 +1911,8 @@ export function trackerCartLabel(backend: Pick<ControlPlaneBackend, "readFile" |
   const romName = cartRomName(backend, tracker, sys.romPath);
   const sram = backend.readSram(sys.id);
   // The window title is the most visible place the working song is named, and for smsggdj the only
-  // source is the cart's own song_name in work RAM.
-  const song = sram ? tracker.songs.workingName(sram, backend.readRam(sys.id) ?? undefined) : null;
+  // source is the cart's own song_name in work RAM. An asset-only cart (EverMIDI) has no battery to name.
+  const song = sram && tracker.songs ? tracker.songs.workingName(sram, backend.readRam(sys.id) ?? undefined) : null;
   const segs = [song, romName].filter((s): s is string => !!s);
   return segs.length ? segs.join(" - ") : null;
 }
@@ -1755,6 +1947,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const multi = ctx.systems.length > 1; // Replace / Remove / Link Group are peer-only rows
   // The tracker submenu (LSDj / risa / …) — one generic branch, gated on the marker role the ROM sniffed.
   const tracker = resolveTracker(sys.roles);
+  const n8cfg = getN8Config();     // null without the seam; enumerates ports + link state fresh each render
+  const n8Here = n8Detected(n8cfg); // true only when a physical N8 is attached -> the submenu renders
   return {
     title: instanceTitle(ctx, sys),
     items: [
@@ -1764,14 +1958,22 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       action("inst-save", saveProjectLabel(ctx), () => void saveProjectInteractive(ctx.stores)),
       action("inst-new", "New Project", () => ctx.newProject()),
       submenu("inst-recent", "Recent", recentChildren(ctx)),
-      // The tracker submenu (LSDj / risa) sits right under Recent, fenced by a separator on each side (the
-      // one above here, and inst-sep-top below). Only present when the cart sniffed a tracker.
-      ...(tracker
+      // The tracker submenu (LSDj / risa) and the N8 Pro hardware submenu share the block right under Recent,
+      // fenced by a separator on each side (the one below here, and inst-sep-top). The tracker is present only
+      // when the cart sniffed one; N8 Pro only when a physical N8 is actually detected (n8Here) - it drives a
+      // real NES, so it belongs beside the trackers, not buried in Settings, but there's nothing to show without
+      // the hardware.
+      ...(tracker || n8Here
         ? [
             sep("inst-sep-tracker"),
-            trackerVersionSupported(tracker, ctx.stores.backend, sys.romPath)
-              ? submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))
-              : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
+            ...(tracker
+              ? [
+                  trackerVersionSupported(tracker, ctx.stores.backend, sys.romPath)
+                    ? submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))
+                    : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
+                ]
+              : []),
+            ...(n8Here ? [submenu("inst-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
           ]
         : []),
       sep("inst-sep-top"),
@@ -1808,12 +2010,18 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
 }
 
 export function buildStartMenu(ctx: MenuContext): MenuTree {
+  const n8cfg = getN8Config();
+  const n8Here = n8Detected(n8cfg); // shown only when a physical N8 is actually attached
   return {
     title: ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug",
     items: [
       submenu("start-recent", "Recent", recentChildren(ctx)),
       action("start-load", "Load...", () => runLoad(ctx)),
       action("start-mgb", "Load mGB (GB MIDI Synth)", () => ctx.stores.project.systems.loadMgb()),
+      // N8 Pro (physical NES) in its own fenced block, mirroring the instance menu's tracker block. The
+      // streaming + SD ops don't need a loaded system, so it belongs here too (configure/connect the cart, or
+      // load a ROM onto it, before opening anything in RetroPlug). Only when a cart is actually detected.
+      ...(n8Here ? [sep("start-sep-n8"), submenu("start-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),

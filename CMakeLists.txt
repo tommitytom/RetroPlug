@@ -179,6 +179,9 @@ endif()
 # --- SameBoy: Game Boy emulator core (submodule at deps/sameboy) ---
 include(cmake/sameboy.cmake)
 
+# --- wjwwood/serial: USB-serial for the Everdrive N8 Pro bridge (submodule at deps/serial) ---
+include(cmake/serial.cmake)
+
 # --- SameBoySystem.cpp: clang-cl isolation (Windows) ------------------------
 # SameBoySystem.cpp #defines GB_INTERNAL to reach SameBoy's internal struct view
 # and GNU-extension headers, which MSVC cl.exe cannot parse. Like the sameboy

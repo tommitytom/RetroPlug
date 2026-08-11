@@ -1,7 +1,7 @@
 // getPpuState against a REAL Mesen NES core, driven through the CLI session + Timeline. Rendering audio
 // advances the PPU, so after a warmup+render the snapshot reports a non-zero frame count and a dot
-// position within the valid NES scanline/cycle ranges. (The tilemap/sprite/palette viewers are out of
-// scope — this proves only the flat register/timing struct.)
+// position within the valid NES scanline/cycle ranges. Also covers the 32-byte palette RAM
+// ($3F00-$3F1F). (The tilemap/sprite viewers are still out of scope.)
 import { test, expect } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
@@ -35,4 +35,7 @@ test("getPpuState reads a real NES PPU: frameCount advances, scanline/cycle in r
   expect(ppu!.mask >= 0 && ppu!.mask <= 0xff).toBeTruthy();
   expect(ppu!.status >= 0 && ppu!.status <= 0xff).toBeTruthy();
   expect(typeof ppu!.writeToggle === "boolean").toBeTruthy();
+  // The 32-byte palette RAM is exposed; entry 0 (the universal background) is a 6-bit NES index.
+  expect(ppu!.paletteRam.length).toBe(32);
+  expect(ppu!.paletteRam[0] <= 0x3f).toBeTruthy();
 });

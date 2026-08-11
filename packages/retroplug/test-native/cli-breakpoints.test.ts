@@ -1,8 +1,8 @@
 // Breakpoints + run-until-break against a REAL Mesen NES core, driven through the CLI session +
 // Timeline. Proves the spec/09 breakpoint surface end-to-end: an execute breakpoint fires at a known PC,
 // a read watchpoint fires on the MIDI FIFO access, the cycle cap returns broke=false, and a condition
-// expression gates the break. Known-good addresses/conditions mirror the legacy nes/debug.test.ts
-// ($9C69 == the midiIdleLoop that polls the MIDI FIFO at $40F1).
+// expression gates the break. $9E33 is the n8-midi idle loop that polls the MIDI FIFO at $40F1 (Y==0
+// there); it's also the `midiIdleLoop` label in the committed resources/roms/n8-midi.dbg.
 import { test, expect } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
@@ -23,10 +23,10 @@ test("breakpoints fire on a real NES: execute PC, FIFO read watchpoint, cycle ca
   renderTimeline(s, new Timeline(), { durationMs: 200, warmupMs: 1000 });
 
   // Execute breakpoint at the idle loop entry must fire exactly there.
-  expect(s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9c69 }])).toBeTruthy();
+  expect(s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9e33 }])).toBeTruthy();
   const exec = s.backend.runUntilBreak(id, 5_000_000);
   expect(exec.broke).toBeTruthy();
-  expect(exec.pc).toBe(0x9c69);
+  expect(exec.pc).toBe(0x9e33);
   expect(exec.breakpointId >= 0).toBeTruthy();
 
   // A read watchpoint on the MIDI FIFO ($40F1) — the idle loop polls it, so it must fire.
@@ -40,12 +40,12 @@ test("breakpoints fire on a real NES: execute PC, FIFO read watchpoint, cycle ca
   expect(s.backend.runUntilBreak(id, 200_000).broke).toBeFalsy();
 
   // A contradiction never matches — the breakpoint must not fire.
-  s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9c69, condition: "1 == 0" }]);
+  s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9e33, condition: "1 == 0" }]);
   expect(s.backend.runUntilBreak(id, 500_000).broke).toBeFalsy();
 
-  // Y is 0 at the idle-loop entry — this condition matches and fires at $9C69.
-  s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9c69, condition: "Y == 0" }]);
+  // Y is 0 at the idle-loop entry — this condition matches and fires at $9E33.
+  s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9e33, condition: "Y == 0" }]);
   const cond = s.backend.runUntilBreak(id, 5_000_000);
   expect(cond.broke).toBeTruthy();
-  expect(cond.pc).toBe(0x9c69);
+  expect(cond.pc).toBe(0x9e33);
 });

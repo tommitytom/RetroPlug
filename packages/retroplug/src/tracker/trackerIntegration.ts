@@ -15,6 +15,8 @@ import { smsggdjAssetCatalog } from "./smsggdjAssetCatalog";
 import { identifySmsggdjVersion } from "../smsggdj/romDetect";
 import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
 import { readSongBlock, readSongName, readSongEcho, sanitizeEcho, songLengthRows, isGrooveEmpty } from "../smsggdj/codec/sav";
+import { evermidiAssetCatalog } from "./evermidiAssetCatalog";
+import { everMidiVersion } from "../evermidi/romDetect";
 import { identifyLsdj } from "../lsdj/runtime/identify";
 import { identifyRisaVersion } from "../risa/runtime/identify";
 import { resolveRisaLayout } from "../risa/runtime/layout";
@@ -26,7 +28,9 @@ export interface TrackerIntegration {
   readonly label: string;
   /** The role kind the ROM provider attaches that identifies this console (the menu gate). */
   readonly markerRole: string;
-  readonly songs: SongCatalog;
+  /** The song catalog (the battery), if this console has one. Asset-only consoles (e.g. EverMIDI, a MIDI
+   *  synth with no song battery) omit it — the shared Songs menu is then simply not built. */
+  readonly songs?: SongCatalog;
   readonly assets: AssetCatalog;
   /** The cart's OWN name — its internal ROM title / embedded version marker, NOT the on-disk filename
    *  (e.g. "LSDj v9.4.2" from the GB cartridge title, "risa v2.2.1" from the PRG "RISA V" marker). null
@@ -153,8 +157,26 @@ export const smsggdjIntegration: TrackerIntegration = {
   },
 };
 
+// EverMIDI: an NES MIDI synth (not a tracker), so it has NO song battery — only ROM assets (a baked DMC kit
+// + the CHR font). An asset-only integration: `songs` is omitted, so only the asset submenus are built.
+export const everMidiIntegration: TrackerIntegration = {
+  id: "evermidi",
+  label: "EverMIDI",
+  markerRole: "evermidi",
+  assets: evermidiAssetCatalog,
+  romName: (rom) => {
+    const v = everMidiVersion(rom); // the byte after the "EVERMIDI" head marker (-1 when absent)
+    return v >= 0 ? `EverMIDI v${v}` : null;
+  },
+};
+
 /** Every registered tracker integration. The one place a new tracker console is added. */
-export const TRACKER_INTEGRATIONS: TrackerIntegration[] = [lsdjIntegration, risaIntegration, smsggdjIntegration];
+export const TRACKER_INTEGRATIONS: TrackerIntegration[] = [
+  lsdjIntegration,
+  risaIntegration,
+  smsggdjIntegration,
+  everMidiIntegration,
+];
 
 /** The tracker integration for a system, resolved from its attached roles (the first role whose kind is an
  *  integration's markerRole). undefined for a non-tracker system. */

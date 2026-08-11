@@ -63,30 +63,61 @@ add_custom_command(
     VERBATIM
 )
 
+# Stock SameBoy boot ROMs, assembled straight from the submodule sources.
+# NOTE: cgb_boot_fast is intentionally NOT here — RetroPlug ships its own silent +
+# flashless fast variants (below), and the RetroPlug cgb_boot_fast would collide with
+# a submodule-built one on the generated header name.
 set(SAMEBOY_BOOTROMS
     dmg_boot
     mgb_boot
     cgb_boot
     cgb0_boot
-    cgb_boot_fast
     agb_boot
     sgb_boot
     sgb2_boot
 )
 
+# RetroPlug-owned silent + flashless fast boot ROMs (cmake/bootroms/). These are thin
+# stubs that DEF RP_FAST and include RetroPlug's own copies of the base ROMs (rp_*.asm);
+# deps/sameboy is never edited. BR_RP_SRC is added to the rgbasm --include path so the
+# stubs' `include "rp_*.asm"` and the base ROMs' `include "sameboot.inc"` both resolve.
+set(BR_RP_SRC "${CMAKE_SOURCE_DIR}/cmake/bootroms")
+set(RETROPLUG_BOOTROMS
+    cgb_boot_fast
+    cgb0_boot_fast
+    agb_boot_fast
+    dmg_boot_fast
+    mgb_boot_fast
+    sgb_boot_fast
+    sgb2_boot_fast
+)
+# The owned base ROMs each fast stub `include`s — added to the fast variants' DEPENDS so
+# an edit to a base retriggers the dependent stubs.
+set(_rp_base_asm
+    "${BR_RP_SRC}/rp_cgb_boot.asm"
+    "${BR_RP_SRC}/rp_dmg_boot.asm"
+    "${BR_RP_SRC}/rp_sgb_boot.asm"
+)
+
 set(_bootrom_headers "")
-foreach(name IN LISTS SAMEBOY_BOOTROMS)
-    set(asm "${BR_SRC}/${name}.asm")
+foreach(name IN LISTS SAMEBOY_BOOTROMS RETROPLUG_BOOTROMS)
+    if(EXISTS "${BR_RP_SRC}/${name}.asm")
+        set(asm "${BR_RP_SRC}/${name}.asm")
+        set(_extra_dep ${_rp_base_asm})
+    else()
+        set(asm "${BR_SRC}/${name}.asm")
+        set(_extra_dep "")
+    endif()
     set(obj "${BR_OBJ}/${name}.o")
     set(bin "${BR_OBJ}/${name}.bin")
     set(hdr "${BR_OUT}/${name}.h")
 
     add_custom_command(
         OUTPUT "${bin}"
-        COMMAND "${RGBASM}" --include "${BR_OBJ}" --include "${BR_SRC}"
+        COMMAND "${RGBASM}" --include "${BR_OBJ}" --include "${BR_SRC}" --include "${BR_RP_SRC}"
             -o "${obj}" "${asm}"
         COMMAND "${RGBLINK}" -x -o "${bin}" "${obj}"
-        DEPENDS "${asm}" "${BR_OBJ}/SameBoyLogo.pb12"
+        DEPENDS "${asm}" "${BR_OBJ}/SameBoyLogo.pb12" ${_extra_dep}
         COMMENT "rgbasm ${name}.bin"
         VERBATIM
     )

@@ -19,6 +19,7 @@
     "smsggdj:gen-symbols": "node packages/retroplug/scripts/gen-smsggdj-symbols.mjs",
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node packages/retroplug/scripts/run-ui-tests.mjs",
     "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-classid-test retroplug-audio-test retroplug-watcher-test retroplug-lottie-test retroplug-midi-test && node packages/retroplug/scripts/run-plugin-tests.mjs",
+    "test:n8": "node scripts/cmake-build.js retroplug-n8-test && build/bin/retroplug-n8-test",
     "sdl:smoke": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-smoke.sh",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
     "profile": "tools/run-profile.sh stats",

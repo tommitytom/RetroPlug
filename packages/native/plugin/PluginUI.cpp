@@ -24,6 +24,7 @@
 #include "ContextTargets.hpp"             // per-context routing for the __rp_* window hooks
 #include "host/input/GamepadManager.hpp" // SDL controller poll (shared UI-thread input)
 #include "host/render/RenderJobRegistry.hpp" // background render jobs (the __rp_*Render hooks)
+#include "host/ui/LvglWheelScroll.hpp"    // shared wheel → hit-tested scroll — with the SDL host + UI tests
 #include "host/ui/NativeFileDialog.hpp"   // OS-native file picker (pfd) — shared with the SDL host
 
 #include <chrono>
@@ -515,23 +516,8 @@ protected:
     // Desktop wheel → scroll the hit-tested scrollable ancestor (the menu). Swallow otherwise, so the
     // base's encoder path can't shuffle group focus across widgets. Ported from legacy PluginUI.
     bool onScroll(const ScrollEvent& ev) override {
-        lv_obj_t* const scr = lv_screen_active();
-        if (scr) {
-            lv_point_t p = {static_cast<int32_t>(ev.pos.getX()), static_cast<int32_t>(ev.pos.getY())};
-            lv_obj_t* hit = lv_indev_search_obj(scr, &p);
-            const int32_t step = 24;
-            const int32_t dy = static_cast<int32_t>(ev.delta.getY() * step);
-            const int32_t dx = static_cast<int32_t>(ev.delta.getX() * step);
-            for (lv_obj_t* it = hit; it; it = lv_obj_get_parent(it)) {
-                if (!lv_obj_has_flag(it, LV_OBJ_FLAG_SCROLLABLE)) continue;
-                const bool vScroll = (dy != 0) && (lv_obj_get_scroll_top(it) + lv_obj_get_scroll_bottom(it) > 0);
-                const bool hScroll = (dx != 0) && (lv_obj_get_scroll_left(it) + lv_obj_get_scroll_right(it) > 0);
-                if (vScroll || hScroll) {
-                    lv_obj_scroll_by_bounded(it, hScroll ? -dx : 0, vScroll ? dy : 0, LV_ANIM_OFF);
-                    return true;
-                }
-            }
-        }
+        retroplug::ui::scrollAtPoint(static_cast<int32_t>(ev.pos.getX()), static_cast<int32_t>(ev.pos.getY()),
+                                     ev.delta.getX(), ev.delta.getY());
         return true;
     }
 

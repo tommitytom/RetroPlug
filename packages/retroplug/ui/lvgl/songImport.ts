@@ -45,6 +45,7 @@ export function planImport(sys: SystemView, source: Uint8Array, warning?: string
   const tracker = resolveTracker(sys.roles);
   if (!tracker) return { kind: "notice", title: "Cannot import", body: "This system has no song catalog." };
   const cat = tracker.songs;
+  if (!cat) return { kind: "notice", title: "Cannot import", body: "This system has no song catalog." };
   if (!cat.isValidSav(source)) return { kind: "notice", title: "Cannot import", body: `Not a valid ${tracker.label} save.` };
   const songs = cat.list(source);
   if (songs.length === 0) return { kind: "notice", title: "Cannot import", body: "No songs found in that save." };

@@ -47,3 +47,24 @@ export function runSession(main: (s: Session) => void): void {
     tjs.exit(1);
   }
 }
+
+/** Opt this session out of the bounded batch pump: the native launcher then pumps until tjs.exit / Ctrl-C.
+ *  A long-running tool (a live MIDI bridge) calls this before entering its poll loop. No-op if the host
+ *  didn't bind the hook. */
+export function keepAlive(): void {
+  (globalThis as { __rp_keepAlive?: () => void }).__rp_keepAlive?.();
+}
+
+/** Boot a session and run `main` WITHOUT auto-exiting on success — for a long-running tool that sets up an
+ *  event-driven poll loop (setInterval) + keepAlive() and returns, leaving the native pump to run it until
+ *  tjs.exit / Ctrl-C. Any throw during setup is reported and exits 1 (mirrors runSession's catch). */
+export function runLongSession(main: (s: Session) => void): void {
+  try {
+    main(bootSession());
+    // No tjs.exit here: the native keep-alive loop pumps until the tool exits or the user hits Ctrl-C.
+  } catch (e) {
+    const err = e as Error;
+    console.error(`ERROR: ${err?.message ?? e}`);
+    tjs.exit(1);
+  }
+}

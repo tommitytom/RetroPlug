@@ -8,6 +8,7 @@
     "noUnusedParameters": true,
     "noImplicitOverride": true,
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "lib": ["ES2020"],
     "types": []

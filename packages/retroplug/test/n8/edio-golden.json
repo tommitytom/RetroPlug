@@ -1,0 +1,13 @@
+{
+  "_comment": "Shared golden for the Everdrive N8 Pro (Edio) protocol FRAMING. The TS impl (src/n8/edio.ts) and the C++ impl (packages/native/src/host/n8/Edio.cpp) are byte-for-byte twins; BOTH edio.test.ts and Edio.test.cpp drive each case below and assert the emitted bytes against THIS file. So a framing change in either impl fails the other's test until both impls AND this golden agree - the single source that forces them to stay in sync. `writes` is the exact hex the op emits; `reads` is hex queued for the port's reads so an op that polls a reply doesn't time out (values are the on-wire byte order). Behavioural checks (return values, throws, dir decode, N8Link) stay in the per-language tests.",
+  "cases": [
+    { "id": "fifoWR.noteOn", "op": "fifoWR", "args": { "bytes": "903c7f" }, "writes": "2bd41ae5000081010300000000903c7f" },
+    { "id": "fifoWR.empty", "op": "fifoWR", "args": { "bytes": "" }, "writes": "" },
+    { "id": "connect.statusFrame", "op": "connect", "reads": "00a5", "writes": "2bd410ef" },
+    { "id": "fifoTxString.ab", "op": "fifoTxString", "args": { "str": "ab" }, "writes": "2bd41ae500008101020000000002002bd41ae50000810102000000006162" },
+    { "id": "fileOpen.ab", "op": "fileOpen", "args": { "path": "ab", "mode": 138 }, "reads": "00a5", "writes": "2bd4c9368a020061622bd410ef" },
+    { "id": "fileWrite.dead", "op": "fileWrite", "args": { "bytes": "dead" }, "reads": "0000a5", "writes": "2bd4cc3302000000dead2bd410ef" },
+    { "id": "fileClose", "op": "fileClose", "reads": "00a5", "writes": "2bd4ce312bd410ef" },
+    { "id": "memRD.srm4", "op": "memRD", "args": { "addr": 16777216, "size": 4 }, "reads": "deadbeef", "writes": "2bd419e6000000010400000000" }
+  ]
+}

@@ -17,7 +17,10 @@ import { LsdjOverlay } from "./LsdjOverlay";
 import { RisaOverlay } from "./RisaOverlay";
 import { getRenderJobs, cancelRender, dismissRenderJob, pickActiveRenderJob, renderBadgeLabel, type RenderJobStatus } from "../../lvgl/render";
 
-const LV_IMAGE_ALIGN_CONTAIN = 14; // aspect-preserving nearest-neighbour scale
+// lv_image.h's inner-align enum: CONTAIN (13) fits the frame inside the tile keeping aspect; COVER (14)
+// fills the tile and crops the overflow. This was 14. A GB tile is exactly 160x144 * zoom so the two
+// coincide there, but a NES frame (256x240) in a GB-shaped tile was being cropped top and bottom.
+const LV_IMAGE_ALIGN_CONTAIN = 13;
 const LV_ALIGN_CENTER = 0x09;
 const LV_ALIGN_BOTTOM_MID = 0x05;
 
