@@ -320,17 +320,21 @@ set(PA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(PA_USE_SNDIO OFF CACHE BOOL "" FORCE)
 set(PA_USE_PULSEAUDIO OFF CACHE BOOL "" FORCE)
 set(PA_USE_OSS OFF CACHE BOOL "" FORCE)
-# dlopen the Linux audio backends (ALSA / PipeWire / JACK) instead of hard-linking them, so retroplug-sdl has NO
-# audio lib in its DT_NEEDED: each backend is loaded lazily and, if its lib (or daemon) is absent, that host API
-# is simply omitted from the Driver menu instead of blocking startup (the backends' *_Initialize soft-fail:
-# *hostApi=NULL + paNoError, which Pa_Initialize skips). This restores the launch-anywhere behaviour the old SDL
-# audio path had (SDL dlopens its backends too) and makes JACK safe to compile in by default. libSDL2 stays
-# linked — it's the window/input shell. `unset` clears any stale cached PA_USE_JACK so the fork's
-# cmake_dependent_option re-decides on JACK_FOUND (on wherever jack dev is present; the arm sysroot has none, so
-# the handheld build is simply JACK-less — and it launches fine regardless).
+# Load the three Linux backends with dlopen rather than linking them, so none of libasound.so.2 /
+# libpipewire-0.3.so.0 / libjack.so.0 is a DT_NEEDED entry on retroplug-sdl. Compiling a backend in no longer
+# means the binary refuses to START where that lib is absent (a PipeWire-less desktop, a JACK-less box, the
+# muOS handheld); a missing lib now just omits that one host API from the Settings > Audio > Driver picker and
+# leaves the rest working (the backends' *_Initialize soft-fail: *hostApi=NULL + paNoError, which Pa_Initialize
+# skips). This is the runtime half of the same problem the PA_USE_* force-offs above solve at compile time, and
+# it's why those are still needed: dlopen only helps for backends we actually want. libSDL2 stays linked — it's
+# the window/input shell.
 set(PA_ALSA_DYNAMIC ON CACHE BOOL "" FORCE)
-set(PA_JACK_DYNAMIC ON CACHE BOOL "" FORCE)
 set(PA_PIPEWIRE_DYNAMIC ON CACHE BOOL "" FORCE)
+set(PA_JACK_DYNAMIC ON CACHE BOOL "" FORCE)
+# With no launch penalty left, JACK needs no opt-in flag: `unset` clears any stale cached PA_USE_JACK so the
+# fork's cmake_dependent_option(PA_USE_JACK ... ON JACK_FOUND OFF) re-decides on JACK_FOUND — compiled in
+# wherever jack dev headers are present, and absent by construction where they aren't (the arm sysroot has
+# none, so the handheld build is simply JACK-less, and it launches fine regardless).
 unset(PA_USE_JACK CACHE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/portaudio ${CMAKE_BINARY_DIR}/portaudio EXCLUDE_FROM_ALL)
 

@@ -126,13 +126,28 @@ re-lays-out.
 `SDL_SetWindowMinimumSize(480,432)` floor (mirroring the plugin's `setGeometryConstraints`), so a tiling
 compositor **tiles it like any other window instead of auto-floating a fixed-size toplevel** — a floating one
 can still be drag-resized, and Hyprland's `togglefloating` flips between the two. `__rp_isWindowSizeControlled`
-now returns a dynamic `wmControlled` (was just `fullscreen`): it's `true` for a fullscreen handheld, and it
+returns a dynamic `wmControlled` (was just `fullscreen`): it's `true` for a fullscreen handheld, and it
 **latches `true`** when the compositor hands us a size we never requested before any request was honored (a
 tile) — exactly `PluginUI::onResize`'s clamp detection, guarded by a `sizeHonored` latch so a floating window
 that *did* honor our sizes isn't mistaken for a tiled one. When `wmControlled`, the UI fits its grid via zoom
 and we stop driving `SDL_SetWindowSize` (don't fight the compositor). A stable `SDL_HINT_APP_NAME` ("RetroPlug")
 sets the Wayland app_id / X11 WM_CLASS so window rules can target it. `RETROPLUG_DEBUG_RESIZE` logs every
 request / WM resize.
+
+**Fit-to-grid only runs where the request is verifiable - i.e. not on Wayland.** `wmControlled` also starts
+`true` on the **Wayland** video backend. On X11, `SDL_SetWindowSize` round-trips the request and reports back
+the geometry the WM actually granted (`X11_SetWindowSize` waits on the server, then sends `RESIZED` with the
+real size), so a refusal is detected and adopted. Wayland has no equivalent - xdg-shell has no client resize
+request at all: we commit the size we want and the compositor either follows (mutter/kwin) or keeps its own box
+and **scales our now-mismatched surface into it**, sending nothing either way. Under a compositor that owns
+geometry (Hyprland, sway, any tiling one) that scaling is what stretched a freshly loaded tile across the whole
+window until the next real configure (a user resize) put surface and window back in step. "Honored" and
+"ignored" are indistinguishable from here, so we don't guess: the compositor owns the window and the UI fits its
+grid via zoom. `RETROPLUG_SDL_FIT_WINDOW=1` opts back into driving the window size on a compositor known to honor
+it. Relatedly, `requestWindowSize` **clamps to the 480x432 floor before applying and recording** the request, the
+way `SDL_SetWindowSize` does: a 1x/2x grid is below the floor, so applying it raw sized the LVGL surface to
+something the window can never take (again: a mismatch for the compositor to scale), and the clamped size coming
+back read as "a size we never asked for" - a phantom tiling takeover that killed fit-to-grid for the session.
 
 **Close guard:** `SDL_QUIT` (window button / WM / Ctrl-C) now routes through the unsaved-changes guard
 (`__rp_onCloseRequested`), a line-for-line mirror of [PluginUI::onClose](../packages/native/plugin/PluginUI.cpp#L352):
