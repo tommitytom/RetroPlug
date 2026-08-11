@@ -1696,7 +1696,8 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
     // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
     ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
-    // (N8 Pro moved to the instance menu's tracker block — it drives a physical NES, alongside risa/LSDj.)
+    // (N8 Pro is no longer here — it drives a physical NES, so it lives in its own block on the start menu +
+    // the instance menu's tracker block, beside risa/LSDj.)
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }
@@ -1852,6 +1853,10 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
       submenu("start-recent", "Recent", recentChildren(ctx)),
       action("start-load", "Load...", () => runLoad(ctx)),
       action("start-mgb", "Load mGB (GB MIDI Synth)", () => ctx.stores.project.systems.loadMgb()),
+      // N8 Pro (physical NES) in its own fenced block, mirroring the instance menu's tracker block. The
+      // streaming + SD ops don't need a loaded system, so it belongs here too (configure/connect the cart, or
+      // load a ROM onto it, before opening anything in RetroPlug).
+      ...(hasN8() ? [sep("start-sep-n8"), submenu("start-n8", "N8 Pro", n8MenuChildren(ctx))] : []),
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),

@@ -7,7 +7,7 @@
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
-import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
+import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { nesRom } from "../systems/fixtures";
 
@@ -154,6 +154,19 @@ test("the SD status row shows the last result when idle", () => {
     const be = new MockBackend("/cfg");
     const stores = composeAppStores({ backend: be });
     expect(findItem(n8Submenu(stores, be), "n8-sd-status")!.label).toBe("SD: Dumped 64 KB to out.srm");
+  } finally {
+    env.restore();
+  }
+});
+
+test("N8 Pro also appears on the start menu (no system loaded), with the same ops", () => {
+  const env = installN8({ busy: false, op: "", done: false, version: 0 });
+  try {
+    const stores = composeAppStores({ backend: new MockBackend("/cfg") });
+    const rows = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-n8");
+    expect(findItem(rows, "n8-port")).toBeTruthy(); // streaming config
+    expect(findItem(rows, "n8-load-rom")).toBeTruthy(); // SD ops (no system needed)
+    expect(findItem(rows, "n8-dump-sram")).toBeTruthy();
   } finally {
     env.restore();
   }
