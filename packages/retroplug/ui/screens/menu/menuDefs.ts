@@ -103,6 +103,8 @@ export interface MenuContext {
   // Open the Songs "import from a .sav" picker (validate the source against the cart's console, then show a
   // checkbox list) — owned by useSongImport, wired from App like the project modals.
   beginSongImport: (sys: SystemView, source: Uint8Array) => void;
+  /** Show the LSDj HD player for a system (a full-window view; Esc closes it). Owned by App. */
+  openLsdjHd: (systemId: number) => void;
 }
 
 /** True only in a standalone host (the SDL handheld build or the DPF JACK standalone), which installs
@@ -1335,6 +1337,9 @@ function lsdjExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
     cycler("lsdj-autostart", "Auto Start", OFF_ON, autoStart ? 1 : 0, (n) =>
       systems.setRoleConfig(sys.id, "lsdj-sync", { autoStart: n === 1 }),
     ),
+    // The HD player: song + all four chains + all four phrases on one full-window screen, in the cart's
+    // own font and palette. The cart keeps playing and stays playable underneath; Esc returns to the grid.
+    action("lsdj-hd", "HD Player", () => ctx.openLsdjHd(sys.id)),
     sep("lsdj-assets-sep"),
   ];
 }

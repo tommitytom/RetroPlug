@@ -36,6 +36,7 @@ function ctxOf(stores: AppStores): MenuContext {
     loadRomAsProject: (romPath: string, explicitSav?: string) =>
       stores.project.openRom(romPath, explicitSav ? { explicitSav } : undefined),
     requestExit: () => {}, // App wires this to the native quit path; inert here.
+    openLsdjHd: () => {},
     beginSongImport: () => {},
   };
 }

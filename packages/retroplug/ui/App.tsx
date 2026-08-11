@@ -25,6 +25,7 @@ import { unsavedRows } from "./lvgl/unsavedRows";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
 import { SystemGrid } from "./screens/grid/SystemGrid";
+import { LsdjHdScreen } from "./screens/hd/LsdjHdScreen";
 import { toggleLsdjDebug } from "./screens/grid/lsdjDebug";
 import { Menu } from "./screens/menu/Menu";
 import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./screens/grid/layout";
@@ -60,6 +61,9 @@ export function App() {
 
   const [menuOpen, setMenuOpen] = useState(true);
   const [menuSystemId, setMenuSystemId] = useState<number | null>(null);
+  // The LSDj HD player, when open: the id of the system it's showing. It replaces the grid but is NOT an
+  // input overlay - the cart keeps playing and keys still reach its joypad, so it doesn't gate `playing`.
+  const [hdSystemId, setHdSystemId] = useState<number | null>(null);
   // Standalone Audio submenu: the draft (staged rate/block) lives outside any store, so subscribe here to
   // force a rebuild when a cycler stages a value — otherwise the label wouldn't repaint until the next
   // unrelated render. Inert in a DAW / the harness (nothing ever emits).
@@ -91,6 +95,12 @@ export function App() {
     setMenuOpen(empty);
     if (empty) setMenuSystemId(null);
   }, [empty]);
+
+  // Close the HD player if the system it's showing goes away (removed, or the project reloaded) - a stale
+  // id would otherwise strand the UI on a screen with nothing to draw.
+  useEffect(() => {
+    if (hdSystemId != null && !systems.some((sys) => sys.id === hdSystemId)) setHdSystemId(null);
+  }, [hdSystemId, systems]);
 
   // Idle: point the keypad at the sink when the grid shows without a menu. Not while a modal overlay owns
   // the keypad (close prompt / project modal) — else closing the menu to raise one steals its focus.
@@ -145,6 +155,7 @@ export function App() {
       if (closeGuard.active) return void closeGuard.onCancel();
       if (modals.active) return void modals.onClose();
       if (songImport.active) return void songImport.onClose();
+      if (hdSystemId != null) return void setHdSystemId(null); // HD player → back to the grid
     }
     if (closeGuard.active || modals.active || browser.active || songImport.active) return; // an overlay owns input; actions don't fire under it
     if (key === KEY_BACKTICK) return void toggleLsdjDebug(); // dev: show/hide the LSDj runtime readout
@@ -241,7 +252,7 @@ export function App() {
     if (!veto) g.__rp_quitWindow?.();
   };
 
-  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: songImport.begin };
+  const ctx: MenuContext = { stores, settings, userConfig, bindings, systems, recent, version, newProject: modals.newProject, loadProject: modals.loadProject, loadRomAsProject: modals.loadRomAsProject, requestExit, beginSongImport: songImport.begin, openLsdjHd: setHdSystemId };
 
   // In-app file browser (openFileBrowser): a full-window overlay above everything, owning input. A browse can
   // be raised from a menu OR from a modal (relink → Locate), so it takes precedence. onClose (Esc/B) cancels.
@@ -305,6 +316,13 @@ export function App() {
         <Menu width={width} height={height} zoom={resolvedZoom} tree={buildStartMenu(ctx)} onClose={() => {}} />
       </Box>
     );
+  }
+
+  // The HD player takes the whole window in place of the grid. A stale id (its system was removed, or the
+  // project reloaded) falls through to the grid here and is cleared by the effect above.
+  if (hdSystemId != null && systems.some((sys) => sys.id === hdSystemId)) {
+    const { width, height } = windowSize;
+    return <LsdjHdScreen systemId={hdSystemId} width={width} height={height} testId="lsdj-hd" />;
   }
 
   const anchored = menuOpen && menuSystemId != null ? systems.find((sys) => sys.id === menuSystemId) : undefined;
