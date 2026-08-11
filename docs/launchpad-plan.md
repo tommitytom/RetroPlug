@@ -162,7 +162,28 @@ Two behaviours the driver **must** honour:
 - Flashing and pulsing are **synchronised to incoming MIDI beat clock** (one beat / two beats per period). Since RetroPlug is the clock master in MI.MAP, a "cued but not yet playing" pad can pulse *on the beat* for free, with no per-frame LED traffic.
 - The bulk LED SysEx carries up to **106 colour specs** - one message repaints the entire surface. Spec = lighting type (1B) + LED index (1B) + data (1-3B), where type 3 is direct RGB.
 
-### 3.4 What we deliberately do not use
+### 3.4 BUILT: what the protocol module covers
+
+[`src/launchpad/`](../packages/retroplug/src/launchpad/) implements all of the above as a pure layer -
+no I/O, no RetroPlug types, no tracker knowledge. Every builder is pinned to one of the manual's own
+worked hex examples in [test/launchpad/](../packages/retroplug/test/launchpad/), so the reference is the
+oracle rather than our reading of it.
+
+Two limits found while building it, both from the PDF rather than the protocol:
+
+- **The 128-colour palette is an image**, so its RGB values cannot be extracted and are not invented. A
+  palette colour is an opaque 0..127 index (with names for the seven the manual states in prose), and
+  anything needing an exact colour uses the RGB lighting type, which needs no palette. RGB is
+  static-only, since lighting types 1 and 2 carry palette indices - the encoder refuses an RGB flash or
+  pulse rather than sending a different colour.
+- **The programmer-mode layout diagram is an image too**, so only the 8x8 grid anchors (11 / 81 / 18) are
+  text-verifiable. The edge-button CC numbers are the community mapping, marked as unverified in
+  `profile.ts` and to be confirmed on hardware in M4.
+
+The API uses a **top-left origin** (y = 0 at the top) against a device that counts rows upwards from the
+bottom; the flip lives in `padIndex`/`padAt` alone.
+
+### 3.5 What we deliberately do not use
 
 DAW mode, Session layout, faders, the DIN port, the internal sequencer. Programmer mode disables all of it anyway, which is precisely why it is the right layer to build on.
 
@@ -334,8 +355,8 @@ Ordered so that everything testable without hardware or native changes comes fir
 
 | M | Deliverable | Native? | Verified by |
 |---|---|---|---|
-| **M0** | `PlaybackModel` interface + `PredictedLsdjModel` (sav + clock) | no | `pnpm test`; differential vs the emulated cart (§9) |
-| **M1** | `src/launchpad/` protocol + `Surface` diffing, Pro MK3 profile | no | `pnpm test` with golden byte vectors |
+| **M0** ✅ | `PlaybackModel` interface + `PredictedLsdjModel` (sav + clock) | no | DONE - 100% agreement vs a real cart (§2.6) |
+| **M1** ✅ | `src/launchpad/` protocol + `Surface` diffing, Pro MK3 profile | no | DONE - 37 tests, the manual's own hex as golden vectors |
 | **M2** | `src/controller/` session + registry + `lsdjMidiMap` app against a fake device | no | `pnpm test` |
 | **M3** | SysEx widening (RtMidi `ignoreTypes`, the two `sdl/main.cpp` caps) | yes | loopback: send a bulk-LED SysEx, observe it intact |
 | **M4** | Launchpad device link: own in/out pair, excluded from the engine stream, injected port factory, Settings picker | yes | hardware-free test via the fake factory; real-device smoke |
