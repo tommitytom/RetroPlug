@@ -69,6 +69,34 @@ Earlier design discussion assumed the cue-quantised LIVEMAP variant. It was **re
 
 `SYNC` is a single value on LSDj's PROJECT screen. A cart in MI.MAP is not in MI.OUT, so there is no way to get note/row feedback alongside map mode. The only row byte LSDj ever emits is in LSDJ-master mode, once, at play start.
 
+### 2.5 MEASURED: what a real cart actually does in MI.MAP
+
+Everything above is documentation. The following is measured against a real `lsdj9_3_3-arduinoboy.gb`
+by [test-native/lsdj-playback-probe.test.ts](../packages/retroplug/test-native/lsdj-playback-probe.test.ts),
+which drives the wire protocol directly through the `midiPassthrough` role and samples position from
+WRAM. These are the rules the predictor implements.
+
+| # | Question | Measured answer |
+|---|---|---|
+| B1 | Does the cart advance through the **shipped `midiMap` role**? | **No.** The launched row triggers and sounds, then freezes on step 0 forever. The role never sends a clock, so the cart never steps. |
+| B0 | Does a bare row byte trigger, and does `0xFF` disturb a playing cart? | Row byte triggers immediately; `0xFF` leaves it playing. `0xFF` is a transparent clock, not a row. |
+| B2 | Ticks per step? | **Exactly 6**, every time. A 24-PPQN clock is 4 steps/beat; one 16-step phrase is 96 ticks (one bar). |
+| B3 | Does it auto-advance past the launched row? | **Yes**, one row per chain, and it **wraps** at the end of the song: launching row 0 walks 0,1,2,0,1,2,... at 96-tick intervals. |
+| B4 | Is a launch song-wide, and do channels then diverge? | Launch sets **all four** channels to the row; they then advance **independently**. With a two-phrase chain on pu2 against one-phrase neighbours, pu2 falls a row behind and stays behind. **Four cursors, not one.** |
+| B5 | What does the `0xFE` NoteOff handshake do? | **Nothing to playback.** The cart keeps playing and stepping normally. Releasing a pad is not a stop, so the app needs its own stop affordance. |
+| B6 | How does a chain treat an empty phrase slot? | A chain **ends at its first empty slot** - in `[phrase 0, EMPTY, phrase 2]`, phrase 2 never plays. Chain length is therefore just "slots before the first null". |
+| B7 | Do rows 254/255 collide with the sentinels? | They are byte-identical to `0xFE`/`0xFF`, so the launchable range is **0..253**. |
+
+Two consequences worth pulling out:
+
+- **`midiMap` is incomplete as shipped.** B1 is a real gap, not a quirk of the test: Arduinoboy's map
+  mode forwards MIDI clock and ours does not, so a RetroPlug MI.MAP cart triggers rows but never plays
+  through them. The existing `lsdj-midimap.test.ts` missed it because it only asserts that a mapped row
+  makes sound. Fixing this is now in scope (M0), and it is what makes the predictor's clock meaningful.
+- **The predictor is a four-cursor, row-level model** whose only real input is chain length. B2/B3/B6
+  together give the whole arithmetic: chain length = slots before the first null, row duration =
+  slots x 96 ticks, advance one row per chain end, wrap at the end of the song.
+
 ---
 
 ## 3. The device: Launchpad Pro [MK3]
