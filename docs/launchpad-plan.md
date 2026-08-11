@@ -1,6 +1,7 @@
 # Engineering Report & Plan: Novation Launchpad support in RetroPlug
 
-**Date:** 2026-08-11 · **Branch:** `feature/launchpad` · **Status:** planned, nothing built
+**Date:** 2026-08-11 · **Branch:** `feature/launchpad` · **Status:** M0-M2 built (pure TS, no device, no
+native change); M3-M6 outstanding
 **First consumer:** LSDj MI.MAP (song-row launching from the 8x8 grid)
 **Target device:** Launchpad Pro [MK3]
 
@@ -86,6 +87,8 @@ WRAM. These are the rules the predictor implements.
 | B5 | What does the `0xFE` NoteOff handshake do? | **Nothing to playback.** The cart keeps playing and stepping normally. Releasing a pad is not a stop, so the app needs its own stop affordance. |
 | B6 | How does a chain treat an empty phrase slot? | A chain **ends at its first empty slot** - in `[phrase 0, EMPTY, phrase 2]`, phrase 2 never plays. Chain length is therefore just "slots before the first null". |
 | B7 | Do rows 254/255 collide with the sentinels? | They are byte-identical to `0xFE`/`0xFF`, so the launchable range is **0..253**. |
+| B8 | Is launching an **empty row** a stop? | **No** - and it is not ignored either. The cart keeps playing, and from stopped it **starts anyway**, on a row nobody asked for. So MI.MAP has no stop at all. |
+| B9 | Where does an empty-row launch land, and what happens on advancing into one? | Two rules, pointing **opposite ways**. Advancing into an empty row **ends the song and wraps to the start** - it is not stepped over. Launching an empty row **scans BACK** to the nearest playable row at or before it. |
 
 Two consequences worth pulling out:
 
@@ -99,6 +102,16 @@ Two consequences worth pulling out:
 - **The predictor is a four-cursor, row-level model** whose only real input is chain length. B2/B3/B6
   together give the whole arithmetic: chain length = slots before the first null, row duration =
   slots x 96 ticks, advance one row per chain end, wrap at the end of the song.
+- **B9 corrected a rule M0 got wrong.** `predict.ts` scanned FORWARD past an empty row for the next
+  populated one, so a song with a gap in the middle would walk over it into a second section a real cart
+  can never reach. The probe song could not expose that (rows 0-2 populated, nothing above), which is why
+  the differential test read 100% with the rule wrong - B9 uses a song with a hole, so the four candidate
+  behaviours land on four different chain numbers. B6 had the corroborating evidence all along and it went
+  unread: a row whose chain holds no playable phrase kept pu1 looping row 0 for 400 ticks. Fixed, and the
+  differential is still 100.0%.
+- **There is no stop, and the app must not pretend otherwise.** B5 killed the `0xFE` handshake as a stop
+  and B8 killed the empty-row launch as one. Nothing in MI.MAP stops a cart except the host transport,
+  which is not a pad.
 
 ### 2.6 RESULT: dead reckoning is exact at row level
 
@@ -296,20 +309,26 @@ Feature roles attach per-system by ROM identity. On the hardware path there is n
 
 ### 7.1 Layers
 
+As BUILT (M0-M2). Two things moved from the original sketch: the playback seam lives under `src/tracker/`
+because risa is the same shape and should implement it without the app changing, and a controller app is a
+plain function over a context rather than an object of callbacks - the same shape as a DSP role's
+`SystemBehavior`, so decoding and LED flushing happen once in the session instead of in every app.
+
 ```
 src/launchpad/            pure protocol, zero I/O, zero RetroPlug knowledge
-  profiles.ts             device table (Pro MK3 first): sysex id, grid math, palette, mode entry/exit
+  profile.ts              device table (Pro MK3 first): sysex id, grid math, edge buttons, capabilities
+  protocol.ts             colours + message builders (mode, layout, bulk LED, inquiry, short form)
   surface.ts              per-LED style + dirty diffing -> minimal byte batches (bulk sysex vs 3-byte notes)
-  decode.ts              incoming note/CC/aftertouch -> typed pad events
+  decode.ts               incoming note/CC/aftertouch -> typed pad events
+
+src/tracker/
+  playbackModel.ts        the observed/predicted seam (§7.2), console-agnostic
 
 src/controller/           host-agnostic app seam
-  session.ts              { onMidi(bytes), tick(ctx), send(bytes) }
-  registry.ts             name -> app module, mirroring RoleRegistry
-  playbackModel.ts        the observed/predicted seam (§7.2)
+  session.ts              ControllerSession: decode in, run the app, flush LEDs, own the device lifecycle
+  registry.ts             name -> app module, mirroring RoleRegistry (and reusing RoleConfigSchema)
   trackerTarget.ts        the emulated-core/external-device seam (§7.3)
-
-src/controller/apps/
-  lsdjMidiMap.ts          the first consumer
+  apps/lsdjMidiMap.ts     the first consumer
 ```
 
 ### 7.2 The `PlaybackModel` seam
@@ -334,6 +353,15 @@ The app emits row launches; the target decides where they go.
 
 Both receive the same launch stream, so the two paths are in sync by construction - the same property `setCoreByteSink` gives the risa/N8 mirror.
 
+**BUILT.** The difference between the two is only the `send` a caller injects; the app emits the ordinary
+NoteOn/NoteOff the shipped `midiMap` role already consumes, so there is no second copy of the wire format
+to keep in step. `midiMapRow` is exported from `dspRoles.ts` purely so the encoder can be round-tripped
+against the decoder that actually ships.
+
+The session also wraps the target so a launch reaches the cart **and** the predictor together: there is no
+code path that sends a row to the cart without telling the model, so the LEDs cannot describe a position
+the cart was never sent to.
+
 ### 7.4 Where each piece runs
 
 | Piece | Thread | Notes |
@@ -357,7 +385,7 @@ Ordered so that everything testable without hardware or native changes comes fir
 |---|---|---|---|
 | **M0** ✅ | `PlaybackModel` interface + `PredictedLsdjModel` (sav + clock) | no | DONE - 100% agreement vs a real cart (§2.6) |
 | **M1** ✅ | `src/launchpad/` protocol + `Surface` diffing, Pro MK3 profile | no | DONE - 37 tests, the manual's own hex as golden vectors |
-| **M2** | `src/controller/` session + registry + `lsdjMidiMap` app against a fake device | no | `pnpm test` |
+| **M2** ✅ | `src/controller/` session + registry + `lsdjMidiMap` app against a fake device | no | DONE - 45 tests, and the two rules B8/B9 settled (§8.1) |
 | **M3** | SysEx widening (RtMidi `ignoreTypes`, the two `sdl/main.cpp` caps) | yes | loopback: send a bulk-LED SysEx, observe it intact |
 | **M4** | Launchpad device link: own in/out pair, excluded from the engine stream, injected port factory, Settings picker | yes | hardware-free test via the fake factory; real-device smoke |
 | **M5** | Project-scope role wiring `TrackerTarget` (emulated core vs Arduinoboy MIDI out) | no | `pnpm test` + `test:native` |
@@ -365,15 +393,68 @@ Ordered so that everything testable without hardware or native changes comes fir
 
 M0-M2 deliver a fully testable app with no device and no native change. M3-M4 make a physical Launchpad work. M6 upgrades emulated-cart fidelity and is genuinely optional.
 
+### 8.1 BUILT: what M2 delivers, and the decisions it fixed
+
+**The grid is LSDj's song screen, twice.** Four columns are the four channels and eight rows are eight song
+rows; the right half continues the song, so all 64 pads show 16 consecutive rows - one LSDj song-screen
+page.
+
+```
+      x=0 x=1 x=2 x=3 | x=4 x=5 x=6 x=7
+      pu1 pu2 wav noi | pu1 pu2 wav noi
+ y=0   r0  r0  r0  r0 |  r8  r8  r8  r8
+ ...
+ y=7   r7  r7  r7  r7 | r15 r15 r15 r15
+```
+
+A column **shows** a channel but cannot **select** one - MI.MAP launches a whole song row and every channel
+jumps (B4), so pressing pu2 at row 5 does what pressing pu1 at row 5 does. Four columns earn half the grid
+anyway, because the channels then advance independently as their chains end, and four columns are the only
+way to see that.
+
+| Decision | Value |
+|---|---|
+| Launch quantisation | `bar` (96 ticks) by default; `immediate` / `beat` / `rowEnd` in config. One bar is also exactly one LSDj phrase at the factory groove, so launches land where the music does. |
+| Nothing playing | Quantisation is skipped and the launch is immediate - otherwise the first press waits for a boundary a stopped cart never reaches. |
+| `rowEnd` | Fires on the model's next row change, so it works identically on the observed and predicted paths with no "ticks remaining" accessor only one of them could answer. |
+| Scrolling | Auto-follows the first playing channel, page-aligned to 16 rows, so a diverging playhead cannot make the display slide about. |
+| LEDs | off / dim green (content) / bright green (playhead) / pulsing yellow (cued). The cue lights all four cells of its row, because a launch is song-wide - and the device syncs pulse to MIDI beat clock itself, so "waiting for the bar" animates on the beat with no per-update LED traffic. |
+| Stop | **None.** B5 and B8 between them establish that nothing in MI.MAP stops a cart, so there is no stop pad to offer. |
+
+**The fake device is what makes "no hardware" mean something.** It decodes the host's own messages back
+into per-LED state - short form and bulk SysEx alike - so a test asserts "pad (2,3) is bright green" and
+fails when the *device* would end up wrong, not merely when our bytes change. It also round-trips M1's
+encoder against itself.
+
+**Paging costs the honest gap.** The `up` / `down` / `session` edge buttons are the unverified community
+CC mapping (§3.4), so `profile.ts`'s "nothing in the first consumer depends on these" no longer strictly
+holds. If M4 finds them wrong it is a one-line profile fix and the 64 launch pads are unaffected. Paging is
+not droppable: seeing rows you are *not* playing is the entire point of a launcher.
+
 ---
 
 ## 9. Testing
 
-- **Protocol**: golden byte vectors for grid addressing, palette, mode entry/exit, and bulk-LED batching. Pure `pnpm test`.
-- **App logic**: a fake surface (pad events in, byte batches out) plus a fake `PlaybackModel`. Pure `pnpm test`.
-- **Predictor accuracy (the important one)**: run `PredictedLsdjModel` and `ObservedLsdjModel` side by side against a real emulated cart over a long render, and assert divergence stays within a stated bound. Same shape as the existing `--drift` analysis. This is the only honest measure of how well the real-hardware path behaves, and it is writable before any hardware exists.
-- **Device link**: injected port factory, as `N8Link` does, so connect/disconnect/teardown are covered with no Launchpad attached.
-- **Manual, hardware**: real Pro MK3 on the MIDI port; confirm Programmer mode entry, LED batching, and - specifically - that **Live mode is restored on exit**.
+BUILT (`pnpm test`, no device, no native build):
+
+- **Protocol** ✅ golden byte vectors from the manual's own worked examples - grid anchors, both lighting
+  forms, bulk-LED batching, mode entry/exit, device inquiry. `test/launchpad/`, 37 tests.
+- **Predictor** ✅ two halves. Deterministic arithmetic in `test/lsdj/playback.test.ts`; agreement with a
+  REAL cart in `test-native/lsdj-playback-differential.test.ts`, which sweeps alignment offsets rather than
+  assuming one. 100.0% over 2400 comparisons.
+- **Controller** ✅ `test/controller/`, 45 tests against a fake device that decodes the host's own messages
+  back into per-LED state, so an assertion is "pad (2,3) is bright green" and fails when the DEVICE would
+  be wrong. Covers the session lifecycle, tick-driving, launch mirroring, the target encoding round-tripped
+  through `midiMapRow`, the registry's config tolerance, and the app's layout, LEDs, quantisation, follow
+  and paging - ending with an end-to-end run over several song wraps.
+- **Semantics** ✅ `test-native/lsdj-playback-probe.test.ts` (B0-B9) measures what a real cart does rather
+  than inferring it. Assertions there guard the instrument; the semantics are locked in by the differential
+  and unit tests once a model exists to hold them to.
+
+OUTSTANDING:
+
+- **Device link** (M4): injected port factory, as `N8Link` does, so connect/disconnect/teardown are covered with no Launchpad attached.
+- **Manual, hardware** (M4): real Pro MK3 on the MIDI port; confirm Programmer mode entry, LED batching, the edge-button CCs (§3.4), and - specifically - that **Live mode is restored on exit**.
 
 ---
 
@@ -381,11 +462,18 @@ M0-M2 deliver a fully testable app with no device and no native change. M3-M4 ma
 
 1. **Predictor drift is undetectable on hardware** (§4.3). Mitigated by the M0 differential test and the optional re-anchor (§4.4), not eliminated. This is inherent to MI.MAP being one-directional.
 2. **Initial state on connect is unknown** on hardware. Likely answer: define a known starting state by commanding transport ourselves rather than trying to infer one.
-3. **Launch quantisation is now our job** (§2.3). Needs a product decision: launch immediately, on the next step, or on the next bar.
+3. ~~**Launch quantisation is now our job**~~ RESOLVED in M2: quantise to the bar by default, with
+   `immediate` / `beat` / `rowEnd` in config (§8.1).
 4. **Leaving the device in Programmer mode** after a crash locks the user out of its Settings menu until a power cycle. Best-effort restore on exit; document the recovery.
 5. **A user-supplied `.sav` may not match what is actually on the cart.** The predictor is only as good as the song file it is given. Consider surfacing an explicit "song loaded for LED feedback" state rather than failing silently.
-6. **Arduinoboy throughput.** The link is a slow serial path; the app should rate-limit launches rather than assume MIDI-rate delivery. Unmeasured.
-7. **Plugin path deferred**, so LED output in a DAW (routed back by the user) is unvalidated.
+6. **Arduinoboy throughput.** The link is a slow serial path; the app should rate-limit launches rather than assume MIDI-rate delivery. Unmeasured. Quantised launch happens to bound this - at most one launch per bar - but `immediate` does not.
+7. **No stop.** Nothing in MI.MAP can stop a cart (B5, B8), so a performer's only stop is the host
+   transport. This is the protocol's limitation rather than ours, and the app does not paper over it.
+8. **The predictor's row rules were wrong once already** (B9), and the differential test did not catch it
+   because the probe song had no gap. Other rules may have the same shape of blind spot - notably H hop
+   commands and phrase-level `G` groove changes, both still unmodelled and both able to change row
+   duration. Worth a probe song built to expose them before anyone plays a real set on this.
+9. **Plugin path deferred**, so LED output in a DAW (routed back by the user) is unvalidated.
 
 ---
 
