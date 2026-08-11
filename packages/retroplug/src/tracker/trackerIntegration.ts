@@ -12,7 +12,9 @@ import { lsdjAssetCatalog } from "./lsdjAssetCatalog";
 import { risaAssetCatalog } from "./risaAssetCatalog";
 import { smsggdjSongCatalog } from "./smsggdjSongCatalog";
 import { smsggdjAssetCatalog } from "./smsggdjAssetCatalog";
-import { identifySmsggdjVersion, supportsCurSlot } from "../smsggdj/romDetect";
+import { identifySmsggdjVersion } from "../smsggdj/romDetect";
+import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
+import { readSongBlock, readSongName, readSongEcho } from "../smsggdj/codec/sav";
 import { identifyLsdj } from "../lsdj/runtime/identify";
 import { identifyRisaVersion } from "../risa/runtime/identify";
 import { resolveRisaLayout } from "../risa/runtime/layout";
@@ -35,6 +37,28 @@ export interface TrackerIntegration {
    *  risa only versions with a bundled layout. false -> the menu greys the tracker submenu as
    *  "(Unsupported Version)" rather than offering dead rows. */
   isVersionSupported?(rom: Uint8Array): boolean;
+  /** Load the saved song at `index` into the RUNNING cart's work RAM, expressed as the writes to make.
+   *
+   *  For a console whose working song lives in the battery (LSDj, risa), loading it is a byte transform
+   *  on the sav and the shared `mutateLiveSav` cold boot puts it in memory - so those omit this. smsggdj
+   *  keeps its working song in work RAM and boots blank, so there is nothing in the image to transform;
+   *  the song has to be written into the core directly. `writeRam` makes that possible without stopping
+   *  the audio thread, and doing it live means the Load never touches the `.sav` at all - strictly less
+   *  destructive than the cold-boot path it replaces.
+   *
+   *  Takes the ROM because the write offsets come from that BUILD's symbol layout, and this is already
+   *  where `romName` / `isVersionSupported` take one. Returns null when the version has no layout, the
+   *  index names no song, or the song will not decode - the caller then leaves the cart alone.
+   *
+   *  Stays PURE: it returns writes, it does not perform them. `loadSongLive` (./liveSav) applies them,
+   *  which keeps this testable without a core and keeps I/O out of the console-specific layer. */
+  liveLoad?(rom: Uint8Array, sav: Uint8Array, index: number): RamWrite[] | null;
+}
+
+/** One contiguous poke into a system's work RAM: `offset` indexes the same region `readRam` returns. */
+export interface RamWrite {
+  offset: number;
+  bytes: Uint8Array;
 }
 
 export const lsdjIntegration: TrackerIntegration = {
@@ -74,11 +98,37 @@ export const smsggdjIntegration: TrackerIntegration = {
     const v = identifySmsggdjVersion(rom); // scans for the version string near the SMSGGDJ marker
     return v ? `smsggdj v${v}` : null;
   },
-  // Songs are loaded by naming a slot in the save and letting the CART load it on the way up, because
-  // this tracker's working song lives in work RAM and cannot be restored by a cold boot alone. A build
-  // that does not honour that byte would show a full Songs menu whose Load did nothing, so it reports
-  // unsupported and the menu greys out instead.
-  isVersionSupported: (rom) => supportsCurSlot(identifySmsggdjVersion(rom)),
+  // Supported = we have this build's work-RAM layout, exactly as risa gates on a bundled symbol
+  // snapshot. NOT `supportsCurSlot`: that asks whether the CART restores a song at boot, which is the
+  // ROM's own concern and only one of several ways to load. Gating the whole submenu on it greyed out
+  // Export / Replace / Delete / Move / Add / Import too, none of which need the cart's help at all.
+  // An unknown build still greys out - the failure mode is unchanged, only the question is right now.
+  isVersionSupported: (rom) => resolveSmsggdjLayout(identifySmsggdjVersion(rom)) !== null,
+
+  // This cart's working song is work RAM, so a load is a poke rather than a byte transform on the sav.
+  // The block alone is not enough: SMDJ4 keeps the NAME and the ECHO settings in the directory entry
+  // (src/rle.asm:34 - "metadata, not in the block"), and echo is audible, so loading without it would
+  // play the new song through the old song's delay taps.
+  liveLoad: (rom, sav, index) => {
+    const layout = resolveSmsggdjLayout(identifySmsggdjVersion(rom));
+    if (!layout) return null;
+    const block = readSongBlock(sav, index); // null on a free slot / bad checksum / malformed stream
+    if (!block) return null;
+
+    const writes: RamWrite[] = [{ offset: layout.song, bytes: block }];
+    const name = readSongName(sav, index);
+    if (name) writes.push({ offset: layout.name, bytes: name.subarray(0, layout.nameLen) });
+    const echo = readSongEcho(sav, index);
+    if (echo) writes.push({ offset: layout.echo, bytes: echo.subarray(0, layout.echoLen) });
+    // The cart clears this on its own load ("loaded block matches the slot: clean"), and leaving it set
+    // would tell the cart the freshly loaded song has unsaved edits.
+    writes.push({ offset: layout.edited, bytes: Uint8Array.of(0) });
+    // `prj_slot` is deliberately NOT written. The cart's own load READS it (you move the PROJECT cursor
+    // to a slot, then press LOAD) rather than writing it, and its legacy meaning is a 6-slot SMDJ3 index
+    // that the PROJECT screen may still clamp - so pointing it at a directory index up to 31 risks a
+    // confused UI for no real gain. It stays in the layout because it costs nothing to know.
+    return writes;
+  },
 };
 
 /** Every registered tracker integration. The one place a new tracker console is added. */

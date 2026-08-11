@@ -23,6 +23,7 @@ export {
   loadSongInPrimary,
   songLoadWouldDiscard,
   savEditWouldDiscard,
+  loadSongLive,
   songLoadByNameWouldDiscard,
   backupSavPath,
   type LiveSavTarget,

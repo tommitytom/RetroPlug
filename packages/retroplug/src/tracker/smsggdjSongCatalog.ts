@@ -8,19 +8,22 @@
 //
 // The shared spine (mutateLiveSav) is read SRAM -> byte transform -> write .sav -> cold boot, which for
 // the other two consoles restores the working song because it lives in the image. For this one it
-// would boot a blank song no matter what we wrote. So `load` names the slot in the superblock's
-// currently-loaded byte and the CART loads it on the way up - which is why this catalog needs a build
-// that honours that byte (see supportsCurSlot), and why `smsggdjIntegration.isVersionSupported` gates
-// on it rather than the menu silently doing nothing.
+// would boot a blank song no matter what we wrote.
 //
-// That byte also supplies the "currently loaded slot" the format previously lacked, which is what makes
-// `workingName` / `workingSong` answerable at all.
+// So loading is done LIVE instead, by `smsggdjIntegration.liveLoad` - the song is written straight into
+// work RAM through `writeRam`, with no `.sav` write and no reboot. `load` below (which names a slot in
+// the superblock's cur_slot byte, for a v0.46+ cart to pick up at boot) survives as the fallback for a
+// build with no layout, and as the durable record for real hardware and for savetool.html.
+//
+// `workingName` therefore reads the cart's own `song_name` out of work RAM when it has it, falling back
+// to cur_slot; that is what makes it answerable on v0.45, which has no cur_slot at all.
 //
 // The same fact has a sharper edge than it first appears: because the cold boot is what makes ANY edit
 // take effect, and the working song is not in the image, EVERY battery op here destroys it - not just
 // `load`. See `workingSongOutsideBattery` below, which is how the shared Songs menu learns to warn about
 // Delete and Move Up as well.
 import type { SongCatalog } from "./songCatalog";
+import { commonSongNameOffset } from "../smsggdj/runtime/layout";
 import {
   listSongs,
   isSmsggdjSav,
@@ -33,6 +36,22 @@ import {
   SMDJ4_BLOCK_LEN,
 } from "../smsggdj/codec/sav";
 
+/** The cart's own `song_name`, read out of live work RAM. Null when there is no RAM, when the supported
+ *  builds disagree on where the field lives (see commonSongNameOffset), or when the bytes are blank -
+ *  a freshly booted cart has never loaded anything, and "" is not a song name. */
+function workingNameFromRam(ram?: Uint8Array): string | null {
+  if (!ram) return null;
+  const at = commonSongNameOffset();
+  if (!at || ram.length < at.offset + at.length) return null;
+  let s = "";
+  for (let i = 0; i < at.length; i++) {
+    const c = ram[at.offset + i];
+    if (c === 0) break;
+    s += String.fromCharCode(c);
+  }
+  return s.trim() || null;
+}
+
 export const smsggdjSongCatalog: SongCatalog = {
   // Overloads the sync role as the menu gate, exactly as LSDj overloads lsdj-sync. It is attached by
   // the ROM provider off the SMSGGDJ build marker and covers both .sms and .gg, so it identifies the
@@ -43,7 +62,14 @@ export const smsggdjSongCatalog: SongCatalog = {
   isValidSav: (bytes) => isSmsggdjSav(bytes),
   importSongs: (target, source, indices) => importSongs(target, source, indices),
 
-  workingName: (sav) => {
+  // Work RAM first, because the cart's own `song_name` is the truth: it is what the FILES screen shows,
+  // it survives a load made from INSIDE the cart, and it is what a host-side liveLoad writes. The
+  // superblock's cur_slot is the fallback for callers with no live system (an offline .sav), and it is
+  // null on every build before v0.46 - which is precisely why reading work RAM is what lights the
+  // working-song row, per-song recents and the window title up on v0.45.
+  workingName: (sav, ram) => {
+    const fromRam = workingNameFromRam(ram);
+    if (fromRam !== null) return fromRam;
     const slot = curSlot(sav);
     return slot < 0 ? null : (listSongs(sav).find((s) => s.index === slot)?.name ?? null);
   },

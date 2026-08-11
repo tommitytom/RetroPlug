@@ -1282,14 +1282,70 @@ So songs could be loaded on v0.45 today. What that route still needs, and why it
   a boot-time load has no such hazard.
 
 The `cur_slot` byte also fixes a genuine hole in SMDJ4 (no "currently loaded slot" field) that benefits
-`savetool.html` and Everdrive users, which `writeRam` does nothing for. Hence: ROM change still
-recommended, `writeRam` available if you would rather not touch the tracker.
+`savetool.html` and Everdrive users, which `writeRam` does nothing for.
 
-#### What is left: the ROM half
+#### Load IS the live write now, and v0.45 is fully supported
 
-**Blocked on a smsggdj build that maintains the byte.** `isVersionSupported` returns false below
-v0.46, so today the vendored v0.45 correctly greys the submenu out rather than offering rows whose
-Load would do nothing. The change is scoped:
+Every caveat above except the last is closed, by taking the write offsets from the build's own symbols
+rather than guessing at them - the same answer risa uses for cc65.
+
+`wlalink -S` emits every RAM label with `_sizeof_*`, so
+`scripts/gen-smsggdj-symbols.mjs` -> `src/smsggdj/runtime/symbols.generated.ts` mirrors
+`gen-risa-symbols.mjs` exactly, merge behaviour and all. Nothing in the smsggdj repo changes: the flag
+is passed at generation time rather than baked into its Makefile.
+
+```
+00:c000 wave_ram      <- block base = work-RAM offset 0
+00:db6d echo_mode        (+$1B6D, 8 contiguous bytes, asserted at generation)
+00:dd58 prj_slot         (+$1D58)
+00:ddc0 song_edited      (+$1DC0)
+00:dea4 song_name        (+$1EA4, 8 bytes)
+```
+
+That closes the objection that made the live route look wrong: **the song name and echo settings are
+not in the block.** `src/rle.asm:34` says so outright (`song_name dsb 8 ; metadata, not in the block`)
+and `rle_song_load` copies both into separate RAM variables, so poking only the block loads the right
+notes with the *previous* song's echo taps - audible, not cosmetic. `TrackerIntegration.liveLoad`
+returns block + name + echo + `song_edited = 0`, and `loadSongLive` (`src/tracker/liveSav.ts`) applies
+them. `prj_slot` is deliberately not written: the cart READS it to decide what to load rather than
+writing it, and its legacy meaning is a 6-slot SMDJ3 index the PROJECT screen may still clamp.
+
+**The gate is re-keyed, not dropped**: `isVersionSupported` now asks
+`resolveSmsggdjLayout(version) !== null`, exactly as risa asks for a bundled snapshot. An unknown build
+still greys out, so the failure mode is unchanged - only the question is right. Keying it on
+`supportsCurSlot` had greyed out Export / Replace / Delete / Move / Add / Import too, none of which need
+the cart's help at all. `supportsCurSlot` survives because it still answers a real and different
+question: whether the CART restores a song at boot.
+
+**Load also stopped being destructive.** The cold-boot path wrote the `.sav` (plus a `.bak`) and
+rebuilt the core; the live path writes nothing to disk and does not reboot, so on the one console where
+the reboot is what destroys the working song, Load no longer can.
+
+`workingName` gained an optional `ram` parameter - the same shape `workingSongDirty` already had - and
+reads the cart's own `song_name`. That is the true source (it is what the cart displays, and it
+survives a load made from *inside* the cart), and it is what lights the working-song row, per-song
+recents and the window title up on v0.45, which carries no `cur_slot` at all. Omitting `ram` yields the
+old answer, so LSDj, risa and the offline `.sav` render paths are untouched.
+
+**Certification, because a snapshot is a claim about a build.** `test-native/sms-layout.test.ts` boots
+the SHIPPED `smsggdj_v0_45.sms` and proves `echo_mode` *behaviourally*: same song, `echo_mode` 0 vs 2,
+and the energy has to move because the echo pass replays delayed copies onto T2/T3. Measured +17.4%. A
+wrong address changes nothing and fails. It also checks `song_name` reads back and `song_edited`
+clears. Reassuringly, a local build of v0.45 differs from the vendored ROM in only **7 bytes** - the
+git-hash build stamp at `$0009-$0010` and the header checksum at `$7FFA` - so no code moved; but the
+test is what makes that a fact rather than an assumption.
+
+Still true, and still the reason the ROM change is worth having: a live load is **volatile**. It
+survives no power cycle and no project reload, and only `cur_slot` gives the format a durable record
+that `savetool.html` and Everdrive users can see. Also unchanged: the cart's own `song_load` runs
+`engine_stop` / `echo_sanitize` / `load_rebase`, and a live load skips all three - loading mid-playback
+may glitch a note. Reaching those from the host means re-implementing the ROM's load and inviting quiet
+divergence, so it is deliberately not done.
+
+#### The ROM half, still worth doing
+
+The Songs menu no longer waits on it. The change is scoped, and lives on branch `feature/cur-slot` in
+`/workspaces/smsggdj`:
 
 - `song_save` / `song_load` (`src/engine.asm:4210-4263`): after `rle_song_save` / `rle_song_load`
   report success, write `prj_slot + 1` to the superblock at SRAM `$8007` (bank 0, `$FFFC = $08`),
@@ -1299,10 +1355,18 @@ Load would do nothing. The change is scoped:
   failed load. That preserves "a first power-on should make sound" for every existing save.
 - `SAVEFORMAT.md` (superblock table) and `tools/smdj4.js` (self-test).
 
-Roughly 45-50 bytes of Z80. **The ROM has 149 bytes free of 131,072 (0.11%)**, so it fits, but not by
-much - worth knowing before adding anything else. The open question is boot ORDER: `song_load` calls
-`engine_stop` + `smp_abort` and currently runs long after `editor_init`, so whether it is safe at the
-`song_new` call site needs the ROM author's judgement rather than a guess.
+**Built and verified on `feature/cur-slot` (commit `83bb795`), awaiting the ROM author's review.** It
+cost 96 bytes on both flavors against 95 free in bank 1, so it had to pay for itself: `rle_entry_ptr`
+folds the slot -> directory-entry arithmetic that was open-coded at four call sites, and `boot_autoload`
+sits in its own bank 0 section. Free space after: SMS 217 -> 121, **GG 148 -> 52** (GG is the binding
+one). Verified on the real Mesen core - `cur=none` boots blank, `cur=0`/`cur=1` boot the named song, a
+cur naming an empty or checksum-failing slot falls back to blank, and booting leaves the battery
+BYTE-IDENTICAL in every case (a non-SMDJ4 cart too, so the magic guard holds).
+
+The open question left for the author is boot ORDER: `song_load` calls `engine_stop` + `smp_abort`, and
+SRAM covers the sample-pool banks in slot 2, so `boot_autoload` runs *after* the pool directory read
+rather than at the `song_new` call site. `editor_init` only sets cursors, so loading after it is safe -
+but that is a judgement worth a second opinion.
 
 Two things found while building it, both pre-existing and unrelated to this work:
 
@@ -1315,6 +1379,7 @@ Two things found while building it, both pre-existing and unrelated to this work
 
 ### Suggested order
 
-All three defects are closed and the tracker integration's RetroPlug half is built. Next is the ROM
-half above, which unblocks the end-to-end test and turns the Songs menu on. Then assets, then the Tier
-2 polish in any order.
+All three defects are closed, the tracker integration is built, and the Songs menu is live on the
+vendored v0.45 - Load included, via the symbol-driven work-RAM write. Next is assets (which need
+neither a ROM change nor a layout), then the Tier 2 polish in any order. The ROM branch lands whenever
+its author is happy with it; nothing in RetroPlug is waiting on it now.

@@ -339,7 +339,10 @@ export function renameSong(sav: Uint8Array, slot: number, name: string): Uint8Ar
 
 /** Build an image from scratch - used by tests and by the CLI's song-seed path. */
 export function buildSav(
-  songs: { block: Uint8Array; name: string }[],
+  // `echo` is optional and defaults to all-zero (echo off), which is what a song saved by a cart with
+  // echo disabled carries. It belongs on the SONG rather than on the image because SMDJ4 stores it per
+  // directory entry, alongside the name.
+  songs: { block: Uint8Array; name: string; echo?: Uint8Array }[],
   cartBytes = 32 * 1024,
   config?: Uint8Array,
 ): Uint8Array | null {
@@ -351,7 +354,9 @@ export function buildSav(
   const detached = songs.map((s) => {
     const nameBytes = new Uint8Array(NAME_LEN);
     for (let i = 0; i < NAME_LEN && i < s.name.length; i++) nameBytes[i] = s.name.charCodeAt(i) & 0xff;
-    return { block: s.block, name: nameBytes, echo: new Uint8Array(ECHO_LEN) };
+    const echoBytes = new Uint8Array(ECHO_LEN);
+    if (s.echo) echoBytes.set(s.echo.subarray(0, ECHO_LEN));
+    return { block: s.block, name: nameBytes, echo: echoBytes };
   });
   return rebuild(sav, detached, -1);
 }
@@ -411,6 +416,15 @@ export function isSongSaved(sav: Uint8Array, block: Uint8Array): boolean {
     if (saved && saved.every((b, i) => b === block[i])) return true;
   }
   return false;
+}
+
+/** A slot's RAW 8 name bytes, padding and all. `listSongs` trims for display; a host-side load has to
+ *  write the cart's `song_name` verbatim, because trimming would leave stale characters behind it. */
+export function readSongName(sav: Uint8Array, slot: number): Uint8Array | null {
+  if (!isSmsggdjSav(sav) || slot < 0 || slot >= entryCount(sav)) return null;
+  const e = entryAt(slot);
+  if (sav[e + E_VALID] !== VALID) return null;
+  return sav.subarray(e + E_NAME, e + E_NAME + NAME_LEN).slice();
 }
 
 /** A slot's echo settings (mode, taps, reductions, stereo, transposes) - they live in the DIRECTORY

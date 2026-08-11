@@ -66,6 +66,7 @@ import {
 import {
   resolveTracker,
   mutateLiveSav,
+  loadSongLive,
   effectiveAssets,
   readAssetOverrides,
   lsdjSongCatalog,
@@ -1083,7 +1084,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
   // still overwrites working memory from the stored slot, so every row is guarded, including that one.
   const ram = cat.workingSongOutsideBattery ? (ctx.stores.project.systems.readRam(sys.id) ?? undefined) : undefined;
   const discards = bytes ? (cat.workingSongDirty?.(bytes, ram) ?? false) : false;
-  const workingLabel = (bytes ? cat.workingName(bytes) : null) || "the working song";
+  const workingLabel = (bytes ? cat.workingName(bytes, ram) : null) || "the working song";
   // Every row below rewrites the battery and cold-boots the cart. On a console whose working song lives
   // OUTSIDE the battery that boot destroys it, so Delete / Replace / Move are as destructive as Load -
   // the assumption that only Load could lose work was LSDj's and risa's, not a universal one. When it
@@ -1097,8 +1098,14 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     // and needn't wait for the rebuilt core to publish a battery snapshot. The song watcher would catch it
     // on its next tick anyway (that's what covers a load made from INSIDE the cart), but a menu load is a
     // deliberate act: its row should be at the top of Recent before the user gets back there.
+    //
+    // A cart that can be loaded LIVE is: the song goes straight into work RAM, so the `.sav` is never
+    // rewritten and the core is never rebooted. That is both faster and strictly safer than the cold-boot
+    // path, which on this one console is what destroys the working song in the first place.
     const doLoad = (): void => {
-      mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index));
+      if (!loadSongLive(ctx.stores.backend, ctx.stores.project.systems, sys, s.index)) {
+        mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index)); // no liveLoad (LSDj / risa), or it declined
+      }
       ctx.stores.project.recordSong(s.name);
     };
     const items: MenuItem[] = [
@@ -1706,12 +1713,14 @@ function cartRomName(backend: Pick<HostBackend, "readFile">, tracker: TrackerInt
  *  internal title / version marker, NOT the on-disk filename) — e.g. "MYSONG - LSDj v9.4.2". Either piece is
  *  dropped when absent (no song loaded / an unversioned ROM). null for a non-tracker system, so the caller
  *  keeps its default project/rom-stem title. */
-export function trackerCartLabel(backend: Pick<ControlPlaneBackend, "readFile" | "readSram">, sys: SystemView): string | null {
+export function trackerCartLabel(backend: Pick<ControlPlaneBackend, "readFile" | "readSram" | "readRam">, sys: SystemView): string | null {
   const tracker = resolveTracker(sys.roles);
   if (!tracker) return null;
   const romName = cartRomName(backend, tracker, sys.romPath);
   const sram = backend.readSram(sys.id);
-  const song = sram ? tracker.songs.workingName(sram) : null;
+  // The window title is the most visible place the working song is named, and for smsggdj the only
+  // source is the cart's own song_name in work RAM.
+  const song = sram ? tracker.songs.workingName(sram, backend.readRam(sys.id) ?? undefined) : null;
   const segs = [song, romName].filter((s): s is string => !!s);
   return segs.length ? segs.join(" - ") : null;
 }

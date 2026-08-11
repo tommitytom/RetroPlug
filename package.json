@@ -16,6 +16,7 @@
     "test": "node scripts/cmake-build.js tjs-cli && node packages/retroplug/scripts/run-tests.mjs",
     "test:native": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/run-native-tests.mjs",
     "lsdj:gen-offsets": "node scripts/cmake-build.js retroplug-host && node packages/retroplug/scripts/gen-lsdj-offsets.mjs",
+    "smsggdj:gen-symbols": "node packages/retroplug/scripts/gen-smsggdj-symbols.mjs",
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node packages/retroplug/scripts/run-ui-tests.mjs",
     "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-classid-test retroplug-audio-test retroplug-watcher-test retroplug-lottie-test retroplug-midi-test && node packages/retroplug/scripts/run-plugin-tests.mjs",
     "sdl:smoke": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-smoke.sh",

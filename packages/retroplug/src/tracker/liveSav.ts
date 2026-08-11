@@ -10,7 +10,7 @@ import type { ControlPlaneBackend } from "../backend";
 import type { SystemsStore } from "../systemsStore";
 import type { RoleInstance } from "../systemRoles";
 import { resolveSavPath } from "../savPaths";
-import { resolveSongCatalog } from "./trackerIntegration"; // the leaf, not ./index - this module IS re-exported there
+import { resolveSongCatalog, resolveTracker } from "./trackerIntegration"; // the leaf, not ./index - this module IS re-exported there
 
 /** The per-system fields a live-sav edit needs - SystemView and SystemEntry both satisfy it. */
 export interface LiveSavTarget {
@@ -21,11 +21,16 @@ export interface LiveSavTarget {
   roles: RoleInstance[];
 }
 
-type SavBackend = Pick<ControlPlaneBackend, "writeFileAtomic" | "writeFile">;
-// `readRam` is OPTIONAL on the seam: only a console whose working song lives outside the battery needs
-// it, and keeping it optional means the mock stores and the recents path don't have to grow a region
-// they never look at.
-type SavSystems = Pick<SystemsStore, "readSram" | "loadSram"> & { readRam?(id: number): Uint8Array | null };
+// `readFile` is here for the LIVE load only: the write offsets come from the ROM build's symbol layout,
+// so that path needs the ROM bytes. The cold-boot path never reads it.
+type SavBackend = Pick<ControlPlaneBackend, "writeFileAtomic" | "writeFile"> & { readFile?(path: string): Uint8Array | null };
+// `readRam` / `writeRam` are OPTIONAL on the seam: only a console whose working song lives outside the
+// battery needs them, and keeping them optional means the mock stores and the recents path don't have to
+// grow a region they never look at.
+type SavSystems = Pick<SystemsStore, "readSram" | "loadSram"> & {
+  readRam?(id: number): Uint8Array | null;
+  writeRam?(id: number, offset: number, bytes: Uint8Array): boolean;
+};
 type FocusedSystems = SavSystems & Pick<SystemsStore, "primary">;
 
 /** The rolling backup a destructive battery edit leaves behind - `<sav>.bak`, one per cart, overwritten
@@ -71,6 +76,32 @@ export function mutateLiveSav(
   return systems.loadSram(sys.id, target) !== null;
 }
 
+/** Load the saved song at `index` into the RUNNING cart's memory, without touching the `.sav` and without
+ *  rebooting - the `liveLoad` path, for a console whose working song lives outside the battery.
+ *
+ *  Strictly less destructive than `mutateLiveSav`: nothing is written to disk, so there is no `.bak` to
+ *  take and nothing to lose if it fails. It is also the only load that does NOT throw away the working
+ *  song of every OTHER kind (the cold boot does), which is why the menu prefers it when it exists.
+ *
+ *  False when the cart has no `liveLoad`, its ROM or battery can't be read, the version has no layout, or
+ *  the song won't decode. Applies writes in order and stops at the first refusal, reporting false - a
+ *  half-written song is a wedged cart, but the alternative (pressing on past a rejected write) is worse,
+ *  and the only way a write is refused is an out-of-bounds offset, which means the layout is wrong and
+ *  the remaining writes would be too. */
+export function loadSongLive(backend: SavBackend, systems: SavSystems, sys: LiveSavTarget, index: number): boolean {
+  const tracker = resolveTracker(sys.roles);
+  if (!tracker?.liveLoad || !sys.romPath || !backend.readFile || !systems.writeRam) return false;
+  const rom = backend.readFile(sys.romPath);
+  const sram = systems.readSram(sys.id);
+  if (!rom || !sram) return false;
+  const writes = tracker.liveLoad(rom, sram, index);
+  if (!writes?.length) return false;
+  for (const w of writes) {
+    if (!systems.writeRam(sys.id, w.offset, w.bytes)) return false;
+  }
+  return true;
+}
+
 /** Load the saved song called `name` into `sys`'s working memory - the Songs menu's Load, addressed by NAME
  *  (what a recents row carries) instead of by slot. Already-loaded is a deliberate no-op: re-picking the song
  *  you are on shouldn't cold-boot the core or throw away working memory. False when the cart isn't a tracker,
@@ -82,9 +113,12 @@ export function loadSongByName(backend: SavBackend, systems: SavSystems, sys: Li
   if (!catalog || !name) return false;
   const sram = systems.readSram(sys.id);
   if (!sram) return false;
-  if (catalog.workingName(sram) === name) return false; // already the working song
+  if (catalog.workingName(sram, systems.readRam?.(sys.id) ?? undefined) === name) return false; // already working
   const match = catalog.list(sram).find((s) => s.name === name);
   if (!match) return false;
+  // A cart that can be loaded LIVE is, in preference to the cold boot: it is faster, it leaves the `.sav`
+  // untouched, and for the one console that has it the reboot is what destroys the working song.
+  if (resolveTracker(sys.roles)?.liveLoad && systems.writeRam) return loadSongLive(backend, systems, sys, match.index);
   return mutateLiveSav(backend, systems, sys, (sav) => catalog.load(sav, match.index));
 }
 

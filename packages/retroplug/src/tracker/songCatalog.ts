@@ -38,8 +38,15 @@ export interface SongCatalog {
   /** Copy the songs at the given SOURCE `indices` (into `source`'s `list()`) into `target`, byte-exact.
    *  Returns the new image, or null when nothing could be imported. Used by the Songs menu's sav importer. */
   importSongs(target: Uint8Array, source: Uint8Array, indices: number[]): Uint8Array | null;
-  /** The currently-loaded (working) song's name, for recents / titles. null when none / unsaved. */
-  workingName(sav: Uint8Array): string | null;
+  /** The currently-loaded (working) song's name, for recents / titles. null when none / unsaved.
+   *
+   *  `ram` is the system's live WORK RAM, and it is what makes this answerable for a console that keeps
+   *  the working song there rather than in the battery: smsggdj reads the cart's own `song_name`, which
+   *  is the true source (it is what the cart displays), where the battery alone knows nothing. Absent
+   *  when the caller has no live system - an import source, or an offline `.sav` render - and a catalog
+   *  must then fall back to whatever the image can tell it, exactly as before this parameter existed.
+   *  LSDj and risa ignore it entirely; their working song IS in the image. */
+  workingName(sav: Uint8Array, ram?: Uint8Array): string | null;
   /** DESCRIBE the live working song, for the Songs menu's synthetic row: its display name, and whether it is
    *  LINKED to a saved slot (which decides whether saving updates that slot or creates a new song). Null when
    *  there is no readable working song.

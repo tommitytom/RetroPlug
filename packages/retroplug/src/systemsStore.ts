@@ -336,6 +336,14 @@ export class SystemsStore {
     return this.backend.readRam(id);
   }
 
+  /** Poke bytes into system `id`'s live work RAM, at the same offsets `readRam` returns. Queued to the
+   *  audio thread, so it lands between blocks and is safe while the core plays; false when the id is
+   *  unknown or the write would run past the region. What a tracker whose working song lives OUTSIDE
+   *  the battery (smsggdj) uses to load a song without rewriting the `.sav` or rebooting the cart. */
+  writeRam(id: number, offset: number, bytes: Uint8Array): boolean {
+    return this.backend.writeRam(id, offset, bytes);
+  }
+
   /** Dump system `id`'s battery SRAM to `path`. False when the id has no SRAM published, or the write fails. */
   saveSram(id: number, path: string): boolean {
     const bytes = this.backend.readSram(id);

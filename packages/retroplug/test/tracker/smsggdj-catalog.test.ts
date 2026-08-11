@@ -7,6 +7,7 @@ import { lsdjSongCatalog } from "../../src/tracker/lsdjSongCatalog";
 import { risaSongCatalog } from "../../src/tracker/risaSongCatalog";
 import { smsggdjIntegration } from "../../src/tracker/trackerIntegration";
 import { buildSav, curSlot, SMDJ4_BLOCK_LEN } from "../../src/smsggdj/codec/sav";
+import { resolveSmsggdjLayout, supportedSmsggdjVersions } from "../../src/smsggdj/runtime/layout";
 import { identifySmsggdjVersion, supportsCurSlot } from "../../src/smsggdj/romDetect";
 
 const CART = 32 * 1024;
@@ -115,14 +116,89 @@ test("romName reads the version, which is NOT adjacent to the build marker", () 
   expect(identifySmsggdjVersion(new Uint8Array(0x8000))).toBe(null); // no marker, no version
 });
 
-test("a build too old to honour the loaded-slot byte reports unsupported", () => {
-  // It is not broken, it is not driveable: Load would write a byte the cart ignores and the user would
-  // get a boot into a blank song with no error. Greying the submenu says so; risa gates the same way on
-  // a version with no bundled RAM layout.
-  expect(smsggdjIntegration.isVersionSupported!(rom("0.45"))).toBe(false);
-  expect(smsggdjIntegration.isVersionSupported!(rom("0.46"))).toBe(true);
-  expect(smsggdjIntegration.isVersionSupported!(rom("0.47"))).toBe(true);
-  expect(smsggdjIntegration.isVersionSupported!(rom("1.0"))).toBe(true);
-  expect(smsggdjIntegration.isVersionSupported!(new Uint8Array(0x8000))).toBe(false);
+test("supported means we have that build's RAM layout, not that the cart autoloads", () => {
+  // The gate was originally keyed on supportsCurSlot - whether the CART restores a song at boot - which
+  // greyed out the whole submenu for v0.45, including Export / Delete / Move / Add / Import, none of
+  // which need the cart's help. The right question is risa's: do we have this build's symbol snapshot,
+  // and therefore know where to write. An unknown build still greys out; only the question changed.
+  expect(smsggdjIntegration.isVersionSupported!(rom("0.45"))).toBe(true); // committed snapshot
+  expect(smsggdjIntegration.isVersionSupported!(rom("0.46"))).toBe(true); // alias to 0.45's
+  expect(smsggdjIntegration.isVersionSupported!(rom("0.47"))).toBe(false); // no snapshot, no alias
+  expect(smsggdjIntegration.isVersionSupported!(rom("1.0"))).toBe(false);
+  expect(smsggdjIntegration.isVersionSupported!(new Uint8Array(0x8000))).toBe(false); // not an smsggdj ROM
+
+  // supportsCurSlot survives, because it still answers a real and different question - whether the CART
+  // restores a song at boot - which is what the ROM branch and the docs are about.
+  expect(supportsCurSlot("0.45")).toBe(false);
+  expect(supportsCurSlot("0.46")).toBe(true);
   expect(supportsCurSlot(null)).toBe(false);
+});
+
+test("the layout resolves for the snapshot version and for its alias, and for nothing else", () => {
+  const l45 = resolveSmsggdjLayout("0.45")!;
+  expect(l45 != null).toBe(true);
+  expect(l45.song).toBe(0); // the block leads work RAM - the assumption every write rests on
+  expect(l45.songLen).toBe(SMDJ4_BLOCK_LEN);
+  expect(l45.echoLen).toBe(8); // eight contiguous db's, asserted at generation time
+  expect(l45.nameLen).toBe(8);
+
+  // An alias borrows the addresses but keeps its OWN label, so a reader can still tell them apart.
+  const l46 = resolveSmsggdjLayout("0.46")!;
+  expect(l46.version).toBe("0.46");
+  expect(l46.name).toBe(l45.name);
+  expect(l46.echo).toBe(l45.echo);
+
+  expect(resolveSmsggdjLayout("0.47")).toBe(null);
+  expect(resolveSmsggdjLayout(null)).toBe(null);
+  expect(supportedSmsggdjVersions().includes("0.45")).toBe(true);
+});
+
+test("liveLoad returns the block AND the metadata SMDJ4 keeps outside it", () => {
+  // The reason a layout is needed at all: poking only the 6,912-byte block loads the right notes with
+  // the previous song's ECHO settings, which is audible, and the previous song's name on screen.
+  const sav = buildSav([{ block: song(1), name: "ALPHA" }, { block: song(2), name: "BETA" }], CART)!;
+  const layout = resolveSmsggdjLayout("0.45")!;
+  const writes = smsggdjIntegration.liveLoad!(rom("0.45"), sav, 1)!;
+  expect(writes != null).toBe(true);
+
+  const at = (offset: number) => writes.find((w) => w.offset === offset);
+  expect(at(layout.song)!.bytes).toEqual(song(2)); // the decoded block, at work-RAM offset 0
+  expect(at(layout.name)!.bytes.length).toBe(8);
+  expect(String.fromCharCode(...at(layout.name)!.bytes).trimEnd().replace(/\0+$/, "")).toBe("BETA");
+  expect(at(layout.echo)!.bytes.length).toBe(8);
+  expect(at(layout.edited)!.bytes).toEqual(Uint8Array.of(0)); // the cart's own load clears this
+
+  // prj_slot is deliberately left alone - the cart READS it to decide what to load, it doesn't write it.
+  expect(at(layout.slot)).toBe(undefined);
+
+  // Every write must land inside the 8 KB region, or writeRam refuses it and the load half-applies.
+  for (const w of writes) expect(w.offset + w.bytes.length <= 0x2000).toBe(true);
+});
+
+test("liveLoad declines rather than guessing", () => {
+  const sav = buildSav([{ block: song(1), name: "ALPHA" }], CART)!;
+  expect(smsggdjIntegration.liveLoad!(rom("0.47"), sav, 0)).toBe(null); // no layout for that build
+  expect(smsggdjIntegration.liveLoad!(new Uint8Array(0x8000), sav, 0)).toBe(null); // not an smsggdj ROM
+  expect(smsggdjIntegration.liveLoad!(rom("0.45"), sav, 3)).toBe(null); // no song in that slot
+
+  // A song whose stored checksum no longer matches is refused, not poked in half-decoded.
+  const corrupt = sav.slice();
+  corrupt[32 + 6] ^= 0xff;
+  expect(smsggdjIntegration.liveLoad!(rom("0.45"), corrupt, 0)).toBe(null);
+});
+
+test("workingName prefers the cart's own song_name in work RAM", () => {
+  // What makes the working-song row, per-song recents and the window title work on v0.45, which has no
+  // cur_slot byte at all.
+  const sav = twoSongs();
+  const layout = resolveSmsggdjLayout("0.45")!;
+  const ram = new Uint8Array(8192);
+  ram.set(new TextEncoder().encode("MYSONG\0\0"), layout.name);
+  expect(smsggdjSongCatalog.workingName(sav, ram)).toBe("MYSONG");
+
+  // Blank work RAM means the cart has loaded nothing, which is not a song called "".
+  expect(smsggdjSongCatalog.workingName(sav, new Uint8Array(8192))).toBe(null);
+  // No RAM at all (an offline .sav): fall back to the save's own record, which v0.45 does not carry.
+  expect(smsggdjSongCatalog.workingName(sav)).toBe(null);
+  expect(smsggdjSongCatalog.workingName(smsggdjSongCatalog.load(sav, 1)!)).toBe("BETA"); // ...but v0.46 does
 });
