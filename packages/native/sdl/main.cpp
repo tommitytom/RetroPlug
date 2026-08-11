@@ -208,10 +208,11 @@ struct AppState {
 
     // Window-geometry ownership — mirrors PluginUI's wmControlled_ / sizeHonored_ / requestedW/H latch, so the
     // resizable SDL window behaves like the DPF standalone under a tiling WM (Wayland/Hyprland). wmControlled
-    // starts true for fullscreen; it also latches true when the compositor hands us a size we never asked for
-    // (a tile) before any requested size was ever honored — then we stop driving SDL_SetWindowSize and the UI
-    // fits its grid via zoom instead. sizeHonored proves the window is floating (a request took), which vetoes
-    // the clamp latch so a spurious compositor resize isn't mistaken for a tiling takeover.
+    // starts true for fullscreen and for the Wayland backend (see setupSdl - a Wayland compositor never tells
+    // us whether it honored a resize); it also latches true when the compositor hands us a size we never asked
+    // for (a tile) before any requested size was ever honored - then we stop driving SDL_SetWindowSize and the
+    // UI fits its grid via zoom instead. sizeHonored proves the window is floating (a request took), which
+    // vetoes the clamp latch so a spurious compositor resize isn't mistaken for a tiling takeover.
     bool          wmControlled = false;
     bool          sizeHonored = false;
     std::uint32_t requestedW = 0;   // last size asked of the WM (the clamp-detection baseline)
@@ -256,6 +257,11 @@ void loadMidiConfig(AppState& a);
 // LVGL glue; declared here so the window hook can call it. Runs on the UI thread (same as present), so the
 // texture/buffer/width swap is race-free.
 void requestWindowSize(AppState& a, std::uint32_t w, std::uint32_t h);
+
+// The smallest window we ask for / allow (mirrors the plugin's setGeometryConstraints). SDL clamps every
+// SDL_SetWindowSize to this floor, so requestWindowSize has to clamp identically - see the comment there.
+constexpr std::uint32_t kMinWindowW = 480;
+constexpr std::uint32_t kMinWindowH = 432;
 
 // ---- LVGL glue (mirrors RenderCore's non-GL subset) -----------------------------------------------
 
@@ -1049,13 +1055,32 @@ bool setupSdl(AppState& a) {
     a.window = SDL_CreateWindow("RetroPlug", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                 a.width, a.height, winFlags);
     if (!a.window) { std::fprintf(stderr, "[retroplug-sdl] SDL_CreateWindow failed: %s\n", SDL_GetError()); return false; }
-    SDL_SetWindowMinimumSize(a.window, 480, 432);
+    SDL_SetWindowMinimumSize(a.window, static_cast<int>(kMinWindowW), static_cast<int>(kMinWindowH));
+    a.debugResize = std::getenv("RETROPLUG_DEBUG_RESIZE") != nullptr;
+
     // Seed the geometry-ownership state: fullscreen is WM-controlled from the start; arm the clamp baseline with
     // the initial size so the FIRST compositor resize that differs (a tile) is recognised as a WM takeover.
-    a.wmControlled = a.fullscreen;
+    //
+    // Wayland is WM-controlled too, always. On X11 a resize request is VERIFIABLE: SDL_SetWindowSize round-trips
+    // it and reports back the geometry the WM actually granted (X11_SetWindowSize waits on the server, then
+    // sends RESIZED with the real size), so a WM that refuses is detected and adopted by onWindowSizeChanged.
+    // Wayland has no such feedback - xdg-shell has no client resize request at all: we simply commit the size
+    // we want, and the compositor either goes along with it (mutter/kwin) or keeps its own box and SCALES our
+    // now-mismatched surface into it, sending nothing either way. Under a compositor that owns geometry
+    // (Hyprland, sway, every tiling compositor) that scaling is what stretched a freshly loaded tile across the
+    // whole window until the next real configure - a user resize - put surface and window back in step. Since
+    // "honored" and "ignored" are indistinguishable from here, we don't guess: the compositor owns the window
+    // and the UI fits its grid via zoom. RETROPLUG_SDL_FIT_WINDOW=1 opts back into driving the window size on a
+    // compositor known to honor it.
+    const char* videoDriver = SDL_GetCurrentVideoDriver();
+    const bool  wayland     = videoDriver && SDL_strcmp(videoDriver, "wayland") == 0;
+    const bool  forceFit    = std::getenv("RETROPLUG_SDL_FIT_WINDOW") != nullptr;
+    a.wmControlled = a.fullscreen || (wayland && !forceFit);
     a.requestedW = a.width;
     a.requestedH = a.height;
-    a.debugResize = std::getenv("RETROPLUG_DEBUG_RESIZE") != nullptr;
+    if (a.debugResize)
+        std::fprintf(stderr, "[retroplug-sdl] video driver '%s' - window geometry %s\n",
+                     videoDriver ? videoDriver : "?", a.wmControlled ? "owned by the WM" : "ours to size");
     a.renderer = SDL_CreateRenderer(a.window, -1, SDL_RENDERER_SOFTWARE);
     if (!a.renderer) { std::fprintf(stderr, "[retroplug-sdl] SDL_CreateRenderer failed: %s\n", SDL_GetError()); return false; }
     a.texture = SDL_CreateTexture(a.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
@@ -1128,6 +1153,15 @@ void applyWindowSize(AppState& a, std::uint32_t w, std::uint32_t h, bool fromWm)
 // PluginUI::requestWindowSize — record the request as the clamp baseline, but don't fight a WM that owns
 // geometry (a tiling compositor or a fullscreen handheld); there the UI fits its grid via zoom instead.
 void requestWindowSize(AppState& a, std::uint32_t w, std::uint32_t h) {
+    // Clamp to the window minimum FIRST, because SDL_SetWindowSize does: a 1x/2x grid (160x144 / 320x288) is
+    // below the floor, so the window can only ever become 480x432. Applying the raw request would size the
+    // LVGL surface to something the window never takes - and a surface that doesn't match the window is
+    // exactly what a compositor scales to fit, which is how a freshly loaded tile ended up stretched across
+    // the whole window. The clamped size also has to be what we RECORD, or it comes back through
+    // onWindowSizeChanged as "a size we never asked for", i.e. a tiling takeover, wrongly latching
+    // wmControlled and killing fit-to-grid for the rest of the session.
+    w = std::max(w, kMinWindowW);
+    h = std::max(h, kMinWindowH);
     a.requestedW = w; // recorded even when WM-controlled, so onWindowSizeChanged can still latch sizeHonored
     a.requestedH = h;
     if (a.wmControlled) {
@@ -1316,8 +1350,10 @@ int main(int argc, char** argv) {
             requestWindowSize(app, static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h));
             int ww = 0, wh = 0;
             SDL_GetWindowSize(app.window, &ww, &wh);
-            std::fprintf(stderr, "[retroplug-sdl] post-resize: state=%ux%u window=%dx%d buf=%zu\n",
-                         app.width, app.height, ww, wh, app.drawBuf.size());
+            // wmControlled is printed too: a request the WM clamps or refuses must not be mistaken for a
+            // tiling takeover (see requestWindowSize), and that's only observable through this latch.
+            std::fprintf(stderr, "[retroplug-sdl] post-resize: state=%ux%u window=%dx%d buf=%zu wmControlled=%d\n",
+                         app.width, app.height, ww, wh, app.drawBuf.size(), (int)app.wmControlled);
         }
     }
 
