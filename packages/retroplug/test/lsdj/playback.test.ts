@@ -103,14 +103,44 @@ test("a chain that ends at an empty slot is timed by the phrases that actually p
   expect(m.position().channels[0].songRow).toBe(1);
 });
 
-test("a row whose chain has no playable phrase is skipped, not stopped on", () => {
-  // Row 1's chain starts with an empty slot, so it is not playable; the cart wraps past it.
+test("an unplayable row ends the song rather than being stepped over", () => {
+  // MEASURED (B9): an empty row is the END of the song, not a hole to skip. Row 1's chain starts with an
+  // empty slot, so it is unplayable - and the cart loops rows 0..0 forever rather than reaching row 2.
+  // B6 saw exactly this on a real cart: pu1's songRow never left 0 across 400 ticks.
   const m = new PredictedLsdjModel(song([[0], [1], [2]], [[0], [null, 1], [2]]));
   expect(m.rowTicks(0, 1)).toBe(null);
 
   m.launch(0);
   m.advance(PHRASE);
-  expect(m.position().channels[0].songRow).toBe(2); // skipped row 1 entirely
+  expect(m.position().channels[0].songRow).toBe(0); // wrapped to the start, NOT on to row 2
+  m.advance(PHRASE * 4);
+  expect(m.position().channels[0].songRow).toBe(0); // and stays in that one-row loop
+});
+
+test("a gap in the middle of a song loops the first section, and never reaches the second", () => {
+  // The shape B9 measured: rows 0-1 populated, 2 empty, 3 populated. The cart wraps at the gap.
+  const m = new PredictedLsdjModel(song([[0], [1], [null], [2]], [[0], [1], [2]]));
+  m.launch(0);
+  m.advance(PHRASE - 1);
+  expect(m.position().channels[0].songRow).toBe(1);
+  m.advance(PHRASE);
+  expect(m.position().channels[0].songRow).toBe(0); // row 2 is the end of the song
+  m.advance(PHRASE * 10);
+  expect(m.position().channels[0].songRow).toBe(0); // row 3 is unreachable, however long we run
+});
+
+test("launching an empty row scans BACK to the nearest playable one", () => {
+  // MEASURED (B9): launching an empty row is neither a stop (B8) nor a no-op - the cart lands on the
+  // last playable row at or before it. Note this is the OPPOSITE direction to the advance rule above;
+  // they really are two different rules on the cart.
+  const m = new PredictedLsdjModel(song([[0], [1], [null], [null], [null], [2]], [[0], [1], [2]]));
+
+  m.launch(3);
+  expect(m.position().channels[0].songRow).toBe(1); // back to 1, not forward to 5 and not row 0
+  expect(m.position().playing).toBe(true);
+
+  m.launch(5);
+  expect(m.position().channels[0].songRow).toBe(5); // a populated row still lands where asked
 });
 
 test("a single large tick step crosses several rows at once", () => {
@@ -157,12 +187,14 @@ test("the grid reports launchable cells, and is safe at the edges", () => {
   expect(g.hasContent(0, 9999)).toBe(false);
 });
 
-test("a channel with nothing at the launched row parks silently instead of guessing", () => {
+test("a channel with nothing to land on stays silent instead of guessing", () => {
+  // pu2 has no chain at row 0 and none before it, so there is nowhere for the backward scan to land.
   const m = new PredictedLsdjModel(song([[0, null]], [[0]]));
   m.launch(0);
   const p = m.position();
   expect(p.channels[0].playing).toBe(true);
   expect(p.channels[1].playing).toBe(false);
+  expect(p.channels[1].songRow).toBe(null);
   expect(p.playing).toBe(true); // the cart as a whole is playing
 });
 

@@ -62,6 +62,34 @@ const GAP_SONG: SavInput = {
   },
 };
 
+// B9 needs a song with a HOLE IN THE MIDDLE, so that "where does an empty-row launch land" has four
+// distinguishable answers. Rows 0-1 and 5-6 hold chains, rows 2-4 are empty; launching row 3 then lands
+// on row 1 (scan back), row 5 (scan forward), row 6 (last populated) or row 0 (wrap to the start), and
+// the decoded chain number says which without ambiguity.
+const SPARSE_SONG: SavInput = {
+  workingSong: {
+    formatVersion: 22,
+    settings: { syncMode: "MidiMap", tempo: 128 },
+    rows: [
+      { chains: [0, 1, 2, 3] },
+      { chains: [4, 5, 6, 7] },
+      { chains: [null, null, null, null] },
+      { chains: [null, null, null, null] },
+      { chains: [null, null, null, null] },
+      { chains: [8, 9, 10, 11] },
+      { chains: [12, 13, 14, 15] },
+    ],
+    chains: [
+      { phrases: [0] }, { phrases: [1] }, { phrases: [2] }, { phrases: [3] },
+      { phrases: [0] }, { phrases: [1] }, { phrases: [2] }, { phrases: [3] },
+      { phrases: [0] }, { phrases: [1] }, { phrases: [2] }, { phrases: [3] },
+      { phrases: [0] }, { phrases: [1] }, { phrases: [2] }, { phrases: [3] },
+    ],
+    phrases: [phrase(1, 0), phrase(2, 1), phrase(3, 2), phrase(4, 3)],
+    instruments: [pulse, pulse, { type: "wave" }, { type: "noise" }],
+  },
+};
+
 /** MEASURED by B2: exactly 6 clock bytes per phrase step at LSDj's default 6/6 groove, which makes a
  *  24-PPQN clock 4 steps/beat and one 16-step phrase 96 ticks (one bar). */
 const TICKS_PER_STEP = 6;
@@ -278,4 +306,91 @@ test("B7: do rows 254/255 collide with the 0xFE/0xFF sentinels?", () => {
   const samples = p.runTicks(120);
   console.log(`[B7] launching row 1 gave chain sequence ${JSON.stringify(transitions(samples, (s) => s.channels.pu1.chain))}`);
   expect(samples.length).toBe(120);
+});
+
+// B8 — is there a STOP? MI.MAP has no stop message and 0xFE turned out to be a no-op (B5), so the only
+// stop a host has is halting the transport, which is out of reach of a pad. But B4 showed that a channel
+// with nothing at the launched row parks silently, which suggests launching an EMPTY row might park all
+// four - an effective stop built out of the one gesture the protocol does have. The predictor already
+// models it that way (predict.ts launch()), on an assumption nothing had tested. This settles whether the
+// Launchpad app can offer a stop pad at all.
+test("B8: what does launching an EMPTY song row do?", () => {
+  // Part 1 — from a PLAYING cart. Rows 0-2 hold chains; everything from row 3 up is empty. Watching the
+  // CHAIN sequence (not just songRow) is what separates the three possible outcomes: a stop, a jump to
+  // row 5 followed by a wrap, or the byte being ignored outright.
+  const p = LsdjProbe.create({ song: SONG });
+  if (!p) return skip("aboy ROM not found / unsupported version");
+
+  p.launchRaw(0);
+  const playing = p.runTicks(150);
+  const before = playing[playing.length - 1];
+
+  p.launchRaw(5);
+  const after = p.runTicks(200);
+
+  console.log(`[B8] before launching the empty row: ${fmtSample(before)}`);
+  dump("B8 after launching empty row 5", after, 40);
+
+  const stillPlaying = after.filter((s) => s.playing).length;
+  const stepped = changeTicks(after, (s) => s.channels.pu1.phraseRow).length;
+  console.log(`[B8] samples still 'playing': ${stillPlaying}/${after.length}; pu1 step changes: ${stepped}`);
+  console.log(`[B8] pu1 songRow after: ${JSON.stringify(transitions(after, (s) => s.channels.pu1.songRow))}`);
+  console.log(`[B8] pu1 chain after:   ${JSON.stringify(transitions(after, (s) => s.channels.pu1.chain))}`);
+  console.log(`[B8] per-channel playing: ${JSON.stringify(CHANNELS.map((c) => after[after.length - 1].channels[c].playing))}`);
+  console.log(`[B8] VERDICT(playing): an empty row ${stillPlaying === 0 ? "PARKS the cart - usable as a stop" : stepped === 0 ? "freezes stepping without clearing the playing flag" : "does NOT stop it"}`);
+
+  // Part 2 — from a STOPPED cart, where nothing is already in motion to confuse the reading. If an empty
+  // row is simply ignored, this cart never starts at all.
+  const idle = LsdjProbe.create({ song: SONG });
+  if (!idle) return skip("aboy ROM not found / unsupported version");
+
+  idle.launchRaw(5);
+  const fromIdle = idle.runTicks(200);
+  console.log(`[B8] from stopped, pu1 songRow: ${JSON.stringify(transitions(fromIdle, (s) => s.channels.pu1.songRow))}`);
+  console.log(`[B8] from stopped, pu1 chain:   ${JSON.stringify(transitions(fromIdle, (s) => s.channels.pu1.chain))}`);
+  console.log(`[B8] from stopped, playing samples: ${fromIdle.filter((s) => s.playing).length}/${fromIdle.length}`);
+  console.log(`[B8] VERDICT(stopped): launching an empty row ${fromIdle.some((s) => s.playing) ? "STARTS the cart anyway" : "leaves it stopped"}`);
+
+  // Guards the instrument, not the finding: the cart must have been playing for part 1 to mean anything.
+  // What the empty launch does is printed above and recorded in docs/launchpad-plan.md.
+  expect(before.playing).toBe(true);
+});
+
+// B9 — B8 established that an empty-row launch neither stops the cart nor is ignored: it STARTS a stopped
+// one, on a row that is not the one asked for. So where does it land? `predict.ts` currently models this
+// case as "park on the launched row, silent", which B8 already disproves, and the predictor cannot be
+// corrected without knowing the actual rule. SPARSE_SONG's middle hole makes all four candidate answers
+// distinguishable by chain number alone.
+test("B9: where does a launch of an empty row actually land?", () => {
+  const p = LsdjProbe.create({ song: SPARSE_SONG });
+  if (!p) return skip("aboy ROM not found / unsupported version");
+
+  p.launchRaw(3); // empty, with populated rows at 0-1 below it and 5-6 above
+  const samples = p.runTicks(200);
+
+  const rows = transitions(samples, (s) => s.channels.pu1.songRow);
+  const chains = transitions(samples, (s) => s.channels.pu1.chain);
+  dump("B9 after launching empty row 3 of a sparse song", samples, 40);
+  console.log(`[B9] pu1 songRow: ${JSON.stringify(rows)}`);
+  console.log(`[B9] pu1 chain:   ${JSON.stringify(chains)}`);
+  console.log(`[B9] playing samples: ${samples.filter((s) => s.playing).length}/${samples.length}`);
+
+  const landed = rows[0];
+  const rule = landed === 1 ? "scans BACK to the nearest populated row"
+    : landed === 5 ? "scans FORWARD to the nearest populated row"
+    : landed === 6 ? "clamps to the LAST populated row"
+    : landed === 0 ? "wraps to the START of the song"
+    : `landed somewhere unexplained (row ${landed})`;
+  console.log(`[B9] VERDICT(launch): an empty-row launch ${rule}`);
+
+  // And the second, separate rule this sequence exposes: having landed on row 1, where does the cart go
+  // when its chain ends and row 2 is EMPTY? Skipping the hole would put it on row 5; ending the song puts
+  // it back at 0. These are different rules from the launch one, and both matter to the predictor.
+  const after = rows[1];
+  console.log(`[B9] VERDICT(advance): advancing into an empty row ${after === 0 ? "ENDS the song and wraps to the start" : after === 5 ? "SKIPS the hole to the next populated row" : `did something else (row ${after})`}`);
+
+  expect(samples.some((s) => s.playing)).toBe(true); // B8 says it starts; if it did not, the rule is moot
+  // MEASURED, and both now load-bearing in predict.ts: a launch scans back, an advance ends the song.
+  expect(landed).toBe(1);
+  expect(after).toBe(0);
 });

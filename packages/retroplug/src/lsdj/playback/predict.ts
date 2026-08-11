@@ -13,6 +13,10 @@
 //   B3  the cart auto-advances one row per chain and WRAPS at the end of the song.
 //   B4  a launch sets ALL channels to the row; they then advance independently as their chains end.
 //   B6  a chain ends at its FIRST EMPTY phrase slot - so chain length is just "slots before the null".
+//   B8  launching an EMPTY row is not a stop - it starts a stopped cart, on a different row.
+//   B9  an empty row is the END OF THE SONG, and the two directions differ:
+//         advancing into one wraps to the start of the song (it is NOT skipped over),
+//         launching one scans BACK to the nearest playable row at or before it.
 //
 // v1 simplifications, all deliberate and all things the differential test will quantify rather than
 // hide: groove 0 only (a phrase-level G command is ignored), no H hop handling, and no awareness of
@@ -97,13 +101,35 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
     return phrases === 0 ? null : phrases * this.ticksPerPhrase;
   }
 
-  /** The next row this channel plays after `row`: the following row with content, wrapping to the first
-   *  one when the song runs out (MEASURED, B3 - the cart wraps rather than stopping). Null when the
-   *  channel has no content anywhere, in which case there is nothing to advance to. */
+  /** The next row this channel plays after `row`.
+   *
+   *  MEASURED (B9): an empty row is the END OF THE SONG, not a hole to step over. So this advances by
+   *  exactly one and, if that row has nothing playable, wraps to the start - it does NOT scan forward
+   *  for the next populated row. A song with a gap in the middle therefore loops its first section
+   *  forever, which is what a real cart does and what an earlier "skip the gap" reading got wrong.
+   *  Null when the channel has no content anywhere, in which case there is nothing to advance to. */
   private nextRow(channel: number, row: number): number | null {
     const ticks = this.rowTicksCache[channel];
-    for (let r = row + 1; r < SONG_ROWS; r++) if (ticks[r] !== null) return r;
-    for (let r = 0; r <= row; r++) if (ticks[r] !== null) return r;
+    const next = row + 1;
+    if (next < SONG_ROWS && ticks[next] !== null) return next;
+    return this.firstRow(channel);
+  }
+
+  /** The row the song restarts at: the first playable one. Row 0 in every ordinary song - the scan
+   *  exists so a song whose first rows are blank still has somewhere to wrap to. */
+  private firstRow(channel: number): number | null {
+    const ticks = this.rowTicksCache[channel];
+    for (let r = 0; r < SONG_ROWS; r++) if (ticks[r] !== null) return r;
+    return null;
+  }
+
+  /** Where a launch of `row` actually lands. MEASURED (B9): launching an empty row does not park and is
+   *  not ignored - the cart scans BACK to the nearest playable row at or before it. Note the asymmetry
+   *  with nextRow, which wraps forward: these are genuinely two different rules on the cart, not one
+   *  rule seen twice. Null when the channel has nothing playable at or before `row`. */
+  private landingRow(channel: number, row: number): number | null {
+    const ticks = this.rowTicksCache[channel];
+    for (let r = row; r >= 0; r--) if (ticks[r] !== null) return r;
     return null;
   }
 
@@ -111,12 +137,13 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
     if (row < 0 || row >= SONG_ROWS) return;
     this.playing = true;
     for (let ch = 0; ch < this.channelCount; ch++) {
-      const ticks = this.rowTicksCache[ch][row];
-      // A channel with nothing at the launched row parks there silently. It has no chain to time, so
-      // nothing advances it - the cart's behaviour here is untested, and is called out in the plan.
-      this.cursors[ch] = ticks === null
-        ? { row, remaining: 0, playing: false }
-        : { row, remaining: ticks, playing: true };
+      const landed = this.landingRow(ch, row);
+      const ticks = landed === null ? null : this.rowTicksCache[ch][landed];
+      // A channel with nothing playable at or before the launched row has nowhere to land, so it stays
+      // silent - the one case where a launch leaves a channel with no position at all.
+      this.cursors[ch] = landed === null || ticks === null
+        ? { row: null, remaining: 0, playing: false }
+        : { row: landed, remaining: ticks, playing: true };
     }
     // MEASURED: the launch byte itself counts as the cart's first tick. Three independent observations
     // agree - the first phrase step lands at tick 5 rather than 6, the first row change at 95 rather
