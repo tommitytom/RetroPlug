@@ -89,10 +89,13 @@ WRAM. These are the rules the predictor implements.
 
 Two consequences worth pulling out:
 
-- **`midiMap` is incomplete as shipped.** B1 is a real gap, not a quirk of the test: Arduinoboy's map
-  mode forwards MIDI clock and ours does not, so a RetroPlug MI.MAP cart triggers rows but never plays
-  through them. The existing `lsdj-midimap.test.ts` missed it because it only asserts that a mapped row
-  makes sound. Fixing this is now in scope (M0), and it is what makes the predictor's clock meaningful.
+- **`midiMap` was incomplete as shipped, and is now fixed.** B1 is a real gap, not a quirk of the test:
+  Arduinoboy's map mode forwards MIDI clock and ours did not, so a RetroPlug MI.MAP cart triggered rows
+  but never played through them. The existing `lsdj-midimap.test.ts` missed it because it only asserts
+  that a mapped row makes sound - and a frozen first step is still audible. The role now emits `0xFF` at
+  24 PPQN from `eachTick` (transport-gated for free, so a stopped host leaves the cart untouched), at
+  frame 0 like the other Arduinoboy-family modes. Guarded by a second test in `lsdj-midimap.test.ts`
+  that watches POSITION rather than loudness.
 - **The predictor is a four-cursor, row-level model** whose only real input is chain length. B2/B3/B6
   together give the whole arithmetic: chain length = slots before the first null, row duration =
   slots x 96 ticks, advance one row per chain end, wrap at the end of the song.

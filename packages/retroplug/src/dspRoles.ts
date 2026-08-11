@@ -55,6 +55,7 @@ const LSDJ_CLOCK = 0xf8; // 24-PPQN MIDI clock tick
 const LSDJ_START = 0xfa; // transport start — Arduinoboy-mode bookend
 const LSDJ_STOP = 0xfc; // transport stop
 const MIDIMAP_NOTEOFF = 0xfe; // MidiMap NoteOff handshake sentinel
+const MIDIMAP_CLOCK = 0xff; // MidiMap tick — Arduinoboy's Mode_LSDJ_Map setMapByte(0xFF) on a 0xF8
 const isNoteOn = (status: number) => (status & 0xf0) === 0x90;
 const isNoteOff = (status: number) => (status & 0xf0) === 0x80;
 const channelOf = (status: number) => status & 0x0f;
@@ -100,6 +101,13 @@ const arduinoboy: SystemBehavior = (c) => {
 // MidiMap (== LsdjSyncRole handleMidiMap): NoteOn → a row byte LSDj reads as a SONG-row jump; a matching
 // NoteOff sends the 0xFE handshake. lastRow persists across blocks so the NoteOff only fires for the row
 // most recently sounded.
+//
+// MI.MAP is a SYNC mode, so it also has to CLOCK the cart: Arduinoboy's Mode_LSDJ_Map turns each host
+// 0xF8 into a 0xFF byte on the link, and LSDj advances one phrase step per 6 of them. Without that
+// stream a mapped row triggers, sounds its first step, and then freezes there forever — measured on a
+// real cart in test-native/lsdj-playback-probe.test.ts (B1), which is how this omission was found.
+// Transport-gated for free: walkTicks yields nothing while the host is stopped, so a paused DAW leaves
+// the cart exactly as it was.
 const midiMap: SystemBehavior = (c) => {
   const st = c.state as { lastRow?: number };
   if (st.lastRow === undefined) st.lastRow = -1;
@@ -118,6 +126,13 @@ const midiMap: SystemBehavior = (c) => {
       }
     }
   }
+  // Frame 0, NOT the tick's sample offset — the same rule the Arduinoboy mode above follows, and for
+  // the same reason: LSDj toggles its serial-clock-enable between bytes in the aboy slave protocols,
+  // so a byte held back by SameBoy's offset gate misses the cart's ready window and the clock starves
+  // (the cart then ignores row bytes too, and sits silent). Delivering at frame 0 emits the same NUMBER
+  // of clocks per block and only drops intra-block placement, which this protocol does not carry anyway.
+  const divisor = (c.config.tempoDivisor as number) || 1;
+  c.eachTick(24 / divisor, () => c.pushSerialIn(0, MIDIMAP_CLOCK));
 };
 
 // Slide LSDj's internal keyboard octave toward `target` by emitting OCT_UP/OCT_DN scancodes; returns the

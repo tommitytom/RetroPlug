@@ -7,6 +7,7 @@ import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
+import { LsdjProbe, transitions, changeMs, gaps, fmtSample } from "./lsdjPlaybackProbe";
 
 declare const __RESOURCES_DIR__: string;
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -76,4 +77,57 @@ test("the TS lsdj-sync MidiMap role maps MIDI notes to LSDj row bytes on a real 
   expect(idle < 0.001).toBeTruthy();      // no map note yet → the song row isn't triggered → silent
   expect(mapped > 0.001).toBeTruthy();    // the mapped row-0 byte plays its note → audible
   expect(mapped > idle).toBeTruthy();
+});
+
+// MI.MAP is a SYNC mode, and for a long time this role forgot the sync half: it mapped rows but never
+// clocked the cart, so a triggered row sounded its first step and froze there. The test above could not
+// see that — a frozen first step is still audible. This one watches POSITION instead of loudness, so a
+// cart that triggers but never advances fails.
+//
+// Numbers are the measured ones from lsdj-playback-probe (B2/B3): 6 clock bytes per phrase step, so
+// 96 ticks per 16-step phrase, and one row per single-phrase chain.
+const ADVANCE_SONG: SavInput = {
+  workingSong: {
+    formatVersion: 22,
+    settings: { syncMode: "MidiMap", tempo: 128 },
+    rows: [{ chains: [0] }, { chains: [1] }, { chains: [2] }],
+    chains: [{ phrases: [0] }, { phrases: [1] }, { phrases: [2] }],
+    phrases: [0, 1, 2].map((n) => ({
+      notes: Array.from({ length: 16 }, () => n + 1),
+      instruments: Array.from({ length: 16 }, () => 0),
+    })),
+    instruments: [{ type: "pulse", panning: "LeftRight", adsr: { initialLevel: 8, attackSpeed: 8 } }],
+  },
+};
+
+test("the midiMap role clocks the cart, so a mapped row actually plays through", () => {
+  const p = LsdjProbe.create({ song: ADVANCE_SONG, mode: "midiMap" });
+  if (!p) return console.log("# SKIP lsdj-midimap advance: aboy ROM not found / unsupported version");
+
+  // Two stages, so a failure says WHICH half broke. First the launch alone, with the host stopped:
+  // that is the pre-existing behaviour and must still trigger the row.
+  p.launchNote(0); // ch1 NoteOn note 0 → row 0
+  const triggered = p.runFree(500, 50);
+  console.log(`[lsdj-midimap] after launch, transport stopped: ${fmtSample(triggered[triggered.length - 1])}`);
+  expect(triggered.some((s) => s.playing)).toBeTruthy();
+
+  // Now start the host. The role's clock comes from eachTick, which walkTicks gates on transport, so
+  // this is the moment the cart should begin stepping.
+  p.bpm(120);
+  p.transport(true);
+  // At 120 BPM a 24-PPQN tick is 20.8 ms, a 6-tick step is 125 ms and a 96-tick phrase is 2 s, so 8 s
+  // covers several rows. Timings are read in MILLISECONDS here: the clock comes from the role's own
+  // eachTick, not from bytes this probe wrote, so its tick counter stays at zero.
+  const samples = p.runFree(8000, 25);
+
+  const steps = changeMs(samples, (s) => s.channels.pu1.phraseRow);
+  const rows = transitions(samples, (s) => s.channels.pu1.songRow);
+  console.log(`[lsdj-midimap] pu1 stepped ${steps.length} times over 8 s; rows ${JSON.stringify(rows)}`);
+  console.log(`[lsdj-midimap] step spacing (ms): ${JSON.stringify(gaps(steps).slice(0, 10))} (expect ~125 ms at 120 BPM)`);
+
+  // The regression this test exists for: the cart must STEP, and must move past the launched row.
+  // Exact trajectory is deliberately not asserted here - it depends on where the clock resyncs when
+  // transport starts, which is what the differential test characterises properly.
+  expect(steps.length > 20).toBeTruthy();
+  expect(rows.length > 1).toBeTruthy();
 });
