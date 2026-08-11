@@ -63,24 +63,73 @@ function printPorts(midi: MidiClient): void {
   }
 }
 
-/** A pattern that is obviously OURS: a diagonal ramp across the grid, so a wrong row/column flip or a
- *  bottom-up/top-down mix-up is visible at a glance rather than looking plausible. Every named edge button
- *  is lit dim, which is also how you tell whether the CC map addresses the buttons you expect. */
+/** The test pattern.
+ *
+ *  A palette ramp fills the grid so every pad is visibly addressable, but a ramp alone cannot tell you the
+ *  grid is the right way UP - a flipped one still looks like a tidy gradient. So three corners get an
+ *  unmistakable flat colour, and the fourth is deliberately left as ramp:
+ *
+ *      (0,0) RED ....... (7,0) GREEN
+ *        .                  .
+ *      (0,7) BLUE ...... (7,7) ramp
+ *
+ *  Red at the TOP-LEFT is the whole check. The device numbers its rows from the bottom, and this module
+ *  presents a top-left origin, so red appearing at the bottom-left would mean the flip in padIndex is
+ *  inverted. Every named edge button is lit dim, which is how you see whether the CC map addresses the
+ *  buttons it claims to. */
 function paint(surface: Surface): void {
   for (let y = 0; y < 8; y++) {
-    for (let x = 0; x < 8; x++) {
-      // Colour by row, brightness by column - the top-left pad is dark, the bottom-right the brightest.
-      const led: Led = { mode: "static", colour: palette(1 + y * 8 + x) };
-      surface.setPad(x, y, led);
-    }
+    for (let x = 0; x < 8; x++) surface.setPad(x, y, { mode: "static", colour: palette(1 + y * 8 + x) });
   }
+  const flat = (index: number): Led => ({ mode: "static", colour: palette(index) });
+  surface.setPad(0, 0, flat(Palette.red));
+  surface.setPad(7, 0, flat(Palette.green));
+  surface.setPad(0, 7, flat(Palette.blue));
+
   for (const name of Object.keys(PRO_MK3.buttons)) {
     surface.setButton(name, { mode: "static", colour: palette(Palette.greenDim) });
   }
 }
 
+/** Light ONE named edge button at a time, announcing the name as it goes.
+ *
+ *  Pressing every button to learn the map is slow and needs the user to describe what they pressed. This is
+ *  the other direction and is unambiguous: the profile says "this name is CC n", the probe lights CC n, and
+ *  whoever is watching reads off which physical button actually lit. A name whose button never lights, or
+ *  lights in the wrong place, is a wrong number - and the labels in the manual's layout diagram are an
+ *  image, so this is the only way to check them. */
+function runSweep(surface: Surface, send: (b: number[]) => void): void {
+  const names = Object.keys(PRO_MK3.buttons);
+  const bright: Led = { mode: "static", colour: palette(Palette.red) };
+  const dim: Led = { mode: "static", colour: palette(Palette.greenDim) };
+  let i = 0;
+
+  console.log(`sweeping ${names.length} named buttons, one per second - watch which one turns RED:`);
+  setInterval(() => {
+    if (i > names.length) return; // done; one tick past the end restored the last button
+    if (i > 0) surface.setButton(names[i - 1], dim); // restore the previous one
+    if (i < names.length) {
+      surface.setButton(names[i], bright);
+      console.log(`  lighting "${names[i]}" (CC ${PRO_MK3.buttons[names[i]]})`);
+    }
+    // Flush AFTER the restore, including on the final tick - returning early there would leave the last
+    // button stuck red.
+    for (const m of surface.flush().messages) send(m);
+    i++;
+  }, 1000);
+}
+
+/** True for traffic that is not a gesture and would otherwise drown the log.
+ *
+ *  MEASURED on a Pro MK3: the device free-runs a 24-PPQN MIDI clock (0xF8) out of the same port, so an
+ *  unfiltered probe prints hundreds of lines a second and nothing else can be read. Worth knowing beyond
+ *  this tool - a Launchpad sharing RetroPlug's musical MIDI input would drive the host transport. */
+const isRealtime = (data: readonly number[]): boolean => data.length === 1 && data[0] >= 0xf8;
+
 function runProbe(args: string[]): void {
   const seconds = Math.max(1, Number(flag(args, "--seconds") ?? 60) | 0);
+  const verbose = args.includes("--verbose");
+  const sweep = args.includes("--sweep");
   const midi = createMidiClient();
 
   const inName = pick(midi.listInputs(), flag(args, "--in"), "input");
@@ -105,21 +154,25 @@ function runProbe(args: string[]): void {
   console.log(`out: "${outName}"`);
   console.log(`painted ${first.dirty} LEDs in ${first.messages.length} message(s).`);
   console.log("");
-  console.log("Look at the device: an 8x8 colour ramp, dark at the TOP-LEFT, brightest at the BOTTOM-RIGHT,");
-  console.log("with every edge button dim green. If the ramp is flipped, the grid mapping is wrong.");
+  console.log("Orientation check - three corners are flat colours over the ramp:");
+  console.log("    RED at the TOP-LEFT, GREEN at the TOP-RIGHT, BLUE at the BOTTOM-LEFT.");
+  console.log("  Red at the BOTTOM-left instead would mean the top-left origin flip is inverted.");
   console.log("");
-  console.log("Now press things. Every pad and button is reported below; press each EDGE button in turn to");
-  console.log("check the profile's CC map - an UNKNOWN line means profile.ts has that button's number wrong.");
+  console.log("Press pads and buttons; each press prints one line. An UNNAMED line is a real control whose");
+  console.log("number profile.ts does not know. MIDI clock is counted, not printed (--verbose shows it).");
   console.log("");
 
   const unknownCcs = new Map<number, number>();
   let events = 0;
+  let realtime = 0;
 
   keepAlive();
+  if (sweep) runSweep(surface, send);
 
   setInterval(() => {
     for (const bytes of midi.poll()) {
       const data = Array.from(bytes);
+      if (isRealtime(data) && !verbose) { realtime++; continue; }
       const ev = decodeMessage(PRO_MK3, data);
 
       if (ev) {
@@ -148,7 +201,7 @@ function runProbe(args: string[]): void {
   setInterval(() => {
     if (--left > 0) return;
     console.log("");
-    console.log(`done: ${events} press(es) seen.`);
+    console.log(`done: ${events} press(es) seen, ${realtime} realtime/clock message(s) filtered.`);
     if (unknownCcs.size) {
       console.log(`UNNAMED CCs: ${[...unknownCcs.keys()].sort((a, b) => a - b).join(", ")}`);
       console.log("Those numbers are real controls the profile does not know - correct PRO_MK3_BUTTONS.");
@@ -245,6 +298,10 @@ const HELP = [
   "                  tools/run-launchpad-loopback.sh)",
   "  --in <name>     read from this MIDI input   (default: the port matching \"" + PRO_MK3.portHint + "\")",
   "  --out <name>    light this MIDI output      (default: the same)",
+  "  --sweep         light each named edge button in turn (one per second) so you can read off which",
+  "                  physical button each name actually addresses - the map check without pressing anything",
+  "  --verbose       also print MIDI clock and other realtime bytes (the device free-runs a clock, so this",
+  "                  is hundreds of lines a second - off by default)",
   "  --seconds <N>   how long to listen before restoring Live mode (default 60)",
 ].join("\n");
 
