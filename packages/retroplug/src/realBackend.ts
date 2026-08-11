@@ -203,22 +203,37 @@ export function createSerialClient(): SerialClient {
   };
 }
 
-/** A live-MIDI-input client (mounted CLI-only today): the MIDI twin of createSerialClient, for the TS N8
- *  bridges. `poll()` drains the messages queued since the last call (each = raw bytes; MIDI carries no
- *  timing). Synchronous like every other facet. `listInputs` returns [] on a host that didn't mount it. */
-export interface MidiInputClient {
+/** A live-MIDI client (mounted CLI-only today): the MIDI twin of createSerialClient, for the TS N8 bridges
+ *  and the Launchpad probe. `poll()` drains the messages queued since the last call (each = raw bytes; MIDI
+ *  carries no timing). Synchronous like every other facet. `listInputs` returns [] on a host that didn't
+ *  mount it.
+ *
+ *  The output half exists because a control surface has to be LIT as well as read, and `send` takes any
+ *  length - a bulk-LED sysex runs to hundreds of bytes. */
+export interface MidiClient {
   listInputs(): string[];
+  listOutputs(): string[];
   /** Open a virtual "<clientName> In/Out" + the selected hardware input ("" = all inputs). False if no MIDI system. */
   open(clientName: string, input: string): boolean;
+  /** Mirror sends to this hardware output ("" = the virtual port only). Applied immediately. */
+  selectOutput(output: string): void;
   poll(): Uint8Array[];
+  send(bytes: Uint8Array | number[]): void;
   close(): void;
 }
-export function createMidiClient(): MidiInputClient {
+
+/** @deprecated the input-only name this had before the output half existed. */
+export type MidiInputClient = MidiClient;
+
+export function createMidiClient(): MidiClient {
   const call = makeCall();
   return {
     listInputs: () => (call("midiListInputs") as string[] | undefined) ?? [],
+    listOutputs: () => (call("midiListOutputs") as string[] | undefined) ?? [],
     open: (clientName, input) => call("midiOpen", clientName, input) as boolean,
+    selectOutput: (output) => void call("midiSelectOutput", output),
     poll: () => ((call("midiPoll") as { bytes: Uint8Array }[] | undefined) ?? []).map((m) => m.bytes),
+    send: (bytes) => void call("midiSend", bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)),
     close: () => void call("midiClose"),
   };
 }

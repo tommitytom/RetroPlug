@@ -801,12 +801,22 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         if (m.bytes.empty()) continue;
         // Forward raw MIDI to a connected physical N8 (no-op + near-free when disconnected). Frame 0 - the
         // standalone stages at frame 0 anyway; the N8Link serial thread does the timed release + USB write.
-        // EXCEPT single-byte System Real-Time (>= 0xF8: clock/start/stop): those are transport, not note
-        // data. The sync roles regenerate whatever each core needs, and risa's generated F8 stream reaches
-        // the N8 via the Engine core-byte mirror - so raw-forwarding them here too would double-clock it.
-        if (!(m.bytes.size() == 1 && m.bytes[0] >= 0xF8))
+        // Two exclusions:
+        //   - single-byte System Real-Time (>= 0xF8: clock/start/stop) is transport, not note data. The sync
+        //     roles regenerate whatever each core needs, and risa's generated F8 stream reaches the N8 via
+        //     the Engine core-byte mirror - so raw-forwarding them here too would double-clock it.
+        //   - SYSEX. Now that the input no longer drops it, a control surface's bulk-LED message (hundreds
+        //     of bytes) would otherwise be shovelled down a cart FIFO that has no idea what it is.
+        const bool realtime = m.bytes.size() == 1 && m.bytes[0] >= 0xF8;
+        const bool sysex    = m.bytes[0] == 0xF0;
+        if (!realtime && !sysex)
             a.n8Host.link().push(0, m.bytes.data(), m.bytes.size(), a.sampleRate);
-        if (m.bytes.size() > 3) continue;
+        // Sysex crosses the RtMidi seam now (MidiIo no longer ignores it), but it is NOT staged as musical
+        // MIDI: no role consumes it, and the passthrough translators (mGB, LSDj MidiPassthrough) push every
+        // byte they are given straight down the cart's link port - so a controller's handshake or bulk-LED
+        // message would arrive at the Game Boy as noise. A control surface has its own stream for this
+        // (BlockInput.controllerIn), which is the whole reason that stream exists.
+        if (sysex) continue;
         // Real-time transport bytes (0xF8 clock / 0xFA start / 0xFB continue / 0xFC stop) drive the host
         // transport, not the emulator — consume them here and don't stage them (the sync roles regenerate
         // clock from Engine tempo/transport). Everything else (notes/CC/...) is staged as host MIDI in.
@@ -824,9 +834,11 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     a.engine.processBlock(static_cast<std::uint32_t>(frames), a.audioPtrs.data(), static_cast<std::size_t>(N));
 
     // Kernel MIDI-out (LSDj MI.OUT / Master Sync / passthrough) → the RtMidi out port, then clear the block's
-    // queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW).
+    // queue. Mirrors PluginDSP::run's writeMidiEvent drain (there it goes to the DAW). No length cap: MidiIo
+    // sends whatever it is given, and a control surface's LED traffic is sysex, so capping at 3 bytes would
+    // silently drop exactly the messages that matter.
     for (const auto& mo : a.engine.midiOut())
-        if (mo.data.size() >= 1 && mo.data.size() <= 3) a.midi.send(mo.data.data(), mo.data.size());
+        if (!mo.data.empty()) a.midi.send(mo.data.data(), mo.data.size());
     a.engine.clearMidiOut();
 
     for (int i = 0; i < frames; ++i)

@@ -18,9 +18,11 @@ bool MidiIo::open(const char* clientName) {
     log_ = std::getenv("RETROPLUG_MIDI_LOG") != nullptr;  // set before the callback thread starts
     try {
         in_ = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, name);
-        // Deliver NOTE/CC/etc. but ignore sysex + active-sensing; keep timing (MIDI clock) for a later
-        // transport-sync step. (sysex, time, sense) — false on `time` means clock messages ARE delivered.
-        in_->ignoreTypes(true, false, true);
+        // (sysex, time, sense) — false means DELIVER. Sysex is on because a control surface speaks it: a
+        // Launchpad attached over TRS/DIN rather than its own USB port arrives on an ordinary hardware
+        // input, and its mode-select + bulk-LED messages are all sysex. Clock stays on for transport sync;
+        // active sensing stays off (a keepalive nothing here wants).
+        in_->ignoreTypes(false, false, true);
         in_->setCallback(&MidiIo::onMidiIn, this);
         in_->openVirtualPort(name + " In");
 
@@ -79,7 +81,7 @@ void MidiIo::openHardwareInputs() {
     for (std::size_t i : open) {
         try {
             auto in = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, clientName_);
-            in->ignoreTypes(true, false, true);
+            in->ignoreTypes(false, false, true);  // sysex delivered — see open()
             in->setCallback(&MidiIo::onMidiIn, this);
             in->openPort(static_cast<unsigned>(i), names[i]);
             std::fprintf(stderr, "[retroplug-sdl] MIDI in: connected hardware port '%s'\n", names[i].c_str());

@@ -24,12 +24,23 @@ public:
     // Hardware MIDI input port names (skips our own virtual port + ALSA "Through").
     std::vector<std::string> midiListInputs();
 
+    // The same for outputs - the other half of talking to a control surface, which has to be LIT as well as
+    // read.
+    std::vector<std::string> midiListOutputs();
+
     // Open MIDI: create the virtual "<clientName> In/Out" ports and open `input` ("" = every hardware input).
     // Returns false if no MIDI system is available.
     bool midiOpen(std::string clientName, std::string input);
 
+    // Choose the hardware output to mirror sends to ("" = the virtual port only). Applied immediately.
+    void midiSelectOutput(std::string output);
+
     // Drain the input messages queued since the last poll (each = raw bytes). Empty when nothing arrived.
     std::vector<RpcMidiIn> midiPoll();
+
+    // Send one raw message. Any length - a control surface's bulk-LED sysex runs to hundreds of bytes, and
+    // MidiIo imposes no cap.
+    void midiSend(rfl::Bytestring bytes);
 
     // Close all MIDI ports.
     void midiClose();
@@ -45,8 +56,11 @@ private:
 template <class Server>
 void registerMidiRpc(Server& s, MidiRpcService& svc) {
     s.template addMethod<&MidiRpcService::midiListInputs>(svc);
+    s.template addMethod<&MidiRpcService::midiListOutputs>(svc);
     s.template addMethod<&MidiRpcService::midiOpen>(svc);
+    s.template addMethod<&MidiRpcService::midiSelectOutput>(svc);
     s.template addMethod<&MidiRpcService::midiPoll>(svc);
+    s.template addMethod<&MidiRpcService::midiSend>(svc);
     s.template addMethod<&MidiRpcService::midiClose>(svc);
 }
 
