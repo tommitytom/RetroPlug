@@ -38,11 +38,11 @@ const CHAINS = [
 ];
 const SONG_INPUT = {
   formatVersion: 22,
-  settings: { syncMode: "MidiMap", tempo: 128 },
+  settings: { syncMode: "MidiMap" as const, tempo: 128 },
   rows: ROWS,
   chains: CHAINS,
   phrases: [phrase(1, 0), phrase(2, 1), phrase(3, 2), phrase(4, 3)],
-  instruments: [pulse, pulse, { type: "wave" }, { type: "noise" }],
+  instruments: [pulse, pulse, { type: "wave" as const }, { type: "noise" as const }],
 };
 const SAV: SavInput = { workingSong: SONG_INPUT };
 
