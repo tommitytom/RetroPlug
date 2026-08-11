@@ -62,6 +62,7 @@ extern "C" {
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
 #include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
 #include "host/rpc/BackendRpcRegistration.hpp"
+#include "host/ui/LvglWheelScroll.hpp"       // shared wheel -> hit-tested scroll (also used by the plugin/test UI)
 #include "host/ui/SoftwareLvglDisplay.hpp"   // shared LvInputState + display/indev scaffold (also used by test/ui)
 #include "system/CoreBackends.hpp"
 #include "system/SystemFactory.hpp"
@@ -217,6 +218,7 @@ struct AppState {
     std::uint32_t requestedW = 0;   // last size asked of the WM (the clamp-detection baseline)
     std::uint32_t requestedH = 0;
     bool          debugResize = false;  // RETROPLUG_DEBUG_RESIZE: log every request / WM resize (WM debugging)
+    bool          logWheel = false;     // RETROPLUG_SDL_TEST_WHEEL: report each wheel event + whether it scrolled
 
     // audio scratch: `numOutputs` planar channel buffers (pre-sized to the device block so the callback
     // never allocates). The Engine renders planar + routes each system to its pair per audioRouting; we
@@ -1303,6 +1305,32 @@ void handleEvents(AppState& a) {
                 a.input.mousePos = {ev.button.x, ev.button.y};
                 a.input.mouseDown = ev.type == SDL_MOUSEBUTTONDOWN;
                 break;
+            // Wheel -> scroll the scrollable ancestor under the cursor (the overflowing menu), the same
+            // shared hit-test scroll PluginUI::onScroll runs for the DPF editor. Without this the wheel was
+            // simply dead in the standalone: LVGL has no wheel handling of its own. We're on the UI thread
+            // here, which is also the one running lv_timer_handler, so scrolling from here is safe.
+            case SDL_MOUSEWHEEL: {
+                float wx = static_cast<float>(ev.wheel.x), wy = static_cast<float>(ev.wheel.y);
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+                // Trackpads / high-resolution wheels report sub-notch deltas here (the integer x/y are the
+                // accumulated whole notches, and stay 0 until a full one builds up).
+                if (ev.wheel.preciseX != 0.0f || ev.wheel.preciseY != 0.0f) {
+                    wx = ev.wheel.preciseX;
+                    wy = ev.wheel.preciseY;
+                }
+#endif
+                if (ev.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) { wx = -wx; wy = -wy; }
+                // SDL2's wheel event carries no position (mouseX/mouseY are SDL3-only). Use the
+                // motion-tracked cursor rather than SDL_GetMouseState: it's the same point the pointer indev
+                // hovers with, so the wheel scrolls exactly what's highlighted under it (and a synthetic
+                // motion event can drive it headlessly). Window-pixel space == LVGL display space.
+                const lv_point_t& p = a.input.mousePos;
+                const bool scrolled = retroplug::ui::scrollAtPoint(p.x, p.y, wx, wy);
+                if (a.logWheel)
+                    std::fprintf(stderr, "[retroplug-sdl] wheel: notches=(%.2f,%.2f) at (%d,%d) scrolled=%d\n",
+                                 wx, wy, p.x, p.y, static_cast<int>(scrolled));
+                break;
+            }
             default: break;
         }
     }
@@ -1428,6 +1456,14 @@ int main(int argc, char** argv) {
                      target, derived, (int)playing, (int)afterStop, cs.outBpm(), (int)cs.outPlaying());
     }
 
+    // Test hook: drive the desktop wheel headlessly. RETROPLUG_SDL_TEST_WHEEL=<notches> pushes a real
+    // SDL_MOUSEMOTION + SDL_MOUSEWHEEL pair through the SDL queue (the exact path a physical wheel takes)
+    // once the React menu has settled, and the handler logs the translated notches + cursor. It reports
+    // scrolled=0 on the start menu, which fits the window — nothing here can open an overflowing menu, so
+    // the scroll itself is asserted end-to-end by the shared `pnpm test:ui wheel-scroll` instead.
+    const char* wheelTest = std::getenv("RETROPLUG_SDL_TEST_WHEEL");
+    app.logWheel = wheelTest != nullptr;
+
     // --- the 60 fps loop: input → JS frame → LVGL render → present ---
     const bool requireNonBlank = std::getenv("RETROPLUG_SDL_REQUIRE_NONBLANK") != nullptr;
     bool nonBlankFail = false;
@@ -1444,6 +1480,19 @@ int main(int argc, char** argv) {
         app.ui.tick();          // pump the shared host's JS/libuv loop
         lv_timer_handler();     // LVGL indev read + layout + render into drawBuf
         present(app);
+
+        if (wheelTest && frame == 45) { // the menu has mounted + laid out by now
+            SDL_Event m{};
+            m.type = SDL_MOUSEMOTION;
+            m.motion.x = static_cast<Sint32>(app.width / 2);
+            m.motion.y = static_cast<Sint32>(app.height / 2);
+            SDL_PushEvent(&m);
+            SDL_Event w{};
+            w.type = SDL_MOUSEWHEEL;
+            w.wheel.y = std::atoi(wheelTest);
+            w.wheel.direction = SDL_MOUSEWHEEL_NORMAL;
+            SDL_PushEvent(&w);  // handled by the next handleEvents, after the motion sets the cursor
+        }
 
         if (exitAfterFrames > 0 && frame + 1 == exitAfterFrames) { // last frame: screenshot + non-blank gate
             if (!screenshotPath.empty()) writeScreenshot(app, screenshotPath);

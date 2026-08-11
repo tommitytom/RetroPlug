@@ -46,6 +46,7 @@ interface NativeUi {
   clickAt(x: number, y: number): void;
   rightClick(x: number, y: number): void;
   moveMouse(x: number, y: number): void;
+  scrollAt(x: number, y: number, notchesY: number, notchesX?: number): void;
   gamepadButton(name: string, press: boolean, pad?: number): void;
   gamepadAxis(axis: string, value: number, pad?: number): void;
   fileDrop(paths: string, x: number, y: number): void;
@@ -127,6 +128,9 @@ export const ui = {
   rightClick(x: number, y: number): void { rp.rightClick(x, y); },
   /** Move the (unpressed) pointer to absolute (x,y) → LVGL hover on the widget under it. */
   moveMouse(x: number, y: number): void { rp.moveMouse(x, y); },
+  /** Turn the mouse wheel `notchesY` notches at absolute (x,y) — positive = away from the user (content
+   *  moves down). Scrolls the scrollable ancestor under the point, as the plugin + SDL hosts do. */
+  scrollAt(x: number, y: number, notchesY: number, notchesX = 0): void { rp.scrollAt(x, y, notchesY, notchesX); },
   /** Emit one SDL controller button transition on the "gamepad-button" bus (name = SDL canonical, e.g.
    *  "dpdown"/"a"/"leftshoulder"). Menu nav / open-button / game routing all read this. */
   gamepadButton(name: string, press: boolean, pad = 0): void { rp.gamepadButton(name, press, pad); },

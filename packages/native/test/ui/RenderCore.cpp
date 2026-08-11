@@ -19,6 +19,8 @@ extern "C" {
     #include <quickjs.h>
 }
 
+#include "host/ui/LvglWheelScroll.hpp"           // shared wheel -> hit-tested scroll (plugin + SDL host)
+
 // lv_binding_js internals (global widget registry + root window + PNG encoder).
 #include "native/core/basic/comp.hpp"          // comp_map, BasicComponent, ECOMP_TYPE
 #include "native/components/component.hpp"      // GetWindowInstance()
@@ -357,6 +359,14 @@ void RenderCore::moveMouse(std::int32_t x, std::int32_t y) {
     input_.mouseDown = false;
     input_.mousePos  = { x, y };
     pump(2);  // let the indev read + LVGL hover-process the new released position
+}
+
+// Turn the wheel at (x,y). No JS bus event: neither the plugin nor the SDL host emits one — the wheel is
+// swallowed into the LVGL scroll — so this is purely the shared scrollAtPoint the hosts call.
+void RenderCore::scrollAt(std::int32_t x, std::int32_t y, float notchesX, float notchesY) {
+    input_.mousePos = { x, y };  // the hosts scroll under the live cursor; keep hover consistent with it
+    retroplug::ui::scrollAtPoint(x, y, notchesX, notchesY);
+    pump(2);  // let LVGL re-layout + redraw at the new scroll offset
 }
 
 void RenderCore::gamepadButton(int pad, const std::string& name, bool press) {

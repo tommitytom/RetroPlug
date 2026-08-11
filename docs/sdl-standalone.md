@@ -15,7 +15,8 @@ SDL2 drives those via its own video backend. **Goal: make `retroplug-sdl` the pr
 - SDL audio callback → the multi-out `engine.processBlock` (2/4/6/8 device channels per the Out Channels
   knob); MIDI-clock-derived transport; live sample-rate/block-size/channels reconfigure (Settings → Audio);
   `audio.json` persistence.
-- Input: keyboard + mouse → LVGL indevs + the `key` bus; gamepad (`GamepadManager`) → menu nav + game input.
+- Input: keyboard + mouse (incl. wheel → scroll the hit-tested container) → LVGL indevs + the `key` bus;
+  gamepad (`GamepadManager`) → menu nav + game input.
 - On-screen LVGL **file browser** (no dependence on OS dialogs), **Exit** menu row, `openPath`, window title.
 - Optional Linux RT audio thread (SCHED_FIFO + core affinity), for headroom on constrained devices.
 
@@ -142,6 +143,26 @@ itself once the user confirms Save/Discard); a clean project quits immediately. 
 Verified headlessly via the `RETROPLUG_SDL_TEST_RESIZE=WxH` and `RETROPLUG_SDL_TEST_QUIT` self-test hooks
 (resize reallocs + renders a full frame at the new size; a clean-project QUIT exits without veto) plus the
 existing `test-ui/resize.test.ts` + `test-ui/close-guard.test.ts` for the JS contract.
+
+### P7 — Mouse wheel — ✅ DONE
+`handleEvents` never handled `SDL_MOUSEWHEEL`, so the wheel was dead in the standalone: LVGL has no wheel
+concept of its own (dpf-widgets feeds it to an ENCODER indev, which shuffles keypad-group *focus* rather than
+scrolling what's under the pointer), and the DPF editor only scrolled because `PluginUI::onScroll` implements
+the hit-test itself. That implementation now lives in
+[LvglWheelScroll.hpp](../packages/native/src/host/ui/LvglWheelScroll.hpp) — walk the hit-tested parent chain,
+scroll the first ancestor that actually overflows, 24 px per notch, `lv_obj_scroll_by_bounded` so it stops at
+both ends — and all three UI hosts call it: the plugin from `onScroll`, the SDL host from `SDL_MOUSEWHEEL`,
+the UI-test harness from `RenderCore::scrollAt`. Programmatic scrolling ignores `scroll-dir`, which is why
+this works on the menu's inner container (it sets `"scroll-dir": "none"` to suppress desktop drag-scroll).
+
+SDL2's wheel event carries no position (`mouseX/mouseY` are SDL3-only), so the host scrolls at the
+motion-tracked cursor — the same point the pointer indev hovers with. `preciseX/Y` (SDL ≥ 2.0.18) covers
+trackpads/high-resolution wheels; `SDL_MOUSEWHEEL_FLIPPED` is un-flipped.
+
+Verified by `test-ui/wheel-scroll.test.ts` (rows move one 24 px step per notch, bounded at both ends, inert
+where nothing overflows) for the shared scroll, plus the `RETROPLUG_SDL_TEST_WHEEL=<notches>` self-test hook
+in `pnpm sdl:smoke` for the SDL half (a pushed motion+wheel pair reaches the handler at the tracked cursor
+with its sign intact).
 
 ### N/A — DAW-only (listed for completeness)
 Parameters/automation, DPF state-chunk get/setState, latency reporting, per-output labels — plugin-in-DAW

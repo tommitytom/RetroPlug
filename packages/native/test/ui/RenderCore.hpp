@@ -104,6 +104,9 @@ public:
     void clickAt(std::int32_t x, std::int32_t y);// press+release at absolute (x,y)
     void rightClickAt(std::int32_t x, std::int32_t y);// emit a right-button "mouse" bus press+release at (x,y)
     void moveMouse(std::int32_t x, std::int32_t y);// move the (unpressed) pointer → LVGL hover at (x,y)
+    // Wheel notches at (x,y): +y = wheel away from the user. Drives the same shared hit-test scroll the
+    // SDL host's SDL_MOUSEWHEEL and the plugin's onScroll do.
+    void scrollAt(std::int32_t x, std::int32_t y, float notchesX, float notchesY);
     // Synthesize the native SDL-poll buses so a test can drive gamepad input (menu nav / game routing).
     // Arg shapes mirror PluginUI::pumpGamepad exactly: button [pad, name, press]; axis [pad, name, value].
     void gamepadButton(int pad, const std::string& name, bool press);

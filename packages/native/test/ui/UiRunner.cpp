@@ -226,6 +226,21 @@ JSValue jsUiMoveMouse(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv
     catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.moveMouse: %s", e.what()); }
 }
 
+// Turn the wheel at (x, y): ui.scrollAt(x, y, notchesY[, notchesX]). Vertical first — it's the axis every
+// real wheel has (and the one the menu scrolls on).
+JSValue jsUiScrollAt(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    int x = 0, y = 0;
+    double notchesY = 0.0, notchesX = 0.0;
+    if (argc < 3) return JS_ThrowTypeError(ctx, "ui.scrollAt(x, y, notchesY[, notchesX])");
+    if (JS_ToInt32(ctx, &x, argv[0]) < 0 || JS_ToInt32(ctx, &y, argv[1]) < 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &notchesY, argv[2]) < 0) return JS_EXCEPTION;
+    if (argc >= 4 && JS_ToFloat64(ctx, &notchesX, argv[3]) < 0) return JS_EXCEPTION;
+    try {
+        coreOrThrow().scrollAt(x, y, static_cast<float>(notchesX), static_cast<float>(notchesY));
+        return JS_UNDEFINED;
+    } catch (const std::exception& e) { return JS_ThrowTypeError(ctx, "ui.scrollAt: %s", e.what()); }
+}
+
 JSValue jsUiRightClick(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     int x = 0, y = 0;
     if (argc < 2) return JS_ThrowTypeError(ctx, "ui.rightClick(x, y)");
@@ -307,6 +322,7 @@ void installUiNamespace(JSContext* ctx) {
         { "clickAt",              { jsUiClickAt,              2 } },
         { "rightClick",           { jsUiRightClick,           2 } },
         { "moveMouse",            { jsUiMoveMouse,            2 } },
+        { "scrollAt",             { jsUiScrollAt,             3 } },
         { "gamepadButton",        { jsUiGamepadButton,        2 } },
         { "gamepadAxis",          { jsUiGamepadAxis,          2 } },
         { "fileDrop",             { jsUiFileDrop,             3 } },
