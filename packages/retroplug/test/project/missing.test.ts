@@ -4,12 +4,12 @@
 // sram); kit samples land with the kits domain. Port of missingFiles.ts.
 import { test, expect } from "../../testing/harness";
 import { scanMissingFiles, relinkInConfig, autoFindSiblings } from "../../src/projectMissing";
-import type { ProjectConfig } from "../../src/projectConfig";
+import { DEFAULT_SETTINGS, type ProjectConfig } from "../../src/projectConfig";
 
 const NO_BLOBS = new Set<string>();
 
 function cfg(systems: ProjectConfig["systems"]): ProjectConfig {
-  return { schemaVersion: "3", settings: { layout: "auto", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0 }, systems };
+  return { schemaVersion: "3", settings: { ...DEFAULT_SETTINGS }, systems };
 }
 
 test("scan: a ROM is missing when its path is absent and no blob is embedded", () => {

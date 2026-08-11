@@ -130,3 +130,25 @@ test("an LED the device could not render is refused rather than mis-encoded", ()
   expect(s.peek(81)).toEqual({ mode: "off" });
   expect(s.flush().dirty).toBe(0);
 });
+
+test("a silent flush returns the same object every time, allocating nothing", () => {
+  // The surface flushes once per audio block, and almost every block is silent. Identity is the only
+  // observable proxy for "allocated nothing", and it is worth pinning: this is the hot path.
+  const s = new Surface();
+  const a = s.flush();
+  const b = s.flush();
+  expect(a === b).toBe(true);
+  expect(a.dirty).toBe(0);
+});
+
+test("a mixed batch containing RGB goes bulk even when it is under the threshold", () => {
+  // RGB has no short form, so one RGB entry has to force the whole batch - otherwise the palette pads
+  // would go as notes and the RGB one would be silently dropped.
+  const s = new Surface();
+  s.setPad(0, 0, RED);
+  s.setPad(1, 0, { mode: "static", colour: rgb(10, 20, 30) });
+  const r = s.flush();
+  expect(r.dirty).toBe(2);
+  expect(r.messages.length).toBe(1);
+  expect(r.messages[0][0]).toBe(0xf0);
+});

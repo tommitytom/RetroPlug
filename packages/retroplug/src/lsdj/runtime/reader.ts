@@ -32,7 +32,11 @@ export function decodeLsdjState(wram: Uint8Array, layout: OffsetLayout, version:
   CHANNELS.forEach((name, i) => {
     const playing = b(layout.active + i) === 0x01;
     anyPlaying ||= playing;
-    const chSongRow = pos(b(layout.songRows + i));
+    // NOT pos(): a song row is a full byte (LSDj has 256 of them), so the >0x7f "parked at 0xFF" rule
+    // that suits chain/phrase indices would report every row from 128 up as "not playing". The channel's
+    // own active flag already answers that question, so use it and read the row raw. Found by
+    // test-native/lsdj-launchpad, which launches rows either side of the 128 boundary.
+    const chSongRow = playing ? (b(layout.songRows + i) ?? null) : null;
     if (chSongRow != null && (songRow == null || chSongRow > songRow)) songRow = chSongRow; // GBPresenter: max valid row
     channels[name] = {
       playing,

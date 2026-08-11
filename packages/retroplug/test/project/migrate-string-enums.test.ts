@@ -3,7 +3,7 @@
 // on load; a v3 config is untouched; an unknown/out-of-range integer falls to the schema default. `zoom`
 // and the genuine-numeric role fields (linkGroupId, tempoDivisor) stay numeric.
 import { test, expect } from "../../testing/harness";
-import { parseConfig, serializeConfig, buildConfig, K_PROJECT } from "../../src/projectConfig";
+import { parseConfig, serializeConfig, buildConfig, DEFAULT_SETTINGS, K_PROJECT } from "../../src/projectConfig";
 import type { ProjectSettings } from "../../src/projectConfig";
 import type { SystemEntry } from "../../src/systemsList";
 
@@ -21,6 +21,7 @@ test("v2→v3: integer project settings migrate to their string values", () => {
     midiRouting: "fourChannelsPerInstance",
     audioRouting: "onePerInstance",
     zoom: 4, // a magnitude, not an enum — untouched
+    controller: DEFAULT_SETTINGS.controller, // added later, and additive: defaulted in, no migration step
   });
 });
 
@@ -80,7 +81,7 @@ test("an unknown/out-of-range setting integer falls to the schema default", () =
 });
 
 test("string settings + role config round-trip through save/load, stamped v3", () => {
-  const settings: ProjectSettings = { layout: "column", midiRouting: "oneChannelPerInstance", audioRouting: "twoPerInstance", zoom: 5 };
+  const settings: ProjectSettings = { ...DEFAULT_SETTINGS, layout: "column", midiRouting: "oneChannelPerInstance", audioRouting: "twoPerInstance", zoom: 5 };
   const entry = {
     id: 1,
     platform: "gb",

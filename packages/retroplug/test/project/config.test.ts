@@ -58,10 +58,11 @@ test("name: an explicit name round-trips; a nameless config omits it (parses und
 });
 
 test("serializeConfig + parseConfig: round-trips, filling settings defaults", () => {
-  const cfg = buildConfig({ layout: "grid", midiRouting: "fourChannelsPerInstance", audioRouting: "onePerInstance", zoom: 4 }, [sys(1, "/proj/a.gb")]);
+  const settings = { ...DEFAULT_SETTINGS, layout: "grid" as const, midiRouting: "fourChannelsPerInstance" as const, audioRouting: "onePerInstance" as const, zoom: 4 };
+  const cfg = buildConfig(settings, [sys(1, "/proj/a.gb")]);
   const json = serializeConfig(cfg, "", identity); // no baseDir → absolute
   const back = parseConfig(json);
-  expect(back.settings).toEqual({ layout: "grid", midiRouting: "fourChannelsPerInstance", audioRouting: "onePerInstance", zoom: 4 });
+  expect(back.settings).toEqual(settings);
   expect(back.systems).toEqual([{ platform: "gb", core: "sameboy", romPath: "/proj/a.gb" }]);
 });
 

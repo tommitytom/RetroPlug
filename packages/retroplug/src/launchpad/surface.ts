@@ -55,6 +55,13 @@ export class Surface {
   private readonly sent = new Map<number, Led>();
   private repaintAll = false;
 
+  // Reused between flushes. This runs once per audio block, and the overwhelmingly common case is "nothing
+  // changed" - which used to allocate a scratch array and a result object anyway, for a call that emits
+  // nothing. The message arrays below still allocate when LEDs genuinely change; that is unavoidable and
+  // happens only when the picture moves.
+  private readonly changed: { index: number; led: Led }[] = [];
+  private readonly silent: FlushResult = { messages: [], dirty: 0 };
+
   constructor(profile: LaunchpadProfile = PRO_MK3) {
     this.profile = profile;
     this.indices = allIndices(profile);
@@ -90,19 +97,25 @@ export class Surface {
   /** Emit the messages that bring the device from its last-flushed state to the desired one, and adopt
    *  that as the new baseline. Empty when nothing changed. */
   flush(): FlushResult {
-    const changed: { index: number; led: Led }[] = [];
-    for (const index of this.indices) {
+    const changed = this.changed;
+    changed.length = 0;
+    const indices = this.indices;
+    let bulk = this.repaintAll;
+    for (let i = 0; i < indices.length; i++) {
+      const index = indices[i];
       const want = this.desired.get(index)!;
-      if (this.repaintAll || !sameLed(want, this.sent.get(index)!)) changed.push({ index, led: want });
+      if (!this.repaintAll && sameLed(want, this.sent.get(index)!)) continue;
+      changed.push({ index, led: want });
+      if (needsSysex(want)) bulk = true; // RGB has no short form, so one entry forces the whole batch
     }
     this.repaintAll = false;
-    if (changed.length === 0) return { messages: [], dirty: 0 };
+    if (changed.length === 0) return this.silent;
 
-    const messages = changed.length > BULK_THRESHOLD || changed.some((c) => needsSysex(c.led))
+    const messages = bulk || changed.length > BULK_THRESHOLD
       ? ledLightingSysex(this.profile, changed)
       : shortMessages(changed);
 
-    for (const c of changed) this.sent.set(c.index, c.led);
+    for (let i = 0; i < changed.length; i++) this.sent.set(changed[i].index, changed[i].led);
     return { messages, dirty: changed.length };
   }
 

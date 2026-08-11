@@ -9,7 +9,7 @@
 // empty slot.
 import { test, expect } from "../../testing/harness";
 import { SongSchema, type Song } from "../../src/lsdj/model";
-import { PredictedLsdjModel, phraseTicks, chainPhraseCount } from "../../src/lsdj/playback";
+import { PredictedLsdjModel, phraseTicks, chainPhraseCount, songRowTicks, normaliseRowTicks } from "../../src/lsdj/playback";
 
 const PHRASE = 96; // 16 steps x 6 ticks at the factory groove
 
@@ -203,4 +203,54 @@ test("an out-of-range launch is ignored rather than corrupting the cursors", () 
   m.launch(0);
   m.launch(999);
   expect(m.position().channels[0].songRow).toBe(0);
+});
+
+// --- the row-ticks table -------------------------------------------------------------------------
+// The model's only input, extracted so a context that cannot decode a sav - the DSP thread - can be
+// handed the answer instead of the song (docs/launchpad-plan.md M5).
+
+test("songRowTicks is exactly what the model builds from a song", () => {
+  const s = song([[0, 1], [2, null], [null, null]], [[0], [0, 0], [1]]);
+  const m = new PredictedLsdjModel(s);
+  const table = songRowTicks(s);
+
+  expect(table.length).toBe(4);
+  expect(table[0].length).toBe(256);
+  for (const ch of [0, 1, 2, 3]) {
+    for (const row of [0, 1, 2, 3, 100, 255]) expect(table[ch][row]).toBe(m.rowTicks(ch, row));
+  }
+});
+
+test("a model built from a table behaves identically to one built from the song", () => {
+  const s = SIMPLE();
+  const fromSong = new PredictedLsdjModel(s);
+  const fromTable = PredictedLsdjModel.fromRowTicks(songRowTicks(s));
+
+  fromSong.launch(0);
+  fromTable.launch(0);
+  for (let i = 0; i < 5; i++) {
+    fromSong.advance(PHRASE);
+    fromTable.advance(PHRASE);
+    expect(fromTable.position().channels[0].songRow).toBe(fromSong.position().channels[0].songRow);
+  }
+});
+
+test("a table arriving from config is coerced rather than trusted", () => {
+  // It crosses a JSON boundary, so it can be short, ragged, or full of nonsense. A missing entry must
+  // read as "no content" - not as undefined, which is neither playable nor empty.
+  const t = normaliseRowTicks([[96], "nonsense", null]);
+  expect(t.length).toBe(4);
+  expect(t.every((ch) => ch.length === 256)).toBeTruthy();
+  expect(t[0][0]).toBe(96);
+  expect(t[0][1]).toBe(null); // beyond the supplied row
+  expect(t[1][0]).toBe(null); // a non-array channel
+  expect(normaliseRowTicks(undefined)[0][0]).toBe(null);
+  expect(normaliseRowTicks([[0, -5, 1.5, "x"]])[0].slice(0, 4)).toEqual([null, null, 1.5, null]);
+});
+
+test("position() reuses its object, so reading it per block allocates nothing", () => {
+  const m = new PredictedLsdjModel(SIMPLE());
+  m.launch(0);
+  expect(m.position() === m.position()).toBe(true);
+  expect(m.grid() === m.grid()).toBe(true);
 });

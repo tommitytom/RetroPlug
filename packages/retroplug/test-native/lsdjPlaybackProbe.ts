@@ -147,6 +147,13 @@ export class LsdjProbe {
     this.raw(MAP_NOTEOFF);
   }
 
+  /** Put an arbitrary host-MIDI message on the wire. For driving the cart with bytes some OTHER module
+   *  produced - the controller layer's launch encoder, say - rather than with this probe's own idea of
+   *  what the protocol looks like. */
+  stage(data: readonly number[]): void {
+    this.audio.stageMidiIn([...data]);
+  }
+
   /** Launch a row THROUGH THE MIDI LAYER, as a Launchpad app would: ch1 note = rows 0..127,
    *  ch2 note = rows 128..255 (midiMapRow in dspRoles.ts). Only meaningful in `midiMap` mode. */
   launchNote(row: number, on = true): void {

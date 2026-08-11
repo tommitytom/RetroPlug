@@ -14,15 +14,17 @@ import { defaultCoreFor, type Platform, type Core } from "./platform";
 import { rebaseToRelative, rebaseToAbsolute } from "./projectPaths";
 import { commonSettingsSchema, type CommonSettings } from "./systemSettings";
 import type { RoleInstance } from "./systemRoles";
-import { z, clampedInt, stringField, enumField, stringifyConfig } from "./configSchema";
+import { z, clampedInt, boolField, stringField, enumField, stringifyConfig } from "./configSchema";
 import { migrateRaw, type MigrationMap, type RawObject } from "./migrate";
 import {
   type SystemLayout,
   type MidiRouting,
   type AudioRouting,
+  type ControllerTarget,
   LAYOUT_VALUES,
   MIDI_ROUTING_VALUES,
   AUDIO_ROUTING_VALUES,
+  CONTROLLER_TARGET_VALUES,
   MODEL_VALUES,
   HIGHPASS_VALUES,
   REGION_VALUES,
@@ -37,6 +39,21 @@ export interface ProjectSettings {
   midiRouting: MidiRouting;
   audioRouting: AudioRouting; // channelSplit fans 1 GB → 8 outs
   zoom: number; // 0 inherit / 1..6
+  controller: ControllerSettings;
+}
+
+/** The control-surface (Launchpad) session — project scope, because on the real-hardware path there is no
+ *  system to hang it off (docs/launchpad-plan.md 6.3). Only the user's CHOICES live here; the derived
+ *  song-timing table the predictor needs is built at projection time and never persisted. */
+export interface ControllerSettings {
+  enabled: boolean;
+  app: string; // a ControllerRegistry id, e.g. "lsdj-midimap"
+  target: ControllerTarget;
+  systemId: number; // 0 = the first system
+  /** The chosen app's OWN knobs (quantise, follow, …), validated by that app's schema rather than here -
+   *  the registry owns their shape, so a new app needs no change to the project schema. Small readable
+   *  JSON, so it persists inline like any other setting. */
+  appConfig: Record<string, unknown>;
 }
 
 /** A system as serialized: thin, with default per-system fields omitted. Its two structural
@@ -74,6 +91,16 @@ export const projectSettingsSchema = z.object({
   midiRouting: enumField(MIDI_ROUTING_VALUES, "sendToAll"),
   audioRouting: enumField(AUDIO_ROUTING_VALUES, "stereo"),
   zoom: clampedInt(0, 6, 0),
+  // ADDITIVE, so no migration step: an older project simply has no `controller` key and the field
+  // defaults fill it (AGENTS.md, config migrations). Off by default - a controller is opt-in hardware.
+  controller: z.object({
+    enabled: boolField(false),
+    app: stringField("lsdj-midimap"),
+    target: enumField(CONTROLLER_TARGET_VALUES, "system"),
+    systemId: clampedInt(0, 0x7fffffff, 0),
+    // Opaque here by design: the chosen app's own schema validates it.
+    appConfig: z.preprocess((v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}), z.record(z.string(), z.unknown())),
+  }).default({ enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} }),
 });
 
 export const DEFAULT_SETTINGS: ProjectSettings = projectSettingsSchema.parse({}) as ProjectSettings;

@@ -29,6 +29,12 @@ export const MIDI_ROUTING_VALUES = [
   "midiChannelToInstance",
 ] as const;
 export type MidiRouting = (typeof MIDI_ROUTING_VALUES)[number];
+
+/** Where a controller app's row launches go: into an emulated cart's MIDI inbox (which the tracker's own
+ *  sync role then puts on the link port), or out of the host to real hardware (an Arduinoboy driving a
+ *  real Game Boy). See docs/launchpad-plan.md 7.3. */
+export const CONTROLLER_TARGET_VALUES = ["system", "midiOut"] as const;
+export type ControllerTarget = (typeof CONTROLLER_TARGET_VALUES)[number];
 export const MidiRouting = {
   SendToAll: "sendToAll",
   FourChannelsPerInstance: "fourChannelsPerInstance",

@@ -15,8 +15,13 @@ test("additive tolerance: a config missing newer fields gets their defaults", ()
     systems: [{ platform: "gb", romPath: "/a.gb" }],
   });
   const cfg = parseConfig(raw);
-  // defaults filled; the v1 integer `layout: 2` migrates to its string value (v2→v3)
-  expect(cfg.settings).toEqual({ layout: "column", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0 });
+  // defaults filled; the v1 integer `layout: 2` migrates to its string value (v2→v3). `controller` is the
+  // newest field and the clearest example of what this test is for: a project written before it existed
+  // loads with it defaulted off, needing no migration step at all.
+  expect(cfg.settings).toEqual({
+    layout: "column", midiRouting: "sendToAll", audioRouting: "stereo", zoom: 0,
+    controller: { enabled: false, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {} },
+  });
   expect(cfg.systems[0]).toEqual({ platform: "gb", core: "sameboy", romPath: "/a.gb" }); // core backfilled (v1→v2)
 });
 

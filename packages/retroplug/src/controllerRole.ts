@@ -20,13 +20,14 @@ import type { ProjectBehavior, ProjectCtx } from "./dspKernel";
 import type { MidiEvent } from "./midiRouting";
 import type { RoleRegistry } from "./systemRoles";
 import { ControllerRegistry, ControllerSession, lsdjMidiMapTarget, registerControllerApps } from "./controller";
-import { PredictedLsdjModel, normaliseRowTicks } from "./lsdj/playback";
+// The leaf, not ./lsdj/playback: the barrel also exports the observed model and the sav-derived table
+// builder, which would pull the WRAM reader and the whole sav codec into the DSP bundle.
+import { PredictedLsdjModel, normaliseRowTicks } from "./lsdj/playback/predict";
 
 /** 24 PPQN, the resolution every Arduinoboy-family sync mode counts in. */
 const TICKS_PER_QUARTER = 24;
 
-export const CONTROLLER_TARGET_VALUES = ["system", "midiOut"] as const;
-export type ControllerTarget = (typeof CONTROLLER_TARGET_VALUES)[number];
+import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "./settingsEnums";
 
 /** The app registry the role resolves against. Built once - apps are static in v1 (registered TS modules,
  *  not runtime-loaded scripts), so there is nothing to rebuild per project. */

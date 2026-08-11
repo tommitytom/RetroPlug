@@ -18,7 +18,8 @@ import { registerRisaAssetsRole } from "./risaAssetsRole";
 import { registerEverMidiRole } from "./evermidiRole";
 import { registerEverMidiAssetsRole } from "./evermidiAssetsRole";
 import { registerRomProviders } from "./romProviders";
-import { projectKernelStructure } from "./kernelProjection";
+import { projectKernelStructure, type ControllerProjection } from "./kernelProjection";
+import { songRowTicksFromSav } from "./lsdj/playback/fromSav";
 import type { ProjectStore } from "./projectStore";
 import type { DspRuntimeClient } from "./dspRuntime";
 
@@ -40,5 +41,28 @@ export function buildAppRegistry(): RoleRegistry {
 /** Project the store's live systems into the kernel structure and push it to the DSP runtime.
  *  Install as the ProjectStore.onSystemsChange hook so each structural edit re-drives the kernel. */
 export function syncDspFromStore(project: ProjectStore, dsp: DspRuntimeClient): boolean {
-  return dsp.setSystems(projectKernelStructure(project.systems.view(), project.settings().midiRouting));
+  const views = project.systems.view();
+  const settings = project.settings();
+  return dsp.setSystems(projectKernelStructure(views, settings.midiRouting, controllerProjection(project)));
+}
+
+/** Assemble the controller role's config, including the derived song-timing table the predictor runs on.
+ *
+ *  The table is built HERE rather than in the role because decoding a battery is a control-plane job - the
+ *  audio thread has neither the bytes nor any business running the sav codec. It is rebuilt on every
+ *  structure push and is never persisted.
+ *
+ *  KNOWN STALENESS: edits the player makes inside LSDj itself do not push a structure change, so the table
+ *  lags the cart until something else does. The LEDs then describe the song as it was, which is the
+ *  predictor's standing limitation (docs/launchpad-plan.md risk 5) rather than a new one. */
+function controllerProjection(project: ProjectStore): ControllerProjection | undefined {
+  const controller = project.settings().controller;
+  if (!controller?.enabled) return undefined;
+
+  const views = project.systems.view();
+  const systemId = controller.systemId > 0 ? controller.systemId : (views[0]?.id ?? 0);
+  const table = systemId > 0 ? songRowTicksFromSav(project.systems.readSram(systemId)) : null;
+  // No readable battery is not a failure: the app still launches rows, it just cannot shade the ones that
+  // hold chains. An empty table reads as "no content anywhere".
+  return { ...controller, songRowTicks: table ?? [] };
 }

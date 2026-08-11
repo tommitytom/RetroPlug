@@ -23,7 +23,9 @@
 // edits made on the device.
 
 import type { Song } from "../model";
-import { CHANNELS } from "../runtime";
+// The leaf, not ../runtime: this module is bundled into the DSP kernel (the audio thread), and the
+// runtime barrel would drag the whole WRAM reader in behind one four-element constant.
+import { CHANNELS } from "../runtime/types";
 import {
   idlePosition,
   type PlaybackGrid,

@@ -19,7 +19,7 @@
 // lets the whole feature be tested against a fake device before any of it can reach real hardware.
 
 import {
-  PRO_MK3, Surface, decodeMessages, enterProgrammerMode, exitToLiveMode,
+  PRO_MK3, Surface, decodeMessage, enterProgrammerMode, exitToLiveMode,
   type LaunchpadProfile, type SurfaceEvent,
 } from "../launchpad";
 import type { PlaybackModel, PredictivePlaybackModel } from "../tracker/playbackModel";
@@ -47,6 +47,10 @@ export interface ControllerCtx {
 }
 
 export type ControllerApp = (ctx: ControllerCtx) => void;
+
+/** The session's own view of the ctx: the same object an app sees, minus the readonly promise, so the
+ *  fields that change per update can be written in place. */
+type MutableCtx = { -readonly [K in keyof ControllerCtx]: ControllerCtx[K] };
 
 /** One update's worth of host input.
  *
@@ -90,6 +94,12 @@ export class ControllerSession {
   private prevTransport = false;
   private started = false;
 
+  // The ctx and the decoded-event list are built ONCE and mutated per update, the way the DSP kernel
+  // builds a SystemCtx: this runs on the audio thread, and a fresh nine-field object plus an array every
+  // block is exactly the per-block allocation the kernel is careful not to make.
+  private readonly events: SurfaceEvent[] = [];
+  private readonly ctx: MutableCtx;
+
   constructor(app: ControllerApp, opts: SessionOptions) {
     this.app = app;
     this.profile = opts.profile ?? PRO_MK3;
@@ -112,6 +122,18 @@ export class ControllerSession {
         real.release(row);
       },
     };
+
+    this.ctx = {
+      surface: this.surface,
+      events: this.events,
+      playback: this.playback,
+      target: this.target,
+      tick: 0,
+      ticks: 0,
+      transport: false,
+      config: this.config,
+      state: this.state,
+    };
   }
 
   /** Take the device: enter Programmer mode and force a full repaint.
@@ -128,7 +150,12 @@ export class ControllerSession {
   /** Run one update and return the messages to write to the device. Empty when nothing changed, which is
    *  the steady state: an app repainting an unchanged grid produces no MIDI at all. */
   update(input: SessionInput): number[][] {
-    const events = decodeMessages(this.profile, input.input);
+    const events = this.events;
+    events.length = 0;
+    for (let i = 0; i < input.input.length; i++) {
+      const ev = decodeMessage(this.profile, input.input[i]);
+      if (ev) events.push(ev);
+    }
 
     // Gate on transport rather than trusting the numbers: a host that seeks while stopped moves ppq
     // without any time passing, and the cart hears no clock for it either.
@@ -139,17 +166,11 @@ export class ControllerSession {
       if (ticks > 0) this.predictive.advance(ticks);
     }
 
-    this.app({
-      surface: this.surface,
-      events,
-      playback: this.playback,
-      target: this.target,
-      tick: input.tick,
-      ticks,
-      transport: input.transport,
-      config: this.config,
-      state: this.state,
-    });
+    const ctx = this.ctx;
+    ctx.tick = input.tick;
+    ctx.ticks = ticks;
+    ctx.transport = input.transport;
+    this.app(ctx);
 
     this.lastTick = input.tick;
     this.prevTransport = input.transport;
