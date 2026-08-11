@@ -82,7 +82,7 @@ import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
-import { hasN8, getN8Config, setN8Port, connectN8, setN8Lookahead } from "./n8Devices";
+import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
 import type { MenuItem, MenuTree } from "./menuTree";
 
@@ -177,12 +177,20 @@ function midiSettingsChildren(): MenuItem[] {
 }
 
 // "Everdrive N8 Pro" submenu (in the instance menu's tracker block, beside risa/LSDj - it drives a real
-// NES), gated on hasN8() alone - available in BOTH the SDL standalone and the DAW plugin. Streaming: pick a
-// serial port (auto-detecting the N8), Connect to open the link, tune the timed-release lookahead; the native
-// host reconnects + persists (n8.cfg) on the spot. SD ops (Load ROM / Dump / Restore SRAM): long native
-// worker jobs that pause streaming, borrow the port, and report progress on the read-only SD row
-// (useN8SdWatch keeps it live). One job at a time - every action is disabled while one runs.
+// NES), available in BOTH the SDL standalone and the DAW plugin. The submenu shows only when a physical N8 is
+// actually detected (a serial port with the cart's USB VID:PID, n8Detected below) - no hardware, no menu.
+// Streaming: pick a serial port (auto-detecting the N8), Connect to open the link, tune the timed-release
+// lookahead; the native host reconnects + persists (n8.cfg) on the spot. SD ops (Load ROM / Dump / Restore
+// SRAM): long native worker jobs that pause streaming, borrow the port, and report progress on the read-only
+// SD row (useN8SdWatch keeps it live). Those appear only once the link is up (see the gate below). One job at
+// a time - every action is disabled while one runs.
 const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
+
+// A physical N8 counts as "here" only when one is actually enumerated (a serial port flagged isN8 by its USB
+// VID:PID). null cfg = the host lacks the seam (headless harness). Gates whether the whole submenu renders.
+function n8Detected(cfg: N8Config | null): boolean {
+  return !!cfg && cfg.ports.some((p) => p.isN8);
+}
 
 // The read-only SD-op status line: progress while busy, else the last result / error, else Ready.
 function n8SdLabel(sd: N8SdStatus): string {
@@ -195,16 +203,19 @@ function n8SdLabel(sd: N8SdStatus): string {
   return "Ready";
 }
 
-function n8MenuChildren(ctx: MenuContext): MenuItem[] {
-  const cfg = getN8Config() ?? { ports: [], selectedPort: "", connected: false, enabled: false, lookaheadMs: 0, bytes: 0, error: "" };
-  // Port cycler: index 0 = "(auto-detect)" (empty selection); the rest are the enumerated ports, N8 tagged.
-  const portValues = cfg.ports.map((p) => p.port);
-  const names = ["(auto-detect)", ...cfg.ports.map((p) => (p.isN8 ? `${p.port} [N8]` : p.port))];
+function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
+  // Port cycler: index 0 = "(auto-detect)" (empty selection); the rest are the DETECTED N8 ports only. A plain
+  // serial port can't be an Everdrive, so we don't offer it (the cart is identified by its USB VID:PID). A
+  // persisted selection that isn't currently enumerated is still shown, tagged "(not detected)", so it never
+  // silently vanishes.
+  const n8Ports = cfg.ports.filter((p) => p.isN8);
+  const portValues = n8Ports.map((p) => p.port);
+  const names = ["(auto-detect)", ...portValues];
   let index = 0;
   if (cfg.selectedPort !== "") {
     const i = portValues.indexOf(cfg.selectedPort);
     if (i >= 0) index = i + 1;
-    else { names.push(`${cfg.selectedPort} (not connected)`); index = names.length - 1; }
+    else { names.push(`${cfg.selectedPort} (not detected)`); index = names.length - 1; }
   }
   const portName = (n: number) => (n === 0 ? "" : portValues[n - 1] ?? cfg.selectedPort);
   const laIdx = Math.max(0, N8_LOOKAHEADS.indexOf(cfg.lookaheadMs));
@@ -226,7 +237,12 @@ function n8MenuChildren(ctx: MenuContext): MenuItem[] {
     action("n8-status", `Status: ${status}`, () => {}, true),  // read-only streaming status row
   ];
 
-  if (sd) {
+  // The SD-card ops (Load ROM / Dump / Restore SRAM) borrow the streaming link's serial port, so they only make
+  // sense once it's up: show them only while connected - or while a job runs. A job momentarily tears the link
+  // down to borrow the port, so `connected` blips false mid-job; `busy` keeps the block (and its live progress
+  // row) put. After a ROM load the link stays down on purpose (a new game booted, streaming stopped), so the
+  // block hides again until you reconnect. Absent entirely without the SD seam (headless harness -> sd null).
+  if (sd && (cfg.connected || busy)) {
     // Each op browses a local file then kicks off the native worker. Load ROM needs the cart at its menu;
     // Dump/Restore act on the running game's battery (see n8SdOps.ts / N8Host).
     items.push(
@@ -1787,6 +1803,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const multi = ctx.systems.length > 1; // Replace / Remove / Link Group are peer-only rows
   // The tracker submenu (LSDj / risa / …) — one generic branch, gated on the marker role the ROM sniffed.
   const tracker = resolveTracker(sys.roles);
+  const n8cfg = getN8Config();     // null without the seam; enumerates ports + link state fresh each render
+  const n8Here = n8Detected(n8cfg); // true only when a physical N8 is attached -> the submenu renders
   return {
     title: instanceTitle(ctx, sys),
     items: [
@@ -1798,9 +1816,10 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       submenu("inst-recent", "Recent", recentChildren(ctx)),
       // The tracker submenu (LSDj / risa) and the N8 Pro hardware submenu share the block right under Recent,
       // fenced by a separator on each side (the one below here, and inst-sep-top). The tracker is present only
-      // when the cart sniffed one; N8 Pro whenever the host exposes the physical-N8 seam (hasN8(), both
-      // standalone + plugin) - it drives a real NES, so it belongs beside the trackers, not buried in Settings.
-      ...(tracker || hasN8()
+      // when the cart sniffed one; N8 Pro only when a physical N8 is actually detected (n8Here) - it drives a
+      // real NES, so it belongs beside the trackers, not buried in Settings, but there's nothing to show without
+      // the hardware.
+      ...(tracker || n8Here
         ? [
             sep("inst-sep-tracker"),
             ...(tracker
@@ -1810,7 +1829,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
                     : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
                 ]
               : []),
-            ...(hasN8() ? [submenu("inst-n8", "N8 Pro", n8MenuChildren(ctx))] : []),
+            ...(n8Here ? [submenu("inst-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
           ]
         : []),
       sep("inst-sep-top"),
@@ -1847,6 +1866,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
 }
 
 export function buildStartMenu(ctx: MenuContext): MenuTree {
+  const n8cfg = getN8Config();
+  const n8Here = n8Detected(n8cfg); // shown only when a physical N8 is actually attached
   return {
     title: ctx.version ? `RetroPlug v${ctx.version}` : "RetroPlug",
     items: [
@@ -1855,8 +1876,8 @@ export function buildStartMenu(ctx: MenuContext): MenuTree {
       action("start-mgb", "Load mGB (GB MIDI Synth)", () => ctx.stores.project.systems.loadMgb()),
       // N8 Pro (physical NES) in its own fenced block, mirroring the instance menu's tracker block. The
       // streaming + SD ops don't need a loaded system, so it belongs here too (configure/connect the cart, or
-      // load a ROM onto it, before opening anything in RetroPlug).
-      ...(hasN8() ? [sep("start-sep-n8"), submenu("start-n8", "N8 Pro", n8MenuChildren(ctx))] : []),
+      // load a ROM onto it, before opening anything in RetroPlug). Only when a cart is actually detected.
+      ...(n8Here ? [sep("start-sep-n8"), submenu("start-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
       sep("start-sep0"),
       submenu("start-project", "Project", projectChildren(ctx)),
       submenu("start-settings", "Settings", settingsChildren(ctx)),

@@ -37,7 +37,8 @@ type N8Globals = {
   __rp_setN8Lookahead?: (ms: number) => void;
 };
 
-/** Whether the host exposes the N8 seam (SDL standalone or DAW plugin). Gates the whole submenu. */
+/** Whether the host exposes the N8 seam (SDL standalone or DAW plugin). Necessary but not sufficient for the
+ *  submenu: menuDefs only renders it when a physical N8 is actually detected (n8Detected over getN8Config). */
 export function hasN8(): boolean {
   return typeof (globalThis as N8Globals).__rp_getN8Config === "function";
 }

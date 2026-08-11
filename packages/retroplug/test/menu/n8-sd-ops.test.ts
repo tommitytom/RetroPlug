@@ -1,9 +1,11 @@
-// The N8 Pro SD-card ops (Load ROM / Dump / Restore SRAM). The N8 Pro submenu lives in the instance menu's
-// tracker block (beside risa/LSDj), not Settings, and its rows appear only when the host exposes the N8 SD
-// seam (the __rp_n8* hooks bindN8Hooks installs). Each browses a local file then calls its native hook, is
-// disabled while a job runs, and the read-only SD row renders the polled status snapshot. We stub the globals
-// (the native worker isn't present in the pure-TS test host) and drive the browse through the MockBackend,
-// exactly like leaves.test does for the file-dialog leaves.
+// The N8 Pro submenu + its SD-card ops (Load ROM / Dump / Restore SRAM). The submenu lives in the instance
+// menu's tracker block (beside risa/LSDj) and on the start menu, and it renders ONLY when a physical N8 is
+// actually detected (a serial port flagged isN8 by its USB VID:PID) - no hardware, no menu. Within it, the SD
+// ops appear only once the streaming link is up (connected), or while a job runs (a job blips the link down to
+// borrow the port). The Port cycler offers only detected N8 ports, never plain serial ports. Each op browses a
+// local file then calls its native hook, is disabled while a job runs, and the read-only SD row renders the
+// polled status snapshot. We stub the __rp_* globals (the native worker isn't present in the pure-TS test host)
+// and drive the browse through the MockBackend, exactly like leaves.test does for the file-dialog leaves.
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
@@ -35,8 +37,8 @@ function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
 }
 
-// The N8 Pro submenu now sits in the instance menu's tracker block (id "inst-n8"), so an instance must exist.
-// Seed a plain NES system once (no tracker role -> the block holds N8 Pro alone), then re-derive the menu.
+// Seed a plain NES system once (no tracker role -> the block holds N8 Pro alone), then return the "inst-n8"
+// submenu's children. The submenu only exists when an N8 is detected (the default stub has an isN8 port).
 function n8Submenu(stores: AppStores, be: MockBackend): MenuItem[] {
   if (stores.project.systems.view().length === 0) {
     be.seed("/roms/a.nes", nesRom());
@@ -66,25 +68,51 @@ interface Calls {
   load: string[];
   dump: string[];
   restore: string[];
+  setPort: string[];
+}
+interface CfgStub {
+  ports: { port: string; isN8: boolean }[];
+  selectedPort: string;
+  connected: boolean;
+  enabled: boolean;
+  lookaheadMs: number;
+  bytes: number;
+  error: string;
 }
 
-// Install the __rp_* N8 hooks the UI reads (getN8Config makes the submenu appear; getN8SdStatus + the three
-// op hooks make the SD rows appear + record their calls). Returns a spy record + a restore().
-function installN8(sd: Sd | null): { calls: Calls; restore: () => void } {
+// The default stub host: one attached N8, link up. Most tests want the ops available, so connected defaults
+// true; the gating tests override connected / ports to exercise the hidden states.
+const DEFAULT_CFG: CfgStub = {
+  ports: [{ port: "/dev/ttyACM0", isN8: true }],
+  selectedPort: "/dev/ttyACM0",
+  connected: true,
+  enabled: true,
+  lookaheadMs: 10,
+  bytes: 0,
+  error: "",
+};
+
+// Install the __rp_* N8 hooks the UI reads (getN8Config makes the submenu appear when a port isN8; getN8SdStatus
+// + the three op hooks make the SD rows appear + record their calls; setN8Port records port picks). Returns a
+// spy record + a restore().
+function installN8(sd: Sd | null, cfg?: Partial<CfgStub>): { calls: Calls; restore: () => void } {
   const g = globalThis as Record<string, unknown>;
-  const calls: Calls = { load: [], dump: [], restore: [] };
+  const calls: Calls = { load: [], dump: [], restore: [], setPort: [] };
   const saved = {
     cfg: g.__rp_getN8Config,
     sd: g.__rp_getN8SdStatus,
     load: g.__rp_n8LoadRom,
     dump: g.__rp_n8DumpSram,
     restore: g.__rp_n8RestoreSram,
+    setPort: g.__rp_setN8Port,
   };
-  g.__rp_getN8Config = () => ({ ports: [{ port: "/dev/ttyACM0", isN8: true }], selectedPort: "/dev/ttyACM0", connected: false, enabled: false, lookaheadMs: 10, bytes: 0, error: "" });
+  const merged: CfgStub = { ...DEFAULT_CFG, ...cfg };
+  g.__rp_getN8Config = () => merged;
   g.__rp_getN8SdStatus = sd === null ? undefined : () => sd;
   g.__rp_n8LoadRom = (p: string) => calls.load.push(p);
   g.__rp_n8DumpSram = (p: string) => calls.dump.push(p);
   g.__rp_n8RestoreSram = (p: string) => calls.restore.push(p);
+  g.__rp_setN8Port = (p: string) => calls.setPort.push(p);
   return {
     calls,
     restore: () => {
@@ -93,11 +121,12 @@ function installN8(sd: Sd | null): { calls: Calls; restore: () => void } {
       g.__rp_n8LoadRom = saved.load;
       g.__rp_n8DumpSram = saved.dump;
       g.__rp_n8RestoreSram = saved.restore;
+      g.__rp_setN8Port = saved.setPort;
     },
   };
 }
 
-test("N8 Pro (instance menu) shows the SD ops, and each browses a local file then calls its native hook", async () => {
+test("N8 Pro (instance menu) shows the SD ops when connected, and each browses a local file then calls its native hook", async () => {
   const env = installN8({ busy: false, op: "", done: false, version: 0 });
   try {
     const be = new MockBackend("/cfg");
@@ -132,8 +161,33 @@ test("N8 Pro (instance menu) shows the SD ops, and each browses a local file the
   }
 });
 
-test("the SD rows (and Connect) are disabled while a job is busy, and the status row shows progress", () => {
-  const env = installN8({ busy: true, op: "load", phase: "Uploading", bytesDone: 45, bytesTotal: 100, done: false, version: 3 });
+test("the SD ops are hidden until the N8 link is connected (streaming config still shows)", () => {
+  const env = installN8({ busy: false, op: "", done: false, version: 0 }, { connected: false, enabled: false });
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    const rows = n8Submenu(stores, be);
+    // Submenu present (an N8 is detected) with the streaming config, but no SD ops until you Connect.
+    expect(findItem(rows, "n8-port")).toBeTruthy();
+    expect(findItem(rows, "n8-connect")).toBeTruthy();
+    expect(findItem(rows, "n8-status")).toBeTruthy();
+    expect(findItem(rows, "n8-load-rom")).toBe(undefined);
+    expect(findItem(rows, "n8-dump-sram")).toBe(undefined);
+    expect(findItem(rows, "n8-restore-sram")).toBe(undefined);
+    expect(findItem(rows, "n8-sd-status")).toBe(undefined);
+    expect(findItem(rows, "n8-sep-sd")).toBe(undefined);
+  } finally {
+    env.restore();
+  }
+});
+
+test("the SD ops stay visible (and disabled) while a job runs, even though the link is torn down mid-job", () => {
+  // A running job disconnects the link to borrow the port, so connected blips false - `busy` must keep the
+  // block + its live progress row put.
+  const env = installN8(
+    { busy: true, op: "load", phase: "Uploading", bytesDone: 45, bytesTotal: 100, done: false, version: 3 },
+    { connected: false },
+  );
   try {
     const be = new MockBackend("/cfg");
     const stores = composeAppStores({ backend: be });
@@ -148,7 +202,7 @@ test("the SD rows (and Connect) are disabled while a job is busy, and the status
   }
 });
 
-test("the SD status row shows the last result when idle", () => {
+test("the SD status row shows the last result when idle (and connected)", () => {
   const env = installN8({ busy: false, op: "dump", done: true, result: "Dumped 64 KB to out.srm", version: 5 });
   try {
     const be = new MockBackend("/cfg");
@@ -172,15 +226,69 @@ test("N8 Pro also appears on the start menu (no system loaded), with the same op
   }
 });
 
+test("the whole N8 Pro submenu is hidden when no N8 is detected (no isN8 port)", () => {
+  const env = installN8({ busy: false, version: 0 }, { ports: [{ port: "/dev/ttyUSB0", isN8: false }], selectedPort: "" });
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    // Start menu: no N8 Pro item (and no fencing separator for it).
+    const start = buildStartMenu(ctxOf(stores)).items;
+    expect(findItem(start, "start-n8")).toBe(undefined);
+    expect(findItem(start, "start-sep-n8")).toBe(undefined);
+    // Instance menu: seed a plain NES (no tracker) -> the whole tracker/N8 block collapses, no inst-n8.
+    be.seed("/roms/a.nes", nesRom());
+    stores.project.systems.addSystem("/roms/a.nes");
+    const sys = stores.project.systems.view()[0];
+    const inst = buildInstanceMenu({ ...ctxOf(stores), system: sys }).items;
+    expect(findItem(inst, "inst-n8")).toBe(undefined);
+    expect(findItem(inst, "inst-sep-tracker")).toBe(undefined);
+  } finally {
+    env.restore();
+  }
+});
+
+test("the Port cycler offers only detected N8 ports, never plain serial ports", () => {
+  // Two ports: one real N8, one plain serial. The cycler must expose only "(auto-detect)" + the N8, so cycling
+  // backward from auto-detect (index 0) wraps to the N8 - never the plain port.
+  const env = installN8(
+    { busy: false, version: 0 },
+    { ports: [{ port: "/dev/ttyACM0", isN8: true }, { port: "/dev/ttyS0", isN8: false }], selectedPort: "" },
+  );
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    const port = findItem(n8Submenu(stores, be), "n8-port")!;
+    expect(port.label).toBe("Port: (auto-detect)"); // no "[N8]" tag; the plain port isn't shown
+    port.onCycle!(-1); // wrap backward to the last entry -> the only real port is the N8
+    expect(env.calls.setPort).toEqual(["/dev/ttyACM0"]);
+  } finally {
+    env.restore();
+  }
+});
+
+test("a persisted port that isn't currently detected is still shown, tagged '(not detected)'", () => {
+  const env = installN8(
+    { busy: false, version: 0 },
+    { ports: [{ port: "/dev/ttyACM0", isN8: true }], selectedPort: "/dev/ttyOLD" },
+  );
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    expect(findItem(n8Submenu(stores, be), "n8-port")!.label).toBe("Port: /dev/ttyOLD (not detected)");
+  } finally {
+    env.restore();
+  }
+});
+
 test("the SD rows are absent when the host lacks the SD seam (streaming-only submenu still builds)", () => {
-  const env = installN8(null); // __rp_getN8SdStatus undefined -> hasN8Sd() false; streaming config still present
+  const env = installN8(null); // __rp_getN8SdStatus undefined -> the SD block can't appear; streaming config still present
   try {
     const be = new MockBackend("/cfg");
     const stores = composeAppStores({ backend: be });
     const rows = n8Submenu(stores, be);
     expect(findItem(rows, "n8-load-rom")).toBe(undefined);
     expect(findItem(rows, "n8-sd-status")).toBe(undefined);
-    expect(findItem(rows, "n8-status")).toBeTruthy(); // the streaming status row (hasN8()) still there
+    expect(findItem(rows, "n8-status")).toBeTruthy(); // the streaming status row still there
   } finally {
     env.restore();
   }
