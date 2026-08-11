@@ -26,7 +26,6 @@ import type { Song } from "../model";
 import { CHANNELS } from "../runtime";
 import {
   idlePosition,
-  type ChannelPosition,
   type PlaybackGrid,
   type PlaybackPosition,
   type PredictivePlaybackModel,
@@ -70,35 +69,86 @@ interface Cursor {
   playing: boolean;
 }
 
+/** How long each channel spends on each song row: `[channel][row]`, null where it has nothing playable.
+ *  This is the ONLY thing the model consults about a song, which is what makes it pushable to a context
+ *  that cannot decode a sav for itself - the DSP thread (docs/launchpad-plan.md M5). */
+export type RowTicksTable = (number | null)[][];
+
+/** Coerce a table that came from somewhere untrusted (a config blob, so across a JSON boundary) into
+ *  exactly `CHANNELS.length` x `SONG_ROWS`. A short or ragged table would otherwise read `undefined` for
+ *  a missing row, which is neither "playable" nor "empty" and quietly misbehaves. */
+export function normaliseRowTicks(table: unknown): RowTicksTable {
+  const src = Array.isArray(table) ? table : [];
+  const out: RowTicksTable = [];
+  for (let ch = 0; ch < CHANNELS.length; ch++) {
+    const row = Array.isArray(src[ch]) ? (src[ch] as unknown[]) : [];
+    const perRow: (number | null)[] = [];
+    for (let r = 0; r < SONG_ROWS; r++) {
+      const v = row[r];
+      perRow.push(typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
+    }
+    out.push(perRow);
+  }
+  return out;
+}
+
+/** Build the table from a decoded song. Extracted so the control plane can derive it once and push it
+ *  somewhere the song itself cannot go, with a single implementation of the arithmetic either way. */
+export function songRowTicks(song: Song): RowTicksTable {
+  // Groove 0 only in v1. A phrase-level G command selects another groove, which would change the row
+  // duration; the differential test is what will say whether that matters in practice.
+  const ticksPerPhrase = phraseTicks(song.grooves?.[0]?.steps ?? []);
+  const out: RowTicksTable = [];
+  for (let ch = 0; ch < CHANNELS.length; ch++) {
+    const perRow: (number | null)[] = [];
+    for (let row = 0; row < SONG_ROWS; row++) {
+      const chainIndex = song.rows?.[row]?.chains?.[ch];
+      const chain = chainIndex === null || chainIndex === undefined ? undefined : song.chains?.[chainIndex];
+      const phrases = chain ? chainPhraseCount(chain.phrases ?? []) : 0;
+      perRow.push(phrases === 0 ? null : phrases * ticksPerPhrase);
+    }
+    out.push(perRow);
+  }
+  return out;
+}
+
 export class PredictedLsdjModel implements PredictivePlaybackModel {
   readonly channelCount = CHANNELS.length;
 
   private readonly cursors: Cursor[] = [];
-  private readonly rowTicksCache: (number | null)[][] = []; // [channel][row], null = no content
-  private readonly ticksPerPhrase: number;
+  private readonly rowTicksCache: RowTicksTable;
   private playing = false;
 
-  constructor(song: Song) {
-    // Groove 0 only in v1. A phrase-level G command selects another groove, which would change the row
-    // duration; the differential test is what will say whether that matters in practice.
-    this.ticksPerPhrase = phraseTicks(song.grooves?.[0]?.steps ?? []);
+  // Reused answers. `position()` and `grid()` are called at least once per update on the audio thread,
+  // and both used to allocate - a fresh array plus four objects, and an object plus a closure. The grid
+  // never changes for a given song; the position object is overwritten in place.
+  private readonly livePosition: PlaybackPosition;
+  private readonly idle: PlaybackPosition;
+  private readonly gridView: PlaybackGrid;
 
-    for (let ch = 0; ch < this.channelCount; ch++) {
-      this.cursors.push({ row: null, remaining: 0, playing: false });
-      const perRow: (number | null)[] = [];
-      for (let row = 0; row < SONG_ROWS; row++) perRow.push(this.computeRowTicks(song, ch, row));
-      this.rowTicksCache.push(perRow);
-    }
+  /** Takes a decoded song, or a prebuilt `RowTicksTable` for a caller that has the arithmetic but not
+   *  the song - the DSP-thread controller role, handed its table through config. */
+  constructor(source: Song | RowTicksTable) {
+    this.rowTicksCache = Array.isArray(source) ? normaliseRowTicks(source) : songRowTicks(source);
+    for (let ch = 0; ch < this.channelCount; ch++) this.cursors.push({ row: null, remaining: 0, playing: false });
+
+    this.livePosition = idlePosition(this.channelCount);
+    this.idle = idlePosition(this.channelCount);
+    const cache = this.rowTicksCache;
+    const channelCount = this.channelCount;
+    this.gridView = {
+      rowCount: SONG_ROWS,
+      channelCount,
+      hasContent(channel: number, row: number): boolean {
+        if (channel < 0 || channel >= channelCount || row < 0 || row >= SONG_ROWS) return false;
+        return cache[channel][row] !== null;
+      },
+    };
   }
 
-  /** Ticks this channel spends on this song row, or null when it has nothing playable there. */
-  private computeRowTicks(song: Song, channel: number, row: number): number | null {
-    const chainIndex = song.rows?.[row]?.chains?.[channel];
-    if (chainIndex === null || chainIndex === undefined) return null;
-    const chain = song.chains?.[chainIndex];
-    if (!chain) return null;
-    const phrases = chainPhraseCount(chain.phrases ?? []);
-    return phrases === 0 ? null : phrases * this.ticksPerPhrase;
+  /** A model over a prebuilt table - the same thing the constructor accepts, named for the call site. */
+  static fromRowTicks(table: RowTicksTable): PredictedLsdjModel {
+    return new PredictedLsdjModel(table);
   }
 
   /** The next row this channel plays after `row`.
@@ -193,23 +243,27 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
     for (let ch = 0; ch < this.channelCount; ch++) this.cursors[ch] = { row: null, remaining: 0, playing: false };
   }
 
+  /** The current position. The returned object is REUSED between calls (this runs per audio block), so
+   *  a caller that needs to keep a position across updates must copy it. Every consumer so far reads it
+   *  and discards it within the same update. */
   position(): PlaybackPosition {
-    if (!this.playing) return idlePosition(this.channelCount);
-    const channels: ChannelPosition[] = this.cursors.map((c) => ({ playing: c.playing, songRow: c.playing ? c.row : null }));
-    return { playing: channels.some((c) => c.playing), channels };
+    if (!this.playing) return this.idle;
+    const p = this.livePosition;
+    let anyPlaying = false;
+    for (let i = 0; i < this.cursors.length; i++) {
+      const c = this.cursors[i];
+      const out = p.channels[i];
+      out.playing = c.playing;
+      out.songRow = c.playing ? c.row : null;
+      if (c.playing) anyPlaying = true;
+    }
+    p.playing = anyPlaying;
+    return p;
   }
 
+  /** Which cells hold something launchable. Immutable for a given song, so this is built once. */
   grid(): PlaybackGrid {
-    const cache = this.rowTicksCache;
-    const channelCount = this.channelCount;
-    return {
-      rowCount: SONG_ROWS,
-      channelCount,
-      hasContent(channel: number, row: number): boolean {
-        if (channel < 0 || channel >= channelCount || row < 0 || row >= SONG_ROWS) return false;
-        return cache[channel][row] !== null;
-      },
-    };
+    return this.gridView;
   }
 
   /** Ticks this channel spends on this row - exposed for tests and for a "progress through the row"

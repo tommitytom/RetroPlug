@@ -59,6 +59,13 @@ export interface BlockInput extends BlockInfo {
   buttons: ButtonEvent[];
   keys: KeyEvent[];
   serialOut: SerialOutEvent[];
+  /** Traffic from a CONTROL SURFACE (a Launchpad), deliberately separate from `midiIn`.
+   *
+   *  Not tidiness: a pad press is a NoteOn, and a translator like `midiMap` reads a NoteOn as a row
+   *  launch - so a surface sharing the musical stream would fire every launch twice, once through the
+   *  controller app's quantiser and once raw. Optional because only a host with a device link bound
+   *  supplies it; absent reads as the kernel's stable empty array. */
+  controllerIn?: MidiEvent[];
 }
 
 /** The full block view a behaviour sees: the dynamic input merged onto the stored structure. The
@@ -75,6 +82,9 @@ export interface Sinks {
   coreMidi: { system: number; frame: number; data: number[] }[];
   coreBytes: { system: number; frame: number; data: number[]; flush?: boolean }[];
   buttons: { system: number; frame: number; button: number; down: boolean }[];
+  /** Raw messages bound for a control surface. Not system-addressed - the device is a project-scope
+   *  peripheral, not something a system owns. */
+  controllerOut: number[][];
 }
 
 /** Where a behaviour's sinks go. The kernel forwards each ctx sink call to the injected target,
@@ -87,6 +97,10 @@ export interface SinkTarget {
   emitCoreMidi(system: number, frame: number, data: number[]): void;
   pushCoreBytes(system: number, frame: number, data: number[], flush?: boolean): void;
   pressButton(system: number, frame: number, button: number, down: boolean): void;
+  /** Bytes back to a control surface (Launchpad LEDs). Optional: a host with no device link bound
+   *  simply doesn't implement it, and the kernel drops the write rather than requiring every host to
+   *  carry a stub. */
+  emitControllerOut?(data: number[]): void;
   reset?(): void;
 }
 
@@ -100,6 +114,7 @@ export class CollectingSink implements SinkTarget {
     this.sinks.coreMidi.length = 0;
     this.sinks.coreBytes.length = 0;
     this.sinks.buttons.length = 0;
+    this.sinks.controllerOut.length = 0;
   }
   pushSerialIn(system: number, frame: number, byte: number): void {
     this.sinks.serialIn.push({ system, frame, byte });
@@ -115,6 +130,9 @@ export class CollectingSink implements SinkTarget {
   }
   pressButton(system: number, frame: number, button: number, down: boolean): void {
     this.sinks.buttons.push({ system, frame, button, down });
+  }
+  emitControllerOut(data: number[]): void {
+    this.sinks.controllerOut.push(data);
   }
 }
 
@@ -153,14 +171,36 @@ export interface SystemCtx {
 }
 
 export type SystemBehavior = (ctx: SystemCtx) => void;
-/** A project-scope behaviour (e.g. routing). `inboxes` is positional — `inboxes[i]` is the pre-cleared
- *  persistent inbox for `block.systems[i]`, in the same order — which the behaviour fills IN PLACE (the
- *  kernel then hands each system its inbox as `ctx.midi`). No per-block Map: the kernel owns the arrays. */
-export type ProjectBehavior = (
-  block: Block,
-  inboxes: MidiEvent[][],
-  config: Record<string, unknown>,
-) => void;
+
+/** The context a project-scope behaviour runs against — the whole-project twin of `SystemCtx`, and
+ *  built the same way: once per `setSystems`, pointing at things the kernel mutates in place, so a
+ *  steady-state block allocates nothing here either.
+ *
+ *  Routing (the original project behaviour) needs only `block` + `inboxes` + `config`. The rest exists
+ *  because a project-scope behaviour that OWNS something — a control surface, a device session — needs
+ *  state across blocks and somewhere to send bytes, and had neither. */
+export interface ProjectCtx {
+  block: Block;
+  /** Positional — `inboxes[i]` is the pre-cleared persistent inbox for `block.systems[i]`, in the same
+   *  order — which a behaviour fills IN PLACE (the kernel then hands each system its inbox as
+   *  `ctx.midi`). No per-block Map: the kernel owns the arrays. */
+  inboxes: MidiEvent[][];
+  config: Record<string, unknown>;
+  /** Persistent scratch across blocks, same contract as `SystemCtx.state` (and pruned the same way). */
+  state: Record<string, unknown>;
+  /** This block's control-surface traffic. Empty unless a host bound a device link. */
+  controllerIn: MidiEvent[];
+  /** Send bytes to the control surface. Silently dropped when no host sink is bound. */
+  emitControllerOut(data: number[]): void;
+  /** Deliver one MIDI event into a system's inbox BY ID, so a behaviour can address a system without
+   *  knowing its index. Ignored for an unknown id. Project stages run before every system pipeline, so
+   *  an event pushed here is read by that system's translators in the SAME block. */
+  toSystem(systemId: number, ev: MidiEvent): void;
+  /** Host MIDI out (to a DAW, or to hardware like an Arduinoboy). */
+  emitMidiOut(systemId: number, frame: number, data: number[]): void;
+}
+
+export type ProjectBehavior = (ctx: ProjectCtx) => void;
 
 /** Per-role runtime-tracing hooks (spec/08-profiling.md Tier B), injected into the kernel only under a
  *  profile host (the bundle builds one iff the native `spanBegin` thunk is bound). `begin`/`end` bracket a
@@ -172,8 +212,12 @@ export interface DspTracer {
 }
 
 export function emptySinks(): Sinks {
-  return { serialIn: [], midiOut: [], coreMidi: [], coreBytes: [], buttons: [] };
+  return { serialIn: [], midiOut: [], coreMidi: [], coreBytes: [], buttons: [], controllerOut: [] };
 }
+
+/** Stood in for an absent `BlockInput.controllerIn`. Shared and never written to, so the common case
+ *  (no device link) costs no allocation. */
+const NO_CONTROLLER_IN: MidiEvent[] = [];
 
 // Walk the PPQ ticks that fall in this block at `resolution` ticks/quarter, calling cb(tick, off)
 // for each; returns the advanced `nextTick`. A faithful TS twin of native PpqUtil::eachTick
@@ -225,10 +269,11 @@ interface SystemSlot {
   stages: StageRun[];
 }
 
-/** A resolved project-scope stage (e.g. routing): its behaviour + its stored config. */
+/** A resolved project-scope stage (e.g. routing): its behaviour + the PERSISTENT ctx it runs against
+ *  (built once in `setSystems`, exactly like a system stage's). */
 interface ProjectStage {
   dsp: ProjectBehavior;
-  config: Record<string, unknown>;
+  ctx: ProjectCtx;
   label: number; // interned role-kind id for tracing (0 when no tracer)
 }
 
@@ -246,11 +291,15 @@ export class DspKernel {
   // Persistent per-system, per-stage scratch bags (system id → stage index → bag). Backs ctx.state
   // so a stateful behaviour keeps its cross-block state; pruned alongside `tick` in setSystems.
   private readonly state = new Map<number, Map<number, Record<string, unknown>>>();
+  // The same, for PROJECT-scope stages (stage index → bag). Keyed by index alone since a project stage
+  // has no system id; kept across setSystems so a role that owns something (a controller session) is not
+  // torn down every time a system is added or a knob changes.
+  private readonly projectState = new Map<number, Record<string, unknown>>();
   // Persistent per-system structure, rebuilt on each setSystems. `inboxes[i] === slots[i].inbox`
   // (positional, parallel to block.systems) — the array handed to project-scope routing.
   private slots: SystemSlot[] = [];
-  private slotById = new Map<number, SystemSlot>();
-  private inboxes: MidiEvent[][] = [];
+  private readonly slotById = new Map<number, SystemSlot>();
+  private readonly inboxes: MidiEvent[][] = [];
   private projectStages: ProjectStage[] = [];
   // Per-role runtime tracing (spec/08-profiling.md Tier B). `tracer` exists only under a profile host;
   // `traceOn` is flipped by the host (__setTrace → setTracing) so per-stage span calls happen ONLY while
@@ -321,14 +370,21 @@ export class DspKernel {
       if (rt?.scope === "project" && rt.dsp) {
         this.projectStages.push({
           dsp: rt.dsp as ProjectBehavior,
-          config: stage.config,
+          ctx: this.buildProjectCtx(this.projectStages.length, stage.config),
           label: this.tracer ? this.internLabel(stage.kind) : 0,
         });
       }
     }
+    // Drop scratch for stages that no longer exist, so a removed-then-re-added project role starts fresh
+    // rather than resuming against a structure it no longer matches.
+    for (const index of this.projectState.keys()) {
+      if (index >= this.projectStages.length) this.projectState.delete(index);
+    }
     this.slots = [];
     this.slotById.clear();
-    this.inboxes = [];
+    // Cleared in place, never reassigned: a project ctx built above captures this array, and swapping it
+    // for a new one would leave that ctx routing into inboxes nothing reads.
+    this.inboxes.length = 0;
     for (const sys of struct.systems) {
       const slot: SystemSlot = { id: sys.id, inbox: [], keys: [], buttons: [], serialOut: [], stages: [] };
       sys.pipeline.forEach((stage, stageIndex) => {
@@ -397,10 +453,12 @@ export class DspKernel {
     // `if (this.traceOn)` guard is false on the non-traced path (production/mock/alloc window) → the hot
     // path is byte-identical; only a trace window pays the span-thunk crossings (spec/08-profiling.md).
     const project = this.projectStages;
+    const controllerIn = dyn.controllerIn ?? NO_CONTROLLER_IN;
     for (let i = 0; i < project.length; i++) {
       const ps = project[i];
+      ps.ctx.controllerIn = controllerIn;
       if (this.traceOn) this.tracer!.begin(ps.label);
-      ps.dsp(b, this.inboxes, ps.config);
+      ps.dsp(ps.ctx);
       if (this.traceOn) this.tracer!.end();
     }
 
@@ -442,6 +500,32 @@ export class DspKernel {
       },
       setNextTick: (tick) => this.tick.set(id, tick),
     };
+  }
+
+  // The PERSISTENT project-scope context, built once per setSystems. `block` and `inboxes` are the
+  // kernel's own long-lived objects (overwritten / cleared in place each block), and `controllerIn` is
+  // repointed by processBlock, so nothing here is rebuilt per block.
+  private buildProjectCtx(stageIndex: number, config: Record<string, unknown>): ProjectCtx {
+    return {
+      block: this.block,
+      inboxes: this.inboxes,
+      config,
+      state: this.projectStageState(stageIndex),
+      controllerIn: NO_CONTROLLER_IN,
+      emitControllerOut: (data) => this.sink.emitControllerOut?.(data),
+      toSystem: (systemId, ev) => {
+        const slot = this.slotById.get(systemId);
+        if (slot) slot.inbox.push(ev);
+      },
+      emitMidiOut: (systemId, frame, data) => this.sink.emitMidiOut(systemId, frame, data),
+    };
+  }
+
+  // The persistent scratch bag for a project-scope stage, created on first use.
+  private projectStageState(stageIndex: number): Record<string, unknown> {
+    let bag = this.projectState.get(stageIndex);
+    if (!bag) this.projectState.set(stageIndex, (bag = {}));
+    return bag;
   }
 
   // The persistent scratch bag for one system's pipeline stage, created on first use.

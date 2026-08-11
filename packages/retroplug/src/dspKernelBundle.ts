@@ -16,6 +16,9 @@ declare function emitMidiOut(system: number, frame: number, data: number[]): voi
 declare function emitCoreMidi(system: number, frame: number, data: number[]): void;
 declare function pushCoreBytes(system: number, frame: number, data: number[], flush?: boolean): void;
 declare function pressButton(system: number, frame: number, button: number, down: boolean): void;
+// Bytes to a control surface (Launchpad LEDs). Bound only by a host that has a device link (M4), so it is
+// feature-gated by `typeof` below exactly like the tracing thunks - an unbound global is safe to test.
+declare function emitControllerOut(data: number[]): void;
 
 // Per-role runtime-tracing thunks (spec/08-profiling.md Tier B). Bound by the host ONLY in a
 // RETROPLUG_PROFILE build — so `typeof spanBegin === "function"` is the runtime feature gate below.
@@ -33,6 +36,9 @@ const sink: SinkTarget = {
   emitCoreMidi: (system, frame, data) => emitCoreMidi(system, frame, data),
   pushCoreBytes: (system, frame, data, flush) => pushCoreBytes(system, frame, data, flush),
   pressButton: (system, frame, button, down) => pressButton(system, frame, button, down),
+  // Only forwarded when the host bound a device link; otherwise the kernel drops the write, which is the
+  // correct behaviour for a controller role running with no controller attached.
+  ...(typeof emitControllerOut === "function" ? { emitControllerOut: (data: number[]) => emitControllerOut(data) } : {}),
 };
 
 // A tracer only when the profile host bound the span thunks (production/mock leave it undefined → the

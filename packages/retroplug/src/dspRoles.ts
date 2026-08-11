@@ -22,6 +22,7 @@ import {
 import { arduinoboyDecodeSerialOut, arduinoboyMasterSyncBlock, type ArduinoboyState, type MasterSyncState } from "./lsdjArduinoboy";
 import { RISA_PPQN, RISA_START, RISA_CLOCK, RISA_STOP, risaLocate, risaArmPacket } from "./risaSync";
 import { SMS_SYNC_PPQN, SMS_SYNC_COUNTER_MOD, smsSyncLevels } from "./smsSync";
+import { registerControllerRole } from "./controllerRole";
 
 // Forward every host-MIDI byte verbatim into the system's serial input. This is both `mgb`
 // (== MgbPassthroughRole) and lsdj-sync's MidiPassthrough mode (== LsdjSyncRole handlePassthrough).
@@ -309,8 +310,8 @@ const lsdjSeedSav = (spec: ConstructSpec, caps: ConstructCaps): ConstructSpec =>
 // midi-routing (project scope): fan the block's GLOBAL midiIn into the per-system inboxes the kernel
 // then hands to each system's pipeline. `inboxes` are the kernel's persistent, pre-cleared arrays
 // (positional, parallel to block.systems), filled in place with no per-block allocation.
-const midiRouting: ProjectBehavior = (block, inboxes, config) => {
-  routeBlockInto(block.midiIn, (config.mode as MidiRouting) ?? MidiRouting.SendToAll, inboxes);
+const midiRouting: ProjectBehavior = (c) => {
+  routeBlockInto(c.block.midiIn, (c.config.mode as MidiRouting) ?? MidiRouting.SendToAll, c.inboxes);
 };
 
 /** Register the built-in DSP-thread roles into `registry`. */
@@ -345,4 +346,8 @@ export function registerDspRoles(registry: RoleRegistry): void {
     schema: z.object({ mode: enumField(MIDI_ROUTING_VALUES, "sendToAll") }),
     dsp: midiRouting,
   });
+  // launchpad: the project-scope controller session (docs/launchpad-plan.md M5). Lives in its own file
+  // because it pulls in the whole src/controller + src/launchpad layer, and is registered HERE so it
+  // reaches the DSP bundle's registry rather than only the control plane's.
+  registerControllerRole(registry);
 }
