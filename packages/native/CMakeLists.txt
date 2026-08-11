@@ -321,17 +321,26 @@ set(PA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(PA_USE_SNDIO OFF CACHE BOOL "" FORCE)
 set(PA_USE_PULSEAUDIO OFF CACHE BOOL "" FORCE)
 set(PA_USE_OSS OFF CACHE BOOL "" FORCE)
-# JACK is opt-in: it makes the binary NEED libjack.so.0 at runtime, which a PipeWire-only desktop (no
-# pipewire-jack/jackd) and the muOS handheld don't ship — so enabling it by default would break startup there.
-# With the flag ON we clear the cached value so PortAudio's own cmake_dependent_option(PA_USE_JACK ... ON
-# JACK_FOUND OFF) auto-enables it where find_package(JACK) succeeds (and stays off where it doesn't — e.g. the
-# arm sysroot has no libjack dev, so the handheld cross build is JACK-free by construction even with the flag).
-option(RETROPLUG_SDL_JACK "Compile the PortAudio JACK host API into retroplug-sdl (needs libjack at build + libjack.so.0 at runtime)" OFF)
+# JACK is opt-in because it needs the JACK headers at BUILD time: with the flag ON we clear the cached value
+# so PortAudio's own cmake_dependent_option(PA_USE_JACK ... ON JACK_FOUND OFF) auto-enables it where
+# find_package(JACK) succeeds (and stays off where it doesn't; e.g. the arm sysroot has no libjack dev, so the
+# handheld cross build is JACK-free by construction even with the flag). It no longer costs a RUNTIME
+# dependency: see PA_JACK_DYNAMIC below.
+option(RETROPLUG_SDL_JACK "Compile the PortAudio JACK host API into retroplug-sdl (needs libjack at build time; dlopen'd at runtime)" OFF)
 if(RETROPLUG_SDL_JACK)
     unset(PA_USE_JACK CACHE)
 else()
     set(PA_USE_JACK OFF CACHE BOOL "" FORCE)
 endif()
+# Load the three Linux backends with dlopen rather than linking them, so none of libasound.so.2 /
+# libpipewire-0.3.so.0 / libjack.so.0 is a DT_NEEDED entry on retroplug-sdl. Compiling a backend in no longer
+# means the binary refuses to START where that lib is absent (a PipeWire-less desktop, a JACK-less box, the
+# muOS handheld); a missing lib now just omits that one host API from the Settings > Audio > Driver picker and
+# leaves the rest working. This is the runtime half of the same problem the PA_USE_* force-offs above solve at
+# compile time, and it's why those are still needed: dlopen only helps for backends we actually want.
+set(PA_ALSA_DYNAMIC ON CACHE BOOL "" FORCE)
+set(PA_PIPEWIRE_DYNAMIC ON CACHE BOOL "" FORCE)
+set(PA_JACK_DYNAMIC ON CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/portaudio ${CMAKE_BINARY_DIR}/portaudio EXCLUDE_FROM_ALL)
 
 # Part of the default `all` target, so build.sh builds it and CI covers it. Its deps are in-tree submodules
