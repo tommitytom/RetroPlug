@@ -73,7 +73,25 @@ run resize 20 RETROPLUG_SDL_TEST_RESIZE=800x704
 want "$LOG" "post-resize: state=800x704 window=800x704" "resize: did not apply"
 echo "  ok: window resize"
 
-# 5) Close guard (P6): an OS close on a clean project isn't vetoed → exits well before the 120-frame budget.
+# 4b) A request below the 480x432 floor (a 1x/2x grid) must land CLAMPED, in lockstep, and must not read as a
+#     tiling takeover. Applying the raw request left the LVGL surface smaller than the window can ever be (a
+#     mismatch the compositor then scales - the stretched-tile bug), and the clamped size coming back looked
+#     like a size we never asked for, latching wmControlled and killing fit-to-grid for the session.
+run resize-min 20 RETROPLUG_SDL_TEST_RESIZE=320x288
+want "$LOG" "post-resize: state=480x432 window=480x432 .*wmControlled=0" "resize: sub-minimum request not clamped in lockstep"
+echo "  ok: window resize clamps to the minimum"
+
+# 5) Mouse wheel: a real SDL_MOUSEMOTION + SDL_MOUSEWHEEL pair through the SDL queue reaches the handler with
+#    the sign intact, dispatched at the motion-tracked cursor (non-zero = the motion landed; the window is
+#    whatever size the UI settles on, so don't pin the centre). Only the SDL half — the scroll it drives is
+#    shared with the plugin/UI-test hosts and is asserted end-to-end (rows move, bounded at both ends) by
+#    `pnpm test:ui wheel-scroll`.
+run wheel 60 RETROPLUG_SDL_TEST_WHEEL=-3
+want "$LOG" "wheel: notches=\(0\.00,-3\.00\) at \([1-9][0-9]*,[1-9][0-9]*\)" \
+     "wheel: SDL_MOUSEWHEEL did not reach the handler at the tracked cursor"
+echo "  ok: mouse wheel"
+
+# 6) Close guard (P6): an OS close on a clean project isn't vetoed → exits well before the 120-frame budget.
 run quit 120 RETROPLUG_SDL_TEST_QUIT=1
 want "$LOG" "close-guard test: exited at frame ([0-9]|[1-9][0-9])$" "quit: close guard did not exit early"
 echo "  ok: close guard"

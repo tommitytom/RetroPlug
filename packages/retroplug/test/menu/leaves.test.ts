@@ -36,6 +36,7 @@ function ctxOf(stores: AppStores): MenuContext {
     loadRomAsProject: (romPath: string, explicitSav?: string) =>
       stores.project.openRom(romPath, explicitSav ? { explicitSav } : undefined),
     requestExit: () => {}, // App wires this to the native quit path; inert here.
+    openLsdjHd: () => {},
     beginSongImport: () => {},
   };
 }
@@ -1063,6 +1064,47 @@ test("Settings -> Open Settings Folder reveals the config dir via the native sea
   delete (globalThis as { __rp_openPath?: unknown }).__rp_openPath;
 });
 
+test("Settings menu order (off-standalone): Keyboard/Gamepad bindings lead + a separator; no device rows", () => {
+  const stores = composeAppStores({ backend: new MockBackend("/cfg") });
+  const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+  // No standalone host -> the Audio/MIDI device pickers (and the separator under them) are absent, so the
+  // bindings editors lead. Their separator is always present (it always has rows above and below).
+  expect(settings.map((i) => i.id)).toEqual([
+    "set-keybindings",
+    "set-gamepad-bindings",
+    "set-sep-bindings",
+    "set-sram",
+    "set-defzoom",
+    "set-render-dir",
+    "set-native-dialogs",
+    "set-open-folder",
+  ]);
+});
+
+test("Settings menu order (standalone): Audio + MIDI lead, separator, then the bindings editors + separator", () => {
+  const g = globalThis as Record<string, unknown>;
+  g.__rp_isStandalone = true;
+  g.__rp_getAudioConfig = () => ({ sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", drivers: ["Auto"], device: "", devicesByDriver: {} });
+  g.__rp_getMidiConfig = () => ({ inputs: [], outputs: [], selectedInput: "", selectedOutput: "" });
+  try {
+    const stores = composeAppStores({ backend: new MockBackend("/cfg") });
+    const settings = submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings");
+    // Device pickers lead, then a separator, then the bindings editors, then their separator.
+    expect(settings.map((i) => i.id).slice(0, 6)).toEqual([
+      "set-audio",
+      "set-midi",
+      "set-sep-devices",
+      "set-keybindings",
+      "set-gamepad-bindings",
+      "set-sep-bindings",
+    ]);
+  } finally {
+    delete g.__rp_isStandalone;
+    delete g.__rp_getAudioConfig;
+    delete g.__rp_getMidiConfig;
+  }
+});
+
 test("appStores: a userConfig change also invalidates the bindings channel", () => {
   const be = new MockBackend("/cfg");
   const fired: string[] = [];
@@ -1102,6 +1144,8 @@ test("Settings -> Audio (standalone): cyclers stage a draft; Apply commits; labe
   // The Driver row defaults to "Auto" when the host exposes no driver list (this fake omits `drivers`).
   expect(findItem(items, "audio-driver")!.label).toBe("Driver: Auto");
   expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+  // Apply keeps the menu open (you often tweak several audio settings in a row).
+  expect(findItem(items, "audio-apply")!.keepOpen).toBe(true);
 
   // Stage a block-size change (a Left step, 2048 -> 1024): the DRAFT label moves, the live device does NOT,
   // and Apply becomes live.
@@ -1170,6 +1214,68 @@ test("Settings -> Audio > Driver (standalone): cycler stages the host API; Apply
   items = audioItems();
   expect(findItem(items, "audio-driver")!.label).toBe("Driver: PipeWire");
   expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+
+  resetAudioDraft();
+  delete g.__rp_isStandalone;
+  delete g.__rp_getAudioConfig;
+  delete g.__rp_setAudioConfig;
+});
+
+test("Settings -> Audio > Output Device (standalone): lists the driver's devices, resets on driver change, Apply commits it as the 5th arg", async () => {
+  const applied: Array<[number, number, number, string, string]> = [];
+  const live = {
+    sampleRate: 48000,
+    blockSize: 2048,
+    outChannels: 2,
+    driver: "Auto",
+    device: "",
+    drivers: ["Auto", "PipeWire", "ALSA"],
+    devicesByDriver: { Auto: ["Speakers", "HDMI"], PipeWire: ["Speakers", "HDMI"], ALSA: ["default"] } as Record<string, string[]>,
+  };
+  const g = globalThis as {
+    __rp_isStandalone?: boolean;
+    __rp_getAudioConfig?: () => typeof live;
+    __rp_setAudioConfig?: (r: number, b: number, ch: number, d: string, dev: string) => void;
+  };
+  g.__rp_isStandalone = true;
+  g.__rp_getAudioConfig = () => ({ ...live });
+  g.__rp_setAudioConfig = (r, b, ch, d, dev) => {
+    live.sampleRate = r;
+    live.blockSize = b;
+    live.outChannels = ch;
+    live.driver = d;
+    live.device = dev;
+    applied.push([r, b, ch, d, dev]);
+  };
+  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  resetAudioDraft();
+
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be, notify: () => {} });
+  const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+
+  // Fresh: Default (the host API default).
+  let items = audioItems();
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default");
+
+  // Step the device cycler → the first device in the Auto driver's list. Staged, device NOT reconfigured.
+  findItem(items, "audio-device")!.onCycle!(1);
+  items = audioItems();
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Speakers");
+  expect(applied.length).toBe(0);
+  expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
+
+  // Changing the Driver resets the device to Default (a device isn't valid across host APIs).
+  findItem(items, "audio-driver")!.onCycle!(1);
+  items = audioItems();
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: PipeWire");
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default");
+
+  // Pick a device under the new driver, Apply → device rides the 5th arg.
+  findItem(items, "audio-device")!.onCycle!(1);
+  findItem(audioItems(), "audio-apply")!.onSelect!();
+  expect(applied[applied.length - 1]).toEqual([48000, 2048, 2, "PipeWire", "Speakers"]);
+  expect(live.device).toBe("Speakers");
 
   resetAudioDraft();
   delete g.__rp_isStandalone;

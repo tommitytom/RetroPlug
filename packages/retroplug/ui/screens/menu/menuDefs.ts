@@ -80,7 +80,7 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
-import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers } from "./audioDraft";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
@@ -108,6 +108,8 @@ export interface MenuContext {
   // Open the Songs "import from a .sav" picker (validate the source against the cart's console, then show a
   // checkbox list) — owned by useSongImport, wired from App like the project modals.
   beginSongImport: (sys: SystemView, source: Uint8Array) => void;
+  /** Show the LSDj HD player for a system (a full-window view; Esc closes it). Owned by App. */
+  openLsdjHd: (systemId: number) => void;
 }
 
 /** True only in a standalone host (the SDL handheld build or the DPF JACK standalone), which installs
@@ -128,24 +130,32 @@ const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
 const AUDIO_CHANNELS = [2, 4, 6, 8];
 const AUDIO_CHANNEL_NAMES = ["Stereo", "4 (2 pairs)", "6 (3 pairs)", "8 (4 pairs)"];
 function audioSettingsChildren(): MenuItem[] {
-  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto" };
+  const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", device: "" };
   const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
   const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
   const chIdx = Math.max(0, AUDIO_CHANNELS.indexOf(cfg.outChannels));
   // The driver list ("Auto" + each compiled-in/available host API) is enumerated natively, so the picker shows
-  // exactly what the build/runtime offers (PipeWire+ALSA on the handheld; +JACK on a -DRETROPLUG_SDL_JACK build).
+  // exactly what the build/runtime offers (PipeWire+ALSA on the handheld, which has no jack dev to compile against;
+  // +JACK on a desktop build, and only when libjack.so.0 is actually there to dlopen).
   const drivers = getAudioDrivers();
   const driverIdx = Math.max(0, drivers.indexOf(cfg.driver));
+  // Output devices of the SELECTED driver (host API), with "Default" (= the host API default) at index 0. The
+  // list tracks the DRAFT driver; changing the driver resets the device (a device isn't valid across host APIs).
+  const dev = deviceCyclerNames(getAudioDevices(cfg.driver), cfg.device, "Default");
+  const devName = (n: number) => (n === 0 ? "" : getAudioDevices(cfg.driver)[n - 1] ?? cfg.device);
   const dirty = audioDraftDirty();
   return [
     // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
-    cycler("audio-driver", "Driver", drivers, driverIdx, (n) => setAudioDraft({ driver: drivers[n] })),
+    cycler("audio-driver", "Driver", drivers, driverIdx, (n) => setAudioDraft({ driver: drivers[n], device: "" })),
+    cycler("audio-device", "Output Device", dev.names, dev.index, (n) => setAudioDraft({ device: devName(n) })),
     cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
     cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
     cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),
     sep("audio-sep-apply"),
-    // Commit the staged rate/block/channels to the device. Greyed (inert) until there's a pending change.
-    action("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
+    // Commit the staged rate/block/channels/driver/device to the device. Greyed (inert) until a pending change.
+    // keepOpen: stay in the Audio submenu after applying (it re-seeds the draft, so Apply just greys out) rather
+    // than closing the whole menu — you often tweak several settings in a row.
+    { ...action("audio-apply", "Apply", () => applyAudioDraft(), !dirty), keepOpen: true },
   ];
 }
 
@@ -1495,6 +1505,9 @@ function lsdjExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
     cycler("lsdj-autostart", "Auto Start", OFF_ON, autoStart ? 1 : 0, (n) =>
       systems.setRoleConfig(sys.id, "lsdj-sync", { autoStart: n === 1 }),
     ),
+    // The HD player: song + all four chains + all four phrases on one full-window screen, in the cart's
+    // own font and palette. The cart keeps playing and stays playable underneath; Esc returns to the grid.
+    action("lsdj-hd", "HD Player", () => ctx.openLsdjHd(sys.id)),
     sep("lsdj-assets-sep"),
   ];
 }
@@ -1700,20 +1713,25 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     ),
     action("set-render-dir-clear", "Clear", () => userConfig.setRenderOutputDir(""), !defaultDir),
   ]);
+  // Device pickers (Audio + MIDI) lead the menu: standalone-only, where the SDL host exposes the audio /
+  // RtMidi seams (a DAW-hosted editor / the headless harness has neither). The separator under them is
+  // emitted only when at least one is present, so a DAW build doesn't open on a stray leading rule.
+  const deviceRows: MenuItem[] = [
+    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
+    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
+  ];
   return [
+    ...deviceRows,
+    ...(deviceRows.length ? [sep("set-sep-devices")] : []),
+    // The input-binding editors sit right below the device pickers, with their own separator under them.
+    submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
+    submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
+    sep("set-sep-bindings"),
     cycler("set-sram", "SRAM Auto-Save", SRAM_AUTO_SAVES.map((m) => SRAM_AUTO_SAVE_LABELS[m] ?? m), sramIdx, (n) => userConfig.setSramAutoSave(SRAM_AUTO_SAVES[n])),
     { id: "set-defzoom", label: `Default Zoom: ${ctx.userConfig.defaultZoom}x`, kind: "cycler", keepOpen: true, onSelect: () => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, 1)), onCycle: (dir) => userConfig.setDefaultZoom(cycleInt(ctx.userConfig.defaultZoom, 1, 6, dir)) },
     renderDirItem,
-    submenu("set-keybindings", "Keyboard Bindings", bindingsChildren(ctx, "keyboard")),
-    submenu("set-gamepad-bindings", "Gamepad Bindings", bindingsChildren(ctx, "gamepad")),
     // The host's OS file dialog (default) vs the in-app browser. On a host with no OS dialog it stays in-app.
     cycler("set-native-dialogs", "File Dialogs", ["In-App", "OS Native"], ctx.userConfig.useNativeFileDialogs ? 1 : 0, (n) => userConfig.setUseNativeFileDialogs(n === 1)),
-    // Audio device (sample rate / block size) — standalone only, where the SDL host exposes the seam.
-    ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
-    // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
-    ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
-    // (N8 Pro is no longer here — it drives a physical NES, so it lives in its own block on the start menu +
-    // the instance menu's tracker block, beside risa/LSDj.)
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }

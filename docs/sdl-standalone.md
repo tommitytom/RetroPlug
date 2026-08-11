@@ -15,7 +15,8 @@ SDL2 drives those via its own video backend. **Goal: make `retroplug-sdl` the pr
 - SDL audio callback → the multi-out `engine.processBlock` (2/4/6/8 device channels per the Out Channels
   knob); MIDI-clock-derived transport; live sample-rate/block-size/channels reconfigure (Settings → Audio);
   `audio.json` persistence.
-- Input: keyboard + mouse → LVGL indevs + the `key` bus; gamepad (`GamepadManager`) → menu nav + game input.
+- Input: keyboard + mouse (incl. wheel → scroll the hit-tested container) → LVGL indevs + the `key` bus;
+  gamepad (`GamepadManager`) → menu nav + game input.
 - On-screen LVGL **file browser** (no dependence on OS dialogs), **Exit** menu row, `openPath`, window title.
 - Optional Linux RT audio thread (SCHED_FIFO + core affinity), for headroom on constrained devices.
 
@@ -125,13 +126,28 @@ re-lays-out.
 `SDL_SetWindowMinimumSize(480,432)` floor (mirroring the plugin's `setGeometryConstraints`), so a tiling
 compositor **tiles it like any other window instead of auto-floating a fixed-size toplevel** — a floating one
 can still be drag-resized, and Hyprland's `togglefloating` flips between the two. `__rp_isWindowSizeControlled`
-now returns a dynamic `wmControlled` (was just `fullscreen`): it's `true` for a fullscreen handheld, and it
+returns a dynamic `wmControlled` (was just `fullscreen`): it's `true` for a fullscreen handheld, and it
 **latches `true`** when the compositor hands us a size we never requested before any request was honored (a
 tile) — exactly `PluginUI::onResize`'s clamp detection, guarded by a `sizeHonored` latch so a floating window
 that *did* honor our sizes isn't mistaken for a tiled one. When `wmControlled`, the UI fits its grid via zoom
 and we stop driving `SDL_SetWindowSize` (don't fight the compositor). A stable `SDL_HINT_APP_NAME` ("RetroPlug")
 sets the Wayland app_id / X11 WM_CLASS so window rules can target it. `RETROPLUG_DEBUG_RESIZE` logs every
 request / WM resize.
+
+**Fit-to-grid only runs where the request is verifiable - i.e. not on Wayland.** `wmControlled` also starts
+`true` on the **Wayland** video backend. On X11, `SDL_SetWindowSize` round-trips the request and reports back
+the geometry the WM actually granted (`X11_SetWindowSize` waits on the server, then sends `RESIZED` with the
+real size), so a refusal is detected and adopted. Wayland has no equivalent - xdg-shell has no client resize
+request at all: we commit the size we want and the compositor either follows (mutter/kwin) or keeps its own box
+and **scales our now-mismatched surface into it**, sending nothing either way. Under a compositor that owns
+geometry (Hyprland, sway, any tiling one) that scaling is what stretched a freshly loaded tile across the whole
+window until the next real configure (a user resize) put surface and window back in step. "Honored" and
+"ignored" are indistinguishable from here, so we don't guess: the compositor owns the window and the UI fits its
+grid via zoom. `RETROPLUG_SDL_FIT_WINDOW=1` opts back into driving the window size on a compositor known to honor
+it. Relatedly, `requestWindowSize` **clamps to the 480x432 floor before applying and recording** the request, the
+way `SDL_SetWindowSize` does: a 1x/2x grid is below the floor, so applying it raw sized the LVGL surface to
+something the window can never take (again: a mismatch for the compositor to scale), and the clamped size coming
+back read as "a size we never asked for" - a phantom tiling takeover that killed fit-to-grid for the session.
 
 **Close guard:** `SDL_QUIT` (window button / WM / Ctrl-C) now routes through the unsaved-changes guard
 (`__rp_onCloseRequested`), a line-for-line mirror of [PluginUI::onClose](../packages/native/plugin/PluginUI.cpp#L352):
@@ -142,6 +158,26 @@ itself once the user confirms Save/Discard); a clean project quits immediately. 
 Verified headlessly via the `RETROPLUG_SDL_TEST_RESIZE=WxH` and `RETROPLUG_SDL_TEST_QUIT` self-test hooks
 (resize reallocs + renders a full frame at the new size; a clean-project QUIT exits without veto) plus the
 existing `test-ui/resize.test.ts` + `test-ui/close-guard.test.ts` for the JS contract.
+
+### P7 — Mouse wheel — ✅ DONE
+`handleEvents` never handled `SDL_MOUSEWHEEL`, so the wheel was dead in the standalone: LVGL has no wheel
+concept of its own (dpf-widgets feeds it to an ENCODER indev, which shuffles keypad-group *focus* rather than
+scrolling what's under the pointer), and the DPF editor only scrolled because `PluginUI::onScroll` implements
+the hit-test itself. That implementation now lives in
+[LvglWheelScroll.hpp](../packages/native/src/host/ui/LvglWheelScroll.hpp) — walk the hit-tested parent chain,
+scroll the first ancestor that actually overflows, 24 px per notch, `lv_obj_scroll_by_bounded` so it stops at
+both ends — and all three UI hosts call it: the plugin from `onScroll`, the SDL host from `SDL_MOUSEWHEEL`,
+the UI-test harness from `RenderCore::scrollAt`. Programmatic scrolling ignores `scroll-dir`, which is why
+this works on the menu's inner container (it sets `"scroll-dir": "none"` to suppress desktop drag-scroll).
+
+SDL2's wheel event carries no position (`mouseX/mouseY` are SDL3-only), so the host scrolls at the
+motion-tracked cursor — the same point the pointer indev hovers with. `preciseX/Y` (SDL ≥ 2.0.18) covers
+trackpads/high-resolution wheels; `SDL_MOUSEWHEEL_FLIPPED` is un-flipped.
+
+Verified by `test-ui/wheel-scroll.test.ts` (rows move one 24 px step per notch, bounded at both ends, inert
+where nothing overflows) for the shared scroll, plus the `RETROPLUG_SDL_TEST_WHEEL=<notches>` self-test hook
+in `pnpm sdl:smoke` for the SDL half (a pushed motion+wheel pair reaches the handler at the tracked cursor
+with its sign intact).
 
 ### N/A — DAW-only (listed for completeness)
 Parameters/automation, DPF state-chunk get/setState, latency reporting, per-output labels — plugin-in-DAW
@@ -154,24 +190,43 @@ Audio is driven by a **PortAudio fork with a native PipeWire host API**
 (<https://github.com/tommitytom/portaudio/tree/pipewire>, vendored as the `deps/portaudio` submodule on the
 `pipewire` branch) — better latency + device handling than SDL's ALSA-compat path, especially on the handheld.
 PortAudio is `add_subdirectory`'d next to rtmidi in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)
-(static) and links only into `retroplug-sdl`; its CMake auto-selects the **PipeWire** host API where
-`libpipewire-0.3` is found (added to the host + the arm64 sysroot via
-[tools/arm-sysroot.sh](../tools/arm-sysroot.sh)) and falls back to **ALSA** otherwise
-(`cmake_dependent_option(PA_USE_PIPEWIRE … ON PIPEWIRE_FOUND OFF)`). SDL still owns the window/video/gamepad;
-only `SDL_INIT_AUDIO` + the SDL device/callback are gone.
+(static) and links only into `retroplug-sdl`; its CMake compiles the **ALSA**, **PipeWire**, and **JACK** host
+APIs (wherever each one's dev headers are found — PipeWire from `libpipewire-0.3`, added to the host + the arm64
+sysroot via [tools/arm-sysroot.sh](../tools/arm-sysroot.sh)). SDL still owns the window/video/gamepad; only
+`SDL_INIT_AUDIO` + the SDL device/callback are gone.
+
+**Backends are dlopen'd, not hard-linked.** The three Linux backends are compiled with `PA_ALSA_DYNAMIC` /
+`PA_PIPEWIRE_DYNAMIC` / `PA_JACK_DYNAMIC`, so `libasound` / `libpipewire-0.3` / `libjack` are **loaded at runtime
+with `dlopen`** rather than being `DT_NEEDED` entries — `readelf -d build/bin/retroplug-sdl` shows no audio lib
+(only `libSDL2`; `libasound` remains only via rtmidi, which is universal). Each backend's `*_Initialize`
+soft-fails (`*hostApi = NULL` + `paNoError`, which `Pa_Initialize` skips — an *error* return would abort all
+audio) when its lib or daemon is absent, so **the binary launches anywhere** and simply omits the missing
+backend from the Driver menu. This restores the launch-anywhere behaviour of the old SDL-audio path (SDL dlopens
+its backends too), which the hard-linked PortAudio build had regressed — a PipeWire-less desktop no longer fails
+to start. The dynamic loading lives in the fork (`src/hostapi/{alsa,jack,pipewire}/…`, mirroring PortAudio's own
+`PA_ALSA_DYNAMIC` pattern); `PA_*_SONAME` env vars override the soname (used to test absence). `libSDL2` stays
+hard-linked — it's the window/input shell.
 
 **Driver picker (`Settings > Audio > Driver`).** The Audio submenu's first row is a driver cycler that
 enumerates the host APIs PortAudio actually registered — **Auto** (the default: prefer PipeWire, else the
-platform default = raw ALSA) plus each compiled-in host API with a usable output device. Because the list is
-enumerated natively (`__rp_getAudioConfig` returns `{…, driver, drivers}`), the picker automatically shows only
-what the build offers: **PipeWire + ALSA** on the handheld, plus **JACK** on a build made with
-`-DRETROPLUG_SDL_JACK=ON`. A pick stages into the Audio draft and commits with the same **Apply** as
-rate/block/channels (one stream reopen), persisted in `audio.json` as `hostApi` (the `PaHostApiTypeId`, `-1` =
-Auto). A selected-but-unavailable host API falls back to Auto at open time (never silence). **Pulse/sndio/OSS
-stay force-off** (`libsdl2-dev` drags in their dev libs, and the handheld doesn't ship the runtime `.so`s);
-**JACK is opt-in** for the same reason — it needs `libjack.so.0` at runtime, which a PipeWire-only desktop
-(no pipewire-jack/jackd) and the handheld lack, so it's off by default and gated behind `RETROPLUG_SDL_JACK`
-(the arm sysroot has no libjack dev, so the handheld cross build is JACK-free even with the flag).
+platform default = raw ALSA) plus each host API with a usable output device. Because the list is enumerated
+natively (`__rp_getAudioConfig` returns `{…, driver, drivers}`), the picker shows exactly what's present at
+runtime: **JACK** only when a JACK server is up, **PipeWire** only when the daemon is running, and so on. A pick
+stages into the Audio draft and commits with the same **Apply** as rate/block/channels (one stream reopen),
+persisted in `audio.json` as `hostApi` (the `PaHostApiTypeId`, `-1` = Auto). A selected-but-unavailable host API
+falls back to Auto at open time (never silence). **JACK is on by default** now that it's dlopen'd (no launch
+penalty); **Pulse/sndio/OSS stay force-off** (`libsdl2-dev` drags in their dev libs and they'd bloat the driver
+list).
+
+**Output Device picker (`Settings > Audio > Output Device`).** Below Driver, a second cycler picks a specific
+output within the selected driver — **Default** (the host API's default output, = the prior behaviour) plus each
+output-capable device of that host API (a PipeWire sink, an HDMI out, a USB DAC, …). The list is enumerated
+natively per host API (`__rp_getAudioConfig` also returns `device` + `devicesByDriver`), so it tracks the
+*draft* Driver, and changing the Driver resets the device to Default (a device isn't valid across host APIs).
+Selected/persisted **by name** (`audio.json` `outputDevice`; PortAudio indices aren't stable across runs) and
+resolved within the chosen host API at open time — a name that's gone falls back to the host API default (never
+silence). `openAudio` picks it via `findOutputDeviceByName` over `effectiveHostApiIndex`; `RETROPLUG_DEBUG_AUDIO`
+lists every output device.
 
 The seam mirrors the old SDL one: `renderAudioBlock` (the shared body — drain the command ring, MIDI in +
 `MidiClockSync`, `engine.processBlock` into the planar buffers, MIDI out, planar→interleaved) is called by the
