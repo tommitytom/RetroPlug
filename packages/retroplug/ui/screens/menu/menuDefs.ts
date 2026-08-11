@@ -130,7 +130,8 @@ function audioSettingsChildren(): MenuItem[] {
   const blockIdx = Math.max(0, AUDIO_BLOCKS.indexOf(cfg.blockSize));
   const chIdx = Math.max(0, AUDIO_CHANNELS.indexOf(cfg.outChannels));
   // The driver list ("Auto" + each compiled-in/available host API) is enumerated natively, so the picker shows
-  // exactly what the build/runtime offers (PipeWire+ALSA on the handheld; +JACK on a -DRETROPLUG_SDL_JACK build).
+  // exactly what the build/runtime offers (PipeWire+ALSA on the handheld, which has no jack dev to compile against;
+  // +JACK on a desktop build, and only when libjack.so.0 is actually there to dlopen).
   const drivers = getAudioDrivers();
   const driverIdx = Math.max(0, drivers.indexOf(cfg.driver));
   // Output devices of the SELECTED driver (host API), with "Default" (= the host API default) at index 0. The
