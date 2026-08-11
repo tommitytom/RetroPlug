@@ -159,3 +159,43 @@ test("the profile carries the model facts the rest of the module reads", () => {
   expect(PRO_MK3.maxColourSpecs).toBe(106);
   expect(PRO_MK3.portHint).toBe("LPProMK3 MIDI"); // NOT the DAW port — programmer traffic lives here
 });
+
+// --- the edge buttons, as measured on hardware ----------------------------------------------------
+// These numbers are not in the manual's TEXT (its layout diagram is an image), so they were read off a
+// real Pro MK3 with `launchpad-probe --sweep` - which lights one name at a time so the physical button
+// each addresses can be observed directly. Pinned here because the mapping this replaced was wrong, and
+// silently wrong: every top-row name was shifted by two.
+
+test("the top row runs left/right then the six mode buttons, with the logo at 99", () => {
+  const top = ["left", "right", "session", "note", "chord", "custom", "sequencer", "projects"];
+  expect(top.map((n) => PRO_MK3.buttons[n])).toEqual([91, 92, 93, 94, 95, 96, 97, 98]);
+  expect(PRO_MK3.buttons.logo).toBe(99);
+});
+
+test("the arrows that scroll are on the LEFT column, not the top row", () => {
+  // The correction the hardware sweep forced: the community map had up/down at 91/92, which are really the
+  // top row's page arrows. Getting this wrong pointed the LSDj app's paging at the wrong two buttons.
+  expect(PRO_MK3.buttons.up).toBe(80);
+  expect(PRO_MK3.buttons.down).toBe(70);
+  expect(buttonName(PRO_MK3, 91)).toBe("left");
+  expect(buttonName(PRO_MK3, 92)).toBe("right");
+});
+
+test("the three edge columns/rows step the way the hardware numbers them", () => {
+  const left = ["up", "down", "clear", "duplicate", "quantise", "fixedLength", "play", "record"];
+  const right = ["patterns", "steps", "patternSettings", "velocity", "probability", "mutation", "microStep", "printToClip"];
+  const bottom = ["recordArm", "mute", "solo", "volume", "pan", "sends", "device", "stopClip"];
+
+  expect(left.map((n) => PRO_MK3.buttons[n])).toEqual([80, 70, 60, 50, 40, 30, 20, 10]);
+  expect(right.map((n) => PRO_MK3.buttons[n])).toEqual([89, 79, 69, 59, 49, 39, 29, 19]);
+  expect(bottom.map((n) => PRO_MK3.buttons[n])).toEqual([101, 102, 103, 104, 105, 106, 107, 108]);
+});
+
+test("every button has its own CC, so no name shadows another", () => {
+  // Surface enumerates Object.values() and buttonName reverse-looks-up, so a duplicate would produce a
+  // repeated index and an ambiguous name.
+  const ccs = Object.values(PRO_MK3.buttons);
+  expect(new Set(ccs).size).toBe(ccs.length);
+  expect(ccs.length).toBe(33);
+  for (const cc of ccs) expect(controlKind(cc)).toBe("cc"); // none of them collides with a grid pad
+});

@@ -45,30 +45,36 @@ export interface LaunchpadProfile {
   readonly buttons: Readonly<Record<string, number>>;
 }
 
-// The edge buttons.
+// The edge buttons, named for the labels printed on the hardware.
 //
-// HONEST GAP: the Programmer-mode layout diagram is an IMAGE in the manual, so unlike the 8x8 grid
-// (whose anchors the manual states in prose - 11 bottom-left, 81 top-left, 18 bottom-right) these
-// numbers are NOT text-verifiable from the reference. They are the widely-used community mapping and
-// match the Session-mode CCs the manual does mention in passing (logo 99, track select 101-108). Treat
-// them as provisional until confirmed against real hardware in M4; the 8x8 grid is the verified part,
-// and nothing in the first consumer depends on these.
+// VERIFIED on a real Pro MK3 with `retroplug-cli launchpad-probe --sweep`, which lights one name at a time
+// so the physical button each addresses can simply be read off. That was worth doing: the widely-used
+// community mapping this file previously carried was WRONG across the whole top row, shifted by two,
+// because it assumed the up/down arrows live there. They do not - they are the top of the LEFT column, and
+// the top row's last two buttons (Sequencer, Projects) were missing from the map entirely.
+//
+// One name per CC, deliberately: Surface enumerates `Object.values(...)` and buttonName reverse-looks-up,
+// so an alias would produce a duplicate index and an ambiguous name.
 const PRO_MK3_BUTTONS: Record<string, number> = {
-  // Top row, left to right.
-  up: 91, down: 92, left: 93, right: 94,
-  session: 95, note: 96, chord: 97, custom: 98,
-  // The logo LED, which is lightable but not pressable.
+  // Top row, left to right: the two page arrows then the mode buttons.
+  left: 91, right: 92, session: 93, note: 94,
+  chord: 95, custom: 96, sequencer: 97, projects: 98,
+  // The logo LED, top right - lightable but not pressable.
   logo: 99,
-  // Bottom row, left to right (track select in Session mode).
-  track1: 101, track2: 102, track3: 103, track4: 104,
-  track5: 105, track6: 106, track7: 107, track8: 108,
-  // Right-hand column, top to bottom (scene launch).
-  scene1: 89, scene2: 79, scene3: 69, scene4: 59,
-  scene5: 49, scene6: 39, scene7: 29, scene8: 19,
-  // Left-hand column, top to bottom.
-  left1: 80, left2: 70, left3: 60, left4: 50,
-  left5: 40, left6: 30, left7: 20, left8: 10,
+  // Left column, top to bottom. `up`/`down` are the ▲/▼ arrows, which is where a song list is scrolled from.
+  up: 80, down: 70, clear: 60, duplicate: 50,
+  quantise: 40, fixedLength: 30, play: 20, record: 10,
+  // Right column, top to bottom (the ">" buttons).
+  patterns: 89, steps: 79, patternSettings: 69, velocity: 59,
+  probability: 49, mutation: 39, microStep: 29, printToClip: 19,
+  // Bottom row, left to right (the track-function row).
+  recordArm: 101, mute: 102, solo: 103, volume: 104,
+  pan: 105, sends: 106, device: 107, stopClip: 108,
 };
+
+// NOT here, and not an oversight: `Shift` (top-left corner) and `Setup` (bottom-left corner). Neither is
+// part of the addressable grid+edge surface, and whether they emit anything in Programmer mode is untested -
+// so they are absent rather than guessed at.
 
 export const PRO_MK3: LaunchpadProfile = {
   name: "Launchpad Pro [MK3]",

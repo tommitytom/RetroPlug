@@ -191,11 +191,42 @@ Two limits found while building it, both from the PDF rather than the protocol:
   static-only, since lighting types 1 and 2 carry palette indices - the encoder refuses an RGB flash or
   pulse rather than sending a different colour.
 - **The programmer-mode layout diagram is an image too**, so only the 8x8 grid anchors (11 / 81 / 18) are
-  text-verifiable. The edge-button CC numbers are the community mapping, marked as unverified in
-  `profile.ts` and to be confirmed on hardware in M4.
+  text-verifiable. The edge-button CC numbers started as the community mapping, marked unverified.
+  **RESOLVED on hardware** (§3.6) - and the community mapping turned out to be wrong.
 
 The API uses a **top-left origin** (y = 0 at the top) against a device that counts rows upwards from the
 bottom; the flip lives in `padIndex`/`padAt` alone.
+
+### 3.6 MEASURED: the edge buttons, and the grid orientation
+
+Run against a real Pro MK3, `retroplug-cli launchpad-probe --sweep` lights one named button per second so
+the physical button each addresses can be read off directly. Two results.
+
+**The community mapping was wrong across the whole top row, shifted by two.** It assumed the up/down arrows
+live there. They do not - they are the top of the LEFT column, and the top row's last two buttons were
+missing from the map entirely.
+
+| | CCs, left→right / top→bottom |
+|---|---|
+| Top row | `left` 91, `right` 92, `session` 93, `note` 94, `chord` 95, `custom` 96, `sequencer` 97, `projects` 98 |
+| Logo | 99 (lightable, not pressable) |
+| Left column | `up` 80, `down` 70, `clear` 60, `duplicate` 50, `quantise` 40, `fixedLength` 30, `play` 20, `record` 10 |
+| Right column | `patterns` 89, `steps` 79, `patternSettings` 69, `velocity` 59, `probability` 49, `mutation` 39, `microStep` 29, `printToClip` 19 |
+| Bottom row | `recordArm` 101, `mute` 102, `solo` 103, `volume` 104, `pan` 105, `sends` 106, `device` 107, `stopClip` 108 |
+
+The positions were all right; only the NAMES were wrong. That mattered anyway: the LSDj app pages with
+`up`/`down`, so under the old map it was driving the top row's ◀/▶ instead of the ▲/▼ beside the grid.
+Renaming fixed the app's behaviour without touching the app. Pinned by tests in
+[test/launchpad/protocol.test.ts](../packages/retroplug/test/launchpad/protocol.test.ts). `Shift` and
+`Setup` (the two corners) are deliberately absent - whether they emit anything in Programmer mode is
+untested, so they are not guessed at.
+
+**The grid orientation is correct**: on hardware the ramp runs in palette order from index 1 at the
+top-left, which is what a top-left origin should produce against a device that numbers rows from the bottom.
+
+**And the device free-runs a MIDI clock** out of the same port. Harmless here (the probe counts rather than
+prints it), but it is a third reason the Launchpad's port must be excluded from the shared musical stream in
+M4: merged in, that clock would drive RetroPlug's transport.
 
 ### 3.5 What we deliberately do not use
 
@@ -429,10 +460,11 @@ into per-LED state - short form and bulk SysEx alike - so a test asserts "pad (2
 fails when the *device* would end up wrong, not merely when our bytes change. It also round-trips M1's
 encoder against itself.
 
-**Paging costs the honest gap.** The `up` / `down` / `session` edge buttons are the unverified community
-CC mapping (§3.4), so `profile.ts`'s "nothing in the first consumer depends on these" no longer strictly
-holds. If M4 finds them wrong it is a one-line profile fix and the 64 launch pads are unaffected. Paging is
-not droppable: seeing rows you are *not* playing is the entire point of a launcher.
+**Paging depended on the unverified CCs, and they were wrong.** The `up` / `down` / `session` bindings were
+pointing at the top row's ◀/▶ and at Chord. Confirming the map on hardware (§3.6) corrected the names, and
+the app's bindings became right without the app changing - `up`/`down` now mean the ▲/▼ beside the grid, and
+`session` means Session. Paging was never droppable: seeing rows you are *not* playing is the entire point
+of a launcher.
 
 ### 8.2 BUILT: M5, the thing that actually runs
 
