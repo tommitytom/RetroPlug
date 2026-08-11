@@ -1102,6 +1102,8 @@ test("Settings -> Audio (standalone): cyclers stage a draft; Apply commits; labe
   // The Driver row defaults to "Auto" when the host exposes no driver list (this fake omits `drivers`).
   expect(findItem(items, "audio-driver")!.label).toBe("Driver: Auto");
   expect(findItem(items, "audio-apply")!.disabled).toBe(true);
+  // Apply keeps the menu open (you often tweak several audio settings in a row).
+  expect(findItem(items, "audio-apply")!.keepOpen).toBe(true);
 
   // Stage a block-size change (a Left step, 2048 -> 1024): the DRAFT label moves, the live device does NOT,
   // and Apply becomes live.

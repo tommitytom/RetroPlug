@@ -145,7 +145,9 @@ function audioSettingsChildren(): MenuItem[] {
     cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),
     sep("audio-sep-apply"),
     // Commit the staged rate/block/channels/driver/device to the device. Greyed (inert) until a pending change.
-    action("audio-apply", "Apply", () => applyAudioDraft(), !dirty),
+    // keepOpen: stay in the Audio submenu after applying (it re-seeds the draft, so Apply just greys out) rather
+    // than closing the whole menu — you often tweak several settings in a row.
+    { ...action("audio-apply", "Apply", () => applyAudioDraft(), !dirty), keepOpen: true },
   ];
 }
 
