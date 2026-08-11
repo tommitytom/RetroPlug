@@ -176,13 +176,12 @@ function midiSettingsChildren(): MenuItem[] {
   ];
 }
 
-// "Everdrive N8 Pro" submenu (Settings > N8 Pro), gated on hasN8() alone - available in BOTH the SDL
-// standalone and the DAW plugin (driving a real NES from the DAW is the point; unlike the Audio/MIDI device
-// pickers, which the DAW owns and stay standalone-only). Streaming: pick a serial port (auto-detecting the
-// N8), Connect to open the link, tune the timed-release lookahead; the native host reconnects + persists
-// (n8.cfg) on the spot. SD ops (Load ROM / Dump / Restore SRAM): long native worker jobs that pause
-// streaming, borrow the port, and report progress on the read-only SD row (useN8SdWatch keeps it live). One
-// job at a time - every action is disabled while one runs.
+// "Everdrive N8 Pro" submenu (in the instance menu's tracker block, beside risa/LSDj - it drives a real
+// NES), gated on hasN8() alone - available in BOTH the SDL standalone and the DAW plugin. Streaming: pick a
+// serial port (auto-detecting the N8), Connect to open the link, tune the timed-release lookahead; the native
+// host reconnects + persists (n8.cfg) on the spot. SD ops (Load ROM / Dump / Restore SRAM): long native
+// worker jobs that pause streaming, borrow the port, and report progress on the read-only SD row
+// (useN8SdWatch keeps it live). One job at a time - every action is disabled while one runs.
 const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
 
 // The read-only SD-op status line: progress while busy, else the last result / error, else Ready.
@@ -196,7 +195,7 @@ function n8SdLabel(sd: N8SdStatus): string {
   return "Ready";
 }
 
-function n8SettingsChildren(ctx: MenuContext): MenuItem[] {
+function n8MenuChildren(ctx: MenuContext): MenuItem[] {
   const cfg = getN8Config() ?? { ports: [], selectedPort: "", connected: false, enabled: false, lookaheadMs: 0, bytes: 0, error: "" };
   // Port cycler: index 0 = "(auto-detect)" (empty selection); the rest are the enumerated ports, N8 tagged.
   const portValues = cfg.ports.map((p) => p.port);
@@ -1697,7 +1696,7 @@ function settingsChildren(ctx: MenuContext): MenuItem[] {
     ...(isStandalone() && hasAudioConfig() ? [submenu("set-audio", "Audio", audioSettingsChildren())] : []),
     // MIDI input/output device selection — standalone only, where the SDL host exposes the RtMidi seam.
     ...(isStandalone() && hasMidiConfig() ? [submenu("set-midi", "MIDI", midiSettingsChildren())] : []),
-    ...(hasN8() ? [submenu("set-n8", "N8 Pro", n8SettingsChildren(ctx))] : []),
+    // (N8 Pro moved to the instance menu's tracker block — it drives a physical NES, alongside risa/LSDj.)
     action("set-open-folder", "Open Settings Folder", () => openPath(ctx.stores.backend.configDir())),
   ];
 }
@@ -1796,14 +1795,21 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       action("inst-save", saveProjectLabel(ctx), () => void saveProjectInteractive(ctx.stores)),
       action("inst-new", "New Project", () => ctx.newProject()),
       submenu("inst-recent", "Recent", recentChildren(ctx)),
-      // The tracker submenu (LSDj / risa) sits right under Recent, fenced by a separator on each side (the
-      // one above here, and inst-sep-top below). Only present when the cart sniffed a tracker.
-      ...(tracker
+      // The tracker submenu (LSDj / risa) and the N8 Pro hardware submenu share the block right under Recent,
+      // fenced by a separator on each side (the one below here, and inst-sep-top). The tracker is present only
+      // when the cart sniffed one; N8 Pro whenever the host exposes the physical-N8 seam (hasN8(), both
+      // standalone + plugin) - it drives a real NES, so it belongs beside the trackers, not buried in Settings.
+      ...(tracker || hasN8()
         ? [
             sep("inst-sep-tracker"),
-            trackerVersionSupported(tracker, ctx.stores.backend, sys.romPath)
-              ? submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))
-              : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
+            ...(tracker
+              ? [
+                  trackerVersionSupported(tracker, ctx.stores.backend, sys.romPath)
+                    ? submenu(`inst-${tracker.id}`, tracker.label, trackerChildren(tracker, ctx, sys))
+                    : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
+                ]
+              : []),
+            ...(hasN8() ? [submenu("inst-n8", "N8 Pro", n8MenuChildren(ctx))] : []),
           ]
         : []),
       sep("inst-sep-top"),

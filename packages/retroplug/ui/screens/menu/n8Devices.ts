@@ -1,4 +1,5 @@
-// "Stream to a physical Everdrive N8 Pro" config for the Settings > N8 submenu, available in BOTH the SDL
+// "Stream to a physical Everdrive N8 Pro" config for the N8 Pro submenu (in the instance menu's tracker
+// block, beside risa/LSDj), available in BOTH the SDL
 // standalone and the DAW plugin (bindN8Hooks binds the __rp_*N8* hooks in each host over its own N8Host).
 // Mirrors midiDevices.ts: the state lives in the native host (the serial connection + lookahead + persisted
 // n8.cfg), not a TS store, so this is a subscribable, not a store. Picks/toggles apply immediately (the host

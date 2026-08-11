@@ -1,4 +1,4 @@
-// useN8SdWatch - keep the Settings > N8 Pro progress row live while a native SD job (ROM upload, SRAM
+// useN8SdWatch - keep the N8 Pro progress row live while a native SD job (ROM upload, SRAM
 // dump/restore) runs. The worker updates its status on a background thread; nothing pushes into JS, so the
 // UI polls. Every few frames it reads the cheap status snapshot and re-renders the caller ONLY when the
 // job's version moves (a progress tick, phase change, done, or error) - so the steady state (idle, or menu

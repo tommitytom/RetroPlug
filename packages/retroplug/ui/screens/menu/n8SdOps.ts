@@ -1,5 +1,5 @@
 // SD-card / menu operations against a physical Everdrive N8 Pro (Load ROM, Dump SRAM, Restore SRAM), for the
-// Settings > N8 Pro submenu. Unlike the streaming config (n8Devices.ts), these are LONG blocking serial ops,
+// N8 Pro submenu (in the instance menu's tracker block). Unlike the streaming config (n8Devices.ts), these are LONG blocking serial ops,
 // so they run on a native background worker (N8SdWorker); this module only kicks them off through the
 // __rp_n8* hooks (bound by bindN8Hooks, the same family as n8Devices.ts) and exposes a polled status
 // snapshot. The worker pauses streaming, borrows the one serial port, and resumes (except after a ROM load,
