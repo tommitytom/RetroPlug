@@ -76,9 +76,10 @@ jobs:
       - name: UI tests (headless LVGL)
         run: pnpm test:ui
 
-      # The SDL standalone is a work in progress and deliberately off CI: the target is
-      # EXCLUDE_FROM_ALL, and `pnpm sdl:smoke` is not run here. Re-add the step (and drop
-      # the EXCLUDE_FROM_ALL in packages/native/CMakeLists.txt) when it's ready.
+      # The SDL standalone (retroplug-sdl) is in the default `all` target, so the Build
+      # step above already compiles and links it on every platform, and it rides along in
+      # the artifact below. `pnpm sdl:smoke` is still NOT run here — CI proves it builds,
+      # not that it runs. It is deliberately absent from release.yml's packaging lists.
 
       - name: Install plugin-format validators
         run: |
@@ -109,6 +110,7 @@ jobs:
             build/bin/retroplug.clap
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.so
+            build/bin/retroplug-sdl
 
   # Native arm64 Linux build — the Raspberry Pi target (Pi 3/4/5, Zero 2, on the
   # 64-bit Raspberry Pi OS). Mirrors the `linux` job on a free arm64 runner; the
@@ -190,6 +192,7 @@ jobs:
             build/bin/retroplug.clap
             build/bin/retroplug.vst3
             build/bin/retroplug-vst2.so
+            build/bin/retroplug-sdl
 
   windows:
     runs-on: windows-2022
@@ -263,6 +266,7 @@ jobs:
             build/bin/RetroPlug.clap
             build/bin/RetroPlug.vst3
             build/bin/RetroPlug.dll
+            build/bin/retroplug-sdl.exe
 
   # Universal (arm64 + x86_64) macOS build on macos-14. Building both slices on
   # every PR gives x86_64 compile coverage without a native Intel runner (the
@@ -325,7 +329,8 @@ jobs:
                    build/bin/RetroPlug.clap/Contents/MacOS/retroplug \
                    build/bin/RetroPlug.vst3/Contents/MacOS/retroplug \
                    build/bin/RetroPlug.component/Contents/MacOS/retroplug \
-                   build/bin/RetroPlug.vst/Contents/MacOS/retroplug; do
+                   build/bin/RetroPlug.vst/Contents/MacOS/retroplug \
+                   build/bin/retroplug-sdl; do
             lipo -archs "$f" | grep -q x86_64
             lipo -archs "$f" | grep -q arm64
           done
@@ -342,7 +347,12 @@ jobs:
       - name: UI tests (headless LVGL)
         run: pnpm test:ui
 
-      # SDL standalone: off CI while it's a work in progress (see the linux job).
+      # SDL standalone: built by the `all` target above and shipped in the artifact
+      # (see the linux job). NOTE it is not usable off this runner — the SDL2.framework
+      # embed in packages/native/CMakeLists.txt covers the .app/.vst3/.clap/.component/.vst
+      # BUNDLES only, and retroplug-sdl is a bare executable, so it resolves SDL2 through
+      # the build machine's absolute rpath. Fine for a build artifact; it needs a framework
+      # copy + @executable_path rpath before it could ship. Excluded from release.yml.
 
       - name: Upload artifacts
         if: always()
@@ -357,3 +367,4 @@ jobs:
             build/bin/RetroPlug.vst3
             build/bin/RetroPlug.component
             build/bin/RetroPlug.vst
+            build/bin/retroplug-sdl
