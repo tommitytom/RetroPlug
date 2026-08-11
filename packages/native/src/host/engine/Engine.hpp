@@ -64,6 +64,12 @@ public:
     void stageMidi(std::uint32_t frame, std::vector<std::uint8_t> bytes);  // delivered on the next processBlock, at intra-block `frame`
     void stageMidi(std::vector<std::uint8_t> bytes) { stageMidi(0, std::move(bytes)); }  // frame-0 convenience (RPC/harness path)
 
+    // Stage traffic from a CONTROL SURFACE (a Launchpad), delivered on the next processBlock as the kernel's
+    // `controllerIn` - a separate stream from stageMidi, and separate for a reason: a pad press is a NoteOn,
+    // and a translator like LSDj's MidiMap reads a NoteOn as a row launch. A surface sharing the musical
+    // stream would fire every launch twice, once through the controller app and once raw.
+    void stageControllerMidi(std::vector<std::uint8_t> bytes);
+
     // --- transport (plain members; mutated only by the Engine's owning thread) ---
     void setBpm(double bpm);
     void setTransport(bool playing);
@@ -83,6 +89,12 @@ public:
     // the top of the next). The plugin drains this to the DAW after processBlock; nothing else reads it.
     const std::vector<DspRuntime::MidiOut>& midiOut() const { return dsp_.midiOut_; }
     void clearMidiOut() { dsp_.midiOut_.clear(); }
+
+    // The kernel's CONTROL-SURFACE sink for this block (LED traffic). Not system-addressed - the device is a
+    // project-scope peripheral, not something a system owns. The standalone drains this to the Launchpad
+    // link; every other host leaves it empty because nothing binds a controller.
+    const std::vector<std::vector<std::uint8_t>>& controllerOut() const { return dsp_.controllerOut_; }
+    void clearControllerOut() { dsp_.controllerOut_.clear(); }
 
     // An optional observer of the raw core-bytes sink (a tracker's host-sync protocol), invoked once
     // per message on the audio thread at the point those bytes fan to the addressed core. The standalone
@@ -154,6 +166,7 @@ private:
     double     sampleRate_;
     bool       dspActive_ = false;                 // a kernel is loaded → run the per-block DSP stage
     std::vector<DspRuntime::MidiIn> pendingMidi_;  // staged host MIDI, consumed on the next block
+    std::vector<DspRuntime::MidiIn> pendingControllerMidi_;  // staged control-surface traffic, likewise
     // Raw serial-out bytes each core emitted LAST block (LSDj MI.OUT), gathered after runBlock and fed
     // to the kernel on the next block (one-block latency — the kernel runs before runBlock, and each
     // SameBoy clears its serialOutLog_ in prepareForBlock).

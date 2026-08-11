@@ -125,11 +125,22 @@ public:
     // no-op (empty output) when no kernel is loaded. `serialOut` carries the raw bytes each core
     // emitted on its serial port LAST block (LSDj MI.OUT — one-block latency; the caller gathers them
     // after runBlock), fanned to `ctx.serialOut` for the addressed system.
+    // `controllerIn` is control-surface traffic, deliberately separate from `midi` (see
+    // Engine::stageControllerMidi). Defaulted so the harness and tests that never bind a surface are
+    // unchanged; the kernel substitutes its own stable empty array when the property is absent.
     void processBlock(const std::vector<MidiIn>& midi,
                       const std::vector<ButtonIn>& buttons,
                       const std::vector<KeyIn>& keys,
                       const std::vector<SerialOut>& serialOut,
+                      const std::vector<MidiIn>& controllerIn,
                       const BlockInfo& block);
+    void processBlock(const std::vector<MidiIn>& midi,
+                      const std::vector<ButtonIn>& buttons,
+                      const std::vector<KeyIn>& keys,
+                      const std::vector<SerialOut>& serialOut,
+                      const BlockInfo& block) {
+        processBlock(midi, buttons, keys, serialOut, kNoControllerIn, block);
+    }
 
     // --- allocation / GC profiling (spec/08-profiling.md); real only in a RETROPLUG_PROFILE build ---
     // allocStats() reports window deltas; resetAllocStats() opens a new window (optionally pinning
@@ -160,8 +171,14 @@ public:
     std::vector<CoreMidi>  coreMidi_;   // emitCoreMidi sink (MIDI-in → the core's onMidi)
     std::vector<CoreBytes> coreBytes_;  // pushCoreBytes sink (raw bytes → the core's device byte-input, no framing)
     std::vector<ButtonOut> buttonOut_;  // pressButton sink
+    // emitControllerOut sink (LED traffic → a control surface). Not system-addressed: the device belongs to
+    // the project, not to a system, so there is nothing to address it by.
+    std::vector<std::vector<std::uint8_t>> controllerOut_;
 
 private:
+    // Stands in for "no control surface attached", which is every host but the standalone with a Launchpad.
+    inline static const std::vector<MidiIn> kNoControllerIn{};
+
     JSRuntime* rt_     = nullptr;
     JSContext* ctx_    = nullptr;
     bool       loaded_ = false;

@@ -44,6 +44,9 @@ public:
     void loadKernel(std::vector<std::uint8_t> bytecode);
     void setSystems(std::string json);
     void stageMidi(std::vector<std::uint8_t> bytes);
+    // Control-surface traffic (a pad press), kept out of the musical stream. Same 4-byte inline
+    // limit as stageMidi, which a Note/CC press fits inside; a surface's sysex never comes this way.
+    void stageControllerMidi(std::vector<std::uint8_t> bytes);
     void setBpm(double bpm);
     void setTransport(bool playing);
     void setPpq(double ppq);

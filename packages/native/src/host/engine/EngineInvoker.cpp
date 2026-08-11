@@ -61,6 +61,15 @@ void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes) {
     maybeFlush();
 }
 
+void QueuedInvoker::stageControllerMidi(std::vector<std::uint8_t> bytes) {
+    DspCommand c;
+    c.kind = DspCommand::Kind::StageControllerMidi;
+    c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());
+    for (std::size_t i = 0; i < bytes.size() && i < 4; ++i) c.stageMidi.data[i] = bytes[i];
+    commands_.tryPush(c);
+    maybeFlush();
+}
+
 void QueuedInvoker::setBpm(double bpm) {
     DspCommand c;
     c.kind = DspCommand::Kind::SetBpm;
@@ -125,6 +134,9 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 break;
             case DspCommand::Kind::StageMidi:
                 engine.stageMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
+                break;
+            case DspCommand::Kind::StageControllerMidi:
+                engine.stageControllerMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
                 break;
             case DspCommand::Kind::SetBpm:
                 engine.setBpm(cmd.setBpm.value);

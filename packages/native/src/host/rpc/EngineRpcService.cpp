@@ -403,6 +403,12 @@ bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
     return true;
 }
 
+bool EngineRpcService::stageControllerIn(std::vector<std::uint8_t> bytes) {
+    if (bytes.empty() || bytes.size() > 4) return false;  // a pad press is 3 bytes; the ring carries 4 inline
+    invoker_.stageControllerMidi(std::move(bytes));
+    return true;
+}
+
 bool EngineRpcService::setSerialOutCapture(std::uint32_t id, bool on) {
     // Control-plane arm/disarm through the invoker's config path (SameBoy-only in Engine::applyConfigField;
     // a no-op on a Mesen/GBA system). The store gates existence on its own list — accept optimistically.

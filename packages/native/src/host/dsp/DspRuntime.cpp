@@ -108,6 +108,29 @@ JSValue emitMidiOut(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueC
     return JS_UNDEFINED;
 }
 
+// emitControllerOut([b0, b1, …]) — the control-surface sink (Launchpad LEDs). No system argument: a control
+// surface belongs to the project, not to a system, so there is nothing to address it by. Bound only by a
+// host that owns a device; the bundle feature-gates on `typeof`, so an unbound global is fine.
+JSValue emitControllerOut(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueConst* argv) {
+    DspRuntime* rt = self(ctx);
+    if (!rt || argc < 1) return JS_UNDEFINED;
+
+    std::int64_t len = 0;
+    if (JS_GetLength(ctx, argv[0], &len) < 0) return JS_UNDEFINED;
+
+    std::vector<std::uint8_t> data;
+    data.reserve(static_cast<std::size_t>(len));
+    for (std::int64_t i = 0; i < len; ++i) {
+        JSValue e = JS_GetPropertyUint32(ctx, argv[0], static_cast<std::uint32_t>(i));
+        std::int32_t b = 0;
+        JS_ToInt32(ctx, &b, e);
+        JS_FreeValue(ctx, e);
+        data.push_back(static_cast<std::uint8_t>(b & 0xff));
+    }
+    rt->controllerOut_.push_back(std::move(data));
+    return JS_UNDEFINED;
+}
+
 // emitCoreMidi(system, frame, [b0, b1, …]) — the MIDI-IN-to-core sink; appends {system, frame, bytes}.
 // The caller fans these to the addressed core's onMidi (opposite direction to emitMidiOut → the DAW).
 JSValue emitCoreMidi(JSContext* ctx, JSValueConst /*thisVal*/, int argc, JSValueConst* argv) {
@@ -241,6 +264,7 @@ DspRuntime::DspRuntime() {
     JSValue global = JS_GetGlobalObject(ctx_);
     JS_SetPropertyStr(ctx_, global, "pushSerialIn", JS_NewCFunction(ctx_, pushSerialIn, "pushSerialIn", 3));
     JS_SetPropertyStr(ctx_, global, "emitMidiOut", JS_NewCFunction(ctx_, emitMidiOut, "emitMidiOut", 3));
+    JS_SetPropertyStr(ctx_, global, "emitControllerOut", JS_NewCFunction(ctx_, emitControllerOut, "emitControllerOut", 1));
     JS_SetPropertyStr(ctx_, global, "emitCoreMidi", JS_NewCFunction(ctx_, emitCoreMidi, "emitCoreMidi", 3));
     JS_SetPropertyStr(ctx_, global, "pushCoreBytes", JS_NewCFunction(ctx_, pushCoreBytes, "pushCoreBytes", 4));
     JS_SetPropertyStr(ctx_, global, "pressButton", JS_NewCFunction(ctx_, pressButton, "pressButton", 4));
@@ -309,12 +333,14 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
                               const std::vector<ButtonIn>& buttons,
                               const std::vector<KeyIn>& keys,
                               const std::vector<SerialOut>& serialOut,
+                              const std::vector<MidiIn>& controllerIn,
                               const BlockInfo& block) {
     serialIn_.clear();
     midiOut_.clear();
     coreMidi_.clear();
     coreBytes_.clear();
     buttonOut_.clear();
+    controllerOut_.clear();
     if (!loaded_) return;
     JS_UpdateStackTop(rt_);  // re-anchor for the calling thread (see loadKernel)
     JSContext* ctx = ctx_;
@@ -385,6 +411,23 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
         JS_SetPropertyUint32(ctx, serialArr, static_cast<std::uint32_t>(i), ev);
     }
     JS_SetPropertyStr(ctx, input, "serialOut", serialArr);
+
+    // controllerIn is OMITTED when empty, which is the normal case (no control surface bound). The kernel
+    // substitutes its own shared empty array for an absent property, so skipping it here costs a host with
+    // no Launchpad exactly nothing per block.
+    if (!controllerIn.empty()) {
+        JSValue ctlArr = JS_NewArray(ctx);
+        for (std::size_t i = 0; i < controllerIn.size(); ++i) {
+            JSValue ev = JS_NewObject(ctx);
+            JS_SetPropertyStr(ctx, ev, "frame", JS_NewInt32(ctx, static_cast<std::int32_t>(controllerIn[i].frame)));
+            JSValue data = JS_NewArray(ctx);
+            for (std::size_t b = 0; b < controllerIn[i].data.size(); ++b)
+                JS_SetPropertyUint32(ctx, data, static_cast<std::uint32_t>(b), JS_NewInt32(ctx, controllerIn[i].data[b]));
+            JS_SetPropertyStr(ctx, ev, "data", data);
+            JS_SetPropertyUint32(ctx, ctlArr, static_cast<std::uint32_t>(i), ev);
+        }
+        JS_SetPropertyStr(ctx, input, "controllerIn", ctlArr);
+    }
 #ifdef RETROPLUG_PROFILE
     spanEnd();                    // marshal
     spanBegin(DSP_SPAN_JSCALL);

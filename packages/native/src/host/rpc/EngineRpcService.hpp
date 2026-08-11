@@ -73,6 +73,9 @@ public:
     bool            setBpm(double bpm);
     bool            setAudioRouting(std::uint32_t mode);
     bool            stageMidiIn(std::vector<std::uint8_t> bytes);
+    // The control-surface twin: staged as `controllerIn` rather than musical MIDI, so a headless test
+    // can drive a Launchpad app without a Launchpad. Harness-facet only, like stageMidiIn.
+    bool            stageControllerIn(std::vector<std::uint8_t> bytes);
     // Arm/disarm a SameBoy's serial-out capture (LSDj MI.OUT). Control-plane, via the invoker's config
     // path (ConfigField::SerialOutCapture) — the TS store calls it when a system's lsdj-sync mode is MIDIOUT.
     bool            setSerialOutCapture(std::uint32_t id, bool on);

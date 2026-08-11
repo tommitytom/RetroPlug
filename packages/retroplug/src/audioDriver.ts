@@ -133,6 +133,11 @@ export interface AudioDriver {
   /** Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
    *  The kernel's midi-routing behaviour fans it to systems; with no routing role it reaches none. */
   stageMidiIn(bytes: Uint8Array | number[]): boolean;
+  /** Stage one CONTROL-SURFACE message (a Launchpad pad press), delivered to the kernel as
+   *  `controllerIn` rather than as musical MIDI - so a headless test can drive a controller app with
+   *  no controller attached. Separate from stageMidiIn because a pad press is a NoteOn, and a
+   *  translator like LSDj's MidiMap would read one on the musical stream as a row launch. */
+  stageControllerIn(bytes: Uint8Array | number[]): boolean;
   /** Drain the MIDI-out the DSP kernel emitted (e.g. the LSDj MI.OUT decoder → `emitMidiOut`),
    *  accumulated across the renderAudio blocks since the last drain. Each entry is one MIDI message
    *  with its source system + block-frame. The plugin drains this to the DAW directly; this is the
@@ -213,6 +218,7 @@ export function createAudioDriver(): AudioDriver {
     setPpq: (ppq) => call("setPpq", ppq) as boolean,
     setBpm: (bpm) => call("setBpm", bpm) as boolean,
     stageMidiIn: (bytes) => call("stageMidiIn", ints(bytes)) as boolean,
+    stageControllerIn: (bytes) => call("stageControllerIn", ints(bytes)) as boolean,
     drainMidiOut: () =>
       (call("drainMidiOut") as { system: number; frame: number; data: Uint8Array }[] | null) ?? [],
     dspAllocStats: () => call("dspAllocStats") as DspAllocStats,

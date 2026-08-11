@@ -21,14 +21,14 @@ struct DspCommand {
         None = 0, SetSystems = 1, LoadKernel = 2, StageMidi = 3,
         AddSystem = 4, ReplaceSystem = 5, RemoveSystem = 6,
         SetBpm = 7, SetTransport = 8, SetConfigField = 9, PressButton = 10,
-        SetAudioRouting = 11, SetPpq = 12,
+        SetAudioRouting = 11, SetPpq = 12, StageControllerMidi = 13,
     };
 
     Kind kind = Kind::None;
     union {
         struct { std::string* json; } setSystems;                 // owning; audio thread deletes
         struct { std::vector<std::uint8_t>* bytecode; } loadKernel; // owning; audio thread deletes
-        struct { std::uint8_t data[4]; std::uint8_t len; } stageMidi;
+        struct { std::uint8_t data[4]; std::uint8_t len; } stageMidi;  // also carries StageControllerMidi
         struct { SystemBase* sys; } addSystem;                    // owning; adopted into the Project
         struct { SystemBase* sys; std::uint32_t id; } replaceSystem; // owning; swapped for id
         struct { std::uint32_t id; } removeSystem;

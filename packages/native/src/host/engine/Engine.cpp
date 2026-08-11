@@ -66,6 +66,12 @@ void Engine::stageMidi(std::uint32_t frame, std::vector<std::uint8_t> bytes) {
     pendingMidi_.push_back({ frame, std::move(bytes) });
 }
 
+void Engine::stageControllerMidi(std::vector<std::uint8_t> bytes) {
+    // Frame 0: a control surface's timing is not musical. A pad press is quantised by the controller app
+    // against the block clock, not placed by sample, so an intra-block offset would carry no information.
+    pendingControllerMidi_.push_back({ 0, std::move(bytes) });
+}
+
 void Engine::setBpm(double bpm) { bpm_ = bpm; }
 void Engine::setTransport(bool playing) { transport_ = playing; }
 void Engine::setPpq(double ppq) { ppq_ = ppq < 0.0 ? 0.0 : ppq; }
@@ -83,8 +89,9 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         dsp_.spanBegin(DSP_SPAN_KERNEL);  // the whole DSP-kernel stage (marshal + JS + sink fan-out)
 #endif
         const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transport_ };
-        dsp_.processBlock(pendingMidi_, kNoButtons, kNoKeys, pendingSerialOut_, dInfo);
+        dsp_.processBlock(pendingMidi_, kNoButtons, kNoKeys, pendingSerialOut_, pendingControllerMidi_, dInfo);
         pendingMidi_.clear();       // staged host MIDI consumed this block
+        pendingControllerMidi_.clear();
         pendingSerialOut_.clear();  // last block's serial-out consumed by the kernel this block
         // serial-in sink → the addressed system's serial FIFO.
         for (const auto& sv : dsp_.serialIn_)
