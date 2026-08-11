@@ -59,8 +59,10 @@ const MIDIMAP_CLOCK = 0xff; // MidiMap tick — Arduinoboy's Mode_LSDJ_Map setMa
 const isNoteOn = (status: number) => (status & 0xf0) === 0x90;
 const isNoteOff = (status: number) => (status & 0xf0) === 0x80;
 const channelOf = (status: number) => status & 0x0f;
-// MidiMap row byte: ch0 NoteOn → note; ch1 → note + 128; other channels skipped (-1).
-const midiMapRow = (channel: number, note: number) => (channel === 0 ? note : channel === 1 ? note + 128 : -1);
+// MidiMap row byte: ch0 NoteOn → note; ch1 → note + 128; other channels skipped (-1). Exported so the
+// controller layer's launch ENCODER (src/controller/trackerTarget.ts) can be round-tripped against the
+// decoder that actually ships, rather than restating the same convention twice and hoping they agree.
+export const midiMapRow = (channel: number, note: number) => (channel === 0 ? note : channel === 1 ? note + 128 : -1);
 
 // MidiSyncArduinoboy (== LsdjSyncRole MidiSyncArduinoboy). Input notes drive runtime state: 24/25 toggle
 // the play flag, 26-29 set the tempo divisor, 30+ push a raw row byte (note-30). The 0xF8 clock flows
