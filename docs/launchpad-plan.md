@@ -1,7 +1,8 @@
 # Engineering Report & Plan: Novation Launchpad support in RetroPlug
 
-**Date:** 2026-08-11 · **Branch:** `feature/launchpad` · **Status:** M0-M2 built (pure TS, no device, no
-native change); M3-M6 outstanding
+**Date:** 2026-08-11 · **Branch:** `feature/launchpad` · **Status:** M0-M2 + M5 built - the whole path from
+a controller event to a moving cart runs per audio block, still with no device and no native change.
+M3/M4 (real hardware) and M6 (observed model) outstanding.
 **First consumer:** LSDj MI.MAP (song-row launching from the 8x8 grid)
 **Target device:** Launchpad Pro [MK3]
 
@@ -388,10 +389,12 @@ Ordered so that everything testable without hardware or native changes comes fir
 | **M2** ✅ | `src/controller/` session + registry + `lsdjMidiMap` app against a fake device | no | DONE - 45 tests, and the two rules B8/B9 settled (§8.1) |
 | **M3** | SysEx widening (RtMidi `ignoreTypes`, the two `sdl/main.cpp` caps) | yes | loopback: send a bulk-LED SysEx, observe it intact |
 | **M4** | Launchpad device link: own in/out pair, excluded from the engine stream, injected port factory, Settings picker | yes | hardware-free test via the fake factory; real-device smoke |
-| **M5** | Project-scope role wiring `TrackerTarget` (emulated core vs Arduinoboy MIDI out) | no | `pnpm test` + `test:native` |
+| **M5** ✅ | Project-scope role wiring `TrackerTarget` (emulated core vs Arduinoboy MIDI out) | no | DONE - the whole chain runs per audio block (§8.2) |
 | **M6** | `ctx.ram` / `ctx.sram` kernel seam + `ObservedLsdjModel` | yes | `test:native`; closes the differential loop from M0 |
 
-M0-M2 deliver a fully testable app with no device and no native change. M3-M4 make a physical Launchpad work. M6 upgrades emulated-cart fidelity and is genuinely optional.
+M0-M2 and M5 deliver a fully testable, fully WIRED app with no device and no native change - the role runs
+in the audio thread and its launches reach a cart. M3-M4 make a physical Launchpad work, and are now the
+only thing between this and a real instrument. M6 upgrades emulated-cart fidelity and is genuinely optional.
 
 ### 8.1 BUILT: what M2 delivers, and the decisions it fixed
 
@@ -430,6 +433,54 @@ encoder against itself.
 CC mapping (§3.4), so `profile.ts`'s "nothing in the first consumer depends on these" no longer strictly
 holds. If M4 finds them wrong it is a one-line profile fix and the 64 launch pads are unaffected. Paging is
 not droppable: seeing rows you are *not* playing is the entire point of a launcher.
+
+### 8.2 BUILT: M5, the thing that actually runs
+
+Everything above was a library nothing called. [`src/controllerRole.ts`](../packages/retroplug/src/controllerRole.ts)
+is the `launchpad` project-scope DSP role that owns a `ControllerSession` and runs it once per audio block.
+
+**Project scope needed three things it did not have.** A project stage got `(block, inboxes, config)` -
+no state across blocks, no sinks - which made a role that OWNS something impossible. `ProjectBehavior` now
+takes a `ProjectCtx` (state, `controllerIn`, `emitControllerOut`, `toSystem`, `emitMidiOut`), built once per
+`setSystems` and pointing at things the kernel mutates in place, exactly as `SystemCtx` is. `midiRouting`
+is the only other implementation, and its tests passing untouched is the guard on that change.
+
+**`controllerIn` is a separate stream from `midiIn`, and that is load-bearing.** A pad press is a NoteOn and
+`midiMap` reads a NoteOn as a row launch, so a surface sharing the musical stream would fire every launch
+twice - once through the app's quantiser, once raw. A test pins exactly that difference.
+
+**Neither seam needed native work.** Native builds the block-input object field by field, so an absent
+`controllerIn` reads as the kernel's stable empty array; `emitControllerOut` is feature-gated on an unbound
+global the way the tracing thunks already are. M4 fills both from a real device link.
+
+**The song table, not the song.** A DSP role cannot decode a sav (that is M6), but the model only ever
+consults ticks-per-(channel, row). `songRowTicks` is extracted from the model's constructor, the control
+plane derives the table from the cart's live battery, and the role is handed it through config. It arrives
+across a JSON boundary, so `normaliseRowTicks` coerces it to exactly 4 x 256 rather than letting a ragged
+table read `undefined` for a missing row.
+
+**Nothing derived reaches the `.rplg`.** The role is SYNTHESIZED in `kernelProjection` from an additive
+`controller` project setting, exactly as `midi-routing` is, so the table lives only in the kernel push. Only
+the user's own choices persist. Additive means no migration step, which the tolerance test now covers.
+
+**Two allocation fixes**, since this is where the code first runs on the audio thread: `Surface.flush()`
+built a scratch array and a result object even when nothing changed (the common case), and the session
+rebuilt its ctx every update. Both are now built once and mutated. Message arrays still allocate when LEDs
+genuinely change, which is unavoidable and rare.
+
+**What the native test found.** [lsdj-launchpad.test.ts](../packages/retroplug/test-native/lsdj-launchpad.test.ts)
+launches rows either side of the 128 boundary to confirm the two-channel split against LSDj rather than
+against our own decoder - and rows 128/129 came back as "not playing". That was the runtime WRAM reader: it
+applied the `> 0x7f` "parked at 0xFF" rule to the song row, which is right for chain and phrase indices but
+wrong for a row, since LSDj has 256 of them. **Any song longer than 128 rows was misreported.** The
+channel's own active flag already answers "is it playing", so the row is now read raw.
+
+**Known gap.** The table is rebuilt on structure push, so edits made inside LSDj leave it stale until
+something else re-pushes - the standing predictor limitation (risk 5), not a new one. And a second
+`LsdjProbe` in one process behaved oddly under transport (the row jumped once at transport-start then
+froze while steps kept advancing), so "what the cart does under the role's clock" stays covered by
+`lsdj-midimap.test.ts` alone. That is a probe-lifecycle question rather than a controller one, and is
+recorded rather than papered over.
 
 ---
 
