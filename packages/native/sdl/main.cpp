@@ -65,6 +65,9 @@ extern "C" {
 #include "host/n8/N8Host.hpp"                // shared N8 link + config + n8.cfg (also used by the DAW plugin)
 #include "host/n8/N8Hooks.hpp"               // binds the __rp_*N8* config hooks (shared with the plugin)
 #include "host/n8/WjwwoodSerialPort.hpp"     // the serial-port factory + listSerialPorts for the N8 picker
+#include "host/launchpad/LaunchpadHost.hpp"  // control-surface link + config + launchpad.cfg
+#include "host/launchpad/LaunchpadHooks.hpp" // binds the __rp_*Launchpad* config hooks
+#include "host/launchpad/RtMidiPort.hpp"     // the RtMidi in/out pair the link claims exclusively
 #include "host/rpc/BackendRpcRegistration.hpp"
 #include "host/ui/LvglWheelScroll.hpp"       // shared wheel -> hit-tested scroll (also used by the plugin/test UI)
 #include "host/ui/SoftwareLvglDisplay.hpp"   // shared LvInputState + display/indev scaffold (also used by test/ui)
@@ -217,6 +220,17 @@ struct AppState {
             return ports;
         },
         hostSvc.configDir()};
+
+    // Control surface (Settings-adjacent "Launchpad" submenu): its own RtMidi in/out pair, deliberately kept
+    // out of app.midi's shared stream so pad presses never arrive as musical MIDI too (a NoteOn there is a
+    // row launch to LSDj's MI.MAP translator, so a shared stream fires every launch twice). audioCb drains
+    // its input into the Engine's controllerIn and pushes the kernel's LED traffic back; the 60 fps loop
+    // writes that out. The port + enabled toggle persist to launchpad.cfg.
+    retroplug::LaunchpadHost launchpadHost{
+        retroplug::rtMidiPortFactory("RetroPlug Launchpad"),
+        [this](bool input) { return input ? midi.listInputs() : midi.listOutputs(); },
+        hostSvc.configDir()};
+    std::vector<retroplug::LaunchpadLink::Message> launchpadScratch;  // reused per block (no per-block alloc)
 
     std::uint32_t width = 640;
     std::uint32_t height = 480;
@@ -826,6 +840,16 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     }
     a.clockSync.advance(frames);
 
+    // Control-surface traffic, on its own stream. Same shape as the MIDI drain above (the vectors were
+    // allocated on the backend's callback thread and are MOVED here, so this allocates nothing), but staged
+    // as controllerIn rather than musical MIDI - a pad NoteOn must reach the controller app's quantiser and
+    // nothing else. The connected flag rides the block so the role can take the device the moment one shows
+    // up (it enters Programmer mode and repaints on that edge).
+    a.launchpadHost.link().drainInput(a.launchpadScratch);
+    for (auto& m : a.launchpadScratch)
+        if (!m.empty()) a.engine.stageControllerMidi(std::move(m));
+    a.engine.setControllerConnected(a.launchpadHost.link().isConnected());
+
     a.engine.setBpm(a.clockSync.outBpm());          // 120 free-run until an external clock master appears
     a.engine.setTransport(a.clockSync.outPlaying()); // then locks to its tempo + start/stop
     // Multi-out: render into the N planar channel buffers; the Engine zeroes + routes each system to its
@@ -840,6 +864,13 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     for (const auto& mo : a.engine.midiOut())
         if (!mo.data.empty()) a.midi.send(mo.data.data(), mo.data.size());
     a.engine.clearMidiOut();
+
+    // Kernel control-surface-out (LED traffic) → the Launchpad link's ring, written to the device by the 60
+    // fps loop rather than from here: a frame of latency is invisible on a light, and it keeps a possible
+    // 538-byte bulk-SysEx USB write off the audio thread. A no-op when no surface is connected.
+    for (const auto& co : a.engine.controllerOut())
+        if (!co.empty()) a.launchpadHost.link().pushOutput(co.data(), co.size());
+    a.engine.clearControllerOut();
 
     for (int i = 0; i < frames; ++i)
         for (int c = 0; c < N; ++c) out[i * N + c] = a.audioPlanar[c][i]; // planar → interleaved (frame-major)
@@ -1155,6 +1186,9 @@ bool setupUi(AppState& a) {
     // The N8 config hooks (Settings > N8) - bound via the shared helper (same one the plugin uses), carrying
     // this AppState's N8Host. Standalone-only, same gating as the MIDI picker (hasN8() is a typeof check).
     if (ctx) retroplug::bindN8Hooks(ctx, a.n8Host);
+    // The Launchpad config hooks (the instance menu's Launchpad submenu). Standalone-only: the DAW plugin's
+    // MIDI seam still caps a message at 4 bytes, and every message here is SysEx.
+    if (ctx) retroplug::bindLaunchpadHooks(ctx, a.launchpadHost);
 
     // Headless proof of the OS-dialog seam. Reports whether __rp_openFileBrowser is bound + whether a desktop
     // helper is available; if one is (a real or a fake zenity/kdialog in PATH), it drives a real pfd request
@@ -1477,6 +1511,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[retroplug-sdl] N8 restore: port '%s'%s\n", c.selectedPort.c_str(),
                      c.connected ? "" : " - not connected");
 
+    // Restore the persisted Launchpad link (the instance menu's Launchpad submenu) and hand app.midi the
+    // port it claimed. No stop/start dance here: the audio thread has not been given the Engine yet, so
+    // reopening the hardware inputs races nothing. The live path installs that dance below, once it can.
+    app.launchpadHost.restore();  // load launchpad.cfg + reclaim the persisted in/out pair
+    app.midi.setReservedInput(app.launchpadHost.reservedInputPort());
+    if (const auto c = app.launchpadHost.getConfig(); c.enabled)
+        std::fprintf(stderr, "[retroplug-sdl] Launchpad restore: in '%s' out '%s'%s\n", c.selectedInput.c_str(),
+                     c.selectedOutput.c_str(), c.connected ? "" : " - not connected");
+
     // Test/diagnostic hook: dump the enumerated hardware MIDI devices then continue.
     if (std::getenv("RETROPLUG_SDL_MIDI_LIST")) {
         for (const auto& n : app.midi.listInputs())  std::fprintf(stderr, "[retroplug-sdl] MIDI in device:  '%s'\n", n.c_str());
@@ -1490,6 +1533,20 @@ int main(int argc, char** argv) {
     pinUiThreadAwayFromAudioCore(); // keep the 60 fps UI/emulator work off the audio thread's core
 #endif
     startAudio(app);
+
+    // Only now that audio is running does taking or releasing a Launchpad port need care: that port has to
+    // leave / rejoin app.midi's shared input stream, and reopening RtMidi's hardware inputs while the
+    // callback is mid-poll is exactly the hazard reconfigureMidi handles. Same treatment - stop audio (which
+    // joins the callback), re-apply, start.
+    app.launchpadHost.setOnLinkChanged([a = &app] {
+        const std::string reserved = a->launchpadHost.reservedInputPort();
+        if (reserved == a->midi.reservedInput()) return;  // no port change, nothing to reopen
+        stopAudio(*a);
+        a->midi.setReservedInput(reserved);
+        startAudio(*a);
+        std::fprintf(stderr, "[retroplug-sdl] Launchpad: reserved MIDI input '%s'\n",
+                     reserved.empty() ? "(none)" : reserved.c_str());
+    });
 
     std::fprintf(stderr, "[retroplug-sdl] running %ux%u @ %.0f Hz\n", app.width, app.height, app.sampleRate);
 
@@ -1572,6 +1629,7 @@ int main(int argc, char** argv) {
         const Uint32 t0 = SDL_GetTicks();
         handleEvents(app);
         pollFileDialog(app);    // deliver a finished OS file-dialog pick (async; no-op when none is open)
+        app.launchpadHost.link().pump();  // write the LED traffic the audio thread queued (no-op when idle)
         if (JSContext* ctx = app.ui.getContext()) {
             app.ui.emit("frame", 0, nullptr); // drives EmulatorTile's getFrame
             pumpGamepad(app);
@@ -1617,6 +1675,12 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[retroplug-sdl] MIDI self-test: staged %llu message(s) into the Engine\n",
                      static_cast<unsigned long long>(app.midiStaged.load(std::memory_order_relaxed)));
     app.midi.close();
+    // Give the control surface back before anything else is torn down. Programmer mode locks the device's
+    // front panel, so skipping this leaves the user's hardware in a state they cannot escape from its own
+    // Settings menu. The link flushes whatever the last block queued, replays the farewell TS handed it, then
+    // closes the ports. (The destructor does this too; doing it here keeps it ahead of the UI teardown, and
+    // goes straight to the link so the reserved-port callback does not try to restart audio.)
+    app.launchpadHost.link().disconnect();
     app.invoker.setAudioThreadOwns(false);
     app.invoker.drainInto(app.engine);
     app.invoker.reclaimReleased();

@@ -16,6 +16,14 @@ export interface BlockInfo {
   tempo: number;
   ppqStart: number; // PPQ position at block start
   transport: boolean;
+  /** Whether a control surface is attached RIGHT NOW.
+   *
+   *  Carried per block like `transport`, and a one-shot could not replace it: the user starts the app,
+   *  THEN plugs the device in, so the controller role needs a false -> true edge to take the device (enter
+   *  Programmer mode and repaint) at the moment it appears. Re-pushing the structure would not serve either
+   *  - project stage state deliberately survives `setSystems`, so the session is not rebuilt. Optional
+   *  because native only sends it when true; absent reads as false. */
+  controllerConnected?: boolean;
 }
 
 /** A UI-mapped Game Boy button transition, targeted at a system. */
@@ -315,6 +323,7 @@ export class DspKernel {
     tempo: 120,
     ppqStart: 0,
     transport: false,
+    controllerConnected: false,
     midiIn: [],
     buttons: [],
     keys: [],
@@ -412,6 +421,7 @@ export class DspKernel {
     b.tempo = dyn.tempo;
     b.ppqStart = dyn.ppqStart;
     b.transport = dyn.transport;
+    b.controllerConnected = dyn.controllerConnected === true; // absent = no device (native omits it when false)
     b.midiIn = dyn.midiIn;
     b.buttons = dyn.buttons;
     b.keys = dyn.keys;

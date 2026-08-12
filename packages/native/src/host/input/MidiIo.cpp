@@ -66,17 +66,22 @@ static std::vector<std::string> hardwarePortNames(const std::vector<std::string>
     return out;
 }
 
+// The pickers list every hardware port, INCLUDING one a control surface has claimed: the reservation only
+// governs what this stream opens, and hiding the port would make the Settings > MIDI list change under the
+// user whenever a Launchpad connects.
 std::vector<std::string> MidiIo::listInputs() const { return hardwarePortNames(probePortNames(true, clientName_), clientName_); }
 std::vector<std::string> MidiIo::listOutputs() const { return hardwarePortNames(probePortNames(false, clientName_), clientName_); }
 
 void MidiIo::openHardwareInputs() {
     hwIn_.clear();
     const std::vector<std::string> names = probePortNames(true, clientName_);
-    // Empty selection = All Devices (every hardware input); else just the one whose name matches.
+    // Empty selection = All Devices (every hardware input); else just the one whose name matches. Either way
+    // a port reserved by a control surface is skipped - "All Devices" is exactly the case that would
+    // otherwise merge a Launchpad's pad presses into the musical stream.
     std::vector<std::size_t> open;
     if (selectedIn_.empty())
-        open = hardwarePortIndices(names, clientName_);
-    else if (auto idx = matchPortIndex(names, clientName_, selectedIn_))
+        open = hardwarePortIndices(names, clientName_, reservedIn_);
+    else if (auto idx = matchPortIndex(names, clientName_, selectedIn_, reservedIn_))
         open.push_back(*idx);
     for (std::size_t i : open) {
         try {
@@ -119,6 +124,12 @@ void MidiIo::setInputSelection(const std::string& name) {
 void MidiIo::setOutputSelection(const std::string& name) {
     selectedOut_ = name;
     if (out_) openHardwareOutput();
+}
+
+void MidiIo::setReservedInput(const std::string& name) {
+    if (reservedIn_ == name) return;  // reapplied every frame by the host; only a real change reopens ports
+    reservedIn_ = name;
+    if (in_) openHardwareInputs();  // apply live (host pauses audio around this)
 }
 
 void MidiIo::close() {

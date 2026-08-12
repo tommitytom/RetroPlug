@@ -34,6 +34,7 @@ import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel
 import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import { subscribeMidi } from "./screens/menu/midiDevices";
 import { subscribeN8 } from "./screens/menu/n8Devices";
+import { subscribeLaunchpad } from "./screens/menu/launchpadDevices";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
 import { buildKeyToAction, buildGamepadToAction, type AppAction } from "../src/keyCodes";
@@ -80,6 +81,10 @@ export function App() {
   // lookahead change emits here to repaint its labels immediately. Inert in a DAW / the harness.
   const [, bumpN8] = useState(0);
   useEffect(() => subscribeN8(() => bumpN8((n) => n + 1)), []);
+  // Standalone Launchpad submenu: likewise, the claimed MIDI pair + connect state live natively, so a port
+  // pick or Connect emits here to repaint immediately. Inert in a DAW / the harness.
+  const [, bumpLaunchpad] = useState(0);
+  useEffect(() => subscribeLaunchpad(() => bumpLaunchpad((n) => n + 1)), []);
 
   const empty = systems.length === 0;
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.

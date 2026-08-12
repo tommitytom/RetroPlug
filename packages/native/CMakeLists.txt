@@ -372,6 +372,10 @@ add_executable(retroplug-sdl
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp           # binds the __rp_*N8* config hooks (shared)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp             # on-device menu (*t/*n/*s) for SD ops (shared)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8SdWorker.cpp         # background worker: ROM upload / SRAM dump+restore
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadLink.cpp   # control-surface in/out pair (own rings)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadHost.cpp   # link + config + launchpad.cfg
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadHooks.cpp  # binds the __rp_*Launchpad* config hooks
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/RtMidiPort.cpp      # the RtMidi backend behind IMidiPort
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
     ${UI_BUNDLE_C})               # the embedded React UI bytecode (rp_ui_bundle)
 
@@ -759,6 +763,28 @@ target_include_directories(retroplug-midi-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
 
 set_target_properties(retroplug-midi-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# retroplug-launchpad-test guards the control-surface device link (the instance menu's Launchpad submenu):
+# LaunchpadLink's connect/disconnect lifecycle, the two rings (a message received reaching the audio-thread
+# drain; an oversized LED message dropped rather than overrunning its slot), the FAREWELL replayed on both
+# disconnect and destruct — Programmer mode locks the device's front panel, so skipping that strands the
+# user's hardware — and LaunchpadHost's launchpad.cfg round-trip + reserved-port reporting. Compiles both
+# against a capturing fake IMidiPort: no rtmidi, no MIDI system, no hardware. Also `pnpm test:plugin`.
+add_executable(retroplug-launchpad-test EXCLUDE_FROM_ALL
+    test/launchpad/LaunchpadLink.test.cpp
+    src/host/launchpad/LaunchpadLink.cpp
+    src/host/launchpad/LaunchpadHost.cpp)
+
+target_link_libraries(retroplug-launchpad-test PRIVATE
+    Catch2::Catch2WithMain)
+
+target_include_directories(retroplug-launchpad-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/launchpad/*.hpp + transport/SpscRing.hpp
+
+set_target_properties(retroplug-launchpad-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

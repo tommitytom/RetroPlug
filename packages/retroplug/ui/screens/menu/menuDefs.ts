@@ -84,6 +84,11 @@ import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDra
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
+import {
+  getLaunchpadConfig, setLaunchpadPorts, connectLaunchpad, looksLikeLaunchpad, type LaunchpadConfig,
+} from "./launchpadDevices";
+import { ControllerRegistry, registerControllerApps, QUANTISE_VALUES, type Quantise } from "../../../src/controller";
+import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/settingsEnums";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -211,6 +216,90 @@ function n8SdLabel(sd: N8SdStatus): string {
   if (sd.error) return `Error: ${sd.error}`;
   if (sd.done && sd.result) return sd.result;
   return "Ready";
+}
+
+// "Launchpad" submenu (in the instance menu's tracker block, beside N8 Pro - a control surface plays a
+// tracker, so it belongs with them). Standalone-only, and gated on the SEAM rather than on detecting a
+// device: a Launchpad also speaks TRS/DIN, so on a machine short of USB ports it arrives through an ordinary
+// MIDI interface on a port named after the INTERFACE. Nothing about that name says "Launchpad", so a
+// detection gate would hide the only menu that could configure exactly that setup. The hint instead picks
+// the default port and tags a row.
+//
+// The rows straddle two scopes on purpose, because setting the feature up needs both: the ports + Connect
+// are HOST state (persisted natively in launchpad.cfg, shared by every project), while the app, its launch
+// quantise, and Enable are PROJECT state (persisted in the .rplg, since which cart a surface drives is a
+// property of the project).
+const controllerApps = new ControllerRegistry();
+registerControllerApps(controllerApps);
+
+const QUANTISE_LABELS: Record<Quantise, string> = {
+  immediate: "Immediately",
+  beat: "Next beat",
+  bar: "Next bar",
+  rowEnd: "End of row",
+};
+
+const CONTROLLER_TARGET_LABELS: Record<ControllerTarget, string> = {
+  system: "Emulated Cart",
+  midiOut: "MIDI Out (real hardware)",
+};
+
+/** The read-only status line: what the link is doing, in the words a player would use. */
+function launchpadStatus(cfg: LaunchpadConfig): string {
+  if (cfg.connected) return cfg.dropped > 0 ? `connected (${cfg.dropped} dropped)` : "connected";
+  if (cfg.error) return `Error: ${cfg.error}`;
+  if (cfg.enabled) return !cfg.selectedInput || !cfg.selectedOutput ? "pick both ports" : "not connected";
+  return "not connected";
+}
+
+/** Cycler names for one direction's ports, hinted ones tagged. Index 0 is "(none)" - a port must be chosen,
+ *  since there is no sensible "all devices" for a device we claim exclusively. */
+function launchpadPortNames(ports: string[], selected: string): { names: string[]; index: number } {
+  const label = (p: string) => (looksLikeLaunchpad(p) ? `${p} (detected)` : p);
+  const names = ["(none)", ...ports.map(label)];
+  if (selected === "") return { names, index: 0 };
+  const i = ports.indexOf(selected);
+  if (i >= 0) return { names, index: i + 1 };
+  names.push(`${selected} (not connected)`); // a persisted pick whose device is away still shows
+  return { names, index: names.length - 1 };
+}
+
+function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem[] {
+  const project = ctx.stores.project;
+  const controller = ctx.settings.controller;
+  const inp = launchpadPortNames(cfg.inputs, cfg.selectedInput);
+  const out = launchpadPortNames(cfg.outputs, cfg.selectedOutput);
+  const portAt = (ports: string[], n: number, current: string) => (n === 0 ? "" : ports[n - 1] ?? current);
+
+  const apps = controllerApps.list();
+  const appIdx = Math.max(0, apps.findIndex((a) => a.id === controller.app));
+  const quantise = (controller.appConfig.quantise as Quantise) ?? "bar";
+  const follow = controller.appConfig.follow !== false;
+
+  return [
+    cycler("lp-input", "Input Device", inp.names, inp.index, (n) =>
+      setLaunchpadPorts(portAt(cfg.inputs, n, cfg.selectedInput), cfg.selectedOutput)),
+    cycler("lp-output", "Output Device", out.names, out.index, (n) =>
+      setLaunchpadPorts(cfg.selectedInput, portAt(cfg.outputs, n, cfg.selectedOutput))),
+    action("lp-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectLaunchpad(!cfg.enabled, cfg)),
+    action("lp-status", `Status: ${launchpadStatus(cfg)}`, () => {}, true), // read-only
+    sep("lp-sep-app"),
+    // Project scope from here down: these ride the .rplg, and each edit re-pushes the kernel structure.
+    cycler("lp-enabled", "Use in Project", OFF_ON, controller.enabled ? 1 : 0, (n) =>
+      project.setController({ enabled: n === 1 })),
+    cycler("lp-app", "App", apps.map((a) => a.label), appIdx, (n) =>
+      project.setController({ app: apps[n].id, appConfig: {} })),
+    cycler("lp-quantise", "Launches", QUANTISE_VALUES.map((q) => QUANTISE_LABELS[q]),
+      Math.max(0, QUANTISE_VALUES.indexOf(quantise)), (n) =>
+        project.setController({ appConfig: { quantise: QUANTISE_VALUES[n] } })),
+    cycler("lp-follow", "Follow Playhead", OFF_ON, follow ? 1 : 0, (n) =>
+      project.setController({ appConfig: { follow: n === 1 } })),
+    // Where launches go. "Emulated Cart" hands them to the tracker's own sync role in the same block;
+    // "MIDI Out" sends them out of the host, which is how a real Game Boy behind an Arduinoboy is driven.
+    cycler("lp-target", "Launches To", CONTROLLER_TARGET_VALUES.map((t) => CONTROLLER_TARGET_LABELS[t]),
+      Math.max(0, CONTROLLER_TARGET_VALUES.indexOf(controller.target)), (n) =>
+        project.setController({ target: CONTROLLER_TARGET_VALUES[n] })),
+  ];
 }
 
 function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
@@ -1823,6 +1912,9 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const tracker = resolveTracker(sys.roles);
   const n8cfg = getN8Config();     // null without the seam; enumerates ports + link state fresh each render
   const n8Here = n8Detected(n8cfg); // true only when a physical N8 is attached -> the submenu renders
+  // Launchpad: null without the seam (a DAW / the harness). Unlike N8 there is no detection gate - see
+  // launchpadMenuChildren for why a TRS-attached surface is invisible to any name-based test.
+  const lpcfg = getLaunchpadConfig();
   return {
     title: instanceTitle(ctx, sys),
     items: [
@@ -1837,7 +1929,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       // when the cart sniffed one; N8 Pro only when a physical N8 is actually detected (n8Here) - it drives a
       // real NES, so it belongs beside the trackers, not buried in Settings, but there's nothing to show without
       // the hardware.
-      ...(tracker || n8Here
+      ...(tracker || n8Here || lpcfg
         ? [
             sep("inst-sep-tracker"),
             ...(tracker
@@ -1847,6 +1939,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
                     : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
                 ]
               : []),
+            ...(lpcfg ? [submenu("inst-launchpad", "Launchpad", launchpadMenuChildren(ctx, lpcfg))] : []),
             ...(n8Here ? [submenu("inst-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
           ]
         : []),

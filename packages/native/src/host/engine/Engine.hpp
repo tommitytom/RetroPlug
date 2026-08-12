@@ -70,6 +70,10 @@ public:
     // stream would fire every launch twice, once through the controller app and once raw.
     void stageControllerMidi(std::vector<std::uint8_t> bytes);
 
+    // Whether a control surface is attached. Plain member, like transport: the host sets it each block from
+    // its device link, and the kernel's controller role takes the device on the false->true edge.
+    void setControllerConnected(bool connected) { controllerConnected_ = connected; }
+
     // --- transport (plain members; mutated only by the Engine's owning thread) ---
     void setBpm(double bpm);
     void setTransport(bool playing);
@@ -177,6 +181,7 @@ private:
     double bpm_       = 120.0;
     bool   transport_ = false;
     double ppq_       = 0.0;
+    bool   controllerConnected_ = false;  // a control surface is bound (set per block by the host)
     HostSyncTrace syncTrace_;  // inert unless RETROPLUG_SYNC_TRACE is set
     // Optional external mirror of the core-bytes stream (set by the standalone to reach a physical N8);
     // null in every other host. Called on the audio thread, so the target must be RT-safe (N8Link is).

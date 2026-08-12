@@ -16,22 +16,31 @@ namespace retroplug {
 
 // Pure, RtMidi-free port-selection helpers (shared by MidiIo + its unit test). A port is "hardware" when its
 // name is neither our own virtual port (contains `clientName`) nor an ALSA MIDI-through (contains "Through").
+//
+// `reserved` is a port some OTHER owner has claimed exclusively - today the Launchpad link, which holds its
+// own in/out pair. Skipping it is not tidiness: a pad press is a NoteOn, and a tracker's MIDI-map translator
+// reads a NoteOn as a row launch, so a surface sharing the musical stream fires every launch twice (once
+// quantised by the controller app, once raw). Matched exactly, since the claimant picked the name out of
+// this very list.
 
-/** Indices of every hardware port in `names` (skipping our own virtual port + ALSA "Through"). */
-inline std::vector<std::size_t> hardwarePortIndices(const std::vector<std::string>& names, const std::string& clientName) {
+/** Indices of every hardware port in `names` (skipping our own virtual port, ALSA "Through", and `reserved`). */
+inline std::vector<std::size_t> hardwarePortIndices(const std::vector<std::string>& names, const std::string& clientName,
+                                                   const std::string& reserved = {}) {
     std::vector<std::size_t> out;
     for (std::size_t i = 0; i < names.size(); ++i) {
         if (names[i].find(clientName) != std::string::npos) continue;  // our own virtual port
         if (names[i].find("Through") != std::string::npos) continue;    // ALSA MIDI-through (no hardware)
+        if (!reserved.empty() && names[i] == reserved) continue;         // claimed by a control surface
         out.push_back(i);
     }
     return out;
 }
 
 /** Index of the hardware port named exactly `selection`, or none (empty selection / no match / a skipped port). */
-inline std::optional<std::size_t> matchPortIndex(const std::vector<std::string>& names, const std::string& clientName, const std::string& selection) {
+inline std::optional<std::size_t> matchPortIndex(const std::vector<std::string>& names, const std::string& clientName,
+                                                 const std::string& selection, const std::string& reserved = {}) {
     if (selection.empty()) return std::nullopt;
-    for (std::size_t i : hardwarePortIndices(names, clientName))
+    for (std::size_t i : hardwarePortIndices(names, clientName, reserved))
         if (names[i] == selection) return i;
     return std::nullopt;
 }
@@ -77,6 +86,12 @@ public:
     const std::string& inputSelection() const { return selectedIn_; }
     const std::string& outputSelection() const { return selectedOut_; }
 
+    // Keep an input port OUT of this stream because another owner holds it exclusively (the Launchpad link).
+    // Empty releases the reservation. Applied immediately if open() has run, so the host must stop audio
+    // around this exactly as it does for setInputSelection.
+    void setReservedInput(const std::string& name);
+    const std::string& reservedInput() const { return reservedIn_; }
+
     // Drain queued input into `out` (called from the audio thread each block; clears `out` first). Lock-free
     // w.r.t. the RtMidi callback thread.
     void poll(std::vector<Message>& out);
@@ -103,6 +118,7 @@ private:
     std::string                             clientName_ = "RetroPlug"; // set by open(); used for port skip + reconnect
     std::string                             selectedIn_;   // "" = All Devices (open every hardware input)
     std::string                             selectedOut_;  // "" = None (virtual output only)
+    std::string                             reservedIn_;   // "" = nothing claimed by a control surface
 
     std::unique_ptr<RtMidiIn>               in_;    // our virtual input port
     std::vector<std::unique_ptr<RtMidiIn>>  hwIn_;  // hardware input ports (USB-MIDI, etc.)

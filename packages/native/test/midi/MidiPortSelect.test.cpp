@@ -60,3 +60,25 @@ TEST_CASE("selection policy: input opens all-vs-one, output opens one-or-none") 
     // A specific absent device → nothing opened.
     REQUIRE_FALSE(matchPortIndex(kPorts, kClient, "Ghost").has_value());
 }
+
+// A port a control surface has claimed exclusively is skipped by BOTH helpers. Not tidiness: a pad press is a
+// NoteOn, and LSDj's MI.MAP translator reads a NoteOn as a row launch, so a Launchpad sharing the musical
+// stream would fire every launch twice - once quantised by the controller app, once raw. "All Devices" is the
+// case that would otherwise do it, and it is the default.
+TEST_CASE("a reserved port drops out of All Devices") {
+    const auto open = hardwarePortIndices(kPorts, kClient, "Launchpad MK2");
+    REQUIRE(open == std::vector<std::size_t>{3});  // the KeyStep still plays; the surface does not
+}
+
+TEST_CASE("a reserved port cannot be selected as the input device either") {
+    // Selecting it explicitly must not smuggle it back in - the link owns the OS port, so opening it twice
+    // would fail anyway, and silently half-working is worse than not opening it.
+    REQUIRE_FALSE(matchPortIndex(kPorts, kClient, "Launchpad MK2", "Launchpad MK2").has_value());
+    REQUIRE(matchPortIndex(kPorts, kClient, "Arturia KeyStep 32", "Launchpad MK2").value() == 3);
+}
+
+TEST_CASE("no reservation is the default and changes nothing") {
+    REQUIRE(hardwarePortIndices(kPorts, kClient, "") == hardwarePortIndices(kPorts, kClient));
+    // A reserved name that is not present is simply inert (the device was unplugged, the link is down).
+    REQUIRE(hardwarePortIndices(kPorts, kClient, "Some Unplugged Launchpad").size() == 2);
+}

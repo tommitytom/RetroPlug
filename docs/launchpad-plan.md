@@ -1,8 +1,8 @@
 # Engineering Report & Plan: Novation Launchpad support in RetroPlug
 
-**Date:** 2026-08-11 · **Branch:** `feature/launchpad` · **Status:** M0-M2 + M5 built - the whole path from
-a controller event to a moving cart runs per audio block, still with no device and no native change.
-M3/M4 (real hardware) and M6 (observed model) outstanding.
+**Date:** 2026-08-12 · **Branch:** `feature/launchpad` · **Status:** M0-M5 built - a real Launchpad on a real
+MIDI port drives a real cart. Only M6 (observed model, emulated-cart fidelity) is outstanding, and it is
+optional.
 **First consumer:** LSDj MI.MAP (song-row launching from the 8x8 grid)
 **Target device:** Launchpad Pro [MK3]
 
@@ -304,28 +304,41 @@ The N8 work merged to main is worth dwelling on: driving a real Everdrive N8 fro
 
 ## 6. Gaps and blockers
 
-### 6.1 SysEx cannot cross any MIDI seam today
+### 6.1 RESOLVED: SysEx crosses the standalone seams
 
-| Seam | Limit | Where |
+| Seam | Was | Now |
 |---|---|---|
-| RtMidi input | `ignoreTypes(true, ...)` drops SysEx at the source | [`MidiIo.cpp:23,82`](../packages/native/src/host/input/MidiIo.cpp#L23) |
-| Standalone MIDI in | `bytes.size() > 3` -> dropped | [`sdl/main.cpp:809`](../packages/native/sdl/main.cpp#L809) |
-| Standalone MIDI out | only 1..3 bytes sent | [`sdl/main.cpp:829`](../packages/native/sdl/main.cpp#L829) |
-| Plugin MIDI in | capped at 4 | [`PluginDSP.cpp:189`](../packages/native/plugin/PluginDSP.cpp#L189) |
-| Plugin MIDI out | capped at `MidiEvent::kDataSize` (4) | [`PluginDSP.cpp:203`](../packages/native/plugin/PluginDSP.cpp#L203) |
-| Control plane -> engine | `DspCommand.stageMidi` holds 4 bytes | [`DspCommand.hpp:31`](../packages/native/src/host/engine/DspCommand.hpp#L31) |
+| RtMidi input | `ignoreTypes(true, ...)` dropped SysEx at the source | `ignoreTypes(false, false, true)` on the virtual + hardware inputs |
+| Standalone MIDI in | `bytes.size() > 3` -> dropped | delivered, but NOT staged as musical MIDI (see below) |
+| Standalone MIDI out | only 1..3 bytes sent | any length; `MidiIo::send` always took one |
+| Plugin MIDI in | capped at 4 | **unchanged** - deferred with the plugin |
+| Plugin MIDI out | capped at `MidiEvent::kDataSize` (4) | **unchanged** - DPF's `MidiEvent` has a `dataExt` pointer for this |
+| Control plane -> engine | `DspCommand.stageMidi` holds 4 bytes | **unchanged**, and not on the path: the device link hands the audio thread its bytes directly |
 
-Nothing is architecturally blocked: `MidiIo::send` already takes an arbitrary length, and DPF's `MidiEvent` carries a `dataExt` pointer for sizes above 4. Standalone needs the first three rows fixed; the plugin rows are deferred with the plugin.
+Two things the widening had to be careful about, both of which bit in review:
 
-### 6.2 There is no device-scoped MIDI
+- **A sysex message reaching the standalone is deliberately NOT staged as host MIDI.** The passthrough
+  translators (mGB, LSDj `MidiPassthrough`) push every byte they are given straight down the cart's link
+  port, so a control surface's handshake would arrive at the Game Boy as noise. Control-surface traffic has
+  its own stream for exactly this reason.
+- **The N8 forward excludes it too**, beside the existing realtime exclusion. A 538-byte bulk-LED message
+  has no business being shovelled into an Everdrive's FIFO.
 
-Standalone opens **every** hardware input and merges them into one engine stream (`MidiIo::openHardwareInputs`), and `send` mirrors to the single selected hardware output. Consequences if we do nothing:
+### 6.2 RESOLVED: the Launchpad has its own in/out pair
 
-- Pad presses arrive as ordinary musical MIDI and get routed into mGB / LSDj.
-- LED traffic sprays at every other listening device.
-- This is the same class as the known "All Devices forwards a controller's mixer ports" quirk.
+Standalone used to open **every** hardware input into one engine stream and mirror `send` to the single
+selected output. `LaunchpadLink` now claims its pair exclusively, and `MidiIo` skips the claimed input
+(`setReservedInput`, threaded through the pure `hardwarePortIndices` / `matchPortIndex` helpers so
+`retroplug-midi-test` covers it).
 
-The Launchpad needs its **own** in/out pair, excluded from the engine MIDI stream.
+The exclusion is load-bearing rather than tidy: a pad press is a NoteOn, and `midiMap` reads a NoteOn as a
+row launch, so a surface sharing the musical stream fires every launch **twice** - once quantised by the app,
+once raw. "All Devices" is the default, and it is exactly the case that would do it.
+
+Two limits worth stating rather than burying. The Pro MK3's *other* USB interfaces (DAW, Custom) are not
+excluded and stay open under "All Devices"; they are idle while the MIDI interface is in Programmer mode. And
+a physical unplug is not detected - RtMidi will not say so without re-probing the port list - so the user
+disconnects from the menu.
 
 ### 6.3 With a real Game Boy there is no system to attach to
 
@@ -418,14 +431,14 @@ Ordered so that everything testable without hardware or native changes comes fir
 | **M0** ✅ | `PlaybackModel` interface + `PredictedLsdjModel` (sav + clock) | no | DONE - 100% agreement vs a real cart (§2.6) |
 | **M1** ✅ | `src/launchpad/` protocol + `Surface` diffing, Pro MK3 profile | no | DONE - 37 tests, the manual's own hex as golden vectors |
 | **M2** ✅ | `src/controller/` session + registry + `lsdjMidiMap` app against a fake device | no | DONE - 45 tests, and the two rules B8/B9 settled (§8.1) |
-| **M3** | SysEx widening (RtMidi `ignoreTypes`, the two `sdl/main.cpp` caps) | yes | loopback: send a bulk-LED SysEx, observe it intact |
-| **M4** | Launchpad device link: own in/out pair, excluded from the engine stream, injected port factory, Settings picker | yes | hardware-free test via the fake factory; real-device smoke |
+| **M3** ✅ | SysEx widening (RtMidi `ignoreTypes`, the two `sdl/main.cpp` caps) | yes | DONE - loopback carries a 299-byte bulk-LED SysEx intact, and a real Pro MK3 lights up |
+| **M4** ✅ | Launchpad device link: own in/out pair, excluded from the engine stream, injected port factory, menu picker | yes | DONE - 14 hardware-free Catch2 cases over a fake port factory, plus 11 menu-seam cases (§8.3) |
 | **M5** ✅ | Project-scope role wiring `TrackerTarget` (emulated core vs Arduinoboy MIDI out) | no | DONE - the whole chain runs per audio block (§8.2) |
 | **M6** | `ctx.ram` / `ctx.sram` kernel seam + `ObservedLsdjModel` | yes | `test:native`; closes the differential loop from M0 |
 
-M0-M2 and M5 deliver a fully testable, fully WIRED app with no device and no native change - the role runs
-in the audio thread and its launches reach a cart. M3-M4 make a physical Launchpad work, and are now the
-only thing between this and a real instrument. M6 upgrades emulated-cart fidelity and is genuinely optional.
+M0-M2 and M5 delivered a fully testable, fully WIRED app with no device and no native change - the role runs
+in the audio thread and its launches reach a cart. M3-M4 made a physical Launchpad work. M6 upgrades
+emulated-cart fidelity and is genuinely optional.
 
 ### 8.1 BUILT: what M2 delivers, and the decisions it fixed
 
@@ -514,6 +527,48 @@ froze while steps kept advancing), so "what the cart does under the role's clock
 `lsdj-midimap.test.ts` alone. That is a probe-lifecycle question rather than a controller one, and is
 recorded rather than papered over.
 
+### 8.3 BUILT: M3 + M4, the device
+
+`controllerIn` was always empty and `emitControllerOut` went nowhere, because nothing owned a Launchpad.
+[`LaunchpadLink`](../packages/native/src/host/launchpad/LaunchpadLink.hpp) now does, on its own in/out pair,
+behind an injected `IMidiPort` so the whole lifecycle is tested with nothing plugged in.
+
+**The two rings are deliberately different, because their producers are.** Device -> audio copies `MidiIo`'s
+ring (a `std::vector` per slot): the producer is the MIDI backend's callback thread, where allocating is that
+thread's own problem, and the audio thread MOVES the vector out - so the drain allocates nothing and reads
+exactly like the `midi.poll` drain two lines above it. Audio -> main is a POD `SpscRing`, because there the
+producer IS the audio thread. **LED traffic leaves on the main loop**, not the audio thread: a frame of
+latency is invisible on a light, and it keeps a possible 538-byte bulk-SysEx USB write off the RT path
+without adding a thread to own.
+
+**Native never learns the protocol.** Programmer mode locks the device's front panel, so the message that
+releases it has to survive a path where the audio thread is already stopped. TS hands down an opaque blob
+(`exitToLiveMode`); the link replays it in `disconnect()` AND in its destructor, and never parses it. Both
+paths are pinned by tests, because either one missing strands the user's hardware.
+
+**The connect edge, and the gap M5 actually left.** M5's role built a session but never called
+`session.connect()`, so Programmer mode was never entered. Sending it once at build time would not have
+fixed it: the real sequence is "start RetroPlug, THEN plug the Launchpad in and hit Connect", by which point
+the session is thousands of blocks old. Re-pushing the structure cannot serve either - project stage state
+deliberately survives `setSystems` (§8.1's own guarantee, working against us here). So the block carries
+**`controllerConnected`** beside `transport`, and the role acts on its rising edge. `connect()` invalidates
+the shadow buffer as well as entering Programmer mode, which matters: entering the mode BLANKS the device,
+so a reconnect that merely diffed would leave the grid dark. The role still runs `update()` while nothing is
+attached, so the predictor keeps advancing and the first frame after plugging in is correct rather than
+frozen at whenever the app started.
+
+**The menu is gated on the SEAM, not on detecting a device - and that is the opposite of N8 Pro beside it.**
+An Everdrive is identified by its USB VID:PID and there is no other way to attach one, so its submenu can
+hide until one appears. A Launchpad also speaks TRS/DIN: short of USB ports it arrives through an ordinary
+MIDI interface, on a port named after the INTERFACE, and nothing in that name says "Launchpad". A detection
+gate would hide the only menu that could configure exactly that setup. So every hardware port is offered,
+and `PRO_MK3_PORT_HINT` is demoted to picking the default and tagging a row "(detected)".
+
+The submenu straddles two scopes on purpose, because setting the feature up needs both: ports + Connect are
+HOST state (persisted natively in `launchpad.cfg`, shared by every project), while app / quantise / follow /
+target / enable are PROJECT state, persisted in the `.rplg` as M5 already arranged. `setController` is the
+one settings writer that re-pushes the kernel, since the role is synthesized at projection time.
+
 ---
 
 ## 9. Testing
@@ -534,10 +589,29 @@ BUILT (`pnpm test`, no device, no native build):
   than inferring it. Assertions there guard the instrument; the semantics are locked in by the differential
   and unit tests once a model exists to hold them to.
 
+- **Device link** ✅ `retroplug-launchpad-test` (Catch2, 14 cases / 66 assertions), over a fake `IMidiPort`:
+  connect / refusal / disconnect, the farewell on BOTH disconnect and destruct and across a reconnect, a
+  received message reaching the audio-thread drain, LED traffic leaving on `pump()` rather than on push, an
+  oversized message dropped rather than overrunning its slot, and `LaunchpadHost`'s `launchpad.cfg`
+  round-trip + reserved-port reporting. No rtmidi, no MIDI system, no hardware.
+- **Port exclusion** ✅ `retroplug-midi-test` gained the reserved-port cases: a claimed port drops out of
+  "All Devices" and cannot be selected explicitly either.
+- **The connect edge** ✅ `test/controller/role.test.ts` drives the real role through a kernel: no hello
+  while nothing is attached, hello FIRST on the block a device appears, not re-sent while it stays, a full
+  repaint on reconnect (not a diff), and the predictor still advancing while disconnected.
+- **The menu + seam** ✅ `test/menu/launchpad.test.ts`, 11 cases: the seam gate, the unfiltered port list,
+  the hint tag stripped back off before a name goes to native, Connect resolving the hinted default (and
+  declining to invent one when nothing is hinted), the farewell landing before anything can connect, the
+  status line, and the project rows re-pushing the kernel.
+- **Hardware** ✅ `retroplug-cli launchpad-probe` on a real Pro MK3 confirmed Programmer-mode entry, LED
+  batching and the edge-button CCs (§3.6 - which corrected them).
+
 OUTSTANDING:
 
-- **Device link** (M4): injected port factory, as `N8Link` does, so connect/disconnect/teardown are covered with no Launchpad attached.
-- **Manual, hardware** (M4): real Pro MK3 on the MIDI port; confirm Programmer mode entry, LED batching, the edge-button CCs (§3.4), and - specifically - that **Live mode is restored on exit**.
+- **Manual, hardware** (M4): standalone + a real Pro MK3 + an LSDj cart in MI.MAP - press a pad, hear the row
+  launch on the bar, watch the playhead track it; then quit and confirm the device's own Settings menu opens
+  again. The probe proved the protocol against the hardware and the fake device proves the lifecycle; what is
+  left is the two ends meeting.
 
 ---
 

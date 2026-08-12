@@ -368,6 +368,9 @@ void DspRuntime::processBlock(const std::vector<MidiIn>& midi,
     JS_SetPropertyStr(ctx, input, "tempo", JS_NewFloat64(ctx, block.tempo));
     JS_SetPropertyStr(ctx, input, "ppqStart", JS_NewFloat64(ctx, block.ppqStart));
     JS_SetPropertyStr(ctx, input, "transport", JS_NewBool(ctx, block.transport));
+    // Only sent when true: the kernel reads an absent property as false, so a host with no control surface
+    // (every host but the standalone with a Launchpad connected) pays nothing per block.
+    if (block.controllerConnected) JS_SetPropertyStr(ctx, input, "controllerConnected", JS_NewBool(ctx, true));
 
     JSValue midiArr = JS_NewArray(ctx);
     for (std::size_t i = 0; i < midi.size(); ++i) {

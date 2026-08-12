@@ -95,6 +95,11 @@ public:
         double        tempo      = 120.0;
         double        ppqStart   = 0.0;
         bool          transport  = false;
+        // Whether a control surface is attached RIGHT NOW. Carried per block like `transport`, and for a
+        // reason a one-shot could not serve: the user starts the app, THEN plugs the device in, so the role
+        // needs a false->true edge to take the device (enter Programmer mode + repaint) at the moment it
+        // appears. Re-pushing the structure would not do it - project stage state survives setSystems.
+        bool controllerConnected = false;
     };
 
     // --- per-block output (the bound sinks fill these; the caller fans them to cores by system) ---

@@ -24,6 +24,7 @@ import { siblingRplgPath, resolveSavPath } from "./savPaths";
 import {
   type ProjectConfig,
   type ProjectSettings,
+  type ControllerSettings,
   DEFAULT_SETTINGS,
   K_PROJECT,
   VersionCheck,
@@ -229,6 +230,22 @@ export class ProjectStore {
     this.projectSettings = { ...this.projectSettings, zoom: n };
     this.markDirty();
     return true;
+  }
+
+  /** Edit the control-surface session (which app runs, where its launches go, the app's own knobs).
+   *
+   *  Unlike the other setting writers this re-drives the KERNEL, not just the title bar: the controller role
+   *  is synthesized from these values at projection time (kernelProjection), so a change that never reached
+   *  setSystems would leave the audio thread running the previous app. `appConfig` merges rather than
+   *  replaces, so a menu row can set one knob without knowing the others. */
+  setController(patch: Partial<ControllerSettings>): void {
+    const current = this.projectSettings.controller;
+    this.projectSettings = {
+      ...this.projectSettings,
+      controller: { ...current, ...patch, appConfig: { ...current.appConfig, ...(patch.appConfig ?? {}) } },
+    };
+    this.markDirty();
+    this.onSystemsChange();
   }
 
   /** Empty project: tear down systems, reset settings/path, mark clean. */

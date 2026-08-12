@@ -36,6 +36,8 @@ registerControllerApps(apps);
 
 interface RoleState {
   session?: ControllerSession | null;
+  /** Whether a device was attached on the previous block - the edge detector below. */
+  attached?: boolean;
 }
 
 const launchpad: ProjectBehavior = (c: ProjectCtx) => {
@@ -44,6 +46,21 @@ const launchpad: ProjectBehavior = (c: ProjectCtx) => {
   const session = st.session;
   if (!session) return; // unknown app id, or no song table - nothing to run
 
+  // TAKE THE DEVICE on the block a link first reports one, not when the session is built. The session is
+  // built on the first block after a structure push, which is almost always LONG before the user plugs a
+  // Launchpad in and connects it - and a device always boots into Live mode, so Programmer mode has to be
+  // re-entered every time one appears. connect() also invalidates the shadow buffer, so a reconnect
+  // repaints the whole surface instead of diffing against LEDs a fresh device never had.
+  const attached = c.block.controllerConnected === true;
+  if (attached && !st.attached) {
+    const hello = session.connect();
+    for (let i = 0; i < hello.length; i++) c.emitControllerOut(hello[i]);
+  }
+  st.attached = attached;
+
+  // Run even with nothing attached: `update` is what drives the predictor, so the model stays correct and
+  // the LEDs are right on the first block after a device appears. The messages then go nowhere, which costs
+  // a disconnected host only the surface diff (empty in the steady state).
   const messages = session.update({
     input: toMessages(c.controllerIn),
     tick: Math.floor(c.block.ppqStart * TICKS_PER_QUARTER),

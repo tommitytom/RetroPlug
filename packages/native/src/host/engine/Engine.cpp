@@ -88,7 +88,7 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
 #ifdef RETROPLUG_PROFILE
         dsp_.spanBegin(DSP_SPAN_KERNEL);  // the whole DSP-kernel stage (marshal + JS + sink fan-out)
 #endif
-        const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transport_ };
+        const DspRuntime::BlockInfo dInfo{ frames, sampleRate_, bpm_, ppq_, transport_, controllerConnected_ };
         dsp_.processBlock(pendingMidi_, kNoButtons, kNoKeys, pendingSerialOut_, pendingControllerMidi_, dInfo);
         pendingMidi_.clear();       // staged host MIDI consumed this block
         pendingControllerMidi_.clear();
