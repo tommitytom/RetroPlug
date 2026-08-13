@@ -71,10 +71,17 @@ The rules below are the parts that don't fit those.
   build (the repeated `emu2413.cpp` warnings), that's LTO link-time codegen, not a
   stale-dependency bug — `[NN%] Built target mesen` prints whether or not it did work.
 - **`retroplug-sdl` is in the default build** — `build.sh` builds it, and CI covers it
-  (CI builds `all`). It needs nothing extra installed: SDL2 is already REQUIRED at root
-  scope for every plugin variant, and rtmidi is an in-tree submodule. `pnpm sdl:smoke`
-  builds it by name then runs the headless smoke; that smoke is still NOT a CI step, so
-  CI proves it compiles + links, not that it runs.
+  (CI builds `all`) on all four platforms. It needs nothing extra installed: SDL2 is
+  already REQUIRED at root scope for every plugin variant, and rtmidi is an in-tree
+  submodule. `pnpm sdl:smoke` builds it by name then runs the headless smoke; that smoke
+  is still NOT a CI step, so CI proves it compiles + links, not that it runs.
+  **It ships in the `build.yml` artifact for every platform but is deliberately kept OUT
+  of releases** — `release.yml`'s four packaging steps are explicit allowlists, and
+  `retroplug-sdl` is not on any of them (each carries a comment saying so). Don't add it
+  until the standalone is release-ready. On macOS the artifact binary is build-machine-only:
+  the `SDL2.framework` embed covers the plugin/app BUNDLES, and `retroplug-sdl` is a bare
+  executable, so it would need a framework copy + an `@executable_path` rpath to run
+  elsewhere.
 - **Never commit derived artifacts** — the embedded bundle C arrays
   (`build/native/*bundle_data.c`).
 - **Config migrations (versioned, raw-JSON).** Persistence is TS-owned. Every serialized
