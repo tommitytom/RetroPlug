@@ -21,13 +21,14 @@ import { menuScreenToRgba } from "../../src/n8/menuImage";
 import { decodeSniffer, SNIFFER_REGION_SIZE, type SnifferSnapshot } from "../../src/n8/sniffer";
 import { chrToPng, chrToPngColor, pngToChr } from "../../src/n8/chrImage";
 import { decodeSysInfo, decodeVdc, fatDateStr, vdcStr } from "../../src/n8/sysInfo";
+import { decodeSaveState, type N8SaveState } from "../../src/n8/saveState";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 
 const DEFAULT_ROM = "resources/roms/n8-midi.nes";
 const VALUE_FLAGS = new Set([
   "--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--sniff-raw",
-  "--dump-chr", "--patch-chr", "--patch-prg", "--mkdir", "--rm", "--palette", "--serial",
+  "--dump-chr", "--patch-chr", "--patch-prg", "--mkdir", "--rm", "--palette", "--savestate", "--serial",
 ]);
 
 const flag = (args: string[], name: string): string | undefined => {
@@ -120,6 +121,19 @@ function printInfo(sysBytes: Uint8Array, vdcBytes: Uint8Array): void {
   console.log(`voltages   : 5.0=${vdcStr(v.v50)} 2.5=${vdcStr(v.v25)} 1.2=${vdcStr(v.v12)} bat=${vdcStr(v.bat)}`);
 }
 
+function printSaveState(path: string, st: N8SaveState): void {
+  if (!st.magicOk) {
+    console.log(`${path}: not a valid N8 save-state (no 'S' magic at 0x18CF)`);
+    return;
+  }
+  const h2 = (v: number): string => v.toString(16).padStart(2, "0");
+  const wramNonZero = st.wram.reduce((n, b) => n + (b !== 0 ? 1 : 0), 0);
+  console.log(`save-state ${path} (full captured game state):`);
+  console.log(`  CPU: A=${h2(st.cpu.a)} X=${h2(st.cpu.x)} Y=${h2(st.cpu.y)} SP=${h2(st.cpu.sp)}   (not available live)`);
+  console.log(`  WRAM 2048 B (${wramNonZero} non-zero)   VRAM 4096 B   CHR 8192 B   EXRAM 32768 B`);
+  printSniffer(st.sniffer); // APU / PPU / palette / OAM captured at save time (reused sniffer decode)
+}
+
 const N8_LOAD_HELP = [
   "usage: retroplug-cli n8-load [options] [<rom.nes>]",
   "",
@@ -153,6 +167,8 @@ const N8_LOAD_HELP = [
   "  --df               print the SD card's free space",
   "  --mkdir <path>     create a directory on the SD card",
   "  --rm <path>        delete a file or empty directory on the SD card (PERMANENT)",
+  "  --savestate <sd-path>  read + decode an N8 save-state (EDN8/gamedata/<rom>/NN.SAV): the full captured",
+  "                     state - CPU regs, WRAM, APU/PPU, CHR - that the live --sniff can't reach",
   "  --show-song        decode the live cart battery (risa/LSDj) and print its songs",
   "  --serial <port>    use this serial port (default: auto-detect the N8)",
   "",
@@ -183,6 +199,7 @@ export const n8LoadTool: CliTool = {
     const doDf = has(args, "--df");
     const mkdir = flag(args, "--mkdir");
     const rm = flag(args, "--rm");
+    const savestate = flag(args, "--savestate");
     const isPatch = patchChr != null || patchPrg != null;
 
     if (sramOnly && !srmPath) throw new Error("--sram-only requires --srm <save.srm>");
@@ -191,7 +208,8 @@ export const n8LoadTool: CliTool = {
     // Read local files up front (fail fast, before touching hardware).
     const readOnly =
       doLs || dumpPath != null || showSong || sramOnly || getFile != null || screenshot != null ||
-      doSniff || sniffRaw != null || dumpChr != null || isPatch || doInfo || doDf || mkdir != null || rm != null;
+      doSniff || sniffRaw != null || dumpChr != null || isPatch || doInfo || doDf || mkdir != null || rm != null ||
+      savestate != null;
     // --get-file <sd-path> <local-dest>: the SD source is the flag operand, the local destination the positional.
     const getFileDest = getFile != null ? positional(args) : undefined;
     if (getFile != null && !getFileDest)
@@ -237,6 +255,12 @@ export const n8LoadTool: CliTool = {
       if (rm != null) {
         n8.edio.fileDelete(rm);
         console.log(`deleted: ${rm}`);
+        return;
+      }
+      if (savestate != null) {
+        // Read an N8 save-state file (NN.SAV) over USB and decode the FULL captured state - WRAM + CPU regs +
+        // CHR the live sniffer can't reach. The player triggers save-states with a physical button combo.
+        printSaveState(savestate, decodeSaveState(n8.readFile(savestate)));
         return;
       }
       if (doLs) {

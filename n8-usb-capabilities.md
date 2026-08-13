@@ -153,14 +153,14 @@ Grouped by payoff. "Effort" is the add to `Edio`/tooling.
 |---|---|---|---|
 | ✅ **Screen capture over USB** | menu `'v'` (2 KB VRAM + 16-byte palette) + `memRD` CHR → PNG (`edlink` `screen`, `MenuImage.MakeImage`) | menu cmd + assembly | DONE (`n8-load --screenshot`): dropped the `/dev/video0` capture card for menu grabs |
 | ⛔ **Reset console over USB** | `edlink` `reset` = `Test()`+`'r'`+single-ack | tried, does not work | NOT VIABLE on our N8. Implemented + hardware-tested the EXACT `edlink` sequence (`'*t'` handshake then `'*r'` + one ack); from the file browser `'*r'` reboots into a solid **gray screen** and hangs (menu stops answering `'*t'`; recovery needs a power-cycle — strictly worse than the smart-plug). `'*r'` is menu-FIFO-serviced so it can only be sent from the menu, exactly where it hangs. `CMD_HOST_RST` (0x29) is Genesis/PC-Engine only; `CMD_RST_EFU` (0x25) reboots into the firmware-update unit; `CMD_RST_MCU` (0x12) is the bootloader — none is a clean file-browser reboot. A clean return-to-menu would need `ed_exit_game`'s config write (`map_idx=255`+`UNLOCK` to `ADDR_CFG`) + reset, which is unverified RE. Reverted. |
-| ✅ **Live state sniffer read** | `memRD` at `ADDR_SSR` (raw offsets: APU +0x080, PPU +0x0C0, palette +0x0A0, OAM +0x100) | just `memRD` | DONE (`n8-load --sniff`): live APU/PPU/OAM of a running game; CPU/WRAM/CHR need a triggered save-state (future) |
+| ✅ **Live state sniffer read** | `memRD` at `ADDR_SSR` (raw offsets: APU +0x080, PPU +0x0C0, palette +0x0A0, OAM +0x100) | just `memRD` | DONE (`n8-load --sniff`): live APU/PPU/OAM of a running game; CPU/WRAM/CHR come from a save-state instead (`--savestate`, done) |
 | ✅ **Arbitrary SD file read** | `CMD_F_FRD` (0xCA) / `CMD_F_FRD_MEM` (0xCB) | 1 opcode | DONE (`n8-load --get-file`): dump `EDN8/sysdata/registry.bin` to **persist** expansion-volume; pull any save/config/OS file |
 
 ### Powerful / cool
 
 | Capability | How | Notes |
 |---|---|---|
-| **Save-state capture/restore** | sniffer region + save-state buffer + `ss_key_*` cfg | snapshot/restore a running game over USB |
+| ✅ **Save-state read/decode** | read `EDN8/gamedata/<rom>/NN.SAV` (48 KB) via `readFile` + decode | DONE + HW-verified (`n8-load --savestate`, `src/n8/saveState.ts`): the FULL captured state - CPU regs (a/x/y/sp), WRAM, VRAM, APU/PPU/OAM (reuses `decodeSniffer`), CHR, EXRAM - reaching what the live sniffer can't. CAVEAT: *creating* a save-state needs the physical `ss_key` button combo (not host-triggerable over USB); reading existing ones works. Restore/write-back is a follow-on |
 | ✅ **PRG/CHR hot-patch** | `memWR` → `ADDR_PRG`/`ADDR_CHR` | DONE + HW-verified: live-patch a running game's graphics/code over USB (`--patch-chr`/`--patch-prg`/`--dump-chr`, hwtest `memwr`; write-twin of `--sniff`). PNG editing loop: `--dump-chr x.png` / `--patch-chr 0 x.png` round-trip an editable grayscale tile grid (`src/n8/chrImage.ts`) - edit a glyph, push it live. `--dump-chr x.png --color [--palette N]` renders the game's REAL colours via the live sniffer palette |
 | **Load FPGA mapper core** | `CMD_FPG_USB` (0x1E) / `ed_cmd_fpg_init_usb` | swap cartridge hardware personality over USB |
 | **RTC get/set/cal** | `CMD_RTC_GET/SET/CAL` (0x14/15/21) | read/set the console clock |
