@@ -6,16 +6,25 @@
 //   retroplug-n8-hwtest dump    <dest.srm>   [port]   # read the 64 KB battery to a file (non-destructive)
 //   retroplug-n8-hwtest load    <rom.nes>    [port]   # upload + boot a ROM (cart must be at its menu)
 //   retroplug-n8-hwtest restore <save.srm>   [port]   # write a .srm to the running game's SRAM + verify
+//   retroplug-n8-hwtest peek    <addr-hex> <len> [port]   # CMD_MEM_RD: read bytes from a device address
+//   retroplug-n8-hwtest poke    <addr-hex> <byte>[port]   # CMD_MEM_WR: write one byte to a device address
+//
+// peek/poke drive a bare Edio (no N8Host / streaming thread), for FPGA config registers like the
+// expansion-audio master volume at 0x1800003 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
+// edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800003 <- 0..255, where 128 = unity gain.
 //
 // Exit 0 on success, 1 on the op's error, 2 on a usage / no-device problem.
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "host/n8/Edio.hpp"
 #include "host/n8/N8Host.hpp"
 #include "host/n8/WjwwoodSerialPort.hpp"
 
@@ -23,10 +32,48 @@ using namespace retroplug;
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: %s <dump|load|restore> <path> [port]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s <dump|load|restore|peek|poke> <path|addr> [len|byte] [port]\n", argv[0]);
         return 2;
     }
-    const std::string op   = argv[1];
+    const std::string op = argv[1];
+
+    // Raw device-memory peek/poke: a bare Edio over the port (no N8Host, no streaming thread). Used to read /
+    // write FPGA config registers directly - e.g. the expansion-audio master volume at 0x1800003.
+    if (op == "peek" || op == "poke") {
+        if (argc < 4) {
+            std::fprintf(stderr, "usage: %s %s <addr-hex> <%s> [port]\n", argv[0], op.c_str(),
+                         op == "peek" ? "len" : "byte");
+            return 2;
+        }
+        const std::int32_t addr = static_cast<std::int32_t>(std::strtol(argv[2], nullptr, 0));
+        const std::string  pport = argc > 4 ? argv[4] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();  // handshake (works whether the menu or a game is running)
+            if (op == "poke") {
+                const std::uint8_t v = static_cast<std::uint8_t>(std::strtol(argv[3], nullptr, 0));
+                edio.memWR(addr, &v, 1);
+                std::printf("poke [0x%X] <- 0x%02X (%u)\n", addr, v, v);
+            } else {
+                const std::size_t         len = static_cast<std::size_t>(std::strtol(argv[3], nullptr, 0));
+                std::vector<std::uint8_t> buf(len ? len : 1);
+                edio.memRD(addr, buf.data(), buf.size());
+                std::printf("peek [0x%X] (%zu):", addr, buf.size());
+                for (std::uint8_t b : buf) std::printf(" %02X", b);
+                std::printf("\n");
+            }
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "%s failed: %s\n", op.c_str(), e.what());
+            return 1;
+        }
+    }
+
     const std::string path = argv[2];
     std::string       port = argc > 3 ? argv[3] : findN8Port();
     if (port.empty()) {
