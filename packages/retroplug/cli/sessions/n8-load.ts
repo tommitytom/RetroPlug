@@ -19,6 +19,7 @@ import {
 } from "../../src/n8";
 import { menuScreenToRgba } from "../../src/n8/menuImage";
 import { decodeSniffer, SNIFFER_REGION_SIZE, type SnifferSnapshot } from "../../src/n8/sniffer";
+import { chrToPng, pngToChr } from "../../src/n8/chrImage";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 
@@ -33,6 +34,7 @@ const flag = (args: string[], name: string): string | undefined => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const has = (args: string[], name: string): boolean => args.includes(name);
+const isPng = (path: string): boolean => path.toLowerCase().endsWith(".png");
 function positional(args: string[]): string | undefined {
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith("--")) {
@@ -122,10 +124,12 @@ const N8_LOAD_HELP = [
   "  --sniff            read a RUNNING game's live APU/PPU/OAM state over USB and print it (a game must",
   "                     be running - the sniffer is off at the menu)",
   "  --sniff-raw <file> dump the raw 512-byte sniffer region to a file (no decode)",
-  "  --dump-chr <file>  read the running game's 8 KB visible CHR bank over USB to a file (edit + patch back)",
+  "  --dump-chr <file>  read the running game's 8 KB visible CHR bank over USB. A .png dest renders an",
+  "                     editable grayscale tile grid; else a raw 8 KB .chr",
   "  --patch-chr <hex-offset> <file>  live-patch the running game's CHR (graphics) from <file> at CHR+offset",
-  "                     (verified; changes show on-screen next frame). Best on a CHR-ROM game (NROM etc.)",
-  "  --patch-prg <hex-offset> <file>  live-patch the running game's PRG (code) from <file> at PRG+offset.",
+  "                     (verified; shows on-screen next frame). <file> = a .png tile grid or raw .chr bytes.",
+  "                     Best on a CHR-ROM game (NROM etc.)",
+  "  --patch-prg <hex-offset> <file>  live-patch the running game's PRG (code) from raw <file> at PRG+offset.",
   "                     WARNING: a bad code patch can crash the game (power-cycle to recover)",
   "  --show-song        decode the live cart battery (risa/LSDj) and print its songs",
   "  --serial <port>    use this serial port (default: auto-detect the N8)",
@@ -222,19 +226,37 @@ export const n8LoadTool: CliTool = {
         return;
       }
       if (dumpChr != null) {
-        // Grab the 8 KB visible CHR bank (edit it, then --patch-chr it back). Read-only.
+        // Grab the 8 KB visible CHR bank (edit it, then --patch-chr it back). Read-only. A .png dest renders
+        // the tiles as an editable grayscale grid; anything else writes the raw 8 KB.
         const chr = n8.edio.memRD(ADDR_CHR, 8192);
-        if (!s.backend.writeFile(dumpChr, chr)) throw new Error(`write failed: ${dumpChr}`);
-        console.log(`wrote ${chr.length} bytes of CHR (bank 0) -> ${dumpChr}`);
+        if (isPng(dumpChr)) {
+          const img = chrToPng(chr);
+          const png = s.backend.pngEncode(img.width, img.height, img.rgba);
+          if (!png) throw new Error("PNG encode failed");
+          if (!s.backend.writeFile(dumpChr, png)) throw new Error(`write failed: ${dumpChr}`);
+          console.log(`wrote ${img.width}x${img.height} grayscale CHR tile grid -> ${dumpChr}`);
+        } else {
+          if (!s.backend.writeFile(dumpChr, chr)) throw new Error(`write failed: ${dumpChr}`);
+          console.log(`wrote ${chr.length} bytes of CHR (bank 0) -> ${dumpChr}`);
+        }
         return;
       }
       if (isPatch) {
         // Live-patch a RUNNING game's CHR (graphics) or PRG (code) - the write-twin of --sniff. The console
         // fetches the same PSRAM, so the change shows on the next PPU/CPU fetch. assertGameRegion keeps it out
-        // of the N8 OS region; writeMemDirect verifies the readback.
+        // of the N8 OS region; writeMemDirect verifies the readback. For --patch-chr, a .png file is decoded
+        // from the grayscale tile grid; else raw bytes. --patch-prg is raw only (PRG isn't tiles).
         const offset = parseInt((patchChr ?? patchPrg)!, 16);
         if (Number.isNaN(offset)) throw new Error(`bad patch offset (expected hex): ${patchChr ?? patchPrg}`);
-        const bytes = readOrThrow(s, patchFile!, "patch data");
+        const raw = readOrThrow(s, patchFile!, "patch data");
+        if (patchPrg != null && isPng(patchFile!))
+          throw new Error("--patch-prg takes raw bytes, not a PNG (PRG is code, not tiles)");
+        let bytes = raw;
+        if (patchChr != null && isPng(patchFile!)) {
+          const img = s.backend.pngDecode(raw);
+          if (!img) throw new Error(`not a valid PNG: ${patchFile}`);
+          bytes = pngToChr(img);
+        }
         assertGameRegion(offset, bytes.length);
         const region = patchChr != null ? "CHR" : "PRG";
         const n = n8.writeMemDirect((patchChr != null ? ADDR_CHR : ADDR_PRG) + offset, bytes);
