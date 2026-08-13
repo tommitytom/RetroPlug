@@ -19,7 +19,7 @@ import {
 } from "../../src/n8";
 import { menuScreenToRgba } from "../../src/n8/menuImage";
 import { decodeSniffer, SNIFFER_REGION_SIZE, type SnifferSnapshot } from "../../src/n8/sniffer";
-import { chrToPng, pngToChr } from "../../src/n8/chrImage";
+import { chrToPng, chrToPngColor, pngToChr } from "../../src/n8/chrImage";
 import { decodeSysInfo, decodeVdc, fatDateStr, vdcStr } from "../../src/n8/sysInfo";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
@@ -27,7 +27,7 @@ import { isLsdjSav, listProjects } from "../../src/lsdj";
 const DEFAULT_ROM = "resources/roms/n8-midi.nes";
 const VALUE_FLAGS = new Set([
   "--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--sniff-raw",
-  "--dump-chr", "--patch-chr", "--patch-prg", "--mkdir", "--rm", "--serial",
+  "--dump-chr", "--patch-chr", "--patch-prg", "--mkdir", "--rm", "--palette", "--serial",
 ]);
 
 const flag = (args: string[], name: string): string | undefined => {
@@ -141,6 +141,8 @@ const N8_LOAD_HELP = [
   "  --sniff-raw <file> dump the raw 512-byte sniffer region to a file (no decode)",
   "  --dump-chr <file>  read the running game's 8 KB visible CHR bank over USB. A .png dest renders an",
   "                     editable grayscale tile grid; else a raw 8 KB .chr",
+  "  --color [--palette N]  with --dump-chr <.png>: render the game's REAL colours via the live sniffer",
+  "                     palette (BG palette group N, 0-3; needs a running game). A viewing aid",
   "  --patch-chr <hex-offset> <file>  live-patch the running game's CHR (graphics) from <file> at CHR+offset",
   "                     (verified; shows on-screen next frame). <file> = a .png tile grid or raw .chr bytes.",
   "                     Best on a CHR-ROM game (NROM etc.)",
@@ -274,14 +276,26 @@ export const n8LoadTool: CliTool = {
       }
       if (dumpChr != null) {
         // Grab the 8 KB visible CHR bank (edit it, then --patch-chr it back). Read-only. A .png dest renders
-        // the tiles as an editable grayscale grid; anything else writes the raw 8 KB.
+        // the tiles as a grayscale grid (editable, roundtrips); with --color, the game's REAL colours via the
+        // live sniffer palette (a viewing aid). Anything else writes the raw 8 KB.
         const chr = n8.edio.memRD(ADDR_CHR, 8192);
         if (isPng(dumpChr)) {
-          const img = chrToPng(chr);
+          let img = chrToPng(chr);
+          let mode = "grayscale";
+          if (has(args, "--color")) {
+            const snap = decodeSniffer(n8.edio.memRD(ADDR_SSR, SNIFFER_REGION_SIZE));
+            if (snap.magicOk) {
+              const group = parseInt(flag(args, "--palette") ?? "0", 10) || 0;
+              img = chrToPngColor(chr, snap.palette, group);
+              mode = `colour (BG palette ${group})`;
+            } else {
+              console.log("--color needs a running game for the live palette; falling back to grayscale");
+            }
+          }
           const png = s.backend.pngEncode(img.width, img.height, img.rgba);
           if (!png) throw new Error("PNG encode failed");
           if (!s.backend.writeFile(dumpChr, png)) throw new Error(`write failed: ${dumpChr}`);
-          console.log(`wrote ${img.width}x${img.height} grayscale CHR tile grid -> ${dumpChr}`);
+          console.log(`wrote ${img.width}x${img.height} ${mode} CHR tile grid -> ${dumpChr}`);
         } else {
           if (!s.backend.writeFile(dumpChr, chr)) throw new Error(`write failed: ${dumpChr}`);
           console.log(`wrote ${chr.length} bytes of CHR (bank 0) -> ${dumpChr}`);

@@ -1,7 +1,7 @@
 // The N8 CHR <-> grayscale-PNG codec (src/n8/chrImage.ts): dump a CHR bank as an editable tile grid and encode
 // it back. Pure, no hardware. Checks the SHADE4 ramp, the row-major tile layout, and a lossless roundtrip.
 import { test, expect } from "../../testing/harness";
-import { chrToPng, pngToChr, SHADE4, grayToPixel, type ChrImage } from "../../src/n8/chrImage";
+import { chrToPng, chrToPngColor, nesRgb, pngToChr, SHADE4, grayToPixel, type ChrImage } from "../../src/n8/chrImage";
 import { encodeTile } from "../../src/risa/rom";
 
 const px = (img: ChrImage, x: number, y: number): number[] => {
@@ -46,6 +46,27 @@ test("grayToPixel buckets edited grays to the nearest of 4 levels", () => {
   expect(grayToPixel(0x00)).toBe(3);
   expect(grayToPixel(0xf0)).toBe(0); // near-white -> paper
   expect(grayToPixel(0x08)).toBe(3); // near-black -> ink
+});
+
+test("chrToPngColor renders pixels through the live palette + NES master palette", () => {
+  const bank = new Uint8Array(8192);
+  // tile 0 row 0 = pixel values 0,1,2,3 (rest 0)
+  encodeTile(bank, 0, Array.from({ length: 64 }, (_, i) => (i < 4 ? i : 0)));
+  // 32-byte palette RAM: universal bg + BG palette group 1's colours at indices 5,6,7.
+  const pal = new Uint8Array(32);
+  pal[0] = 0x0f; // universal bg -> pixel 0
+  pal[5] = 0x30; // group 1, colour 1 -> pixel 1
+  pal[6] = 0x21; // group 1, colour 2 -> pixel 2
+  pal[7] = 0x16; // group 1, colour 3 -> pixel 3
+  const img = chrToPngColor(bank, pal, 1); // BG palette group 1
+  const px = (x: number, y: number): number[] => {
+    const o = (y * img.width + x) * 4;
+    return [img.rgba[o], img.rgba[o + 1], img.rgba[o + 2]];
+  };
+  expect(px(0, 0)).toEqual([...nesRgb(0x0f)]); // pixel 0 -> universal bg
+  expect(px(1, 0)).toEqual([...nesRgb(0x30)]); // pixel 1 -> group1 colour 1
+  expect(px(2, 0)).toEqual([...nesRgb(0x21)]);
+  expect(px(3, 0)).toEqual([...nesRgb(0x16)]);
 });
 
 test("pngToChr rejects a malformed image", () => {
