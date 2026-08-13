@@ -2,9 +2,9 @@
 // against a FakeSerialPort. The menu cases mirror the native gtest (packages/native/test/n8/Edio.test.cpp)
 // byte-for-byte; the load cases exercise loadRom / writeSramDirect over the fake.
 import { test, expect } from "../../testing/harness";
-import { Edio, ADDR_SRM } from "../../src/n8/edio";
+import { Edio, ADDR_SRM, ADDR_CHR, N8_OS_REGION } from "../../src/n8/edio";
 import { N8Menu } from "../../src/n8/n8Menu";
-import { loadRom, writeSramDirect } from "../../src/n8/n8Load";
+import { loadRom, writeSramDirect, writeMemDirect, assertGameRegion } from "../../src/n8/n8Load";
 import { FakeSerialPort } from "../../src/n8/fakeSerial";
 
 const u32le = (n: number): number[] => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff];
@@ -119,4 +119,29 @@ test("writeSramDirect throws when the readback differs", () => {
   port.queueBytes(0x11, 0x22, 0x33, 0xff); // last byte differs
   const edio = new Edio(port);
   expect(() => writeSramDirect(edio, new Uint8Array([0x11, 0x22, 0x33, 0x44]))).toThrow("verify failed");
+});
+
+// --- writeMemDirect (live CHR/PRG hot-patch) + assertGameRegion ------------------------------------------
+
+test("writeMemDirect writes a block to a device address and verifies the readback", () => {
+  const port = new FakeSerialPort();
+  port.queueBytes(0xde, 0xad, 0xbe, 0xef); // memRD verify -> identical
+  const n = writeMemDirect(new Edio(port), ADDR_CHR + 0x40, new Uint8Array([0xde, 0xad, 0xbe, 0xef]));
+  expect(n).toBe(4);
+  // First frame is the CMD_MEM_WR (0x1a) to ADDR_CHR + 0x40.
+  expect(port.written.slice(0, 12)).toEqual([0x2b, 0xd4, 0x1a, 0xe5, ...u32le(ADDR_CHR + 0x40), ...u32le(4)]);
+});
+
+test("writeMemDirect throws when the readback differs", () => {
+  const port = new FakeSerialPort();
+  port.queueBytes(0xde, 0xad, 0xbe, 0x00); // last byte differs
+  expect(() => writeMemDirect(new Edio(port), ADDR_CHR, new Uint8Array([0xde, 0xad, 0xbe, 0xef]))).toThrow("verify failed");
+});
+
+test("assertGameRegion allows the game region and blocks the N8 OS region", () => {
+  assertGameRegion(0, 8192); // in-range: a throw here fails the test
+  assertGameRegion(N8_OS_REGION - 4, 4); // ends exactly at the OS boundary - allowed
+  expect(() => assertGameRegion(N8_OS_REGION - 4, 8)).toThrow(); // spills into the OS region
+  expect(() => assertGameRegion(N8_OS_REGION, 1)).toThrow();
+  expect(() => assertGameRegion(-1, 1)).toThrow();
 });

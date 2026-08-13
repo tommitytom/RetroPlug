@@ -11,8 +11,9 @@
 //   retroplug-n8-hwtest read    <sd-path> <local-dest> [port]  # CMD_F_FRD: read an SD file over USB
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
 //   retroplug-n8-hwtest sniff    [port]                        # memRD ADDR_SSR: a running game's live APU/PPU/OAM
+//   retroplug-n8-hwtest memwr    <addr-hex> <file> [port]      # block memWR + verify (live-patch CHR/PRG)
 //
-// peek/poke/read/vramdump/sniff drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
+// peek/poke/read/vramdump/sniff/memwr drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
 // the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
 // edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read pulls a whole
 // SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
@@ -40,7 +41,7 @@ int main(int argc, char** argv) {
         // `sniff` needs no path/addr (it auto-detects the port), so allow a bare argc==2.
         if (!(argc == 2 && std::string(argv[1]) == "sniff")) {
             std::fprintf(stderr,
-                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff> <path|addr> [len|byte|dest] [port]\n",
+                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff|memwr> <path|addr> [len|byte|dest] [port]\n",
                          argv[0]);
             return 2;
         }
@@ -114,6 +115,54 @@ int main(int argc, char** argv) {
             return 0;
         } catch (const std::exception& e) {
             std::fprintf(stderr, "%s failed: %s\n", op.c_str(), e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio block memWR from a file + readback verify: the block-write twin of poke. Live-patch a running
+    // game's CHR/PRG (memWR to ADDR_CHR/ADDR_PRG + offset writes the same PSRAM the console fetches). Exercises
+    // the native memWR on hardware at an arbitrary address.
+    if (op == "memwr") {
+        if (argc < 4) {
+            std::fprintf(stderr, "usage: %s memwr <addr-hex> <file> [port]\n", argv[0]);
+            return 2;
+        }
+        const std::int32_t addr  = static_cast<std::int32_t>(std::strtol(argv[2], nullptr, 0));
+        const std::string  src   = argv[3];
+        const std::string  pport = argc > 4 ? argv[4] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        std::FILE* f = std::fopen(src.c_str(), "rb");
+        if (!f) {
+            std::fprintf(stderr, "cannot read %s\n", src.c_str());
+            return 1;
+        }
+        std::vector<std::uint8_t> data;
+        std::uint8_t              chunk[4096];
+        for (std::size_t got; (got = std::fread(chunk, 1, sizeof(chunk), f)) > 0;)
+            data.insert(data.end(), chunk, chunk + got);
+        std::fclose(f);
+        if (data.empty()) {
+            std::fprintf(stderr, "%s is empty\n", src.c_str());
+            return 1;
+        }
+        try {
+            WjwwoodSerialPort         sp(pport);
+            Edio                      edio(sp);
+            edio.connect();
+            edio.memWR(addr, data.data(), data.size());
+            std::vector<std::uint8_t> check(data.size());
+            edio.memRD(addr, check.data(), check.size());
+            if (check != data) {
+                std::fprintf(stderr, "verify failed: readback != written\n");
+                return 1;
+            }
+            std::printf("wrote + verified %zu bytes -> [0x%X]\n", data.size(), addr);
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "memwr failed: %s\n", e.what());
             return 1;
         }
     }

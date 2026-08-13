@@ -6,14 +6,27 @@
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import { createSerialClient } from "../../src/realBackend";
-import { createN8, baseName, ADDR_MENU_CHR, ADDR_SSR, type SerialPortInfo, type LoadOptions } from "../../src/n8";
+import {
+  createN8,
+  baseName,
+  assertGameRegion,
+  ADDR_MENU_CHR,
+  ADDR_SSR,
+  ADDR_CHR,
+  ADDR_PRG,
+  type SerialPortInfo,
+  type LoadOptions,
+} from "../../src/n8";
 import { menuScreenToRgba } from "../../src/n8/menuImage";
 import { decodeSniffer, SNIFFER_REGION_SIZE, type SnifferSnapshot } from "../../src/n8/sniffer";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 
 const DEFAULT_ROM = "resources/roms/n8-midi.nes";
-const VALUE_FLAGS = new Set(["--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--sniff-raw", "--serial"]);
+const VALUE_FLAGS = new Set([
+  "--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--sniff-raw",
+  "--dump-chr", "--patch-chr", "--patch-prg", "--serial",
+]);
 
 const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
@@ -109,6 +122,11 @@ const N8_LOAD_HELP = [
   "  --sniff            read a RUNNING game's live APU/PPU/OAM state over USB and print it (a game must",
   "                     be running - the sniffer is off at the menu)",
   "  --sniff-raw <file> dump the raw 512-byte sniffer region to a file (no decode)",
+  "  --dump-chr <file>  read the running game's 8 KB visible CHR bank over USB to a file (edit + patch back)",
+  "  --patch-chr <hex-offset> <file>  live-patch the running game's CHR (graphics) from <file> at CHR+offset",
+  "                     (verified; changes show on-screen next frame). Best on a CHR-ROM game (NROM etc.)",
+  "  --patch-prg <hex-offset> <file>  live-patch the running game's PRG (code) from <file> at PRG+offset.",
+  "                     WARNING: a bad code patch can crash the game (power-cycle to recover)",
   "  --show-song        decode the live cart battery (risa/LSDj) and print its songs",
   "  --serial <port>    use this serial port (default: auto-detect the N8)",
   "",
@@ -128,21 +146,32 @@ export const n8LoadTool: CliTool = {
     const getFile = flag(args, "--get-file");
     const screenshot = flag(args, "--screenshot");
     const sniffRaw = flag(args, "--sniff-raw");
+    const dumpChr = flag(args, "--dump-chr");
+    const patchChr = flag(args, "--patch-chr"); // operand = hex offset into CHR
+    const patchPrg = flag(args, "--patch-prg"); // operand = hex offset into PRG
     const doLs = has(args, "--ls");
     const sramOnly = has(args, "--sram-only");
     const showSong = has(args, "--show-song");
     const doSniff = has(args, "--sniff");
+    const isPatch = patchChr != null || patchPrg != null;
 
     if (sramOnly && !srmPath) throw new Error("--sram-only requires --srm <save.srm>");
+    if (patchChr != null && patchPrg != null) throw new Error("pass only one of --patch-chr / --patch-prg");
 
     // Read local files up front (fail fast, before touching hardware).
     const readOnly =
-      doLs || dumpPath != null || showSong || sramOnly || getFile != null || screenshot != null || doSniff || sniffRaw != null;
+      doLs || dumpPath != null || showSong || sramOnly || getFile != null || screenshot != null ||
+      doSniff || sniffRaw != null || dumpChr != null || isPatch;
     // --get-file <sd-path> <local-dest>: the SD source is the flag operand, the local destination the positional.
     const getFileDest = getFile != null ? positional(args) : undefined;
     if (getFile != null && !getFileDest)
       throw new Error("--get-file requires a local destination: --get-file <sd-path> <local-dest>");
-    const romPath = getFile != null ? undefined : positional(args) ?? (sdPath || readOnly ? undefined : DEFAULT_ROM);
+    // --patch-chr/--patch-prg <hex-offset> <file>: the offset is the flag operand, the local file the positional.
+    const patchFile = isPatch ? positional(args) : undefined;
+    if (isPatch && !patchFile)
+      throw new Error("--patch-chr/--patch-prg requires a data file: --patch-chr <hex-offset> <file>");
+    const romPath =
+      getFile != null || isPatch ? undefined : positional(args) ?? (sdPath || readOnly ? undefined : DEFAULT_ROM);
     let romBytes: Uint8Array | undefined;
     let romName: string | undefined;
     if (romPath && !sdPath) {
@@ -190,6 +219,26 @@ export const n8LoadTool: CliTool = {
           console.log(`wrote ${region.length} bytes of raw sniffer region -> ${sniffRaw}`);
         }
         if (doSniff) printSniffer(decodeSniffer(region));
+        return;
+      }
+      if (dumpChr != null) {
+        // Grab the 8 KB visible CHR bank (edit it, then --patch-chr it back). Read-only.
+        const chr = n8.edio.memRD(ADDR_CHR, 8192);
+        if (!s.backend.writeFile(dumpChr, chr)) throw new Error(`write failed: ${dumpChr}`);
+        console.log(`wrote ${chr.length} bytes of CHR (bank 0) -> ${dumpChr}`);
+        return;
+      }
+      if (isPatch) {
+        // Live-patch a RUNNING game's CHR (graphics) or PRG (code) - the write-twin of --sniff. The console
+        // fetches the same PSRAM, so the change shows on the next PPU/CPU fetch. assertGameRegion keeps it out
+        // of the N8 OS region; writeMemDirect verifies the readback.
+        const offset = parseInt((patchChr ?? patchPrg)!, 16);
+        if (Number.isNaN(offset)) throw new Error(`bad patch offset (expected hex): ${patchChr ?? patchPrg}`);
+        const bytes = readOrThrow(s, patchFile!, "patch data");
+        assertGameRegion(offset, bytes.length);
+        const region = patchChr != null ? "CHR" : "PRG";
+        const n = n8.writeMemDirect((patchChr != null ? ADDR_CHR : ADDR_PRG) + offset, bytes);
+        console.log(`patched + verified ${n} bytes into ${region} at +0x${offset.toString(16)} (live, running game)`);
         return;
       }
       if (dumpPath != null) {

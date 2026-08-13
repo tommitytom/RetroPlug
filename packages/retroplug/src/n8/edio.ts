@@ -19,8 +19,11 @@ const CMD_F_FRD = 0xca; // read bytes from the open file
 const CMD_F_FWR = 0xcc; // write bytes to the open file
 const CMD_F_FCLOSE = 0xce; // close the open file
 
+export const ADDR_PRG = 0x000000; // PRG-ROM PSRAM (8 MB) - live code, the same chip the CPU fetches
+export const ADDR_CHR = 0x800000; // CHR-ROM PSRAM (8 MB) - live graphics, the same chip the PPU fetches
 export const ADDR_SRM = 0x1000000; // cart battery RAM (a game's .srm)
 export const ADDR_MENU_CHR = 0xfe0000; // menu CHR (ADDR_CHR 0x800000 + 0x7E0000); screenshot
+export const N8_OS_REGION = 0x7e0000; // top of PRG/CHR (0x7E0000..0x800000) is the N8 OS/menu - never patch into it
 export const ADDR_SSR = 0x1802000; // save-state sniffer: a running game's live APU/PPU/OAM write-mirror
 export const ADDR_FIFO = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
 export const SIZE_SRM_GAME = 0x10000; // 64 KB - max battery RAM a game uses

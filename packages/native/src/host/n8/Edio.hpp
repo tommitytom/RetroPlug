@@ -44,6 +44,8 @@ public:
     static constexpr std::uint8_t CMD_F_FRD     = 0xCA;   // read bytes from the open file
     static constexpr std::uint8_t CMD_F_FWR     = 0xCC;   // write bytes to the open file
     static constexpr std::uint8_t CMD_F_FCLOSE  = 0xCE;   // close the open file
+    static constexpr std::int32_t ADDR_PRG      = 0x0000000; // PRG-ROM PSRAM (8 MB) - the same chip the CPU fetches
+    static constexpr std::int32_t ADDR_CHR      = 0x0800000; // CHR-ROM PSRAM (8 MB) - the same chip the PPU fetches
     static constexpr std::int32_t ADDR_SRM      = 0x1000000; // cart battery RAM (SRAM/PRG-NVRAM); a game's .srm
     static constexpr std::int32_t ADDR_MENU_CHR = 0x0FE0000; // menu CHR (ADDR_CHR 0x800000 + 0x7E0000); screenshot
     static constexpr std::int32_t ADDR_SSR      = 0x1802000; // save-state sniffer: a running game's live APU/PPU/OAM mirror

@@ -6,7 +6,7 @@
 
 import { Edio } from "./edio";
 import { N8Menu } from "./n8Menu";
-import { loadRom, dumpSram, writeSramDirect, type LoadOptions, type LoadResult } from "./n8Load";
+import { loadRom, dumpSram, writeSramDirect, writeMemDirect, type LoadOptions, type LoadResult } from "./n8Load";
 import type { SerialTransport } from "./transport";
 
 export {
@@ -14,8 +14,11 @@ export {
   N8TimeoutError,
   ADDR_SRM,
   ADDR_MENU_CHR,
+  ADDR_PRG,
+  ADDR_CHR,
   ADDR_SSR,
   ADDR_FIFO,
+  N8_OS_REGION,
   SIZE_SRM_GAME,
   FA_READ,
   FA_WRITE,
@@ -25,7 +28,7 @@ export {
 export type { N8DirEntry } from "./edio";
 export { N8Menu } from "./n8Menu";
 export { RisaSyncTranslator } from "./risaSyncTranslator";
-export { loadRom, dumpSram, writeSramDirect, baseName } from "./n8Load";
+export { loadRom, dumpSram, writeSramDirect, writeMemDirect, assertGameRegion, baseName } from "./n8Load";
 export type { LoadOptions, LoadResult } from "./n8Load";
 export type { SerialTransport, OpenSerialPort, SerialPortInfo, SerialClient } from "./transport";
 
@@ -42,6 +45,9 @@ export interface N8 {
   dumpSram(): Uint8Array;
   /** Write a save straight to cart SRAM (running game only; corrupts the menu). Returns bytes written. */
   writeSramDirect(srm: Uint8Array): number;
+  /** Write a block straight to device memory (ADDR_PRG/ADDR_CHR + offset) + verify. Live-patches a running
+   *  game's code/graphics. Returns bytes written. */
+  writeMemDirect(addr: number, data: Uint8Array): number;
   /** List an SD-card directory. */
   listDir(path: string): ReturnType<Edio["listDir"]>;
   /** Read a whole SD-card file by path (over USB). */
@@ -58,6 +64,7 @@ export function createN8(transport: SerialTransport): N8 {
     load: (opts: LoadOptions) => loadRom(edio, opts),
     dumpSram: () => dumpSram(edio),
     writeSramDirect: (srm: Uint8Array) => writeSramDirect(edio, srm),
+    writeMemDirect: (addr: number, data: Uint8Array) => writeMemDirect(edio, addr, data),
     listDir: (path: string) => edio.listDir(path),
     readFile: (path: string) => edio.readFile(path),
   };
