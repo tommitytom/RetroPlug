@@ -132,9 +132,9 @@ Reading APU regs off real silicon would directly validate the emulator's
 | `'t'` | test / handshake | ✓ `N8Menu::test` |
 | `'n'` | select game (install) | ✓ `appInstall` |
 | `'s'` | run game | ✓ `appStart` |
-| `'r'` | reboot | ✓ `reset` (but see caveat) |
+| `'r'` | reboot | ✗ HANGS the console to a gray screen from the menu (see caveat) |
 | `'h'` | halt | ✗ |
-| `'v'` | **VRAM dump** (screen capture) | ✗ |
+| `'v'` | **VRAM dump** (screen capture) | ✓ `vramDump` (`n8-load --screenshot`) |
 
 ## Capability catalog — what's not yet exposed
 
@@ -144,10 +144,10 @@ Grouped by payoff. "Effort" is the add to `Edio`/tooling.
 
 | Capability | How | Effort | Notes |
 |---|---|---|---|
-| **Screen capture over USB** | menu `'v'` (2 KB VRAM + 16-byte palette) + `memRD` CHR → PNG (`edlink` `screen`, `MenuImage.MakeImage`) | menu cmd + assembly | Drop the `/dev/video0` capture card for menu grabs |
-| **Reset console over USB** | `edlink` `reset` = `Test()`+`'r'`+wait-ready; or `CMD_HOST_RST` (0x29) | 1 opcode / fix menu seq | Replace the HA smart-plug power-cycle (our `*r` currently hangs — likely a missing wait-for-ready or game-vs-menu context) |
+| ✅ **Screen capture over USB** | menu `'v'` (2 KB VRAM + 16-byte palette) + `memRD` CHR → PNG (`edlink` `screen`, `MenuImage.MakeImage`) | menu cmd + assembly | DONE (`n8-load --screenshot`): dropped the `/dev/video0` capture card for menu grabs |
+| ⛔ **Reset console over USB** | `edlink` `reset` = `Test()`+`'r'`+single-ack | tried, does not work | NOT VIABLE on our N8. Implemented + hardware-tested the EXACT `edlink` sequence (`'*t'` handshake then `'*r'` + one ack); from the file browser `'*r'` reboots into a solid **gray screen** and hangs (menu stops answering `'*t'`; recovery needs a power-cycle — strictly worse than the smart-plug). `'*r'` is menu-FIFO-serviced so it can only be sent from the menu, exactly where it hangs. `CMD_HOST_RST` (0x29) is Genesis/PC-Engine only; `CMD_RST_EFU` (0x25) reboots into the firmware-update unit; `CMD_RST_MCU` (0x12) is the bootloader — none is a clean file-browser reboot. A clean return-to-menu would need `ed_exit_game`'s config write (`map_idx=255`+`UNLOCK` to `ADDR_CFG`) + reset, which is unverified RE. Reverted. |
 | **Live state sniffer read** | `memRD` at `ADDR_SSR` (APU/PPU/CPU/RAM/OAM) | just `memRD` | On-hardware audio/graphics state; validate emulator |
-| **Arbitrary SD file read** | `CMD_F_FRD` (0xCA) / `CMD_F_FRD_MEM` (0xCB) | 1 opcode | Dump `EDN8/sysdata/registry.bin` to **persist** expansion-volume; pull any save/config/OS file |
+| ✅ **Arbitrary SD file read** | `CMD_F_FRD` (0xCA) / `CMD_F_FRD_MEM` (0xCB) | 1 opcode | DONE (`n8-load --get-file`): dump `EDN8/sysdata/registry.bin` to **persist** expansion-volume; pull any save/config/OS file |
 
 ### Powerful / cool
 
@@ -175,20 +175,27 @@ Grouped by payoff. "Effort" is the add to `Edio`/tooling.
 - **USB address offset trap:** the NES-CPU-side `MapConfig` layout starts at offset 0, but over
   USB the config block sits at **offset 32** (`master_vol` = `0x1800023`, not `0x1800003`). Poking
   the wrong one silently no-ops.
-- **`*r` menu reboot hangs** in our current use; `edlink` does `Test()` → `'r'` → wait-for-ready,
-  and there's a lower-level `CMD_HOST_RST`. Get the sequence right before relying on reset.
+- **`*r` menu reboot HANGS the console (confirmed 2026-08-13, feature reverted).** We implemented the
+  EXACT `edlink` `DeviceCmd.Reset` (`'*t'` handshake to re-sync the framing, then `'*r'` + one ack) and
+  tested on real hardware: from the file browser, `'*r'` reboots into a solid **gray screen** and the
+  6502 does not return to the menu (the menu stops answering `'*t'`; file/mem ops over the MCU still
+  work, but recovery needs a power-cycle). Since `'*r'` is menu-FIFO-serviced it can ONLY be sent from
+  the menu — exactly where it hangs — so there is no context in which it usefully returns to the browser.
+  `CMD_HOST_RST` (0x29) is Genesis/PC-Engine only (never used on the N8); `CMD_RST_EFU` (0x25) reboots
+  into the firmware-update unit; `CMD_RST_MCU` (0x12) is the bootloader. The only plausible clean path is
+  `ed_exit_game`'s config write (`map_idx=255` + `MAP_CTRL_UNLOCK` to `ADDR_CFG`) followed by a reset —
+  device-side C in `edn8-pro-pub`, but unverified over USB. Left for a future slice.
 - **The file API works while a game runs** (verified — `--ls` responded with EverMIDI running).
 - **`ed_cmd_game_ctr` is a counter**, not controller injection — no button-injection over USB was
   found.
 
 ## Suggested next builds (highest payoff-to-effort)
 
-1. **Screen capture over USB** (menu `'v'` + CHR read + PNG) — retire the video-capture path for
-   menu/boot screenshots.
-2. **`CMD_F_FRD` file-read** — unlocks reading `registry.bin` (persist expansion volume), saves,
-   and any SD file; small mirror of the existing `CMD_F_FWR` path.
-3. **Sniffer read helper** — `memRD` wrappers for APU/PPU/OAM to inspect real-hardware state.
-4. **Reset-over-USB** — nail the `reset`/`CMD_HOST_RST` sequence to replace the smart-plug cycle.
+1. ✅ **Screen capture over USB** (menu `'v'` + CHR read + PNG) — DONE (`n8-load --screenshot`).
+2. ✅ **`CMD_F_FRD` file-read** — DONE (`n8-load --get-file`): reads `registry.bin`, saves, any SD file.
+3. ⛔ **Reset-over-USB** — tried, NOT VIABLE: `'*r'` from the menu hangs the console to a gray screen
+   (the exact `edlink` sequence; reverted). See the caveat + capability catalog for the full finding.
+4. **Sniffer read helper** — `memRD` wrappers for APU/PPU/OAM to inspect real-hardware state (next best).
 
 ---
 *Reference: `/workspaces/edlink` (DeviceIO_V1.cs, DEV_EDN8/*, Help.cs), `/workspaces/edn8-pro-pub`
