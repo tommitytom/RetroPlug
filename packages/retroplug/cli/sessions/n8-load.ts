@@ -6,12 +6,13 @@
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import { createSerialClient } from "../../src/realBackend";
-import { createN8, baseName, type SerialPortInfo, type LoadOptions } from "../../src/n8";
+import { createN8, baseName, ADDR_MENU_CHR, type SerialPortInfo, type LoadOptions } from "../../src/n8";
+import { menuScreenToRgba } from "../../src/n8/menuImage";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 
 const DEFAULT_ROM = "resources/roms/n8-midi.nes";
-const VALUE_FLAGS = new Set(["--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--serial"]);
+const VALUE_FLAGS = new Set(["--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--serial"]);
 
 const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
@@ -76,6 +77,7 @@ const N8_LOAD_HELP = [
   "  --dump-sram <file> read the cart SRAM (64 KB game region) out to <file> (no ROM, no reboot)",
   "  --ls <path>        list an SD-card directory (use \"/\" for root) and exit",
   "  --get-file <sd-path> <local-dest>  read an SD-card file over USB to a local file (no reboot)",
+  "  --screenshot <out.png>  capture the N8 MENU screen over USB to a PNG (the menu must be showing)",
   "  --show-song        decode the live cart battery (risa/LSDj) and print its songs",
   "  --serial <port>    use this serial port (default: auto-detect the N8)",
   "",
@@ -93,6 +95,7 @@ export const n8LoadTool: CliTool = {
     const srmPath = flag(args, "--srm");
     const dumpPath = flag(args, "--dump-sram");
     const getFile = flag(args, "--get-file");
+    const screenshot = flag(args, "--screenshot");
     const doLs = has(args, "--ls");
     const sramOnly = has(args, "--sram-only");
     const showSong = has(args, "--show-song");
@@ -100,7 +103,7 @@ export const n8LoadTool: CliTool = {
     if (sramOnly && !srmPath) throw new Error("--sram-only requires --srm <save.srm>");
 
     // Read local files up front (fail fast, before touching hardware).
-    const readOnly = doLs || dumpPath != null || showSong || sramOnly || getFile != null;
+    const readOnly = doLs || dumpPath != null || showSong || sramOnly || getFile != null || screenshot != null;
     // --get-file <sd-path> <local-dest>: the SD source is the flag operand, the local destination the positional.
     const getFileDest = getFile != null ? positional(args) : undefined;
     if (getFile != null && !getFileDest)
@@ -131,6 +134,17 @@ export const n8LoadTool: CliTool = {
         const bytes = n8.readFile(getFile);
         if (!s.backend.writeFile(getFileDest!, bytes)) throw new Error(`write failed: ${getFileDest}`);
         console.log(`read ${bytes.length} bytes of ${getFile} -> ${getFileDest}`);
+        return;
+      }
+      if (screenshot != null) {
+        n8.menu.test(); // clean "is the menu running?" error before the big raw VRAM read
+        const { vram, palette } = n8.menu.vramDump();
+        const chr = n8.edio.memRD(ADDR_MENU_CHR, 8192);
+        const img = menuScreenToRgba(chr, vram, palette);
+        const png = s.backend.pngEncode(img.width, img.height, img.rgba);
+        if (!png) throw new Error("PNG encode failed");
+        if (!s.backend.writeFile(screenshot, png)) throw new Error(`write failed: ${screenshot}`);
+        console.log(`wrote ${img.width}x${img.height} menu screenshot -> ${screenshot}`);
         return;
       }
       if (dumpPath != null) {

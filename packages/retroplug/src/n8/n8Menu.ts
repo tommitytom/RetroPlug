@@ -42,6 +42,17 @@ export class N8Menu {
     this.cmd("s");
   }
 
+  // Dump the menu's on-screen state: '*v' -> the firmware streams 2048 VRAM bytes (1024 flattened
+  // (tileIdx, attr) pairs) then 16 palette bytes (NES master-palette indices) straight back over USB. Pair
+  // with an Edio.memRD(ADDR_MENU_CHR, 8192) to reconstruct the 256x224 screen (see menuImage.ts). Menu-only
+  // (a running game won't answer) - call test() first for a clean error.
+  vramDump(): { vram: Uint8Array; palette: Uint8Array } {
+    this.cmd("v");
+    const vram = this.edio.readData(2048);
+    const palette = this.edio.readData(16);
+    return { vram, palette };
+  }
+
   // Reboot back to the menu: '*r' -> best-effort ack. The console then reboots (~seconds, screen black), so
   // the caller must poll test() to know when the menu is actually back. Use to switch ROMs.
   reset(): void {

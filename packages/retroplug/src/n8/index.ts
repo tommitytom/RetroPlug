@@ -13,6 +13,7 @@ export {
   Edio,
   N8TimeoutError,
   ADDR_SRM,
+  ADDR_MENU_CHR,
   ADDR_FIFO,
   SIZE_SRM_GAME,
   FA_READ,

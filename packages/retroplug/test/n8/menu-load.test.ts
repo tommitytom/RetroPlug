@@ -61,6 +61,21 @@ test("N8Menu.appStart sends '*s'", () => {
   expect(port.written).toEqual(memWrFifo([0x2a, 0x73])); // '*', 's'
 });
 
+test("N8Menu.vramDump sends '*v' and splits the 2048+16 reply into vram + palette", () => {
+  const port = new FakeSerialPort();
+  const reply: number[] = [];
+  for (let i = 0; i < 2048; i++) reply.push(i & 0xff); // vram
+  for (let i = 0; i < 16; i++) reply.push(0xa0 + i); // palette
+  port.queueBytes(...reply);
+  const { vram, palette } = new N8Menu(new Edio(port)).vramDump();
+  expect(vram.length).toBe(2048);
+  expect(palette.length).toBe(16);
+  expect(vram[0]).toBe(0);
+  expect(vram[2047]).toBe(2047 & 0xff);
+  expect(Array.from(palette)).toEqual([0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf]);
+  expect(port.written).toEqual(memWrFifo([0x2a, 0x76])); // '*', 'v'
+});
+
 // --- loadRom orchestration ------------------------------------------------------------------------------
 
 test("loadRom (sdPath) handshakes, installs, and boots - '*s' is written last", () => {

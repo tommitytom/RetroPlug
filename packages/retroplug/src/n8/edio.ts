@@ -20,6 +20,7 @@ const CMD_F_FWR = 0xcc; // write bytes to the open file
 const CMD_F_FCLOSE = 0xce; // close the open file
 
 export const ADDR_SRM = 0x1000000; // cart battery RAM (a game's .srm)
+export const ADDR_MENU_CHR = 0xfe0000; // menu CHR (ADDR_CHR 0x800000 + 0x7E0000); screenshot
 export const ADDR_FIFO = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
 export const SIZE_SRM_GAME = 0x10000; // 64 KB - max battery RAM a game uses
 
@@ -201,6 +202,13 @@ export class Edio {
   rx32(): number {
     const b = this.rxData(4);
     return (b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24)) >>> 0;
+  }
+
+  // Read `size` raw bytes off the serial port (no command frame) - a menu reply the firmware streams after a
+  // FIFO command, e.g. N8Menu.vramDump's 2048+16 bytes. (memRD/fileRead can't serve it: each sends its own
+  // command first.) Blocks; throws N8TimeoutError on no response.
+  readData(size: number): Uint8Array {
+    return this.rxData(size);
   }
 
   // --- framing internals (mirror Edio.cpp) ---

@@ -23,10 +23,13 @@
 
 #include "host/n8/Edio.hpp"
 #include "host/n8/N8Link.hpp"
+#include "host/n8/N8Menu.hpp"
 
 using retroplug::Edio;
 using retroplug::ISerialPort;
 using retroplug::N8Link;
+using retroplug::N8Menu;
+using retroplug::N8VramDump;
 
 namespace {
 
@@ -182,6 +185,21 @@ TEST_CASE("readFile finds the size via listDir, then reads the whole file", "[n8
     push({0x00, 0xDE, 0xAD, 0xBE, 0xEF});                             // fileRead resp + 4 data bytes
     port.queueStatus(0xA500);                                          // fileClose checkStatus
     REQUIRE(Edio(port).readFile("d/f") == std::vector<std::uint8_t>{0xDE, 0xAD, 0xBE, 0xEF});
+}
+
+TEST_CASE("N8Menu.vramDump sends '*v' and splits the 2048+16 reply", "[n8]") {
+    FakeSerialPort port;
+    for (int i = 0; i < 2048; ++i) port.toRead.push_back(static_cast<std::uint8_t>(i & 0xFF));
+    for (int i = 0; i < 16; ++i) port.toRead.push_back(static_cast<std::uint8_t>(0xA0 + i));
+    Edio             edio(port);
+    const N8VramDump vd = N8Menu(edio).vramDump();
+    REQUIRE(vd.vram.size() == 2048);
+    REQUIRE(vd.palette.size() == 16);
+    REQUIRE(vd.vram[2047] == (2047 & 0xFF));
+    REQUIRE(vd.palette[0] == 0xA0);
+    REQUIRE(vd.palette[15] == 0xAF);
+    // The only write is the '*v' FIFO command (memWR to ADDR_FIFO 0x1810000).
+    REQUIRE(port.written == fromHex("2bd41ae50000810102000000002a76"));
 }
 
 // --- N8Link: the host serial thread + ring + timed scheduler (standalone/plugin forward; no TS twin) ---

@@ -30,6 +30,16 @@ int N8Menu::appInstall(const std::string& devicePath) {
 
 void N8Menu::appStart() { cmd('s'); }
 
+N8VramDump N8Menu::vramDump() {
+    cmd('v');
+    N8VramDump out;
+    out.vram.resize(2048);
+    out.palette.resize(16);
+    edio_.readData(out.vram.data(), out.vram.size());
+    edio_.readData(out.palette.data(), out.palette.size());
+    return out;
+}
+
 void N8Menu::reset() {
     edio_.flushInput();
     cmd('r');

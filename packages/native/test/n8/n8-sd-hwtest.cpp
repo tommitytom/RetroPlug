@@ -9,8 +9,9 @@
 //   retroplug-n8-hwtest peek    <addr-hex> <len> [port]   # CMD_MEM_RD: read bytes from a device address
 //   retroplug-n8-hwtest poke    <addr-hex> <byte>[port]   # CMD_MEM_WR: write one byte to a device address
 //   retroplug-n8-hwtest read    <sd-path> <local-dest> [port]  # CMD_F_FRD: read an SD file over USB
+//   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
 //
-// peek/poke/read drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config registers like
+// peek/poke/read/vramdump drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
 // the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
 // edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read pulls a whole
 // SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
@@ -28,13 +29,14 @@
 
 #include "host/n8/Edio.hpp"
 #include "host/n8/N8Host.hpp"
+#include "host/n8/N8Menu.hpp"
 #include "host/n8/WjwwoodSerialPort.hpp"
 
 using namespace retroplug;
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: %s <dump|load|restore|peek|poke|read> <path|addr> [len|byte|dest] [port]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s <dump|load|restore|peek|poke|read|vramdump> <path|addr> [len|byte|dest] [port]\n", argv[0]);
         return 2;
     }
     const std::string op = argv[1];
@@ -106,6 +108,43 @@ int main(int argc, char** argv) {
             return 0;
         } catch (const std::exception& e) {
             std::fprintf(stderr, "%s failed: %s\n", op.c_str(), e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio + N8Menu screen dump ('*v'): pull the menu VRAM(2048)+palette(16)+CHR(8192) over USB to one
+    // raw file (10256 bytes). Menu-only (a running game won't answer '*v'). Exercises the C++ readData /
+    // vramDump / memRD twins; render the raw dump to PNG via the TS assembler or use the CLI --screenshot.
+    if (op == "vramdump") {
+        const std::string dest  = argv[2];
+        const std::string pport = argc > 3 ? argv[3] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            N8Menu menu(edio);
+            menu.test();  // clean "not at its menu" error before the big raw read
+            const N8VramDump          vd = menu.vramDump();
+            std::vector<std::uint8_t> chr(8192);
+            edio.memRD(Edio::ADDR_MENU_CHR, chr.data(), chr.size());
+            std::FILE* f = std::fopen(dest.c_str(), "wb");
+            if (!f) {
+                std::fprintf(stderr, "cannot write %s\n", dest.c_str());
+                return 1;
+            }
+            std::fwrite(vd.vram.data(), 1, vd.vram.size(), f);
+            std::fwrite(vd.palette.data(), 1, vd.palette.size(), f);
+            std::fwrite(chr.data(), 1, chr.size(), f);
+            std::fclose(f);
+            std::printf("wrote vram(%zu)+palette(%zu)+chr(%zu) = %zu bytes -> %s\n", vd.vram.size(),
+                        vd.palette.size(), chr.size(), vd.vram.size() + vd.palette.size() + chr.size(), dest.c_str());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "vramdump failed: %s\n", e.what());
             return 1;
         }
     }

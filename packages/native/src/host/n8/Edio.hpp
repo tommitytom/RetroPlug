@@ -45,6 +45,7 @@ public:
     static constexpr std::uint8_t CMD_F_FWR     = 0xCC;   // write bytes to the open file
     static constexpr std::uint8_t CMD_F_FCLOSE  = 0xCE;   // close the open file
     static constexpr std::int32_t ADDR_SRM      = 0x1000000; // cart battery RAM (SRAM/PRG-NVRAM); a game's .srm
+    static constexpr std::int32_t ADDR_MENU_CHR = 0x0FE0000; // menu CHR (ADDR_CHR 0x800000 + 0x7E0000); screenshot
     static constexpr std::int32_t ADDR_FIFO     = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
     static constexpr std::size_t  SIZE_SRM_GAME = 0x10000;   // 64 KB — max battery RAM a game uses (risa: 64 KB)
     static constexpr int          ACK_BLOCK_SIZE = 1024;  // fileWrite ack granularity
@@ -102,6 +103,11 @@ public:
     std::uint8_t  rx8();
     std::uint16_t rx16();
     std::uint32_t rx32();
+
+    // Read `size` raw bytes off the serial port (no command frame) - a menu reply the firmware streams after a
+    // FIFO command, e.g. N8Menu::vramDump's 2048+16 bytes. (memRD/fileRead can't serve it: they send their own
+    // command first.) Blocks; throws on timeout.
+    void readData(std::uint8_t* data, std::size_t size);
 
     // Read timeout (ms) threaded into ISerialPort::read (handshake + menu replies). fifoWR never reads.
     void setReadTimeout(int ms) { timeoutMs_ = ms; }
