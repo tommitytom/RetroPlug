@@ -41,13 +41,16 @@ public:
     static constexpr std::uint8_t CMD_F_DIR_SIZE = 0xC6;  // number of records in the loaded directory
     static constexpr std::uint8_t CMD_F_DIR_GET = 0xC8;   // pull a range of directory records
     static constexpr std::uint8_t CMD_F_FOPN    = 0xC9;   // open a file on the SD card
+    static constexpr std::uint8_t CMD_F_FRD     = 0xCA;   // read bytes from the open file
     static constexpr std::uint8_t CMD_F_FWR     = 0xCC;   // write bytes to the open file
     static constexpr std::uint8_t CMD_F_FCLOSE  = 0xCE;   // close the open file
     static constexpr std::int32_t ADDR_SRM      = 0x1000000; // cart battery RAM (SRAM/PRG-NVRAM); a game's .srm
     static constexpr std::int32_t ADDR_FIFO     = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
     static constexpr std::size_t  SIZE_SRM_GAME = 0x10000;   // 64 KB — max battery RAM a game uses (risa: 64 KB)
     static constexpr int          ACK_BLOCK_SIZE = 1024;  // fileWrite ack granularity
+    static constexpr int          RD_BLOCK_SIZE  = 4096;  // fileRead resp-gated block size (matches edlink)
     // File-open mode flags (FatFs).
+    static constexpr std::uint8_t FA_READ         = 0x01;
     static constexpr std::uint8_t FA_WRITE        = 0x02;
     static constexpr std::uint8_t FA_CREATE_ALWAYS = 0x08;
     static constexpr std::uint8_t FS_MAKEPATH     = 0x80; // create parent dirs if missing
@@ -88,6 +91,12 @@ public:
     void fileWrite(const std::vector<std::uint8_t>& bytes) { fileWrite(bytes.data(), bytes.size()); }
     void fileClose();
 
+    // Read `size` bytes from the open file via CMD_F_FRD (resp-gated blocks; the inverse of fileWrite - no
+    // trailing status). Pairs with fileOpen(path, FA_READ). Throws on a non-zero per-block device status.
+    void fileRead(std::uint8_t* data, std::size_t size);
+    // Read a whole SD file by path: find its size via listDir, then fileOpen(FA_READ) -> fileRead -> fileClose.
+    std::vector<std::uint8_t> readFile(const std::string& path);
+
     // Blocking reads from the serial port - the N8 menu's replies come back this way (its TX FIFO drains to
     // USB). Throw std::runtime_error on timeout. Used by the menu command layer (N8Menu).
     std::uint8_t  rx8();
@@ -108,6 +117,7 @@ private:
     void txData(const std::uint8_t* data, std::size_t size);    // chunked at 8192
     void txString(const std::string& s);                        // tx16(len) + bytes
     void txDataACK(const std::uint8_t* data, std::size_t size); // ack byte (0=ok) per ACK_BLOCK_SIZE block
+    void rxDataACK(std::uint8_t* data, std::size_t size);       // resp byte (0=ok) per RD_BLOCK_SIZE block
     void rxData(std::uint8_t* data, std::size_t size);          // blocks; throws on timeout
     std::string rxString();                                     // rx16(len) + bytes
     void checkStatus();                                         // poll CMD_STATUS; throw if low byte != 0

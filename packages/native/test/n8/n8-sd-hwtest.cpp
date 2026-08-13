@@ -8,10 +8,12 @@
 //   retroplug-n8-hwtest restore <save.srm>   [port]   # write a .srm to the running game's SRAM + verify
 //   retroplug-n8-hwtest peek    <addr-hex> <len> [port]   # CMD_MEM_RD: read bytes from a device address
 //   retroplug-n8-hwtest poke    <addr-hex> <byte>[port]   # CMD_MEM_WR: write one byte to a device address
+//   retroplug-n8-hwtest read    <sd-path> <local-dest> [port]  # CMD_F_FRD: read an SD file over USB
 //
-// peek/poke drive a bare Edio (no N8Host / streaming thread), for FPGA config registers like the
-// expansion-audio master volume at 0x1800003 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
-// edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800003 <- 0..255, where 128 = unity gain.
+// peek/poke/read drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config registers like
+// the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
+// edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read pulls a whole
+// SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
 //
 // Exit 0 on success, 1 on the op's error, 2 on a usage / no-device problem.
 #include <chrono>
@@ -32,10 +34,44 @@ using namespace retroplug;
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: %s <dump|load|restore|peek|poke> <path|addr> [len|byte] [port]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s <dump|load|restore|peek|poke|read> <path|addr> [len|byte|dest] [port]\n", argv[0]);
         return 2;
     }
     const std::string op = argv[1];
+
+    // Bare-Edio SD file read (CMD_F_FRD): pull a whole SD file over USB to a local file. Read-only, so safe on
+    // a running game (exercises the C++ Edio::readFile twin of the CLI's TS readFile).
+    if (op == "read") {
+        if (argc < 4) {
+            std::fprintf(stderr, "usage: %s read <sd-path> <local-dest> [port]\n", argv[0]);
+            return 2;
+        }
+        const std::string sdPath = argv[2];
+        const std::string dest   = argv[3];
+        const std::string pport  = argc > 4 ? argv[4] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort               sp(pport);
+            Edio                            edio(sp);
+            edio.connect();  // handshake (works whether the menu or a game is running)
+            const std::vector<std::uint8_t> bytes = edio.readFile(sdPath);
+            std::FILE*                      f     = std::fopen(dest.c_str(), "wb");
+            if (!f) {
+                std::fprintf(stderr, "cannot write %s\n", dest.c_str());
+                return 1;
+            }
+            std::fwrite(bytes.data(), 1, bytes.size(), f);
+            std::fclose(f);
+            std::printf("read %zu bytes of %s -> %s\n", bytes.size(), sdPath.c_str(), dest.c_str());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "read failed: %s\n", e.what());
+            return 1;
+        }
+    }
 
     // Raw device-memory peek/poke: a bare Edio over the port (no N8Host, no streaming thread). Used to read /
     // write FPGA config registers directly - e.g. the expansion-audio master volume at 0x1800003.

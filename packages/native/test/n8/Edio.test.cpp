@@ -121,6 +121,9 @@ TEST_CASE("Edio framing matches the shared golden (twins edio.test.ts)", "[n8]")
         } else if (c.op == "memRD") {
             std::vector<std::uint8_t> buf(static_cast<std::size_t>(a.size.value_or(0)));
             if (!buf.empty()) edio.memRD(static_cast<std::int32_t>(a.addr.value_or(0)), buf.data(), buf.size());
+        } else if (c.op == "fileRead") {
+            std::vector<std::uint8_t> buf(static_cast<std::size_t>(a.size.value_or(0)));
+            if (!buf.empty()) edio.fileRead(buf.data(), buf.size());
         } else {
             FAIL("unknown golden op: " << c.op);
         }
@@ -154,6 +157,31 @@ TEST_CASE("connect throws on a non-0xA5 status word", "[n8]") {
 TEST_CASE("connect throws when the device does not answer (read timeout)", "[n8]") {
     FakeSerialPort port;  // no queued reply => read returns 0 => timeout
     REQUIRE_THROWS(Edio(port).connect());
+}
+
+TEST_CASE("fileRead loops resp-gated blocks over RD_BLOCK_SIZE", "[n8]") {
+    FakeSerialPort port;
+    port.toRead.push_back(0x00);                                     // block 1 resp
+    for (int i = 0; i < Edio::RD_BLOCK_SIZE; ++i) port.toRead.push_back(0xAA);
+    port.toRead.push_back(0x00);                                     // block 2 resp
+    for (int i = 0; i < 4; ++i) port.toRead.push_back(0xBB);
+    std::vector<std::uint8_t> buf(Edio::RD_BLOCK_SIZE + 4);
+    Edio(port).fileRead(buf.data(), buf.size());
+    REQUIRE(buf.front() == 0xAA);
+    REQUIRE(buf[Edio::RD_BLOCK_SIZE - 1] == 0xAA);
+    REQUIRE(buf.back() == 0xBB);
+}
+
+TEST_CASE("readFile finds the size via listDir, then reads the whole file", "[n8]") {
+    FakeSerialPort port;
+    const auto push = [&](std::initializer_list<std::uint8_t> bs) { for (std::uint8_t b : bs) port.toRead.push_back(b); };
+    port.queueStatus(0xA500);                                          // listDir DIR_LD checkStatus
+    push({0x01, 0x00});                                               // DIR_SIZE = 1 record
+    push({0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x66});  // file "f", size 4
+    port.queueStatus(0xA500);                                          // fileOpen(FA_READ) checkStatus
+    push({0x00, 0xDE, 0xAD, 0xBE, 0xEF});                             // fileRead resp + 4 data bytes
+    port.queueStatus(0xA500);                                          // fileClose checkStatus
+    REQUIRE(Edio(port).readFile("d/f") == std::vector<std::uint8_t>{0xDE, 0xAD, 0xBE, 0xEF});
 }
 
 // --- N8Link: the host serial thread + ring + timed scheduler (standalone/plugin forward; no TS twin) ---

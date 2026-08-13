@@ -11,7 +11,7 @@ import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 
 const DEFAULT_ROM = "resources/roms/n8-midi.nes";
-const VALUE_FLAGS = new Set(["--sd-path", "--srm", "--dump-sram", "--ls", "--serial"]);
+const VALUE_FLAGS = new Set(["--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--serial"]);
 
 const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
@@ -75,6 +75,7 @@ const N8_LOAD_HELP = [
   "                     WARNING: corrupts the menu if run on the file browser",
   "  --dump-sram <file> read the cart SRAM (64 KB game region) out to <file> (no ROM, no reboot)",
   "  --ls <path>        list an SD-card directory (use \"/\" for root) and exit",
+  "  --get-file <sd-path> <local-dest>  read an SD-card file over USB to a local file (no reboot)",
   "  --show-song        decode the live cart battery (risa/LSDj) and print its songs",
   "  --serial <port>    use this serial port (default: auto-detect the N8)",
   "",
@@ -91,6 +92,7 @@ export const n8LoadTool: CliTool = {
     const sdPath = flag(args, "--sd-path");
     const srmPath = flag(args, "--srm");
     const dumpPath = flag(args, "--dump-sram");
+    const getFile = flag(args, "--get-file");
     const doLs = has(args, "--ls");
     const sramOnly = has(args, "--sram-only");
     const showSong = has(args, "--show-song");
@@ -98,8 +100,12 @@ export const n8LoadTool: CliTool = {
     if (sramOnly && !srmPath) throw new Error("--sram-only requires --srm <save.srm>");
 
     // Read local files up front (fail fast, before touching hardware).
-    const readOnly = doLs || dumpPath != null || showSong || sramOnly;
-    const romPath = positional(args) ?? (sdPath || readOnly ? undefined : DEFAULT_ROM);
+    const readOnly = doLs || dumpPath != null || showSong || sramOnly || getFile != null;
+    // --get-file <sd-path> <local-dest>: the SD source is the flag operand, the local destination the positional.
+    const getFileDest = getFile != null ? positional(args) : undefined;
+    if (getFile != null && !getFileDest)
+      throw new Error("--get-file requires a local destination: --get-file <sd-path> <local-dest>");
+    const romPath = getFile != null ? undefined : positional(args) ?? (sdPath || readOnly ? undefined : DEFAULT_ROM);
     let romBytes: Uint8Array | undefined;
     let romName: string | undefined;
     if (romPath && !sdPath) {
@@ -119,6 +125,12 @@ export const n8LoadTool: CliTool = {
         const entries = n8.listDir(path === "/" ? "" : path);
         console.log(`${path} (${entries.length} entr${entries.length === 1 ? "y" : "ies"}):`);
         for (const e of entries) console.log(e.isDir ? `  [DIR]  ${e.name}` : `  ${String(e.size).padStart(8)}  ${e.name}`);
+        return;
+      }
+      if (getFile != null) {
+        const bytes = n8.readFile(getFile);
+        if (!s.backend.writeFile(getFileDest!, bytes)) throw new Error(`write failed: ${getFileDest}`);
+        console.log(`read ${bytes.length} bytes of ${getFile} -> ${getFileDest}`);
         return;
       }
       if (dumpPath != null) {

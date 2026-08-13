@@ -15,6 +15,7 @@ const CMD_F_DIR_LD = 0xc5; // load a directory into the N8 buffer (sorted)
 const CMD_F_DIR_SIZE = 0xc6; // number of records in the loaded directory
 const CMD_F_DIR_GET = 0xc8; // pull a range of directory records
 const CMD_F_FOPN = 0xc9; // open a file on the SD card
+const CMD_F_FRD = 0xca; // read bytes from the open file
 const CMD_F_FWR = 0xcc; // write bytes to the open file
 const CMD_F_FCLOSE = 0xce; // close the open file
 
@@ -23,9 +24,11 @@ export const ADDR_FIFO = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
 export const SIZE_SRM_GAME = 0x10000; // 64 KB - max battery RAM a game uses
 
 const ACK_BLOCK_SIZE = 1024; // fileWrite ack granularity
+const RD_BLOCK_SIZE = 4096; // fileRead resp-gated block size (matches edlink)
 const TX_BLOCK_SIZE = 8192; // txData chunk (matches native)
 
 // File-open mode flags (FatFs).
+export const FA_READ = 0x01;
 export const FA_WRITE = 0x02;
 export const FA_CREATE_ALWAYS = 0x08;
 export const FS_MAKEPATH = 0x80; // create parent dirs if missing
@@ -164,6 +167,28 @@ export class Edio {
     this.checkStatus();
   }
 
+  // Read `size` bytes from the open file via CMD_F_FRD (resp-gated blocks; the inverse of fileWrite - no
+  // trailing status). Pairs with fileOpen(path, FA_READ).
+  fileRead(size: number): Uint8Array {
+    if (size === 0) return new Uint8Array(0);
+    this.txCMD(CMD_F_FRD);
+    this.tx32(size);
+    return this.rxDataACK(size);
+  }
+
+  // Read a whole SD file by path: find its size via listDir, then fileOpen(FA_READ) -> fileRead -> fileClose.
+  readFile(path: string): Uint8Array {
+    const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    const dir = slash < 0 ? "" : path.slice(0, slash);
+    const name = slash < 0 ? path : path.slice(slash + 1);
+    const entry = this.listDir(dir).find((e) => !e.isDir && e.name === name);
+    if (!entry) throw new Error(`Edio: file not found on SD: ${path}`);
+    this.fileOpen(path, FA_READ);
+    const data = this.fileRead(entry.size);
+    this.fileClose();
+    return data;
+  }
+
   // --- blocking reads (the N8 menu's replies come back this way) ---
 
   rx8(): number {
@@ -218,6 +243,22 @@ export class Edio {
       off += block;
       remaining -= block;
     }
+  }
+
+  // Read in RD_BLOCK_SIZE blocks, each preceded by a 0 resp byte the device sends first (inverse of txDataACK).
+  private rxDataACK(size: number): Uint8Array {
+    const out = new Uint8Array(size);
+    let off = 0;
+    let remaining = size;
+    while (remaining > 0) {
+      const resp = this.rx8();
+      if (resp !== 0) throw new Error(`Edio: file read error 0x${hex2(resp)}`);
+      const block = Math.min(remaining, RD_BLOCK_SIZE);
+      out.set(this.rxData(block), off);
+      off += block;
+      remaining -= block;
+    }
+    return out;
   }
 
   // Read exactly `size` bytes, looping over short reads; a zero-length read is a timeout (no response).

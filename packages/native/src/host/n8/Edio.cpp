@@ -195,6 +195,22 @@ void Edio::checkStatus() {
     }
 }
 
+void Edio::rxDataACK(std::uint8_t* data, std::size_t size) {
+    std::size_t offset = 0;
+    while (size > 0) {
+        const std::uint8_t resp = rx8();  // the device gates each block with a 0 resp byte (0 = ok)
+        if (resp != 0) {
+            char msg[48];
+            std::snprintf(msg, sizeof(msg), "Edio: file read error 0x%02X", resp);
+            throw std::runtime_error(msg);
+        }
+        const std::size_t block = std::min<std::size_t>(size, RD_BLOCK_SIZE);
+        rxData(data + offset, block);
+        offset += block;
+        size   -= block;
+    }
+}
+
 void Edio::fileOpen(const std::string& path, std::uint8_t mode) {
     txCMD(CMD_F_FOPN);
     tx8(mode);
@@ -212,6 +228,32 @@ void Edio::fileWrite(const std::uint8_t* data, std::size_t size) {
 void Edio::fileClose() {
     txCMD(CMD_F_FCLOSE);
     checkStatus();
+}
+
+void Edio::fileRead(std::uint8_t* data, std::size_t size) {
+    if (size == 0) return;
+    txCMD(CMD_F_FRD);
+    tx32(static_cast<std::uint32_t>(size));
+    rxDataACK(data, size);  // resp-gated blocks; no trailing CMD_STATUS (unlike fileWrite)
+}
+
+std::vector<std::uint8_t> Edio::readFile(const std::string& path) {
+    // Find the file's size via the directory listing (reuses listDir; no separate FINFO/AVB op), then read it.
+    const auto        slash = path.find_last_of("/\\");
+    const std::string dir   = slash == std::string::npos ? "" : path.substr(0, slash);
+    const std::string name  = slash == std::string::npos ? path : path.substr(slash + 1);
+    std::uint32_t     size  = 0;
+    bool              found = false;
+    for (const N8DirEntry& e : listDir(dir)) {
+        if (!e.isDir && e.name == name) { size = e.size; found = true; break; }
+    }
+    if (!found) throw std::runtime_error("Edio: file not found on SD: " + path);
+
+    std::vector<std::uint8_t> out(size);
+    fileOpen(path, FA_READ);
+    fileRead(out.data(), out.size());
+    fileClose();
+    return out;
 }
 
 }  // namespace retroplug

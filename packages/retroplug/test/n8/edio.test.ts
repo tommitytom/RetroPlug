@@ -38,6 +38,7 @@ function driveGolden(c: GoldenCase): number[] {
     case "fileWrite": edio.fileWrite(new Uint8Array(fromHex(a.bytes ?? ""))); break;
     case "fileClose": edio.fileClose(); break;
     case "memRD": edio.memRD(a.addr ?? 0, a.size ?? 0); break;
+    case "fileRead": edio.fileRead(a.size ?? 0); break;
     default: throw new Error(`edio golden: unknown op '${c.op}'`);
   }
   return port.written;
@@ -85,6 +86,42 @@ test("memRD returns the bytes read from the address", () => {
   const port = new FakeSerialPort();
   port.queueBytes(0xde, 0xad, 0xbe, 0xef);
   expect(Array.from(new Edio(port).memRD(ADDR_SRM, 4))).toEqual([0xde, 0xad, 0xbe, 0xef]);
+});
+
+test("fileRead returns the bytes after the per-block resp byte", () => {
+  const port = new FakeSerialPort();
+  port.queueBytes(0x00, 0xde, 0xad, 0xbe, 0xef); // resp 0 (ok), then 4 data bytes
+  expect(Array.from(new Edio(port).fileRead(4))).toEqual([0xde, 0xad, 0xbe, 0xef]);
+});
+
+test("fileRead loops resp-gated blocks over RD_BLOCK_SIZE (4096)", () => {
+  const port = new FakeSerialPort();
+  port.queueBytes(0x00, ...new Array(4096).fill(0xaa)); // block 1: resp + 4096 bytes
+  port.queueBytes(0x00, 0xbb, 0xbb, 0xbb, 0xbb); //         block 2: resp + 4 bytes
+  const out = new Edio(port).fileRead(4100);
+  expect(out.length).toBe(4100);
+  expect(out[0]).toBe(0xaa);
+  expect(out[4095]).toBe(0xaa);
+  expect(Array.from(out.slice(4096))).toEqual([0xbb, 0xbb, 0xbb, 0xbb]);
+});
+
+test("fileRead throws on a non-zero per-block resp", () => {
+  const port = new FakeSerialPort();
+  port.queueBytes(0x04); // FAT_NO_FILE-ish error resp
+  expect(() => new Edio(port).fileRead(4)).toThrow();
+});
+
+test("readFile finds the size via listDir, then reads the whole file", () => {
+  const port = new FakeSerialPort();
+  // listDir("d"): DIR_LD checkStatus ok, DIR_SIZE = 1, one record: file "f" size 4
+  port.queueStatus(0xa500);
+  port.queueBytes(0x01, 0x00);
+  port.queueBytes(0x00, /*size*/ 0x04, 0x00, 0x00, 0x00, /*date*/ 0x00, 0x00, /*time*/ 0x00, 0x00, /*attrib*/ 0x00, /*len*/ 0x01, 0x00, /*"f"*/ 0x66);
+  // fileOpen("d/f", FA_READ) checkStatus ok; fileRead(4) resp + data; fileClose checkStatus ok
+  port.queueStatus(0xa500);
+  port.queueBytes(0x00, 0xde, 0xad, 0xbe, 0xef);
+  port.queueStatus(0xa500);
+  expect(Array.from(new Edio(port).readFile("d/f"))).toEqual([0xde, 0xad, 0xbe, 0xef]);
 });
 
 test("listDir decodes the sorted directory records (file + subdir)", () => {

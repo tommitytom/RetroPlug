@@ -15,6 +15,7 @@ export {
   ADDR_SRM,
   ADDR_FIFO,
   SIZE_SRM_GAME,
+  FA_READ,
   FA_WRITE,
   FA_CREATE_ALWAYS,
   FS_MAKEPATH,
@@ -41,6 +42,8 @@ export interface N8 {
   writeSramDirect(srm: Uint8Array): number;
   /** List an SD-card directory. */
   listDir(path: string): ReturnType<Edio["listDir"]>;
+  /** Read a whole SD-card file by path (over USB). */
+  readFile(path: string): Uint8Array;
 }
 
 export function createN8(transport: SerialTransport): N8 {
@@ -54,5 +57,6 @@ export function createN8(transport: SerialTransport): N8 {
     dumpSram: () => dumpSram(edio),
     writeSramDirect: (srm: Uint8Array) => writeSramDirect(edio, srm),
     listDir: (path: string) => edio.listDir(path),
+    readFile: (path: string) => edio.readFile(path),
   };
 }
