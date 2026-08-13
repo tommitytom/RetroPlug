@@ -34,7 +34,8 @@ export const ADDR_FIFO = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
 export const SIZE_SRM_GAME = 0x10000; // 64 KB - max battery RAM a game uses
 
 const ACK_BLOCK_SIZE = 1024; // fileWrite ack granularity
-const RD_BLOCK_SIZE = 4096; // fileRead resp-gated block size (matches edlink)
+const RD_BLOCK_SIZE = 512; // fileRead block size: one CMD_F_FRD per block; <=512 avoids the cart-FIFO overload
+// the device warns about (edn8-pro-pub ed_cmd_file_read), which desyncs multi-block reads at 4096
 const TX_BLOCK_SIZE = 8192; // txData chunk (matches native)
 
 // File-open mode flags (FatFs).
@@ -214,13 +215,23 @@ export class Edio {
     this.checkStatus();
   }
 
-  // Read `size` bytes from the open file via CMD_F_FRD (resp-gated blocks; the inverse of fileWrite - no
-  // trailing status). Pairs with fileOpen(path, FA_READ).
+  // Read `size` bytes from the open file. One CMD_F_FRD per block (block size <= RD_BLOCK_SIZE), each gated by
+  // a resp byte, exactly as the device's ed_cmd_file_read loops (edn8-pro-pub) - re-sending the command per
+  // block is required, and keeping blocks <= 512 avoids the cart-FIFO overload that desyncs a single big read.
+  // Pairs with fileOpen(path, FA_READ).
   fileRead(size: number): Uint8Array {
-    if (size === 0) return new Uint8Array(0);
-    this.txCMD(CMD_F_FRD);
-    this.tx32(size);
-    return this.rxDataACK(size);
+    const out = new Uint8Array(size);
+    let off = 0;
+    while (off < size) {
+      const block = Math.min(RD_BLOCK_SIZE, size - off);
+      this.txCMD(CMD_F_FRD);
+      this.tx32(block);
+      const resp = this.rx8();
+      if (resp !== 0) throw new Error(`Edio: file read error 0x${hex2(resp)}`);
+      out.set(this.rxData(block), off);
+      off += block;
+    }
+    return out;
   }
 
   // Read a whole SD file by path: find its size via listDir, then fileOpen(FA_READ) -> fileRead -> fileClose.
@@ -297,22 +308,6 @@ export class Edio {
       off += block;
       remaining -= block;
     }
-  }
-
-  // Read in RD_BLOCK_SIZE blocks, each preceded by a 0 resp byte the device sends first (inverse of txDataACK).
-  private rxDataACK(size: number): Uint8Array {
-    const out = new Uint8Array(size);
-    let off = 0;
-    let remaining = size;
-    while (remaining > 0) {
-      const resp = this.rx8();
-      if (resp !== 0) throw new Error(`Edio: file read error 0x${hex2(resp)}`);
-      const block = Math.min(remaining, RD_BLOCK_SIZE);
-      out.set(this.rxData(block), off);
-      off += block;
-      remaining -= block;
-    }
-    return out;
   }
 
   // Read exactly `size` bytes, looping over short reads; a zero-length read is a timeout (no response).

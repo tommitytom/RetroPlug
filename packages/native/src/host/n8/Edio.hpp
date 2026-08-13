@@ -57,7 +57,7 @@ public:
     static constexpr std::int32_t ADDR_FIFO     = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
     static constexpr std::size_t  SIZE_SRM_GAME = 0x10000;   // 64 KB — max battery RAM a game uses (risa: 64 KB)
     static constexpr int          ACK_BLOCK_SIZE = 1024;  // fileWrite ack granularity
-    static constexpr int          RD_BLOCK_SIZE  = 4096;  // fileRead resp-gated block size (matches edlink)
+    static constexpr int          RD_BLOCK_SIZE  = 512;   // fileRead block size: one CMD_F_FRD/block; <=512 avoids FIFO overload
     // File-open mode flags (FatFs).
     static constexpr std::uint8_t FA_READ         = 0x01;
     static constexpr std::uint8_t FA_WRITE        = 0x02;
@@ -144,7 +144,6 @@ private:
     void txData(const std::uint8_t* data, std::size_t size);    // chunked at 8192
     void txString(const std::string& s);                        // tx16(len) + bytes
     void txDataACK(const std::uint8_t* data, std::size_t size); // ack byte (0=ok) per ACK_BLOCK_SIZE block
-    void rxDataACK(std::uint8_t* data, std::size_t size);       // resp byte (0=ok) per RD_BLOCK_SIZE block
     void rxData(std::uint8_t* data, std::size_t size);          // blocks; throws on timeout
     std::string rxString();                                     // rx16(len) + bytes
     void checkStatus();                                         // poll CMD_STATUS; throw if low byte != 0

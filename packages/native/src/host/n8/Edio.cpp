@@ -233,21 +233,6 @@ void Edio::checkStatus() {
     }
 }
 
-void Edio::rxDataACK(std::uint8_t* data, std::size_t size) {
-    std::size_t offset = 0;
-    while (size > 0) {
-        const std::uint8_t resp = rx8();  // the device gates each block with a 0 resp byte (0 = ok)
-        if (resp != 0) {
-            char msg[48];
-            std::snprintf(msg, sizeof(msg), "Edio: file read error 0x%02X", resp);
-            throw std::runtime_error(msg);
-        }
-        const std::size_t block = std::min<std::size_t>(size, RD_BLOCK_SIZE);
-        rxData(data + offset, block);
-        offset += block;
-        size   -= block;
-    }
-}
 
 void Edio::fileOpen(const std::string& path, std::uint8_t mode) {
     txCMD(CMD_F_FOPN);
@@ -269,10 +254,23 @@ void Edio::fileClose() {
 }
 
 void Edio::fileRead(std::uint8_t* data, std::size_t size) {
-    if (size == 0) return;
-    txCMD(CMD_F_FRD);
-    tx32(static_cast<std::uint32_t>(size));
-    rxDataACK(data, size);  // resp-gated blocks; no trailing CMD_STATUS (unlike fileWrite)
+    // One CMD_F_FRD per block (<= RD_BLOCK_SIZE), each gated by a resp byte, exactly as the device's
+    // ed_cmd_file_read loops (edn8-pro-pub) - re-sending the command per block is required, and keeping
+    // blocks <= 512 avoids the cart-FIFO overload that desyncs a single big read.
+    std::size_t off = 0;
+    while (off < size) {
+        const std::size_t block = std::min<std::size_t>(RD_BLOCK_SIZE, size - off);
+        txCMD(CMD_F_FRD);
+        tx32(static_cast<std::uint32_t>(block));
+        const std::uint8_t resp = rx8();
+        if (resp != 0) {
+            char msg[48];
+            std::snprintf(msg, sizeof(msg), "Edio: file read error 0x%02X", resp);
+            throw std::runtime_error(msg);
+        }
+        rxData(data + off, block);
+        off += block;
+    }
 }
 
 std::vector<std::uint8_t> Edio::readFile(const std::string& path) {

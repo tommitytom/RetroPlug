@@ -99,15 +99,21 @@ test("fileRead returns the bytes after the per-block resp byte", () => {
   expect(Array.from(new Edio(port).fileRead(4))).toEqual([0xde, 0xad, 0xbe, 0xef]);
 });
 
-test("fileRead loops resp-gated blocks over RD_BLOCK_SIZE (4096)", () => {
+test("fileRead re-sends CMD_F_FRD per <=512 block (the multi-block protocol)", () => {
   const port = new FakeSerialPort();
-  port.queueBytes(0x00, ...new Array(4096).fill(0xaa)); // block 1: resp + 4096 bytes
-  port.queueBytes(0x00, 0xbb, 0xbb, 0xbb, 0xbb); //         block 2: resp + 4 bytes
-  const out = new Edio(port).fileRead(4100);
-  expect(out.length).toBe(4100);
+  port.queueBytes(0x00, ...new Array(512).fill(0xaa)); // block 1: resp + 512 bytes
+  port.queueBytes(0x00, ...new Array(88).fill(0xbb)); //  block 2: resp + 88 bytes
+  const out = new Edio(port).fileRead(600);
+  expect(out.length).toBe(600);
   expect(out[0]).toBe(0xaa);
-  expect(out[4095]).toBe(0xaa);
-  expect(Array.from(out.slice(4096))).toEqual([0xbb, 0xbb, 0xbb, 0xbb]);
+  expect(out[511]).toBe(0xaa);
+  expect(out[512]).toBe(0xbb);
+  expect(out[599]).toBe(0xbb);
+  // The fix: each block re-issues CMD_F_FRD (0xca) rather than one command for the whole read.
+  let cmds = 0;
+  for (let i = 0; i + 3 < port.written.length; i++)
+    if (port.written[i] === 0x2b && port.written[i + 1] === 0xd4 && port.written[i + 2] === 0xca) cmds++;
+  expect(cmds).toBe(2);
 });
 
 test("fileRead throws on a non-zero per-block resp", () => {
