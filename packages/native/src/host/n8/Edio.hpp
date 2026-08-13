@@ -35,7 +35,9 @@ class Edio {
 public:
     // Protocol constants (krikzz Edio). Public so the framing test can assert against them.
     static constexpr std::uint8_t CMD_STATUS    = 0x10;   // connect handshake / status poll
+    static constexpr std::uint8_t CMD_GET_VDC   = 0x13;   // read board voltages (4x u16: v50, v25, v12, bat)
     static constexpr std::uint8_t CMD_MEM_RD    = 0x19;   // read bytes from a device address
+    static constexpr std::uint8_t CMD_SYS_INF   = 0x26;   // read the 64-byte device info (serial, versions, form factor)
     static constexpr std::uint8_t CMD_MEM_WR    = 0x1A;   // write bytes to a device address
     static constexpr std::uint8_t CMD_F_DIR_LD  = 0xC5;   // load a directory into the N8 buffer (sorted)
     static constexpr std::uint8_t CMD_F_DIR_SIZE = 0xC6;  // number of records in the loaded directory
@@ -68,6 +70,13 @@ public:
 
     // The connect status read on its own (CMD_STATUS -> rx16 -> 0xA5 check). Throws on a bad reply.
     int getStatus();
+
+    // Read the raw 64-byte device-info block (serial, versions, form factor, flash); decode with decodeSysInfo
+    // (TS src/n8/sysInfo.ts). Works whether the menu or a game is running.
+    std::vector<std::uint8_t> sysInfo();
+
+    // Read the raw 8-byte board-voltage block (four u16: v50, v25, v12, bat).
+    std::vector<std::uint8_t> vdc();
 
     // Write raw MIDI bytes to the cart FIFO (fire-and-forget: no status read). The one op the bridge needs.
     void fifoWR(const std::uint8_t* data, std::size_t size);

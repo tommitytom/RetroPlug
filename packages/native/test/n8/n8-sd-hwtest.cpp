@@ -12,8 +12,9 @@
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
 //   retroplug-n8-hwtest sniff    [port]                        # memRD ADDR_SSR: a running game's live APU/PPU/OAM
 //   retroplug-n8-hwtest memwr    <addr-hex> <file> [port]      # block memWR + verify (live-patch CHR/PRG)
+//   retroplug-n8-hwtest info     [port]                        # CMD_SYS_INF + CMD_GET_VDC: serial/versions/form/volts
 //
-// peek/poke/read/vramdump/sniff/memwr drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
+// peek/poke/read/vramdump/sniff/memwr/info drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
 // the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
 // edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read pulls a whole
 // SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
@@ -38,10 +39,11 @@ using namespace retroplug;
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        // `sniff` needs no path/addr (it auto-detects the port), so allow a bare argc==2.
-        if (!(argc == 2 && std::string(argv[1]) == "sniff")) {
+        // `sniff`/`info` need no path/addr (they auto-detect the port), so allow a bare argc==2 for them.
+        const std::string a1 = argc >= 2 ? argv[1] : "";
+        if (!(argc == 2 && (a1 == "sniff" || a1 == "info"))) {
             std::fprintf(stderr,
-                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff|memwr> <path|addr> [len|byte|dest] [port]\n",
+                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|info> <path|addr> [len|byte|dest] [port]\n",
                          argv[0]);
             return 2;
         }
@@ -115,6 +117,37 @@ int main(int argc, char** argv) {
             return 0;
         } catch (const std::exception& e) {
             std::fprintf(stderr, "%s failed: %s\n", op.c_str(), e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio device info (CMD_SYS_INF + CMD_GET_VDC): the native twin of the TS decodeSysInfo/decodeVdc.
+    // Decodes the key fields inline (offsets from edlink getSysInf; little-endian) to prove the C++ Edio::sysInfo.
+    if (op == "info") {
+        const std::string pport = argc > 2 ? argv[2] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            const std::vector<std::uint8_t> b = edio.sysInfo();
+            const std::vector<std::uint8_t> v = edio.vdc();
+            const auto u16 = [](const std::vector<std::uint8_t>& d, int o) { return d[o] | (d[o + 1] << 8); };
+            const auto u32 = [](const std::vector<std::uint8_t>& d, int o) {
+                return static_cast<std::uint32_t>(d[o]) | (d[o + 1] << 8) | (d[o + 2] << 16) | (static_cast<std::uint32_t>(d[o + 3]) << 24);
+            };
+            std::printf("device_id  : 0x%02X %s\n", b[46], b[46] == 0x17 ? "(EverDrive-N8 PRO)" : "");
+            std::printf("serial     : %08X.%08X\n", u32(b, 20), u32(b, 24));
+            std::printf("form factor: %s\n", b[52] == 0 ? "NES" : b[52] == 1 ? "Famicom" : "unknown");
+            std::printf("bootloader : 0x%04X   flash: %u MB\n", u16(b, 44), (1u << b[55]) / 0x100000u);
+            std::printf("voltages   : 5.0=%02X.%02X 2.5=%02X.%02X 1.2=%02X.%02X bat=%02X.%02X\n",
+                        v[1], v[0], v[3], v[2], v[5], v[4], v[7], v[6]);
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "info failed: %s\n", e.what());
             return 1;
         }
     }

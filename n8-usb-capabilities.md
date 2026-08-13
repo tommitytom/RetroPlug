@@ -164,7 +164,7 @@ Grouped by payoff. "Effort" is the add to `Edio`/tooling.
 | ✅ **PRG/CHR hot-patch** | `memWR` → `ADDR_PRG`/`ADDR_CHR` | DONE + HW-verified: live-patch a running game's graphics/code over USB (`--patch-chr`/`--patch-prg`/`--dump-chr`, hwtest `memwr`; write-twin of `--sniff`). PNG editing loop: `--dump-chr x.png` / `--patch-chr 0 x.png` round-trip an editable grayscale tile grid (`src/n8/chrImage.ts`) - edit a glyph, push it live |
 | **Load FPGA mapper core** | `CMD_FPG_USB` (0x1E) / `ed_cmd_fpg_init_usb` | swap cartridge hardware personality over USB |
 | **RTC get/set/cal** | `CMD_RTC_GET/SET/CAL` (0x14/15/21) | read/set the console clock |
-| **Device info** | `CMD_SYS_INF` (0x26) → serial, sw/boot ver, device id; `edlink` `devinf` | includes NES-vs-Famicom form factor |
+| ✅ **Device info** | `CMD_SYS_INF` (0x26) + `CMD_GET_VDC` (0x13) | DONE + HW-verified (`n8-load --info`, hwtest `info`, `src/n8/sysInfo.ts`): serial, boot/sw/hw versions, MCU-core build date, flash size, counters, board voltages, and NES-vs-Famicom form factor. This unit: EverDrive-N8 PRO, NES, boot 0x0100, core 2025-11-08 |
 | **Memory fill/test/CRC** | `CMD_MEM_SET/TST/CRC` (0x1B/1C/1D); `edlink` `diag` | fast SRAM verify, self-test |
 | **Flash read/write** | `CMD_FLA_RD/WR` (0x16/17); `edlink` `flard`/`flawr` | cart firmware / recovery |
 | **Full SD file ops** | copy/move/delete/mkdir/info/seek/crc/free (`CMD_F_*` 0xC3–D5) | complete filesystem, not just write |

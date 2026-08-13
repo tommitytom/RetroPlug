@@ -9,7 +9,9 @@ import type { SerialTransport } from "./transport";
 
 // Protocol constants (krikzz Edio) - kept byte-identical to native Edio.hpp.
 const CMD_STATUS = 0x10; // connect handshake / status poll
+const CMD_GET_VDC = 0x13; // read board voltages (4x u16: v50, v25, v12, bat)
 const CMD_MEM_RD = 0x19; // read bytes from a device address
+const CMD_SYS_INF = 0x26; // read the 64-byte device info (serial, versions, form factor, flash)
 const CMD_MEM_WR = 0x1a; // write bytes to a device address
 const CMD_F_DIR_LD = 0xc5; // load a directory into the N8 buffer (sorted)
 const CMD_F_DIR_SIZE = 0xc6; // number of records in the loaded directory
@@ -80,6 +82,19 @@ export class Edio {
     if ((resp & 0xff00) !== 0xa500)
       throw new Error(`Edio: unexpected status response (${hex4(resp & 0xffff)})`);
     return resp & 0xff;
+  }
+
+  // Read the raw 64-byte device-info block (serial, versions, form factor, flash). Decode with
+  // decodeSysInfo (src/n8/sysInfo.ts). Works whether the menu or a game is running.
+  sysInfo(): Uint8Array {
+    this.txCMD(CMD_SYS_INF);
+    return this.readData(64);
+  }
+
+  // Read the raw 8-byte board-voltage block (four u16: v50, v25, v12, bat). Decode with decodeVdc.
+  vdc(): Uint8Array {
+    this.txCMD(CMD_GET_VDC);
+    return this.readData(8);
   }
 
   setReadTimeout(ms: number): void {

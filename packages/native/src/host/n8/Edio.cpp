@@ -137,6 +137,20 @@ int Edio::getStatus() {
     return resp & 0xFF;
 }
 
+std::vector<std::uint8_t> Edio::sysInfo() {
+    txCMD(CMD_SYS_INF);
+    std::vector<std::uint8_t> buf(64);
+    readData(buf.data(), buf.size());
+    return buf;
+}
+
+std::vector<std::uint8_t> Edio::vdc() {
+    txCMD(CMD_GET_VDC);
+    std::vector<std::uint8_t> buf(8);
+    readData(buf.data(), buf.size());
+    return buf;
+}
+
 int Edio::connect(int handshakeTimeoutMs) {
     timeoutMs_ = handshakeTimeoutMs;
     port_.flushInput();

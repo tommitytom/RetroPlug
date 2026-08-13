@@ -127,6 +127,10 @@ TEST_CASE("Edio framing matches the shared golden (twins edio.test.ts)", "[n8]")
         } else if (c.op == "fileRead") {
             std::vector<std::uint8_t> buf(static_cast<std::size_t>(a.size.value_or(0)));
             if (!buf.empty()) edio.fileRead(buf.data(), buf.size());
+        } else if (c.op == "sysInfo") {
+            edio.sysInfo();
+        } else if (c.op == "vdc") {
+            edio.vdc();
         } else {
             FAIL("unknown golden op: " << c.op);
         }

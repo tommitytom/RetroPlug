@@ -39,6 +39,8 @@ function driveGolden(c: GoldenCase): number[] {
     case "fileClose": edio.fileClose(); break;
     case "memRD": edio.memRD(a.addr ?? 0, a.size ?? 0); break;
     case "fileRead": edio.fileRead(a.size ?? 0); break;
+    case "sysInfo": edio.sysInfo(); break;
+    case "vdc": edio.vdc(); break;
     default: throw new Error(`edio golden: unknown op '${c.op}'`);
   }
   return port.written;

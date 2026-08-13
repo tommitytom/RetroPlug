@@ -20,6 +20,7 @@ import {
 import { menuScreenToRgba } from "../../src/n8/menuImage";
 import { decodeSniffer, SNIFFER_REGION_SIZE, type SnifferSnapshot } from "../../src/n8/sniffer";
 import { chrToPng, pngToChr } from "../../src/n8/chrImage";
+import { decodeSysInfo, decodeVdc, fatDateStr, vdcStr } from "../../src/n8/sysInfo";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 
@@ -105,6 +106,20 @@ function printSniffer(snap: SnifferSnapshot): void {
   console.log(`OAM: ${snap.activeSprites} sprite(s) on-screen (of 64)`);
 }
 
+function printInfo(sysBytes: Uint8Array, vdcBytes: Uint8Array): void {
+  const s = decodeSysInfo(sysBytes);
+  const v = decodeVdc(vdcBytes);
+  const mb = s.flashSizeBytes >= 0x100000 ? `${s.flashSizeBytes / 0x100000} MB` : `${s.flashSizeBytes} B`;
+  console.log(`device     : ${s.deviceName} (id 0x${s.deviceId.toString(16)})`);
+  console.log(`serial     : ${s.serial}`);
+  console.log(`form factor: ${s.formFactor}`);
+  console.log(`bootloader : 0x${s.bootVer.toString(16).padStart(4, "0")}  (sw 0x${s.swVer.toString(16)}, hw 0x${s.hwVer.toString(16)})`);
+  console.log(`build date : ${fatDateStr(s.buildDate)}   mcu core: ${fatDateStr(s.coreDate)}`);
+  console.log(`flash size : ${mb}`);
+  console.log(`counters   : ${s.gameCtr} games, ${s.bootCtr} boots`);
+  console.log(`voltages   : 5.0=${vdcStr(v.v50)} 2.5=${vdcStr(v.v25)} 1.2=${vdcStr(v.v12)} bat=${vdcStr(v.bat)}`);
+}
+
 const N8_LOAD_HELP = [
   "usage: retroplug-cli n8-load [options] [<rom.nes>]",
   "",
@@ -131,6 +146,8 @@ const N8_LOAD_HELP = [
   "                     Best on a CHR-ROM game (NROM etc.)",
   "  --patch-prg <hex-offset> <file>  live-patch the running game's PRG (code) from raw <file> at PRG+offset.",
   "                     WARNING: a bad code patch can crash the game (power-cycle to recover)",
+  "  --info             print the N8's device info (serial, firmware/bootloader versions, NES/Famicom form",
+  "                     factor, flash size, voltages) over USB",
   "  --show-song        decode the live cart battery (risa/LSDj) and print its songs",
   "  --serial <port>    use this serial port (default: auto-detect the N8)",
   "",
@@ -157,6 +174,7 @@ export const n8LoadTool: CliTool = {
     const sramOnly = has(args, "--sram-only");
     const showSong = has(args, "--show-song");
     const doSniff = has(args, "--sniff");
+    const doInfo = has(args, "--info");
     const isPatch = patchChr != null || patchPrg != null;
 
     if (sramOnly && !srmPath) throw new Error("--sram-only requires --srm <save.srm>");
@@ -165,7 +183,7 @@ export const n8LoadTool: CliTool = {
     // Read local files up front (fail fast, before touching hardware).
     const readOnly =
       doLs || dumpPath != null || showSong || sramOnly || getFile != null || screenshot != null ||
-      doSniff || sniffRaw != null || dumpChr != null || isPatch;
+      doSniff || sniffRaw != null || dumpChr != null || isPatch || doInfo;
     // --get-file <sd-path> <local-dest>: the SD source is the flag operand, the local destination the positional.
     const getFileDest = getFile != null ? positional(args) : undefined;
     if (getFile != null && !getFileDest)
@@ -190,6 +208,11 @@ export const n8LoadTool: CliTool = {
       const n8 = createN8(port);
       n8.connect(); // throws if the N8 doesn't answer the handshake
 
+      if (doInfo) {
+        // Device identity + voltages (CMD_SYS_INF + CMD_GET_VDC). Works at the menu or in a game.
+        printInfo(n8.edio.sysInfo(), n8.edio.vdc());
+        return;
+      }
       if (doLs) {
         const path = flag(args, "--ls") ?? "/";
         const entries = n8.listDir(path === "/" ? "" : path);
