@@ -103,27 +103,34 @@ cart tracked the expansion audio on the L6 exactly — `0x00` mutes to noise flo
 
 ## The save-state "sniffer" — live console state (`ADDR_SSR = 0x1802000`)
 
-The N8 continuously captures the running console into a memory-mapped buffer (the same data a
-save-state uses). Readable via `memRD` — a debugger/inspector over USB. Structure per
-`everdrive.h` (offsets within the sniffer buffer; exact device-address mapping + read semantics
-**unverified** — confirm before relying on it):
+The N8's FPGA continuously snoops the cartridge bus and mirrors every CPU write to the PPU/APU/OAM/mapper
+into a readable device region (`edn8-pro-pub fpga/base_sv/sst.sv`). Read via `memRD(0x1802000, 0x200)` — no
+trigger, no config, a pure read (cannot hang, unlike reset). **DONE + hardware-verified 2026-08-13** (`n8-load
+--sniff` / `--sniff-raw`; hwtest `sniff`; pure-TS `decodeSniffer` in `src/n8/sniffer.ts`).
 
-| offset | size | contents |
-|---|---|---|
-| 0x0000 | 2 KB | **WRAM** (console RAM) |
-| 0x0800 | 4 KB | **VRAM** (nametables) |
-| 0x1800 | 128 | mapper regs |
-| 0x1880 | 32 | **APU registers** (live audio state) |
-| 0x18A0 | 32 | **PPU palette** (screen colours) |
-| 0x18C0 | 4 | PPU regs (ctrl, mask, scroll) |
-| 0x18FF | 1 | `SS_HIT` (who invoked in-game menu) |
-| 0x1900 | 256 | **OAM** (sprites) |
-| 0x19C8 | 4 | **CPU regs** (a, x, y, sp) |
-| 0x1A00/0x1C00 | 512/1 KB | mapper memory |
-| 0x2000 | 8 KB | CHR |
+**CRITICAL: two different layouts.** The `everdrive.h` header table (WRAM 0x0000, VRAM 0x0800, APU 0x1880 …)
+is the **OS-assembled 16 KB save FILE**, NOT the raw ADDR_SSR region — the raw hardware offset is that minus
+0x1800. Reading `0x1802000 + 0x1880` gets garbage; the live APU is at `+0x080`. The REAL raw offsets
+(confirmed in `sst.sv` + on hardware):
 
-Reading APU regs off real silicon would directly validate the emulator's
-`getApuState`/`getExpansionAudioState` used in the EverMIDI audio-tuning work.
+| raw offset | size | contents | live w/o trigger? |
+|---|---|---|---|
+| `+0x000` | 128 | mapper registers | yes |
+| `+0x080` | 32 | **APU registers** ($4000-$401F write mirror) | yes |
+| `+0x0A0` | 32 | **PPU palette** | yes |
+| `+0x0C0` | 4 | PPU regs (ctrl, mask, scroll-x, scroll-y) | yes |
+| `+0x0C8` | 4 | CPU regs a/x/y/sp slot | **no — reads 0xFF** |
+| `+0x0CF` | 1 | magic `0x53` (`'S'`) — "sniffer alive" check | yes |
+| `+0x0FF` | 1 | `SS_HIT` | only after a trigger |
+| `+0x100` | 256 | **OAM** (sprites) | yes |
+
+**Scope (inherent):** only the write-snoop mirror is live. **WRAM, VRAM/CHR, and the CPU registers are NOT
+in this region** — they exist only in the OS-assembled file after a *triggered* save-state (`MAP_CTRL_SS_ON`
++ an `ss_key_*` combo / `MAP_CTRL_SS_BTN`), a separate future capability. The sniffer is also **disabled in
+the menu** (map-255 core) — a read at the file browser has no `0x53` magic, so `--sniff` needs a running game.
+
+HW-verified: a MIDI note into EverMIDI decoded as `pulse1 474 Hz vol 15 duty 50%` (TS + C++ twins agree),
+and the read validates the emulator's `getApuState`/`getExpansionAudioState` from the EverMIDI audio-tuning work.
 
 ## Menu commands (`edlink/DEV_EDN8/MenuCmd.cs`, sent through the FIFO menu channel)
 
@@ -146,7 +153,7 @@ Grouped by payoff. "Effort" is the add to `Edio`/tooling.
 |---|---|---|---|
 | ✅ **Screen capture over USB** | menu `'v'` (2 KB VRAM + 16-byte palette) + `memRD` CHR → PNG (`edlink` `screen`, `MenuImage.MakeImage`) | menu cmd + assembly | DONE (`n8-load --screenshot`): dropped the `/dev/video0` capture card for menu grabs |
 | ⛔ **Reset console over USB** | `edlink` `reset` = `Test()`+`'r'`+single-ack | tried, does not work | NOT VIABLE on our N8. Implemented + hardware-tested the EXACT `edlink` sequence (`'*t'` handshake then `'*r'` + one ack); from the file browser `'*r'` reboots into a solid **gray screen** and hangs (menu stops answering `'*t'`; recovery needs a power-cycle — strictly worse than the smart-plug). `'*r'` is menu-FIFO-serviced so it can only be sent from the menu, exactly where it hangs. `CMD_HOST_RST` (0x29) is Genesis/PC-Engine only; `CMD_RST_EFU` (0x25) reboots into the firmware-update unit; `CMD_RST_MCU` (0x12) is the bootloader — none is a clean file-browser reboot. A clean return-to-menu would need `ed_exit_game`'s config write (`map_idx=255`+`UNLOCK` to `ADDR_CFG`) + reset, which is unverified RE. Reverted. |
-| **Live state sniffer read** | `memRD` at `ADDR_SSR` (APU/PPU/CPU/RAM/OAM) | just `memRD` | On-hardware audio/graphics state; validate emulator |
+| ✅ **Live state sniffer read** | `memRD` at `ADDR_SSR` (raw offsets: APU +0x080, PPU +0x0C0, palette +0x0A0, OAM +0x100) | just `memRD` | DONE (`n8-load --sniff`): live APU/PPU/OAM of a running game; CPU/WRAM/CHR need a triggered save-state (future) |
 | ✅ **Arbitrary SD file read** | `CMD_F_FRD` (0xCA) / `CMD_F_FRD_MEM` (0xCB) | 1 opcode | DONE (`n8-load --get-file`): dump `EDN8/sysdata/registry.bin` to **persist** expansion-volume; pull any save/config/OS file |
 
 ### Powerful / cool
@@ -195,7 +202,8 @@ Grouped by payoff. "Effort" is the add to `Edio`/tooling.
 2. ✅ **`CMD_F_FRD` file-read** — DONE (`n8-load --get-file`): reads `registry.bin`, saves, any SD file.
 3. ⛔ **Reset-over-USB** — tried, NOT VIABLE: `'*r'` from the menu hangs the console to a gray screen
    (the exact `edlink` sequence; reverted). See the caveat + capability catalog for the full finding.
-4. **Sniffer read helper** — `memRD` wrappers for APU/PPU/OAM to inspect real-hardware state (next best).
+4. ✅ **Sniffer read helper** — DONE (`n8-load --sniff`): live APU/PPU/OAM of a running game (raw offsets
+   from `sst.sv`, not the OS-file layout). Next: a *triggered* save-state to reach WRAM/CPU-regs/CHR.
 
 ---
 *Reference: `/workspaces/edlink` (DeviceIO_V1.cs, DEV_EDN8/*, Help.cs), `/workspaces/edn8-pro-pub`

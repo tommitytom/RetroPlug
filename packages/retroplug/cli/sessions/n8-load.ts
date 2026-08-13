@@ -6,13 +6,14 @@
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import { createSerialClient } from "../../src/realBackend";
-import { createN8, baseName, ADDR_MENU_CHR, type SerialPortInfo, type LoadOptions } from "../../src/n8";
+import { createN8, baseName, ADDR_MENU_CHR, ADDR_SSR, type SerialPortInfo, type LoadOptions } from "../../src/n8";
 import { menuScreenToRgba } from "../../src/n8/menuImage";
+import { decodeSniffer, SNIFFER_REGION_SIZE, type SnifferSnapshot } from "../../src/n8/sniffer";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 
 const DEFAULT_ROM = "resources/roms/n8-midi.nes";
-const VALUE_FLAGS = new Set(["--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--serial"]);
+const VALUE_FLAGS = new Set(["--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--sniff-raw", "--serial"]);
 
 const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
@@ -62,6 +63,33 @@ function decodeAndPrint(sram: Uint8Array): void {
   }
 }
 
+const DUTY = ["12.5%", "25%", "50%", "75%"];
+function printSniffer(snap: SnifferSnapshot): void {
+  if (!snap.magicOk) {
+    console.log(
+      "no live sniffer data (magic byte absent) - is a GAME running? The sniffer is off at the file-browser menu.",
+    );
+    return;
+  }
+  const a = snap.apu;
+  const chan = (name: string, on: boolean, freq: number, vol: number, extra = ""): string =>
+    `  ${name.padEnd(8)} ${on ? "on " : "off"}  ${String(freq).padStart(5)} Hz  vol ${String(vol).padStart(2)}${extra}`;
+  console.log("APU ($4000-$401F, live write-mirror):");
+  console.log(chan("pulse1", a.pulse1.enabled, a.pulse1.frequency, a.pulse1.volume, `  duty ${DUTY[a.pulse1.duty]}`));
+  console.log(chan("pulse2", a.pulse2.enabled, a.pulse2.frequency, a.pulse2.volume, `  duty ${DUTY[a.pulse2.duty]}`));
+  console.log(`  triangle ${a.triangle.enabled ? "on " : "off"}  ${String(a.triangle.frequency).padStart(5)} Hz`);
+  console.log(`  noise    ${a.noise.enabled ? "on " : "off"}  period ${a.noise.periodIndex}  vol ${a.noise.volume}${a.noise.mode ? "  (short)" : ""}`);
+  console.log(`  dmc      ${a.dmc.enabled ? "on " : "off"}  rate ${a.dmc.rateIndex}  level ${a.dmc.level}`);
+  console.log(`  $4015=${a.enableReg.toString(16).padStart(2, "0")}  $4017 ${a.frameMode5Step ? "5-step" : "4-step"}`);
+  console.log(
+    `PPU: ctrl=${snap.ppu.ctrl.toString(16).padStart(2, "0")} mask=${snap.ppu.mask.toString(16).padStart(2, "0")}` +
+      ` (bg ${snap.ppu.showBackground ? "on" : "off"}, sprites ${snap.ppu.showSprites ? "on" : "off"}) scroll=${snap.ppu.scrollX},${snap.ppu.scrollY}`,
+  );
+  const hex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join(" ");
+  console.log(`palette ($3F00-$3F1F): ${hex(snap.palette)}`);
+  console.log(`OAM: ${snap.activeSprites} sprite(s) on-screen (of 64)`);
+}
+
 const N8_LOAD_HELP = [
   "usage: retroplug-cli n8-load [options] [<rom.nes>]",
   "",
@@ -78,6 +106,9 @@ const N8_LOAD_HELP = [
   "  --ls <path>        list an SD-card directory (use \"/\" for root) and exit",
   "  --get-file <sd-path> <local-dest>  read an SD-card file over USB to a local file (no reboot)",
   "  --screenshot <out.png>  capture the N8 MENU screen over USB to a PNG (the menu must be showing)",
+  "  --sniff            read a RUNNING game's live APU/PPU/OAM state over USB and print it (a game must",
+  "                     be running - the sniffer is off at the menu)",
+  "  --sniff-raw <file> dump the raw 512-byte sniffer region to a file (no decode)",
   "  --show-song        decode the live cart battery (risa/LSDj) and print its songs",
   "  --serial <port>    use this serial port (default: auto-detect the N8)",
   "",
@@ -96,14 +127,17 @@ export const n8LoadTool: CliTool = {
     const dumpPath = flag(args, "--dump-sram");
     const getFile = flag(args, "--get-file");
     const screenshot = flag(args, "--screenshot");
+    const sniffRaw = flag(args, "--sniff-raw");
     const doLs = has(args, "--ls");
     const sramOnly = has(args, "--sram-only");
     const showSong = has(args, "--show-song");
+    const doSniff = has(args, "--sniff");
 
     if (sramOnly && !srmPath) throw new Error("--sram-only requires --srm <save.srm>");
 
     // Read local files up front (fail fast, before touching hardware).
-    const readOnly = doLs || dumpPath != null || showSong || sramOnly || getFile != null || screenshot != null;
+    const readOnly =
+      doLs || dumpPath != null || showSong || sramOnly || getFile != null || screenshot != null || doSniff || sniffRaw != null;
     // --get-file <sd-path> <local-dest>: the SD source is the flag operand, the local destination the positional.
     const getFileDest = getFile != null ? positional(args) : undefined;
     if (getFile != null && !getFileDest)
@@ -145,6 +179,17 @@ export const n8LoadTool: CliTool = {
         if (!png) throw new Error("PNG encode failed");
         if (!s.backend.writeFile(screenshot, png)) throw new Error(`write failed: ${screenshot}`);
         console.log(`wrote ${img.width}x${img.height} menu screenshot -> ${screenshot}`);
+        return;
+      }
+      if (doSniff || sniffRaw != null) {
+        // Read the FPGA's live save-state sniffer of a RUNNING game (no menu.test - the sniffer is off at
+        // the menu, exactly where '*t' answers, so requiring the menu would be backwards).
+        const region = n8.edio.memRD(ADDR_SSR, SNIFFER_REGION_SIZE);
+        if (sniffRaw != null) {
+          if (!s.backend.writeFile(sniffRaw, region)) throw new Error(`write failed: ${sniffRaw}`);
+          console.log(`wrote ${region.length} bytes of raw sniffer region -> ${sniffRaw}`);
+        }
+        if (doSniff) printSniffer(decodeSniffer(region));
         return;
       }
       if (dumpPath != null) {

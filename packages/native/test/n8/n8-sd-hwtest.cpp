@@ -10,8 +10,9 @@
 //   retroplug-n8-hwtest poke    <addr-hex> <byte>[port]   # CMD_MEM_WR: write one byte to a device address
 //   retroplug-n8-hwtest read    <sd-path> <local-dest> [port]  # CMD_F_FRD: read an SD file over USB
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
+//   retroplug-n8-hwtest sniff    [port]                        # memRD ADDR_SSR: a running game's live APU/PPU/OAM
 //
-// peek/poke/read/vramdump drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
+// peek/poke/read/vramdump/sniff drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
 // the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
 // edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read pulls a whole
 // SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
@@ -36,8 +37,13 @@ using namespace retroplug;
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: %s <dump|load|restore|peek|poke|read|vramdump> <path|addr> [len|byte|dest] [port]\n", argv[0]);
-        return 2;
+        // `sniff` needs no path/addr (it auto-detects the port), so allow a bare argc==2.
+        if (!(argc == 2 && std::string(argv[1]) == "sniff")) {
+            std::fprintf(stderr,
+                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff> <path|addr> [len|byte|dest] [port]\n",
+                         argv[0]);
+            return 2;
+        }
     }
     const std::string op = argv[1];
 
@@ -145,6 +151,34 @@ int main(int argc, char** argv) {
             return 0;
         } catch (const std::exception& e) {
             std::fprintf(stderr, "vramdump failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio live save-state sniffer read: memRD(ADDR_SSR, 512) mirrors a RUNNING game's APU/PPU/OAM
+    // writes (edn8-pro-pub sst.sv). Read-only, safe on a running game. Menu-only-OFF: at the file browser the
+    // mirror is disabled, so the magic byte at +0xCF won't be 0x53. Exercises the C++ memRD twin on hardware.
+    if (op == "sniff") {
+        const std::string pport = argc > 2 ? argv[2] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort         sp(pport);
+            Edio                      edio(sp);
+            edio.connect();
+            std::vector<std::uint8_t> ssr(0x200);
+            edio.memRD(Edio::ADDR_SSR, ssr.data(), ssr.size());
+            const bool magicOk = ssr[0xCF] == 0x53;
+            std::printf("magic [+0xCF] = 0x%02X %s\n", ssr[0xCF], magicOk ? "('S' - sniffer live)" : "(no running game?)");
+            std::printf("APU  [+0x080..0x09F]:");
+            for (int i = 0; i < 0x20; ++i) std::printf(" %02X", ssr[0x080 + i]);
+            std::printf("\nPPU  [+0x0C0..0x0C3]: %02X %02X %02X %02X   CPU [+0x0C8]: %02X %02X %02X %02X\n",
+                        ssr[0x0C0], ssr[0x0C1], ssr[0x0C2], ssr[0x0C3], ssr[0x0C8], ssr[0x0C9], ssr[0x0CA], ssr[0x0CB]);
+            return magicOk ? 0 : 1;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "sniff failed: %s\n", e.what());
             return 1;
         }
     }

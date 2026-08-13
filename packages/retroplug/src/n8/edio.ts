@@ -21,6 +21,7 @@ const CMD_F_FCLOSE = 0xce; // close the open file
 
 export const ADDR_SRM = 0x1000000; // cart battery RAM (a game's .srm)
 export const ADDR_MENU_CHR = 0xfe0000; // menu CHR (ADDR_CHR 0x800000 + 0x7E0000); screenshot
+export const ADDR_SSR = 0x1802000; // save-state sniffer: a running game's live APU/PPU/OAM write-mirror
 export const ADDR_FIFO = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
 export const SIZE_SRM_GAME = 0x10000; // 64 KB - max battery RAM a game uses
 
