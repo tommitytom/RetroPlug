@@ -167,7 +167,7 @@ Grouped by payoff. "Effort" is the add to `Edio`/tooling.
 | ✅ **Device info** | `CMD_SYS_INF` (0x26) + `CMD_GET_VDC` (0x13) | DONE + HW-verified (`n8-load --info`, hwtest `info`, `src/n8/sysInfo.ts`): serial, boot/sw/hw versions, MCU-core build date, flash size, counters, board voltages, and NES-vs-Famicom form factor. This unit: EverDrive-N8 PRO, NES, boot 0x0100, core 2025-11-08 |
 | **Memory fill/test/CRC** | `CMD_MEM_SET/TST/CRC` (0x1B/1C/1D); `edlink` `diag` | fast SRAM verify, self-test |
 | **Flash read/write** | `CMD_FLA_RD/WR` (0x16/17); `edlink` `flard`/`flawr` | cart firmware / recovery |
-| **Full SD file ops** | copy/move/delete/mkdir/info/seek/crc/free (`CMD_F_*` 0xC3–D5) | complete filesystem, not just write |
+| ✅ **SD file management** | `CMD_F_DIR_MK`/`F_DEL`/`F_AVB` (0xD2/D3/D5) | DONE + HW-verified (`n8-load --mkdir`/`--rm`/`--df`, hwtest `fstest`): mkdir + delete a file/empty-dir over USB (round-trip verified). CAVEAT: free space (`CMD_F_AVB`) returns 0 on this N8 firmware even though mkdir/rm/ls work - the `--df` command says so honestly. Copy/move/info/seek/crc still TODO |
 | **Cheats engine** | `map_ctrl` bit 2 + `CheatSlot`/`CheatList` (`everdrive.h`) | Game-Genie codes via config |
 | **In-game menu / halt hooks** | `map_ctrl` ss bits; menu `'h'` | trigger the in-game menu / halt |
 | **TCP/IP bridge** | `edlink` `netgate` | tunnel the cart link over the network |

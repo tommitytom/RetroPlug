@@ -41,6 +41,9 @@ function driveGolden(c: GoldenCase): number[] {
     case "fileRead": edio.fileRead(a.size ?? 0); break;
     case "sysInfo": edio.sysInfo(); break;
     case "vdc": edio.vdc(); break;
+    case "freeSpace": edio.freeSpace(); break;
+    case "dirMake": edio.dirMake(a.path ?? ""); break;
+    case "fileDelete": edio.fileDelete(a.path ?? ""); break;
     default: throw new Error(`edio golden: unknown op '${c.op}'`);
   }
   return port.written;

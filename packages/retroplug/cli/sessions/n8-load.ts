@@ -27,7 +27,7 @@ import { isLsdjSav, listProjects } from "../../src/lsdj";
 const DEFAULT_ROM = "resources/roms/n8-midi.nes";
 const VALUE_FLAGS = new Set([
   "--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--sniff-raw",
-  "--dump-chr", "--patch-chr", "--patch-prg", "--serial",
+  "--dump-chr", "--patch-chr", "--patch-prg", "--mkdir", "--rm", "--serial",
 ]);
 
 const flag = (args: string[], name: string): string | undefined => {
@@ -148,6 +148,9 @@ const N8_LOAD_HELP = [
   "                     WARNING: a bad code patch can crash the game (power-cycle to recover)",
   "  --info             print the N8's device info (serial, firmware/bootloader versions, NES/Famicom form",
   "                     factor, flash size, voltages) over USB",
+  "  --df               print the SD card's free space",
+  "  --mkdir <path>     create a directory on the SD card",
+  "  --rm <path>        delete a file or empty directory on the SD card (PERMANENT)",
   "  --show-song        decode the live cart battery (risa/LSDj) and print its songs",
   "  --serial <port>    use this serial port (default: auto-detect the N8)",
   "",
@@ -175,6 +178,9 @@ export const n8LoadTool: CliTool = {
     const showSong = has(args, "--show-song");
     const doSniff = has(args, "--sniff");
     const doInfo = has(args, "--info");
+    const doDf = has(args, "--df");
+    const mkdir = flag(args, "--mkdir");
+    const rm = flag(args, "--rm");
     const isPatch = patchChr != null || patchPrg != null;
 
     if (sramOnly && !srmPath) throw new Error("--sram-only requires --srm <save.srm>");
@@ -183,7 +189,7 @@ export const n8LoadTool: CliTool = {
     // Read local files up front (fail fast, before touching hardware).
     const readOnly =
       doLs || dumpPath != null || showSong || sramOnly || getFile != null || screenshot != null ||
-      doSniff || sniffRaw != null || dumpChr != null || isPatch || doInfo;
+      doSniff || sniffRaw != null || dumpChr != null || isPatch || doInfo || doDf || mkdir != null || rm != null;
     // --get-file <sd-path> <local-dest>: the SD source is the flag operand, the local destination the positional.
     const getFileDest = getFile != null ? positional(args) : undefined;
     if (getFile != null && !getFileDest)
@@ -211,6 +217,24 @@ export const n8LoadTool: CliTool = {
       if (doInfo) {
         // Device identity + voltages (CMD_SYS_INF + CMD_GET_VDC). Works at the menu or in a game.
         printInfo(n8.edio.sysInfo(), n8.edio.vdc());
+        return;
+      }
+      if (doDf) {
+        const free = n8.edio.freeSpace();
+        // Our N8 firmware reports 0 for CMD_F_AVB (the FAT free-cluster count isn't populated) even though
+        // mkdir/rm/ls work; be honest rather than print a bogus 0 GB. May report a real value on other units.
+        if (free === 0) console.log("SD free space: 0 (this N8 firmware doesn't report free space via CMD_F_AVB)");
+        else console.log(`SD free space: ${(free / 0x40000000).toFixed(2)} GB (${free} bytes)`);
+        return;
+      }
+      if (mkdir != null) {
+        n8.edio.dirMake(mkdir);
+        console.log(`made directory: ${mkdir}`);
+        return;
+      }
+      if (rm != null) {
+        n8.edio.fileDelete(rm);
+        console.log(`deleted: ${rm}`);
         return;
       }
       if (doLs) {

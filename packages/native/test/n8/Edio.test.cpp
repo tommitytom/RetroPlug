@@ -131,6 +131,12 @@ TEST_CASE("Edio framing matches the shared golden (twins edio.test.ts)", "[n8]")
             edio.sysInfo();
         } else if (c.op == "vdc") {
             edio.vdc();
+        } else if (c.op == "freeSpace") {
+            edio.freeSpace();
+        } else if (c.op == "dirMake") {
+            edio.dirMake(a.path.value_or(""));
+        } else if (c.op == "fileDelete") {
+            edio.fileDelete(a.path.value_or(""));
         } else {
             FAIL("unknown golden op: " << c.op);
         }

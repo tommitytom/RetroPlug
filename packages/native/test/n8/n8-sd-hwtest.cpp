@@ -13,8 +13,9 @@
 //   retroplug-n8-hwtest sniff    [port]                        # memRD ADDR_SSR: a running game's live APU/PPU/OAM
 //   retroplug-n8-hwtest memwr    <addr-hex> <file> [port]      # block memWR + verify (live-patch CHR/PRG)
 //   retroplug-n8-hwtest info     [port]                        # CMD_SYS_INF + CMD_GET_VDC: serial/versions/form/volts
+//   retroplug-n8-hwtest fstest   [port]                        # CMD_F_AVB/DIR_MK/DEL: free space + scratch mkdir/rm
 //
-// peek/poke/read/vramdump/sniff/memwr/info drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
+// peek/poke/read/vramdump/sniff/memwr/info/fstest drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
 // the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
 // edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read pulls a whole
 // SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
@@ -39,11 +40,11 @@ using namespace retroplug;
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        // `sniff`/`info` need no path/addr (they auto-detect the port), so allow a bare argc==2 for them.
+        // `sniff`/`info`/`fstest` need no path/addr (they auto-detect the port), so allow a bare argc==2.
         const std::string a1 = argc >= 2 ? argv[1] : "";
-        if (!(argc == 2 && (a1 == "sniff" || a1 == "info"))) {
+        if (!(argc == 2 && (a1 == "sniff" || a1 == "info" || a1 == "fstest"))) {
             std::fprintf(stderr,
-                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|info> <path|addr> [len|byte|dest] [port]\n",
+                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|info|fstest> <path|addr> [len|byte|dest] [port]\n",
                          argv[0]);
             return 2;
         }
@@ -117,6 +118,33 @@ int main(int argc, char** argv) {
             return 0;
         } catch (const std::exception& e) {
             std::fprintf(stderr, "%s failed: %s\n", op.c_str(), e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio SD file-management round-trip (CMD_F_AVB + CMD_F_DIR_MK + CMD_F_DEL): free space, then make +
+    // remove a scratch dir (self-cleaning, safe). Exercises the native freeSpace/dirMake/fileDelete twins.
+    if (op == "fstest") {
+        const std::string pport = argc > 2 ? argv[2] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            const std::uint64_t free = edio.freeSpace();
+            std::printf("SD free space: %.2f GB (%llu bytes)\n", free / static_cast<double>(1ull << 30),
+                        static_cast<unsigned long long>(free));
+            const std::string scratch = "EDN8/rp-scratch";
+            edio.dirMake(scratch);
+            std::printf("made %s\n", scratch.c_str());
+            edio.fileDelete(scratch);
+            std::printf("removed %s\n", scratch.c_str());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "fstest failed: %s\n", e.what());
             return 1;
         }
     }

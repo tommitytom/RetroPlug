@@ -151,6 +151,28 @@ std::vector<std::uint8_t> Edio::vdc() {
     return buf;
 }
 
+std::uint64_t Edio::freeSpace() {
+    txCMD(CMD_F_AVB);
+    std::uint8_t b[8];
+    readData(b, 8);
+    const std::uint64_t hi = static_cast<std::uint32_t>(b[0] | (b[1] << 8) | (b[2] << 16) | (static_cast<std::uint32_t>(b[3]) << 24));
+    const std::uint64_t lo = static_cast<std::uint32_t>(b[4] | (b[5] << 8) | (b[6] << 16) | (static_cast<std::uint32_t>(b[7]) << 24));
+    return (hi << 32) | lo;
+}
+
+void Edio::dirMake(const std::string& path) {
+    txCMD(CMD_F_DIR_MK);
+    txString(path);
+    const int resp = getStatus();
+    if (resp != 0 && resp != 8) throw std::runtime_error("Edio: mkdir error (" + path + ")");
+}
+
+void Edio::fileDelete(const std::string& path) {
+    txCMD(CMD_F_DEL);
+    txString(path);
+    checkStatus();
+}
+
 int Edio::connect(int handshakeTimeoutMs) {
     timeoutMs_ = handshakeTimeoutMs;
     port_.flushInput();

@@ -46,6 +46,9 @@ public:
     static constexpr std::uint8_t CMD_F_FRD     = 0xCA;   // read bytes from the open file
     static constexpr std::uint8_t CMD_F_FWR     = 0xCC;   // write bytes to the open file
     static constexpr std::uint8_t CMD_F_FCLOSE  = 0xCE;   // close the open file
+    static constexpr std::uint8_t CMD_F_DIR_MK  = 0xD2;   // make a directory on the SD card
+    static constexpr std::uint8_t CMD_F_DEL     = 0xD3;   // delete a file or empty directory
+    static constexpr std::uint8_t CMD_F_AVB     = 0xD5;   // free space available on the SD card (u64)
     static constexpr std::int32_t ADDR_PRG      = 0x0000000; // PRG-ROM PSRAM (8 MB) - the same chip the CPU fetches
     static constexpr std::int32_t ADDR_CHR      = 0x0800000; // CHR-ROM PSRAM (8 MB) - the same chip the PPU fetches
     static constexpr std::int32_t ADDR_SRM      = 0x1000000; // cart battery RAM (SRAM/PRG-NVRAM); a game's .srm
@@ -77,6 +80,12 @@ public:
 
     // Read the raw 8-byte board-voltage block (four u16: v50, v25, v12, bat).
     std::vector<std::uint8_t> vdc();
+
+    // SD file management. freeSpace: bytes free (CMD_F_AVB). dirMake: mkdir (tolerates "exists"). fileDelete:
+    // remove a file or empty dir. dirMake/fileDelete throw std::runtime_error on a device error.
+    std::uint64_t freeSpace();
+    void          dirMake(const std::string& path);
+    void          fileDelete(const std::string& path);
 
     // Write raw MIDI bytes to the cart FIFO (fire-and-forget: no status read). The one op the bridge needs.
     void fifoWR(const std::uint8_t* data, std::size_t size);

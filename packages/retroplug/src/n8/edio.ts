@@ -20,6 +20,9 @@ const CMD_F_FOPN = 0xc9; // open a file on the SD card
 const CMD_F_FRD = 0xca; // read bytes from the open file
 const CMD_F_FWR = 0xcc; // write bytes to the open file
 const CMD_F_FCLOSE = 0xce; // close the open file
+const CMD_F_DIR_MK = 0xd2; // make a directory on the SD card
+const CMD_F_DEL = 0xd3; // delete a file or empty directory
+const CMD_F_AVB = 0xd5; // free space available on the SD card (u64)
 
 export const ADDR_PRG = 0x000000; // PRG-ROM PSRAM (8 MB) - live code, the same chip the CPU fetches
 export const ADDR_CHR = 0x800000; // CHR-ROM PSRAM (8 MB) - live graphics, the same chip the PPU fetches
@@ -95,6 +98,30 @@ export class Edio {
   vdc(): Uint8Array {
     this.txCMD(CMD_GET_VDC);
     return this.readData(8);
+  }
+
+  // Free space on the SD card, in bytes (CMD_F_AVB -> two u32: hi then lo, per edlink FileAvailable).
+  freeSpace(): number {
+    this.txCMD(CMD_F_AVB);
+    const b = this.readData(8);
+    const hi = (b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24)) >>> 0;
+    const lo = (b[4] | (b[5] << 8) | (b[6] << 16) | (b[7] << 24)) >>> 0;
+    return hi * 0x100000000 + lo;
+  }
+
+  // Make a directory on the SD card (CMD_F_DIR_MK + path). Tolerates "already exists" (status 8).
+  dirMake(path: string): void {
+    this.txCMD(CMD_F_DIR_MK);
+    this.txString(path);
+    const resp = this.getStatus();
+    if (resp !== 0 && resp !== 8) throw new Error(`Edio: mkdir error 0x${hex2(resp)} (${path})`);
+  }
+
+  // Delete a file or empty directory on the SD card (CMD_F_DEL + path). Throws on a non-zero device status.
+  fileDelete(path: string): void {
+    this.txCMD(CMD_F_DEL);
+    this.txString(path);
+    this.checkStatus();
   }
 
   setReadTimeout(ms: number): void {

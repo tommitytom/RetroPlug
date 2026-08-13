@@ -145,3 +145,33 @@ test("assertGameRegion allows the game region and blocks the N8 OS region", () =
   expect(() => assertGameRegion(N8_OS_REGION, 1)).toThrow();
   expect(() => assertGameRegion(-1, 1)).toThrow();
 });
+
+// --- SD file management: freeSpace / dirMake / fileDelete -----------------------------------------------
+
+test("freeSpace assembles the u64 (hi*2^32 + lo) from the 8-byte reply", () => {
+  const a = new FakeSerialPort();
+  a.queueBytes(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40); // hi=0, lo=0x40000000
+  expect(new Edio(a).freeSpace()).toBe(0x40000000); // 1 GB
+  const b = new FakeSerialPort();
+  b.queueBytes(0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00); // hi=1, lo=0 -> uses the high word
+  expect(new Edio(b).freeSpace()).toBe(4294967296);
+});
+
+test("dirMake tolerates 'already exists' (status 8) but throws on other errors", () => {
+  const ok = new FakeSerialPort();
+  ok.queueBytes(0x08, 0xa5); // status 8 (already exists)
+  new Edio(ok).dirMake("EDN8/x"); // must NOT throw
+  const bad = new FakeSerialPort();
+  bad.queueBytes(0x05, 0xa5); // some other error
+  expect(() => new Edio(bad).dirMake("EDN8/x")).toThrow();
+});
+
+test("fileDelete sends CMD_F_DEL + path and throws on a non-zero status", () => {
+  const ok = new FakeSerialPort();
+  ok.queueBytes(0x00, 0xa5); // ok
+  new Edio(ok).fileDelete("EDN8/x/y.bin"); // must NOT throw
+  expect(ok.written.slice(0, 4)).toEqual([0x2b, 0xd4, 0xd3, 0x2c]); // CMD_F_DEL (0xd3) frame
+  const bad = new FakeSerialPort();
+  bad.queueBytes(0x05, 0xa5);
+  expect(() => new Edio(bad).fileDelete("EDN8/x")).toThrow();
+});
