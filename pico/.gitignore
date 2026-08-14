@@ -1,0 +1,3 @@
+# Pico SDK build trees (per-stage out-of-source builds)
+build/
+*/build/
