@@ -114,10 +114,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	# --- VCS ---------------------------------------------------------------
 	git \
 	git-lfs \
-	# --- RP2040 flashing + USB tools: OpenOCD drives a CMSIS-DAP debugger
-	# (e.g. the Raspberry Pi Debug Probe) over SWD to flash RP2040 firmware;
-	# usbutils (lsusb) for USB-passthrough diagnostics in the hardware lab.
-	openocd \
+	# --- usbutils (lsusb) for USB-passthrough diagnostics in the hardware lab.
+	# OpenOCD is built from source below (the RP2350-capable Raspberry Pi fork -
+	# stock OpenOCD / the apt package only ship rp2040.cfg, can't touch an RP2350).
 	usbutils \
 	# --- Plugin-format validators need these to download/extract -----------
 	curl \
@@ -175,6 +174,36 @@ RUN set -eux; \
 # cc65 tools locate their headers / libs / macro packages (e.g. longbranch.mac) via CC65_HOME; without it
 # a /usr/local install can't find asminc and the build fails. The evermidi rom/Makefile assumes this path.
 ENV CC65_HOME=/usr/local/share/cc65
+
+# --- OpenOCD (Raspberry Pi fork) for RP2350 SWD flashing + debugging via the
+# Raspberry Pi Debug Probe (CMSIS-DAP). Stock OpenOCD 0.12 (and the Ubuntu apt
+# package) only ship rp2040.cfg and cannot touch an RP2350, and there is no apt
+# package for the fork - so build it, plus its bundled jimtcl, from a pinned
+# source snapshot into /usr/local. This is what lets an agent flash the pico/
+# firmware (a Pico 2 / RP2350) over SWD with NO BOOTSEL. See pico/README.md and
+# .devcontainer/hw-usb-perms.sh (which exposes the probe's console).
+ARG OPENOCD_RPI_COMMIT=acff23ffd100479d6481a1155123774b79a990b9
+RUN set -eux; \
+	apt-get update && apt-get install -y --no-install-recommends \
+		autoconf automake libtool pkg-config texinfo \
+		libhidapi-dev libusb-1.0-0-dev; \
+	rm -rf /var/lib/apt/lists/*; \
+	mkdir -p /tmp/openocd && cd /tmp/openocd; \
+	git init -q; \
+	git remote add origin https://github.com/raspberrypi/openocd.git; \
+	git fetch -q --depth 1 origin "${OPENOCD_RPI_COMMIT}"; \
+	git checkout -q FETCH_HEAD; \
+	git submodule update --init; \
+	( cd jimtcl && ./configure --prefix=/usr/local --shared && make -j"$(nproc)" && make install ); \
+	ldconfig; \
+	./bootstrap; \
+	PKG_CONFIG_PATH=/usr/local/lib/pkgconfig ./configure --disable-werror \
+		--enable-cmsis-dap --enable-cmsis-dap-v2 --prefix=/usr/local; \
+	make -j"$(nproc)"; \
+	make install; \
+	ldconfig; \
+	cd / && rm -rf /tmp/openocd; \
+	openocd --version
 
 # --- Plugin-format validators -----------------------------------------------
 # Pinned versions; both ship as single-binary releases on GitHub. pluginval
