@@ -114,6 +114,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	# --- VCS ---------------------------------------------------------------
 	git \
 	git-lfs \
+	# --- RP2040 flashing + USB tools: OpenOCD drives a CMSIS-DAP debugger
+	# (e.g. the Raspberry Pi Debug Probe) over SWD to flash RP2040 firmware;
+	# usbutils (lsusb) for USB-passthrough diagnostics in the hardware lab.
+	openocd \
+	usbutils \
 	# --- Plugin-format validators need these to download/extract -----------
 	curl \
 	unzip \
