@@ -30,6 +30,7 @@ add_subdirectory(${PICO_PIO_USB_PATH} pico_pio_usb)
 
 add_executable(n8_host
     main.c
+    edio.c
     # TinyUSB's PIO-USB host controller driver, compiled directly (as the
     # Pico-PIO-USB host example does) so it builds regardless of SDK gating.
     ${PICO_TINYUSB_PATH}/src/portable/raspberrypi/pio_usb/hcd_pio_usb.c

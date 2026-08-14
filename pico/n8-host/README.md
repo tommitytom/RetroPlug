@@ -15,7 +15,7 @@ PIO-USB - they don't contend.
 | Slice | State | What |
 |-------|-------|------|
 | 2.1 | **done (HW-verified)** | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.c`) |
-| 2.2 | todo | `edio.c/.h` port: sysInfo + memRD/memWR |
+| 2.2 | **done (HW-verified)** | `edio.c/.h` port: status + sysInfo + memRD |
 | 2.3 | todo | `fifoWR` = memWR(0x1810000, midi) - a test note to the FIFO |
 | 2.4 | todo | the bridge: MIDI (UART1/GP5, reuse `../midi-in/midi.c`) -> `fifoWR` |
 
