@@ -14,7 +14,7 @@ PIO-USB - they don't contend.
 
 | Slice | State | What |
 |-------|-------|------|
-| 2.1 | built | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.c`) |
+| 2.1 | **done (HW-verified)** | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.c`) |
 | 2.2 | todo | `edio.c/.h` port: sysInfo + memRD/memWR |
 | 2.3 | todo | `fifoWR` = memWR(0x1810000, midi) - a test note to the FIFO |
 | 2.4 | todo | the bridge: MIDI (UART1/GP5, reuse `../midi-in/midi.c`) -> `fifoWR` |
@@ -41,9 +41,14 @@ git clone https://github.com/sekigon-gonnoc/Pico-PIO-USB.git /workspaces/Pico-PI
     GND  (pin 4) ->   GND    (phys pin 38)
 ```
 
-D+/D- must be the consecutive pair GP2/GP3 (PIO-USB drives D-, = D+ + 1). Optional
-22-33R series on D+/D-. Then plug the **N8's USB cable** into this socket (the same
-A-plug that went to the PC). Keep the debug probe attached (SWD flash + console);
+**Identifying the socket contacts:** a *receptacle* is pin-mirrored vs a *plug* - looking
+**into the mouth**, the 4 USB-2.0 contacts read **4-3-2-1** left->right, i.e.
+**GND, D+, D-, VBUS**. So VBUS is the contact on the **right**. Get VBUS/GND backwards
+and nothing enumerates (the device is unpowered - its pull-up needs VBUS); verify with a
+meter (the two outer contacts are the power pair). D+/D- must be the consecutive pair
+GP2/GP3 (PIO-USB drives D-, = D+ + 1); if it powers but won't enumerate, swap them
+(harmless). Optional 22-33R series on D+/D-. Then plug the **N8's USB cable** into this
+socket (the same A-plug that went to the PC). Keep the debug probe attached (SWD flash + console);
 the MIDI opto circuit can stay wired (unused until slice 2.4). PIO-USB forces a
 120 MHz system clock (`set_sys_clock_khz(120000)`).
 

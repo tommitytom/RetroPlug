@@ -9,7 +9,7 @@
 #endif
 
 #define CFG_TUSB_OS            OPT_OS_NONE
-#define CFG_TUSB_DEBUG         0
+#define CFG_TUSB_DEBUG         0     // bump to 2 to trace USB enumeration on the console
 
 //------------- Host stack on the PIO-USB root port -------------//
 #define CFG_TUH_ENABLED        1
