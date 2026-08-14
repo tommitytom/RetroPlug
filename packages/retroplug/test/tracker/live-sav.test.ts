@@ -6,7 +6,10 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";
-import { mutateLiveSav, loadSongByName, loadSongInPrimary, lsdjSongCatalog, songLoadWouldDiscard, songLoadByNameWouldDiscard } from "../../src/tracker";
+import { mutateLiveSav, loadSongByName, loadSongInPrimary, lsdjSongCatalog, songLoadWouldDiscard, songLoadByNameWouldDiscard, savEditWouldDiscard, loadSongLive } from "../../src/tracker";
+import { buildSav, SMDJ4_BLOCK_LEN } from "../../src/smsggdj/codec/sav";
+import { resolveSmsggdjLayout } from "../../src/smsggdj/runtime/layout";
+import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
 import { lsdjRom, gbRomBattery } from "../systems/fixtures";
 import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
 
@@ -171,6 +174,123 @@ test("songLoadWouldDiscard: a non-tracker cart never prompts (no positive signal
   const id = systems.addSystem("/roms/plain.gb")!;
   be.setSram(id, new Uint8Array(0x2000).fill(7));
   expect(songLoadWouldDiscard(systems, systems.systems()[0])).toBe(false);
+});
+
+// --- the OTHER five ops, on a console whose working song is not in the battery ----------------------
+
+/** A live smsggdj cart: a .sms carrying the build marker, with a two-song SMDJ4 battery and a synthetic
+ *  work-RAM block - the region the cart actually composes in, and which no `.sav` ever contains. */
+function newSmsCart() {
+  const be = new MockBackend("/cfg");
+  const systems = new SystemsStore(be, () => {}, buildAppRegistry());
+  const rom = new Uint8Array(0x8200);
+  rom.set([0x54, 0x4d, 0x52, 0x20, 0x53, 0x45, 0x47, 0x41], 0x7ff0); // "TMR SEGA"
+  rom[0x7ff0 + 0xf] = 0x40; // region nibble 4 -> SMS
+  for (let i = 0; i < "SMSGGDJ".length; i++) rom[0x3640 + i] = "SMSGGDJ".charCodeAt(i);
+  // The VERSION string too, at the offset a real v0.45 build puts it: without it no layout resolves and
+  // the live path correctly refuses, which is a different test from the one below.
+  for (let i = 0; i < "V0.45".length; i++) rom[0x367b + i] = "V0.45".charCodeAt(i);
+  be.seed("/roms/smsggdj.sms", rom);
+  const id = systems.addSystem("/roms/smsggdj.sms")!;
+  const block = (tag: number): Uint8Array => {
+    const b = new Uint8Array(SMDJ4_BLOCK_LEN);
+    for (let i = 0; i < SMDJ4_BLOCK_LEN; i += 4) b.set([tag, 0xff, 0, 0], i);
+    return b;
+  };
+  be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], 32 * 1024)!);
+  const setWorking = (b: Uint8Array): void => {
+    const ram = new Uint8Array(8192);
+    ram.set(b, 0);
+    be.setRam(id, ram);
+  };
+  return { be, systems, sys: () => systems.systems()[0], block, setWorking };
+}
+
+test("loadSongLive: writes the song into work RAM, and touches neither the .sav nor the core", () => {
+  // The point of the live path. Every other song op rewrites the battery and cold-boots; this one pokes
+  // and returns, so there is no file to corrupt and no reboot to lose the working song to.
+  const { be, systems, sys, block, setWorking } = newSmsCart();
+  setWorking(new Uint8Array(SMDJ4_BLOCK_LEN)); // blank working song, as a freshly booted cart has
+  const before = sys().id;
+
+  expect(loadSongLive(be, systems, sys(), 1)).toBe(true);
+
+  const ram = be.readRam(sys().id)!;
+  expect(ram.subarray(0, SMDJ4_BLOCK_LEN)).toEqual(block(2)); // BETA, at work-RAM offset 0
+  expect(sys().id).toBe(before); // no rebuild: the core was never reconstructed
+  expect(be.readFile("/roms/smsggdj.sav")).toBe(null); // ...and nothing was written to disk
+  expect(be.readFile("/roms/smsggdj.sav.bak")).toBe(null); // so no backup was needed either
+
+  // The metadata SMDJ4 keeps OUTSIDE the block travelled with it - the whole reason for the layout.
+  const layout = resolveSmsggdjLayout("0.45")!;
+  const name = String.fromCharCode(...ram.subarray(layout.name, layout.name + layout.nameLen)).replace(/\0+$/, "");
+  expect(name).toBe("BETA");
+  expect(ram[layout.edited]).toBe(0);
+
+  // ...and now the catalog can name the working song from RAM, which v0.45's battery cannot do.
+  expect(smsggdjSongCatalog.workingName(be.readSram(sys().id)!, ram)).toBe("BETA");
+});
+
+test("loadSongLive: declines cleanly instead of half-writing", () => {
+  const { be, systems, sys, setWorking } = newSmsCart();
+  setWorking(new Uint8Array(SMDJ4_BLOCK_LEN));
+  expect(loadSongLive(be, systems, sys(), 9)).toBe(false); // no song in that slot
+  const plain = newCart(); // an LSDj cart has no liveLoad at all
+  expect(loadSongLive(plain.be, plain.systems, plain.sys(), 0)).toBe(false);
+});
+
+test("loadSongByName prefers the live path over the cold boot when the cart has one", () => {
+  // The seam the Songs menu and the recents row share. LSDj keeps cold-booting; smsggdj does not, and
+  // the observable difference is that the system id does NOT change (no rebuild) and no .sav is written.
+  const { be, systems, sys, block, setWorking } = newSmsCart();
+  setWorking(new Uint8Array(SMDJ4_BLOCK_LEN));
+  const before = sys().id;
+
+  expect(loadSongByName(be, systems, sys(), "ALPHA")).toBe(true);
+  expect(sys().id).toBe(before);
+  expect(be.readRam(sys().id)!.subarray(0, SMDJ4_BLOCK_LEN)).toEqual(block(1));
+  expect(be.readFile("/roms/smsggdj.sav")).toBe(null);
+
+  // Re-picking the song already loaded stays a no-op - now decided from work RAM, since that is where
+  // the live load put the name.
+  expect(loadSongByName(be, systems, sys(), "ALPHA")).toBe(false);
+  expect(loadSongByName(be, systems, sys(), "NOSUCH")).toBe(false);
+});
+
+test("savEditWouldDiscard: a battery edit warns on the console whose working song is NOT in the battery", () => {
+  // The gap the review found. mutateLiveSav always ends in a cold boot; for LSDj and risa that is free
+  // because the working song is inside the bytes being rewritten, so the shared menu guarded Load alone.
+  // Here the working song is work RAM and the reboot destroys it, so Delete / Move / Add / Import /
+  // Replace are every bit as destructive as Load and have to ask first.
+  const { systems, sys, block, setWorking } = newSmsCart();
+
+  setWorking(block(2)); // working song IS the saved BETA - the reboot costs nothing
+  expect(savEditWouldDiscard(systems, sys())).toBe(false);
+
+  const edited = block(2);
+  edited[9] ^= 0xff; // ...now edited, and in no slot
+  setWorking(edited);
+  expect(savEditWouldDiscard(systems, sys())).toBe(true);
+  expect(songLoadWouldDiscard(systems, sys())).toBe(true); // Load agrees, off the same signal
+});
+
+test("savEditWouldDiscard: with no work RAM published it stays silent rather than guessing", () => {
+  // The mock publishes no WRAM until a test sets one, which is exactly the "cannot tell" case. A prompt
+  // fired on no evidence is the one that teaches people to dismiss prompts.
+  const { systems, sys } = newSmsCart();
+  expect(savEditWouldDiscard(systems, sys())).toBe(false);
+});
+
+test("savEditWouldDiscard: LSDj is never warned, because its reboot restores the working song", () => {
+  // The reason this is a per-console flag and not a blanket confirm. GRUB is dirty here - the LOAD guard
+  // fires - yet a Delete rewrites the .sav with working memory intact and the cold boot brings it back,
+  // so warning about it would be false.
+  const { be, systems, sys } = newCart();
+  const edited = be.readSram(sys().id)!.slice();
+  edited[0x100] ^= 0xff;
+  be.setSram(sys().id, edited);
+  expect(songLoadWouldDiscard(systems, sys())).toBe(true);
+  expect(savEditWouldDiscard(systems, sys())).toBe(false);
 });
 
 test("songLoadByNameWouldDiscard: re-picking the song you are ON never prompts", () => {

@@ -140,6 +140,30 @@ std::vector<std::uint8_t> syncTimestampRom() {
     return rom;
 }
 
+// A 32 KB Game Gear ROM that configures the EXT parallel port's direction and then copies $01 into
+// work RAM forever. The GG twin of portPollRom, and the only way to see what an `IN ($01)` actually
+// returns: the whole point of the vendored direction-mask edit is that the answer depends on $02, so
+// reading emulator state instead of running an IN would test the wrong thing.
+//
+// `dir` is the $02 word (bits 6-0 = PC6-PC0 direction, 1 = INPUT; bit 7 disables the PC6 NMI), and
+// `latch` is written to $01 afterwards, which is what an OUTPUT pin must read back. That write order -
+// direction first, then data - is the safe sequence GGSYNC.md specifies for the undefined power-on
+// latch. $C001 <- port $01.
+std::vector<std::uint8_t> ggExtPollRom(std::uint8_t dir, std::uint8_t latch) {
+    const std::uint8_t code[] = {
+        0x3E, dir,         // 0000  ld   a, dir
+        0xD3, 0x02,        // 0002  out  ($02), a
+        0x3E, latch,       // 0004  ld   a, latch
+        0xD3, 0x01,        // 0006  out  ($01), a
+        0xDB, 0x01,        // 0008  in   a, ($01)     <- loop
+        0x32, 0x01, 0xC0,  // 000A  ld   ($C001), a
+        0x18, 0xF9,        // 000D  jr   -7            -> loop at 0008
+    };
+    std::vector<std::uint8_t> rom(32 * 1024, 0x00);
+    std::memcpy(rom.data(), code, sizeof(code));
+    return rom;
+}
+
 // Work RAM as the ROM sees it. SmsWorkRam is 8 KB based at $C000, so index 0 is $C000.
 std::uint8_t workRam(MesenSmsSystem& sys, std::size_t index) {
     auto acc = sys.getMemory(rp::MemoryType::Ram, rp::AccessType::Read);
@@ -156,6 +180,25 @@ std::unique_ptr<MesenSmsSystem> buildPoller(SystemId id = 1) {
     auto sys = std::make_unique<MesenSmsSystem>(id, cfg, portPollRom());
     sys->onActivate(kSampleRate);
     return sys;
+}
+
+std::unique_ptr<MesenSmsSystem> buildGgPoller(std::uint8_t dir, std::uint8_t latch, SystemId id = 1) {
+    MesenSmsConfig cfg;
+    cfg.gameGear = true;
+    cfg.enableFm = false;
+    cfg.romPath  = "gg-ext-poll.gg";   // the .gg extension is what selects the GG model in Mesen
+    auto sys = std::make_unique<MesenSmsSystem>(id, cfg, ggExtPollRom(dir, latch));
+    sys->onActivate(kSampleRate);
+    return sys;
+}
+
+// The sync counter as a Game Gear EXT-port level word: counter bit 0 on PC4 AND PC5, bit 1 on PC6
+// (GGSYNC.md). The C++ mirror of ggSyncLevels in smsSync.ts.
+std::uint8_t ggSyncLevels(int counter) {
+    std::uint8_t levels = 0x7F;
+    if (!(counter & 1)) levels &= std::uint8_t(~0x30);   // PC4 + PC5 low
+    if (!(counter & 2)) levels &= std::uint8_t(~0x40);   // PC6 low
+    return levels;
 }
 
 std::uint32_t workRam16(MesenSmsSystem& sys, std::size_t index) {
@@ -294,6 +337,71 @@ TEST_CASE("SMS host-driven port levels reach the ROM and hold", "[sms]") {
     sys->setExternalInput(1, 0xFF);
     runInto(*sys, kFrames, 2, scratch);
     CHECK(workRam(*sys, 1) == 0xFF);   // released again
+}
+
+TEST_CASE("GG host-driven EXT levels reach the ROM, and only on input pins", "[sms]") {
+    // Guards the vendored SmsMemoryManager $01 read. Stock Mesen returned _state.GgExtData verbatim -
+    // a bare loopback, flagged //TODOSMS - so an `IN ($01)` could only ever see what the ROM itself
+    // had written. smsggdj's GG build decodes its sync counter from PC4/PC5/PC6 there, which meant
+    // the counter was pinned at whatever the startup latch left and `(current - last) & 3` was
+    // permanently 0: armed, willing, and silent forever.
+    std::vector<float> scratch;
+
+    SECTION("all pins input: the host drives every bit") {
+        auto sys = buildGgPoller(/*dir=*/0xFF, /*latch=*/0xFF);   // $FF = PC0-PC6 all inputs
+        REQUIRE(sys->activated());
+        runInto(*sys, kFrames, 4, scratch);
+        // Idle reads exactly what the stock loopback returned after the same init, so the edit is
+        // inert until something drives a pin. This is the no-regression half of the guard.
+        CHECK(workRam(*sys, 1) == 0x7F);
+
+        // Each counter level in turn, and each must still be there several frames later: the ROM
+        // samples once per video frame, so set-and-hold is the contract exactly as it is on SMS.
+        for (int counter = 0; counter < 4; ++counter) {
+            INFO("counter = " << counter);
+            const std::uint8_t levels = ggSyncLevels(counter);
+            sys->setExternalInput(0, levels);
+            runInto(*sys, kFrames, 2, scratch);
+            CHECK(workRam(*sys, 1) == levels);
+            runInto(*sys, kFrames, 8, scratch);
+            CHECK(workRam(*sys, 1) == levels);
+        }
+
+        sys->setExternalInput(0, 0x7F);
+        runInto(*sys, kFrames, 2, scratch);
+        CHECK(workRam(*sys, 1) == 0x7F);   // released again
+    }
+
+    SECTION("output pins ignore the host and read back the latch") {
+        // $8F is GGSYNC.md's "sync OUT" mask: PC4-PC6 outputs, PC0-PC3 inputs, PC6 NMI disabled. So
+        // with the host pulling everything low, the four input bits follow it to 0 and the three
+        // output bits must still read the latched 1s. Without the direction mask this would read
+        // 0x00 (host wins everywhere) or 0x7F (latch wins everywhere); only honouring $02 gives 0x70.
+        auto sys = buildGgPoller(/*dir=*/0x8F, /*latch=*/0xFF);
+        REQUIRE(sys->activated());
+        runInto(*sys, kFrames, 4, scratch);
+        CHECK(workRam(*sys, 1) == 0x7F);
+
+        sys->setExternalInput(0, 0x00);
+        runInto(*sys, kFrames, 4, scratch);
+        CHECK(workRam(*sys, 1) == 0x70);
+    }
+
+    SECTION("bit 7 of $02 is the NMI disable, not a direction") {
+        // $7F and $FF differ only in bit 7, which Sega's manual defines as the PC6 falling-edge NMI
+        // disable. Reading it as an eighth direction bit would make these two masks behave
+        // differently; they must not. (gg_link_test.asm really does use $7F.)
+        auto a = buildGgPoller(/*dir=*/0x7F, /*latch=*/0xFF);
+        auto b = buildGgPoller(/*dir=*/0xFF, /*latch=*/0xFF, /*id=*/2);
+        REQUIRE(a->activated());
+        REQUIRE(b->activated());
+        a->setExternalInput(0, 0x2A);
+        b->setExternalInput(0, 0x2A);
+        runInto(*a, kFrames, 4, scratch);
+        runInto(*b, kFrames, 4, scratch);
+        CHECK(workRam(*a, 1) == 0x2A);
+        CHECK(workRam(*a, 1) == workRam(*b, 1));
+    }
 }
 
 TEST_CASE("SMS held button survives an emulated frame", "[sms]") {

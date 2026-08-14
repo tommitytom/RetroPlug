@@ -21,7 +21,7 @@ const RENDER_HINT = "run 'retroplug-cli render --help' for the full options";
 /** The detailed `render --help` text (CliTool.help). Explains every flag, its default, and its constraints. */
 export const RENDER_HELP = `usage: retroplug-cli render <rom> [options]
 
-Render a Game Boy (.gb/.gbc), or NES (.nes) ROM to a WAV file. The ROM is booted and its audio
+Render a Game Boy (.gb/.gbc), GBA (.gba), NES (.nes), Master System (.sms) or Game Gear (.gg) ROM to a WAV file. The ROM is booted and its audio
 is written to disk. For a saved LSDj / risa song, Start is pressed so it begins playing (use --no-start to
 capture raw boot audio); mGB needs no such press, as it plays from incoming MIDI. With a loaded LSDj (Game
 Boy) or risa (NES) sav the song length is auto-detected (rendered up to the HFF stop) unless you pin a fixed
@@ -52,7 +52,7 @@ Options:
   --no-start             Do NOT press Start on boot; render the raw boot/menu audio.
   --song <name>          LSDj / risa: promote a saved song to the working song by name (case-insensitive).
   --song-index <0-31>    LSDj / risa: promote a saved song by its slot number instead of by name.
-  --list-songs           LSDj / risa: print the sav's saved song names and exit (renders nothing).
+  --list-songs           LSDj / risa / smsggdj: print the sav's saved song names and exit (renders nothing).
   -h, --help             Show this help and exit.
 
 Examples:

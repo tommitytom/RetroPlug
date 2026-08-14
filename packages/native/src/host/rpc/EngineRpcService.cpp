@@ -45,9 +45,15 @@ std::vector<std::uint8_t> slurpAll(const std::string& path) {
 }
 
 // The default core for a platform — the fallback when the wire spec omits `core`. TS always sends
-// both (derived via defaultCoreFor), so this only backstops a caller that sends platform alone.
+// both (derived via its own defaultCoreFor), so this only backstops a caller that sends platform alone.
+//
+// MIRRORS `DEFAULT_CORE` in packages/retroplug/src/platform.ts, and unlike that one it has no compiler
+// holding it to the platform list: DEFAULT_CORE is a `Record<Platform, Core>`, so adding a Platform
+// member is a hard TS error, whereas a missing case here just silently falls through to SameBoy and
+// the construct returns nullptr with no diagnostic. That is exactly how "sms"/"gg" were left behind
+// when they landed. app-cores.test.ts drives every platform through this path with `core` omitted.
 std::string defaultCoreFor(const std::string& platform) {
-    if (platform == "nes" || platform == "gba") return "mesen";
+    if (platform == "nes" || platform == "gba" || platform == "sms" || platform == "gg") return "mesen";
     return "sameboy";  // "gb" (and unknown/absent) → SameBoy
 }
 
@@ -162,6 +168,23 @@ std::optional<rfl::Bytestring> EngineRpcService::readRam(std::uint32_t id) {
     auto bytes = engine_.readRam(id);
     if (!bytes) return std::nullopt;
     return toBytestring(*bytes);
+}
+
+bool EngineRpcService::writeRam(std::uint32_t id, std::uint32_t offset, rfl::Bytestring bytes) {
+    // Queued through the invoker (flushed inline when quiescent, applied on the audio thread while it
+    // runs), so a host can poke a PLAYING core.
+    //
+    // But NOT accepted optimistically the way pressButton is, and the difference matters. A dropped
+    // key edge is a lost keypress; a dropped 6,912-byte write is a caller that believes it loaded a
+    // song. So the answerable failures are answered HERE, synchronously, from the published snapshot
+    // (race-free, no live-core read): unknown id, no writable RAM, out of bounds. The queued apply
+    // re-checks bounds anyway, because the region could in principle change between the two.
+    if (bytes.empty()) return false;
+    const std::size_t ram = engine_.ramSize(id);
+    if (ram == 0 || static_cast<std::size_t>(offset) + bytes.size() > ram) return false;
+    const auto* p = reinterpret_cast<const std::uint8_t*>(bytes.data());
+    invoker_.writeRam(id, offset, std::vector<std::uint8_t>(p, p + bytes.size()));
+    return true;
 }
 
 bool EngineRpcService::screenshot(std::uint32_t id, std::string path) {

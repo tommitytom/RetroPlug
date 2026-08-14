@@ -32,19 +32,25 @@ struct MesenSmsConfig {
     bool          gameGear        = false;
 
     // Emulate the YM2413 FM unit. On by default, matching Mesen and matching
-    // real FM-equipped hardware.
+    // real FM-equipped hardware. ON means "FM sounds ALONGSIDE the PSG", which
+    // took a vendored change to be true.
     //
-    // This is not just "more sound". Mesen models the Japanese SMS behaviour
-    // where port $F2 MUXES rather than sums: a ROM that writes $F2=1 to turn FM
-    // on gets its PSG output zeroed outright (SmsFmAudio::IsPsgAudioMuted ->
-    // SmsPsg::PlayQueuedAudio's memset). smsggdj does exactly that at boot when
-    // its FM option is enabled, and its own source notes that real hardware and
-    // SMSPlus SUM the two while Emulicious muxes - so with FM on, Mesen loses
-    // every PSG channel the tracker plays. Turning FM off here restores them.
+    // Stock Mesen models the Japanese SMS, where port $F2 MUXES rather than
+    // sums: a ROM writing $F2 = 1 to turn FM on gets its PSG output zeroed
+    // outright (SmsFmAudio::IsPsgAudioMuted -> SmsPsg::PlayQueuedAudio's
+    // memset). smsggdj does exactly that at boot when its FM option is on, so
+    // this switch used to cost the tracker three tone voices plus noise - a
+    // PSG-instrument song measured rms 0.051 -> 0.000, literal silence, while
+    // an FM-instrument song played fine. Its own source notes real hardware and
+    // SMSPlus SUM while Emulicious muxes, and a Mark III with the FM add-on
+    // sums too. configureSms therefore sets SmsConfig::FmMutesPsg = false.
+    // Guarded by test-native/sms-fm.test.ts, whose mixed PSG+FM song is the
+    // only shape that distinguishes summing from muxing.
     //
-    // Also load-bearing for testing: with FM off the PSG output is byte
-    // identical regardless of the step loop's flush cadence, which is what
-    // makes a cadence-invariance guard possible at all.
+    // Still useful OFF, for a reason unrelated to that: with FM off the PSG
+    // output is byte identical regardless of the step loop's flush cadence,
+    // which is what makes a cadence-invariance guard possible at all. The sync
+    // fixtures keep it off for that, not because they must.
     bool          enableFm        = true;
 
     bool          embedRom        = true;

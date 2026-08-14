@@ -47,15 +47,19 @@ export function registerRomProviders(registry: RoleRegistry): void {
     rom.platform === "nes" ? [{ kind: "nes-n8-midi", config: {} }] : [],
   );
 
-  // smsggdj (the LSDj-style Master System tracker) → the `sms-sync` role that clocks it from the DAW
-  // transport over controller port 2. Matched on the ROM's build MARKER, not the platform: those are
-  // Player 2's button lines, so attaching this to every SMS cart would inject phantom presses into any
-  // game that reads the port. Master System only - the Game Gear build reads its EXT port ($01), which
-  // stock Mesen models as a bare loopback with no host input path, so a `.gg` cart gets no role rather
-  // than one that silently does nothing.
-  registry.registerRomProvider((rom: RomContext) =>
-    rom.platform === "sms" && isSmsggdjRom(rom.header) ? [{ kind: "sms-sync", config: {} }] : [],
-  );
+  // smsggdj (the LSDj-style Master System / Game Gear tracker) → the `sms-sync` role that clocks it
+  // from the DAW transport. Matched on the ROM's build MARKER, not the platform: on SMS the transport
+  // rides Player 2's button lines, so attaching this to every SMS cart would inject phantom presses
+  // into any game that reads the port.
+  //
+  // `machine` carries the wire format, because the two builds read different pins - SMS controller
+  // port 2 ($DD) versus the GG EXT parallel port ($01). Both work: the GG path needs Mesen to honour
+  // the $02 direction mask on an $01 read rather than looping the port straight back, which is the
+  // vendored SmsMemoryManager edit.
+  registry.registerRomProvider((rom: RomContext) => {
+    if ((rom.platform !== "sms" && rom.platform !== "gg") || !isSmsggdjRom(rom.header)) return [];
+    return [{ kind: "sms-sync", config: { machine: rom.platform } }];
+  });
 
   // risa (the LSDj-style NES/MMC5 tracker) → the `risa` marker role that gates the Songs menu, plus the
   // `risa-assets` role holding non-destructive theme/font ROM overrides. Detected by its iNES 2.0 header

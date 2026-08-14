@@ -20,6 +20,7 @@ import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
 import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
 import { loadSongToWorkingInSav } from "../risaSongOps";
+import { listSongs as smsggdjListSongs, setCurSlot as smsggdjSetCurSlot } from "../smsggdj/codec/sav";
 import { isRisaRomHeader, runtime as risaRuntime } from "../risa";
 import { lsdjSongCatalog, risaSongCatalog } from "../tracker";
 import type { ChannelExportMode } from "../settingsEnums";
@@ -137,7 +138,10 @@ function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: L
   const platform = platformOf(o.rom);
   if (platform === "gb") return resolveLsdjSongSeed(ctx, o, log, warn);
   if (platform === "nes") return resolveRisaSongSeed(ctx, o, log, warn);
-  throw new Error(`render: --song/--song-index is a Game Boy (LSDj) / NES (risa) feature (got ${platform})`);
+  if (platform === "sms" || platform === "gg") return resolveSmsggdjSongSeed(ctx, o, log, warn);
+  throw new Error(
+    `render: --song/--song-index is a Game Boy (LSDj) / NES (risa) / Master System + Game Gear (smsggdj) feature (got ${platform})`,
+  );
 }
 
 function resolveLsdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SongSeed {
@@ -203,6 +207,37 @@ function resolveRisaSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, war
   if (!seed) throw new Error(`render: could not load risa song ${idx} (needs a current-layout catalog)`);
   const name = songs.find((sg) => sg.index === idx)?.name || null;
   log(`song "${name || "(unnamed)"}" (slot ${idx}) → working song`);
+  return { seed, name };
+}
+
+/** The smsggdj catalog's saved songs (index + name), for --list-songs. */
+export function readSmsggdjSongs(ctx: RenderContext, o: RenderOpts): { path: string; songs: { index: number; name: string }[] } {
+  const { path, raw } = readRisaSav(ctx, o); // sibling-sav resolution, console-agnostic despite the name
+  return { path, songs: smsggdjListSongs(raw) };
+}
+
+/** smsggdj: unlike LSDj and risa, the seed does NOT move the song anywhere. This cart's working song is
+ *  work RAM and it boots blank on purpose, so the save NAMES the slot and the cart loads it on the way
+ *  up - the same mechanism the Songs menu uses. See src/tracker/smsggdjSongCatalog. */
+function resolveSmsggdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SongSeed {
+  const { raw } = readRisaSav(ctx, o); // the sibling-sav resolution is console-agnostic despite the name
+  const songs = smsggdjListSongs(raw);
+  const listing = songs.map((sg) => `${sg.index}:${sg.name}`).join(", ") || "(none)";
+  let idx: number;
+  if (o.songIndex !== undefined) {
+    idx = o.songIndex;
+    if (!songs.some((sg) => sg.index === idx)) throw new Error(`render: slot ${idx} is empty; songs: ${listing}`);
+  } else {
+    const want = o.song!.trim().toUpperCase();
+    const hits = songs.filter((sg) => sg.name.trim().toUpperCase() === want);
+    if (hits.length === 0) throw new Error(`render: no song named "${o.song}"; songs: ${listing}`);
+    if (hits.length > 1) warn(`render: ${hits.length} songs named "${o.song}"; using slot ${hits[0].index}`);
+    idx = hits[0].index;
+  }
+  const seed = smsggdjSetCurSlot(raw, idx);
+  if (!seed) throw new Error(`render: could not select smsggdj song ${idx}`);
+  const name = songs.find((sg) => sg.index === idx)?.name || null;
+  log(`song "${name || "(unnamed)"}" (slot ${idx}) → loaded at boot`);
   return { seed, name };
 }
 

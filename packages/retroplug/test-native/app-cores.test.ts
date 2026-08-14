@@ -81,3 +81,39 @@ test("the Game Gear backend picks the GG machine, not SMS (geometry is the proof
   // chain in one assertion.
   bootsAndRenders(GG, "gg", 1000, { width: 160, height: 144 });
 });
+
+// The wire spec's `core` is OPTIONAL (BackendConstructSpec), and native falls back to
+// EngineRpcService's defaultCoreFor when it is absent. Nothing exercised that fallback: TS always
+// sends `core` explicitly, so the native mirror silently rotted - it read `nes || gba` long after
+// "sms"/"gg" shipped, which would route an SMS spec to SameBoy and return nullptr with no diagnostic.
+//
+// TS's own DEFAULT_CORE is a `Record<Platform, Core>`, so a new Platform is a hard compile error there;
+// the C++ side has no such guard, and this test is the substitute. `core` is deleted rather than
+// omitted because ConstructSpec requires it - the point is precisely a caller that does not send it.
+function buildsWithoutCore(rom: string, platform: string): void {
+  const be = createRealBackend();
+  if (!be.fileExists(rom)) {
+    console.log(`# SKIP app-cores default-core: ROM not found at ${rom}`);
+    return;
+  }
+  const spec: Record<string, unknown> = {
+    romPath: rom,
+    platform,
+    embeddedRom: "",
+    savPath: null,
+    statePath: null,
+  };
+  const id = 900 + platform.length; // outside the store's allocator, distinct per case
+  expect(be.constructSystem(spec as never, id)).toBeTruthy();
+  createAudioDriver().renderAudio(500);
+  expect(be.getFrame(id)?.published ?? false).toBeTruthy(); // a real core, not a nullptr swallowed
+  expect(be.removeSystem(id)).toBeTruthy();
+}
+
+test("a wire spec that omits `core` still reaches the right backend, for every platform", () => {
+  // gb goes to SameBoy; the four Mesen platforms must not fall through to it.
+  buildsWithoutCore(NES, "nes");
+  buildsWithoutCore(SMS, "sms");
+  buildsWithoutCore(GG, "gg");
+  buildsWithoutCore(GBA, "gba");
+});
