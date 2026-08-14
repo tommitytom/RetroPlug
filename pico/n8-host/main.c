@@ -64,6 +64,30 @@ static void n8_probe(void) {
     printf("[n8-host] --- probe done ---\n");
 }
 
+// slice 2.3: pulse a test note into the FIFO (C4 on ch1) ~once a second. With the
+// EverMIDI ROM running on the NES, this is audible (ch1 -> APU Pulse1); at the
+// menu the write still executes, it's just not consumed. Each MIDI message is its
+// own fifoWR (= memWR to ADDR_FIFO), exactly as n8-bridge does on the host.
+static void test_note_task(void) {
+    static uint32_t next_ms = 0;
+    static bool on = false;
+    uint32_t t = to_ms_since_boot(get_absolute_time());
+    if (t < next_ms) return;
+    if (!on) {
+        const uint8_t note_on[3] = { 0x90, 0x3c, 0x7f };   // note-on ch1 C4 vel127
+        edio_fifo_wr(note_on, sizeof note_on);
+        printf("[n8-host] fifoWR note ON  (90 3c 7f)\n");
+        on = true;
+        next_ms = t + 300;
+    } else {
+        const uint8_t note_off[3] = { 0x80, 0x3c, 0x00 };  // note-off ch1 C4
+        edio_fifo_wr(note_off, sizeof note_off);
+        printf("[n8-host] fifoWR note OFF (80 3c 00)\n");
+        on = false;
+        next_ms = t + 700;
+    }
+}
+
 int main(void) {
     set_sys_clock_khz(120000, true);   // PIO-USB needs a 120 MHz-multiple clock
     stdio_init_all();
@@ -81,6 +105,9 @@ int main(void) {
         if (n8_ready && !probed) {
             probed = true;
             n8_probe();
+        }
+        if (n8_ready && probed) {
+            test_note_task();
         }
     }
 }
