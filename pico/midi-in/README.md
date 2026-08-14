@@ -55,17 +55,27 @@ original RP2040 Pico, add `-DPICO_BOARD=pico`. Outside the devcontainer,
 
 ## Flash
 
-Flash over USB with the board in **BOOTSEL** (hold its BOOTSEL button while
-resetting / replugging power):
+**Over SWD via the Debug Probe (recommended - no BOOTSEL).** Wire the probe's
+**D** (SWD) 3-pin to the Pico's debug header (SWCLK/GND/SWDIO), then:
+
+```sh
+sudo openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg \
+     -c "program build/midi_in_test.elf verify reset exit"
+```
+
+Programs + resets in one shot, no button. The devcontainer ships the
+RP2350-capable **Raspberry Pi OpenOCD fork** for this (stock OpenOCD only does
+rp2040). SWD also gives real debugging - `openocd` opens a gdb server on :3333.
+
+**Over USB (BOOTSEL) - fallback / very first flash.** Hold BOOTSEL while
+resetting/replugging power, then:
 
 ```sh
 sudo picotool load -x build/midi_in_test.uf2      # loads + reboots into the app
 ```
 
-Note: an RP2350 can't be SWD-flashed by stock Ubuntu OpenOCD 0.12 (it only ships
-`rp2040.cfg`; RP2350 SWD needs Raspberry Pi's OpenOCD fork), so USB/BOOTSEL is the
-path here. The container-side USB passthrough that makes `picotool` work from
-inside the devcontainer lives on `main` (see `.devcontainer/hw-usb-perms.sh`).
+Both rely on the container-side USB passthrough (bind-mounted `/dev/bus/usb` +
+`.devcontainer/hw-usb-perms.sh`), which lives on `main`.
 
 ## Verify
 
