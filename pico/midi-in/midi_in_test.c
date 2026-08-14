@@ -20,6 +20,7 @@
 // midi_print.c). Play a note and you get e.g. "NoteOn ch1 C5 (72) vel 69".
 
 #include <stdio.h>
+#include <stdlib.h>
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "midi.h"
@@ -28,6 +29,34 @@
 #define MIDI_UART   uart1
 #define MIDI_RX_PIN 5      // GP5 = UART1 RX = physical pin 7
 #define MIDI_BAUD   31250
+
+// Firmware-side sink: turns the always-on MIDI clock into a quiet tempo readout
+// (printed only when it settles or changes, so it proves the link is live without
+// burying note events), and hands everything else to the portable printer.
+static void on_midi(const midi_message *m, void *user) {
+    if (m->status == 0xF8) { // MIDI clock: 24 per quarter note
+        static uint32_t ticks = 0;
+        static uint64_t last_us = 0;
+        static uint32_t last_bpm10 = 0;
+        if ((++ticks % 24) == 0) {                 // one quarter note elapsed
+            uint64_t now = time_us_64();
+            if (last_us != 0) {
+                uint64_t dt = now - last_us;       // us per quarter note
+                if (dt > 0) {
+                    uint32_t bpm10 = (uint32_t)(600000000ULL / dt); // BPM x10
+                    if (abs((int)bpm10 - (int)last_bpm10) >= 10) {  // changed >= 1 BPM
+                        printf("clock   ~%lu.%lu BPM\n",
+                               (unsigned long)(bpm10 / 10), (unsigned long)(bpm10 % 10));
+                        last_bpm10 = bpm10;
+                    }
+                }
+            }
+            last_us = now;
+        }
+        return;
+    }
+    midi_print(m, user); // notes / CC / aftertouch / transport
+}
 
 int main(void) {
     stdio_init_all();      // console -> UART0 (GP0/GP1) via the debug probe
@@ -43,10 +72,10 @@ int main(void) {
     uart_set_fifo_enabled(MIDI_UART, true);
 
     midi_parser parser;
-    midi_parser_init(&parser, midi_print, NULL);
+    midi_parser_init(&parser, on_midi, NULL);
 
     printf("\n[n8-midi] MIDI IN decoder on UART1/GP5 @ %d baud. "
-           "Clock/sensing filtered - play a note...\n", MIDI_BAUD);
+           "Clock -> tempo, sensing filtered - play a note...\n", MIDI_BAUD);
 
     while (true) {
         if (uart_is_readable(MIDI_UART)) {
