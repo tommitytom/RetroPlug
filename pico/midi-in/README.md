@@ -29,13 +29,16 @@ edge causes UART framing errors at 3.3V.
 
 ## Build
 
-Needs the ARM toolchain (`gcc-arm-none-eabi`) and the Pico SDK.
+The devcontainer already provides the ARM toolchain, the Pico SDK, and
+`PICO_SDK_PATH` (see [`../README.md`](../README.md)), so this is just:
 
 ```sh
-export PICO_SDK_PATH=/workspaces/pico-sdk        # wherever you cloned it
 cmake -S . -B build -G Ninja
 cmake --build build
 ```
+
+Outside the devcontainer, `export PICO_SDK_PATH=/opt/pico-sdk` first (or wherever
+you cloned the SDK).
 
 Output: `build/midi_in_test.uf2` (plus `.elf` for SWD flashing).
 

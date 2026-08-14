@@ -18,13 +18,17 @@ MIDI + controller. They can coordinate over UART/I2C.
 
 ## Prerequisites
 
-- `gcc-arm-none-eabi` (ARM bare-metal toolchain)
-- The [Pico SDK](https://github.com/raspberrypi/pico-sdk), pointed to by `PICO_SDK_PATH`
+**In the devcontainer these are already baked in** - the ARM toolchain
+(`gcc-arm-none-eabi`), the [Pico SDK](https://github.com/raspberrypi/pico-sdk) at
+`/opt/pico-sdk` (with `PICO_SDK_PATH` set for every shell), and a system `picotool`
+(so builds don't re-fetch it). Nothing to install; just build a stage.
+
+On a bare host (no devcontainer):
 
 ```sh
-sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
-git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git /workspaces/pico-sdk
-export PICO_SDK_PATH=/workspaces/pico-sdk
+sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib libusb-1.0-0-dev
+git clone --depth 1 --branch 2.1.1 https://github.com/raspberrypi/pico-sdk.git /opt/pico-sdk
+export PICO_SDK_PATH=/opt/pico-sdk
 ```
 
 Each stage is a self-contained SDK project - `cd` into it and see its README.
