@@ -1,11 +1,22 @@
-# Stage 1 - MIDI IN (smoke test)
+# Stage 1 - MIDI IN
 
-Reads raw MIDI from a TRS jack through a **6N138** optoisolator into a Raspberry Pi
-Pico's **UART1 (GP5)** and prints each byte as hex to the console. This proves the
-opto + UART receive chain end to end before we parse anything or talk to the N8.
+Reads MIDI from a TRS jack through a **6N138** optoisolator into a Pico's
+**UART1 (GP5)**, decodes it with a reusable parser, and prints one human-readable
+event per message to the console. This proves the opto + UART receive chain and
+gives us the event model the later N8-bridge stage forwards.
 
+Hardware-verified 2026-08-14 (a Novation Launchpad through the full chain).
 Part of the standalone "MIDI keyboard -> real NES/N8, no computer" device
 (see [`../README.md`](../README.md)).
+
+## Files
+
+- `midi.{h,c}` - pure-C MIDI byte-stream parser (running status + realtime
+  interleave + SysEx skip). No hardware deps; reused by later stages and the
+  offline host test.
+- `midi_print.{h,c}` - a `midi_sink` that prints a readable line per message
+  (clock `0xF8` + active-sensing `0xFE` filtered; transport shown).
+- `midi_in_test.c` - firmware: UART1/GP5 -> parser -> printer, LED toggles per byte.
 
 ## Wiring (6N138, output side at 3.3V)
 
@@ -19,54 +30,70 @@ Part of the standalone "MIDI keyboard -> real NES/N8, no computer" device
   Pico 3.3V side
     6N138 pin 8 (Vcc) -- Pico 3V3   (phys pin 36)   [+ optional 0.1uF to GND]
     6N138 pin 5 (GND) -- Pico GND   (phys pin 38)
-    6N138 pin 6 (Vo)  -- 470R pull-up to 3V3, and to GP5 (UART1 RX, phys pin 7)
-    6N138 pin 7 (Vb)  -- 4.7k to GND
+    6N138 pin 6 (Vo)  -- 330R pull-up to 3V3, and to GP5 (UART1 RX, phys pin 7)
+    6N138 pin 7 (Vb)  -- 5k1 to GND
 ```
 
-TRS jack is wired **MIDI Type A**. A Type B source needs Tip/Ring swapped.
-The `4.7k` on pin 7 is not optional - without it the 6N138's slow Darlington
-edge causes UART framing errors at 3.3V.
+TRS jack is wired **MIDI Type A** (Novation MK3, Korg, Make Noise, TE...). A
+Type B source (Arturia, older gear) needs Tip/Ring swapped. Pin-6 pull-up is
+220-470R (330R here); the **pin-7 resistor (~5k, 5k1 here) is not optional** -
+without it the 6N138's slow Darlington edge causes UART framing errors at 3.3V.
 
 ## Build
 
-The devcontainer already provides the ARM toolchain, the Pico SDK, and
-`PICO_SDK_PATH` (see [`../README.md`](../README.md)), so this is just:
+The devcontainer provides the ARM toolchain, the Pico SDK, and `PICO_SDK_PATH`
+(see [`../README.md`](../README.md)):
 
 ```sh
 cmake -S . -B build -G Ninja
 cmake --build build
 ```
 
-Outside the devcontainer, `export PICO_SDK_PATH=/opt/pico-sdk` first (or wherever
-you cloned the SDK).
+**Defaults to the Pico 2 (RP2350)** - the board in the hardware lab. For an
+original RP2040 Pico, add `-DPICO_BOARD=pico`. Outside the devcontainer,
+`export PICO_SDK_PATH=/opt/pico-sdk` first. Output: `build/midi_in_test.uf2`.
 
-Output: `build/midi_in_test.uf2` (plus `.elf` for SWD flashing).
+## Flash
 
-Default board is the RP2040 `pico`. For a Pico 2 (RP2350) add `-DPICO_BOARD=pico2`.
-
-## Flash + verify (with the Raspberry Pi Debug Probe)
-
-SWD flash:
+Flash over USB with the board in **BOOTSEL** (hold its BOOTSEL button while
+resetting / replugging power):
 
 ```sh
-openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg \
-        -c "adapter speed 5000" -c "program build/midi_in_test.elf verify reset exit"
+sudo picotool load -x build/midi_in_test.uf2      # loads + reboots into the app
 ```
 
-(or hold BOOTSEL, plug USB, and drag `midi_in_test.uf2` onto the RPI-RP2 drive.)
+Note: an RP2350 can't be SWD-flashed by stock Ubuntu OpenOCD 0.12 (it only ships
+`rp2040.cfg`; RP2350 SWD needs Raspberry Pi's OpenOCD fork), so USB/BOOTSEL is the
+path here. The container-side USB passthrough that makes `picotool` work from
+inside the devcontainer lives on `main` (see `.devcontainer/hw-usb-perms.sh`).
 
-Watch the console (the debug probe's UART, wired to GP0/GP1):
+## Verify
+
+Watch the console. In the devcontainer the Raspberry Pi Debug Probe's UART is
+pinned to a stable node by the postStart hook:
 
 ```sh
-screen /dev/ttyACM0 115200      # or: minicom -D /dev/ttyACM0 -b 115200
+sudo stty -F /dev/ttyDbgProbe 115200 raw -echo
+cat /dev/ttyDbgProbe
 ```
 
-Play a note on a MIDI source plugged into the TRS jack. You should see, for C4:
+(The probe's **U** (UART) 3-pin port must be wired to the Pico's GP0/GP1 + GND.)
+Play a note and you get decoded events; clock/sensing are filtered:
 
 ```
-90 3C 7F      note on,  ch1, C4, vel 127
-80 3C 00      note off, ch1, C4
+NoteOn  ch1  C5   ( 72) vel 69
+ChanAT  ch1  = 74
+NoteOff ch1  C5   ( 72)
 ```
 
-The onboard LED also toggles on every received byte, so you get a sanity check
-even without a terminal.
+The onboard LED also toggles on every received byte - a sanity check with no
+terminal at all.
+
+## Host test (no hardware)
+
+The parser is pure C, so it can be exercised offline:
+
+```sh
+gcc -std=c11 -I. -o /tmp/miditest midi.c midi_print.c host_test.c
+/tmp/miditest <raw-midi-bytes-file>
+```
