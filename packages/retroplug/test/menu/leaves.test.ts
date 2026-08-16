@@ -1283,6 +1283,47 @@ test("Settings -> Audio > Output Device (standalone): lists the driver's devices
   delete g.__rp_setAudioConfig;
 });
 
+test("Settings -> Audio > Output Device (standalone): 'Default' names the device it resolves to, per driver", async () => {
+  const live = {
+    sampleRate: 48000,
+    blockSize: 512,
+    outChannels: 2,
+    driver: "Auto",
+    device: "",
+    drivers: ["Auto", "PipeWire", "ALSA"],
+    devicesByDriver: { Auto: ["Headphones", "HDMI"], PipeWire: ["Headphones", "HDMI"], ALSA: ["default"] } as Record<string, string[]>,
+    // What "" resolves to on each host API — the PipeWire session default sink here, `default` on ALSA.
+    defaultByDriver: { Auto: "Headphones", PipeWire: "Headphones", ALSA: "default" } as Record<string, string>,
+  };
+  const g = globalThis as { __rp_isStandalone?: boolean; __rp_getAudioConfig?: () => typeof live };
+  g.__rp_isStandalone = true;
+  g.__rp_getAudioConfig = () => ({ ...live });
+  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  resetAudioDraft();
+
+  const stores = composeAppStores({ backend: new MockBackend("/cfg"), notify: () => {} });
+  const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+
+  // No explicit pick: the row still names the device the sound goes to.
+  let items = audioItems();
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default (Headphones)");
+
+  // The label follows the DRAFT driver, so it tracks the host API whose default would be used.
+  findItem(items, "audio-driver")!.onCycle!(1); // Auto -> PipeWire
+  findItem(audioItems(), "audio-driver")!.onCycle!(1); // PipeWire -> ALSA
+  items = audioItems();
+  expect(findItem(items, "audio-driver")!.label).toBe("Driver: ALSA");
+  expect(findItem(items, "audio-device")!.label).toBe("Output Device: Default (default)");
+
+  // A host that can't name its default (an older build, or a host API with no output) keeps the bare label.
+  delete (live as Partial<typeof live>).defaultByDriver;
+  expect(findItem(audioItems(), "audio-device")!.label).toBe("Output Device: Default");
+
+  resetAudioDraft();
+  delete g.__rp_isStandalone;
+  delete g.__rp_getAudioConfig;
+});
+
 test("Settings Default Render Dir: unset by default, Set persists to config, Clear resets (disabled when unset)", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

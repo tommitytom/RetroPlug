@@ -75,6 +75,12 @@ The rules below are the parts that don't fit those.
   already REQUIRED at root scope for every plugin variant, and rtmidi is an in-tree
   submodule. `pnpm sdl:smoke` builds it by name then runs the headless smoke; that smoke
   is still NOT a CI step, so CI proves it compiles + links, not that it runs.
+  `pnpm sdl:pipewire` is the audio-device half the smoke can't cover (it runs with no
+  audio server at all): it stands up a PRIVATE PipeWire server + two null sinks in its own
+  `XDG_RUNTIME_DIR` and asserts WHICH output device the PortAudio PipeWire backend opens —
+  the session default sink (`default.audio.sink`) wins, an explicit Settings pick beats it,
+  a stale pick warns and falls back, and a libpipewire-less run degrades to ALSA. Also not
+  in CI (the runners have no PipeWire); the devcontainer ships one for it.
   **It ships in the `build.yml` artifact for every platform but is deliberately kept OUT
   of releases** — `release.yml`'s four packaging steps are explicit allowlists, and
   `retroplug-sdl` is not on any of them (each carries a comment saying so). Don't add it

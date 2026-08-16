@@ -92,7 +92,7 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
-import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices } from "./audioDraft";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
@@ -153,7 +153,10 @@ function audioSettingsChildren(): MenuItem[] {
   const driverIdx = Math.max(0, drivers.indexOf(cfg.driver));
   // Output devices of the SELECTED driver (host API), with "Default" (= the host API default) at index 0. The
   // list tracks the DRAFT driver; changing the driver resets the device (a device isn't valid across host APIs).
-  const dev = deviceCyclerNames(getAudioDevices(cfg.driver), cfg.device, "Default");
+  // "Default" names the device it resolves to when the host can tell us (e.g. the PipeWire session default sink),
+  // so the row says where the sound is actually going rather than just "Default".
+  const defaultName = getAudioDefaultDevice(cfg.driver);
+  const dev = deviceCyclerNames(getAudioDevices(cfg.driver), cfg.device, defaultName ? `Default (${defaultName})` : "Default");
   const devName = (n: number) => (n === 0 ? "" : getAudioDevices(cfg.driver)[n - 1] ?? cfg.device);
   const dirty = audioDraftDirty();
   return [
