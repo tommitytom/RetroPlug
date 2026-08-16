@@ -11,12 +11,20 @@ class Sunsoft5bAudio : public BaseExpansionAudio
 {
 private:
 	uint8_t _volumeLut[0x10] = {};
+	uint8_t _envVolumeLut[0x20] = {};   //5-bit envelope levels, 1.5 dB/step; [31] == _volumeLut[15]
 	uint8_t _currentRegister = 0;
 	uint8_t _registers[0x10] = {};
 	int16_t _lastOutput = 0;
 	int16_t _timer[3] = {};
 	uint8_t _toneStep[3] = {};
 	bool _processTick = false;
+
+	uint32_t _noiseLfsr = 1;    //17-bit; never let it reach 0 or it locks up
+	int32_t _noiseTimer = 0;
+	int32_t _envTimer = 0;
+	uint8_t _envStep = 0;       //0..31 within the current ramp
+	bool _envAttack = false;    //ramp direction: level rises with the step while true
+	bool _envHolding = false;   //ramp finished and frozen (Hold, or Continue=0)
 
 	uint16_t GetPeriod(int channel)
 	{
@@ -62,12 +70,81 @@ private:
 		}
 	}
 
+	//"Frequency = Clock / (32 * Period)", i.e. one new random bit every 32*period clocks. UpdateChannel runs
+	//every 2 clocks (the _processTick divide-by-2), so the LFSR advances every 16*period of those.
+	void UpdateNoise()
+	{
+		_noiseTimer--;
+		if(_noiseTimer <= 0) {
+			uint8_t period = GetNoisePeriod() & 0x1F;
+			_noiseTimer = 16 * (period ? period : 1);
+			//17-bit LFSR, taps at bits 16 and 13 (shifted right here, so bits 0 and 3); output is bit 0.
+			_noiseLfsr = (_noiseLfsr >> 1) | (((_noiseLfsr ^ (_noiseLfsr >> 3)) & 0x01) << 16);
+		}
+	}
+
+	//"Frequency = Clock / (16 * Period)" is the STEP rate, and the ramp is a 5-bit series of 32 levels.
+	void UpdateEnvelope()
+	{
+		_envTimer--;
+		if(_envTimer > 0) {
+			return;
+		}
+		uint16_t period = GetEnvelopePeriod();
+		_envTimer = 8 * (period ? period : 1);   //16*period clocks, at one call per 2 clocks
+
+		if(_envHolding) {
+			return;
+		}
+		_envStep++;
+		if(_envStep <= 31) {
+			return;
+		}
+
+		//A ramp finished. Continue(3) / Attack(2) / Alternate(1) / Hold(0) decide what follows.
+		uint8_t shape = _registers[0x0D] & 0x0F;
+		if(!(shape & 0x08)) {
+			//Continue=0 (shapes 0-7): a single ramp, then silence, whichever way it ran.
+			_envHolding = true;
+			_envStep = 31;
+			_envAttack = false;   //level = 31-31 = 0
+			return;
+		}
+		if(shape & 0x02) {
+			_envAttack = !_envAttack;   //Alternate
+		}
+		if(shape & 0x01) {
+			_envHolding = true;         //Hold: freeze at this ramp's final level
+			_envStep = 31;
+		} else {
+			_envStep = 0;
+		}
+	}
+
+	//5-bit envelope level: rising while attacking, falling otherwise.
+	uint8_t GetEnvelopeLevel()
+	{
+		return _envAttack ? _envStep : (31 - _envStep);
+	}
+
+	//The channel's amplitude: the shared envelope when bit 4 is set, else the fixed 4-bit volume.
+	uint8_t GetAmplitude(int channel)
+	{
+		return IsEnvelopeEnabled(channel) ? _envVolumeLut[GetEnvelopeLevel()] : GetVolume(channel);
+	}
+
 	void UpdateOutputLevel()
 	{
 		int16_t summedOutput = 0;
+		bool noiseOut = (_noiseLfsr & 0x01) != 0;
 		for(int i = 0; i < 3; i++) {
-			if(IsToneEnabled(i) && _toneStep[i] < 0x08) {
-				summedOutput += GetVolume(i);
+			//"A bit of 0 enables the noise/tone [...] If both bits are 1, the channel outputs a constant
+			//signal at the specified volume. If both bits are 0, the result is the logical and of noise
+			//and tone." So each half is OR'd with its own disable bit, and the two are AND'ed.
+			bool tone = !IsToneEnabled(i) || (_toneStep[i] < 0x08);
+			bool noise = !IsNoiseEnabled(i) || noiseOut;
+			if(tone && noise) {
+				summedOutput += GetAmplitude(i);
 			}
 		}
 
@@ -84,6 +161,8 @@ protected:
 		SVArray(_registers, 0x10);
 		SVArray(_toneStep, 3);
 		SV(_currentRegister); SV(_lastOutput); SV(_processTick);
+		SV(_noiseLfsr); SV(_noiseTimer);
+		SV(_envTimer); SV(_envStep); SV(_envAttack); SV(_envHolding);
 	}
 
 	void ClockAudio() override
@@ -92,6 +171,8 @@ protected:
 			for(int i = 0; i < 3; i++) {
 				UpdateChannel(i);
 			}
+			UpdateNoise();
+			UpdateEnvelope();
 			UpdateOutputLevel();
 		}
 		_processTick = !_processTick;
@@ -116,6 +197,15 @@ public:
 
 			_volumeLut[i] = (uint8_t)output;
 		}
+
+		//The envelope's 5-bit ramp is the same curve at 1.5 dB per step, so level 31 lands exactly on the
+		//4-bit level 15 (_volumeLut[i] == _envVolumeLut[2*i + 1]).
+		double envOutput = 1.0;
+		_envVolumeLut[0] = 0;
+		for(int i = 1; i < 0x20; i++) {
+			_envVolumeLut[i] = (uint8_t)envOutput;
+			envOutput *= 1.1885022274370184377301224648922;
+		}
 	}
 
 	void WriteRegister(uint16_t addr, uint8_t value)
@@ -128,6 +218,13 @@ public:
 			case 0xE000:
 				if(_currentRegister <= 0x0F) {
 					_registers[_currentRegister] = value;
+					if(_currentRegister == 0x0D) {
+						//Writing the shape RESTARTS the envelope - which is how a note-on retriggers it.
+						_envStep = 0;
+						_envHolding = false;
+						_envAttack = (value & 0x04) != 0;
+						_envTimer = 0;
+					}
 				}
 				break;
 		}
@@ -144,9 +241,12 @@ public:
 		for(int ch = 0; ch < 3; ch++) {
 			NesExpansionAudioChannel c;
 			uint16_t period = GetPeriod(ch);
-			c.Enabled     = IsToneEnabled(ch);
-			c.Volume      = _registers[8 + ch] & 0x0F;   // 4-bit, loud-scale
-			c.OutputLevel = GetVolume(ch);               // LUT amplitude
+			// A channel is audible if EITHER generator feeds it (both disable bits set = a constant level).
+			c.Enabled     = IsToneEnabled(ch) || IsNoiseEnabled(ch);
+			// In envelope mode the 4-bit field is not the volume (bit 4 is the mode flag and the low nibble
+			// reads 0), so report the envelope's current level instead of a misleading 0.
+			c.Volume      = IsEnvelopeEnabled(ch) ? (uint8_t)(GetEnvelopeLevel() >> 1) : (uint8_t)(_registers[8 + ch] & 0x0F);
+			c.OutputLevel = GetAmplitude(ch);            // LUT amplitude, envelope-aware
 			c.Period      = period;                      // 12-bit tone period
 			c.Frequency   = period ? clk / (32.0 * period) : 0.0;
 			state.channels.push_back(c);

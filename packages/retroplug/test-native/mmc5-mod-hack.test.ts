@@ -1,21 +1,26 @@
-// Characterises Mesen's MMC5 pulse under EverMIDI's "MOD hack" (CC115 on, CC116 rate), which re-writes the
-// pulse HI register from the idle loop to reset the duty phase.
+// Guards Mesen's MMC5 pulse under EverMIDI's "MOD hack" (CC115 on, CC116 rate), which re-writes the pulse
+// HI register from the idle loop to reset the duty phase.
 //
-// Why this exists: on a real NES + Everdrive N8 the MMC5 pulse holds FULL level at every reset rate, right
-// down to reload 1, and the phase reset instead pulls the pitch sharp. In Mesen it thins toward silence.
-// The cause is in the core: SquareChannel::WriteRam runs `if(!_isMmc5Square) UpdateOutput();`, so an MMC5
-// pulse does not refresh its output on a register write - Mmc5Square::_currentOutput only changes when its
-// timer expires. Reset the phase faster than the timer period and the emulated output is pinned to one duty
-// step (a constant = silence), where hardware emits a transition on every reset.
+// The bug this locks down: SquareChannel::WriteRam used to run `if(!_isMmc5Square) UpdateOutput();`, so an
+// MMC5 pulse never refreshed its output on a register write - Mmc5Square::_currentOutput only moved when
+// its timer expired. A phase reset repeated faster than the note's period then walked _dutyPos through the
+// same few steps every time, the level never changed, and the channel rendered DIGITAL SILENCE. Hardware
+// instead emits a transition on every reset, so it stays at full level and the reset rate becomes the
+// audible pitch. Fixed by giving the write path a virtual UpdateOutputAfterWrite(), which the MMC5 square
+// overrides to refresh its own latch (it must not push into the 2A03 mixer the way UpdateOutput does).
 //
-// So this test does NOT assert hardware parity (the core cannot deliver it). It pins the CURRENT emulated
-// behaviour, so that if the core is ever fixed the change is visible here rather than silently shifting the
-// ROM's tuning. The hardware numbers are in the EverMIDI hardware-test report.
+// Measured on a real NES + Everdrive N8 (PAL, capture ch5), reload 1: -31.50 dBFS at C4 and -31.51 at C2,
+// i.e. no level change at all from mod-off, with the pitch instead pulled sharp (C2 +2591 cents).
 import { test, expect } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
 const MMC5_ROM = "/workspaces/evermidi/rom/build/n8-midi-mmc5.nes";
+// The shipped ROM FLOORS its reset rate to [65,128], so it cannot reach the rates that exposed the bug.
+// An un-floored build (mmc5.c: `128 - val` in place of `128 - (val >> 1)`) is what proves the fix; point
+// MMC5_ROM at one to re-run that. Numbers with reload 1, before -> after the core fix:
+//   C4  -240.00 dBFS (digital silence) -> -27.71     hardware: -31.50
+//   C2  -240.00 dBFS (digital silence) -> -32.32     hardware: -31.51
 
 const CH_MMC5 = 6; // EverMIDI's MMC5 Pulse 1 (BASE01)
 const CH_2A03 = 1; // 2A03 Pulse 1 - the unfloored reference the ROM compares against
@@ -73,5 +78,11 @@ test("MMC5 MOD hack: Mesen thins the pulse as the reset rate rises (hardware doe
 
     // The note must still exist at all - a totally dead render would mean the harness, not the core.
     expect(off > -90).toBeTruthy();
+    // The MOD hack must never silence the channel, at any rate this ROM can ask for.
+    expect(fast > -60).toBeTruthy();
+    expect(slow > -60).toBeTruthy();
+    // The MMC5 pulse is register-identical to the 2A03 pulse, so under the same hack they should land in
+    // the same ballpark. Before the fix this was 208 dB apart (-240 vs -32) on an un-floored build.
+    expect(Math.abs(fast - ref) < 10).toBeTruthy();
   }
 });

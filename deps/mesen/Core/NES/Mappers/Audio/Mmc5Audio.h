@@ -16,6 +16,19 @@ private:
 		//"$5001 has no effect. The MMC5 pulse channels will not sweep, as they have no sweep unit."
 	}
 
+	//The output latch has to follow a register write, not wait for the next timer expiry. $5003/$5007 resets
+	//the duty phase, and on hardware that reset IS an output transition. Without refreshing here, a phase
+	//reset repeated faster than the note's period walks _dutyPos through the same few steps every time and
+	//the level never moves - the channel goes silent. That is emulator-only: on a real NES + Everdrive N8
+	//the MMC5 pulse holds full level at every reset rate down to reload 1, and the reset rate becomes the
+	//audible pitch. (Measured; it is why EverMIDI floors its MMC5 MOD rate. See mmc5-mod-hack.test.ts.)
+	virtual void UpdateOutputAfterWrite() override
+	{
+		//Mirrors RunChannel's expression - no IsMuted() check, since "frequency values less than 8 do not
+		//silence the MMC5 pulse channels".
+		_currentOutput = _dutySequences[_duty][_dutyPos] * _envelope.GetVolume();
+	}
+
 public:
 	Mmc5Square(NesConsole* console) : SquareChannel(AudioChannel::MMC5, console, false)
 	{
