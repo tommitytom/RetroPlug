@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
         const std::string a1 = argc >= 2 ? argv[1] : "";
         if (!(argc == 2 && (a1 == "sniff" || a1 == "info" || a1 == "fstest"))) {
             std::fprintf(stderr,
-                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|info|fstest> <path|addr> [len|byte|dest] [port]\n",
+                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|fifowr|info|fstest> <path|addr> [len|byte|dest] [port]\n",
                          argv[0]);
             return 2;
         }
@@ -224,6 +224,47 @@ int main(int argc, char** argv) {
             return 0;
         } catch (const std::exception& e) {
             std::fprintf(stderr, "memwr failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio cart-FIFO write from a file: memWR to ADDR_FIFO, which a running ROM drains at $40F0/$40F1
+    // (EverMIDI reads raw MIDI bytes from it). Unlike memwr there is NO readback verify - a FIFO is consumed
+    // by the NES side, so reading it back can never return what was written.
+    if (op == "fifowr") {
+        if (argc < 3) {
+            std::fprintf(stderr, "usage: %s fifowr <file> [port]\n", argv[0]);
+            return 2;
+        }
+        const std::string src   = argv[2];
+        const std::string pport = argc > 3 ? argv[3] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        std::FILE* f = std::fopen(src.c_str(), "rb");
+        if (!f) {
+            std::fprintf(stderr, "cannot read %s\n", src.c_str());
+            return 1;
+        }
+        std::vector<std::uint8_t> data;
+        std::uint8_t              chunk[4096];
+        for (std::size_t got; (got = std::fread(chunk, 1, sizeof(chunk), f)) > 0;)
+            data.insert(data.end(), chunk, chunk + got);
+        std::fclose(f);
+        if (data.empty()) {
+            std::fprintf(stderr, "%s is empty\n", src.c_str());
+            return 1;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            edio.fifoWR(data.data(), data.size());
+            std::printf("fifoWR %zu bytes\n", data.size());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "fifowr failed: %s\n", e.what());
             return 1;
         }
     }

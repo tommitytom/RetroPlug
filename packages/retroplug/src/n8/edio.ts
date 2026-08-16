@@ -31,6 +31,10 @@ export const ADDR_MENU_CHR = 0xfe0000; // menu CHR (ADDR_CHR 0x800000 + 0x7E0000
 export const N8_OS_REGION = 0x7e0000; // top of PRG/CHR (0x7E0000..0x800000) is the N8 OS/menu - never patch into it
 export const ADDR_SSR = 0x1802000; // save-state sniffer: a running game's live APU/PPU/OAM write-mirror
 export const ADDR_FIFO = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
+// FPGA config reg: expansion-audio master volume (MapConfig.master_vol = scfg[3]; krikzz edn8-pro-pub
+// fpga/base_sv/sys_cfg.sv). 0 = mute, 128 = unity, 255 = 2x. Write-only and live-only - it applies to the
+// RUNNING cart, and reading it back returns something else, so never verify this write.
+export const ADDR_EXP_VOL = 0x1800023;
 export const SIZE_SRM_GAME = 0x10000; // 64 KB - max battery RAM a game uses
 
 const ACK_BLOCK_SIZE = 1024; // fileWrite ack granularity
