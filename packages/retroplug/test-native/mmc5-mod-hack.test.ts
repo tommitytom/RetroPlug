@@ -49,7 +49,17 @@ test("MMC5 MOD hack: Mesen thins the pulse as the reset rate rises (hardware doe
     console.log(`# SKIP mmc5-mod-hack: no ROM at ${MMC5_ROM} (build it: make -C rom MAPPER=mmc5 all)`);
     return;
   }
-  if (s.project.systems.addSystem(MMC5_ROM) == null) throw new Error("addSystem failed");
+  const id = s.project.systems.addSystem(MMC5_ROM);
+  if (id == null) throw new Error("addSystem failed");
+  // NOTE: the hardware rig is PAL, and this SHOULD run PAL to match it. It does not yet. Both routes fail:
+  //   - adopt() with a construct-time region boots PAL (the core logs it) but renders SILENCE here, even on
+  //     the 2A03 and even with region ntsc, so adopt() produces a system renderTimeline cannot drive.
+  //   - setRoleConfig() below updates the TS role config (it reads back "pal") but the core still reports
+  //     NTSC at load, and every level here is bit-identical to the NTSC run.
+  // The levels this test pins are region-insensitive (a square's rms barely moves with pitch) and the
+  // silencing mechanism is structural, so the comparison holds. Revisit when adopt()/setRoleConfig are fixed.
+  s.project.systems.setRoleConfig(id, "mesen", { region: "pal" });
+  console.log(`[mmc5-mod] role region = ${s.project.systems.view()[0]?.roles.find((r) => r.kind === "mesen")?.config.region} (core may still be NTSC)`);
 
   // C4 and C2: the ROM's comment says low notes pin to silence soonest, so walk both.
   for (const [name, note] of [["C4", 60], ["C2", 36]] as const) {
