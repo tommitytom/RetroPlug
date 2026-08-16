@@ -16,7 +16,7 @@ PIO-USB - they don't contend.
 |-------|-------|------|
 | 2.1 | **done (HW-verified)** | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.c`) |
 | 2.2 | **done (HW-verified)** | `edio.c/.h` port: status + sysInfo + memRD |
-| 2.3 | **impl** (write verified; audible needs EverMIDI) | `fifoWR` = memWR(0x1810000, midi) - repeating test note |
+| 2.3 | **done (HW-verified)** | `fifoWR` = memWR(0x1810000, midi): C4 note-on -> EverMIDI Pulse1, proven by reading the N8 sniffer back (`note_and_sniff`) |
 | 2.4 | todo | the bridge: MIDI (UART1/GP5, reuse `../midi-in/midi.c`) -> `fifoWR` |
 
 ## Dependencies (not in the repo yet - see "one-time setup")
@@ -62,14 +62,24 @@ sudo openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg \
 sudo stty -F /dev/ttyDbgProbe 115200 raw -echo && cat /dev/ttyDbgProbe
 ```
 
-With the N8 plugged into the socket you should see:
+With the N8 plugged into the socket, and the **EverMIDI ROM running** on the NES, you
+should see the probe followed by a repeating FIFO-consumption proof:
 
 ```
 [n8-host] device mounted: addr 1  VID:PID 38df:0017   <- N8!
-[n8-host] CDC mounted (idx 0, addr 1, VID:PID 38df:0017)
-[n8-host] -> Edio CMD_STATUS (2b d4 10 ef)
-[n8-host] *** N8 STATUS OK (code=00) - Edio handshake works! ***
+[n8-host] CDC mounted (idx 0, VID:PID 38df:0017)
+[n8-host] --- Edio probe ---
+[n8-host] CMD_STATUS -> 5 (busy - ROM running)
+[n8-host] SYS_INF: serial=00035AAD.00002C4D  device_id=0x17 (N8 PRO)  sw=0103 hw=0001
+[n8-host] --- probe done ---
+[sniff] magic=53 $4000=bf $4002=8d $4003=01 $4015=0f  P1_timer=397  <<< PULSE1 ACTIVE - EverMIDI consumed it!
 ```
+
+`note_and_sniff()` fifoWRs a C4 note-on, then reads the N8 **sniffer** (a running game's
+live `$4000-$401F` write-mirror) back: `$4015` bit0 set + a non-zero Pulse1 timer means
+EverMIDI received the MIDI over the FIFO and drove the 2A03 - deterministic proof
+independent of the audio rig. At the N8 **menu** instead, `CMD_STATUS` is `0 (OK)` and
+the write still issues but nothing consumes it (Pulse1 idle).
 
 Defaults to `pico2` (RP2350). Override with `-DPICO_BOARD=pico`;
 `-DPICO_PIO_USB_PATH=...` if Pico-PIO-USB lives elsewhere.

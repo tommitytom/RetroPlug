@@ -77,6 +77,8 @@ bool edio_mem_rd(uint32_t addr, uint8_t *buf, uint32_t len) {
 }
 
 // memWR: CMD + addr(tx32) + len(tx32) + exec(0) + data. Fire-and-forget (no status).
+// Faithful to the SSOT (edio.ts / Edio.cpp): cmd frame, then the 9-byte header, then
+// the payload, as separate writes. Verified to drive EverMIDI's FIFO end to end.
 bool edio_mem_wr(uint32_t addr, const uint8_t *data, uint32_t len) {
     if (len == 0) return true;
     if (!tx_cmd(EDIO_CMD_MEM_WR)) return false;

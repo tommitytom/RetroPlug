@@ -37,8 +37,11 @@ static void hexdump(const char *label, const uint8_t *d, int n) {
 static void n8_probe(void) {
     printf("[n8-host] --- Edio probe ---\n");
 
+    // Status is 0 (OK) at the N8 menu; a running ROM reports a non-zero busy state
+    // (e.g. 5) while the link stays fully functional - not an error. -1 = no reply.
     int st = edio_get_status();
-    printf("[n8-host] CMD_STATUS -> %d %s\n", st, (st == 0) ? "(OK)" : "(error)");
+    printf("[n8-host] CMD_STATUS -> %d %s\n", st,
+           st == 0 ? "(OK)" : st < 0 ? "(no reply)" : "(busy - ROM running)");
 
     uint8_t info[64];
     if (edio_sys_info(info)) {
@@ -61,31 +64,46 @@ static void n8_probe(void) {
     else
         printf("[n8-host] memRD failed\n");
 
+    // memWR is exercised (and proven to land) non-destructively by note_and_sniff():
+    // it fifoWRs a note, then reads the running ROM's APU write-mirror back. If the
+    // FIFO write didn't reach EverMIDI, Pulse1 never activates - so a live sniff is a
+    // stronger check than an SRM round-trip, and doesn't clobber a save-game's battery RAM.
     printf("[n8-host] --- probe done ---\n");
 }
 
-// slice 2.3: pulse a test note into the FIFO (C4 on ch1) ~once a second. With the
-// EverMIDI ROM running on the NES, this is audible (ch1 -> APU Pulse1); at the
-// menu the write still executes, it's just not consumed. Each MIDI message is its
-// own fifoWR (= memWR to ADDR_FIFO), exactly as n8-bridge does on the host.
-static void test_note_task(void) {
+// Busy-wait `ms` while keeping USB serviced (tuh_task) - lets the N8 process a FIFO
+// write and update its APU write-mirror before we read it back.
+static void pump_ms(uint32_t ms) {
+    uint32_t until = to_ms_since_boot(get_absolute_time()) + ms;
+    while (to_ms_since_boot(get_absolute_time()) < until) tuh_task();
+}
+
+// Deterministic FIFO-consumption check: send C4 on ch1, then read the N8 sniffer
+// (the running game's live $4000-$401F write mirror) and report Pulse1. If EverMIDI
+// consumed the note, $4015 bit0 is set and the Pulse1 timer ($4002/$4003) is non-zero
+// - proof independent of the (flaky) audio rig.
+static void note_and_sniff(void) {
     static uint32_t next_ms = 0;
-    static bool on = false;
     uint32_t t = to_ms_since_boot(get_absolute_time());
     if (t < next_ms) return;
-    if (!on) {
-        const uint8_t note_on[3] = { 0x90, 0x3c, 0x7f };   // note-on ch1 C4 vel127
-        edio_fifo_wr(note_on, sizeof note_on);
-        printf("[n8-host] fifoWR note ON  (90 3c 7f)\n");
-        on = true;
-        next_ms = t + 300;
+    next_ms = t + 1500;
+
+    const uint8_t on[3]  = { 0x90, 0x3c, 0x7f };   // note-on ch1 C4
+    const uint8_t off[3] = { 0x80, 0x3c, 0x00 };
+    edio_fifo_wr(on, sizeof on);
+    pump_ms(150);                                  // let EverMIDI act + the mirror update
+
+    uint8_t s[EDIO_SNIFFER_SIZE];
+    if (edio_mem_rd(EDIO_ADDR_SSR, s, sizeof s)) {
+        uint16_t p1 = s[0x82] | ((s[0x83] & 0x07) << 8);
+        bool active = (s[0x95] & 0x01) && p1;
+        printf("[sniff] magic=%02x $4000=%02x $4002=%02x $4003=%02x $4015=%02x  P1_timer=%u  %s\n",
+               s[0xcf], s[0x80], s[0x82], s[0x83], s[0x95], p1,
+               active ? "<<< PULSE1 ACTIVE - EverMIDI consumed it!" : "(pulse1 idle - not consumed)");
     } else {
-        const uint8_t note_off[3] = { 0x80, 0x3c, 0x00 };  // note-off ch1 C4
-        edio_fifo_wr(note_off, sizeof note_off);
-        printf("[n8-host] fifoWR note OFF (80 3c 00)\n");
-        on = false;
-        next_ms = t + 700;
+        printf("[sniff] sniffer read FAILED\n");
     }
+    edio_fifo_wr(off, sizeof off);
 }
 
 int main(void) {
@@ -107,7 +125,7 @@ int main(void) {
             n8_probe();
         }
         if (n8_ready && probed) {
-            test_note_task();
+            note_and_sniff();
         }
     }
 }

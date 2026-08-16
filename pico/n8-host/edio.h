@@ -19,6 +19,8 @@ enum {
 
 // N8 device addresses.
 #define EDIO_ADDR_SRM   0x1000000u   // cart battery RAM (a game's .srm)
+#define EDIO_ADDR_SSR   0x1802000u   // sniffer: a running game's live APU/PPU/OAM write-mirror (0x200 B)
+#define EDIO_SNIFFER_SIZE 0x200u
 #define EDIO_ADDR_FIFO  0x1810000u   // cart FIFO -> the running ROM reads $40F0/$40F1
 
 // Bind the CDC interface index the N8 is on (from tuh_cdc_mount_cb).
