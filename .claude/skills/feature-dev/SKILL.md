@@ -103,6 +103,14 @@ sanitizers) and add a regression test. If the feature adds a consumer-facing cap
 
 ## Gotchas
 
+- **NEVER use Python, under any circumstances** - no `python`/`python3`, no numpy, no venv, no inline
+  `-c` snippets, for analysis or scratch work or "just a quick check". This project's tooling is
+  TS/C++ behind `retroplug-cli` plus ordinary shell tools. If something seems to need Python, it needs
+  a `retroplug-cli` subcommand instead: write it in `packages/retroplug/cli/sessions/*.ts`, register
+  it in `cli/tools.ts` (the only registration point), and rebuild with
+  `cmake --build build --target retroplug-cli -j$(nproc)`. A throwaway script proves nothing twice;
+  a subcommand is reviewable, reusable and shares the repo's DSP helpers with the tests.
+
 - `deps/sameboy`'s dirty tree is expected (patched at configure); `deps/mesen` is vendored — edit directly
   and revert instrumentation.
 - The CLI SDK surface (`cli/sdk-types.d.ts`) is hand-maintained and can lag `realBackend` — add missing
