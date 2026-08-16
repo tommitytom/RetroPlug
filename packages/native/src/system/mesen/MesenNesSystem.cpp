@@ -75,7 +75,8 @@ constexpr uint32_t kNesPalette[64] = {
     0xFFE4E594, 0xFFCFEF96, 0xFFBDF4AB, 0xFFB3F3CC, 0xFFB5EBF2, 0xFFB8B8B8, 0xFF000000, 0xFF000000,
 };
 
-void configureNes(Emulator& emu, std::uint32_t region, bool removeSpriteLimit) {
+void configureNes(Emulator& emu, std::uint32_t region, bool removeSpriteLimit,
+                  std::uint32_t s5bNoise, std::uint32_t mmc5PhaseReset) {
     EmuSettings* settings = emu.GetSettings();
     NesConfig cfg{};
     cfg.Port1 = ControllerConfig{ .Type = ControllerType::NesController };
@@ -89,6 +90,9 @@ void configureNes(Emulator& emu, std::uint32_t region, bool removeSpriteLimit) {
     // TS-owned "mesen" role knobs, seeded before LoadRom so region is correct from power-on.
     cfg.Region = static_cast<ConsoleRegion>(region);
     cfg.RemoveSpriteLimit = removeSpriteLimit;
+    // 0 = the documented chip behaviour, 1 = match the Everdrive N8's FPGA cores.
+    cfg.Sunsoft5bNoiseEnabled = (s5bNoise == 0);
+    cfg.Mmc5PulsePhaseReset   = (mmc5PhaseReset == 0);
     settings->SetNesConfig(cfg);
 }
 
@@ -133,7 +137,7 @@ void MesenNesSystem::onActivate(double sampleRate) {
     // background polling thread (ShortcutKeyHandler) that, besides being pure
     // overhead, races the debugger pointer against LoadRom's ResetDebugger.
     emu_->Initialize(false);
-    configureNes(*emu_, config_.region, config_.removeSpriteLimit);
+    configureNes(*emu_, config_.region, config_.removeSpriteLimit, config_.s5bNoise, config_.mmc5PhaseReset);
 
     VirtualFile romFile(rom_.data(), rom_.size(),
                         config_.romPath.empty() ? std::string("rom.nes") : config_.romPath);
@@ -268,6 +272,20 @@ void MesenNesSystem::setRegion(std::uint32_t region) {
         }
         emu_->Reset();   // re-runs the ROM from the reset vector, now under the new timing
     }
+}
+
+// Both cartridge-accuracy switches are live: the core reads them where it needs them (per sample for the
+// 5B's noise, per register write for the MMC5's phase reset), so no reset is needed. 0 = chip, 1 = N8.
+void MesenNesSystem::setS5bNoise(std::uint32_t mode) {
+    if (config_.s5bNoise == mode) return;
+    config_.s5bNoise = mode;
+    if (emu_) emu_->GetSettings()->GetNesConfig().Sunsoft5bNoiseEnabled = (mode == 0);
+}
+
+void MesenNesSystem::setMmc5PhaseReset(std::uint32_t mode) {
+    if (config_.mmc5PhaseReset == mode) return;
+    config_.mmc5PhaseReset = mode;
+    if (emu_) emu_->GetSettings()->GetNesConfig().Mmc5PulsePhaseReset = (mode == 0);
 }
 
 void MesenNesSystem::setApuLatencyMs(double ms) {

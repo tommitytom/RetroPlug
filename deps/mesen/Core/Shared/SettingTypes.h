@@ -629,7 +629,14 @@ struct NesConfig
 	bool RemoveSpriteLimit = false;
 	bool AdaptiveSpriteLimit = false;
 	bool EnablePalBorders = false;
-	
+
+	//Two cartridge-accuracy switches, both defaulting to the documented CHIP behaviour. Turn one off to
+	//match an Everdrive N8 Pro instead, whose FPGA cores measurably differ - useful when developing
+	//against that cartridge, since otherwise the emulator and the console disagree. See
+	//Sunsoft5bAudio.h / Mmc5Audio.h for the measurements behind each.
+	bool Sunsoft5bNoiseEnabled = true;   //false: no noise generator, so the tone-AND-noise mixer mutes
+	bool Mmc5PulsePhaseReset = true;     //false: a $5003/$5007 write does not reset the duty sequencer
+
 	bool UseCustomVsPalette = false;
 	
 	OverscanDimensions NtscOverscan = {};

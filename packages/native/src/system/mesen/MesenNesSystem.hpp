@@ -112,6 +112,9 @@ public:
     void setRegion(std::uint32_t region);
     // APU flush window as a latency (ms) → NesSoundMixer::SetLatencyMs. Live, no reset (scalar re-threshold).
     void setApuLatencyMs(double ms);
+    // Cartridge-accuracy switches (0 = chip, 1 = Everdrive N8). Live - the core reads them in place.
+    void setS5bNoise(std::uint32_t mode);
+    void setMmc5PhaseReset(std::uint32_t mode);
     // The live APU flush window in CPU cycles (the mixer's conversion of apuLatencyMs against the region
     // clock). 0 before onActivate. Exposed for tests / introspection.
     std::uint32_t apuFlushCycleLength() const;

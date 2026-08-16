@@ -29,6 +29,23 @@ private:
 		_currentOutput = _dutySequences[_duty][_dutyPos] * _envelope.GetVolume();
 	}
 
+	//nesdev says the MMC5's phase reset is "the same as their APU counterparts", and that is the default.
+	//A real NES + Everdrive N8 disagrees, so this is switchable.
+	//
+	//Measured on the N8 with EverMIDI's MOD hack (a $5003 rewrite from the idle loop) sweeping the reset
+	//rate from reload 128 down to 1, on C4 and C2. The 2A03 pulse skews its duty hard - down to 0.067 at
+	//C2, a 6% pulse train - and loses 7.2 dB with it, and Mesen reproduces that closely (0.061, -5.2 dB).
+	//The MMC5 pulse instead holds duty at 0.500 at EVERY rate and does not change level at all; only its
+	//pitch moves. That is what a sequencer which is NOT reset looks like: the waveform stays a clean 50%
+	//square and the period rewrite alone pulls it sharp.
+	//
+	//Unresolved: whether that is the real MMC5 or just the N8's core (its 5B likewise omits the noise
+	//generator). Telling them apart needs a real MMC5 cartridge.
+	virtual bool ResetsPhaseOnWrite() override
+	{
+		return _console->GetNesConfig().Mmc5PulsePhaseReset;
+	}
+
 public:
 	Mmc5Square(NesConsole* console) : SquareChannel(AudioChannel::MMC5, console, false)
 	{

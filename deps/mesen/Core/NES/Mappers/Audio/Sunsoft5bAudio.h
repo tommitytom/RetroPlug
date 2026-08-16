@@ -19,6 +19,9 @@ private:
 	uint8_t _toneStep[3] = {};
 	bool _processTick = false;
 
+	uint32_t _noiseLfsr = 1;    //17-bit; never let it reach 0 or it locks up
+	int32_t _noiseTimer = 0;
+
 	int32_t _envTimer = 0;
 	uint8_t _envStep = 0;       //0..31 within the current ramp
 	bool _envAttack = false;    //ramp direction: level rises with the step while true
@@ -68,25 +71,36 @@ private:
 		}
 	}
 
-	//The noise generator is deliberately NOT implemented, to match the Everdrive N8 Pro's 5B core, which is
-	//the hardware this emulation is checked against.
+	//"Frequency = Clock / (32 * Period)", i.e. one new random bit every 32*period clocks. UpdateChannel runs
+	//every 2 clocks (the _processTick divide-by-2), so the LFSR advances every 16*period of those.
+	void UpdateNoise()
+	{
+		_noiseTimer--;
+		if(_noiseTimer <= 0) {
+			uint8_t period = GetNoisePeriod() & 0x1F;
+			_noiseTimer = 16 * (period ? period : 1);
+			//17-bit LFSR, taps at bits 16 and 13 (shifted right here, so bits 0 and 3); output is bit 0.
+			_noiseLfsr = (_noiseLfsr >> 1) | (((_noiseLfsr ^ (_noiseLfsr >> 3)) & 0x01) << 16);
+		}
+	}
+
+	//Bit 0 of the LFSR, or a hard 0 when emulating the Everdrive N8 Pro's 5B core instead of the chip.
 	//
 	//Measured on the N8 (EverMIDI, capture ch5): enabling noise on a sounding channel drops it from
 	//-34.09 dBFS to -81.32 (the noise floor), reversibly, at EVERY noise period across the full range. The
 	//mixer below explains that exactly - the chip ANDs tone with noise, so a noise signal stuck at 0 gates
-	//the channel to silence. A working generator would rasp, never mute. So the N8 produces no noise.
+	//the channel to silence. A working generator would rasp, never mute. So the N8 produces no noise, and
+	//software written against that cartridge (EverMIDI) hears silence where the chip would rasp.
 	//
-	//A real Sunsoft 5B does (nesdev.org/wiki/Sunsoft_5B_audio: a 17-bit LFSR, taps 16/13, clocked at
-	//Clock/(32*period) from register $06). To emulate the chip instead of the cartridge, clock an LFSR here
-	//and return its bit 0 from GetNoiseOutput. Doing so makes the emulator DIVERGE from the N8: EverMIDI's
-	//CC1 would rasp here and mute on the console.
-	//
-	//What this cannot distinguish from outside: a noise generator stuck low versus a mixer that mis-decodes
-	//the noise-enable bit and kills tone. Both look identical. Noise-on with TONE DISABLED would separate
-	//them, which EverMIDI has no CC for, and mapper 69 is not in krikzz's published FPGA sources.
+	//What the measurement CANNOT distinguish from outside: a noise generator stuck low versus a mixer that
+	//mis-decodes the noise-enable bit and kills tone. Both look identical. Noise-on with TONE DISABLED would
+	//separate them, which EverMIDI has no CC for, and mapper 69 is not in krikzz's published FPGA sources.
 	bool GetNoiseOutput()
 	{
-		return false;
+		if(!_console->GetNesConfig().Sunsoft5bNoiseEnabled) {
+			return false;
+		}
+		return (_noiseLfsr & 0x01) != 0;
 	}
 
 	//"Frequency = Clock / (16 * Period)" is the STEP rate, and the ramp is a 5-bit series of 32 levels.
@@ -167,6 +181,7 @@ protected:
 		SVArray(_registers, 0x10);
 		SVArray(_toneStep, 3);
 		SV(_currentRegister); SV(_lastOutput); SV(_processTick);
+		SV(_noiseLfsr); SV(_noiseTimer);
 		SV(_envTimer); SV(_envStep); SV(_envAttack); SV(_envHolding);
 	}
 
@@ -176,6 +191,7 @@ protected:
 			for(int i = 0; i < 3; i++) {
 				UpdateChannel(i);
 			}
+			UpdateNoise();
 			UpdateEnvelope();
 			UpdateOutputLevel();
 		}

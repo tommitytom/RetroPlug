@@ -12,6 +12,7 @@ import {
   HIGHPASS_VALUES,
   REGION_VALUES,
   CHANNEL_EXPORT_VALUES,
+  CARTRIDGE_ACCURACY_VALUES,
   COLOR_CORRECTION_VALUES,
   DMG_PALETTE_VALUES,
 } from "./settingsEnums";
@@ -65,6 +66,13 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       // APU flush window as a latency in ms (the worst-case NES audio latency the resampler batching adds).
       // Live knob; native converts ms→CPU cycles per region clock. ~1.4ms ≈ the historical 2500-cycle window.
       apuLatencyMs: clampedNumber(0.25, 6.0, 1.4),
+      // Cartridge-accuracy switches, defaulting to the documented CHIP behaviour so ordinary games are
+      // unaffected. Set to "n8" to match an Everdrive N8 Pro, whose FPGA cores measurably differ - the 5B
+      // has no noise generator (so enabling noise MUTES, since the mixer ANDs tone with noise), and an
+      // MMC5 pulse write does not restart the duty sequencer (so a phase-reset hack holds level and only
+      // shifts pitch). Both measured on hardware; see the mmc5-mod-hack / s5b-envelope-noise tests.
+      s5bNoise: enumField(CARTRIDGE_ACCURACY_VALUES, "chip"),
+      mmc5PhaseReset: enumField(CARTRIDGE_ACCURACY_VALUES, "chip"),
       // CLI-only per-channel export mode (spec/10 §5/§5b): mix, stereoModPins (Pulse | TND + Expansion),
       // individualMono (5 core channels). Set at construct (via adopt) — the settings menu doesn't surface
       // it. Additive. (pinsPlusRef = pins + a mix reference, native/test-only.)
