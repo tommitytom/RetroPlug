@@ -11,6 +11,25 @@
 //
 // Measured on a real NES + Everdrive N8 (PAL, capture ch5), reload 1: -31.50 dBFS at C4 and -31.51 at C2,
 // i.e. no level change at all from mod-off, with the pitch instead pulled sharp (C2 +2591 cents).
+//
+// A full CC116 sweep on hardware then explained WHY, and left one gap still open. Duty (fraction of the
+// waveform above zero) at reload 1, hardware vs this core:
+//
+//                    hardware duty   this core   hardware rms change   core rms change
+//   MMC5 C4              0.500         0.738           0.0 dB             -1.6 dB
+//   MMC5 C2              0.501         0.922           0.0 dB             -5.4 dB
+//   2A03 C4              0.216         0.210          -2.3 dB             -2.4 dB
+//   2A03 C2              0.067         0.061          -7.2 dB             -5.2 dB
+//
+// So the 2A03 model is RIGHT: it skews duty to a narrow pulse train exactly as the chip does, and loses
+// level in proportion. The real MMC5 does not skew AT ALL - it stays a clean 50% square and just retriggers
+// faster, which is why its level never moves. This core still skews it (the wrong way, toward 0.9), because
+// Mmc5Square inherits the 2A03's `_dutyPos = 0` phase reset from SquareChannel.
+//
+// The remaining question is whose behaviour that is. nesdev's MMC5 page says "phase reset [is] the same as
+// their APU counterparts", which would predict the 2A03's skew - the hardware says otherwise, so either the
+// wiki is imprecise or the Everdrive N8's MMC5 core does not implement the sequencer reset. That cannot be
+// told apart without a real MMC5 cartridge, exactly like the 5B noise question.
 import { test, expect } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
@@ -36,6 +55,24 @@ function rms(pcm: Float32Array, from = 0, to = pcm.length): number {
 
 const db = (x: number) => 20 * Math.log10(Math.max(x, 1e-12));
 
+/** Duty (fraction above zero) and crest (peak/rms) of the sustain. On real hardware the MMC5 pulse holds
+ *  duty 0.500 at EVERY reset rate - the reset just retriggers a clean 50% square faster, which is why its
+ *  level never moves - while the 2A03 skews to 0.067-0.833 and loses level in proportion. */
+function shape(pcm: Float32Array): { duty: number; crest: number } {
+  const from = Math.floor(pcm.length * 0.25);
+  const to = Math.floor(pcm.length * 0.85);
+  let above = 0;
+  let mean = 0;
+  for (let i = from; i < to; i++) mean += pcm[i];
+  mean /= Math.max(to - from, 1);
+  let peak = 0;
+  for (let i = from; i < to; i++) {
+    if (pcm[i] - mean > 0) above++;
+    peak = Math.max(peak, Math.abs(pcm[i] - mean));
+  }
+  return { duty: above / Math.max(to - from, 1), crest: peak / Math.max(rms(pcm, from, to), 1e-12) };
+}
+
 /** Hold `note` on `ch` for 1.5 s with the MOD hack at `rate`, and report the sustain level in dBFS. */
 function modLevelDb(s: ReturnType<typeof bootSession>, ch: number, note: number, rate: number): number {
   const tl = new Timeline()
@@ -44,9 +81,13 @@ function modLevelDb(s: ReturnType<typeof bootSession>, ch: number, note: number,
     .midi(40, cc(ch, 115, 127))
     .note(100, note, { durationMs: 1500, channel: ch, velocity: 100 });
   const pcm = renderTimeline(s, tl, { durationMs: 1700, warmupMs: 1200 });
+  lastShape = shape(pcm);
   // Measure the sustain only (skip attack/release), by fraction so the sample rate need not be known.
   return db(rms(pcm, Math.floor(pcm.length * 0.25), Math.floor(pcm.length * 0.85)));
 }
+
+let lastShape = { duty: 0, crest: 0 };
+const shapeStr = () => `duty ${lastShape.duty.toFixed(3)} crest ${lastShape.crest.toFixed(2)}`;
 
 test("MMC5 MOD hack: Mesen thins the pulse as the reset rate rises (hardware does not)", () => {
   const s = bootSession();
@@ -56,25 +97,21 @@ test("MMC5 MOD hack: Mesen thins the pulse as the reset rate rises (hardware doe
   }
   const id = s.project.systems.addSystem(MMC5_ROM);
   if (id == null) throw new Error("addSystem failed");
-  // NOTE: the hardware rig is PAL, and this SHOULD run PAL to match it. It does not yet. Both routes fail:
-  //   - adopt() with a construct-time region boots PAL (the core logs it) but renders SILENCE here, even on
-  //     the 2A03 and even with region ntsc, so adopt() produces a system renderTimeline cannot drive.
-  //   - setRoleConfig() below updates the TS role config (it reads back "pal") but the core still reports
-  //     NTSC at load, and every level here is bit-identical to the NTSC run.
-  // The levels this test pins are region-insensitive (a square's rms barely moves with pitch) and the
-  // silencing mechanism is structural, so the comparison holds. Revisit when adopt()/setRoleConfig are fixed.
+  // PAL, to match the bench NES these numbers are compared against (EverMIDI times a frame to detect the
+  // region and picks its PAL tuning table). This only reaches the core since the UpdateRegion fix - see
+  // nes-region-apply.test.ts, which probes the APU timer period because rms cannot see a region change.
   s.project.systems.setRoleConfig(id, "mesen", { region: "pal" });
-  console.log(`[mmc5-mod] role region = ${s.project.systems.view()[0]?.roles.find((r) => r.kind === "mesen")?.config.region} (core may still be NTSC)`);
 
   // C4 and C2: the ROM's comment says low notes pin to silence soonest, so walk both.
   for (const [name, note] of [["C4", 60], ["C2", 36]] as const) {
     const off = modLevelDb(s, CH_MMC5, note, 0);
+    const offShape = shapeStr();
     const slow = modLevelDb(s, CH_MMC5, note, 32);
     const fast = modLevelDb(s, CH_MMC5, note, 127); // floored to reload 65 by the shipped ROM
-    console.log(`[mmc5-mod] ${name} MMC5  mod-off ${off.toFixed(2)}  rate32 ${slow.toFixed(2)}  rate127 ${fast.toFixed(2)} dBFS`);
+    console.log(`[mmc5-mod] ${name} MMC5  mod-off ${off.toFixed(2)} (${offShape})  rate32 ${slow.toFixed(2)}  rate127 ${fast.toFixed(2)} dBFS (${shapeStr()})`);
 
     const ref = modLevelDb(s, CH_2A03, note, 127);
-    console.log(`[mmc5-mod] ${name} 2A03  rate127 ${ref.toFixed(2)} dBFS (unfloored reference)`);
+    console.log(`[mmc5-mod] ${name} 2A03  rate127 ${ref.toFixed(2)} dBFS (${shapeStr()})`);
 
     // The note must still exist at all - a totally dead render would mean the harness, not the core.
     expect(off > -90).toBeTruthy();

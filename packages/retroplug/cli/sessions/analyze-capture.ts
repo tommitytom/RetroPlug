@@ -185,6 +185,20 @@ function run(s: Session, args: string[]): void {
     console.log("  pitch: none detected");
   }
 
+  // Waveform shape, which separates "the same square at a different pitch" from "the same pitch with a
+  // lopsided duty". Both can have identical rms OR identical spectra, so neither of those tells them apart:
+  //   duty  - the fraction of the (DC-removed) signal above zero. A 50% square ~0.50; narrow pulses ~0.1.
+  //   crest - peak/rms. A 50% square ~1.0; the narrower the pulse the higher it climbs.
+  // A phase-reset hack that truncates cycles shows up here as duty drifting away from 0.5 and crest rising,
+  // where a clean retrigger at a new rate leaves both alone.
+  if (args.includes("--shape")) {
+    let above = 0;
+    for (let i = 0; i < x.length; i++) if (x[i] > 0) above++;
+    const duty = above / Math.max(x.length, 1);
+    const crest = peak(x) / Math.max(rms(x), 1e-12);
+    console.log(`  shape: duty ${pad(duty, 6, 3)}   crest ${pad(crest, 6, 2)}`);
+  }
+
   // A tone/noise split: a Sunsoft 5B square with its noise generator mixed in puts real energy well above
   // the fundamental's harmonics, where a clean square has little.
   const band = flag(args, "--band");
@@ -208,6 +222,8 @@ export const analyzeCaptureTool: CliTool = {
     "  --channel N     analyse this 1-based channel (else: level survey of all channels)",
     "  --expect-hz F   also report the error in cents vs this frequency",
     "  --band lo:hi    report the energy in a band, e.g. --band 4000:12000 for noise/hiss content",
+    "  --shape         report duty (fraction above zero) + crest (peak/rms): tells a clean square at a",
+    "                  new pitch apart from a duty-skewed / truncated one, which rms alone cannot",
     "  --env-rate      also report how FAST the amplitude repeats (Hz) - swing shows an envelope is",
     "                  running, this shows a speed control changing it (rate moves, swing does not)",
     "  --trim a:b      analyse only seconds a..b (measure the SUSTAIN, not the attack/release)",
