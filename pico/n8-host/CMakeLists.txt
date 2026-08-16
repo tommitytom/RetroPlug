@@ -31,6 +31,8 @@ add_subdirectory(${PICO_PIO_USB_PATH} pico_pio_usb)
 add_executable(n8_host
     main.c
     edio.c
+    # Stage-1 MIDI parser, reused as-is (the bridge forwards its decoded messages).
+    ${CMAKE_CURRENT_LIST_DIR}/../midi-in/midi.c
     # TinyUSB's PIO-USB host controller driver, compiled directly (as the
     # Pico-PIO-USB host example does) so it builds regardless of SDK gating.
     ${PICO_TINYUSB_PATH}/src/portable/raspberrypi/pio_usb/hcd_pio_usb.c
@@ -39,11 +41,15 @@ add_executable(n8_host
 # Tell Pico-PIO-USB to use the TinyUSB integration.
 target_compile_definitions(n8_host PRIVATE PIO_USB_USE_TINYUSB)
 
-# So TinyUSB finds tusb_config.h.
-target_include_directories(n8_host PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+# So TinyUSB finds tusb_config.h, and the build finds the shared midi.h.
+target_include_directories(n8_host PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${CMAKE_CURRENT_LIST_DIR}/../midi-in
+)
 
 target_link_libraries(n8_host
     pico_stdlib
+    hardware_uart
     pico_pio_usb
     tinyusb_host
 )

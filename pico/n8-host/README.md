@@ -16,8 +16,8 @@ PIO-USB - they don't contend.
 |-------|-------|------|
 | 2.1 | **done (HW-verified)** | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.c`) |
 | 2.2 | **done (HW-verified)** | `edio.c/.h` port: status + sysInfo + memRD |
-| 2.3 | **done (HW-verified)** | `fifoWR` = memWR(0x1810000, midi): C4 note-on -> EverMIDI Pulse1, proven by reading the N8 sniffer back (`note_and_sniff`) |
-| 2.4 | todo | the bridge: MIDI (UART1/GP5, reuse `../midi-in/midi.c`) -> `fifoWR` |
+| 2.3 | **done (HW-verified)** | `fifoWR` = memWR(0x1810000, midi): C4 note-on -> EverMIDI Pulse1, proven by reading the N8 sniffer back |
+| 2.4 | **done (HW-verified)** | the bridge: MIDI (UART1/GP5, reuse `../midi-in/midi.c`) -> `fifoWR`. Launchpad -> real NES, no PC; 2A03 audio measured off the L6 at 261 Hz (PAL C4) |
 
 ## Dependencies (not in the repo yet - see "one-time setup")
 
@@ -49,8 +49,8 @@ meter (the two outer contacts are the power pair). D+/D- must be the consecutive
 GP2/GP3 (PIO-USB drives D-, = D+ + 1); if it powers but won't enumerate, swap them
 (harmless). Optional 22-33R series on D+/D-. Then plug the **N8's USB cable** into this
 socket (the same A-plug that went to the PC). Keep the debug probe attached (SWD flash + console);
-the MIDI opto circuit can stay wired (unused until slice 2.4). PIO-USB forces a
-120 MHz system clock (`set_sys_clock_khz(120000)`).
+the stage-1 MIDI opto circuit feeds GP5 (UART1 RX) - the bridge (slice 2.4) forwards it. PIO-USB
+forces a 120 MHz system clock (`set_sys_clock_khz(120000)`).
 
 ## Build + flash + verify
 
@@ -62,24 +62,28 @@ sudo openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg \
 sudo stty -F /dev/ttyDbgProbe 115200 raw -echo && cat /dev/ttyDbgProbe
 ```
 
-With the N8 plugged into the socket, and the **EverMIDI ROM running** on the NES, you
-should see the probe followed by a repeating FIFO-consumption proof:
+With the N8 plugged into the socket and the **EverMIDI ROM running** on the NES, on boot
+you see the Edio probe, then - **play a MIDI keyboard into the TRS input** - one line per
+forwarded message plus a read-only Pulse1 report:
 
 ```
 [n8-host] device mounted: addr 1  VID:PID 38df:0017   <- N8!
-[n8-host] CDC mounted (idx 0, VID:PID 38df:0017)
 [n8-host] --- Edio probe ---
 [n8-host] CMD_STATUS -> 5 (busy - ROM running)
 [n8-host] SYS_INF: serial=00035AAD.00002C4D  device_id=0x17 (N8 PRO)  sw=0103 hw=0001
 [n8-host] --- probe done ---
-[sniff] magic=53 $4000=bf $4002=8d $4003=01 $4015=0f  P1_timer=397  <<< PULSE1 ACTIVE - EverMIDI consumed it!
+[bridge] MIDI -> FIFO: 90 3c 7f          <- note-on C4 (2A03 ch1 -> Pulse1)
+[sniff] Pulse1 ON <<< NES is playing it  ($4015=0f P1_timer=397)
+[bridge] MIDI -> FIFO: 80 3c 00          <- note-off
+[sniff] Pulse1 off  ($4015=0f P1_timer=0)
 ```
 
-`note_and_sniff()` fifoWRs a C4 note-on, then reads the N8 **sniffer** (a running game's
-live `$4000-$401F` write-mirror) back: `$4015` bit0 set + a non-zero Pulse1 timer means
-EverMIDI received the MIDI over the FIFO and drove the 2A03 - deterministic proof
-independent of the audio rig. At the N8 **menu** instead, `CMD_STATUS` is `0 (OK)` and
-the write still issues but nothing consumes it (Pulse1 idle).
+The bridge forwards only channel-voice messages (`0x80-0xEF`); MIDI clock / sensing /
+transport are dropped so they can't flood the FIFO. `sniff_report()` injects nothing - it
+reads the running ROM's `$4000-$401F` write-mirror and reports Pulse1 on/off as live
+confirmation. **Audio proof:** with a held note, the 2A03 output recorded off the Zoom L6
+(channel 3) measures a 261 Hz fundamental with odd harmonics (a square wave) = PAL C4,
+exactly the pitch the `P1_timer=397` predicts. So: MIDI keyboard -> real NES audio, no PC.
 
 Defaults to `pico2` (RP2350). Override with `-DPICO_BOARD=pico`;
 `-DPICO_PIO_USB_PATH=...` if Pico-PIO-USB lives elsewhere.

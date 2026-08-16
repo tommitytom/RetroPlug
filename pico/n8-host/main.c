@@ -1,27 +1,39 @@
-// N8 standalone bridge - stage 2, slice 2.2: Edio protocol port.
+// N8 standalone bridge - stage 2, slice 2.4: the MIDI -> N8 bridge (no PC).
 //
-// The Pico hosts the N8 over PIO-USB (slice 2.1) and now speaks a real slice of
-// the Edio protocol (edio.c): on mount it runs a probe - CMD_STATUS, SYS_INF
-// (decoded device info), and a read-only memRD of the cart SRM. Proves the
-// framed command + bulk-read paths end to end. Writes (memWR) are exercised
-// save-safely via fifoWR in the next slice.
+// One Pico does the whole thing. MIDI comes in on a hardware UART (UART1/GP5, the
+// stage-1 6N138 opto circuit) and is decoded by the reusable parser (../midi-in/
+// midi.c). Each complete channel-voice message is forwarded straight to the N8's
+// cart FIFO via Edio fifoWR (= memWR to 0x1810000) - which, with the EverMIDI ROM
+// running on the NES, plays it on the 2A03. The N8 is hosted over PIO-USB
+// (slice 2.1) and driven with the Edio port (slice 2.2/2.3). A read-only sniff of
+// the running ROM's APU write-mirror reports Pulse1 on/off as live confirmation.
+//
+// So: play a MIDI keyboard -> the real NES plays it, with no computer in the loop.
 //
 // Wiring + build: see README.md. USB-A host socket D+=GP2/D-=GP3, VBUS=pin40,
-// GND=pin38; console on UART0/GP0-GP1 -> the debug probe -> /dev/ttyDbgProbe.
+// GND=pin38; MIDI opto out -> GP5 (pin 7); console on UART0/GP0-GP1 -> the debug
+// probe -> /dev/ttyDbgProbe. UART1/GP5, PIO-USB and UART0 don't contend.
 
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
+#include "hardware/uart.h"
 #include "pio_usb.h"
 #include "tusb.h"
 #include "edio.h"
+#include "midi.h"
 
 #define PIN_USB_DP 2          // GP2 = D+, GP3 = D-
 #define N8_VID     0x38df
 #define N8_PID     0x0017
 
-static volatile bool n8_ready = false;   // set by the CDC mount callback
-static bool          probed   = false;   // run the probe once per mount
+#define MIDI_UART   uart1     // stage-1 MIDI IN
+#define MIDI_RX_PIN 5         // GP5 = UART1 RX = physical pin 7
+#define MIDI_BAUD   31250
+
+static volatile bool n8_ready    = false;   // set by the CDC mount callback
+static bool          probed      = false;   // run the probe once per mount
+static bool          forward_ok  = false;   // gate MIDI->FIFO on a ready+probed N8
 
 // TinyUSB's no-RTOS timing hook (no board layer), backed by the SDK clock.
 uint32_t tusb_time_millis_api(void) { return to_ms_since_boot(get_absolute_time()); }
@@ -64,55 +76,72 @@ static void n8_probe(void) {
     else
         printf("[n8-host] memRD failed\n");
 
-    // memWR is exercised (and proven to land) non-destructively by note_and_sniff():
-    // it fifoWRs a note, then reads the running ROM's APU write-mirror back. If the
-    // FIFO write didn't reach EverMIDI, Pulse1 never activates - so a live sniff is a
-    // stronger check than an SRM round-trip, and doesn't clobber a save-game's battery RAM.
+    // memWR isn't checked destructively here (an SRM round-trip would clobber a
+    // save-game's battery RAM): the bridge exercises it live via fifoWR, and
+    // sniff_report() reads Pulse1 back to confirm the forwarded notes landed.
     printf("[n8-host] --- probe done ---\n");
 }
 
-// Busy-wait `ms` while keeping USB serviced (tuh_task) - lets the N8 process a FIFO
-// write and update its APU write-mirror before we read it back.
-static void pump_ms(uint32_t ms) {
-    uint32_t until = to_ms_since_boot(get_absolute_time()) + ms;
-    while (to_ms_since_boot(get_absolute_time()) < until) tuh_task();
+// The bridge sink: a complete MIDI message from the parser -> the N8 FIFO. Forward
+// only channel-voice messages (0x80-0xEF), which is what EverMIDI plays; system +
+// realtime bytes (clock/sensing/transport) are dropped here. Program-change and
+// channel-pressure carry one data byte, the rest carry two. One fifoWR per message,
+// exactly as the host n8-bridge does. Runs synchronously (edio pumps tuh_task).
+static void midi_to_fifo(const midi_message *m, void *user) {
+    (void)user;
+    if (m->status >= 0xf0) return;             // channel-voice only
+    if (!forward_ok) return;                    // N8 not ready yet: drop
+
+    uint8_t b[3];
+    b[0] = m->status;
+    b[1] = m->data0;
+    uint32_t n = (m->type == MIDI_PROGRAM_CHANGE || m->type == MIDI_CHANNEL_PRESSURE) ? 2 : 3;
+    if (n == 3) b[2] = m->data1;
+
+    edio_fifo_wr(b, n);
+    printf("[bridge] MIDI -> FIFO:");
+    for (uint32_t i = 0; i < n; i++) printf(" %02x", b[i]);
+    printf("\n");
 }
 
-// Deterministic FIFO-consumption check: send C4 on ch1, then read the N8 sniffer
-// (the running game's live $4000-$401F write mirror) and report Pulse1. If EverMIDI
-// consumed the note, $4015 bit0 is set and the Pulse1 timer ($4002/$4003) is non-zero
-// - proof independent of the (flaky) audio rig.
-static void note_and_sniff(void) {
+// Read-only confirmation: poll the running ROM's APU write-mirror and report Pulse1
+// on/off. Injects NOTHING (the forwarded MIDI is what drives it), and prints only on
+// a state change so held notes don't spam the console.
+static void sniff_report(void) {
     static uint32_t next_ms = 0;
+    static int last_active = -1;
     uint32_t t = to_ms_since_boot(get_absolute_time());
     if (t < next_ms) return;
-    next_ms = t + 1500;
-
-    const uint8_t on[3]  = { 0x90, 0x3c, 0x7f };   // note-on ch1 C4
-    const uint8_t off[3] = { 0x80, 0x3c, 0x00 };
-    edio_fifo_wr(on, sizeof on);
-    pump_ms(150);                                  // let EverMIDI act + the mirror update
+    next_ms = t + 400;
 
     uint8_t s[EDIO_SNIFFER_SIZE];
-    if (edio_mem_rd(EDIO_ADDR_SSR, s, sizeof s)) {
-        uint16_t p1 = s[0x82] | ((s[0x83] & 0x07) << 8);
-        bool active = (s[0x95] & 0x01) && p1;
-        printf("[sniff] magic=%02x $4000=%02x $4002=%02x $4003=%02x $4015=%02x  P1_timer=%u  %s\n",
-               s[0xcf], s[0x80], s[0x82], s[0x83], s[0x95], p1,
-               active ? "<<< PULSE1 ACTIVE - EverMIDI consumed it!" : "(pulse1 idle - not consumed)");
-    } else {
-        printf("[sniff] sniffer read FAILED\n");
+    if (!edio_mem_rd(EDIO_ADDR_SSR, s, sizeof s)) return;
+    uint16_t p1 = s[0x82] | ((s[0x83] & 0x07) << 8);
+    int active = ((s[0x95] & 0x01) && p1) ? 1 : 0;
+    if (active != last_active) {
+        printf("[sniff] Pulse1 %s  ($4015=%02x P1_timer=%u)\n",
+               active ? "ON <<< NES is playing it" : "off", s[0x95], p1);
+        last_active = active;
     }
-    edio_fifo_wr(off, sizeof off);
 }
 
 int main(void) {
     set_sys_clock_khz(120000, true);   // PIO-USB needs a 120 MHz-multiple clock
     stdio_init_all();
     sleep_ms(100);
-    printf("\n[n8-host] USB host up (D+=GP%d, D-=GP%d). Waiting for the N8...\n",
-           PIN_USB_DP, PIN_USB_DP + 1);
+    printf("\n[n8-host] USB host up (D+=GP%d, D-=GP%d). MIDI IN on UART1/GP%d @ %d. "
+           "Waiting for the N8...\n", PIN_USB_DP, PIN_USB_DP + 1, MIDI_RX_PIN, MIDI_BAUD);
 
+    // MIDI IN (stage-1 opto circuit) on UART1/GP5.
+    uart_init(MIDI_UART, MIDI_BAUD);
+    gpio_set_function(MIDI_RX_PIN, GPIO_FUNC_UART);
+    uart_set_format(MIDI_UART, 8, 1, UART_PARITY_NONE);
+    uart_set_fifo_enabled(MIDI_UART, true);
+
+    midi_parser parser;
+    midi_parser_init(&parser, midi_to_fifo, NULL);
+
+    // N8 USB host on PIO-USB.
     pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
     pio_cfg.pin_dp = PIN_USB_DP;
     tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
@@ -120,13 +149,19 @@ int main(void) {
 
     while (true) {
         tuh_task();
+
+        // Drain any MIDI bytes -> parser (which forwards complete messages via the
+        // sink). Always drain so the UART FIFO can't overrun; the sink itself gates
+        // on forward_ok, so bytes before the N8 is ready are parsed and dropped.
+        while (uart_is_readable(MIDI_UART))
+            midi_parser_byte(&parser, uart_getc(MIDI_UART));
+
         if (n8_ready && !probed) {
             probed = true;
             n8_probe();
         }
-        if (n8_ready && probed) {
-            note_and_sniff();
-        }
+        forward_ok = n8_ready && probed;
+        if (forward_ok) sniff_report();
     }
 }
 
