@@ -1,10 +1,23 @@
 # Adding Sega Master System / Game Gear via the vendored Mesen core
 
-**Scoping document: prospective work, none of it implemented.** Third pass. Two decisions from the repo owner are folded in as settled (two sibling platforms; sample-accurate stepping is mandatory), and every claim from the previous pass that an empirical probe overturned is corrected in place rather than left standing.
+**Status: Tier 1 is BUILT and green. Tier 2 is partial, Tier 3 is not started.** Jump to
+[section 12](#12-where-this-stands-and-what-is-left) for what is actually left; everything before it is the
+scoping document that produced the work, kept because its measurements and negative controls are the
+record of why each piece is shaped the way it is.
+
+Read the tier tables in sections 5-7 as the ORIGINAL plan, not as a to-do list - section 12 supersedes
+them. Sections written after the fact are titled "..., as built" and are the ones that describe the tree.
+
+Originally a scoping document, third pass. Two decisions from the repo owner are folded in as settled
+(two sibling platforms; sample-accurate stepping is mandatory), and every claim from an earlier pass that
+an empirical probe overturned is corrected in place rather than left standing.
 
 ---
 
 ## 1. Bottom line
+
+*(Written before the work. The estimate below is left as it stood; what actually shipped is in
+[section 12](#12-where-this-stands-and-what-is-left).)*
 
 **Tier 1 (boots, renders, makes sound, takes input, and syncs sample-accurately) is 8 to 10 days, not the 4 to 5 the previous pass estimated. Tier 1 + Tier 2 is three to four weeks of calendar. Tier 3 (stems, roles, tracker) is a quarter, and most of it is optional.**
 
@@ -249,7 +262,7 @@ Three functional lines. It makes TH (`0x80`), TR (`0x08`) and TL (`0x04`) all de
 
 With Edit 1 in place this is no longer strictly needed **for sync**, but it is needed for ordinary buttons and it is the right place to get `RefreshKeyState` off the audio thread. The reversible alternative is an `IInputProvider` (`Core/Shared/Interfaces/IInputProvider.h`) registered via `BaseControlManager::RegisterInputProvider`, which runs after the clear (`BaseControlManager.cpp:170-175`) and survives `UpdateControlDevices`'s device recreation.
 
-**Edit 3 (required only for `.gg`, ~5 lines) - the Game Gear EXT port is a bare loopback.** `SmsMemoryManager.cpp:396` stores `_state.GgExtData = value & 0x7F` and `:467` returns it verbatim, both flagged `//TODOSMS GG - input/output ext port`. `_state.GgExtConfig` (`$02` direction, 1 = input) is stored and never consulted on read. `$04`, the serial receive register, is a literal `return 0xFF` (`:470`). smsggdj's GG startup writes `$02=$FF` then `$01=$FF` (`engine.asm:420-421`), so `sync_read`'s `in a,($01)` (`engine.asm:564`) returns a constant `0x7F` forever: counter pinned at 3, `sync_in_delta` = 0. Measured on the real `.gg`: `write $01=0xAA -> read $01=0x2A`, pure loopback; ROM decodes counter=3 and nothing external can change it. **GG sync is dead in stock Mesen.** Minimal honest fix, filling in an acknowledged stub:
+**Edit 3 (required only for `.gg`, ~5 lines) - the Game Gear EXT port is a bare loopback.** `SmsMemoryManager.cpp:396` stores `_state.GgExtData = value & 0x7F` and `:467` returns it verbatim, both flagged `//TODOSMS GG - input/output ext port`. `_state.GgExtConfig` (`$02` direction, 1 = input) is stored and never consulted on read. `$04`, the serial receive register, is a literal `return 0xFF` (`:470`). smsggdj's GG startup writes `$02=$FF` then `$01=$FF` (`engine.asm:420-421`), so `sync_read`'s `in a,($01)` (`engine.asm:564`) returns a constant `0x7F` forever: counter pinned at 3, `sync_in_delta` = 0. Measured on the real `.gg`: `write $01=0xAA -> read $01=0x2A`, pure loopback; ROM decodes counter=3 and nothing external can change it. **GG sync is dead in stock Mesen.** (BUILT - see "Game Gear sync, as built". The estimate below held: the shipped edit is the direction mask, and the idle read is bit-identical to stock.) Minimal honest fix, filling in an acknowledged stub:
 
 ```cpp
 // SmsMemoryManagerState: uint8_t GgExtInput = 0xFF;   // externally driven levels (pull-ups high)
@@ -315,7 +328,16 @@ This delivers true sample accuracy at the `IN` instruction because `SmsControlle
 
 The GG build reads `$01` directly, PC4 = TL bit 4, PC5 = TR bit 5, PC6 = TH bit 6 (`engine.asm:564-573`). With Edit 3 the host drives PC5 and PC6 from the same offset-gated drain and leaves PC4 high so `PC4 AND PC5` reduces to PC5, matching GGSYNC.md's note that for a direct bridge connection pin 6 may remain unconnected. The ROM holds `$02 = $FF` at rest and while slaved, so every sync pin is on the input side of the new mask.
 
+**BUILT, with one deliberate deviation: PC4 and PC5 are driven TOGETHER, not PC5 alone.** Leaving PC4 to its pull-up does work on the emulator and for a direct bridge, but a stock crossed Gear-to-Gear cable carries bit 0 on both pins, so driving only one would behave differently on hardware depending on the cable. Driving both costs nothing and matches what a GG-to-GG master does. See "Game Gear sync, as built".
+
 #### The TS role: `sms-sync`
+
+**This subsection is the design as PREDICTED, and the state machine below is not what shipped - see
+"The sms-sync role, as built" for the real one.** The MIDI-shaped START / CONTINUE / CLOCK / STOP
+machine described here came from the reference hardware bridge, which receives actual MIDI; the DAW
+role receives a transport flag and a tick stream instead, so it reduced to "while `block.transport`,
+advance the counter once per tick". No arm, no start or stop message, no seek handling. The
+predictions about `walkTicks`, set-and-hold and the absent locate all held.
 
 A near-clone of `risaSync` (`dspRoles.ts:221-249`), attached by ROM marker in `romProviders.ts`. It needs no new kernel machinery: `walkTicks` (`dspKernel.ts:183-207`) already yields drift-free per-tick sample offsets, `block.transport` gives the edges, `ppqStart` discontinuity gives seek detection, and `setNextTick` re-phases after one. State machine, mirroring the reference encoder at `/workspaces/smsggdj/adapter/src/sync_protocol.c` exactly:
 
@@ -526,7 +548,7 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 | 6 | `SmsButton` + `toSmsButton` remap | `InputTypes.hpp`, `MesenSmsSystem.cpp` | trivial | low | Position-aligned Right=0..Start=7 like `GbaButton:52`. Mesen's native order is `{Up=0,Down,Left,Right,B,A,Pause}` (`Input/SmsController.h:58`) so an explicit switch is required as at `MesenGbaSystem.cpp:202-219`. Start -> `Pause`; **Select -> early return**, not `default: return A`, or Select spuriously fires button 2. Per H9, `Pause` on port 0 drives the Z80 NMI on SMS (`SmsVdp.cpp:600-602`) and reads as Start at `$00` bit 7 on GG (`SmsMemoryManager.cpp:456-464`), so the two platforms want different labels even though the wire byte is shared. |
 | **7** | **Vendored: `SmsControlManager::SetExternalInput`** | `deps/mesen/Core/SMS/SmsControlManager.{h,cpp}` | small | **high** | **New, and on the critical path.** Section 2.4. Without it the sync counter degenerates to mod-2 and presents as an intermittent double-tempo bug rather than a dead line. 3 functional lines at `InternalReadPort`, plus a `// RetroPlug:` marker (there is no configure-time patch guard for `deps/mesen`, so the marker is the only inventory). |
 | 8 | Vendored: `SmsControlManager::UpdateInputState` override | `deps/mesen/Core/SMS/SmsControlManager.{h,cpp}` | small | medium | **Confirmed empirically twice.** No override exists (full header read; GBA has one at `GbaControlManager.h:28`), so `SmsVdp.cpp:654` -> `SmsConsole.cpp:171` -> `BaseControlManager.cpp:158-176` runs `ClearState()` + `SetStateFromInput()` and wipes every bit set via `SetBitValue`, plus `KeyManager::RefreshKeyState()` on the audio thread. Probe: `post-frame Right still pressed = 0`, every run; device `shared_ptr` unchanged, so it is the clear not recreation. Same bug patched at `GbaControlManager.cpp:24-37`. No `ActiveKeys` cache to refresh, so the body is empty plus a comment. Item 7 makes sync immune to this; ordinary buttons are not. |
-| 9 | **Vendored: GG EXT input model** (`.gg` only) | `deps/mesen/Core/SMS/SmsMemoryManager.{h,cpp}`, `SmsTypes.h` | small | medium | Section 2.4 Edit 3. `$01` is a bare loopback (`:396` write, `:467` read, both `//TODOSMS`), `$02` direction is stored and never consulted, `$04` serial rx is `return 0xFF` (`:470`). Measured: `write $01=0xAA -> read $01=0x2A`; GG sync is dead in stock Mesen. ~5 lines, fills an acknowledged stub, no regression (`GgExtInput = 0xFF` reproduces today's pull-up-high behaviour). |
+| 9 | ~~**Vendored: GG EXT input model**~~ **DONE** (`.gg` only) | `deps/mesen/Core/SMS/SmsMemoryManager.{h,cpp}`, `SmsTypes.h` | small | medium | Section 2.4 Edit 3. `$01` is a bare loopback (`:396` write, `:467` read, both `//TODOSMS`), `$02` direction is stored and never consulted, `$04` serial rx is `return 0xFF` (`:470`). Measured: `write $01=0xAA -> read $01=0x2A`; GG sync is dead in stock Mesen. ~5 lines, fills an acknowledged stub, no regression (`GgExtInput = 0xFF` reproduces today's pull-up-high behaviour). |
 | 10 | **Host-side: teardown `Stop(false, true, false)`** | `MesenSmsSystem::onDeactivate` | small | **high** | Bottom line (a). `Emulator::Stop` is public at `Emulator.h:148`; `preventRecentGameSave=true` is load-bearing both for the disk write and for H10's serialize-path blip overrun. **ASan does not catch this** (both frames in the uninstrumented `libmesen.a`), so prove it with 40 construct/destruct cycles in Catch2, 5 runs. Measured 5/5 clean with `Stop`, 3/5 crashes without. |
 | 11 | `RomFormat::Sms` **and** `RomFormat::Gg` + `detectRomFormat` **and** `platform.ts detectPlatform` | `packages/native/src/system/RomFormat.hpp:13-18`, `packages/retroplug/src/platform.ts:15,21-25,35,62-70` | small | **high** | **One item in two languages, one commit.** `platform.ts:11-12` and `RomFormat.hpp:6-11` state they are deliberately mirrored; if they diverge, `classifyRom` says `"sms"`, TS calls `constructSystem`, and `MesenBackend`'s gate returns nullptr - a failed load with no diagnostic. Probe `$7FF0`/`$3FF0`/`$1FF0` for `TMR SEGA`, discriminate on `$7FFF` (`0x4c` SMS / `0x6c` GG), and handle the 512-byte copier header Mesen strips (`SmsConsole.cpp:38-42`, `size % 0x400 == 0x200`) which shifts every offset. D1 makes the `$7FFF` discriminator load-bearing rather than informational. Headerless SMS and all SG-1000 fail. `DEFAULT_CORE` is a `Record<Platform, Core>` (`platform.ts:21`) and is a hard compile error the instant `Platform` gains a member; two members, two rows. |
 | 12 | Two sniff lengths, not one | `platform.ts:35`, `systemsStore.ts:32` | small | medium | `ROM_SNIFF_LEN = 0x134` is all `classifyRom` reads (`systemsStore.ts:50`, `backend.readFilePrefix`). **`ROLE_HEADER_LEN = 0x150` is a second, independent constant**, and it is the buffer fed to both `romHasBattery` (`:624`) and the ROM-provider registry (`:615`) - which is what an `sms-sync` marker role would have to match on. A `$7FF0` header is 32 KB past both. Either raise them (a ~100x read amplification on a path that also runs per `siblingRomCandidates` probe) or add a second offset-targeted read. Update the `platform.ts:1-12` header comment, which currently promises the opposite of what SMS will do. |
@@ -547,7 +569,7 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 
 | Item | Files | Effort | Risk | Why |
 |---|---|---|---|---|
-| `defaultCoreFor` backstop | `EngineRpcService.cpp:48-52` | trivial | low | `if (platform == "nes" \|\| platform == "gba") return "mesen";` needs `"sms"` and `"gg"`. TS always sends core explicitly, but omitting this makes a platform-only wire spec silently route SMS to SameBoy and return nullptr. `BackendTypes.hpp:76` enumerates the platform strings in a doc comment. |
+| ~~`defaultCoreFor` backstop~~ **DONE** | `EngineRpcService.cpp:48-52` | trivial | low | `if (platform == "nes" \|\| platform == "gba") return "mesen";` needed `"sms"` and `"gg"`. TS always sends core explicitly, but omitting this makes a platform-only wire spec silently route SMS to SameBoy and return nullptr. `BackendTypes.hpp:76` enumerates the platform strings in a doc comment. |
 | `pressButtonAt` overload | `SystemBase.hpp`, `Engine.cpp:115`, `DspRuntime.cpp`, `dspKernel.ts:438`, `dspKernelBundle`, `SystemCtx` type | small | low | Section 2.4. Additive overload with a forwarding default, so `SameBoySystem` / `MesenNesSystem` / `MesenGbaSystem` behaviour is bit-for-bit unchanged and SameBoy's load-bearing 10 ms synthesized spacing survives. Closes the three dead lines. Not needed for SMS sync (which rides `pushCoreBytes`), but it is the generic fix and only two role call sites use `ctx.pressButton` today (`dspRoles.ts:72-73,187-188`). |
 | Settings-menu gating | `menuDefs.ts:456-467` | trivial | low | NES knob rows are gated on `sys.platform === "nes"`; SMS and GG each need their own gate or they inherit nothing (and must not inherit NES-only rows). |
 | Render library | `src/render/render.ts:61-69`, `src/render/types.ts:12` | small | low | `platformOf` classifies by **file extension** here, unlike the store's magic-byte `classifyRom`. Convenient for SMS/GG (extension is what Mesen wants anyway) and it makes D1 trivial on this path; worth a comment. Without a case, `.sms` falls to `"other"`: mix render works, no auto-start gesture (`:494-498`) and no song-end probe (`:440-467`). |
@@ -556,7 +578,7 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 | Real-core Mesen legs | `test-native/app-mesen-persistence.test.ts`, `app-mesen-settings.test.ts` | small | low | The natural home for SMS and GG construct-blob + live-knob proofs, mirroring the NES rows. |
 | Per-platform button labels | `menuDefs.ts:1327` (`GB_BUTTONS`) | medium | low | Cosmetic but now motivated by H9: SMS Start is Pause/NMI, GG Start is a real Start. Bindings are one global keyboard profile plus one global gamepad profile (`bindingsStore.ts:115-127`), not per system, so keep the 8 wire names as storage keys and add a display-label map driven off the focused system's platform (SMS: A -> "Button 2", B -> "Button 1", Start -> "Pause", Select hidden; GG: Start -> "Start"). Forking the profile schema would be a `spec/05` version bump for no functional gain. |
 | `reaper:sms-sync` render leg | `tools/run-reaper-suite.sh:35` + author script + `.lua` + `.rpp` fixture | medium | medium | Clones `reaper:risa-sync`. **Must script the ROM into `SYNC: IN` through its own UI first** - `$DD` is untouched at boot. Resolves ~25 ms at best (section 2.8), so it is a drift and gross-regression guard, not an accuracy proof. Known failure mode: a stale `.rpp` embedding an old VST3 class id so Reaper loads the FX offline (silent render, not an error). Never CI. |
-| CLI + docs + release checklist | `cli/renderArgs.ts:24,59-63`, `cli/timeline.ts:14`, `cli/sdk-types.d.ts:346`, `SystemFactory.hpp:19`, `CoreBackends.hpp:6`, `SystemBase.hpp:23-24,194,211,290-291,362`, `SnapshotRegistry.hpp:86`, `systemsStore.ts:43-45`, `DebugRpcService.{cpp,hpp}` (14 "null on SameBoy/GBA" comments), `spec/00:4,91`, `spec/01:362`, `spec/03:77`, `spec/04:35`, `spec/05:33`, `spec/07:26-29,48`, `spec/09:230`, `spec/README:39-40`, `README.md:166`, `docs/sdl-standalone.md:35`, `RELEASE_TESTING.md:35-41` | small | low | `renderArgs.ts:24` still says "Render a Game Boy (.gb/.gbc), or NES (.nes) ROM" - it never got `.gba`, so fix both. `RELEASE_TESTING.md:35-41` needs SMS **and** GG rows in the manual ROM-kinds checklist. **Stale independent of SMS, fix while you are in there:** `spec/04:34-35` claims "there is exactly one system-role today (sameboy); Mesen exposes no natively-consumed knobs yet" (the NES region / sprite-limit / apuLatencyMs work invalidated it); `spec/05:32` says "`core` is deliberately not stored" while `:181` documents the migration that stores it; `spec/06`'s target table omits `retroplug-sdl` / `-watcher-test` / `-midi-test` / `-lottie-test` / `-render-host-test`, `:193` cites a `BUILD_CLI` block at `CMakeLists.txt:554-574` in a file that is now 312 lines, and it says "6 renders + 3 editor checks" where `run-reaper-suite.sh:35` lists 7 (8 with `sms-sync`); `romProviders.ts:2` cites `sameboy/RomSniffer.cpp` which does not exist; `AGENTS.md` names four Catch2 binaries where `package.json:20` and `run-plugin-tests.mjs:27` list six. |
+| CLI + docs + release checklist | `cli/renderArgs.ts:24,59-63`, `cli/timeline.ts:14`, `cli/sdk-types.d.ts:346`, `SystemFactory.hpp:19`, `CoreBackends.hpp:6`, `SystemBase.hpp:23-24,194,211,290-291,362`, `SnapshotRegistry.hpp:86`, `systemsStore.ts:43-45`, `DebugRpcService.{cpp,hpp}` (14 "null on SameBoy/GBA" comments), `spec/00:4,91`, `spec/01:362`, `spec/03:77`, `spec/04:35`, `spec/05:33`, `spec/07:26-29,48`, `spec/09:230`, `spec/README:39-40`, `README.md:166`, `docs/sdl-standalone.md:35`, `RELEASE_TESTING.md:35-41` | small | low | `renderArgs.ts:24` still says "Render a Game Boy (.gb/.gbc), or NES (.nes) ROM" - it never got `.gba`, so fix both. `RELEASE_TESTING.md:35-41` needs SMS **and** GG rows in the manual ROM-kinds checklist. **Stale independent of SMS, fix while you are in there:** `spec/04:34-35` claims "there is exactly one system-role today (sameboy); Mesen exposes no natively-consumed knobs yet" (the NES region / sprite-limit / apuLatencyMs work invalidated it); `spec/05:32` says "`core` is deliberately not stored" while `:181` documents the migration that stores it; `spec/06`'s target table omits `retroplug-sdl` / `-watcher-test` / `-midi-test` / `-lottie-test` / `-render-host-test`, `:193` cites a `BUILD_CLI` block at `CMakeLists.txt:554-574` in a file that is now 312 lines, and it says "6 renders + 3 editor checks" where `run-reaper-suite.sh:35` now lists 9 (`sms-sync` and `gg-sync` both landed); `romProviders.ts:2` cites `sameboy/RomSniffer.cpp` which does not exist; `AGENTS.md` names four Catch2 binaries where `package.json:20` and `run-plugin-tests.mjs:27` list six. |
 | Tile geometry (recommend: **do not** do this) | `ui/screens/grid/layout.ts:9-10,28-34` | large | medium | `GB_NATIVE_W/H = 160/144` is the only tile sizing, and NES 256x240 and GBA 240x160 have letterboxed via `LV_IMAGE_ALIGN_CONTAIN` for a year. Per-system means the grid stops being a uniform lattice and ripples into `gridContentSize` / `getTileBounds` / `fitZoom` / `hitTestTile`, `App.tsx:109`, `main.tsx:47` (which must agree with App or the window bounces on first frame), `test/file-drop/hit-test.test.ts`, and the three `reaper:editor*` checks. Pre-existing wart. D1 helps here: Game Gear at 160x144 is a pixel-perfect fit for the existing tile once `GameGearOverscan` is set, so only Master System is affected. |
 
 ---
@@ -578,6 +600,10 @@ Ordered so each phase ends in an exit-zero. Items 3/4/5/6 are the diff from the 
 ---
 
 ## 8. Suggested first commit
+
+*(Delivered as planned, across four commits: the native system + audio guards, the host-driven port
+levels, the TS wiring, then the sync role. The sequencing note below held - the Catch2 route really was
+the only way to land and validate the native half first.)*
 
 **`MesenSmsConfig.hpp` + `MesenSmsSystem.{hpp,cpp}` + `CMakeLists.txt:48` + `resources/roms/smsggdj_v0_45.{sms,gg}` + `SmsAudio.test.cpp` in `retroplug-audio-test`.**
 
@@ -670,6 +696,51 @@ mux like Mesen and lose the PSG; sum like real hardware, which needs a vendored
 `IsPsgAudioMuted` change and diverges from upstream Mesen for every other SMS game; or expose the
 choice as a role knob and let the user pick. This also reshapes Tier 3's stem work - a PSG 4-stem
 tap is worth much less if the PSG is muted whenever FM is on.
+
+**ANSWERED AND FIXED: the FM path was never broken, the MUX was.** The re-measure this section
+called for was run, and it settles every part of it. The matrix, one PSG-instrument song and one
+FM-instrument song, `enableFm` (ours) against the cart's own `fm_on`:
+
+| | PSG song | FM song |
+|---|---|---|
+| `enableFm=0`, cart FM off | 0.051 | 0.000 |
+| `enableFm=1`, cart FM off | 0.051 | 0.000 |
+| `enableFm=1`, cart FM **on** | **0.000** | **0.008** |
+| `enableFm=0`, cart FM on | 0.051 | 0.000 |
+
+So **FM was audible all along** (row 3, right column - the YM2413 reaches the mix, exactly as the
+`MixAudio` reading above predicted), and the earlier `peak = 0` was indeed confounded: that probe
+measured a PSG-instrument song under the mux, which is row 3 left, a genuine and total silence. The
+`$F2` truth table explains all four rows:
+
+| `_audioControl` | PSG | FM |
+|---|---|---|
+| 0 | audible | muted |
+| 1 | **muted** | **audible** |
+| 2 | muted | muted (genuine silence) |
+| 3 | audible | audible |
+
+(`SmsFmAudio.cpp:45-50` for the PSG half, `:78-82` for the FM half.) smsggdj writes `$F2 = $01`, so on
+stock Mesen turning FM on costs it three tone voices plus noise.
+
+**The fix is to sum rather than mux**, which is what real hardware, SMSPlus and a Mark III with the FM
+add-on all do per smsggdj's own source, and what a music tool wants regardless. It is gated rather than
+hardcoded: `SmsConfig::FmMutesPsg` (new, **defaults true** so stock behaviour is unchanged for anything
+that does not set it) is consulted by `SmsFmAudio::IsPsgAudioMuted`, and `configureSms` sets it false.
+Only the PSG half is gated - `MixAudio`'s own `_audioControl` check still decides when FM is heard, so
+"FM off" still means off in both directions.
+
+`System > FM Audio` now means what it says: ON gives PSG **and** FM, OFF gives PSG only.
+
+**Guarded by `test-native/sms-fm.test.ts`**, and the shape of that guard is the point. An FM-only song
+is audible under BOTH models - the mux picks FM, the sum includes it - so it cannot tell them apart. It
+takes a song playing PSG on T1 and FM on T2 *at once*: under the mux that collapses to the FM-only
+level, under summing it has to carry both. Measured 0.0537 both / 0.0179 FM-only / 0.0512 PSG-only.
+Negative control run: restoring `FmMutesPsg = true` fails the PSG-survives and the both-sound cases and
+leaves the FM-only case passing, which is exactly the discrimination claimed.
+
+What this does NOT change: FM on still makes the audio path cadence-dependent (H3 above), so the sync
+fixtures keep `enableFm: false` - now for that reason alone, not because they must.
 
 ### Two smaller corrections from the same pass
 
@@ -766,10 +837,11 @@ N8 FIFO is a memory-mapped port non-N8 carts ignore; a controller port has no su
 marker is past `ROLE_HEADER_LEN`, `defaultRoles` now reads `SEGA_SNIFF_LEN` for sms/gg - one deeper
 read at construct, not on the classify path.
 
-**Game Gear gets no role at all.** `SmsMemoryManager::ReadGameGearPort` case 1 is a bare loopback
-(`return _state.GgExtData;`, marked `//TODOSMS`), and `GGSYNC.md` confirms the GG build reads `$01`
-rather than `$DD`. So GG sync is dead in this tree whatever TS does, and a role that silently did
-nothing would be worse than none.
+**Game Gear got no role at first, and now does.** `SmsMemoryManager::ReadGameGearPort` case 1 was a
+bare loopback (`return _state.GgExtData;`, marked `//TODOSMS`), and `GGSYNC.md` confirms the GG build
+reads `$01` rather than `$DD` - so GG sync was dead in this tree whatever TS did, and a role that
+silently did nothing would have been worse than none. That is fixed; see "Game Gear sync, as built"
+below. The role now attaches on both machines, tagged with which one.
 
 **The fixture needed a native addition.** smsggdj deliberately does not autoload a save (`song_new`
 boots blank; main.asm:238: "a first power-on should make sound"), so the metronome has to be written
@@ -887,23 +959,89 @@ at the audio and include the instrument's attack plus the detector's threshold l
 plugin latency to compensate. A constant below one video frame, when the inherent quantisation is a
 full frame, would be fitting noise.
 
-2. **IN or IN24?** IN24 (divisor 6, 24 PPQN) is the DAW-shaped answer and matches the existing ares-link-sync / RP2040 bridge contract, but caps at 450 BPM NTSC / 375 PAL (3 clocks per frame before the mod-4 counter aliases) and at one row per frame (`engine.asm:742-750` has no loop). IN (divisor 1) gives 1:1 row control but the host must choose the row rate itself. This decides the role's tick resolution. A product question, not a technical one.
+### Game Gear sync, as built
+
+GG sync works, on the same terms as SMS. Everything above about the protocol - the 2-bit counter, the
+once-per-frame `(current - last) & 3`, arm-latches-the-level, no locate, the mod-4 aliasing ceiling -
+holds unchanged, because it is the same code in the same ROM. **Only the pins move.**
+
+| | Master System | Game Gear |
+|---|---|---|
+| ROM reads | `$DD` (controller port 2) | `$01` (EXT parallel, PC0-PC6) |
+| counter bit 0 | TR (bit 3), ANDed with TL | PC4 AND PC5 (bits 4, 5) |
+| counter bit 1 | TH (bit 7) | PC6 (bit 6) |
+| idle word | `0xFF` | `0x7F` |
+| native sink | `SmsControlManager::SetExternalInput` | `SmsMemoryManager::SetGgExternalInput` |
+
+So it is ONE role with two encoders, not two protocols: `sms-sync`'s config gained
+`machine: "sms" | "gg"`, which the provider sets from the ROM's platform. Additive with a default, so
+no migration step - a project stamped before it existed parses as `"sms"`, which is what those
+projects were. `syncLevelsFor` (`smsSync.ts`) is the single place the two wire formats are chosen
+between, and the native `SmsSyncRole` picks its sink from the system it was built for rather than
+being told, so the TS config drives the encoding alone.
+
+#### The vendored Mesen edit, and why it is small
+
+Stock `ReadGameGearPort` case 1 returned `_state.GgExtData` unconditionally - what the ROM itself last
+wrote - so nothing external could ever be read. smsggdj's GG build decodes its counter from PC4-PC6
+there, which meant the counter was pinned at whatever the startup latch left and the delta was
+permanently 0: armed, willing, and silent forever.
+
+The fix honours the `$02` direction mask that Mesen already stores and never consulted. Per Sega's
+Game Gear Hardware Reference Manual, `$02` bits 6-0 are the directions for PC6-PC0 with **1 = input**
+(bit 7 is the PC6 falling-edge NMI disable, not a direction, hence the `0x7F`):
+
+```cpp
+uint8_t inputs = _state.GgExtConfig & 0x7F;
+return (uint8_t)((_state.GgExtData & ~inputs) | (_ggExtInput & inputs));
+```
+
+An input pin reads the external level, an output pin still reads back the latch. Two properties worth
+noting: it fills in an acknowledged `//TODOSMS` stub rather than inventing behaviour, and **it is
+inert until a host drives a pin** - with `_ggExtInput` idling at `0x7F` the read reproduces the stock
+loopback bit for bit after the standard GG init, which the guard asserts directly.
+
+#### What guards it
+
+- **`retroplug-audio-test`** - a synthetic `.gg` ROM that sets `$02`, then polls `$01` into work RAM,
+  so the assertion is about what an actual `IN` returns rather than about emulator state. Three
+  sections: all-input (every counter level arrives and holds across frames), `$8F` (GGSYNC.md's sync-OUT
+  mask - the host pulls everything low and the three output pins must still read the latched 1s, so
+  `0x70` rather than `0x00` or `0x7F`), and `$7F` vs `$FF` (bit 7 is the NMI disable, so they must
+  behave identically). **Negative control run:** reverting the read to the stock loopback fails 8 of
+  those assertions, including counters 0-2 - counter 3 correctly still passes, because `0x7F` *is* the
+  idle value.
+- **`pnpm test dsp/sms-sync`** - the GG encoding, that it touches no pin outside PC4-PC6, and that both
+  machines carry the *same counter sequence* on their different pins (the property that justifies one
+  role rather than two; if it ever fails, they should split).
+- **`pnpm test:native dsp-sms-sync` + `dsp-sms-sync-drift`** - every guard runs twice, once per
+  machine. Not redundancy: the two take different sinks through different vendored edits, so measuring
+  only one would leave the other's timing asserted by analogy.
+- **`pnpm reaper:gg-sync`** - a real DAW render, in `RENDER_SCENARIOS` alongside `sms-sync`. Measured
+  peak 18.21 ms, stddev 4.90, 60/60 beats matched, against SMS's 17.96 / 4.95. The headless twin reads
+  20.46 ms peak with row spacing 116.10 / 133.51 about a mean of 124.97 - the same video-frame
+  quantisation, so the same conclusion applies and GG gets no PDC entry either.
+
+One thing GG does NOT need: a tile-geometry change. `GameGearOverscan{48,48,48,48}` crops to 160x144,
+which is a pixel-perfect fit for the existing grid tile.
+
+2. ~~**IN or IN24?**~~ **ANSWERED: IN24, shipped.** The role clocks at 24 PPQN and the measured ceiling matched the derivation (449 BPM NTSC, asserted in `test/dsp/sms-sync.test.ts` rather than hardcoded). Original reasoning: IN24 (divisor 6, 24 PPQN) is the DAW-shaped answer and matches the existing ares-link-sync / RP2040 bridge contract, but caps at 450 BPM NTSC / 375 PAL (3 clocks per frame before the mod-4 counter aliases) and at one row per frame (`engine.asm:742-750` has no loop). IN (divisor 1) gives 1:1 row control but the host must choose the row rate itself. This decides the role's tick resolution. A product question, not a technical one.
 
 3. ~~**Does `detectRomFormat` get an extension fallback?**~~ **ANSWERED: yes, as the last tier only.** See "The classification tiers, as built" below.
 
-4. ~~**How do the two sniff lengths grow?**~~ **ANSWERED: neither grows; `classifyRom` reads twice.** See below. `ROLE_HEADER_LEN` is untouched, so an `sms-sync` marker provider still has no bytes to match on and must attach by platform, as `nes-n8-midi` does.
+4. ~~**How do the two sniff lengths grow?**~~ **ANSWERED: neither grows; `classifyRom` reads twice.** See below. `ROLE_HEADER_LEN` is untouched - but the conclusion drawn from that here was WRONG: `defaultRoles` reads the deeper `SEGA_SNIFF_LEN` prefix for sms/gg (`systemsStore.ts:633`), so the marker provider matches on `SMSGGDJ` after all and does NOT attach by platform. That mattered: attaching by platform would have driven Player 2's button lines in every SMS game.
 
-5. **Stems: mono or stereo, and is FM in scope?** Stereo matches the GB decision (`spec/10` section 2), is **required** for GG fidelity given `GameGearPanningReg`, and at exactly 4 stereo streams is the only layout that fits the 8-output plugin `ChannelSplit` path. Mono matches the NES precedent and halves the lane count. Separately: mix-only FM is free (it already lands in the stereo stream `MesenAudioDevice` receives); FM as one lumped stem; or 9 individual tone voices. In rhythm mode, do BD/HH/SD/TOM/CYM get their own streams or fold into one? 4 PSG + 9 FM = 13 streams fits under `kMaxLanes`; 4 + 14 does not. **Recommend stereo, PSG only initially.**
+5. **Stems: mono or stereo, and is FM in scope?** *(still open. No longer entangled with the FM mux question - the PSG is no longer muted when FM is on, so a PSG 4-stem tap keeps its value.)* Stereo matches the GB decision (`spec/10` section 2), is **required** for GG fidelity given `GameGearPanningReg`, and at exactly 4 stereo streams is the only layout that fits the 8-output plugin `ChannelSplit` path. Mono matches the NES precedent and halves the lane count. Separately: mix-only FM is free (it already lands in the stereo stream `MesenAudioDevice` receives); FM as one lumped stem; or 9 individual tone voices. In rhythm mode, do BD/HH/SD/TOM/CYM get their own streams or fold into one? 4 PSG + 9 FM = 13 streams fits under `kMaxLanes`; 4 + 14 does not. **Recommend stereo, PSG only initially.**
 
 6. ~~**What PDC value for `sms-sync`?**~~ **ANSWERED: none, measured.** `__rp_syncLatencyMs` stays unchanged, exactly as `risa-sync` shipped. Both the real-Reaper render and its headless twin now pass `--drift`, and the ROM's own row counter puts the systematic offset under a video frame with no stable sign across runs - so there is no constant to compensate, only the frame quantisation that PDC cannot touch. See "The Reaper leg exists, and the sync is on the grid".
 
 6b. *(original wording)* **What PDC value for `sms-sync`** (and, separately, for the already-missing `risa-sync`)? The LSDj 33 ms was measured, not derived. Needs a `tools/reaper-timing-analyze.py` pass against a real render once the leg exists. Note residual 6 in section 2.7: the ROM's poll phase within a frame is variable, so the value must be measured rather than computed from the frame rate.
 
-7. **`SmsControlManager::SetExternalInput` versus `IInputProvider` versus the `$3F` hijack?** The external-input mask is 3 lines and immune to the per-frame clobber but is a real (if tiny) vendored addition; `IInputProvider` is reversible and upstream-friendly but still needs a TH model that stock Mesen does not have; the `$3F` hijack is zero edits and verified working but fires `LatchHorizontalCounter` on every counter increment and collides with the ROM's own `out ($3F),$FF` on stop. Owner's call on how much vendored surface is acceptable. Section 2.4 recommends the mask.
+7. ~~**`SmsControlManager::SetExternalInput` versus `IInputProvider` versus the `$3F` hijack?**~~ **ANSWERED: the mask, plus a second one for Game Gear.** `SetExternalInput` shipped for SMS, and the GG EXT port needed its own edit in `SmsMemoryManager` (see "Game Gear sync, as built"). Total vendored surface for sync: two files, both filling in acknowledged `//TODOSMS` stubs, both inert until a host drives a line. Original framing: the external-input mask is 3 lines and immune to the per-frame clobber but is a real (if tiny) vendored addition; `IInputProvider` is reversible and upstream-friendly but still needs a TH model that stock Mesen does not have; the `$3F` hijack is zero edits and verified working but fires `LatchHorizontalCounter` on every counter increment and collides with the ROM's own `out ($3F),$FF` on stop. Owner's call on how much vendored surface is acceptable. Section 2.4 recommends the mask.
 
-8. **Is `SYNC: OUT` wanted?** Polling `ControlPort` in the fine phase of the step loop gives sample-accurate OUT detection with no core edit (Tier 3), but only export SMS hardware can drive the port and Mesen's japan/overseas model option is an open `//TODOSMS` (`SmsControlManager.cpp:104`).
+8. **Is `SYNC: OUT` wanted?** *(still open)* Polling `ControlPort` in the fine phase of the step loop gives sample-accurate OUT detection with no core edit (Tier 3), but only export SMS hardware can drive the port and Mesen's japan/overseas model option is an open `//TODOSMS` (`SmsControlManager.cpp:104`).
 
-9. **Is a debug session wanted?** GBA set the precedent of none, and `spec/09:230` already documents the degradation. SMS would be the second console in that hole, though Tier 3's Z80 CPU-state virtuals fall out nearly free from D2's step loop.
+9. **Is a debug session wanted?** *(still open)* GBA set the precedent of none, and `spec/09:230` already documents the degradation. SMS would be the second console in that hole, though Tier 3's Z80 CPU-state virtuals fall out nearly free from D2's step loop.
 
 10. **Does `MemoryType` grow a CRAM tag?** Wire-format addition (`MemoryType.hpp:39-53`, `backend.ts:561-573`, `cli/sdk-types.d.ts:202`). Cheap now, awkward later.
 
@@ -939,12 +1077,16 @@ full frame, would be fitting noise.
 
 ## 11. What SMS/GG support would NOT get
 
+*(Written before the work, and still the right framing. Tier 1 has since shipped, so the list below is
+now a description of the tree rather than a prediction - with one correction: `sms-sync` works on BOTH
+machines, Game Gear included, which this section assumed would not happen.)*
+
 **Blunt version: even with sample-accurate sync, Tier 1 + Tier 2 ships an emulator with a clock input, not a RetroPlug system.**
 
 RetroPlug's actual value is the tracker spine: `SongCatalog` / `AssetCatalog` / marker roles / the runtime WRAM overlay / the `retroplug-cli <x>-rom` verb family. After three to four weeks, SMS and GG would have:
 
-- **A working sample-accurate sync leg** (that is the change from the previous pass; `sms-sync` is now Tier 1 item 21, not a Tier 3 aspiration).
-- **No songs menu, no assets menu.** `TRACKER_INTEGRATIONS` (`trackerIntegration.ts:65`) gets no entry. No Load/Export/Replace/Delete/Add, no kits, no palettes, no fonts.
+- **A working sample-accurate sync leg**, on BOTH machines (`sms-sync` was Tier 1 item 21, not a Tier 3 aspiration, and Game Gear came with it rather than being cut).
+- **No songs menu, no assets menu.** `TRACKER_INTEGRATIONS` (`trackerIntegration.ts:65`) is still `[lsdj, risa]`. No Load/Export/Replace/Delete/Add, no kits, no palettes, no fonts.
 - **No MIDI.** `onMidi` / `pushSerialIn` stay default no-ops (`SystemBase.hpp:88-104`). `SYNC: MIDI` takeover is explicitly out of scope (section 2.4): the Z80 is the clock master of a bit-banged shift-in sampling DAT within ~3 microseconds of its own port write, which needs an in-core write-callback peripheral, not host scheduling.
 - **No `SYNC: OUT`.** Tier 3, cheap (one `ControlPort` read per instruction in the fine phase, no core edit), but not in this scope.
 - **No stems** unless Tier 3 lands, so no `System > Render` split; `validSplits` returns `["mix"]`.
@@ -955,8 +1097,328 @@ RetroPlug's actual value is the tracker spine: `SongCatalog` / `AssetCatalog` / 
 
 Three caveats before treating that as a plan:
 
-1. **The directory has no "currently loaded slot" field**, and the SRAM window is superblock + directory + heap plus a separate 10-byte OPTIONS block at `$BF60`. `SongCatalog.workingName` is **required**, and `workingSongDirty` drives the recents-per-song rows and the destructive-load confirm. If the live song lives in console work RAM, this needs a runtime RAM overlay via `backend.readRam` (the LSDj reader pattern), not pure sav parsing.
+1. **The directory has no "currently loaded slot" field**, and the SRAM window is superblock + directory + heap plus a separate 10-byte OPTIONS block at `$BF60`. `SongCatalog.workingName` is **required**, and `workingSongDirty` drives the recents-per-song rows and the destructive-load confirm. **This is now settled rather than conditional: the live song DOES live in console work RAM, and the layout is known.** smsggdj lays its working song out at `$C000` byte-for-byte as the SMDJ4 save block - phrases at +`$100`, chains and song at +`$E00`, sixteen `instr_default` records at +`$1500`, all located by signature and exercised every test run by `pokeMetronomeIntoWram` (`test-native/smsSyncSong.ts`). So a save-block offset IS a WRAM offset, and the runtime RAM overlay via `backend.readRam` (the LSDj reader pattern) is required, not optional. The structural consequence for the integration is concrete: `SongCatalog.load(sav, index)` returns new **sav** bytes, but loading a song here has to write **WRAM**. That interface mismatch is the design work, and it is not addressed by any existing integration.
 2. **The format is still moving.** SMDJ4 is "v0.30+" with an existing SMDJ3 -> SMDJ4 migration tool. RetroPlug's tracker integrations are version-pinned by design (risa carries `isVersionSupported` gated on a bundled per-version RAM layout, `trackerIntegration.ts:59-61`). You would be signing up for that versioning burden against a moving target from day one.
 3. **It is a separate project.** The comparable risa integration was 69 commits, 445 file-touches, +17,577 / -1,435. Scope it after generic SMS/GG emulation lands and after the format settles.
 
 **Recommended shape:** Tier 1 + Tier 2 as a self-contained "SMS and GG play, and sync sample-accurately" milestone at three to four weeks, with the test ROMs vendored so the guards actually run in CI (unlike GBA's). Then decide on stems - materially more attractive now that 4 stereo PSG streams fit the plugin `ChannelSplit` path - and smsggdj as separate, independently-justified projects.
+
+*(That shape held. Tier 1 landed as its own milestone with the ROMs vendored; stems and the tracker
+remain separate and unstarted. See section 12.)*
+
+---
+
+## 12. Where this stands, and what is left
+
+Current as of the Game Gear sync commit. **Tier 1: done.** All 22 items, both machines, with the
+guards described in "The sms-sync role, as built", "The Reaper leg exists, and the sync is on the
+grid" and "Game Gear sync, as built". `pnpm test` (103 files), `test:native` (84), `test:plugin` (6
+binaries) and `pnpm reaper:all` (12 checks) are green.
+
+### Defects: the product currently lies to the user
+
+Ordered by how badly. These are not missing features - they are things a user can reach today that
+behave wrongly.
+
+1. ~~**`System > FM Audio` produces silence when turned on.**~~ **FIXED.** It was the `$F2` mux, not
+   the FM path: stock Mesen zeroes the PSG buffer when a ROM enables FM, so an FM-on smsggdj lost three
+   tone voices plus noise. RetroPlug now sums, behind `SmsConfig::FmMutesPsg` (default true, so stock
+   Mesen behaviour is unchanged for anything that does not opt out). Guarded by
+   `test-native/sms-fm.test.ts`. See "FM resolved, and it opens a worse question" for the matrix and
+   the negative control.
+2. ~~**A project saved before a role existed can never gain it.**~~ **FIXED.** Stored roles won
+   wholesale, so providers only ever ran for a project storing none: a `.rplg` authored before
+   `sms-sync` existed loaded, booted, armed, showed WAIT and ignored the DAW forever, with nothing
+   saying why. `adopt` now appends any provider-suggested role whose kind the stored list is missing
+   (`SystemsStore.withMissingFeatureRoles`), so an older project behaves as though it were created
+   today - which also repairs the identical trap for anything predating `risa-sync` or `lsdj-assets`.
+   NOT a migration step, despite first appearing to be one: `migrate.ts` steps are pure `(raw) => raw`
+   JSON transforms with no backend, and providers need the ROM's header bytes. No schema change and no
+   version bump either; the augmented list only reaches disk when the user next saves, at which point
+   the project self-heals. Guarded by `test/systems/store-role-union.test.ts` (store logic) and
+   `test-native/project-role-union.test.ts` (the real load path, which then runs the transport and
+   asserts the sequencer moves). **Forward hazard:** the union is only safe because no role can be
+   removed - `setRoleConfig` edits config and there is no `removeRole` anywhere - so whoever adds a
+   removal affordance must add a tombstone or this will resurrect removed roles.
+3. ~~**`defaultCoreFor` still reads `nes || gba`**~~ **FIXED** (`EngineRpcService.cpp`). It mirrors TS's
+   `DEFAULT_CORE` but with no compiler holding it to the platform list - `DEFAULT_CORE` is a
+   `Record<Platform, Core>`, so a new member is a hard TS error there, while a missing case in C++ just
+   falls through to SameBoy and the construct returns nullptr with no diagnostic. Which is exactly how
+   it rotted. `app-cores.test.ts` now drives every platform through the fallback with `core` omitted,
+   so the next platform cannot repeat it; the negative control (restoring `nes || gba`) fails that
+   case.
+
+### Tier 2 remainder
+
+- **Region / Revision knobs are unreachable.** `Engine::applyConfigField` dispatches through
+  `dynamic_cast<MesenNesSystem*>` (`Engine.cpp:287`), so an SMS system fails the cast. Harmless
+  **only because** the SMS menu exposes FM Audio alone (which is applied at construct, not through
+  this path) - the moment a second row is added it silently no-ops with a live-looking cycler. Region
+  is additionally special: `SmsConsole::UpdateRegion` is private and only reachable from `RunFrame`,
+  which the sample-accurate loop bypasses, so it must be construct-time or omitted.
+- **Button labels are Game Boy names.** H9 makes this more than cosmetic: SMS Start is Pause/NMI, GG
+  Start is a real Start, and A/B are buttons 2/1.
+- **No SMS/GG rows in `app-mesen-persistence` / `app-mesen-settings`** - the construct-blob and
+  live-knob proofs where NES has them.
+- **Documentation is silent.** Zero mentions of SMS/GG in `README.md`, `RELEASE_TESTING.md` or
+  `spec/`. `renderArgs.ts:24` still says "Render a Game Boy (.gb/.gbc), or NES (.nes) ROM" - it never
+  got `.gba` either, so fix both.
+- **`pressButtonAt`** (sample-offset button presses). Generic Tier 2 item; not needed for sync, which
+  rides `pushCoreBytes`.
+- **Nothing shows which roles a system has.** The union above stops a stale project from being
+  *broken*, but the diagnosis that took reading the project file by hand is still not available from
+  inside the app. A read-only role list in the system menu would have turned that evening into a
+  glance. Deliberately out of the union slice; still worth doing.
+
+### Tier 3, unstarted
+
+- **smsggdj tracker integration** - **the RetroPlug half is BUILT; the ROM half is not.** See
+  "Tracker integration, as built" below.
+- **PSG 4-stem tap** - structurally *easier* than NES. The four `channelOutput` values already exist
+  in `SmsPsg.cpp` and are summed with plain `int16` addition, so the stems re-sum exactly, with no
+  "does not sum" caveat like the NES pins. And 4 stereo streams is exactly 8 lanes, which drives the
+  existing `ChannelSplit` router with zero new plumbing: **SMS/GG would be the first non-GB console
+  usable in the plugin split.** Note the interaction with the FM question - a PSG tap is worth much
+  less if the PSG is muted whenever FM is on - which it no longer is, so the tap keeps its full value.
+- **Z80 CPU-state virtuals** - ~80 lines, no core edits, largely free now that the step loop already
+  holds the `SmsCpu*`.
+- **Full debug session**, **`SYNC: OUT`**, **FM stems**, **per-mapper work** - all optional, all
+  unstarted.
+
+### Tracker integration, as built (songs)
+
+`TRACKER_INTEGRATIONS` has its third console. What ships: the SMDJ4 codec (`src/smsggdj/codec/`), the
+`SongCatalog`, the Songs submenu with `.smdj4` Export / Replace / Add, per-song recents, and
+`retroplug-cli render --song / --song-index / --list-songs`.
+
+**The structural problem and how it was removed.** The shared spine (`mutateLiveSav`) is read SRAM ->
+byte transform -> write `.sav` -> cold boot. LSDj and risa keep the working song IN the battery so a
+cold boot restores it; smsggdj's is the live 6,912-byte WRAM block at `$C000` and it boots blank on
+purpose (`song_new`, main.asm:238).
+
+At the time this was built there was no way to write a running core's RAM from the plugin: `writeCpu`
+is on the **debug facet**, and `ControlPlaneBackend` is "debug-free at the type level". **That has
+since changed** - `writeRam` is now a control-plane operation (see below), so the ROM change is no
+longer the only route. It is still the shipped one, and still the cheaper one; the section below says
+what the alternative would cost.
+
+So `load` NAMES a slot in a new superblock byte and the CART loads it at boot. The spine is untouched
+(`load` is still `(sav, index) => new sav`), no native seam is added, and the same byte supplies the
+"currently loaded slot" the format lacked - which is what makes `workingName` / `workingSong`
+answerable and closes caveat 1 in section 11.
+
+Encoding is **slot + 1, 0 = none**, not the raw slot: the byte lives in reserved space that every
+older save leaves `$00`, so a raw number would make all of them claim slot 0 and, once the cart
+autoloads, boot into it.
+
+#### Every battery edit is destructive here, not just Load
+
+`workingSongDirty` was originally left unimplemented, on the grounds that it asks whether the working
+song's CONTENT differs from its slot and that content is in WRAM, which a `(sav) => boolean` cannot
+see. That was contract-correct but it scoped the hazard too narrowly, and a review pass found the
+bigger half: **`mutateLiveSav` always ends in a cold boot, so on this console Delete, Replace, Move
+Up/Down, Add and Import destroy the working song exactly as thoroughly as Load does** - and unlike
+Load, those five had no confirm at all. The shared Songs menu guarded Load alone because for LSDj and
+risa the working song is *inside* the image being rewritten, so their reboot restores it. That
+assumption was invisible until a third console broke it.
+
+The `.bak` rolling backup does not cover this. It snapshots the battery, which for smsggdj structurally
+never contained the working song.
+
+Two additions close it, both in the shared layer rather than special-cased per console:
+
+- **`SongCatalog.workingSongDirty(sav, ram?)`** takes the live work RAM. smsggdj answers by asking
+  whether the live block matches any saved song (`isSongSaved`, checksum-narrowed so at most one slot
+  is decoded). Without `ram` it answers *clean*: "cannot tell" has to look like "nothing to lose", or
+  the menu prompts forever.
+- **`SongCatalog.workingSongOutsideBattery`** declares the console-level fact. `savEditWouldDiscard`
+  (`src/tracker/liveSav.ts`) is `flag && dirty`, and is false for LSDj and risa by construction, so
+  this adds no friction where the reboot is free.
+
+The menu then warns on all six ops: Delete and Replace extend their existing confirm, Move Up/Down and
+Add gain one *only* when work would be lost (reordering is otherwise cheap and repeated, and a prompt
+on every nudge is how prompts get dismissed unread), and the import picker shows an inline line rather
+than stacking a dialog on a dialog.
+
+One residual, and it is why this still wants the ROM change: with no boot-time autoload the cart has no
+way to know a freshly booted blank song is blank, so it reads as dirty. Once the cart autoloads
+`cur_slot`, a fresh boot matches the slot it came from and stays silent.
+
+**One corrupt song may never cost the user the rest of the cart.** `detachAll` returns null rather than
+a prefix when any listed entry fails to decode, so every mutating op refuses. The alternative looks
+harmless and is not: `listSongs` stops at a structural hole, so an entry it returns that then fails its
+checksum is *payload* corruption and says nothing about the entries after it. Detaching what it could
+would hand `rebuild` a short list, and `rebuild` lays out a perfectly well-formed image from it - which
+`mutateLiveSav` writes straight over the user's `.sav`. One flipped byte would become the silent
+deletion of every song stored after it, during an edit aimed at a different slot. Confirmed by
+execution before the fix: a three-song cart with one bad checksum, `deleteSong(sav, 0)` returned an
+image containing zero songs. The import SOURCE goes the other way on purpose - a bad song in someone
+else's file is skipped, since refusing the whole import would deny the good songs to protect a cart
+that is not at risk.
+
+Both codecs were certified against smsggdj's own tools and then frozen, the discipline used for the
+LSDj codec against liblsdj: `rleCompress` is byte-identical to `tools/rle.js` (the real demo song packs
+6,912 -> 722) with cross-decode both ways, and container placement matches `tools/smdj4.js buildSav`
+across 1-4 songs, sparse and store-raw, the bank bump, both SRAM-FULL cases and 8/16/32 KB carts.
+
+#### `writeRam` makes the ROM change optional
+
+`writeRam(id, offset, bytes)` (`EmulatorBackend`) is the write counterpart of `readRam`, in the same
+coordinates: region offset 0 IS CPU `$C000`, so a 6,912-byte song block goes in with one call.
+Demonstrated end to end by `test-native/sms-live-song-load.test.ts` - a song decoded from a real SMDJ4
+battery, written into a cart that is PLAYING, which keeps sequencing across the swap with no reboot and
+no ROM change.
+
+So songs could be loaded on v0.45 today. What that route still needs, and why it is not what shipped:
+
+- **A `SongCatalog` extension.** `load` is `(sav, index) => new sav` - pure, no I/O. A live write is I/O
+  and belongs in the `liveSav` layer, so it needs an optional "load into the core" hook rather than
+  reusing `load`.
+- **Catalog edits still cold-boot.** `mutateLiveSav` reconstructs the core after delete / reorder / add,
+  which on this cart means the working song is gone. The live route would have to snapshot WRAM before
+  and restore it after - doable, more moving parts.
+- **It races the cart.** Replacing the song block under a running tracker walks past whatever
+  invariants the engine holds over those bytes. Fine to toy with, and the test shows it recovers, but
+  a boot-time load has no such hazard.
+
+The `cur_slot` byte also fixes a genuine hole in SMDJ4 (no "currently loaded slot" field) that benefits
+`savetool.html` and Everdrive users, which `writeRam` does nothing for.
+
+#### Load IS the live write now, and v0.45 is fully supported
+
+Every caveat above except the last is closed, by taking the write offsets from the build's own symbols
+rather than guessing at them - the same answer risa uses for cc65.
+
+`wlalink -S` emits every RAM label with `_sizeof_*`, so
+`scripts/gen-smsggdj-symbols.mjs` -> `src/smsggdj/runtime/symbols.generated.ts` mirrors
+`gen-risa-symbols.mjs` exactly, merge behaviour and all. Nothing in the smsggdj repo changes: the flag
+is passed at generation time rather than baked into its Makefile.
+
+```
+00:c000 wave_ram      <- block base = work-RAM offset 0
+00:db6d echo_mode        (+$1B6D, 8 contiguous bytes, asserted at generation)
+00:dd58 prj_slot         (+$1D58)
+00:ddc0 song_edited      (+$1DC0)
+00:dea4 song_name        (+$1EA4, 8 bytes)
+```
+
+That closes the objection that made the live route look wrong: **the song name and echo settings are
+not in the block.** `src/rle.asm:34` says so outright (`song_name dsb 8 ; metadata, not in the block`)
+and `rle_song_load` copies both into separate RAM variables, so poking only the block loads the right
+notes with the *previous* song's echo taps - audible, not cosmetic. `TrackerIntegration.liveLoad`
+returns block + name + echo + `song_edited = 0`, and `loadSongLive` (`src/tracker/liveSav.ts`) applies
+them. `prj_slot` is deliberately not written: the cart READS it to decide what to load rather than
+writing it, and its legacy meaning is a 6-slot SMDJ3 index the PROJECT screen may still clamp.
+
+**The gate is re-keyed, not dropped**: `isVersionSupported` now asks
+`resolveSmsggdjLayout(version) !== null`, exactly as risa asks for a bundled snapshot. An unknown build
+still greys out, so the failure mode is unchanged - only the question is right. Keying it on
+`supportsCurSlot` had greyed out Export / Replace / Delete / Move / Add / Import too, none of which need
+the cart's help at all. `supportsCurSlot` survives because it still answers a real and different
+question: whether the CART restores a song at boot.
+
+**Load also stopped being destructive.** The cold-boot path wrote the `.sav` (plus a `.bak`) and
+rebuilt the core; the live path writes nothing to disk and does not reboot, so on the one console where
+the reboot is what destroys the working song, Load no longer can.
+
+`workingName` gained an optional `ram` parameter - the same shape `workingSongDirty` already had - and
+reads the cart's own `song_name`. That is the true source (it is what the cart displays, and it
+survives a load made from *inside* the cart), and it is what lights the working-song row, per-song
+recents and the window title up on v0.45, which carries no `cur_slot` at all. Omitting `ram` yields the
+old answer, so LSDj, risa and the offline `.sav` render paths are untouched.
+
+**Certification, because a snapshot is a claim about a build.** `test-native/sms-layout.test.ts` boots
+the SHIPPED `smsggdj_v0_45.sms` and proves `echo_mode` *behaviourally*: same song, `echo_mode` 0 vs 2,
+and the energy has to move because the echo pass replays delayed copies onto T2/T3. Measured +17.4%. A
+wrong address changes nothing and fails. It also checks `song_name` reads back and `song_edited`
+clears. Reassuringly, a local build of v0.45 differs from the vendored ROM in only **7 bytes** - the
+git-hash build stamp at `$0009-$0010` and the header checksum at `$7FFA` - so no code moved; but the
+test is what makes that a fact rather than an assumption.
+
+#### What the cart does around a load, and what the host reproduces
+
+The obvious worry is that a live poke skips the bookkeeping the cart's own `song_load` does. Reading it
+narrows that down a lot:
+
+- **`load_rebase` opens with `ret z` on `play_state`**, so a load made while the transport is STOPPED
+  needs none of it. That is the common case for a menu Load.
+- While PLAYING it does three things that matter, and leaving them undone is not a passing glitch:
+  `eng_len` is the wrap point, so the sequencer would loop at the *previous* song's length indefinitely;
+  queued LIVE cells address the old song's grid; and an empty groove in the new song stalls the clock.
+  `liveLoad` reproduces exactly these three, gated on reading `play_state` out of the same work-RAM
+  snapshot. `songLengthRows` ports the ROM's own scan, and the cart independently agrees with it -
+  `sms-layout` asserts the cart's freshly-computed `eng_len` is 8 for the fixture before the host writes
+  anything, then that a load under a running transport moves it to 2.
+- **`echo_sanitize`** is now applied host-side before the echo bytes are written, so a corrupt or foreign
+  directory entry cannot put an out-of-range mode or a zero delay tap into the live engine.
+- **`load_carry_post`** (the CONT beat-carry, which replants the carried phrase in the reserved
+  phrase 51 / chain 39) is deliberately NOT reproduced. That is a musical feature of the cart's own CONT
+  load, and synthesizing it from the host would be re-implementing the tracker.
+- **`engine_stop` is not called, and a reset is not the answer either.** A reset would fix all of the
+  above by brute force, but it throws away exactly what makes the live path worth having (no reboot, no
+  `.sav` write, working song intact) and reintroduces the boot race, since `song_new` blanks work RAM on
+  the way up. Stopping the engine properly is also more than a zeroed byte - `engine_stop` releases the
+  sync lines, clears the live queues and quiesces the channels - so poking `play_state` would be a worse
+  imitation than not stopping at all.
+
+Still true, and still the reason the ROM change is worth having: a live load is **volatile**. It
+survives no power cycle and no project reload, and only `cur_slot` gives the format a durable record
+that `savetool.html` and Everdrive users can see.
+
+##### A note on measuring this
+
+The first version of the echo certification compared total RMS between runs and was **not
+reproducible**: `writeRam` lands between blocks, so the echo ring's contents at the moment of the change
+vary, and the same three modes swung between -43% and +99% of baseline across repeats. The test now
+polls `psg_vols` for *which channels the engine drives*, which is a binary rather than a magnitude:
+
+```
+off:   T1=0 T2=f T3=f     T2/T3 never sound
+mode1: T1=0 T2=2 T3=f     echo on T2 only
+mode2: T1=0 T2=2 T3=4     echo on T2 and T3
+```
+
+Identical on every run, and a far more exact statement of what `echo_mode` means. Worth remembering for
+any future SMS audio assertion: compare what the engine *did*, not how loud the window came out.
+
+#### The ROM half, still worth doing
+
+The Songs menu no longer waits on it. The change is scoped, and lives on branch `feature/cur-slot` in
+`/workspaces/smsggdj`:
+
+- `song_save` / `song_load` (`src/engine.asm:4210-4263`): after `rle_song_save` / `rle_song_load`
+  report success, write `prj_slot + 1` to the superblock at SRAM `$8007` (bank 0, `$FFFC = $08`),
+  BEFORE the existing `xor a / ld ($FFFC),a` restore.
+- Boot (`src/main.asm:224`): where `song_new` is called unconditionally, read that byte and
+  `song_load` the named slot instead when it is non-zero, falling back to `song_new` on zero or a
+  failed load. That preserves "a first power-on should make sound" for every existing save.
+- `SAVEFORMAT.md` (superblock table) and `tools/smdj4.js` (self-test).
+
+**Built and verified on `feature/cur-slot` (commit `83bb795`), awaiting the ROM author's review.** It
+cost 96 bytes on both flavors against 95 free in bank 1, so it had to pay for itself: `rle_entry_ptr`
+folds the slot -> directory-entry arithmetic that was open-coded at four call sites, and `boot_autoload`
+sits in its own bank 0 section. Free space after: SMS 217 -> 121, **GG 148 -> 52** (GG is the binding
+one). Verified on the real Mesen core - `cur=none` boots blank, `cur=0`/`cur=1` boot the named song, a
+cur naming an empty or checksum-failing slot falls back to blank, and booting leaves the battery
+BYTE-IDENTICAL in every case (a non-SMDJ4 cart too, so the magic guard holds).
+
+The open question left for the author is boot ORDER: `song_load` calls `engine_stop` + `smp_abort`, and
+SRAM covers the sample-pool banks in slot 2, so `boot_autoload` runs *after* the pool directory read
+rather than at the `song_new` call site. `editor_init` only sets cursors, so loading after it is safe -
+but that is a judgement worth a second opinion.
+
+Two things found while building it, both pre-existing and unrelated to this work:
+
+- **The Makefile's Game Gear region stamp needs bash.** `printf '\x6c'` is dash-undefined; under
+  `/bin/sh` -> dash it writes the four literal characters, the `xxd` check fails, and the rule deletes
+  the `.gg`. `make SHELL=/bin/bash` works. Everywhere `/bin/sh` is bash this is invisible.
+- Building it needs `wla-dx` (not packaged; builds from source in a minute), Pillow, and `xxd`. A
+  clean build reproduces the vendored v0.45 ROMs byte-for-byte apart from the embedded git-hash build
+  stamp and its checksum.
+
+### Suggested order
+
+All three defects are closed, the tracker integration is built, and the Songs menu is live on the
+vendored v0.45 - Load included, via the symbol-driven work-RAM write. Next is assets (which need
+neither a ROM change nor a layout), then the Tier 2 polish in any order. The ROM branch lands whenever
+its author is happy with it; nothing in RetroPlug is waiting on it now.

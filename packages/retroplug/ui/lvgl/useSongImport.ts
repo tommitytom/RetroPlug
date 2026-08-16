@@ -8,6 +8,7 @@ import type { AppStores } from "../../src/appStores";
 import type { SystemView } from "../../src/systemsStore";
 import type { MenuTree } from "../screens/menu/menuTree";
 import { planImport, buildImportModal, applyImport, type ImportPending } from "./songImport";
+import { savEditWouldDiscard } from "../../src/tracker";
 
 export interface SongImport {
   /** The overlay to render (null = nothing showing). */
@@ -24,7 +25,16 @@ export function useSongImport(stores: AppStores): SongImport {
   const [pending, setPending] = useState<ImportPending | null>(null);
 
   const onClose = (): void => setPending(null);
-  const begin = (sys: SystemView, source: Uint8Array): void => setPending(planImport(sys, source));
+  const begin = (sys: SystemView, source: Uint8Array): void =>
+    // Importing rewrites the battery and cold-boots the cart like every other song edit, so on a console
+    // whose working song lives outside the battery it discards unsaved work too.
+    setPending(
+      planImport(
+        sys,
+        source,
+        savEditWouldDiscard(stores.project.systems, sys) ? "! Unsaved changes to the working song will be lost" : undefined,
+      ),
+    );
 
   const toggle = (index: number): void =>
     setPending((p: ImportPending | null) => {
@@ -51,7 +61,10 @@ export function useSongImport(stores: AppStores): SongImport {
       setPending({
         kind: "notice",
         title: imported === 0 ? "Nothing imported" : "Import incomplete",
-        body: imported === 0 ? "The save is full — no songs were imported." : `Imported ${imported} of ${requested} songs; the save filled up.`,
+        // Don't name a cause we can't know: a short import is usually a full target, but a song the
+        // source can't decode is skipped too, and telling someone their cart is full when it isn't
+        // sends them deleting songs to make room they already have.
+        body: imported === 0 ? "No songs were imported." : `Imported ${imported} of ${requested} songs; the rest would not fit or could not be read.`,
       });
       return;
     }

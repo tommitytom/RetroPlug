@@ -69,6 +69,9 @@ private:
 	
 	uint32_t DetectSgCartRam(vector<uint8_t>& romData);
 
+	// RetroPlug: see SetGgExternalInput. Idle = every PC pin high.
+	uint8_t _ggExtInput = 0x7F;
+
 public:
 	void Init(Emulator* emu, SmsConsole* console, vector<uint8_t>& romData, vector<uint8_t>& biosRom, SmsVdp* vdp, SmsControlManager* controlManager, SmsCart* cart, SmsPsg* psg, SmsFmAudio* fmAudio);
 	SmsMemoryManager();
@@ -78,6 +81,17 @@ public:
 	{
 		return _state;
 	}
+
+	// RetroPlug: the externally-driven pin levels for the Game Gear EXT parallel
+	// port ($01 / PC0-PC6). Only bits the ROM has configured as INPUTS in $02 are
+	// taken from here; output bits still read back the latched $01 data, so this
+	// is inert until both the ROM asks for an input and the host drives one.
+	// 0x7F = every pin released (pull-ups high), which is what stock Mesen's
+	// loopback returns after the standard GG init, so the idle read is unchanged.
+	// Deliberately NOT in _state and NOT serialized, matching
+	// SmsControlManager::_extInput: the host re-drives it on the next block.
+	void SetGgExternalInput(uint8_t levels) { _ggExtInput = levels & 0x7F; }
+	uint8_t GetGgExternalInput() const { return _ggExtInput; }
 
 	__forceinline void Exec(uint8_t clocks)
 	{

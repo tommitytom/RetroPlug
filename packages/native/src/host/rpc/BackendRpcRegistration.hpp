@@ -45,6 +45,7 @@ void registerEmulatorRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::readState>(e);
     s.template addMethod<&EngineRpcService::readSram>(e);
     s.template addMethod<&EngineRpcService::readRam>(e);
+    s.template addMethod<&EngineRpcService::writeRam>(e);
     s.template addMethod<&EngineRpcService::screenshot>(e);
     s.template addMethod<&EngineRpcService::getFrame>(e);
     s.template addMethod<&EngineRpcService::pressButton>(e);

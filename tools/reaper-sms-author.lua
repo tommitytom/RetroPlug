@@ -1,5 +1,9 @@
 -- reaper-sms-author.lua
 --
+-- Serves both machines: REAPER_AUTHOR_STEM picks the render stem (and so which project this is), the
+-- autoloaded .rplg carries the ROM. The Game Gear build clocks the same counter on its EXT parallel
+-- port rather than controller port 2, which changes nothing on the DAW side.
+--
 -- Author the smsggdj host-sync DAW-timing project and save it. The Master System counterpart of
 -- reaper-risa-author.lua, and structurally identical to it: SMS host sync is driven by the TRANSPORT
 -- alone, so the plugin track carries NO MIDI item. RetroPlug's rom provider attaches `sms-sync` off the
@@ -30,7 +34,7 @@ log("[author] start, dest=" .. dest .. " render_dir=" .. render_dir)
 
 local BPM = 120
 local DURATION = tonumber(os.getenv("REAPER_AUTHOR_DURATION")) or 30.0
-local RENDER_STEM = "reaper-sms-sync"
+local RENDER_STEM = os.getenv("REAPER_AUTHOR_STEM") or "reaper-sms-sync"
 
 reaper.Main_OnCommand(40023, 0)  -- File: New project
 reaper.SetCurrentBPM(0, BPM, false)

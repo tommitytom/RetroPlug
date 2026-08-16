@@ -28,7 +28,11 @@ function emit(): void {
 // The native config carries the option sets too — the driver list (drivers) and the output devices per driver
 // (devicesByDriver). They're not part of the draft VALUE, so nativeGet folds only the selected driver/device
 // into AudioCfg; getAudioDrivers() / getAudioDevices() read the lists.
-type NativeAudioCfg = Partial<AudioCfg> & { drivers?: string[]; devicesByDriver?: Record<string, string[]> };
+type NativeAudioCfg = Partial<AudioCfg> & {
+  drivers?: string[];
+  devicesByDriver?: Record<string, string[]>;
+  defaultByDriver?: Record<string, string>;
+};
 function nativeGet(): AudioCfg | null {
   const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
   if (typeof fn !== "function") return null;
@@ -62,6 +66,14 @@ export function getAudioDevices(driver: string): string[] {
   if (typeof fn !== "function") return [];
   const list = fn()?.devicesByDriver?.[driver];
   return Array.isArray(list) ? list : [];
+}
+
+/** What an empty device selection resolves to on a driver (the host API's default output); "" if unknown. */
+export function getAudioDefaultDevice(driver: string): string {
+  const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
+  if (typeof fn !== "function") return "";
+  const name = fn()?.defaultByDriver?.[driver];
+  return typeof name === "string" ? name : "";
 }
 
 /** Whether the SDL host exposes the audio-config seam (standalone only). Gates the whole submenu. */

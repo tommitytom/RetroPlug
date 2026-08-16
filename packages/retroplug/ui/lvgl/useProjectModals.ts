@@ -75,7 +75,9 @@ export function useProjectModals(stores: AppStores): ProjectModals {
         // that proceeds unprompted - never a prompt when nothing is at stake.
         const sys = song ? project.systems.primary() : null;
         if (song && sys && songLoadByNameWouldDiscard(project.systems, sys, song)) {
-          const working = resolveSongCatalog(sys.roles)?.workingName(project.systems.readSram(sys.id)!) || "the working song";
+          const working =
+            resolveSongCatalog(sys.roles)?.workingName(project.systems.readSram(sys.id)!, project.systems.readRam(sys.id) ?? undefined) ||
+            "the working song";
           setPending({
             kind: "songDiscard",
             song,

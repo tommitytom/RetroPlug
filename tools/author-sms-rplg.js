@@ -3,8 +3,11 @@
 // ROM + output path) and run it on retroplug-host, which EXPORTS a PKZIP `.rplg.zip`. Counterpart of
 // tools/author-risa-rplg.js (risa) and tools/author-nes-rplg.js (n8-midi).
 //
+// Authors either machine's fixture - smsggdj's Master System and Game Gear builds share the protocol
+// and differ only in which pins carry it, so the machine is derived from the ROM's extension.
+//
 //   node tools/author-sms-rplg.js [ROM] [OUT.rplg.zip]
-//     ROM   default resources/roms/smsggdj_v0_45.sms
+//     ROM   default resources/roms/smsggdj_v0_45.sms  (.gg authors the Game Gear fixture)
 //     OUT   default build/sms.rplg.zip
 //
 // Unlike the risa/LSDj ROMs this one is committed in-repo, so the usual "skip when the sibling
@@ -20,7 +23,8 @@ const PKG = resolve(REPO, "packages/retroplug");
 const HOST = process.env.RETROPLUG_HOST || resolve(REPO, "build/bin/retroplug-host");
 
 const ROM = resolve(REPO, process.argv[2] || "resources/roms/smsggdj_v0_45.sms");
-const OUT = resolve(process.argv[3] || resolve(REPO, "build/sms.rplg.zip"));
+const MACHINE = ROM.toLowerCase().endsWith(".gg") ? "gg" : "sms";
+const OUT = resolve(process.argv[3] || resolve(REPO, `build/${MACHINE}.rplg.zip`));
 
 if (!existsSync(ROM)) {
   console.log(`[author-sms-rplg] SKIP: smsggdj ROM not found at ${ROM}`);
@@ -28,7 +32,7 @@ if (!existsSync(ROM)) {
 }
 
 mkdirSync(dirname(OUT), { recursive: true });
-const bundle = resolve(REPO, "build/native/author-sms-rplg.js");
+const bundle = resolve(REPO, `build/native/author-${MACHINE}-rplg.js`);
 mkdirSync(dirname(bundle), { recursive: true });
 
 buildSync({
@@ -42,6 +46,7 @@ buildSync({
   define: {
     "process.env.NODE_ENV": '"production"',
     __SMS_ROM__: JSON.stringify(ROM),
+    __SMS_MACHINE__: JSON.stringify(MACHINE),
     __RPLG_OUT__: JSON.stringify(OUT),
   },
 });

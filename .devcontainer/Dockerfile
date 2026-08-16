@@ -85,6 +85,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	libdbus-1-dev \
 	libasound2-dev \
 	libjack-jackd2-dev \
+	# --- PortAudio's native PipeWire host API (retroplug-sdl): headers only,
+	# libpipewire is dlopen'd at runtime. Without these the portaudio build
+	# fails on <pipewire/pipewire.h> once a cache has PA_USE_PIPEWIRE=ON. ----
+	libpipewire-0.3-dev \
+	# --- A PipeWire server to test that backend against (tools/run-sdl-pipewire.sh
+	# runs a private one): the daemon + pw-cli/pw-metadata, wireplumber for the
+	# session default + stream linking, and dbus-x11 because wireplumber exits
+	# without a session bus. Not used by the build. -------------------------
+	pipewire \
+	pipewire-bin \
+	wireplumber \
+	dbus-x11 \
 	libcurl4-openssl-dev \
 	libffi-dev \
 	libssl-dev \
@@ -114,6 +126,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	# --- VCS ---------------------------------------------------------------
 	git \
 	git-lfs \
+	# --- usbutils (lsusb) for USB-passthrough diagnostics in the hardware lab.
+	# OpenOCD is built from source below (the RP2350-capable Raspberry Pi fork -
+	# stock OpenOCD / the apt package only ship rp2040.cfg, can't touch an RP2350).
+	usbutils \
 	# --- Plugin-format validators need these to download/extract -----------
 	curl \
 	unzip \
@@ -202,6 +218,36 @@ RUN set -eux; \
 	cmake --install /tmp/picotool/build --prefix /usr/local; \
 	rm -rf /tmp/picotool; \
 	picotool version
+
+# --- OpenOCD (Raspberry Pi fork) for RP2350 SWD flashing + debugging via the
+# Raspberry Pi Debug Probe (CMSIS-DAP). Stock OpenOCD 0.12 (and the Ubuntu apt
+# package) only ship rp2040.cfg and cannot touch an RP2350, and there is no apt
+# package for the fork - so build it, plus its bundled jimtcl, from a pinned
+# source snapshot into /usr/local. This is what lets an agent flash the pico/
+# firmware (a Pico 2 / RP2350) over SWD with NO BOOTSEL. See pico/README.md and
+# .devcontainer/hw-usb-perms.sh (which exposes the probe's console).
+ARG OPENOCD_RPI_COMMIT=acff23ffd100479d6481a1155123774b79a990b9
+RUN set -eux; \
+	apt-get update && apt-get install -y --no-install-recommends \
+		autoconf automake libtool pkg-config texinfo \
+		libhidapi-dev libusb-1.0-0-dev; \
+	rm -rf /var/lib/apt/lists/*; \
+	mkdir -p /tmp/openocd && cd /tmp/openocd; \
+	git init -q; \
+	git remote add origin https://github.com/raspberrypi/openocd.git; \
+	git fetch -q --depth 1 origin "${OPENOCD_RPI_COMMIT}"; \
+	git checkout -q FETCH_HEAD; \
+	git submodule update --init; \
+	( cd jimtcl && ./configure --prefix=/usr/local --shared && make -j"$(nproc)" && make install ); \
+	ldconfig; \
+	./bootstrap; \
+	PKG_CONFIG_PATH=/usr/local/lib/pkgconfig ./configure --disable-werror \
+		--enable-cmsis-dap --enable-cmsis-dap-v2 --prefix=/usr/local; \
+	make -j"$(nproc)"; \
+	make install; \
+	ldconfig; \
+	cd / && rm -rf /tmp/openocd; \
+	openocd --version
 
 # --- Plugin-format validators -----------------------------------------------
 # Pinned versions; both ship as single-binary releases on GitHub. pluginval

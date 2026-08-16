@@ -38,10 +38,18 @@ import {
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
-const ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
+// Both machines. The protocol is shared and only the pins differ (SMS controller port 2, GG EXT
+// port), but "the same protocol" is a claim about the ROM, not about our delivery path - and the two
+// take different sinks through different vendored Mesen edits. Measuring only one would leave the
+// other's timing asserted by analogy.
+const MACHINES = [
+  { machine: "sms", platform: "sms", rom: __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms" },
+  { machine: "gg", platform: "gg", rom: __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.gg" },
+] as const;
+
 /** Written unconditionally: it is the artifact that makes a failure diagnosable, and it is the exact
  *  stereo shape tools/reaper-timing-analyze.py --drift expects, so the Reaper analyzer runs on it. */
-const OUT_WAV = "/tmp/headless-sms-sync.wav";
+const outWav = (machine: string) => `/tmp/headless-${machine}-sync.wav`;
 
 const PAUSE = 7;
 const BPM = 120;
@@ -98,118 +106,121 @@ function risingEdges(mono: Float32Array, sampleRate: number): number[] {
   return edges;
 }
 
-test("the DAW transport holds smsggdj on the grid for 30s, with no accumulation", () => {
-  const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP dsp-sms-sync-drift: missing ${ROM}`);
-    return;
-  }
-  const audio = createAudioDriver();
-  const sr = audio.sampleRate();
+for (const m of MACHINES) {
+  test(`${m.machine.toUpperCase()}: the DAW transport holds smsggdj on the grid for 30s, with no accumulation`, () => {
+    const be = createRealBackend();
+    if (!be.fileExists(m.rom)) {
+      console.log(`# SKIP dsp-sms-sync-drift ${m.machine}: missing ${m.rom}`);
+      return;
+    }
+    const audio = createAudioDriver();
+    const sr = audio.sampleRate();
 
-  expect(
-    be.constructSystem(
-      {
-        romPath: ROM,
-        platform: "sms",
-        core: "mesen",
-        embeddedRom: "",
-        savPath: null,
-        statePath: null,
-        sramBytes: buildSmsMetronomeSav(SMS_SYNC_IN24),
-        settings: JSON.stringify({ enableFm: false }),
-      },
-      1,
-    ),
-  ).toBeTruthy();
-  audio.renderAudio(3000); // boot: splash, config_load (takes IN24 + fm off), song_new
-  expect(pokeMetronomeIntoWram(be, 1) > 0).toBeTruthy();
+    expect(
+      be.constructSystem(
+        {
+          romPath: m.rom,
+          platform: m.platform,
+          core: "mesen",
+          embeddedRom: "",
+          savPath: null,
+          statePath: null,
+          sramBytes: buildSmsMetronomeSav(SMS_SYNC_IN24),
+          settings: JSON.stringify({ enableFm: false }),
+        },
+        1,
+      ),
+    ).toBeTruthy();
+    audio.renderAudio(3000); // boot: splash, config_load (takes IN24 + fm off), song_new
+    expect(pokeMetronomeIntoWram(be, 1) > 0).toBeTruthy();
 
-  const dsp = createDspRuntime();
-  expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
-  expect(dsp.setSystems({ systems: [{ id: 1, pipeline: [{ kind: "sms-sync", config: {} }] }] })).toBeTruthy();
+    const wav = outWav(m.machine);
+    const dsp = createDspRuntime();
+    expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
+    expect(dsp.setSystems({ systems: [{ id: 1, pipeline: [{ kind: "sms-sync", config: { machine: m.machine } }] }] })).toBeTruthy();
 
-  // Arm: in IN24 this parks the ROM in WAIT holding for the first host clock.
-  audio.pressButton(1, PAUSE, true);
-  audio.renderAudio(100);
-  audio.pressButton(1, PAUSE, false);
-  audio.renderAudio(100);
+    // Arm: in IN24 this parks the ROM in WAIT holding for the first host clock.
+    audio.pressButton(1, PAUSE, true);
+    audio.renderAudio(100);
+    audio.pressButton(1, PAUSE, false);
+    audio.renderAudio(100);
 
-  audio.setBpm(BPM);
-  audio.setPpq(0);
-  audio.setTransport(true);
+    audio.setBpm(BPM);
+    audio.setPpq(0);
+    audio.setTransport(true);
 
-  // Sample 0 of the first block below is ppq 0, so the beat grid is analytic from here.
-  const pollMs = (POLL_FRAMES / sr) * 1000;
-  const totalFrames = Math.round(SECONDS * sr);
-  const left = new Float32Array(totalFrames);
-  const rowAt: number[] = []; // absolute row -> frame at which its advance was observed
-  let frame = 0;
-  let prevStep = be.readRam(1)![PHRASE_STEP];
+    // Sample 0 of the first block below is ppq 0, so the beat grid is analytic from here.
+    const pollMs = (POLL_FRAMES / sr) * 1000;
+    const totalFrames = Math.round(SECONDS * sr);
+    const left = new Float32Array(totalFrames);
+    const rowAt: number[] = []; // absolute row -> frame at which its advance was observed
+    let frame = 0;
+    let prevStep = be.readRam(1)![PHRASE_STEP];
 
-  while (frame < totalFrames) {
-    const buf = audio.renderAudio(pollMs);
-    const frames = buf.length / 2;
-    for (let f = 0; f < frames && frame + f < totalFrames; f++) left[frame + f] = buf[f * 2];
-    frame += frames;
-    const step = be.readRam(1)![PHRASE_STEP];
-    let delta = (step - prevStep + PHRASE_STEPS) % PHRASE_STEPS;
-    prevStep = step;
-    while (delta-- > 0) rowAt.push(frame);
-  }
+    while (frame < totalFrames) {
+      const buf = audio.renderAudio(pollMs);
+      const frames = buf.length / 2;
+      for (let f = 0; f < frames && frame + f < totalFrames; f++) left[frame + f] = buf[f * 2];
+      frame += frames;
+      const step = be.readRam(1)![PHRASE_STEP];
+      let delta = (step - prevStep + PHRASE_STEPS) % PHRASE_STEPS;
+      prevStep = step;
+      while (delta-- > 0) rowAt.push(frame);
+    }
 
-  // --- 1. the row counter ---
-  const framesPerRow = (sr * 60) / (BPM * SMS_ROWS_PER_BEAT);
-  const expectedRows = Math.floor(totalFrames / framesPerRow);
-  expect(Math.abs(rowAt.length - expectedRows) <= 2).toBeTruthy(); // right tempo, nothing dropped
+    // --- 1. the row counter ---
+    const framesPerRow = (sr * 60) / (BPM * SMS_ROWS_PER_BEAT);
+    const expectedRows = Math.floor(totalFrames / framesPerRow);
+    expect(Math.abs(rowAt.length - expectedRows) <= 2).toBeTruthy(); // right tempo, nothing dropped
 
-  const t0 = rowAt[0];
-  let peakResid = 0;
-  for (let r = 0; r < rowAt.length; r++) {
-    const resid = ((rowAt[r] - t0 - r * framesPerRow) / sr) * 1000;
-    peakResid = Math.max(peakResid, Math.abs(resid));
-  }
-  let minGap = Infinity;
-  let maxGap = 0;
-  for (let r = 1; r < rowAt.length; r++) {
-    const g = ((rowAt[r] - rowAt[r - 1]) / sr) * 1000;
-    minGap = Math.min(minGap, g);
-    maxGap = Math.max(maxGap, g);
-  }
-  const meanGap = ((rowAt[rowAt.length - 1] - t0) / sr) * 1000 / (rowAt.length - 1);
-  const idealGap = (framesPerRow / sr) * 1000;
-  console.log(
-    `[sms-drift] ${rowAt.length} rows, residual peak ${peakResid.toFixed(2)} ms, ` +
-      `gap mean ${meanGap.toFixed(2)} min ${minGap.toFixed(2)} max ${maxGap.toFixed(2)} (ideal ${idealGap.toFixed(2)})`,
-  );
-  // The whole claim, and it is an ACCUMULATION claim: anchored on row 0, no row over 30 s strays
-  // further than a video frame from where the DAW put it.
-  expect(peakResid < DRIFT_TOLERANCE_MS).toBeTruthy();
-  // Mean spacing pins the tempo independently of the residual - a role clocking at the wrong PPQN
-  // would ramp the residual, but this says the rate itself is right to well under a frame.
-  expect(Math.abs(meanGap - idealGap) < 1).toBeTruthy();
-  // ...and the wobble really is only the frame grid, not something larger hiding under the mean.
-  expect(maxGap - minGap < 2.5 * FRAME_MS).toBeTruthy();
+    const t0 = rowAt[0];
+    let peakResid = 0;
+    for (let r = 0; r < rowAt.length; r++) {
+      const resid = ((rowAt[r] - t0 - r * framesPerRow) / sr) * 1000;
+      peakResid = Math.max(peakResid, Math.abs(resid));
+    }
+    let minGap = Infinity;
+    let maxGap = 0;
+    for (let r = 1; r < rowAt.length; r++) {
+      const g = ((rowAt[r] - rowAt[r - 1]) / sr) * 1000;
+      minGap = Math.min(minGap, g);
+      maxGap = Math.max(maxGap, g);
+    }
+    const meanGap = ((rowAt[rowAt.length - 1] - t0) / sr) * 1000 / (rowAt.length - 1);
+    const idealGap = (framesPerRow / sr) * 1000;
+    console.log(
+      `[sms-drift ${m.machine}] ${rowAt.length} rows, residual peak ${peakResid.toFixed(2)} ms, ` +
+        `gap mean ${meanGap.toFixed(2)} min ${minGap.toFixed(2)} max ${maxGap.toFixed(2)} (ideal ${idealGap.toFixed(2)})`,
+    );
+    // The whole claim, and it is an ACCUMULATION claim: anchored on row 0, no row over 30 s strays
+    // further than a video frame from where the DAW put it.
+    expect(peakResid < DRIFT_TOLERANCE_MS).toBeTruthy();
+    // Mean spacing pins the tempo independently of the residual - a role clocking at the wrong PPQN
+    // would ramp the residual, but this says the rate itself is right to well under a frame.
+    expect(Math.abs(meanGap - idealGap) < 1).toBeTruthy();
+    // ...and the wobble really is only the frame grid, not something larger hiding under the mean.
+    expect(maxGap - minGap < 2.5 * FRAME_MS).toBeTruthy();
 
-  // --- 2. the audio, under the analyzer's own onset rule ---
-  const beats = Math.floor((SECONDS * BPM) / 60);
-  const edges = risingEdges(left, sr);
-  console.log(`[sms-drift] ${edges.length} rising edges for ${beats} beats`);
-  // Exactly one edge per beat. More means the note is ringing into the next hit and the drift render
-  // is measuring its own detector rather than the sync - which is precisely how this fixture failed.
-  expect(edges.length).toBe(beats);
+    // --- 2. the audio, under the analyzer's own onset rule ---
+    const beats = Math.floor((SECONDS * BPM) / 60);
+    const edges = risingEdges(left, sr);
+    console.log(`[sms-drift ${m.machine}] ${edges.length} rising edges for ${beats} beats`);
+    // Exactly one edge per beat. More means the note is ringing into the next hit and the drift render
+    // is measuring its own detector rather than the sync - which is precisely how this fixture failed.
+    expect(edges.length).toBe(beats);
 
-  const pcm = new Float32Array(totalFrames * 2);
-  for (let f = 0; f < totalFrames; f++) pcm[f * 2] = left[f];
-  const framesPerBeat = (sr * 60) / BPM;
-  const clickFrames = Math.round(sr * 0.02);
-  for (let b = 0; Math.round(b * framesPerBeat) + clickFrames < totalFrames; b++) {
-    const start = Math.round(b * framesPerBeat);
-    for (let i = 0; i < clickFrames; i++)
-      pcm[(start + i) * 2 + 1] = 0.6 * Math.exp(-i / (sr * 0.004)) * Math.sin((2 * Math.PI * 1000 * i) / sr);
-  }
-  expect(be.writeFile(OUT_WAV, encodeWav(pcm, sr, 2))).toBeTruthy();
-  console.log(`[sms-drift] wrote ${OUT_WAV} (analyze: tools/reaper-timing-analyze.py ${OUT_WAV} --drift)`);
+    const pcm = new Float32Array(totalFrames * 2);
+    for (let f = 0; f < totalFrames; f++) pcm[f * 2] = left[f];
+    const framesPerBeat = (sr * 60) / BPM;
+    const clickFrames = Math.round(sr * 0.02);
+    for (let b = 0; Math.round(b * framesPerBeat) + clickFrames < totalFrames; b++) {
+      const start = Math.round(b * framesPerBeat);
+      for (let i = 0; i < clickFrames; i++)
+        pcm[(start + i) * 2 + 1] = 0.6 * Math.exp(-i / (sr * 0.004)) * Math.sin((2 * Math.PI * 1000 * i) / sr);
+    }
+    expect(be.writeFile(wav, encodeWav(pcm, sr, 2))).toBeTruthy();
+    console.log(`[sms-drift ${m.machine}] wrote ${wav} (analyze: tools/reaper-timing-analyze.py ${wav} --drift)`);
 
-  expect(be.removeSystem(1)).toBeTruthy();
-});
+    expect(be.removeSystem(1)).toBeTruthy();
+  });
+}

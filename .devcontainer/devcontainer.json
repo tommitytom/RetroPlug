@@ -31,6 +31,19 @@
   // These nodes come in root-owned; postStartCommand opens them to the vscode user. If a device is
   // absent (e.g. N8 unplugged) the container start fails on the missing --device, so unplugging
   // means temporarily removing that line + rebuilding.
+  //
+  // Raw USB passthrough (to flash / drive RP2040 boards such as the Raspberry Pi Debug Probe,
+  // VID:PID 2e8a:000c, over SWD with OpenOCD): bind-mount the whole /dev/bus/usb tree + grant the
+  // USB (major 189) and tty-ACM (major 166) device-cgroup rules. Unlike --device this is a directory
+  // mount, so it does NOT hard-fail when a board is absent and it stays live across replug.
+  // hw-usb-perms.sh (postStart) then opens the usb nodes to the user and exposes the probe's dynamic
+  // CDC console under a stable /dev/ttyDbgProbe. See pico/README.md.
+  //
+  // usbmon URB capture: bind-mount the host's debugfs so /sys/kernel/debug/usb/usbmon/<bus>u (a plain
+  // text URB log) is readable in the container after `sudo modprobe usbmon` on the host. Used to diff
+  // a working host cdc-acm FIFO write vs the Pico's PIO-USB output while debugging the N8 cart-FIFO
+  // write path (pico-n8-fifo-write-bug.md). Read with `sudo cat`. cap-add SYS_ADMIN so debugfs is
+  // accessible from inside the container.
   "runArgs": [
     "--init",
     "--shm-size=512m",
@@ -39,10 +52,15 @@
     "--device=/dev/ttyACM0",
     "--device=/dev/snd",
     "--device=/dev/video0",
-    "--device=/dev/video1"
+    "--device=/dev/video1",
+    "--mount=type=bind,source=/dev/bus/usb,target=/dev/bus/usb",
+    "--mount=type=bind,source=/sys/kernel/debug,target=/sys/kernel/debug",
+    "--cap-add=SYS_ADMIN",
+    "--device-cgroup-rule=c 189:* rmw",
+    "--device-cgroup-rule=c 166:* rmw"
   ],
   "postCreateCommand": "bash .devcontainer/post-create.sh",
-  "postStartCommand": "sudo chmod a+rw /dev/ttyACM0 /dev/video0 /dev/video1 2>/dev/null; sudo chmod -R a+rw /dev/snd 2>/dev/null; true",
+  "postStartCommand": "sudo chmod a+rw /dev/ttyACM0 /dev/video0 /dev/video1 2>/dev/null; sudo chmod -R a+rw /dev/snd 2>/dev/null; bash .devcontainer/hw-usb-perms.sh 2>/dev/null; true",
   "customizations": {
     "vscode": {
       "extensions": [

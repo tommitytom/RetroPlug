@@ -56,9 +56,19 @@ import { EverMidiRom } from "../../../src/evermidi/rom";
 import { readOverrides as readEverMidiOverrides, type EverMidiAssetOverride } from "../../../src/evermidiAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
+// Aliased: `replaceSong` and `addSong` are already taken here by the LSDj row helpers.
+import {
+  readSongBlock as readSmdjSongBlock,
+  readSongEcho as readSmdjSongEcho,
+  wrapSong as wrapSmdjSong,
+  unwrapSong as unwrapSmdjSong,
+  replaceSong as replaceSmdjSong,
+  addSong as addSmdjSong,
+} from "../../../src/smsggdj/codec/sav";
 import {
   resolveTracker,
   mutateLiveSav,
+  loadSongLive,
   effectiveAssets,
   readAssetOverrides,
   lsdjSongCatalog,
@@ -66,6 +76,8 @@ import {
   workingSongTargets,
   lsdjAssetCatalog,
   risaAssetCatalog,
+  smsggdjSongCatalog,
+  smsggdjAssetCatalog,
   evermidiAssetCatalog,
   type SongCatalog,
   type AssetCatalog,
@@ -80,7 +92,7 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
-import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices } from "./audioDraft";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
@@ -141,7 +153,10 @@ function audioSettingsChildren(): MenuItem[] {
   const driverIdx = Math.max(0, drivers.indexOf(cfg.driver));
   // Output devices of the SELECTED driver (host API), with "Default" (= the host API default) at index 0. The
   // list tracks the DRAFT driver; changing the driver resets the device (a device isn't valid across host APIs).
-  const dev = deviceCyclerNames(getAudioDevices(cfg.driver), cfg.device, "Default");
+  // "Default" names the device it resolves to when the host can tell us (e.g. the PipeWire session default sink),
+  // so the row says where the sound is actually going rather than just "Default".
+  const defaultName = getAudioDefaultDevice(cfg.driver);
+  const dev = deviceCyclerNames(getAudioDevices(cfg.driver), cfg.device, defaultName ? `Default (${defaultName})` : "Default");
   const devName = (n: number) => (n === 0 ? "" : getAudioDevices(cfg.driver)[n - 1] ?? cfg.device);
   const dirty = audioDraftDirty();
   return [
@@ -1251,8 +1266,15 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
   // Would loading ANY song discard uncommitted work? One question per menu build, not per row - it's a
   // property of the working song, not of the row you're pointing at. Loading the song you're already on
   // still overwrites working memory from the stored slot, so every row is guarded, including that one.
-  const discards = bytes ? (cat.workingSongDirty?.(bytes) ?? false) : false;
-  const workingLabel = (bytes ? cat.workingName(bytes) : null) || "the working song";
+  const ram = cat.workingSongOutsideBattery ? (ctx.stores.project.systems.readRam(sys.id) ?? undefined) : undefined;
+  const discards = bytes ? (cat.workingSongDirty?.(bytes, ram) ?? false) : false;
+  const workingLabel = (bytes ? cat.workingName(bytes, ram) : null) || "the working song";
+  // Every row below rewrites the battery and cold-boots the cart. On a console whose working song lives
+  // OUTSIDE the battery that boot destroys it, so Delete / Replace / Move are as destructive as Load -
+  // the assumption that only Load could lose work was LSDj's and risa's, not a universal one. When it
+  // holds, this is false and nothing below changes.
+  const rebootDiscards = (cat.workingSongOutsideBattery ?? false) && discards;
+  const rebootWarning = ` ${workingLabel} has unsaved changes and the cart will restart - they will be lost.`;
 
   const rows: MenuItem[] = songs.map((s, i) => {
     const name = s.name || `Song ${s.index}`;
@@ -1260,8 +1282,14 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     // and needn't wait for the rebuilt core to publish a battery snapshot. The song watcher would catch it
     // on its next tick anyway (that's what covers a load made from INSIDE the cart), but a menu load is a
     // deliberate act: its row should be at the top of Recent before the user gets back there.
+    //
+    // A cart that can be loaded LIVE is: the song goes straight into work RAM, so the `.sav` is never
+    // rewritten and the core is never rebooted. That is both faster and strictly safer than the cold-boot
+    // path, which on this one console is what destroys the working song in the first place.
     const doLoad = (): void => {
-      mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index));
+      if (!loadSongLive(ctx.stores.backend, ctx.stores.project.systems, sys, s.index)) {
+        mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index)); // no liveLoad (LSDj / risa), or it declined
+      }
       ctx.stores.project.recordSong(s.name);
     };
     const items: MenuItem[] = [
@@ -1280,7 +1308,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
         kind: "prompt" as const,
         keepOpen: true,
         prompt: {
-          title: `Replace saved song "${name}"?`,
+          title: `Replace saved song "${name}"?${rebootDiscards ? rebootWarning : ""}`,
           hint: "Enter to pick a file  |  Esc to cancel",
           confirm: true,
           onConfirm: () => {
@@ -1293,8 +1321,34 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     if (cat.reorder) {
       // reorder takes LIST POSITIONS (index into the rendered list), not the row's `index` — they coincide
       // for a positional catalog (risa) but not for LSDj's sparse slot numbers.
-      items.push(action(`${spec.id}-song-${s.index}-up`, "Move Up", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, i, i - 1)), i === 0));
-      items.push(action(`${spec.id}-song-${s.index}-down`, "Move Down", () => mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, i, i + 1)), i === last));
+      // Reordering normally gets no confirm, and shouldn't: it is cheap, reversible and repeated, so a
+      // prompt on every nudge would be pure friction. When the reboot costs the working song it is
+      // neither cheap nor reversible, so it gains one for exactly that case and no other.
+      const move = (dir: "up" | "down", to: number, disabled: boolean): MenuItem => {
+        const label = dir === "up" ? "Move Up" : "Move Down";
+        const id = `${spec.id}-song-${s.index}-${dir}`;
+        const run = (): void => {
+          mutateSavBytes(ctx, sys, (sav) => cat.reorder!(sav, i, to));
+        };
+        if (disabled || !rebootDiscards) return action(id, label, run, disabled);
+        return {
+          id,
+          label,
+          kind: "prompt" as const,
+          keepOpen: true,
+          prompt: {
+            title: `${label}?${rebootWarning}`,
+            hint: "Enter to continue  |  Esc to cancel",
+            confirm: true,
+            onConfirm: () => {
+              run();
+              return null;
+            },
+          },
+        };
+      };
+      items.push(move("up", i - 1, i === 0));
+      items.push(move("down", i + 1, i === last));
     }
     items.push({
       id: `${spec.id}-song-${s.index}-delete`,
@@ -1302,7 +1356,7 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
       kind: "prompt" as const,
       keepOpen: true,
       prompt: {
-        title: `Delete song "${name}"?`,
+        title: `Delete song "${name}"?${rebootDiscards ? rebootWarning : ""}`,
         hint: "Enter to delete  |  Esc to cancel",
         confirm: true,
         onConfirm: () => {
@@ -1350,12 +1404,27 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
     // linked - without it the two read as two songs rather than one song and its uncommitted edits.
     workingRows.push(submenu(`${spec.id}-song-working`, `[working] ${wName} (unsaved)`, wItems), sep(`${spec.id}-song-working-sep`));
   }
-  return submenu(`${spec.id}-songs`, "Songs", [
-    ...workingRows,
-    action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys)),
-    sep(`${spec.id}-song-add-sep`),
-    ...body,
-  ]);
+  // Add reaches the battery too, so it reboots as well - the file picker it opens makes that easy to
+  // forget. Confirm BEFORE browsing: cancelling in the picker then costs nothing, and a prompt after the
+  // user has already chosen a file reads as a second, redundant question.
+  const addRow = rebootDiscards
+    ? {
+        id: `${spec.id}-song-add`,
+        label: "Add...",
+        kind: "prompt" as const,
+        keepOpen: true,
+        prompt: {
+          title: `Add a song?${rebootWarning}`,
+          hint: "Enter to pick a file  |  Esc to cancel",
+          confirm: true,
+          onConfirm: () => {
+            spec.addSong(ctx, sys);
+            return null;
+          },
+        },
+      }
+    : action(`${spec.id}-song-add`, "Add...", () => spec.addSong(ctx, sys));
+  return submenu(`${spec.id}-songs`, "Songs", [...workingRows, addRow, sep(`${spec.id}-song-add-sep`), ...body]);
 }
 
 // The throw→null wrapper for risa's catalog ops used by its file actions (LSDj's ops return null directly;
@@ -1460,6 +1529,63 @@ const risaSongSpec: SongMenuSpec = {
   canCommitWorking: canRisaSaveWorking,
 };
 
+// --- smsggdj Songs file actions (the `.smdj4` single-song unit tools/savetool.html speaks) ------------
+// A `.smdj4` is a 16-byte header (magic + block checksum + the echo settings, which live in the
+// DIRECTORY entry rather than the song) followed by the verbatim 6,912-byte block. Uncompressed on
+// purpose: a single song on disk has no space pressure, and staying raw means the file IS what the cart
+// holds in work RAM.
+function smsggdjExportSong(ctx: MenuContext, sys: SystemView, index: number, name: string): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Export song ${index}`, patterns: ["*.smdj4"], saving: true, defaultName: `${sanitizeName(name)}.smdj4` }, (path) => {
+    const sav = ctx.stores.project.systems.readSram(sys.id);
+    if (!sav) return;
+    const block = readSmdjSongBlock(sav, index);
+    if (!block) return; // free slot / failed its checksum: nothing honest to write
+    const file = wrapSmdjSong(block, readSmdjSongEcho(sav, index) ?? undefined);
+    if (file) be.writeFileAtomic(path, file);
+  });
+}
+function smsggdjReplaceSong(ctx: MenuContext, sys: SystemView, index: number): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: `Replace song ${index}`, patterns: ["*.smdj4"] }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    const song = unwrapSmdjSong(data); // rejects a wrong magic / length / checksum rather than importing junk
+    if (!song) return;
+    mutateSavBytes(ctx, sys, (sav) => replaceSmdjSong(sav, index, song.block, song.echo));
+  });
+}
+function smsggdjAddSong(ctx: MenuContext, sys: SystemView): void {
+  const be = ctx.stores.backend;
+  browseThen(ctx, { title: "Add Song", patterns: ["*.smdj4", ...SAV_PATTERNS] }, (path) => {
+    const data = be.readFile(path);
+    if (!data) return;
+    if (isSavPath(path)) {
+      ctx.beginSongImport(sys, data); // a whole .sav/.srm -> the checkbox picker
+      return;
+    }
+    const song = unwrapSmdjSong(data);
+    if (!song) return;
+    const name = path.replace(/^.*[\\/]/, "").replace(/\.smdj4$/i, "").slice(0, 8).toUpperCase();
+    mutateSavBytes(ctx, sys, (sav) => addSmdjSong(sav, song.block, name));
+  });
+}
+const smsggdjSongSpec: SongMenuSpec = {
+  id: "smsggdj",
+  catalog: smsggdjSongCatalog,
+  exportSong: smsggdjExportSong,
+  replaceSong: smsggdjReplaceSong,
+  addSong: smsggdjAddSong,
+  // No working-song rows: this cart's working song is work RAM, so the catalog reports no unsaved
+  // working song to export or promote. See smsggdjSongCatalog.
+};
+const smsggdjAssetSpec: AssetMenuSpec = {
+  id: "smsggdj",
+  catalog: smsggdjAssetCatalog,
+  exportAsset: () => {},
+  replaceAsset: () => {},
+}; // `types: []`, so assetMenu renders nothing and neither action is reachable
+
 // The per-console UI bindings for a tracker integration: the file-dialog specs (Songs + assets, which own
 // file formats) plus any per-console extras not yet unified (LSDj's sync cyclers). Keyed by integration id;
 // the integration itself (id/label/markerRole/songs/assets) rides src/tracker (the one place a console is
@@ -1472,6 +1598,7 @@ interface TrackerUi {
 const TRACKER_UI: Record<string, TrackerUi> = {
   lsdj: { song: lsdjSongSpec, asset: lsdjAssetSpec, extras: lsdjExtras },
   risa: { song: risaSongSpec, asset: risaAssetSpec },
+  smsggdj: { song: smsggdjSongSpec, asset: smsggdjAssetSpec },
   evermidi: { asset: everMidiAssetSpec },
 };
 
@@ -1781,12 +1908,14 @@ function cartRomName(backend: Pick<HostBackend, "readFile">, tracker: TrackerInt
  *  internal title / version marker, NOT the on-disk filename) — e.g. "MYSONG - LSDj v9.4.2". Either piece is
  *  dropped when absent (no song loaded / an unversioned ROM). null for a non-tracker system, so the caller
  *  keeps its default project/rom-stem title. */
-export function trackerCartLabel(backend: Pick<ControlPlaneBackend, "readFile" | "readSram">, sys: SystemView): string | null {
+export function trackerCartLabel(backend: Pick<ControlPlaneBackend, "readFile" | "readSram" | "readRam">, sys: SystemView): string | null {
   const tracker = resolveTracker(sys.roles);
   if (!tracker) return null;
   const romName = cartRomName(backend, tracker, sys.romPath);
   const sram = backend.readSram(sys.id);
-  const song = sram && tracker.songs ? tracker.songs.workingName(sram) : null;
+  // The window title is the most visible place the working song is named, and for smsggdj the only
+  // source is the cart's own song_name in work RAM. An asset-only cart (EverMIDI) has no battery to name.
+  const song = sram && tracker.songs ? tracker.songs.workingName(sram, backend.readRam(sys.id) ?? undefined) : null;
   const segs = [song, romName].filter((s): s is string => !!s);
   return segs.length ? segs.join(" - ") : null;
 }

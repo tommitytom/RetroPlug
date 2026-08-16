@@ -12,20 +12,21 @@
 // and lands 4 rows per quarter note.
 
 // --- SMDJ4 song-block geometry (SAVEFORMAT.md "The 6,912-byte song block") ---
-const BLOCK_LEN = 6912;
+export const BLOCK_LEN = 6912;
 const P_WAVE = 0; // 256   8 stamp presets, untouched here: a TONE instrument never reads them
-const P_PHRASES = 256; // 3328  52 phrases x 64 B (16 steps x note,instr,cmd,param)
-const P_CHAINS = 3584; // 1280  40 chains x 32 B (16 x phrase#,transpose)
-const P_SONG = 4864; // 512   128 rows x 4 chain numbers (one per channel: T1 T2 T3 N)
-const P_INSTR = 5376; // 256   16 instruments x 16 B
+// Exported: the FM guard (sms-fm.test.ts) patches a second channel into the metronome block.
+export const P_PHRASES = 256; // 3328  52 phrases x 64 B (16 steps x note,instr,cmd,param)
+export const P_CHAINS = 3584; // 1280  40 chains x 32 B (16 x phrase#,transpose)
+export const P_SONG = 4864; // 512   128 rows x 4 chain numbers (one per channel: T1 T2 T3 N)
+export const P_INSTR = 5376; // 256   16 instruments x 16 B
 const P_TABLES = 5632; // 1024  256 rows x 4
 const P_GROOVES = 6656; // 256
 
 const NUM_PHRASES = 52;
 const NUM_CHAINS = 40;
 const SONG_ROWS = 128;
-const STEPS_PER_PHRASE = 16;
-const CHAIN_ENTRIES = 16;
+export const STEPS_PER_PHRASE = 16;
+export const CHAIN_ENTRIES = 16;
 
 // The ROM's own new-song defaults. An EMPTY phrase step is `00 FF 00 00` - note 0 is a real note
 // (A-2), so it is the $FF INSTRUMENT that marks a step as silent, not the note byte.
@@ -40,7 +41,7 @@ const EMPTY_TABLE_ROW = [0xff, 0x00, 0x00, 0x00];
 export const SMS_ROWS_PER_BEAT = 4;
 
 // The metronome note. Mid-range so it is unambiguous against silence in an onset detector.
-const HIT_NOTE = 0x0d;
+export const HIT_NOTE = 0x0d;
 const HIT_INSTR = 0x00; // instrument 0, left at instr_default
 // The note is cut one row after it fires, and that single byte is the difference between a drift
 // render that measures sync and one that measures its own detector.
@@ -147,9 +148,9 @@ export function buildMetronomeBlock(): Uint8Array {
  *  tries each length in turn and v1 is what tools/smdj4.js writes, so it is the smallest thing the ROM
  *  definitely accepts.
  *
- *  `fmOn` defaults OFF deliberately: smsggdj writes $F2 = $01 when FM is on, and Mesen models $F2 as a
- *  mux whose PSG branch memsets the buffer, so an FM-on fixture would render silence no matter how
- *  well the sync worked. */
+ *  `fmOn` defaults OFF so the sync fixtures measure the PSG metronome with the YM2413 contributing
+ *  nothing. It was once mandatory - Mesen muxed $F2, so an FM-on cart rendered silence - but the
+ *  vendored SmsFmAudio change now sums the two (sms-fm.test.ts drives both paths deliberately). */
 export function buildConfigBlock(syncMode: number, fmOn = 0): Uint8Array {
   const palSel = 0;
   const vidSel = 0; // AUTO
@@ -198,7 +199,7 @@ export function buildSmsMetronomeSav(syncMode: number = SMS_SYNC_IN24): Uint8Arr
 // --- putting the song into the RUNNING core ---------------------------------
 
 /** SMS work RAM is mapped at CPU $C000. */
-const WRAM_BASE = 0xc000;
+export const WRAM_BASE = 0xc000;
 
 /** Minimal write seam: `writeCpu` on a real backend. Kept structural so a test can pass a spy. */
 export interface PokeCaps {

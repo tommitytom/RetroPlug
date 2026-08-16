@@ -15,6 +15,8 @@ export { lsdjSongCatalog } from "./lsdjSongCatalog";
 export { risaSongCatalog } from "./risaSongCatalog";
 export { lsdjAssetCatalog } from "./lsdjAssetCatalog";
 export { risaAssetCatalog } from "./risaAssetCatalog";
+export { smsggdjSongCatalog } from "./smsggdjSongCatalog";
+export { smsggdjAssetCatalog } from "./smsggdjAssetCatalog";
 export { evermidiAssetCatalog } from "./evermidiAssetCatalog";
 
 export {
@@ -22,6 +24,8 @@ export {
   loadSongByName,
   loadSongInPrimary,
   songLoadWouldDiscard,
+  savEditWouldDiscard,
+  loadSongLive,
   songLoadByNameWouldDiscard,
   backupSavPath,
   type LiveSavTarget,

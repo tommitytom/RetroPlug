@@ -1,7 +1,9 @@
-// The sms-sync DSP role driven through the kernel: it turns the DAW transport into smsggdj's
-// controller-port sync transport - a 2-bit counter held on port 2's TR + TH lines at 24 PPQN. NOT a
-// byte protocol; each payload is a LEVEL WORD the native side holds on the port until the next one.
-// Mirrors dsp/risa-sync.test.ts. Pure TS, no backend.
+// The sms-sync DSP role driven through the kernel: it turns the DAW transport into smsggdj's sync
+// transport - a 2-bit counter held on two port lines at 24 PPQN. NOT a byte protocol; each payload is
+// a LEVEL WORD the native side holds on the port until the next one. Covers BOTH machines: Master
+// System carries the counter on controller port 2's TR + TH, Game Gear on the EXT port's PC4/PC5 +
+// PC6, and the `machine` config picks between them. Mirrors dsp/risa-sync.test.ts. Pure TS, no
+// backend.
 //
 // Protocol reference: smsggdj's GGSYNC.md and src/engine.asm:576-590 / :646-661.
 import { test, expect } from "../../testing/harness";
@@ -12,20 +14,24 @@ import { registerRomProviders } from "../../src/romProviders";
 import {
   isSmsggdjRom,
   smsSyncLevels,
+  ggSyncLevels,
   SMS_SYNC_IDLE_LEVELS,
+  GG_SYNC_IDLE_LEVELS,
   SMS_SYNC_COUNTER_MOD,
   SMS_SYNC_MAX_CLOCKS_PER_POLL,
   SMS_SYNC_PPQN,
 } from "../../src/smsSync";
 
-// A one-system project carrying just the sms-sync role.
-function sms(): DspKernel {
+// A one-system project carrying just the sms-sync role, for one machine or the other.
+function machine(m: "sms" | "gg"): DspKernel {
   const reg = new RoleRegistry();
   registerDspRoles(reg);
   const k = new DspKernel(reg);
-  k.setSystems({ project: [], systems: [{ id: 1, pipeline: [{ kind: "sms-sync", config: {} }] }] });
+  k.setSystems({ project: [], systems: [{ id: 1, pipeline: [{ kind: "sms-sync", config: { machine: m } }] }] });
   return k;
 }
+const sms = () => machine("sms");
+const gg = () => machine("gg");
 
 // 22050 frames @ 44100 / 120 bpm = exactly 1 beat (24 ticks at 24 PPQN).
 const baseDyn = (): BlockInput => ({
@@ -169,7 +175,7 @@ test("the marker must be inside the prefix the caller actually read", () => {
   expect(isSmsggdjRom(b.subarray(0, 0x8200))).toBeTruthy();
 });
 
-test("the provider attaches sms-sync to smsggdj only, and never to Game Gear", () => {
+test("the provider attaches sms-sync to smsggdj only, on both machines", () => {
   const reg = new RoleRegistry();
   registerDspRoles(reg);
   registerRomProviders(reg);
@@ -181,13 +187,83 @@ test("the provider attaches sms-sync to smsggdj only, and never to Game Gear", (
   const plain = new Uint8Array(0x8200);
 
   expect(kinds("sms", marked).includes("sms-sync")).toBeTruthy();
-  // A generic SMS cart gets nothing: the transport drives Player 2's button lines, so attaching it
-  // unconditionally would press buttons in someone's game.
+  // Game Gear too - the marker is in the shared source, so the .gg build carries it.
+  expect(kinds("gg", marked).includes("sms-sync")).toBeTruthy();
+  // A generic cart gets nothing on either machine: the SMS transport drives Player 2's button lines,
+  // so attaching it unconditionally would press buttons in someone's game.
   expect(kinds("sms", plain).includes("sms-sync")).toBeFalsy();
-  // Game Gear is excluded even WITH the marker - its build reads the EXT port, which stock Mesen
-  // loopbacks. A role that silently did nothing would be worse than no role at all.
-  expect(kinds("gg", marked).includes("sms-sync")).toBeFalsy();
+  expect(kinds("gg", plain).includes("sms-sync")).toBeFalsy();
   // And no other platform picks it up.
   expect(kinds("nes", marked).includes("sms-sync")).toBeFalsy();
   expect(kinds("gb", marked).includes("sms-sync")).toBeFalsy();
+});
+
+test("the provider tags each machine with its own wire format", () => {
+  // The role is one protocol with two encodings, so the provider has to say WHICH - and get it from
+  // the platform rather than defaulting. A `.gg` tagged "sms" would drive $DD's bit layout onto the
+  // EXT port: pins the ROM does not read, so it would arm and then sit in WAIT forever.
+  const reg = new RoleRegistry();
+  registerDspRoles(reg);
+  registerRomProviders(reg);
+  const marked = new Uint8Array(0x8200);
+  for (let i = 0; i < "SMSGGDJ".length; i++) marked[0x3640 + i] = "SMSGGDJ".charCodeAt(i);
+  const machineOf = (platform: string) =>
+    (reg.defaultRoles("mesen" as never, platform as never, marked, "")
+      .find((r) => r.kind === "sms-sync")?.config as { machine?: string } | undefined)?.machine;
+
+  expect(machineOf("sms")).toBe("sms");
+  expect(machineOf("gg")).toBe("gg");
+});
+
+// --- Game Gear: the same counter on different pins ---------------------------
+
+test("ggSyncLevels: counter bit 0 drives PC4 AND PC5, bit 1 drives PC6", () => {
+  // GGSYNC.md's parallel-counter contract. PC4 and PC5 move TOGETHER because the ROM reads that bit
+  // as `PC4 AND PC5`, which is what makes both a direct bridge (PC4 open, pull-up high) and a stock
+  // crossed Gear-to-Gear cable decode the same value. Driving only one would work here and then
+  // behave differently on hardware depending on the cable.
+  expect(ggSyncLevels(0)).toBe(0x0f); // both bits 0: PC4+PC5 low, PC6 low
+  expect(ggSyncLevels(1)).toBe(0x3f); // bit 0 set:   PC4+PC5 high, PC6 low
+  expect(ggSyncLevels(2)).toBe(0x4f); // bit 1 set:   PC4+PC5 low, PC6 high
+  expect(ggSyncLevels(3)).toBe(0x7f); // both set:    all high = idle
+  expect(ggSyncLevels(3)).toBe(GG_SYNC_IDLE_LEVELS);
+});
+
+test("ggSyncLevels never touches a pin outside PC4-PC6", () => {
+  // PC0-PC3 are other people's pins (and bit 7 is not a pin at all). Anything this role clears
+  // outside its three would be a phantom signal on a link cable.
+  const outside = 0xff & ~0x70;
+  for (let c = 0; c < 8; c++) expect(ggSyncLevels(c) & outside).toBe(GG_SYNC_IDLE_LEVELS & outside);
+});
+
+test("ggSyncLevels wraps mod 4 and tolerates negative counters", () => {
+  for (let c = 0; c < 12; c++) expect(ggSyncLevels(c)).toBe(ggSyncLevels(c % SMS_SYNC_COUNTER_MOD));
+  expect(ggSyncLevels(-1)).toBe(ggSyncLevels(3));
+  expect(ggSyncLevels(-4)).toBe(ggSyncLevels(0));
+});
+
+test("the two machines carry the SAME counter sequence on different pins", () => {
+  // The property that justifies one role rather than two: identical state machine, identical delta
+  // sequence, only the bit positions differ. If these ever diverge, the shared `machine` config is
+  // the wrong abstraction and they should split.
+  const bits = (levels: number, lo: number, hi: number) =>
+    ((levels & lo) !== 0 ? 1 : 0) | ((levels & hi) !== 0 ? 2 : 0);
+  for (let c = 0; c < 4; c++) {
+    expect(bits(smsSyncLevels(c), 0x08, 0x80)).toBe(c); // SMS: TR, TH
+    expect(bits(ggSyncLevels(c), 0x20, 0x40)).toBe(c); //  GG: PC5, PC6
+  }
+});
+
+test("a gg-configured role emits GG level words at the same 24 PPQN cadence", () => {
+  const k = gg();
+  const out = k.processBlock({ ...baseDyn(), transport: true }) as Out;
+  const got = levels(out);
+  expect(got.length).toBe(SMS_SYNC_PPQN);
+  // Same advance-by-one-per-tick sequence the SMS case asserts, in the GG encoding, and starting at
+  // counter 1 (the idle level the ROM latched at arm is 3, so the first clock is a delta of 1).
+  expect(got[0]).toBe(ggSyncLevels(1));
+  expect(got[1]).toBe(ggSyncLevels(2));
+  expect(got[3]).toBe(ggSyncLevels(0));
+  // ...and nothing in the stream is an SMS word: those set bit 7, which is not a GG pin at all.
+  expect(got.some((v) => (v & 0x80) !== 0)).toBeFalsy();
 });
