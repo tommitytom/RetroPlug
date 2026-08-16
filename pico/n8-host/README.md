@@ -15,9 +15,14 @@ PIO-USB - they don't contend.
 | Slice | State | What |
 |-------|-------|------|
 | 2.1 | **done (HW-verified)** | USB host enumerates the N8 + Edio `CMD_STATUS` handshake (`main.c`) |
-| 2.2 | **done (HW-verified)** | `edio.c/.h` port: status + sysInfo + memRD |
-| 2.3 | **done (HW-verified)** | `fifoWR` = memWR(0x1810000, midi): C4 note-on -> EverMIDI Pulse1, proven by reading the N8 sniffer back |
-| 2.4 | **done (HW-verified)** | the bridge: MIDI (UART1/GP5, reuse `../midi-in/midi.c`) -> `fifoWR`. Launchpad -> real NES, no PC; 2A03 audio measured off the L6 at 261 Hz (PAL C4) |
+| 2.2 | **done (HW-verified)** | `edio.c/.h` port: status + sysInfo + memRD - all reads work over PIO-USB |
+| 2.3 | **BLOCKED** | `fifoWR` = memWR(0x1810000, midi). Byte-identical to the working PC host, but the N8 ACKs the write and never routes it to the cart FIFO **over Pico-PIO-USB** (memWR to RAM works). See **`../../pico-n8-fifo-write-bug.md`**. |
+| 2.4 | **BLOCKED (on 2.3)** | the bridge (MIDI UART1/GP5, reuse `../midi-in/midi.c` -> `fifoWR`) + `edio_menu_*` autonomous boot are CODED but can't reach the N8 until the FIFO write works. All prior "verified" audio was the PC host's residual note, not the Pico. |
+
+> **The blocker is a Pico-PIO-USB limitation, not a bug in this code** - the Edio framing is
+> byte-for-byte identical to the PC host that drives the N8 correctly. The likely fix is a
+> **silicon** USB host: build with `-DRP_NATIVE_USB=ON` and wire the N8 to the RP2350's native
+> USB pins (see the toggle below). Full analysis + everything ruled out: `../../pico-n8-fifo-write-bug.md`.
 
 ## Dependencies (not in the repo yet - see "one-time setup")
 
@@ -62,28 +67,34 @@ sudo openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg \
 sudo stty -F /dev/ttyDbgProbe 115200 raw -echo && cat /dev/ttyDbgProbe
 ```
 
-With the N8 plugged into the socket and the **EverMIDI ROM running** on the NES, on boot
-you see the Edio probe, then - **play a MIDI keyboard into the TRS input** - one line per
-forwarded message plus a read-only Pulse1 report:
+On boot you see the Edio probe (reads work), then `boot_evermidi()` tries the menu handshake:
 
 ```
 [n8-host] device mounted: addr 1  VID:PID 38df:0017   <- N8!
 [n8-host] --- Edio probe ---
-[n8-host] CMD_STATUS -> 5 (busy - ROM running)
+[n8-host] CMD_STATUS -> 0 (OK)
 [n8-host] SYS_INF: serial=00035AAD.00002C4D  device_id=0x17 (N8 PRO)  sw=0103 hw=0001
 [n8-host] --- probe done ---
-[bridge] MIDI -> FIFO: 90 3c 7f          <- note-on C4 (2A03 ch1 -> Pulse1)
-[sniff] Pulse1 ON <<< NES is playing it  ($4015=0f P1_timer=397)
-[bridge] MIDI -> FIFO: 80 3c 00          <- note-off
-[sniff] Pulse1 off  ($4015=0f P1_timer=0)
+[n8-host] menu handshake (*t)...
 ```
 
-The bridge forwards only channel-voice messages (`0x80-0xEF`); MIDI clock / sensing /
-transport are dropped so they can't flood the FIFO. `sniff_report()` injects nothing - it
-reads the running ROM's `$4000-$401F` write-mirror and reports Pulse1 on/off as live
-confirmation. **Audio proof:** with a held note, the 2A03 output recorded off the Zoom L6
-(channel 3) measures a 261 Hz fundamental with odd harmonics (a square wave) = PAL C4,
-exactly the pitch the `P1_timer=397` predicts. So: MIDI keyboard -> real NES audio, no PC.
+Over PIO-USB the `*t` handshake never gets its `k` reply, because the FIFO write it rides on
+doesn't reach the N8's running code (slice 2.3, above) - so `boot_evermidi()` gives up and the
+bridge forwards MIDI that also never lands. The reads (probe, `CMD_STATUS`, `SYS_INF`, `memRD`)
+all work. `midi_to_fifo()` forwards only channel-voice messages (`0x80-0xEF`), dropping clock /
+sensing / transport / aftertouch so they can't flood the FIFO; `sniff_report()` is read-only.
+
+### Native-USB toggle (the intended fix for slice 2.3)
+
+`-DRP_NATIVE_USB=ON` builds against the RP2350's **silicon** USB host controller (native rhport 0)
+instead of PIO-USB, whose software wire-timing is the suspected cause of the FIFO-write failure:
+
+```sh
+cmake -S . -B build-native -G Ninja -DRP_NATIVE_USB=ON && cmake --build build-native
+```
+
+Native uses the Pico's own USB D+/D- pins (not GP2/GP3), so the N8 must be wired there and the
+Pico powered via VSYS - different wiring from the PIO-USB socket above.
 
 Defaults to `pico2` (RP2350). Override with `-DPICO_BOARD=pico`;
 `-DPICO_PIO_USB_PATH=...` if Pico-PIO-USB lives elsewhere.

@@ -18,7 +18,9 @@
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
 #include "hardware/uart.h"
+#ifndef USE_NATIVE_USB
 #include "pio_usb.h"
+#endif
 #include "tusb.h"
 #include "edio.h"
 #include "midi.h"
@@ -82,20 +84,60 @@ static void n8_probe(void) {
     printf("[n8-host] --- probe done ---\n");
 }
 
+// Autonomous boot: if the N8 file-browser MENU is running (it answers '*t' with 'k'),
+// drive it over the cart FIFO (edio_menu_*) to install + boot EverMIDI, no PC in the loop.
+// If a game is already running (or wedged) the menu won't answer, and we just forward MIDI.
+// NOTE: this depends on the cart-FIFO WRITE path (memWR to 0x1810000), which does NOT work
+// over Pico-PIO-USB - the N8 ACKs the write but never routes it to the FIFO, so '*t' gets no
+// reply and this returns early. It works from a silicon USB host. See pico-n8-fifo-write-bug.md.
+#define EVERMIDI_SD_PATH "usb-games/n8-midi.nes"
+static void boot_evermidi(void) {
+    // The N8's USB (MCU) enumerates before the menu core is ready, so retry the handshake
+    // for a few seconds after a fresh power-up.
+    printf("[n8-host] menu handshake (*t)...\n");
+    bool menu = false;
+    for (int i = 0; i < 20 && !menu; i++) {
+        menu = edio_menu_test();
+        if (!menu) for (int j = 0; j < 4; j++) { sleep_ms(100); tuh_task(); }
+    }
+    if (!menu) {
+        printf("[n8-host] no 'k' - a game is already running (or the FIFO write is blocked); "
+               "forwarding MIDI as-is\n");
+        return;
+    }
+    printf("[n8-host] menu up -> install %s (*n)...\n", EVERMIDI_SD_PATH);
+    int st = edio_menu_install(EVERMIDI_SD_PATH);
+    if (st != 0) {
+        printf("[n8-host] install FAILED (status %d)%s\n", st,
+               st == 0x44 ? " - dirty menu heap, power-cycle to a fresh menu" : "");
+        return;
+    }
+    printf("[n8-host] installed -> boot (*s); EverMIDI starting...\n");
+    edio_menu_start();
+    for (int i = 0; i < 40; i++) { sleep_ms(100); tuh_task(); }   // let the NES reboot into the game
+    printf("[n8-host] EverMIDI booted by the Pico - no PC used.\n");
+}
+
 // The bridge sink: a complete MIDI message from the parser -> the N8 FIFO. Forward
-// only channel-voice messages (0x80-0xEF), which is what EverMIDI plays; system +
-// realtime bytes (clock/sensing/transport) are dropped here. Program-change and
-// channel-pressure carry one data byte, the rest carry two. One fifoWR per message,
-// exactly as the host n8-bridge does. Runs synchronously (edio pumps tuh_task).
+// only channel-voice messages (0x80-0xEF); system + realtime bytes (clock/sensing/
+// transport) are dropped. CRITICAL: aftertouch is ALSO dropped - poly-aftertouch
+// (0xA0) and channel-pressure (0xD0) are high-rate continuous streams (a Launchpad
+// floods channel-pressure while any pad is held). Forwarding that flood overruns the
+// N8 cart FIFO faster than EverMIDI drains it, which desyncs its MIDI parser and
+// HANGS the ROM on the last note (observed on hardware). EverMIDI only plays notes,
+// so we forward note-on/off + program-change + pitch-bend + CC and drop the rest.
+// Program-change carries one data byte, the rest two. One fifoWR per message.
 static void midi_to_fifo(const midi_message *m, void *user) {
     (void)user;
-    if (m->status >= 0xf0) return;             // channel-voice only
-    if (!forward_ok) return;                    // N8 not ready yet: drop
+    if (m->status >= 0xf0) return;                      // channel-voice only
+    if (m->type == MIDI_POLY_AFTERTOUCH ||
+        m->type == MIDI_CHANNEL_PRESSURE) return;        // drop the aftertouch flood
+    if (!forward_ok) return;                             // N8 not ready yet: drop
 
     uint8_t b[3];
     b[0] = m->status;
     b[1] = m->data0;
-    uint32_t n = (m->type == MIDI_PROGRAM_CHANGE || m->type == MIDI_CHANNEL_PRESSURE) ? 2 : 3;
+    uint32_t n = (m->type == MIDI_PROGRAM_CHANGE) ? 2 : 3;   // 1-data-byte message
     if (n == 3) b[2] = m->data1;
 
     edio_fifo_wr(b, n);
@@ -104,33 +146,36 @@ static void midi_to_fifo(const midi_message *m, void *user) {
     printf("\n");
 }
 
-// Read-only confirmation: poll the running ROM's APU write-mirror and report Pulse1
-// on/off. Injects NOTHING (the forwarded MIDI is what drives it), and prints only on
-// a state change so held notes don't spam the console.
+// Read-only confirmation: poll the running ROM's APU write-mirror and report Pulse1's
+// PITCH whenever it changes. Injects NOTHING (the forwarded MIDI is what drives it), so
+// a moving pitch here = EverMIDI really is following the notes (not stuck). Prints only
+// on change so held notes stay quiet. PAL 2A07: f = 1662607 / (16 * (timer + 1)).
 static void sniff_report(void) {
     static uint32_t next_ms = 0;
-    static int last_active = -1;
     uint32_t t = to_ms_since_boot(get_absolute_time());
     if (t < next_ms) return;
-    next_ms = t + 400;
+    next_ms = t + 250;
 
     uint8_t s[EDIO_SNIFFER_SIZE];
-    if (!edio_mem_rd(EDIO_ADDR_SSR, s, sizeof s)) return;
-    uint16_t p1 = s[0x82] | ((s[0x83] & 0x07) << 8);
-    int active = ((s[0x95] & 0x01) && p1) ? 1 : 0;
-    if (active != last_active) {
-        printf("[sniff] Pulse1 %s  ($4015=%02x P1_timer=%u)\n",
-               active ? "ON <<< NES is playing it" : "off", s[0x95], p1);
-        last_active = active;
-    }
+    if (!edio_mem_rd(EDIO_ADDR_SSR, s, sizeof s)) { printf("[sniff] read FAIL\n"); return; }
+    uint16_t p1 = ((s[0x95] & 0x01) ? (s[0x82] | ((s[0x83] & 0x07) << 8)) : 0);
+    unsigned hz = p1 ? (1662607u / (16u * (p1 + 1u))) : 0;
+    printf("[sniff] timer=%-4u %4u Hz\n", p1, hz);
 }
 
 int main(void) {
+#ifndef USE_NATIVE_USB
     set_sys_clock_khz(120000, true);   // PIO-USB needs a 120 MHz-multiple clock
+#endif
     stdio_init_all();
     sleep_ms(100);
-    printf("\n[n8-host] USB host up (D+=GP%d, D-=GP%d). MIDI IN on UART1/GP%d @ %d. "
+#ifdef USE_NATIVE_USB
+    printf("\n[n8-host] USB host up (NATIVE controller, rhport 0). MIDI IN on UART1/GP%d @ %d. "
+           "Waiting for the N8...\n", MIDI_RX_PIN, MIDI_BAUD);
+#else
+    printf("\n[n8-host] USB host up (PIO-USB D+=GP%d, D-=GP%d). MIDI IN on UART1/GP%d @ %d. "
            "Waiting for the N8...\n", PIN_USB_DP, PIN_USB_DP + 1, MIDI_RX_PIN, MIDI_BAUD);
+#endif
 
     // MIDI IN (stage-1 opto circuit) on UART1/GP5.
     uart_init(MIDI_UART, MIDI_BAUD);
@@ -141,11 +186,15 @@ int main(void) {
     midi_parser parser;
     midi_parser_init(&parser, midi_to_fifo, NULL);
 
-    // N8 USB host on PIO-USB.
+#ifdef USE_NATIVE_USB
+    tuh_init(0);   // RP2350 native USB host controller (its own D+/D- pins)
+#else
+    // N8 USB host on PIO-USB (GP2/GP3).
     pio_usb_configuration_t pio_cfg = PIO_USB_DEFAULT_CONFIG;
     pio_cfg.pin_dp = PIN_USB_DP;
     tuh_configure(1, TUH_CFGID_RPI_PIO_USB_CONFIGURATION, &pio_cfg);
     tuh_init(1);
+#endif
 
     while (true) {
         tuh_task();
@@ -159,6 +208,7 @@ int main(void) {
         if (n8_ready && !probed) {
             probed = true;
             n8_probe();
+            boot_evermidi();
         }
         forward_ok = n8_ready && probed;
         if (forward_ok) sniff_report();

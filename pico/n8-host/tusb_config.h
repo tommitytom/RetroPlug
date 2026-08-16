@@ -11,10 +11,19 @@
 #define CFG_TUSB_OS            OPT_OS_NONE
 #define CFG_TUSB_DEBUG         0     // bump to 2 to trace USB enumeration on the console
 
-//------------- Host stack on the PIO-USB root port -------------//
+//------------- Host stack: native USB (rhport 0) or PIO-USB (rhport 1) -------------//
+// -DRP_NATIVE_USB=ON routes the host controller to the RP2350's SILICON USB controller
+// (rhport 0, the Pico's native USB pins) instead of the software PIO-USB (rhport 1). The
+// native controller is a hardware host like a PC's, so its wire timing may drive the N8's
+// cart FIFO where PIO-USB can't (pico-n8-fifo-write-bug.md).
 #define CFG_TUH_ENABLED        1
+#ifdef USE_NATIVE_USB
+#define CFG_TUH_RPI_PIO_USB    0     // native USB host controller
+#define BOARD_TUH_RHPORT       0
+#else
 #define CFG_TUH_RPI_PIO_USB    1     // route the host controller to PIO-USB
 #define BOARD_TUH_RHPORT       1     // PIO-USB is roothub port 1 (native = 0)
+#endif
 #define CFG_TUH_MAX_SPEED      OPT_MODE_FULL_SPEED
 
 #define CFG_TUH_ENUMERATION_BUFSIZE 256

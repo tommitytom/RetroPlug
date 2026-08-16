@@ -37,4 +37,13 @@ bool edio_mem_rd(uint32_t addr, uint8_t *buf, uint32_t len);
 bool edio_mem_wr(uint32_t addr, const uint8_t *data, uint32_t len);
 bool edio_fifo_wr(const uint8_t *data, uint32_t len);          // = mem_wr(ADDR_FIFO, ...)
 
+// N8 file-browser menu command channel: the running MENU reads '*'-prefixed commands from
+// the same cart FIFO the bridge writes to, and streams replies back over the CDC. Menu-only
+// (a running/frozen game won't answer). Mirrors packages/retroplug/src/n8/n8Menu.ts. Lets
+// the Pico boot a ROM with no PC: edio_menu_test() then edio_menu_install(path) then
+// edio_menu_start().
+bool edio_menu_test(void);                 // '*t' handshake: true iff the menu replied 'k'
+int  edio_menu_install(const char *path);  // '*n' + path -> load ROM; status (0=ok), or -1 on read fail
+void edio_menu_start(void);                // '*s' boot the installed ROM (the game then runs)
+
 #endif // EDIO_H
