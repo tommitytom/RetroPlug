@@ -20,8 +20,9 @@ struct MesenNesRoleConfig {
     // Cartridge-accuracy switches: 0 = the documented chip, 1 = match an Everdrive N8 Pro's FPGA core.
     // s5bNoise 1 = no 5B noise generator (so tone-AND-noise mutes the channel); mmc5PhaseReset 1 = a
     // $5003/$5007 write does not restart the pulse duty sequencer. Both live, both measured on hardware.
-    std::uint32_t s5bNoise          = 0;
-    std::uint32_t mmc5PhaseReset    = 0;
+    // Defaulted to 1 to match coreRoles.ts - the N8 is how NES music actually gets played back.
+    std::uint32_t s5bNoise          = 1;
+    std::uint32_t mmc5PhaseReset    = 1;
 };
 
 // The SMS/GG slice of that same TS "mesen" role. A separate struct rather than more fields on the one

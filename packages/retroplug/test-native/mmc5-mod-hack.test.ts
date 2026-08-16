@@ -100,7 +100,9 @@ test("MMC5 MOD hack: Mesen thins the pulse as the reset rate rises (hardware doe
   // PAL, to match the bench NES these numbers are compared against (EverMIDI times a frame to detect the
   // region and picks its PAL tuning table). This only reaches the core since the UpdateRegion fix - see
   // nes-region-apply.test.ts, which probes the APU timer period because rms cannot see a region change.
-  s.project.systems.setRoleConfig(id, "mesen", { region: "pal" });
+  // mmc5PhaseReset "chip" explicitly: the DEFAULT is "n8" (no phase reset at all, which is what the
+  // cartridge does), and this file guards the chip-behaviour path - the one the silence bug lived in.
+  s.project.systems.setRoleConfig(id, "mesen", { region: "pal", mmc5PhaseReset: "chip" });
 
   // C4 and C2: the ROM's comment says low notes pin to silence soonest, so walk both.
   for (const [name, note] of [["C4", 60], ["C2", 36]] as const) {

@@ -29,18 +29,26 @@ private:
 		_currentOutput = _dutySequences[_duty][_dutyPos] * _envelope.GetVolume();
 	}
 
-	//nesdev says the MMC5's phase reset is "the same as their APU counterparts", and that is the default.
-	//A real NES + Everdrive N8 disagrees, so this is switchable.
+	//Whether a $5003/$5007 write restarts the duty sequencer. nesdev says the MMC5's phase reset is "the
+	//same as their APU counterparts"; an Everdrive N8 Pro does NOT do that, and this is switchable because
+	//RetroPlug's default follows the N8 (see coreRoles.ts - NES music is played back through one).
 	//
-	//Measured on the N8 with EverMIDI's MOD hack (a $5003 rewrite from the idle loop) sweeping the reset
-	//rate from reload 128 down to 1, on C4 and C2. The 2A03 pulse skews its duty hard - down to 0.067 at
-	//C2, a 6% pulse train - and loses 7.2 dB with it, and Mesen reproduces that closely (0.061, -5.2 dB).
-	//The MMC5 pulse instead holds duty at 0.500 at EVERY rate and does not change level at all; only its
-	//pitch moves. That is what a sequencer which is NOT reset looks like: the waveform stays a clean 50%
-	//square and the period rewrite alone pulls it sharp.
+	//Measured first, with EverMIDI's MOD hack (a $5003 rewrite from the idle loop) sweeping the reset rate
+	//from reload 128 down to 1, on C4 and C2. The 2A03 pulse skews its duty hard - to 0.067 at C2, a 6%
+	//pulse train - and loses 7.2 dB with it, and this core reproduces that closely (0.061, -5.2 dB). The
+	//MMC5 pulse instead held duty at 0.500 at EVERY rate with no level change at all; only its pitch moved.
 	//
-	//Unresolved: whether that is the real MMC5 or just the N8's core (its 5B likewise omits the noise
-	//generator). Telling them apart needs a real MMC5 cartridge.
+	//Then confirmed in krikzz's published RTL (edn8-pro-pub fpga/005/snd_mmc5.sv), which settles it: in
+	//module `pulse`, duty_ctr is assigned in exactly ONE place -
+	//    always @(posedge freq_clk) if(!silent) duty_ctr <= duty_ctr + 1;
+	//so no register write ever clears it. A write to reg 3 instead forces the freq_ctr reload branch,
+	//    if(freq_ctr != 0 & !regs_we3) freq_ctr <= freq_ctr - 1; else begin freq_clk <= !freq_clk; ... end
+	//toggling freq_clk and thereby ADVANCING the sequencer by a step. That is the whole effect: extra
+	//steps, so the waveform runs faster (pitch rises) while its shape is untouched (duty stays 50%, level
+	//stays put) - exactly the measurements above.
+	//
+	//What a real MMC5 does is still unknown; the wiki predicts the 2A03's behaviour and no MMC5 cartridge
+	//was available to check. "chip" is that prediction, "n8" is the verified cartridge.
 	virtual bool ResetsPhaseOnWrite() override
 	{
 		return _console->GetNesConfig().Mmc5PulsePhaseReset;

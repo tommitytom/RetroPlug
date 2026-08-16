@@ -62,7 +62,11 @@ function play(s: ReturnType<typeof bootSession>, setup: number[][], holdMs = 150
 function boot() {
   const s = bootSession();
   if (!s.backend.fileExists(S5B_ROM)) return null;
-  if (s.project.systems.addSystem(S5B_ROM) == null) throw new Error("addSystem failed");
+  const id = s.project.systems.addSystem(S5B_ROM);
+  if (id == null) throw new Error("addSystem failed");
+  // Explicit: the DEFAULT is "n8" (RetroPlug is music software and the N8 is how NES music is played),
+  // and this file characterises the chip. cartridge-accuracy.test.ts covers the fork itself.
+  if (!s.project.systems.setRoleConfig(id, "mesen", { s5bNoise: "chip" })) throw new Error("setRoleConfig failed");
   return s;
 }
 

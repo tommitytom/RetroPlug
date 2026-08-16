@@ -58,14 +58,14 @@ test("a NES system auto-gets the mesen system role; editing region crosses to th
   const id = store.addSystem("/roms/g.nes") as number;
   const v = store.view()[0];
   expect(v.platform).toBe("nes");
-  expect(v.roles).toEqual([{ kind: "mesen", config: { region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "chip", mmc5PhaseReset: "chip", channelExportMode: "mix" } }]);
+  expect(v.roles).toEqual([{ kind: "mesen", config: { region: "auto", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", channelExportMode: "mix" } }]);
 
   expect(store.setRoleConfig(id, "mesen", { region: "pal" })).toBeTruthy(); // PAL
   expect(store.view()[0].roles[0].config.region).toBe("pal");
   expect(be.applyRoleCalls[be.applyRoleCalls.length - 1]).toEqual({
     id,
     kind: "mesen",
-    config: { region: 2, removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: 0, mmc5PhaseReset: 0, channelExportMode: 0 }, // whole role config crosses (system-category, native-encoded)
+    config: { region: 2, removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: 1, mmc5PhaseReset: 1, channelExportMode: 0 }, // whole role config crosses (system-category, native-encoded)
   });
 });
 
