@@ -19,8 +19,6 @@ private:
 	uint8_t _toneStep[3] = {};
 	bool _processTick = false;
 
-	uint32_t _noiseLfsr = 1;    //17-bit; never let it reach 0 or it locks up
-	int32_t _noiseTimer = 0;
 	int32_t _envTimer = 0;
 	uint8_t _envStep = 0;       //0..31 within the current ramp
 	bool _envAttack = false;    //ramp direction: level rises with the step while true
@@ -70,17 +68,25 @@ private:
 		}
 	}
 
-	//"Frequency = Clock / (32 * Period)", i.e. one new random bit every 32*period clocks. UpdateChannel runs
-	//every 2 clocks (the _processTick divide-by-2), so the LFSR advances every 16*period of those.
-	void UpdateNoise()
+	//The noise generator is deliberately NOT implemented, to match the Everdrive N8 Pro's 5B core, which is
+	//the hardware this emulation is checked against.
+	//
+	//Measured on the N8 (EverMIDI, capture ch5): enabling noise on a sounding channel drops it from
+	//-34.09 dBFS to -81.32 (the noise floor), reversibly, at EVERY noise period across the full range. The
+	//mixer below explains that exactly - the chip ANDs tone with noise, so a noise signal stuck at 0 gates
+	//the channel to silence. A working generator would rasp, never mute. So the N8 produces no noise.
+	//
+	//A real Sunsoft 5B does (nesdev.org/wiki/Sunsoft_5B_audio: a 17-bit LFSR, taps 16/13, clocked at
+	//Clock/(32*period) from register $06). To emulate the chip instead of the cartridge, clock an LFSR here
+	//and return its bit 0 from GetNoiseOutput. Doing so makes the emulator DIVERGE from the N8: EverMIDI's
+	//CC1 would rasp here and mute on the console.
+	//
+	//What this cannot distinguish from outside: a noise generator stuck low versus a mixer that mis-decodes
+	//the noise-enable bit and kills tone. Both look identical. Noise-on with TONE DISABLED would separate
+	//them, which EverMIDI has no CC for, and mapper 69 is not in krikzz's published FPGA sources.
+	bool GetNoiseOutput()
 	{
-		_noiseTimer--;
-		if(_noiseTimer <= 0) {
-			uint8_t period = GetNoisePeriod() & 0x1F;
-			_noiseTimer = 16 * (period ? period : 1);
-			//17-bit LFSR, taps at bits 16 and 13 (shifted right here, so bits 0 and 3); output is bit 0.
-			_noiseLfsr = (_noiseLfsr >> 1) | (((_noiseLfsr ^ (_noiseLfsr >> 3)) & 0x01) << 16);
-		}
+		return false;
 	}
 
 	//"Frequency = Clock / (16 * Period)" is the STEP rate, and the ramp is a 5-bit series of 32 levels.
@@ -136,7 +142,7 @@ private:
 	void UpdateOutputLevel()
 	{
 		int16_t summedOutput = 0;
-		bool noiseOut = (_noiseLfsr & 0x01) != 0;
+		bool noiseOut = GetNoiseOutput();
 		for(int i = 0; i < 3; i++) {
 			//"A bit of 0 enables the noise/tone [...] If both bits are 1, the channel outputs a constant
 			//signal at the specified volume. If both bits are 0, the result is the logical and of noise
@@ -161,7 +167,6 @@ protected:
 		SVArray(_registers, 0x10);
 		SVArray(_toneStep, 3);
 		SV(_currentRegister); SV(_lastOutput); SV(_processTick);
-		SV(_noiseLfsr); SV(_noiseTimer);
 		SV(_envTimer); SV(_envStep); SV(_envAttack); SV(_envHolding);
 	}
 
@@ -171,7 +176,6 @@ protected:
 			for(int i = 0; i < 3; i++) {
 				UpdateChannel(i);
 			}
-			UpdateNoise();
 			UpdateEnvelope();
 			UpdateOutputLevel();
 		}

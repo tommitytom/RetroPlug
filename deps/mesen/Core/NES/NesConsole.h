@@ -53,7 +53,6 @@ private:
 
 	bool _nextFrameOverclockDisabled = false;
 	
-	void UpdateRegion(bool forceUpdate = false);
 	void LoadHdPack(VirtualFile& romFile);
 	
 	void InitializeInputDevices(GameInputType inputType, GameSystem system);
@@ -64,6 +63,11 @@ private:
 public:
 	NesConsole(Emulator* emulator);
 	~NesConsole();
+
+	//Re-read ConsoleRegion from the config and push it into the CPU/PPU/APU/mixer. Public because Reset()
+	//deliberately reuses the CACHED _region, and the only other refresh is RunFrame() - which a host that
+	//drives cpu->Exec() itself never calls, leaving a live region change stuck until the next LoadRom.
+	void UpdateRegion(bool forceUpdate = false);
 
 	static vector<string> GetSupportedExtensions() { return { ".nes", ".fds", ".unif", ".unf", ".nsf", ".nsfe", ".studybox", ".qd" }; }
 	static vector<string> GetSupportedSignatures() { return { "NES\x1a", "FDS\x1a", "\x1*NINTENDO-HVC*", "NESM\x1a", "NSFE", "UNIF", "STBX" }; }

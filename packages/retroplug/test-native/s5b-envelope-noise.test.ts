@@ -3,20 +3,21 @@
 // UpdateOutputLevel summed tone only. Envelope mode (amp bit 4) therefore read as volume 0 = SILENT, and
 // both noise CCs were inert. That is why EverMIDI has no automated tests for either.
 //
-// Now implemented from nesdev.org/wiki/Sunsoft_5B_audio: a 17-bit LFSR (taps 16/13) at Clock/(32*period),
-// a 32-step envelope at Clock/(16*period) with the Continue/Attack/Alternate/Hold shape bits, and the real
-// mixer rule - "if both bits are 0, the result is the logical and of noise and tone".
+// Now implemented from nesdev.org/wiki/Sunsoft_5B_audio: a 32-step envelope at Clock/(16*period) with the
+// Continue/Attack/Alternate/Hold shape bits, and the real mixer rule - "if both bits are 0, the result is
+// the logical and of noise and tone". The noise GENERATOR is deliberately left unimplemented so the core
+// matches the Everdrive N8 Pro, which is the hardware this is played on; see Sunsoft5bAudio.h.
 //
 // Reference numbers from the physical NES + Everdrive N8 (PAL), measured on capture ch5:
 //   envelope OFF -> 0.87 dB of swing over the sustain (a flat tone)
 //   envelope ON  -> 22-26 dB of swing (the level visibly ramping)
-// The NOISE case deliberately has no hardware reference: the N8's own 5B core produces no noise (enabling
-// it silences the channel outright, exactly as the AND rule predicts for a noise signal stuck at 0), so
-// this asserts the documented chip behaviour rather than what that cartridge does.
+//   noise ON     -> -34.09 dBFS drops to -81.32, i.e. the channel is gated off
+// The emulator swings further than 22-26 dB simply because it has no analog noise floor to hide the
+// bottom of the ramp in.
 import { test, expect } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
-import { bandEnergyDb } from "../cli/spectral-metrics";
+
 
 const S5B_ROM = "/workspaces/evermidi/rom/build/n8-midi-s5b.nes";
 const CH = 6; // EverMIDI's S5B Square A (BASE01)
@@ -85,31 +86,27 @@ test("S5B hardware envelope: envelope mode sounds and its level moves, where it 
   expect(swingDb(flat) < 3).toBeTruthy();
 });
 
-test("S5B noise: enabling noise mixes it with the tone instead of doing nothing", () => {
+test("S5B noise: enabling noise SILENCES the channel, matching the N8's 5B core", () => {
   const s = boot();
   if (!s) { console.log(`# SKIP s5b: no ROM at ${S5B_ROM}`); return; }
 
   // CC1 must come AFTER the note: EverMIDI's s5b_note_on unconditionally sets the noise-disable bit, so a
   // CC1 sent before a note-on is clobbered by it (a ROM bug, reported separately).
-  const toneOnly = play(s, [cc(20, 0), cc(7, 127), cc(1, 0)]);
   const tl = new Timeline()
     .midi(20, cc(20, 0))
     .midi(40, cc(7, 127))
     .midi(60, cc(30, 64))
     .note(100, A4, { durationMs: 1500, channel: CH, velocity: 100 })
     .midi(700, cc(1, 127)); // noise on, mid-note
-  const withNoise = renderTimeline(s, tl, { durationMs: 1700, warmupMs: 1200 });
+  const pcm = renderTimeline(s, tl, { durationMs: 1700, warmupMs: 1200 });
 
-  // Compare the second half (noise on) against the tone-only render, well above the 440 Hz fundamental.
-  const half = Math.floor(withNoise.length / 2);
-  const noisePart = withNoise.slice(half);
-  const toneBand = bandEnergyDb(toneOnly.slice(Math.floor(toneOnly.length / 2)), 5000, 18000);
-  const noiseBand = bandEnergyDb(noisePart, 5000, 18000);
-  console.log(`[s5b-noise] tone-only band ${toneBand.toFixed(2)} dB   noise-on band ${noiseBand.toFixed(2)} dB`);
-  console.log(`[s5b-noise] tone-only rms ${db(rms(toneOnly)).toFixed(2)}   noise-on rms ${db(rms(noisePart)).toFixed(2)} dBFS`);
+  // Before the CC the tone is sounding; after it the channel must go quiet, because the mixer ANDs tone
+  // with a noise signal this core does not generate. Hardware: -34.09 -> -81.32 dBFS.
+  const third = Math.floor(pcm.length / 3);
+  const before = db(rms(pcm, Math.floor(pcm.length * 0.15), third));
+  const after = db(rms(pcm, Math.floor(pcm.length * 0.65), Math.floor(pcm.length * 0.95)));
+  console.log(`[s5b-noise] tone ${before.toFixed(2)} dBFS -> noise-on ${after.toFixed(2)} dBFS`);
 
-  // It must still make sound (the N8's core mutes here - that is the cartridge, not the chip) ...
-  expect(db(rms(noisePart)) > -60).toBeTruthy();
-  // ... and gating the tone with the LFSR must change the spectrum, not leave it identical.
-  expect(Math.abs(noiseBand - toneBand) > 1).toBeTruthy();
+  expect(before > -60).toBeTruthy();          // it was sounding
+  expect(after < before - 30).toBeTruthy();   // and enabling noise gated it off
 });

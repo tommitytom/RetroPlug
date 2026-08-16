@@ -256,11 +256,17 @@ void MesenNesSystem::setRemoveSpriteLimit(bool on) {
 void MesenNesSystem::setRegion(std::uint32_t region) {
     if (config_.region == region) return;  // value-guarded — a reset is expensive
     config_.region = region;
-    // Region reconfigures CPU/PPU/APU timing, which this integration only re-polls on reset (the NES
-    // path drives cpu->Exec() directly and bypasses RunFrame). Mirror SameBoy model→restartEmulator.
+    // Region reconfigures CPU/PPU/APU timing. Setting the config alone is NOT enough: NesConsole caches
+    // the region in _region and Reset() reuses that cached value, while the only refresh points are
+    // LoadRom() and RunFrame() - and this integration drives cpu->Exec() directly, so RunFrame never runs.
+    // Without the explicit UpdateRegion the console silently keeps its old timing, and a ROM that measures
+    // the frame length to detect PAL (EverMIDI does) goes on tuning itself for the previous region.
     if (emu_) {
         emu_->GetSettings()->GetNesConfig().Region = static_cast<ConsoleRegion>(region);
-        emu_->Reset();
+        if (auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get())) {
+            console->UpdateRegion(/*forceUpdate=*/true);
+        }
+        emu_->Reset();   // re-runs the ROM from the reset vector, now under the new timing
     }
 }
 
