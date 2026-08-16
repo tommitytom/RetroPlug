@@ -16,7 +16,7 @@ import { identifySmsggdjVersion } from "../smsggdj/romDetect";
 import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
 import { readSongBlock, readSongName, readSongEcho, sanitizeEcho, songLengthRows, isGrooveEmpty } from "../smsggdj/codec/sav";
 import { evermidiAssetCatalog } from "./evermidiAssetCatalog";
-import { everMidiVersion } from "../evermidi/romDetect";
+import { everMidiInfo, EVERMIDI_MARKER } from "../evermidi/romDetect";
 import { identifyLsdj } from "../lsdj/runtime/identify";
 import { identifyRisaVersion } from "../risa/runtime/identify";
 import { resolveRisaLayout } from "../risa/runtime/layout";
@@ -165,8 +165,9 @@ export const everMidiIntegration: TrackerIntegration = {
   markerRole: "evermidi",
   assets: evermidiAssetCatalog,
   romName: (rom) => {
-    const v = everMidiVersion(rom); // the byte after the "EVERMIDI" head marker (-1 when absent)
-    return v >= 0 ? `EverMIDI v${v}` : null;
+    const info = everMidiInfo(rom); // decoded evermidi-n8 SIG block (null when the marker is absent)
+    if (!info) return null;
+    return `${EVERMIDI_MARKER} v${info.semver.join(".")}`; // marker doubles as the display name
   },
 };
 
