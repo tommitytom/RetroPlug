@@ -85,6 +85,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	libdbus-1-dev \
 	libasound2-dev \
 	libjack-jackd2-dev \
+	# --- PortAudio's native PipeWire host API (retroplug-sdl): headers only,
+	# libpipewire is dlopen'd at runtime. Without these the portaudio build
+	# fails on <pipewire/pipewire.h> once a cache has PA_USE_PIPEWIRE=ON. ----
+	libpipewire-0.3-dev \
 	libcurl4-openssl-dev \
 	libffi-dev \
 	libssl-dev \
