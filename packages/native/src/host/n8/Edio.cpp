@@ -52,6 +52,8 @@ void Edio::rxData(std::uint8_t* data, std::size_t size) {
 
 void Edio::flushInput() { port_.flushInput(); }
 
+void Edio::readData(std::uint8_t* data, std::size_t size) { rxData(data, size); }
+
 std::uint8_t Edio::rx8() {
     std::uint8_t b;
     rxData(&b, 1);
@@ -135,6 +137,42 @@ int Edio::getStatus() {
     return resp & 0xFF;
 }
 
+std::vector<std::uint8_t> Edio::sysInfo() {
+    txCMD(CMD_SYS_INF);
+    std::vector<std::uint8_t> buf(64);
+    readData(buf.data(), buf.size());
+    return buf;
+}
+
+std::vector<std::uint8_t> Edio::vdc() {
+    txCMD(CMD_GET_VDC);
+    std::vector<std::uint8_t> buf(8);
+    readData(buf.data(), buf.size());
+    return buf;
+}
+
+std::uint64_t Edio::freeSpace() {
+    txCMD(CMD_F_AVB);
+    std::uint8_t b[8];
+    readData(b, 8);
+    const std::uint64_t hi = static_cast<std::uint32_t>(b[0] | (b[1] << 8) | (b[2] << 16) | (static_cast<std::uint32_t>(b[3]) << 24));
+    const std::uint64_t lo = static_cast<std::uint32_t>(b[4] | (b[5] << 8) | (b[6] << 16) | (static_cast<std::uint32_t>(b[7]) << 24));
+    return (hi << 32) | lo;
+}
+
+void Edio::dirMake(const std::string& path) {
+    txCMD(CMD_F_DIR_MK);
+    txString(path);
+    const int resp = getStatus();
+    if (resp != 0 && resp != 8) throw std::runtime_error("Edio: mkdir error (" + path + ")");
+}
+
+void Edio::fileDelete(const std::string& path) {
+    txCMD(CMD_F_DEL);
+    txString(path);
+    checkStatus();
+}
+
 int Edio::connect(int handshakeTimeoutMs) {
     timeoutMs_ = handshakeTimeoutMs;
     port_.flushInput();
@@ -195,6 +233,7 @@ void Edio::checkStatus() {
     }
 }
 
+
 void Edio::fileOpen(const std::string& path, std::uint8_t mode) {
     txCMD(CMD_F_FOPN);
     tx8(mode);
@@ -212,6 +251,45 @@ void Edio::fileWrite(const std::uint8_t* data, std::size_t size) {
 void Edio::fileClose() {
     txCMD(CMD_F_FCLOSE);
     checkStatus();
+}
+
+void Edio::fileRead(std::uint8_t* data, std::size_t size) {
+    // One CMD_F_FRD per block (<= RD_BLOCK_SIZE), each gated by a resp byte, exactly as the device's
+    // ed_cmd_file_read loops (edn8-pro-pub) - re-sending the command per block is required, and keeping
+    // blocks <= 512 avoids the cart-FIFO overload that desyncs a single big read.
+    std::size_t off = 0;
+    while (off < size) {
+        const std::size_t block = std::min<std::size_t>(RD_BLOCK_SIZE, size - off);
+        txCMD(CMD_F_FRD);
+        tx32(static_cast<std::uint32_t>(block));
+        const std::uint8_t resp = rx8();
+        if (resp != 0) {
+            char msg[48];
+            std::snprintf(msg, sizeof(msg), "Edio: file read error 0x%02X", resp);
+            throw std::runtime_error(msg);
+        }
+        rxData(data + off, block);
+        off += block;
+    }
+}
+
+std::vector<std::uint8_t> Edio::readFile(const std::string& path) {
+    // Find the file's size via the directory listing (reuses listDir; no separate FINFO/AVB op), then read it.
+    const auto        slash = path.find_last_of("/\\");
+    const std::string dir   = slash == std::string::npos ? "" : path.substr(0, slash);
+    const std::string name  = slash == std::string::npos ? path : path.substr(slash + 1);
+    std::uint32_t     size  = 0;
+    bool              found = false;
+    for (const N8DirEntry& e : listDir(dir)) {
+        if (!e.isDir && e.name == name) { size = e.size; found = true; break; }
+    }
+    if (!found) throw std::runtime_error("Edio: file not found on SD: " + path);
+
+    std::vector<std::uint8_t> out(size);
+    fileOpen(path, FA_READ);
+    fileRead(out.data(), out.size());
+    fileClose();
+    return out;
 }
 
 }  // namespace retroplug

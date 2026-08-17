@@ -8,6 +8,12 @@
     { "id": "fileOpen.ab", "op": "fileOpen", "args": { "path": "ab", "mode": 138 }, "reads": "00a5", "writes": "2bd4c9368a020061622bd410ef" },
     { "id": "fileWrite.dead", "op": "fileWrite", "args": { "bytes": "dead" }, "reads": "0000a5", "writes": "2bd4cc3302000000dead2bd410ef" },
     { "id": "fileClose", "op": "fileClose", "reads": "00a5", "writes": "2bd4ce312bd410ef" },
-    { "id": "memRD.srm4", "op": "memRD", "args": { "addr": 16777216, "size": 4 }, "reads": "deadbeef", "writes": "2bd419e6000000010400000000" }
+    { "id": "memRD.srm4", "op": "memRD", "args": { "addr": 16777216, "size": 4 }, "reads": "deadbeef", "writes": "2bd419e6000000010400000000" },
+    { "id": "fileRead.4", "op": "fileRead", "args": { "size": 4 }, "reads": "00deadbeef", "writes": "2bd4ca3504000000" },
+    { "id": "sysInfo", "op": "sysInfo", "reads": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "writes": "2bd426d9" },
+    { "id": "vdc", "op": "vdc", "reads": "0000000000000000", "writes": "2bd413ec" },
+    { "id": "freeSpace", "op": "freeSpace", "reads": "0000000000100000", "writes": "2bd4d52a" },
+    { "id": "dirMake.ab", "op": "dirMake", "args": { "path": "ab" }, "reads": "00a5", "writes": "2bd4d22d020061622bd410ef" },
+    { "id": "fileDelete.ab", "op": "fileDelete", "args": { "path": "ab" }, "reads": "00a5", "writes": "2bd4d32c020061622bd410ef" }
   ]
 }

@@ -3,7 +3,7 @@
 // testable against a fake transport. The CLI `n8` command group (cli/sessions/n8.ts) wires local file I/O +
 // the serial port around these.
 
-import { Edio, ADDR_SRM, SIZE_SRM_GAME, FA_WRITE, FA_CREATE_ALWAYS, FS_MAKEPATH } from "./edio";
+import { Edio, ADDR_SRM, SIZE_SRM_GAME, N8_OS_REGION, FA_WRITE, FA_CREATE_ALWAYS, FS_MAKEPATH } from "./edio";
 import { N8Menu } from "./n8Menu";
 
 /** The final path component (basename) of an SD or local path. */
@@ -75,4 +75,28 @@ export function writeSramDirect(edio: Edio, srm: Uint8Array): number {
   for (let i = 0; i < n; i++)
     if (check[i] !== data[i]) throw new Error("cart SRAM verify failed (readback != save)");
   return n;
+}
+
+// Guard a PRG/CHR patch offset+length against the N8 OS/menu region (top 0x7E0000..0x800000 of each chip):
+// clobbering it would break the file browser until a power-cycle. Pure - throws on an out-of-range patch.
+export function assertGameRegion(offset: number, len: number): void {
+  if (!Number.isInteger(offset) || offset < 0)
+    throw new Error(`patch offset must be a non-negative integer (got ${offset})`);
+  if (offset + len > N8_OS_REGION)
+    throw new Error(
+      `patch [0x${offset.toString(16)}..0x${(offset + len).toString(16)}] runs into the N8 OS region ` +
+        `(>= 0x${N8_OS_REGION.toString(16)}); keep game patches below it`,
+    );
+}
+
+// Write a block STRAIGHT to device memory over USB (no menu/reboot) and verify the readback. The write-twin of
+// dumpSram/memRD: patch a RUNNING game's PRG/CHR (ADDR_PRG/ADDR_CHR + offset) - the console fetches the same
+// PSRAM, so the change is live on the next CPU/PPU fetch. Returns bytes written; throws if the readback differs.
+export function writeMemDirect(edio: Edio, addr: number, data: Uint8Array): number {
+  if (data.length === 0) return 0;
+  edio.memWR(addr, data);
+  const check = edio.memRD(addr, data.length);
+  for (let i = 0; i < data.length; i++)
+    if (check[i] !== data[i]) throw new Error(`device write verify failed at 0x${(addr + i).toString(16)}`);
+  return data.length;
 }

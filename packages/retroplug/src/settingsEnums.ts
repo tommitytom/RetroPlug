@@ -86,6 +86,14 @@ export const REGION_VALUES = ["auto", "ntsc", "pal", "dendy", "ntscJapan"] as co
 export type ConsoleRegion = (typeof REGION_VALUES)[number];
 
 // NES per-channel export mode (spec/10 §5/§5b): mix=0, stereoModPins=1, pinsPlusRef=2, individualMono=3.
+// Cartridge-accuracy switches. "chip" is the documented hardware behaviour and the default; "n8" matches
+// an Everdrive N8 Pro's FPGA cores, which measurably differ, so software developed against that cartridge
+// (EverMIDI) sounds the same in the emulator as on the console. Both are per-system and live.
+//   s5bNoise "n8"       - the 5B has no noise generator there, so tone-AND-noise mutes the channel
+//   mmc5PhaseReset "n8" - a $5003/$5007 write does not restart the pulse duty sequencer there
+export const CARTRIDGE_ACCURACY_VALUES = ["chip", "n8"] as const;
+export type CartridgeAccuracy = (typeof CARTRIDGE_ACCURACY_VALUES)[number];
+
 export const CHANNEL_EXPORT_VALUES = ["mix", "stereoModPins", "pinsPlusRef", "individualMono"] as const;
 export type ChannelExportMode = (typeof CHANNEL_EXPORT_VALUES)[number];
 
@@ -132,7 +140,12 @@ const ROLE_NATIVE_ENUMS: Record<string, Record<string, readonly string[]>> = {
     colorCorrection: COLOR_CORRECTION_VALUES,
     dmgPalette: DMG_PALETTE_VALUES,
   },
-  mesen: { region: REGION_VALUES, channelExportMode: CHANNEL_EXPORT_VALUES },
+  mesen: {
+    region: REGION_VALUES,
+    channelExportMode: CHANNEL_EXPORT_VALUES,
+    s5bNoise: CARTRIDGE_ACCURACY_VALUES,
+    mmc5PhaseReset: CARTRIDGE_ACCURACY_VALUES,
+  },
 };
 
 /** Encode a role config for native: replace each string enum field with its native integer (index),

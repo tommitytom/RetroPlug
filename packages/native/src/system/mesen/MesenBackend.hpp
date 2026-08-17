@@ -17,6 +17,12 @@ struct MesenNesRoleConfig {
     bool          removeSpriteLimit = false;
     std::uint32_t channelExportMode = 0;      // 0 = Mix, 1 = pins, 3 = 5 mono (CLI-only; spec/10 §5/§5b)
     double        apuLatencyMs      = 1.4;    // APU flush window as latency (ms); live. ~1.4ms ≈ 2500 cyc NTSC
+    // Cartridge-accuracy switches: 0 = the documented chip, 1 = match an Everdrive N8 Pro's FPGA core.
+    // s5bNoise 1 = no 5B noise generator (so tone-AND-noise mutes the channel); mmc5PhaseReset 1 = a
+    // $5003/$5007 write does not restart the pulse duty sequencer. Both live, both measured on hardware.
+    // Defaulted to 1 to match coreRoles.ts - the N8 is how NES music actually gets played back.
+    std::uint32_t s5bNoise          = 1;
+    std::uint32_t mmc5PhaseReset    = 1;
 };
 
 // The SMS/GG slice of that same TS "mesen" role. A separate struct rather than more fields on the one

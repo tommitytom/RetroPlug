@@ -499,7 +499,14 @@ export class SystemsStore {
    *  savSuffix + savPath-override (no free-suffix reassignment). Appends; focuses the
    *  first. Returns the new id, or null when the ROM won't classify. `blobs` (present
    *  only for a zip-import) seed the emulator's SRAM/savestate from the archive instead
-   *  of from disk; `savPath` stays the auto-save target. */
+   *  of from disk; `savPath` stays the auto-save target.
+   *
+   *  QUIET ON PURPOSE: unlike every other mutation this does NOT markDirty(), so the
+   *  store→DSP projection does not run. A project load adopts N systems and then fires
+   *  ONE onSystemsChange (see projectStore.load), rather than re-projecting N times.
+   *  A standalone caller must therefore trigger a sync itself - any markDirty-ing call
+   *  (e.g. setRoleConfig) will do - or the system boots and renders VIDEO while the DSP
+   *  knows nothing about it and it produces NO AUDIO. */
   adopt(
     config: {
       core?: Core; // persisted since the v2 project schema (else auto-derived from platform)

@@ -23,10 +23,13 @@
 
 #include "host/n8/Edio.hpp"
 #include "host/n8/N8Link.hpp"
+#include "host/n8/N8Menu.hpp"
 
 using retroplug::Edio;
 using retroplug::ISerialPort;
 using retroplug::N8Link;
+using retroplug::N8Menu;
+using retroplug::N8VramDump;
 
 namespace {
 
@@ -121,6 +124,19 @@ TEST_CASE("Edio framing matches the shared golden (twins edio.test.ts)", "[n8]")
         } else if (c.op == "memRD") {
             std::vector<std::uint8_t> buf(static_cast<std::size_t>(a.size.value_or(0)));
             if (!buf.empty()) edio.memRD(static_cast<std::int32_t>(a.addr.value_or(0)), buf.data(), buf.size());
+        } else if (c.op == "fileRead") {
+            std::vector<std::uint8_t> buf(static_cast<std::size_t>(a.size.value_or(0)));
+            if (!buf.empty()) edio.fileRead(buf.data(), buf.size());
+        } else if (c.op == "sysInfo") {
+            edio.sysInfo();
+        } else if (c.op == "vdc") {
+            edio.vdc();
+        } else if (c.op == "freeSpace") {
+            edio.freeSpace();
+        } else if (c.op == "dirMake") {
+            edio.dirMake(a.path.value_or(""));
+        } else if (c.op == "fileDelete") {
+            edio.fileDelete(a.path.value_or(""));
         } else {
             FAIL("unknown golden op: " << c.op);
         }
@@ -154,6 +170,46 @@ TEST_CASE("connect throws on a non-0xA5 status word", "[n8]") {
 TEST_CASE("connect throws when the device does not answer (read timeout)", "[n8]") {
     FakeSerialPort port;  // no queued reply => read returns 0 => timeout
     REQUIRE_THROWS(Edio(port).connect());
+}
+
+TEST_CASE("fileRead loops resp-gated blocks over RD_BLOCK_SIZE", "[n8]") {
+    FakeSerialPort port;
+    port.toRead.push_back(0x00);                                     // block 1 resp
+    for (int i = 0; i < Edio::RD_BLOCK_SIZE; ++i) port.toRead.push_back(0xAA);
+    port.toRead.push_back(0x00);                                     // block 2 resp
+    for (int i = 0; i < 4; ++i) port.toRead.push_back(0xBB);
+    std::vector<std::uint8_t> buf(Edio::RD_BLOCK_SIZE + 4);
+    Edio(port).fileRead(buf.data(), buf.size());
+    REQUIRE(buf.front() == 0xAA);
+    REQUIRE(buf[Edio::RD_BLOCK_SIZE - 1] == 0xAA);
+    REQUIRE(buf.back() == 0xBB);
+}
+
+TEST_CASE("readFile finds the size via listDir, then reads the whole file", "[n8]") {
+    FakeSerialPort port;
+    const auto push = [&](std::initializer_list<std::uint8_t> bs) { for (std::uint8_t b : bs) port.toRead.push_back(b); };
+    port.queueStatus(0xA500);                                          // listDir DIR_LD checkStatus
+    push({0x01, 0x00});                                               // DIR_SIZE = 1 record
+    push({0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x66});  // file "f", size 4
+    port.queueStatus(0xA500);                                          // fileOpen(FA_READ) checkStatus
+    push({0x00, 0xDE, 0xAD, 0xBE, 0xEF});                             // fileRead resp + 4 data bytes
+    port.queueStatus(0xA500);                                          // fileClose checkStatus
+    REQUIRE(Edio(port).readFile("d/f") == std::vector<std::uint8_t>{0xDE, 0xAD, 0xBE, 0xEF});
+}
+
+TEST_CASE("N8Menu.vramDump sends '*v' and splits the 2048+16 reply", "[n8]") {
+    FakeSerialPort port;
+    for (int i = 0; i < 2048; ++i) port.toRead.push_back(static_cast<std::uint8_t>(i & 0xFF));
+    for (int i = 0; i < 16; ++i) port.toRead.push_back(static_cast<std::uint8_t>(0xA0 + i));
+    Edio             edio(port);
+    const N8VramDump vd = N8Menu(edio).vramDump();
+    REQUIRE(vd.vram.size() == 2048);
+    REQUIRE(vd.palette.size() == 16);
+    REQUIRE(vd.vram[2047] == (2047 & 0xFF));
+    REQUIRE(vd.palette[0] == 0xA0);
+    REQUIRE(vd.palette[15] == 0xAF);
+    // The only write is the '*v' FIFO command (memWR to ADDR_FIFO 0x1810000).
+    REQUIRE(port.written == fromHex("2bd41ae50000810102000000002a76"));
 }
 
 // --- N8Link: the host serial thread + ring + timed scheduler (standalone/plugin forward; no TS twin) ---

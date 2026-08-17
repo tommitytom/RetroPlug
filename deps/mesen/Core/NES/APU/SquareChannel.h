@@ -89,6 +89,22 @@ protected:
 		}
 	}
 
+	//A register write restarts the sequencer, and the output follows the sequencer position immediately -
+	//so a write produces an output transition of its own. The APU squares do that through UpdateOutput
+	//(straight into the 2A03 mixer); an MMC5 square must NOT touch that mixer (Mmc5Audio sums GetOutput()
+	//into the expansion mixer instead), so it overrides this to refresh its own latched output.
+	virtual void UpdateOutputAfterWrite()
+	{
+		UpdateOutput();
+	}
+
+	//Whether a write to the length/high register restarts the duty sequencer. Always true for the 2A03
+	//pulses; the MMC5 pulse makes it configurable (see Mmc5Audio.h).
+	virtual bool ResetsPhaseOnWrite()
+	{
+		return true;
+	}
+
 public:
 	SquareChannel(AudioChannel channel, NesConsole* console, bool isChannel1) : _envelope(channel, console), _timer(channel, console->GetSoundMixer())
 	{
@@ -167,16 +183,16 @@ public:
 				SetPeriod((_realPeriod & 0xFF) | ((value & 0x07) << 8));
 
 				//The sequencer is restarted at the first value of the current sequence.
-				_dutyPos = 0;
+				if(ResetsPhaseOnWrite()) {
+					_dutyPos = 0;
+				}
 
 				//The envelope is also restarted.
 				_envelope.ResetEnvelope();
 				break;
 		}
 		
-		if(!_isMmc5Square) {
-			UpdateOutput();
-		}
+		UpdateOutputAfterWrite();
 	}
 
 	void TickSweep()

@@ -2,9 +2,9 @@
 // against a FakeSerialPort. The menu cases mirror the native gtest (packages/native/test/n8/Edio.test.cpp)
 // byte-for-byte; the load cases exercise loadRom / writeSramDirect over the fake.
 import { test, expect } from "../../testing/harness";
-import { Edio, ADDR_SRM } from "../../src/n8/edio";
+import { Edio, ADDR_SRM, ADDR_CHR, N8_OS_REGION } from "../../src/n8/edio";
 import { N8Menu } from "../../src/n8/n8Menu";
-import { loadRom, writeSramDirect } from "../../src/n8/n8Load";
+import { loadRom, writeSramDirect, writeMemDirect, assertGameRegion } from "../../src/n8/n8Load";
 import { FakeSerialPort } from "../../src/n8/fakeSerial";
 
 const u32le = (n: number): number[] => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff];
@@ -61,6 +61,21 @@ test("N8Menu.appStart sends '*s'", () => {
   expect(port.written).toEqual(memWrFifo([0x2a, 0x73])); // '*', 's'
 });
 
+test("N8Menu.vramDump sends '*v' and splits the 2048+16 reply into vram + palette", () => {
+  const port = new FakeSerialPort();
+  const reply: number[] = [];
+  for (let i = 0; i < 2048; i++) reply.push(i & 0xff); // vram
+  for (let i = 0; i < 16; i++) reply.push(0xa0 + i); // palette
+  port.queueBytes(...reply);
+  const { vram, palette } = new N8Menu(new Edio(port)).vramDump();
+  expect(vram.length).toBe(2048);
+  expect(palette.length).toBe(16);
+  expect(vram[0]).toBe(0);
+  expect(vram[2047]).toBe(2047 & 0xff);
+  expect(Array.from(palette)).toEqual([0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae, 0xaf]);
+  expect(port.written).toEqual(memWrFifo([0x2a, 0x76])); // '*', 'v'
+});
+
 // --- loadRom orchestration ------------------------------------------------------------------------------
 
 test("loadRom (sdPath) handshakes, installs, and boots - '*s' is written last", () => {
@@ -104,4 +119,59 @@ test("writeSramDirect throws when the readback differs", () => {
   port.queueBytes(0x11, 0x22, 0x33, 0xff); // last byte differs
   const edio = new Edio(port);
   expect(() => writeSramDirect(edio, new Uint8Array([0x11, 0x22, 0x33, 0x44]))).toThrow("verify failed");
+});
+
+// --- writeMemDirect (live CHR/PRG hot-patch) + assertGameRegion ------------------------------------------
+
+test("writeMemDirect writes a block to a device address and verifies the readback", () => {
+  const port = new FakeSerialPort();
+  port.queueBytes(0xde, 0xad, 0xbe, 0xef); // memRD verify -> identical
+  const n = writeMemDirect(new Edio(port), ADDR_CHR + 0x40, new Uint8Array([0xde, 0xad, 0xbe, 0xef]));
+  expect(n).toBe(4);
+  // First frame is the CMD_MEM_WR (0x1a) to ADDR_CHR + 0x40.
+  expect(port.written.slice(0, 12)).toEqual([0x2b, 0xd4, 0x1a, 0xe5, ...u32le(ADDR_CHR + 0x40), ...u32le(4)]);
+});
+
+test("writeMemDirect throws when the readback differs", () => {
+  const port = new FakeSerialPort();
+  port.queueBytes(0xde, 0xad, 0xbe, 0x00); // last byte differs
+  expect(() => writeMemDirect(new Edio(port), ADDR_CHR, new Uint8Array([0xde, 0xad, 0xbe, 0xef]))).toThrow("verify failed");
+});
+
+test("assertGameRegion allows the game region and blocks the N8 OS region", () => {
+  assertGameRegion(0, 8192); // in-range: a throw here fails the test
+  assertGameRegion(N8_OS_REGION - 4, 4); // ends exactly at the OS boundary - allowed
+  expect(() => assertGameRegion(N8_OS_REGION - 4, 8)).toThrow(); // spills into the OS region
+  expect(() => assertGameRegion(N8_OS_REGION, 1)).toThrow();
+  expect(() => assertGameRegion(-1, 1)).toThrow();
+});
+
+// --- SD file management: freeSpace / dirMake / fileDelete -----------------------------------------------
+
+test("freeSpace assembles the u64 (hi*2^32 + lo) from the 8-byte reply", () => {
+  const a = new FakeSerialPort();
+  a.queueBytes(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40); // hi=0, lo=0x40000000
+  expect(new Edio(a).freeSpace()).toBe(0x40000000); // 1 GB
+  const b = new FakeSerialPort();
+  b.queueBytes(0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00); // hi=1, lo=0 -> uses the high word
+  expect(new Edio(b).freeSpace()).toBe(4294967296);
+});
+
+test("dirMake tolerates 'already exists' (status 8) but throws on other errors", () => {
+  const ok = new FakeSerialPort();
+  ok.queueBytes(0x08, 0xa5); // status 8 (already exists)
+  new Edio(ok).dirMake("EDN8/x"); // must NOT throw
+  const bad = new FakeSerialPort();
+  bad.queueBytes(0x05, 0xa5); // some other error
+  expect(() => new Edio(bad).dirMake("EDN8/x")).toThrow();
+});
+
+test("fileDelete sends CMD_F_DEL + path and throws on a non-zero status", () => {
+  const ok = new FakeSerialPort();
+  ok.queueBytes(0x00, 0xa5); // ok
+  new Edio(ok).fileDelete("EDN8/x/y.bin"); // must NOT throw
+  expect(ok.written.slice(0, 4)).toEqual([0x2b, 0xd4, 0xd3, 0x2c]); // CMD_F_DEL (0xd3) frame
+  const bad = new FakeSerialPort();
+  bad.queueBytes(0x05, 0xa5);
+  expect(() => new Edio(bad).fileDelete("EDN8/x")).toThrow();
 });
