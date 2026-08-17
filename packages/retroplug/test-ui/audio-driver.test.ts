@@ -19,7 +19,10 @@ const live = { sampleRate: 48000, blockSize: 1024, outChannels: 2, driver: "Auto
 const drivers = ["Auto", "PipeWire", "ALSA"];
 const g = globalThis as Record<string, unknown>;
 g.__rp_isStandalone = true;
-g.__rp_getAudioConfig = () => ({ ...live, drivers: [...drivers] });
+// autoDriver names what "Auto" actually resolves to, which the Driver row shows in brackets - "Auto" on
+// its own does not tell you which driver you are on, and that is the one thing you want to know when
+// something sounds wrong.
+g.__rp_getAudioConfig = () => ({ ...live, drivers: [...drivers], autoDriver: "PipeWire" });
 g.__rp_setAudioConfig = (r: number, b: number, ch: number, d: string) => {
   calls.push([r, b, ch, d]);
   live.sampleRate = r;
@@ -44,7 +47,7 @@ test("Settings > Audio > Driver: reads the host list, cycles + repaints, stages,
   ui.pump(8);
 
   // Default: the driver is Auto (the PipeWire-preferred default).
-  expect(labelOf("Driver")).toBe("Driver: Auto");
+  expect(labelOf("Driver")).toBe("Driver: Auto (PipeWire)");
 
   // Step the Driver cycler forward → PipeWire (label repaints via the subscribe wiring). Nothing committed yet.
   expect(navTo("Driver")).toBeTruthy();
@@ -63,4 +66,17 @@ test("Settings > Audio > Driver: reads the host list, cycles + repaints, stages,
   expect(calls.at(-1)).toEqual([48000, 1024, 2, "PipeWire"]);
   expect(live.driver).toBe("PipeWire");
   expect(labelOf("Driver")).toBe("Driver: PipeWire");
+});
+
+test("a host that cannot say what Auto resolved to leaves the row plain", () => {
+  // Graceful rather than "Auto ()": the bracket exists to answer a question, and an empty one answers
+  // nothing while looking like a bug. Runs on from the previous test, which leaves us in Settings > Audio.
+  g.__rp_getAudioConfig = () => ({ ...live, driver: "Auto", drivers: [...drivers] });
+  // Cycle the row back round to Auto - which also forces the repaint that reads the new fake.
+  expect(navTo("Driver")).toBeTruthy();
+  for (let i = 0; i < drivers.length && !labelOf("Driver").startsWith("Driver: Auto"); i++) {
+    ui.tapKey(Key.Enter);
+    ui.pump(8);
+  }
+  expect(labelOf("Driver")).toBe("Driver: Auto");
 });

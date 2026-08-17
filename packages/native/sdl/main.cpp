@@ -586,6 +586,14 @@ JSValue jsGetAudioConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
             JS_SetPropertyStr(ctx, devicesObj, key, da);
             JS_SetPropertyStr(ctx, defaultsObj, key, JS_NewString(ctx, defaultOutputName(idx).c_str()));
         };
+        // autoDriver: which host API "Auto" actually resolves to right now, so the Driver row can say
+        // "Auto (PipeWire)" rather than leaving the user to guess which one they are on. Same resolution the
+        // device list below uses, so the two rows cannot disagree.
+        const PaHostApiIndex   autoIdx  = autoOutputHostApiIndex();
+        const PaHostApiInfo*   autoInfo = autoIdx >= 0 ? Pa_GetHostApiInfo(autoIdx) : nullptr;
+        JS_SetPropertyStr(ctx, o, "autoDriver",
+                          JS_NewString(ctx, autoInfo && autoInfo->name ? autoInfo->name : ""));
+
         setDevices("Auto", autoOutputHostApiIndex());
         for (const HostApiEntry& e : apis)
             setDevices(e.name.c_str(), Pa_HostApiTypeIdToHostApiIndex(static_cast<PaHostApiTypeId>(e.type)));

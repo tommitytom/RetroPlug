@@ -32,6 +32,7 @@ type NativeAudioCfg = Partial<AudioCfg> & {
   drivers?: string[];
   devicesByDriver?: Record<string, string[]>;
   defaultByDriver?: Record<string, string>;
+  autoDriver?: string;
 };
 function nativeGet(): AudioCfg | null {
   const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
@@ -73,6 +74,16 @@ export function getAudioDefaultDevice(driver: string): string {
   const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
   if (typeof fn !== "function") return "";
   const name = fn()?.defaultByDriver?.[driver];
+  return typeof name === "string" ? name : "";
+}
+
+/** The host API "Auto" currently resolves to (e.g. "PipeWire"), or "" when the host cannot say. Shown in
+ *  brackets on the Driver row, because "Auto" on its own does not tell you which driver you are actually on -
+ *  and that is exactly what you want to know when something sounds wrong. */
+export function getAutoAudioDriver(): string {
+  const fn = (globalThis as { __rp_getAudioConfig?: () => NativeAudioCfg }).__rp_getAudioConfig;
+  if (typeof fn !== "function") return "";
+  const name = fn()?.autoDriver;
   return typeof name === "string" ? name : "";
 }
 

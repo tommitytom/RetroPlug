@@ -92,7 +92,7 @@ import { startSystemRender, renderBaseName, validSplits, formatDuration } from "
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
-import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice } from "./audioDraft";
+import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
@@ -157,6 +157,11 @@ function audioSettingsChildren(): MenuItem[] {
   // +JACK on a desktop build, and only when libjack.so.0 is actually there to dlopen).
   const drivers = getAudioDrivers();
   const driverIdx = Math.max(0, drivers.indexOf(cfg.driver));
+  // "Auto" alone does not say which driver you ended up on, which is the one thing you want to know when
+  // something sounds wrong - so name it, the way the Output Device row names what "Default" resolved to. The
+  // VALUE list stays `drivers` (the cycler hands back drivers[n]); only the labels differ.
+  const autoDriver = getAutoAudioDriver();
+  const driverNames = drivers.map((d) => (d === "Auto" && autoDriver ? `Auto (${autoDriver})` : d));
   // Output devices of the SELECTED driver (host API), with "Default" (= the host API default) at index 0. The
   // list tracks the DRAFT driver; changing the driver resets the device (a device isn't valid across host APIs).
   // "Default" names the device it resolves to when the host can tell us (e.g. the PipeWire session default sink),
@@ -167,7 +172,7 @@ function audioSettingsChildren(): MenuItem[] {
   const dirty = audioDraftDirty();
   return [
     // The cyclers stage a pending value only — the label tracks the draft, but the live device is unchanged.
-    cycler("audio-driver", "Driver", drivers, driverIdx, (n) => setAudioDraft({ driver: drivers[n], device: "" })),
+    cycler("audio-driver", "Driver", driverNames, driverIdx, (n) => setAudioDraft({ driver: drivers[n], device: "" })),
     cycler("audio-device", "Output Device", dev.names, dev.index, (n) => setAudioDraft({ device: devName(n) })),
     cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
     cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
