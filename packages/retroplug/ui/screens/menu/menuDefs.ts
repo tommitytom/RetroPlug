@@ -101,6 +101,7 @@ import {
 } from "./launchpadDevices";
 import { ControllerRegistry, registerControllerApps, QUANTISE_VALUES, type Quantise } from "../../../src/controller";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/settingsEnums";
+import { controllerSyncOverride } from "../../../src/kernelProjection";
 import type { MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
@@ -259,6 +260,13 @@ const CONTROLLER_TARGET_LABELS: Record<ControllerTarget, string> = {
   midiOut: "MIDI Out (real hardware)",
 };
 
+/** The read-only line describing what the controller has done to the cart's sync role. `cartSync` is the
+ *  cart's OWN SYNC setting as last polled, which is what decides it. */
+function cartSyncLabel(mode: "midiMap" | "off", cartSync: string | null): string {
+  if (mode === "midiMap") return cartSync ? "Cart: MI.MAP - driven by the controller" : "Cart: MI.MAP - driven by the controller (SYNC unread)";
+  return `Cart SYNC is ${(cartSync ?? "").toUpperCase()}, not MI.MAP - not driving it`;
+}
+
 /** The read-only status line: what the link is doing, in the words a player would use. */
 function launchpadStatus(cfg: LaunchpadConfig): string {
   if (cfg.connected) return cfg.dropped > 0 ? `connected (${cfg.dropped} dropped)` : "connected";
@@ -289,6 +297,11 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
   // Polled on the song-watch timer (refreshControllerSong), so reading it here costs a field access
   // rather than a 128 KB battery copy per menu render.
   const cartSync = controller.enabled ? project.controllerCartSync() : null;
+  // What the kernel will actually run on the cart, computed by the SAME helper the projection uses - so the
+  // row cannot describe something other than what is happening.
+  const syncOverride = controllerSyncOverride(ctx.systems, {
+    ...controller, songRowTicks: [], anchor: null, cartSync,
+  });
   const apps = controllerApps.list();
   const appIdx = Math.max(0, apps.findIndex((a) => a.id === controller.app));
   const quantise = (controller.appConfig.quantise as Quantise) ?? "bar";
@@ -301,13 +314,17 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
       setLaunchpadPorts(cfg.selectedInput, portAt(cfg.outputs, n, cfg.selectedOutput))),
     action("lp-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectLaunchpad(!cfg.enabled, cfg)),
     action("lp-status", `Status: ${launchpadStatus(cfg)}`, () => {}, true), // read-only
-    // A cart that is not in MI.MAP ignores row launches ENTIRELY WITHOUT COMPLAINT: it goes on playing and
-    // stepping to the host clock, so the only symptom is that the pads stop doing anything. Worth a row of
-    // its own, because the way players land there is nasty - LSDj refuses to change SYNC while the cart is
-    // playing, so reaching for the setting mid-session leaves it wherever the first press landed with no way
-    // back until playback stops (measured in test-native/lsdj-sync-toggle).
-    ...(cartSync && cartSync !== "MidiMap"
-      ? [action("lp-cart-sync", `Cart SYNC is ${cartSync.toUpperCase()}, not MI.MAP - pads will do nothing`, () => {}, true)]
+    // What the controller is doing to the cart's sync role, and why. Shown rather than applied silently:
+    // the override does not touch the saved project (it happens at projection time), so without a row here
+    // the LSDj submenu would go on reporting the user's own setting while the kernel ran a different one.
+    //
+    // A cart that is not in MI.MAP ignores row launches ENTIRELY WITHOUT COMPLAINT - it goes on playing and
+    // stepping to the host clock, so the only symptom is that the pads stop doing anything. And the way
+    // players land there is nasty: LSDj refuses to change SYNC while the cart is playing, so reaching for
+    // the setting mid-session leaves it wherever the first press landed, with no way back until playback
+    // stops (measured in test-native/lsdj-sync-toggle).
+    ...(syncOverride
+      ? [action("lp-cart-sync", cartSyncLabel(syncOverride.mode, cartSync), () => {}, true)]
       : []),
     sep("lp-sep-app"),
     // Project scope from here down: these ride the .rplg, and each edit re-pushes the kernel structure.

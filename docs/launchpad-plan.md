@@ -610,6 +610,33 @@ already owns. The rows ride to the audio thread as role config with a sequence n
 that already agree left alone, and per channel because they genuinely diverge (B4). Mid-song correction is
 still M6; a start edge is not.
 
+### 8.5 FIXED: the two sync settings never had to agree, and nothing made them
+
+The fault the first session actually hit hardest, found on the second. `lsdj-sync` defaults to **`midiSync`**,
+while the MI.MAP app's launches are NoteOns that only the **`midiMap`** translator turns into row bytes. So
+enabling a Launchpad on a fresh cart produced a cart being clocked for a mode it was not in, launches that
+went nowhere, and LSDj sitting on "WAIT" - with nothing anywhere saying why.
+
+`controllerSyncOverride` now decides the cart's sync mode from the controller, at **projection** time rather
+than by editing the project. That placement is the design: nothing reaches the `.rplg`, turning the
+controller off restores whatever the user had, and the two settings cannot drift apart because only one of
+them is now authoritative.
+
+It has two answers, and the second matters as much as the first:
+
+| The cart's OWN SYNC | What we run | Why |
+|---|---|---|
+| MI.MAP, or unreadable | `midiMap` | What the app needs. Unreadable means a battery not yet published, and refusing to drive it would be a worse guess than trying. |
+| anything else | `off` | A cart in LSDJ (master) mode drives the link ITSELF, so our clock collides with its own and LSDj reports TOO BUSY and stops rendering properly. Better to send a cart that is not listening nothing at all. |
+
+Shown rather than applied silently: the submenu carries a row saying which of those is in force, because the
+LSDj submenu goes on reporting the user's own stored setting.
+
+Guarded where it counts - against a real cart, through the REAL projection rather than a hand-written
+pipeline ([test-native/lsdj-launchpad](../packages/retroplug/test-native/lsdj-launchpad.test.ts)): a project
+whose cart is in the default `midiSync` launches row 42; the same project with no controller ignores the
+same bytes (the bug, pinned as the control); and a cart whose own SYNC says LSDJ is left alone.
+
 ---
 
 ## 9. Testing

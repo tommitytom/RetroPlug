@@ -16,6 +16,8 @@ import { launchMessage } from "../src/controller";
 import { PredictedLsdjModel } from "../src/lsdj/playback";
 import { SongSchema } from "../src/lsdj/model";
 import { LsdjProbe, fmtSample } from "./lsdjPlaybackProbe";
+import { projectKernelStructure, type ControllerProjection } from "../src/kernelProjection";
+import type { SystemView } from "../src/systemsStore";
 
 // 130 rows, every one a single-phrase chain, so every row is playable and 96 ticks long. Reaching past
 // row 127 is the point: that is where the wire protocol switches to MIDI channel 2. All rows share one
@@ -63,3 +65,70 @@ test("the controller layer's launch bytes move a real cart, on both MIDI channel
 // second LsdjProbe in the same process saw the row jump once at transport-start and then freeze, while
 // the steps kept advancing. Worth understanding before anyone builds on it, but it is a probe-lifecycle
 // question, not a controller one, so it is recorded rather than papered over with a loose assertion.
+
+// --- the pipeline a real project actually runs -----------------------------------------------------
+//
+// Everything above hand-writes `mode: "midiMap"`. A real project does not: `lsdj-sync` defaults to
+// `midiSync`, and nothing made it agree with the controller - so enabling a Launchpad on a fresh cart
+// clocked it for a mode it was not in, sent launches nowhere, and left LSDj sitting on "WAIT". Reported
+// from a hardware session. These drive the cart through projectKernelStructure, so what is under test is
+// the pipeline a project would really produce.
+
+/** A SystemView carrying the roles a freshly built LSDj cart has, with the STORED (default) sync mode. */
+function lsdjView(id: number, mode = "midiSync"): SystemView {
+  return {
+    id, platform: "gb", core: "sameboy", romPath: "", savPath: "", savSuffix: 0,
+    embedded: false, battery: true, focused: true, missing: false,
+    settings: { gainDb: 0, reloadOnRomChange: false },
+    roles: [{ kind: "sameboy", config: {} }, { kind: "lsdj-sync", config: { mode, tempoDivisor: 1 } }],
+  };
+}
+
+const projection = (over: Partial<ControllerProjection> = {}): ControllerProjection => ({
+  enabled: true, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {},
+  songRowTicks: [], anchor: null, cartSync: "MidiMap", ...over,
+});
+
+test("a project whose cart is in the DEFAULT midiSync still launches rows once a controller is on", () => {
+  const p = LsdjProbe.create({
+    song: SONG,
+    structure: (id) => projectKernelStructure([lsdjView(id)], "sendToAll", projection()),
+  });
+  if (!p) return console.log("# SKIP lsdj-launchpad: aboy ROM not found / unsupported version");
+
+  p.stage(launchMessage(42)!);
+  const after = p.render(400);
+  console.log(`[lsdj-launchpad] default-mode project, row 42: ${fmtSample(after)}`);
+  expect(after.channels.pu1.songRow).toBe(42);
+});
+
+test("without a controller the same project ignores the same launch, which is what was wrong", () => {
+  // The control: it is the projection's override that makes the row land, not something else about the
+  // pipeline. A cart in midiSync reads a NoteOn as nothing at all.
+  const p = LsdjProbe.create({
+    song: SONG,
+    structure: (id) => projectKernelStructure([lsdjView(id)], "sendToAll"),
+  });
+  if (!p) return;
+
+  p.stage(launchMessage(42)!);
+  const after = p.render(400);
+  console.log(`[lsdj-launchpad] no controller, row 42: ${fmtSample(after)}`);
+  expect(after.channels.pu1.songRow !== 42).toBe(true);
+});
+
+test("a cart whose OWN SYNC is not MI.MAP is left alone rather than clocked at", () => {
+  // A cart in LSDJ (master) mode drives the link itself, so our bytes collide with its own and LSDj
+  // reports TOO BUSY. The projection sends it nothing; the launch therefore does nothing, which is the
+  // correct outcome for a cart that is not listening.
+  const p = LsdjProbe.create({
+    song: SONG,
+    structure: (id) => projectKernelStructure([lsdjView(id)], "sendToAll", projection({ cartSync: "Lsdj" })),
+  });
+  if (!p) return;
+
+  p.stage(launchMessage(42)!);
+  const after = p.render(400);
+  console.log(`[lsdj-launchpad] cart SYNC=LSDJ, row 42: ${fmtSample(after)}`);
+  expect(after.channels.pu1.songRow !== 42).toBe(true);
+});

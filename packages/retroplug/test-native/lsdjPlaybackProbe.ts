@@ -68,6 +68,10 @@ export interface ProbeOptions {
   rom?: string;
   /** Milliseconds rendered before the probe hands back control, to clear the boot/self-test. */
   bootMs?: number;
+  /** Build the whole kernel structure instead of the default one-role pipeline, given the id the probe
+   *  assigned. For asking what the REAL projection produces - whether the pipeline a project actually
+   *  runs drives the cart - rather than what a hand-written pipeline does. */
+  structure?: (systemId: number) => unknown;
 }
 
 const emptyChannels = (): ProbeSample["channels"] => ({
@@ -117,10 +121,13 @@ export class LsdjProbe {
     }, id)) return null;
 
     if (!dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)) return null;
-    if (!dsp.setSystems({
-      project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
-      systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode: opts.mode ?? "midiPassthrough" } }] }],
-    })) return null;
+    const structure = opts.structure
+      ? opts.structure(id)
+      : {
+          project: [{ kind: "midi-routing", config: { mode: "sendToAll" } }],
+          systems: [{ id, pipeline: [{ kind: "lsdj-sync", config: { mode: opts.mode ?? "midiPassthrough" } }] }],
+        };
+    if (!dsp.setSystems(structure as never)) return null;
 
     const probe = new LsdjProbe(be, audio, reader, id);
     probe.render(opts.bootMs ?? 6000); // past the cartridge self-test, onto the song screen

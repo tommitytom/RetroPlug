@@ -21,6 +21,36 @@ export interface ControllerProjection extends ControllerSettings {
   songRowTicks: RowTicksTable;
   /** Where the cart was seen starting on its own, or null on the hardware path / before it ever has. */
   anchor: ControllerAnchor | null;
+  /** The cart's OWN SYNC setting, as last polled ("MidiMap", "Lsdj", …), or null when unreadable. */
+  cartSync: string | null;
+}
+
+/** The `lsdj-sync` mode the controller needs the cart it drives to be in, and which system that is.
+ *  Null when no controller is driving an emulated cart.
+ *
+ *  This exists because the two settings MUST agree and nothing made them. `lsdj-sync` defaults to
+ *  `midiSync`, while the MI.MAP app's launches are NoteOns that only the `midiMap` translator turns into
+ *  row bytes - so enabling a Launchpad on a fresh cart produced a cart being clocked for a mode it was not
+ *  in, launches that went nowhere, and LSDj sitting on "WAIT". Reported from a hardware session.
+ *
+ *  The override is applied at PROJECTION time rather than written into the project, which is what makes it
+ *  safe: nothing reaches the `.rplg`, and turning the controller off restores whatever the user had.
+ *
+ *  `off` when the CART's own SYNC says it is not in MI.MAP. That is not politeness - a cart in LSDJ (master)
+ *  mode drives the link itself, so our clock bytes collide with its own and LSDj reports TOO BUSY and stops
+ *  rendering properly. Measured in test-native/lsdj-sync-toggle. Better to send a cart that is not listening
+ *  nothing at all. */
+export function controllerSyncOverride(
+  views: SystemView[],
+  controller?: ControllerProjection,
+): { systemId: number; mode: "midiMap" | "off" } | null {
+  if (!controller?.enabled || controller.target !== "system" || controller.app !== "lsdj-midimap") return null;
+  const systemId = controller.systemId > 0 ? controller.systemId : (views[0]?.id ?? 0);
+  if (systemId <= 0) return null;
+  // A cart we cannot read is assumed willing: that is the case on a freshly built system whose battery has
+  // not been published yet, and refusing to drive it would be a worse guess than trying.
+  const mode = controller.cartSync && controller.cartSync !== "MidiMap" ? "off" : "midiMap";
+  return { systemId, mode };
 }
 
 /** Build the kernel structure from the systems' roles + the project MIDI-routing mode.
@@ -54,5 +84,19 @@ export function projectKernelStructure(
       },
     });
   }
-  return { project, systems: views.map((v) => ({ id: v.id, pipeline: v.roles })) };
+  const sync = controllerSyncOverride(views, controller);
+  return {
+    project,
+    systems: views.map((v) => ({
+      id: v.id,
+      pipeline: sync && sync.systemId === v.id ? withLsdjSyncMode(v.roles, sync.mode) : v.roles,
+    })),
+  };
+}
+
+/** `roles` with any `lsdj-sync` stage forced to `mode`. Returns the original array when there is nothing
+ *  to change, so an unaffected system's pipeline keeps its identity across pushes. */
+function withLsdjSyncMode(roles: RoleInstance[], mode: string): RoleInstance[] {
+  if (!roles.some((r) => r.kind === "lsdj-sync")) return roles;
+  return roles.map((r) => (r.kind === "lsdj-sync" ? { ...r, config: { ...r.config, mode } } : r));
 }
