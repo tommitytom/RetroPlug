@@ -34,6 +34,9 @@ public:
     std::optional<rfl::Bytestring> readState(std::uint32_t id);
     std::optional<rfl::Bytestring> readSram(std::uint32_t id);
     std::optional<rfl::Bytestring> readRam(std::uint32_t id);   // work RAM (WRAM), per-block published copy
+    // The WRITE counterpart of readRam, in the same coordinates. Queued like pressButton, so it lands
+    // between blocks and is safe while the audio thread runs - unlike the debug facet's writeCpu.
+    bool            writeRam(std::uint32_t id, std::uint32_t offset, rfl::Bytestring bytes);
     bool screenshot(std::uint32_t id, std::string path);
     RpcFrame getFrame(std::uint32_t id);
 

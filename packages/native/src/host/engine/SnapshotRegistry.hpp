@@ -59,6 +59,9 @@ public:
     std::optional<std::vector<std::uint8_t>> readState(SystemId id);   // whole savestate
     std::optional<std::vector<std::uint8_t>> readSram(SystemId id);    // SRAM (savestate slice or live core)
     std::optional<std::vector<std::uint8_t>> readRam(SystemId id);     // work RAM (WRAM), published EVERY block
+    // The published WRAM length WITHOUT copying it - so a bounds check costs nothing. 0 when the id is
+    // gone or the core publishes no RAM (a region past kMaxRamBytes is skipped, so readRam is null too).
+    std::size_t ramSize(SystemId id);
 
     // Free a slot when its system is deleted (control thread). Idempotent (no-op for an unknown id).
     void release(SystemId id);

@@ -3,9 +3,11 @@
 #include <algorithm>
 
 #include "Core/SMS/SmsControlManager.h"
+#include "Core/SMS/SmsMemoryManager.h"
 
 // The controller port the sync lines live on. smsggdj reads $DD, which is port 1 (TR/TL/TH);
-// port 0 is $DC, the player-1 pad. Not a knob: the ROM's sync_read hardcodes it.
+// port 0 is $DC, the player-1 pad. Not a knob: the ROM's sync_read hardcodes it. Game Gear does not
+// use this at all - see onAttach.
 namespace { constexpr std::uint8_t kSyncPort = 1; }
 
 void SmsSyncRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count, bool /*flush*/) {
@@ -32,7 +34,11 @@ void SmsSyncRole::pumpUntil(std::uint32_t sampleOffset) {
 
     while (!pending_.empty() && pending_.front().offset <= sampleOffset) {
         lastApplied_ = pending_.front().levels;
-        if (controlManager_) controlManager_->SetExternalInput(kSyncPort, lastApplied_);
+        if (gameGear_) {
+            if (memoryManager_) memoryManager_->SetGgExternalInput(lastApplied_);
+        } else if (controlManager_) {
+            controlManager_->SetExternalInput(kSyncPort, lastApplied_);
+        }
         pending_.pop_front();
     }
 }

@@ -18,9 +18,13 @@
 // The render then needs no input at all: the restored core is already armed, and the DAW transport's
 // first 24-PPQN clock starts it. That is the SMS equivalent of lsdj-sync's `autoStart`.
 //
-// Paths injected at bundle time by tools/author-sms-rplg.js.
-//   __SMS_ROM__   absolute ROM path (smsggdj_v0_45.sms)
-//   __RPLG_OUT__  absolute output .rplg.zip path
+// Serves BOTH machines - the Master System and Game Gear builds of smsggdj differ only in which pins
+// carry the sync counter, so one script authors either fixture.
+//
+// Injected at bundle time by tools/author-sms-rplg.js.
+//   __SMS_ROM__       absolute ROM path (smsggdj_v0_45.sms / .gg)
+//   __SMS_MACHINE__   "sms" or "gg" - the sync role's wire format
+//   __RPLG_OUT__      absolute output .rplg.zip path
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
@@ -29,6 +33,7 @@ import { buildAppRegistry } from "../src/appHost";
 import { buildSmsMetronomeSav, pokeMetronomeIntoWram, SMS_SYNC_IN24 } from "./smsSyncSong";
 
 declare const __SMS_ROM__: string;
+declare const __SMS_MACHINE__: "sms" | "gg";
 declare const __RPLG_OUT__: string;
 
 // smsggdj's Play/Stop. Mesen puts Buttons::B on $DC bit 4 (SMS button 1) and Buttons::A on bit 5
@@ -39,16 +44,18 @@ const be = createRealBackend();
 const audio = createAudioDriver();
 const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
 
-// enableFm MUST be false. smsggdj writes $F2 = $01 when its own FM option is on, and Mesen models $F2
-// as a mux whose PSG branch memsets the buffer - an FM-routed core renders silence however well the
-// sync works. Passed as a role config so it lands at CONSTRUCT: configureSms runs before LoadRom, so a
-// later applyRoleConfig would not take. The battery's OPTIONS block sets the ROM's own fm_on = 0 too.
+// `enableFm: false` is no longer REQUIRED - the vendored SmsFmAudio change makes FM sum with the PSG
+// instead of muting it (see sms-fm.test.ts) - but it is kept, for a different reason: with FM off the
+// YM2413 provider contributes nothing to the mix at all, so the drift render measures the PSG
+// metronome alone. The battery's OPTIONS block sets the ROM's own fm_on = 0 to match. Passed as a role
+// config so it lands at CONSTRUCT: configureSms runs before LoadRom, so a later applyRoleConfig would
+// not take.
 const id = project.systems.adopt(
   {
     romPath: __SMS_ROM__,
     roles: [
       { kind: "mesen", config: { enableFm: false } },
-      { kind: "sms-sync", config: {} },
+      { kind: "sms-sync", config: { machine: __SMS_MACHINE__ } },
     ],
   },
   { sramBytes: buildSmsMetronomeSav(SMS_SYNC_IN24) },
@@ -68,5 +75,5 @@ audio.pressButton(id, PAUSE, false);
 audio.renderAudio(600);
 
 const ok = project.export(__RPLG_OUT__);
-console.log(`[author-sms-rplg] ${ok ? "wrote" : "FAILED"} ${__RPLG_OUT__} (poked ${writes} bytes)`);
+console.log(`[author-sms-rplg] ${__SMS_MACHINE__}: ${ok ? "wrote" : "FAILED"} ${__RPLG_OUT__} (poked ${writes} bytes)`);
 (globalThis as { tjs?: { exit(code: number): void } }).tjs?.exit(ok ? 0 : 1);

@@ -714,6 +714,13 @@ struct SmsConfig
 	uint32_t FmAudioVolume = 100;
 	bool EnableFmAudio = true;
 
+	// RetroPlug: whether enabling FM MUTES the PSG (port $F2 as a mux) or lets
+	// the two sum. Mesen models the Japanese SMS, which muxes; a Mark III with
+	// the FM add-on sums, and so does real hardware per the smsggdj author.
+	// Defaults true, so stock behaviour is unchanged for anything that does not
+	// set it. See MesenSmsSystem's configureSms for why RetroPlug sets it false.
+	bool FmMutesPsg = true;
+
 	OverscanDimensions NtscOverscan = {};
 	OverscanDimensions PalOverscan = {};
 	OverscanDimensions GameGearOverscan = {};

@@ -118,6 +118,14 @@ void QueuedInvoker::pressButton(SystemId id, std::uint8_t button, bool down) {
     maybeFlush();
 }
 
+void QueuedInvoker::writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes) {
+    DspCommand c;
+    c.kind = DspCommand::Kind::WriteRam;
+    c.writeRam = { static_cast<std::uint32_t>(id), offset, new std::vector<std::uint8_t>(std::move(bytes)) };
+    if (!commands_.tryPush(c)) delete c.writeRam.bytes;  // full ring: drop the poke, never leak it
+    maybeFlush();
+}
+
 // --- consumer half: apply every queued command into the Engine (audio loop, or the inline flush) -----
 
 void QueuedInvoker::drainInto(Engine& engine) {
@@ -155,6 +163,10 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 break;
             case DspCommand::Kind::PressButton:
                 engine.pressButton(cmd.pressButton.id, cmd.pressButton.button, cmd.pressButton.down);
+                break;
+            case DspCommand::Kind::WriteRam:
+                engine.writeRam(cmd.writeRam.id, cmd.writeRam.offset, *cmd.writeRam.bytes);
+                delete cmd.writeRam.bytes;  // owning payload - free after applying (rare op)
                 break;
             // Lifecycle: alloc-free pointer swaps into the pre-reserved Project; displaced/removed
             // cores are handed back for delete (never freed here).
@@ -207,6 +219,7 @@ void QueuedInvoker::freePending() {
         switch (cmd.kind) {
             case DspCommand::Kind::SetSystems:    delete cmd.setSystems.json; break;
             case DspCommand::Kind::LoadKernel:    delete cmd.loadKernel.bytecode; break;
+            case DspCommand::Kind::WriteRam:      delete cmd.writeRam.bytes; break;
             case DspCommand::Kind::AddSystem:     // built but never adopted → free its slot too
                 if (registry_) registry_->release(cmd.addSystem.sys->id());
                 delete cmd.addSystem.sys; break;

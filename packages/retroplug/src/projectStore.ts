@@ -192,7 +192,9 @@ export class ProjectStore {
     const catalog = resolveSongCatalog(primary.roles);
     if (!catalog) return undefined;
     const sram = this.backend.readSram(primary.id);
-    return sram ? catalog.workingName(sram) ?? undefined : undefined;
+    // Work RAM too: a console whose working song lives there (smsggdj) can only name it from the live
+    // core, and the recents row this feeds is the whole point of asking.
+    return sram ? catalog.workingName(sram, this.backend.readRam(primary.id) ?? undefined) ?? undefined : undefined;
   }
 
   /** Record `song` as a recents row for the open project. Recents holds one row per song, so this adds a row

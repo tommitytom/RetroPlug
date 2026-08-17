@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 
 #include "system/SystemBase.hpp"
 #include "system/SystemTypes.hpp"   // AudioBlockInfo, SystemId
@@ -224,6 +225,26 @@ std::optional<std::vector<std::uint8_t>> Engine::readSram(SystemId id) {
 
 std::optional<std::vector<std::uint8_t>> Engine::readRam(SystemId id) {
     return registry_.readRam(id);     // the owned per-block WRAM copy — never walks Project / the live core
+}
+
+std::size_t Engine::ramSize(SystemId id) {
+    return registry_.ramSize(id);     // published copy, like readRam - no Project walk, no live core
+}
+
+bool Engine::writeRam(SystemId id, std::uint32_t offset, const std::vector<std::uint8_t>& bytes) {
+    if (bytes.empty()) return false;
+    SystemBase* sys = project_.findSystem(id);
+    if (!sys) return false;
+    // ReadWrite, so a backend with a read-only RAM view reports failure rather than silently dropping
+    // the poke into a copy nobody reads.
+    auto acc = sys->getMemory(rp::MemoryType::Ram, rp::AccessType::ReadWrite);
+    if (!acc.valid()) return false;
+    // Bounds are the ONE thing this refuses: a short write past the end would corrupt whatever the
+    // core keeps after its RAM region, which is a crash rather than the "confuse the ROM" the caller
+    // signed up for. Partial writes are refused too - half a song block is not a song.
+    if (static_cast<std::size_t>(offset) + bytes.size() > acc.size()) return false;
+    std::memcpy(acc.data() + offset, bytes.data(), bytes.size());
+    return true;
 }
 
 bool Engine::screenshot(SystemId id, const std::string& path) {

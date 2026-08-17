@@ -220,6 +220,19 @@ std::optional<std::vector<std::uint8_t>> SnapshotRegistry::readRam(SystemId id) 
                                      ramReadScratch_.begin() + kRamLenPrefix + len);
 }
 
+std::size_t SnapshotRegistry::ramSize(SystemId id) {
+    // Same read + prefix decode as readRam, minus the copy out. Reads the published triple-buffer, so
+    // it is safe while the audio thread runs.
+    Slot* s = find(id);
+    if (!s || !s->ram) return 0;
+    const std::size_t slotSize = s->ram->size();
+    if (ramReadScratch_.size() < slotSize) ramReadScratch_.resize(slotSize);
+    if (!s->ram->readInto(ramReadScratch_.data(), slotSize)) return 0;
+    std::uint32_t len = 0;
+    std::memcpy(&len, ramReadScratch_.data(), sizeof(len));
+    return static_cast<std::size_t>(len) + kRamLenPrefix > slotSize ? 0 : len;
+}
+
 void SnapshotRegistry::release(SystemId id) {
     if (id == 0) return;
     Slot* s = find(id);

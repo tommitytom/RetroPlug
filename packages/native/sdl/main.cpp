@@ -505,6 +505,15 @@ std::vector<std::string> outputDevicesForHostApi(PaHostApiIndex idx) {
     return out;
 }
 
+// The name of a host API's default output device ("" when it has none) — what an empty device selection
+// resolves to, which the Settings picker shows next to "Default".
+std::string defaultOutputName(PaHostApiIndex idx) {
+    const PaHostApiInfo* h = (idx >= 0) ? Pa_GetHostApiInfo(idx) : nullptr;
+    if (!h || h->defaultOutputDevice == paNoDevice) return {};
+    const PaDeviceInfo* di = Pa_GetDeviceInfo(h->defaultOutputDevice);
+    return (di && di->name) ? std::string(di->name) : std::string();
+}
+
 // A host API's output device whose name matches `name` (empty name / no match → paNoDevice).
 PaDeviceIndex findOutputDeviceByName(PaHostApiIndex idx, const std::string& name) {
     const PaHostApiInfo* h = (idx >= 0 && !name.empty()) ? Pa_GetHostApiInfo(idx) : nullptr;
@@ -563,18 +572,25 @@ JSValue jsGetAudioConfig(JSContext* ctx, JSValueConst, int, JSValueConst*) {
         // devicesByDriver: the output device names per host API (keyed by driver name, + "Auto" = the auto
         // host's devices), so the Output Device picker can list the DRAFT driver's devices without a native
         // round-trip. `device` is the current selection ("" = the host API default).
+        // defaultByDriver: what "" (the host API default) actually resolves to per driver — on PipeWire that's
+        // the session default sink (what the desktop's sound settings point at), on ALSA the `default` PCM. The
+        // picker shows it beside "Default" so the row names a real device instead of leaving the user guessing
+        // which output the sound is going to.
         JSValue devicesObj = JS_NewObject(ctx);
+        JSValue defaultsObj = JS_NewObject(ctx);
         auto setDevices = [&](const char* key, PaHostApiIndex idx) {
             JSValue da = JS_NewArray(ctx);
             const std::vector<std::string> devs = outputDevicesForHostApi(idx);
             for (std::uint32_t i = 0; i < devs.size(); ++i)
                 JS_SetPropertyUint32(ctx, da, i, JS_NewString(ctx, devs[i].c_str()));
             JS_SetPropertyStr(ctx, devicesObj, key, da);
+            JS_SetPropertyStr(ctx, defaultsObj, key, JS_NewString(ctx, defaultOutputName(idx).c_str()));
         };
         setDevices("Auto", autoOutputHostApiIndex());
         for (const HostApiEntry& e : apis)
             setDevices(e.name.c_str(), Pa_HostApiTypeIdToHostApiIndex(static_cast<PaHostApiTypeId>(e.type)));
         JS_SetPropertyStr(ctx, o, "devicesByDriver", devicesObj);
+        JS_SetPropertyStr(ctx, o, "defaultByDriver", defaultsObj);
         JS_SetPropertyStr(ctx, o, "device", JS_NewString(ctx, g_app->reqOutputDevice.c_str()));
     }
     return o;

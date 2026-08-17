@@ -53,6 +53,7 @@ public:
     void setAudioRouting(std::uint8_t mode);
     void applyConfigField(SystemId id, std::uint8_t field, double value);
     void pressButton(SystemId id, std::uint8_t button, bool down);
+    void writeRam(SystemId id, std::uint32_t offset, std::vector<std::uint8_t> bytes);
 
     // consumer: apply every queued command INTO the Engine. Called by the audio loop each block (audio
     // thread) and by the inline flush (control thread).

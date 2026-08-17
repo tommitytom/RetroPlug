@@ -144,11 +144,22 @@ public:
     // Work RAM (WRAM), from the registry's per-block published copy — safe while the audio thread runs,
     // and fresh EVERY block (unlike readState/readSram), so a runtime overlay tracks per-frame state.
     std::optional<std::vector<std::uint8_t>> readRam(SystemId id);
+    /** The published WRAM length, for a bounds check that costs no copy. 0 = no writable RAM. */
+    std::size_t ramSize(SystemId id);
     bool screenshot(SystemId id, const std::string& path);
     // The system's latest video frame (raw XRGB8888). Reads the concurrent FrameBufferTriple, so it is
     // safe while the audio thread writes; width/height are 0 (published false) for an unknown system.
     EngineFrame getFrame(SystemId id);
     bool pressButton(SystemId id, std::uint8_t button, bool down);
+
+    // Audio-thread: poke bytes into a system's work RAM. `offset` indexes the SAME region readRam
+    // returns, so read-modify-write round-trips without a coordinate conversion. Applied between
+    // blocks via the invoker, never from the calling thread - which is what separates it from the
+    // debug facet's writeCpu (a live-core write, valid only when the audio thread is stopped).
+    //
+    // Deliberately unguarded beyond bounds: writing a running core's RAM CAN confuse it, because the
+    // emulated program has its own invariants over those bytes. That is the point of the feature.
+    bool writeRam(SystemId id, std::uint32_t offset, const std::vector<std::uint8_t>& bytes);
     // Apply a live config edit to a system (SameBoy-only cast today). Value-guarded per field so a
     // whole-config re-send only acts on what changed (no spurious model restart).
     void applyConfigField(SystemId id, std::uint8_t field, double value);

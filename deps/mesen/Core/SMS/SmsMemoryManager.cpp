@@ -463,8 +463,22 @@ uint8_t SmsMemoryManager::ReadGameGearPort(uint8_t port)
 			);
 		}
 
-		//TODOSMS GG - input/output ext port
-		case 1: return _state.GgExtData;
+		//TODOSMS GG - input/output ext port (partially addressed below)
+		case 1: {
+			// RetroPlug: honour the $02 direction mask instead of looping $01 straight back.
+			// Per Sega's Game Gear Hardware Reference Manual, $02 bits 6-0 are the directions
+			// for PC6-PC0 with 1 = INPUT and 0 = output (bit 7 is the PC6 falling-edge NMI
+			// disable, not a direction, hence the 0x7F). An input pin reads the external level;
+			// an output pin still reads back the latched $01 data.
+			//
+			// Stock Mesen returned _state.GgExtData unconditionally, so anything driving the
+			// EXT port from outside read back only what the ROM itself had written - a link
+			// protocol decoded a frozen constant forever. Idle (_ggExtInput = 0x7F, every pin
+			// released) reproduces the old value bit for bit after the standard GG init, so
+			// this changes nothing until a host actually drives a pin.
+			uint8_t inputs = _state.GgExtConfig & 0x7F;
+			return (uint8_t)((_state.GgExtData & ~inputs) | (_ggExtInput & inputs));
+		}
 		case 2: return _state.GgExtConfig;
 		case 3: return _state.GgSendData;
 		case 4: return 0xFF;

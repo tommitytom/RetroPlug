@@ -94,6 +94,8 @@ jobs:
           set -eux
           plat="linux-x86_64"
           # artifact-in-build/bin : download-target-name
+          # retroplug-sdl is built by `all` but deliberately NOT packaged: the SDL
+          # standalone is not part of a release yet. It ships only as a build.yml artifact.
           for entry in "retroplug:standalone" "retroplug.vst3:vst3" \
                        "retroplug.clap:clap" "retroplug-vst2.so:vst2" \
                        "retroplug-cli:cli"; do
@@ -166,6 +168,8 @@ jobs:
           set -eux
           plat="linux-aarch64"
           # artifact-in-build/bin : download-target-name
+          # retroplug-sdl is built by `all` but deliberately NOT packaged: the SDL
+          # standalone is not part of a release yet. It ships only as a build.yml artifact.
           for entry in "retroplug:standalone" "retroplug.vst3:vst3" \
                        "retroplug.clap:clap" "retroplug-vst2.so:vst2" \
                        "retroplug-cli:cli"; do
@@ -238,6 +242,8 @@ jobs:
         run: |
           $plat = "windows-x86_64"
           # artifact-in-build\bin -> download-target-name
+          # retroplug-sdl.exe is built by `all` but deliberately NOT packaged: the SDL
+          # standalone is not part of a release yet. It ships only as a build.yml artifact.
           $targets = [ordered]@{
             "RetroPlug.exe"     = "standalone"
             "RetroPlug.vst3"    = "vst3"
@@ -427,6 +433,8 @@ jobs:
           set -eux
           plat="macos-universal"
           # artifact-in-build/bin : download-target-name
+          # retroplug-sdl is built by `all` but deliberately NOT packaged: the SDL
+          # standalone is not part of a release yet. It ships only as a build.yml artifact.
           for entry in "RetroPlug.app:standalone" "RetroPlug.vst3:vst3" \
                        "RetroPlug.clap:clap" "RetroPlug.component:au" \
                        "RetroPlug.vst:vst2" "retroplug-cli:cli"; do
