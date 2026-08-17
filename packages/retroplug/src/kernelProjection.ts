@@ -12,11 +12,15 @@ import type { SystemView } from "./systemsStore";
 import type { MidiRouting } from "./settingsEnums";
 import type { ControllerSettings } from "./projectConfig";
 import type { RowTicksTable } from "./lsdj/playback/predict";
+import type { ControllerAnchor } from "./lsdj/playback/anchor";
 
 /** What the controller role needs that project settings alone cannot give: the derived per-row timing
- *  table. Assembled by the caller (appHost), because reading a cart's battery needs the store. */
+ *  table, and the start-edge anchor. Assembled by the caller (appHost), because reading a cart's battery
+ *  and its live RAM needs the store. */
 export interface ControllerProjection extends ControllerSettings {
   songRowTicks: RowTicksTable;
+  /** Where the cart was seen starting on its own, or null on the hardware path / before it ever has. */
+  anchor: ControllerAnchor | null;
 }
 
 /** Build the kernel structure from the systems' roles + the project MIDI-routing mode.
@@ -43,6 +47,10 @@ export function projectKernelStructure(
         systemId: controller.systemId,
         appConfig: controller.appConfig,
         songRowTicks: controller.songRowTicks,
+        // The role re-anchors when the SEQ changes, so an anchor riding along on later pushes is applied
+        // once rather than yanking the playhead back on every unrelated structure edit.
+        anchorRows: controller.anchor?.rows ?? [],
+        anchorSeq: controller.anchor?.seq ?? 0,
       },
     });
   }

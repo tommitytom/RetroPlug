@@ -286,6 +286,9 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
   const out = launchpadPortNames(cfg.outputs, cfg.selectedOutput);
   const portAt = (ports: string[], n: number, current: string) => (n === 0 ? "" : ports[n - 1] ?? current);
 
+  // Polled on the song-watch timer (refreshControllerSong), so reading it here costs a field access
+  // rather than a 128 KB battery copy per menu render.
+  const cartSync = controller.enabled ? project.controllerCartSync() : null;
   const apps = controllerApps.list();
   const appIdx = Math.max(0, apps.findIndex((a) => a.id === controller.app));
   const quantise = (controller.appConfig.quantise as Quantise) ?? "bar";
@@ -298,6 +301,14 @@ function launchpadMenuChildren(ctx: MenuContext, cfg: LaunchpadConfig): MenuItem
       setLaunchpadPorts(cfg.selectedInput, portAt(cfg.outputs, n, cfg.selectedOutput))),
     action("lp-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectLaunchpad(!cfg.enabled, cfg)),
     action("lp-status", `Status: ${launchpadStatus(cfg)}`, () => {}, true), // read-only
+    // A cart that is not in MI.MAP ignores row launches ENTIRELY WITHOUT COMPLAINT: it goes on playing and
+    // stepping to the host clock, so the only symptom is that the pads stop doing anything. Worth a row of
+    // its own, because the way players land there is nasty - LSDj refuses to change SYNC while the cart is
+    // playing, so reaching for the setting mid-session leaves it wherever the first press landed with no way
+    // back until playback stops (measured in test-native/lsdj-sync-toggle).
+    ...(cartSync && cartSync !== "MidiMap"
+      ? [action("lp-cart-sync", `Cart SYNC is ${cartSync.toUpperCase()}, not MI.MAP - pads will do nothing`, () => {}, true)]
+      : []),
     sep("lp-sep-app"),
     // Project scope from here down: these ride the .rplg, and each edit re-pushes the kernel structure.
     cycler("lp-enabled", "Use in Project", OFF_ON, controller.enabled ? 1 : 0, (n) =>

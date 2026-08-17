@@ -52,7 +52,7 @@ test("projectKernelStructure: each system's pipeline mirrors its roles in order"
 // timing table, and a synthesized project role never reaches the saved `.rplg`.
 
 const controller = (over: Partial<ControllerProjection> = {}): ControllerProjection => ({
-  enabled: true, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {}, songRowTicks: [], ...over,
+  enabled: true, app: "lsdj-midimap", target: "system", systemId: 0, appConfig: {}, songRowTicks: [], anchor: null, ...over,
 });
 
 test("projectKernelStructure: no controller role unless one is enabled", () => {
@@ -70,8 +70,21 @@ test("projectKernelStructure: an enabled controller becomes a launchpad role car
   expect(s.project![0].kind).toBe("midi-routing"); // routing still runs first
   expect(s.project![1]).toEqual({
     kind: "launchpad",
-    config: { app: "lsdj-midimap", target: "midiOut", systemId: 4, appConfig: { quantise: "beat" }, songRowTicks: table },
+    config: {
+      app: "lsdj-midimap", target: "midiOut", systemId: 4, appConfig: { quantise: "beat" }, songRowTicks: table,
+      // No anchor: this cart has not been seen starting on its own, and on the hardware path it never will.
+      anchorRows: [], anchorSeq: 0,
+    },
   });
+});
+
+test("a start-edge anchor rides along with its sequence number", () => {
+  const s = projectKernelStructure([view(1, [])], "sendToAll", controller({
+    anchor: { rows: [5, 5, null, 5], seq: 3 },
+  }));
+  const cfg = s.project![1].config as Record<string, unknown>;
+  expect(cfg.anchorRows).toEqual([5, 5, null, 5]);
+  expect(cfg.anchorSeq).toBe(3);
 });
 
 test("the derived song table never reaches a saved project", () => {

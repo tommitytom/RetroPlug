@@ -19,6 +19,9 @@ import type { SystemEntry } from "./systemsList";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
 import { resolveSongCatalog } from "./tracker";
+import { workingSongSignature, savSyncMode } from "./lsdj/playback/fromSav";
+import { anchorRowsFromState, anyChannelPlaying, type ControllerAnchor } from "./lsdj/playback/anchor";
+import { LsdjReader } from "./lsdj/runtime";
 import { basename, dirname, stem } from "./pathUtil";
 import { siblingRplgPath, resolveSavPath } from "./savPaths";
 import {
@@ -91,6 +94,12 @@ export class ProjectStore {
   private projectName = ""; // the USER-set name (Project > Name); blank unless typed, persisted in the .rplg
   private dirty = false;
   private pendingLoad: { cfg: ProjectConfig; path: string; blobs: Map<string, Uint8Array> } | null = null;
+  private controllerSongSig = 0; // last seen live-song signature (see refreshControllerSong)
+  private controllerSync: string | null = null; // the controller cart's SYNC setting at the last poll
+  private controllerAnchor: ControllerAnchor | null = null; // where the cart last started on its own
+  private controllerWasPlaying = false; // edge detector for the above
+  private controllerReaderPath = ""; // the ROM the cached reader was built from
+  private controllerReaderCache: LsdjReader | null = null;
   private onSystemsChange: () => void = () => {};
   private onChangeCb: () => void = () => {};
 
@@ -214,6 +223,84 @@ export class ProjectStore {
   recordCurrentSong(): boolean {
     const song = this.currentSong();
     return song ? this.recordSong(song) : false;
+  }
+
+  /** Notice an edit the player made INSIDE the tracker and re-drive the kernel, so a control surface's
+   *  song grid follows the song.
+   *
+   *  The controller's row-timing table is derived at projection time and pushed to the audio thread as
+   *  data, which means it only moves when something re-pushes. Nothing did: adding a chain to a song row
+   *  left the grid showing the song as it was until the feature was toggled off and on. This is the
+   *  missing signal, and it is polled rather than pushed because a cart being edited on its own screen
+   *  emits nothing. Cheap enough to sit on the same timer as recordCurrentSong: a signature over ~3 KB of
+   *  the live battery, with the sav decode happening only when it moves.
+   *
+   *  Deliberately does NOT mark the project dirty - the song lives in the cart's battery, not the .rplg. */
+  refreshControllerSong(): boolean {
+    const controller = this.projectSettings.controller;
+    if (!controller.enabled) return false;
+    const id = controller.systemId > 0 ? controller.systemId : (this.systems.view()[0]?.id ?? 0);
+    if (id <= 0) return false;
+    const sram = this.backend.readSram(id);
+    // One read, two answers. The sync mode is recorded EVERY poll (the player can change it without
+    // touching the song), while the re-push is gated on the song actually having moved.
+    this.controllerSync = savSyncMode(sram);
+    const anchored = this.sampleControllerAnchor(id);
+    const sig = workingSongSignature(sram);
+    const songMoved = sig !== this.controllerSongSig;
+    this.controllerSongSig = sig;
+    if (!songMoved && !anchored) return false;
+    this.onSystemsChange();
+    return true;
+  }
+
+  /** Watch for the cart starting playback on its OWN - the player pressing START on LSDj's song screen -
+   *  and capture where it actually started, so the predictor can be corrected.
+   *
+   *  Only the not-playing -> playing EDGE, which is what makes this affordable on the existing structure
+   *  push: a start is rare and discrete, where streaming the position every block would be M6. Returns
+   *  whether a new anchor was captured. Emulated carts only - a real Game Boy has no WRAM to read, and
+   *  dead reckoning stays all there is. */
+  private sampleControllerAnchor(id: number): boolean {
+    const reader = this.controllerReader(id);
+    if (!reader) return false;
+    const wram = this.backend.readRam(id);
+    if (!wram) return false;
+    const state = reader.read(wram);
+    const playing = anyChannelPlaying(state);
+    const started = playing && !this.controllerWasPlaying;
+    this.controllerWasPlaying = playing;
+    if (!started) return false;
+    this.controllerAnchor = { rows: anchorRowsFromState(state), seq: (this.controllerAnchor?.seq ?? 0) + 1 };
+    return true;
+  }
+
+  /** The WRAM reader for the controller's cart, built once per ROM. Null for a non-LSDj system, an
+   *  embedded ROM (nothing to read a header from), or a version with no known layout. */
+  private controllerReader(id: number): LsdjReader | null {
+    const sys = this.systems.view().find((s) => s.id === id);
+    const romPath = sys?.romPath ?? "";
+    if (!romPath || !sys?.roles?.some((r) => r.kind === "lsdj-sync")) return null;
+    if (this.controllerReaderPath !== romPath) {
+      this.controllerReaderPath = romPath;
+      const header = this.backend.readFilePrefix(romPath, 0x150);
+      const r = header ? LsdjReader.fromHeader(header) : null;
+      this.controllerReaderCache = r && r.supported ? r : null;
+    }
+    return this.controllerReaderCache;
+  }
+
+  /** The latest start-edge anchor, or null when the cart has not started on its own since load. Read by
+   *  the kernel projection, which pushes it to the controller role. */
+  controllerStartAnchor(): ControllerAnchor | null {
+    return this.controllerAnchor;
+  }
+
+  /** The controller cart's SYNC setting as of the last poll, or null when it is not a readable LSDj
+   *  battery. Anything other than "MidiMap" means row launches are being silently ignored - the cart goes
+   *  on playing and stepping, so the only symptom is that the pads stop doing anything. */
+  controllerCartSync(): string | null {
+    return this.controllerSync;
   }
 
   setLayout(v: SystemLayout): boolean {

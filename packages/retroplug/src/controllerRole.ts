@@ -38,11 +38,59 @@ interface RoleState {
   session?: ControllerSession | null;
   /** Whether a device was attached on the previous block - the edge detector below. */
   attached?: boolean;
+  /** The predictor, held here as well as inside the session so a reconfigure can carry it over rather
+   *  than restarting the song. */
+  model?: PredictedLsdjModel;
+  /** Identity of the config values the session was built from, so a re-push can be noticed. A structure
+   *  push builds a fresh config object, so reference equality is the whole test. */
+  table?: unknown;
+  shape?: string;
+  /** The last anchor sequence applied - see the re-anchor below. */
+  anchorSeq?: number;
+}
+
+/** The config fields that require a NEW session rather than an in-place update: which app runs, where its
+ *  launches go, and the app's own knobs (an app reads some of those once into its state, so swapping the
+ *  config object underneath it would leave half the change applied). */
+function sessionShape(c: ProjectCtx): string {
+  return JSON.stringify([c.config.app, c.config.target, c.config.systemId, c.config.appConfig]);
 }
 
 const launchpad: ProjectBehavior = (c: ProjectCtx) => {
   const st = c.state as RoleState;
-  if (st.session === undefined) st.session = buildSession(c);
+
+  // REACT TO A RE-PUSH. The session used to be built once and kept forever, which quietly made every later
+  // change invisible: editing the song on the cart left the grid showing the song as it was, and changing
+  // the app's own knobs in the menu did nothing at all. Toggling the feature off and on was the only way
+  // through, because that drops the stage and takes its state with it.
+  //
+  // The two kinds of change are handled differently ON PURPOSE. A new song table is adopted IN PLACE, so a
+  // chain added to row 12 lights up without the playhead moving. Anything structural rebuilds the session,
+  // carrying the predictor across so the song still does not restart.
+  const shape = sessionShape(c);
+  if (st.session === undefined || st.shape !== shape) {
+    if (st.model) st.model.setRowTicks(c.config.songRowTicks); // carried over: the table may have moved too
+    else st.model = PredictedLsdjModel.fromRowTicks(normaliseRowTicks(c.config.songRowTicks));
+    st.session = buildSession(c, st.model);
+    st.shape = shape;
+    st.table = c.config.songRowTicks;
+    st.attached = false; // a fresh surface has no idea what the device is showing: re-take it below
+  } else if (st.table !== c.config.songRowTicks) {
+    st.model?.setRowTicks(c.config.songRowTicks);
+    st.table = c.config.songRowTicks;
+  }
+
+  // RE-ANCHOR when the control plane saw the cart start playing on its own - the player pressing START on
+  // LSDj's own song screen, which the predictor has no other way to learn about. It begins at whatever row
+  // LSDj's cursor was on, so without this the lit playhead points at the wrong row until the next pad press
+  // (docs/launchpad-plan.md 4.4). Keyed on the sequence number, so an anchor riding along on later structure
+  // pushes is applied once rather than yanking the playhead back on every unrelated edit.
+  const seq = (c.config.anchorSeq as number) ?? 0;
+  if (seq !== st.anchorSeq) {
+    st.anchorSeq = seq;
+    if (seq > 0 && Array.isArray(c.config.anchorRows)) st.model?.anchorTo(c.config.anchorRows as (number | null)[]);
+  }
+
   const session = st.session;
   if (!session) return; // unknown app id, or no song table - nothing to run
 
@@ -69,14 +117,18 @@ const launchpad: ProjectBehavior = (c: ProjectCtx) => {
   for (let i = 0; i < messages.length; i++) c.emitControllerOut(messages[i]);
 };
 
-/** Build the session from config, or null when the config names nothing runnable. Called once, on the
- *  first block after a structure push - the kernel keeps the scratch bag across blocks, so the session
- *  (and its shadow buffer, and the app's own state) survives. */
-function buildSession(c: ProjectCtx): ControllerSession | null {
+/** Build the session from config, or null when the config names nothing runnable. Called on the first
+ *  block after a structure push and again whenever the session's shape changes; the kernel keeps the
+ *  scratch bag across blocks, so between those the session (and its shadow buffer, and the app's own
+ *  state) survives.
+ *
+ *  `model` is owned by the ROLE, not the session, and is reused across rebuilds. That is what stops a menu
+ *  tweak from restarting the song underneath the player - the cart keeps playing either way, so a model
+ *  that reset to nowhere would just make the LEDs lie until the next launch. */
+function buildSession(c: ProjectCtx, model: PredictedLsdjModel): ControllerSession | null {
   const type = apps.get((c.config.app as string) ?? "");
   if (!type) return null;
 
-  const model = PredictedLsdjModel.fromRowTicks(normaliseRowTicks(c.config.songRowTicks));
   const systemId = resolveSystemId(c, (c.config.systemId as number) ?? 0);
   const target = (c.config.target as ControllerTarget) ?? "system";
 
@@ -139,6 +191,11 @@ export function registerControllerRole(registry: RoleRegistry): void {
       systemId: clampedInt(0, 0x7fffffff, 0),
       appConfig: objectOr(),
       songRowTicks: arrayOr(),
+      // The start-edge re-anchor: where the CART said it was when the player started it themselves, and a
+      // sequence number so one anchor is applied once. Empty / 0 on the real-hardware path, where there is
+      // no memory to read and dead reckoning is all there is.
+      anchorRows: arrayOr(),
+      anchorSeq: clampedInt(0, 0x7fffffff, 0),
     }),
     dsp: launchpad,
   });

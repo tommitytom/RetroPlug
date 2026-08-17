@@ -94,6 +94,21 @@ export function normaliseRowTicks(table: unknown): RowTicksTable {
   return out;
 }
 
+/** Coerce `table` into `dst` in place, same rules as normaliseRowTicks but allocating nothing. `dst` must
+ *  already be the right shape. Exists because the one caller that replaces a live table (the controller
+ *  role, when the player edits the song on the cart) runs on the AUDIO THREAD. */
+export function copyRowTicks(table: unknown, dst: RowTicksTable): void {
+  const src = Array.isArray(table) ? table : [];
+  for (let ch = 0; ch < dst.length; ch++) {
+    const row = Array.isArray(src[ch]) ? (src[ch] as unknown[]) : [];
+    const out = dst[ch];
+    for (let r = 0; r < out.length; r++) {
+      const v = row[r];
+      out[r] = typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+    }
+  }
+}
+
 /** Build the table from a decoded song. Extracted so the control plane can derive it once and push it
  *  somewhere the song itself cannot go, with a single implementation of the arithmetic either way. */
 export function songRowTicks(song: Song): RowTicksTable {
@@ -153,6 +168,30 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
     return new PredictedLsdjModel(table);
   }
 
+  /** Adopt a new table WITHOUT disturbing playback - what happens when the player edits the song on the
+   *  cart while it is running. The alternative (build a fresh model) would jump the playhead back to
+   *  nowhere, which is exactly what the player is not asking for by adding a chain to row 12.
+   *
+   *  Updates in place, so the grid view built over the old array keeps working and nothing allocates on
+   *  the audio thread. Cursors are then re-validated against the new content: a row that LOST its chain
+   *  cannot still be playing, and a row whose chain got shorter cannot have more ticks left than it now
+   *  holds. Both are reachable by ordinary editing. */
+  setRowTicks(table: unknown): void {
+    copyRowTicks(table, this.rowTicksCache);
+    for (let ch = 0; ch < this.channelCount; ch++) {
+      const cur = this.cursors[ch];
+      if (cur.row === null) continue;
+      const ticks = this.rowTicksCache[ch][cur.row];
+      if (ticks === null) {
+        cur.row = null;
+        cur.remaining = 0;
+        cur.playing = false;
+      } else if (cur.remaining > ticks) {
+        cur.remaining = ticks;
+      }
+    }
+  }
+
   /** The next row this channel plays after `row`.
    *
    *  MEASURED (B9): an empty row is the END OF THE SONG, not a hole to step over. So this advances by
@@ -183,6 +222,36 @@ export class PredictedLsdjModel implements PredictivePlaybackModel {
     const ticks = this.rowTicksCache[channel];
     for (let r = row; r >= 0; r--) if (ticks[r] !== null) return r;
     return null;
+  }
+
+  /** Move each channel to where the cart says it actually is - the re-anchor of docs/launchpad-plan.md 4.4.
+   *
+   *  Unlike `launch` this is a CORRECTION, not an event: it does not consume a tick, and it leaves a channel
+   *  alone when the observation agrees with the prediction, so anchoring on a cart the predictor was already
+   *  tracking is a no-op rather than a stutter. A channel is given the full row duration, since the
+   *  observation says which row but not how far into it - at 96 ticks a row that is at worst one row of
+   *  phase, and the next anchor or launch corrects it.
+   *
+   *  `rows[ch]` null means that channel is not playing. All four null is a stopped cart. */
+  anchorTo(rows: readonly (number | null)[]): void {
+    let anyPlaying = false;
+    for (let ch = 0; ch < this.channelCount; ch++) {
+      const cur = this.cursors[ch];
+      const row = rows[ch];
+      if (row === null || row === undefined || row < 0 || row >= SONG_ROWS) {
+        cur.row = null;
+        cur.remaining = 0;
+        cur.playing = false;
+        continue;
+      }
+      anyPlaying = true;
+      if (cur.playing && cur.row === row) continue; // already right: leave its phase alone
+      const ticks = this.rowTicksCache[ch][row];
+      cur.row = row;
+      cur.remaining = ticks ?? 0;
+      cur.playing = ticks !== null;
+    }
+    this.playing = anyPlaying;
   }
 
   launch(row: number): void {

@@ -569,6 +569,47 @@ HOST state (persisted natively in `launchpad.cfg`, shared by every project), whi
 target / enable are PROJECT state, persisted in the `.rplg` as M5 already arranged. `setController` is the
 one settings writer that re-pushes the kernel, since the role is synthesized at projection time.
 
+### 8.4 FIXED: three things a real session found
+
+M4 shipped and was played. Three faults, all of which needed hardware to see.
+
+**The grid did not follow the song.** Editing a chain into a song row inside LSDj left the pads showing the
+song as it was; toggling "Use in Project" off and on was the only way through. Two causes, stacked. The role
+built its `ControllerSession` once and kept it forever, so a re-pushed `songRowTicks` never reached the
+model - and menu knobs were equally dead, for the same reason. And nothing re-pushed anyway: the table is
+derived at projection time from the cart's battery, and a cart being edited on its own screen emits no
+signal.
+
+So the role now watches its config, and treats two kinds of change differently. A new table is adopted **in
+place** (`PredictedLsdjModel.setRowTicks`), so a chain added to row 12 lights up without the playhead
+moving; anything structural rebuilds the session, **carrying the predictor across** so the song does not
+restart under the player. And `ProjectStore.refreshControllerSong` polls the battery on the existing
+song-watch timer, gated on a signature over only the four regions row timing depends on (chain assignments,
+chain phrases, chain allocations, groove 0) - so an instrument tweak or a rename costs nothing, and the sav
+decode happens only once the answer has actually moved.
+
+**A cart that leaves MI.MAP goes deaf, silently.** Measured in
+[test-native/lsdj-sync-toggle](../packages/retroplug/test-native/lsdj-sync-toggle.test.ts): LSDj **refuses to
+change SYNC while it is playing** (editable when idle, editable when merely being clocked, not while
+playing), so reaching for the setting mid-session leaves it wherever the first press landed with no way
+back. A cart in MI.OUT then ignores row launches completely while still playing and still stepping to the
+host clock - nothing looks wrong, the pads just stop working. Not our bug to fix, but very much ours to
+report: the poll reads the SYNC byte and the Launchpad submenu says
+`Cart SYNC is MIDIOUT, not MI.MAP - pads will do nothing`.
+
+That file also carries the instrument that got there: `LsdjProbe` gained button presses, chords, screen
+navigation and `autoClock` (a clock running underneath every rendered frame, so "the player did this while
+it was syncing" is one flag rather than hand-interleaved bytes).
+
+**Pressing START on the cart desynced the display.** LSDj starts at whatever row ITS cursor is on; the
+predictor carried on from where it thought it was, and the lit playhead stayed wrong until the next pad
+press put both back in step. This is the re-anchor of section 4.4, applied at the one moment it is cheap and
+unambiguous: the **not-playing -> playing edge**, which the control plane sees through the WRAM reader it
+already owns. The rows ride to the audio thread as role config with a sequence number, and
+`PredictedLsdjModel.anchorTo` applies them as a correction rather than an event - no tick consumed, channels
+that already agree left alone, and per channel because they genuinely diverge (B4). Mid-song correction is
+still M6; a start edge is not.
+
 ---
 
 ## 9. Testing

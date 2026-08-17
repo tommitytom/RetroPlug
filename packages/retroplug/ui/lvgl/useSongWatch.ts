@@ -25,5 +25,9 @@ export function useSongWatch(stores: AppStores): void {
     if (++ticks.current < POLL_FRAMES) return;
     ticks.current = 0;
     stores.project.recordCurrentSong();
+    // Same rhythm, same battery, different question: has the SONG ITSELF changed under a control surface?
+    // A cart being edited on its own screen tells the app nothing, so this is the only way the Launchpad's
+    // grid learns that row 12 just gained a chain. Inert unless a controller is enabled.
+    stores.project.refreshControllerSong();
   });
 }

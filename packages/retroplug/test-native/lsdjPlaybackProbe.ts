@@ -38,6 +38,10 @@ export const ABOY_ROM = __RESOURCES_DIR__ + "/roms/lsdj/lsdj9_3_3-arduinoboy.gb"
 export const MAP_CLOCK = 0xff; // one per MIDI clock (0xF8) — Arduinoboy's setMapByte(0xFF, …)
 export const MAP_NOTEOFF = 0xfe; // the NoteOff handshake (MIDIMAP_NOTEOFF in dspRoles.ts)
 
+/** Song-relative offset of the SYNC setting in the working song (regions.ts syncMode). Lets a test read
+ *  which mode the cart is ACTUALLY in, rather than trusting a count of button presses. */
+export const SYNC_MODE_OFF = 0x3fbd;
+
 /** One 24-PPQN tick at ~119 BPM. LSDj drains the link port from its frame loop (~16.7 ms), so a
  *  clock stream faster than a frame is simply not consumed — the first version of this probe clocked
  *  at 3-5 ms and the cart never moved at all. Keep tick spacing at or above one frame. */
@@ -183,8 +187,95 @@ export class LsdjProbe {
     return out;
   }
 
+  // --- driving the handheld ------------------------------------------------------------------------
+  // Some questions are only reachable through LSDj's own UI, because the interesting code is the code
+  // that RUNS when the user changes something (switching SYNC reconfigures the link hardware; poking the
+  // setting byte in SRAM behind LSDj's back runs none of that). Buttons are `BUTTON_VALUE` from
+  // keyCodes.ts - the same uint8 the native bridge carries.
+
+  /** Tap a button: hold it for `downMs`, release, settle for `upMs`. LSDj samples the pad from its frame
+   *  loop, so a press shorter than a frame is simply never seen. */
+  press(button: number, downMs = 50, upMs = 50): ProbeSample {
+    this.audio.pressButton(this.id, button, true);
+    this.render(downMs);
+    this.audio.pressButton(this.id, button, false);
+    return this.render(upMs);
+  }
+
+  /** Tap `button` while `held` is down - LSDj's chords (SELECT+direction switches screen). */
+  chord(held: number, button: number, downMs = 50, upMs = 50): ProbeSample {
+    this.audio.pressButton(this.id, held, true);
+    this.render(30);
+    this.audio.pressButton(this.id, button, true);
+    this.render(downMs);
+    this.audio.pressButton(this.id, button, false);
+    this.render(30);
+    this.audio.pressButton(this.id, held, false);
+    return this.render(upMs);
+  }
+
+  /** Walk to `target` with SELECT+direction, sampling after each move. LSDj lays its screens out on a
+   *  grid, so this tries each direction rather than hardcoding a route - the map differs by version and
+   *  a wrong turn would silently leave a test asserting about the wrong screen. Returns whether it
+   *  arrived. */
+  gotoScreen(target: string, tries = 12): boolean {
+    const SELECT = 6;
+    const DIRS = [2, 1, 3, 0]; // Up, Left, Down, Right
+    if (this.sample().screen === target) return true;
+    for (let i = 0; i < tries; i++) {
+      for (const dir of DIRS) {
+        if (this.chord(SELECT, dir).screen === target) return true;
+      }
+    }
+    return false;
+  }
+
+  /** The cart's live battery - for reading a setting LSDj stores in the song (SYNC, tempo, …) from
+   *  outside, which is how a test checks that a UI edit actually landed. */
+  sram(): Uint8Array | null {
+    return this.be.readSram(this.id);
+  }
+
+  /** The song's SYNC setting byte (regions.ts syncMode), or null when the battery is unreadable. */
+  syncMode(): number | null {
+    const s = this.sram();
+    return s && s.length > SYNC_MODE_OFF ? s[SYNC_MODE_OFF] : null;
+  }
+
+  /** Keep a clock running underneath everything else this probe does - every render() from here on emits
+   *  one MAP_CLOCK per `msPerTick` of rendered time. Null turns it off.
+   *
+   *  Exists because some questions are about what the cart does while it is BEING clocked and the player
+   *  is doing something else: walking LSDj's menus, changing a setting. Driving that by hand would mean
+   *  interleaving clock bytes into every button press by hand, and getting it slightly wrong in a way that
+   *  quietly changes the experiment. */
+  autoClock(msPerTick: number | null): void {
+    this.autoClockMs = msPerTick && msPerTick > 0 ? msPerTick : 0;
+    this.autoClockDebt = 0;
+  }
+  private autoClockMs = 0;
+  private autoClockDebt = 0;
+
   /** Render `ms` and return the state at the end of it. */
   render(ms: number): ProbeSample {
+    if (this.autoClockMs > 0) {
+      // Slice the render so the clock keeps its spacing across a long call, carrying the remainder so a
+      // run of short renders still produces ticks at the right average rate.
+      let left = ms;
+      while (left > 0) {
+        const step = Math.min(left, this.autoClockMs - this.autoClockDebt);
+        this.autoClockDebt += step;
+        if (this.autoClockDebt >= this.autoClockMs) {
+          this.raw(MAP_CLOCK);
+          this.tickCount++;
+          this.autoClockDebt = 0;
+        }
+        this.audio.renderAudio(step);
+        this.ms += step;
+        left -= step;
+      }
+      return this.sample();
+    }
     this.audio.renderAudio(ms);
     this.ms += ms;
     return this.sample();

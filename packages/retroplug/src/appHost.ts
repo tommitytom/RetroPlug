@@ -64,5 +64,5 @@ function controllerProjection(project: ProjectStore): ControllerProjection | und
   const table = systemId > 0 ? songRowTicksFromSav(project.systems.readSram(systemId)) : null;
   // No readable battery is not a failure: the app still launches rows, it just cannot shade the ones that
   // hold chains. An empty table reads as "no content anywhere".
-  return { ...controller, songRowTicks: table ?? [] };
+  return { ...controller, songRowTicks: table ?? [], anchor: project.controllerStartAnchor() };
 }
