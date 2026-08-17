@@ -75,14 +75,11 @@ std::vector<std::string> MidiIo::listOutputs() const { return hardwarePortNames(
 void MidiIo::openHardwareInputs() {
     hwIn_.clear();
     const std::vector<std::string> names = probePortNames(true, clientName_);
-    // Empty selection = All Devices (every hardware input); else just the one whose name matches. Either way
-    // a port reserved by a control surface is skipped - "All Devices" is exactly the case that would
-    // otherwise merge a Launchpad's pad presses into the musical stream.
-    std::vector<std::size_t> open;
-    if (selectedIn_.empty())
-        open = hardwarePortIndices(names, clientName_, reservedIn_);
-    else if (auto idx = matchPortIndex(names, clientName_, selectedIn_, reservedIn_))
-        open.push_back(*idx);
+    // The policy lives in the pure helper so it can be unit-tested: none (the default) / every device / the
+    // named one, with a control surface's claimed port skipped throughout.
+    const std::vector<std::size_t> open = inputPortsToOpen(names, clientName_, selectedIn_, reservedIn_);
+    if (open.empty() && selectedIn_.empty())
+        std::fprintf(stderr, "[retroplug-sdl] MIDI in: no hardware device selected (Settings > MIDI)\n");
     for (std::size_t i : open) {
         try {
             auto in = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, clientName_);

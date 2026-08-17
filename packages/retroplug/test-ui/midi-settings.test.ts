@@ -6,7 +6,7 @@
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
 
-// A fake SDL host: two input devices, one output. selected* start at the defaults ("" = All / None). The
+// A fake SDL host: two input devices, one output. selected* start at the defaults ("" = None either way). The
 // setters record their calls and mutate the fake state, so a re-render reflects the pick (as the real host
 // would after reconnecting the port). Installed at module scope so it's present before the UI boots.
 const calls: Array<[string, string]> = [];
@@ -43,28 +43,36 @@ test("Settings > MIDI: input/output device cyclers pick a device, call the host,
   ui.tapKey(Key.Enter);
   ui.pump(8);
 
-  // Defaults: input = All Devices, output = None.
-  expect(labelOf("Input Device")).toBe("Input Device: All Devices");
+  // Defaults: NOTHING open in either direction. Input used to default to every device, which is a
+  // surprising amount of behaviour to get without asking - anything plugged in becomes a MIDI source, so a
+  // control surface's free-running clock drives the host tempo. The virtual "RetroPlug In" port is open
+  // regardless, so "None" still receives from a DAW; only physical devices are opt-in.
+  expect(labelOf("Input Device")).toBe("Input Device: None");
   expect(labelOf("Output Device")).toBe("Output Device: None");
 
-  // Step the input cycler forward → the first device; the host setter is called with its name.
+  // Step forward → "All Devices", which is now a CHOICE rather than the default, stored as its sentinel.
   expect(navTo("Input Device")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(8);
+  expect(calls.at(-1)).toEqual(["in", "*"]);
+  expect(labelOf("Input Device")).toBe("Input Device: All Devices");
+
+  // Then the devices themselves, in the order the live list gives them.
   ui.tapKey(Key.Enter);
   ui.pump(8);
   expect(calls.at(-1)).toEqual(["in", "Launchpad MK2"]);
   expect(labelOf("Input Device")).toBe("Input Device: Launchpad MK2");
 
-  // Again → the second device (proves the live list drives the cycle, not a fixed toggle).
   ui.tapKey(Key.Enter);
   ui.pump(8);
   expect(calls.at(-1)).toEqual(["in", "Arturia KeyStep 32"]);
   expect(labelOf("Input Device")).toBe("Input Device: Arturia KeyStep 32");
 
-  // Once more wraps back to All Devices (empty selection).
+  // Once more wraps back to None (empty selection).
   ui.tapKey(Key.Enter);
   ui.pump(8);
   expect(calls.at(-1)).toEqual(["in", ""]);
-  expect(labelOf("Input Device")).toBe("Input Device: All Devices");
+  expect(labelOf("Input Device")).toBe("Input Device: None");
 
   // The output cycler picks the hardware output; Left steps back to None.
   expect(navTo("Output Device")).toBeTruthy();

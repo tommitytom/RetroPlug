@@ -1050,8 +1050,12 @@ void saveAudioConfig(AppState& a) {
     writeTextFile(audioCfgPath(a), rfl::json::write(c) + "\n");
 }
 
-// The chosen MIDI input/output device names (Settings > MIDI). "" = the default sentinel (All Devices for
-// input, None for output).
+// The chosen MIDI input/output device names (Settings > MIDI). "" = None in BOTH directions (the virtual
+// ports only), which is the default; the input also takes kAllInputs ("*") as an explicit "every device".
+//
+// NOTE for anyone reading an old midi.json: "" used to mean All Devices on the input side, and there is no
+// way to tell that apart from "never chose" - both wrote the same empty string. So an existing file simply
+// lands on the new default, which is the behaviour a default change should have.
 struct MidiCfgJson {
     std::string input;
     std::string output;
@@ -1112,7 +1116,7 @@ void reconfigureMidi(AppState& a, bool input, const std::string& name) {
     startAudio(a);
     saveMidiConfig(a);
     std::fprintf(stderr, "[retroplug-sdl] MIDI %s device -> '%s'\n", input ? "input" : "output",
-                 name.empty() ? (input ? "All Devices" : "None") : name.c_str());
+                 name.empty() ? "None" : (name == retroplug::kAllInputs ? "All Devices" : name.c_str()));
 }
 
 // (The N8 link + config + n8.cfg persistence now live in retroplug::N8Host, shared with the DAW plugin.)

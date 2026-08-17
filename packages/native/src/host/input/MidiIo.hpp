@@ -45,6 +45,27 @@ inline std::optional<std::size_t> matchPortIndex(const std::vector<std::string>&
     return std::nullopt;
 }
 
+/** The input selection meaning "every hardware port at once". An explicit CHOICE, not the default: opening
+ *  every device turns out to be a surprising thing to do by default, because a device you plugged in for one
+ *  purpose is then also a MIDI source - a control surface's free-running clock ends up driving the host
+ *  tempo, a controller's mixer ports send notes at the cart. So the empty selection is "None" (matching the
+ *  output side), and this is what a user picks when they want the old behaviour back. */
+inline constexpr const char* kAllInputs = "*";
+
+/** Indices of the input ports to open for `selection`: none when empty (the default), every hardware port
+ *  for kAllInputs, else just the one whose name matches. A port `reserved` by a control surface is skipped
+ *  in every case.
+ *
+ *  Pure so the policy itself is testable (retroplug-midi-test) rather than only observable by watching which
+ *  RtMidi ports a running standalone happens to open. */
+inline std::vector<std::size_t> inputPortsToOpen(const std::vector<std::string>& names, const std::string& clientName,
+                                                 const std::string& selection, const std::string& reserved = {}) {
+    if (selection.empty()) return {};
+    if (selection == kAllInputs) return hardwarePortIndices(names, clientName, reserved);
+    if (auto idx = matchPortIndex(names, clientName, selection, reserved)) return { *idx };
+    return {};
+}
+
 // Cross-platform MIDI I/O for the SDL standalone, wrapping RtMidi (deps/rtmidi). The DPF plugin gets MIDI
 // from its DAW host, so this is standalone-only.
 //
@@ -77,10 +98,16 @@ public:
     std::vector<std::string> listInputs() const;
     std::vector<std::string> listOutputs() const;
 
-    // Choose which hardware device to use, by port name; applied immediately if open() has run. An empty input
-    // selection means "All Devices" (open every hardware input, the default); an empty output selection means
-    // "None" (the virtual output only, the default). A name that isn't currently present is remembered and
-    // re-applied on the next open()/reconnect. Persisted by the host (midi.json).
+    // Choose which hardware device to use, by port name; applied immediately if open() has run. An empty
+    // selection means "None" for BOTH directions - the virtual ports only, and the default. `kAllInputs`
+    // ("*") is the explicit "every hardware input" choice. A name that isn't currently present is remembered
+    // and re-applied on the next open()/reconnect. Persisted by the host (midi.json).
+    //
+    // Input used to default to every device, which is a surprising amount of behaviour to get without asking
+    // for it: anything plugged in becomes a MIDI source, so a control surface's free-running clock drives the
+    // host tempo and a controller's mixer ports send notes at the cart. Note the virtual "<client> In" port
+    // is ALWAYS open regardless, so a DAW or an aconnect user is unaffected by the default - only physical
+    // devices became opt-in.
     void setInputSelection(const std::string& name);
     void setOutputSelection(const std::string& name);
     const std::string& inputSelection() const { return selectedIn_; }
@@ -116,7 +143,7 @@ private:
     void openHardwareOutput();
 
     std::string                             clientName_ = "RetroPlug"; // set by open(); used for port skip + reconnect
-    std::string                             selectedIn_;   // "" = All Devices (open every hardware input)
+    std::string                             selectedIn_;   // "" = None (virtual input only); "*" = every device
     std::string                             selectedOut_;  // "" = None (virtual output only)
     std::string                             reservedIn_;   // "" = nothing claimed by a control surface
 

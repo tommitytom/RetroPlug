@@ -93,7 +93,7 @@ import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice } from "./audioDraft";
-import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput } from "./midiDevices";
+import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
 import {
@@ -194,12 +194,29 @@ function deviceCyclerNames(devices: string[], selected: string, allLabel: string
   return { names, index: names.length - 1 };
 }
 
+/** Cycler entries for the INPUT device: "None" (the default), then "All Devices", then each port.
+ *
+ *  Two sentinels rather than the output side's one, because opening every device is a real choice somebody
+ *  might want and a poor thing to get without asking - anything plugged in becomes a MIDI source, so a
+ *  control surface's free-running clock drives the host tempo and a controller's mixer ports send notes at
+ *  the cart. The virtual "RetroPlug In" port is open either way, so "None" still receives from a DAW. */
+function inputCyclerNames(devices: string[], selected: string): { names: string[]; index: number } {
+  const names = ["None", "All Devices", ...devices];
+  if (selected === "") return { names, index: 0 };
+  if (selected === ALL_INPUTS) return { names, index: 1 };
+  const i = devices.indexOf(selected);
+  if (i >= 0) return { names, index: i + 2 };
+  names.push(`${selected} (not connected)`); // a saved pick whose device is away still shows
+  return { names, index: names.length - 1 };
+}
+
 function midiSettingsChildren(): MenuItem[] {
   const cfg = getMidiConfig() ?? { inputs: [], outputs: [], selectedInput: "", selectedOutput: "" };
-  const inp = deviceCyclerNames(cfg.inputs, cfg.selectedInput, "All Devices");
+  const inp = inputCyclerNames(cfg.inputs, cfg.selectedInput);
   const out = deviceCyclerNames(cfg.outputs, cfg.selectedOutput, "None");
-  // Cycler index 0 = the default sentinel ("" selection); any other index maps back to the device name.
-  const inName = (n: number) => (n === 0 ? "" : cfg.inputs[n - 1] ?? cfg.selectedInput);
+  // Input index 0/1 are the two sentinels; anything above maps back to a device name. Output keeps its
+  // single sentinel at 0.
+  const inName = (n: number) => (n === 0 ? "" : n === 1 ? ALL_INPUTS : cfg.inputs[n - 2] ?? cfg.selectedInput);
   const outName = (n: number) => (n === 0 ? "" : cfg.outputs[n - 1] ?? cfg.selectedOutput);
   return [
     cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),

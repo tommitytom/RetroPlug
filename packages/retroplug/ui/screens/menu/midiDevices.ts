@@ -8,10 +8,16 @@
 // (subscribeMidi) so a device pick forces a rebuild and the cycler label tracks the new value at once. The seam
 // is absent in a DAW / JACK standalone / the headless harness (hasMidiConfig() is false → the submenu hidden).
 
+/** The input selection meaning "every hardware port at once" - an explicit choice, not the default.
+ *  Opening every device turns out to be a surprising thing to do by default: anything plugged in becomes a
+ *  MIDI source, so a control surface's free-running clock ends up driving the host tempo and a controller's
+ *  mixer ports send notes at the cart. Mirrors kAllInputs in MidiIo.hpp. */
+export const ALL_INPUTS = "*";
+
 export interface MidiConfig {
-  inputs: string[]; // available hardware input port names ("" selection = All Devices, the default)
-  outputs: string[]; // available hardware output port names ("" selection = None, the default)
-  selectedInput: string; // "" = All Devices; else a device name (may not be currently present)
+  inputs: string[]; // available hardware input port names
+  outputs: string[]; // available hardware output port names
+  selectedInput: string; // "" = None (virtual input only, the default); ALL_INPUTS = every device; else a name
   selectedOutput: string; // "" = None (virtual output only); else a device name
 }
 
