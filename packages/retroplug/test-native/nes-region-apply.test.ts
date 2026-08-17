@@ -27,7 +27,7 @@ function periodFor(region: "ntsc" | "pal" | null): { period: number; frequency: 
     .note(200, 60, { channel: 1, durationMs: 600 })
     .at(500, (sess) => (apu = sess.backend.getApuState(id)));
   renderTimeline(s, tl, { durationMs: 900, warmupMs: 1500 });
-  if (!apu) throw new Error("no APU state");
+  expect(apu != null).toBeTruthy();
   return { period: apu!.pulse1.period, frequency: apu!.pulse1.frequency };
 }
 
