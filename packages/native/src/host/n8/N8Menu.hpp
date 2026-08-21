@@ -1,10 +1,19 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace retroplug {
 
 class Edio;
+
+// The menu's on-screen state (from N8Menu::vramDump): 2048 flattened (tileIdx, attr) VRAM pairs + 16
+// NES-palette indices. Pair with Edio::memRD(ADDR_MENU_CHR, 8192) to reconstruct the 256x224 screen.
+struct N8VramDump {
+    std::vector<std::uint8_t> vram;     // 2048 bytes
+    std::vector<std::uint8_t> palette;  // 16 bytes
+};
 
 // The on-device Everdrive N8 menu command channel - a native twin of the TS N8Menu (n8Menu.ts). While the
 // N8's file-browser menu is running it reads '*'-prefixed commands from the same cart FIFO the MIDI bridge
@@ -27,6 +36,10 @@ public:
 
     // Boot the installed ROM: '*s'. The menu core drops out and the game runs.
     void appStart();
+
+    // Dump the menu's on-screen state: '*v' -> the firmware streams 2048 VRAM bytes then 16 palette bytes
+    // straight back over USB. Menu-only (a running game won't answer) - call test() first for a clean error.
+    N8VramDump vramDump();
 
     // Reboot back to the menu: '*r' -> best-effort ack (the console then reboots for ~seconds). Not used by
     // the UI ops (we cannot reliably wait for the reboot), kept for parity with n8Menu.ts.

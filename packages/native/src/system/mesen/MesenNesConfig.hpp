@@ -24,6 +24,13 @@ struct MesenNesConfig {
     // needs a reset. removeSpriteLimit toggles the PPU 8-sprites/line cap (live).
     std::uint32_t region            = 0;
     bool          removeSpriteLimit = false;
+    // Cartridge-accuracy switches (TS enums, 0 = "chip", 1 = "n8"). Default to "n8" to match coreRoles.ts:
+    // this is music software and NES music is played back through an Everdrive N8 Pro, whose FPGA cores
+    // measurably differ from the documented chips. Live knobs.
+    // s5bNoise: the 5B's noise generator (the N8 has none, and its tone-AND-noise mixer then mutes).
+    // mmc5PhaseReset: whether $5003/$5007 restarts the pulse duty sequencer (the N8's does not).
+    std::uint32_t s5bNoise          = 1;
+    std::uint32_t mmc5PhaseReset    = 1;
     // Per-channel audio export mode (CLI-only; spec/10 §5/§5b). 0 = Mix (default, the mixed stereo
     // output). 1 = StereoModPins: the two 2A03 output pins (Pulse | TND) + a lumped Expansion stream, 3
     // mono channelLayout() streams. 3 = IndividualMono: the 5 core channels (Square1/Square2/Triangle/

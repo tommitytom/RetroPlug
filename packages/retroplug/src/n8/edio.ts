@@ -9,23 +9,41 @@ import type { SerialTransport } from "./transport";
 
 // Protocol constants (krikzz Edio) - kept byte-identical to native Edio.hpp.
 const CMD_STATUS = 0x10; // connect handshake / status poll
+const CMD_GET_VDC = 0x13; // read board voltages (4x u16: v50, v25, v12, bat)
 const CMD_MEM_RD = 0x19; // read bytes from a device address
+const CMD_SYS_INF = 0x26; // read the 64-byte device info (serial, versions, form factor, flash)
 const CMD_MEM_WR = 0x1a; // write bytes to a device address
 const CMD_F_DIR_LD = 0xc5; // load a directory into the N8 buffer (sorted)
 const CMD_F_DIR_SIZE = 0xc6; // number of records in the loaded directory
 const CMD_F_DIR_GET = 0xc8; // pull a range of directory records
 const CMD_F_FOPN = 0xc9; // open a file on the SD card
+const CMD_F_FRD = 0xca; // read bytes from the open file
 const CMD_F_FWR = 0xcc; // write bytes to the open file
 const CMD_F_FCLOSE = 0xce; // close the open file
+const CMD_F_DIR_MK = 0xd2; // make a directory on the SD card
+const CMD_F_DEL = 0xd3; // delete a file or empty directory
+const CMD_F_AVB = 0xd5; // free space available on the SD card (u64)
 
+export const ADDR_PRG = 0x000000; // PRG-ROM PSRAM (8 MB) - live code, the same chip the CPU fetches
+export const ADDR_CHR = 0x800000; // CHR-ROM PSRAM (8 MB) - live graphics, the same chip the PPU fetches
 export const ADDR_SRM = 0x1000000; // cart battery RAM (a game's .srm)
+export const ADDR_MENU_CHR = 0xfe0000; // menu CHR (ADDR_CHR 0x800000 + 0x7E0000); screenshot
+export const N8_OS_REGION = 0x7e0000; // top of PRG/CHR (0x7E0000..0x800000) is the N8 OS/menu - never patch into it
+export const ADDR_SSR = 0x1802000; // save-state sniffer: a running game's live APU/PPU/OAM write-mirror
 export const ADDR_FIFO = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
+// FPGA config reg: expansion-audio master volume (MapConfig.master_vol = scfg[3]; krikzz edn8-pro-pub
+// fpga/base_sv/sys_cfg.sv). 0 = mute, 128 = unity, 255 = 2x. Write-only and live-only - it applies to the
+// RUNNING cart, and reading it back returns something else, so never verify this write.
+export const ADDR_EXP_VOL = 0x1800023;
 export const SIZE_SRM_GAME = 0x10000; // 64 KB - max battery RAM a game uses
 
 const ACK_BLOCK_SIZE = 1024; // fileWrite ack granularity
+const RD_BLOCK_SIZE = 512; // fileRead block size: one CMD_F_FRD per block; <=512 avoids the cart-FIFO overload
+// the device warns about (edn8-pro-pub ed_cmd_file_read), which desyncs multi-block reads at 4096
 const TX_BLOCK_SIZE = 8192; // txData chunk (matches native)
 
 // File-open mode flags (FatFs).
+export const FA_READ = 0x01;
 export const FA_WRITE = 0x02;
 export const FA_CREATE_ALWAYS = 0x08;
 export const FS_MAKEPATH = 0x80; // create parent dirs if missing
@@ -72,6 +90,43 @@ export class Edio {
     if ((resp & 0xff00) !== 0xa500)
       throw new Error(`Edio: unexpected status response (${hex4(resp & 0xffff)})`);
     return resp & 0xff;
+  }
+
+  // Read the raw 64-byte device-info block (serial, versions, form factor, flash). Decode with
+  // decodeSysInfo (src/n8/sysInfo.ts). Works whether the menu or a game is running.
+  sysInfo(): Uint8Array {
+    this.txCMD(CMD_SYS_INF);
+    return this.readData(64);
+  }
+
+  // Read the raw 8-byte board-voltage block (four u16: v50, v25, v12, bat). Decode with decodeVdc.
+  vdc(): Uint8Array {
+    this.txCMD(CMD_GET_VDC);
+    return this.readData(8);
+  }
+
+  // Free space on the SD card, in bytes (CMD_F_AVB -> two u32: hi then lo, per edlink FileAvailable).
+  freeSpace(): number {
+    this.txCMD(CMD_F_AVB);
+    const b = this.readData(8);
+    const hi = (b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24)) >>> 0;
+    const lo = (b[4] | (b[5] << 8) | (b[6] << 16) | (b[7] << 24)) >>> 0;
+    return hi * 0x100000000 + lo;
+  }
+
+  // Make a directory on the SD card (CMD_F_DIR_MK + path). Tolerates "already exists" (status 8).
+  dirMake(path: string): void {
+    this.txCMD(CMD_F_DIR_MK);
+    this.txString(path);
+    const resp = this.getStatus();
+    if (resp !== 0 && resp !== 8) throw new Error(`Edio: mkdir error 0x${hex2(resp)} (${path})`);
+  }
+
+  // Delete a file or empty directory on the SD card (CMD_F_DEL + path). Throws on a non-zero device status.
+  fileDelete(path: string): void {
+    this.txCMD(CMD_F_DEL);
+    this.txString(path);
+    this.checkStatus();
   }
 
   setReadTimeout(ms: number): void {
@@ -164,6 +219,38 @@ export class Edio {
     this.checkStatus();
   }
 
+  // Read `size` bytes from the open file. One CMD_F_FRD per block (block size <= RD_BLOCK_SIZE), each gated by
+  // a resp byte, exactly as the device's ed_cmd_file_read loops (edn8-pro-pub) - re-sending the command per
+  // block is required, and keeping blocks <= 512 avoids the cart-FIFO overload that desyncs a single big read.
+  // Pairs with fileOpen(path, FA_READ).
+  fileRead(size: number): Uint8Array {
+    const out = new Uint8Array(size);
+    let off = 0;
+    while (off < size) {
+      const block = Math.min(RD_BLOCK_SIZE, size - off);
+      this.txCMD(CMD_F_FRD);
+      this.tx32(block);
+      const resp = this.rx8();
+      if (resp !== 0) throw new Error(`Edio: file read error 0x${hex2(resp)}`);
+      out.set(this.rxData(block), off);
+      off += block;
+    }
+    return out;
+  }
+
+  // Read a whole SD file by path: find its size via listDir, then fileOpen(FA_READ) -> fileRead -> fileClose.
+  readFile(path: string): Uint8Array {
+    const slash = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    const dir = slash < 0 ? "" : path.slice(0, slash);
+    const name = slash < 0 ? path : path.slice(slash + 1);
+    const entry = this.listDir(dir).find((e) => !e.isDir && e.name === name);
+    if (!entry) throw new Error(`Edio: file not found on SD: ${path}`);
+    this.fileOpen(path, FA_READ);
+    const data = this.fileRead(entry.size);
+    this.fileClose();
+    return data;
+  }
+
   // --- blocking reads (the N8 menu's replies come back this way) ---
 
   rx8(): number {
@@ -176,6 +263,13 @@ export class Edio {
   rx32(): number {
     const b = this.rxData(4);
     return (b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24)) >>> 0;
+  }
+
+  // Read `size` raw bytes off the serial port (no command frame) - a menu reply the firmware streams after a
+  // FIFO command, e.g. N8Menu.vramDump's 2048+16 bytes. (memRD/fileRead can't serve it: each sends its own
+  // command first.) Blocks; throws N8TimeoutError on no response.
+  readData(size: number): Uint8Array {
+    return this.rxData(size);
   }
 
   // --- framing internals (mirror Edio.cpp) ---

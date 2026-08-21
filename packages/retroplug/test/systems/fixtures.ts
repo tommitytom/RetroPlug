@@ -142,7 +142,7 @@ export function risaRomFull(): Uint8Array {
   return rom;
 }
 
-/** A full-size synthetic EverMIDI ROM (16 + 32 KB PRG + 8 KB CHR = 0xA010, NROM) carrying the "EVERMIDI"
+/** A full-size synthetic EverMIDI ROM (16 + 32 KB PRG + 8 KB CHR = 0xA010, NROM) carrying the "evermidi-n8"
  *  marker at the ROM head + one populated DMC kit at $C000 (PRG offset 0x4000) + a distinct CHR font region.
  *  Enough for EverMidiRom.isEverMidi + kit/font read/patch; the PRG body is otherwise zeros. */
 export function everMidiRom(): Uint8Array {
@@ -154,10 +154,12 @@ export function everMidiRom(): Uint8Array {
   rom[5] = 0x01; // 1 × 8 KB CHR
   rom[6] = 0x01; // vertical mirroring, mapper 0 (NROM)
 
-  // The EVERMIDI detection marker at the ROM head ($8000 = file offset 0x10), as the SIG segment bakes it.
-  const MARK = "EVERMIDI";
+  // The EverMIDI SIG block at the ROM head ($8000 = file offset 0x10), as the SIG segment bakes it:
+  // the "evermidi-n8" marker (also the display name) + semver(0.1.0).
+  const MARK = "evermidi-n8";
   for (let i = 0; i < MARK.length; i++) rom[0x10 + i] = MARK.charCodeAt(i);
-  rom[0x10 + MARK.length] = 0x01; // version 1
+  let p = 0x10 + MARK.length;
+  rom[p++] = 0x00; rom[p++] = 0x01; rom[p++] = 0x00; // semantic version 0.1.0
 
   // A risa-format theme table in the code region (before the kit at 0x4010), at a fixed offset for tests.
   // Magic + one 7-role record (bg,normal,shaded,alternate,status,cursor,selection) + a 4-char name.
@@ -184,7 +186,7 @@ export function everMidiRom(): Uint8Array {
 }
 
 /** A full-size synthetic EverMIDI BANKING ROM (16 + 256 KB PRG + 8 KB CHR, mapper 69 / FME-7) carrying the
- *  "EVERMIDI" marker + theme table + one populated DMC kit in slot 0, with slots 1..15 reserved (unpopulated)
+ *  "evermidi-n8" marker + theme table + one populated DMC kit in slot 0, with slots 1..15 reserved (unpopulated)
  *  — the multi-kit twin of everMidiRom(). The banking header (PRG 16 × 16 KB, mapper != 0) drives
  *  EverMidiRom.kitBankCapacity() to 16, so the assets menu goes addable/16-slot. Kit slot k sits at PRG
  *  offset 0x4000 + k*0x2000 (banks 2..17), the same as the real nes-banked.cfg. */
@@ -198,9 +200,10 @@ export function everMidiMultiKitRom(): Uint8Array {
   rom[6] = 0x51; // vertical mirroring, mapper 69 low nibble (Sunsoft 5B / FME-7)
   rom[7] = 0x40; // mapper 69 high nibble
 
-  const MARK = "EVERMIDI";
+  const MARK = "evermidi-n8"; // marker (also the display name)
   for (let i = 0; i < MARK.length; i++) rom[0x10 + i] = MARK.charCodeAt(i);
-  rom[0x10 + MARK.length] = 0x01; // version 1
+  let p = 0x10 + MARK.length;
+  rom[p++] = 0x00; rom[p++] = 0x01; rom[p++] = 0x00; // semantic version 0.1.0
 
   // Theme table in the code region (same layout as everMidiRom()).
   const themeOffset = 0x100;

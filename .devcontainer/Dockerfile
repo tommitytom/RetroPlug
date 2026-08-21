@@ -187,6 +187,38 @@ RUN set -eux; \
 # a /usr/local install can't find asminc and the build fails. The evermidi rom/Makefile assumes this path.
 ENV CC65_HOME=/usr/local/share/cc65
 
+# --- RP2040 / Raspberry Pi Pico firmware toolchain --------------------------
+# The pico/ subtree (the standalone "MIDI / controller -> N8, no computer" bridge
+# firmware) builds with ARM bare-metal GCC + the Pico SDK. Baked in so `cmake` in
+# any pico/<stage>/ just works; PICO_SDK_PATH is set for every shell. The SDK is a
+# plain clone (no submodules) - the UART/MIDI stage needs none; the later USB-host
+# stage will need lib/tinyusb (`git -C $PICO_SDK_PATH submodule update --init
+# lib/tinyusb`). See pico/README.md.
+ARG PICO_SDK_VERSION=2.1.1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	gcc-arm-none-eabi \
+	libnewlib-arm-none-eabi \
+	libstdc++-arm-none-eabi-newlib \
+	libusb-1.0-0-dev \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& git clone --depth 1 --branch "${PICO_SDK_VERSION}" \
+		https://github.com/raspberrypi/pico-sdk.git /opt/pico-sdk \
+	&& arm-none-eabi-gcc --version
+ENV PICO_SDK_PATH=/opt/pico-sdk
+
+# --- picotool: SDK 2.x uses it to emit the flashable .uf2 (pico_add_extra_outputs).
+# Without a system install the SDK re-fetches + rebuilds it per build tree; install
+# it once so pico builds are fast and offline-capable. find_package(picotool) picks
+# up the config under /usr/local/lib/cmake/picotool. libusb (above) is its dep.
+ARG PICOTOOL_VERSION=2.1.1
+RUN set -eux; \
+	git clone --depth 1 --branch "${PICOTOOL_VERSION}" https://github.com/raspberrypi/picotool.git /tmp/picotool; \
+	cmake -S /tmp/picotool -B /tmp/picotool/build -G Ninja -DPICO_SDK_PATH=/opt/pico-sdk; \
+	cmake --build /tmp/picotool/build; \
+	cmake --install /tmp/picotool/build --prefix /usr/local; \
+	rm -rf /tmp/picotool; \
+	picotool version
+
 # --- OpenOCD (Raspberry Pi fork) for RP2350 SWD flashing + debugging via the
 # Raspberry Pi Debug Probe (CMSIS-DAP). Stock OpenOCD 0.12 (and the Ubuntu apt
 # package) only ship rp2040.cfg and cannot touch an RP2350, and there is no apt

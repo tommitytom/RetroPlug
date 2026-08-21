@@ -1,0 +1,6 @@
+# Pico SDK build trees (per-stage out-of-source builds), incl. variant dirs
+# like build-native/ (native-USB host build).
+build/
+*/build/
+build-*/
+*/build-*/

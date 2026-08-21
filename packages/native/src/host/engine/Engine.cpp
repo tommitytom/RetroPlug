@@ -326,6 +326,12 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
             case ConfigField::NesApuLatencyMs:
                 mn->setApuLatencyMs(value);                        // live — re-thresholds the APU flush window
                 break;
+            case ConfigField::NesS5bNoise:
+                mn->setS5bNoise(static_cast<std::uint32_t>(value));         // live — read per sample
+                break;
+            case ConfigField::NesMmc5PhaseReset:
+                mn->setMmc5PhaseReset(static_cast<std::uint32_t>(value));   // live — read per register write
+                break;
             default:
                 break;
         }

@@ -153,19 +153,56 @@ export function deinterleaveStereo(pcm: Float32Array): [Float32Array, Float32Arr
   return [l, r];
 }
 
-/** Decode a 16-bit PCM WAV produced by encodeWav back to { sampleRate, channels, interleaved pcm } in
- *  [-1,1]. Reads the canonical 44-byte header this module writes (no chunk-walking); for the round-trip
- *  test that guards >2-channel output. */
+/** Decode a PCM WAV to { sampleRate, channels, interleaved pcm } in [-1,1]. Handles what encodeWav writes
+ *  (16-bit, canonical 44-byte header) plus what an external recorder hands back from real hardware: 24/32-bit
+ *  int and 32-bit float, WAVE_FORMAT_EXTENSIBLE, and extra chunks before `data` (so it walks chunks rather
+ *  than assuming fixed offsets). */
 export function decodeWav(bytes: Uint8Array): { sampleRate: number; channels: number; pcm: Float32Array } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const tag = (o: number) => String.fromCharCode(view.getUint8(o), view.getUint8(o + 1), view.getUint8(o + 2), view.getUint8(o + 3));
-  if (tag(0) !== "RIFF" || tag(8) !== "WAVE" || tag(36) !== "data")
-    throw new Error("decodeWav: not a canonical RIFF/PCM16 WAV");
-  const channels = view.getUint16(22, true);
-  const sampleRate = view.getUint32(24, true);
-  const dataSize = view.getUint32(40, true);
-  const count = dataSize / 2; // int16 samples
+  if (tag(0) !== "RIFF" || tag(8) !== "WAVE") throw new Error("decodeWav: not a RIFF/WAVE file");
+
+  let format = 0, channels = 0, sampleRate = 0, bits = 0;
+  let dataAt = -1, dataSize = 0;
+  for (let o = 12; o + 8 <= bytes.byteLength; ) {
+    const id = tag(o);
+    const size = view.getUint32(o + 4, true);
+    const body = o + 8;
+    if (id === "fmt ") {
+      format = view.getUint16(body, true);
+      channels = view.getUint16(body + 2, true);
+      sampleRate = view.getUint32(body + 4, true);
+      bits = view.getUint16(body + 14, true);
+      // WAVE_FORMAT_EXTENSIBLE: the real format is the first 2 bytes of the SubFormat GUID.
+      if (format === 0xfffe && size >= 40) format = view.getUint16(body + 24, true);
+    } else if (id === "data") {
+      dataAt = body;
+      dataSize = Math.min(size, bytes.byteLength - body);
+    }
+    o = body + size + (size & 1); // chunks are word-aligned
+  }
+  if (dataAt < 0 || !channels || !sampleRate) throw new Error("decodeWav: missing fmt/data chunk");
+
+  const bytesPer = bits >> 3;
+  if (!bytesPer) throw new Error("decodeWav: bad bits-per-sample");
+  const count = Math.floor(dataSize / bytesPer);
   const pcm = new Float32Array(count);
-  for (let i = 0; i < count; i++) pcm[i] = view.getInt16(44 + i * 2, true) / 32768;
+  if (format === 3 && bits === 32) {
+    for (let i = 0; i < count; i++) pcm[i] = view.getFloat32(dataAt + i * 4, true);
+  } else if (format === 1 && bits === 16) {
+    for (let i = 0; i < count; i++) pcm[i] = view.getInt16(dataAt + i * 2, true) / 32768;
+  } else if (format === 1 && bits === 32) {
+    for (let i = 0; i < count; i++) pcm[i] = view.getInt32(dataAt + i * 4, true) / 2147483648;
+  } else if (format === 1 && bits === 24) {
+    for (let i = 0; i < count; i++) {
+      const p = dataAt + i * 3;
+      const v = (view.getUint8(p) | (view.getUint8(p + 1) << 8) | (view.getInt8(p + 2) << 16));
+      pcm[i] = v / 8388608;
+    }
+  } else if (format === 1 && bits === 8) {
+    for (let i = 0; i < count; i++) pcm[i] = (view.getUint8(dataAt + i) - 128) / 128;
+  } else {
+    throw new Error(`decodeWav: unsupported format ${format} @ ${bits}-bit`);
+  }
   return { sampleRate, channels, pcm };
 }
