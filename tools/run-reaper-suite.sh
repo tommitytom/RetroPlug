@@ -11,7 +11,7 @@
 #
 # Usage:
 #   tools/run-reaper-suite.sh                 # build + author + run all 12
-#   RP_SUITE_JOBS=4 tools/run-reaper-suite.sh # cap concurrency at 4 (default: 8)
+#   RP_SUITE_JOBS=4 tools/run-reaper-suite.sh # force concurrency 4 (default: what /dev/shm fits, max 8)
 #   RP_SUITE_NO_BUILD=1 tools/run-reaper-suite.sh   # skip the vst3 build + fixture regen
 #
 # Wired as `pnpm reaper:all`.
@@ -22,7 +22,40 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
-MAXJOBS="${RP_SUITE_JOBS:-8}"
+# ---- concurrency cap ------------------------------------------------------------------------
+# Every scenario stands up its own JACK server, and each jackd mmaps a ~107 MB segment in
+# /dev/shm. Start more at once than /dev/shm can back and the mapping fails: jackd dies with
+# `Bus error (core dumped)`, and the Reaper it was for then waits forever on a server that is
+# gone: parked at 0% CPU, writing no .rc file and never timing out. Dev containers commonly
+# ship a 512 MB /dev/shm, which fits 4, so a fixed default of 8 hangs the whole leg there.
+# Derive it instead, and only ever cap DOWNWARD from the historical 8.
+JACK_SHM_MB=128     # ~107 MB per server, plus slack for reaper's own client segments
+SHM_AVAIL_MB="$(df -Pm /dev/shm 2>/dev/null | awk 'NR==2 {print $4}')"
+if [ -n "$SHM_AVAIL_MB" ] && [ "$SHM_AVAIL_MB" -gt 0 ] 2>/dev/null; then
+    SHM_CAP=$(( SHM_AVAIL_MB / JACK_SHM_MB ))
+    [ "$SHM_CAP" -lt 1 ] && SHM_CAP=1
+else
+    SHM_CAP=8       # unreadable /dev/shm: assume the historical default rather than throttling
+fi
+
+if [ -n "${RP_SUITE_JOBS:-}" ]; then
+    MAXJOBS="$RP_SUITE_JOBS"
+    if [ "$MAXJOBS" -gt "$SHM_CAP" ] 2>/dev/null; then
+        echo "[suite] WARNING: RP_SUITE_JOBS=$MAXJOBS is above what /dev/shm can back" >&2
+        echo "[suite]          (${SHM_AVAIL_MB:-?} MB free / ${JACK_SHM_MB} MB per jackd = $SHM_CAP)." >&2
+        echo "[suite]          Expect jackd 'Bus error' and renders hung at 0% CPU." >&2
+    fi
+else
+    MAXJOBS=$(( SHM_CAP < 8 ? SHM_CAP : 8 ))
+fi
+
+# A crashed run leaves its 107 MB segments behind and starves the next one, which shows up here
+# as a surprisingly low cap. Point at the fix rather than deleting them: a jackd we don't own
+# may legitimately be using them.
+if [ "$SHM_CAP" -lt 4 ] && ls /dev/shm/jack-* >/dev/null 2>&1 && ! pgrep -x jackd >/dev/null 2>&1; then
+    echo "[suite] note: /dev/shm holds jack segments but no jackd is running, so a previous run leaked them." >&2
+    echo "[suite]       rm -f /dev/shm/jack-* /dev/shm/jack_sem.* /dev/shm/jack-shm-registry" >&2
+fi
 RESULTS_DIR="$REPO_DIR/build/reaper-suite"
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
