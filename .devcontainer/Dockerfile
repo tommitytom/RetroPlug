@@ -90,12 +90,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	# fails on <pipewire/pipewire.h> once a cache has PA_USE_PIPEWIRE=ON. ----
 	libpipewire-0.3-dev \
 	# --- A PipeWire server to test that backend against: the daemon plus
-	# pw-cli/pw-metadata. tools/run-sdl-pipewire.sh runs a private one, with its
-	# sinks + "default" metadata declared as context.objects, so it needs NO
-	# session manager (wireplumber wants logind/dbus and exits without them in a
-	# container). Not used by the build. ------------------------------------
+	# pw-cli/pw-metadata/pw-link. tools/run-sdl-pipewire.sh runs a private one,
+	# with its sinks + "default" metadata declared as context.objects, so the
+	# device-selection checks need no session manager. wireplumber is only for
+	# the wide-output checks, which need something to link streams (ports don't
+	# materialise otherwise) - that script drops its bluetooth context, whose
+	# logind module has no /run/systemd here and would exit 70. Not used by the
+	# build. -----------------------------------------------------------------
 	pipewire \
 	pipewire-bin \
+	wireplumber \
 	libcurl4-openssl-dev \
 	libffi-dev \
 	libssl-dev \

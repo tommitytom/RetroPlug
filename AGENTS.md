@@ -85,7 +85,14 @@ The rules below are the parts that don't fit those.
   without them here — which silently collapsed every expectation onto the priority fallback
   when the check depended on it. The third sink (`rp-decoy`) always outranks the others on
   `priority.session` and is never the default, so "followed the default" can't pass by
-  accident. Not in CI (the runners have no PipeWire); the devcontainer ships one for it.
+  accident. It also covers WIDE output (`Out Channels` 4/6/8): 8 channels against a stereo
+  sink must open, be 8 PORTS wide, and still have pair 1 linked — the port count is the
+  assertion that matters, since a stream with no declared layout silently comes out 2 wide
+  while the log still says 8. That leg runs LAST and is the one part needing a session
+  manager (ports only materialise once something links the stream); it starts wireplumber
+  with its bluetooth context dropped, because that context's logind module has no
+  `/run/systemd` in a container and takes the daemon down with it. Not in CI (the runners
+  have no PipeWire); the devcontainer ships one for it.
   **It ships in the `build.yml` artifact for every platform but is deliberately kept OUT
   of releases** — `release.yml`'s four packaging steps are explicit allowlists, and
   `retroplug-sdl` is not on any of them (each carries a comment saying so). Don't add it

@@ -1003,6 +1003,13 @@ bool openAudio(AppState& a) {
     std::fprintf(stderr, "[retroplug-sdl] audio: PortAudio [%s] '%s' %d Hz, %d frames, %d ch\n",
                  di ? Pa_GetHostApiInfo(di->hostApi)->name : "?", di ? di->name : "?",
                  static_cast<int>(a.sampleRate), a.reqBlockSize, a.numOutputs);
+    // Wider than the device takes: legal on PipeWire (the stream carries its own layout), but only the
+    // pairs the device has ports for are connected — the rest wait for a patchbay. Say so, or "Out
+    // Channels: 8 and I only hear the first pair" looks like a bug rather than a routing step.
+    if (di && a.numOutputs > di->maxOutputChannels)
+        std::fprintf(stderr, "[retroplug-sdl] audio: '%s' takes %d ch — pairs beyond the first %d channel(s) "
+                             "are unconnected until you patch them (qpwgraph / your DAW)\n",
+                     di->name, di->maxOutputChannels, di->maxOutputChannels);
     return true;
 }
 

@@ -48,7 +48,11 @@ chmod 700 "$XDG_RUNTIME_DIR"
 CFG="$HOME/.config/retroplug/audio.json"
 PASS=0; FAIL=0
 
-cleanup() { [ -n "${PW_PID:-}" ] && kill "$PW_PID" 2>/dev/null; rm -rf "$TMP"; }
+cleanup() {
+    [ -n "${WP_PID:-}" ] && kill "$WP_PID" 2>/dev/null   # only set for the wide-output checks
+    [ -n "${PW_PID:-}" ] && kill "$PW_PID" 2>/dev/null
+    rm -rf "$TMP"
+}
 trap cleanup EXIT
 
 # ---- the private server -------------------------------------------------------------------------------
@@ -145,6 +149,61 @@ writecfg none
 run no-libpipewire PA_PIPEWIRE_SONAME=libpipewire-not-here.so.0
 if [ "${CHOSE%%|*}" = "ALSA" ] && [ "$RC" -eq 0 ]; then echo "  ok: degrades to ALSA without libpipewire"; PASS=$((PASS+1))
 else echo "  FAIL: expected an ALSA device without libpipewire, got '${CHOSE:-<muted>}' (rc=$RC)"; FAIL=$((FAIL+1)); fi
+
+# ---- wide output (Settings > Audio > Out Channels 4/6/8) ----------------------------------------------
+# Runs LAST and needs a session manager, so it can't share the hermetic server above: the adapter only
+# materialises its ports once something links the stream, and wireplumber also rewrites default.audio.sink
+# (which would trample the selection cases). The sinks here are stereo, which is the case that used to be
+# refused outright with "Invalid number of channels" — and, once it opened, the case where the stream came
+# out 2 ports wide with the other stems silently dropped. Hence both assertions.
+start_session_manager() {
+    command -v wireplumber >/dev/null 2>&1 || return 1
+    # Its bluetooth context loads the logind module, which finds no /run/systemd in a container and takes
+    # the whole daemon down (exit 70). Drop that one context; main + policy are what do the linking.
+    cp -r /usr/share/wireplumber "$TMP/wpconf" 2>/dev/null || return 1
+    python3 - "$TMP/wpconf/wireplumber.conf" <<'PY' || return 1
+import sys
+p = sys.argv[1]
+s = open(p).read().replace("{ name = bluetooth.lua, type = config/lua }", "# bluetooth.lua dropped (logind)")
+open(p, "w").write(s)
+PY
+    WIREPLUMBER_CONFIG_DIR="$TMP/wpconf" WIREPLUMBER_DATA_DIR="$TMP/wpconf" \
+        wireplumber >"$TMP/wireplumber.log" 2>&1 &
+    WP_PID=$!
+    sleep 3
+    kill -0 "$WP_PID" 2>/dev/null
+}
+
+if start_session_manager; then
+    writecfg '{"sampleRate":48000,"blockSize":512,"outChannels":8,"hostApi":18,"outputDevice":"RetroPlug Low Priority"}'
+    LOG="$TMP/wide-output.log"
+    RETROPLUG_DEBUG_AUDIO=1 RETROPLUG_SDL_EXIT_AFTER_FRAMES=240 timeout 90 "$BIN" >"$LOG" 2>&1 &
+    APP_PID=$!
+    for _ in $(seq 60); do grep -q "running " "$LOG" 2>/dev/null && break; sleep 0.25; done
+    sleep 3
+    PORTS=$(pw-link -o 2>/dev/null | grep -c '^retroplug-sdl:')
+    LINKED=$(pw-link -l 2>/dev/null | grep -A1 '^retroplug-sdl:output_F' | grep -c 'playback_F')
+    wait "$APP_PID"; RC=$?
+    CHOSE=$(sed -n "s/.*audio: PortAudio \[\(.*\)\] '\(.*\)' [0-9]* Hz.*/\1|\2/p" "$LOG" | head -1)
+
+    check "opens 8 channels against a stereo sink" "PipeWire|RetroPlug Low Priority"
+    # Anchored on the "audio: PortAudio ..." line the OPEN prints: a bare "512 frames, 8 ch" also appears
+    # in the Pa_OpenStream FAILURE message, which would pass this on a binary that opened nothing.
+    grep -q "audio: PortAudio .*512 frames, 8 ch" "$LOG" \
+        && { echo "  ok: host reports 8 channels"; PASS=$((PASS+1)); } \
+        || { echo "  FAIL: host did not report 8 channels"; cat "$LOG" >&2; FAIL=$((FAIL+1)); }
+    # The port count is the real assertion: without an explicit channel layout on the stream the adapter
+    # takes its width from the sink, so this reads 2 while the log still claims 8.
+    [ "$PORTS" -eq 8 ] \
+        && { echo "  ok: the stream really is 8 ports wide"; PASS=$((PASS+1)); } \
+        || { echo "  FAIL: expected 8 output ports on the stream, found $PORTS"; FAIL=$((FAIL+1)); }
+    # ...and the first pair must still reach the stereo sink, or wide output would cost you all audio.
+    [ "$LINKED" -ge 2 ] \
+        && { echo "  ok: pair 1 is linked to the sink"; PASS=$((PASS+1)); } \
+        || { echo "  FAIL: pair 1 is not linked to the sink (found $LINKED links)"; FAIL=$((FAIL+1)); }
+else
+    echo "  SKIPPED: wide-output checks need wireplumber (not installed, or it would not start)"
+fi
 
 echo "SDL PipeWire check: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || exit 1
