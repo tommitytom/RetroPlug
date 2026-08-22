@@ -76,11 +76,16 @@ The rules below are the parts that don't fit those.
   submodule. `pnpm sdl:smoke` builds it by name then runs the headless smoke; that smoke
   is still NOT a CI step, so CI proves it compiles + links, not that it runs.
   `pnpm sdl:pipewire` is the audio-device half the smoke can't cover (it runs with no
-  audio server at all): it stands up a PRIVATE PipeWire server + two null sinks in its own
+  audio server at all): it stands up a PRIVATE PipeWire server + three null sinks in its own
   `XDG_RUNTIME_DIR` and asserts WHICH output device the PortAudio PipeWire backend opens —
   the session default sink (`default.audio.sink`) wins, an explicit Settings pick beats it,
-  a stale pick warns and falls back, and a libpipewire-less run degrades to ALSA. Also not
-  in CI (the runners have no PipeWire); the devcontainer ships one for it.
+  a stale pick warns and falls back, and a libpipewire-less run degrades to ALSA. That server
+  runs with NO session manager: the sinks AND the `default` metadata object are declared as
+  `context.objects` in a daemon-only config, because wireplumber needs logind/dbus and exits
+  without them here — which silently collapsed every expectation onto the priority fallback
+  when the check depended on it. The third sink (`rp-decoy`) always outranks the others on
+  `priority.session` and is never the default, so "followed the default" can't pass by
+  accident. Not in CI (the runners have no PipeWire); the devcontainer ships one for it.
   **It ships in the `build.yml` artifact for every platform but is deliberately kept OUT
   of releases** — `release.yml`'s four packaging steps are explicit allowlists, and
   `retroplug-sdl` is not on any of them (each carries a comment saying so). Don't add it

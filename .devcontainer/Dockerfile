@@ -89,14 +89,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	# libpipewire is dlopen'd at runtime. Without these the portaudio build
 	# fails on <pipewire/pipewire.h> once a cache has PA_USE_PIPEWIRE=ON. ----
 	libpipewire-0.3-dev \
-	# --- A PipeWire server to test that backend against (tools/run-sdl-pipewire.sh
-	# runs a private one): the daemon + pw-cli/pw-metadata, wireplumber for the
-	# session default + stream linking, and dbus-x11 because wireplumber exits
-	# without a session bus. Not used by the build. -------------------------
+	# --- A PipeWire server to test that backend against: the daemon plus
+	# pw-cli/pw-metadata. tools/run-sdl-pipewire.sh runs a private one, with its
+	# sinks + "default" metadata declared as context.objects, so it needs NO
+	# session manager (wireplumber wants logind/dbus and exits without them in a
+	# container). Not used by the build. ------------------------------------
 	pipewire \
 	pipewire-bin \
-	wireplumber \
-	dbus-x11 \
 	libcurl4-openssl-dev \
 	libffi-dev \
 	libssl-dev \
