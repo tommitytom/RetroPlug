@@ -1140,7 +1140,7 @@ test("Settings -> Audio (standalone): cyclers stage a draft; Apply commits; labe
   // Fresh: labels mirror the live device; Apply is inert (no pending change).
   let items = audioItems();
   expect(findItem(items, "audio-rate")!.label).toBe("Sample Rate: 48000 Hz");
-  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 2048");
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 2048 (42.7 ms)");
   // The Driver row defaults to "Auto" when the host exposes no driver list (this fake omits `drivers`).
   expect(findItem(items, "audio-driver")!.label).toBe("Driver: Auto");
   expect(findItem(items, "audio-apply")!.disabled).toBe(true);
@@ -1151,7 +1151,7 @@ test("Settings -> Audio (standalone): cyclers stage a draft; Apply commits; labe
   // and Apply becomes live.
   findItem(items, "audio-block")!.onCycle!(-1);
   items = audioItems(); // App re-renders on the draft bump; the test rebuilds to observe it
-  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 1024");
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 1024 (21.3 ms)");
   expect(live.blockSize).toBe(2048); // not applied yet
   expect(findItem(items, "audio-apply")!.disabled).toBeFalsy();
 
@@ -1159,7 +1159,7 @@ test("Settings -> Audio (standalone): cyclers stage a draft; Apply commits; labe
   findItem(items, "audio-apply")!.onSelect!();
   expect(live.blockSize).toBe(1024);
   items = audioItems();
-  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 1024");
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 1024 (21.3 ms)");
   expect(findItem(items, "audio-apply")!.disabled).toBe(true);
 
   resetAudioDraft();
@@ -1281,6 +1281,38 @@ test("Settings -> Audio > Output Device (standalone): lists the driver's devices
   delete g.__rp_isStandalone;
   delete g.__rp_getAudioConfig;
   delete g.__rp_setAudioConfig;
+});
+
+test("Settings -> Audio > Block Size (standalone): labels carry the block's latency, which follows the draft rate", async () => {
+  const live = { sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", device: "" };
+  const g = globalThis as { __rp_isStandalone?: boolean; __rp_getAudioConfig?: () => typeof live };
+  g.__rp_isStandalone = true;
+  g.__rp_getAudioConfig = () => ({ ...live });
+  const { resetAudioDraft } = await import("../../ui/screens/menu/audioDraft");
+  resetAudioDraft();
+
+  const stores = composeAppStores({ backend: new MockBackend("/cfg"), notify: () => {} });
+  const audioItems = () => submenuChildren(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-settings"), "set-audio");
+
+  // 512 frames at 48 kHz = 10.666... ms.
+  let items = audioItems();
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 512 (10.7 ms)");
+
+  // Halving the block halves the latency.
+  findItem(items, "audio-block")!.onCycle!(-1); // 512 -> 256
+  items = audioItems();
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.3 ms)");
+
+  // The figure tracks the DRAFT sample rate, so the same block reads longer once the rate drops - the
+  // point of showing it at all is that the two settings decide the latency together.
+  findItem(items, "audio-rate")!.onCycle!(-1); // 48000 -> 44100
+  items = audioItems();
+  expect(findItem(items, "audio-rate")!.label).toBe("Sample Rate: 44100 Hz");
+  expect(findItem(items, "audio-block")!.label).toBe("Block Size: 256 (5.8 ms)");
+
+  resetAudioDraft();
+  delete g.__rp_isStandalone;
+  delete g.__rp_getAudioConfig;
 });
 
 test("Settings -> Audio > Output Device (standalone): 'Default' names the device it resolves to, per driver", async () => {

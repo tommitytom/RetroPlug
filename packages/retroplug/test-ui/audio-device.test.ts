@@ -41,6 +41,10 @@ test("Settings > Audio > Output Device: cycles the driver's devices, stages, and
   // Default: the host API default output.
   expect(labelOf("Output Device")).toBe("Output Device: Default");
 
+  // The Block Size row carries the block's latency at the current rate (1024 @ 48 kHz), on-screen and not
+  // just in the menu model — it's a composed label, so this proves what actually renders.
+  expect(labelOf("Block Size")).toBe("Block Size: 1024 (21.3 ms)");
+
   // Cycle through the (Auto) driver's devices → Speakers → HDMI. Staged only (no device setter call yet).
   expect(navTo("Output Device")).toBeTruthy();
   ui.tapKey(Key.Enter);

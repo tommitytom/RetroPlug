@@ -147,6 +147,16 @@ const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
 // pair count since routing works in stereo pairs.
 const AUDIO_CHANNELS = [2, 4, 6, 8];
 const AUDIO_CHANNEL_NAMES = ["Stereo", "4 (2 pairs)", "6 (3 pairs)", "8 (4 pairs)"];
+
+/** How long one block of `frames` lasts at `rate`, for the Block Size row — the number that setting is
+ *  really about (a block is a buffer's worth of audio, so it's the delay the size buys you). It is the
+ *  device's buffer period, not end-to-end output latency: the driver and the device add their own
+ *  buffering on top, so the figure heard is at least this and usually more. Computed against the DRAFT
+ *  sample rate, so cycling Sample Rate re-labels every block size. */
+function blockLatencyMs(frames: number, sampleRate: number): string {
+  if (sampleRate <= 0) return "?";
+  return `${((frames / sampleRate) * 1000).toFixed(1)} ms`;
+}
 function audioSettingsChildren(): MenuItem[] {
   const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", device: "" };
   const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
@@ -175,7 +185,8 @@ function audioSettingsChildren(): MenuItem[] {
     cycler("audio-driver", "Driver", driverNames, driverIdx, (n) => setAudioDraft({ driver: drivers[n], device: "" })),
     cycler("audio-device", "Output Device", dev.names, dev.index, (n) => setAudioDraft({ device: devName(n) })),
     cycler("audio-rate", "Sample Rate", AUDIO_RATES.map((r) => `${r} Hz`), rateIdx, (n) => setAudioDraft({ sampleRate: AUDIO_RATES[n] })),
-    cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b}`), blockIdx, (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
+    cycler("audio-block", "Block Size", AUDIO_BLOCKS.map((b) => `${b} (${blockLatencyMs(b, cfg.sampleRate)})`), blockIdx,
+           (n) => setAudioDraft({ blockSize: AUDIO_BLOCKS[n] })),
     cycler("audio-channels", "Out Channels", AUDIO_CHANNEL_NAMES, chIdx, (n) => setAudioDraft({ outChannels: AUDIO_CHANNELS[n] })),
     sep("audio-sep-apply"),
     // Commit the staged rate/block/channels/driver/device to the device. Greyed (inert) until a pending change.
