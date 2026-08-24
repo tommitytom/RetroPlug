@@ -14,7 +14,11 @@ import type { SplitMode } from "./render";
 /** The persisted render-menu selections (System > Render): what to split into, the output sample rate, and
  *  the max render length. Global (not per-system) so the single "Render..." action reads the current picks. */
 export const RENDER_SPLITS = ["mix", "channels", "pins"] as const;
-export const RENDER_SAMPLE_RATES = [44100, 48000, 96000] as const;
+// Matches the rates the standalone's audio device offers (menuDefs AUDIO_RATES) from 44.1k up. A render is
+// offline, so a high rate costs render time and file size rather than risking an underrun; the CLI has
+// always taken any rate via --sample-rate, and this is the picker catching up. Additive, so no config
+// migration: widening the accepted set can only turn a value the schema used to rewrite into one it keeps.
+export const RENDER_SAMPLE_RATES = [44100, 48000, 88200, 96000, 176400, 192000] as const;
 export const RENDER_MAX_DURATION_MIN_SEC = 5;
 export const RENDER_MAX_DURATION_MAX_SEC = 1800; // 30 min cap
 /** What "Render" does when the target file already exists: clobber it, or write to the next free name. */

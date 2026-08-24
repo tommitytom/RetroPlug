@@ -184,7 +184,10 @@ test("userConfig render setters: validate + clamp, persist through the store", (
 
   expect(store.setRenderSampleRate(48000)).toBe(true);
   expect(store.render().sampleRate).toBe(48000);
-  expect(store.setRenderSampleRate(22050)).toBe(false); // not in the offered set
+  expect(store.setRenderSampleRate(192000)).toBe(true); // the high end the device picker also offers
+  expect(store.render().sampleRate).toBe(192000);
+  expect(store.setRenderSampleRate(48000)).toBe(true); // back, so the persistence check below is unchanged
+  expect(store.setRenderSampleRate(22050)).toBe(false); // below the render floor: still not offered
 
   store.setRenderMaxDurationSec(90);
   expect(store.render().maxDurationSec).toBe(90);
