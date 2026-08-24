@@ -34,9 +34,12 @@
 
 #if defined(__linux__)
 #include <atomic>
+#include <cstdarg>
+#include <dlfcn.h>
 #include <pthread.h>
 #include <sched.h>
 #include <unistd.h>
+#include <alsa/asoundlib.h>   // snd_lib_error_set_handler only — see quietenAudioLogs
 #endif
 
 // We own main() (a plain console entry). On Windows/macOS SDL's <SDL.h> otherwise #defines main → SDL_main
@@ -938,6 +941,83 @@ void stopAudio(AppState& a) {
     if (a.audioPump.joinable()) { a.audioPumpRun.store(false, std::memory_order_release); a.audioPump.join(); }
 }
 
+// RETROPLUG_DEBUG_AUDIO: dump the audio backends' own chatter + the host API / device enumeration. Read once
+// (it can't change under us) and shared by openAudio and the log handlers below.
+bool audioDebugEnabled() {
+    static const bool on = std::getenv("RETROPLUG_DEBUG_AUDIO") != nullptr;
+    return on;
+}
+
+// Tacked onto the "muted" messages: the backend's own account of WHY is suppressed by default (see below),
+// so a failure has to say how to get it back. Empty once it's already on.
+const char* audioDebugHint() {
+    return audioDebugEnabled() ? "" : " — re-run with RETROPLUG_DEBUG_AUDIO=1 for the backend's diagnostics";
+}
+
+// ---- audio backend log noise ----------------------------------------------------------------------
+// Pa_Initialize brings up EVERY compiled-in host API, and enumerating them is loud on a normal desktop:
+//
+//   * PortAudio's ALSA backend builds its device list by opening every PCM named in the system alsa.conf
+//     (rear, center_lfe, side, hdmi, modem, phoneline, dsp, a52, usb_stream, dsnoop...). Almost none of
+//     those exist on a given machine, and libasound's default error handler prints each failure to stderr
+//     — roughly forty lines of "error" about devices we are never going to open. The probe itself then
+//     adds its own "GropeDevice: ... set_rate_near failed!" lines through PaUtil_DebugPrint.
+//   * libjack prints "jack server is not running or cannot be started" (plus JackShmReadWritePtr noise)
+//     wherever no JACK server happens to be up.
+//
+// None of it indicates a problem — on a PipeWire laptop all of it precedes the one line that says which
+// device actually opened — but it buries the messages that do matter, and it is what users paste when
+// something goes wrong. So route all three streams here: silent by default, verbatim under
+// RETROPLUG_DEBUG_AUDIO. Nothing is lost, it just takes an env var to see.
+#if defined(__linux__)
+void alsaLogHandler(const char* file, int line, const char* function, int err, const char* fmt, ...) {
+    if (!audioDebugEnabled()) return;
+    std::fprintf(stderr, "[retroplug-sdl] ALSA %s:%d:(%s) ", file ? file : "?", line, function ? function : "?");
+    va_list args;
+    va_start(args, fmt);
+    std::vfprintf(stderr, fmt, args);
+    va_end(args);
+    if (err) std::fprintf(stderr, ": %s", snd_strerror(err));
+    std::fputc('\n', stderr);
+}
+
+void jackLogHandler(const char* msg) {
+    if (audioDebugEnabled() && msg) std::fprintf(stderr, "[retroplug-sdl] JACK: %s\n", msg);
+}
+#endif
+
+// PortAudio's own diagnostics (PaUtil_DebugPrint). Its callback hands us a preformatted line, newline
+// included. Declared here rather than including pa_debugprint.h: that's a PRIVATE PortAudio header, and
+// pulling src/common onto this target's include path to reach two symbols isn't worth it.
+extern "C" {
+typedef void (*PaUtilLogCallback)(const char* log);
+void PaUtil_SetDebugPrintFunction(PaUtilLogCallback cb);
+}
+void paLogHandler(const char* log) {
+    if (audioDebugEnabled() && log) std::fputs(log, stderr);
+}
+
+// Install the above. Must run BEFORE Pa_Initialize — that's where the enumeration (and the noise) happens.
+void quietenAudioLogs() {
+    PaUtil_SetDebugPrintFunction(paLogHandler);
+#if defined(__linux__)
+    // libasound is already linked (rtmidi pulls it in), so this is a direct call.
+    snd_lib_error_set_handler(alsaLogHandler);
+    // libjack is NOT linked — PortAudio dlopen's it (PA_JACK_DYNAMIC), and only once Pa_Initialize runs,
+    // which is already too late to catch its first complaint. So load it ourselves first and keep the
+    // handle: PortAudio's dlopen then reuses the same library with our handlers already in place. Absent
+    // libjack simply means no JACK host API, and nothing to silence.
+    if (void* jack = dlopen("libjack.so.0", RTLD_LAZY)) {
+        using JackLogSetter = void (*)(void (*)(const char*));
+        if (auto setError = reinterpret_cast<JackLogSetter>(dlsym(jack, "jack_set_error_function")))
+            setError(jackLogHandler);
+        if (auto setInfo = reinterpret_cast<JackLogSetter>(dlsym(jack, "jack_set_info_function")))
+            setInfo(jackLogHandler);
+        // deliberately not dlclose'd: unloading would drop the handlers we just installed
+    }
+#endif
+}
+
 // Open a PortAudio output stream at the requested rate/block + size the render scratch. numOutputs / sampleRate
 // / the planar buffers are ALWAYS set (even when muted) so the Engine + the multi-out self-test behave with no
 // device. Returns true if a real stream opened; false = muted (startAudio then runs the fallback pump).
@@ -949,7 +1029,7 @@ bool openAudio(AppState& a) {
     for (int c = 0; c < a.numOutputs; ++c) a.audioPtrs[c] = a.audioPlanar[c].data();
 
     // One-time diagnostic: the registered host APIs + every output device (RETROPLUG_DEBUG_AUDIO).
-    if (std::getenv("RETROPLUG_DEBUG_AUDIO")) {
+    if (audioDebugEnabled()) {
         for (PaHostApiIndex i = 0; i < Pa_GetHostApiCount(); ++i) {
             const PaHostApiInfo* h = Pa_GetHostApiInfo(i);
             if (h) std::fprintf(stderr, "[retroplug-sdl] host API %d: %s (type=%d, devices=%d, defaultOut=%d)\n",
@@ -980,7 +1060,7 @@ bool openAudio(AppState& a) {
     }
     if (dev == paNoDevice) dev = Pa_GetDefaultOutputDevice();   // last resort
     if (dev == paNoDevice) {
-        std::fprintf(stderr, "[retroplug-sdl] PortAudio: no default output device (muted)\n");
+        std::fprintf(stderr, "[retroplug-sdl] PortAudio: no default output device (muted)%s\n", audioDebugHint());
         a.audioStream = nullptr;
         return false;
     }
@@ -993,8 +1073,8 @@ bool openAudio(AppState& a) {
     const PaError err = Pa_OpenStream(&a.audioStream, nullptr, &out, a.reqSampleRate,
                                       static_cast<unsigned long>(a.reqBlockSize), paNoFlag, paCallback, &a);
     if (err != paNoError) {
-        std::fprintf(stderr, "[retroplug-sdl] Pa_OpenStream(%d Hz, %d frames, %d ch) failed: %s (muted)\n",
-                     a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, Pa_GetErrorText(err));
+        std::fprintf(stderr, "[retroplug-sdl] Pa_OpenStream(%d Hz, %d frames, %d ch) failed: %s (muted)%s\n",
+                     a.reqSampleRate, a.reqBlockSize, a.reqOutChannels, Pa_GetErrorText(err), audioDebugHint());
         a.audioStream = nullptr;
         return false;
     }
@@ -1291,6 +1371,7 @@ bool setupSdl(AppState& a) {
     // Audio: init PortAudio, apply any persisted rate/block (the Audio settings submenu), then open the stream
     // before boot so the obtained rate seeds the Engine. Where no device opens (headless), openAudio leaves it
     // muted and startAudio runs the fallback pump so the emulator still advances (see audioPumpLoop).
+    quietenAudioLogs();   // before Pa_Initialize: that is where the backends do their noisy enumeration
     if (const PaError pe = Pa_Initialize(); pe != paNoError)
         std::fprintf(stderr, "[retroplug-sdl] Pa_Initialize failed: %s (running muted)\n", Pa_GetErrorText(pe));
     loadAudioConfig(a);
