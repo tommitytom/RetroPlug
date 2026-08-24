@@ -140,7 +140,12 @@ function isStandalone(): boolean {
 // Standalone audio device config (the SDL host's sample-rate / block-size, for the Audio submenu). The
 // cyclers edit a DRAFT (audioDraft.ts) — nothing is applied until the "Apply" row commits it via
 // __rp_setAudioConfig (re-open device + persist). Absent in a DAW / the harness (hasAudioConfig() false).
-const AUDIO_RATES = [22050, 32000, 44100, 48000];
+// Both families, up to what a modern interface actually offers: the 44.1 line (44100/88200/176400) and the
+// 48 line (32000/48000/96000/192000). Nothing in the path caps at 48k - the cores take whatever rate they
+// are handed (GB_set_sample_rate / Mesen's AudioConfig), and the render feature has offered 96k for a while
+// (RENDER_SAMPLE_RATES) - this list was just the starter set the SDL host shipped with. Higher rates cost
+// proportionally more emulation per second, so a low-power device (the handheld) should stay at 48k or below.
+const AUDIO_RATES = [22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000];
 const AUDIO_BLOCKS = [128, 256, 512, 1024, 2048, 4096];
 // Output device channels: 2 = stereo mix; 4/6/8 open that many device channels so the project's Audio
 // Routing (2-Ch/Inst, 1-Ch/Inst, Channels) fans real stems out to a multichannel interface. Labelled by
