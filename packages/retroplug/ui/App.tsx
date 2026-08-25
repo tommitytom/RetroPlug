@@ -33,6 +33,7 @@ import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./scree
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel, type MenuContext } from "./screens/menu/menuDefs";
 import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import { subscribeMidi } from "./screens/menu/midiDevices";
+import { subscribeTransport } from "./screens/menu/transport";
 import { subscribeN8 } from "./screens/menu/n8Devices";
 import { subscribeLaunchpad } from "./screens/menu/launchpadDevices";
 import type { MenuTree } from "./screens/menu/menuTree";
@@ -77,6 +78,10 @@ export function App() {
   // here to repaint the "Input/Output Device" labels immediately. Inert in a DAW / the harness.
   const [, bumpMidi] = useState(0);
   useEffect(() => subscribeMidi(() => bumpMidi((n) => n + 1)), []);
+  // Standalone Transport row: play/stop lives in the native host (the audio thread publishes it back), so a
+  // toggle emits here to repaint the label at once. Inert in a DAW / the harness.
+  const [, bumpTransport] = useState(0);
+  useEffect(() => subscribeTransport(() => bumpTransport((n) => n + 1)), []);
   // Standalone N8 submenu (Settings > N8 Pro): the serial-link state lives natively, so a port/connect/
   // lookahead change emits here to repaint its labels immediately. Inert in a DAW / the harness.
   const [, bumpN8] = useState(0);

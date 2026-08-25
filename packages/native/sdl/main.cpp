@@ -127,6 +127,7 @@ struct MidiClockSync {
     double bpm = 120.0;            // last good estimate
     bool active = false;           // clock seen within the timeout
     bool stopped = false;          // explicit 0xFC latch (overrides clock presence)
+    bool manualPlaying = false;    // the local transport (Instance menu > Transport); used when no clock master
 
     static constexpr int    kWindowPulses = 24; // one quarter-note → a stable estimate ~2×/s
     static constexpr double kTimeoutSec   = 0.5;
@@ -159,7 +160,12 @@ struct MidiClockSync {
     }
 
     double outBpm() const { return active ? bpm : 120.0; }
-    bool   outPlaying() const { return active ? !stopped : true; }
+    // An external master wins while it is there; otherwise the local transport decides. That local transport
+    // starts STOPPED, which is a change from the standalone's original always-playing behaviour: a running
+    // transport is not idle state, it is a clock — the LSDj/risa sync roles turn it into link-port bytes, so
+    // a SYNC=MIDI cart used to start running at 120 BPM the moment it booted, with nothing plugged in and no
+    // way to stop it. Non-sync use (mGB, an un-synced cart) never looked at the transport and is unaffected.
+    bool   outPlaying() const { return active ? !stopped : manualPlaying; }
 };
 
 // Whole-process state, reached by the LVGL indev read callbacks (via driver_data), the SDL audio
@@ -208,6 +214,15 @@ struct AppState {
     std::vector<retroplug::MidiIo::Message> midiScratch;  // reused per block (no per-block alloc)
     std::atomic<std::uint64_t> midiStaged{0};             // count staged into the Engine (headless self-test)
     MidiClockSync clockSync;                              // MIDI-clock → BPM/transport (audio thread only)
+
+    // The local transport (Instance menu > Transport), across the UI/audio thread boundary. clockSync itself
+    // is audio-thread-only, so the menu can't poke it: the UI writes the REQUEST, the callback folds it into
+    // clockSync each block and publishes back what the transport actually is (an external clock master
+    // overrides the local flag, and the menu shows that rather than lying about who is in charge).
+    std::atomic<bool>  transportRequest{false};   // UI -> audio: the local play/stop the user picked
+    std::atomic<bool>  transportPlaying{false};   // audio -> UI: what the Engine is actually being told
+    std::atomic<bool>  transportExternal{false};  // audio -> UI: a MIDI clock master is driving it
+    std::atomic<float> transportBpm{120.0f};      // audio -> UI: the tempo in force
 
     // Physical Everdrive N8 Pro link (Settings > N8): a host serial thread streams the polled MIDI + generated
     // sync bytes to the real cart on a timed schedule (audioCb pushes; the thread does the USB I/O). The port +
@@ -638,6 +653,28 @@ JSValue jsSetAudioConfig(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
     return JS_UNDEFINED;
 }
 
+// __rp_getTransport(): { playing, external, bpm } — what the host is telling the Engine right now. `external`
+// means a MIDI clock master is in charge, so the menu shows the transport as theirs (toggling still records a
+// local preference, it just doesn't take effect until the master goes away). Standalone-only: a DAW owns the
+// transport, so the plugin never binds this and the row is hidden.
+JSValue jsGetTransport(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    JSValue o = JS_NewObject(ctx);
+    if (g_app) {
+        JS_SetPropertyStr(ctx, o, "playing",  JS_NewBool(ctx, g_app->transportPlaying.load(std::memory_order_relaxed)));
+        JS_SetPropertyStr(ctx, o, "external", JS_NewBool(ctx, g_app->transportExternal.load(std::memory_order_relaxed)));
+        JS_SetPropertyStr(ctx, o, "bpm",      JS_NewFloat64(ctx, g_app->transportBpm.load(std::memory_order_relaxed)));
+    }
+    return o;
+}
+
+// __rp_setTransport(playing): start/stop the local transport. Takes effect on the next audio block; with an
+// external clock master present it is recorded but overridden (see jsGetTransport).
+JSValue jsSetTransport(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (g_app && argc >= 1)
+        g_app->transportRequest.store(JS_ToBool(ctx, argv[0]) != 0, std::memory_order_relaxed);
+    return JS_UNDEFINED;
+}
+
 // __rp_getMidiConfig(): { inputs: string[], outputs: string[], selectedInput, selectedOutput } — the live
 // hardware MIDI ports + the current device selection, for the Settings > MIDI pickers. "" selection = the
 // default (All Devices for input, None for output). Standalone-only; absent in the plugin (DAW routes MIDI).
@@ -689,6 +726,9 @@ void installWindowHooks(JSContext* ctx) {
     bind("__rp_openPath", jsOpenPath, 1);
     bind("__rp_getAudioConfig", jsGetAudioConfig, 0);
     bind("__rp_setAudioConfig", jsSetAudioConfig, 2);
+    // Local transport (Instance menu > Transport) — standalone-only, like the audio/MIDI device seams.
+    bind("__rp_getTransport", jsGetTransport, 0);
+    bind("__rp_setTransport", jsSetTransport, 1);
     // MIDI device selection (Settings > MIDI). RtMidi is compiled into retroplug-sdl, so the seam always
     // exists here; the plugin never binds these (hasMidiConfig() is false there → the submenu is hidden).
     bind("__rp_getMidiConfig", jsGetMidiConfig, 0);
@@ -877,8 +917,15 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         if (!m.empty()) a.engine.stageControllerMidi(std::move(m));
     a.engine.setControllerConnected(a.launchpadHost.link().isConnected());
 
-    a.engine.setBpm(a.clockSync.outBpm());          // 120 free-run until an external clock master appears
-    a.engine.setTransport(a.clockSync.outPlaying()); // then locks to its tempo + start/stop
+    // Fold in the menu's play/stop, then publish what the transport ended up being (see AppState).
+    a.clockSync.manualPlaying = a.transportRequest.load(std::memory_order_relaxed);
+    const double bpm = a.clockSync.outBpm();
+    const bool playing = a.clockSync.outPlaying();
+    a.transportPlaying.store(playing, std::memory_order_relaxed);
+    a.transportExternal.store(a.clockSync.active, std::memory_order_relaxed);
+    a.transportBpm.store(static_cast<float>(bpm), std::memory_order_relaxed);
+    a.engine.setBpm(bpm);            // 120 free-run until an external clock master appears
+    a.engine.setTransport(playing);  // then locks to its tempo + start/stop
     // Multi-out: render into the N planar channel buffers; the Engine zeroes + routes each system to its
     // pair per audioRouting (MultiOutRouter/ChannelSplitRouter). N=2 collapses every mode to the stereo mix
     // (identical to the old 2-arg path). N=4/6/8 spreads stems across the device's pairs.
@@ -1673,6 +1720,11 @@ int main(int argc, char** argv) {
         app.midi.injectForTest(noteOn, 3);
     }
 
+    // Test hook: drive the transport seam the way the menu does — through the JS global, not the atomic —
+    // so a missing or renamed bind shows up as playing=0 in the report below rather than as a row that
+    // silently disappears from the menu. Any non-empty string is truthy to JS_ToBool.
+    if (std::getenv("RETROPLUG_SDL_TEST_TRANSPORT")) callGlobal(app.host, "__rp_setTransport", "1");
+
     // Test hook: exercise a live audio reconfigure (device close/reopen + engine re-rate) headlessly.
     if (std::getenv("RETROPLUG_SDL_TEST_RECONFIG")) {
         reconfigureAudio(app, 44100, 512, app.reqOutChannels, app.reqHostApi, app.reqOutputDevice);
@@ -1724,9 +1776,12 @@ int main(int argc, char** argv) {
         cs.onByte(0xFC); cs.advance(framesPerPulse);          // explicit stop
         const bool afterStop = cs.outPlaying();
         for (int i = 0; i < 64; ++i) cs.advance(framesPerPulse); // long clock silence → free-run revert
+        // `live` is the RUNNING host's transport, not this scratch estimator's: it proves the standalone
+        // boots stopped (the local transport's default), which is the thing a cart's sync role keys off.
         std::fprintf(stderr, "[retroplug-sdl] clock self-test: target=%.1f derived=%.1f playing=%d afterStop=%d "
-                     "afterTimeout(bpm=%.1f playing=%d)\n",
-                     target, derived, (int)playing, (int)afterStop, cs.outBpm(), (int)cs.outPlaying());
+                     "afterTimeout(bpm=%.1f playing=%d) live=%d\n",
+                     target, derived, (int)playing, (int)afterStop, cs.outBpm(), (int)cs.outPlaying(),
+                     (int)app.transportPlaying.load(std::memory_order_relaxed));
     }
 
     // Test hook: drive the desktop wheel headlessly. RETROPLUG_SDL_TEST_WHEEL=<notches> pushes a real
@@ -1790,6 +1845,11 @@ int main(int argc, char** argv) {
     if (std::getenv("RETROPLUG_SDL_MIDI_SELFTEST"))
         std::fprintf(stderr, "[retroplug-sdl] MIDI self-test: staged %llu message(s) into the Engine\n",
                      static_cast<unsigned long long>(app.midiStaged.load(std::memory_order_relaxed)));
+    // playing=1 proves the whole path: the JS bind exists, the request crossed to the audio thread, and the
+    // transport it published back came out running.
+    if (std::getenv("RETROPLUG_SDL_TEST_TRANSPORT"))
+        std::fprintf(stderr, "[retroplug-sdl] transport self-test: playing=%d\n",
+                     (int)app.transportPlaying.load(std::memory_order_relaxed));
     app.midi.close();
     // Give the control surface back before anything else is torn down. Programmer mode locks the device's
     // front panel, so skipping this leaves the user's hardware in a state they cannot escape from its own

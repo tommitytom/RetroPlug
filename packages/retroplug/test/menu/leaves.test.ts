@@ -452,6 +452,45 @@ test("Link Group stays hidden for a NES peer (SameBoy serial link only); Replace
   expect(findItem(items, "inst-link")).toBe(undefined);       // NES has no link cable → row gated out
 });
 
+test("instance menu Transport (standalone): starts Stopped, toggles through the native seam, hidden without it", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be, notify: () => {} });
+  be.seed("/roms/a.nes", nesRom());
+  const id = stores.project.systems.addSystem("/roms/a.nes")!;
+  const anchored = stores.project.systems.view().find((s) => s.id === id)!;
+  const items = () => buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items;
+
+  // No seam (a DAW / the harness): the host owns the transport, so there is no row at all.
+  expect(findItem(items(), "inst-transport")).toBe(undefined);
+
+  const live = { playing: false, external: false, bpm: 120 };
+  const g = globalThis as {
+    __rp_getTransport?: () => typeof live;
+    __rp_setTransport?: (playing: boolean) => void;
+  };
+  g.__rp_getTransport = () => ({ ...live });
+  g.__rp_setTransport = (playing) => (live.playing = playing);
+
+  // The default that stops a SYNC=MIDI cart being clocked by a standalone nobody pressed play on.
+  expect(findItem(items(), "inst-transport")!.label).toBe("Transport: Stopped");
+
+  findItem(items(), "inst-transport")!.onCycle!(1);
+  expect(live.playing).toBe(true);
+  expect(findItem(items(), "inst-transport")!.label).toBe("Transport: Playing");
+
+  findItem(items(), "inst-transport")!.onCycle!(-1);
+  expect(live.playing).toBe(false);
+
+  // An external clock master owns the transport - the row says whose it is, and what tempo.
+  live.playing = true;
+  live.external = true;
+  live.bpm = 139.7;
+  expect(findItem(items(), "inst-transport")!.label).toBe("Transport: Playing (MIDI clock, 140 BPM)");
+
+  delete g.__rp_getTransport;
+  delete g.__rp_setTransport;
+});
+
 test("a cancelled browse mutates nothing", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });

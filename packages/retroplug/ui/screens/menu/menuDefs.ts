@@ -94,6 +94,7 @@ import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
+import { getTransport, setTransport } from "./transport";
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
 import {
@@ -162,6 +163,22 @@ function blockLatencyMs(frames: number, sampleRate: number): string {
   if (sampleRate <= 0) return "?";
   return `${((frames / sampleRate) * 1000).toFixed(1)} ms`;
 }
+/** The standalone's play/stop row, fenced into its own block (empty in a DAW / the harness, where the host
+ *  owns the transport). It is a clock control, not a cosmetic one: while the transport runs, the LSDj / risa
+ *  sync roles are sending link-port clock to the cart. Starts Stopped. An external MIDI clock master takes
+ *  precedence while it is running - the label says so, and a pick here is kept for when it goes away. */
+function transportRow(): MenuItem[] {
+  const t = getTransport();
+  if (!t) return [];
+  const note = t.external ? ` (MIDI clock, ${Math.round(t.bpm)} BPM)` : "";
+  return [
+    sep("inst-sep-transport"),
+    cycler("inst-transport", "Transport", [`Stopped${note}`, `Playing${note}`], t.playing ? 1 : 0, (n) =>
+      setTransport(n === 1),
+    ),
+  ];
+}
+
 function audioSettingsChildren(): MenuItem[] {
   const cfg = getAudioDraft() ?? { sampleRate: 48000, blockSize: 512, outChannels: 2, driver: "Auto", device: "" };
   const rateIdx = Math.max(0, AUDIO_RATES.indexOf(cfg.sampleRate));
@@ -2161,6 +2178,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
             ),
           ]
         : []),
+      ...transportRow(),
       sep("inst-sep1"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       submenu("inst-project", "Project", projectChildren(ctx)),
