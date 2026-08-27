@@ -452,43 +452,70 @@ test("Link Group stays hidden for a NES peer (SameBoy serial link only); Replace
   expect(findItem(items, "inst-link")).toBe(undefined);       // NES has no link cable → row gated out
 });
 
-test("instance menu Transport (standalone): starts Stopped, toggles through the native seam, hidden without it", () => {
+test("instance menu MIDI Clock (standalone): starts Stopped, play/stop + tempo drive the native seam, absent without it", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be, notify: () => {} });
   be.seed("/roms/a.nes", nesRom());
   const id = stores.project.systems.addSystem("/roms/a.nes")!;
   const anchored = stores.project.systems.view().find((s) => s.id === id)!;
   const items = () => buildInstanceMenu({ ...ctxOf(stores), system: anchored }).items;
+  const clock = () => submenuChildren(items(), "inst-clock");
 
-  // No seam (a DAW / the harness): the host owns the transport, so there is no row at all.
-  expect(findItem(items(), "inst-transport")).toBe(undefined);
+  // No seam - a DAW-hosted plugin or the DPF standalone, where the host owns the transport. No submenu.
+  expect(findItem(items(), "inst-clock")).toBe(undefined);
 
-  const live = { playing: false, external: false, bpm: 120 };
+  const live = { playing: false, external: false, bpm: 120, localBpm: 120 };
   const g = globalThis as {
     __rp_getTransport?: () => typeof live;
     __rp_setTransport?: (playing: boolean) => void;
+    __rp_setClockBpm?: (bpm: number) => void;
   };
   g.__rp_getTransport = () => ({ ...live });
-  g.__rp_setTransport = (playing) => (live.playing = playing);
+  g.__rp_setTransport = (playing) => {
+    live.playing = playing;
+  };
+  g.__rp_setClockBpm = (bpm) => {
+    live.localBpm = bpm;
+    live.bpm = bpm;
+  };
 
-  // The default that stops a SYNC=MIDI cart being clocked by a standalone nobody pressed play on.
-  expect(findItem(items(), "inst-transport")!.label).toBe("Transport: Stopped");
+  // Stopped by default - the thing that keeps a SYNC=MIDI cart from being clocked by a standalone nobody
+  // pressed play on. The parent row summarises without opening it.
+  expect(findItem(items(), "inst-clock")!.label).toBe("MIDI Clock: Stopped");
+  expect(findItem(clock(), "inst-clock-transport")!.label).toBe("Transport: Stopped");
+  expect(findItem(clock(), "inst-clock-tempo")!.label).toBe("Tempo: 120 BPM");
 
-  findItem(items(), "inst-transport")!.onCycle!(1);
+  findItem(clock(), "inst-clock-transport")!.onCycle!(1);
   expect(live.playing).toBe(true);
-  expect(findItem(items(), "inst-transport")!.label).toBe("Transport: Playing");
+  expect(findItem(items(), "inst-clock")!.label).toBe("MIDI Clock: 120 BPM"); // running → the parent shows tempo
 
-  findItem(items(), "inst-transport")!.onCycle!(-1);
-  expect(live.playing).toBe(false);
+  // Tempo: fine step on Left/Right, coarse on PageUp/PageDown.
+  findItem(clock(), "inst-clock-tempo")!.onCycle!(1);
+  expect(live.localBpm).toBe(121);
+  findItem(clock(), "inst-clock-tempo")!.onCoarseStep!(1);
+  expect(live.localBpm).toBe(131);
+  findItem(clock(), "inst-clock-tempo")!.onCoarseStep!(-1);
+  expect(live.localBpm).toBe(121);
+  expect(findItem(clock(), "inst-clock-tempo")!.label).toBe("Tempo: 121 BPM");
 
-  // An external clock master owns the transport - the row says whose it is, and what tempo.
+  // Clamped at the ends (the same window an external clock's estimate is trusted in).
+  g.__rp_setClockBpm(20);
+  findItem(clock(), "inst-clock-tempo")!.onCoarseStep!(-1);
+  expect(live.localBpm).toBe(20);
+
+  // An external master owns both values: the rows report ITS state and go inert.
   live.playing = true;
   live.external = true;
   live.bpm = 139.7;
-  expect(findItem(items(), "inst-transport")!.label).toBe("Transport: Playing (MIDI clock, 140 BPM)");
+  expect(findItem(items(), "inst-clock")!.label).toBe("MIDI Clock: 140 BPM");
+  expect(findItem(clock(), "inst-clock-source")!.label).toBe("Source: External MIDI clock");
+  expect(findItem(clock(), "inst-clock-tempo")!.label).toBe("Tempo: 140 BPM");
+  expect(findItem(clock(), "inst-clock-tempo")!.disabled).toBe(true);
+  expect(findItem(clock(), "inst-clock-transport")!.disabled).toBe(true);
 
   delete g.__rp_getTransport;
   delete g.__rp_setTransport;
+  delete g.__rp_setClockBpm;
 });
 
 test("a cancelled browse mutates nothing", async () => {

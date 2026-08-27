@@ -45,6 +45,9 @@ test("the grid shows a live frame and click-to-focus, populated through the menu
   // Duplicate via the instance menu (Esc → menu; navigate to "Duplicate Instance").
   ui.tapKey(Key.Esc);
   ui.pump(10);
+  // Nothing here binds __rp_getTransport, which is what a DAW-hosted plugin and the DPF standalone look
+  // like: the MIDI Clock submenu is SDL-standalone-only, so it must not be on screen in this menu.
+  expect(ui.findByTextContaining("MIDI Clock")).toBe(null);
   expect(navTo("Duplicate Instance")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(20);

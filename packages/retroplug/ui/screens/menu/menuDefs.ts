@@ -94,7 +94,7 @@ import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
-import { getTransport, setTransport } from "./transport";
+import { getTransport, setTransport, setClockBpm, CLOCK_BPM_STEP, CLOCK_BPM_COARSE_STEP } from "./transport";
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
 import {
@@ -163,19 +163,45 @@ function blockLatencyMs(frames: number, sampleRate: number): string {
   if (sampleRate <= 0) return "?";
   return `${((frames / sampleRate) * 1000).toFixed(1)} ms`;
 }
-/** The standalone's play/stop row, fenced into its own block (empty in a DAW / the harness, where the host
- *  owns the transport). It is a clock control, not a cosmetic one: while the transport runs, the LSDj / risa
- *  sync roles are sending link-port clock to the cart. Starts Stopped. An external MIDI clock master takes
- *  precedence while it is running - the label says so, and a pick here is kept for when it goes away. */
-function transportRow(): MenuItem[] {
+/** The standalone's MIDI Clock submenu (empty in a DAW / the DPF standalone / the harness, where the host owns
+ *  the transport and never binds the seam). This is a clock control, not a cosmetic one: while the transport
+ *  runs, the LSDj / risa sync roles are turning it into link-port clock for the cart. Transport starts
+ *  Stopped; the tempo persists.
+ *
+ *  While an external clock master is running it owns both values, so the rows show ITS state and go inert -
+ *  editing them would look like it did something it can't. They come back when the master stops. */
+function midiClockChildren(t: NonNullable<ReturnType<typeof getTransport>>): MenuItem[] {
+  if (t.external) {
+    return [
+      action("inst-clock-source", "Source: External MIDI clock", () => {}, true),
+      action("inst-clock-transport", `Transport: ${t.playing ? "Playing" : "Stopped"}`, () => {}, true),
+      action("inst-clock-tempo", `Tempo: ${Math.round(t.bpm)} BPM`, () => {}, true),
+    ];
+  }
+  const step = (delta: number) => setClockBpm(t.localBpm + delta);
+  return [
+    cycler("inst-clock-transport", "Transport", ["Stopped", "Playing"], t.playing ? 1 : 0, (n) => setTransport(n === 1)),
+    {
+      // Not a `cycler`: the tempo is a range, not a list of options. Same keys though - Left/Right step by
+      // one, PageUp/PageDown by ten (onCoarseStep, as the render-duration row uses), Enter nudges up.
+      id: "inst-clock-tempo",
+      label: `Tempo: ${Math.round(t.localBpm)} BPM`,
+      kind: "cycler",
+      keepOpen: true,
+      onSelect: () => step(CLOCK_BPM_STEP),
+      onCycle: (dir) => step(dir * CLOCK_BPM_STEP),
+      onCoarseStep: (dir) => step(dir * CLOCK_BPM_COARSE_STEP),
+    },
+  ];
+}
+
+function midiClockRow(): MenuItem[] {
   const t = getTransport();
   if (!t) return [];
-  const note = t.external ? ` (MIDI clock, ${Math.round(t.bpm)} BPM)` : "";
+  const state = t.playing ? `${Math.round(t.bpm)} BPM` : "Stopped";
   return [
     sep("inst-sep-transport"),
-    cycler("inst-transport", "Transport", [`Stopped${note}`, `Playing${note}`], t.playing ? 1 : 0, (n) =>
-      setTransport(n === 1),
-    ),
+    submenu("inst-clock", `MIDI Clock: ${state}`, midiClockChildren(t)),
   ];
 }
 
@@ -2178,7 +2204,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
             ),
           ]
         : []),
-      ...transportRow(),
+      ...midiClockRow(),
       sep("inst-sep1"),
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       submenu("inst-project", "Project", projectChildren(ctx)),

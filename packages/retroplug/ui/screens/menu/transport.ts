@@ -12,9 +12,17 @@
 
 export interface TransportState {
   playing: boolean; // what the Engine is being told right now
-  external: boolean; // a MIDI clock master is driving it — this row's pick is recorded but overridden
-  bpm: number;
+  external: boolean; // a MIDI clock master is driving it — our own settings are recorded but overridden
+  bpm: number; // the tempo in force (the master's while `external`)
+  localBpm: number; // our own tempo — what comes back when the master goes away
 }
+
+/** The tempo range the host accepts, matching the window an external clock's estimate is trusted in
+ *  (MidiClockSync::kMinBpm/kMaxBpm). Steps: fine on Left/Right, coarse on PageUp/PageDown. */
+export const CLOCK_BPM_MIN = 20;
+export const CLOCK_BPM_MAX = 999;
+export const CLOCK_BPM_STEP = 1;
+export const CLOCK_BPM_COARSE_STEP = 10;
 
 let version = 0;
 const listeners = new Set<() => void>();
@@ -26,6 +34,7 @@ function emit(): void {
 type TransportGlobals = {
   __rp_getTransport?: () => Partial<TransportState>;
   __rp_setTransport?: (playing: boolean) => void;
+  __rp_setClockBpm?: (bpm: number) => void;
 };
 
 /** Whether the host exposes the transport seam (standalone only). Gates the row. */
@@ -38,16 +47,26 @@ export function getTransport(): TransportState | null {
   const fn = (globalThis as TransportGlobals).__rp_getTransport;
   if (typeof fn !== "function") return null;
   const t = fn() ?? {};
+  const bpm = typeof t.bpm === "number" && t.bpm > 0 ? t.bpm : 120;
   return {
     playing: t.playing === true,
     external: t.external === true,
-    bpm: typeof t.bpm === "number" && t.bpm > 0 ? t.bpm : 120,
+    bpm,
+    localBpm: typeof t.localBpm === "number" && t.localBpm > 0 ? t.localBpm : bpm,
   };
 }
 
 /** Start/stop the local transport. Applies on the next audio block, then repaints the label. */
 export function setTransport(playing: boolean): void {
   (globalThis as TransportGlobals).__rp_setTransport?.(playing);
+  emit();
+}
+
+/** Set the local tempo (clamped here as well as natively, so the label can't show a value the host
+ *  refused). Applies on the next audio block and persists; ignored while an external master is running. */
+export function setClockBpm(bpm: number): void {
+  const clamped = Math.min(CLOCK_BPM_MAX, Math.max(CLOCK_BPM_MIN, Math.round(bpm)));
+  (globalThis as TransportGlobals).__rp_setClockBpm?.(clamped);
   emit();
 }
 

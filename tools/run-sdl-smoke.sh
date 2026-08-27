@@ -62,12 +62,13 @@ run clock 2 RETROPLUG_SDL_TEST_CLOCK=140
 want "$LOG" "clock self-test: target=140.0 derived=1(39|40|41)\." "clock: derived BPM off target"
 want "$LOG" "afterStop=0" "clock: 0xFC stop did not clear transport"
 # ...and with no clock master, the host's own transport is STOPPED at boot. That default is what keeps a
-# SYNC=MIDI cart from being clocked by a standalone nobody has pressed play on (Instance menu > Transport).
+# SYNC=MIDI cart from being clocked by a standalone nobody has pressed play on (Instance menu > MIDI Clock).
 want "$LOG" "live=0" "clock: the host transport is running at boot (should start stopped)"
-# ...and the menu's play/stop actually reaches it: this drives __rp_setTransport through the JS global the
-# Transport row calls, so a missing bind reads back playing=0 instead of quietly hiding the row.
+# ...and the MIDI Clock submenu's controls actually reach it: this drives __rp_setTransport/__rp_setClockBpm
+# through the JS globals those rows call, so a missing bind reads back the default instead of quietly
+# dropping the submenu from the menu.
 run transport 30 RETROPLUG_SDL_TEST_TRANSPORT=1
-want "$LOG" "transport self-test: playing=1" "transport: __rp_setTransport did not start the transport"
+want "$LOG" "transport self-test: playing=1 bpm=140" "transport: the MIDI Clock seam did not start/retempo the clock"
 echo "  ok: MIDI-clock transport + stopped at boot + menu play/stop"
 
 # 3) Multi-output audio (P5): an 8-channel device opens with 8 planar buffers.
