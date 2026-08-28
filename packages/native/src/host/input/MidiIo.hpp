@@ -66,6 +66,27 @@ inline std::vector<std::size_t> inputPortsToOpen(const std::vector<std::string>&
     return {};
 }
 
+/** Pull the System Real-Time bytes (0xF8..0xFF: clock, start/continue/stop, reset) out of one incoming
+ *  message, handing each to `onRealtime` in order, and leave `bytes` holding whatever else was there.
+ *
+ *  Real-time bytes are a stream WITHIN the stream: the spec lets them appear at any byte boundary,
+ *  including between the data bytes of another message, and a transport is free to hand several events
+ *  over as one buffer. Matching only a one-byte message therefore both MISSES clock (a batched pair reads
+ *  as no clock at all - a tempo estimate built on those pulses comes out a whole ratio slow) and corrupts
+ *  what is left (a clock byte staged into the middle of a NoteOn goes down a cart's link port as noise).
+ *
+ *  Shrinks in place: this runs per message on the audio thread, so it must not allocate. */
+template <typename F>
+inline void extractRealtime(std::vector<std::uint8_t>& bytes, F&& onRealtime) {
+    std::size_t write = 0;
+    for (std::size_t read = 0; read < bytes.size(); ++read) {
+        const std::uint8_t b = bytes[read];
+        if (b >= 0xF8) onRealtime(b);
+        else bytes[write++] = b;
+    }
+    bytes.resize(write);
+}
+
 // Cross-platform MIDI I/O for the SDL standalone, wrapping RtMidi (deps/rtmidi). The DPF plugin gets MIDI
 // from its DAW host, so this is standalone-only.
 //
@@ -110,6 +131,11 @@ public:
     // devices became opt-in.
     void setInputSelection(const std::string& name);
     void setOutputSelection(const std::string& name);
+    /** Messages dropped because the ring was full since startup — always 0 in a healthy run. Non-zero
+     *  means the audio thread stopped draining, and any transport clock in what was lost is simply gone,
+     *  which downstream reads as a tempo that is too slow. Reported by the RETROPLUG_DEBUG_AUDIO dump. */
+    std::uint64_t droppedCount() const { return dropped_.load(std::memory_order_relaxed); }
+
     const std::string& inputSelection() const { return selectedIn_; }
     const std::string& outputSelection() const { return selectedOut_; }
 
@@ -160,6 +186,11 @@ private:
     std::atomic<std::size_t>       head_{0};  // consumer index (audio thread)
     std::atomic<std::size_t>       tail_{0};  // producer index (callback thread)
     std::uint64_t                  seq_ = 0;  // producer-only monotonic counter
+    // Messages the ring had no room for. A full ring means the audio thread stopped draining (a stall, a
+    // device that never started), and the symptom downstream is silent: a tempo estimate built on the
+    // pulses that DID land reads slow, in proportion to what was lost. Counted so it can be reported
+    // rather than guessed at.
+    std::atomic<std::uint64_t>     dropped_{0};
     bool                           log_ = false;  // RETROPLUG_MIDI_LOG: dump in + out bytes to stderr
 };
 

@@ -106,3 +106,50 @@ TEST_CASE("no reservation is the default and changes nothing") {
     // A reserved name that is not present is simply inert (the device was unplugged, the link is down).
     REQUIRE(hardwarePortIndices(kPorts, kClient, "Some Unplugged Launchpad").size() == 2);
 }
+
+// --- System Real-Time extraction -------------------------------------------------------------------
+// Clock/start/stop are a stream within the stream: the spec allows them at ANY byte boundary, and a
+// transport may hand several events over in one buffer. The drain used to recognise them only as a
+// one-byte message, so a batched pair counted as no clock at all - which reads downstream as a tempo a
+// whole ratio slow, and puts a stray 0xF8 into whatever message it was riding along with.
+
+static std::vector<std::uint8_t> realtimeOf(std::vector<std::uint8_t>& bytes) {
+    std::vector<std::uint8_t> seen;
+    retroplug::extractRealtime(bytes, [&](std::uint8_t b) { seen.push_back(b); });
+    return seen;
+}
+
+TEST_CASE("a lone clock byte is extracted and leaves nothing behind") {
+    std::vector<std::uint8_t> msg{0xF8};
+    REQUIRE(realtimeOf(msg) == std::vector<std::uint8_t>{0xF8});
+    REQUIRE(msg.empty());
+}
+
+TEST_CASE("clocks batched into one message are ALL counted") {
+    // The halving case: two pulses delivered together used to count as zero.
+    std::vector<std::uint8_t> msg{0xF8, 0xF8};
+    REQUIRE(realtimeOf(msg) == std::vector<std::uint8_t>{0xF8, 0xF8});
+    REQUIRE(msg.empty());
+}
+
+TEST_CASE("a clock interleaved INTO another message is pulled out, leaving the message intact") {
+    std::vector<std::uint8_t> msg{0x90, 0x3C, 0xF8, 0x40};  // NoteOn with a clock byte mid-message
+    REQUIRE(realtimeOf(msg) == std::vector<std::uint8_t>{0xF8});
+    REQUIRE(msg == std::vector<std::uint8_t>{0x90, 0x3C, 0x40});
+}
+
+TEST_CASE("start / stop / continue and reset all count as real-time; channel data never does") {
+    std::vector<std::uint8_t> msg{0xFA, 0x90, 0xFC, 0x3C, 0xFB, 0x40, 0xFF};
+    REQUIRE(realtimeOf(msg) == std::vector<std::uint8_t>{0xFA, 0xFC, 0xFB, 0xFF});
+    REQUIRE(msg == std::vector<std::uint8_t>{0x90, 0x3C, 0x40});
+
+    std::vector<std::uint8_t> note{0x90, 0x3C, 0x7F};
+    REQUIRE(realtimeOf(note).empty());
+    REQUIRE(note == std::vector<std::uint8_t>{0x90, 0x3C, 0x7F});
+}
+
+TEST_CASE("0xF7 (sysex end) is NOT real-time - the boundary is 0xF8") {
+    std::vector<std::uint8_t> msg{0xF0, 0x7E, 0xF7};
+    REQUIRE(realtimeOf(msg).empty());
+    REQUIRE(msg.size() == 3);
+}

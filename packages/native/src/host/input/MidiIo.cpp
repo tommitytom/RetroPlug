@@ -146,7 +146,10 @@ void MidiIo::onMidiIn(double /*timeStamp*/, std::vector<unsigned char>* message,
 void MidiIo::pushRing(const unsigned char* data, std::size_t len) {
     const std::size_t t = tail_.load(std::memory_order_relaxed);
     const std::size_t n = (t + 1) % kCapacity;
-    if (n == head_.load(std::memory_order_acquire)) return;  // full → drop
+    if (n == head_.load(std::memory_order_acquire)) {  // full → drop
+        dropped_.fetch_add(1, std::memory_order_relaxed);  // counted, so a lost clock isn't invisible
+        return;
+    }
     ring_[t].seq = ++seq_;
     ring_[t].bytes.assign(data, data + len);
     tail_.store(n, std::memory_order_release);

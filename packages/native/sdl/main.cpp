@@ -127,6 +127,8 @@ struct MidiClockSync {
     double bpm = 120.0;            // last good estimate
     bool active = false;           // clock seen within the timeout
     bool stopped = false;          // explicit 0xFC latch (overrides clock presence)
+    bool debug = false;            // RETROPLUG_DEBUG_AUDIO: report each tempo estimate's inputs
+    std::uint64_t droppedMessages = 0;  // MidiIo's ring drops, folded in so the report names the culprit
     bool manualPlaying = false;    // the local transport (Instance menu > MIDI Clock); used when no clock master
     double manualBpm = 120.0;      // the local tempo, likewise — what the sync roles clock at when we're the master
 
@@ -153,6 +155,12 @@ struct MidiClockSync {
             windowFrames += frames;
             if (windowPulses >= kWindowPulses && windowFrames > 0) {
                 const double est = 60.0 * sampleRate * windowPulses / (static_cast<double>(windowFrames) * 24.0);
+                if (debug)
+                    std::fprintf(stderr, "[retroplug-sdl] clock: %d pulses / %lld frames @ %.0f Hz -> %.1f BPM"
+                                 " (%.1f pulses/s, %llu message(s) dropped)\n",
+                                 windowPulses, windowFrames, sampleRate, est,
+                                 sampleRate * windowPulses / static_cast<double>(windowFrames),
+                                 static_cast<unsigned long long>(droppedMessages));
                 if (est >= kMinBpm && est <= kMaxBpm) bpm = est;
                 windowPulses = 0;
                 windowFrames = 0;
@@ -306,6 +314,7 @@ AppState* g_app = nullptr;  // single instance
 // Audio device (re)configuration — defined after audioCb (they reference it); declared here so the
 // __rp_setAudioConfig hook (bound earlier) can drive a live sample-rate / block-size change.
 bool openAudio(AppState& a);
+bool audioDebugEnabled();   // RETROPLUG_DEBUG_AUDIO (defined with the audio log handlers)
 void reconfigureAudio(AppState& a, int sampleRate, int blockSize, int channels, int hostApi, const std::string& device);
 void loadAudioConfig(AppState& a);
 void saveAudioConfig(AppState& a);
@@ -898,19 +907,25 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
     // carries no sub-block timing worth preserving (a proper offset from the block clock is a later step).
     a.midi.poll(a.midiScratch);
     a.clockSync.sampleRate = a.sampleRate;
+    a.clockSync.debug = audioDebugEnabled();
+    a.clockSync.droppedMessages = a.midi.droppedCount();
     for (auto& m : a.midiScratch) {
+        if (m.bytes.empty()) continue;
+        // System Real-Time first, wherever it sits in the message. It drives the host transport and is
+        // never staged, never sent to a cart: the sync roles regenerate whatever each core needs from
+        // Engine tempo/transport, and risa's generated stream reaches the N8 via the core-byte mirror, so
+        // forwarding the wire bytes too would double-clock it. Testing only for a ONE-BYTE message (what
+        // this did before) drops any clock a transport batched with another event, and a tempo estimate
+        // missing pulses reads a whole ratio slow.
+        retroplug::extractRealtime(m.bytes, [&](std::uint8_t status) { a.clockSync.onByte(status); });
         if (m.bytes.empty()) continue;
         // Forward raw MIDI to a connected physical N8 (no-op + near-free when disconnected). Frame 0 - the
         // standalone stages at frame 0 anyway; the N8Link serial thread does the timed release + USB write.
-        // Two exclusions:
-        //   - single-byte System Real-Time (>= 0xF8: clock/start/stop) is transport, not note data. The sync
-        //     roles regenerate whatever each core needs, and risa's generated F8 stream reaches the N8 via
-        //     the Engine core-byte mirror - so raw-forwarding them here too would double-clock it.
-        //   - SYSEX. Now that the input no longer drops it, a control surface's bulk-LED message (hundreds
-        //     of bytes) would otherwise be shovelled down a cart FIFO that has no idea what it is.
-        const bool realtime = m.bytes.size() == 1 && m.bytes[0] >= 0xF8;
-        const bool sysex    = m.bytes[0] == 0xF0;
-        if (!realtime && !sysex)
+        // Real-time is already gone (stripped above); SYSEX is excluded here, because a control surface's
+        // bulk-LED message (hundreds of bytes) would otherwise be shovelled down a cart FIFO that has no
+        // idea what it is.
+        const bool sysex = m.bytes[0] == 0xF0;
+        if (!sysex)
             a.n8Host.link().push(0, m.bytes.data(), m.bytes.size(), a.sampleRate);
         // Sysex crosses the RtMidi seam now (MidiIo no longer ignores it), but it is NOT staged as musical
         // MIDI: no role consumes it, and the passthrough translators (mGB, LSDj MidiPassthrough) push every
@@ -918,10 +933,7 @@ void renderAudioBlock(AppState& a, float* out, int frames) {
         // message would arrive at the Game Boy as noise. A control surface has its own stream for this
         // (BlockInput.controllerIn), which is the whole reason that stream exists.
         if (sysex) continue;
-        // Real-time transport bytes (0xF8 clock / 0xFA start / 0xFB continue / 0xFC stop) drive the host
-        // transport, not the emulator — consume them here and don't stage them (the sync roles regenerate
-        // clock from Engine tempo/transport). Everything else (notes/CC/...) is staged as host MIDI in.
-        if (m.bytes.size() == 1 && a.clockSync.onByte(m.bytes[0])) continue;
+        // Everything left (notes / CC / ...) is staged as host MIDI in.
         a.engine.stageMidi(0, std::move(m.bytes));
         a.midiStaged.fetch_add(1, std::memory_order_relaxed);
     }
