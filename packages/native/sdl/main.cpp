@@ -1807,13 +1807,23 @@ int main(int argc, char** argv) {
         const bool playing = cs.outPlaying();
         cs.onByte(0xFC); cs.advance(framesPerPulse);          // explicit stop
         const bool afterStop = cs.outPlaying();
+        // A master that CHANGES tempo mid-stream (the DAW-tempo-fader case): the estimate has to follow it,
+        // not latch the first reading.
+        MidiClockSync sweep;
+        sweep.sampleRate = app.sampleRate;
+        for (int i = 0; i < 48; ++i) { sweep.onByte(0xF8); sweep.advance(framesPerPulse); }
+        const double sweepFirst = sweep.outBpm();
+        const long long framesPerPulse2 = static_cast<long long>(app.sampleRate * 60.0 / ((target * 0.5) * 24.0));
+        for (int i = 0; i < 48; ++i) { sweep.onByte(0xF8); sweep.advance(framesPerPulse2); }
+        const double sweepAfter = sweep.outBpm();
+
         for (int i = 0; i < 64; ++i) cs.advance(framesPerPulse); // long clock silence → free-run revert
         // `live` is the RUNNING host's transport, not this scratch estimator's: it proves the standalone
         // boots stopped (the local transport's default), which is the thing a cart's sync role keys off.
         std::fprintf(stderr, "[retroplug-sdl] clock self-test: target=%.1f derived=%.1f playing=%d afterStop=%d "
-                     "afterTimeout(bpm=%.1f playing=%d) live=%d\n",
+                     "afterTimeout(bpm=%.1f playing=%d) live=%d sweep(%.1f -> %.1f)\n",
                      target, derived, (int)playing, (int)afterStop, cs.outBpm(), (int)cs.outPlaying(),
-                     (int)app.transportPlaying.load(std::memory_order_relaxed));
+                     (int)app.transportPlaying.load(std::memory_order_relaxed), sweepFirst, sweepAfter);
     }
 
     // Test hook: drive the desktop wheel headlessly. RETROPLUG_SDL_TEST_WHEEL=<notches> pushes a real

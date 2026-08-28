@@ -33,7 +33,7 @@ import { gridContentSize, hitTestTile, resolveZoom, SystemLayout } from "./scree
 import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel, type MenuContext } from "./screens/menu/menuDefs";
 import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import { subscribeMidi } from "./screens/menu/midiDevices";
-import { subscribeTransport } from "./screens/menu/transport";
+import { subscribeTransport, pollTransport } from "./screens/menu/transport";
 import { subscribeN8 } from "./screens/menu/n8Devices";
 import { subscribeLaunchpad } from "./screens/menu/launchpadDevices";
 import type { MenuTree } from "./screens/menu/menuTree";
@@ -210,6 +210,14 @@ export function App() {
   // cold-boot replaces the tile under the cursor (falling back to the focused tile), or loads a bare .sav
   // into that tile. The native editor pushes the OS drop onto the "file-drop" channel (newline-joined
   // paths + window-space x/y); inert in the headless harness, which never emits it.
+  // The MIDI Clock submenu's values move without anyone touching the menu (an external master starts,
+  // stops, changes tempo), so poll them while the menu is on screen — the same poll-and-compare the render
+  // badge does. pollTransport only emits when a DISPLAYED value changes, and the seam is absent in a DAW /
+  // the harness, so this is a cheap no-op there.
+  useNativeEvent("frame", () => {
+    if (menuOpen) pollTransport();
+  });
+
   useNativeEvent("file-drop", (...args) => {
     const paths = String(args[0] ?? "").split("\n").filter((p) => p.length > 0);
     if (paths.length === 0) return;

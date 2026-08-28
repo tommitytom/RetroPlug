@@ -70,6 +70,23 @@ export function setClockBpm(bpm: number): void {
   emit();
 }
 
+/** Re-read the host and emit if anything the MIDI Clock submenu DISPLAYS has changed. Unlike the audio /
+ *  MIDI device seams, this state moves on its own: an external clock master starts, stops and changes tempo
+ *  without anyone touching the menu, and a menu built once would sit there showing the tempo that was
+ *  current when it opened. Called from App's per-frame hook while the menu is open (the same poll-and-
+ *  compare the render badge uses), so a DAW tempo fader is followed on screen.
+ *
+ *  Compares the ROUNDED tempo, which is what the label shows — an estimate wobbling by a fraction of a BPM
+ *  must not re-render the whole menu 60 times a second. */
+let lastKey = "";
+export function pollTransport(): void {
+  const t = getTransport();
+  const key = t ? `${t.playing}:${t.external}:${Math.round(t.bpm)}:${Math.round(t.localBpm)}` : "";
+  if (key === lastKey) return;
+  lastKey = key;
+  emit();
+}
+
 /** A monotonic version — a stable snapshot for App's forced re-render on a transport change. */
 export function transportVersion(): number {
   return version;
