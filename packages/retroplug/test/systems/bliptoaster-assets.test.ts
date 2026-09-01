@@ -39,7 +39,7 @@ function populatedBank(fill: number): Uint8Array {
   return bank;
 }
 
-test("an BlipToaster system attaches an empty bliptoaster-assets role and constructs with no romBytes", () => {
+test("a BlipToaster system attaches an empty bliptoaster-assets role and constructs with no romBytes", () => {
   const { be, store } = newStore();
   be.seed("/roms/synth.nes", blipToasterRom());
   const id = store.addSystem("/roms/synth.nes");

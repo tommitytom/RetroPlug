@@ -54,7 +54,7 @@ const overrideSchema = z.object({
   erase: z.boolean().optional(),
 });
 
-// The role config: just the override list (empty by default — an BlipToaster cart with no replacements).
+// The role config: just the override list (empty by default — a BlipToaster cart with no replacements).
 const blipToasterAssetsSchema = z.object({
   overrides: z.array(overrideSchema).default([]),
 });
@@ -96,7 +96,7 @@ function applyOne(rom: BlipToasterRom, ov: BlipToasterAssetOverride, caps: Const
 }
 
 /** Fold a list of overrides onto base ROM bytes, returning the patched image (per-override try/catch so a
- *  bad entry just skips). Returns the base unchanged if it isn't an BlipToaster image. */
+ *  bad entry just skips). Returns the base unchanged if it isn't a BlipToaster image. */
 export function applyOverridesToRom(
   baseBytes: Uint8Array,
   overrides: BlipToasterAssetOverride[],

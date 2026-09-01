@@ -252,7 +252,7 @@ function migrateProjectRaw(raw: RawObject, fromVersion: number): RawObject {
 
 /** The current project-format version. Bump ONLY on a breaking (non-additive) change, and add
  *  the matching `PROJECT_MIGRATIONS[N-1]` step. v2 persists each system's `core`; v3 makes the
- *  enum settings string-valued; v4 renames the BlipToaster role kinds to BlipToaster. */
+ *  enum settings string-valued; v4 renames the EverMIDI role kinds to BlipToaster. */
 export const K_PROJECT = 4;
 
 export enum VersionCheck {

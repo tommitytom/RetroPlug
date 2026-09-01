@@ -1,5 +1,5 @@
 // The "bliptoaster" feature role. A control-plane-only marker role (no DSP behaviour, no config) attached to
-// an BlipToaster ROM by the bliptoaster ROM provider (romProviders.ts). Its presence gates the BlipToaster asset
+// a BlipToaster ROM by the bliptoaster ROM provider (romProviders.ts). Its presence gates the BlipToaster asset
 // menu — it is the tracker integration's markerRole — exactly as "risa" gates risa's menu. Registered into
 // the control-plane registry only (buildAppRegistry), like registerRisaRole.
 import { z } from "zod";

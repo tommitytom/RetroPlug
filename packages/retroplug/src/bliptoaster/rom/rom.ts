@@ -1,4 +1,4 @@
-// BlipToasterRom — a pure-TS view/patcher over an BlipToaster (NROM) .nes image, the BlipToaster twin of
+// BlipToasterRom — a pure-TS view/patcher over a BlipToaster (NROM) .nes image, the BlipToaster twin of
 // ../../risa/rom/rom.ts. A .nes is mostly opaque code, so this reads/patches only the replaceable asset
 // regions — the baked DMC kit bank and the CHR font — leaving everything else byte-identical. Construct
 // with fromBytes (clones, so the caller's buffer is never mutated); after patching hand bytes() to the

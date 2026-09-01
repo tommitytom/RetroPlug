@@ -1,4 +1,4 @@
-// The BlipToaster instance submenu: gated on the `bliptoaster` marker role the ROM provider attaches to an BlipToaster
+// The BlipToaster instance submenu: gated on the `bliptoaster` marker role the ROM provider attaches to a BlipToaster
 // cart. It is ASSET-ONLY (no song battery), so it exercises the songs-optional path — there must be NO Songs
 // submenu, only the Kits + Fonts asset submenus. Mirrors test/menu/risa.test.ts (asset half).
 import { test, expect } from "../../testing/harness";
@@ -38,17 +38,17 @@ function blipToasterItems(be: MockBackend, stores: AppStores, path = "/roms/synt
   return () => buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items;
 }
 
-test("the BlipToaster submenu appears only for an BlipToaster ROM, is asset-only (no Songs), and lists Kits + Fonts", () => {
+test("the BlipToaster submenu appears only for a BlipToaster ROM, is asset-only (no Songs), and lists Kits + Fonts", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
 
-  // A plain NES ROM (no BLIPTOASTER marker) → no `bliptoaster` role → no submenu.
+  // A plain NES ROM (no "bliptoaster" marker) → no `bliptoaster` role → no submenu.
   be.seed("/roms/plain.nes", nesRom());
   const plainId = stores.project.systems.addSystem("/roms/plain.nes")!;
   const plain = stores.project.systems.view().find((s) => s.id === plainId)!;
   expect(findItem(buildInstanceMenu({ ...ctxOf(stores), system: plain }).items, "inst-bliptoaster")).toBe(undefined);
 
-  // An BlipToaster ROM → the provider attaches `bliptoaster` → the submenu shows, asset-only (no Songs submenu).
+  // A BlipToaster ROM → the provider attaches `bliptoaster` → the submenu shows, asset-only (no Songs submenu).
   const items = blipToasterItems(be, stores);
   expect(findItem(items(), "inst-bliptoaster")?.kind).toBe("submenu");
   const kids = submenuChildren(items(), "inst-bliptoaster");

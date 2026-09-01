@@ -95,7 +95,7 @@ Direct device memory + FIFO. Key N8 addresses: cart battery RAM `0x1000000`, liv
 ## 2b. Drive a ROM with MIDI (`n8-play`)
 
 `retroplug-cli n8-play [--serial <port>] [--exp-vol <0-255>] <step>...` plays a **scripted** MIDI
-sequence into the cart FIFO, so an BlipToaster check is one reproducible command with no controller
+sequence into the cart FIFO, so a BlipToaster check is one reproducible command with no controller
 attached. (`n8-bridge` is the live twin, and needs a real MIDI input port.)
 
 Steps are 1-based on MIDI channel, matching the BlipToaster monitor's `CH` column:

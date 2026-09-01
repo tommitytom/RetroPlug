@@ -2,7 +2,7 @@
 //
 // (1) MesenBackend::build must load TS-supplied effective ROM bytes (spec.romBytes) instead of slurping
 //     romPath — proven by constructing with a nonexistent romPath but valid romBytes (only the romBytes path
-//     can boot it). This support already shipped for risa; here it's exercised for an BlipToaster ROM.
+//     can boot it). This support already shipped for risa; here it's exercised for a BlipToaster ROM.
 // (2) End-to-end: patch a kit + a font into the base ROM in memory via BlipToasterRom, construct from those
 //     bytes, and confirm the patched image boots (and the on-disk .nes is never touched).
 // Points at the sibling bliptoaster build (which carries the BLIPTOASTER marker + baked kit); SKIPs cleanly if absent.
@@ -45,7 +45,7 @@ test("the COMMITTED resources/roms ROM is detected, and its role set is attached
   console.log(`[bliptoaster-rom] vendored ROM detected: ${BLIPTOASTER_MARKER} v${info.semver.join(".")}`);
 });
 
-test("constructSystem romBytes boots an BlipToaster (Mesen) system over a nonexistent romPath", () => {
+test("constructSystem romBytes boots a BlipToaster (Mesen) system over a nonexistent romPath", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
   if (!be.fileExists(BLIPTOASTER_ROM)) { console.log(`# SKIP bliptoaster-rom romBytes: no ROM at ${BLIPTOASTER_ROM}`); return; }

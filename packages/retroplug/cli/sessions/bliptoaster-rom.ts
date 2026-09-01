@@ -1,5 +1,5 @@
 // `retroplug-cli bliptoaster-rom` — inspect, extract and edit the static assets (DPCM sample kits, the theme,
-// the CHR font) inside an BlipToaster `.nes` ROM, headlessly. The BlipToaster twin of ./risa-rom.ts (BlipToaster is
+// the CHR font) inside a BlipToaster `.nes` ROM, headlessly. The BlipToaster twin of ./risa-rom.ts (BlipToaster is
 // also NES/DMC, so it reuses the exact same risa asset codecs), backed by the pure-TS src/bliptoaster/rom
 // module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile is native
 // (s.audio.compileDmc — the generic DMC compiler); sample splicing re-packs existing DPCM + a freshly-
