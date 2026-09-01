@@ -12,15 +12,38 @@ import { createAudioDriver } from "../src/audioDriver";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { EverMidiRom } from "../src/evermidi/rom";
+import { everMidiInfo, isEverMidiRomHeader, EVERMIDI_MARKER } from "../src/evermidi/romDetect";
 
-const EVERMIDI_ROM = "/workspaces/evermidi/rom/n8-midi.nes";
+declare const __REPO_RESOURCES_DIR__: string;
+// The COMMITTED ROM, always present (unlike the sibling build below).
+const VENDORED_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
+
+const EVERMIDI_ROM = "/workspaces/evermidi/rom/build/bliptoaster.nes";
 // The plain-banking FME-7 build (mapper 69, no expansion audio): 16 switchable DMC kit banks. Skips cleanly
 // if `make -C /workspaces/evermidi/rom all-mappers` hasn't been run.
-const EVERMIDI_FME7 = "/workspaces/evermidi/rom/n8-midi-fme7.nes";
+const EVERMIDI_FME7 = "/workspaces/evermidi/rom/build/bliptoaster-fme7.nes";
 const KIT_MAGIC_ADDR = 0xdf40; // $C000 + $1F40: the risa-kit present marker in the bank mapped at $C000
 const CC_STATUS_CH5 = 0xb4; // Control Change, MIDI channel 5 (the DMC channel)
 const CC_DMC_BANK = 14;
 const CC_DMC_LOOP = 4;
+
+// REGRESSION GUARD. The vendored ROM and the detection marker drifted apart once already: resources/roms was
+// last refreshed while the marker was still "EVERMIDI", the marker later became "evermidi-n8", and nothing
+// noticed that the committed ROM had stopped being recognised. Assert the shipped bytes against the shipped
+// detector so re-vendoring a mismatched build fails here instead of silently dropping the asset menu.
+test("the COMMITTED resources/roms ROM is detected, and its role set is attached", () => {
+  const be = createRealBackend();
+  expect(be.fileExists(VENDORED_ROM)).toBeTruthy(); // committed, so never a skip
+
+  const rom = EverMidiRom.fromBytes(be.readFile(VENDORED_ROM)!);
+  expect(rom.isEverMidi).toBe(true);
+
+  const header = be.readFile(VENDORED_ROM)!.subarray(0, 0x150);
+  expect(isEverMidiRomHeader(header)).toBe(true);
+  const info = everMidiInfo(header)!;
+  expect(info != null).toBeTruthy();
+  console.log(`[evermidi-rom] vendored ROM detected: ${EVERMIDI_MARKER} v${info.semver.join(".")}`);
+});
 
 test("constructSystem romBytes boots an EverMIDI (Mesen) system over a nonexistent romPath", () => {
   const be = createRealBackend();

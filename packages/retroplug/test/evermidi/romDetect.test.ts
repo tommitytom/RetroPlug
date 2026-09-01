@@ -1,4 +1,4 @@
-// EverMIDI SIG-block detection tests: find the "evermidi-n8" head marker + read its semver, and reject
+// EverMIDI SIG-block detection tests: find the "bliptoaster" head marker + read its semver, and reject
 // non-EverMIDI buffers. Pure byte-level — no emulator or real ROM.
 import { test, expect } from "../../testing/harness";
 import { everMidiInfo, isEverMidiRomHeader, EVERMIDI_MARKER } from "../../src/evermidi/romDetect";
@@ -28,4 +28,30 @@ test("non-EverMIDI buffers return null / false", () => {
     expect(everMidiInfo(buf)).toBe(null);
     expect(isEverMidiRomHeader(buf)).toBe(false);
   }
+});
+
+// The marker is a wire contract with the ROM repo's rom/src/core/sig.s, and it has moved twice ("EVERMIDI"
+// -> "evermidi-n8" -> "bliptoaster"). Pin the exact bytes here so a drift is a failing test rather than a
+// ROM that silently loses its Kits/Fonts/Themes menu. The pre-rename spellings must NOT be detected.
+test("the marker is exactly the bytes the ROM bakes, and superseded markers are rejected", () => {
+  expect(EVERMIDI_MARKER).toBe("bliptoaster");
+
+  const withMarker = (mark: string): Uint8Array => {
+    const h = new Uint8Array(0x150);
+    for (let i = 0; i < mark.length; i++) h[0x10 + i] = mark.charCodeAt(i);
+    h[0x10 + mark.length] = 0; h[0x11 + mark.length] = 1; h[0x12 + mark.length] = 0;
+    return h;
+  };
+  for (const old of ["EVERMIDI", "evermidi-n8"]) expect(isEverMidiRomHeader(withMarker(old))).toBe(false);
+});
+
+// The SIG block is padded upstream to a fixed 16 bytes with $FF after the semver. Reading must stop at the
+// semver and not mistake the padding for further fields.
+test("the $FF padding after the semver is ignored", () => {
+  const h = new Uint8Array(0x150).fill(0);
+  let p = 0x10;
+  for (let i = 0; i < EVERMIDI_MARKER.length; i++) h[p++] = EVERMIDI_MARKER.charCodeAt(i);
+  h[p++] = 0; h[p++] = 1; h[p++] = 0;
+  h.fill(0xff, p, 0x10 + 16); // pad to the fixed 16-byte block
+  expect(everMidiInfo(h)).toEqual({ semver: [0, 1, 0] });
 });

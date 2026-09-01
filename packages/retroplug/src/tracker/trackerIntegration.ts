@@ -165,7 +165,7 @@ export const everMidiIntegration: TrackerIntegration = {
   markerRole: "evermidi",
   assets: evermidiAssetCatalog,
   romName: (rom) => {
-    const info = everMidiInfo(rom); // decoded evermidi-n8 SIG block (null when the marker is absent)
+    const info = everMidiInfo(rom); // decoded bliptoaster SIG block (null when the marker is absent)
     if (!info) return null;
     return `${EVERMIDI_MARKER} v${info.semver.join(".")}`; // marker doubles as the display name
   },
