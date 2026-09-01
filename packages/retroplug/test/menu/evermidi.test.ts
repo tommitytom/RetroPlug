@@ -46,29 +46,29 @@ test("the EverMIDI submenu appears only for an EverMIDI ROM, is asset-only (no S
   be.seed("/roms/plain.nes", nesRom());
   const plainId = stores.project.systems.addSystem("/roms/plain.nes")!;
   const plain = stores.project.systems.view().find((s) => s.id === plainId)!;
-  expect(findItem(buildInstanceMenu({ ...ctxOf(stores), system: plain }).items, "inst-evermidi")).toBe(undefined);
+  expect(findItem(buildInstanceMenu({ ...ctxOf(stores), system: plain }).items, "inst-bliptoaster")).toBe(undefined);
 
   // An EverMIDI ROM → the provider attaches `evermidi` → the submenu shows, asset-only (no Songs submenu).
   const items = everMidiItems(be, stores);
-  expect(findItem(items(), "inst-evermidi")?.kind).toBe("submenu");
-  const kids = submenuChildren(items(), "inst-evermidi");
-  expect(findItem(kids, "evermidi-songs")).toBe(undefined); // no song battery → no Songs submenu
-  expect(findItem(kids, "evermidi-themes")?.kind).toBe("submenu");
-  expect(findItem(kids, "evermidi-kits")?.kind).toBe("submenu");
-  expect(findItem(kids, "evermidi-fonts")?.kind).toBe("submenu");
+  expect(findItem(items(), "inst-bliptoaster")?.kind).toBe("submenu");
+  const kids = submenuChildren(items(), "inst-bliptoaster");
+  expect(findItem(kids, "bliptoaster-songs")).toBe(undefined); // no song battery → no Songs submenu
+  expect(findItem(kids, "bliptoaster-themes")?.kind).toBe("submenu");
+  expect(findItem(kids, "bliptoaster-kits")?.kind).toBe("submenu");
+  expect(findItem(kids, "bliptoaster-fonts")?.kind).toBe("submenu");
 });
 
 test("the Themes submenu lists the baked theme with Export/Replace (no Remove until overridden)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const items = everMidiItems(be, stores);
-  const themes = submenuChildren(submenuChildren(items(), "inst-evermidi"), "evermidi-themes");
+  const themes = submenuChildren(submenuChildren(items(), "inst-bliptoaster"), "bliptoaster-themes");
   expect(themes.length).toBe(1);
   expect(themes[0].label).toBe("[0] DFLT"); // decoded, space-trimmed theme name
-  const t0 = submenuChildren(themes, "evermidi-theme-0");
-  expect(findItem(t0, "evermidi-theme-0-export")?.kind).toBe("action");
-  expect(findItem(t0, "evermidi-theme-0-replace")?.kind).toBe("action");
-  expect(findItem(t0, "evermidi-theme-0-remove")).toBe(undefined);
+  const t0 = submenuChildren(themes, "bliptoaster-theme-0");
+  expect(findItem(t0, "bliptoaster-theme-0-export")?.kind).toBe("action");
+  expect(findItem(t0, "bliptoaster-theme-0-replace")?.kind).toBe("action");
+  expect(findItem(t0, "bliptoaster-theme-0-remove")).toBe(undefined);
 });
 
 test("a theme override shows a * marker + a Remove Override row", () => {
@@ -76,7 +76,7 @@ test("a theme override shows a * marker + a Remove Override row", () => {
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/synth3.nes", everMidiRom());
   const id = stores.project.systems.addSystem("/roms/synth3.nes")!;
-  stores.project.systems.setRoleConfig(id, "evermidi-assets", {
+  stores.project.systems.setRoleConfig(id, "bliptoaster-assets", {
     overrides: [
       {
         type: "theme",
@@ -87,35 +87,35 @@ test("a theme override shows a * marker + a Remove Override row", () => {
     ],
   });
   const themes = submenuChildren(
-    submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-evermidi"),
-    "evermidi-themes",
+    submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-bliptoaster"),
+    "bliptoaster-themes",
   );
   expect(themes[0].label).toBe("[0] NEON *");
-  expect(findItem(submenuChildren(themes, "evermidi-theme-0"), "evermidi-theme-0-remove")?.kind).toBe("action");
+  expect(findItem(submenuChildren(themes, "bliptoaster-theme-0"), "bliptoaster-theme-0-remove")?.kind).toBe("action");
 });
 
 test("the Kits + Fonts submenus list the base ROM's assets with Export/Replace (no Add/Delete — Replace-only)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const items = everMidiItems(be, stores);
-  const kids = () => submenuChildren(items(), "inst-evermidi");
+  const kids = () => submenuChildren(items(), "inst-bliptoaster");
 
-  const kits = submenuChildren(kids(), "evermidi-kits");
-  expect(findItem(kits, "evermidi-kit-add")).toBe(undefined); // single kit → not addable
-  const k0 = kits.find((k) => k.id === "evermidi-kit-0")!; // the fixture's base "TEST" kit
+  const kits = submenuChildren(kids(), "bliptoaster-kits");
+  expect(findItem(kits, "bliptoaster-kit-add")).toBe(undefined); // single kit → not addable
+  const k0 = kits.find((k) => k.id === "bliptoaster-kit-0")!; // the fixture's base "TEST" kit
   expect(k0.label).toBe("[0] TEST");
-  const krows = submenuChildren(kits, "evermidi-kit-0");
-  expect(findItem(krows, "evermidi-kit-0-export")?.kind).toBe("action");
-  expect(findItem(krows, "evermidi-kit-0-replace")?.kind).toBe("action");
-  expect(findItem(krows, "evermidi-kit-0-delete")).toBe(undefined); // not addable → no Delete
-  expect(findItem(krows, "evermidi-kit-0-remove")).toBe(undefined); // no override yet
+  const krows = submenuChildren(kits, "bliptoaster-kit-0");
+  expect(findItem(krows, "bliptoaster-kit-0-export")?.kind).toBe("action");
+  expect(findItem(krows, "bliptoaster-kit-0-replace")?.kind).toBe("action");
+  expect(findItem(krows, "bliptoaster-kit-0-delete")).toBe(undefined); // not addable → no Delete
+  expect(findItem(krows, "bliptoaster-kit-0-remove")).toBe(undefined); // no override yet
 
-  const fonts = submenuChildren(kids(), "evermidi-fonts");
-  const f0 = fonts.find((f) => f.id === "evermidi-font-0")!;
+  const fonts = submenuChildren(kids(), "bliptoaster-fonts");
+  const f0 = fonts.find((f) => f.id === "bliptoaster-font-0")!;
   expect(f0.label).toBe("[0] Font 0");
-  const frows = submenuChildren(fonts, "evermidi-font-0");
-  expect(findItem(frows, "evermidi-font-0-export")?.kind).toBe("action");
-  expect(findItem(frows, "evermidi-font-0-replace")?.kind).toBe("action");
+  const frows = submenuChildren(fonts, "bliptoaster-font-0");
+  expect(findItem(frows, "bliptoaster-font-0-export")?.kind).toBe("action");
+  expect(findItem(frows, "bliptoaster-font-0-replace")?.kind).toBe("action");
 });
 
 test("a banking ROM makes Kits addable (Add... + per-kit Delete) and shows a high-slot override row", () => {
@@ -125,23 +125,23 @@ test("a banking ROM makes Kits addable (Add... + per-kit Delete) and shows a hig
   const id = stores.project.systems.addSystem("/roms/synthbank.nes")!;
   const kitsOf = () =>
     submenuChildren(
-      submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-evermidi"),
-      "evermidi-kits",
+      submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-bliptoaster"),
+      "bliptoaster-kits",
     );
 
   // Kits is now addable (16 banks): leads with Add..., and the base kit row gains a Delete.
-  expect(findItem(kitsOf(), "evermidi-kit-add")?.kind).toBe("action");
-  expect(kitsOf().find((k) => k.id === "evermidi-kit-0")!.label).toBe("[0] TEST");
-  expect(findItem(submenuChildren(kitsOf(), "evermidi-kit-0"), "evermidi-kit-0-delete")?.kind).toBe("action");
+  expect(findItem(kitsOf(), "bliptoaster-kit-add")?.kind).toBe("action");
+  expect(kitsOf().find((k) => k.id === "bliptoaster-kit-0")!.label).toBe("[0] TEST");
+  expect(findItem(submenuChildren(kitsOf(), "bliptoaster-kit-0"), "bliptoaster-kit-0-delete")?.kind).toBe("action");
 
   // A linked override into slot 5 adds a second row [5] HATS * alongside the base kit.
   be.seed("/kits/hats.rkit", EverMidiRom.fromBytes(everMidiMultiKitRom()).getKitBank(0)!); // a real populated bank
-  stores.project.systems.setRoleConfig(id, "evermidi-assets", {
+  stores.project.systems.setRoleConfig(id, "bliptoaster-assets", {
     overrides: [{ type: "kit", slot: 5, name: "HATS", path: "/kits/hats.rkit" }],
   });
-  expect(kitsOf().find((k) => k.id === "evermidi-kit-0")).toBeTruthy(); // base kit still present
-  expect(kitsOf().find((k) => k.id === "evermidi-kit-5")!.label).toBe("[5] HATS *");
-  expect(findItem(submenuChildren(kitsOf(), "evermidi-kit-5"), "evermidi-kit-5-remove")?.kind).toBe("action");
+  expect(kitsOf().find((k) => k.id === "bliptoaster-kit-0")).toBeTruthy(); // base kit still present
+  expect(kitsOf().find((k) => k.id === "bliptoaster-kit-5")!.label).toBe("[5] HATS *");
+  expect(findItem(submenuChildren(kitsOf(), "bliptoaster-kit-5"), "bliptoaster-kit-5-remove")?.kind).toBe("action");
 });
 
 test("a linked kit override shows a * marker + a Remove Override row", () => {
@@ -150,14 +150,14 @@ test("a linked kit override shows a * marker + a Remove Override row", () => {
   be.seed("/roms/synth2.nes", everMidiRom());
   const id = stores.project.systems.addSystem("/roms/synth2.nes")!;
   be.seed("/kits/drums.rkit", EverMidiRom.fromBytes(everMidiRom()).getKitBank(0)!); // a real populated bank
-  stores.project.systems.setRoleConfig(id, "evermidi-assets", {
+  stores.project.systems.setRoleConfig(id, "bliptoaster-assets", {
     overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/kits/drums.rkit" }],
   });
 
   const kits = submenuChildren(
-    submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-evermidi"),
-    "evermidi-kits",
+    submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-bliptoaster"),
+    "bliptoaster-kits",
   );
-  expect(kits.find((k) => k.id === "evermidi-kit-0")!.label).toBe("[0] DRUMS *"); // override name + * marker
-  expect(findItem(submenuChildren(kits, "evermidi-kit-0"), "evermidi-kit-0-remove")?.kind).toBe("action");
+  expect(kits.find((k) => k.id === "bliptoaster-kit-0")!.label).toBe("[0] DRUMS *"); // override name + * marker
+  expect(findItem(submenuChildren(kits, "bliptoaster-kit-0"), "bliptoaster-kit-0-remove")?.kind).toBe("action");
 });

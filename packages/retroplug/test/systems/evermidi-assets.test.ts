@@ -44,7 +44,7 @@ test("an EverMIDI system attaches an empty evermidi-assets role and constructs w
   be.seed("/roms/synth.nes", everMidiRom());
   const id = store.addSystem("/roms/synth.nes");
   expect(id).toBeTruthy();
-  expect(store.view()[0].roles.map((r) => r.kind).includes("evermidi-assets")).toBeTruthy();
+  expect(store.view()[0].roles.map((r) => r.kind).includes("bliptoaster-assets")).toBeTruthy();
   expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined); // no overrides → base ROM
 });
 
@@ -55,7 +55,7 @@ test("a theme override is stored INLINE (no path) and applied to the effective R
   const id = store.addSystem("/roms/synth.nes")!;
 
   const override = { type: "theme", slot: 0, name: "NEON", theme: THEME_NEON };
-  store.setRoleConfig(id, "evermidi-assets", { overrides: [override] });
+  store.setRoleConfig(id, "bliptoaster-assets", { overrides: [override] });
   store.reloadSystem(id);
 
   const spec = be.constructCalls[be.constructCalls.length - 1];
@@ -77,7 +77,7 @@ test("a kit override LINKS a .rkit bank by path and splices it into the effectiv
 
   const bank = populatedBank(0x11);
   be.seed("/kits/drums.rkit", bank);
-  store.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/kits/drums.rkit" }] });
+  store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/kits/drums.rkit" }] });
   store.reloadSystem(id);
 
   const spec = be.constructCalls[be.constructCalls.length - 1];
@@ -96,7 +96,7 @@ test("a banking ROM takes a kit override into a high slot; the base kit is prese
 
   const bank = populatedBank(0x33);
   be.seed("/kits/hats.rkit", bank);
-  store.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "kit", slot: 5, name: "HATS", path: "/kits/hats.rkit" }] });
+  store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 5, name: "HATS", path: "/kits/hats.rkit" }] });
   store.reloadSystem(id);
 
   const spec = be.constructCalls[be.constructCalls.length - 1];
@@ -115,7 +115,7 @@ test("a font override LINKS a .chr file by path and applies it to the effective 
 
   const bank = new Uint8Array(0x2000).fill(0x5a);
   be.seed("/fonts/new.chr", bank);
-  store.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "font", slot: 0, name: "new", path: "/fonts/new.chr" }] });
+  store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "font", slot: 0, name: "new", path: "/fonts/new.chr" }] });
   store.reloadSystem(id);
 
   const spec = be.constructCalls[be.constructCalls.length - 1];
@@ -130,7 +130,7 @@ test("a wrong-size .chr font override is skipped (leaves the base font intact)",
   const id = store.addSystem("/roms/synth.nes")!;
 
   be.seed("/fonts/bad.chr", new Uint8Array(0x1000)); // half a bank — rejected by applyOne
-  store.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "font", slot: 0, name: "bad", path: "/fonts/bad.chr" }] });
+  store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "font", slot: 0, name: "bad", path: "/fonts/bad.chr" }] });
   store.reloadSystem(id);
 
   const spec = be.constructCalls[be.constructCalls.length - 1];
@@ -145,7 +145,7 @@ test("an erase kit override empties the base kit slot in the effective ROM", () 
   const id = store.addSystem("/roms/synth.nes")!;
   expect(EverMidiRom.fromBytes(base).isKitPopulated(0)).toBe(true); // the fixture has a base kit
 
-  store.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "kit", slot: 0, name: "", erase: true }] });
+  store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 0, name: "", erase: true }] });
   store.reloadSystem(id);
 
   const spec = be.constructCalls[be.constructCalls.length - 1];
@@ -160,7 +160,7 @@ test("a wrong-size .rkit kit override is skipped (leaves the base kit intact)", 
   const id = store.addSystem("/roms/synth.nes")!;
 
   be.seed("/kits/bad.rkit", new Uint8Array(0x1000)); // half a bank — rejected by applyOne
-  store.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "kit", slot: 0, name: "bad", path: "/kits/bad.rkit" }] });
+  store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 0, name: "bad", path: "/kits/bad.rkit" }] });
   store.reloadSystem(id);
 
   const spec = be.constructCalls[be.constructCalls.length - 1];
@@ -175,11 +175,11 @@ test("Remove Override reverts the next construct to the base ROM (no romBytes)",
   const id = store.addSystem("/roms/synth.nes")!;
 
   be.seed("/kits/drums.rkit", populatedBank(0x22));
-  store.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/kits/drums.rkit" }] });
+  store.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/kits/drums.rkit" }] });
   const id2 = store.reloadSystem(id)!; // reload swaps the id in place
   expect(be.constructCalls[be.constructCalls.length - 1].romBytes != null).toBeTruthy();
 
-  store.setRoleConfig(id2, "evermidi-assets", { overrides: [] });
+  store.setRoleConfig(id2, "bliptoaster-assets", { overrides: [] });
   store.reloadSystem(id2);
   expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined);
 });

@@ -21,7 +21,7 @@ const kitType = (capacity: number): AssetTypeInfo => ({
 });
 
 export const evermidiAssetCatalog: AssetCatalog = {
-  assetRole: "evermidi-assets",
+  assetRole: "bliptoaster-assets",
   // Default (ROM-independent) shape: single-kit. resolveTypes refines the kit type per cart below.
   types: [THEME_TYPE, kitType(1), FONT_TYPE],
   resolveTypes(romBytes: Uint8Array): AssetTypeInfo[] {

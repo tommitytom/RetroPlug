@@ -90,7 +90,7 @@ test("string settings + role config round-trip through save/load, stamped v3", (
     roles: [{ kind: "sameboy", config: { model: "sgb", highpass: "off", linkGroupId: 0, fastBoot: true } }],
   } as unknown as SystemEntry;
   const cfg = buildConfig(settings, [entry]);
-  expect(cfg.schemaVersion).toBe(String(K_PROJECT)); // "3"
+  expect(cfg.schemaVersion).toBe(String(K_PROJECT)); // "4"
   const back = parseConfig(serializeConfig(cfg, "", identity));
   expect(back.settings).toEqual(settings);
   expect(back.systems[0].roles).toEqual([{ kind: "sameboy", config: { model: "sgb", highpass: "off", linkGroupId: 0, fastBoot: true } }]);

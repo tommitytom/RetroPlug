@@ -6,5 +6,5 @@ import { z } from "zod";
 import type { RoleRegistry } from "./systemRoles";
 
 export function registerEverMidiRole(registry: RoleRegistry): void {
-  registry.registerRole({ kind: "evermidi", category: "feature", scope: "system", schema: z.object({}) });
+  registry.registerRole({ kind: "bliptoaster", category: "feature", scope: "system", schema: z.object({}) });
 }

@@ -1212,7 +1212,7 @@ const risaAssetSpec: AssetMenuSpec = { id: "risa", catalog: risaAssetCatalog, ex
 // EverMIDI has no themes (no ROM theme table yet) — just the baked DMC kit + the CHR font, both LINKED by
 // path (a pre-built 8 KB .rkit / .chr bank, read at construct). Mirrors the risa actions minus themes.
 const everMidiAssetOverrides = (sys: SystemView): EverMidiAssetOverride[] =>
-  readEverMidiOverrides(sys.roles.find((r) => r.kind === "evermidi-assets")?.config);
+  readEverMidiOverrides(sys.roles.find((r) => r.kind === "bliptoaster-assets")?.config);
 
 const readEverMidiRomFor = (be: HostBackend, romPath: string): EverMidiRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
@@ -1270,7 +1270,7 @@ function replaceEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetType
     } catch {
       return; // malformed .rit / unreadable → leave the ROM untouched
     }
-    writeOverrides(ctx, sys, "evermidi-assets", [
+    writeOverrides(ctx, sys, "bliptoaster-assets", [
       ...everMidiAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot)),
       entry,
     ]);
@@ -1278,7 +1278,7 @@ function replaceEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetType
 }
 
 const everMidiAssetSpec: AssetMenuSpec = {
-  id: "evermidi",
+  id: "bliptoaster",
   catalog: evermidiAssetCatalog,
   exportAsset: exportEverMidiAsset,
   replaceAsset: replaceEverMidiAsset,
@@ -1797,7 +1797,7 @@ const TRACKER_UI: Record<string, TrackerUi> = {
   lsdj: { song: lsdjSongSpec, asset: lsdjAssetSpec, extras: lsdjExtras },
   risa: { song: risaSongSpec, asset: risaAssetSpec },
   smsggdj: { song: smsggdjSongSpec, asset: smsggdjAssetSpec },
-  evermidi: { asset: everMidiAssetSpec },
+  bliptoaster: { asset: everMidiAssetSpec },
 };
 
 // One tracker's instance-submenu children: its extras (if any), the shared Songs menu (only if the

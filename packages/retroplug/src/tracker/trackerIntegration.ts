@@ -160,9 +160,9 @@ export const smsggdjIntegration: TrackerIntegration = {
 // EverMIDI: an NES MIDI synth (not a tracker), so it has NO song battery — only ROM assets (a baked DMC kit
 // + the CHR font). An asset-only integration: `songs` is omitted, so only the asset submenus are built.
 export const everMidiIntegration: TrackerIntegration = {
-  id: "evermidi",
+  id: "bliptoaster",
   label: "EverMIDI",
-  markerRole: "evermidi",
+  markerRole: "bliptoaster",
   assets: evermidiAssetCatalog,
   romName: (rom) => {
     const info = everMidiInfo(rom); // decoded bliptoaster SIG block (null when the marker is absent)

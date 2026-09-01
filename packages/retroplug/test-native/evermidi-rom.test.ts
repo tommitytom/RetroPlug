@@ -176,7 +176,7 @@ test("FME-7 multi-kit: a .rkit override into slot 1 becomes selectable + plays",
   s.backend.writeFileAtomic(rkitPath, rkit);
 
   // Link it into slot 1 (reserved on the base ROM) and reload — the role folds it into the effective ROM.
-  s.project.systems.setRoleConfig(id, "evermidi-assets", { overrides: [{ type: "kit", slot: 1, name: "HATS", path: rkitPath }] });
+  s.project.systems.setRoleConfig(id, "bliptoaster-assets", { overrides: [{ type: "kit", slot: 1, name: "HATS", path: rkitPath }] });
   const id2 = s.project.systems.reloadSystem(id);
   if (id2 == null) throw new Error("reloadSystem failed");
 

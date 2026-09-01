@@ -208,9 +208,37 @@ function projectV2toV3(raw: RawObject): RawObject {
   return raw;
 }
 
+// The role kinds renamed in v4, old → new. The EverMIDI project became BlipToaster, and the two role
+// kinds it owns are persisted verbatim as `systems[].roles[].kind`, so old projects carry the old spelling.
+const V4_ROLE_RENAMES: Record<string, string> = {
+  evermidi: "bliptoaster",
+  "evermidi-assets": "bliptoaster-assets",
+};
+
+/** v3 → v4: the EverMIDI role kinds renamed to BlipToaster. Rewrites each system's `roles[].kind` in
+ *  place. Only the kind string moves — both roles keep their config shape (the marker role has none, and
+ *  the assets role keeps its `overrides` list), so no config rewriting is needed. Idempotent-safe: an
+ *  already-renamed kind is not a key of the map and is left alone. */
+function projectV3toV4(raw: RawObject): RawObject {
+  const systems = raw.systems;
+  if (Array.isArray(systems)) {
+    for (const s of systems) {
+      const roles = s && typeof s === "object" ? (s as RawObject).roles : undefined;
+      if (!Array.isArray(roles)) continue;
+      for (const r of roles) {
+        if (!r || typeof r !== "object") continue;
+        const role = r as RawObject;
+        const renamed = typeof role.kind === "string" ? V4_ROLE_RENAMES[role.kind] : undefined;
+        if (renamed) role.kind = renamed;
+      }
+    }
+  }
+  return raw;
+}
+
 /** Ordered raw-JSON migrations for the project root, keyed by from-version (see migrate.ts):
  *  `PROJECT_MIGRATIONS[v]` upgrades a v-stamped config to v+1. */
-const PROJECT_MIGRATIONS: MigrationMap = { 1: projectV1toV2, 2: projectV2toV3 };
+const PROJECT_MIGRATIONS: MigrationMap = { 1: projectV1toV2, 2: projectV2toV3, 3: projectV3toV4 };
 
 /** Bring a raw config from its stamped `fromVersion` up to `K_PROJECT`, on the raw object,
  *  before the (single, latest) zod schema validates it. The Newer branch (refuse) lives at
@@ -223,8 +251,8 @@ function migrateProjectRaw(raw: RawObject, fromVersion: number): RawObject {
 
 /** The current project-format version. Bump ONLY on a breaking (non-additive) change, and add
  *  the matching `PROJECT_MIGRATIONS[N-1]` step. v2 persists each system's `core`; v3 makes the
- *  enum settings string-valued. */
-export const K_PROJECT = 3;
+ *  enum settings string-valued; v4 renames the EverMIDI role kinds to BlipToaster. */
+export const K_PROJECT = 4;
 
 export enum VersionCheck {
   Ok = "ok",

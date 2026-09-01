@@ -21,7 +21,7 @@ import {
 } from "./risa/rom";
 import { EverMidiRom } from "./evermidi/rom";
 
-export const EVERMIDI_ASSETS_ROLE = "evermidi-assets";
+export const EVERMIDI_ASSETS_ROLE = "bliptoaster-assets";
 
 /** One asset override for `slot`. KITS and FONTS are binary, so they LINK their file on disk by `path` (a
  *  pre-built 8 KB `.rkit` DMC bank / an 8 KB `.chr` CHR bank, read at construct). A kit override with

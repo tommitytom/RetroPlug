@@ -160,7 +160,7 @@ JSON**, backed by two mechanisms:
 
 | Root | TS const |
 |---|---|
-| `.rplg` / DAW chunk | `K_PROJECT = 3` ([projectConfig.ts](../packages/retroplug/src/projectConfig.ts)) |
+| `.rplg` / DAW chunk | `K_PROJECT = 4` ([projectConfig.ts](../packages/retroplug/src/projectConfig.ts)) |
 | `config.json` | `USER_CONFIG_SCHEMA = 1` |
 | `bindings/*.json` | `BINDINGS_SCHEMA = 1` |
 | `recent.json` | `RECENT_SCHEMA = 2` |
@@ -182,6 +182,11 @@ JSON**, backed by two mechanisms:
    rewrites the integer enum settings — the project `layout`/`midiRouting`/`audioRouting`
    and the per-system role-config enums (`model`/`highpass`/`region`/`channelExportMode`/
    lsdj `mode`) — to their string values ([settingsEnums.ts](../packages/retroplug/src/settingsEnums.ts)).
+   **v3→v4** (`PROJECT_MIGRATIONS[3]`) renames the two role kinds the EverMIDI → BlipToaster
+   rename moved: `evermidi` → `bliptoaster` and `evermidi-assets` → `bliptoaster-assets`. Role
+   `kind` is persisted verbatim, so this is the case a rename of any role kind must follow: an
+   exact-match map over `systems[].roles[].kind`, leaving each role's `config` untouched (the
+   assets role's `overrides` list is the user's kit/font/theme replacements).
 
 Additive-only changes still need no step: the strict zod schemas fill a missing field from
 its `.default()` and **clamp** out-of-range scalars (an unknown string enum falls to its default)

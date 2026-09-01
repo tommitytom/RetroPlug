@@ -79,7 +79,7 @@ export function registerRomProviders(registry: RoleRegistry): void {
   // battery, so there is no song marker — the tracker integration is asset-only.
   registry.registerRomProvider((rom: RomContext): RoleInstance[] =>
     rom.platform === "nes" && isEverMidiRomHeader(rom.header)
-      ? [{ kind: "evermidi", config: {} }, { kind: "evermidi-assets", config: { overrides: [] } }]
+      ? [{ kind: "bliptoaster", config: {} }, { kind: "bliptoaster-assets", config: { overrides: [] } }]
       : [],
   );
 }
