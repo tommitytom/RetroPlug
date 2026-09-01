@@ -1,4 +1,4 @@
-// The EverMIDI instance submenu: gated on the `evermidi` marker role the ROM provider attaches to an EverMIDI
+// The BlipToaster instance submenu: gated on the `bliptoaster` marker role the ROM provider attaches to an BlipToaster
 // cart. It is ASSET-ONLY (no song battery), so it exercises the songs-optional path — there must be NO Songs
 // submenu, only the Kits + Fonts asset submenus. Mirrors test/menu/risa.test.ts (asset half).
 import { test, expect } from "../../testing/harness";
@@ -6,8 +6,8 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { everMidiRom, everMidiMultiKitRom, nesRom } from "../systems/fixtures";
-import { EverMidiRom } from "../../src/evermidi/rom";
+import { blipToasterRom, blipToasterMultiKitRom, nesRom } from "../systems/fixtures";
+import { BlipToasterRom } from "../../src/bliptoaster/rom";
 
 function ctxOf(stores: AppStores): MenuContext {
   return {
@@ -32,24 +32,24 @@ function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
 }
 
-function everMidiItems(be: MockBackend, stores: AppStores, path = "/roms/synth.nes"): () => MenuItem[] {
-  be.seed(path, everMidiRom());
+function blipToasterItems(be: MockBackend, stores: AppStores, path = "/roms/synth.nes"): () => MenuItem[] {
+  be.seed(path, blipToasterRom());
   const id = stores.project.systems.addSystem(path)!;
   return () => buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items;
 }
 
-test("the EverMIDI submenu appears only for an EverMIDI ROM, is asset-only (no Songs), and lists Kits + Fonts", () => {
+test("the BlipToaster submenu appears only for an BlipToaster ROM, is asset-only (no Songs), and lists Kits + Fonts", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
 
-  // A plain NES ROM (no EVERMIDI marker) → no `evermidi` role → no submenu.
+  // A plain NES ROM (no BLIPTOASTER marker) → no `bliptoaster` role → no submenu.
   be.seed("/roms/plain.nes", nesRom());
   const plainId = stores.project.systems.addSystem("/roms/plain.nes")!;
   const plain = stores.project.systems.view().find((s) => s.id === plainId)!;
   expect(findItem(buildInstanceMenu({ ...ctxOf(stores), system: plain }).items, "inst-bliptoaster")).toBe(undefined);
 
-  // An EverMIDI ROM → the provider attaches `evermidi` → the submenu shows, asset-only (no Songs submenu).
-  const items = everMidiItems(be, stores);
+  // An BlipToaster ROM → the provider attaches `bliptoaster` → the submenu shows, asset-only (no Songs submenu).
+  const items = blipToasterItems(be, stores);
   expect(findItem(items(), "inst-bliptoaster")?.kind).toBe("submenu");
   const kids = submenuChildren(items(), "inst-bliptoaster");
   expect(findItem(kids, "bliptoaster-songs")).toBe(undefined); // no song battery → no Songs submenu
@@ -61,7 +61,7 @@ test("the EverMIDI submenu appears only for an EverMIDI ROM, is asset-only (no S
 test("the Themes submenu lists the baked theme with Export/Replace (no Remove until overridden)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  const items = everMidiItems(be, stores);
+  const items = blipToasterItems(be, stores);
   const themes = submenuChildren(submenuChildren(items(), "inst-bliptoaster"), "bliptoaster-themes");
   expect(themes.length).toBe(1);
   expect(themes[0].label).toBe("[0] DFLT"); // decoded, space-trimmed theme name
@@ -74,7 +74,7 @@ test("the Themes submenu lists the baked theme with Export/Replace (no Remove un
 test("a theme override shows a * marker + a Remove Override row", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  be.seed("/roms/synth3.nes", everMidiRom());
+  be.seed("/roms/synth3.nes", blipToasterRom());
   const id = stores.project.systems.addSystem("/roms/synth3.nes")!;
   stores.project.systems.setRoleConfig(id, "bliptoaster-assets", {
     overrides: [
@@ -97,7 +97,7 @@ test("a theme override shows a * marker + a Remove Override row", () => {
 test("the Kits + Fonts submenus list the base ROM's assets with Export/Replace (no Add/Delete — Replace-only)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  const items = everMidiItems(be, stores);
+  const items = blipToasterItems(be, stores);
   const kids = () => submenuChildren(items(), "inst-bliptoaster");
 
   const kits = submenuChildren(kids(), "bliptoaster-kits");
@@ -121,7 +121,7 @@ test("the Kits + Fonts submenus list the base ROM's assets with Export/Replace (
 test("a banking ROM makes Kits addable (Add... + per-kit Delete) and shows a high-slot override row", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  be.seed("/roms/synthbank.nes", everMidiMultiKitRom()); // mapper 69 (FME-7) → 16 switchable kit banks
+  be.seed("/roms/synthbank.nes", blipToasterMultiKitRom()); // mapper 69 (FME-7) → 16 switchable kit banks
   const id = stores.project.systems.addSystem("/roms/synthbank.nes")!;
   const kitsOf = () =>
     submenuChildren(
@@ -135,7 +135,7 @@ test("a banking ROM makes Kits addable (Add... + per-kit Delete) and shows a hig
   expect(findItem(submenuChildren(kitsOf(), "bliptoaster-kit-0"), "bliptoaster-kit-0-delete")?.kind).toBe("action");
 
   // A linked override into slot 5 adds a second row [5] HATS * alongside the base kit.
-  be.seed("/kits/hats.rkit", EverMidiRom.fromBytes(everMidiMultiKitRom()).getKitBank(0)!); // a real populated bank
+  be.seed("/kits/hats.rkit", BlipToasterRom.fromBytes(blipToasterMultiKitRom()).getKitBank(0)!); // a real populated bank
   stores.project.systems.setRoleConfig(id, "bliptoaster-assets", {
     overrides: [{ type: "kit", slot: 5, name: "HATS", path: "/kits/hats.rkit" }],
   });
@@ -147,9 +147,9 @@ test("a banking ROM makes Kits addable (Add... + per-kit Delete) and shows a hig
 test("a linked kit override shows a * marker + a Remove Override row", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  be.seed("/roms/synth2.nes", everMidiRom());
+  be.seed("/roms/synth2.nes", blipToasterRom());
   const id = stores.project.systems.addSystem("/roms/synth2.nes")!;
-  be.seed("/kits/drums.rkit", EverMidiRom.fromBytes(everMidiRom()).getKitBank(0)!); // a real populated bank
+  be.seed("/kits/drums.rkit", BlipToasterRom.fromBytes(blipToasterRom()).getKitBank(0)!); // a real populated bank
   stores.project.systems.setRoleConfig(id, "bliptoaster-assets", {
     overrides: [{ type: "kit", slot: 0, name: "DRUMS", path: "/kits/drums.rkit" }],
   });

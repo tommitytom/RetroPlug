@@ -170,11 +170,11 @@ RUN set -eux; \
 	cd / && rm -rf /tmp/rgbds; \
 	rgbasm --version
 
-# --- cc65: 6502/NES toolchain (ca65/cc65/ld65) for building NES test ROMs such as evermidi
+# --- cc65: 6502/NES toolchain (ca65/cc65/ld65) for building NES test ROMs such as bliptoaster
 # (resources/roms/bliptoaster.nes). The distro package (2.19-1, 2020) predates the `c_sp` C-stack-pointer
 # rename that modern NES crt0 code targets, so it builds a subtly-broken ROM — build a pinned source
 # snapshot into /usr/local instead. cc65 ships no prebuilt Linux binaries, hence the from-source build.
-# See tools/sync-cli-to-evermidi.sh and tools/build-cli-sdk.mjs.
+# See tools/sync-cli-to-bliptoaster.sh and tools/build-cli-sdk.mjs.
 ARG CC65_COMMIT=cc3c40c54e51b2d9a22b63c85c418a2b11763377
 RUN set -eux; \
 	mkdir -p /tmp/cc65 && cd /tmp/cc65; \
@@ -187,7 +187,7 @@ RUN set -eux; \
 	cd / && rm -rf /tmp/cc65; \
 	cc65 --version
 # cc65 tools locate their headers / libs / macro packages (e.g. longbranch.mac) via CC65_HOME; without it
-# a /usr/local install can't find asminc and the build fails. The evermidi rom/Makefile assumes this path.
+# a /usr/local install can't find asminc and the build fails. The bliptoaster rom/Makefile assumes this path.
 ENV CC65_HOME=/usr/local/share/cc65
 
 # --- RP2040 / Raspberry Pi Pico firmware toolchain --------------------------

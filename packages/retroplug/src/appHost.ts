@@ -15,8 +15,8 @@ import { registerDspRoles } from "./dspRoles";
 import { registerLsdjAssetsRole } from "./lsdjAssetsRole";
 import { registerRisaRole } from "./risaRole";
 import { registerRisaAssetsRole } from "./risaAssetsRole";
-import { registerEverMidiRole } from "./evermidiRole";
-import { registerEverMidiAssetsRole } from "./evermidiAssetsRole";
+import { registerBlipToasterRole } from "./bliptoasterRole";
+import { registerBlipToasterAssetsRole } from "./bliptoasterAssetsRole";
 import { registerRomProviders } from "./romProviders";
 import { projectKernelStructure, type ControllerProjection } from "./kernelProjection";
 import { songRowTicksFromSav } from "./lsdj/playback/fromSav";
@@ -32,8 +32,8 @@ export function buildAppRegistry(): RoleRegistry {
   registerLsdjAssetsRole(registry);
   registerRisaRole(registry);
   registerRisaAssetsRole(registry);
-  registerEverMidiRole(registry);
-  registerEverMidiAssetsRole(registry);
+  registerBlipToasterRole(registry);
+  registerBlipToasterAssetsRole(registry);
   registerRomProviders(registry);
   return registry;
 }

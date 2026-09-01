@@ -86,15 +86,15 @@ private:
 
 	//Bit 0 of the LFSR, or a hard 0 when emulating the Everdrive N8 Pro's 5B core instead of the chip.
 	//
-	//Measured on the N8 (EverMIDI, capture ch5): enabling noise on a sounding channel drops it from
+	//Measured on the N8 (BlipToaster, capture ch5): enabling noise on a sounding channel drops it from
 	//-34.09 dBFS to -81.32 (the noise floor), reversibly, at EVERY noise period across the full range. The
 	//mixer below explains that exactly - the chip ANDs tone with noise, so a noise signal stuck at 0 gates
 	//the channel to silence. A working generator would rasp, never mute. So the N8 produces no noise, and
-	//software written against that cartridge (EverMIDI) hears silence where the chip would rasp.
+	//software written against that cartridge (BlipToaster) hears silence where the chip would rasp.
 	//
 	//What the measurement CANNOT distinguish from outside: a noise generator stuck low versus a mixer that
 	//mis-decodes the noise-enable bit and kills tone. Both look identical. Noise-on with TONE DISABLED would
-	//separate them, which EverMIDI has no CC for, and mapper 69 is not in krikzz's published FPGA sources.
+	//separate them, which BlipToaster has no CC for, and mapper 69 is not in krikzz's published FPGA sources.
 	bool GetNoiseOutput()
 	{
 		if(!_console->GetNesConfig().Sunsoft5bNoiseEnabled) {

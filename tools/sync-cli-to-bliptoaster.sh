@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Build retroplug-cli + the test SDK and copy them into a consumer repo's retroplug-cli/ harness
-# (evermidi by default). This is the "sync" step: the binary is platform-specific and NOT committed on
+# (bliptoaster by default). This is the "sync" step: the binary is platform-specific and NOT committed on
 # the consumer side (it's gitignored there), and the SDK (.js + .d.ts) is a regenerable artifact — this
 # script refreshes all three from the current RetroPlug source.
 #
-#   tools/sync-cli-to-evermidi.sh [dest-repo]      (default dest-repo: ../evermidi, relative to this repo)
+#   tools/sync-cli-to-bliptoaster.sh [dest-repo]      (default dest-repo: ../evermidi, relative to this repo)
 #
 # Populates <dest>/retroplug-cli/{bin/retroplug-cli, sdk/retroplug-cli.js, sdk/retroplug-cli.d.ts}.
 # (Future: the consumer devcontainer pulls the binary from a GitHub release instead of this local copy.)
@@ -16,7 +16,7 @@ DEST="${1:-$REPO/../evermidi}"
 # Resolve DEST to an absolute path (it must already exist).
 if [ ! -d "$DEST" ]; then
 	echo "error: destination repo not found: $DEST" >&2
-	echo "usage: tools/sync-cli-to-evermidi.sh [dest-repo]" >&2
+	echo "usage: tools/sync-cli-to-bliptoaster.sh [dest-repo]" >&2
 	exit 1
 fi
 DEST="$(cd "$DEST" && pwd)"

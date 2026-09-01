@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
     }
 
     // Bare-Edio cart-FIFO write from a file: memWR to ADDR_FIFO, which a running ROM drains at $40F0/$40F1
-    // (EverMIDI reads raw MIDI bytes from it). Unlike memwr there is NO readback verify - a FIFO is consumed
+    // (BlipToaster reads raw MIDI bytes from it). Unlike memwr there is NO readback verify - a FIFO is consumed
     // by the NES side, so reading it back can never return what was written.
     if (op == "fifowr") {
         if (argc < 3) {

@@ -1,28 +1,28 @@
-// `retroplug-cli evermidi-rom` — inspect, extract and edit the static assets (DPCM sample kits, the theme,
-// the CHR font) inside an EverMIDI `.nes` ROM, headlessly. The EverMIDI twin of ./risa-rom.ts (EverMIDI is
-// also NES/DMC, so it reuses the exact same risa asset codecs), backed by the pure-TS src/evermidi/rom
+// `retroplug-cli bliptoaster-rom` — inspect, extract and edit the static assets (DPCM sample kits, the theme,
+// the CHR font) inside an BlipToaster `.nes` ROM, headlessly. The BlipToaster twin of ./risa-rom.ts (BlipToaster is
+// also NES/DMC, so it reuses the exact same risa asset codecs), backed by the pure-TS src/bliptoaster/rom
 // module; this is just the CLI surface (arg parsing + file I/O + WAV/JSON output). Kit compile is native
 // (s.audio.compileDmc — the generic DMC compiler); sample splicing re-packs existing DPCM + a freshly-
 // compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
 //
-// EverMIDI has up to 16 SWITCHABLE kit banks on the banking builds (VRC6/VRC7/S5B/FME-7/N163) and a single
+// BlipToaster has up to 16 SWITCHABLE kit banks on the banking builds (VRC6/VRC7/S5B/FME-7/N163) and a single
 // kit on NROM — kit indices are bounded by rom.kitBankCapacity(). It bakes ONE theme (index 0) and one CHR
 // font. Unlike risa there is NO kit-metadata mirror, so setKit is a plain bank splice.
 //
-//   retroplug-cli evermidi-rom info          <rom> [--json]
-//   retroplug-cli evermidi-rom extract       <rom> <outDir> [--rate N]
-//   retroplug-cli evermidi-rom patch         <rom> <manifest.json> <out>       (the whole-ROM manifest)
-//   retroplug-cli evermidi-rom build-kit     <kit.json> <out.rkit> [flags]     (native compile → .rkit file)
-//   retroplug-cli evermidi-rom import-sample <rom> <kit> <audio> [flags]       (compile one + splice)
-//   retroplug-cli evermidi-rom remove-sample <rom> <kit> <slot> [--out rom]
-//   retroplug-cli evermidi-rom export-theme  / import-theme   (.rit palette-role JSON)
-//   retroplug-cli evermidi-rom export-font   / import-font    (.chr raw 8 KB CHR banks)
-//   retroplug-cli evermidi-rom export-kit    / import-kit     (.rkit raw 8 KB DPCM banks)
+//   retroplug-cli bliptoaster-rom info          <rom> [--json]
+//   retroplug-cli bliptoaster-rom extract       <rom> <outDir> [--rate N]
+//   retroplug-cli bliptoaster-rom patch         <rom> <manifest.json> <out>       (the whole-ROM manifest)
+//   retroplug-cli bliptoaster-rom build-kit     <kit.json> <out.rkit> [flags]     (native compile → .rkit file)
+//   retroplug-cli bliptoaster-rom import-sample <rom> <kit> <audio> [flags]       (compile one + splice)
+//   retroplug-cli bliptoaster-rom remove-sample <rom> <kit> <slot> [--out rom]
+//   retroplug-cli bliptoaster-rom export-theme  / import-theme   (.rit palette-role JSON)
+//   retroplug-cli bliptoaster-rom export-font   / import-font    (.chr raw 8 KB CHR banks)
+//   retroplug-cli bliptoaster-rom export-kit    / import-kit     (.rkit raw 8 KB DPCM banks)
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import type { KitEffect, RisaDmcSampleSpec } from "../../src/audioDriver";
 import { encodeWav } from "../wav";
-import { EverMidiRom } from "../../src/evermidi/rom";
+import { BlipToasterRom } from "../../src/bliptoaster/rom";
 import {
   bankToModel,
   isBankPopulated,
@@ -46,17 +46,17 @@ const dec = new TextDecoder();
 const sanitize = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_") || "_";
 const pad2 = (n: number): string => String(n).padStart(2, "0");
 
-function openRom(s: Session, path: string): EverMidiRom {
+function openRom(s: Session, path: string): BlipToasterRom {
   const bytes = s.backend.readFile(path);
   if (!bytes) throw new Error(`cannot read ROM: ${path}`);
-  const rom = EverMidiRom.fromBytes(bytes);
-  if (!rom.isEverMidi) throw new Error(`not a recognised EverMIDI ROM (size=${bytes.length})`);
+  const rom = BlipToasterRom.fromBytes(bytes);
+  if (!rom.isBlipToaster) throw new Error(`not a recognised BlipToaster ROM (size=${bytes.length})`);
   return rom;
 }
 
-// Validate a kit-bank index against the ROM's capacity (1 on NROM, up to 16 on a banking build). EverMidiRom
+// Validate a kit-bank index against the ROM's capacity (1 on NROM, up to 16 on a banking build). BlipToasterRom
 // setKit silently no-ops out of range, so the verbs that splice a bank directly must guard first.
-function kitIndexInRange(rom: EverMidiRom, idx: number): number {
+function kitIndexInRange(rom: BlipToasterRom, idx: number): number {
   const cap = rom.kitBankCapacity();
   if (!Number.isInteger(idx) || idx < 0 || idx >= cap) throw new Error(`kit index ${idx} out of range (0..${cap - 1})`);
   return idx;
@@ -183,7 +183,7 @@ interface Manifest {
 }
 
 // The kit's 16 sample slots as re-packable AssembleSlots (null where empty), for splice/rename.
-function kitSlots(rom: EverMidiRom, kitIndex: number): { name: string; slots: (AssembleSlot | null)[] } {
+function kitSlots(rom: BlipToasterRom, kitIndex: number): { name: string; slots: (AssembleSlot | null)[] } {
   const bank = rom.getKitBank(kitIndex);
   if (!bank) throw new Error(`kit index ${kitIndex} out of range`);
   const model = bankToModel(bank);
@@ -194,7 +194,7 @@ function kitSlots(rom: EverMidiRom, kitIndex: number): { name: string; slots: (A
 }
 
 // Apply kit metadata renames (kit name and/or per-sample names) by re-assembling the current bank.
-function applyKitRenames(rom: EverMidiRom, slot: number, newName: string | undefined, renames: { index: number; name: string }[] | undefined): void {
+function applyKitRenames(rom: BlipToasterRom, slot: number, newName: string | undefined, renames: { index: number; name: string }[] | undefined): void {
   const { name, slots } = kitSlots(rom, slot);
   for (const r of renames ?? []) if (slots[r.index]) slots[r.index]!.name = r.name;
   rom.setKit(slot, assembleKitBank(newName ?? name, slots));
@@ -202,7 +202,7 @@ function applyKitRenames(rom: EverMidiRom, slot: number, newName: string | undef
 
 // --- verbs ----------------------------------------------------------------------------------------------
 
-function romToJson(rom: EverMidiRom): unknown {
+function romToJson(rom: BlipToasterRom): unknown {
   const themes = rom.themes().map((t) => ({ slot: t.slot, theme: serializeRit(t.theme).theme }));
   const fonts = rom.fonts().map((f) => ({ slot: f.slot }));
   const kits = rom.kits().map((k) => ({
@@ -215,7 +215,7 @@ function romToJson(rom: EverMidiRom): unknown {
 
 function info(s: Session, args: string[]): void {
   const romPath = positionals(args)[0];
-  if (!romPath) throw new Error("usage: evermidi-rom info <rom> [--json]");
+  if (!romPath) throw new Error("usage: bliptoaster-rom info <rom> [--json]");
   const rom = openRom(s, romPath);
   if (has(args, "--json")) {
     console.log(JSON.stringify(romToJson(rom), null, 2));
@@ -233,7 +233,7 @@ function info(s: Session, args: string[]): void {
 
 function extract(s: Session, args: string[]): void {
   const [romPath, outDir] = positionals(args);
-  if (!romPath || !outDir) throw new Error("usage: evermidi-rom extract <rom> <outDir> [--rate N]");
+  if (!romPath || !outDir) throw new Error("usage: bliptoaster-rom extract <rom> <outDir> [--rate N]");
   const rateOverride = flag(args, "--rate") != null ? parseInt(flag(args, "--rate")!, 10) : undefined;
   const rom = openRom(s, romPath);
   const write = (name: string, bytes: Uint8Array) => {
@@ -263,7 +263,7 @@ function extract(s: Session, args: string[]): void {
 
 function buildKit(s: Session, args: string[]): void {
   const [specPath, outKit] = positionals(args);
-  if (!specPath || !outKit) throw new Error("usage: evermidi-rom build-kit <kit.json> <out.rkit> [effect flags]");
+  if (!specPath || !outKit) throw new Error("usage: bliptoaster-rom build-kit <kit.json> <out.rkit> [effect flags]");
   const spec = JSON.parse(dec.decode(readOrThrow(s, specPath, "kit spec"))) as KitEntry;
   if (!spec.build || spec.build.length === 0) throw new Error('kit spec needs a "build" array of source audio files');
   const bank = compileKitBank(s, spec.name ?? "", spec.build, specPath, fallbacks(args));
@@ -273,7 +273,7 @@ function buildKit(s: Session, args: string[]): void {
 
 function importSample(s: Session, args: string[]): void {
   const [romPath, kitStr, audio] = positionals(args);
-  if (!romPath || kitStr == null || !audio) throw new Error("usage: evermidi-rom import-sample <rom> <kit> <audio> [--slot N] [--name X] [--out rom] [flags]");
+  if (!romPath || kitStr == null || !audio) throw new Error("usage: bliptoaster-rom import-sample <rom> <kit> <audio> [--slot N] [--name X] [--out rom] [flags]");
   const rom = openRom(s, romPath);
   const kitIndex = kitIndexInRange(rom, parseInt(kitStr, 10));
   const name = flag(args, "--name") ?? sampleName(audio);
@@ -304,7 +304,7 @@ function importSample(s: Session, args: string[]): void {
 
 function removeSample(s: Session, args: string[]): void {
   const [romPath, kitStr, slotStr] = positionals(args);
-  if (!romPath || kitStr == null || slotStr == null) throw new Error("usage: evermidi-rom remove-sample <rom> <kit> <slot> [--out rom]");
+  if (!romPath || kitStr == null || slotStr == null) throw new Error("usage: bliptoaster-rom remove-sample <rom> <kit> <slot> [--out rom]");
   const rom = openRom(s, romPath);
   const kitIndex = kitIndexInRange(rom, parseInt(kitStr, 10));
   const slot = parseInt(slotStr, 10);
@@ -319,7 +319,7 @@ function removeSample(s: Session, args: string[]): void {
 
 function exportTheme(s: Session, args: string[]): void {
   const [romPath, idxStr, out] = positionals(args);
-  if (!romPath || idxStr == null || !out) throw new Error("usage: evermidi-rom export-theme <rom> <index> <out.rit>");
+  if (!romPath || idxStr == null || !out) throw new Error("usage: bliptoaster-rom export-theme <rom> <index> <out.rit>");
   const rom = openRom(s, romPath);
   const t = rom.getTheme(parseInt(idxStr, 10));
   if (!t) throw new Error(`theme ${idxStr} out of range / no theme table`);
@@ -330,7 +330,7 @@ function exportTheme(s: Session, args: string[]): void {
 
 function importTheme(s: Session, args: string[]): void {
   const [romPath, file, idxStr] = positionals(args);
-  if (!romPath || !file || idxStr == null) throw new Error("usage: evermidi-rom import-theme <rom> <in.rit> <index> [--out rom]");
+  if (!romPath || !file || idxStr == null) throw new Error("usage: bliptoaster-rom import-theme <rom> <in.rit> <index> [--out rom]");
   const rom = openRom(s, romPath);
   const { theme } = parseRit(JSON.parse(dec.decode(readOrThrow(s, file, "theme .rit")))); // throws on a bad .rit
   const t = normalizeTheme(theme);
@@ -342,7 +342,7 @@ function importTheme(s: Session, args: string[]): void {
 
 function exportFont(s: Session, args: string[]): void {
   const [romPath, idxStr, out] = positionals(args);
-  if (!romPath || idxStr == null || !out) throw new Error("usage: evermidi-rom export-font <rom> <index> <out.chr>");
+  if (!romPath || idxStr == null || !out) throw new Error("usage: bliptoaster-rom export-font <rom> <index> <out.chr>");
   const rom = openRom(s, romPath);
   const bank = rom.getChrFontSlot(parseInt(idxStr, 10));
   if (!bank) throw new Error(`font ${idxStr} out of range / no CHR region`);
@@ -352,7 +352,7 @@ function exportFont(s: Session, args: string[]): void {
 
 function importFont(s: Session, args: string[]): void {
   const [romPath, file, idxStr] = positionals(args);
-  if (!romPath || !file || idxStr == null) throw new Error("usage: evermidi-rom import-font <rom> <in.chr> <index> [--out rom]");
+  if (!romPath || !file || idxStr == null) throw new Error("usage: bliptoaster-rom import-font <rom> <in.chr> <index> [--out rom]");
   const rom = openRom(s, romPath);
   const data = readOrThrow(s, file, "font .chr");
   if (data.length !== CHR_BANK_SIZE) throw new Error(`.chr must be exactly 8 KB (got ${data.length})`);
@@ -364,7 +364,7 @@ function importFont(s: Session, args: string[]): void {
 
 function exportKit(s: Session, args: string[]): void {
   const [romPath, idxStr, out] = positionals(args);
-  if (!romPath || idxStr == null || !out) throw new Error("usage: evermidi-rom export-kit <rom> <index> <out.rkit>");
+  if (!romPath || idxStr == null || !out) throw new Error("usage: bliptoaster-rom export-kit <rom> <index> <out.rkit>");
   const rom = openRom(s, romPath);
   const bank = rom.getKitBank(parseInt(idxStr, 10));
   if (!bank || !isBankPopulated(bank)) throw new Error(`kit ${idxStr} is empty / out of range`);
@@ -374,12 +374,12 @@ function exportKit(s: Session, args: string[]): void {
 
 function importKit(s: Session, args: string[]): void {
   const [romPath, file, idxStr] = positionals(args);
-  if (!romPath || !file || idxStr == null) throw new Error("usage: evermidi-rom import-kit <rom> <in.rkit> <index> [--out rom]");
+  if (!romPath || !file || idxStr == null) throw new Error("usage: bliptoaster-rom import-kit <rom> <in.rkit> <index> [--out rom]");
   const rom = openRom(s, romPath);
   const idx = kitIndexInRange(rom, parseInt(idxStr, 10));
   const data = readOrThrow(s, file, "kit .rkit");
   if (data.length !== KIT_BANK_SIZE || !isBankPopulated(data)) throw new Error(`.rkit must be a populated 8 KB DPCM bank`);
-  rom.setKit(idx, data); // plain bank splice — EverMIDI reads the kit index directly at boot (no mirror)
+  rom.setKit(idx, data); // plain bank splice — BlipToaster reads the kit index directly at boot (no mirror)
   const out = flag(args, "--out") ?? romPath;
   if (!s.backend.writeFileAtomic(out, rom.bytes())) throw new Error(`write failed: ${out}`);
   console.log(`imported ${file} into kit ${idx}; wrote ${out}`);
@@ -387,7 +387,7 @@ function importKit(s: Session, args: string[]): void {
 
 function patchManifest(s: Session, args: string[]): void {
   const [romPath, manifestPath, outRom] = positionals(args);
-  if (!romPath || !manifestPath || !outRom) throw new Error("usage: evermidi-rom patch <rom> <manifest.json> <out>");
+  if (!romPath || !manifestPath || !outRom) throw new Error("usage: bliptoaster-rom patch <rom> <manifest.json> <out>");
   const rom = openRom(s, romPath);
   const m = JSON.parse(dec.decode(readOrThrow(s, manifestPath, "manifest"))) as Manifest;
   const fb = fallbacks(args);
@@ -431,8 +431,8 @@ function patchManifest(s: Session, args: string[]): void {
   console.log(`applied ${applied} manifest entr${applied === 1 ? "y" : "ies"}; wrote ${outRom}`);
 }
 
-const EVERMIDI_ROM_HELP = [
-  "usage: retroplug-cli evermidi-rom <subcommand> ...",
+const BLIPTOASTER_ROM_HELP = [
+  "usage: retroplug-cli bliptoaster-rom <subcommand> ...",
   "",
   "  info          <rom> [--json]                     theme / font / kit inventory (+ kit-bank capacity)",
   "  extract       <rom> <outDir> [--rate N]          dump each kit sample to a mono WAV + theme/font + rom.json",
@@ -464,10 +464,10 @@ const EVERMIDI_ROM_HELP = [
   "  (build source: a path string, or { file, name?, rate?, loop?, normalize?, offset?, length?, effects? })",
 ].join("\n");
 
-export const everMidiRomTool: CliTool = {
-  name: "evermidi-rom",
-  summary: "inspect / extract / edit EverMIDI ROM kits, theme and font (+ compile WAV → .rkit)",
-  help: EVERMIDI_ROM_HELP,
+export const blipToasterRomTool: CliTool = {
+  name: "bliptoaster-rom",
+  summary: "inspect / extract / edit BlipToaster ROM kits, theme and font (+ compile WAV → .rkit)",
+  help: BLIPTOASTER_ROM_HELP,
   run(s: Session, args: string[]): void {
     const sub = args[0];
     const rest = args.slice(1);
@@ -483,6 +483,6 @@ export const everMidiRomTool: CliTool = {
     if (sub === "import-font") return importFont(s, rest);
     if (sub === "export-kit") return exportKit(s, rest);
     if (sub === "import-kit") return importKit(s, rest);
-    throw new Error(`unknown subcommand '${sub ?? ""}'\n\n${EVERMIDI_ROM_HELP}`);
+    throw new Error(`unknown subcommand '${sub ?? ""}'\n\n${BLIPTOASTER_ROM_HELP}`);
   },
 };

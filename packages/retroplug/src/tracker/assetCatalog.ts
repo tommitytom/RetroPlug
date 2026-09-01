@@ -51,7 +51,7 @@ export interface AssetCatalog {
   /** The base ROM's slots for one asset type (name-fallbacks applied) — [] when the ROM can't be parsed. */
   baseSlots(romBytes: Uint8Array, kind: string): AssetSlot[];
   /** Optional per-ROM override of `types` — for a console whose `addable`/`maxSlots` depend on the cart
-   *  (e.g. EverMIDI: single-kit on NROM, addable/16 on a banking build). Defaults to `types` when absent. */
+   *  (e.g. BlipToaster: single-kit on NROM, addable/16 on a banking build). Defaults to `types` when absent. */
   resolveTypes?(romBytes: Uint8Array): AssetTypeInfo[];
 
   /** Fold this console's override list onto base ROM bytes → the EFFECTIVE image (what construct hands the

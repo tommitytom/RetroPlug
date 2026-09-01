@@ -2,7 +2,7 @@
 
 Status: plan / spike complete
 Goal: take MIDI into RetroPlug and forward it over USB to a physical Everdrive N8 Pro running the
-EverMIDI NES ROM, so a MIDI controller / DAW plays the real NES. One-way (host -> cart); EverMIDI is
+BlipToaster NES ROM, so a MIDI controller / DAW plays the real NES. One-way (host -> cart); BlipToaster is
 MIDI-in only.
 
 ---
@@ -17,7 +17,7 @@ host-side blocking-I/O thread). This plan ports that reference onto the current 
 1. **CLI bridge** (`retroplug-cli n8-bridge`) - a thin MIDI-port -> serial-port pipe, no emulator, lowest
    latency. Fastest to validate against hardware.
 2. **Standalone / plugin bridge** - a host-side serial thread fed by the audio thread, with a timed
-   scheduler that preserves note/clock timing, plus the emulated EverMIDI as a live on-screen preview.
+   scheduler that preserves note/clock timing, plus the emulated BlipToaster as a live on-screen preview.
 
 ---
 
@@ -48,7 +48,7 @@ The N8 Pro USB is **krikzz's Edio command protocol over a CDC serial port** - NO
   ```
   `memWR` does **not** round-trip (fire-and-forget), so a 3-byte MIDI message is ~16 bytes over USB,
   sub-millisecond. Bytes land at the cart FIFO the ROM polls at `$40F0` (data) / `$40F1` (status bit 7);
-  EverMIDI reads them with a standard running-status MIDI parser.
+  BlipToaster reads them with a standard running-status MIDI parser.
 
 Constants worth lifting verbatim from `ecs-linux:src/mesen/Edio.h`:
 
@@ -91,7 +91,7 @@ same mechanism, opt-in via a `--lookahead-ms` flag.
 ## 4. Architecture
 
 ```
-                        ┌─ emulated EverMIDI (on-screen preview)   [standalone/plugin only]
+                        ┌─ emulated BlipToaster (on-screen preview)   [standalone/plugin only]
 MIDI in ──> routing ──> NesN8FifoRole ──┤
  (RtMidi / DAW)          (audio thread)  └─ tap ──> SpscRing<TimedEdioCmd> ──> serial thread (scheduler)
                                                                                         │ fifoWR
@@ -135,7 +135,7 @@ retroplug-cli n8-bridge [--midi-in <port>] [--serial <port>] [--lookahead-ms N] 
 
 **Standalone** (deliverable 2): a "MIDI -> N8" panel - MIDI input picker (already have via RtMidi), N8 serial
 port dropdown (auto-suggest `38df:0017`), Connect toggle, status + byte counter, lookahead-latency slider,
-and an optional "run emulated EverMIDI as monitor" toggle so the on-screen core mirrors the real cart.
+and an optional "run emulated BlipToaster as monitor" toggle so the on-screen core mirrors the real cart.
 
 **Plugin** (later): a `System > Send to N8 Pro...` menu -> pick port -> that system's routed MIDI also
 streams to the cart; status in the tile/menu.
@@ -170,7 +170,7 @@ streams to the cart; status in the tile/menu.
   usually plug-and-play. Port naming differs per OS - enumeration + `38df:0017` matching handles it.
 - **CLI needs a new MIDI-in dep.** The CLI has no live MIDI today (only harness `stageMidiIn`); RtMidi is the
   addition.
-- **One-way only.** EverMIDI only reads MIDI, so no return path is needed. (The `Edio` client can read
+- **One-way only.** BlipToaster only reads MIDI, so no return path is needed. (The `Edio` client can read
   status, used for the connect handshake / health only.)
 - **Don't over-batch.** `memWR` is fire-and-forget; write per message (or per due-time in the scheduler) to
   keep latency low. The 2048-byte cart FIFO buffers bursts.

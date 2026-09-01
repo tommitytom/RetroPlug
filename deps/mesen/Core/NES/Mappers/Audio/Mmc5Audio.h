@@ -21,7 +21,7 @@ private:
 	//reset repeated faster than the note's period walks _dutyPos through the same few steps every time and
 	//the level never moves - the channel goes silent. That is emulator-only: on a real NES + Everdrive N8
 	//the MMC5 pulse holds full level at every reset rate down to reload 1, and the reset rate becomes the
-	//audible pitch. (Measured; it is why EverMIDI floors its MMC5 MOD rate. See mmc5-mod-hack.test.ts.)
+	//audible pitch. (Measured; it is why BlipToaster floors its MMC5 MOD rate. See mmc5-mod-hack.test.ts.)
 	virtual void UpdateOutputAfterWrite() override
 	{
 		//Mirrors RunChannel's expression - no IsMuted() check, since "frequency values less than 8 do not
@@ -33,7 +33,7 @@ private:
 	//same as their APU counterparts"; an Everdrive N8 Pro does NOT do that, and this is switchable because
 	//RetroPlug's default follows the N8 (see coreRoles.ts - NES music is played back through one).
 	//
-	//Measured first, with EverMIDI's MOD hack (a $5003 rewrite from the idle loop) sweeping the reset rate
+	//Measured first, with BlipToaster's MOD hack (a $5003 rewrite from the idle loop) sweeping the reset rate
 	//from reload 128 down to 1, on C4 and C2. The 2A03 pulse skews its duty hard - to 0.067 at C2, a 6%
 	//pulse train - and loses 7.2 dB with it, and this core reproduces that closely (0.061, -5.2 dB). The
 	//MMC5 pulse instead held duty at 0.500 at EVERY rate with no level change at all; only its pitch moved.

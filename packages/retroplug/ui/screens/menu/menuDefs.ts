@@ -52,8 +52,8 @@ import {
 } from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
-import { EverMidiRom } from "../../../src/evermidi/rom";
-import { readOverrides as readEverMidiOverrides, type EverMidiAssetOverride } from "../../../src/evermidiAssetsRole";
+import { BlipToasterRom } from "../../../src/bliptoaster/rom";
+import { readOverrides as readBlipToasterOverrides, type BlipToasterAssetOverride } from "../../../src/bliptoasterAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 // Aliased: `replaceSong` and `addSong` are already taken here by the LSDj row helpers.
@@ -78,7 +78,7 @@ import {
   risaAssetCatalog,
   smsggdjSongCatalog,
   smsggdjAssetCatalog,
-  evermidiAssetCatalog,
+  bliptoasterAssetCatalog,
   type SongCatalog,
   type AssetCatalog,
   type AssetSlotRow,
@@ -955,7 +955,7 @@ function assetMenu(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): Menu
   const bytes = assetRomBytes(ctx.stores.backend, sys.romPath);
   if (!bytes) return [];
   const overrides = overridesFor(sys, spec.catalog.assetRole);
-  // A catalog may refine its types per-ROM (EverMIDI: single-kit on NROM, addable/16 on a banking cart).
+  // A catalog may refine its types per-ROM (BlipToaster: single-kit on NROM, addable/16 on a banking cart).
   const types = spec.catalog.resolveTypes ? spec.catalog.resolveTypes(bytes) : spec.catalog.types;
   return types.map((type) => {
     const rows = effectiveAssets(spec.catalog.baseSlots(bytes, type.kind), overrides, type.kind, type.noun);
@@ -1208,24 +1208,24 @@ function replaceRisaAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo
 const lsdjAssetSpec: AssetMenuSpec = { id: "lsdj", catalog: lsdjAssetCatalog, exportAsset, replaceAsset };
 const risaAssetSpec: AssetMenuSpec = { id: "risa", catalog: risaAssetCatalog, exportAsset: exportRisaAsset, replaceAsset: replaceRisaAsset };
 
-// --- EverMIDI asset file actions (Export/Replace own the .rkit/.chr formats) ---------------------------
-// EverMIDI has no themes (no ROM theme table yet) — just the baked DMC kit + the CHR font, both LINKED by
+// --- BlipToaster asset file actions (Export/Replace own the .rkit/.chr formats) ---------------------------
+// BlipToaster has no themes (no ROM theme table yet) — just the baked DMC kit + the CHR font, both LINKED by
 // path (a pre-built 8 KB .rkit / .chr bank, read at construct). Mirrors the risa actions minus themes.
-const everMidiAssetOverrides = (sys: SystemView): EverMidiAssetOverride[] =>
-  readEverMidiOverrides(sys.roles.find((r) => r.kind === "bliptoaster-assets")?.config);
+const blipToasterAssetOverrides = (sys: SystemView): BlipToasterAssetOverride[] =>
+  readBlipToasterOverrides(sys.roles.find((r) => r.kind === "bliptoaster-assets")?.config);
 
-const readEverMidiRomFor = (be: HostBackend, romPath: string): EverMidiRom | null => {
+const readBlipToasterRomFor = (be: HostBackend, romPath: string): BlipToasterRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
   if (!bytes) return null;
-  const rom = EverMidiRom.fromBytes(bytes);
-  return rom.isEverMidi ? rom : null;
+  const rom = BlipToasterRom.fromBytes(bytes);
+  return rom.isBlipToaster ? rom : null;
 };
 
 // Export theme/kit/font `slot` to a picked file: the override's data if replaced, else the base ROM's asset.
-function exportEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void {
+function exportBlipToasterAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void {
   const be = ctx.stores.backend;
   const kind = type.kind;
-  const ov = everMidiAssetOverrides(sys).find((o) => o.type === kind && o.slot === slot);
+  const ov = blipToasterAssetOverrides(sys).find((o) => o.type === kind && o.slot === slot);
   const defaultName = `${sanitizeName(label)}${type.ext}`;
   browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: type.patterns, saving: true, defaultName }, (path) => {
     let bytes: Uint8Array | null = null;
@@ -1233,15 +1233,15 @@ function exportEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeI
       // The theme comes from the inline override, or the base ROM decoded; emit a .rit (readable JSON).
       let theme = ov?.theme ?? null;
       if (!theme) {
-        const t = readEverMidiRomFor(be, sys.romPath)?.getTheme(slot);
+        const t = readBlipToasterRomFor(be, sys.romPath)?.getTheme(slot);
         if (t) theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
       }
       if (theme) bytes = new TextEncoder().encode(JSON.stringify(serializeRit(theme), null, 2) + "\n");
     } else if (kind === "kit") {
       // The linked bank if overridden, else the base ROM's 8 KB DMC bank — either is a ready-to-link .rkit.
-      bytes = ov?.path ? be.readFile(ov.path) : (readEverMidiRomFor(be, sys.romPath)?.getKitBank(slot) ?? null);
+      bytes = ov?.path ? be.readFile(ov.path) : (readBlipToasterRomFor(be, sys.romPath)?.getKitBank(slot) ?? null);
     } else {
-      bytes = ov?.path ? be.readFile(ov.path) : (readEverMidiRomFor(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
+      bytes = ov?.path ? be.readFile(ov.path) : (readBlipToasterRomFor(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
     }
     if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
   });
@@ -1249,13 +1249,13 @@ function exportEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeI
 
 // Replace theme/kit/font `slot` from a picked file: validate it, record the override (theme INLINE / font +
 // kit by PATH) in role config, and reload so it takes effect. NON-DESTRUCTIVE — the base .nes is never written.
-function replaceEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
+function replaceBlipToasterAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
   const be = ctx.stores.backend;
   const kind = type.kind;
   browseThen(ctx, { title: `Replace ${kind} ${slot}`, patterns: type.patterns }, (path) => {
     const data = be.readFile(path);
     if (!data) return;
-    let entry: EverMidiAssetOverride;
+    let entry: BlipToasterAssetOverride;
     try {
       if (kind === "theme") {
         const { theme } = parseRit(JSON.parse(new TextDecoder().decode(data))); // throws on a bad .rit
@@ -1271,17 +1271,17 @@ function replaceEverMidiAsset(ctx: MenuContext, sys: SystemView, type: AssetType
       return; // malformed .rit / unreadable → leave the ROM untouched
     }
     writeOverrides(ctx, sys, "bliptoaster-assets", [
-      ...everMidiAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot)),
+      ...blipToasterAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot)),
       entry,
     ]);
   });
 }
 
-const everMidiAssetSpec: AssetMenuSpec = {
+const blipToasterAssetSpec: AssetMenuSpec = {
   id: "bliptoaster",
-  catalog: evermidiAssetCatalog,
-  exportAsset: exportEverMidiAsset,
-  replaceAsset: replaceEverMidiAsset,
+  catalog: bliptoasterAssetCatalog,
+  exportAsset: exportBlipToasterAsset,
+  replaceAsset: replaceBlipToasterAsset,
 };
 
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
@@ -1789,7 +1789,7 @@ const smsggdjAssetSpec: AssetMenuSpec = {
 // the integration itself (id/label/markerRole/songs/assets) rides src/tracker (the one place a console is
 // registered).
 interface TrackerUi {
-  song?: SongMenuSpec; // omitted for asset-only consoles (e.g. EverMIDI) — no Songs submenu is built
+  song?: SongMenuSpec; // omitted for asset-only consoles (e.g. BlipToaster) — no Songs submenu is built
   asset: AssetMenuSpec;
   extras?(ctx: MenuContext, sys: SystemView): MenuItem[];
 }
@@ -1797,7 +1797,7 @@ const TRACKER_UI: Record<string, TrackerUi> = {
   lsdj: { song: lsdjSongSpec, asset: lsdjAssetSpec, extras: lsdjExtras },
   risa: { song: risaSongSpec, asset: risaAssetSpec },
   smsggdj: { song: smsggdjSongSpec, asset: smsggdjAssetSpec },
-  bliptoaster: { asset: everMidiAssetSpec },
+  bliptoaster: { asset: blipToasterAssetSpec },
 };
 
 // One tracker's instance-submenu children: its extras (if any), the shared Songs menu (only if the
@@ -2112,7 +2112,7 @@ export function trackerCartLabel(backend: Pick<ControlPlaneBackend, "readFile" |
   const romName = cartRomName(backend, tracker, sys.romPath);
   const sram = backend.readSram(sys.id);
   // The window title is the most visible place the working song is named, and for smsggdj the only
-  // source is the cart's own song_name in work RAM. An asset-only cart (EverMIDI) has no battery to name.
+  // source is the cart's own song_name in work RAM. An asset-only cart (BlipToaster) has no battery to name.
   const song = sram && tracker.songs ? tracker.songs.workingName(sram, backend.readRam(sys.id) ?? undefined) : null;
   const segs = [song, romName].filter((s): s is string => !!s);
   return segs.length ? segs.join(" - ") : null;

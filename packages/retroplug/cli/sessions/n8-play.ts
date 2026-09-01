@@ -2,7 +2,7 @@
 //
 // The live twin of `n8-bridge`: where the bridge forwards a controller/DAW in real time, this plays a fixed
 // sequence given on the command line, so a hardware check is one reproducible command with no MIDI hardware
-// attached. The EverMIDI ROM reads these bytes at $40F0/$40F1. Pair it with a capture + `analyze-capture` to
+// attached. The BlipToaster ROM reads these bytes at $40F0/$40F1. Pair it with a capture + `analyze-capture` to
 // verify what the real chips actually did (see the nes-hardware-lab skill).
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
@@ -45,7 +45,7 @@ const num = (s: string, what: string, max: number): number => {
 export function stepBytes(step: string): { bytes: number[]; waitMs: number } {
   const p = step.split(":");
   const kind = p[0];
-  // MIDI channels are 1-based here (matching the EverMIDI monitor's CH column and BASE01).
+  // MIDI channels are 1-based here (matching the BlipToaster monitor's CH column and BASE01).
   const chan = (i: number): number => num(p[i], `${kind}: channel`, 16) - 1;
 
   if (kind === "wait") {
@@ -90,7 +90,7 @@ function run(_s: Session, args: string[]): void {
   }
 
   if (flag(args, "--prime") !== "off") {
-    // EverMIDI drops the first message after boot; burn one harmless CC so step 1 always lands.
+    // BlipToaster drops the first message after boot; burn one harmless CC so step 1 always lands.
     n8.edio.fifoWR(new Uint8Array([0xb0, 121, 0]));
     spin(50);
   }
@@ -113,10 +113,10 @@ export const n8PlayTool: CliTool = {
   help: [
     "usage: retroplug-cli n8-play [--serial <port>] [--exp-vol <0-255>] [--prime off] <step>...",
     "",
-    "  Sends a fixed MIDI sequence to the N8's cart FIFO, which the EverMIDI ROM reads at $40F0/$40F1.",
+    "  Sends a fixed MIDI sequence to the N8's cart FIFO, which the BlipToaster ROM reads at $40F0/$40F1.",
     "  The scripted twin of n8-bridge: reproducible hardware checks with no controller attached.",
     "",
-    "steps (MIDI channels are 1-based, matching the EverMIDI monitor's CH column):",
+    "steps (MIDI channels are 1-based, matching the BlipToaster monitor's CH column):",
     "  on:<ch>:<note>[:<vel>]   note on  (velocity defaults to 100)",
     "  off:<ch>:<note>          note off",
     "  cc:<ch>:<num>:<val>      control change",
@@ -127,7 +127,7 @@ export const n8PlayTool: CliTool = {
     "  --exp-vol <0-255>  set the FPGA expansion-audio master volume first (0 mute, 128 unity, 255 2x).",
     "                     REQUIRED for expansion chips (VRC6/VRC7/N163/S5B/MMC5) - at 0 they are silent",
     "                     however correct the ROM is. Live-only: it applies to the running cart.",
-    "  --prime off        skip the priming CC (EverMIDI drops its first message after boot)",
+    "  --prime off        skip the priming CC (BlipToaster drops its first message after boot)",
     "",
     "example - hold a 2 s A4 on the S5B's Square A with the hardware envelope on:",
     "  retroplug-cli n8-play --exp-vol 128 \\",

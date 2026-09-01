@@ -208,8 +208,9 @@ function projectV2toV3(raw: RawObject): RawObject {
   return raw;
 }
 
-// The role kinds renamed in v4, old → new. The EverMIDI project became BlipToaster, and the two role
-// kinds it owns are persisted verbatim as `systems[].roles[].kind`, so old projects carry the old spelling.
+// The role kinds renamed in v4, old → new. The EverMIDI project became BlipToaster, and the two role kinds
+// it owns are persisted verbatim as `systems[].roles[].kind`, so old projects carry the old spelling.
+// NOTE the keys are the PRE-rename spellings and must stay that way — they are the whole point of the step.
 const V4_ROLE_RENAMES: Record<string, string> = {
   evermidi: "bliptoaster",
   "evermidi-assets": "bliptoaster-assets",
@@ -251,7 +252,7 @@ function migrateProjectRaw(raw: RawObject, fromVersion: number): RawObject {
 
 /** The current project-format version. Bump ONLY on a breaking (non-additive) change, and add
  *  the matching `PROJECT_MIGRATIONS[N-1]` step. v2 persists each system's `core`; v3 makes the
- *  enum settings string-valued; v4 renames the EverMIDI role kinds to BlipToaster. */
+ *  enum settings string-valued; v4 renames the BlipToaster role kinds to BlipToaster. */
 export const K_PROJECT = 4;
 
 export enum VersionCheck {

@@ -1,12 +1,12 @@
 // The two "mesen" role switches that choose between the documented CHIP behaviour and an Everdrive N8
 // Pro's FPGA core. Both default to "chip" so ordinary games are untouched; "n8" exists so software
-// developed against that cartridge (EverMIDI) sounds the same in the emulator as it does on the console.
+// developed against that cartridge (BlipToaster) sounds the same in the emulator as it does on the console.
 //
 // Each is a real behavioural fork, measured on a real NES + N8 (PAL, capture ch5):
 //   s5bNoise       - the N8's 5B has no noise generator, and since the mixer ANDs tone with noise,
 //                    enabling noise MUTES the channel: -34.09 dBFS -> -81.32, at every noise period.
 //                    A real 5B rasps instead.
-//   mmc5PhaseReset - the N8's MMC5 does not restart the duty sequencer on a $5003 write. Under EverMIDI's
+//   mmc5PhaseReset - the N8's MMC5 does not restart the duty sequencer on a $5003 write. Under BlipToaster's
 //                    MOD hack the real MMC5 holds duty 0.500 and does not change level at ANY reset rate
 //                    (only its pitch moves), where the 2A03 skews to 0.067 duty and drops 7.2 dB.
 import { test, expect } from "../testing/harness";
@@ -52,7 +52,7 @@ test("s5bNoise: 'chip' rasps where 'n8' mutes the channel", () => {
   for (const mode of ["chip", "n8"] as const) {
     const s = boot(S5B_ROM, mode, "s5bNoise");
     if (!s) { console.log(`# SKIP: no ROM at ${S5B_ROM}`); return; }
-    // CC1 must come AFTER the note-on: EverMIDI's s5b_note_on unconditionally sets the noise-disable bit.
+    // CC1 must come AFTER the note-on: BlipToaster's s5b_note_on unconditionally sets the noise-disable bit.
     const tl = new Timeline()
       .midi(20, cc(6, 20, 0))
       .midi(40, cc(6, 7, 127))

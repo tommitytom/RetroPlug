@@ -3,7 +3,7 @@
 // One Pico does the whole thing. MIDI comes in on a hardware UART (UART1/GP5, the
 // stage-1 6N138 opto circuit) and is decoded by the reusable parser (../midi-in/
 // midi.c). Each complete channel-voice message is forwarded straight to the N8's
-// cart FIFO via Edio fifoWR (= memWR to 0x1810000) - which, with the EverMIDI ROM
+// cart FIFO via Edio fifoWR (= memWR to 0x1810000) - which, with the BlipToaster ROM
 // running on the NES, plays it on the 2A03. The N8 is hosted over PIO-USB
 // (slice 2.1) and driven with the Edio port (slice 2.2/2.3). A read-only sniff of
 // the running ROM's APU write-mirror reports Pulse1 on/off as live confirmation.
@@ -85,13 +85,15 @@ static void n8_probe(void) {
 }
 
 // Autonomous boot: if the N8 file-browser MENU is running (it answers '*t' with 'k'),
-// drive it over the cart FIFO (edio_menu_*) to install + boot EverMIDI, no PC in the loop.
+// drive it over the cart FIFO (edio_menu_*) to install + boot BlipToaster, no PC in the loop.
 // If a game is already running (or wedged) the menu won't answer, and we just forward MIDI.
 // NOTE: this depends on the cart-FIFO WRITE path (memWR to 0x1810000), which does NOT work
 // over Pico-PIO-USB - the N8 ACKs the write but never routes it to the FIFO, so '*t' gets no
 // reply and this returns early. It works from a silicon USB host. See pico-n8-fifo-write-bug.md.
-#define EVERMIDI_SD_PATH "usb-games/n8-midi.nes"
-static void boot_evermidi(void) {
+// The filename on the N8's PHYSICAL SD card, which is not renamed by this repo - it still reads n8-midi.nes
+// until the card is rewritten. Update both together.
+#define BLIPTOASTER_SD_PATH "usb-games/n8-midi.nes"
+static void boot_bliptoaster(void) {
     // The N8's USB (MCU) enumerates before the menu core is ready, so retry the handshake
     // for a few seconds after a fresh power-up.
     printf("[n8-host] menu handshake (*t)...\n");
@@ -105,17 +107,17 @@ static void boot_evermidi(void) {
                "forwarding MIDI as-is\n");
         return;
     }
-    printf("[n8-host] menu up -> install %s (*n)...\n", EVERMIDI_SD_PATH);
-    int st = edio_menu_install(EVERMIDI_SD_PATH);
+    printf("[n8-host] menu up -> install %s (*n)...\n", BLIPTOASTER_SD_PATH);
+    int st = edio_menu_install(BLIPTOASTER_SD_PATH);
     if (st != 0) {
         printf("[n8-host] install FAILED (status %d)%s\n", st,
                st == 0x44 ? " - dirty menu heap, power-cycle to a fresh menu" : "");
         return;
     }
-    printf("[n8-host] installed -> boot (*s); EverMIDI starting...\n");
+    printf("[n8-host] installed -> boot (*s); BlipToaster starting...\n");
     edio_menu_start();
     for (int i = 0; i < 40; i++) { sleep_ms(100); tuh_task(); }   // let the NES reboot into the game
-    printf("[n8-host] EverMIDI booted by the Pico - no PC used.\n");
+    printf("[n8-host] BlipToaster booted by the Pico - no PC used.\n");
 }
 
 // The bridge sink: a complete MIDI message from the parser -> the N8 FIFO. Forward
@@ -123,8 +125,8 @@ static void boot_evermidi(void) {
 // transport) are dropped. CRITICAL: aftertouch is ALSO dropped - poly-aftertouch
 // (0xA0) and channel-pressure (0xD0) are high-rate continuous streams (a Launchpad
 // floods channel-pressure while any pad is held). Forwarding that flood overruns the
-// N8 cart FIFO faster than EverMIDI drains it, which desyncs its MIDI parser and
-// HANGS the ROM on the last note (observed on hardware). EverMIDI only plays notes,
+// N8 cart FIFO faster than BlipToaster drains it, which desyncs its MIDI parser and
+// HANGS the ROM on the last note (observed on hardware). BlipToaster only plays notes,
 // so we forward note-on/off + program-change + pitch-bend + CC and drop the rest.
 // Program-change carries one data byte, the rest two. One fifoWR per message.
 static void midi_to_fifo(const midi_message *m, void *user) {
@@ -148,7 +150,7 @@ static void midi_to_fifo(const midi_message *m, void *user) {
 
 // Read-only confirmation: poll the running ROM's APU write-mirror and report Pulse1's
 // PITCH whenever it changes. Injects NOTHING (the forwarded MIDI is what drives it), so
-// a moving pitch here = EverMIDI really is following the notes (not stuck). Prints only
+// a moving pitch here = BlipToaster really is following the notes (not stuck). Prints only
 // on change so held notes stay quiet. PAL 2A07: f = 1662607 / (16 * (timer + 1)).
 static void sniff_report(void) {
     static uint32_t next_ms = 0;
@@ -208,7 +210,7 @@ int main(void) {
         if (n8_ready && !probed) {
             probed = true;
             n8_probe();
-            boot_evermidi();
+            boot_bliptoaster();
         }
         forward_ok = n8_ready && probed;
         if (forward_ok) sniff_report();

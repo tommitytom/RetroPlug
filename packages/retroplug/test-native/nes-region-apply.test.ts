@@ -1,6 +1,6 @@
 // Does a NES region change actually reach the core? RMS cannot answer that (a square's level does not
 // depend on its frequency), and the "[NTSC]"/"[PAL]" banner is only printed at LoadRom, so both of the
-// obvious signals are blind. The APU timer PERIOD is not: EverMIDI carries separate NTSC and PAL tuning
+// obvious signals are blind. The APU timer PERIOD is not: BlipToaster carries separate NTSC and PAL tuning
 // tables and picks one from the detected region, so the same MIDI note is written as a DIFFERENT period
 // per region while coming out at the same pitch in Hz.
 //

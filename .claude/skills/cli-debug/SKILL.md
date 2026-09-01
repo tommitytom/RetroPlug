@@ -1,7 +1,7 @@
 ---
 name: cli-debug
 description: >-
-  Debug and fix issues that a retroplug-cli consumer (e.g. the EverMIDI NES ROM) reports against the
+  Debug and fix issues that a retroplug-cli consumer (e.g. the BlipToaster NES ROM) reports against the
   tooling — a sound channel silent/wrong, MIDI/pitch/timing off, a harness test failing, missing emulator
   introspection, or an "is this a Mesen/SameBoy bug?" question. Reproduce on the CURRENT source, root-cause
   across the layers (RetroPlug native/emulator/host vs the CLI SDK vs the consumer's own ROM), fix here with
@@ -12,7 +12,7 @@ description: >-
 # Debugging CLI-tooling issues from the RetroPlug side
 
 You are in the **RetroPlug** repo — the emulator cores (Mesen NES, SameBoy GB), the native host, the
-plugin, the DSP, and the `retroplug-cli` test harness + SDK. Downstream **consumers** (e.g. the EverMIDI
+plugin, the DSP, and the `retroplug-cli` test harness + SDK. Downstream **consumers** (e.g. the BlipToaster
 NES ROM, a sibling checkout — the sync default is `../evermidi`) drive ROMs through the CLI and report
 issues, often as handoff docs (`<consumer>/RETROPLUG-CLI-HANDOFF*.md`). Your advantage over the consumer:
 you have the full source. Use it.
@@ -34,7 +34,7 @@ a byte/register trace — most "emulator" reports are the integration or the con
 ## Reproduce on CURRENT source first
 
 Consumers run a **prebuilt, synced** `bin/retroplug-cli` that lags this repo. Always reproduce against
-current source: `tools/sync-cli-to-evermidi.sh [dest]` (rebuilds `retroplug-cli` + the SDK and copies
+current source: `tools/sync-cli-to-bliptoaster.sh [dest]` (rebuilds `retroplug-cli` + the SDK and copies
 `bin/`+`sdk/` into the consumer), then run the consumer's failing session/test. No repro on current source
 ⇒ already fixed. Still reproduces ⇒ you have a live repro to work from.
 
@@ -73,7 +73,7 @@ current source: `tools/sync-cli-to-evermidi.sh [dest]` (rebuilds `retroplug-cli`
   the sanitizers (`tools/run-sanitizer.sh`). Back a "fixed" claim with a real exit-zero.
 - **Regression test**: add a Catch2 unit (`packages/native/test/...`, wired into its target's CMakeLists)
   and/or a `test-native` (`packages/retroplug/test-native/*.test.ts`, auto-discovered).
-- **Sync back + confirm the consumer**: `tools/sync-cli-to-evermidi.sh`, then run the consumer's suite
+- **Sync back + confirm the consumer**: `tools/sync-cli-to-bliptoaster.sh`, then run the consumer's suite
   (`cd ../<consumer>/retroplug-cli && npm test`). Backward compat matters — the consumer's existing tests
   must stay green against the rebuilt binary.
 - **Clean up**: revert temporary instrumentation; keep an env-gated trace only if broadly useful.

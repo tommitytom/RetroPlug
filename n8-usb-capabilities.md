@@ -129,8 +129,8 @@ in this region** — they exist only in the OS-assembled file after a *triggered
 + an `ss_key_*` combo / `MAP_CTRL_SS_BTN`), a separate future capability. The sniffer is also **disabled in
 the menu** (map-255 core) — a read at the file browser has no `0x53` magic, so `--sniff` needs a running game.
 
-HW-verified: a MIDI note into EverMIDI decoded as `pulse1 474 Hz vol 15 duty 50%` (TS + C++ twins agree),
-and the read validates the emulator's `getApuState`/`getExpansionAudioState` from the EverMIDI audio-tuning work.
+HW-verified: a MIDI note into BlipToaster decoded as `pulse1 474 Hz vol 15 duty 50%` (TS + C++ twins agree),
+and the read validates the emulator's `getApuState`/`getExpansionAudioState` from the BlipToaster audio-tuning work.
 
 ## Menu commands (`edlink/DEV_EDN8/MenuCmd.cs`, sent through the FIFO menu channel)
 
@@ -192,7 +192,7 @@ Grouped by payoff. "Effort" is the add to `Edio`/tooling.
   into the firmware-update unit; `CMD_RST_MCU` (0x12) is the bootloader. The only plausible clean path is
   `ed_exit_game`'s config write (`map_idx=255` + `MAP_CTRL_UNLOCK` to `ADDR_CFG`) followed by a reset —
   device-side C in `edn8-pro-pub`, but unverified over USB. Left for a future slice.
-- **The file API works while a game runs** (verified — `--ls` responded with EverMIDI running).
+- **The file API works while a game runs** (verified — `--ls` responded with BlipToaster running).
 - **`ed_cmd_game_ctr` is a counter**, not controller injection — no button-injection over USB was
   found.
 

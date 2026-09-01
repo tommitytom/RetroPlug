@@ -1,6 +1,6 @@
-# EverMIDI: FIFO MIDI parser hangs after a stray/misaligned byte (does not resync on status bytes)
+# BlipToaster: FIFO MIDI parser hangs after a stray/misaligned byte (does not resync on status bytes)
 
-Context: driving the EverMIDI ROM on a real NES + Everdrive N8 Pro by writing raw MIDI
+Context: driving the BlipToaster ROM on a real NES + Everdrive N8 Pro by writing raw MIDI
 bytes into the N8 cart FIFO (device addr `0x1810000`, which the ROM reads at `$40F0/$40F1`).
 Two independent drivers were used: the RetroPlug host (`retroplug-cli n8-bridge`, over the
 kernel CDC-ACM) and a Raspberry Pi Pico USB-host bridge. Same symptom from both.
@@ -8,16 +8,16 @@ kernel CDC-ACM) and a Raspberry Pi Pico USB-host bridge. Same symptom from both.
 ## What is PROVEN (observed on hardware, via the N8 APU write-mirror "sniffer")
 
 The sniffer (`memRD 0x1802000`) is the N8's live mirror of the ROM's `$4000-$401F` APU
-register writes - i.e. ground truth for what EverMIDI actually drove, independent of audio.
+register writes - i.e. ground truth for what BlipToaster actually drove, independent of audio.
 
-1. **A freshly booted EverMIDI plays arbitrary notes correctly.** Injecting single
+1. **A freshly booted BlipToaster plays arbitrary notes correctly.** Injecting single
    note-ons moved Pulse1's timer to exactly the right value every time:
    - `90 45 7f` (A4, note 69) -> Pulse1 timer 235
    - `90 48 7f` (C5, note 72) -> timer ~198
    - `90 37 7f` (G3, note 55) -> timer ~528
    So the FIFO read path, the MIDI parse, and the APU output are all correct in a good state.
 
-2. **After a USB host disconnect/reconnect, EverMIDI gets stuck and never recovers.**
+2. **After a USB host disconnect/reconnect, BlipToaster gets stuck and never recovers.**
    It holds the *last note's* pitch forever and ignores every subsequent MIDI message, even
    though:
    - the new messages are correctly framed MIDI (verified byte-for-byte on the wire), and
@@ -39,9 +39,9 @@ coincidental with a handoff; the handoff is the reliable trigger.
 
 ## Most likely cause (HYPOTHESIS)
 
-A byte-framing desync in EverMIDI's FIFO MIDI parser. The USB reconnect (or a FIFO
+A byte-framing desync in BlipToaster's FIFO MIDI parser. The USB reconnect (or a FIFO
 overflow) leaves one or more stray/partial bytes in the cart FIFO, shifting the byte
-boundary. From then on EverMIDI reads every 3-byte MIDI message off-by-N and never
+boundary. From then on BlipToaster reads every 3-byte MIDI message off-by-N and never
 realigns - the classic MIDI "off-by-one framing" bug - because it does **not resync on
 status bytes**.
 
@@ -56,7 +56,7 @@ Against this: the APU mirror keeps showing a sustained note, suggesting the per-
 refresh loop is still running (alive but mis-parsing), not halted. The repro below
 distinguishes the two.
 
-## Recommended fix (in the EverMIDI ROM, `../evermidi`)
+## Recommended fix (in the BlipToaster ROM, `../evermidi`)
 
 Make the FIFO MIDI reader resync on status bytes (standard MIDI parsing rules):
 
@@ -73,7 +73,7 @@ Make the FIFO MIDI reader resync on status bytes (standard MIDI parsing rules):
     program-change/channel-pressure); support running status (another data byte after a
     complete channel-voice message re-uses the last status).
 
-This makes EverMIDI self-heal from any stray/misaligned/dropped byte within one message,
+This makes BlipToaster self-heal from any stray/misaligned/dropped byte within one message,
 instead of wedging forever.
 
 Secondary hardening (optional): if the FIFO can overflow and silently drop bytes, the
@@ -83,7 +83,7 @@ core fix.
 
 ## Repro the other agent can run (no special hardware handoff needed)
 
-With EverMIDI booted and playing:
+With BlipToaster booted and playing:
 1. Write a **single stray data byte** into the FIFO with no status (e.g. one `0x00` or
    `0x7f`), then write a valid note-on (`90 3c 7f`).
 2. A correct (resync-on-status) parser plays C4 - it realigns on the `0x90` status byte.

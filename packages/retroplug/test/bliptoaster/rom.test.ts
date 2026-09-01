@@ -1,14 +1,14 @@
-// EverMIDI ROM asset view/patch layer — pure byte-level tests. Mirrors test/risa/rom.test.ts: read the kit +
-// font, prove setKit/setChrFontSlot splice ONLY the intended bytes (byte-diff), and that isEverMidi accepts a
+// BlipToaster ROM asset view/patch layer — pure byte-level tests. Mirrors test/risa/rom.test.ts: read the kit +
+// font, prove setKit/setChrFontSlot splice ONLY the intended bytes (byte-diff), and that isBlipToaster accepts a
 // full ROM but rejects a marker-less / truncated / garbage buffer. No emulator or real ROM needed.
 import { test, expect } from "../../testing/harness";
-import { everMidiRom, everMidiMultiKitRom, nesRom, garbage } from "../systems/fixtures";
-import { EverMidiRom } from "../../src/evermidi/rom";
+import { blipToasterRom, blipToasterMultiKitRom, nesRom, garbage } from "../systems/fixtures";
+import { BlipToasterRom } from "../../src/bliptoaster/rom";
 import { serializeRit, parseRit } from "../../src/risa/rom";
 
 const KIT_OFFSET = 0x10 + 0x4000; // the baked kit at $C000
 const CHR_OFFSET = 0x10 + 0x8000; // CHR follows the 32 KB PRG
-const THEME_OFFSET = 0x100; // the theme table in everMidiRom() (code region, before the kit)
+const THEME_OFFSET = 0x100; // the theme table in blipToasterRom() (code region, before the kit)
 
 /** The set of byte offsets that differ between two equal-length buffers. */
 function changedOffsets(a: Uint8Array, b: Uint8Array): number[] {
@@ -17,15 +17,15 @@ function changedOffsets(a: Uint8Array, b: Uint8Array): number[] {
   return out;
 }
 
-test("isEverMidi accepts a full EverMIDI ROM and rejects marker-less / truncated / garbage buffers", () => {
-  expect(EverMidiRom.fromBytes(everMidiRom()).isEverMidi).toBe(true);
-  expect(EverMidiRom.fromBytes(nesRom()).isEverMidi).toBe(false); // NES magic but no EVERMIDI marker
-  expect(EverMidiRom.fromBytes(garbage()).isEverMidi).toBe(false);
-  expect(EverMidiRom.fromBytes(everMidiRom().slice(0, 0x100)).isEverMidi).toBe(false); // marker but too small
+test("isBlipToaster accepts a full BlipToaster ROM and rejects marker-less / truncated / garbage buffers", () => {
+  expect(BlipToasterRom.fromBytes(blipToasterRom()).isBlipToaster).toBe(true);
+  expect(BlipToasterRom.fromBytes(nesRom()).isBlipToaster).toBe(false); // NES magic but no BLIPTOASTER marker
+  expect(BlipToasterRom.fromBytes(garbage()).isBlipToaster).toBe(false);
+  expect(BlipToasterRom.fromBytes(blipToasterRom().slice(0, 0x100)).isBlipToaster).toBe(false); // marker but too small
 });
 
 test("kits() decodes the baked kit; getKitBank reads its 8 KB bank", () => {
-  const rom = EverMidiRom.fromBytes(everMidiRom());
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
   expect(rom.kitCount()).toBe(1);
   expect(rom.isKitPopulated(0)).toBe(true);
   const kits = rom.kits();
@@ -36,7 +36,7 @@ test("kits() decodes the baked kit; getKitBank reads its 8 KB bank", () => {
 });
 
 test("setKit splices only the 8 KB kit bank (no metadata mirror)", () => {
-  const rom = EverMidiRom.fromBytes(everMidiRom());
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
   const before = rom.bytes().slice();
 
   const bank = new Uint8Array(0x2000).fill(0xab);
@@ -49,14 +49,14 @@ test("setKit splices only the 8 KB kit bank (no metadata mirror)", () => {
 });
 
 test("clearKitBank empties the slot (drops the populated magic)", () => {
-  const rom = EverMidiRom.fromBytes(everMidiRom());
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
   expect(rom.isKitPopulated(0)).toBe(true);
   rom.clearKitBank(0);
   expect(rom.isKitPopulated(0)).toBe(false);
 });
 
 test("NROM is single-kit: capacity 1, no free slot, out-of-range setKit is a no-op", () => {
-  const rom = EverMidiRom.fromBytes(everMidiRom());
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
   expect(rom.kitBankCapacity()).toBe(1);
   expect(rom.firstFreeKitIndex()).toBe(-1); // slot 0 populated, capacity 1 → nothing free
   const before = rom.bytes().slice();
@@ -68,8 +68,8 @@ test("NROM is single-kit: capacity 1, no free slot, out-of-range setKit is a no-
 });
 
 test("a banking ROM exposes 16 kit banks: capacity 16, first free is slot 1, setKit(5) adds a bank", () => {
-  const rom = EverMidiRom.fromBytes(everMidiMultiKitRom());
-  expect(rom.isEverMidi).toBe(true);
+  const rom = BlipToasterRom.fromBytes(blipToasterMultiKitRom());
+  expect(rom.isBlipToaster).toBe(true);
   expect(rom.kitBankCapacity()).toBe(16);
   // Only slot 0 is baked; the rest are reserved/empty.
   expect(rom.kitCount()).toBe(1);
@@ -91,7 +91,7 @@ test("a banking ROM exposes 16 kit banks: capacity 16, first free is slot 1, set
 });
 
 test("fonts: getChrFontSlot reads the slot, setChrFontSlot splices only that 8 KB bank", () => {
-  const rom = EverMidiRom.fromBytes(everMidiRom());
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
   expect(rom.chrFontSlotCount).toBe(1);
   expect(rom.fonts().map((f) => f.slot)).toEqual([0]);
 
@@ -108,7 +108,7 @@ test("fonts: getChrFontSlot reads the slot, setChrFontSlot splices only that 8 K
 });
 
 test("themes() decodes the baked theme located by the magic scan", () => {
-  const rom = EverMidiRom.fromBytes(everMidiRom());
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
   expect(rom.hasThemes).toBe(true);
   expect(rom.themeCount).toBe(1);
   const themes = rom.themes();
@@ -120,7 +120,7 @@ test("themes() decodes the baked theme located by the magic scan", () => {
 });
 
 test("setTheme splices only the 7-byte record + 4-byte name for that slot", () => {
-  const rom = EverMidiRom.fromBytes(everMidiRom());
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
   const before = rom.bytes().slice();
 
   const rec = new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
@@ -142,6 +142,6 @@ test("setTheme splices only the 7-byte record + 4-byte name for that slot", () =
 });
 
 test("a theme round-trips through the .rit shape", () => {
-  const t = EverMidiRom.fromBytes(everMidiRom()).themes()[0].theme;
+  const t = BlipToasterRom.fromBytes(blipToasterRom()).themes()[0].theme;
   expect(parseRit(serializeRit(t)).theme).toEqual(t);
 });

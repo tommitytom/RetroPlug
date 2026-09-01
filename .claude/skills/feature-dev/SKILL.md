@@ -2,7 +2,7 @@
 name: feature-dev
 description: >-
   Orient in RetroPlug's subsystems before implementing a feature that spans RetroPlug and a consumer
-  (e.g. the EverMIDI ROM driven through retroplug-cli, or the plugin). Maps the feature to the subsystems
+  (e.g. the BlipToaster ROM driven through retroplug-cli, or the plugin). Maps the feature to the subsystems
   it touches — emulator cores/systems, audio/DSP + roles, MIDI, the debug/introspection RPCs, the CLI SDK,
   persistence, assets — so you reuse what already exists, extend the right layer, and pick the right
   tooling, then build/test/sync and verify on the consumer. Use when adding or designing a feature (for a
@@ -11,7 +11,7 @@ description: >-
 
 # Implementing a feature with RetroPlug subsystem context
 
-You're building a feature that involves a RetroPlug **consumer** — most often the EverMIDI NES ROM driven
+You're building a feature that involves a RetroPlug **consumer** — most often the BlipToaster NES ROM driven
 through the `retroplug-cli` harness (sibling checkout, sync default `../evermidi`), sometimes the plugin
 or another dpf.js consumer. Such features usually span **both sides**: behavior in the consumer's own
 artifact (e.g. ROM code) *plus* a RetroPlug capability that supports or observes it (a new emulator
@@ -76,7 +76,7 @@ codec, persistence, tests) and a good template to pattern-match against.
   assets in-memory at construct without rewriting the on-disk ROM.
 - **Harness + build/sync** — `retroplug-cli` (`cli/session`, the SDK), `run-native-tests.mjs`, C++ Catch2
   (`pnpm test:plugin`); `build.sh` / `node scripts/cmake-build.js <target>`;
-  `tools/sync-cli-to-evermidi.sh` copies the built CLI + SDK into the consumer. spec/06.
+  `tools/sync-cli-to-bliptoaster.sh` copies the built CLI + SDK into the consumer. spec/06.
 
 ## Extension recipes (match the need to the layer)
 
@@ -99,7 +99,7 @@ codec, persistence, tests) and a good template to pattern-match against.
 Back a "done" claim with an exit-zero, per spec/06. Build (`build.sh` / `cmake-build.js <target>`); run the
 headless suites (`pnpm test` / `test:native` / `test:ui` / `test:plugin`, `run-native-tests.mjs`, the
 sanitizers) and add a regression test. If the feature adds a consumer-facing capability,
-`tools/sync-cli-to-evermidi.sh` and run the consumer's suite — its existing tests must stay green.
+`tools/sync-cli-to-bliptoaster.sh` and run the consumer's suite — its existing tests must stay green.
 
 ## Gotchas
 

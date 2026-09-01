@@ -15,8 +15,8 @@ import { smsggdjAssetCatalog } from "./smsggdjAssetCatalog";
 import { identifySmsggdjVersion } from "../smsggdj/romDetect";
 import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
 import { readSongBlock, readSongName, readSongEcho, sanitizeEcho, songLengthRows, isGrooveEmpty } from "../smsggdj/codec/sav";
-import { evermidiAssetCatalog } from "./evermidiAssetCatalog";
-import { everMidiInfo, EVERMIDI_MARKER } from "../evermidi/romDetect";
+import { bliptoasterAssetCatalog } from "./bliptoasterAssetCatalog";
+import { blipToasterInfo, BLIPTOASTER_MARKER } from "../bliptoaster/romDetect";
 import { identifyLsdj } from "../lsdj/runtime/identify";
 import { identifyRisaVersion } from "../risa/runtime/identify";
 import { resolveRisaLayout } from "../risa/runtime/layout";
@@ -28,7 +28,7 @@ export interface TrackerIntegration {
   readonly label: string;
   /** The role kind the ROM provider attaches that identifies this console (the menu gate). */
   readonly markerRole: string;
-  /** The song catalog (the battery), if this console has one. Asset-only consoles (e.g. EverMIDI, a MIDI
+  /** The song catalog (the battery), if this console has one. Asset-only consoles (e.g. BlipToaster, a MIDI
    *  synth with no song battery) omit it — the shared Songs menu is then simply not built. */
   readonly songs?: SongCatalog;
   readonly assets: AssetCatalog;
@@ -157,17 +157,17 @@ export const smsggdjIntegration: TrackerIntegration = {
   },
 };
 
-// EverMIDI: an NES MIDI synth (not a tracker), so it has NO song battery — only ROM assets (a baked DMC kit
+// BlipToaster: an NES MIDI synth (not a tracker), so it has NO song battery — only ROM assets (a baked DMC kit
 // + the CHR font). An asset-only integration: `songs` is omitted, so only the asset submenus are built.
-export const everMidiIntegration: TrackerIntegration = {
+export const blipToasterIntegration: TrackerIntegration = {
   id: "bliptoaster",
-  label: "EverMIDI",
+  label: "BlipToaster",
   markerRole: "bliptoaster",
-  assets: evermidiAssetCatalog,
+  assets: bliptoasterAssetCatalog,
   romName: (rom) => {
-    const info = everMidiInfo(rom); // decoded bliptoaster SIG block (null when the marker is absent)
+    const info = blipToasterInfo(rom); // decoded bliptoaster SIG block (null when the marker is absent)
     if (!info) return null;
-    return `${EVERMIDI_MARKER} v${info.semver.join(".")}`; // marker doubles as the display name
+    return `${BLIPTOASTER_MARKER} v${info.semver.join(".")}`; // marker doubles as the display name
   },
 };
 
@@ -176,7 +176,7 @@ export const TRACKER_INTEGRATIONS: TrackerIntegration[] = [
   lsdjIntegration,
   risaIntegration,
   smsggdjIntegration,
-  everMidiIntegration,
+  blipToasterIntegration,
 ];
 
 /** The tracker integration for a system, resolved from its attached roles (the first role whose kind is an

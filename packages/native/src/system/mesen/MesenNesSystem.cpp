@@ -264,7 +264,7 @@ void MesenNesSystem::setRegion(std::uint32_t region) {
     // the region in _region and Reset() reuses that cached value, while the only refresh points are
     // LoadRom() and RunFrame() - and this integration drives cpu->Exec() directly, so RunFrame never runs.
     // Without the explicit UpdateRegion the console silently keeps its old timing, and a ROM that measures
-    // the frame length to detect PAL (EverMIDI does) goes on tuning itself for the previous region.
+    // the frame length to detect PAL (BlipToaster does) goes on tuning itself for the previous region.
     if (emu_) {
         emu_->GetSettings()->GetNesConfig().Region = static_cast<ConsoleRegion>(region);
         if (auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get())) {

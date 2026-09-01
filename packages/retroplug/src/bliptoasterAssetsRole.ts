@@ -1,12 +1,12 @@
-// The `evermidi-assets` feature role: a per-system, NON-DESTRUCTIVE list of EverMIDI ROM asset overrides
-// (a replaced theme / DMC kit / CHR font) — the EverMIDI twin of ./risaAssetsRole.ts. It carries NO DSP
+// The `bliptoaster-assets` feature role: a per-system, NON-DESTRUCTIVE list of BlipToaster ROM asset overrides
+// (a replaced theme / DMC kit / CHR font) — the BlipToaster twin of ./risaAssetsRole.ts. It carries NO DSP
 // behaviour: the base `.nes` on disk is never touched; the overrides are folded into the base ROM in memory
 // at CONSTRUCT time (the onConstruct hook), so `effective ROM = base ROM + overrides`, rebuilt on every load.
 // The override manifest is the persisted source of truth (it round-trips through the project's role config).
 // THEMES are palette indices, stored INLINE as a readable object (no file, no base64), like risa. KITS and
 // FONTS are binary, so they LINK their bank file on disk by path — a pre-built 8 KB `.rkit` DMC bank / an
 // 8 KB `.chr` CHR bank, read at construct (kit compilation is offline, like risa). A kit override with
-// `erase: true` empties the slot instead. Applying reuses the pure-TS patcher (src/evermidi/rom).
+// `erase: true` empties the slot instead. Applying reuses the pure-TS patcher (src/bliptoaster/rom).
 import type { RoleRegistry, ConstructCaps } from "./systemRoles";
 import type { ConstructSpec } from "./backend";
 import { z } from "./configSchema";
@@ -19,14 +19,14 @@ import {
   normalizeTheme,
   type RisaTheme,
 } from "./risa/rom";
-import { EverMidiRom } from "./evermidi/rom";
+import { BlipToasterRom } from "./bliptoaster/rom";
 
-export const EVERMIDI_ASSETS_ROLE = "bliptoaster-assets";
+export const BLIPTOASTER_ASSETS_ROLE = "bliptoaster-assets";
 
 /** One asset override for `slot`. KITS and FONTS are binary, so they LINK their file on disk by `path` (a
  *  pre-built 8 KB `.rkit` DMC bank / an 8 KB `.chr` CHR bank, read at construct). A kit override with
  *  `erase: true` empties the slot instead of linking a bank. `name` is a display label. */
-export interface EverMidiAssetOverride {
+export interface BlipToasterAssetOverride {
   type: "theme" | "font" | "kit";
   slot: number;
   name?: string;
@@ -54,20 +54,20 @@ const overrideSchema = z.object({
   erase: z.boolean().optional(),
 });
 
-// The role config: just the override list (empty by default — an EverMIDI cart with no replacements).
-const everMidiAssetsSchema = z.object({
+// The role config: just the override list (empty by default — an BlipToaster cart with no replacements).
+const blipToasterAssetsSchema = z.object({
   overrides: z.array(overrideSchema).default([]),
 });
 
-/** Read the override list off a system's `evermidi-assets` role config (empty when absent/invalid). */
-export function readOverrides(config: Record<string, unknown> | undefined): EverMidiAssetOverride[] {
+/** Read the override list off a system's `bliptoaster-assets` role config (empty when absent/invalid). */
+export function readOverrides(config: Record<string, unknown> | undefined): BlipToasterAssetOverride[] {
   const raw = config?.overrides;
-  return Array.isArray(raw) ? (raw as EverMidiAssetOverride[]) : [];
+  return Array.isArray(raw) ? (raw as BlipToasterAssetOverride[]) : [];
 }
 
-// Apply one override onto an open EverMidiRom. Isolated + throwing so the caller can try/catch per entry
+// Apply one override onto an open BlipToasterRom. Isolated + throwing so the caller can try/catch per entry
 // (a moved file / bad asset just skips).
-function applyOne(rom: EverMidiRom, ov: EverMidiAssetOverride, caps: ConstructCaps): void {
+function applyOne(rom: BlipToasterRom, ov: BlipToasterAssetOverride, caps: ConstructCaps): void {
   if (ov.type === "theme") {
     if (!ov.theme) throw new Error(`theme override slot ${ov.slot}: no theme`);
     const theme = normalizeTheme(ov.theme);
@@ -96,22 +96,22 @@ function applyOne(rom: EverMidiRom, ov: EverMidiAssetOverride, caps: ConstructCa
 }
 
 /** Fold a list of overrides onto base ROM bytes, returning the patched image (per-override try/catch so a
- *  bad entry just skips). Returns the base unchanged if it isn't an EverMIDI image. */
+ *  bad entry just skips). Returns the base unchanged if it isn't an BlipToaster image. */
 export function applyOverridesToRom(
   baseBytes: Uint8Array,
-  overrides: EverMidiAssetOverride[],
+  overrides: BlipToasterAssetOverride[],
   caps: ConstructCaps,
-  onSkip?: (ov: EverMidiAssetOverride, message: string) => void,
+  onSkip?: (ov: BlipToasterAssetOverride, message: string) => void,
 ): Uint8Array {
-  const rom = EverMidiRom.fromBytes(baseBytes);
-  if (!rom.isEverMidi) return baseBytes;
+  const rom = BlipToasterRom.fromBytes(baseBytes);
+  if (!rom.isBlipToaster) return baseBytes;
   for (const ov of overrides) {
     try {
       applyOne(rom, ov, caps);
     } catch (e) {
       const msg = (e as Error).message;
       if (onSkip) onSkip(ov, msg);
-      else console.log(`[evermidi-assets] skipped ${ov.type} slot ${ov.slot}: ${msg}`);
+      else console.log(`[bliptoaster-assets] skipped ${ov.type} slot ${ov.slot}: ${msg}`);
     }
   }
   return rom.bytes();
@@ -128,13 +128,13 @@ function applyAssetOverrides(spec: ConstructSpec, caps: ConstructCaps, config: R
   return patched !== base ? { ...spec, romBytes: patched } : spec;
 }
 
-/** Register the `evermidi-assets` feature role (no DSP behaviour; a construct-time asset patcher). */
-export function registerEverMidiAssetsRole(registry: RoleRegistry): void {
+/** Register the `bliptoaster-assets` feature role (no DSP behaviour; a construct-time asset patcher). */
+export function registerBlipToasterAssetsRole(registry: RoleRegistry): void {
   registry.registerRole({
-    kind: EVERMIDI_ASSETS_ROLE,
+    kind: BLIPTOASTER_ASSETS_ROLE,
     category: "feature",
     scope: "system",
-    schema: everMidiAssetsSchema,
+    schema: blipToasterAssetsSchema,
     onConstruct: applyAssetOverrides,
   });
 }

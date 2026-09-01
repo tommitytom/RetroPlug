@@ -1,5 +1,5 @@
 // The retroplug-cli SDK's public TypeScript interface — the curated contract shipped to consumer repos
-// (e.g. evermidi) as `retroplug-cli.d.ts`, sitting next to the pre-bundled `retroplug-cli.js`. A test
+// (e.g. bliptoaster) as `retroplug-cli.d.ts`, sitting next to the pre-bundled `retroplug-cli.js`. A test
 // author imports named symbols from the `.js`; tsc (moduleResolution "bundler") resolves the types here.
 //
 // This is a HAND-CURATED public surface, not a mechanical dump of the whole package — it types exactly

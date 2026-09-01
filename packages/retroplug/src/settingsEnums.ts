@@ -88,7 +88,7 @@ export type ConsoleRegion = (typeof REGION_VALUES)[number];
 // NES per-channel export mode (spec/10 §5/§5b): mix=0, stereoModPins=1, pinsPlusRef=2, individualMono=3.
 // Cartridge-accuracy switches. "chip" is the documented hardware behaviour and the default; "n8" matches
 // an Everdrive N8 Pro's FPGA cores, which measurably differ, so software developed against that cartridge
-// (EverMIDI) sounds the same in the emulator as on the console. Both are per-system and live.
+// (BlipToaster) sounds the same in the emulator as on the console. Both are per-system and live.
 //   s5bNoise "n8"       - the 5B has no noise generator there, so tone-AND-noise mutes the channel
 //   mmc5PhaseReset "n8" - a $5003/$5007 write does not restart the pulse duty sequencer there
 export const CARTRIDGE_ACCURACY_VALUES = ["chip", "n8"] as const;

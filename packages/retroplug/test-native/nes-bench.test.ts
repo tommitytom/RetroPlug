@@ -60,7 +60,7 @@ type Ev = { block: number; msg: number[] };
 const noteOn = (ch: number, note: number, vel: number): number[] => [0x90 | ch, note, vel];
 const noteOff = (ch: number, note: number): number[] => [0x80 | ch, note, 0];
 
-// bliptoaster.nes voice map (reference_evermidi): MIDI ch1(0) → Pulse1, ch3(2) → Triangle, ch4(3) → Noise
+// bliptoaster.nes voice map (reference_bliptoaster): MIDI ch1(0) → Pulse1, ch3(2) → Triangle, ch4(3) → Noise
 // (ch2 is a known-broken ROM voice — driving it is harmless, it just doubles onto Pulse1). The Mesen core
 // steps its whole CPU/PPU/APU each block regardless of which voices ring, so this drives audible voices for
 // realism; the per-block core cost is what we're measuring.

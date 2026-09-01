@@ -17,7 +17,7 @@ export { lsdjAssetCatalog } from "./lsdjAssetCatalog";
 export { risaAssetCatalog } from "./risaAssetCatalog";
 export { smsggdjSongCatalog } from "./smsggdjSongCatalog";
 export { smsggdjAssetCatalog } from "./smsggdjAssetCatalog";
-export { evermidiAssetCatalog } from "./evermidiAssetCatalog";
+export { bliptoasterAssetCatalog } from "./bliptoasterAssetCatalog";
 
 export {
   mutateLiveSav,

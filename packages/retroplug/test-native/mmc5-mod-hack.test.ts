@@ -1,4 +1,4 @@
-// Guards Mesen's MMC5 pulse under EverMIDI's "MOD hack" (CC115 on, CC116 rate), which re-writes the pulse
+// Guards Mesen's MMC5 pulse under BlipToaster's "MOD hack" (CC115 on, CC116 rate), which re-writes the pulse
 // HI register from the idle loop to reset the duty phase.
 //
 // The bug this locks down: SquareChannel::WriteRam used to run `if(!_isMmc5Square) UpdateOutput();`, so an
@@ -41,7 +41,7 @@ const MMC5_ROM = "/workspaces/evermidi/rom/build/bliptoaster-mmc5.nes";
 //   C4  -240.00 dBFS (digital silence) -> -27.71     hardware: -31.50
 //   C2  -240.00 dBFS (digital silence) -> -32.32     hardware: -31.51
 
-const CH_MMC5 = 6; // EverMIDI's MMC5 Pulse 1 (BASE01)
+const CH_MMC5 = 6; // BlipToaster's MMC5 Pulse 1 (BASE01)
 const CH_2A03 = 1; // 2A03 Pulse 1 - the unfloored reference the ROM compares against
 
 const cc = (ch: number, num: number, val: number) => [0xb0 | (ch - 1), num, val];
@@ -97,7 +97,7 @@ test("MMC5 MOD hack: Mesen thins the pulse as the reset rate rises (hardware doe
   }
   const id = s.project.systems.addSystem(MMC5_ROM);
   if (id == null) throw new Error("addSystem failed");
-  // PAL, to match the bench NES these numbers are compared against (EverMIDI times a frame to detect the
+  // PAL, to match the bench NES these numbers are compared against (BlipToaster times a frame to detect the
   // region and picks its PAL tuning table). This only reaches the core since the UpdateRegion fix - see
   // nes-region-apply.test.ts, which probes the APU timer period because rms cannot see a region change.
   // mmc5PhaseReset "chip" explicitly: the DEFAULT is "n8" (no phase reset at all, which is what the

@@ -95,10 +95,10 @@ Direct device memory + FIFO. Key N8 addresses: cart battery RAM `0x1000000`, liv
 ## 2b. Drive a ROM with MIDI (`n8-play`)
 
 `retroplug-cli n8-play [--serial <port>] [--exp-vol <0-255>] <step>...` plays a **scripted** MIDI
-sequence into the cart FIFO, so an EverMIDI check is one reproducible command with no controller
+sequence into the cart FIFO, so an BlipToaster check is one reproducible command with no controller
 attached. (`n8-bridge` is the live twin, and needs a real MIDI input port.)
 
-Steps are 1-based on MIDI channel, matching the EverMIDI monitor's `CH` column:
+Steps are 1-based on MIDI channel, matching the BlipToaster monitor's `CH` column:
 `on:<ch>:<note>[:<vel>]`, `off:<ch>:<note>`, `cc:<ch>:<num>:<val>`, `wait:<ms>`.
 
 ```sh
@@ -110,9 +110,9 @@ retroplug-cli n8-play --exp-vol 128 cc:6:29:80 cc:6:28:64 cc:6:20:127 on:6:69 wa
   FPGA master volume (`0x1800023`, 0 mute / 128 unity / 255 2x), which the N8 mixes expansion audio
   through. Get it wrong and every expansion voice is silent no matter how correct the ROM is - a
   trap that reads exactly like a chip bug. Write-only and live-only (applies to the running cart).
-- EverMIDI **drops its first MIDI message after boot**; `n8-play` sends a priming CC automatically
+- BlipToaster **drops its first MIDI message after boot**; `n8-play` sends a priming CC automatically
   (`--prime off` to skip).
-- **Confirm receipt independently of audio:** grab a video frame while a note is held. The EverMIDI
+- **Confirm receipt independently of audio:** grab a video frame while a note is held. The BlipToaster
   monitor lights the channel's note dot and shows `KEY`/`LEVEL`, which proves the FIFO -> parse path
   worked even when you hear nothing.
 
@@ -178,7 +178,7 @@ on-screen text, or watch a game's state. (`/dev/video1` is the same card's secon
    `retroplug-cli analyze-capture <wav> --channel 3`.
 5. If it wedges or the menu goes OOM: `nes-power.sh reset` and retry.
 
-Always take a **known-good control** in the same session before believing a negative. For EverMIDI
+Always take a **known-good control** in the same session before believing a negative. For BlipToaster
 that's a 2A03 note (`n8-play on:1:69 wait:2500 off:1:69` -> ch3 should read ~440 Hz within a few
 cents): it proves the FIFO, the ROM, the analog path and the capture all work, so a silent expansion
 chip is a real finding and not a broken rig. For an **expansion** chip take the control on that side

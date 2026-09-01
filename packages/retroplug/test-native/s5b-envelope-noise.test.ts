@@ -1,7 +1,7 @@
 // Sunsoft 5B hardware envelope + noise, which Mesen's Sunsoft5bAudio did not implement at all: the
 // IsEnvelopeEnabled / IsNoiseEnabled / GetNoisePeriod accessors existed but were never called, so
 // UpdateOutputLevel summed tone only. Envelope mode (amp bit 4) therefore read as volume 0 = SILENT, and
-// both noise CCs were inert. That is why EverMIDI has no automated tests for either.
+// both noise CCs were inert. That is why BlipToaster has no automated tests for either.
 //
 // Now implemented from nesdev.org/wiki/Sunsoft_5B_audio: a 17-bit LFSR (taps 16/13) at Clock/(32*period),
 // a 32-step envelope at Clock/(16*period) with the Continue/Attack/Alternate/Hold shape bits, and the real
@@ -22,7 +22,7 @@ import { Timeline, renderTimeline } from "../cli/timeline";
 
 
 const S5B_ROM = "/workspaces/evermidi/rom/build/bliptoaster-s5b.nes";
-const CH = 6; // EverMIDI's S5B Square A (BASE01)
+const CH = 6; // BlipToaster's S5B Square A (BASE01)
 const A4 = 69;
 
 const cc = (num: number, val: number) => [0xb0 | (CH - 1), num, val];
@@ -96,7 +96,7 @@ test("S5B noise: the chip default gates the tone with the LFSR instead of ignori
   const s = boot();
   if (!s) { console.log(`# SKIP s5b: no ROM at ${S5B_ROM}`); return; }
 
-  // CC1 must come AFTER the note: EverMIDI's s5b_note_on unconditionally sets the noise-disable bit, so a
+  // CC1 must come AFTER the note: BlipToaster's s5b_note_on unconditionally sets the noise-disable bit, so a
   // CC1 sent before a note-on is clobbered by it (a ROM bug, reported separately).
   const tl = new Timeline()
     .midi(20, cc(20, 0))

@@ -1,4 +1,4 @@
-// EverMIDI ROM detection. EverMIDI is an NROM cart whose iNES header is indistinguishable from any other
+// BlipToaster ROM detection. BlipToaster is an NROM cart whose iNES header is indistinguishable from any other
 // NROM game (no mapper/battery fingerprint like risa, no cartridge-title field like Game Boy). So it embeds
 // a fixed ASCII marker "bliptoaster" at the ROM head ($8000, file offset 0x10; see the SIG segment in the
 // ROM repo's rom/src/core/sig.s), followed by a 3-byte semantic version. We detect it by scanning the
@@ -17,36 +17,36 @@
 // deliberately NOT detected — there is no fallback.
 
 /** The BlipToaster detection marker, which is also the ROM's display name. */
-export const EVERMIDI_MARKER = "bliptoaster";
-const EVERMIDI_SCAN_LEN = 0x150;
+export const BLIPTOASTER_MARKER = "bliptoaster";
+const BLIPTOASTER_SCAN_LEN = 0x150;
 
-export interface EverMidiInfo {
+export interface BlipToasterInfo {
   /** Semantic version [major, minor, patch]. */
   semver: [number, number, number];
 }
 
-/** Decode the EverMIDI SIG block from a ROM header prefix, or null if the marker is absent. Scans the first
+/** Decode the BlipToaster SIG block from a ROM header prefix, or null if the marker is absent. Scans the first
  *  0x150 bytes for the tag, then reads the 3-byte semver after it. Reads at most the header prefix, so the
  *  short RomContext header is enough. */
-export function everMidiInfo(header: Uint8Array): EverMidiInfo | null {
-  const limit = Math.min(header.length, EVERMIDI_SCAN_LEN);
-  for (let i = 0; i + EVERMIDI_MARKER.length < limit; i++) {
+export function blipToasterInfo(header: Uint8Array): BlipToasterInfo | null {
+  const limit = Math.min(header.length, BLIPTOASTER_SCAN_LEN);
+  for (let i = 0; i + BLIPTOASTER_MARKER.length < limit; i++) {
     let hit = true;
-    for (let j = 0; j < EVERMIDI_MARKER.length; j++) {
-      if (header[i + j] !== EVERMIDI_MARKER.charCodeAt(j)) {
+    for (let j = 0; j < BLIPTOASTER_MARKER.length; j++) {
+      if (header[i + j] !== BLIPTOASTER_MARKER.charCodeAt(j)) {
         hit = false;
         break;
       }
     }
     if (!hit) continue;
 
-    const base = i + EVERMIDI_MARKER.length; // first byte after the marker = semver major
+    const base = i + BLIPTOASTER_MARKER.length; // first byte after the marker = semver major
     return { semver: [header[base], header[base + 1], header[base + 2]] };
   }
   return null;
 }
 
-/** True if `header` (the ROM prefix) carries the EverMIDI marker. */
-export function isEverMidiRomHeader(header: Uint8Array): boolean {
-  return everMidiInfo(header) !== null;
+/** True if `header` (the ROM prefix) carries the BlipToaster marker. */
+export function isBlipToasterRomHeader(header: Uint8Array): boolean {
+  return blipToasterInfo(header) !== null;
 }

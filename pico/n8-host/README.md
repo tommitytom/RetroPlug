@@ -67,7 +67,7 @@ sudo openocd -f interface/cmsis-dap.cfg -f target/rp2350.cfg \
 sudo stty -F /dev/ttyDbgProbe 115200 raw -echo && cat /dev/ttyDbgProbe
 ```
 
-On boot you see the Edio probe (reads work), then `boot_evermidi()` tries the menu handshake:
+On boot you see the Edio probe (reads work), then `boot_bliptoaster()` tries the menu handshake:
 
 ```
 [n8-host] device mounted: addr 1  VID:PID 38df:0017   <- N8!
@@ -79,7 +79,7 @@ On boot you see the Edio probe (reads work), then `boot_evermidi()` tries the me
 ```
 
 Over PIO-USB the `*t` handshake never gets its `k` reply, because the FIFO write it rides on
-doesn't reach the N8's running code (slice 2.3, above) - so `boot_evermidi()` gives up and the
+doesn't reach the N8's running code (slice 2.3, above) - so `boot_bliptoaster()` gives up and the
 bridge forwards MIDI that also never lands. The reads (probe, `CMD_STATUS`, `SYS_INF`, `memRD`)
 all work. `midi_to_fifo()` forwards only channel-voice messages (`0x80-0xEF`), dropping clock /
 sensing / transport / aftertouch so they can't flood the FIFO; `sniff_report()` is read-only.

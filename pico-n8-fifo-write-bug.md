@@ -17,7 +17,7 @@ The N8 menu answers `*t`->`k` / `*v`->2064 bytes when driven by the host
 
 Consequence: every earlier "hardware-verified" result for the Pico bridge (repeating note,
 "261 Hz audio", the play trace) was actually the **host's** residual note - the N8 was hot-moved
-from the host to the Pico while EverMIDI held that note. The Pico never drove it.
+from the host to the Pico while BlipToaster held that note. The Pico never drove it.
 
 ## What works from the Pico
 USB enumeration + CDC mount; `CMD_STATUS` (0 at menu / non-zero running); `SYS_INF`;
@@ -125,5 +125,5 @@ and should be corrected.
 
 ## Repro from this tree
 `pico/n8-host/` (build with `PICO_SDK_PATH` + `cmake --build build`, flash over SWD). The current
-`boot_evermidi()` runs the minimal diagnostic (SRM round-trip + one clean `*t`) on mount. The N8
+`boot_bliptoaster()` runs the minimal diagnostic (SRM round-trip + one clean `*t`) on mount. The N8
 must be at its menu (power-cycle first). Console on `/dev/ttyDbgProbe` @ 115200.

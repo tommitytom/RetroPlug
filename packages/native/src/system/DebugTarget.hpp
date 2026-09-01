@@ -131,7 +131,7 @@ struct ApuDmcState {
     double        sampleRate     = 0.0;    // Hz
 };
 
-// The five NES APU channels' decoded state. Channel names follow NES/evermidi
+// The five NES APU channels' decoded state. Channel names follow NES/bliptoaster
 // convention (pulse1/pulse2), not Mesen's Square1/Square2.
 struct ApuState {
     ApuSquareState   pulse1;

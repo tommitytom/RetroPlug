@@ -18,7 +18,7 @@
 // set = no data, clear = data ready. Bytes pushed via `pushByte` (host-MIDI
 // bytes for n8-midi) become available to the ROM on the next `lda $40F0`.
 //
-// Register addresses confirmed against old/evermidi/rom/everdrive.h. The
+// Register addresses confirmed against old/bliptoaster/rom/everdrive.h. The
 // legacy MesenComponents.h had a stale 0x4150/0x4151 — the values here
 // are correct.
 

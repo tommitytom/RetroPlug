@@ -1,6 +1,6 @@
 // `retroplug-cli n8-bridge` / `n8-sync` - stream live MIDI to a physical Everdrive N8 Pro over USB, entirely
 // in TS (these replaced the native subcommands). `n8-bridge` forwards raw MIDI to the cart FIFO (for the
-// EverMIDI ROM); `n8-sync` translates a MIDI clock/transport into risa host-sync bytes (via the pure-TS
+// BlipToaster ROM); `n8-sync` translates a MIDI clock/transport into risa host-sync bytes (via the pure-TS
 // RisaSyncTranslator). Both are long-running: they open the serial (createN8) + MIDI (createMidiClient)
 // facets, call keepAlive(), and run an event-driven poll loop (setInterval) until Ctrl-C - the native
 // launcher pumps it (see cli/main.cpp).
@@ -98,7 +98,7 @@ const BRIDGE_HELP = [
   "usage: retroplug-cli n8-bridge [--list] [--midi-in <name>] [--serial <port>] [--lookahead-ms <N>]",
   "",
   "  Stream live MIDI straight to a physical Everdrive N8 Pro's cart FIFO over USB, so a controller / DAW",
-  "  plays the real NES (for the EverMIDI ROM). Runs until Ctrl-C.",
+  "  plays the real NES (for the BlipToaster ROM). Runs until Ctrl-C.",
   "",
   ...COMMON_FLAGS,
 ].join("\n");

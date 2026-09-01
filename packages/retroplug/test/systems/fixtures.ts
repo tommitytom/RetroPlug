@@ -142,10 +142,10 @@ export function risaRomFull(): Uint8Array {
   return rom;
 }
 
-/** A full-size synthetic EverMIDI ROM (16 + 32 KB PRG + 8 KB CHR = 0xA010, NROM) carrying the "bliptoaster"
+/** A full-size synthetic BlipToaster ROM (16 + 32 KB PRG + 8 KB CHR = 0xA010, NROM) carrying the "bliptoaster"
  *  marker at the ROM head + one populated DMC kit at $C000 (PRG offset 0x4000) + a distinct CHR font region.
- *  Enough for EverMidiRom.isEverMidi + kit/font read/patch; the PRG body is otherwise zeros. */
-export function everMidiRom(): Uint8Array {
+ *  Enough for BlipToasterRom.isBlipToaster + kit/font read/patch; the PRG body is otherwise zeros. */
+export function blipToasterRom(): Uint8Array {
   const PRG = 0x8000; // 2 × 16 KB (NROM, 32 KB)
   const CHR = 0x2000; // 1 × 8 KB
   const rom = new Uint8Array(0x10 + PRG + CHR);
@@ -154,7 +154,7 @@ export function everMidiRom(): Uint8Array {
   rom[5] = 0x01; // 1 × 8 KB CHR
   rom[6] = 0x01; // vertical mirroring, mapper 0 (NROM)
 
-  // The EverMIDI SIG block at the ROM head ($8000 = file offset 0x10), as the SIG segment bakes it:
+  // The BlipToaster SIG block at the ROM head ($8000 = file offset 0x10), as the SIG segment bakes it:
   // the "bliptoaster" marker (also the display name) + semver(0.1.0).
   const MARK = "bliptoaster";
   for (let i = 0; i < MARK.length; i++) rom[0x10 + i] = MARK.charCodeAt(i);
@@ -185,12 +185,12 @@ export function everMidiRom(): Uint8Array {
   return rom;
 }
 
-/** A full-size synthetic EverMIDI BANKING ROM (16 + 256 KB PRG + 8 KB CHR, mapper 69 / FME-7) carrying the
+/** A full-size synthetic BlipToaster BANKING ROM (16 + 256 KB PRG + 8 KB CHR, mapper 69 / FME-7) carrying the
  *  "bliptoaster" marker + theme table + one populated DMC kit in slot 0, with slots 1..15 reserved (unpopulated)
- *  — the multi-kit twin of everMidiRom(). The banking header (PRG 16 × 16 KB, mapper != 0) drives
- *  EverMidiRom.kitBankCapacity() to 16, so the assets menu goes addable/16-slot. Kit slot k sits at PRG
+ *  — the multi-kit twin of blipToasterRom(). The banking header (PRG 16 × 16 KB, mapper != 0) drives
+ *  BlipToasterRom.kitBankCapacity() to 16, so the assets menu goes addable/16-slot. Kit slot k sits at PRG
  *  offset 0x4000 + k*0x2000 (banks 2..17), the same as the real nes-banked.cfg. */
-export function everMidiMultiKitRom(): Uint8Array {
+export function blipToasterMultiKitRom(): Uint8Array {
   const PRG = 0x40000; // 16 × 16 KB (256 KB banking build)
   const CHR = 0x2000; // 1 × 8 KB
   const rom = new Uint8Array(0x10 + PRG + CHR);
@@ -205,7 +205,7 @@ export function everMidiMultiKitRom(): Uint8Array {
   let p = 0x10 + MARK.length;
   rom[p++] = 0x00; rom[p++] = 0x01; rom[p++] = 0x00; // semantic version 0.1.0
 
-  // Theme table in the code region (same layout as everMidiRom()).
+  // Theme table in the code region (same layout as blipToasterRom()).
   const themeOffset = 0x100;
   rom.set([0xa5, 0x5a, 0x54, 0x48, 0x4d, 0x45], themeOffset); // THEME_META_MAGIC
   rom.set([0x0d, 0x30, 0x00, 0x10, 0x30, 0x21, 0x11], themeOffset + 6); // record 0

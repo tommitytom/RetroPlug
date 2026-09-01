@@ -1,15 +1,15 @@
-// EverMidiRom — a pure-TS view/patcher over an EverMIDI (NROM) .nes image, the EverMIDI twin of
+// BlipToasterRom — a pure-TS view/patcher over an BlipToaster (NROM) .nes image, the BlipToaster twin of
 // ../../risa/rom/rom.ts. A .nes is mostly opaque code, so this reads/patches only the replaceable asset
 // regions — the baked DMC kit bank and the CHR font — leaving everything else byte-identical. Construct
 // with fromBytes (clones, so the caller's buffer is never mutated); after patching hand bytes() to the
-// evermidi-assets role's spec.romBytes channel (the on-disk .nes is never rewritten).
+// bliptoaster-assets role's spec.romBytes channel (the on-disk .nes is never rewritten).
 //
-// EverMIDI is NROM: a flat 32 KB PRG with one DPCM kit bank baked at CPU $C000 (PRG offset 0x4000; the KIT
-// region in the evermidi repo's rom/nes.cfg) and the CHR after PRG. Unlike risa there is NO kit-metadata
+// BlipToaster is NROM: a flat 32 KB PRG with one DPCM kit bank baked at CPU $C000 (PRG offset 0x4000; the KIT
+// region in the bliptoaster repo's rom/nes.cfg) and the CHR after PRG. Unlike risa there is NO kit-metadata
 // mirror (the ROM reads the kit index directly at boot), so setKit is a plain bank splice. The kit + font
 // FORMATS are identical to risa's, so the pure codecs (bankToModel + the 8 KB bank / CHR layout) are reused.
 
-import { isEverMidiRomHeader } from "../romDetect";
+import { isBlipToasterRomHeader } from "../romDetect";
 import {
   HEADER_SIZE,
   PRG_16K_SIZE,
@@ -27,16 +27,16 @@ import {
   type RisaTheme,
 } from "../../risa/rom";
 
-// EverMIDI bakes kit slot 0 at CPU $C000 = PRG offset 0x4000 (the KIT region in evermidi/rom/nes*.cfg). On a
+// BlipToaster bakes kit slot 0 at CPU $C000 = PRG offset 0x4000 (the KIT region in bliptoaster/rom/nes*.cfg). On a
 // banking build the switchable window at $C000-$DFFF steps through 8K PRG banks 2..17, so slot k sits at
 // 0x4000 + k*0x2000 (contiguous with slot 0) — the same arithmetic as risa's kitBankOffset.
 const KIT_CPU_OFFSET = 0x4000;
 // Banking builds (VRC6/VRC7/S5B/FME-7/N163) carry up to 16 switchable kit banks (the ROM's CC_DMC_BANK +
 // nes-banked.cfg); NROM has no PRG banking, so its $C000 kit is fixed and it stays single-kit.
-const EVERMIDI_MAX_KITS = 16;
-// EverMIDI bakes a single risa-format theme (its UI is one 2-color screen). The 7-role record uses the
+const BLIPTOASTER_MAX_KITS = 16;
+// BlipToaster bakes a single risa-format theme (its UI is one 2-color screen). The 7-role record uses the
 // same theme.ts codec as risa; the table lives in RODATA (the code region, before the kit).
-const EVERMIDI_THEME_COUNT = 1;
+const BLIPTOASTER_THEME_COUNT = 1;
 
 interface Layout {
   kitOffset: number;
@@ -67,17 +67,17 @@ function computeKitCapacity(bytes: Uint8Array): number {
   if (readMapper(bytes) === 0) return 1;
   const prg8kBanks = bytes[4] * 2;
   const kitBanks = prg8kBanks - 2 /* code */ - 1 /* fixed reset/vectors */;
-  return Math.max(1, Math.min(EVERMIDI_MAX_KITS, kitBanks));
+  return Math.max(1, Math.min(BLIPTOASTER_MAX_KITS, kitBanks));
 }
 
-export class EverMidiRom {
+export class BlipToasterRom {
   private readonly layout: Layout | null;
   private readonly markerOk: boolean;
   private readonly themeMetaOffset: number; // -1 when absent
   private readonly kitCapacity: number; // switchable kit banks (1 on NROM, up to 16 on a banking build)
 
   private constructor(private readonly rom: Uint8Array) {
-    this.markerOk = isEverMidiRomHeader(rom);
+    this.markerOk = isBlipToasterRomHeader(rom);
     this.layout = computeLayout(rom);
     this.kitCapacity = computeKitCapacity(rom);
     // Locate the risa-format theme table by its magic, scanning the code region ($8000-$BFFF, before
@@ -87,14 +87,14 @@ export class EverMidiRom {
   }
 
   /** Wrap a ROM image (cloned, so patches never touch the caller's buffer). */
-  static fromBytes(bytes: Uint8Array): EverMidiRom {
-    return new EverMidiRom(bytes.slice());
+  static fromBytes(bytes: Uint8Array): BlipToasterRom {
+    return new BlipToasterRom(bytes.slice());
   }
 
-  /** True for a recognized EverMIDI image: the marker is present, the layout derives, and the file is big
+  /** True for a recognized BlipToaster image: the marker is present, the layout derives, and the file is big
    *  enough for its regions. NOT an exact-size check — the on-cart CHR region can exceed the header's
-   *  declared CHR size (EverMIDI reserves 16 KB CHR but declares one 8 KB bank). */
-  get isEverMidi(): boolean {
+   *  declared CHR size (BlipToaster reserves 16 KB CHR but declares one 8 KB bank). */
+  get isBlipToaster(): boolean {
     if (!this.markerOk || this.layout == null) return false;
     return this.rom.length >= this.layout.chrOffset + this.layout.chrSize;
   }
@@ -110,14 +110,14 @@ export class EverMidiRom {
     return this.themeMetaOffset >= 0;
   }
   get themeCount(): number {
-    return EVERMIDI_THEME_COUNT;
+    return BLIPTOASTER_THEME_COUNT;
   }
 
   /** The raw on-ROM bytes of theme `idx`: a 7-byte record + 4-byte name. Null if there's no theme table. */
   getTheme(idx: number): { recordBytes: Uint8Array; nameBytes: Uint8Array } | null {
     if (!this.hasThemes) return null;
     const recordBase = this.themeMetaOffset + THEME_META_MAGIC.length;
-    const namesOff = recordBase + EVERMIDI_THEME_COUNT * THEME_RECORD_SIZE;
+    const namesOff = recordBase + BLIPTOASTER_THEME_COUNT * THEME_RECORD_SIZE;
     return {
       recordBytes: this.rom.slice(recordBase + idx * THEME_RECORD_SIZE, recordBase + (idx + 1) * THEME_RECORD_SIZE),
       nameBytes: this.rom.slice(namesOff + idx * THEME_NAME_SIZE, namesOff + (idx + 1) * THEME_NAME_SIZE),
@@ -128,7 +128,7 @@ export class EverMidiRom {
   setTheme(idx: number, recordBytes: Uint8Array, nameBytes: Uint8Array): void {
     if (!this.hasThemes) return;
     const recordBase = this.themeMetaOffset + THEME_META_MAGIC.length;
-    const namesOff = recordBase + EVERMIDI_THEME_COUNT * THEME_RECORD_SIZE;
+    const namesOff = recordBase + BLIPTOASTER_THEME_COUNT * THEME_RECORD_SIZE;
     this.rom.set(recordBytes.subarray(0, THEME_RECORD_SIZE), recordBase + idx * THEME_RECORD_SIZE);
     this.rom.set(nameBytes.subarray(0, THEME_NAME_SIZE), namesOff + idx * THEME_NAME_SIZE);
   }
@@ -137,7 +137,7 @@ export class EverMidiRom {
   themes(): { slot: number; theme: RisaTheme }[] {
     if (!this.hasThemes) return [];
     const out: { slot: number; theme: RisaTheme }[] = [];
-    for (let i = 0; i < EVERMIDI_THEME_COUNT; i++) {
+    for (let i = 0; i < BLIPTOASTER_THEME_COUNT; i++) {
       const t = this.getTheme(i)!;
       out.push({ slot: i, theme: decodeThemeFromRom(t.recordBytes, t.nameBytes) });
     }
@@ -225,7 +225,7 @@ export class EverMidiRom {
     this.rom.set(bank.subarray(0, KIT_BANK_SIZE), this.kitBankOffset(idx));
   }
 
-  /** Splice a compiled 8 KB kit bank into slot `idx`. EverMIDI reads the kit index directly at boot, so
+  /** Splice a compiled 8 KB kit bank into slot `idx`. BlipToaster reads the kit index directly at boot, so
    *  there's no resident metadata mirror to update (unlike risa's setKit) — this is just the bank splice. */
   setKit(idx: number, bank: Uint8Array): void {
     this.setKitBank(idx, bank);

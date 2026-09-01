@@ -24,7 +24,7 @@ export interface CliTool {
 import { renderTool } from "./sessions/render";
 import { lsdjRomTool } from "./sessions/lsdj-rom";
 import { risaRomTool } from "./sessions/risa-rom";
-import { everMidiRomTool } from "./sessions/evermidi-rom";
+import { blipToasterRomTool } from "./sessions/bliptoaster-rom";
 import { n8LoadTool } from "./sessions/n8-load";
 import { n8BridgeTool, n8SyncTool } from "./sessions/n8-bridge";
 import { n8PlayTool } from "./sessions/n8-play";
@@ -36,7 +36,7 @@ export const tools: CliTool[] = [
   renderTool,
   lsdjRomTool,
   risaRomTool,
-  everMidiRomTool,
+  blipToasterRomTool,
   n8LoadTool,
   n8BridgeTool,
   n8SyncTool,
