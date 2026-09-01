@@ -1,10 +1,10 @@
 // C1: host MIDI drives a NES core. The whole path end-to-end against a REAL Mesen core — routing →
 // the nes-n8-midi role → the emitCoreMidi sink → Engine fans it to onMidi → the always-attached N8
-// FIFO → n8-midi.nes plays APU Pulse1. Proven by RMS: silent when idle, audible after a ch1 NoteOn.
+// FIFO → bliptoaster.nes plays APU Pulse1. Proven by RMS: silent when idle, audible after a ch1 NoteOn.
 // Also closes the F3 gap (deferred earlier because NES had no audio): the universal gain setting now
 // audibly silences/restores a ringing NES core.
 //
-// NOTE: channel 2 of n8-midi.nes is broken (ROM fixed later) — drive channel 1 only (ch1 → Pulse1).
+// NOTE: channel 2 of bliptoaster.nes is broken (ROM fixed later) — drive channel 1 only (ch1 → Pulse1).
 // A fresh NoteOn is staged before each measurement so the proof doesn't depend on the ROM sustaining.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
@@ -17,7 +17,7 @@ import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 const NOTE_ON_CH1 = [0x90, 60, 100]; // ch1 NoteOn C4 → APU Pulse1
 
 const rms = (a: Float32Array): number => {

@@ -8,7 +8,7 @@ import { assertInTune, assertPitchInTune, spectralFingerprint, assertFingerprint
 import { type ExpansionAudioState } from "../src/backend";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const VRC6 = __REPO_RESOURCES_DIR__ + "/roms/n8-midi-vrc6.nes";
+const VRC6 = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-vrc6.nes";
 const SR = 44100;
 
 function threw(fn: () => void): boolean { try { fn(); return false; } catch { return true; } }

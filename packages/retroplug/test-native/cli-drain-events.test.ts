@@ -10,7 +10,7 @@ import { Timeline, renderTimeline } from "../cli/timeline";
 import type { DebugEvent } from "../src/backend";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("drainEvents captures APU register-write events from a real NES", () => {
   const s = bootSession();

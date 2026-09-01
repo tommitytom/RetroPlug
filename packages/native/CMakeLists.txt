@@ -722,7 +722,7 @@ target_include_directories(retroplug-audio-test PRIVATE
 # the n8-midi NES ROM the NesStems pin test drives (a ch1 note supplies real APU signal).
 target_compile_definitions(retroplug-audio-test PRIVATE
     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
-    RP_N8_MIDI_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/n8-midi.nes"
+    RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
     # smsggdj (MIT, (c) Seb Tomczak / little-scale) in both cartridge shapes. The
     # SMS and GG builds differ in visible geometry and video config, so both are
     # needed to guard the overscan setup. resources/ never ships (release.yml

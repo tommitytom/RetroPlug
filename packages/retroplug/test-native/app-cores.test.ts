@@ -15,9 +15,9 @@ import { buildAppRegistry } from "../src/appHost";
 declare const __RESOURCES_DIR__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
-// n8-midi.nes + the smsggdj pair are committed in-repo; the GBA ROM lives only in the sibling
+// bliptoaster.nes + the smsggdj pair are committed in-repo; the GBA ROM lives only in the sibling
 // resources tree.
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 const GBA = __RESOURCES_DIR__ + "/roms/nanoloop287d.gba";
 const SMS = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
 const GG = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.gg";

@@ -26,8 +26,8 @@
 #include "system/mesen/MesenNesSystem.hpp"
 #include "transport/MidiTypes.hpp"
 
-#ifndef RP_N8_MIDI_ROM_PATH
-#error "RP_N8_MIDI_ROM_PATH must be defined (path to resources/roms/n8-midi.nes)"
+#ifndef RP_BLIPTOASTER_ROM_PATH
+#error "RP_BLIPTOASTER_ROM_PATH must be defined (path to resources/roms/bliptoaster.nes)"
 #endif
 
 namespace {
@@ -38,7 +38,7 @@ constexpr int           kBootBlocks = 90;    // ~1 s: boot + FIFO init before th
 constexpr int           kPlayBlocks = 120;   // ~1.3 s of held note to compare
 
 std::vector<std::uint8_t> readRom() {
-    std::FILE* f = std::fopen(RP_N8_MIDI_ROM_PATH, "rb");
+    std::FILE* f = std::fopen(RP_BLIPTOASTER_ROM_PATH, "rb");
     REQUIRE(f != nullptr);
     std::fseek(f, 0, SEEK_END);
     const long n = std::ftell(f);
@@ -52,7 +52,7 @@ std::vector<std::uint8_t> readRom() {
 
 std::unique_ptr<MesenNesSystem> buildNes(std::uint32_t channelExportMode) {
     MesenNesConfig cfg;
-    cfg.romPath = RP_N8_MIDI_ROM_PATH;
+    cfg.romPath = RP_BLIPTOASTER_ROM_PATH;
     cfg.channelExportMode = channelExportMode;
     auto sys = std::make_unique<MesenNesSystem>(1, cfg, readRom());
     sys->onActivate(kSampleRate);

@@ -12,7 +12,7 @@
 // On-device: bundle via tools/bundle-native-test.mjs nes-bench, set RP_BENCH_ROM to the on-device ROM.
 //
 // Workload knobs (env): RP_BENCH_PROFILE (A|B|C), RP_BENCH_BLOCKS, RP_BENCH_WARMUP, RP_BENCH_SEED,
-// RP_BENCH_ROM (path to a .nes; default the in-tree n8-midi.nes). One test per file (shared native Engine).
+// RP_BENCH_ROM (path to a .nes; default the in-tree bliptoaster.nes). One test per file (shared native Engine).
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
@@ -60,7 +60,7 @@ type Ev = { block: number; msg: number[] };
 const noteOn = (ch: number, note: number, vel: number): number[] => [0x90 | ch, note, vel];
 const noteOff = (ch: number, note: number): number[] => [0x80 | ch, note, 0];
 
-// n8-midi.nes voice map (reference_evermidi): MIDI ch1(0) → Pulse1, ch3(2) → Triangle, ch4(3) → Noise
+// bliptoaster.nes voice map (reference_evermidi): MIDI ch1(0) → Pulse1, ch3(2) → Triangle, ch4(3) → Noise
 // (ch2 is a known-broken ROM voice — driving it is harmless, it just doubles onto Pulse1). The Mesen core
 // steps its whole CPU/PPU/APU each block regardless of which voices ring, so this drives audible voices for
 // realism; the per-block core cost is what we're measuring.
@@ -104,7 +104,7 @@ function buildSchedule(profile: string, blocks: number, seed: number): Ev[] {
 
 test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI workload", () => {
   const be = createRealBackend();
-  const rom = envStr("RP_BENCH_ROM", __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes");
+  const rom = envStr("RP_BENCH_ROM", __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes");
   if (!be.fileExists(rom)) {
     console.warn(`[nes-bench] no ROM at ${rom} — set RP_BENCH_ROM. Skipping.`);
     expect(true).toBeTruthy();

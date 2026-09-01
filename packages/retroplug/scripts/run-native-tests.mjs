@@ -24,7 +24,7 @@ const OUT_DIR = join(PKG, ".native-build");
 // The sibling resources dir (ROMs/manuals/…), overridable — mirrors the repo-wide convention.
 // Injected into the bundle so a test can locate real ROMs by absolute path (native slurps them).
 const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../resources");
-// The in-repo resources dir — a few small ROMs are committed here (e.g. resources/roms/n8-midi.nes)
+// The in-repo resources dir — a few small ROMs are committed here (e.g. resources/roms/bliptoaster.nes)
 // rather than in the sibling tree, so a test can reach them without the sibling being populated.
 const REPO_RESOURCES_DIR = join(REPO, "resources");
 

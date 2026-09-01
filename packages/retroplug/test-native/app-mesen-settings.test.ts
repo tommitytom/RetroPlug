@@ -13,7 +13,7 @@ import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry } from "../src/appHost";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("a NES core boots with a non-default region seeded from its role config (construct blob)", () => {
   const be = createRealBackend();

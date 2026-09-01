@@ -14,7 +14,7 @@ import { encodeWav } from "../cli/wav";
 
 // The FME-7 build (plain banking, no expansion audio): 16 switchable kit banks. Built by
 // `make -C /workspaces/evermidi/rom all-mappers`; SKIP cleanly if absent.
-const EVERMIDI_ROM = "/workspaces/evermidi/rom/n8-midi-fme7.nes";
+const EVERMIDI_ROM = "/workspaces/evermidi/rom/build/bliptoaster-fme7.nes";
 
 function toolSession(): { be: ReturnType<typeof createRealBackend>; audio: ReturnType<typeof createAudioDriver>; s: Session } {
   const be = createRealBackend();

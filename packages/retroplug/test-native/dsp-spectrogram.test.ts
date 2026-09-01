@@ -8,7 +8,7 @@ import { stft, spectrogramImage, writeSpectrogramPng } from "../cli/spectrogram"
 import { toMono } from "../cli/dsp";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 const SR = 44100;
 
 function sine(freq: number, n: number): Float32Array {

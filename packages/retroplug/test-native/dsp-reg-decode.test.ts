@@ -8,7 +8,7 @@ import { decodeExpansionWrites } from "../cli/reg-decode";
 import { type DebugEvent, type ExpansionAudioState } from "../src/backend";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const VRC6 = __REPO_RESOURCES_DIR__ + "/roms/n8-midi-vrc6.nes";
+const VRC6 = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-vrc6.nes";
 
 test("decodeExpansionWrites(vrc6) reconstructs the note-on registers; freqReg matches the live period", () => {
   const s = bootSession();

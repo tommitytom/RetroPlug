@@ -25,7 +25,7 @@ import { decodeSaveState, type N8SaveState } from "../../src/n8/saveState";
 import { isRisaSav, listSongs } from "../../src/risa";
 import { isLsdjSav, listProjects } from "../../src/lsdj";
 
-const DEFAULT_ROM = "resources/roms/n8-midi.nes";
+const DEFAULT_ROM = "resources/roms/bliptoaster.nes";
 const VALUE_FLAGS = new Set([
   "--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--sniff-raw",
   "--dump-chr", "--patch-chr", "--patch-prg", "--mkdir", "--rm", "--palette", "--savestate", "--serial",
@@ -141,7 +141,7 @@ const N8_LOAD_HELP = [
   "  firmware parses the ROM and sources the mapper core from its own SD, so no low-level FPGA/mapper",
   "  work happens here. Auto-detects the N8 (VID:PID 38df:0017).",
   "",
-  "  <rom.nes>          upload this local ROM to usb-games/ and boot it (default: resources/roms/n8-midi.nes)",
+  "  <rom.nes>          upload this local ROM to usb-games/ and boot it (default: resources/roms/bliptoaster.nes)",
   "  --sd-path <path>   instead, boot a ROM already on the N8 SD card by its SD path",
   "  --srm <save.srm>   restore this battery save on boot (written to EDN8/gamedata/<rom>/bram.srm)",
   "  --sram-only        with --srm: write the save STRAIGHT to cart SRAM (a running game; no reboot).",

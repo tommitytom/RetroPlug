@@ -21,7 +21,7 @@ import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 const NOTE_ON_CH1 = [0x90, 60, 100]; // ch1 NoteOn C4 → APU Pulse1 → the Pulse pin
 
 const leftRms = (a: Float32Array): number => {

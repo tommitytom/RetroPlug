@@ -1,15 +1,16 @@
 // loadLabels — load a cc65 `.dbg` symbol file into a REAL Mesen NES debug target over the backend RPC.
 // Proves the spec/09 symbol-labels verb is wired end-to-end: a bogus path fails gracefully (no crash),
-// and the committed n8-midi `.dbg` fixture (labels CPU $9C69 "midiIdleLoop") loads successfully. Reached
+// and the committed bliptoaster `.dbg` fixture (labels CPU $9FC4 "midiIdleLoop") loads successfully. Reached
 // via the live core's debugTarget() — NES-only (SameBoy/GBA have none). Mirrors cli-observe.test.ts.
 import { test, expect } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
-// The cc65 .dbg fixture (symbols for n8-midi.nes) lives beside its ROM under resources/roms.
-const DBG = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.dbg";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
+// A MINIMAL hand-written cc65 `.dbg` (3 symbols), not the real 1.3 MB build output — this test only proves
+// the file parses and loads, so the addresses need not be exhaustive. It lives beside its ROM in resources/roms.
+const DBG = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.dbg";
 
 test("loadLabels loads a cc65 .dbg into a real NES core (and fails a bogus path gracefully)", () => {
   const s = bootSession();

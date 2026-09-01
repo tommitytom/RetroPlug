@@ -8,7 +8,7 @@ import { Timeline, renderTimeline } from "../cli/timeline";
 import { type PpuState } from "../src/backend";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("getPpuState reads a real NES PPU: frameCount advances, scanline/cycle in range", () => {
   const s = bootSession();

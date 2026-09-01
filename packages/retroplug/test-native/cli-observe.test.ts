@@ -9,7 +9,7 @@ import { Timeline, renderTimeline } from "../cli/timeline";
 import { MemoryRegion, type ApuState } from "../src/backend";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("debug reads observe a real NES: APU pulse1, CPU pc, FIFO peek, RAM region", () => {
   const s = bootSession();

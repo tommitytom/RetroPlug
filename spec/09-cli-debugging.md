@@ -23,7 +23,7 @@ stimulus path it drives is the DSP role kernel of [04-roles-dsp-kernel.md](04-ro
 ## 1. The goal — agent-driven ROM development against a real core
 
 The CLI's most valuable role is as a **scriptable test harness for developing a ROM against a real
-emulator core**. The motivating case is a hand-written NES ROM (e.g. `n8-midi.nes`, an Everdrive-style
+emulator core**. The motivating case is a hand-written NES ROM (e.g. `bliptoaster.nes`, an Everdrive-style
 MIDI→APU synth) developed **outside this repo**: an agent authors a TypeScript session that boots the
 ROM on a real Mesen NES core, drives it (MIDI notes, button presses, transport), **observes** the
 resulting machine state, **asserts** expectations, and gets a machine-readable **pass/fail** — then
@@ -139,13 +139,13 @@ The whole thing rides Mesen's own debugger, which is compiled into the native bi
   via `Engine::findSystem(id)` and forwards to `SystemBase::…` / `debugTarget()->…`. The facet was
   ported from the earlier (now-removed) harness surface rather than hand-rolled, so it is a strict
   wrapper over a proven `IDebugTarget`, verified by `test-native/cli-*.test.ts` against a real
-  `n8-midi.nes` — including a **read-watchpoint on the MIDI FIFO at `$40F1`** that fires.
+  `bliptoaster.nes` — including a **read-watchpoint on the MIDI FIFO at `$40F1`** that fires.
 
 ## 5. Capability inventory (prioritized for a MIDI→APU ROM)
 
 The whole inventory is **built** — each is a method on the `debug` facet (`DebugRpcService`),
 resolving the live system via `Engine::findSystem` and forwarding to `SystemBase::…` / `debugTarget()->…`,
-proven on a real `n8-midi.nes` in `test-native/cli-*.test.ts`. Only Mesen native `.mlb` labels remain.
+proven on a real `bliptoaster.nes` in `test-native/cli-*.test.ts`. Only Mesen native `.mlb` labels remain.
 
 | Status | Capability | Mesen provides | RPC(s) + session use |
 |---|---|---|---|
@@ -242,6 +242,6 @@ test("n8-midi: ch1 note → pulse1 at pitch; pulse2 silent", () => {
   (`getPpuState` scalar state is). cc65 `.dbg` labels are shipped; Mesen native `.mlb` label files still
   need a **new parser** (Mesen's C# one isn't vendored). A standalone `EvaluateExpression` is compiled
   but not surfaced (breakpoint expression conditions do go through the evaluator).
-- **Known ROM bug, not a harness bug.** The committed `resources/roms/n8-midi.nes` drives MIDI ch2 to
+- **Known ROM bug, not a harness bug.** The committed `resources/roms/bliptoaster.nes` drives MIDI ch2 to
   Square1 (Square2 silent) — a stale cc65 binary already *caught* by `getApuState`. Rebuild the ROM; don't
   chase it as an integration defect.

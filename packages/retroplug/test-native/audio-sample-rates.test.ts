@@ -12,7 +12,7 @@ import { window } from "../cli/dsp";
 import { type ApuState } from "../src/backend";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 // The 48 k family's top end and the 44.1 k family's, plus 48 k as the control. 22050/32000/44100/88200 take
 // the same path with a smaller ratio; these are the ones the ceiling used to exclude.

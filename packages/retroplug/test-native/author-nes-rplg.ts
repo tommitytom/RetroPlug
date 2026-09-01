@@ -4,7 +4,7 @@
 // via romProviders), and export. The Reaper render boots it (~1 s) and drives it via a MIDI item.
 //
 // Paths injected at bundle time by tools/author-nes-rplg.js.
-//   __NES_ROM__   absolute ROM path (resources/roms/n8-midi.nes)
+//   __NES_ROM__   absolute ROM path (resources/roms/bliptoaster.nes)
 //   __RPLG_OUT__  absolute output .rplg.zip path
 import { createRealBackend } from "../src/realBackend";
 import { RecentStore } from "../src/recentStore";

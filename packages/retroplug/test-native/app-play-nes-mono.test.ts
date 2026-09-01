@@ -19,7 +19,7 @@ import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 const rms = (a: Float32Array): number => {
   let s = 0;

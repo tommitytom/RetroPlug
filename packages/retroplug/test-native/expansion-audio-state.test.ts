@@ -9,8 +9,8 @@ import { Timeline, renderTimeline } from "../cli/timeline";
 import { type ExpansionAudioState } from "../src/backend";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
-const VRC6 = __REPO_RESOURCES_DIR__ + "/roms/n8-midi-vrc6.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
+const VRC6 = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-vrc6.nes";
 
 test("getExpansionAudioState reports 'none' for a cart without expansion audio", () => {
   const s = bootSession();

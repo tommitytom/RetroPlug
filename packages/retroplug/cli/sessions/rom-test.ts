@@ -1,6 +1,6 @@
 // The agent-facing ROM-test pattern: a session that DRIVES a real NES and ASSERTS on its state, emitting
 // TAP. This is how you develop a ROM against the CLI — write a session like this, bundle it, run it on
-// retroplug-cli, parse the TAP. Tuned to the committed n8-midi.nes (a MIDI→APU synth).
+// retroplug-cli, parse the TAP. Tuned to the committed bliptoaster.nes (a MIDI→APU synth).
 //
 //   retroplug-cli build/cli/rom-test.js <rom>
 //

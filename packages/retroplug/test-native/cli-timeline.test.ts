@@ -7,7 +7,7 @@ import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 function rms(pcm: Float32Array): number {
   let s = 0;

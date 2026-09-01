@@ -13,7 +13,7 @@ import { report, sustainPerChannel } from "./audio-levels-lib";
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 const NOTES = [[0x90, 48, 127], [0x91, 55, 127], [0x92, 43, 127], [0x93, 60, 127], [0x94, 60, 127]];
 const PINS = ["Pulse pin", "TND pin", "Expansion"];
 

@@ -21,7 +21,7 @@ import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
 
-const S5B_ROM = "/workspaces/evermidi/rom/build/n8-midi-s5b.nes";
+const S5B_ROM = "/workspaces/evermidi/rom/build/bliptoaster-s5b.nes";
 const CH = 6; // EverMIDI's S5B Square A (BASE01)
 const A4 = 69;
 

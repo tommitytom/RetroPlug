@@ -14,7 +14,7 @@ import { report, sustain, sustainPerChannel } from "./audio-levels-lib";
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
 
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 // n8-midi: ch1→Pulse1, ch2→Pulse2, ch3→Triangle, ch4→Noise, ch5→DMC.
 const NOTES = [[0x90, 48, 127], [0x91, 55, 127], [0x92, 43, 127], [0x93, 60, 127], [0x94, 60, 127]];
 const NAMES = ["Pulse 1", "Pulse 2", "Triangle", "Noise", "DMC"];

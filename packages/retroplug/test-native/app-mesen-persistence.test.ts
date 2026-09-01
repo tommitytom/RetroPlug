@@ -1,7 +1,7 @@
 // FOUNDATION F1/F2: the Mesen (NES) backend joins the live snapshot plane like SameBoy. Against a
 // REAL Mesen core: readState must republish as the core runs (not freeze at the boot seed), a ROM
 // that passes the NES magic gate but fails Mesen's LoadRom must fail the construct (no zombie tile),
-// and a battery cart's SRAM must read back through the registry (F2). n8-midi.nes is committed
+// and a battery cart's SRAM must read back through the registry (F2). bliptoaster.nes is committed
 // in-repo; the battery NES fixture is authored inline (no real-core battery ROM ships).
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
@@ -15,7 +15,7 @@ import { nesRom, nesRomBattery } from "../test/systems/fixtures";
 declare const __REPO_RESOURCES_DIR__: string;
 declare const __CONFIG_DIR__: string;
 
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i]);
 

@@ -3,7 +3,7 @@
 // PKZIP `.rplg.zip`. Counterpart of tools/author-rplg.js (mGB) / author-lsdj-rplg.js.
 //
 //   node tools/author-nes-rplg.js [ROM] [OUT.rplg.zip]
-//     ROM   default resources/roms/n8-midi.nes
+//     ROM   default resources/roms/bliptoaster.nes
 //     OUT   default build/nes.rplg.zip
 const { buildSync } = require("esbuild");
 const { execFileSync } = require("child_process");
@@ -14,7 +14,7 @@ const REPO = resolve(__dirname, "..");
 const PKG = resolve(REPO, "packages/retroplug");
 const HOST = process.env.RETROPLUG_HOST || resolve(REPO, "build/bin/retroplug-host");
 
-const ROM = resolve(REPO, process.argv[2] || "resources/roms/n8-midi.nes");
+const ROM = resolve(REPO, process.argv[2] || "resources/roms/bliptoaster.nes");
 const OUT = resolve(process.argv[3] || resolve(REPO, "build/nes.rplg.zip"));
 
 mkdirSync(dirname(OUT), { recursive: true });

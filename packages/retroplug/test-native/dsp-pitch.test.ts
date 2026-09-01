@@ -9,7 +9,7 @@ import { window } from "../cli/dsp";
 import { type ApuState } from "../src/backend";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 const SR = 44100;
 
 /** A harmonic-rich tone (sum of 1/h harmonics) - what HPS is designed for; a pure sine is a degenerate case. */

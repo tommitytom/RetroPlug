@@ -12,7 +12,7 @@ import { Timeline, renderTimeline } from "../cli/timeline";
 import type { ApuState } from "../src/backend";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 /** Boot the ROM, optionally switch region, then read pulse1 while a C4 is sounding. */
 function periodFor(region: "ntsc" | "pal" | null): { period: number; frequency: number } {

@@ -1,14 +1,16 @@
 // Breakpoints + run-until-break against a REAL Mesen NES core, driven through the CLI session +
 // Timeline. Proves the spec/09 breakpoint surface end-to-end: an execute breakpoint fires at a known PC,
 // a read watchpoint fires on the MIDI FIFO access, the cycle cap returns broke=false, and a condition
-// expression gates the break. $9E33 is the n8-midi idle loop that polls the MIDI FIFO at $40F1 (Y==0
-// there); it's also the `midiIdleLoop` label in the committed resources/roms/n8-midi.dbg.
+// expression gates the break. $9FC4 is bliptoaster's `ed_fifo_busy` (LDA $40F1 / AND #$80 / RTS) - the MIDI
+// FIFO poll the idle loop calls every pass, so an execute break there and a $40F1 read watchpoint both fire
+// reliably; it's also the `midiIdleLoop` label in the committed resources/roms/bliptoaster.dbg. Y is 8
+// throughout that routine (sampled stable across 25 separate hits), so "Y == 8" matches and "Y == 0" cannot.
 import { test, expect } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
 declare const __REPO_RESOURCES_DIR__: string;
-const NES = __REPO_RESOURCES_DIR__ + "/roms/n8-midi.nes";
+const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("breakpoints fire on a real NES: execute PC, FIFO read watchpoint, cycle cap, conditions", () => {
   const s = bootSession();
@@ -23,10 +25,10 @@ test("breakpoints fire on a real NES: execute PC, FIFO read watchpoint, cycle ca
   renderTimeline(s, new Timeline(), { durationMs: 200, warmupMs: 1000 });
 
   // Execute breakpoint at the idle loop entry must fire exactly there.
-  expect(s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9e33 }])).toBeTruthy();
+  expect(s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9fc4 }])).toBeTruthy();
   const exec = s.backend.runUntilBreak(id, 5_000_000);
   expect(exec.broke).toBeTruthy();
-  expect(exec.pc).toBe(0x9e33);
+  expect(exec.pc).toBe(0x9fc4);
   expect(exec.breakpointId >= 0).toBeTruthy();
 
   // A read watchpoint on the MIDI FIFO ($40F1) — the idle loop polls it, so it must fire.
@@ -40,12 +42,12 @@ test("breakpoints fire on a real NES: execute PC, FIFO read watchpoint, cycle ca
   expect(s.backend.runUntilBreak(id, 200_000).broke).toBeFalsy();
 
   // A contradiction never matches — the breakpoint must not fire.
-  s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9e33, condition: "1 == 0" }]);
+  s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9fc4, condition: "1 == 0" }]);
   expect(s.backend.runUntilBreak(id, 500_000).broke).toBeFalsy();
 
-  // Y is 0 at the idle-loop entry — this condition matches and fires at $9E33.
-  s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9e33, condition: "Y == 0" }]);
+  // Y is 8 throughout the FIFO poll — this condition matches and fires at $9FC4.
+  s.backend.setBreakpoints(id, [{ type: "execute", start: 0x9fc4, condition: "Y == 8" }]);
   const cond = s.backend.runUntilBreak(id, 5_000_000);
   expect(cond.broke).toBeTruthy();
-  expect(cond.pc).toBe(0x9e33);
+  expect(cond.pc).toBe(0x9fc4);
 });

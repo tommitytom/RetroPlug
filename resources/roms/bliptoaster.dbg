@@ -2,7 +2,7 @@ version	major=2,minor=0
 info	csym=0,file=1,line=0,mod=1,scope=1,seg=1,span=0,sym=2,type=0
 file	id=0,name="main.s",size=100,mtime=0x00000000,mod=0
 mod	id=0,name="main.o",file=0
-seg	id=0,name="CODE",start=0x8000,size=0x8000,addrsize=absolute,type=ro,oname="n8-midi.nes",ooffs=16
+seg	id=0,name="CODE",start=0x8000,size=0x8000,addrsize=absolute,type=ro,oname="bliptoaster.nes",ooffs=16
 sym	id=0,name="reset",addrsize=absolute,scope=0,def=0,val=0x8000,seg=0,type=lab
-sym	id=1,name="midiIdleLoop",addrsize=absolute,scope=0,def=0,val=0x9E33,seg=0,type=lab
+sym	id=1,name="midiIdleLoop",addrsize=absolute,scope=0,def=0,val=0x9FC4,seg=0,type=lab
 sym	id=2,name="someConstant",addrsize=zeropage,scope=0,def=0,val=0x10,type=equ
