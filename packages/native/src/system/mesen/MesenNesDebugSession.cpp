@@ -176,7 +176,17 @@ rp::BreakInfo doStep(Debugger* dbg, NesCpu* cpu, StepType type) {
     dbg->Step(CpuType::Nes, 1, type);
     // Generous cap: a single step is one instruction; StepOut/StepOver can run
     // many (a whole subroutine). ~50M cycles ≈ a few frames.
-    return execLoop(dbg, cpu, 50'000'000ull, /*reportPcBefore*/ false);
+    rp::BreakInfo bi = execLoop(dbg, cpu, 50'000'000ull, /*reportPcBefore*/ false);
+
+    // DISARM the step request before handing control back. ResumeFromBreak (in execLoop) only clears the
+    // current break; the StepRequest this call installed outlives it, and a spent one breaks on the NEXT
+    // instruction. Nothing outside this function calls ResumeFromBreak, so ordinary emulation - the audio
+    // render that resumes after a step - would re-break immediately and stall forever, with the core making
+    // no progress. Debugger::Run() reinstates a fresh (empty) StepRequest, which is exactly the free-running
+    // state runUntilBreak sets up for the same reason; user breakpoints live in the breakpoint manager and
+    // are unaffected. Also covers the cycle-cap exit, where the request was never satisfied at all.
+    dbg->Run();
+    return bi;
 }
 } // namespace
 

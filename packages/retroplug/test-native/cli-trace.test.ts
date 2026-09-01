@@ -29,6 +29,8 @@ test("trace logger captures the instruction stream + the step trio advances a re
   let into = null as BreakInfo | null;
   let over = null as BreakInfo | null;
   let out = null as BreakInfo | null;
+  let pcAfterSteps = -1;
+  let pcLater = -1;
 
   const tl = new Timeline()
     .at(10, (sess) => (enabled = sess.backend.setTrace(id, true)))
@@ -45,7 +47,14 @@ test("trace logger captures the instruction stream + the step trio advances a re
       const spTop = sp();
       for (let i = 0; i < 256 && sp() >= spTop; i++) sess.backend.stepInto(id);
       out = sess.backend.stepOut(id);
-    });
+      pcAfterSteps = sess.backend.getCpuRegisters(id).find((r) => r.name === "pc")!.value;
+    })
+    // Ordinary emulation must survive the step trio. A step installs a Mesen StepRequest, and a SPENT one
+    // breaks on the next instruction; nothing outside the step call resumes from that, so if doStep fails to
+    // disarm it (Debugger::Run) the core stops making progress the moment the render resumes. That is a HANG,
+    // not a failed assertion - it spins at 100% CPU and takes the whole native suite with it - so this
+    // sampled PC is a documentation of intent as much as a check.
+    .at(380, (sess) => (pcLater = sess.backend.getCpuRegisters(id).find((r) => r.name === "pc")!.value));
   renderTimeline(s, tl, { durationMs: 400, warmupMs: 1000 });
 
   // setTrace succeeds on a live NES debug target.
@@ -64,4 +73,9 @@ test("trace logger captures the instruction stream + the step trio advances a re
   expect(into!.breakpointId === -1).toBeTruthy();
   expect(over != null && typeof over!.pc === "number" && over!.breakpointId === -1).toBeTruthy();
   expect(out != null && typeof out!.pc === "number" && out!.breakpointId === -1).toBeTruthy();
+
+  // ...and the core kept running afterwards (see the note on the .at(380) sample above).
+  expect(pcAfterSteps >= 0).toBeTruthy();
+  expect(pcLater >= 0).toBeTruthy();
+  expect(pcLater !== pcAfterSteps).toBeTruthy(); // emulation advanced past where the steps left it
 });
