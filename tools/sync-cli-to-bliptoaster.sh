@@ -6,6 +6,9 @@
 #
 #   tools/sync-cli-to-bliptoaster.sh [dest-repo]      (default dest-repo: ../evermidi, relative to this repo)
 #
+# The default dest is still ../evermidi: the PROJECT renamed to BlipToaster, but the checkout directory
+# has not, so the path stays as it is on disk. Rename this default when the checkout is renamed.
+#
 # Populates <dest>/retroplug-cli/{bin/retroplug-cli, sdk/retroplug-cli.js, sdk/retroplug-cli.d.ts}.
 # (Future: the consumer devcontainer pulls the binary from a GitHub release instead of this local copy.)
 set -euo pipefail
