@@ -186,8 +186,15 @@ test("FME-7 multi-kit: a .rkit override into slot 1 becomes selectable + plays",
     .midi(200, [CC_STATUS_CH5, CC_DMC_BANK, 1]) // select the now-populated slot 1
     .at(300, (ss) => (magicAtBank1 = ss.backend.readCpu(id2, KIT_MAGIC_ADDR) ?? -1))
     .midi(320, [CC_STATUS_CH5, CC_DMC_LOOP, 127]) // loop so playback is observable mid-render
-    .noteOn(340, 0, { channel: 5, velocity: 127 }) // ch5 note 0 -> slot-0 sample of the (now populated) bank 1
-    .at(600, (ss) => (dmcEnabled = ss.backend.getApuState(id2).dmc.enabled));
+    .noteOn(340, 0, { channel: 5, velocity: 127 }); // ch5 note 0 -> slot-0 sample of the (now populated) bank 1
+  // LATCH rather than sample once: `dmc.enabled` is only true while the sample is actually being fed, and
+  // this kit's slot-0 sample runs out around 430ms. A single read at 600ms caught the tail-off, not the
+  // playback, so a sample shorter than the read offset read as "never played". Poll across the note and
+  // assert it was enabled at SOME point - that is what "it actually plays" means, and it stays true
+  // whatever the kit's sample length or the loop CC's semantics.
+  for (const t of [360, 400, 450, 500, 600, 700]) {
+    tl.at(t, (ss) => (dmcEnabled = dmcEnabled || ss.backend.getApuState(id2).dmc.enabled));
+  }
   renderTimeline(s, tl, { durationMs: 900, warmupMs: 1100 });
   s.project.systems.removeSystem(id2);
 
