@@ -56,7 +56,7 @@ Against this: the APU mirror keeps showing a sustained note, suggesting the per-
 refresh loop is still running (alive but mis-parsing), not halted. The repro below
 distinguishes the two.
 
-## Recommended fix (in the BlipToaster ROM, `../evermidi`)
+## Recommended fix (in the BlipToaster ROM, `../bliptoaster`)
 
 Make the FIFO MIDI reader resync on status bytes (standard MIDI parsing rules):
 

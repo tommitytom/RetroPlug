@@ -13,7 +13,7 @@ description: >-
 
 You are in the **RetroPlug** repo — the emulator cores (Mesen NES, SameBoy GB), the native host, the
 plugin, the DSP, and the `retroplug-cli` test harness + SDK. Downstream **consumers** (e.g. the BlipToaster
-NES ROM, a sibling checkout — the sync default is `../evermidi`) drive ROMs through the CLI and report
+NES ROM, a sibling checkout — the sync default is `../bliptoaster`) drive ROMs through the CLI and report
 issues, often as handoff docs (`<consumer>/RETROPLUG-CLI-HANDOFF*.md`). Your advantage over the consumer:
 you have the full source. Use it.
 

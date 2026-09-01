@@ -12,7 +12,7 @@ description: >-
 # Implementing a feature with RetroPlug subsystem context
 
 You're building a feature that involves a RetroPlug **consumer** — most often the BlipToaster NES ROM driven
-through the `retroplug-cli` harness (sibling checkout, sync default `../evermidi`), sometimes the plugin
+through the `retroplug-cli` harness (sibling checkout, sync default `../bliptoaster`), sometimes the plugin
 or another dpf.js consumer. Such features usually span **both sides**: behavior in the consumer's own
 artifact (e.g. ROM code) *plus* a RetroPlug capability that supports or observes it (a new emulator
 behavior, a debug/introspection RPC, an SDK method, a DSP role, a persistence change). The value of

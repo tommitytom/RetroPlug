@@ -5,7 +5,7 @@
 //     can boot it). This support already shipped for risa; here it's exercised for a BlipToaster ROM.
 // (2) End-to-end: patch a kit + a font into the base ROM in memory via BlipToasterRom, construct from those
 //     bytes, and confirm the patched image boots (and the on-disk .nes is never touched).
-// Points at the sibling bliptoaster build (which carries the BLIPTOASTER marker + baked kit); SKIPs cleanly if absent.
+// Points at the sibling bliptoaster build (which carries the "bliptoaster" marker + baked kit); SKIPs cleanly if absent.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
@@ -18,10 +18,10 @@ declare const __REPO_RESOURCES_DIR__: string;
 // The COMMITTED ROM, always present (unlike the sibling build below).
 const VENDORED_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
-const BLIPTOASTER_ROM = "/workspaces/evermidi/rom/build/bliptoaster.nes";
+const BLIPTOASTER_ROM = "/workspaces/bliptoaster/rom/build/bliptoaster.nes";
 // The plain-banking FME-7 build (mapper 69, no expansion audio): 16 switchable DMC kit banks. Skips cleanly
-// if `make -C /workspaces/evermidi/rom all-mappers` hasn't been run.
-const BLIPTOASTER_FME7 = "/workspaces/evermidi/rom/build/bliptoaster-fme7.nes";
+// if `make -C /workspaces/bliptoaster/rom all-mappers` hasn't been run.
+const BLIPTOASTER_FME7 = "/workspaces/bliptoaster/rom/build/bliptoaster-fme7.nes";
 const KIT_MAGIC_ADDR = 0xdf40; // $C000 + $1F40: the risa-kit present marker in the bank mapped at $C000
 const CC_STATUS_CH5 = 0xb4; // Control Change, MIDI channel 5 (the DMC channel)
 const CC_DMC_BANK = 14;

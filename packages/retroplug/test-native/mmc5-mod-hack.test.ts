@@ -34,7 +34,7 @@ import { test, expect } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
-const MMC5_ROM = "/workspaces/evermidi/rom/build/bliptoaster-mmc5.nes";
+const MMC5_ROM = "/workspaces/bliptoaster/rom/build/bliptoaster-mmc5.nes";
 // The shipped ROM FLOORS its reset rate to [65,128], so it cannot reach the rates that exposed the bug.
 // An un-floored build (mmc5.c: `128 - val` in place of `128 - (val >> 1)`) is what proves the fix; point
 // MMC5_ROM at one to re-run that. Numbers with reload 1, before -> after the core fix:
