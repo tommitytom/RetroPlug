@@ -14,9 +14,9 @@
 // QuickJS. (An out-of-process stdio host could not honour it without making every Backend method
 // async, which is why this is an in-process addon and not rpcpp's shipped stdio client.)
 //
-// Scope: the host facet only (filesystem / config / codec) - no Engine. That is enough to exercise
-// the codec end to end: strings, ints, bools, optionals, structs, vectors of structs, and binary in
-// both directions via readFile/writeFile/zip/unzip/pngEncode/pngDecode.
+// Scope: the WHOLE backend surface, exactly as the CLI mounts it (registerAllBackendRpc) - host,
+// emulator, dsp-kernel, debug and audio-driver facets over one Engine. So a Node process can boot the
+// real control plane (bootSession) and drive the emulator cores.
 
 #include <exception>
 #include <optional>
@@ -28,25 +28,42 @@
 #include "NodeCodec.hpp"
 #include "NodeTransport.hpp"
 
+#include "host/engine/Engine.hpp"
+#include "host/engine/EngineInvoker.hpp"
 #include "host/rpc/BackendRpcRegistration.hpp"
+#include "system/CoreBackends.hpp"
+#include "system/SystemFactory.hpp"
 
 namespace {
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::NodeCodec>;
 
-// One per addon instance (one per Node context - a worker_thread gets its own). Held through
-// napi_set_instance_data rather than a static, so multiple contexts don't share a backend.
+// One per addon instance (one per Node context - a worker_thread gets its own, with its own Engine).
+// Held through napi_set_instance_data rather than a static, so multiple contexts don't share a
+// backend. Member order mirrors cli/main.cpp's composition block: the Engine and factory come first
+// because the services hold references to them.
 struct AddonState {
-    HostRpcService       host;
-    rpcpp::NodeTransport transport;
-    BackendRpcServer     server;
+    Engine                engine;
+    SystemFactory         factory;
+    QueuedInvoker         invoker;
+    HostRpcService        host;
+    EngineRpcService      engineSvc;
+    DebugRpcService       debugSvc;
+    AudioDriverRpcService driver;
+    rpcpp::NodeTransport  transport;
+    BackendRpcServer      server;
 
     explicit AddonState(napi_env env)
-        // No primary object: every facet is mounted cross-object. The async sink is unused (nothing
-        // in the backend surface pushes today), matching the CLI host.
-        : transport([](napi_env, napi_value) {}),
+        : invoker(engine, engine.registry()),
+          engineSvc(engine, factory, invoker),
+          debugSvc(engine),
+          driver(engine, invoker),
+          // No primary object: every facet is mounted cross-object. The async sink is unused (nothing
+          // in the backend surface pushes today), matching the CLI host.
+          transport([](napi_env, napi_value) {}),
           server(transport, rpcpp::NodeCodec{env}) {
-        registerHostRpc(server, host);
+        registerCoreBackends(factory);
+        registerAllBackendRpc(server, host, engineSvc, debugSvc, driver);
     }
 };
 

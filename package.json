@@ -20,6 +20,7 @@
     "test:ui": "node scripts/cmake-build.js retroplug-ui-test && node packages/retroplug/scripts/run-ui-tests.mjs",
     "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-classid-test retroplug-audio-test retroplug-watcher-test retroplug-lottie-test retroplug-midi-test retroplug-launchpad-test && node packages/retroplug/scripts/run-plugin-tests.mjs",
     "test:n8": "node scripts/cmake-build.js retroplug-n8-test && build/bin/retroplug-n8-test",
+    "test:node": "node packages/native/node/test/run.mjs",
     "sdl:smoke": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-smoke.sh",
     "sdl:pipewire": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-pipewire.sh",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
