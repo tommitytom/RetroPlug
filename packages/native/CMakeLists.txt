@@ -220,24 +220,44 @@ if(TARGET ${_TJSC_DEP})
   add_dependencies(retroplug-ts-stripper-bundle ${_TJSC_DEP})
 endif()
 
-# The test SDK (cli/sdk.ts → the authoring layer + its .d.ts), embedded as raw text C arrays so the
-# BINARY owns it: `test` / `run` materialize it next to a consumer's tests when it is missing or its
-# stamp does not match, which means a consumer never carries a copy that can go stale against a newer
-# binary. Not bytecode - a consumer's test imports it as an ordinary `.js` file on disk.
+# The test SDK, embedded twice, for two different consumers:
+#
+#   rp_retroplug_cli[]  MODULE bytecode, compiled with `tjsc -n retroplug-cli` so the module NAME is
+#                       exactly `retroplug-cli`. cli/main.cpp JS_ReadObject's it before evaluating a
+#                       session, which registers it in QuickJS's loaded-module table; an
+#                       `import ... from "retroplug-cli"` then resolves from that table, because
+#                       js_host_resolve_imported_module looks there BEFORE calling the module loader
+#                       (quickjs.c: "first look at the loaded modules"). So the SDK never touches the
+#                       filesystem - there is no .js to generate, sync, or let go stale.
+#   rp_sdk_dts[]        the .d.ts as raw text. Still materialized next to a consumer's tests, because
+#                       editors and `tsc` read declarations off disk; a bare specifier resolves to it
+#                       via a tsconfig `paths` entry.
+#
+# The relative-import form could never work this way: tjs_module_normalizer only consults the import
+# map for BARE specifiers (modules.c, `if (name[0] != '.')`), so "../sdk/x.js" always hits the disk.
 set(SDK_ASSETS_C "${CMAKE_BINARY_DIR}/native/sdk-assets_data.c")
-set_source_files_properties(${SDK_ASSETS_C} PROPERTIES GENERATED TRUE)
+set(SDK_MODULE_C "${CMAKE_BINARY_DIR}/native/sdk-module_data.c")
+set_source_files_properties(${SDK_ASSETS_C} ${SDK_MODULE_C} PROPERTIES GENERATED TRUE)
 add_custom_target(retroplug-cli-sdk-assets
-    BYPRODUCTS ${SDK_ASSETS_C} ${SDK_ASSETS_C}.new
+    BYPRODUCTS ${SDK_ASSETS_C} ${SDK_ASSETS_C}.new ${SDK_MODULE_C} ${SDK_MODULE_C}.new
+    # Builds build/cli-sdk/{retroplug-cli.js,.d.ts}, then embeds the .d.ts + a content stamp.
     COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/embed-sdk.mjs
             ${CMAKE_BINARY_DIR}/cli-sdk ${SDK_ASSETS_C}.new
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SDK_ASSETS_C}.new ${SDK_ASSETS_C}
-    COMMENT "Embedding the retroplug-cli test SDK"
+    # ...and compiles the same bundle to module bytecode under the name a test imports.
+    COMMAND ${_TJSC_COMMAND} -m -n retroplug-cli -s -p rp_ -o ${SDK_MODULE_C}.new
+            ${CMAKE_BINARY_DIR}/cli-sdk/retroplug-cli.js
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SDK_MODULE_C}.new ${SDK_MODULE_C}
+    COMMENT "Embedding the retroplug-cli test SDK (module bytecode + .d.ts)"
     VERBATIM)
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-cli-sdk-assets ${_TJSC_DEP})
+endif()
 
 # retroplug-cli: the standalone runner — the backend lib + a main() that evals either the COMPILED-IN
 # dispatcher bundle (commands + help) or, when argv[1] is a `.js`, a session file by path. No Node at
 # runtime. Output binary lands in build/bin/.
-add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C})
+add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C} ${SDK_MODULE_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend)
 add_dependencies(retroplug-cli retroplug-cli-bundle)             # the embedded dispatcher bytecode must exist first

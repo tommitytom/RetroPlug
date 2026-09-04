@@ -52,10 +52,15 @@ export function runEmu(sdk, nesRom) {
     rec("gb:pcmHash", hashPcm(gbPcm));
     rec("gb:peak", peak(gbPcm));
 
-    // Snapshot reads: binary out through the emulator facet.
+    // Snapshot reads: binary out through the emulator facet. LENGTH only, deliberately.
+    //
+    // readState is NOT byte-stable run to run for identical input - repeated runs of the SAME host
+    // produce differing states (verified with an isolated RETROPLUG_USER_CONFIG_DIR, so it is not just
+    // persisted config). Hashing it made this suite flaky rather than catching anything: it is a
+    // property of the save-state serialization, not of the codec this test exists to compare. Binary
+    // fidelity through the codec is covered exactly by parity.test.mjs and by the PCM hashes below.
     const gbState = s.backend.readState(gb);
     rec("gb:stateLen", gbState ? gbState.length : null);
-    rec("gb:stateHash", gbState ? fnv1a(gbState) : null);
 
     // --- an on-disk NES ROM through the Mesen core ---
     if (!s.backend.fileExists(nesRom)) throw new Error(`rom not found: ${nesRom}`);

@@ -38,9 +38,9 @@ export function stripTs(source: string, filename?: string): string {
 }
 
 /** `dir`'s sibling build directory - where stripped output goes. Keeping the same directory DEPTH is what
- *  lets a test's own import specifiers resolve unchanged: from `<kit>/.rp-test-build/x.js`,
- *  `../sdk/retroplug-cli.js` still reaches `<kit>/sdk/` and `./helper.js` stays local. Rewriting
- *  specifiers would defeat the whole point of a position-preserving strip. */
+ *  lets a test's own RELATIVE imports resolve unchanged: from `<kit>/.rp-test-build/x.js`, a sibling
+ *  `./helper.js` still resolves. Rewriting specifiers would defeat the point of a position-preserving
+ *  strip. (The SDK itself is a BARE specifier resolved from the module registry, so it is unaffected.) */
 export function buildDirFor(dir: string): string {
   const clean = dir.replace(/\/+$/, "");
   const slash = clean.lastIndexOf("/");
@@ -65,9 +65,9 @@ export interface BuildResult {
   emitted: string[];
   /** The directory they were written to. */
   outDir: string;
-  /** True if any source imports the SDK, so the caller knows whether to materialize it. Checked from
-   *  the sources we are already reading, so a directory of self-contained files never has a 1.7 MB SDK
-   *  written next to it for nothing. */
+  /** True if any source imports the SDK, so the caller knows whether to write its .d.ts out for editors
+   *  and tsc. Checked from the sources we are already reading; a directory that imports nothing gets no
+   *  stray sdk/ dropped beside it. (Only declarations - the SDK itself resolves from the registry.) */
   needsSdk: boolean;
 }
 
@@ -91,7 +91,7 @@ export function buildTsDir(backend: HostBackend, srcDir: string, outDir?: string
     if (!bytes) throw new Error(`could not read ${srcPath}`);
 
     const source = new TextDecoder().decode(bytes);
-    if (source.includes("sdk/retroplug-cli.js")) needsSdk = true;
+    if (/from\s*["']retroplug-cli["']/.test(source)) needsSdk = true;
     const code = isStrippableTs(entry) ? stripTs(source, srcPath) : source;
 
     const outName = outputName(entry);

@@ -79,8 +79,8 @@ else
 	echo "ok   - refused input produced no output file"
 fi
 
-# 5. The SDK is owned by the BINARY: absent or stale, it is rewritten; current, it is left alone. This
-#    is what removes the "synced copy lags a newer binary" failure mode.
+# 5. The SDK resolves from the module REGISTRY (bare specifier, no file), and only its .d.ts is written
+#    out - for editors and tsc, which read declarations off disk.
 # This fixture IMPORTS the SDK, so materialization is demanded (a directory of self-contained files
 # deliberately gets no SDK written next to it) and the checks below prove the written copy is usable.
 SDKFIX="$TMP/sdkfix"
@@ -90,31 +90,37 @@ out="$TMP/sdk1.log"
 "$CLI" test "$SDKFIX/tests" >"$out" 2>&1
 check "runs with no sdk/ present at all" 0 $?
 contains "the materialized SDK is importable and working" "$out" "encodeWav works"
-if [ -f "$SDKFIX/sdk/retroplug-cli.js" ] && [ -f "$SDKFIX/sdk/retroplug-cli.d.ts" ]; then
-	echo "ok   - a missing SDK is materialized from the binary"
+if [ -f "$SDKFIX/sdk/retroplug-cli.d.ts" ]; then
+	echo "ok   - the SDK .d.ts is materialized from the binary"
 else
-	echo "FAIL - the SDK was not materialized"
+	echo "FAIL - the .d.ts was not materialized"
 	fails=$((fails + 1))
+fi
+if [ -e "$SDKFIX/sdk/retroplug-cli.js" ]; then
+	echo "FAIL - a runtime SDK .js was written; it should resolve from the module registry"
+	fails=$((fails + 1))
+else
+	echo "ok   - NO runtime SDK .js exists anywhere (registry-resolved)"
 fi
 
 # A stale copy (wrong content, wrong stamp) must be replaced, not trusted.
-echo "corrupt" >"$SDKFIX/sdk/retroplug-cli.js"
+echo "corrupt" >"$SDKFIX/sdk/retroplug-cli.d.ts"
 echo "deadbeefdeadbeef" >"$SDKFIX/sdk/.rp-sdk-stamp"
 "$CLI" test "$SDKFIX/tests" >"$TMP/sdk2.log" 2>&1
 check "a stale SDK is replaced" 0 $?
-if [ "$(wc -c <"$SDKFIX/sdk/retroplug-cli.js")" -gt 1000 ]; then
-	echo "ok   - the stale SDK was rewritten from the binary"
+if [ "$(wc -c <"$SDKFIX/sdk/retroplug-cli.d.ts")" -gt 1000 ]; then
+	echo "ok   - the stale .d.ts was rewritten from the binary"
 else
 	echo "FAIL - the stale SDK was left in place"
 	fails=$((fails + 1))
 fi
 
 # A current copy must NOT be rewritten (no churn in the consumer's tree on every run).
-before="$(stat -c %Y "$SDKFIX/sdk/retroplug-cli.js")"
+before="$(stat -c %Y "$SDKFIX/sdk/retroplug-cli.d.ts")"
 sleep 1
 "$CLI" test "$SDKFIX/tests" >/dev/null 2>&1
-if [ "$(stat -c %Y "$SDKFIX/sdk/retroplug-cli.js")" = "$before" ]; then
-	echo "ok   - a current SDK is left untouched"
+if [ "$(stat -c %Y "$SDKFIX/sdk/retroplug-cli.d.ts")" = "$before" ]; then
+	echo "ok   - a current .d.ts is left untouched"
 else
 	echo "FAIL - a current SDK was rewritten anyway"
 	fails=$((fails + 1))
@@ -127,14 +133,15 @@ else
 	echo "ok   - a directory that imports no SDK gets none written"
 fi
 
-# An explicit --out must relocate the SDK too: a test resolves ../sdk relative to ITS OWN location.
+# --out moves the stripped output, but NOT the .d.ts: nothing imports that at run time any more, and
+# editors read it next to the source tests.
 rm -rf "$SDKFIX/sdk"
 "$CLI" test "$SDKFIX/tests" --out "$TMP/outdir/build" >"$TMP/sdk4.log" 2>&1
-check "--out relocates the SDK with the output" 0 $?
-if [ -f "$TMP/outdir/sdk/retroplug-cli.js" ]; then
-	echo "ok   - the SDK followed --out"
+check "--out still runs" 0 $?
+if [ -f "$SDKFIX/sdk/retroplug-cli.d.ts" ]; then
+	echo "ok   - --out does not move the .d.ts (it belongs next to the SOURCE tests)"
 else
-	echo "FAIL - the SDK did not follow --out"
+	echo "FAIL - the .d.ts went missing under --out"
 	fails=$((fails + 1))
 fi
 

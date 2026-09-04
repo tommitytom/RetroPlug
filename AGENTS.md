@@ -172,14 +172,16 @@ individual `reaper:*` scripts safe to run in parallel.
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
 `retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one
 file - so a consumer repo (BlipToaster) needs **no Node, npm, esbuild or node_modules**. Its kit is the
-**binary plus tests, and nothing else**: the SDK is embedded too, and `test` / `run` write `sdk/` out
-next to the tests when it is missing or its content stamp is stale
-([cli/sdkAssets.ts](packages/retroplug/cli/sdkAssets.ts)), so a consumer copy can no longer lag the
-binary and `sync-cli-to-bliptoaster.sh` is a ONE-FILE copy. It is written relative to the OUTPUT dir,
-not the source dir - a test resolves `../sdk/...` from where the emitted file sits, and those diverge
-under `--out`. It is only written when a source actually imports it (`buildTsDir` reports `needsSdk`),
-so a directory of self-contained files never gets 1.7 MB dropped beside it. Two pre-existing facts make
-the stripping work:
+**binary plus tests, and nothing else**, and `sync-cli-to-bliptoaster.sh` is a ONE-FILE copy. A test
+imports the SDK by the BARE specifier `"retroplug-cli"`, which the binary serves from QuickJS's
+loaded-module table: cli/main.cpp `JS_ReadObject`s the embedded module bytecode (tjsc `-n
+retroplug-cli`) before a session evaluates, and `js_host_resolve_imported_module` checks that table
+BEFORE the module loader, so the SDK never becomes a file - nothing to sync or let go stale. A relative
+specifier could not work this way: `tjs_module_normalizer` only consults the import map for BARE names
+(`if (name[0] != '.')`), so `"../sdk/x.js"` always hits the disk. Only the `.d.ts` is still written out
+([cli/sdkAssets.ts](packages/retroplug/cli/sdkAssets.ts)), because editors and `tsc` read declarations
+from disk and reach it via a tsconfig `paths` entry; it is written only when a source actually imports
+the SDK (`buildTsDir` reports `needsSdk`). Two pre-existing facts make the stripping work:
 the txiki runtime **already resolves `import` off disk at runtime** (so tests never needed bundling, only
 stripping), and consumer tests already use explicit `.js` specifiers, so emitting `X.ts` -> `X.js` at the
 same directory DEPTH needs no specifier rewriting. That depth is why stripped output lands in the source

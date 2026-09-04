@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build retroplug-cli and copy it into a consumer repo's retroplug-cli/ harness (bliptoaster by default).
 # This is the "sync" step, and it is now a ONE-FILE copy: the binary is platform-specific and NOT
-# committed on the consumer side (it's gitignored there), and it carries the test SDK embedded, so
-# `retroplug-cli test` / `run` write sdk/ out next to the consumer's tests when it is missing or its
-# stamp is stale. Nothing else to keep in step, and a consumer copy can no longer lag the binary.
+# committed on the consumer side (it's gitignored there), and it carries the test SDK embedded as a
+# MODULE: a test's `import ... from "retroplug-cli"` resolves from QuickJS's loaded-module table, so the
+# SDK never becomes a file at all. Only its .d.ts is written out, for editors and tsc.
 #
 #   tools/sync-cli-to-bliptoaster.sh [dest-repo]      (default dest-repo: ../bliptoaster, relative to this repo)
 #
@@ -42,4 +42,4 @@ ldd "$DEST_KIT/bin/retroplug-cli" || true
 echo
 echo "synced:"
 echo "  $DEST_KIT/bin/retroplug-cli   ($(du -h "$DEST_KIT/bin/retroplug-cli" | cut -f1))"
-echo '  (sdk/ regenerates itself from the binary on the next retroplug-cli test / run)'
+echo '  (the SDK ships INSIDE the binary; only sdk/retroplug-cli.d.ts is written out, on the next test / run)'

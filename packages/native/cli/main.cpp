@@ -51,10 +51,13 @@ extern const std::uint32_t rp_cli_bundle_size;
 // rather than a module, and loaded ON DEMAND — see jsLoadTsStripper below.
 extern const std::uint8_t  rp_ts_stripper_bundle[];
 extern const std::uint32_t rp_ts_stripper_bundle_size;
-// The test SDK as raw TEXT (not bytecode): `test` / `run` write it next to a consumer's tests, which is
-// why the binary carries it - a consumer copy could otherwise go stale against a newer binary.
-extern const unsigned char rp_sdk_js[];
-extern const unsigned int  rp_sdk_js_size;
+// The test SDK as MODULE bytecode, compiled under the module name `retroplug-cli` (tjsc -n). Registered
+// before a session evaluates so `import ... from "retroplug-cli"` resolves from QuickJS's loaded-module
+// table with no file on disk - see registerSdkModule below.
+extern const std::uint8_t  rp_retroplug_cli[];
+extern const std::uint32_t rp_retroplug_cli_size;
+// The SDK's .d.ts as raw text. This one IS still written to disk, because editors and tsc read
+// declarations from the filesystem; a bare specifier reaches it through a tsconfig `paths` entry.
 extern const unsigned char rp_sdk_dts[];
 extern const unsigned int  rp_sdk_dts_size;
 extern const char          rp_sdk_hash[];  // content stamp, so the staleness check is O(1)
@@ -107,14 +110,30 @@ JSValue jsLoadTsStripper(JSContext* ctx, JSValueConst, int, JSValueConst*) {
 // globalThis.__rp_sdkAsset(name) -> string. "js" / "d.ts" hand back the embedded SDK text, "hash" its
 // content stamp. Read by cli/sdkAssets.ts when it materializes the SDK for a consumer's tests; nothing
 // is decoded here, the arrays are plain UTF-8.
+// Register the embedded SDK under its module name, WITHOUT evaluating it. JS_ReadObject alone is enough:
+// deserializing module bytecode creates the JSModuleDef, which enters ctx->loaded_modules, and
+// js_host_resolve_imported_module checks that table before ever calling the module loader. So a session's
+// `import ... from "retroplug-cli"` links against this and no file is ever looked for.
+//
+// Not evaluated here: the module body runs lazily when something actually imports it, so a session that
+// does not use the SDK pays only the deserialize.
+void registerSdkModule(JSContext* ctx) {
+    JSValue mod = JS_ReadObject(ctx, rp_retroplug_cli, rp_retroplug_cli_size, JS_READ_OBJ_BYTECODE);
+    if (JS_IsException(mod)) {
+        JS_FreeValue(ctx, JS_GetException(ctx));  // non-fatal: imports of it will simply fail to resolve
+        return;
+    }
+    if (JS_VALUE_GET_TAG(mod) == JS_TAG_MODULE && JS_ResolveModule(ctx, mod) < 0)
+        JS_FreeValue(ctx, JS_GetException(ctx));
+    JS_FreeValue(ctx, mod);
+}
+
 JSValue jsSdkAsset(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     if (argc < 1) return JS_NULL;
     const char* name = JS_ToCString(ctx, argv[0]);
     if (!name) return JS_NULL;
     JSValue out = JS_NULL;
-    if (std::strcmp(name, "js") == 0)
-        out = JS_NewStringLen(ctx, reinterpret_cast<const char*>(rp_sdk_js), rp_sdk_js_size);
-    else if (std::strcmp(name, "d.ts") == 0)
+    if (std::strcmp(name, "d.ts") == 0)
         out = JS_NewStringLen(ctx, reinterpret_cast<const char*>(rp_sdk_dts), rp_sdk_dts_size);
     else if (std::strcmp(name, "hash") == 0)
         out = JS_NewString(ctx, rp_sdk_hash);
@@ -238,6 +257,9 @@ int main(int argc, char** argv) try {
     // from the args we exposed above and prints help / routes it).
     int rc;
     if (runFile) {
+        // Session files are the only thing that imports the SDK, so only they pay the deserialize;
+        // `render` / `n8-bridge` / help never touch it.
+        registerSdkModule(ctx);
         const std::string code = slurp(argv[1]);
         rc = host.evalModuleBuffer(code.data(), code.size(), argv[1]);
     } else {

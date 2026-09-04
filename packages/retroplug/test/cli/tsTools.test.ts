@@ -3,9 +3,9 @@
 //
 // buildDirFor is worth guarding carefully because it is what makes stripped tests work at all. Stripping
 // preserves an import specifier verbatim, so the emitted `.js` MUST sit at the same directory depth as
-// the `.ts` it came from, or `../sdk/retroplug-cli.js` resolves somewhere else. The "." vs ".." case
-// below is not hypothetical: getting it wrong made every test fail with
-// "could not load '../sdk/retroplug-cli.js'".
+// the `.ts` it came from, or a sibling `./helper.js` resolves somewhere else. The "." vs ".." case below
+// is not hypothetical: getting it wrong made every test fail to resolve its imports.
+// (The SDK is exempt - it is a bare specifier served from the module registry, never a path.)
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { buildDirFor, isStrippableTs, outputName, buildTsDir } from "../../cli/tsStrip";
@@ -22,12 +22,12 @@ test("tsStrip: buildDirFor puts the build dir alongside the source dir, at the s
   expect(buildDirFor("kit/tests/")).toBe("kit/.rp-test-build"); // trailing slash tolerated
 });
 
-test("sdkAssets: sdkDirFor keys off the OUTPUT dir, not the source dir", () => {
-  // A test resolves `../sdk/...` relative to where the emitted file sits. Those coincide by default,
-  // but diverge under `--out` - keying off the source dir put the SDK where nothing imported it.
-  expect(sdkDirFor(buildDirFor("kit/tests"))).toBe("kit/sdk"); // default: alongside the tests
-  expect(sdkDirFor("/tmp/build-xyz")).toBe("/tmp/sdk"); // --out: follows the output
-  expect(sdkDirFor(".rp-test-build")).toBe("./sdk"); // bare name: same "." rule as buildDirFor
+test("sdkAssets: sdkDirFor sits alongside the SOURCE tests", () => {
+  // Only the .d.ts is written, and only editors/tsc read it - nothing resolves it at run time (the SDK
+  // itself is a bare specifier served from the module registry), so it keys off the source dir.
+  expect(sdkDirFor("kit/tests")).toBe("kit/sdk");
+  expect(sdkDirFor("/abs/kit/tests")).toBe("/abs/kit/sdk");
+  expect(sdkDirFor("tests")).toBe("./sdk"); // bare name: same "." rule as buildDirFor
 });
 
 test("tsStrip: only non-declaration .ts is strippable, and .ts maps to .js", () => {
@@ -64,11 +64,11 @@ test("tsStrip: buildTsDir strips .ts, copies .js, and skips .d.ts and subdirecto
   }
 });
 
-test("tsStrip: buildTsDir reports needsSdk when a source imports the SDK", () => {
+test("tsStrip: buildTsDir reports needsSdk from the BARE specifier", () => {
   const backend = new MockBackend();
   backend.writeFile(
     "/kit/tests/a.test.ts",
-    new TextEncoder().encode(`import { test } from "../sdk/retroplug-cli.js";`),
+    new TextEncoder().encode(`import { test } from "retroplug-cli";`),
   );
   const g = globalThis as { __stripTypes?: (s: string, f?: string) => string };
   const prev = g.__stripTypes;

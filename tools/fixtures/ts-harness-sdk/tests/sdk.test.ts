@@ -1,7 +1,7 @@
-// Imports the SDK by the same specifier a real consumer test uses, so the materialization checks prove
-// the written file is IMPORTABLE and working - not merely present on disk. encodeWav is a pure function
+// Imports the SDK by the same BARE specifier a real consumer test uses. It resolves from the module
+// registry with no file on disk at all; encodeWav is a pure function
 // with no emulator dependency, which keeps this fixture fast.
-import { encodeWav } from "../sdk/retroplug-cli.js";
+import { encodeWav } from "retroplug-cli";
 
 declare const tjs: { exit(c: number): void };
 

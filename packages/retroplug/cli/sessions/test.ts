@@ -101,7 +101,7 @@ export const testTool: CliTool = {
 
     // The binary owns the SDK: refresh it next to the tests if it is missing or stale, so the copy a
     // test imports can never lag the binary running it. Only when something actually imports it.
-    if (needsSdk) ensureSdk(s.backend, sdkDirFor(outDir));
+    if (needsSdk) ensureSdk(s.backend, sdkDirFor(opts.dir));
 
     const tests = selectTests(emitted, opts.filter);
 
