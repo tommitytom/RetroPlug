@@ -176,7 +176,14 @@ emulator-side tests, so a hardware number is comparable with a rendered one.
 **Verification discipline:** a real NES tone TRACKS what you play - if you inject different
 notes, the measured pitch must move. A fixed tone that doesn't change with input is a capture
 artifact or a stuck note, NOT proof the game is playing. Cross-check pitch against `--sniff`
-(the APU timer). The NES here is PAL: `f = 1662607 / (16 * (timer + 1))`.
+(the APU timer): `f = 1662607 / (16 * (timer + 1))`, because **this console is PAL**.
+
+> **`--sniff` prints NTSC-decoded frequencies, and this console is PAL - so its Hz reads ~7.6% HIGH.**
+> `decodeSniffer()` takes a `cpuHz` that defaults to `CPU_HZ_NTSC`
+> ([src/n8/sniffer.ts](../../packages/retroplug/src/n8/sniffer.ts)), and `n8-load --sniff` doesn't
+> override it. A capture measuring 440 Hz against a sniff reading 474 Hz is **agreement, not a tuning
+> bug**: 474 x 1662607/1789773 = 440.3. Convert before you compare, or you'll go hunting a 7.6% error
+> that isn't there.
 
 ## 4. Capture the NES video (USB capture card)
 
