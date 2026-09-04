@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Build retroplug-cli + the test SDK and copy them into a consumer repo's retroplug-cli/ harness
-# (bliptoaster by default). This is the "sync" step: the binary is platform-specific and NOT committed on
-# the consumer side (it's gitignored there), and the SDK (.js + .d.ts) is a regenerable artifact — this
-# script refreshes all three from the current RetroPlug source.
+# Build retroplug-cli and copy it into a consumer repo's retroplug-cli/ harness (bliptoaster by default).
+# This is the "sync" step, and it is now a ONE-FILE copy: the binary is platform-specific and NOT
+# committed on the consumer side (it's gitignored there), and it carries the test SDK embedded, so
+# `retroplug-cli test` / `run` write sdk/ out next to the consumer's tests when it is missing or its
+# stamp is stale. Nothing else to keep in step, and a consumer copy can no longer lag the binary.
 #
 #   tools/sync-cli-to-bliptoaster.sh [dest-repo]      (default dest-repo: ../bliptoaster, relative to this repo)
 #
-# Populates <dest>/retroplug-cli/{bin/retroplug-cli, sdk/retroplug-cli.js, sdk/retroplug-cli.d.ts}.
+# Populates <dest>/retroplug-cli/bin/retroplug-cli. The sdk/ directory materializes itself on first run.
 # (Future: the consumer devcontainer pulls the binary from a GitHub release instead of this local copy.)
 set -euo pipefail
 
@@ -22,14 +23,10 @@ fi
 DEST="$(cd "$DEST" && pwd)"
 
 BIN_SRC="$REPO/build/bin/retroplug-cli"
-SDK_DIR="$REPO/build/cli-sdk"
 DEST_KIT="$DEST/retroplug-cli"
 
 echo "==> building retroplug-cli"
 node "$REPO/scripts/cmake-build.js" retroplug-cli
-
-echo "==> building the test SDK"
-node "$REPO/tools/build-cli-sdk.mjs" "$SDK_DIR"
 
 if [ ! -x "$BIN_SRC" ]; then
 	echo "error: binary not found after build: $BIN_SRC" >&2
@@ -37,15 +34,12 @@ if [ ! -x "$BIN_SRC" ]; then
 fi
 
 echo "==> copying into $DEST_KIT"
-mkdir -p "$DEST_KIT/bin" "$DEST_KIT/sdk"
+mkdir -p "$DEST_KIT/bin"
 install -m 0755 "$BIN_SRC" "$DEST_KIT/bin/retroplug-cli"
-install -m 0644 "$SDK_DIR/retroplug-cli.js" "$DEST_KIT/sdk/retroplug-cli.js"
-install -m 0644 "$SDK_DIR/retroplug-cli.d.ts" "$DEST_KIT/sdk/retroplug-cli.d.ts"
 
 echo "==> done. runtime deps of the copied binary:"
 ldd "$DEST_KIT/bin/retroplug-cli" || true
 echo
 echo "synced:"
 echo "  $DEST_KIT/bin/retroplug-cli   ($(du -h "$DEST_KIT/bin/retroplug-cli" | cut -f1))"
-echo "  $DEST_KIT/sdk/retroplug-cli.js"
-echo "  $DEST_KIT/sdk/retroplug-cli.d.ts"
+echo '  (sdk/ regenerates itself from the binary on the next retroplug-cli test / run)'

@@ -65,6 +65,10 @@ export interface BuildResult {
   emitted: string[];
   /** The directory they were written to. */
   outDir: string;
+  /** True if any source imports the SDK, so the caller knows whether to materialize it. Checked from
+   *  the sources we are already reading, so a directory of self-contained files never has a 1.7 MB SDK
+   *  written next to it for nothing. */
+  needsSdk: boolean;
 }
 
 /**
@@ -76,6 +80,7 @@ export function buildTsDir(backend: HostBackend, srcDir: string, outDir?: string
   const dir = srcDir.replace(/\/+$/, "");
   const out = outDir ?? buildDirFor(dir);
   const emitted: string[] = [];
+  let needsSdk = false;
 
   for (const entry of backend.listDir(dir)) {
     if (entry.endsWith("/")) continue; // listDir marks directories with a trailing slash
@@ -86,6 +91,7 @@ export function buildTsDir(backend: HostBackend, srcDir: string, outDir?: string
     if (!bytes) throw new Error(`could not read ${srcPath}`);
 
     const source = new TextDecoder().decode(bytes);
+    if (source.includes("sdk/retroplug-cli.js")) needsSdk = true;
     const code = isStrippableTs(entry) ? stripTs(source, srcPath) : source;
 
     const outName = outputName(entry);
@@ -95,5 +101,5 @@ export function buildTsDir(backend: HostBackend, srcDir: string, outDir?: string
     emitted.push(outName);
   }
 
-  return { emitted, outDir: out };
+  return { emitted, outDir: out, needsSdk };
 }

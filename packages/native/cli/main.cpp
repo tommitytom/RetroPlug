@@ -51,6 +51,13 @@ extern const std::uint32_t rp_cli_bundle_size;
 // rather than a module, and loaded ON DEMAND — see jsLoadTsStripper below.
 extern const std::uint8_t  rp_ts_stripper_bundle[];
 extern const std::uint32_t rp_ts_stripper_bundle_size;
+// The test SDK as raw TEXT (not bytecode): `test` / `run` write it next to a consumer's tests, which is
+// why the binary carries it - a consumer copy could otherwise go stale against a newer binary.
+extern const unsigned char rp_sdk_js[];
+extern const unsigned int  rp_sdk_js_size;
+extern const unsigned char rp_sdk_dts[];
+extern const unsigned int  rp_sdk_dts_size;
+extern const char          rp_sdk_hash[];  // content stamp, so the staleness check is O(1)
 }
 
 namespace {
@@ -95,6 +102,24 @@ JSValue jsLoadTsStripper(JSContext* ctx, JSValueConst, int, JSValueConst*) {
     if (JS_IsException(res)) return res;
     JS_FreeValue(ctx, res);
     return JS_UNDEFINED;
+}
+
+// globalThis.__rp_sdkAsset(name) -> string. "js" / "d.ts" hand back the embedded SDK text, "hash" its
+// content stamp. Read by cli/sdkAssets.ts when it materializes the SDK for a consumer's tests; nothing
+// is decoded here, the arrays are plain UTF-8.
+JSValue jsSdkAsset(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_NULL;
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_NULL;
+    JSValue out = JS_NULL;
+    if (std::strcmp(name, "js") == 0)
+        out = JS_NewStringLen(ctx, reinterpret_cast<const char*>(rp_sdk_js), rp_sdk_js_size);
+    else if (std::strcmp(name, "d.ts") == 0)
+        out = JS_NewStringLen(ctx, reinterpret_cast<const char*>(rp_sdk_dts), rp_sdk_dts_size);
+    else if (std::strcmp(name, "hash") == 0)
+        out = JS_NewString(ctx, rp_sdk_hash);
+    JS_FreeCString(ctx, name);
+    return out;
 }
 
 // Ctrl-C stops a long-running session (and any batch command). The handler must be async-signal-safe, so it
@@ -203,6 +228,9 @@ int main(int argc, char** argv) try {
     // globalThis.__rp_loadTsStripper — cli/tsStrip.ts calls it lazily to install __stripTypes.
     JS_SetPropertyStr(ctx, global, "__rp_loadTsStripper",
                       JS_NewCFunction(ctx, jsLoadTsStripper, "__rp_loadTsStripper", 0));
+
+    // globalThis.__rp_sdkAsset — cli/sdkAssets.ts reads the embedded SDK text through it.
+    JS_SetPropertyStr(ctx, global, "__rp_sdkAsset", JS_NewCFunction(ctx, jsSdkAsset, "__rp_sdkAsset", 1));
 
     JS_FreeValue(ctx, global);
 

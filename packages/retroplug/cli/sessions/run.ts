@@ -12,6 +12,7 @@ import type { Session } from "../session";
 import type { CliTool } from "../tools";
 import { buildTsDir, buildDirFor, outputName } from "../tsStrip";
 import { spawnSession } from "../childSession";
+import { ensureSdk, sdkDirFor } from "../sdkAssets";
 
 export interface RunArgs {
   session: string;
@@ -69,7 +70,8 @@ export const runTool: CliTool = {
 
     const { dir, file } = splitPath(opts.session);
     const outDir = opts.out ?? buildDirFor(dir);
-    buildTsDir(s.backend, dir, outDir);
+    const { needsSdk } = buildTsDir(s.backend, dir, outDir);
+    if (needsSdk) ensureSdk(s.backend, sdkDirFor(outDir)); // see the note in sessions/test.ts
 
     keepAlive();
     void load(`${outDir}/${outputName(file)}`, opts.sessionArgs);

@@ -20,6 +20,7 @@ import type { Session } from "../session";
 import type { CliTool } from "../tools";
 import { buildTsDir, buildDirFor } from "../tsStrip";
 import { spawnSession } from "../childSession";
+import { ensureSdk, sdkDirFor } from "../sdkAssets";
 
 export interface TestArgs {
   dir: string;
@@ -96,7 +97,12 @@ export const testTool: CliTool = {
     }
 
     const outDir = opts.out ?? buildDirFor(opts.dir);
-    const { emitted } = buildTsDir(s.backend, opts.dir, outDir);
+    const { emitted, needsSdk } = buildTsDir(s.backend, opts.dir, outDir);
+
+    // The binary owns the SDK: refresh it next to the tests if it is missing or stale, so the copy a
+    // test imports can never lag the binary running it. Only when something actually imports it.
+    if (needsSdk) ensureSdk(s.backend, sdkDirFor(outDir));
+
     const tests = selectTests(emitted, opts.filter);
 
     if (tests.length === 0) {

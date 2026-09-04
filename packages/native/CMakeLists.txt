@@ -220,14 +220,29 @@ if(TARGET ${_TJSC_DEP})
   add_dependencies(retroplug-ts-stripper-bundle ${_TJSC_DEP})
 endif()
 
+# The test SDK (cli/sdk.ts → the authoring layer + its .d.ts), embedded as raw text C arrays so the
+# BINARY owns it: `test` / `run` materialize it next to a consumer's tests when it is missing or its
+# stamp does not match, which means a consumer never carries a copy that can go stale against a newer
+# binary. Not bytecode - a consumer's test imports it as an ordinary `.js` file on disk.
+set(SDK_ASSETS_C "${CMAKE_BINARY_DIR}/native/sdk-assets_data.c")
+set_source_files_properties(${SDK_ASSETS_C} PROPERTIES GENERATED TRUE)
+add_custom_target(retroplug-cli-sdk-assets
+    BYPRODUCTS ${SDK_ASSETS_C} ${SDK_ASSETS_C}.new
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/embed-sdk.mjs
+            ${CMAKE_BINARY_DIR}/cli-sdk ${SDK_ASSETS_C}.new
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SDK_ASSETS_C}.new ${SDK_ASSETS_C}
+    COMMENT "Embedding the retroplug-cli test SDK"
+    VERBATIM)
+
 # retroplug-cli: the standalone runner — the backend lib + a main() that evals either the COMPILED-IN
 # dispatcher bundle (commands + help) or, when argv[1] is a `.js`, a session file by path. No Node at
 # runtime. Output binary lands in build/bin/.
-add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C})
+add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C} ${SDK_ASSETS_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend)
 add_dependencies(retroplug-cli retroplug-cli-bundle)             # the embedded dispatcher bytecode must exist first
 add_dependencies(retroplug-cli retroplug-ts-stripper-bundle)     # ...and the stripper bytecode
+add_dependencies(retroplug-cli retroplug-cli-sdk-assets)         # ...and the embedded SDK
 
 set_target_properties(retroplug-cli PROPERTIES
     CXX_STANDARD 20

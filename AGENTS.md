@@ -172,7 +172,14 @@ individual `reaper:*` scripts safe to run in parallel.
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
 `retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one
 file - so a consumer repo (BlipToaster) needs **no Node, npm, esbuild or node_modules**. Its kit is the
-binary + `sdk/retroplug-cli.js` + `sdk/retroplug-cli.d.ts` + tests. Two pre-existing facts make it work:
+**binary plus tests, and nothing else**: the SDK is embedded too, and `test` / `run` write `sdk/` out
+next to the tests when it is missing or its content stamp is stale
+([cli/sdkAssets.ts](packages/retroplug/cli/sdkAssets.ts)), so a consumer copy can no longer lag the
+binary and `sync-cli-to-bliptoaster.sh` is a ONE-FILE copy. It is written relative to the OUTPUT dir,
+not the source dir - a test resolves `../sdk/...` from where the emitted file sits, and those diverge
+under `--out`. It is only written when a source actually imports it (`buildTsDir` reports `needsSdk`),
+so a directory of self-contained files never gets 1.7 MB dropped beside it. Two pre-existing facts make
+the stripping work:
 the txiki runtime **already resolves `import` off disk at runtime** (so tests never needed bundling, only
 stripping), and consumer tests already use explicit `.js` specifiers, so emitting `X.ts` -> `X.js` at the
 same directory DEPTH needs no specifier rewriting. That depth is why stripped output lands in the source

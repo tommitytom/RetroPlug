@@ -9,6 +9,7 @@
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { buildDirFor, isStrippableTs, outputName, buildTsDir } from "../../cli/tsStrip";
+import { sdkDirFor } from "../../cli/sdkAssets";
 import { parseTestArgs, selectTests } from "../../cli/sessions/test";
 import { parseRunArgs, splitPath } from "../../cli/sessions/run";
 
@@ -19,6 +20,14 @@ test("tsStrip: buildDirFor puts the build dir alongside the source dir, at the s
   expect(buildDirFor("kit/tests")).toBe("kit/.rp-test-build");
   expect(buildDirFor("/abs/kit/tests")).toBe("/abs/kit/.rp-test-build");
   expect(buildDirFor("kit/tests/")).toBe("kit/.rp-test-build"); // trailing slash tolerated
+});
+
+test("sdkAssets: sdkDirFor keys off the OUTPUT dir, not the source dir", () => {
+  // A test resolves `../sdk/...` relative to where the emitted file sits. Those coincide by default,
+  // but diverge under `--out` - keying off the source dir put the SDK where nothing imported it.
+  expect(sdkDirFor(buildDirFor("kit/tests"))).toBe("kit/sdk"); // default: alongside the tests
+  expect(sdkDirFor("/tmp/build-xyz")).toBe("/tmp/sdk"); // --out: follows the output
+  expect(sdkDirFor(".rp-test-build")).toBe("./sdk"); // bare name: same "." rule as buildDirFor
 });
 
 test("tsStrip: only non-declaration .ts is strippable, and .ts maps to .js", () => {
@@ -41,13 +50,31 @@ test("tsStrip: buildTsDir strips .ts, copies .js, and skips .d.ts and subdirecto
   const prev = g.__stripTypes;
   g.__stripTypes = (src) => `/*stripped*/${src}`;
   try {
-    const { emitted, outDir } = buildTsDir(backend, "/kit/tests");
+    const { emitted, outDir, needsSdk } = buildTsDir(backend, "/kit/tests");
     expect(outDir).toBe("/kit/.rp-test-build");
     expect(emitted.sort().join(",")).toBe("a.test.js,helper.js"); // no types.d.ts
+    // Nothing here imports the SDK, so none should be written next to it.
+    expect(needsSdk).toBe(false);
 
     const dec = new TextDecoder();
     expect(dec.decode(backend.readFile("/kit/.rp-test-build/a.test.js")!)).toBe("/*stripped*/const x: number = 1;");
     expect(dec.decode(backend.readFile("/kit/.rp-test-build/helper.js")!)).toBe("export const h = 1;");
+  } finally {
+    g.__stripTypes = prev;
+  }
+});
+
+test("tsStrip: buildTsDir reports needsSdk when a source imports the SDK", () => {
+  const backend = new MockBackend();
+  backend.writeFile(
+    "/kit/tests/a.test.ts",
+    new TextEncoder().encode(`import { test } from "../sdk/retroplug-cli.js";`),
+  );
+  const g = globalThis as { __stripTypes?: (s: string, f?: string) => string };
+  const prev = g.__stripTypes;
+  g.__stripTypes = (src) => src;
+  try {
+    expect(buildTsDir(backend, "/kit/tests").needsSdk).toBe(true);
   } finally {
     g.__stripTypes = prev;
   }
