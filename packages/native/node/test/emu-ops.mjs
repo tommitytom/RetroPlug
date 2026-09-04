@@ -54,11 +54,16 @@ export function runEmu(sdk, nesRom) {
 
     // Snapshot reads: binary out through the emulator facet. LENGTH only, deliberately.
     //
-    // readState is NOT byte-stable run to run for identical input - repeated runs of the SAME host
-    // produce differing states (verified with an isolated RETROPLUG_USER_CONFIG_DIR, so it is not just
-    // persisted config). Hashing it made this suite flaky rather than catching anything: it is a
-    // property of the save-state serialization, not of the codec this test exists to compare. Binary
-    // fidelity through the codec is covered exactly by parity.test.mjs and by the PCM hashes below.
+    // readState is NOT byte-stable run to run, and that is CORRECT, not a defect: SameBoy models
+    // unpredictable power-on RAM by filling WRAM / HRAM / OAM / extra-OAM / wave RAM with GB_random()
+    // at reset (Core/gb.c:1460-1630), and Core/random.c seeds that generator from time(NULL) in a
+    // library constructor. Two runs in the same wall-clock second agree; runs a second apart do not.
+    // (Confirmed by pinning time() via LD_PRELOAD: the savestate then repeats exactly.)
+    //
+    // It does NOT reach the audio or the battery - across five widely separated forced seeds the
+    // rendered PCM and readSram were byte-identical, which is why the hashes below are safe to assert
+    // and why SRAM auto-save does not spuriously dirty. Only whole-savestate and whole-WRAM reads
+    // carry the randomness, so never hash those in a regression test.
     const gbState = s.backend.readState(gb);
     rec("gb:stateLen", gbState ? gbState.length : null);
 
