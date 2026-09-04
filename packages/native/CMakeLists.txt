@@ -200,13 +200,34 @@ if(TARGET ${_TJSC_DEP})
   add_dependencies(retroplug-cli-bundle ${_TJSC_DEP})
 endif()
 
+# The TypeScript type stripper — ts-blank-space + the TS parser → tjsc bytecode C array, COMPILED INTO
+# retroplug-cli so `retroplug-cli test/run` can execute `.ts` directly with no Node, npm or bundler on
+# the consumer's machine. GLOBAL CODE (tjsc WITHOUT -m, like the render worker): cli/main.cpp loads it
+# with JS_ReadObject + JS_EvalFunction on demand, so the ~4 MB never touches the startup path of
+# `render` / `n8-bridge` / any other command. Array name derives from the output stem →
+# rp_ts_stripper_bundle[] + _size. Derived; never committed.
+set(TS_STRIPPER_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/ts-stripper-bundle.js")
+set(TS_STRIPPER_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/ts-stripper-bundle_data.c")
+set_source_files_properties(${TS_STRIPPER_BUNDLE_C} PROPERTIES GENERATED TRUE)
+add_custom_target(retroplug-ts-stripper-bundle
+    BYPRODUCTS ${TS_STRIPPER_BUNDLE_JS} ${TS_STRIPPER_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C}.new
+    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-ts-stripper.mjs ${TS_STRIPPER_BUNDLE_JS}
+    COMMAND ${_TJSC_COMMAND} -s -p rp_ -o ${TS_STRIPPER_BUNDLE_C}.new ${TS_STRIPPER_BUNDLE_JS}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TS_STRIPPER_BUNDLE_C}.new ${TS_STRIPPER_BUNDLE_C}
+    COMMENT "Bundling the TypeScript type stripper (esbuild + global-code bytecode)"
+    VERBATIM)
+if(TARGET ${_TJSC_DEP})
+  add_dependencies(retroplug-ts-stripper-bundle ${_TJSC_DEP})
+endif()
+
 # retroplug-cli: the standalone runner — the backend lib + a main() that evals either the COMPILED-IN
 # dispatcher bundle (commands + help) or, when argv[1] is a `.js`, a session file by path. No Node at
 # runtime. Output binary lands in build/bin/.
-add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C})
+add_executable(retroplug-cli cli/main.cpp ${CLI_BUNDLE_C} ${TS_STRIPPER_BUNDLE_C})
 
 target_link_libraries(retroplug-cli PRIVATE retroplug-backend)
-add_dependencies(retroplug-cli retroplug-cli-bundle)  # the embedded dispatcher bytecode must exist first
+add_dependencies(retroplug-cli retroplug-cli-bundle)             # the embedded dispatcher bytecode must exist first
+add_dependencies(retroplug-cli retroplug-ts-stripper-bundle)     # ...and the stripper bytecode
 
 set_target_properties(retroplug-cli PROPERTIES
     CXX_STANDARD 20

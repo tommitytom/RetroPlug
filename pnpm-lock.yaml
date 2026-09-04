@@ -21,6 +21,12 @@ importers:
       esbuild:
         specifier: ^0.28
         version: 0.28.1
+      ts-blank-space:
+        specifier: 0.9.0
+        version: 0.9.0
+      typescript-5:
+        specifier: npm:typescript@5.7.3
+        version: typescript@5.7.3
 
   packages/native: {}
 
@@ -321,6 +327,15 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  ts-blank-space@0.9.0:
+    resolution: {integrity: sha512-TU6coIZm6RxGgAjroRKmi6aCQ7Pq7cT+1I+bTKBepD6joOuWqUCOptVlz+eurqTnatnQOimlR8XB5sQZ6ULwbw==}
+    engines: {node: '>=18.0.0'}
+
+  typescript@5.7.3:
+    resolution: {integrity: sha512-84MVSjMEHP+FQRPy3pX9sTVV/INIex71s9TL2Gm5FG/WG1SqXeKyZ0k7/blY/4FdOzI12CBy1vGc4og/eus0fw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
     engines: {node: '>=16.20.0'}
@@ -499,6 +514,12 @@ snapshots:
       '@esbuild/win32-arm64': 0.28.1
       '@esbuild/win32-ia32': 0.28.1
       '@esbuild/win32-x64': 0.28.1
+
+  ts-blank-space@0.9.0:
+    dependencies:
+      typescript: 5.7.3
+
+  typescript@5.7.3: {}
 
   typescript@7.0.2:
     optionalDependencies:

@@ -21,6 +21,8 @@ export interface CliTool {
   run(s: Session, args: string[]): void;
 }
 
+import { testTool } from "./sessions/test";
+import { runTool } from "./sessions/run";
 import { renderTool } from "./sessions/render";
 import { lsdjRomTool } from "./sessions/lsdj-rom";
 import { risaRomTool } from "./sessions/risa-rom";
@@ -33,6 +35,8 @@ import { launchpadProbeTool } from "./sessions/launchpad-probe";
 
 /** Every baked-in command. The ONLY place a new tool is registered. */
 export const tools: CliTool[] = [
+  testTool,
+  runTool,
   renderTool,
   lsdjRomTool,
   risaRomTool,

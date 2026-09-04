@@ -169,6 +169,24 @@ editor checks) at once, `pnpm reaper:all` fans them out concurrently
 JACK server + per-tag config dir / display / logs), which is also what makes the
 individual `reaper:*` scripts safe to run in parallel.
 
+**`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
+`retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one
+file - so a consumer repo (BlipToaster) needs **no Node, npm, esbuild or node_modules**. Its kit is the
+binary + `sdk/retroplug-cli.js` + `sdk/retroplug-cli.d.ts` + tests. Two pre-existing facts make it work:
+the txiki runtime **already resolves `import` off disk at runtime** (so tests never needed bundling, only
+stripping), and consumer tests already use explicit `.js` specifiers, so emitting `X.ts` -> `X.js` at the
+same directory DEPTH needs no specifier rewriting. That depth is why stripped output lands in the source
+dir's SIBLING `.rp-test-build/` ([cli/tsStrip.ts](packages/retroplug/cli/tsStrip.ts) `buildDirFor`) - put
+it anywhere else and every `../sdk/...` import breaks. Each test file runs in its **own process**
+(`tjs.spawn`), which is required, not tidy: the TAP harness calls `tjs.exit` when a file ends, its case
+list is module-level, and the native `Engine` is per-process. The stripper is ts-blank-space + the TS
+parser, compiled in as global-code bytecode (+4 MB) and loaded **on demand** via `__rp_loadTsStripper`, so
+no other command pays for it. **Types are stripped, not compiled**: only erasable syntax works - `enum`,
+`namespace` and constructor parameter properties are refused with `file:line:col`. Wiring
+ts-blank-space's optional `onError` is what enforces that; omit it and an `enum` passes through as invalid
+JavaScript. (`@swc/wasm-typescript` was tried first and rejected: under the WAMR interpreter it core-dumped
+on 3 of 7 real test files and silently emitted EMPTY output on 2 more, which makes a test file "pass".)
+
 **UI/background rendering** (the `System > Render` menu; [spec/11-ui-rendering.md](spec/11-ui-rendering.md)):
 the CLI `render` command and the UI render share one library (`packages/retroplug/src/render/`), run offline
 by a bare-QuickJS `RenderHost` (own `Engine`) on a per-job thread (`RenderJobRegistry`). Verify with

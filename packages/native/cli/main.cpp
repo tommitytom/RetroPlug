@@ -47,6 +47,10 @@ using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec
 extern "C" {
 extern const std::uint8_t  rp_cli_bundle[];
 extern const std::uint32_t rp_cli_bundle_size;
+// The TypeScript type stripper (ts-blank-space + the TS parser), also compiled in but as GLOBAL CODE
+// rather than a module, and loaded ON DEMAND — see jsLoadTsStripper below.
+extern const std::uint8_t  rp_ts_stripper_bundle[];
+extern const std::uint32_t rp_ts_stripper_bundle_size;
 }
 
 namespace {
@@ -77,6 +81,19 @@ JSValue jsExit(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
 bool g_keepAlive = false;
 JSValue jsKeepAlive(JSContext*, JSValueConst, int, JSValueConst*) {
     g_keepAlive = true;
+    return JS_UNDEFINED;
+}
+
+// globalThis.__rp_loadTsStripper() — evaluate the compiled-in type stripper into this context, defining
+// globalThis.__stripTypes(source, filename). Called ONCE, lazily, by cli/tsStrip.ts when a `test` / `run`
+// command actually has TypeScript to strip; every other command never pays the ~4 MB. Global-code
+// bytecode (tjsc without -m), so it loads exactly the way RenderHost loads the render worker.
+JSValue jsLoadTsStripper(JSContext* ctx, JSValueConst, int, JSValueConst*) {
+    JSValue obj = JS_ReadObject(ctx, rp_ts_stripper_bundle, rp_ts_stripper_bundle_size, JS_READ_OBJ_BYTECODE);
+    if (JS_IsException(obj)) return obj;
+    JSValue res = JS_EvalFunction(ctx, obj);  // consumes obj
+    if (JS_IsException(res)) return res;
+    JS_FreeValue(ctx, res);
     return JS_UNDEFINED;
 }
 
@@ -182,6 +199,10 @@ int main(int argc, char** argv) try {
     // globalThis.__rp_keepAlive — a long-running session (MIDI bridge) calls it to switch the pump from the
     // bounded batch backstop to run-until-exit (see the pump loop below).
     JS_SetPropertyStr(ctx, global, "__rp_keepAlive", JS_NewCFunction(ctx, jsKeepAlive, "__rp_keepAlive", 0));
+
+    // globalThis.__rp_loadTsStripper — cli/tsStrip.ts calls it lazily to install __stripTypes.
+    JS_SetPropertyStr(ctx, global, "__rp_loadTsStripper",
+                      JS_NewCFunction(ctx, jsLoadTsStripper, "__rp_loadTsStripper", 0));
 
     JS_FreeValue(ctx, global);
 

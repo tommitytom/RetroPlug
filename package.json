@@ -21,6 +21,7 @@
     "test:plugin": "node scripts/cmake-build.js retroplug-plugin-test retroplug-classid-test retroplug-audio-test retroplug-watcher-test retroplug-lottie-test retroplug-midi-test retroplug-launchpad-test && node packages/retroplug/scripts/run-plugin-tests.mjs",
     "test:n8": "node scripts/cmake-build.js retroplug-n8-test && build/bin/retroplug-n8-test",
     "test:node": "node packages/native/node/test/run.mjs",
+    "test:cli-ts": "node scripts/cmake-build.js retroplug-cli && tools/run-cli-ts-tests.sh",
     "sdl:smoke": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-smoke.sh",
     "sdl:pipewire": "node scripts/cmake-build.js retroplug-sdl && tools/run-sdl-pipewire.sh",
     "screenshot": "node scripts/cmake-build.js retroplug-jack && tools/run-standalone.sh",
@@ -61,6 +62,8 @@
   },
   "devDependencies": {
     "dpf.js": "link:./deps/dpf.js",
-    "esbuild": "^0.28"
+    "esbuild": "^0.28",
+    "ts-blank-space": "0.9.0",
+    "typescript-5": "npm:typescript@5.7.3"
   }
 }
