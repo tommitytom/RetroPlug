@@ -19,12 +19,7 @@ import { keepAlive, exitProcess } from "../session";
 import type { Session } from "../session";
 import type { CliTool } from "../tools";
 import { buildTsDir, buildDirFor } from "../tsStrip";
-
-declare const tjs: {
-  exePath: string;
-  env: Record<string, string>;
-  spawn(args: string[], options?: { env?: Record<string, string> }): { wait(): Promise<{ exit_status: number; term_signal: string | null }> };
-};
+import { spawnSession } from "../childSession";
 
 export interface TestArgs {
   dir: string;
@@ -124,11 +119,10 @@ async function runAll(tests: string[], outDir: string, sessionArgs: string[]): P
     console.log(`\n# ${file}`);
     // A fresh config dir per file so runs never cross-contaminate (mirrors what the Node runner did
     // with mkdtemp). The child creates it on first write - writeFile makes parent dirs on demand.
-    const proc = tjs.spawn([tjs.exePath, `${outDir}/${file}`, ...sessionArgs], {
-      env: { ...tjs.env, RETROPLUG_USER_CONFIG_DIR: `${outDir}/.cfg/${name}` },
+    const code = await spawnSession(`${outDir}/${file}`, sessionArgs, {
+      RETROPLUG_USER_CONFIG_DIR: `${outDir}/.cfg/${name}`,
     });
-    const status = await proc.wait();
-    if (status.exit_status !== 0 || status.term_signal) failed++;
+    if (code !== 0) failed++;
   }
 
   const total = tests.length;

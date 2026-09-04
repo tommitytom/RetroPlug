@@ -1,8 +1,8 @@
 // `retroplug-cli run <session.ts> [args...]` - strip and run a single TypeScript session.
 //
-// The one-off sibling of `test`: same stripping, same directory layout, but it runs ONE file in this
-// process rather than spawning a child per test. This is what a repro / probe script uses (it replaces
-// BlipToaster's repro/run.mjs, the second place Node was needed).
+// The one-off sibling of `test`: same stripping, same directory layout, but ONE file. This is what a
+// repro / probe script uses (it replaces BlipToaster's repro/run.mjs, the second place Node was needed).
+// `run <x.ts>` is exactly the `.ts` equivalent of `retroplug-cli <x.js>`, down to the exit code.
 //
 // The whole source directory is stripped, not just the named file, so a session that imports a sibling
 // helper works without us resolving the module graph.
@@ -11,6 +11,7 @@ import { keepAlive, exitProcess } from "../session";
 import type { Session } from "../session";
 import type { CliTool } from "../tools";
 import { buildTsDir, buildDirFor, outputName } from "../tsStrip";
+import { spawnSession } from "../childSession";
 
 export interface RunArgs {
   session: string;
@@ -55,8 +56,8 @@ export const runTool: CliTool = {
   name: "run",
   summary: "Strip and run a single TypeScript session file",
   help,
-  // The stripped module is loaded with a dynamic import (async), and the session itself decides the
-  // exit code - typically via the TAP harness calling tjs.exit. So we must not be auto-exited.
+  // The session runs in a child process (see childSession) and we wait on it, so we must not be
+  // auto-exited; we report the child's exit code once it finishes.
   longRunning: true,
   run(s: Session, args: string[]): void {
     const opts = parseRunArgs(args);
@@ -71,18 +72,12 @@ export const runTool: CliTool = {
     buildTsDir(s.backend, dir, outDir);
 
     keepAlive();
-    void load(`${outDir}/${outputName(file)}`);
+    void load(`${outDir}/${outputName(file)}`, opts.sessionArgs);
   },
 };
 
-async function load(path: string): Promise<void> {
-  try {
-    await import(path);
-    // No exit here: the session owns its exit code (the TAP harness calls tjs.exit when it finishes).
-    // If it never does, the keep-alive pump runs until Ctrl-C, which matches `retroplug-cli <file.js>`.
-  } catch (e) {
-    const err = e as Error;
-    console.error(`ERROR: ${err?.message ?? e}`);
-    exitProcess(1);
-  }
+async function load(path: string, args: string[]): Promise<void> {
+  // The session owns its exit code (a TAP harness calls tjs.exit when it finishes); we just pass it on,
+  // so `run x.ts` and `retroplug-cli x.js` behave identically.
+  exitProcess(await spawnSession(path, args));
 }
