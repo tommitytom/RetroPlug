@@ -23,21 +23,38 @@ through and controllable from the shell:
 You can't see or hear the console directly - **capture audio/video to observe it**. When you claim
 something plays or shows on screen, back it with a recording/frame, not an assumption.
 
+The rig is shared by the **RetroPlug** and **BlipToaster** dev containers - both pass the same four
+devices through, and both see the same `/workspaces` mount (so the power script and its token are
+already there). Only the binary location differs; see [Prereqs](#0-prereqs).
+
 > **NEVER use Python. Under any circumstances.** No `python`/`python3`, no numpy, no venv, no inline
 > `-c` snippets - not for audio analysis, not for MIDI bytes, not for "just a quick check". Everything
 > here is `retroplug-cli` plus ordinary shell tools (`arecord`, `ffmpeg`, `dd`). If a measurement
-> looks like it needs Python, it needs a `retroplug-cli` subcommand instead: add one
-> (`packages/retroplug/cli/sessions/*.ts` + register it in `cli/tools.ts`, which is the only place a
-> tool is registered) and rebuild with
-> `cmake --build build --target retroplug-cli -j$(nproc)`. That keeps every hardware measurement
-> reproducible, reviewable and shared with the emulator-side tests.
+> looks like it needs Python, it needs a `retroplug-cli` subcommand instead - see
+> [Adding a measurement](#adding-a-measurement) for how, from either repo. That keeps every hardware
+> measurement reproducible, reviewable and shared with the emulator-side tests.
 
 ## 0. Prereqs
 
-- Build the CLI once: `./build.sh` (from a RetroPlug worktree) -> `build/bin/retroplug-cli` +
-  `build/bin/retroplug-n8-hwtest`. Both auto-detect the N8 (VID:PID `38df:0017`), so `--serial` is
-  usually optional; pass `--serial /dev/ttyACM0` (or your N8 node) if auto-detect fails.
+This skill works from **either** repo on this machine, and the only difference is where the two
+binaries come from. Set `RPBIN` once and every command below is copy-pasteable:
+
+| you are in | binaries | how to get them |
+|---|---|---|
+| a **RetroPlug** worktree | `build/bin/` | `./build.sh`, plus `cmake --build build --target retroplug-n8-hwtest -j$(nproc)` (it's `EXCLUDE_FROM_ALL`) |
+| the **BlipToaster** repo | `retroplug-cli/bin/` | prebuilt + gitignored; populate from a RetroPlug checkout with `tools/sync-cli-to-bliptoaster.sh`. **That image has no C++ toolchain - you cannot build them here.** |
+
+```sh
+RPBIN=build/bin            # RetroPlug worktree
+RPBIN=retroplug-cli/bin    # BlipToaster repo
+```
+
+- Both binaries auto-detect the N8 (VID:PID `38df:0017`), so `--serial` is usually optional; pass
+  `--serial /dev/ttyACM0` (or your N8 node) if auto-detect fails.
 - On boot the N8 sits at its **file-browser menu**; no game auto-runs. `n8-load` boots one.
+- **The N8 serial is exclusive.** Both dev containers pass `/dev/ttyACM0` through, but only one
+  process can hold it. `Edio: serial read timeout` can therefore also mean "the other container is
+  driving the N8", not just "a game is running".
 
 ## 1. Power (Home Assistant)
 
@@ -52,10 +69,12 @@ something plays or shows on screen, back it with a recording/frame, not an assum
 
 ## 2. Run code on the NES (Everdrive N8 over USB)
 
-`retroplug-cli n8-load [options] [<rom.nes>]` drives the N8's on-device menu to load + boot a ROM.
-The N8 firmware parses the iNES header and sources the mapper core from its own SD card.
+`$RPBIN/retroplug-cli n8-load [options] [<rom.nes>]` drives the N8's on-device menu to load + boot a
+ROM. The N8 firmware parses the iNES header and sources the mapper core from its own SD card.
 
-- **Boot a local ROM:** `retroplug-cli n8-load path/to/game.nes` (uploads to `usb-games/` and boots).
+- **Boot a local ROM:** `$RPBIN/retroplug-cli n8-load path/to/game.nes` (uploads to `usb-games/` and
+  boots). From BlipToaster the ROM is `build/bliptoaster.nes` or a mapper variant
+  (`make MAPPER=s5b clean all` -> `build/bliptoaster-s5b.nes`).
 - **Boot a ROM already on the SD:** `n8-load --sd-path usb-games/game.nes`.
 - **Device info:** `n8-load --info` (serial, firmware, form factor, flash, voltages) - a quick "is
   the N8 alive over USB" check.
@@ -81,7 +100,7 @@ A game must be running for these (the sniffer is off at the menu):
 
 ### Low-level access (`retroplug-n8-hwtest`)
 
-`retroplug-n8-hwtest <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|fifowr|info|fstest> <addr|path> [len|byte|dest] [port]`
+`$RPBIN/retroplug-n8-hwtest <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|fifowr|info|fstest> <addr|path> [len|byte|dest] [port]`
 
 Direct device memory + FIFO. Key N8 addresses: cart battery RAM `0x1000000`, live sniffer region
 `0x1802000`, cart FIFO `0x1810000` (a running ROM reads it at `$40F0/$40F1`).
@@ -94,7 +113,7 @@ Direct device memory + FIFO. Key N8 addresses: cart battery RAM `0x1000000`, liv
 
 ## 2b. Drive a ROM with MIDI (`n8-play`)
 
-`retroplug-cli n8-play [--serial <port>] [--exp-vol <0-255>] <step>...` plays a **scripted** MIDI
+`$RPBIN/retroplug-cli n8-play [--serial <port>] [--exp-vol <0-255>] <step>...` plays a **scripted** MIDI
 sequence into the cart FIFO, so a BlipToaster check is one reproducible command with no controller
 attached. (`n8-bridge` is the live twin, and needs a real MIDI input port.)
 
@@ -103,7 +122,7 @@ Steps are 1-based on MIDI channel, matching the BlipToaster monitor's `CH` colum
 
 ```sh
 # hold a 2 s A4 on the S5B's Square A with the hardware envelope on
-retroplug-cli n8-play --exp-vol 128 cc:6:29:80 cc:6:28:64 cc:6:20:127 on:6:69 wait:2000 off:6:69
+$RPBIN/retroplug-cli n8-play --exp-vol 128 cc:6:29:80 cc:6:28:64 cc:6:20:127 on:6:69 wait:2000 off:6:69
 ```
 
 - **`--exp-vol` is REQUIRED for expansion audio** (VRC6 / VRC7 / N163 / S5B / MMC5). It writes the
@@ -138,14 +157,14 @@ Record a few seconds while something plays, then measure it with `analyze-captur
 
 ```sh
 arecord -D hw:L6,0 -f S32_LE -r 48000 -c 12 -d 5 /tmp/nes.wav
-retroplug-cli analyze-capture /tmp/nes.wav                          # level survey of all 12 channels
-retroplug-cli analyze-capture /tmp/nes.wav --channel 3 --expect-hz 440
+$RPBIN/retroplug-cli analyze-capture /tmp/nes.wav                    # level survey of all 12 channels
+$RPBIN/retroplug-cli analyze-capture /tmp/nes.wav --channel 3 --expect-hz 440
 ```
 
 `analyze-capture` reports level, fundamental (`detectPitch`, with cents error vs `--expect-hz`), a
 short-time **envelope** (min/max/swing over the sounding part), and `--band lo:hi` energy. It shares
-the repo's DSP helpers (`cli/pitch.ts`, `cli/spectral-metrics.ts`) with the emulator-side tests, so a
-hardware number is comparable with a rendered one.
+RetroPlug's DSP helpers (`packages/retroplug/cli/pitch.ts`, `cli/spectral-metrics.ts`) with the
+emulator-side tests, so a hardware number is comparable with a rendered one.
 
 - **The envelope swing is the point for hardware-envelope chips.** A flat tone and one pulsing under
   the Sunsoft 5B's envelope generator have the SAME rms - only the swing separates them.
@@ -171,12 +190,12 @@ on-screen text, or watch a game's state. (`/dev/video1` is the same card's secon
 
 ## Typical loop
 
-1. `nes-power.sh reset` -> `sleep 35` (fresh menu).
-2. `n8-load game.nes` -> ROM boots on the real NES.
+1. `/workspaces/.nes-power.sh reset` -> `sleep 35` (fresh menu).
+2. `$RPBIN/retroplug-cli n8-load game.nes` -> ROM boots on the real NES.
 3. Grab `/dev/video0` frame to confirm it's on screen; `--sniff` for live register state.
 4. Background `arecord ... hw:L6,0`, drive it with `n8-play` (MIDI ROMs) or just let it run, then
-   `retroplug-cli analyze-capture <wav> --channel 3`.
-5. If it wedges or the menu goes OOM: `nes-power.sh reset` and retry.
+   `$RPBIN/retroplug-cli analyze-capture <wav> --channel 3`.
+5. If it wedges or the menu goes OOM: `/workspaces/.nes-power.sh reset` and retry.
 
 Always take a **known-good control** in the same session before believing a negative. For BlipToaster
 that's a 2A03 note (`n8-play on:1:69 wait:2500 off:1:69` -> ch3 should read ~440 Hz within a few
@@ -186,5 +205,21 @@ too - a known-good VRC6 note on ch5 - before concluding a chip is dead.
 
 **Loading a second ROM needs a power-cycle.** `n8-load` drives the N8's file-browser MENU, and a
 running game isn't the menu: the load fails with `Edio: serial read timeout (no N8 response)`. That
-timeout means "a game is running", not "the N8 is broken". `nes-power.sh reset` -> `sleep 40` ->
-load.
+timeout means "a game is running", not "the N8 is broken". `/workspaces/.nes-power.sh reset` ->
+`sleep 40` -> load.
+
+## Adding a measurement
+
+A hardware number that `analyze-capture` / `--sniff` can't produce yet is a **missing
+`retroplug-cli` subcommand**, never a Python script. How you add one depends on where you are:
+
+- **In a RetroPlug worktree:** write it as `packages/retroplug/cli/sessions/*.ts`, register it in
+  `cli/tools.ts` (the only place a tool is registered), then
+  `cmake --build build --target retroplug-cli -j$(nproc)`.
+- **In the BlipToaster repo:** you can't - that image carries no C++ toolchain, and the binaries are
+  synced artefacts. Do the work on the RetroPlug side (the `cli-debug` skill covers the handoff),
+  then re-sync with `tools/sync-cli-to-bliptoaster.sh` and re-run here. **Do not** work around the
+  gap with a throwaway script.
+
+Either way the new subcommand is shared with the emulator-side tests, which is the whole point: the
+hardware measurement and the rendered one stay comparable.
