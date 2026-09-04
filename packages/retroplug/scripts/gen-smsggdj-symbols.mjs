@@ -40,6 +40,12 @@ const WANT = [
   // they are here so a test can certify the echo address by what the engine actually drives,
   // rather than by how loud the mix happens to be in a given window.
   "psg_vols",
+  // Battery observability, same "for the tests" status as psg_vols. sram_ok / sram_slots are the
+  // cart's OWN boot-time SRAM probe (it writes and reads back both banks), so reading them is how a
+  // test asserts the emulated cart RAM is real and 32 KB rather than assuming it. file_count and
+  // scr_mode let a test drive the cart to its FILES screen - the only place the cart reads its own
+  // SMDJ4 directory out of SRAM - and check it found the songs the host put there.
+  "sram_ok", "sram_slots", "file_count", "scr_mode",
 ];
 
 // The echo settings are EIGHT separate `db`s that the ROM copies as one run

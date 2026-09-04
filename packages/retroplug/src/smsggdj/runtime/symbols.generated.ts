@@ -35,6 +35,14 @@ export interface SmsggdjSymbols {
   groove_pos_len: number;
   psg_vols: number;
   psg_vols_len: number;
+  sram_ok: number;
+  sram_ok_len: number;
+  sram_slots: number;
+  sram_slots_len: number;
+  file_count: number;
+  file_count_len: number;
+  scr_mode: number;
+  scr_mode_len: number;
   echo_len: number;
 }
 
@@ -64,6 +72,14 @@ export const SMSGGDJ_SYMBOLS: Record<string, SmsggdjSymbols> = {
     groove_pos_len: 0x1,
     psg_vols: 0x1f4c,
     psg_vols_len: 0x4,
+    sram_ok: 0x1c7e,
+    sram_ok_len: 0x1,
+    sram_slots: 0x1c7f,
+    sram_slots_len: 0x1,
+    file_count: 0x1d51,
+    file_count_len: 0x1,
+    scr_mode: 0x1d3a,
+    scr_mode_len: 0x1,
     echo_len: 0x8,
   },
 };

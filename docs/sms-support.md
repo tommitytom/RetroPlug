@@ -1381,6 +1381,43 @@ mode2: T1=0 T2=2 T3=4     echo on T2 and T3
 Identical on every run, and a far more exact statement of what `echo_mode` means. Worth remembering for
 any future SMS audio assertion: compare what the engine *did*, not how loud the window came out.
 
+#### The battery itself, and Game Gear - both checked, both fine
+
+Two things the song work had been ASSUMING rather than proving, now proven by
+`test-native/sms-sram.test.ts`.
+
+**The emulated cart's SRAM is real.** Mesen gives an SMS/GG cart RAM through a flat
+`_cartRamSize = CartRamMaxSize` (`SmsMemoryManager.cpp:86`) with no header flag behind it, and every
+existing song test hands the core a `.sav` and then pokes work RAM - so nothing asked whether the cart
+could see its own battery. It can, and the cart says so itself rather than us saying it for the cart:
+its boot probe (`sram_detect`) writes into the SRAM window in both banks and requires them to differ,
+and it comes up `sram_ok=1`, `sram_slots=6` (= 32 KB), `sd4_cap=$8000`. Driven to FILES - the only
+screen that calls `rle_dir_count` - it reads `file_count=2` out of a two-song image the TS codec wrote,
+and browsing leaves the battery byte-identical. Driven through its own SAVE on a blank cart it appends a
+real RLE blob that `readSram` hands back and `readSongBlock` decompresses and checksums. So the loop
+closes in both directions, and the five Songs rows that are NOT Load (Export / Replace / Delete / Move /
+Add / Import) are standing on something real.
+
+That needed four more generated symbols (`sram_ok`, `sram_slots`, `file_count`, `scr_mode`), test-only
+observability in the same class as `psg_vols`. Regenerating from a fresh local v0.45 link reproduced
+every address already committed, byte for byte, which is an independent re-derivation of the snapshot as
+a side effect.
+
+**The Game Gear flavor loads songs, on the SMS-derived layout.** `resolveSmsggdjLayout` is keyed by
+VERSION with no `.sms`/`.gg` distinction, so a GG Load writes to addresses taken from an SMS link, and
+nothing exercised it. Two independent checks: `wlalink -S` over both v0.45 links gives an IDENTICAL
+`$C000-$DFFF` label set (the GG build adds no RAM variables), and a live load on the real `.gg` through
+the shipping `liveLoad` lands the block at offset 0, carries `song_name` across, leaves `eng_len=8` and
+plays.
+
+**One divergence found by reading, not measured.** `isGrooveEmpty(block, sel)` treats an out-of-range
+`sel` as empty, and `groove_sel = NUM_GROOVES` (16) is not out of range - it is the CONT tempo-glide
+SENTINEL, which `groove_base` (`engine.asm:1021-1036`) resolves to `glide_scratch` in RAM rather than to
+a groove in the block. So during a tempo glide the cart keeps the scratch groove and a host-side load
+resets `groove_sel` to 0, aborting the glide. Narrow (it needs a Songs > Load landing inside a CONT
+glide) and the fix is small - either leave the groove alone when `sel >= 16`, or read `glide_scratch`
+out of the RAM snapshot the way the cart reads it - but it is a real difference from `load_rebase`.
+
 #### The ROM half, still worth doing
 
 The Songs menu no longer waits on it. The change is scoped, and lives on branch `feature/cur-slot` in
