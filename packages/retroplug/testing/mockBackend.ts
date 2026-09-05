@@ -339,13 +339,17 @@ export class MockBackend implements Backend {
     this.log.push("getApuState");
     const square = (): ApuSquareState => ({
       enabled: false, period: 0, timer: 0, duty: 0, outputVolume: 0, frequency: 0, lengthCounter: 0,
-      constantVolume: false, envelopeVolume: 0, sweepEnabled: false, sweepNegate: false, sweepPeriod: 0, sweepShift: 0,
+      constantVolume: false, envelopeVolume: 0, envelopeLevel: 0, envelopeOutput: 0, envelopeLoop: false,
+      sweepEnabled: false, sweepNegate: false, sweepPeriod: 0, sweepShift: 0,
     });
     return {
       pulse1: square(),
       pulse2: square(),
       triangle: { enabled: false, period: 0, timer: 0, outputVolume: 0, frequency: 0, lengthCounter: 0, linearCounter: 0 },
-      noise: { enabled: false, period: 0, timer: 0, outputVolume: 0, frequency: 0, lengthCounter: 0, modeFlag: false, constantVolume: false, envelopeVolume: 0 },
+      noise: {
+        enabled: false, period: 0, timer: 0, outputVolume: 0, frequency: 0, lengthCounter: 0, modeFlag: false,
+        constantVolume: false, envelopeVolume: 0, envelopeLevel: 0, envelopeOutput: 0, envelopeLoop: false,
+      },
       dmc: { enabled: false, sampleAddr: 0, sampleLength: 0, bytesRemaining: 0, period: 0, outputVolume: 0, loop: false, irqEnabled: false, sampleRate: 0 },
     };
   }
@@ -393,13 +397,18 @@ export class MockBackend implements Backend {
     this.log.push("drainEvents");
     // No real core: hand back one deterministic Register-write event when the id is live, otherwise none.
     return this.systems.has(id)
-      ? [{ type: 0, operationType: 1, address: 0x4000, value: 0x80, programCounter: 0x8000, scanline: 0, cycle: 0 }]
+      ? [{ type: 0, operationType: 1, address: 0x4000, value: 0x80, programCounter: 0x8000, scanline: 0, cycle: 0, frame: 1 }]
       : [];
   }
 
   loadLabels(_id: number, _path: string): boolean {
     this.log.push("loadLabels");
     return false; // the mock has no NES debug target, so no symbol file is ever loaded
+  }
+
+  symbolAddress(_id: number, _name: string): number | null {
+    this.log.push("symbolAddress");
+    return null; // nothing is ever loaded (see loadLabels)
   }
 
   setCpuRegister(id: number, _name: string, _value: number): boolean {

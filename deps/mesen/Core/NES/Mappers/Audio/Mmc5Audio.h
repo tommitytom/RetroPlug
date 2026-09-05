@@ -5,6 +5,7 @@
 #include "NES/APU/NesApu.h"
 #include "NES/NesConsole.h"
 #include "NES/NesMemoryManager.h"
+#include "NES/NesExpansionAudioState.h"
 
 class Mmc5Square : public SquareChannel
 {
@@ -185,6 +186,34 @@ public:
 				_square2.SetEnabled((value & 0x02) == 0x02);
 				break;
 		}
+	}
+
+	//RetroPlug: the decoded snapshot the host's getExpansionAudioState serves for an MMC5 cart -
+	//[pulse1, pulse2, pcm]. The pulses read like the 2A03's: the programmed 11-bit period, its decoded
+	//Hz, the duty, and `Volume` = the envelope's effective output (what the mixer multiplies by, 0 once
+	//the length counter is out). The PCM "channel" carries the 8-bit $5011 DAC level in OutputLevel and
+	//that level scaled to 0-15 in Volume; it is Enabled while write mode is selected ($5010 bit 0 clear).
+	NesExpansionAudioState GetState()
+	{
+		NesExpansionAudioState state;
+		state.chip = "mmc5";
+		for(Mmc5Square* sq : { &_square1, &_square2 }) {
+			ApuSquareState s = sq->GetState();
+			NesExpansionAudioChannel c;
+			c.Enabled     = s.Enabled;
+			c.Volume      = (uint8_t)(s.LengthCounter.Counter > 0 ? (s.Envelope.ConstantVolume ? s.Envelope.Volume : s.Envelope.Counter) : 0);
+			c.OutputLevel = (uint32_t)std::abs((int)sq->GetOutput());
+			c.Period      = s.Period;
+			c.Frequency   = s.Period > 0 ? s.Frequency : 0.0;
+			c.Duty        = s.Duty;
+			state.channels.push_back(c);
+		}
+		NesExpansionAudioChannel pcm;
+		pcm.Enabled     = !_pcmReadMode;
+		pcm.Volume      = (uint8_t)((_pcmOutput * 15 + 127) / 255);
+		pcm.OutputLevel = _pcmOutput;
+		state.channels.push_back(pcm);
+		return state;
 	}
 
 	void GetMapperStateEntries(vector<MapperStateEntry>& entries)

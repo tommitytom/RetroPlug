@@ -164,6 +164,7 @@ export function createDebugClient(): DebugBackend {
     stepInstruction: (id) => Number(call("stepInstruction", id)),
     drainEvents: (id) => call("drainEvents", id) as DebugEvent[],
     loadLabels: (id, path) => call("loadLabels", id, path) as boolean,
+    symbolAddress: (id, name) => (call("symbolAddress", id, name) as number | null | undefined) ?? null,
     setCpuRegister: (id, name, value) => call("setCpuRegister", id, name, value) as boolean,
     runUntilPc: (id, target, maxCycles) => call("runUntilPc", id, target, maxCycles) as boolean,
     setBreakpoints: (id, breakpoints: Breakpoint[]) =>

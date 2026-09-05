@@ -54,6 +54,7 @@ protected:
 	int16_t _snapshotScanlineOffset = 0;
 	uint16_t _snapshotCycle = 0;
 	bool _forAutoRefresh = false;
+	uint32_t _frameId = 0; //RetroPlug: incremented by every ClearFrameEvents (see GetFrameId)
 	SimpleLock _lock;
 
 	virtual bool ShowPreviousFrameEvents() = 0;
@@ -80,6 +81,15 @@ public:
 	void GetEvents(DebugEventInfo* eventArray, uint32_t& maxEventCount);
 	uint32_t GetEventCount();
 	virtual void ClearFrameEvents();
+
+	//RetroPlug: frame identity for a POLLING consumer (the CLI's drainEvents). The log is rotated by
+	//ClearFrameEvents at the pre-render line, which is NOT where the PPU's own frame counter increments
+	//(scanline 240), so a label taken from the PPU would flip mid-vblank; this counter moves with the
+	//rotation itself. GetRawFrameEvents hands back the two retained frames UNFILTERED and un-snapshotted:
+	//GetEvents' viewer semantics drop previous-frame events that sit BEFORE the current dot (a wrapped
+	//display), which a poller that is simply behind would lose.
+	uint32_t GetFrameId() { return _frameId; }
+	void GetRawFrameEvents(vector<DebugEventInfo>& prevFrame, vector<DebugEventInfo>& currentFrame);
 
 	virtual EventViewerCategoryCfg GetEventConfig(DebugEventInfo& evt) = 0;
 

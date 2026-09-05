@@ -32,11 +32,12 @@ struct NesExpansionAudioChannel
 	uint8_t  Instrument     = 0;     // VRC7 patch 0=custom,1-15 ROM (0 for other chips)
 	uint16_t WaveLength     = 0;     // N163: active wave length in samples (0 for other chips)
 	uint8_t  ActiveChannels = 0;     // N163: enabled channel count 1-8 (0 for other chips)
+	uint8_t  WaveAddress    = 0;     // N163: wave RAM start sample 0-255 (0 for other chips)
 };
 
 struct NesExpansionAudioState
 {
-	// "none" | "vrc6" | "vrc7" | "s5b" | "n163"
+	// "none" | "vrc6" | "vrc7" | "s5b" | "n163" | "mmc5"
 	string chip = "none";
 	vector<NesExpansionAudioChannel> channels;
 };

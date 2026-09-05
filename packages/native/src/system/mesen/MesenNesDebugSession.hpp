@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "system/DebugTarget.hpp"
@@ -23,6 +27,7 @@ public:
     void beginProfile() override;
     std::vector<rp::ProfiledFunction> readProfile() override;
     bool loadLabels(const std::string& path) override;
+    std::optional<std::uint32_t> symbolAddress(const std::string& name) override;
     std::vector<rp::DisasmLine> disassemble(std::uint32_t addr, std::uint32_t count) override;
     void setTraceEnabled(bool on) override;
     std::vector<rp::TraceLine> readTrace(std::uint32_t count) override;
@@ -45,4 +50,14 @@ private:
     Debugger* ensureDebugger();
 
     Emulator* emu_ = nullptr;
+
+    // Every name the loaded `.dbg` resolves (assembler labels + the C names behind them) -> CPU address,
+    // for symbolAddress. Empty until loadLabels succeeds.
+    std::unordered_map<std::string, std::uint32_t> symbols_;
+
+    // drainEvents' cursor: the event-manager frame id the last call saw, and how many of that frame's
+    // events it had already returned, so each call hands back only what is new.
+    bool          drainPrimed_    = false;
+    std::uint32_t lastFrameId_    = 0;
+    std::size_t   lastFrameCount_ = 0;
 };

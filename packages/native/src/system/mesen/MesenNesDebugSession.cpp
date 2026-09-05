@@ -115,7 +115,12 @@ bool MesenNesDebugSession::loadLabels(const std::string& path) {
     if (syms.empty()) return false;
     LabelManager* labels = dbg->GetLabelManager();
     if (!labels) return false;
+    symbols_.clear();
     for (const auto& s : syms) {
+        symbols_.emplace(s.name, s.address);  // first definition wins (statics can repeat across modules)
+        // Only the assembler labels name code/data for Mesen's disassembly + profiler; the C names are
+        // lookup aliases (symbolAddress) and would otherwise double every label.
+        if (s.cName) continue;
         // The .dbg `val` is a CPU-space address; translate to the absolute ROM
         // address the profiler/labels key on (mapper-agnostic).
         const AddressInfo abs = dbg->GetAbsoluteAddress(
@@ -124,6 +129,14 @@ bool MesenNesDebugSession::loadLabels(const std::string& path) {
             labels->SetLabel(static_cast<std::uint32_t>(abs.Address), abs.Type, s.name, "");
     }
     return true;
+}
+
+std::optional<std::uint32_t> MesenNesDebugSession::symbolAddress(const std::string& name) {
+    if (auto it = symbols_.find(name); it != symbols_.end()) return it->second;
+    // cc65 prefixes every C identifier's assembler label with '_'; accept the bare C name for a symbol
+    // whose .dbg carried no csym record (an older toolchain, or a hand-written fixture).
+    if (auto it = symbols_.find("_" + name); it != symbols_.end()) return it->second;
+    return std::nullopt;
 }
 
 namespace {
@@ -211,6 +224,12 @@ rp::ApuState MesenNesDebugSession::getApuState() {
         o.lengthCounter  = q.LengthCounter.Counter;
         o.constantVolume = q.Envelope.ConstantVolume;
         o.envelopeVolume = q.Envelope.Volume;
+        o.envelopeLevel  = q.Envelope.Counter;
+        o.envelopeLoop   = q.Envelope.Loop;
+        // What ApuEnvelope::GetVolume feeds the mixer: the register nibble in constant mode, the decay
+        // counter in envelope mode, and 0 once the length counter has run out.
+        o.envelopeOutput = q.LengthCounter.Counter > 0
+            ? (q.Envelope.ConstantVolume ? q.Envelope.Volume : q.Envelope.Counter) : 0;
         o.sweepEnabled   = q.SweepEnabled;
         o.sweepNegate    = q.SweepNegate;
         o.sweepPeriod    = q.SweepPeriod;
@@ -237,6 +256,10 @@ rp::ApuState MesenNesDebugSession::getApuState() {
     out.noise.modeFlag       = s.Noise.ModeFlag;
     out.noise.constantVolume = s.Noise.Envelope.ConstantVolume;
     out.noise.envelopeVolume = s.Noise.Envelope.Volume;
+    out.noise.envelopeLevel  = s.Noise.Envelope.Counter;
+    out.noise.envelopeLoop   = s.Noise.Envelope.Loop;
+    out.noise.envelopeOutput = s.Noise.LengthCounter.Counter > 0
+        ? (s.Noise.Envelope.ConstantVolume ? s.Noise.Envelope.Volume : s.Noise.Envelope.Counter) : 0;
 
     out.dmc.enabled        = s.Dmc.BytesRemaining > 0;
     out.dmc.sampleAddr     = s.Dmc.SampleAddr;
@@ -276,6 +299,7 @@ rp::ExpansionAudioState MesenNesDebugSession::getExpansionAudioState() {
         o.instrument     = c.Instrument;
         o.waveLength     = c.WaveLength;
         o.activeChannels = c.ActiveChannels;
+        o.waveAddress    = c.WaveAddress;
         out.channels.push_back(o);
     }
     return out;
@@ -475,24 +499,46 @@ std::vector<rp::DebugEvent> MesenNesDebugSession::drainEvents() {
     cfg.ShowNtscBorders = false;
     em->SetConfiguration(static_cast<BaseEventViewerConfig&>(cfg));
 
-    em->TakeEventSnapshot(false);
-    std::uint32_t count = em->GetEventCount();   // also filters into the sent buffer
-    if (count == 0) return out;
-    std::vector<DebugEventInfo> buf(count);
-    em->GetEvents(buf.data(), count);            // count clamped to what was written
-    out.reserve(count);
-    for (std::uint32_t i = 0; i < count; ++i) {
-        const DebugEventInfo& e = buf[i];
-        rp::DebugEvent r;
-        r.type           = static_cast<std::uint8_t>(e.Type);
-        r.operationType  = static_cast<std::uint8_t>(e.Operation.Type);
-        r.address        = e.Operation.Address;
-        r.value          = e.Operation.Value;
-        r.programCounter = e.ProgramCounter;
-        r.scanline       = e.Scanline;
-        r.cycle          = e.Cycle;
-        out.push_back(r);
+    // The two frames the manager retains, RAW (GetRawFrameEvents, not the viewer's snapshot/GetEvents
+    // path: that one drops previous-frame events that sit before the current dot, which a poller that is
+    // simply behind would lose). The manager's own frame id is the label - it moves with the log rotation.
+    std::vector<DebugEventInfo> prev, cur;
+    em->GetRawFrameEvents(prev, cur);
+    const std::uint32_t frameId = em->GetFrameId();
+
+    // The cursor: return only what is new since the last call. Same frame -> the current frame's tail;
+    // the very next frame -> the rest of the frame we were part-way through, then all of the new one; a
+    // gap (or the first call) -> both retained frames, whatever came between is gone.
+    std::size_t prevFrom = 0, curFrom = 0;
+    if (drainPrimed_ && frameId == lastFrameId_) {
+        prevFrom = prev.size();  // already returned in full
+        curFrom  = std::min(lastFrameCount_, cur.size());
+    } else if (drainPrimed_ && frameId == lastFrameId_ + 1) {
+        prevFrom = std::min(lastFrameCount_, prev.size());
     }
+    drainPrimed_    = true;
+    lastFrameId_    = frameId;
+    lastFrameCount_ = cur.size();
+
+    const auto emit = [&](std::vector<DebugEventInfo>& v, std::size_t from, std::uint32_t frame) {
+        for (std::size_t i = from; i < v.size(); ++i) {
+            DebugEventInfo& e = v[i];
+            if (!em->GetEventConfig(e).Visible) continue;  // the viewer's per-category set (all on above)
+            rp::DebugEvent r;
+            r.type           = static_cast<std::uint8_t>(e.Type);
+            r.operationType  = static_cast<std::uint8_t>(e.Operation.Type);
+            r.address        = e.Operation.Address;
+            r.value          = e.Operation.Value;
+            r.programCounter = e.ProgramCounter;
+            r.scanline       = e.Scanline;
+            r.cycle          = e.Cycle;
+            r.frame          = frame;
+            out.push_back(r);
+        }
+    };
+    out.reserve((prev.size() - prevFrom) + (cur.size() - curFrom));
+    if (frameId > 0) emit(prev, prevFrom, frameId - 1);
+    emit(cur, curFrom, frameId);
     return out;
 }
 

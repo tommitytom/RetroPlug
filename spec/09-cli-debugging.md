@@ -7,8 +7,9 @@ debugger is surfaced through a dedicated **`debug` RPC facet**
 ([DebugRpcService](../packages/native/src/host/rpc/DebugRpcService.cpp)) — decoded APU/PPU state,
 CPU-bus peek + poke (`readCpu`/`writeCpu`), region reads, CPU registers + step + PC-run, breakpoints
 (`setBreakpoints`/`runUntilBreak`, with a real `$40F1` FIFO read-watchpoint that fires), execution
-trace + step-into/over/out, per-frame register-event capture (`drainEvents`), profiler + disassembler
-+ call stack, and cc65 `.dbg` labels — resolving the live system via `Engine::findSystem` (the
+trace + step-into/over/out, a draining, frame-stamped register-event log (`drainEvents`), profiler +
+disassembler + call stack, and cc65 `.dbg` labels with a name lookup (`loadLabels` + `symbolAddress`,
+C names and statics included) — resolving the live system via `Engine::findSystem` (the
 control-thread / direct-render regime). `Timeline.at(ms, fn)` is the observe/assert hook, and a
 TAP-emitting `cli/sessions/rom-test.ts` is the agent-facing example. Proven on a real n8-midi core: a
 ch1 note drives pulse1 at ~261 Hz (C4) with pulse2 silent.
@@ -45,9 +46,12 @@ TS session at build time; the binary runs the JS). See the CLI scaffold in
   hook), and `runSession(main)` runs the body and reports the exit code. `hostArgs()` reads the session's
   argv (hung off the `Symbol.for("plugin")` namespace — `tjs.args` is a read-only txiki accessor).
 - **Event scripting** — [cli/timeline.ts](../packages/retroplug/cli/timeline.ts): a fluent,
-  typed `Timeline` (MIDI/`note`/`press`/`tap`/`bpm`/`transport`/`screenshot` at absolute ms) whose
-  `build()` is pure (stable ms-sort), and `renderTimeline(session, timeline, { durationMs, warmupMs })`
+  typed `Timeline` (`midi`/`sysex`/`note`/`press`/`tap`/`bpm`/`transport`/`screenshot` at absolute ms)
+  whose `build()` is pure (stable ms-sort), and `renderTimeline(session, timeline, { durationMs, warmupMs })`
   advances the render chunk-by-chunk, firing each event at its time, returning the concatenated PCM.
+  `midi()` takes bytes of ANY length (a SysEx, or several messages as one run - the command ring carries
+  a long run as an owning payload and the Engine hands it to the core's raw byte path, the N8 FIFO),
+  validates them at authoring time, and a host refusal is an error, never a silent drop.
 - **Artifacts** — [cli/wav.ts](../packages/retroplug/cli/wav.ts) encodes interleaved-stereo
   Float32 PCM (from `audio.renderAudio(ms)`) to a 16-bit WAV; `audio.screenshot(id, path)` writes a PNG.
 
@@ -59,7 +63,7 @@ The current session verb vocabulary (all on the booted `Session`):
 | Drive | `audio.stageMidiIn(bytes)`, `audio.pressButton(id, button, down)`, `audio.setBpm(v)`, `audio.setTransport(running)` |
 | Render | `audio.renderAudio(ms): Float32Array` |
 | Observe — media/state | `audio.screenshot(id, path)`, `backend.readState/readSram(id)`, `backend.getFrame(id)` |
-| Observe — debug (NES) | `backend.getApuState(id)`, `readCpu(id, addr)`, `readMemory(id, region)`, `getCpuRegisters(id)`, `setCpuRegister`, `stepInstruction`/`runUntilPc`, `setBreakpoints`/`runUntilBreak`, `setTrace`/`readTrace`, `stepInto`/`stepOver`/`stepOut`, `loadLabels`, `beginProfile`/`readProfile`, `disassemble`, `getCallStack` |
+| Observe — debug (NES) | `backend.getApuState(id)`, `getExpansionAudioState(id)`, `getPpuState(id)`, `drainEvents(id)`, `readCpu(id, addr)`, `readMemory(id, region)`, `getCpuRegisters(id)`, `setCpuRegister`, `stepInstruction`/`runUntilPc`, `setBreakpoints`/`runUntilBreak`, `setTrace`/`readTrace`, `stepInto`/`stepOver`/`stepOut`, `loadLabels`/`symbolAddress`, `beginProfile`/`readProfile`, `disassemble`, `getCallStack` |
 | Schedule / assert | `Timeline` (+ `.at(ms, fn)` — the observe/assert hook) + `renderTimeline` |
 
 Example sessions live in [cli/sessions/](../packages/retroplug/cli/sessions) (`mgb-smoke.ts`,
@@ -149,14 +153,14 @@ proven on a real `bliptoaster.nes` in `test-native/cli-*.test.ts`. Only Mesen na
 
 | Status | Capability | Mesen provides | RPC(s) + session use |
 |---|---|---|---|
-| **Built** | **Decoded per-channel APU state** — pulse1/2, triangle, noise, dmc: period, frequency Hz, duty, envelope volume, length | `NesApu::GetState()` → `rp::ApuState` (no `InitDebugger`) | `getApuState(id): ApuState` → `.at(t, s => expect(s.backend.getApuState(id).pulse1.frequency > 250 && …pulse1.envelopeVolume > 0).toBeTruthy())`. **The centerpiece** — the only way to observe MIDI→sound. |
+| **Built** | **Decoded per-channel APU state** — pulse1/2, triangle, noise, dmc: period, frequency Hz, duty, length, and the envelope three ways (`envelopeVolume` = the register nibble, `envelopeLevel` = the live decay counter, `envelopeOutput` = what the mixer uses) | `NesApu::GetState()` → `rp::ApuState` (no `InitDebugger`) | `getApuState(id): ApuState` → `.at(t, s => expect(s.backend.getApuState(id).pulse1.envelopeOutput).toBeGreaterThan(0))`. **The centerpiece** — the only way to observe MIDI→sound. The expansion twin `getExpansionAudioState` covers VRC6/VRC7/S5B/N163/MMC5 from the PROGRAMMED registers. |
 | **Built** | **CPU-bus peek + region reads** (incl. the `$40F1` Everdrive MIDI FIFO) | `NesMemoryManager::DebugRead` (`PeekRam`); `GetMemory(MemoryType)` | `readCpu(id, addr): number\|null` (mapped I/O / FIFO); `readMemory(id, region): Uint8Array` (`MemoryRegion.Ram/OAM/…`). |
 | **Built** | CPU registers + step + PC-run + register-write | `NesCpu::GetState/SetState`, `Debugger::Step` | `getCpuRegisters(id): CpuRegister[]`, `stepInstruction(id)`, `setCpuRegister(id, name, value)`, `runUntilPc(id, target, maxCycles)`. |
 | **Built** | **Breakpoints + `runUntilBreak`** — exec/read/write watchpoints with expression conditions (`[$40F0]!=0`, `Y==0`, scanline/cycle gates) | `Breakpoint::Create` → `Debugger::SetBreakpoints`; `ExpressionEvaluator` | `setBreakpoints(id, Breakpoint[]): bool` + `runUntilBreak(id, maxCycles): BreakInfo`. The `$40F1` read-watch fires. Lazily inits the heavy debugger. |
 | **Built** | Execution trace + step trio | `Debugger::GetExecutionTrace`, `TraceLogger` | `setTrace(id, on)`, `readTrace(id, count): TraceLine[]` (`{pc, text}`), `stepInto/stepOver/stepOut(id): BreakInfo`. |
-| **Built** | **cc65 symbol labels** | `LabelManager` ← cc65 `.dbg` (`rp::parseCc65Dbg`) | `loadLabels(id, path): bool` (name-resolves disasm/profile/callstack). **`.mlb` still needs a new parser** — Mesen's C# one isn't vendored. |
+| **Built** | **cc65 symbol labels + name lookup** | `LabelManager` ← cc65 `.dbg` (`rp::parseCc65Dbg`, which also resolves the `csym` C-name records - statics included - through their `sym`/`exp` chain) | `loadLabels(id, path): bool` (name-resolves disasm/profile/callstack) + `symbolAddress(id, name): number\|null` (`g_frame`, a static `s_mode1`, or an assembler label; pair with `readCpu` to read a ROM variable by name). **`.mlb` still needs a new parser** — Mesen's C# one isn't vendored. |
 | **Built** | Profiler + disassembler + call stack | `Profiler`, `Disassembler`, `CallstackManager` | `beginProfile/readProfile(id)`, `disassemble(id, addr, count)`, `getCallStack(id)`. |
-| **Built** | **EventManager** — batch-capture every `$2000-$401F` register write per frame with PC/scanline/cycle | `NesEventManager` (`TakeEventSnapshot`/`GetEvents`) | `drainEvents(id)` per frame → assert the *sequence/timing* of APU writes. Frame-scoped (drain ~60/s). |
+| **Built** | **EventManager** — every `$2000-$401F` + mapper register access, NMI/IRQ, DMA read, with PC/scanline/cycle and a `frame` stamp | `BaseEventManager::GetRawFrameEvents` + `GetFrameId` (a RetroPlug addition: the manager's own frame counter, incremented where the log rotates - the pre-render line, 21 scanlines away from `_frameCount++` - so the stamp never flips mid-vblank) | `drainEvents(id)` returns only what is NEW since the last call, oldest first, so a dense poll's concatenation is the distinct set (no dedupe key needed; `frame:scanline:cycle` is a stable identity). Mesen retains the frame in progress + the previous one, so poll at least once per ~16 ms; a slower poll loses frames, never repeats. |
 | **Built** | PPU state (scanline/cycle/scroll) | `NesDebugger::GetPpuState` | `getPpuState(id)`. Marginal for an audio ROM (the framebuffer is already published for screenshots); the tilemap/sprite/palette **viewers** are not wrapped. |
 | **Built** | Memory **write**/poke (arrange state before assertions) | `MemoryDumper::SetMemoryValue` / `NesMemoryManager::DebugWrite` | `writeCpu(id, addr, val)`. |
 
@@ -236,8 +240,11 @@ test("n8-midi: ch1 note → pulse1 at pitch; pulse2 silent", () => {
   breakpoint/step/trace/profile, so `getApuState` + `readCpu` + `readMemory` (which don't need it) stay cheap
   and non-debug renders aren't slowed — keep that laziness.
 - **APU `enabled` semantics.** `enabled` is only the `$4015` switch (often set once at init), **not** "a
-  note is sounding." Gate APU assertions on `period > 0 && envelopeVolume > 0` (square/noise) or
-  `period/outputVolume`, else false positives.
+  note is sounding." Gate APU assertions on `period > 0 && envelopeOutput > 0` (square/noise) or
+  `period/outputVolume`, else false positives. And **`envelopeVolume` is the register nibble**: in
+  hardware-envelope mode (`constantVolume` false) it is the decay PERIOD, which reads 0 for the fastest
+  decay while the note is audible - `envelopeOutput` (constant ? nibble : live decay counter, 0 once the
+  length counter is out) is the level the mixer uses.
 - **Still unwrapped.** The PPU tilemap/sprite/palette **viewers** are compiled+linked but not wrapped
   (`getPpuState` scalar state is). cc65 `.dbg` labels are shipped; Mesen native `.mlb` label files still
   need a **new parser** (Mesen's C# one isn't vendored). A standalone `EvaluateExpression` is compiled

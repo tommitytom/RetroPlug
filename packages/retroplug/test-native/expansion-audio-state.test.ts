@@ -108,3 +108,88 @@ test("getExpansionAudioState decodes VRC6 pitch in Hz: A4 in tune + octave-doubl
   expect(Math.abs(a4 / a3 - 2) < 0.02).toBeTruthy();
   expect(Math.abs(a5 / a4 - 2) < 0.02).toBeTruthy();
 });
+
+// The N163 read is the PROGRAMMED register file (Namco163Audio::GetState reads _internalRam), so two reads
+// of one held note must agree on every pitch term - period (18-bit freq reg), waveLength, waveAddress and
+// activeChannels - and only outputLevel may differ (it is the live multiplexed sample). BlipToaster's notes
+// reported the opposite (period 61007/56547, waveLength 36/184 for one held note); this pins the contract.
+// BlipToaster programs every voice's wave length as 32 samples (n163.c writes 0xE0 to reg +4).
+const N163 = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-n163.nes";
+
+test("getExpansionAudioState decodes N163 from the programmed registers: two reads of a held note agree", () => {
+  const s = bootSession();
+  if (!s.backend.fileExists(N163)) {
+    console.log("# SKIP: no N163 rom");
+    return;
+  }
+  const id = s.project.systems.addSystem(N163);
+  if (id == null) throw new Error("addSystem failed");
+
+  // MIDI ch6 = the ROM's N163 wave 0. Two snapshots 60 ms apart, both mid-note.
+  let a: ExpansionAudioState | null = null, b: ExpansionAudioState | null = null;
+  const tl = new Timeline()
+    .noteOn(200, 57, { channel: 6, velocity: 127 })
+    .at(400, (sess) => (a = sess.backend.getExpansionAudioState(id)))
+    .at(460, (sess) => (b = sess.backend.getExpansionAudioState(id)))
+    .noteOff(700, 57, { channel: 6 });
+  renderTimeline(s, tl, { durationMs: 800, warmupMs: 1100 });
+  s.project.systems.removeSystem(id);
+
+  expect(a!.chip).toBe("n163");
+  expect(a!.channels.length, "N163 reports all 8 hardware voices").toBe(8);
+  const sounding = a!.channels.filter((c) => c.enabled && c.volume > 0);
+  expect(sounding.length, "voices sounding for one held note").toBe(1);
+  const v = sounding[0];
+  expect(v.period, "18-bit frequency register").toBeGreaterThan(0);
+  expect(v.frequency, "decoded Hz").toBeGreaterThan(0);
+  expect(v.waveLength, "the ROM programs 32-sample waves").toBe(32);
+  expect(v.activeChannels).toBeGreaterThanOrEqual(1);
+  // The programmed registers are stable across reads; only the live sample level may move.
+  for (let i = 0; i < 8; i++) {
+    const x = a!.channels[i], y = b!.channels[i];
+    expect(y.period, `voice ${i} period`).toBe(x.period);
+    expect(y.waveLength, `voice ${i} waveLength`).toBe(x.waveLength);
+    expect(y.waveAddress, `voice ${i} waveAddress`).toBe(x.waveAddress);
+    expect(y.activeChannels, `voice ${i} activeChannels`).toBe(x.activeChannels);
+    expect(y.volume, `voice ${i} volume`).toBe(x.volume);
+    expect(y.enabled, `voice ${i} enabled`).toBe(x.enabled);
+    expect(y.frequency, `voice ${i} frequency`).toBe(x.frequency);
+  }
+});
+
+// MMC5 used to report NO channels at all; now [pulse1, pulse2, pcm]. MIDI ch6 = MMC5 pulse 1 in the ROM.
+const MMC5 = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-mmc5.nes";
+
+test("getExpansionAudioState decodes MMC5: pulse1/pulse2/pcm, a sounding pulse reads enabled + volume + pitch", () => {
+  const s = bootSession();
+  if (!s.backend.fileExists(MMC5)) {
+    console.log("# SKIP: no MMC5 rom");
+    return;
+  }
+  const id = s.project.systems.addSystem(MMC5);
+  if (id == null) throw new Error("addSystem failed");
+
+  let st: ExpansionAudioState | null = null, after: ExpansionAudioState | null = null;
+  const tl = new Timeline()
+    .noteOn(200, 69, { channel: 6, velocity: 127 })
+    .at(400, (sess) => (st = sess.backend.getExpansionAudioState(id)))
+    .noteOff(500, 69, { channel: 6 })
+    .at(800, (sess) => (after = sess.backend.getExpansionAudioState(id)));
+  renderTimeline(s, tl, { durationMs: 900, warmupMs: 1100 });
+  s.project.systems.removeSystem(id);
+
+  expect(st!.chip).toBe("mmc5");
+  expect(st!.channels.length, "pulse1, pulse2, pcm").toBe(3);
+  const p1 = st!.channels[0];
+  expect(p1.enabled, "pulse1 enabled").toBeTruthy();
+  expect(p1.volume, "pulse1 envelope output").toBeGreaterThan(0);
+  expect(p1.period, "pulse1 11-bit period").toBeGreaterThan(0);
+  // A4 on an NTSC clock: the same timer formula as the 2A03, so ~440 Hz give or take the table's rounding.
+  expect(p1.frequency, "pulse1 Hz").toBeCloseTo(440, 6);
+  expect(p1.duty).toBeLessThanOrEqual(3);
+  // The other pulse is idle, and the PCM channel carries the DAC level (nothing playing = 0).
+  expect(st!.channels[1].volume, "pulse2 idle").toBe(0);
+  expect(st!.channels[2].outputLevel, "pcm idle").toBe(0);
+  // After note-off the pulse is silent again.
+  expect(after!.channels[0].volume, "pulse1 after note-off").toBe(0);
+});

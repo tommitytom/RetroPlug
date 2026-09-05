@@ -40,6 +40,9 @@ public:
     // Load a cc65 `.dbg` symbol file so profiler/disassembly output shows function names. Needs a Mesen
     // NES debug target (false on SameBoy/GBA, a gone id, or read/parse failure).
     bool loadLabels(std::uint32_t id, std::string path);
+    // A loaded symbol's CPU address by name (a C name incl. statics, or the assembler label); nullopt
+    // (JS null) when nothing is loaded, the name is unknown, or there is no debug target.
+    std::optional<std::uint32_t> symbolAddress(std::uint32_t id, std::string name);
 
     // --- writes / control-flow (plain SystemBase virtuals; false when the id is gone / unsupported) ---
     // setCpuRegister writes one register by name; runUntilPc single-steps until PC == target.

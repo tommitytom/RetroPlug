@@ -183,6 +183,7 @@ public:
 			c.Frequency      = freq * clk / (15.0 * 65536.0 * waveLen * numCh);
 			c.WaveLength     = waveLen;                               // active wave samples
 			c.ActiveChannels = numCh;                                 // enabled voice count
+			c.WaveAddress    = GetWaveAddress(ch);                    // wave RAM start sample
 			state.channels.push_back(c);
 		}
 		return state;

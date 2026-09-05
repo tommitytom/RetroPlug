@@ -390,6 +390,11 @@ protected:
 		}
 	}
 
+	NesExpansionAudioState GetExpansionAudioState() override
+	{
+		return _audio ? _audio->GetState() : NesExpansionAudioState{};
+	}
+
 	void Serialize(Serializer& s) override
 	{
 		BaseMapper::Serialize(s);

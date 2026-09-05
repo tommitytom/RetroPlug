@@ -82,6 +82,14 @@ bool DebugRpcService::loadLabels(std::uint32_t id, std::string path) {
     return dbg->loadLabels(path);  // false on read/parse failure
 }
 
+std::optional<std::uint32_t> DebugRpcService::symbolAddress(std::uint32_t id, std::string name) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return std::nullopt;
+    rp::IDebugTarget* dbg = sys->debugTarget();  // null on SameBoy/GBA
+    if (!dbg) return std::nullopt;
+    return dbg->symbolAddress(name);  // nullopt until loadLabels, or for an unknown name
+}
+
 bool DebugRpcService::setCpuRegister(std::uint32_t id, std::string name, std::uint32_t value) {
     SystemBase* sys = engine_.findSystem(id);
     if (!sys) return false;

@@ -11,7 +11,15 @@
 // ─── Live-core read types (NES; getApuState / getPpuState / …). Mirror the native reflect-cpp structs. ──
 
 /** One 2A03 square (pulse) channel. `frequency` is decoded Hz; gate "is it sounding" on
- *  `period > 0 && envelopeVolume > 0` — `enabled` is only the $4015 switch. */
+ *  `period > 0 && envelopeOutput > 0` — `enabled` is only the $4015 switch.
+ *
+ *  The envelope, three ways. `envelopeVolume` is the $4000 low nibble as written: the level in
+ *  constant-volume mode, but the DECAY PERIOD in hardware-envelope mode (`constantVolume` false), where a
+ *  ROM wanting the fastest decay writes 0 and the field reads 0 while a note is plainly audible.
+ *  `envelopeLevel` is the envelope unit's live decay counter (15 at (re)trigger, counting down, wrapping
+ *  back to 15 while `envelopeLoop` is set). `envelopeOutput` is what the mixer actually multiplies by:
+ *  `envelopeVolume` in constant mode, `envelopeLevel` in envelope mode, 0 once the length counter has run
+ *  out - "the note kept its level" reads from this one. */
 export interface ApuSquareState {
   enabled: boolean;
   period: number;
@@ -22,6 +30,9 @@ export interface ApuSquareState {
   lengthCounter: number;
   constantVolume: boolean;
   envelopeVolume: number;
+  envelopeLevel: number;
+  envelopeOutput: number;
+  envelopeLoop: boolean;
   sweepEnabled: boolean;
   sweepNegate: boolean;
   sweepPeriod: number;
@@ -48,7 +59,11 @@ export interface ApuNoiseState {
   lengthCounter: number;
   modeFlag: boolean;
   constantVolume: boolean;
+  /** The $400C low nibble as written; see ApuSquareState for the three envelope fields. */
   envelopeVolume: number;
+  envelopeLevel: number;
+  envelopeOutput: number;
+  envelopeLoop: boolean;
 }
 
 export interface ApuDmcState {
@@ -77,9 +92,12 @@ export interface ApuState {
  *  chips; `period` is the chip-native pitch register. `frequency` is the decoded output pitch in Hz (the
  *  expansion analogue of `ApuSquareState.frequency`) - computed from the pitch register regardless of
  *  audibility, so gate "sounding" on `enabled`/`volume` and read `frequency` for "what pitch"; it is 0
- *  only when the pitch is undefined (a zero timer/fnum). `waveLength`/`activeChannels` are N163-only
- *  cross-check terms (0 for other chips). `constantOutput` (VRC6 "ignore duty" → DC/no tone),
- *  `instrument` (VRC7 patch) and `volume` are the diagnostic fields. */
+ *  only when the pitch is undefined (a zero timer/fnum). Every pitch/volume field is the PROGRAMMED
+ *  register - read straight from the chip's register file, so two reads of one held note agree; only
+ *  `outputLevel` is live. `waveLength`/`activeChannels`/`waveAddress` are the N163's other pitch terms
+ *  and its wave-RAM start (the same values `N163VoiceWrite` reconstructs from the write log; 0 for other
+ *  chips). `constantOutput` (VRC6 "ignore duty" → DC/no tone), `instrument` (VRC7 patch) and `volume`
+ *  are the diagnostic fields. */
 export interface ExpansionAudioChannel {
   enabled: boolean;
   volume: number;
@@ -92,12 +110,17 @@ export interface ExpansionAudioChannel {
   instrument: number;
   waveLength: number;
   activeChannels: number;
+  waveAddress: number;
 }
 
 /** The decoded NES expansion-audio snapshot (`getExpansionAudioState`). `chip` is the active chip
- *  ("none" when the cart has no expansion sound); `channels` are its voices in chip order. */
+ *  ("none" when the cart has no expansion sound); `channels` are its voices in chip order. MMC5 reports
+ *  [pulse1, pulse2, pcm]: the pulses like the 2A03's (`period`/`frequency`/`duty`, `volume` = the
+ *  envelope's effective output 0-15, 0 once the length counter is out), and the PCM channel's 8-bit
+ *  $5011 DAC level in `outputLevel` (`volume` = that level scaled to 0-15; `enabled` while write mode is
+ *  selected). */
 export interface ExpansionAudioState {
-  chip: "none" | "vrc6" | "vrc7" | "s5b" | "n163" | string;
+  chip: "none" | "vrc6" | "vrc7" | "s5b" | "n163" | "mmc5" | string;
   channels: ExpansionAudioChannel[];
 }
 
@@ -125,7 +148,12 @@ export interface CpuRegister {
   bits: number;
 }
 
-/** One Mesen event-viewer event (`drainEvents`) logged for the last frame. */
+/** One Mesen event-viewer event (`drainEvents`): a register access / NMI / IRQ / DMA read. `frame` is
+ *  the event manager's own frame counter (it increments where the log rotates, the pre-render line - NOT
+ *  `PpuState.frameCount`, which increments 21 scanlines earlier), so `frame:scanline:cycle` is a stable
+ *  identity for an event across polls. `type` is the DebugEventType ordinal (0=Register, 1=Nmi, 2=Irq,
+ *  3=Breakpoint, 4=BgColorChange, 5=SpriteZeroHit, 6=DmcDmaRead, 7=DmaRead); `operationType` the
+ *  MemoryOperationType ordinal (0=Read, 1=Write, ...); `value` is -1 for a read with no captured value. */
 export interface DebugEvent {
   type: number;
   operationType: number;
@@ -134,6 +162,7 @@ export interface DebugEvent {
   programCounter: number;
   scanline: number;
   cycle: number;
+  frame: number;
 }
 
 // ─── Debugger + profiler types (breakpoints / stepping / trace / profiling / disassembly). ──────────────
@@ -225,10 +254,17 @@ export interface Backend {
   getCpuRegisters(id: number): CpuRegister[];
   /** Set a single 6502 register (a/x/y/sp/ps/pc) by name. */
   setCpuRegister(id: number, name: string, value: number): boolean;
-  /** APU/PPU/mapper register-write + event log for the last frame (frame-scoped). */
+  /** The APU/PPU/mapper register-access + NMI/IRQ/DMA event log: every event that is NEW since the last
+   *  call, oldest first, each stamped with its `frame`. Mesen retains only the frame in progress plus the
+   *  previous one, so poll at least once per PPU frame (~16 ms) to see everything - a slower poll loses
+   *  whole frames, never repeats. The first call returns both retained frames. */
   drainEvents(id: number): DebugEvent[];
   /** Load a cc65 `.dbg` symbol file so profiling / breakpoints / disassembly / call stack show names. */
   loadLabels(id: number, path: string): boolean;
+  /** The CPU address of a symbol from the loaded `.dbg`, by name: a C name (`g_frame`, and a file-scope
+   *  `static` such as `s_mode1`) or the assembler label (`_g_frame`, `midiIdleLoop`). Null until
+   *  `loadLabels`, or for an unknown name. Pair with `readCpu` to read a ROM variable by name. */
+  symbolAddress(id: number, name: string): number | null;
 
   // ── Debugger: breakpoints, stepping, trace, disassembly, call stack (NES-only) ──
   /** Run one 6502 instruction; returns the cycles it took. */
@@ -273,6 +309,15 @@ export interface SystemsStore {
   /** Load the embedded mGB Game Boy synth (no external file). */
   loadMgb(): number | null;
   removeSystem(id: number): boolean;
+  /** Edit one of the system's role configs (validated by the role's schema; a "system" role's config is
+   *  applied to the live core). E.g. the NES console region: `setRoleConfig(id, "mesen", { region: "pal" })`
+   *  - baked at construct, so follow it with `reset(id)` to reboot in that region. False when the system
+   *  or the role is absent. */
+  setRoleConfig(id: number, roleKind: string, partial: Record<string, unknown>): boolean;
+  /** Reboot `id` in place, carrying its battery SRAM forward (a hardware-style reset: the save persists,
+   *  the running state is dropped). Rebuilds the core, so the system gets a NEW id - use the returned one;
+   *  null when `id` is absent. */
+  reset(id: number): number | null;
 }
 
 // ─── The audio driver (Session.audio): render + drive input/MIDI. Curated ROM-testing subset. ─────────
@@ -282,7 +327,9 @@ export interface AudioDriver {
   renderAudio(ms: number): Float32Array;
   /** Advance `ms` and return EACH live system's own interleaved-stereo output, in project-slot order. */
   renderAudioPerSystem(ms: number): Float32Array[];
-  /** Stage one global host-MIDI message for the kernel's next render (fanned to systems by routing). */
+  /** Stage global host-MIDI bytes for the kernel's next render - any non-empty length: a channel message
+   *  (fanned to systems by routing), a whole SysEx, or several messages as one run (broadcast unchanged,
+   *  delivered to the N8 FIFO byte-for-byte, in order). False only for an empty array. */
   stageMidiIn(bytes: Uint8Array | number[]): boolean;
   /** Drain the MIDI-out the DSP kernel emitted since the last drain (each entry is one message). */
   drainMidiOut(): { system: number; frame: number; data: Uint8Array }[];
@@ -337,8 +384,14 @@ export type TimelineEvent =
 /** A fluent, TS-authored timeline of timed emulator events. Every method records an event at absolute
  *  `ms` and returns `this`. */
 export declare class Timeline {
-  /** Stage a raw MIDI message (≤4 bytes) — global host MIDI, fanned to systems by the routing role. */
+  /** Stage raw MIDI bytes — global host MIDI, fanned to systems by the routing role. Any length: one
+   *  channel message, a whole SysEx, or several messages as one run (a run longer than one message is
+   *  broadcast unchanged and reaches the N8 FIFO byte-for-byte, in order). Throws at authoring time on an
+   *  empty array or a non-byte value, so a bad message can never be dropped silently. */
   midi(ms: number, bytes: number[]): this;
+  /** A System Exclusive message: `payload` (7-bit bytes, manufacturer id first) wrapped in F0 .. F7.
+   *  Throws at authoring time if a payload byte has bit 7 set. */
+  sysex(ms: number, payload: number[]): this;
   noteOn(ms: number, note: number, opts?: NoteOpts): this;
   noteOff(ms: number, note: number, opts?: NoteOpts): this;
   /** noteOn at `ms`, noteOff at `ms + durationMs`. */
@@ -378,12 +431,20 @@ export declare function encodeWav(pcm: Float32Array, sampleRate?: number, channe
  *  TAP output + the process exit code — do NOT wrap the body in a runSession()-style exit. */
 export declare function test(name: string, fn: () => void | Promise<void>): void;
 
-/** Fluent assertions. Any throw fails the case (reported as TAP `not ok`). */
-export declare function expect(actual: unknown): {
+/** Fluent assertions. Any throw fails the case (reported as TAP `not ok`). Every failure names both
+ *  values (`expected > 50, got 12`), and the optional `message` is prefixed so a case with several
+ *  checks says which one fired: `expect(hz, "pulse1 pitch").toBeCloseTo(440, 1)`. */
+export declare function expect(actual: unknown, message?: string): {
   toBe(expected: unknown): void;
   toEqual(expected: unknown): void;
   toBeTruthy(): void;
   toBeFalsy(): void;
+  toBeGreaterThan(bound: number): void;
+  toBeGreaterThanOrEqual(bound: number): void;
+  toBeLessThan(bound: number): void;
+  toBeLessThanOrEqual(bound: number): void;
+  /** |actual - expected| <= tolerance (an ABSOLUTE tolerance, default 1e-9 - not jest's digit count). */
+  toBeCloseTo(expected: number, tolerance?: number): void;
   toThrow(match?: string | RegExp): void;
 };
 

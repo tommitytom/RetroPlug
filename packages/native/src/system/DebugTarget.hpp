@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 #include <rfl/Bytestring.hpp>
@@ -76,10 +77,20 @@ struct BreakInfo {
 // exposes what the emulator decodes internally instead. `frequency` is the
 // derived pitch in Hz. `outputVolume` is the instantaneous mixer output — for
 // square/triangle it is gated by the duty/sequence position, so it oscillates.
-// A *sounding note* shows as `period` > 0 and (square/noise) `envelopeVolume` >
-// 0; `enabled` is only the channel's $4015 on/off switch, which a ROM often
+// A *sounding note* shows as `period` > 0 and (square/noise) `envelopeOutput`
+// > 0; `enabled` is only the channel's $4015 on/off switch, which a ROM often
 // sets once at init, so it is NOT "a note is sounding". (`period` == 0 makes
 // `frequency` meaninglessly high, not 0 — gate on `period`/`outputVolume`.)
+//
+// The envelope, three ways (square + noise). `envelopeVolume` is the $4000/$400C
+// low nibble as written: the level in constant-volume mode, but the DECAY PERIOD
+// in hardware-envelope mode (bit 4 clear) - where a ROM that wants the fastest
+// decay writes 0, and the field reads 0 while a note is plainly audible.
+// `envelopeLevel` is the envelope unit's live decay counter (15 at (re)trigger,
+// counting down; wrapping back to 15 when `envelopeLoop` is set), and
+// `envelopeOutput` is what the mixer actually multiplies by: `envelopeVolume`
+// in constant mode, `envelopeLevel` in envelope mode, 0 once the length counter
+// has run out. "The note kept its level" reads from `envelopeOutput`.
 
 struct ApuSquareState {
     bool          enabled        = false;  // $4015 channel switch (not "sounding")
@@ -90,7 +101,10 @@ struct ApuSquareState {
     double        frequency      = 0.0;    // Hz
     std::uint8_t  lengthCounter  = 0;
     bool          constantVolume = false;  // fixed volume vs envelope decay
-    std::uint8_t  envelopeVolume = 0;      // the set volume 0-15
+    std::uint8_t  envelopeVolume = 0;      // the $4000 low nibble: level (constant) or decay period (envelope)
+    std::uint8_t  envelopeLevel  = 0;      // live decay counter 0-15 (meaningful in envelope mode)
+    std::uint8_t  envelopeOutput = 0;      // effective level the mixer uses 0-15 (0 once the length counter is out)
+    bool          envelopeLoop   = false;  // length-counter halt / envelope loop flag (bit 5)
     bool          sweepEnabled   = false;
     bool          sweepNegate    = false;
     std::uint8_t  sweepPeriod    = 0;
@@ -116,7 +130,10 @@ struct ApuNoiseState {
     std::uint8_t  lengthCounter  = 0;
     bool          modeFlag       = false;  // metallic/periodic vs normal noise
     bool          constantVolume = false;
-    std::uint8_t  envelopeVolume = 0;      // the set volume 0-15
+    std::uint8_t  envelopeVolume = 0;      // the $400C low nibble: level (constant) or decay period (envelope)
+    std::uint8_t  envelopeLevel  = 0;      // live decay counter 0-15 (see ApuSquareState)
+    std::uint8_t  envelopeOutput = 0;      // effective level the mixer uses 0-15
+    bool          envelopeLoop   = false;  // length-counter halt / envelope loop flag
 };
 
 struct ApuDmcState {
@@ -143,10 +160,13 @@ struct ApuState {
 
 // -- NES expansion audio state ----------------------------------------------
 //
-// Decoded live state of the cart's expansion audio chip (VRC6/VRC7/Sunsoft-5B/
-// Namco-163) — the analogue of ApuState for the mapper sound hardware, whose
-// registers are also write-only. `chip` names the active chip ("none" when the
-// cart has no expansion audio); `channels` holds its voices in chip order.
+// Decoded state of the cart's expansion audio chip (VRC6/VRC7/Sunsoft-5B/
+// Namco-163/MMC5) — the analogue of ApuState for the mapper sound hardware,
+// whose registers are also write-only. `chip` names the active chip ("none"
+// when the cart has no expansion audio); `channels` holds its voices in chip
+// order. The pitch/volume fields are the PROGRAMMED registers (read straight
+// from the chip's register file, so two reads of one held note agree); only
+// `outputLevel` is live.
 //
 // The per-channel struct is a superset — a field is populated when meaningful
 // for the chip and left 0/false otherwise. `volume` is NORMALIZED to 0 (silent)
@@ -172,10 +192,14 @@ struct ExpansionAudioChannel {
     std::uint8_t  instrument     = 0;      // VRC7 patch 0=custom,1-15 ROM (0 for other chips)
     std::uint16_t waveLength     = 0;      // N163: active wave length in samples (0 for other chips)
     std::uint8_t  activeChannels = 0;      // N163: enabled channel count 1-8 (0 for other chips)
+    std::uint8_t  waveAddress    = 0;      // N163: wave RAM start sample 0-255 (0 for other chips)
 };
 
+// `chip`: "none" | "vrc6" | "vrc7" | "s5b" | "n163" | "mmc5". MMC5 reports [pulse1, pulse2, pcm]: the
+// pulses like the 2A03's (period/frequency/duty, `volume` = the envelope's effective output 0-15),
+// and the PCM channel's 8-bit DAC level in `outputLevel` (`volume` = that level scaled to 0-15).
 struct ExpansionAudioState {
-    std::string chip;                                   // "none"|"vrc6"|"vrc7"|"s5b"|"n163"
+    std::string chip;
     std::vector<ExpansionAudioChannel> channels;        // in the chip's channel order
 };
 
@@ -210,10 +234,14 @@ struct PpuState {
 };
 
 // One Mesen event-viewer event (a register read/write, NMI, IRQ, DMA read,
-// etc.) captured for the most recent PPU frame. Mesen's event manager logs
-// these per frame and wipes them at each frame boundary, so drainEvents()
-// snapshots the current (in-progress) frame plus the previous one. `type` is
-// the DebugEventType ordinal (0=Register, 1=Nmi, 2=Irq, 3=Breakpoint,
+// etc.). Mesen's event manager logs these per PPU frame and retains only the
+// frame in progress plus the previous one; drainEvents() returns each event
+// ONCE (only what is new since the last call), so a caller that polls at least
+// once per frame sees every event exactly once. `frame` is the event manager's
+// own frame counter (incremented where the log rotates, the pre-render line -
+// NOT PpuState.frameCount, which increments 21 scanlines earlier); with it,
+// `frame:scanline:cycle` is a stable identity across polls. `type` is the
+// DebugEventType ordinal (0=Register, 1=Nmi, 2=Irq, 3=Breakpoint,
 // 4=BgColorChange, 5=SpriteZeroHit, 6=DmcDmaRead, 7=DmaRead); `operationType`
 // is the MemoryOperationType ordinal (0=Read, 1=Write, ...). `address`/`value`
 // are the register access (value is -1 for a read with no captured value).
@@ -226,6 +254,7 @@ struct DebugEvent {
     std::uint32_t programCounter = 0;
     std::int32_t  scanline       = 0;
     std::uint16_t cycle          = 0;
+    std::uint32_t frame          = 0;
 };
 
 // Optional per-system debugger / profiler, returned by
@@ -253,6 +282,13 @@ public:
     // shows function names. Returns false on read/parse failure or if
     // unsupported. Safe to call before or after beginProfile.
     virtual bool loadLabels(const std::string& path) = 0;
+
+    // The CPU address of a symbol from the loaded `.dbg`, by name: a C name
+    // (`g_frame`, and a file-scope `static` such as `s_mode1` - the `.dbg`
+    // records those under their assembler label, which this resolves through
+    // the C-symbol table) or the assembler label itself (`_g_frame`,
+    // `midiIdleLoop`). nullopt when no labels are loaded or the name is unknown.
+    virtual std::optional<std::uint32_t> symbolAddress(const std::string& /*name*/) { return std::nullopt; }
 
     // Disassemble `count` instructions starting at CPU address `addr`.
     virtual std::vector<DisasmLine> disassemble(std::uint32_t addr, std::uint32_t count) = 0;
@@ -300,10 +336,13 @@ public:
     virtual BreakInfo stepOver() = 0;
     virtual BreakInfo stepOut() = 0;
 
-    // Drain the events Mesen's event viewer logged for the most recent frame
-    // (register reads/writes to APU/PPU/mapper regs, NMI/IRQ, DMA reads).
-    // Frame-scoped: cleared at each PPU frame boundary, so call after advancing
-    // the emulator. Default {} for backends without an event viewer.
+    // Drain the events Mesen's event viewer logged (register reads/writes to
+    // APU/PPU/mapper regs, NMI/IRQ, DMA reads) that are NEW since the last
+    // call, oldest first, each stamped with its `frame`. The event manager
+    // retains only the frame in progress plus the previous one, so a caller
+    // must poll at least once per PPU frame (~16 ms) to see everything; a
+    // slower poll loses whole frames, never repeats. The first call returns
+    // both retained frames. Default {} for backends without an event viewer.
     virtual std::vector<DebugEvent> drainEvents() { return {}; }
 };
 

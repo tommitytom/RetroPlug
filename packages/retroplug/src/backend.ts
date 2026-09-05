@@ -237,15 +237,23 @@ export interface Backend {
   /** Single-step the core one instruction; returns the cycle count consumed (0 when unsupported). */
   stepInstruction(id: number): number;
 
-  /** Drain the register/DMA/NMI/IRQ events Mesen's event viewer logged for the frame just rendered
-   *  (write $4000-$4013 APU regs, $2000-$2007 PPU regs, etc). Frame-scoped — call after advancing the
-   *  core. Empty when the id is gone or the core has no NES event viewer (SameBoy/GBA). */
+  /** Drain the register/DMA/NMI/IRQ events Mesen's event viewer logged ($4000-$4013 APU regs,
+   *  $2000-$2007 PPU regs, mapper regs, etc) that are NEW since the last call, oldest first, each stamped
+   *  with its `frame`. Mesen retains only the frame in progress plus the previous one, so poll at least
+   *  once per PPU frame (~16 ms) to see every event; a slower poll loses whole frames, never repeats.
+   *  Empty when the id is gone or the core has no NES event viewer (SameBoy/GBA). */
   drainEvents(id: number): DebugEvent[];
 
   /** Load a cc65 `.dbg` symbol file (by path) so profiler/disassembly output shows function names.
    *  Returns false when the id is gone, the core has no NES debug target (SameBoy/GBA), or the file
    *  can't be read/parsed. */
   loadLabels(id: number, path: string): boolean;
+
+  /** The CPU address of a symbol from the `.dbg` loaded by `loadLabels`, by name: a C name (`g_frame`,
+   *  and a file-scope `static` such as `s_mode1` - resolved through the `.dbg`'s C-symbol records) or
+   *  the assembler label (`_g_frame`, `midiIdleLoop`). Null when nothing is loaded, the name is unknown,
+   *  or the core has no NES debug target. */
+  symbolAddress(id: number, name: string): number | null;
 
   /** Write one CPU register by name (canonical lower-case, e.g. "a"/"pc"). Returns false when the id is
    *  gone, the backend can't write, or the name is unknown / read-only. */
@@ -353,7 +361,7 @@ export type EmulatorBackend = Pick<
 export type DebugBackend = Pick<
   Backend,
   | "getApuState" | "getExpansionAudioState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
-  | "stepInstruction" | "drainEvents" | "loadLabels" | "setCpuRegister" | "runUntilPc"
+  | "stepInstruction" | "drainEvents" | "loadLabels" | "symbolAddress" | "setCpuRegister" | "runUntilPc"
   | "setBreakpoints" | "runUntilBreak" | "setTrace" | "readTrace" | "stepInto" | "stepOver" | "stepOut"
   | "beginProfile" | "readProfile" | "disassemble" | "getCallStack"
 >;
@@ -392,8 +400,14 @@ export interface FrameData {
 // packages/native/src/system/DebugTarget.hpp + CpuState.hpp field-for-field, verbatim names — the RPC
 // returns each as a plain JS object, so a direct cast is a faithful shape). ---
 
-/** One 2A03 square (pulse) channel. `frequency` is the decoded Hz; `envelopeVolume`/`period` are the
- *  reliable "is it sounding" signal (`enabled` is only the $4015 switch). */
+/** One 2A03 square (pulse) channel. `frequency` is the decoded Hz; `envelopeOutput`/`period` are the
+ *  reliable "is it sounding" signal (`enabled` is only the $4015 switch). The envelope three ways:
+ *  `envelopeVolume` is the $4000 low nibble as written - the level in constant-volume mode, but the DECAY
+ *  PERIOD in hardware-envelope mode (`constantVolume` false), where it reads 0 for the fastest decay while
+ *  a note is plainly audible; `envelopeLevel` is the envelope unit's live decay counter (15 at trigger,
+ *  counting down, wrapping to 15 when `envelopeLoop` is set); `envelopeOutput` is what the mixer actually
+ *  uses - `envelopeVolume` in constant mode, `envelopeLevel` in envelope mode, 0 once the length counter
+ *  has run out. "The note kept its level" reads from `envelopeOutput`. */
 export interface ApuSquareState {
   enabled: boolean;
   period: number;
@@ -404,6 +418,9 @@ export interface ApuSquareState {
   lengthCounter: number;
   constantVolume: boolean;
   envelopeVolume: number;
+  envelopeLevel: number;
+  envelopeOutput: number;
+  envelopeLoop: boolean;
   sweepEnabled: boolean;
   sweepNegate: boolean;
   sweepPeriod: number;
@@ -430,6 +447,9 @@ export interface ApuNoiseState {
   modeFlag: boolean;
   constantVolume: boolean;
   envelopeVolume: number;
+  envelopeLevel: number;
+  envelopeOutput: number;
+  envelopeLoop: boolean;
 }
 
 export interface ApuDmcState {
@@ -473,12 +493,16 @@ export interface ExpansionAudioChannel {
   instrument: number;      // VRC7 patch 0=custom, 1-15 ROM (0 for others)
   waveLength: number;      // N163: active wave length in samples (0 for others)
   activeChannels: number;  // N163: enabled channel count 1-8 (0 for others)
+  waveAddress: number;     // N163: wave RAM start sample 0-255 (0 for others)
 }
 
 /** The decoded NES expansion-audio snapshot (`getExpansionAudioState`). `chip` is the active chip
- *  ("none" when the cart has no expansion sound); `channels` are its voices in chip order. */
+ *  ("none" when the cart has no expansion sound); `channels` are its voices in chip order. The pitch /
+ *  volume fields are the PROGRAMMED registers (two reads of one held note agree); only `outputLevel` is
+ *  live. MMC5 reports [pulse1, pulse2, pcm]: the pulses like the 2A03's (`volume` = the envelope's
+ *  effective output), the PCM channel's 8-bit DAC level in `outputLevel` (`volume` = it scaled to 0-15). */
 export interface ExpansionAudioState {
-  chip: "none" | "vrc6" | "vrc7" | "s5b" | "n163" | string;
+  chip: "none" | "vrc6" | "vrc7" | "s5b" | "n163" | "mmc5" | string;
   channels: ExpansionAudioChannel[];
 }
 
@@ -511,11 +535,13 @@ export interface CpuRegister {
   bits: number;
 }
 
-/** One Mesen event-viewer event (`drainEvents`) — a register access / NMI / IRQ / DMA read logged for a
- *  frame. `type` is the DebugEventType ordinal (0=Register, 1=Nmi, 2=Irq, 3=Breakpoint, 4=BgColorChange,
- *  5=SpriteZeroHit, 6=DmcDmaRead, 7=DmaRead); `operationType` is the MemoryOperationType ordinal (0=Read,
- *  1=Write, ...). `address`/`value` are the register access (value -1 for a read with no captured value);
- *  `scanline`/`cycle` are the PPU position it fired at. */
+/** One Mesen event-viewer event (`drainEvents`) — a register access / NMI / IRQ / DMA read. `frame` is the
+ *  event manager's own frame counter (it increments where the log rotates, the pre-render line - NOT
+ *  `PpuState.frameCount`, which increments 21 scanlines earlier), so `frame:scanline:cycle` is a stable
+ *  identity for an event across polls. `type` is the DebugEventType ordinal (0=Register, 1=Nmi, 2=Irq,
+ *  3=Breakpoint, 4=BgColorChange, 5=SpriteZeroHit, 6=DmcDmaRead, 7=DmaRead); `operationType` is the
+ *  MemoryOperationType ordinal (0=Read, 1=Write, ...). `address`/`value` are the register access (value -1
+ *  for a read with no captured value); `scanline`/`cycle` are the PPU position it fired at. */
 export interface DebugEvent {
   type: number;
   operationType: number;
@@ -524,6 +550,7 @@ export interface DebugEvent {
   programCounter: number;
   scanline: number;
   cycle: number;
+  frame: number;
 }
 
 /** One row of the execution trace (`readTrace`, most-recent first). `pc` is the instruction address;

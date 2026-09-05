@@ -77,8 +77,16 @@ uint32_t BaseEventManager::GetEventCount()
 	return (uint32_t)_sentEvents.size();
 }
 
+void BaseEventManager::GetRawFrameEvents(vector<DebugEventInfo>& prevFrame, vector<DebugEventInfo>& currentFrame)
+{
+	auto lock = _lock.AcquireSafe();
+	prevFrame = _prevDebugEvents;
+	currentFrame = _debugEvents;
+}
+
 void BaseEventManager::ClearFrameEvents()
 {
+	_frameId++;
 	_prevDebugEvents = _debugEvents;
 	_debugEvents.clear();
 }
