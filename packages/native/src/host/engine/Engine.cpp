@@ -97,17 +97,24 @@ void Engine::runBlockWithRouter(std::uint32_t frames, const AudioRouter& router)
         // serial-in sink → the addressed system's serial FIFO.
         for (const auto& sv : dsp_.serialIn_)
             if (SystemBase* t = project_.findSystem(sv.system)) t->pushSerialIn(sv.frame, sv.byte);
-        // core-MIDI sink → the addressed core's onMidi (e.g. the NES N8 FIFO). One ::MidiEvent per entry;
-        // an oversized message (> the inline data[4]) is skipped, matching the DAW-drain guard.
+        // core-MIDI sink → the addressed core's onMidi (e.g. the NES N8 FIFO). One ::MidiEvent per entry.
+        // A message longer than the inline data[4] (a SysEx, or several messages staged as one run) goes
+        // down the core's RAW byte path instead: for the NES that is the same FIFO onMidi feeds, unframed
+        // and uncapped, and a core with no byte device (SameBoy's mGB speaks 3-byte messages only) ignores
+        // it - which also keeps a dangling MidiEvent::dataExt out of SameBoy's queued copy.
         for (const auto& cm : dsp_.coreMidi_) {
-            if (cm.data.empty() || cm.data.size() > ::MidiEvent::kDataSize) continue;
-            if (SystemBase* t = project_.findSystem(cm.system)) {
-                ::MidiEvent ev{};
-                ev.frame = cm.frame;
-                ev.size  = static_cast<std::uint32_t>(cm.data.size());
-                for (std::size_t j = 0; j < cm.data.size(); ++j) ev.data[j] = cm.data[j];
-                t->onMidi(&ev, 1);
+            if (cm.data.empty()) continue;
+            SystemBase* t = project_.findSystem(cm.system);
+            if (!t) continue;
+            if (cm.data.size() > ::MidiEvent::kDataSize) {
+                t->pushCoreBytes(cm.frame, cm.data.data(), cm.data.size(), false);
+                continue;
             }
+            ::MidiEvent ev{};
+            ev.frame = cm.frame;
+            ev.size  = static_cast<std::uint32_t>(cm.data.size());
+            for (std::size_t j = 0; j < cm.data.size(); ++j) ev.data[j] = cm.data[j];
+            t->onMidi(&ev, 1);
         }
         // raw core-bytes sink → the addressed core's byte device (e.g. the NES N8 FIFO). Un-framed: no
         // MidiEvent, so NO length cap — a byte protocol (a tracker's host sync) can exceed 4 bytes.

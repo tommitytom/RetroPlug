@@ -130,8 +130,10 @@ export interface AudioDriver {
    *  ppq accumulate, so "resume where we paused" is expressible but "rewind and play again" is not. */
   setPpq(ppq: number): boolean;
   setBpm(bpm: number): boolean;
-  /** Stage a global host-MIDI message for the kernel's next render (consumed on its first block).
-   *  The kernel's midi-routing behaviour fans it to systems; with no routing role it reaches none. */
+  /** Stage global host-MIDI bytes for the kernel's next render (consumed on its first block). Any
+   *  non-empty length: a channel message, a whole SysEx, or several messages as one run - the kernel's
+   *  midi-routing behaviour fans a channel message to its system(s) and broadcasts a longer run unchanged;
+   *  with no routing role it reaches none. False only for an empty array. */
   stageMidiIn(bytes: Uint8Array | number[]): boolean;
   /** Stage one CONTROL-SURFACE message (a Launchpad pad press), delivered to the kernel as
    *  `controllerIn` rather than as musical MIDI - so a headless test can drive a controller app with

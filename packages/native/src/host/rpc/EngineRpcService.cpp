@@ -423,7 +423,10 @@ bool EngineRpcService::setAudioRouting(std::uint32_t mode) {
 }
 
 bool EngineRpcService::stageMidiIn(std::vector<std::uint8_t> bytes) {
-    if (bytes.empty() || bytes.size() > 4) return false;  // a MIDI message fits in 4 bytes
+    // Any non-empty length: a channel message, a SysEx, or several messages staged as one run. The
+    // invoker carries the long ones as an owning payload; the kernel's routing broadcasts a run longer
+    // than one message unchanged, and the core-MIDI sink hands it to the core's raw byte path.
+    if (bytes.empty()) return false;
     invoker_.stageMidi(std::move(bytes));
     return true;
 }

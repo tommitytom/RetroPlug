@@ -41,9 +41,29 @@ export class Timeline {
     return this;
   }
 
-  /** Stage a raw MIDI message (≤4 bytes) — global host MIDI, fanned to systems by the routing role. */
+  /** Stage raw MIDI bytes — global host MIDI, fanned to systems by the routing role. Any length: one
+   *  channel message, a whole SysEx, or several messages as one run (the routing broadcasts a run longer
+   *  than one message unchanged, and the NES N8 FIFO takes it byte-for-byte, in order). Throws HERE, at
+   *  authoring time, on an empty array or a non-byte value, so a bad message can never be dropped silently
+   *  by the render. */
   midi(ms: number, bytes: number[]): this {
-    return this.push({ ms, kind: "midi", bytes });
+    if (!Array.isArray(bytes) || bytes.length === 0) throw new Error(`Timeline.midi(${ms}): expected a non-empty byte array`);
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i];
+      if (!Number.isInteger(b) || b < 0 || b > 0xff)
+        throw new Error(`Timeline.midi(${ms}): byte ${i} is ${String(b)}, expected an integer 0..255`);
+    }
+    return this.push({ ms, kind: "midi", bytes: bytes.slice() });
+  }
+  /** A System Exclusive message: `payload` (7-bit data bytes, manufacturer id first) wrapped in F0 .. F7.
+   *  Throws at authoring time if a payload byte has bit 7 set - that would end the message early. */
+  sysex(ms: number, payload: number[]): this {
+    for (let i = 0; i < payload.length; i++) {
+      const b = payload[i];
+      if (!Number.isInteger(b) || b < 0 || b > 0x7f)
+        throw new Error(`Timeline.sysex(${ms}): payload byte ${i} is ${String(b)}, expected 0..127 (7-bit)`);
+    }
+    return this.midi(ms, [0xf0, ...payload, 0xf7]);
   }
   noteOn(ms: number, note: number, opts?: NoteOpts): this {
     return this.midi(ms, noteOnBytes(note, opts));
@@ -116,7 +136,11 @@ export function renderTimeline(
   for (const ev of timeline.build()) {
     advance(ev.ms);
     switch (ev.kind) {
-      case "midi": audio.stageMidiIn(ev.bytes); break;
+      case "midi":
+        // The driver's false is the ONLY way a message can fail to reach the kernel now; make it loud.
+        if (!audio.stageMidiIn(ev.bytes))
+          throw new Error(`Timeline: the host refused a ${ev.bytes.length}-byte MIDI message at ${ev.ms} ms`);
+        break;
       case "press": audio.pressButton(ev.system, ev.button, ev.down); break;
       case "bpm": audio.setBpm(ev.bpm); break;
       case "transport": audio.setTransport(ev.running); break;

@@ -175,19 +175,22 @@ protected:
         if (tp.bbt.valid) bpm = tp.bbt.beatsPerMinute;
         const bool playing = tp.playing;
 
-        // Host MIDI in → stage directly on the audio thread (bypasses the ring + its 4-byte cap; safe
-        // because run() owns the Engine while active). Short messages only; SysEx deferred.
+        // Host MIDI in → stage directly on the audio thread (bypasses the ring; safe because run() owns
+        // the Engine while active). Every size: DPF keeps a message longer than the inline data[4] (a
+        // SysEx) in dataExt, and the Engine's core-MIDI sink hands those to the core's raw byte path
+        // (the NES N8 FIFO), so a DAW can upload a wave to the N163 build the same way the CLI does.
         for (uint32_t i = 0; i < midiEventCount; ++i) {
             const MidiEvent& e = midiEvents[i];
             if (e.size < 1) continue;
+            const uint8_t* bytes = e.size <= MidiEvent::kDataSize ? e.data : e.dataExt;
+            if (bytes == nullptr) continue;
             // Forward raw MIDI to a connected physical N8 (no-op when disconnected). Skip single-byte System
             // Real-Time (>= 0xF8: clock/start/stop): those are transport, and risa's generated clock already
             // reaches the N8 via the Engine core-byte mirror - raw-forwarding them too would double-clock it.
             // e.frame preserves the DAW's intra-block timing (the N8Link scheduler releases on it).
-            if (!(e.size == 1 && e.data[0] >= 0xF8))
-                n8Host_.link().push(e.frame, e.data, e.size, getSampleRate());
-            if (e.size <= 4)
-                engine_.stageMidi(e.frame, std::vector<std::uint8_t>(e.data, e.data + e.size));
+            if (!(e.size == 1 && bytes[0] >= 0xF8))
+                n8Host_.link().push(e.frame, bytes, e.size, getSampleRate());
+            engine_.stageMidi(e.frame, std::vector<std::uint8_t>(bytes, bytes + e.size));
         }
 
         // One audio block: drain control-thread structural edits on the audio thread → set transport

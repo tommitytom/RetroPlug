@@ -53,17 +53,28 @@ void QueuedInvoker::setSystems(std::string json) {
 }
 
 void QueuedInvoker::stageMidi(std::vector<std::uint8_t> bytes) {
+    if (bytes.empty()) return;
     DspCommand c;
     c.kind = DspCommand::Kind::StageMidi;
-    c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());
-    for (std::size_t i = 0; i < bytes.size() && i < 4; ++i) c.stageMidi.data[i] = bytes[i];
-    commands_.tryPush(c);
+    c.stageMidi.ext = nullptr;
+    if (bytes.size() <= 4) {
+        c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());
+        for (std::size_t i = 0; i < bytes.size(); ++i) c.stageMidi.data[i] = bytes[i];
+        commands_.tryPush(c);
+    } else {
+        // Too long for the inline slot (a SysEx, or several messages staged as one run): ship it as an
+        // owning payload, freed by the audio thread after applying - the writeRam pattern.
+        c.stageMidi.len = 0;
+        c.stageMidi.ext = new std::vector<std::uint8_t>(std::move(bytes));
+        if (!commands_.tryPush(c)) delete c.stageMidi.ext;  // full ring: drop the message, never leak it
+    }
     maybeFlush();
 }
 
 void QueuedInvoker::stageControllerMidi(std::vector<std::uint8_t> bytes) {
     DspCommand c;
     c.kind = DspCommand::Kind::StageControllerMidi;
+    c.stageMidi.ext = nullptr;
     c.stageMidi.len = static_cast<std::uint8_t>(bytes.size());
     for (std::size_t i = 0; i < bytes.size() && i < 4; ++i) c.stageMidi.data[i] = bytes[i];
     commands_.tryPush(c);
@@ -141,7 +152,12 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 delete cmd.loadKernel.bytecode;
                 break;
             case DspCommand::Kind::StageMidi:
-                engine.stageMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
+                if (cmd.stageMidi.ext) {
+                    engine.stageMidi(std::move(*cmd.stageMidi.ext));
+                    delete cmd.stageMidi.ext;  // owning payload - free after applying (rare op)
+                } else {
+                    engine.stageMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
+                }
                 break;
             case DspCommand::Kind::StageControllerMidi:
                 engine.stageControllerMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
@@ -220,13 +236,14 @@ void QueuedInvoker::freePending() {
             case DspCommand::Kind::SetSystems:    delete cmd.setSystems.json; break;
             case DspCommand::Kind::LoadKernel:    delete cmd.loadKernel.bytecode; break;
             case DspCommand::Kind::WriteRam:      delete cmd.writeRam.bytes; break;
+            case DspCommand::Kind::StageMidi:     delete cmd.stageMidi.ext; break;  // null for an inline message
             case DspCommand::Kind::AddSystem:     // built but never adopted → free its slot too
                 if (registry_) registry_->release(cmd.addSystem.sys->id());
                 delete cmd.addSystem.sys; break;
             case DspCommand::Kind::ReplaceSystem: // built but never swapped in → free its slot too
                 if (registry_) registry_->release(cmd.replaceSystem.sys->id());
                 delete cmd.replaceSystem.sys; break;
-            default: break;  // StageMidi/RemoveSystem/SetBpm/SetTransport carry no heap payload
+            default: break;  // StageControllerMidi/RemoveSystem/SetBpm/SetTransport carry no heap payload
         }
     }
 }

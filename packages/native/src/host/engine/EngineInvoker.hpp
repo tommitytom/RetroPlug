@@ -43,9 +43,10 @@ public:
     void removeSystem(SystemId id);
     void loadKernel(std::vector<std::uint8_t> bytecode);
     void setSystems(std::string json);
+    // Any length: a channel message rides the command inline, a longer run (SysEx) as an owning payload.
     void stageMidi(std::vector<std::uint8_t> bytes);
-    // Control-surface traffic (a pad press), kept out of the musical stream. Same 4-byte inline
-    // limit as stageMidi, which a Note/CC press fits inside; a surface's sysex never comes this way.
+    // Control-surface traffic (a pad press), kept out of the musical stream. Inline-only (4 bytes),
+    // which a Note/CC press fits inside; a surface's sysex never comes this way.
     void stageControllerMidi(std::vector<std::uint8_t> bytes);
     void setBpm(double bpm);
     void setTransport(bool playing);

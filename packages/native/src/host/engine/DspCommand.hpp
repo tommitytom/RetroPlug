@@ -10,7 +10,9 @@ class SystemBase;  // pointer-only — keeps DspCommand trivially copyable and t
 // SpscRing<DspCommand, N>. POD / trivially copy-assignable so it rides the ring without heap
 // churn. The heavy payloads (rare, user-initiated) cross as raw OWNING pointers — the audio thread
 // applies then `delete`s / hands them off, the accepted non-RT-on-rare-op pattern from PluginDSP's
-// LoadProject / AddSystem. StageMidi is fully inline (a MIDI message fits in 4 bytes).
+// LoadProject / AddSystem. StageMidi is inline for a channel message (fits in 4 bytes); a longer one
+// (SysEx, or several messages staged as one run) crosses as an owning `ext` vector, the same rare-op
+// pattern - the audio thread applies then deletes it.
 //
 // The lifecycle kinds mirror production's Command: the control thread builds + onActivate's the
 // SameBoySystem off-thread and ships the raw pointer here; the audio thread does an alloc-free
@@ -28,7 +30,9 @@ struct DspCommand {
     union {
         struct { std::string* json; } setSystems;                 // owning; audio thread deletes
         struct { std::vector<std::uint8_t>* bytecode; } loadKernel; // owning; audio thread deletes
-        struct { std::uint8_t data[4]; std::uint8_t len; } stageMidi;  // also carries StageControllerMidi
+        // `len` bytes inline when the message fits; else `ext` OWNS the whole message (audio thread deletes)
+        // and `len` is 0. Also carries StageControllerMidi, which never uses `ext` (a pad press is 3 bytes).
+        struct { std::uint8_t data[4]; std::uint8_t len; std::vector<std::uint8_t>* ext; } stageMidi;
         struct { SystemBase* sys; } addSystem;                    // owning; adopted into the Project
         struct { SystemBase* sys; std::uint32_t id; } replaceSystem; // owning; swapped for id
         struct { std::uint32_t id; } removeSystem;
@@ -44,5 +48,5 @@ struct DspCommand {
         struct { std::uint32_t id; std::uint32_t offset; std::vector<std::uint8_t>* bytes; } writeRam;
     };
 
-    DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0} {}
+    DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0, nullptr} {}
 };

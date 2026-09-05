@@ -66,3 +66,25 @@ test("raw midi / bpm / transport / screenshot pass through as typed events", () 
     { ms: 30, kind: "screenshot", system: 7, path: "/tmp/x.png" },
   ]);
 });
+
+test("midi() takes any length - a SysEx or several messages as one run - and copies the array", () => {
+  const src = [0x90, 60, 0x7f, 0x91, 64, 0x7f];
+  const evs = new Timeline().midi(0, src).midi(1, [0xf0, 0x7d, 0x42, 0x02, 0xf7]).build();
+  expect((evs[0] as { bytes: number[] }).bytes).toEqual(src);
+  expect((evs[1] as { bytes: number[] }).bytes.length).toBe(5);
+  src[0] = 0; // the recorded event must not alias the caller's array
+  expect((evs[0] as { bytes: number[] }).bytes[0]).toBe(0x90);
+});
+
+test("midi() refuses an empty array and a non-byte value at authoring time, naming the ms", () => {
+  expect(() => new Timeline().midi(300, [])).toThrow("Timeline.midi(300)");
+  expect(() => new Timeline().midi(300, [0x90, 256, 1])).toThrow("byte 1 is 256");
+  expect(() => new Timeline().midi(300, [0x90, -1, 1])).toThrow("expected an integer 0..255");
+  expect(() => new Timeline().midi(300, [0x90, 1.5, 1])).toThrow("byte 1 is 1.5");
+});
+
+test("sysex() wraps a 7-bit payload in F0..F7 and refuses a byte with bit 7 set", () => {
+  const ev = new Timeline().sysex(10, [0x7d, 0x42, 0x02]).build()[0] as { bytes: number[] };
+  expect(ev.bytes).toEqual([0xf0, 0x7d, 0x42, 0x02, 0xf7]);
+  expect(() => new Timeline().sysex(10, [0x7d, 0x90])).toThrow("payload byte 1 is 144");
+});
