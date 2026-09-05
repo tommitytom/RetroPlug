@@ -153,6 +153,20 @@ out="$TMP/run-fail.log"
 "$CLI" run "$FIX/ts-harness/fail.test.ts" --out "$TMP/build-runf" >"$out" 2>&1
 check "run propagates a session's failure exit" 1 $?
 
+# 6b. A session whose sibling build dir cannot be written (a file straight under /tmp has "/" for a
+#     sibling) falls back to a temp dir instead of dying with "could not write", and says so.
+RO="$TMP/ro"
+mkdir -p "$RO/src"
+cp "$FIX/ts-harness/pass.test.ts" "$FIX/ts-harness/helper.ts" "$RO/src/"
+chmod 555 "$RO"
+out="$TMP/run-ro.log"
+"$CLI" run "$RO/src/pass.test.ts" >"$out" 2>&1
+code=$?
+chmod 755 "$RO"
+check "run under an unwritable sibling still exits 0" 0 $code
+contains "the fallback is announced" "$out" "sibling build dir is not writable"
+contains "the session ran from the fallback" "$out" "a stripped sibling helper is importable"
+
 # 7. Stripping is position-preserving: output length must equal input length, so a stack trace from the
 #    emitted .js points at the right line of the .ts.
 for f in pass.test fail.test helper; do

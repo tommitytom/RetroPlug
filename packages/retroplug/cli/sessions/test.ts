@@ -18,9 +18,11 @@
 import { keepAlive, exitProcess } from "../session";
 import type { Session } from "../session";
 import type { CliTool } from "../tools";
-import { buildTsDir, buildDirFor } from "../tsStrip";
+import { buildTsDir, resolveBuildDir } from "../tsStrip";
 import { spawnSession } from "../childSession";
 import { ensureSdk, sdkDirFor } from "../sdkAssets";
+
+declare const tjs: { tmpDir: string };
 
 export interface TestArgs {
   dir: string;
@@ -71,7 +73,8 @@ config dir), and the exit code is nonzero if any file fails, so this is a real p
 
 options:
   --rom <path>      passed to every test file as its first argument
-  --out <dir>       where to write stripped output (default: <dir>'s sibling .rp-test-build)
+  --out <dir>       where to write stripped output (default: <dir>'s sibling .rp-test-build, or a
+                    directory under the temp dir when that sibling is not writable)
   -- <args...>      extra arguments appended to every test file's argv
 
 TypeScript is stripped, not compiled: only erasable syntax is supported. enum, namespace and
@@ -96,7 +99,8 @@ export const testTool: CliTool = {
       return;
     }
 
-    const outDir = opts.out ?? buildDirFor(opts.dir);
+    const { outDir, fellBack } = resolveBuildDir(s.backend, opts.dir, opts.out, tjs.tmpDir);
+    if (fellBack) console.error(`note: the sibling build dir is not writable; stripping into ${outDir} (override with --out)`);
     const { emitted, needsSdk } = buildTsDir(s.backend, opts.dir, outDir);
 
     // The binary owns the SDK: refresh it next to the tests if it is missing or stale, so the copy a

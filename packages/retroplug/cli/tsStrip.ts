@@ -49,6 +49,36 @@ export function buildDirFor(dir: string): string {
   return (slash < 0 ? "." : clean.slice(0, slash)) + "/.rp-test-build";
 }
 
+/** A file-system-safe slug of a source directory, for the temp-dir fallback below. */
+function slugOf(dir: string): string {
+  return dir.replace(/^\/+/, "").replace(/[^A-Za-z0-9._-]+/g, "_") || "root";
+}
+
+/**
+ * Where stripped output goes for `srcDir`: `explicitOut` when the user passed `--out`; else the sibling
+ * build dir (buildDirFor) - unless that turns out not to be writable, in which case a directory under
+ * `tmpDir` keyed on the source path. The sibling is probed by really writing a marker, so the answer is
+ * the truth rather than a guess. A session straight under `/tmp` is the case that needs this: its sibling
+ * is `/.rp-test-build`, and the run died there with `could not write` (BlipToaster's HARNESS-NOTES 4.2).
+ * The fallback keeps sibling imports working (the whole directory is still stripped into one place); only
+ * a `../` import out of the source dir would miss, which `--out` next to the sources covers.
+ */
+export function resolveBuildDir(
+  backend: HostBackend,
+  srcDir: string,
+  explicitOut: string | null | undefined,
+  tmpDir: string,
+): { outDir: string; fellBack: boolean } {
+  if (explicitOut) return { outDir: explicitOut, fellBack: false };
+  const sibling = buildDirFor(srcDir);
+  const marker = `${sibling}/.rp-writable`;
+  if (backend.writeFile(marker, new Uint8Array(0))) {
+    backend.deleteFile(marker);
+    return { outDir: sibling, fellBack: false };
+  }
+  return { outDir: `${tmpDir.replace(/\/+$/, "")}/rp-test-build/${slugOf(srcDir)}`, fellBack: true };
+}
+
 /** A `.ts` source file that should be stripped: not a `.d.ts` (types only, nothing to emit). */
 export function isStrippableTs(name: string): boolean {
   return name.endsWith(".ts") && !name.endsWith(".d.ts");
@@ -97,7 +127,7 @@ export function buildTsDir(backend: HostBackend, srcDir: string, outDir?: string
     const outName = outputName(entry);
     // writeFile creates parent dirs on demand, so outDir needs no mkdir.
     if (!backend.writeFile(`${out}/${outName}`, new TextEncoder().encode(code)))
-      throw new Error(`could not write ${out}/${outName}`);
+      throw new Error(`could not write ${out}/${outName} (pass --out <dir> to choose a writable build directory)`);
     emitted.push(outName);
   }
 

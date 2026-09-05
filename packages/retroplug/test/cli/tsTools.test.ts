@@ -8,7 +8,7 @@
 // (The SDK is exempt - it is a bare specifier served from the module registry, never a path.)
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
-import { buildDirFor, isStrippableTs, outputName, buildTsDir } from "../../cli/tsStrip";
+import { buildDirFor, isStrippableTs, outputName, buildTsDir, resolveBuildDir } from "../../cli/tsStrip";
 import { sdkDirFor } from "../../cli/sdkAssets";
 import { parseTestArgs, selectTests } from "../../cli/sessions/test";
 import { parseRunArgs, splitPath } from "../../cli/sessions/run";
@@ -123,4 +123,43 @@ test("run: splitPath treats a bare name as living in the current directory", () 
   expect(splitPath("a/b/c.ts").file).toBe("c.ts");
   expect(splitPath("c.ts").dir).toBe(".");
   expect(splitPath("c.ts").file).toBe("c.ts");
+});
+
+// resolveBuildDir: the sibling build dir when it is writable; a temp-dir fallback when it is not (a session
+// straight under /tmp maps to /.rp-test-build, which nobody can write); --out verbatim, never probed.
+function backendRefusing(prefix: string): MockBackend & { writes: string[] } {
+  const b = new MockBackend() as MockBackend & { writes: string[] };
+  b.writes = [];
+  const orig = b.writeFile.bind(b);
+  b.writeFile = (path: string, bytes: Uint8Array) => {
+    b.writes.push(path);
+    return path.startsWith(prefix) ? false : orig(path, bytes);
+  };
+  return b;
+}
+
+test("resolveBuildDir keeps the writable sibling and removes its probe marker", () => {
+  const b = backendRefusing("/nowhere");
+  const r = resolveBuildDir(b, "kit/tests", null, "/tmp");
+  expect(r).toEqual({ outDir: "kit/.rp-test-build", fellBack: false });
+  expect(b.writes).toEqual(["kit/.rp-test-build/.rp-writable"]);
+  expect(b.fileExists("kit/.rp-test-build/.rp-writable")).toBe(false); // the probe leaves nothing behind
+});
+
+test("resolveBuildDir falls back under the temp dir when the sibling cannot be written", () => {
+  const b = backendRefusing("/.rp-test-build");
+  const r = resolveBuildDir(b, "/tmp", null, "/var/tmp/");
+  expect(r.fellBack).toBe(true);
+  expect(r.outDir).toBe("/var/tmp/rp-test-build/tmp"); // keyed on the source path, trailing slash trimmed
+  // A different source dir with the same unwritable sibling gets its own fallback, so two sessions never
+  // share stripped output.
+  expect(resolveBuildDir(b, "/probes", null, "/var/tmp").outDir).toBe("/var/tmp/rp-test-build/probes");
+  // ...while one whose sibling IS writable (/tmp/probes -> /tmp/.rp-test-build) stays put.
+  expect(resolveBuildDir(b, "/tmp/probes", null, "/var/tmp")).toEqual({ outDir: "/tmp/.rp-test-build", fellBack: false });
+});
+
+test("resolveBuildDir honours --out without probing anything", () => {
+  const b = backendRefusing("/");
+  expect(resolveBuildDir(b, "/tmp", "/somewhere/out", "/var/tmp")).toEqual({ outDir: "/somewhere/out", fellBack: false });
+  expect(b.writes).toEqual([]);
 });

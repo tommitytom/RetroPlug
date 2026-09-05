@@ -10,9 +10,11 @@
 import { keepAlive, exitProcess } from "../session";
 import type { Session } from "../session";
 import type { CliTool } from "../tools";
-import { buildTsDir, buildDirFor, outputName } from "../tsStrip";
+import { buildTsDir, resolveBuildDir, outputName } from "../tsStrip";
 import { spawnSession } from "../childSession";
 import { ensureSdk, sdkDirFor } from "../sdkAssets";
+
+declare const tjs: { tmpDir: string };
 
 export interface RunArgs {
   session: string;
@@ -45,7 +47,9 @@ const help = `usage: retroplug-cli run <session.ts> [args...]
 Strip and run a single TypeScript session file. Everything after the path is passed to the session as
 its arguments (read with hostArgs()).
 
-  --out <dir>   where to write stripped output (default: the session dir's sibling .rp-test-build)
+  --out <dir>   where to write stripped output (default: the session dir's sibling .rp-test-build; when
+                that is not writable - a file straight under /tmp has "/" for a sibling - a directory
+                under the temp dir is used instead, and the run says so)
 
 TypeScript is stripped, not compiled: only erasable syntax is supported. enum, namespace and
 constructor parameter properties are rejected with a file:line:col error.
@@ -69,7 +73,9 @@ export const runTool: CliTool = {
     }
 
     const { dir, file } = splitPath(opts.session);
-    const outDir = opts.out ?? buildDirFor(dir);
+    // A session straight under /tmp has "/" for a sibling: fall back to the temp dir rather than dying.
+    const { outDir, fellBack } = resolveBuildDir(s.backend, dir, opts.out, tjs.tmpDir);
+    if (fellBack) console.error(`note: the sibling build dir is not writable; stripping into ${outDir} (override with --out)`);
     const { needsSdk } = buildTsDir(s.backend, dir, outDir);
     if (needsSdk) ensureSdk(s.backend, sdkDirFor(dir)); // see the note in sessions/test.ts
 

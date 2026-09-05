@@ -23,6 +23,7 @@ export function test(name: string, fn: TestFn): void {
 }
 
 function fmt(v: unknown): string {
+  if (typeof v === "number") return String(v); // JSON would print NaN / Infinity as null
   if (v instanceof Uint8Array) {
     const head = Array.from(v.slice(0, 8)).join(",");
     return `Uint8Array(${v.length})[${head}${v.length > 8 ? ",…" : ""}]`;
@@ -34,26 +35,53 @@ function fmt(v: unknown): string {
   }
 }
 
-export function expect(actual: unknown) {
+/** Fluent assertions. Every failure names BOTH values (an inequality reports the actual number, not just
+ *  "expected truthy"), and an optional `message` is prefixed to the failure so a case with several checks
+ *  says which one fired: `expect(hz, "pulse1 pitch").toBeCloseTo(440, 1)`. */
+export function expect(actual: unknown, message?: string) {
+  const fail = (detail: string): never => {
+    throw new Error(message ? `${message}: ${detail}` : detail);
+  };
+  const num = (what: string): number => {
+    if (typeof actual !== "number") fail(`${what} expects a number, got ${fmt(actual)}`);
+    return actual as number;
+  };
   return {
     toBe(expected: unknown): void {
-      if (!Object.is(actual, expected)) {
-        throw new Error(`expected ${fmt(expected)}, got ${fmt(actual)}`);
-      }
+      if (!Object.is(actual, expected)) fail(`expected ${fmt(expected)}, got ${fmt(actual)}`);
     },
     toEqual(expected: unknown): void {
       const a = JSON.stringify(actual);
       const b = JSON.stringify(expected);
-      if (a !== b) throw new Error(`expected ${b}, got ${a}`);
+      if (a !== b) fail(`expected ${b}, got ${a}`);
     },
     toBeTruthy(): void {
-      if (!actual) throw new Error(`expected truthy, got ${fmt(actual)}`);
+      if (!actual) fail(`expected truthy, got ${fmt(actual)}`);
     },
     toBeFalsy(): void {
-      if (actual) throw new Error(`expected falsy, got ${fmt(actual)}`);
+      if (actual) fail(`expected falsy, got ${fmt(actual)}`);
+    },
+    toBeGreaterThan(bound: number): void {
+      if (!(num("toBeGreaterThan") > bound)) fail(`expected > ${fmt(bound)}, got ${fmt(actual)}`);
+    },
+    toBeGreaterThanOrEqual(bound: number): void {
+      if (!(num("toBeGreaterThanOrEqual") >= bound)) fail(`expected >= ${fmt(bound)}, got ${fmt(actual)}`);
+    },
+    toBeLessThan(bound: number): void {
+      if (!(num("toBeLessThan") < bound)) fail(`expected < ${fmt(bound)}, got ${fmt(actual)}`);
+    },
+    toBeLessThanOrEqual(bound: number): void {
+      if (!(num("toBeLessThanOrEqual") <= bound)) fail(`expected <= ${fmt(bound)}, got ${fmt(actual)}`);
+    },
+    /** |actual - expected| <= tolerance (an absolute tolerance, default 1e-9 - NOT jest's digits). */
+    toBeCloseTo(expected: number, tolerance = 1e-9): void {
+      const a = num("toBeCloseTo");
+      const diff = Math.abs(a - expected);
+      if (!(diff <= tolerance))
+        fail(`expected ${fmt(expected)} +/- ${fmt(tolerance)}, got ${fmt(actual)} (off by ${fmt(diff)})`);
     },
     toThrow(match?: string | RegExp): void {
-      if (typeof actual !== "function") throw new Error("toThrow expects a function");
+      if (typeof actual !== "function") fail("toThrow expects a function");
       let threw: unknown;
       let didThrow = false;
       try {
@@ -62,11 +90,11 @@ export function expect(actual: unknown) {
         didThrow = true;
         threw = e;
       }
-      if (!didThrow) throw new Error("expected function to throw, but it did not");
+      if (!didThrow) fail("expected function to throw, but it did not");
       if (match !== undefined) {
         const msg = threw instanceof Error ? threw.message : String(threw);
         const ok = typeof match === "string" ? msg.includes(match) : match.test(msg);
-        if (!ok) throw new Error(`expected throw matching ${fmt(match)}, got ${fmt(msg)}`);
+        if (!ok) fail(`expected throw matching ${fmt(match)}, got ${fmt(msg)}`);
       }
     },
   };
