@@ -8,7 +8,7 @@
 import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import { decodeWav } from "../wav";
-import { detectPitch, centsError } from "../pitch";
+import { detectPitch, centsError, type PitchResult } from "../pitch";
 import { magnitudeSpectrum } from "../dsp";
 import { bandEnergyDb } from "../spectral-metrics";
 
@@ -73,6 +73,19 @@ export function envelopeLinear(
   mean /= Math.max(n, 1);
   for (let i = 0; i < n; i++) env[i] -= mean; // the modulation, without the carrier level
   return { env, rate: sampleRate / hop };
+}
+
+/** The pitch line for an analysed window, GATED ON LEVEL. The detector always finds something: a capture
+ *  channel sitting at its noise floor (-75 dBFS, nothing on it) came back as "750.00 Hz, confidence 1.00"
+ *  and made a triangle look like it was on the wrong input. Confidence says nothing about level, so when
+ *  the window's rms is under the --floor the detector is not even run and the answer is "silent". */
+export function pitchLine(levelDb: number, floorDb: number, detect: () => PitchResult, expectHz?: number): string {
+  if (levelDb < floorDb)
+    return `  pitch: silent (rms ${levelDb.toFixed(2)} dBFS is under the ${floorDb} dBFS floor; no pitch reported)`;
+  const p = detect();
+  if (!(p.hz > 0)) return "  pitch: none detected";
+  const vs = expectHz !== undefined ? `   vs ${expectHz} Hz: ${pad(centsError(p.hz, expectHz), 7, 1)} cents` : "";
+  return `  pitch ${pad(p.hz)} Hz   confidence ${pad(p.confidence, 5)}${vs}`;
 }
 
 /** Envelope stats over the SOUNDING part only, so leading/trailing silence can't fake a big swing. */
@@ -177,13 +190,7 @@ function run(s: Session, args: string[]): void {
     for (let i = 0; i < row.length; i += 100) console.log(`    ${(i * hopMs / 1000).toFixed(2)}s |${row.slice(i, i + 100)}|`);
   }
 
-  const p = detectPitch(x, { sampleRate });
-  if (p.hz > 0) {
-    const vs = expectHz !== undefined ? `   vs ${expectHz} Hz: ${pad(centsError(p.hz, expectHz), 7, 1)} cents` : "";
-    console.log(`  pitch ${pad(p.hz)} Hz   confidence ${pad(p.confidence, 5)}${vs}`);
-  } else {
-    console.log("  pitch: none detected");
-  }
+  console.log(pitchLine(levelDb, floorDb, () => detectPitch(x, { sampleRate }), expectHz));
 
   // Waveform shape, which separates "the same square at a different pitch" from "the same pitch with a
   // lopsided duty". Both can have identical rms OR identical spectra, so neither of those tells them apart:
@@ -227,8 +234,10 @@ export const analyzeCaptureTool: CliTool = {
     "  --env-rate      also report how FAST the amplitude repeats (Hz) - swing shows an envelope is",
     "                  running, this shows a speed control changing it (rate moves, swing does not)",
     "  --trim a:b      analyse only seconds a..b (measure the SUSTAIN, not the attack/release)",
-    "  --floor dB      the silence floor for the envelope stats (default -70; a quiet NES capture",
-    "                  idles near -76 dBFS, so anything above -70 is really sounding)",
+    "  --floor dB      the silence floor for the envelope stats AND the pitch (default -70; a quiet NES",
+    "                  capture idles near -76 dBFS, so anything above -70 is really sounding). A window",
+    "                  under the floor reports 'pitch: silent' - the detector would otherwise read the",
+    "                  noise floor itself as a confident tone (750 Hz at confidence 1.00 on an idle input)",
     "",
     "  The envelope swing is what distinguishes a HARDWARE volume envelope (Sunsoft 5B CC20/28/29)",
     "  from a flat tone - both have the same average level, so RMS alone cannot tell them apart.",

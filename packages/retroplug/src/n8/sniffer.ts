@@ -22,7 +22,8 @@ const OFF_OAM = 0x100; // 256 B - sprite RAM
 
 export const SNIFFER_REGION_SIZE = 0x200; // one memRD covers mapper..OAM
 export const SNIFFER_MAGIC = 0x53; // 'S'
-export const CPU_HZ_NTSC = 1789773; // 2A03 NTSC; PAL 2A07 is 1662607
+export const CPU_HZ_NTSC = 1789773; // 2A03 NTSC
+export const CPU_HZ_PAL = 1662607; // 2A07 PAL: the same timer reads 7.6% lower in Hz
 
 /** One of the two 2A03 square channels ($4000-$4003 / $4004-$4007). */
 export interface ApuPulse {

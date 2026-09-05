@@ -31,6 +31,7 @@ import { n8LoadTool } from "./sessions/n8-load";
 import { n8BridgeTool, n8SyncTool } from "./sessions/n8-bridge";
 import { n8PlayTool } from "./sessions/n8-play";
 import { analyzeCaptureTool } from "./sessions/analyze-capture";
+import { grabFrameTool } from "./sessions/grab-frame";
 import { launchpadProbeTool } from "./sessions/launchpad-probe";
 
 /** Every baked-in command. The ONLY place a new tool is registered. */
@@ -46,6 +47,7 @@ export const tools: CliTool[] = [
   n8SyncTool,
   n8PlayTool,
   analyzeCaptureTool,
+  grabFrameTool,
   launchpadProbeTool,
 ];
 

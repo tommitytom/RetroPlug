@@ -18,7 +18,7 @@ import {
   type LoadOptions,
 } from "../../src/n8";
 import { menuScreenToRgba } from "../../src/n8/menuImage";
-import { decodeSniffer, SNIFFER_REGION_SIZE, type SnifferSnapshot } from "../../src/n8/sniffer";
+import { decodeSniffer, SNIFFER_REGION_SIZE, CPU_HZ_NTSC, CPU_HZ_PAL, type SnifferSnapshot } from "../../src/n8/sniffer";
 import { chrToPng, chrToPngColor, pngToChr } from "../../src/n8/chrImage";
 import { decodeSysInfo, decodeVdc, fatDateStr, vdcStr } from "../../src/n8/sysInfo";
 import { decodeSaveState, type N8SaveState } from "../../src/n8/saveState";
@@ -152,6 +152,9 @@ const N8_LOAD_HELP = [
   "  --screenshot <out.png>  capture the N8 MENU screen over USB to a PNG (the menu must be showing)",
   "  --sniff            read a RUNNING game's live APU/PPU/OAM state over USB and print it (a game must",
   "                     be running - the sniffer is off at the menu)",
+  "  --pal              with --sniff: decode the APU timers at the PAL CPU clock (1.6626 MHz) instead of",
+  "                     NTSC. The sniffer cannot tell the region; on a PAL console the NTSC decode reads",
+  "                     7.6% high (440 Hz shows as 474)",
   "  --sniff-raw <file> dump the raw 512-byte sniffer region to a file (no decode)",
   "  --dump-chr <file>  read the running game's 8 KB visible CHR bank over USB. A .png dest renders an",
   "                     editable grayscale tile grid; else a raw 8 KB .chr",
@@ -174,6 +177,12 @@ const N8_LOAD_HELP = [
   "",
   "  Run load from the N8 file-browser menu. If a load fails with 'out of memory' (a dirty menu heap",
   "  after a prior failed load), power-cycle the console to a fresh menu and retry.",
+  "",
+  "  There is no --to-menu: a RUNNING game cannot be returned to the menu over USB. The N8's menu",
+  "  commands ('t'/'n'/'s'/'r') are answered by the N8 OS, which is not running while a game is, and",
+  "  the cartridge has no way to reset the console - the FPGA only DETECTS a reset (the CPU clock",
+  "  stopping) and switches to the OS mapper on it. So loading a second ROM takes the console's reset",
+  "  button or a power-cycle (/workspaces/.nes-power.sh reset, then ~35 s for the menu).",
 ].join("\n");
 
 export const n8LoadTool: CliTool = {
@@ -295,7 +304,13 @@ export const n8LoadTool: CliTool = {
           if (!s.backend.writeFile(sniffRaw, region)) throw new Error(`write failed: ${sniffRaw}`);
           console.log(`wrote ${region.length} bytes of raw sniffer region -> ${sniffRaw}`);
         }
-        if (doSniff) printSniffer(decodeSniffer(region));
+        if (doSniff) {
+          // The APU timers decode to Hz through the CPU clock, which differs by 7.6% between regions; the
+          // sniffer cannot tell which console it is on, so the caller says (--pal), else NTSC.
+          const pal = has(args, "--pal");
+          console.log(`(APU Hz decoded at ${pal ? "PAL 1.6626" : "NTSC 1.7898"} MHz${pal ? "" : " - pass --pal on a PAL console"})`);
+          printSniffer(decodeSniffer(region, pal ? CPU_HZ_PAL : CPU_HZ_NTSC));
+        }
         return;
       }
       if (dumpChr != null) {

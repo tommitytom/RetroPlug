@@ -109,6 +109,8 @@ Direct device memory + FIFO. Key N8 addresses: cart battery RAM `0x1000000`, liv
   live-patching CHR/PRG).
 - `fifowr <file>` - push bytes into the cart FIFO. Use this, NOT `memwr 0x1810000`: `memwr` always
   verifies by reading back, and a FIFO is drained by the NES, so that verify can never pass.
+  (`n8-play file:<path>` / `raw:` / `sysex:` do the same from the scripted tool, so a check that
+  mixes notes and raw bytes is one command.)
 - `sniff` / `info` - same data as the CLI, bare.
 
 ## 2b. Drive a ROM with MIDI (`n8-play`)
@@ -118,19 +120,29 @@ sequence into the cart FIFO, so a BlipToaster check is one reproducible command 
 attached. (`n8-bridge` is the live twin, and needs a real MIDI input port.)
 
 Steps are 1-based on MIDI channel, matching the BlipToaster monitor's `CH` column:
-`on:<ch>:<note>[:<vel>]`, `off:<ch>:<note>`, `cc:<ch>:<num>:<val>`, `wait:<ms>`.
+`on:<ch>:<note>[:<vel>]`, `off:<ch>:<note>`, `cc:<ch>:<num>:<val>`, `wait:<ms>`, plus raw bytes:
+`raw:<hex,...>` (verbatim - `raw:ff` is the panic byte), `sysex:<hex,...>` (a 7-bit payload wrapped in
+F0..F7), `file:<path>` (a file's bytes, what `retroplug-n8-hwtest fifowr` sends).
 
 ```sh
 # hold a 2 s A4 on the S5B's Square A with the hardware envelope on
 $RPBIN/retroplug-cli n8-play --exp-vol 128 cc:6:29:80 cc:6:28:64 cc:6:20:127 on:6:69 wait:2000 off:6:69
+# N163 build: hold a note, then (from the SAME command) upload a flat wave over SysEx and restore the bank
+$RPBIN/retroplug-cli n8-play --rom build/bliptoaster-n163.nes on:6:57 wait:2500 \
+    sysex:7d,42,01,00,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08,08 \
+    wait:2000 sysex:7d,42,02 wait:2000 off:6:57
 ```
 
 - **`--exp-vol` is REQUIRED for expansion audio** (VRC6 / VRC7 / N163 / S5B / MMC5). It writes the
   FPGA master volume (`0x1800023`, 0 mute / 128 unity / 255 2x), which the N8 mixes expansion audio
   through. Get it wrong and every expansion voice is silent no matter how correct the ROM is - a
   trap that reads exactly like a chip bug. Write-only and live-only (applies to the running cart).
+  `--rom <rom.nes>` (the ROM that is running) defaults it to 128 when the mapper carries expansion
+  audio (5, 19, 24, 26, 69, 85); with neither flag the run WARNS that the register was left alone.
+- **Nothing is reset between invocations**: a note held by one `n8-play` keeps sounding through the
+  next, so a check can hold a note with one command and push a SysEx or start a capture with another.
 - BlipToaster **drops its first MIDI message after boot**; `n8-play` sends a priming CC automatically
-  (`--prime off` to skip).
+  (`--prime off` to skip - do skip it on a follow-up call while a note is held).
 - **Confirm receipt independently of audio:** grab a video frame while a note is held. The BlipToaster
   monitor lights the channel's note dot and shows `KEY`/`LEVEL`, which proves the FIFO -> parse path
   worked even when you hear nothing.
@@ -142,7 +154,8 @@ The NES analog audio is on the **Zoom L6** USB interface: ALSA card `hw:L6,0`, f
 
 | capture channel | carries |
 |---|---|
-| **ch3 / ch4** | the **2A03** (the console's own APU: pulse 1/2, triangle, noise, DMC) |
+| **ch3** | the **2A03**'s first output pin: **pulse 1 / 2** |
+| **ch4** | the **2A03**'s second output pin: **triangle, noise, DMC** (a triangle note leaves ch3 at its floor - verified 2026-09-05) |
 | **ch5** | the **expansion audio** (VRC6 / VRC7 / N163 / S5B / MMC5, off the N8) |
 
 **Look at ch5 for expansion chips.** They are NOT mixed into ch3 - an expansion note reads as pure
@@ -159,6 +172,7 @@ Record a few seconds while something plays, then measure it with `analyze-captur
 arecord -D hw:L6,0 -f S32_LE -r 48000 -c 12 -d 5 /tmp/nes.wav
 $RPBIN/retroplug-cli analyze-capture /tmp/nes.wav                    # level survey of all 12 channels
 $RPBIN/retroplug-cli analyze-capture /tmp/nes.wav --channel 3 --expect-hz 440
+$RPBIN/retroplug-cli analyze-capture /tmp/nes.wav --channel 5 --trim 3.2:5.0   # one window, not the whole capture
 ```
 
 `analyze-capture` reports level, fundamental (`detectPitch`, with cents error vs `--expect-hz`), a
@@ -171,6 +185,10 @@ emulator-side tests, so a hardware number is comparable with a rendered one.
 - **A silent capture reads as ~-76 dBFS** on ch3/ch4 (the real analog noise floor with the console
   idle); genuinely unconnected inputs sit near -107. So "-76" means connected-but-silent, and the
   default `--floor -70` treats anything above it as sounding.
+- **The pitch is gated on that floor.** The detector always finds something - an idle ch3 used to come
+  back as "750 Hz, confidence 1.00" (2026-09-05) and made a triangle look like it was on the wrong
+  input. A window under `--floor` now prints `pitch: silent` and the detector is not run; confidence
+  says nothing about level, so read the rms line first either way.
 - To record and drive at once, background the `arecord` and give it ~0.5 s before `n8-play`.
 
 **Verification discipline:** a real NES tone TRACKS what you play - if you inject different
@@ -178,22 +196,31 @@ notes, the measured pitch must move. A fixed tone that doesn't change with input
 artifact or a stuck note, NOT proof the game is playing. Cross-check pitch against `--sniff`
 (the APU timer): `f = 1662607 / (16 * (timer + 1))`, because **this console is PAL**.
 
-> **`--sniff` prints NTSC-decoded frequencies, and this console is PAL - so its Hz reads ~7.6% HIGH.**
-> `decodeSniffer()` takes a `cpuHz` that defaults to `CPU_HZ_NTSC`
-> ([src/n8/sniffer.ts](../../packages/retroplug/src/n8/sniffer.ts)), and `n8-load --sniff` doesn't
-> override it. A capture measuring 440 Hz against a sniff reading 474 Hz is **agreement, not a tuning
-> bug**: 474 x 1662607/1789773 = 440.3. Convert before you compare, or you'll go hunting a 7.6% error
-> that isn't there.
+> **This console is PAL: pass `--pal` to `--sniff`.** The sniffer cannot tell the region, and without
+> the flag the APU timers decode at the NTSC clock (`decodeSniffer()`'s default,
+> [src/n8/sniffer.ts](../../packages/retroplug/src/n8/sniffer.ts)), so the Hz read ~7.6% HIGH: a capture
+> measuring 440 Hz against a sniff reading 474 Hz is **agreement, not a tuning bug** (474 x
+> 1662607/1789773 = 440.3). `n8-load --sniff --pal` decodes at 1.6626 MHz and prints which clock it used;
+> without `--pal` the output reminds you.
 
 ## 4. Capture the NES video (USB capture card)
 
 The NES video is on a UVC USB capture card at **`/dev/video0`** (YUYV, 720x576 @ 25fps and
-720x480 @ 30fps). Grab a single frame to see the current screen (menu or game):
+720x480 @ 30fps). Grab a frame to see the current screen (menu or game):
 ```sh
-ffmpeg -y -f v4l2 -input_format yuyv422 -video_size 720x576 -i /dev/video0 -frames:v 1 /tmp/nes.png
+$RPBIN/retroplug-cli grab-frame /tmp/nes.png        # PAL 720x576, keeps the 30th frame, checks it is not black
 ```
 Read `/tmp/nes.png` to see the N8 menu or the running game. Use this to confirm a ROM booted, read
 on-screen text, or watch a game's state. (`/dev/video1` is the same card's second node.)
+
+**Why a subcommand and not `-frames:v 1`:** the card's first frames after the device is (re)opened - and
+for a while after a power-cycle - come back as flat black (every pixel luma 16) with no error, which is
+indistinguishable from a console showing nothing. Three "black screen" boots on 2026-09-04 were this
+artefact; the ROMs were fine. `grab-frame` runs ffmpeg for a run of frames keeping only the last
+(`-frames:v 30 -update 1`), then DECODES the PNG and measures it: a flat-black result is retried with a
+longer run and, if it stays black, reported as `WARNING: ... flat black` rather than handed back as the
+screen (`--fail-on-black` makes that exit 1). The raw ffmpeg line it wraps, if you need it:
+`ffmpeg -y -f v4l2 -standard PAL -input_format yuyv422 -video_size 720x576 -i /dev/video0 -frames:v 30 -update 1 /tmp/nes.png`.
 
 ## Typical loop
 
@@ -210,10 +237,14 @@ cents): it proves the FIFO, the ROM, the analog path and the capture all work, s
 chip is a real finding and not a broken rig. For an **expansion** chip take the control on that side
 too - a known-good VRC6 note on ch5 - before concluding a chip is dead.
 
-**Loading a second ROM needs a power-cycle.** `n8-load` drives the N8's file-browser MENU, and a
-running game isn't the menu: the load fails with `Edio: serial read timeout (no N8 response)`. That
-timeout means "a game is running", not "the N8 is broken". `/workspaces/.nes-power.sh reset` ->
-`sleep 40` -> load.
+**Loading a second ROM needs a power-cycle, and no USB command can avoid it.** `n8-load` drives the
+N8's file-browser MENU, and a running game isn't the menu: the load fails with `Edio: serial read
+timeout (no N8 response)`. That timeout means "a game is running", not "the N8 is broken".
+`/workspaces/.nes-power.sh reset` -> `sleep 40` -> load. There is deliberately no `n8-load --to-menu`:
+the menu commands (`t`/`n`/`s`/`r`) are answered by the N8 OS, which is not running while a game is,
+and the cartridge cannot reset the console - in the N8 Pro FPGA `sys_rst` is DETECTED (the CPU's M2
+clock stopping) and only then does it switch to the OS mapper (edn8-pro-pub `var.sv`, `everdrive.sv`).
+Writing the OS mapper index into the config block over USB while a game runs would just crash it.
 
 ## Adding a measurement
 
