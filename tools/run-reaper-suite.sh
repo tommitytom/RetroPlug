@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Run the whole headless-Reaper leg CONCURRENTLY: build + author once, then fan out all twelve
-# checks (9 audio renders + 3 editor snapshots) in parallel and print a PASS/FAIL summary.
+# Run the whole headless-Reaper leg CONCURRENTLY: build + author once, then fan out all fourteen
+# checks (9 audio renders + 5 editor/host checks) in parallel and print a PASS/FAIL summary.
 #
 # Each check runs through the isolated harness (tools/reaper-env.sh) with a distinct RP_JOB_TAG,
 # so they don't share a JACK server, a Reaper config dir, an Xvfb display, or log files — which is
@@ -10,9 +10,9 @@
 # and wall-clock-independent, so parallel scheduling can't change the audio.
 #
 # Usage:
-#   tools/run-reaper-suite.sh                 # build + author + run all 12
+#   tools/run-reaper-suite.sh                 # build + author + run all 14
 #   RP_SUITE_JOBS=4 tools/run-reaper-suite.sh # force concurrency 4 (default: what /dev/shm fits, max 8)
-#   RP_SUITE_NO_BUILD=1 tools/run-reaper-suite.sh   # skip the vst3 build + fixture regen
+#   RP_SUITE_NO_BUILD=1 tools/run-reaper-suite.sh   # skip the plugin build + fixture regen
 #
 # Wired as `pnpm reaper:all`.
 
@@ -144,12 +144,18 @@ JACKP[gg-sync]="1024"
 SCEN_ENV[gg-sync]="REAPER_AUTHOR_STEM=reaper-gg-sync"
 ANALYZE[gg-sync]='tools/reaper-timing-analyze.py build/reaper-gg-sync.wav --drift'
 
-# Editor scenarios: name -> the standalone script (each already self-judges).
-declare -A EDITOR_SCRIPT
-EDITOR_SCENARIOS=(editor editor-reopen editor-autoload)
+# Editor / host scenarios: name -> the standalone script (each already self-judges), plus any env
+# it needs. params-* is the per-ROM parameter-name check, run once per plugin format because CLAP and
+# VST3 take entirely different notification paths in DPF.
+declare -A EDITOR_SCRIPT EDITOR_ENV
+EDITOR_SCENARIOS=(editor editor-reopen editor-autoload params-vst3 params-clap)
 EDITOR_SCRIPT[editor]="tools/run-reaper-editor.sh"
 EDITOR_SCRIPT[editor-reopen]="tools/run-reaper-editor-reopen.sh"
 EDITOR_SCRIPT[editor-autoload]="tools/run-reaper-editor-autoload.sh"
+EDITOR_SCRIPT[params-vst3]="tools/run-reaper-params.sh"
+EDITOR_SCRIPT[params-clap]="tools/run-reaper-params.sh"
+EDITOR_ENV[params-vst3]="RP_PARAMS_FORMAT=vst3"
+EDITOR_ENV[params-clap]="RP_PARAMS_FORMAT=clap"
 
 ALL_SCENARIOS=("${RENDER_SCENARIOS[@]}" "${EDITOR_SCENARIOS[@]}")
 
@@ -188,7 +194,8 @@ run_render() {
 
 run_editor() {
     local n="$1"
-    RP_JOB_TAG="suite-$n" "${EDITOR_SCRIPT[$n]}"
+    # shellcheck disable=SC2086
+    env RP_JOB_TAG="suite-$n" ${EDITOR_ENV[$n]:-} "${EDITOR_SCRIPT[$n]}"
 }
 
 # Dispatch one scenario by name, recording rc + a one-line verdict for the summary.
@@ -205,8 +212,8 @@ run_one() {
 
 # ---- build + author once --------------------------------------------------------------------
 if [ "${RP_SUITE_NO_BUILD:-0}" != "1" ]; then
-    echo "[suite] building retroplug-vst3 …"
-    node scripts/cmake-build.js retroplug-vst3 || { echo "[suite] build failed" >&2; exit 1; }
+    echo "[suite] building retroplug-vst3 + retroplug-clap …"
+    node scripts/cmake-build.js retroplug-vst3 retroplug-clap || { echo "[suite] build failed" >&2; exit 1; }
     echo "[suite] regenerating autoload fixtures …"
     node tools/author-rplg.js            >"$RESULTS_DIR/fixture-mgb.log" 2>&1 || { echo "[suite] mgb fixture failed" >&2; exit 1; }
     node tools/author-nes-rplg.js        >"$RESULTS_DIR/fixture-nes.log" 2>&1 || { echo "[suite] nes fixture failed" >&2; exit 1; }

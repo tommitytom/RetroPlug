@@ -140,6 +140,17 @@ reaper_env_up() {
     mkdir -p "$REAPER_CFG/.vst3" "$RP_LOG_DIR"
     export HOME="$REAPER_CFG"
     ln -sfn "$vst3_bundle" "$HOME/.vst3/${vst3_name}.vst3"
+
+    # CLAP twin. Reaper scans ~/.clap the same way it scans ~/.vst3, so a job that wants the CLAP
+    # build (RP_WANT_CLAP=1 — only the parameter check does today) gets it staged alongside. Opt-in so
+    # every other job keeps scanning exactly one format and cannot pick the wrong one.
+    if [ "${RP_WANT_CLAP:-0}" = "1" ]; then
+        local clap_bundle="$RP_REPO_DIR/build/bin/${vst3_name}.clap"
+        [ -e "$clap_bundle" ] || { echo "reaper-env: $clap_bundle not built" >&2; return 1; }
+        mkdir -p "$HOME/.clap"
+        ln -sfn "$clap_bundle" "$HOME/.clap/${vst3_name}.clap"
+    fi
+
     if [ "${RP_SCAN_FRESH:-0}" = "1" ]; then
         rm -f "$REAPER_CFG"/reaper-vstplugins*.ini "$REAPER_CFG"/reaper-vstplugins*.ini.bak 2>/dev/null || true
     fi
