@@ -33,6 +33,16 @@ g.__rp_setAudioConfig = (r: number, b: number, ch: number, d: string) => {
 
 const labelOf = (prefix: string) => ui.findByTextContaining(prefix)?.text ?? "(missing)";
 
+// Drive the cursor to the top of the menu (saturate Up) so Down-nav is deterministic. Needed now that
+// Apply RETAINS focus after a commit (it greys out on the last row rather than yanking back to the top),
+// so a previous Apply can leave the cursor parked where Down-nav alone can't reach forward from.
+const toTop = () => {
+  for (let i = 0; i < 24; i++) {
+    ui.tapKey(Key.Up);
+    ui.pump(2);
+  }
+};
+
 test("Settings > Audio > Driver: reads the host list, cycles + repaints, stages, and Apply commits the driver", () => {
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
@@ -73,10 +83,34 @@ test("a host that cannot say what Auto resolved to leaves the row plain", () => 
   // nothing while looking like a bug. Runs on from the previous test, which leaves us in Settings > Audio.
   g.__rp_getAudioConfig = () => ({ ...live, driver: "Auto", drivers: [...drivers] });
   // Cycle the row back round to Auto - which also forces the repaint that reads the new fake.
+  toTop();
   expect(navTo("Driver")).toBeTruthy();
   for (let i = 0; i < drivers.length && !labelOf("Driver").startsWith("Driver: Auto"); i++) {
     ui.tapKey(Key.Enter);
     ui.pump(8);
   }
   expect(labelOf("Driver")).toBe("Driver: Auto");
+});
+
+test("Applying keeps the selection on the Apply row (it greys out, it does not jump to the top)", () => {
+  // Regression: Apply re-seeds the draft, so in the SAME commit it toggles enabled->disabled. The menu's
+  // focus target used to only keep the cursor on a row if it were still FOCUSABLE — a just-disabled Apply
+  // wasn't, so the selection yanked back to the first row of the menu. It should stay on Apply (now greyed).
+  // Runs on from the previous test, which leaves us in Settings > Audio.
+  // Dirty the draft so Apply is enabled + reachable, then focus it.
+  toTop();
+  expect(navTo("Driver")).toBeTruthy();
+  ui.tapKey(Key.Right); // step the cycler → dirty draft
+  ui.pump(8);
+  expect(navTo("Apply")).toBeTruthy();
+  ui.tapKey(Key.Enter); // commit + re-seed → Apply greys out (disabled)
+  ui.pump(8);
+
+  // The selection stays on Apply (not yanked to the first row of the menu).
+  const f = ui.focused();
+  expect(f != null && f.text === "Apply").toBeTruthy();
+  // And arrow nav still works FROM that row (Up lands on the last cycler, not the top).
+  ui.tapKey(Key.Up);
+  ui.pump(4);
+  expect(ui.focused()!.text.includes("Out Channels")).toBeTruthy();
 });

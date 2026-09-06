@@ -146,27 +146,35 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   const flatRef = useRef<FlatEntry[]>(flat);
   flatRef.current = flat;
   const visibleKey = flat.map((f) => f.item.id).join(",");
-  // Rebuild the keypad group whenever the FOCUSABLE set changes, not just the visible set. A row toggling
-  // disabled<->enabled in place (e.g. the Audio "Apply" row once the draft is dirty) keeps the same visibleKey,
-  // so keying the group rebuild on visibleKey alone would never add the newly-enabled row to the LVGL group —
-  // arrow / gamepad nav then can't reach it (Down stops at the last row that WAS focusable). This mirrors the
-  // orderedRefs / focusTarget filter (separators + disabled excluded).
+  // Rebuild the keypad group whenever the disabled state of any visible row changes, not just the visible
+  // set. Every non-separator visible row is a group member (disabled ones included — see orderedRefs), so the
+  // rebuild's real job here is to re-run focusTarget: when the row the cursor sits on toggles disabled in
+  // place (the Audio "Apply" row greying out after a commit), focusTarget keeps the cursor on it instead of
+  // yanking it to the first focusable row. Separators are excluded (never focusable).
   const focusableKey = flat.map((f) => (f.item.kind === "separator" || f.item.disabled ? "" : f.item.id)).join(",");
 
+  // Every non-separator visible row is a group member — disabled rows included. Arrow / click nav skips
+  // disabled rows in onItemKey / activate (and focusTarget never *selects* a disabled row), so a disabled row
+  // can only ever be the LVGL-focused object if the cursor is already sitting on one (e.g. Apply right after a
+  // commit); it stays inert there. Keeping them in the group is what lets focusTarget hold the cursor on a row
+  // that just turned disabled rather than being forced off it.
   const orderedRefs = useCallback(
     () =>
       flatRef.current
-        .filter((f) => f.item.kind !== "separator" && !f.item.disabled)
+        .filter((f) => f.item.kind !== "separator")
         .map((f) => refsByIdRef.current.get(f.item.id))
         .filter((x) => x != null),
     [],
   );
 
-  // Keep the previously-focused row if it still exists, else the first focusable; sync focusedIdRef.
+  // Keep the previously-focused row as long as it's still VISIBLE — even if it just became disabled (the Audio
+  // "Apply" row greys out after committing; the selection should stay on it, not jump to the first row). Only
+  // fall back to the first focusable row if the focused id is gone from the list entirely. Sync focusedIdRef.
   const focusTarget = useCallback(() => {
+    const visible = flatRef.current.filter((f) => f.item.kind !== "separator").map((f) => f.item.id);
     const focusable = flatRef.current.filter((f) => f.item.kind !== "separator" && !f.item.disabled).map((f) => f.item.id);
     let id = focusedIdRef.current;
-    if (!focusable.includes(id)) id = focusable[0] ?? "";
+    if (!visible.includes(id)) id = focusable[0] ?? "";
     focusedIdRef.current = id;
     setFocusedId(id);
     return id ? refsByIdRef.current.get(id) : undefined;
@@ -214,9 +222,10 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       const cur = entries.findIndex((f) => f.item.id === focusedIdRef.current);
       if (cur < 0) return;
       const item = entries[cur].item;
-      // Left/Right cycle the focused item's value; focus does not move.
-      if (e.key === ELvKey.LV_KEY_RIGHT) return item.onCycle?.(1);
-      if (e.key === ELvKey.LV_KEY_LEFT) return item.onCycle?.(-1);
+      // Left/Right cycle the focused item's value; focus does not move. A disabled row is fully inert (the
+      // cursor can sit on one — e.g. Apply after a commit — but cycling it would still change the value).
+      if (e.key === ELvKey.LV_KEY_RIGHT) return item.disabled ? undefined : item.onCycle?.(1);
+      if (e.key === ELvKey.LV_KEY_LEFT) return item.disabled ? undefined : item.onCycle?.(-1);
       let dir: 1 | -1;
       if (e.key === ELvKey.LV_KEY_DOWN) dir = 1;
       else if (e.key === ELvKey.LV_KEY_UP) dir = -1;
