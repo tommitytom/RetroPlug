@@ -17,6 +17,7 @@ import { createDspRuntime } from "./dspRuntime";
 import { syncDspFromStore } from "./appHost";
 import { FileWatcher } from "./fileWatcher";
 import { LsdjSyncMode } from "./settingsEnums";
+import { projectParameterMap } from "./parameterMap";
 import { b64encode, b64decode } from "./base64";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
@@ -106,5 +107,12 @@ g.__rp_syncLatencyMs = (): string => {
   }
   return String(ms);
 };
+
+// Per-ROM DAW automation parameters. The plugin owns a fixed pool of MIDI-CC slots and re-labels them
+// from this map whenever it changes (spec/12-dynamic-parameters.md), so a DAW shows "PU1 Pulse Width"
+// instead of "CC 1". Polled by the plugin after each load, on activate, and from the editor's idle loop
+// (a ROM loaded through the UI never passes through setState); it re-declares only when the JSON moves.
+g.__rp_parameterMapJson = (): string =>
+  JSON.stringify(projectParameterMap(project.systems.view(), project.settings().midiRouting));
 
 g.__rp_ready = kernelOk;
