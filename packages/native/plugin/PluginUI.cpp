@@ -83,6 +83,8 @@ class PluginUI : public UI {
     bool windowTitleSet_ = false;
     bool allowClose_ = false; // set by requestQuit() so the re-entrant onClose() lets the window close
     unsigned watcherPumpTick_ = 0; // throttles the file-watcher pump in uiIdle (efsw already coalesced)
+    unsigned paramMapTick_    = 0; // throttles the DAW parameter-map poll in uiIdle (same reasoning)
+    SharedDSP* sharedDsp_ = nullptr; // the plugin's in-process handoff, latched at attach (may be null)
 
     // Window geometry: the resize-grip fallback + tiling-WM clamp detection. Once a size comes back
     // different from what we asked (a Wayland/Hyprland tile), wmControlled_ latches true and we stop
@@ -276,6 +278,7 @@ public:
         // init(), so the UI runs on the control-plane context where __rpcSend already lives.
         SharedDSP* shared = nullptr;
         if (void* dspPtr = getPluginInstancePointer()) shared = getSharedDSP(dspPtr);
+        sharedDsp_ = shared;
         if (shared && shared->host)
             jsEngine.useExternalHost(*shared->host);
         else
@@ -445,6 +448,12 @@ protected:
                 JS_FreeValue(ctx, fn);
                 JS_FreeValue(ctx, global);
             }
+            // Per-ROM DAW parameter names. A ROM loaded through the UI changes what the plugin's CC
+            // slots mean without ever passing through DPF's setState, so the editor is the only place
+            // that notices. Same low cadence as the watcher: re-labelling is a human-speed event, and
+            // the poll is a no-op unless the map's JSON actually moved.
+            if ((++paramMapTick_ % 15) == 0 && sharedDsp_ != nullptr && sharedDsp_->pollParameterMap)
+                sharedDsp_->pollParameterMap();
         }
         jsEngine.tick();                                               // pump the shared host's JS loop
         maybeWriteScreenshot();

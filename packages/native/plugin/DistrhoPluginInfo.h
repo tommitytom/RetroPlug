@@ -45,6 +45,12 @@
 #define DISTRHO_PLUGIN_WANT_LATENCY     1
 #define DISTRHO_PLUGIN_WANT_PROGRAMS    0
 
+// Per-ROM parameter names: the MIDI-CC slot pool is re-labelled from the loaded ROM's CC map, so a DAW
+// shows "PU1 Pulse Width" rather than "CC 1" (spec/12-dynamic-parameters.md). CLAP and VST3 apply it
+// live; every other format keeps the names declared at construct. Requires DIRECT_ACCESS on VST3 (below)
+// so there is one plugin instance answering both the component and the controller.
+#define DISTRHO_PLUGIN_WANT_DYNAMIC_PARAMETERS 1
+
 // In-process editor↔DSP access: enables UI::getPluginInstancePointer() so the editor reaches the shared
 // host. All plugin formats (clap/vst3/jack) link DSP+UI in one binary.
 #define DISTRHO_PLUGIN_WANT_DIRECT_ACCESS 1

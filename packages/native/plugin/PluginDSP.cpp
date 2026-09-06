@@ -5,6 +5,8 @@
 // RETROPLUG_AUTOLOAD_PROJECT hook go through the JS project globals (base64 done in JS).
 #include "DistrhoPlugin.hpp"
 
+#include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -13,6 +15,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <rfl/json.hpp>       // the __rp_parameterMapJson payload
+#include <rfl/DefaultIfMissing.hpp>
 
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
@@ -40,6 +45,30 @@ extern const std::uint32_t rp_cp_bundle_size;
 START_NAMESPACE_DISTRHO
 
 using PluginRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
+
+// --- the DAW parameter pool (spec/12-dynamic-parameters.md) ---
+// One master gain plus a fixed grid of MIDI-CC slots. The COUNT, ORDER, SYMBOLS, RANGES and hints are
+// frozen for the instance's life: DPF refuses to move them on a live plugin (CLAP would need a
+// deactivate, VST3 a component reload), a DAW project's automation is bound to the slot, and DPF's own
+// state save/restore is keyed by symbol. Only the names and the hidden flag change per loaded ROM.
+// kMaxSystems matches the four stereo output pairs, since a system routes to one.
+// kCcSlotsPerSystem twins CC_SLOTS_PER_SYSTEM in packages/retroplug/src/parameterMap.ts.
+static constexpr std::uint32_t kMaxSystems       = 4;
+static constexpr std::uint32_t kCcSlotsPerSystem = 16;
+static constexpr std::uint32_t kCcSlotCount      = kMaxSystems * kCcSlotsPerSystem;
+static constexpr std::uint32_t kParamGain        = 0;
+static constexpr std::uint32_t kParamCcBase      = 1;
+static constexpr std::uint32_t kParameterCount   = kParamCcBase + kCcSlotCount;
+
+// One entry of __rp_parameterMapJson. Tolerant-read (DefaultIfMissing) like the other JSON that
+// crosses into native: an older/newer control plane must not fail the whole map.
+struct CcSlotDto {
+    std::uint32_t slot      = 0;   // pool index, 0 .. kCcSlotCount-1
+    std::uint32_t cc        = 0;   // MIDI CC number
+    std::uint32_t channel   = 0;   // PRE-routing MIDI channel (the project's routing then delivers it)
+    std::string   name;
+    std::string   shortName;
+};
 
 class PluginDSP : public Plugin {
     // Control-plane runtime (main-thread only): the txiki context + the backend service graph it drives
@@ -71,13 +100,32 @@ class PluginDSP : public Plugin {
 
     float gainDb_ = 0.0f;
 
+    // --- CC slot state ---
+    // Names are main-thread only (initParameter runs from the DPF ctor and from reinitParameters, both
+    // main thread). The (claimed, channel, cc) triple is what the audio thread needs, so it lives apart
+    // as one relaxed atomic per slot: 0 = unclaimed, else 0x8000 | (channel << 8) | cc. The audio thread
+    // only reads it, and a map landing a block late just means one block of stale routing.
+    struct CcSlotName { std::string name, shortName; bool claimed = false; };
+    std::array<CcSlotName, kCcSlotCount>          ccName_{};
+    std::array<std::atomic<std::uint16_t>, kCcSlotCount> ccBinding_{};
+    std::array<std::atomic<float>, kCcSlotCount>  ccValue_{};
+    std::array<float, kCcSlotCount>               ccSent_{};   // audio thread only
+    std::string                                   ccMapJson_;  // last map seen, so a poll is a no-op
+
 public:
     // In-process handoff to the editor: exposes host_ so a DPF UI can attach its LVGL display to the
     // control-plane context (where __rpcSend is already bound). Public so getSharedDSP reaches it.
     SharedDSP shared_{};
 
-    PluginDSP() : Plugin(1 /*params*/, 0 /*programs*/, 1 /*states*/) {
+    PluginDSP() : Plugin(kParameterCount, 0 /*programs*/, 1 /*states*/) {
+        for (auto& b : ccBinding_) b.store(0, std::memory_order_relaxed);
+        for (auto& v : ccValue_)   v.store(0.0f, std::memory_order_relaxed);
+        ccSent_.fill(0.0f);
         bootControlPlane();
+        // The autoload in bootControlPlane may already have put a ROM in place, so name the pool from
+        // it before DPF reads the parameters. (This is the construct-time pass; the host has no
+        // parameter info yet, so it only fills ccName_ - there is nothing to notify.)
+        updateParameterMap();
     }
 
 protected:
@@ -117,15 +165,59 @@ protected:
         portGroup.symbol = symBuf;
     }
 
-    // --- parameters (one: master gain, applied post-render) ---
+    // --- parameters: master gain + the per-system MIDI-CC slot pool ---
+    // Re-run for every slot by DPF whenever the loaded ROM changes what the slots mean, so everything
+    // here except the name / short name / hidden bit MUST be a constant of the index (DPF refuses a
+    // structural change and warns).
     void initParameter(uint32_t index, Parameter& p) override {
-        if (index != 0) return;
-        p.symbol = "gain"; p.name = "Master Gain"; p.shortName = "Gain"; p.unit = "dB";
-        p.ranges.min = -90.0f; p.ranges.max = 12.0f; p.ranges.def = 0.0f;
-        p.hints = kParameterIsAutomatable;
+        if (index == kParamGain) {
+            p.symbol = "gain"; p.name = "Master Gain"; p.shortName = "Gain"; p.unit = "dB";
+            p.ranges.min = -90.0f; p.ranges.max = 12.0f; p.ranges.def = 0.0f;
+            p.hints = kParameterIsAutomatable;
+            return;
+        }
+        if (index < kParamCcBase || index >= kParameterCount) return;
+
+        const std::uint32_t slot = index - kParamCcBase;
+        const std::uint32_t sys  = slot / kCcSlotsPerSystem;
+        const std::uint32_t n    = slot % kCcSlotsPerSystem;
+        char buf[40];
+
+        std::snprintf(buf, sizeof(buf), "sys%u_cc%u", sys + 1, n + 1);
+        p.symbol = buf;
+
+        const CcSlotName& nm = ccName_[slot];
+        if (nm.claimed) {
+            // "1: PU1 Pulse Width" - the system number keeps four systems' lanes apart in the host list
+            std::snprintf(buf, sizeof(buf), "%u: %s", sys + 1, nm.name.c_str());
+            p.name      = buf;
+            p.shortName = nm.shortName.c_str();
+        } else {
+            std::snprintf(buf, sizeof(buf), "%u: CC %u", sys + 1, n + 1);
+            p.name = buf;
+            std::snprintf(buf, sizeof(buf), "CC %u", n + 1);
+            p.shortName = buf;
+        }
+
+        p.ranges.min = 0.0f; p.ranges.max = 127.0f; p.ranges.def = 0.0f;
+        p.hints = kParameterIsAutomatable | kParameterIsInteger | (nm.claimed ? 0x0 : kParameterIsHidden);
     }
-    float getParameterValue(uint32_t index) const override { return index == 0 ? gainDb_ : 0.0f; }
-    void  setParameterValue(uint32_t index, float value) override { if (index == 0) gainDb_ = value; }
+
+    float getParameterValue(uint32_t index) const override {
+        if (index == kParamGain) return gainDb_;
+        if (index >= kParamCcBase && index < kParameterCount)
+            return ccValue_[index - kParamCcBase].load(std::memory_order_relaxed);
+        return 0.0f;
+    }
+
+    // Called from the host's main thread outside processing and from the audio thread during it, so it
+    // only ever stores. run() turns a moved value into the actual CC (the block's parameter changes have
+    // all landed by then).
+    void setParameterValue(uint32_t index, float value) override {
+        if (index == kParamGain) { gainDb_ = value; return; }
+        if (index >= kParamCcBase && index < kParameterCount)
+            ccValue_[index - kParamCcBase].store(value, std::memory_order_relaxed);
+    }
 
     // --- state: one "project" key = base64(.rplg) via the JS control plane ---
     void initState(uint32_t index, State& state) override {
@@ -143,7 +235,8 @@ protected:
     void setState(const char* key, const char* value) override {
         if (std::strcmp(key, "project") != 0) return;
         callGlobal("__rp_loadProjectB64", value ? value : "");
-        updateLatency();  // the loaded project's sync mode determines the compensable latency
+        updateLatency();        // the loaded project's sync mode determines the compensable latency
+        updateParameterMap();   // ...and its ROMs determine what the DAW's CC slots are called
     }
 
     // --- audio lifecycle: DPF owns the audio thread and calls run(), so the plugin drives the Engine
@@ -154,6 +247,7 @@ protected:
         // flushed every push, so the command ring is empty at this handoff.) Then report PDC latency.
         invoker_.setAudioThreadOwns(true);
         updateLatency();
+        updateParameterMap();
     }
     void deactivate() override {
         // DPF guarantees no run() during/after deactivate, so the ring has a single accessor again. Take
@@ -191,6 +285,28 @@ protected:
             if (!(e.size == 1 && bytes[0] >= 0xF8))
                 n8Host_.link().push(e.frame, bytes, e.size, getSampleRate());
             engine_.stageMidi(e.frame, std::vector<std::uint8_t>(bytes, bytes + e.size));
+        }
+
+        // DAW automation → MIDI CC. A claimed slot emits at the head of the block whenever its value
+        // moved: DPF has already applied every parameter change for this block by now, so frame 0 is
+        // where they all landed. The bytes go down the same two paths a host CC does — the emulated
+        // core (routed by the project's MIDI routing, which is why the map carries a PRE-routing
+        // channel) and a connected physical N8, so automation behaves the same on hardware.
+        for (std::uint32_t slot = 0; slot < kCcSlotCount; ++slot) {
+            const std::uint16_t binding = ccBinding_[slot].load(std::memory_order_relaxed);
+            if (binding == 0) continue;
+            const float v = ccValue_[slot].load(std::memory_order_relaxed);
+            if (v == ccSent_[slot]) continue;
+            ccSent_[slot] = v;
+            int iv = static_cast<int>(v + 0.5f);
+            iv = iv < 0 ? 0 : (iv > 127 ? 127 : iv);
+            const std::uint8_t cc[3] = {
+                static_cast<std::uint8_t>(0xB0 | ((binding >> 8) & 0x0F)),
+                static_cast<std::uint8_t>(binding & 0x7F),
+                static_cast<std::uint8_t>(iv),
+            };
+            n8Host_.link().push(0, cc, 3, getSampleRate());
+            engine_.stageMidi(0, std::vector<std::uint8_t>(cc, cc + 3));
         }
 
         // One audio block: drain control-thread structural edits on the audio thread → set transport
@@ -266,6 +382,7 @@ private:
 
         // Publish the host so an editor can attach its LVGL display to this same context.
         shared_.host = &host_;
+        shared_.pollParameterMap = [this] { updateParameterMap(); };
 
         // Turn on the native file watcher (config.json + bindings/ recursively; ROMs registered by TS via
         // setWatchedRoms). The TS FileWatcher.pump() drains it from the UI idle loop (__rp_pumpWatcher).
@@ -348,6 +465,39 @@ private:
         const std::string ms = callGlobal("__rp_syncLatencyMs", nullptr);
         const double latMs = ms.empty() ? 0.0 : std::atof(ms.c_str());
         setLatency(static_cast<uint32_t>(latMs * getSampleRate() / 1000.0 + 0.5));
+    }
+
+public:
+    // Re-label the CC slot pool from whatever the control plane says the loaded ROMs expose, and ask the
+    // host to re-read the parameter info if anything moved (spec/12-dynamic-parameters.md). The JSON is
+    // compared as a string first, so the common "nothing changed" poll costs one JS call and a compare.
+    // Main thread only — it writes the name strings initParameter reads, and DPF notifies the host inline.
+    // Public so the editor can drive it from uiIdle: a ROM loaded through the UI never reaches setState.
+    void updateParameterMap() {
+        const std::string json = callGlobal("__rp_parameterMapJson", nullptr);
+        if (json == ccMapJson_) return;
+        ccMapJson_ = json;
+
+        for (auto& n : ccName_) n = CcSlotName{};
+        for (auto& b : ccBinding_) b.store(0, std::memory_order_relaxed);
+
+        if (!json.empty()) {
+            const auto parsed = rfl::json::read<std::vector<CcSlotDto>, rfl::DefaultIfMissing>(json);
+            if (parsed) {
+                for (const CcSlotDto& s : *parsed) {
+                    if (s.slot >= kCcSlotCount || s.cc > 127 || s.channel > 15) continue;
+                    ccName_[s.slot] = CcSlotName{s.name, s.shortName, true};
+                    ccBinding_[s.slot].store(
+                        static_cast<std::uint16_t>(0x8000u | (s.channel << 8) | s.cc),
+                        std::memory_order_relaxed);
+                }
+            } else {
+                d_stderr("[retroplug] __rp_parameterMapJson unreadable: %s",
+                         parsed.error().what());
+            }
+        }
+
+        if (canUpdateParameterInfo()) requestParameterInfoUpdate();
     }
 };
 
