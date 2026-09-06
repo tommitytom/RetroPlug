@@ -16,6 +16,7 @@ import {
   LSDJ_MODE_VALUES,
   COLOR_CORRECTION_VALUES,
   DMG_PALETTE_VALUES,
+  type AudioRouting,
   type SameBoyModel,
   type SameBoyHighpass,
   type SameBoyColorCorrection,
@@ -484,9 +485,20 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
 const MIDI_ROUTING_NAMES = ["Send to All", "4 Ch / Inst", "1 Ch / Inst", "Ch -> Inst"];
-// Index 3 (ChannelSplit) fans one Game Boy's 4 channels across the 8 outputs; offered only for a
-// single system (see projectChildren) — native gates it to systemCount()==1 too.
-const AUDIO_ROUTING_NAMES = ["Stereo", "2 Ch / Inst", "1 Ch / Inst", "Channels (1 GB)"];
+// Indices 3/4 (channelSplit / pinSplit) fan ONE system's channels across the 8 outputs, so they're
+// offered only for a single system — and "Pins" only for a NES, the only console with output pins to
+// split (see validAudioRoutings). Native gates both the same way and is the authority. The labels
+// deliberately match the System > Render submenu's SPLIT_LABELS: same concept, same words.
+const AUDIO_ROUTING_NAMES = ["Stereo", "2 Ch / Inst", "1 Ch / Inst", "Channels", "Pins"];
+
+/** Which routing modes the Audio Routing cycler offers for a project. UX only — native re-checks.
+ *  A split needs exactly one system (a lone system has no link peers), and "Pins" additionally needs
+ *  that system to be a NES. Mirrors `validSplits`, which gates the Render submenu on the same pair. */
+export function validAudioRoutings(systems: readonly Pick<SystemView, "platform">[]): AudioRouting[] {
+  if (systems.length !== 1) return [...AUDIO_ROUTING_VALUES.slice(0, 3)];
+  const all = [...AUDIO_ROUTING_VALUES];
+  return systems[0].platform === "nes" ? all : all.filter((v) => v !== "pinSplit");
+}
 const LAYOUT_NAMES = ["Auto", "Row", "Column", "Grid"];
 const MODEL_NAMES = ["Auto", "DMG-B", "MGB", "SGB", "SGB PAL", "SGB2", "CGB-0", "CGB-A", "CGB-B", "CGB-C", "CGB-D", "CGB-E", "AGB", "GBP"];
 const HIGHPASS_NAMES = ["Off", "Accurate", "DC-Block"];
@@ -1881,15 +1893,23 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
       },
     });
   }
+  const audioRoutings = validAudioRoutings(ctx.systems);
   items.push(
     cycler("proj-layout", "Layout", LAYOUT_NAMES, Math.max(0, LAYOUT_VALUES.indexOf(ctx.settings.layout)), (n) => project.setLayout(LAYOUT_VALUES[n])),
     { id: "proj-zoom", label: `Zoom: ${ctx.settings.zoom === 0 ? "Default" : `${ctx.settings.zoom}x`}`, kind: "cycler", keepOpen: true, onSelect: () => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, 1)), onCycle: (dir) => project.setZoom(cycleInt(ctx.settings.zoom, 0, 6, dir)) },
     sep("proj-sep1"),
     cycler("proj-midi", "MIDI Routing", MIDI_ROUTING_NAMES, Math.max(0, MIDI_ROUTING_VALUES.indexOf(ctx.settings.midiRouting)), (n) => project.setMidiRouting(MIDI_ROUTING_VALUES[n])),
-    // channelSplit (index 3) is single-system-only, so the cycler drops it with 0 or >1 systems (the
-    // per-instance modes stay — they're the multi-system routes). Native is the authority and can't
-    // mis-route regardless; this is UX only.
-    cycler("proj-audio", "Audio Routing", ctx.systems.length === 1 ? AUDIO_ROUTING_NAMES : AUDIO_ROUTING_NAMES.slice(0, 3), Math.max(0, AUDIO_ROUTING_VALUES.indexOf(ctx.settings.audioRouting)), (n) => project.setAudioRouting(AUDIO_ROUTING_VALUES[n])),
+    // The split modes are single-system-only (and Pins NES-only), so the cycler offers a filtered list
+    // and steps through THAT — not a prefix of the full table, since dropping Pins while keeping
+    // Channels would otherwise shift the indices. The per-instance modes always stay; they're the
+    // multi-system routes. Native is the authority and can't mis-route regardless; this is UX only.
+    cycler(
+      "proj-audio",
+      "Audio Routing",
+      audioRoutings.map((v) => AUDIO_ROUTING_NAMES[AUDIO_ROUTING_VALUES.indexOf(v)]),
+      Math.max(0, audioRoutings.indexOf(ctx.settings.audioRouting)),
+      (n) => project.setAudioRouting(audioRoutings[n]),
+    ),
   );
   return items;
 }

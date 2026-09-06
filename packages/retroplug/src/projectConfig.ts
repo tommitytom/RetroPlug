@@ -37,7 +37,7 @@ import {
 export interface ProjectSettings {
   layout: SystemLayout;
   midiRouting: MidiRouting;
-  audioRouting: AudioRouting; // channelSplit fans 1 GB → 8 outs
+  audioRouting: AudioRouting; // channelSplit/pinSplit fan ONE system's channels across the outs
   zoom: number; // 0 inherit / 1..6
   controller: ControllerSettings;
 }

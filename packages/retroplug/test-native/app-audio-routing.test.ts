@@ -39,14 +39,16 @@ test("audioRouting reaches native and playback survives a mode switch", () => {
   const id = project.systems.loadMgb()!;
   expect(typeof id).toBe("number");
 
-  // The seam: valid modes accepted (Stereo / TwoPerInstance / OnePerInstance / ChannelSplit), out of
-  // range rejected. (Per-pair SEPARATION for ChannelSplit is a native-Catch2 render check — this
-  // test-host capture is stereo, so it can only prove acceptance here; see ChannelSplit.test.cpp.)
+  // The seam: valid modes accepted (Stereo / TwoPerInstance / OnePerInstance / ChannelSplit / PinSplit),
+  // out of range rejected. (Per-lane SEPARATION for the split modes is a native-Catch2 render check —
+  // this test-host capture is stereo, so it can only prove acceptance here; see ChannelSplit.test.cpp
+  // and NesSplitRouting.test.cpp.)
   expect(be.setAudioRouting(0)).toBeTruthy();
   expect(be.setAudioRouting(1)).toBeTruthy();
   expect(be.setAudioRouting(2)).toBeTruthy();
   expect(be.setAudioRouting(3)).toBeTruthy(); // ChannelSplit (1 GB → 8 outs) — now accepted
-  expect(be.setAudioRouting(4)).toBeFalsy(); // > ChannelSplit → rejected
+  expect(be.setAudioRouting(4)).toBeTruthy(); // PinSplit (1 NES → 3 mono outs); inert on this GB
+  expect(be.setAudioRouting(5)).toBeFalsy(); // > PinSplit → rejected
   // Through the store (the real UI path — the menu cycler calls this), which pushes to native.
   expect(project.setAudioRouting("twoPerInstance")).toBeTruthy();
 
