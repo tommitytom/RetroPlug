@@ -110,6 +110,10 @@ class PluginDSP : public Plugin {
     std::array<std::atomic<std::uint16_t>, kCcSlotCount> ccBinding_{};
     std::array<std::atomic<float>, kCcSlotCount>  ccValue_{};
     std::array<float, kCcSlotCount>               ccSent_{};   // audio thread only
+    // Set when the map moves, consumed by the next block. A re-labelled slot now drives a DIFFERENT CC,
+    // so the value the DAW is showing has never been sent to the newly-loaded ROM; without this the
+    // lane and the ROM disagree until the user happens to touch it.
+    std::atomic<bool>                             ccResendAll_{false};
     std::string                                   ccMapJson_;  // last map seen, so a poll is a no-op
 
 public:
@@ -292,11 +296,12 @@ protected:
         // where they all landed. The bytes go down the same two paths a host CC does — the emulated
         // core (routed by the project's MIDI routing, which is why the map carries a PRE-routing
         // channel) and a connected physical N8, so automation behaves the same on hardware.
+        const bool resendAll = ccResendAll_.exchange(false, std::memory_order_relaxed);
         for (std::uint32_t slot = 0; slot < kCcSlotCount; ++slot) {
             const std::uint16_t binding = ccBinding_[slot].load(std::memory_order_relaxed);
             if (binding == 0) continue;
             const float v = ccValue_[slot].load(std::memory_order_relaxed);
-            if (v == ccSent_[slot]) continue;
+            if (v == ccSent_[slot] && !resendAll) continue;
             ccSent_[slot] = v;
             int iv = static_cast<int>(v + 0.5f);
             iv = iv < 0 ? 0 : (iv > 127 ? 127 : iv);
@@ -496,6 +501,10 @@ public:
                          parsed.error().what());
             }
         }
+
+        // Every claimed slot now means something new, so push the DAW's current values at the ROM that
+        // just arrived rather than waiting for the user to move a lane.
+        ccResendAll_.store(true, std::memory_order_relaxed);
 
         if (canUpdateParameterInfo()) requestParameterInfoUpdate();
     }
