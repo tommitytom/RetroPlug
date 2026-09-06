@@ -1856,7 +1856,10 @@ int main(int argc, char** argv) {
         pollFileDialog(app);    // deliver a finished OS file-dialog pick (async; no-op when none is open)
         app.launchpadHost.link().pump();  // write the LED traffic the audio thread queued (no-op when idle)
         if (JSContext* ctx = app.ui.getContext()) {
-            app.ui.emit("frame", 0, nullptr); // drives EmulatorTile's getFrame
+            // arg0 = LVGL tick (ms): the UI's monotonic clock (menu gamepad hold-to-repeat timing).
+            JSValue tickMs = JS_NewUint32(ctx, lv_tick_get());
+            app.ui.emit("frame", 1, &tickMs); // drives EmulatorTile's getFrame
+            JS_FreeValue(ctx, tickMs);
             pumpGamepad(app);
             (void)ctx;
         }

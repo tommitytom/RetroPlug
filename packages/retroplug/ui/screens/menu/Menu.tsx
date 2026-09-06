@@ -44,6 +44,13 @@ const CAPTURE_COLOR = "#ffb74d"; // orange, matching the legacy capture-armed ro
 const DISABLED_COLOR = "#666666"; // greyed text for an inert (unavailable-for-this-cart) row
 const WARN_COLOR = "#ffd54f"; // yellow — a warning row (a recent entry whose file is missing)
 const GAMEPAD_CAPTURE_AXIS = 0.6; // a stick must pass this (past the play threshold) to bind as an axis token
+// Gamepad hold-to-repeat: unlike keys (the OS auto-repeats them into LVGL's keypad indev), SDL emits
+// exactly ONE press event per gamepad-button press, so a held d-pad button would move the cursor exactly
+// once. Re-fire the held directional nav ourselves — after an initial pause, then at a fixed period —
+// mirroring the OS keyboard repeat the arrows already get for free. Timing runs off the LVGL tick (ms)
+// the "frame" event carries — the headless harness advances it deterministically, so tests are stable.
+const HOLD_REPEAT_DELAY_MS = 400; // first repeat this long into the hold (LVGL's indev long-press default)
+const HOLD_REPEAT_PERIOD_MS = 100; // then every this (LVGL's indev long-press-repeat default)
 // Mouse-hover bar: a dimmer navy than the focus bar (#14243f), so the row under the pointer reads as
 // highlighted but subordinate to the keyboard-selected row. A pre-dimmed colour at full opacity (a
 // state-style's background-opacity isn't reliably applied). LVGL toggles it on LV_STATE_HOVERED.
@@ -108,6 +115,11 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   }, []);
   // The live text/confirm prompt overlay, or null. The ref mirrors it so the once-mounted key handler
   // reads the latest; the state drives the render.
+  // The last "frame" tick (ms) — the UI's only monotonic clock (LVGL tick, u32), for hold-to-repeat timing.
+  const tickRef = useRef(0);
+  // The held d-pad button's repeat state, or null: slot = `${pad}:${name}` (release matches on it), the
+  // nav it drives, when the hold started, and when the last repeat fired.
+  const holdRepeatRef = useRef<{ slot: string; nav: MenuNav; since: number; last: number } | null>(null);
   const [promptState, setPromptState] = useState<PromptState | null>(null);
   const promptStateRef = useRef<PromptState | null>(null);
   const setPrompt = useCallback((next: PromptState | null) => {
@@ -312,12 +324,35 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     [onItemKey, onClose, activate, setCapturing, setPrompt],
   );
 
+  // Hold-to-repeat: while a directional nav button stays down, re-fire it after HOLD_REPEAT_DELAY_MS, then
+  // every HOLD_REPEAT_PERIOD_MS — the gamepad twin of the OS key repeat the arrows already get. The u32
+  // diff is wrap-safe (the LVGL tick wraps at ~49.7 days). A prompt/capture modal freezes the repeat
+  // (input is owned) but does not drop the hold, so releasing first cancels cleanly.
+  useNativeEvent("frame", (...args) => {
+    const t = (args[0] as number) ?? 0;
+    tickRef.current = t;
+    const rep = holdRepeatRef.current;
+    if (!rep) return;
+    const u32 = (a: number, b: number) => (a - b + 0x100000000) % 0x100000000;
+    if (u32(t, rep.since) < HOLD_REPEAT_DELAY_MS) return;
+    if (u32(t, rep.last) < HOLD_REPEAT_PERIOD_MS) return;
+    rep.last = t;
+    if (promptStateRef.current || capturingIdRef.current) return; // a modal owns input: freeze the repeat
+    applyMenuNav(rep.nav);
+  });
+
   // Gamepad: bind a rebind row when one is armed, else navigate the menu like the keyboard. menuOpen already
   // gates useGamepadInput off while the menu is up, so game routing never competes for these events.
   useNativeEvent("gamepad-button", (...args) => {
+    const pad = args[0] as number;
     const name = args[1] as string;
     const press = args[2] as boolean;
-    if (!press) return; // the menu acts on press only
+    const slot = `${pad}:${name}`;
+    if (!press) {
+      // A release stops THAT button's repeat (any other still-held button's repeat keeps running).
+      if (holdRepeatRef.current?.slot === slot) holdRepeatRef.current = null;
+      return; // the menu acts on press only
+    }
 
     // 1. An open prompt owns the pad: A confirms, B cancels; ignore the rest.
     if (promptStateRef.current) {
@@ -340,7 +375,14 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     }
     // 3. Idle: drive nav (d-pad moves + cycles, A selects, B backs out) exactly like the keyboard.
     const nav = menuNavForButton(name);
-    if (nav) applyMenuNav(nav);
+    if (!nav) return;
+    applyMenuNav(nav);
+    // Arm hold-to-repeat for directional nav only: select/back fire exactly once per press (a held A must
+    // not re-confirm, a held B must not stack backs-out). A newer press re-arms, so switching d-pad
+    // buttons mid-hold moves the repeat to the new button.
+    if (nav !== "select" && nav !== "back") {
+      holdRepeatRef.current = { slot, nav, since: tickRef.current, last: tickRef.current };
+    }
   });
   useNativeEvent("gamepad-axis", (...args) => {
     const pad = args[0] as number;
@@ -359,16 +401,25 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     }
     if (promptStateRef.current) return; // a prompt owns input; don't drift the axis-dir map
 
-    // 2. Idle: the left stick navigates like the d-pad, edge-detected (via the axisToken hysteresis) so a
-    //    held stick fires a single move, not a stream.
+    // 2. Idle: the left stick navigates like the d-pad, edge-detected via the axisToken hysteresis. A
+    //    deliberate push fires one move AND arms the hold-to-repeat (a held stick keeps moving, like a held
+    //    d-pad button); returning to centre disarms it. A flip through the other side re-arms in the new
+    //    direction. The slot is `axis:`-prefixed so a stick release can only cancel a stick-armed repeat
+    //    (never a d-pad button's), and vice versa.
     if (axisName !== "leftx" && axisName !== "lefty") return;
     const key = `${pad}:${axisName}`;
+    const stickSlot = `axis:${key}`;
     const cur = menuAxisDirRef.current.get(key) ?? "";
     const next = axisToken(axisName, value, cur);
     if (next === cur) return;
     menuAxisDirRef.current.set(key, next);
     const nav = menuNavForAxisToken(next); // null when centred
-    if (nav) applyMenuNav(nav);
+    if (nav) {
+      applyMenuNav(nav);
+      holdRepeatRef.current = { slot: stickSlot, nav, since: tickRef.current, last: tickRef.current };
+    } else if (holdRepeatRef.current?.slot === stickSlot) {
+      holdRepeatRef.current = null; // back to centre: stop the repeat
+    }
   });
 
   // Keyboard scroll-follow: keep the focused row near the viewport midpoint so an expanded submenu that

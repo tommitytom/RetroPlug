@@ -428,7 +428,10 @@ protected:
             if (getWindow().getApp().isStandalone()) getWindow().setTitle("RetroPlug");
         }
         if (JSContext* ctx = jsEngine.getContext()) {
-            jsEngine.emit("frame", 0, nullptr); // drives EmulatorTile's getFrame
+            // arg0 = LVGL tick (ms): the UI's monotonic clock (menu gamepad hold-to-repeat timing).
+            JSValue tickMs = JS_NewUint32(ctx, lv_tick_get());
+            jsEngine.emit("frame", 1, &tickMs); // drives EmulatorTile's getFrame
+            JS_FreeValue(ctx, tickMs);
             pumpGamepad(ctx);                   // poll controllers → the gamepad-* JS bus
             // Deliver a finished OS file-dialog pick (async; cancel = empty). uiFileBrowserSelected resolves
             // the awaiting JS Promise via __rp_onFileBrowserResult (empty c-string → null → cancel).
