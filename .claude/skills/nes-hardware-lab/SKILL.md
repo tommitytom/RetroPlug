@@ -85,7 +85,20 @@ ROM. The N8 firmware parses the iNES header and sources the mapper core from its
 
 ### Observing / introspecting a running game
 
-A game must be running for these (the sniffer is off at the menu):
+A game must be running for these (the sniffer is off at the menu).
+
+> **Reading CART memory takes the bus off the console.** Anything touching PRG / CHR / SRM
+> (`--dump-chr`, `--patch-chr`, `--patch-prg`, `--dump-sram`, `--show-song`, and `hwtest
+> peek/poke/memwr` at those addresses) is a USB DMA, and the FPGA hands that memory controller to
+> the DMA for the whole command - the console loses the chip meanwhile, and the PPU reads `0x00`.
+> A timing-sensitive game may not survive it: measured on a mapper-30 CHR-RAM ROM, a single
+> **16-byte** read wedges it until a power-cycle (an NROM CHR-ROM game is unaffected). Chunking does
+> not help - 40 one-byte reads wedge it too.
+>
+> Reads of the **system region** (`0x1800000`+: config, sniffer, FIFO) are not a DMA and never touch
+> the cart bus, so `--sniff` and `--info` are always safe. **Poll a running game with `--sniff`, and
+> observe it on the video capture card** - neither perturbs it. If you must dump cart memory, expect
+> to do it once and then power-cycle.
 
 - **Live APU/PPU/OAM state:** `n8-load --sniff` (decoded) or `--sniff-raw <file>` (raw 512 B). This is
   the ground-truth of what the game is actually driving - use it to confirm a note is playing, a
