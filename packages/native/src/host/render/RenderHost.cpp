@@ -123,6 +123,7 @@ void bindRpcSend(JSContext* ctx, JSValue ns, RpcSendFn* dispatch) {
     JS_SetPropertyStr(ctx, ns, "__rpcSend", f);
 }
 
+// TODO: Should be in TS and compiled in rather than inline
 // Bare QuickJS gives us the ES standard library (JSON, TypedArrays, DataView, Array, Math) but no console
 // and no TextEncoder/TextDecoder — the two Web globals the control plane touches (console throughout;
 // TextEncoder/TextDecoder constructed at module load by projectStore/recentStore). Shim both; console routes
