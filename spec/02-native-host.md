@@ -129,7 +129,7 @@ Every mutation here routes through the `QueuedInvoker`; every read routes throug
 | `pressButton` | `(uint32 id, uint32 button, bool down) → bool` | joypad transition → the addressed core |
 | `renderAudio` | `(double ms) → Bytestring` | synchronous pull render, interleaved f32 L/R ([`:182`](../packages/native/src/host/rpc/EngineRpcService.cpp#L182)) |
 | `setTransport` / `setBpm` | `→ bool` | queued transport ops |
-| `setAudioRouting` | `(uint32 mode) → bool` | gated `mode ≤ 3` (Stereo / TwoPerInstance / OnePerInstance / ChannelSplit) ([`:321`](../packages/native/src/host/rpc/EngineRpcService.cpp#L321)) |
+| `setAudioRouting` | `(uint32 mode) → bool` | gated `mode ≤ 4` (Stereo / TwoPerInstance / OnePerInstance / ChannelSplit / PinSplit) ([`:321`](../packages/native/src/host/rpc/EngineRpcService.cpp#L321)) |
 | `stageMidiIn` | `(vector<uint8> bytes) → bool` | ≤ 4 bytes (one MIDI message) |
 
 `duplicate` and `reload` are **not** native methods — they are TS orchestration over
