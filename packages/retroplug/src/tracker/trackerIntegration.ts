@@ -153,6 +153,15 @@ export const smsggdjIntegration: TrackerIntegration = {
         writes.push({ offset: layout.groovePos, bytes: Uint8Array.of(0) });
       }
     }
+
+    // --- and repaint, which unlike load_rebase is needed whether or not the transport is running -----
+    // The cart only redraws rows flagged in `dirty_rows`, and every one of its OWN load paths ends in
+    // `mark_all_dirty` (fpx_close, cont_load_fire). Writing the song without this loads it correctly and
+    // leaves the PREVIOUS song on screen: the notes change, the display does not, until the user nudges
+    // something. Measured before the fix - a load moved exactly 0 of 48,903 non-animating pixels.
+    // `mark_all_dirty` is literally "1 into all 16 flags", so reproducing it is one write.
+    writes.push({ offset: layout.dirtyRows, bytes: new Uint8Array(layout.dirtyRowsLen).fill(1) });
+    writes.push({ offset: layout.labelDirty, bytes: Uint8Array.of(1) });
     return writes;
   },
 };

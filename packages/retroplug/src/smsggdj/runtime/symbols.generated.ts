@@ -43,6 +43,10 @@ export interface SmsggdjSymbols {
   file_count_len: number;
   scr_mode: number;
   scr_mode_len: number;
+  dirty_rows: number;
+  dirty_rows_len: number;
+  label_dirty: number;
+  label_dirty_len: number;
   echo_len: number;
 }
 
@@ -80,6 +84,10 @@ export const SMSGGDJ_SYMBOLS: Record<string, SmsggdjSymbols> = {
     file_count_len: 0x1,
     scr_mode: 0x1d3a,
     scr_mode_len: 0x1,
+    dirty_rows: 0x1e7b,
+    dirty_rows_len: 0x10,
+    label_dirty: 0x1dbd,
+    label_dirty_len: 0x1,
     echo_len: 0x8,
   },
 };

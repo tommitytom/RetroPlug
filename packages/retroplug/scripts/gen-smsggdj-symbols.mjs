@@ -46,6 +46,10 @@ const WANT = [
   // scr_mode let a test drive the cart to its FILES screen - the only place the cart reads its own
   // SMDJ4 directory out of SRAM - and check it found the songs the host put there.
   "sram_ok", "sram_slots", "file_count", "scr_mode",
+  // The editor's repaint flags. Unlike the two groups above these ARE written by a host-side load:
+  // `mark_all_dirty` (editor.asm:5271) is just "1 into all 16 dirty_rows", and the cart's own load ends
+  // in it, so a load that skips it leaves the previous song on screen until the user touches something.
+  "dirty_rows", "label_dirty",
 ];
 
 // The echo settings are EIGHT separate `db`s that the ROM copies as one run

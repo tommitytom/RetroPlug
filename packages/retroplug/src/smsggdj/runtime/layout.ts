@@ -41,6 +41,9 @@ function layoutFrom(symbolsKey: string, version: string = symbolsKey): SmsggdjLa
     liveQLen: s.live_q_len,
     grooveSel: s.groove_sel,
     groovePos: s.groove_pos,
+    dirtyRows: s.dirty_rows,
+    dirtyRowsLen: s.dirty_rows_len,
+    labelDirty: s.label_dirty,
     psgVols: s.psg_vols,
     psgVolsLen: s.psg_vols_len,
   };

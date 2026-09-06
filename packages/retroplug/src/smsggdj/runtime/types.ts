@@ -43,6 +43,21 @@ export interface SmsggdjLayout {
   grooveSel: number;
   groovePos: number;
 
+  // --- repaint, needed for EVERY load, running or stopped --------------------------------------------
+  // The cart redraws only rows it has been told are dirty, and its own load ends in `mark_all_dirty`
+  // (editor.asm:5271 - "1 into all 16 dirty_rows"). A load that writes the song and not these leaves the
+  // PREVIOUS song on screen until the user happens to touch a control, which is what the cart's own
+  // FILES load could never do because it always ran mark_all_dirty on its way out.
+
+  /** One flag per text row; 1 = redraw next frame. Writing 1 to all of them IS `mark_all_dirty`. */
+  dirtyRows: number;
+  dirtyRowsLen: number;
+  /** Redraw the screen-name + column-header lines. The cart's own load does NOT set this (it always
+   *  loads from FILES, whose header shows nothing song-derived), but a host load can land on any screen
+   *  - GROOVE's header carries the groove number a load can reset - so this one write goes deliberately
+   *  beyond `mark_all_dirty`. It costs one label frame, and ~20 ordinary cart actions set it too. */
+  labelDirty: number;
+
   /** PSG shadow attenuations, one byte per channel (0 loud .. $F silent). Read-only, and not part of
    *  loading a song: it is here so a test can certify the echo address by which channels the ENGINE
    *  actually drives, which is a binary fact, instead of by how loud a given window happens to be. */

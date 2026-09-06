@@ -1410,6 +1410,27 @@ nothing exercised it. Two independent checks: `wlalink -S` over both v0.45 links
 the shipping `liveLoad` lands the block at offset 0, carries `song_name` across, leaves `eng_len=8` and
 plays.
 
+#### A load has to repaint, and did not
+
+Reported from real use: a menu Load put the right song in memory and left the PREVIOUS one on screen
+until the user nudged a control. The cart redraws only the text rows flagged in `dirty_rows`, and every
+one of its OWN load paths ends in `mark_all_dirty` (`fpx_close`, `cont_load_fire`); `liveLoad`
+reproduced `load_rebase` and the directory-entry metadata but not that. `mark_all_dirty` is literally
+"1 into all 16 flags" (`editor.asm:5271`), so the fix is one write, plus a second - `label_dirty` -
+which goes deliberately beyond the cart: its own load always runs from FILES, whose header shows nothing
+song-derived, whereas a host load can land on GROOVE, whose header carries the groove number a load can
+reset.
+
+Worth recording is how it was measured, because the obvious approach does not work. The cart animates
+parts of its screen unprompted (a blinking glyph in the header, a self-redrawing text row in the grid),
+so two idle frames 800 ms apart differ by hundreds of pixels: the first attempt reported 702 differing
+bytes for an idle interval and 36 for a load that had done nothing at all, i.e. the noise was 20x the
+signal and pointed the wrong way. `test-native/sms-repaint.test.ts` therefore builds an ANIMATION MASK
+from six idle samples with no input and compares only the pixels outside it, which is reproducible to
+the pixel: the load moved **0** of 48,903 non-animating pixels before the fix and **1072** after, while
+a forced repaint afterwards went from 271 to 2. Both halves are asserted, so a regression that quietly
+stops repainting fails on the first number and one that repaints only partially fails on the second.
+
 **One divergence found by reading, not measured.** `isGrooveEmpty(block, sel)` treats an out-of-range
 `sel` as empty, and `groove_sel = NUM_GROOVES` (16) is not out of range - it is the CONT tempo-glide
 SENTINEL, which `groove_base` (`engine.asm:1021-1036`) resolves to `glide_scratch` in RAM rather than to
