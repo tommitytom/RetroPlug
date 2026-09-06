@@ -92,8 +92,18 @@ A game must be running for these (the sniffer is off at the menu):
   register is set, etc., independent of the audio/video capture.
 - **Menu screenshot over USB:** `n8-load --screenshot <out.png>` (only while the **menu** is showing;
   for a running game use the video capture card instead - see below).
-- **Graphics:** `--dump-chr <out.png>` (visible CHR tiles; add `--color [--palette N]` for real
-  colours), `--patch-chr <hexoff> <file>` (live-patch graphics, shows next frame).
+- **Cart configuration:** `--sniff` also prints what the FPGA is configured for - mapper index,
+  PRG/CHR/SRAM sizes, mirroring, and whether **CHR is RAM or ROM**. That last one decides where the
+  game's tiles physically live, so check it before reasoning about any CHR read.
+- **Graphics:** `--dump-chr <out.png>` (the 8 KB bank the PPU is fetching *right now*; add
+  `--color [--palette N]` for real colours), `--patch-chr <hexoff> <file>` (live-patch graphics at
+  an offset into that same bank, shows next frame). Both need a **running game** - at the menu the
+  CHR chip holds the N8 OS font, and `--dump-chr` errors rather than hand it back. On a multi-bank
+  cart the bank is read from the live mapper registers; if that mapper isn't decoded yet, the
+  command says so and you pass `--chr-bank <n>` (which also reaches the banks that aren't on
+  screen). A CHR-RAM cart's RAM is NOT at `ADDR_CHR` - it is at `+0x400000`, the upper 4 MB of the
+  chip - which the tool now handles; the decode lives in RetroPlug's
+  `packages/retroplug/src/n8/mapConfig.ts`.
 - **Code:** `--patch-prg <hexoff> <file>` live-patches PRG (a bad patch crashes the game ->
   power-cycle to recover). `--savestate <sd-path>` decodes a full N8 save-state.
 - **Saves:** `--dump-sram <file>` reads cart battery RAM; `--srm <save.srm>` restores one on boot.
@@ -102,9 +112,13 @@ A game must be running for these (the sniffer is off at the menu):
 
 `$RPBIN/retroplug-n8-hwtest <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|fifowr|info|fstest> <addr|path> [len|byte|dest] [port]`
 
-Direct device memory + FIFO. Key N8 addresses: cart battery RAM `0x1000000`, live sniffer region
-`0x1802000`, cart FIFO `0x1810000` (a running ROM reads it at `$40F0/$40F1`).
-- `peek <hexaddr> <len>` / `poke <hexaddr> <byte>` - read/write device memory.
+Direct device memory + FIFO. Key N8 addresses: PRG `0x0000000`, CHR `0x0800000` (CHR-**RAM** carts:
+`0x0C00000`), cart battery RAM `0x1000000`, mapper-config block `0x1800020` (16 B, read/write),
+live sniffer region `0x1802000`, cart FIFO `0x1810000` (a running ROM reads it at `$40F0/$40F1`).
+- `peek <hexaddr> <len>` / `poke <hexaddr> <byte>` - read/write device memory. The address is
+  **hex**, with or without an `0x` prefix (it used to parse base-0, so a bare `1800020` silently
+  read decimal `0x1B7754` and came back as bus noise - that is how the config block got written off
+  as write-only). `len` and `byte` are still base-0, so decimal unless you prefix them.
 - `memwr <hexaddr> <file>` - write a file's bytes to an address, **with a readback verify** (for
   live-patching CHR/PRG).
 - `fifowr <file>` - push bytes into the cart FIFO. Use this, NOT `memwr 0x1810000`: `memwr` always
