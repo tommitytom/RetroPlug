@@ -771,6 +771,27 @@ set_target_properties(retroplug-plugin-test PROPERTIES
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+# retroplug-dynparams-test guards the dynamic-parameter diff classifier in the DPF fork
+# (PluginExporter::reinitParameters — spec/12-dynamic-parameters.md): which parameter fields a LIVE
+# plugin may re-declare, and that `hints`/`ranges` are never written behind the audio thread's back.
+# It builds NO plugin format — just DPF's format-neutral core (DistrhoPlugin.cpp; the rest of what it
+# needs is header-only) plus a toy plugin in the test — so its own test/plugin/dynparams/DistrhoPluginInfo.h
+# is ordered first to shadow the shipped one. Also `pnpm test:plugin`, on demand.
+add_executable(retroplug-dynparams-test EXCLUDE_FROM_ALL
+    test/plugin/DynamicParameters.test.cpp
+    ${DPFJS_PATH}/deps/dpf/distrho/src/DistrhoPlugin.cpp)
+
+target_link_libraries(retroplug-dynparams-test PRIVATE Catch2::Catch2WithMain)
+
+target_include_directories(retroplug-dynparams-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/plugin/dynparams   # the test's DistrhoPluginInfo.h — must come first
+    ${DPFJS_PATH}/deps/dpf/distrho)                     # DistrhoPlugin.hpp + src/DistrhoPluginInternal.hpp
+
+set_target_properties(retroplug-dynparams-test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
 # retroplug-classid-test guards TjsHostRuntime::init's class-id counter sync (the plugin-editor blank-UI
 # fix): it needs the real txiki host, so it links retroplug-backend. Also `pnpm test:plugin`, on demand.
 add_executable(retroplug-classid-test EXCLUDE_FROM_ALL

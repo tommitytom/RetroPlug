@@ -25,7 +25,7 @@ const REPO = resolve(PKG, "../..");
 const BIN_DIR = process.env.RETROPLUG_BIN_DIR || join(REPO, "build", "bin");
 const EXE = process.platform === "win32" ? ".exe" : "";
 
-const BINARIES = ["retroplug-plugin-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test"];
+const BINARIES = ["retroplug-plugin-test", "retroplug-dynparams-test", "retroplug-classid-test", "retroplug-audio-test", "retroplug-watcher-test", "retroplug-lottie-test", "retroplug-midi-test", "retroplug-launchpad-test"];
 
 const jobs = resolveJobs();
 const filter = stripJobsArgs()[0];
