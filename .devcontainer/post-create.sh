@@ -58,6 +58,19 @@ if not d.get('hasCompletedOnboarding'):
     os.replace(tmp, real)
 PY
 
+# Seed pi's provider config for the host's local LLM server. Copy only when
+# absent: this file is the starting point, not the source of truth — pi rewrites
+# ~/.pi/agent/models.json itself, and the apt-pi-state volume carries hand edits
+# across rebuilds. Overwriting here would silently revert them every rebuild.
+PI_MODELS="$HOME/.pi/agent/models.json"
+if [ ! -f "$PI_MODELS" ]; then
+    echo "post-create: seeding $PI_MODELS from .devcontainer/pi-models.json"
+    mkdir -p "$(dirname "$PI_MODELS")"
+    cp .devcontainer/pi-models.json "$PI_MODELS"
+else
+    echo "post-create: $PI_MODELS exists, leaving it alone"
+fi
+
 unset NODE_OPTIONS
 
 echo "==> Configuring git-lfs..."

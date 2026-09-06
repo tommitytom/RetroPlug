@@ -1,0 +1,31 @@
+{
+  "providers": {
+    "sglang": {
+      "baseUrl": "http://172.17.0.1:8010/v1",
+      "api": "openai-completions",
+      "apiKey": "sglang",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "thinkingFormat": "qwen",
+        "supportsReasoningEffort": true
+      },
+      "models": [
+        {
+          "id": "Qwen/Qwen3.8-27B-FP8",
+          "reasoning": true,
+          "contextWindow": 262144,
+          "maxTokens": 32768,
+          "thinkingLevelMap": {
+            "off": "none",
+            "minimal": "none",
+            "low": "low",
+            "medium": "medium",
+            "high": "xhigh",
+            "xhigh": "xhigh",
+            "max": "xhigh"
+          }
+        }
+      ]
+    }
+  }
+}

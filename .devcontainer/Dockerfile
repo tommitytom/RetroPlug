@@ -304,6 +304,8 @@ RUN set -eux; \
 	uv venv --python python3 /opt/reaper-mcp-server/.venv; \
 	uv pip install --python /opt/reaper-mcp-server/.venv/bin/python -e .
 
+RUN npm install -g @earendil-works/pi-coding-agent
+
 # Install wt (git worktree helper)
 RUN ln -s /workspaces/RetroPlug-main/.devcontainer/wt.sh /usr/local/bin/wt
 
