@@ -31,10 +31,22 @@ export const ADDR_MENU_CHR = 0xfe0000; // menu CHR (ADDR_CHR 0x800000 + 0x7E0000
 export const N8_OS_REGION = 0x7e0000; // top of PRG/CHR (0x7E0000..0x800000) is the N8 OS/menu - never patch into it
 export const ADDR_SSR = 0x1802000; // save-state sniffer: a running game's live APU/PPU/OAM write-mirror
 export const ADDR_FIFO = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
-// FPGA config reg: expansion-audio master volume (MapConfig.master_vol = scfg[3]; krikzz edn8-pro-pub
-// fpga/base_sv/sys_cfg.sv). 0 = mute, 128 = unity, 255 = 2x. Write-only and live-only - it applies to the
-// RUNNING cart, and reading it back returns something else, so never verify this write.
-export const ADDR_EXP_VOL = 0x1800023;
+// The 16-byte FPGA mapper-config block (krikzz edn8-pro-pub fpga/base_sv/sys_cfg.sv `scfg`, decoded by
+// mapConfig.ts; = everdrive.h's MapConfig struct minus its leading 32-byte cheat block, which is why the
+// NES-CPU-side offsets in that header are 32 lower than the USB ones). The OS writes it when it hands a game
+// over, so it describes the RUNNING cart: mapper index, PRG/CHR/SRM sizes, mirroring, and CHR-RAM-vs-ROM.
+// Readable AND writable over USB (`pi_di` muxes `ce_cfg` back to the host in everdrive.sv) - HW-verified.
+export const ADDR_CFG = 0x1800020;
+export const SIZE_CFG = 16;
+// Expansion-audio master volume = MapConfig.master_vol (scfg[3]). 0 = mute, 128 = unity, 255 = 2x. Live-only:
+// it applies to the RUNNING cart and a reboot/map-load reloads the OS's stored value.
+export const ADDR_EXP_VOL = ADDR_CFG + 3;
+// A CHR-RAM cart's RAM is NOT at ADDR_CHR: everdrive.sv forces bit 22 of the CHR address for a chr_ram game
+// ("save state engine expects chr ram to be mapped at upper 4M"), so the PPU sees the UPPER 4 MB of the CHR
+// chip. That bit is applied only to the console's own fetches (`!dma.req_chr`) - the USB/DMA path passes the
+// host address through verbatim, so a host read has to add this offset itself.
+export const CHR_RAM_OFFSET = 0x400000;
+export const SIZE_CHR_BANK = 0x2000; // 8 KB - one CHR bank / the whole PPU pattern-table window
 export const SIZE_SRM_GAME = 0x10000; // 64 KB - max battery RAM a game uses
 
 const ACK_BLOCK_SIZE = 1024; // fileWrite ack granularity

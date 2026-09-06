@@ -4,7 +4,8 @@
 // ../realBackend.ts). This is also the scriptable surface: `createN8(transport)` gives a JS/TS caller the
 // whole cart API (connect / menu / load / SRAM read+write / listDir) over any SerialTransport.
 
-import { Edio } from "./edio";
+import { Edio, ADDR_CFG, SIZE_CFG } from "./edio";
+import { decodeMapConfig, type N8MapConfig } from "./mapConfig";
 import { N8Menu } from "./n8Menu";
 import { loadRom, dumpSram, writeSramDirect, writeMemDirect, type LoadOptions, type LoadResult } from "./n8Load";
 import type { SerialTransport } from "./transport";
@@ -18,6 +19,10 @@ export {
   ADDR_CHR,
   ADDR_SSR,
   ADDR_FIFO,
+  ADDR_CFG,
+  SIZE_CFG,
+  CHR_RAM_OFFSET,
+  SIZE_CHR_BANK,
   N8_OS_REGION,
   SIZE_SRM_GAME,
   FA_READ,
@@ -27,6 +32,8 @@ export {
 } from "./edio";
 export type { N8DirEntry } from "./edio";
 export { N8Menu } from "./n8Menu";
+export { decodeMapConfig, resolveChrWindow, chrBankAddr, describeChrWindow } from "./mapConfig";
+export type { N8MapConfig, N8Mirroring, ChrWindow, ChrBankSource } from "./mapConfig";
 export { RisaSyncTranslator } from "./risaSyncTranslator";
 export { loadRom, dumpSram, writeSramDirect, writeMemDirect, assertGameRegion, baseName } from "./n8Load";
 export type { LoadOptions, LoadResult } from "./n8Load";
@@ -52,6 +59,9 @@ export interface N8 {
   listDir(path: string): ReturnType<Edio["listDir"]>;
   /** Read a whole SD-card file by path (over USB). */
   readFile(path: string): Uint8Array;
+  /** Read the FPGA mapper-config block: what the OS told the cart the RUNNING game is (mapper index,
+   *  PRG/CHR/SRM sizes, mirroring, CHR-RAM-vs-ROM). */
+  mapConfig(): N8MapConfig;
 }
 
 export function createN8(transport: SerialTransport): N8 {
@@ -67,5 +77,6 @@ export function createN8(transport: SerialTransport): N8 {
     writeMemDirect: (addr: number, data: Uint8Array) => writeMemDirect(edio, addr, data),
     listDir: (path: string) => edio.listDir(path),
     readFile: (path: string) => edio.readFile(path),
+    mapConfig: () => decodeMapConfig(edio.memRD(ADDR_CFG, SIZE_CFG)),
   };
 }

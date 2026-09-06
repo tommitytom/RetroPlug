@@ -10,10 +10,19 @@ import {
   createN8,
   baseName,
   assertGameRegion,
+  decodeMapConfig,
+  resolveChrWindow,
+  describeChrWindow,
   ADDR_MENU_CHR,
   ADDR_SSR,
   ADDR_CHR,
+  ADDR_CFG,
   ADDR_PRG,
+  SIZE_CFG,
+  SIZE_CHR_BANK,
+  type ChrWindow,
+  type N8,
+  type N8MapConfig,
   type SerialPortInfo,
   type LoadOptions,
 } from "../../src/n8";
@@ -29,11 +38,26 @@ const DEFAULT_ROM = "resources/roms/bliptoaster.nes";
 const VALUE_FLAGS = new Set([
   "--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--sniff-raw",
   "--dump-chr", "--patch-chr", "--patch-prg", "--mkdir", "--rm", "--palette", "--savestate", "--serial",
+  "--chr-bank",
 ]);
 
+// Read an option's operand. A missing or `--`-prefixed operand is an error, not a value: `--dump-chr --color
+// out.png` otherwise takes the literal "--color" as the filename and pushes out.png into the positional ROM
+// slot, so the command fails naming a problem ("cannot read ROM: out.png") the user never had.
 const flag = (args: string[], name: string): string | undefined => {
   const i = args.indexOf(name);
-  return i >= 0 ? args[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const value = args[i + 1];
+  if (value === undefined) throw new Error(`${name} needs a value`);
+  if (value.startsWith("--")) throw new Error(`${name} needs a value, but the next argument is the option '${value}'`);
+  return value;
+};
+// The same, for options that have a default when their operand is left off (`--ls` alone = the SD root).
+const flagOr = (args: string[], name: string, fallback: string): string => {
+  const i = args.indexOf(name);
+  if (i < 0) return fallback;
+  const value = args[i + 1];
+  return value === undefined || value.startsWith("--") ? fallback : value;
 };
 const has = (args: string[], name: string): boolean => args.includes(name);
 const isPng = (path: string): boolean => path.toLowerCase().endsWith(".png");
@@ -107,6 +131,40 @@ function printSniffer(snap: SnifferSnapshot): void {
   console.log(`OAM: ${snap.activeSprites} sprite(s) on-screen (of 64)`);
 }
 
+// The running cart as the FPGA is configured for it. Worth printing next to --sniff: "CHR 32 KB RAM" is the
+// one fact that decides where a game's tiles actually live on the CHR chip.
+function printMapConfig(cfg: N8MapConfig): void {
+  const kb = (n: number): string => `${n / 1024} KB`;
+  console.log(
+    `cart (FPGA config): mapper ${cfg.mapIdx}${cfg.mapSub ? `.${cfg.mapSub}` : ""}  PRG ${kb(cfg.prgSizeBytes)}  ` +
+      `CHR ${kb(cfg.chrSizeBytes)} ${cfg.chrRam ? "RAM" : "ROM"} (${cfg.chrBanks} x 8 KB)  ` +
+      `SRAM ${kb(cfg.srmSizeBytes)}  ${cfg.mirroring} mirroring`,
+  );
+}
+
+// Work out which 8 KB of the CHR chip the RUNNING game's PPU is fetching, for --dump-chr / --patch-chr. Both
+// used to assume "ADDR_CHR + 0" and call it bank 0, which is only ever right for an unbanked CHR-ROM cart: a
+// CHR-RAM cart's pixels live in the upper 4 MB of the same chip (see CHR_RAM_OFFSET), so that read returned
+// leftover N8 OS font - plausible bytes, wrong data, no error. The running cart's own FPGA config says which
+// it is, so this asks the device rather than guessing.
+function resolveChr(n8: N8, args: string[]): { window: ChrWindow; palette: Uint8Array } {
+  const cfg = decodeMapConfig(n8.edio.memRD(ADDR_CFG, SIZE_CFG));
+  const snap = decodeSniffer(n8.edio.memRD(ADDR_SSR, SNIFFER_REGION_SIZE));
+  if (!snap.magicOk)
+    throw new Error(
+      "no game is running, so the CHR chip holds the N8 OS file-browser font rather than a game's tiles " +
+        "(the sniffer's magic byte is absent). Boot a ROM first with `n8-load <rom.nes>`; to capture the " +
+        "menu's own screen use --screenshot.",
+    );
+  const bankArg = flag(args, "--chr-bank");
+  let bank: number | undefined;
+  if (bankArg !== undefined) {
+    bank = parseInt(bankArg, 10);
+    if (Number.isNaN(bank)) throw new Error(`--chr-bank expects a number, got '${bankArg}'`);
+  }
+  return { window: resolveChrWindow(cfg, snap.mapperRegs, bank), palette: snap.palette };
+}
+
 function printInfo(sysBytes: Uint8Array, vdcBytes: Uint8Array): void {
   const s = decodeSysInfo(sysBytes);
   const v = decodeVdc(vdcBytes);
@@ -157,12 +215,17 @@ const N8_LOAD_HELP = [
   "                     7.6% high (440 Hz shows as 474)",
   "  --sniff-raw <file> dump the raw 512-byte sniffer region to a file (no decode)",
   "  --dump-chr <file>  read the running game's 8 KB visible CHR bank over USB. A .png dest renders an",
-  "                     editable grayscale tile grid; else a raw 8 KB .chr",
+  "                     editable grayscale tile grid; else a raw 8 KB .chr. Needs a RUNNING game - at the",
+  "                     menu the CHR chip holds the N8 OS font, so this errors instead of returning it",
+  "  --chr-bank <n>     with --dump-chr / --patch-chr: pick the 8 KB CHR bank by number instead of the one",
+  "                     the live mapper registers say is on screen. Required on a multi-bank cart whose",
+  "                     mapper isn't decoded here (the error lists the range)",
   "  --color [--palette N]  with --dump-chr <.png>: render the game's REAL colours via the live sniffer",
-  "                     palette (BG palette group N, 0-3; needs a running game). A viewing aid",
-  "  --patch-chr <hex-offset> <file>  live-patch the running game's CHR (graphics) from <file> at CHR+offset",
-  "                     (verified; shows on-screen next frame). <file> = a .png tile grid or raw .chr bytes.",
-  "                     Best on a CHR-ROM game (NROM etc.)",
+  "                     palette (BG palette group N, 0-3). A viewing aid",
+  "  --patch-chr <hex-offset> <file>  live-patch the running game's CHR (graphics) from <file>, at an offset",
+  "                     into the SAME visible 8 KB bank --dump-chr returns (verified; shows on-screen next",
+  "                     frame). <file> = a .png tile grid or raw .chr bytes. Works on CHR-ROM and CHR-RAM,",
+  "                     though a CHR-RAM game may overwrite the patch itself on its next redraw",
   "  --patch-prg <hex-offset> <file>  live-patch the running game's PRG (code) from raw <file> at PRG+offset.",
   "                     WARNING: a bad code patch can crash the game (power-cycle to recover)",
   "  --info             print the N8's device info (serial, firmware/bootloader versions, NES/Famicom form",
@@ -273,7 +336,7 @@ export const n8LoadTool: CliTool = {
         return;
       }
       if (doLs) {
-        const path = flag(args, "--ls") ?? "/";
+        const path = flagOr(args, "--ls", "/");
         const entries = n8.listDir(path === "/" ? "" : path);
         console.log(`${path} (${entries.length} entr${entries.length === 1 ? "y" : "ies"}):`);
         for (const e of entries) console.log(e.isDir ? `  [DIR]  ${e.name}` : `  ${String(e.size).padStart(8)}  ${e.name}`);
@@ -309,35 +372,32 @@ export const n8LoadTool: CliTool = {
           // sniffer cannot tell which console it is on, so the caller says (--pal), else NTSC.
           const pal = has(args, "--pal");
           console.log(`(APU Hz decoded at ${pal ? "PAL 1.6626" : "NTSC 1.7898"} MHz${pal ? "" : " - pass --pal on a PAL console"})`);
+          printMapConfig(decodeMapConfig(n8.edio.memRD(ADDR_CFG, SIZE_CFG)));
           printSniffer(decodeSniffer(region, pal ? CPU_HZ_PAL : CPU_HZ_NTSC));
         }
         return;
       }
       if (dumpChr != null) {
-        // Grab the 8 KB visible CHR bank (edit it, then --patch-chr it back). Read-only. A .png dest renders
-        // the tiles as a grayscale grid (editable, roundtrips); with --color, the game's REAL colours via the
-        // live sniffer palette (a viewing aid). Anything else writes the raw 8 KB.
-        const chr = n8.edio.memRD(ADDR_CHR, 8192);
+        // Grab the 8 KB bank the PPU is fetching right now (edit it, then --patch-chr it back). Read-only. A
+        // .png dest renders the tiles as a grayscale grid (editable, roundtrips); with --color, the game's
+        // REAL colours via the live sniffer palette (a viewing aid). Anything else writes the raw 8 KB.
+        const { window, palette } = resolveChr(n8, args);
+        const chr = n8.edio.memRD(window.addr, SIZE_CHR_BANK);
         if (isPng(dumpChr)) {
           let img = chrToPng(chr);
           let mode = "grayscale";
           if (has(args, "--color")) {
-            const snap = decodeSniffer(n8.edio.memRD(ADDR_SSR, SNIFFER_REGION_SIZE));
-            if (snap.magicOk) {
-              const group = parseInt(flag(args, "--palette") ?? "0", 10) || 0;
-              img = chrToPngColor(chr, snap.palette, group);
-              mode = `colour (BG palette ${group})`;
-            } else {
-              console.log("--color needs a running game for the live palette; falling back to grayscale");
-            }
+            const group = parseInt(flagOr(args, "--palette", "0"), 10) || 0;
+            img = chrToPngColor(chr, palette, group);
+            mode = `colour (BG palette ${group})`;
           }
           const png = s.backend.pngEncode(img.width, img.height, img.rgba);
           if (!png) throw new Error("PNG encode failed");
           if (!s.backend.writeFile(dumpChr, png)) throw new Error(`write failed: ${dumpChr}`);
-          console.log(`wrote ${img.width}x${img.height} ${mode} CHR tile grid -> ${dumpChr}`);
+          console.log(`wrote ${img.width}x${img.height} ${mode} tile grid of ${describeChrWindow(window)} -> ${dumpChr}`);
         } else {
           if (!s.backend.writeFile(dumpChr, chr)) throw new Error(`write failed: ${dumpChr}`);
-          console.log(`wrote ${chr.length} bytes of CHR (bank 0) -> ${dumpChr}`);
+          console.log(`wrote ${chr.length} bytes of ${describeChrWindow(window)} -> ${dumpChr}`);
         }
         return;
       }
@@ -357,10 +417,26 @@ export const n8LoadTool: CliTool = {
           if (!img) throw new Error(`not a valid PNG: ${patchFile}`);
           bytes = pngToChr(img);
         }
-        assertGameRegion(offset, bytes.length);
-        const region = patchChr != null ? "CHR" : "PRG";
-        const n = n8.writeMemDirect((patchChr != null ? ADDR_CHR : ADDR_PRG) + offset, bytes);
-        console.log(`patched + verified ${n} bytes into ${region} at +0x${offset.toString(16)} (live, running game)`);
+        if (patchPrg != null) {
+          assertGameRegion(offset, bytes.length);
+          const n = n8.writeMemDirect(ADDR_PRG + offset, bytes);
+          console.log(`patched + verified ${n} bytes into PRG at +0x${offset.toString(16)} (live, running game)`);
+          return;
+        }
+        // The CHR offset is relative to the visible 8 KB bank - the same bytes --dump-chr hands back - so the
+        // dump/edit/patch round-trip lines up on a banked or CHR-RAM cart instead of landing in whatever
+        // happens to sit at the bottom of the chip.
+        const { window } = resolveChr(n8, args);
+        if (offset + bytes.length > SIZE_CHR_BANK)
+          throw new Error(
+            `patch [0x${offset.toString(16)}..0x${(offset + bytes.length).toString(16)}] runs past the visible ` +
+              `8 KB CHR bank; the offset is relative to the bank --dump-chr returns. Use --chr-bank to reach another bank`,
+          );
+        assertGameRegion(window.addr - ADDR_CHR + offset, bytes.length);
+        const n = n8.writeMemDirect(window.addr + offset, bytes);
+        console.log(
+          `patched + verified ${n} bytes into ${describeChrWindow(window)} at +0x${offset.toString(16)} (live, running game)`,
+        );
         return;
       }
       if (dumpPath != null) {

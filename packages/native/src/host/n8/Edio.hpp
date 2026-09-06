@@ -55,6 +55,17 @@ public:
     static constexpr std::int32_t ADDR_MENU_CHR = 0x0FE0000; // menu CHR (ADDR_CHR 0x800000 + 0x7E0000); screenshot
     static constexpr std::int32_t ADDR_SSR      = 0x1802000; // save-state sniffer: a running game's live APU/PPU/OAM mirror
     static constexpr std::int32_t ADDR_FIFO     = 0x1810000; // cart FIFO (NES side reads $40F0/$40F1)
+    // The 16-byte FPGA mapper-config block (edn8-pro-pub fpga/base_sv/sys_cfg.sv `scfg`): what the OS told the
+    // cart the RUNNING game is - mapper index, PRG/CHR/SRM size masks, mirroring, CHR-RAM-vs-ROM, master
+    // volume. Read AND write over USB (HW-verified). Decoded TS-side by src/n8/mapConfig.ts.
+    static constexpr std::int32_t ADDR_CFG      = 0x1800020;
+    static constexpr std::size_t  SIZE_CFG      = 16;
+    static constexpr std::int32_t ADDR_EXP_VOL  = ADDR_CFG + 3; // expansion-audio master volume (128 = unity)
+    // A CHR-RAM cart's RAM is NOT at ADDR_CHR: everdrive.sv forces CHR address bit 22 for a chr_ram game, so
+    // the PPU sees the UPPER 4 MB of the CHR chip. That bit is applied only to the console's own fetches
+    // (`!dma.req_chr`), so a host read/write over USB has to add this offset itself.
+    static constexpr std::int32_t CHR_RAM_OFFSET = 0x400000;
+    static constexpr std::size_t  SIZE_CHR_BANK  = 0x2000;   // 8 KB - one CHR bank / the PPU pattern-table window
     static constexpr std::size_t  SIZE_SRM_GAME = 0x10000;   // 64 KB — max battery RAM a game uses (risa: 64 KB)
     static constexpr int          ACK_BLOCK_SIZE = 1024;  // fileWrite ack granularity
     static constexpr int          RD_BLOCK_SIZE  = 512;   // fileRead block size: one CMD_F_FRD/block; <=512 avoids FIFO overload

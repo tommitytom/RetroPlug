@@ -86,14 +86,17 @@ int main(int argc, char** argv) {
     }
 
     // Raw device-memory peek/poke: a bare Edio over the port (no N8Host, no streaming thread). Used to read /
-    // write FPGA config registers directly - e.g. the expansion-audio master volume at 0x1800003.
+    // write FPGA config registers directly - e.g. the expansion-audio master volume at Edio::ADDR_EXP_VOL.
     if (op == "peek" || op == "poke") {
         if (argc < 4) {
             std::fprintf(stderr, "usage: %s %s <addr-hex> <%s> [port]\n", argv[0], op.c_str(),
                          op == "peek" ? "len" : "byte");
             return 2;
         }
-        const std::int32_t addr = static_cast<std::int32_t>(std::strtol(argv[2], nullptr, 0));
+        // Base 16, as the usage says: with strtol's base 0 a bare "1800020" silently read as DECIMAL
+        // (0x1B7754) and returned bus noise, which is how the config block was once written off as
+        // write-only. An explicit "0x" prefix still parses.
+        const std::int32_t addr = static_cast<std::int32_t>(std::strtol(argv[2], nullptr, 16));
         const std::string  pport = argc > 4 ? argv[4] : findN8Port();
         if (pport.empty()) {
             std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
