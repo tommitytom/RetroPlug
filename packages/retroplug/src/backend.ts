@@ -144,12 +144,13 @@ export interface Backend {
   setSerialOutCapture(id: number, on: boolean): boolean;
 
   /** Set the project's audio-output routing (0 Stereo / 1 TwoPerInstance / 2 OnePerInstance /
-   *  3 ChannelSplit / 4 PinSplit) — which of the plugin's 4 stereo output pairs each system mixes into,
-   *  or (modes 3/4, single system only) one system's channels fanned across the outs: a Game Boy's 4
-   *  stereo channels over the 4 pairs, a NES's 5 mono core channels over outs 1..5, or a NES's 3 mono
-   *  pins over outs 1..3. The one project-level setting that reaches native audio (the Engine resolves a
-   *  lane plan per mode + system count and picks MultiOutRouter / ChannelSplitRouter from it). Returns
-   *  false on an out-of-range mode. */
+   *  3 ChannelSplit / 4 PinSplit / 5 StereoPinSplit) — which of the plugin's 4 stereo output pairs each
+   *  system mixes into, or (modes 3..5, single system only) one system's channels fanned across the
+   *  outs: a Game Boy's 4 stereo channels over the 4 pairs, a NES's 5 mono core channels over outs 1..5,
+   *  a NES's 3 mono pins over outs 1..3, or those same 3 pins over a PAIR each (outs 1/2, 3/4, 5/6,
+   *  mirrored L=R). The one project-level setting that reaches native audio (the Engine resolves a lane
+   *  plan per mode + system count and picks MultiOutRouter / ChannelSplitRouter from it). Returns false
+   *  on an out-of-range mode. */
   setAudioRouting(mode: number): boolean;
 
   // --- Live emulator input ------------------------------------------------

@@ -82,16 +82,16 @@ Two placement layers, mutually exclusive in the 8-lane budget:
 1. **Per-system** (today: `AudioRouting::Stereo / TwoPerInstance / OnePerInstance`,
    [AudioRouting.hpp](../packages/native/src/system/AudioRouting.hpp)) — fans *many* systems across the
    8 fixed lanes. `streamCount(slot) = 1` always.
-2. **Per-channel** (new: `ChannelSplit` / `PinSplit`) — fans *one* system's streams across lanes. Two
-   realizations:
+2. **Per-channel** (new: `ChannelSplit` / `PinSplit` / `StereoPinSplit`) — fans *one* system's streams
+   across lanes. Two realizations:
    - **Plugin**: `ChannelSplitRouter`, whose `laneStride` follows the layout — stream *k* → stereo pair
      *k* for stereo streams (GB, 8 lanes), or → lane *k* for mono ones (NES: 5 channels or 3 pins).
      Gated to `systemCount() == 1`.
    - **CLI**: a width-flexible `PerChannelRouter` that hands each stream its own buffer (the system
      decides count/width) — serves GB 4-stereo *and* NES 5-mono / pins.
 
-`ChannelSplit` / `PinSplit` are the 4th and 5th `AudioRouting` values, both gated to
-`systemCount() == 1`, **not** a combination with the per-instance modes. Do not generalize the
+`ChannelSplit` / `PinSplit` / `StereoPinSplit` are the 4th, 5th and 6th `AudioRouting` values, all gated
+to `systemCount() == 1`, **not** a combination with the per-instance modes. Do not generalize the
 per-channel router to many systems.
 
 ## 2. Game Boy design (the primary case: 1 GB → 8 outputs)
@@ -205,13 +205,22 @@ Output every channel on its own mono stream:
 
 ## 4. Plugin output option
 
-Two project-level `AudioRouting` values, both **single-system**. Menu rows: `Channels` and (NES only)
-`Pins`, matching the `System > Render` submenu's `Mix / Channels / Pins` vocabulary — same concept,
-same words. The old `Channels (1 GB)` label meant "one Game Boy" and read as a gigabyte.
+Three project-level `AudioRouting` values, all **single-system**. Menu rows: `Channels`, and (NES only)
+`Pins` + `Stereo Pins`. The first two match the `System > Render` submenu's `Mix / Channels / Pins`
+vocabulary — same concept, same words. The old `Channels (1 GB)` label meant "one Game Boy" and read as
+a gigabyte.
 
-- **Native enum:** `AudioRouting::ChannelSplit = 3`, `AudioRouting::PinSplit = 4`
+- **Native enum:** `AudioRouting::ChannelSplit = 3`, `PinSplit = 4`, `StereoPinSplit = 5`
   ([AudioRouting.hpp](../packages/native/src/system/AudioRouting.hpp)). TS mirrors them as
-  `channelSplit` / `pinSplit` (additive to the persisted enum → no `K_PROJECT` bump, no migration step).
+  `channelSplit` / `pinSplit` / `stereoPinSplit` (additive to the persisted enum → no `K_PROJECT` bump,
+  no migration step).
+- **Why two pin modes.** They tap the *same* three streams and differ only in lanes spent. `Pins` packs
+  them 3-across (Pulse on out 1, TND on out 2, Expansion on out 3), which is tightest and works on a
+  4-channel interface — but the plugin's outputs are four stereo PAIRS, so out 1 and out 2 arrive as the
+  L and R of one DAW track. Hosts that can only bus or insert FX on a whole stereo pair cannot then treat
+  Pulse and TND separately. `Stereo Pins` spends a pair on each pin (out 1/2, 3/4, 5/6) with the mono
+  stem mirrored L=R, so every pin is an ordinary centred stereo track. Six lanes instead of three, bought
+  deliberately for DAW ergonomics.
 - **Router:** `ChannelSplitRouter` returns `streamCount(slot 0) = channelLayout().size()` and places
   stream *k* by a **`laneStride`** taken from the layout:
   - **stride 2 — stereo streams:** `bus(0, k) → { lane 2k, lane 2k+1 }`. GB channel *k* → plugin stereo
@@ -221,38 +230,47 @@ same words. The old `Channels (1 GB)` label meant "one Game Boy" and read as a g
     backend writes only the L lane (`MesenNesSystem::finishBlock` fills `outs[2k]` and leaves
     `outs[2k+1]` at the caller-zeroed 0).
 
+  `StereoPinSplit` is the one mode that overrides the layout: a MONO layout on stride 2, so each pin
+  gets a real pair. `processBlock` then mirrors lane 2k into lane 2k+1 after rendering (`mirrorMonoToPair`
+  on the plan). That mirror lives in the **Engine, not the backend**, and deliberately so: the CLI's
+  `renderAudioPerChannel` also hands `finishBlock` distinct L/R buffers but wants R left *silent* (the
+  per-channel WAV export documents mono pins as "a silent R"), so a backend-side "fill both lanes" would
+  corrupt it. Being a copy rather than a sum is safe because a split is single-system, so the R lanes are
+  still exactly the zero `processBlock` filled them with.
+
   `Engine::processBlock` already zeroes all 8 lanes before routing, so unused lanes are silent for free.
 - **Lane plan (cached, not per block).** `Engine::syncSplitPlan()` resolves `{ nStreams, laneStride,
-  lanesNeeded }` on the four edges that can change it — `setAudioRouting` + the three structural ops —
-  because `channelLayout()` returns a `std::vector` and the audio thread must not allocate to count
+  lanesNeeded, mirrorMonoToPair }` on the four edges that can change it — `setAudioRouting` + the three
+  structural ops — because `channelLayout()` returns a `std::vector` and the audio thread must not count
   streams. `processBlock` only tests `lanesNeeded <= numOutputs`, so a narrow host (an SDL 4-channel
-  pick) still carries `Pins` and falls back for `Channels` on its own.
+  pick) still carries `Pins` (3 lanes) and falls back for `Channels` (5) and `Stereo Pins` (6) on its own.
 - **NES tap arming (the load-bearing part for NES).** `MesenNesSystem::channelLayout()` reports
   per-channel streams only once `NesSoundMixer::SetChannelCapture` has run, and that was **construct-only**
   (from the "mesen" role's `channelExportMode`) — so a split mode would have silently rendered a plain
   stereo mix. `syncSplitPlan()` arms it live via `MesenNesSystem::setChannelExportMode`
-  (`PinSplit → 1`, `ChannelSplit → 3`) **without rebuilding the core**: a routing flip must not reset a
+  (either pin mode → 1, `ChannelSplit` → 3) **without rebuilding the core**: a routing flip must not reset a
   playing game the way `setRegion` does. It records `{ SystemId, prevMode }` for what it armed and
   restores that first on every re-resolve, so the CLI / render path — which legitimately sets
   `channelExportMode` at construct and never selects a split routing — is never disturbed. Deliberately
   NOT a `ConfigField` / `applyRoleConfig` entry: routing is the single owner in a live host.
 - **Gating (authority in native).** The `Engine` builds `ChannelSplitRouter` **only** when the routing
   is a split mode and `systemCount() == 1` (and unlinked — link groups round-robin multiple GBs into
-  their own buses); `PinSplit` additionally requires the system to be a `MesenNesSystem`, since nothing
-  else has output pins. Otherwise it builds the normal `MultiOutRouter` and the layout is inert. A
+  their own buses); both pin modes additionally require the system to be a `MesenNesSystem`, since
+  nothing else has output pins. Otherwise it builds the normal `MultiOutRouter` and the layout is inert. A
   multi-instance project can never mis-route. The TS UI mirrors this gating purely for UX
   (`validAudioRoutings` in [menuDefs.ts](../packages/retroplug/ui/screens/menu/menuDefs.ts), whose
   predicate mirrors `validSplits`).
 - **RPC/command:** the guard in `EngineRpcService::setAudioRouting`
-  ([EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp)) is `mode > 4`; the
+  ([EngineRpcService.cpp](../packages/native/src/host/rpc/EngineRpcService.cpp)) is `mode > 5`; the
   `SetAudioRouting` `DspCommand` path is unchanged.
 - **Port labels: generic (decision).** Keep the static `Out 1..4 L/R` labels with a documented mapping
   (GB: Out1 = Pulse1, Out2 = Pulse2, Out3 = Wave, Out4 = Noise. NES `Channels`: lanes 1..5 =
-  Square1/Square2/Triangle/Noise/DMC. NES `Pins`: lanes 1..3 = Pulse/TND/Expansion). Mode-aware
-  relabeling is a deferred follow-on.
-- **Still GB-only: stereo-per-stem.** The 5 NES core channels as stereo PAIRS would need 10 lanes,
-  which is why NES is mono in the plugin. Widening `DISTRHO_PLUGIN_NUM_OUTPUTS` would shift the
-  DAW-visible bus layout of every existing session, so it is not on the table for this.
+  Square1/Square2/Triangle/Noise/DMC. NES `Pins`: lanes 1..3 = Pulse/TND/Expansion. NES `Stereo Pins`:
+  Out1 = Pulse, Out2 = TND, Out3 = Expansion). Mode-aware relabeling is a deferred follow-on.
+- **Still GB-only: stereo-per-stem for CHANNELS.** The 5 NES core channels as stereo pairs would need 10
+  lanes, which is why `Channels` is mono-packed on the NES. (The 3 pins fit at 6, which is what makes
+  `Stereo Pins` possible at all.) Widening `DISTRHO_PLUGIN_NUM_OUTPUTS` would shift the DAW-visible bus
+  layout of every existing session, so it is not on the table for this.
 
 ## 5. CLI output option
 
@@ -364,7 +382,8 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
    clone, loud configure-time failure if a bump invalidates it.
 3. **NES in plugin:** ~~deferred — NES per-channel is CLI-only in v1~~ — **SHIPPED**, via mono-lane
    packing (`ChannelSplitRouter::laneStride`) plus a live tap arm in `Engine::syncSplitPlan`. Menu rows
-   `Channels` (5 mono lanes) + `Pins` (3). Stereo-per-stem stays GB-only — §3/§4.
+   `Channels` (5 mono lanes), `Pins` (3) and `Stereo Pins` (3 pairs). Stereo-per-stem for the 5 CHANNELS
+   stays GB-only (10 lanes needed) — §3/§4.
 4. **NES 5-mono stems:** raw pre-DAC linear levels with an explicit **"does not sum"** label — §3b.
 5. **Plugin port labels:** **generic** `Out 1..4 L/R` + a documented mapping — §4.
 6. **WAV format:** **16-bit PCM**, positional channels — §5.
@@ -434,16 +453,21 @@ reflect-cpp `DefaultIfMissing`-tolerant config that crosses to native), **not** 
 7. **NES in the plugin — DONE (mono-lane packing).** `ChannelSplitRouter` gained a `laneStride`: 2 keeps
    the GB pair-per-stream layout byte-identical, 1 gives a mono stream one lane, so the NES's 5 core
    channels fit lanes 0..4 and its 3 pins lanes 0..2 without widening
-   `DISTRHO_PLUGIN_NUM_OUTPUTS`. `AudioRouting::PinSplit = 4` is the NES-only pin mode (it falls back to
-   Stereo on any other console); `ChannelSplit` now means "this system's channels", GB or NES. Menu rows
-   are `Channels` + `Pins` (`validAudioRoutings`), replacing the mis-read `Channels (1 GB)`.
+   `DISTRHO_PLUGIN_NUM_OUTPUTS`. `AudioRouting::PinSplit = 4` and `StereoPinSplit = 5` are the NES-only
+   pin modes (both fall back to Stereo on any other console); `ChannelSplit` now means "this system's
+   channels", GB or NES. Menu rows are `Channels`, `Pins` and `Stereo Pins` (`validAudioRoutings`),
+   replacing the mis-read `Channels (1 GB)`. `Stereo Pins` spends a whole pair per pin (mirrored L=R, via
+   the Engine so the CLI export keeps its silent R) because the plugin's outputs are stereo PAIRS: under
+   the packed `Pins` layout, Pulse and TND share one DAW track and hosts that only bus whole pairs cannot
+   separate them.
    `Engine::syncSplitPlan` resolves the lane plan on routing/system changes instead of rebuilding a
    `channelLayout()` vector on the audio thread every block, and arms the NES tap **live** —
    `channelExportMode` was construct-only, so without this a split mode silently rendered the plain mix.
    It restores what it armed on the way out, leaving the CLI/render construct-time path untouched.
    Guards: `NesSplitRouting.test.cpp` (a real Mesen core through the Engine: the arm, the 3- and 5-lane
    fan-outs, the round-trip restore, and the fall-back when a second system arrives — every case fails if
-   the arming is removed) + `EngineChannelSplit.test.cpp`'s mono-packing / lane-budget / non-NES-Pins
-   sections over fakes.
+   the arming is removed) — including the pair-per-pin layout, asserted as bit-identical lanes within
+   each pair, which fails if the mirror is dropped — + `EngineChannelSplit.test.cpp`'s mono-packing /
+   lane-budget / non-NES-Pins sections over fakes.
 8. **Follow-ons** (decisions permitting) — upstream-vs-diff for the SameBoy patch; the NES separation
    pot; EPSM; mode-aware plugin port relabeling; stereo-per-stem for the NES (needs > 8 ports).

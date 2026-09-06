@@ -43,13 +43,15 @@ export const MidiRouting = {
 } as const satisfies Record<string, MidiRouting>;
 
 // Audio output-pair placement. Crosses to native's AudioRouting enum by index via `audioRoutingToIndex`
-// (Stereo=0 … PinSplit=4). The two split modes are single-system-only (the menu gates them via
+// (Stereo=0 … StereoPinSplit=5). The three split modes are single-system-only (the menu gates them via
 // `validAudioRoutings`; native re-checks systemCount()==1 and is the authority):
-//   channelSplit  one system's channels — a Game Boy's 4 STEREO channels across the 8 outs, or a NES's
-//                 5 MONO core channels across outs 1..5.
-//   pinSplit      a NES's three 2A03 output pins (Pulse | TND | Expansion) across outs 1..3, mono.
-//                 NES-only; native falls back to Stereo for any other console.
-export const AUDIO_ROUTING_VALUES = ["stereo", "twoPerInstance", "onePerInstance", "channelSplit", "pinSplit"] as const;
+//   channelSplit    one system's channels — a Game Boy's 4 STEREO channels across the 8 outs, or a NES's
+//                   5 MONO core channels across outs 1..5.
+//   pinSplit        a NES's three 2A03 output pins (Pulse | TND | Expansion) across outs 1..3, mono.
+//   stereoPinSplit  the same three pins, one PAIR each (outs 1/2, 3/4, 5/6), mirrored L=R — so every pin
+//                   is a normal stereo track in a DAW that can only bus/FX whole pairs.
+// Both pin modes are NES-only; native falls back to Stereo for any other console.
+export const AUDIO_ROUTING_VALUES = ["stereo", "twoPerInstance", "onePerInstance", "channelSplit", "pinSplit", "stereoPinSplit"] as const;
 export type AudioRouting = (typeof AUDIO_ROUTING_VALUES)[number];
 
 // --- per-system role enums -------------------------------------------------

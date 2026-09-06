@@ -414,7 +414,7 @@ test("instance menu hides Replace / Remove / Link Group for a lone instance, sho
   expect(findItem(multi, "inst-link")).toBeTruthy();
 });
 
-test("Audio Routing offers the splits only for a single system (Channels), and Pins only for a NES", () => {
+test("Audio Routing offers the splits only for a single system (Channels), and the pin modes only for a NES", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/a.gb", gbRom());
@@ -429,11 +429,12 @@ test("Audio Routing offers the splits only for a single system (Channels), and P
   expect(stores.project.settings().audioRouting).toBe("channelSplit");
   expect(audioRow().label).toBe("Audio Routing: Channels");
 
-  // Pins is NES-only: a GB wraps straight from Channels back to Stereo, never landing on pinSplit.
+  // Both pin modes are NES-only: a GB wraps straight from Channels back to Stereo, never landing on
+  // pinSplit or stereoPinSplit.
   audioRow().onSelect!();
   expect(stores.project.settings().audioRouting).toBe("stereo");
 
-  // A second system drops BOTH splits from the cycle, so stepping past OnePerInstance wraps to Stereo(0)
+  // A second system drops EVERY split from the cycle, so stepping past OnePerInstance wraps to Stereo(0)
   // (native gates it too, so this is UX only — the three per-instance modes stay).
   stores.project.systems.addSystem("/roms/a.gb");
   stores.project.setAudioRouting("onePerInstance");
@@ -441,13 +442,13 @@ test("Audio Routing offers the splits only for a single system (Channels), and P
   expect(stores.project.settings().audioRouting).toBe("stereo");
 });
 
-test("Audio Routing offers Pins for a single NES, after Channels", () => {
+test("Audio Routing offers both pin modes for a single NES, after Channels", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/g.nes", nesRom());
   const audioRow = () => findItem(submenuChildren(buildStartMenu(ctxOf(stores)).items, "start-project"), "proj-audio")!;
 
-  // One NES: the full cycle is Stereo -> 2/Inst -> 1/Inst -> Channels -> Pins -> wrap.
+  // One NES: the full cycle is Stereo -> 2/Inst -> 1/Inst -> Channels -> Pins -> Stereo Pins -> wrap.
   stores.project.systems.addSystem("/roms/g.nes");
   stores.project.setAudioRouting("onePerInstance");
   audioRow().onSelect!();
@@ -457,12 +458,15 @@ test("Audio Routing offers Pins for a single NES, after Channels", () => {
   expect(stores.project.settings().audioRouting).toBe("pinSplit");
   expect(audioRow().label).toBe("Audio Routing: Pins");
   audioRow().onSelect!();
+  expect(stores.project.settings().audioRouting).toBe("stereoPinSplit");
+  expect(audioRow().label).toBe("Audio Routing: Stereo Pins");
+  audioRow().onSelect!();
   expect(stores.project.settings().audioRouting).toBe("stereo");
 
-  // Stepping BACKWARDS off Stereo lands on Pins — the cycler steps the filtered list, so the last row
-  // is the NES-only one rather than a fixed index into the full table.
+  // Stepping BACKWARDS off Stereo lands on Stereo Pins — the cycler steps the filtered list, so the
+  // last row is the NES-only one rather than a fixed index into the full table.
   audioRow().onCycle!(-1);
-  expect(stores.project.settings().audioRouting).toBe("pinSplit");
+  expect(stores.project.settings().audioRouting).toBe("stereoPinSplit");
 });
 
 test("Link Group stays hidden for a NES peer (SameBoy serial link only); Replace / Remove still show", () => {

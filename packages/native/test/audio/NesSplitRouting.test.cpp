@@ -80,11 +80,14 @@ std::unique_ptr<MesenNesSystem> buildNes(SystemId id) {
     return e;
 }
 
-// Eight output lanes plus the peak-magnitude readout the checks are phrased in.
+// Eight output lanes plus the readouts the checks are phrased in: each lane's peak magnitude, and the
+// biggest sample-level divergence within each stereo PAIR (0 => the pair's two lanes are identical,
+// which is what "the mono stem was mirrored across the pair" means).
 struct Lanes {
     std::array<std::vector<float>, 8> buf;
     std::array<float*, 8>             ptr{};
     std::array<float, 8>              peak{};
+    std::array<float, 4>              pairDiff{};
 
     Lanes() {
         for (std::size_t i = 0; i < buf.size(); ++i) {
@@ -92,10 +95,13 @@ struct Lanes {
             ptr[i] = buf[i].data();
         }
     }
-    void resetPeaks() { peak.fill(0.0f); }
+    void resetPeaks() { peak.fill(0.0f); pairDiff.fill(0.0f); }
     void accumulatePeaks() {
         for (std::size_t L = 0; L < buf.size(); ++L)
             for (float x : buf[L]) peak[L] = std::max(peak[L], std::abs(x));
+        for (std::size_t p = 0; p < pairDiff.size(); ++p)
+            for (std::uint32_t i = 0; i < kFrames; ++i)
+                pairDiff[p] = std::max(pairDiff[p], std::abs(buf[2 * p][i] - buf[2 * p + 1][i]));
     }
 };
 
@@ -143,6 +149,54 @@ TEST_CASE("Engine PinSplit arms a real NES tap live and fans 3 mono pins across 
     CHECK(lanes.peak[0] > kSignal);
     for (int L = 3; L < 8; ++L)
         CHECK(lanes.peak[L] == 0.0f);
+    // Pin 2 (TND) sits on the RIGHT of the same pair, so out 1/2 is one DAW track carrying two different
+    // pins. That is exactly what StereoPinSplit exists to avoid, and the contrast the next case asserts.
+    CHECK(lanes.pairDiff[0] > kSignal);
+}
+
+TEST_CASE("Engine StereoPinSplit gives each pin its own PAIR, mirrored L=R",
+          "[audio][channelsplit][nes]") {
+    Engine eng(kSampleRate);
+    eng.adoptSystem(buildNes(1));
+    eng.setAudioRouting(AudioRouting::StereoPinSplit);
+
+    // Same tap as PinSplit — the modes differ only in how many lanes the three streams spread over.
+    auto* nes = dynamic_cast<MesenNesSystem*>(eng.findSystem(1));
+    REQUIRE(nes != nullptr);
+    CHECK(nes->channelExportMode() == 1);
+    CHECK(nes->channelLayout().size() == 3);
+
+    Lanes lanes;
+    driveAndMeasure(eng, 1, lanes, 8);
+
+    // Pulse now fills BOTH lanes of pair 0 — a centred stereo track, not a hard-left one. The R lane
+    // carrying signal at all is the whole feature: under PinSplit it would be TND.
+    CHECK(lanes.peak[0] > kSignal);
+    CHECK(lanes.peak[1] > kSignal);
+    // Bit-identical across each pair (a copy of the L lane, never a second summed write — a doubled
+    // stem would show as peak[1] == 2*peak[0] with pairDiff == peak[0]).
+    CHECK(lanes.peak[1] == lanes.peak[0]);
+    for (int p = 0; p < 3; ++p)
+        CHECK(lanes.pairDiff[p] == 0.0f);
+    // 3 pins × 2 lanes = 6, so the 4th pair is past the layout and untouched.
+    CHECK(lanes.peak[6] == 0.0f);
+    CHECK(lanes.peak[7] == 0.0f);
+}
+
+TEST_CASE("StereoPinSplit needs 6 lanes, so a narrow host falls back rather than truncating",
+          "[audio][channelsplit][nes]") {
+    // The SDL 4-channel case: mono Pins (3 lanes) fits, the pair-per-pin layout does not.
+    Engine eng(kSampleRate);
+    eng.adoptSystem(buildNes(1));
+    eng.setAudioRouting(AudioRouting::StereoPinSplit);
+
+    Lanes lanes;
+    driveAndMeasure(eng, 1, lanes, 4);  // only 4 lanes offered — 6 needed
+
+    // MultiOutRouter → the plain mixed stereo into pair 0, and pair 1 silent.
+    CHECK(lanes.peak[0] > kSignal);
+    CHECK(lanes.peak[2] == 0.0f);
+    CHECK(lanes.peak[3] == 0.0f);
 }
 
 TEST_CASE("Engine ChannelSplit on a real NES fans 5 mono core channels across outs 0..4",

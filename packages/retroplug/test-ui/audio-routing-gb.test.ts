@@ -1,14 +1,14 @@
 // Project > Audio Routing for a Game Boy, end to end on the headless display: "Channels" is offered,
-// "Pins" is not (a GB has no 2A03 output pins to split). The NES counterpart is audio-routing-nes.test.ts
+// neither pin row is (a GB has no 2A03 output pins to split). The NES counterpart is audio-routing-nes.test.ts
 // — a separate file because the UI harness boots one app per FILE and tests within one share it, so a
 // second drop here would make it a two-system project and change the gating under test.
 //
 // Stepping BACKWARDS off Stereo is the load-bearing assertion: it lands on the last OFFERED row. If the
-// cycler stepped a fixed-length table and merely hid Pins, this would land on a phantom row.
+// cycler stepped a fixed-length table and merely hid the pin rows, this would land on a phantom row.
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
 
-test("Audio Routing on a Game Boy offers Channels but never Pins", () => {
+test("Audio Routing on a Game Boy offers Channels but neither pin mode", () => {
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
 
@@ -32,7 +32,7 @@ test("Audio Routing on a Game Boy offers Channels but never Pins", () => {
 
   ui.tapKey(Key.Left);
   ui.pump(6);
-  expect(ui.focused()!.text).toBe("Audio Routing: Channels"); // NOT Pins
+  expect(ui.focused()!.text).toBe("Audio Routing: Channels"); // NOT either pin row
 
   // And forward from there wraps to Stereo — Channels really is the last row for a GB.
   ui.tapKey(Key.Enter);

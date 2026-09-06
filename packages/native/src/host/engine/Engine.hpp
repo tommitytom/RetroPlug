@@ -191,6 +191,10 @@ private:
         std::uint32_t nStreams    = 0;
         std::size_t   laneStride  = 2;  // 2 = a stereo pair per stream, 1 = one mono lane per stream
         std::size_t   lanesNeeded = 0;
+        // A MONO layout given a full pair per stream (StereoPinSplit): the backend fills only the L lane,
+        // so processBlock mirrors it into the R one afterwards. False for a genuinely stereo layout (the
+        // GB writes both lanes itself) and for mono packing (l and r are the same buffer).
+        bool          mirrorMonoToPair = false;
     };
     SplitPlan splitPlan_;
 

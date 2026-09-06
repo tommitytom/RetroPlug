@@ -103,7 +103,8 @@ void Engine::syncSplitPlan() {
         armedTap_ = {};
     }
 
-    const bool split = audioRouting_ == AudioRouting::ChannelSplit || audioRouting_ == AudioRouting::PinSplit;
+    const bool pins  = audioRouting_ == AudioRouting::PinSplit || audioRouting_ == AudioRouting::StereoPinSplit;
+    const bool split = pins || audioRouting_ == AudioRouting::ChannelSplit;
     if (!split || systemCount() != 1) return;  // multi-system / non-split → MultiOutRouter
 
     SystemBase* sys = project_.systems().front().get();
@@ -112,14 +113,14 @@ void Engine::syncSplitPlan() {
     // Pins are a 2A03 property — nothing else has output pins to split. A GB (or any other console)
     // asked for them falls back to Stereo rather than silently rendering something else.
     auto* nes = dynamic_cast<MesenNesSystem*>(sys);
-    if (audioRouting_ == AudioRouting::PinSplit && !nes) return;
+    if (pins && !nes) return;
 
     // Arm the NES tap for the mode being entered (a GB already reports its 4 channels unconditionally),
-    // remembering what it was so the restore above can undo exactly this.
+    // remembering what it was so the restore above can undo exactly this. Both pin modes tap the SAME
+    // three streams — they differ only in how many lanes those streams are spread over.
     if (nes) {
-        const std::uint32_t want = audioRouting_ == AudioRouting::PinSplit
-                                       ? 1u   // StereoModPins: Pulse | TND | lumped Expansion
-                                       : 3u;  // IndividualMono: the 5 core channels
+        const std::uint32_t want = pins ? 1u   // StereoModPins: Pulse | TND | lumped Expansion
+                                        : 3u;  // IndividualMono: the 5 core channels
         if (nes->channelExportMode() != want) {
             armedTap_ = { true, nes->id(), nes->channelExportMode() };
             nes->setChannelExportMode(want);
@@ -135,10 +136,16 @@ void Engine::syncSplitPlan() {
     const bool allMono = std::none_of(layout.begin(), layout.end(),
                                       [](const ChannelStream& s) { return s.stereo; });
 
-    splitPlan_.valid       = true;
-    splitPlan_.nStreams    = static_cast<std::uint32_t>(layout.size());
-    splitPlan_.laneStride  = allMono ? 1u : 2u;
-    splitPlan_.lanesNeeded = splitPlan_.laneStride * layout.size();
+    // Mono streams normally pack one per lane, EXCEPT under StereoPinSplit, which deliberately spends a
+    // whole pair on each so every pin lands as its own DAW track (see AudioRouting.hpp). That is the one
+    // case where the backend's L-only write has to be mirrored across the pair afterwards.
+    const bool pairPerMono = allMono && audioRouting_ == AudioRouting::StereoPinSplit;
+
+    splitPlan_.valid            = true;
+    splitPlan_.nStreams         = static_cast<std::uint32_t>(layout.size());
+    splitPlan_.laneStride       = (allMono && !pairPerMono) ? 1u : 2u;
+    splitPlan_.lanesNeeded      = splitPlan_.laneStride * layout.size();
+    splitPlan_.mirrorMonoToPair = pairPerMono;
 }
 
 // Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
@@ -250,6 +257,15 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     if (splitPlan_.valid && splitPlan_.lanesNeeded <= numOutputs) {
         ChannelSplitRouter router(outputs, numOutputs, splitPlan_.nStreams, splitPlan_.laneStride);
         runBlockWithRouter(frames, router);
+        // StereoPinSplit: each mono pin got a whole pair, and a mono backend writes only the L lane
+        // (MesenNesSystem::finishBlock fills outs[2k]). Mirror it so the pin arrives as a normal centred
+        // stereo track. A COPY, not a sum: the split is single-system and the R lanes are still exactly
+        // the zero filled in above. Deliberately here and not in the backend — the CLI's
+        // renderAudioPerChannel also hands it distinct L/R buffers but wants R left silent, so a
+        // backend-side "fill both lanes" would corrupt the per-channel WAV export.
+        if (splitPlan_.mirrorMonoToPair)
+            for (std::uint32_t k = 0; k < splitPlan_.nStreams; ++k)
+                std::copy_n(outputs[2 * k], frames, outputs[2 * k + 1]);
         return;
     }
 

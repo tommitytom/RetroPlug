@@ -485,19 +485,24 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
 
 // --- name tables (mirror the native enums, ported from legacy menuDefs.tsx) ---------------------------
 const MIDI_ROUTING_NAMES = ["Send to All", "4 Ch / Inst", "1 Ch / Inst", "Ch -> Inst"];
-// Indices 3/4 (channelSplit / pinSplit) fan ONE system's channels across the 8 outputs, so they're
-// offered only for a single system — and "Pins" only for a NES, the only console with output pins to
-// split (see validAudioRoutings). Native gates both the same way and is the authority. The labels
-// deliberately match the System > Render submenu's SPLIT_LABELS: same concept, same words.
-const AUDIO_ROUTING_NAMES = ["Stereo", "2 Ch / Inst", "1 Ch / Inst", "Channels", "Pins"];
+// Indices 3..5 (channelSplit / pinSplit / stereoPinSplit) fan ONE system's channels across the 8 outputs,
+// so they're offered only for a single system — and the two pin rows only for a NES, the only console
+// with output pins to split (see validAudioRoutings). Native gates them the same way and is the
+// authority. "Channels" / "Pins" deliberately match the System > Render submenu's SPLIT_LABELS: same
+// concept, same words. "Stereo Pins" spends a whole output pair on each pin so a DAW that can only
+// bus/FX whole stereo pairs can treat each one separately.
+const AUDIO_ROUTING_NAMES = ["Stereo", "2 Ch / Inst", "1 Ch / Inst", "Channels", "Pins", "Stereo Pins"];
+
+/** The NES-only routing modes: both pin splits. A GB has no 2A03 output pins to fan out. */
+const NES_ONLY_ROUTINGS: readonly AudioRouting[] = ["pinSplit", "stereoPinSplit"];
 
 /** Which routing modes the Audio Routing cycler offers for a project. UX only — native re-checks.
- *  A split needs exactly one system (a lone system has no link peers), and "Pins" additionally needs
- *  that system to be a NES. Mirrors `validSplits`, which gates the Render submenu on the same pair. */
+ *  A split needs exactly one system (a lone system has no link peers), and the pin rows additionally
+ *  need that system to be a NES. Mirrors `validSplits`, which gates the Render submenu on the same pair. */
 export function validAudioRoutings(systems: readonly Pick<SystemView, "platform">[]): AudioRouting[] {
   if (systems.length !== 1) return [...AUDIO_ROUTING_VALUES.slice(0, 3)];
   const all = [...AUDIO_ROUTING_VALUES];
-  return systems[0].platform === "nes" ? all : all.filter((v) => v !== "pinSplit");
+  return systems[0].platform === "nes" ? all : all.filter((v) => !NES_ONLY_ROUTINGS.includes(v));
 }
 const LAYOUT_NAMES = ["Auto", "Row", "Column", "Grid"];
 const MODEL_NAMES = ["Auto", "DMG-B", "MGB", "SGB", "SGB PAL", "SGB2", "CGB-0", "CGB-A", "CGB-B", "CGB-C", "CGB-D", "CGB-E", "AGB", "GBP"];

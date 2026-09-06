@@ -1,7 +1,8 @@
-// Project > Audio Routing for a NES, end to end on the headless display. A NES offers BOTH split rows —
-// "Channels" (its 5 mono core channels) and "Pins" (its 3 mono 2A03 output pins) — where a Game Boy
-// offers only the first (see audio-routing-gb.test.ts, a separate file because the UI harness boots one
-// app per FILE and tests within one share it).
+// Project > Audio Routing for a NES, end to end on the headless display. A NES offers all three split
+// rows — "Channels" (its 5 mono core channels), "Pins" (its 3 mono 2A03 output pins) and "Stereo Pins"
+// (those same 3 pins, a stereo PAIR each) — where a Game Boy offers only the first (see
+// audio-routing-gb.test.ts, a separate file because the UI harness boots one app per FILE and tests
+// within one share it).
 //
 // This is the on-screen half of the pure-TS gating test (test/menu/leaves.test.ts): it proves the
 // filtered cycler actually renders and steps that way through the real Menu component, not just that
@@ -9,7 +10,7 @@
 
 import { test, expect, ui, navTo, Key } from "ui-harness";
 
-test("Audio Routing on a NES cycles through Channels and Pins", () => {
+test("Audio Routing on a NES cycles through Channels, Pins and Stereo Pins", () => {
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
 
@@ -41,11 +42,12 @@ test("Audio Routing on a NES cycles through Channels and Pins", () => {
   expect(step()).toBe("Audio Routing: 2 Ch / Inst");
   expect(step()).toBe("Audio Routing: 1 Ch / Inst");
   expect(step()).toBe("Audio Routing: Channels"); // no "(1 GB)" — it read as a gigabyte
-  expect(step()).toBe("Audio Routing: Pins");     // NES-only; the whole point of this test
-  expect(step()).toBe("Audio Routing: Stereo");   // wraps
+  expect(step()).toBe("Audio Routing: Pins");        // NES-only
+  expect(step()).toBe("Audio Routing: Stereo Pins"); // NES-only; a pair per pin, for DAW bussing
+  expect(step()).toBe("Audio Routing: Stereo");      // wraps
 
-  // Left steps back onto the LAST offered row, which here is the NES-only one.
+  // Left steps back onto the LAST offered row, which here is a NES-only one.
   ui.tapKey(Key.Left);
   ui.pump(6);
-  expect(ui.focused()!.text).toBe("Audio Routing: Pins");
+  expect(ui.focused()!.text).toBe("Audio Routing: Stereo Pins");
 });
