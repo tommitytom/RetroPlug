@@ -34,7 +34,10 @@ The rules below are the parts that don't fit those.
   only the plugin calls). `deps/catch2` is the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
   `test:plugin` binaries (`retroplug-plugin-test` / `retroplug-classid-test` /
-  `retroplug-audio-test` / `retroplug-watcher-test`) as `Catch2::Catch2WithMain`.
+  `retroplug-audio-test` / `retroplug-watcher-test` / `retroplug-dynparams-test`) as
+  `Catch2::Catch2WithMain`. `retroplug-dynparams-test` is the odd one out: it compiles DPF's
+  format-neutral core (`DistrhoPlugin.cpp`) plus its OWN `DistrhoPluginInfo.h`, building no plugin
+  format at all, to drive `PluginExporter::reinitParameters` over a toy plugin.
 - **`deps/sameboy` is patched at configure — a dirty working tree there is
   EXPECTED, not stray changes.** The per-channel (4-stem) Game Boy audio tap lives
   in `Core/apu.{c,h}` and ships as a tracked patch
@@ -144,8 +147,9 @@ must be backed by an actual exit-zero** from one of these.
 The headless loop (the only path — legacy is gone) is documented in
 [spec/06-build-test.md](spec/06-build-test.md): `pnpm test` (pure-TS mock),
 `test:native` (real host + cores), `test:ui` (LVGL React), `test:plugin` (Catch2
-C++ unit checks — the per-context window-hook routing + the class-id counter sync
-that keeps the DAW-hosted editor from rendering blank), `screenshot`,
+C++ unit checks — the per-context window-hook routing, the class-id counter sync
+that keeps the DAW-hosted editor from rendering blank, and the DPF dynamic-parameter
+diff classifier), `screenshot`,
 `reaper:editor` (`tools/run-reaper-editor.sh` — floats the hosted plugin editor in
 headless Reaper and asserts its LVGL snapshot rendered; the only check of on-screen
 editor rendering, not in CI), `reaper:editor-reopen` (`tools/run-reaper-editor-reopen.sh`
@@ -155,7 +159,13 @@ still shown; mouse-driven since keys don't reach the plugin editor headlessly),
 project already in the control plane and asserts the editor shows it, the session-restore /
 setState half; deterministic, no mouse) — both guard the editor↔control-plane single-store
 graph (a close/reopen or a setState-restored project showing the start menu means the UI
-composed its own store again); not in CI. Then the `tools/run-sanitizer.sh` thread / address checks,
+composed its own store again); not in CI. `reaper:params` / `reaper:params-clap`
+(`tools/run-reaper-params.sh` — reads the plugin's parameter names through ReaScript before and
+after click-loading mGB, asserting the per-ROM CC labels replaced the generic pool and the
+parameter COUNT held; the only proof a host acts on the re-read flag DPF raises, and the only
+check that covers the editor's parameter-map idle poll. Run it per FORMAT: the two take different
+paths in DPF, and it verifies which format Reaper actually loaded, since a bare "RetroPlug" lets
+Reaper pick VST3 for both). Then the `tools/run-sanitizer.sh` thread / address checks,
 and `validate`. The LSDj-sync / DAW-timing / audio-quality matrix runs headlessly
 too — the real-Reaper
 `reaper:lsdj-*` renders + `tools/reaper-timing-analyze.py`; see

@@ -1,11 +1,17 @@
-# Dynamic parameters (planned, not built)
+# Dynamic parameters
 
-**Status: design only. No code exists yet.** This doc plans per-ROM DAW parameters: when mGB or
-BlipToaster is loaded, the host should show named automation lanes ("PU1 Duty", "Noise Env") that map
-to that ROM's MIDI CCs, instead of one generic list. It spans two repos: the DPF fork
-(`deps/dpf.js/deps/dpf`, `git@github.com:tommitytom/DPF.git`) and RetroPlug's plugin + TS layer.
+**Status: built.** Per-ROM DAW parameters: when mGB or BlipToaster is loaded, the host shows named
+automation lanes ("PU1 Pulse Width", "Noise Volume") mapped to that ROM's MIDI CCs, instead of one
+generic list. It spans two repos: the DPF fork (`deps/dpf.js/deps/dpf`,
+`git@github.com:tommitytom/DPF.git`) and RetroPlug's plugin + TS layer.
 
-Scope is **CLAP and VST3**. LV2, VST2, AU, JACK and the standalone keep today's behaviour unchanged.
+Scope is **CLAP and VST3**. LV2, VST2, AU, JACK and the standalone keep today's behaviour unchanged:
+they pass no callback, `Plugin::canUpdateParameterInfo()` is false there, and the pool keeps the names
+it was declared with.
+
+Verified against real Reaper in both formats (`pnpm reaper:params` / `reaper:params-clap`). Sections
+1-5 below describe the design as built; section 9 records where the build diverged from the original
+plan and why.
 
 ## 1. Why this does not work today
 
@@ -98,11 +104,11 @@ Plugin::requestParameterInfoUpdate()      // plugin -> DPF, any thread
 
 - **Descriptor change** (`name` / `shortName` / `unit` / `description` / the `kParameterIsHidden`
   bit): applied immediately, contributes `kParameterInfoChanged`.
-- **Enum values / value formatting**: applied, contributes `kParameterTextChanged`.
-- **Structural change** (`symbol`, `designation`, `groupId`, `ranges`, or any hint other than
-  `kParameterIsHidden`): **not applied**. Logged via `d_stderr2` and skipped. Structural changes are
-  a contract violation for this feature, and silently applying them would desync the audio thread
-  (see 3.3) and reinterpret recorded automation.
+- **Structural change** (`symbol`, `designation`, `groupId`, `ranges`, `enumValues`, or any hint other
+  than `kParameterIsHidden`): **not applied**, and refused for the whole index so a mixed edit cannot
+  half-apply. Logged via `d_stderr2`, contributes `kParameterInfoRefused`. Structural changes are a
+  contract violation for this feature, and silently applying them would desync the audio thread (see
+  3.3) and reinterpret recorded automation.
 
 Rejecting rather than supporting structural changes is deliberate: supporting them means a
 deactivate/reactivate cycle on CLAP and a component reload on VST3, which is a much larger feature
@@ -211,24 +217,26 @@ override would live in the project JSON, and per the config-migration rule that 
 
 ## 6. Verification
 
-- **`pnpm test`** covers the TS projection: role table plus active systems in, flat descriptor list
-  out. Pure logic, no host.
-- **`retroplug-plugin-test`** (Catch2, `cmake --build build --target retroplug-plugin-test`) covers
-  the diff classifier: descriptor-only change applies; a range or symbol change is rejected and does
-  not mutate the live `Parameter`.
-- **Real VST3 host.** A new `tools/reaper-params.lua` + `tools/run-reaper-params.sh`, modelled on
-  [tools/reaper-editor-open.lua](../tools/reaper-editor-open.lua): insert RetroPlug, read
-  `TrackFX_GetNumParams` / `TrackFX_GetParamName`, load an mGB project, re-read, and assert the names
-  changed while the count did not. This is the only check that proves a host honours the restart
-  flag.
-- **Real CLAP host.** Reaper reads CLAP too. [tools/reaper-env.sh:132-142](../tools/reaper-env.sh#L132-L142)
-  currently symlinks only `build/bin/retroplug.vst3` into `$HOME/.vst3`; add the `retroplug.clap` ->
-  `$HOME/.clap` twin and run the same Lua with the format forced. `build/bin/retroplug.clap` already
-  builds.
-- **`tools/run-sanitizer.sh`** must stay clean, specifically the TSAN leg: the whole point of the
-  side array in 3.3 is that the audio thread's `hints` read is never written.
-- Add the new job to [tools/run-reaper-suite.sh](../tools/run-reaper-suite.sh) once it passes, keeping
-  the `/dev/shm` concurrency cap in mind.
+- **`pnpm test midi`** covers the TS projection
+  ([test/midi/parameterMap.test.ts](../packages/retroplug/test/midi/parameterMap.test.ts)): slot
+  arithmetic, the per-system cap, and the routing-reachability rule.
+- **`pnpm test:plugin`** runs `retroplug-dynparams-test`
+  ([test/plugin/DynamicParameters.test.cpp](../packages/native/test/plugin/DynamicParameters.test.cpp)),
+  which drives `reinitParameters()` directly over a toy plugin with no plugin format built at all.
+  It pins the classifier and, critically, that toggling hidden never writes `Parameter::hints`.
+- **Real hosts.** `pnpm reaper:params` (VST3) and `pnpm reaper:params-clap` (CLAP) insert RetroPlug
+  with no project, read every parameter name through ReaScript, click-load mGB **through the UI**,
+  and re-read: the names must become mGB's map, `"1: CC 1"` must be gone, and the count must not have
+  moved. This is the only check that proves a host acts on the flag the plugin raises, and loading
+  through the UI also covers the editor idle poll. Both are in
+  [run-reaper-suite.sh](../tools/run-reaper-suite.sh) as `params-vst3` / `params-clap`; neither is in
+  CI (they need a full DAW + X stack).
+- The format is requested by its **prefixed** name (`"CLAPi: RetroPlug"`) and then re-checked against
+  what Reaper actually loaded. A bare `"RetroPlug"` let Reaper pick VST3 for both legs, so the CLAP
+  run was silently a second VST3 run that still reported PASS.
+- **`tools/run-sanitizer.sh thread`** passes, but note what it does *not* cover: it builds and runs
+  `retroplug-host`, which does not link DPF, so it never exercises this code. The guard for the
+  `hints` invariant in 3.3 is the Catch2 case above, not TSAN.
 
 ## 7. Risks and open questions
 
@@ -247,15 +255,37 @@ override would live in the project JSON, and per the config-migration rule that 
 
 ## 8. Sequencing
 
-Each item is a commit that builds and passes on its own.
+Landed in this order, each a commit that builds and passes on its own. The first four are in the DPF
+fork, the rest here.
 
-1. DPF: map `kParameterIsHidden` to `CLAP_PARAM_IS_HIDDEN` and `V3_PARAM_IS_HIDDEN`. Standalone
-   improvement, no new API.
+1. DPF: map `kParameterIsHidden` to `CLAP_PARAM_IS_HIDDEN` and `V3_PARAM_IS_HIDDEN`.
 2. DPF: the macro, the `Plugin` API, the `PrivateData` fields, `reinitParameters()` and its diff
-   classifier. No backend wiring yet, so nothing observable changes.
-3. DPF: CLAP wiring (deferral + rescan). Verify against Reaper's CLAP scan.
+   classifier.
+3. DPF: CLAP wiring (deferral + rescan).
 4. DPF: VST3 wiring (latched flag + titles-changed) and the separate-controller guard.
-5. RetroPlug: grow the pool, add the `__rp_parameterMapJson` seam, wire `setParameterValue` to
-   synthesised CC. Names still generic.
-6. RetroPlug: the mGB and BlipToaster CC tables plus the TS projection, with `pnpm test` coverage.
-7. Tooling: `run-reaper-params.sh` for both formats, then add it to the suite.
+5. RetroPlug: the mGB and BlipToaster CC tables plus the TS projection.
+6. RetroPlug: the pool, the `__rp_parameterMapJson` seam, the editor idle poll, and
+   `setParameterValue` to synthesised CC.
+7. `retroplug-dynparams-test`, then `run-reaper-params.sh` for both formats and the suite entry.
+
+## 9. Where the build diverged from the plan
+
+- **Enum values are structural, not a descriptor.** The plan applied them under a
+  `kParameterTextChanged` flag. They cannot be: VST3 derives `step_count` from `enumValues.count`, and
+  CLAP's `IS_STEPPED` is on its critical list needing `RESCAN_ALL`. Applying them live would leave a
+  host with a stale step count. The separate text flag went with them; a change now notifies with
+  `RESCAN_INFO|RESCAN_TEXT` unconditionally, which is what DPF already does elsewhere and is cheap.
+- **A refusal is whole-index.** The plan did not say what happens to the descriptor fields of an index
+  whose ranges also moved. They are dropped, so a mixed edit cannot half-apply.
+- **The pool's per-slot count stayed at 16, and the tables are curated.** The plan flagged the size as
+  a guess pending an audit of the real CC maps. Audited: mGB documents ~24 controls across four
+  channels, BlipToaster far more. Both tables carry the subset worth an automation lane and leave out
+  setup-only controls (pitchbend range, preset load, sustain). 16 fits both with room.
+- **Slots are only claimed when the routing can reach them.** Not in the plan at all, and it turned out
+  to matter: a parameter write becomes an ordinary staged CC, so `FourChannelsPerInstance` cannot
+  address a ROM's fifth voice and the one-channel modes reach only its first. Those slots stay
+  unclaimed rather than pretending to work.
+- **The editor idle poll.** The plan polled only from `setState` and `activate`, which misses the main
+  case: a ROM loaded through the UI never passes through `setState`. `SharedDSP` gained a
+  `pollParameterMap` hook the editor drives from `uiIdle`.
+- **TSAN does not cover this.** See section 6.
