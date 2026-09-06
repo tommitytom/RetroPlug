@@ -177,6 +177,34 @@ private:
     // first (they differ per router — the flat multi-out array vs the per-system pairs).
     void runBlockWithRouter(std::uint32_t frames, const AudioRouter& router);
 
+    // Re-resolve splitPlan_ (and arm/disarm any NES per-channel tap it needs) from the CURRENT routing
+    // mode + system set. Called on every edge that can change either: setAudioRouting and the three
+    // structural ops. Deliberately NOT called per block — channelLayout() returns a std::vector, and the
+    // audio thread must not allocate to answer "how many lanes".
+    void syncSplitPlan();
+
+    // The resolved lane assignment for a split routing (see AudioRouting.hpp). Invalid => processBlock
+    // uses the MultiOutRouter. lanesNeeded is checked against the host's actual output count per block,
+    // so a narrow device (an SDL 4-channel pick) still falls back to Stereo on its own.
+    struct SplitPlan {
+        bool          valid       = false;
+        std::uint32_t nStreams    = 0;
+        std::size_t   laneStride  = 2;  // 2 = a stereo pair per stream, 1 = one mono lane per stream
+        std::size_t   lanesNeeded = 0;
+    };
+    SplitPlan splitPlan_;
+
+    // The NES tap syncSplitPlan() armed, and what its export mode was BEFORE we touched it. Restored
+    // before every re-resolve so leaving a split mode (or gaining a second system) puts the core back
+    // exactly as found. Scoped to what WE armed on purpose: the CLI / RenderHost set channelExportMode at
+    // construct through the mesen role blob and never select a split routing, so they are never disturbed.
+    struct ArmedTap {
+        bool          active   = false;
+        SystemId      id       = 0;
+        std::uint32_t prevMode = 0;
+    };
+    ArmedTap armedTap_;
+
     Project          project_;
     SnapshotRegistry registry_;
     DspRuntime dsp_;

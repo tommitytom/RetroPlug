@@ -32,10 +32,16 @@ Engine::Engine(double sampleRate) : sampleRate_(sampleRate) {
 void Engine::adoptSystem(std::unique_ptr<SystemBase> sys) {
     project_.adoptSystem(sys.release());  // Project takes ownership of the raw pointer
     project_.rebuildLinkGroups();
+    syncSplitPlan();  // the system set decides whether a split routing is live at all
 }
 
 std::unique_ptr<SystemBase> Engine::removeSystem(SystemId id) {
-    return std::unique_ptr<SystemBase>(project_.removeSystemAndRelease(id));  // does its own rebuild
+    auto removed = std::unique_ptr<SystemBase>(project_.removeSystemAndRelease(id));  // does its own rebuild
+    // Drop the arm record FIRST if it named the departing core — it is the caller's to delete now, and
+    // syncSplitPlan must not chase a pointer through a Project that no longer holds it.
+    if (armedTap_.active && armedTap_.id == id) armedTap_ = {};
+    syncSplitPlan();
+    return removed;
 }
 
 std::unique_ptr<SystemBase> Engine::replaceSystem(SystemId id, std::unique_ptr<SystemBase> sys) {
@@ -43,6 +49,10 @@ std::unique_ptr<SystemBase> Engine::replaceSystem(SystemId id, std::unique_ptr<S
     // (then it was never adopted) — either way it's the leftover for the caller to dispose.
     SystemBase* old = project_.swapSystem(id, sys.release());
     project_.rebuildLinkGroups();
+    // Same reasoning as removeSystem: the core we armed is gone, so forget it rather than restoring a
+    // mode onto the FRESH system that inherited its id (which arrived with its own construct-time value).
+    if (armedTap_.active && armedTap_.id == id) armedTap_ = {};
+    syncSplitPlan();
     return std::unique_ptr<SystemBase>(old);
 }
 
@@ -76,7 +86,60 @@ void Engine::stageControllerMidi(std::vector<std::uint8_t> bytes) {
 void Engine::setBpm(double bpm) { bpm_ = bpm; }
 void Engine::setTransport(bool playing) { transport_ = playing; }
 void Engine::setPpq(double ppq) { ppq_ = ppq < 0.0 ? 0.0 : ppq; }
-void Engine::setAudioRouting(AudioRouting mode) { audioRouting_ = mode; }
+void Engine::setAudioRouting(AudioRouting mode) {
+    audioRouting_ = mode;
+    syncSplitPlan();
+}
+
+void Engine::syncSplitPlan() {
+    splitPlan_ = {};
+
+    // Put back whatever we last armed, before deciding anything — so every transition (mode change,
+    // second system added, ROM replaced) starts from the core's own construct-time state. A system that
+    // has since gone is simply not found and the record is dropped.
+    if (armedTap_.active) {
+        if (auto* prev = dynamic_cast<MesenNesSystem*>(project_.findSystem(armedTap_.id)))
+            prev->setChannelExportMode(armedTap_.prevMode);
+        armedTap_ = {};
+    }
+
+    const bool split = audioRouting_ == AudioRouting::ChannelSplit || audioRouting_ == AudioRouting::PinSplit;
+    if (!split || systemCount() != 1) return;  // multi-system / non-split → MultiOutRouter
+
+    SystemBase* sys = project_.systems().front().get();
+    if (!sys) return;
+
+    // Pins are a 2A03 property — nothing else has output pins to split. A GB (or any other console)
+    // asked for them falls back to Stereo rather than silently rendering something else.
+    auto* nes = dynamic_cast<MesenNesSystem*>(sys);
+    if (audioRouting_ == AudioRouting::PinSplit && !nes) return;
+
+    // Arm the NES tap for the mode being entered (a GB already reports its 4 channels unconditionally),
+    // remembering what it was so the restore above can undo exactly this.
+    if (nes) {
+        const std::uint32_t want = audioRouting_ == AudioRouting::PinSplit
+                                       ? 1u   // StereoModPins: Pulse | TND | lumped Expansion
+                                       : 3u;  // IndividualMono: the 5 core channels
+        if (nes->channelExportMode() != want) {
+            armedTap_ = { true, nes->id(), nes->channelExportMode() };
+            nes->setChannelExportMode(want);
+        }
+    }
+
+    // Read the layout ONCE, now that the tap reflects the mode (channelLayout() follows it). A layout is
+    // all-stereo (GB) or all-mono (NES); a mixed one has no sensible packing, so treat it as stereo and
+    // let the lane budget decide — the only mixed case would be a future backend, and it stays inert
+    // rather than mis-routing.
+    const std::vector<ChannelStream> layout = sys->channelLayout();
+    if (layout.empty()) return;
+    const bool allMono = std::none_of(layout.begin(), layout.end(),
+                                      [](const ChannelStream& s) { return s.stereo; });
+
+    splitPlan_.valid       = true;
+    splitPlan_.nStreams    = static_cast<std::uint32_t>(layout.size());
+    splitPlan_.laneStride  = allMono ? 1u : 2u;
+    splitPlan_.lanesNeeded = splitPlan_.laneStride * layout.size();
+}
 
 // Run the kernel (if active) + fan its system-addressed sinks to the cores BEFORE onProcess
 // (delivered this block); `dInfo`/`AudioBlockInfo` are both built at the block-start `ppq_`, and
@@ -176,18 +239,18 @@ void Engine::processBlock(std::uint32_t frames, float* const* outputs, std::size
     for (std::size_t c = 0; c < numOutputs; ++c)
         std::fill_n(outputs[c], frames, 0.0f);
 
-    // ChannelSplit: one system fans its per-channel streams across the output pairs (a Game Boy's 4
-    // channels → outs 0/1,2/3,4/5,6/7). Gated to a single system — a lone system has no link peers, so
-    // this IS the "unlinked" condition; any other project falls through to MultiOutRouter and the wide
-    // layout stays inert (the load-bearing correctness rule: the split is Engine/router-driven, never an
-    // always-on system trait). A non-GB single system reports 1 stream → collapses to Stereo (pair 0).
-    if (audioRouting_ == AudioRouting::ChannelSplit && systemCount() == 1) {
-        const auto n = static_cast<std::uint32_t>(project_.systems().front()->channelLayout().size());
-        if (n >= 1 && 2u * n <= numOutputs) {
-            ChannelSplitRouter router(outputs, numOutputs, n);
-            runBlockWithRouter(frames, router);
-            return;
-        }
+    // A split routing: one system fans its per-channel streams across the outputs (a Game Boy's 4 stereo
+    // channels → outs 0/1,2/3,4/5,6/7; a NES's 5 mono core channels → outs 0..4, or its 3 pins → outs
+    // 0..2). syncSplitPlan() already resolved the stream count + lane stride and gated on a single system
+    // — a lone system has no link peers, so that IS the "unlinked" condition; any other project leaves
+    // the plan invalid and falls through to MultiOutRouter, the wide layout inert (the load-bearing
+    // correctness rule: the split is Engine/router-driven, never an always-on system trait). A single
+    // system with no split of its own reports 1 stereo stream → collapses to Stereo (pair 0). The lane
+    // budget is checked HERE, not there, because only the caller knows how wide this host actually is.
+    if (splitPlan_.valid && splitPlan_.lanesNeeded <= numOutputs) {
+        ChannelSplitRouter router(outputs, numOutputs, splitPlan_.nStreams, splitPlan_.laneStride);
+        runBlockWithRouter(frames, router);
+        return;
     }
 
     MultiOutRouter router(outputs, numOutputs, audioRouting_);

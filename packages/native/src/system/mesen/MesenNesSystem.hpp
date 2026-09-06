@@ -115,6 +115,17 @@ public:
     // Cartridge-accuracy switches (0 = chip, 1 = Everdrive N8). Live - the core reads them in place.
     void setS5bNoise(std::uint32_t mode);
     void setMmc5PhaseReset(std::uint32_t mode);
+    // Arm/disarm the per-channel tap AFTER construct, so a plugin routing change (Engine::syncSplitPlan)
+    // can reach the split modes without rebuilding the core the way setRegion does — a routing flip must
+    // not reset a playing game. Same modes as MesenNesConfig::channelExportMode (0 = off/Mix, 1 = pins,
+    // 3 = 5 individual mono); channelLayout() follows it. Value-guarded, and pre-onActivate it only records
+    // the mode (onActivate arms from config_). NOT cheap - SetChannelCapture allocates the per-stream blip
+    // buffers + resamplers - but it is a user menu action, not a per-block cost, and it runs on the same
+    // audio thread that already absorbs SameBoySystem::restartEmulator from applyConfigField.
+    void setChannelExportMode(std::uint32_t mode);
+    /** The armed per-channel export mode (0 = off). Lets the Engine record what it found before arming,
+     *  so it can restore a construct-time (CLI / render) value it did not set. */
+    std::uint32_t channelExportMode() const { return config_.channelExportMode; }
     // The live APU flush window in CPU cycles (the mixer's conversion of apuLatencyMs against the region
     // clock). 0 before onActivate. Exposed for tests / introspection.
     std::uint32_t apuFlushCycleLength() const;

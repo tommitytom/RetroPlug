@@ -300,6 +300,18 @@ std::uint32_t MesenNesSystem::apuFlushCycleLength() const {
     return nesMixer_ ? nesMixer_->GetCycleLength() : 0;
 }
 
+void MesenNesSystem::setChannelExportMode(std::uint32_t mode) {
+    if (config_.channelExportMode == mode) return;
+    config_.channelExportMode = mode;
+    // Before onActivate there is no mixer yet — the new mode is recorded and onActivate arms from it.
+    if (!nesMixer_) return;
+    // Re-arms (or, at mode 0, frees) the per-stream blip buffers + resamplers. Any frames already
+    // captured under the OLD mode are dropped with them, which is what we want: the streams change
+    // shape, so a partial block of the previous layout would fan out to the wrong lanes.
+    nesMixer_->SetChannelCapture(mode, static_cast<std::uint32_t>(sampleRate_));
+    channelCapture_ = mode >= 1;
+}
+
 void MesenNesSystem::pressButton(std::uint8_t button, bool down) {
     pendingButtons_.push_back({ button, down });
 }
