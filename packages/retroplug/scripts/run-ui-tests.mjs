@@ -77,6 +77,9 @@ async function runOne({ file, slug }) {
   const romsDir = join(cfgDir, "roms");
   mkdirSync(romsDir, { recursive: true });
   copyFileSync(join(REPO, "resources/roms/mGB.gb"), join(romsDir, "mGB.gb"));
+  // A NES cart too, for the tests that need a non-GB console (console-dependent menu rows). Committed
+  // like mGB, so unconditional — unlike the two best-effort stages below.
+  copyFileSync(join(REPO, "resources/roms/bliptoaster.nes"), join(romsDir, "bliptoaster.nes"));
   // Stage an LSDj ROM too when one is present (local or the sibling resources tree) — the LSDj-overlay
   // test drops it; absent, that test SKIPs. It's a large external asset, so this is best-effort.
   for (const src of [join(REPO, "resources/roms/lsdj/lsdj9_4_2.gb"), join(REPO, "../resources/roms/lsdj/lsdj9_4_2.gb")]) {
