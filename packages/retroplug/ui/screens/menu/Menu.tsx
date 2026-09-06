@@ -32,6 +32,8 @@ import {
   KEY_PAGE_UP,
   KEY_PAGE_DOWN,
   KEY_DELETE,
+  KEY_UP,
+  KEY_DOWN,
   type MenuNav,
 } from "../../../src/keyCodes";
 import { setMenuModalActive } from "./menuModal";
@@ -120,6 +122,14 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // The held d-pad button's repeat state, or null: slot = `${pad}:${name}` (release matches on it), the
   // nav it drives, when the hold started, and when the last repeat fired.
   const holdRepeatRef = useRef<{ slot: string; nav: MenuNav; since: number; last: number } | null>(null);
+  // Edge-wrap arming, per direction: the OS auto-repeats a held arrow as a STREAM of press=true events
+  // (no press=false until the physical release), so "the first press of a hold" — the only press allowed
+  // to wrap the cursor to the far end — is a press=true with no press=false in between. Tracked here on
+  // the "key" bus (which runs ahead of the LVGL keypad nav it arms), consumed by onItemKey, reset on
+  // release. The gamepad path doesn't use these — it passes `fresh` explicitly (its press event is the
+  // fresh one; the synthesized repeats are not).
+  const arrowHeldRef = useRef({ up: false, down: false });
+  const arrowFreshRef = useRef({ up: false, down: false });
   const [promptState, setPromptState] = useState<PromptState | null>(null);
   const promptStateRef = useRef<PromptState | null>(null);
   const setPrompt = useCallback((next: PromptState | null) => {
@@ -219,7 +229,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   }, [setPrompt]);
 
   const onItemKey = useCallback(
-    (e: { key: number }) => {
+    (e: { key: number; fresh?: boolean }) => {
       (e as { stopPropagation?: () => void }).stopPropagation?.(); // else bubbles to the scroll View
       if (capturingIdRef.current || promptStateRef.current) return; // freeze nav while a modal is armed
       const entries = flatRef.current;
@@ -233,9 +243,27 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       if (e.key === ELvKey.LV_KEY_DOWN) dir = 1;
       else if (e.key === ELvKey.LV_KEY_UP) dir = -1;
       else return;
+      // Edge-wrap: only the FIRST press of a hold wraps to the far end — a repeat of a still-held key
+      // stops at the edge (a held button shouldn't bounce the cursor back up the list). A gamepad press
+      // passes `fresh` explicitly; a keyboard press is fresh iff the "key" bus saw a release since its
+      // last press (read-and-clear below, so only the first event of the hold may wrap).
+      const d = dir === 1 ? "down" : "up";
+      let fresh: boolean;
+      if (e.fresh !== undefined) fresh = e.fresh;
+      else {
+        fresh = arrowFreshRef.current[d];
+        arrowFreshRef.current[d] = false;
+      }
       let next = cur + dir;
       while (next >= 0 && next < entries.length && (entries[next].item.kind === "separator" || entries[next].item.disabled)) next += dir;
-      if (next < 0 || next >= entries.length) return; // no wrap-around
+      if (next < 0 || next >= entries.length) {
+        if (!fresh) return; // a held key's repeat stops at the edge
+        // A fresh press at the edge wraps to the far end (skipping separators / disabled rows): going
+        // down wraps to the FIRST navigable row, going up wraps to the LAST.
+        next = dir === 1 ? 0 : entries.length - 1;
+        while (next >= 0 && next < entries.length && (entries[next].item.kind === "separator" || entries[next].item.disabled)) next += dir;
+        if (next < 0 || next >= entries.length) return; // nothing navigable at all
+      }
       const nextId = entries[next].item.id;
       focusedIdRef.current = nextId;
       setFocusedId(nextId);
@@ -252,6 +280,18 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     const code = args[0] as number;
     const press = args[1] as boolean;
     const mod = (args[2] as number) ?? 0;
+    // Arrow hold-tracking for edge-wrap (the LVGL keypad nav it arms runs a beat later, off the indev):
+    // the first press of a hold arms a one-shot wrap for its direction; the release disarms it.
+    if (code === KEY_UP || code === KEY_DOWN) {
+      const d = code === KEY_UP ? "up" : "down";
+      if (press) {
+        if (!arrowHeldRef.current[d]) arrowFreshRef.current[d] = true; // not held before → fresh press
+        arrowHeldRef.current[d] = true;
+      } else {
+        arrowHeldRef.current[d] = false;
+        arrowFreshRef.current[d] = false;
+      }
+    }
     if (!press) return;
     const itemById = (id: string): MenuItem | undefined => flatRef.current.find((f) => f.item.id === id)?.item;
 
@@ -305,11 +345,12 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // Apply a resolved menu-nav action from the gamepad, reusing the exact primitives the keyboard drives:
   // Up/Down/Left/Right feed onItemKey (a synthetic {key} is fine — it optional-chains stopPropagation);
   // Back closes the menu. Select reproduces BOTH the key-bus idle arming AND LVGL's Enter→CLICKED activate,
-  // since the gamepad bus never reaches the keypad indev (so there's no CLICKED to lean on).
+  // since the gamepad bus never reaches the keypad indev (so there's no CLICKED to lean on). `fresh`
+  // marks the first press of a hold (edge-wrap allowed) vs a synthesized repeat (stops at the edge).
   const applyMenuNav = useCallback(
-    (nav: MenuNav) => {
-      if (nav === "up") return onItemKey({ key: ELvKey.LV_KEY_UP });
-      if (nav === "down") return onItemKey({ key: ELvKey.LV_KEY_DOWN });
+    (nav: MenuNav, fresh = false) => {
+      if (nav === "up") return onItemKey({ key: ELvKey.LV_KEY_UP, fresh });
+      if (nav === "down") return onItemKey({ key: ELvKey.LV_KEY_DOWN, fresh });
       if (nav === "left") return onItemKey({ key: ELvKey.LV_KEY_LEFT });
       if (nav === "right") return onItemKey({ key: ELvKey.LV_KEY_RIGHT });
       if (nav === "back") return onClose();
@@ -373,10 +414,11 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       }
       return;
     }
-    // 3. Idle: drive nav (d-pad moves + cycles, A selects, B backs out) exactly like the keyboard.
+    // 3. Idle: drive nav (d-pad moves + cycles, A selects, B backs out) exactly like the keyboard. The
+    //    press is FRESH (a new physical press) — a held button's repeats come from the frame handler.
     const nav = menuNavForButton(name);
     if (!nav) return;
-    applyMenuNav(nav);
+    applyMenuNav(nav, true);
     // Arm hold-to-repeat for directional nav only: select/back fire exactly once per press (a held A must
     // not re-confirm, a held B must not stack backs-out). A newer press re-arms, so switching d-pad
     // buttons mid-hold moves the repeat to the new button.
@@ -415,7 +457,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     menuAxisDirRef.current.set(key, next);
     const nav = menuNavForAxisToken(next); // null when centred
     if (nav) {
-      applyMenuNav(nav);
+      applyMenuNav(nav, true); // a deliberate push is a fresh press (repeats come from the frame handler)
       holdRepeatRef.current = { slot: stickSlot, nav, since: tickRef.current, last: tickRef.current };
     } else if (holdRepeatRef.current?.slot === stickSlot) {
       holdRepeatRef.current = null; // back to centre: stop the repeat
