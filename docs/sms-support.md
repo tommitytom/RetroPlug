@@ -1439,6 +1439,52 @@ resets `groove_sel` to 0, aborting the glide. Narrow (it needs a Songs > Load la
 glide) and the fix is small - either leave the groove alone when `sel >= 16`, or read `glide_scratch`
 out of the RAM snapshot the way the cart reads it - but it is a real difference from `load_rebase`.
 
+#### Rendering: there is no song end to detect, and three things were missing
+
+**smsggdj has no HFF.** Its `H` is `CMD_HOP` - "end this track's phrase now", a jump inside a table - which
+is LSDj's plain hop, not LSDj's `HFF` stop. None of the 26 commands touches the transport. `play_state` is
+written in exactly two places (set by `engine_play`, cleared by `engine_stop`) and every `engine_stop`
+caller is a user action. And structurally there is nothing to end: when a chain finishes, `at_adv` walks
+down the column and `at_loopblk` returns to the top of that track's contiguous block, so columns loop
+independently and forever. DESIGN.md says it outright. **So song-length auto-detect is not a missing probe
+- it is not a question this console can answer**, and `--duration` is the honest contract. The nearest
+readable end is the per-track active flag (`chst + track*32 + 6`), which all four tracks clear when a
+LIVE-queued `$FE` stop reaches their chain end; that is a performance gesture, not something authored into
+a song, and `play_state` stays 1 through it.
+
+Finding that out turned up something worse: **rendering an smsggdj cart produced silence**, measured, with
+no diagnostic. Three independent gaps, all "SMS was never added to the render":
+
+- `pressPlay` knew `gb` and `nes`, so **play was never pressed**. Now it presses PAUSE (the SMS Z80 NMI /
+  the GG Start), gated on the ROM being smsggdj - on a generic Master System game that button pauses it.
+  It is a TOGGLE, so it first reads `play_state` and presses only when stopped.
+- `validateRenderOpts` rejected `--song`/`--song-index` for anything but gb/nes, which had also left the
+  `resolveSmsggdjSongSeed` below it **unreachable**. That seed wrote the superblock's `cur_slot` byte, which
+  is the right durable record but only a v0.46+ cart reads at boot - so on the shipped v0.45 it selected
+  nothing. Selection now resolves to an index and the song is written into the booted core through the same
+  `liveLoad` the Songs menu uses.
+- Nothing warned. A bare render now says the cart boots blank and lists the songs it could have played; a
+  render with no `--duration` says why no length can be detected.
+
+**The load has to wait for the cart, and "read it back" is not enough.** The write must land after the
+boot-time `song_new`, which blanks the block. Measured on v0.45: a write at 1500 or 2000 ms is undone and
+2500 ms survives - too tight to hard-code, since PAL runs ~17% slower. But retrying until the block reads
+back is *also* wrong: a write at 1750 ms verifies as a byte-perfect 6,912-byte block and is wiped 400 ms
+later, so the loop stops on a match that does not last. The loader therefore waits for `song_new`'s own
+footprint (wave_ram's preset waves, against work RAM that powers on all zeros) before writing, then
+requires the block to hold across several checks.
+
+**The UI's `System > Render` needed one more thing.** It snapshots the live battery and boots a fresh
+instance from it - which for this console describes a blank song. For a cart whose working song is outside
+the battery it now carries a savestate too (which does capture work RAM), so the render starts from what
+you are hearing. That is also why the play press had to become conditional.
+
+Guarded by `test-native/sms-render.test.ts`: `--song-index` on `.sms`, `--song` by name on `.gg`, the
+savestate path, the empty-slot error, and the one case that legitimately renders silence (no song
+selected) asserting the warning names the songs. Its context is shared and cleared between tests on
+purpose - a per-test store cannot tear down systems the native backend still holds, and the leftovers made
+the silence case come out at full level, passing for the wrong reason.
+
 #### The ROM half, still worth doing
 
 The Songs menu no longer waits on it. The change is scoped, and lives on branch `feature/cur-slot` in

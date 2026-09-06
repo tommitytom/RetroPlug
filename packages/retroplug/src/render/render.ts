@@ -20,9 +20,12 @@ import { siblingSavPath } from "../savPaths";
 import { decodeSav, encodeSav, kSavSize } from "../lsdj";
 import { listSongs as risaListSongs, type RisaSongInfo } from "../risaSav";
 import { loadSongToWorkingInSav } from "../risaSongOps";
-import { listSongs as smsggdjListSongs, setCurSlot as smsggdjSetCurSlot } from "../smsggdj/codec/sav";
+import { listSongs as smsggdjListSongs, isSmsggdjSav } from "../smsggdj/codec/sav";
+import { identifySmsggdjVersion } from "../smsggdj/romDetect";
+import { resolveSmsggdjLayout } from "../smsggdj/runtime/layout";
 import { isRisaRomHeader, runtime as risaRuntime } from "../risa";
-import { lsdjSongCatalog, risaSongCatalog } from "../tracker";
+import { lsdjSongCatalog, risaSongCatalog, smsggdjSongCatalog } from "../tracker";
+import { smsggdjIntegration } from "../tracker/trackerIntegration"; // the leaf: the barrel exports catalogs, not integrations
 import type { ChannelExportMode } from "../settingsEnums";
 import {
   type Platform,
@@ -37,6 +40,7 @@ import {
 const GB_START = 7; // GameboyButton::Start — LSDj/mGB begin playback on a Start press.
 const NES_START = 7; // NesButton::Start (same index) ; NES_SELECT = 6. risa plays a song on SELECT+START.
 const NES_SELECT = 6;
+const SMS_START = 7; // SmsButton::Start -> SmsController::Buttons::Pause. smsggdj toggles play/stop on it.
 // A fixed (non-auto-detect) render runs for `durationMs` if pinned, else `maxDurationMs` — so "max duration"
 // bounds every render, not just the LSDj auto-length cap. maxDurationMs defaults to 600000 (10 min) at the
 // CLI / worker seams, so a render with neither pinned falls back to that cap.
@@ -138,7 +142,9 @@ function resolveSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: L
   const platform = platformOf(o.rom);
   if (platform === "gb") return resolveLsdjSongSeed(ctx, o, log, warn);
   if (platform === "nes") return resolveRisaSongSeed(ctx, o, log, warn);
-  if (platform === "sms" || platform === "gg") return resolveSmsggdjSongSeed(ctx, o, log, warn);
+  // sms/gg is deliberately absent: smsggdj cannot be seeded through SRAM (see resolveSmsggdjSong), so
+  // runRenderJob resolves and applies it separately, after the boot settle.
+  if (platform === "sms" || platform === "gg") return undefined;
   throw new Error(
     `render: --song/--song-index is a Game Boy (LSDj) / NES (risa) / Master System + Game Gear (smsggdj) feature (got ${platform})`,
   );
@@ -219,7 +225,41 @@ export function readSmsggdjSongs(ctx: RenderContext, o: RenderOpts): { path: str
 /** smsggdj: unlike LSDj and risa, the seed does NOT move the song anywhere. This cart's working song is
  *  work RAM and it boots blank on purpose, so the save NAMES the slot and the cart loads it on the way
  *  up - the same mechanism the Songs menu uses. See src/tracker/smsggdjSongCatalog. */
-function resolveSmsggdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SongSeed {
+// --- smsggdj (SMS / GG) song selection --------------------------------------------------------------
+//
+// Unlike LSDj and risa this CANNOT be a seed. Those two keep the working song in the battery, so writing
+// the chosen song into the SRAM the fresh system boots from is enough. smsggdj's working song is the live
+// work-RAM block at $C000 and the cart boots deliberately blank (`song_new`, main.asm:238) - there is
+// nothing in the image to promote. An earlier version of this seeded the superblock's `cur_slot` byte,
+// which is the right durable record but only a v0.46+ cart reads it at boot, so on the shipped v0.45 it
+// selected nothing and the render came out silent. Selection therefore resolves to an INDEX here and the
+// song is written into the booted core by loadSmsggdjSongLive, the same path the Songs menu Load uses.
+
+/** True when `o.rom` is an smsggdj cart. Gates the play press, the song load and the no-song warning, so a
+ *  generic Master System game is left alone - on SMS the play button IS the Pause NMI, and pressing it on
+ *  an ordinary game would pause it. */
+function isSmsggdjRom(ctx: RenderContext, o: RenderOpts): boolean {
+  const bytes = ctx.backend.readFile(o.rom);
+  return !!bytes && identifySmsggdjVersion(bytes) !== null;
+}
+
+/** Is the smsggdj cart's transport running? Null when it cannot be told (no layout, no RAM snapshot) —
+ *  the caller then behaves as it did before, which is to press play. */
+function smsggdjIsPlaying(ctx: RenderContext, o: RenderOpts, id: number): boolean | null {
+  const rom = ctx.backend.readFile(o.rom);
+  const layout = rom ? resolveSmsggdjLayout(identifySmsggdjVersion(rom)) : null;
+  const ram = layout ? ctx.backend.readRam(id) : null;
+  if (!layout || !ram || ram.length <= layout.playState) return null;
+  return ram[layout.playState] !== 0;
+}
+
+/** The chosen smsggdj song: which slot, and its name for the output filename. */
+interface SmsggdjSongPick {
+  index: number;
+  name: string | null;
+}
+
+function resolveSmsggdjSong(ctx: RenderContext, o: RenderOpts, log: Logger, warn: Logger): SmsggdjSongPick {
   const { raw } = readRisaSav(ctx, o); // the sibling-sav resolution is console-agnostic despite the name
   const songs = smsggdjListSongs(raw);
   const listing = songs.map((sg) => `${sg.index}:${sg.name}`).join(", ") || "(none)";
@@ -234,11 +274,111 @@ function resolveSmsggdjSongSeed(ctx: RenderContext, o: RenderOpts, log: Logger, 
     if (hits.length > 1) warn(`render: ${hits.length} songs named "${o.song}"; using slot ${hits[0].index}`);
     idx = hits[0].index;
   }
-  const seed = smsggdjSetCurSlot(raw, idx);
-  if (!seed) throw new Error(`render: could not select smsggdj song ${idx}`);
   const name = songs.find((sg) => sg.index === idx)?.name || null;
-  log(`song "${name || "(unnamed)"}" (slot ${idx}) → loaded at boot`);
-  return { seed, name };
+  log(`song "${name || "(unnamed)"}" (slot ${idx}) → work RAM`);
+  return { index: idx, name };
+}
+
+// The load has to land AFTER the cart's boot-time `song_new`, which blanks the song block on the way up
+// (main.asm:224, right after the splash). The shared 1500 ms settle is tuned for the GB splash and is not
+// enough here: measured on the shipped v0.45, a write at 1500 or 2000 ms is silently undone and only
+// 2500 ms and later survive. A bigger fixed number would be guessing - the margin is ~500 ms on NTSC and
+// PAL runs ~17% slower - and simply retrying until the block reads back is NOT enough either: measured,
+// a write at 1750 ms verifies perfectly (the whole 6,912-byte block byte-identical) and is then wiped
+// 400 ms later, so the loop stops on a match that does not last.
+//
+// So wait for the cart to tell us it is past that point. `song_new` fills wave_ram with the 8 preset
+// waves, and work RAM powers on all zeros (MesenSmsSystem pins RamPowerOnState = AllZeros), so a
+// non-zero wave_ram IS "song_new has run". The write then still has to verify, and hold across several
+// checks - the readback is the guarantee, the boot signal is what stops it passing too early.
+const SMSGGDJ_STEP_MS = 250;
+const SMSGGDJ_BOOT_STEPS = 24; // x STEP = 6s of boot to wait through before writing
+const SMSGGDJ_HOLD_STEPS = 4; // consecutive verified checks (1s) before the load is believed
+const SMSGGDJ_WRITE_TRIES = 4;
+
+/** Any non-zero byte in `ram[at .. at+len)`. */
+function anyNonZero(ram: Uint8Array, at: number, len: number): boolean {
+  for (let i = at; i < at + len && i < ram.length; i++) if (ram[i] !== 0) return true;
+  return false;
+}
+
+/** `ram[at .. at+len) === want[from .. from+len)`. */
+function ramMatches(ram: Uint8Array, at: number, want: Uint8Array, from: number, len: number): boolean {
+  if (ram.length < at + len || want.length < from + len) return false;
+  for (let i = 0; i < len; i++) if (ram[at + i] !== want[from + i]) return false;
+  return true;
+}
+
+/** Write the chosen song into the booted cart's work RAM and confirm it stuck (see above). Returns having
+ *  verified the song is really in memory and stable.
+ *
+ *  Throws rather than warns, on every failure path. The user named a song; rendering the blank boot song
+ *  instead would produce a silent WAV that looks like a successful render - exactly the bug this whole
+ *  path exists to fix. */
+function loadSmsggdjSongLive(ctx: RenderContext, o: RenderOpts, id: number, index: number): void {
+  const rom = ctx.backend.readFile(o.rom);
+  const sav = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
+  if (!rom || !sav) throw new Error(`render: could not re-read the ROM/sav to load smsggdj song ${index}`);
+  const version = identifySmsggdjVersion(rom);
+  const layout = resolveSmsggdjLayout(version);
+  const writes = layout ? smsggdjIntegration.liveLoad?.(rom, sav, index, ctx.backend.readRam(id) ?? undefined) : null;
+  if (!layout || !writes?.length) {
+    throw new Error(
+      `render: could not load smsggdj song ${index} - no work-RAM layout for this build ` +
+        `(${version ?? "unrecognized version"}), or the song will not decode`,
+    );
+  }
+  const want = writes.find((w) => w.offset === layout.song)?.bytes;
+  if (!want) throw new Error(`render: smsggdj song ${index} produced no song block to write`);
+
+  // wave_ram is the block's first field, so it spans [song, song + phrasePool) - no extra symbol needed.
+  for (let i = 0; i < SMSGGDJ_BOOT_STEPS; i++) {
+    const ram = ctx.backend.readRam(id);
+    if (ram && anyNonZero(ram, layout.song, layout.phrasePool)) break;
+    ctx.audio.renderAudio(SMSGGDJ_STEP_MS);
+  }
+
+  // The whole block is compared, not a witness field: nothing else writes it while the transport is
+  // stopped, and a partial match is exactly the failure being guarded against.
+  for (let tries = 0; tries < SMSGGDJ_WRITE_TRIES; tries++) {
+    for (const w of writes) {
+      if (!ctx.backend.writeRam(id, w.offset, w.bytes))
+        throw new Error(`render: work-RAM write refused at +$${w.offset.toString(16)} loading smsggdj song ${index}`);
+    }
+    let held = 0;
+    while (held < SMSGGDJ_HOLD_STEPS) {
+      ctx.audio.renderAudio(SMSGGDJ_STEP_MS); // let the queued writes land, and the boot move on
+      const ram = ctx.backend.readRam(id);
+      if (!ram || !ramMatches(ram, layout.song, want, 0, want.length)) break;
+      held++;
+    }
+    if (held === SMSGGDJ_HOLD_STEPS) return;
+  }
+  throw new Error(
+    `render: smsggdj song ${index} would not stay in work RAM - the cart kept overwriting it (still booting?)`,
+  );
+}
+
+/** Warn when an smsggdj render was given no song to play. LSDj and risa boot into their working song, so a
+ *  bare `render cart.gb` makes music; this cart boots blank ON PURPOSE (`song_new`, so a first power-on
+ *  still makes a sound) and there is no working song in the battery to fall back on. Without --song the
+ *  output is therefore silence, which used to happen with no explanation at all. Not an error: rendering
+ *  the boot state is legitimate (it is what --no-start does elsewhere), and a `.sav` may hold no songs. */
+function warnIfSmsggdjHasNoSong(ctx: RenderContext, o: RenderOpts, platform: Platform, warn: Logger): void {
+  if (platform !== "sms" && platform !== "gg") return;
+  // A savestate carries work RAM, so it carries the working song - that is exactly how the UI's
+  // System > Render reaches this console, and warning there would be false.
+  if (o.state) return;
+  if (!isSmsggdjRom(ctx, o)) return;
+  const raw = ctx.backend.readFile(o.sav ?? siblingSavPath(o.rom));
+  if (!raw || !isSmsggdjSav(raw)) return;
+  const songs = smsggdjListSongs(raw);
+  if (!songs.length) return;
+  warn(
+    `render: smsggdj boots to a BLANK song (it keeps no working song in the battery), so this will render ` +
+      `silence — pass --song <name> or --song-index <n> to play one of: ` +
+      songs.map((sg) => `${sg.index}:${sg.name || "(unnamed)"}`).join(", "),
+  );
 }
 
 /** Build the single system + project it into the DSP runtime. `seed` (LSDj song bytes) forces the adopt
@@ -276,6 +416,9 @@ function currentSongName(ctx: RenderContext, o: RenderOpts, platform: Platform):
   if (!raw) return null;
   if (platform === "gb") return isLsdjSav(raw) ? lsdjSongCatalog.workingName(raw) : null;
   if (platform === "nes") return risaSongCatalog.workingName(raw); // self-guards on the N8T magic
+  // smsggdj answers from the superblock's cur_slot with no work RAM to consult, which is null on every
+  // build before v0.46 — so this falls through to the ROM stem there, as it did before.
+  if (platform === "sms" || platform === "gg") return smsggdjSongCatalog.workingName(raw);
   return null;
 }
 
@@ -507,9 +650,13 @@ function buildPlayingProbe(ctx: RenderContext, o: RenderOpts, id: number, platfo
 /** Validate a resolved render request against its platform. Throws on a bad split/platform or song/platform
  *  combo so the caller fails before loading anything. (Shared by the CLI and the worker.) */
 export function validateRenderOpts(o: RenderOpts, platform: Platform): void {
-  // Song selection promotes a saved catalog song to the working song — LSDj (GB) + risa (NES) only.
-  if ((o.song !== undefined || o.songIndex !== undefined) && platform !== "gb" && platform !== "nes")
-    throw new Error(`render: --song/--song-index is a Game Boy (LSDj) / NES (risa) feature (got ${platform})`);
+  // Song selection promotes a saved catalog song to the working song — LSDj (GB), risa (NES) and smsggdj
+  // (SMS/GG). smsggdj is not a seed but a post-boot work-RAM write; the flag is accepted all the same.
+  const songPlatforms: Platform[] = ["gb", "nes", "sms", "gg"];
+  if ((o.song !== undefined || o.songIndex !== undefined) && !songPlatforms.includes(platform))
+    throw new Error(
+      `render: --song/--song-index is a Game Boy (LSDj) / NES (risa) / Master System + Game Gear (smsggdj) feature (got ${platform})`,
+    );
   if (o.split === "pins") {
     if (platform !== "nes") throw new Error(`render: --split pins is NES-only (got ${platform})`);
   } else if (o.split === "channels" && platform !== "gb" && platform !== "nes") {
@@ -532,6 +679,22 @@ function pressPlay(ctx: RenderContext, sink: RenderSink, o: RenderOpts, id: numb
     return [head];
   }
   if (platform === "nes" && isRisaRom(ctx, o)) return pressRisaPlay(ctx, sink, id); // generic NES ROMs untouched
+  if ((platform === "sms" || platform === "gg") && isSmsggdjRom(ctx, o)) {
+    // The cart's play/stop control is the PAUSE button (SMS: the Z80 NMI; GG: its real Start): it sets
+    // nmi_event and the frame loop turns that into tp_start when stopped, tp_stop when playing
+    // (main.asm:928-936). From the boot SONG screen tp_start is engine_play in MODE_SONG - the whole song
+    // from song_cur, which is what a render wants. Gated on the cart being smsggdj: on a generic SMS game
+    // this button pauses it.
+    //
+    // It is a TOGGLE, so pressing it blind is wrong whenever the cart is already running - which a render
+    // restored from a savestate (the UI's System > Render carries one, so the render starts from what you
+    // were hearing) very much can be. Ask first.
+    if (smsggdjIsPlaying(ctx, o, id) === true) return [];
+    ctx.audio.pressButton(id, SMS_START, true);
+    const head = sink.renderChunk(DETECT_CHUNK_MS); // the song starts here — capture it as the lead-in
+    ctx.audio.pressButton(id, SMS_START, false);
+    return [head];
+  }
   return [];
 }
 
@@ -551,16 +714,26 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
     throw new Error(`render: could not set sample rate to ${o.sampleRate}Hz`);
 
   const seed = resolveSongSeed(ctx, o, log, warn);
+  // smsggdj resolves its song here rather than through the seed, because its working song is not in the
+  // battery — see resolveSmsggdjSong. Resolved BEFORE the boot so a bad --song fails fast.
+  const smsSong =
+    (platform === "sms" || platform === "gg") && (o.song !== undefined || o.songIndex !== undefined)
+      ? resolveSmsggdjSong(ctx, o, log, warn)
+      : undefined;
   const id = buildSystem(ctx, o, platform, seed?.seed);
 
   ctx.audio.renderAudio(1500); // settle boot (past the mGB/LSDj splash) before driving playback
   if (o.bpm) ctx.audio.setBpm(o.bpm);
   if (o.transport) ctx.audio.setTransport(true);
 
+  // AFTER the settle: the cart's boot blanks the song block, so an earlier write would be wiped.
+  if (smsSong) loadSmsggdjSongLive(ctx, o, id, smsSong.index);
+  else warnIfSmsggdjHasNoSong(ctx, o, platform, warn);
+
   const sr = ctx.audio.sampleRate();
   // Default the filename to the SONG: the selected song when --song/--song-index is used, else the sav's
   // working song. --out overrides both, so skip the sav read then.
-  const songName = o.out ? null : seed ? seed.name : currentSongName(ctx, o, platform);
+  const songName = o.out ? null : seed ? seed.name : smsSong ? smsSong.name : currentSongName(ctx, o, platform);
   const base = resolveOnExists(ctx, o, platform, outBase(o, songName));
 
   // Song-length auto-detect: when the ROM is a supported tracker (LSDj on GB, risa on NES) and the user
@@ -569,6 +742,18 @@ export function runRenderJob(ctx: RenderContext, o: RenderOpts, hooks: RenderHoo
   const isPlaying = buildPlayingProbe(ctx, o, id, platform, warn);
   // Auto-detect applies to both mix and split (GB channels) — split just renders per-channel chunks.
   const autoDetect = isPlaying !== null && o.start && o.durationMs === undefined;
+
+  // smsggdj has no song end to detect, so a render with no --duration silently ran for the whole 10-minute
+  // cap. That is not a missing probe we could add: `H` is a phrase hop, not LSDj's HFF stop, nothing in the
+  // command set touches the transport, and when a chain ends the track loops back to the top of its own
+  // contiguous block (engine.asm at_loopblk) - columns loop independently and forever, by design. Say so
+  // instead of leaving the user to guess why the WAV is exactly the cap long.
+  if (!autoDetect && o.durationMs === undefined && isSmsggdjRom(ctx, o)) {
+    warn(
+      `render: smsggdj songs loop forever (no HFF-style stop exists on this console), so song-length ` +
+        `auto-detect is not possible — rendering the full ${o.maxDurationMs}ms cap; pass --duration to pin a length`,
+    );
+  }
 
   // Announce before the (possibly multi-minute) render so callers don't look hung while it works.
   const how = autoDetect ? `detecting length (HFF, cap ${o.maxDurationMs}ms)` : `${o.durationMs ?? o.maxDurationMs}ms`;

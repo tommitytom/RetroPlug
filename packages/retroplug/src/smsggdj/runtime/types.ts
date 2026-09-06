@@ -12,6 +12,11 @@ export interface SmsggdjLayout {
   song: number;
   /** 6,912 - the SMDJ4 block length, a property of the format rather than of the build. */
   songLen: number;
+  /** The phrase pool inside the block: the region the sequencer READS and never writes back. That makes it
+   *  the honest witness for "did my write land and survive" - a whole-block compare would fail on cursor
+   *  and engine bookkeeping the cart legitimately owns. */
+  phrasePool: number;
+  phrasePoolLen: number;
   /** The 8-char song name. NOT in the block - SMDJ4 keeps it in the directory entry. */
   name: number;
   nameLen: number;

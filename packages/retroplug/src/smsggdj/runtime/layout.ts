@@ -29,6 +29,8 @@ function layoutFrom(symbolsKey: string, version: string = symbolsKey): SmsggdjLa
     // The block length is the FORMAT's (SMDJ4's 6,912 bytes), not a symbol: wave_ram_len is just the
     // 256 bytes of wave data that lead it. The layout only certifies where the block starts.
     songLen: SMDJ4_BLOCK_LEN,
+    phrasePool: s.phrase_pool,
+    phrasePoolLen: s.phrase_pool_len,
     name: s.song_name,
     nameLen: s.song_name_len,
     echo: s.echo_mode,

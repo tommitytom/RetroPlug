@@ -64,6 +64,18 @@ export function startSystemRender(backend: RenderBackend, sys: SystemView, req: 
       const tmp = `${dir}/.render-src-sys${sys.id}.sav`;
       if (backend.writeFileAtomic(tmp, sram)) spec.sav = tmp;
     }
+    // ...and for a cart whose WORKING SONG is not in the battery (smsggdj: it lives in work RAM and the
+    // cart boots blank on purpose), the battery does not describe what you are hearing — a fresh boot from
+    // it renders silence. Carry a savestate as well, which does capture work RAM, so the render starts
+    // from the song that is actually loaded. Additive: `state` is applied after the sav at construct, and
+    // no other console sets this flag, so nothing else changes.
+    if (resolveSongCatalog(sys.roles)?.workingSongOutsideBattery) {
+      const state = backend.readState(sys.id);
+      if (state) {
+        const tmp = `${dir}/.render-src-sys${sys.id}.ss0`;
+        if (backend.writeFileAtomic(tmp, state)) spec.state = tmp;
+      }
+    }
   } else {
     const state = backend.readState(sys.id);
     if (state) {

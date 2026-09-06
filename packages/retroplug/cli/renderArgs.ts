@@ -22,10 +22,16 @@ const RENDER_HINT = "run 'retroplug-cli render --help' for the full options";
 export const RENDER_HELP = `usage: retroplug-cli render <rom> [options]
 
 Render a Game Boy (.gb/.gbc), GBA (.gba), NES (.nes), Master System (.sms) or Game Gear (.gg) ROM to a WAV file. The ROM is booted and its audio
-is written to disk. For a saved LSDj / risa song, Start is pressed so it begins playing (use --no-start to
-capture raw boot audio); mGB needs no such press, as it plays from incoming MIDI. With a loaded LSDj (Game
-Boy) or risa (NES) sav the song length is auto-detected (rendered up to the HFF stop) unless you pin a fixed
-length with --duration.
+is written to disk. For a saved LSDj / risa / smsggdj song, play is pressed so it begins playing (use
+--no-start to capture raw boot audio); mGB needs no such press, as it plays from incoming MIDI. With a
+loaded LSDj (Game Boy) or risa (NES) sav the song length is auto-detected (rendered up to the HFF stop)
+unless you pin a fixed length with --duration.
+
+smsggdj (.sms/.gg) differs twice. It boots to a BLANK song by design - it keeps no working song in its
+battery - so --song/--song-index is REQUIRED or the render is silence. And its songs loop forever: H is
+a phrase hop, nothing in its command set stops the transport, and a track that reaches the end of its
+column loops back to the top of its block. There is no HFF-style stop to detect, so --duration is
+required too, or you get the full --max-duration cap.
 
 Durations accept a unit: 500ms, 3s, 2m (decimals ok, e.g. 1.5s); a bare number is milliseconds.
 
@@ -35,10 +41,11 @@ Arguments:
 Options:
   --sav <file>           Battery save (.sav) to load. Default: <rom>.sav next to the ROM, if it exists.
   --state <file>         Savestate to restore after boot (instead of a fresh boot).
-  --out <file>           Output path. Default: the working/selected song's name for an LSDj/risa cart, else
+  --out <file>           Output path. Default: the working/selected song's name for a tracker cart, else
                          the ROM name; <name>.wav for a mix, <name>_<channel>.wav for --split.
   --duration <time>      Fixed render length (e.g. 3s, 500ms, 2m). Turns OFF song-length auto-detection.
                          Default: auto for a loaded LSDj / risa sav, otherwise the --max-duration cap (10m).
+                         smsggdj songs have no end, so pin this for any .sms/.gg render.
   --max-duration <time>  Safety cap for song-length auto-detect when no HFF stop is found. Default: 10m.
   --sample-rate <hz>     Output sample rate. Default: 44100. Higher rates resample the console's audio up
                          (larger WAV, same song); must be set before the ROM boots (it always is here).
@@ -50,8 +57,10 @@ Options:
   --bpm <n>              Host tempo (BPM) for tempo-synced playback. Use with --transport.
   --transport            Run the host transport (play), so tempo-synced ROMs advance. Default: off.
   --no-start             Do NOT press Start on boot; render the raw boot/menu audio.
-  --song <name>          LSDj / risa: promote a saved song to the working song by name (case-insensitive).
-  --song-index <0-31>    LSDj / risa: promote a saved song by its slot number instead of by name.
+  --song <name>          LSDj / risa / smsggdj: play a saved song, by name (case-insensitive). LSDj and
+                         risa promote it to the working song in the battery before boot; smsggdj has no
+                         working song in its battery, so it is written into the booted cart's work RAM.
+  --song-index <0-31>    The same, by slot number instead of by name.
   --list-songs           LSDj / risa / smsggdj: print the sav's saved song names and exit (renders nothing).
   -h, --help             Show this help and exit.
 
@@ -60,7 +69,8 @@ Examples:
   retroplug-cli render song.gbc --split channels         # 4 per-channel stereo stems
   retroplug-cli render song.gbc --song INTRO --out intro.wav
   retroplug-cli render game.nes --split channels --duration 5s   # NES core channels, fixed 5s
-  retroplug-cli render song.gbc --sample-rate 96000      # render at 96 kHz`;
+  retroplug-cli render song.gbc --sample-rate 96000      # render at 96 kHz
+  retroplug-cli render smsggdj.sms --sav set.sav --song DEMO --duration 30s   # smsggdj: both flags needed`;
 
 function intValue(flag: string, raw: string | undefined): number {
   const n = Number(raw);

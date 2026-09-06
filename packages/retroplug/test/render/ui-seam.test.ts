@@ -13,7 +13,9 @@ import type { SystemView } from "../../src/systemsStore";
 
 /** A minimal SystemView carrying only the fields startSystemRender reads. */
 function sysView(over: Partial<SystemView>): SystemView {
-  return { id: 1, romPath: "/roms/song.gb", battery: true, ...over } as unknown as SystemView;
+  // `roles` is not optional on a real SystemView, and startSystemRender now reads it (to spot a cart whose
+  // working song lives outside the battery) — the cast would otherwise hand it undefined.
+  return { id: 1, romPath: "/roms/song.gb", battery: true, roles: [], ...over } as unknown as SystemView;
 }
 
 interface Captured {
