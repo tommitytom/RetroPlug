@@ -23,6 +23,9 @@ struct MesenNesRoleConfig {
     // Defaulted to 1 to match coreRoles.ts - the N8 is how NES music actually gets played back.
     std::uint32_t s5bNoise          = 1;
     std::uint32_t mmc5PhaseReset    = 1;
+    // Host directory the emulated EverDrive N8 SD card maps to. Construct-time (the FIFO is built in
+    // onActivate), so a live edit needs a reset — like `region`. Empty => a per-process scratch dir.
+    std::string   sdRoot;
 };
 
 // The SMS/GG slice of that same TS "mesen" role. A separate struct rather than more fields on the one

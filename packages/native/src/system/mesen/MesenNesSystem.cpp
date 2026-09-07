@@ -167,6 +167,9 @@ void MesenNesSystem::onActivate(double sampleRate) {
     if (auto* nesConsole = dynamic_cast<NesConsole*>(emu_->GetConsole().get())) {
         n8Role_ = std::make_unique<NesN8FifoRole>();
         n8Role_->onAttach(*nesConsole);
+        // The emulated SD card, for a ROM that pulls data off the cartridge itself. Set before the
+        // core runs a single instruction, so a boot-time sd_init sees it.
+        n8Role_->setSdRoot(config_.sdRoot);
 
         // Borrow the NES sound mixer for the live "mesen" knobs (APU flush window + per-channel capture).
         // Held for the emulator's lifetime, nulled in onDeactivate before teardown.
@@ -328,6 +331,13 @@ void MesenNesSystem::pushCoreBytes(std::uint32_t frame, const std::uint8_t* data
     if (n8Role_) {
         n8Role_->pushBytes(frame, data, size, flush);
     }
+}
+
+std::vector<std::uint8_t> MesenNesSystem::drainCoreBytes() {
+    // The other direction: what the ROM wrote to the FIFO with CMD_USB_WR. The role's queue is
+    // mutex-guarded, so this is safe from the control thread while the core runs.
+    if (!n8Role_) return {};
+    return n8Role_->drainUsbTx();
 }
 
 namespace {

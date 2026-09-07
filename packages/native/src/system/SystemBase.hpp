@@ -95,6 +95,12 @@ public:
     virtual void pushCoreBytes(std::uint32_t /*frame*/, const std::uint8_t* /*data*/, std::size_t /*size*/,
                                bool /*flush*/ = false) {}
 
+    // The inverse of pushCoreBytes: take the RAW bytes the core has sent host-ward since the last
+    // drain, oldest first. On the NES that is the N8 FIFO's `CMD_USB_WR` payload — the back-channel a
+    // cartridge uses to talk to the host (on hardware the MCU forwards it out of the USB port). Empty
+    // for cores with no such transport. Control-thread read; the NES implementation is mutex-guarded.
+    virtual std::vector<std::uint8_t> drainCoreBytes() { return {}; }
+
     // Audio-thread: enqueue a button transition.
     virtual void pressButton(std::uint8_t /*button*/, bool /*down*/) {}
 

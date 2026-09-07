@@ -85,7 +85,7 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::dspTraceNames>(e);
 }
 
-// --- debug: live-core inspection / stepping / breakpoints / profiler (22; CLI only, spec/09) ---
+// --- debug: live-core inspection / stepping / breakpoints / profiler (25; CLI only, spec/09) ---
 template <class Server>
 void registerDebugRpc(Server& s, DebugRpcService& d) {
     s.template addMethod<&DebugRpcService::getApuState>(d);
@@ -97,6 +97,7 @@ void registerDebugRpc(Server& s, DebugRpcService& d) {
     s.template addMethod<&DebugRpcService::getCpuRegisters>(d);
     s.template addMethod<&DebugRpcService::stepInstruction>(d);
     s.template addMethod<&DebugRpcService::drainEvents>(d);
+    s.template addMethod<&DebugRpcService::drainCoreBytes>(d);
     s.template addMethod<&DebugRpcService::loadLabels>(d);
     s.template addMethod<&DebugRpcService::symbolAddress>(d);
     s.template addMethod<&DebugRpcService::setCpuRegister>(d);

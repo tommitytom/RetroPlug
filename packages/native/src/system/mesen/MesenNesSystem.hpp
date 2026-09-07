@@ -56,6 +56,10 @@ public:
     void pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size,
                        bool flush = false) override;
 
+    // Control-thread: the N8 FIFO's CMD_USB_WR payload — what the ROM has sent host-ward since the
+    // last drain. Empty before activation or when the ROM has sent nothing.
+    std::vector<std::uint8_t> drainCoreBytes() override;
+
     // Audio-thread: queue a NES button transition. The byte is reinterpreted
     // as NesButton (Right/Left/Up/Down/A/B/Select/Start, positions 0..7).
     // Applied to Mesen's NesController at the top of the next onProcess.

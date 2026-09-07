@@ -41,6 +41,11 @@ struct MesenNesConfig {
     // resampler batching adds (window duration = cycleLength / cpuClock). Live-editable ("mesen" role knob);
     // converted to CPU cycles by NesSoundMixer::SetLatencyMs. ~1.4ms ≈ the historical 2500-cycle window (NTSC).
     double        apuLatencyMs      = 1.4;
+    // Host directory the emulated EverDrive SD card maps to ("/" on the card), for a ROM that pulls
+    // data off the cartridge's own storage. Empty => a per-process scratch dir (NesEverdriveFifo::
+    // defaultSdRoot), NOT the working directory. Applied at activate; there is no live toggle, so a
+    // change needs a rebuild (setRoleConfig + reset), same as `region`.
+    std::string   sdRoot;
     std::string   romPath;
     // See SameBoyConfig::savSuffix. 0 => owns `<rom>.sav`; N>=2 => `<rom>-N.sav`,
     // so duplicated / repeat-loaded instances don't clobber a shared sibling.
