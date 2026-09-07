@@ -9,13 +9,19 @@
 //   retroplug-n8-hwtest peek    <addr-hex> <len> [port]   # CMD_MEM_RD: read bytes from a device address
 //   retroplug-n8-hwtest poke    <addr-hex> <byte>[port]   # CMD_MEM_WR: write one byte to a device address
 //   retroplug-n8-hwtest read    <sd-path> <local-dest> [port]  # CMD_F_FRD: read an SD file over USB
+//   retroplug-n8-hwtest write   <local-src> <sd-path>  [port]  # CMD_F_FWR: write a local file to the SD card
+//   retroplug-n8-hwtest fiford  <count> [timeout-ms]   [port]  # read the cart's USB back-channel (CMD_USB_WR)
 //   retroplug-n8-hwtest vramdump <out.bin> [port]              # menu '*v': dump VRAM+palette+CHR (screenshot)
 //   retroplug-n8-hwtest sniff    [port]                        # memRD ADDR_SSR: a running game's live APU/PPU/OAM
 //   retroplug-n8-hwtest memwr    <addr-hex> <file> [port]      # block memWR + verify (live-patch CHR/PRG)
 //   retroplug-n8-hwtest info     [port]                        # CMD_SYS_INF + CMD_GET_VDC: serial/versions/form/volts
 //   retroplug-n8-hwtest fstest   [port]                        # CMD_F_AVB/DIR_MK/DEL: free space + scratch mkdir/rm
 //
-// peek/poke/read/vramdump/sniff/memwr/info/fstest drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
+// fiford is the read half of fifowr, and the only op that does NOT handshake first: Edio::connect starts with
+// flushInput, which would throw away bytes a running ROM had already queued. So it opens the port and reads,
+// and a wrong/absent port simply times out rather than reporting "no device".
+//
+// peek/poke/read/write/vramdump/sniff/memwr/info/fstest drive a bare Edio (no N8Host / streaming thread). peek/poke reach FPGA config regs like
 // the expansion-audio master volume at 0x1800023 (MapConfig.master_vol = scfg[3]; see krikzz edn8-pro-pub
 // edio/everdrive.h + fpga/base_sv/sys_cfg.sv). 0x1800023 <- 0..255, where 128 = unity gain. read pulls a whole
 // SD file (e.g. EDN8/sysdata/registry.bin) to a local file.
@@ -38,13 +44,30 @@
 
 using namespace retroplug;
 
+namespace {
+
+// A whole local file into a byte vector. Empty on a missing/unreadable/empty file — every caller here
+// treats "nothing to send" as an error, so the two cases don't need telling apart.
+std::vector<std::uint8_t> slurpLocal(const std::string& path) {
+    std::FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) return {};
+    std::vector<std::uint8_t> data;
+    std::uint8_t              chunk[4096];
+    for (std::size_t got; (got = std::fread(chunk, 1, sizeof(chunk), f)) > 0;)
+        data.insert(data.end(), chunk, chunk + got);
+    std::fclose(f);
+    return data;
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
     if (argc < 3) {
         // `sniff`/`info`/`fstest` need no path/addr (they auto-detect the port), so allow a bare argc==2.
         const std::string a1 = argc >= 2 ? argv[1] : "";
         if (!(argc == 2 && (a1 == "sniff" || a1 == "info" || a1 == "fstest"))) {
             std::fprintf(stderr,
-                         "usage: %s <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|fifowr|info|fstest> <path|addr> [len|byte|dest] [port]\n",
+                         "usage: %s <dump|load|restore|peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|info|fstest> <path|addr|count> [len|byte|dest] [port]\n",
                          argv[0]);
             return 2;
         }
@@ -81,6 +104,80 @@ int main(int argc, char** argv) {
             return 0;
         } catch (const std::exception& e) {
             std::fprintf(stderr, "read failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // Bare-Edio SD file write (CMD_F_FWR): push a local file onto the card, creating parent dirs. The
+    // supported way to put a DATA file on the SD over USB — the alternative was smuggling it through the
+    // per-game save slot (--srm), which is a fixed path capped at 64 KB.
+    if (op == "write") {
+        if (argc < 4) {
+            std::fprintf(stderr, "usage: %s write <local-src> <sd-path> [port]\n", argv[0]);
+            return 2;
+        }
+        const std::string src    = argv[2];
+        const std::string sdPath = argv[3];
+        const std::string pport  = argc > 4 ? argv[4] : findN8Port();
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        const std::vector<std::uint8_t> data = slurpLocal(src);
+        if (data.empty()) {
+            std::fprintf(stderr, "cannot read %s (or it is empty)\n", src.c_str());
+            return 1;
+        }
+        try {
+            WjwwoodSerialPort sp(pport);
+            Edio              edio(sp);
+            edio.connect();
+            edio.writeFile(sdPath, data);
+            std::printf("wrote %zu bytes of %s -> %s\n", data.size(), src.c_str(), sdPath.c_str());
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "write failed: %s\n", e.what());
+            return 1;
+        }
+    }
+
+    // The read half of fifowr: bytes the RUNNING ROM sent host-ward with CMD_USB_WR, which the MCU
+    // forwards straight out of the USB port (edn8-pro-pub edio/everdrive.c `ed_cmd_usb_wr`; fifo_b in
+    // fpga/base_sv/base_io.sv, whose empty flag the ROM reads as $40F1 bit 6). This is the back-channel
+    // that lets a host streaming data IN pace itself to what the ROM has actually consumed.
+    //
+    // Deliberately NO connect() handshake: it begins with flushInput, which would discard bytes already
+    // queued by the ROM. The cost is that a wrong port just times out instead of saying "no device".
+    if (op == "fiford") {
+        if (argc < 3) {
+            std::fprintf(stderr, "usage: %s fiford <count> [timeout-ms] [port]\n", argv[0]);
+            return 2;
+        }
+        const std::size_t count     = static_cast<std::size_t>(std::strtol(argv[2], nullptr, 0));
+        const int         timeoutMs = argc > 3 ? static_cast<int>(std::strtol(argv[3], nullptr, 0)) : 2000;
+        const std::string pport     = argc > 4 ? argv[4] : findN8Port();
+        if (count == 0) {
+            std::fprintf(stderr, "fiford: count must be > 0\n");
+            return 2;
+        }
+        if (pport.empty()) {
+            std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
+            return 2;
+        }
+        try {
+            WjwwoodSerialPort         sp(pport);
+            Edio                      edio(sp);
+            edio.setReadTimeout(timeoutMs);
+            std::vector<std::uint8_t> buf(count);
+            edio.readData(buf.data(), buf.size());  // throws on timeout (the ROM sent nothing)
+            std::printf("fiford %zu:", buf.size());
+            for (std::uint8_t b : buf) std::printf(" %02X", b);
+            std::printf("\n  ascii: ");
+            for (std::uint8_t b : buf) std::printf("%c", (b >= 0x20 && b < 0x7F) ? static_cast<char>(b) : '.');
+            std::printf("\n");
+            return 0;
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "fiford failed: %s (is a ROM running and sending CMD_USB_WR?)\n", e.what());
             return 1;
         }
     }
@@ -198,18 +295,9 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
             return 2;
         }
-        std::FILE* f = std::fopen(src.c_str(), "rb");
-        if (!f) {
-            std::fprintf(stderr, "cannot read %s\n", src.c_str());
-            return 1;
-        }
-        std::vector<std::uint8_t> data;
-        std::uint8_t              chunk[4096];
-        for (std::size_t got; (got = std::fread(chunk, 1, sizeof(chunk), f)) > 0;)
-            data.insert(data.end(), chunk, chunk + got);
-        std::fclose(f);
+        const std::vector<std::uint8_t> data = slurpLocal(src);
         if (data.empty()) {
-            std::fprintf(stderr, "%s is empty\n", src.c_str());
+            std::fprintf(stderr, "cannot read %s (or it is empty)\n", src.c_str());
             return 1;
         }
         try {
@@ -245,18 +333,9 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "no Everdrive N8 found; pass a port explicitly\n");
             return 2;
         }
-        std::FILE* f = std::fopen(src.c_str(), "rb");
-        if (!f) {
-            std::fprintf(stderr, "cannot read %s\n", src.c_str());
-            return 1;
-        }
-        std::vector<std::uint8_t> data;
-        std::uint8_t              chunk[4096];
-        for (std::size_t got; (got = std::fread(chunk, 1, sizeof(chunk), f)) > 0;)
-            data.insert(data.end(), chunk, chunk + got);
-        std::fclose(f);
+        const std::vector<std::uint8_t> data = slurpLocal(src);
         if (data.empty()) {
-            std::fprintf(stderr, "%s is empty\n", src.c_str());
+            std::fprintf(stderr, "cannot read %s (or it is empty)\n", src.c_str());
             return 1;
         }
         try {

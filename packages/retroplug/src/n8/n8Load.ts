@@ -3,7 +3,7 @@
 // testable against a fake transport. The CLI `n8` command group (cli/sessions/n8.ts) wires local file I/O +
 // the serial port around these.
 
-import { Edio, ADDR_SRM, SIZE_SRM_GAME, N8_OS_REGION, FA_WRITE, FA_CREATE_ALWAYS, FS_MAKEPATH } from "./edio";
+import { Edio, ADDR_SRM, SIZE_SRM_GAME, N8_OS_REGION } from "./edio";
 import { N8Menu } from "./n8Menu";
 
 /** The final path component (basename) of an SD or local path. */
@@ -39,19 +39,14 @@ export function loadRom(edio: Edio, opts: LoadOptions): LoadResult {
     if (!opts.romBytes || !opts.romName)
       throw new Error("loadRom: pass romBytes + romName to upload, or sdPath to boot an existing SD ROM");
     bootPath = `usb-games/${opts.romName}`;
-    edio.fileOpen(bootPath, FA_WRITE | FA_CREATE_ALWAYS | FS_MAKEPATH);
-    edio.fileWrite(opts.romBytes);
-    edio.fileClose();
+    edio.writeFile(bootPath, opts.romBytes);
   }
 
   // Restore the battery save the NATIVE way: write it into the menu's per-game save slot
   // (EDN8/gamedata/<rom>/bram.srm) BEFORE the menu loads the game, so the MENU itself copies it into cart
   // SRAM at hand-off. Writing cart SRAM directly over USB corrupts the running menu (which uses that region).
   if (opts.srm && opts.srm.length) {
-    const gd = `EDN8/gamedata/${baseName(bootPath)}/bram.srm`;
-    edio.fileOpen(gd, FA_WRITE | FA_CREATE_ALWAYS | FS_MAKEPATH);
-    edio.fileWrite(opts.srm);
-    edio.fileClose();
+    edio.writeFile(`EDN8/gamedata/${baseName(bootPath)}/bram.srm`, opts.srm);
   }
 
   const mapIndex = menu.appInstall(bootPath);

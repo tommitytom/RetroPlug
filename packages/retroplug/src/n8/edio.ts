@@ -263,6 +263,14 @@ export class Edio {
     return data;
   }
 
+  // Write a whole file to an SD path, creating it and any missing parent directories
+  // (FA_CREATE_ALWAYS | FS_MAKEPATH). The inverse of readFile.
+  writeFile(path: string, bytes: Uint8Array): void {
+    this.fileOpen(path, FA_WRITE | FA_CREATE_ALWAYS | FS_MAKEPATH);
+    this.fileWrite(bytes);
+    this.fileClose();
+  }
+
   // --- blocking reads (the N8 menu's replies come back this way) ---
 
   rx8(): number {

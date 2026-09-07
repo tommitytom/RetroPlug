@@ -59,6 +59,9 @@ export interface N8 {
   listDir(path: string): ReturnType<Edio["listDir"]>;
   /** Read a whole SD-card file by path (over USB). */
   readFile(path: string): Uint8Array;
+  /** Write a whole file to an SD-card path (over USB), creating any missing parent directories. The
+   *  inverse of readFile — how a data file gets onto the card without going through a save slot. */
+  writeFile(path: string, bytes: Uint8Array): void;
   /** Read the FPGA mapper-config block: what the OS told the cart the RUNNING game is (mapper index,
    *  PRG/CHR/SRM sizes, mirroring, CHR-RAM-vs-ROM). */
   mapConfig(): N8MapConfig;
@@ -77,6 +80,7 @@ export function createN8(transport: SerialTransport): N8 {
     writeMemDirect: (addr: number, data: Uint8Array) => writeMemDirect(edio, addr, data),
     listDir: (path: string) => edio.listDir(path),
     readFile: (path: string) => edio.readFile(path),
+    writeFile: (path: string, bytes: Uint8Array) => edio.writeFile(path, bytes),
     mapConfig: () => decodeMapConfig(edio.memRD(ADDR_CFG, SIZE_CFG)),
   };
 }
