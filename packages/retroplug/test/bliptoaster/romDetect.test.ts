@@ -7,6 +7,7 @@ import {
   blipToasterChip,
   BLIPTOASTER_MARKER,
   BLIPTOASTER_CHIP_SCAN_LEN,
+  needsChipLabelScan,
 } from "../../src/bliptoaster/romDetect";
 import { buildAppRegistry } from "../../src/appHost";
 import { blipToasterRom, nesRom, garbage } from "../systems/fixtures";
@@ -22,12 +23,13 @@ function sigHeader(semver: [number, number, number], at = 0x10): Uint8Array {
 
 test("blipToasterInfo reads the semver from the fixture ROM's SIG block", () => {
   const rom = blipToasterRom();
-  expect(blipToasterInfo(rom)).toEqual({ semver: [0, 1, 0] });
+  // The fixture predates the SIG chip tag, so `chip` is null and the build falls to the later sources.
+  expect(blipToasterInfo(rom)).toEqual({ semver: [0, 1, 0], chip: null });
   expect(isBlipToasterRomHeader(rom)).toBe(true);
 });
 
 test("the marker is found anywhere in the 0x150 scan window", () => {
-  expect(blipToasterInfo(sigHeader([1, 2, 3], 0x40))).toEqual({ semver: [1, 2, 3] });
+  expect(blipToasterInfo(sigHeader([1, 2, 3], 0x40))).toEqual({ semver: [1, 2, 3], chip: null });
 });
 
 test("non-BlipToaster buffers return null / false", () => {
@@ -56,6 +58,56 @@ function withLabel(rom: Uint8Array, label: string, at = 0x2f00): Uint8Array {
   b[at + label.length] = 0;
   return b;
 }
+
+/** Write the 4-byte SIG chip tag, ASCII and NUL-padded, at +14 from the marker - as the ROM's sig.s
+ *  bakes it from the same USE_* switch that picks the audio driver. */
+function withSigChip(rom: Uint8Array, tag: string, markerAt = 0x10): Uint8Array {
+  const b = rom.slice();
+  const at = markerAt + 14;
+  for (let i = 0; i < 4; i++) b[at + i] = i < tag.length ? tag.charCodeAt(i) : 0;
+  return b;
+}
+
+test("the SIG chip tag names the build outright, ahead of the label and the mapper", () => {
+  const rom = blipToasterRom();
+  const cases = [
+    ["2A03", "2a03"], ["VRC6", "vrc6"], ["VRC7", "vrc7"],
+    ["S5B", "s5b"], ["N163", "n163"], ["MMC5", "mmc5"],
+  ] as const;
+  for (const [tag, chip] of cases) {
+    expect(blipToasterInfo(withSigChip(rom, tag))?.chip).toBe(chip);
+    expect(blipToasterChip(withSigChip(rom, tag))).toBe(chip);
+  }
+
+  // It outranks both later sources: a tag beats a contradicting label AND a contradicting mapper.
+  const conflicted = withSigChip(withLabel(withMapper(rom, 85), "VRC6"), "MMC5");
+  expect(blipToasterChip(conflicted)).toBe("mmc5");
+
+  // And it settles the mapper-69 pair from the SHORT prefix alone - no deep read needed.
+  const s5b = withSigChip(withMapper(rom, 69), "S5B").subarray(0, 0x150);
+  const base = withSigChip(withMapper(rom, 69), "2A03").subarray(0, 0x150);
+  expect(blipToasterChip(s5b)).toBe("s5b");
+  expect(blipToasterChip(base)).toBe("2a03");
+});
+
+test("a pre-tag ROM reads as untagged, and that is what asks for the deep read", () => {
+  const rom = blipToasterRom();
+  // $FF filler (what an older SIG block pads with) and 0x00 both mean "no tag".
+  for (const filler of [0xff, 0x00]) {
+    const b = rom.slice();
+    b.fill(filler, 0x10 + 14, 0x10 + 20);
+    expect(blipToasterInfo(b)?.chip).toBe(null);
+    expect(needsChipLabelScan(b)).toBe(true);
+  }
+  // A tag naming a chip this build has never heard of is treated as absent, not guessed at.
+  expect(blipToasterInfo(withSigChip(rom, "FDS"))?.chip).toBe(null);
+  expect(needsChipLabelScan(withSigChip(rom, "FDS"))).toBe(true);
+
+  // A tagged ROM does not, so it never pays the bigger read.
+  expect(needsChipLabelScan(withSigChip(rom, "S5B"))).toBe(false);
+  // Neither does a cart that is not BlipToaster at all.
+  expect(needsChipLabelScan(nesRom())).toBe(false);
+});
 
 test("the chip label separates the two mapper-69 builds, which nothing in the header can", () => {
   const base = withMapper(blipToasterRom(), 69);
@@ -146,13 +198,13 @@ test("the marker is exactly the bytes the ROM bakes, and superseded markers are 
   for (const old of ["EVERMIDI", "evermidi-n8"]) expect(isBlipToasterRomHeader(withMarker(old))).toBe(false);
 });
 
-// The SIG block is padded upstream to a fixed 16 bytes with $FF after the semver. Reading must stop at the
-// semver and not mistake the padding for further fields.
-test("the $FF padding after the semver is ignored", () => {
+// The SIG block is padded upstream to a fixed size with $FF after the last field. Reading must stop at the
+// declared fields and not mistake the padding for further ones.
+test("the $FF padding after the declared fields is ignored", () => {
   const h = new Uint8Array(0x150).fill(0);
   let p = 0x10;
   for (let i = 0; i < BLIPTOASTER_MARKER.length; i++) h[p++] = BLIPTOASTER_MARKER.charCodeAt(i);
   h[p++] = 0; h[p++] = 1; h[p++] = 0;
-  h.fill(0xff, p, 0x10 + 16); // pad to the fixed 16-byte block
-  expect(blipToasterInfo(h)).toEqual({ semver: [0, 1, 0] });
+  h.fill(0xff, p, 0x10 + 20); // pad to the fixed 20-byte block
+  expect(blipToasterInfo(h)).toEqual({ semver: [0, 1, 0], chip: null });
 });

@@ -28,26 +28,34 @@ import {
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
-import { blipToasterChip, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
+import { blipToasterChip, needsChipLabelScan, BLIPTOASTER_CHIP_SCAN_LEN } from "./bliptoaster/romDetect";
 import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 
 // How much ROM header to read for the role providers (title lives at 0x134).
 const ROLE_HEADER_LEN = 0x150;
 
-// How much of the ROM the role providers need to see. Two platforms need far more than a header, both
-// because what identifies the cart is nowhere near the start of the file:
-//
-//  - Sega: no title field, and the header itself sits at the END of a bank. smsggdj's marker is at
-//    $3640, so a ROLE_HEADER_LEN read would leave the provider nothing to match on and force `sms-sync`
-//    onto every SMS cart - which it must not, since it drives Player 2's button lines.
-//  - NES: BlipToaster names its audio chip only in the on-screen label its linker pins inside the PRG
-//    region, and that is the ONLY thing separating its two mapper-69 builds (see bliptoaster/romDetect).
-//
-// One read at construct, not on the classify path.
-function roleSniffLen(platform: Platform): number {
-  if (platform === "sms" || platform === "gg") return SEGA_SNIFF_LEN;
-  if (platform === "nes") return BLIPTOASTER_CHIP_SCAN_LEN;
-  return ROLE_HEADER_LEN;
+/** What the role providers get to look at. Read in TIERS, the same shape `classifyRom` uses, because two
+ *  cases need far more than a header and neither is the common one:
+ *
+ *  - **Sega always.** No title field, and the header itself sits at the END of a bank. smsggdj's marker
+ *    is at $3640, so a ROLE_HEADER_LEN read would leave the provider nothing to match on and force
+ *    `sms-sync` onto every SMS cart - which it must not, since it drives Player 2's button lines.
+ *  - **A BlipToaster ROM predating the SIG chip tag.** Newer ones declare their build in the SIG block,
+ *    inside the short prefix; older ones name it only in the on-screen label their linker pins inside the
+ *    PRG region, and that is the ONLY thing separating the two mapper-69 builds (bliptoaster/romDetect).
+ *    So the deep read is the fallback path, not the normal one, and no other NES cart pays it.
+ *
+ *  One read at construct, not on the classify path. */
+function readRoleHeader(backend: RoleHeaderCaps, platform: Platform, romPath: string): Uint8Array {
+  if (platform === "sms" || platform === "gg") return backend.readFilePrefix(romPath, SEGA_SNIFF_LEN) ?? new Uint8Array();
+
+  const short = backend.readFilePrefix(romPath, ROLE_HEADER_LEN) ?? new Uint8Array();
+  if (platform !== "nes" || !needsChipLabelScan(short)) return short;
+  return backend.readFilePrefix(romPath, BLIPTOASTER_CHIP_SCAN_LEN) ?? short;
+}
+
+interface RoleHeaderCaps {
+  readFilePrefix(path: string, length: number): Uint8Array | null;
 }
 
 // TS owns the system-id counter (native never allocates). Module-scoped so it's ONE id space per
@@ -668,9 +676,8 @@ export class SystemsStore {
   //
   private defaultRoles(core: Core, platform: Platform, romPath: string, embeddedRom: string): RoleInstance[] {
     if (!this.registry) return [];
-    const prefixLen = roleSniffLen(platform);
     const header =
-      romPath && !embeddedRom ? this.backend.readFilePrefix(romPath, prefixLen) ?? new Uint8Array() : new Uint8Array();
+      romPath && !embeddedRom ? readRoleHeader(this.backend, platform, romPath) : new Uint8Array();
     return this.registry.defaultRoles(core, platform, header, embeddedRom);
   }
 
@@ -743,10 +750,11 @@ export class SystemsStore {
     const i = roles.findIndex((r) => r.kind === "bliptoaster");
     if (i < 0 || !romPath || embeddedRom) return roles;
 
-    // The same prefix `defaultRoles` gives the providers - short of the chip label, an S5B ROM would
-    // be "corrected" back onto the 2A03 mapper fallback every load.
-    const header = this.backend.readFilePrefix(romPath, BLIPTOASTER_CHIP_SCAN_LEN);
-    if (!header) return roles;
+    // The same tiered read `defaultRoles` gives the providers. A `bliptoaster` role means the cart is
+    // NES; passing a shorter prefix would "correct" an untagged S5B ROM back onto the ambiguous mapper
+    // fallback on every load.
+    const header = readRoleHeader(this.backend, "nes", romPath);
+    if (!header.length) return roles;
 
     const chip = blipToasterChip(header);
     const cfg = roles[i].config as { chip?: string } | undefined;

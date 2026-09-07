@@ -222,35 +222,40 @@ tremolo depth belongs on the expansion voices too. Only the poly channel differs
 LFO for the whole chord (`_polyLfo*`), and it is one lane because it is one channel.
 
 **Which BlipToaster build.** Only one expansion chip can be active at a time, so each is a separate
-`.nes` with its own CC set. It is read from the **chip label the ROM prints on its own monitor
-header** - `blit_str(0, 1, AUDIO_CHIP_NAME)` in the ROM repo's `src/ui/ui.c`, where `AUDIO_CHIP_NAME`
-is picked by the same `#if` chain that selects the audio driver. That is a NUL-terminated ASCII
-literal in RODATA, so the ROM states which chip it drives in bytes we can read
-([romDetect.ts](../packages/retroplug/src/bliptoaster/romDetect.ts)). The ROM provider records it as
-`chip` on the system's `bliptoaster` role, which is where the projection reads it.
+`.nes` with its own CC set. The ROM provider records it as `chip` on the system's `bliptoaster` role,
+which is where the projection reads it.
 
-Two details make this exact rather than a substring guess:
+**The iNES header cannot answer this.** The base 2A03 build takes FME-7 (69) for kit banking alone,
+which is also the Sunsoft 5B mapper, and the two ROMs are byte-identical across all 16 header bytes,
+the same size, and not iNES 2.0 (so there is no submapper to split them); their bodies differ in
+~16.7 KB. Nor is there anywhere safe to add one: bytes 12-15 trip the "DiskDude!" heuristic in
+loaders that implement it (byte 7's high nibble is discarded, so mapper 69 reads as 5), and adopting
+iNES 2.0 for its submapper field re-reads bytes 9 and 10 with different meanings. So the identifier
+lives in the ROM's own SIG block instead, and
+[romDetect.ts](../packages/retroplug/src/bliptoaster/romDetect.ts) reads three sources in order:
 
-- **The scan bound is enforced by the ROM's build, not estimated.** Its linker config gives the PRG
-  region a hard `start = $8000, size = $4000` holding SIG + CODE + RODATA, with the DMC kit banks
-  starting at file offset `$4010`, so every string literal in the main window is inside `$10..$4010`
-  or the link fails. `BLIPTOASTER_CHIP_SCAN_LEN` is that bound.
-- **The NUL terminator is required.** The VRC7 ROM contains `VRC7` twice - the chip label and the
-  `"VRC7 PATCH"` heading - and the terminator picks the label. It also makes a chance hit in 6502
-  code vanishingly unlikely. A ROM naming two different chips reports no match rather than picking
-  one, falling through to the mapper.
+1. **The SIG chip tag.** 4 bytes of NUL-padded ASCII at `+14` from the `bliptoaster` marker, at a
+   fixed offset inside the `0x150` prefix everything already reads. `sig.s` bakes it from the same
+   `USE_*` switches that select the audio driver (`ca65` receives them too), so it cannot drift from
+   the chip actually compiled in. `$FF` means a ROM built before the field existed.
+2. **The on-screen chip label**, for those older ROMs. `blit_str(0, 1, AUDIO_CHIP_NAME)` in the ROM
+   repo's `src/ui/ui.c` prints it in the monitor header, and it is a plain NUL-terminated ASCII
+   literal in RODATA, so an untagged ROM still states which chip it drives. Two details make it exact
+   rather than a substring guess: the **scan bound is enforced by the ROM's build** (its linker config
+   gives PRG a hard `start = $8000, size = $4000`, with the DMC kit banks from file offset `$4010`, so
+   every string literal in the main window is inside `$10..$4010` or the link fails - that is
+   `BLIPTOASTER_CHIP_SCAN_LEN`), and the **NUL terminator is required**, which picks the chip label
+   over the `"VRC7 PATCH"` heading that shares the VRC7 tag and makes a chance hit in 6502 code
+   vanishingly unlikely. A ROM naming two different chips reports no match rather than picking one.
+3. **The iNES mapper**, when the caller holds only a prefix: 5 MMC5, 19 N163, 24 VRC6, 85 VRC7, and
+   69 to `2a03` - the subset that can never be wrong, since the 2A03 CC set is a strict subset of
+   S5B's.
 
-**Why the label and not the header: mapper 69 is ambiguous.** The base 2A03 build takes FME-7 (69)
-for kit banking alone, which is also the Sunsoft 5B mapper, and the two ROMs are byte-identical
-across all 16 header bytes, the same size, and not iNES 2.0 (so there is no submapper to split
-them); their bodies differ in ~16.7 KB. Nothing in the header can tell them apart, which is what
-rules out a header-only read. The **iNES mapper survives as the fallback** for a caller holding only
-a prefix, mapping 5 MMC5, 19 N163, 24 VRC6, 85 VRC7 and 69 to `2a03` - the subset that can never be
-wrong, since the 2A03 CC set is a strict subset of S5B's.
-
-Reaching the label costs a deeper read, so NES joins Sega in `roleSniffLen`
-([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)) - the same precedent as smsggdj's
-marker at `$3640`. One read at construct, not on the classify path.
+Only source 2 costs a deeper read, so `readRoleHeader`
+([systemsStore.ts](../packages/retroplug/src/systemsStore.ts)) reads in **tiers**, the same shape
+`classifyRom` uses: the short prefix first, and the `0x4010` read only when `needsChipLabelScan` says
+this is a BlipToaster ROM with no tag. Sega still always takes its deep read (smsggdj's marker is at
+`$3640`); no other NES cart pays one. One read at construct, not on the classify path.
 
 **The seam.** `PluginDSP` polls a new `__rp_parameterMapJson` global exactly where it already polls
 `__rp_syncLatencyMs` in `updateLatency()`
@@ -353,10 +358,12 @@ fork, the rest here.
 - **The editor idle poll.** The plan polled only from `setState` and `activate`, which misses the main
   case: a ROM loaded through the UI never passes through `setState`. `SharedDSP` gained a
   `pollParameterMap` hook the editor drives from `uiIdle`.
-- **The build is read from the ROM's chip label, not its mapper.** The first cut used the iNES mapper
-  and shipped mapper 69 as a documented ambiguity, since the base 2A03 and S5B builds are
-  header-identical. They are not otherwise identical: each prints its chip in its own monitor header,
-  and that label is plain NUL-terminated ASCII the linker pins inside the PRG region. Reading it
-  needed only a deeper prefix in `roleSniffLen`, so it closed with no change to the ROM. The mapper is
-  still the fallback for a short read. See section 5.
+- **The build is declared by the ROM, not inferred from its mapper.** The first cut used the iNES
+  mapper and shipped mapper 69 as a documented ambiguity, since the base 2A03 and S5B builds are
+  header-identical. That closed in two steps. First without touching the ROM: each build prints its
+  chip in its own monitor header, and that label is plain NUL-terminated ASCII the linker pins inside
+  the PRG region, so a deeper prefix was enough. Then properly, by adding a 4-byte chip tag to the SIG
+  block (`SIG_SIZE` 16 -> 20), which puts the answer at a fixed offset inside the short prefix and
+  stops the primary path depending on a UI string. Both earlier sources remain, in order: the label
+  serves ROMs built before the tag, the mapper serves a short read. See section 5.
 - **TSAN does not cover this.** See section 6.

@@ -197,6 +197,38 @@ test("a stale `chip` is corrected when the ROM at that path is a different build
   expect(chipOf(store, id!)).toBe("vrc6");
 });
 
+// The two mapper-69 builds are the case the mapper alone cannot serve. Both routes to the answer have
+// to survive the store's tiered read: a current ROM declares its build in the SIG block (inside the
+// short prefix), an older one only in the on-screen label (which costs the deep read).
+test("both mapper-69 builds resolve through the store, tagged or not", () => {
+  const withSigChip = (mapper: number, tag: string): Uint8Array => {
+    const rom = blipToasterWithMapper(mapper);
+    for (let i = 0; i < 4; i++) rom[0x10 + 14 + i] = i < tag.length ? tag.charCodeAt(i) : 0;
+    return rom;
+  };
+  const withLabel = (mapper: number, label: string): Uint8Array => {
+    const rom = blipToasterWithMapper(mapper);
+    for (let i = 0; i < label.length; i++) rom[0x2f00 + i] = label.charCodeAt(i);
+    rom[0x2f00 + label.length] = 0;
+    return rom;
+  };
+  const adopt = (rom: Uint8Array): string | undefined => {
+    const { be, store } = newAppStore();
+    be.seed("/roms/bt.nes", rom);
+    const id = store.adopt({ romPath: "/roms/bt.nes", core: "mesen", roles: [
+      { kind: "mesen", config: {} },
+      { kind: "bliptoaster", config: {} },
+    ] });
+    return chipOf(store, id!);
+  };
+
+  expect(adopt(withSigChip(69, "S5B"))).toBe("s5b");
+  expect(adopt(withSigChip(69, "2A03"))).toBe("2a03");
+  expect(adopt(withLabel(69, "S5B"))).toBe("s5b"); // pre-tag ROM, found by the deep read
+  expect(adopt(withLabel(69, "2A03"))).toBe("2a03");
+  expect(adopt(blipToasterWithMapper(69))).toBe("2a03"); // neither: the subset that can't be wrong
+});
+
 test("re-deriving the chip leaves the rest of that role's config alone", () => {
   const { be, store } = newAppStore();
   be.seed("/roms/bt.nes", blipToasterWithMapper(85));
