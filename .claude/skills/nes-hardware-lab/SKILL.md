@@ -78,7 +78,9 @@ ROM. The N8 firmware parses the iNES header and sources the mapper core from its
 - **Boot a ROM already on the SD:** `n8-load --sd-path usb-games/game.nes`.
 - **Device info:** `n8-load --info` (serial, firmware, form factor, flash, voltages) - a quick "is
   the N8 alive over USB" check.
-- **List / read SD files:** `--ls <dir>` (use `/` for root), `--get-file <sd-path> <local>`, `--df`
+- **List / read / write SD files:** `--ls <dir>` (use `/` for root), `--get-file <sd-path> <local>`,
+  `--put-file <local> <sd-path>` (creates parent dirs; the way to put a DATA file on the card - `--srm`
+  goes to the fixed 64 KB per-game save slot), `--mkdir` / `--rm`, `--df`
   (free space), `--mkdir <path>`, `--rm <path>` (permanent).
 - **GOTCHA - dirty menu OOM:** if a load fails with "out of memory", the menu heap is dirty from a
   prior failed load -> **power-cycle** (`nes-power.sh reset`) to a fresh menu and retry.
@@ -123,7 +125,7 @@ A game must be running for these (the sniffer is off at the menu).
 
 ### Low-level access (`retroplug-n8-hwtest`)
 
-`$RPBIN/retroplug-n8-hwtest <dump|load|restore|peek|poke|read|vramdump|sniff|memwr|fifowr|info|fstest> <addr|path> [len|byte|dest] [port]`
+`$RPBIN/retroplug-n8-hwtest <dump|load|restore|peek|poke|read|write|vramdump|sniff|memwr|fifowr|fiford|info|fstest> <addr|path|count> [len|byte|dest] [port]`
 
 Direct device memory + FIFO. Key N8 addresses: PRG `0x0000000`, CHR `0x0800000` (CHR-**RAM** carts:
 `0x0C00000`), cart battery RAM `0x1000000`, mapper-config block `0x1800020` (16 B, read/write),
@@ -138,6 +140,17 @@ live sniffer region `0x1802000`, cart FIFO `0x1810000` (a running ROM reads it a
   verifies by reading back, and a FIFO is drained by the NES, so that verify can never pass.
   (`n8-play file:<path>` / `raw:` / `sysex:` do the same from the scripted tool, so a check that
   mixes notes and raw bytes is one command.)
+- `fiford <count> [timeout-ms]` - read the other direction: bytes the running ROM sent host-ward
+  with `CMD_USB_WR`, which the MCU forwards straight out of the USB port. The cartridge **can** talk
+  back (fifo_b in `edn8-pro-pub` `fpga/base_sv/base_io.sv`; the ROM sees its empty flag as `$40F1`
+  bit 6, `FIFO_ARM_RXF`) - so a host streaming data in can pace itself to what the ROM actually
+  consumed rather than guessing at a safe rate. Unlike every other op this does **no handshake**:
+  `connect` starts with a `flushInput` that would throw away bytes the ROM had already queued, so a
+  wrong port times out instead of reporting "no device". Develop against the emulator first - the
+  same bytes come out of `backend.drainCoreBytes(id)` there.
+- `read <sd-path> <local>` / `write <local> <sd-path>` - pull a file off the SD card, or put one on
+  it (creating parent dirs). `write` is how a data file gets onto the card; `retroplug-cli n8-load
+  --put-file <local> <sd-path>` is the same thing from the scripted tool. Neither needs a reboot.
 - `sniff` / `info` - same data as the CLI, bare.
 
 ## 2b. Drive a ROM with MIDI (`n8-play`)

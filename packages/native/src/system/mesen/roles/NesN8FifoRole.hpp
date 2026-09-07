@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <deque>
+#include <string>
+#include <vector>
 
 #include "system/mesen/NesEverdriveFifo.hpp"
 #include "transport/MidiTypes.hpp"
@@ -27,6 +29,14 @@ public:
     // $40F0/$40F1 are routed through it. Called once, on the audio thread,
     // from MesenNesSystem::onActivate after the ROM has loaded.
     void onAttach(NesConsole& console);
+
+    // Point the emulated SD card at a host directory ("/" on the card). Set at activate from the
+    // "mesen" role's `sdRoot`; empty means a per-process scratch dir (see NesEverdriveFifo).
+    void setSdRoot(const std::string& root) { fifo_.setSdRoot(root); }
+
+    // Take the bytes the ROM has sent host-ward via CMD_USB_WR since the last drain (oldest first).
+    // The emulated NES→host back-channel; empty when the ROM has sent nothing.
+    std::vector<std::uint8_t> drainUsbTx() { return fifo_.drainTx(); }
 
     // Audio-thread: QUEUE each event's bytes tagged with the event's intra-block sample offset
     // (ev.frame) instead of delivering immediately. The bytes are released into the FIFO by pumpUntil
@@ -63,6 +73,7 @@ public:
     // Drop BOTH queues: the not-yet-delivered bytes AND the delivered-but-unread ones sitting in the
     // FIFO's RX queue. `clear()` alone leaves the latter, which the ROM would still read. Used on a
     // barrier message, on core reset, and on savestate load — anywhere the byte stream is discontinuous.
+    // The NES→host TX queue is deliberately untouched: this is a barrier in one direction only.
     void flushAll() { clear(); fifo_.clearRx(); }
 
     // Introspection / tests.

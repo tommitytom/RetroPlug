@@ -9,7 +9,7 @@
 #
 # Two binaries go over, because the consumer's image has no C++ toolchain and cannot build either:
 #   retroplug-cli        the harness + every hardware command (n8-load / n8-play / analyze-capture / ...).
-#   retroplug-n8-hwtest  the bare low-level N8 device access (peek/poke/memwr/fifowr/sniff) that the
+#   retroplug-n8-hwtest  the bare low-level N8 device access (peek/poke/memwr/fifowr/fiford/sniff) that the
 #                        nes-hardware-lab skill documents. EXCLUDE_FROM_ALL, so it's built by name here.
 #
 # Populates <dest>/retroplug-cli/bin/. The sdk/ directory materializes itself on first run.

@@ -163,6 +163,9 @@ export function createDebugClient(): DebugBackend {
     getCpuRegisters: (id) => call("getCpuRegisters", id) as CpuRegister[],
     stepInstruction: (id) => Number(call("stepInstruction", id)),
     drainEvents: (id) => call("drainEvents", id) as DebugEvent[],
+    // Always a Uint8Array, never null: "the ROM has sent nothing" and "this core has no back-channel"
+    // are both an empty drain, so a caller can loop over the result without a guard.
+    drainCoreBytes: (id) => bytesOrNull(call("drainCoreBytes", id)) ?? new Uint8Array(0),
     loadLabels: (id, path) => call("loadLabels", id, path) as boolean,
     symbolAddress: (id, name) => (call("symbolAddress", id, name) as number | null | undefined) ?? null,
     setCpuRegister: (id, name, value) => call("setCpuRegister", id, name, value) as boolean,

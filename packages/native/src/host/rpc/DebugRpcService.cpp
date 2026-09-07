@@ -74,6 +74,16 @@ std::vector<rp::DebugEvent> DebugRpcService::drainEvents(std::uint32_t id) {
     return dbg->drainEvents();  // events Mesen logged for the frame just rendered
 }
 
+rfl::Bytestring DebugRpcService::drainCoreBytes(std::uint32_t id) {
+    rfl::Bytestring out;
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return out;
+    const std::vector<std::uint8_t> bytes = sys->drainCoreBytes();  // empty on cores with no transport
+    const auto* p = reinterpret_cast<const std::byte*>(bytes.data());
+    out.assign(p, p + bytes.size());
+    return out;
+}
+
 bool DebugRpcService::loadLabels(std::uint32_t id, std::string path) {
     SystemBase* sys = engine_.findSystem(id);
     if (!sys) return false;

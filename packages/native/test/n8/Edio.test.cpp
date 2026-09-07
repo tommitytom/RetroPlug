@@ -119,6 +119,8 @@ TEST_CASE("Edio framing matches the shared golden (twins edio.test.ts)", "[n8]")
             edio.fileOpen(a.path.value_or(""), static_cast<std::uint8_t>(a.mode.value_or(0)));
         } else if (c.op == "fileWrite") {
             edio.fileWrite(fromHex(a.bytes.value_or("")));
+        } else if (c.op == "writeFile") {
+            edio.writeFile(a.path.value_or(""), fromHex(a.bytes.value_or("")));
         } else if (c.op == "fileClose") {
             edio.fileClose();
         } else if (c.op == "memRD") {

@@ -21,6 +21,7 @@
 // is right; this is the behavioural half of that claim, against the ROM users actually run.)
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
+import type { Platform } from "../src/platform";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildSav, isSmsggdjSav, listSongs, readSongBlock, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/sav";
 import { SMSGGDJ_SYMBOLS } from "../src/smsggdj/runtime/symbols.generated";
@@ -71,7 +72,7 @@ function chord(audio: ReturnType<typeof createAudioDriver>, id: number, hold: nu
   audio.renderAudio(GAP_MS);
 }
 
-function boot(be: ReturnType<typeof createRealBackend>, id: number, romPath: string, platform: string, sram: Uint8Array) {
+function boot(be: ReturnType<typeof createRealBackend>, id: number, romPath: string, platform: Platform, sram: Uint8Array) {
   const audio = createAudioDriver();
   expect(
     be.constructSystem(

@@ -292,4 +292,10 @@ std::vector<std::uint8_t> Edio::readFile(const std::string& path) {
     return out;
 }
 
+void Edio::writeFile(const std::string& path, const std::uint8_t* data, std::size_t size) {
+    fileOpen(path, FA_WRITE | FA_CREATE_ALWAYS | FS_MAKEPATH);
+    fileWrite(data, size);
+    fileClose();
+}
+
 }  // namespace retroplug

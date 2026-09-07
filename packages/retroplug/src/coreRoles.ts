@@ -81,6 +81,14 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       // individualMono (5 core channels). Set at construct (via adopt) — the settings menu doesn't surface
       // it. Additive. (pinsPlusRef = pins + a mix reference, native/test-only.)
       channelExportMode: enumField(CHANNEL_EXPORT_VALUES, "mix"),
+      // NES-only: the host directory the emulated EverDrive N8 SD card maps to ("/" on the card), for a
+      // ROM that pulls its data off the cartridge rather than over MIDI. Empty means a per-process
+      // scratch directory - deliberately NOT the working directory, which made the card depend on where
+      // the process was started and let a file one test wrote become every later run's card.
+      //
+      // Construct-time, like `region`: the FIFO is built when the core activates, so an edit needs a
+      // rebuild (setRoleConfig then reset(id)) rather than taking effect live.
+      sdRoot: z.string().default(""),
     }),
   });
 }

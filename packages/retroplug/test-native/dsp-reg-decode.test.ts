@@ -46,7 +46,7 @@ test("decodeExpansionWrites(vrc6) reconstructs the note-on registers; freqReg ma
 // dedicated ROM on the RetroPlug side) and the VRC6 masked-address routing, straight from known bytes.
 let seq = 0;
 function mkWrites(pairs: [number, number][]): DebugEvent[] {
-  return pairs.map(([address, value]) => ({ type: 0, operationType: 1, address, value, programCounter: 0x8000 + seq, scanline: 0, cycle: seq++ }));
+  return pairs.map(([address, value]) => ({ type: 0, operationType: 1, address, value, programCounter: 0x8000 + seq, scanline: 0, cycle: seq++, frame: 1 }));
 }
 
 test("decodeExpansionWrites(vrc6) honors the masked $9003 mirror ($9007 -> shift/halt)", () => {

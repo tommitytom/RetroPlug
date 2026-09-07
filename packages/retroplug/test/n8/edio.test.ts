@@ -36,6 +36,7 @@ function driveGolden(c: GoldenCase): number[] {
     case "connect": edio.connect(); break;
     case "fileOpen": edio.fileOpen(a.path ?? "", a.mode ?? 0); break;
     case "fileWrite": edio.fileWrite(new Uint8Array(fromHex(a.bytes ?? ""))); break;
+    case "writeFile": edio.writeFile(a.path ?? "", new Uint8Array(fromHex(a.bytes ?? ""))); break;
     case "fileClose": edio.fileClose(); break;
     case "memRD": edio.memRD(a.addr ?? 0, a.size ?? 0); break;
     case "fileRead": edio.fileRead(a.size ?? 0); break;

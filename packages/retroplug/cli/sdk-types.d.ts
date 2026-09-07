@@ -236,6 +236,14 @@ export interface Backend {
   writeFileAtomic(path: string, bytes: Uint8Array): boolean;
   fileExists(path: string): boolean;
   readFile(path: string): Uint8Array | null;
+  /** Delete the file at `path`; false when it isn't there. A test that leaves state behind (a fixture
+   *  on the emulated SD card, a rendered WAV) can clean up after itself instead of leaning on `rm`. */
+  deleteFile(path: string): boolean;
+  /** The entry names directly under `dir` (not recursive), empty when `dir` is absent. Subdirectories
+   *  carry a trailing `/`, files don't. */
+  listDir(dir: string): string[];
+  /** Move/rename `from` to `to`. False on failure. */
+  rename(from: string, to: string): boolean;
   /** Encode an RGBA8888 buffer to PNG bytes (native lodepng); null on failure. Used by the spectrogram. */
   pngEncode(width: number, height: number, rgba: Uint8Array): Uint8Array | null;
   /** Decode PNG bytes to RGBA8888; null if not a valid/supported PNG. */
@@ -259,6 +267,13 @@ export interface Backend {
    *  previous one, so poll at least once per PPU frame (~16 ms) to see everything - a slower poll loses
    *  whole frames, never repeats. The first call returns both retained frames. */
   drainEvents(id: number): DebugEvent[];
+  /** The raw bytes the CORE has sent host-ward since the last call, oldest first — the read direction of
+   *  the same transport `stageMidiIn` writes into. On the NES that is the EverDrive FIFO's `CMD_USB_WR`
+   *  payload: the cartridge's back-channel, which on real hardware the N8's MCU forwards out of its USB
+   *  port (`retroplug-n8-hwtest fiford` reads the same stream). Lets a ROM that is being streamed to ack
+   *  what it consumed, so the host can pace to it instead of guessing. Empty when the ROM has sent
+   *  nothing or the core has no such transport (Game Boy / GBA). */
+  drainCoreBytes(id: number): Uint8Array;
   /** Load a cc65 `.dbg` symbol file so profiling / breakpoints / disassembly / call stack show names. */
   loadLabels(id: number, path: string): boolean;
   /** The CPU address of a symbol from the loaded `.dbg`, by name: a C name (`g_frame`, and a file-scope
@@ -312,7 +327,13 @@ export interface SystemsStore {
   /** Edit one of the system's role configs (validated by the role's schema; a "system" role's config is
    *  applied to the live core). E.g. the NES console region: `setRoleConfig(id, "mesen", { region: "pal" })`
    *  - baked at construct, so follow it with `reset(id)` to reboot in that region. False when the system
-   *  or the role is absent. */
+   *  or the role is absent.
+   *
+   *  `sdRoot` is the other construct-time "mesen" knob a ROM test tends to want: the host directory the
+   *  emulated EverDrive N8 SD card maps to, for a ROM that reads its data off the cartridge. Point it at
+   *  a per-test temp dir and write the fixture there before `reset(id)`, so the ROM's boot-time SD init
+   *  sees it. Left unset, the card is a per-process scratch dir - NOT the working directory, so a file a
+   *  test writes can't become the next run's card. */
   setRoleConfig(id: number, roleKind: string, partial: Record<string, unknown>): boolean;
   /** Reboot `id` in place, carrying its battery SRAM forward (a hardware-style reset: the save persists,
    *  the running state is dropped). Rebuilds the core, so the system gets a NEW id - use the returned one;

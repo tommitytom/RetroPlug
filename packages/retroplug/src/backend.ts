@@ -247,6 +247,14 @@ export interface Backend {
    *  Empty when the id is gone or the core has no NES event viewer (SameBoy/GBA). */
   drainEvents(id: number): DebugEvent[];
 
+  /** Drain the raw bytes the CORE has sent host-ward since the last call, oldest first — the inverse of
+   *  the DSP kernel's `pushCoreBytes`. On the NES that is the EverDrive FIFO's `CMD_USB_WR` payload: the
+   *  cartridge's back-channel, which on real hardware the N8's MCU forwards out of its USB port (the
+   *  `retroplug-n8-hwtest fiford` op reads the same stream). A ROM streaming data in can use it to pace
+   *  itself to the host instead of guessing. Empty when the id is gone, the ROM has sent nothing, or the
+   *  core has no such transport (SameBoy/GBA). */
+  drainCoreBytes(id: number): Uint8Array;
+
   /** Load a cc65 `.dbg` symbol file (by path) so profiler/disassembly output shows function names.
    *  Returns false when the id is gone, the core has no NES debug target (SameBoy/GBA), or the file
    *  can't be read/parsed. */
@@ -364,7 +372,7 @@ export type EmulatorBackend = Pick<
 export type DebugBackend = Pick<
   Backend,
   | "getApuState" | "getExpansionAudioState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
-  | "stepInstruction" | "drainEvents" | "loadLabels" | "symbolAddress" | "setCpuRegister" | "runUntilPc"
+  | "stepInstruction" | "drainEvents" | "drainCoreBytes" | "loadLabels" | "symbolAddress" | "setCpuRegister" | "runUntilPc"
   | "setBreakpoints" | "runUntilBreak" | "setTrace" | "readTrace" | "stepInto" | "stepOver" | "stepOut"
   | "beginProfile" | "readProfile" | "disassemble" | "getCallStack"
 >;

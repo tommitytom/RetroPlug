@@ -37,6 +37,11 @@ public:
     std::uint64_t                stepInstruction(std::uint32_t id);
     std::vector<rp::DebugEvent>  drainEvents(std::uint32_t id);
 
+    // The core→host raw byte stream since the last drain: on the NES, what the ROM sent through the
+    // N8 FIFO with CMD_USB_WR (the cartridge's back-channel — on hardware the MCU forwards it out of
+    // the USB port). A plain SystemBase virtual, no debug target needed; empty on cores without one.
+    rfl::Bytestring              drainCoreBytes(std::uint32_t id);
+
     // Load a cc65 `.dbg` symbol file so profiler/disassembly output shows function names. Needs a Mesen
     // NES debug target (false on SameBoy/GBA, a gone id, or read/parse failure).
     bool loadLabels(std::uint32_t id, std::string path);

@@ -401,6 +401,13 @@ export class MockBackend implements Backend {
       : [];
   }
 
+  drainCoreBytes(_id: number): Uint8Array {
+    this.log.push("drainCoreBytes");
+    // No real core, so no cartridge to talk back — always an empty drain, which is also what a live
+    // system whose ROM never sends returns.
+    return new Uint8Array(0);
+  }
+
   loadLabels(_id: number, _path: string): boolean {
     this.log.push("loadLabels");
     return false; // the mock has no NES debug target, so no symbol file is ever loaded

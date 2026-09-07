@@ -36,7 +36,7 @@ import { isLsdjSav, listProjects } from "../../src/lsdj";
 
 const DEFAULT_ROM = "resources/roms/bliptoaster.nes";
 const VALUE_FLAGS = new Set([
-  "--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--screenshot", "--sniff-raw",
+  "--sd-path", "--srm", "--dump-sram", "--ls", "--get-file", "--put-file", "--screenshot", "--sniff-raw",
   "--dump-chr", "--patch-chr", "--patch-prg", "--mkdir", "--rm", "--palette", "--savestate", "--serial",
   "--chr-bank",
 ]);
@@ -207,6 +207,9 @@ const N8_LOAD_HELP = [
   "  --dump-sram <file> read the cart SRAM (64 KB game region) out to <file> (no ROM, no reboot)",
   "  --ls <path>        list an SD-card directory (use \"/\" for root) and exit",
   "  --get-file <sd-path> <local-dest>  read an SD-card file over USB to a local file (no reboot)",
+  "  --put-file <local-src> <sd-path>   write a local file to the SD card over USB (no reboot). Creates",
+  "                     missing parent directories. The way to put a DATA file on the card - unlike --srm,",
+  "                     which lands in the fixed 64 KB per-game save slot",
   "  --screenshot <out.png>  capture the N8 MENU screen over USB to a PNG (the menu must be showing)",
   "  --sniff            read a RUNNING game's live APU/PPU/OAM state over USB and print it (a game must",
   "                     be running - the sniffer is off at the menu)",
@@ -267,6 +270,7 @@ export const n8LoadTool: CliTool = {
     const srmPath = flag(args, "--srm");
     const dumpPath = flag(args, "--dump-sram");
     const getFile = flag(args, "--get-file");
+    const putFile = flag(args, "--put-file"); // operand = local source
     const screenshot = flag(args, "--screenshot");
     const sniffRaw = flag(args, "--sniff-raw");
     const dumpChr = flag(args, "--dump-chr");
@@ -288,19 +292,27 @@ export const n8LoadTool: CliTool = {
 
     // Read local files up front (fail fast, before touching hardware).
     const readOnly =
-      doLs || dumpPath != null || showSong || sramOnly || getFile != null || screenshot != null ||
+      doLs || dumpPath != null || showSong || sramOnly || getFile != null || putFile != null || screenshot != null ||
       doSniff || sniffRaw != null || dumpChr != null || isPatch || doInfo || doDf || mkdir != null || rm != null ||
       savestate != null;
     // --get-file <sd-path> <local-dest>: the SD source is the flag operand, the local destination the positional.
     const getFileDest = getFile != null ? positional(args) : undefined;
     if (getFile != null && !getFileDest)
       throw new Error("--get-file requires a local destination: --get-file <sd-path> <local-dest>");
+    // --put-file <local-src> <sd-path>: the mirror image — source first, destination second, so the
+    // flag operand is the LOCAL file here and the positional is the SD path.
+    const putFileDest = putFile != null ? positional(args) : undefined;
+    if (putFile != null && !putFileDest)
+      throw new Error("--put-file requires an SD destination: --put-file <local-src> <sd-path>");
+    if (getFile != null && putFile != null) throw new Error("pass only one of --get-file / --put-file");
     // --patch-chr/--patch-prg <hex-offset> <file>: the offset is the flag operand, the local file the positional.
     const patchFile = isPatch ? positional(args) : undefined;
     if (isPatch && !patchFile)
       throw new Error("--patch-chr/--patch-prg requires a data file: --patch-chr <hex-offset> <file>");
     const romPath =
-      getFile != null || isPatch ? undefined : positional(args) ?? (sdPath || readOnly ? undefined : DEFAULT_ROM);
+      getFile != null || putFile != null || isPatch
+        ? undefined
+        : positional(args) ?? (sdPath || readOnly ? undefined : DEFAULT_ROM);
     let romBytes: Uint8Array | undefined;
     let romName: string | undefined;
     if (romPath && !sdPath) {
@@ -308,6 +320,7 @@ export const n8LoadTool: CliTool = {
       romName = baseName(romPath);
     }
     const srm = srmPath ? readOrThrow(s, srmPath, "save") : undefined;
+    const putBytes = putFile != null ? readOrThrow(s, putFile, "file") : undefined;
 
     const serial = createSerialClient();
     const port = serial.open(pickPort(serial.listPorts(), serialPort));
@@ -355,6 +368,14 @@ export const n8LoadTool: CliTool = {
         const bytes = n8.readFile(getFile);
         if (!s.backend.writeFile(getFileDest!, bytes)) throw new Error(`write failed: ${getFileDest}`);
         console.log(`read ${bytes.length} bytes of ${getFile} -> ${getFileDest}`);
+        return;
+      }
+      if (putFile != null) {
+        // The inverse of --get-file, and the supported way to put a DATA file on the card: parent
+        // directories are created, the destination is wherever you name it, and there is no size cap
+        // (unlike smuggling it through --srm, which lands in a fixed 64 KB save slot).
+        n8.writeFile(putFileDest!, putBytes!);
+        console.log(`wrote ${putBytes!.length} bytes of ${putFile} -> ${putFileDest}`);
         return;
       }
       if (screenshot != null) {

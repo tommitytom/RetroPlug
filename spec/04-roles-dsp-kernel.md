@@ -133,7 +133,15 @@ value, ranges mirroring the native enums:
 
 | Role | Config (zod, defaults) |
 |---|---|
-| `sameboy` | `model` 0–13 (CgbC=9), `highpass` 0–2, `linkGroupId` 0–255, `fastBoot` bool (true) |
+| `sameboy` | `model` 0–13 (CgbC=9), `highpass` 0–2, `linkGroupId` 0–255, `fastBoot` bool (true), plus the display group (`colorCorrection`, `dmgPalette`, `lightTemperature`) |
+| `mesen` | one role for every Mesen platform, so the knobs are per-platform and the menu gates each group. NES: `region`, `removeSpriteLimit`, `apuLatencyMs`, the cartridge-accuracy pair (`s5bNoise` / `mmc5PhaseReset`, both defaulting to `"n8"`), `channelExportMode`, `sdRoot`. SMS/GG: `enableFm` |
+
+Not every system-role field is live. `region`, `channelExportMode` and `sdRoot` are read when the core
+is **constructed**, so an edit takes effect only after a rebuild: `setRoleConfig(id, …)` then
+`reset(id)`, which re-sends the stored role config as the construct `settings` blob and hands back a
+new id. `sdRoot` is the host directory the emulated EverDrive N8 SD card maps to (`"/"` on the card),
+for a NES ROM that pulls its data off the cartridge; empty means a per-process scratch directory, not
+the working directory. Reading back what such a ROM sends is `drainCoreBytes` ([09](09-cli-debugging.md)).
 
 **DSP-thread roles** ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)) — feature
 behaviours over the per-system context:
@@ -151,7 +159,7 @@ Two channels cross the RPC boundary to a running emulator, and no feature-role c
 | Change | RPC | Reaches |
 |---|---|---|
 | the two universal settings (`gainDb`, `reloadOnRomChange`) | `applySystemSetting` | the live core (see [03-ts-layer.md](03-ts-layer.md)) |
-| a **system-role** config edit | `applyRoleConfig(id, kind, config)` | the live core, `sameboy` only |
+| a **system-role** config edit | `applyRoleConfig(id, kind, config)` | the live core (`sameboy` + `mesen`), minus the construct-time fields noted above |
 | a **feature-role** config edit | *(none)* | only the DSP kernel, as part of the re-pushed structure |
 
 [`SystemsStore.setRoleConfig`](../packages/retroplug/src/systemsStore.ts#L329) merges the

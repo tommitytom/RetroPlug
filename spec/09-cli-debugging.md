@@ -7,7 +7,9 @@ debugger is surfaced through a dedicated **`debug` RPC facet**
 ([DebugRpcService](../packages/native/src/host/rpc/DebugRpcService.cpp)) — decoded APU/PPU state,
 CPU-bus peek + poke (`readCpu`/`writeCpu`), region reads, CPU registers + step + PC-run, breakpoints
 (`setBreakpoints`/`runUntilBreak`, with a real `$40F1` FIFO read-watchpoint that fires), execution
-trace + step-into/over/out, a draining, frame-stamped register-event log (`drainEvents`), profiler +
+trace + step-into/over/out, a draining, frame-stamped register-event log (`drainEvents`), the
+core→host raw byte stream (`drainCoreBytes` — the NES cartridge's `CMD_USB_WR` back-channel; see
+below), profiler +
 disassembler + call stack, and cc65 `.dbg` labels with a name lookup (`loadLabels` + `symbolAddress`,
 C names and statics included) — resolving the live system via `Engine::findSystem` (the
 control-thread / direct-render regime). `Timeline.at(ms, fn)` is the observe/assert hook, and a
@@ -63,7 +65,7 @@ The current session verb vocabulary (all on the booted `Session`):
 | Drive | `audio.stageMidiIn(bytes)`, `audio.pressButton(id, button, down)`, `audio.setBpm(v)`, `audio.setTransport(running)` |
 | Render | `audio.renderAudio(ms): Float32Array` |
 | Observe — media/state | `audio.screenshot(id, path)`, `backend.readState/readSram(id)`, `backend.getFrame(id)` |
-| Observe — debug (NES) | `backend.getApuState(id)`, `getExpansionAudioState(id)`, `getPpuState(id)`, `drainEvents(id)`, `readCpu(id, addr)`, `readMemory(id, region)`, `getCpuRegisters(id)`, `setCpuRegister`, `stepInstruction`/`runUntilPc`, `setBreakpoints`/`runUntilBreak`, `setTrace`/`readTrace`, `stepInto`/`stepOver`/`stepOut`, `loadLabels`/`symbolAddress`, `beginProfile`/`readProfile`, `disassemble`, `getCallStack` |
+| Observe — debug (NES) | `backend.getApuState(id)`, `getExpansionAudioState(id)`, `getPpuState(id)`, `drainEvents(id)`, `drainCoreBytes(id)`, `readCpu(id, addr)`, `readMemory(id, region)`, `getCpuRegisters(id)`, `setCpuRegister`, `stepInstruction`/`runUntilPc`, `setBreakpoints`/`runUntilBreak`, `setTrace`/`readTrace`, `stepInto`/`stepOver`/`stepOut`, `loadLabels`/`symbolAddress`, `beginProfile`/`readProfile`, `disassemble`, `getCallStack` |
 | Schedule / assert | `Timeline` (+ `.at(ms, fn)` — the observe/assert hook) + `renderTimeline` |
 
 Example sessions live in [cli/sessions/](../packages/retroplug/cli/sessions) (`mgb-smoke.ts`,
@@ -162,7 +164,8 @@ proven on a real `bliptoaster.nes` in `test-native/cli-*.test.ts`. Only Mesen na
 | **Built** | Profiler + disassembler + call stack | `Profiler`, `Disassembler`, `CallstackManager` | `beginProfile/readProfile(id)`, `disassemble(id, addr, count)`, `getCallStack(id)`. |
 | **Built** | **EventManager** — every `$2000-$401F` + mapper register access, NMI/IRQ, DMA read, with PC/scanline/cycle and a `frame` stamp | `BaseEventManager::GetRawFrameEvents` + `GetFrameId` (a RetroPlug addition: the manager's own frame counter, incremented where the log rotates - the pre-render line, 21 scanlines away from `_frameCount++` - so the stamp never flips mid-vblank) | `drainEvents(id)` returns only what is NEW since the last call, oldest first, so a dense poll's concatenation is the distinct set (no dedupe key needed; `frame:scanline:cycle` is a stable identity). Mesen retains the frame in progress + the previous one, so poll at least once per ~16 ms; a slower poll loses frames, never repeats. |
 | **Built** | PPU state (scanline/cycle/scroll) | `NesDebugger::GetPpuState` | `getPpuState(id)`. Marginal for an audio ROM (the framebuffer is already published for screenshots); the tilemap/sprite/palette **viewers** are not wrapped. |
-| **Built** | Memory **write**/poke (arrange state before assertions) | `MemoryDumper::SetMemoryValue` / `NesMemoryManager::DebugWrite` | `writeCpu(id, addr, val)`. |
+| **Built** | Memory **write**/poke (arrange state before assertions) | `MemoryDumper::SetMemoryValue` / `NesMemoryManager::DebugWrite` | `writeCpu(id, addr, val)`. Note the poke has side effects **disabled**, so it reaches PRG/CHR RAM but not mapped I/O - a `writeCpu` to `$40F0` does NOT enter the Everdrive FIFO. |
+| **Built** | **Core→host raw bytes** — the direction `stageMidiIn` doesn't cover. On the NES the ROM frames a `CMD_USB_WR` to `$40F0` and the cartridge hands the payload to the host (on hardware the N8's MCU forwards it out of the USB port; `retroplug-n8-hwtest fiford` reads the same stream). Lets a ROM being streamed to acknowledge what it consumed, so the host paces to it instead of guessing. | Nothing - RetroPlug's own [NesEverdriveFifo](../packages/native/src/system/mesen/NesEverdriveFifo.hpp), which parses `$40F0` writes as Edio commands exactly as the device's MCU does | `drainCoreBytes(id): Uint8Array` — a `SystemBase` virtual (`drainCoreBytes`, the inverse of the DSP kernel's `pushCoreBytes`), so no debug target is created. Take-not-peek; empty for a core with no such transport. The same FIFO serves the emulated **SD card**, whose root is the `mesen` role's `sdRoot` (spec/04). |
 
 ## 6. Integration — built + remaining
 

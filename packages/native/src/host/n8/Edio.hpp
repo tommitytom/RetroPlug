@@ -130,6 +130,13 @@ public:
     // Read a whole SD file by path: find its size via listDir, then fileOpen(FA_READ) -> fileRead -> fileClose.
     std::vector<std::uint8_t> readFile(const std::string& path);
 
+    // Write a whole file to an SD path, creating it and any missing parent directories
+    // (FA_WRITE|FA_CREATE_ALWAYS|FS_MAKEPATH) — the inverse of readFile.
+    void writeFile(const std::string& path, const std::uint8_t* data, std::size_t size);
+    void writeFile(const std::string& path, const std::vector<std::uint8_t>& bytes) {
+        writeFile(path, bytes.data(), bytes.size());
+    }
+
     // Blocking reads from the serial port - the N8 menu's replies come back this way (its TX FIFO drains to
     // USB). Throw std::runtime_error on timeout. Used by the menu command layer (N8Menu).
     std::uint8_t  rx8();
