@@ -126,11 +126,13 @@ FXW=$(xdotool search --name "CLAPi: RetroPlug" 2>/dev/null | head -1 || true)
 eval "$(xdotool getwindowgeometry --shell "$FXW" 2>/dev/null || true)" # sets X, Y, WIDTH, HEIGHT
 CX=$(( ${X:-114} + LOAD_X_OFF )); CY=$(( ${Y:-100} + LOAD_Y_OFF ))
 echo "run-reaper-params[$FORMAT]: DISPLAY=$DISPLAY  FXW=${FXW:-none}  click 'Load mGB' at ($CX,$CY)"
+# Under `reaper:all` (jobs=4) everything is slower and LVGL's indev polling misses more presses, so be
+# more patient here than the standalone case needs: RP_PARAMS_CLICK_TRIES raises the attempt count.
 loaded_sz=0
-for attempt in $(seq 1 6); do
+for attempt in $(seq 1 "${RP_PARAMS_CLICK_TRIES:-12}"); do
   xdotool mousemove "$CX" "$CY" 2>/dev/null || true
-  sleep 0.3
-  xdotool mousedown 1 2>/dev/null || true; sleep 0.3; xdotool mouseup 1 2>/dev/null || true
+  sleep 0.4
+  xdotool mousedown 1 2>/dev/null || true; sleep 0.4; xdotool mouseup 1 2>/dev/null || true
   for _ in $(seq 1 16); do
     sleep 0.5
     loaded_sz=$(wc -c < "$SNAP" 2>/dev/null || echo 0)

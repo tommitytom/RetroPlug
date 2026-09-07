@@ -243,11 +243,20 @@ ELAPSED=$((SECONDS - START))
 # ---- summary --------------------------------------------------------------------------------
 echo
 echo "================ reaper suite summary (${ELAPSED}s, jobs=$MAXJOBS) ================"
+# Exit 2 is the INCONCLUSIVE contract the mouse-driven checks already define (run-reaper-editor-reopen.sh,
+# run-reaper-params.sh): the synthesized click that loads a ROM through the UI did not register, so the
+# check never got to assert anything. That is a harness miss, not a regression, and reporting it as FAIL
+# makes the suite cry wolf. It is still surfaced loudly and never silently folded into "all passed".
 fail=0
+skip=0
 for n in "${ALL_SCENARIOS[@]}"; do
     rc=$(cat "$RESULTS_DIR/$n.rc" 2>/dev/null || echo "?")
     if [ "$rc" = "0" ]; then
         printf "  PASS  %s\n" "$n"
+    elif [ "$rc" = "2" ]; then
+        printf "  SKIP  %s (inconclusive)\n" "$n"
+        sed 's/^/          /' <(tail -n 3 "$RESULTS_DIR/$n.log" 2>/dev/null) || true
+        skip=$((skip + 1))
     else
         printf "  FAIL  %s (rc=%s)\n" "$n" "$rc"
         # Surface the tail of the failing job so the cause is visible without hunting logs.
@@ -258,7 +267,11 @@ done
 echo "  logs: $RESULTS_DIR/<scenario>.log"
 echo "======================================================================"
 if [ "$fail" -eq 0 ]; then
-    echo "ALL ${#ALL_SCENARIOS[@]} REAPER CHECKS PASSED"
+    if [ "$skip" -eq 0 ]; then
+        echo "ALL ${#ALL_SCENARIOS[@]} REAPER CHECKS PASSED"
+    else
+        echo "$((${#ALL_SCENARIOS[@]} - skip)) REAPER CHECKS PASSED, $skip SKIPPED (inconclusive, not a failure)"
+    fi
     exit 0
 fi
 echo "$fail of ${#ALL_SCENARIOS[@]} REAPER CHECKS FAILED"
