@@ -56,7 +56,9 @@ local function loop()
   elseif phase == "shown" and now - t > 3.0 then
     dump("before", tr, fx)   -- no project loaded: every CC slot is generic and hidden
     os.execute("touch " .. SIG_DIR .. "/rp-params-before")
-    phase = "waiting"
+    -- Autoload mode: the plugin already came up with a project (RETROPLUG_AUTOLOAD_PROJECT), so the
+    -- "before" dump is already the loaded state and there is nothing to click. Dump again and stop.
+    if os.getenv("RP_PARAMS_AUTOLOAD") == "1" then t = now; phase = "settling" else phase = "waiting" end
   elseif phase == "waiting" and exists(LOADED) then
     t = now; phase = "settling"
   elseif phase == "settling" and now - t > SETTLE then

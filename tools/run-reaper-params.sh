@@ -39,6 +39,10 @@ W=1280; H=720
 # its 1-based system number - so these are the exact strings a host reports, prefix included.
 MGB_NAME="${RP_PARAMS_EXPECT:-1: PU1 Pulse Width}"
 POOL_NAME="1: CC 1"
+# Autoload mode only: `;`-separated lane names (without the "1: " system prefix) the loaded project's
+# ROM must expose. Defaults to a VRC7 spread - a core 2A03 lane, a per-voice FM lane, and one of the
+# chip-global custom-patch lanes, so a build that silently fell back to the 2A03 table fails here.
+RP_PARAMS_EXPECT_LANES="${RP_PARAMS_EXPECT_LANES:-Pulse 1 Duty;FM 1 Volume;FM 6 Volume;FM Attack;FM Key-Scale Rate}"
 
 : "${RP_JOB_TAG:=params-$FORMAT}"
 RP_SCREEN_W=$W RP_SCREEN_H=$H
@@ -63,6 +67,26 @@ export RP_PARAMS_FX="$FX_TOKEN: RetroPlug"
 rm -f "$OUT" "$SNAP" "$SIGDIR/rp-params-lua.log" \
       "$SIGDIR/rp-params-before" "$SIGDIR/rp-params-loaded" "$SIGDIR/rp-params-done"
 
+# Autoload mode (RP_PARAMS_ROM=<rom>): the plugin comes up with the ROM already loaded, so there is
+# nothing to click and no before/after transition - the check is simply "does the host report the lanes
+# this ROM should have". Deterministic (no mouse), and the only coverage of the per-chip BlipToaster
+# parameter tables, which the click-driven mGB path never reaches.
+#
+# The project is a hand-written THIN .rplg: JSON referencing the ROM by path, with no `roles` key, so
+# loading it re-runs the ROM providers - which is exactly the detection chain under test. No fixture
+# authoring and no retroplug-host build needed.
+if [ -n "${RP_PARAMS_ROM:-}" ]; then
+  if [ ! -e "$RP_PARAMS_ROM" ]; then
+    echo "SKIP: $RP_PARAMS_ROM not present, nothing to check." >&2
+    reaper_env_down; trap - EXIT INT TERM; exit 2
+  fi
+  rom_abs="$(cd "$(dirname "$RP_PARAMS_ROM")" && pwd)/$(basename "$RP_PARAMS_ROM")"
+  RETROPLUG_AUTOLOAD_PROJECT="$SIGDIR/params.rplg"
+  printf '{"schemaVersion":"4","settings":{},"systems":[{"platform":"nes","core":"mesen","romPath":"%s"}]}\n' \
+    "$rom_abs" >"$RETROPLUG_AUTOLOAD_PROJECT"
+  export RETROPLUG_AUTOLOAD_PROJECT RP_PARAMS_AUTOLOAD=1
+fi
+
 RETROPLUG_SCREENSHOT_PATH="$SNAP" \
 RETROPLUG_SCREENSHOT_INTERVAL_MS=400 \
   reaper -cfgfile "$REAPER_CFG/reaper.ini" -nosplash "$SCRIPT_DIR/reaper-params.lua" >"$SIGDIR/reaper.log" 2>&1 & REAPER_PID=$!
@@ -70,6 +94,31 @@ RETROPLUG_SCREENSHOT_INTERVAL_MS=400 \
 # Wait for the pre-load dump, which the script writes once the editor has floated and settled.
 for _ in $(seq 1 120); do [ -f "$SIGDIR/rp-params-before" ] && break; sleep 0.5; done
 reaper_wait_snapshot "$SNAP" "${RP_PARAMS_TIMEOUT:-45}" || true
+
+if [ -n "${RP_PARAMS_ROM:-}" ]; then
+  # Autoload mode: nothing to click, just wait for the second dump.
+  for _ in $(seq 1 120); do [ -f "$SIGDIR/rp-params-done" ] && break; sleep 0.5; done
+  reaper_env_down
+  trap - EXIT INT TERM
+  cp -f "$OUT" "$REPO_DIR/build/reaper-params-$FORMAT.txt" 2>/dev/null || true
+  [ -s "$OUT" ] || { echo "SKIP: no parameter dump written — see $SIGDIR/reaper.log" >&2; exit 2; }
+
+  FX_LOADED=$(grep -m1 '^#fx	' "$OUT" | cut -f2-)
+  case "$FX_LOADED" in "$FX_TOKEN"*) ;; *)
+    echo "SKIP: Reaper loaded '$FX_LOADED', not a $FX_TOKEN plugin." >&2; exit 2 ;;
+  esac
+  claimed=$(grep -cP "^after\t[0-9]+\t1: (?!CC [0-9]+$)" "$OUT" || true)
+  echo "run-reaper-params[$FORMAT]: fx='$FX_LOADED' rom=$(basename "$RP_PARAMS_ROM") claimed=$claimed lanes"
+  fail=0
+  IFS=';' read -r -a EXPECT <<<"$RP_PARAMS_EXPECT_LANES"
+  for want in "${EXPECT[@]}"; do
+    [ -n "$want" ] || continue
+    grep -qF "	1: $want" "$OUT" || { echo "FAIL: the host does not report '1: $want'." >&2; fail=1; }
+  done
+  [ "$fail" = "0" ] || exit 1
+  echo "PASS: the host reports this build's lanes ($claimed claimed)."
+  exit 0
+fi
 
 # Click-load mGB through the UI menu (mouse routes to the plugin; keyboard does not).
 FXW=$(xdotool search --name "CLAPi: RetroPlug" 2>/dev/null | head -1 || true)

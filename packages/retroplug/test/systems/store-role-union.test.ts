@@ -21,7 +21,8 @@ import { registerCoreRoles } from "../../src/coreRoles";
 import { registerDspRoles } from "../../src/dspRoles";
 import { registerLsdjAssetsRole } from "../../src/lsdjAssetsRole";
 import { registerRomProviders } from "../../src/romProviders";
-import { gbRom, lsdjRom } from "./fixtures";
+import { buildAppRegistry } from "../../src/appHost";
+import { gbRom, lsdjRom, blipToasterRom } from "./fixtures";
 
 function newStore() {
   const be = new MockBackend("/cfg");
@@ -146,4 +147,67 @@ test("the smsggdj case that prompted this: a mesen-only project gains sms-sync",
   const sync = roles.find((r) => r.kind === "sms-sync");
   expect(sync != null).toBeTruthy();
   expect(sync!.config.machine).toBe("sms"); // tagged with the wire format, as a fresh add would be
+});
+
+// --- derived facts vs stored configuration -------------------------------------------------------
+//
+// The union rule above ("a stored role is never touched") protects CONFIGURATION. It must not protect
+// a field that is a fact about the ROM file, because then a project can outlive the truth. That is the
+// case for `bliptoaster.chip`, which says which expansion build the ROM is and decides the entire DAW
+// parameter map (src/parameterMap.ts): a project written before the field existed stores no chip, and
+// reading it as the 2A03 default silently hides every VRC7 / VRC6 / N163 / MMC5 lane.
+
+/** A BlipToaster ROM fixture with its iNES mapper rewritten (85 = VRC7, 24 = VRC6, 0 = base). */
+function blipToasterWithMapper(mapper: number): Uint8Array {
+  const rom = blipToasterRom();
+  rom[6] = (rom[6] & 0x0f) | ((mapper & 0x0f) << 4);
+  rom[7] = (rom[7] & 0x0f) | (mapper & 0xf0);
+  return rom;
+}
+
+function newAppStore() {
+  const be = new MockBackend("/cfg");
+  return { be, store: new SystemsStore(be, undefined, buildAppRegistry()) };
+}
+
+const chipOf = (store: SystemsStore, id: number): string | undefined =>
+  (store.view().find((v) => v.id === id)?.roles.find((r) => r.kind === "bliptoaster")?.config as
+    | { chip?: string }
+    | undefined)?.chip;
+
+test("a project saved before `chip` existed re-derives it from the ROM", () => {
+  const { be, store } = newAppStore();
+  be.seed("/roms/bt.nes", blipToasterWithMapper(85));
+  // Exactly what a pre-field project holds: the role, with an empty config.
+  const id = store.adopt({ romPath: "/roms/bt.nes", core: "mesen", roles: [
+    { kind: "mesen", config: {} },
+    { kind: "bliptoaster", config: {} },
+  ] });
+  expect(id != null).toBeTruthy();
+  expect(chipOf(store, id!)).toBe("vrc7");
+});
+
+test("a stale `chip` is corrected when the ROM at that path is a different build", () => {
+  const { be, store } = newAppStore();
+  be.seed("/roms/bt.nes", blipToasterWithMapper(24));
+  const id = store.adopt({ romPath: "/roms/bt.nes", core: "mesen", roles: [
+    { kind: "mesen", config: {} },
+    { kind: "bliptoaster", config: { chip: "vrc7" } }, // the ROM was swapped since this was written
+  ] });
+  expect(chipOf(store, id!)).toBe("vrc6");
+});
+
+test("re-deriving the chip leaves the rest of that role's config alone", () => {
+  const { be, store } = newAppStore();
+  be.seed("/roms/bt.nes", blipToasterWithMapper(85));
+  const id = store.adopt({ romPath: "/roms/bt.nes", core: "mesen", roles: [
+    { kind: "mesen", config: {} },
+    { kind: "bliptoaster", config: { chip: "2a03", keepMe: 7 } },
+    { kind: "bliptoaster-assets", config: { overrides: [{ type: "kit", slot: 3 }] } },
+  ] });
+  const roles = store.view().find((v) => v.id === id)!.roles;
+  expect((roles.find((r) => r.kind === "bliptoaster")!.config as { keepMe?: number }).keepMe).toBe(7);
+  // ...and a sibling role's stored config is untouched: this is not a general re-derive
+  const assets = roles.find((r) => r.kind === "bliptoaster-assets")!.config as { overrides: unknown[] };
+  expect(assets.overrides.length).toBe(1);
 });

@@ -28,6 +28,7 @@ import {
 } from "./systemsList";
 import { type CommonSettings, DEFAULT_COMMON_SETTINGS, clampGain, commonSettingsSchema } from "./systemSettings";
 import type { RoleRegistry, RoleInstance } from "./systemRoles";
+import { blipToasterChip } from "./bliptoaster/romDetect";
 import { roleConfigForNative, LsdjSyncMode } from "./settingsEnums";
 
 // How much ROM header to read for the role providers (title lives at 0x134).
@@ -710,7 +711,34 @@ export class SystemsStore {
     const missing = this.defaultRoles(core, platform, romPath, embeddedRom).filter(
       (r) => r.kind !== core && !have.has(r.kind),
     );
-    return missing.length ? [...stored, ...missing] : stored;
+    return this.withDerivedRoleFacts(missing.length ? [...stored, ...missing] : stored, romPath, embeddedRom);
+  }
+
+  /** Re-derive the role-config fields that are FACTS ABOUT THE ROM FILE rather than user choices, so a
+   *  loaded project reflects the ROM on disk today. The same reasoning as `battery` below, which is
+   *  re-derived at every build instead of being serialized - the difference is only that these live
+   *  inside a role config, so they cannot simply be left out of the file.
+   *
+   *  Today that is exactly one field: `bliptoaster.chip`, which expansion build the ROM is. It decides
+   *  which CC set the DAW parameter map exposes (parameterMap.ts), and overwriting it repairs the two
+   *  cases a stored value gets wrong: a project written before the field existed (which would read as
+   *  the 2A03 core and silently show none of the expansion lanes), and a ROM swapped for a different
+   *  build at the same path. It is deliberately NOT covered by "a stored role is never touched" above:
+   *  that rule protects configuration, and this is not configuration. */
+  private withDerivedRoleFacts(roles: RoleInstance[], romPath: string, embeddedRom: string): RoleInstance[] {
+    const i = roles.findIndex((r) => r.kind === "bliptoaster");
+    if (i < 0 || !romPath || embeddedRom) return roles;
+
+    const header = this.backend.readFilePrefix(romPath, ROLE_HEADER_LEN);
+    if (!header) return roles;
+
+    const chip = blipToasterChip(header);
+    const cfg = roles[i].config as { chip?: string } | undefined;
+    if (cfg?.chip === chip) return roles;
+
+    const out = [...roles];
+    out[i] = { ...roles[i], config: { ...(cfg ?? {}), chip } };
+    return out;
   }
 
   // Whether this cart has battery-backed save memory, derived from the ROM header (embedded/missing → false).

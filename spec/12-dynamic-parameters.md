@@ -9,9 +9,9 @@ Scope is **CLAP and VST3**. LV2, VST2, AU, JACK and the standalone keep today's 
 they pass no callback, `Plugin::canUpdateParameterInfo()` is false there, and the pool keeps the names
 it was declared with.
 
-Verified against real Reaper in both formats (`pnpm reaper:params` / `reaper:params-clap`). Sections
-1-5 below describe the design as built; section 9 records where the build diverged from the original
-plan and why.
+Verified against real Reaper in both formats (`pnpm reaper:params` / `reaper:params-clap`) and per
+BlipToaster build (`reaper:params-vrc7`). Sections 1-5 below describe the design as built; section 9
+records where the build diverged from the original plan and why.
 
 ## 1. Why this does not work today
 
@@ -255,13 +255,19 @@ override would live in the project JSON, and per the config-migration rule that 
   ([test/plugin/DynamicParameters.test.cpp](../packages/native/test/plugin/DynamicParameters.test.cpp)),
   which drives `reinitParameters()` directly over a toy plugin with no plugin format built at all.
   It pins the classifier and, critically, that toggling hidden never writes `Parameter::hints`.
-- **Real hosts.** `pnpm reaper:params` (VST3) and `pnpm reaper:params-clap` (CLAP) insert RetroPlug
+- **Real hosts, per-chip.** `pnpm reaper:params-vrc7` autoloads a BlipToaster VRC7 ROM through a
+  hand-written thin `.rplg` (no `roles` key, so loading it re-runs the ROM providers - the detection
+  chain under test) and asserts the host reports that build's lanes: a core 2A03 lane, a per-voice FM
+  lane, and a chip-global custom-patch lane, so a build that silently fell back to the 2A03 table
+  fails. Deterministic, no mouse. It is the only coverage of the per-chip tables, which the mGB path
+  below never reaches. Point `RP_PARAMS_ROM` at any build to check another.
+- **Real hosts, re-labelling.** `pnpm reaper:params` (VST3) and `pnpm reaper:params-clap` (CLAP) insert RetroPlug
   with no project, read every parameter name through ReaScript, click-load mGB **through the UI**,
   and re-read: the names must become mGB's map, `"1: CC 1"` must be gone, and the count must not have
   moved. This is the only check that proves a host acts on the flag the plugin raises, and loading
-  through the UI also covers the editor idle poll. Both are in
-  [run-reaper-suite.sh](../tools/run-reaper-suite.sh) as `params-vst3` / `params-clap`; neither is in
-  CI (they need a full DAW + X stack).
+  through the UI also covers the editor idle poll. All three are in
+  [run-reaper-suite.sh](../tools/run-reaper-suite.sh) as `params-vst3` / `params-clap` / `params-vrc7`;
+  none is in CI (they need a full DAW + X stack).
 - The format is requested by its **prefixed** name (`"CLAPi: RetroPlug"`) and then re-checked against
   what Reaper actually loaded. A bare `"RetroPlug"` let Reaper pick VST3 for both legs, so the CLAP
   run was silently a second VST3 run that still reported PASS.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Run the whole headless-Reaper leg CONCURRENTLY: build + author once, then fan out all fourteen
-# checks (9 audio renders + 5 editor/host checks) in parallel and print a PASS/FAIL summary.
+# Run the whole headless-Reaper leg CONCURRENTLY: build + author once, then fan out all fifteen
+# checks (9 audio renders + 6 editor/host checks) in parallel and print a PASS/FAIL summary.
 #
 # Each check runs through the isolated harness (tools/reaper-env.sh) with a distinct RP_JOB_TAG,
 # so they don't share a JACK server, a Reaper config dir, an Xvfb display, or log files — which is
@@ -10,7 +10,7 @@
 # and wall-clock-independent, so parallel scheduling can't change the audio.
 #
 # Usage:
-#   tools/run-reaper-suite.sh                 # build + author + run all 14
+#   tools/run-reaper-suite.sh                 # build + author + run all 15
 #   RP_SUITE_JOBS=4 tools/run-reaper-suite.sh # force concurrency 4 (default: what /dev/shm fits, max 8)
 #   RP_SUITE_NO_BUILD=1 tools/run-reaper-suite.sh   # skip the plugin build + fixture regen
 #
@@ -148,14 +148,16 @@ ANALYZE[gg-sync]='tools/reaper-timing-analyze.py build/reaper-gg-sync.wav --drif
 # it needs. params-* is the per-ROM parameter-name check, run once per plugin format because CLAP and
 # VST3 take entirely different notification paths in DPF.
 declare -A EDITOR_SCRIPT EDITOR_ENV
-EDITOR_SCENARIOS=(editor editor-reopen editor-autoload params-vst3 params-clap)
+EDITOR_SCENARIOS=(editor editor-reopen editor-autoload params-vst3 params-clap params-vrc7)
 EDITOR_SCRIPT[editor]="tools/run-reaper-editor.sh"
 EDITOR_SCRIPT[editor-reopen]="tools/run-reaper-editor-reopen.sh"
 EDITOR_SCRIPT[editor-autoload]="tools/run-reaper-editor-autoload.sh"
 EDITOR_SCRIPT[params-vst3]="tools/run-reaper-params.sh"
 EDITOR_SCRIPT[params-clap]="tools/run-reaper-params.sh"
+EDITOR_SCRIPT[params-vrc7]="tools/run-reaper-params.sh"
 EDITOR_ENV[params-vst3]="RP_PARAMS_FORMAT=vst3"
 EDITOR_ENV[params-clap]="RP_PARAMS_FORMAT=clap"
+EDITOR_ENV[params-vrc7]="RP_PARAMS_ROM=resources/roms/bliptoaster-vrc7.nes"
 
 ALL_SCENARIOS=("${RENDER_SCENARIOS[@]}" "${EDITOR_SCENARIOS[@]}")
 
