@@ -30,7 +30,8 @@ test("trace logger captures the instruction stream + the step trio advances a re
   let over = null as BreakInfo | null;
   let out = null as BreakInfo | null;
   let pcAfterSteps = -1;
-  let pcLater = -1;
+  let frameAfterSteps = -1;
+  let frameLater = -1;
 
   const tl = new Timeline()
     .at(10, (sess) => (enabled = sess.backend.setTrace(id, true)))
@@ -39,22 +40,34 @@ test("trace logger captures the instruction stream + the step trio advances a re
       sess.backend.setTrace(id, false); // rows captured; a trace row per instruction is slow over a run
       into = sess.backend.stepInto(id);
       over = sess.backend.stepOver(id);
-      // Before stepOut, make sure the CPU is INSIDE a subroutine: from the top-level idle loop stepOut has
-      // no return frame and grinds the full ~50M-cycle cap (minutes). stepInto over a JSR pushes a return
-      // address (SP drops), so step until SP falls below its current value — ROM-agnostic, no hardcoded
-      // subroutine address. The idle loop polls the FIFO via a JSR, so this descends within a few steps.
+      pcAfterSteps = sess.backend.getCpuRegisters(id).find((r) => r.name === "pc")!.value;
+      frameAfterSteps = sess.backend.getPpuState(id)!.frameCount;
+    })
+    // Ordinary emulation must survive a step. A step installs a Mesen StepRequest, and a SPENT one breaks
+    // on the next instruction; nothing outside the step call resumes from that, so if doStep fails to
+    // disarm it (Debugger::Run) the core stops making progress the moment the render resumes. That is a
+    // HANG, not a failed assertion - it spins at 100% CPU and takes the whole native suite with it - so
+    // this sample is a documentation of intent as much as a check.
+    //
+    // Progress is measured by the PPU FRAME COUNT, not by the PC changing. A PC sample is not a progress
+    // signal: the idle loop is a handful of instructions, so two samples legitimately land on the same one
+    // and the check fails on a running core. frameCount only ever climbs.
+    //
+    // It is also sampled BEFORE stepOut, which must come last. A stepOut with no reachable return runs its
+    // full ~50M-cycle cap, which is ~28 SECONDS of emulated time - the render then has that much audio
+    // already buffered and legitimately emulates nothing more for the rest of a 400 ms timeline. Sampling
+    // after it would read a flat frame count off a perfectly healthy core.
+    .at(340, (sess) => (frameLater = sess.backend.getPpuState(id)!.frameCount))
+    .at(360, (sess) => {
+      // Descend into a subroutine first, so stepOut has a return frame to find: stepInto over a JSR pushes
+      // a return address (SP drops), so step until SP falls below its current value - ROM-agnostic, no
+      // hardcoded subroutine address. It may still cap (the frame it finds can be a long-running call),
+      // which is why only the shape of the result is asserted.
       const sp = () => sess.backend.getCpuRegisters(id).find((r) => r.name === "sp")!.value;
       const spTop = sp();
       for (let i = 0; i < 256 && sp() >= spTop; i++) sess.backend.stepInto(id);
       out = sess.backend.stepOut(id);
-      pcAfterSteps = sess.backend.getCpuRegisters(id).find((r) => r.name === "pc")!.value;
-    })
-    // Ordinary emulation must survive the step trio. A step installs a Mesen StepRequest, and a SPENT one
-    // breaks on the next instruction; nothing outside the step call resumes from that, so if doStep fails to
-    // disarm it (Debugger::Run) the core stops making progress the moment the render resumes. That is a HANG,
-    // not a failed assertion - it spins at 100% CPU and takes the whole native suite with it - so this
-    // sampled PC is a documentation of intent as much as a check.
-    .at(380, (sess) => (pcLater = sess.backend.getCpuRegisters(id).find((r) => r.name === "pc")!.value));
+    });
   renderTimeline(s, tl, { durationMs: 400, warmupMs: 1000 });
 
   // setTrace succeeds on a live NES debug target.
@@ -76,6 +89,6 @@ test("trace logger captures the instruction stream + the step trio advances a re
 
   // ...and the core kept running afterwards (see the note on the .at(380) sample above).
   expect(pcAfterSteps >= 0).toBeTruthy();
-  expect(pcLater >= 0).toBeTruthy();
-  expect(pcLater !== pcAfterSteps).toBeTruthy(); // emulation advanced past where the steps left it
+  expect(frameAfterSteps >= 0).toBeTruthy();
+  expect(frameLater > frameAfterSteps).toBeTruthy(); // emulation advanced past where the steps left it
 });

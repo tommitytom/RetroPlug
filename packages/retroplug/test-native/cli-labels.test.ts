@@ -47,7 +47,7 @@ test("loadLabels loads a cc65 .dbg into a real NES core (and fails a bogus path 
 
   // Assembler labels resolve as written.
   expect(s.backend.symbolAddress(id, "reset")).toBe(0x8000);
-  expect(s.backend.symbolAddress(id, "midiIdleLoop")).toBe(0x9fc4);
+  expect(s.backend.symbolAddress(id, "midiIdleLoop")).toBe(0x8d98);
   expect(s.backend.symbolAddress(id, "_g_frame")).toBe(0x0356);
   // C names resolve through the csym table: the global via its import -> export chain, and the STATIC.
   expect(s.backend.symbolAddress(id, "g_frame")).toBe(0x0356);

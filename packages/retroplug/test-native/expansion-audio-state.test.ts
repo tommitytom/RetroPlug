@@ -1,33 +1,59 @@
 // getExpansionAudioState against a REAL Mesen NES core, driven through the CLI session + Timeline.
 // The expansion-audio registers are write-only (like the 2A03's), so this snapshot is how a test
 // observes what a MIDI-driven ROM programmed into the mapper sound chip. Proves the end-to-end RPC +
-// per-chip decode: the base ROM (mapper 0) reports "none"; the VRC6 ROM reports its 3 voices, and a
+// per-chip decode: a cart with no sound mapper reports "none"; the VRC6 ROM reports its 3 voices, and a
 // sounding pulse reads back enabled with a non-zero normalized volume.
 import { test, expect } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { type ExpansionAudioState } from "../src/backend";
+import { nesRomBattery } from "../test/systems/fixtures";
 
 declare const __REPO_RESOURCES_DIR__: string;
+declare const __CONFIG_DIR__: string;
 const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
+const S5B = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-s5b.nes";
 const VRC6 = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-vrc6.nes";
 
-test("getExpansionAudioState reports 'none' for a cart without expansion audio", () => {
+// Read the chip + channel count a warmed core reports for `rom`.
+function chipOf(rom: string): ExpansionAudioState | null {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
-  const id = s.project.systems.addSystem(NES);
+  const id = s.project.systems.addSystem(rom);
   if (id == null) throw new Error("addSystem failed");
-
   let st: ExpansionAudioState | null = null;
   const tl = new Timeline().at(400, (sess) => (st = sess.backend.getExpansionAudioState(id)));
   renderTimeline(s, tl, { durationMs: 600, warmupMs: 1000 });
+  return st;
+}
 
+test("getExpansionAudioState reports 'none' for a cart without expansion audio", () => {
+  // A synthetic MMC1 cart, because no BlipToaster build is expansion-less any more: every one takes a
+  // sound mapper, and the base build takes FME-7 (69) even though it only banks kits with it.
+  const s = bootSession();
+  const rom = __CONFIG_DIR__ + "/roms/plain.nes";
+  expect(s.backend.writeFile(rom, nesRomBattery())).toBeTruthy();
+
+  const st = chipOf(rom);
   expect(st != null).toBeTruthy();
   expect(st!.chip === "none").toBeTruthy();
   expect(Array.isArray(st!.channels) && st!.channels.length === 0).toBeTruthy();
+});
+
+// Both mapper-69 BlipToaster builds present the SAME expansion audio to the emulator: the hardware is on
+// the cart either way, the base build simply never writes to it. So not even Mesen's view of the sound
+// chip can say which build a ROM is - which is exactly why the build is read from the SIG chip tag
+// instead of the mapper (src/bliptoaster/romDetect.ts).
+test("the base and S5B builds are indistinguishable by their expansion audio", () => {
+  const s = bootSession();
+  if (!s.backend.fileExists(NES) || !s.backend.fileExists(S5B)) {
+    console.log("# SKIP: no NES rom");
+    return;
+  }
+  const base = chipOf(NES);
+  const s5b = chipOf(S5B);
+  expect(base!.chip === "s5b").toBeTruthy();
+  expect(s5b!.chip === "s5b").toBeTruthy();
+  expect(base!.channels.length).toBe(s5b!.channels.length);
 });
 
 test("getExpansionAudioState decodes VRC6: 3 voices, a sounding pulse reads enabled + volume>0", () => {
