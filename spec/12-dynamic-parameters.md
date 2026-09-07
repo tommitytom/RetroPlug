@@ -192,7 +192,7 @@ parameters. Symbols are `gain`, then `sys1_cc1` .. `sys4_cc160`. Every slot is `
 claimed.
 
 160 is sized from the real CC tables, not guessed: the largest ROM in the set is BlipToaster's VRC7
-build at **130** lanes (12 channels), then MMC5 103, VRC6 99, N163 97, S5B 92, the 2A03 core 65, and
+build at **137** lanes (12 channels), then MMC5 106, VRC6 103, N163 101, S5B 95, the 2A03 core 65, and
 mGB 24. `pnpm test midi/parameterMap` fails the build if any table outgrows the budget, since the
 projection would otherwise truncate silently. **Changing `CC_SLOTS_PER_SYSTEM` shifts host
 automation** on systems 2-4, whose pool indices are `system * CC_SLOTS_PER_SYSTEM` (symbols are
@@ -213,6 +213,13 @@ Reset All Controllers, CC123 All Notes Off) - automating a panic message is acti
 **Chip-global controls get one lane, not one per voice.** VRC7's custom patch is a single shared user
 instrument (OPLL has only one), and the S5B envelope and noise generator are chip-wide. A `shared`
 flag on the CC spec emits one un-prefixed lane addressed on the first channel that owns it.
+
+**The vibrato/tremolo LFO, by contrast, is genuinely per-voice.** `lfo_tick()` in the ROM walks
+`st = 0..CH_COUNT-1` reading `_lfoRate[st]` / `_lfoShape[st]` / `_lfoPhase[st]`, so every expansion
+voice has its own - "FM 3 LFO Shape" is a real control. That same loop dips expansion volume through
+`exp_trem()` (including the VRC6 sawtooth, whose accumulator base *is* its amplitude), which is why
+tremolo depth belongs on the expansion voices too. Only the poly channel differs: it has one shared
+LFO for the whole chord (`_polyLfo*`), and it is one lane because it is one channel.
 
 **Which BlipToaster build.** Only one expansion chip can be active at a time, so each is a separate
 `.nes` with its own CC set. The SIG block carries only the marker and a semver, so the build is read

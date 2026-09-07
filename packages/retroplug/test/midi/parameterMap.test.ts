@@ -98,6 +98,28 @@ test("chip-global controls get ONE lane, not one per voice", () => {
   expect(vrc7.filter((p) => p.cc === 7 && p.name.startsWith("FM ")).length).toEqual(6);
 });
 
+test("the LFO is per-voice, and tremolo reaches the expansion voices too", () => {
+  // lfo_tick() in the ROM walks st = 0..CH_COUNT-1 reading _lfoRate[st] / _lfoShape[st] / _lfoPhase[st],
+  // so each expansion voice really does have its own LFO - "FM 3 LFO Shape" is a real control, not an
+  // over-expansion. The same loop dips expansion volume through exp_trem(), which is why tremolo depth
+  // belongs on them as well; it was missing from the first cut of these tables.
+  const vrc7 = expandRomSpec(BLIPTOASTER_SPECS.vrc7);
+  for (const n of ["FM 3 LFO Shape", "FM 3 LFO Rate", "FM 3 Vibrato Depth", "FM 3 Tremolo Depth"])
+    expect(vrc7.some((p) => p.name === n)).toEqual(true);
+  // per-voice, so every FM channel has its own
+  expect(vrc7.filter((p) => p.cc === 79 && p.name.startsWith("FM ")).length).toEqual(6);
+  expect(vrc7.filter((p) => p.cc === 78 && p.name.startsWith("FM ")).length).toEqual(6);
+  // ...and every other expansion build carries tremolo on its voices, including the VRC6 saw, whose
+  // exp_trem() dips the sawtooth accumulator base
+  const has = (chip: string, n: string) => expandRomSpec(BLIPTOASTER_SPECS[chip]).some((p) => p.name === n);
+  expect(has("vrc6", "VRC6 Saw Tremolo Depth")).toEqual(true);
+  expect(has("s5b", "Square C Tremolo Depth")).toEqual(true);
+  expect(has("n163", "Wave 3 Tremolo Depth")).toEqual(true);
+  expect(has("mmc5", "MMC5 Pulse 2 Tremolo Depth")).toEqual(true);
+  // the 2A03 triangle has no volume, so no tremolo - the one voice that must NOT have it
+  expect(has("2a03", "Triangle Tremolo Depth")).toEqual(false);
+});
+
 test("VRC7 drops CC15, which that build does not implement", () => {
   expect(expandRomSpec(BLIPTOASTER_SPECS.vrc7).some((p) => p.cc === 15)).toEqual(false);
   expect(expandRomSpec(BLIPTOASTER_SPECS["2a03"]).some((p) => p.cc === 15)).toEqual(true);
