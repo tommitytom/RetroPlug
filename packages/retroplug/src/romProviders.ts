@@ -10,7 +10,7 @@
 import type { RoleRegistry, RomContext, RoleInstance } from "./systemRoles";
 import { LsdjSyncMode } from "./settingsEnums";
 import { isRisaRomHeader, isRisaSyncRom } from "./risa";
-import { isBlipToasterRomHeader } from "./bliptoaster/romDetect";
+import { isBlipToasterRomHeader, blipToasterChip } from "./bliptoaster/romDetect";
 import { isSmsggdjRom } from "./smsSync";
 
 // The Game Boy cartridge title field is 0x134..0x143. Decode it to an uppercase ASCII
@@ -79,7 +79,10 @@ export function registerRomProviders(registry: RoleRegistry): void {
   // battery, so there is no song marker — the tracker integration is asset-only.
   registry.registerRomProvider((rom: RomContext): RoleInstance[] =>
     rom.platform === "nes" && isBlipToasterRomHeader(rom.header)
-      ? [{ kind: "bliptoaster", config: {} }, { kind: "bliptoaster-assets", config: { overrides: [] } }]
+      ? [
+          { kind: "bliptoaster", config: { chip: blipToasterChip(rom.header) } },
+          { kind: "bliptoaster-assets", config: { overrides: [] } },
+        ]
       : [],
   );
 }

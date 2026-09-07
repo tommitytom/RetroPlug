@@ -127,6 +127,14 @@ if ! has before "$POOL_NAME"; then
   echo "      looking at the parameter pool it thinks it is; result is inconclusive." >&2
   exit 2
 fi
+# The click-retry loop above gives up after 6 attempts and signals the ReaScript regardless, so the
+# post-load dump exists even when mGB never loaded. Without this the run reports FAIL ("the names did
+# not change") for what is really a setup failure — the names were never asked to change.
+if ! { [ "$loaded_sz" -gt 0 ] && [ "$loaded_sz" -le "$GRID_MAX_BYTES" ]; }; then
+  echo "SKIP: could not click-load mGB (the editor snapshot is still the menu at ${loaded_sz}B, grid is" >&2
+  echo "      <= ${GRID_MAX_BYTES}B). Adjust RP_LOAD_X_OFF / RP_LOAD_Y_OFF; result is inconclusive." >&2
+  exit 2
+fi
 
 fail=0
 if [ "$CB" != "$CA" ]; then

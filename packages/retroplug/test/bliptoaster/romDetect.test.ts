@@ -1,7 +1,13 @@
 // BlipToaster SIG-block detection tests: find the "bliptoaster" head marker + read its semver, and reject
 // non-BlipToaster buffers. Pure byte-level — no emulator or real ROM.
 import { test, expect } from "../../testing/harness";
-import { blipToasterInfo, isBlipToasterRomHeader, BLIPTOASTER_MARKER } from "../../src/bliptoaster/romDetect";
+import {
+  blipToasterInfo,
+  isBlipToasterRomHeader,
+  blipToasterChip,
+  BLIPTOASTER_MARKER,
+} from "../../src/bliptoaster/romDetect";
+import { buildAppRegistry } from "../../src/appHost";
 import { blipToasterRom, nesRom, garbage } from "../systems/fixtures";
 
 // A header carrying the marker + a semver at `at`.
@@ -28,6 +34,41 @@ test("non-BlipToaster buffers return null / false", () => {
     expect(blipToasterInfo(buf)).toBe(null);
     expect(isBlipToasterRomHeader(buf)).toBe(false);
   }
+});
+
+// --- which build is it? (drives the DAW parameter map — see src/parameterMap.ts) ---
+
+/** The fixture ROM with its iNES mapper number rewritten. */
+function withMapper(rom: Uint8Array, mapper: number): Uint8Array {
+  const b = rom.slice();
+  b[6] = (b[6] & 0x0f) | ((mapper & 0x0f) << 4);
+  b[7] = (b[7] & 0x0f) | (mapper & 0xf0);
+  return b;
+}
+
+test("blipToasterChip reads the build off the iNES mapper", () => {
+  const rom = blipToasterRom();
+  expect(blipToasterChip(withMapper(rom, 5))).toBe("mmc5");
+  expect(blipToasterChip(withMapper(rom, 19))).toBe("n163");
+  expect(blipToasterChip(withMapper(rom, 24))).toBe("vrc6");
+  expect(blipToasterChip(withMapper(rom, 85))).toBe("vrc7");
+  // FME-7 (69) is the base build's kit-banking mapper AND the Sunsoft 5B mapper, and the two ROMs are
+  // otherwise header-identical, so it resolves to the subset that can never be wrong.
+  expect(blipToasterChip(withMapper(rom, 69))).toBe("2a03");
+  expect(blipToasterChip(rom)).toBe("2a03"); // the fixture is NROM
+});
+
+test("the provider records the build on the `bliptoaster` role", () => {
+  const reg = buildAppRegistry();
+  const chipOf = (rom: Uint8Array): string | undefined => {
+    const role = reg.defaultRoles("mesen", "nes", rom).find((r) => r.kind === "bliptoaster");
+    return (role?.config as { chip?: string } | undefined)?.chip;
+  };
+  expect(chipOf(withMapper(blipToasterRom(), 85))).toBe("vrc7");
+  expect(chipOf(withMapper(blipToasterRom(), 24))).toBe("vrc6");
+  expect(chipOf(blipToasterRom())).toBe("2a03");
+  // a non-BlipToaster NES ROM gets no such role at all
+  expect(reg.defaultRoles("mesen", "nes", nesRom()).some((r) => r.kind === "bliptoaster")).toBe(false);
 });
 
 // The marker is a wire contract with the ROM repo's rom/src/core/sig.s, and it has moved twice ("EVERMIDI"

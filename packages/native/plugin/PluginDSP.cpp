@@ -52,9 +52,12 @@ using PluginRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>
 // deactivate, VST3 a component reload), a DAW project's automation is bound to the slot, and DPF's own
 // state save/restore is keyed by symbol. Only the names and the hidden flag change per loaded ROM.
 // kMaxSystems matches the four stereo output pairs, since a system routes to one.
-// kCcSlotsPerSystem twins CC_SLOTS_PER_SYSTEM in packages/retroplug/src/parameterMap.ts.
+// kCcSlotsPerSystem twins CC_SLOTS_PER_SYSTEM in packages/retroplug/src/parameterMap.ts and is sized
+// for the largest ROM in the set (BlipToaster's VRC7 build: 12 channels, ~130 lanes) with headroom.
+// CHANGING IT SHIFTS HOST AUTOMATION on systems 2-4, whose pool indices are `system * this`, so it is
+// deliberately generous rather than tight - unclaimed slots are hidden and cost a float each.
 static constexpr std::uint32_t kMaxSystems       = 4;
-static constexpr std::uint32_t kCcSlotsPerSystem = 16;
+static constexpr std::uint32_t kCcSlotsPerSystem = 160;
 static constexpr std::uint32_t kCcSlotCount      = kMaxSystems * kCcSlotsPerSystem;
 static constexpr std::uint32_t kParamGain        = 0;
 static constexpr std::uint32_t kParamCcBase      = 1;
@@ -185,7 +188,7 @@ protected:
         const std::uint32_t slot = index - kParamCcBase;
         const std::uint32_t sys  = slot / kCcSlotsPerSystem;
         const std::uint32_t n    = slot % kCcSlotsPerSystem;
-        char buf[40];
+        char buf[80];   // fits the longest lane name, e.g. "1: MMC5 Pulse 1 Sustain / Length Flag"
 
         std::snprintf(buf, sizeof(buf), "sys%u_cc%u", sys + 1, n + 1);
         p.symbol = buf;

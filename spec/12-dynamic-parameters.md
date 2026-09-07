@@ -186,16 +186,47 @@ LV2 is not fixable and should be documented as such: its control ports are baked
 
 Per the spec thesis, native owns bytes and TypeScript owns meaning: the CC map is meaning.
 
-**The pool.** `PluginDSP` declares `1 + kSystemCount * kCcSlotsPerSystem` parameters (proposal:
-`1 + 4 * 16 = 65`, one constant). Symbols are `gain`, then `sys1_cc1` .. `sys4_cc16`. Every slot is
-`0..127`, `kParameterIsInteger | kParameterIsAutomatable`. Default names are `"1: CC 1"` etc, hidden
-until claimed.
+**The pool.** `PluginDSP` declares `1 + kMaxSystems * kCcSlotsPerSystem` = `1 + 4 * 160` = **641**
+parameters. Symbols are `gain`, then `sys1_cc1` .. `sys4_cc160`. Every slot is `0..127`,
+`kParameterIsInteger | kParameterIsAutomatable`. Default names are `"1: CC 1"` etc, hidden until
+claimed.
 
-**The map.** Each role that wants named parameters declares a static CC table next to its role
-definition ([systemRoles.ts](../packages/retroplug/src/systemRoles.ts) /
-[coreRoles.ts](../packages/retroplug/src/coreRoles.ts)): a list of `{ slot, cc, channel, name,
-shortName }`. mGB and BlipToaster each get one. The control plane projects the active systems'
-tables into a flat list for the pool.
+160 is sized from the real CC tables, not guessed: the largest ROM in the set is BlipToaster's VRC7
+build at **130** lanes (12 channels), then MMC5 103, VRC6 99, N163 97, S5B 92, the 2A03 core 65, and
+mGB 24. `pnpm test midi/parameterMap` fails the build if any table outgrows the budget, since the
+projection would otherwise truncate silently. **Changing `CC_SLOTS_PER_SYSTEM` shifts host
+automation** on systems 2-4, whose pool indices are `system * CC_SLOTS_PER_SYSTEM` (symbols are
+derived from `(system, n)` so DPF's own state restore survives, but CLAP's `clap_id` and VST3's
+`param_id` are the flat index), so it is deliberately generous rather than tight.
+
+**The map.** [parameterMap.ts](../packages/retroplug/src/parameterMap.ts) holds one `RomSpec` per ROM
+build: its voice names per 0-based MIDI channel, and every CC it responds to with the channels that
+accept it. `expandRomSpec` turns that into one lane per (CC, channel), named `"<Voice> <Control>"`.
+The tables are transcribed from each ROM's own documentation - mGB's from the MIDI implementation map
+in trash80/mGB's README, BlipToaster's from the per-chip tables in its `docs/chips/*.md`, each of
+which lists every CC that build responds to and on which channels.
+
+Two things are deliberately excluded from every table: the RPN bend-range handshake (CC101/100/6/38
+is a three-message sequence, not a value) and the channel-mode messages (CC120 All Sound Off, CC121
+Reset All Controllers, CC123 All Notes Off) - automating a panic message is actively harmful.
+
+**Chip-global controls get one lane, not one per voice.** VRC7's custom patch is a single shared user
+instrument (OPLL has only one), and the S5B envelope and noise generator are chip-wide. A `shared`
+flag on the CC spec emits one un-prefixed lane addressed on the first channel that owns it.
+
+**Which BlipToaster build.** Only one expansion chip can be active at a time, so each is a separate
+`.nes` with its own CC set. The SIG block carries only the marker and a semver, so the build is read
+off the **iNES mapper**: 5 MMC5, 19 N163, 24 VRC6, 85 VRC7 ([romDetect.ts](../packages/retroplug/src/bliptoaster/romDetect.ts)).
+The ROM provider records it as `chip` on the system's `bliptoaster` role, which is where the
+projection reads it.
+
+**Known gap: mapper 69 is ambiguous.** The base 2A03 build uses FME-7 (69) for kit banking, which is
+also the Sunsoft 5B mapper, and the two ROMs are otherwise header-identical (same size, same flag
+bytes, no iNES 2.0 submapper). 69 therefore resolves to `2a03`, whose CC set is a strict subset of
+S5B's: an S5B ROM gets correct-but-incomplete lanes (its three squares and the shared envelope are
+missing) rather than wrong ones. Closing it needs a chip byte in the ROM's SIG block, which has two
+spare `$FF` bytes inside its fixed 16-byte block. Until then an S5B user can set `"chip": "s5b"` on
+the `bliptoaster` role in a thin `.rplg`.
 
 **The seam.** `PluginDSP` polls a new `__rp_parameterMapJson` global exactly where it already polls
 `__rp_syncLatencyMs` in `updateLatency()`
@@ -246,9 +277,11 @@ override would live in the project JSON, and per the config-migration rule that 
 - **Automation follows the slot, not the name.** If a user automates `sys1_cc4` under mGB and then
   loads BlipToaster, the lane keeps controlling slot 4, which is now a different CC. That is inherent
   to a fixed pool and should be called out in the UI, not engineered around.
-- **Pool size is a guess.** 16 slots per system is a starting point. Too small and ROMs cannot expose
-  everything; too large and the DAW's parameter list is noisy even with hidden flags (not all hosts
-  honour hidden). Pick after auditing mGB's and BlipToaster's actual CC maps.
+- **The pool is large, and hidden is only a hint.** 641 parameters, of which a typical single-system
+  2A03 project claims 65. Hosts that honour `CLAP_PARAM_IS_HIDDEN` / `V3_PARAM_IS_HIDDEN` show only
+  the claimed ones; hosts that ignore it list all 641. pluginval passes both formats at this size and
+  Reaper is unbothered (its VST3 view is 2725, since DPF already prepends 2081 internal MIDI CC
+  parameters), but a host with a tighter parameter budget is untested.
 - **Upstream divergence.** This is the fork's third feature commit. Keeping the ctor parameter
   defaulted and every edit behind `DISTRHO_PLUGIN_WANT_DYNAMIC_PARAMETERS` keeps the merge surface at
   two backend files. Worth offering upstream.
@@ -277,10 +310,12 @@ fork, the rest here.
   `RESCAN_INFO|RESCAN_TEXT` unconditionally, which is what DPF already does elsewhere and is cheap.
 - **A refusal is whole-index.** The plan did not say what happens to the descriptor fields of an index
   whose ranges also moved. They are dropped, so a mixed edit cannot half-apply.
-- **The pool's per-slot count stayed at 16, and the tables are curated.** The plan flagged the size as
-  a guess pending an audit of the real CC maps. Audited: mGB documents ~24 controls across four
-  channels, BlipToaster far more. Both tables carry the subset worth an automation lane and leave out
-  setup-only controls (pitchbend range, preset load, sustain). 16 fits both with room.
+- **The pool went to 160 slots per system, and the tables are complete rather than curated.** The
+  first cut shipped 16 slots and a hand-picked ~16-entry table per ROM, which dropped most of what
+  BlipToaster exposes (the Pulse MOD hack, fine bend, the Wave Traveler, the envelope/length block,
+  the DMC address override) and could not represent VRC7 at all. Re-done from each ROM's own
+  per-chip CC tables: every CC a build responds to, on every channel that accepts it, minus the RPN
+  handshake and the channel-mode messages. See section 5 for the sizing and the index-shift hazard.
 - **Slots are only claimed when the routing can reach them.** Not in the plan at all, and it turned out
   to matter: a parameter write becomes an ordinary staged CC, so `FourChannelsPerInstance` cannot
   address a ROM's fifth voice and the one-channel modes reach only its first. Those slots stay

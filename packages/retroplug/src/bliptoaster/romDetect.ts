@@ -50,3 +50,35 @@ export function blipToasterInfo(header: Uint8Array): BlipToasterInfo | null {
 export function isBlipToasterRomHeader(header: Uint8Array): boolean {
   return blipToasterInfo(header) !== null;
 }
+
+/** The expansion audio chip a BlipToaster build carries. Only one can be active at a time, so each is
+ *  a separate `.nes`. Decides which CC set the DAW parameter map exposes (parameterMap.ts). */
+export type BlipToasterChip = "2a03" | "vrc6" | "vrc7" | "s5b" | "n163" | "mmc5";
+
+// The SIG block carries only the marker + a semver, so the chip is read off the iNES mapper number
+// instead - each expansion build must use its chip's mapper to get the audio through.
+//
+// GOTCHA: the base 2A03 build uses FME-7 (69) for kit banking, which is ALSO the Sunsoft 5B mapper,
+// and the two ROMs are otherwise header-identical (same size, same flag bytes, no iNES 2.0 submapper).
+// So 69 is ambiguous and resolves to "2a03": the 2A03 core is a strict subset of the S5B build, so an
+// S5B ROM gets correct-but-incomplete lanes (its three squares and the shared envelope are missing)
+// rather than wrong ones. Distinguishing them needs a chip byte in the ROM's SIG block; until then an
+// S5B user can set `"chip": "s5b"` on the system's `bliptoaster` role in a thin `.rplg`.
+const MAPPER_TO_CHIP: Record<number, BlipToasterChip> = {
+  5: "mmc5",
+  19: "n163",
+  24: "vrc6",
+  69: "2a03", // ambiguous with s5b - see above
+  85: "vrc7",
+};
+
+/** Read the iNES mapper number from a ROM header prefix (low nibble in byte 6, high in byte 7). */
+export function inesMapper(header: Uint8Array): number {
+  if (header.length < 8) return 0;
+  return (header[6] >> 4) | (header[7] & 0xf0);
+}
+
+/** Which BlipToaster build `header` is, from its iNES mapper. Defaults to the 2A03 core. */
+export function blipToasterChip(header: Uint8Array): BlipToasterChip {
+  return MAPPER_TO_CHIP[inesMapper(header)] ?? "2a03";
+}
