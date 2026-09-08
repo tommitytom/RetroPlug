@@ -23,7 +23,7 @@ const CMD_F_FOPN = 0xc9;
 const CMD_F_FRD = 0xca;
 const CMD_F_FRD_MEM = 0xcb;
 const FA_READ = 0x01;
-const MEM_VRAM = 3; // rp::MemoryType::Vram — CHR-RAM on a cart that has it
+const MEM_VRAM = 3; // rp::MemoryType::Vram, CHR-RAM on a cart that has it
 
 /** `LDA #value` then `STA $40F0` — one byte pushed into the cartridge FIFO. */
 function pushByte(value: number): number[] {
@@ -65,7 +65,7 @@ function pushU32(value: number): number[] {
   return [0, 8, 16, 24].flatMap((shift) => pushByte((value >>> shift) & 0xff));
 }
 
-/** `LDA #value` then `STA $40FF` — arm the mapper status bits the wait loop will watch. */
+/** `LDA #value` then `STA $40FF`: arm the mapper status bits the wait loop will watch. */
 function armMstat(value: number): number[] {
   return [0xa9, value & 0xff, 0x8d, REG_MSTAT & 0xff, REG_MSTAT >> 8];
 }

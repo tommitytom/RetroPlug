@@ -13,8 +13,8 @@
 // $40F0/$40F1 register interface, replaying the boot exchange and asserting the
 // FIFO is fully drained afterwards. Run via `pnpm test:plugin` (retroplug-audio-test).
 //
-// It also covers the rest of the Edio surface a cartridge actually drives — the SD-card file API,
-// the NES→host back-channel (CMD_USB_WR), and the CMD_F_FRD_MEM DMA with its $40FF handshake —
+// It also covers the rest of the Edio surface a cartridge actually drives: the SD-card file API,
+// the NES→host back-channel (CMD_USB_WR), and the CMD_F_FRD_MEM DMA with its $40FF handshake, all
 // against the reference the device's own NES SDK gives (edn8-pro-pub edio/everdrive.c). Those are
 // the cases below the boot-exchange pair.
 //
@@ -211,7 +211,7 @@ bool mstatSettled(rp::NesEverdriveFifo& fifo, std::uint8_t want) {
 }
 
 // The whole loop, bounded the way the ROM bounds it (4096 spins). Returns how many passes failed
-// before it settled, or -1 if it gave up — which is what a wedged handshake looks like on a console.
+// before it settled, or -1 if it gave up, which is what a wedged handshake looks like on a console.
 int spinForDma(rp::NesEverdriveFifo& fifo, std::uint8_t want = MSTAT_MCU_PEND) {
     for (int spins = 0; spins < 4096; ++spins) {
         if (mstatSettled(fifo, want)) return spins;
@@ -519,7 +519,7 @@ TEST_CASE("CMD_F_FRD_MEM writes the file straight into cartridge memory", "[audi
         writeDmaRequest(fifo, PI_CHR_RAM, 4096);
         // No clock source, so the transfer is instant and the loop settles on its first pass.
         CHECK(spinForDma(fifo) == 0);
-        // Unlike CMD_F_FRD this command replies with no bytes at all — the payload went to memory.
+        // Unlike CMD_F_FRD this command replies with no bytes at all: the payload went to memory.
         CHECK(fifo.ReadRam(0x40F1) == 0x80);
         CHECK(queryStatus(fifo) == 0);
         CHECK(cart.at(0, 4096) == file);
@@ -573,7 +573,7 @@ TEST_CASE("$40FF answers the shape the SDK's wait loop tests", "[audio][nes][fif
     const std::uint8_t a = fifo.ReadRam(REG_MSTAT);
     const std::uint8_t b = fifo.ReadRam(REG_MSTAT);
     // The loop's first test. It reads the register TWICE per pass, so the strobe has to flip per
-    // read — per pass or per frame would fail it every time.
+    // read; per pass or per frame would fail it every time.
     CHECK(static_cast<std::uint8_t>(a ^ b) == MSTAT_STROBE);
     CHECK((a & 0xF0) == 0xA0);   // the loop's third test: the reply is well-formed
     CHECK((a & 0x06) == 0);      // idle reads as idle, so a ROM polling with no DMA out doesn't hang
@@ -604,7 +604,7 @@ TEST_CASE("$40FF answers the shape the SDK's wait loop tests", "[audio][nes][fif
 
 TEST_CASE("the DMA runs on the exec write, not on the last parameter byte", "[audio][nes][fifo][dma]") {
     // THE ordering trap. The ROM arms $40FF *after* the parameters, so an implementation that copies
-    // when the 8th parameter byte lands clears the pending bit before the arming write sets it —
+    // when the 8th parameter byte lands clears the pending bit before the arming write sets it,
     // and nothing is left to clear it again. The ROM spins to its bound and reports failure for a
     // transfer that actually happened.
     ScratchCard card;
@@ -645,7 +645,7 @@ TEST_CASE("the DMA runs on the exec write, not on the last parameter byte", "[au
 
 TEST_CASE("a DMA to memory that isn't backed fails, and writes nothing", "[audio][nes][fifo][dma]") {
     // A silent drop would look EXACTLY like a working DMA to the ROM, which is the worst failure
-    // mode available here — so an unbacked destination has to be an Edio error.
+    // mode available here, so an unbacked destination has to be an Edio error.
     ScratchCard card;
     const std::vector<std::uint8_t> file = pattern(512);
     card.put("clip.bin", file);
@@ -664,7 +664,7 @@ TEST_CASE("a DMA to memory that isn't backed fails, and writes nothing", "[audio
     SECTION("SRAM, likewise")                        { addr = 0x1000000; }
 
     writeDmaRequest(fifo, addr, len);
-    // The MCU still ANSWERED — "it replied" and "it did what was asked" are separate questions, and
+    // The MCU still ANSWERED: "it replied" and "it did what was asked" are separate questions, and
     // the ROM asks the second one with CMD_STATUS. A loop that hung here could not report anything.
     CHECK(spinForDma(fifo) == 0);
     CHECK(queryStatus(fifo) != 0);
@@ -741,7 +741,7 @@ TEST_CASE("a DMA with nowhere to go, or nothing to read, is an error", "[audio][
 
 TEST_CASE("the transfer holds the pending bit for its modelled duration", "[audio][nes][fifo][dma]") {
     // Without a modelled duration the wait loop exits on its first pass, and a frame budget measured
-    // against the emulator comes out optimistic — the DMA looks free when on the device it is not.
+    // against the emulator comes out optimistic; the DMA looks free when on the device it is not.
     ScratchCard card;
     const std::vector<std::uint8_t> file = pattern(8192);
     card.put("clip.bin", file);
