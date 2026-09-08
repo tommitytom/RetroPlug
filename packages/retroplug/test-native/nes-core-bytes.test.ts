@@ -335,3 +335,74 @@ test("a DMA into a cart with no CHR-RAM is refused, not silently dropped", () =>
   s.project.systems.removeSystem(id);
   s.backend.deleteFile(sdRoot + path);
 });
+
+// --- FIFO fidelity: what the transport does when the ROM can't keep up -------------------------
+//
+// The emulated queue is unbounded and instant by default, so a ROM can never be starved and can
+// never lose a byte. The cartridge's is 2048 deep and fed by a ~150 KB/s wire. `fifo: "hardware"`
+// on the mesen role opts a test in to the real thing; these prove the knob reaches the live core
+// and that the loss is VISIBLE rather than merely inferable from garbled output.
+
+/** Boot a ROM that reads nothing at all, push `total` bytes at it, and report the transport. */
+function floodParkedRom(fifoCfg: Record<string, unknown> | null, total: number) {
+  const s = bootSession();
+  const path = "/tmp/rp-corebytes-flood.nes";
+  expect(s.backend.writeFile(path, nromRom(parkAfter([])))).toBeTruthy();
+  let id = s.project.systems.addSystem(path);
+  if (id == null) throw new Error("addSystem failed");
+  if (fifoCfg) {
+    // Construct-time, like sdRoot: the FIFO is built when the core activates, so the reset is what
+    // applies it — and it hands back a new id.
+    expect(s.project.systems.setRoleConfig(id, "mesen", fifoCfg)).toBeTruthy();
+    const next = s.project.systems.reset(id);
+    if (next == null) throw new Error("reset after setRoleConfig failed");
+    id = next;
+  }
+  s.audio.renderAudio(10); // let the ROM reach its parked loop
+
+  for (let sent = 0; sent < total; sent += 512) {
+    const chunk = new Uint8Array(Math.min(512, total - sent));
+    for (let i = 0; i < chunk.length; ++i) chunk[i] = (sent + i) & 0xff;
+    expect(s.audio.stageMidiIn(chunk)).toBeTruthy();
+  }
+  // Comfortably longer than the wire needs for `total` bytes (4096 at 150 KB/s is ~27 ms), so the
+  // measurement is of the QUEUE's behaviour and not of the render being cut short.
+  s.audio.renderAudio(200);
+
+  const stats = s.backend.getCoreTransportStats(id);
+  s.project.systems.removeSystem(id);
+  return stats;
+}
+
+test("the default FIFO profile loses nothing, however far behind the ROM is", () => {
+  // The regression guard for every existing test: a parked ROM that reads not one byte still has
+  // all 4096 waiting for it, because the default queue is unbounded.
+  const stats = floodParkedRom(null, 4096);
+  expect(stats.rxCapacity).toEqual(0); // 0 = unbounded, so nothing CAN be dropped
+  expect(stats.droppedBytes).toEqual(0);
+  expect(stats.rxDepth).toEqual(4096);
+  expect(stats.wirePending).toEqual(0); // instant delivery: nothing is left on the wire
+});
+
+test("the hardware FIFO profile drops what the ROM was too slow to read", () => {
+  // The bug class this makes reachable: a dropped byte. nesvj's first live wire format tracked the
+  // display buffer with a counter in the ROM — correct forever on a lossless queue, and permanently
+  // out of step with the encoder after a single drop on hardware. No emulator test could produce one.
+  const stats = floodParkedRom({ fifo: "hardware" }, 4096);
+  expect(stats.rxCapacity).toEqual(2048); // SIZE_FIFO, as the device
+  expect(stats.rxDepth).toEqual(2048); // filled to the brim and stuck there
+  // Every byte is accounted for: what the ROM can still read plus what the queue had no room for.
+  expect(stats.rxDepth + stats.droppedBytes).toEqual(4096);
+  expect(stats.droppedBytes).toBeGreaterThan(0);
+});
+
+test("an explicit rate overrides the profile without restating the depth", () => {
+  // What makes a rate sweep possible at all: tools/nesvj-rate-test.sh varies the wire speed to find
+  // the knee, which needs one knob to move while the other holds.
+  const slow = floodParkedRom({ fifo: "hardware", fifoBytesPerSecond: 20000 }, 4096);
+  expect(slow.rxCapacity).toEqual(2048); // still the profile's depth
+  // 4096 bytes at 20 KB/s is ~205 ms, and the render is 200 — so some of it is provably still in
+  // flight, which is the wire being slower than the profile's default rather than instant.
+  expect(slow.wirePending).toBeGreaterThan(0);
+  expect(slow.rxDepth + slow.droppedBytes + slow.wirePending).toEqual(4096);
+});
