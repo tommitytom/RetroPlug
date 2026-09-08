@@ -142,6 +142,10 @@ is **constructed**, so an edit takes effect only after a rebuild: `setRoleConfig
 new id. `sdRoot` is the host directory the emulated EverDrive N8 SD card maps to (`"/"` on the card),
 for a NES ROM that pulls its data off the cartridge; empty means a per-process scratch directory, not
 the working directory. Reading back what such a ROM sends is `drainCoreBytes` ([09](09-cli-debugging.md)).
+A ROM can also skip the CPU entirely: `CMD_F_FRD_MEM` has the emulated MCU read the open file straight
+into cartridge memory over the PI bus, which `MesenNesSystem` backs for the CHR-RAM window
+(PI `0xC00000`) only. That transfer's duration is modelled from the rate measured on real hardware,
+so the ROM's wait loop spins about as long here as it does on a console.
 
 **DSP-thread roles** ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)) — feature
 behaviours over the per-system context:
