@@ -146,6 +146,11 @@ namespace rp {
 	// holds on NTSC, where a cycles-per-byte constant would have made the transfer 8% quicker.
 	static constexpr double DMA_BYTES_PER_SECOND = 2.2e6;
 
+	// The largest transfer any PI destination could absorb: the device's biggest chip is 8 MB. A
+	// longer request is a garbled parameter rather than a big read, and it has to be refused BEFORE
+	// the staging buffer is sized - a u32 length taken at face value would allocate up to 4 GB.
+	static constexpr uint32_t DMA_MAX_LEN = 8u * 1024 * 1024;
+
 	// -----------------------------------------------------------------------
 	// Host-side directory record (matches ed_rx_file_info layout)
 	// -----------------------------------------------------------------------
@@ -914,7 +919,8 @@ namespace rp {
 		// Returns the Edio status the ROM will collect with its CMD_STATUS query.
 		uint8_t performDma(uint32_t piAddr, uint32_t len) {
 			if (len == 0) return 0;
-			if (!_cartWriter) return 0x13;          // no backing memory at all (FR_INVALID_PARAMETER)
+			if (len > DMA_MAX_LEN) return 0x13;     // garbled parameter (FR_INVALID_PARAMETER)
+			if (!_cartWriter) return 0x13;          // no backing memory at all
 			if (!_openFile.is_open()) return 0x04;  // FAT_NO_FILE
 
 			std::vector<uint8_t> buf(len, 0x00);

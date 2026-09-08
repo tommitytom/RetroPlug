@@ -706,6 +706,20 @@ TEST_CASE("a DMA with nowhere to go, or nothing to read, is an error", "[audio][
         CHECK(cart.untouched());
     }
 
+    SECTION("a length no destination could absorb") {
+        // A garbled parameter must be refused before it is believed: sizing a staging buffer from a
+        // u32 taken at face value would try to allocate 4 GB inside the CPU's write handler.
+        FakeCart cart;
+        rp::NesEverdriveFifo fifo;
+        fifo.setSdRoot(card.root);
+        fifo.setCartWriter(cart.writer());
+        openForRead(fifo, "/clip.bin");
+        writeDmaRequest(fifo, PI_CHR_RAM, 0xFFFFFFFFu);
+        CHECK(spinForDma(fifo) == 0);
+        CHECK(queryStatus(fifo) != 0);
+        CHECK(cart.untouched());
+    }
+
     SECTION("already at EOF") {
         FakeCart cart;
         rp::NesEverdriveFifo fifo;
