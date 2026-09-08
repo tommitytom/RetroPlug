@@ -417,6 +417,11 @@ namespace rp {
 				return;
 			}
 			if (addr != 0x40F0) return;
+			// Carry the wire forward BEFORE the command runs. A command's reply is pushed straight
+			// into fifo_a, so without this a host byte that had already arrived would be overtaken by
+			// a reply generated after it and the ROM would read the two out of order. The wire is a
+			// delay, never a reordering.
+			pumpWire();
 			// A $40F0 write with a transfer staged is the exec trigger (the SDK's _ed_halt_exec),
 			// not command data. Feeding it to the parser instead would both lose the DMA and leave
 			// the ROM waiting on a pending bit nothing would ever clear.

@@ -965,3 +965,39 @@ TEST_CASE("an idle wire banks no credit", "[audio][nes][fifo][wire]") {
     CHECK(fifo.stats().rxDepth == 0);    // still has to be carried
     CHECK(fifo.stats().wirePending == 64);
 }
+
+TEST_CASE("a host byte already delivered is not overtaken by a later command reply", "[audio][nes][fifo][wire]") {
+    // The wire is a DELAY, never a reordering. A command's reply is pushed straight into fifo_a, so
+    // the wire has to be carried forward before the command runs; otherwise a byte the host handed
+    // over first would arrive after a reply generated second, and a ROM that interleaves a push with
+    // an Edio query would decode them in the wrong order.
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+
+    SECTION("under the instant profile") {
+        fifo.pushByte(0xAA);
+        writeCmd(fifo, CMD_STATUS);            // reply: 0x00, 0xA5
+        CHECK(readBytes(fifo, 4) == std::vector<std::uint8_t>{0xAA, 0x00, 0xA5});
+    }
+
+    SECTION("under a rated wire, once the byte has had time to cross") {
+        fifo.setFifoProfile(0, rp::FIFO_HW_BYTES_PER_SECOND);
+        fifo.pushByte(0xAA);
+        cycles += static_cast<std::uint64_t>(
+            1.0 / static_cast<double>(rp::FIFO_HW_BYTES_PER_SECOND) * static_cast<double>(PAL_CLOCK_HZ)) + 1;
+        writeCmd(fifo, CMD_STATUS);
+        CHECK(readBytes(fifo, 4) == std::vector<std::uint8_t>{0xAA, 0x00, 0xA5});
+    }
+
+    SECTION("but a byte still in flight legitimately arrives after the reply") {
+        // The other side of the same rule: the wire has NOT delivered it yet, so it is not late,
+        // it has not arrived. This is the case a paced host actually produces.
+        fifo.setFifoProfile(0, rp::FIFO_HW_BYTES_PER_SECOND);
+        fifo.pushByte(0xAA);
+        writeCmd(fifo, CMD_STATUS);
+        CHECK(readBytes(fifo, 2) == std::vector<std::uint8_t>{0x00, 0xA5});
+        cycles += 100000;
+        CHECK(readBytes(fifo, 2) == std::vector<std::uint8_t>{0xAA});
+    }
+}
