@@ -19,13 +19,15 @@ void NesN8FifoRole::onAttach(NesConsole& console) {
     }
     memMgr->RegisterIODevice(&fifo_);
 
-    // Give the DMA handshake a sense of time. The MCU's PI-bus transfer is not instantaneous on the
-    // device, and the ROM's wait loop is where that shows: without this it exits on its first
-    // iteration and any frame budget measured headlessly is optimistic. The clock rate is read from
-    // the console rather than assumed, so the modelled wall time holds on PAL and NTSC alike.
+    // Give the cartridge a sense of time. Two models need it: the DMA handshake's transfer window,
+    // and the host wire's delivery rate. Neither is instantaneous on the device, and both show up in
+    // ROM-visible timing - the DMA in how long its wait loop spins, the wire in whether a copy loop
+    // is ever starved mid-structure. Without a clock both stay instant, and anything measured
+    // against them comes out optimistic. The clock rate is read from the console rather than
+    // assumed, so a modelled wall duration holds on PAL and NTSC alike.
     if (NesCpu* cpu = console.GetCpu()) {
-        fifo_.setDmaClock([cpu] { return cpu->GetCycleCount(); },
-                          NesConstants::GetClockRate(console.GetRegion()));
+        fifo_.setCartClock([cpu] { return cpu->GetCycleCount(); },
+                           NesConstants::GetClockRate(console.GetRegion()));
     }
 
     std::fprintf(stderr, "[NesN8FifoRole] FIFO attached at $40F0/$40F1/$40FF\n");

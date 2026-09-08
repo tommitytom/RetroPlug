@@ -103,6 +103,17 @@ export type CartridgeAccuracy = (typeof CARTRIDGE_ACCURACY_VALUES)[number];
 export const CHANNEL_EXPORT_VALUES = ["mix", "stereoModPins", "pinsPlusRef", "individualMono"] as const;
 export type ChannelExportMode = (typeof CHANNEL_EXPORT_VALUES)[number];
 
+// How faithfully the emulated EverDrive N8 cart FIFO behaves like the real one.
+//   "instant"  - unbounded and delivered immediately. The DEFAULT, and what every existing test was
+//                written against: nothing can ever be lost and a pushed chunk is readable at once.
+//   "hardware" - 2048 bytes deep, dropping when full, delivered at the wire's ~150 KB/s. Both of
+//                those hide bug classes when they are absent: a ROM that cannot lose a byte never has
+//                its recovery path exercised, and one handed a whole chunk atomically is never
+//                starved mid-structure the way a real wire starves it.
+// Construct-time (the FIFO is built when the core activates), so an edit needs setRoleConfig + reset.
+export const FIFO_PROFILE_VALUES = ["instant", "hardware"] as const;
+export type FifoProfile = (typeof FIFO_PROFILE_VALUES)[number];
+
 // LSDj sync mode (LsdjSyncMode 0..8). The lsdj-sync DSP role switches on these members, and the
 // serial-out capture gate / host-sync latency compare against MidiOut/MasterSync/MidiSync/…
 export const LSDJ_MODE_VALUES = [
@@ -151,6 +162,7 @@ const ROLE_NATIVE_ENUMS: Record<string, Record<string, readonly string[]>> = {
     channelExportMode: CHANNEL_EXPORT_VALUES,
     s5bNoise: CARTRIDGE_ACCURACY_VALUES,
     mmc5PhaseReset: CARTRIDGE_ACCURACY_VALUES,
+    fifo: FIFO_PROFILE_VALUES,
   },
 };
 

@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 import { savFromJson } from "../src/lsdj";
 
@@ -406,6 +406,13 @@ export class MockBackend implements Backend {
     // No real core, so no cartridge to talk back — always an empty drain, which is also what a live
     // system whose ROM never sends returns.
     return new Uint8Array(0);
+  }
+
+  getCoreTransportStats(_id: number): CoreTransportStats {
+    this.log.push("getCoreTransportStats");
+    // No real core, so no transport: all zero, which is also what a live core with an unbounded
+    // queue and nothing in flight reports.
+    return { rxDepth: 0, rxCapacity: 0, droppedBytes: 0, wirePending: 0, txDepth: 0 };
   }
 
   loadLabels(_id: number, _path: string): boolean {

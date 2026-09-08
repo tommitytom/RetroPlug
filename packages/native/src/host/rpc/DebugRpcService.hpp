@@ -10,6 +10,7 @@
 #include "system/CpuState.hpp"    // rp::CpuRegister
 #include "system/DebugTarget.hpp" // rp::ApuState / PpuState / DebugEvent / TraceLine / BreakInfo /
                                   // BreakpointSpec / ProfiledFunction / DisasmLine / CallFrame
+#include "system/SystemBase.hpp"  // CoreTransportStats
 
 class Engine;
 
@@ -41,6 +42,12 @@ public:
     // N8 FIFO with CMD_USB_WR (the cartridge's back-channel — on hardware the MCU forwards it out of
     // the USB port). A plain SystemBase virtual, no debug target needed; empty on cores without one.
     rfl::Bytestring              drainCoreBytes(std::uint32_t id);
+
+    // What that transport is holding and what it has lost: on the NES the N8 FIFO's two stages plus
+    // its cumulative dropped-byte count. The only way a test can SEE the transport drop a byte rather
+    // than infer it from garbled output — the emulated queue is permissive by default, and a lossy
+    // one is opted into with the "mesen" role's `fifo` profile. Zeroes on cores without a transport.
+    CoreTransportStats           getCoreTransportStats(std::uint32_t id);
 
     // Load a cc65 `.dbg` symbol file so profiler/disassembly output shows function names. Needs a Mesen
     // NES debug target (false on SameBoy/GBA, a gone id, or read/parse failure).

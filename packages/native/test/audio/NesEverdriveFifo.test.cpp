@@ -24,6 +24,7 @@
 // it on real hardware (nesvj src/core/dma.s), so what passes here is what that console executes.
 
 #include <cstdint>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <functional>
@@ -752,7 +753,7 @@ TEST_CASE("the transfer holds the pending bit for its modelled duration", "[audi
     fifo.setCartWriter(cart.writer());
 
     std::uint64_t cycles = 0;
-    fifo.setDmaClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
     openForRead(fifo, "/clip.bin");
 
     writeDmaRequest(fifo, PI_CHR_RAM, 8192);
@@ -786,7 +787,7 @@ TEST_CASE("the modelled wait costs the ROM about as many spins as the console me
     fifo.setCartWriter(cart.writer());
 
     std::uint64_t cycles = 0;
-    fifo.setDmaClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
     openForRead(fifo, "/clip.bin");
     writeDmaRequest(fifo, PI_CHR_RAM, 8192);
 
@@ -809,4 +810,158 @@ TEST_CASE("the modelled wait costs the ROM about as many spins as the console me
     }
     CHECK(shortSpins >= spins / 5);
     CHECK(shortSpins <= spins / 3);
+}
+
+// --- FIFO fidelity: depth and wire rate --------------------------------------------------------
+//
+// The emulated queue is unbounded and instant by default, and the cartridge's is neither. Both gaps
+// hide a class of bug rather than a bug: a ROM that can never lose a byte never has its recovery path
+// exercised, and one handed a whole chunk atomically is never starved mid-structure the way a real
+// wire starves it. nesvj lost half its frames on silicon to the second of those with 14/14 tests green.
+
+TEST_CASE("the default profile is the permissive queue every existing test assumes", "[audio][nes][fifo][wire]") {
+    rp::NesEverdriveFifo fifo;   // no setFifoProfile: unbounded, instant
+
+    const std::vector<std::uint8_t> burst = pattern(5000);
+    for (std::uint8_t b : burst) fifo.pushByte(b);
+
+    // Readable at once and in full - nothing waits on a wire and nothing is dropped.
+    const auto stats = fifo.stats();
+    CHECK(stats.rxDepth == burst.size());
+    CHECK(stats.rxCapacity == 0);      // 0 = unbounded, so droppedBytes cannot be anything but 0
+    CHECK(stats.droppedBytes == 0);
+    CHECK(stats.wirePending == 0);
+    CHECK(readBytes(fifo, burst.size()) == burst);
+}
+
+TEST_CASE("a rated wire delivers over time instead of atomically", "[audio][nes][fifo][wire]") {
+    // The difference that hid nesvj's worst bug: its copy loop kept a byte offset so it could resume
+    // when the FIFO ran dry, and the resume path was wrong. Fed a chunk atomically the loop never
+    // runs dry MID-structure, so the path is never taken and the test passes.
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setFifoProfile(/*depth*/ 0, rp::FIFO_HW_BYTES_PER_SECOND);
+
+    const std::vector<std::uint8_t> chunk = pattern(512);
+    for (std::uint8_t b : chunk) fifo.pushByte(b);
+
+    // Handed over, but not yet carried: the ROM polling $40F1 right now sees an EMPTY fifo.
+    CHECK(fifo.stats().wirePending == chunk.size());
+    CHECK(fifo.stats().rxDepth == 0);
+    CHECK(fifo.ReadRam(0x40F1) == 0x80);
+
+    // 512 bytes at ~150 KB/s is ~3.4 ms, which is ~5675 PAL cycles. Rounded UP: the model carries a
+    // whole byte only once a whole byte's worth of time has passed, so the last one lands on the
+    // cycle after the exact fractional window, not on it.
+    const auto window = static_cast<std::uint64_t>(std::ceil(
+        512.0 / static_cast<double>(rp::FIFO_HW_BYTES_PER_SECOND) * static_cast<double>(PAL_CLOCK_HZ)));
+
+    cycles = window / 2;
+    const auto half = fifo.stats();
+    CHECK(half.rxDepth > 200);        // about half of it, give or take the credit remainder
+    CHECK(half.rxDepth < 312);
+    CHECK(half.wirePending == chunk.size() - half.rxDepth);
+
+    cycles = window;
+    CHECK(fifo.stats().wirePending == 0);
+
+    // And it is the same bytes in the same order - the wire delays, it does not reorder.
+    CHECK(readBytes(fifo, chunk.size()) == chunk);
+    CHECK(fifo.stats().droppedBytes == 0);
+}
+
+TEST_CASE("a full queue drops the bytes it has no room for, and counts them", "[audio][nes][fifo][wire]") {
+    // Structurally unreachable before this: no emulator test could drop a byte, so no emulator test
+    // could exercise a ROM's recovery from one. nesvj's first live format tracked the display buffer
+    // with a counter in the ROM, which is correct forever on a lossless queue and permanently out of
+    // step after one drop on hardware.
+    rp::NesEverdriveFifo fifo;
+    fifo.setFifoProfile(/*depth*/ 8, /*bytesPerSecond*/ 0);   // instant delivery, tiny queue
+
+    const std::vector<std::uint8_t> burst = pattern(20);
+    for (std::uint8_t b : burst) fifo.pushByte(b);
+
+    const auto stats = fifo.stats();
+    CHECK(stats.rxCapacity == 8);
+    CHECK(stats.rxDepth == 8);
+    CHECK(stats.droppedBytes == 12);
+
+    // A full FIFO loses the ARRIVING byte, so what the ROM reads is the head of the burst and the
+    // tail is simply missing. Contiguous with a gap, never reordered - which is what makes a
+    // sequence number on the wire able to detect it.
+    CHECK(readBytes(fifo, 16) == std::vector<std::uint8_t>(burst.begin(), burst.begin() + 8));
+
+    // The count is CUMULATIVE across the run: reading does not reset it, so a timeline can sample it
+    // repeatedly and subtract.
+    CHECK(fifo.stats().droppedBytes == 12);
+    for (std::uint8_t b : pattern(12)) fifo.pushByte(b);
+    CHECK(fifo.stats().droppedBytes == 16);
+}
+
+TEST_CASE("an Edio reply is subject to the queue's depth but not to the wire", "[audio][nes][fifo][wire]") {
+    // The device has ONE fifo_a, so a command reply competes for the same 2048 bytes a host push
+    // does - nesvj's EDIO_BLOCK of 1792 is sized against exactly that. But the reply does not cross
+    // the USB wire: it is the MCU answering a command the ROM just issued, already inside the cart.
+    ScratchCard card;
+    card.put("clip.bin", pattern(64));
+
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setFifoProfile(/*depth*/ 4, /*bytesPerSecond*/ 1);   // a wire so slow nothing could cross it
+    fifo.setSdRoot(card.root);
+
+    // Not rate-gated: the status word is readable with the clock still at zero.
+    writeCmd(fifo, CMD_STATUS);
+    CHECK(readBytes(fifo, 2) == std::vector<std::uint8_t>{0x00, 0xA5});
+
+    // Depth-gated, though. A 16-byte read replies with 17 bytes (resp + data) into a 4-deep queue.
+    openForRead(fifo, "/clip.bin");
+    const std::uint64_t droppedBefore = fifo.stats().droppedBytes;
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, 16);
+    CHECK(fifo.stats().rxDepth == 4);
+    CHECK(fifo.stats().droppedBytes - droppedBefore == 13);
+}
+
+TEST_CASE("a barrier drops what is on the wire as well as what was delivered", "[audio][nes][fifo][wire]") {
+    // clearRx is a barrier in the host->NES direction: the ROM must not read bytes belonging to the
+    // stream position it just left. A byte still crossing the wire is every bit as stale as a
+    // delivered one, so leaving it would let the barrier leak.
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setFifoProfile(0, rp::FIFO_HW_BYTES_PER_SECOND);
+
+    for (std::uint8_t b : pattern(64)) fifo.pushByte(b);
+    REQUIRE(fifo.stats().wirePending == 64);
+
+    fifo.clearRx();
+    CHECK(fifo.stats().wirePending == 0);
+    CHECK(fifo.stats().rxDepth == 0);
+
+    // And the wire is usable again afterwards, with its credit reset rather than banked: a byte
+    // pushed now still has to wait its turn.
+    fifo.pushByte(0x42);
+    CHECK(fifo.stats().rxDepth == 0);
+    cycles += static_cast<std::uint64_t>(
+        1.0 / static_cast<double>(rp::FIFO_HW_BYTES_PER_SECOND) * static_cast<double>(PAL_CLOCK_HZ)) + 1;
+    CHECK(fifo.stats().rxDepth == 1);
+    CHECK(fifo.ReadRam(0x40F0) == 0x42);
+}
+
+TEST_CASE("an idle wire banks no credit", "[audio][nes][fifo][wire]") {
+    // Otherwise a long quiet period would let the next push burst through instantly, which is the
+    // atomic delivery this profile exists to avoid - and the quiet period between chunks is exactly
+    // what a paced host spends most of its time in.
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setFifoProfile(0, rp::FIFO_HW_BYTES_PER_SECOND);
+
+    cycles = 10'000'000;                 // ~6 seconds of silence: credit for ~900 KB, if it banked
+    for (std::uint8_t b : pattern(64)) fifo.pushByte(b);
+    CHECK(fifo.stats().rxDepth == 0);    // still has to be carried
+    CHECK(fifo.stats().wirePending == 64);
 }

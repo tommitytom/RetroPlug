@@ -134,7 +134,7 @@ namespace rp {
 	static constexpr uint32_t PI_CHR_RAM_OFFSET = 0x400000;
 	static constexpr uint32_t PI_ADDR_CHR_RAM   = PI_ADDR_CHR + PI_CHR_RAM_OFFSET;  // 0xC00000
 
-	// How fast the MCU moves bytes over the PI bus, for the wait-time model (see setDmaClock).
+	// How fast the MCU moves bytes over the PI bus, for the wait-time model (see setCartClock).
 	//
 	// DERIVED FROM THE ONE HARDWARE MEASUREMENT, and re-derivable if that ROM's loop changes:
 	// nesvj's wait loop (its src/core/dma.s) is 37 CPU cycles per spin, and a real N8 Pro took 165
@@ -150,6 +150,24 @@ namespace rp {
 	// longer request is a garbled parameter rather than a big read, and it has to be refused BEFORE
 	// the staging buffer is sized - a u32 length taken at face value would allocate up to 4 GB.
 	static constexpr uint32_t DMA_MAX_LEN = 8u * 1024 * 1024;
+
+	// -----------------------------------------------------------------------
+	// FIFO fidelity profile: how closely the host->NES queue behaves like the cartridge's
+	// -----------------------------------------------------------------------
+	// The default is PERMISSIVE - unbounded and delivered instantly - because that is what every
+	// existing test was written against. The device is neither, and the difference hides whole
+	// classes of bug: a ROM that can never lose a byte never has its recovery path exercised, and
+	// one fed a whole chunk atomically is never starved mid-structure the way a real wire starves it.
+	// A test opts in to the hardware profile through the "mesen" role's `fifo` field.
+	//
+	// The measured constants, kept here rather than in a shell script:
+	//   depth  - SIZE_FIFO in edn8-pro-pub/edio/everdrive.h. nesvj's EDIO_BLOCK of 1792 is chosen
+	//            against it (the reply is the block PLUS a resp byte, so 2048 cannot serve 2048).
+	//   rate   - nesvj measured 512 bytes arriving over ~3.4 ms on the USB link, so ~150 KB/s. This
+	//            is the BURST rate of the wire, not a sustained throughput: a host that paces its
+	//            chunks is modelling its own gaps, and that pacing is the test's business.
+	static constexpr uint32_t FIFO_HW_DEPTH            = 2048;
+	static constexpr uint32_t FIFO_HW_BYTES_PER_SECOND = 150000;
 
 	// -----------------------------------------------------------------------
 	// Host-side directory record (matches ed_rx_file_info layout)
@@ -219,12 +237,27 @@ namespace rp {
 		// MIDI parser and caused the "first message is ignored" priming quirk.
 		uint8_t _lastStatus = 0;
 
+		// ----- The wire (host -> MCU -> fifo_a) -------------------------
+		// What the host has handed over but the wire has not yet carried. Unbounded on purpose: it
+		// stands for the host's own outbound buffer, which has no cartridge counterpart and must not
+		// drop - a byte lost HERE would be the emulation inventing a failure the device never has.
+		// Bytes cross into _rxQueue at _wireBytesPerSecond (see pumpWire), and only there can they be
+		// dropped, by the queue being full.
+		std::queue<uint8_t> _wireQueue;
+		uint32_t _wireBytesPerSecond = 0;   // 0 = instant: the wire is not modelled
+		uint64_t _wireLastCycle      = 0;
+		double   _wireCredit         = 0.0; // fractional bytes carried over between pumps
+
+		// fifo_a's depth, and what it has cost. 0 = unbounded (the permissive default).
+		uint32_t _rxCapacity   = 0;
+		uint64_t _droppedBytes = 0;         // cumulative, never cleared by a read: a test samples it
+
 		// ----- CMD_F_FRD_MEM / $40FF handshake --------------------------
 		// Where a DMA writes, and how the emulation learns time has passed. Both injected: the FIFO
 		// knows the Edio protocol, not which host buffer stands in for the cartridge.
 		std::function<bool(uint32_t, const uint8_t*, size_t)> _cartWriter;
-		std::function<uint64_t()> _dmaCycles;
-		uint32_t _dmaCpuClockHz = 0;
+		std::function<uint64_t()> _cartCycles;
+		uint32_t _cartCpuClockHz = 0;
 
 		uint8_t  _pendBits = 0;  // $40FF bits 1-2, set by a write, cleared as the MCU finishes
 		uint8_t  _strobe   = 0;  // $40FF bit 3, flipped on every read
@@ -266,16 +299,48 @@ namespace rp {
 			_cartWriter = std::move(fn);
 		}
 
-		// Model how long the MCU's PI-bus transfer takes, so the ROM's wait loop spins about as
-		// many times as it does on the device (see DMA_BYTES_PER_SECOND). `cycleSource` reads the
-		// CPU's cycle counter and `cpuClockHz` converts the modelled wall time into cycles.
+		// Give the cartridge a sense of time: `cycleSource` reads the CPU's cycle counter and
+		// `cpuClockHz` converts a modelled wall duration into cycles. Two things use it - the DMA's
+		// transfer window (DMA_BYTES_PER_SECOND) and the host wire's delivery rate (setFifoProfile).
 		//
-		// WITHOUT this a DMA completes instantly and the wait loop exits on its first iteration,
-		// which is correct but makes any headless frame budget built on it optimistic.
-		void setDmaClock(std::function<uint64_t()> cycleSource, uint32_t cpuClockHz) {
+		// WITHOUT it both are instant: a DMA completes on the wait loop's first pass and a pushed
+		// byte is readable immediately. Correct, but it makes anything measured against it optimistic.
+		void setCartClock(std::function<uint64_t()> cycleSource, uint32_t cpuClockHz) {
 			std::lock_guard<std::mutex> lock(_mutex);
-			_dmaCycles = std::move(cycleSource);
-			_dmaCpuClockHz = cpuClockHz;
+			_cartCycles = std::move(cycleSource);
+			_cartCpuClockHz = cpuClockHz;
+			_wireLastCycle = _cartCycles ? _cartCycles() : 0;
+		}
+
+		// How faithfully the host->NES queue behaves like fifo_a. `depth` 0 = unbounded,
+		// `bytesPerSecond` 0 = instant delivery; both together are the permissive default every
+		// existing test was written against. MesenNesSystem resolves the "mesen" role's `fifo`
+		// profile (and any explicit override) into this pair at activate.
+		//
+		// A rate needs setCartClock to have been called, or there is no clock to meter against and
+		// delivery stays instant. A depth does not: dropping is a queue property, not a timing one.
+		void setFifoProfile(uint32_t depth, uint32_t bytesPerSecond) {
+			std::lock_guard<std::mutex> lock(_mutex);
+			_rxCapacity = depth;
+			_wireBytesPerSecond = bytesPerSecond;
+			_wireCredit = 0.0;
+			_wireLastCycle = _cartCycles ? _cartCycles() : 0;
+		}
+
+		// Depth of each stage, and what the queue has cost so far. `droppedBytes` is CUMULATIVE and
+		// a read does not clear it, so a timeline can sample it repeatedly without racing itself.
+		struct FifoStats {
+			uint64_t rxDepth      = 0;  // delivered, waiting for the ROM to read
+			uint64_t rxCapacity   = 0;  // 0 = unbounded
+			uint64_t droppedBytes = 0;  // lost to a full queue, for the whole run
+			uint64_t wirePending  = 0;  // handed over by the host, not yet carried
+			uint64_t txDepth      = 0;  // NES->host (CMD_USB_WR), waiting for drainTx
+		};
+
+		FifoStats stats() {
+			std::lock_guard<std::mutex> lock(_mutex);
+			pumpWire();
+			return FifoStats{ _rxQueue.size(), _rxCapacity, _droppedBytes, _wireQueue.size(), _txQueue.size() };
 		}
 
 		// Drop the DMA handshake: any staged-but-unexecuted transfer, the pending bits and the
@@ -315,6 +380,9 @@ namespace rp {
 				_strobe ^= MSTAT_STROBE;   // per READ, not per poll iteration: the loop reads twice
 				return val;
 			}
+			// Both registers carry the wire forward first: the ROM's poll of $40F1 is exactly the
+			// moment a byte that has had time to arrive should have arrived.
+			pumpWire();
 			if (addr == 0x40F1) {
 				return _rxQueue.empty() ? 0x80 : 0x00;
 			}
@@ -362,27 +430,41 @@ namespace rp {
 		// ----------------------------------------------------------------
 		// Called from MIDI callback or audio thread
 		// ----------------------------------------------------------------
+		// Hand one byte to the WIRE, not to the ROM. Under the default instant profile the next pump
+		// carries it straight through and this is what it always was; with a rate set, it arrives
+		// when the wire has had time to carry it.
 		void pushByte(uint8_t byte) {
 			std::lock_guard<std::mutex> lock(_mutex);
-			_rxQueue.push(byte);
+			// Carry what is already owed before adding to the queue, so an idle gap between pushes is
+			// the host's gap rather than credit the wire banks up and then bursts through.
+			pumpWire();
+			_wireQueue.push(byte);
 			if (fifoTraceEnabled())
-				std::fprintf(stderr, "[fifo] midi %02X (depth=%zu)\n", byte, _rxQueue.size());
+				std::fprintf(stderr, "[fifo] midi %02X (wire=%zu depth=%zu)\n",
+				             byte, _wireQueue.size(), _rxQueue.size());
 		}
 
 		// Number of bytes waiting in the RX queue (not yet read by the ROM). For tests / introspection.
+		// Bytes still on the wire are NOT counted - they have not been delivered. See stats().
 		std::size_t rxCount() {
 			std::lock_guard<std::mutex> lock(_mutex);
+			pumpWire();
 			return _rxQueue.size();
 		}
 
-		// Drop every DELIVERED-but-unread byte. A host-sync arm is a barrier: the ROM must not read
-		// clocks queued for the position it just left, and those bytes are already past the pending
-		// queue and sitting here. Leaves the TX parser state alone - only the emulator->NES direction
-		// is being re-pointed.
+		// Drop every byte the ROM has not read: both the DELIVERED ones sitting in fifo_a and the
+		// ones still crossing the wire. A host-sync arm is a barrier - the ROM must not read clocks
+		// queued for the position it just left - and a byte mid-wire is every bit as stale as a
+		// delivered one. Leaves the TX parser state alone: only the emulator->NES direction is being
+		// re-pointed.
 		void clearRx() {
 			std::lock_guard<std::mutex> lock(_mutex);
 			std::queue<uint8_t> empty;
 			_rxQueue.swap(empty);
+			std::queue<uint8_t> emptyWire;
+			_wireQueue.swap(emptyWire);
+			_wireCredit = 0.0;
+			_wireLastCycle = _cartCycles ? _cartCycles() : 0;
 		}
 
 		// Take everything the ROM has sent host-ward via CMD_USB_WR since the last drain, oldest byte
@@ -402,6 +484,65 @@ namespace rp {
 		}
 
 	private:
+		// ----------------------------------------------------------------
+		// fifo_a: delivery and depth — called with _mutex held
+		// ----------------------------------------------------------------
+
+		// The ONLY way a byte enters the ROM's read queue, whether it came off the wire or from the
+		// MCU answering an Edio command. On the device those share one 2048-byte fifo_a, so the depth
+		// applies to both: a command reply landing while the ROM is behind on reading is exactly the
+		// case nesvj's EDIO_BLOCK of 1792 is sized to avoid.
+		//
+		// A full queue DROPS, and counts. Byte-granular, which is the honest model of "no room": the
+		// losses nesvj measured on hardware came in exact multiples of 2048, but that is a host/MCU
+		// accounting artefact of the USB link, and reproducing the number by fitting to it would be
+		// inventing a mechanism rather than modelling one.
+		void pushRx(uint8_t byte) {
+			if (_rxCapacity != 0 && _rxQueue.size() >= _rxCapacity) {
+				++_droppedBytes;
+				if (fifoTraceEnabled())
+					std::fprintf(stderr, "[fifo] DROP %02X (full at %u, dropped=%llu)\n",
+					             byte, _rxCapacity, static_cast<unsigned long long>(_droppedBytes));
+				return;
+			}
+			_rxQueue.push(byte);
+		}
+
+		// Carry bytes from the host's outbound buffer into fifo_a at the modelled wire rate. Without
+		// a rate or a clock this moves everything, which is the historical behaviour: a pushed byte is
+		// readable on the ROM's very next poll.
+		//
+		// Credit is accumulated in fractional bytes so a rate that is not a whole number of bytes per
+		// cycle does not round down to nothing on every short interval. It resets when the wire runs
+		// dry: an idle wire carries nothing, so time spent with nothing to send must not bank up into
+		// a burst when the host next writes.
+		void pumpWire() {
+			if (_wireQueue.empty()) {
+				_wireCredit = 0.0;
+				_wireLastCycle = _cartCycles ? _cartCycles() : _wireLastCycle;
+				return;
+			}
+			if (_wireBytesPerSecond == 0 || !_cartCycles || _cartCpuClockHz == 0) {
+				while (!_wireQueue.empty()) { pushRx(_wireQueue.front()); _wireQueue.pop(); }
+				return;
+			}
+
+			const uint64_t now = _cartCycles();
+			if (now > _wireLastCycle) {
+				const double bytesPerCycle =
+					static_cast<double>(_wireBytesPerSecond) / static_cast<double>(_cartCpuClockHz);
+				_wireCredit += static_cast<double>(now - _wireLastCycle) * bytesPerCycle;
+			}
+			_wireLastCycle = now;
+
+			while (_wireCredit >= 1.0 && !_wireQueue.empty()) {
+				pushRx(_wireQueue.front());
+				_wireQueue.pop();
+				_wireCredit -= 1.0;
+			}
+			if (_wireQueue.empty()) _wireCredit = 0.0;
+		}
+
 		// ----------------------------------------------------------------
 		// TX parser — called with _mutex held
 		// ----------------------------------------------------------------
@@ -475,7 +616,7 @@ namespace rp {
 			_writeBlock.clear();
 
 			if (_writeRemaining > 0) {
-				_rxQueue.push(0x00);  // ack the next block
+				pushRx(0x00);  // ack the next block
 				return;
 			}
 			setStatus(_openFile.is_open() ? uint8_t(0) : uint8_t(0x04));  // FAT_NO_FILE if never opened
@@ -637,25 +778,25 @@ namespace rp {
 		// Push a 16-bit status word: 0xA500 | errorCode. Only emitted in reply to
 		// a CMD_STATUS query (see setStatus's rationale).
 		void pushStatus(uint8_t errorCode = 0) {
-			_rxQueue.push(static_cast<uint8_t>(errorCode)); // low byte
-			_rxQueue.push(0xA5);                            // high byte
+			pushRx(static_cast<uint8_t>(errorCode)); // low byte
+			pushRx(0xA5);                            // high byte
 		}
 
 		void pushU16(uint16_t v) {
-			_rxQueue.push(static_cast<uint8_t>(v));
-			_rxQueue.push(static_cast<uint8_t>(v >> 8));
+			pushRx(static_cast<uint8_t>(v));
+			pushRx(static_cast<uint8_t>(v >> 8));
 		}
 
 		void pushU32(uint32_t v) {
-			_rxQueue.push(static_cast<uint8_t>(v));
-			_rxQueue.push(static_cast<uint8_t>(v >> 8));
-			_rxQueue.push(static_cast<uint8_t>(v >> 16));
-			_rxQueue.push(static_cast<uint8_t>(v >> 24));
+			pushRx(static_cast<uint8_t>(v));
+			pushRx(static_cast<uint8_t>(v >> 8));
+			pushRx(static_cast<uint8_t>(v >> 16));
+			pushRx(static_cast<uint8_t>(v >> 24));
 		}
 
 		void pushString(const std::string& s) {
 			pushU16(static_cast<uint16_t>(s.size()));
-			for (uint8_t c : s) _rxQueue.push(c);
+			for (uint8_t c : s) pushRx(c);
 		}
 
 		// Read a length-prefixed string out of _params at a given offset.
@@ -718,7 +859,7 @@ namespace rp {
 			pushU32(r.size);
 			pushU16(r.date);
 			pushU16(r.time);
-			_rxQueue.push(r.attrib);
+			pushRx(r.attrib);
 			pushString(r.name);
 		}
 
@@ -774,11 +915,11 @@ namespace rp {
 			for (uint16_t i = 0; i < amount; i++) {
 				size_t idx = startIdx + i;
 				if (idx >= _dirRecords.size()) {
-					_rxQueue.push(0x04); // FAT_NO_FILE — signals end of listing
+					pushRx(0x04); // FAT_NO_FILE — signals end of listing
 					break;
 				}
 
-				_rxQueue.push(0x00); // resp == 0 means record follows
+				pushRx(0x00); // resp == 0 means record follows
 
 				EdioDirRecord r = _dirRecords[idx];
 				if (maxNameLen > 0 && r.name.size() > maxNameLen) {
@@ -843,7 +984,7 @@ namespace rp {
 			// the ROM's decode above it.
 			uint32_t len = readParamU32(0);
 			if (len == 0) {
-				_rxQueue.push(0x00);
+				pushRx(0x00);
 				return;
 			}
 
@@ -860,12 +1001,12 @@ namespace rp {
 			// Nothing to give (no open file, or already at EOF) is an ERROR, not a success with no data:
 			// a resp of 0 followed by no bytes leaves a polling ROM waiting for a payload forever.
 			if (got == 0) {
-				_rxQueue.push(0x04); // FAT_NO_FILE
+				pushRx(0x04); // FAT_NO_FILE
 				return;
 			}
 
-			_rxQueue.push(0x00); // success resp
-			for (uint32_t i = 0; i < got; i++) _rxQueue.push(buf[i]);
+			pushRx(0x00); // success resp
+			for (uint32_t i = 0; i < got; i++) pushRx(buf[i]);
 		}
 
 		// CMD_F_FRD_MEM: STAGE the transfer, do NOT perform it. The ROM arms $40FF AFTER sending
@@ -891,10 +1032,10 @@ namespace rp {
 			// since no emulated operation drives the FPGA half of the handshake.
 			_dmaInFlight    = true;
 			_dmaDoneAtCycle = 0;
-			if (_dmaCycles && _dmaCpuClockHz > 0 && _dmaLen > 0) {
+			if (_cartCycles && _cartCpuClockHz > 0 && _dmaLen > 0) {
 				const double seconds = static_cast<double>(_dmaLen) / DMA_BYTES_PER_SECOND;
-				_dmaDoneAtCycle = _dmaCycles() +
-					static_cast<uint64_t>(seconds * static_cast<double>(_dmaCpuClockHz));
+				_dmaDoneAtCycle = _cartCycles() +
+					static_cast<uint64_t>(seconds * static_cast<double>(_cartCpuClockHz));
 			}
 			retireDmaIfElapsed();
 		}
@@ -907,7 +1048,7 @@ namespace rp {
 		// is what the device does too.
 		void retireDmaIfElapsed() {
 			if (!_dmaInFlight) return;
-			if (_dmaDoneAtCycle != 0 && _dmaCycles && _dmaCycles() < _dmaDoneAtCycle) return;
+			if (_dmaDoneAtCycle != 0 && _cartCycles && _cartCycles() < _dmaDoneAtCycle) return;
 			_dmaInFlight    = false;
 			_dmaDoneAtCycle = 0;
 			_pendBits &= static_cast<uint8_t>(~MSTAT_MCU_PEND);
@@ -955,7 +1096,7 @@ namespace rp {
 			_writeRemaining = len;
 			_writeBlock.clear();
 			_writeBlock.reserve(std::min(len, ACK_BLOCK_SIZE));
-			_rxQueue.push(0x00);  // ack the first block; collectWriteByte takes it from here
+			pushRx(0x00);  // ack the first block; collectWriteByte takes it from here
 			_parseState = ParseState::CollectWriteData;
 		}
 
@@ -974,7 +1115,7 @@ namespace rp {
 		void execFifoWrite() {
 			const uint16_t len = readParamU16(0);
 			if (_params.size() < 2u + len) return;
-			for (uint16_t i = 0; i < len; i++) _rxQueue.push(_params[2 + i]);
+			for (uint16_t i = 0; i < len; i++) pushRx(_params[2 + i]);
 		}
 
 		void execFileClose() {
@@ -1001,11 +1142,11 @@ namespace rp {
 
 			std::error_code ec;
 			if (!std::filesystem::exists(hostPath, ec)) {
-				_rxQueue.push(0x04); // FAT_NO_FILE — resp byte before info
+				pushRx(0x04); // FAT_NO_FILE — resp byte before info
 				return;
 			}
 
-			_rxQueue.push(0x00); // resp == 0 → info follows
+			pushRx(0x00); // resp == 0 → info follows
 			std::filesystem::directory_entry de(hostPath, ec);
 			EdioDirRecord r = recordFromEntry(de);
 			pushFileInfo(r);

@@ -84,6 +84,12 @@ rfl::Bytestring DebugRpcService::drainCoreBytes(std::uint32_t id) {
     return out;
 }
 
+CoreTransportStats DebugRpcService::getCoreTransportStats(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    return sys->coreTransportStats();  // all-zero on cores with no host<->cart transport
+}
+
 bool DebugRpcService::loadLabels(std::uint32_t id, std::string path) {
     SystemBase* sys = engine_.findSystem(id);
     if (!sys) return false;

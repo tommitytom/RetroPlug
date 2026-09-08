@@ -46,6 +46,14 @@ struct MesenNesConfig {
     // defaultSdRoot), NOT the working directory. Applied at activate; there is no live toggle, so a
     // change needs a rebuild (setRoleConfig + reset), same as `region`.
     std::string   sdRoot;
+    // How faithfully the emulated cart FIFO behaves like the device's. 0 = instant (unbounded and
+    // delivered immediately - the permissive behaviour every existing test was written against),
+    // 1 = hardware (NesEverdriveFifo::FIFO_HW_*: 2048 deep, ~150 KB/s, dropping when full). The two
+    // overrides are 0 = "take it from the profile", so a rate sweep can vary one without the other.
+    // Construct-time (the FIFO is built in onActivate), same as sdRoot.
+    std::uint32_t fifo               = 0;
+    std::uint32_t fifoDepth          = 0;
+    std::uint32_t fifoBytesPerSecond = 0;
     std::string   romPath;
     // See SameBoyConfig::savSuffix. 0 => owns `<rom>.sav`; N>=2 => `<rom>-N.sav`,
     // so duplicated / repeat-loaded instances don't clobber a shared sibling.

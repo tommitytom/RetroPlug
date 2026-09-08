@@ -171,6 +171,20 @@ void MesenNesSystem::onActivate(double sampleRate) {
         // core runs a single instruction, so a boot-time sd_init sees it.
         n8Role_->setSdRoot(config_.sdRoot);
 
+        // How faithfully the host->NES queue behaves like the cartridge's. The profile carries the
+        // measured constants; an explicit override of 0 means "take it from the profile", so a test
+        // can sweep the rate without also having to restate the depth.
+        {
+            const bool hw = config_.fifo == 1;
+            const std::uint32_t depth = config_.fifoDepth != 0
+                ? config_.fifoDepth
+                : (hw ? rp::FIFO_HW_DEPTH : 0u);
+            const std::uint32_t rate = config_.fifoBytesPerSecond != 0
+                ? config_.fifoBytesPerSecond
+                : (hw ? rp::FIFO_HW_BYTES_PER_SECOND : 0u);
+            n8Role_->setFifoProfile(depth, rate);
+        }
+
         // Where a CMD_F_FRD_MEM DMA lands: the MCU reads the open file straight into cartridge memory
         // over the PI bus, so an N8 address has to be resolved to a Mesen buffer. Only the CHR-RAM
         // window is backed - the one nesvj verified byte-exact against a dump off a real cart. PRG
@@ -362,6 +376,12 @@ std::vector<std::uint8_t> MesenNesSystem::drainCoreBytes() {
     // mutex-guarded, so this is safe from the control thread while the core runs.
     if (!n8Role_) return {};
     return n8Role_->drainUsbTx();
+}
+
+CoreTransportStats MesenNesSystem::coreTransportStats() {
+    if (!n8Role_) return {};
+    const auto s = n8Role_->fifoStats();
+    return CoreTransportStats{ s.rxDepth, s.rxCapacity, s.droppedBytes, s.wirePending, s.txDepth };
 }
 
 namespace {

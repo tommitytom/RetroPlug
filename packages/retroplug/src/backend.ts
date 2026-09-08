@@ -255,6 +255,18 @@ export interface Backend {
    *  core has no such transport (SameBoy/GBA). */
   drainCoreBytes(id: number): Uint8Array;
 
+  /** What the core's host↔cartridge transport is holding, and what it has LOST. On the NES these are
+   *  the EverDrive FIFO's two stages (`wirePending` = handed over by the host but not yet carried,
+   *  `rxDepth` = delivered and waiting for the ROM to read) plus `droppedBytes`, the cumulative count
+   *  of bytes the queue had no room for.
+   *
+   *  This is the only way a test can SEE the transport drop something rather than infer it from
+   *  garbled output. It can only be non-zero when the queue is bounded, which is opt-in: the `mesen`
+   *  role's `fifo` profile defaults to "instant" (unbounded, immediate). `droppedBytes` is cumulative
+   *  and reading does not clear it, so a timeline can sample it repeatedly. All zero when the id is
+   *  gone or the core has no such transport (SameBoy/GBA). */
+  getCoreTransportStats(id: number): CoreTransportStats;
+
   /** Load a cc65 `.dbg` symbol file (by path) so profiler/disassembly output shows function names.
    *  Returns false when the id is gone, the core has no NES debug target (SameBoy/GBA), or the file
    *  can't be read/parsed. */
@@ -372,6 +384,7 @@ export type EmulatorBackend = Pick<
 export type DebugBackend = Pick<
   Backend,
   | "getApuState" | "getExpansionAudioState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
+  | "getCoreTransportStats"
   | "stepInstruction" | "drainEvents" | "drainCoreBytes" | "loadLabels" | "symbolAddress" | "setCpuRegister" | "runUntilPc"
   | "setBreakpoints" | "runUntilBreak" | "setTrace" | "readTrace" | "stepInto" | "stepOver" | "stepOut"
   | "beginProfile" | "readProfile" | "disassemble" | "getCallStack"
@@ -553,6 +566,17 @@ export interface CpuRegister {
  *  3=Breakpoint, 4=BgColorChange, 5=SpriteZeroHit, 6=DmcDmaRead, 7=DmaRead); `operationType` is the
  *  MemoryOperationType ordinal (0=Read, 1=Write, ...). `address`/`value` are the register access (value -1
  *  for a read with no captured value); `scanline`/`cycle` are the PPU position it fired at. */
+/** Depths of the core's host↔cartridge transport plus what it has lost (`getCoreTransportStats`). On
+ *  the NES: the EverDrive FIFO's wire stage and its fifo_a, whose capacity is `rxCapacity` (0 =
+ *  unbounded, so `droppedBytes` can only ever be 0). Byte counts, cumulative for `droppedBytes`. */
+export interface CoreTransportStats {
+  rxDepth: number;
+  rxCapacity: number;
+  droppedBytes: number;
+  wirePending: number;
+  txDepth: number;
+}
+
 export interface DebugEvent {
   type: number;
   operationType: number;

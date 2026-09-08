@@ -15,6 +15,7 @@ import {
   CARTRIDGE_ACCURACY_VALUES,
   COLOR_CORRECTION_VALUES,
   DMG_PALETTE_VALUES,
+  FIFO_PROFILE_VALUES,
 } from "./settingsEnums";
 
 /** Register the built-in core-config system roles into `registry`. */
@@ -89,6 +90,18 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       // Construct-time, like `region`: the FIFO is built when the core activates, so an edit needs a
       // rebuild (setRoleConfig then reset(id)) rather than taking effect live.
       sdRoot: z.string().default(""),
+      // NES-only: how faithfully the emulated cart FIFO behaves like the device's (see
+      // FIFO_PROFILE_VALUES). Default "instant" - unbounded and immediate - because that is the
+      // transport every existing test assumes, and because a lossy queue is something a test should
+      // ASK for rather than inherit. "hardware" makes two hardware-only bug classes reachable in CI:
+      // a dropped byte (so a ROM's recovery path can be exercised) and a wire that trickles (so a
+      // copy loop can be starved mid-structure rather than only between chunks).
+      //
+      // The two overrides are 0 = "take the profile's value", so a rate sweep can vary one without
+      // restating the other. Construct-time, like `sdRoot`: setRoleConfig then reset(id).
+      fifo: enumField(FIFO_PROFILE_VALUES, "instant"),
+      fifoDepth: clampedInt(0, 1 << 20, 0),
+      fifoBytesPerSecond: clampedInt(0, 100_000_000, 0),
     }),
   });
 }

@@ -59,6 +59,7 @@ public:
     // Control-thread: the N8 FIFO's CMD_USB_WR payload — what the ROM has sent host-ward since the
     // last drain. Empty before activation or when the ROM has sent nothing.
     std::vector<std::uint8_t> drainCoreBytes() override;
+    CoreTransportStats coreTransportStats() override;
 
     // Audio-thread: queue a NES button transition. The byte is reinterpreted
     // as NesButton (Right/Left/Up/Down/A/B/Select/Start, positions 0..7).

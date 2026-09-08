@@ -26,6 +26,12 @@ struct MesenNesRoleConfig {
     // Host directory the emulated EverDrive N8 SD card maps to. Construct-time (the FIFO is built in
     // onActivate), so a live edit needs a reset — like `region`. Empty => a per-process scratch dir.
     std::string   sdRoot;
+    // Cart-FIFO fidelity: 0 = instant (unbounded, immediate), 1 = hardware (2048 deep, ~150 KB/s,
+    // drops when full). The two overrides are 0 = "use the profile's value". Construct-time, so an
+    // edit needs a reset — like sdRoot. Default 0 keeps every existing test's transport permissive.
+    std::uint32_t fifo               = 0;
+    std::uint32_t fifoDepth          = 0;
+    std::uint32_t fifoBytesPerSecond = 0;
 };
 
 // The SMS/GG slice of that same TS "mesen" role. A separate struct rather than more fields on the one

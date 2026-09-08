@@ -45,6 +45,17 @@ public:
     // wherever the ROM restarts - see NesEverdriveFifo::clearDmaHandshake for why it is separate.
     void clearDmaHandshake() { fifo_.clearDmaHandshake(); }
 
+    // How faithfully the host->NES queue behaves like the cartridge's fifo_a: `depth` 0 = unbounded,
+    // `bytesPerSecond` 0 = instant. Both zero is the permissive default. Set at activate from the
+    // "mesen" role's `fifo` profile.
+    void setFifoProfile(std::uint32_t depth, std::uint32_t bytesPerSecond) {
+        fifo_.setFifoProfile(depth, bytesPerSecond);
+    }
+
+    // Queue depths + the cumulative dropped-byte count, for a test that needs to see the transport
+    // rather than infer it. See NesEverdriveFifo::FifoStats.
+    rp::NesEverdriveFifo::FifoStats fifoStats() { return fifo_.stats(); }
+
     // Take the bytes the ROM has sent host-ward via CMD_USB_WR since the last drain (oldest first).
     // The emulated NES→host back-channel; empty when the ROM has sent nothing.
     std::vector<std::uint8_t> drainUsbTx() { return fifo_.drainTx(); }

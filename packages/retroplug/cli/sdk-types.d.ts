@@ -154,6 +154,16 @@ export interface CpuRegister {
  *  identity for an event across polls. `type` is the DebugEventType ordinal (0=Register, 1=Nmi, 2=Irq,
  *  3=Breakpoint, 4=BgColorChange, 5=SpriteZeroHit, 6=DmcDmaRead, 7=DmaRead); `operationType` the
  *  MemoryOperationType ordinal (0=Read, 1=Write, ...); `value` is -1 for a read with no captured value. */
+/** Depths of the core's host<->cartridge transport plus what it has lost (`getCoreTransportStats`).
+ *  `rxCapacity` 0 means unbounded, in which case `droppedBytes` can only ever be 0. */
+export interface CoreTransportStats {
+  rxDepth: number;
+  rxCapacity: number;
+  droppedBytes: number;
+  wirePending: number;
+  txDepth: number;
+}
+
 export interface DebugEvent {
   type: number;
   operationType: number;
@@ -274,6 +284,14 @@ export interface Backend {
    *  what it consumed, so the host can pace to it instead of guessing. Empty when the ROM has sent
    *  nothing or the core has no such transport (Game Boy / GBA). */
   drainCoreBytes(id: number): Uint8Array;
+  /** What that transport is holding, and what it has LOST. On the NES the EverDrive FIFO's two stages
+   *  (`wirePending` = handed over by the host but not yet carried, `rxDepth` = delivered and waiting for
+   *  the ROM) plus `droppedBytes`, the cumulative count the queue had no room for.
+   *
+   *  The only way to SEE the transport lose a byte rather than infer it from garbled output. It can only
+   *  be non-zero when the queue is bounded, which is opt-in: `setRoleConfig(id, "mesen", { fifo:
+   *  "hardware" })` then `reset(id)`. `droppedBytes` never resets, so sample it and subtract. */
+  getCoreTransportStats(id: number): CoreTransportStats;
   /** Load a cc65 `.dbg` symbol file so profiling / breakpoints / disassembly / call stack show names. */
   loadLabels(id: number, path: string): boolean;
   /** The CPU address of a symbol from the loaded `.dbg`, by name: a C name (`g_frame`, and a file-scope

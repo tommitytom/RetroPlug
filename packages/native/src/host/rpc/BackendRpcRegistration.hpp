@@ -98,6 +98,7 @@ void registerDebugRpc(Server& s, DebugRpcService& d) {
     s.template addMethod<&DebugRpcService::stepInstruction>(d);
     s.template addMethod<&DebugRpcService::drainEvents>(d);
     s.template addMethod<&DebugRpcService::drainCoreBytes>(d);
+    s.template addMethod<&DebugRpcService::getCoreTransportStats>(d);
     s.template addMethod<&DebugRpcService::loadLabels>(d);
     s.template addMethod<&DebugRpcService::symbolAddress>(d);
     s.template addMethod<&DebugRpcService::setCpuRegister>(d);
