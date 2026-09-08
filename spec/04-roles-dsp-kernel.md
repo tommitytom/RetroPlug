@@ -147,6 +147,14 @@ into cartridge memory over the PI bus, which `MesenNesSystem` backs for the CHR-
 (PI `0xC00000`) only. That transfer's duration is modelled from the rate measured on real hardware,
 so the ROM's wait loop spins about as long here as it does on a console.
 
+`fifo` (plus the `fifoDepth` / `fifoBytesPerSecond` overrides) says how faithfully that FIFO behaves
+like the cartridge's. It defaults to `"instant"` - unbounded and delivered immediately, which is what
+every existing test assumes - and `"hardware"` opts in to 2048 bytes deep, dropping when full, fed at
+the wire's ~150 KB/s. Both of those absences hide a bug class rather than being bugs: a ROM that
+cannot lose a byte never has its recovery path exercised, and one handed a whole chunk atomically is
+never starved mid-structure. `getCoreTransportStats` reports both queue depths and the cumulative
+drop count ([09](09-cli-debugging.md)).
+
 **DSP-thread roles** ([dspRoles.ts](../packages/retroplug/src/dspRoles.ts)) — feature
 behaviours over the per-system context:
 
