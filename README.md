@@ -21,8 +21,8 @@ audio plugin (CLAP / VST3 / VST2 / AU) in your favourite DAW!
 - **Background rendering** - bounce a song to WAV from the menu while you keep working,
   or from the command line without opening the UI at all
 - Multiple instances in a single window, linked with virtual Game Boy link cables
-- Flexible audio and MIDI routing, including splitting a single Game Boy out to its
-  individual sound channels
+- Flexible audio and MIDI routing, including splitting a single system out to its
+  individual sound channels, or a NES out to its three 2A03 output pins
 - **Real hardware** - drive an Everdrive N8 Pro over USB, and use a Novation Launchpad
   as a control surface
 
@@ -109,8 +109,20 @@ option offers:
 - **2 Ch / Inst** - each instance gets its own stereo pair (instance 1 → 1-2,
   instance 2 → 3-4, …).
 - **1 Ch / Inst** - each instance on its own mono channel.
-- **Channels (1 GB)** - with a single Game Boy loaded, split it out to its individual
-  sound channels on separate outputs.
+- **Channels** - one system's individual sound channels: a Game Boy's 4 channels as
+  four stereo pairs across the 8 outs, or a NES's 5 core channels (square 1/2,
+  triangle, noise, DMC) as mono on outs 1-5.
+- **Pins** - a NES's three 2A03 output pins (Pulse, TND, Expansion) as mono on outs
+  1-3.
+- **Stereo Pins** - the same three pins, but a stereo *pair* each (outs 1/2, 3/4, 5/6)
+  with L mirrored to R, so each pin arrives as an ordinary stereo track in a DAW that
+  can only bus or FX whole pairs.
+
+The last three only apply with a single instance loaded, since a split has nowhere to
+go once there are peers, and the two pin modes additionally need that instance to be a
+NES. The menu offers only what applies, and the audio engine re-checks regardless. In
+the standalone, raise `Settings` > `Audio` > `Out Channels` to match, or the extra
+streams have nowhere to land.
 
 ### MIDI Routing
 By default every instance receives all MIDI on all channels. The `MIDI Routing`
