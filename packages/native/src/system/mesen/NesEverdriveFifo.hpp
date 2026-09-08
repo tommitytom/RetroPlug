@@ -485,7 +485,7 @@ namespace rp {
 
 	private:
 		// ----------------------------------------------------------------
-		// fifo_a: delivery and depth — called with _mutex held
+		// fifo_a: delivery and depth - called with _mutex held
 		// ----------------------------------------------------------------
 
 		// The ONLY way a byte enters the ROM's read queue, whether it came off the wire or from the

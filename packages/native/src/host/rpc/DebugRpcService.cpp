@@ -138,6 +138,16 @@ rp::BreakInfo DebugRpcService::runUntilBreak(std::uint32_t id, std::uint64_t max
     return dbg->runUntilBreak(maxCycles);  // broke=false on the cycle cap
 }
 
+rp::BreakHitBatch DebugRpcService::drainBreakHits(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    rp::BreakHitBatch batch;
+    batch.hits = dbg->drainBreakHits(batch.overflow);
+    return batch;
+}
+
 // Execution trace + single-step — all route through the Mesen NES debug target (null on SameBoy/GBA →
 // no-op/empty/default).
 bool DebugRpcService::setTrace(std::uint32_t id, bool on) {

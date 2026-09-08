@@ -67,6 +67,35 @@ struct BreakInfo {
     std::int32_t  breakpointId = -1;
 };
 
+// One breakpoint firing recorded PASSIVELY, during an ordinary render rather than under
+// runUntilBreak. Mesen's headless driver does not block on a break - it records it and returns - so
+// the render loop can note the hit, resume, and carry on. That turns a conditional watchpoint into a
+// continuous INVARIANT check: `value > 15` on a variable is asserted on every write the ROM makes,
+// not only at the moments a test happens to sample.
+//
+// `cpuCycle` is what makes a duration measurable (two hits subtract), and `scanline`/`cycle` say
+// where in the frame it fired - which is how "did this ROM write the PPU outside vblank" is asked.
+// Both are sampled just AFTER the triggering instruction, so they are its end, not its start.
+struct BreakHit {
+    std::int32_t  breakpointId = -1;
+    std::uint32_t pc           = 0;  // the instruction that triggered it
+    std::uint32_t address      = 0;  // the address accessed (0 for an execute breakpoint)
+    std::int32_t  value        = -1; // the byte written/read, -1 when the operation carried none
+    std::int32_t  scanline     = -1;
+    std::int32_t  cycle        = -1;
+    std::uint64_t cpuCycle     = 0;
+    bool          isWrite      = false;
+};
+
+// What one drainBreakHits call returns: the firings plus how many were seen beyond the capture cap.
+// A struct rather than a bare list because a truncated batch still has to be distinguishable from a
+// complete one - "the invariant held" and "it was violated more times than we could record" must not
+// look alike.
+struct BreakHitBatch {
+    std::vector<BreakHit> hits;
+    std::uint32_t         overflow = 0;
+};
+
 // -- NES APU per-channel state ----------------------------------------------
 //
 // A snapshot of the five NES APU channels' DECODED musical state — period,
@@ -329,6 +358,15 @@ public:
     // the CPU one instruction at a time and stops when a breakpoint fires.
     virtual void setBreakpoints(const std::vector<BreakpointSpec>& bps) = 0;
     virtual BreakInfo runUntilBreak(std::uint64_t maxCycles) = 0;
+
+    // Take the breakpoint firings recorded during ORDINARY execution since the last call, oldest
+    // first. The passive twin of runUntilBreak: install a conditional watchpoint, render the
+    // timeline normally, then ask what tripped. Empty when nothing did.
+    //
+    // The buffer is capped (a badly-scoped watchpoint fires on every instruction, inside the audio
+    // thread), so `overflow` reports how many were seen beyond what is returned. A non-zero overflow
+    // still means the invariant was violated - only the detail is lost.
+    virtual std::vector<BreakHit> drainBreakHits(std::uint32_t& overflow) { overflow = 0; return {}; }
 
     // Single-step: into the next instruction, over a subroutine call, or out of
     // the current subroutine.

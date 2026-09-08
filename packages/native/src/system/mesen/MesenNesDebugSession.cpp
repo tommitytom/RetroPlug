@@ -382,6 +382,64 @@ void MesenNesDebugSession::setBreakpoints(const std::vector<rp::BreakpointSpec>&
     }
     dbg->SetBreakpoints(bps.empty() ? nullptr : bps.data(),
                         static_cast<std::uint32_t>(bps.size()));
+
+    // Arm (or disarm) the render loop's passive capture with the set. Installing breakpoints is the
+    // only way to ask for it, so an ordinary render pays nothing until a test does.
+    breakCaptureArmed_ = !bps.empty();
+    breakHits_.clear();
+    breakHitOverflow_ = 0;
+    // Free-run: without this a breakpoint installed after a step would leave the spent StepRequest
+    // in place and re-break on the next instruction (see doStep's note).
+    dbg->Run();
+}
+
+void MesenNesDebugSession::captureBreakHit() {
+    // InternalGetDebugger, not ensureDebugger: this runs after EVERY instruction while armed, and
+    // the debugger is guaranteed to exist already (setBreakpoints is what arms this, and it built
+    // one). A bare pointer read keeps the hot path to a load and a branch.
+    Debugger* dbg = emu_ ? emu_->InternalGetDebugger() : nullptr;
+    if (!dbg || !dbg->IsExecutionStopped()) return;
+
+    const BreakEvent evt = dbg->GetLastBreakEvent();
+    if (breakHits_.size() < kMaxBreakHits) {
+        rp::BreakHit hit;
+        hit.breakpointId = evt.BreakpointId;
+        hit.address      = evt.Operation.Address;
+        // A read that carried no value reports -1, matching drainEvents' convention for the same case.
+        hit.value        = static_cast<std::int32_t>(evt.Operation.Value);
+        hit.isWrite      = evt.Operation.Type == MemoryOperationType::Write ||
+                           evt.Operation.Type == MemoryOperationType::DmaWrite;
+        if (NesCpu* cpu = nesCpuOf(emu_)) {
+            // Execution stopped just AFTER the triggering instruction, so this is where it left the
+            // CPU rather than where the instruction began, the same convention runUntilBreak
+            // documents for its `pc`.
+            hit.pc       = cpu->GetState().PC;
+            hit.cpuCycle = cpu->GetState().CycleCount;
+        }
+        if (auto* console = dynamic_cast<NesConsole*>(emu_->GetConsole().get())) {
+            if (BaseNesPpu* ppu = console->GetPpu()) {
+                // WHERE in the frame it fired, which is what turns a $2006/$2007 watchpoint into
+                // "did this ROM write the PPU outside vblank".
+                hit.scanline = ppu->GetCurrentScanline();
+                hit.cycle    = static_cast<std::int32_t>(ppu->GetCurrentCycle());
+            }
+        }
+        breakHits_.push_back(hit);
+    } else {
+        ++breakHitOverflow_;
+    }
+
+    // Let the render carry on. Upstream Mesen blocked here until a UI thread resumed; this driver
+    // does not, so the flag would otherwise stay set and every later break be indistinguishable.
+    dbg->ResumeFromBreak();
+}
+
+std::vector<rp::BreakHit> MesenNesDebugSession::drainBreakHits(std::uint32_t& overflow) {
+    overflow = breakHitOverflow_;
+    breakHitOverflow_ = 0;
+    std::vector<rp::BreakHit> out;
+    out.swap(breakHits_);   // take, not peek: a second drain reports only what is new
+    return out;
 }
 
 rp::BreakInfo MesenNesDebugSession::runUntilBreak(std::uint64_t maxCycles) {

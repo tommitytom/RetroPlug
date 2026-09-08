@@ -352,7 +352,7 @@ function floodParkedRom(fifoCfg: Record<string, unknown> | null, total: number) 
   if (id == null) throw new Error("addSystem failed");
   if (fifoCfg) {
     // Construct-time, like sdRoot: the FIFO is built when the core activates, so the reset is what
-    // applies it — and it hands back a new id.
+    // applies it, and it hands back a new id.
     expect(s.project.systems.setRoleConfig(id, "mesen", fifoCfg)).toBeTruthy();
     const next = s.project.systems.reset(id);
     if (next == null) throw new Error("reset after setRoleConfig failed");
@@ -386,7 +386,7 @@ test("the default FIFO profile loses nothing, however far behind the ROM is", ()
 
 test("the hardware FIFO profile drops what the ROM was too slow to read", () => {
   // The bug class this makes reachable: a dropped byte. nesvj's first live wire format tracked the
-  // display buffer with a counter in the ROM — correct forever on a lossless queue, and permanently
+  // display buffer with a counter in the ROM: correct forever on a lossless queue, and permanently
   // out of step with the encoder after a single drop on hardware. No emulator test could produce one.
   const stats = floodParkedRom({ fifo: "hardware" }, 4096);
   expect(stats.rxCapacity).toEqual(2048); // SIZE_FIFO, as the device
@@ -401,7 +401,7 @@ test("an explicit rate overrides the profile without restating the depth", () =>
   // the knee, which needs one knob to move while the other holds.
   const slow = floodParkedRom({ fifo: "hardware", fifoBytesPerSecond: 20000 }, 4096);
   expect(slow.rxCapacity).toEqual(2048); // still the profile's depth
-  // 4096 bytes at 20 KB/s is ~205 ms, and the render is 200 — so some of it is provably still in
+  // 4096 bytes at 20 KB/s is ~205 ms, and the render is 200, so some of it is provably still in
   // flight, which is the wire being slower than the profile's default rather than instant.
   expect(slow.wirePending).toBeGreaterThan(0);
   expect(slow.rxDepth + slow.droppedBytes + slow.wirePending).toEqual(4096);

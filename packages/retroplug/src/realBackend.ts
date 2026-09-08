@@ -13,7 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakHitBatch, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
 import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transport";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 
@@ -178,6 +178,10 @@ export function createDebugClient(): DebugBackend {
     setBreakpoints: (id, breakpoints: Breakpoint[]) =>
       call("setBreakpoints", id, breakpoints.map((b) => ({ type: b.type, start: b.start, end: b.end ?? 0, condition: b.condition ?? "" }))) as boolean,
     runUntilBreak: (id, maxCycles) => call("runUntilBreak", id, maxCycles) as BreakInfo,
+    // Always a batch, never null: a core with no debug target reports "nothing tripped" rather than
+    // an absence, so a caller can read .hits without guarding.
+    drainBreakHits: (id) =>
+      (call("drainBreakHits", id) as BreakHitBatch | null | undefined) ?? { hits: [], overflow: 0 },
     setTrace: (id, on) => call("setTrace", id, on) as boolean,
     readTrace: (id, count) => call("readTrace", id, count) as TraceLine[],
     stepInto: (id) => call("stepInto", id) as BreakInfo,

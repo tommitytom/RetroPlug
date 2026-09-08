@@ -4,7 +4,7 @@
 // "disk". This is what lets the whole application layer be tested with `tjs run`
 // and nothing else.
 
-import type { ApuState, ApuSquareState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
+import type { ApuState, ApuSquareState, Backend, BreakHitBatch, BreakInfo, Breakpoint, CallFrame, ConstructSpec, CoreTransportStats, CpuRegister, DebugEvent, DisasmLine, ExpansionAudioState, FileBrowserOpts, FrameData, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "../src/backend";
 import { detectPlatform } from "../src/platform";
 import { savFromJson } from "../src/lsdj";
 
@@ -438,6 +438,12 @@ export class MockBackend implements Backend {
   setBreakpoints(id: number, _breakpoints: Breakpoint[]): boolean {
     this.log.push("setBreakpoints");
     return this.systems.has(id); // installs nothing real; only a live NES core breaks
+  }
+
+  drainBreakHits(_id: number): BreakHitBatch {
+    this.log.push("drainBreakHits");
+    // No real core, so nothing can ever trip: "the invariant held" is the honest mock answer.
+    return { hits: [], overflow: 0 };
   }
 
   runUntilBreak(_id: number, _maxCycles: number): BreakInfo {

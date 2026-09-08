@@ -449,15 +449,25 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // its depth IS the output-block sample index (leftover from a prior block occupies indices [0, depth) —
     // an event there simply fires ASAP). Gate on the SAME metric the loop uses (capture streams in pins
     // mode, else the mix ring).
+    // Passive breakpoint capture (spec/09). Mesen's headless driver records a break and RETURNS
+    // rather than blocking, so an ordinary render can notice one, log it and carry on, which turns
+    // a conditional watchpoint into a continuous invariant instead of something only runUntilBreak
+    // can observe. Hoisted out of the loop: null unless a test has installed a breakpoint set, so
+    // the normal render path pays one predictable branch per instruction and nothing else.
+    MesenNesDebugSession* breakWatch =
+        (debugSession_ && debugSession_->breakCaptureArmed()) ? debugSession_.get() : nullptr;
+
     if (channelCapture_ && nesMixer_) {
         while (nesMixer_->AvailableCaptureFrames() < framesNeeded) {
             if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(nesMixer_->AvailableCaptureFrames()));
             cpu->Exec();
+            if (breakWatch) breakWatch->captureBreakHit();
         }
     } else {
         while (audioDevice_->availableFrames() < framesNeeded) {
             if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(audioDevice_->availableFrames()));
             cpu->Exec();
+            if (breakWatch) breakWatch->captureBreakHit();
         }
     }
     // Release anything due through the block end (offsets in [0, framesNeeded]); offsets past it carry to

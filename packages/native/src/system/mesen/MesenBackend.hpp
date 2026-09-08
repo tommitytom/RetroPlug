@@ -28,7 +28,7 @@ struct MesenNesRoleConfig {
     std::string   sdRoot;
     // Cart-FIFO fidelity: 0 = instant (unbounded, immediate), 1 = hardware (2048 deep, ~150 KB/s,
     // drops when full). The two overrides are 0 = "use the profile's value". Construct-time, so an
-    // edit needs a reset — like sdRoot. Default 0 keeps every existing test's transport permissive.
+    // edit needs a reset, like sdRoot. Default 0 keeps every existing test's transport permissive.
     std::uint32_t fifo               = 0;
     std::uint32_t fifoDepth          = 0;
     std::uint32_t fifoBytesPerSecond = 0;

@@ -196,6 +196,42 @@ export interface BreakInfo {
   breakpointId: number;
 }
 
+/** One breakpoint firing recorded PASSIVELY during an ordinary render (`drainBreakHits`). `pc` and
+ *  `cpuCycle` are sampled just after the triggering instruction; `address`/`value` are the access that
+ *  tripped it (`value` -1 when it carried none); `scanline`/`cycle` say where in the frame. */
+export interface BreakHit {
+  breakpointId: number;
+  pc: number;
+  address: number;
+  value: number;
+  scanline: number;
+  cycle: number;
+  cpuCycle: number;
+  isWrite: boolean;
+}
+
+/** What one `drainBreakHits` returns. `overflow` > 0 means more firings than the capture cap. */
+export interface BreakHitBatch {
+  hits: BreakHit[];
+  overflow: number;
+}
+
+/** A continuous invariant for `renderTimeline({ invariants })`. Name the variable by `symbol` (resolved
+ *  through `symbolAddress`, so `loadLabels` must have run) or give an `address` directly, then bound it
+ *  with `max` / `min` / `equals`, or supply a raw Mesen `condition` for anything else. A violation fails
+ *  the run and reports the frame, scanline and value it fired at. */
+export interface TimelineInvariant {
+  system: number;
+  symbol?: string;
+  address?: number;
+  end?: number;
+  max?: number;
+  min?: number;
+  equals?: number;
+  condition?: string;
+  label?: string;
+}
+
 /** One row of the execution trace (`readTrace`, most-recent first). `pc` is the instruction address;
  *  `text` is the disassembly + register state Mesen logged for it. */
 export interface TraceLine {
@@ -306,6 +342,13 @@ export interface Backend {
   setBreakpoints(id: number, breakpoints: Breakpoint[]): boolean;
   /** Step the CPU until a breakpoint fires or `maxCycles` elapses. */
   runUntilBreak(id: number, maxCycles: number): BreakInfo;
+  /** The breakpoint firings recorded during ORDINARY rendering since the last call, oldest first: the
+   *  passive twin of `runUntilBreak`. Install a conditional watchpoint, render the timeline as usual,
+   *  then ask what tripped, which is what makes a Mesen condition a CONTINUOUS invariant instead of
+   *  something only a single-stepping run can see. `renderTimeline({ invariants })` wraps this.
+   *
+   *  `overflow` counts firings past the capture cap; non-zero still means the invariant was violated. */
+  drainBreakHits(id: number): BreakHitBatch;
   /** Run until PC reaches `target` (or `maxCycles`) — a one-shot execute breakpoint. */
   runUntilPc(id: number, target: number, maxCycles: number): boolean;
   /** Source-level stepping. */

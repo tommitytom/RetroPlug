@@ -296,6 +296,17 @@ export interface Backend {
    *  or when the id is gone / there is no NES debug target. */
   runUntilBreak(id: number, maxCycles: number): BreakInfo;
 
+  /** The breakpoint firings recorded during ORDINARY rendering since the last call, oldest first: the
+   *  passive twin of `runUntilBreak`. Install a conditional watchpoint, render as usual, then ask what
+   *  tripped. That turns a Mesen condition (`value > 15`, `scanline < 240`) into a CONTINUOUS invariant
+   *  rather than something only a single-stepping run can observe, which is what makes watchpoints
+   *  reachable from a timeline-driven test at all.
+   *
+   *  `overflow` counts firings past the capture cap, which a badly-scoped watchpoint will hit; a
+   *  truncated batch still proves the invariant was violated, it just loses the detail. Take-not-peek,
+   *  like `drainEvents`. Empty on a core with no NES debug target. */
+  drainBreakHits(id: number): BreakHitBatch;
+
   /** Toggle Mesen's per-instruction execution trace logger. Returns false when the id is gone or the
    *  core has no NES debug target (SameBoy/GBA); read the captured rows afterwards with readTrace. */
   setTrace(id: number, on: boolean): boolean;
@@ -386,7 +397,7 @@ export type DebugBackend = Pick<
   | "getApuState" | "getExpansionAudioState" | "getPpuState" | "readCpu" | "writeCpu" | "readMemory" | "getCpuRegisters"
   | "getCoreTransportStats"
   | "stepInstruction" | "drainEvents" | "drainCoreBytes" | "loadLabels" | "symbolAddress" | "setCpuRegister" | "runUntilPc"
-  | "setBreakpoints" | "runUntilBreak" | "setTrace" | "readTrace" | "stepInto" | "stepOver" | "stepOut"
+  | "setBreakpoints" | "runUntilBreak" | "drainBreakHits" | "setTrace" | "readTrace" | "stepInto" | "stepOver" | "stepOut"
   | "beginProfile" | "readProfile" | "disassemble" | "getCallStack"
 >;
 
@@ -602,6 +613,30 @@ export interface BreakInfo {
   broke: boolean;
   pc: number;
   breakpointId: number;
+}
+
+/** One breakpoint firing recorded PASSIVELY during an ordinary render (`drainBreakHits`). `pc` and
+ *  `cpuCycle` are sampled just AFTER the triggering instruction (the convention `runUntilBreak`
+ *  documents), `address`/`value` are the access that tripped it (`value` -1 when it carried none), and
+ *  `scanline`/`cycle` say where in the frame it happened, which is how "did this ROM touch the PPU
+ *  outside vblank" gets asked. Two hits' `cpuCycle` subtract to a duration. */
+export interface BreakHit {
+  breakpointId: number;
+  pc: number;
+  address: number;
+  value: number;
+  scanline: number;
+  cycle: number;
+  cpuCycle: number;
+  isWrite: boolean;
+}
+
+/** What one `drainBreakHits` returns. `overflow` is how many firings were seen beyond the capture cap:
+ *  non-zero means the invariant was violated more often than could be recorded, which must stay
+ *  distinguishable from "it held". */
+export interface BreakHitBatch {
+  hits: BreakHit[];
+  overflow: number;
 }
 
 /** A breakpoint to install via `setBreakpoints` (input; mirrors native `rp::BreakpointSpec`). `type` is
