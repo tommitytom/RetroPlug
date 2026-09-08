@@ -33,6 +33,14 @@
 // the MCU forwards its payload to the USB host, which is how a cartridge talks
 // back, and here it queues for `drainTx`.
 //
+// `CMD_F_FRD_MEM` is the exception in a different direction: instead of replying
+// through the FIFO, the MCU reads the open file straight into CARTRIDGE memory
+// over the PI bus, with the 6502 doing nothing but waiting. It needs a third
+// register, `$40FF` (REG_MSTAT), and a two-step trigger: the parameters STAGE the
+// transfer and a later `$40F0` write EXECUTES it (see execStagedDma). Proven on a
+// real N8 Pro from a running game: 8192 bytes into CHR-RAM, byte-exact, at roughly
+// a hundred times the rate of the CPU-mediated `CMD_F_FRD` path.
+//
 // Register addresses confirmed against old/bliptoaster/rom/everdrive.h. The
 // legacy MesenComponents.h had a stale 0x4150/0x4151 — the values here
 // are correct.
@@ -78,6 +86,10 @@ namespace rp {
 	static constexpr uint8_t CMD_F_DIR_GET  = 0xC8;
 	static constexpr uint8_t CMD_F_FOPN    = 0xC9;
 	static constexpr uint8_t CMD_F_FRD     = 0xCA;
+	// addr(4) + len(4), both little-endian u32: read from the open file straight into cartridge
+	// memory by DMA. `edio/everdrive.c` ed_cmd_file_read_mem sends the parameters, then runs the
+	// halt handshake below rather than reading a reply out of the FIFO.
+	static constexpr uint8_t CMD_F_FRD_MEM = 0xCB;
 	static constexpr uint8_t CMD_F_FWR     = 0xCC;
 	static constexpr uint8_t CMD_F_FCLOSE  = 0xCE;
 	static constexpr uint8_t CMD_F_FPTR    = 0xCF;
@@ -94,6 +106,45 @@ namespace rp {
 	// CMD_F_FWR's flow-control granularity (everdrive.c ACK_BLOCK_SIZE): the device sends one ack byte,
 	// the ROM answers with up to this many payload bytes, and so on until the length is met.
 	static constexpr uint32_t ACK_BLOCK_SIZE = 1024;
+
+	// -----------------------------------------------------------------------
+	// $40FF (REG_MSTAT) - the mapper status register the DMA handshake polls
+	// -----------------------------------------------------------------------
+	// Reads answer `MSTAT_BASE | pendBits | strobe`, and the strobe flips on EVERY read: the SDK's
+	// wait loop reads the register twice per iteration and requires the two to differ in nothing but
+	// that bit, which is how it knows the register is live rather than open bus. Writes set the
+	// pending bits, which is how a ROM arms the operation it is about to wait on.
+	static constexpr uint16_t REG_MSTAT      = 0x40FF;
+	static constexpr uint8_t  MSTAT_BASE     = 0xA0;  // the loop also checks the high nibble reads $A
+	static constexpr uint8_t  MSTAT_MCU_PEND = 0x02;
+	static constexpr uint8_t  MSTAT_FPG_PEND = 0x04;
+	static constexpr uint8_t  MSTAT_PEND_MASK = MSTAT_MCU_PEND | MSTAT_FPG_PEND;
+	static constexpr uint8_t  MSTAT_STROBE   = 0x08;
+
+	// -----------------------------------------------------------------------
+	// PI bus geography of the N8 Pro cartridge (mirrors packages/retroplug/src/n8/edio.ts)
+	// -----------------------------------------------------------------------
+	// The addresses CMD_F_FRD_MEM's first parameter is drawn from. Only the CHR-RAM window is
+	// backed here; see setCartWriter for why the others are refused rather than guessed at.
+	static constexpr uint32_t PI_ADDR_PRG = 0x0000000;  // PRG PSRAM (8 MB)
+	static constexpr uint32_t PI_ADDR_CHR = 0x0800000;  // CHR PSRAM (8 MB)
+	static constexpr uint32_t PI_ADDR_SRM = 0x1000000;  // cart battery RAM
+	// everdrive.sv forces bit 22 of the CHR address for a chr_ram game, so a CHR-RAM cart's RAM is
+	// the UPPER 4 MB of the CHR chip and not ADDR_CHR - the same fact `n8-load --dump-chr` encodes.
+	static constexpr uint32_t PI_CHR_RAM_OFFSET = 0x400000;
+	static constexpr uint32_t PI_ADDR_CHR_RAM   = PI_ADDR_CHR + PI_CHR_RAM_OFFSET;  // 0xC00000
+
+	// How fast the MCU moves bytes over the PI bus, for the wait-time model (see setDmaClock).
+	//
+	// DERIVED FROM THE ONE HARDWARE MEASUREMENT, and re-derivable if that ROM's loop changes:
+	// nesvj's wait loop (its src/core/dma.s) is 37 CPU cycles per spin, and a real N8 Pro took 165
+	// and 172 spins to move 8192 bytes over two boots. That is ~6.2k cycles, or ~3.7 ms against
+	// PAL's 1662607 Hz, so ~2.2 MB/s - inside the 1.7-2.8 MB/s band that run reported.
+	//
+	// Quoted as bytes per second rather than cycles per byte on purpose: the MCU's transfer takes a
+	// fixed WALL time, and a faster CPU simply burns more cycles waiting for it. So the same number
+	// holds on NTSC, where a cycles-per-byte constant would have made the transfer 8% quicker.
+	static constexpr double DMA_BYTES_PER_SECOND = 2.2e6;
 
 	// -----------------------------------------------------------------------
 	// Host-side directory record (matches ed_rx_file_info layout)
@@ -163,6 +214,27 @@ namespace rp {
 		// MIDI parser and caused the "first message is ignored" priming quirk.
 		uint8_t _lastStatus = 0;
 
+		// ----- CMD_F_FRD_MEM / $40FF handshake --------------------------
+		// Where a DMA writes, and how the emulation learns time has passed. Both injected: the FIFO
+		// knows the Edio protocol, not which host buffer stands in for the cartridge.
+		std::function<bool(uint32_t, const uint8_t*, size_t)> _cartWriter;
+		std::function<uint64_t()> _dmaCycles;
+		uint32_t _dmaCpuClockHz = 0;
+
+		uint8_t  _pendBits = 0;  // $40FF bits 1-2, set by a write, cleared as the MCU finishes
+		uint8_t  _strobe   = 0;  // $40FF bit 3, flipped on every read
+		// The staged (parameters received, not yet executed) transfer. See execStagedDma for why
+		// those are two steps and not one.
+		bool     _dmaStaged = false;
+		uint32_t _dmaAddr   = 0;
+		uint32_t _dmaLen    = 0;
+		// Executed, still inside its modelled transfer window. Distinct from "the pending bit is
+		// set", which a ROM can also do by arming $40FF with no transfer behind it.
+		bool     _dmaInFlight = false;
+		// Cycle count at which the modelled transfer finishes and MSTAT_MCU_PEND clears. 0 = the
+		// transfer is instant (no clock source installed).
+		uint64_t _dmaDoneAtCycle = 0;
+
 	public:
 		// Set the host directory that stands in for the SD card root ("/"). Must be set before the ROM
 		// runs any SD command; MesenNesSystem does it at activate from the "mesen" role's `sdRoot`.
@@ -176,6 +248,46 @@ namespace rp {
 			_sdRoot = root;
 		}
 
+		// Where CMD_F_FRD_MEM's DMA lands: write `len` bytes into cartridge memory at a PI bus
+		// address, answering false if that range is not backed. MesenNesSystem installs one at
+		// activate, mapping the CHR-RAM window (PI_ADDR_CHR_RAM) onto Mesen's NesChrRam.
+		//
+		// The whole range MUST be validated before a single byte is written. PRG, SRAM and CHR-ROM
+		// are legal PI targets on the device but have no verified emulated counterpart, and a
+		// silent drop would look EXACTLY like a working DMA to the ROM - the worst failure mode
+		// available here - so an unbacked address is an Edio error, not a no-op.
+		void setCartWriter(std::function<bool(uint32_t piAddr, const uint8_t* data, size_t len)> fn) {
+			std::lock_guard<std::mutex> lock(_mutex);
+			_cartWriter = std::move(fn);
+		}
+
+		// Model how long the MCU's PI-bus transfer takes, so the ROM's wait loop spins about as
+		// many times as it does on the device (see DMA_BYTES_PER_SECOND). `cycleSource` reads the
+		// CPU's cycle counter and `cpuClockHz` converts the modelled wall time into cycles.
+		//
+		// WITHOUT this a DMA completes instantly and the wait loop exits on its first iteration,
+		// which is correct but makes any headless frame budget built on it optimistic.
+		void setDmaClock(std::function<uint64_t()> cycleSource, uint32_t cpuClockHz) {
+			std::lock_guard<std::mutex> lock(_mutex);
+			_dmaCycles = std::move(cycleSource);
+			_dmaCpuClockHz = cpuClockHz;
+		}
+
+		// Drop the DMA handshake: any staged-but-unexecuted transfer, the pending bits and the
+		// wait-time deadline. Called wherever the ROM restarts (core reset, savestate load) - a
+		// staged DMA that outlived a reset would swallow the rebooted ROM's next $40F0 write as an
+		// exec trigger. Deliberately NOT part of flushAll, whose contract is a barrier in the
+		// host->NES byte direction only.
+		void clearDmaHandshake() {
+			std::lock_guard<std::mutex> lock(_mutex);
+			_dmaStaged = false;
+			_dmaInFlight = false;
+			_dmaAddr = 0;
+			_dmaLen = 0;
+			_dmaDoneAtCycle = 0;
+			_pendBits = 0;
+		}
+
 		// ----------------------------------------------------------------
 		// INesMemoryHandler
 		// ----------------------------------------------------------------
@@ -183,10 +295,21 @@ namespace rp {
 			ranges.SetAllowOverride();
 			ranges.AddHandler(MemoryOperation::Read,  0x40F0, 0x40F1);
 			ranges.AddHandler(MemoryOperation::Write, 0x40F0, 0x40F1);
+			// $40FF is the mapper status register, in the same $4020-$5FFF space a mapper would
+			// otherwise own. Overriding one more address there is the trade already made for
+			// $40F0/$40F1, and on an N8-hosted ROM it is the faithful answer.
+			ranges.AddHandler(MemoryOperation::Read,  REG_MSTAT);
+			ranges.AddHandler(MemoryOperation::Write, REG_MSTAT);
 		}
 
 		uint8_t ReadRam(uint16_t addr) override {
 			std::lock_guard<std::mutex> lock(_mutex);
+			if (addr == REG_MSTAT) {
+				retireDmaIfElapsed();
+				const uint8_t val = MSTAT_BASE | _pendBits | _strobe;
+				_strobe ^= MSTAT_STROBE;   // per READ, not per poll iteration: the loop reads twice
+				return val;
+			}
 			if (addr == 0x40F1) {
 				return _rxQueue.empty() ? 0x80 : 0x00;
 			}
@@ -205,14 +328,29 @@ namespace rp {
 
 		uint8_t PeekRam(uint16_t addr) override {
 			std::lock_guard<std::mutex> lock(_mutex);
+			// The debugger's peek path: same value, no strobe flip and no DMA retirement. A viewer
+			// refreshing $40FF must not be able to satisfy the ROM's wait loop on its behalf.
+			if (addr == REG_MSTAT) return static_cast<uint8_t>(MSTAT_BASE | _pendBits | _strobe);
 			if (addr == 0x40F1) return _rxQueue.empty() ? 0x80 : 0x00;
 			if (addr == 0x40F0) return _rxQueue.empty() ? 0xFF : _rxQueue.front();
 			return 0xFF;
 		}
 
 		void WriteRam(uint16_t addr, uint8_t value) override {
-			if (addr != 0x40F0) return;
 			std::lock_guard<std::mutex> lock(_mutex);
+			if (addr == REG_MSTAT) {
+				// Arming: the ROM sets the bits it is about to wait on.
+				_pendBits = value & MSTAT_PEND_MASK;
+				return;
+			}
+			if (addr != 0x40F0) return;
+			// A $40F0 write with a transfer staged is the exec trigger (the SDK's _ed_halt_exec),
+			// not command data. Feeding it to the parser instead would both lose the DMA and leave
+			// the ROM waiting on a pending bit nothing would ever clear.
+			if (_dmaStaged) {
+				execStagedDma();
+				return;
+			}
 			parseByte(value);
 		}
 
@@ -360,6 +498,7 @@ namespace rp {
 			// Fixed-size parameters
 			case CMD_F_FPTR:    _paramBytesNeeded = 4; break; // u32 addr
 			case CMD_F_FRD:     _paramBytesNeeded = 4; break; // u32 len
+			case CMD_F_FRD_MEM: _paramBytesNeeded = 8; break; // u32 dest PI addr + u32 len
 			case CMD_F_FWR:     _paramBytesNeeded = 4; break; // u32 len (then ACK-data follows separately)
 
 			// CMD_F_DIR_LD: 1 byte (sorted) + length-prefixed string
@@ -462,6 +601,7 @@ namespace rp {
 			case CMD_F_DIR_GET:   execDirGet();    break;
 			case CMD_F_FOPN:      execFileOpen();  break;
 			case CMD_F_FRD:       execFileRead();  break;
+			case CMD_F_FRD_MEM:   stageFileReadMem(); break;
 			case CMD_F_FWR:       execFileWrite(); break;
 			case CMD_F_FCLOSE:    execFileClose(); break;
 			case CMD_F_FPTR:      execFileSetPtr(); break;
@@ -721,6 +861,77 @@ namespace rp {
 
 			_rxQueue.push(0x00); // success resp
 			for (uint32_t i = 0; i < got; i++) _rxQueue.push(buf[i]);
+		}
+
+		// CMD_F_FRD_MEM: STAGE the transfer, do NOT perform it. The ROM arms $40FF AFTER sending
+		// the parameters and only then writes the exec byte, so a copy here would clear the pending
+		// bit before the arming write set it - leaving nothing to ever clear it again. The ROM
+		// would spin to its timeout and report failure for a DMA that had actually happened.
+		void stageFileReadMem() {
+			// params: u32 destination PI address, then u32 length.
+			_dmaAddr   = readParamU32(0);
+			_dmaLen    = readParamU32(4);
+			_dmaStaged = true;
+		}
+
+		// The exec write landed ($40F0 with a transfer staged): move the bytes, then start the
+		// clock the ROM's wait loop is actually waiting on.
+		void execStagedDma() {
+			_dmaStaged = false;
+			setStatus(performDma(_dmaAddr, _dmaLen));
+
+			// MSTAT_MCU_PEND clears when the modelled transfer time elapses, whether or not the
+			// transfer succeeded: "the MCU answered" and "it did what was asked" are separate
+			// questions, and the ROM asks the second with CMD_STATUS. MSTAT_FPG_PEND is left alone,
+			// since no emulated operation drives the FPGA half of the handshake.
+			_dmaInFlight    = true;
+			_dmaDoneAtCycle = 0;
+			if (_dmaCycles && _dmaCpuClockHz > 0 && _dmaLen > 0) {
+				const double seconds = static_cast<double>(_dmaLen) / DMA_BYTES_PER_SECOND;
+				_dmaDoneAtCycle = _dmaCycles() +
+					static_cast<uint64_t>(seconds * static_cast<double>(_dmaCpuClockHz));
+			}
+			retireDmaIfElapsed();
+		}
+
+		// Clear MSTAT_MCU_PEND once the modelled transfer window has passed. With no clock source
+		// the deadline is 0 and the DMA retires immediately, so a host with no CPU to ask (every
+		// protocol test, and any future non-Mesen caller) still sees a coherent handshake.
+		//
+		// Only an EXECUTED transfer retires. A ROM that arms $40FF without one waits forever, which
+		// is what the device does too.
+		void retireDmaIfElapsed() {
+			if (!_dmaInFlight) return;
+			if (_dmaDoneAtCycle != 0 && _dmaCycles && _dmaCycles() < _dmaDoneAtCycle) return;
+			_dmaInFlight    = false;
+			_dmaDoneAtCycle = 0;
+			_pendBits &= static_cast<uint8_t>(~MSTAT_MCU_PEND);
+		}
+
+		// Move `len` bytes from the open file at _filePtr into cartridge memory at `piAddr`, and
+		// advance the file pointer exactly as CMD_F_FRD does - a ROM that interleaves the two
+		// against one pointer (a small header over the FIFO, the bulk by DMA) depends on that.
+		// Returns the Edio status the ROM will collect with its CMD_STATUS query.
+		uint8_t performDma(uint32_t piAddr, uint32_t len) {
+			if (len == 0) return 0;
+			if (!_cartWriter) return 0x13;          // no backing memory at all (FR_INVALID_PARAMETER)
+			if (!_openFile.is_open()) return 0x04;  // FAT_NO_FILE
+
+			std::vector<uint8_t> buf(len, 0x00);
+			_openFile.clear();  // a prior read to EOF leaves eofbit set, which fails the next seek
+			_openFile.seekg(_filePtr);
+			_openFile.read(reinterpret_cast<char*>(buf.data()), len);
+			const uint32_t got = static_cast<uint32_t>(_openFile.gcount());
+			// Already at EOF is an ERROR, not a success that moved nothing, by the same reasoning
+			// as execFileRead: a ROM told "fine" about an empty transfer reads stale pixels forever.
+			if (got == 0) return 0x04;
+
+			// The writer validates the whole range before writing a byte, so a refusal leaves both
+			// cartridge memory and the file pointer untouched.
+			if (!_cartWriter(piAddr, buf.data(), got)) return 0x13;
+
+			_filePtr += got;
+			return 0;
 		}
 
 		void execFileWrite() {

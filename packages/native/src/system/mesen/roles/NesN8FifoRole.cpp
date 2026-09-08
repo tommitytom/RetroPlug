@@ -4,6 +4,8 @@
 #include <cstdio>
 
 #include "Core/NES/NesConsole.h"
+#include "Core/NES/NesConstants.h"
+#include "Core/NES/NesCpu.h"
 #include "Core/NES/NesMemoryManager.h"
 
 NesN8FifoRole::NesN8FifoRole() = default;
@@ -16,7 +18,17 @@ void NesN8FifoRole::onAttach(NesConsole& console) {
         return;
     }
     memMgr->RegisterIODevice(&fifo_);
-    std::fprintf(stderr, "[NesN8FifoRole] FIFO attached at $40F0/$40F1\n");
+
+    // Give the DMA handshake a sense of time. The MCU's PI-bus transfer is not instantaneous on the
+    // device, and the ROM's wait loop is where that shows: without this it exits on its first
+    // iteration and any frame budget measured headlessly is optimistic. The clock rate is read from
+    // the console rather than assumed, so the modelled wall time holds on PAL and NTSC alike.
+    if (NesCpu* cpu = console.GetCpu()) {
+        fifo_.setDmaClock([cpu] { return cpu->GetCycleCount(); },
+                          NesConstants::GetClockRate(console.GetRegion()));
+    }
+
+    std::fprintf(stderr, "[NesN8FifoRole] FIFO attached at $40F0/$40F1/$40FF\n");
 }
 
 void NesN8FifoRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count, bool flush) {

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,16 @@ public:
     // Point the emulated SD card at a host directory ("/" on the card). Set at activate from the
     // "mesen" role's `sdRoot`; empty means a per-process scratch dir (see NesEverdriveFifo).
     void setSdRoot(const std::string& root) { fifo_.setSdRoot(root); }
+
+    // Where a CMD_F_FRD_MEM DMA lands. MesenNesSystem installs one at activate mapping the N8's PI
+    // bus onto the core's cartridge memory; without it every DMA reports an Edio error.
+    void setCartWriter(std::function<bool(std::uint32_t, const std::uint8_t*, std::size_t)> fn) {
+        fifo_.setCartWriter(std::move(fn));
+    }
+
+    // Drop the DMA handshake (staged transfer, pending bits, wait deadline). Paired with flushAll
+    // wherever the ROM restarts - see NesEverdriveFifo::clearDmaHandshake for why it is separate.
+    void clearDmaHandshake() { fifo_.clearDmaHandshake(); }
 
     // Take the bytes the ROM has sent host-ward via CMD_USB_WR since the last drain (oldest first).
     // The emulated NES→host back-channel; empty when the ROM has sent nothing.

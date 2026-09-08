@@ -171,6 +171,25 @@ void MesenNesSystem::onActivate(double sampleRate) {
         // core runs a single instruction, so a boot-time sd_init sees it.
         n8Role_->setSdRoot(config_.sdRoot);
 
+        // Where a CMD_F_FRD_MEM DMA lands: the MCU reads the open file straight into cartridge memory
+        // over the PI bus, so an N8 address has to be resolved to a Mesen buffer. Only the CHR-RAM
+        // window is backed - the one nesvj verified byte-exact against a dump off a real cart. PRG
+        // ($000000), SRAM ($1000000) and CHR-ROM are legal PI targets on the device but have no
+        // verified counterpart here, so they are REFUSED: a silent drop would be indistinguishable
+        // from a working DMA to the ROM.
+        n8Role_->setCartWriter([emu = emu_.get()](std::uint32_t piAddr, const std::uint8_t* data,
+                                                  std::size_t len) -> bool {
+            ConsoleMemoryInfo info = emu->GetMemory(::MemoryType::NesChrRam);
+            if (!info.Memory || info.Size == 0) return false;  // a CHR-ROM cart has no window here
+            if (piAddr < rp::PI_ADDR_CHR_RAM) return false;
+            // Validated whole before a byte moves: a clipped write would corrupt the tail of a frame
+            // and still report success.
+            const std::uint64_t offset = piAddr - rp::PI_ADDR_CHR_RAM;
+            if (offset + len > static_cast<std::uint64_t>(info.Size)) return false;
+            std::memcpy(static_cast<std::uint8_t*>(info.Memory) + offset, data, len);
+            return true;
+        });
+
         // Borrow the NES sound mixer for the live "mesen" knobs (APU flush window + per-channel capture).
         // Held for the emulator's lifetime, nulled in onDeactivate before teardown.
         nesMixer_ = nesConsole->GetSoundMixer();
@@ -245,8 +264,13 @@ void MesenNesSystem::onSampleRateChanged(double sampleRate) {
 void MesenNesSystem::onReset() {
     if (emu_) emu_->Reset();
     // Drop bytes in flight so stale notes / sync clocks don't fire after the reset. BOTH queues: bytes
-    // already delivered into the FIFO would otherwise be read by the freshly reset ROM.
-    if (n8Role_) n8Role_->flushAll();
+    // already delivered into the FIFO would otherwise be read by the freshly reset ROM. The DMA
+    // handshake goes with them: a staged transfer that outlived the reset would swallow the rebooted
+    // ROM's next $40F0 write as its exec trigger.
+    if (n8Role_) {
+        n8Role_->flushAll();
+        n8Role_->clearDmaHandshake();
+    }
 }
 
 void MesenNesSystem::setGainDb(float dB) {
@@ -667,7 +691,10 @@ bool MesenNesSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     ss.seekg(0);
     // The restored ROM is at an unrelated point in the byte stream, so anything queued or delivered for
     // the pre-load one is stale — a host-sync clock read after the jump would advance the wrong position.
-    if (n8Role_) n8Role_->flushAll();
+    if (n8Role_) {
+        n8Role_->flushAll();
+        n8Role_->clearDmaHandshake();
+    }
     return emu_->GetSaveStateManager()->LoadState(ss);
 }
 
