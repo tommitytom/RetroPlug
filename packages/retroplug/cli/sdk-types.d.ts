@@ -492,11 +492,15 @@ export declare class Timeline {
 }
 
 /** Play `timeline` against a booted session and return the concatenated interleaved-stereo PCM.
- *  `warmupMs` renders + DISCARDS that many ms first to boot the core (n8-midi needs ~1s). */
+ *  `warmupMs` renders + DISCARDS that many ms first to boot the core (n8-midi needs ~1s).
+ *
+ *  `invariants` install conditional watchpoints that hold for the WHOLE run, warm-up included, and
+ *  THROW naming the frame position of the first violation. They own the system's breakpoint set
+ *  (`setBreakpoints` replaces it wholesale), and are disarmed again when the run ends. */
 export declare function renderTimeline(
   session: Session,
   timeline: Timeline,
-  opts: { durationMs: number; warmupMs?: number },
+  opts: { durationMs: number; warmupMs?: number; invariants?: TimelineInvariant[] },
 ): Float32Array;
 
 /** Named button values (Right=0..Start=7) + the GBA-only L/R wire bytes. Pass to Timeline.press/tap. */

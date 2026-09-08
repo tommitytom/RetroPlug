@@ -11,7 +11,14 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "lib": ["ES2020"],
-    "types": []
+    "types": [],
+    // Resolve the bare specifier a CONSUMER uses to the shipped declaration file, exactly as their
+    // tsconfig does. Nothing in the app imports it; it exists so cli/sdkSurfaceCheck.ts can be
+    // type-checked against the .d.ts, which is hand-maintained and has twice shipped out of step
+    // with the implementation it describes.
+    "paths": {
+      "retroplug-cli": ["./cli/sdk-types.d.ts"]
+    }
   },
   "include": ["src", "testing", "test", "test-native", "cli", "tools-src"]
 }
