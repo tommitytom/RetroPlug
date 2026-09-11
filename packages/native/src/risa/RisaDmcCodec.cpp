@@ -160,7 +160,7 @@ std::vector<std::uint8_t> RisaDmcCodec::assemble(
     const std::vector<std::vector<std::uint8_t>>& encoded) const {
     std::vector<std::uint8_t> bank(kBankSize, 0);
     // Sample-name region defaults to spaces (kit_bank_parser modelToBank).
-    std::fill(bank.begin() + kSampleNames, bank.begin() + kSampleNames + kSlotCount * kSampleNameLen, 0x20);
+    std::fill(bank.begin() + kSampleNames, bank.begin() + kSampleNames + kSlotCount * kSampleNameLen, std::uint8_t{0x20});
 
     std::size_t cursor = 0;
     for (std::size_t slot = 0; slot < kSlotCount; ++slot) {
