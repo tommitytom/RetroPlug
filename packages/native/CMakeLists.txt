@@ -282,8 +282,17 @@ set_target_properties(retroplug-cli PROPERTIES
 # Linux/macOS for now (Windows wants an import lib from the node distribution).
 option(RETROPLUG_NODE_ADDON "Build the Node-API addon host (retroplug.node)" OFF)
 if(RETROPLUG_NODE_ADDON)
+    # nvm / homebrew / any non-system node keeps its headers next to the binary, not in /usr/include,
+    # so ask the node on PATH where it lives before falling back to the system spellings.
+    find_program(NODE_EXECUTABLE NAMES node nodejs)
+    if(NODE_EXECUTABLE)
+        get_filename_component(_node_bin "${NODE_EXECUTABLE}" REALPATH)
+        get_filename_component(_node_prefix "${_node_bin}" DIRECTORY)
+        get_filename_component(_node_prefix "${_node_prefix}" DIRECTORY)
+    endif()
     find_path(NODE_API_INCLUDE_DIR node_api.h
-        HINTS ${NODE_INCLUDE_DIR} /usr/include/node /usr/local/include/node
+        HINTS ${NODE_INCLUDE_DIR} ${_node_prefix}/include/node
+              /usr/include/node /usr/local/include/node
     )
     if(NOT NODE_API_INCLUDE_DIR)
         message(FATAL_ERROR
