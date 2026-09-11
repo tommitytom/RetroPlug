@@ -86,6 +86,10 @@ test("a freshly booted cart is clean, and a keypress on the SONG grid makes it d
   const booted = be.readRam(id)!;
   expect(booted.length).toBe(WORK_RAM);
   expect(edited < booted.length).toBeTruthy();
+  // ...and 3 s in, the cart is UP: the readiness latch is what lets the predicate answer at all (before
+  // it, "clean" is the only answer, whatever the bytes - see sms-boot-timeline for the boot itself).
+  expect(booted[SYM.ints_on]).toBe(1);
+  expect(smsggdjSongCatalog.workingSongReady!(booted)).toBe(true);
 
   // The reported bug, on the real cart. The content signal alone says dirty here - the boot song is in
   // no slot - and the cart says nothing has been typed, so nothing is at stake.
