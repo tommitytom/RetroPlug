@@ -18,7 +18,7 @@ import { SystemsStore } from "./systemsStore";
 import type { SystemEntry } from "./systemsList";
 import type { RoleRegistry } from "./systemRoles";
 import type { RecentStore } from "./recentStore";
-import { resolveSongCatalog } from "./tracker";
+import { resolveSongCatalog, resolveTracker, workingSongReady, songLoadByNameWouldDiscard, loadSongLive, mutateLiveSav } from "./tracker";
 import { workingSongSignature, savSyncMode } from "./lsdj/playback/fromSav";
 import { anchorRowsFromState, anyChannelPlaying, type ControllerAnchor } from "./lsdj/playback/anchor";
 import { LsdjReader } from "./lsdj/runtime";
@@ -79,6 +79,31 @@ function isZipProjectPath(path: string): boolean {
 // Inclusive upper bound for `zoom` (the one numeric setting; native validates + rejects above).
 const ZOOM_MAX = 6;
 
+/** A song the user asked to have loaded into the primary cart, parked until the cart can take it.
+ *  By NAME (what a Recent row carries) or by catalog INDEX (what a Songs-menu row carries - exact under
+ *  duplicate names, where a name resolves to the first). */
+export interface SongRequest {
+  name?: string;
+  index?: number;
+  /** Whether discarding unsaved working-song work has already been agreed to. A Songs-menu Load was
+   *  guarded before it got here; a Recent row's was not, so `settleSong` asks once. */
+  confirmed: boolean;
+}
+
+/** What `settleSong` did with the parked request this time. */
+export type SongSettle =
+  | "idle" // nothing requested
+  | "waiting" // the cart cannot take it yet, or a discard confirm is pending - ask again next frame
+  | "loaded" // the song is in the cart and its Recent row is recorded
+  | "dropped" // nothing to do, or it could not be done (no cart, no catalog, song gone, budget spent)
+  | { kind: "discard"; song: string; working: string }; // loading would destroy unsaved work - confirmSong() or cancelSong()
+
+// How long a parked song request waits for the cart to come up, in settle ticks (the UI settles once per
+// frame, so ~15 s at 60 fps). An smsggdj boot is ~3 s; a cart that never gets there is a cart that is
+// not going to, and a request that waits forever is a write that lands in some later, unrelated session
+// of the same tile. Dropped with a warning, never applied late.
+const SONG_REQUEST_BUDGET = 900;
+
 // Allowed value tuples for the string-enum settings — an unknown value is rejected (native re-validates).
 const SETTING_VALUES = {
   layout: LAYOUT_VALUES,
@@ -94,6 +119,8 @@ export class ProjectStore {
   private projectName = ""; // the USER-set name (Project > Name); blank unless typed, persisted in the .rplg
   private dirty = false;
   private pendingLoad: { cfg: ProjectConfig; path: string; blobs: Map<string, Uint8Array> } | null = null;
+  private songRequest: (SongRequest & { ticks: number; asked: boolean }) | null = null; // see requestSong / settleSong
+  private recentPending = false; // the open project's Recent row is owed, once its cart can say what it holds (see syncRecent)
   private controllerSongSig = 0; // last seen live-song signature (see refreshControllerSong)
   private controllerSync: string | null = null; // the controller cart's SYNC setting at the last poll
   private controllerAnchor: ControllerAnchor | null = null; // where the cart last started on its own
@@ -209,20 +236,128 @@ export class ProjectStore {
   /** Record `song` as a recents row for the open project. Recents holds one row per song, so this adds a row
    *  the first time a song is seen and moves its row to the front when you come back to it. Nothing to
    *  record without a project path (never saved) or a song name. Returns whether the list changed. Used
-   *  where the song is KNOWN - the Songs menu's Load names the song it just loaded, with no need to wait for
-   *  the rebuilt core to publish a fresh battery snapshot. */
+   *  where the song is KNOWN - a settled song request names the song it just loaded, with no need to wait
+   *  for the core to publish a fresh snapshot. */
   recordSong(song: string): boolean {
     if (!this.path || !song) return false;
     return this.recent.add(this.path, this.recentName(), song);
   }
 
-  /** `recordSong` for whatever the focused cart currently has loaded - the song-change signal for a load we
-   *  DIDN'T make: the user picking a song on LSDj's / risa's own file screen. Cheap to call on a timer, which
-   *  is how the UI drives it: it re-reads the live battery, and RecentStore.add no-ops (no write, no notify)
-   *  while the answer is unchanged. Returns whether the list changed. */
-  recordCurrentSong(): boolean {
+  // Record the project's own Recent row at the moment it becomes the open project (save / load / adopt) -
+  // unless its primary cart is a tracker that cannot yet say what it holds. smsggdj's working song is work
+  // RAM, and for the cart's first seconds that RAM is the boot sequence's, not the cart's: recording then
+  // wrote a SONGLESS row for a project that was about to have a song, and the song watcher added the real
+  // row a few seconds later, so Recent showed both. The row is owed instead, and syncRecent pays it on the
+  // first tick the cart is ready - once, and correct on first appearance.
+  private recordProjectRow(path: string): void {
+    const sys = this.primarySystem();
+    if (sys && resolveSongCatalog(sys.roles) && !workingSongReady(this.systems, sys)) {
+      this.recentPending = true;
+      return;
+    }
+    this.recentPending = false;
+    this.recent.add(path, this.recentName(), this.currentSong());
+  }
+
+  /** Keep the Recent list in step with the focused cart. Two jobs, both cheap enough for a timer (the UI
+   *  calls this every ~half second): pay an owed project row (see recordProjectRow) once the cart can be
+   *  read, songless when the cart is genuinely blank; and record a song change the app did not make -
+   *  the user picking a song on LSDj's / risa's / smsggdj's own file screen, which nothing else can see.
+   *  RecentStore.add no-ops (no write, no notify) while the answer is unchanged. Returns whether the
+   *  list changed. */
+  syncRecent(): boolean {
+    if (!this.path) return false; // never saved: nothing to record against
+    if (this.recentPending) {
+      const sys = this.primarySystem();
+      if (sys && !workingSongReady(this.systems, sys)) return false; // still booting - next tick
+      this.recentPending = false;
+      return this.recent.add(this.path, this.recentName(), this.currentSong());
+    }
     const song = this.currentSong();
     return song ? this.recordSong(song) : false;
+  }
+
+  /** Ask for a song to be loaded into the primary cart, and settle it when the cart can take it.
+   *
+   *  ONE mechanism for both places a song load starts - a Recent row (by name) and a Songs-menu row (by
+   *  index) - because both were doing the load themselves, immediately, and on a console whose working
+   *  song is work RAM "immediately" can be before the cart has booted: the write landed, `song_new` ran,
+   *  and the song was gone. A Recent load used to work only because the discard prompt in front of it
+   *  cost the user a couple of seconds. The request is parked here and `settleSong` applies it on the
+   *  first tick the cart is ready; the UI settles once per frame while one is parked. A new request
+   *  replaces the old (the user changed their mind); a new project clears it. */
+  requestSong(req: SongRequest): void {
+    this.songRequest = { ...req, ticks: 0, asked: false };
+  }
+  /** Drop a parked request - the user declined the discard, or nothing should load any more. */
+  cancelSong(): void {
+    this.songRequest = null;
+  }
+  /** The user agreed to discard the working song; the next settle loads. */
+  confirmSong(): void {
+    if (this.songRequest) this.songRequest.confirmed = true;
+  }
+  hasSongRequest(): boolean {
+    return this.songRequest !== null;
+  }
+
+  /** Try to apply the parked song request. Called once per frame by the UI while a request exists, and
+   *  once inline by whoever made the request (a cart that is already up - LSDj, risa, a running
+   *  smsggdj - loads right there, so the menu keeps its immediacy).
+   *
+   *  The discard guard runs HERE, at apply time, because that is the only time the cart's working song
+   *  is real: guarding a Recent load before the cart had booted was the "unsaved changes" prompt for a
+   *  song nobody had written. It is asked once - the answer arrives through confirmSong / cancelSong,
+   *  and until then every tick is "waiting". A request that arrived confirmed (the Songs menu guards its
+   *  own rows first) skips it. Loading the song a Recent row names when it is ALREADY the working song is
+   *  a no-op, reported as loaded; a menu row always loads, since re-loading the song you are on is a
+   *  documented way to throw edits away. */
+  settleSong(): SongSettle {
+    const req = this.songRequest;
+    if (!req) return "idle";
+    const sys = this.primarySystem();
+    const catalog = sys ? resolveSongCatalog(sys.roles) : undefined;
+    if (!sys || !catalog) return this.dropSongRequest();
+    if (!workingSongReady(this.systems, sys)) {
+      if (++req.ticks <= SONG_REQUEST_BUDGET) return "waiting";
+      console.warn(`[project] song request ${req.name ?? `#${req.index}`} dropped: the cart never became ready`);
+      return this.dropSongRequest();
+    }
+    const sram = this.systems.readSram(sys.id);
+    if (!sram) return this.dropSongRequest();
+    const songs = catalog.list(sram);
+    const target = req.index !== undefined ? songs.find((s) => s.index === req.index) : songs.find((s) => s.name === req.name);
+    if (!target) return this.dropSongRequest(); // renamed / deleted since the row was recorded
+    if (req.index === undefined && catalog.workingName(sram, this.backend.readRam(sys.id) ?? undefined) === target.name) {
+      this.songRequest = null; // already the working song: nothing to load, nothing to lose
+      this.recordSong(target.name);
+      return "loaded";
+    }
+    if (!req.confirmed) {
+      if (req.asked) return "waiting"; // the prompt is up
+      if (songLoadByNameWouldDiscard(this.systems, sys, target.name)) {
+        req.asked = true;
+        const working = catalog.workingName(sram, this.backend.readRam(sys.id) ?? undefined) || "the working song";
+        return { kind: "discard", song: target.name, working };
+      }
+    }
+    this.songRequest = null;
+    // A cart that can be loaded LIVE is (the song goes straight into work RAM, no `.sav` rewrite, no
+    // reboot); the others take the cold-boot spine, whose reboot restores their working song from the
+    // image it just wrote.
+    const ok = resolveTracker(sys.roles)?.liveLoad
+      ? loadSongLive(this.backend, this.systems, sys, target.index)
+      : mutateLiveSav(this.backend, this.systems, sys, (sav) => catalog.load(sav, target.index));
+    if (!ok) return "dropped";
+    // By NAME, now: the row should be at the top of Recent before the user gets back there, and a cold
+    // boot's fresh snapshot is not needed to know which song was just loaded.
+    this.recordSong(target.name);
+    return "loaded";
+  }
+
+  private dropSongRequest(): "dropped" {
+    this.songRequest = null;
+    return "dropped";
   }
 
   /** Notice an edit the player made INSIDE the tracker and re-drive the kernel, so a control surface's
@@ -232,7 +367,7 @@ export class ProjectStore {
    *  data, which means it only moves when something re-pushes. Nothing did: adding a chain to a song row
    *  left the grid showing the song as it was until the feature was toggled off and on. This is the
    *  missing signal, and it is polled rather than pushed because a cart being edited on its own screen
-   *  emits nothing. Cheap enough to sit on the same timer as recordCurrentSong: a signature over ~3 KB of
+   *  emits nothing. Cheap enough to sit on the same timer as syncRecent: a signature over ~3 KB of
    *  the live battery, with the sav decode happening only when it moves.
    *
    *  Deliberately does NOT mark the project dirty - the song lives in the cart's battery, not the .rplg. */
@@ -345,6 +480,8 @@ export class ProjectStore {
     this.path = "";
     this.projectName = "";
     this.dirty = false;
+    this.songRequest = null; // whatever was waiting was for a cart that no longer exists
+    this.recentPending = false;
     this.onSystemsChange(); // the DSP now runs nothing
     this.onChangeCb();
   }
@@ -365,7 +502,7 @@ export class ProjectStore {
     const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName); // blank name → omitted
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
     if (!this.backend.writeFile(path, enc.encode(json))) return false;
-    this.recent.add(path, this.recentName(), this.currentSong()); // the recents label - the cart's identity unless the user named it
+    this.recordProjectRow(path); // the recents label - the cart's identity unless the user named it
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -385,7 +522,7 @@ export class ProjectStore {
       this.save(path);
       return;
     }
-    this.recent.add(path, this.recentName(), this.currentSong());
+    this.recordProjectRow(path);
     this.path = path;
     this.onChangeCb();
   }
@@ -407,7 +544,7 @@ export class ProjectStore {
     });
     const archive = this.backend.zip(entries);
     if (!archive || !this.backend.writeFileAtomic(path, archive)) return false;
-    this.recent.add(path, this.recentName(), this.currentSong());
+    this.recordProjectRow(path);
     this.path = path;
     this.dirty = false;
     this.onChangeCb();
@@ -526,7 +663,9 @@ export class ProjectStore {
     this.projectSettings = { ...DEFAULT_SETTINGS, ...cfg.settings };
     this.pushAudioRouting(); // apply the loaded project's routing to native audio
     this.projectName = cfg.name ?? ""; // only a name the user gave the project is stored; blank = unnamed
-    if (path) this.recent.add(path, this.recentName(), this.currentSong()); // in-memory loads (plugin state chunk) pass "" - no recents entry
+    this.songRequest = null; // a request parked against the previous cart cannot apply to this one
+    this.recentPending = false;
+    if (path) this.recordProjectRow(path); // in-memory loads (plugin state chunk) pass "" - no recents entry
     this.path = path;
     this.dirty = false;
     this.onSystemsChange(); // push the rebuilt systems (the adopt path is quiet)

@@ -47,6 +47,10 @@ export interface SmsggdjSymbols {
   dirty_rows_len: number;
   label_dirty: number;
   label_dirty_len: number;
+  ints_on: number;
+  ints_on_len: number;
+  frame: number;
+  frame_len: number;
   echo_len: number;
 }
 
@@ -88,6 +92,10 @@ export const SMSGGDJ_SYMBOLS: Record<string, SmsggdjSymbols> = {
     dirty_rows_len: 0x10,
     label_dirty: 0x1dbd,
     label_dirty_len: 0x1,
+    ints_on: 0x1f13,
+    ints_on_len: 0x1,
+    frame: 0x1f02,
+    frame_len: 0x2,
     echo_len: 0x8,
   },
 };

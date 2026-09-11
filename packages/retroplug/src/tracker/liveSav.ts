@@ -91,6 +91,11 @@ export function mutateLiveSav(
 export function loadSongLive(backend: SavBackend, systems: SavSystems, sys: LiveSavTarget, index: number): boolean {
   const tracker = resolveTracker(sys.roles);
   if (!tracker?.liveLoad || !sys.romPath || !backend.readFile || !systems.writeRam) return false;
+  // A write into a cart that is still booting is a write the boot then erases - `song_new` re-seeds the
+  // block a moment later - and the caller would believe it loaded a song. Refusing here is what makes
+  // "false" mean "nothing happened" rather than "something happened and was undone"; the caller that
+  // wants the song once the cart is up parks the request and asks again (ProjectStore.settleSong).
+  if (!workingSongReady(systems, sys)) return false;
   const rom = backend.readFile(sys.romPath);
   const sram = systems.readSram(sys.id);
   if (!rom || !sram) return false;
@@ -129,6 +134,17 @@ export function loadSongByName(backend: SavBackend, systems: SavSystems, sys: Li
 export function loadSongInPrimary(backend: SavBackend, systems: FocusedSystems, name: string): boolean {
   const sys = systems.primary();
   return sys ? loadSongByName(backend, systems, sys, name) : false;
+}
+
+/** Can `sys`'s working song be read and written right now? True for every console but the one whose
+ *  working song lives in work RAM (smsggdj), where the core's first seconds belong to the boot sequence
+ *  and not to the cart - see `SongCatalog.workingSongReady`. Everything that would read the working
+ *  song to make a decision, or write it, asks this first; a caller that gets false waits for the next
+ *  frame rather than guessing at a timer. A cart with no catalog is trivially ready (nothing to wait for). */
+export function workingSongReady(systems: SavSystems, sys: LiveSavTarget): boolean {
+  const catalog = resolveSongCatalog(sys.roles);
+  if (!catalog?.workingSongReady) return true;
+  return catalog.workingSongReady(systems.readRam?.(sys.id) ?? undefined);
 }
 
 /** Would loading a DIFFERENT song into `sys` discard work that exists in no saved slot? The one place the

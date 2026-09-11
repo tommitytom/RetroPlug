@@ -40,11 +40,62 @@ test("add: a project holds ONE row per song; the same song again just moves its 
   l = addEntry(l, "/a.rplg", "cart", "GRUB"); // back to GRUB -> moved up, NOT duplicated
   expect(keys(l)).toEqual([entryKey("/a.rplg", "GRUB"), entryKey("/a.rplg", "INTRO")]);
   expect(l.length).toBe(2);
+});
 
-  // A songless add is its own row (a non-tracker project, or a cart with nothing loaded) - it neither
-  // duplicates nor absorbs the song rows.
+test("add: a song row supersedes the project's songless row - the two never coexist", () => {
+  // The songless row is the placeholder for a project that has had no song loaded (a cart that booted
+  // blank). The moment the project has a song row, the placeholder has nothing to say that the song
+  // rows do not, and showing both is what read as "it added smsggdj.sav without listing the song".
+  let l = addEntry([], "/a.rplg", "cart"); // opened blank
+  l = addEntry(l, "/other.rplg", "other"); // an unrelated project's songless row stays
+  l = addEntry(l, "/a.rplg", "cart", "DEMO"); // ...then DEMO is loaded
+  expect(keys(l)).toEqual([entryKey("/a.rplg", "DEMO"), entryKey("/other.rplg")]);
+
+  // Once song rows exist, opening the project blank again adds nothing: it is listed, and "open blank" is
+  // not a thing to reopen. Order and names are untouched (no write follows from an unchanged list).
+  const before = l;
   l = addEntry(l, "/a.rplg", "cart");
-  expect(keys(l)).toEqual([entryKey("/a.rplg"), entryKey("/a.rplg", "GRUB"), entryKey("/a.rplg", "INTRO")]);
+  expect(l).toEqual(before);
+  l = addEntry(l, "/a.rplg", "renamed"); // not even a rename reaches through the no-op
+  expect(l).toEqual(before);
+
+  // A second song row drops nothing but the placeholder - which is already gone - and the other project's
+  // songless row is not this project's to drop.
+  l = addEntry(l, "/a.rplg", "cart", "INTRO");
+  expect(keys(l)).toEqual([entryKey("/a.rplg", "INTRO"), entryKey("/a.rplg", "DEMO"), entryKey("/other.rplg")]);
+});
+
+test("add: the supersede is per path - a songless row survives song rows of OTHER projects", () => {
+  let l = addEntry([], "/blank.rplg", "blank");
+  l = addEntry(l, "/a.rplg", "cart", "DEMO");
+  l = addEntry(l, "/a.rplg", "cart", "INTRO");
+  expect(keys(l)).toEqual([entryKey("/a.rplg", "INTRO"), entryKey("/a.rplg", "DEMO"), entryKey("/blank.rplg")]);
+  // ...and a non-tracker project, which only ever records songless rows, keeps its one row as before.
+  l = addEntry(l, "/blank.rplg", "blank");
+  expect(keys(l)).toEqual([entryKey("/blank.rplg"), entryKey("/a.rplg", "INTRO"), entryKey("/a.rplg", "DEMO")]);
+  expect(l.length).toBe(3);
+});
+
+test("add: the supersede counts toward the cap like any other drop", () => {
+  // Three rows, cap 3: the placeholder goes because it is superseded, not because it is oldest - so the
+  // oldest unrelated row survives where a plain prepend would have pushed it out.
+  let l: RecentEntry[] = [];
+  l = addEntry(l, "/old.rplg", "old", undefined, 3);
+  l = addEntry(l, "/x.rplg", "x", undefined, 3);
+  l = addEntry(l, "/a.rplg", "cart", undefined, 3); // the placeholder, newest
+  l = addEntry(l, "/a.rplg", "cart", "DEMO", 3);
+  expect(keys(l)).toEqual([entryKey("/a.rplg", "DEMO"), entryKey("/x.rplg"), entryKey("/old.rplg")]);
+});
+
+test("remove + relink leave the supersede rule's results alone", () => {
+  // remove takes out exactly the row it names; a relink carries song rows AND a songless row alike, and
+  // neither reintroduces a placeholder next to song rows.
+  let l = addEntry([], "/a.rplg", "cart", "DEMO");
+  l = addEntry(l, "/b.rplg", "b"); // newest first: [/b, /a DEMO]
+  expect(keys(removeEntry(l, "/a.rplg", "DEMO"))).toEqual([entryKey("/b.rplg")]);
+  expect(keys(removeEntry(l, "/a.rplg"))).toEqual(keys(l)); // no songless row of /a to remove
+  const moved = relinkEntry(l, "/a.rplg", "/moved.rplg"); // in place: the order is kept
+  expect(keys(moved)).toEqual([entryKey("/b.rplg"), entryKey("/moved.rplg", "DEMO")]);
 });
 
 test("add: caps at max, dropping the oldest", () => {

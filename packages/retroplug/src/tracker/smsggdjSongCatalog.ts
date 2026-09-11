@@ -24,7 +24,7 @@
 // Delete and Move Up as well. It also means the reverse: after a project LOAD the cart has only just
 // booted, so its working song is the cart's, not the user's, and `workingSongDirty` has to say so.
 import type { SongCatalog } from "./songCatalog";
-import { commonSongEditedOffset, commonSongNameOffset } from "../smsggdj/runtime/layout";
+import { commonBootedOffset, commonSongEditedOffset, commonSongNameOffset } from "../smsggdj/runtime/layout";
 import {
   listSongs,
   isSmsggdjSav,
@@ -37,17 +37,37 @@ import {
   SMDJ4_BLOCK_LEN,
 } from "../smsggdj/codec/sav";
 
-/** The cart's own `song_name`, read out of live work RAM. Null when there is no RAM, when the supported
- *  builds disagree on where the field lives (see commonSongNameOffset), or when the bytes are blank -
- *  a freshly booted cart has never loaded anything, and "" is not a song name. */
+/** Has the cart finished booting? `ints_on` is written exactly once, right before the main loop starts
+ *  and after every boot-time overwrite of the working song (main.asm: init's zero-fill, the splash,
+ *  song_new, editor_init, boot_autoload, init_paint - THEN `ld a,1 / ld (ints_on),a / ei`). Until it
+ *  reads 1, work RAM is readable but not yet the cart's. Not ready when there is no RAM, when the RAM is
+ *  too short to hold the latch, or when the supported builds disagree on where it lives - "cannot tell"
+ *  has to mean "do not write", which is the opposite polarity from the dirty predicate below. */
+function isBooted(ram?: Uint8Array): boolean {
+  if (!ram) return false;
+  const at = commonBootedOffset();
+  return at !== null && ram.length > at && ram[at] === 1;
+}
+
+/** The cart's own `song_name`, read out of live work RAM. Null when there is no RAM, when the cart has
+ *  not booted (see isBooted), when the supported builds disagree on where the field lives (see
+ *  commonSongNameOffset), or when the bytes are blank - a freshly booted cart has never loaded anything,
+ *  and "" is not a song name.
+ *
+ *  Also null when the bytes are not a name at all. The cart writes names in ASCII (the same font-indexed
+ *  strings its own `print_at` shows), padded with spaces or zeros; anything outside printable ASCII is a
+ *  snapshot taken mid-write, or bytes that were never a name. A caller that RECORDS this - the Recent
+ *  list polls it every half second - must never be handed such a thing, because it was: rows of box
+ *  glyphs appeared in Recent, recorded from a cart that was still booting. */
 function workingNameFromRam(ram?: Uint8Array): string | null {
-  if (!ram) return null;
+  if (!ram || !isBooted(ram)) return null;
   const at = commonSongNameOffset();
   if (!at || ram.length < at.offset + at.length) return null;
   let s = "";
   for (let i = 0; i < at.length; i++) {
     const c = ram[at.offset + i];
     if (c === 0) break;
+    if (c < 0x20 || c > 0x7e) return null;
     s += String.fromCharCode(c);
   }
   return s.trim() || null;
@@ -63,17 +83,23 @@ export const smsggdjSongCatalog: SongCatalog = {
   isValidSav: (bytes) => isSmsggdjSav(bytes),
   importSongs: (target, source, indices) => importSongs(target, source, indices),
 
-  // Work RAM first, because the cart's own `song_name` is the truth: it is what the FILES screen shows,
-  // it survives a load made from INSIDE the cart, and it is what a host-side liveLoad writes. The
-  // superblock's cur_slot is the fallback for callers with no live system (an offline .sav), and it is
-  // null on every build before v0.46 - which is precisely why reading work RAM is what lights the
-  // working-song row, per-song recents and the window title up on v0.45.
+  // The live cart answers ALONE when there is one, because its own `song_name` is the truth: it is what
+  // the FILES screen shows, it survives a load made from INSIDE the cart, and it is what a host-side
+  // liveLoad writes. Blank, or not yet booted, is therefore "no song" and never the save's guess - the
+  // superblock's cur_slot says which slot the cart will autoload, not what it holds now. That byte is
+  // the fallback only for callers with NO live system (an offline .sav), and it is null on every build
+  // before v0.46 - which is precisely why reading work RAM is what lights the working-song row, per-song
+  // recents and the window title up on v0.45.
   workingName: (sav, ram) => {
-    const fromRam = workingNameFromRam(ram);
-    if (fromRam !== null) return fromRam;
+    if (ram) return workingNameFromRam(ram);
     const slot = curSlot(sav);
     return slot < 0 ? null : (listSongs(sav).find((s) => s.index === slot)?.name ?? null);
   },
+
+  // See isBooted. Every consumer of the working song - the Recent list, the window title, the Songs
+  // menu, the load guards, and the live load itself - waits on this rather than on a timer, because
+  // the boot takes as long as the splash does and a timer would be a guess.
+  workingSongReady: (ram) => isBooted(ram),
 
   // Always `linked`: the working song got there by being named in the superblock, so it is by
   // construction the slot it came from. There is no unlinked state to report - unlike risa, where a
@@ -111,7 +137,7 @@ export const smsggdjSongCatalog: SongCatalog = {
   // Recent offered to discard a song nobody had written, and could only call it "the working song"
   // because there wasn't one to name.
   workingSongDirty: (sav, ram) => {
-    if (!ram || ram.length < SMDJ4_BLOCK_LEN || !isSmsggdjSav(sav)) return false;
+    if (!ram || !isBooted(ram) || ram.length < SMDJ4_BLOCK_LEN || !isSmsggdjSav(sav)) return false;
     const edited = commonSongEditedOffset();
     if (edited === null || ram.length <= edited || ram[edited] === 0) return false;
     return !isSongSaved(sav, ram.subarray(0, SMDJ4_BLOCK_LEN));

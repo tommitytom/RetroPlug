@@ -2,6 +2,8 @@
 // detectPlatform, so a fixture only needs the right magic at the right offset.
 // (Not a *.test.ts, so the runner ignores it; imported by the store tests.)
 
+import { resolveSmsggdjLayout } from "../../src/smsggdj/runtime/layout";
+
 const GB_LOGO = [
   0xce, 0xed, 0x66, 0x66, 0xcc, 0x0d, 0x00, 0x0b, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0c, 0x00, 0x0d,
   0x00, 0x08, 0x11, 0x1f, 0x88, 0x89, 0x00, 0x0e, 0xdc, 0xcc, 0x6e, 0xe6, 0xdd, 0xdd, 0xd9, 0x99,
@@ -226,6 +228,37 @@ export function blipToasterMultiKitRom(): Uint8Array {
   const chrOffset = 0x10 + PRG;
   for (let b = 0; b < CHR; b++) rom[chrOffset + b] = (b * 7 + 3) & 0xff;
   return rom;
+}
+
+/** An smsggdj build's ROM as the providers and the version gate see it: a "TMR SEGA" header whose region
+ *  nibble says SMS, the SMSGGDJ marker at $3640 and a `V<version>` string at $367B - where the real v0.45
+ *  build puts them (the version is NOT adjacent to the marker; the UI string table sits between). A
+ *  supported version (0.45 / 0.46) resolves a work-RAM layout, so the live song path is open. */
+export function smsggdjRom(version = "0.45"): Uint8Array {
+  const b = new Uint8Array(0x8200);
+  b.set([0x54, 0x4d, 0x52, 0x20, 0x53, 0x45, 0x47, 0x41], 0x7ff0); // "TMR SEGA"
+  b[0x7ff0 + 0xf] = 0x40; // region nibble 4 -> SMS
+  for (let i = 0; i < "SMSGGDJ".length; i++) b[0x3640 + i] = "SMSGGDJ".charCodeAt(i);
+  const v = `V${version}`;
+  for (let i = 0; i < v.length; i++) b[0x367b + i] = v.charCodeAt(i);
+  return b;
+}
+
+/** smsggdj work RAM (the 8 KB region readRam serves) as a test wants the cart to hold it: the working-song
+ *  `block` at the base, the cart's own `song_name` (space-padded, as `rle_name_default` pads it), its
+ *  `song_edited` flag, and `ints_on` - the "boot finished" latch. `booted` defaults to TRUE, a cart that
+ *  is up, because that is what nearly every test means by "a cart"; `booted: false` is the boot window,
+ *  in which the block, the name and the flags are the boot sequence's and not yet the cart's. */
+export function smsggdjRam(opts: { block?: Uint8Array; name?: string; edited?: boolean; booted?: boolean } = {}): Uint8Array {
+  const layout = resolveSmsggdjLayout("0.45")!;
+  const ram = new Uint8Array(0x2000);
+  if (opts.block) ram.set(opts.block, layout.song);
+  if (opts.name !== undefined) {
+    for (let i = 0; i < layout.nameLen; i++) ram[layout.name + i] = i < opts.name.length ? opts.name.charCodeAt(i) : 0x20;
+  }
+  ram[layout.edited] = opts.edited ? 1 : 0;
+  ram[layout.booted] = (opts.booted ?? true) ? 1 : 0;
+  return ram;
 }
 
 /** A present-but-not-a-ROM buffer (classifies "unknown"). */

@@ -9,6 +9,12 @@
 // full-window overlay — App renders `modal` above everything, exactly like the close-guard prompt. The
 // overlay is a plain MenuTree (data), rebuilt each render from the pending state, so its handlers never
 // go stale. Mirrors useCloseGuard's Save/Discard/Cancel flow via the shared saveProjectInteractive.
+//
+// It also owns the settling of a SONG REQUEST (ProjectStore.requestSong): the song a Recent row asked
+// for, or one the Songs menu picked. The store parks the request and applies it on the first tick the
+// cart can take it, which for a console whose working song is work RAM (smsggdj) is after its boot, not
+// the frame the project loaded; this hook is what ticks it, and what raises the discard prompt when the
+// store reports that loading would destroy unsaved work.
 
 import { useRef, useState } from "react";
 
@@ -18,9 +24,9 @@ import type { MissingFile } from "../../src/projectMissing";
 import { hasUnsavedChanges } from "../../src/unsavedChanges";
 import { basename } from "../../src/pathUtil";
 import { SAV_PATTERNS } from "../../src/savPaths";
-import { loadSongInPrimary, songLoadByNameWouldDiscard, resolveSongCatalog } from "../../src/tracker";
 import { saveProjectInteractive } from "./saveProjectInteractive";
 import { unsavedRows } from "./unsavedRows";
+import { useNativeEvent } from "./useNativeEvent";
 import type { MenuItem, MenuTree } from "../screens/menu/menuTree";
 
 const ROM_PATTERNS = ["*.gb", "*.gbc", "*.gba", "*.nes", "*.sms", "*.gg"];
@@ -34,7 +40,7 @@ type PendingModal =
   | { kind: "relink"; missing: MissingFile[] }
   // A recent SONG row's load, when the cart it lands on holds uncommitted working-song work. The row asked
   // to open song X; silently destroying song Y on the way is not what was agreed to.
-  | { kind: "songDiscard"; song: string; working: string; proceed: () => void };
+  | { kind: "songDiscard"; song: string; working: string };
 
 export interface ProjectModals {
   /** The overlay to render (null = nothing showing). */
@@ -60,37 +66,37 @@ export function useProjectModals(stores: AppStores): ProjectModals {
   // re-rendering anything itself.
   const pendingSong = useRef<string>("");
 
+  // Give the parked song request a chance to apply. "waiting" means the cart is not up yet (or the discard
+  // prompt is showing) and the frame tick will ask again; "discard" raises that prompt; anything else is
+  // finished, one way or the other, and there is nothing to show for it.
+  const settleSong = (): void => {
+    const r = project.settleSong();
+    if (r === "waiting") return;
+    if (typeof r === "object") setPending({ kind: "songDiscard", song: r.song, working: r.working });
+  };
+  useNativeEvent("frame", () => {
+    if (project.hasSongRequest()) settleSong();
+  });
+
   // A load result → the next overlay: loaded clears; incompatible/error notify; missing offers relink.
   const handleOutcome = (outcome: LoadOutcome): void => {
     // Every completed load funnels through here (including one finished by a relink), so this is the one
-    // place the requested song can be applied. A load that didn't land drops it - except "missing", which
-    // is still in flight awaiting the relink.
+    // place the requested song can be handed over. A load that didn't land drops it - except "missing",
+    // which is still in flight awaiting the relink.
     const song = pendingSong.current;
     if (outcome.kind !== "missing") pendingSong.current = "";
     switch (outcome.kind) {
       case "loaded": {
-        // The Songs menu's Load is guarded in menuDefs; this is the OTHER way a song load happens, and it
-        // destroys the working song exactly the same way (both go through catalog.load → mutateLiveSav).
-        // A missing SRAM snapshot right after the rebuild answers "not dirty", so the worst case is a load
-        // that proceeds unprompted - never a prompt when nothing is at stake.
-        const sys = song ? project.systems.primary() : null;
-        if (song && sys && songLoadByNameWouldDiscard(project.systems, sys, song)) {
-          const working =
-            resolveSongCatalog(sys.roles)?.workingName(project.systems.readSram(sys.id)!, project.systems.readRam(sys.id) ?? undefined) ||
-            "the working song";
-          setPending({
-            kind: "songDiscard",
-            song,
-            working,
-            proceed: () => {
-              loadSongInPrimary(stores.backend, project.systems, song);
-              setPending(null);
-            },
-          });
-          break; // keep the overlay up - the load waits on the answer
-        }
-        if (song) loadSongInPrimary(stores.backend, project.systems, song); // reopen the row's song
         setPending(null);
+        // The row's song is a REQUEST, not a load: the project has only just been rebuilt, and on a
+        // console whose working song is work RAM the cart is still booting - a write now is a write the
+        // boot erases. The store applies it on the first tick the cart is ready (LSDj / risa: this very
+        // call), and guards it THEN, when the cart's working song is real; the discard prompt, if any,
+        // comes back through settleSong.
+        if (song) {
+          project.requestSong({ name: song, confirmed: false });
+          settleSong();
+        }
         break;
       }
       case "incompatible":
@@ -135,10 +141,18 @@ export function useProjectModals(stores: AppStores): ProjectModals {
         project.cancelLoad(); // abandoning the relink drops the held load
         pendingSong.current = ""; // …and the song it was going to open
       }
+      if (p?.kind === "songDiscard") project.cancelSong(); // "Keep current song": the request is withdrawn
       return null;
     });
 
-  const modal = pending ? buildModal(pending, stores, handleOutcome, onClose) : null;
+  // "Discard & load": the store has the request; agreeing is what lets the next settle apply it.
+  const proceedSong = (): void => {
+    project.confirmSong();
+    setPending(null);
+    settleSong();
+  };
+
+  const modal = pending ? buildModal(pending, stores, handleOutcome, onClose, proceedSong) : null;
   return { modal, active: pending !== null, onClose, newProject, loadProject, loadRomAsProject };
 }
 
@@ -149,6 +163,7 @@ function buildModal(
   stores: AppStores,
   handleOutcome: (o: LoadOutcome) => void,
   onClose: () => void,
+  proceedSong: () => void,
 ): MenuTree {
   const btn = (id: string, label: string, onSelect: () => void): MenuItem => ({ id, label, kind: "action", keepOpen: true, onSelect });
 
@@ -168,14 +183,14 @@ function buildModal(
   }
 
   if (pending.kind === "songDiscard") {
-    const { proceed, song, working } = pending;
+    const { song, working } = pending;
     // No "save first" here (unlike the Songs menu): the cart has only just booted, so this is a plain
     // proceed-or-cancel. Cancel leaves the project loaded showing whatever song the cart came up on.
     return {
       title: "Unsaved song",
       items: [
         btn("song-discard-what", `"${working}" has unsaved changes`, () => {}),
-        btn("song-discard-go", `Discard & load "${song}"`, proceed),
+        btn("song-discard-go", `Discard & load "${song}"`, proceedSong),
         btn("song-discard-cancel", "Keep current song", onClose),
       ],
     };

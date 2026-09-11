@@ -149,35 +149,35 @@ test("recents name: a battery-less cart names the ROM alone; the project's own n
   expect(recent.view()[0].label).toBe("My Song");
 });
 
-test("recordCurrentSong: a song change adds a row, coming back moves it up, unchanged is a no-op", () => {
+test("syncRecent: a song change adds a row, coming back moves it up, unchanged is a no-op", () => {
   const { be, recent, project } = newTrackerProject();
   be.seed("/roms/lsdj.gb", lsdjRom("LSDJ-V9.4.2"));
   const id = project.systems.addSystem("/roms/lsdj.gb")!;
   be.setSram(id, lsdjSav(0)); // GRUB is the working song
 
-  expect(project.recordCurrentSong()).toBeFalsy(); // never saved: no path to record against
+  expect(project.syncRecent()).toBeFalsy(); // never saved: no path to record against
   expect(recent.view().length).toBe(0);
 
   project.save("/proj/x.rplg"); // the save records the (project, GRUB) row itself
   expect(recent.view().map((v) => v.song)).toEqual(["GRUB"]);
-  expect(project.recordCurrentSong()).toBeFalsy(); // nothing changed -> no row, no write
+  expect(project.syncRecent()).toBeFalsy(); // nothing changed -> no row, no write
 
   be.setSram(id, lsdjSav(1)); // the user loads INTRO from inside LSDj
-  expect(project.recordCurrentSong()).toBeTruthy();
+  expect(project.syncRecent()).toBeTruthy();
   expect(recent.view().map((v) => v.song)).toEqual(["INTRO", "GRUB"]); // a row each, newest first
 
   be.setSram(id, lsdjSav(0)); // ...and back to GRUB
-  expect(project.recordCurrentSong()).toBeTruthy();
+  expect(project.syncRecent()).toBeTruthy();
   expect(recent.view().map((v) => v.song)).toEqual(["GRUB", "INTRO"]); // moved up, NOT duplicated
   expect(recent.view()[0].label).toBe("lsdj.sav [lsdj]"); // the project half is the cart, as for any row
 });
 
-test("recordCurrentSong: nothing to record for a non-tracker cart", () => {
+test("syncRecent: nothing to record for a non-tracker cart", () => {
   const { be, recent, project } = newTrackerProject();
   be.seed("/roms/game.gb", gbRomBattery()); // a battery cart, but no song catalog
   project.systems.addSystem("/roms/game.gb");
   project.save("/proj/x.rplg");
-  expect(project.recordCurrentSong()).toBeFalsy();
+  expect(project.syncRecent()).toBeFalsy();
   expect(recent.view().map((v) => v.song)).toEqual([undefined]);
 });
 

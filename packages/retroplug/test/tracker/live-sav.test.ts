@@ -6,11 +6,11 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";
-import { mutateLiveSav, loadSongByName, loadSongInPrimary, lsdjSongCatalog, songLoadWouldDiscard, songLoadByNameWouldDiscard, savEditWouldDiscard, loadSongLive } from "../../src/tracker";
+import { mutateLiveSav, loadSongByName, loadSongInPrimary, lsdjSongCatalog, songLoadWouldDiscard, songLoadByNameWouldDiscard, savEditWouldDiscard, loadSongLive, workingSongReady } from "../../src/tracker";
 import { buildSav, SMDJ4_BLOCK_LEN } from "../../src/smsggdj/codec/sav";
 import { resolveSmsggdjLayout } from "../../src/smsggdj/runtime/layout";
 import { smsggdjSongCatalog } from "../../src/tracker/smsggdjSongCatalog";
-import { lsdjRom, gbRomBattery } from "../systems/fixtures";
+import { lsdjRom, gbRomBattery, smsggdjRom, smsggdjRam } from "../systems/fixtures";
 import { savFrom, loadSongToWorking, type SavInput } from "../../src/lsdjSav";
 
 const SONG = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [0] }], phrases: [{ notes: [1], instruments: [0] }], instruments: [{ type: "pulse" as const }] };
@@ -178,19 +178,13 @@ test("songLoadWouldDiscard: a non-tracker cart never prompts (no positive signal
 
 // --- the OTHER five ops, on a console whose working song is not in the battery ----------------------
 
-/** A live smsggdj cart: a .sms carrying the build marker, with a two-song SMDJ4 battery and a synthetic
- *  work-RAM block - the region the cart actually composes in, and which no `.sav` ever contains. */
+/** A live smsggdj cart: a .sms carrying the build marker (+ the version string, without which no layout
+ *  resolves and the live path correctly refuses), with a two-song SMDJ4 battery and a synthetic work-RAM
+ *  block - the region the cart actually composes in, and which no `.sav` ever contains. */
 function newSmsCart() {
   const be = new MockBackend("/cfg");
   const systems = new SystemsStore(be, () => {}, buildAppRegistry());
-  const rom = new Uint8Array(0x8200);
-  rom.set([0x54, 0x4d, 0x52, 0x20, 0x53, 0x45, 0x47, 0x41], 0x7ff0); // "TMR SEGA"
-  rom[0x7ff0 + 0xf] = 0x40; // region nibble 4 -> SMS
-  for (let i = 0; i < "SMSGGDJ".length; i++) rom[0x3640 + i] = "SMSGGDJ".charCodeAt(i);
-  // The VERSION string too, at the offset a real v0.45 build puts it: without it no layout resolves and
-  // the live path correctly refuses, which is a different test from the one below.
-  for (let i = 0; i < "V0.45".length; i++) rom[0x367b + i] = "V0.45".charCodeAt(i);
-  be.seed("/roms/smsggdj.sms", rom);
+  be.seed("/roms/smsggdj.sms", smsggdjRom("0.45"));
   const id = systems.addSystem("/roms/smsggdj.sms")!;
   const block = (tag: number): Uint8Array => {
     const b = new Uint8Array(SMDJ4_BLOCK_LEN);
@@ -199,12 +193,10 @@ function newSmsCart() {
   };
   be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], 32 * 1024)!);
   // `edited` is the cart's own song_edited flag - the thing that separates "typed for an hour" from
-  // "this is what the cart booted into", which content alone cannot tell apart.
-  const setWorking = (b: Uint8Array, edited = false): void => {
-    const ram = new Uint8Array(8192);
-    ram.set(b, 0);
-    ram[resolveSmsggdjLayout("0.45")!.edited] = edited ? 1 : 0;
-    be.setRam(id, ram);
+  // "this is what the cart booted into", which content alone cannot tell apart. `booted` is its
+  // ints_on latch: false is the boot window, where nothing in work RAM is the cart's yet.
+  const setWorking = (b: Uint8Array, opts: { edited?: boolean; booted?: boolean } = {}): void => {
+    be.setRam(id, smsggdjRam({ block: b, ...opts }));
   };
   return { be, systems, sys: () => systems.systems()[0], block, setWorking };
 }
@@ -267,12 +259,12 @@ test("savEditWouldDiscard: a battery edit warns on the console whose working son
   // Replace are every bit as destructive as Load and have to ask first.
   const { systems, sys, block, setWorking } = newSmsCart();
 
-  setWorking(block(2), true); // working song IS the saved BETA - the reboot costs nothing
+  setWorking(block(2), { edited: true }); // working song IS the saved BETA - the reboot costs nothing
   expect(savEditWouldDiscard(systems, sys())).toBe(false);
 
   const edited = block(2);
   edited[9] ^= 0xff; // ...now edited, and in no slot
-  setWorking(edited, true);
+  setWorking(edited, { edited: true });
   expect(savEditWouldDiscard(systems, sys())).toBe(true);
   expect(songLoadWouldDiscard(systems, sys())).toBe(true); // Load agrees, off the same signal
 });
@@ -293,8 +285,50 @@ test("a just-booted smsggdj cart discards nothing, so loading a recent song asks
   // ...and the same cart once it HAS been edited still prompts, which is the whole point of the guard.
   const typed = new Uint8Array(SMDJ4_BLOCK_LEN);
   typed[9] = 0x42;
-  setWorking(typed, true);
+  setWorking(typed, { edited: true });
   expect(songLoadByNameWouldDiscard(systems, sys(), "BETA")).toBe(true);
+});
+
+test("an smsggdj cart that has not BOOTED takes no live load, and is never read as holding a song", () => {
+  // The other half of the same bug. Work RAM is readable from the moment the core exists, but for the
+  // cart's first seconds it is the boot sequence's: `init` zero-fills it, `song_new` seeds the blank
+  // song, v0.46 `boot_autoload` reloads the last slot. A song written in that window is erased a moment
+  // later - which is exactly what a Recent-row load did, and it reported success. Refusing until
+  // `ints_on` says the main loop is running is what makes "false" mean "nothing happened".
+  const { be, systems, sys, block, setWorking } = newSmsCart();
+  setWorking(block(2), { booted: false }); // whatever the boot left there so far; even a whole song
+  expect(workingSongReady(systems, sys())).toBe(false);
+  const writes = () => be.log.filter((m) => m === "writeRam").length;
+  const before = writes();
+
+  expect(loadSongLive(be, systems, sys(), 0)).toBe(false);
+  expect(loadSongByName(be, systems, sys(), "ALPHA")).toBe(false);
+  expect(writes()).toBe(before); // not one byte poked into a booting cart
+
+  // ...nor is anything in it a song yet: the name is the boot's, not the cart's, so there is no working
+  // song to report, to guard, or to record a Recent row for.
+  expect(smsggdjSongCatalog.workingName(be.readSram(sys().id)!, be.readRam(sys().id)!)).toBe(null);
+  expect(songLoadWouldDiscard(systems, sys())).toBe(false);
+  expect(savEditWouldDiscard(systems, sys())).toBe(false);
+
+  // The latch flips; the same cart, the same bytes, now takes the load.
+  setWorking(block(2), { booted: true });
+  expect(workingSongReady(systems, sys())).toBe(true);
+  expect(loadSongLive(be, systems, sys(), 0)).toBe(true);
+  expect(writes() > before).toBe(true);
+  expect(be.readRam(sys().id)!.subarray(0, SMDJ4_BLOCK_LEN)).toEqual(block(1));
+});
+
+test("readiness is a per-console fact: LSDj is always ready, a non-tracker cart trivially so", () => {
+  // The working song of LSDj / risa is the battery, complete from the first frame - nothing to wait for.
+  // A cart with no song catalog has no working song at all, which is also nothing to wait for.
+  const { systems, sys } = newCart();
+  expect(workingSongReady(systems, sys())).toBe(true);
+  const plain = new MockBackend("/cfg");
+  const plainSystems = new SystemsStore(plain, () => {}, buildAppRegistry());
+  plain.seed("/roms/game.gb", gbRomBattery());
+  plainSystems.addSystem("/roms/game.gb");
+  expect(workingSongReady(plainSystems, plainSystems.systems()[0])).toBe(true);
 });
 
 test("savEditWouldDiscard: with no work RAM published it stays silent rather than guessing", () => {

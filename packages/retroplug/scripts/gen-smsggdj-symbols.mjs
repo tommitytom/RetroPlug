@@ -50,6 +50,15 @@ const WANT = [
   // `mark_all_dirty` (editor.asm:5271) is just "1 into all 16 dirty_rows", and the cart's own load ends
   // in it, so a load that skips it leaves the previous song on screen until the user touches something.
   "dirty_rows", "label_dirty",
+  // Boot completion. Work RAM is readable from the moment the core is constructed, but the cart spends
+  // its first seconds in `init` (zero-fills $C000-$DFEE), the splash, `song_new` and (v0.46+)
+  // `boot_autoload` - and every one of those overwrites the working song. A host that reads the song
+  // name during that window reads nothing, and one that WRITES a song then has it wiped, which is how
+  // a Recent-list load came to silently do nothing. `ints_on` is written exactly once, `ld a,1` right
+  // before `ei` and the main loop (main.asm), after all of the above: it is the latch that says the
+  // working song is now the cart's to keep. `frame` is the main-loop counter (incremented once per
+  // iteration, main.asm), so a test can also see the cart is alive and how far past boot it is.
+  "ints_on", "frame",
 ];
 
 // The echo settings are EIGHT separate `db`s that the ROM copies as one run

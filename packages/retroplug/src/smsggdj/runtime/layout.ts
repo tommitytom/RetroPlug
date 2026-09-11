@@ -12,8 +12,9 @@ import type { SmsggdjLayout } from "./types";
 // of needing that build's label file. Verified by comparing the linker's symbol output for both:
 //
 //   0.46 -> 0.45   wave_ram c000, phrase_pool c100, echo_mode db6d, song_edited ddc0, prj_slot dd58,
-//                  song_name dea4 - identical in both, because the v0.46 cur_slot change adds ROM code
-//                  and no RAM variables.
+//                  song_name dea4, ints_on df13, frame df02 - identical in both, because the v0.46
+//                  cur_slot change adds ROM code and no RAM variables. (ints_on / frame / song_name were
+//                  also read straight out of the v0.46 BINARIES, from the code that writes them.)
 //
 // An alias is a claim about two builds, so it is only ever added after that comparison, never on the
 // assumption that a small change cannot move anything.
@@ -48,6 +49,8 @@ function layoutFrom(symbolsKey: string, version: string = symbolsKey): SmsggdjLa
     labelDirty: s.label_dirty,
     psgVols: s.psg_vols,
     psgVolsLen: s.psg_vols_len,
+    booted: s.ints_on,
+    frame: s.frame,
   };
 }
 
@@ -93,4 +96,13 @@ export function commonSongNameOffset(): { offset: number; length: number } | nul
  *  build we cannot read the flag out of is one we have no positive signal from. */
 export function commonSongEditedOffset(): number | null {
   return commonOffset((s) => s.song_edited);
+}
+
+/** Where `ints_on` sits, for `SongCatalog.workingSongReady` - the cart's "init done" latch, written once
+ *  right before its main loop starts and after every boot-time overwrite of the working song (`init`'s
+ *  zero-fill, `song_new`, `boot_autoload`). Until it reads 1 the working song is not the cart's to keep:
+ *  a name read from it is nothing, and a song written into it is wiped. Null makes that caller say NOT
+ *  ready, because a build we cannot locate the latch in is one we must not write into blind. */
+export function commonBootedOffset(): number | null {
+  return commonOffset((s) => s.ints_on);
 }
