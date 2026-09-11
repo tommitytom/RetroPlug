@@ -195,7 +195,11 @@ jobs:
             build/bin/retroplug-sdl
 
   windows:
-    runs-on: windows-2022
+    # windows-2025-vs2026: Windows Server 2025 + Visual Studio 2026 (MSVC 14.51), matching the
+    # toolset this project is developed on. The plain windows-2022 / windows-2025 images both ship
+    # VS 2022 17.14 (MSVC 14.44), which disagrees with 14.51 about which warnings exist -- under
+    # the /W4 /WX build that meant a locally clean tree could still fail here (it did, on C4127).
+    runs-on: windows-2025-vs2026
     env:
       # build.bat defaults VCPKG_ROOT to C:\code\vcpkg; point it at the runner's
       # preinstalled vcpkg. RGBDS_DIR is set later once RGBDS is extracted.
