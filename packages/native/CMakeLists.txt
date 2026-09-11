@@ -981,3 +981,23 @@ set_target_properties(retroplug-lottie-test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# --- warnings-as-errors (MSVC) ---------------------------------------------------------------------
+# Windows is the one platform whose compiler sees code the Linux/macOS CI never compiles (every
+# `#if defined(_WIN32)` branch), so a warning there is the only signal that half of a platform
+# guard has rotted. Apply /WX to RETROPLUG'S OWN targets only — never globally: the vendored
+# subtrees (mesen, sameboy, txiki/lvgl/libuv, portaudio, rtmidi, wjwwood/serial) warn freely and
+# are silenced with per-number /wd#### rather than fixed, so a global /WX would fail on code we
+# do not own. Note the level: nothing sets /W here, so this is MSVC's default /W1 — raising it
+# is a separate (and much larger) cleanup.
+option(RETROPLUG_WERROR "Treat compiler warnings as errors in RetroPlug's own targets (MSVC)" ON)
+if(MSVC AND RETROPLUG_WERROR)
+    set(_rp_werror_targets
+        retroplug-core retroplug-backend retroplug-host retroplug-cli retroplug-sdl
+        retroplug retroplug-dsp retroplug-ui)
+    foreach(_t IN LISTS _rp_werror_targets)
+        if(TARGET ${_t})
+            target_compile_options(${_t} PRIVATE /WX)
+        endif()
+    endforeach()
+endif()
