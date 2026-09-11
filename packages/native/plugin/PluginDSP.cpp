@@ -501,7 +501,7 @@ public:
                 }
             } else {
                 d_stderr("[retroplug] __rp_parameterMapJson unreadable: %s",
-                         parsed.error().what());
+                         parsed.error().what().c_str());
             }
         }
 

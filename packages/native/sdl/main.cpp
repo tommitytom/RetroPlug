@@ -1499,7 +1499,7 @@ void applyWindowSize(AppState& a, std::uint32_t w, std::uint32_t h, bool fromWm)
     const std::uint32_t stride = lv_draw_buf_width_to_stride(w, cf);
     a.drawBuf.assign(static_cast<std::size_t>(stride) * h, 0);
     lv_display_set_resolution(a.display, w, h);
-    lv_display_set_buffers(a.display, a.drawBuf.data(), nullptr, a.drawBuf.size(), LV_DISPLAY_RENDER_MODE_DIRECT);
+    lv_display_set_buffers(a.display, a.drawBuf.data(), nullptr, static_cast<std::uint32_t>(a.drawBuf.size()), LV_DISPLAY_RENDER_MODE_DIRECT);
 
     // SDL streaming texture: recreate at the new size (can't be resized in place).
     if (a.texture) SDL_DestroyTexture(a.texture);

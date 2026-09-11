@@ -502,7 +502,7 @@ void MesenNesSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
             }
         }
         // Flush the mix ring (discard) so it stays bounded — the loop gated on the capture streams, not it.
-        const std::uint32_t mixAvail = audioDevice_->availableFrames();
+        const std::uint32_t mixAvail = static_cast<std::uint32_t>(audioDevice_->availableFrames());
         if (stereoAccum_.size() < std::size_t(mixAvail) * 2) stereoAccum_.assign(std::size_t(mixAvail) * 2, 0.0f);
         audioDevice_->drain(stereoAccum_.data(), mixAvail);
     } else {
