@@ -402,6 +402,7 @@ set(RTMIDI_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
 set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
+retroplug_silence_dep_warnings(rtmidi)
 
 # --- retroplug-cli N8 transport facets: serial + live MIDI -> the TS N8 stack ------------------------
 # The N8 tools (n8-load / n8-bridge / n8-sync) are all TS now (packages/retroplug/src/n8 + cli/sessions/):
@@ -453,6 +454,7 @@ set(PA_JACK_DYNAMIC ON CACHE BOOL "" FORCE)
 # none, so the handheld build is simply JACK-less, and it launches fine regardless).
 unset(PA_USE_JACK CACHE)
 add_subdirectory(${CMAKE_SOURCE_DIR}/deps/portaudio ${CMAKE_BINARY_DIR}/portaudio EXCLUDE_FROM_ALL)
+retroplug_silence_dep_warnings(portaudio)
 
 # Part of the default `all` target, so build.sh builds it and CI covers it. Its deps are in-tree submodules
 # (rtmidi + portaudio) or already required (SDL2 at root scope for gamepad input); PortAudio adds no new

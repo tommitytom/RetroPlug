@@ -70,9 +70,12 @@ The rules below are the parts that don't fit those.
   wall / 26m51s CPU with it on, 2.4s / 6.6s with it off** — same single compile, the
   rest is eight full LTO links. So it's OFF by default and every `release.yml` job
   passes it ON; shipped builds keep the speedup, the dev loop doesn't pay for it.
-  Toggling the option recompiles mesen (~45 s). If you see mesen scroll past on every
-  build (the repeated `emu2413.cpp` warnings), that's LTO link-time codegen, not a
-  stale-dependency bug — `[NN%] Built target mesen` prints whether or not it did work.
+  Toggling the option recompiles mesen (~45 s). If a build with it ON seems to stall on
+  every link, that's LTO link-time codegen over mesen's ~430 objects, not a
+  stale-dependency bug: `[NN%] Built target mesen` prints whether or not it did work.
+  (It used to announce itself with repeated `emu2413.cpp` / `-Wodr` warnings at each
+  link. Those are silenced now - the per-TU `-w` can't reach link-time codegen, so
+  `deps/mesen/CMakeLists.txt` puts a `-w` on the consumers' link line under LTO too.)
 - **`retroplug-sdl` is in the default build** — `build.sh` builds it, and CI covers it
   (CI builds `all`) on all four platforms. It needs nothing extra installed: SDL2 is
   already REQUIRED at root scope for every plugin variant, and rtmidi is an in-tree

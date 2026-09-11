@@ -52,9 +52,29 @@ endif()
 set_source_files_properties(${MESEN_CPP_SOURCES} ${MESEN_C_SOURCES} PROPERTIES
     COMPILE_OPTIONS "${_mesen_force_inc}")
 
+# Lua picks `tmpnam` over `mkstemp` for os.tmpname unless it is told the platform is POSIX
+# (Lua/loslib.c:111-135, gated on LUA_USE_POSIX). glibc marks `tmpnam` with a .gnu.warning section, so
+# every binary that links libmesen.a got "the use of `tmpnam' is dangerous, better use `mkstemp'" from
+# the LINKER - eight times in a full build, and once more on every incremental relink. That one is not
+# suppressible with a compiler flag; the fix is to stop referencing the symbol, which is what the
+# warning asks for and what any POSIX Lua build does.
+#
+# LUA_USE_POSIX and not LUA_USE_LINUX/MACOSX: those two add LUA_USE_DLOPEN (and a -ldl dependency) on
+# top, which this build has no use for. luaconf.h never reads the macro itself - only the .c files do -
+# so the Lua sources are the whole blast radius, and Mesen's C++ Lua consumers are unaffected.
+if(NOT WIN32)
+    set(MESEN_LUA_SOURCES ${MESEN_C_SOURCES})
+    list(FILTER MESEN_LUA_SOURCES INCLUDE REGEX "/Lua/")
+    set_source_files_properties(${MESEN_LUA_SOURCES} PROPERTIES COMPILE_DEFINITIONS LUA_USE_POSIX)
+endif()
+
 add_library(mesen STATIC ${MESEN_CPP_SOURCES} ${MESEN_C_SOURCES})
 
-target_include_directories(mesen PUBLIC
+# SYSTEM: the -w below is PRIVATE, so it does nothing for the RetroPlug sources that include Mesen's
+# headers (MesenNesSystem.cpp and the rest of src/system/mesen). Those headers are upstream code too, so
+# a consumer gets them as -isystem and is not held responsible for what they warn about - while its own
+# warnings stay exactly as loud as they were.
+target_include_directories(mesen SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"            # so Core/* and Utilities/* paths resolve
     "${CMAKE_CURRENT_SOURCE_DIR}/Core"       # so `#include "pch.h"` resolves
     "${CMAKE_CURRENT_SOURCE_DIR}/Utilities"  # sibling-file includes within Utilities/
@@ -81,6 +101,21 @@ if(RETROPLUG_MESEN_LTO)
         INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
         INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON
     )
+    # Under LTO the codegen happens at LINK time, in a process that takes its warning flags from the LINK
+    # command line - so the -w further down, which is a per-TU compile option, does not reach it. Two of
+    # Mesen's warnings come back at every one of the nine links, and one of them (-Wodr on
+    # Utilities/NTSC/nes_ntsc_impl.h) is a whole-program check that exists ONLY at link time and has no
+    # compile-time form at all. That pair is what "mesen scrolls past on every build" has always been.
+    #
+    # INTERFACE, so it lands on the link line of each consumer rather than on mesen's own (a static lib
+    # is archived, not linked). It reaches lto1 only: real linker diagnostics - ld's own warnings, the
+    # .gnu.warning sections - are the linker's and stay visible, on these binaries and every other.
+    #
+    # Scoped inside this if(): with LTO off there is no link-time codegen to quiet, and leaving the
+    # default dev-loop link lines untouched keeps any future link diagnostic loud.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_options(mesen INTERFACE -w)
+    endif()
 endif()
 
 if(WIN32)
@@ -92,28 +127,22 @@ if(WIN32)
     target_link_libraries(mesen PUBLIC winmm ws2_32 iphlpapi)
 endif()
 
-# Mesen is upstream-tracked; suppress its warnings rather than patching.
+# Mesen is upstream-tracked; suppress its warnings rather than patching. `-w` rather than the curated
+# -Wno-* list this used to carry, for two reasons the list could not fix:
+#
+#   - It could not silence the loudest ones. `NesPpu.h`'s "inline function ... used but never defined"
+#     (16 of them, from HdNesPpu.cpp and friends) is emitted with NO [-W...] tag, so GCC offers no flag
+#     that turns it off. Only -w does.
+#   - Two of its entries (-Wno-reorder, -Wno-class-memaccess) are C++/ObjC++-only, and the list was
+#     applied to the whole target - including the ~73 Lua / SevenZip / Utilities C sources. cc1 then
+#     warned about the flags themselves, twice per C file: 146 warning lines, the bulk of a clean
+#     build's noise, all of it produced by the warning suppression.
+#
+# Same treatment as the other vendored cores (cmake/sameboy.cmake, cmake/serial.cmake) and the same
+# rationale: we do not own this code, and a clean build should be quiet enough that a warning in code we
+# DO own is visible. Our own sources keep every warning they had - this is PRIVATE to the mesen target.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(mesen PRIVATE
-        -Wno-unused-parameter
-        -Wno-unused-variable
-        -Wno-unused-function
-        -Wno-unused-but-set-variable
-        -Wno-switch
-        -Wno-sign-compare
-        -Wno-reorder
-        -Wno-deprecated-declarations
-        -Wno-class-memaccess
-        -Wno-missing-field-initializers
-        -Wno-multichar
-        -Wno-strict-aliasing
-        -Wno-parentheses
-        -Wno-format
-        -Wno-implicit-fallthrough
-    )
-    # Lua's C sources in particular trigger these.
-    set_source_files_properties(${MESEN_C_SOURCES} PROPERTIES
-        COMPILE_FLAGS "-Wno-implicit-function-declaration -Wno-unused-result")
+    target_compile_options(mesen PRIVATE -w)
 endif()
 
 # Use Mesen's own precompiled header to keep build time down.
