@@ -69,8 +69,15 @@ std::vector<std::uint8_t> fromHex(const std::string& h) {
     return out;
 }
 
+}  // namespace
+
 // The shared golden schema (edio-golden.json). Field names match the JSON keys; every field the golden
 // omits per op is std::optional.
+// These live in a NAMED namespace deliberately: reflect-cpp reflects a struct through a fake-object
+// conversion operator, which clang refuses to define for a type with no linkage - an anonymous-namespace
+// DTO fails to compile.
+namespace edio_golden {
+
 struct EdioArgs {
     std::optional<std::string>  bytes;
     std::optional<std::string>  str;
@@ -90,7 +97,11 @@ struct EdioGolden {
     std::vector<EdioCase> cases;
 };
 
-}  // namespace
+}  // namespace edio_golden
+
+using edio_golden::EdioArgs;
+using edio_golden::EdioCase;
+using edio_golden::EdioGolden;
 
 TEST_CASE("Edio framing matches the shared golden (twins edio.test.ts)", "[n8]") {
     std::ifstream f(EDIO_GOLDEN_PATH);
