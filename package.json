@@ -60,7 +60,12 @@
     "reaper:params-vrc7": "node scripts/cmake-build.js retroplug-vst3 && RP_PARAMS_ROM=resources/roms/bliptoaster-vrc7.nes tools/run-reaper-params.sh",
     "reaper:editor-autoload": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && tools/run-reaper-editor-autoload.sh",
     "reaper:two-instances": "node scripts/cmake-build.js retroplug-vst3 && tools/run-reaper-two-instances.sh",
-    "reaper:two-instances-load": "node scripts/cmake-build.js retroplug-vst3 && tools/run-reaper-two-instances-load.sh"
+    "reaper:two-instances-load": "node scripts/cmake-build.js retroplug-vst3 && tools/run-reaper-two-instances-load.sh",
+    "reaper:win": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-reaper-suite.ps1",
+    "reaper:win-editor": "node scripts/cmake-build.js retroplug-vst3 && powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-reaper-editor.ps1",
+    "reaper:win-params": "node scripts/cmake-build.js retroplug-vst3 && powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-reaper-params.ps1",
+    "renoise:probe": "node scripts/cmake-build.js retroplug-vst3 && powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-renoise-render.ps1 -Mode probe",
+    "renoise:render": "node scripts/cmake-build.js retroplug-vst3 && powershell -NoProfile -ExecutionPolicy Bypass -File tools/run-renoise-render.ps1 -Mode render"
   },
   "dependencies": {
     "@msgpack/msgpack": "^3.0.0",

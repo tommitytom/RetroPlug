@@ -286,6 +286,42 @@ To run the **whole** Reaper leg (**15 checks: 9 renders + 6 editor/host**) at on
 JACK server + per-tag config dir / display / logs), which is also what makes the
 individual `reaper:*` scripts safe to run in parallel.
 
+**The same Reaper leg runs on WINDOWS**, via PowerShell twins that reuse the
+`.rpp` fixtures, the `.lua` authors and the Python analyzer unchanged:
+`pnpm reaper:win` ([tools/run-reaper-suite.ps1](tools/run-reaper-suite.ps1)),
+plus `reaper:win-editor` / `reaper:win-params`. The Linux scaffolding has no
+Windows equivalent and needs none - each piece maps to something simpler
+([tools/reaper-env.ps1](tools/reaper-env.ps1) documents the mapping):
+- **Xvfb + openbox -> nothing.** There is a real desktop.
+- **jackd dummy -> Reaper's own Dummy Audio device**, `[audioconfig] mode=4`.
+  `dummy_blocksize` IS the render block size, so `REAPER_JACK_PERIOD` means the
+  same thing on both platforms (the midi-timing scenarios need 8192).
+- **the xdotool EULA dismisser -> seeding the `[nag]` key** from the user's own
+  `%APPDATA%\REAPER\REAPER.ini`. Without it a fresh config stops at the EULA
+  before running the ReaScript and the run hangs with nothing on stdout.
+- **`HOME=<cfg>` -> `-cfgfile`**, which on Windows relocates the WHOLE resource
+  tree (Scripts/, the plugin-scan cache), not just the ini.
+The one real loss is concurrency: a single desktop and a process-global audio
+device mean the Windows scenarios run **sequentially**, so budget the sum. A
+scenario whose ROM is absent (risa) reports SKIP, not FAIL. The analyzer needs a
+REAL Python plus numpy - the `python.exe` on PATH under `WindowsApps` is a Store
+stub, not an interpreter.
+
+**Renoise is the second host** ([tools/run-renoise-render.ps1](tools/run-renoise-render.ps1)
++ the `com.retroplug.harness.xrnx` tool). It exists because every host-integration
+bug this repo has hit - the class-id collision that blanked the hosted editor, the
+per-ROM parameter relabelling - is a bug about how ONE host drives the plugin, and
+one host cannot catch those. Renoise has no render CLI, so the tool IS the CLI: it
+runs at startup, reads a job spec, drives the Lua API and quits. Two modes, and the
+split is not cosmetic: `-Mode render` needs a REGISTERED Renoise (`song:render()` is
+disabled in the demo, and Renoise says so with a modal dialog rather than a Lua
+return, so the runner detects that in `Log.txt` and reports SKIP instead of hanging);
+`-Mode probe` instantiates the plugin and dumps the parameter surface the host sees,
+which needs no render and therefore works in the demo. Renoise finds the plugin
+through its own configured VST path - point it at `build\bin` once in
+Preferences > Plug-ins; the harness deliberately does NOT rewrite `Config.xml`,
+which Renoise owns and rewrites wholesale on exit.
+
 **`retroplug-cli` as a consumer's whole test harness** (`pnpm test:cli-ts`):
 `retroplug-cli test <dir>` strips and runs a directory of `.ts` tests, and `run <session.ts>` does one
 file - so a consumer repo (BlipToaster) needs **no Node, npm, esbuild or node_modules**. Its kit is the

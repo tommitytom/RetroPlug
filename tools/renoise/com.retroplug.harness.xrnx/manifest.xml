@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RenoiseScriptingTool doc_version="0">
+  <ApiVersion>6.2</ApiVersion>
+  <Id>com.retroplug.harness</Id>
+  <Version>1</Version>
+  <Author>RetroPlug</Author>
+  <Name>RetroPlug Harness</Name>
+  <Category>Testing</Category>
+  <Description>Headless render harness: loads the RetroPlug plugin, builds a song from a job spec, renders it to WAV and quits. Driven by tools/run-renoise-render.ps1.</Description>
+  <Homepage>https://github.com/tommitytom/RetroPlug</Homepage>
+</RenoiseScriptingTool>
