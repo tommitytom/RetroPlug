@@ -1,7 +1,7 @@
 // Song rows in the Recent list, proven against a REAL SameBoy core. The mock-tier tests cover the list
 // logic; what only a real core can show is the loop the feature actually rides: a song load writes the
 // battery + cold-boots the cart, the core PUBLISHES that battery to the snapshot registry, and
-// recordCurrentSong reads the published bytes back and records the row. That read-back is exactly what
+// syncRecent reads the published bytes back and records the row. That read-back is exactly what
 // catches a song the user loads on LSDj's own FILE screen (identical battery bytes - LSDj's load writes
 // the same active-project byte), which nothing else in the app can see.
 import { test, expect } from "../testing/harness";
@@ -47,7 +47,7 @@ test("a song change records its own recents row, read back from the real core's 
 
   const songs = () => recent.view().map((v) => v.song);
   expect(songs()).toEqual(["GRUB"]); // the save recorded the cart's working song
-  expect(project.recordCurrentSong()).toBeFalsy(); // unchanged → no second row, no write
+  expect(project.syncRecent()).toBeFalsy(); // unchanged → no second row, no write
 
   // Load the other song the way the Recent list does. The core reboots from the written battery and
   // publishes it, so the poll now sees INTRO - the same state LSDj's own FILE-screen load produces.
@@ -55,12 +55,12 @@ test("a song change records its own recents row, read back from the real core's 
   expect(loadSongByName(be, project.systems, sys, "INTRO")).toBeTruthy();
   expect(lsdjSongCatalog.workingName(project.systems.readSram(project.systems.systems()[0].id)!)).toBe("INTRO");
 
-  expect(project.recordCurrentSong()).toBeTruthy();
+  expect(project.syncRecent()).toBeTruthy();
   expect(songs()).toEqual(["INTRO", "GRUB"]); // a row each, newest first
 
   // Back to GRUB: its row moves up rather than duplicating.
   expect(loadSongByName(be, project.systems, project.systems.systems()[0], "GRUB")).toBeTruthy();
-  expect(project.recordCurrentSong()).toBeTruthy();
+  expect(project.syncRecent()).toBeTruthy();
   expect(songs()).toEqual(["GRUB", "INTRO"]);
   expect(recent.view().every((v) => v.path === be.canonicalize(projPath))).toBeTruthy(); // one project, two rows
 });

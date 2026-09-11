@@ -4,7 +4,7 @@
 // A version with no snapshot resolves to null, and the tracker integration then reports the build
 // unsupported rather than writing to addresses it is guessing at. Same shape as risa's
 // ../../risa/runtime/layout.ts, and for the same reason.
-import { SMSGGDJ_SYMBOLS } from "./symbols.generated";
+import { SMSGGDJ_SYMBOLS, type SmsggdjSymbols } from "./symbols.generated";
 import { SMDJ4_BLOCK_LEN } from "../codec/sav";
 import type { SmsggdjLayout } from "./types";
 
@@ -12,8 +12,9 @@ import type { SmsggdjLayout } from "./types";
 // of needing that build's label file. Verified by comparing the linker's symbol output for both:
 //
 //   0.46 -> 0.45   wave_ram c000, phrase_pool c100, echo_mode db6d, song_edited ddc0, prj_slot dd58,
-//                  song_name dea4 - identical in both, because the v0.46 cur_slot change adds ROM code
-//                  and no RAM variables.
+//                  song_name dea4, ints_on df13, frame df02 - identical in both, because the v0.46
+//                  cur_slot change adds ROM code and no RAM variables. (ints_on / frame / song_name were
+//                  also read straight out of the v0.46 BINARIES, from the code that writes them.)
 //
 // An alias is a claim about two builds, so it is only ever added after that comparison, never on the
 // assumption that a small change cannot move anything.
@@ -48,6 +49,8 @@ function layoutFrom(symbolsKey: string, version: string = symbolsKey): SmsggdjLa
     labelDirty: s.label_dirty,
     psgVols: s.psg_vols,
     psgVolsLen: s.psg_vols_len,
+    booted: s.ints_on,
+    frame: s.frame,
   };
 }
 
@@ -66,19 +69,40 @@ export function supportedSmsggdjVersions(): string[] {
   return [...Object.keys(SMSGGDJ_SYMBOLS), ...Object.keys(VERSION_ALIASES)];
 }
 
-/** Where `song_name` sits, for a caller that has work RAM but NOT the ROM - `SongCatalog.workingName`,
- *  which is handed an image and a memory snapshot and no way to ask which build produced them.
- *
- *  Answers only when EVERY supported version agrees, which they do today (0.45 and 0.46 both put it at
- *  +$1EA4). The moment a build moves it this returns null and the caller falls back to the save's own
- *  cur_slot - degraded, but never reading a stranger's bytes and calling them a song name. Closing that
- *  proprly means threading the ROM through `workingName`, and it is not worth doing before a build
- *  actually diverges. */
-export function commonSongNameOffset(): { offset: number; length: number } | null {
+/** An offset EVERY supported build agrees on, or null the moment one of them moves it. The escape hatch
+ *  for a caller that has work RAM but NOT the ROM, and therefore no way to ask which build produced the
+ *  snapshot it is holding. Closing that properly means threading the ROM through those callers, and it
+ *  is not worth doing before a build actually diverges - at which point this returns null and each
+ *  caller degrades on its own terms rather than reading a stranger's bytes. */
+function commonOffset(pick: (s: SmsggdjSymbols) => number): number | null {
   const all = Object.values(SMSGGDJ_SYMBOLS);
   if (!all.length) return null;
-  const { song_name, song_name_len } = all[0];
-  return all.every((s) => s.song_name === song_name && s.song_name_len === song_name_len)
-    ? { offset: song_name, length: song_name_len }
-    : null;
+  const first = pick(all[0]);
+  return all.every((s) => pick(s) === first) ? first : null;
+}
+
+/** Where `song_name` sits, for `SongCatalog.workingName`. Agreed today: 0.45 and 0.46 both put it at
+ *  +$1EA4. Null makes the catalog fall back to the save's own cur_slot - degraded, but never naming a
+ *  song after bytes that might be something else. */
+export function commonSongNameOffset(): { offset: number; length: number } | null {
+  const offset = commonOffset((s) => s.song_name);
+  const length = commonOffset((s) => s.song_name_len);
+  return offset === null || length === null ? null : { offset, length };
+}
+
+/** Where `song_edited` sits, for `SongCatalog.workingSongDirty` - the cart's own "song data changed
+ *  since the last save or load" flag (editor.asm:141), which is the only thing that can tell an hour of
+ *  work from the song the cart happened to boot into. Null leaves that caller saying CLEAN, because a
+ *  build we cannot read the flag out of is one we have no positive signal from. */
+export function commonSongEditedOffset(): number | null {
+  return commonOffset((s) => s.song_edited);
+}
+
+/** Where `ints_on` sits, for `SongCatalog.workingSongReady` - the cart's "init done" latch, written once
+ *  right before its main loop starts and after every boot-time overwrite of the working song (`init`'s
+ *  zero-fill, `song_new`, `boot_autoload`). Until it reads 1 the working song is not the cart's to keep:
+ *  a name read from it is nothing, and a song written into it is wiped. Null makes that caller say NOT
+ *  ready, because a build we cannot locate the latch in is one we must not write into blind. */
+export function commonBootedOffset(): number | null {
+  return commonOffset((s) => s.ints_on);
 }

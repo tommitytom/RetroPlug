@@ -110,19 +110,94 @@ export class Timeline {
   }
 }
 
+/** A continuous invariant to hold for the whole run. Name the variable with `symbol` (resolved through
+ *  `symbolAddress`, so the test must have called `loadLabels` first) or give an `address`; bound it with
+ *  `max` / `min` / `equals`, or pass a raw Mesen `condition` for anything those don't cover.
+ *
+ *  It compiles to a conditional WRITE watchpoint, so it is checked on every write the ROM makes rather
+ *  than at the moments a test happens to sample, which is the difference between catching a transient
+ *  and hoping a `Timeline.at()` lands on it. */
+export interface TimelineInvariant {
+  system: number;
+  symbol?: string;
+  address?: number;
+  end?: number;
+  max?: number;
+  min?: number;
+  equals?: number;
+  condition?: string;
+  /** Shown in the failure message instead of the symbol/address, when a raw condition needs a name. */
+  label?: string;
+}
+
+/** The Mesen expression that means "this invariant was VIOLATED": the watchpoint fires on the bad
+ *  case, so a hit is a failure. `value` is the byte being written. */
+function invariantCondition(inv: TimelineInvariant): string {
+  if (inv.condition) return inv.condition;
+  const parts: string[] = [];
+  if (inv.max != null) parts.push(`value > ${inv.max}`);
+  if (inv.min != null) parts.push(`value < ${inv.min}`);
+  if (inv.equals != null) parts.push(`value != ${inv.equals}`);
+  // No bound at all means "any write here is a violation", which is a legitimate thing to assert
+  // (a variable that must never be touched after init), so an empty condition is not an error.
+  return parts.join(" || ");
+}
+
+function invariantName(inv: TimelineInvariant): string {
+  return inv.label ?? inv.symbol ?? (inv.address != null ? `$${inv.address.toString(16)}` : "<invariant>");
+}
+
 /** Play `timeline` against a booted session: render up to each event's ms, fire it, render on, then
  *  render the tail out to `durationMs`. Returns the concatenated interleaved-stereo PCM (feed to
  *  encodeWav). The engine is persistent, so an event fired between renders lands in the next chunk.
  *
  *  `warmupMs` renders (and DISCARDS) that many ms first, to boot the core before the timeline — many
  *  ROMs ignore input until initialized (n8-midi needs ~1s), so a note at t=0 would otherwise be lost.
- *  The returned PCM starts at the timeline's t=0, not the warm-up. */
+ *  The returned PCM starts at the timeline's t=0, not the warm-up.
+ *
+ *  `invariants` install conditional watchpoints that hold for the whole run (warm-up included) and
+ *  THROW if any fires. They own the system's breakpoint set (setBreakpoints replaces it wholesale),
+ *  so a test cannot combine these with its own breakpoints on the same system. */
 export function renderTimeline(
   session: Session,
   timeline: Timeline,
-  opts: { durationMs: number; warmupMs?: number },
+  opts: { durationMs: number; warmupMs?: number; invariants?: TimelineInvariant[] },
 ): Float32Array {
   const audio = session.audio;
+
+  // Armed BEFORE the warm-up: a ROM's init is exactly where a "written once and never again"
+  // invariant is most likely to be violated.
+  const invariants = opts.invariants ?? [];
+  const bySystem = new Map<number, TimelineInvariant[]>();
+  for (const inv of invariants) {
+    const addr =
+      inv.address ??
+      (inv.symbol != null
+        ? session.backend.symbolAddress(inv.system, inv.symbol) ??
+          session.backend.symbolAddress(inv.system, "_" + inv.symbol)
+        : null);
+    if (addr == null)
+      throw new Error(
+        `renderTimeline: invariant "${invariantName(inv)}" has no address: pass one, or loadLabels before the run`,
+      );
+    const list = bySystem.get(inv.system) ?? [];
+    list.push({ ...inv, address: addr });
+    bySystem.set(inv.system, list);
+  }
+  for (const [system, list] of bySystem) {
+    const ok = session.backend.setBreakpoints(
+      system,
+      list.map((inv) => ({
+        type: "write" as const,
+        start: inv.address!,
+        end: inv.end ?? inv.address!,
+        condition: invariantCondition(inv),
+      })),
+    );
+    if (!ok) throw new Error(`renderTimeline: could not install invariants on system ${system}`);
+    session.backend.drainBreakHits(system); // discard anything a prior run left
+  }
+
   if (opts.warmupMs && opts.warmupMs > 0) audio.renderAudio(opts.warmupMs); // boot, discarded
   const chunks: Float32Array[] = [];
   let cur = 0;
@@ -149,6 +224,24 @@ export function renderTimeline(
     }
   }
   advance(opts.durationMs); // tail
+
+  // A violation is reported with WHERE it happened, because "live_ofs went over 15" without a frame
+  // and scanline is the same needle-in-a-haystack the invariant exists to remove.
+  for (const [system, list] of bySystem) {
+    const batch = session.backend.drainBreakHits(system);
+    session.backend.setBreakpoints(system, []); // disarm: leave the core as we found it
+    if (batch.hits.length === 0 && batch.overflow === 0) continue;
+    const hit = batch.hits[0];
+    const inv = list.find((i) => i.address === hit?.address) ?? list[0];
+    const where = hit
+      ? `scanline ${hit.scanline} cycle ${hit.cycle}, pc $${hit.pc.toString(16)}, value ${hit.value}`
+      : "position unavailable";
+    const more =
+      batch.hits.length - 1 + batch.overflow > 0
+        ? ` (+${batch.hits.length - 1 + batch.overflow} more)`
+        : "";
+    throw new Error(`renderTimeline: invariant "${invariantName(inv)}" violated at ${where}${more}`);
+  }
 
   let n = 0;
   for (const c of chunks) n += c.length;

@@ -85,7 +85,7 @@ void registerHarnessRpc(Server& s, EngineRpcService& e) {
     s.template addMethod<&EngineRpcService::dspTraceNames>(e);
 }
 
-// --- debug: live-core inspection / stepping / breakpoints / profiler (25; CLI only, spec/09) ---
+// --- debug: live-core inspection / stepping / breakpoints / profiler (27; CLI only, spec/09) ---
 template <class Server>
 void registerDebugRpc(Server& s, DebugRpcService& d) {
     s.template addMethod<&DebugRpcService::getApuState>(d);
@@ -98,12 +98,14 @@ void registerDebugRpc(Server& s, DebugRpcService& d) {
     s.template addMethod<&DebugRpcService::stepInstruction>(d);
     s.template addMethod<&DebugRpcService::drainEvents>(d);
     s.template addMethod<&DebugRpcService::drainCoreBytes>(d);
+    s.template addMethod<&DebugRpcService::getCoreTransportStats>(d);
     s.template addMethod<&DebugRpcService::loadLabels>(d);
     s.template addMethod<&DebugRpcService::symbolAddress>(d);
     s.template addMethod<&DebugRpcService::setCpuRegister>(d);
     s.template addMethod<&DebugRpcService::runUntilPc>(d);
     s.template addMethod<&DebugRpcService::setBreakpoints>(d);
     s.template addMethod<&DebugRpcService::runUntilBreak>(d);
+    s.template addMethod<&DebugRpcService::drainBreakHits>(d);
     s.template addMethod<&DebugRpcService::setTrace>(d);
     s.template addMethod<&DebugRpcService::readTrace>(d);
     s.template addMethod<&DebugRpcService::stepInto>(d);
@@ -126,7 +128,7 @@ void registerDriverRpc(Server& s, AudioDriverRpcService& d) {
     s.template addMethod<&AudioDriverRpcService::drainReleased>(d);
 }
 
-// The full union (72 methods) + discovery — every facet mounted. Hosts that expose the whole surface
+// The full union (74 methods) + discovery - every facet mounted. Hosts that expose the whole surface
 // (the CLI + test host) use this; scoped hosts call the individual register functions they're allowed to.
 template <class Server>
 void registerAllBackendRpc(Server& s, HostRpcService& host, EngineRpcService& engine,

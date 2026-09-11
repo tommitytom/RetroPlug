@@ -114,7 +114,10 @@ sanitizers) and add a regression test. If the feature adds a consumer-facing cap
 - `deps/sameboy`'s dirty tree is expected (patched at configure); `deps/mesen` is vendored — edit directly
   and revert instrumentation.
 - The CLI SDK surface (`cli/sdk-types.d.ts`) is hand-maintained and can lag `realBackend` — add missing
-  methods when a consumer needs them.
+  methods when a consumer needs them. `cli/sdkSurfaceCheck.ts` compiles a sample consumer against that
+  declaration file (through the same `retroplug-cli` `paths` entry a consumer uses), so drift is a
+  `pnpm typecheck` failure rather than something a consumer has to report — **add a line there for
+  anything you add to the surface**, or it stays unchecked.
 - No opaque binary in `.rplg`; link assets by path.
 - A consumer runs a synced binary that lags this repo — rebuild + sync when the feature touches native/SDK.
 - Don't commit derived artifacts (embedded `*bundle_data.c`); don't push or open PRs without an explicit ask.

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,27 @@ public:
     // Point the emulated SD card at a host directory ("/" on the card). Set at activate from the
     // "mesen" role's `sdRoot`; empty means a per-process scratch dir (see NesEverdriveFifo).
     void setSdRoot(const std::string& root) { fifo_.setSdRoot(root); }
+
+    // Where a CMD_F_FRD_MEM DMA lands. MesenNesSystem installs one at activate mapping the N8's PI
+    // bus onto the core's cartridge memory; without it every DMA reports an Edio error.
+    void setCartWriter(std::function<bool(std::uint32_t, const std::uint8_t*, std::size_t)> fn) {
+        fifo_.setCartWriter(std::move(fn));
+    }
+
+    // Drop the DMA handshake (staged transfer, pending bits, wait deadline). Paired with flushAll
+    // wherever the ROM restarts - see NesEverdriveFifo::clearDmaHandshake for why it is separate.
+    void clearDmaHandshake() { fifo_.clearDmaHandshake(); }
+
+    // How faithfully the host->NES queue behaves like the cartridge's fifo_a: `depth` 0 = unbounded,
+    // `bytesPerSecond` 0 = instant. Both zero is the permissive default. Set at activate from the
+    // "mesen" role's `fifo` profile.
+    void setFifoProfile(std::uint32_t depth, std::uint32_t bytesPerSecond) {
+        fifo_.setFifoProfile(depth, bytesPerSecond);
+    }
+
+    // Queue depths + the cumulative dropped-byte count, for a test that needs to see the transport
+    // rather than infer it. See NesEverdriveFifo::FifoStats.
+    rp::NesEverdriveFifo::FifoStats fifoStats() { return fifo_.stats(); }
 
     // Take the bytes the ROM has sent host-ward via CMD_USB_WR since the last drain (oldest first).
     // The emulated NES→host back-channel; empty when the ROM has sent nothing.

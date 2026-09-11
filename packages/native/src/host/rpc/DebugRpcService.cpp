@@ -84,6 +84,12 @@ rfl::Bytestring DebugRpcService::drainCoreBytes(std::uint32_t id) {
     return out;
 }
 
+CoreTransportStats DebugRpcService::getCoreTransportStats(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    return sys->coreTransportStats();  // all-zero on cores with no host<->cart transport
+}
+
 bool DebugRpcService::loadLabels(std::uint32_t id, std::string path) {
     SystemBase* sys = engine_.findSystem(id);
     if (!sys) return false;
@@ -130,6 +136,16 @@ rp::BreakInfo DebugRpcService::runUntilBreak(std::uint32_t id, std::uint64_t max
     rp::IDebugTarget* dbg = sys->debugTarget();
     if (!dbg) return {};
     return dbg->runUntilBreak(maxCycles);  // broke=false on the cycle cap
+}
+
+rp::BreakHitBatch DebugRpcService::drainBreakHits(std::uint32_t id) {
+    SystemBase* sys = engine_.findSystem(id);
+    if (!sys) return {};
+    rp::IDebugTarget* dbg = sys->debugTarget();
+    if (!dbg) return {};
+    rp::BreakHitBatch batch;
+    batch.hits = dbg->drainBreakHits(batch.overflow);
+    return batch;
 }
 
 // Execution trace + single-step — all route through the Mesen NES debug target (null on SameBoy/GBA →

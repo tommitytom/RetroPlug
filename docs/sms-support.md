@@ -1227,10 +1227,16 @@ never contained the working song.
 
 Two additions close it, both in the shared layer rather than special-cased per console:
 
-- **`SongCatalog.workingSongDirty(sav, ram?)`** takes the live work RAM. smsggdj answers by asking
-  whether the live block matches any saved song (`isSongSaved`, checksum-narrowed so at most one slot
-  is decoded). Without `ram` it answers *clean*: "cannot tell" has to look like "nothing to lose", or
-  the menu prompts forever.
+- **`SongCatalog.workingSongDirty(sav, ram?)`** takes the live work RAM. smsggdj answers from two
+  signals that must BOTH agree: the cart's own `song_edited` ("1 = song data changed since last
+  save/load", editor.asm:141 - the byte its PROJECT screen prints UNSAVED from, set at the input
+  dispatch of every song-data screen and cleared by a load, a save and `song_new`), and the live block
+  matching no saved song (`isSongSaved`, checksum-narrowed so at most one slot is decoded). The flag is
+  what content alone cannot supply - a cart boots into `song_new`'s blank song, which is in no slot, so
+  comparing content read EVERY fresh boot as an hour of unsaved work and a Recent-list load offered to
+  discard a song nobody had written. The content compare narrows the flag, which is set on the keypress
+  rather than on a mutation. Without `ram`, or before the cart has booted (below), it answers *clean*:
+  "cannot tell" has to look like "nothing to lose", or the menu prompts forever.
 - **`SongCatalog.workingSongOutsideBattery`** declares the console-level fact. `savEditWouldDiscard`
   (`src/tracker/liveSav.ts`) is `flag && dirty`, and is false for LSDj and risa by construction, so
   this adds no friction where the reboot is free.
@@ -1240,9 +1246,54 @@ Add gain one *only* when work would be lost (reordering is otherwise cheap and r
 on every nudge is how prompts get dismissed unread), and the import picker shows an inline line rather
 than stacking a dialog on a dialog.
 
-One residual, and it is why this still wants the ROM change: with no boot-time autoload the cart has no
-way to know a freshly booted blank song is blank, so it reads as dirty. Once the cart autoloads
-`cur_slot`, a fresh boot matches the slot it came from and stays silent.
+(The residual this section once carried - "a freshly booted blank song reads as dirty until the cart
+autoloads `cur_slot`" - is closed by `song_edited`: `song_new` clears it, so a fresh boot is clean on
+every build.)
+
+#### The cart has to boot first: `ints_on`, and why every read and write waits on it
+
+Work RAM is readable from the moment the core is constructed (the snapshot registry seeds it at claim,
+and SMS RAM powers on zeroed), but for the cart's first ~2.3 s it is the boot sequence's, not the
+cart's: `init` zero-fills `$C000-$DFEE`, the splash runs, `song_new` seeds the blank song (and
+`rle_name_default` writes eight spaces into `song_name`), v0.46+ `boot_autoload` reloads the last slot,
+`editor_init` and `init_paint` follow. Three bugs in the Recent list were this one fact:
+
+- a song picked from a Recent row did not load - the live write was made at frame 0 of the project
+  load, landed, and was erased by `song_new` moments later while the caller reported success (it had
+  only ever worked because the discard prompt in front of it cost the user those seconds);
+- a songless `smsggdj.sav [smsggdj]` row appeared beside the song's row - the project row was recorded
+  at load with whatever the cart could name, which was nothing, and the song watcher added the real
+  row seconds later;
+- rows of box glyphs - the name reader accepted any non-zero bytes and the watcher recorded what it
+  read every half second, boot included.
+
+The cart says when it is up. `ints_on` (main.asm) is written exactly once, `ld a,1 / ld (ints_on),a /
+ei` right before the main loop and after everything above; `vdp_set_addr` reads it. It is in the symbol
+table with `frame` (the main-loop counter), regenerated from a v0.45 link that is **byte-identical** to
+the vendored ROM, and both were also read straight out of the v0.46 binaries from the code that writes
+them - `$DF13` / `$DF02` everywhere, so the 0.46 alias holds.
+
+`SongCatalog.workingSongReady(ram)` is that latch (absent = always ready: LSDj and risa keep the working
+song in the battery). Before it reads 1, smsggdj's `workingName` and `workingSongDirty` answer "no
+song", `loadSongLive` refuses, and a name is only ever printable ASCII (anything else in the field is a
+snapshot mid-write, and the whole field is refused). No RAM at all is "not ready" - the safe polarity
+for a gate in front of a write.
+
+Both places a song load starts - a Recent row (by name) and the Songs menu (by index) - are now ONE
+request: `ProjectStore.requestSong` parks it, `settleSong` applies it on the first tick the cart can
+take it (the UI settles once per frame while one is parked; LSDj, risa and a running smsggdj resolve
+inline, so the menu keeps its immediacy), guards it THEN - when the working song is real - and records
+the song's Recent row itself. A request that arrived confirmed (the menu guarded its own row) skips the
+prompt; one that waits past ~15 s of ticks is dropped with a warning rather than applied to some later
+session of the same tile. The project's own row is owed while the cart boots and paid by the song
+watcher (`syncRecent`) once it is up: once, songless only when the cart is genuinely blank; in the list
+a song row supersedes a project's songless row and a songless add changes nothing once song rows exist.
+
+Proven on the shipped ROMs by `test-native/sms-boot-timeline.test.ts` (the latch frame by frame, both
+machines; a write before it erased, after it held 5 s; the name field clean at every post-boot snapshot
+through the cart's own FILES save + load), `app-song-recents-sms.test.ts` (the stores over the real
+core), and `test-ui/recent-smsggdj.test.ts` (the reported flow in the real app). `render.ts` keeps its
+own proven wait-and-retry for the CLI; folding it onto the latch is a follow-up.
 
 **One corrupt song may never cost the user the rest of the cart.** `detachAll` returns null rather than
 a prefix when any listed entry fails to decode, so every mutating op refuses. The alternative looks

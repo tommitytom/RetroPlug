@@ -18,10 +18,16 @@ const RECENT_MIGRATIONS: MigrationMap = {};
 
 // One recent entry: a non-empty path + a display name (defaulting to "") + an optional working-song label
 // (additive since the 1→2 schema, so old files without it still load — no migration step needed).
+//
+// A song name is printable ASCII - every tracker this app knows writes names that way - so a row whose
+// song is anything else is not a song row but the residue of one recorded from a cart that had not
+// finished booting (rows of box glyphs, in Recent, from bytes that were never a name). Such a row is
+// SKIPPED like any other malformed entry, which is also what cleans an already-corrupted recent.json:
+// the next change to the list is written without it.
 const recentEntrySchema = z.object({
   path: z.string().min(1),
   name: z.string().catch("").default(""),
-  song: z.string().optional(),
+  song: z.string().regex(/^[\x20-\x7e]*$/).optional(),
 });
 
 /** Parse recent.json text into entries, capped to `max`. Never throws: malformed

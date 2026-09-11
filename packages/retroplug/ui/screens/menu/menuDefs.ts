@@ -69,7 +69,6 @@ import {
 import {
   resolveTracker,
   mutateLiveSav,
-  loadSongLive,
   effectiveAssets,
   readAssetOverrides,
   lsdjSongCatalog,
@@ -1493,19 +1492,16 @@ function songMenu(spec: SongMenuSpec, ctx: MenuContext, sys: SystemView): MenuIt
 
   const rows: MenuItem[] = songs.map((s, i) => {
     const name = s.name || `Song ${s.index}`;
-    // Load, then record this song in recents right away - by NAME, since we know which one we just loaded
-    // and needn't wait for the rebuilt core to publish a battery snapshot. The song watcher would catch it
-    // on its next tick anyway (that's what covers a load made from INSIDE the cart), but a menu load is a
-    // deliberate act: its row should be at the top of Recent before the user gets back there.
-    //
-    // A cart that can be loaded LIVE is: the song goes straight into work RAM, so the `.sav` is never
-    // rewritten and the core is never rebooted. That is both faster and strictly safer than the cold-boot
-    // path, which on this one console is what destroys the working song in the first place.
+    // A REQUEST to the store, settled right here when the cart can take it - which for LSDj, risa and a
+    // running smsggdj is now, so the menu keeps its immediacy - and by the frame tick otherwise: an
+    // smsggdj that is still booting would have its song erased by that boot a moment after the write,
+    // and used to be cold-booted blank instead. The store picks the live path (straight into work RAM, no
+    // `.sav` rewrite, no reboot) or the cold-boot spine per console, and records the song's Recent row
+    // itself, by NAME, so the row is at the top before the user gets back there. `confirmed`: this row was
+    // already guarded (loadGuard below) or had nothing to guard, so the store must not ask again.
     const doLoad = (): void => {
-      if (!loadSongLive(ctx.stores.backend, ctx.stores.project.systems, sys, s.index)) {
-        mutateSavBytes(ctx, sys, (sav) => cat.load(sav, s.index)); // no liveLoad (LSDj / risa), or it declined
-      }
-      ctx.stores.project.recordSong(s.name);
+      ctx.stores.project.requestSong({ index: s.index, confirmed: true });
+      ctx.stores.project.settleSong();
     };
     const items: MenuItem[] = [
       // Clean working song: load outright - a confirm that fires when nothing would be lost is worse than

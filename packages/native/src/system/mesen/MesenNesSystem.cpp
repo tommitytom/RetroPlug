@@ -171,6 +171,39 @@ void MesenNesSystem::onActivate(double sampleRate) {
         // core runs a single instruction, so a boot-time sd_init sees it.
         n8Role_->setSdRoot(config_.sdRoot);
 
+        // How faithfully the host->NES queue behaves like the cartridge's. The profile carries the
+        // measured constants; an explicit override of 0 means "take it from the profile", so a test
+        // can sweep the rate without also having to restate the depth.
+        {
+            const bool hw = config_.fifo == 1;
+            const std::uint32_t depth = config_.fifoDepth != 0
+                ? config_.fifoDepth
+                : (hw ? rp::FIFO_HW_DEPTH : 0u);
+            const std::uint32_t rate = config_.fifoBytesPerSecond != 0
+                ? config_.fifoBytesPerSecond
+                : (hw ? rp::FIFO_HW_BYTES_PER_SECOND : 0u);
+            n8Role_->setFifoProfile(depth, rate);
+        }
+
+        // Where a CMD_F_FRD_MEM DMA lands: the MCU reads the open file straight into cartridge memory
+        // over the PI bus, so an N8 address has to be resolved to a Mesen buffer. Only the CHR-RAM
+        // window is backed - the one nesvj verified byte-exact against a dump off a real cart. PRG
+        // ($000000), SRAM ($1000000) and CHR-ROM are legal PI targets on the device but have no
+        // verified counterpart here, so they are REFUSED: a silent drop would be indistinguishable
+        // from a working DMA to the ROM.
+        n8Role_->setCartWriter([emu = emu_.get()](std::uint32_t piAddr, const std::uint8_t* data,
+                                                  std::size_t len) -> bool {
+            ConsoleMemoryInfo info = emu->GetMemory(::MemoryType::NesChrRam);
+            if (!info.Memory || info.Size == 0) return false;  // a CHR-ROM cart has no window here
+            if (piAddr < rp::PI_ADDR_CHR_RAM) return false;
+            // Validated whole before a byte moves: a clipped write would corrupt the tail of a frame
+            // and still report success.
+            const std::uint64_t offset = piAddr - rp::PI_ADDR_CHR_RAM;
+            if (offset + len > static_cast<std::uint64_t>(info.Size)) return false;
+            std::memcpy(static_cast<std::uint8_t*>(info.Memory) + offset, data, len);
+            return true;
+        });
+
         // Borrow the NES sound mixer for the live "mesen" knobs (APU flush window + per-channel capture).
         // Held for the emulator's lifetime, nulled in onDeactivate before teardown.
         nesMixer_ = nesConsole->GetSoundMixer();
@@ -245,8 +278,13 @@ void MesenNesSystem::onSampleRateChanged(double sampleRate) {
 void MesenNesSystem::onReset() {
     if (emu_) emu_->Reset();
     // Drop bytes in flight so stale notes / sync clocks don't fire after the reset. BOTH queues: bytes
-    // already delivered into the FIFO would otherwise be read by the freshly reset ROM.
-    if (n8Role_) n8Role_->flushAll();
+    // already delivered into the FIFO would otherwise be read by the freshly reset ROM. The DMA
+    // handshake goes with them: a staged transfer that outlived the reset would swallow the rebooted
+    // ROM's next $40F0 write as its exec trigger.
+    if (n8Role_) {
+        n8Role_->flushAll();
+        n8Role_->clearDmaHandshake();
+    }
 }
 
 void MesenNesSystem::setGainDb(float dB) {
@@ -340,6 +378,12 @@ std::vector<std::uint8_t> MesenNesSystem::drainCoreBytes() {
     return n8Role_->drainUsbTx();
 }
 
+CoreTransportStats MesenNesSystem::coreTransportStats() {
+    if (!n8Role_) return {};
+    const auto s = n8Role_->fifoStats();
+    return CoreTransportStats{ s.rxDepth, s.rxCapacity, s.droppedBytes, s.wirePending, s.txDepth };
+}
+
 namespace {
 NesController::Buttons toNesButton(std::uint8_t b) {
     switch (static_cast<NesButton>(b)) {
@@ -405,15 +449,25 @@ bool MesenNesSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     // its depth IS the output-block sample index (leftover from a prior block occupies indices [0, depth) —
     // an event there simply fires ASAP). Gate on the SAME metric the loop uses (capture streams in pins
     // mode, else the mix ring).
+    // Passive breakpoint capture (spec/09). Mesen's headless driver records a break and RETURNS
+    // rather than blocking, so an ordinary render can notice one, log it and carry on, which turns
+    // a conditional watchpoint into a continuous invariant instead of something only runUntilBreak
+    // can observe. Hoisted out of the loop: null unless a test has installed a breakpoint set, so
+    // the normal render path pays one predictable branch per instruction and nothing else.
+    MesenNesDebugSession* breakWatch =
+        (debugSession_ && debugSession_->breakCaptureArmed()) ? debugSession_.get() : nullptr;
+
     if (channelCapture_ && nesMixer_) {
         while (nesMixer_->AvailableCaptureFrames() < framesNeeded) {
             if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(nesMixer_->AvailableCaptureFrames()));
             cpu->Exec();
+            if (breakWatch) breakWatch->captureBreakHit();
         }
     } else {
         while (audioDevice_->availableFrames() < framesNeeded) {
             if (n8Role_) n8Role_->pumpUntil(static_cast<std::uint32_t>(audioDevice_->availableFrames()));
             cpu->Exec();
+            if (breakWatch) breakWatch->captureBreakHit();
         }
     }
     // Release anything due through the block end (offsets in [0, framesNeeded]); offsets past it carry to
@@ -667,7 +721,10 @@ bool MesenNesSystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
     ss.seekg(0);
     // The restored ROM is at an unrelated point in the byte stream, so anything queued or delivered for
     // the pre-load one is stale — a host-sync clock read after the jump would advance the wrong position.
-    if (n8Role_) n8Role_->flushAll();
+    if (n8Role_) {
+        n8Role_->flushAll();
+        n8Role_->clearDmaHandshake();
+    }
     return emu_->GetSaveStateManager()->LoadState(ss);
 }
 

@@ -19,6 +19,18 @@
 
 namespace rp { class IDebugTarget; }
 
+// What the core's host<->cartridge transport is holding, and what it has lost. Cross-core by name
+// rather than NES-specific: any core that grows a lossy transport reports the same five numbers.
+// `droppedBytes` is CUMULATIVE for the run - reading it does not clear it - so a timeline can sample
+// it repeatedly without racing itself. Field names match the TS keys (reflect-cpp serialises this).
+struct CoreTransportStats {
+    std::uint64_t rxDepth      = 0;  // delivered to the core, not yet read by it
+    std::uint64_t rxCapacity   = 0;  // 0 = unbounded (nothing can be dropped)
+    std::uint64_t droppedBytes = 0;  // lost because the queue was full
+    std::uint64_t wirePending  = 0;  // handed over by the host, not yet carried to the core
+    std::uint64_t txDepth      = 0;  // sent by the core, not yet drained by the host
+};
+
 // Polymorphic runtime representation of one emulator instance. Owned by the
 // DSP thread inside Project. Concrete subclasses: SameBoySystem, MesenNesSystem
 // (NES), MesenGbaSystem.
@@ -100,6 +112,12 @@ public:
     // cartridge uses to talk to the host (on hardware the MCU forwards it out of the USB port). Empty
     // for cores with no such transport. Control-thread read; the NES implementation is mutex-guarded.
     virtual std::vector<std::uint8_t> drainCoreBytes() { return {}; }
+
+    // Depths of the core's host<->cart transport, and what it has cost. On the NES these are the N8
+    // FIFO's two stages plus its cumulative dropped-byte count, which is the only way a test can see
+    // that the transport lost something rather than infer it from garbled output. All zero for a core
+    // with no such transport. Control-thread read; the NES implementation is mutex-guarded.
+    virtual CoreTransportStats coreTransportStats() { return {}; }
 
     // Audio-thread: enqueue a button transition.
     virtual void pressButton(std::uint8_t /*button*/, bool /*down*/) {}

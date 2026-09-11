@@ -154,6 +154,16 @@ export interface CpuRegister {
  *  identity for an event across polls. `type` is the DebugEventType ordinal (0=Register, 1=Nmi, 2=Irq,
  *  3=Breakpoint, 4=BgColorChange, 5=SpriteZeroHit, 6=DmcDmaRead, 7=DmaRead); `operationType` the
  *  MemoryOperationType ordinal (0=Read, 1=Write, ...); `value` is -1 for a read with no captured value. */
+/** Depths of the core's host<->cartridge transport plus what it has lost (`getCoreTransportStats`).
+ *  `rxCapacity` 0 means unbounded, in which case `droppedBytes` can only ever be 0. */
+export interface CoreTransportStats {
+  rxDepth: number;
+  rxCapacity: number;
+  droppedBytes: number;
+  wirePending: number;
+  txDepth: number;
+}
+
 export interface DebugEvent {
   type: number;
   operationType: number;
@@ -184,6 +194,42 @@ export interface BreakInfo {
   broke: boolean;
   pc: number;
   breakpointId: number;
+}
+
+/** One breakpoint firing recorded PASSIVELY during an ordinary render (`drainBreakHits`). `pc` and
+ *  `cpuCycle` are sampled just after the triggering instruction; `address`/`value` are the access that
+ *  tripped it (`value` -1 when it carried none); `scanline`/`cycle` say where in the frame. */
+export interface BreakHit {
+  breakpointId: number;
+  pc: number;
+  address: number;
+  value: number;
+  scanline: number;
+  cycle: number;
+  cpuCycle: number;
+  isWrite: boolean;
+}
+
+/** What one `drainBreakHits` returns. `overflow` > 0 means more firings than the capture cap. */
+export interface BreakHitBatch {
+  hits: BreakHit[];
+  overflow: number;
+}
+
+/** A continuous invariant for `renderTimeline({ invariants })`. Name the variable by `symbol` (resolved
+ *  through `symbolAddress`, so `loadLabels` must have run) or give an `address` directly, then bound it
+ *  with `max` / `min` / `equals`, or supply a raw Mesen `condition` for anything else. A violation fails
+ *  the run and reports the frame, scanline and value it fired at. */
+export interface TimelineInvariant {
+  system: number;
+  symbol?: string;
+  address?: number;
+  end?: number;
+  max?: number;
+  min?: number;
+  equals?: number;
+  condition?: string;
+  label?: string;
 }
 
 /** One row of the execution trace (`readTrace`, most-recent first). `pc` is the instruction address;
@@ -274,6 +320,14 @@ export interface Backend {
    *  what it consumed, so the host can pace to it instead of guessing. Empty when the ROM has sent
    *  nothing or the core has no such transport (Game Boy / GBA). */
   drainCoreBytes(id: number): Uint8Array;
+  /** What that transport is holding, and what it has LOST. On the NES the EverDrive FIFO's two stages
+   *  (`wirePending` = handed over by the host but not yet carried, `rxDepth` = delivered and waiting for
+   *  the ROM) plus `droppedBytes`, the cumulative count the queue had no room for.
+   *
+   *  The only way to SEE the transport lose a byte rather than infer it from garbled output. It can only
+   *  be non-zero when the queue is bounded, which is opt-in: `setRoleConfig(id, "mesen", { fifo:
+   *  "hardware" })` then `reset(id)`. `droppedBytes` never resets, so sample it and subtract. */
+  getCoreTransportStats(id: number): CoreTransportStats;
   /** Load a cc65 `.dbg` symbol file so profiling / breakpoints / disassembly / call stack show names. */
   loadLabels(id: number, path: string): boolean;
   /** The CPU address of a symbol from the loaded `.dbg`, by name: a C name (`g_frame`, and a file-scope
@@ -288,6 +342,13 @@ export interface Backend {
   setBreakpoints(id: number, breakpoints: Breakpoint[]): boolean;
   /** Step the CPU until a breakpoint fires or `maxCycles` elapses. */
   runUntilBreak(id: number, maxCycles: number): BreakInfo;
+  /** The breakpoint firings recorded during ORDINARY rendering since the last call, oldest first: the
+   *  passive twin of `runUntilBreak`. Install a conditional watchpoint, render the timeline as usual,
+   *  then ask what tripped, which is what makes a Mesen condition a CONTINUOUS invariant instead of
+   *  something only a single-stepping run can see. `renderTimeline({ invariants })` wraps this.
+   *
+   *  `overflow` counts firings past the capture cap; non-zero still means the invariant was violated. */
+  drainBreakHits(id: number): BreakHitBatch;
   /** Run until PC reaches `target` (or `maxCycles`) — a one-shot execute breakpoint. */
   runUntilPc(id: number, target: number, maxCycles: number): boolean;
   /** Source-level stepping. */
@@ -431,11 +492,15 @@ export declare class Timeline {
 }
 
 /** Play `timeline` against a booted session and return the concatenated interleaved-stereo PCM.
- *  `warmupMs` renders + DISCARDS that many ms first to boot the core (n8-midi needs ~1s). */
+ *  `warmupMs` renders + DISCARDS that many ms first to boot the core (n8-midi needs ~1s).
+ *
+ *  `invariants` install conditional watchpoints that hold for the WHOLE run, warm-up included, and
+ *  THROW naming the frame position of the first violation. They own the system's breakpoint set
+ *  (`setBreakpoints` replaces it wholesale), and are disarmed again when the run ends. */
 export declare function renderTimeline(
   session: Session,
   timeline: Timeline,
-  opts: { durationMs: number; warmupMs?: number },
+  opts: { durationMs: number; warmupMs?: number; invariants?: TimelineInvariant[] },
 ): Float32Array;
 
 /** Named button values (Right=0..Start=7) + the GBA-only L/R wire bytes. Pass to Timeline.press/tap. */

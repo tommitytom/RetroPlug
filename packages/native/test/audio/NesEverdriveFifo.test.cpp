@@ -13,13 +13,21 @@
 // $40F0/$40F1 register interface, replaying the boot exchange and asserting the
 // FIFO is fully drained afterwards. Run via `pnpm test:plugin` (retroplug-audio-test).
 //
-// It also covers the rest of the Edio surface a cartridge actually drives — the SD-card file API
-// and the NES→host back-channel (CMD_USB_WR) — against the reference the device's own NES SDK
-// gives (edn8-pro-pub edio/everdrive.c). Those are the cases below the boot-exchange pair.
+// It also covers the rest of the Edio surface a cartridge actually drives: the SD-card file API,
+// the NES→host back-channel (CMD_USB_WR), and the CMD_F_FRD_MEM DMA with its $40FF handshake, all
+// against the reference the device's own NES SDK gives (edn8-pro-pub edio/everdrive.c). Those are
+// the cases below the boot-exchange pair.
+//
+// The DMA cases matter more than most: on hardware that command hands the cartridge's memory
+// controller to the MCU, so before this emulation existed the only way to check it was to power-cycle
+// a console and diff a CHR dump. The wait loop they drive is transcribed from the ROM that measured
+// it on real hardware (nesvj src/core/dma.s), so what passes here is what that console executes.
 
 #include <cstdint>
+#include <cmath>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <initializer_list>
 #include <string>
 #include <vector>
@@ -98,6 +106,7 @@ struct ScratchCard {
 };
 
 constexpr std::uint8_t CMD_STATUS  = 0x10;
+constexpr std::uint8_t CMD_F_FRD_MEM = 0xCB;
 constexpr std::uint8_t CMD_USB_WR  = 0x22;
 constexpr std::uint8_t CMD_FIFO_WR = 0x23;
 constexpr std::uint8_t CMD_UART_WR = 0x24;
@@ -118,6 +127,97 @@ std::vector<std::uint8_t> pattern(std::size_t n) {
     std::vector<std::uint8_t> v(n);
     for (std::size_t i = 0; i < n; ++i) v[i] = patternByte(i);
     return v;
+}
+
+// Open `path` on the card for reading and confirm it took, so any later failure is about the
+// command under test rather than about the file.
+void openForRead(rp::NesEverdriveFifo& fifo, const char* path) {
+    writeCmd(fifo, CMD_F_FOPN);
+    writeByte(fifo, FA_READ);
+    writeString(fifo, path);
+    writeCmd(fifo, CMD_STATUS);
+    REQUIRE(readBytes(fifo, 2) == std::vector<std::uint8_t>{0x00, 0xA5});
+}
+
+// The ROM's `ed_check_status`: query the stored result of the last command.
+std::uint8_t queryStatus(rp::NesEverdriveFifo& fifo) {
+    writeCmd(fifo, CMD_STATUS);
+    const auto reply = readBytes(fifo, 2);
+    REQUIRE(reply.size() == 2);
+    REQUIRE(reply[1] == 0xA5);
+    return reply[0];
+}
+
+// --- CMD_F_FRD_MEM: the DMA into cartridge memory --------------------------------------------
+
+constexpr std::uint16_t REG_MSTAT      = 0x40FF;
+constexpr std::uint8_t  MSTAT_MCU_PEND = 0x02;
+constexpr std::uint8_t  MSTAT_FPG_PEND = 0x04;
+constexpr std::uint8_t  MSTAT_STROBE   = 0x08;
+
+// The destination window MesenNesSystem backs with Mesen's CHR-RAM.
+constexpr std::uint32_t PI_CHR_RAM = 0x00C00000;
+
+// PAL, which is what the console that measured the DMA runs, and the cost of one pass of its wait
+// loop: 4+3+4+2+3+2 +2+3+3+3 +5+3, counted off nesvj src/core/dma.s.
+constexpr std::uint32_t PAL_CLOCK_HZ   = 1662607;
+constexpr std::uint64_t CYCLES_PER_SPIN = 37;
+
+// Stands in for the cartridge memory a DMA lands in. The writer has the same contract as the real
+// one in MesenNesSystem: validate the WHOLE range first, so a refusal leaves memory untouched.
+struct FakeCart {
+    std::vector<std::uint8_t> mem = std::vector<std::uint8_t>(32 * 1024, 0x00);
+
+    std::function<bool(std::uint32_t, const std::uint8_t*, std::size_t)> writer() {
+        return [this](std::uint32_t piAddr, const std::uint8_t* data, std::size_t len) {
+            if (piAddr < PI_CHR_RAM) return false;
+            const std::uint64_t off = piAddr - PI_CHR_RAM;
+            if (off + len > mem.size()) return false;
+            std::memcpy(mem.data() + off, data, len);
+            return true;
+        };
+    }
+
+    bool untouched() const {
+        for (std::uint8_t b : mem) if (b != 0x00) return false;
+        return true;
+    }
+
+    std::vector<std::uint8_t> at(std::size_t off, std::size_t len) const {
+        return std::vector<std::uint8_t>(mem.begin() + off, mem.begin() + off + len);
+    }
+};
+
+// The bytes the ROM sends, in the order it sends them: the framed command, the two u32 parameters,
+// the ARM write to $40FF, and only then the exec write to $40F0.
+void writeDmaRequest(rp::NesEverdriveFifo& fifo, std::uint32_t addr, std::uint32_t len) {
+    writeCmd(fifo, CMD_F_FRD_MEM);
+    writeU32(fifo, addr);
+    writeU32(fifo, len);
+    fifo.WriteRam(REG_MSTAT, MSTAT_MCU_PEND);
+    fifo.WriteRam(0x40F0, 0x00);
+}
+
+// One pass of the ROM's wait loop, transcribed instruction for instruction from dma.s. All three
+// tests it applies, in its order: the two reads differ in nothing but the strobe, the armed bits
+// read clear, and the high nibble reads $A.
+bool mstatSettled(rp::NesEverdriveFifo& fifo, std::uint8_t want) {
+    const std::uint8_t v1 = fifo.ReadRam(REG_MSTAT);                    // lda REG_MSTAT / sta dma_prev
+    const std::uint8_t v2 = fifo.ReadRam(REG_MSTAT);                    // lda REG_MSTAT
+    std::uint8_t a = static_cast<std::uint8_t>(v2 ^ MSTAT_STROBE);      // eor #STAT_STROBE
+    if (a != v1) return false;                                          // cmp dma_prev / bne again
+    a = static_cast<std::uint8_t>(a ^ (MSTAT_MCU_PEND | MSTAT_FPG_PEND));
+    if (static_cast<std::uint8_t>(a & want) != want) return false;      // and dma_want / cmp / bne
+    return (v1 & 0xF0) == 0xA0;                                         // and #$F0 / cmp #$A0
+}
+
+// The whole loop, bounded the way the ROM bounds it (4096 spins). Returns how many passes failed
+// before it settled, or -1 if it gave up, which is what a wedged handshake looks like on a console.
+int spinForDma(rp::NesEverdriveFifo& fifo, std::uint8_t want = MSTAT_MCU_PEND) {
+    for (int spins = 0; spins < 4096; ++spins) {
+        if (mstatSettled(fifo, want)) return spins;
+    }
+    return -1;
 }
 
 } // namespace
@@ -396,4 +496,508 @@ TEST_CASE("a file written over the FIFO reads back through it byte-for-byte", "[
     REQUIRE(reply.size() == payload.size() + 1);
     CHECK(reply[0] == 0x00);
     CHECK(std::vector<std::uint8_t>(reply.begin() + 1, reply.end()) == payload);
+}
+
+// --- CMD_F_FRD_MEM ----------------------------------------------------------------------------
+//
+// The MCU reads the open file straight into cartridge memory over the PI bus, with the 6502 doing
+// nothing but waiting on $40FF. Verified on a real N8 Pro from a running game (nesvj 1ca7107):
+// 8192 bytes into CHR-RAM bank 0, byte-exact against a dump off the cart.
+
+TEST_CASE("CMD_F_FRD_MEM writes the file straight into cartridge memory", "[audio][nes][fifo][dma]") {
+    ScratchCard card;
+    const std::vector<std::uint8_t> file = pattern(4096);
+    card.put("clip.bin", file);
+
+    FakeCart cart;
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    fifo.setCartWriter(cart.writer());
+
+    openForRead(fifo, "/clip.bin");
+
+    SECTION("at the base of the window") {
+        writeDmaRequest(fifo, PI_CHR_RAM, 4096);
+        // No clock source, so the transfer is instant and the loop settles on its first pass.
+        CHECK(spinForDma(fifo) == 0);
+        // Unlike CMD_F_FRD this command replies with no bytes at all: the payload went to memory.
+        CHECK(fifo.ReadRam(0x40F1) == 0x80);
+        CHECK(queryStatus(fifo) == 0);
+        CHECK(cart.at(0, 4096) == file);
+    }
+
+    SECTION("at an offset inside it") {
+        writeDmaRequest(fifo, PI_CHR_RAM + 0x2000, 4096);
+        CHECK(spinForDma(fifo) == 0);
+        CHECK(queryStatus(fifo) == 0);
+        CHECK(cart.at(0x2000, 4096) == file);
+        // The address is ABSOLUTE: nothing outside the requested range moved.
+        CHECK(cart.at(0, 0x2000) == std::vector<std::uint8_t>(0x2000, 0x00));
+    }
+}
+
+TEST_CASE("CMD_F_FRD_MEM advances the file pointer, so F_FRD carries on from it", "[audio][nes][fifo][dma]") {
+    // The property nesvj's frame loop depends on: a small per-frame header over the FIFO and the
+    // 4 KB image by DMA, interleaved against ONE pointer, with both advancing it.
+    ScratchCard card;
+    const std::vector<std::uint8_t> file = pattern(8192);
+    card.put("clip.bin", file);
+
+    FakeCart cart;
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    fifo.setCartWriter(cart.writer());
+
+    openForRead(fifo, "/clip.bin");
+    writeDmaRequest(fifo, PI_CHR_RAM, 4096);
+    REQUIRE(spinForDma(fifo) == 0);
+    REQUIRE(queryStatus(fifo) == 0);
+
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, 64);
+    const auto reply = readBytes(fifo, 64 + 8);
+    REQUIRE(reply.size() == 65);
+    CHECK(reply[0] == 0x00);
+    CHECK(std::vector<std::uint8_t>(reply.begin() + 1, reply.end()) ==
+          std::vector<std::uint8_t>(file.begin() + 4096, file.begin() + 4160));
+
+    // And back the other way: a DMA after an F_FRD starts where the F_FRD stopped.
+    writeDmaRequest(fifo, PI_CHR_RAM + 0x1000, 128);
+    CHECK(spinForDma(fifo) == 0);
+    CHECK(queryStatus(fifo) == 0);
+    CHECK(cart.at(0x1000, 128) == std::vector<std::uint8_t>(file.begin() + 4160, file.begin() + 4288));
+}
+
+TEST_CASE("$40FF answers the shape the SDK's wait loop tests", "[audio][nes][fifo][dma]") {
+    rp::NesEverdriveFifo fifo;   // idle: nothing armed, nothing staged
+
+    const std::uint8_t a = fifo.ReadRam(REG_MSTAT);
+    const std::uint8_t b = fifo.ReadRam(REG_MSTAT);
+    // The loop's first test. It reads the register TWICE per pass, so the strobe has to flip per
+    // read; per pass or per frame would fail it every time.
+    CHECK(static_cast<std::uint8_t>(a ^ b) == MSTAT_STROBE);
+    CHECK((a & 0xF0) == 0xA0);   // the loop's third test: the reply is well-formed
+    CHECK((a & 0x06) == 0);      // idle reads as idle, so a ROM polling with no DMA out doesn't hang
+
+    SECTION("the peek path is side-effect-free") {
+        // A memory viewer refreshing $40FF must not move the strobe: it would change what the ROM's
+        // next read sees, and could satisfy the wait loop on the ROM's behalf.
+        const std::uint8_t peek = fifo.PeekRam(REG_MSTAT);
+        CHECK(fifo.PeekRam(REG_MSTAT) == peek);
+        CHECK(fifo.PeekRam(REG_MSTAT) == peek);
+        CHECK(fifo.ReadRam(REG_MSTAT) == peek);
+    }
+
+    SECTION("a write arms the pending bits, and only those bits") {
+        fifo.WriteRam(REG_MSTAT, 0xFF);
+        CHECK((fifo.ReadRam(REG_MSTAT) & ~MSTAT_STROBE) == (0xA0 | MSTAT_MCU_PEND | MSTAT_FPG_PEND));
+        fifo.WriteRam(REG_MSTAT, 0x00);
+        CHECK((fifo.ReadRam(REG_MSTAT) & ~MSTAT_STROBE) == 0xA0);
+    }
+
+    SECTION("arming with nothing behind it never settles") {
+        // As on a device where nothing was triggered. This is the reason the EXEC write completes a
+        // transfer and the parameters do not: only an executed DMA can retire the pending bit.
+        fifo.WriteRam(REG_MSTAT, MSTAT_MCU_PEND);
+        CHECK(spinForDma(fifo) == -1);
+    }
+}
+
+TEST_CASE("the DMA runs on the exec write, not on the last parameter byte", "[audio][nes][fifo][dma]") {
+    // THE ordering trap. The ROM arms $40FF *after* the parameters, so an implementation that copies
+    // when the 8th parameter byte lands clears the pending bit before the arming write sets it,
+    // and nothing is left to clear it again. The ROM spins to its bound and reports failure for a
+    // transfer that actually happened.
+    ScratchCard card;
+    const std::vector<std::uint8_t> file = pattern(256);
+    card.put("clip.bin", file);
+
+    FakeCart cart;
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    fifo.setCartWriter(cart.writer());
+    openForRead(fifo, "/clip.bin");
+
+    writeCmd(fifo, CMD_F_FRD_MEM);
+    writeU32(fifo, PI_CHR_RAM);
+    writeU32(fifo, 256);
+    CHECK(cart.untouched());                 // staged only
+
+    fifo.WriteRam(REG_MSTAT, MSTAT_MCU_PEND);   // arm, AFTER the parameters
+    CHECK(cart.untouched());
+    CHECK((fifo.ReadRam(REG_MSTAT) & MSTAT_MCU_PEND) == MSTAT_MCU_PEND);
+
+    fifo.WriteRam(0x40F0, 0x00);                // exec
+    CHECK(spinForDma(fifo) == 0);
+    CHECK(queryStatus(fifo) == 0);
+    CHECK(cart.at(0, 256) == file);
+
+    // The exec byte was consumed by the DMA path rather than fed to the command parser, so the
+    // parser is still in step: an ordinary framed command lands, and so does a second DMA.
+    writeCmd(fifo, CMD_F_FPTR);
+    writeU32(fifo, 0);
+    CHECK(queryStatus(fifo) == 0);
+
+    writeDmaRequest(fifo, PI_CHR_RAM + 0x100, 64);
+    CHECK(spinForDma(fifo) == 0);
+    CHECK(queryStatus(fifo) == 0);
+    CHECK(cart.at(0x100, 64) == std::vector<std::uint8_t>(file.begin(), file.begin() + 64));
+}
+
+TEST_CASE("a DMA to memory that isn't backed fails, and writes nothing", "[audio][nes][fifo][dma]") {
+    // A silent drop would look EXACTLY like a working DMA to the ROM, which is the worst failure
+    // mode available here, so an unbacked destination has to be an Edio error.
+    ScratchCard card;
+    const std::vector<std::uint8_t> file = pattern(512);
+    card.put("clip.bin", file);
+
+    FakeCart cart;
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    fifo.setCartWriter(cart.writer());
+    openForRead(fifo, "/clip.bin");
+
+    std::uint32_t addr = 0;
+    std::uint32_t len  = 64;
+    SECTION("below the window")       { addr = PI_CHR_RAM - 1; }
+    SECTION("overrunning its end")    { addr = PI_CHR_RAM + 32 * 1024 - 8; }
+    SECTION("PRG, a legal PI target on the device")  { addr = 0x0000000; }
+    SECTION("SRAM, likewise")                        { addr = 0x1000000; }
+
+    writeDmaRequest(fifo, addr, len);
+    // The MCU still ANSWERED: "it replied" and "it did what was asked" are separate questions, and
+    // the ROM asks the second one with CMD_STATUS. A loop that hung here could not report anything.
+    CHECK(spinForDma(fifo) == 0);
+    CHECK(queryStatus(fifo) != 0);
+    CHECK(cart.untouched());
+
+    // The file pointer did not move either, so the next read still starts at byte 0 and a ROM can
+    // fall back to the CPU-mediated path without re-seeking.
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, 4);
+    const auto reply = readBytes(fifo, 8);
+    REQUIRE(reply.size() == 5);
+    CHECK(std::vector<std::uint8_t>(reply.begin() + 1, reply.end()) ==
+          std::vector<std::uint8_t>(file.begin(), file.begin() + 4));
+}
+
+TEST_CASE("a DMA with nowhere to go, or nothing to read, is an error", "[audio][nes][fifo][dma]") {
+    ScratchCard card;
+    card.put("clip.bin", pattern(64));
+
+    SECTION("no cart writer installed at all") {
+        // The shape any host that isn't wired to a core has. It must report failure rather than
+        // crash or claim success.
+        rp::NesEverdriveFifo fifo;
+        fifo.setSdRoot(card.root);
+        openForRead(fifo, "/clip.bin");
+        writeDmaRequest(fifo, PI_CHR_RAM, 64);
+        CHECK(spinForDma(fifo) == 0);
+        CHECK(queryStatus(fifo) != 0);
+    }
+
+    SECTION("no open file") {
+        FakeCart cart;
+        rp::NesEverdriveFifo fifo;
+        fifo.setSdRoot(card.root);
+        fifo.setCartWriter(cart.writer());
+        writeDmaRequest(fifo, PI_CHR_RAM, 64);
+        CHECK(spinForDma(fifo) == 0);
+        CHECK(queryStatus(fifo) == 0x04);   // FAT_NO_FILE
+        CHECK(cart.untouched());
+    }
+
+    SECTION("a length no destination could absorb") {
+        // A garbled parameter must be refused before it is believed: sizing a staging buffer from a
+        // u32 taken at face value would try to allocate 4 GB inside the CPU's write handler.
+        FakeCart cart;
+        rp::NesEverdriveFifo fifo;
+        fifo.setSdRoot(card.root);
+        fifo.setCartWriter(cart.writer());
+        openForRead(fifo, "/clip.bin");
+        writeDmaRequest(fifo, PI_CHR_RAM, 0xFFFFFFFFu);
+        CHECK(spinForDma(fifo) == 0);
+        CHECK(queryStatus(fifo) != 0);
+        CHECK(cart.untouched());
+    }
+
+    SECTION("already at EOF") {
+        FakeCart cart;
+        rp::NesEverdriveFifo fifo;
+        fifo.setSdRoot(card.root);
+        fifo.setCartWriter(cart.writer());
+        openForRead(fifo, "/clip.bin");
+
+        writeDmaRequest(fifo, PI_CHR_RAM, 64);
+        REQUIRE(spinForDma(fifo) == 0);
+        REQUIRE(queryStatus(fifo) == 0);
+
+        // Nothing left. A success with no data would leave a ROM re-displaying the same 64 bytes
+        // forever and never learning the stream had ended.
+        writeDmaRequest(fifo, PI_CHR_RAM + 0x100, 64);
+        CHECK(spinForDma(fifo) == 0);
+        CHECK(queryStatus(fifo) == 0x04);
+    }
+}
+
+TEST_CASE("the transfer holds the pending bit for its modelled duration", "[audio][nes][fifo][dma]") {
+    // Without a modelled duration the wait loop exits on its first pass, and a frame budget measured
+    // against the emulator comes out optimistic; the DMA looks free when on the device it is not.
+    ScratchCard card;
+    const std::vector<std::uint8_t> file = pattern(8192);
+    card.put("clip.bin", file);
+
+    FakeCart cart;
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    fifo.setCartWriter(cart.writer());
+
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    openForRead(fifo, "/clip.bin");
+
+    writeDmaRequest(fifo, PI_CHR_RAM, 8192);
+
+    // Busy the instant the exec write lands...
+    CHECK((fifo.ReadRam(REG_MSTAT) & MSTAT_MCU_PEND) == MSTAT_MCU_PEND);
+    // ...but the bytes are already in place. The emulation lands them atomically at the start of the
+    // window rather than progressively; no ROM can tell, because the CPU must not touch the cart
+    // while the MCU holds it (which is why the SDK's wait loop runs from RAM).
+    CHECK(cart.at(0, 8192) == file);
+
+    const auto window = static_cast<std::uint64_t>(
+        8192.0 / rp::DMA_BYTES_PER_SECOND * static_cast<double>(PAL_CLOCK_HZ));
+    cycles = window - 1;
+    CHECK((fifo.ReadRam(REG_MSTAT) & MSTAT_MCU_PEND) == MSTAT_MCU_PEND);
+    cycles = window;
+    CHECK((fifo.ReadRam(REG_MSTAT) & MSTAT_MCU_PEND) == 0);
+    CHECK(queryStatus(fifo) == 0);
+}
+
+TEST_CASE("the modelled wait costs the ROM about as many spins as the console measured", "[audio][nes][fifo][dma]") {
+    // The measurement this is calibrated against: a real N8 Pro moved 8192 bytes in 165 and 172
+    // passes of this loop, over two boots. Drive the transcribed loop with a clock that advances the
+    // way the 6502 does and the emulated console should land in the same place.
+    ScratchCard card;
+    card.put("clip.bin", pattern(8192));
+
+    FakeCart cart;
+    rp::NesEverdriveFifo fifo;
+    fifo.setSdRoot(card.root);
+    fifo.setCartWriter(cart.writer());
+
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    openForRead(fifo, "/clip.bin");
+    writeDmaRequest(fifo, PI_CHR_RAM, 8192);
+
+    int spins = 0;
+    for (; spins < 4096; ++spins) {
+        if (mstatSettled(fifo, MSTAT_MCU_PEND)) break;
+        cycles += CYCLES_PER_SPIN;
+    }
+    CHECK(spins >= 140);
+    CHECK(spins <= 200);
+
+    // And the model scales: a quarter of the bytes is a quarter of the wait, which is what makes a
+    // per-frame budget computable from it at all.
+    cycles = 0;
+    writeDmaRequest(fifo, PI_CHR_RAM, 2048);
+    int shortSpins = 0;
+    for (; shortSpins < 4096; ++shortSpins) {
+        if (mstatSettled(fifo, MSTAT_MCU_PEND)) break;
+        cycles += CYCLES_PER_SPIN;
+    }
+    CHECK(shortSpins >= spins / 5);
+    CHECK(shortSpins <= spins / 3);
+}
+
+// --- FIFO fidelity: depth and wire rate --------------------------------------------------------
+//
+// The emulated queue is unbounded and instant by default, and the cartridge's is neither. Both gaps
+// hide a class of bug rather than a bug: a ROM that can never lose a byte never has its recovery path
+// exercised, and one handed a whole chunk atomically is never starved mid-structure the way a real
+// wire starves it. nesvj lost half its frames on silicon to the second of those with 14/14 tests green.
+
+TEST_CASE("the default profile is the permissive queue every existing test assumes", "[audio][nes][fifo][wire]") {
+    rp::NesEverdriveFifo fifo;   // no setFifoProfile: unbounded, instant
+
+    const std::vector<std::uint8_t> burst = pattern(5000);
+    for (std::uint8_t b : burst) fifo.pushByte(b);
+
+    // Readable at once and in full - nothing waits on a wire and nothing is dropped.
+    const auto stats = fifo.stats();
+    CHECK(stats.rxDepth == burst.size());
+    CHECK(stats.rxCapacity == 0);      // 0 = unbounded, so droppedBytes cannot be anything but 0
+    CHECK(stats.droppedBytes == 0);
+    CHECK(stats.wirePending == 0);
+    CHECK(readBytes(fifo, burst.size()) == burst);
+}
+
+TEST_CASE("a rated wire delivers over time instead of atomically", "[audio][nes][fifo][wire]") {
+    // The difference that hid nesvj's worst bug: its copy loop kept a byte offset so it could resume
+    // when the FIFO ran dry, and the resume path was wrong. Fed a chunk atomically the loop never
+    // runs dry MID-structure, so the path is never taken and the test passes.
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setFifoProfile(/*depth*/ 0, rp::FIFO_HW_BYTES_PER_SECOND);
+
+    const std::vector<std::uint8_t> chunk = pattern(512);
+    for (std::uint8_t b : chunk) fifo.pushByte(b);
+
+    // Handed over, but not yet carried: the ROM polling $40F1 right now sees an EMPTY fifo.
+    CHECK(fifo.stats().wirePending == chunk.size());
+    CHECK(fifo.stats().rxDepth == 0);
+    CHECK(fifo.ReadRam(0x40F1) == 0x80);
+
+    // 512 bytes at ~150 KB/s is ~3.4 ms, which is ~5675 PAL cycles. Rounded UP: the model carries a
+    // whole byte only once a whole byte's worth of time has passed, so the last one lands on the
+    // cycle after the exact fractional window, not on it.
+    const auto window = static_cast<std::uint64_t>(std::ceil(
+        512.0 / static_cast<double>(rp::FIFO_HW_BYTES_PER_SECOND) * static_cast<double>(PAL_CLOCK_HZ)));
+
+    cycles = window / 2;
+    const auto half = fifo.stats();
+    CHECK(half.rxDepth > 200);        // about half of it, give or take the credit remainder
+    CHECK(half.rxDepth < 312);
+    CHECK(half.wirePending == chunk.size() - half.rxDepth);
+
+    cycles = window;
+    CHECK(fifo.stats().wirePending == 0);
+
+    // And it is the same bytes in the same order - the wire delays, it does not reorder.
+    CHECK(readBytes(fifo, chunk.size()) == chunk);
+    CHECK(fifo.stats().droppedBytes == 0);
+}
+
+TEST_CASE("a full queue drops the bytes it has no room for, and counts them", "[audio][nes][fifo][wire]") {
+    // Structurally unreachable before this: no emulator test could drop a byte, so no emulator test
+    // could exercise a ROM's recovery from one. nesvj's first live format tracked the display buffer
+    // with a counter in the ROM, which is correct forever on a lossless queue and permanently out of
+    // step after one drop on hardware.
+    rp::NesEverdriveFifo fifo;
+    fifo.setFifoProfile(/*depth*/ 8, /*bytesPerSecond*/ 0);   // instant delivery, tiny queue
+
+    const std::vector<std::uint8_t> burst = pattern(20);
+    for (std::uint8_t b : burst) fifo.pushByte(b);
+
+    const auto stats = fifo.stats();
+    CHECK(stats.rxCapacity == 8);
+    CHECK(stats.rxDepth == 8);
+    CHECK(stats.droppedBytes == 12);
+
+    // A full FIFO loses the ARRIVING byte, so what the ROM reads is the head of the burst and the
+    // tail is simply missing. Contiguous with a gap, never reordered - which is what makes a
+    // sequence number on the wire able to detect it.
+    CHECK(readBytes(fifo, 16) == std::vector<std::uint8_t>(burst.begin(), burst.begin() + 8));
+
+    // The count is CUMULATIVE across the run: reading does not reset it, so a timeline can sample it
+    // repeatedly and subtract.
+    CHECK(fifo.stats().droppedBytes == 12);
+    for (std::uint8_t b : pattern(12)) fifo.pushByte(b);
+    CHECK(fifo.stats().droppedBytes == 16);
+}
+
+TEST_CASE("an Edio reply is subject to the queue's depth but not to the wire", "[audio][nes][fifo][wire]") {
+    // The device has ONE fifo_a, so a command reply competes for the same 2048 bytes a host push
+    // does - nesvj's EDIO_BLOCK of 1792 is sized against exactly that. But the reply does not cross
+    // the USB wire: it is the MCU answering a command the ROM just issued, already inside the cart.
+    ScratchCard card;
+    card.put("clip.bin", pattern(64));
+
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setFifoProfile(/*depth*/ 4, /*bytesPerSecond*/ 1);   // a wire so slow nothing could cross it
+    fifo.setSdRoot(card.root);
+
+    // Not rate-gated: the status word is readable with the clock still at zero.
+    writeCmd(fifo, CMD_STATUS);
+    CHECK(readBytes(fifo, 2) == std::vector<std::uint8_t>{0x00, 0xA5});
+
+    // Depth-gated, though. A 16-byte read replies with 17 bytes (resp + data) into a 4-deep queue.
+    openForRead(fifo, "/clip.bin");
+    const std::uint64_t droppedBefore = fifo.stats().droppedBytes;
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, 16);
+    CHECK(fifo.stats().rxDepth == 4);
+    CHECK(fifo.stats().droppedBytes - droppedBefore == 13);
+}
+
+TEST_CASE("a barrier drops what is on the wire as well as what was delivered", "[audio][nes][fifo][wire]") {
+    // clearRx is a barrier in the host->NES direction: the ROM must not read bytes belonging to the
+    // stream position it just left. A byte still crossing the wire is every bit as stale as a
+    // delivered one, so leaving it would let the barrier leak.
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setFifoProfile(0, rp::FIFO_HW_BYTES_PER_SECOND);
+
+    for (std::uint8_t b : pattern(64)) fifo.pushByte(b);
+    REQUIRE(fifo.stats().wirePending == 64);
+
+    fifo.clearRx();
+    CHECK(fifo.stats().wirePending == 0);
+    CHECK(fifo.stats().rxDepth == 0);
+
+    // And the wire is usable again afterwards, with its credit reset rather than banked: a byte
+    // pushed now still has to wait its turn.
+    fifo.pushByte(0x42);
+    CHECK(fifo.stats().rxDepth == 0);
+    cycles += static_cast<std::uint64_t>(
+        1.0 / static_cast<double>(rp::FIFO_HW_BYTES_PER_SECOND) * static_cast<double>(PAL_CLOCK_HZ)) + 1;
+    CHECK(fifo.stats().rxDepth == 1);
+    CHECK(fifo.ReadRam(0x40F0) == 0x42);
+}
+
+TEST_CASE("an idle wire banks no credit", "[audio][nes][fifo][wire]") {
+    // Otherwise a long quiet period would let the next push burst through instantly, which is the
+    // atomic delivery this profile exists to avoid - and the quiet period between chunks is exactly
+    // what a paced host spends most of its time in.
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+    fifo.setFifoProfile(0, rp::FIFO_HW_BYTES_PER_SECOND);
+
+    cycles = 10'000'000;                 // ~6 seconds of silence: credit for ~900 KB, if it banked
+    for (std::uint8_t b : pattern(64)) fifo.pushByte(b);
+    CHECK(fifo.stats().rxDepth == 0);    // still has to be carried
+    CHECK(fifo.stats().wirePending == 64);
+}
+
+TEST_CASE("a host byte already delivered is not overtaken by a later command reply", "[audio][nes][fifo][wire]") {
+    // The wire is a DELAY, never a reordering. A command's reply is pushed straight into fifo_a, so
+    // the wire has to be carried forward before the command runs; otherwise a byte the host handed
+    // over first would arrive after a reply generated second, and a ROM that interleaves a push with
+    // an Edio query would decode them in the wrong order.
+    rp::NesEverdriveFifo fifo;
+    std::uint64_t cycles = 0;
+    fifo.setCartClock([&cycles] { return cycles; }, PAL_CLOCK_HZ);
+
+    SECTION("under the instant profile") {
+        fifo.pushByte(0xAA);
+        writeCmd(fifo, CMD_STATUS);            // reply: 0x00, 0xA5
+        CHECK(readBytes(fifo, 4) == std::vector<std::uint8_t>{0xAA, 0x00, 0xA5});
+    }
+
+    SECTION("under a rated wire, once the byte has had time to cross") {
+        fifo.setFifoProfile(0, rp::FIFO_HW_BYTES_PER_SECOND);
+        fifo.pushByte(0xAA);
+        cycles += static_cast<std::uint64_t>(
+            1.0 / static_cast<double>(rp::FIFO_HW_BYTES_PER_SECOND) * static_cast<double>(PAL_CLOCK_HZ)) + 1;
+        writeCmd(fifo, CMD_STATUS);
+        CHECK(readBytes(fifo, 4) == std::vector<std::uint8_t>{0xAA, 0x00, 0xA5});
+    }
+
+    SECTION("but a byte still in flight legitimately arrives after the reply") {
+        // The other side of the same rule: the wire has NOT delivered it yet, so it is not late,
+        // it has not arrived. This is the case a paced host actually produces.
+        fifo.setFifoProfile(0, rp::FIFO_HW_BYTES_PER_SECOND);
+        fifo.pushByte(0xAA);
+        writeCmd(fifo, CMD_STATUS);
+        CHECK(readBytes(fifo, 2) == std::vector<std::uint8_t>{0x00, 0xA5});
+        cycles += 100000;
+        CHECK(readBytes(fifo, 2) == std::vector<std::uint8_t>{0xAA});
+    }
 }

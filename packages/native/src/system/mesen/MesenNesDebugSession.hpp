@@ -42,6 +42,19 @@ public:
     rp::BreakInfo stepOver() override;
     rp::BreakInfo stepOut() override;
     std::vector<rp::DebugEvent> drainEvents() override;
+    std::vector<rp::BreakHit> drainBreakHits(std::uint32_t& overflow) override;
+
+    // --- passive break capture (driven from MesenNesSystem's render loop) ---
+    //
+    // True once a non-empty breakpoint set is installed. Read once per instruction by the render
+    // loop, so it is inline and trivially predictable; the whole mechanism costs nothing until a
+    // test asks for it.
+    bool breakCaptureArmed() const { return breakCaptureArmed_; }
+
+    // Called after each cpu->Exec() while armed: if a breakpoint fired, record it and resume.
+    // Mesen's headless SleepUntilResume does not block, so without this the break would simply be
+    // overwritten by the next one and execution would carry on with _executionStopped stuck set.
+    void captureBreakHit();
 
 private:
     // Initialise Mesen's debugger on first use (claiming the emulation thread)
@@ -54,6 +67,14 @@ private:
     // Every name the loaded `.dbg` resolves (assembler labels + the C names behind them) -> CPU address,
     // for symbolAddress. Empty until loadLabels succeeds.
     std::unordered_map<std::string, std::uint32_t> symbols_;
+
+    // Passive break capture. `breakHits_` is CAPPED: a watchpoint scoped too broadly fires on every
+    // instruction, and this buffer grows on the audio thread. Past the cap only the count is kept -
+    // enough to still fail a test, which is what an invariant is for.
+    static constexpr std::size_t kMaxBreakHits = 4096;
+    bool                      breakCaptureArmed_ = false;
+    std::vector<rp::BreakHit> breakHits_;
+    std::uint32_t             breakHitOverflow_  = 0;
 
     // drainEvents' cursor: the event-manager frame id the last call saw, and how many of that frame's
     // events it had already returned, so each call hands back only what is new.

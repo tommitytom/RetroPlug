@@ -7,8 +7,9 @@ import { lsdjSongCatalog } from "../../src/tracker/lsdjSongCatalog";
 import { risaSongCatalog } from "../../src/tracker/risaSongCatalog";
 import { smsggdjIntegration } from "../../src/tracker/trackerIntegration";
 import { buildSav, curSlot, SMDJ4_BLOCK_LEN, songLengthRows, sanitizeEcho } from "../../src/smsggdj/codec/sav";
-import { resolveSmsggdjLayout, supportedSmsggdjVersions } from "../../src/smsggdj/runtime/layout";
+import { resolveSmsggdjLayout, supportedSmsggdjVersions, commonBootedOffset } from "../../src/smsggdj/runtime/layout";
 import { identifySmsggdjVersion, supportsCurSlot } from "../../src/smsggdj/romDetect";
+import { smsggdjRom as rom, smsggdjRam } from "../systems/fixtures";
 
 const CART = 32 * 1024;
 const song = (tag: number): Uint8Array => {
@@ -18,15 +19,6 @@ const song = (tag: number): Uint8Array => {
 };
 const twoSongs = (): Uint8Array =>
   buildSav([{ block: song(1), name: "ALPHA" }, { block: song(2), name: "BETA" }], CART)!;
-
-/** A ROM carrying the SMSGGDJ marker at $3640 and a version string after it, as real builds do. */
-function rom(version: string): Uint8Array {
-  const b = new Uint8Array(0x8000);
-  for (let i = 0; i < "SMSGGDJ".length; i++) b[0x3640 + i] = "SMSGGDJ".charCodeAt(i);
-  const v = `V${version}`;
-  for (let i = 0; i < v.length; i++) b[0x367b + i] = v.charCodeAt(i);
-  return b;
-}
 
 test("the catalog resolves off sms-sync, for both machines", () => {
   // The sync role is the marker, overloaded exactly as LSDj overloads lsdj-sync - and the provider
@@ -78,9 +70,8 @@ test("workingSongDirty needs work RAM, and says CLEAN when it has none", () => {
 
 test("a working song that matches a saved slot is clean; one that matches none is dirty", () => {
   const sav = twoSongs();
-  const ram = new Uint8Array(8192); // SMS work RAM; the song block is at its base
-
-  ram.set(song(2), 0); // exactly BETA
+  // A running cart (booted), edited since its last save/load. The song block is at the base of work RAM.
+  const ram = smsggdjRam({ block: song(2), edited: true }); // exactly BETA
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
 
   ram[5] ^= 0xff; // ...now edited, and saved nowhere
@@ -88,6 +79,73 @@ test("a working song that matches a saved slot is clean; one that matches none i
 
   ram.set(song(1), 0); // exactly ALPHA - a different slot, still saved
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
+});
+
+test("a cart that has not been edited is clean, whatever its work RAM holds", () => {
+  // The cart's own `song_edited` (editor.asm:141, "1 = song data changed since last save/load") has to
+  // agree before anything is called unsaved, because content alone cannot tell an hour of work from a
+  // song nobody has touched. The case that made this matter: a cart boots into the blank song `song_new`
+  // gives it, that blank song is in no saved slot, and comparing content therefore called EVERY fresh
+  // boot unsaved work - so loading a project from Recent offered to discard a song that never existed.
+  const sav = twoSongs();
+  const layout = resolveSmsggdjLayout("0.45")!;
+
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, smsggdjRam())).toBe(false); // just booted, blank
+
+  // Even a block matching no saved slot: song_new clears the flag, so a blank song is not lost work.
+  const fresh = smsggdjRam({ block: song(9) });
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, fresh)).toBe(false);
+
+  fresh[layout.edited] = 1; // ...and the same bytes once the cart says they were typed
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, fresh)).toBe(true);
+});
+
+test("nothing in work RAM is the cart's until it has booted: not a name, not an edit, not ready", () => {
+  // Work RAM is readable from the moment the core exists, and for the cart's first seconds it is the
+  // boot sequence's: `init` zero-fills it, `song_new` seeds the blank song, v0.46 `boot_autoload` reloads
+  // the last slot. `ints_on` is written once, right before the main loop, after all of that - the latch
+  // every reader waits on. Before it, even a whole song with a name and the edited flag set is not
+  // evidence of anything (it is what a poll caught mid-boot), and the answers are the empty ones.
+  const sav = twoSongs();
+  const booting = smsggdjRam({ block: song(9), name: "MYSONG", edited: true, booted: false });
+  expect(smsggdjSongCatalog.workingSongReady!(booting)).toBe(false);
+  expect(smsggdjSongCatalog.workingName(sav, booting)).toBe(null);
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, booting)).toBe(false);
+
+  // No RAM at all, or too little of it to hold the latch, is "cannot tell", and cannot-tell must read as
+  // not ready: this is the gate in front of a WRITE, and a write into a cart that might be booting is
+  // a write the boot erases.
+  expect(smsggdjSongCatalog.workingSongReady!(undefined)).toBe(false);
+  expect(smsggdjSongCatalog.workingSongReady!(new Uint8Array(16))).toBe(false);
+  expect(smsggdjSongCatalog.workingSongReady!(new Uint8Array(commonBootedOffset()!))).toBe(false); // one short
+
+  // The latch flips and the same bytes are the cart's.
+  const up = smsggdjRam({ block: song(9), name: "MYSONG", edited: true, booted: true });
+  expect(smsggdjSongCatalog.workingSongReady!(up)).toBe(true);
+  expect(smsggdjSongCatalog.workingName(sav, up)).toBe("MYSONG");
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, up)).toBe(true);
+});
+
+test("a song name is printable ASCII; anything else in the field is not a name", () => {
+  // The cart writes names in ASCII - space-padded by `rle_name_default`, zero-padded by the codec's
+  // directory writer - and both read back as the trimmed word. Bytes outside 0x20-0x7E are a snapshot
+  // taken mid-write or bytes that were never a name, and the whole field is refused rather than the
+  // odd bytes skipped: rows of box glyphs were recorded into Recent from exactly this.
+  const sav = twoSongs();
+  const layout = resolveSmsggdjLayout("0.45")!;
+  const withRaw = (bytes: number[]): Uint8Array => {
+    const ram = smsggdjRam();
+    ram.set(bytes, layout.name);
+    return ram;
+  };
+  expect(smsggdjSongCatalog.workingName(sav, withRaw([0x44, 0x45, 0x4d, 0x4f, 0x20, 0x20, 0x20, 0x20]))).toBe("DEMO"); // "DEMO    "
+  expect(smsggdjSongCatalog.workingName(sav, withRaw([0x44, 0x45, 0x4d, 0x4f, 0, 0, 0, 0]))).toBe("DEMO"); // "DEMO\0\0\0\0"
+  expect(smsggdjSongCatalog.workingName(sav, withRaw([0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20]))).toBe(null); // blank = no song
+  expect(smsggdjSongCatalog.workingName(sav, withRaw([0x44, 0x45, 0x4d, 0x4f, 0x20, 0x20, 0x20, 0x7e]))).toBe("DEMO   ~"); // the printable range
+  expect(smsggdjSongCatalog.workingName(sav, withRaw([0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0xa5, 0x20, 0x20]))).toBe(null); // high bytes
+  expect(smsggdjSongCatalog.workingName(sav, withRaw([0x44, 0x45, 0x01, 0x4f, 0x20, 0x20, 0x20, 0x20]))).toBe(null); // a control byte inside
+  expect(smsggdjSongCatalog.workingName(sav, withRaw([0x7f, 0x44, 0x45, 0x4d, 0x4f, 0, 0, 0]))).toBe(null); // DEL
+  expect(smsggdjSongCatalog.workingName(sav, withRaw([0x44, 0x45, 0x4d, 0x4f, 0, 0xff, 0xff, 0xff]))).toBe("DEMO"); // past the terminator is not read
 });
 
 test("the working song is declared OUTSIDE the battery, which is what guards the other five ops", () => {
@@ -239,18 +297,22 @@ test("liveLoad declines rather than guessing", () => {
   expect(smsggdjIntegration.liveLoad!(rom("0.45"), corrupt, 0)).toBe(null);
 });
 
-test("workingName prefers the cart's own song_name in work RAM", () => {
+test("workingName is the cart's own song_name when there is a live cart, the save's record only without one", () => {
   // What makes the working-song row, per-song recents and the window title work on v0.45, which has no
   // cur_slot byte at all.
   const sav = twoSongs();
-  const layout = resolveSmsggdjLayout("0.45")!;
-  const ram = new Uint8Array(8192);
-  ram.set(new TextEncoder().encode("MYSONG\0\0"), layout.name);
-  expect(smsggdjSongCatalog.workingName(sav, ram)).toBe("MYSONG");
+  expect(smsggdjSongCatalog.workingName(sav, smsggdjRam({ name: "MYSONG" }))).toBe("MYSONG");
 
   // Blank work RAM means the cart has loaded nothing, which is not a song called "".
-  expect(smsggdjSongCatalog.workingName(sav, new Uint8Array(8192))).toBe(null);
+  expect(smsggdjSongCatalog.workingName(sav, smsggdjRam())).toBe(null);
   // No RAM at all (an offline .sav): fall back to the save's own record, which v0.45 does not carry.
   expect(smsggdjSongCatalog.workingName(sav)).toBe(null);
-  expect(smsggdjSongCatalog.workingName(smsggdjSongCatalog.load(sav, 1)!)).toBe("BETA"); // ...but v0.46 does
+  const named = smsggdjSongCatalog.load(sav, 1)!; // ...but v0.46 does
+  expect(smsggdjSongCatalog.workingName(named)).toBe("BETA");
+  // A live cart answers ALONE: cur_slot says what the cart will autoload at boot, not what it holds now,
+  // so a blank or still-booting cart is "no song" even when the save names one. (A v0.46 cart that DID
+  // autoload it has the name in RAM, and answers from there.)
+  expect(smsggdjSongCatalog.workingName(named, smsggdjRam())).toBe(null);
+  expect(smsggdjSongCatalog.workingName(named, smsggdjRam({ name: "BETA", booted: false }))).toBe(null);
+  expect(smsggdjSongCatalog.workingName(named, smsggdjRam({ name: "BETA" }))).toBe("BETA");
 });

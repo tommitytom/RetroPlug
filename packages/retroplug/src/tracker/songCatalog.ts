@@ -38,6 +38,18 @@ export interface SongCatalog {
   /** Copy the songs at the given SOURCE `indices` (into `source`'s `list()`) into `target`, byte-exact.
    *  Returns the new image, or null when nothing could be imported. Used by the Songs menu's sav importer. */
   importSongs(target: Uint8Array, source: Uint8Array, indices: number[]): Uint8Array | null;
+  /** True when the working song can be read and written RIGHT NOW - the live core has finished booting
+   *  far enough that what is in memory is the cart's to keep, not a boot sequence in progress.
+   *
+   *  Absent (the default) means always ready: LSDj and risa keep the working song in the battery, which
+   *  is complete from the first frame. smsggdj keeps it in work RAM, and work RAM is readable from the
+   *  moment the core exists but is NOT the cart's for its first seconds - `init` zero-fills it, the splash
+   *  runs, `song_new` seeds the blank song, v0.46+ `boot_autoload` reloads the last slot. A name read in
+   *  that window is nothing; a song written in it is silently wiped. Everything that reads the working
+   *  song (recents, titles, the Songs menu, the load guards) and everything that writes it (a live load)
+   *  waits on this. `ram` is the live work RAM; no RAM at all is "not ready", the safe polarity for a
+   *  write. */
+  workingSongReady?(ram?: Uint8Array): boolean;
   /** The currently-loaded (working) song's name, for recents / titles. null when none / unsaved.
    *
    *  `ram` is the system's live WORK RAM, and it is what makes this answerable for a console that keeps

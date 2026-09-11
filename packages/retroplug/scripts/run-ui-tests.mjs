@@ -80,6 +80,10 @@ async function runOne({ file, slug }) {
   // A NES cart too, for the tests that need a non-GB console (console-dependent menu rows). Committed
   // like mGB, so unconditional — unlike the two best-effort stages below.
   copyFileSync(join(REPO, "resources/roms/bliptoaster.nes"), join(romsDir, "bliptoaster.nes"));
+  // The smsggdj tracker (committed), for the Recent-list test that needs a cart whose working song lives
+  // in work RAM and takes seconds to boot. The test writes the `.sav` beside it itself (the SMDJ4 codec is
+  // TS, and the test runs in the app's own context), so only the ROM is staged.
+  copyFileSync(join(REPO, "resources/roms/smsggdj_v0_45.sms"), join(romsDir, "smsggdj_v0_45.sms"));
   // Stage an LSDj ROM too when one is present (local or the sibling resources tree) — the LSDj-overlay
   // test drops it; absent, that test SKIPs. It's a large external asset, so this is best-effort.
   for (const src of [join(REPO, "resources/roms/lsdj/lsdj9_4_2.gb"), join(REPO, "../resources/roms/lsdj/lsdj9_4_2.gb")]) {

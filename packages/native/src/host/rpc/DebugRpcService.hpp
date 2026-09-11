@@ -10,6 +10,7 @@
 #include "system/CpuState.hpp"    // rp::CpuRegister
 #include "system/DebugTarget.hpp" // rp::ApuState / PpuState / DebugEvent / TraceLine / BreakInfo /
                                   // BreakpointSpec / ProfiledFunction / DisasmLine / CallFrame
+#include "system/SystemBase.hpp"  // CoreTransportStats
 
 class Engine;
 
@@ -42,6 +43,12 @@ public:
     // the USB port). A plain SystemBase virtual, no debug target needed; empty on cores without one.
     rfl::Bytestring              drainCoreBytes(std::uint32_t id);
 
+    // What that transport is holding and what it has lost: on the NES the N8 FIFO's two stages plus
+    // its cumulative dropped-byte count. The only way a test can SEE the transport drop a byte rather
+    // than infer it from garbled output: the emulated queue is permissive by default, and a lossy
+    // one is opted into with the "mesen" role's `fifo` profile. Zeroes on cores without a transport.
+    CoreTransportStats           getCoreTransportStats(std::uint32_t id);
+
     // Load a cc65 `.dbg` symbol file so profiler/disassembly output shows function names. Needs a Mesen
     // NES debug target (false on SameBoy/GBA, a gone id, or read/parse failure).
     bool loadLabels(std::uint32_t id, std::string path);
@@ -60,6 +67,13 @@ public:
     // until a breakpoint fires or `maxCycles` elapses (broke=false + defaults on the cap / no target).
     bool          setBreakpoints(std::uint32_t id, std::vector<rp::BreakpointSpec> bps);
     rp::BreakInfo runUntilBreak(std::uint32_t id, std::uint64_t maxCycles);
+
+    // The breakpoint firings recorded during ORDINARY rendering since the last call, oldest first:
+    // the passive twin of runUntilBreak. Install a conditional watchpoint, render the timeline as
+    // usual, then ask what tripped: that makes a Mesen condition ("value > 15", "scanline < 240") a
+    // CONTINUOUS invariant rather than something only a single-stepping run can see. `overflow`
+    // counts firings past the capture cap, which a badly-scoped watchpoint will hit.
+    rp::BreakHitBatch drainBreakHits(std::uint32_t id);
 
     // --- execution trace + single-step (needs a Mesen NES debug target; empty/false on SameBoy/GBA) ---
     // setTrace toggles Mesen's per-instruction trace logger; readTrace returns up to `count` most-recent

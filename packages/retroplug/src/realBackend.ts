@@ -13,7 +13,7 @@
 // recomposes them into the full `Backend`. openFileBrowser is the one async method and rides
 // a UI-direct native hook rather than the RPC bridge (see below).
 
-import type { ApuState, Backend, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
+import type { ApuState, Backend, BreakHitBatch, BreakInfo, Breakpoint, CallFrame, ConstructSpec, ControlPlaneBackend, CoreTransportStats, CpuRegister, DebugBackend, DebugEvent, DisasmLine, EmulatorBackend, ExpansionAudioState, FileBrowserOpts, FrameData, HostBackend, PngImageData, PpuState, ProfiledFunction, TraceLine, ZipEntry } from "./backend";
 import type { OpenSerialPort, SerialClient, SerialPortInfo } from "./n8/transport";
 import { savFromJson as savFromJsonTs } from "./lsdj";
 
@@ -166,6 +166,11 @@ export function createDebugClient(): DebugBackend {
     // Always a Uint8Array, never null: "the ROM has sent nothing" and "this core has no back-channel"
     // are both an empty drain, so a caller can loop over the result without a guard.
     drainCoreBytes: (id) => bytesOrNull(call("drainCoreBytes", id)) ?? new Uint8Array(0),
+    // Always an object, never null: a gone id and a core with no transport both read as all-zero, so
+    // a caller can subtract two samples without guarding either.
+    getCoreTransportStats: (id) =>
+      (call("getCoreTransportStats", id) as CoreTransportStats | null | undefined) ??
+      { rxDepth: 0, rxCapacity: 0, droppedBytes: 0, wirePending: 0, txDepth: 0 },
     loadLabels: (id, path) => call("loadLabels", id, path) as boolean,
     symbolAddress: (id, name) => (call("symbolAddress", id, name) as number | null | undefined) ?? null,
     setCpuRegister: (id, name, value) => call("setCpuRegister", id, name, value) as boolean,
@@ -173,6 +178,10 @@ export function createDebugClient(): DebugBackend {
     setBreakpoints: (id, breakpoints: Breakpoint[]) =>
       call("setBreakpoints", id, breakpoints.map((b) => ({ type: b.type, start: b.start, end: b.end ?? 0, condition: b.condition ?? "" }))) as boolean,
     runUntilBreak: (id, maxCycles) => call("runUntilBreak", id, maxCycles) as BreakInfo,
+    // Always a batch, never null: a core with no debug target reports "nothing tripped" rather than
+    // an absence, so a caller can read .hits without guarding.
+    drainBreakHits: (id) =>
+      (call("drainBreakHits", id) as BreakHitBatch | null | undefined) ?? { hits: [], overflow: 0 },
     setTrace: (id, on) => call("setTrace", id, on) as boolean,
     readTrace: (id, count) => call("readTrace", id, count) as TraceLine[],
     stepInto: (id) => call("stepInto", id) as BreakInfo,

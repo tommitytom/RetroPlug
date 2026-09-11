@@ -4,6 +4,8 @@
 #include <cstdio>
 
 #include "Core/NES/NesConsole.h"
+#include "Core/NES/NesConstants.h"
+#include "Core/NES/NesCpu.h"
 #include "Core/NES/NesMemoryManager.h"
 
 NesN8FifoRole::NesN8FifoRole() = default;
@@ -16,7 +18,19 @@ void NesN8FifoRole::onAttach(NesConsole& console) {
         return;
     }
     memMgr->RegisterIODevice(&fifo_);
-    std::fprintf(stderr, "[NesN8FifoRole] FIFO attached at $40F0/$40F1\n");
+
+    // Give the cartridge a sense of time. Two models need it: the DMA handshake's transfer window,
+    // and the host wire's delivery rate. Neither is instantaneous on the device, and both show up in
+    // ROM-visible timing - the DMA in how long its wait loop spins, the wire in whether a copy loop
+    // is ever starved mid-structure. Without a clock both stay instant, and anything measured
+    // against them comes out optimistic. The clock rate is read from the console rather than
+    // assumed, so a modelled wall duration holds on PAL and NTSC alike.
+    if (NesCpu* cpu = console.GetCpu()) {
+        fifo_.setCartClock([cpu] { return cpu->GetCycleCount(); },
+                           NesConstants::GetClockRate(console.GetRegion()));
+    }
+
+    std::fprintf(stderr, "[NesN8FifoRole] FIFO attached at $40F0/$40F1/$40FF\n");
 }
 
 void NesN8FifoRole::pushBytes(std::uint32_t offset, const std::uint8_t* data, std::size_t count, bool flush) {

@@ -40,6 +40,22 @@ test("parse: an older-or-equal schema is accepted", () => {
   expect(parseRecent(older)).toEqual([{ path: "/a", name: "" }]);
 });
 
+test("parse: a song name is printable ASCII - anything else marks the row malformed", () => {
+  // Every tracker this app reads writes names in printable ASCII. A row whose song holds anything else is
+  // not a song row but the residue of one recorded from a still-booting cart (box glyphs in Recent), and
+  // it is skipped like any malformed entry rather than shown, or kept forever.
+  const doc = (song: string) => JSON.stringify({ schemaVersion: RECENT_SCHEMA, entries: [{ path: "/a", name: "n", song }] });
+  expect(parseRecent(doc("DEMO"))).toEqual([{ path: "/a", name: "n", song: "DEMO" }]);
+  expect(parseRecent(doc("A B-2 ~!"))).toEqual([{ path: "/a", name: "n", song: "A B-2 ~!" }]); // the whole printable range is fine
+  expect(parseRecent(doc(""))).toEqual([{ path: "/a", name: "n", song: "" }]);
+  expect(parseRecent(doc("¥¥¥"))).toEqual([]); // Latin-1 high bytes, as String.fromCharCode makes them
+  expect(parseRecent(doc("DEMO"))).toEqual([]); // a control character inside
+  expect(parseRecent(doc(""))).toEqual([]); // DEL
+  expect(parseRecent(doc("☐☐"))).toEqual([]); // and anything beyond ASCII
+  // A song-less row has nothing to validate.
+  expect(parseRecent(JSON.stringify({ schemaVersion: RECENT_SCHEMA, entries: [{ path: "/a", name: "n" }] }))).toEqual([{ path: "/a", name: "n" }]);
+});
+
 test("parse: skips malformed entries and caps the list", () => {
   const doc = {
     schemaVersion: RECENT_SCHEMA,

@@ -68,4 +68,16 @@ export interface SmsggdjLayout {
    *  actually drives, which is a binary fact, instead of by how loud a given window happens to be. */
   psgVols: number;
   psgVolsLen: number;
+
+  // --- boot completion: when the working song is the cart's to keep ---------------------------------
+  // Work RAM is readable from the moment the core exists, but for the cart's first seconds it is not yet
+  // the cart's: `init` zero-fills it, `song_new` seeds the blank song, v0.46+ `boot_autoload` reloads
+  // the last slot. A name read in that window is nothing, and a song written in it is wiped.
+
+  /** 1 once the main loop is about to start - written exactly once, after every boot-time overwrite of
+   *  the working song. 0 (zero-filled) until then. The readiness latch every read and write waits on. */
+  booted: number;
+  /** The main-loop frame counter (16-bit LE), incremented once per iteration; 0 until the loop runs.
+   *  For tests: proof the cart is alive, and how far past boot it is. */
+  frame: number;
 }
