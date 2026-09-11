@@ -46,17 +46,27 @@ if (-not $env:RP_JOB_TAG) { $env:RP_JOB_TAG = "params-$format" }
 if ($format -eq 'clap') { $env:RP_WANT_CLAP = '1' }
 $env:RP_PARAMS_FX = "${fxToken}: RetroPlug"
 
-# Win32 just enough to find the FX window and click inside it. xdotool's Windows equivalent is
-# not a tool but these four calls.
-if (-not ('RpWin32' -as [type])) {
-    Add-Type -Namespace Rp -Name Win32 -MemberDefinition @'
-[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n);
-[DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
-[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-[DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, UIntPtr i);
-public struct RECT { public int Left, Top, Right, Bottom; }
-'@ -UsingNamespace System.Runtime.InteropServices -ErrorAction SilentlyContinue
+# xdotool's Windows equivalent is not a tool, it is these five calls. Compiled ONLY for the
+# mouse path: the RP_PARAMS_ROM path drives everything through autoload and needs no input
+# synthesis at all, so it should not depend on a C# compile succeeding.
+function Initialize-RpWin32 {
+    if ('Rp.Win32' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace Rp {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+    public static class Win32 {
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+        [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+        [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint data, UIntPtr extra);
+    }
+}
+'@
 }
 $MOUSEEVENTF_LEFTDOWN = 0x0002; $MOUSEEVENTF_LEFTUP = 0x0004
 
@@ -70,6 +80,22 @@ try {
 
     foreach ($f in @($out, $snap, (Join-Path $sigDir 'rp-params-before'), (Join-Path $sigDir 'rp-params-loaded'), (Join-Path $sigDir 'rp-params-done'))) {
         if (Test-Path $f) { Remove-Item $f -Force }
+    }
+
+    # The mouse-driven variant is NOT ported yet, and is refused rather than run, because a
+    # half-ported check that reports FAIL is worse than one that reports SKIP. Two things are
+    # missing: the "Load mGB" click offsets are calibrated for the Linux window geometry and do
+    # not land on Windows (the click registers on nothing and the editor snapshot never changes
+    # to the loaded grid), and the bash twin asserts DIFFERENT names on this path - the mGB lane
+    # plus the CC pool - which are not the RP_PARAMS_EXPECT_LANES list the ROM path checks.
+    # The ROM path below covers the same underlying behaviour (the host re-reading parameter
+    # names after a ROM loads) deterministically and with no input synthesis, so it is the one
+    # to use until the click path is calibrated.
+    if (-not $env:RP_PARAMS_ROM) {
+        Write-Host 'SKIP: the mouse-driven "Load mGB" variant is not ported to Windows yet.' -ForegroundColor Yellow
+        Write-Host '      Set RP_PARAMS_ROM (e.g. resources\roms\bliptoaster-vrc7.nes) for the' -ForegroundColor Yellow
+        Write-Host '      deterministic autoload variant, which needs no clicking.' -ForegroundColor Yellow
+        exit 2
     }
 
     $romMode = $false
@@ -97,12 +123,13 @@ try {
     [void](Wait-SettledFile -Path $snap -TimeoutSec 45)
 
     if (-not $romMode) {
+        Initialize-RpWin32
         # Find the floating FX window and click "Load mGB" at the same offset the bash twin uses.
         $hwnd = [Rp.Win32]::FindWindow($null, "CLAPi: RetroPlug")
         if ($hwnd -eq [IntPtr]::Zero) { $hwnd = [Rp.Win32]::FindWindow($null, "VST3i: RetroPlug") }
         $x = 114 + $loadXOff; $y = 100 + $loadYOff
         if ($hwnd -ne [IntPtr]::Zero) {
-            $r = New-Object Rp.Win32+RECT
+            $r = New-Object Rp.RECT
             if ([Rp.Win32]::GetWindowRect($hwnd, [ref]$r)) { $x = $r.Left + $loadXOff; $y = $r.Top + $loadYOff }
             [void][Rp.Win32]::SetForegroundWindow($hwnd)
         }
