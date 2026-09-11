@@ -6,7 +6,56 @@
 
 #include "RtMidi.h"
 
+#if defined(__APPLE__)
+#include <CoreMIDI/CoreMIDI.h>
+
+#include <chrono>
+#include <thread>
+#endif
+
 namespace retroplug {
+
+#if defined(__APPLE__)
+// RtMidi makes the process's one CoreMIDI client inside MidiInCore::getCoreMidiClientSingleton(), which
+// is declared throw() -- while its failure path calls error(DRIVER_ERROR), and that THROWS. A throw
+// crossing a noexcept boundary is an immediate std::terminate (__cxa_call_unexpected), so when
+// MIDIClientCreate fails the host ABORTS outright and not one of the catch blocks in this file can see
+// it -- they never get to unwind. Upstream thestk/rtmidi, so it is not ours to fix in place.
+//
+// Observed as an Abort trap out of probePortNames() below, via listInputs() at startup, when several
+// short-lived hosts run back to back (tools/run-sdl-smoke.sh): MIDIClientCreate intermittently returns
+// -304 or -2 while MIDIServer -- an on-demand daemon that stops once its last client goes -- is still
+// coming back up.
+//
+// So make the client ourselves first and let a failure mean "no MIDI" rather than a dead host. It is
+// kept for the process lifetime deliberately: RtMidi's own singleton then rides on an already-warm
+// connection, and holding it keeps MIDIServer up for the rest of the run.
+static bool coreMidiAvailable() {
+    static const bool ok = [] {
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            MIDIClientRef client = 0;
+            if (MIDIClientCreate(CFSTR("RetroPlug"), nullptr, nullptr, &client) == noErr)
+                return true;  // never disposed: it is the keepalive
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+        std::fprintf(stderr, "[retroplug] MIDI unavailable: CoreMIDI would not create a client "
+                             "(continuing without MIDI)\n");
+        return false;
+    }();
+    return ok;
+}
+#endif
+
+// Declared in the header: everything that builds an RtMidiIn/RtMidiOut, here or in the Launchpad link,
+// must pass through this first -- see coreMidiAvailable(), RtMidi turns a CoreMIDI failure into a
+// process abort, so "ask first" is the only protection available.
+bool midiSystemUsable() {
+#if defined(__APPLE__)
+    return coreMidiAvailable();
+#else
+    return true;
+#endif
+}
 
 MidiIo::MidiIo() = default;
 
@@ -16,6 +65,7 @@ bool MidiIo::open(const char* clientName) {
     clientName_ = clientName && *clientName ? clientName : "RetroPlug";
     const std::string& name = clientName_;
     log_ = std::getenv("RETROPLUG_MIDI_LOG") != nullptr;  // set before the callback thread starts
+    if (!midiSystemUsable()) return false;
     try {
         in_ = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, name);
         // (sysex, time, sense) — false means DELIVER. Sysex is on because a control surface speaks it: a
@@ -43,6 +93,7 @@ bool MidiIo::open(const char* clientName) {
 // Names of the hardware input/output ports currently present (skipping our own virtual port + ALSA "Through").
 static std::vector<std::string> probePortNames(bool input, const std::string& clientName) {
     std::vector<std::string> names;
+    if (!midiSystemUsable()) return {};
     try {
         if (input) {
             RtMidiIn probe(RtMidi::UNSPECIFIED, clientName);

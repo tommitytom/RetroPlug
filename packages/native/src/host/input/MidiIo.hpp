@@ -14,6 +14,12 @@ class RtMidiOut;
 
 namespace retroplug {
 
+/** True when an RtMidiIn/RtMidiOut can safely be CONSTRUCTED. On macOS this creates (and then keeps)
+ *  the process's CoreMIDI client first, because RtMidi aborts the process instead of reporting a failure
+ *  -- see the comment on coreMidiAvailable() in MidiIo.cpp. Elsewhere it is always true. Anything that
+ *  builds an RtMidi object must ask this first, including outside this header's own class. */
+bool midiSystemUsable();
+
 // Pure, RtMidi-free port-selection helpers (shared by MidiIo + its unit test). A port is "hardware" when its
 // name is neither our own virtual port (contains `clientName`) nor an ALSA MIDI-through (contains "Through").
 //

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "RtMidi.h"
+#include "host/input/MidiIo.hpp"   // midiSystemUsable(): RtMidi aborts the host on a CoreMIDI failure
 
 namespace retroplug {
 namespace {
@@ -75,6 +76,7 @@ private:
 LaunchpadLink::PortFactory rtMidiPortFactory(std::string clientName) {
     return [clientName = std::move(clientName)](const std::string& inName, const std::string& outName,
                                                 IMidiPort::Receiver receiver) -> std::unique_ptr<IMidiPort> {
+        if (!midiSystemUsable()) throw std::runtime_error("MIDI system unavailable");
         try {
             return std::make_unique<RtMidiPort>(clientName, inName, outName, std::move(receiver));
         } catch (RtMidiError& e) {
