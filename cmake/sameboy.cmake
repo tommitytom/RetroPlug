@@ -132,7 +132,12 @@ endif()
 # Consumer-facing surface (both toolchains). GB_INTERNAL is deliberately NOT here
 # — consumers get the public opaque-struct view. The DISABLE_* defs affect the
 # struct layout, so consumers MUST agree on them; GB_VERSION is convenience.
-target_include_directories(sameboy PUBLIC "${SAMEBOY_DIR}/Core" "${_SAMEBOY_GEN_INC}")
+#
+# SYSTEM: the -w above is PRIVATE to the sameboy target, so it does nothing for SameBoySystem.cpp, which
+# includes these headers with GB_INTERNAL and inherited two -Wmultichar warnings from save_state.h's
+# `return 'SAME'`. The headers are upstream code as much as the .c files are, so a consumer gets them as
+# -isystem and keeps its own warnings.
+target_include_directories(sameboy SYSTEM PUBLIC "${SAMEBOY_DIR}/Core" "${_SAMEBOY_GEN_INC}")
 target_compile_definitions(sameboy PUBLIC
     GB_DISABLE_TIMEKEEPING
     GB_DISABLE_DEBUGGER

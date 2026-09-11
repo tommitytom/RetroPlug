@@ -17,6 +17,12 @@
 // reproducible here - writeRam lands between blocks, so the echo ring's contents at the moment of the
 // change vary run to run, and the same three states swung between -43% and +99% of baseline across
 // repeats. The channel set does not move: three runs give T2=f/T2=2/T2=2, T3=f/T3=f/T3=4, every time.
+//
+// The emulation underneath is fully deterministic - renderAudio steps whole blocks off a sample count,
+// with no clock in it, and SMS work RAM powers on zeroed - so repeated runs of this file are identical
+// byte for byte. If it ever fails ONLY under the parallel suite, suspect a resource shared between host
+// PROCESSES rather than anything here: it did exactly that until Mesen's scratch folder was given a pid
+// (MesenGlobalInit.cpp), because every concurrent host was staging its ROM over the same /tmp path.
 import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
@@ -30,6 +36,33 @@ declare const __REPO_RESOURCES_DIR__: string;
 
 const ROM = __REPO_RESOURCES_DIR__ + "/roms/smsggdj_v0_45.sms";
 const PAUSE = 7;
+
+/** Render until the cart's OWN boot latch says the main loop is running, and answer how long that took.
+ *
+ *  This used to be `renderAudio(3000)`, a stopwatch - which is precisely the bug the rest of this branch
+ *  went and removed from the app. The shipped v0.45 flips `ints_on` at ~2.3 s, so the constant carried
+ *  700 ms of margin, no statement of what it was waiting FOR, and no way to notice when it ran out: a
+ *  slower boot (v0.46 does an autoload before the loop) turns every write below into a write the boot
+ *  then erases, and the test fails on an attenuation reading four steps downstream. Waiting on the latch
+ *  asks the cart, and a cart that never answers fails saying so.
+ *
+ *  The slicing is deliberate at 256 ms = 12 whole 1024-frame render blocks at the host's 48 kHz, so the
+ *  poll steps the core exactly as one long render would. Nothing here asserts that, but it keeps this
+ *  change from moving the audio measurements it feeds. */
+function bootCart(be: ReturnType<typeof createRealBackend>, audio: ReturnType<typeof createAudioDriver>, id: number, booted: number): number {
+  const SLICE = 256;
+  const BUDGET = 8000; // ~3.5x the shipped v0.45 boot; a real regression is an infinite wait, not a slow one
+  for (let t = 0; t < BUDGET; t += SLICE) {
+    audio.renderAudio(SLICE);
+    const ram = be.readRam(id);
+    if (ram && ram[booted] === 1) return t + SLICE;
+  }
+  const ram = be.readRam(id);
+  throw new Error(
+    `cart never reached its main loop within ${BUDGET} ms: ints_on=${ram ? ram[booted] : "no ram"} ` +
+      `(ram ${ram ? ram.length : 0} bytes). A ROM that failed to load reads as a permanently unbooted cart.`,
+  );
+}
 /** Echo settings as SMDJ4 stores them: mode, tap1, tap2, red1, red2, stereo, tsp1, tsp2. */
 const echoOff = Uint8Array.of(0, 4, 8, 2, 4, 0, 0, 0);
 const echoOn = Uint8Array.of(2, 4, 8, 2, 4, 0, 0, 0); // 2 = T2 + T3
@@ -59,13 +92,18 @@ test("echo_mode is where the symbols say - changing that byte changes the sound"
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       1,
     ),
+    "constructSystem (a false here is Mesen refusing the ROM, not a layout problem)",
   ).toBeTruthy();
-  audio.renderAudio(3000); // splash + config_load + song_new
+  console.log(`[sms-layout] booted after ${bootCart(be, audio, 1, layout.booted)} ms`); // splash + config_load + song_new
   for (const w of smsggdjIntegration.liveLoad!(be.readFile(ROM)!, sav, 0)!) expect(be.writeRam(1, w.offset, w.bytes)).toBeTruthy();
   audio.pressButton(1, PAUSE, true);
   audio.renderAudio(80);
   audio.pressButton(1, PAUSE, false);
   audio.renderAudio(1200); // settle, and let the 64-tick echo history fill
+
+  // Everything below reads as silence if the transport never started, and "T1 is silent" is a long way
+  // from "PAUSE did not take". Say which it is here, once, before the three measurements.
+  expect(be.readRam(1)![layout.playState] !== 0, "the cart is not playing - the PAUSE tap did not start the transport").toBeTruthy();
 
   /** Set echo_mode alone, then poll which PSG channels the ENGINE actually drives, as the loudest
    *  attenuation each one reaches (0 loud .. $F silent).
@@ -97,15 +135,15 @@ test("echo_mode is where the symbols say - changing that byte changes the sound"
   const show = (m: number[]) => `T1=${m[0].toString(16)} T2=${m[1].toString(16)} T3=${m[2].toString(16)}`;
   console.log(`[sms-layout] loudest attenuation  off: ${show(off)}   mode1: ${show(t2)}   mode2: ${show(both)}`);
 
-  expect(off[0] < 0xf).toBeTruthy(); // T1 is playing the song in every case
-  expect(off[1]).toBe(0xf); // echo off: T2 and T3 never make a sound
-  expect(off[2]).toBe(0xf);
-  expect(t2[1] < 0xf).toBeTruthy(); // mode 1: T2 only
-  expect(t2[2]).toBe(0xf);
-  expect(both[1] < 0xf).toBeTruthy(); // mode 2: T2 AND T3
-  expect(both[2] < 0xf).toBeTruthy();
+  expect(off[0] < 0xf, "echo off: T1 plays the song in every case").toBeTruthy();
+  expect(off[1], "echo off: T2 never makes a sound").toBe(0xf);
+  expect(off[2], "echo off: T3 never makes a sound").toBe(0xf);
+  expect(t2[1] < 0xf, "mode 1: T2 is audible").toBeTruthy();
+  expect(t2[2], "mode 1: T3 is still silent").toBe(0xf);
+  expect(both[1] < 0xf, "mode 2: T2 is audible").toBeTruthy();
+  expect(both[2] < 0xf, "mode 2: T3 is audible too").toBeTruthy();
 
-  expect(be.readRam(1)![layout.echo]).toBe(2); // ...and readable back on the region readRam serves
+  expect(be.readRam(1)![layout.echo], "echo_mode reads back on the region readRam serves").toBe(2);
   expect(be.removeSystem(1)).toBeTruthy();
 });
 
@@ -133,8 +171,9 @@ test("a load under a RUNNING transport rebases eng_len onto the new song", () =>
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       5,
     ),
+    "constructSystem (a false here is Mesen refusing the ROM, not a layout problem)",
   ).toBeTruthy();
-  audio.renderAudio(3000);
+  bootCart(be, audio, 5, layout.booted);
 
   // Load the LONG song while stopped, then start the transport.
   for (const w of smsggdjIntegration.liveLoad!(rom, sav, 0, be.readRam(5) ?? undefined)!) expect(be.writeRam(5, w.offset, w.bytes)).toBeTruthy();
@@ -144,8 +183,8 @@ test("a load under a RUNNING transport rebases eng_len onto the new song", () =>
   audio.renderAudio(500);
 
   const playingRam = be.readRam(5)!;
-  expect(playingRam[layout.playState] !== 0).toBeTruthy(); // the cart really is running
-  expect(playingRam[layout.engLen]).toBe(8); // the cart's own scan agrees with songLengthRows
+  expect(playingRam[layout.playState] !== 0, "the cart is not playing - the PAUSE tap did not start the transport").toBeTruthy();
+  expect(playingRam[layout.engLen], "the cart's own scan agrees with songLengthRows").toBe(8);
 
   // Now load the SHORT song UNDER the running transport. Without the rebase, eng_len stays 8.
   const writes = smsggdjIntegration.liveLoad!(rom, sav, 1, playingRam)!;
@@ -155,8 +194,8 @@ test("a load under a RUNNING transport rebases eng_len onto the new song", () =>
 
   const after = be.readRam(5)!;
   console.log(`[sms-layout] eng_len 8 -> ${after[layout.engLen]} across a load under a running transport`);
-  expect(after[layout.engLen]).toBe(2); // wraps at the NEW song's length
-  expect(after[layout.playState] !== 0).toBeTruthy(); // ...and it is still playing
+  expect(after[layout.engLen], "eng_len wraps at the NEW song's length").toBe(2);
+  expect(after[layout.playState] !== 0, "...and the transport survived the load").toBeTruthy();
 
   // The negative control: with no RAM passed, liveLoad assumes stopped and emits no rebase at all - so a
   // regression that dropped the play_state check would show up as this set being identical.
@@ -175,8 +214,9 @@ test("song_name and song_edited land where the symbols say", () => {
       { romPath: ROM, platform: "sms", core: "mesen", embeddedRom: "", savPath: null, statePath: null, sramBytes: sav, settings: JSON.stringify({ enableFm: false }) },
       6,
     ),
+    "constructSystem (a false here is Mesen refusing the ROM, not a layout problem)",
   ).toBeTruthy();
-  audio.renderAudio(3000);
+  bootCart(be, audio, 6, layout.booted);
   for (const w of smsggdjIntegration.liveLoad!(be.readFile(ROM)!, sav, 0)!) expect(be.writeRam(6, w.offset, w.bytes)).toBeTruthy();
   audio.renderAudio(50);
   const ram = be.readRam(6)!;
@@ -184,14 +224,14 @@ test("song_name and song_edited land where the symbols say", () => {
   // The name travelled from the DIRECTORY ENTRY into the cart's own song_name - the field that is not in
   // the block, and the reason the layout exists rather than a bare offset-0 poke.
   const name = String.fromCharCode(...ram.subarray(layout.name, layout.name + layout.nameLen)).replace(/\0+$/, "").trim();
-  expect(name).toBe("ECHOTEST");
+  expect(name, "the directory entry's name reached the cart's own song_name").toBe("ECHOTEST");
 
   // The cart's own load clears its dirty flag; a live load has to leave the same state behind, or the
   // cart believes a freshly loaded song already has unsaved edits.
-  expect(ram[layout.edited]).toBe(0);
+  expect(ram[layout.edited], "a live load leaves song_edited clear, as the cart's own load does").toBe(0);
 
   // The block still leads work RAM - the assumption the generator asserts, re-checked against the core.
-  expect(layout.song).toBe(0);
-  expect(ram.length >= SMDJ4_BLOCK_LEN).toBeTruthy();
+  expect(layout.song, "the song block still leads work RAM").toBe(0);
+  expect(ram.length >= SMDJ4_BLOCK_LEN, "readRam serves at least a whole song block").toBeTruthy();
   expect(be.removeSystem(6)).toBeTruthy();
 });

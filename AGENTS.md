@@ -63,6 +63,25 @@ The rules below are the parts that don't fit those.
   `cl` + vcpkg-`x64-windows-static` configure (overridable via `VCPKG_ROOT` /
   `RGBDS_DIR` / `NODE_DIR`). Both scripts pass any `-D<var>=<value>` straight
   through to the configure (and force one, so the entry lands on an existing tree).
+- **The Windows build is `/W4 /WX`, and CI runs the SAME compiler you do.** The
+  warning block at the end of
+  [packages/native/CMakeLists.txt](packages/native/CMakeLists.txt) puts `/W4 /WX` on
+  RetroPlug's OWN targets only (`RETROPLUG_WERROR=OFF` opts out); the vendored subtrees
+  keep their own levels. Windows is the one platform whose compiler ever sees the
+  `#if defined(_WIN32)` half of a platform guard, so it is where a rotted guard shows up.
+  Three rules when it fires:
+  - **Fix our code; suppress only what we do not own** — and suppress by NUMBER, pinned
+    to the one header that raises it, so a new warning class still fails. You cannot
+    lower a level with `/W0` or `/w`: a second `/W`-family flag trips command-line
+    warning `D9025`, which is itself un-suppressable.
+  - **A vendored `.cpp` compiled straight into one of our targets** (lodepng, dpf-widgets
+    `LVGL.cpp`) takes a per-source `/wd` list via `set_source_files_properties` —
+    per-source options are appended after the target's, so they win over `/W4`.
+  - **Both windows CI jobs run `windows-2025-vs2026`** (VS 2026, MSVC 14.51) to match the
+    dev box. That is deliberate: plain `windows-2025` ships the same VS 2022 17.14 /
+    MSVC 14.44 as `windows-2022`, and 14.44 vs 14.51 disagree about which warnings
+    exist — before they were matched, a locally clean `/W4` build could still go red on
+    CI (it did, on `C4127` in rpcpp). Don't "fix" that class of failure locally-only.
 - **Mesen LTO is opt-in (`-DRETROPLUG_MESEN_LTO=ON`), and that is deliberate.** It
   buys ~10% on the NES core (Cortex-A53: xRT 0.83 -> 0.92), but it turns every mesen
   object into LTO bitcode, so each of the *nine* binaries linking that static lib
@@ -70,9 +89,12 @@ The rules below are the parts that don't fit those.
   wall / 26m51s CPU with it on, 2.4s / 6.6s with it off** — same single compile, the
   rest is eight full LTO links. So it's OFF by default and every `release.yml` job
   passes it ON; shipped builds keep the speedup, the dev loop doesn't pay for it.
-  Toggling the option recompiles mesen (~45 s). If you see mesen scroll past on every
-  build (the repeated `emu2413.cpp` warnings), that's LTO link-time codegen, not a
-  stale-dependency bug — `[NN%] Built target mesen` prints whether or not it did work.
+  Toggling the option recompiles mesen (~45 s). If a build with it ON seems to stall on
+  every link, that's LTO link-time codegen over mesen's ~430 objects, not a
+  stale-dependency bug: `[NN%] Built target mesen` prints whether or not it did work.
+  (It used to announce itself with repeated `emu2413.cpp` / `-Wodr` warnings at each
+  link. Those are silenced now - the per-TU `-w` can't reach link-time codegen, so
+  `deps/mesen/CMakeLists.txt` puts a `-w` on the consumers' link line under LTO too.)
 - **`retroplug-sdl` is in the default build** — `build.sh` builds it, and CI covers it
   (CI builds `all`) on all four platforms. It needs nothing extra installed: SDL2 is
   already REQUIRED at root scope for every plugin variant, and rtmidi is an in-tree
@@ -143,6 +165,12 @@ bundle — are in [spec/06-build-test.md](spec/06-build-test.md).)
 
 Verify your own work headlessly before claiming it's done — **a "tests pass" claim
 must be backed by an actual exit-zero** from one of these.
+
+**On Windows, run the suites through `test.bat`, not bare `pnpm test*`** (`test.bat` =
+all four; `test.bat native ui` = a subset). It enters the MSVC env the `cmake-build`
+step needs and pins pnpm via corepack, because pnpm strips `PATH` for spawned children
+on Windows — without it the scripts die on `spawnSync cmake ENOENT`, which looks like a
+broken tree but is not.
 
 The headless loop (the only path — legacy is gone) is documented in
 [spec/06-build-test.md](spec/06-build-test.md): `pnpm test` (pure-TS mock),

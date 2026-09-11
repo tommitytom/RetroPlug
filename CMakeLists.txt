@@ -130,9 +130,10 @@ message(STATUS "dpf.js framework: ${DPFJS_PATH}")
 
 # Third-party dep warnings are silenced inside dpf.js's own CMake (it owns the
 # lvgl / txiki / quickjs / libuv / mbedtls subtrees), and the genuine warnings in
-# the framework forks are fixed at source — so RetroPlug needs no dep-warning
-# handling here beyond the vendored bits it pulls in itself (SameBoy: cmake/
-# sameboy.cmake; liblsdj: packages/native/test/CMakeLists.txt).
+# the framework forks are fixed at source. The deps RetroPlug pulls in ITSELF are
+# quieted here instead - see retroplug_silence_dep_warnings below, plus the two
+# vendored cores that need more than a flag (SameBoy: cmake/sameboy.cmake;
+# Mesen: deps/mesen/CMakeLists.txt).
 add_subdirectory("${DPFJS_PATH}" dpfjs)
 
 # --- SDL2: used for gamepad/game-controller input across every plugin
@@ -175,6 +176,30 @@ else()
 endif()
 
 # LVGL, txiki.js, msgpack-c, and rpcpp now come from dpf.js (above).
+
+# --- Third-party warning suppression -----------------------------------------
+# The deps RetroPlug adds itself (as opposed to the ones dpf.js owns and already quiets) are upstream
+# code we don't author, so a warning in one tells us nothing we can act on and hides the ones in code we
+# DO own. `-w` PRIVATE on the dep's own target: our sources are untouched and keep every warning.
+#
+# Call it AFTER the add_subdirectory that defines the target - the flag appends to whatever the dep set
+# for itself, so it wins over a -Wall the dep raises. Targets are optional: several deps are
+# EXCLUDE_FROM_ALL and only exist in some configurations, hence the per-target TARGET guard.
+#
+# GNU/Clang only, mirroring cmake/sameboy.cmake. On MSVC a second /W-family flag trips command-line
+# warning D9025 on any dep that sets its own /W3 or /W4 - which is itself a warning, and not
+# /wd-suppressible. dpf.js's CMakeLists has the escape hatch if Windows noise ever needs addressing: an
+# explicit /wd#### list per observed code. Nothing here has been measured on MSVC, so nothing is guessed.
+function(retroplug_silence_dep_warnings)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        return()
+    endif()
+    foreach(_tgt IN LISTS ARGN)
+        if(TARGET ${_tgt})
+            target_compile_options(${_tgt} PRIVATE -w)
+        endif()
+    endforeach()
+endfunction()
 
 # --- SameBoy: Game Boy emulator core (submodule at deps/sameboy) ---
 include(cmake/sameboy.cmake)
@@ -226,11 +251,13 @@ add_subdirectory(deps/mesen)
 # --- r8brain-free: high-quality SRC for LSDJ kit compilation.
 # Also used for non-44.1 kHz host-rate sync accuracy.
 add_subdirectory(deps/r8brain)
+retroplug_silence_dep_warnings(r8brain)
 
 # --- enkiTS: task scheduler. Drives per-sample parallel work in the LSDJ
 # kit compiler so a 16-sample kit can recompile across cores instead of
 # blocking the UI rpcpp thread on a serial loop.
 add_subdirectory(deps/enkiTS)
+retroplug_silence_dep_warnings(enkiTS)
 
 # --- miniaudio: single-header audio file decoder (WAV / MP3 / FLAC).
 # Used by SampleCache to load source samples for kit compilation.
@@ -251,6 +278,7 @@ target_include_directories(miniaudio INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/deps/
 # isn't found. Force it ON here so efsw-static always exists (BUILD_SHARED_LIBS stays OFF — static build).
 set(BUILD_STATIC_LIBS ON CACHE BOOL "Build efsw as a static library" FORCE)
 add_subdirectory(deps/efsw "${CMAKE_BINARY_DIR}/deps/efsw" EXCLUDE_FROM_ALL)
+retroplug_silence_dep_warnings(efsw-static efsw)
 
 # lvgl-js-native + the framework PIC settings now come from dpf.js (above).
 
@@ -299,6 +327,7 @@ endif()
 set(CATCH_INSTALL_DOCS   OFF CACHE BOOL "" FORCE)
 set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
 add_subdirectory(deps/catch2 "${CMAKE_BINARY_DIR}/deps/catch2" EXCLUDE_FROM_ALL)
+retroplug_silence_dep_warnings(Catch2 Catch2WithMain)
 
 # --- the native package: retroplug-core (shared emulator/Project lib) + the Backend / txiki host
 # + the DPF plugin + the test host / cli / ui-test.
