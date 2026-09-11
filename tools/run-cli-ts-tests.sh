@@ -29,6 +29,9 @@ check() { # check <label> <expected-exit> <actual-exit>
 		fails=$((fails + 1))
 	fi
 }
+mtime() { # mtime <file> - GNU coreutils and BSD/macOS spell this differently
+	stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"
+}
 contains() { # contains <label> <haystack-file> <needle>
 	if grep -qF -- "$3" "$2"; then
 		echo "ok   - $1"
@@ -116,10 +119,10 @@ else
 fi
 
 # A current copy must NOT be rewritten (no churn in the consumer's tree on every run).
-before="$(stat -c %Y "$SDKFIX/sdk/retroplug-cli.d.ts")"
+before="$(mtime "$SDKFIX/sdk/retroplug-cli.d.ts")"
 sleep 1
 "$CLI" test "$SDKFIX/tests" >/dev/null 2>&1
-if [ "$(stat -c %Y "$SDKFIX/sdk/retroplug-cli.d.ts")" = "$before" ]; then
+if [ "$(mtime "$SDKFIX/sdk/retroplug-cli.d.ts")" = "$before" ]; then
 	echo "ok   - a current .d.ts is left untouched"
 else
 	echo "FAIL - a current SDK was rewritten anyway"
