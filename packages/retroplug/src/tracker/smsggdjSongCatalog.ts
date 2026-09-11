@@ -21,9 +21,10 @@
 // The same fact has a sharper edge than it first appears: because the cold boot is what makes ANY edit
 // take effect, and the working song is not in the image, EVERY battery op here destroys it - not just
 // `load`. See `workingSongOutsideBattery` below, which is how the shared Songs menu learns to warn about
-// Delete and Move Up as well.
+// Delete and Move Up as well. It also means the reverse: after a project LOAD the cart has only just
+// booted, so its working song is the cart's, not the user's, and `workingSongDirty` has to say so.
 import type { SongCatalog } from "./songCatalog";
-import { commonSongNameOffset } from "../smsggdj/runtime/layout";
+import { commonSongEditedOffset, commonSongNameOffset } from "../smsggdj/runtime/layout";
 import {
   listSongs,
   isSmsggdjSav,
@@ -94,12 +95,25 @@ export const smsggdjSongCatalog: SongCatalog = {
   // say clean: "I cannot tell" has to look like "nothing to lose", because a prompt that fires when
   // nothing would be lost trains people to dismiss the one that matters.
   //
-  // Dirty means the live block matches NO saved song - the contract's own words, and the right test for
-  // a console with no link byte to consult. Once the cart autoloads its currently-loaded slot at boot, a
-  // freshly booted cart matches the slot it came from and stays silent; before that it has no way to
-  // know a blank song is blank, which is one more reason the Songs menu is gated on that ROM.
+  // Two signals, and BOTH have to agree before anything is called unsaved:
+  //
+  //   song_edited  the cart's own flag, "1 = song data changed since last save/load" (editor.asm:141) -
+  //                the byte its PROJECT screen prints UNSAVED from. Set at the input dispatch for every
+  //                song-data screen (do_place / do_cut / do_edit), and cleared by a load (rle.asm:484),
+  //                a save (rle.asm:817) and `song_new` (engine.asm:4326, "fresh song = no unsaved
+  //                changes"). It answers "has a human touched this", which content cannot.
+  //   the content  the live block matching no saved song. Narrows the flag, which is set on the
+  //                KEYPRESS rather than on a mutation, so an edit typed and undone by hand stays clean.
+  //
+  // The flag is what this console needs and the other two do not. Its working song is not in the image,
+  // so a cart that has just booted holds whatever `song_new` gave it - a blank song, saved in no slot.
+  // Content alone therefore read every fresh boot as an hour of unsaved work: loading a project from
+  // Recent offered to discard a song nobody had written, and could only call it "the working song"
+  // because there wasn't one to name.
   workingSongDirty: (sav, ram) => {
     if (!ram || ram.length < SMDJ4_BLOCK_LEN || !isSmsggdjSav(sav)) return false;
+    const edited = commonSongEditedOffset();
+    if (edited === null || ram.length <= edited || ram[edited] === 0) return false;
     return !isSongSaved(sav, ram.subarray(0, SMDJ4_BLOCK_LEN));
   },
 

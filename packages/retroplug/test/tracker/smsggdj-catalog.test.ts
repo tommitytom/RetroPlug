@@ -78,7 +78,9 @@ test("workingSongDirty needs work RAM, and says CLEAN when it has none", () => {
 
 test("a working song that matches a saved slot is clean; one that matches none is dirty", () => {
   const sav = twoSongs();
+  const layout = resolveSmsggdjLayout("0.45")!;
   const ram = new Uint8Array(8192); // SMS work RAM; the song block is at its base
+  ram[layout.edited] = 1; // the cart has been edited since its last save/load
 
   ram.set(song(2), 0); // exactly BETA
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
@@ -88,6 +90,26 @@ test("a working song that matches a saved slot is clean; one that matches none i
 
   ram.set(song(1), 0); // exactly ALPHA - a different slot, still saved
   expect(smsggdjSongCatalog.workingSongDirty!(sav, ram)).toBe(false);
+});
+
+test("a cart that has not been edited is clean, whatever its work RAM holds", () => {
+  // The cart's own `song_edited` (editor.asm:141, "1 = song data changed since last save/load") has to
+  // agree before anything is called unsaved, because content alone cannot tell an hour of work from a
+  // song nobody has touched. The case that made this matter: a cart boots into the blank song `song_new`
+  // gives it, that blank song is in no saved slot, and comparing content therefore called EVERY fresh
+  // boot unsaved work - so loading a project from Recent offered to discard a song that never existed.
+  const sav = twoSongs();
+  const layout = resolveSmsggdjLayout("0.45")!;
+
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, new Uint8Array(8192))).toBe(false); // just booted
+
+  // Even a block matching no saved slot: song_new clears the flag, so a blank song is not lost work.
+  const fresh = new Uint8Array(8192);
+  fresh.set(song(9), 0);
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, fresh)).toBe(false);
+
+  fresh[layout.edited] = 1; // ...and the same bytes once the cart says they were typed
+  expect(smsggdjSongCatalog.workingSongDirty!(sav, fresh)).toBe(true);
 });
 
 test("the working song is declared OUTSIDE the battery, which is what guards the other five ops", () => {

@@ -198,9 +198,12 @@ function newSmsCart() {
     return b;
   };
   be.setSram(id, buildSav([{ block: block(1), name: "ALPHA" }, { block: block(2), name: "BETA" }], 32 * 1024)!);
-  const setWorking = (b: Uint8Array): void => {
+  // `edited` is the cart's own song_edited flag - the thing that separates "typed for an hour" from
+  // "this is what the cart booted into", which content alone cannot tell apart.
+  const setWorking = (b: Uint8Array, edited = false): void => {
     const ram = new Uint8Array(8192);
     ram.set(b, 0);
+    ram[resolveSmsggdjLayout("0.45")!.edited] = edited ? 1 : 0;
     be.setRam(id, ram);
   };
   return { be, systems, sys: () => systems.systems()[0], block, setWorking };
@@ -264,14 +267,34 @@ test("savEditWouldDiscard: a battery edit warns on the console whose working son
   // Replace are every bit as destructive as Load and have to ask first.
   const { systems, sys, block, setWorking } = newSmsCart();
 
-  setWorking(block(2)); // working song IS the saved BETA - the reboot costs nothing
+  setWorking(block(2), true); // working song IS the saved BETA - the reboot costs nothing
   expect(savEditWouldDiscard(systems, sys())).toBe(false);
 
   const edited = block(2);
   edited[9] ^= 0xff; // ...now edited, and in no slot
-  setWorking(edited);
+  setWorking(edited, true);
   expect(savEditWouldDiscard(systems, sys())).toBe(true);
   expect(songLoadWouldDiscard(systems, sys())).toBe(true); // Load agrees, off the same signal
+});
+
+test("a just-booted smsggdj cart discards nothing, so loading a recent song asks nothing", () => {
+  // The bug this closes, end to end. Picking a SONG row on the start menu loads the project and then
+  // loads that song, and the guard in between was reading the work RAM of a cart that had only just been
+  // created: blank (SMS work RAM powers on zeroed), matching no saved slot, and therefore "unsaved work".
+  // The prompt named it `"the working song"` - the fallback for a song with no name - because there was
+  // no song. Nothing has been typed into this cart, so there is nothing to keep.
+  const { systems, sys, setWorking } = newSmsCart();
+
+  setWorking(new Uint8Array(SMDJ4_BLOCK_LEN)); // exactly what a freshly loaded project boots into
+  expect(songLoadByNameWouldDiscard(systems, sys(), "BETA")).toBe(false);
+  expect(songLoadWouldDiscard(systems, sys())).toBe(false);
+  expect(savEditWouldDiscard(systems, sys())).toBe(false);
+
+  // ...and the same cart once it HAS been edited still prompts, which is the whole point of the guard.
+  const typed = new Uint8Array(SMDJ4_BLOCK_LEN);
+  typed[9] = 0x42;
+  setWorking(typed, true);
+  expect(songLoadByNameWouldDiscard(systems, sys(), "BETA")).toBe(true);
 });
 
 test("savEditWouldDiscard: with no work RAM published it stays silent rather than guessing", () => {
