@@ -12,13 +12,9 @@
 #include <string>
 #include <functional>
 
-#if defined(_WIN32)
-#include <processthreadsapi.h>
-#else
-#include <unistd.h>
-#endif
-
 #include "Core/NES/INesMemoryHandler.h"
+
+#include "util/ProcessId.hpp"
 
 // EverDrive N8 Pro FIFO emulator. Maps to NES address space at $40F0 (data)
 // and $40F1 (status). The N8-midi ROM polls $40F1 bit 7 (`FIFO_MOS_RXF`):
@@ -55,15 +51,8 @@ namespace rp {
 		return on;
 	}
 
-	// This process's id, for naming the default SD-card scratch directory. Concurrent harness runs
-	// (the reaper suite, a consumer's per-file test processes) must not share a card.
-	inline long long currentProcessId() {
-#if defined(_WIN32)
-		return static_cast<long long>(::GetCurrentProcessId());
-#else
-		return static_cast<long long>(::getpid());
-#endif
-	}
+	// `currentProcessId` (util/ProcessId.hpp) names the default SD-card scratch directory: concurrent
+	// harness runs (the reaper suite, a consumer's per-file test processes) must not share a card.
 
 	// -----------------------------------------------------------------------
 	// Command codes (NES SDK / Edio protocol)

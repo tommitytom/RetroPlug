@@ -40,7 +40,6 @@ float dbToLin(float dB) {
     return dB > -90.0f ? std::pow(10.0f, dB * 0.05f) : 0.0f;
 }
 
-constexpr const char* kMesenHomeFolder = "/tmp/retroplug-mesen";
 
 void configureGba(Emulator& emu, bool skipBootScreen) {
     EmuSettings* settings = emu.GetSettings();
@@ -74,7 +73,7 @@ void installGbaBios(const std::string& biosPath) {
                      biosPath.c_str());
         return;
     }
-    fs::path dstDir = fs::path(kMesenHomeFolder) / "Firmware";
+    fs::path dstDir = fs::path(mesenHomeFolder()) / "Firmware";
     fs::create_directories(dstDir, ec);
     fs::path dst = dstDir / "gba_bios.bin";
     fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);

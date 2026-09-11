@@ -40,8 +40,6 @@ float dbToLin(float dB) {
     return dB > -90.0f ? std::pow(10.0f, dB * 0.05f) : 0.0f;
 }
 
-constexpr const char* kMesenHomeFolder = "/tmp/retroplug-mesen";
-
 // Coarse flush budget in Z80 T-states. ~256 output samples at 48 kHz NTSC.
 // Bounded well under two independent limits: SmsPsg's own 20000-T auto-flush
 // (so the cadence stays host-owned), and the ~149,000 T at which a single
@@ -189,7 +187,10 @@ SmsConsole* MesenSmsSystem::smsConsole() const {
 // So: real stem for 1 and 2, real file for 3. The per-system subdirectory keeps
 // two systems whose ROMs happen to share a stem from overwriting each other's
 // staged bytes (which Reset would then reload as the wrong game), while leaving
-// the filename - and therefore the battery stem - the honest one.
+// the filename - and therefore the battery stem - the honest one. The home
+// folder it hangs off is per-PROCESS (mesenHomeFolder), which is the same
+// argument one level out: the system id is unique within a process, not across
+// the concurrent host processes the test runners start.
 std::string MesenSmsSystem::stageRom() {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -201,7 +202,7 @@ std::string MesenSmsSystem::stageRom() {
     }
     const char* ext = config_.gameGear ? ".gg" : ".sms";
 
-    const fs::path dir = fs::path(kMesenHomeFolder) / "staged" / std::to_string(id());
+    const fs::path dir = fs::path(mesenHomeFolder()) / "staged" / std::to_string(id());
     fs::create_directories(dir, ec);
     if (ec) {
         std::fprintf(stderr, "[MesenSmsSystem] cannot create staging dir '%s': %s\n",
