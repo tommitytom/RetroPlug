@@ -1012,8 +1012,9 @@ if(MSVC)
         /wd4200   # zero-sized array in struct -- libwebsockets lws-dht.h (via txiki)
         /wd4245   # enum -> uint32_t mismatch  -- DPF DistrhoDetails.hpp
         /wd4206   # empty translation unit     -- DPF-generated _dpf_empty.c
-        # MSVC version-dependent: 14.44 (what CI runs) reports this in rpcpp; 14.51 does not, so a
-        # locally clean /W4 build is not proof CI is clean. Keep the number here, not a local-only fix.
+        # MSVC version-dependent: 14.44 reports this in rpcpp, 14.51 does not. CI and the dev box
+        # both run 14.51 now (windows-2025-vs2026), so this one is for anyone still on a 14.44
+        # toolchain -- and a reminder that the two versions disagree about what a warning is.
         /wd4127)  # conditional expression is constant -- rpcpp TypedRpcServer.h
     if(RETROPLUG_WERROR)
         list(APPEND _rp_warn_flags /WX)

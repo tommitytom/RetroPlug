@@ -69,7 +69,10 @@ The rules below are the parts that don't fit those.
   RetroPlug's OWN targets only (`RETROPLUG_WERROR=OFF` opts out); the vendored subtrees
   keep their own levels. Windows is the one platform whose compiler ever sees the
   `#if defined(_WIN32)` half of a platform guard, so it is where a rotted guard shows up.
-  Three rules when it fires:
+  The GNU/Clang side of this is a different lever: `retroplug_silence_dep_warnings()` in the
+  root [CMakeLists.txt](CMakeLists.txt) puts `-w` on a DEP's own target; that form trips `D9025`
+  on MSVC, which is why Windows suppresses per-number on OUR targets instead. Three rules when
+  a Windows warning fires:
   - **Fix our code; suppress only what we do not own** — and suppress by NUMBER, pinned
     to the one header that raises it, so a new warning class still fails. You cannot
     lower a level with `/W0` or `/w`: a second `/W`-family flag trips command-line
