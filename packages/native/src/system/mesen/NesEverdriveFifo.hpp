@@ -13,7 +13,10 @@
 #include <functional>
 
 #if defined(_WIN32)
-#include <processthreadsapi.h>
+// <process.h> (the CRT's _getpid) rather than the SDK's <processthreadsapi.h>: that header is
+// not standalone-includable -- only <windows.h> defines the _AMD64_ target-arch macro
+// that winnt.h demands, so including it directly is a "No Target Architecture" error.
+#include <process.h>
 #else
 #include <unistd.h>
 #endif
@@ -59,7 +62,7 @@ namespace rp {
 	// (the reaper suite, a consumer's per-file test processes) must not share a card.
 	inline long long currentProcessId() {
 #if defined(_WIN32)
-		return static_cast<long long>(::GetCurrentProcessId());
+		return static_cast<long long>(::_getpid());
 #else
 		return static_cast<long long>(::getpid());
 #endif
