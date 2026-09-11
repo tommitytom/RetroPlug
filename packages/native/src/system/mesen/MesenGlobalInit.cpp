@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <string>
 
 #include "Core/Shared/MessageManager.h"
 #include "Utilities/FolderUtilities.h"
@@ -14,6 +15,33 @@ namespace {
 // mesenHomeFolder(), which outlives the handler: the handler is registered after that string finishes
 // constructing, and atexit handlers interleave with static destruction in reverse completion order.
 const std::string* g_home = nullptr;
+
+// Drop every child of the scratch root that no live process owns. Two kinds qualify: a pid-named
+// directory whose pid is gone, and anything NOT pid-named at all - the latter is the pre-pid layout,
+// where `staged/` accumulated one directory per system id ever constructed and was never cleaned.
+//
+// So: an all-digits name survives exactly as long as its pid does, and any other name goes. Conservative
+// where it counts, since this deletes - processAlive answers "alive" for anything it cannot prove gone,
+// including a pid owned by another user. Errors are ignored throughout: a sweep that cannot run is not a
+// reason to fail to start a core. Our OWN pid is skipped here (we are alive), so the caller still clears
+// a directory left by a predecessor that held it.
+void sweepAbandoned(const std::filesystem::path& base) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::exists(base, ec)) return;
+
+    for (fs::directory_iterator it(base, ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        const bool numeric = !name.empty() && name.find_first_not_of("0123456789") == std::string::npos;
+
+        // 18 digits is past any pid and short of overflowing the parse; a longer run is not a name we
+        // wrote, so it falls through to removal with the pre-pid leftovers.
+        if (numeric && name.size() <= 18 && rp::processAlive(std::stoll(name))) continue;
+
+        std::error_code rm;
+        fs::remove_all(it->path(), rm);
+    }
+}
 
 } // namespace
 
@@ -39,14 +67,18 @@ void mesenGlobalInit() {
 // nondeterminism.
 //
 // The pid segment is the same fix NesEverdriveFifo already applies to its SD-card scratch dir, for the
-// same reason. Removed at exit, best effort: a run that crashes leaves a directory behind, which costs a
-// few KB of /tmp and is cleared if that pid comes round again.
+// same reason. Removed at exit, and swept on the way in for owners that are gone - a host that is KILLED
+// never runs its atexit, which is every Reaper the test suite starts, so the sweep is what keeps the root
+// from growing by a directory per run.
 const std::string& mesenHomeFolder() {
     static const std::string home = [] {
         namespace fs = std::filesystem;
         std::error_code ec;
 
-        const fs::path dir = fs::path("/tmp/retroplug-mesen") / std::to_string(rp::currentProcessId());
+        const fs::path base("/tmp/retroplug-mesen");
+        sweepAbandoned(base);
+
+        const fs::path dir = base / std::to_string(rp::currentProcessId());
         fs::remove_all(dir, ec); // a previous run that crashed holding this pid
         fs::create_directories(dir, ec);
 
