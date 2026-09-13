@@ -1334,8 +1334,12 @@ const blipToasterAssetSpec: AssetMenuSpec = {
 // replace an entry's contents, they don't pick the live one. Each of these is a boot default and not a lock: the
 // cart's own CC 16 / CC 17 (and CC 14 / CC 15) still move it live, and the next cold boot comes back to this.
 //
-// A change cold-boots the system (writeSettings -> reloadSystem), which is what makes it visible at once: the
-// ROM reads the block during startup and nowhere else.
+// The ROM reads the block during STARTUP and nowhere else, so a change only shows after a cold boot - and that
+// splits the rows the way the rest of this menu is already split. The CYCLERS just pin the field: they leave the
+// running cart alone, so you can step through 16 themes with the menu open, and the pin is persisted (and
+// re-applied by any later load) the moment you move it. The two ACTIONS reboot, and close the menu as every
+// action row does, which is when you see the new look. A project LOAD needs neither - construct applies the
+// pins on the way in.
 
 // The label for the row's current value, given the effective settings. Kit and Theme name the ENTRY the cart
 // will use, read from the ROM itself, so the row says "TR-909" rather than "3" - the same names the Kits and
@@ -1351,10 +1355,8 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
   // boots with right now, which is what a row must show.
   const pinned = readBlipToasterSettings(sys);
   const effective = { ...rom.settings()!, ...pinned };
-  const write = (patch: Record<string, unknown>): void => {
-    ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: { ...pinned, ...patch } });
-    ctx.stores.project.systems.reloadSystem(sys.id);
-  };
+  const pin = (patch: Record<string, unknown>): void =>
+    void ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: { ...pinned, ...patch } });
 
   const kitNames = Array.from({ length: SETTINGS_KIT_COUNT }, (_v, i) => rom.kits().find((k) => k.slot === i)?.name || `Kit ${i}`);
   const themeNames = Array.from(
@@ -1364,19 +1366,21 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
   const fontNames = Array.from({ length: SETTINGS_FONT_COUNT }, (_v, i) => `Font ${i}`);
 
   return [
-    cycler("bliptoaster-set-theme", "Theme", themeNames, effective.theme, (n) => write({ theme: n })),
-    cycler("bliptoaster-set-font", "Font", fontNames, effective.font, (n) => write({ font: n })),
+    cycler("bliptoaster-set-theme", "Theme", themeNames, effective.theme, (n) => pin({ theme: n })),
+    cycler("bliptoaster-set-font", "Font", fontNames, effective.font, (n) => pin({ font: n })),
     sep("bliptoaster-set-sep"),
-    cycler("bliptoaster-set-basech", "Base Channel", baseChannelNames, effective.baseChannel, (n) => write({ baseChannel: n })),
-    cycler("bliptoaster-set-kit", "Default Kit", kitNames, effective.kit, (n) => write({ kit: n })),
-    cycler("bliptoaster-set-mode1", "Mode 1 at Boot", OFF_ON, effective.mode1 ? 1 : 0, (n) => write({ mode1: n === 1 })),
+    cycler("bliptoaster-set-basech", "Base Channel", baseChannelNames, effective.baseChannel, (n) => pin({ baseChannel: n })),
+    cycler("bliptoaster-set-kit", "Default Kit", kitNames, effective.kit, (n) => pin({ kit: n })),
+    cycler("bliptoaster-set-mode1", "Mode 1 at Boot", OFF_ON, effective.mode1 ? 1 : 0, (n) => pin({ mode1: n === 1 })),
     // "not on the VRC7 build" is the ROM's own behaviour (it has no velocity curve), not something to hide here:
     // the byte is still baked and still honoured by every other build of the same project's ROM.
-    cycler("bliptoaster-set-curve", "Velocity Curve", ["Linear", "Log"], effective.velCurve ? 1 : 0, (n) => write({ velCurve: n === 1 })),
-    // Only offered once something IS pinned: with nothing pinned the rows already show the ROM's own bytes.
+    cycler("bliptoaster-set-curve", "Velocity Curve", ["Linear", "Log"], effective.velCurve ? 1 : 0, (n) => pin({ velCurve: n === 1 })),
+    // The two reboot rows. Both are only offered once something IS pinned: with nothing pinned the rows above
+    // already show the ROM's own bytes, so there is nothing to apply and nothing to reset.
     ...(Object.keys(pinned).length
       ? [
-          sep("bliptoaster-set-reset-sep"),
+          sep("bliptoaster-set-apply-sep"),
+          action("bliptoaster-set-apply", "Apply (Reboot Cart)", () => void ctx.stores.project.systems.reloadSystem(sys.id)),
           action("bliptoaster-set-reset", "Reset to ROM Defaults", () => {
             ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: {} });
             ctx.stores.project.systems.reloadSystem(sys.id);

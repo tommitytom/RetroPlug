@@ -83,7 +83,8 @@ test("the Settings rows show the ROM's own baked values, naming the entry each f
   expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: TEST");
   expect(rowLabel(items(), "bliptoaster-set-mode1")).toBe("Mode 1 at Boot: Off");
   expect(rowLabel(items(), "bliptoaster-set-curve")).toBe("Velocity Curve: Linear");
-  // Nothing pinned yet, so there is nothing to reset.
+  // Nothing pinned yet, so there is nothing to apply and nothing to reset.
+  expect(findItem(settingsRows(items()), "bliptoaster-set-apply")).toBe(undefined);
   expect(findItem(settingsRows(items()), "bliptoaster-set-reset")).toBe(undefined);
 });
 
@@ -115,7 +116,11 @@ test("cycling a Settings row pins that field on the role and leaves the others u
   expect(pinned().theme).toBe(15);
   expect(pinned().mode1).toBe(true);
 
-  // With something pinned, Reset appears and clears the lot back to the ROM's bytes.
+  // A cycler pins but does NOT reboot - the ROM is read at startup only, so the reboot is its own row (which
+  // keeps the menu alive across a step: reloadSystem swaps the id the instance menu is anchored to).
+  expect(findItem(settingsRows(items()), "bliptoaster-set-apply")?.kind).toBe("action");
+
+  // Reset clears the lot back to the ROM's bytes, and reboots so the cart actually comes up that way.
   findItem(settingsRows(items()), "bliptoaster-set-reset")!.onSelect!();
   expect(pinned()).toEqual({});
   expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DFLT");
