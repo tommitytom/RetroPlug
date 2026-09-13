@@ -48,6 +48,104 @@ test("a BlipToaster system attaches an empty bliptoaster-assets role and constru
   expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined); // no overrides → base ROM
 });
 
+// ── The baked rig settings (the same role config, a sibling key to `overrides`) ────────────────────────
+// The cart has no settings memory, so the screen/rig defaults are bytes in the ROM's code bank. RetroPlug pins
+// only the fields the user changed and folds them in at construct, exactly like an asset override.
+
+/** The effective ROM's decoded settings after the latest construct (null when construct got no romBytes). */
+function constructedSettings(be: MockBackend) {
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  return spec.romBytes ? BlipToasterRom.fromBytes(spec.romBytes).settings() : null;
+}
+
+test("a settings patch is folded into the effective ROM, and leaves every field it does not name alone", () => {
+  const { be, store } = newStore();
+  const base = blipToasterRom();
+  be.seed("/roms/synth.nes", base);
+  const id = store.addSystem("/roms/synth.nes")!;
+  // The fixture's block is the one a fresh build ships: format 1, every field at its power-on default.
+  expect(BlipToasterRom.fromBytes(base).settings()).toEqual({ baseChannel: 0, kit: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
+
+  store.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 11, font: 2 } });
+  store.reloadSystem(id);
+  // Only the two named fields moved - the rest are still the ROM's own bytes, not defaults written back over them.
+  expect(constructedSettings(be)).toEqual({ baseChannel: 0, kit: 0, ppu: true, velCurve: false, theme: 11, font: 2 });
+  expect([...be.readFile("/roms/synth.nes")!]).toEqual([...base]); // on-disk .nes untouched
+});
+
+test("settings and asset overrides ride the same config and are both applied", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/synth.nes", blipToasterRom());
+  const id = store.addSystem("/roms/synth.nes")!;
+  store.setRoleConfig(id, "bliptoaster-assets", {
+    overrides: [{ type: "theme", slot: 0, name: "NEON", theme: THEME_NEON }],
+    settings: { baseChannel: 3, kit: 5, ppu: false, velCurve: true },
+  });
+  store.reloadSystem(id);
+
+  const patched = BlipToasterRom.fromBytes(be.constructCalls[be.constructCalls.length - 1].romBytes!);
+  expect(patched.settings()).toEqual({ baseChannel: 3, kit: 5, ppu: false, velCurve: true, theme: 0, font: 0 });
+  expect(decodeThemeFromRom(patched.getTheme(0)!.recordBytes, patched.getTheme(0)!.nameBytes).name).toBe("NEON");
+});
+
+test("a settings field written on its own still triggers the patch (an empty override list is not 'nothing to do')", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/synth.nes", blipToasterRom());
+  const id = store.addSystem("/roms/synth.nes")!;
+  store.setRoleConfig(id, "bliptoaster-assets", { settings: { ppu: false } });
+  store.reloadSystem(id);
+  expect(be.constructCalls[be.constructCalls.length - 1].romBytes != null).toBeTruthy();
+  expect(constructedSettings(be)!.ppu).toBe(false);
+});
+
+test("clearing the settings patch reverts the next construct to the base ROM (no romBytes)", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/synth.nes", blipToasterRom());
+  const id = store.addSystem("/roms/synth.nes")!;
+  store.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 7 } });
+  const id2 = store.reloadSystem(id)!; // reload swaps the id in place
+  expect(constructedSettings(be)!.theme).toBe(7);
+
+  store.setRoleConfig(id2, "bliptoaster-assets", { settings: {} });
+  store.reloadSystem(id2);
+  expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined); // nothing pinned → base ROM
+});
+
+test("a ROM with no readable settings block takes the asset overrides and ignores the settings patch", () => {
+  const { be, store } = newStore();
+  const base = blipToasterRom();
+  base.fill(0, 0x100 + 6 + 16 * 11, 0x100 + 6 + 16 * 11 + 6); // wipe the SETT magic, leave the theme table
+  be.seed("/roms/synth.nes", base);
+  const id = store.addSystem("/roms/synth.nes")!;
+  store.setRoleConfig(id, "bliptoaster-assets", {
+    overrides: [{ type: "theme", slot: 0, name: "NEON", theme: THEME_NEON }],
+    settings: { theme: 11 },
+  });
+  store.reloadSystem(id);
+
+  const patched = BlipToasterRom.fromBytes(be.constructCalls[be.constructCalls.length - 1].romBytes!);
+  expect(patched.hasSettings).toBe(false);
+  expect(patched.settings()).toBe(null);
+  expect(decodeThemeFromRom(patched.getTheme(0)!.recordBytes, patched.getTheme(0)!.nameBytes).name).toBe("NEON");
+});
+
+test("a settings block stamped a format this build does not read is left entirely alone", () => {
+  const { be, store } = newStore();
+  const base = blipToasterRom();
+  const at = 0x100 + 6 + 16 * 11; // the block, immediately after the theme table
+  base[at + 6] = 2; // a format from some later tool
+  const before = base.slice();
+  be.seed("/roms/synth.nes", base);
+  const id = store.addSystem("/roms/synth.nes")!;
+  store.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 11, ppu: false } });
+  store.reloadSystem(id);
+
+  // Half-writing a layout we do not know would be worse than doing nothing, so construct hands over an
+  // untouched image rather than a partly-patched one.
+  const spec = be.constructCalls[be.constructCalls.length - 1];
+  expect([...(spec.romBytes ?? before)]).toEqual([...before]);
+});
+
 test("a theme override is stored INLINE (no path) and applied to the effective ROM", () => {
   const { be, store } = newStore();
   const base = blipToasterRom();

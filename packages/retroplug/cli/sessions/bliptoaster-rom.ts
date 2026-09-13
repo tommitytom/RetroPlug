@@ -6,8 +6,9 @@
 // compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
 //
 // BlipToaster has up to 16 SWITCHABLE kit banks on the banking builds (VRC6/VRC7/S5B/FME-7/N163) and a single
-// kit on NROM — kit indices are bounded by rom.kitBankCapacity(). It bakes ONE theme (index 0) and one CHR
-// font. Unlike risa there is NO kit-metadata mirror, so setKit is a plain bank splice.
+// kit on NROM — kit indices are bounded by rom.kitBankCapacity(). It also bakes 16 themes (bounded by
+// rom.themeCount) and 4 CHR fonts (rom.chrFontSlotCount), all switchable live over MIDI. Unlike risa there is
+// NO kit-metadata mirror, so setKit is a plain bank splice.
 //
 //   retroplug-cli bliptoaster-rom info          <rom> [--json]
 //   retroplug-cli bliptoaster-rom extract       <rom> <outDir> [--rate N]
@@ -22,7 +23,13 @@ import type { CliTool } from "../tools";
 import type { Session } from "../session";
 import type { KitEffect, RisaDmcSampleSpec } from "../../src/audioDriver";
 import { encodeWav } from "../wav";
-import { BlipToasterRom } from "../../src/bliptoaster/rom";
+import {
+  BlipToasterRom,
+  SETTINGS_KIT_COUNT,
+  SETTINGS_THEME_COUNT,
+  SETTINGS_FONT_COUNT,
+  type BlipToasterSettingsPatch,
+} from "../../src/bliptoaster/rom";
 import {
   bankToModel,
   isBankPopulated,
@@ -69,7 +76,11 @@ const flag = (args: string[], name: string): string | undefined => {
 const has = (args: string[], name: string): boolean => args.includes(name);
 const positionals = (args: string[]): string[] => {
   // Tokens that aren't a flag and aren't a flag's value. Only value-taking flags consume the next token.
-  const valueFlags = new Set(["--out", "--name", "--slot", "--rate", "--gain", "--filter", "--cutoff", "--q"]);
+  const valueFlags = new Set([
+    "--out", "--name", "--slot", "--rate", "--gain", "--filter", "--cutoff", "--q",
+    // `settings` flags: each takes a value, which must not be mistaken for the <rom> positional.
+    "--base-channel", "--kit", "--ppu", "--mode1", "--curve", "--theme", "--font",
+  ]);
   const out: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith("--")) {
@@ -180,6 +191,9 @@ interface Manifest {
   kits?: KitEntry[];
   themes?: ThemeEntry[];
   fonts?: FontEntry[];
+  // The baked rig settings, as the `settings` verb's fields. Named fields only, so a manifest can pin the
+  // default kit without restating the whole block.
+  settings?: BlipToasterSettingsPatch;
 }
 
 // The kit's 16 sample slots as re-packable AssembleSlots (null where empty), for splice/rename.
@@ -210,7 +224,27 @@ function romToJson(rom: BlipToasterRom): unknown {
     name: k.name,
     samples: k.model.slots.map((sm, i) => (sm ? { slot: i, name: sm.name, rate: sm.rate, loop: sm.loop, bytes: sm.dpcm.length } : null)).filter(Boolean),
   }));
-  return { kitBanks: rom.kitBankCapacity(), themes, fonts, kits };
+  // `settings` is null on a ROM with no readable block (one predating it, or stamped a newer format).
+  return { kitBanks: rom.kitBankCapacity(), settings: rom.settings(), themes, fonts, kits };
+}
+
+// The baked settings as `info` prints them: the field name, then the effective value with the entry it names
+// where there is one (the default kit and theme point into the tables above).
+function settingsLines(rom: BlipToasterRom): string[] {
+  const set = rom.settings();
+  if (!set) return ["settings: (no block)"];
+  const named = (slot: number, name: string | undefined): string => `${slot}${name ? ` (${name})` : ""}`;
+  return [
+    "settings:",
+    `  base channel:    BASE${String(set.baseChannel + 1).padStart(2, "0")}`,
+    `  default kit:     ${named(set.kit, rom.kits().find((k) => k.slot === set.kit)?.name)}`,
+    `  ppu enabled:     ${set.ppu ? "yes" : "no"}`,
+    `  velocity curve:  ${set.velCurve ? "log" : "linear"}`,
+    // A field this image's build predates reads as its default but is not actually honoured, so say so rather
+    // than printing a value the cart will not act on.
+    `  default theme:   ${named(set.theme, rom.themes().find((t) => t.slot === set.theme)?.theme.name.trim())}${rom.settingSupported("theme") ? "" : "   (not read by this ROM - predates the field)"}`,
+    `  default font:    ${set.font}${rom.settingSupported("font") ? "" : "   (not read by this ROM - predates the field)"}`,
+  ];
 }
 
 function info(s: Session, args: string[]): void {
@@ -229,6 +263,93 @@ function info(s: Session, args: string[]): void {
   const kits = rom.kits();
   console.log(`kits: ${kits.length} populated / ${rom.kitBankCapacity()} banks`);
   for (const k of kits) console.log(`  [${String(k.slot).padStart(2)}] ${k.name.padEnd(6)}  ${k.model.slots.filter(Boolean).length} samples`);
+  for (const line of settingsLines(rom)) console.log(line);
+}
+
+// --- settings: print the baked block, or patch named fields into a copy -----------------------------------
+// Every field is a BOOT default the cart's own CCs still move live; the ROM clamps anything out of range back
+// to that field's power-on default, and so does the writer (src/bliptoaster/rom/settings.ts), so the value
+// printed back is always the one the cart will really boot with.
+const SETTINGS_FLAGS: Record<string, string> = {
+  "--base-channel": "1-16",
+  "--kit": "0-15",
+  "--ppu": "on|off",
+  "--mode1": "on|off",
+  "--curve": "linear|log",
+  "--theme": "0-15",
+  "--font": "0-3",
+};
+
+// Parse one flag into its settings field, throwing with the accepted range rather than silently clamping - a CLI
+// typo should not quietly bake a different value than the one asked for.
+function intFlag(args: string[], name: string, max: number, offset = 0): number | undefined {
+  const raw = flag(args, name);
+  if (raw == null) return undefined;
+  const n = parseInt(raw, 10) - offset;
+  if (!Number.isInteger(n) || n < 0 || n > max) throw new Error(`${name} must be ${SETTINGS_FLAGS[name]}`);
+  return n;
+}
+function enumFlag(args: string[], name: string, on: string, off: string): boolean | undefined {
+  const raw = flag(args, name);
+  if (raw == null) return undefined;
+  if (raw === on) return true;
+  if (raw === off) return false;
+  throw new Error(`${name} must be ${SETTINGS_FLAGS[name]}`);
+}
+
+/** The `+9` byte, from either spelling. It was "Mode 1 at boot" (on = dark until START) and is now "PPU
+ *  enabled" (on = the screen draws) - the same byte with the opposite sense - so `--mode1` survives only as a
+ *  DEPRECATED alias for the inverse, which is what keeps an old command line doing what it says rather than
+ *  what it used to write. Giving both is refused: one byte, two spellings that disagree, and picking a winner
+ *  silently is how someone bakes a dark screen and blames the cart. */
+function ppuFlag(args: string[]): boolean | undefined {
+  const ppu = enumFlag(args, "--ppu", "on", "off");
+  const mode1 = enumFlag(args, "--mode1", "on", "off");
+  if (ppu !== undefined && mode1 !== undefined) throw new Error("--ppu and --mode1 set the same byte; pass one (--mode1 is the deprecated inverse)");
+  if (mode1 !== undefined) {
+    console.log("warning: --mode1 is deprecated - the byte now means PPU enabled, so this writes --ppu " + (mode1 ? "off" : "on"));
+    return !mode1;
+  }
+  return ppu;
+}
+
+function settings(s: Session, args: string[]): void {
+  const romPath = positionals(args)[0];
+  if (!romPath) throw new Error("usage: bliptoaster-rom settings <rom> [--base-channel 1-16] [--kit 0-15] [--ppu on|off] [--curve linear|log] [--theme 0-15] [--font 0-3] [--out <nes>]");
+  const rom = openRom(s, romPath);
+  if (!rom.hasSettings) throw new Error("no settings block in this ROM (it predates the block, or is stamped a format this build does not read)");
+
+  const patch: BlipToasterSettingsPatch = {};
+  const baseChannel = intFlag(args, "--base-channel", 15, 1); // 1-16 on the command line, 0-15 in the block
+  const kit = intFlag(args, "--kit", SETTINGS_KIT_COUNT - 1);
+  const ppu = ppuFlag(args);
+  const curve = enumFlag(args, "--curve", "log", "linear");
+  const theme = intFlag(args, "--theme", SETTINGS_THEME_COUNT - 1);
+  const font = intFlag(args, "--font", SETTINGS_FONT_COUNT - 1);
+  if (baseChannel !== undefined) patch.baseChannel = baseChannel;
+  if (kit !== undefined) patch.kit = kit;
+  if (ppu !== undefined) patch.ppu = ppu;
+  if (curve !== undefined) patch.velCurve = curve;
+  if (theme !== undefined) patch.theme = theme;
+  if (font !== undefined) patch.font = font;
+
+  // No flags = read-only. Print and write NOTHING, so `settings <rom>` can never touch the ROM it is inspecting.
+  if (Object.keys(patch).length === 0) {
+    for (const line of settingsLines(rom)) console.log(line);
+    return;
+  }
+  // Refuse a field this image's own build predates. Its byte is still the reserved 0xFF, so writing it would
+  // succeed, report success, and change nothing about how the cart boots.
+  for (const field of ["theme", "font"] as const) {
+    if (patch[field] !== undefined && !rom.settingSupported(field)) {
+      throw new Error(`this ROM predates the baked ${field} setting (its byte is still reserved) - rebuild it from a source tree that has SET_F_${field.toUpperCase()}`);
+    }
+  }
+  rom.setSettings(patch);
+  const out = flag(args, "--out") ?? romPath;
+  if (!s.backend.writeFileAtomic(out, rom.bytes())) throw new Error(`write failed: ${out}`);
+  console.log(`wrote ${Object.keys(patch).join(", ")} to ${out}`);
+  for (const line of settingsLines(BlipToasterRom.fromBytes(rom.bytes()))) console.log(line);
 }
 
 function extract(s: Session, args: string[]): void {
@@ -317,12 +438,21 @@ function removeSample(s: Session, args: string[]): void {
   console.log(`removed slot ${slot} from kit ${kitIndex}; wrote ${out}`);
 }
 
+// Validate a theme index against the table the ROM actually carries (16 on every shipped build). BlipToasterRom
+// bounds both accessors itself — getTheme returns null, setTheme no-ops — so without this an out-of-range
+// import-theme would report success and write an unchanged ROM.
+function themeIndexInRange(rom: BlipToasterRom, idx: number): number {
+  const count = rom.themeCount;
+  if (count === 0) throw new Error("no theme table in this ROM");
+  if (!Number.isInteger(idx) || idx < 0 || idx >= count) throw new Error(`theme index ${idx} out of range (0..${count - 1})`);
+  return idx;
+}
+
 function exportTheme(s: Session, args: string[]): void {
   const [romPath, idxStr, out] = positionals(args);
   if (!romPath || idxStr == null || !out) throw new Error("usage: bliptoaster-rom export-theme <rom> <index> <out.rit>");
   const rom = openRom(s, romPath);
-  const t = rom.getTheme(parseInt(idxStr, 10));
-  if (!t) throw new Error(`theme ${idxStr} out of range / no theme table`);
+  const t = rom.getTheme(themeIndexInRange(rom, parseInt(idxStr, 10)))!;
   const theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
   if (!s.backend.writeFile(out, enc.encode(JSON.stringify(serializeRit(theme), null, 2) + "\n"))) throw new Error(`write failed: ${out}`);
   console.log(`wrote theme ${idxStr} to ${out}`);
@@ -332,9 +462,10 @@ function importTheme(s: Session, args: string[]): void {
   const [romPath, file, idxStr] = positionals(args);
   if (!romPath || !file || idxStr == null) throw new Error("usage: bliptoaster-rom import-theme <rom> <in.rit> <index> [--out rom]");
   const rom = openRom(s, romPath);
+  const idx = themeIndexInRange(rom, parseInt(idxStr, 10));
   const { theme } = parseRit(JSON.parse(dec.decode(readOrThrow(s, file, "theme .rit")))); // throws on a bad .rit
   const t = normalizeTheme(theme);
-  rom.setTheme(parseInt(idxStr, 10), encodeThemeRecord(t), encodeThemeName(t));
+  rom.setTheme(idx, encodeThemeRecord(t), encodeThemeName(t));
   const out = flag(args, "--out") ?? romPath;
   if (!s.backend.writeFileAtomic(out, rom.bytes())) throw new Error(`write failed: ${out}`);
   console.log(`imported ${file} into theme ${idxStr}; wrote ${out}`);
@@ -413,9 +544,10 @@ function patchManifest(s: Session, args: string[]): void {
 
   for (const te of m.themes ?? []) {
     if (!te.file) throw new Error(`theme entry (slot ${te.slot}) needs "file"`);
+    const idx = themeIndexInRange(rom, te.slot);
     const { theme } = parseRit(JSON.parse(dec.decode(readOrThrow(s, resolvePath(manifestPath, te.file), "theme"))));
     const t = normalizeTheme(theme);
-    rom.setTheme(te.slot, encodeThemeRecord(t), encodeThemeName(t));
+    rom.setTheme(idx, encodeThemeRecord(t), encodeThemeName(t));
     applied++;
   }
 
@@ -427,6 +559,17 @@ function patchManifest(s: Session, args: string[]): void {
     applied++;
   }
 
+  if (m.settings) {
+    if (!rom.hasSettings) throw new Error('manifest has "settings" but this ROM carries no readable settings block');
+    // A manifest written against the old key would otherwise apply CLEANLY and do nothing at all (setSettings
+    // writes named fields only), leaving the screen byte at whatever it was. Name the replacement and the
+    // inversion rather than let that pass.
+    if ("mode1" in (m.settings as Record<string, unknown>))
+      throw new Error('manifest "settings" uses "mode1", which is now "ppu" with the opposite sense: "mode1": true becomes "ppu": false');
+    rom.setSettings(m.settings);
+    applied++;
+  }
+
   if (!s.backend.writeFileAtomic(outRom, rom.bytes())) throw new Error(`write failed: ${outRom}`);
   console.log(`applied ${applied} manifest entr${applied === 1 ? "y" : "ies"}; wrote ${outRom}`);
 }
@@ -434,7 +577,8 @@ function patchManifest(s: Session, args: string[]): void {
 const BLIPTOASTER_ROM_HELP = [
   "usage: retroplug-cli bliptoaster-rom <subcommand> ...",
   "",
-  "  info          <rom> [--json]                     theme / font / kit inventory (+ kit-bank capacity)",
+  "  info          <rom> [--json]                     theme / font / kit inventory + baked settings",
+  "  settings      <rom> [field flags] [--out <nes>]  print or patch the baked rig settings (no flags = print)",
   "  extract       <rom> <outDir> [--rate N]          dump each kit sample to a mono WAV + theme/font + rom.json",
   "  patch         <rom> <manifest.json> <out>        realize a manifest (builds/imports/metadata)",
   "  build-kit     <kit.json> <out.rkit> [flags]      compile a .rkit from a (slotless) kit entry",
@@ -449,6 +593,18 @@ const BLIPTOASTER_ROM_HELP = [
   "  (themes are risa's .rit palette-role JSON; fonts are raw 8 KB NES CHR banks; kits are 8 KB DPCM banks)",
   "  (kit <index> is a switchable ROM bank: 0 on NROM, 0..15 on a banking build — see `info`)",
   "",
+  "settings flags (each optional; only the ones given are written):",
+  "  --base-channel 1-16   the cart's base MIDI channel (BASE01..BASE16)",
+  "  --kit 0-15            the DMC kit bank ch5 plays out of at boot",
+  "  --ppu on|off          draw the screen at boot (off = dark until START, the old Mode 1)",
+  "  --mode1 on|off        DEPRECATED alias for the INVERSE of --ppu (the byte's meaning flipped)",
+  "  --curve linear|log    the velocity curve on every channel (the VRC7 build has none)",
+  "  --theme 0-15          the colour theme the screen comes up in",
+  "  --font 0-3            the CHR font the screen comes up in",
+  "  Each is a BOOT default, not a lock: the cart's own CCs (14/15/16/17) still move it live, and the next",
+  "  cold boot returns to the baked value. RetroPlug's BlipToaster > Settings submenu edits the same block",
+  "  non-destructively (pinned in the project, folded into the ROM in memory) instead of writing the file.",
+  "",
   "build-kit / import-sample flags:  --rate N (PAL DPCM index 0-15, default 12)  --loop  --no-normalize",
   "                     --gain X  --filter LowPass|HighPass|…  --cutoff HZ  --q Q   (no dither — DMC is 1-bit)",
   "",
@@ -458,7 +614,9 @@ const BLIPTOASTER_ROM_HELP = [
   '               { "slot": 1, "file": "HAT.rkit" },',
   '               { "slot": 2, "name": "RENAMED", "samples": [{ "index": 0, "name": "BD" }] }],',
   '    "themes": [{ "slot": 0, "file": "dark.rit" }],',
-  '    "fonts":  [{ "slot": 0, "file": "big.chr" }] }',
+  '    "fonts":  [{ "slot": 0, "file": "big.chr" }],',
+  '    "settings": { "theme": 11, "font": 2, "kit": 3, "baseChannel": 3, "ppu": true, "velCurve": false } }',
+  '  ("settings" is not per-slot - it is the one baked block, and only the fields named are written)',
   "build-kit takes ONE kit entry without a slot, e.g.",
   '  { "name": "MYKIT", "build": [{ "file": "kick.wav", "name": "BD", "rate": 12 }, "snare.wav"] }   → then import-kit',
   "  (build source: a path string, or { file, name?, rate?, loop?, normalize?, offset?, length?, effects? })",
@@ -472,6 +630,7 @@ export const blipToasterRomTool: CliTool = {
     const sub = args[0];
     const rest = args.slice(1);
     if (sub === "info") return info(s, rest);
+    if (sub === "settings") return settings(s, rest);
     if (sub === "extract") return extract(s, rest);
     if (sub === "patch") return patchManifest(s, rest);
     if (sub === "build-kit") return buildKit(s, rest);

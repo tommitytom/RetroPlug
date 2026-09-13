@@ -1,0 +1,91 @@
+// The BlipToaster > Settings submenu, end to end on the headless display. The cart has no settings memory, so
+// its rig defaults are bytes in the ROM; these rows edit them non-destructively (pinned on the
+// bliptoaster-assets role, folded into the ROM in memory at construct). This is also where you CHOOSE which of
+// the baked themes / fonts / kits the cart comes up in - the Themes and Fonts submenus replace an entry's
+// contents, they don't pick the live one.
+//
+// test/menu/bliptoaster.test.ts already proves the menu MODEL. What only this can prove is the glue: that the
+// rows become real LVGL widgets inside the instance menu, and that a keypress on one round-trips through the
+// store and comes back as a new label. Base Channel and Mode 1 are the rows driven here because they are two of
+// the four fields the block shipped with, so every cart that has the block honours them; the staged
+// resources/roms/bliptoaster.nes predates the theme + font fields, which is exactly why those two must show up
+// greyed below.
+import { test, expect, ui, navTo, Key } from "ui-harness";
+
+const BLIPTOASTER = () => ui.romDir() + "/bliptoaster.nes";
+const labelOf = (prefix: string) => ui.findByTextContaining(prefix)?.text ?? "(missing)";
+
+test("the BlipToaster Settings rows render in the instance menu and cycle the cart's baked defaults", () => {
+  expect(ui.boot()).toBeTruthy();
+  ui.pump(30);
+
+  ui.fileDrop(BLIPTOASTER(), 0, 0);
+  ui.pump(30);
+  expect(ui.findByTestId("tile-0") != null).toBeTruthy();
+
+  // Esc opens the instance menu; the cart's marker role puts a BlipToaster submenu on it.
+  ui.tapKey(Key.Esc);
+  ui.pump(10);
+  expect(navTo("BlipToaster")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+
+  // Settings sits above the asset submenus: it is what the cart BOOTS with, they are what it boots FROM.
+  expect(navTo("Settings")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+
+  // Every field of the block has a row, each showing the ROM's own baked value.
+  expect(labelOf("Base Channel")).toBe("Base Channel: BASE01");
+  expect(labelOf("Default Kit")).toBe("Default Kit: TR-909"); // named from the ROM, not a bare index
+  expect(labelOf("Mode 1 at Boot")).toBe("Mode 1 at Boot: Off");
+  expect(labelOf("Velocity Curve")).toBe("Velocity Curve: Linear");
+  // The staged resources/roms/bliptoaster.nes is an OLDER cart, from before the block carried the two screen
+  // fields - so their bytes are still the reserved 0xFF and it does not look at them. That is the case behind
+  // the bug report ("I can pick a font but it doesn't change"), and it must READ as inert rather than offering a
+  // live cycler that writes a byte into the void. Refresh that ROM and these two become cyclers like the rest.
+  expect(ui.findByTextContaining("Theme: DFLT (ROM Too Old)") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Font: Font 0 (ROM Too Old)") != null).toBeTruthy();
+  // Nothing pinned yet, so the two reboot rows are absent: the rows above are showing the ROM's own bytes, and
+  // there is nothing to apply or reset.
+  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
+  expect(ui.findByTextContaining("Reset to ROM Defaults")).toBe(null);
+
+  // Right steps the value: role config written, row re-rendered off the new pin.
+  expect(navTo("Base Channel")).toBeTruthy();
+  ui.tapKey(Key.Right);
+  ui.pump(20);
+  expect(labelOf("Base Channel")).toBe("Base Channel: BASE02");
+
+  // Left comes back, so it is a live two-way row and not a one-shot write. Still PINNED, though, at the value
+  // the ROM happens to bake - so the reboot rows have appeared and stay.
+  ui.tapKey(Key.Left);
+  ui.pump(20);
+  expect(labelOf("Base Channel")).toBe("Base Channel: BASE01");
+  expect(ui.findByTextContaining("Apply (Reboot Cart)") != null).toBeTruthy();
+
+  // A cycler does NOT reboot, which is what keeps the menu open across all of the above - a reload swaps the
+  // system id and the instance menu is anchored to it, so rebooting per keypress would drop the menu each time.
+  expect(navTo("Mode 1 at Boot")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(20);
+  expect(labelOf("Mode 1 at Boot")).toBe("Mode 1 at Boot: On");
+
+  // Reset clears the pin back to the ROM's own bytes. It reboots, so the menu closes - the grid tile is back.
+  expect(navTo("Reset to ROM Defaults")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(20);
+  expect(ui.findByTestId("tile-0") != null).toBeTruthy();
+
+  // Reopen and the row is back at the ROM's value, with the reboot rows gone again.
+  ui.tapKey(Key.Esc);
+  ui.pump(10);
+  expect(navTo("BlipToaster")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+  expect(navTo("Settings")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+  expect(labelOf("Mode 1 at Boot")).toBe("Mode 1 at Boot: Off");
+  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
+});

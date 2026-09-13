@@ -1,12 +1,14 @@
 // The BlipToaster implementation of AssetCatalog — the base-ROM asset parse over BlipToasterRom, the BlipToaster twin
-// of ./risaAssetCatalog.ts. BlipToaster bakes one theme + one CHR font slot; the DMC kit is single-slot on NROM
-// but up to 16 SWITCHABLE banks on a banking build (VRC6/VRC7/S5B/FME-7/N163). So the kit type is ROM-aware
-// (resolveTypes): Replace-only on NROM, addable/16 on a banking cart. Themes/fonts stay single-slot.
-// The file-dialog Export/Replace stay in the menu (they own the .rit/.rkit/.chr formats).
-import type { AssetCatalog, AssetSlot, AssetTypeInfo, AssetOverride } from "./assetCatalog";
+// of ./risaAssetCatalog.ts. Every type is a FIXED list the cart bakes and switches between live over MIDI: 16
+// themes (CC 16), 4 CHR fonts (CC 17), and 16 DMC kits (ch5 CC 14) on a banking build
+// (VRC6/VRC7/S5B/FME-7/N163) or one fixed kit on NROM. The counts are READ from the ROM, not assumed — which is
+// why the kit type is ROM-aware (resolveTypes): Replace-only on NROM, addable/16 on a banking cart. Themes and
+// fonts are never addable: both tables are fixed-size, so a replace overwrites an entry and can never grow the
+// list. The file-dialog Export/Replace stay in the menu (they own the .rit/.rkit/.chr formats).
+import { readAssetOverrides, type AssetCatalog, type AssetSlot, type AssetTypeInfo } from "./assetCatalog";
 import type { ConstructCaps } from "../systemRoles";
 import { BlipToasterRom } from "../bliptoaster/rom";
-import { applyOverridesToRom, type BlipToasterAssetOverride } from "../bliptoasterAssetsRole";
+import { applyConfigToRom, readSettings } from "../bliptoasterAssetsRole";
 
 const THEME_TYPE: AssetTypeInfo = { kind: "theme", title: "Themes", noun: "Theme", patterns: ["*.rit"], ext: ".rit", addable: false, maxSlots: 0 };
 const FONT_TYPE: AssetTypeInfo = { kind: "font", title: "Fonts", noun: "Font", patterns: ["*.chr"], ext: ".chr", addable: false, maxSlots: 0 };
@@ -36,7 +38,13 @@ export const bliptoasterAssetCatalog: AssetCatalog = {
     if (kind === "font") return rom.fonts().map((f) => ({ slot: f.slot, name: `Font ${f.slot}` }));
     return [];
   },
-  applyOverrides(romBytes: Uint8Array, overrides: AssetOverride[], caps: ConstructCaps, onSkip): Uint8Array {
-    return applyOverridesToRom(romBytes, overrides as BlipToasterAssetOverride[], caps, onSkip);
+  // BlipToaster persists the baked rig settings next to the override list, so this hands the WHOLE config to
+  // the role's patcher — a bake that applied only the overrides would write an image the cart never boots.
+  applyRoleConfig(romBytes: Uint8Array, config: Record<string, unknown> | undefined, caps: ConstructCaps, onSkip): Uint8Array {
+    return applyConfigToRom(romBytes, config ?? {}, caps, onSkip);
+  },
+  // ...which is also why a pinned settings field alone counts as an edit worth baking.
+  hasEdits(config: Record<string, unknown> | undefined): boolean {
+    return readAssetOverrides(config).length > 0 || Object.keys(readSettings(config)).length > 0;
   },
 };

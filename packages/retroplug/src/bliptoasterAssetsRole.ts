@@ -1,12 +1,21 @@
-// The `bliptoaster-assets` feature role: a per-system, NON-DESTRUCTIVE list of BlipToaster ROM asset overrides
-// (a replaced theme / DMC kit / CHR font) — the BlipToaster twin of ./risaAssetsRole.ts. It carries NO DSP
-// behaviour: the base `.nes` on disk is never touched; the overrides are folded into the base ROM in memory
-// at CONSTRUCT time (the onConstruct hook), so `effective ROM = base ROM + overrides`, rebuilt on every load.
-// The override manifest is the persisted source of truth (it round-trips through the project's role config).
-// THEMES are palette indices, stored INLINE as a readable object (no file, no base64), like risa. KITS and
-// FONTS are binary, so they LINK their bank file on disk by path — a pre-built 8 KB `.rkit` DMC bank / an
-// 8 KB `.chr` CHR bank, read at construct (kit compilation is offline, like risa). A kit override with
-// `erase: true` empties the slot instead. Applying reuses the pure-TS patcher (src/bliptoaster/rom).
+// The `bliptoaster-assets` feature role: a per-system, NON-DESTRUCTIVE set of BlipToaster ROM edits — the
+// BlipToaster twin of ./risaAssetsRole.ts. It carries NO DSP behaviour: the base `.nes` on disk is never
+// touched; the edits are folded into the base ROM in memory at CONSTRUCT time (the onConstruct hook), so
+// `effective ROM = base ROM + config`, rebuilt on every load. The config is the persisted source of truth (it
+// round-trips through the project's role config), and it holds two kinds of edit:
+//
+//   `overrides`  a list of replaced ASSETS (a theme / DMC kit / CHR font, by slot). THEMES are palette indices,
+//                stored INLINE as a readable object (no file, no base64), like risa. KITS and FONTS are binary,
+//                so they LINK their bank file on disk by path — a pre-built 8 KB `.rkit` DMC bank / an 8 KB
+//                `.chr` CHR bank, read at construct (kit compilation is offline, like risa). A kit override
+//                with `erase: true` empties the slot instead.
+//   `settings`   the cart's BAKED RIG DEFAULTS (base MIDI channel, default kit, Mode 1 at boot, velocity curve,
+//                default theme, default font) — the 16-byte block in the ROM's code bank. Only the fields the
+//                project actually sets are written, so an untouched field keeps whatever the `.nes` baked.
+//                See bliptoaster/rom/settings.ts for the format.
+//
+// Both ride the one patcher (applyConfigToRom), which is also what the menu bakes with — so "what the cart
+// runs" and "what Patch ROM in Place writes" cannot drift apart.
 import type { RoleRegistry, ConstructCaps } from "./systemRoles";
 import type { ConstructSpec } from "./backend";
 import { z } from "./configSchema";
@@ -19,7 +28,13 @@ import {
   normalizeTheme,
   type RisaTheme,
 } from "./risa/rom";
-import { BlipToasterRom } from "./bliptoaster/rom";
+import {
+  BlipToasterRom,
+  SETTINGS_KIT_COUNT,
+  SETTINGS_THEME_COUNT,
+  SETTINGS_FONT_COUNT,
+  type BlipToasterSettingsPatch,
+} from "./bliptoaster/rom";
 
 export const BLIPTOASTER_ASSETS_ROLE = "bliptoaster-assets";
 
@@ -54,15 +69,35 @@ const overrideSchema = z.object({
   erase: z.boolean().optional(),
 });
 
-// The role config: just the override list (empty by default — a BlipToaster cart with no replacements).
+// Every settings field is OPTIONAL, and that is the semantic: an absent field means "leave the byte the .nes
+// baked", so a project pins only what the user actually changed. Ranges match the ROM's own (settings.ts).
+const settingsSchema = z.object({
+  baseChannel: z.number().int().min(0).max(15).optional(),
+  kit: z.number().int().min(0).max(SETTINGS_KIT_COUNT - 1).optional(),
+  ppu: z.boolean().optional(),
+  velCurve: z.boolean().optional(),
+  theme: z.number().int().min(0).max(SETTINGS_THEME_COUNT - 1).optional(),
+  font: z.number().int().min(0).max(SETTINGS_FONT_COUNT - 1).optional(),
+});
+
+// The role config: the asset override list plus the baked-settings patch, both empty by default — a BlipToaster
+// cart with no edits at all. Additive with defaults, so a project written before `settings` existed still parses
+// and needs no migration step (spec/05).
 const blipToasterAssetsSchema = z.object({
   overrides: z.array(overrideSchema).default([]),
+  settings: settingsSchema.default({}),
 });
 
 /** Read the override list off a system's `bliptoaster-assets` role config (empty when absent/invalid). */
 export function readOverrides(config: Record<string, unknown> | undefined): BlipToasterAssetOverride[] {
   const raw = config?.overrides;
   return Array.isArray(raw) ? (raw as BlipToasterAssetOverride[]) : [];
+}
+
+/** Read the baked-settings patch off a system's `bliptoaster-assets` role config ({} when absent/invalid). */
+export function readSettings(config: Record<string, unknown> | undefined): BlipToasterSettingsPatch {
+  const raw = config?.settings;
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as BlipToasterSettingsPatch) : {};
 }
 
 // Apply one override onto an open BlipToasterRom. Isolated + throwing so the caller can try/catch per entry
@@ -103,9 +138,22 @@ export function applyOverridesToRom(
   caps: ConstructCaps,
   onSkip?: (ov: BlipToasterAssetOverride, message: string) => void,
 ): Uint8Array {
+  return applyConfigToRom(baseBytes, { overrides }, caps, onSkip);
+}
+
+/** Fold a whole `bliptoaster-assets` role config (asset overrides + the baked-settings patch) onto base ROM
+ *  bytes, returning the patched image — the ONE patcher both construct and the menu's bake run, so the image
+ *  the cart runs and the image "Patch ROM in Place" writes are the same by construction. A bad asset entry just
+ *  skips (reported through `onSkip`); returns the base unchanged if it isn't a BlipToaster image. */
+export function applyConfigToRom(
+  baseBytes: Uint8Array,
+  config: Record<string, unknown>,
+  caps: ConstructCaps,
+  onSkip?: (ov: BlipToasterAssetOverride, message: string) => void,
+): Uint8Array {
   const rom = BlipToasterRom.fromBytes(baseBytes);
   if (!rom.isBlipToaster) return baseBytes;
-  for (const ov of overrides) {
+  for (const ov of readOverrides(config)) {
     try {
       applyOne(rom, ov, caps);
     } catch (e) {
@@ -114,17 +162,25 @@ export function applyOverridesToRom(
       else console.log(`[bliptoaster-assets] skipped ${ov.type} slot ${ov.slot}: ${msg}`);
     }
   }
+  // Settings last, and unconditionally: setSettings writes only the named fields and no-ops on a ROM with no
+  // readable block, so there is nothing to guard and nothing an unreadable block can half-write.
+  rom.setSettings(readSettings(config));
   return rom.bytes();
 }
 
-// Load-time hook: fold the overrides into the base ROM and hand native the patched bytes. Additive — a
-// no-op when there are no overrides or when romBytes is already set.
+/** True when a role config asks for anything at all — no asset overrides and no pinned settings field means
+ *  construct has no reason to read the ROM off disk, let alone patch it. */
+function configIsEmpty(config: Record<string, unknown>): boolean {
+  return readOverrides(config).length === 0 && Object.keys(readSettings(config)).length === 0;
+}
+
+// Load-time hook: fold the config into the base ROM and hand native the patched bytes. Additive — a
+// no-op when the config is empty or when romBytes is already set.
 function applyAssetOverrides(spec: ConstructSpec, caps: ConstructCaps, config: Record<string, unknown>): ConstructSpec {
-  const overrides = readOverrides(config);
-  if (overrides.length === 0 || spec.romBytes || spec.embeddedRom || !spec.romPath) return spec;
+  if (configIsEmpty(config) || spec.romBytes || spec.embeddedRom || !spec.romPath) return spec;
   const base = caps.readFile(spec.romPath);
   if (!base) return spec;
-  const patched = applyOverridesToRom(base, overrides, caps);
+  const patched = applyConfigToRom(base, config, caps);
   return patched !== base ? { ...spec, romBytes: patched } : spec;
 }
 

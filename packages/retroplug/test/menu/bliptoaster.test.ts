@@ -56,19 +56,165 @@ test("the BlipToaster submenu appears only for a BlipToaster ROM, is asset-only 
   expect(findItem(kids, "bliptoaster-themes")?.kind).toBe("submenu");
   expect(findItem(kids, "bliptoaster-kits")?.kind).toBe("submenu");
   expect(findItem(kids, "bliptoaster-fonts")?.kind).toBe("submenu");
+  expect(findItem(kids, "bliptoaster-settings")?.kind).toBe("submenu");
 });
 
-test("the Themes submenu lists the baked theme with Export/Replace (no Remove until overridden)", () => {
+// ── Settings: the cart's baked rig defaults ────────────────────────────────────────────────────────────
+// This submenu is how you CHOOSE among the baked themes / fonts / kits; the asset submenus above replace an
+// entry's contents. Each row is a cycler over the ROM's own entries, and a change is pinned on the
+// bliptoaster-assets role (folded into the ROM in memory at construct - the .nes on disk is untouched).
+const settingsRows = (items: MenuItem[]) => submenuChildren(submenuChildren(items, "inst-bliptoaster"), "bliptoaster-settings");
+const rowLabel = (items: MenuItem[], id: string) => findItem(settingsRows(items), id)?.label;
+function cycle(items: MenuItem[], id: string, dir: 1 | -1 = 1): void {
+  const row = findItem(settingsRows(items), id)!;
+  expect(row.kind).toBe("cycler");
+  row.onCycle!(dir);
+}
+
+test("the Settings rows show the ROM's own baked values, naming the entry each field selects", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const items = blipToasterItems(be, stores);
+  // A ROM straight out of the build: every field at its power-on default. The Theme and Default Kit rows name
+  // the ENTRY, read from the ROM, so a row says "DFLT" / "TEST" rather than a bare index.
+  expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DFLT");
+  expect(rowLabel(items(), "bliptoaster-set-font")).toBe("Font: Font 0");
+  expect(rowLabel(items(), "bliptoaster-set-basech")).toBe("Base Channel: BASE01");
+  expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: TEST");
+  expect(rowLabel(items(), "bliptoaster-set-ppu")).toBe("PPU Enabled: On"); // the one field whose default is on
+  expect(rowLabel(items(), "bliptoaster-set-curve")).toBe("Velocity Curve: Linear");
+  // Nothing pinned yet, so there is nothing to apply and nothing to reset.
+  expect(findItem(settingsRows(items()), "bliptoaster-set-apply")).toBe(undefined);
+  expect(findItem(settingsRows(items()), "bliptoaster-set-reset")).toBe(undefined);
+});
+
+test("cycling a Settings row pins that field on the role and leaves the others unpinned", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/synth-set.nes", blipToasterRom());
+  stores.project.systems.addSystem("/roms/synth-set.nes");
+  // reloadSystem swaps the id, so re-read the system each time rather than caching the view.
+  const items = () => {
+    const sys = stores.project.systems.view()[0];
+    return buildInstanceMenu({ ...ctxOf(stores), system: sys }).items;
+  };
+  const pinned = (): Record<string, unknown> =>
+    stores.project.systems.view()[0].roles.find((r) => r.kind === "bliptoaster-assets")!.config.settings as Record<string, unknown>;
+
+  cycle(items(), "bliptoaster-set-theme"); // 0 -> 1
+  expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DARK");
+  expect(pinned()).toEqual({ theme: 1 });
+
+  cycle(items(), "bliptoaster-set-theme", -1); // 1 -> 0: still PINNED, at the same value the ROM bakes
+  expect(pinned()).toEqual({ theme: 0 });
+  cycle(items(), "bliptoaster-set-theme", -1); // 0 -> 15, wrapping the 16 the cart bakes
+  expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: AMBR");
+
+  cycle(items(), "bliptoaster-set-ppu");
+  expect(rowLabel(items(), "bliptoaster-set-ppu")).toBe("PPU Enabled: Off");
+  expect(Object.keys(pinned()).sort()).toEqual(["ppu", "theme"]); // accumulated, not replaced
+  expect(pinned().theme).toBe(15);
+  expect(pinned().ppu).toBe(false);
+
+  // A cycler pins but does NOT reboot - the ROM is read at startup only, so the reboot is its own row (which
+  // keeps the menu alive across a step: reloadSystem swaps the id the instance menu is anchored to).
+  expect(findItem(settingsRows(items()), "bliptoaster-set-apply")?.kind).toBe("action");
+
+  // Reset clears the lot back to the ROM's bytes, and reboots so the cart actually comes up that way.
+  findItem(settingsRows(items()), "bliptoaster-set-reset")!.onSelect!();
+  expect(pinned()).toEqual({});
+  expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DFLT");
+  expect(rowLabel(items(), "bliptoaster-set-ppu")).toBe("PPU Enabled: On");
+});
+
+test("each Settings list is bounded by what THIS cart carries, not by the format's maximum", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // The NROM fixture has one kit bank and one CHR bank, so those two rows have a single entry each and cannot
+  // cycle - offering a slot the cart has no record for would bake an index it cannot use. Themes still wrap 16
+  // (the table is there whatever the cart's banking is).
+  const items = blipToasterItems(be, stores, "/roms/bounded.nes");
+  cycle(items(), "bliptoaster-set-kit");
+  expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: TEST");
+  cycle(items(), "bliptoaster-set-font");
+  expect(rowLabel(items(), "bliptoaster-set-font")).toBe("Font: Font 0");
+  cycle(items(), "bliptoaster-set-theme");
+  expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DARK");
+});
+
+test("the Font row offers the 4 banks the banking ROM declares, and the Kit row its 16", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/synthbank-set.nes", blipToasterMultiKitRom());
+  stores.project.systems.addSystem("/roms/synthbank-set.nes");
+  const items = () => buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view()[0] }).items;
+  // Font wraps at 4 (the cart's FONT_COUNT), so stepping back from 0 lands on 3 rather than running past the
+  // banks the ROM has.
+  cycle(items(), "bliptoaster-set-font", -1);
+  expect(rowLabel(items(), "bliptoaster-set-font")).toBe("Font: Font 3");
+  // Kit 1 is a reserved (unpopulated) bank on this fixture, so it has no name to show - it is still selectable,
+  // since the setting names a BANK, not a populated kit.
+  cycle(items(), "bliptoaster-set-kit");
+  expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: Kit 1");
+});
+
+test("on a ROM predating the screen fields, Theme and Font are GREYED - not silently inert rows", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const rom = blipToasterRom();
+  const at = 0x100 + 6 + 16 * 11; // the settings block
+  rom.fill(0xff, at + 11, at + 16); // as a build predating the theme + font fields leaves it
+  be.seed("/roms/oldsett.nes", rom);
+  stores.project.systems.addSystem("/roms/oldsett.nes");
+  const items = () => buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view()[0] }).items;
+
+  // This is the case behind the bug report: the cart ignores the byte, so a live cycler here would look exactly
+  // like the feature being broken. It says why instead, and cannot be cycled.
+  const theme = findItem(settingsRows(items()), "bliptoaster-set-theme")!;
+  expect(theme.kind).toBe("action");
+  expect(theme.disabled).toBe(true);
+  expect(theme.label).toBe("Theme: DFLT (ROM Too Old)");
+  expect(findItem(settingsRows(items()), "bliptoaster-set-font")?.disabled).toBe(true);
+
+  // The four fields the block shipped with are unaffected - an old cart keeps the rest of the submenu.
+  expect(findItem(settingsRows(items()), "bliptoaster-set-basech")?.kind).toBe("cycler");
+  cycle(items(), "bliptoaster-set-basech");
+  expect(rowLabel(items(), "bliptoaster-set-basech")).toBe("Base Channel: BASE02");
+});
+
+test("a ROM with no readable settings block gets no Settings submenu (the asset submenus still show)", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  const rom = blipToasterRom();
+  rom.fill(0, 0x100 + 6 + 16 * 11, 0x100 + 6 + 16 * 11 + 6); // wipe the SETT magic
+  be.seed("/roms/nosett.nes", rom);
+  const id = stores.project.systems.addSystem("/roms/nosett.nes")!;
+  const kids = submenuChildren(
+    buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items,
+    "inst-bliptoaster",
+  );
+  expect(findItem(kids, "bliptoaster-settings")).toBe(undefined);
+  expect(findItem(kids, "bliptoaster-themes")?.kind).toBe("submenu");
+});
+
+test("the Themes submenu lists ALL 16 baked themes with Export/Replace (no Remove until overridden)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const items = blipToasterItems(be, stores);
   const themes = submenuChildren(submenuChildren(items(), "inst-bliptoaster"), "bliptoaster-themes");
-  expect(themes.length).toBe(1);
-  expect(themes[0].label).toBe("[0] DFLT"); // decoded, space-trimmed theme name
-  const t0 = submenuChildren(themes, "bliptoaster-theme-0");
-  expect(findItem(t0, "bliptoaster-theme-0-export")?.kind).toBe("action");
-  expect(findItem(t0, "bliptoaster-theme-0-replace")?.kind).toBe("action");
-  expect(findItem(t0, "bliptoaster-theme-0-remove")).toBe(undefined);
+  // The cart bakes 16 and CC 16 switches between them live, so all 16 must be reachable here. A single row
+  // was the bug this file pins: the count was hard-coded to 1 and the reader used risa's split layout.
+  expect(themes.length).toBe(16);
+  expect(themes.map((t) => t.label)).toEqual([
+    "[0] DFLT", "[1] DARK", "[2] NEON", "[3] LITE", "[4] CRT", "[5] ICE", "[6] FIRE", "[7] GB",
+    "[8] AQUA", "[9] MONO", "[10] PLSM", "[11] MTRX", "[12] FOG", "[13] SUN", "[14] MOON", "[15] AMBR",
+  ]); // decoded, space-trimmed theme names
+  for (const slot of [0, 15]) {
+    const rows = submenuChildren(themes, `bliptoaster-theme-${slot}`);
+    expect(findItem(rows, `bliptoaster-theme-${slot}-export`)?.kind).toBe("action");
+    expect(findItem(rows, `bliptoaster-theme-${slot}-replace`)?.kind).toBe("action");
+    expect(findItem(rows, `bliptoaster-theme-${slot}-remove`)).toBe(undefined);
+  }
 });
 
 test("a theme override shows a * marker + a Remove Override row", () => {
