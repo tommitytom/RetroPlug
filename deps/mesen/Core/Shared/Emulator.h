@@ -62,6 +62,8 @@ private:
 	friend class EmulatorLock;
 
 	unique_ptr<thread> _emuThread;
+	//RetroPlug: per-emulator firmware folder, see SetFirmwareFolderOverride
+	string _firmwareFolderOverride;
 	unique_ptr<AudioPlayerHud> _audioPlayerHud;
 	safe_ptr<IConsole> _console;
 
@@ -232,6 +234,14 @@ public:
 	AudioTrackInfo GetAudioTrackInfo();
 	void ProcessAudioPlayerAction(AudioPlayerActionParams p);
 	AudioPlayerHud* GetAudioPlayerHud() { return _audioPlayerHud.get(); }
+
+	//RetroPlug: where this emulator looks for firmware, ahead of the shared FolderUtilities one.
+	//FolderUtilities' folders are process-global statics, which is fine for an application that runs
+	//one emulator and wrong for a host that runs several: a plugin loads an instance per track, and
+	//each wants its own BIOS. Empty (the default) keeps the stock behaviour. Set it before LoadRom -
+	//it is re-read on every load, including the reload a Reset does.
+	void SetFirmwareFolderOverride(string folder) { _firmwareFolderOverride = folder; }
+	string GetFirmwareFolderOverride() { return _firmwareFolderOverride; }
 
 	bool IsRunning() { return _console != nullptr; }
 	bool IsRunAheadFrame() { return _isRunAheadFrame; }

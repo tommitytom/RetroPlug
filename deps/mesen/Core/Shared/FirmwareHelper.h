@@ -91,13 +91,30 @@ private:
 		return false;
 	}
 
-	static bool AttemptLoadFirmware(uint8_t** out, string filename, uint32_t size, string altFilename = "")
+	//RetroPlug: resolve `filename` against this emulator's own firmware folder before the shared one.
+	//FolderUtilities' folders are process-global statics - fine for an application running a single
+	//emulator, wrong for a host running several, where each instance wants its own BIOS and the last
+	//one to write the shared folder would otherwise decide what all of them load. An emulator with no
+	//override set (the default, and every call passing nullptr) behaves exactly as before.
+	static VirtualFile FindFirmware(Emulator* emu, string filename, uint32_t size)
 	{
-		string path = FolderUtilities::CombinePath(FolderUtilities::GetFirmwareFolder(), filename);
-		VirtualFile firmware(path);
+		if(emu) {
+			string overrideFolder = emu->GetFirmwareFolderOverride();
+			if(!overrideFolder.empty()) {
+				VirtualFile firmware(FolderUtilities::CombinePath(overrideFolder, filename));
+				if(firmware.IsValid() && firmware.GetSize() == size) {
+					return firmware;
+				}
+			}
+		}
+		return VirtualFile(FolderUtilities::CombinePath(FolderUtilities::GetFirmwareFolder(), filename));
+	}
+
+	static bool AttemptLoadFirmware(Emulator* emu, uint8_t** out, string filename, uint32_t size, string altFilename = "")
+	{
+		VirtualFile firmware = FindFirmware(emu, filename, size);
 		if((!firmware.IsValid() || firmware.GetSize() != size) && !altFilename.empty()) {
-			string altPath = FolderUtilities::CombinePath(FolderUtilities::GetFirmwareFolder(), altFilename);
-			firmware = VirtualFile(altPath);
+			firmware = FindFirmware(emu, altFilename, size);
 		}
 
 		if(firmware.IsValid() && firmware.GetSize() == size) {
@@ -109,13 +126,11 @@ private:
 		return false;
 	}
 
-	static bool AttemptLoadFirmware(vector<uint8_t>& out, string filename, uint32_t size, string altFilename = "")
+	static bool AttemptLoadFirmware(Emulator* emu, vector<uint8_t>& out, string filename, uint32_t size, string altFilename = "")
 	{
-		string path = FolderUtilities::CombinePath(FolderUtilities::GetFirmwareFolder(), filename);
-		VirtualFile firmware(path);
+		VirtualFile firmware = FindFirmware(emu, filename, size);
 		if((!firmware.IsValid() || firmware.GetSize() != size) && !altFilename.empty()) {
-			string altPath = FolderUtilities::CombinePath(FolderUtilities::GetFirmwareFolder(), altFilename);
-			firmware = VirtualFile(altPath);
+			firmware = FindFirmware(emu, altFilename, size);
 		}
 
 		if(firmware.IsValid() && firmware.GetSize() == size) {
@@ -154,14 +169,14 @@ public:
 	{
 		string filename = "st018.rom";
 		uint32_t size = 0x28000;
-		if(AttemptLoadFirmware(out, filename, size)) {
+		if(AttemptLoadFirmware(emu, out, filename, size)) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), FirmwareType::ST018, size);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(out, filename, size)) {
+		if(AttemptLoadFirmware(emu, out, filename, size)) {
 			return true;
 		}
 
@@ -190,14 +205,14 @@ public:
 	{
 		string filename = "SufamiTurbo.sfc";
 		
-		if(AttemptLoadFirmware(data, filename, 0x40000)) {
+		if(AttemptLoadFirmware(emu, data, filename, 0x40000)) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), FirmwareType::SufamiTurbo, 0x40000);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(data, filename, 0x40000)) {
+		if(AttemptLoadFirmware(emu, data, filename, 0x40000)) {
 			return true;
 		}
 
@@ -209,7 +224,7 @@ public:
 	{
 		string filename = useSgb2 ? "SGB2.sfc" : "SGB1.sfc";
 		prgSize = useSgb2 ? 0x80000 : 0x40000;
-		if(AttemptLoadFirmware(prgRom, filename, prgSize)) {
+		if(AttemptLoadFirmware(emu, prgRom, filename, prgSize)) {
 			return true;
 		}
 
@@ -217,7 +232,7 @@ public:
 			MissingFirmwareMessage msg(filename.c_str(), useSgb2 ? FirmwareType::SGB2 : FirmwareType::SGB1, prgSize);
 			emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-			if(AttemptLoadFirmware(prgRom, filename, prgSize)) {
+			if(AttemptLoadFirmware(emu, prgRom, filename, prgSize)) {
 				return true;
 			}
 
@@ -239,14 +254,14 @@ public:
 		}
 
 		uint32_t size = type == FirmwareType::GameboyColor ? 2304 : 256;
-		if(AttemptLoadFirmware(bootRom, filename, size, altFilename)) {
+		if(AttemptLoadFirmware(emu, bootRom, filename, size, altFilename)) {
 			return true;
 		}
 
 		/*MissingFirmwareMessage msg(filename.c_str(), type, size);
 		console->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(bootRom, filename, size)) {
+		if(AttemptLoadFirmware(emu, bootRom, filename, size)) {
 			return true;
 		}
 
@@ -259,14 +274,14 @@ public:
 		string filename = "gba_bios.bin";
 
 		uint32_t size = 0x4000;
-		if(AttemptLoadFirmware(bootRom, filename, size)) {
+		if(AttemptLoadFirmware(emu, bootRom, filename, size)) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), FirmwareType::GameboyAdvance, size);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(bootRom, filename, size)) {
+		if(AttemptLoadFirmware(emu, bootRom, filename, size)) {
 			return true;
 		}
 
@@ -278,14 +293,14 @@ public:
 	{
 		string filename = "disksys.rom";
 		uint32_t size = 0x2000;
-		if(AttemptLoadFirmware(biosRom, filename, size, "FdsBios.bin")) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, size, "FdsBios.bin")) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), FirmwareType::FDS, size);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(biosRom, filename, size, "FdsBios.bin")) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, size, "FdsBios.bin")) {
 			return true;
 		}
 
@@ -297,14 +312,14 @@ public:
 	{
 		string filename = "StudyBox.bin";
 		uint32_t size = 0x40000;
-		if(AttemptLoadFirmware(biosRom, filename, size, "StudyBox.bin")) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, size, "StudyBox.bin")) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), FirmwareType::StudyBox, size);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(biosRom, filename, size, "StudyBox.bin")) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, size, "StudyBox.bin")) {
 			return true;
 		}
 
@@ -317,14 +332,14 @@ public:
 		string filename = "[BIOS] Super CD-ROM System (Japan) (v3.0).pce";
 		string altName = "syscard3.pce";
 		uint32_t size = 0x40000;
-		if(AttemptLoadFirmware(biosRom, filename, size, altName)) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, size, altName)) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), FirmwareType::PceSuperCd, size);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(biosRom, filename, size, altName)) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, size, altName)) {
 			return true;
 		}
 
@@ -336,14 +351,14 @@ public:
 	{
 		string filename = "[BIOS] Games Express CD Card (Japan).pce";
 		string altName = "gecard.pce";
-		if(AttemptLoadFirmware(biosRom, filename, 0x8000, altName) || AttemptLoadFirmware(biosRom, filename, 0x4000, altName)) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, 0x8000, altName) || AttemptLoadFirmware(emu, biosRom, filename, 0x4000, altName)) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), FirmwareType::PceGamesExpress, 0x8000, 0x4000);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(biosRom, filename, 0x8000, altName) || AttemptLoadFirmware(biosRom, filename, 0x4000, altName)) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, 0x8000, altName) || AttemptLoadFirmware(emu, biosRom, filename, 0x4000, altName)) {
 			return true;
 		}
 
@@ -367,14 +382,14 @@ public:
 	{
 		string filename = "bios.col";
 		uint32_t size = 0x2000;
-		if(AttemptLoadFirmware(biosRom, filename, size)) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, size)) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), FirmwareType::ColecoVision, size);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(biosRom, filename, size)) {
+		if(AttemptLoadFirmware(emu, biosRom, filename, size)) {
 			return true;
 		}
 
@@ -394,14 +409,14 @@ public:
 		}
 		uint32_t size = model == WsModel::Monochrome ? 0x1000 : 0x2000;
 		string path = FolderUtilities::CombinePath(FolderUtilities::GetFirmwareFolder(), filename);
-		if(AttemptLoadFirmware(bootRom, filename, size)) {
+		if(AttemptLoadFirmware(emu, bootRom, filename, size)) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), firmwareType, size);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(bootRom, filename, size)) {
+		if(AttemptLoadFirmware(emu, bootRom, filename, size)) {
 			return true;
 		}
 
@@ -413,14 +428,14 @@ public:
 	{
 		string filename = "ymf288_adpcm_rom.bin";
 		uint32_t size = 0x2000;
-		if(AttemptLoadFirmware(romData, filename, size)) {
+		if(AttemptLoadFirmware(emu, romData, filename, size)) {
 			return true;
 		}
 
 		MissingFirmwareMessage msg(filename.c_str(), FirmwareType::Ymf288AdpcmRom, size);
 		emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::MissingFirmware, &msg);
 
-		if(AttemptLoadFirmware(romData, filename, size)) {
+		if(AttemptLoadFirmware(emu, romData, filename, size)) {
 			return true;
 		}
 

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "system/SystemBase.hpp"
@@ -112,4 +113,10 @@ private:
     // GbaController::Buttons enum in onProcess.
     struct PendingGbaButton { std::uint8_t button; bool down; };
     std::vector<PendingGbaButton>     pendingButtons_;
+
+    // This system's private firmware directory: which one it owns, and where it ended up once a BIOS
+    // was actually installed there (empty when none was). Private per INSTANCE because Mesen's own
+    // firmware folder is process-global while a host runs several emulators - see installGbaBios.
+    const std::uint64_t               firmwareSlot_;
+    std::string                       firmwareDir_;
 };

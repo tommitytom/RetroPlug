@@ -1,5 +1,6 @@
 #include "system/mesen/MesenGbaSystem.hpp"
 
+#include <atomic>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -57,30 +58,49 @@ void configureGba(Emulator& emu, bool skipBootScreen) {
     settings->SetGbaConfig(cfg);
 }
 
-// Mesen's FirmwareHelper::LoadGbaBootRom hardcodes the filename
-// `gba_bios.bin` and searches under FolderUtilities::GetFirmwareFolder(),
-// which is `<home>/Firmware` (no SetFirmwareFolder API exists). To honour a
-// user-provided biosPath we copy the file into that fixed location before
-// Mesen tries to load it. Failure is non-fatal — Mesen falls back to a
-// zeroed boot ROM (HLE).
-void installGbaBios(const std::string& biosPath) {
-    if (biosPath.empty()) return;
+// Hands out the per-instance firmware directory number used below. Process-wide and monotonic,
+// so it is unique among every GBA system this process ever builds - including ones constructed on
+// the background render threads, hence the atomic.
+std::uint64_t nextFirmwareSlot() {
+    static std::atomic<std::uint64_t> counter{0};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+// Mesen's FirmwareHelper::LoadGbaBootRom hardcodes the filename `gba_bios.bin`, so honouring a
+// user-provided biosPath means copying that file somewhere Mesen will look for it under that name.
+//
+// The folder is ours alone, and that matters: Mesen's own firmware folder is a process-global static
+// (`FolderUtilities::GetFirmwareFolder()`), while a host runs several emulators at once - a DAW loads
+// a plugin instance per track, and each background render spins its own. Sharing one folder makes the
+// install and the load a two-step transaction over global state: whoever activates in between can
+// replace the file, and the activating system then boots the other one's BIOS. Sequential activation
+// happens to interleave safely, but render hosts construct cores on their own threads, so nothing
+// orders those two steps. A directory per system removes the shared step rather than racing for it.
+//
+// So each system installs into `<home>/firmware/<slot>` and points its emulator at it through
+// SetFirmwareFolderOverride (a RetroPlug addition to vendored Mesen, which consults it ahead of the
+// shared folder). Returns the folder, or empty when there is nothing to install - failure is
+// non-fatal either way, Mesen falls back to a zeroed boot ROM (HLE).
+std::string installGbaBios(const std::string& biosPath, std::uint64_t slot) {
+    if (biosPath.empty()) return {};
     namespace fs = std::filesystem;
     std::error_code ec;
     fs::path src(biosPath);
     if (!fs::exists(src, ec)) {
         std::fprintf(stderr, "[MesenGbaSystem] biosPath '%s' does not exist; falling back to HLE\n",
                      biosPath.c_str());
-        return;
+        return {};
     }
-    fs::path dstDir = fs::path(mesenHomeFolder()) / "Firmware";
+    fs::path dstDir = fs::path(mesenHomeFolder()) / "firmware" / std::to_string(slot);
     fs::create_directories(dstDir, ec);
     fs::path dst = dstDir / "gba_bios.bin";
     fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
     if (ec) {
         std::fprintf(stderr, "[MesenGbaSystem] failed to install BIOS '%s' -> '%s': %s\n",
                      biosPath.c_str(), dst.string().c_str(), ec.message().c_str());
+        return {};
     }
+    return dstDir.string();
 }
 
 } // namespace
@@ -90,7 +110,8 @@ MesenGbaSystem::MesenGbaSystem(SystemId id,
                      std::vector<std::uint8_t> romBytes)
     : SystemBase(id),
       config_(std::move(config)),
-      rom_(std::move(romBytes)) {
+      rom_(std::move(romBytes)),
+      firmwareSlot_(nextFirmwareSlot()) {
     gainSmoother_.setTimeConstant(0.020f);
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
 }
@@ -116,7 +137,7 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     // concurrent core construction on background render threads doesn't race (see MesenGlobalInit).
     mesenGlobalInit();
 
-    installGbaBios(config_.biosPath);
+    firmwareDir_ = installGbaBios(config_.biosPath, firmwareSlot_);
 
     emu_ = std::make_unique<Emulator>();
     // enableShortcuts=false: the plugin drives input/transport itself and never
@@ -124,6 +145,8 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     // background polling thread (ShortcutKeyHandler) that, besides being pure
     // overhead, races the debugger pointer against LoadRom's ResetDebugger.
     emu_->Initialize(false);
+    // Before LoadRom, which is what reads the boot ROM - and is re-run by every Reset.
+    if (!firmwareDir_.empty()) emu_->SetFirmwareFolderOverride(firmwareDir_);
     configureGba(*emu_, config_.skipBootScreen);
 
     VirtualFile romFile(rom_.data(), rom_.size(),
@@ -172,6 +195,14 @@ void MesenGbaSystem::onDeactivate() {
     audioDevice_.reset();
     videoDevice_.reset();
     activated_ = false;
+
+    if (!firmwareDir_.empty()) {
+        // Ours alone, so it goes with us rather than accumulating one copy of the BIOS per system
+        // ever loaded. remove_all because the installed gba_bios.bin is still in it.
+        std::error_code ec;
+        std::filesystem::remove_all(firmwareDir_, ec);
+        firmwareDir_.clear();
+    }
 }
 
 void MesenGbaSystem::onSampleRateChanged(double sampleRate) {
