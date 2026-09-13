@@ -190,7 +190,17 @@ still shown; mouse-driven since keys don't reach the plugin editor headlessly),
 project already in the control plane and asserts the editor shows it, the session-restore /
 setState half; deterministic, no mouse) — both guard the editor↔control-plane single-store
 graph (a close/reopen or a setState-restored project showing the start menu means the UI
-composed its own store again); not in CI. `reaper:params` / `reaper:params-clap`
+composed its own store again); not in CI. **`reaper:two-instances` /
+`reaper:two-instances-load`** are the only checks that run MORE THAN ONE instance in a host,
+which is its own state: a control-plane runtime each, and an LVGL display each on one UI
+thread. The first loads N instances + N editors and watches the host survive
+(`RP_TWO_FORMAT=vst3|clap`, `RP_TWO_COUNT`, `RP_TWO_AUTOLOAD`); the second drives the reported
+failure — load a ROM through instance 1's editor, open instance 2, load through THAT one — and
+judges by a ReaScript defer HEARTBEAT, because the bug freezes rather than crashes and a live
+process proves nothing. Reaper runs defer on the same main thread both editors idle on, so a
+blocked UI thread stops the counter dead; `RP_LOAD_MODE=dialog` (the "Load..." row) is the leg
+that reproduced it, and the harness SIGKILLs, since a host spinning in LVGL never answers
+SIGTERM. Neither is in CI. `reaper:params` / `reaper:params-clap`
 (`tools/run-reaper-params.sh` — reads the plugin's parameter names through ReaScript before and
 after click-loading mGB, asserting the per-ROM CC labels replaced the generic pool and the
 parameter COUNT held; the only proof a host acts on the re-read flag DPF raises, and the only
