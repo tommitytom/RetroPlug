@@ -356,6 +356,9 @@ public:
     }
 
     ~PluginUI() override {
+        // Our own members are destroyed before the LVGL widget base, so the teardown below still talks to
+        // LVGL - and does it from a destructor, which is not one of the widget's callbacks either.
+        lvglMakeCurrent();
         // Unmount (→ __rp_unmountUI) + flush the async widget deletes while the context is still alive,
         // leaving the shared host clean for the next editor session.
         clearWindowSizeHooks(jsEngine.getContext(), this); // hooks outlive us on the shared context — un-point our target
@@ -395,6 +398,7 @@ protected:
     // Now driven by the NativeFileDialog (pfd) poll in uiIdle rather than DPF's browser, but kept as the DPF
     // override too (USE_FILE_BROWSER stays on for drag-and-drop) so DPF never routes a stray pick elsewhere.
     void uiFileBrowserSelected(const char* filename) override {
+        lvglMakeCurrent(); // resolving the pick re-renders the UI
         JSContext* ctx = jsEngine.getContext();
         if (!ctx) return;
         JSValue global = JS_GetGlobalObject(ctx);
@@ -415,6 +419,7 @@ protected:
     // (load-as-project / replace-instance / load-sram). Delivered on the UI thread that pumps the JS loop, so
     // a direct emit is safe. Enabled for both standalone and the DAW-hosted editor.
     void uiFileDropped(const char* paths, double x, double y) override {
+        lvglMakeCurrent(); // the drop handler loads a project, i.e. re-renders the UI
         if (std::getenv("PUGL_DND_DEBUG"))
             d_stdout("[dnd] uiFileDropped paths=<<%s>> at %.0f,%.0f", paths ? paths : "(null)", x, y);
         JSContext* ctx = jsEngine.getContext();
@@ -426,6 +431,10 @@ protected:
 #endif
 
     void uiIdle() override {
+        // Everything below reaches LVGL - the per-frame emulator-tile blit, the React commits the JS
+        // pump runs, the screenshot - and uiIdle is a DPF callback, not one of the LVGL widget's own, so
+        // nothing has pointed LVGL at THIS editor yet. See lvglMakeCurrent.
+        lvglMakeCurrent();
         if (!windowTitleSet_) {
             windowTitleSet_ = true;
             if (getWindow().getApp().isStandalone()) getWindow().setTitle("RetroPlug");
@@ -496,6 +505,7 @@ protected:
     }
 
     bool onKeyboard(const KeyboardEvent& ev) override {
+        lvglMakeCurrent(); // the base feeds the LVGL keypad indev, and the emit below runs JS handlers
         UI::onKeyboard(ev); // base → LVGL keypad indev (menu arrow nav / Enter)
         if (JSContext* ctx = jsEngine.getContext()) {
             // key is the unshifted code point (DPF gives 'a' for the A key regardless of Shift); pass mod so
@@ -508,6 +518,7 @@ protected:
     }
 
     bool onMouse(const MouseEvent& ev) override {
+        lvglMakeCurrent(); // as onKeyboard: the base drives the pointer indev, the emit runs JS handlers
         // Click-to-focus: an embedded plugin child window doesn't get keyboard focus on its own on Windows
         // (pugl never SetFocus()es it, and hosts like Renoise deliver keys to the focused window rather than
         // forwarding effEditKeyDown). Grab keyboard focus on any press so onKeyboard starts receiving keys.
@@ -525,6 +536,7 @@ protected:
     // Desktop wheel → scroll the hit-tested scrollable ancestor (the menu). Swallow otherwise, so the
     // base's encoder path can't shuffle group focus across widgets. Ported from legacy PluginUI.
     bool onScroll(const ScrollEvent& ev) override {
+        lvglMakeCurrent(); // scrollAtPoint hit-tests the LVGL tree
         retroplug::ui::scrollAtPoint(static_cast<int32_t>(ev.pos.getX()), static_cast<int32_t>(ev.pos.getY()),
                                      ev.delta.getX(), ev.delta.getY());
         return true;
