@@ -235,6 +235,37 @@ test("setSettings normalizes what it writes, so a write then a read round-trips"
   expect(BlipToasterRom.fromBytes(rom.bytes()).settings()).toEqual(rom.settings());
 });
 
+test("a field still at the reserved 0xFF is reported UNSUPPORTED - that image's build predates it", () => {
+  // The reserved filler doubles as a capability probe. A ROM built before a field has its byte at 0xFF; one
+  // built after has it at 0 (the ROM's own power-on default), and no writer here ever produces 0xFF. So this
+  // distinguishes "the cart boots theme 0" from "the cart does not look at this byte at all" - which is the
+  // difference between a working default and a Theme row that silently does nothing.
+  const current = BlipToasterRom.fromBytes(blipToasterRom());
+  expect(current.settingSupported("theme")).toBe(true);
+  expect(current.settingSupported("font")).toBe(true);
+
+  const old = blipToasterRom();
+  old.fill(0xff, SETTINGS_OFFSET + 11, SETTINGS_OFFSET + 16); // the block as a build predating both fields has it
+  const rom = BlipToasterRom.fromBytes(old);
+  expect(rom.hasSettings).toBe(true); // the block IS there and its four original fields are honoured
+  expect(rom.settingSupported("theme")).toBe(false);
+  expect(rom.settingSupported("font")).toBe(false);
+  // The four fields the block shipped with are always supported - they have no reserved state to probe.
+  for (const f of ["baseChannel", "kit", "mode1", "velCurve"] as const) expect(rom.settingSupported(f)).toBe(true);
+  // And they still read + write on such a ROM, so an old cart is not cut off from the rest of the block.
+  rom.setSettings({ baseChannel: 3 });
+  expect(rom.settings()!.baseChannel).toBe(3);
+});
+
+test("no readable block means no field is supported", () => {
+  const bare = blipToasterRom();
+  bare.fill(0, SETTINGS_OFFSET, SETTINGS_OFFSET + 6);
+  const rom = BlipToasterRom.fromBytes(bare);
+  for (const f of ["theme", "font", "kit", "baseChannel", "mode1", "velCurve"] as const) {
+    expect(rom.settingSupported(f)).toBe(false);
+  }
+});
+
 test("a ROM with no block, or one stamped a format we don't read, reports none and cannot be written", () => {
   for (const mutate of [
     (b: Uint8Array) => b.fill(0, SETTINGS_OFFSET, SETTINGS_OFFSET + 6), // no magic

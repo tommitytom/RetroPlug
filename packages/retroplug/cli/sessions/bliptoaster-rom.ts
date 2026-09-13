@@ -240,8 +240,10 @@ function settingsLines(rom: BlipToasterRom): string[] {
     `  default kit:     ${named(set.kit, rom.kits().find((k) => k.slot === set.kit)?.name)}`,
     `  mode 1 at boot:  ${set.mode1 ? "on" : "off"}`,
     `  velocity curve:  ${set.velCurve ? "log" : "linear"}`,
-    `  default theme:   ${named(set.theme, rom.themes().find((t) => t.slot === set.theme)?.theme.name.trim())}`,
-    `  default font:    ${set.font}`,
+    // A field this image's build predates reads as its default but is not actually honoured, so say so rather
+    // than printing a value the cart will not act on.
+    `  default theme:   ${named(set.theme, rom.themes().find((t) => t.slot === set.theme)?.theme.name.trim())}${rom.settingSupported("theme") ? "" : "   (not read by this ROM - predates the field)"}`,
+    `  default font:    ${set.font}${rom.settingSupported("font") ? "" : "   (not read by this ROM - predates the field)"}`,
   ];
 }
 
@@ -318,6 +320,13 @@ function settings(s: Session, args: string[]): void {
   if (Object.keys(patch).length === 0) {
     for (const line of settingsLines(rom)) console.log(line);
     return;
+  }
+  // Refuse a field this image's own build predates. Its byte is still the reserved 0xFF, so writing it would
+  // succeed, report success, and change nothing about how the cart boots.
+  for (const field of ["theme", "font"] as const) {
+    if (patch[field] !== undefined && !rom.settingSupported(field)) {
+      throw new Error(`this ROM predates the baked ${field} setting (its byte is still reserved) - rebuild it from a source tree that has SET_F_${field.toUpperCase()}`);
+    }
   }
   rom.setSettings(patch);
   const out = flag(args, "--out") ?? romPath;

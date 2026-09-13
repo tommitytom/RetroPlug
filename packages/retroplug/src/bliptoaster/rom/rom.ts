@@ -37,6 +37,7 @@ import {
   SETTINGS_BLOCK_SIZE,
   SETTINGS_FORMAT,
   settingsFormatAt,
+  fieldIsSupported,
   decodeSettings,
   encodeSettings,
   type BlipToasterSettings,
@@ -222,6 +223,14 @@ export class BlipToasterRom {
   setSettings(patch: BlipToasterSettingsPatch): void {
     if (this.settingsOffset < 0) return;
     encodeSettings(this.rom, this.settingsOffset, patch);
+  }
+
+  /** Does this ROM's own build READ `field`, or was it built before the field existed? A field added after the
+   *  block shipped has its byte at the reserved 0xFF in an older image (see fieldIsSupported) — and writing one
+   *  such byte does nothing at all, which from the UI is indistinguishable from the feature being broken. False
+   *  for every field when there is no readable block. */
+  settingSupported(field: keyof BlipToasterSettings): boolean {
+    return this.settingsOffset >= 0 && fieldIsSupported(this.rom, this.settingsOffset, field);
   }
 
   // --- Fonts (CHR) ------------------------------------------------------------------------------------

@@ -6,9 +6,10 @@
 //
 // test/menu/bliptoaster.test.ts already proves the menu MODEL. What only this can prove is the glue: that the
 // rows become real LVGL widgets inside the instance menu, and that a keypress on one round-trips through the
-// store and comes back as a new label. Base Channel is the row driven here because its 16 values exist on every
-// build - the committed resources/roms/bliptoaster.nes is an older cart with a single theme and font, so those
-// two rows have nothing to cycle through on it.
+// store and comes back as a new label. Base Channel and Mode 1 are the rows driven here because they are two of
+// the four fields the block shipped with, so every cart that has the block honours them; the staged
+// resources/roms/bliptoaster.nes predates the theme + font fields, which is exactly why those two must show up
+// greyed below.
 import { test, expect, ui, navTo, Key } from "ui-harness";
 
 const BLIPTOASTER = () => ui.romDir() + "/bliptoaster.nes";
@@ -39,8 +40,12 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   expect(labelOf("Default Kit")).toBe("Default Kit: TR-909"); // named from the ROM, not a bare index
   expect(labelOf("Mode 1 at Boot")).toBe("Mode 1 at Boot: Off");
   expect(labelOf("Velocity Curve")).toBe("Velocity Curve: Linear");
-  expect(ui.findByTextContaining("Theme:") != null).toBeTruthy();
-  expect(ui.findByTextContaining("Font:") != null).toBeTruthy();
+  // The staged resources/roms/bliptoaster.nes is an OLDER cart, from before the block carried the two screen
+  // fields - so their bytes are still the reserved 0xFF and it does not look at them. That is the case behind
+  // the bug report ("I can pick a font but it doesn't change"), and it must READ as inert rather than offering a
+  // live cycler that writes a byte into the void. Refresh that ROM and these two become cyclers like the rest.
+  expect(ui.findByTextContaining("Theme: DFLT (ROM Too Old)") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Font: Font 0 (ROM Too Old)") != null).toBeTruthy();
   // Nothing pinned yet, so the two reboot rows are absent: the rows above are showing the ROM's own bytes, and
   // there is nothing to apply or reset.
   expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);

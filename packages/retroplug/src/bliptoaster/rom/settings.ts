@@ -71,6 +71,31 @@ export const DEFAULT_SETTINGS: BlipToasterSettings = {
 /** A partial edit: only the named fields are written, the rest of the block is left as the ROM baked it. */
 export type BlipToasterSettingsPatch = Partial<BlipToasterSettings>;
 
+/** The RESERVED filler. Every unused byte of the block holds it, and a new field takes a reserved byte, so this
+ *  doubles as an exact capability probe: see fieldIsSupported. */
+const RESERVED = 0xff;
+
+// Which byte each optional-in-practice field lives at, for that probe. The four original fields (channel, kit,
+// Mode 1, curve) shipped with the block and are not listed — every ROM carrying the block reads them.
+const FIELD_OFFSET: Partial<Record<keyof BlipToasterSettings, number>> = {
+  theme: F_THEME,
+  font: F_FONT,
+};
+
+/** Does the ROM's own build READ this field, or does it predate it?
+ *
+ *  The block is fixed-size with reserved bytes, and a new field takes one, so a ROM built before a field has
+ *  that field's byte still at 0xFF while one built after has it at 0 (its power-on default, from the ROM's own
+ *  `g_settings`). No writer ever produces 0xFF — every writer here normalizes, and the ROM's power-on value is
+ *  0 — so 0xFF at a field means exactly "this image's code does not look at this byte".
+ *
+ *  That matters to the UI, not just to tidiness: offering a Theme or Font pick on a cart that ignores it looks
+ *  precisely like the feature being broken. Fields the block shipped with are always supported. */
+export function fieldIsSupported(rom: Uint8Array, at: number, field: keyof BlipToasterSettings): boolean {
+  const off = FIELD_OFFSET[field];
+  return off === undefined || rom[at + off] !== RESERVED;
+}
+
 const clamp = (value: number, count: number): number => (value >= 0 && value < count ? value : 0);
 
 /** The format byte of the block at `at`. Gate every other accessor on this equalling SETTINGS_FORMAT: a block

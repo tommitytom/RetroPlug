@@ -1370,9 +1370,18 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
   );
   const fontNames = Array.from({ length: bounded(rom.chrFontSlotCount, SETTINGS_FONT_COUNT) }, (_v, i) => `Font ${i}`);
 
+  // A field the cart's own build predates is GREYED, not offered. Writing its byte does nothing at all in that
+  // image, and a row that silently no-ops reads exactly like the feature being broken - which is how this was
+  // found. The reserved-0xFF convention makes the probe exact (settingSupported); the suffix follows the
+  // "(Unsupported Version)" wording a detected-but-undriveable tracker cart already uses.
+  const screenRow = (id: string, label: string, field: "theme" | "font", names: string[], current: number): MenuItem =>
+    rom.settingSupported(field)
+      ? cycler(id, label, names, current, (n) => pin({ [field]: n }))
+      : action(id, `${label}: ${names[current] ?? "?"} (ROM Too Old)`, () => {}, true);
+
   return [
-    cycler("bliptoaster-set-theme", "Theme", themeNames, effective.theme, (n) => pin({ theme: n })),
-    cycler("bliptoaster-set-font", "Font", fontNames, effective.font, (n) => pin({ font: n })),
+    screenRow("bliptoaster-set-theme", "Theme", "theme", themeNames, effective.theme),
+    screenRow("bliptoaster-set-font", "Font", "font", fontNames, effective.font),
     sep("bliptoaster-set-sep"),
     cycler("bliptoaster-set-basech", "Base Channel", baseChannelNames, effective.baseChannel, (n) => pin({ baseChannel: n })),
     cycler("bliptoaster-set-kit", "Default Kit", kitNames, effective.kit, (n) => pin({ kit: n })),

@@ -210,6 +210,73 @@ test("a settings-patched ROM boots, and the core comes up in the theme the block
   console.log(`[bliptoaster-rom] settings --theme 11 -> the core boots with $3F00/$3F01 = 0F/2A`);
 });
 
+// The committed resources ROM is a real artifact predating the two screen fields, so it is the honest fixture
+// for the capability probe - its bytes are the 0xFF a pre-field build leaves, not something a test contrived.
+// __REPO_RESOURCES_DIR__ (an absolute path the runner injects), not a relative one - the suite does not run from
+// the repo root, so a relative path here would silently SKIP, which is the failure this file was already bitten by.
+declare const __REPO_RESOURCES_DIR__: string;
+const OLD_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
+
+test("a ROM predating the screen fields is reported as not reading them, and refuses a write", () => {
+  const { be, s } = toolSession();
+  if (!be.fileExists(OLD_ROM)) { console.log(`# SKIP capability probe: no ROM at ${OLD_ROM}`); return; }
+  const rom = BlipToasterRom.fromBytes(be.readFile(OLD_ROM)!);
+  expect(rom.hasSettings).toBe(true); // the block is there: its four original fields DO work on this cart
+  expect(rom.settingSupported("baseChannel")).toBe(true);
+  expect(rom.settingSupported("theme")).toBe(false);
+  expect(rom.settingSupported("font")).toBe(false);
+
+  // Writing one of them would "succeed" and change nothing about how the cart boots, which is the failure the
+  // bug report described. Refuse instead, and leave the file alone.
+  const nes = "/tmp/rp-em-old.nes";
+  expect(be.writeFile(nes, rom.bytes())).toBeTruthy();
+  const before = be.readFile(nes)!;
+  expect(() => blipToasterRomTool.run(s, ["settings", nes, "--font", "2"])).toThrow();
+  expect(() => blipToasterRomTool.run(s, ["settings", nes, "--theme", "11"])).toThrow();
+  expect([...be.readFile(nes)!]).toEqual([...before]);
+  // A field the block shipped with still writes on the same cart - an old ROM is not cut off from the rest.
+  blipToasterRomTool.run(s, ["settings", nes, "--base-channel", "4"]);
+  expect(BlipToasterRom.fromBytes(be.readFile(nes)!).settings()!.baseChannel).toBe(3);
+  console.log(`[bliptoaster-rom] ${OLD_ROM}: theme/font unsupported (reserved 0xFF), base channel still writable`);
+});
+
+// The font's other half. The theme leg above reads palette RAM, but nothing exposes which CHR bank is MAPPED -
+// no readMemory region follows the window, and FME-7's $8000/$A000 writes are not in Mesen's event log - so the
+// ROM's own g_fontIdx was as far as the consumer's suite could go, and that only says the ROM took the setting.
+// The rendered FRAME is the missing evidence: two ROMs identical but for the font byte must not draw the same
+// pixels. Without this, "the setting is applied" and "the glyphs changed" are two different claims and only the
+// first was tested.
+function frameOf(be: ReturnType<typeof createRealBackend>, audio: ReturnType<typeof createAudioDriver>, rom: string, id: number): Uint8Array {
+  expect(be.constructSystem({ romPath: rom, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, id)).toBeTruthy();
+  audio.renderAudio(44100 * 2); // ~2 s: past boot and the first drawn page
+  const frame = be.getFrame(id);
+  expect(frame != null && frame.published).toBeTruthy();
+  return new Uint8Array(frame!.pixels);
+}
+
+test("the baked font byte reaches the screen: two ROMs differing only in it render different pixels", () => {
+  const { be, audio, s } = toolSession();
+  if (romSkip(be, "font pixels")) return;
+
+  const a = copyRom(be, "/tmp/rp-em-font0.nes");
+  const b = copyRom(be, "/tmp/rp-em-font2.nes");
+  blipToasterRomTool.run(s, ["settings", a, "--font", "0"]);
+  blipToasterRomTool.run(s, ["settings", b, "--font", "2"]);
+  // The two images differ in exactly one byte, so any pixel difference below is the font and nothing else.
+  const ra = be.readFile(a)!, rb = be.readFile(b)!;
+  let romDiff = 0;
+  for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) romDiff++;
+  expect(romDiff).toBe(1);
+
+  const pa = frameOf(be, audio, a, 60);
+  const pb = frameOf(be, audio, b, 61);
+  expect(pa.length).toBe(pb.length);
+  let pixDiff = 0;
+  for (let i = 0; i < pa.length; i++) if (pa[i] !== pb[i]) pixDiff++;
+  console.log(`[bliptoaster-rom] font 0 vs font 2: ${pixDiff} of ${pa.length} frame bytes differ`);
+  expect(pixDiff).toBeGreaterThan(0);
+});
+
 test("bliptoaster-rom patch realizes a mixed manifest (build kit + import theme + font) and boots", () => {
   const { be, audio, s } = toolSession();
   if (romSkip(be, "patch")) return;
