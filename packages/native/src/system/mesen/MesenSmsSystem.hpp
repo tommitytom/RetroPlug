@@ -163,6 +163,12 @@ private:
     // on the definition.
     std::string stageRom();
 
+    // The staging directory this system owns, as `<home>/staged/<stagingSlot_>`.
+    // Unique per system INSTANCE, which the system id is NOT: ids are allocated
+    // per Project, and one process holds several (a DAW's plugin instances, plus
+    // each background render host). See stageRom().
+    const std::uint64_t stagingSlot_;
+
     MesenSmsConfig                    config_;
     std::vector<std::uint8_t>         rom_;
     std::unique_ptr<Emulator>         emu_;

@@ -1,6 +1,7 @@
 #include "system/mesen/MesenSmsSystem.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -148,12 +149,21 @@ int toSmsButton(std::uint8_t wire) {
     }
 }
 
+// Hands out the per-instance staging directory number stageRom() uses. Process-wide and
+// monotonic, so it is unique among every system this process ever builds - including ones
+// constructed on the background render threads, hence the atomic.
+std::uint64_t nextStagingSlot() {
+    static std::atomic<std::uint64_t> counter{0};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
 } // namespace
 
 MesenSmsSystem::MesenSmsSystem(SystemId id,
                                MesenSmsConfig config,
                                std::vector<std::uint8_t> romBytes)
     : SystemBase(id),
+      stagingSlot_(nextStagingSlot()),
       config_(std::move(config)),
       rom_(std::move(romBytes)),
       frames_(config_.gameGear ? kGgPixelWidth  : kSmsPixelWidth,
@@ -184,13 +194,24 @@ SmsConsole* MesenSmsSystem::smsConsole() const {
 //      disk makes Reset a SILENT NO-OP - the console pointer does not even
 //      change.
 //
-// So: real stem for 1 and 2, real file for 3. The per-system subdirectory keeps
-// two systems whose ROMs happen to share a stem from overwriting each other's
-// staged bytes (which Reset would then reload as the wrong game), while leaving
-// the filename - and therefore the battery stem - the honest one. The home
-// folder it hangs off is per-PROCESS (mesenHomeFolder), which is the same
-// argument one level out: the system id is unique within a process, not across
-// the concurrent host processes the test runners start.
+// So: real stem for 1 and 2, real file for 3. The filename therefore cannot
+// carry the uniqueness, and the subdirectory has to - it keeps two systems whose
+// ROMs share a stem from overwriting each other's staged bytes (which Reset
+// would then reload as the wrong game) while leaving the battery stem honest.
+//
+// That directory is named per system INSTANCE, and deliberately NOT by the
+// system id. Ids come from a counter TS keeps per control-plane context
+// (systemsStore.ts), i.e. one id space per Project - and a process holds several
+// Projects: every plugin instance a DAW loads has its own, as does every
+// background render host. So two live systems share id 1 as a matter of course,
+// and two instances of the same tracker share a ROM stem too, which collapsed
+// them onto ONE file. Since onDeactivate deletes that file, whichever instance
+// closed first took the other's ROM with it, and the survivor's next Reset
+// silently did nothing (meaning 3 above).
+//
+// The home folder this hangs off is per-PROCESS (mesenHomeFolder) - the same
+// argument one level out, for the concurrent host processes the test runners
+// start. Per-process root plus per-instance directory is unique everywhere.
 std::string MesenSmsSystem::stageRom() {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -202,7 +223,7 @@ std::string MesenSmsSystem::stageRom() {
     }
     const char* ext = config_.gameGear ? ".gg" : ".sms";
 
-    const fs::path dir = fs::path(mesenHomeFolder()) / "staged" / std::to_string(id());
+    const fs::path dir = fs::path(mesenHomeFolder()) / "staged" / std::to_string(stagingSlot_);
     fs::create_directories(dir, ec);
     if (ec) {
         std::fprintf(stderr, "[MesenSmsSystem] cannot create staging dir '%s': %s\n",
@@ -336,6 +357,9 @@ void MesenSmsSystem::onDeactivate() {
     if (!stagedRomPath_.empty()) {
         std::error_code ec;
         std::filesystem::remove(stagedRomPath_, ec);
+        // ...and the directory it sat in, which is ours alone and now empty. Without this a long
+        // session leaves one empty directory per system ever loaded, until the process exits.
+        std::filesystem::remove(std::filesystem::path(stagedRomPath_).parent_path(), ec);
         stagedRomPath_.clear();
     }
 }

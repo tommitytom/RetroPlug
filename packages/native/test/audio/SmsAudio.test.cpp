@@ -30,6 +30,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -37,6 +38,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "system/SystemTypes.hpp"
+#include "system/mesen/MesenGlobalInit.hpp"
 #include "system/mesen/MesenSmsConfig.hpp"
 #include "system/mesen/MesenSmsSystem.hpp"
 #include "transport/FrameBufferTriple.hpp"
@@ -739,4 +741,48 @@ TEST_CASE("SMS construct/destruct cycles do not crash", "[sms]") {
         sys.reset();
     }
     SUCCEED("40 construct/destruct cycles survived");
+}
+
+// A system id is unique within a PROJECT, not within a process — TS allocates it from a module-scoped
+// counter per control-plane context (systemsStore.ts), and one process can hold several: a DAW loads
+// several plugin instances, and a background render spins its own host besides. So two live systems
+// routinely share id 1, and stageRom's `<home>/staged/<id>/<stem>.<ext>` collapses them onto one file
+// whenever their ROMs also share a stem — which two instances of the same tracker always do.
+//
+// That is not a cosmetic clash. onDeactivate DELETES the staged file, and Mesen's Reset() re-reads the
+// ROM from that path (the source of the model selection and the battery stem), where a name that is not
+// on disk makes Reset a SILENT no-op. So one instance closing leaves the other holding a path to
+// nothing, and the failure only surfaces later, as a reset that quietly does nothing.
+TEST_CASE("two systems sharing an id stage to separate files", "[sms]") {
+    namespace fs = std::filesystem;
+
+    // Count what is staged right now rather than assuming an empty root: this binary runs every other
+    // case in the same process, against the same per-process home folder.
+    const fs::path root = fs::path(mesenHomeFolder()) / "staged";
+    auto staged = [&] {
+        std::size_t n = 0;
+        std::error_code ec;
+        for (fs::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec))
+            if (it->is_regular_file(ec)) ++n;
+        return n;
+    };
+
+    const std::size_t before = staged();
+
+    // Two Projects' system 1, same ROM: exactly what two plugin instances of one tracker produce.
+    auto a = build(false, 1);
+    REQUIRE(a->activated());
+    const std::size_t withA = staged();
+    REQUIRE(withA == before + 1);
+
+    auto b = build(false, 1);
+    REQUIRE(b->activated());
+    CHECK(staged() == withA + 1); // b must stage its OWN file, not overwrite a's
+
+    // The damaging half: b going away must leave a's ROM on disk.
+    b.reset();
+    CHECK(staged() == withA);
+
+    a.reset();
+    CHECK(staged() == before);
 }
