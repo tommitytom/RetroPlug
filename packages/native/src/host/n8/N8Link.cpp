@@ -52,6 +52,16 @@ bool N8Link::connect(const std::string& port) {
         portName_ = port;
         error_.clear();
     }
+    // The link is up and nothing else is on the port yet (the serial thread starts below), so this is where a
+    // one-shot device write belongs - see OnConnected. Best-effort by design: the only plausible throw is a
+    // read timeout on a port whose first fifoWR would fail anyway, and losing the MIDI link over a volume
+    // register would be a worse outcome than the register staying where the N8 OS left it.
+    if (onConnected_) {
+        try {
+            onConnected_(*edio_);
+        } catch (const std::exception&) {
+        }
+    }
     // Quiescent here (connected_ is false, so no producer is pushing): clear any stale items from a prior
     // connection, then start the consumer thread BEFORE allowing producers.
     { TimedChunk drop; while (ring_.tryPop(drop)) {} }

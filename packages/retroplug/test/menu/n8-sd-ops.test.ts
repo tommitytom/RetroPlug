@@ -70,6 +70,7 @@ interface Calls {
   dump: string[];
   restore: string[];
   setPort: string[];
+  setExpVol: number[];
 }
 interface CfgStub {
   ports: { port: string; isN8: boolean }[];
@@ -77,6 +78,7 @@ interface CfgStub {
   connected: boolean;
   enabled: boolean;
   lookaheadMs: number;
+  expVol: number;
   bytes: number;
   error: string;
 }
@@ -89,6 +91,7 @@ const DEFAULT_CFG: CfgStub = {
   connected: true,
   enabled: true,
   lookaheadMs: 10,
+  expVol: -1, // Auto, the native default
   bytes: 0,
   error: "",
 };
@@ -98,7 +101,7 @@ const DEFAULT_CFG: CfgStub = {
 // spy record + a restore().
 function installN8(sd: Sd | null, cfg?: Partial<CfgStub>): { calls: Calls; restore: () => void } {
   const g = globalThis as Record<string, unknown>;
-  const calls: Calls = { load: [], dump: [], restore: [], setPort: [] };
+  const calls: Calls = { load: [], dump: [], restore: [], setPort: [], setExpVol: [] };
   const saved = {
     cfg: g.__rp_getN8Config,
     sd: g.__rp_getN8SdStatus,
@@ -106,6 +109,7 @@ function installN8(sd: Sd | null, cfg?: Partial<CfgStub>): { calls: Calls; resto
     dump: g.__rp_n8DumpSram,
     restore: g.__rp_n8RestoreSram,
     setPort: g.__rp_setN8Port,
+    setExpVol: g.__rp_setN8ExpVol,
   };
   const merged: CfgStub = { ...DEFAULT_CFG, ...cfg };
   g.__rp_getN8Config = () => merged;
@@ -114,6 +118,7 @@ function installN8(sd: Sd | null, cfg?: Partial<CfgStub>): { calls: Calls; resto
   g.__rp_n8DumpSram = (p: string) => calls.dump.push(p);
   g.__rp_n8RestoreSram = (p: string) => calls.restore.push(p);
   g.__rp_setN8Port = (p: string) => calls.setPort.push(p);
+  g.__rp_setN8ExpVol = (v: number) => calls.setExpVol.push(v);
   return {
     calls,
     restore: () => {
@@ -123,6 +128,7 @@ function installN8(sd: Sd | null, cfg?: Partial<CfgStub>): { calls: Calls; resto
       g.__rp_n8DumpSram = saved.dump;
       g.__rp_n8RestoreSram = saved.restore;
       g.__rp_setN8Port = saved.setPort;
+      g.__rp_setN8ExpVol = saved.setExpVol;
     },
   };
 }
@@ -262,6 +268,34 @@ test("the Port cycler offers only detected N8 ports, never plain serial ports", 
     expect(port.label).toBe("Port: (auto-detect)"); // no "[N8]" tag; the plain port isn't shown
     port.onCycle!(-1); // wrap backward to the last entry -> the only real port is the N8
     expect(env.calls.setPort).toEqual(["/dev/ttyACM0"]);
+  } finally {
+    env.restore();
+  }
+});
+
+test("the Expansion Volume cycler shows Auto by default and passes the picked value to the host", () => {
+  // master_vol is 0 after a power-cycle, which silences a VRC6/VRC7/N163/S5B/MMC5 cart's extra voices exactly
+  // like a dead chip - so the row exists, defaults to Auto (the host derives unity from the running cart's
+  // mapper), and offers explicit values for anything Auto can't recognise.
+  const env = installN8({ busy: false, version: 0 });
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    const row = findItem(n8Submenu(stores, be), "n8-exp-vol")!;
+    expect(row.label).toBe("Expansion Volume: Auto");
+    row.onCycle!(1); // Auto -> the mute entry, labelled with the number it writes
+    expect(env.calls.setExpVol).toEqual([0]);
+  } finally {
+    env.restore();
+  }
+});
+
+test("an explicit expansion volume is shown as the value the host writes", () => {
+  const env = installN8({ busy: false, version: 0 }, { expVol: 128 });
+  try {
+    const be = new MockBackend("/cfg");
+    const stores = composeAppStores({ backend: be });
+    expect(findItem(n8Submenu(stores, be), "n8-exp-vol")!.label).toBe("Expansion Volume: 128 (unity)");
   } finally {
     env.restore();
   }

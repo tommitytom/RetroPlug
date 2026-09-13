@@ -37,10 +37,54 @@ std::string baseNameOf(const std::string& path) {
     return i == std::string::npos ? path : path.substr(i + 1);
 }
 
+// iNES mappers whose cartridge carries its own sound chip - the audio the N8's FPGA mixes in through
+// `master_vol`. The TS twin is EXPANSION_MAPPERS in cli/sessions/n8-play.ts (the same policy behind
+// `n8-play --rom`); keep the two in step.
+bool mapperHasExpansionAudio(int mapper) {
+    switch (mapper) {
+        case 5:   // MMC5
+        case 19:  // Namco 163
+        case 24:  // VRC6
+        case 26:  // VRC6 (alternate pinout)
+        case 69:  // Sunsoft 5B
+        case 85:  // VRC7
+            return true;
+        default:
+            return false;
+    }
+}
+
+// The iNES mapper number from a ROM image's header, or -1 when the bytes are not an iNES image. Twin of
+// inesMapper in cli/sessions/n8-play.ts, down to ignoring NES 2.0's extra nibble (no expansion-audio mapper
+// needs it).
+int inesMapper(const std::vector<std::uint8_t>& rom) {
+    if (rom.size() < 16 || rom[0] != 'N' || rom[1] != 'E' || rom[2] != 'S' || rom[3] != 0x1A) return -1;
+    return (rom[7] & 0xF0) | (rom[6] >> 4);
+}
+
+// The mapper of the RUNNING cart, read off the N8's FPGA config block - what the OS told the cart it is, so
+// it answers for a game the user booted from the cart's own file browser (the usual state when the menu says
+// Connect). map_idx = scfg[0] | scfg[2]'s high nibble << 8, as decodeMapConfig does TS-side. Returns -1 when
+// the block can't be read, which lands on "leave the register alone" - the safe answer.
+int runningMapper(Edio& edio) {
+    std::uint8_t cfg[Edio::SIZE_CFG] = {0};
+    try {
+        edio.memRD(Edio::ADDR_CFG, cfg, sizeof cfg);
+    } catch (const std::exception&) {
+        return -1;
+    }
+    return ((cfg[2] >> 4) << 8) | cfg[0];
+}
+
 }  // namespace
 
 N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string configDir)
-    : factory_(std::move(factory)), link_(factory_), lister_(std::move(lister)), configDir_(std::move(configDir)) {}
+    : factory_(std::move(factory)), link_(factory_), lister_(std::move(lister)), configDir_(std::move(configDir)) {
+    // Every time the streaming link comes up - a Connect, a live port switch, the resume after an SD op, the
+    // reconnect restore() does - set the expansion-audio master volume. Connect is the moment that matters:
+    // a ROM load deliberately leaves streaming stopped, so the user comes back through here either way.
+    link_.setOnConnected([this](Edio& edio) { applyExpVol(edio, -1); });
+}
 
 N8ConfigDto N8Host::getConfig() {
     N8ConfigDto c;
@@ -49,6 +93,7 @@ N8ConfigDto N8Host::getConfig() {
     c.connected    = link_.isConnected();
     c.enabled      = enabled_;
     c.lookaheadMs  = link_.lookaheadMs();
+    c.expVol       = expVol_.load(std::memory_order_relaxed);
     c.bytes        = link_.bytesForwarded();
     c.error        = link_.lastError();
     return c;
@@ -87,28 +132,60 @@ void N8Host::setLookahead(int ms) {
     save();
 }
 
+void N8Host::setExpVol(int v) {
+    if (sdWorker_.busy()) return;  // an SD op owns the port; the reconnect below would fight it
+    const int clamped = v < 0 ? EXP_VOL_AUTO : (v > 255 ? 255 : v);
+    expVol_.store(clamped, std::memory_order_relaxed);
+    // Bounce a live link so the pick is audible now rather than at the next Connect: the volume is written by
+    // the connect path (the serial thread owns the Edio once it's up), which is the same reason setPort
+    // reconnects to switch ports.
+    if (link_.isConnected() && !port_.empty()) {
+        link_.disconnect();
+        link_.connect(port_);
+    }
+    save();
+}
+
+void N8Host::applyExpVol(Edio& edio, int mapperHint) {
+    int value = expVol_.load(std::memory_order_relaxed);
+    if (value == EXP_VOL_AUTO) {
+        const int mapper = mapperHint >= 0 ? mapperHint : runningMapper(edio);
+        // Not an expansion-audio cart (or nothing readable to say it is): leave the register as the N8 OS set
+        // it. Auto only rescues the case it can recognise; it never overrides a deliberate device setting.
+        if (mapper < 0 || !mapperHasExpansionAudio(mapper)) return;
+        value = EXP_VOL_UNITY;
+    }
+    const std::uint8_t byte = static_cast<std::uint8_t>(value);
+    edio.memWR(Edio::ADDR_EXP_VOL, &byte, 1);
+}
+
 void N8Host::restore() {
     if (FILE* f = std::fopen((configDir_ + "/n8.cfg").c_str(), "r")) {
         char        line[512];
         std::string port;
-        int         la = 10, en = 0;  // defaults: lookahead 10ms, disabled
+        int         la = 10, en = 0;        // defaults: lookahead 10ms, disabled
+        int         ev = EXP_VOL_AUTO;      // a file written before the setting existed has no 4th line
         if (std::fgets(line, sizeof line, f)) {
             port = line;
             while (!port.empty() && (port.back() == '\n' || port.back() == '\r')) port.pop_back();
         }
         if (std::fgets(line, sizeof line, f)) la = std::atoi(line);
         if (std::fgets(line, sizeof line, f)) en = std::atoi(line);
+        if (std::fgets(line, sizeof line, f)) ev = std::atoi(line);
         std::fclose(f);
         port_ = port;
         link_.setLookaheadMs(la < 0 ? 0 : la);
         enabled_ = (en != 0);
+        expVol_.store(ev < 0 ? EXP_VOL_AUTO : (ev > 255 ? 255 : ev), std::memory_order_relaxed);
     }
+    // Read before this line, so the reconnect below applies the restored volume rather than the default.
     if (enabled_) connect(true);  // reconnect the persisted link (auto-picks if the saved port is empty)
 }
 
 void N8Host::save() {
     if (FILE* f = std::fopen((configDir_ + "/n8.cfg").c_str(), "w")) {
-        std::fprintf(f, "%s\n%d\n%d\n", port_.c_str(), link_.lookaheadMs(), enabled_ ? 1 : 0);
+        std::fprintf(f, "%s\n%d\n%d\n%d\n", port_.c_str(), link_.lookaheadMs(), enabled_ ? 1 : 0,
+                     expVol_.load(std::memory_order_relaxed));
         std::fclose(f);
     }
 }
@@ -165,6 +242,10 @@ void N8Host::startLoadRom(const std::string& romPath) {
         p.phase("Booting");
         const int mapIndex = menu.appInstall(bootPath);  // menu parses iNES + sources the core from SD
         menu.appStart();
+        // The mapload just reloaded the OS's stored master_vol, so set ours on the ROM we hold - its header
+        // names the mapper outright, no need to ask the cart. The next Connect applies it again (streaming is
+        // stopped below), which is what covers a cart booted from the N8's own file browser.
+        applyExpVol(edio, inesMapper(rom));
         p.result("Booted " + name + " (map " + std::to_string(mapIndex) + ") - streaming stopped");
         // The old stream died with the previous ROM (controlJob left link_ disconnected + doesn't reconnect a
         // load), so commit that: clear the enabled toggle + persist. Without this, enabled_ stays true with the

@@ -19,6 +19,7 @@ export interface N8Config {
   connected: boolean; // the serial link is open + handshaken
   enabled: boolean; // the user's "stream to the N8" toggle
   lookaheadMs: number; // timed-release latency the serial thread applies
+  expVol: number; // expansion-audio master volume written on connect: -1 = auto, else 0..255 (128 = unity)
   bytes: number; // bytes forwarded since connect (status)
   error: string; // last error, or "" (status)
 }
@@ -35,6 +36,7 @@ type N8Globals = {
   __rp_setN8Port?: (name: string) => void;
   __rp_connectN8?: (enabled: boolean) => void;
   __rp_setN8Lookahead?: (ms: number) => void;
+  __rp_setN8ExpVol?: (v: number) => void;
 };
 
 /** Whether the host exposes the N8 seam (SDL standalone or DAW plugin). Necessary but not sufficient for the
@@ -57,6 +59,7 @@ export function getN8Config(): N8Config | null {
     connected: !!c.connected,
     enabled: !!c.enabled,
     lookaheadMs: typeof c.lookaheadMs === "number" ? c.lookaheadMs : 0,
+    expVol: typeof c.expVol === "number" ? c.expVol : -1,
     bytes: typeof c.bytes === "number" ? c.bytes : 0,
     error: typeof c.error === "string" ? c.error : "",
   };
@@ -77,6 +80,13 @@ export function connectN8(enabled: boolean): void {
 /** Set the timed-release lookahead latency (ms). Applies + persists natively. */
 export function setN8Lookahead(ms: number): void {
   (globalThis as N8Globals).__rp_setN8Lookahead?.(ms);
+  emit();
+}
+
+/** Set the expansion-audio master volume the host writes to the cart on connect (-1 = auto, else 0..255).
+ *  Applies + persists natively; a live link is bounced so the pick takes effect at once. */
+export function setN8ExpVol(v: number): void {
+  (globalThis as N8Globals).__rp_setN8ExpVol?.(v);
   emit();
 }
 

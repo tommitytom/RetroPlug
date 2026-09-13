@@ -25,6 +25,7 @@ struct N8ConfigDto {
     bool                   connected = false;
     bool                   enabled = false;
     int                    lookaheadMs = 0;
+    int                    expVol = -1;  // -1 = auto (see N8Host::EXP_VOL_AUTO), else the 0..255 to write
     std::uint64_t          bytes = 0;
     std::string            error;
 };
@@ -38,6 +39,14 @@ struct N8ConfigDto {
 class N8Host {
 public:
     using PortLister = std::function<std::vector<N8PortDto>()>;
+
+    // The expansion-audio master volume setting (Edio::ADDR_EXP_VOL - `master_vol`, which scales ONLY the
+    // cartridge's own sound chip, never the console's 2A03). It is 0 after a power-cycle, and a 0 there
+    // silences a VRC6 / VRC7 / N163 / S5B / MMC5 cart's extra voices no matter what the ROM does - a symptom
+    // that reads exactly like a dead chip. AUTO writes unity for a cart whose mapper carries expansion audio
+    // and leaves any other cart's register alone; an explicit 0..255 is written whatever is running.
+    static constexpr int EXP_VOL_AUTO  = -1;
+    static constexpr int EXP_VOL_UNITY = 128;
 
     N8Host(N8Link::PortFactory factory, PortLister lister, std::string configDir);
 
@@ -56,7 +65,13 @@ public:
     // Timed-release lookahead (ms, clamped >= 0). Persists.
     void setLookahead(int ms);
 
-    // Load n8.cfg (port / lookahead / enabled) and reconnect if it was enabled. Call once at host startup.
+    // Expansion-audio master volume: EXP_VOL_AUTO or a 0..255 value (clamped). Persists. Applied on every
+    // connect, so a pick made while streaming bounces the link to take effect at once (setPort does the same
+    // to switch ports - the serial thread owns the Edio, so a reconnect is how the host reaches the device).
+    void setExpVol(int v);
+
+    // Load n8.cfg (port / lookahead / enabled / expansion volume) and reconnect if it was enabled. Call once
+    // at host startup.
     void restore();
 
     // --- SD-card / menu control ops (Settings > N8 Pro). Each runs on the N8SdWorker's background thread:
@@ -77,6 +92,11 @@ public:
 private:
     void save();
 
+    // Write the configured expansion-audio master volume through `edio` (see EXP_VOL_AUTO). `mapperHint` is
+    // the iNES mapper when the caller knows it (a ROM we just uploaded), or -1 to ask the running cart.
+    // Runs on whichever thread owns the port: the UI thread inside connect(), or the SD worker after a load.
+    void applyExpVol(Edio& edio, int mapperHint);
+
     // Build a worker job that borrows the port from link_ (pausing streaming), opens a control Edio, runs
     // `op(edio, progress)`, then resumes streaming iff reconnectAfter (a thrown op always resumes streaming).
     N8SdWorker::Job controlJob(bool reconnectAfter, std::function<void(Edio&, N8SdWorker::Progress&)> op);
@@ -87,6 +107,7 @@ private:
     std::string         configDir_;
     std::string         port_;
     std::atomic<bool>   enabled_{false};  // atomic: a successful ROM load clears it from the worker thread (below)
+    std::atomic<int>    expVol_{EXP_VOL_AUTO};  // atomic: read by applyExpVol on the SD worker thread
     N8SdWorker          sdWorker_;   // LAST: destroyed first, so its thread joins while link_ + factory_ are alive
 };
 

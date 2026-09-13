@@ -29,12 +29,21 @@ public:
     // opened; connect() catches it. (Port enumeration for the picker is the caller's job via listSerialPorts.)
     using PortFactory = std::function<std::unique_ptr<ISerialPort>(const std::string&)>;
 
+    // Ran on the freshly handshaken Edio inside connect(), before the serial thread starts - so it is the
+    // only user of the port and needs no locking. The one-shot "the link just came up" seam: N8Host hangs the
+    // expansion-audio master volume off it (N8Host::applyExpVol). A throw is caught and ignored: a config
+    // write must never fail a working MIDI link.
+    using OnConnected = std::function<void(Edio&)>;
+
     explicit N8Link(PortFactory factory);
     ~N8Link();
     N8Link(const N8Link&)            = delete;
     N8Link& operator=(const N8Link&) = delete;
 
     // --- Control (UI/main thread) ---
+    // Set once by the owner before any connect (read-only afterwards, so the SD worker's resume-connect can
+    // run it too).
+    void          setOnConnected(OnConnected fn) { onConnected_ = std::move(fn); }
     bool          connect(const std::string& port);  // open + handshake + spawn the serial thread
     void          disconnect();                       // stop + join the serial thread, close the port
     bool          isConnected() const { return connected_.load(std::memory_order_acquire); }
@@ -60,6 +69,7 @@ private:
     void setError(const std::string& msg);
 
     PortFactory                factory_;
+    OnConnected                onConnected_;  // set before the first connect; never mutated afterwards
     SpscRing<TimedChunk, 1024> ring_;  // audio producer -> serial consumer
     std::atomic<std::int64_t>  lookaheadNs_{0};
     std::atomic<bool>          connected_{false};

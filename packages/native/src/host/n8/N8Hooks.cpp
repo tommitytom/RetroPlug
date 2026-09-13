@@ -41,6 +41,7 @@ JSValue jsGetN8Config(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSV
         JS_SetPropertyStr(ctx, o, "connected", JS_NewBool(ctx, c.connected));
         JS_SetPropertyStr(ctx, o, "enabled", JS_NewBool(ctx, c.enabled));
         JS_SetPropertyStr(ctx, o, "lookaheadMs", JS_NewInt32(ctx, c.lookaheadMs));
+        JS_SetPropertyStr(ctx, o, "expVol", JS_NewInt32(ctx, c.expVol));
         JS_SetPropertyStr(ctx, o, "bytes", JS_NewInt64(ctx, static_cast<std::int64_t>(c.bytes)));
         JS_SetPropertyStr(ctx, o, "error", JS_NewString(ctx, c.error.c_str()));
     }
@@ -69,6 +70,16 @@ JSValue jsSetN8Lookahead(JSContext* ctx, JSValueConst, int argc, JSValueConst* a
         std::int32_t ms = 0;
         JS_ToInt32(ctx, &ms, argv[0]);
         h->setLookahead(ms);
+    }
+    return JS_UNDEFINED;
+}
+
+JSValue jsSetN8ExpVol(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv, int, JSValue* funcData) {
+    N8Host* h = hostFromData(ctx, funcData);
+    if (h && argc >= 1) {
+        std::int32_t v = N8Host::EXP_VOL_AUTO;
+        JS_ToInt32(ctx, &v, argv[0]);
+        h->setExpVol(v);
     }
     return JS_UNDEFINED;
 }
@@ -143,6 +154,7 @@ void bindN8Hooks(JSContext* ctx, N8Host& host) {
     bind("__rp_setN8Port", jsSetN8Port, 1);
     bind("__rp_connectN8", jsConnectN8, 1);
     bind("__rp_setN8Lookahead", jsSetN8Lookahead, 1);
+    bind("__rp_setN8ExpVol", jsSetN8ExpVol, 1);
     bind("__rp_n8LoadRom", jsN8LoadRom, 1);
     bind("__rp_n8DumpSram", jsN8DumpSram, 1);
     bind("__rp_n8RestoreSram", jsN8RestoreSram, 1);

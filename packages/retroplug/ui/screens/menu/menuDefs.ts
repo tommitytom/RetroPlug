@@ -95,7 +95,7 @@ import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
 import { getTransport, setTransport, setClockBpm, CLOCK_BPM_STEP, CLOCK_BPM_COARSE_STEP } from "./transport";
-import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
+import { getN8Config, setN8Port, connectN8, setN8Lookahead, setN8ExpVol, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
 import {
   getLaunchpadConfig, setLaunchpadPorts, connectLaunchpad, looksLikeLaunchpad, type LaunchpadConfig,
@@ -298,6 +298,15 @@ function midiSettingsChildren(): MenuItem[] {
 // a time - every action is disabled while one runs.
 const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
 
+// The cart's expansion-audio master volume, written on connect (native N8Host::applyExpVol). It scales ONLY a
+// cartridge sound chip - VRC6 / VRC7 / N163 / S5B / MMC5 - never the console's own 2A03, and it is 0 after a
+// power-cycle, so one of those carts streamed from here comes up with its extra voices silent unless someone
+// sets it. "Auto" writes unity for a cart whose mapper carries expansion audio and leaves anything else as the
+// N8 OS had it; an explicit pick is written whatever is running. -1 is the Auto sentinel (N8Host EXP_VOL_AUTO).
+const N8_EXP_VOLS = [-1, 0, 64, 128, 192, 255];
+const n8ExpVolLabel = (v: number): string =>
+  v < 0 ? "Auto" : v === 0 ? "0 (mute)" : v === 128 ? "128 (unity)" : String(v);
+
 // A physical N8 counts as "here" only when one is actually enumerated (a serial port flagged isN8 by its USB
 // VID:PID). null cfg = the host lacks the seam (headless harness). Gates whether the whole submenu renders.
 function n8Detected(cfg: N8Config | null): boolean {
@@ -442,6 +451,7 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
   }
   const portName = (n: number) => (n === 0 ? "" : portValues[n - 1] ?? cfg.selectedPort);
   const laIdx = Math.max(0, N8_LOOKAHEADS.indexOf(cfg.lookaheadMs));
+  const evIdx = Math.max(0, N8_EXP_VOLS.indexOf(cfg.expVol)); // an off-list persisted value shows as Auto
   const status = cfg.enabled
     ? cfg.connected
       ? `Streaming (${cfg.bytes} bytes)`
@@ -456,6 +466,7 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
     cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n))),
     action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled), busy),
     cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx, (n) => setN8Lookahead(N8_LOOKAHEADS[n])),
+    cycler("n8-exp-vol", "Expansion Volume", N8_EXP_VOLS.map(n8ExpVolLabel), evIdx, (n) => setN8ExpVol(N8_EXP_VOLS[n])),
     sep("n8-sep-status"),
     action("n8-status", `Status: ${status}`, () => {}, true),  // read-only streaming status row
   ];
