@@ -81,7 +81,7 @@ test("the Settings rows show the ROM's own baked values, naming the entry each f
   expect(rowLabel(items(), "bliptoaster-set-font")).toBe("Font: Font 0");
   expect(rowLabel(items(), "bliptoaster-set-basech")).toBe("Base Channel: BASE01");
   expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: TEST");
-  expect(rowLabel(items(), "bliptoaster-set-mode1")).toBe("Mode 1 at Boot: Off");
+  expect(rowLabel(items(), "bliptoaster-set-ppu")).toBe("PPU Enabled: On"); // the one field whose default is on
   expect(rowLabel(items(), "bliptoaster-set-curve")).toBe("Velocity Curve: Linear");
   // Nothing pinned yet, so there is nothing to apply and nothing to reset.
   expect(findItem(settingsRows(items()), "bliptoaster-set-apply")).toBe(undefined);
@@ -110,11 +110,11 @@ test("cycling a Settings row pins that field on the role and leaves the others u
   cycle(items(), "bliptoaster-set-theme", -1); // 0 -> 15, wrapping the 16 the cart bakes
   expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: AMBR");
 
-  cycle(items(), "bliptoaster-set-mode1");
-  expect(rowLabel(items(), "bliptoaster-set-mode1")).toBe("Mode 1 at Boot: On");
-  expect(Object.keys(pinned()).sort()).toEqual(["mode1", "theme"]); // accumulated, not replaced
+  cycle(items(), "bliptoaster-set-ppu");
+  expect(rowLabel(items(), "bliptoaster-set-ppu")).toBe("PPU Enabled: Off");
+  expect(Object.keys(pinned()).sort()).toEqual(["ppu", "theme"]); // accumulated, not replaced
   expect(pinned().theme).toBe(15);
-  expect(pinned().mode1).toBe(true);
+  expect(pinned().ppu).toBe(false);
 
   // A cycler pins but does NOT reboot - the ROM is read at startup only, so the reboot is its own row (which
   // keeps the menu alive across a step: reloadSystem swaps the id the instance menu is anchored to).
@@ -124,7 +124,7 @@ test("cycling a Settings row pins that field on the role and leaves the others u
   findItem(settingsRows(items()), "bliptoaster-set-reset")!.onSelect!();
   expect(pinned()).toEqual({});
   expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DFLT");
-  expect(rowLabel(items(), "bliptoaster-set-mode1")).toBe("Mode 1 at Boot: Off");
+  expect(rowLabel(items(), "bliptoaster-set-ppu")).toBe("PPU Enabled: On");
 });
 
 test("each Settings list is bounded by what THIS cart carries, not by the format's maximum", () => {

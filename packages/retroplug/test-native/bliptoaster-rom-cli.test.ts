@@ -173,17 +173,18 @@ test("bliptoaster-rom settings prints the real ROM's block, patches named fields
   if (romSkip(be, "settings")) return;
   const base = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
   expect(base.hasSettings).toBe(true);
-  // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build.
-  expect(base.settings()).toEqual({ baseChannel: 0, kit: 0, mode1: false, velCurve: false, theme: 0, font: 0 });
+  // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build. `ppu`
+  // is the one that is not zero: the screen draws unless someone bakes the dark boot.
+  expect(base.settings()).toEqual({ baseChannel: 0, kit: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
 
   // No flags: read-only. It must not write the ROM it is inspecting.
   const nes = copyRom(be, "/tmp/rp-em-set.nes");
   blipToasterRomTool.run(s, ["settings", nes]);
   expect([...be.readFile(nes)!]).toEqual([...base.bytes()]);
 
-  blipToasterRomTool.run(s, ["settings", nes, "--theme", "11", "--font", "2", "--base-channel", "4", "--kit", "9", "--mode1", "on", "--curve", "log"]);
+  blipToasterRomTool.run(s, ["settings", nes, "--theme", "11", "--font", "2", "--base-channel", "4", "--kit", "9", "--ppu", "off", "--curve", "log"]);
   const after = BlipToasterRom.fromBytes(be.readFile(nes)!);
-  expect(after.settings()).toEqual({ baseChannel: 3, kit: 9, mode1: true, velCurve: true, theme: 11, font: 2 });
+  expect(after.settings()).toEqual({ baseChannel: 3, kit: 9, ppu: false, velCurve: true, theme: 11, font: 2 });
   // Only the block moved: the assets are byte-identical, so this cannot have disturbed a kit or the theme table.
   expect(after.themes().map((t) => t.theme.name)).toEqual(base.themes().map((t) => t.theme.name));
   for (let i = 0; i < 16; i++) expect([...after.getKitBank(i)!]).toEqual([...base.getKitBank(i)!]);
@@ -191,8 +192,15 @@ test("bliptoaster-rom settings prints the real ROM's block, patches named fields
   // A value out of range throws rather than clamping - a CLI typo must not quietly bake something else.
   expect(() => blipToasterRomTool.run(s, ["settings", nes, "--theme", "16"])).toThrow();
   expect(() => blipToasterRomTool.run(s, ["settings", nes, "--curve", "sharp"])).toThrow();
+  // The two spellings of the screen byte disagree by design, so asking for both is refused rather than resolved.
+  expect(() => blipToasterRomTool.run(s, ["settings", nes, "--ppu", "on", "--mode1", "on"])).toThrow();
   expect([...be.readFile(nes)!]).toEqual([...after.bytes()]); // and wrote nothing
-  console.log(`[bliptoaster-rom] settings: printed, patched 6 fields, rejected 2 bad values`);
+
+  // --mode1 still works, writing the INVERSE - `--mode1 off` is the dark-boot flag's old "off", which is the
+  // screen drawing, so it must land the same byte `--ppu on` does.
+  blipToasterRomTool.run(s, ["settings", nes, "--mode1", "off"]);
+  expect(BlipToasterRom.fromBytes(be.readFile(nes)!).settings()!.ppu).toBe(true);
+  console.log(`[bliptoaster-rom] settings: printed, patched 6 fields, rejected 3 bad values, --mode1 inverted`);
 });
 
 test("a settings-patched ROM boots, and the core comes up in the theme the block names", () => {

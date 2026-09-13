@@ -1385,7 +1385,7 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
     sep("bliptoaster-set-sep"),
     cycler("bliptoaster-set-basech", "Base Channel", baseChannelNames, effective.baseChannel, (n) => pin({ baseChannel: n })),
     cycler("bliptoaster-set-kit", "Default Kit", kitNames, effective.kit, (n) => pin({ kit: n })),
-    cycler("bliptoaster-set-mode1", "Mode 1 at Boot", OFF_ON, effective.mode1 ? 1 : 0, (n) => pin({ mode1: n === 1 })),
+    cycler("bliptoaster-set-ppu", "PPU Enabled", OFF_ON, effective.ppu ? 1 : 0, (n) => pin({ ppu: n === 1 })),
     // "not on the VRC7 build" is the ROM's own behaviour (it has no velocity curve), not something to hide here:
     // the byte is still baked and still honoured by every other build of the same project's ROM.
     cycler("bliptoaster-set-curve", "Velocity Curve", ["Linear", "Log"], effective.velCurve ? 1 : 0, (n) => pin({ velCurve: n === 1 })),

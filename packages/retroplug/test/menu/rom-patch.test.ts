@@ -211,7 +211,7 @@ test("BlipToaster's bake carries the pinned SETTINGS too, and a settings pin alo
 
   // A pinned setting is an edit worth baking even with an empty override list - the rows read that off the
   // catalog (hasEdits), not off the override list alone.
-  stores.project.systems.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 11, mode1: true } });
+  stores.project.systems.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 11, ppu: false } });
   expect(findItem(kids(), "bliptoaster-patch-rom")?.disabled).toBeFalsy();
 
   // Bake must be the image construct hands the core - settings included, or the .nes on disk would boot
@@ -222,7 +222,7 @@ test("BlipToaster's bake carries the pinned SETTINGS too, and a settings pin alo
   expect(sameBytes(be.readFile("/roms/bake-bt.nes")!, effective)).toBe(true);
 
   const baked = BlipToasterRom.fromBytes(be.readFile("/roms/bake-bt.nes")!);
-  expect(baked.settings()).toEqual({ baseChannel: 0, kit: 0, mode1: true, velCurve: false, theme: 11, font: 0 });
+  expect(baked.settings()).toEqual({ baseChannel: 0, kit: 0, ppu: false, velCurve: false, theme: 11, font: 0 });
   // And the pin is gone: the bytes are in the file now, so the rows grey out again and a later hand-edit of the
   // .nes is not silently overridden by a stale project pin.
   const cfg = stores.project.systems.view()[0].roles.find((r) => r.kind === "bliptoaster-assets")!.config;

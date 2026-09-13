@@ -190,7 +190,7 @@ JSON**, backed by two mechanisms:
 
 An `*-assets` role config is not limited to `overrides`. BlipToaster's also carries `settings`,
 the fields of the cart's baked 16-byte rig-settings block the project pins (default theme / font /
-kit, base MIDI channel, Mode 1 at boot, velocity curve). Every field is **optional**, and that is
+kit, base MIDI channel, PPU enabled at boot, velocity curve). Every field is **optional**, and that is
 the semantic: an absent field means "leave the byte the `.nes` baked", so a project pins only what
 the user changed. Additive with a `.default({})`, so it needed no migration step. Both kinds of
 edit are folded onto the base ROM in memory by the one patcher (`applyConfigToRom`), which is also

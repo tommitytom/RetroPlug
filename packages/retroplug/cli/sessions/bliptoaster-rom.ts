@@ -79,7 +79,7 @@ const positionals = (args: string[]): string[] => {
   const valueFlags = new Set([
     "--out", "--name", "--slot", "--rate", "--gain", "--filter", "--cutoff", "--q",
     // `settings` flags: each takes a value, which must not be mistaken for the <rom> positional.
-    "--base-channel", "--kit", "--mode1", "--curve", "--theme", "--font",
+    "--base-channel", "--kit", "--ppu", "--mode1", "--curve", "--theme", "--font",
   ]);
   const out: string[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -238,7 +238,7 @@ function settingsLines(rom: BlipToasterRom): string[] {
     "settings:",
     `  base channel:    BASE${String(set.baseChannel + 1).padStart(2, "0")}`,
     `  default kit:     ${named(set.kit, rom.kits().find((k) => k.slot === set.kit)?.name)}`,
-    `  mode 1 at boot:  ${set.mode1 ? "on" : "off"}`,
+    `  ppu enabled:     ${set.ppu ? "yes" : "no"}`,
     `  velocity curve:  ${set.velCurve ? "log" : "linear"}`,
     // A field this image's build predates reads as its default but is not actually honoured, so say so rather
     // than printing a value the cart will not act on.
@@ -273,6 +273,7 @@ function info(s: Session, args: string[]): void {
 const SETTINGS_FLAGS: Record<string, string> = {
   "--base-channel": "1-16",
   "--kit": "0-15",
+  "--ppu": "on|off",
   "--mode1": "on|off",
   "--curve": "linear|log",
   "--theme": "0-15",
@@ -296,22 +297,38 @@ function enumFlag(args: string[], name: string, on: string, off: string): boolea
   throw new Error(`${name} must be ${SETTINGS_FLAGS[name]}`);
 }
 
+/** The `+9` byte, from either spelling. It was "Mode 1 at boot" (on = dark until START) and is now "PPU
+ *  enabled" (on = the screen draws) - the same byte with the opposite sense - so `--mode1` survives only as a
+ *  DEPRECATED alias for the inverse, which is what keeps an old command line doing what it says rather than
+ *  what it used to write. Giving both is refused: one byte, two spellings that disagree, and picking a winner
+ *  silently is how someone bakes a dark screen and blames the cart. */
+function ppuFlag(args: string[]): boolean | undefined {
+  const ppu = enumFlag(args, "--ppu", "on", "off");
+  const mode1 = enumFlag(args, "--mode1", "on", "off");
+  if (ppu !== undefined && mode1 !== undefined) throw new Error("--ppu and --mode1 set the same byte; pass one (--mode1 is the deprecated inverse)");
+  if (mode1 !== undefined) {
+    console.log("warning: --mode1 is deprecated - the byte now means PPU enabled, so this writes --ppu " + (mode1 ? "off" : "on"));
+    return !mode1;
+  }
+  return ppu;
+}
+
 function settings(s: Session, args: string[]): void {
   const romPath = positionals(args)[0];
-  if (!romPath) throw new Error("usage: bliptoaster-rom settings <rom> [--base-channel 1-16] [--kit 0-15] [--mode1 on|off] [--curve linear|log] [--theme 0-15] [--font 0-3] [--out <nes>]");
+  if (!romPath) throw new Error("usage: bliptoaster-rom settings <rom> [--base-channel 1-16] [--kit 0-15] [--ppu on|off] [--curve linear|log] [--theme 0-15] [--font 0-3] [--out <nes>]");
   const rom = openRom(s, romPath);
   if (!rom.hasSettings) throw new Error("no settings block in this ROM (it predates the block, or is stamped a format this build does not read)");
 
   const patch: BlipToasterSettingsPatch = {};
   const baseChannel = intFlag(args, "--base-channel", 15, 1); // 1-16 on the command line, 0-15 in the block
   const kit = intFlag(args, "--kit", SETTINGS_KIT_COUNT - 1);
-  const mode1 = enumFlag(args, "--mode1", "on", "off");
+  const ppu = ppuFlag(args);
   const curve = enumFlag(args, "--curve", "log", "linear");
   const theme = intFlag(args, "--theme", SETTINGS_THEME_COUNT - 1);
   const font = intFlag(args, "--font", SETTINGS_FONT_COUNT - 1);
   if (baseChannel !== undefined) patch.baseChannel = baseChannel;
   if (kit !== undefined) patch.kit = kit;
-  if (mode1 !== undefined) patch.mode1 = mode1;
+  if (ppu !== undefined) patch.ppu = ppu;
   if (curve !== undefined) patch.velCurve = curve;
   if (theme !== undefined) patch.theme = theme;
   if (font !== undefined) patch.font = font;
@@ -544,6 +561,11 @@ function patchManifest(s: Session, args: string[]): void {
 
   if (m.settings) {
     if (!rom.hasSettings) throw new Error('manifest has "settings" but this ROM carries no readable settings block');
+    // A manifest written against the old key would otherwise apply CLEANLY and do nothing at all (setSettings
+    // writes named fields only), leaving the screen byte at whatever it was. Name the replacement and the
+    // inversion rather than let that pass.
+    if ("mode1" in (m.settings as Record<string, unknown>))
+      throw new Error('manifest "settings" uses "mode1", which is now "ppu" with the opposite sense: "mode1": true becomes "ppu": false');
     rom.setSettings(m.settings);
     applied++;
   }
@@ -574,7 +596,8 @@ const BLIPTOASTER_ROM_HELP = [
   "settings flags (each optional; only the ones given are written):",
   "  --base-channel 1-16   the cart's base MIDI channel (BASE01..BASE16)",
   "  --kit 0-15            the DMC kit bank ch5 plays out of at boot",
-  "  --mode1 on|off        start with the screen dark until START",
+  "  --ppu on|off          draw the screen at boot (off = dark until START, the old Mode 1)",
+  "  --mode1 on|off        DEPRECATED alias for the INVERSE of --ppu (the byte's meaning flipped)",
   "  --curve linear|log    the velocity curve on every channel (the VRC7 build has none)",
   "  --theme 0-15          the colour theme the screen comes up in",
   "  --font 0-3            the CHR font the screen comes up in",
@@ -592,7 +615,7 @@ const BLIPTOASTER_ROM_HELP = [
   '               { "slot": 2, "name": "RENAMED", "samples": [{ "index": 0, "name": "BD" }] }],',
   '    "themes": [{ "slot": 0, "file": "dark.rit" }],',
   '    "fonts":  [{ "slot": 0, "file": "big.chr" }],',
-  '    "settings": { "theme": 11, "font": 2, "kit": 3, "baseChannel": 3, "mode1": true, "velCurve": false } }',
+  '    "settings": { "theme": 11, "font": 2, "kit": 3, "baseChannel": 3, "ppu": true, "velCurve": false } }',
   '  ("settings" is not per-slot - it is the one baked block, and only the fields named are written)',
   "build-kit takes ONE kit entry without a slot, e.g.",
   '  { "name": "MYKIT", "build": [{ "file": "kick.wav", "name": "BD", "rate": 12 }, "snare.wav"] }   → then import-kit',

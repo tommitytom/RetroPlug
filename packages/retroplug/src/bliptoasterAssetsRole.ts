@@ -74,7 +74,7 @@ const overrideSchema = z.object({
 const settingsSchema = z.object({
   baseChannel: z.number().int().min(0).max(15).optional(),
   kit: z.number().int().min(0).max(SETTINGS_KIT_COUNT - 1).optional(),
-  mode1: z.boolean().optional(),
+  ppu: z.boolean().optional(),
   velCurve: z.boolean().optional(),
   theme: z.number().int().min(0).max(SETTINGS_THEME_COUNT - 1).optional(),
   font: z.number().int().min(0).max(SETTINGS_FONT_COUNT - 1).optional(),
