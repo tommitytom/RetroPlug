@@ -1358,12 +1358,17 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
   const pin = (patch: Record<string, unknown>): void =>
     void ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: { ...pinned, ...patch } });
 
-  const kitNames = Array.from({ length: SETTINGS_KIT_COUNT }, (_v, i) => rom.kits().find((k) => k.slot === i)?.name || `Kit ${i}`);
-  const themeNames = Array.from(
-    { length: SETTINGS_THEME_COUNT },
-    (_v, i) => rom.themes().find((t) => t.slot === i)?.theme.name.trim() || `Theme ${i}`,
+  // Each list is bounded by what THIS ROM carries, not by the format's maximum - offering a theme the cart has
+  // no record for would bake an index it cannot use. Capped at the format's bound too (a field is one byte with
+  // a fixed range), and floored at 1 so a cycler always has something to show.
+  const bounded = (n: number, max: number): number => Math.max(1, Math.min(n, max));
+  const kitNames = Array.from({ length: bounded(rom.kitBankCapacity(), SETTINGS_KIT_COUNT) }, (_v, i) =>
+    rom.kits().find((k) => k.slot === i)?.name || `Kit ${i}`,
   );
-  const fontNames = Array.from({ length: SETTINGS_FONT_COUNT }, (_v, i) => `Font ${i}`);
+  const themeNames = Array.from({ length: bounded(rom.themeCount, SETTINGS_THEME_COUNT) }, (_v, i) =>
+    rom.themes().find((t) => t.slot === i)?.theme.name.trim() || `Theme ${i}`,
+  );
+  const fontNames = Array.from({ length: bounded(rom.chrFontSlotCount, SETTINGS_FONT_COUNT) }, (_v, i) => `Font ${i}`);
 
   return [
     cycler("bliptoaster-set-theme", "Theme", themeNames, effective.theme, (n) => pin({ theme: n })),

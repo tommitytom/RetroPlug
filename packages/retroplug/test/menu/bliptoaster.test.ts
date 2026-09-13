@@ -127,6 +127,21 @@ test("cycling a Settings row pins that field on the role and leaves the others u
   expect(rowLabel(items(), "bliptoaster-set-mode1")).toBe("Mode 1 at Boot: Off");
 });
 
+test("each Settings list is bounded by what THIS cart carries, not by the format's maximum", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  // The NROM fixture has one kit bank and one CHR bank, so those two rows have a single entry each and cannot
+  // cycle - offering a slot the cart has no record for would bake an index it cannot use. Themes still wrap 16
+  // (the table is there whatever the cart's banking is).
+  const items = blipToasterItems(be, stores, "/roms/bounded.nes");
+  cycle(items(), "bliptoaster-set-kit");
+  expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: TEST");
+  cycle(items(), "bliptoaster-set-font");
+  expect(rowLabel(items(), "bliptoaster-set-font")).toBe("Font: Font 0");
+  cycle(items(), "bliptoaster-set-theme");
+  expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DARK");
+});
+
 test("the Font row offers the 4 banks the banking ROM declares, and the Kit row its 16", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
