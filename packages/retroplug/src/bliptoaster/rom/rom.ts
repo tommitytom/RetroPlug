@@ -32,6 +32,16 @@ import {
   type KitModel,
   type RisaTheme,
 } from "../../risa/rom";
+import {
+  SETTINGS_MAGIC,
+  SETTINGS_BLOCK_SIZE,
+  SETTINGS_FORMAT,
+  settingsFormatAt,
+  decodeSettings,
+  encodeSettings,
+  type BlipToasterSettings,
+  type BlipToasterSettingsPatch,
+} from "./settings";
 
 // BlipToaster bakes kit slot 0 at CPU $C000 = PRG offset 0x4000 (the KIT region in bliptoaster/rom/nes*.cfg). On a
 // banking build the switchable window at $C000-$DFFF steps through 8K PRG banks 2..17, so slot k sits at
@@ -107,6 +117,7 @@ export class BlipToasterRom {
   private readonly markerOk: boolean;
   private readonly themeMetaOffset: number; // -1 when absent
   private readonly themes_: number; // theme entries the table holds (0 when there is no table)
+  private readonly settingsOffset: number; // -1 when absent or stamped a format we don't read
   private readonly kitCapacity: number; // switchable kit banks (1 on NROM, up to 16 on a banking build)
 
   private constructor(private readonly rom: Uint8Array) {
@@ -114,10 +125,21 @@ export class BlipToasterRom {
     this.layout = computeLayout(rom);
     this.kitCapacity = computeKitCapacity(rom);
     // Locate the risa-format theme table by its magic, scanning the code region ($8000-$BFFF, before
-    // the kit bank) so a coincidental magic in the DPCM bytes can't match.
+    // the kit bank) so a coincidental magic in the DPCM bytes can't match. The settings block lives in the
+    // same region (it is the next object after the theme table in the shipped image) and is found the same way.
     this.themeMetaOffset =
       this.layout != null ? findMagicInRange(rom, THEME_META_MAGIC, HEADER_SIZE, KIT_CPU_OFFSET) : -1;
     this.themes_ = countThemes(rom, this.themeMetaOffset);
+    this.settingsOffset = this.layout != null ? this.findSettings(rom) : -1;
+  }
+
+  /** The settings block's file offset, or -1 when it is absent, cut short by the end of the region, or stamped
+   *  a format this build does not read. Gating on the FORMAT here is what makes every accessor below safe: a
+   *  ROM from a newer tool is reported as having no block rather than half-decoded against the wrong layout. */
+  private findSettings(rom: Uint8Array): number {
+    const at = findMagicInRange(rom, SETTINGS_MAGIC, HEADER_SIZE, KIT_CPU_OFFSET);
+    if (at < 0 || at + SETTINGS_BLOCK_SIZE > rom.length) return -1;
+    return settingsFormatAt(rom, at) === SETTINGS_FORMAT ? at : -1;
   }
 
   /** Wrap a ROM image (cloned, so patches never touch the caller's buffer). */
@@ -181,6 +203,25 @@ export class BlipToasterRom {
       out.push({ slot: i, theme: decodeThemeFromRom(t.recordBytes, t.nameBytes) });
     }
     return out;
+  }
+
+  // --- Baked settings (the rig defaults; ./settings.ts has the format) --------------------------------
+  /** True when this ROM carries a settings block in a format we read. */
+  get hasSettings(): boolean {
+    return this.settingsOffset >= 0;
+  }
+
+  /** The cart's baked rig configuration — already the EFFECTIVE values (see decodeSettings), so this is what
+   *  the ROM will boot with. Null when there is no readable block. */
+  settings(): BlipToasterSettings | null {
+    return this.settingsOffset < 0 ? null : decodeSettings(this.rom, this.settingsOffset);
+  }
+
+  /** Splice the named fields into the block, leaving the rest as the ROM baked them. No-op when there is no
+   *  readable block — so a ROM predating the block, or stamped a newer format, is never half-written. */
+  setSettings(patch: BlipToasterSettingsPatch): void {
+    if (this.settingsOffset < 0) return;
+    encodeSettings(this.rom, this.settingsOffset, patch);
   }
 
   // --- Fonts (CHR) ------------------------------------------------------------------------------------

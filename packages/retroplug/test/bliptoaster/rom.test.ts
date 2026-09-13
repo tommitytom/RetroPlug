@@ -179,6 +179,78 @@ test("setTheme splices only the 7-byte record + 4-byte name of that entry", () =
   expect(rom.getTheme(6)!.nameBytes[0]).toBe("F".charCodeAt(0)); // "FIRE"
 });
 
+// --- the baked settings block -------------------------------------------------------------------------
+const SETTINGS_OFFSET = THEME_OFFSET + 6 + 16 * 11; // the block sits right behind the theme table
+
+test("settings() decodes the block, mirroring the ROM's own per-field rule", () => {
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
+  expect(rom.hasSettings).toBe(true);
+  expect(rom.settings()).toEqual({ baseChannel: 0, kit: 0, mode1: false, velCurve: false, theme: 0, font: 0 });
+
+  // Each field follows the ROM's rule, and they differ: the channel and kit are MASKED (& 0x0F), the flags are
+  // any-non-zero, and the two screen fields CLAMP to 0. Reading them any other way would report a value the
+  // cart will not actually boot with.
+  const b = blipToasterRom();
+  b.set([0x1f, 0x2a, 0x7f, 0x40, 0x10, 0x09], SETTINGS_OFFSET + 7);
+  expect(BlipToasterRom.fromBytes(b).settings()).toEqual({
+    baseChannel: 0x0f, // 0x1F & 0x0F  -> BASE16
+    kit: 0x0a, //        0x2A & 0x0F
+    mode1: true, //      0x7F != 0
+    velCurve: true, //   0x40 != 0
+    theme: 0, //         0x10 is past the 16 themes
+    font: 0, //          0x09 is past the 4 fonts
+  });
+});
+
+test("settings: the reserved 0xFF an older tool leaves behind reads as the power-on defaults", () => {
+  // The case that decides whether this is safe to ship: a tool that has never heard of a field writes nothing,
+  // so the field holds the block's reserved filler.
+  const b = blipToasterRom();
+  b.fill(0xff, SETTINGS_OFFSET + 7, SETTINGS_OFFSET + 16);
+  const set = BlipToasterRom.fromBytes(b).settings()!;
+  expect(set.theme).toBe(0);
+  expect(set.font).toBe(0);
+  expect(set.baseChannel).toBe(15); // masked, not clamped - the ROM would boot BASE16, and this says so
+});
+
+test("setSettings writes only the named fields, and only inside the block", () => {
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
+  const before = rom.bytes().slice();
+  rom.setSettings({ theme: 11, font: 2 });
+
+  const changed = changedOffsets(before, rom.bytes());
+  expect(changed).toEqual([SETTINGS_OFFSET + 11, SETTINGS_OFFSET + 12]);
+  expect(rom.settings()).toEqual({ baseChannel: 0, kit: 0, mode1: false, velCurve: false, theme: 11, font: 2 });
+  // An empty patch is a no-op, not "write the defaults".
+  const mid = rom.bytes().slice();
+  rom.setSettings({});
+  expect(changedOffsets(mid, rom.bytes())).toEqual([]);
+});
+
+test("setSettings normalizes what it writes, so a write then a read round-trips", () => {
+  const rom = BlipToasterRom.fromBytes(blipToasterRom());
+  rom.setSettings({ baseChannel: 0x1f, kit: 0x2a, theme: 99, font: 9, mode1: true, velCurve: false });
+  expect(rom.settings()).toEqual({ baseChannel: 15, kit: 10, mode1: true, velCurve: false, theme: 0, font: 0 });
+  // Round-tripping through a fresh view of the bytes gives the same answer (nothing lives outside the block).
+  expect(BlipToasterRom.fromBytes(rom.bytes()).settings()).toEqual(rom.settings());
+});
+
+test("a ROM with no block, or one stamped a format we don't read, reports none and cannot be written", () => {
+  for (const mutate of [
+    (b: Uint8Array) => b.fill(0, SETTINGS_OFFSET, SETTINGS_OFFSET + 6), // no magic
+    (b: Uint8Array) => (b[SETTINGS_OFFSET + 6] = 2), // a format from some later tool
+  ]) {
+    const b = blipToasterRom();
+    mutate(b);
+    const rom = BlipToasterRom.fromBytes(b);
+    expect(rom.hasSettings).toBe(false);
+    expect(rom.settings()).toBe(null);
+    const before = rom.bytes().slice();
+    rom.setSettings({ theme: 11, mode1: true });
+    expect(changedOffsets(before, rom.bytes())).toEqual([]); // never half-written
+  }
+});
+
 test("a theme round-trips through the .rit shape", () => {
   const t = BlipToasterRom.fromBytes(blipToasterRom()).themes()[0].theme;
   expect(parseRit(serializeRit(t)).theme).toEqual(t);

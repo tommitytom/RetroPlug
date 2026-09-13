@@ -168,6 +168,48 @@ test("bliptoaster-rom export-theme → import-theme round-trips a .rit; export-f
   expect([...be.readFile(BLIPTOASTER_ROM)!]).toEqual([...rom0.bytes()]); // source ROM untouched
 });
 
+test("bliptoaster-rom settings prints the real ROM's block, patches named fields, and rejects a bad value", () => {
+  const { be, s } = toolSession();
+  if (romSkip(be, "settings")) return;
+  const base = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
+  expect(base.hasSettings).toBe(true);
+  // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build.
+  expect(base.settings()).toEqual({ baseChannel: 0, kit: 0, mode1: false, velCurve: false, theme: 0, font: 0 });
+
+  // No flags: read-only. It must not write the ROM it is inspecting.
+  const nes = copyRom(be, "/tmp/rp-em-set.nes");
+  blipToasterRomTool.run(s, ["settings", nes]);
+  expect([...be.readFile(nes)!]).toEqual([...base.bytes()]);
+
+  blipToasterRomTool.run(s, ["settings", nes, "--theme", "11", "--font", "2", "--base-channel", "4", "--kit", "9", "--mode1", "on", "--curve", "log"]);
+  const after = BlipToasterRom.fromBytes(be.readFile(nes)!);
+  expect(after.settings()).toEqual({ baseChannel: 3, kit: 9, mode1: true, velCurve: true, theme: 11, font: 2 });
+  // Only the block moved: the assets are byte-identical, so this cannot have disturbed a kit or the theme table.
+  expect(after.themes().map((t) => t.theme.name)).toEqual(base.themes().map((t) => t.theme.name));
+  for (let i = 0; i < 16; i++) expect([...after.getKitBank(i)!]).toEqual([...base.getKitBank(i)!]);
+
+  // A value out of range throws rather than clamping - a CLI typo must not quietly bake something else.
+  expect(() => blipToasterRomTool.run(s, ["settings", nes, "--theme", "16"])).toThrow();
+  expect(() => blipToasterRomTool.run(s, ["settings", nes, "--curve", "sharp"])).toThrow();
+  expect([...be.readFile(nes)!]).toEqual([...after.bytes()]); // and wrote nothing
+  console.log(`[bliptoaster-rom] settings: printed, patched 6 fields, rejected 2 bad values`);
+});
+
+test("a settings-patched ROM boots, and the core comes up in the theme the block names", () => {
+  const { be, audio, s } = toolSession();
+  if (romSkip(be, "settings boot")) return;
+  const nes = copyRom(be, "/tmp/rp-em-setboot.nes");
+  blipToasterRomTool.run(s, ["settings", nes, "--theme", "11"]); // MTRX: bg $0F, text $2A
+
+  expect(be.constructSystem({ romPath: nes, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 44)).toBeTruthy();
+  audio.renderAudio(44100); // ~1 s: past the ROM's boot, so the palette has been written
+  // The proof that the byte reached the hardware, not just the file: $3F00/$3F01 hold theme 11's two roles.
+  const pal = be.getPpuState(44).paletteRam;
+  expect(pal[0]).toBe(0x0f);
+  expect(pal[1]).toBe(0x2a);
+  console.log(`[bliptoaster-rom] settings --theme 11 -> the core boots with $3F00/$3F01 = 0F/2A`);
+});
+
 test("bliptoaster-rom patch realizes a mixed manifest (build kit + import theme + font) and boots", () => {
   const { be, audio, s } = toolSession();
   if (romSkip(be, "patch")) return;

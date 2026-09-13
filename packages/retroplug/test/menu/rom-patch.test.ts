@@ -11,7 +11,8 @@ import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuD
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
 import { LsdjRom, ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
 import { lsdjAssetCatalog } from "../../src/tracker";
-import { gbRomBattery, risaRomFull } from "../systems/fixtures";
+import { BlipToasterRom } from "../../src/bliptoaster/rom";
+import { gbRomBattery, risaRomFull, blipToasterRom } from "../systems/fixtures";
 
 // A row that browses (Export) fires openFileBrowser fire-and-forget; flush the microtask chain it kicks off.
 const flush = async () => {
@@ -198,6 +199,35 @@ test("Export Patched ROM... writes the effective ROM elsewhere, leaving the ROM 
   expect(paletteName(be.readFile("/out/song-patched.gb")!, 1)).toBe("NEON"); // the baked image
   expect(sameBytes(be.readFile("/roms/song.gb")!, base)).toBe(true); // base ROM untouched
   expect(overridesOf(stores).length).toBe(1); // and the project still carries the override
+});
+
+test("BlipToaster's bake carries the pinned SETTINGS too, and a settings pin alone un-greys the rows", () => {
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  be.seed("/roms/bake-bt.nes", blipToasterRom());
+  const id = stores.project.systems.addSystem("/roms/bake-bt.nes")!;
+  const kids = () => submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view()[0] }).items, "inst-bliptoaster");
+  expect(findItem(kids(), "bliptoaster-patch-rom")?.disabled).toBe(true);
+
+  // A pinned setting is an edit worth baking even with an empty override list - the rows read that off the
+  // catalog (hasEdits), not off the override list alone.
+  stores.project.systems.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 11, mode1: true } });
+  expect(findItem(kids(), "bliptoaster-patch-rom")?.disabled).toBeFalsy();
+
+  // Bake must be the image construct hands the core - settings included, or the .nes on disk would boot
+  // differently from the project that wrote it.
+  stores.project.systems.reloadSystem(stores.project.systems.view()[0].id);
+  const effective = new Uint8Array(be.constructCalls[be.constructCalls.length - 1].romBytes!);
+  expect(findItem(kids(), "bliptoaster-patch-rom")!.prompt!.onConfirm("")).toBe(null);
+  expect(sameBytes(be.readFile("/roms/bake-bt.nes")!, effective)).toBe(true);
+
+  const baked = BlipToasterRom.fromBytes(be.readFile("/roms/bake-bt.nes")!);
+  expect(baked.settings()).toEqual({ baseChannel: 0, kit: 0, mode1: true, velCurve: false, theme: 11, font: 0 });
+  // And the pin is gone: the bytes are in the file now, so the rows grey out again and a later hand-edit of the
+  // .nes is not silently overridden by a stale project pin.
+  const cfg = stores.project.systems.view()[0].roles.find((r) => r.kind === "bliptoaster-assets")!.config;
+  expect(cfg.settings).toEqual({});
+  expect(findItem(kids(), "bliptoaster-patch-rom")?.disabled).toBe(true);
 });
 
 test("risa gets the same two rows, and patching bakes a theme into the .nes", () => {

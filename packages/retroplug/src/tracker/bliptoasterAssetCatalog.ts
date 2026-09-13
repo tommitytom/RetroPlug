@@ -5,10 +5,10 @@
 // why the kit type is ROM-aware (resolveTypes): Replace-only on NROM, addable/16 on a banking cart. Themes and
 // fonts are never addable: both tables are fixed-size, so a replace overwrites an entry and can never grow the
 // list. The file-dialog Export/Replace stay in the menu (they own the .rit/.rkit/.chr formats).
-import type { AssetCatalog, AssetSlot, AssetTypeInfo, AssetOverride } from "./assetCatalog";
+import { readAssetOverrides, type AssetCatalog, type AssetSlot, type AssetTypeInfo } from "./assetCatalog";
 import type { ConstructCaps } from "../systemRoles";
 import { BlipToasterRom } from "../bliptoaster/rom";
-import { applyOverridesToRom, type BlipToasterAssetOverride } from "../bliptoasterAssetsRole";
+import { applyConfigToRom, readSettings } from "../bliptoasterAssetsRole";
 
 const THEME_TYPE: AssetTypeInfo = { kind: "theme", title: "Themes", noun: "Theme", patterns: ["*.rit"], ext: ".rit", addable: false, maxSlots: 0 };
 const FONT_TYPE: AssetTypeInfo = { kind: "font", title: "Fonts", noun: "Font", patterns: ["*.chr"], ext: ".chr", addable: false, maxSlots: 0 };
@@ -38,7 +38,13 @@ export const bliptoasterAssetCatalog: AssetCatalog = {
     if (kind === "font") return rom.fonts().map((f) => ({ slot: f.slot, name: `Font ${f.slot}` }));
     return [];
   },
-  applyOverrides(romBytes: Uint8Array, overrides: AssetOverride[], caps: ConstructCaps, onSkip): Uint8Array {
-    return applyOverridesToRom(romBytes, overrides as BlipToasterAssetOverride[], caps, onSkip);
+  // BlipToaster persists the baked rig settings next to the override list, so this hands the WHOLE config to
+  // the role's patcher — a bake that applied only the overrides would write an image the cart never boots.
+  applyRoleConfig(romBytes: Uint8Array, config: Record<string, unknown> | undefined, caps: ConstructCaps, onSkip): Uint8Array {
+    return applyConfigToRom(romBytes, config ?? {}, caps, onSkip);
+  },
+  // ...which is also why a pinned settings field alone counts as an edit worth baking.
+  hasEdits(config: Record<string, unknown> | undefined): boolean {
+    return readAssetOverrides(config).length > 0 || Object.keys(readSettings(config)).length > 0;
   },
 };

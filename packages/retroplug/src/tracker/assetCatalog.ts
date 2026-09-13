@@ -54,13 +54,22 @@ export interface AssetCatalog {
    *  (e.g. BlipToaster: single-kit on NROM, addable/16 on a banking build). Defaults to `types` when absent. */
   resolveTypes?(romBytes: Uint8Array): AssetTypeInfo[];
 
-  /** Fold this console's override list onto base ROM bytes → the EFFECTIVE image (what construct hands the
-   *  core). The same patcher the `*-assets` role runs at load, exposed so the menu can bake that image out to
-   *  disk. `onSkip` reports an entry that couldn't be applied (moved/deleted linked file, malformed asset):
-   *  the ones a load silently drops. Returns the base unchanged when it isn't this console's ROM. */
-  applyOverrides(
+  /** Does this role config ask for anything — i.e. is there an edit to BAKE? Defaults to "the override list is
+   *  non-empty", which is the answer for every console that persists nothing else. A console that does (
+   *  BlipToaster's settings block) must override this, or its bake rows stay greyed out with a pending edit. */
+  hasEdits?(config: Record<string, unknown> | undefined): boolean;
+
+  /** Fold this console's WHOLE `*-assets` role config onto base ROM bytes → the EFFECTIVE image (what construct
+   *  hands the core). The same patcher the role runs at load, exposed so the menu can bake that image out to
+   *  disk. `onSkip` reports an entry that couldn't be applied (moved/deleted linked file, malformed asset): the
+   *  ones a load silently drops. Returns the base unchanged when it isn't this console's ROM.
+   *
+   *  It takes the config rather than the override list because a console may persist MORE than replacements
+   *  there (BlipToaster also pins the cart's baked rig settings), and a bake that saw only part of it would
+   *  write an image the cart never actually runs. Each catalog reads its own shape out of it. */
+  applyRoleConfig(
     romBytes: Uint8Array,
-    overrides: AssetOverride[],
+    config: Record<string, unknown> | undefined,
     caps: ConstructCaps,
     onSkip?: (ov: AssetOverride, message: string) => void,
   ): Uint8Array;

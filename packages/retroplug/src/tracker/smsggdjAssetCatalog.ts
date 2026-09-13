@@ -14,5 +14,5 @@ export const smsggdjAssetCatalog: AssetCatalog = {
   assetRole: "sms-assets", // reserved; no role registers under it yet, so no overrides can exist
   types: [],
   baseSlots: (): AssetSlot[] => [],
-  applyOverrides: (romBytes: Uint8Array): Uint8Array => romBytes,
+  applyRoleConfig: (romBytes: Uint8Array): Uint8Array => romBytes,
 };

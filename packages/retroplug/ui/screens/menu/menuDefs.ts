@@ -53,8 +53,18 @@ import {
 } from "../../../src/risaSongOps";
 import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, bankToModel, KIT_BANK_SIZE } from "../../../src/risa/rom";
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
-import { BlipToasterRom } from "../../../src/bliptoaster/rom";
-import { readOverrides as readBlipToasterOverrides, type BlipToasterAssetOverride } from "../../../src/bliptoasterAssetsRole";
+import {
+  BlipToasterRom,
+  SETTINGS_KIT_COUNT,
+  SETTINGS_THEME_COUNT,
+  SETTINGS_FONT_COUNT,
+  type BlipToasterSettingsPatch,
+} from "../../../src/bliptoaster/rom";
+import {
+  readOverrides as readBlipToasterOverrides,
+  readSettings as readBlipToasterSettingsConfig,
+  type BlipToasterAssetOverride,
+} from "../../../src/bliptoasterAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 // Aliased: `replaceSong` and `addSong` are already taken here by the LSDj row helpers.
@@ -915,12 +925,14 @@ function trackerVersionSupported(t: TrackerIntegration, be: HostBackend, romPath
   return !rom || t.isVersionSupported(rom); // unreadable ROM -> can't disprove support; leave the submenu live
 }
 
-// The override list off a system's `*-assets` role config (console-agnostic — the generic rows only read
-// type/slot/name/erase; the file-actions read the typed list for their console-specific fields).
-const overridesFor = (sys: SystemView, role: string): AssetOverride[] =>
-  readAssetOverrides(sys.roles.find((r) => r.kind === role)?.config);
+// A system's whole `*-assets` role config, and the override list out of it (console-agnostic — the generic rows
+// only read type/slot/name/erase; the file-actions read the typed list for their console-specific fields).
+const roleConfigFor = (sys: SystemView, role: string): Record<string, unknown> | undefined =>
+  sys.roles.find((r) => r.kind === role)?.config;
+const overridesFor = (sys: SystemView, role: string): AssetOverride[] => readAssetOverrides(roleConfigFor(sys, role));
 
-// Persist an override list + rebuild so onConstruct re-patches the effective ROM.
+// Persist an override list + rebuild so onConstruct re-patches the effective ROM. setRoleConfig merges at the
+// top level, so this leaves any sibling key (BlipToaster's baked `settings`) alone.
 function writeOverrides(ctx: MenuContext, sys: SystemView, role: string, overrides: AssetOverride[]): void {
   ctx.stores.project.systems.setRoleConfig(sys.id, role, { overrides });
   ctx.stores.project.systems.reloadSystem(sys.id);
@@ -1009,7 +1021,7 @@ function bakeRom(
   const base = sys.romPath ? ctx.stores.backend.readFile(sys.romPath) : null;
   if (!base) return null;
   const skipped: string[] = [];
-  const bytes = spec.catalog.applyOverrides(base, overridesFor(sys, spec.catalog.assetRole), ctx.stores.backend, (ov) =>
+  const bytes = spec.catalog.applyRoleConfig(base, roleConfigFor(sys, spec.catalog.assetRole), ctx.stores.backend, (ov) =>
     skipped.push(`${ov.type} ${ov.slot}`),
   );
   return { bytes, skipped, recognised: bytes !== base };
@@ -1031,7 +1043,11 @@ function patchRomInPlace(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView)
   // No reloadSystem: the effective ROM is byte-identical to what the core is already running, so a cold boot
   // would cost the playback position and buy nothing. setRoleConfig re-renders the menu + marks the project
   // dirty on its own (a feature role is pure TS - see SystemsStore.setRoleConfig).
-  ctx.stores.project.systems.setRoleConfig(sys.id, spec.catalog.assetRole, { overrides: [] });
+  //
+  // `settings` is cleared with the overrides, and for the same reason: it is now IN the file, so keeping the
+  // pin would only re-write the bytes it already matches - and would go on overriding a later hand-edit of the
+  // ROM the user would expect to take effect. Consoles without that key are unaffected.
+  ctx.stores.project.systems.setRoleConfig(sys.id, spec.catalog.assetRole, { overrides: [], settings: {} });
   return null;
 }
 
@@ -1050,7 +1066,11 @@ function exportPatchedRom(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView
 // The two bake rows, greyed when there's nothing to bake. Both live at the tracker submenu's root (they're
 // whole-ROM ops, not per-asset-type), below the asset submenus.
 function romPatchRows(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView): MenuItem[] {
-  const none = overridesFor(sys, spec.catalog.assetRole).length === 0;
+  const config = roleConfigFor(sys, spec.catalog.assetRole);
+  // The catalog decides what counts as a pending edit: for most consoles that is a non-empty override list, but
+  // BlipToaster also pins the cart's baked settings, and a bake that ignored those would grey the rows out with
+  // real changes waiting (and then write an image missing them).
+  const none = !(spec.catalog.hasEdits ? spec.catalog.hasEdits(config) : readAssetOverrides(config).length > 0);
   return [
     sep(`${spec.id}-patch-sep`),
     {
@@ -1230,6 +1250,10 @@ const risaAssetSpec: AssetMenuSpec = { id: "risa", catalog: risaAssetCatalog, ex
 const blipToasterAssetOverrides = (sys: SystemView): BlipToasterAssetOverride[] =>
   readBlipToasterOverrides(sys.roles.find((r) => r.kind === "bliptoaster-assets")?.config);
 
+/** The baked-settings fields this PROJECT pins (not the ROM's own bytes) — only what the user has changed. */
+const readBlipToasterSettings = (sys: SystemView): BlipToasterSettingsPatch =>
+  readBlipToasterSettingsConfig(sys.roles.find((r) => r.kind === "bliptoaster-assets")?.config);
+
 const readBlipToasterRomFor = (be: HostBackend, romPath: string): BlipToasterRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
   if (!bytes) return null;
@@ -1299,6 +1323,76 @@ const blipToasterAssetSpec: AssetMenuSpec = {
   exportAsset: exportBlipToasterAsset,
   replaceAsset: replaceBlipToasterAsset,
 };
+
+// --- BlipToaster Settings submenu (the cart's baked rig defaults) --------------------------------------
+// BlipToaster has no settings memory - no battery, and nothing survives a RESET on purpose - so what you would
+// set once for your rig is baked into the `.nes`: a 16-byte block in its code bank (src/bliptoaster/rom/settings).
+// These rows edit it exactly the way the asset rows edit assets: the pick is persisted on the
+// `bliptoaster-assets` role and folded into the ROM IN MEMORY at construct, and the file on disk is untouched.
+//
+// So the Theme and Font rows here are how you CHOOSE among the baked 16 / 4 - the Themes and Fonts submenus
+// replace an entry's contents, they don't pick the live one. Each of these is a boot default and not a lock: the
+// cart's own CC 16 / CC 17 (and CC 14 / CC 15) still move it live, and the next cold boot comes back to this.
+//
+// A change cold-boots the system (writeSettings -> reloadSystem), which is what makes it visible at once: the
+// ROM reads the block during startup and nowhere else.
+
+// The label for the row's current value, given the effective settings. Kit and Theme name the ENTRY the cart
+// will use, read from the ROM itself, so the row says "TR-909" rather than "3" - the same names the Kits and
+// Themes submenus list. A slot the ROM has nothing in falls back to its number.
+const baseChannelNames = Array.from({ length: 16 }, (_v, i) => `BASE${String(i + 1).padStart(2, "0")}`);
+
+function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] {
+  const bytes = assetRomBytes(ctx.stores.backend, sys.romPath);
+  if (!bytes) return [];
+  const rom = BlipToasterRom.fromBytes(bytes);
+  if (!rom.isBlipToaster || !rom.hasSettings) return []; // a ROM predating the block, or a format we don't read
+  // The EFFECTIVE settings: the ROM's baked block with the project's pinned fields on top - i.e. what the cart
+  // boots with right now, which is what a row must show.
+  const pinned = readBlipToasterSettings(sys);
+  const effective = { ...rom.settings()!, ...pinned };
+  const write = (patch: Record<string, unknown>): void => {
+    ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: { ...pinned, ...patch } });
+    ctx.stores.project.systems.reloadSystem(sys.id);
+  };
+
+  const kitNames = Array.from({ length: SETTINGS_KIT_COUNT }, (_v, i) => rom.kits().find((k) => k.slot === i)?.name || `Kit ${i}`);
+  const themeNames = Array.from(
+    { length: SETTINGS_THEME_COUNT },
+    (_v, i) => rom.themes().find((t) => t.slot === i)?.theme.name.trim() || `Theme ${i}`,
+  );
+  const fontNames = Array.from({ length: SETTINGS_FONT_COUNT }, (_v, i) => `Font ${i}`);
+
+  return [
+    cycler("bliptoaster-set-theme", "Theme", themeNames, effective.theme, (n) => write({ theme: n })),
+    cycler("bliptoaster-set-font", "Font", fontNames, effective.font, (n) => write({ font: n })),
+    sep("bliptoaster-set-sep"),
+    cycler("bliptoaster-set-basech", "Base Channel", baseChannelNames, effective.baseChannel, (n) => write({ baseChannel: n })),
+    cycler("bliptoaster-set-kit", "Default Kit", kitNames, effective.kit, (n) => write({ kit: n })),
+    cycler("bliptoaster-set-mode1", "Mode 1 at Boot", OFF_ON, effective.mode1 ? 1 : 0, (n) => write({ mode1: n === 1 })),
+    // "not on the VRC7 build" is the ROM's own behaviour (it has no velocity curve), not something to hide here:
+    // the byte is still baked and still honoured by every other build of the same project's ROM.
+    cycler("bliptoaster-set-curve", "Velocity Curve", ["Linear", "Log"], effective.velCurve ? 1 : 0, (n) => write({ velCurve: n === 1 })),
+    // Only offered once something IS pinned: with nothing pinned the rows already show the ROM's own bytes.
+    ...(Object.keys(pinned).length
+      ? [
+          sep("bliptoaster-set-reset-sep"),
+          action("bliptoaster-set-reset", "Reset to ROM Defaults", () => {
+            ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: {} });
+            ctx.stores.project.systems.reloadSystem(sys.id);
+          }),
+        ]
+      : []),
+  ];
+}
+
+// The BlipToaster tracker extras: the Settings submenu above the asset submenus (it is what the cart BOOTS
+// with, the asset menus are what it boots FROM). Empty when the ROM carries no readable settings block.
+function blipToasterExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
+  const rows = blipToasterSettingsRows(ctx, sys);
+  if (rows.length === 0) return [];
+  return [submenu("bliptoaster-settings", "Settings", rows), sep("bliptoaster-settings-sep")];
+}
 
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
 // Songs are the battery, NOT a ROM override: edits act directly on the live SRAM (like LSDj's own FILE
@@ -1810,7 +1904,7 @@ const TRACKER_UI: Record<string, TrackerUi> = {
   lsdj: { song: lsdjSongSpec, asset: lsdjAssetSpec, extras: lsdjExtras },
   risa: { song: risaSongSpec, asset: risaAssetSpec },
   smsggdj: { song: smsggdjSongSpec, asset: smsggdjAssetSpec },
-  bliptoaster: { asset: blipToasterAssetSpec },
+  bliptoaster: { asset: blipToasterAssetSpec, extras: blipToasterExtras },
 };
 
 // One tracker's instance-submenu children: its extras (if any), the shared Songs menu (only if the
