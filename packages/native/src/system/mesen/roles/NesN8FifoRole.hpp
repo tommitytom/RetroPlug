@@ -32,7 +32,7 @@ public:
     void onAttach(NesConsole& console);
 
     // Point the emulated SD card at a host directory ("/" on the card). Set at activate from the
-    // "mesen" role's `sdRoot`; empty means a per-process scratch dir (see NesEverdriveFifo).
+    // "mesen" role's `sdRoot`; empty means a scratch dir private to this FIFO (see NesEverdriveFifo).
     void setSdRoot(const std::string& root) { fifo_.setSdRoot(root); }
 
     // Where a CMD_F_FRD_MEM DMA lands. MesenNesSystem installs one at activate mapping the N8's PI

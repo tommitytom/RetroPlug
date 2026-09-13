@@ -139,6 +139,39 @@ void openForRead(rp::NesEverdriveFifo& fifo, const char* path) {
     REQUIRE(readBytes(fifo, 2) == std::vector<std::uint8_t>{0x00, 0xA5});
 }
 
+// Write `payload` to `path` on the card through the Edio file API, confirming each step took, so a
+// later failure is about the case under test rather than about the write. FS_MAKEPATH because a card
+// that has never been written to has no directory yet - materialising it is that flag's job.
+void writeFile(rp::NesEverdriveFifo& fifo, const char* path, const std::vector<std::uint8_t>& payload) {
+    writeCmd(fifo, CMD_F_FOPN);
+    writeByte(fifo, FA_WRITE | FA_CREATE_ALWAYS | FS_MAKEPATH);
+    writeString(fifo, path);
+    writeCmd(fifo, CMD_STATUS);
+    REQUIRE(readBytes(fifo, 2) == std::vector<std::uint8_t>{0x00, 0xA5});
+
+    writeCmd(fifo, CMD_F_FWR);
+    writeU32(fifo, static_cast<std::uint32_t>(payload.size()));
+    REQUIRE(readBytes(fifo, 1) == std::vector<std::uint8_t>{0x00});
+    for (std::uint8_t byte : payload) writeByte(fifo, byte);
+    writeCmd(fifo, CMD_STATUS);
+    REQUIRE(readBytes(fifo, 2) == std::vector<std::uint8_t>{0x00, 0xA5});
+
+    writeCmd(fifo, CMD_F_FCLOSE);
+    writeCmd(fifo, CMD_STATUS);
+    REQUIRE(readBytes(fifo, 2) == std::vector<std::uint8_t>{0x00, 0xA5});
+}
+
+// Read `n` bytes back from `path`, without the leading response byte.
+std::vector<std::uint8_t> readFile(rp::NesEverdriveFifo& fifo, const char* path, std::size_t n) {
+    openForRead(fifo, path);
+    writeCmd(fifo, CMD_F_FRD);
+    writeU32(fifo, static_cast<std::uint32_t>(n));
+    const auto reply = readBytes(fifo, n + 8);
+    REQUIRE(reply.size() == n + 1);
+    REQUIRE(reply[0] == 0x00);
+    return std::vector<std::uint8_t>(reply.begin() + 1, reply.end());
+}
+
 // The ROM's `ed_check_status`: query the stored result of the last command.
 std::uint8_t queryStatus(rp::NesEverdriveFifo& fifo) {
     writeCmd(fifo, CMD_STATUS);
@@ -348,6 +381,35 @@ TEST_CASE("an unset SD root is a scratch card, not the working directory", "[aud
 
     std::error_code ec;
     std::filesystem::remove(name, ec);
+}
+
+TEST_CASE("two cartridges with no SD root get separate cards", "[audio][nes][fifo]") {
+    // One process holds several systems - a DAW loads several plugin instances, and each background
+    // render spins its own host. Each is a separate cartridge with its own card, so an unset root has
+    // to give each ITS OWN scratch directory. Sharing one meant the second ROM to write a filename
+    // silently replaced the first ROM's file, and the first then read back bytes it never wrote.
+    // Systems that really should share a card are given the same explicit sdRoot.
+    rp::NesEverdriveFifo a;   // neither gets a setSdRoot
+    rp::NesEverdriveFifo b;
+    // CHECK, not REQUIRE: when this regresses the read-backs below should still run and show the
+    // actual damage (each cartridge reading bytes the other wrote) rather than stopping at the cause.
+    CHECK(a.cardRoot() != b.cardRoot());
+
+    const std::vector<std::uint8_t> fromA = pattern(64);
+    std::vector<std::uint8_t>       fromB(fromA.size());
+    for (std::size_t i = 0; i < fromB.size(); ++i)
+        fromB[i] = static_cast<std::uint8_t>(~fromA[i]);
+
+    // The same filename on both cards, which is the realistic case: two instances of one tracker.
+    writeFile(a, "/card.bin", fromA);
+    writeFile(b, "/card.bin", fromB);
+
+    CHECK(readFile(a, "/card.bin", fromA.size()) == fromA);
+    CHECK(readFile(b, "/card.bin", fromB.size()) == fromB);
+
+    std::error_code ec;
+    std::filesystem::remove_all(a.cardRoot(), ec);
+    std::filesystem::remove_all(b.cardRoot(), ec);
 }
 
 TEST_CASE("CMD_F_FRD sends one resp byte for the whole request, not one per 512", "[audio][nes][fifo]") {

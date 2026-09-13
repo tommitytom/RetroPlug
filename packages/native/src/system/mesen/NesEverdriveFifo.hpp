@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <queue>
 #include <vector>
 #include <mutex>
@@ -51,8 +52,10 @@ namespace rp {
 		return on;
 	}
 
-	// `currentProcessId` (util/ProcessId.hpp) names the default SD-card scratch directory: concurrent
-	// harness runs (the reaper suite, a consumer's per-file test processes) must not share a card.
+	// `currentProcessId` (util/ProcessId.hpp) names the OUTER level of the default SD-card scratch
+	// directory: concurrent harness runs (the reaper suite, a consumer's per-file test processes) must
+	// not share a card. The inner level is per FIFO instance, for the systems inside one process - see
+	// defaultSdRoot().
 
 	// -----------------------------------------------------------------------
 	// Command codes (NES SDK / Edio protocol)
@@ -208,6 +211,8 @@ namespace rp {
 
 		// ----- Filesystem state -----------------------------------------
 		std::filesystem::path _sdRoot;       // maps "/" on the N8 SD card
+		// Used when _sdRoot is empty. Per FIFO instance — see defaultSdRoot().
+		const std::filesystem::path _defaultSdRoot = makeDefaultSdRoot();
 		std::filesystem::path _openFilePath;
 		std::fstream          _openFile;
 		uint32_t              _filePtr = 0;
@@ -266,13 +271,21 @@ namespace rp {
 		// Set the host directory that stands in for the SD card root ("/"). Must be set before the ROM
 		// runs any SD command; MesenNesSystem does it at activate from the "mesen" role's `sdRoot`.
 		//
-		// Empty means "no card was named", which resolves to a per-process scratch directory (see
-		// defaultSdRoot) rather than the process's working directory. Nothing is created for it — a
+		// Empty means "no card was named", which resolves to a scratch directory private to this FIFO
+		// (see defaultSdRoot) rather than the process's working directory. Nothing is created for it — a
 		// missing directory already reads as an empty card — so a NES system that never touches SD
 		// leaves nothing on disk.
 		void setSdRoot(const std::filesystem::path& root) {
 			std::lock_guard<std::mutex> lock(_mutex);
 			_sdRoot = root;
+		}
+
+		// Which directory this cartridge's card actually lives in: the explicit sdRoot when one was
+		// given, otherwise this FIFO's own scratch directory. Worth being able to ask from outside -
+		// "whose card is this?" being unanswerable is what let two systems quietly share one.
+		std::filesystem::path cardRoot() {
+			std::lock_guard<std::mutex> lock(_mutex);
+			return _sdRoot.empty() ? _defaultSdRoot : _sdRoot;
 		}
 
 		// Where CMD_F_FRD_MEM's DMA lands: write `len` bytes into cartridge memory at a PI bus
@@ -817,15 +830,27 @@ namespace rp {
 			return static_cast<uint16_t>(_params[offset] | (_params[offset + 1] << 8));
 		}
 
-		// Where an unset SD root points: a per-process scratch directory, NOT the working directory.
-		// The CWD made the emulated card depend on where the CLI happened to be started, and let a file
-		// a test wrote land next to the source, where it silently became every later run's "card".
-		// Computed once; nothing creates it until a ROM actually writes.
-		static const std::filesystem::path& defaultSdRoot() {
-			static const std::filesystem::path root =
-				std::filesystem::temp_directory_path() /
-				("retroplug-sd-" + std::to_string(static_cast<long long>(currentProcessId())));
-			return root;
+		// Where an unset SD root points: a scratch directory of this FIFO's OWN, NOT the working
+		// directory. The CWD made the emulated card depend on where the CLI happened to be started, and
+		// let a file a test wrote land next to the source, where it silently became every later run's
+		// "card".
+		//
+		// Two levels, because there are two different sharers to keep apart. The pid keeps concurrent
+		// harness runs off each other's card (the reaper suite, a consumer's per-file test processes).
+		// The per-instance slot does the same INSIDE one process, which holds several systems - a DAW
+		// loads several plugin instances, and each background render spins its own host. Each of those
+		// is a separate cartridge with its own card, so one must not read or overwrite another's files.
+		// Two systems that really should share a card get the same explicit sdRoot; that is what the
+		// config is for.
+		//
+		// Computed once per FIFO; nothing creates it until a ROM actually writes.
+		const std::filesystem::path& defaultSdRoot() const { return _defaultSdRoot; }
+
+		static std::filesystem::path makeDefaultSdRoot() {
+			static std::atomic<uint64_t> slot{0};
+			return std::filesystem::temp_directory_path() /
+			       ("retroplug-sd-" + std::to_string(static_cast<long long>(currentProcessId()))) /
+			       std::to_string(slot.fetch_add(1, std::memory_order_relaxed));
 		}
 
 		// Convert an N8 path (absolute, e.g. "/music/song.lsdj") to a host path.
