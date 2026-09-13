@@ -12,9 +12,12 @@ import { BlipToasterRom } from "../src/bliptoaster/rom";
 import { bankToModel, isBankPopulated, decodeThemeFromRom } from "../src/risa/rom";
 import { encodeWav } from "../cli/wav";
 
-// The FME-7 build (plain banking, no expansion audio): 16 switchable kit banks. Built by
-// `make -C /workspaces/bliptoaster/rom all-mappers`; SKIP cleanly if absent.
-const BLIPTOASTER_ROM = "/workspaces/bliptoaster/rom/build/bliptoaster-fme7.nes";
+// The base build (FME-7, taken for kit banking alone — no expansion audio): 16 switchable kit banks, 16 baked
+// themes, 4 CHR fonts. Built by a bare `make` in the bliptoaster checkout; these legs SKIP cleanly if absent.
+// Keep this path current with that repo: it pointed at a pre-rename layout for a while, and since a missing ROM
+// only SKIPS, every ROM-splice leg here silently passed without running — which is how the theme-table bug
+// (§9 of its HARNESS-NOTES) reached a release with a green suite behind it.
+const BLIPTOASTER_ROM = "/workspaces/bliptoaster/build/bliptoaster.nes";
 
 function toolSession(): { be: ReturnType<typeof createRealBackend>; audio: ReturnType<typeof createAudioDriver>; s: Session } {
   const be = createRealBackend();
@@ -51,28 +54,39 @@ test("bliptoaster-rom build-kit compiles a WAV into a populated 8 KB .rkit (no R
   console.log(`[bliptoaster-rom] build-kit compiled WAV → 8 KB .rkit (MYDR/BD)`);
 });
 
-test("bliptoaster-rom import-kit places a compiled .rkit into a reserved bank; the ROM boots", () => {
+test("bliptoaster-rom import-kit replaces one bank and leaves the other 15 byte-identical; the ROM boots", () => {
   const { be, audio, s } = toolSession();
   if (romSkip(be, "import-kit")) return;
   writeSine(be, "/tmp/rp-em-ik.wav", 300);
   expect(be.writeFile("/tmp/rp-em-ik-spec.json", jenc({ name: "HATS", build: [{ file: "/tmp/rp-em-ik.wav", name: "HH" }] }))).toBeTruthy();
   blipToasterRomTool.run(s, ["build-kit", "/tmp/rp-em-ik-spec.json", "/tmp/rp-em-ik.rkit"]);
 
-  // Slot 3 is a reserved/empty bank on the FME-7 build — import populates it (multi-kit).
+  // Every one of the 16 banks ships POPULATED (the cart bakes all 16 of its .rkit assets), so an import is a
+  // replace, not a fill. It used to assume slot 3 was reserved and empty - true of an earlier build.
+  const SLOT = 3;
+  const base = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
+  expect(base.kitBankCapacity()).toBe(16);
+  expect(base.kitCount()).toBe(16);
+  const before = base.kits().find((k) => k.slot === SLOT)!.name;
+  expect(before === "HATS").toBe(false); // the baked kit must not already be the one we import
+
   const nes = copyRom(be, "/tmp/rp-em-ik.nes");
-  expect(BlipToasterRom.fromBytes(be.readFile(nes)!).isKitPopulated(3)).toBe(false);
-  blipToasterRomTool.run(s, ["import-kit", nes, "/tmp/rp-em-ik.rkit", "3", "--out", nes]);
+  blipToasterRomTool.run(s, ["import-kit", nes, "/tmp/rp-em-ik.rkit", String(SLOT), "--out", nes]);
 
   const rom = BlipToasterRom.fromBytes(be.readFile(nes)!);
-  expect(rom.kitBankCapacity()).toBe(16);
-  expect(rom.isKitPopulated(3)).toBe(true);
-  expect(rom.kits().some((k) => k.slot === 3 && k.name === "HATS")).toBe(true);
-  expect([...be.readFile(BLIPTOASTER_ROM)!]).toEqual([...BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!).bytes()]); // source untouched
+  expect(rom.isKitPopulated(SLOT)).toBe(true);
+  expect(rom.kits().find((k) => k.slot === SLOT)!.name).toBe("HATS");
+  // The splice is bank-local: every other bank still matches the source byte for byte.
+  for (let i = 0; i < 16; i++) {
+    if (i === SLOT) continue;
+    expect([...rom.getKitBank(i)!]).toEqual([...base.getKitBank(i)!]);
+  }
+  expect([...be.readFile(BLIPTOASTER_ROM)!]).toEqual([...base.bytes()]); // source untouched
 
   expect(be.constructSystem({ romPath: nes, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 40)).toBeTruthy();
   audio.renderAudio(300);
   expect(be.getFrame(40) != null).toBeTruthy();
-  console.log(`[bliptoaster-rom] import-kit into reserved bank 3 (HATS); patched ROM boots`);
+  console.log(`[bliptoaster-rom] import-kit replaced bank ${SLOT} (${before} -> HATS); patched ROM boots`);
 });
 
 test("bliptoaster-rom import-sample splices into a kit, remove-sample empties a slot (index preserved)", () => {
@@ -99,24 +113,58 @@ test("bliptoaster-rom import-sample splices into a kit, remove-sample empties a 
   console.log(`[bliptoaster-rom] import-sample (slot 1) + remove-sample (slot 0) — index-addressed splice`);
 });
 
+// The real-artifact guard for the asset TABLES. The synthetic fixtures in test/systems/fixtures.ts can only
+// prove the reader matches what they themselves bake, and for a while both baked the wrong theme layout, so the
+// count read as 1 with the whole suite green. Asserting the shipped ROM's own names is what catches a drift
+// between the two repos - the table's stride, its length, or a build that reshuffles it.
+test("the real ROM's baked tables read in full: 16 named themes, 4 fonts, 16 kit banks", () => {
+  const { be, s } = toolSession();
+  if (romSkip(be, "tables")) return;
+  const rom = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
+
+  expect(rom.themeCount).toBe(16);
+  expect(rom.themes().map((t) => t.theme.name.trim())).toEqual([
+    "DFLT", "DARK", "NEON", "LITE", "CRT", "ICE", "FIRE", "GB",
+    "AQUA", "MONO", "PLSM", "MTRX", "FOG", "SUN", "MOON", "AMBR",
+  ]);
+  expect(rom.chrFontSlotCount).toBe(4);
+  expect(rom.kitBankCapacity()).toBe(16);
+  // Every entry decodes to in-range palette roles - i.e. the stride lands on records, not on adjacent RODATA.
+  for (const { theme } of rom.themes()) {
+    for (const role of ["bg", "normal", "shaded", "alternate", "status", "cursor", "selection"] as const) {
+      expect(parseInt(theme[role].slice(2), 16) <= 0x3f).toBe(true);
+    }
+  }
+  // And `info` reports the same thing, since that is the surface a user reads.
+  blipToasterRomTool.run(s, ["info", BLIPTOASTER_ROM]);
+  console.log(`[bliptoaster-rom] real ROM: 16 themes / 4 fonts / 16 kit banks`);
+});
+
 test("bliptoaster-rom export-theme → import-theme round-trips a .rit; export-font → import-font a .chr", () => {
   const { be, s } = toolSession();
   if (romSkip(be, "theme/font")) return;
   const rom0 = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
-  const wantTheme = decodeThemeFromRom(rom0.getTheme(0)!.recordBytes, rom0.getTheme(0)!.nameBytes);
-  const wantFont = rom0.getChrFontSlot(0)!;
+  // A HIGH theme index on purpose: slot 0 is the one entry risa's split layout happened to read correctly, so
+  // a slot-0-only round-trip passes against the broken reader too.
+  const SLOT = 11;
+  const wantTheme = decodeThemeFromRom(rom0.getTheme(SLOT)!.recordBytes, rom0.getTheme(SLOT)!.nameBytes);
+  expect(wantTheme.name.trim()).toBe("MTRX");
+  const wantFont = rom0.getChrFontSlot(3)!; // likewise the LAST font bank, not bank 0
 
-  blipToasterRomTool.run(s, ["export-theme", BLIPTOASTER_ROM, "0", "/tmp/rp-em.rit"]);
-  blipToasterRomTool.run(s, ["export-font", BLIPTOASTER_ROM, "0", "/tmp/rp-em.chr"]);
+  blipToasterRomTool.run(s, ["export-theme", BLIPTOASTER_ROM, String(SLOT), "/tmp/rp-em.rit"]);
+  blipToasterRomTool.run(s, ["export-font", BLIPTOASTER_ROM, "3", "/tmp/rp-em.chr"]);
   expect(be.readFile("/tmp/rp-em.chr")!.length).toBe(0x2000);
 
   const nes = copyRom(be, "/tmp/rp-em-tf.nes");
-  blipToasterRomTool.run(s, ["import-theme", nes, "/tmp/rp-em.rit", "0", "--out", nes]);
-  blipToasterRomTool.run(s, ["import-font", nes, "/tmp/rp-em.chr", "0", "--out", nes]);
+  blipToasterRomTool.run(s, ["import-theme", nes, "/tmp/rp-em.rit", String(SLOT), "--out", nes]);
+  blipToasterRomTool.run(s, ["import-font", nes, "/tmp/rp-em.chr", "3", "--out", nes]);
 
   const rom = BlipToasterRom.fromBytes(be.readFile(nes)!);
-  expect(decodeThemeFromRom(rom.getTheme(0)!.recordBytes, rom.getTheme(0)!.nameBytes)).toEqual(wantTheme);
-  expect([...rom.getChrFontSlot(0)!]).toEqual([...wantFont]);
+  expect(decodeThemeFromRom(rom.getTheme(SLOT)!.recordBytes, rom.getTheme(SLOT)!.nameBytes)).toEqual(wantTheme);
+  expect([...rom.getChrFontSlot(3)!]).toEqual([...wantFont]);
+  // Re-importing the same bytes is a no-op, so the whole file must still match the source byte for byte - which
+  // also proves the splice addressed entry 11 and not something adjacent.
+  expect([...be.readFile(nes)!]).toEqual([...rom0.bytes()]);
   expect([...be.readFile(BLIPTOASTER_ROM)!]).toEqual([...rom0.bytes()]); // source ROM untouched
 });
 

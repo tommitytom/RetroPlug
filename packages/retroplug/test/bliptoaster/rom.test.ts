@@ -2,7 +2,14 @@
 // font, prove setKit/setChrFontSlot splice ONLY the intended bytes (byte-diff), and that isBlipToaster accepts a
 // full ROM but rejects a marker-less / truncated / garbage buffer. No emulator or real ROM needed.
 import { test, expect } from "../../testing/harness";
-import { blipToasterRom, blipToasterMultiKitRom, nesRom, garbage } from "../systems/fixtures";
+import {
+  blipToasterRom,
+  blipToasterMultiKitRom,
+  blipToasterThemeTable,
+  blipToasterSettingsBlock,
+  nesRom,
+  garbage,
+} from "../systems/fixtures";
 import { BlipToasterRom } from "../../src/bliptoaster/rom";
 import { serializeRit, parseRit } from "../../src/risa/rom";
 
@@ -107,38 +114,69 @@ test("fonts: getChrFontSlot reads the slot, setChrFontSlot splices only that 8 K
   expect(Array.from(rom.getChrFontSlot(0)!)).toEqual(Array.from(bank));
 });
 
-test("themes() decodes the baked theme located by the magic scan", () => {
+test("themes() decodes all 16 baked themes from the INTERLEAVED table, not just entry 0", () => {
   const rom = BlipToasterRom.fromBytes(blipToasterRom());
   expect(rom.hasThemes).toBe(true);
-  expect(rom.themeCount).toBe(1);
+  expect(rom.themeCount).toBe(16);
   const themes = rom.themes();
-  expect(themes.length).toBe(1);
-  expect(themes[0].slot).toBe(0);
-  expect(themes[0].theme.bg).toBe("0x0D");
+  expect(themes.map((t) => t.slot)).toEqual([...Array(16).keys()]);
+  // The names are what a menu row / `info` line shows. Read from 11-byte entries: on risa's split layout
+  // (16 records, THEN 16 names) only entry 0's name lands in the right place, so this list is the assertion
+  // that the stride is BlipToaster's own.
+  expect(themes.map((t) => t.theme.name)).toEqual([
+    "DFLT", "DARK", "NEON", "LITE", "CRT ", "ICE ", "FIRE", "GB  ",
+    "AQUA", "MONO", "PLSM", "MTRX", "FOG ", "SUN ", "MOON", "AMBR",
+  ]);
+  expect(themes[0].theme.bg).toBe("0x0D"); // the fixture's per-slot bg = 0x0D + slot
   expect(themes[0].theme.normal).toBe("0x30");
-  expect(themes[0].theme.name).toBe("DFLT");
+  expect(themes[15].theme.bg).toBe("0x1C");
 });
 
-test("setTheme splices only the 7-byte record + 4-byte name for that slot", () => {
+test("the theme count is the table's, bounded by the first byte that is not a palette index", () => {
+  // The shipped ROM puts the settings block's $A5 magic immediately after the last entry, with no terminator
+  // and no fill — so a table of 3 must read as 3, not run on into whatever follows it.
+  const short = blipToasterRom();
+  short.set(blipToasterThemeTable(3), 0x100);
+  short.set(blipToasterSettingsBlock(), 0x100 + 6 + 3 * 11);
+  const rom = BlipToasterRom.fromBytes(short);
+  expect(rom.themeCount).toBe(3);
+  expect(rom.themes().map((t) => t.theme.name)).toEqual(["DFLT", "DARK", "NEON"]);
+  // Past the last entry there is nothing to read or write: getTheme is null and setTheme cannot grow the table.
+  expect(rom.getTheme(3)).toBe(null);
+  expect(rom.getTheme(-1)).toBe(null);
+  const before = rom.bytes().slice();
+  rom.setTheme(3, new Uint8Array(7).fill(1), new Uint8Array(4).fill(0x5a));
+  expect(changedOffsets(before, rom.bytes())).toEqual([]);
+});
+
+test("a ROM with no theme table reports none", () => {
+  const bare = blipToasterRom();
+  bare.fill(0, 0x100, 0x100 + 6); // wipe the THME magic
+  const rom = BlipToasterRom.fromBytes(bare);
+  expect(rom.hasThemes).toBe(false);
+  expect(rom.themeCount).toBe(0);
+  expect(rom.themes()).toEqual([]);
+  expect(rom.getTheme(0)).toBe(null);
+});
+
+test("setTheme splices only the 7-byte record + 4-byte name of that entry", () => {
   const rom = BlipToasterRom.fromBytes(blipToasterRom());
   const before = rom.bytes().slice();
 
   const rec = new Uint8Array([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
   const name = new Uint8Array([0x5a, 0x5a, 0x5a, 0x5a]); // "ZZZZ"
-  rom.setTheme(0, rec, name);
+  rom.setTheme(5, rec, name); // an entry the old split-layout reader could not even address
 
   const changed = changedOffsets(before, rom.bytes());
-  const recStart = THEME_OFFSET + 6; // after the 6-byte magic
-  const nameStart = recStart + 7; // after the single record
-  for (const off of changed) {
-    const inRec = off >= recStart && off < recStart + 7;
-    const inName = off >= nameStart && off < nameStart + 4;
-    expect(inRec || inName).toBe(true);
-  }
+  const entryStart = THEME_OFFSET + 6 + 5 * 11; // after the 6-byte magic, 5 whole 11-byte entries in
+  for (const off of changed) expect(off >= entryStart && off < entryStart + 11).toBe(true);
   expect(changed.length).toBe(11); // all 7 + 4 differ from the seed
-  const back = rom.getTheme(0)!;
+  const back = rom.getTheme(5)!;
   expect(Array.from(back.recordBytes)).toEqual([1, 2, 3, 4, 5, 6, 7]);
   expect(Array.from(back.nameBytes)).toEqual([0x5a, 0x5a, 0x5a, 0x5a]);
+  // Its neighbours are untouched, which is what an 11-byte stride buys.
+  expect(rom.getTheme(4)!.nameBytes[0]).toBe("C".charCodeAt(0)); // "CRT "
+  expect(rom.getTheme(6)!.nameBytes[0]).toBe("F".charCodeAt(0)); // "FIRE"
 });
 
 test("a theme round-trips through the .rit shape", () => {

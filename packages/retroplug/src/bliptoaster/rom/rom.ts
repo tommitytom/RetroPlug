@@ -1,13 +1,18 @@
-// BlipToasterRom — a pure-TS view/patcher over a BlipToaster (NROM) .nes image, the BlipToaster twin of
+// BlipToasterRom — a pure-TS view/patcher over a BlipToaster .nes image, the BlipToaster twin of
 // ../../risa/rom/rom.ts. A .nes is mostly opaque code, so this reads/patches only the replaceable asset
-// regions — the baked DMC kit bank and the CHR font — leaving everything else byte-identical. Construct
-// with fromBytes (clones, so the caller's buffer is never mutated); after patching hand bytes() to the
-// bliptoaster-assets role's spec.romBytes channel (the on-disk .nes is never rewritten).
+// regions — the baked DMC kit banks, the theme table and the CHR fonts — leaving everything else
+// byte-identical. Construct with fromBytes (clones, so the caller's buffer is never mutated); after
+// patching hand bytes() to the bliptoaster-assets role's spec.romBytes channel (the on-disk .nes is never
+// rewritten).
 //
-// BlipToaster is NROM: a flat 32 KB PRG with one DPCM kit bank baked at CPU $C000 (PRG offset 0x4000; the KIT
-// region in the bliptoaster repo's rom/nes.cfg) and the CHR after PRG. Unlike risa there is NO kit-metadata
-// mirror (the ROM reads the kit index directly at boot), so setKit is a plain bank splice. The kit + font
-// FORMATS are identical to risa's, so the pure codecs (bankToModel + the 8 KB bank / CHR layout) are reused.
+// Every shipped build BANKS (the base 2A03 one takes FME-7 for kit banking alone): a 256 KB PRG whose
+// switchable $C000-$DFFF window steps through the 16 baked DPCM kit banks from PRG offset 0x4000 (the KIT00..
+// KIT15 regions in the bliptoaster repo's cfg/nes-banked.cfg), with the CHR fonts after PRG. A flat NROM
+// build is still READ correctly (one fixed kit at $C000, no banking) — kitBankCapacity() derives which from
+// the iNES header rather than assuming. Unlike risa there is NO kit-metadata mirror (the ROM reads the kit
+// index directly at boot), so setKit is a plain bank splice. The kit + font + theme FORMATS are identical to
+// risa's, so the pure codecs (bankToModel / the 8 KB bank + CHR layout / the theme record) are all reused —
+// only the theme table's STRIDE is BlipToaster's own (see THEME_ENTRY_SIZE).
 
 import { isBlipToasterRomHeader } from "../romDetect";
 import {
@@ -18,6 +23,7 @@ import {
   KIT_MAGIC_OFFSET,
   CHR_BANK_SIZE,
   THEME_META_MAGIC,
+  THEME_COUNT,
   THEME_RECORD_SIZE,
   THEME_NAME_SIZE,
   bankToModel,
@@ -34,9 +40,35 @@ const KIT_CPU_OFFSET = 0x4000;
 // Banking builds (VRC6/VRC7/S5B/FME-7/N163) carry up to 16 switchable kit banks (the ROM's CC_DMC_BANK +
 // nes-banked.cfg); NROM has no PRG banking, so its $C000 kit is fixed and it stays single-kit.
 const BLIPTOASTER_MAX_KITS = 16;
-// BlipToaster bakes a single risa-format theme (its UI is one 2-color screen). The 7-role record uses the
-// same theme.ts codec as risa; the table lives in RODATA (the code region, before the kit).
-const BLIPTOASTER_THEME_COUNT = 1;
+
+// BlipToaster bakes risa's 16 themes and switches between them live on CC 16 (`g_themeTable` / sysSetTheme in
+// the ROM repo's src/core/sys.c; its UI uses roles bg + normal, and carries the other 5 so risa's theme
+// tooling round-trips). The 7-role record and the 4-char name use the same theme.ts codec as risa, but the
+// TABLE LAYOUT differs and cannot be shared: risa splits it into 16 records THEN 16 names, BlipToaster
+// interleaves one entry per theme — the name right behind its record, 11 bytes per entry.
+const THEME_ENTRY_SIZE = THEME_RECORD_SIZE + THEME_NAME_SIZE;
+// Every role byte is a 6-bit index into the NES master palette, so 0x00..0x3F is the whole valid domain —
+// which is what bounds the table (see countThemes).
+const PALETTE_INDEX_MAX = 0x3f;
+
+/** How many theme entries the table at `metaOffset` holds (0 when there is no table).
+ *
+ *  The ROM's table is a fixed 16 entries (THEME_COUNT in its sys.h) with no terminator, no count byte and no
+ *  fill after it — in the shipped ROM the settings block's own `$A5 $5A SETT` magic starts the very next
+ *  byte. So the bound is the ENTRY: a first role byte above 0x3F is not a palette index, so entry `n` is not
+ *  a record and the table ended there. That reads the shipped 16 exactly, stops clean on whatever follows,
+ *  and still reads a shorter table should a later build bake one. */
+function countThemes(rom: Uint8Array, metaOffset: number): number {
+  if (metaOffset < 0) return 0;
+  const base = metaOffset + THEME_META_MAGIC.length;
+  let n = 0;
+  while (n < THEME_COUNT) {
+    const off = base + n * THEME_ENTRY_SIZE;
+    if (off + THEME_ENTRY_SIZE > rom.length || rom[off] > PALETTE_INDEX_MAX) break;
+    n++;
+  }
+  return n;
+}
 
 interface Layout {
   kitOffset: number;
@@ -74,6 +106,7 @@ export class BlipToasterRom {
   private readonly layout: Layout | null;
   private readonly markerOk: boolean;
   private readonly themeMetaOffset: number; // -1 when absent
+  private readonly themes_: number; // theme entries the table holds (0 when there is no table)
   private readonly kitCapacity: number; // switchable kit banks (1 on NROM, up to 16 on a banking build)
 
   private constructor(private readonly rom: Uint8Array) {
@@ -84,6 +117,7 @@ export class BlipToasterRom {
     // the kit bank) so a coincidental magic in the DPCM bytes can't match.
     this.themeMetaOffset =
       this.layout != null ? findMagicInRange(rom, THEME_META_MAGIC, HEADER_SIZE, KIT_CPU_OFFSET) : -1;
+    this.themes_ = countThemes(rom, this.themeMetaOffset);
   }
 
   /** Wrap a ROM image (cloned, so patches never touch the caller's buffer). */
@@ -92,8 +126,8 @@ export class BlipToasterRom {
   }
 
   /** True for a recognized BlipToaster image: the marker is present, the layout derives, and the file is big
-   *  enough for its regions. NOT an exact-size check — the on-cart CHR region can exceed the header's
-   *  declared CHR size (BlipToaster reserves 16 KB CHR but declares one 8 KB bank). */
+   *  enough for its regions. Deliberately a lower bound, not an exact-size check, so a build that reserves
+   *  more CHR than its header declares still reads (the shipped ones declare all 4 banks and match exactly). */
   get isBlipToaster(): boolean {
     if (!this.markerOk || this.layout == null) return false;
     return this.rom.length >= this.layout.chrOffset + this.layout.chrSize;
@@ -104,40 +138,45 @@ export class BlipToasterRom {
     return this.rom;
   }
 
-  // --- Themes (NES palette) — one risa-format theme, applied to the bg/text colors at boot -----------
-  /** True if the theme table's magic was located in the code region. */
+  // --- Themes (NES palette) — the baked table, CC 16 picks the live one ------------------------------
+  /** True if the theme table's magic was located in the code region AND it holds at least one entry. */
   get hasThemes(): boolean {
-    return this.themeMetaOffset >= 0;
+    return this.themes_ > 0;
   }
+  /** How many themes the table holds — the real parsed count (16 on every shipped build), not a constant. */
   get themeCount(): number {
-    return BLIPTOASTER_THEME_COUNT;
+    return this.themes_;
   }
 
-  /** The raw on-ROM bytes of theme `idx`: a 7-byte record + 4-byte name. Null if there's no theme table. */
+  /** The file offset of theme entry `idx` (its record; the name follows at +THEME_RECORD_SIZE). */
+  private themeEntryOffset(idx: number): number {
+    return this.themeMetaOffset + THEME_META_MAGIC.length + idx * THEME_ENTRY_SIZE;
+  }
+
+  /** The raw on-ROM bytes of theme `idx`: a 7-byte record + the 4-byte name interleaved behind it. Null when
+   *  there's no theme table or `idx` is past its last entry. */
   getTheme(idx: number): { recordBytes: Uint8Array; nameBytes: Uint8Array } | null {
-    if (!this.hasThemes) return null;
-    const recordBase = this.themeMetaOffset + THEME_META_MAGIC.length;
-    const namesOff = recordBase + BLIPTOASTER_THEME_COUNT * THEME_RECORD_SIZE;
+    if (idx < 0 || idx >= this.themes_) return null;
+    const off = this.themeEntryOffset(idx);
     return {
-      recordBytes: this.rom.slice(recordBase + idx * THEME_RECORD_SIZE, recordBase + (idx + 1) * THEME_RECORD_SIZE),
-      nameBytes: this.rom.slice(namesOff + idx * THEME_NAME_SIZE, namesOff + (idx + 1) * THEME_NAME_SIZE),
+      recordBytes: this.rom.slice(off, off + THEME_RECORD_SIZE),
+      nameBytes: this.rom.slice(off + THEME_RECORD_SIZE, off + THEME_ENTRY_SIZE),
     };
   }
 
-  /** Splice theme `idx`'s record (7 bytes) + name (4 bytes) in place. No-op if there's no theme table. */
+  /** Splice theme `idx`'s record (7 bytes) + name (4 bytes) in place. No-op when there's no theme table or
+   *  `idx` is past its last entry — the table is fixed-size, so a replace can never grow it. */
   setTheme(idx: number, recordBytes: Uint8Array, nameBytes: Uint8Array): void {
-    if (!this.hasThemes) return;
-    const recordBase = this.themeMetaOffset + THEME_META_MAGIC.length;
-    const namesOff = recordBase + BLIPTOASTER_THEME_COUNT * THEME_RECORD_SIZE;
-    this.rom.set(recordBytes.subarray(0, THEME_RECORD_SIZE), recordBase + idx * THEME_RECORD_SIZE);
-    this.rom.set(nameBytes.subarray(0, THEME_NAME_SIZE), namesOff + idx * THEME_NAME_SIZE);
+    if (idx < 0 || idx >= this.themes_) return;
+    const off = this.themeEntryOffset(idx);
+    this.rom.set(recordBytes.subarray(0, THEME_RECORD_SIZE), off);
+    this.rom.set(nameBytes.subarray(0, THEME_NAME_SIZE), off + THEME_RECORD_SIZE);
   }
 
   /** The decoded themes, for a menu inventory (empty when there's no theme table). */
   themes(): { slot: number; theme: RisaTheme }[] {
-    if (!this.hasThemes) return [];
     const out: { slot: number; theme: RisaTheme }[] = [];
-    for (let i = 0; i < BLIPTOASTER_THEME_COUNT; i++) {
+    for (let i = 0; i < this.themes_; i++) {
       const t = this.getTheme(i)!;
       out.push({ slot: i, theme: decodeThemeFromRom(t.recordBytes, t.nameBytes) });
     }

@@ -1,8 +1,10 @@
 // The BlipToaster implementation of AssetCatalog — the base-ROM asset parse over BlipToasterRom, the BlipToaster twin
-// of ./risaAssetCatalog.ts. BlipToaster bakes one theme + one CHR font slot; the DMC kit is single-slot on NROM
-// but up to 16 SWITCHABLE banks on a banking build (VRC6/VRC7/S5B/FME-7/N163). So the kit type is ROM-aware
-// (resolveTypes): Replace-only on NROM, addable/16 on a banking cart. Themes/fonts stay single-slot.
-// The file-dialog Export/Replace stay in the menu (they own the .rit/.rkit/.chr formats).
+// of ./risaAssetCatalog.ts. Every type is a FIXED list the cart bakes and switches between live over MIDI: 16
+// themes (CC 16), 4 CHR fonts (CC 17), and 16 DMC kits (ch5 CC 14) on a banking build
+// (VRC6/VRC7/S5B/FME-7/N163) or one fixed kit on NROM. The counts are READ from the ROM, not assumed — which is
+// why the kit type is ROM-aware (resolveTypes): Replace-only on NROM, addable/16 on a banking cart. Themes and
+// fonts are never addable: both tables are fixed-size, so a replace overwrites an entry and can never grow the
+// list. The file-dialog Export/Replace stay in the menu (they own the .rit/.rkit/.chr formats).
 import type { AssetCatalog, AssetSlot, AssetTypeInfo, AssetOverride } from "./assetCatalog";
 import type { ConstructCaps } from "../systemRoles";
 import { BlipToasterRom } from "../bliptoaster/rom";

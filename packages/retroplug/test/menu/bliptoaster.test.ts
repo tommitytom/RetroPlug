@@ -58,17 +58,24 @@ test("the BlipToaster submenu appears only for a BlipToaster ROM, is asset-only 
   expect(findItem(kids, "bliptoaster-fonts")?.kind).toBe("submenu");
 });
 
-test("the Themes submenu lists the baked theme with Export/Replace (no Remove until overridden)", () => {
+test("the Themes submenu lists ALL 16 baked themes with Export/Replace (no Remove until overridden)", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const items = blipToasterItems(be, stores);
   const themes = submenuChildren(submenuChildren(items(), "inst-bliptoaster"), "bliptoaster-themes");
-  expect(themes.length).toBe(1);
-  expect(themes[0].label).toBe("[0] DFLT"); // decoded, space-trimmed theme name
-  const t0 = submenuChildren(themes, "bliptoaster-theme-0");
-  expect(findItem(t0, "bliptoaster-theme-0-export")?.kind).toBe("action");
-  expect(findItem(t0, "bliptoaster-theme-0-replace")?.kind).toBe("action");
-  expect(findItem(t0, "bliptoaster-theme-0-remove")).toBe(undefined);
+  // The cart bakes 16 and CC 16 switches between them live, so all 16 must be reachable here. A single row
+  // was the bug this file pins: the count was hard-coded to 1 and the reader used risa's split layout.
+  expect(themes.length).toBe(16);
+  expect(themes.map((t) => t.label)).toEqual([
+    "[0] DFLT", "[1] DARK", "[2] NEON", "[3] LITE", "[4] CRT", "[5] ICE", "[6] FIRE", "[7] GB",
+    "[8] AQUA", "[9] MONO", "[10] PLSM", "[11] MTRX", "[12] FOG", "[13] SUN", "[14] MOON", "[15] AMBR",
+  ]); // decoded, space-trimmed theme names
+  for (const slot of [0, 15]) {
+    const rows = submenuChildren(themes, `bliptoaster-theme-${slot}`);
+    expect(findItem(rows, `bliptoaster-theme-${slot}-export`)?.kind).toBe("action");
+    expect(findItem(rows, `bliptoaster-theme-${slot}-replace`)?.kind).toBe("action");
+    expect(findItem(rows, `bliptoaster-theme-${slot}-remove`)).toBe(undefined);
+  }
 });
 
 test("a theme override shows a * marker + a Remove Override row", () => {

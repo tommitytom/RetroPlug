@@ -6,8 +6,9 @@
 // compiled slot via assembleKitBank (byte-identical to a whole-kit recompile).
 //
 // BlipToaster has up to 16 SWITCHABLE kit banks on the banking builds (VRC6/VRC7/S5B/FME-7/N163) and a single
-// kit on NROM — kit indices are bounded by rom.kitBankCapacity(). It bakes ONE theme (index 0) and one CHR
-// font. Unlike risa there is NO kit-metadata mirror, so setKit is a plain bank splice.
+// kit on NROM — kit indices are bounded by rom.kitBankCapacity(). It also bakes 16 themes (bounded by
+// rom.themeCount) and 4 CHR fonts (rom.chrFontSlotCount), all switchable live over MIDI. Unlike risa there is
+// NO kit-metadata mirror, so setKit is a plain bank splice.
 //
 //   retroplug-cli bliptoaster-rom info          <rom> [--json]
 //   retroplug-cli bliptoaster-rom extract       <rom> <outDir> [--rate N]
@@ -317,12 +318,21 @@ function removeSample(s: Session, args: string[]): void {
   console.log(`removed slot ${slot} from kit ${kitIndex}; wrote ${out}`);
 }
 
+// Validate a theme index against the table the ROM actually carries (16 on every shipped build). BlipToasterRom
+// bounds both accessors itself — getTheme returns null, setTheme no-ops — so without this an out-of-range
+// import-theme would report success and write an unchanged ROM.
+function themeIndexInRange(rom: BlipToasterRom, idx: number): number {
+  const count = rom.themeCount;
+  if (count === 0) throw new Error("no theme table in this ROM");
+  if (!Number.isInteger(idx) || idx < 0 || idx >= count) throw new Error(`theme index ${idx} out of range (0..${count - 1})`);
+  return idx;
+}
+
 function exportTheme(s: Session, args: string[]): void {
   const [romPath, idxStr, out] = positionals(args);
   if (!romPath || idxStr == null || !out) throw new Error("usage: bliptoaster-rom export-theme <rom> <index> <out.rit>");
   const rom = openRom(s, romPath);
-  const t = rom.getTheme(parseInt(idxStr, 10));
-  if (!t) throw new Error(`theme ${idxStr} out of range / no theme table`);
+  const t = rom.getTheme(themeIndexInRange(rom, parseInt(idxStr, 10)))!;
   const theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
   if (!s.backend.writeFile(out, enc.encode(JSON.stringify(serializeRit(theme), null, 2) + "\n"))) throw new Error(`write failed: ${out}`);
   console.log(`wrote theme ${idxStr} to ${out}`);
@@ -332,9 +342,10 @@ function importTheme(s: Session, args: string[]): void {
   const [romPath, file, idxStr] = positionals(args);
   if (!romPath || !file || idxStr == null) throw new Error("usage: bliptoaster-rom import-theme <rom> <in.rit> <index> [--out rom]");
   const rom = openRom(s, romPath);
+  const idx = themeIndexInRange(rom, parseInt(idxStr, 10));
   const { theme } = parseRit(JSON.parse(dec.decode(readOrThrow(s, file, "theme .rit")))); // throws on a bad .rit
   const t = normalizeTheme(theme);
-  rom.setTheme(parseInt(idxStr, 10), encodeThemeRecord(t), encodeThemeName(t));
+  rom.setTheme(idx, encodeThemeRecord(t), encodeThemeName(t));
   const out = flag(args, "--out") ?? romPath;
   if (!s.backend.writeFileAtomic(out, rom.bytes())) throw new Error(`write failed: ${out}`);
   console.log(`imported ${file} into theme ${idxStr}; wrote ${out}`);
@@ -413,9 +424,10 @@ function patchManifest(s: Session, args: string[]): void {
 
   for (const te of m.themes ?? []) {
     if (!te.file) throw new Error(`theme entry (slot ${te.slot}) needs "file"`);
+    const idx = themeIndexInRange(rom, te.slot);
     const { theme } = parseRit(JSON.parse(dec.decode(readOrThrow(s, resolvePath(manifestPath, te.file), "theme"))));
     const t = normalizeTheme(theme);
-    rom.setTheme(te.slot, encodeThemeRecord(t), encodeThemeName(t));
+    rom.setTheme(idx, encodeThemeRecord(t), encodeThemeName(t));
     applied++;
   }
 
