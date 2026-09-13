@@ -120,6 +120,9 @@ public:
     // Cartridge-accuracy switches (0 = chip, 1 = Everdrive N8). Live - the core reads them in place.
     void setS5bNoise(std::uint32_t mode);
     void setMmc5PhaseReset(std::uint32_t mode);
+    // The cartridge sound chip's level as a percentage (100 = unity), applied to every expansion channel
+    // Mesen mixes. Live - the mixer re-reads its volume scalars each buffer.
+    void setExpansionVolume(std::uint32_t percent);
     // Arm/disarm the per-channel tap AFTER construct, so a plugin routing change (Engine::syncSplitPlan)
     // can reach the split modes without rebuilding the core the way setRegion does — a routing flip must
     // not reset a playing game. Same modes as MesenNesConfig::channelExportMode (0 = off/Mix, 1 = pins,

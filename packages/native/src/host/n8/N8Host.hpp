@@ -25,7 +25,6 @@ struct N8ConfigDto {
     bool                   connected = false;
     bool                   enabled = false;
     int                    lookaheadMs = 0;
-    int                    expVol = -1;  // -1 = auto (see N8Host::EXP_VOL_AUTO), else the 0..255 to write
     std::uint64_t          bytes = 0;
     std::string            error;
 };
@@ -40,15 +39,26 @@ class N8Host {
 public:
     using PortLister = std::function<std::vector<N8PortDto>()>;
 
-    // The expansion-audio master volume setting (Edio::ADDR_EXP_VOL - `master_vol`, which scales ONLY the
-    // cartridge's own sound chip, never the console's 2A03). It is 0 after a power-cycle, and a 0 there
-    // silences a VRC6 / VRC7 / N163 / S5B / MMC5 cart's extra voices no matter what the ROM does - a symptom
-    // that reads exactly like a dead chip. AUTO writes unity for a cart whose mapper carries expansion audio
-    // and leaves any other cart's register alone; an explicit 0..255 is written whatever is running.
+    // The expansion-audio master volume written to the device (Edio::ADDR_EXP_VOL - `master_vol`, which
+    // scales ONLY the cartridge's own sound chip, never the console's 2A03). It is 0 after a power-cycle,
+    // and a 0 there silences a VRC6 / VRC7 / N163 / S5B / MMC5 cart's extra voices no matter what the ROM
+    // does - a symptom that reads exactly like a dead chip.
+    //
+    // NOT a setting of its own: the UI owns the level as the NES system's `expansionVolume` knob (percent,
+    // in the project) and pushes the rescaled byte here, so the cart sounds the same emulated and on the
+    // console. Hence no persistence in n8.cfg - the project is where it lives. AUTO is the standing value
+    // until something pushes one: it writes unity for a cart whose mapper carries expansion audio, and
+    // leaves anything else as the N8's own menu had it. That is what a project with no NES system in it
+    // (or a link that comes up before one loads) gets.
     static constexpr int EXP_VOL_AUTO  = -1;
     static constexpr int EXP_VOL_UNITY = 128;
 
     N8Host(N8Link::PortFactory factory, PortLister lister, std::string configDir);
+    // Stops the serial thread before any member it reads goes away: a posted control write (setExpVol)
+    // captures `this` and runs on that thread, and link_ is declared BEFORE the fields such a callback
+    // touches, so its own destructor would join too late. (The SD worker, whose jobs also capture `this`, is
+    // declared last and so is already joined first.)
+    ~N8Host();
 
     N8Link&       link() { return link_; }
     const N8Link& link() const { return link_; }
@@ -65,13 +75,11 @@ public:
     // Timed-release lookahead (ms, clamped >= 0). Persists.
     void setLookahead(int ms);
 
-    // Expansion-audio master volume: EXP_VOL_AUTO or a 0..255 value (clamped). Persists. Applied on every
-    // connect, so a pick made while streaming bounces the link to take effect at once (setPort does the same
-    // to switch ports - the serial thread owns the Edio, so a reconnect is how the host reaches the device).
+    // Expansion-audio master volume: EXP_VOL_AUTO or a 0..255 value (clamped). Written on every connect, and
+    // at once (through the serial thread) when it changes on a live link. Not persisted - see EXP_VOL_AUTO.
     void setExpVol(int v);
 
-    // Load n8.cfg (port / lookahead / enabled / expansion volume) and reconnect if it was enabled. Call once
-    // at host startup.
+    // Load n8.cfg (port / lookahead / enabled) and reconnect if it was enabled. Call once at host startup.
     void restore();
 
     // --- SD-card / menu control ops (Settings > N8 Pro). Each runs on the N8SdWorker's background thread:
@@ -107,7 +115,7 @@ private:
     std::string         configDir_;
     std::string         port_;
     std::atomic<bool>   enabled_{false};  // atomic: a successful ROM load clears it from the worker thread (below)
-    std::atomic<int>    expVol_{EXP_VOL_AUTO};  // atomic: read by applyExpVol on the SD worker thread
+    std::atomic<int>    expVol_{EXP_VOL_AUTO};  // atomic: read by applyExpVol on the SD + serial threads
     N8SdWorker          sdWorker_;   // LAST: destroyed first, so its thread joins while link_ + factory_ are alive
 };
 

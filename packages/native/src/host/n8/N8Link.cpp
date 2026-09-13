@@ -78,6 +78,16 @@ void N8Link::disconnect() {
     connected_.store(false, std::memory_order_release);
     edio_.reset();
     serialPort_.reset();
+    // Drop anything posted but never run: it described the device we just let go of, and the next connect
+    // applies the current config from scratch.
+    std::lock_guard<std::mutex> l(control_);
+    pendingControl_ = nullptr;
+}
+
+void N8Link::postControl(std::function<void(Edio&)> fn) {
+    if (!connected_.load(std::memory_order_acquire)) return;
+    std::lock_guard<std::mutex> l(control_);
+    pendingControl_ = std::move(fn);
 }
 
 void N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::size_t n, double sampleRate) {
@@ -99,6 +109,22 @@ void N8Link::push(std::uint32_t sampleOffset, const std::uint8_t* data, std::siz
 void N8Link::serialLoop() {
     TimedChunk chunk;
     while (running_.load(std::memory_order_acquire)) {
+        // A posted control write (see postControl) runs between chunks, on the thread that owns the port.
+        // Best-effort, like the connect-time one: a config register must not take the MIDI link down.
+        {
+            std::function<void(Edio&)> control;
+            {
+                std::lock_guard<std::mutex> l(control_);
+                control = std::move(pendingControl_);
+                pendingControl_ = nullptr;
+            }
+            if (control) {
+                try {
+                    control(*edio_);
+                } catch (const std::exception&) {
+                }
+            }
+        }
         if (!ring_.tryPop(chunk)) {
             std::this_thread::sleep_for(std::chrono::microseconds(200));  // ring empty
             continue;

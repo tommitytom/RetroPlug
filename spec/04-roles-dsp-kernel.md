@@ -134,7 +134,7 @@ value, ranges mirroring the native enums:
 | Role | Config (zod, defaults) |
 |---|---|
 | `sameboy` | `model` 0–13 (CgbC=9), `highpass` 0–2, `linkGroupId` 0–255, `fastBoot` bool (true), plus the display group (`colorCorrection`, `dmgPalette`, `lightTemperature`) |
-| `mesen` | one role for every Mesen platform, so the knobs are per-platform and the menu gates each group. NES: `region`, `removeSpriteLimit`, `apuLatencyMs`, the cartridge-accuracy pair (`s5bNoise` / `mmc5PhaseReset`, both defaulting to `"n8"`), `channelExportMode`, `sdRoot`. SMS/GG: `enableFm` |
+| `mesen` | one role for every Mesen platform, so the knobs are per-platform and the menu gates each group. NES: `region`, `removeSpriteLimit`, `apuLatencyMs`, the cartridge-accuracy pair (`s5bNoise` / `mmc5PhaseReset`, both defaulting to `"n8"`), `expansionVolume` (the cartridge sound chip's level, percent of unity — the same value the UI rescales into a connected N8's `master_vol`), `channelExportMode`, `sdRoot`. SMS/GG: `enableFm` |
 
 Not every system-role field is live. `region`, `channelExportMode` and `sdRoot` are read when the core
 is **constructed**, so an edit takes effect only after a rebuild: `setRoleConfig(id, …)` then

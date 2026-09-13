@@ -86,6 +86,8 @@ N8Host::N8Host(N8Link::PortFactory factory, PortLister lister, std::string confi
     link_.setOnConnected([this](Edio& edio) { applyExpVol(edio, -1); });
 }
 
+N8Host::~N8Host() { link_.disconnect(); }
+
 N8ConfigDto N8Host::getConfig() {
     N8ConfigDto c;
     c.ports        = lister_ ? lister_() : std::vector<N8PortDto>{};
@@ -93,7 +95,6 @@ N8ConfigDto N8Host::getConfig() {
     c.connected    = link_.isConnected();
     c.enabled      = enabled_;
     c.lookaheadMs  = link_.lookaheadMs();
-    c.expVol       = expVol_.load(std::memory_order_relaxed);
     c.bytes        = link_.bytesForwarded();
     c.error        = link_.lastError();
     return c;
@@ -133,17 +134,12 @@ void N8Host::setLookahead(int ms) {
 }
 
 void N8Host::setExpVol(int v) {
-    if (sdWorker_.busy()) return;  // an SD op owns the port; the reconnect below would fight it
     const int clamped = v < 0 ? EXP_VOL_AUTO : (v > 255 ? 255 : v);
-    expVol_.store(clamped, std::memory_order_relaxed);
-    // Bounce a live link so the pick is audible now rather than at the next Connect: the volume is written by
-    // the connect path (the serial thread owns the Edio once it's up), which is the same reason setPort
-    // reconnects to switch ports.
-    if (link_.isConnected() && !port_.empty()) {
-        link_.disconnect();
-        link_.connect(port_);
-    }
-    save();
+    if (expVol_.exchange(clamped, std::memory_order_relaxed) == clamped) return;
+    // Reach a live link through its own serial thread, so turning the knob is audible on the console
+    // straight away without interrupting the MIDI stream. A no-op while disconnected (and while an SD op
+    // owns the port, since that disconnects the link first): the next connect applies the new value.
+    link_.postControl([this](Edio& edio) { applyExpVol(edio, -1); });
 }
 
 void N8Host::applyExpVol(Edio& edio, int mapperHint) {
@@ -163,29 +159,26 @@ void N8Host::restore() {
     if (FILE* f = std::fopen((configDir_ + "/n8.cfg").c_str(), "r")) {
         char        line[512];
         std::string port;
-        int         la = 10, en = 0;        // defaults: lookahead 10ms, disabled
-        int         ev = EXP_VOL_AUTO;      // a file written before the setting existed has no 4th line
+        int         la = 10, en = 0;  // defaults: lookahead 10ms, disabled
         if (std::fgets(line, sizeof line, f)) {
             port = line;
             while (!port.empty() && (port.back() == '\n' || port.back() == '\r')) port.pop_back();
         }
         if (std::fgets(line, sizeof line, f)) la = std::atoi(line);
         if (std::fgets(line, sizeof line, f)) en = std::atoi(line);
-        if (std::fgets(line, sizeof line, f)) ev = std::atoi(line);
         std::fclose(f);
         port_ = port;
         link_.setLookaheadMs(la < 0 ? 0 : la);
         enabled_ = (en != 0);
-        expVol_.store(ev < 0 ? EXP_VOL_AUTO : (ev > 255 ? 255 : ev), std::memory_order_relaxed);
     }
-    // Read before this line, so the reconnect below applies the restored volume rather than the default.
+    // Note there is no expansion volume here: it belongs to the project, not the link (see EXP_VOL_AUTO), so
+    // this reconnect comes up on AUTO and the UI pushes the loaded project's value when it has one.
     if (enabled_) connect(true);  // reconnect the persisted link (auto-picks if the saved port is empty)
 }
 
 void N8Host::save() {
     if (FILE* f = std::fopen((configDir_ + "/n8.cfg").c_str(), "w")) {
-        std::fprintf(f, "%s\n%d\n%d\n%d\n", port_.c_str(), link_.lookaheadMs(), enabled_ ? 1 : 0,
-                     expVol_.load(std::memory_order_relaxed));
+        std::fprintf(f, "%s\n%d\n%d\n", port_.c_str(), link_.lookaheadMs(), enabled_ ? 1 : 0);
         std::fclose(f);
     }
 }

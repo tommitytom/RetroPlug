@@ -95,7 +95,7 @@ import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
 import { hasMidiConfig, getMidiConfig, setMidiInput, setMidiOutput, ALL_INPUTS } from "./midiDevices";
 import { getTransport, setTransport, setClockBpm, CLOCK_BPM_STEP, CLOCK_BPM_COARSE_STEP } from "./transport";
-import { getN8Config, setN8Port, connectN8, setN8Lookahead, setN8ExpVol, type N8Config } from "./n8Devices";
+import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
 import {
   getLaunchpadConfig, setLaunchpadPorts, connectLaunchpad, looksLikeLaunchpad, type LaunchpadConfig,
@@ -298,15 +298,6 @@ function midiSettingsChildren(): MenuItem[] {
 // a time - every action is disabled while one runs.
 const N8_LOOKAHEADS = [0, 5, 10, 15, 20, 30, 50];
 
-// The cart's expansion-audio master volume, written on connect (native N8Host::applyExpVol). It scales ONLY a
-// cartridge sound chip - VRC6 / VRC7 / N163 / S5B / MMC5 - never the console's own 2A03, and it is 0 after a
-// power-cycle, so one of those carts streamed from here comes up with its extra voices silent unless someone
-// sets it. "Auto" writes unity for a cart whose mapper carries expansion audio and leaves anything else as the
-// N8 OS had it; an explicit pick is written whatever is running. -1 is the Auto sentinel (N8Host EXP_VOL_AUTO).
-const N8_EXP_VOLS = [-1, 0, 64, 128, 192, 255];
-const n8ExpVolLabel = (v: number): string =>
-  v < 0 ? "Auto" : v === 0 ? "0 (mute)" : v === 128 ? "128 (unity)" : String(v);
-
 // A physical N8 counts as "here" only when one is actually enumerated (a serial port flagged isN8 by its USB
 // VID:PID). null cfg = the host lacks the seam (headless harness). Gates whether the whole submenu renders.
 function n8Detected(cfg: N8Config | null): boolean {
@@ -451,7 +442,6 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
   }
   const portName = (n: number) => (n === 0 ? "" : portValues[n - 1] ?? cfg.selectedPort);
   const laIdx = Math.max(0, N8_LOOKAHEADS.indexOf(cfg.lookaheadMs));
-  const evIdx = Math.max(0, N8_EXP_VOLS.indexOf(cfg.expVol)); // an off-list persisted value shows as Auto
   const status = cfg.enabled
     ? cfg.connected
       ? `Streaming (${cfg.bytes} bytes)`
@@ -466,7 +456,6 @@ function n8MenuChildren(ctx: MenuContext, cfg: N8Config): MenuItem[] {
     cycler("n8-port", "Port", names, index, (n) => setN8Port(portName(n))),
     action("n8-connect", cfg.enabled ? "Disconnect" : "Connect", () => connectN8(!cfg.enabled), busy),
     cycler("n8-lookahead", "Lookahead", N8_LOOKAHEADS.map((m) => `${m} ms`), laIdx, (n) => setN8Lookahead(N8_LOOKAHEADS[n])),
-    cycler("n8-exp-vol", "Expansion Volume", N8_EXP_VOLS.map(n8ExpVolLabel), evIdx, (n) => setN8ExpVol(N8_EXP_VOLS[n])),
     sep("n8-sep-status"),
     action("n8-status", `Status: ${status}`, () => {}, true),  // read-only streaming status row
   ];
@@ -633,6 +622,13 @@ function sameboyConfig(sys: SystemView): {
 const APU_LATENCY_MS = [0.5, 1.0, 1.4, 3.0, 5.0];
 const APU_LATENCY_NAMES = ["0.5 ms", "1.0 ms", "1.4 ms", "3.0 ms", "5.0 ms"];
 
+// "Expansion Volume": how loud the CARTRIDGE's own sound chip is (VRC6 / VRC7 / N163 / S5B / MMC5 / FDS),
+// as a percentage of the level the hardware mixes it at. Not the 2A03 - a cart without an expansion chip
+// hears nothing from this row. It drives a connected Everdrive N8 Pro as well (expVolToN8), so the chip
+// sits at the same level emulated and on the console. The role accepts any value in [0, 200].
+const EXP_VOLUMES = [0, 25, 50, 75, 100, 125, 150, 200];
+const EXP_VOLUME_NAMES = EXP_VOLUMES.map((v) => (v === 0 ? "Off" : v === 100 ? "100% (unity)" : `${v}%`));
+
 /** Index of the preset in `presets` nearest `v`, so a cycler over a continuous value still shows the
  *  current setting even when it's off-grid (a project written by an older build, or by hand). */
 function nearestIndex(presets: readonly number[], v: number): number {
@@ -650,6 +646,7 @@ function mesenConfig(sys: SystemView): {
   region: ConsoleRegion;
   removeSpriteLimit: boolean;
   apuLatencyMs: number;
+  expansionVolume: number;
   enableFm: boolean;
 } {
   const c = (sys.roles.find((r) => r.kind === "mesen")?.config ?? {}) as Record<string, unknown>;
@@ -657,6 +654,7 @@ function mesenConfig(sys: SystemView): {
     region: typeof c.region === "string" ? (c.region as ConsoleRegion) : "auto",
     removeSpriteLimit: c.removeSpriteLimit === true,
     apuLatencyMs: typeof c.apuLatencyMs === "number" ? c.apuLatencyMs : 1.4,
+    expansionVolume: typeof c.expansionVolume === "number" ? c.expansionVolume : 100,
     enableFm: c.enableFm !== false, // default ON, matching the schema + MesenSmsConfig
   };
 }
@@ -814,6 +812,9 @@ function systemChildren(ctx: MenuContext, sys: SystemView): MenuItem[] {
       ),
       cycler("sys-nes-apu-latency", "APU Latency", APU_LATENCY_NAMES, nearestIndex(APU_LATENCY_MS, cfg.apuLatencyMs), (n) =>
         systems.setRoleConfig(sys.id, "mesen", { apuLatencyMs: APU_LATENCY_MS[n] }),
+      ),
+      cycler("sys-nes-exp-volume", "Expansion Volume", EXP_VOLUME_NAMES, nearestIndex(EXP_VOLUMES, cfg.expansionVolume), (n) =>
+        systems.setRoleConfig(sys.id, "mesen", { expansionVolume: EXP_VOLUMES[n] }),
       ),
     );
   }

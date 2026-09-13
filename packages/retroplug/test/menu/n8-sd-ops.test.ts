@@ -11,7 +11,8 @@ import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, buildStartMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
 import type { MenuItem } from "../../ui/screens/menu/menuTree";
-import { nesRom } from "../systems/fixtures";
+import { projectExpVolForN8, expVolToN8 } from "../../ui/screens/menu/n8Devices";
+import { nesRom, gbRom } from "../systems/fixtures";
 
 // The MenuContext App.tsx assembles from its hooks, minus React (mirrors leaves.test's ctxOf).
 function ctxOf(stores: AppStores): MenuContext {
@@ -70,7 +71,6 @@ interface Calls {
   dump: string[];
   restore: string[];
   setPort: string[];
-  setExpVol: number[];
 }
 interface CfgStub {
   ports: { port: string; isN8: boolean }[];
@@ -78,7 +78,6 @@ interface CfgStub {
   connected: boolean;
   enabled: boolean;
   lookaheadMs: number;
-  expVol: number;
   bytes: number;
   error: string;
 }
@@ -91,7 +90,6 @@ const DEFAULT_CFG: CfgStub = {
   connected: true,
   enabled: true,
   lookaheadMs: 10,
-  expVol: -1, // Auto, the native default
   bytes: 0,
   error: "",
 };
@@ -101,7 +99,7 @@ const DEFAULT_CFG: CfgStub = {
 // spy record + a restore().
 function installN8(sd: Sd | null, cfg?: Partial<CfgStub>): { calls: Calls; restore: () => void } {
   const g = globalThis as Record<string, unknown>;
-  const calls: Calls = { load: [], dump: [], restore: [], setPort: [], setExpVol: [] };
+  const calls: Calls = { load: [], dump: [], restore: [], setPort: [] };
   const saved = {
     cfg: g.__rp_getN8Config,
     sd: g.__rp_getN8SdStatus,
@@ -109,7 +107,6 @@ function installN8(sd: Sd | null, cfg?: Partial<CfgStub>): { calls: Calls; resto
     dump: g.__rp_n8DumpSram,
     restore: g.__rp_n8RestoreSram,
     setPort: g.__rp_setN8Port,
-    setExpVol: g.__rp_setN8ExpVol,
   };
   const merged: CfgStub = { ...DEFAULT_CFG, ...cfg };
   g.__rp_getN8Config = () => merged;
@@ -118,7 +115,6 @@ function installN8(sd: Sd | null, cfg?: Partial<CfgStub>): { calls: Calls; resto
   g.__rp_n8DumpSram = (p: string) => calls.dump.push(p);
   g.__rp_n8RestoreSram = (p: string) => calls.restore.push(p);
   g.__rp_setN8Port = (p: string) => calls.setPort.push(p);
-  g.__rp_setN8ExpVol = (v: number) => calls.setExpVol.push(v);
   return {
     calls,
     restore: () => {
@@ -128,7 +124,6 @@ function installN8(sd: Sd | null, cfg?: Partial<CfgStub>): { calls: Calls; resto
       g.__rp_n8DumpSram = saved.dump;
       g.__rp_n8RestoreSram = saved.restore;
       g.__rp_setN8Port = saved.setPort;
-      g.__rp_setN8ExpVol = saved.setExpVol;
     },
   };
 }
@@ -273,32 +268,41 @@ test("the Port cycler offers only detected N8 ports, never plain serial ports", 
   }
 });
 
-test("the Expansion Volume cycler shows Auto by default and passes the picked value to the host", () => {
-  // master_vol is 0 after a power-cycle, which silences a VRC6/VRC7/N163/S5B/MMC5 cart's extra voices exactly
-  // like a dead chip - so the row exists, defaults to Auto (the host derives unity from the running cart's
-  // mapper), and offers explicit values for anything Auto can't recognise.
+test("the expansion volume is NOT an N8 row: it follows the NES system's own knob", () => {
+  // The cartridge sound chip's level belongs to the cart (System > Expansion Volume), not to the link, so
+  // the N8 submenu has no row for it - App pushes the system's value down instead (projectExpVolForN8).
   const env = installN8({ busy: false, version: 0 });
   try {
     const be = new MockBackend("/cfg");
     const stores = composeAppStores({ backend: be });
-    const row = findItem(n8Submenu(stores, be), "n8-exp-vol")!;
-    expect(row.label).toBe("Expansion Volume: Auto");
-    row.onCycle!(1); // Auto -> the mute entry, labelled with the number it writes
-    expect(env.calls.setExpVol).toEqual([0]);
+    expect(findItem(n8Submenu(stores, be), "n8-exp-vol")).toBe(undefined);
+
+    // A NES system at 50% asks the link for half of the N8's unity (128).
+    const sys = stores.project.systems.view()[0];
+    expect(projectExpVolForN8([sys])).toBe(128); // the default, 100%
+    stores.project.systems.setRoleConfig(sys.id, "mesen", { expansionVolume: 50 });
+    expect(projectExpVolForN8(stores.project.systems.view())).toBe(64);
   } finally {
     env.restore();
   }
 });
 
-test("an explicit expansion volume is shown as the value the host writes", () => {
-  const env = installN8({ busy: false, version: 0 }, { expVol: 128 });
-  try {
-    const be = new MockBackend("/cfg");
-    const stores = composeAppStores({ backend: be });
-    expect(findItem(n8Submenu(stores, be), "n8-exp-vol")!.label).toBe("Expansion Volume: 128 (unity)");
-  } finally {
-    env.restore();
-  }
+test("a project with no NES system leaves the N8's expansion volume to the host (auto)", () => {
+  // Nothing here to take a level from, so the host goes on deriving one from whatever the console is
+  // running rather than imposing a number a Game Boy project never chose.
+  const be = new MockBackend("/cfg");
+  const stores = composeAppStores({ backend: be });
+  expect(projectExpVolForN8(stores.project.systems.view())).toBe(-1); // empty project
+  be.seed("/roms/a.gb", gbRom());
+  stores.project.systems.addSystem("/roms/a.gb");
+  expect(projectExpVolForN8(stores.project.systems.view())).toBe(-1);
+});
+
+test("expVolToN8 rescales percent-of-unity onto the register's 128-is-unity range", () => {
+  expect(expVolToN8(100)).toBe(128); // unity on both scales
+  expect(expVolToN8(0)).toBe(0);
+  expect(expVolToN8(25)).toBe(32);
+  expect(expVolToN8(200)).toBe(255); // saturates: the register stops at 255, just under 2x
 });
 
 test("a persisted port that isn't currently detected is still shown, tagged '(not detected)'", () => {

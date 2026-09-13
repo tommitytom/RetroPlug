@@ -7,6 +7,11 @@
 // new value at once. The seam is present in both hosts and absent only in the headless harness (hasN8() then
 // false -> submenu hidden). See __rp_getN8Config / __rp_setN8Port / __rp_connectN8 / __rp_setN8Lookahead, bound
 // by bindN8Hooks (packages/native/src/host/n8/N8Hooks.cpp) from both sdl/main.cpp and plugin/PluginDSP.cpp.
+//
+// The one piece of N8 config that is NOT host state is the cartridge sound chip's level: that belongs to the
+// NES system (its "Expansion Volume" knob, in the project), and App pushes it down here - see
+// projectExpVolForN8 / setN8ExpVol at the bottom.
+import type { SystemView } from "../../../src/systemsStore";
 
 export interface N8Port {
   port: string; // OS serial port name (/dev/ttyACM0, COM3, ...)
@@ -19,7 +24,6 @@ export interface N8Config {
   connected: boolean; // the serial link is open + handshaken
   enabled: boolean; // the user's "stream to the N8" toggle
   lookaheadMs: number; // timed-release latency the serial thread applies
-  expVol: number; // expansion-audio master volume written on connect: -1 = auto, else 0..255 (128 = unity)
   bytes: number; // bytes forwarded since connect (status)
   error: string; // last error, or "" (status)
 }
@@ -59,7 +63,6 @@ export function getN8Config(): N8Config | null {
     connected: !!c.connected,
     enabled: !!c.enabled,
     lookaheadMs: typeof c.lookaheadMs === "number" ? c.lookaheadMs : 0,
-    expVol: typeof c.expVol === "number" ? c.expVol : -1,
     bytes: typeof c.bytes === "number" ? c.bytes : 0,
     error: typeof c.error === "string" ? c.error : "",
   };
@@ -83,11 +86,33 @@ export function setN8Lookahead(ms: number): void {
   emit();
 }
 
-/** Set the expansion-audio master volume the host writes to the cart on connect (-1 = auto, else 0..255).
- *  Applies + persists natively; a live link is bounced so the pick takes effect at once. */
+/** The N8's expansion-audio master volume (`master_vol`, 128 = unity) for a system "Expansion Volume" of
+ *  `percent` (100 = unity). Both scale the cartridge's own sound chip, just against different unities, so
+ *  the emulated cart and the console end up at the same level. 200% saturates the register. */
+export function expVolToN8(percent: number): number {
+  return Math.max(0, Math.min(255, Math.round((percent * 128) / 100)));
+}
+
+/** Point a connected N8 at the level the project asks for (-1 = leave it to the host's own default, which
+ *  derives unity from the running cart's mapper - what a project with no NES system in it gets). Applied on
+ *  the spot when the link is up, and again on every connect. NOT persisted here: the level belongs to the
+ *  NES system's `expansionVolume` knob, in the project. */
 export function setN8ExpVol(v: number): void {
   (globalThis as N8Globals).__rp_setN8ExpVol?.(v);
-  emit();
+}
+
+/** The N8 master_vol a project asks for: the focused NES system's "Expansion Volume" (else the first NES
+ *  system's), rescaled. -1 when the project has no NES system at all - there is no cart here to take a level
+ *  from, so the host goes on deriving one from whatever is running on the console. Several NES instances can
+ *  share one link (it carries the whole instance's MIDI), so the focused one - the cart whose menu you were
+ *  just in - decides. */
+export function projectExpVolForN8(systems: SystemView[]): number {
+  const nes = systems.filter((s) => s.platform === "nes");
+  if (nes.length === 0) return -1;
+  const sys = nes.find((s) => s.focused) ?? nes[0];
+  const cfg = sys.roles.find((r) => r.kind === "mesen")?.config as Record<string, unknown> | undefined;
+  const percent = typeof cfg?.expansionVolume === "number" ? cfg.expansionVolume : 100;
+  return expVolToN8(percent);
 }
 
 /** A monotonic version - a stable snapshot for App's forced re-render on a pick/toggle. */

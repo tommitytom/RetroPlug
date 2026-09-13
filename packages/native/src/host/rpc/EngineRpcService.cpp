@@ -147,6 +147,7 @@ bool EngineRpcService::applyRoleConfig(std::uint32_t id, std::string kind, std::
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesApuLatencyMs), c.apuLatencyMs);
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesS5bNoise), static_cast<double>(c.s5bNoise));
         invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesMmc5PhaseReset), static_cast<double>(c.mmc5PhaseReset));
+        invoker_.applyConfigField(id, static_cast<std::uint8_t>(ConfigField::NesExpansionVolume), static_cast<double>(c.expansionVolume));
         return true;
     }
     return false;

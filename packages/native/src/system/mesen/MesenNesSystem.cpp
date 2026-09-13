@@ -75,8 +75,21 @@ constexpr uint32_t kNesPalette[64] = {
     0xFFE4E594, 0xFFCFEF96, 0xFFBDF4AB, 0xFFB3F3CC, 0xFFB5EBF2, 0xFFB8B8B8, 0xFF000000, 0xFF000000,
 };
 
+// The six cartridge sound chips, in Mesen's AudioChannel order (NesTypes.h): FDS, MMC5, VRC6, VRC7,
+// Namco163, Sunsoft5B. Only one is ever present on a cart, so the knob sets them together - it means "the
+// cartridge's own sound chip", not "whichever of the six this cart has".
+constexpr int kFirstExpansionChannel = 5;   // AudioChannel::FDS
+constexpr int kLastExpansionChannel  = 10;  // AudioChannel::Sunsoft5B
+
+// Expansion volume as a percentage (100 = unity), mapped onto Mesen's per-channel volumes. The mixer scales
+// each chip's contribution by ChannelVolumes[i]/100 in GetExpansionOutput and re-reads the array every
+// buffer (NesSoundMixer::UpdateRates), so a change lands live - no reset, no reconfigure.
+void applyExpansionVolume(NesConfig& cfg, std::uint32_t percent) {
+    for (int i = kFirstExpansionChannel; i <= kLastExpansionChannel; ++i) cfg.ChannelVolumes[i] = percent;
+}
+
 void configureNes(Emulator& emu, std::uint32_t region, bool removeSpriteLimit,
-                  std::uint32_t s5bNoise, std::uint32_t mmc5PhaseReset) {
+                  std::uint32_t s5bNoise, std::uint32_t mmc5PhaseReset, std::uint32_t expansionVolume) {
     EmuSettings* settings = emu.GetSettings();
     NesConfig cfg{};
     cfg.Port1 = ControllerConfig{ .Type = ControllerType::NesController };
@@ -87,6 +100,7 @@ void configureNes(Emulator& emu, std::uint32_t region, bool removeSpriteLimit,
     for (int i = 0; i < 11; ++i) {
         cfg.ChannelVolumes[i] = 100;
     }
+    applyExpansionVolume(cfg, expansionVolume);
     // TS-owned "mesen" role knobs, seeded before LoadRom so region is correct from power-on.
     cfg.Region = static_cast<ConsoleRegion>(region);
     cfg.RemoveSpriteLimit = removeSpriteLimit;
@@ -137,7 +151,8 @@ void MesenNesSystem::onActivate(double sampleRate) {
     // background polling thread (ShortcutKeyHandler) that, besides being pure
     // overhead, races the debugger pointer against LoadRom's ResetDebugger.
     emu_->Initialize(false);
-    configureNes(*emu_, config_.region, config_.removeSpriteLimit, config_.s5bNoise, config_.mmc5PhaseReset);
+    configureNes(*emu_, config_.region, config_.removeSpriteLimit, config_.s5bNoise, config_.mmc5PhaseReset,
+                 config_.expansionVolume);
 
     VirtualFile romFile(rom_.data(), rom_.size(),
                         config_.romPath.empty() ? std::string("rom.nes") : config_.romPath);
@@ -327,6 +342,13 @@ void MesenNesSystem::setMmc5PhaseReset(std::uint32_t mode) {
     if (config_.mmc5PhaseReset == mode) return;
     config_.mmc5PhaseReset = mode;
     if (emu_) emu_->GetSettings()->GetNesConfig().Mmc5PulsePhaseReset = (mode == 0);
+}
+
+void MesenNesSystem::setExpansionVolume(std::uint32_t percent) {
+    if (config_.expansionVolume == percent) return;
+    config_.expansionVolume = percent;
+    // Live: the mixer re-reads ChannelVolumes into its own scalars once per audio buffer.
+    if (emu_) applyExpansionVolume(emu_->GetSettings()->GetNesConfig(), percent);
 }
 
 void MesenNesSystem::setApuLatencyMs(double ms) {

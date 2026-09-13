@@ -29,6 +29,8 @@ enum class ConfigField : std::uint8_t {
     ColorCorrection = 10, DmgPalette = 11, LightTemperature = 12,
     // Mesen (NES) cartridge-accuracy switches — 0 = chip, 1 = Everdrive N8. Both live.
     NesS5bNoise = 13, NesMmc5PhaseReset = 14,
+    // Mesen (NES) — the cartridge sound chip's level, percent of unity. Live.
+    NesExpansionVolume = 15,
 };
 
 // One system's video frame, read from its lock-free FrameBufferTriple. `data` is raw XRGB8888

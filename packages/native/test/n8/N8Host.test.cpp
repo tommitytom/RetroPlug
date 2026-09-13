@@ -5,12 +5,15 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <deque>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "host/n8/Edio.hpp"  // ISerialPort
@@ -26,9 +29,23 @@ namespace {
 
 // The state a run of fake ports shares: what cart the N8 claims to be running (the FPGA config block the host
 // reads to decide the volume) and every byte written across all of them, so a test can assert what went out.
+// The wire is mutex-guarded because a posted control write (setExpVol on a live link) is made by the serial
+// thread while the test reads.
 struct FakeDevice {
-    int                       mapper = 0;  // map_idx the config block reports (0 = no expansion audio)
-    std::vector<std::uint8_t> written;
+    int mapper = 0;  // map_idx the config block reports (0 = no expansion audio)
+
+    void append(const std::uint8_t* data, std::size_t n) {
+        std::lock_guard<std::mutex> l(mu_);
+        written_.insert(written_.end(), data, data + n);
+    }
+    std::vector<std::uint8_t> wire() {
+        std::lock_guard<std::mutex> l(mu_);
+        return written_;
+    }
+
+private:
+    std::mutex                mu_;
+    std::vector<std::uint8_t> written_;
 };
 
 // A fake serial port that answers the Edio handshake (CMD_STATUS -> 0xA500 OK) so N8Link::connect succeeds
@@ -43,7 +60,7 @@ struct FakePort : ISerialPort {
         for (std::uint8_t b : cfg) toRead.push_back(b);
     }
     std::size_t write(const std::uint8_t* data, std::size_t n) override {
-        dev_.written.insert(dev_.written.end(), data, data + n);
+        dev_.append(data, n);
         return n;
     }
     std::size_t read(std::uint8_t* b, std::size_t n, int) override {
@@ -86,6 +103,18 @@ std::vector<std::uint8_t> memWrFrame(std::int32_t addr, std::uint8_t value) {
 
 // Every value written to the expansion-volume register in `wire`, in wire order (empty = the host left the
 // register alone). Matches on the frame up to the value, so it finds a write of any value.
+std::vector<int> expVolWrites(const std::vector<std::uint8_t>& wire);
+
+// Wait for `n` expansion-volume writes to reach the device. A write posted to a LIVE link is made by the
+// serial thread at its next turn, so the test can't read the wire straight after the call.
+bool waitForExpVolWrites(FakeDevice& dev, std::size_t n) {
+    for (int i = 0; i < 2000; i++) {
+        if (expVolWrites(dev.wire()).size() >= n) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return false;
+}
+
 std::vector<int> expVolWrites(const std::vector<std::uint8_t>& wire) {
     const auto  full   = memWrFrame(Edio::ADDR_EXP_VOL, 0);
     const auto  prefix = std::vector<std::uint8_t>(full.begin(), full.end() - 1);  // all but the value byte
@@ -139,16 +168,15 @@ TEST_CASE("N8Host.setLookahead is reflected and clamped", "[n8host]") {
 }
 
 TEST_CASE("N8Host.connect sets the expansion volume to unity on an expansion-audio cart", "[n8host]") {
-    // The whole point of the setting: master_vol is 0 after a power-cycle, so a VRC6 cart streamed from the
-    // menu would come up with its extra voices silent. Auto (the default) recognises the running cart from the
-    // FPGA config block and writes unity.
+    // The standing behaviour when nothing has pushed a level (no NES system in the project, or the link came
+    // up before one loaded): master_vol is 0 after a power-cycle, so a VRC6 cart streamed from the menu would
+    // come up with its extra voices silent. Auto recognises the running cart from the FPGA config block.
     FakeDevice dev;
     dev.mapper = 24;  // VRC6
     N8Host host(factoryFor(dev), listerWith({{"/dev/ttyACM0", true}}), tempCfgDir());
     host.connect(true);
     REQUIRE(host.getConfig().connected);
-    REQUIRE(host.getConfig().expVol == N8Host::EXP_VOL_AUTO);
-    REQUIRE(expVolWrites(dev.written) == std::vector<int>{N8Host::EXP_VOL_UNITY});
+    REQUIRE(expVolWrites(dev.wire()) == std::vector<int>{N8Host::EXP_VOL_UNITY});
 }
 
 TEST_CASE("N8Host.connect leaves the expansion volume alone on a cart without expansion audio", "[n8host]") {
@@ -159,52 +187,57 @@ TEST_CASE("N8Host.connect leaves the expansion volume alone on a cart without ex
     N8Host host(factoryFor(dev), listerWith({{"/dev/ttyACM0", true}}), tempCfgDir());
     host.connect(true);
     REQUIRE(host.getConfig().connected);
-    REQUIRE(expVolWrites(dev.written).empty());
+    REQUIRE(expVolWrites(dev.wire()).empty());
 }
 
-TEST_CASE("N8Host.setExpVol writes an explicit pick whatever is running, and applies it while streaming", "[n8host]") {
+TEST_CASE("N8Host.setExpVol writes the pushed level whatever is running, on the next connect", "[n8host]") {
+    // The UI pushes the NES system's own Expansion Volume here (rescaled), so an explicit value is written
+    // regardless of the cart - this device reports mapper 0, where Auto writes nothing at all.
     FakeDevice dev;
-    dev.mapper = 0;  // no expansion audio: Auto would write nothing, so every write below is the explicit pick
+    dev.mapper = 0;
+    N8Host host(factoryFor(dev), listerWith({{"/dev/ttyACM0", true}}), tempCfgDir());
+    host.setExpVol(64);
+    host.connect(true);
+    REQUIRE(expVolWrites(dev.wire()) == std::vector<int>{64});
+}
+
+TEST_CASE("N8Host.setExpVol reaches a live link without tearing it down", "[n8host]") {
+    // Turning the knob mid-session must be audible on the console at once AND must not interrupt the MIDI
+    // stream - a dropped note-off is a stuck note. The write rides the serial thread (N8Link::postControl),
+    // so the link stays up and connected throughout.
+    FakeDevice dev;
+    dev.mapper = 0;
     N8Host host(factoryFor(dev), listerWith({{"/dev/ttyACM0", true}}), tempCfgDir());
     host.connect(true);
-    REQUIRE(expVolWrites(dev.written).empty());
+    REQUIRE(expVolWrites(dev.wire()).empty());
 
-    host.setExpVol(64);  // picked while streaming -> bounces the link, so it lands now rather than next Connect
-    REQUIRE(host.getConfig().expVol == 64);
-    REQUIRE(host.getConfig().connected);
-    REQUIRE(expVolWrites(dev.written) == std::vector<int>{64});
+    host.setExpVol(64);
+    REQUIRE(waitForExpVolWrites(dev, 1));
+    REQUIRE(host.getConfig().connected);  // never bounced
 
     host.setExpVol(9999);  // clamped to the register's range
-    REQUIRE(host.getConfig().expVol == 255);
-    REQUIRE(expVolWrites(dev.written) == std::vector<int>{64, 255});
+    REQUIRE(waitForExpVolWrites(dev, 2));
+    REQUIRE(expVolWrites(dev.wire()) == std::vector<int>{64, 255});
+    REQUIRE(host.getConfig().connected);
 }
 
-TEST_CASE("N8Host persists the expansion volume and applies it on the restored connect", "[n8host]") {
+TEST_CASE("N8Host does not persist the expansion volume - it belongs to the project", "[n8host]") {
+    // n8.cfg stays the three-line port / lookahead / enabled file. A level pushed by one project must not
+    // come back to haunt the next one: a fresh host restores on Auto and waits to be told.
     const std::string dir = tempCfgDir();
     {
         N8Host host(okFactory(), listerWith({{"/dev/ttyACM0", true}}), dir);
         host.setExpVol(192);
+        host.setLookahead(15);
         host.connect(true);
     }
     FakeDevice dev;
-    dev.mapper = 0;  // an explicit pick is written regardless of the cart
+    dev.mapper = 0;  // Auto writes nothing here, so a leaked 192 would show up as a write
     N8Host restored(factoryFor(dev), listerWith({{"/dev/ttyACM0", true}}), dir);
     restored.restore();
-    REQUIRE(restored.getConfig().expVol == 192);
-    REQUIRE(expVolWrites(dev.written) == std::vector<int>{192});
-}
-
-TEST_CASE("N8Host reads an n8.cfg written before the expansion volume existed as Auto", "[n8host]") {
-    const std::string dir = tempCfgDir();
-    if (FILE* f = std::fopen((dir + "/n8.cfg").c_str(), "w")) {
-        std::fprintf(f, "/dev/ttyACM0\n15\n0\n");  // the old three-line file: port / lookahead / enabled
-        std::fclose(f);
-    }
-    N8Host host(okFactory(), listerWith({{"/dev/ttyACM0", true}}), dir);
-    host.restore();
-    const auto c = host.getConfig();
-    REQUIRE(c.lookaheadMs == 15);
-    REQUIRE(c.expVol == N8Host::EXP_VOL_AUTO);
+    REQUIRE(restored.getConfig().lookaheadMs == 15);  // the link's own settings still persist
+    REQUIRE(restored.getConfig().connected);
+    REQUIRE(expVolWrites(dev.wire()).empty());
 }
 
 TEST_CASE("N8Host persists to n8.cfg and restore() reconnects", "[n8host]") {

@@ -78,6 +78,14 @@ export function registerCoreRoles(registry: RoleRegistry): void {
       // a phase-reset hack holds a 50% duty and full level and only shifts pitch.
       s5bNoise: enumField(CARTRIDGE_ACCURACY_VALUES, "n8"),
       mmc5PhaseReset: enumField(CARTRIDGE_ACCURACY_VALUES, "n8"),
+      // NES-only: the level of the CARTRIDGE's own sound chip (VRC6 / VRC7 / N163 / S5B / MMC5 / FDS), as a
+      // percentage of unity - never the console's 2A03. Mesen mixes each expansion chip through a per-channel
+      // volume; this sets all six together, since a cart has at most one. Live.
+      //
+      // It is also what a connected Everdrive N8 Pro is set to: the FPGA has the same control (`master_vol`,
+      // 128 = unity) and the UI rescales this value into it, so one knob decides how loud the chip is whether
+      // you are hearing the emulator or the console. 100 = the chip as the hardware mixes it.
+      expansionVolume: clampedNumber(0, 200, 100),
       // CLI-only per-channel export mode (spec/10 §5/§5b): mix, stereoModPins (Pulse | TND + Expansion),
       // individualMono (5 core channels). Set at construct (via adopt) — the settings menu doesn't surface
       // it. Additive. (pinsPlusRef = pins + a mix reference, native/test-only.)

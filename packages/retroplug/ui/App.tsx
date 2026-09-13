@@ -34,7 +34,7 @@ import { buildInstanceMenu, buildStartMenu, composeWindowTitle, trackerCartLabel
 import { subscribeAudioDraft } from "./screens/menu/audioDraft";
 import { subscribeMidi } from "./screens/menu/midiDevices";
 import { subscribeTransport, pollTransport } from "./screens/menu/transport";
-import { subscribeN8 } from "./screens/menu/n8Devices";
+import { subscribeN8, projectExpVolForN8, setN8ExpVol } from "./screens/menu/n8Devices";
 import { subscribeLaunchpad } from "./screens/menu/launchpadDevices";
 import type { MenuTree } from "./screens/menu/menuTree";
 import { isMenuModalActive } from "./screens/menu/menuModal";
@@ -86,6 +86,13 @@ export function App() {
   // lookahead change emits here to repaint its labels immediately. Inert in a DAW / the harness.
   const [, bumpN8] = useState(0);
   useEffect(() => subscribeN8(() => bumpN8((n) => n + 1)), []);
+  // The cartridge sound chip sits at ONE level, whether you are hearing the emulator or a real console: the
+  // NES system's "Expansion Volume" knob drives Mesen's expansion channels, and this pushes the same value
+  // (rescaled) to a connected N8's `master_vol`. Deriving it from `systems` covers every way it can move -
+  // the knob itself, a project load, a focus change, an instance coming or going - and the host writes it on
+  // connect as well, so the order the link and the project come up in doesn't matter.
+  const n8ExpVol = projectExpVolForN8(systems);
+  useEffect(() => setN8ExpVol(n8ExpVol), [n8ExpVol]);
   // Standalone Launchpad submenu: likewise, the claimed MIDI pair + connect state live natively, so a port
   // pick or Connect emits here to repaint immediately. Inert in a DAW / the harness.
   const [, bumpLaunchpad] = useState(0);

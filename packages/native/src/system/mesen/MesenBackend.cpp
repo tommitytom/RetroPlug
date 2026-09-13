@@ -73,6 +73,7 @@ std::unique_ptr<SystemBase> MesenBackend::build(SystemId id, const SystemBuildSp
         cfg.removeSpriteLimit = role.removeSpriteLimit;
         cfg.channelExportMode = role.channelExportMode;
         cfg.apuLatencyMs = role.apuLatencyMs;
+        cfg.expansionVolume = role.expansionVolume;  // seeded before LoadRom, so no frames play at the wrong level
         cfg.sdRoot = role.sdRoot;
         cfg.fifo = role.fifo;
         cfg.fifoDepth = role.fifoDepth;

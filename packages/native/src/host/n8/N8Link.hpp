@@ -44,6 +44,12 @@ public:
     // Set once by the owner before any connect (read-only afterwards, so the SD worker's resume-connect can
     // run it too).
     void          setOnConnected(OnConnected fn) { onConnected_ = std::move(fn); }
+    // Run `fn` on the serial thread's Edio at its next turn. The UI thread must NOT touch the port while the
+    // link is up (the serial thread owns it), and tearing the link down to reach the device would drop
+    // whatever MIDI was in flight - a dropped note-off is a stuck note on real hardware. Replaces any call
+    // still pending (these are "make the device match the current setting", so only the last one matters).
+    // A no-op while disconnected: the connect path applies the current config through OnConnected anyway.
+    void          postControl(std::function<void(Edio&)> fn);
     bool          connect(const std::string& port);  // open + handshake + spawn the serial thread
     void          disconnect();                       // stop + join the serial thread, close the port
     bool          isConnected() const { return connected_.load(std::memory_order_acquire); }
@@ -79,6 +85,9 @@ private:
     mutable std::mutex meta_;      // guards portName_ + error_ (set on connect/disconnect/error, read by status)
     std::string        portName_;
     std::string        error_;
+
+    std::mutex             control_;  // guards pendingControl_ (posted by the UI thread, taken by the serial one)
+    std::function<void(Edio&)> pendingControl_;
 
     std::unique_ptr<ISerialPort> serialPort_;  // owned; read by the serial thread
     std::unique_ptr<Edio>        edio_;

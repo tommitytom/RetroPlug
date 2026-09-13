@@ -31,6 +31,11 @@ struct MesenNesConfig {
     // mmc5PhaseReset: whether $5003/$5007 restarts the pulse duty sequencer (the N8's does not).
     std::uint32_t s5bNoise          = 1;
     std::uint32_t mmc5PhaseReset    = 1;
+    // The cartridge sound chip's level as a percentage of unity (VRC6 / VRC7 / N163 / S5B / MMC5 / FDS -
+    // never the console's own 2A03), applied to every expansion channel Mesen mixes. 100 = the chip as the
+    // hardware mixes it. Live knob. The N8 Pro's FPGA has the same control (`master_vol`, 128 = unity), and
+    // the UI drives both from this one value, so a cart sounds the same emulated and on the console.
+    std::uint32_t expansionVolume   = 100;
     // Per-channel audio export mode (CLI-only; spec/10 §5/§5b). 0 = Mix (default, the mixed stereo
     // output). 1 = StereoModPins: the two 2A03 output pins (Pulse | TND) + a lumped Expansion stream, 3
     // mono channelLayout() streams. 3 = IndividualMono: the 5 core channels (Square1/Square2/Triangle/

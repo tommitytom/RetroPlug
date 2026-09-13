@@ -41,7 +41,6 @@ JSValue jsGetN8Config(JSContext* ctx, JSValueConst, int, JSValueConst*, int, JSV
         JS_SetPropertyStr(ctx, o, "connected", JS_NewBool(ctx, c.connected));
         JS_SetPropertyStr(ctx, o, "enabled", JS_NewBool(ctx, c.enabled));
         JS_SetPropertyStr(ctx, o, "lookaheadMs", JS_NewInt32(ctx, c.lookaheadMs));
-        JS_SetPropertyStr(ctx, o, "expVol", JS_NewInt32(ctx, c.expVol));
         JS_SetPropertyStr(ctx, o, "bytes", JS_NewInt64(ctx, static_cast<std::int64_t>(c.bytes)));
         JS_SetPropertyStr(ctx, o, "error", JS_NewString(ctx, c.error.c_str()));
     }

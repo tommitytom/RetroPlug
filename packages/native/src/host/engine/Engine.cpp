@@ -418,6 +418,9 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
             case ConfigField::NesMmc5PhaseReset:
                 mn->setMmc5PhaseReset(static_cast<std::uint32_t>(value));   // live — read per register write
                 break;
+            case ConfigField::NesExpansionVolume:
+                mn->setExpansionVolume(static_cast<std::uint32_t>(value));  // live — mixer re-reads per buffer
+                break;
             default:
                 break;
         }

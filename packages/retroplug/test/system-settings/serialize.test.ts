@@ -51,7 +51,7 @@ test("a customized NES (mesen) role round-trips through serialize → parse → 
   s1.setRoleConfig(id, "mesen", { region: "pal" }); // PAL
 
   const cfg = buildConfig(DEFAULT_SETTINGS, s1.systems());
-  expect(cfg.systems[0].roles).toEqual([{ kind: "mesen", config: { region: "pal", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0 } }]);
+  expect(cfg.systems[0].roles).toEqual([{ kind: "mesen", config: { region: "pal", removeSpriteLimit: false, enableFm: true, apuLatencyMs: 1.4, s5bNoise: "n8", mmc5PhaseReset: "n8", expansionVolume: 100, channelExportMode: "mix", sdRoot: "", fifo: "instant", fifoDepth: 0, fifoBytesPerSecond: 0 } }]);
 
   const back = parseConfig(serializeConfig(cfg, "", identity));
   const be2 = new MockBackend("/cfg");
