@@ -78,6 +78,14 @@ so concurrent core construction can't race.
 - **`ui/lvgl/render.ts`** — `startSystemRender` snapshots the live `readSram`/`readState` to a temp file
   under `configDir` and calls `__rp_startRender`; `pickActiveRenderJob` selects a tile's badge job and
   `renderBadgeLabel` writes its text. Inert in the headless harness (no hooks bound).
+- **The instance's CONFIGURATION rides along** — `spec.roles` (the live system's roles, configs included)
+  and `spec.gainDb`. The job boots a fresh core from the ROM on disk, so without them it would take each
+  role's schema DEFAULTS and render a PAL project at NTSC, a Game Boy as the wrong model, a replaced DMC kit
+  from the cart's original samples, or an expansion chip at unity whatever the instance's Expansion Volume
+  says. `buildSystem` therefore goes through `adopt` whenever roles/gain are carried (the same construct-time
+  path a project load uses), and folds a NES split's `channelExportMode` INTO the carried `mesen` role rather
+  than replacing the list. A CLI render carries neither — it has no project to copy and correctly boots the
+  ROM as it ships.
 - **Menu** — `System > Render` holds selectors — **Audio Routing** (the split mode: Mix / Channels / Pins,
   gated on platform), **Sample Rate** (44100 / 48000 / 96000), **Max Duration** (Left/Right ±1s,
   PageUp/PageDown ±30s) — persisted
@@ -107,6 +115,11 @@ so concurrent core construction can't race.
 - **Badge + menu:** `pnpm test:ui render-badge` (tile badge) and `pnpm test:ui render-menu` (the Split /
   Sample Rate / Max-Duration selectors + PageUp/PageDown coarse step + Render… → `__rp_startRender`), both on
   the real LVGL display via a file-dropped ROM.
+- **Carried configuration:** `pnpm test:native risa-render` — a carried `region` moves the DETECTED song
+  length (PAL 59000 ms → NTSC 49800 ms, the 50/60 clock ratio), and a carried `gainDb` / role knob lands on
+  the system the job builds. It has to be measured structurally like that: risa boots with randomized NES
+  RAM, so two renders of one song differ by ~3 dB and no LEVEL comparison across renders means anything. What
+  each knob then does to the audio is its own test (`pnpm test:native expansion-volume`).
 
 ## Not yet built / deferred
 

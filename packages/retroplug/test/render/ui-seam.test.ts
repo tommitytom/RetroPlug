@@ -15,12 +15,16 @@ import type { SystemView } from "../../src/systemsStore";
 function sysView(over: Partial<SystemView>): SystemView {
   // `roles` is not optional on a real SystemView, and startSystemRender now reads it (to spot a cart whose
   // working song lives outside the battery) — the cast would otherwise hand it undefined.
-  return { id: 1, romPath: "/roms/song.gb", battery: true, roles: [], ...over } as unknown as SystemView;
+  return { id: 1, romPath: "/roms/song.gb", battery: true, roles: [], settings: { gainDb: 0 }, ...over } as unknown as SystemView;
 }
 
 interface Captured {
   systemId: number;
-  spec: { rom: string; out: string; split: string; sav?: string; state?: string; sampleRate?: number; maxDurationMs?: number };
+  spec: {
+    rom: string; out: string; split: string; sav?: string; state?: string; sampleRate?: number; maxDurationMs?: number;
+    roles?: { kind: string; config: Record<string, unknown> }[];
+    gainDb?: number;
+  };
 }
 
 /** Install a __rp_startRender spy; `box.last` holds the most recent capture. */
@@ -69,6 +73,36 @@ test("startSystemRender: channels split threads the split mode through", () => {
   startSystemRender(backend, sysView({ id: 2, battery: true }), { split: "channels" }, "/out/x");
   expect(spy.box.last!.spec.split).toBe("channels");
   expect(spy.box.last!.spec.sampleRate).toBe(undefined); // omitted → worker uses the engine default
+  spy.restore();
+});
+
+test("startSystemRender: the instance's configuration rides along, so the offline core is not built at defaults", () => {
+  // A render boots a FRESH core from the ROM on disk. Its roles decide region, model, the cartridge sound
+  // chip's level, which DMC kit is in the bank - all of which would otherwise come back as schema defaults
+  // and render something the user is not hearing.
+  const backend = new MockBackend("/config");
+  backend.setSram(3, new Uint8Array([1]));
+  const spy = spyStartRender();
+  const roles = [
+    { kind: "mesen", config: { region: "pal", expansionVolume: 50 } },
+    { kind: "bliptoaster-assets", config: { overrides: [{ type: "kit", slot: 1, path: "/kits/mine.rkit" }] } },
+  ];
+  startSystemRender(backend, sysView({ id: 3, romPath: "/roms/a.nes", battery: true, roles, settings: { gainDb: -6 } }), { split: "mix" }, "/out/x.wav");
+
+  expect(spy.box.last!.spec.roles).toEqual(roles); // verbatim, configs and all
+  expect(spy.box.last!.spec.gainDb).toBe(-6);
+  spy.restore();
+});
+
+test("startSystemRender: a default-configured instance sends no roles/gain, so a render stays a plain boot", () => {
+  // Thin spec, like every other field here: nothing pinned means nothing to say, and the worker's own
+  // defaults (which are the same schema defaults) apply.
+  const backend = new MockBackend("/config");
+  backend.setSram(1, new Uint8Array([1]));
+  const spy = spyStartRender();
+  startSystemRender(backend, sysView({ id: 1, battery: true }), { split: "mix" }, "/out/x.wav");
+  expect(spy.box.last!.spec.roles).toBe(undefined);
+  expect(spy.box.last!.spec.gainDb).toBe(undefined);
   spy.restore();
 });
 

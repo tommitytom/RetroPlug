@@ -46,14 +46,25 @@ export interface RenderRequest {
 
 /** Snapshot the live system's persisted state (its battery SRAM, or a savestate if the cart has no battery)
  *  to a temp file, then start a background render of a FRESH instance built from it — never the running core.
- *  `outPath` is the chosen WAV path (a prefix for split modes, matching the CLI). Returns the job id, or null
- *  if it couldn't start (no on-disk ROM, or the hook is absent in the headless harness). */
+ *  The instance's CONFIGURATION (its roles + gain) rides along, so "fresh" means a new core set up the way
+ *  this one is, not one at the format's defaults. `outPath` is the chosen WAV path (a prefix for split modes,
+ *  matching the CLI). Returns the job id, or null if it couldn't start (no on-disk ROM, or the hook is absent
+ *  in the headless harness). */
 export function startSystemRender(backend: RenderBackend, sys: SystemView, req: RenderRequest, outPath: string): number | null {
   if (!hooks.__rp_startRender || !sys.romPath) return null;
   const spec: Record<string, unknown> = { rom: sys.romPath, out: outPath, split: req.split };
   if (req.sampleRate !== undefined) spec.sampleRate = req.sampleRate;
   if (req.maxDurationMs !== undefined) spec.maxDurationMs = req.maxDurationMs;
   if (req.onExists !== undefined) spec.onExists = req.onExists;
+
+  // How this instance is CONFIGURED, so the offline core comes up the way you are hearing it. The render
+  // boots a fresh system from the ROM on disk; without these it would take each role's schema defaults and
+  // quietly render a PAL project at NTSC, a Game Boy as the wrong model, a replaced DMC kit from the
+  // original samples, or an expansion chip at unity whatever the instance's Expansion Volume says. The
+  // ROM's own bytes still come from disk - the asset overrides are re-folded at construct, by the same
+  // patcher the live cart used, so they land the same way.
+  if (sys.roles.length) spec.roles = sys.roles;
+  if (sys.settings.gainDb) spec.gainDb = sys.settings.gainDb;
 
   // A fresh boot from the CURRENT state (not the on-disk sibling .sav): copy the live SRAM / savestate to a
   // temp file the render worker's own Engine loads by path.

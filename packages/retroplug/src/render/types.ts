@@ -6,6 +6,7 @@ import type { Backend } from "../backend";
 import type { ProjectStore } from "../projectStore";
 import type { DspRuntimeClient } from "../dspRuntime";
 import type { AudioDriver } from "../audioDriver";
+import type { RoleInstance } from "../systemRoles";
 
 export type SplitMode = "mix" | "channels" | "pins";
 
@@ -35,6 +36,13 @@ export interface RenderOpts {
   song?: string; // by name (case-insensitive, ≤8 chars)
   songIndex?: number; // by slot 0–31
   listSongs: boolean; // (CLI) print the sav's song names and exit — not a render; handled by the CLI wrapper
+  // How the instance is CONFIGURED, carried verbatim from the live system by the UI's System > Render. A
+  // render boots a fresh core from the ROM on disk, so without these it would use each role's schema
+  // DEFAULTS — rendering a PAL project at NTSC, a cart with a replaced DMC kit from its original samples, an
+  // expansion chip at unity however the instance is set. Absent from a CLI render, which has no project to
+  // take them from and correctly boots the ROM as it ships.
+  roles?: RoleInstance[]; // the live system's roles (system + feature), configs included
+  gainDb?: number; // the instance's own gain (CommonSettings.gainDb); 0 / absent = unity
 }
 
 /** The subset of a booted control plane the render orchestration drives. `Session` (cli/session.ts)

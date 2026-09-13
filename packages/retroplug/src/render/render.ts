@@ -27,6 +27,7 @@ import { isRisaRomHeader, runtime as risaRuntime } from "../risa";
 import { lsdjSongCatalog, risaSongCatalog, smsggdjSongCatalog } from "../tracker";
 import { smsggdjIntegration } from "../tracker/trackerIntegration"; // the leaf: the barrel exports catalogs, not integrations
 import type { ChannelExportMode } from "../settingsEnums";
+import type { RoleInstance } from "../systemRoles";
 import {
   type Platform,
   type RenderContext,
@@ -381,19 +382,35 @@ function warnIfSmsggdjHasNoSong(ctx: RenderContext, o: RenderOpts, platform: Pla
   );
 }
 
+/** The role list to build the render's core from: the instance's own roles when the caller carried them (the
+ *  UI's System > Render), else none — which lets adopt/addSystem attach defaults, as a CLI render wants.
+ *  `exportMode` (a NES split) is folded INTO the carried `mesen` role rather than replacing the list, so
+ *  `--split channels` and a project's region / expansion volume / accuracy switches all survive together.
+ *  The render's own split decides channelExportMode outright: it is the one knob the request owns, and a
+ *  stale value pinned in the project must not arm capture the request did not ask for. */
+function rolesForRender(carried: RoleInstance[] | undefined, exportMode?: ChannelExportMode): RoleInstance[] | undefined {
+  if (!carried?.length) return exportMode ? [{ kind: "mesen", config: { channelExportMode: exportMode } }] : undefined;
+  if (!exportMode) return carried;
+  const merged = carried.map((r) => (r.kind === "mesen" ? { ...r, config: { ...r.config, channelExportMode: exportMode } } : r));
+  return merged.some((r) => r.kind === "mesen") ? merged : [...merged, { kind: "mesen", config: { channelExportMode: exportMode } }];
+}
+
 /** Build the single system + project it into the DSP runtime. `seed` (LSDj song bytes) forces the adopt
- *  path; a NES split mode arms construct-time capture; otherwise addSystem auto-detects. */
+ *  path; so do carried roles / gain (they can only be applied at construct) and a NES split mode arming
+ *  construct-time capture; otherwise addSystem auto-detects. */
 function buildSystem(ctx: RenderContext, o: RenderOpts, platform: Platform, seed?: Uint8Array): number {
   let id: number | null;
   const nesSplit = platform === "nes" && o.split !== "mix";
-  if (seed || nesSplit) {
-    // A chosen-song seed (adopt takes raw SRAM bytes) and NES per-channel capture (channelExportMode engages
-    // at construct/onActivate) both go through adopt — combined here so `--song-index … --split channels`
-    // arms both. A seed replaces the sav; without one, pair the sav. adopt is quiet → project the store by
-    // hand (bootSession's onSystemsChange hook doesn't fire).
+  const roles = rolesForRender(o.roles, nesSplit ? nesExportMode(o.split) : undefined);
+  if (seed || roles || o.gainDb) {
+    // A chosen-song seed (adopt takes raw SRAM bytes), the instance's carried configuration, and NES
+    // per-channel capture (channelExportMode engages at construct/onActivate) all go through adopt — combined
+    // here so `--song-index … --split channels` arms both. A seed replaces the sav; without one, pair the sav.
+    // adopt is quiet → project the store by hand (bootSession's onSystemsChange hook doesn't fire).
     const spec: Parameters<typeof ctx.project.systems.adopt>[0] = { romPath: o.rom };
     if (!seed && o.sav) spec.savPath = o.sav;
-    if (nesSplit) spec.roles = [{ kind: "mesen", config: { channelExportMode: nesExportMode(o.split) } }];
+    if (roles) spec.roles = roles;
+    if (o.gainDb) spec.settings = { gainDb: o.gainDb };
     ctx.project.systems.adopt(spec, seed ? { sramBytes: seed } : undefined);
     syncDspFromStore(ctx.project, ctx.dsp);
     id = ctx.project.systems.view()[0]?.id ?? null;

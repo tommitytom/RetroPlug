@@ -37,6 +37,10 @@ function normalize(spec: RenderJobSpec): RenderOpts {
     start: spec.start ?? true,
     song: spec.song,
     songIndex: spec.songIndex,
+    // How the instance is configured, when the caller had one to copy (the UI's System > Render). Absent
+    // for a CLI render, which boots the ROM as it ships.
+    roles: spec.roles,
+    gainDb: spec.gainDb,
     listSongs: false, // the worker only renders — --list-songs is a CLI-only query
   };
 }

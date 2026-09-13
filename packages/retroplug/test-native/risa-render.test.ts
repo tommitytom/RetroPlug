@@ -123,3 +123,56 @@ test("render auto-detects a real risa song's HFF stop (hff true) and trims to it
   expect(wav.pcm.length).toBe(res.frames); // the WAV is trimmed exactly to the detected stop (no silent tail)
   expect(rms(wav.pcm) > 0.001).toBe(true);
 });
+
+// --- the instance's configuration reaching the render -----------------------------------------------------
+// A render boots a FRESH core from the ROM on disk, so whatever the live instance is set to has to be carried
+// into the job (RenderOpts.roles / gainDb, filled by the UI's System > Render) or the offline core comes up at
+// the role schema's DEFAULTS - rendering a PAL project at NTSC, a cart's expansion chip at unity whatever its
+// Expansion Volume says, an instance's gain at 0 dB.
+//
+// Region is what proves it, and it has to be: this cart boots with RANDOMIZED NES RAM, so two renders of the
+// same song differ by ~3 dB and NO level comparison here means anything. The console clock is structural
+// instead - PAL's 50 Hz against NTSC's 60 makes the same song play ~16% faster, which the HFF end-detection
+// reads off the cart's own sequencer rather than off the audio.
+test("a carried role config configures the render's core (region moves the detected song length)", () => {
+  const be = createRealBackend();
+  if (!be.fileExists(RISA_ROM) || !be.fileExists(ECOLI_SRM)) {
+    console.log(`# SKIP risa-render: missing ${RISA_ROM} or ${ECOLI_SRM}`);
+    return;
+  }
+  const lengthAt = (region: string): number => {
+    const res = runRenderJob(newCtx(be), baseOpts({
+      sav: ECOLI_SRM, maxDurationMs: 80000, out: `/tmp/rp-risa-region-${region}.wav`,
+      roles: [{ kind: "mesen", config: { region } }],
+    }));
+    expect(res.hff, `${region}: the song's HFF end was detected`).toBe(true);
+    return res.lengthMs ?? 0;
+  };
+  const pal = lengthAt("pal");
+  const ntsc = lengthAt("ntsc");
+  console.log(`[risa-render] carried region: pal ${pal} ms -> ntsc ${ntsc} ms (ratio ${(ntsc / pal).toFixed(3)})`);
+
+  // 50/60 = 0.833 at the frame rate the cart sequences on; the detection granularity is a render chunk, so
+  // allow a little either side. A role that never reached the core would put this at exactly 1.000.
+  expect(ntsc / pal, "NTSC runs the same song ~16% faster").toBeCloseTo(0.84, 0.03);
+});
+
+test("a carried gainDb + role knob land on the system the render builds", () => {
+  // The same randomized power-on RAM rules out a level comparison for gain, so this asserts WHERE the values
+  // land rather than what they sound like: the render's core is built by adopt, and the store it is built in
+  // still holds it when the job returns. What the knobs then DO to the audio is each knob's own test
+  // (test-native/expansion-volume.test.ts for the expansion chip, the region case above for the clock).
+  const be = createRealBackend();
+  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy();
+  const ctx = newCtx(be);
+  runRenderJob(ctx, baseOpts({
+    songIndex: 0, durationMs: 300, out: "/tmp/rp-risa-carried.wav",
+    gainDb: -6, roles: [{ kind: "mesen", config: { expansionVolume: 25 } }],
+  }));
+
+  const sys = ctx.project.systems.view()[0];
+  expect(sys.settings.gainDb, "the instance's gain").toBe(-6);
+  const mesen = sys.roles.find((r) => r.kind === "mesen")!.config as { expansionVolume?: number };
+  expect(mesen.expansionVolume, "the instance's Expansion Volume").toBe(25);
+});
