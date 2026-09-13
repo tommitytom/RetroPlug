@@ -188,6 +188,17 @@ JSON**, backed by two mechanisms:
    exact-match map over `systems[].roles[].kind`, leaving each role's `config` untouched (the
    assets role's `overrides` list is the user's kit/font/theme replacements).
 
+An `*-assets` role config is not limited to `overrides`. BlipToaster's also carries `settings`,
+the fields of the cart's baked 16-byte rig-settings block the project pins (default theme / font /
+kit, base MIDI channel, Mode 1 at boot, velocity curve). Every field is **optional**, and that is
+the semantic: an absent field means "leave the byte the `.nes` baked", so a project pins only what
+the user changed. Additive with a `.default({})`, so it needed no migration step. Both kinds of
+edit are folded onto the base ROM in memory by the one patcher (`applyConfigToRom`), which is also
+what the menu's bake rows write out, so the image the cart runs and the image "Patch ROM in Place"
+writes cannot drift apart. The block's format is in
+[bliptoaster/rom/settings.ts](../packages/retroplug/src/bliptoaster/rom/settings.ts); feature roles
+and their construct hooks are [04-roles-dsp-kernel.md](04-roles-dsp-kernel.md).
+
 Additive-only changes still need no step: the strict zod schemas fill a missing field from
 its `.default()` and **clamp** out-of-range scalars (an unknown string enum falls to its default)
 ([configSchema.ts](../packages/retroplug/src/configSchema.ts)), so an old file that only
