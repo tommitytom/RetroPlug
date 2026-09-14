@@ -3,9 +3,10 @@
 //
 // test/menu/*.test.ts already proves the MODEL side (that a kit row carries its verbs rather than children).
 // What only this can prove is the renderer's half, which lives entirely in Menu.tsx and has no other cover:
-// that the row composes into ONE lv_label carrying `[0] <name>   <  verb  >`, that Left/Right re-render it
-// onto the next verb without moving focus, that the pick wraps, and that Enter runs the verb the row is
-// showing at that moment — the renderer owns which verb that is, so nothing downstream can be asked.
+// that the row composes into ONE lv_label carrying `[0] <name>   <  verb  >` WHEN FOCUSED and just its name
+// otherwise, that Left/Right re-render it onto the next verb without moving focus, that the pick wraps, and
+// that Enter runs the verb the row is showing at that moment — the renderer owns which verb that is, so
+// nothing downstream can be asked.
 //
 // Driven on resources/roms/bliptoaster.nes: a mapper-69 (FME-7) banking cart, so its kit type is addable and
 // the row carries all three of Export / Replace / Delete. Delete is the one verb that neither opens a file
@@ -57,6 +58,15 @@ test("a kit row carries its verbs inline: Left/Right pick one, Enter runs the pi
   expect(/<\s+Export\.\.\.\s+>$/.test(step(Key.Right))).toBeTruthy();
   // Left walks it back the other way, so it is a live two-way pick and not a one-shot advance.
   expect(/<\s+Delete\s+>$/.test(step(Key.Left))).toBeTruthy();
+
+  // The verb block belongs to the cursor: step off the row and it is just its name again, so a list of kits
+  // reads as a column of names. Stepping back on restores the verb the row was left on, not the first one.
+  ui.tapKey(Key.Up);
+  ui.pump(6);
+  expect(ui.findByTextContaining("[0] ")?.text).toBe(name);
+  ui.tapKey(Key.Down);
+  ui.pump(6);
+  expect(/<\s+Delete\s+>$/.test(row())).toBeTruthy();
 
   // Enter runs the verb the row is SHOWING (Delete), not the one it opened on: the slot is erased through the
   // assets role and the menu closes, exactly as the equivalent submenu leaf did.

@@ -219,9 +219,10 @@ backend.writeFileAtomic(out, r.bytes());            // save the patched .gb
   success. This one schema replaces the old separate `edits.json`/`spec.json`.
 - **UI (non-destructive overrides).** The plugin's **LSDj** menu has a **Kits / Fonts / Palettes** submenu;
   each asset can be **Export…**'d (`.kit`/`.lsdpal`/`.png`) or **Replace from Disk…**'d. A **kit** offers
-  those verbs *inline on its own row* — `[0] TR-606   <  Export...  >`, Left/Right picking the verb and Enter
-  running it (the `actionCycler` row kind, see [spec/03-ts-layer.md](../spec/03-ts-layer.md)); fonts and
-  palettes still open a submenu per slot. A replacement is
+  those verbs *inline on its own row* — the focused row reads `[0] TR-606   <  Export...  >`, Left/Right
+  picking the verb and Enter running it (the `actionCycler` row kind, see
+  [spec/03-ts-layer.md](../spec/03-ts-layer.md)); fonts and palettes still open a submenu per slot. A
+  replacement is
   **never baked into the `.gb`** — it's recorded as an override in the per-system **`lsdj-assets` role**:
   **kits/fonts (binary) LINK to the file on disk by path** (never embedded bytes — mirroring how the project
   references its ROM/sav), while **palettes are stored INLINE as structured colours** (`colorSets` — just

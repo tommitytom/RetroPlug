@@ -6,10 +6,11 @@
 // current value baked into the label and step it: Enter/onSelect goes forward, Left/Right → onCycle(±1);
 // they set keepOpen so the menu stays put while stepping. Submenus nest inline via `children`.
 //
-// "actionCycler" is the flat alternative to a one-row submenu: the row shows its label followed by ONE of
-// its `actions` wrapped in angle brackets (`[0] TR-606   <  Export...  >`), Left/Right pick which, and Enter
-// RUNS the picked one (unlike a "cycler", where Enter steps). Which action a row is showing is transient
-// render state owned by Menu.tsx — the tree is rebuilt from scratch every render and carries no selection.
+// "actionCycler" is the flat alternative to a one-row submenu: the FOCUSED row shows its label followed by
+// ONE of its `actions` wrapped in angle brackets (`[0] TR-606   <  Export...  >`) — unfocused, it is just its
+// label — Left/Right pick which, and Enter RUNS the picked one (unlike a "cycler", where Enter steps). Which
+// action a row is showing is transient render state owned by Menu.tsx: the tree is rebuilt from scratch every
+// render and carries no selection.
 
 export type MenuItemKind = "action" | "submenu" | "separator" | "cycler" | "actionCycler" | "capture" | "prompt";
 

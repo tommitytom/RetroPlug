@@ -513,15 +513,17 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
             );
           }
           const isCapturing = capturingId === item.id;
+          const isFocused = focusedId === item.id;
           let label: string;
           if (item.kind === "submenu") label = `${item.label} ${openItems.has(item.id) ? "v" : ">"}`;
-          else if (item.kind === "actionCycler") label = actionCyclerLabel(item, actionIndexOf(item));
+          // The verb block belongs to the CURSOR, not the row: an unfocused actionCycler is just its name, so a
+          // list of them reads as a column of names and only the row you're on offers anything to do.
+          else if (item.kind === "actionCycler") label = isFocused ? actionCyclerLabel(item, actionIndexOf(item)) : item.label;
           else if (isCapturing) {
             const colon = item.label.indexOf(":"); // keep the "<Button>: " head, swap the value for a prompt
             const what = item.capture?.source === "gamepad" ? "button" : "key";
             label = `${colon >= 0 ? item.label.slice(0, colon) : item.label}: Press a ${what}...`;
           } else label = item.label;
-          const isFocused = focusedId === item.id;
           return (
             <TextAny
               key={item.id}
