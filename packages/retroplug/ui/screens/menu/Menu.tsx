@@ -13,7 +13,8 @@
 //
 // Navigation: LVGL turns Enter on the focused row into PRESSED→CLICKED → the row's onClick → activate().
 // Arrow Up/Down move a ref-tracked cursor and call the group's focus(); Left/Right cycle a "cycler"
-// item's value. Esc is NOT handled here — the menu controller owns open/close.
+// item's value, or pick which of an "actionCycler" row's actions Enter will run. Esc is NOT handled here —
+// the menu controller owns open/close.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Text, ELvKey } from "lvgljs-ui";
@@ -54,6 +55,20 @@ interface PromptState {
   spec: PromptSpec;
   value: string;
   error: string;
+}
+
+// An "actionCycler" row: `<label>   <  verb  >`. The verb is centred in a field as wide as the row's widest
+// verb, so stepping through them doesn't visibly stretch the row out from under the brackets. Padding with
+// SPACES can only approximate that — the menu font is Montserrat (proportional, LV_FONT_DEFAULT in
+// packages/native/src/lv_conf.h), so equal character counts aren't equal widths. It still holds the row to
+// roughly a character of drift instead of the dozen-plus the raw labels differ by; true pixel alignment
+// would need the row split into two Texts, which would cost it its single-label identity (the UI harness
+// reads focused().text off an lv_label — see packages/native/test/ui/RenderCore.cpp widgetInfo).
+function actionCyclerLabel(item: MenuItem, index: number): string {
+  const actions = item.actions ?? [];
+  const text = actions[index]?.label ?? "";
+  const pad = actions.reduce((w, a) => Math.max(w, a.label.length), 0) - text.length;
+  return `${item.label}   <${" ".repeat(Math.floor(pad / 2) + 1)}${text}${" ".repeat(Math.ceil(pad / 2) + 1)}>`;
 }
 
 // lvgljs-ui's Text type doesn't expose ref / onKey / onFocusedStyle; cast to reach them.
@@ -106,6 +121,24 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     capturingIdRef.current = id;
     setCapturingId(id);
   }, []);
+  // Which action each "actionCycler" row is showing, keyed by item id. Renderer-owned transient state, like
+  // `openItems` above: the tree is rebuilt from scratch every render and carries no selection, and a row the
+  // user never touched sits on its first (safest) action. The ref mirrors it so LVGL's CLICKED → activate and
+  // the gamepad's Select read the index the arrows just set, within the same event.
+  const [actionIdx, setActionIdx] = useState<Map<string, number>>(() => new Map());
+  const actionIdxRef = useRef<Map<string, number>>(actionIdx);
+  const setActionIndex = useCallback((id: string, index: number) => {
+    const next = new Map(actionIdxRef.current);
+    next.set(id, index);
+    actionIdxRef.current = next;
+    setActionIdx(next);
+  }, []);
+  // Clamped on read: the list shrinks under the cursor when a row's last action is the one that removes
+  // itself (Remove Override drops out of the list once the override is gone).
+  const actionIndexOf = useCallback(
+    (item: MenuItem) => Math.min(actionIdxRef.current.get(item.id) ?? 0, Math.max(0, (item.actions?.length ?? 0) - 1)),
+    [],
+  );
   // The live text/confirm prompt overlay, or null. The ref mirrors it so the once-mounted key handler
   // reads the latest; the state drives the render.
   const [promptState, setPromptState] = useState<PromptState | null>(null);
@@ -199,10 +232,12 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
         });
         return;
       }
-      item.onSelect?.();
+      // An actionCycler runs the verb it is currently showing; every other leaf runs its own onSelect.
+      if (item.kind === "actionCycler") item.actions?.[actionIndexOf(item)]?.onSelect();
+      else item.onSelect?.();
       if (!item.keepOpen) onClose();
     },
-    [onClose],
+    [onClose, actionIndexOf],
   );
 
   // Run the open prompt's onConfirm: a returned error string keeps it open (shown red); null closes it.
@@ -214,6 +249,18 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     else setPrompt(null);
   }, [setPrompt]);
 
+  // Left/Right on the focused row: an actionCycler steps which verb it shows (renderer-owned index, wrapping
+  // like every other cycler here); anything else hands off to its own onCycle. Nothing is invoked either way.
+  const stepItem = useCallback(
+    (item: MenuItem, dir: 1 | -1) => {
+      if (item.kind !== "actionCycler") return item.onCycle?.(dir);
+      const count = item.actions?.length ?? 0;
+      if (count === 0) return;
+      setActionIndex(item.id, (actionIndexOf(item) + dir + count) % count);
+    },
+    [actionIndexOf, setActionIndex],
+  );
+
   const onItemKey = useCallback(
     (e: { key: number }) => {
       (e as { stopPropagation?: () => void }).stopPropagation?.(); // else bubbles to the scroll View
@@ -224,8 +271,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       const item = entries[cur].item;
       // Left/Right cycle the focused item's value; focus does not move. A disabled row is fully inert (the
       // cursor can sit on one — e.g. Apply after a commit — but cycling it would still change the value).
-      if (e.key === ELvKey.LV_KEY_RIGHT) return item.disabled ? undefined : item.onCycle?.(1);
-      if (e.key === ELvKey.LV_KEY_LEFT) return item.disabled ? undefined : item.onCycle?.(-1);
+      if (e.key === ELvKey.LV_KEY_RIGHT) return item.disabled ? undefined : stepItem(item, 1);
+      if (e.key === ELvKey.LV_KEY_LEFT) return item.disabled ? undefined : stepItem(item, -1);
       let dir: 1 | -1;
       if (e.key === ELvKey.LV_KEY_DOWN) dir = 1;
       else if (e.key === ELvKey.LV_KEY_UP) dir = -1;
@@ -239,7 +286,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       const nextRef = refsByIdRef.current.get(nextId);
       if (nextRef) focus(nextRef); // move keypad focus; the scroll-follow effect keeps the row on-screen
     },
-    [focus],
+    [focus, stepItem],
   );
 
   // Modal key input for "capture" and "prompt" rows. Letter keys reach the UI only on the raw "key" bus,
@@ -457,6 +504,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           const isCapturing = capturingId === item.id;
           let label: string;
           if (item.kind === "submenu") label = `${item.label} ${openItems.has(item.id) ? "v" : ">"}`;
+          else if (item.kind === "actionCycler") label = actionCyclerLabel(item, actionIndexOf(item));
           else if (isCapturing) {
             const colon = item.label.indexOf(":"); // keep the "<Button>: " head, swap the value for a prompt
             const what = item.capture?.source === "gamepad" ? "button" : "key";

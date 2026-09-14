@@ -6,7 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuAction, MenuItem } from "../../ui/screens/menu/menuTree";
 import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
 import { gbRomBattery, nesRom } from "../systems/fixtures";
 
@@ -31,6 +31,11 @@ const findItem = (items: MenuItem[], id: string) => items.find((i) => i.id === i
 function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   const sm = items.find((i) => i.id === id);
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
+}
+/** An inline action-cycler row's verb list — the form kit rows take (one row carrying its own actions). */
+function actionsOf(items: MenuItem[], id: string): MenuAction[] {
+  const row = items.find((i) => i.id === id);
+  return row && row.kind === "actionCycler" ? row.actions ?? [] : [];
 }
 
 // A 1 MiB image LsdjRom accepts (mirrors systems/lsdj-assets.test): GB logo + battery header, a version title
@@ -110,11 +115,13 @@ test("a linked kit override shows a * marker + Delete + Remove Override, added t
 
   const kits = submenuChildren(kids(), "lsdj-kits");
   expect(kits.find((k) => k.id === "lsdj-kit-0")?.label).toBe("[0] DRUMS *");
-  const rows = submenuChildren(kits, "lsdj-kit-0");
-  expect(findItem(rows, "lsdj-kit-0-export")?.kind).toBe("action");
-  expect(findItem(rows, "lsdj-kit-0-replace")?.kind).toBe("action");
-  expect(findItem(rows, "lsdj-kit-0-delete")?.kind).toBe("action"); // kits get Delete
-  expect(findItem(rows, "lsdj-kit-0-remove")?.kind).toBe("action");
+  // A kit is one inline row: its verbs ride ON it (Left/Right pick, Enter runs), not in a submenu below it.
+  expect(actionsOf(kits, "lsdj-kit-0").map((a) => a.id)).toEqual([
+    "lsdj-kit-0-export",
+    "lsdj-kit-0-replace",
+    "lsdj-kit-0-delete", // kits get Delete
+    "lsdj-kit-0-remove", // and Remove Override once one rides the slot
+  ]);
 });
 
 test("Remove Override drops the override end-to-end (reload reverts the effective ROM to base)", () => {

@@ -5,7 +5,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuAction, MenuItem } from "../../ui/screens/menu/menuTree";
 import { risaRom, risaRomFull, nesRom, setRisaVersionMarker } from "../systems/fixtures";
 import { RisaRom } from "../../src/risa/rom";
 import { savBytes } from "../risa/fixtures";
@@ -46,6 +46,11 @@ const findItem = (items: MenuItem[], id: string) => items.find((i) => i.id === i
 function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   const sm = items.find((i) => i.id === id);
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
+}
+/** An inline action-cycler row's verb list — the form kit rows take (one row carrying its own actions). */
+function actionsOf(items: MenuItem[], id: string): MenuAction[] {
+  const row = items.find((i) => i.id === id);
+  return row && row.kind === "actionCycler" ? row.actions ?? [] : [];
 }
 // The 5-song legacy catalog (HOU8, HOU, DBZ, DBZ2-F, FUNK0), normalized to the 64 KB image readSram returns.
 const CATALOG = () => normalizeSaveContainer(savBytes("multi_legacy")).save;
@@ -265,12 +270,10 @@ test("the risa submenu shows a Kits submenu with Add... + the base kit rows", ()
   const k0 = kits.find((k) => k.id === "risa-kit-0")!; // the fixture's base "TEST" kit
   expect(k0.label).toBe("[0] TEST");
 
-  // A kit row offers Export / Replace / Delete, no Remove Override until one exists.
-  const rows = submenuChildren(kits, "risa-kit-0");
-  expect(findItem(rows, "risa-kit-0-export")?.kind).toBe("action");
-  expect(findItem(rows, "risa-kit-0-replace")?.kind).toBe("action");
-  expect(findItem(rows, "risa-kit-0-delete")?.kind).toBe("action"); // kits get Delete
-  expect(findItem(rows, "risa-kit-0-remove")).toBe(undefined);
+  // A kit is one inline row carrying its own verbs: Export / Replace / Delete, no Remove Override until one
+  // exists. (Left/Right pick which the row shows, Enter runs it — there is no submenu to descend into.)
+  expect(k0.kind).toBe("actionCycler");
+  expect(actionsOf(kits, "risa-kit-0").map((a) => a.id)).toEqual(["risa-kit-0-export", "risa-kit-0-replace", "risa-kit-0-delete"]);
 });
 
 test("a linked kit override shows a * marker + Remove Override, listed alongside the base kit", () => {
@@ -287,7 +290,7 @@ test("a linked kit override shows a * marker + Remove Override, listed alongside
   );
   expect(kits.find((k) => k.id === "risa-kit-5")!.label).toBe("[5] DRUMS *"); // override name + * marker
   expect(kits.some((k) => k.id === "risa-kit-0")).toBe(true); // base kit still listed
-  expect(findItem(submenuChildren(kits, "risa-kit-5"), "risa-kit-5-remove")?.kind).toBe("action");
+  expect(actionsOf(kits, "risa-kit-5").some((a) => a.id === "risa-kit-5-remove")).toBe(true);
 });
 
 test("Delete on a base kit records an erase override and empties the effective slot end-to-end", () => {
@@ -301,7 +304,7 @@ test("Delete on a base kit records an erase override and empties the effective s
   );
   expect(kits().some((k) => k.id === "risa-kit-0")).toBe(true);
 
-  findItem(submenuChildren(kits(), "risa-kit-0"), "risa-kit-0-delete")!.onSelect!(); // Delete the base "TEST" kit
+  actionsOf(kits(), "risa-kit-0").find((a) => a.id === "risa-kit-0-delete")!.onSelect(); // Delete the base "TEST" kit
 
   // The erase override drops the slot from the effective list AND the reload handed native a patched ROM
   // whose slot 0 is unpopulated. (reloadSystem swaps the id, so re-query the sole system by index.)

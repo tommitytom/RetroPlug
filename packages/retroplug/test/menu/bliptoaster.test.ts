@@ -5,7 +5,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuAction, MenuItem } from "../../ui/screens/menu/menuTree";
 import { blipToasterRom, blipToasterMultiKitRom, nesRom } from "../systems/fixtures";
 import { BlipToasterRom } from "../../src/bliptoaster/rom";
 
@@ -30,6 +30,11 @@ const findItem = (items: MenuItem[], id: string) => items.find((i) => i.id === i
 function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   const sm = items.find((i) => i.id === id);
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
+}
+/** An inline action-cycler row's verb list — the form kit rows take (one row carrying its own actions). */
+function actionsOf(items: MenuItem[], id: string): MenuAction[] {
+  const row = items.find((i) => i.id === id);
+  return row && row.kind === "actionCycler" ? row.actions ?? [] : [];
 }
 
 function blipToasterItems(be: MockBackend, stores: AppStores, path = "/roms/synth.nes"): () => MenuItem[] {
@@ -250,11 +255,13 @@ test("the Kits + Fonts submenus list the base ROM's assets with Export/Replace (
   expect(findItem(kits, "bliptoaster-kit-add")).toBe(undefined); // single kit → not addable
   const k0 = kits.find((k) => k.id === "bliptoaster-kit-0")!; // the fixture's base "TEST" kit
   expect(k0.label).toBe("[0] TEST");
-  const krows = submenuChildren(kits, "bliptoaster-kit-0");
-  expect(findItem(krows, "bliptoaster-kit-0-export")?.kind).toBe("action");
-  expect(findItem(krows, "bliptoaster-kit-0-replace")?.kind).toBe("action");
-  expect(findItem(krows, "bliptoaster-kit-0-delete")).toBe(undefined); // not addable → no Delete
-  expect(findItem(krows, "bliptoaster-kit-0-remove")).toBe(undefined); // no override yet
+  // A kit is one inline row carrying its own verbs (Left/Right pick, Enter runs) — no submenu to descend into.
+  expect(k0.kind).toBe("actionCycler");
+  expect(actionsOf(kits, "bliptoaster-kit-0").map((a) => a.id)).toEqual([
+    "bliptoaster-kit-0-export",
+    "bliptoaster-kit-0-replace",
+    // not addable → no Delete; no override yet → no Remove Override
+  ]);
 
   const fonts = submenuChildren(kids(), "bliptoaster-fonts");
   const f0 = fonts.find((f) => f.id === "bliptoaster-font-0")!;
@@ -278,7 +285,7 @@ test("a banking ROM makes Kits addable (Add... + per-kit Delete) and shows a hig
   // Kits is now addable (16 banks): leads with Add..., and the base kit row gains a Delete.
   expect(findItem(kitsOf(), "bliptoaster-kit-add")?.kind).toBe("action");
   expect(kitsOf().find((k) => k.id === "bliptoaster-kit-0")!.label).toBe("[0] TEST");
-  expect(findItem(submenuChildren(kitsOf(), "bliptoaster-kit-0"), "bliptoaster-kit-0-delete")?.kind).toBe("action");
+  expect(actionsOf(kitsOf(), "bliptoaster-kit-0").some((a) => a.id === "bliptoaster-kit-0-delete")).toBe(true);
 
   // A linked override into slot 5 adds a second row [5] HATS * alongside the base kit.
   be.seed("/kits/hats.rkit", BlipToasterRom.fromBytes(blipToasterMultiKitRom()).getKitBank(0)!); // a real populated bank
@@ -287,7 +294,7 @@ test("a banking ROM makes Kits addable (Add... + per-kit Delete) and shows a hig
   });
   expect(kitsOf().find((k) => k.id === "bliptoaster-kit-0")).toBeTruthy(); // base kit still present
   expect(kitsOf().find((k) => k.id === "bliptoaster-kit-5")!.label).toBe("[5] HATS *");
-  expect(findItem(submenuChildren(kitsOf(), "bliptoaster-kit-5"), "bliptoaster-kit-5-remove")?.kind).toBe("action");
+  expect(actionsOf(kitsOf(), "bliptoaster-kit-5").some((a) => a.id === "bliptoaster-kit-5-remove")).toBe(true);
 });
 
 test("a linked kit override shows a * marker + a Remove Override row", () => {
@@ -305,5 +312,5 @@ test("a linked kit override shows a * marker + a Remove Override row", () => {
     "bliptoaster-kits",
   );
   expect(kits.find((k) => k.id === "bliptoaster-kit-0")!.label).toBe("[0] DRUMS *"); // override name + * marker
-  expect(findItem(submenuChildren(kits, "bliptoaster-kit-0"), "bliptoaster-kit-0-remove")?.kind).toBe("action");
+  expect(actionsOf(kits, "bliptoaster-kit-0").some((a) => a.id === "bliptoaster-kit-0-remove")).toBe(true);
 });

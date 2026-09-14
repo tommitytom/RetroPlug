@@ -416,8 +416,14 @@ widget's native uid for the test harness and is inert in production.
 ### The menu — [`screens/menu/`](../packages/retroplug/ui/screens/menu)
 
 - [`menuTree.ts`](../packages/retroplug/ui/screens/menu/menuTree.ts) is the pure data
-  model: `MenuItem { id, label, kind: "action"|"submenu"|"separator"|"cycler", … }` where each
-  leaf carries its own effect callback (no dispatch).
+  model: `MenuItem { id, label, kind: "action"|"submenu"|"separator"|"cycler"|"actionCycler", … }`
+  where each leaf carries its own effect callback (no dispatch). An **`actionCycler`** is the flat
+  alternative to a one-row submenu: the row carries an `actions` list and renders as
+  `[0] TR-606   <  Export...  >`, Left/Right picking which verb shows and Enter **running** it
+  (where a `cycler`'s Enter *steps*). Which verb a row is showing is transient state in
+  `Menu.tsx` — the tree is rebuilt from scratch every render and holds no selection. Tracker
+  **kit** lists are the first users (`assetRow` in `menuDefs.ts` builds one verb list and renders
+  it inline for kits, as a submenu for the other asset types).
 - [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts) builds the start
   and instance menus over a `MenuContext` (stores + current values, rebuilt each render).
   Leaves call store methods directly, current values are baked into labels, and

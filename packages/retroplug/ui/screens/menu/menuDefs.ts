@@ -113,7 +113,7 @@ import {
 import { ControllerRegistry, registerControllerApps, QUANTISE_VALUES, type Quantise } from "../../../src/controller";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/settingsEnums";
 import { controllerSyncOverride } from "../../../src/kernelProjection";
-import type { MenuItem, MenuTree } from "./menuTree";
+import type { MenuAction, MenuItem, MenuTree } from "./menuTree";
 
 /** Everything a builder reads (current values) + mutates through (the stores). Rebuilt each render. */
 export interface MenuContext {
@@ -571,6 +571,13 @@ function sep(id: string): MenuItem {
   return { id, label: "", kind: "separator" };
 }
 
+/** An inline action-cycler row: one line carrying its own verb list (`[0] TR-606   <  Export...  >`) instead
+ *  of a submenu holding one leaf per verb. Left/Right pick the verb, Enter runs it — so a row's actions cost
+ *  no extra level of menu. The showing verb is Menu.tsx's state; this only supplies the list. */
+function actionCycler(id: string, label: string, actions: MenuAction[]): MenuItem {
+  return { id, label, kind: "actionCycler", actions };
+}
+
 /** "Save Project", with a trailing " *" when the project or any battery SRAM is unsaved (the same signal the
  *  close guard asks). The star is the file's established "modified" marker (cf. the asset-override rows). */
 function saveProjectLabel(ctx: MenuContext): string {
@@ -977,15 +984,22 @@ function addAsset(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: 
 }
 
 // One asset item: Export / Replace, plus Delete (kits only) + Remove Override (when overridden).
+//
+// KITS render those verbs INLINE — `[0] TR-606   <  Export...  >`, Left/Right picking and Enter running —
+// because they're the asset people actually churn through, and a submenu per slot made patching one a
+// four-level descent. The other types keep the submenu form; the flat row is being adopted one list at a
+// time, and both forms are built from the same verb list so they can't drift apart.
 function assetRow(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, row: AssetSlotRow): MenuItem {
   const id = `${spec.id}-${type.kind}-${row.slot}`;
-  const items: MenuItem[] = [
-    action(`${id}-export`, "Export...", () => spec.exportAsset(ctx, sys, type, row.slot, row.name)),
-    action(`${id}-replace`, "Replace from Disk...", () => spec.replaceAsset(ctx, sys, type, row.slot)),
+  const verbs: MenuAction[] = [
+    { id: `${id}-export`, label: "Export...", onSelect: () => spec.exportAsset(ctx, sys, type, row.slot, row.name) },
+    { id: `${id}-replace`, label: "Replace from Disk...", onSelect: () => spec.replaceAsset(ctx, sys, type, row.slot) },
   ];
-  if (type.addable) items.push(action(`${id}-delete`, "Delete", () => deleteAsset(spec, ctx, sys, type, row.slot)));
-  if (row.overridden) items.push(action(`${id}-remove`, "Remove Override", () => removeOverride(spec, ctx, sys, type.kind, row.slot)));
-  return submenu(id, `[${row.slot}] ${row.name}${row.overridden ? " *" : ""}`, items);
+  if (type.addable) verbs.push({ id: `${id}-delete`, label: "Delete", onSelect: () => deleteAsset(spec, ctx, sys, type, row.slot) });
+  if (row.overridden) verbs.push({ id: `${id}-remove`, label: "Remove Override", onSelect: () => removeOverride(spec, ctx, sys, type.kind, row.slot) });
+  const label = `[${row.slot}] ${row.name}${row.overridden ? " *" : ""}`;
+  if (type.kind === "kit") return actionCycler(id, label, verbs);
+  return submenu(id, label, verbs.map((v) => action(v.id, v.label, v.onSelect)));
 }
 
 // Build a console's asset submenus (one per asset type); empty when the ROM can't be read (e.g. headless). A
