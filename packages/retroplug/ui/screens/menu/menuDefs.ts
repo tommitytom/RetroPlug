@@ -2340,6 +2340,8 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       submenu("inst-system", "System", systemChildren(ctx, sys)),
       submenu("inst-project", "Project", projectChildren(ctx)),
       submenu("inst-settings", "Settings", settingsChildren(ctx)),
+      // The host-transport readout fences itself and sits BETWEEN the two groups, belonging to neither.
+      ...midiClockRow(),
       sep("inst-sep1"),
       action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd(sys.id)),
       action("inst-dup", "Duplicate Instance", () => {
@@ -2363,7 +2365,6 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
             ),
           ]
         : []),
-      ...midiClockRow(),
       ...(isStandalone() ? [sep("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],
