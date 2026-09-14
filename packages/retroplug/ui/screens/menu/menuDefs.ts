@@ -55,7 +55,6 @@ import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, b
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import {
   BlipToasterRom,
-  SETTINGS_KIT_COUNT,
   SETTINGS_THEME_COUNT,
   SETTINGS_FONT_COUNT,
   type BlipToasterSettingsPatch,
@@ -1354,7 +1353,9 @@ const blipToasterAssetSpec: AssetMenuSpec = {
 //
 // So the Theme and Font rows here are how you CHOOSE among the baked 16 / 4 - the Themes and Fonts submenus
 // replace an entry's contents, they don't pick the live one. Each of these is a boot default and not a lock: the
-// cart's own CC 16 / CC 17 (and CC 14 / CC 15) still move it live, and the next cold boot comes back to this.
+// cart's own CC 16 / CC 17 (and CC 15) still move it live, and the next cold boot comes back to this. The DMC
+// KIT has no row here on purpose: ch5 CC 14 (or a ch5 program change) picks it, which a song does before it
+// plays anything, so a baked default was a byte and a row restating what the music says anyway.
 //
 // The ROM reads the block during STARTUP and nowhere else, so a change only shows after a cold boot - and that
 // splits the rows the way the rest of this menu is already split. The CYCLERS just pin the field: they leave the
@@ -1363,9 +1364,9 @@ const blipToasterAssetSpec: AssetMenuSpec = {
 // action row does, which is when you see the new look. A project LOAD needs neither - construct applies the
 // pins on the way in.
 
-// The label for the row's current value, given the effective settings. Kit and Theme name the ENTRY the cart
-// will use, read from the ROM itself, so the row says "TR-909" rather than "3" - the same names the Kits and
-// Themes submenus list. A slot the ROM has nothing in falls back to its number.
+// The label for the row's current value, given the effective settings. Theme names the ENTRY the cart will use,
+// read from the ROM itself, so the row says "NEON" rather than "2" - the same names the Themes submenu lists.
+// A slot the ROM has nothing in falls back to its number.
 const baseChannelNames = Array.from({ length: 16 }, (_v, i) => String(i + 1).padStart(2, "0"));
 
 function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] {
@@ -1384,9 +1385,6 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
   // no record for would bake an index it cannot use. Capped at the format's bound too (a field is one byte with
   // a fixed range), and floored at 1 so a cycler always has something to show.
   const bounded = (n: number, max: number): number => Math.max(1, Math.min(n, max));
-  const kitNames = Array.from({ length: bounded(rom.kitBankCapacity(), SETTINGS_KIT_COUNT) }, (_v, i) =>
-    rom.kits().find((k) => k.slot === i)?.name || `Kit ${i}`,
-  );
   const themeNames = Array.from({ length: bounded(rom.themeCount, SETTINGS_THEME_COUNT) }, (_v, i) =>
     rom.themes().find((t) => t.slot === i)?.theme.name.trim() || `Theme ${i}`,
   );
@@ -1397,7 +1395,6 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
     cycler("bliptoaster-set-font", "Font", fontNames, effective.font, (n) => pin({ font: n })),
     sep("bliptoaster-set-sep"),
     cycler("bliptoaster-set-basech", "Base MIDI Channel", baseChannelNames, effective.baseChannel, (n) => pin({ baseChannel: n })),
-    cycler("bliptoaster-set-kit", "Default Kit", kitNames, effective.kit, (n) => pin({ kit: n })),
     cycler("bliptoaster-set-ppu", "PPU Enabled", OFF_ON, effective.ppu ? 1 : 0, (n) => pin({ ppu: n === 1 })),
     // "not on the VRC7 build" is the ROM's own behaviour (it has no velocity curve), not something to hide here:
     // the byte is still baked and still honoured by every other build of the same project's ROM.

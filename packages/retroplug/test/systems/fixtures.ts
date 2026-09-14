@@ -171,16 +171,16 @@ export function blipToasterThemeTable(count = 16): Uint8Array {
 }
 
 /** The baked settings block as the ROM bakes it (src/core/settings.c): the `\xA5\x5ASETT` magic, the format
- *  byte, then the rig fields; +13..15 stay reserved 0xFF. Defaults are the power-on ones the ROM bakes - all
- *  zero except `ppu`, which is 1 (the screen draws), i.e. the block of a ROM straight out of the build. */
+ *  byte, then the rig fields; +8 and +13..15 stay reserved 0xFF. Defaults are the power-on ones the ROM bakes -
+ *  all zero except `ppu`, which is 1 (the screen draws), i.e. the block of a ROM straight out of the build. */
 export function blipToasterSettingsBlock(
-  fields: { version?: number; baseChannel?: number; kit?: number; ppu?: number; velCurve?: number; theme?: number; font?: number } = {},
+  fields: { version?: number; baseChannel?: number; ppu?: number; velCurve?: number; theme?: number; font?: number } = {},
 ): Uint8Array {
   const out = new Uint8Array(16);
   out.set([0xa5, 0x5a, 0x53, 0x45, 0x54, 0x54], 0); // "\xA5\x5ASETT"
   out[6] = fields.version ?? 1;
   out[7] = fields.baseChannel ?? 0;
-  out[8] = fields.kit ?? 0;
+  out[8] = 0xff; // reserved — held the default kit slot before the kit became CC-only
   out[9] = fields.ppu ?? 1; // the one non-zero power-on default: PPU enabled
   out[10] = fields.velCurve ?? 0;
   out[11] = fields.theme ?? 0;

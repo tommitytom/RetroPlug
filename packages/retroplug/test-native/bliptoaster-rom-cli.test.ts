@@ -175,16 +175,16 @@ test("bliptoaster-rom settings prints the real ROM's block, patches named fields
   expect(base.hasSettings).toBe(true);
   // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build. `ppu`
   // is the one that is not zero: the screen draws unless someone bakes the dark boot.
-  expect(base.settings()).toEqual({ baseChannel: 0, kit: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
+  expect(base.settings()).toEqual({ baseChannel: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
 
   // No flags: read-only. It must not write the ROM it is inspecting.
   const nes = copyRom(be, "/tmp/rp-em-set.nes");
   blipToasterRomTool.run(s, ["settings", nes]);
   expect([...be.readFile(nes)!]).toEqual([...base.bytes()]);
 
-  blipToasterRomTool.run(s, ["settings", nes, "--theme", "11", "--font", "2", "--base-channel", "4", "--kit", "9", "--ppu", "off", "--curve", "log"]);
+  blipToasterRomTool.run(s, ["settings", nes, "--theme", "11", "--font", "2", "--base-channel", "4", "--ppu", "off", "--curve", "log"]);
   const after = BlipToasterRom.fromBytes(be.readFile(nes)!);
-  expect(after.settings()).toEqual({ baseChannel: 3, kit: 9, ppu: false, velCurve: true, theme: 11, font: 2 });
+  expect(after.settings()).toEqual({ baseChannel: 3, ppu: false, velCurve: true, theme: 11, font: 2 });
   // Only the block moved: the assets are byte-identical, so this cannot have disturbed a kit or the theme table.
   expect(after.themes().map((t) => t.theme.name)).toEqual(base.themes().map((t) => t.theme.name));
   for (let i = 0; i < 16; i++) expect([...after.getKitBank(i)!]).toEqual([...base.getKitBank(i)!]);

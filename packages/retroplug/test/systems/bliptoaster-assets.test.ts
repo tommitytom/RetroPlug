@@ -64,12 +64,12 @@ test("a settings patch is folded into the effective ROM, and leaves every field 
   be.seed("/roms/synth.nes", base);
   const id = store.addSystem("/roms/synth.nes")!;
   // The fixture's block is the one a fresh build ships: format 1, every field at its power-on default.
-  expect(BlipToasterRom.fromBytes(base).settings()).toEqual({ baseChannel: 0, kit: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
+  expect(BlipToasterRom.fromBytes(base).settings()).toEqual({ baseChannel: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
 
   store.setRoleConfig(id, "bliptoaster-assets", { settings: { theme: 11, font: 2 } });
   store.reloadSystem(id);
   // Only the two named fields moved - the rest are still the ROM's own bytes, not defaults written back over them.
-  expect(constructedSettings(be)).toEqual({ baseChannel: 0, kit: 0, ppu: true, velCurve: false, theme: 11, font: 2 });
+  expect(constructedSettings(be)).toEqual({ baseChannel: 0, ppu: true, velCurve: false, theme: 11, font: 2 });
   expect([...be.readFile("/roms/synth.nes")!]).toEqual([...base]); // on-disk .nes untouched
 });
 
@@ -79,12 +79,12 @@ test("settings and asset overrides ride the same config and are both applied", (
   const id = store.addSystem("/roms/synth.nes")!;
   store.setRoleConfig(id, "bliptoaster-assets", {
     overrides: [{ type: "theme", slot: 0, name: "NEON", theme: THEME_NEON }],
-    settings: { baseChannel: 3, kit: 5, ppu: false, velCurve: true },
+    settings: { baseChannel: 3, ppu: false, velCurve: true },
   });
   store.reloadSystem(id);
 
   const patched = BlipToasterRom.fromBytes(be.constructCalls[be.constructCalls.length - 1].romBytes!);
-  expect(patched.settings()).toEqual({ baseChannel: 3, kit: 5, ppu: false, velCurve: true, theme: 0, font: 0 });
+  expect(patched.settings()).toEqual({ baseChannel: 3, ppu: false, velCurve: true, theme: 0, font: 0 });
   expect(decodeThemeFromRom(patched.getTheme(0)!.recordBytes, patched.getTheme(0)!.nameBytes).name).toBe("NEON");
 });
 

@@ -83,12 +83,13 @@ test("the Settings rows show the ROM's own baked values, naming the entry each f
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const items = blipToasterItems(be, stores);
-  // A ROM straight out of the build: every field at its power-on default. The Theme and Default Kit rows name
-  // the ENTRY, read from the ROM, so a row says "DFLT" / "TEST" rather than a bare index.
+  // A ROM straight out of the build: every field at its power-on default. The Theme row names the ENTRY, read
+  // from the ROM, so it says "DFLT" rather than a bare index.
   expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DFLT");
   expect(rowLabel(items(), "bliptoaster-set-font")).toBe("Font: Font 0");
   expect(rowLabel(items(), "bliptoaster-set-basech")).toBe("Base MIDI Channel: 01");
-  expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: TEST");
+  // No kit row: the DMC kit is picked with ch5 CC 14, not baked.
+  expect(findItem(settingsRows(items()), "bliptoaster-set-kit")).toBe(undefined);
   expect(rowLabel(items(), "bliptoaster-set-ppu")).toBe("PPU Enabled: On"); // the one field whose default is on
   expect(rowLabel(items(), "bliptoaster-set-curve")).toBe("Velocity Curve: Linear");
   // Nothing pinned yet, so there is nothing to apply and nothing to reset.
@@ -138,19 +139,17 @@ test("cycling a Settings row pins that field on the role and leaves the others u
 test("each Settings list is bounded by what THIS cart carries, not by the format's maximum", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
-  // The NROM fixture has one kit bank and one CHR bank, so those two rows have a single entry each and cannot
-  // cycle - offering a slot the cart has no record for would bake an index it cannot use. Themes still wrap 16
-  // (the table is there whatever the cart's banking is).
+  // The NROM fixture has one CHR bank, so the Font row has a single entry and cannot cycle - offering a slot the
+  // cart has no record for would bake an index it cannot use. Themes still wrap 16 (the table is there whatever
+  // the cart's banking is).
   const items = blipToasterItems(be, stores, "/roms/bounded.nes");
-  cycle(items(), "bliptoaster-set-kit");
-  expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: TEST");
   cycle(items(), "bliptoaster-set-font");
   expect(rowLabel(items(), "bliptoaster-set-font")).toBe("Font: Font 0");
   cycle(items(), "bliptoaster-set-theme");
   expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DARK");
 });
 
-test("the Font row offers the 4 banks the banking ROM declares, and the Kit row its 16", () => {
+test("the Font row offers the 4 banks the banking ROM declares", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   be.seed("/roms/synthbank-set.nes", blipToasterMultiKitRom());
@@ -160,10 +159,6 @@ test("the Font row offers the 4 banks the banking ROM declares, and the Kit row 
   // banks the ROM has.
   cycle(items(), "bliptoaster-set-font", -1);
   expect(rowLabel(items(), "bliptoaster-set-font")).toBe("Font: Font 3");
-  // Kit 1 is a reserved (unpopulated) bank on this fixture, so it has no name to show - it is still selectable,
-  // since the setting names a BANK, not a populated kit.
-  cycle(items(), "bliptoaster-set-kit");
-  expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: Kit 1");
 });
 
 test("a ROM whose block leaves the screen fields reserved still gets live rows, reading them as 0", () => {

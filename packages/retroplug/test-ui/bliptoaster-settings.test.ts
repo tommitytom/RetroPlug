@@ -39,7 +39,6 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   // of their own: expanding BlipToaster is all it takes to reach them.
   // Every field of the block has a row, each showing the ROM's own baked value.
   expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 01");
-  expect(labelOf("Default Kit")).toBe("Default Kit: TR-909"); // named from the ROM, not a bare index
   expect(labelOf("PPU Enabled")).toBe("PPU Enabled: Off");
   expect(labelOf("Velocity Curve")).toBe("Velocity Curve: Linear");
   // Theme and Font are live rows like the rest. NOTE: the staged resources/roms/bliptoaster.nes is still an
