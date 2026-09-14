@@ -64,7 +64,7 @@ test("a kit row carries its verbs inline: Left/Right pick one, Enter runs the pi
 
   // Right walks the list; the name half never changes, focus stays put (a step is not a move), and the
   // arrows do not budge under the widest verb in the list.
-  expect(step(Key.Right)).toBe(`${name} < Replace from Disk... >`);
+  expect(step(Key.Right)).toBe(`${name} < Replace... >`);
   expect(arrowBox()).toBe(fixed);
   expect(step(Key.Right)).toBe(`${name} < Delete >`);
   expect(arrowBox()).toBe(fixed);
@@ -104,6 +104,6 @@ test("a kit row carries its verbs inline: Left/Right pick one, Enter runs the pi
   expect(ui.focused()?.text).toBe("[0] Font 0 < Export... >");
   expect(arrowBox()).toBe(fixed);
   // A font is not addable and carries no override, so Replace is the end of its list — and it wraps there.
-  expect(step(Key.Right)).toBe("[0] Font 0 < Replace from Disk... >");
+  expect(step(Key.Right)).toBe("[0] Font 0 < Replace... >");
   expect(step(Key.Right)).toBe("[0] Font 0 < Export... >");
 });

@@ -85,7 +85,7 @@ test("the mouse aims at the cells: the verb runs it, the arrows step it, the row
     ui.pump(12);
   };
   click(">");
-  expect(ui.focused()?.text).toBe("[0] TR-909 < Replace from Disk... >");
+  expect(ui.focused()?.text).toBe("[0] TR-909 < Replace... >");
   click("<");
   expect(ui.focused()?.text).toBe("[0] TR-909 < Export... >");
   click(">");

@@ -991,7 +991,7 @@ function assetRow(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: 
   const id = `${spec.id}-${type.kind}-${row.slot}`;
   const verbs: MenuAction[] = [
     { id: `${id}-export`, label: "Export...", onSelect: () => spec.exportAsset(ctx, sys, type, row.slot, row.name) },
-    { id: `${id}-replace`, label: "Replace from Disk...", onSelect: () => spec.replaceAsset(ctx, sys, type, row.slot) },
+    { id: `${id}-replace`, label: "Replace...", onSelect: () => spec.replaceAsset(ctx, sys, type, row.slot) },
   ];
   if (type.addable) verbs.push({ id: `${id}-delete`, label: "Delete", onSelect: () => deleteAsset(spec, ctx, sys, type, row.slot) });
   if (row.overridden) verbs.push({ id: `${id}-remove`, label: "Remove Override", onSelect: () => removeOverride(spec, ctx, sys, type.kind, row.slot) });

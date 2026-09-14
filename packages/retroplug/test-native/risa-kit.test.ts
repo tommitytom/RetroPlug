@@ -121,7 +121,7 @@ test("the risa-assets kit override links a pre-built .rkit at construct (offline
   writeTestWav(be, WAV);
 
   // Compile a bank OFFLINE (the plugin can't reach compileDmc) and persist it as a .rkit — exactly what the
-  // Kits menu's "Export..." writes and "Replace from Disk..." later links.
+  // Kits menu's "Export..." writes and "Replace..." later links.
   const bank = audio.compileDmc({ name: "DRUMS", samples: [{ path: WAV, name: "KIK", rate: 12, effects: [] }] });
   const KIT = "/tmp/rp-risa-kit.rkit";
   expect(be.writeFileAtomic(KIT, bank)).toBe(true);

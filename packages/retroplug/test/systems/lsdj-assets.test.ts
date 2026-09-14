@@ -58,7 +58,7 @@ test("replacing a kit records an override and reload hands native the patched ef
   be.seed("/roms/song.gb", base);
   const id = store.addSystem("/roms/song.gb")!;
 
-  // The menu's "Replace from Disk…" links to a .kit file on disk (never embeds bytes).
+  // The menu's "Replace…" links to a .kit file on disk (never embeds bytes).
   const bank = buildKitBank("NEWK", [{ name: "BD", bytes: Uint8Array.of(0x12, 0x34, 0x56, 0x78) }]);
   be.seed("/kits/new.kit", bank);
   const overrides = [{ type: "kit", slot: 0, name: "NEWK", path: "/kits/new.kit" }];
