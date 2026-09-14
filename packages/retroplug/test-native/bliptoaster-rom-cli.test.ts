@@ -173,9 +173,12 @@ test("bliptoaster-rom settings prints the real ROM's block, patches named fields
   if (romSkip(be, "settings")) return;
   const base = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
   expect(base.hasSettings).toBe(true);
-  // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build. `ppu`
-  // is the one that is not zero: the screen draws unless someone bakes the dark boot.
-  expect(base.settings()).toEqual({ baseChannel: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
+  // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build. Two of
+  // them are not zero: `ppu` (the screen draws unless someone bakes the dark boot) and, since 2026-09-14,
+  // `font` - the cart bakes font01-risa as its typeface and applies it in main() over the CHR bank crt0.s
+  // maps at reset. So "the ROM boots on bank 0" and "the ROM's baked default font is 0" are no longer the
+  // same statement, and only the second one is this block's business.
+  expect(base.settings()).toEqual({ baseChannel: 0, ppu: true, velCurve: false, theme: 0, font: 1 });
 
   // No flags: read-only. It must not write the ROM it is inspecting.
   const nes = copyRom(be, "/tmp/rp-em-set.nes");

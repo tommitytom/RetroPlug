@@ -64,15 +64,20 @@ export interface BlipToasterSettings {
   font: number;
 }
 
-/** The power-on defaults: what a cart boots with when its block was never patched. Also what every field falls
- *  back to when its byte is out of range — which is the case that matters, since a tool older than a field
- *  leaves the reserved 0xFF sitting there. */
+/** What every field falls back to when its byte is unusable - out of range, or the reserved 0xFF a tool older
+ *  than the field left sitting there. That is the case this constant is for, and it mirrors what `decodeSettings`
+ *  actually does (`clamp`, plus the deliberate `!= 0` on `ppu`).
+ *
+ *  It is NOT "what a shipped cart boots with": since 2026-09-14 the build bakes `font` = 1 (font01-risa), so a
+ *  stock ROM decodes to font 1 while a cart predating the field falls back to 0 - it has no SET_F_FONT at all
+ *  and simply runs the CHR bank reset maps. Read a real ROM rather than reaching for this if you want the
+ *  former. */
 export const DEFAULT_SETTINGS: BlipToasterSettings = {
   baseChannel: 0,
-  ppu: true, // the one non-zero default: a clobbered or never-written byte must boot a VISIBLE screen
+  ppu: true, // the one non-zero FALLBACK: a clobbered or never-written byte must boot a VISIBLE screen
   velCurve: false,
   theme: 0,
-  font: 0,
+  font: 0, // a cart with no usable +12 runs bank 0; the current build BAKES 1, which is a different question
 };
 
 /** A partial edit: only the named fields are written, the rest of the block is left as the ROM baked it. */
