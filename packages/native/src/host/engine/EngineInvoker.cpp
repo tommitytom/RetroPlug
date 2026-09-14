@@ -81,6 +81,16 @@ void QueuedInvoker::stageControllerMidi(std::vector<std::uint8_t> bytes) {
     maybeFlush();
 }
 
+void QueuedInvoker::stageSystemMidi(SystemId id, std::vector<std::uint8_t> bytes) {
+    DspCommand c;
+    c.kind = DspCommand::Kind::StageSystemMidi;
+    c.stageSystemMidi.id = static_cast<std::uint32_t>(id);
+    c.stageSystemMidi.len = static_cast<std::uint8_t>(bytes.size() < 4 ? bytes.size() : 4);
+    for (std::size_t i = 0; i < bytes.size() && i < 4; ++i) c.stageSystemMidi.data[i] = bytes[i];
+    commands_.tryPush(c);  // no heap payload — dropped on a full ring (a lost knob step, not a leak)
+    maybeFlush();
+}
+
 void QueuedInvoker::setBpm(double bpm) {
     DspCommand c;
     c.kind = DspCommand::Kind::SetBpm;
@@ -161,6 +171,9 @@ void QueuedInvoker::drainInto(Engine& engine) {
                 break;
             case DspCommand::Kind::StageControllerMidi:
                 engine.stageControllerMidi(std::vector<std::uint8_t>(cmd.stageMidi.data, cmd.stageMidi.data + cmd.stageMidi.len));
+                break;
+            case DspCommand::Kind::StageSystemMidi:
+                engine.stageSystemMidi(cmd.stageSystemMidi.id, cmd.stageSystemMidi.data, cmd.stageSystemMidi.len);
                 break;
             case DspCommand::Kind::SetBpm:
                 engine.setBpm(cmd.setBpm.value);

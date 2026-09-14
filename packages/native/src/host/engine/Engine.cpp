@@ -381,6 +381,20 @@ bool Engine::pressButton(SystemId id, std::uint8_t button, bool down) {
     return true;
 }
 
+bool Engine::stageSystemMidi(SystemId id, const std::uint8_t* bytes, std::size_t len) {
+    if (!bytes || len == 0 || len > ::MidiEvent::kDataSize) return false;
+    SystemBase* sys = project_.findSystem(id);
+    if (!sys) return false;
+    // Straight to the system's ingress - the same call the routing kernel would make, minus the routing.
+    // Frame 0: a knob has no musical position, exactly as stageControllerMidi argues for a pad press.
+    ::MidiEvent ev;
+    ev.frame = 0;
+    ev.size = static_cast<std::uint32_t>(len);
+    for (std::size_t i = 0; i < len; ++i) ev.data[i] = bytes[i];
+    sys->onMidi(&ev, 1);
+    return true;
+}
+
 void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
     SystemBase* sys = project_.findSystem(id);
     if (!sys) return;

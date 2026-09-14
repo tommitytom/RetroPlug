@@ -162,6 +162,13 @@ export interface Backend {
    *  return only says the call was accepted, not that the id exists. */
   pressButton(id: number, button: number, down: boolean): boolean;
 
+  /** Deliver up to 4 MIDI bytes straight to system `id`'s ingress, BYPASSING the project's MIDI routing.
+   *  For CONTROL traffic the UI aims at one cart — a settings row sending the CC that applies it live —
+   *  which must not depend on how musical MIDI is routed (`sendToAll` would reach every instance;
+   *  `midiChannelToInstance` rewrites the channel out from under it). Queued to the audio thread like
+   *  pressButton, so the return says accepted, not delivered; false for an empty or over-long message. */
+  stageSystemMidi(id: number, bytes: number[]): boolean;
+
   // --- Live emulator reads (the pump) -------------------------------------
   // The DSP→TS direction: read a live system's state out. Native publishes these from
   // the audio thread into race-free triple-buffers; TS pulls the latest snapshot by the
@@ -388,7 +395,7 @@ export type HostBackend = Pick<
 export type EmulatorBackend = Pick<
   Backend,
   | "constructSystem" | "removeSystem" | "applySystemSetting" | "applyRoleConfig" | "setSerialOutCapture"
-  | "setAudioRouting" | "pressButton" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
+  | "setAudioRouting" | "pressButton" | "stageSystemMidi" | "readState" | "readSram" | "readRam" | "writeRam" | "getFrame"
 >;
 
 /** Live-core inspection / stepping / breakpoints / profiler — the CLI-only debug facet (spec/09). */

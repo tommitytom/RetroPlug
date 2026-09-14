@@ -71,6 +71,8 @@ export class MockBackend implements Backend {
   readonly serialOutCaptureCalls: { id: number; on: boolean }[] = [];
   readonly audioRoutingCalls: number[] = [];
   readonly pressButtonCalls: { id: number; button: number; down: boolean }[] = [];
+  /** Control MIDI aimed at one system (backend.stageSystemMidi), in call order. */
+  readonly stageSystemMidiCalls: { id: number; bytes: number[] }[] = [];
 
   /** Ids passed to the pump reads, in order. */
   readonly readStateCalls: number[] = [];
@@ -596,6 +598,13 @@ export class MockBackend implements Backend {
   pressButton(id: number, button: number, down: boolean): boolean {
     this.log.push("pressButton");
     this.pressButtonCalls.push({ id, button, down });
+    return true;
+  }
+
+  stageSystemMidi(id: number, bytes: number[]): boolean {
+    this.log.push("stageSystemMidi");
+    if (bytes.length === 0 || bytes.length > 4) return false;
+    this.stageSystemMidiCalls.push({ id, bytes: [...bytes] });
     return true;
   }
 

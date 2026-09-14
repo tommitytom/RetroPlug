@@ -24,6 +24,7 @@ struct DspCommand {
         AddSystem = 4, ReplaceSystem = 5, RemoveSystem = 6,
         SetBpm = 7, SetTransport = 8, SetConfigField = 9, PressButton = 10,
         SetAudioRouting = 11, SetPpq = 12, StageControllerMidi = 13, WriteRam = 14,
+        StageSystemMidi = 15,
     };
 
     Kind kind = Kind::None;
@@ -46,6 +47,11 @@ struct DspCommand {
         // union can hold inline), freed by the audio thread after applying - the same rare-op pattern
         // setSystems and loadKernel use.
         struct { std::uint32_t id; std::uint32_t offset; std::vector<std::uint8_t>* bytes; } writeRam;
+        // MIDI aimed at ONE system, delivered straight to its ingress and NEVER through the routing kernel.
+        // That is the whole point: a menu knob has to reach the cart whose menu it is, whatever the project's
+        // MUSICAL routing is doing with channels (sendToAll would hit every instance; midiChannelToInstance
+        // rewrites the channel out from under it). Inline-only, like StageControllerMidi - a CC is 3 bytes.
+        struct { std::uint32_t id; std::uint8_t data[4]; std::uint8_t len; } stageSystemMidi;
     };
 
     DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0, nullptr} {}
