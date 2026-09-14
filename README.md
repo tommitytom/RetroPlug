@@ -5,21 +5,15 @@ emulators, with a focus on music creation. It runs standalone and can be used as
 audio plugin (CLAP / VST3 / VST2 / AU) in your favourite DAW!
 
 ## Features
-- **Five consoles**, sniffed from the ROM's own header rather than its file extension:
-  Game Boy / Color (SameBoy), and NES, Game Boy Advance, Master System and Game Gear
-  (Mesen)
-- Runs standalone, or as a CLAP / VST3 / VST2 / AU plugin inside your DAW
-- Full Game Boy MIDI support for [mGB](https://github.com/trash80/mGB) - built in, no
-  ROM needed
-- **DAW sync for four music carts**: [LSDj](https://www.littlesounddj.com) (with
-  [Arduinoboy](https://github.com/trash80/Arduinoboy)-style modes), risa (NES), smsggdj
+- **DAW sync for three music carts**: [LSDj](https://www.littlesounddj.com) (with
+  [Arduinoboy](https://github.com/trash80/Arduinoboy)-style modes), mGB (Game Boy MIDI synth) smsggdj
   (Master System / Game Gear), and BlipToaster (NES MIDI synth)
 - **Song management** - browse, load, import, export and reorder the songs inside a
-  tracker cart's battery, without leaving RetroPlug
+  tracker cart's battery
 - **ROM assets** - swap a cart's sample kits, palettes, themes and fonts, previewed live
   and patched non-destructively
 - **Background rendering** - bounce a song to WAV from the menu while you keep working,
-  or from the command line without opening the UI at all
+  or from the CLI
 - Multiple instances in a single window, linked with virtual Game Boy link cables
 - Flexible audio and MIDI routing, including splitting a single system out to its
   individual sound channels, or a NES out to its three 2A03 output pins
@@ -63,11 +57,10 @@ Raspberry Pi works), Windows (x86_64) and macOS (universal).
 - **Name your project** under `Project` > `Name` - it's what the window title and the
   `Recent` list show. Leave it empty (the default) and the name follows the loaded
   instance instead: its song, sav and ROM.
-- **The `Recent` list remembers songs, not just files.** A tracker project gets one row
-  per song you've loaded, so picking a row reopens the project *with that song loaded*.
-- **Nothing is lost silently.** Quitting, or starting / loading another project, with
-  unsaved work asks first and lists what is unsaved: the project file, and any cart
-  whose battery differs from its `.sav` (naming the file it would write).
+- **Nothing is saved or lost silently.** Most emulators automatically update the .sav 
+  file associated with a ROM; RetroPlug does not do this. Quitting, or starting / loading 
+  another project, with unsaved work asks first and lists what is unsaved: the project 
+  file, and any cart whose battery differs from its `.sav` (naming the file it would write).
 
 ### The System menu
 Per-instance emulator controls, under `System`:
@@ -76,7 +69,11 @@ Per-instance emulator controls, under `System`:
   changes on disk, so an assembler in another window updates the running cart.
 - **Emulator settings**, which differ per console: Model / Fast Boot / Highpass /
   DMG Palette / Colour Correction / Light Temp (Game Boy), Region / Remove Sprite
-  Limit / APU Latency (NES), FM Audio (Master System).
+  Limit / APU Latency / Expansion Volume (NES), FM Audio (Master System).
+  `Expansion Volume` is the level of the cartridge's own sound chip (VRC6, VRC7,
+  Namco 163, Sunsoft 5B, MMC5, FDS) and never the console's own audio - and it
+  follows through to a connected Everdrive N8 Pro, so a cart sits at the same level
+  emulated and on the console.
 - **Battery and state** - `Swap ROM (Preserve SRAM)...`, `New SRAM...`, `Load SRAM...`,
   `Save SRAM`, `Load State...`, `Save State`, `Save State As...`.
 - **Render** - bounce this instance to a WAV in the background; see
@@ -85,7 +82,7 @@ Per-instance emulator controls, under `System`:
 ## Multiple Instances
 You can load several systems in a single window and work with them side by side -
 handy for running multiple copies of LSDj (linked with virtual link cables), or a mix
-of consoles (only Game Boys are linkable). From an instance's menu:
+of consoles (currently, only Game Boys are linkable). From an instance's menu:
 
 - **Add Instance** - load another ROM into a new instance.
 - **Duplicate Instance** - clone the active instance, state and all.
@@ -145,11 +142,10 @@ submenu named after it. What that submenu holds depends on the cart:
 | smsggdj | Master System / Game Gear | follows the DAW transport | yes | not yet |
 | BlipToaster | NES | MIDI synth (no sequencer) | - | Kits, Themes, Fonts |
 
-Unlike LSDj, risa and smsggdj need no sync mode picked: they follow the host transport
+Unlike LSDj, smsggdj needs no sync mode picked: they follow the host transport
 directly, so pressing play in your DAW plays the cart in time.
 
-An unrecognised build of a cart is shown greyed out as `(Unsupported Version)` rather
-than offering rows that would write to addresses it is guessing at.
+An unrecognised build of a cart is shown greyed out as `(Unsupported Version)`.
 
 ### Songs
 The `Songs` submenu lists the songs saved in the cart's battery, and each one can be
@@ -228,7 +224,12 @@ Two pieces of physical hardware are supported directly, and their submenus appea
 when the device is actually attached:
 
 - **Everdrive N8 Pro** - load and boot a `.nes` onto a real NES over USB, stream live
-  MIDI to it, drive host sync from a MIDI clock, and dump or restore its save.
+  MIDI to it, drive host sync from a MIDI clock, and dump or restore its save. The
+  cart's expansion-audio volume follows the NES instance's own `Expansion Volume`
+  setting (under `System`), so a VRC6 / VRC7 / N163 / Sunsoft 5B / MMC5 cart's extra
+  voices are audible without visiting the N8's own menu, at the level you set for the
+  emulator. With no NES instance loaded the link sets unity for a cart
+  whose mapper carries expansion audio, and leaves any other cart alone.
 - **Novation Launchpad** - use a Launchpad as a control surface, with input/output port
   selection (a Launchpad attached over TRS/DIN arrives under the interface's name, so
   ports are pickable rather than detected) and a Follow Playhead mode.
@@ -358,7 +359,7 @@ If you find you have issues with a particular DAW, please feel free to submit a 
 
 **A**: Make sure you have the correct sync mode selected in both LSDj, and in the context menu!
 
-**Q**: I loaded my smsggdj cart and rendered it, but the WAV is silent.
+**Q**: WTF! I loaded my smsggdj cart and rendered it, but the WAV is silent (╯°□°）╯︵ ┻━┻
 
 **A**: smsggdj boots to a blank song on purpose - it keeps no working song in its
 battery. Pick a song first (in the app: the cart's `Songs` menu; on the command line:
