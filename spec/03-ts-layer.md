@@ -416,14 +416,45 @@ widget's native uid for the test harness and is inert in production.
 ### The menu — [`screens/menu/`](../packages/retroplug/ui/screens/menu)
 
 - [`menuTree.ts`](../packages/retroplug/ui/screens/menu/menuTree.ts) is the pure data
-  model: `MenuItem { id, label, kind: "action"|"submenu"|"separator"|"cycler", … }` where each
-  leaf carries its own effect callback (no dispatch).
+  model: `MenuItem { id, label, kind: "action"|"submenu"|"separator"|"cycler"|"actionCycler", … }`
+  where each leaf carries its own effect callback (no dispatch). An **`actionCycler`** is the flat
+  alternative to a one-row submenu: the row carries an `actions` list and, **while focused**, renders as
+  `[0] TR-606   <  Export...  >` (unfocused it is just its label — the element belongs to the
+  cursor), Left/Right picking which verb shows and Enter **running** it
+  (where a `cycler`'s Enter *steps*). Which verb a row is showing is transient state in
+  `Menu.tsx` — the tree is rebuilt from scratch every render and holds no selection. A verb may carry its
+  own `keepOpen`, overriding the row's (a `Select` you run repeatedly, beside an `Export...` that opens a
+  dialog). Every tracker **asset** list uses it (`assetRow` in `menuDefs.ts` — kits, themes/palettes, fonts
+  alike), so a slot's verbs cost no extra level of menu. The element's width is fixed by the zoom alone, so
+  the arrows land in the same columns on every such row regardless of which list it belongs to.
+  Asset rows carry two markers, meaning different things: **`*` is the LIVE slot** (what the cart is set to)
+  and **`~` an overridden one** (contents replaced from disk); a slot can be both (`[0] NEON *~`). A console
+  with a live slot implements `selectedSlot`/`selectSlot` on its `AssetMenuSpec`, which is what puts a
+  leading `Select` verb on every row but the live one — BlipToaster's theme + font do, so their lists ARE
+  the picker rather than a cycler elsewhere naming a slot by number.
+  Unlike every other row, an `actionCycler` is a **`Box` of labels, not a single `Text`** — the menu font is
+  proportional, so the arrows can only hold fixed positions as real widgets: name at the row's left
+  (`justify-content: space-between`), then a fixed-width element at the right made of three explicit columns,
+  `arrow | verb | arrow`. Two consequences. The Box must be told its **height** (LVGL gives a plain object a
+  default size and lv_binding_js exposes no `LV_SIZE_CONTENT`), so `Menu.tsx` measures a real `Text` row and
+  sizes Box rows to match — don't derive it from `itemFont`, which is snapped to the nearest built-in
+  Montserrat. And `flex-grow` is unusable on the children: lv_binding_js's flex pipe drops it unless the
+  child's own style also says `display: "flex"`. The UI harness composes a non-label widget's text from its
+  descendant labels (`RenderCore::widgetInfo`), so `navTo` / `focused().text` still see these rows.
+  The **mouse aims at the cells**: clicking the verb runs it, clicking an arrow steps the pick, and clicking
+  the row body only moves the cursor — so a click can't run a verb the pointer was never over, which matters
+  because the element is invisible until the row is focused. Each cell hover-highlights and stops the click
+  bubbling (Texts are created `LV_OBJ_FLAG_EVENT_BUBBLE`). That splits the two paths that used to share the
+  row's `onClick`, so **keypad Enter is handled on the key bus instead** — LVGL routes it through the same
+  `CLICKED` event the mouse uses, and only the row body should answer that one.
 - [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts) builds the start
   and instance menus over a `MenuContext` (stores + current values, rebuilt each render).
   Leaves call store methods directly, current values are baked into labels, and
-  `browseThen` opens the OS dialog before applying. The instance menu offers Duplicate /
-  Remove / Load ROM / Add / Link Group / a System submenu (SameBoy model/highpass/fastBoot
-  cyclers, Save/Load State + SRAM, New SRAM, Reset) / Project / Settings.
+  `browseThen` opens the OS dialog before applying. The instance menu runs project ops (Load /
+  Save / New / Recent) and any tracker submenu first, then the three settings submenus — a
+  System submenu (SameBoy model/highpass/fastBoot cyclers, Save/Load State + SRAM, New SRAM,
+  Reset) / Project / Settings — and closes with the per-instance group (Add / Duplicate /
+  Replace / Remove / Link Group), which is therefore the bottom of the menu.
 - [`Menu.tsx`](../packages/retroplug/ui/screens/menu/Menu.tsx) is the keyboard-driven
   tree renderer. The focus highlight is React state driven **only** by explicit nav / click /
   rebuild — never by LVGL `onFocus` events — so there's nothing for stray focus events to

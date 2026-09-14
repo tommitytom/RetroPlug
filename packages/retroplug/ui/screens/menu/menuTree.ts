@@ -5,8 +5,14 @@
 // A leaf carries its own effect as a callback (no dispatch indirection). "cycler" items display their
 // current value baked into the label and step it: Enter/onSelect goes forward, Left/Right → onCycle(±1);
 // they set keepOpen so the menu stays put while stepping. Submenus nest inline via `children`.
+//
+// "actionCycler" is the flat alternative to a one-row submenu: the FOCUSED row shows its label followed by
+// ONE of its `actions` wrapped in angle brackets (`[0] TR-606   <  Export...  >`) — unfocused, it is just its
+// label — Left/Right pick which, and Enter RUNS the picked one (unlike a "cycler", where Enter steps). Which
+// action a row is showing is transient render state owned by Menu.tsx: the tree is rebuilt from scratch every
+// render and carries no selection.
 
-export type MenuItemKind = "action" | "submenu" | "separator" | "cycler" | "capture" | "prompt";
+export type MenuItemKind = "action" | "submenu" | "separator" | "cycler" | "actionCycler" | "capture" | "prompt";
 
 /** A text-input (or yes/no) overlay armed by a "prompt" row. onConfirm returns an error string to keep
  *  the overlay open (shown red), or null to close it — the single success/failure channel. */
@@ -22,11 +28,24 @@ export interface PromptSpec {
   onConfirm: (value: string) => string | null;
 }
 
+/** One choice on an "actionCycler" row: the verb shown between the angle brackets and what Enter runs. The
+ *  id is the same one the equivalent submenu leaf would carry, so a row's actions stay addressable by name. */
+export interface MenuAction {
+  id: string;
+  label: string;
+  onSelect: () => void;
+  /** Stay open after this verb runs, overriding the row's own `keepOpen`. Per-VERB because one row's verbs
+   *  can want different things: a `Select` you may run several times in a row to audition, beside an
+   *  `Export...` that opens a dialog the menu should get out of the way of. */
+  keepOpen?: boolean;
+}
+
 export interface MenuItem {
   id: string;
   label: string;
   kind: MenuItemKind;
   children?: MenuItem[]; // present iff kind === "submenu"
+  actions?: MenuAction[]; // present iff kind === "actionCycler" — Left/Right pick, Enter runs the picked one
   onSelect?: () => void; // action / cycler (Enter or click)
   onCycle?: (dir: 1 | -1) => void; // cycler (Left/Right — fine step)
   onCoarseStep?: (dir: 1 | -1) => void; // cycler (PageUp/PageDown — coarse step, e.g. the render duration jump)

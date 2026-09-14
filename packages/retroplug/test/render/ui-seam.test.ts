@@ -87,7 +87,7 @@ test("startSystemRender: the instance's configuration rides along, so the offlin
     { kind: "mesen", config: { region: "pal", expansionVolume: 50 } },
     { kind: "bliptoaster-assets", config: { overrides: [{ type: "kit", slot: 1, path: "/kits/mine.rkit" }] } },
   ];
-  startSystemRender(backend, sysView({ id: 3, romPath: "/roms/a.nes", battery: true, roles, settings: { gainDb: -6 } }), { split: "mix" }, "/out/x.wav");
+  startSystemRender(backend, sysView({ id: 3, romPath: "/roms/a.nes", battery: true, roles, settings: { gainDb: -6, reloadOnRomChange: false } }), { split: "mix" }, "/out/x.wav");
 
   expect(spy.box.last!.spec.roles).toEqual(roles); // verbatim, configs and all
   expect(spy.box.last!.spec.gainDb).toBe(-6);

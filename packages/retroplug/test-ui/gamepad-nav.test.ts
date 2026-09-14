@@ -48,6 +48,13 @@ test("the gamepad navigates the start menu, adds a system, then opens + drives t
   ui.pump(6);
   expect(ui.findByTextContaining("Link Group: 2") != null).toBeTruthy();
 
+  // Back out and reopen to put the cursor at the top: System sits ABOVE the instance rows Link Group belongs
+  // to, and navToPad only walks down.
+  ui.gamepadTap("b");
+  ui.pump(10);
+  ui.gamepadTap("leftshoulder");
+  ui.pump(10);
+
   // A on a submenu expands it inline (System → the per-instance state items appear).
   expect(navToPad("System")).toBeTruthy();
   ui.gamepadTap("a");

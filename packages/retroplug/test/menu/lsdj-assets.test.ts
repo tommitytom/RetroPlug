@@ -6,7 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { composeAppStores, type AppStores } from "../../src/appStores";
 import { buildInstanceMenu, type MenuContext } from "../../ui/screens/menu/menuDefs";
-import type { MenuItem } from "../../ui/screens/menu/menuTree";
+import type { MenuAction, MenuItem } from "../../ui/screens/menu/menuTree";
 import { ROM_SIZE, BANK_SIZE, PALETTE_SIZE, PALETTE_CHECK } from "../../src/lsdj/rom";
 import { gbRomBattery, nesRom } from "../systems/fixtures";
 
@@ -31,6 +31,11 @@ const findItem = (items: MenuItem[], id: string) => items.find((i) => i.id === i
 function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   const sm = items.find((i) => i.id === id);
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
+}
+/** An inline action-cycler row's verb list — the form every asset row takes (one row, its own actions). */
+function actionsOf(items: MenuItem[], id: string): MenuAction[] {
+  const row = items.find((i) => i.id === id);
+  return row && row.kind === "actionCycler" ? row.actions ?? [] : [];
 }
 
 // A 1 MiB image LsdjRom accepts (mirrors systems/lsdj-assets.test): GB logo + battery header, a version title
@@ -71,14 +76,12 @@ test("the LSDj submenu shows Kits / Fonts / Palettes asset submenus for a full R
   expect(kids().filter((k) => k.kind === "submenu" && k.id.startsWith("lsdj-") && k.id.endsWith("s") && !k.id.endsWith("songs")).map((k) => k.id))
     .toEqual(["lsdj-kits", "lsdj-fonts", "lsdj-palettes"]);
 
-  // The 2-palette block → two palette rows, each with Export + Replace and no Remove Override yet.
+  // The 2-palette block → two palette rows, each an inline row carrying Export + Replace and no more: not
+  // addable, so no Delete, and no override yet, so no Remove Override.
   const palettes = submenuChildren(kids(), "lsdj-palettes");
   expect(palettes.map((p) => p.id)).toEqual(["lsdj-palette-0", "lsdj-palette-1"]);
-  const p0 = submenuChildren(palettes, "lsdj-palette-0");
-  expect(findItem(p0, "lsdj-palette-0-export")?.kind).toBe("action");
-  expect(findItem(p0, "lsdj-palette-0-replace")?.kind).toBe("action");
-  expect(findItem(p0, "lsdj-palette-0-delete")).toBe(undefined); // palettes aren't kits — no Delete
-  expect(findItem(p0, "lsdj-palette-0-remove")).toBe(undefined); // no override yet
+  expect(palettes[0].kind).toBe("actionCycler");
+  expect(actionsOf(palettes, "lsdj-palette-0").map((a) => a.id)).toEqual(["lsdj-palette-0-export", "lsdj-palette-0-replace"]);
 
   // The Kits submenu leads with Add... (+ separator) — the addable affordance.
   const kits = submenuChildren(kids(), "lsdj-kits");
@@ -95,8 +98,8 @@ test("a palette override shows a * marker + a Remove Override row", () => {
   });
 
   const palettes = submenuChildren(kids(), "lsdj-palettes");
-  expect(findItem(palettes, "lsdj-palette-1")?.label).toBe("[1] NEON *"); // override name + the * marker
-  expect(findItem(submenuChildren(palettes, "lsdj-palette-1"), "lsdj-palette-1-remove")?.kind).toBe("action");
+  expect(findItem(palettes, "lsdj-palette-1")?.label).toBe("[1] NEON ~"); // override name + the ~ marker (* is the LIVE slot)
+  expect(actionsOf(palettes, "lsdj-palette-1").some((a) => a.id === "lsdj-palette-1-remove")).toBe(true);
 });
 
 test("a linked kit override shows a * marker + Delete + Remove Override, added to the effective kit list", () => {
@@ -109,12 +112,14 @@ test("a linked kit override shows a * marker + Delete + Remove Override, added t
   });
 
   const kits = submenuChildren(kids(), "lsdj-kits");
-  expect(kits.find((k) => k.id === "lsdj-kit-0")?.label).toBe("[0] DRUMS *");
-  const rows = submenuChildren(kits, "lsdj-kit-0");
-  expect(findItem(rows, "lsdj-kit-0-export")?.kind).toBe("action");
-  expect(findItem(rows, "lsdj-kit-0-replace")?.kind).toBe("action");
-  expect(findItem(rows, "lsdj-kit-0-delete")?.kind).toBe("action"); // kits get Delete
-  expect(findItem(rows, "lsdj-kit-0-remove")?.kind).toBe("action");
+  expect(kits.find((k) => k.id === "lsdj-kit-0")?.label).toBe("[0] DRUMS ~");
+  // A kit is one inline row: its verbs ride ON it (Left/Right pick, Enter runs), not in a submenu below it.
+  expect(actionsOf(kits, "lsdj-kit-0").map((a) => a.id)).toEqual([
+    "lsdj-kit-0-export",
+    "lsdj-kit-0-replace",
+    "lsdj-kit-0-delete", // kits get Delete
+    "lsdj-kit-0-remove", // and Remove Override once one rides the slot
+  ]);
 });
 
 test("Remove Override drops the override end-to-end (reload reverts the effective ROM to base)", () => {
@@ -125,13 +130,13 @@ test("Remove Override drops the override end-to-end (reload reverts the effectiv
   stores.project.systems.setRoleConfig(id, "lsdj-assets", {
     overrides: [{ type: "palette", slot: 1, name: "NEON", colorSets: [{ colors: [{ r: 0, g: 0, b: 0 }] }] }],
   });
-  expect(findItem(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1")?.label).toBe("[1] NEON *");
+  expect(findItem(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1")?.label).toBe("[1] NEON ~");
 
   // Remove Override: writes the emptied list + reloads → the row reverts (no *, no -remove).
-  findItem(submenuChildren(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1"), "lsdj-palette-1-remove")!.onSelect!();
+  actionsOf(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1").find((a) => a.id === "lsdj-palette-1-remove")!.onSelect();
   const palettes = submenuChildren(kids(), "lsdj-palettes");
   expect(findItem(palettes, "lsdj-palette-1")?.label).toBe("[1] ABCD"); // back to the base name (no *)
-  expect(findItem(submenuChildren(palettes, "lsdj-palette-1"), "lsdj-palette-1-remove")).toBe(undefined);
+  expect(actionsOf(palettes, "lsdj-palette-1").some((a) => a.id === "lsdj-palette-1-remove")).toBe(false);
   // The last construct carries the base ROM (no override-patched romBytes).
   expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined);
 });

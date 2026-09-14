@@ -25,7 +25,6 @@ import type { KitEffect, RisaDmcSampleSpec } from "../../src/audioDriver";
 import { encodeWav } from "../wav";
 import {
   BlipToasterRom,
-  SETTINGS_KIT_COUNT,
   SETTINGS_THEME_COUNT,
   SETTINGS_FONT_COUNT,
   type BlipToasterSettingsPatch,
@@ -192,7 +191,7 @@ interface Manifest {
   themes?: ThemeEntry[];
   fonts?: FontEntry[];
   // The baked rig settings, as the `settings` verb's fields. Named fields only, so a manifest can pin the
-  // default kit without restating the whole block.
+  // base channel without restating the whole block.
   settings?: BlipToasterSettingsPatch;
 }
 
@@ -237,7 +236,6 @@ function settingsLines(rom: BlipToasterRom): string[] {
   return [
     "settings:",
     `  base channel:    BASE${String(set.baseChannel + 1).padStart(2, "0")}`,
-    `  default kit:     ${named(set.kit, rom.kits().find((k) => k.slot === set.kit)?.name)}`,
     `  ppu enabled:     ${set.ppu ? "yes" : "no"}`,
     `  velocity curve:  ${set.velCurve ? "log" : "linear"}`,
     // A field this image's build predates reads as its default but is not actually honoured, so say so rather
@@ -272,7 +270,6 @@ function info(s: Session, args: string[]): void {
 // printed back is always the one the cart will really boot with.
 const SETTINGS_FLAGS: Record<string, string> = {
   "--base-channel": "1-16",
-  "--kit": "0-15",
   "--ppu": "on|off",
   "--mode1": "on|off",
   "--curve": "linear|log",
@@ -315,19 +312,17 @@ function ppuFlag(args: string[]): boolean | undefined {
 
 function settings(s: Session, args: string[]): void {
   const romPath = positionals(args)[0];
-  if (!romPath) throw new Error("usage: bliptoaster-rom settings <rom> [--base-channel 1-16] [--kit 0-15] [--ppu on|off] [--curve linear|log] [--theme 0-15] [--font 0-3] [--out <nes>]");
+  if (!romPath) throw new Error("usage: bliptoaster-rom settings <rom> [--base-channel 1-16] [--ppu on|off] [--curve linear|log] [--theme 0-15] [--font 0-3] [--out <nes>]");
   const rom = openRom(s, romPath);
   if (!rom.hasSettings) throw new Error("no settings block in this ROM (it predates the block, or is stamped a format this build does not read)");
 
   const patch: BlipToasterSettingsPatch = {};
   const baseChannel = intFlag(args, "--base-channel", 15, 1); // 1-16 on the command line, 0-15 in the block
-  const kit = intFlag(args, "--kit", SETTINGS_KIT_COUNT - 1);
   const ppu = ppuFlag(args);
   const curve = enumFlag(args, "--curve", "log", "linear");
   const theme = intFlag(args, "--theme", SETTINGS_THEME_COUNT - 1);
   const font = intFlag(args, "--font", SETTINGS_FONT_COUNT - 1);
   if (baseChannel !== undefined) patch.baseChannel = baseChannel;
-  if (kit !== undefined) patch.kit = kit;
   if (ppu !== undefined) patch.ppu = ppu;
   if (curve !== undefined) patch.velCurve = curve;
   if (theme !== undefined) patch.theme = theme;

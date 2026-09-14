@@ -59,6 +59,7 @@ public:
     // `flush` is ignored: a held level has no undelivered-stream hazard to clear. See SmsSyncRole.
     void pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size,
                        bool flush = false) override;
+    bool hasCoreBytesIn() const override { return true; }  // the sync role's EXT/controller-port transport
 
     FrameBufferTriple* framebuffer() override { return &frames_; }
 

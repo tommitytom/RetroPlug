@@ -137,6 +137,7 @@ export function createEmulatorClient(): EmulatorBackend {
     setSerialOutCapture: (id, on) => call("setSerialOutCapture", id, on) as boolean,
     setAudioRouting: (mode) => call("setAudioRouting", mode) as boolean,
     pressButton: (id, button, down) => call("pressButton", id, button, down) as boolean,
+    stageSystemMidi: (id, bytes) => call("stageSystemMidi", id, bytes) as boolean,
     readState: (id) => bytesOrNull(call("readState", id)),
     readSram: (id) => bytesOrNull(call("readSram", id)),
     readRam: (id) => bytesOrNull(call("readRam", id)),

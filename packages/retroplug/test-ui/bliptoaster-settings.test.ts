@@ -1,20 +1,16 @@
-// The BlipToaster > Settings submenu, end to end on the headless display. The cart has no settings memory, so
-// its rig defaults are bytes in the ROM; these rows edit them non-destructively (pinned on the
-// bliptoaster-assets role, folded into the ROM in memory at construct). This is also where you CHOOSE which of
-// the baked themes / fonts / kits the cart comes up in - the Themes and Fonts submenus replace an entry's
-// contents, they don't pick the live one.
+// The BlipToaster settings rows, end to end on the headless display. The cart has no settings memory, so its rig
+// defaults are bytes in the ROM; these rows edit them non-destructively (pinned on the bliptoaster-assets role,
+// folded into the ROM in memory at construct). This is also where you CHOOSE which of the baked themes / fonts
+// the cart comes up in - the Themes and Fonts submenus replace an entry's contents, they don't pick the live one.
 //
 // test/menu/bliptoaster.test.ts already proves the menu MODEL. What only this can prove is the glue: that the
 // rows become real LVGL widgets inside the instance menu, and that a keypress on one round-trips through the
-// store and comes back as a new label. Base Channel and PPU Enabled are the rows driven here because they are
-// two of the four fields the block shipped with, so every cart that has the block honours them; the staged
-// resources/roms/bliptoaster.nes predates the theme + font fields, which is exactly why those two must show up
-// greyed below.
+// store and comes back as a new label. Base MIDI Channel and PPU Enabled are the rows driven here because they
+// are two of the fields the block shipped with, so every cart carrying the block honours them.
 //
-// That staged ROM also predates the 2026-09-13 polarity flip of the screen byte (+9 was "Mode 1 at boot", 1 =
-// dark; it is now "PPU enabled", 1 = draws). Its byte is 0, so the row below reads "Off" - which is what the
-// byte says today, not what that old image does with it. Refreshing the ROM makes this "On" (a current build
-// bakes 1) at the same time as it turns the two greyed rows into cyclers.
+// Every expectation below is the staged resources/roms/bliptoaster.nes's OWN baked block, i.e. a cart straight
+// out of the build: every field at its power-on default, which is 0 for all of them except PPU enabled (1 - the
+// screen draws). Rebuild + re-stage that ROM and these stay true unless the ROM's own defaults move.
 import { test, expect, ui, navTo, Key } from "ui-harness";
 
 const BLIPTOASTER = () => ui.romDir() + "/bliptoaster.nes";
@@ -35,46 +31,41 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   ui.tapKey(Key.Enter);
   ui.pump(10);
 
-  // Settings sits above the asset submenus: it is what the cart BOOTS with, they are what it boots FROM.
-  expect(navTo("Settings")).toBeTruthy();
-  ui.tapKey(Key.Enter);
-  ui.pump(10);
-
+  // The settings rows sit at the top of the BlipToaster menu, above the asset submenus and behind no submenu
+  // of their own: expanding BlipToaster is all it takes to reach them.
   // Every field of the block has a row, each showing the ROM's own baked value.
-  expect(labelOf("Base Channel")).toBe("Base Channel: BASE01");
-  expect(labelOf("Default Kit")).toBe("Default Kit: TR-909"); // named from the ROM, not a bare index
-  expect(labelOf("PPU Enabled")).toBe("PPU Enabled: Off");
+  expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 01");
+  expect(labelOf("PPU Enabled")).toBe("PPU Enabled: On"); // the one field whose power-on default is 1
   expect(labelOf("Velocity Curve")).toBe("Velocity Curve: Linear");
-  // The staged resources/roms/bliptoaster.nes is an OLDER cart, from before the block carried the two screen
-  // fields - so their bytes are still the reserved 0xFF and it does not look at them. That is the case behind
-  // the bug report ("I can pick a font but it doesn't change"), and it must READ as inert rather than offering a
-  // live cycler that writes a byte into the void. Refresh that ROM and these two become cyclers like the rest.
-  expect(ui.findByTextContaining("Theme: DFLT (ROM Too Old)") != null).toBeTruthy();
-  expect(ui.findByTextContaining("Font: Font 0 (ROM Too Old)") != null).toBeTruthy();
-  // Nothing pinned yet, so the two reboot rows are absent: the rows above are showing the ROM's own bytes, and
-  // there is nothing to apply or reset.
-  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
+  // Theme and Font have no row here: they are picked in their own lists (see the Themes leg at the end).
+  expect(ui.findByTextContaining("Theme:")).toBe(null);
+  expect(ui.findByTextContaining("Font:")).toBe(null);
+  // Nothing pinned yet, so Reset is absent: the rows above are showing the ROM's own bytes already. There is
+  // no "Apply" row at all - a row reaches the running cart over SysEx as it is stepped, so a reboot would have
+  // nothing left to do.
   expect(ui.findByTextContaining("Reset to ROM Defaults")).toBe(null);
+  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
 
   // Right steps the value: role config written, row re-rendered off the new pin.
-  expect(navTo("Base Channel")).toBeTruthy();
+  expect(navTo("Base MIDI Channel")).toBeTruthy();
   ui.tapKey(Key.Right);
   ui.pump(20);
-  expect(labelOf("Base Channel")).toBe("Base Channel: BASE02");
+  expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 02");
 
   // Left comes back, so it is a live two-way row and not a one-shot write. Still PINNED, though, at the value
-  // the ROM happens to bake - so the reboot rows have appeared and stay.
+  // the ROM happens to bake - so Reset has appeared and stays. Still no Apply.
   ui.tapKey(Key.Left);
   ui.pump(20);
-  expect(labelOf("Base Channel")).toBe("Base Channel: BASE01");
-  expect(ui.findByTextContaining("Apply (Reboot Cart)") != null).toBeTruthy();
+  expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 01");
+  expect(ui.findByTextContaining("Reset to ROM Defaults") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
 
   // A cycler does NOT reboot, which is what keeps the menu open across all of the above - a reload swaps the
   // system id and the instance menu is anchored to it, so rebooting per keypress would drop the menu each time.
   expect(navTo("PPU Enabled")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(20);
-  expect(labelOf("PPU Enabled")).toBe("PPU Enabled: On");
+  expect(labelOf("PPU Enabled")).toBe("PPU Enabled: Off"); // stepped off the ROM's default
 
   // Reset clears the pin back to the ROM's own bytes. It reboots, so the menu closes - the grid tile is back.
   expect(navTo("Reset to ROM Defaults")).toBeTruthy();
@@ -88,9 +79,20 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   expect(navTo("BlipToaster")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(10);
-  expect(navTo("Settings")).toBeTruthy();
+  expect(labelOf("PPU Enabled")).toBe("PPU Enabled: On"); // the one field whose power-on default is 1
+  expect(ui.findByTextContaining("Reset to ROM Defaults")).toBe(null);
+
+  // The Themes list is the theme PICKER: the live slot wears a star, and Enter on another row's leading
+  // `Select` verb moves it - without closing the menu, so a run of themes can be auditioned in place.
+  expect(navTo("Themes")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(10);
-  expect(labelOf("PPU Enabled")).toBe("PPU Enabled: Off");
-  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
+  expect(labelOf("[0] DFLT")).toBe("[0] DFLT *");
+  expect(navTo("[2] NEON")).toBeTruthy();
+  expect(ui.focused()?.text).toBe("[2] NEON < Select >");
+  ui.tapKey(Key.Enter);
+  ui.pump(20);
+  expect(ui.findByTextContaining("[0] DFLT")?.text).toBe("[0] DFLT"); // the star left slot 0
+  expect(ui.findByTextContaining("[2] NEON")?.text).toBe("[2] NEON *"); //  ...and landed on slot 2
+  expect(ui.findByTextContaining("Themes") != null).toBeTruthy(); // still open: Select does not close the menu
 });

@@ -222,7 +222,7 @@ test("BlipToaster's bake carries the pinned SETTINGS too, and a settings pin alo
   expect(sameBytes(be.readFile("/roms/bake-bt.nes")!, effective)).toBe(true);
 
   const baked = BlipToasterRom.fromBytes(be.readFile("/roms/bake-bt.nes")!);
-  expect(baked.settings()).toEqual({ baseChannel: 0, kit: 0, ppu: false, velCurve: false, theme: 11, font: 0 });
+  expect(baked.settings()).toEqual({ baseChannel: 0, ppu: false, velCurve: false, theme: 11, font: 0 });
   // And the pin is gone: the bytes are in the file now, so the rows grey out again and a later hand-edit of the
   // .nes is not silently overridden by a stale project pin.
   const cfg = stores.project.systems.view()[0].roles.find((r) => r.kind === "bliptoaster-assets")!.config;
@@ -243,7 +243,7 @@ test("risa gets the same two rows, and patching bakes a theme into the .nes", ()
       { type: "theme", slot: 1, name: "NEON", theme: { name: "NEON", bg: "0x0D", normal: "0x30", shaded: "0x10", alternate: "0x20", status: "0x05", cursor: "0x15", selection: "0x25" } },
     ],
   });
-  expect(findItem(submenuChildren(kids(), "risa-themes"), "risa-theme-1")?.label).toBe("[1] NEON *"); // override
+  expect(findItem(submenuChildren(kids(), "risa-themes"), "risa-theme-1")?.label).toBe("[1] NEON ~"); // override
 
   expect(findItem(kids(), "risa-patch-rom")!.prompt!.onConfirm("")).toBe(null);
 

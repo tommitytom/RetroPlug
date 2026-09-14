@@ -9,7 +9,7 @@
 //                so they LINK their bank file on disk by path — a pre-built 8 KB `.rkit` DMC bank / an 8 KB
 //                `.chr` CHR bank, read at construct (kit compilation is offline, like risa). A kit override
 //                with `erase: true` empties the slot instead.
-//   `settings`   the cart's BAKED RIG DEFAULTS (base MIDI channel, default kit, Mode 1 at boot, velocity curve,
+//   `settings`   the cart's BAKED RIG DEFAULTS (base MIDI channel, Mode 1 at boot, velocity curve,
 //                default theme, default font) — the 16-byte block in the ROM's code bank. Only the fields the
 //                project actually sets are written, so an untouched field keeps whatever the `.nes` baked.
 //                See bliptoaster/rom/settings.ts for the format.
@@ -30,7 +30,6 @@ import {
 } from "./risa/rom";
 import {
   BlipToasterRom,
-  SETTINGS_KIT_COUNT,
   SETTINGS_THEME_COUNT,
   SETTINGS_FONT_COUNT,
   type BlipToasterSettingsPatch,
@@ -73,7 +72,6 @@ const overrideSchema = z.object({
 // baked", so a project pins only what the user actually changed. Ranges match the ROM's own (settings.ts).
 const settingsSchema = z.object({
   baseChannel: z.number().int().min(0).max(15).optional(),
-  kit: z.number().int().min(0).max(SETTINGS_KIT_COUNT - 1).optional(),
   ppu: z.boolean().optional(),
   velCurve: z.boolean().optional(),
   theme: z.number().int().min(0).max(SETTINGS_THEME_COUNT - 1).optional(),

@@ -13,7 +13,8 @@
 //
 // Navigation: LVGL turns Enter on the focused row into PRESSED→CLICKED → the row's onClick → activate().
 // Arrow Up/Down move a ref-tracked cursor and call the group's focus(); Left/Right cycle a "cycler"
-// item's value. Esc is NOT handled here — the menu controller owns open/close.
+// item's value, or pick which of an "actionCycler" row's actions Enter will run. Esc is NOT handled here —
+// the menu controller owns open/close.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Text, ELvKey } from "lvgljs-ui";
@@ -48,6 +49,10 @@ const GAMEPAD_CAPTURE_AXIS = 0.6; // a stick must pass this (past the play thres
 // highlighted but subordinate to the keyboard-selected row. A pre-dimmed colour at full opacity (a
 // state-style's background-opacity isn't reliably applied). LVGL toggles it on LV_STATE_HOVERED.
 const ROW_HOVER_STYLE = { "background-color": "#0d1626", "background-opacity": 255 } as const;
+// The same idea one level in: an action-cycler's clickable cells (the verb, each arrow) light up under the
+// pointer so it's clear the click lands on THEM, not on the row. Brighter than both bars above, since it
+// paints on top of the focus bar — these cells only exist on the focused row.
+const CELL_HOVER_STYLE = { "background-color": "#2a4770", "background-opacity": 255 } as const;
 
 /** The live prompt overlay: its spec, the typed value, and any error string (shown red). */
 interface PromptState {
@@ -55,6 +60,7 @@ interface PromptState {
   value: string;
   error: string;
 }
+
 
 // lvgljs-ui's Text type doesn't expose ref / onKey / onFocusedStyle; cast to reach them.
 const TextAny = Text as any;
@@ -73,6 +79,17 @@ const BASE_PAD_LEFT = 4;
 const INDENT_STEP = 16;
 const OUTER_PAD_LR_BASE = 8;
 const OUTER_PAD_TB_BASE = 6;
+// The `<  verb  >` element an "actionCycler" row shows while focused: a fixed-width region pinned to the
+// row's right edge, with an arrow column at each end and the verb centred in what's left. Its width depends
+// ONLY on the zoom — never on which verb is showing, or which row it is — which is the whole point: the two
+// arrows then sit at the same x on every action-cycler row and don't budge as you step through the list.
+// Real widgets rather than a padded string because the menu font is Montserrat (proportional — LV_FONT_DEFAULT
+// in packages/native/src/lv_conf.h), where no amount of space-padding pins a glyph. Capped against the menu
+// width below so a narrow menu doesn't squeeze the name column out.
+const ACTION_REGION_BASE = 260;
+const ACTION_REGION_MAX_FRAC = 0.6;
+const ACTION_ARROW_BASE = 22; // one arrow column; the glyph is centred in it, which is its side padding
+const ACTION_PAD_RIGHT_BASE = 8; // inset the element's right edge from the highlight bar's
 
 export interface MenuProps {
   width: number;
@@ -93,6 +110,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   const indentStep = r(INDENT_STEP);
   const outerPadLR = r(OUTER_PAD_LR_BASE);
   const outerPadTB = r(OUTER_PAD_TB_BASE);
+  const actionRegionW = Math.min(r(ACTION_REGION_BASE), Math.round((width - outerPadLR * 2) * ACTION_REGION_MAX_FRAC));
+  const actionArrowW = r(ACTION_ARROW_BASE);
 
   const [openItems, setOpenItems] = useState<Set<string>>(() => new Set());
   // The focus highlight, driven ONLY by explicit nav / click / rebuild (never by LVGL onFocus events, so
@@ -106,6 +125,24 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     capturingIdRef.current = id;
     setCapturingId(id);
   }, []);
+  // Which action each "actionCycler" row is showing, keyed by item id. Renderer-owned transient state, like
+  // `openItems` above: the tree is rebuilt from scratch every render and carries no selection, and a row the
+  // user never touched sits on its first (safest) action. The ref mirrors it so LVGL's CLICKED → activate and
+  // the gamepad's Select read the index the arrows just set, within the same event.
+  const [actionIdx, setActionIdx] = useState<Map<string, number>>(() => new Map());
+  const actionIdxRef = useRef<Map<string, number>>(actionIdx);
+  const setActionIndex = useCallback((id: string, index: number) => {
+    const next = new Map(actionIdxRef.current);
+    next.set(id, index);
+    actionIdxRef.current = next;
+    setActionIdx(next);
+  }, []);
+  // Clamped on read: the list shrinks under the cursor when a row's last action is the one that removes
+  // itself (Remove Override drops out of the list once the override is gone).
+  const actionIndexOf = useCallback(
+    (item: MenuItem) => Math.min(actionIdxRef.current.get(item.id) ?? 0, Math.max(0, (item.actions?.length ?? 0) - 1)),
+    [],
+  );
   // The live text/confirm prompt overlay, or null. The ref mirrors it so the once-mounted key handler
   // reads the latest; the state drives the render.
   const [promptState, setPromptState] = useState<PromptState | null>(null);
@@ -131,6 +168,12 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // The inner scrollable container + a cached row height, for the keyboard scroll-follow effect below.
   const innerViewRef = useRef<{ scrollToY?: (y: number, animate: boolean) => void } | null>(null);
   const itemHeightRef = useRef<number>(0);
+  // A Text row sizes itself to its line; a Box row (actionCycler) does not — LVGL gives a plain object a
+  // default size and lv_binding_js's style layer exposes no LV_SIZE_CONTENT, so a Box has to be TOLD how tall
+  // a row is. It's measured off a real Text row below rather than derived from `itemFont`, because font-size
+  // is snapped to the nearest built-in Montserrat: at small zooms the requested size is not the rendered line
+  // height. Until that measurement lands (one frame), fall back to a close estimate.
+  const [textRowH, setTextRowH] = useState(0);
   // `${pad}:${axisName}` → the half-axis token the left stick is currently in, for edge-detected nav (a
   // held stick fires one move, not a stream). Separate from useGamepadInput's — this one drives the menu.
   const menuAxisDirRef = useRef<Map<string, string>>(new Map());
@@ -199,10 +242,31 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
         });
         return;
       }
-      item.onSelect?.();
-      if (!item.keepOpen) onClose();
+      // An actionCycler runs the verb it is currently showing; every other leaf runs its own onSelect. The
+      // verb may ask to stay open on its own account (a `Select` you can run repeatedly), overriding the row.
+      let keepOpen = item.keepOpen;
+      if (item.kind === "actionCycler") {
+        const picked = item.actions?.[actionIndexOf(item)];
+        picked?.onSelect();
+        keepOpen = picked?.keepOpen ?? item.keepOpen;
+      } else item.onSelect?.();
+      if (!keepOpen) onClose();
     },
-    [onClose],
+    [onClose, actionIndexOf],
+  );
+
+  // Move the cursor onto a row without acting on it — the mouse path for an action-cycler's row body, where
+  // only the element's own cells run anything. LVGL focuses a clicked row by itself, but a click that lands
+  // on a child label leaves the group where it was, so the focus is moved explicitly here.
+  const focusRow = useCallback(
+    (item: MenuItem) => {
+      if (item.disabled) return;
+      focusedIdRef.current = item.id;
+      setFocusedId(item.id);
+      const ref = refsByIdRef.current.get(item.id);
+      if (ref) focus(ref);
+    },
+    [focus],
   );
 
   // Run the open prompt's onConfirm: a returned error string keeps it open (shown red); null closes it.
@@ -214,6 +278,18 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     else setPrompt(null);
   }, [setPrompt]);
 
+  // Left/Right on the focused row: an actionCycler steps which verb it shows (renderer-owned index, wrapping
+  // like every other cycler here); anything else hands off to its own onCycle. Nothing is invoked either way.
+  const stepItem = useCallback(
+    (item: MenuItem, dir: 1 | -1) => {
+      if (item.kind !== "actionCycler") return item.onCycle?.(dir);
+      const count = item.actions?.length ?? 0;
+      if (count === 0) return;
+      setActionIndex(item.id, (actionIndexOf(item) + dir + count) % count);
+    },
+    [actionIndexOf, setActionIndex],
+  );
+
   const onItemKey = useCallback(
     (e: { key: number }) => {
       (e as { stopPropagation?: () => void }).stopPropagation?.(); // else bubbles to the scroll View
@@ -224,8 +300,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       const item = entries[cur].item;
       // Left/Right cycle the focused item's value; focus does not move. A disabled row is fully inert (the
       // cursor can sit on one — e.g. Apply after a commit — but cycling it would still change the value).
-      if (e.key === ELvKey.LV_KEY_RIGHT) return item.disabled ? undefined : item.onCycle?.(1);
-      if (e.key === ELvKey.LV_KEY_LEFT) return item.disabled ? undefined : item.onCycle?.(-1);
+      if (e.key === ELvKey.LV_KEY_RIGHT) return item.disabled ? undefined : stepItem(item, 1);
+      if (e.key === ELvKey.LV_KEY_LEFT) return item.disabled ? undefined : stepItem(item, -1);
       let dir: 1 | -1;
       if (e.key === ELvKey.LV_KEY_DOWN) dir = 1;
       else if (e.key === ELvKey.LV_KEY_UP) dir = -1;
@@ -239,7 +315,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
       const nextRef = refsByIdRef.current.get(nextId);
       if (nextRef) focus(nextRef); // move keypad focus; the scroll-follow effect keeps the row on-screen
     },
-    [focus],
+    [focus, stepItem],
   );
 
   // Modal key input for "capture" and "prompt" rows. Letter keys reach the UI only on the raw "key" bus,
@@ -291,6 +367,11 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     if (code === KEY_DELETE && focused.onDelete) return focused.onDelete();
     if (code === KEY_PAGE_UP) return focused.onCoarseStep?.(1);
     if (code === KEY_PAGE_DOWN) return focused.onCoarseStep?.(-1);
+    // Enter on an actionCycler row runs its verb from HERE rather than from the row's onClick, because that
+    // onClick is the MOUSE's path and the mouse must not run a verb by landing on the row body — LVGL routes
+    // keypad Enter through the same CLICKED event, so the two can't share a handler. (LVGL still delivers
+    // that CLICKED afterwards; it lands on focusRow, which is a no-op on the row already under the cursor.)
+    if (focused.kind === "actionCycler" && code === KEY_ENTER) return activate(focused);
     if (focused.kind === "capture") {
       if (code === KEY_ENTER) setCapturing(focused.id);
       else if (code === KEY_BACKSPACE) focused.capture?.onClear();
@@ -390,13 +471,17 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     const entries = flatRef.current;
     if (!view?.scrollToY || entries.length === 0) return;
 
-    // Measure a real row once (font + padding are constant): the first focusable row — separators are thinner.
-    const firstItem = entries.find((f) => f.item.kind !== "separator");
+    // Measure a real row once (font + padding are constant): the first focusable row — separators are thinner,
+    // and an actionCycler row is a Box wearing whatever height we last told it, so it can't be the yardstick.
+    const firstItem = entries.find((f) => f.item.kind !== "separator" && f.item.kind !== "actionCycler");
     const firstRef = firstItem
       ? (refsByIdRef.current.get(firstItem.item.id) as { getBoundingClientRect?: () => { height: number } } | undefined)
       : undefined;
     const measured = firstRef?.getBoundingClientRect?.().height;
-    if (measured && measured > 0) itemHeightRef.current = measured;
+    if (measured && measured > 0) {
+      itemHeightRef.current = measured;
+      setTextRowH(measured); // what the Box rows size themselves to, so every row lines up
+    }
     const itemH = itemHeightRef.current;
     if (itemH <= 0) return;
 
@@ -455,6 +540,132 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
             );
           }
           const isCapturing = capturingId === item.id;
+          const isFocused = focusedId === item.id;
+          const rowColor = item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : item.warn ? WARN_COLOR : isFocused ? "#4fc3f7" : "#ffffff";
+          // The chrome every row shares: the full-width highlight bar, the depth indent, the vertical rhythm.
+          const rowStyle = {
+            width: "100%",
+            "background-color": "#14243f", // full-width highlight bar on the focused row
+            "background-opacity": isFocused ? 255 : 0,
+            "padding-top": itemPadVert,
+            "padding-bottom": itemPadVert,
+            "padding-left": basePadLeft + depth * indentStep,
+            "padding-right": r(4),
+          };
+          const setRowRef = (node: unknown) => {
+            if (node) refsByIdRef.current.set(item.id, node);
+            else refsByIdRef.current.delete(item.id);
+          };
+
+          // An actionCycler is laid out rather than written: name (taking the slack) + a fixed-width element
+          // at the right edge, arrows pinned to ITS edges and the verb centred between them. The element
+          // belongs to the CURSOR — an unfocused row is just its name, so a list reads as a column of names
+          // and only the row you're on offers anything to do. The row is a Box, not a Text, which makes it
+          // the group member LVGL focuses and the object that takes the row's key/click events.
+          //
+          // The MOUSE aims at the cells, not the row: clicking the verb runs it, clicking an arrow steps the
+          // pick, and clicking anywhere else on the row only moves the cursor there. So a stray click on a
+          // row can't run something the pointer was never over — which matters precisely because the element
+          // is invisible until the row is focused.
+          if (item.kind === "actionCycler") {
+            const verb = item.actions?.[actionIndexOf(item)]?.label ?? "";
+            // The row's vertical padding is carried by the CELLS, not the row, so each of them is as tall as
+            // the row is. A label is only as tall as its line, so with the padding on the Box the pointer met
+            // a 21px-tall child over the text and the 29px-tall Box in the strip above and below it — and a
+            // hover highlight that changed height as it moved. Padding a label expands its box without moving
+            // the text, so this keeps the rows aligned to the pixel with the Text rows around them.
+            const cell = {
+              "text-color": rowColor,
+              "font-size": itemFont,
+              "background-opacity": 0,
+              "padding-top": itemPadVert,
+              "padding-bottom": itemPadVert,
+            } as const;
+            // Texts are created LV_OBJ_FLAG_EVENT_BUBBLE (components/text/text.cpp), so a cell's click would
+            // ALSO reach the row's onClick below; each cell stops it.
+            const onCell = (run: () => void) => (e: { stopPropagation?: () => void }) => {
+              e?.stopPropagation?.();
+              run();
+            };
+            // No flex-grow anywhere: lv_binding_js's flex pipe
+            // (deps/dpf.js/deps/lv_binding_js/src/render/react/core/style/pipe/flex.ts) silently drops
+            // `flex-grow` unless the CHILD's own style also says `display: "flex"`, which would turn a label
+            // into a flex container. The row leans on `space-between` instead (read off the container, so it
+            // needs no such thing) to push the element to its right edge, and the element itself is three
+            // EXPLICIT columns — arrow | verb | arrow — summing to its width. Explicit rather than
+            // space-between inside, because space-between distributes the remainder and drifts the last item
+            // by a pixel as the verb's width changes; fixed columns put the arrows on the same pixel every
+            // time. The verb is a content-sized label CENTRED in the middle column rather than a label filling
+            // it, so the hover highlight and the hit target are the words themselves, not the whole column.
+            return (
+              <Box
+                key={item.id}
+                innerRef={setRowRef}
+                style={{
+                  ...rowStyle,
+                  height: textRowH || itemFont + itemPadVert * 2 + r(3),
+                  "padding-top": 0, // the cells carry it, so each of them is the full height of the row
+                  "padding-bottom": 0,
+                  "padding-right": r(ACTION_PAD_RIGHT_BASE),
+                  display: "flex",
+                  "flex-direction": "row",
+                  "align-items": "center",
+                  "justify-content": "space-between",
+                }}
+                onHoveredStyle={item.disabled ? undefined : ROW_HOVER_STYLE}
+                onKey={onItemKey}
+                onClick={() => focusRow(item)}
+              >
+                {/* The name fills the row's slack so it, not the Box behind it, is the hover target wherever
+                    the pointer sits on the left of the row — a clickable child steals LV_STATE_HOVERED from
+                    its ancestor, so a content-sized name made the row's bar blink out over the text itself.
+                    `display: flex` is not decoration: lv_binding_js's flex pipe reads `flex-grow` only off a
+                    style that also declares it (a label with no children lays nothing out either way). The
+                    bar is the unfocused row's affordance; a focused row already wears its cursor. */}
+                <TextAny
+                  style={{ ...cell, display: "flex", "flex-grow": 1 }}
+                  onHoveredStyle={item.disabled || isFocused ? undefined : ROW_HOVER_STYLE}
+                >
+                  {item.label}
+                </TextAny>
+                {isFocused && (
+                  <Box style={{ width: actionRegionW, display: "flex", "flex-direction": "row", "align-items": "center", "background-opacity": 0 }}>
+                    <TextAny
+                      style={{ ...cell, width: actionArrowW, "text-align": "center" }}
+                      onHoveredStyle={CELL_HOVER_STYLE}
+                      onClick={onCell(() => stepItem(item, -1))}
+                    >
+                      {"<"}
+                    </TextAny>
+                    {/* Overflow is clipped by this column (Box resets overflow to hidden), so a verb too long
+                        for it is cut rather than wrapped onto a second line that would grow the row. */}
+                    <Box
+                      style={{
+                        width: actionRegionW - actionArrowW * 2,
+                        display: "flex",
+                        "flex-direction": "row",
+                        "justify-content": "center",
+                        "align-items": "center",
+                        "background-opacity": 0,
+                      }}
+                    >
+                      <TextAny style={cell} onHoveredStyle={CELL_HOVER_STYLE} onClick={onCell(() => activate(item))}>
+                        {verb}
+                      </TextAny>
+                    </Box>
+                    <TextAny
+                      style={{ ...cell, width: actionArrowW, "text-align": "center" }}
+                      onHoveredStyle={CELL_HOVER_STYLE}
+                      onClick={onCell(() => stepItem(item, 1))}
+                    >
+                      {">"}
+                    </TextAny>
+                  </Box>
+                )}
+              </Box>
+            );
+          }
+
           let label: string;
           if (item.kind === "submenu") label = `${item.label} ${openItems.has(item.id) ? "v" : ">"}`;
           else if (isCapturing) {
@@ -462,25 +673,11 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
             const what = item.capture?.source === "gamepad" ? "button" : "key";
             label = `${colon >= 0 ? item.label.slice(0, colon) : item.label}: Press a ${what}...`;
           } else label = item.label;
-          const isFocused = focusedId === item.id;
           return (
             <TextAny
               key={item.id}
-              ref={(node: unknown) => {
-                if (node) refsByIdRef.current.set(item.id, node);
-                else refsByIdRef.current.delete(item.id);
-              }}
-              style={{
-                width: "100%",
-                "text-color": item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : item.warn ? WARN_COLOR : isFocused ? "#4fc3f7" : "#ffffff",
-                "background-color": "#14243f", // full-width highlight bar on the focused row
-                "background-opacity": isFocused ? 255 : 0,
-                "font-size": itemFont,
-                "padding-top": itemPadVert,
-                "padding-bottom": itemPadVert,
-                "padding-left": basePadLeft + depth * indentStep,
-                "padding-right": r(4),
-              }}
+              ref={setRowRef}
+              style={{ ...rowStyle, "text-color": rowColor, "font-size": itemFont }}
               onHoveredStyle={item.disabled ? undefined : ROW_HOVER_STYLE}
               onKey={onItemKey}
               onClick={() => activate(item)}

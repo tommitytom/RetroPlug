@@ -155,6 +155,10 @@ public:
     // safe while the audio thread writes; width/height are 0 (published false) for an unknown system.
     EngineFrame getFrame(SystemId id);
     bool pressButton(SystemId id, std::uint8_t button, bool down);
+    // Hand `len` MIDI bytes straight to ONE system's ingress, skipping the routing kernel. For CONTROL
+    // traffic the UI aims at a specific cart (a settings knob), which must not depend on how the project
+    // routes musical MIDI. False when there is no such system. See DspCommand::stageSystemMidi.
+    bool stageSystemMidi(SystemId id, const std::uint8_t* bytes, std::size_t len);
 
     // Audio-thread: poke bytes into a system's work RAM. `offset` indexes the SAME region readRam
     // returns, so read-modify-write round-trips without a coordinate conversion. Applied between

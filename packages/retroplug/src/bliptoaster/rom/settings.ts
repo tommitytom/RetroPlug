@@ -11,9 +11,13 @@
 // comes back to the baked value.
 //
 // The reader below MIRRORS the ROM's own per-field rule, and the two must stay in step (src/midi/main.c reads
-// the channel and kit through `& 0x0F`, the flags through `!= 0`, and clamps the theme and font against their
-// table sizes). That is not pedantry: it is what makes a value RetroPlug shows equal the value the cart will
+// the channel through `& 0x0F`, the flags through `!= 0`, and clamps the theme and font against their table
+// sizes). That is not pedantry: it is what makes a value RetroPlug shows equal the value the cart will
 // actually boot with, including for a byte no tool has ever written.
+//
+// +8 is RESERVED and was the default DMC kit slot. The kit is picked with ch5 CC 14 (or a ch5 program change),
+// which is what a song does before it plays anything, so a baked default only ever added a byte, a row and a
+// flag that said the same thing later and worse. The cart still loads kit 0's directory at boot.
 //
 // `ppu` is the field to be careful with. Its byte was "Mode 1 at boot" (1 = dark until START) until 2026-09-13
 // and is now "PPU enabled" (1 = the screen draws) - same byte, opposite sense, and the format stayed 1 because
@@ -32,14 +36,12 @@ export const SETTINGS_FORMAT = 1;
 // Field offsets from the start of the block (src/core/settings.h SET_F_*).
 const F_VERSION = 6;
 const F_BASE_CH = 7;
-const F_KIT = 8;
+// +8 reserved (was the default kit slot — see the note at the top).
 const F_PPU = 9;
 const F_VELCURVE = 10;
 const F_THEME = 11;
 const F_FONT = 12;
 
-/** How many baked DMC kit slots the default-kit field can name (the ROM's ch5 CC 14 range). */
-export const SETTINGS_KIT_COUNT = 16;
 /** How many baked themes / CHR fonts the two screen fields can name (THEME_COUNT / FONT_COUNT in the ROM's
  *  src/core/sys.h). The theme table's REAL length is read from the ROM (BlipToasterRom.themeCount); these are
  *  the bounds the ROM's own clamp uses, so they are what decides whether a byte survives the round trip. */
@@ -51,8 +53,6 @@ export const SETTINGS_FONT_COUNT = 4;
 export interface BlipToasterSettings {
   /** Base MIDI channel as an OFFSET: 0 = BASE01 (channel 1), 3 = BASE04. */
   baseChannel: number;
-  /** Default DMC kit slot, 0..15 — which bank ch5 plays out of at boot. */
-  kit: number;
   /** PPU enabled at boot: the screen draws. False is the old "Mode 1" boot - dark until START is pressed.
    *  The only field whose default is TRUE (see the polarity note at the top). */
   ppu: boolean;
@@ -69,7 +69,6 @@ export interface BlipToasterSettings {
  *  leaves the reserved 0xFF sitting there. */
 export const DEFAULT_SETTINGS: BlipToasterSettings = {
   baseChannel: 0,
-  kit: 0,
   ppu: true, // the one non-zero default: a clobbered or never-written byte must boot a VISIBLE screen
   velCurve: false,
   theme: 0,
@@ -79,12 +78,33 @@ export const DEFAULT_SETTINGS: BlipToasterSettings = {
 /** A partial edit: only the named fields are written, the rest of the block is left as the ROM baked it. */
 export type BlipToasterSettingsPatch = Partial<BlipToasterSettings>;
 
+/** The cart's rig message: `F0 7D 42 03 <baseCh> <ppu> <curve> <theme> <font> F7` (its src/midi/main.h
+ *  SX_SETTINGS). The block is only READ at boot, so this is the only way to change the rig on a cart that is
+ *  already running - and nothing can ask a console for a reset over MIDI anyway.
+ *
+ *  It carries EVERY field, which is the cart's contract and not this function being lazy: the cart commits
+ *  atomically on the F7 and applying it twice is a no-op, so the host states the rig it wants instead of
+ *  tracking what moved, and a dropped message heals on the next edit. Values are normalized exactly as
+ *  encodeSettings normalizes them for the baked block, so what the cart hears and what a later bake writes
+ *  cannot disagree. Every byte lands ≤ 0x0F, so the payload is 7-bit clean with no encoding. */
+export function blipToasterSettingsSysex(s: BlipToasterSettings): number[] {
+  return [
+    0xf0, 0x7d, 0x42, 0x03,
+    s.baseChannel & 0x0f,
+    s.ppu ? 1 : 0,
+    s.velCurve ? 1 : 0,
+    clamp(s.theme, SETTINGS_THEME_COUNT),
+    clamp(s.font, SETTINGS_FONT_COUNT),
+    0xf7,
+  ];
+}
+
 /** The RESERVED filler. Every unused byte of the block holds it, and a new field takes a reserved byte, so this
  *  doubles as an exact capability probe: see fieldIsSupported. */
 const RESERVED = 0xff;
 
-// Which byte each optional-in-practice field lives at, for that probe. The four original fields (channel, kit,
-// PPU, curve) shipped with the block and are not listed — every ROM carrying the block reads them.
+// Which byte each optional-in-practice field lives at, for that probe. The fields the block shipped with
+// (channel, PPU, curve) are not listed — every ROM carrying the block reads them.
 const FIELD_OFFSET: Partial<Record<keyof BlipToasterSettings, number>> = {
   theme: F_THEME,
   font: F_FONT,
@@ -117,7 +137,6 @@ export function settingsFormatAt(rom: Uint8Array, at: number): number {
 export function decodeSettings(rom: Uint8Array, at: number): BlipToasterSettings {
   return {
     baseChannel: rom[at + F_BASE_CH] & 0x0f, // masked by the ROM, not clamped: 0x1F boots as BASE16
-    kit: rom[at + F_KIT] & 0x0f,
     ppu: rom[at + F_PPU] !== 0, // 0xFF from an older tool therefore reads as enabled, which is the safe way round
     velCurve: rom[at + F_VELCURVE] !== 0,
     theme: clamp(rom[at + F_THEME], SETTINGS_THEME_COUNT),
@@ -129,7 +148,6 @@ export function decodeSettings(rom: Uint8Array, at: number): BlipToasterSettings
  *  them, so a write then a read round-trips; the reserved bytes and the magic are untouched. */
 export function encodeSettings(rom: Uint8Array, at: number, patch: BlipToasterSettingsPatch): void {
   if (patch.baseChannel !== undefined) rom[at + F_BASE_CH] = patch.baseChannel & 0x0f;
-  if (patch.kit !== undefined) rom[at + F_KIT] = patch.kit & 0x0f;
   if (patch.ppu !== undefined) rom[at + F_PPU] = patch.ppu ? 1 : 0;
   if (patch.velCurve !== undefined) rom[at + F_VELCURVE] = patch.velCurve ? 1 : 0;
   if (patch.theme !== undefined) rom[at + F_THEME] = clamp(patch.theme, SETTINGS_THEME_COUNT);

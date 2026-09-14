@@ -50,6 +50,9 @@ public:
 
     // --- audio render / input drive / transport ---
     bool            pressButton(std::uint32_t id, std::uint32_t button, bool down);
+    // Control MIDI for ONE system, bypassing the routing kernel: a settings knob that must reach the cart
+    // it belongs to, however the project routes musical MIDI. Up to 4 bytes (a channel message).
+    bool            stageSystemMidi(std::uint32_t id, std::vector<std::uint8_t> bytes);
     rfl::Bytestring renderAudio(double ms);
     // Per-system audio: each live system's interleaved-stereo PCM, in Project-slot order (marshals to
     // Uint8Array[]). Isolates each core so LSDj link-cable sync is provable (a follower's own RMS).

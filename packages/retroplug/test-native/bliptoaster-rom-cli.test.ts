@@ -175,16 +175,16 @@ test("bliptoaster-rom settings prints the real ROM's block, patches named fields
   expect(base.hasSettings).toBe(true);
   // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build. `ppu`
   // is the one that is not zero: the screen draws unless someone bakes the dark boot.
-  expect(base.settings()).toEqual({ baseChannel: 0, kit: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
+  expect(base.settings()).toEqual({ baseChannel: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
 
   // No flags: read-only. It must not write the ROM it is inspecting.
   const nes = copyRom(be, "/tmp/rp-em-set.nes");
   blipToasterRomTool.run(s, ["settings", nes]);
   expect([...be.readFile(nes)!]).toEqual([...base.bytes()]);
 
-  blipToasterRomTool.run(s, ["settings", nes, "--theme", "11", "--font", "2", "--base-channel", "4", "--kit", "9", "--ppu", "off", "--curve", "log"]);
+  blipToasterRomTool.run(s, ["settings", nes, "--theme", "11", "--font", "2", "--base-channel", "4", "--ppu", "off", "--curve", "log"]);
   const after = BlipToasterRom.fromBytes(be.readFile(nes)!);
-  expect(after.settings()).toEqual({ baseChannel: 3, kit: 9, ppu: false, velCurve: true, theme: 11, font: 2 });
+  expect(after.settings()).toEqual({ baseChannel: 3, ppu: false, velCurve: true, theme: 11, font: 2 });
   // Only the block moved: the assets are byte-identical, so this cannot have disturbed a kit or the theme table.
   expect(after.themes().map((t) => t.theme.name)).toEqual(base.themes().map((t) => t.theme.name));
   for (let i = 0; i < 16; i++) expect([...after.getKitBank(i)!]).toEqual([...base.getKitBank(i)!]);
@@ -228,8 +228,19 @@ const OLD_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 test("a ROM predating the screen fields is reported as not reading them, and refuses a write", () => {
   const { be, s } = toolSession();
   if (!be.fileExists(OLD_ROM)) { console.log(`# SKIP capability probe: no ROM at ${OLD_ROM}`); return; }
-  const rom = BlipToasterRom.fromBytes(be.readFile(OLD_ROM)!);
-  expect(rom.hasSettings).toBe(true); // the block is there: its four original fields DO work on this cart
+  // The specimen is the REAL ROM with the two screen bytes put back to the reserved 0xFF an older build leaves
+  // there - derived rather than found, because the staged ROM is kept current and so is never itself old. Only
+  // those two bytes move, so everything else about it is a genuine cart.
+  const bytes = be.readFile(OLD_ROM)!;
+  let at = -1;
+  for (let i = 0x10; i + 16 <= bytes.length && at < 0; i++) {
+    if (bytes[i] === 0xa5 && bytes[i + 1] === 0x5a && bytes[i + 2] === 0x53 && bytes[i + 3] === 0x45 && bytes[i + 4] === 0x54 && bytes[i + 5] === 0x54) at = i;
+  }
+  expect(at, "settings block found in the staged ROM").toBeGreaterThan(0);
+  bytes.fill(0xff, at + 11, at + 13); // +11 theme, +12 font: as a build predating both fields leaves them
+
+  const rom = BlipToasterRom.fromBytes(bytes);
+  expect(rom.hasSettings).toBe(true); // the block is there: the fields it shipped with DO work on this cart
   expect(rom.settingSupported("baseChannel")).toBe(true);
   expect(rom.settingSupported("theme")).toBe(false);
   expect(rom.settingSupported("font")).toBe(false);
@@ -245,7 +256,7 @@ test("a ROM predating the screen fields is reported as not reading them, and ref
   // A field the block shipped with still writes on the same cart - an old ROM is not cut off from the rest.
   blipToasterRomTool.run(s, ["settings", nes, "--base-channel", "4"]);
   expect(BlipToasterRom.fromBytes(be.readFile(nes)!).settings()!.baseChannel).toBe(3);
-  console.log(`[bliptoaster-rom] ${OLD_ROM}: theme/font unsupported (reserved 0xFF), base channel still writable`);
+  console.log(`[bliptoaster-rom] ${OLD_ROM} with +11/+12 reserved: theme/font unsupported, base channel still writable`);
 });
 
 // The font's other half. The theme leg above reads palette RAM, but nothing exposes which CHR bank is MAPPED -

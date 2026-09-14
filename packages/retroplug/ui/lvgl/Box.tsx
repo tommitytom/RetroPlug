@@ -32,12 +32,18 @@ export const CHROME_RESET = {
 export function Box({
   style,
   onClick,
+  onKey,
+  onHoveredStyle,
   align,
   innerRef,
   children,
 }: {
   style?: Record<string, unknown>;
   onClick?: () => void;
+  /** LVGL key events for a Box that is itself a focus-group member (a menu row laid out as columns). */
+  onKey?: (event: { key: number }) => void;
+  /** Style merged in while the pointer is over the Box — the container twin of a Text's hover bar. */
+  onHoveredStyle?: Record<string, unknown>;
   align?: unknown;
   /** Forwarded to the View's native ref (findByTestId tagging, canvas handles, …). */
   innerRef?: Ref<unknown>;
@@ -49,6 +55,8 @@ export function Box({
   const props: Record<string, unknown> = { style: { ...CHROME_RESET, ...style } };
   if (innerRef !== undefined) props.ref = innerRef;
   if (onClick !== undefined) props.onClick = onClick;
+  if (onKey !== undefined) props.onKey = onKey;
+  if (onHoveredStyle !== undefined) props.onHoveredStyle = onHoveredStyle;
   if (align !== undefined) props.align = align;
   return <ViewAny {...props}>{children}</ViewAny>;
 }
