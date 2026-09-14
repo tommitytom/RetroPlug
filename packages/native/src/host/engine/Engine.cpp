@@ -382,11 +382,24 @@ bool Engine::pressButton(SystemId id, std::uint8_t button, bool down) {
 }
 
 bool Engine::stageSystemMidi(SystemId id, const std::uint8_t* bytes, std::size_t len) {
-    if (!bytes || len == 0 || len > ::MidiEvent::kDataSize) return false;
+    if (!bytes || len == 0) return false;
     SystemBase* sys = project_.findSystem(id);
     if (!sys) return false;
-    // Straight to the system's ingress - the same call the routing kernel would make, minus the routing.
     // Frame 0: a knob has no musical position, exactly as stageControllerMidi argues for a pad press.
+    //
+    // pushCoreBytes, not onMidi, and the difference is load-bearing: onMidi is the MIDI-FRAMED door, and the
+    // NES role's implementation clamps every event to MidiEvent::kDataSize and ignores dataExt
+    // (NesN8FifoRole.cpp), so a SysEx through it arrives as its first four bytes and the cart waits forever
+    // for an F7 that was thrown away. pushCoreBytes is the raw door the DSP kernel itself uses for this
+    // transport (see the CoreBytes sink below), with no framing and no cap - which is what a rig message
+    // needs. A system with no raw ingress falls back to the framed one, where a channel message still fits.
+    if (sys->hasCoreBytesIn()) {
+        // flush=false on purpose: flush DISCARDS whatever the device still holds, which for the N8 FIFO is
+        // the performance queued behind this. A settings message is not a barrier - it joins the stream.
+        sys->pushCoreBytes(0, bytes, len, false);
+        return true;
+    }
+    if (len > ::MidiEvent::kDataSize) return false;
     ::MidiEvent ev;
     ev.frame = 0;
     ev.size = static_cast<std::uint32_t>(len);

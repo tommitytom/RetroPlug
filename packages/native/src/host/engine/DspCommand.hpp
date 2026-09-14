@@ -50,8 +50,10 @@ struct DspCommand {
         // MIDI aimed at ONE system, delivered straight to its ingress and NEVER through the routing kernel.
         // That is the whole point: a menu knob has to reach the cart whose menu it is, whatever the project's
         // MUSICAL routing is doing with channels (sendToAll would hit every instance; midiChannelToInstance
-        // rewrites the channel out from under it). Inline-only, like StageControllerMidi - a CC is 3 bytes.
-        struct { std::uint32_t id; std::uint8_t data[4]; std::uint8_t len; } stageSystemMidi;
+        // rewrites the channel out from under it). `len` bytes inline when the message fits, else `ext` OWNS
+        // the whole message (audio thread deletes) and `len` is 0 - the same shape as stageMidi, because a
+        // settings message is a SysEx and a rig block does not fit in four bytes.
+        struct { std::uint32_t id; std::uint8_t data[4]; std::uint8_t len; std::vector<std::uint8_t>* ext; } stageSystemMidi;
     };
 
     DspCommand() : kind(Kind::None), stageMidi{{0, 0, 0, 0}, 0, nullptr} {}

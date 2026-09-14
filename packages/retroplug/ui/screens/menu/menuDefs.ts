@@ -55,6 +55,7 @@ import { RisaRom, serializeRit, parseRit, decodeThemeFromRom, isBankPopulated, b
 import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../../../src/risaAssetsRole";
 import {
   BlipToasterRom,
+  blipToasterSettingsSysex,
   SETTINGS_THEME_COUNT,
   SETTINGS_FONT_COUNT,
   type BlipToasterSettingsPatch,
@@ -1378,8 +1379,14 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
   // boots with right now, which is what a row must show.
   const pinned = readBlipToasterSettings(sys);
   const effective = { ...rom.settings()!, ...pinned };
-  const pin = (patch: Record<string, unknown>): void =>
-    void ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: { ...pinned, ...patch } });
+  // Pin the field AND tell the running cart, so a row takes effect now rather than at the next cold boot. The
+  // pin is what a LOAD replays (and what a bake writes); the SysEx is what the cart in front of you hears.
+  // Sent per-system so it reaches THIS cart whatever the project's musical MIDI routing does (stageSystemMidi).
+  const pin = (patch: Record<string, unknown>): void => {
+    const next = { ...pinned, ...patch };
+    ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: next });
+    ctx.stores.backend.stageSystemMidi(sys.id, blipToasterSettingsSysex({ ...rom.settings()!, ...next }));
+  };
 
   // Each list is bounded by what THIS ROM carries, not by the format's maximum - offering a theme the cart has
   // no record for would bake an index it cannot use. Capped at the format's bound too (a field is one byte with
@@ -1399,12 +1406,13 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
     // "not on the VRC7 build" is the ROM's own behaviour (it has no velocity curve), not something to hide here:
     // the byte is still baked and still honoured by every other build of the same project's ROM.
     cycler("bliptoaster-set-curve", "Velocity Curve", ["Linear", "Log"], effective.velCurve ? 1 : 0, (n) => pin({ velCurve: n === 1 })),
-    // The two reboot rows. Both are only offered once something IS pinned: with nothing pinned the rows above
-    // already show the ROM's own bytes, so there is nothing to apply and nothing to reset.
+    // Reset is the one row left. There is no "Apply" any more: every row above already reached the cart over
+    // SysEx as it was stepped, so there was nothing left for a reboot to do that the row had not done. Reset
+    // still reboots, because dropping the pins means going back to the ROM's OWN bytes, which are only read at
+    // boot. Offered only once something IS pinned - with nothing pinned the rows show the ROM's bytes already.
     ...(Object.keys(pinned).length
       ? [
           sep("bliptoaster-set-apply-sep"),
-          action("bliptoaster-set-apply", "Apply (Reboot Cart)", () => void ctx.stores.project.systems.reloadSystem(sys.id)),
           action("bliptoaster-set-reset", "Reset to ROM Defaults", () => {
             ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: {} });
             ctx.stores.project.systems.reloadSystem(sys.id);

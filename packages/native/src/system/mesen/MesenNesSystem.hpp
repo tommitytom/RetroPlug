@@ -55,6 +55,7 @@ public:
     void onMidi(const ::MidiEvent* events, std::uint32_t count) override;
     void pushCoreBytes(std::uint32_t frame, const std::uint8_t* data, std::size_t size,
                        bool flush = false) override;
+    bool hasCoreBytesIn() const override { return n8Role_ != nullptr; }  // the N8 FIFO is the raw ingress
 
     // Control-thread: the N8 FIFO's CMD_USB_WR payload — what the ROM has sent host-ward since the
     // last drain. Empty before activation or when the ROM has sent nothing.

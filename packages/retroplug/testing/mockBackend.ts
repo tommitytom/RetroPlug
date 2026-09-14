@@ -603,7 +603,7 @@ export class MockBackend implements Backend {
 
   stageSystemMidi(id: number, bytes: number[]): boolean {
     this.log.push("stageSystemMidi");
-    if (bytes.length === 0 || bytes.length > 4) return false;
+    if (bytes.length === 0) return false;
     this.stageSystemMidiCalls.push({ id, bytes: [...bytes] });
     return true;
   }

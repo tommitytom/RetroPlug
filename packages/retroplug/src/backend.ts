@@ -162,11 +162,11 @@ export interface Backend {
    *  return only says the call was accepted, not that the id exists. */
   pressButton(id: number, button: number, down: boolean): boolean;
 
-  /** Deliver up to 4 MIDI bytes straight to system `id`'s ingress, BYPASSING the project's MIDI routing.
+  /** Deliver MIDI bytes straight to system `id`'s ingress, BYPASSING the project's MIDI routing. Any length:
    *  For CONTROL traffic the UI aims at one cart — a settings row sending the CC that applies it live —
    *  which must not depend on how musical MIDI is routed (`sendToAll` would reach every instance;
    *  `midiChannelToInstance` rewrites the channel out from under it). Queued to the audio thread like
-   *  pressButton, so the return says accepted, not delivered; false for an empty or over-long message. */
+   *  pressButton, so the return says accepted, not delivered; false only for an empty message. */
   stageSystemMidi(id: number, bytes: number[]): boolean;
 
   // --- Live emulator reads (the pump) -------------------------------------

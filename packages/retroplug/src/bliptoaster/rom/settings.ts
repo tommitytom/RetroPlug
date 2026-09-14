@@ -78,6 +78,27 @@ export const DEFAULT_SETTINGS: BlipToasterSettings = {
 /** A partial edit: only the named fields are written, the rest of the block is left as the ROM baked it. */
 export type BlipToasterSettingsPatch = Partial<BlipToasterSettings>;
 
+/** The cart's rig message: `F0 7D 42 03 <baseCh> <ppu> <curve> <theme> <font> F7` (its src/midi/main.h
+ *  SX_SETTINGS). The block is only READ at boot, so this is the only way to change the rig on a cart that is
+ *  already running - and nothing can ask a console for a reset over MIDI anyway.
+ *
+ *  It carries EVERY field, which is the cart's contract and not this function being lazy: the cart commits
+ *  atomically on the F7 and applying it twice is a no-op, so the host states the rig it wants instead of
+ *  tracking what moved, and a dropped message heals on the next edit. Values are normalized exactly as
+ *  encodeSettings normalizes them for the baked block, so what the cart hears and what a later bake writes
+ *  cannot disagree. Every byte lands ≤ 0x0F, so the payload is 7-bit clean with no encoding. */
+export function blipToasterSettingsSysex(s: BlipToasterSettings): number[] {
+  return [
+    0xf0, 0x7d, 0x42, 0x03,
+    s.baseChannel & 0x0f,
+    s.ppu ? 1 : 0,
+    s.velCurve ? 1 : 0,
+    clamp(s.theme, SETTINGS_THEME_COUNT),
+    clamp(s.font, SETTINGS_FONT_COUNT),
+    0xf7,
+  ];
+}
+
 /** The RESERVED filler. Every unused byte of the block holds it, and a new field takes a reserved byte, so this
  *  doubles as an exact capability probe: see fieldIsSupported. */
 const RESERVED = 0xff;

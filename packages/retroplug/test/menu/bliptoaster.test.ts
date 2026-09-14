@@ -125,9 +125,15 @@ test("cycling a Settings row pins that field on the role and leaves the others u
   expect(pinned().theme).toBe(15);
   expect(pinned().ppu).toBe(false);
 
-  // A cycler pins but does NOT reboot - the ROM is read at startup only, so the reboot is its own row (which
-  // keeps the menu alive across a step: reloadSystem swaps the id the instance menu is anchored to).
-  expect(findItem(settingsRows(items()), "bliptoaster-set-apply")?.kind).toBe("action");
+  // A cycler pins but does NOT reboot - it tells the RUNNING cart instead, with the rig SysEx, so there is no
+  // "Apply" row to reboot into the change. (That also keeps the menu alive across a step: reloadSystem swaps
+  // the id the instance menu is anchored to.) The send goes to THIS system, bypassing the musical routing.
+  expect(findItem(settingsRows(items()), "bliptoaster-set-apply")).toBe(undefined);
+  const sent = be.stageSystemMidiCalls;
+  expect(sent.length).toBe(4); // one per cycle above, each declaring the whole block
+  expect(sent[sent.length - 1].id).toBe(stores.project.systems.view()[0].id);
+  // F0 7D 42 03 <baseCh> <ppu> <curve> <theme> <font> F7 - the pins just made (theme 15, ppu off) inside it.
+  expect(sent[sent.length - 1].bytes).toEqual([0xf0, 0x7d, 0x42, 0x03, 0, 0, 0, 15, 0, 0xf7]);
 
   // Reset clears the lot back to the ROM's bytes, and reboots so the cart actually comes up that way.
   findItem(settingsRows(items()), "bliptoaster-set-reset")!.onSelect!();

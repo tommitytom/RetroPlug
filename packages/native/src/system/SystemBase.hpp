@@ -107,6 +107,12 @@ public:
     virtual void pushCoreBytes(std::uint32_t /*frame*/, const std::uint8_t* /*data*/, std::size_t /*size*/,
                                bool /*flush*/ = false) {}
 
+    // Does pushCoreBytes actually go anywhere on this system? The default above is a silent no-op, which is
+    // right for a stream a core simply has no use for — but a caller with ONE message to deliver (a host
+    // settings SysEx) needs to know whether it was delivered or dropped, and a message too long for the
+    // MIDI-framed door has nowhere else to go. Ask before choosing a door; see Engine::stageSystemMidi.
+    virtual bool hasCoreBytesIn() const { return false; }
+
     // The inverse of pushCoreBytes: take the RAW bytes the core has sent host-ward since the last
     // drain, oldest first. On the NES that is the N8 FIFO's `CMD_USB_WR` payload — the back-channel a
     // cartridge uses to talk to the host (on hardware the MCU forwards it out of the USB port). Empty

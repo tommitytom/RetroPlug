@@ -40,10 +40,11 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   // Theme and Font are live rows like the rest, reading the current build's own bytes.
   expect(labelOf("Theme")).toBe("Theme: DFLT");
   expect(labelOf("Font")).toBe("Font: Font 0");
-  // Nothing pinned yet, so the two reboot rows are absent: the rows above are showing the ROM's own bytes, and
-  // there is nothing to apply or reset.
-  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
+  // Nothing pinned yet, so Reset is absent: the rows above are showing the ROM's own bytes already. There is
+  // no "Apply" row at all - a row reaches the running cart over SysEx as it is stepped, so a reboot would have
+  // nothing left to do.
   expect(ui.findByTextContaining("Reset to ROM Defaults")).toBe(null);
+  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
 
   // Right steps the value: role config written, row re-rendered off the new pin.
   expect(navTo("Base MIDI Channel")).toBeTruthy();
@@ -52,11 +53,12 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 02");
 
   // Left comes back, so it is a live two-way row and not a one-shot write. Still PINNED, though, at the value
-  // the ROM happens to bake - so the reboot rows have appeared and stay.
+  // the ROM happens to bake - so Reset has appeared and stays. Still no Apply.
   ui.tapKey(Key.Left);
   ui.pump(20);
   expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 01");
-  expect(ui.findByTextContaining("Apply (Reboot Cart)") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Reset to ROM Defaults") != null).toBeTruthy();
+  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
 
   // A cycler does NOT reboot, which is what keeps the menu open across all of the above - a reload swaps the
   // system id and the instance menu is anchored to it, so rebooting per keypress would drop the menu each time.
@@ -78,5 +80,5 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   ui.tapKey(Key.Enter);
   ui.pump(10);
   expect(labelOf("PPU Enabled")).toBe("PPU Enabled: On"); // the one field whose power-on default is 1
-  expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
+  expect(ui.findByTextContaining("Reset to ROM Defaults")).toBe(null);
 });
