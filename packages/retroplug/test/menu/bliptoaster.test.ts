@@ -61,14 +61,17 @@ test("the BlipToaster submenu appears only for a BlipToaster ROM, is asset-only 
   expect(findItem(kids, "bliptoaster-themes")?.kind).toBe("submenu");
   expect(findItem(kids, "bliptoaster-kits")?.kind).toBe("submenu");
   expect(findItem(kids, "bliptoaster-fonts")?.kind).toBe("submenu");
-  expect(findItem(kids, "bliptoaster-settings")?.kind).toBe("submenu");
+  // The settings rows live in THIS list, not behind a "Settings" submenu of their own.
+  expect(findItem(kids, "bliptoaster-settings")).toBe(undefined);
+  expect(findItem(kids, "bliptoaster-set-basech")?.kind).toBe("cycler");
 });
 
 // ── Settings: the cart's baked rig defaults ────────────────────────────────────────────────────────────
-// This submenu is how you CHOOSE among the baked themes / fonts / kits; the asset submenus above replace an
+// These rows are how you CHOOSE among the baked themes / fonts / kits; the asset submenus below replace an
 // entry's contents. Each row is a cycler over the ROM's own entries, and a change is pinned on the
-// bliptoaster-assets role (folded into the ROM in memory at construct - the .nes on disk is untouched).
-const settingsRows = (items: MenuItem[]) => submenuChildren(submenuChildren(items, "inst-bliptoaster"), "bliptoaster-settings");
+// bliptoaster-assets role (folded into the ROM in memory at construct - the .nes on disk is untouched). They
+// sit at the top of the BlipToaster menu itself, so this is just its child list.
+const settingsRows = (items: MenuItem[]) => submenuChildren(items, "inst-bliptoaster");
 const rowLabel = (items: MenuItem[], id: string) => findItem(settingsRows(items), id)?.label;
 function cycle(items: MenuItem[], id: string, dir: 1 | -1 = 1): void {
   const row = findItem(settingsRows(items), id)!;
@@ -84,7 +87,7 @@ test("the Settings rows show the ROM's own baked values, naming the entry each f
   // the ENTRY, read from the ROM, so a row says "DFLT" / "TEST" rather than a bare index.
   expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DFLT");
   expect(rowLabel(items(), "bliptoaster-set-font")).toBe("Font: Font 0");
-  expect(rowLabel(items(), "bliptoaster-set-basech")).toBe("Base Channel: BASE01");
+  expect(rowLabel(items(), "bliptoaster-set-basech")).toBe("Base MIDI Channel: 01");
   expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: TEST");
   expect(rowLabel(items(), "bliptoaster-set-ppu")).toBe("PPU Enabled: On"); // the one field whose default is on
   expect(rowLabel(items(), "bliptoaster-set-curve")).toBe("Velocity Curve: Linear");
@@ -184,7 +187,7 @@ test("on a ROM predating the screen fields, Theme and Font are GREYED - not sile
   // The four fields the block shipped with are unaffected - an old cart keeps the rest of the submenu.
   expect(findItem(settingsRows(items()), "bliptoaster-set-basech")?.kind).toBe("cycler");
   cycle(items(), "bliptoaster-set-basech");
-  expect(rowLabel(items(), "bliptoaster-set-basech")).toBe("Base Channel: BASE02");
+  expect(rowLabel(items(), "bliptoaster-set-basech")).toBe("Base MIDI Channel: 02");
 });
 
 test("a ROM with no readable settings block gets no Settings submenu (the asset submenus still show)", () => {
@@ -198,7 +201,7 @@ test("a ROM with no readable settings block gets no Settings submenu (the asset 
     buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items,
     "inst-bliptoaster",
   );
-  expect(findItem(kids, "bliptoaster-settings")).toBe(undefined);
+  expect(findItem(kids, "bliptoaster-set-basech")).toBe(undefined); // no readable block → no settings rows
   expect(findItem(kids, "bliptoaster-themes")?.kind).toBe("submenu");
 });
 

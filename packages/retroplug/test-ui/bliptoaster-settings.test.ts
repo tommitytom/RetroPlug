@@ -6,7 +6,7 @@
 //
 // test/menu/bliptoaster.test.ts already proves the menu MODEL. What only this can prove is the glue: that the
 // rows become real LVGL widgets inside the instance menu, and that a keypress on one round-trips through the
-// store and comes back as a new label. Base Channel and PPU Enabled are the rows driven here because they are
+// store and comes back as a new label. Base MIDI Channel and PPU Enabled are the rows driven here because they are
 // two of the four fields the block shipped with, so every cart that has the block honours them; the staged
 // resources/roms/bliptoaster.nes predates the theme + font fields, which is exactly why those two must show up
 // greyed below.
@@ -35,13 +35,10 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   ui.tapKey(Key.Enter);
   ui.pump(10);
 
-  // Settings sits above the asset submenus: it is what the cart BOOTS with, they are what it boots FROM.
-  expect(navTo("Settings")).toBeTruthy();
-  ui.tapKey(Key.Enter);
-  ui.pump(10);
-
+  // The settings rows sit at the top of the BlipToaster menu, above the asset submenus and behind no submenu
+  // of their own: expanding BlipToaster is all it takes to reach them.
   // Every field of the block has a row, each showing the ROM's own baked value.
-  expect(labelOf("Base Channel")).toBe("Base Channel: BASE01");
+  expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 01");
   expect(labelOf("Default Kit")).toBe("Default Kit: TR-909"); // named from the ROM, not a bare index
   expect(labelOf("PPU Enabled")).toBe("PPU Enabled: Off");
   expect(labelOf("Velocity Curve")).toBe("Velocity Curve: Linear");
@@ -57,16 +54,16 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   expect(ui.findByTextContaining("Reset to ROM Defaults")).toBe(null);
 
   // Right steps the value: role config written, row re-rendered off the new pin.
-  expect(navTo("Base Channel")).toBeTruthy();
+  expect(navTo("Base MIDI Channel")).toBeTruthy();
   ui.tapKey(Key.Right);
   ui.pump(20);
-  expect(labelOf("Base Channel")).toBe("Base Channel: BASE02");
+  expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 02");
 
   // Left comes back, so it is a live two-way row and not a one-shot write. Still PINNED, though, at the value
   // the ROM happens to bake - so the reboot rows have appeared and stay.
   ui.tapKey(Key.Left);
   ui.pump(20);
-  expect(labelOf("Base Channel")).toBe("Base Channel: BASE01");
+  expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 01");
   expect(ui.findByTextContaining("Apply (Reboot Cart)") != null).toBeTruthy();
 
   // A cycler does NOT reboot, which is what keeps the menu open across all of the above - a reload swaps the
@@ -86,9 +83,6 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   ui.tapKey(Key.Esc);
   ui.pump(10);
   expect(navTo("BlipToaster")).toBeTruthy();
-  ui.tapKey(Key.Enter);
-  ui.pump(10);
-  expect(navTo("Settings")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(10);
   expect(labelOf("PPU Enabled")).toBe("PPU Enabled: Off");

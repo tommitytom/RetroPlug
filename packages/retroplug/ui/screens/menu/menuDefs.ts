@@ -1346,7 +1346,7 @@ const blipToasterAssetSpec: AssetMenuSpec = {
   replaceAsset: replaceBlipToasterAsset,
 };
 
-// --- BlipToaster Settings submenu (the cart's baked rig defaults) --------------------------------------
+// --- BlipToaster settings rows (the cart's baked rig defaults) -----------------------------------------
 // BlipToaster has no settings memory - no battery, and nothing survives a RESET on purpose - so what you would
 // set once for your rig is baked into the `.nes`: a 16-byte block in its code bank (src/bliptoaster/rom/settings).
 // These rows edit it exactly the way the asset rows edit assets: the pick is persisted on the
@@ -1366,7 +1366,7 @@ const blipToasterAssetSpec: AssetMenuSpec = {
 // The label for the row's current value, given the effective settings. Kit and Theme name the ENTRY the cart
 // will use, read from the ROM itself, so the row says "TR-909" rather than "3" - the same names the Kits and
 // Themes submenus list. A slot the ROM has nothing in falls back to its number.
-const baseChannelNames = Array.from({ length: 16 }, (_v, i) => `BASE${String(i + 1).padStart(2, "0")}`);
+const baseChannelNames = Array.from({ length: 16 }, (_v, i) => String(i + 1).padStart(2, "0"));
 
 function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const bytes = assetRomBytes(ctx.stores.backend, sys.romPath);
@@ -1405,7 +1405,7 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
     screenRow("bliptoaster-set-theme", "Theme", "theme", themeNames, effective.theme),
     screenRow("bliptoaster-set-font", "Font", "font", fontNames, effective.font),
     sep("bliptoaster-set-sep"),
-    cycler("bliptoaster-set-basech", "Base Channel", baseChannelNames, effective.baseChannel, (n) => pin({ baseChannel: n })),
+    cycler("bliptoaster-set-basech", "Base MIDI Channel", baseChannelNames, effective.baseChannel, (n) => pin({ baseChannel: n })),
     cycler("bliptoaster-set-kit", "Default Kit", kitNames, effective.kit, (n) => pin({ kit: n })),
     cycler("bliptoaster-set-ppu", "PPU Enabled", OFF_ON, effective.ppu ? 1 : 0, (n) => pin({ ppu: n === 1 })),
     // "not on the VRC7 build" is the ROM's own behaviour (it has no velocity curve), not something to hide here:
@@ -1426,12 +1426,15 @@ function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] 
   ];
 }
 
-// The BlipToaster tracker extras: the Settings submenu above the asset submenus (it is what the cart BOOTS
-// with, the asset menus are what it boots FROM). Empty when the ROM carries no readable settings block.
+// The BlipToaster tracker extras: the settings rows sit at the TOP of the BlipToaster menu, above the asset
+// submenus and fenced off from them (they are what the cart BOOTS with, the asset menus are what it boots
+// FROM). Inline rather than behind a "Settings" submenu of their own: there are only a handful, and one of the
+// two things you come to this menu to do should not cost a level. Empty when the ROM carries no readable
+// settings block.
 function blipToasterExtras(ctx: MenuContext, sys: SystemView): MenuItem[] {
   const rows = blipToasterSettingsRows(ctx, sys);
   if (rows.length === 0) return [];
-  return [submenu("bliptoaster-settings", "Settings", rows), sep("bliptoaster-settings-sep")];
+  return [...rows, sep("bliptoaster-settings-sep")];
 }
 
 // --- LSDj Songs submenu (the SAV's 32 saved-song slots: export / replace / delete / add) ---------------
