@@ -45,5 +45,9 @@ packages/retroplug/.test-build/
 packages/retroplug/.native-build/
 packages/retroplug/.ui-build/
 
+# Per-file test durations, recorded by the runners to dispatch longest-first next run.
+# Machine-specific and self-healing (a missing file just costs one unordered run).
+packages/retroplug/.test-timings/
+
 # macOS Finder metadata
 .DS_Store
