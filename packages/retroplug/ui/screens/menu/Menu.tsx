@@ -57,17 +57,28 @@ interface PromptState {
   error: string;
 }
 
+// Rough glyph advance widths, in units where a space is 1. The menu font is Montserrat (proportional —
+// LV_FONT_DEFAULT in packages/native/src/lv_conf.h), so padding an "actionCycler" verb out to a common
+// CHARACTER count leaves the brackets visibly walking: pad chars are spaces, and a space is about half the
+// width of the letter it stands in for. Three buckets is enough to close that — it's only ever choosing how
+// many spaces to emit, so being a few percent off costs a few pixels, and a font change costs looseness, not
+// correctness. (The alternative, splitting the row into two Texts for real column alignment, would cost the
+// row its single-lv_label identity: the UI harness reads focused().text off a label, so navTo() — and every
+// test that leans on it — would stop seeing these rows. See packages/native/test/ui/RenderCore.cpp.)
+const GLYPH_NARROW = "ijltfrIJ.,:;!'\"|()[]{}/\\-"; // ~1 space wide
+const GLYPH_WIDE = "mwMW@%"; // ~3 spaces wide
+const textWidth = (s: string): number => {
+  let w = 0;
+  for (const ch of s) w += ch === " " ? 1 : GLYPH_NARROW.includes(ch) ? 1 : GLYPH_WIDE.includes(ch) ? 3 : 2;
+  return w;
+};
+
 // An "actionCycler" row: `<label>   <  verb  >`. The verb is centred in a field as wide as the row's widest
-// verb, so stepping through them doesn't visibly stretch the row out from under the brackets. Padding with
-// SPACES can only approximate that — the menu font is Montserrat (proportional, LV_FONT_DEFAULT in
-// packages/native/src/lv_conf.h), so equal character counts aren't equal widths. It still holds the row to
-// roughly a character of drift instead of the dozen-plus the raw labels differ by; true pixel alignment
-// would need the row split into two Texts, which would cost it its single-label identity (the UI harness
-// reads focused().text off an lv_label — see packages/native/test/ui/RenderCore.cpp widgetInfo).
+// verb (measured, per above), so stepping through the list doesn't drag the brackets around.
 function actionCyclerLabel(item: MenuItem, index: number): string {
   const actions = item.actions ?? [];
   const text = actions[index]?.label ?? "";
-  const pad = actions.reduce((w, a) => Math.max(w, a.label.length), 0) - text.length;
+  const pad = actions.reduce((w, a) => Math.max(w, textWidth(a.label)), 0) - textWidth(text);
   return `${item.label}   <${" ".repeat(Math.floor(pad / 2) + 1)}${text}${" ".repeat(Math.ceil(pad / 2) + 1)}>`;
 }
 
