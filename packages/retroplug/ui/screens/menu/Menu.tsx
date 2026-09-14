@@ -598,7 +598,18 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
                 onKey={onItemKey}
                 onClick={() => focusRow(item)}
               >
-                <Text style={cell}>{item.label}</Text>
+                {/* The name fills the row's slack so it, not the Box behind it, is the hover target wherever
+                    the pointer sits on the left of the row — a clickable child steals LV_STATE_HOVERED from
+                    its ancestor, so a content-sized name made the row's bar blink out over the text itself.
+                    `display: flex` is not decoration: lv_binding_js's flex pipe reads `flex-grow` only off a
+                    style that also declares it (a label with no children lays nothing out either way). The
+                    bar is the unfocused row's affordance; a focused row already wears its cursor. */}
+                <TextAny
+                  style={{ ...cell, display: "flex", "flex-grow": 1 }}
+                  onHoveredStyle={item.disabled || isFocused ? undefined : ROW_HOVER_STYLE}
+                >
+                  {item.label}
+                </TextAny>
                 {isFocused && (
                   <Box style={{ width: actionRegionW, display: "flex", "flex-direction": "row", "align-items": "center", "background-opacity": 0 }}>
                     <TextAny

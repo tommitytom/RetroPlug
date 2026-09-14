@@ -43,6 +43,17 @@ test("the mouse aims at the cells: the verb runs it, the arrows step it, the row
   const nameCell = ui.findByText("[0] TR-909")!;
   expect(ui.findByText("<")).toBe(null);
 
+  // An unfocused row is ONE hover target across its whole width — its name label fills the row's slack
+  // rather than hugging the text. A clickable child steals LV_STATE_HOVERED from its ancestor, so while the
+  // name was content-sized the row's bar showed in the empty space beside it and blinked out over the text
+  // itself. Sweep the pointer across the row: it must stay lit the whole way.
+  const cy = mid(nameCell)[1];
+  for (const x of [nameCell.x + 4, nameCell.x + Math.floor(nameCell.width / 2), nameCell.x + nameCell.width - 6]) {
+    ui.moveMouse(x, cy);
+    ui.pump(8);
+    expect(ui.findByText("[0] TR-909")!.state & State.Hovered).toBe(State.Hovered);
+  }
+
   // Clicking the row BODY only moves the cursor there — the element appears and the menu stays open.
   ui.moveMouse(...mid(nameCell));
   ui.clickAt(...mid(nameCell));
