@@ -434,6 +434,12 @@ widget's native uid for the test harness and is inert in production.
   Montserrat. And `flex-grow` is unusable on the children: lv_binding_js's flex pipe drops it unless the
   child's own style also says `display: "flex"`. The UI harness composes a non-label widget's text from its
   descendant labels (`RenderCore::widgetInfo`), so `navTo` / `focused().text` still see these rows.
+  The **mouse aims at the cells**: clicking the verb runs it, clicking an arrow steps the pick, and clicking
+  the row body only moves the cursor — so a click can't run a verb the pointer was never over, which matters
+  because the element is invisible until the row is focused. Each cell hover-highlights and stops the click
+  bubbling (Texts are created `LV_OBJ_FLAG_EVENT_BUBBLE`). That splits the two paths that used to share the
+  row's `onClick`, so **keypad Enter is handled on the key bus instead** — LVGL routes it through the same
+  `CLICKED` event the mouse uses, and only the row body should answer that one.
 - [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts) builds the start
   and instance menus over a `MenuContext` (stores + current values, rebuilt each render).
   Leaves call store methods directly, current values are baked into labels, and

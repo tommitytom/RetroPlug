@@ -3,10 +3,10 @@
 //
 // test/menu/*.test.ts already proves the MODEL side (that a kit row carries its verbs rather than children).
 // What only this can prove is the renderer's half, which lives entirely in Menu.tsx and has no other cover:
-// that the row composes into ONE lv_label carrying `[0] <name>   <  verb  >` WHEN FOCUSED and just its name
-// otherwise, that Left/Right re-render it onto the next verb without moving focus, that the pick wraps, and
-// that Enter runs the verb the row is showing at that moment — the renderer owns which verb that is, so
-// nothing downstream can be asked.
+// that a focused row lays out as `[0] <name>  <  verb  >` and an unfocused one is just its name, that
+// Left/Right re-render it onto the next verb without moving focus, that the pick wraps, that the two arrows
+// hold the SAME pixels whatever verb sits between them, and that Enter runs the verb the row is showing at
+// that moment — the renderer owns which verb that is, so nothing downstream can be asked.
 //
 // Driven on resources/roms/bliptoaster.nes: a mapper-69 (FME-7) banking cart, so its kit type is addable and
 // the row carries all three of Export / Replace / Delete. Delete is the one verb that neither opens a file

@@ -49,6 +49,10 @@ const GAMEPAD_CAPTURE_AXIS = 0.6; // a stick must pass this (past the play thres
 // highlighted but subordinate to the keyboard-selected row. A pre-dimmed colour at full opacity (a
 // state-style's background-opacity isn't reliably applied). LVGL toggles it on LV_STATE_HOVERED.
 const ROW_HOVER_STYLE = { "background-color": "#0d1626", "background-opacity": 255 } as const;
+// The same idea one level in: an action-cycler's clickable cells (the verb, each arrow) light up under the
+// pointer so it's clear the click lands on THEM, not on the row. Brighter than both bars above, since it
+// paints on top of the focus bar — these cells only exist on the focused row.
+const CELL_HOVER_STYLE = { "background-color": "#2a4770", "background-opacity": 255 } as const;
 
 /** The live prompt overlay: its spec, the typed value, and any error string (shown red). */
 interface PromptState {
@@ -246,6 +250,20 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     [onClose, actionIndexOf],
   );
 
+  // Move the cursor onto a row without acting on it — the mouse path for an action-cycler's row body, where
+  // only the element's own cells run anything. LVGL focuses a clicked row by itself, but a click that lands
+  // on a child label leaves the group where it was, so the focus is moved explicitly here.
+  const focusRow = useCallback(
+    (item: MenuItem) => {
+      if (item.disabled) return;
+      focusedIdRef.current = item.id;
+      setFocusedId(item.id);
+      const ref = refsByIdRef.current.get(item.id);
+      if (ref) focus(ref);
+    },
+    [focus],
+  );
+
   // Run the open prompt's onConfirm: a returned error string keeps it open (shown red); null closes it.
   const confirmPrompt = useCallback(() => {
     const ps = promptStateRef.current;
@@ -344,6 +362,11 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     if (code === KEY_DELETE && focused.onDelete) return focused.onDelete();
     if (code === KEY_PAGE_UP) return focused.onCoarseStep?.(1);
     if (code === KEY_PAGE_DOWN) return focused.onCoarseStep?.(-1);
+    // Enter on an actionCycler row runs its verb from HERE rather than from the row's onClick, because that
+    // onClick is the MOUSE's path and the mouse must not run a verb by landing on the row body — LVGL routes
+    // keypad Enter through the same CLICKED event, so the two can't share a handler. (LVGL still delivers
+    // that CLICKED afterwards; it lands on focusRow, which is a no-op on the row already under the cursor.)
+    if (focused.kind === "actionCycler" && code === KEY_ENTER) return activate(focused);
     if (focused.kind === "capture") {
       if (code === KEY_ENTER) setCapturing(focused.id);
       else if (code === KEY_BACKSPACE) focused.capture?.onClear();
@@ -534,9 +557,20 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           // belongs to the CURSOR — an unfocused row is just its name, so a list reads as a column of names
           // and only the row you're on offers anything to do. The row is a Box, not a Text, which makes it
           // the group member LVGL focuses and the object that takes the row's key/click events.
+          //
+          // The MOUSE aims at the cells, not the row: clicking the verb runs it, clicking an arrow steps the
+          // pick, and clicking anywhere else on the row only moves the cursor there. So a stray click on a
+          // row can't run something the pointer was never over — which matters precisely because the element
+          // is invisible until the row is focused.
           if (item.kind === "actionCycler") {
             const verb = item.actions?.[actionIndexOf(item)]?.label ?? "";
             const cell = { "text-color": rowColor, "font-size": itemFont, "background-opacity": 0 } as const;
+            // Texts are created LV_OBJ_FLAG_EVENT_BUBBLE (components/text/text.cpp), so a cell's click would
+            // ALSO reach the row's onClick below; each cell stops it.
+            const onCell = (run: () => void) => (e: { stopPropagation?: () => void }) => {
+              e?.stopPropagation?.();
+              run();
+            };
             // No flex-grow anywhere: lv_binding_js's flex pipe
             // (deps/dpf.js/deps/lv_binding_js/src/render/react/core/style/pipe/flex.ts) silently drops
             // `flex-grow` unless the CHILD's own style also says `display: "flex"`, which would turn a label
@@ -545,7 +579,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
             // EXPLICIT columns — arrow | verb | arrow — summing to its width. Explicit rather than
             // space-between inside, because space-between distributes the remainder and drifts the last item
             // by a pixel as the verb's width changes; fixed columns put the arrows on the same pixel every
-            // time, and centring the verb in its own column centres it exactly between them.
+            // time. The verb is a content-sized label CENTRED in the middle column rather than a label filling
+            // it, so the hover highlight and the hit target are the words themselves, not the whole column.
             return (
               <Box
                 key={item.id}
@@ -561,15 +596,41 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
                 }}
                 onHoveredStyle={item.disabled ? undefined : ROW_HOVER_STYLE}
                 onKey={onItemKey}
-                onClick={() => activate(item)}
+                onClick={() => focusRow(item)}
               >
                 <Text style={cell}>{item.label}</Text>
                 {isFocused && (
                   <Box style={{ width: actionRegionW, display: "flex", "flex-direction": "row", "align-items": "center", "background-opacity": 0 }}>
-                    <Text style={{ ...cell, width: actionArrowW, "text-align": "center" }}>{"<"}</Text>
-                    {/* Ellipsised rather than wrapped: a verb too long for its column must not grow the row. */}
-                    <Text style={{ ...cell, width: actionRegionW - actionArrowW * 2, "text-align": "center", "text-overflow": "ellipsis" }}>{verb}</Text>
-                    <Text style={{ ...cell, width: actionArrowW, "text-align": "center" }}>{">"}</Text>
+                    <TextAny
+                      style={{ ...cell, width: actionArrowW, "text-align": "center" }}
+                      onHoveredStyle={CELL_HOVER_STYLE}
+                      onClick={onCell(() => stepItem(item, -1))}
+                    >
+                      {"<"}
+                    </TextAny>
+                    {/* Overflow is clipped by this column (Box resets overflow to hidden), so a verb too long
+                        for it is cut rather than wrapped onto a second line that would grow the row. */}
+                    <Box
+                      style={{
+                        width: actionRegionW - actionArrowW * 2,
+                        display: "flex",
+                        "flex-direction": "row",
+                        "justify-content": "center",
+                        "align-items": "center",
+                        "background-opacity": 0,
+                      }}
+                    >
+                      <TextAny style={cell} onHoveredStyle={CELL_HOVER_STYLE} onClick={onCell(() => activate(item))}>
+                        {verb}
+                      </TextAny>
+                    </Box>
+                    <TextAny
+                      style={{ ...cell, width: actionArrowW, "text-align": "center" }}
+                      onHoveredStyle={CELL_HOVER_STYLE}
+                      onClick={onCell(() => stepItem(item, 1))}
+                    >
+                      {">"}
+                    </TextAny>
                   </Box>
                 )}
               </Box>
