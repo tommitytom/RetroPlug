@@ -56,8 +56,7 @@ import { readOverrides as readRisaOverrides, type RisaAssetOverride } from "../.
 import {
   BlipToasterRom,
   blipToasterSettingsSysex,
-  SETTINGS_THEME_COUNT,
-  SETTINGS_FONT_COUNT,
+  type BlipToasterSettings,
   type BlipToasterSettingsPatch,
 } from "../../../src/bliptoaster/rom";
 import {
@@ -919,6 +918,12 @@ interface AssetMenuSpec {
   catalog: AssetCatalog;
   exportAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void;
   replaceAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void;
+  // Optional: a console where one slot of an asset type is the LIVE one (BlipToaster's theme + font, which its
+  // settings block names). Where it applies, the list is also the picker - the row carries a `Select` verb and
+  // the live slot wears a `*` - rather than a separate cycler somewhere else naming a slot by number. Return
+  // null for a type that has no such notion; every other console leaves this unset and its rows are unchanged.
+  selectedSlot?(ctx: MenuContext, sys: SystemView, kind: string): number | null;
+  selectSlot?(ctx: MenuContext, sys: SystemView, kind: string, slot: number): void;
 }
 
 // Read + cache the base ROM bytes once per romPath (the menu rebuilds every render; the catalog re-parses on
@@ -983,19 +988,32 @@ function addAsset(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: 
   spec.replaceAsset(ctx, sys, type, slot);
 }
 
-// One asset item: Export / Replace, plus Delete (kits only) + Remove Override (when overridden).
+// One asset item: Export / Replace, plus Select (where the console has a live slot), Delete (kits only) and
+// Remove Override (when overridden).
 //
 // Every asset type renders those verbs INLINE — `[0] TR-606   <  Export...  >`, Left/Right picking and Enter
 // running — rather than as a submenu per slot, which made patching any one of them a four-level descent.
+//
+// Two markers, and they mean different things: `*` is the LIVE slot (what the cart is set to), `~` is an
+// overridden one (its contents replaced from disk). A slot can be both.
 function assetRow(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, row: AssetSlotRow): MenuItem {
   const id = `${spec.id}-${type.kind}-${row.slot}`;
-  const verbs: MenuAction[] = [
+  const selected = spec.selectedSlot?.(ctx, sys, type.kind) ?? null;
+  const verbs: MenuAction[] = [];
+  // Select leads, so landing on a row offers the thing the list is FOR; it keeps the menu open so a run of
+  // themes can be auditioned without reopening it each time. Absent on the slot already live - there is
+  // nothing to select - which also stops it being the default verb on exactly the row where it is a no-op.
+  if (spec.selectSlot && selected !== null && selected !== row.slot) {
+    verbs.push({ id: `${id}-select`, label: "Select", keepOpen: true, onSelect: () => spec.selectSlot!(ctx, sys, type.kind, row.slot) });
+  }
+  verbs.push(
     { id: `${id}-export`, label: "Export...", onSelect: () => spec.exportAsset(ctx, sys, type, row.slot, row.name) },
     { id: `${id}-replace`, label: "Replace...", onSelect: () => spec.replaceAsset(ctx, sys, type, row.slot) },
-  ];
+  );
   if (type.addable) verbs.push({ id: `${id}-delete`, label: "Delete", onSelect: () => deleteAsset(spec, ctx, sys, type, row.slot) });
   if (row.overridden) verbs.push({ id: `${id}-remove`, label: "Remove Override", onSelect: () => removeOverride(spec, ctx, sys, type.kind, row.slot) });
-  return actionCycler(id, `[${row.slot}] ${row.name}${row.overridden ? " *" : ""}`, verbs);
+  const marks = `${selected === row.slot ? "*" : ""}${row.overridden ? "~" : ""}`;
+  return actionCycler(id, `[${row.slot}] ${row.name}${marks ? ` ${marks}` : ""}`, verbs);
 }
 
 // Build a console's asset submenus (one per asset type); empty when the ROM can't be read (e.g. headless). A
@@ -1339,11 +1357,26 @@ function replaceBlipToasterAsset(ctx: MenuContext, sys: SystemView, type: AssetT
   });
 }
 
+// The cart's settings block names one THEME and one FONT as the live ones, so for those two the asset list is
+// also the picker: the row that IS live wears a `*`, every other row offers `Select`. That replaces a pair of
+// cyclers at the menu's root which named a slot by number, in a different place from the list of slots.
+const BLIPTOASTER_SELECTABLE: Record<string, "theme" | "font" | undefined> = { theme: "theme", font: "font" };
+
 const blipToasterAssetSpec: AssetMenuSpec = {
   id: "bliptoaster",
   catalog: bliptoasterAssetCatalog,
   exportAsset: exportBlipToasterAsset,
   replaceAsset: replaceBlipToasterAsset,
+  selectedSlot(ctx, sys, kind) {
+    const field = BLIPTOASTER_SELECTABLE[kind];
+    if (!field) return null; // kits have no live slot: ch5 CC 14 picks one, and nothing is baked
+    const s = blipToasterEffectiveSettings(ctx, sys);
+    return s ? s[field] : null;
+  },
+  selectSlot(ctx, sys, kind, slot) {
+    const field = BLIPTOASTER_SELECTABLE[kind];
+    if (field) blipToasterPinSettings(ctx, sys, { [field]: slot });
+  },
 };
 
 // --- BlipToaster settings rows (the cart's baked rig defaults) -----------------------------------------
@@ -1352,55 +1385,44 @@ const blipToasterAssetSpec: AssetMenuSpec = {
 // These rows edit it exactly the way the asset rows edit assets: the pick is persisted on the
 // `bliptoaster-assets` role and folded into the ROM IN MEMORY at construct, and the file on disk is untouched.
 //
-// So the Theme and Font rows here are how you CHOOSE among the baked 16 / 4 - the Themes and Fonts submenus
-// replace an entry's contents, they don't pick the live one. Each of these is a boot default and not a lock: the
-// cart's own CC 16 / CC 17 (and CC 15) still move it live, and the next cold boot comes back to this. The DMC
-// KIT has no row here on purpose: ch5 CC 14 (or a ch5 program change) picks it, which a song does before it
-// plays anything, so a baked default was a byte and a row restating what the music says anyway.
+// THEME and FONT have no row here: the cart names one of each as live, so their lists ARE the picker (a `*` on
+// the live slot, `Select` on every other - see blipToasterAssetSpec). The DMC kit has none either: ch5 CC 14
+// picks it, which a song does before it plays anything. What is left is the rig proper - the base channel, the
+// screen, the velocity curve - which nothing else in the menu names.
 //
-// The ROM reads the block during STARTUP and nowhere else, so a change only shows after a cold boot - and that
-// splits the rows the way the rest of this menu is already split. The CYCLERS just pin the field: they leave the
-// running cart alone, so you can step through 16 themes with the menu open, and the pin is persisted (and
-// re-applied by any later load) the moment you move it. The two ACTIONS reboot, and close the menu as every
-// action row does, which is when you see the new look. A project LOAD needs neither - construct applies the
-// pins on the way in.
-
-// The label for the row's current value, given the effective settings. Theme names the ENTRY the cart will use,
-// read from the ROM itself, so the row says "NEON" rather than "2" - the same names the Themes submenu lists.
-// A slot the ROM has nothing in falls back to its number.
+// Every row pins the field AND tells the running cart over SysEx, so it takes effect now; the pin is what a
+// later LOAD replays and what a bake writes. A project load needs neither - construct applies the pins on the
+// way in.
 const baseChannelNames = Array.from({ length: 16 }, (_v, i) => String(i + 1).padStart(2, "0"));
 
-function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] {
+/** The cart's baked block with the project's pins on top - what it is set to right now. Null when the ROM has
+ *  no readable block (one predating it, or a format this build does not read). */
+function blipToasterEffectiveSettings(ctx: MenuContext, sys: SystemView): BlipToasterSettings | null {
   const bytes = assetRomBytes(ctx.stores.backend, sys.romPath);
-  if (!bytes) return [];
+  if (!bytes) return null;
   const rom = BlipToasterRom.fromBytes(bytes);
-  if (!rom.isBlipToaster || !rom.hasSettings) return []; // a ROM predating the block, or a format we don't read
-  // The EFFECTIVE settings: the ROM's baked block with the project's pinned fields on top - i.e. what the cart
-  // boots with right now, which is what a row must show.
-  const pinned = readBlipToasterSettings(sys);
-  const effective = { ...rom.settings()!, ...pinned };
-  // Pin the field AND tell the running cart, so a row takes effect now rather than at the next cold boot. The
-  // pin is what a LOAD replays (and what a bake writes); the SysEx is what the cart in front of you hears.
-  // Sent per-system so it reaches THIS cart whatever the project's musical MIDI routing does (stageSystemMidi).
-  const pin = (patch: Record<string, unknown>): void => {
-    const next = { ...pinned, ...patch };
-    ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: next });
-    ctx.stores.backend.stageSystemMidi(sys.id, blipToasterSettingsSysex({ ...rom.settings()!, ...next }));
-  };
+  if (!rom.isBlipToaster || !rom.hasSettings) return null;
+  return { ...rom.settings()!, ...readBlipToasterSettings(sys) };
+}
 
-  // Each list is bounded by what THIS ROM carries, not by the format's maximum - offering a theme the cart has
-  // no record for would bake an index it cannot use. Capped at the format's bound too (a field is one byte with
-  // a fixed range), and floored at 1 so a cycler always has something to show.
-  const bounded = (n: number, max: number): number => Math.max(1, Math.min(n, max));
-  const themeNames = Array.from({ length: bounded(rom.themeCount, SETTINGS_THEME_COUNT) }, (_v, i) =>
-    rom.themes().find((t) => t.slot === i)?.theme.name.trim() || `Theme ${i}`,
-  );
-  const fontNames = Array.from({ length: bounded(rom.chrFontSlotCount, SETTINGS_FONT_COUNT) }, (_v, i) => `Font ${i}`);
+/** Pin `patch` on the role AND declare the resulting rig to the RUNNING cart. Both halves matter and neither
+ *  is redundant: the pin is what a load replays and a bake writes, the SysEx is what the cart in front of you
+ *  hears. Sent per-system so it reaches THIS cart whatever the project's MUSICAL routing is doing. */
+function blipToasterPinSettings(ctx: MenuContext, sys: SystemView, patch: BlipToasterSettingsPatch): void {
+  const effective = blipToasterEffectiveSettings(ctx, sys);
+  if (!effective) return;
+  const next = { ...readBlipToasterSettings(sys), ...patch };
+  ctx.stores.project.systems.setRoleConfig(sys.id, "bliptoaster-assets", { settings: next });
+  ctx.stores.backend.stageSystemMidi(sys.id, blipToasterSettingsSysex({ ...effective, ...patch }));
+}
+
+function blipToasterSettingsRows(ctx: MenuContext, sys: SystemView): MenuItem[] {
+  const effective = blipToasterEffectiveSettings(ctx, sys);
+  if (!effective) return [];
+  const pinned = readBlipToasterSettings(sys);
+  const pin = (patch: BlipToasterSettingsPatch): void => blipToasterPinSettings(ctx, sys, patch);
 
   return [
-    cycler("bliptoaster-set-theme", "Theme", themeNames, effective.theme, (n) => pin({ theme: n })),
-    cycler("bliptoaster-set-font", "Font", fontNames, effective.font, (n) => pin({ font: n })),
-    sep("bliptoaster-set-sep"),
     cycler("bliptoaster-set-basech", "Base MIDI Channel", baseChannelNames, effective.baseChannel, (n) => pin({ baseChannel: n })),
     cycler("bliptoaster-set-ppu", "PPU Enabled", OFF_ON, effective.ppu ? 1 : 0, (n) => pin({ ppu: n === 1 })),
     // "not on the VRC7 build" is the ROM's own behaviour (it has no velocity curve), not something to hide here:

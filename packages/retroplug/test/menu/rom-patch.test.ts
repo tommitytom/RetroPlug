@@ -243,7 +243,7 @@ test("risa gets the same two rows, and patching bakes a theme into the .nes", ()
       { type: "theme", slot: 1, name: "NEON", theme: { name: "NEON", bg: "0x0D", normal: "0x30", shaded: "0x10", alternate: "0x20", status: "0x05", cursor: "0x15", selection: "0x25" } },
     ],
   });
-  expect(findItem(submenuChildren(kids(), "risa-themes"), "risa-theme-1")?.label).toBe("[1] NEON *"); // override
+  expect(findItem(submenuChildren(kids(), "risa-themes"), "risa-theme-1")?.label).toBe("[1] NEON ~"); // override
 
   expect(findItem(kids(), "risa-patch-rom")!.prompt!.onConfirm("")).toBe(null);
 

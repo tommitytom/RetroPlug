@@ -252,7 +252,7 @@ test("a theme override shows a * marker + a Remove Override row", () => {
     submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-risa"),
     "risa-themes",
   );
-  expect(themes[1].label).toBe("[1] NEON *"); // override name + the * marker
+  expect(themes[1].label).toBe("[1] NEON ~"); // override name + the ~ marker (* is the LIVE slot)
   expect(actionsOf(themes, "risa-theme-1").some((a) => a.id === "risa-theme-1-remove")).toBe(true);
 });
 
@@ -284,7 +284,7 @@ test("a linked kit override shows a * marker + Remove Override, listed alongside
     submenuChildren(buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view().find((s) => s.id === id)! }).items, "inst-risa"),
     "risa-kits",
   );
-  expect(kits.find((k) => k.id === "risa-kit-5")!.label).toBe("[5] DRUMS *"); // override name + * marker
+  expect(kits.find((k) => k.id === "risa-kit-5")!.label).toBe("[5] DRUMS ~"); // override name + the ~ marker (* is the LIVE slot)
   expect(kits.some((k) => k.id === "risa-kit-0")).toBe(true); // base kit still listed
   expect(actionsOf(kits, "risa-kit-5").some((a) => a.id === "risa-kit-5-remove")).toBe(true);
 });

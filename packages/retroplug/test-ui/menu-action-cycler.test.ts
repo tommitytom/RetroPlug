@@ -101,9 +101,10 @@ test("a kit row carries its verbs inline: Left/Right pick one, Enter runs the pi
   ui.pump(10);
   expect(navTo("Font 0")).toBeTruthy();
   ui.pump(6);
-  expect(ui.focused()?.text).toBe("[0] Font 0 < Export... >");
+  expect(ui.focused()?.text).toBe("[0] Font 0 * < Export... >"); // `*` = the live font (the list is its picker)
   expect(arrowBox()).toBe(fixed);
-  // A font is not addable and carries no override, so Replace is the end of its list — and it wraps there.
-  expect(step(Key.Right)).toBe("[0] Font 0 < Replace... >");
-  expect(step(Key.Right)).toBe("[0] Font 0 < Export... >");
+  // This cart has ONE font bank, so it is the live one: no Select (nothing to select), not addable, no
+  // override — Export and Replace are the whole list, and it wraps there.
+  expect(step(Key.Right)).toBe("[0] Font 0 * < Replace... >");
+  expect(step(Key.Right)).toBe("[0] Font 0 * < Export... >");
 });

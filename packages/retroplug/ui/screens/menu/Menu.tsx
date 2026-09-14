@@ -242,10 +242,15 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
         });
         return;
       }
-      // An actionCycler runs the verb it is currently showing; every other leaf runs its own onSelect.
-      if (item.kind === "actionCycler") item.actions?.[actionIndexOf(item)]?.onSelect();
-      else item.onSelect?.();
-      if (!item.keepOpen) onClose();
+      // An actionCycler runs the verb it is currently showing; every other leaf runs its own onSelect. The
+      // verb may ask to stay open on its own account (a `Select` you can run repeatedly), overriding the row.
+      let keepOpen = item.keepOpen;
+      if (item.kind === "actionCycler") {
+        const picked = item.actions?.[actionIndexOf(item)];
+        picked?.onSelect();
+        keepOpen = picked?.keepOpen ?? item.keepOpen;
+      } else item.onSelect?.();
+      if (!keepOpen) onClose();
     },
     [onClose, actionIndexOf],
   );

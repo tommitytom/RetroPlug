@@ -98,7 +98,7 @@ test("a palette override shows a * marker + a Remove Override row", () => {
   });
 
   const palettes = submenuChildren(kids(), "lsdj-palettes");
-  expect(findItem(palettes, "lsdj-palette-1")?.label).toBe("[1] NEON *"); // override name + the * marker
+  expect(findItem(palettes, "lsdj-palette-1")?.label).toBe("[1] NEON ~"); // override name + the ~ marker (* is the LIVE slot)
   expect(actionsOf(palettes, "lsdj-palette-1").some((a) => a.id === "lsdj-palette-1-remove")).toBe(true);
 });
 
@@ -112,7 +112,7 @@ test("a linked kit override shows a * marker + Delete + Remove Override, added t
   });
 
   const kits = submenuChildren(kids(), "lsdj-kits");
-  expect(kits.find((k) => k.id === "lsdj-kit-0")?.label).toBe("[0] DRUMS *");
+  expect(kits.find((k) => k.id === "lsdj-kit-0")?.label).toBe("[0] DRUMS ~");
   // A kit is one inline row: its verbs ride ON it (Left/Right pick, Enter runs), not in a submenu below it.
   expect(actionsOf(kits, "lsdj-kit-0").map((a) => a.id)).toEqual([
     "lsdj-kit-0-export",
@@ -130,7 +130,7 @@ test("Remove Override drops the override end-to-end (reload reverts the effectiv
   stores.project.systems.setRoleConfig(id, "lsdj-assets", {
     overrides: [{ type: "palette", slot: 1, name: "NEON", colorSets: [{ colors: [{ r: 0, g: 0, b: 0 }] }] }],
   });
-  expect(findItem(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1")?.label).toBe("[1] NEON *");
+  expect(findItem(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1")?.label).toBe("[1] NEON ~");
 
   // Remove Override: writes the emptied list + reloads → the row reverts (no *, no -remove).
   actionsOf(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1").find((a) => a.id === "lsdj-palette-1-remove")!.onSelect();

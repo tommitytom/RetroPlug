@@ -34,6 +34,10 @@ export interface MenuAction {
   id: string;
   label: string;
   onSelect: () => void;
+  /** Stay open after this verb runs, overriding the row's own `keepOpen`. Per-VERB because one row's verbs
+   *  can want different things: a `Select` you may run several times in a row to audition, beside an
+   *  `Export...` that opens a dialog the menu should get out of the way of. */
+  keepOpen?: boolean;
 }
 
 export interface MenuItem {

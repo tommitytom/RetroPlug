@@ -37,9 +37,9 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   expect(labelOf("Base MIDI Channel")).toBe("Base MIDI Channel: 01");
   expect(labelOf("PPU Enabled")).toBe("PPU Enabled: On"); // the one field whose power-on default is 1
   expect(labelOf("Velocity Curve")).toBe("Velocity Curve: Linear");
-  // Theme and Font are live rows like the rest, reading the current build's own bytes.
-  expect(labelOf("Theme")).toBe("Theme: DFLT");
-  expect(labelOf("Font")).toBe("Font: Font 0");
+  // Theme and Font have no row here: they are picked in their own lists (see the Themes leg at the end).
+  expect(ui.findByTextContaining("Theme:")).toBe(null);
+  expect(ui.findByTextContaining("Font:")).toBe(null);
   // Nothing pinned yet, so Reset is absent: the rows above are showing the ROM's own bytes already. There is
   // no "Apply" row at all - a row reaches the running cart over SysEx as it is stepped, so a reboot would have
   // nothing left to do.
@@ -81,4 +81,18 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   ui.pump(10);
   expect(labelOf("PPU Enabled")).toBe("PPU Enabled: On"); // the one field whose power-on default is 1
   expect(ui.findByTextContaining("Reset to ROM Defaults")).toBe(null);
+
+  // The Themes list is the theme PICKER: the live slot wears a star, and Enter on another row's leading
+  // `Select` verb moves it - without closing the menu, so a run of themes can be auditioned in place.
+  expect(navTo("Themes")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+  expect(labelOf("[0] DFLT")).toBe("[0] DFLT *");
+  expect(navTo("[2] NEON")).toBeTruthy();
+  expect(ui.focused()?.text).toBe("[2] NEON < Select >");
+  ui.tapKey(Key.Enter);
+  ui.pump(20);
+  expect(ui.findByTextContaining("[0] DFLT")?.text).toBe("[0] DFLT"); // the star left slot 0
+  expect(ui.findByTextContaining("[2] NEON")?.text).toBe("[2] NEON *"); //  ...and landed on slot 2
+  expect(ui.findByTextContaining("Themes") != null).toBeTruthy(); // still open: Select does not close the menu
 });

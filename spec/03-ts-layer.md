@@ -422,10 +422,16 @@ widget's native uid for the test harness and is inert in production.
   `[0] TR-606   <  Export...  >` (unfocused it is just its label — the element belongs to the
   cursor), Left/Right picking which verb shows and Enter **running** it
   (where a `cycler`'s Enter *steps*). Which verb a row is showing is transient state in
-  `Menu.tsx` — the tree is rebuilt from scratch every render and holds no selection. Every tracker
-  **asset** list uses it (`assetRow` in `menuDefs.ts` — kits, themes/palettes, fonts alike), so a
-  slot's verbs cost no extra level of menu. The element's width is fixed by the zoom alone, so the
-  arrows land in the same columns on every such row regardless of which list it belongs to.
+  `Menu.tsx` — the tree is rebuilt from scratch every render and holds no selection. A verb may carry its
+  own `keepOpen`, overriding the row's (a `Select` you run repeatedly, beside an `Export...` that opens a
+  dialog). Every tracker **asset** list uses it (`assetRow` in `menuDefs.ts` — kits, themes/palettes, fonts
+  alike), so a slot's verbs cost no extra level of menu. The element's width is fixed by the zoom alone, so
+  the arrows land in the same columns on every such row regardless of which list it belongs to.
+  Asset rows carry two markers, meaning different things: **`*` is the LIVE slot** (what the cart is set to)
+  and **`~` an overridden one** (contents replaced from disk); a slot can be both (`[0] NEON *~`). A console
+  with a live slot implements `selectedSlot`/`selectSlot` on its `AssetMenuSpec`, which is what puts a
+  leading `Select` verb on every row but the live one — BlipToaster's theme + font do, so their lists ARE
+  the picker rather than a cycler elsewhere naming a slot by number.
   Unlike every other row, an `actionCycler` is a **`Box` of labels, not a single `Text`** — the menu font is
   proportional, so the arrows can only hold fixed positions as real widgets: name at the row's left
   (`justify-content: space-between`), then a fixed-width element at the right made of three explicit columns,
