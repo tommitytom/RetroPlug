@@ -2337,6 +2337,10 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
           ]
         : []),
       sep("inst-sep-top"),
+      submenu("inst-system", "System", systemChildren(ctx, sys)),
+      submenu("inst-project", "Project", projectChildren(ctx)),
+      submenu("inst-settings", "Settings", settingsChildren(ctx)),
+      sep("inst-sep1"),
       action("inst-add", "Add Instance", () => void ctx.stores.fileSelection.browseAdd(sys.id)),
       action("inst-dup", "Duplicate Instance", () => {
         const id = systems.duplicateSystem(sys.id);
@@ -2360,10 +2364,6 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
           ]
         : []),
       ...midiClockRow(),
-      sep("inst-sep1"),
-      submenu("inst-system", "System", systemChildren(ctx, sys)),
-      submenu("inst-project", "Project", projectChildren(ctx)),
-      submenu("inst-settings", "Settings", settingsChildren(ctx)),
       ...(isStandalone() ? [sep("inst-sep-exit"), action("inst-exit", "Exit RetroPlug", () => ctx.requestExit())] : []),
       // Deferred: About panel.
     ],

@@ -20,15 +20,19 @@ test("the mouse wheel scrolls an overflowing menu, and stops at its ends", () =>
   expect(navTo("System")).toBeTruthy();
   ui.tapKey(Key.Enter);
   ui.pump(15);
+  // Then put the cursor on the LAST row, below the block System just expanded, so the scroll-follow leaves
+  // the container part way down — a known non-top start for the wheel to move away from.
+  expect(navTo("Duplicate Instance")).toBeTruthy();
+  ui.pump(10);
 
-  // A row near the top of the list, and a point inside the menu to put the cursor on.
+  // That row, and a point inside the menu to put the cursor on.
   const row = () => ui.findByTextContaining("Duplicate Instance")!;
   expect(row() != null).toBeTruthy();
   const px = row().x + Math.floor(row().width / 2);
   const py = row().y + Math.floor(row().height / 2);
 
-  // Start from the top: navigating to System already scroll-followed the container part way down, and a
-  // spin up is bounded, so this parks it at a known end (and proves the up direction moves the list down).
+  // Start from the top: the scroll-follow above left the container part way down, and a spin up is bounded,
+  // so this parks it at a known end (and proves the up direction moves the list down).
   const partScrolled = row().y;
   ui.scrollAt(px, py, 50);
   const top = row().y;
@@ -44,11 +48,11 @@ test("the mouse wheel scrolls an overflowing menu, and stops at its ends", () =>
   expect(row().y).toBe(top);
 
   // Bounded at the far end too: a big spin down leaves the last row on-screen rather than scrolling the
-  // content clean out of the viewport.
+  // content clean out of the viewport. ("Duplicate Instance" is that last row — the instance group sits at
+  // the bottom of the menu, below System / Project / Settings.)
   const win = ui.snapshot();
   ui.scrollAt(px, py, -50);
-  const last = ui.findByTextContaining("Settings")!;
-  expect(last.y >= 0 && last.y + last.height <= win.height).toBeTruthy();
+  expect(row().y >= 0 && row().y + row().height <= win.height).toBeTruthy();
 
   // The wheel is inert where nothing overflows: back on the grid, no scrollable ancestor claims it.
   ui.tapKey(Key.Esc);

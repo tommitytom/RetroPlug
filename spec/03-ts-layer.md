@@ -444,9 +444,11 @@ widget's native uid for the test harness and is inert in production.
 - [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts) builds the start
   and instance menus over a `MenuContext` (stores + current values, rebuilt each render).
   Leaves call store methods directly, current values are baked into labels, and
-  `browseThen` opens the OS dialog before applying. The instance menu offers Duplicate /
-  Remove / Load ROM / Add / Link Group / a System submenu (SameBoy model/highpass/fastBoot
-  cyclers, Save/Load State + SRAM, New SRAM, Reset) / Project / Settings.
+  `browseThen` opens the OS dialog before applying. The instance menu runs project ops (Load /
+  Save / New / Recent) and any tracker submenu first, then the three settings submenus — a
+  System submenu (SameBoy model/highpass/fastBoot cyclers, Save/Load State + SRAM, New SRAM,
+  Reset) / Project / Settings — and closes with the per-instance group (Add / Duplicate /
+  Replace / Remove / Link Group), which is therefore the bottom of the menu.
 - [`Menu.tsx`](../packages/retroplug/ui/screens/menu/Menu.tsx) is the keyboard-driven
   tree renderer. The focus highlight is React state driven **only** by explicit nav / click /
   rebuild — never by LVGL `onFocus` events — so there's nothing for stray focus events to
