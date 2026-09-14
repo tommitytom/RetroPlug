@@ -166,25 +166,26 @@ test("the Font row offers the 4 banks the banking ROM declares, and the Kit row 
   expect(rowLabel(items(), "bliptoaster-set-kit")).toBe("Default Kit: Kit 1");
 });
 
-test("on a ROM predating the screen fields, Theme and Font are GREYED - not silently inert rows", () => {
+test("a ROM whose block leaves the screen fields reserved still gets live rows, reading them as 0", () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const rom = blipToasterRom();
   const at = 0x100 + 6 + 16 * 11; // the settings block
-  rom.fill(0xff, at + 11, at + 16); // as a build predating the theme + font fields leaves it
+  rom.fill(0xff, at + 11, at + 16); // the reserved tail, as a build predating the theme + font fields left it
   be.seed("/roms/oldsett.nes", rom);
   stores.project.systems.addSystem("/roms/oldsett.nes");
   const items = () => buildInstanceMenu({ ...ctxOf(stores), system: stores.project.systems.view()[0] }).items;
 
-  // This is the case behind the bug report: the cart ignores the byte, so a live cycler here would look exactly
-  // like the feature being broken. It says why instead, and cannot be cycled.
+  // Every field is offered. These rows used to be greyed as "(ROM Too Old)" when the byte read 0xFF, from when
+  // carts in the wild predated the fields; nothing unreleased does, so the row is live and the out-of-range
+  // byte just decodes to slot 0.
   const theme = findItem(settingsRows(items()), "bliptoaster-set-theme")!;
-  expect(theme.kind).toBe("action");
-  expect(theme.disabled).toBe(true);
-  expect(theme.label).toBe("Theme: DFLT (ROM Too Old)");
-  expect(findItem(settingsRows(items()), "bliptoaster-set-font")?.disabled).toBe(true);
+  expect(theme.kind).toBe("cycler");
+  expect(theme.disabled).toBe(undefined);
+  expect(theme.label).toBe("Theme: DFLT");
+  cycle(items(), "bliptoaster-set-theme");
+  expect(rowLabel(items(), "bliptoaster-set-theme")).toBe("Theme: DARK");
 
-  // The four fields the block shipped with are unaffected - an old cart keeps the rest of the submenu.
   expect(findItem(settingsRows(items()), "bliptoaster-set-basech")?.kind).toBe("cycler");
   cycle(items(), "bliptoaster-set-basech");
   expect(rowLabel(items(), "bliptoaster-set-basech")).toBe("Base MIDI Channel: 02");

@@ -42,12 +42,13 @@ test("the BlipToaster Settings rows render in the instance menu and cycle the ca
   expect(labelOf("Default Kit")).toBe("Default Kit: TR-909"); // named from the ROM, not a bare index
   expect(labelOf("PPU Enabled")).toBe("PPU Enabled: Off");
   expect(labelOf("Velocity Curve")).toBe("Velocity Curve: Linear");
-  // The staged resources/roms/bliptoaster.nes is an OLDER cart, from before the block carried the two screen
-  // fields - so their bytes are still the reserved 0xFF and it does not look at them. That is the case behind
-  // the bug report ("I can pick a font but it doesn't change"), and it must READ as inert rather than offering a
-  // live cycler that writes a byte into the void. Refresh that ROM and these two become cyclers like the rest.
-  expect(ui.findByTextContaining("Theme: DFLT (ROM Too Old)") != null).toBeTruthy();
-  expect(ui.findByTextContaining("Font: Font 0 (ROM Too Old)") != null).toBeTruthy();
+  // Theme and Font are live rows like the rest. NOTE: the staged resources/roms/bliptoaster.nes is still an
+  // OLDER cart, from before the block carried these two fields - its bytes are the reserved 0xFF, which decodes
+  // to slot 0, and its code never reads them. The rows used to be greyed for exactly that reason; that gate is
+  // gone (no released build predates the fields), so re-stage this ROM and the two rows become truthful as well
+  // as live.
+  expect(labelOf("Theme")).toBe("Theme: DFLT");
+  expect(labelOf("Font")).toBe("Font: Font 0");
   // Nothing pinned yet, so the two reboot rows are absent: the rows above are showing the ROM's own bytes, and
   // there is nothing to apply or reset.
   expect(ui.findByTextContaining("Apply (Reboot Cart)")).toBe(null);
