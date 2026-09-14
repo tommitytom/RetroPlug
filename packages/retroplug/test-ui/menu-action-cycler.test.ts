@@ -54,7 +54,8 @@ test("a kit row carries its verbs inline: Left/Right pick one, Enter runs the pi
   expect(row()).toBe(`${name} < Export... >`);
 
   // The arrows are geometry, not text: they must land on the same pixels whatever the verb between them is,
-  // which is the entire reason the row is laid out instead of space-padded (the font is proportional).
+  // which is why the row is laid out rather than space-padded. The UI face is monospaced, so padding would
+  // happen to line up today - this check is what stops that coincidence from being what the row relies on.
   const arrowBox = () => {
     const lhs = ui.findByText("<")!;
     const rhs = ui.findByText(">")!;
@@ -107,4 +108,6 @@ test("a kit row carries its verbs inline: Left/Right pick one, Enter runs the pi
   // override — Export and Replace are the whole list, and it wraps there.
   expect(step(Key.Right)).toBe("[0] Font 0 * < Replace... >");
   expect(step(Key.Right)).toBe("[0] Font 0 * < Export... >");
+
+  ui.snapshotPng("/tmp/ui-menu-action-cycler.png");
 });

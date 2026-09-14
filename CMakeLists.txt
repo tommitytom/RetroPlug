@@ -136,6 +136,21 @@ message(STATUS "dpf.js framework: ${DPFJS_PATH}")
 # Mesen: deps/mesen/CMakeLists.txt).
 add_subdirectory("${DPFJS_PATH}" dpfjs)
 
+# --- The UI's monospaced faces. lv_conf.h sets every LV_FONT_MONTSERRAT_* to 0, so LVGL
+# compiled none of its own font objects; these supply those same seven symbol names built
+# from DejaVu Sans Mono (tools/gen-mono-fonts.sh regenerates them).
+#
+# They go on the `lvgl` target rather than one of ours because that is where the objects
+# they replace used to live. Both lvgl itself (LV_FONT_DEFAULT) and the binding's
+# builtin_font_list reference these symbols, and a definition sitting in some other static
+# library would leave the link order-dependent - fine here, a missing symbol on another
+# platform's linker. Same archive, no ordering question.
+file(GLOB RETROPLUG_MONO_FONTS "${PROJECT_SOURCE_DIR}/packages/native/src/fonts/lv_font_montserrat_*.c")
+if(NOT RETROPLUG_MONO_FONTS)
+    message(FATAL_ERROR "No fonts in packages/native/src/fonts/ — run tools/gen-mono-fonts.sh.")
+endif()
+target_sources(lvgl PRIVATE ${RETROPLUG_MONO_FONTS})
+
 # --- SDL2: used for gamepad/game-controller input across every plugin
 # variant (and the standalone). DPF's own SDL2 detection is gated to the
 # JACK target only (audio backend fallback), so we find SDL2 ourselves at
