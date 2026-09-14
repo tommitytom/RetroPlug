@@ -43,15 +43,20 @@ test("the mouse aims at the cells: the verb runs it, the arrows step it, the row
   const nameCell = ui.findByText("[0] TR-909")!;
   expect(ui.findByText("<")).toBe(null);
 
-  // An unfocused row is ONE hover target across its whole width — its name label fills the row's slack
-  // rather than hugging the text. A clickable child steals LV_STATE_HOVERED from its ancestor, so while the
-  // name was content-sized the row's bar showed in the empty space beside it and blinked out over the text
-  // itself. Sweep the pointer across the row: it must stay lit the whole way.
-  const cy = mid(nameCell)[1];
-  for (const x of [nameCell.x + 4, nameCell.x + Math.floor(nameCell.width / 2), nameCell.x + nameCell.width - 6]) {
-    ui.moveMouse(x, cy);
-    ui.pump(8);
-    expect(ui.findByText("[0] TR-909")!.state & State.Hovered).toBe(State.Hovered);
+  // An unfocused row is ONE hover target over its whole AREA — its name label fills the row's slack and
+  // carries the row's vertical padding, so it is exactly as wide and as tall as the row. A clickable child
+  // steals LV_STATE_HOVERED from its ancestor, so any part of the row the label didn't cover fell through to
+  // the Box behind it: while the name hugged its text the bar blinked out over the text, and while the label
+  // was only a line tall the bar changed height between the text and the padding above and below it. The
+  // label matching a plain Text row's height is what makes the second impossible; sweep both axes for the
+  // first. (The row body is inert to clicks, so a sweep can't run anything.)
+  expect(nameCell.height).toBe(ui.findByText("Add...")!.height);
+  for (const dy of [1, Math.floor(nameCell.height / 2), nameCell.height - 2]) {
+    for (const dx of [4, Math.floor(nameCell.width / 2), nameCell.width - 6]) {
+      ui.moveMouse(nameCell.x + dx, nameCell.y + dy);
+      ui.pump(6);
+      expect(ui.findByText("[0] TR-909")!.state & State.Hovered).toBe(State.Hovered);
+    }
   }
 
   // Clicking the row BODY only moves the cursor there — the element appears and the menu stays open.

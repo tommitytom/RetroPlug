@@ -564,7 +564,18 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           // is invisible until the row is focused.
           if (item.kind === "actionCycler") {
             const verb = item.actions?.[actionIndexOf(item)]?.label ?? "";
-            const cell = { "text-color": rowColor, "font-size": itemFont, "background-opacity": 0 } as const;
+            // The row's vertical padding is carried by the CELLS, not the row, so each of them is as tall as
+            // the row is. A label is only as tall as its line, so with the padding on the Box the pointer met
+            // a 21px-tall child over the text and the 29px-tall Box in the strip above and below it — and a
+            // hover highlight that changed height as it moved. Padding a label expands its box without moving
+            // the text, so this keeps the rows aligned to the pixel with the Text rows around them.
+            const cell = {
+              "text-color": rowColor,
+              "font-size": itemFont,
+              "background-opacity": 0,
+              "padding-top": itemPadVert,
+              "padding-bottom": itemPadVert,
+            } as const;
             // Texts are created LV_OBJ_FLAG_EVENT_BUBBLE (components/text/text.cpp), so a cell's click would
             // ALSO reach the row's onClick below; each cell stops it.
             const onCell = (run: () => void) => (e: { stopPropagation?: () => void }) => {
@@ -588,6 +599,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
                 style={{
                   ...rowStyle,
                   height: textRowH || itemFont + itemPadVert * 2 + r(3),
+                  "padding-top": 0, // the cells carry it, so each of them is the full height of the row
+                  "padding-bottom": 0,
                   "padding-right": r(ACTION_PAD_RIGHT_BASE),
                   display: "flex",
                   "flex-direction": "row",
