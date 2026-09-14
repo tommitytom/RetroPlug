@@ -287,7 +287,15 @@ same directory DEPTH needs no specifier rewriting. That depth is why stripped ou
 dir's SIBLING `.rp-test-build/` ([cli/tsStrip.ts](packages/retroplug/cli/tsStrip.ts) `buildDirFor`) - put
 it anywhere else and every `../sdk/...` import breaks. Each test file runs in its **own process**
 (`tjs.spawn`), which is required, not tidy: the TAP harness calls `tjs.exit` when a file ends, its case
-list is module-level, and the native `Engine` is per-process. The stripper is ts-blank-space + the TS
+list is module-level, and the native `Engine` is per-process. That isolation is also why the files run
+**concurrently** - a bounded pool, default half the logical cores, `--jobs N` / `-j N` / `RP_TEST_JOBS`
+(BlipToaster's 51-file suite: 154s serial -> 16s). Dispatch is longest-first from durations recorded in
+`<outDir>/.timings.json` (inside the derived build dir, so a consumer gains no tracked file), and each
+child's stdout+stderr are captured and flushed as one labelled block, since concurrent children sharing a
+terminal shred the TAP. **`-j1` keeps the old behaviour exactly** - listed order, stdio inherited, output
+streaming live - which is what you want when debugging one file. The pipes are drained CONCURRENTLY with
+the wait; `await stdout.text()` then `await stderr.text()` deadlocks on a child noisy enough to fill the
+other pipe's buffer. The stripper is ts-blank-space + the TS
 parser, compiled in as global-code bytecode (+4 MB) and loaded **on demand** via `__rp_loadTsStripper`, so
 no other command pays for it. **Types are stripped, not compiled**: only erasable syntax works - `enum`,
 `namespace` and constructor parameter properties are refused with `file:line:col`. Wiring
