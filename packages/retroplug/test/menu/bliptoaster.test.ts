@@ -31,7 +31,7 @@ function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   const sm = items.find((i) => i.id === id);
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
 }
-/** An inline action-cycler row's verb list — the form kit rows take (one row carrying its own actions). */
+/** An inline action-cycler row's verb list — the form every asset row takes (one row, its own actions). */
 function actionsOf(items: MenuItem[], id: string): MenuAction[] {
   const row = items.find((i) => i.id === id);
   return row && row.kind === "actionCycler" ? row.actions ?? [] : [];
@@ -215,10 +215,8 @@ test("the Themes submenu lists ALL 16 baked themes with Export/Replace (no Remov
     "[8] AQUA", "[9] MONO", "[10] PLSM", "[11] MTRX", "[12] FOG", "[13] SUN", "[14] MOON", "[15] AMBR",
   ]); // decoded, space-trimmed theme names
   for (const slot of [0, 15]) {
-    const rows = submenuChildren(themes, `bliptoaster-theme-${slot}`);
-    expect(findItem(rows, `bliptoaster-theme-${slot}-export`)?.kind).toBe("action");
-    expect(findItem(rows, `bliptoaster-theme-${slot}-replace`)?.kind).toBe("action");
-    expect(findItem(rows, `bliptoaster-theme-${slot}-remove`)).toBe(undefined);
+    expect(actionsOf(themes, `bliptoaster-theme-${slot}`).map((a) => a.id))
+      .toEqual([`bliptoaster-theme-${slot}-export`, `bliptoaster-theme-${slot}-replace`]);
   }
 });
 
@@ -242,7 +240,7 @@ test("a theme override shows a * marker + a Remove Override row", () => {
     "bliptoaster-themes",
   );
   expect(themes[0].label).toBe("[0] NEON *");
-  expect(findItem(submenuChildren(themes, "bliptoaster-theme-0"), "bliptoaster-theme-0-remove")?.kind).toBe("action");
+  expect(actionsOf(themes, "bliptoaster-theme-0").some((a) => a.id === "bliptoaster-theme-0-remove")).toBe(true);
 });
 
 test("the Kits + Fonts submenus list the base ROM's assets with Export/Replace (no Add/Delete — Replace-only)", () => {
@@ -266,9 +264,7 @@ test("the Kits + Fonts submenus list the base ROM's assets with Export/Replace (
   const fonts = submenuChildren(kids(), "bliptoaster-fonts");
   const f0 = fonts.find((f) => f.id === "bliptoaster-font-0")!;
   expect(f0.label).toBe("[0] Font 0");
-  const frows = submenuChildren(fonts, "bliptoaster-font-0");
-  expect(findItem(frows, "bliptoaster-font-0-export")?.kind).toBe("action");
-  expect(findItem(frows, "bliptoaster-font-0-replace")?.kind).toBe("action");
+  expect(actionsOf(fonts, "bliptoaster-font-0").map((a) => a.id)).toEqual(["bliptoaster-font-0-export", "bliptoaster-font-0-replace"]);
 });
 
 test("a banking ROM makes Kits addable (Add... + per-kit Delete) and shows a high-slot override row", () => {

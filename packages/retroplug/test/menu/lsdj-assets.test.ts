@@ -32,7 +32,7 @@ function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   const sm = items.find((i) => i.id === id);
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
 }
-/** An inline action-cycler row's verb list — the form kit rows take (one row carrying its own actions). */
+/** An inline action-cycler row's verb list — the form every asset row takes (one row, its own actions). */
 function actionsOf(items: MenuItem[], id: string): MenuAction[] {
   const row = items.find((i) => i.id === id);
   return row && row.kind === "actionCycler" ? row.actions ?? [] : [];
@@ -76,14 +76,12 @@ test("the LSDj submenu shows Kits / Fonts / Palettes asset submenus for a full R
   expect(kids().filter((k) => k.kind === "submenu" && k.id.startsWith("lsdj-") && k.id.endsWith("s") && !k.id.endsWith("songs")).map((k) => k.id))
     .toEqual(["lsdj-kits", "lsdj-fonts", "lsdj-palettes"]);
 
-  // The 2-palette block → two palette rows, each with Export + Replace and no Remove Override yet.
+  // The 2-palette block → two palette rows, each an inline row carrying Export + Replace and no more: not
+  // addable, so no Delete, and no override yet, so no Remove Override.
   const palettes = submenuChildren(kids(), "lsdj-palettes");
   expect(palettes.map((p) => p.id)).toEqual(["lsdj-palette-0", "lsdj-palette-1"]);
-  const p0 = submenuChildren(palettes, "lsdj-palette-0");
-  expect(findItem(p0, "lsdj-palette-0-export")?.kind).toBe("action");
-  expect(findItem(p0, "lsdj-palette-0-replace")?.kind).toBe("action");
-  expect(findItem(p0, "lsdj-palette-0-delete")).toBe(undefined); // palettes aren't kits — no Delete
-  expect(findItem(p0, "lsdj-palette-0-remove")).toBe(undefined); // no override yet
+  expect(palettes[0].kind).toBe("actionCycler");
+  expect(actionsOf(palettes, "lsdj-palette-0").map((a) => a.id)).toEqual(["lsdj-palette-0-export", "lsdj-palette-0-replace"]);
 
   // The Kits submenu leads with Add... (+ separator) — the addable affordance.
   const kits = submenuChildren(kids(), "lsdj-kits");
@@ -101,7 +99,7 @@ test("a palette override shows a * marker + a Remove Override row", () => {
 
   const palettes = submenuChildren(kids(), "lsdj-palettes");
   expect(findItem(palettes, "lsdj-palette-1")?.label).toBe("[1] NEON *"); // override name + the * marker
-  expect(findItem(submenuChildren(palettes, "lsdj-palette-1"), "lsdj-palette-1-remove")?.kind).toBe("action");
+  expect(actionsOf(palettes, "lsdj-palette-1").some((a) => a.id === "lsdj-palette-1-remove")).toBe(true);
 });
 
 test("a linked kit override shows a * marker + Delete + Remove Override, added to the effective kit list", () => {
@@ -135,10 +133,10 @@ test("Remove Override drops the override end-to-end (reload reverts the effectiv
   expect(findItem(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1")?.label).toBe("[1] NEON *");
 
   // Remove Override: writes the emptied list + reloads → the row reverts (no *, no -remove).
-  findItem(submenuChildren(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1"), "lsdj-palette-1-remove")!.onSelect!();
+  actionsOf(submenuChildren(kids(), "lsdj-palettes"), "lsdj-palette-1").find((a) => a.id === "lsdj-palette-1-remove")!.onSelect();
   const palettes = submenuChildren(kids(), "lsdj-palettes");
   expect(findItem(palettes, "lsdj-palette-1")?.label).toBe("[1] ABCD"); // back to the base name (no *)
-  expect(findItem(submenuChildren(palettes, "lsdj-palette-1"), "lsdj-palette-1-remove")).toBe(undefined);
+  expect(actionsOf(palettes, "lsdj-palette-1").some((a) => a.id === "lsdj-palette-1-remove")).toBe(false);
   // The last construct carries the base ROM (no override-patched romBytes).
   expect(be.constructCalls[be.constructCalls.length - 1].romBytes).toBe(undefined);
 });

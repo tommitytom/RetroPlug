@@ -985,10 +985,8 @@ function addAsset(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: 
 
 // One asset item: Export / Replace, plus Delete (kits only) + Remove Override (when overridden).
 //
-// KITS render those verbs INLINE — `[0] TR-606   <  Export...  >`, Left/Right picking and Enter running —
-// because they're the asset people actually churn through, and a submenu per slot made patching one a
-// four-level descent. The other types keep the submenu form; the flat row is being adopted one list at a
-// time, and both forms are built from the same verb list so they can't drift apart.
+// Every asset type renders those verbs INLINE — `[0] TR-606   <  Export...  >`, Left/Right picking and Enter
+// running — rather than as a submenu per slot, which made patching any one of them a four-level descent.
 function assetRow(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, row: AssetSlotRow): MenuItem {
   const id = `${spec.id}-${type.kind}-${row.slot}`;
   const verbs: MenuAction[] = [
@@ -997,9 +995,7 @@ function assetRow(spec: AssetMenuSpec, ctx: MenuContext, sys: SystemView, type: 
   ];
   if (type.addable) verbs.push({ id: `${id}-delete`, label: "Delete", onSelect: () => deleteAsset(spec, ctx, sys, type, row.slot) });
   if (row.overridden) verbs.push({ id: `${id}-remove`, label: "Remove Override", onSelect: () => removeOverride(spec, ctx, sys, type.kind, row.slot) });
-  const label = `[${row.slot}] ${row.name}${row.overridden ? " *" : ""}`;
-  if (type.kind === "kit") return actionCycler(id, label, verbs);
-  return submenu(id, label, verbs.map((v) => action(v.id, v.label, v.onSelect)));
+  return actionCycler(id, `[${row.slot}] ${row.name}${row.overridden ? " *" : ""}`, verbs);
 }
 
 // Build a console's asset submenus (one per asset type); empty when the ROM can't be read (e.g. headless). A

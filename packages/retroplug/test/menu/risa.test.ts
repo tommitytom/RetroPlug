@@ -47,7 +47,7 @@ function submenuChildren(items: MenuItem[], id: string): MenuItem[] {
   const sm = items.find((i) => i.id === id);
   return sm && sm.kind === "submenu" ? sm.children ?? [] : [];
 }
-/** An inline action-cycler row's verb list — the form kit rows take (one row carrying its own actions). */
+/** An inline action-cycler row's verb list — the form every asset row takes (one row, its own actions). */
 function actionsOf(items: MenuItem[], id: string): MenuAction[] {
   const row = items.find((i) => i.id === id);
   return row && row.kind === "actionCycler" ? row.actions ?? [] : [];
@@ -237,10 +237,7 @@ test("the risa submenu shows Themes (16) + Fonts (4) asset submenus for a full R
   expect(fonts[3].label).toBe("[3] Font 3");
 
   // Each theme/font row offers Export + Replace (no Remove Override until one exists).
-  const t0 = submenuChildren(themes, "risa-theme-0");
-  expect(findItem(t0, "risa-theme-0-export")?.kind).toBe("action");
-  expect(findItem(t0, "risa-theme-0-replace")?.kind).toBe("action");
-  expect(findItem(t0, "risa-theme-0-remove")).toBe(undefined);
+  expect(actionsOf(themes, "risa-theme-0").map((a) => a.id)).toEqual(["risa-theme-0-export", "risa-theme-0-replace"]);
 });
 
 test("a theme override shows a * marker + a Remove Override row", () => {
@@ -256,8 +253,7 @@ test("a theme override shows a * marker + a Remove Override row", () => {
     "risa-themes",
   );
   expect(themes[1].label).toBe("[1] NEON *"); // override name + the * marker
-  const t1 = submenuChildren(themes, "risa-theme-1");
-  expect(findItem(t1, "risa-theme-1-remove")?.kind).toBe("action");
+  expect(actionsOf(themes, "risa-theme-1").some((a) => a.id === "risa-theme-1-remove")).toBe(true);
 });
 
 test("the risa submenu shows a Kits submenu with Add... + the base kit rows", () => {

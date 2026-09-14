@@ -92,4 +92,18 @@ test("a kit row carries its verbs inline: Left/Right pick one, Enter runs the pi
 
   openKits();
   expect(ui.findByTextContaining("[0] ")).toBe(null); // slot 0 is gone from the effective kit list
+
+  // Every asset list takes this row, not just kits — and the element's width is fixed by the zoom alone, so a
+  // FONT row's arrows land in the same columns a kit row's did. That is what keeps the menu from looking
+  // ragged when two asset lists are expanded at once. (Fonts sit below Kits, and navTo only walks down.)
+  expect(navTo("Fonts")).toBeTruthy();
+  ui.tapKey(Key.Enter);
+  ui.pump(10);
+  expect(navTo("Font 0")).toBeTruthy();
+  ui.pump(6);
+  expect(ui.focused()?.text).toBe("[0] Font 0 < Export... >");
+  expect(arrowBox()).toBe(fixed);
+  // A font is not addable and carries no override, so Replace is the end of its list — and it wraps there.
+  expect(step(Key.Right)).toBe("[0] Font 0 < Replace from Disk... >");
+  expect(step(Key.Right)).toBe("[0] Font 0 < Export... >");
 });
