@@ -86,10 +86,17 @@ const emptyChannels = (): ProbeSample["channels"] => ({
 // starting at 1 would silently adopt another test's cart instead of building its own.
 let nextSystemId = 100;
 
+// Every probe built so far, so a test can drop the carts its predecessors left running. renderAudio
+// advances EVERY live system in the host process, so a probe that is never closed is still emulated
+// by every later test — the cost of a file compounds with each test in it (lsdj-playback-probe's ten
+// carts made it, at 42 s, the native suite's longest file by 4x). See closeAll below.
+const liveProbes: LsdjProbe[] = [];
+
 /** A live LSDj cart plus the means to write bytes at it and watch what happens. */
 export class LsdjProbe {
   private ms = 0;
   private tickCount = 0;
+  private closed = false;
 
   private constructor(
     private readonly be: ReturnType<typeof createRealBackend>,
@@ -130,8 +137,24 @@ export class LsdjProbe {
     if (!dsp.setSystems(structure as never)) return null;
 
     const probe = new LsdjProbe(be, audio, reader, id);
+    liveProbes.push(probe);
     probe.render(opts.bootMs ?? 6000); // past the cartridge self-test, onto the song screen
     return probe;
+  }
+
+  /** Drop this probe's cart from the host. Idempotent; the probe is unusable afterwards. */
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.be.removeSystem(this.id);
+  }
+
+  /** Close every probe built so far. Call it at the TOP of each test rather than the bottom: a test
+   *  that returns early (a skip, a failed guard) or throws still leaves its cart running otherwise,
+   *  and it is the NEXT test that pays for it. Ids are never reused, so this cannot drop a live cart
+   *  a later probe expects. */
+  static closeAll(): void {
+    for (const p of liveProbes.splice(0)) p.close();
   }
 
   /** Put one raw byte on the link port (via the passthrough role). A 1-byte "MIDI message" whose

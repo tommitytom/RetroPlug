@@ -38,6 +38,7 @@ const rms = (a: Float32Array): number => {
 };
 
 test("the TS lsdj-sync MidiMap role maps MIDI notes to LSDj row bytes on a real core", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const be = createRealBackend();
   if (!be.fileExists(ABOY)) {
     console.log(`# SKIP lsdj-midimap: aboy LSDj ROM not found at ${ABOY}`);
@@ -101,6 +102,7 @@ const ADVANCE_SONG: SavInput = {
 };
 
 test("the midiMap role clocks the cart, so a mapped row actually plays through", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: ADVANCE_SONG, mode: "midiMap" });
   if (!p) return console.log("# SKIP lsdj-midimap advance: aboy ROM not found / unsupported version");
 

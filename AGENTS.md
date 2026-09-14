@@ -204,6 +204,25 @@ step needs and pins pnpm via corepack, because pnpm strips `PATH` for spawned ch
 on Windows — without it the scripts die on `spawnSync cmake ENOENT`, which looks like a
 broken tree but is not.
 
+**The four `pnpm test*` suites run in PARALLEL, and a slow suite is nearly always one slow
+FILE, not the pool.** Each runner's unit of work is an isolated child process, dispatched by
+the shared pool in
+[scripts/lib/testPool.mjs](packages/retroplug/scripts/lib/testPool.mjs) — default half the
+logical threads, override with `--jobs N` / `-j N` / `TEST_JOBS` (`=1` serial). Work is
+dispatched LONGEST-FIRST from durations the previous run recorded in the gitignored
+`packages/retroplug/.test-timings/`, so the wall clock is bounded by the slowest file rather
+than by when the pool happened to reach it. That makes **one** file the thing to look at when
+a suite drags: read `.test-timings/native.json`, and if the top entry is near the whole wall
+clock, raising `--jobs` will do nothing. Two traps put it there, both of which cost
+`test:native` a 10x factor:
+- **`audio.renderAudio(ms)` takes MILLISECONDS, not frames.** `renderAudio(44100)` is 44
+  seconds of emulated audio, not one. Every honest call in the suite is a plain 50–6000.
+- **A constructed system that is never removed is still emulated by every later test in that
+  file** — `renderAudio` advances ALL live systems in the host process, so per-file cost grows
+  with the square of the boots. Call `be.removeSystem(id)` (or `LsdjProbe.closeAll()`, which
+  the probe-based files call at the TOP of each test so an early return still cleans up) once
+  a core's state has been read. A file whose realtime factor DEGRADES case by case has this.
+
 The headless loop (the only path — legacy is gone) is documented in
 [spec/06-build-test.md](spec/06-build-test.md): `pnpm test` (pure-TS mock),
 `test:native` (real host + cores), `test:ui` (LVGL React), `test:plugin` (Catch2

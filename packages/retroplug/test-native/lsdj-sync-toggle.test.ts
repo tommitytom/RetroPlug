@@ -82,6 +82,7 @@ function rowsUnderClock(p: LsdjProbe, launchRow = 1, ticks = 260): (number | nul
 }
 
 test("MAP: where the SYNC field lives on the PROJECT screen, and what its values are", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   if (!have()) return;
   const p = LsdjProbe.create({ song: song("None") });
   if (!p) return;
@@ -120,6 +121,7 @@ test("MAP: where the SYNC field lives on the PROJECT screen, and what its values
 });
 
 test("MEASURED: SYNC can be changed while idle or merely clocked, but NOT while the cart is playing", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   if (!have()) return;
   // Three fresh carts rather than one walked through three states, because MI.MAP has no stop (B5/B8):
   // once a cart is playing there is no clean way back to "idle" to test the next condition.
@@ -147,6 +149,7 @@ test("MEASURED: SYNC can be changed while idle or merely clocked, but NOT while 
 });
 
 test("MEASURED: a cart knocked off MI.MAP mid-flight stops honouring launches, and cannot be put back", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   if (!have()) return;
   const p = LsdjProbe.create({ song: song("MidiMap") });
   if (!p) return;
