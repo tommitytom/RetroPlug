@@ -57,30 +57,6 @@ interface PromptState {
   error: string;
 }
 
-// Rough glyph advance widths, in units where a space is 1. The menu font is Montserrat (proportional —
-// LV_FONT_DEFAULT in packages/native/src/lv_conf.h), so padding an "actionCycler" verb out to a common
-// CHARACTER count leaves the brackets visibly walking: pad chars are spaces, and a space is about half the
-// width of the letter it stands in for. Three buckets is enough to close that — it's only ever choosing how
-// many spaces to emit, so being a few percent off costs a few pixels, and a font change costs looseness, not
-// correctness. (The alternative, splitting the row into two Texts for real column alignment, would cost the
-// row its single-lv_label identity: the UI harness reads focused().text off a label, so navTo() — and every
-// test that leans on it — would stop seeing these rows. See packages/native/test/ui/RenderCore.cpp.)
-const GLYPH_NARROW = "ijltfrIJ.,:;!'\"|()[]{}/\\-"; // ~1 space wide
-const GLYPH_WIDE = "mwMW@%"; // ~3 spaces wide
-const textWidth = (s: string): number => {
-  let w = 0;
-  for (const ch of s) w += ch === " " ? 1 : GLYPH_NARROW.includes(ch) ? 1 : GLYPH_WIDE.includes(ch) ? 3 : 2;
-  return w;
-};
-
-// An "actionCycler" row: `<label>   <  verb  >`. The verb is centred in a field as wide as the row's widest
-// verb (measured, per above), so stepping through the list doesn't drag the brackets around.
-function actionCyclerLabel(item: MenuItem, index: number): string {
-  const actions = item.actions ?? [];
-  const text = actions[index]?.label ?? "";
-  const pad = actions.reduce((w, a) => Math.max(w, textWidth(a.label)), 0) - textWidth(text);
-  return `${item.label}   <${" ".repeat(Math.floor(pad / 2) + 1)}${text}${" ".repeat(Math.ceil(pad / 2) + 1)}>`;
-}
 
 // lvgljs-ui's Text type doesn't expose ref / onKey / onFocusedStyle; cast to reach them.
 const TextAny = Text as any;
@@ -99,6 +75,17 @@ const BASE_PAD_LEFT = 4;
 const INDENT_STEP = 16;
 const OUTER_PAD_LR_BASE = 8;
 const OUTER_PAD_TB_BASE = 6;
+// The `<  verb  >` element an "actionCycler" row shows while focused: a fixed-width region pinned to the
+// row's right edge, with an arrow column at each end and the verb centred in what's left. Its width depends
+// ONLY on the zoom — never on which verb is showing, or which row it is — which is the whole point: the two
+// arrows then sit at the same x on every action-cycler row and don't budge as you step through the list.
+// Real widgets rather than a padded string because the menu font is Montserrat (proportional — LV_FONT_DEFAULT
+// in packages/native/src/lv_conf.h), where no amount of space-padding pins a glyph. Capped against the menu
+// width below so a narrow menu doesn't squeeze the name column out.
+const ACTION_REGION_BASE = 260;
+const ACTION_REGION_MAX_FRAC = 0.6;
+const ACTION_ARROW_BASE = 22; // one arrow column; the glyph is centred in it, which is its side padding
+const ACTION_PAD_RIGHT_BASE = 8; // inset the element's right edge from the highlight bar's
 
 export interface MenuProps {
   width: number;
@@ -119,6 +106,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   const indentStep = r(INDENT_STEP);
   const outerPadLR = r(OUTER_PAD_LR_BASE);
   const outerPadTB = r(OUTER_PAD_TB_BASE);
+  const actionRegionW = Math.min(r(ACTION_REGION_BASE), Math.round((width - outerPadLR * 2) * ACTION_REGION_MAX_FRAC));
+  const actionArrowW = r(ACTION_ARROW_BASE);
 
   const [openItems, setOpenItems] = useState<Set<string>>(() => new Set());
   // The focus highlight, driven ONLY by explicit nav / click / rebuild (never by LVGL onFocus events, so
@@ -175,6 +164,12 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // The inner scrollable container + a cached row height, for the keyboard scroll-follow effect below.
   const innerViewRef = useRef<{ scrollToY?: (y: number, animate: boolean) => void } | null>(null);
   const itemHeightRef = useRef<number>(0);
+  // A Text row sizes itself to its line; a Box row (actionCycler) does not — LVGL gives a plain object a
+  // default size and lv_binding_js's style layer exposes no LV_SIZE_CONTENT, so a Box has to be TOLD how tall
+  // a row is. It's measured off a real Text row below rather than derived from `itemFont`, because font-size
+  // is snapped to the nearest built-in Montserrat: at small zooms the requested size is not the rendered line
+  // height. Until that measurement lands (one frame), fall back to a close estimate.
+  const [textRowH, setTextRowH] = useState(0);
   // `${pad}:${axisName}` → the half-axis token the left stick is currently in, for edge-detected nav (a
   // held stick fires one move, not a stream). Separate from useGamepadInput's — this one drives the menu.
   const menuAxisDirRef = useRef<Map<string, string>>(new Map());
@@ -448,13 +443,17 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
     const entries = flatRef.current;
     if (!view?.scrollToY || entries.length === 0) return;
 
-    // Measure a real row once (font + padding are constant): the first focusable row — separators are thinner.
-    const firstItem = entries.find((f) => f.item.kind !== "separator");
+    // Measure a real row once (font + padding are constant): the first focusable row — separators are thinner,
+    // and an actionCycler row is a Box wearing whatever height we last told it, so it can't be the yardstick.
+    const firstItem = entries.find((f) => f.item.kind !== "separator" && f.item.kind !== "actionCycler");
     const firstRef = firstItem
       ? (refsByIdRef.current.get(firstItem.item.id) as { getBoundingClientRect?: () => { height: number } } | undefined)
       : undefined;
     const measured = firstRef?.getBoundingClientRect?.().height;
-    if (measured && measured > 0) itemHeightRef.current = measured;
+    if (measured && measured > 0) {
+      itemHeightRef.current = measured;
+      setTextRowH(measured); // what the Box rows size themselves to, so every row lines up
+    }
     const itemH = itemHeightRef.current;
     if (itemH <= 0) return;
 
@@ -514,11 +513,71 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           }
           const isCapturing = capturingId === item.id;
           const isFocused = focusedId === item.id;
+          const rowColor = item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : item.warn ? WARN_COLOR : isFocused ? "#4fc3f7" : "#ffffff";
+          // The chrome every row shares: the full-width highlight bar, the depth indent, the vertical rhythm.
+          const rowStyle = {
+            width: "100%",
+            "background-color": "#14243f", // full-width highlight bar on the focused row
+            "background-opacity": isFocused ? 255 : 0,
+            "padding-top": itemPadVert,
+            "padding-bottom": itemPadVert,
+            "padding-left": basePadLeft + depth * indentStep,
+            "padding-right": r(4),
+          };
+          const setRowRef = (node: unknown) => {
+            if (node) refsByIdRef.current.set(item.id, node);
+            else refsByIdRef.current.delete(item.id);
+          };
+
+          // An actionCycler is laid out rather than written: name (taking the slack) + a fixed-width element
+          // at the right edge, arrows pinned to ITS edges and the verb centred between them. The element
+          // belongs to the CURSOR — an unfocused row is just its name, so a list reads as a column of names
+          // and only the row you're on offers anything to do. The row is a Box, not a Text, which makes it
+          // the group member LVGL focuses and the object that takes the row's key/click events.
+          if (item.kind === "actionCycler") {
+            const verb = item.actions?.[actionIndexOf(item)]?.label ?? "";
+            const cell = { "text-color": rowColor, "font-size": itemFont, "background-opacity": 0 } as const;
+            // No flex-grow anywhere: lv_binding_js's flex pipe
+            // (deps/dpf.js/deps/lv_binding_js/src/render/react/core/style/pipe/flex.ts) silently drops
+            // `flex-grow` unless the CHILD's own style also says `display: "flex"`, which would turn a label
+            // into a flex container. The row leans on `space-between` instead (read off the container, so it
+            // needs no such thing) to push the element to its right edge, and the element itself is three
+            // EXPLICIT columns — arrow | verb | arrow — summing to its width. Explicit rather than
+            // space-between inside, because space-between distributes the remainder and drifts the last item
+            // by a pixel as the verb's width changes; fixed columns put the arrows on the same pixel every
+            // time, and centring the verb in its own column centres it exactly between them.
+            return (
+              <Box
+                key={item.id}
+                innerRef={setRowRef}
+                style={{
+                  ...rowStyle,
+                  height: textRowH || itemFont + itemPadVert * 2 + r(3),
+                  "padding-right": r(ACTION_PAD_RIGHT_BASE),
+                  display: "flex",
+                  "flex-direction": "row",
+                  "align-items": "center",
+                  "justify-content": "space-between",
+                }}
+                onHoveredStyle={item.disabled ? undefined : ROW_HOVER_STYLE}
+                onKey={onItemKey}
+                onClick={() => activate(item)}
+              >
+                <Text style={cell}>{item.label}</Text>
+                {isFocused && (
+                  <Box style={{ width: actionRegionW, display: "flex", "flex-direction": "row", "align-items": "center", "background-opacity": 0 }}>
+                    <Text style={{ ...cell, width: actionArrowW, "text-align": "center" }}>{"<"}</Text>
+                    {/* Ellipsised rather than wrapped: a verb too long for its column must not grow the row. */}
+                    <Text style={{ ...cell, width: actionRegionW - actionArrowW * 2, "text-align": "center", "text-overflow": "ellipsis" }}>{verb}</Text>
+                    <Text style={{ ...cell, width: actionArrowW, "text-align": "center" }}>{">"}</Text>
+                  </Box>
+                )}
+              </Box>
+            );
+          }
+
           let label: string;
           if (item.kind === "submenu") label = `${item.label} ${openItems.has(item.id) ? "v" : ">"}`;
-          // The verb block belongs to the CURSOR, not the row: an unfocused actionCycler is just its name, so a
-          // list of them reads as a column of names and only the row you're on offers anything to do.
-          else if (item.kind === "actionCycler") label = isFocused ? actionCyclerLabel(item, actionIndexOf(item)) : item.label;
           else if (isCapturing) {
             const colon = item.label.indexOf(":"); // keep the "<Button>: " head, swap the value for a prompt
             const what = item.capture?.source === "gamepad" ? "button" : "key";
@@ -527,21 +586,8 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
           return (
             <TextAny
               key={item.id}
-              ref={(node: unknown) => {
-                if (node) refsByIdRef.current.set(item.id, node);
-                else refsByIdRef.current.delete(item.id);
-              }}
-              style={{
-                width: "100%",
-                "text-color": item.disabled ? DISABLED_COLOR : isCapturing ? CAPTURE_COLOR : item.warn ? WARN_COLOR : isFocused ? "#4fc3f7" : "#ffffff",
-                "background-color": "#14243f", // full-width highlight bar on the focused row
-                "background-opacity": isFocused ? 255 : 0,
-                "font-size": itemFont,
-                "padding-top": itemPadVert,
-                "padding-bottom": itemPadVert,
-                "padding-left": basePadLeft + depth * indentStep,
-                "padding-right": r(4),
-              }}
+              ref={setRowRef}
+              style={{ ...rowStyle, "text-color": rowColor, "font-size": itemFont }}
               onHoveredStyle={item.disabled ? undefined : ROW_HOVER_STYLE}
               onKey={onItemKey}
               onClick={() => activate(item)}

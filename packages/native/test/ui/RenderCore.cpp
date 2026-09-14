@@ -271,6 +271,24 @@ lv_obj_t* RenderCore::focusedObject() const {
     return g ? lv_group_get_focused(g) : nullptr;
 }
 
+// The text a non-label object "reads as": its descendant labels, in tree order, space-joined. A menu row is
+// usually a single lv_label and widgetInfo reads it straight; a row that composes several labels to lay out
+// columns (the action-cycler row's `name  <  verb  >`, which needs real widgets because the font is
+// proportional) would otherwise report no text at all, and navTo() — which steps until focused().text
+// matches — would step straight past it. Composing keeps every text-driven query working on either shape.
+static void collectLabelText(lv_obj_t* obj, std::string& out) {
+    if (lv_obj_check_type(obj, &lv_label_class)) {
+        const char* t = lv_label_get_text(obj);
+        if (t && *t) {
+            if (!out.empty()) out += ' ';
+            out += t;
+        }
+        return; // a label's children (if any) are not its text
+    }
+    const std::uint32_t n = lv_obj_get_child_count(obj);
+    for (std::uint32_t i = 0; i < n; ++i) collectLabelText(lv_obj_get_child(obj, i), out);
+}
+
 WidgetInfo RenderCore::widgetInfo(lv_obj_t* obj) const {
     WidgetInfo wi;
     if (!obj) return wi;
@@ -285,6 +303,8 @@ WidgetInfo RenderCore::widgetInfo(lv_obj_t* obj) const {
     wi.state = lv_obj_get_state(obj); // LV_STATE_* bitmask (FOCUSED/HOVERED/PRESSED/…)
     if (lv_obj_check_type(obj, &lv_label_class)) {
         if (const char* t = lv_label_get_text(obj)) wi.text = t;
+    } else {
+        collectLabelText(obj, wi.text); // a multi-label row still reports the text it reads as
     }
     return wi;
 }

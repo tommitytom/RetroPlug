@@ -44,29 +44,45 @@ test("a kit row carries its verbs inline: Left/Right pick one, Enter runs the pi
 
   openKits();
 
-  // The kit rows are rows, not submenus: no "v"/">" expander, the verb rides on the line inside <>. Landing
-  // on one shows the FIRST verb, which is deliberately the read-only one — an unaimed Enter can't destroy a kit.
+  // The kit rows are rows, not submenus: no "v"/">" expander, the verb rides on the line between the arrows.
+  // Landing on one shows the FIRST verb, which is deliberately the read-only one — an unaimed Enter can't
+  // destroy a kit. (The row is several labels laid out as columns, so focused().text is the harness composing
+  // them in tree order — see RenderCore::widgetInfo.)
   expect(navTo("[0] ")).toBeTruthy();
   const row = () => ui.focused()?.text ?? "(unfocused)";
-  expect(/^\[0\] .*<\s+Export\.\.\.\s+>$/.test(row())).toBeTruthy();
+  const name = "[0] TR-909";
+  expect(row()).toBe(`${name} < Export... >`);
 
-  // Right walks the list; the name half never changes, and focus stays put (a step is not a move).
-  const name = row().slice(0, row().indexOf("<")).trimEnd();
-  expect(step(Key.Right)).toBe(`${name}   < Replace from Disk... >`);
-  expect(/^\[0\] .*<\s+Delete\s+>$/.test(step(Key.Right))).toBeTruthy();
+  // The arrows are geometry, not text: they must land on the same pixels whatever the verb between them is,
+  // which is the entire reason the row is laid out instead of space-padded (the font is proportional).
+  const arrowBox = () => {
+    const lhs = ui.findByText("<")!;
+    const rhs = ui.findByText(">")!;
+    return `${lhs.x}..${rhs.x + rhs.width}`;
+  };
+  const fixed = arrowBox();
+
+  // Right walks the list; the name half never changes, focus stays put (a step is not a move), and the
+  // arrows do not budge under the widest verb in the list.
+  expect(step(Key.Right)).toBe(`${name} < Replace from Disk... >`);
+  expect(arrowBox()).toBe(fixed);
+  expect(step(Key.Right)).toBe(`${name} < Delete >`);
+  expect(arrowBox()).toBe(fixed);
   // ...and wraps, like every other cycler in this menu.
-  expect(/<\s+Export\.\.\.\s+>$/.test(step(Key.Right))).toBeTruthy();
+  expect(step(Key.Right)).toBe(`${name} < Export... >`);
   // Left walks it back the other way, so it is a live two-way pick and not a one-shot advance.
-  expect(/<\s+Delete\s+>$/.test(step(Key.Left))).toBeTruthy();
+  expect(step(Key.Left)).toBe(`${name} < Delete >`);
 
-  // The verb block belongs to the cursor: step off the row and it is just its name again, so a list of kits
+  // The element belongs to the cursor: step off the row and it is just its name again, so a list of kits
   // reads as a column of names. Stepping back on restores the verb the row was left on, not the first one.
   ui.tapKey(Key.Up);
   ui.pump(6);
   expect(ui.findByTextContaining("[0] ")?.text).toBe(name);
+  expect(ui.findByText("<")).toBe(null); // no arrows anywhere once no action-cycler row is focused
   ui.tapKey(Key.Down);
   ui.pump(6);
-  expect(/<\s+Delete\s+>$/.test(row())).toBeTruthy();
+  expect(row()).toBe(`${name} < Delete >`);
+  expect(arrowBox()).toBe(fixed);
 
   // Enter runs the verb the row is SHOWING (Delete), not the one it opened on: the slot is erased through the
   // assets role and the menu closes, exactly as the equivalent submenu leaf did.

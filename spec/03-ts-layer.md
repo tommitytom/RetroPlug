@@ -419,12 +419,21 @@ widget's native uid for the test harness and is inert in production.
   model: `MenuItem { id, label, kind: "action"|"submenu"|"separator"|"cycler"|"actionCycler", … }`
   where each leaf carries its own effect callback (no dispatch). An **`actionCycler`** is the flat
   alternative to a one-row submenu: the row carries an `actions` list and, **while focused**, renders as
-  `[0] TR-606   <  Export...  >` (unfocused it is just its label — the verb block belongs to the
+  `[0] TR-606   <  Export...  >` (unfocused it is just its label — the element belongs to the
   cursor), Left/Right picking which verb shows and Enter **running** it
   (where a `cycler`'s Enter *steps*). Which verb a row is showing is transient state in
   `Menu.tsx` — the tree is rebuilt from scratch every render and holds no selection. Tracker
   **kit** lists are the first users (`assetRow` in `menuDefs.ts` builds one verb list and renders
   it inline for kits, as a submenu for the other asset types).
+  Unlike every other row, an `actionCycler` is a **`Box` of labels, not a single `Text`** — the menu font is
+  proportional, so the arrows can only hold fixed positions as real widgets: name at the row's left
+  (`justify-content: space-between`), then a fixed-width element at the right made of three explicit columns,
+  `arrow | verb | arrow`. Two consequences. The Box must be told its **height** (LVGL gives a plain object a
+  default size and lv_binding_js exposes no `LV_SIZE_CONTENT`), so `Menu.tsx` measures a real `Text` row and
+  sizes Box rows to match — don't derive it from `itemFont`, which is snapped to the nearest built-in
+  Montserrat. And `flex-grow` is unusable on the children: lv_binding_js's flex pipe drops it unless the
+  child's own style also says `display: "flex"`. The UI harness composes a non-label widget's text from its
+  descendant labels (`RenderCore::widgetInfo`), so `navTo` / `focused().text` still see these rows.
 - [`menuDefs.ts`](../packages/retroplug/ui/screens/menu/menuDefs.ts) builds the start
   and instance menus over a `MenuContext` (stores + current values, rebuilt each render).
   Leaves call store methods directly, current values are baked into labels, and
