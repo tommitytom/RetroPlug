@@ -231,8 +231,10 @@ when the device is actually attached:
   emulator. With no NES instance loaded the link sets unity for a cart
   whose mapper carries expansion audio, and leaves any other cart alone.
 - **Novation Launchpad** - use a Launchpad as a control surface, with input/output port
-  selection (a Launchpad attached over TRS/DIN arrives under the interface's name, so
-  ports are pickable rather than detected) and a Follow Playhead mode.
+  selection and a Follow Playhead mode. The menu appears once one is found: over USB
+  that is its port name, and over TRS/DIN (where it arrives under the interface's name)
+  `Settings > MIDI > Scan for Control Surface` asks each port what it is and records the
+  pair that answers.
 
 ## Settings
 The `Settings` menu covers:
@@ -240,7 +242,8 @@ The `Settings` menu covers:
 - **Audio** (standalone only) - driver, output and input device, block size, sample
   rate, and output channel count.
 - **MIDI** (standalone only) - input device, transport handling, external MIDI clock
-  source, and lookahead.
+  source, lookahead, and `Scan for Control Surface` (finds a Launchpad on any port,
+  including one attached over TRS/DIN).
 - **Keyboard Bindings / Gamepad Bindings** - remap the console buttons and app
   actions (open menu, cycle instances). Bindings live in named profiles you can
   create, rename and delete, and both keyboard and gamepad are edited directly in the

@@ -337,8 +337,9 @@ once raw. "All Devices" is the default, and it is exactly the case that would do
 
 Two limits worth stating rather than burying. The Pro MK3's *other* USB interfaces (DAW, Custom) are not
 excluded and stay open under "All Devices"; they are idle while the MIDI interface is in Programmer mode. And
-a physical unplug is not detected - RtMidi will not say so without re-probing the port list - so the user
-disconnects from the menu.
+a physical unplug is not noticed WHILE CONNECTED - RtMidi will not say so without re-probing the port list -
+so the user disconnects from the menu. (The submenu's presence gate does re-probe, since it reads the port
+list each render, so a device that goes away while idle takes its menu with it.)
 
 ### 6.3 With a real Game Boy there is no system to attach to
 
@@ -557,12 +558,31 @@ so a reconnect that merely diffed would leave the grid dark. The role still runs
 attached, so the predictor keeps advancing and the first frame after plugging in is correct rather than
 frozen at whenever the app started.
 
-**The menu is gated on the SEAM, not on detecting a device - and that is the opposite of N8 Pro beside it.**
-An Everdrive is identified by its USB VID:PID and there is no other way to attach one, so its submenu can
-hide until one appears. A Launchpad also speaks TRS/DIN: short of USB ports it arrives through an ordinary
-MIDI interface, on a port named after the INTERFACE, and nothing in that name says "Launchpad". A detection
-gate would hide the only menu that could configure exactly that setup. So every hardware port is offered,
-and `PRO_MK3_PORT_HINT` is demoted to picking the default and tagging a row "(detected)".
+**The menu is gated on DETECTING a device, like N8 Pro beside it - but detection cannot work the same way.**
+An Everdrive is identified by its USB VID:PID and there is no other way to attach one. A Launchpad also
+speaks TRS/DIN: short of USB ports it arrives through an ordinary MIDI interface, on a port named after the
+INTERFACE, and nothing in that name says "Launchpad". Nor can it be found passively - DIN is a one-way
+current loop with no enumeration and no idle heartbeat, so the OS sees the interface and nothing else. The
+only identification mechanism MIDI 1.0 has is the Universal Device Inquiry, which is a transmit.
+
+So presence (`launchpadDetected`) means one of three things, none of which probes anything at render time: a
+port named like the device's own USB interface (`PRO_MK3_PORT_HINT`, which still also picks the default and
+tags a row "(detected)"); a live link; or a RECORDED pick whose both ports are still enumerated. Presence is
+checked rather than trusted, so an unplugged interface takes the submenu with it.
+
+That recorded pick is what **Settings > MIDI > Scan for Control Surface** writes, and why the scan lives
+there rather than here: this submenu is hidden until a device is known, so the place a device is FOUND has
+to be somewhere that is always reachable. Settings is where you describe your rig; the instance menu is
+where you play the hardware you have. The scan is one inquiry per output, on request - never on a timer,
+never at startup. It is also the only way to learn the PAIRING, since the reply names the input that belongs
+to the output written to, which may be a different interface entirely. Every port is still offered in the
+cyclers, so a wrong guess stays fixable.
+
+Native carries the probe and the answers without parsing either, exactly as it carries the farewell:
+`deviceInquiry()` / `parseInquiryReply` / `deviceName` are TS's, so a second model is a data entry in
+`PROFILES` rather than new C++. `LaunchpadScanner` runs on its own thread and is polled (`useLaunchpadScanWatch`),
+and the host takes `MidiIo`'s hardware inputs down for the duration - a Windows MIDI input is exclusive, so
+otherwise a scan could not hear the very interface the user selected as their input device.
 
 The submenu straddles two scopes on purpose, because setting the feature up needs both: ports + Connect are
 HOST state (persisted natively in `launchpad.cfg`, shared by every project), while app / quantise / follow /
@@ -657,20 +677,29 @@ BUILT (`pnpm test`, no device, no native build):
   than inferring it. Assertions there guard the instrument; the semantics are locked in by the differential
   and unit tests once a model exists to hold them to.
 
-- **Device link** ✅ `retroplug-launchpad-test` (Catch2, 14 cases / 66 assertions), over a fake `IMidiPort`:
-  connect / refusal / disconnect, the farewell on BOTH disconnect and destruct and across a reconnect, a
-  received message reaching the audio-thread drain, LED traffic leaving on `pump()` rather than on push, an
-  oversized message dropped rather than overrunning its slot, and `LaunchpadHost`'s `launchpad.cfg`
-  round-trip + reserved-port reporting. No rtmidi, no MIDI system, no hardware.
+- **Device link + scan** ✅ `retroplug-launchpad-test` (Catch2, 22 cases / 98 assertions), over a fake
+  `IMidiPort`: connect / refusal / disconnect, the farewell on BOTH disconnect and destruct and across a
+  reconnect, a received message reaching the audio-thread drain, LED traffic leaving on `pump()` rather than
+  on push, an oversized message dropped rather than overrunning its slot, and `LaunchpadHost`'s
+  `launchpad.cfg` round-trip + reserved-port reporting. The scan half drives `LaunchpadScanner` over a
+  scriptable rig: the probe reaching every output verbatim, a reply tagged with the PAIR that produced it
+  (answer on a different port from the probe), a port that will not open counted and stepped over, an
+  arrival outside any probe window dropped rather than misattributed, realtime noise ignored, one scan at a
+  time, the refusal while the link holds the ports, and the `onScanBusy` edges. No rtmidi, no MIDI system,
+  no hardware.
 - **Port exclusion** ✅ `retroplug-midi-test` gained the reserved-port cases: a claimed port drops out of
   "All Devices" and cannot be selected explicitly either.
 - **The connect edge** ✅ `test/controller/role.test.ts` drives the real role through a kernel: no hello
   while nothing is attached, hello FIRST on the block a device appears, not re-sent while it stays, a full
   repaint on reconnect (not a diff), and the predictor still advancing while disconnected.
-- **The menu + seam** ✅ `test/menu/launchpad.test.ts`, 11 cases: the seam gate, the unfiltered port list,
-  the hint tag stripped back off before a name goes to native, Connect resolving the hinted default (and
-  declining to invent one when nothing is hinted), the farewell landing before anything can connect, the
-  status line, and the project rows re-pushing the kernel.
+- **The menu + seam** ✅ `test/menu/launchpad.test.ts`, 22 cases: the presence gate in all its forms (no
+  seam, nothing plugged in, a USB name, a recorded pick, that pick's interface unplugged, a live link), the
+  unfiltered port list, the hint tag stripped back off before a name goes to native, Connect resolving the
+  hinted default (and declining to invent one when nothing is hinted), the farewell landing before anything
+  can connect, the status line, and the project rows re-pushing the kernel. The scan rows pin that the probe
+  handed down IS `deviceInquiry()`, that only a Novation answer is acted on (another manufacturer, a stray
+  NoteOn and a truncated reply all leave the config alone), that a real answer is found among that noise,
+  and that "nothing answered" is distinguished from "could not look" when a port was in use.
 - **Hardware** ✅ `retroplug-cli launchpad-probe` on a real Pro MK3 confirmed Programmer-mode entry, LED
   batching and the edge-button CCs (§3.6 - which corrected them).
 

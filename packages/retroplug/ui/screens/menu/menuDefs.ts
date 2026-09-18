@@ -107,7 +107,9 @@ import { getTransport, setTransport, setClockBpm, CLOCK_BPM_STEP, CLOCK_BPM_COAR
 import { getN8Config, setN8Port, connectN8, setN8Lookahead, type N8Config } from "./n8Devices";
 import { getN8SdStatus, n8LoadRom, n8DumpSram, n8RestoreSram, type N8SdStatus } from "./n8SdOps";
 import {
-  getLaunchpadConfig, setLaunchpadPorts, connectLaunchpad, looksLikeLaunchpad, type LaunchpadConfig,
+  getLaunchpadConfig, setLaunchpadPorts, connectLaunchpad, looksLikeLaunchpad, launchpadDetected,
+  hasLaunchpadScan, startLaunchpadScan, getLaunchpadScan, launchpadFromScan, forgetLaunchpad,
+  type LaunchpadConfig, type LaunchpadScanStatus,
 } from "./launchpadDevices";
 import { ControllerRegistry, registerControllerApps, QUANTISE_VALUES, type Quantise } from "../../../src/controller";
 import { CONTROLLER_TARGET_VALUES, type ControllerTarget } from "../../../src/settingsEnums";
@@ -283,6 +285,34 @@ function inputCyclerNames(devices: string[], selected: string): { names: string[
   return { names, index: names.length - 1 };
 }
 
+/** The read-only line under the scan row: what it is doing, or what the last one concluded.
+ *
+ *  A finished scan outranks the recorded device, and reads its own replies rather than waiting for them to
+ *  be applied. Both halves matter: re-scanning after unplugging something has to be able to say "nothing
+ *  answered" instead of going on naming what used to be there, and the verdict must not flicker through
+ *  "nothing" while the apply edge lands a frame later.
+ *
+ *  `skipped` is worth showing rather than swallowing. A MIDI input is exclusive on Windows, so a port
+ *  another application is holding simply cannot be listened on - and "nothing answered" then means
+ *  something quite different from "nothing is there". */
+function launchpadScanLabel(scan: LaunchpadScanStatus | null, cfg: LaunchpadConfig | null): string {
+  if (scan?.busy) return scan.phase || "Scanning...";
+  if (scan?.error) return `Error: ${scan.error}`;
+  if (scan?.done) {
+    const hit = launchpadFromScan(scan);
+    if (hit) return `${hit.name} on ${hit.input}`;
+    return scan.skipped > 0
+      ? `Nothing answered (${scan.skipped} port(s) in use elsewhere)`
+      : "Nothing answered";
+  }
+  if (cfg?.deviceLabel && cfg.selectedInput) return `${cfg.deviceLabel} on ${cfg.selectedInput}`;
+  return "Not scanned";
+}
+
+// Settings > MIDI. The device pickers, plus the control-surface scan - the one place a Launchpad can be
+// FOUND, which is why it lives here and not in the instance menu's Launchpad submenu: that submenu only
+// appears once a device is known, so a TRS-attached surface would have nowhere to be set up from. Settings
+// is where you describe your rig; the instance menu is where you play the hardware you have.
 function midiSettingsChildren(): MenuItem[] {
   const cfg = getMidiConfig() ?? { inputs: [], outputs: [], selectedInput: "", selectedOutput: "" };
   const inp = inputCyclerNames(cfg.inputs, cfg.selectedInput);
@@ -291,9 +321,24 @@ function midiSettingsChildren(): MenuItem[] {
   // single sentinel at 0.
   const inName = (n: number) => (n === 0 ? "" : n === 1 ? ALL_INPUTS : cfg.inputs[n - 2] ?? cfg.selectedInput);
   const outName = (n: number) => (n === 0 ? "" : cfg.outputs[n - 1] ?? cfg.selectedOutput);
+  const lpcfg = getLaunchpadConfig();
+  const scan = getLaunchpadScan();
   return [
     cycler("midi-input", "Input Device", inp.names, inp.index, (n) => setMidiInput(inName(n))),
     cycler("midi-output", "Output Device", out.names, out.index, (n) => setMidiOutput(outName(n))),
+    // Writing MIDI at a stranger's gear is never something to do on a timer or a render, so this is the
+    // only trigger: one Universal Device Inquiry per output, on request. Disabled while the link holds a
+    // pair - those ports cannot be reopened, and a connected device is already found.
+    ...(hasLaunchpadScan()
+      ? [
+          sep("midi-sep-surface"),
+          action("midi-scan", "Scan for Control Surface", () => void startLaunchpadScan(),
+            !!scan?.busy || !!lpcfg?.connected),
+          action("midi-scan-status", `Control Surface: ${launchpadScanLabel(scan, lpcfg)}`, () => {}, true),
+          action("midi-scan-forget", "Forget Control Surface", () => forgetLaunchpad(),
+            !lpcfg?.selectedInput || !!lpcfg?.connected),
+        ]
+      : []),
   ];
 }
 
@@ -325,11 +370,15 @@ function n8SdLabel(sd: N8SdStatus): string {
 }
 
 // "Launchpad" submenu (in the instance menu's tracker block, beside N8 Pro - a control surface plays a
-// tracker, so it belongs with them). Standalone-only, and gated on the SEAM rather than on detecting a
-// device: a Launchpad also speaks TRS/DIN, so on a machine short of USB ports it arrives through an ordinary
-// MIDI interface on a port named after the INTERFACE. Nothing about that name says "Launchpad", so a
-// detection gate would hide the only menu that could configure exactly that setup. The hint instead picks
-// the default port and tags a row.
+// tracker, so it belongs with them). Standalone-only, and shown only when a device is actually there
+// (launchpadDetected), the same rule the N8 Pro submenu next door follows.
+//
+// Detecting one is not a name test, because a Launchpad also speaks TRS/DIN: on a machine short of USB ports
+// it arrives through an ordinary MIDI interface, on a port named after the INTERFACE, and nothing about that
+// name says "Launchpad". Nor can it be done passively - DIN has no enumeration and no idle heartbeat, so the
+// OS sees the interface and nothing else. It takes a Universal Device Inquiry, which is a transmit, which is
+// why FINDING one lives in Settings > MIDI as a deliberate user action and this submenu only ever reads the
+// answer. The port cyclers still offer every port unfiltered, so a wrong guess is fixable here.
 //
 // The rows straddle two scopes on purpose, because setting the feature up needs both: the ports + Connect
 // are HOST state (persisted natively in launchpad.cfg, shared by every project), while the app, its launch
@@ -359,7 +408,12 @@ function cartSyncLabel(mode: "midiMap" | "off", cartSync: string | null): string
 
 /** The read-only status line: what the link is doing, in the words a player would use. */
 function launchpadStatus(cfg: LaunchpadConfig): string {
-  if (cfg.connected) return cfg.dropped > 0 ? `connected (${cfg.dropped} dropped)` : "connected";
+  if (cfg.connected) {
+    if (cfg.dropped > 0) return `connected (${cfg.dropped} dropped)`;
+    // The name a scan read off the device, when there is one. Worth the room: it is the difference between
+    // "the cable reaches a Launchpad" and "the ports opened", which otherwise read identically here.
+    return cfg.deviceLabel ? `connected - ${cfg.deviceLabel}` : "connected";
+  }
   if (cfg.error) return `Error: ${cfg.error}`;
   if (cfg.enabled) return !cfg.selectedInput || !cfg.selectedOutput ? "pick both ports" : "not connected";
   return "not connected";
@@ -2326,9 +2380,10 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
   const tracker = resolveTracker(sys.roles);
   const n8cfg = getN8Config();     // null without the seam; enumerates ports + link state fresh each render
   const n8Here = n8Detected(n8cfg); // true only when a physical N8 is attached -> the submenu renders
-  // Launchpad: null without the seam (a DAW / the harness). Unlike N8 there is no detection gate - see
-  // launchpadMenuChildren for why a TRS-attached surface is invisible to any name-based test.
+  // Launchpad: null without the seam (a DAW / the harness), and shown only when a surface is actually here -
+  // over USB by port name, or on any port pair a Settings > MIDI scan found. See launchpadMenuChildren.
   const lpcfg = getLaunchpadConfig();
+  const lpHere = launchpadDetected(lpcfg);
   return {
     title: instanceTitle(ctx, sys),
     items: [
@@ -2338,12 +2393,12 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
       action("inst-save", saveProjectLabel(ctx), () => void saveProjectInteractive(ctx.stores)),
       action("inst-new", "New Project", () => ctx.newProject()),
       submenu("inst-recent", "Recent", recentChildren(ctx)),
-      // The tracker submenu (LSDj / risa) and the N8 Pro hardware submenu share the block right under Recent,
+      // The tracker submenu (LSDj / risa) and the two hardware submenus share the block right under Recent,
       // fenced by a separator on each side (the one below here, and inst-sep-top). The tracker is present only
-      // when the cart sniffed one; N8 Pro only when a physical N8 is actually detected (n8Here) - it drives a
-      // real NES, so it belongs beside the trackers, not buried in Settings, but there's nothing to show without
-      // the hardware.
-      ...(tracker || n8Here || lpcfg
+      // when the cart sniffed one; N8 Pro only when a physical N8 is actually detected (n8Here) and Launchpad
+      // only when a control surface is (lpHere) - both drive real hardware, so they belong beside the trackers
+      // rather than buried in Settings, but there's nothing to show without the device.
+      ...(tracker || n8Here || lpHere
         ? [
             sep("inst-sep-tracker"),
             ...(tracker
@@ -2353,7 +2408,7 @@ export function buildInstanceMenu(ctx: MenuContext): MenuTree {
                     : action(`inst-${tracker.id}`, `${tracker.label} (Unsupported Version)`, () => {}, true),
                 ]
               : []),
-            ...(lpcfg ? [submenu("inst-launchpad", "Launchpad", launchpadMenuChildren(ctx, lpcfg))] : []),
+            ...(lpHere ? [submenu("inst-launchpad", "Launchpad", launchpadMenuChildren(ctx, lpcfg!))] : []),
             ...(n8Here ? [submenu("inst-n8", "N8 Pro", n8MenuChildren(ctx, n8cfg!))] : []),
           ]
         : []),

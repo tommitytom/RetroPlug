@@ -485,6 +485,7 @@ add_executable(retroplug-sdl
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8SdWorker.cpp         # background worker: ROM upload / SRAM dump+restore
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadLink.cpp   # control-surface in/out pair (own rings)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadHost.cpp   # link + config + launchpad.cfg
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadScanner.cpp # device-inquiry port scan (worker thread)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/LaunchpadHooks.cpp  # binds the __rp_*Launchpad* config hooks
     ${CMAKE_CURRENT_SOURCE_DIR}/src/host/launchpad/RtMidiPort.cpp      # the RtMidi backend behind IMidiPort
     ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
@@ -905,15 +906,21 @@ set_target_properties(retroplug-midi-test PROPERTIES
 # LaunchpadLink's connect/disconnect lifecycle, the two rings (a message received reaching the audio-thread
 # drain; an oversized LED message dropped rather than overrunning its slot), the FAREWELL replayed on both
 # disconnect and destruct — Programmer mode locks the device's front panel, so skipping that strands the
-# user's hardware — and LaunchpadHost's launchpad.cfg round-trip + reserved-port reporting. Compiles both
-# against a capturing fake IMidiPort: no rtmidi, no MIDI system, no hardware. Also `pnpm test:plugin`.
+# user's hardware — and LaunchpadHost's launchpad.cfg round-trip + reserved-port reporting. It also guards
+# LaunchpadScanner, the device-inquiry port scan that decides whether the submenu appears at all: the probe
+# reaching every output, a reply tagged with the PAIR that produced it, and a port that will not open being
+# stepped over rather than failing the scan. Compiles all three against a capturing fake IMidiPort: no
+# rtmidi, no MIDI system, no hardware. Also `pnpm test:plugin`.
 add_executable(retroplug-launchpad-test EXCLUDE_FROM_ALL
     test/launchpad/LaunchpadLink.test.cpp
     src/host/launchpad/LaunchpadLink.cpp
-    src/host/launchpad/LaunchpadHost.cpp)
+    src/host/launchpad/LaunchpadHost.cpp
+    src/host/launchpad/LaunchpadScanner.cpp)
 
+find_package(Threads REQUIRED)
 target_link_libraries(retroplug-launchpad-test PRIVATE
-    Catch2::Catch2WithMain)
+    Catch2::Catch2WithMain
+    Threads::Threads)              # LaunchpadScanner's scan thread
 
 target_include_directories(retroplug-launchpad-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src)   # host/launchpad/*.hpp + transport/SpscRing.hpp

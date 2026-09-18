@@ -125,6 +125,7 @@ std::vector<std::string> MidiIo::listOutputs() const { return hardwarePortNames(
 
 void MidiIo::openHardwareInputs() {
     hwIn_.clear();
+    if (inputsSuspended_) return;  // a control-surface scan holds the ports (see setHardwareInputsSuspended)
     const std::vector<std::string> names = probePortNames(true, clientName_);
     // The policy lives in the pure helper so it can be unit-tested: none (the default) / every device / the
     // named one, with a control surface's claimed port skipped throughout.
@@ -178,6 +179,14 @@ void MidiIo::setReservedInput(const std::string& name) {
     if (reservedIn_ == name) return;  // reapplied every frame by the host; only a real change reopens ports
     reservedIn_ = name;
     if (in_) openHardwareInputs();  // apply live (host pauses audio around this)
+}
+
+void MidiIo::setHardwareInputsSuspended(bool suspended) {
+    if (inputsSuspended_ == suspended) return;
+    inputsSuspended_ = suspended;
+    if (in_) openHardwareInputs();  // closes them, or re-applies selectedIn_ on the way back
+    std::fprintf(stderr, "[retroplug-sdl] MIDI in: hardware inputs %s\n",
+                 suspended ? "suspended for a control-surface scan" : "resumed");
 }
 
 void MidiIo::close() {

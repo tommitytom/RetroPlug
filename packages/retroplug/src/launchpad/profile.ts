@@ -41,6 +41,9 @@ export interface LaunchpadProfile {
   readonly maxColourSpecs: number;
   /** Substring identifying the right USB port among the model's several. */
   readonly portHint: string;
+  /** The two family bytes this model answers a Device Inquiry with - what identifies it on a DIN port,
+   *  where the port name is the interface's and says nothing about what is plugged into it. */
+  readonly family: readonly [number, number];
   /** Named edge buttons -> their CC number. */
   readonly buttons: Readonly<Record<string, number>>;
 }
@@ -82,11 +85,30 @@ export const PRO_MK3: LaunchpadProfile = {
   programmerLayout: 0x11,
   maxColourSpecs: 106, // "up to 106 <Colour Spec> entries to light up the entire surface"
   portHint: PRO_MK3_PORT_HINT,
+  family: PRO_MK3_FAMILY,
   buttons: PRO_MK3_BUTTONS,
 };
 
 /** Every profile this build knows, by a short key. */
 export const PROFILES: Readonly<Record<string, LaunchpadProfile>> = { "pro-mk3": PRO_MK3 };
+
+/** The profile whose model answers with these family bytes, or null. How a device found by Device Inquiry
+ *  is identified - the only identification a TRS/DIN-attached surface can offer, since its port is named
+ *  after somebody's interface. */
+export function profileForFamily(family: readonly number[]): LaunchpadProfile | null {
+  for (const p of Object.values(PROFILES))
+    if (p.family[0] === family[0] && p.family[1] === family[1]) return p;
+  return null;
+}
+
+/** A human name for a device that answered an inquiry. A Novation we have no profile for still reports
+ *  something true (its family bytes) rather than claiming to be a model we cannot actually drive. */
+export function deviceName(family: readonly number[]): string {
+  const p = profileForFamily(family);
+  if (p) return p.name;
+  const hex = family.map((b) => (b ?? 0).toString(16).padStart(2, "0")).join(" ");
+  return `Novation device (family ${hex})`;
+}
 
 /** True for a pad coordinate inside the 8x8 grid. */
 export function isPad(pad: Pad): boolean {

@@ -22,6 +22,7 @@ import { useSongImport } from "./lvgl/useSongImport";
 import { useSongWatch } from "./lvgl/useSongWatch";
 import { useSramAutoSave } from "./lvgl/useSramAutoSave";
 import { useN8SdWatch } from "./lvgl/useN8SdWatch";
+import { useLaunchpadScanWatch } from "./lvgl/useLaunchpadScanWatch";
 import { unsavedRows } from "./lvgl/unsavedRows";
 import { useGameInput } from "./input/useGameInput";
 import { useGamepadInput } from "./input/useGamepadInput";
@@ -62,6 +63,7 @@ export function App() {
   useSongWatch(stores); // records the focused cart's song in Recent when it changes (incl. loads made inside the cart)
   useSramAutoSave(stores); // mirrors each battery to its .sav under the Continuous preference (no-op otherwise)
   useN8SdWatch(); // re-renders the Settings > N8 Pro progress row while a native SD job (ROM/SRAM) runs
+  useLaunchpadScanWatch(); // watches a control-surface scan and records what answered (Settings > MIDI)
   const version = useMemo(() => stores.backend.version(), [stores.backend]); // static; shown in the menu title
 
   const [menuOpen, setMenuOpen] = useState(true);

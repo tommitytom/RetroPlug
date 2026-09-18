@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "host/launchpad/LaunchpadLink.hpp"
+#include "host/launchpad/LaunchpadScanner.hpp"
 
 namespace retroplug {
 
@@ -16,6 +17,7 @@ struct LaunchpadConfigDto {
     std::vector<std::string> outputs;  // every hardware MIDI output, unfiltered
     std::string              selectedInput;
     std::string              selectedOutput;
+    std::string              deviceLabel;  // what the scan identified, verbatim from TS ("" = never scanned)
     bool                     connected = false;
     bool                     enabled   = false;
     std::uint64_t            sent      = 0;
@@ -43,18 +45,39 @@ public:
      *  stopped - so the stop/start dance lives in the host and this class stays free of it. */
     using LinkChangedFn = std::function<void()>;
 
-    LaunchpadHost(LaunchpadLink::PortFactory factory, PortLister lister, std::string configDir);
+    /** Fired on both edges of a scan, on the UI thread. The embedding host uses it to take its shared MIDI
+     *  stream's hardware inputs down for the duration: a Windows MIDI input is exclusive, so a scan cannot
+     *  open the very interface the user selected as their input device - which is precisely the rig a DIN
+     *  Launchpad is on. Like LinkChangedFn, the audio stop/start this needs lives in the host. */
+    using ScanBusyFn = std::function<void(bool busy)>;
+
+    LaunchpadHost(LaunchpadLink::PortFactory factory, LaunchpadScanner::OpenFn opener, PortLister lister,
+                  std::string configDir);
 
     LaunchpadLink&       link() { return link_; }
     const LaunchpadLink& link() const { return link_; }
 
     void setOnLinkChanged(LinkChangedFn fn) { onLinkChanged_ = std::move(fn); }
+    void setOnScanBusy(ScanBusyFn fn) { onScanBusy_ = std::move(fn); }
 
     /** The live snapshot (ports enumerated fresh, link state read live). */
     LaunchpadConfigDto getConfig();
 
     /** Choose the in/out pair by port name; live-switches if currently connected; persists. */
     void setPorts(const std::string& input, const std::string& output);
+
+    /** Record what the scan identified. Opaque: TS parses the reply and names the model, native stores the
+     *  string and hands it back. Persists. */
+    void setDeviceLabel(const std::string& label);
+
+    /** Write `probe` out of every enumerated output, listening on every input, and report what came back.
+     *  Fire-and-forget; the UI polls scanStatus(). A no-op while a scan is running or while the link holds a
+     *  pair (those ports cannot be reopened, and a connected device needs no finding). */
+    bool scan(std::vector<std::uint8_t> probe, unsigned windowMs);
+
+    /** The current/last scan. Call from the UI thread ONLY: this is also where the scan's finishing edge is
+     *  noticed and onScanBusy(false) fired, so the host's audio dance runs on the thread that owns it. */
+    LaunchpadScanStatusDto scanStatus();
 
     /** Toggle the link. Persists. Enabling with no port chosen leaves it down rather than guessing: the UI
      *  resolves the default (it owns the device hint), and native stores exactly what it is told. */
@@ -75,13 +98,17 @@ private:
     void save();
     void applyLink();  // (re)connect or disconnect to match enabled_ + the selected ports, then notify
 
-    LaunchpadLink link_;
-    PortLister    lister_;
-    LinkChangedFn onLinkChanged_;
-    std::string   configDir_;
-    std::string   input_;
-    std::string   output_;
-    bool          enabled_ = false;
+    LaunchpadLink    link_;
+    LaunchpadScanner scanner_;
+    PortLister       lister_;
+    LinkChangedFn    onLinkChanged_;
+    ScanBusyFn       onScanBusy_;
+    std::string      configDir_;
+    std::string      input_;
+    std::string      output_;
+    std::string      deviceLabel_;
+    bool             enabled_      = false;
+    bool             scanReported_ = false;  // onScanBusy(true) fired and not yet matched by its false edge
 };
 
 }  // namespace retroplug

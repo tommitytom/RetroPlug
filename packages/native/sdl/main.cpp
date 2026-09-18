@@ -260,6 +260,7 @@ struct AppState {
     // writes that out. The port + enabled toggle persist to launchpad.cfg.
     retroplug::LaunchpadHost launchpadHost{
         retroplug::rtMidiPortFactory("RetroPlug Launchpad"),
+        retroplug::rtMidiPortOpener("RetroPlug Scan"),  // one-port-at-a-time, for Settings > MIDI's scan
         [this](bool input) { return input ? midi.listInputs() : midi.listOutputs(); },
         hostSvc.configDir()};
     std::vector<retroplug::LaunchpadLink::Message> launchpadScratch;  // reused per block (no per-block alloc)
@@ -1750,6 +1751,18 @@ int main(int argc, char** argv) {
         startAudio(*a);
         std::fprintf(stderr, "[retroplug-sdl] Launchpad: reserved MIDI input '%s'\n",
                      reserved.empty() ? "(none)" : reserved.c_str());
+    });
+
+    // A control-surface scan opens every hardware MIDI input for a second or so, which app.midi may already
+    // be holding - and on Windows a MIDI input is exclusive, so the scan would simply not hear the interface
+    // the user selected as their input device. That is the very rig a TRS-attached Launchpad is on, so the
+    // stream steps aside for the duration. Same reopening hazard, same treatment as above: stop audio (which
+    // joins the callback), re-apply, start. Audio runs THROUGH the scan; only these two edges stop it.
+    app.launchpadHost.setOnScanBusy([a = &app](bool busy) {
+        if (a->midi.hardwareInputsSuspended() == busy) return;
+        stopAudio(*a);
+        a->midi.setHardwareInputsSuspended(busy);
+        startAudio(*a);
     });
 
     std::fprintf(stderr, "[retroplug-sdl] running %ux%u @ %.0f Hz\n", app.width, app.height, app.sampleRate);

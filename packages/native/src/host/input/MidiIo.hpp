@@ -151,6 +151,15 @@ public:
     void setReservedInput(const std::string& name);
     const std::string& reservedInput() const { return reservedIn_; }
 
+    // Close every hardware input for the duration of a control-surface SCAN, without disturbing the user's
+    // selection (resuming re-applies it). Not the same lever as setReservedInput, which names ONE port a
+    // surface holds for as long as it is connected: a scan needs them ALL down, briefly. It matters because
+    // a Windows MIDI input is exclusive, so a scan cannot open the very interface the user picked as their
+    // input device - which is exactly the rig a TRS-attached Launchpad is on. Applied immediately if open()
+    // has run, so the host must stop audio around this exactly as it does for setInputSelection.
+    void setHardwareInputsSuspended(bool suspended);
+    bool hardwareInputsSuspended() const { return inputsSuspended_; }
+
     // Drain queued input into `out` (called from the audio thread each block; clears `out` first). Lock-free
     // w.r.t. the RtMidi callback thread.
     void poll(std::vector<Message>& out);
@@ -178,6 +187,7 @@ private:
     std::string                             selectedIn_;   // "" = None (virtual input only); "*" = every device
     std::string                             selectedOut_;  // "" = None (virtual output only)
     std::string                             reservedIn_;   // "" = nothing claimed by a control surface
+    bool                                    inputsSuspended_ = false;  // a scan is holding the ports
 
     std::unique_ptr<RtMidiIn>               in_;    // our virtual input port
     std::vector<std::unique_ptr<RtMidiIn>>  hwIn_;  // hardware input ports (USB-MIDI, etc.)
