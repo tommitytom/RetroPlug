@@ -166,7 +166,13 @@ void RenderCore::reopenEditor() {
 void RenderCore::pump(int iterations) {
     for (int i = 0; i < iterations; ++i) {
         g_tickMs += 23; // keep the UI tick roughly in step with an audio block
-        if (engine_.getContext()) engine_.emit("frame", 0, nullptr);
+        if (JSContext* ctx = engine_.getContext()) {
+            // arg0 = the simulated tick (ms) — mirrors the plugin/SDL hosts, which pass lv_tick_get();
+            // the UI's hold-to-repeat timing reads it off the "frame" event.
+            JSValue tickMs = JS_NewUint32(ctx, g_tickMs);
+            engine_.emit("frame", 1, &tickMs);
+            JS_FreeValue(ctx, tickMs);
+        }
         engine_.tick();
         lv_timer_handler();
     }
