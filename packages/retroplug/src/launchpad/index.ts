@@ -5,7 +5,7 @@
 // and no native build. Protocol reference: the Launchpad Pro [MK3] Programmer's Reference Manual.
 export {
   PRO_MK3, PROFILES, GRID_SIZE, PRO_MK3_PORT_HINT, NOVATION_ID, PRO_MK3_FAMILY,
-  isPad, padIndex, padAt, buttonName, controlKind,
+  isPad, padIndex, padAt, buttonName, controlKind, profileForFamily, deviceName,
   type LaunchpadProfile, type Pad, type ControlKind,
 } from "./profile";
 

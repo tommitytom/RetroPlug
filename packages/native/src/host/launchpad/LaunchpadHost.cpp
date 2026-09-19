@@ -19,8 +19,10 @@ bool readLine(std::FILE* f, std::string& out) {
 
 }  // namespace
 
-LaunchpadHost::LaunchpadHost(LaunchpadLink::PortFactory factory, PortLister lister, std::string configDir)
-    : link_(std::move(factory)), lister_(std::move(lister)), configDir_(std::move(configDir)) {}
+LaunchpadHost::LaunchpadHost(LaunchpadLink::PortFactory factory, LaunchpadScanner::OpenFn opener,
+                             PortLister lister, std::string configDir)
+    : link_(std::move(factory)), scanner_(std::move(opener)), lister_(std::move(lister)),
+      configDir_(std::move(configDir)) {}
 
 LaunchpadConfigDto LaunchpadHost::getConfig() {
     LaunchpadConfigDto c;
@@ -28,6 +30,7 @@ LaunchpadConfigDto LaunchpadHost::getConfig() {
     c.outputs        = lister_ ? lister_(false) : std::vector<std::string>{};
     c.selectedInput  = input_;
     c.selectedOutput = output_;
+    c.deviceLabel    = deviceLabel_;
     c.connected      = link_.isConnected();
     c.enabled        = enabled_;
     c.sent           = link_.messagesSent();
@@ -49,6 +52,41 @@ void LaunchpadHost::connect(bool enable) {
     save();
 }
 
+void LaunchpadHost::setDeviceLabel(const std::string& label) {
+    deviceLabel_.clear();
+    deviceLabel_.reserve(label.size());
+    for (char c : label)                       // the cfg is line-oriented; a newline in the label would
+        if (c != '\n' && c != '\r') deviceLabel_ += c;  // shift every field after it on the next load
+    save();
+}
+
+bool LaunchpadHost::scan(std::vector<std::uint8_t> probe, unsigned windowMs) {
+    if (scanner_.busy() || link_.isConnected()) return false;
+    auto inputs  = lister_ ? lister_(true) : std::vector<std::string>{};
+    auto outputs = lister_ ? lister_(false) : std::vector<std::string>{};
+    // The false edge is fired from scanStatus(), on the UI thread - see the ScanBusyFn comment. Raised before
+    // start() so the host's inputs are already down when the first port is opened.
+    if (onScanBusy_ && !scanReported_) {
+        scanReported_ = true;
+        onScanBusy_(true);
+    }
+    if (scanner_.start(std::move(probe), std::move(inputs), std::move(outputs), windowMs)) return true;
+    if (scanReported_) {  // refused after all - give the host its inputs back rather than leaving them down
+        scanReported_ = false;
+        if (onScanBusy_) onScanBusy_(false);
+    }
+    return false;
+}
+
+LaunchpadScanStatusDto LaunchpadHost::scanStatus() {
+    LaunchpadScanStatusDto s = scanner_.status();
+    if (scanReported_ && !s.busy) {
+        scanReported_ = false;
+        if (onScanBusy_) onScanBusy_(false);
+    }
+    return s;
+}
+
 void LaunchpadHost::applyLink() {
     const bool want = enabled_ && !input_.empty() && !output_.empty();
     if (want)
@@ -64,14 +102,18 @@ std::string LaunchpadHost::reservedInputPort() const {
 
 void LaunchpadHost::restore() {
     if (std::FILE* f = std::fopen((configDir_ + "/launchpad.cfg").c_str(), "r")) {
-        std::string in, out, en;
+        // Line-oriented, so the device label appended below is readable by an older build and a file written
+        // by one (three lines) loads here with an empty label - readLine leaves its output alone at EOF.
+        std::string in, out, en, label;
         readLine(f, in);
         readLine(f, out);
         readLine(f, en);
+        readLine(f, label);
         std::fclose(f);
-        input_   = in;
-        output_  = out;
-        enabled_ = std::atoi(en.c_str()) != 0;
+        input_       = in;
+        output_      = out;
+        enabled_     = std::atoi(en.c_str()) != 0;
+        deviceLabel_ = label;
     }
     // Reconnect the persisted pair, if any. This claims the ports; it does NOT put the device into
     // Programmer mode - only the controller role does that, on the connect edge it sees in the block info -
@@ -81,7 +123,8 @@ void LaunchpadHost::restore() {
 
 void LaunchpadHost::save() {
     if (std::FILE* f = std::fopen((configDir_ + "/launchpad.cfg").c_str(), "w")) {
-        std::fprintf(f, "%s\n%s\n%d\n", input_.c_str(), output_.c_str(), enabled_ ? 1 : 0);
+        std::fprintf(f, "%s\n%s\n%d\n%s\n", input_.c_str(), output_.c_str(), enabled_ ? 1 : 0,
+                     deviceLabel_.c_str());
         std::fclose(f);
     }
 }

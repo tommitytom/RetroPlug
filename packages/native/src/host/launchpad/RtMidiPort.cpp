@@ -71,6 +71,54 @@ private:
     std::unique_ptr<RtMidiIn>  in_;  // LAST: destroyed first, cancelling the callback
 };
 
+// One port, one direction - what a scan holds. An input keeps its RtMidiIn (destroyed first by declaration
+// order, cancelling the callback before the receiver dies); an output keeps only its RtMidiOut and ignores
+// send() when it has none.
+class RtMidiSinglePort final : public IMidiPort {
+public:
+    RtMidiSinglePort(const std::string& clientName, bool input, const std::string& name, Receiver receiver)
+        : receiver_(std::move(receiver)) {
+        if (input) {
+            in_ = std::make_unique<RtMidiIn>(RtMidi::UNSPECIFIED, clientName);
+            const auto idx = findPort(*in_, name);
+            if (!idx) throw std::runtime_error("MIDI input port not found: " + name);
+            in_->ignoreTypes(false, false, true);  // sysex DELIVERED - an inquiry reply is one
+            in_->setCallback(&RtMidiSinglePort::onMidiIn, this);
+            in_->openPort(*idx, name);
+        } else {
+            out_ = std::make_unique<RtMidiOut>(RtMidi::UNSPECIFIED, clientName);
+            const auto idx = findPort(*out_, name);
+            if (!idx) throw std::runtime_error("MIDI output port not found: " + name);
+            out_->openPort(*idx, name);
+        }
+    }
+
+    ~RtMidiSinglePort() override {
+        in_.reset();
+        out_.reset();
+    }
+
+    void send(const std::uint8_t* data, std::size_t n) override {
+        if (!out_ || n == 0) return;
+        try {
+            out_->sendMessage(data, n);
+        } catch (RtMidiError&) {
+            // A probe that will not go out is a port we learn nothing from, not a reason to fail the scan.
+        }
+    }
+
+private:
+    static void onMidiIn(double, std::vector<unsigned char>* message, void* userData) {
+        if (!message || message->empty()) return;
+        auto* self = static_cast<RtMidiSinglePort*>(userData);
+        if (self->receiver_) self->receiver_(message->data(), message->size());
+    }
+
+    Receiver                   receiver_;
+    std::unique_ptr<RtMidiOut> out_;
+    std::unique_ptr<RtMidiIn>  in_;  // LAST: destroyed first, cancelling the callback
+};
+
 }  // namespace
 
 LaunchpadLink::PortFactory rtMidiPortFactory(std::string clientName) {
@@ -81,6 +129,18 @@ LaunchpadLink::PortFactory rtMidiPortFactory(std::string clientName) {
             return std::make_unique<RtMidiPort>(clientName, inName, outName, std::move(receiver));
         } catch (RtMidiError& e) {
             throw std::runtime_error(e.what());  // one exception type for LaunchpadLink::connect to catch
+        }
+    };
+}
+
+LaunchpadScanner::OpenFn rtMidiPortOpener(std::string clientName) {
+    return [clientName = std::move(clientName)](bool input, const std::string& name,
+                                                IMidiPort::Receiver receiver) -> std::unique_ptr<IMidiPort> {
+        if (!midiSystemUsable()) throw std::runtime_error("MIDI system unavailable");
+        try {
+            return std::make_unique<RtMidiSinglePort>(clientName, input, name, std::move(receiver));
+        } catch (RtMidiError& e) {
+            throw std::runtime_error(e.what());  // one exception type for the scan to count and step over
         }
     };
 }

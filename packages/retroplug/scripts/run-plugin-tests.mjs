@@ -47,7 +47,10 @@ async function runOne(name) {
   return run.status === 0;
 }
 
-const results = await runPool(selected, runOne, { jobs });
+const results = await runPool(selected, runOne, {
+  jobs,
+  timings: { file: join(PKG, ".test-timings/plugin.json"), key: (name) => name },
+});
 const failures = selected.filter((_, i) => results[i] === false);
 
 if (failures.length) {

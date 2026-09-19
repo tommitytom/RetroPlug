@@ -584,21 +584,34 @@
  *   FONT USAGE
  *===================*/
 
-/* Montserrat fonts with ASCII range and some symbols using bpp = 4
- * https://fonts.google.com/specimen/Montserrat */
+/* The UI is monospaced, and these are all 0 on purpose.
+ *
+ * There is no font-family in this stack: a component picks a font by PIXEL SIZE, the TS
+ * style pipe turns the size into an index, and native maps that index to an
+ * `lv_font_montserrat_*` pointer (lv_binding_js .../style/font/font.hpp). That table is
+ * in a submodule and names the symbols directly, so the face is changed by changing what
+ * the symbols POINT AT, not by asking for a different one.
+ *
+ * So LVGL compiles none of its own Montserrat faces, and packages/native/src/fonts/
+ * supplies those seven symbol names built from DejaVu Sans Mono instead (regenerate with
+ * tools/gen-mono-fonts.sh). Turning one of these back to 1 will collide at link with the
+ * file of the same name in that directory - switch the face by regenerating, not here.
+ *
+ * Sizes 8/10/20/26-48 stay off exactly as before: font.hpp already folds every one of
+ * them onto a nearer size that is built. */
 #define LV_FONT_MONTSERRAT_8  0
 #define LV_FONT_MONTSERRAT_10 0
-#define LV_FONT_MONTSERRAT_12 1
-#define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_16 1
-#define LV_FONT_MONTSERRAT_18 1
+#define LV_FONT_MONTSERRAT_12 0
+#define LV_FONT_MONTSERRAT_14 0
+#define LV_FONT_MONTSERRAT_16 0
+#define LV_FONT_MONTSERRAT_18 0
 #define LV_FONT_MONTSERRAT_20 0
-#define LV_FONT_MONTSERRAT_22 1
-#define LV_FONT_MONTSERRAT_24 1
+#define LV_FONT_MONTSERRAT_22 0
+#define LV_FONT_MONTSERRAT_24 0
 #define LV_FONT_MONTSERRAT_26 0
 #define LV_FONT_MONTSERRAT_28 0
 #define LV_FONT_MONTSERRAT_30 0
-#define LV_FONT_MONTSERRAT_32 1
+#define LV_FONT_MONTSERRAT_32 0
 #define LV_FONT_MONTSERRAT_34 0
 #define LV_FONT_MONTSERRAT_36 0
 #define LV_FONT_MONTSERRAT_38 0
@@ -627,7 +640,18 @@
  *  #define LV_FONT_CUSTOM_DECLARE   LV_FONT_DECLARE(my_font_1) LV_FONT_DECLARE(my_font_2)
  *  @endcode
  */
-#define LV_FONT_CUSTOM_DECLARE
+/* Declare the monospaced faces from packages/native/src/fonts/. With every
+ * LV_FONT_MONTSERRAT_* above set to 0, lv_font.h declares none of these names itself, so
+ * without this both LV_FONT_DEFAULT below and the binding's builtin_font_list would be
+ * naming symbols the compiler has never heard of. */
+#define LV_FONT_CUSTOM_DECLARE \
+    LV_FONT_DECLARE(lv_font_montserrat_12) \
+    LV_FONT_DECLARE(lv_font_montserrat_14) \
+    LV_FONT_DECLARE(lv_font_montserrat_16) \
+    LV_FONT_DECLARE(lv_font_montserrat_18) \
+    LV_FONT_DECLARE(lv_font_montserrat_22) \
+    LV_FONT_DECLARE(lv_font_montserrat_24) \
+    LV_FONT_DECLARE(lv_font_montserrat_32)
 
 /** Always set a default font */
 #define LV_FONT_DEFAULT &lv_font_montserrat_14

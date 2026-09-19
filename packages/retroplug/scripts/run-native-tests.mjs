@@ -125,7 +125,10 @@ async function runOne({ file, slug }) {
   return run.status === 0;
 }
 
-const results = await runPool(tests, runOne, { jobs });
+const results = await runPool(tests, runOne, {
+  jobs,
+  timings: { file: join(PKG, ".test-timings/native.json"), key: (t) => t.slug },
+});
 const failures = tests.filter((_, i) => results[i] === false).map((t) => t.slug);
 
 if (failures.length) {

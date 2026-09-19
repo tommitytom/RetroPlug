@@ -37,6 +37,7 @@ const songJson = {
 const SONG: SavInput = { workingSong: songJson };
 
 test("the controller layer's launch bytes move a real cart, on both MIDI channels", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG, mode: "midiMap" });
   if (!p) return console.log("# SKIP lsdj-launchpad: aboy ROM not found / unsupported version");
 
@@ -90,6 +91,7 @@ const projection = (over: Partial<ControllerProjection> = {}): ControllerProject
 });
 
 test("a project whose cart is in the DEFAULT midiSync still launches rows once a controller is on", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({
     song: SONG,
     structure: (id) => projectKernelStructure([lsdjView(id)], "sendToAll", projection()),
@@ -103,6 +105,7 @@ test("a project whose cart is in the DEFAULT midiSync still launches rows once a
 });
 
 test("without a controller the same project ignores the same launch, which is what was wrong", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   // The control: it is the projection's override that makes the row land, not something else about the
   // pipeline. A cart in midiSync reads a NoteOn as nothing at all.
   const p = LsdjProbe.create({
@@ -118,6 +121,7 @@ test("without a controller the same project ignores the same launch, which is wh
 });
 
 test("a cart whose OWN SYNC is not MI.MAP is left alone rather than clocked at", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   // A cart in LSDJ (master) mode drives the link itself, so our bytes collide with its own and LSDj
   // reports TOO BUSY. The projection sends it nothing; the launch therefore does nothing, which is the
   // correct outcome for a cart that is not listening.

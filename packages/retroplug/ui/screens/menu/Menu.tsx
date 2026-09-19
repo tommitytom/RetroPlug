@@ -83,9 +83,11 @@ const OUTER_PAD_TB_BASE = 6;
 // row's right edge, with an arrow column at each end and the verb centred in what's left. Its width depends
 // ONLY on the zoom — never on which verb is showing, or which row it is — which is the whole point: the two
 // arrows then sit at the same x on every action-cycler row and don't budge as you step through the list.
-// Real widgets rather than a padded string because the menu font is Montserrat (proportional — LV_FONT_DEFAULT
-// in packages/native/src/lv_conf.h), where no amount of space-padding pins a glyph. Capped against the menu
-// width below so a narrow menu doesn't squeeze the name column out.
+// Real widgets rather than a padded string. The UI face is monospaced (packages/native/src/fonts/, wired up
+// in packages/native/src/lv_conf.h), so spaces WOULD line up today — but then the row would owe its alignment
+// to the face, and any future face that isn't monospaced would silently un-align every asset list. These
+// widths are geometry: they hold whoever is drawing the glyphs. Capped against the menu width below so a
+// narrow menu doesn't squeeze the name column out.
 const ACTION_REGION_BASE = 260;
 const ACTION_REGION_MAX_FRAC = 0.6;
 const ACTION_ARROW_BASE = 22; // one arrow column; the glyph is centred in it, which is its side padding
@@ -171,7 +173,7 @@ export function Menu({ width, height, zoom, tree, onClose }: MenuProps) {
   // A Text row sizes itself to its line; a Box row (actionCycler) does not — LVGL gives a plain object a
   // default size and lv_binding_js's style layer exposes no LV_SIZE_CONTENT, so a Box has to be TOLD how tall
   // a row is. It's measured off a real Text row below rather than derived from `itemFont`, because font-size
-  // is snapped to the nearest built-in Montserrat: at small zooms the requested size is not the rendered line
+  // is snapped to the nearest size the font table actually carries: at small zooms the requested size is not the rendered line
   // height. Until that measurement lands (one frame), fall back to a close estimate.
   const [textRowH, setTextRowH] = useState(0);
   // `${pad}:${axisName}` → the half-axis token the left stick is currently in, for edge-detected nav (a

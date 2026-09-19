@@ -432,13 +432,14 @@ widget's native uid for the test harness and is inert in production.
   with a live slot implements `selectedSlot`/`selectSlot` on its `AssetMenuSpec`, which is what puts a
   leading `Select` verb on every row but the live one — BlipToaster's theme + font do, so their lists ARE
   the picker rather than a cycler elsewhere naming a slot by number.
-  Unlike every other row, an `actionCycler` is a **`Box` of labels, not a single `Text`** — the menu font is
-  proportional, so the arrows can only hold fixed positions as real widgets: name at the row's left
+  Unlike every other row, an `actionCycler` is a **`Box` of labels, not a single `Text`** — the arrows hold
+  fixed positions as real widgets rather than by space-padding, so the row's alignment is geometry and does
+  not depend on the face being monospaced (which it currently is): name at the row's left
   (`justify-content: space-between`), then a fixed-width element at the right made of three explicit columns,
   `arrow | verb | arrow`. Two consequences. The Box must be told its **height** (LVGL gives a plain object a
   default size and lv_binding_js exposes no `LV_SIZE_CONTENT`), so `Menu.tsx` measures a real `Text` row and
-  sizes Box rows to match — don't derive it from `itemFont`, which is snapped to the nearest built-in
-  Montserrat. And `flex-grow` is unusable on the children: lv_binding_js's flex pipe drops it unless the
+  sizes Box rows to match — don't derive it from `itemFont`, which is snapped to the nearest size the font
+  table carries. And `flex-grow` is unusable on the children: lv_binding_js's flex pipe drops it unless the
   child's own style also says `display: "flex"`. The UI harness composes a non-label widget's text from its
   descendant labels (`RenderCore::widgetInfo`), so `navTo` / `focused().text` still see these rows.
   The **mouse aims at the cells**: clicking the verb runs it, clicking an arrow steps the pick, and clicking

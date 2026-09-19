@@ -107,6 +107,7 @@ const dump = (label: string, samples: ProbeSample[], every = 1): void => {
 // (free-running on its own tempo), or does it sit still? This is the evidence behind the "should
 // midiMap forward clock?" decision.
 test("B1: MI.MAP through the shipped midiMap role, with no clock byte", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG, mode: "midiMap" });
   if (!p) return skip("aboy ROM not found / unsupported version");
 
@@ -132,6 +133,7 @@ test("B1: MI.MAP through the shipped midiMap role, with no clock byte", () => {
 // single 0xFF then do to it? If 0xFF is a clock the cart keeps playing; if the cart reads it as just
 // another row byte, 0xFF means row 255 (empty) and playback stops dead.
 test("B0: does a raw row byte trigger, and what does one 0xFF do to a playing cart?", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
   if (!p) return skip("aboy ROM not found / unsupported version");
 
@@ -169,6 +171,7 @@ test("B0: does a raw row byte trigger, and what does one 0xFF do to a playing ca
 // B2 — one clock byte per tick. Does the cart step at the documented 6 ticks/step of the default
 // groove (which would make 24 PPQN = 4 steps/beat)? The gaps between phraseRow changes answer it.
 test("B2: ticks per step under an explicit 0xFF clock stream", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
   if (!p) return skip("aboy ROM not found / unsupported version");
 
@@ -191,6 +194,7 @@ test("B2: ticks per step under an explicit 0xFF clock stream", () => {
 // B3 — THE question for a row-level predictor. Launch row 0 and keep clocking: when the chain ends,
 // does the cart move to row 1 on its own, or loop row 0 until told otherwise?
 test("B3: does the cart auto-advance past a launched row?", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
   if (!p) return skip("aboy ROM not found / unsupported version");
 
@@ -221,6 +225,7 @@ test("B3: does the cart auto-advance past a launched row?", () => {
 // B4 — is a launch song-wide, and do the four channels then drift apart? Row 0's chain 1 (pu2) is
 // twice as long as its neighbours, so if channels advance independently pu2 should fall a row behind.
 test("B4: is a launch song-wide, and do channels diverge afterwards?", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
   if (!p) return skip("aboy ROM not found / unsupported version");
 
@@ -246,6 +251,7 @@ test("B4: is a launch song-wide, and do channels diverge afterwards?", () => {
 
 // B5 — what the Launchpad app's "pad released" actually does to the cart.
 test("B5: what does the 0xFE NoteOff handshake do?", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
   if (!p) return skip("aboy ROM not found / unsupported version");
 
@@ -272,6 +278,7 @@ test("B5: what does the 0xFE NoteOff handshake do?", () => {
 // B6 — chain duration is the predictor's only real input, so how a chain treats empty slots decides
 // the arithmetic: stop at the first hole, or skip it and keep going?
 test("B6: how does a chain treat empty phrase slots?", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: GAP_SONG });
   if (!p) return skip("aboy ROM not found / unsupported version");
 
@@ -294,6 +301,7 @@ test("B6: how does a chain treat empty phrase slots?", () => {
 // B7 — rows 254/255 share their byte values with the 0xFE/0xFF sentinels, so they may not be
 // launchable at all. That would cap the app's addressable range, which the grid layout needs to know.
 test("B7: do rows 254/255 collide with the 0xFE/0xFF sentinels?", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
   if (!p) return skip("aboy ROM not found / unsupported version");
 
@@ -315,6 +323,7 @@ test("B7: do rows 254/255 collide with the 0xFE/0xFF sentinels?", () => {
 // models it that way (predict.ts launch()), on an assumption nothing had tested. This settles whether the
 // Launchpad app can offer a stop pad at all.
 test("B8: what does launching an EMPTY song row do?", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   // Part 1 — from a PLAYING cart. Rows 0-2 hold chains; everything from row 3 up is empty. Watching the
   // CHAIN sequence (not just songRow) is what separates the three possible outcomes: a stop, a jump to
   // row 5 followed by a wrap, or the byte being ignored outright.
@@ -362,6 +371,7 @@ test("B8: what does launching an EMPTY song row do?", () => {
 // corrected without knowing the actual rule. SPARSE_SONG's middle hole makes all four candidate answers
 // distinguishable by chain number alone.
 test("B9: where does a launch of an empty row actually land?", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SPARSE_SONG });
   if (!p) return skip("aboy ROM not found / unsupported version");
 

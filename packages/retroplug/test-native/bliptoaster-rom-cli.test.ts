@@ -173,9 +173,12 @@ test("bliptoaster-rom settings prints the real ROM's block, patches named fields
   if (romSkip(be, "settings")) return;
   const base = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
   expect(base.hasSettings).toBe(true);
-  // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build. `ppu`
-  // is the one that is not zero: the screen draws unless someone bakes the dark boot.
-  expect(base.settings()).toEqual({ baseChannel: 0, ppu: true, velCurve: false, theme: 0, font: 0 });
+  // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build. Two of
+  // them are not zero: `ppu` (the screen draws unless someone bakes the dark boot) and, since 2026-09-14,
+  // `font` - the cart bakes font01-risa as its typeface and applies it in main() over the CHR bank crt0.s
+  // maps at reset. So "the ROM boots on bank 0" and "the ROM's baked default font is 0" are no longer the
+  // same statement, and only the second one is this block's business.
+  expect(base.settings()).toEqual({ baseChannel: 0, ppu: true, velCurve: false, theme: 0, font: 1 });
 
   // No flags: read-only. It must not write the ROM it is inspecting.
   const nes = copyRom(be, "/tmp/rp-em-set.nes");
@@ -210,12 +213,13 @@ test("a settings-patched ROM boots, and the core comes up in the theme the block
   blipToasterRomTool.run(s, ["settings", nes, "--theme", "11"]); // MTRX: bg $0F, text $2A
 
   expect(be.constructSystem({ romPath: nes, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, 44)).toBeTruthy();
-  audio.renderAudio(44100); // ~1 s: past the ROM's boot, so the palette has been written
+  audio.renderAudio(1000); // ~1 s: past the ROM's boot, so the palette has been written
   // The proof that the byte reached the hardware, not just the file: $3F00/$3F01 hold theme 11's two roles.
   const pal = be.getPpuState(44).paletteRam;
   expect(pal[0]).toBe(0x0f);
   expect(pal[1]).toBe(0x2a);
   console.log(`[bliptoaster-rom] settings --theme 11 -> the core boots with $3F00/$3F01 = 0F/2A`);
+  expect(be.removeSystem(44)).toBeTruthy(); // renderAudio drives EVERY live system — see frameOf below
 });
 
 // The committed resources ROM is a real artifact predating the two screen fields, so it is the honest fixture
@@ -265,12 +269,18 @@ test("a ROM predating the screen fields is reported as not reading them, and ref
 // The rendered FRAME is the missing evidence: two ROMs identical but for the font byte must not draw the same
 // pixels. Without this, "the setting is applied" and "the glyphs changed" are two different claims and only the
 // first was tested.
+// Tear the core down once its frame is read. renderAudio drives EVERY system still live in this
+// process, so a system left behind is emulated again by each later case — the two boots here used to
+// cost 24 s and 31 s for 2 s of audio apiece, because they were dragging their predecessors along.
+// Removed, they are a few seconds each. The pixels are copied out first, so the frame outlives the core.
 function frameOf(be: ReturnType<typeof createRealBackend>, audio: ReturnType<typeof createAudioDriver>, rom: string, id: number): Uint8Array {
   expect(be.constructSystem({ romPath: rom, platform: "nes", core: "mesen", embeddedRom: "", savPath: null, statePath: null }, id)).toBeTruthy();
-  audio.renderAudio(44100 * 2); // ~2 s: past boot and the first drawn page
+  audio.renderAudio(2000); // ~2 s: past boot and the first drawn page
   const frame = be.getFrame(id);
   expect(frame != null && frame.published).toBeTruthy();
-  return new Uint8Array(frame!.pixels);
+  const pixels = new Uint8Array(frame!.pixels);
+  expect(be.removeSystem(id)).toBeTruthy();
+  return pixels;
 }
 
 test("the baked font byte reaches the screen: two ROMs differing only in it render different pixels", () => {
@@ -318,4 +328,5 @@ test("bliptoaster-rom patch realizes a mixed manifest (build kit + import theme 
   audio.renderAudio(300);
   expect(be.getFrame(41) != null).toBeTruthy();
   console.log(`[bliptoaster-rom] patch: built kit 4 + theme 0 + font 0; patched ROM boots`);
+  expect(be.removeSystem(41)).toBeTruthy();
 });

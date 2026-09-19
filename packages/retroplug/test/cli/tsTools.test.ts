@@ -10,7 +10,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { buildDirFor, isStrippableTs, outputName, buildTsDir, resolveBuildDir } from "../../cli/tsStrip";
 import { sdkDirFor } from "../../cli/sdkAssets";
-import { parseTestArgs, selectTests } from "../../cli/sessions/test";
+import { parseTestArgs, selectTests, resolveJobs, orderLongestFirst } from "../../cli/sessions/test";
 import { parseRunArgs, splitPath } from "../../cli/sessions/run";
 
 test("tsStrip: buildDirFor puts the build dir alongside the source dir, at the same depth", () => {
@@ -97,6 +97,57 @@ test("test: parseTestArgs takes dir + filter positionally and options anywhere",
   expect(c.dir).toBe("tests");
   expect(c.rom).toBe("r.nes");
   expect(c.passthrough.join(" ")).toBe("-v --trace");
+});
+
+test("test: parseTestArgs reads --jobs/-j in every spelling, and a bad value falls back", () => {
+  expect(parseTestArgs(["tests"]).jobs).toBe(null); // not given: resolveJobs decides
+  expect(parseTestArgs(["tests", "--jobs", "4"]).jobs).toBe(4);
+  expect(parseTestArgs(["tests", "--jobs=4"]).jobs).toBe(4);
+  expect(parseTestArgs(["tests", "-j", "4"]).jobs).toBe(4);
+  expect(parseTestArgs(["tests", "-j4"]).jobs).toBe(4);
+
+  // Neither of these may run ZERO files - a suite that does nothing must not exit 0.
+  expect(parseTestArgs(["tests", "-j0"]).jobs).toBe(null);
+  expect(parseTestArgs(["tests", "-jwat"]).jobs).toBe(null);
+
+  // The flag must not be mistaken for the positional filter.
+  const a = parseTestArgs(["tests", "pulse", "-j", "8"]);
+  expect(a.dir).toBe("tests");
+  expect(a.filter).toBe("pulse");
+  expect(a.jobs).toBe(8);
+});
+
+test("test: resolveJobs prefers the flag, then the env, then half the cores - never past the file count", () => {
+  expect(resolveJobs(4, {}, 32, 50)).toBe(4); // flag wins
+  expect(resolveJobs(null, { RP_TEST_JOBS: "6" }, 32, 50)).toBe(6); // then env
+  expect(resolveJobs(4, { RP_TEST_JOBS: "6" }, 32, 50)).toBe(4); // flag beats env
+  expect(resolveJobs(null, {}, 32, 50)).toBe(16); // then half the cores
+  expect(resolveJobs(null, { RP_TEST_JOBS: "nope" }, 32, 50)).toBe(16); // junk env ignored
+
+  // Spawning more children than there are files just makes idle workers.
+  expect(resolveJobs(null, {}, 32, 3)).toBe(3);
+  // Degenerate machines and empty lists still run something rather than nothing.
+  expect(resolveJobs(null, {}, 1, 5)).toBe(1);
+  expect(resolveJobs(null, {}, 0, 5)).toBe(1);
+  expect(resolveJobs(null, {}, 32, 0)).toBe(1);
+});
+
+test("test: orderLongestFirst puts the slowest first and unmeasured files ahead of everything", () => {
+  const tests = ["a.test.js", "b.test.js", "c.test.js"];
+  expect(orderLongestFirst(tests, { "a.test.js": 100, "b.test.js": 9000, "c.test.js": 500 }).join(","))
+    .toBe("b.test.js,c.test.js,a.test.js");
+
+  // No record = could be the expensive one, so it leads rather than trails.
+  expect(orderLongestFirst(tests, { "a.test.js": 100, "c.test.js": 500 }).join(","))
+    .toBe("b.test.js,c.test.js,a.test.js");
+
+  // No timings at all, or junk values, degrade to the listed order rather than something arbitrary.
+  expect(orderLongestFirst(tests, {}).join(",")).toBe("a.test.js,b.test.js,c.test.js");
+  expect(orderLongestFirst(tests, { "b.test.js": NaN } as Record<string, number>).join(","))
+    .toBe("a.test.js,b.test.js,c.test.js");
+
+  // A stale entry for a file that no longer exists must not resurrect it.
+  expect(orderLongestFirst(["a.test.js"], { "gone.test.js": 9000, "a.test.js": 1 }).join(",")).toBe("a.test.js");
 });
 
 test("test: selectTests picks *.test.js only, applies the filter, and sorts", () => {

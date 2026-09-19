@@ -82,6 +82,7 @@ function agreement(observed: ProbeSample[], predicted: (number | null)[][], offs
 }
 
 test("the predicted model tracks a real cart's song rows over a long run", () => {
+  LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SAV });
   if (!p) return console.log("# SKIP lsdj-playback-differential: aboy ROM not found / unsupported version");
 

@@ -164,6 +164,35 @@ If a tile / row / menu renders in a confusingly wrong slot, this is almost certa
 why. (Build-target gotchas — which target rebuilds the standalone vs the embedded
 bundle — are in [spec/06-build-test.md](spec/06-build-test.md).)
 
+**There is no font-family — the UI face is monospaced by SYMBOL SUBSTITUTION.** A
+component picks a font by pixel size and nothing else: the TS style pipe turns
+`font-size` into an index
+([text.ts](deps/dpf.js/deps/lv_binding_js/src/render/react/core/style/pipe/text.ts)) and
+native maps that index onto an `lv_font_montserrat_*` pointer
+([font.hpp](deps/dpf.js/deps/lv_binding_js/src/render/native/core/style/font/font.hpp)).
+That table is in a submodule and names the symbols literally, so the face is changed by
+changing what the names POINT AT, not by asking for another one. Hence: every
+`LV_FONT_MONTSERRAT_*` in [lv_conf.h](packages/native/src/lv_conf.h) is **0** so LVGL
+compiles none of its own, `LV_FONT_CUSTOM_DECLARE` declares the seven sizes the table
+uses, and `packages/native/src/fonts/lv_font_montserrat_{12,14,16,18,22,24,32}.c` supply
+those symbol names built from **DejaVu Sans Mono** — regenerate with
+[tools/gen-mono-fonts.sh](tools/gen-mono-fonts.sh), which also renames each generated
+file's uppercase include guard (lv_font_conv derives it from the filename, so it would
+otherwise be the very `LV_FONT_MONTSERRAT_*` macro now set to 0, and the file would
+preprocess away to a missing symbol). Three consequences:
+- **Turning an `LV_FONT_MONTSERRAT_*` back to 1 is a duplicate-symbol link error**, not a
+  font change. Switch faces by regenerating, not in `lv_conf.h`.
+- **The generation keeps the FontAwesome pass.** `LV_SYMBOL_*` glyphs live inside these
+  same font files (the binding's `dropdownlist.cpp` draws them); drop that `--font` and
+  they become placeholder boxes.
+- The `.c` files are committed, like LVGL's own are, so a build needs no npm/network.
+  They are added to the **`lvgl`** target in the root [CMakeLists.txt](CMakeLists.txt) —
+  the archive the objects they replace came from, so nothing depends on static-link order.
+
+The face is monospaced, but **don't let layout start depending on that**: the
+action-cycler row aligns its arrows with real widget geometry rather than space-padding
+for exactly this reason, and a UI test pins it.
+
 ## Verification loop
 
 Verify your own work headlessly before claiming it's done — **a "tests pass" claim
@@ -174,6 +203,25 @@ all four; `test.bat native ui` = a subset). It enters the MSVC env the `cmake-bu
 step needs and pins pnpm via corepack, because pnpm strips `PATH` for spawned children
 on Windows — without it the scripts die on `spawnSync cmake ENOENT`, which looks like a
 broken tree but is not.
+
+**The four `pnpm test*` suites run in PARALLEL, and a slow suite is nearly always one slow
+FILE, not the pool.** Each runner's unit of work is an isolated child process, dispatched by
+the shared pool in
+[scripts/lib/testPool.mjs](packages/retroplug/scripts/lib/testPool.mjs) — default half the
+logical threads, override with `--jobs N` / `-j N` / `TEST_JOBS` (`=1` serial). Work is
+dispatched LONGEST-FIRST from durations the previous run recorded in the gitignored
+`packages/retroplug/.test-timings/`, so the wall clock is bounded by the slowest file rather
+than by when the pool happened to reach it. That makes **one** file the thing to look at when
+a suite drags: read `.test-timings/native.json`, and if the top entry is near the whole wall
+clock, raising `--jobs` will do nothing. Two traps put it there, both of which cost
+`test:native` a 10x factor:
+- **`audio.renderAudio(ms)` takes MILLISECONDS, not frames.** `renderAudio(44100)` is 44
+  seconds of emulated audio, not one. Every honest call in the suite is a plain 50–6000.
+- **A constructed system that is never removed is still emulated by every later test in that
+  file** — `renderAudio` advances ALL live systems in the host process, so per-file cost grows
+  with the square of the boots. Call `be.removeSystem(id)` (or `LsdjProbe.closeAll()`, which
+  the probe-based files call at the TOP of each test so an early return still cleans up) once
+  a core's state has been read. A file whose realtime factor DEGRADES case by case has this.
 
 The headless loop (the only path — legacy is gone) is documented in
 [spec/06-build-test.md](spec/06-build-test.md): `pnpm test` (pure-TS mock),
@@ -239,7 +287,15 @@ same directory DEPTH needs no specifier rewriting. That depth is why stripped ou
 dir's SIBLING `.rp-test-build/` ([cli/tsStrip.ts](packages/retroplug/cli/tsStrip.ts) `buildDirFor`) - put
 it anywhere else and every `../sdk/...` import breaks. Each test file runs in its **own process**
 (`tjs.spawn`), which is required, not tidy: the TAP harness calls `tjs.exit` when a file ends, its case
-list is module-level, and the native `Engine` is per-process. The stripper is ts-blank-space + the TS
+list is module-level, and the native `Engine` is per-process. That isolation is also why the files run
+**concurrently** - a bounded pool, default half the logical cores, `--jobs N` / `-j N` / `RP_TEST_JOBS`
+(BlipToaster's 51-file suite: 154s serial -> 16s). Dispatch is longest-first from durations recorded in
+`<outDir>/.timings.json` (inside the derived build dir, so a consumer gains no tracked file), and each
+child's stdout+stderr are captured and flushed as one labelled block, since concurrent children sharing a
+terminal shred the TAP. **`-j1` keeps the old behaviour exactly** - listed order, stdio inherited, output
+streaming live - which is what you want when debugging one file. The pipes are drained CONCURRENTLY with
+the wait; `await stdout.text()` then `await stderr.text()` deadlocks on a child noisy enough to fill the
+other pipe's buffer. The stripper is ts-blank-space + the TS
 parser, compiled in as global-code bytecode (+4 MB) and loaded **on demand** via `__rp_loadTsStripper`, so
 no other command pays for it. **Types are stripped, not compiled**: only erasable syntax works - `enum`,
 `namespace` and constructor parameter properties are refused with `file:line:col`. Wiring

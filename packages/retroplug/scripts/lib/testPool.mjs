@@ -7,9 +7,19 @@
 //
 // Concurrency defaults to half the logical threads; override with `--jobs N` / `-j N`
 // on the runner argv or the `TEST_JOBS` env. `TEST_JOBS=1` restores serial behaviour.
+//
+// Work is dispatched LONGEST-FIRST, from durations recorded by the previous run (see
+// `timings` on runPool). These suites are extremely skewed — a handful of files that
+// boot a real core and render tens of seconds of audio, against a tail of sub-second
+// ones — and a long file picked up late runs alone at the end while every worker but
+// one sits idle. Longest-first makes the wall clock bounded by the SLOWEST FILE rather
+// than by when the pool happened to reach it. Files with no recorded time (new, renamed,
+// or a first-ever run) sort first, since an unmeasured file may well be the expensive one.
 
 import { spawn } from "node:child_process";
 import { availableParallelism, cpus } from "node:os";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 // Resolve the concurrency for this run. Precedence: --jobs/-j argv > TEST_JOBS env >
 // default (half the logical threads, min 1). Returns a positive integer.
@@ -73,24 +83,71 @@ export function spawnBuffered(cmd, args, opts = {}) {
   });
 }
 
+// Read a runner's recorded per-item durations. Missing/corrupt file => no timings, which
+// just means this run dispatches in input order and records times for the next one.
+function loadTimings(file) {
+  try {
+    const data = JSON.parse(readFileSync(file, "utf8"));
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+// Persist durations for the next run. Best-effort: a read-only or racing checkout must not
+// fail a suite that otherwise passed, so every error here is swallowed.
+function saveTimings(file, timings) {
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify(timings, null, 1) + "\n");
+  } catch {
+    /* scheduling hint only — never worth failing a run over */
+  }
+}
+
 // Bounded-concurrency async pool. Runs `worker(item, index)` for every item with at
 // most `jobs` in flight; returns results in input order. A worker that throws yields
 // its thrown value's absence as `undefined` in the results — runners treat a thrown
 // worker as a failure explicitly, so we let it propagate via the returned value shape.
-export async function runPool(items, worker, { jobs = 1 } = {}) {
+//
+// `timings: { file, key }` opts into longest-first dispatch: durations are read from
+// `file`, used to order the work, then rewritten with this run's measurements. `key(item)`
+// names an item stably across runs (a slug, not an index — indices shift when a filter is
+// applied or a file is added). DISPATCH order changes; the returned results stay in INPUT
+// order, because the runners pair them with their own `items` array by index.
+export async function runPool(items, worker, { jobs = 1, timings } = {}) {
   const results = new Array(items.length);
+
+  // Indices in the order they'll be picked up. Unknown durations sort first (Infinity),
+  // then longest to shortest; ties keep input order so a run stays reproducible.
+  const past = timings ? loadTimings(timings.file) : {};
+  const cost = (i) => {
+    const v = past[timings.key(items[i])];
+    return typeof v === "number" && Number.isFinite(v) ? v : Infinity;
+  };
+  const order = items.map((_, i) => i);
+  if (timings) order.sort((a, b) => cost(b) - cost(a) || a - b);
+
+  const measured = {};
   let next = 0;
 
   async function run() {
     while (true) {
-      const i = next++;
-      if (i >= items.length) return;
+      const slot = next++;
+      if (slot >= order.length) return;
+      const i = order[slot];
+      const started = Date.now();
       results[i] = await worker(items[i], i);
+      if (timings) measured[timings.key(items[i])] = Date.now() - started;
     }
   }
 
   const n = Math.max(1, Math.min(jobs, items.length || 1));
   await Promise.all(Array.from({ length: n }, run));
+  // Merge rather than replace: a filtered run ("pnpm test recent") measures a handful of
+  // files, and overwriting would throw away every other file's time and blind the next
+  // full run's ordering.
+  if (timings) saveTimings(timings.file, { ...past, ...measured });
   return results;
 }
 
