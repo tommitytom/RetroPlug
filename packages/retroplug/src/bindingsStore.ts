@@ -10,7 +10,8 @@
 import type { HostBackend } from "./backend";
 import type { UserConfigStore } from "./userConfigStore";
 import { defaultBindingMap, type BindingMap } from "./bindingMap";
-import { parseBindingMap, serializeBindingMap } from "./bindingSerialization";
+import { parseBindingMapResult, serializeBindingMap, BINDINGS_SCHEMA } from "./bindingSerialization";
+import { warnStampedNewer } from "./migrate";
 import { joinPath, stem, extensionLower } from "./pathUtil";
 
 const BINDINGS_DIR = "bindings";
@@ -32,6 +33,10 @@ export function isValidProfileChar(ch: string): boolean {
 }
 
 export class BindingsStore {
+  // Profiles found stamped ahead of this build. Per-NAME rather than one flag: profiles are
+  // separate files, so a newer `wasd.json` says nothing about `default.json`.
+  private readonly readOnlyProfiles = new Set<string>();
+
   constructor(
     private readonly backend: HostBackend,
     private readonly userConfig: UserConfigStore,
@@ -57,18 +62,29 @@ export class BindingsStore {
   }
 
   /** Read + parse one profile, or null when the name is invalid / the file is
-   *  missing / malformed / stamped newer than us. */
+   *  missing / malformed / stamped newer than us. A newer stamp also latches the profile
+   *  read-only (see `readOnlyProfiles`). */
   loadProfile(name: string): BindingMap | null {
     if (!isValidProfileName(name)) return null;
     const bytes = this.backend.readFile(this.profilePath(name));
     if (!bytes) return null;
-    return parseBindingMap(dec.decode(bytes));
+    const parsed = parseBindingMapResult(dec.decode(bytes));
+    if (parsed.ok) return parsed.value;
+    if (parsed.reason === "newer" && !this.readOnlyProfiles.has(name)) {
+      this.readOnlyProfiles.add(name);
+      warnStampedNewer(`${BINDINGS_DIR}/${name}.json`, parsed.stamped, BINDINGS_SCHEMA);
+    }
+    return null;
   }
 
   /** Overwrite (or create) bindings/<name>.json, forcing its embedded name to match the
    *  filename. Returns false on an invalid name / write failure. */
   saveProfile(name: string, map: BindingMap): boolean {
     if (!isValidProfileName(name)) return false;
+    // The editor does `loadProfile(name) ?? defaultBindingMap()` and saves the result, so without
+    // this a profile written by a newer build is replaced by this build's defaults on the first
+    // rebind — the refusal to READ it is what supplies the defaults that overwrite it.
+    if (this.readOnlyProfiles.has(name)) return false;
     const ok = this.backend.writeFileAtomic(this.profilePath(name), enc.encode(serializeBindingMap({ ...map, name })));
     if (ok) this.onChange();
     return ok;

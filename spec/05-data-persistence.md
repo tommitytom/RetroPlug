@@ -124,7 +124,7 @@ still loads (migrated up if needed — see the version-stamp policy below).
 
 | File | Model | Stamp const | Shape |
 |---|---|---|---|
-| `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug/src/userConfig.ts)) | `USER_CONFIG_SCHEMA = 1` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave }` |
+| `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug/src/userConfig.ts)) | `USER_CONFIG_SCHEMA = 2` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave }` |
 | `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad, keyboardActions, gamepadActions }` (one profile per file; the `*Actions` sections — Open Menu / Cycle Instances — seed to defaults when missing) |
 | `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name, song? }] }`, most-recent-first, capped at 10. Keyed by path + `song`, so one project holds a row per song it has had loaded. A songless row is the placeholder for a project that has had no song loaded: a song row supersedes it, and a songless add changes nothing once song rows exist, so the two never coexist for one path. `song` is printable ASCII; a persisted row whose song is anything else is skipped on read (the residue of a name read from a cart that had not finished booting). `name` is the project's name as of the last record: its own name when set, else its primary cart's `"<sav.ext> [<rom>]"` identity |
 
@@ -161,7 +161,7 @@ JSON**, backed by two mechanisms:
 | Root | TS const |
 |---|---|
 | `.rplg` / DAW chunk | `K_PROJECT = 4` ([projectConfig.ts](../packages/retroplug/src/projectConfig.ts)) |
-| `config.json` | `USER_CONFIG_SCHEMA = 1` |
+| `config.json` | `USER_CONFIG_SCHEMA = 2` |
 | `bindings/*.json` | `BINDINGS_SCHEMA = 1` |
 | `recent.json` | `RECENT_SCHEMA = 2` |
 
@@ -170,6 +170,22 @@ JSON**, backed by two mechanisms:
    differs by root: the project load returns `{kind:"incompatible"}` (the
    project-incompatible modal); config/bindings/recent return `null`/`[]` and the store
    **keeps its previous in-memory value** (also on malformed/non-object files).
+
+   **Refusing to read a newer file is only half of it — the store must also stop
+   WRITING that file.** Its "previous in-memory value" is the defaults, so a build that
+   merely declines to read a newer root will happily persist its defaults over it at the
+   next change, and the file is gone: one Settings press for `config.json`, one rebind
+   for a profile, and for `recent.json` about half a second, since `add` runs on the
+   song-watch timer. So a **newer** stamp latches that root **read-only** for the
+   session and logs one line naming both versions
+   ([warnStampedNewer](../packages/retroplug/src/migrate.ts)); the bindings latch is per
+   profile name, since profiles are separate files. The project root needs no latch — it
+   refuses by never adopting the path, so a refused project is never a write target.
+
+   This is why refusal carries a **reason**
+   ([parseVersionedRoot](../packages/retroplug/src/migrate.ts) returns `"newer"` vs
+   `"malformed"`) rather than one null: a **malformed** root stays writable on purpose,
+   so a corrupted file heals on the next change. Only "from the future" is protected.
 
 2. **Migrations (raw-JSON, latest-schema-only).** Keep only the LATEST zod schema per
    root — never a per-version copy. On a breaking (non-additive) change, bump the root's

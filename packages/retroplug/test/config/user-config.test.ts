@@ -6,7 +6,7 @@
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { UserConfigStore } from "../../src/userConfigStore";
-import { parseUserConfig, serializeUserConfig, USER_CONFIG_SCHEMA } from "../../src/userConfigSerialization";
+import { parseUserConfig, parseUserConfigResult, serializeUserConfig, USER_CONFIG_SCHEMA } from "../../src/userConfigSerialization";
 import { DEFAULT_USER_CONFIG, type SramAutoSave } from "../../src/userConfig";
 
 const CONFIG = "/config/config.json";
@@ -35,6 +35,46 @@ test("parse: a newer schema stamp / malformed / non-object all yield null (keep 
   expect(parseUserConfig(JSON.stringify({ schemaVersion: USER_CONFIG_SCHEMA + 1 }))).toBe(null);
   expect(parseUserConfig("not json")).toBe(null);
   expect(parseUserConfig("[]")).toBe(null);
+});
+
+test("parse result: 'from the future' is a DIFFERENT refusal from 'corrupt'", () => {
+  // The store writes over a corrupt file (so it heals) but must never write over a newer one,
+  // so collapsing these two into one null is what made the overwrite bug possible.
+  const newer = parseUserConfigResult(JSON.stringify({ schemaVersion: USER_CONFIG_SCHEMA + 3 }));
+  expect(newer.ok).toBeFalsy();
+  expect(!newer.ok && newer.reason).toBe("newer");
+  expect(!newer.ok && newer.stamped).toBe(USER_CONFIG_SCHEMA + 3); // reported so the warning can name it
+
+  for (const bad of ["not json", "[]", "null"]) {
+    const r = parseUserConfigResult(bad);
+    expect(r.ok).toBeFalsy();
+    expect(!r.ok && r.reason).toBe("malformed");
+  }
+
+  const good = parseUserConfigResult(serializeUserConfig(DEFAULT_USER_CONFIG));
+  expect(good.ok).toBeTruthy();
+});
+
+test("store: a config.json from a NEWER build is never overwritten by this one", () => {
+  const { be, store } = newStore();
+  const fromTheFuture = JSON.stringify({ schemaVersion: USER_CONFIG_SCHEMA + 1, defaultZoom: 4, somethingNew: true });
+  be.seed(CONFIG, fromTheFuture);
+  store.load();
+  expect(store.config()).toEqual(DEFAULT_USER_CONFIG); // refused, so we run on defaults
+
+  // The setter used to persist those defaults straight over the newer file.
+  expect(store.setDefaultZoom(5)).toBeFalsy();
+  expect(store.setSramAutoSave("Continuous")).toBeFalsy();
+  expect(be.readText(CONFIG)).toBe(fromTheFuture); // byte-identical: untouched
+  expect(be.log.includes("writeFileAtomic")).toBeFalsy();
+});
+
+test("store: a MALFORMED config.json still heals on the next change", () => {
+  const { be, store } = newStore();
+  be.seed(CONFIG, "garbage"); // not from the future — just junk we may replace
+  store.load();
+  expect(store.setDefaultZoom(5)).toBeTruthy();
+  expect(parseUserConfig(be.readText(CONFIG)!)!.defaultZoom).toBe(5);
 });
 
 test("serialize: stamps the schema version and round-trips through parse", () => {

@@ -132,7 +132,11 @@ The rules below are the parts that don't fit those.
   (`build/native/*bundle_data.c`).
 - **Config migrations (versioned, raw-JSON).** Persistence is TS-owned. Every serialized
   JSON root (project / DPF state, user config, bindings, recent) is version-**stamped**: a
-  file stamped newer than the build is refused; one stamped older is **migrated** up. Keep
+  file stamped newer than the build is refused AND latched **read-only** (refusing to read it
+  is not enough — the store's fallback value is the defaults, so the next write would replace
+  the newer file with them); one stamped older is **migrated** up. A **malformed** root stays
+  writable on purpose, so corruption heals on the next change — which is why refusal carries a
+  reason (`parseVersionedRoot`) rather than one null. Keep
   only the LATEST zod schema per root — never a per-version copy. A breaking (non-additive)
   change bumps that root's version constant (`K_PROJECT` / `*_SCHEMA`) and adds one raw
   `(obj) => obj` step to its migrations map

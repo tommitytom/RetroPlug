@@ -5,7 +5,7 @@
 // tolerant: absent / garbage / newer-than-us all yield an empty list.
 
 import { z, stringifyConfig } from "./configSchema";
-import { migrateRaw, readNumericVersion, type MigrationMap, type RawObject } from "./migrate";
+import { parseVersionedRoot, type MigrationMap, type RootRefusal } from "./migrate";
 import { MAX_ENTRIES, type RecentEntry } from "./recentList";
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file
@@ -30,23 +30,29 @@ const recentEntrySchema = z.object({
   song: z.string().regex(/^[\x20-\x7e]*$/).optional(),
 });
 
-/** Parse recent.json text into entries, capped to `max`. Never throws: malformed
- *  JSON, a non-object root, or a newer schema stamp all return []; a malformed entry
- *  is skipped rather than failing the whole list. */
-export function parseRecent(json: string, max = MAX_ENTRIES): RecentEntry[] {
-  let doc: unknown;
-  try {
-    doc = JSON.parse(json);
-  } catch {
-    return [];
-  }
-  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return [];
-  const rawRoot = doc as RawObject;
-  if (typeof rawRoot.schemaVersion === "number" && rawRoot.schemaVersion > RECENT_SCHEMA) return [];
-  const migrated = migrateRaw(rawRoot, readNumericVersion(rawRoot, RECENT_SCHEMA), RECENT_SCHEMA, RECENT_MIGRATIONS);
-  const entries = (migrated as { entries?: unknown }).entries;
-  if (!Array.isArray(entries)) return [];
+/** Parse recent.json text, saying WHY on failure. The store needs the reason: a corrupt list is
+ *  rewritten clean on the next change, but one stamped newer must be left alone. Individual
+ *  malformed ENTRIES are still skipped rather than refusing the file — that is the healing case,
+ *  not a refusal. */
+export function parseRecentResult(
+  json: string,
+  max = MAX_ENTRIES,
+): { ok: true; entries: RecentEntry[] } | { ok: false; reason: RootRefusal; stamped?: number } {
+  const root = parseVersionedRoot(json, RECENT_SCHEMA, RECENT_MIGRATIONS);
+  if (!root.ok) return root;
+  const entries = (root.raw as { entries?: unknown }).entries;
+  if (!Array.isArray(entries)) return { ok: false, reason: "malformed" };
+  return { ok: true, entries: collectEntries(entries, max) };
+}
 
+/** Parse recent.json text into entries, capped to `max`. Never throws; [] on any refusal, for
+ *  callers that only need the list — `parseRecentResult` distinguishes the failures. */
+export function parseRecent(json: string, max = MAX_ENTRIES): RecentEntry[] {
+  const r = parseRecentResult(json, max);
+  return r.ok ? r.entries : [];
+}
+
+function collectEntries(entries: unknown[], max: number): RecentEntry[] {
   const out: RecentEntry[] = [];
   for (const raw of entries) {
     const r = recentEntrySchema.safeParse(raw);

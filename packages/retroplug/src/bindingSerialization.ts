@@ -6,7 +6,7 @@
 
 import { bindingMapSchema, type BindingMap } from "./bindingMap";
 import { stringifyConfig } from "./configSchema";
-import { migrateRaw, readNumericVersion, type MigrationMap, type RawObject } from "./migrate";
+import { parseVersionedRoot, type MigrationMap, type RootRefusal } from "./migrate";
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file stamped
  *  newer than this is refused on load, one stamped older is migrated (below). */
@@ -16,21 +16,22 @@ export const BINDINGS_SCHEMA = 1;
  *  a breaking bump; the seam is here so the first one is a one-line add. */
 const BINDINGS_MIGRATIONS: MigrationMap = {};
 
-/** Parse a profile file. Returns null when the text can't be trusted (malformed JSON, a
- *  non-object root, or a newer schema stamp) — the caller retains its current value. A
- *  valid but partial/older profile parses with its missing fields defaulted. */
+/** Parse a profile file, saying WHY on failure — the store needs to tell a corrupt profile
+ *  (replaceable) from one written by a newer build (must not be). A valid but partial/older
+ *  profile parses with its missing fields defaulted. */
+export function parseBindingMapResult(
+  json: string,
+): { ok: true; value: BindingMap } | { ok: false; reason: RootRefusal; stamped?: number } {
+  const root = parseVersionedRoot(json, BINDINGS_SCHEMA, BINDINGS_MIGRATIONS);
+  if (!root.ok) return root;
+  return { ok: true, value: bindingMapSchema.parse(root.raw) as BindingMap };
+}
+
+/** Parse a profile file. Null when the text can't be trusted, for callers that only need the
+ *  value; `parseBindingMapResult` distinguishes the failures. */
 export function parseBindingMap(json: string): BindingMap | null {
-  let doc: unknown;
-  try {
-    doc = JSON.parse(json);
-  } catch {
-    return null;
-  }
-  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
-  const raw = doc as RawObject;
-  if (typeof raw.schemaVersion === "number" && raw.schemaVersion > BINDINGS_SCHEMA) return null;
-  const migrated = migrateRaw(raw, readNumericVersion(raw, BINDINGS_SCHEMA), BINDINGS_SCHEMA, BINDINGS_MIGRATIONS);
-  return bindingMapSchema.parse(migrated) as BindingMap;
+  const r = parseBindingMapResult(json);
+  return r.ok ? r.value : null;
 }
 
 /** Serialize a profile, stamping the current schema version (native field order, then the TS-only

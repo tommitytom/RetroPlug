@@ -6,7 +6,7 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { BindingsStore } from "../../src/bindingsStore";
-import { parseBindingMap } from "../../src/bindingSerialization";
+import { parseBindingMap, BINDINGS_SCHEMA } from "../../src/bindingSerialization";
 import { defaultBindingMap, type BindingMap } from "../../src/bindingMap";
 
 const DEFAULT_JSON = "/config/bindings/default.json";
@@ -124,4 +124,28 @@ test("resolvedBindings: forwards keyboardActions from the keyboard profile, game
   // A missing active keyboard profile falls back to the seeded default actions.
   uc.setActiveKeyboardBindings("ghost");
   expect(store.resolvedBindings().keyboardActions).toEqual(defaultBindingMap().keyboardActions);
+});
+
+test("a profile from a NEWER build is never overwritten by this one", () => {
+  // The editor does `loadProfile(name) ?? defaultBindingMap()` and saves the result, so the
+  // refusal to READ a newer profile is exactly what used to supply the defaults that replaced it:
+  // one rebind destroyed the file.
+  const { be, store } = setup();
+  const fromTheFuture = JSON.stringify({ schemaVersion: BINDINGS_SCHEMA + 1, name: "wasd", keyboard: { Left: ["A"] } });
+  be.seed("/config/bindings/wasd.json", fromTheFuture);
+
+  expect(store.loadProfile("wasd")).toBe(null); // refused — and latched read-only
+  expect(store.saveProfile("wasd", store.loadProfile("wasd") ?? defaultBindingMap())).toBeFalsy();
+  expect(be.readText("/config/bindings/wasd.json")).toBe(fromTheFuture); // byte-identical: untouched
+});
+
+test("the read-only latch is per PROFILE, not global", () => {
+  const { be, store } = setup();
+  be.seed("/config/bindings/future.json", JSON.stringify({ schemaVersion: BINDINGS_SCHEMA + 1 }));
+  store.ensureDefaults();
+  expect(store.loadProfile("future")).toBe(null); // latches "future" only
+
+  // A sibling profile this build understands stays fully writable.
+  expect(store.saveProfile("wasd", wasd())).toBeTruthy();
+  expect(parseBindingMap(be.readText("/config/bindings/wasd.json")!)!.keyboard.Left).toEqual(["A"]);
 });

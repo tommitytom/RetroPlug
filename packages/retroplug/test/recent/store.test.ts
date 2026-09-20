@@ -5,7 +5,7 @@
 import { test, expect } from "../../testing/harness";
 import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
-import { serializeRecent } from "../../src/recentSerialization";
+import { serializeRecent, RECENT_SCHEMA } from "../../src/recentSerialization";
 
 const RECENT = "/cfg/recent.json";
 
@@ -160,4 +160,22 @@ test("relink: repoints a moved project + persists; absent is a no-op", () => {
   expect(v[0].label).toBe("Keep"); // the recorded name survives the relink
   expect(v[0].missing).toBeFalsy();
   expect(store.relink("/nope.rplg", "/x.rplg")).toBeFalsy();
+});
+
+test("a recent.json from a NEWER build is never overwritten by this one", () => {
+  // The most urgent of the three roots: `add` runs on a ~500ms song-watch timer, so this file
+  // used to be replaced by a one-row list within about half a second of opening any project.
+  const fromTheFuture = JSON.stringify({
+    schemaVersion: RECENT_SCHEMA + 1,
+    entries: [{ path: "/proj/precious.rplg", name: "precious" }],
+  });
+  const { be, store, changes } = newStore({ [RECENT]: fromTheFuture });
+  store.load();
+  expect(store.view()).toEqual([]); // refused, so we show nothing
+
+  expect(store.add("/proj/other.rplg", "other")).toBeFalsy();
+  expect(store.remove("/proj/precious.rplg")).toBeFalsy();
+  expect(be.readText(RECENT)).toBe(fromTheFuture); // byte-identical: untouched
+  expect(be.log.includes("writeFileAtomic")).toBeFalsy();
+  expect(changes()).toBe(0);
 });

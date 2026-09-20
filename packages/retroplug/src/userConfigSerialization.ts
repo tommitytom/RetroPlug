@@ -8,7 +8,7 @@
 
 import { userConfigSchema, type UserConfig } from "./userConfig";
 import { stringifyConfig } from "./configSchema";
-import { migrateRaw, readNumericVersion, type MigrationMap, type RawObject } from "./migrate";
+import { parseVersionedRoot, type MigrationMap, type RawObject, type RootRefusal } from "./migrate";
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file stamped
  *  newer than this is refused on load, one stamped older is migrated (below). */
@@ -29,21 +29,22 @@ function userConfigV1toV2(raw: RawObject): RawObject {
 /** Raw-JSON migrations keyed by from-version (see migrate.ts). */
 const USER_CONFIG_MIGRATIONS: MigrationMap = { 1: userConfigV1toV2 };
 
-/** Parse config.json text. Returns null when the text can't be trusted (malformed JSON,
- *  a non-object root, or a newer schema stamp) — the caller retains its current config.
- *  A valid but partial/older doc parses with its missing fields defaulted. */
+/** Parse config.json text, saying WHY on failure. The store needs the reason: a malformed file
+ *  may be replaced on the next change (so corruption heals), but one stamped newer must not be —
+ *  see RootRefusal. A valid but partial/older doc parses with its missing fields defaulted. */
+export function parseUserConfigResult(
+  json: string,
+): { ok: true; value: UserConfig } | { ok: false; reason: RootRefusal; stamped?: number } {
+  const root = parseVersionedRoot(json, USER_CONFIG_SCHEMA, USER_CONFIG_MIGRATIONS);
+  if (!root.ok) return root;
+  return { ok: true, value: userConfigSchema.parse(root.raw) as UserConfig };
+}
+
+/** Parse config.json text. Null when the text can't be trusted, for callers that only need the
+ *  value; `parseUserConfigResult` distinguishes the failures. */
 export function parseUserConfig(json: string): UserConfig | null {
-  let doc: unknown;
-  try {
-    doc = JSON.parse(json);
-  } catch {
-    return null;
-  }
-  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
-  const raw = doc as RawObject;
-  if (typeof raw.schemaVersion === "number" && raw.schemaVersion > USER_CONFIG_SCHEMA) return null;
-  const migrated = migrateRaw(raw, readNumericVersion(raw, USER_CONFIG_SCHEMA), USER_CONFIG_SCHEMA, USER_CONFIG_MIGRATIONS);
-  return userConfigSchema.parse(migrated) as UserConfig;
+  const r = parseUserConfigResult(json);
+  return r.ok ? r.value : null;
 }
 
 /** Serialize config.json text, stamping the current schema version. Every schema field must appear here:

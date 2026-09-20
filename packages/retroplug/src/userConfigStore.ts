@@ -19,7 +19,8 @@ import {
   type UserConfig,
 } from "./userConfig";
 import type { SplitMode } from "./render";
-import { parseUserConfig, serializeUserConfig } from "./userConfigSerialization";
+import { parseUserConfigResult, serializeUserConfig, USER_CONFIG_SCHEMA } from "./userConfigSerialization";
+import { warnStampedNewer } from "./migrate";
 
 const CONFIG_FILE = "config.json";
 const enc = new TextEncoder();
@@ -27,6 +28,11 @@ const dec = new TextDecoder();
 
 export class UserConfigStore {
   private current: UserConfig = { ...DEFAULT_USER_CONFIG };
+  // Latched when config.json turns out to be stamped ahead of this build. Refusing to READ such a
+  // file is not enough: `current` is then the defaults, and the next setter would persist those over
+  // the newer file, so one Settings press on an older build destroys it. Only "newer" latches —
+  // a merely malformed file stays writable so it heals on the next change.
+  private readOnly = false;
   // Per-system render-filename OVERRIDES — session-only, deliberately NOT persisted (config.json). The
   // Render menu re-derives the default from the loaded song each time; this just remembers a name the user
   // typed for the current session. Keyed by system id; changing it fires onChange so the menu label repaints.
@@ -47,8 +53,12 @@ export class UserConfigStore {
       this.backend.writeFileAtomic(this.filePath(), enc.encode(serializeUserConfig(this.current)));
       return;
     }
-    const parsed = parseUserConfig(dec.decode(bytes));
-    if (parsed) this.current = parsed;
+    const parsed = parseUserConfigResult(dec.decode(bytes));
+    if (parsed.ok) this.current = parsed.value;
+    else if (parsed.reason === "newer") {
+      this.readOnly = true;
+      warnStampedNewer(CONFIG_FILE, parsed.stamped, USER_CONFIG_SCHEMA);
+    }
   }
 
   /** Re-read config.json after an external change (the file-watch reaction). A missing /
@@ -58,10 +68,19 @@ export class UserConfigStore {
   reload(): boolean {
     const bytes = this.backend.readFile(this.filePath());
     if (!bytes) return false; // deleted → keep current
-    const parsed = parseUserConfig(dec.decode(bytes));
-    if (!parsed) return false; // malformed / newer → keep current
-    if (serializeUserConfig(parsed) === serializeUserConfig(this.current)) return false; // no change
-    this.current = parsed;
+    const parsed = parseUserConfigResult(dec.decode(bytes));
+    if (!parsed.ok) {
+      // An external edit can introduce a newer stamp mid-session (a second machine syncing the
+      // folder), so the latch is set here too — not only at load.
+      if (parsed.reason === "newer" && !this.readOnly) {
+        this.readOnly = true;
+        warnStampedNewer(CONFIG_FILE, parsed.stamped, USER_CONFIG_SCHEMA);
+      }
+      return false; // malformed / newer → keep current
+    }
+    this.readOnly = false; // a readable stamp is back on disk (replaced/downgraded), so the hazard is gone
+    if (serializeUserConfig(parsed.value) === serializeUserConfig(this.current)) return false; // no change
+    this.current = parsed.value;
     this.onChange();
     return true;
   }
@@ -181,6 +200,7 @@ export class UserConfigStore {
 
   // Adopt `next` if it differs from the current config: persist atomically + notify.
   private commit(next: UserConfig): boolean {
+    if (this.readOnly) return false; // a newer build wrote this file; ours is not the version that gets to edit it
     const after = serializeUserConfig(next);
     if (after === serializeUserConfig(this.current)) return false; // genuine no-op
     this.current = next;

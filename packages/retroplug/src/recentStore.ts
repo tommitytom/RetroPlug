@@ -8,7 +8,8 @@
 
 import type { HostBackend } from "./backend";
 import { addEntry, removeEntry, relinkEntry, entryKey, label, type RecentEntry } from "./recentList";
-import { parseRecent, serializeRecent } from "./recentSerialization";
+import { parseRecentResult, serializeRecent, RECENT_SCHEMA } from "./recentSerialization";
+import { warnStampedNewer } from "./migrate";
 
 const RECENT_FILE = "recent.json";
 const enc = new TextEncoder();
@@ -27,6 +28,11 @@ export interface RecentView {
 
 export class RecentStore {
   private entries: RecentEntry[] = [];
+  // Latched when recent.json is stamped ahead of this build. The most urgent of the three roots:
+  // `add` runs on a ~500ms song-watch timer, so without this a newer list is replaced by a
+  // single-row one within about half a second of opening any project. Only "newer" latches —
+  // a file with junk ENTRIES stays writable, which is what heals it on the next change.
+  private readOnly = false;
 
   constructor(private readonly backend: HostBackend, private readonly onChange: () => void = () => {}) {}
 
@@ -34,7 +40,16 @@ export class RecentStore {
    *  unreadable file leaves the list empty. */
   load(): void {
     const bytes = this.backend.readFile(this.filePath());
-    this.entries = bytes ? parseRecent(dec.decode(bytes)) : [];
+    if (!bytes) {
+      this.entries = [];
+      return;
+    }
+    const parsed = parseRecentResult(dec.decode(bytes));
+    this.entries = parsed.ok ? parsed.entries : [];
+    if (!parsed.ok && parsed.reason === "newer") {
+      this.readOnly = true;
+      warnStampedNewer(RECENT_FILE, parsed.stamped, RECENT_SCHEMA);
+    }
   }
 
   /** Snapshot for the UI (most-recent-first), with live `missing` flags + labels. */
@@ -90,6 +105,7 @@ export class RecentStore {
 
   // Adopt `next` if it differs from the current list: persist atomically + notify.
   private commit(next: RecentEntry[]): boolean {
+    if (this.readOnly) return false; // a newer build wrote this list; don't replace it with ours
     const after = serializeRecent(next);
     if (after === serializeRecent(this.entries)) return false; // genuine no-op
     this.entries = next;
