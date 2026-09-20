@@ -64,3 +64,31 @@ test("BindingsStore: ensureDefaults + profile CRUD over real disk (listDir/write
   expect(b.availableProfiles()).toEqual(["default"]);
   expect(b.loadProfile("wasd")).toBe(null);
 });
+
+// --- the atomic write itself, over the real fs ---
+
+test("writeFileAtomic: creates parent dirs, round-trips the bytes, and leaves no temp behind", () => {
+  const be = createRealBackend();
+  const dir = __CONFIG_DIR__ + "/atomic/nested";
+  const target = dir + "/payload.bin";
+  const bytes = new Uint8Array([0, 1, 2, 253, 254, 255]);
+
+  expect(be.writeFileAtomic(target, bytes)).toBeTruthy(); // atomic/nested/ does not exist yet
+  expect([...be.readFile(target)!]).toEqual([...bytes]);
+
+  // The temp is renamed, never left: a survivor would be both litter and, under a name ending
+  // in .json, a phantom bindings profile.
+  expect(be.listDir(dir)).toEqual(["payload.bin"]);
+});
+
+test("writeFileAtomic: a rewrite replaces the contents and still leaves the dir clean", () => {
+  const be = createRealBackend();
+  const target = __CONFIG_DIR__ + "/atomic-rewrite.bin";
+
+  expect(be.writeFileAtomic(target, new Uint8Array([1, 1, 1, 1]))).toBeTruthy();
+  expect(be.writeFileAtomic(target, new Uint8Array([9]))).toBeTruthy(); // shorter: a torn write would show
+  expect([...be.readFile(target)!]).toEqual([9]);
+
+  const strays = be.listDir(__CONFIG_DIR__).filter((n) => n.includes(".tmp."));
+  expect(strays).toEqual([]);
+});

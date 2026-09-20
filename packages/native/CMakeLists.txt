@@ -39,6 +39,8 @@ add_library(retroplug-core STATIC
     # processAlive only, so <windows.h> stays in one TU rather than in every includer of the header
     # (NesEverdriveFifo.hpp pulls it in, which is the whole NES core).
     ${CMAKE_CURRENT_SOURCE_DIR}/src/util/ProcessId.cpp
+    # Same rule: fsyncPath needs <windows.h> (FlushFileBuffers), so it stays out of line too.
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/util/FileSync.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/SystemBase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/BlockRunner.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/system/OfflineRender.cpp

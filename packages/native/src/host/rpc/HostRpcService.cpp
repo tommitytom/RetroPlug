@@ -1,5 +1,6 @@
 #include "host/rpc/HostRpcService.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -11,7 +12,9 @@
 #include "Version.hpp"
 #include "host/rpc/NativeFileWatcher.hpp"
 #include "native/core/img/png/lodepng.h"
+#include "util/FileSync.hpp"
 #include "util/MinizZip.hpp"
+#include "util/ProcessId.hpp"
 
 namespace fs = std::filesystem;
 
@@ -93,13 +96,38 @@ bool HostRpcService::writeFile(std::string path, rfl::Bytestring bytes) {
     if (!f) return false;
     if (!bytes.empty())
         f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    // Close BEFORE asking: ~ofstream flushes, so `f.good()` on a still-open stream answers before the
+    // bytes have reached the OS. A full disk fails at that flush, and reporting success there is how a
+    // truncated file gets called a saved one.
+    f.close();
     return f.good();
 }
 
 bool HostRpcService::writeFileAtomic(std::string path, rfl::Bytestring bytes) {
-    const std::string tmp = path + ".tmp";
-    if (!writeFile(tmp, std::move(bytes))) return false;
+    // The temp name carries pid + a process-local counter, because a fixed "<path>.tmp" is shared
+    // state: two plugin instances in one DAW saving the same config.json, or two hosts on one machine,
+    // each write their own bytes to that one name and then rename whatever is there into place -
+    // so one instance's half-written temp becomes the other's "saved" file. The suffix deliberately
+    // does not end in .json: BindingsStore lists profiles by extension, and a stray match would
+    // surface as a phantom profile.
+    static std::atomic<unsigned long long> tmpCounter{0};
+    const std::string tmp = path + ".tmp." + std::to_string(rp::currentProcessId()) + "." +
+                            std::to_string(tmpCounter.fetch_add(1, std::memory_order_relaxed));
     std::error_code ec;
+    if (!writeFile(tmp, std::move(bytes))) {
+        // Drop the partial temp. Mandatory now that the name is unique: a fixed "<path>.tmp" was at
+        // least reused by the next attempt, whereas leaving these behind means a disk that is full
+        // (the very reason the write failed) collects one more stray per retry.
+        fs::remove(tmp, ec);
+        return false;
+    }
+    // Flush the temp's contents to the device BEFORE publishing it. The rename is atomic with respect
+    // to the directory, not to the data: without this a crash can leave the new name in place over
+    // contents that never landed, i.e. an empty file where the old one used to be.
+    if (!rp::fsyncPath(tmp)) {
+        fs::remove(tmp, ec);
+        return false;
+    }
     fs::rename(tmp, path, ec);
     if (ec) {
         fs::remove(tmp, ec);
@@ -118,6 +146,7 @@ bool HostRpcService::appendFile(std::string path, rfl::Bytestring bytes) {
     if (!f) return false;
     if (!bytes.empty())
         f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    f.close(); // see writeFile: the flush is where a full disk fails
     return f.good();
 }
 
@@ -129,6 +158,7 @@ bool HostRpcService::writeFileAt(std::string path, std::uint32_t offset, rfl::By
     f.seekp(static_cast<std::streamoff>(offset));
     if (!bytes.empty())
         f.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    f.close(); // see writeFile: the flush is where a full disk fails
     return f.good();
 }
 
