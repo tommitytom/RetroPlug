@@ -64,6 +64,7 @@ test("save: writes raw JSON (not a zip), records recents + path, clears dirty", 
   const doc = JSON.parse(onDisk);
   expect(doc.systems[0].romPath).toBe("a.gb"); // rebased relative to the .rplg folder
   expect(recent.view().map((v) => v.path)).toEqual(["/proj/song.rplg"]);
+  expect(be.log.includes("writeFileAtomic")).toBeTruthy(); // temp+rename: a crash mid-save can't truncate the project
   expect(project.currentPath()).toBe("/proj/song.rplg");
   expect(project.isDirty()).toBeFalsy();
 });
@@ -232,7 +233,7 @@ test("adoptRomProject: an embedded ROM (no path) is a no-op — nothing written 
   project.systems.loadMgb(); // embedded mGB: no on-disk sibling
   project.adoptRomProject("");
   expect(recent.view().length).toBe(0);
-  expect(be.log.includes("writeFile")).toBeFalsy();
+  expect(be.log.includes("writeFile") || be.log.includes("writeFileAtomic")).toBeFalsy(); // no write of either kind
 });
 
 test("save then load: round-trips the systems (rebuilt over the real store)", () => {

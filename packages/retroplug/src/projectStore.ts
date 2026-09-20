@@ -5,7 +5,7 @@
 // faithfully (native restores omitted rich fields via DefaultIfMissing).
 //
 // Two on-disk shapes, one config model — distinguished by EXTENSION, not by content:
-//   - THIN `.rplg` (save) = raw JSON, paths only. save = build config → writeFile;
+//   - THIN `.rplg` (save) = raw JSON, paths only. save = build config → writeFileAtomic;
 //     load = readFile → parse → toAbsolute → scan/relink → adopt each system from disk. A `.rplg` is
 //     ALWAYS pure JSON — never a zip; load errors if the bytes aren't valid JSON.
 //   - EXPORT `.rplg.zip` (PKZIP) = the same thin project.json PLUS the emulator's live blobs
@@ -501,7 +501,7 @@ export class ProjectStore {
   save(path: string): boolean {
     const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName); // blank name → omitted
     const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
-    if (!this.backend.writeFile(path, enc.encode(json))) return false;
+    if (!this.backend.writeFileAtomic(path, enc.encode(json))) return false;
     this.recordProjectRow(path); // the recents label - the cart's identity unless the user named it
     this.path = path;
     this.dirty = false;

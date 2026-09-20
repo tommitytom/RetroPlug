@@ -74,6 +74,7 @@ test("pump: writes only in Continuous, and only on change", () => {
   be.setSram(id, bytes(1, 2, 3));
   expect(saver.pump()).toBe(1); // no file yet → write
   expect([...be.readFile(SAV)!]).toEqual([1, 2, 3]);
+  expect(be.log.includes("writeFileAtomic")).toBeTruthy(); // ...and neither is the ~2s autosave mirror
   expect(saver.pump()).toBe(0); // unchanged (persistent hash) → no write
   be.setSram(id, bytes(7));
   expect(saver.pump()).toBe(1); // changed → write
@@ -94,7 +95,7 @@ test("embedded system (no romPath) is skipped", () => {
   const saver = new SramAutoSaver(be, systems, new UserConfigStore(be));
   systems.loadMgb(); // embedded, no romPath / sibling
   expect(saver.flushOnSave()).toBe(0);
-  expect(be.log.includes("writeFile")).toBeFalsy();
+  expect(be.log.includes("writeFile") || be.log.includes("writeFileAtomic")).toBeFalsy(); // no write of either kind
 });
 
 test("a paired savPath override is honored as the write target", () => {
@@ -142,6 +143,7 @@ test("flushDirtySram: writes each dirty battery to its sibling .sav, then it's c
   const list = systems.systems();
   expect(flushDirtySram(be, list)).toBe(1);
   expect([...be.readFile(SAV)!]).toEqual([4, 5, 6]);
+  expect(be.log.includes("writeFileAtomic")).toBeTruthy(); // the battery is never truncated by a crash mid-write
   expect(sramDirtyCount(be, list)).toBe(0); // now mirrored
   expect(flushDirtySram(be, list)).toBe(0); // nothing dirty → no rewrite
 });
@@ -160,7 +162,7 @@ test("sramDirtyCount / flushDirtySram skip embedded systems (no romPath)", () =>
   systems.loadMgb(); // embedded, no sibling
   expect(sramDirtyCount(be, systems.systems())).toBe(0);
   expect(flushDirtySram(be, systems.systems())).toBe(0);
-  expect(be.log.includes("writeFile")).toBeFalsy();
+  expect(be.log.includes("writeFile") || be.log.includes("writeFileAtomic")).toBeFalsy(); // no write of either kind
 });
 
 // --- LSDj semantic dirty signature (normalises the per-frame working-RAM clock) ---

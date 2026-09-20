@@ -122,7 +122,7 @@ export function flushDirtySram(backend: ControlPlaneBackend, systems: SramTarget
   let n = 0;
   for (const t of dirtySramTargets(backend, systems)) {
     const live = backend.readSram(t.id);
-    if (live && backend.writeFile(t.savPath, live)) n++;
+    if (live && backend.writeFileAtomic(t.savPath, live)) n++;
   }
   return n;
 }
@@ -209,7 +209,7 @@ export class SramAutoSaver {
     const onDisk = lastHash === null ? this.backend.readFile(savPath) : null;
     const decision = decideAutoSave(savBytes, lastHash, onDisk);
 
-    if (decision.write && !this.backend.writeFile(savPath, savBytes)) return false; // retry next time
+    if (decision.write && !this.backend.writeFileAtomic(savPath, savBytes)) return false; // retry next time
     if (persistent) {
       this.hashes.set(id, decision.hash);
       this.rawHashes.set(id, raw!); // seed/refresh the cheap gate for the next tick
