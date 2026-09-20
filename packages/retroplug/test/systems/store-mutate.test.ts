@@ -6,7 +6,8 @@ import { test, expect } from "../../testing/harness";
 import { MockBackend, stateBytesFor, sramBytesFor } from "../../testing/mockBackend";
 import { SystemsStore } from "../../src/systemsStore";
 import { buildAppRegistry } from "../../src/appHost";
-import { gbRom, gbaRom, nesRom, lsdjRom, garbage } from "./fixtures";
+import { gbRom, gbRomBattery, gbaRom, nesRom, lsdjRom, garbage } from "./fixtures";
+import { resolveSavPath } from "../../src/savPaths";
 
 function newStore() {
   const be = new MockBackend("/cfg");
@@ -350,4 +351,42 @@ test("inheritLinkGroup: a non-SameBoy parent is a no-op (link groups are a GB co
   const child = store.addSystem("/roms/b.gb") as number;
   store.inheritLinkGroup(child, parent);
   expect(linkGroupOf(store, child)).toBe(0); // nothing promoted or assigned
+});
+
+// Regression: replaceSystem / swapRom / loadRom used to hard-code sav suffix 0 while addSystem and
+// duplicateSystem disambiguate against the live list. Pointing a duplicate back at the same ROM therefore
+// dropped it onto suffix 0 alongside the original, and both entries resolved to the SAME <rom>.sav - which
+// the auto-save pump then ping-pongs two different batteries into, round-robin, forever.
+test("replaceSystem does not collide a duplicate's sav with the instance it was cloned from", () => {
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRomBattery());
+  be.seed("/roms/b.gb", gbRomBattery());
+  const a = store.addSystem("/roms/a.gb")!;
+  const dup = store.duplicateSystem(a)!;
+  expect(store.systems().map((v) => v.savSuffix)).toEqual([0, 2]);
+
+  // Send the duplicate somewhere else and then back to the original ROM.
+  const moved = store.replaceSystem(dup, "/roms/b.gb")!;
+  const back = store.replaceSystem(moved, "/roms/a.gb")!;
+
+  const savs = store.systems().map((v) => resolveSavPath(v.romPath, v.savSuffix, v.savPath));
+  expect(savs[0]).toBe("/roms/a.sav");
+  expect(savs[1] !== savs[0]).toBeTruthy(); // NOT both /roms/a.sav
+  expect(back !== a).toBeTruthy();
+});
+
+test("a same-ROM replace keeps the suffix the instance already owns (no orphaned <rom>-N.sav)", () => {
+  // The other half: excluding the replaced id from the ownership scan is not enough, because
+  // nextFreeSavSuffix also skips a suffix whose file exists - and that file is this instance's OWN save.
+  // Migrating it to -3 would strand the battery it has been writing all session.
+  const { be, store } = newStore();
+  be.seed("/roms/a.gb", gbRomBattery());
+  const a = store.addSystem("/roms/a.gb")!;
+  const dup = store.duplicateSystem(a)!;
+  be.seed("/roms/a-2.sav", new Uint8Array([7, 7, 7])); // the duplicate has been auto-saving here
+
+  store.replaceSystem(dup, "/roms/a.gb"); // same ROM
+  const v = store.systems();
+  expect(v[1].savSuffix).toBe(2); // kept its own slot, not pushed to 3
+  expect(resolveSavPath(v[1].romPath, v[1].savSuffix, v[1].savPath)).toBe("/roms/a-2.sav");
 });

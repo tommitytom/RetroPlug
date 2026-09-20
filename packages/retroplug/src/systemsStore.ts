@@ -214,7 +214,7 @@ export class SystemsStore {
   /** Swap a specific system for `romPath`, in place. */
   replaceSystem(id: number, romPath: string, opts?: { explicitSav?: string }): number | null {
     if (!findById(this.entries, id)) return null;
-    const built = this.construct(romPath, "", 0, opts?.explicitSav, id);
+    const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), opts?.explicitSav, id);
     if (!built) return null;
     this.entries = replaceById(this.entries, id, built.entry);
     if (this.focusedId === id) this.focusedId = built.id;
@@ -225,13 +225,15 @@ export class SystemsStore {
    *  change that keeps your save (e.g. bumping LSDj to a new version without losing the song). Unlike
    *  replaceSystem (fresh boot, sav from disk), this seeds the running SRAM as the new cart's cold-boot
    *  battery. The new ROM is classified afresh, so platform/core/roles/battery follow it; identity + focus
-   *  are preserved. The auto-save target follows the new ROM (its sibling `<rom>.sav`, suffix 0), so — like
+   *  are preserved. The auto-save target follows the new ROM (its sibling `<rom>.sav`, at a suffix
+   *  disambiguated against the live list — see replacementSuffix; it is NOT unconditionally 0, which used
+   *  to collide two instances of one ROM onto a single file), so — like
    *  New SRAM / Load SRAM — the carried battery is what's saved there on the next battery write. Null when
    *  `id` is absent or the ROM won't classify/build. */
   swapRom(id: number, romPath: string): number | null {
     if (!findById(this.entries, id)) return null;
     const sramBytes = this.backend.readSram(id) ?? undefined;
-    const built = this.construct(romPath, "", 0, undefined, id, sramBytes);
+    const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), undefined, id, sramBytes);
     if (!built) return null;
     this.entries = replaceById(this.entries, id, built.entry);
     if (this.focusedId === id) this.focusedId = built.id;
@@ -598,7 +600,7 @@ export class SystemsStore {
   private loadInPlace(romPath: string, embeddedRom: string, explicitSav?: string): number | null {
     const empty = this.entries.length === 0;
     const target = empty ? undefined : this.effectiveFocus();
-    const built = this.construct(romPath, embeddedRom, 0, explicitSav, target);
+    const built = this.construct(romPath, embeddedRom, this.replacementSuffix(target, romPath), explicitSav, target);
     if (!built) return null;
     this.entries = empty
       ? appendEntry(this.entries, built.entry)
@@ -789,12 +791,29 @@ export class SystemsStore {
   }
 
   // The free suffix for a new instance of `romPath`: live-list ownership + on-disk.
-  private freeSuffix(romPath: string): number {
+  // `excludeId` is a system that is about to STOP EXISTING (it is being replaced), so the slot it
+  // currently owns is not a conflict for its own successor.
+  private freeSuffix(romPath: string, excludeId?: number): number {
+    const live = excludeId === undefined ? this.entries : this.entries.filter((e) => e.id !== excludeId);
     return nextFreeSavSuffix(
       romPath,
-      (n) => isSuffixOwned(this.entries, romPath, n),
+      (n) => isSuffixOwned(live, romPath, n),
       (n) => this.backend.fileExists(siblingSavPath(romPath, n)),
     );
+  }
+
+  // The sav suffix for a system replacing `replaceId`. Replacing in place is NOT the same question as
+  // adding: hard-coding 0 here dropped a duplicate onto the original's `<rom>.sav`, and both then wrote
+  // the same file. But excluding the outgoing id is not enough on its own either - nextFreeSavSuffix also
+  // skips a suffix whose file exists on disk, and for an UNCHANGED ROM that file is the outgoing
+  // instance's own save, so it would migrate to a fresh suffix and strand the battery it has been
+  // writing all session. Hence: same ROM keeps its slot; a different ROM disambiguates without counting
+  // the instance it displaces.
+  private replacementSuffix(replaceId: number | undefined, romPath: string): number {
+    if (replaceId === undefined) return this.freeSuffix(romPath);
+    const prev = findById(this.entries, replaceId);
+    if (prev && prev.romPath === romPath) return prev.savSuffix;
+    return this.freeSuffix(romPath, replaceId);
   }
 
   // The focused id, falling back to the front when focus is stale (DSP LoadRom rule).
