@@ -122,7 +122,7 @@ export function sramDirtyCount(backend: ControlPlaneBackend, systems: SramTarget
 }
 
 /** Write every dirty system's live battery to its sibling `.sav` (UNGATED — an explicit "save on close",
- *  unlike the auto-save mirror which respects the Off preference). Returns the number written. */
+ *  unlike the auto-save mirror, which only runs under Continuous). Returns the number written. */
 export function flushDirtySram(backend: ControlPlaneBackend, systems: SramTarget[]): number {
   let n = 0;
   for (const t of dirtySramTargets(backend, systems)) {
@@ -130,6 +130,30 @@ export function flushDirtySram(backend: ControlPlaneBackend, systems: SramTarget
     if (live && backend.writeFileAtomic(t.savPath, live)) n++;
   }
   return n;
+}
+
+/** Write ONE system's live battery to its own resolved `.sav` because its core is about to be destroyed
+ *  (remove / replace / rebuild / project teardown). Returns whether anything was written.
+ *
+ *  Delegates the whole decision to dirtySramTargets, so an embedded ROM, a battery-less cart, an empty
+ *  battery and a battery that already matches disk are all no-ops.
+ *
+ *  `named` is the file THIS OPERATION explicitly named — the sav being loaded, the savestate being
+ *  booted, the file being created. When the system's own target IS that file, the flush is SKIPPED, and
+ *  that skip is the point rather than an optimisation: the callers that write a sav and then cold-boot
+ *  from it (tracker/liveSav.ts, lsdjSongImport, songImport, the Songs menu) leave the LIVE battery
+ *  holding the PRE-edit bytes, so flushing it would overwrite the edit that was just saved with the
+ *  state it replaced. That is the exact data loss this function exists to prevent, pointed backwards. */
+export function flushBatteryForTeardown(
+  backend: ControlPlaneBackend,
+  sys: SramTarget,
+  named?: string,
+): boolean {
+  if (named) {
+    const own = resolveSavPath(sys.romPath, sys.savSuffix, sys.savPath);
+    if (own && backend.canonicalize(own) === backend.canonicalize(named)) return false;
+  }
+  return flushDirtySram(backend, [sys]) === 1;
 }
 
 export class SramAutoSaver {

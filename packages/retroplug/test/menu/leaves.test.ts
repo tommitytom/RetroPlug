@@ -774,7 +774,7 @@ test("system Load SRAM... cold-boots the system with the picked file's SRAM", as
   expect(stores.project.systems.view()[0].savPath).toBe("/in/x.sav"); // auto-save target repointed to the load
 });
 
-test("system New SRAM... opens a save dialog, boots blank, and repoints to the chosen file (ROM's .sav untouched)", async () => {
+test("system New SRAM... opens a save dialog, boots blank, and repoints to the chosen file (the old .sav keeps the battery)", async () => {
   const be = new MockBackend("/cfg");
   const stores = composeAppStores({ backend: be });
   const { id, items } = systemMenu(be, stores); // ROM /roms/a.gb (battery)
@@ -792,7 +792,12 @@ test("system New SRAM... opens a save dialog, boots blank, and repoints to the c
   expect(seed.length).toBe(0x20000); // native truncates/zero-pads to the cart's real battery size
   expect(seed.every((b) => b === 0)).toBeTruthy(); // blank battery
   expect(be.fileExists("/saves/fresh.sav")).toBe(true); // the fresh save was materialised at the pick
-  expect(be.fileExists("/roms/a.sav")).toBe(false); // the ROM's own <rom>.sav was NOT overwritten
+  // The old target receives the battery the cart was running, NOT the blank one. Before the teardown
+  // flush this file stayed absent, which read as "we left it alone" but meant an unsaved battery was
+  // discarded on the way to a fresh cartridge.
+  const old = be.readFile("/roms/a.sav");
+  expect(old !== null).toBeTruthy();
+  expect(old!.every((b) => b === 0)).toBeFalsy(); // the live battery, not the blank seed
 });
 
 test("system Reset reboots carrying the live battery, no dialog", () => {

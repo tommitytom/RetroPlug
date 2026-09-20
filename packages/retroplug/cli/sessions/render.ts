@@ -49,6 +49,8 @@ function runRender(s: Session, args: string[]): void {
   const o = parseRenderArgs(args);
   if (o.listSongs) { listSongs(s, o); return; }
   // Default hooks: logging → console, no progress/cancel. The Session structurally satisfies RenderContext.
+  // Exporting must not write the user's .sav: see the same call in render/worker.ts.
+  s.project.systems.setBatteryFlush(false);
   runRenderJob(s, o);
 }
 

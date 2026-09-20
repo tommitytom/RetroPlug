@@ -64,6 +64,9 @@ function main(): void {
   }
 
   const session = bootSession(); // structurally satisfies RenderContext (backend / project / dsp / audio)
+  // A render is an EXPORT. It builds systems, may load a savestate into one, and drops them again, so the
+  // before-teardown battery flush would turn an export into a write in the user's save folder.
+  session.project.systems.setBatteryFlush(false);
   try {
     const result = runRenderJob(session, opts, {
       onRendered: (ms) => __rp_reportRenderedMs?.(ms),

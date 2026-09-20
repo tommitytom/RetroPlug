@@ -14,6 +14,7 @@ import type { ConstructSpec, ControlPlaneBackend, HostBackend } from "./backend"
 import { detectPlatform, romHasBattery, ROM_SNIFF_LEN, SEGA_SNIFF_LEN, defaultCoreFor, type Platform, type Core } from "./platform";
 
 import { resolveSavPath, siblingSavPath, siblingRplgPath, nextFreeSavSuffix, siblingSavCandidates } from "./savPaths";
+import { flushBatteryForTeardown, type SramTarget } from "./sramAutoSave";
 import { extensionLower } from "./pathUtil";
 import {
   type SystemEntry,
@@ -115,6 +116,8 @@ export class SystemsStore {
   private focusedId = 0;
   private dirty = false;
   private onFocusChange: () => void = () => {};
+  // Whether a core teardown writes the battery to disk first. Off only for an offline render.
+  private batteryFlush = true;
 
   constructor(
     private readonly backend: ControlPlaneBackend,
@@ -160,6 +163,13 @@ export class SystemsStore {
    *  re-projecting the DSP (distinct from the structural onChange). */
   setOnFocusChange(fn: () => void): void {
     this.onFocusChange = fn;
+  }
+
+  /** Turn the before-teardown battery flush off for this store. For a throwaway headless session — an
+   *  offline render builds systems, loads savestates into them and drops them, and an export must not
+   *  write into the user's save folder as a side effect. The plugin and the standalone never call this. */
+  setBatteryFlush(on: boolean): void {
+    this.batteryFlush = on;
   }
 
   /** Focus system `id` when it exists. Returns whether focus changed. Transient UI state: notifies for
@@ -213,7 +223,9 @@ export class SystemsStore {
 
   /** Swap a specific system for `romPath`, in place. */
   replaceSystem(id: number, romPath: string, opts?: { explicitSav?: string }): number | null {
-    if (!findById(this.entries, id)) return null;
+    const prev = findById(this.entries, id);
+    if (!prev) return null;
+    this.flushBeforeDrop(prev);
     const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), opts?.explicitSav, id);
     if (!built) return null;
     this.entries = replaceById(this.entries, id, built.entry);
@@ -231,8 +243,10 @@ export class SystemsStore {
    *  New SRAM / Load SRAM — the carried battery is what's saved there on the next battery write. Null when
    *  `id` is absent or the ROM won't classify/build. */
   swapRom(id: number, romPath: string): number | null {
-    if (!findById(this.entries, id)) return null;
+    const prev = findById(this.entries, id);
+    if (!prev) return null;
     const sramBytes = this.backend.readSram(id) ?? undefined;
+    this.flushBeforeDrop(prev); // the OLD cart's sav — the carried battery lands on the new ROM's
     const built = this.construct(romPath, "", this.replacementSuffix(id, romPath), undefined, id, sramBytes);
     if (!built) return null;
     this.entries = replaceById(this.entries, id, built.entry);
@@ -287,7 +301,9 @@ export class SystemsStore {
 
   /** Drop a system; refocus the front if it was focused. False when absent. */
   removeSystem(id: number): boolean {
-    if (!findById(this.entries, id)) return false;
+    const e = findById(this.entries, id);
+    if (!e) return false;
+    this.flushBeforeDrop(e);
     this.backend.removeSystem(id);
     this.entries = removeById(this.entries, id);
     this.focusedId = nextFocusAfterRemove(this.entries, id, this.focusedId);
@@ -299,7 +315,9 @@ export class SystemsStore {
    *  id and preserving identity + focus. Orchestrated in TS: pull SRAM from the registry, then cold-boot
    *  the ROM with it (no savestate) via a replaceId construct. No native reload method. */
   reloadSystem(id: number): number | null {
-    if (!findById(this.entries, id)) return null;
+    const prev = findById(this.entries, id);
+    if (!prev) return null;
+    this.flushBeforeDrop(prev);
     return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
   }
 
@@ -384,6 +402,8 @@ export class SystemsStore {
   loadState(id: number, path: string): number | null {
     const bytes = this.backend.readFile(path);
     if (!bytes) return null;
+    const prev = findById(this.entries, id);
+    if (prev) this.flushBeforeDrop(prev, path);
     return this.rebuildInPlace(id, { stateBytes: bytes });
   }
 
@@ -397,6 +417,9 @@ export class SystemsStore {
     if (!bytes) return null;
     const src = findById(this.entries, id);
     if (!src) return null;
+    // `path` is named, so a caller that just WROTE it (a Songs-menu edit, a song import) is skipped —
+    // its live battery is the pre-edit copy and flushing would undo the save. See flushBatteryForTeardown.
+    this.flushBeforeDrop(src, path);
     const override = src.embeddedRom
       ? undefined // embedded synth has no on-disk save target to repoint
       : resolveSavOverride(src.romPath, src.savSuffix, path, (p) => this.backend.canonicalize(p));
@@ -407,7 +430,9 @@ export class SystemsStore {
    *  save persists, the running state is dropped. Reconstructs from the ROM (the same engine
    *  as reload) rather than a live GB_reset. Null when `id` is absent. */
   reset(id: number): number | null {
-    if (!findById(this.entries, id)) return null;
+    const prev = findById(this.entries, id);
+    if (!prev) return null;
+    this.flushBeforeDrop(prev);
     return this.rebuildInPlace(id, { sramBytes: this.backend.readSram(id) ?? undefined });
   }
 
@@ -421,12 +446,15 @@ export class SystemsStore {
 
   /** "New SRAM…": cold-boot system `id` on a blank battery and repoint its auto-save target to the
    *  user-picked `savPath`, then materialise that file — a fresh cartridge written to a NEW file the user
-   *  named, so the old `<rom>.sav` is only overwritten if they deliberately pick it (the save dialog makes
-   *  that explicit). The ROM is unchanged, so the system's settings/roles are preserved. Null for an absent
-   *  id or the embedded synth (no on-disk save). */
+   *  named. The old target is not left behind: the battery the cart was RUNNING is flushed to it first, so
+   *  the promise is "your current save lands in the old file, never the blank one" rather than "the old
+   *  file is untouched" — leaving it untouched meant silently discarding unsaved play on the way to a
+   *  fresh cartridge. The ROM is unchanged, so the system's settings/roles are preserved. Null for an
+   *  absent id or the embedded synth (no on-disk save). */
   newSramAs(id: number, savPath: string): number | null {
     const src = findById(this.entries, id);
     if (!src || src.embeddedRom) return null;
+    this.flushBeforeDrop(src, savPath); // the old target keeps the CURRENT battery, never the blank one
     // Normalise the pick the way construct does: "" when it's just the natural sibling, else the raw path.
     const override = resolveSavOverride(src.romPath, src.savSuffix, savPath, (p) => this.backend.canonicalize(p));
     const newId = this.rebuildInPlace(id, { sramBytes: new Uint8Array(BLANK_SRAM_BYTES) }, override);
@@ -517,7 +545,10 @@ export class SystemsStore {
 
   /** Tear down every system + reset the list/focus (for `new` + before a load). */
   clear(): void {
-    for (const e of this.entries) this.backend.removeSystem(e.id);
+    for (const e of this.entries) {
+      this.flushBeforeDrop(e);
+      this.backend.removeSystem(e.id);
+    }
     this.entries = [];
     this.focusedId = 0;
   }
@@ -788,6 +819,15 @@ export class SystemsStore {
       if (rt?.onConstruct) s = rt.onConstruct(s, this.backend, r.config);
     }
     return s;
+  }
+
+  // Write a system's live battery to its own `.sav` before its core is destroyed. Every teardown path
+  // funnels through here so "closing a cart never loses its battery" is one rule rather than nine.
+  // `named` is the file the operation itself named (see flushBatteryForTeardown) — omit it when the
+  // operation names no file. A no-op for a store with the flush disabled (an offline render).
+  private flushBeforeDrop(sys: SramTarget, named?: string): void {
+    if (!this.batteryFlush) return;
+    flushBatteryForTeardown(this.backend, sys, named);
   }
 
   // The free suffix for a new instance of `romPath`: live-list ownership + on-disk.
