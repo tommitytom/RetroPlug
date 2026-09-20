@@ -28,6 +28,8 @@
 #include "Core/Shared/MemoryType.h"
 #include "Core/Shared/MessageManager.h"
 #include "Core/Shared/SaveStateManager.h"
+
+#include "system/mesen/MesenStateCeiling.hpp"
 #include "Core/Shared/SettingTypes.h"
 #include "Core/Shared/Video/VideoRenderer.h"
 #include "Utilities/FolderUtilities.h"
@@ -582,12 +584,10 @@ std::vector<ChannelStream> MesenNesSystem::channelLayout() const {
 }
 
 std::size_t MesenNesSystem::stateSnapshotSize() const {
-    // Mesen savestates are variable-size (SaveStateManager streams them), so
-    // size the triple once with headroom; the publisher skips any capture that
-    // would exceed it rather than reallocating mid-life.
-    const std::size_t measured = saveStateBytes().size();
-    if (measured == 0) return 0;
-    return measured + measured / 2 + 8192;
+    // A ceiling, measured from an UNCOMPRESSED serialize — see mesenStateCeiling. The triple is
+    // allocated once from this and never resized, so it must cover the largest capture this core will
+    // ever produce, not the small one a just-booted (mostly-zero, highly compressible) machine yields.
+    return emu_ ? mesenStateCeiling(*emu_) : 0;
 }
 
 bool MesenNesSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {

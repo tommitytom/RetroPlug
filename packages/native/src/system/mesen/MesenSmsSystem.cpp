@@ -31,6 +31,8 @@
 #include "Core/Shared/EventType.h"
 #include "Core/Shared/MemoryType.h"
 #include "Core/Shared/SaveStateManager.h"
+
+#include "system/mesen/MesenStateCeiling.hpp"
 #include "Core/Shared/SettingTypes.h"
 #include "Core/Shared/Video/VideoRenderer.h"
 #include "Utilities/VirtualFile.h"
@@ -615,11 +617,10 @@ void MesenSmsSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
 }
 
 std::size_t MesenSmsSystem::stateSnapshotSize() const {
-    // Variable-size streamed savestate; size the triple once with headroom and
-    // skip (don't realloc) any later capture that would exceed it.
-    const std::size_t measured = saveStateBytes().size();
-    if (measured == 0) return 0;
-    return measured + measured / 2 + 8192;
+    // A ceiling, measured from an UNCOMPRESSED serialize — see mesenStateCeiling. The triple is
+    // allocated once from this and never resized, so it must cover the largest capture this core will
+    // ever produce, not the small one a just-booted (mostly-zero, highly compressible) machine yields.
+    return emu_ ? mesenStateCeiling(*emu_) : 0;
 }
 
 bool MesenSmsSystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
