@@ -7,7 +7,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
 import { hasUnsavedChanges, unsavedChanges } from "../../src/unsavedChanges";
-import { gbRom } from "../systems/fixtures";
+import { gbRomBattery } from "../systems/fixtures";
 
 function newProject() {
   const be = new MockBackend("/cfg");
@@ -22,7 +22,7 @@ test("a clean empty project has no unsaved changes", () => {
 
 test("a project edit is unsaved (project-dirty channel)", () => {
   const { be, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", gbRomBattery());
   project.systems.addSystem("/roms/a.gb"); // structural edit → project dirty
   expect(project.isDirty()).toBeTruthy();
   expect(hasUnsavedChanges(be, project)).toBeTruthy();
@@ -30,7 +30,7 @@ test("a project edit is unsaved (project-dirty channel)", () => {
 
 test("a clean project with a battery differing from its .sav is unsaved (SRAM channel)", () => {
   const { be, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", gbRomBattery());
   const id = project.systems.addSystem("/roms/a.gb")!;
   be.seed("/roms/a.sav", be.readSram(id)!); // battery already mirrored to disk
   project.save("/roms/a.rplg"); // project now clean
@@ -48,7 +48,7 @@ test("unsavedChanges: nothing to list when the project is clean", () => {
 
 test("unsavedChanges: an unsaved project names its file, or reports that it has none yet", () => {
   const { be, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", gbRomBattery());
   const id = project.systems.addSystem("/roms/a.gb")!;
   be.seed("/roms/a.sav", be.readSram(id)!); // battery mirrored, so only the project channel is dirty
 
@@ -61,7 +61,7 @@ test("unsavedChanges: an unsaved project names its file, or reports that it has 
 
 test("unsavedChanges: an unsaved battery names the .sav it would write, flagging one not on disk yet", () => {
   const { be, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", gbRomBattery());
   const id = project.systems.addSystem("/roms/a.gb")!;
   project.save("/roms/a.rplg"); // project clean; no /roms/a.sav on disk
 
@@ -77,7 +77,7 @@ test("unsavedChanges: an unsaved battery names the .sav it would write, flagging
 
 test("unsavedChanges: the project leads, then one row per unsaved battery in systems order", () => {
   const { be, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", gbRomBattery());
   const first = project.systems.addSystem("/roms/a.gb")!; // suffix 0 -> /roms/a.sav
   const second = project.systems.addSystem("/roms/a.gb")!; // suffix 2 -> /roms/a-2.sav
   be.seed("/roms/a.sav", be.readSram(first)!);

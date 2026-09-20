@@ -81,6 +81,7 @@ export interface SramTarget {
   romPath: string;
   savSuffix: number;
   savPath: string; // the paired-save override ("" = the suffix sibling)
+  battery: boolean; // the cart has battery-backed save memory — a cart without one has no .sav to write
 }
 
 /** One system whose live battery is unsaved: which system, the `.sav` a save would write, and whether
@@ -95,11 +96,15 @@ export interface DirtySram {
  *  signal, with the target path + whether it's a new file. Uses sramSignature, which normalises LSDj's
  *  per-frame working-RAM churn (the ticking clock) away so a just-booted LSDj cart isn't reported dirty;
  *  non-LSDj batteries use a whole-SRAM hash. Embedded ROMs (no romPath) and empty batteries are never
- *  dirty; a missing `.sav` with a non-empty battery is. */
+ *  dirty; a missing `.sav` with a non-empty battery is.
+ *
+ *  A cart with NO battery is never dirty either, however much its save region reports: a core can publish
+ *  a non-empty SaveRam for a cartridge that has none, and writing that produced a `.sav` next to a ROM
+ *  that can't use one. Harmless-looking until a teardown flush makes it happen on every remove and reset. */
 export function dirtySramTargets(backend: ControlPlaneBackend, systems: SramTarget[]): DirtySram[] {
   const out: DirtySram[] = [];
   for (const s of systems) {
-    if (!s.romPath) continue;
+    if (!s.romPath || !s.battery) continue;
     const savPath = resolveSavPath(s.romPath, s.savSuffix, s.savPath);
     if (!savPath) continue;
     const live = backend.readSram(s.id);

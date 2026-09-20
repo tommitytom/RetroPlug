@@ -8,7 +8,7 @@ import { SystemsStore } from "../../src/systemsStore";
 import { UserConfigStore } from "../../src/userConfigStore";
 import { SramAutoSaver, hashBytes, decideAutoSave, sramDirtyCount, dirtySramTargets, flushDirtySram, lsdjSramSignature, sramSignature } from "../../src/sramAutoSave";
 import { savFrom } from "../../src/lsdj";
-import { gbRom } from "../systems/fixtures";
+import { gbRom, gbRomBattery } from "../systems/fixtures";
 
 const bytes = (...b: number[]) => new Uint8Array(b);
 const SAV = "/proj/a.sav";
@@ -37,7 +37,7 @@ function setup() {
   const uc = new UserConfigStore(be); // default sramAutoSave = "OnProjectSave"
   const systems = new SystemsStore(be);
   const saver = new SramAutoSaver(be, systems, uc);
-  be.seed("/proj/a.gb", gbRom());
+  be.seed("/proj/a.gb", gbRomBattery());
   const id = systems.addSystem("/proj/a.gb")!; // savPath resolves to /proj/a.sav
   return { be, uc, systems, saver, id };
 }
@@ -102,7 +102,7 @@ test("a paired savPath override is honored as the write target", () => {
   const be = new MockBackend("/config");
   const systems = new SystemsStore(be);
   const saver = new SramAutoSaver(be, systems, new UserConfigStore(be));
-  be.seed("/proj/a.gb", gbRom());
+  be.seed("/proj/a.gb", gbRomBattery());
   be.seed("/saves/custom.sav", bytes(0)); // a different paired save → becomes the override
   const id = systems.addSystem("/proj/a.gb", { explicitSav: "/saves/custom.sav" })!;
   be.setSram(id, bytes(1, 1));
@@ -156,6 +156,23 @@ test("flushDirtySram is NOT gated on the auto-save preference (unlike flushOnSav
   expect([...be.readFile(SAV)!]).toEqual([7, 7]);
 });
 
+test("a cart with NO battery is never dirty, so it never grows a stray .sav", () => {
+  // A core can publish a non-empty save region for a cartridge whose header declares no battery. Writing
+  // that produced a .sav next to a ROM that cannot use one - invisible while it only happened on an
+  // explicit save, and constant once teardown started flushing too.
+  const be = new MockBackend("/config");
+  const systems = new SystemsStore(be);
+  be.seed("/proj/nobat.gb", gbRom()); // a plain GB header: no battery declared
+  const id = systems.addSystem("/proj/nobat.gb")!;
+  expect(systems.systems()[0].battery).toBeFalsy();
+  be.setSram(id, bytes(1, 2, 3)); // the core reports save memory anyway
+
+  expect(sramDirtyCount(be, systems.systems())).toBe(0);
+  expect(flushDirtySram(be, systems.systems())).toBe(0);
+  expect(be.readFile("/proj/nobat.sav")).toBe(null);
+  expect(be.log.includes("writeFileAtomic")).toBeFalsy();
+});
+
 test("sramDirtyCount / flushDirtySram skip embedded systems (no romPath)", () => {
   const be = new MockBackend("/config");
   const systems = new SystemsStore(be);
@@ -196,7 +213,7 @@ test("sramSignature falls back to a whole-SRAM hash for a non-LSDj battery", () 
 test("an LSDj cart whose only diff from disk is the ticked clock is NOT dirty", () => {
   const be = new MockBackend("/config");
   const systems = new SystemsStore(be);
-  be.seed("/proj/a.gb", gbRom());
+  be.seed("/proj/a.gb", gbRomBattery());
   const id = systems.addSystem("/proj/a.gb")!;
 
   const disk = savFrom({ workingSong: { settings: { tempo: 150 } } });
@@ -220,7 +237,7 @@ test("an LSDj cart whose only diff from disk is the ticked clock is NOT dirty", 
 test("pump (Continuous) writes only the systems whose SRAM changed, per system", () => {
   const { be, uc, systems, saver, id } = setup();
   uc.setSramAutoSave("Continuous");
-  be.seed("/proj/b.gb", gbRom());
+  be.seed("/proj/b.gb", gbRomBattery());
   const id2 = systems.addSystem("/proj/b.gb")!;
   be.setSram(id, bytes(1));
   be.setSram(id2, bytes(2));
@@ -233,7 +250,7 @@ test("pump (Continuous) writes only the systems whose SRAM changed, per system",
 test("pump prunes the persistent hash of a removed system (no stale-hash leak)", () => {
   const { be, uc, systems, saver, id } = setup();
   uc.setSramAutoSave("Continuous");
-  be.seed("/proj/b.gb", gbRom());
+  be.seed("/proj/b.gb", gbRomBattery());
   const id2 = systems.addSystem("/proj/b.gb")!;
   be.setSram(id, bytes(1));
   be.setSram(id2, bytes(2));
@@ -307,9 +324,9 @@ test("pump(limit) examines at most `limit` systems per tick, round-robin over th
   uc.setSramAutoSave("Continuous");
   const systems = new SystemsStore(be);
   const saver = new SramAutoSaver(be, systems, uc);
-  be.seed("/proj/a.gb", gbRom());
-  be.seed("/proj/b.gb", gbRom());
-  be.seed("/proj/c.gb", gbRom());
+  be.seed("/proj/a.gb", gbRomBattery());
+  be.seed("/proj/b.gb", gbRomBattery());
+  be.seed("/proj/c.gb", gbRomBattery());
   const ids = ["/proj/a.gb", "/proj/b.gb", "/proj/c.gb"].map((p) => systems.addSystem(p)!);
   ids.forEach((id, i) => be.setSram(id, bytes(i + 1)));
 

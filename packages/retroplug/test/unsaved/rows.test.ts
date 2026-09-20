@@ -7,7 +7,7 @@ import { MockBackend } from "../../testing/mockBackend";
 import { RecentStore } from "../../src/recentStore";
 import { ProjectStore } from "../../src/projectStore";
 import { unsavedRows } from "../../ui/lvgl/unsavedRows";
-import { gbRom } from "../systems/fixtures";
+import { gbRomBattery } from "../systems/fixtures";
 
 function newProject() {
   const be = new MockBackend("/cfg");
@@ -22,7 +22,7 @@ test("unsavedRows: nothing at all when the project is clean", () => {
 
 test("unsavedRows: a row per unsaved item, greyed + nav-skipped, closed by a separator", () => {
   const { be, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", gbRomBattery());
   project.systems.addSystem("/roms/a.gb"); // suffix 0 -> /roms/a.sav (not on disk)
   project.systems.addSystem("/roms/a.gb"); // suffix 2 -> /roms/a-2.sav (not on disk)
 
@@ -40,7 +40,7 @@ test("unsavedRows: a row per unsaved item, greyed + nav-skipped, closed by a sep
 
 test("unsavedRows: a saved project names its file; a mirrored battery drops off", () => {
   const { be, project } = newProject();
-  be.seed("/roms/a.gb", gbRom());
+  be.seed("/roms/a.gb", gbRomBattery());
   const id = project.systems.addSystem("/roms/a.gb")!;
   be.seed("/roms/a.sav", be.readSram(id)!); // battery mirrored to disk
   project.save("/proj/song.rplg");
