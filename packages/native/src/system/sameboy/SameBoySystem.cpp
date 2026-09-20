@@ -158,6 +158,27 @@ namespace {
 inline float dbToLin(float dB) {
     return dB > -90.0f ? std::pow(10.0f, dB * 0.05f) : 0.0f;
 }
+
+// Extra savestate capacity so a LIVE model switch never outgrows the snapshot slot.
+//
+// A model change rebuilds gb_ in place (Engine::applyConfigField → restartEmulator) while the system
+// keeps its id, so the slot allocated at construct has to serve every model the user can cycle to. It
+// cannot be resized on the fly: the publish can run on the audio thread, and SnapshotRegistry sized its
+// shadow slot from our capacity at claim.
+//
+// For a fixed cart, GB_get_save_state_size varies in exactly two terms (deps/sameboy/Core/save_state.c):
+//   ram_size + vram_size  — 0x2000+0x2000 on DMG, 0x8000+0x4000 on CGB/AGB/GBP  (gb.c, GB_init)
+//   the HLE-SGB section   — sizeof(GB_sgb_t) + a length word, on SGB models only
+// Adding BOTH (rather than their max) is deliberate: it stays sufficient from ANY model to ANY other,
+// and survives SameBoy ever shipping an SGB model with CGB-sized RAM. The 1 KB covers BESS's 'SGB '
+// block, whose type is file-static in save_state.c and so cannot be sizeof'd from here.
+//
+// Cost: ~108 KB, carried by this triple and the registry's shadow (3 buffers each) — about 635 KB per
+// SameBoy system. Paid to keep a model switch allocation-free on the audio thread.
+constexpr std::size_t kModelSwitchHeadroom =
+    (0x8000u + 0x4000u) - (0x2000u + 0x2000u)  // widest ram+vram delta (CGB over DMG)
+    + sizeof(GB_sgb_t) + sizeof(std::uint32_t) // the HLE-SGB section + its length word
+    + 1024u;                                   // BESS 'SGB ' block + slop
 } // namespace
 
 SameBoySystem::SameBoySystem(SystemId id,
@@ -350,6 +371,10 @@ void SameBoySystem::restartEmulator() {
     // model can't restore a savestate from the old one.
     config_.savestate.clear();
     onActivate(sr);
+    // The published blob + region table still describe the core we just destroyed, and the new model
+    // resizes both. Re-arm so the next block republishes them together rather than leaving readState /
+    // readSram (and the .sav mirror downstream) on the old core for up to half a second.
+    rearmStateSnapshot();
 }
 
 void SameBoySystem::clearSram() {
@@ -403,7 +428,9 @@ bool SameBoySystem::loadStateBytes(const std::vector<std::uint8_t>& bytes) {
 // -- Whole-savestate snapshot ------------------------------------------------
 
 std::size_t SameBoySystem::stateSnapshotSize() const {
-    return gb_ ? GB_get_save_state_size(const_cast<GB_gameboy_t*>(gb_)) : 0;
+    // A CEILING, not the live size — see kModelSwitchHeadroom. The triple is allocated once from this
+    // and never resized, so it must cover every model this system can be switched to at runtime.
+    return gb_ ? GB_get_save_state_size(const_cast<GB_gameboy_t*>(gb_)) + kModelSwitchHeadroom : 0;
 }
 
 bool SameBoySystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
@@ -418,6 +445,12 @@ bool SameBoySystem::captureStateSnapshot(std::vector<std::uint8_t>& dst) {
 // MBC-RAM (=SRAM), WRAM and VRAM sit as raw blobs at the tail of the no-BESS
 // region of the savestate, in that order. Their offsets are therefore valid
 // against a full (BESS) savestate too, since BESS data is appended after them.
+//
+// MODEL-DEPENDENT, and re-read on every publish rather than cached: WRAM/VRAM sizes differ between DMG
+// and CGB, and an HLE-SGB state inserts a ~74 KB section ahead of all three. Note the SRAM offset alone
+// survives a DMG<->CGB switch unchanged — it is computed by subtracting vram+ram+mbc from a total that
+// contains them, so those terms cancel — but it does move across an SGB boundary. Must stay cheap and
+// allocation-free; it runs at the publish cadence on the block thread.
 // Ported from old/src/sameboy/SectionOffsetCollector.c.
 SystemBase::StateRegionTable SameBoySystem::stateSnapshotRegions() const {
     StateRegionTable t{};

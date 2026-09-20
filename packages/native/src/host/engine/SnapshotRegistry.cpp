@@ -41,7 +41,6 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
     s->frame.reset();
     s->state.reset();
     s->sram.reset();
-    s->sramOffset = 0;
     s->sramFromCore = false;
     s->sampleAccum = 0;
 
@@ -55,8 +54,8 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
 
     // State + SRAM: seed from the live savestate so a read right after construct (no block yet)
     // returns real bytes. The slot is sized to the live snapshot triple's PAYLOAD CAPACITY (which
-    // carries per-core headroom — Mesen savestates grow within a session) plus the length prefix, so
-    // the coarse-interval republish never overflows it. `sys` must already have enableStateSnapshot()'d.
+    // carries per-core headroom — Mesen savestates grow within a session, and a SameBoy model switch
+    // resizes the core's state outright) plus the length prefix, so the republish never overflows it. `sys` must already have enableStateSnapshot()'d.
     const std::vector<std::uint8_t> savestate = sys.saveStateBytes();
     const std::size_t bootLen = savestate.size();
     const std::size_t cap     = sys.stateSnapshotCapacity();
@@ -65,14 +64,14 @@ bool SnapshotRegistry::claim(SystemId id, SystemBase& sys) {
         writeSized(*s->state, savestate.data(), bootLen);
     }
 
-    // SRAM has two sources. SameBoy exposes its cart RAM as a region WITHIN the savestate (same layout
-    // live + seeded), so slice it out — cheap, no extra core read. A core whose savestate exposes no
+    // SRAM has two sources. SameBoy exposes its cart RAM as a region WITHIN the savestate, so slice it
+    // out — cheap, no extra core read. Its OFFSET is model-dependent and is therefore not cached here;
+    // only the SIZE is, because that comes from the cart header and no model changes it. A core whose savestate exposes no
     // SRAM region (Mesen's streamed format leaves stateRegions() empty) publishes its battery straight
     // from the live core via saveSramBytes() — sourced HERE on the control thread, republished on the
     // coarse interval. A no-battery cart reports empty → no slot → readSram stays null (correct).
     const auto& reg = sys.stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
     if (reg.size > 0 && static_cast<std::size_t>(reg.offset) + reg.size <= bootLen) {
-        s->sramOffset = reg.offset;
         s->sram = std::make_unique<MemorySnapshotTriple>(reg.size);
         std::memcpy(s->sram->writeSlot(), savestate.data() + reg.offset, reg.size);
         s->sram->publish();
@@ -148,10 +147,17 @@ void SnapshotRegistry::publishAll(const Project& project, std::uint32_t frames, 
             // NOT the old exact-size (==) match, which froze every variable-size republish.
             if (publishScratch_.size() + kStateLenPrefix <= s->state->size())
                 writeSized(*s->state, publishScratch_.data(), publishScratch_.size());
-            // SameBoy SRAM slice (payload-relative offset within the fresh savestate).
-            if (s->sram && !s->sramFromCore &&
-                static_cast<std::size_t>(s->sramOffset) + s->sram->size() <= publishScratch_.size()) {
-                std::memcpy(s->sram->writeSlot(), publishScratch_.data() + s->sramOffset, s->sram->size());
+            // SameBoy SRAM slice. The offset comes from the region table the core refreshed alongside
+            // THIS blob, never from a claim-time cache: a model switch rebuilds the core, and an HLE-SGB
+            // state carries a ~74 KB section ahead of the cart RAM, so a cached offset would slice the
+            // wrong bytes and hand them to the TS auto-save mirror as the user's battery. The size is
+            // compared for EQUALITY, not fit: this triple has no length prefix, so a changed size cannot
+            // be represented and a partial write would publish half a battery. (It cannot change — the
+            // cart header fixes it — but the guard says so rather than relying on it silently.)
+            const auto& reg = sys->stateRegions()[static_cast<std::size_t>(rp::MemoryType::Sram)];
+            if (s->sram && !s->sramFromCore && reg.size == s->sram->size() &&
+                static_cast<std::size_t>(reg.offset) + reg.size <= publishScratch_.size()) {
+                std::memcpy(s->sram->writeSlot(), publishScratch_.data() + reg.offset, reg.size);
                 s->sram->publish();
             }
         }
@@ -246,7 +252,6 @@ void SnapshotRegistry::release(SystemId id) {
     s->sram.reset();
     s->ram.reset();
     s->width = s->height = 0;
-    s->sramOffset = 0;
     s->sramFromCore = false;
     s->sampleAccum = 0;
 }

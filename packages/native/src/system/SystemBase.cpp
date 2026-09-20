@@ -102,8 +102,19 @@ bool SystemBase::enableStateSnapshot() {
     // Arm an immediate first publish so a Save right after load works without
     // waiting a full interval.
     stateSnapSamples_     = UINT64_MAX / 2;
+    stateOverflowLogged_  = false;
     stateSnapshotEnabled_ = true;
     return true;
+}
+
+void SystemBase::rearmStateSnapshot() {
+    if (!stateSnapshotEnabled_ || !stateSnapshot_) return;
+    // Same trick as enable: push the accumulator past the interval so the next block republishes
+    // instead of leaving the old core's blob + regions up for as much as half a second. Note this
+    // deliberately does NOT touch stateRegions_ — the table is refreshed by the publish itself, so it
+    // can never get ahead of the blob it describes.
+    stateSnapSamples_    = UINT64_MAX / 2;
+    stateOverflowLogged_ = false;
 }
 
 void SystemBase::publishStateSnapshot(std::uint32_t frames, double sampleRate) {
@@ -118,13 +129,23 @@ void SystemBase::publishStateSnapshot(std::uint32_t frames, double sampleRate) {
 
     const std::size_t cap = stateSnapshot_->size();
     if (stateScratch_.size() + kStateLenPrefix > cap) {
-        // Grew beyond the slot — never realloc mid-life (would dangle the
-        // UI-side pointer); skip this publish.
-        std::fprintf(stderr,
-                     "[RetroPlug] state snapshot for system %u too large (%zu > %zu), skipping\n",
-                     id_, stateScratch_.size() + kStateLenPrefix, cap);
+        // Grew beyond the slot. Never realloc mid-life: this can run on the audio thread, and the
+        // registry sized its shadow slot off our capacity at claim. Backends size the triple to a
+        // ceiling precisely so this cannot happen; if it does, freezing on the last good (blob,
+        // regions) pair is the safe degradation — stale but self-consistent, never a wrong slice.
+        if (!stateOverflowLogged_) {
+            stateOverflowLogged_ = true;
+            std::fprintf(stderr,
+                         "[RetroPlug] state snapshot for system %u too large (%zu > %zu), skipping\n",
+                         id_, stateScratch_.size() + kStateLenPrefix, cap);
+        }
         return;
     }
+
+    // Refresh the region table IN LOCKSTEP with the blob it describes, and only now that the capture is
+    // known to fit. The core may have been rebuilt under a different model since the last publish, which
+    // moves these offsets; updating them anywhere else would let them describe a blob we never published.
+    stateRegions_ = stateSnapshotRegions();
 
     std::uint8_t* slot = stateSnapshot_->writeSlot();
     const std::uint32_t len = static_cast<std::uint32_t>(stateScratch_.size());

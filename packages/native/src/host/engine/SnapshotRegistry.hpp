@@ -32,6 +32,11 @@ class Project;
 // dropped the system) — never on the audio thread. publishAll only ever writes a slot whose system
 // is still in project.systems(), which is exactly the window before its release, so a published-to
 // slot is never concurrently freed.
+//
+// That allocation rule is why the state slot is sized to a CEILING rather than to the live savestate:
+// a SameBoy model switch arrives on the audio thread (Engine::applyConfigField) and resizes the core's
+// state, so growing this buffer to match would be an audio-thread realloc racing a control-thread read.
+// Sizing once, big enough for any model the backend can switch into, removes the need entirely.
 class SnapshotRegistry {
 public:
     SnapshotRegistry() = default;
@@ -75,7 +80,9 @@ private:
         std::unique_ptr<MemorySnapshotTriple> state;          // [len:4 LE][savestate][headroom tail]
         std::unique_ptr<MemorySnapshotTriple> sram;
         std::unique_ptr<MemorySnapshotTriple> ram;            // work RAM (WRAM), republished every block
-        std::uint32_t                         sramOffset = 0;     // SRAM slice offset within the savestate
+        // NOTE: the SRAM slice offset is deliberately NOT cached here. It moves when the core is rebuilt
+        // under a different SameBoy model (an HLE-SGB state carries a ~74 KB section ahead of the cart
+        // RAM), so publishAll re-reads it from the region table published alongside each blob.
         bool                                  sramFromCore = false; // SRAM published live (saveSramBytes), not sliced
         std::uint64_t                         sampleAccum = 0;    // samples since the last state/sram publish
     };

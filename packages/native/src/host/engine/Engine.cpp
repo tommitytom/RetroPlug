@@ -462,7 +462,8 @@ void Engine::applyConfigField(SystemId id, std::uint8_t field, double value) {
             const auto m = static_cast<SameBoyModel>(static_cast<std::uint32_t>(value));
             if (sb->config_.model != m) {
                 sb->config_.model = m;
-                sb->restartEmulator();  // rebuilds gb_ + clears the savestate (a new model can't restore an old one)
+                sb->restartEmulator();  // rebuilds gb_, clears the savestate (a new model can't restore an
+                                        // old one), and re-arms the state snapshot onto the new model
                 project_.rebuildLinkGroups();
             }
             break;

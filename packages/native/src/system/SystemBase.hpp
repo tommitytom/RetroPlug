@@ -343,9 +343,9 @@ public:
     using StateRegionTable = std::array<StateRegion, rp::kMemoryTypeCount>;
 
     // DSP thread: idempotent. Allocates the snapshot triple sized to
-    // stateSnapshotSize() (+ the length prefix) and captures region offsets,
-    // arming an immediate first publish. No-op if already enabled or if the
-    // backend doesn't support savestates (stateSnapshotSize() == 0).
+    // stateSnapshotSize() — a CEILING, not the live size (see the hook below) — plus the length
+    // prefix, seeds the region table, and arms an immediate first publish. No-op if already enabled
+    // or if the backend doesn't support savestates (stateSnapshotSize() == 0).
     bool enableStateSnapshot();
 
     // DSP thread: accumulate `frames`; once past the interval, capture the
@@ -356,24 +356,46 @@ public:
     // stripped). False if no snapshot has been published yet.
     bool readStateSnapshot(std::vector<std::uint8_t>& out);
 
-    // UI thread: region table for slicing SRAM/RAM/VRAM out of a snapshot read
-    // via readStateSnapshot(). A region with size 0 is absent. Stable for the
-    // life of the system (set once at enable).
+    // Region table for slicing SRAM/RAM/VRAM out of a snapshot read via readStateSnapshot(). A region
+    // with size 0 is absent.
+    //
+    // It describes the snapshot CURRENTLY PUBLISHED, not the core as it stands: publishStateSnapshot
+    // refreshes it in lockstep with the blob, and only when that blob is actually published. That pairing
+    // is the correctness argument — a core rebuilt under a different SameBoy model moves these offsets,
+    // so a table refreshed on the rebuild instead would describe a blob that the publish may have
+    // skipped, and the SRAM slice would read the wrong bytes straight into the user's .sav.
+    //
+    // NOT thread-safe, and deliberately not atomic. There are exactly two legal readers: the block
+    // thread in SnapshotRegistry::publishAll (same thread as the writer, later in the same block), and
+    // SnapshotRegistry::claim on the control thread BEFORE the system is handed to the audio thread.
+    // A third caller from any other thread would be a silent data race.
     const StateRegionTable& stateRegions() const { return stateRegions_; }
 
     // Control/UI thread: the max savestate PAYLOAD the live snapshot triple can
     // hold (0 if state snapshots aren't enabled). An external shadow buffer — the
-    // SnapshotRegistry — sizes its own slot to this so a variable-size
-    // (Mesen) savestate never overflows it, mirroring the headroom this triple
-    // was allocated with (stateSnapshotSize() capped the payload).
+    // SnapshotRegistry — sizes its own slot to this so neither a variable-size (Mesen) savestate nor a
+    // SameBoy model switch can overflow it, mirroring the headroom this triple was allocated with
+    // (stateSnapshotSize() is the backend's ceiling).
     std::size_t stateSnapshotCapacity() const;
 
 protected:
     std::vector<::MidiEvent> midiOut_;
 
+    // DSP thread (or the control thread while quiescent): the backend has rebuilt its core in place —
+    // a SameBoy model switch — so the published blob and region table now describe a core that is gone.
+    // Arms an immediate republish, which refreshes both together within one block instead of up to
+    // kStateSnapshotIntervalSec later. Allocates NOTHING: the triple was sized to a ceiling covering
+    // every model the backend can switch into, which is exactly what makes this callable from the audio
+    // thread (where Engine::applyConfigField runs while the audio thread owns the Engine).
+    void rearmStateSnapshot();
+
     // State-snapshot backend hooks (default: unsupported). Overridden by
     // SameBoySystem (with region offsets) and the Mesen systems (full state,
     // no offsets). All called on the DSP thread.
+    //
+    // stateSnapshotSize() is the MAXIMUM payload this backend will ever capture for this cart, not the
+    // current one: Mesen adds headroom because its savestates grow within a session, SameBoy because a
+    // live model switch resizes the core's state. The triple is allocated once from it and never resized.
     virtual std::size_t stateSnapshotSize() const { return 0; }
     virtual bool captureStateSnapshot(std::vector<std::uint8_t>& /*dst*/) { return false; }
     virtual StateRegionTable stateSnapshotRegions() const { return {}; }
@@ -385,9 +407,11 @@ private:
     };
     std::array<SnapshotEntry, rp::kMemoryTypeCount> snapshots_;
 
-    // Whole-savestate snapshot. Triple allocated once at enable and freed only
-    // in the destructor (never mid-life), so the UI-side raw pointer can't
-    // dangle. interval ~0.5s.
+    // Whole-savestate snapshot. The triple is allocated once at enable and freed only in the destructor,
+    // never resized mid-life, for two reasons: publishStateSnapshot can run on the audio thread, where
+    // allocating is not allowed; and SnapshotRegistry sizes its own shadow slot off
+    // stateSnapshotCapacity() at claim, so a resize here would silently desync the two. Backends size it
+    // to a ceiling instead (see stateSnapshotSize). interval ~0.5s.
     static constexpr double                kStateSnapshotIntervalSec = 0.5;
     // Sanity bound on a single savestate. Comfortably above any GB/NES/GBA
     // state; rejects an absurd size rather than allocating wildly.
@@ -395,9 +419,12 @@ private:
     std::unique_ptr<MemorySnapshotTriple>  stateSnapshot_;
     StateRegionTable                       stateRegions_{};
     std::vector<std::uint8_t>              stateScratch_;       // DSP-thread capture buffer
-    std::vector<std::uint8_t>              stateReadScratch_;   // UI-thread read buffer
+    std::vector<std::uint8_t>              stateReadScratch_;   // read buffer (block thread, via the registry)
     std::uint64_t                          stateSnapSamples_ = 0;
     bool                                   stateSnapshotEnabled_ = false;
+    // Latches the "capture too large" warning so a capture that keeps overflowing logs once per arming
+    // rather than twice a second forever.
+    bool                                   stateOverflowLogged_ = false;
 
     SystemId id_;
 };
