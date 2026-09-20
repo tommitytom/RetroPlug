@@ -39,9 +39,7 @@ test("Continuous mirrors a live battery to its .sav with no explicit save", () =
 
   const saver = new SramAutoSaver(be, project.systems, userConfig);
 
-  // Off / OnProjectSave: the pump must stay out of the way entirely.
-  userConfig.setSramAutoSave("Off");
-  expect(saver.pump()).toBe(0);
+  // OnProjectSave: the pump must stay out of the way entirely.
   userConfig.setSramAutoSave("OnProjectSave");
   expect(saver.pump()).toBe(0);
 

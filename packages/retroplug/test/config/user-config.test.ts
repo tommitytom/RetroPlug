@@ -142,10 +142,19 @@ test("setDefaultZoom: accepts 1..6 (persists + notifies); rejects out-of-range /
 
 test("setSramAutoSave: accepts a known mode, rejects an unknown one", () => {
   const { store } = newStore();
-  expect(store.setSramAutoSave("Off")).toBeTruthy();
-  expect(store.sramAutoSave()).toBe("Off");
+  expect(store.setSramAutoSave("Continuous")).toBeTruthy();
+  expect(store.sramAutoSave()).toBe("Continuous");
   expect(store.setSramAutoSave("bogus" as SramAutoSave)).toBeFalsy();
-  expect(store.sramAutoSave()).toBe("Off");
+  expect(store.sramAutoSave()).toBe("Continuous");
+});
+
+test("the retired Off mode migrates to OnProjectSave (v2 -> v3)", () => {
+  // Off never suppressed the save-path write, so it was OnProjectSave under another name. A v2 config
+  // carrying it must land on the mode it actually behaved as, not on zod's silent coercion.
+  const v2 = JSON.stringify({ schemaVersion: 2, sramAutoSave: "Off", defaultZoom: 4 });
+  const cfg = parseUserConfig(v2)!;
+  expect(cfg.sramAutoSave).toBe("OnProjectSave");
+  expect(cfg.defaultZoom).toBe(4); // the rest of the config rides through untouched
 });
 
 test("setUseNativeFileDialogs: toggles both ways, persists, and notifies (regression: was omitted from serialize)", () => {

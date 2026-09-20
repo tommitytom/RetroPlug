@@ -124,7 +124,7 @@ still loads (migrated up if needed — see the version-stamp policy below).
 
 | File | Model | Stamp const | Shape |
 |---|---|---|---|
-| `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug/src/userConfig.ts)) | `USER_CONFIG_SCHEMA = 2` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave }` |
+| `config.json` | `UserConfig` ([userConfig.ts](../packages/retroplug/src/userConfig.ts)) | `USER_CONFIG_SCHEMA = 3` | `{ schemaVersion, activeKeyboardBindings, activeGamepadBindings, defaultZoom 1-6, sramAutoSave }` |
 | `bindings/<name>.json` | `BindingMap` ([bindingMap.ts](../packages/retroplug/src/bindingMap.ts)) | `BINDINGS_SCHEMA = 1` | `{ schemaVersion, name, keyboard, gamepad, keyboardActions, gamepadActions }` (one profile per file; the `*Actions` sections — Open Menu / Cycle Instances — seed to defaults when missing) |
 | `recent.json` | `RecentEntry[]` ([recentList.ts](../packages/retroplug/src/recentList.ts)) | `RECENT_SCHEMA = 2` | `{ schemaVersion, entries: [{ path, name, song? }] }`, most-recent-first, capped at 10. Keyed by path + `song`, so one project holds a row per song it has had loaded. A songless row is the placeholder for a project that has had no song loaded: a song row supersedes it, and a songless add changes nothing once song rows exist, so the two never coexist for one path. `song` is printable ASCII; a persisted row whose song is anything else is skipped on read (the residue of a name read from a cart that had not finished booting). `name` is the project's name as of the last record: its own name when set, else its primary cart's `"<sav.ext> [<rom>]"` identity |
 
@@ -161,7 +161,7 @@ JSON**, backed by two mechanisms:
 | Root | TS const |
 |---|---|
 | `.rplg` / DAW chunk | `K_PROJECT = 4` ([projectConfig.ts](../packages/retroplug/src/projectConfig.ts)) |
-| `config.json` | `USER_CONFIG_SCHEMA = 2` |
+| `config.json` | `USER_CONFIG_SCHEMA = 3` |
 | `bindings/*.json` | `BINDINGS_SCHEMA = 1` |
 | `recent.json` | `RECENT_SCHEMA = 2` |
 
@@ -266,15 +266,38 @@ and the test suite both link no C++ sav codec.
 ## SRAM auto-save policy
 
 Battery RAM is mirrored to the loose sibling `<rom>.sav` the way most Game Boy
-emulators do, gated on the user's `sramAutoSave` preference. Native only reads
-SRAM (through the snapshot read door) and writes a file; the whole policy is TS
+emulators do. Native only reads SRAM (through the snapshot read door) and writes
+a file; the whole policy is TS
 ([sramAutoSave.ts](../packages/retroplug/src/sramAutoSave.ts)).
+
+The battery reaches disk at two moments regardless of the preference, because
+both are the user acting rather than a background policy:
+
+| Moment | Written by |
+|---|---|
+| Saving the project (menu Save / Save As, Save & Quit, the discard-guard's Save) | `flushDirtySram`, via `saveProjectInteractive` |
+| **A cart's core being destroyed** — remove, replace, swap, reset, load SRAM / state, a ROM-watch reload, New/Load Project | `flushBatteryForTeardown`, from `SystemsStore` |
+
+The preference then chooses whether it *also* happens while you play:
 
 | Mode | Behaviour |
 |---|---|
-| `Off` | never write the loose `.sav` |
-| `OnProjectSave` (default) | flush every system at a save/quit moment (`flushOnSave`) |
-| `Continuous` | also write changed SRAM on a throttled idle tick (`pump`) |
+| `OnProjectSave` (default) | the two moments above, and nothing else |
+| `Continuous` | plus changed SRAM on a throttled idle tick (`pump`) |
+
+There used to be a third mode, `Off`, documented as "never write the loose
+`.sav`". It never did that: the save path was ungated and the one function that
+honoured the preference at save time (`flushOnSave`) had no callers, so `Off`
+and `OnProjectSave` were one behaviour under two labels. It was dropped rather
+than made literal — a mode that lets a cart's battery be discarded on teardown is
+a data-loss setting — and `USER_CONFIG_SCHEMA` 2→3 migrates it to
+`OnProjectSave`.
+
+The teardown flush has one exception, and it is load-bearing: a caller that has
+just *written* a `.sav` and is cold-booting from it (a Songs-menu edit, a song
+import) leaves the live battery holding the pre-edit bytes, so flushing there
+would write the old song back over the new one. `loadSram`'s `path` argument names
+that file and suppresses the flush for it.
 
 `SramAutoSaver` reads live SRAM via `backend.readSram(id)`, resolves the target
 with `resolveSavPath` (embedded-ROM systems have no sibling and are skipped), and

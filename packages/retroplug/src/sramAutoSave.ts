@@ -1,8 +1,7 @@
-// The loose-`.sav` auto-save (mirror) policy — a port of native's system/SramAutoSave.hpp
-// write logic. Flush a system's battery RAM to its sibling <rom>.sav the way most Game
+// The loose-`.sav` auto-save (mirror) policy. Flush a system's battery RAM to its sibling <rom>.sav the way most Game
 // Boy emulators do: write when the SRAM changed since the last check, seeding (not
 // rewriting) an identical sibling that was just loaded. Gated on the user's `sramAutoSave`
-// preference (Off / OnProjectSave / Continuous).
+// preference: OnProjectSave writes at a save and when a cart closes, Continuous adds an idle mirror.
 //
 // This is pure decision logic over the live SRAM byte read: it reads SRAM via the
 // existing backend.readSram(id) pump and resolves the target with resolveSavPath — no new
@@ -158,14 +157,14 @@ export function flushBatteryForTeardown(
 
 export class SramAutoSaver {
   // Persistent per-system hash of the last-written SRAM, used by pump() so the Continuous
-  // idle-tick only writes on change. flushOnSave() uses a fresh (null) hash instead.
+  // idle-tick only writes on change. A non-persistent flush uses a fresh (null) hash instead.
   private hashes = new Map<number, number>();
   // Raw whole-battery hash of what each system looked like last tick — the cheap gate in front of the
   // semantic signature. sramSignature on an LSDj cart is a full encodeSong(decodeSong(...)) round-trip over
   // 32 KB, and the Continuous pump asks per system every couple of seconds; measured on a live cart the
   // battery does not move at all during playback, so this hash answers "nothing to do" nearly every time.
   // When the raw bytes DO move we fall through to the semantic signature, which still decides whether the
-  // change is meaningful. Pump-only; flushOnSave always does the full comparison.
+  // change is meaningful. Pump-only; a non-persistent flush always does the full comparison.
   private rawHashes = new Map<number, number>();
   // Round-robin position for pump(limit), so a bounded tick still services every system over time.
   private cursor = 0;
@@ -176,23 +175,10 @@ export class SramAutoSaver {
     private readonly userConfig: UserConfigStore,
   ) {}
 
-  /** Flush every system's battery RAM to its resolved sibling `.sav` at a save/quit
-   *  moment (port of flushSramMirror): a no-op when the preference is Off; otherwise each
-   *  system is seeded-or-written against its on-disk file with a fresh hash. Returns the
-   *  number of systems actually written. */
-  flushOnSave(): number {
-    if (this.userConfig.sramAutoSave() === "Off") return 0;
-    let written = 0;
-    for (const sys of this.systems.systems()) {
-      if (this.flushSystem(sys.id, sys.romPath, sys.savSuffix, sys.savPath, false)) written++;
-    }
-    return written;
-  }
-
   /** The Continuous idle-tick: writes each system's changed SRAM using its persistent
-   *  hash (no write when unchanged). A no-op unless the preference is Continuous — Off /
-   *  OnProjectSave leave the loose `.sav` to flushOnSave. The caller throttles the
-   *  cadence. Returns the number of systems written this tick. */
+   *  hash (no write when unchanged). A no-op unless the preference is Continuous — under OnProjectSave
+   *  the loose `.sav` is written by flushDirtySram at a save, and by flushBatteryForTeardown when a cart
+   *  closes. The caller throttles the cadence. Returns the number of systems written this tick. */
   /** `limit` caps how many systems are examined this tick, round-robin across calls. Even the SKIP path
    *  costs a ~10 ms whole-battery hash on the plugin's JIT-less runtime, so a 4-cart project would spend
    *  ~40 ms in one frame - a visible stall - if every tick examined everything. The UI passes 1 to keep
@@ -214,7 +200,7 @@ export class SramAutoSaver {
   }
 
   // Resolve, read, decide, and (maybe) write one system's SRAM. `persistent` selects the
-  // pump's cross-tick hash vs flushOnSave's fresh one. Returns whether it wrote.
+  // pump's cross-tick hash vs a fresh one. Returns whether it wrote.
   private flushSystem(id: number, romPath: string, savSuffix: number, savOverride: string, persistent: boolean): boolean {
     if (!romPath) return false; // embedded ROM: no sibling to mirror
     const savPath = resolveSavPath(romPath, savSuffix, savOverride);

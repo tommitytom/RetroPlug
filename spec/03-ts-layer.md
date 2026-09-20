@@ -261,10 +261,11 @@ are validated by `isValidProfileName`
   [`pluginControlPlane.ts`](../packages/retroplug/src/pluginControlPlane.ts) and drives `pump()` from the
   UI idle loop (`__rp_pumpWatcher`).
 - **SramAutoSaver** — [`src/sramAutoSave.ts`](../packages/retroplug/src/sramAutoSave.ts):
-  the loose-`.sav` mirror policy over `backend.readSram(id)` + `resolveSavPath`, gated on the
-  `sramAutoSave` preference. `flushOnSave()` writes at save/quit; `pump()` is the Continuous
-  idle-tick. An FNV-1a change hash dedups writes and distinguishes seed-vs-write against the
-  on-disk file. Pure decision logic — native only reads SRAM and writes bytes.
+  the loose-`.sav` mirror policy over `backend.readSram(id)` + `resolveSavPath`. `flushDirtySram`
+  writes at a project save and `flushBatteryForTeardown` when a cart's core is destroyed — neither
+  consults the preference, because both are the user acting; `pump()` is the Continuous idle-tick and
+  is the only thing the preference gates. An FNV-1a change hash dedups writes and distinguishes
+  seed-vs-write against the on-disk file. Pure decision logic — native only reads SRAM and writes bytes.
 
 ---
 

@@ -99,6 +99,7 @@ import type { HostBackend, ControlPlaneBackend } from "../../../src/backend";
 import { openPath } from "../../lvgl/openPath";
 import { startSystemRender, renderBaseName, validSplits, formatDuration } from "../../lvgl/render";
 import { saveProjectInteractive } from "../../lvgl/saveProjectInteractive";
+import { flushDirtySram } from "../../../src/sramAutoSave";
 import { hasUnsavedChanges } from "../../../src/unsavedChanges";
 import type { FileBrowserOpts } from "../../../src/backend";
 import { hasAudioConfig, getAudioDraft, setAudioDraft, applyAudioDraft, audioDraftDirty, getAudioDrivers, getAudioDevices, getAudioDefaultDevice, getAutoAudioDriver } from "./audioDraft";
@@ -586,7 +587,7 @@ const LIGHT_TEMP_NAMES = ["Cool 100%", "Cool 80%", "Cool 60%", "Cool 40%", "Cool
 // the CGB rows. Colour correction and light temperature are shown on exactly the complement.
 const DMG_MODELS: readonly SameBoyModel[] = ["dmgB", "mgb", "sgb", "sgbPal", "sgb2"];
 const isDmgModel = (m: SameBoyModel): boolean => DMG_MODELS.includes(m);
-const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { Off: "Off", OnProjectSave: "On Save", Continuous: "Continuous" };
+const SRAM_AUTO_SAVE_LABELS: Record<string, string> = { OnProjectSave: "On Save", Continuous: "Continuous" };
 // Link Group cycles 0..4 (0 = Off), mirroring the legacy LINK_GROUP_MAX.
 const LINK_GROUP_NAMES = ["Off", "1", "2", "3", "4"];
 // NES console region (ConsoleRegion 0..4), the "mesen" role's region knob.
@@ -2072,9 +2073,15 @@ function projectChildren(ctx: MenuContext): MenuItem[] {
   if (ctx.systems.length > 0) {
     // Save writes to the known path when there is one (else Save As covers it). Save As / Export browse
     // for a target; each store method already takes a resolved path.
-    if (project.currentPath()) items.push(action("proj-save", saveProjectLabel(ctx), () => project.save(project.currentPath())));
+    // Both go through saveProjectInteractive, which flushes each cart's battery first. Calling
+    // project.save directly meant this row carried the unsaved-battery "*" in its own label and then
+    // saved everything except the battery.
+    if (project.currentPath()) items.push(action("proj-save", saveProjectLabel(ctx), () => void saveProjectInteractive(ctx.stores)));
     items.push(action("proj-saveas", "Save Project As...", () =>
-      browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) => project.save(p)),
+      browseThen(ctx, { title: "Save Project", patterns: PROJECT_PATTERNS, saving: true, defaultName: "project.rplg" }, (p) => {
+        flushDirtySram(ctx.stores.backend, project.systems.systems());
+        project.save(p);
+      }),
     ));
     items.push(action("proj-export", "Export Zip...", () =>
       browseThen(ctx, { title: "Export Zip", patterns: ZIP_PATTERNS, saving: true, defaultName: "project.rplg.zip" }, (p) => project.export(p)),

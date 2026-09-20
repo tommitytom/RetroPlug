@@ -12,7 +12,7 @@ import { parseVersionedRoot, type MigrationMap, type RawObject, type RootRefusal
 
 /** On-disk schema version. Bump only on a breaking (non-additive) change; a file stamped
  *  newer than this is refused on load, one stamped older is migrated (below). */
-export const USER_CONFIG_SCHEMA = 2;
+export const USER_CONFIG_SCHEMA = 3;
 
 /** v1→v2: `render.lastDir` was renamed to `render.outputDir`. Carry the value forward so a
  *  remembered folder survives the rename; zod then strips the leftover `lastDir` (unknown key).
@@ -26,8 +26,18 @@ function userConfigV1toV2(raw: RawObject): RawObject {
   return raw;
 }
 
+/** v2→v3: the `Off` sramAutoSave mode was retired (it never suppressed the save-path write, so it was
+ *  `OnProjectSave` wearing a different label). Map it forward explicitly. Zod's `.catch` would coerce an
+ *  unknown value to the same default anyway, but relying on that would leave no record in the code that
+ *  `Off` ever existed - and a silent coercion is a landmine for whoever adds the next mode.
+ *  Idempotent — only rewrites the retired value. */
+function userConfigV2toV3(raw: RawObject): RawObject {
+  if (raw.sramAutoSave === "Off") raw.sramAutoSave = "OnProjectSave";
+  return raw;
+}
+
 /** Raw-JSON migrations keyed by from-version (see migrate.ts). */
-const USER_CONFIG_MIGRATIONS: MigrationMap = { 1: userConfigV1toV2 };
+const USER_CONFIG_MIGRATIONS: MigrationMap = { 1: userConfigV1toV2, 2: userConfigV2toV3 };
 
 /** Parse config.json text, saying WHY on failure. The store needs the reason: a malformed file
  *  may be replaced on the next change (so corruption heals), but one stamped newer must not be —

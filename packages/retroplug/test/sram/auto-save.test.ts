@@ -42,30 +42,13 @@ function setup() {
   return { be, uc, systems, saver, id };
 }
 
-test("flushOnSave (OnProjectSave): writes the resolved <rom>.sav, then dedups", () => {
-  const { be, saver, id } = setup();
-  be.setSram(id, bytes(1, 2, 3));
-  expect(saver.flushOnSave()).toBe(1);
-  expect([...be.readFile(SAV)!]).toEqual([1, 2, 3]);
-  expect(saver.flushOnSave()).toBe(0); // on-disk matches live → seed, no rewrite
-});
-
-test("flushOnSave: a changed SRAM is rewritten", () => {
-  const { be, saver, id } = setup();
-  be.setSram(id, bytes(1, 2, 3));
-  saver.flushOnSave();
-  be.setSram(id, bytes(4, 5, 6));
-  expect(saver.flushOnSave()).toBe(1);
-  expect([...be.readFile(SAV)!]).toEqual([4, 5, 6]);
-});
-
-test("Off: flushOnSave and pump are no-ops", () => {
+test("OnProjectSave: the idle pump stays out of the way entirely", () => {
+  // The default mode writes at a save and when a cart closes, never on the tick.
   const { be, uc, saver, id } = setup();
-  uc.setSramAutoSave("Off");
+  uc.setSramAutoSave("OnProjectSave");
   be.setSram(id, bytes(1, 2, 3));
-  expect(saver.flushOnSave()).toBe(0);
   expect(saver.pump()).toBe(0);
-  expect(be.readFile(SAV)).toBe(null); // nothing written
+  expect(be.readFile(SAV)).toBe(null); // nothing written by the tick
 });
 
 test("pump: writes only in Continuous, and only on change", () => {
@@ -92,21 +75,19 @@ test("pump: seeds (no write) when an identical .sav is already on disk", () => {
 test("embedded system (no romPath) is skipped", () => {
   const be = new MockBackend("/config");
   const systems = new SystemsStore(be);
-  const saver = new SramAutoSaver(be, systems, new UserConfigStore(be));
   systems.loadMgb(); // embedded, no romPath / sibling
-  expect(saver.flushOnSave()).toBe(0);
+  expect(flushDirtySram(be, systems.systems())).toBe(0);
   expect(be.log.includes("writeFile") || be.log.includes("writeFileAtomic")).toBeFalsy(); // no write of either kind
 });
 
 test("a paired savPath override is honored as the write target", () => {
   const be = new MockBackend("/config");
   const systems = new SystemsStore(be);
-  const saver = new SramAutoSaver(be, systems, new UserConfigStore(be));
   be.seed("/proj/a.gb", gbRomBattery());
   be.seed("/saves/custom.sav", bytes(0)); // a different paired save → becomes the override
   const id = systems.addSystem("/proj/a.gb", { explicitSav: "/saves/custom.sav" })!;
   be.setSram(id, bytes(1, 1));
-  expect(saver.flushOnSave()).toBe(1);
+  expect(flushDirtySram(be, systems.systems())).toBe(1);
   expect([...be.readFile("/saves/custom.sav")!]).toEqual([1, 1]); // wrote to the override, not /proj/a.sav
   expect(be.readFile(SAV)).toBe(null);
 });
@@ -148,12 +129,19 @@ test("flushDirtySram: writes each dirty battery to its sibling .sav, then it's c
   expect(flushDirtySram(be, list)).toBe(0); // nothing dirty → no rewrite
 });
 
-test("flushDirtySram is NOT gated on the auto-save preference (unlike flushOnSave)", () => {
+test("flushDirtySram writes under either mode — the battery always reaches disk at a save", () => {
+  // Both surviving modes write here; they differ only in whether the idle tick also mirrors. The retired
+  // "Off" was the one that claimed otherwise, and never actually suppressed this path.
   const { be, uc, systems, id } = setup();
-  uc.setSramAutoSave("Off"); // would make flushOnSave a no-op
+  uc.setSramAutoSave("OnProjectSave");
   be.setSram(id, bytes(7, 7));
-  expect(flushDirtySram(be, systems.systems())).toBe(1); // still writes — an explicit save on close
+  expect(flushDirtySram(be, systems.systems())).toBe(1);
   expect([...be.readFile(SAV)!]).toEqual([7, 7]);
+
+  uc.setSramAutoSave("Continuous");
+  be.setSram(id, bytes(8, 8));
+  expect(flushDirtySram(be, systems.systems())).toBe(1);
+  expect([...be.readFile(SAV)!]).toEqual([8, 8]);
 });
 
 test("a cart with NO battery is never dirty, so it never grows a stray .sav", () => {

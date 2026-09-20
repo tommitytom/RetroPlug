@@ -46,13 +46,21 @@ const renderSchema = z.preprocess(
   }),
 );
 
-/** When the loose sibling <rom>.sav is auto-saved. The string values match native's
- *  rp::SramMirror enum spellings — Off = never write it; OnProjectSave = flush on
- *  save/quit (the default); Continuous = also throttled idle writes — but the TS side
- *  names the field `sramAutoSave`: "mirror" reads from the plugin's side, "auto save"
- *  fits both the plugin and the standalone. This store only holds the preference; the
- *  auto-save POLICY that consumes it is a later increment. */
-export const SRAM_AUTO_SAVES = ["Off", "OnProjectSave", "Continuous"] as const;
+/** When the loose sibling <rom>.sav is auto-saved. `OnProjectSave` (the default) writes it at the
+ *  moments the user acts — saving the project, and closing a cart — and `Continuous` adds a throttled
+ *  idle mirror on top.
+ *
+ *  There used to be a third mode, `Off`. It never did what it said: the save path wrote regardless, and
+ *  the one function that honoured the preference at save time had no callers, so `Off` and
+ *  `OnProjectSave` were the same behaviour under two labels. Rather than make `Off` literal - which
+ *  would mean a cart's battery could be discarded on teardown by preference - the mode was dropped
+ *  (v2→v3 migrates it to `OnProjectSave`). The battery always reaches disk; the only choice is whether
+ *  it also happens while you play.
+ *
+ *  The field is named `sramAutoSave` rather than native's "mirror": that reading comes from the plugin's
+ *  side, whereas "auto save" fits the plugin and the standalone equally. Native carries no counterpart
+ *  today - the whole policy is TS. */
+export const SRAM_AUTO_SAVES = ["OnProjectSave", "Continuous"] as const;
 export type SramAutoSave = (typeof SRAM_AUTO_SAVES)[number];
 
 /** config.json — the per-user preferences. */
@@ -67,7 +75,8 @@ export interface UserConfig {
 
 /** Validates + defaults + clamps a (possibly partial/stale) config.json object. Strict:
  *  unknown keys are stripped; a missing/bad field takes its default; an out-of-range
- *  defaultZoom clamps to 1..6; an unknown sramAutoSave falls back to the default. */
+ *  defaultZoom clamps to 1..6; an unknown sramAutoSave (including the retired "Off") falls back to
+ *  the default - the v2→v3 migration handles it explicitly so the coercion is never load-bearing. */
 export const userConfigSchema = z.object({
   activeKeyboardBindings: stringField("default"),
   activeGamepadBindings: stringField("default"),
