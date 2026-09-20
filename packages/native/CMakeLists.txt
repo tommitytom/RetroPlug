@@ -770,10 +770,12 @@ add_dependencies(retroplug-ui-test retroplug-ui-bundle)
 
 # --- plugin unit checks (retroplug-plugin-test) ----------------------------------------------------
 # Pure-C++ Catch2 checks for plugin/ mechanisms that need real JSContexts but no LVGL/txiki host —
-# currently the per-context window-hook routing (ContextTargets.hpp). Links bare quickjs (qjs) + Catch2.
+# currently the per-context window-hook routing (ContextTargets.hpp) and the last-good project-state
+# cache (LastGoodState.hpp). Links bare quickjs (qjs) + Catch2.
 # Run via `pnpm test:plugin` (builds + runs the binary; the exit code is pass/fail). On demand only.
 add_executable(retroplug-plugin-test EXCLUDE_FROM_ALL
-    test/plugin/ContextTargets.test.cpp)
+    test/plugin/ContextTargets.test.cpp
+    test/plugin/LastGoodState.test.cpp)
 
 target_link_libraries(retroplug-plugin-test PRIVATE
     qjs                        # bare quickjs: JS_* + ArrayBuffer / CFunctionData

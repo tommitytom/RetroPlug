@@ -22,6 +22,7 @@
 #include "dpfjs/host/TjsHostRuntime.hpp"  // shared txiki/QuickJS host (+ tjs.h/quickjs.h)
 
 #include "PluginShared.hpp"     // SharedDSP handoff to the editor
+#include "LastGoodState.hpp"   // keeps a failed project serialization from reporting "empty"
 
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
@@ -99,7 +100,14 @@ class PluginDSP : public Plugin {
         hostSvc_.configDir()};
     std::unique_ptr<rpcpp::QuickJSTransport> transport_;
     std::unique_ptr<PluginRpcServer>     server_;
+    // Did the control plane come up AND signal __rp_ready? Gates callGlobal, so a runtime that failed
+    // to init, or a bundle that threw during eval, degrades to "" everywhere instead of being called
+    // into half-built. NOT consulted by readReady, which is the pump loop that decides this value.
     bool jsReady_ = false;
+
+    // Last project chunk that serialized successfully. getState is const (DPF's signature), hence
+    // mutable rather than the const_cast this used to need at the call.
+    mutable retroplug::LastGoodState lastGoodProject_;
 
     float gainDb_ = 0.0f;
 
@@ -237,7 +245,13 @@ protected:
     }
     String getState(const char* key) const override {
         if (std::strcmp(key, "project") != 0) return String();
-        return String(const_cast<PluginDSP*>(this)->callGlobal("__rp_saveProjectB64", nullptr).c_str());
+        const std::string& out =
+            lastGoodProject_.offer(const_cast<PluginDSP*>(this)->callGlobal("__rp_saveProjectB64", nullptr));
+        // Log the first substitution only: the host calls this on every save AND on editor connect, so
+        // a persistent failure would otherwise flood stderr with the same line.
+        if (lastGoodProject_.fallbacks() == 1)
+            d_stderr("[retroplug] project serialization failed; reporting the last good state to the host");
+        return String(out.c_str());
     }
     void setState(const char* key, const char* value) override {
         if (std::strcmp(key, "project") != 0) return;
@@ -417,6 +431,7 @@ private:
     }
 
     bool readReady() {
+        if (!host_.isInitialized()) return false;
         JSContext* ctx = host_.context();
         JSValue global = JS_GetGlobalObject(ctx);
         JSValue v      = JS_GetPropertyStr(ctx, global, "__rp_ready");
@@ -427,8 +442,16 @@ private:
     }
 
     // Call globalThis[name](arg?) on the control-plane context (main thread only). Returns the string
-    // result, or "" for a non-string / missing fn / exception.
+    // result, or "" for a non-string / missing fn / exception — or for a runtime that never came up.
+    //
+    // That last case is why the guard is HERE rather than at each caller: bootControlPlane returns
+    // early when host_.init() fails, leaving a null context, and the constructor goes straight on to
+    // updateParameterMap(). Every JS-touching method (getState/setState/activate/updateLatency/
+    // updateParameterMap) funnels through this function and readReady, so guarding the two of them
+    // covers the whole surface — and a DAW scanning plugins gets a silent no-op instead of a crash
+    // inside our constructor. "" is already the answer every caller handles.
     std::string callGlobal(const char* name, const char* arg) {
+        if (!host_.isInitialized() || !jsReady_) return {};
         JSContext* ctx = host_.context();
         JSValue global = JS_GetGlobalObject(ctx);
         JSValue fn     = JS_GetPropertyStr(ctx, global, name);
