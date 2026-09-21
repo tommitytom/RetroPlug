@@ -56,6 +56,13 @@ namespace {
 // Safe for the 2A03, VRC6, N163, FDS and MMC5 squares. Sunsoft 5B and MMC5 PCM clip past it, but both
 // already wrap Mesen's `int16_t currentOutput = GetOutputVolume() * 4` upstream of us. Mesen's GBA path
 // subtracts its bias before scaling, so it is already bipolar at +/-16384 and gets NO makeup.
+//
+// SMS gets none either, and that was worth checking rather than assuming: it landed after this fix and
+// copied the un-adjusted path, and its PSG is a unipolar summed-attenuation mixer - structurally the
+// same case the 2A03 makes here. Measured instead of reasoned: a synthetic ROM latching all four PSG
+// channels to attenuation 0 peaks at 32768, i.e. Mesen's SmsPsg already spans the full numeric range,
+// where the 2A03 reaches 19996. Its makeup would be 32767/32768, and applying this one would clip it.
+// So SMS is not quietly 5 dB down; nothing to do.
 constexpr float kNesMakeupDb = 4.29f;
 
 // The makeup must not lift a trim-to-mute off zero, so the -90 dB kill is tested on the USER value.
