@@ -40,6 +40,7 @@ expansion sub-channels, the 4-byte MIDI-out cap) tracked in
 | [10-multichannel-audio-out.md](10-multichannel-audio-out.md) | **Built** (steps 1–7; per-mapper NES expansion sub-channels remain). Outputting the individual console sound channels of one instance: Game Boy → 8 outputs (a stereo pair per channel, via a tracked SameBoy tap), NES → 5 mono stems or the hardware "stereo-mod" pins (via a `NesSoundMixer` edit). One router/mode-driven host seam (`channelLayout()` + a lane-counted `finishBlock`), the `AudioRouting::ChannelSplit` / `PinSplit` / `StereoPinSplit` plugin options (menu rows `Channels` / `Pins` / `Stereo Pins`; a stereo stream takes a lane pair, a mono one a single lane, so the NES fits 8 outputs - except `Stereo Pins`, which spends a pair per pin so each is its own DAW track), and a `renderAudioPerChannel` CLI RPC feeding multichannel / per-stereo / per-mono WAV export. |
 | [11-ui-rendering.md](11-ui-rendering.md) | **Built.** Rendering a system to WAV from the `System > Render` menu as a background job — a fresh instance built from a *copy* of the live SRAM/savestate (never the running core). A shared `src/render/` library the CLI `render` command and the worker both run; a bare-QuickJS `RenderHost` (own `Engine`, no txiki) running a global-code worker bundle; a `RenderJobRegistry` of per-job threads (concurrent, cancellable, survives editor close); and the `__rp_*Render` hooks + tile elapsed-duration/cancel badge. |
 | [12-dynamic-parameters.md](12-dynamic-parameters.md) | **Built** (CLAP + VST3; other formats keep their construct-time names). Per-ROM named DAW automation lanes mapped to mGB / BlipToaster MIDI CCs: the fixed-pool / mutable-descriptor contract the two formats actually permit, the DPF fork's `requestParameterInfoUpdate()` + re-declare-and-diff behind an opt-in macro, the plugin's CC slot pool and its `__rp_parameterMapJson` seam, and the real-Reaper check that proves a host acts on the flag. |
+| [13-subsystems.md](13-subsystems.md) | **The index of everything else.** One short entry each for the subsystems the docs above do not cover: the common tracker interface (`src/tracker/`), risa, smsggdj, the LSDj HD player, the Everdrive N8 hardware bridge, Launchpad, the controller role, the pico firmware, `retroplug-sdl`, and the Node addon. What each is, where it lives, and which command proves a change to it. |
 
 ## Reading order
 
@@ -47,6 +48,8 @@ expansion sub-channels, the 4-byte MIDI-out cap) tracked in
   [02](02-native-host.md) / [03](03-ts-layer.md) for the side you're working on.
 - **Changing code and want to verify it?** Go straight to [06-build-test.md](06-build-test.md).
 - **Working on the port itself?** [07-remaining-work.md](07-remaining-work.md) is the map of what's left.
+- **Looking for a subsystem you can't find above?** [13-subsystems.md](13-subsystems.md) - trackers,
+  hardware bridges, and the non-plugin hosts.
 
 ## Provenance
 
