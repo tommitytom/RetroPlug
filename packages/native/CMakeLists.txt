@@ -1,11 +1,25 @@
-# retroplug-host: the native host for the TS app.
+# packages/native — the C++ side of RetroPlug: two static libs, the hosts built on them, the DPF
+# plugin, and the test binaries.
 #
-# Exposes the Backend to a TS bundle over
-# globalThis[Symbol.for("plugin")].__rpcSend, and runs the test harness. The
-# fs/config/codec half is std::filesystem + miniz; the emulator half is a real SameBoySystem
-# in a real Project. It links `retroplug-core` (Project + SystemBase + SameBoy/Mesen, plus
-# transitive rpcpp + miniz and the packages/native/src include) — so no longer emulator-free.
-# Output binary lands in build/bin/.
+# This file holds the libraries and the straightforward executables. The parts that are large or
+# self-contained are include()d from cmake/ so this stays readable top to bottom:
+#
+#   cmake/test-binary.cmake   retroplug_add_test_binary() — the shape every test binary shares
+#   cmake/node-addon.cmake    retroplug-node, the N-API host (opt-in)
+#   cmake/bundles.cmake       the embedded control-plane + React-UI bytecode
+#   cmake/deps.cmake          rtmidi / serial / portaudio, and the retroplug-cli N8 facets
+#   cmake/plugin.cmake        dpf_add_plugin + per-platform packaging
+#   cmake/tests.cmake         the ten native test binaries
+#   cmake/warnings.cmake      /W4 /WX on our own targets (MSVC)
+#
+# They are include()d, not add_subdirectory()'d, which matters: include() keeps the CURRENT
+# directory scope, so ${CMAKE_CURRENT_SOURCE_DIR} still resolves to packages/native/ inside them and
+# every relative source path reads as it did when it was inline. add_subdirectory would open a child
+# scope, re-root that variable, and scope target properties differently.
+#
+# ORDER IS SEMANTIC. CMake runs top to bottom and a target must exist before anything modifies it —
+# cmake/deps.cmake calls target_sources() on retroplug-cli, so it has to come after retroplug-cli is
+# defined. Move an include() and the failure is a confusing "unknown target", not a clear one.
 
 # quickjs.h's directory. Spelled out at six call sites before; it is deep enough that a typo in one
 # of them would fail confusingly, and short enough here to read.
@@ -284,55 +298,8 @@ set_target_properties(retroplug-cli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
-# --- retroplug.node: the Node-API host ---------------------------------------------------------------
-# The fourth host over the same backend service graph (plugin / CLI / render worker / Node), swapping the
-# QuickJS codec for an N-API one (node/NodeCodec.hpp) so packages/retroplug/src — which has no txiki
-# coupling — runs unmodified on Node. __rpcSend stays SYNCHRONOUS, which an in-process addon can honour
-# and an out-of-process stdio client cannot.
-#
-# OFF by default: it needs Node's N-API headers, which a build box need not have. Turn it on through the
-# usual entry point, which passes -D straight to the configure:
-#     ./build.sh -DRETROPLUG_NODE_ADDON=ON
-# Linux/macOS for now (Windows wants an import lib from the node distribution).
-option(RETROPLUG_NODE_ADDON "Build the Node-API addon host (retroplug.node)" OFF)
-if(RETROPLUG_NODE_ADDON)
-    # nvm / homebrew / any non-system node keeps its headers next to the binary, not in /usr/include,
-    # so ask the node on PATH where it lives before falling back to the system spellings.
-    find_program(NODE_EXECUTABLE NAMES node nodejs)
-    if(NODE_EXECUTABLE)
-        get_filename_component(_node_bin "${NODE_EXECUTABLE}" REALPATH)
-        get_filename_component(_node_prefix "${_node_bin}" DIRECTORY)
-        get_filename_component(_node_prefix "${_node_prefix}" DIRECTORY)
-    endif()
-    find_path(NODE_API_INCLUDE_DIR node_api.h
-        HINTS ${NODE_INCLUDE_DIR} ${_node_prefix}/include/node
-              /usr/include/node /usr/local/include/node
-    )
-    if(NOT NODE_API_INCLUDE_DIR)
-        message(FATAL_ERROR
-            "RETROPLUG_NODE_ADDON=ON but node_api.h was not found. "
-            "Install the Node headers or pass -DNODE_INCLUDE_DIR=<dir containing node_api.h>.")
-    endif()
-
-    add_library(retroplug-node MODULE node/binding.cpp)
-    target_include_directories(retroplug-node PRIVATE
-        ${NODE_API_INCLUDE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/node
-    )
-    target_link_libraries(retroplug-node PRIVATE retroplug-backend)
-    set_target_properties(retroplug-node PROPERTIES
-        CXX_STANDARD 20
-        CXX_STANDARD_REQUIRED ON
-        PREFIX ""                 # `retroplug.node`, not `libretroplug.node`
-        OUTPUT_NAME "retroplug"
-        SUFFIX ".node"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/node"
-    )
-    if(APPLE)
-        # The napi_* symbols are resolved by the loading node process, not linked here.
-        target_link_options(retroplug-node PRIVATE -undefined dynamic_lookup)
-    endif()
-endif()
+# The Node-API addon host (opt-in: -DRETROPLUG_NODE_ADDON=ON).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/node-addon.cmake)
 
 # The example sessions, esbuild-bundled to runnable .js (with the DSP kernel injected as
 # __DSP_KERNEL_BUNDLE__, mirroring the cp-bundle recipe). A normal build yields both the binary and demos
@@ -369,116 +336,16 @@ add_custom_target(retroplug-example-session ALL
     COMMENT "Bundling CLI example sessions (esbuild)"
     VERBATIM)
 
-# --- control-plane bundle: pluginControlPlane.ts → bytecode C array (mirrors ui-regenerate). The DPF
-# plugin evals this at construct to compose the stores + DSP kernel. Derived; never committed.
-set(CP_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/cp-bundle.js")
-set(CP_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/cp-bundle_data.c")
-set_source_files_properties(${CP_BUNDLE_C} PROPERTIES GENERATED TRUE)  # produced before the plugin compiles
+# The embedded control-plane + React-UI bytecode bundles.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bundles.cmake)
 
-add_custom_target(retroplug-cp-bundle ALL
-    BYPRODUCTS ${CP_BUNDLE_JS} ${CP_BUNDLE_C} ${CP_BUNDLE_C}.new
-    COMMAND ${NODE_EXECUTABLE}
-            ${CMAKE_SOURCE_DIR}/tools/build-controlplane.js ${CP_BUNDLE_JS}
-    COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${CP_BUNDLE_C}.new ${CP_BUNDLE_JS}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CP_BUNDLE_C}.new ${CP_BUNDLE_C}
-    COMMENT "Regenerating control-plane bundle (esbuild + bytecode)"
-    VERBATIM)
-# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
-# path (not a target) — the custom command's DEPENDS already tracks it.
-if(TARGET ${_TJSC_DEP})
-  add_dependencies(retroplug-cp-bundle ${_TJSC_DEP})
-endif()
-
-# The UI bundle: main.tsx → bytecode C array (React entry via build-ui.js). Derived; never
-# committed. Defined BEFORE the plugin so its FILES_UI can embed it; the UI-test binary below reuses the
-# same vars/target.
-set(UI_BUNDLE_JS "${CMAKE_BINARY_DIR}/native/ui-bundle.js")
-set(UI_BUNDLE_C  "${CMAKE_BINARY_DIR}/native/ui-bundle_data.c")
-set_source_files_properties(${UI_BUNDLE_C} PROPERTIES GENERATED TRUE)
-
-add_custom_target(retroplug-ui-bundle
-    BYPRODUCTS ${UI_BUNDLE_JS} ${UI_BUNDLE_C} ${UI_BUNDLE_C}.new
-    COMMAND ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/build-ui.js
-            ${UI_BUNDLE_JS} ${UI_BUNDLE_JS}.d
-            ${CMAKE_SOURCE_DIR}/packages/retroplug/ui/main.tsx
-    COMMAND ${_TJSC_COMMAND} -m -s -p rp_ -o ${UI_BUNDLE_C}.new ${UI_BUNDLE_JS}
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${UI_BUNDLE_C}.new ${UI_BUNDLE_C}
-    COMMENT "Regenerating UI bundle (esbuild + bytecode)"
-    VERBATIM)
-# Order against the in-tree tjsc target only; a cross-build's -DTJSC_EXECUTABLE is a host file
-# path (not a target) — the custom command's DEPENDS already tracks it.
-if(TARGET ${_TJSC_DEP})
-  add_dependencies(retroplug-ui-bundle ${_TJSC_DEP})
-endif()
+# rtmidi / serial / portaudio, and the retroplug-cli N8 transport facets built on them.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/deps.cmake)
 
 # --- retroplug-sdl: the SDL2 standalone for framebuffer handhelds (Anbernic / muOS) + plain Linux.
 # muOS has no X11 (fbdev + Mali EGL only), so the DPF/pugl JACK standalone can't run there. This host
 # reuses the WHOLE core — retroplug-backend (Engine + cores + txiki) + lvgl-js-native (the LVGL/React
 # bridge) + the SAME embedded cp/ui bundles the plugin links — and provides its own SDL2 window / audio /
-# input shell (sdl/main.cpp), bypassing DPF entirely. Modeled on retroplug-cli + retroplug-ui-test.
-# RtMidi (deps/rtmidi submodule) — cross-platform MIDI I/O for live-MIDI hosts: the SDL standalone and the
-# CLI n8-bridge (the plugin gets MIDI from its DAW host instead). Static; ALSA on Linux (JACK off — the
-# handheld path is ALSA/PipeWire); RtMidi's own CMake selects the platform API + link libs. EXCLUDE_FROM_ALL
-# so the `rtmidi` target is built only because a target links it (retroplug-sdl, or retroplug-cli when
-# RETROPLUG_N8_BRIDGE is ON — see below).
-set(RTMIDI_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(RTMIDI_API_JACK OFF CACHE BOOL "" FORCE)
-set(RTMIDI_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-add_subdirectory(${CMAKE_SOURCE_DIR}/deps/rtmidi ${CMAKE_BINARY_DIR}/rtmidi EXCLUDE_FROM_ALL)
-retroplug_silence_dep_warnings(rtmidi)
-
-# --- retroplug-cli N8 transport facets: serial + live MIDI -> the TS N8 stack ------------------------
-# The N8 tools (n8-load / n8-bridge / n8-sync) are all TS now (packages/retroplug/src/n8 + cli/sessions/):
-# native only provides the thin transport facets they ride on - the serial byte transport (SerialRpcService
-# over wjwwood/serial) and the live-MIDI-input facet (MidiRpcService over RtMidi). No C++ Edio/menu/translator
-# here anymore (the TS edio.ts + risaSyncTranslator.ts replace them). ON by default; turn OFF to keep
-# retroplug-cli (and thus the CI `all` build) free of the RtMidi/serial deps (ALSA dev headers on Linux) -
-# the N8 tools then just fail to find a device.
-option(RETROPLUG_N8_BRIDGE "Build the retroplug-cli N8 transport facets (links RtMidi + serial)" ON)
-if(RETROPLUG_N8_BRIDGE)
-    target_sources(retroplug-cli PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/SerialRpcService.cpp   # serial byte-transport RPC facet (TS N8 seam)
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiIo.cpp          # RtMidi in/out seam (shared with retroplug-sdl)
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/MidiRpcService.cpp) # live-MIDI-input RPC facet (TS bridge seam)
-    target_link_libraries(retroplug-cli PRIVATE serial rtmidi)
-    target_compile_definitions(retroplug-cli PRIVATE RETROPLUG_N8_BRIDGE)
-endif()
-
-# PortAudio (deps/portaudio submodule, `pipewire` branch) — the standalone's audio backend, replacing the SDL
-# audio device/callback for better latency + device handling than SDL's ALSA-compat path (the plugin uses its
-# DAW host's audio, so only retroplug-sdl needs this). Static. The `portaudio` CMake auto-selects ALSA (dev
-# present via rtmidi), the native PipeWire host API where libpipewire-0.3 is found, and JACK where jack dev is
-# found. The Settings > Audio > Driver picker lists whatever host APIs end up compiled in here. EXCLUDE_FROM_ALL
-# so `portaudio` builds only because retroplug-sdl links it.
-set(PA_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(PA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(PA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-# We want PipeWire (native) + ALSA (fallback) + JACK. PortAudio auto-enables every host API whose dev libs it
-# finds, and libsdl2-dev drags in libpulse-dev + libsndio-dev — so without these the binary ends up NEEDing
-# libpulse / libsndio.so.7, which the muOS device doesn't ship (it failed to load there). Force them off.
-set(PA_USE_SNDIO OFF CACHE BOOL "" FORCE)
-set(PA_USE_PULSEAUDIO OFF CACHE BOOL "" FORCE)
-set(PA_USE_OSS OFF CACHE BOOL "" FORCE)
-# Load the three Linux backends with dlopen rather than linking them, so none of libasound.so.2 /
-# libpipewire-0.3.so.0 / libjack.so.0 is a DT_NEEDED entry on retroplug-sdl. Compiling a backend in no longer
-# means the binary refuses to START where that lib is absent (a PipeWire-less desktop, a JACK-less box, the
-# muOS handheld); a missing lib now just omits that one host API from the Settings > Audio > Driver picker and
-# leaves the rest working (the backends' *_Initialize soft-fail: *hostApi=NULL + paNoError, which Pa_Initialize
-# skips). This is the runtime half of the same problem the PA_USE_* force-offs above solve at compile time, and
-# it's why those are still needed: dlopen only helps for backends we actually want. libSDL2 stays linked — it's
-# the window/input shell.
-set(PA_ALSA_DYNAMIC ON CACHE BOOL "" FORCE)
-set(PA_PIPEWIRE_DYNAMIC ON CACHE BOOL "" FORCE)
-set(PA_JACK_DYNAMIC ON CACHE BOOL "" FORCE)
-# With no launch penalty left, JACK needs no opt-in flag: `unset` clears any stale cached PA_USE_JACK so the
-# fork's cmake_dependent_option(PA_USE_JACK ... ON JACK_FOUND OFF) re-decides on JACK_FOUND — compiled in
-# wherever jack dev headers are present, and absent by construction where they aren't (the arm sysroot has
-# none, so the handheld build is simply JACK-less, and it launches fine regardless).
-unset(PA_USE_JACK CACHE)
-add_subdirectory(${CMAKE_SOURCE_DIR}/deps/portaudio ${CMAKE_BINARY_DIR}/portaudio EXCLUDE_FROM_ALL)
-retroplug_silence_dep_warnings(portaudio)
-
 # Part of the default `all` target, so build.sh builds it and CI covers it. Its deps are in-tree submodules
 # (rtmidi + portaudio) or already required (SDL2 at root scope for gamepad input); PortAudio adds no new
 # system lib to build — ALSA is present via rtmidi, and libpipewire-0.3 (if installed) just upgrades it to the
@@ -541,211 +408,8 @@ set_target_properties(retroplug-sdl PROPERTIES
     CXX_STANDARD_REQUIRED ON
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-# --- retroplug.{vst3,clap} + the jack standalone: the DPF plugin hosting the
-# Engine + control plane, with the React UI on the shared LVGL editor widget. Distinct identity from the
-# legacy `retroplug` (they coexist).
-dpf_add_plugin(retroplug
-    TARGETS clap vst3 vst2 au jack  # au is macOS-only (DPF gates it to APPLE; a no-op elsewhere)
-    USE_FILE_BROWSER                    # DPF's own (helper-free) file dialog is the fallback when no pfd helper
-                                        # exists; also auto-enables DGL_USE_FILE_DROP for drag-and-drop (uiFileDropped)
-    FILES_DSP
-        plugin/PluginDSP.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Link.cpp            # host serial thread -> physical N8 (streaming)
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/Edio.cpp             # N8 Pro serial client
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/WjwwoodSerialPort.cpp # serial-port factory + listSerialPorts
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Host.cpp           # shared N8 link + config + n8.cfg
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Hooks.cpp          # binds the __rp_*N8* config + SD-op hooks
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8Menu.cpp           # on-device menu (*t/*n/*s) for SD ops
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/n8/N8SdWorker.cpp       # background worker: ROM upload / SRAM dump+restore
-        ${CP_BUNDLE_C}                # the embedded control-plane bytecode (rp_cp_bundle)
-    FILES_UI
-        plugin/PluginUI.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/host/input/GamepadManager.cpp  # SDL gamepad poll (shared UI-thread input)
-        ${UI_BUNDLE_C}                # the embedded React UI bytecode (rp_ui_bundle)
-        ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp)  # the generic DPF↔LVGL base widget
-
-# plugin/ FIRST so DPF resolves OUR DistrhoPluginInfo.h ahead of DPF's own default. The `src` root
-# (for "host/input/GamepadManager.hpp") arrives transitively PUBLIC via retroplug-backend.
-# dpf-widgets/generic resolves "LVGL.hpp".
-target_include_directories(retroplug BEFORE PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/plugin)
-target_include_directories(retroplug PUBLIC ${DPFJS_PATH}/deps/dpf-widgets/generic)
-# portable-file-dialogs (header-only): the OS-native picker backing __rp_openFileBrowser (via NativeFileDialog),
-# shared with retroplug-sdl. No link libs on Linux/macOS; Windows pulls comdlg32/ole32 through its header.
-target_include_directories(retroplug PUBLIC ${CMAKE_SOURCE_DIR}/deps/portable-file-dialogs)
-
-target_link_libraries(retroplug PUBLIC
-    retroplug-backend  # Engine/Backend + txiki host + (transitively) the cores + rpcpp
-    lvgl-js-native                # LVGL + LvglJsEngine + lv_binding_js + lodepng (the editor)
-    dpfjs::core                   # DPF Plugin + UI base
-    serial)                       # wjwwood/serial -> physical Everdrive N8 Pro (Settings > N8, all formats)
-
-target_compile_definitions(retroplug PUBLIC DPFJS_ENV_PREFIX="RETROPLUG_")
-
-# The embedded bundles must exist before the plugin compiles them.
-add_dependencies(retroplug retroplug-cp-bundle retroplug-ui-bundle)
-
-# Windows only: the standalone (retroplug-jack, OUTPUT_NAME "retroplug") exports
-# symbols, so link.exe emits an import library "retroplug.lib" — the same name,
-# in the same dir, as DPF's base plugin library "retroplug.lib" that the exe also
-# links, tripping LNK1149 ("output filename matches input filename"). Executables
-# never emit import libraries on Linux/macOS, so this is Windows-specific. Give
-# the standalone's implib a distinct name; nothing links against it.
-if(WIN32 AND TARGET retroplug-jack)
-    # Product-cased exe (RetroPlug.exe) to match RetroPlug.app + the branded plugin
-    # bundles. Keep the implib named retroplug-jack: with OUTPUT_NAME "RetroPlug"
-    # link.exe would emit RetroPlug.lib, which on the case-insensitive Windows FS
-    # still collides with DPF's base "retroplug.lib" (LNK1149) — nothing links this
-    # implib anyway.
-    set_target_properties(retroplug-jack PROPERTIES
-        OUTPUT_NAME "RetroPlug"
-        ARCHIVE_OUTPUT_NAME retroplug-jack)
-
-    # No console window when the standalone is launched directly. DPF's main() already attaches to a
-    # parent console when there is one (AttachConsole(ATTACH_PARENT_PROCESS) in DistrhoPluginJACK.cpp),
-    # but the exe links as a CONSOLE-subsystem app, so Windows always spawns a console. Build it as a
-    # GUI-subsystem app instead: double-clicking shows no console, while running it from a terminal still
-    # prints there (DPF's attach picks up the launching shell) — so debugging via `retroplug.exe` in a
-    # console still works. main() (not WinMain) stays the entry via /ENTRY:mainCRTStartup.
-    if(MSVC)
-        target_link_options(retroplug-jack PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
-    endif()
-elseif(APPLE AND TARGET retroplug-jack)
-    # No terminal window when the standalone is launched from Finder. DPF builds the JACK standalone as a
-    # bare Mach-O executable (bin/retroplug); double-clicking a bare executable in Finder opens it inside
-    # Terminal.app — the macOS analogue of the Windows console popup. Package it as a .app bundle instead:
-    # Finder / `open` launches it as a proper GUI app with no terminal, while running the binary inside the
-    # bundle (bin/RetroPlug.app/Contents/MacOS/RetroPlug) from a shell still prints stdout/stderr there — so
-    # console debugging still works. Same trade-off as the Windows /SUBSYSTEM:WINDOWS build above. The UI is
-    # compiled into the binary (rp_ui_bundle), so the bundle needs no external Resources.
-    #
-    # OUTPUT_NAME is the bundle's on-disk name, which is what Finder / the Applications folder display — so
-    # override DPF's lowercase "retroplug" to the product-cased "RetroPlug" (RetroPlug.app). This runs after
-    # dpf_add_plugin, so it wins. CFBundleExecutable is derived from OUTPUT_NAME automatically. (The plugin
-    # bundle DIRS are branded separately, post-build, further down — hosts key on the plugin's VST3 class /
-    # CLAP id / AU codes, not the bundle filename, so that rename is purely cosmetic.)
-    set_target_properties(retroplug-jack PROPERTIES
-        MACOSX_BUNDLE TRUE
-        OUTPUT_NAME "RetroPlug"
-        MACOSX_BUNDLE_BUNDLE_NAME "RetroPlug"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "net.tommitytom.retroplug")  # matches DISTRHO_PLUGIN_CLAP_ID + the AU bundle
-endif()
-
-# Windows: the single-file plugin outputs (CLAP + VST2 are plain modules there,
-# not bundle dirs) take the branded name straight from OUTPUT_NAME → RetroPlug.clap
-# / RetroPlug.dll. VST3 is a bundle DIR even on Windows, so it's branded via the
-# post-build rename below instead. Linux keeps the lowercase Unix names.
-if(WIN32)
-    if(TARGET retroplug-clap)
-        set_target_properties(retroplug-clap PROPERTIES OUTPUT_NAME "RetroPlug")  # RetroPlug.clap
-    endif()
-    if(TARGET retroplug-vst2)
-        set_target_properties(retroplug-vst2 PROPERTIES OUTPUT_NAME "RetroPlug")  # RetroPlug.dll
-    endif()
-endif()
-
-# macOS: give the vst3/clap/vst bundles our CFBundleIdentifier. DPF generates the AU (.component) Info.plist
-# via DistrhoPluginExport, which correctly uses DISTRHO_PLUGIN_CLAP_ID (net.tommitytom.retroplug); but the
-# vst3/clap/vst bundles are configure_file'd from DPF's shared template, which hardcodes the framework
-# author's placeholder domain (studio.kx.distrho.<name>). Rather than fork the generic template, rewrite the
-# identifier post-build so every RetroPlug bundle is consistent under our domain. Keep this value in sync
-# with DISTRHO_PLUGIN_CLAP_ID (plugin/DistrhoPluginInfo.h) — the single source of truth for the AU + CLAP id.
-if(APPLE)
-    set(_rp_bundle_id "net.tommitytom.retroplug")
-    # target -> on-disk bundle dir (the vst2 target's bundle extension is .vst, not .vst2)
-    foreach(_pair "retroplug-vst3:retroplug.vst3" "retroplug-clap:retroplug.clap" "retroplug-vst2:retroplug.vst")
-        string(REPLACE ":" ";" _p "${_pair}")
-        list(GET _p 0 _tgt)
-        list(GET _p 1 _bundle)
-        if(TARGET ${_tgt})
-            add_custom_command(TARGET ${_tgt} POST_BUILD
-                COMMAND /usr/bin/plutil -replace CFBundleIdentifier -string "${_rp_bundle_id}"
-                        "${CMAKE_BINARY_DIR}/bin/${_bundle}/Contents/Info.plist"
-                COMMENT "Setting CFBundleIdentifier=${_rp_bundle_id} on ${_bundle}"
-                VERBATIM)
-        endif()
-    endforeach()
-endif()
-
-# macOS distribution: embed SDL2.framework into every SDL2-linked bundle.
-# ---------------------------------------------------------------------------
-# The framework build (RETROPLUG_SDL2_FRAMEWORK) links SDL2 by its install name
-# @rpath/SDL2.framework/Versions/A/SDL2 (GamepadManager + backend pull SDL2 into
-# the standalone AND every plugin format). Nothing on an end-user machine
-# provides that framework, so copy the (universal) framework into each bundle's
-# Contents/Frameworks and add an @loader_path/../Frameworks rpath to resolve it.
-# The embedded framework is re-signed with our Developer ID by the CI codesign
-# step (.github/workflows/release.yml). retroplug-cli links no SDL2, so it is
-# excluded. The dev build (pkg-config / Homebrew SDL2) needs none of this — the
-# machine already has SDL2 — so this is gated on RETROPLUG_SDL2_FRAMEWORK.
-if(APPLE AND RETROPLUG_SDL2_FRAMEWORK)
-    # ${SDL2_FRAMEWORK} is the .framework directory (find_library return, root
-    # CMakeLists). target -> on-disk bundle dir (vst2's extension is .vst).
-    foreach(_pair "retroplug-jack:RetroPlug.app" "retroplug-vst3:retroplug.vst3"
-                  "retroplug-clap:retroplug.clap" "retroplug-vst2:retroplug.vst"
-                  "retroplug-au:retroplug.component")
-        string(REPLACE ":" ";" _p "${_pair}")
-        list(GET _p 0 _tgt)
-        list(GET _p 1 _bundle)
-        if(TARGET ${_tgt})
-            # Resolve @rpath/SDL2.framework/... against the embedded copy. dyld
-            # tries each rpath in turn, so the build-machine's absolute framework
-            # rpath (added automatically by CMake) still works locally.
-            set_property(TARGET ${_tgt} APPEND PROPERTY
-                BUILD_RPATH "@loader_path/../Frameworks")
-            # cp -R preserves the framework's Versions/Current symlink structure
-            # (CMake's copy_directory would flatten it and break codesign).
-            add_custom_command(TARGET ${_tgt} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E rm -rf
-                        "${CMAKE_BINARY_DIR}/bin/${_bundle}/Contents/Frameworks/SDL2.framework"
-                COMMAND ${CMAKE_COMMAND} -E make_directory
-                        "${CMAKE_BINARY_DIR}/bin/${_bundle}/Contents/Frameworks"
-                COMMAND /bin/cp -R "${SDL2_FRAMEWORK}"
-                        "${CMAKE_BINARY_DIR}/bin/${_bundle}/Contents/Frameworks/"
-                COMMENT "Embedding SDL2.framework into ${_bundle}"
-                VERBATIM)
-        endif()
-    endforeach()
-endif()
-
-# Brand the on-disk plugin bundle NAMES to the product casing on the GUI platforms
-# (macOS + Windows — both case-insensitive filesystems). DPF hardcodes the lowercase
-# plugin name into each bundle's DIRECTORY path (bin/retroplug.vst3/…), which
-# OUTPUT_NAME can't override, so rename the outer directory post-build to RetroPlug.*.
-# Only the directory name changes — the inner binary + Info.plist (CFBundleExecutable)
-# stay "retroplug", so the code-signature / notarization seal (which covers Contents/,
-# not the directory name) and host loading (via CFBundleExecutable) are unaffected.
-# `cmake -E rename` is an idempotent no-op on later builds (source and dest are the
-# same inode on a case-insensitive FS). Linux stays lowercase (Unix convention +
-# case-sensitive FS); its single-file CLAP/VST2 — and Windows' — are branded via
-# OUTPUT_NAME above, so only the bundle DIRS need renaming here.
-if(APPLE OR WIN32)
-    set(_rp_renames "")
-    if(APPLE)
-        list(APPEND _rp_renames
-            "retroplug-vst3:retroplug.vst3:RetroPlug.vst3"
-            "retroplug-clap:retroplug.clap:RetroPlug.clap"
-            "retroplug-au:retroplug.component:RetroPlug.component"
-            "retroplug-vst2:retroplug.vst:RetroPlug.vst")
-    elseif(WIN32)
-        list(APPEND _rp_renames "retroplug-vst3:retroplug.vst3:RetroPlug.vst3")
-    endif()
-    foreach(_triple ${_rp_renames})
-        string(REPLACE ":" ";" _t "${_triple}")
-        list(GET _t 0 _tgt)
-        list(GET _t 1 _from)
-        list(GET _t 2 _to)
-        if(TARGET ${_tgt})
-            # Registered after the CFBundleIdentifier + SDL2-embed POST_BUILD steps
-            # above, so those run against the lowercase dir first, then this renames.
-            add_custom_command(TARGET ${_tgt} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E rename
-                        "${CMAKE_BINARY_DIR}/bin/${_from}"
-                        "${CMAKE_BINARY_DIR}/bin/${_to}"
-                COMMENT "Branding bundle name: ${_from} -> ${_to}"
-                VERBATIM)
-        endif()
-    endforeach()
-endif()
+# The DPF plugin (clap/vst3/vst2/au/jack) + per-platform packaging.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/plugin.cmake)
 
 # --- UI test harness -------------------------------------------------------------------------------
 # retroplug-ui-test boots the React UI on a headless software LVGL display
@@ -777,217 +441,8 @@ set_target_properties(retroplug-ui-test PROPERTIES
 # The embedded bundle must exist before the test binary compiles it.
 add_dependencies(retroplug-ui-test retroplug-ui-bundle)
 
-# --- native test binaries ---------------------------------------------------------------------------
-# Ten Catch2 binaries, all EXCLUDE_FROM_ALL and built BY NAME (nothing reads BUILD_TESTING):
-# `pnpm test:plugin` builds and runs eight of them, `pnpm test:n8` the ninth, and the tenth needs a
-# real console on a USB port. The shared shape lives in retroplug_add_test_binary() — see
-# cmake/test-binary.cmake; what is written out here is only what differs per test.
+# The ten native test binaries (EXCLUDE_FROM_ALL; built by name).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests.cmake)
 
-# Pure-C++ Catch2 checks for plugin/ mechanisms that need real JSContexts but no LVGL/txiki host —
-# currently the per-context window-hook routing (ContextTargets.hpp) and the last-good project-state
-# cache (LastGoodState.hpp). Links bare quickjs (qjs) + Catch2.
-retroplug_add_test_binary(
-    NAME     retroplug-plugin-test
-    SOURCES  test/plugin/ContextTargets.test.cpp
-             test/plugin/LastGoodState.test.cpp
-    LIBS     qjs                                        # bare quickjs: JS_* + ArrayBuffer / CFunctionData
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/plugin         # ContextTargets.hpp
-             ${RP_QUICKJS_INCLUDE})                     # quickjs.h
-
-# Guards the dynamic-parameter diff classifier in the DPF fork (PluginExporter::reinitParameters —
-# spec/12-dynamic-parameters.md): which parameter fields a LIVE plugin may re-declare, and that
-# `hints`/`ranges` are never written behind the audio thread's back. It builds NO plugin format — just
-# DPF's format-neutral core (DistrhoPlugin.cpp; the rest of what it needs is header-only) plus a toy
-# plugin in the test — so its own test/plugin/dynparams/DistrhoPluginInfo.h is ordered first on the
-# include path to shadow the shipped one.
-retroplug_add_test_binary(
-    NAME     retroplug-dynparams-test
-    SOURCES  test/plugin/DynamicParameters.test.cpp
-             ${DPFJS_PATH}/deps/dpf/distrho/src/DistrhoPlugin.cpp
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/test/plugin/dynparams   # the test's DistrhoPluginInfo.h — must come first
-             ${DPFJS_PATH}/deps/dpf/distrho)                     # DistrhoPlugin.hpp + src/DistrhoPluginInternal.hpp
-
-# Guards TjsHostRuntime::init's class-id counter sync (the plugin-editor blank-UI fix); it needs the
-# real txiki host, so it links retroplug-backend.
-retroplug_add_test_binary(
-    NAME     retroplug-classid-test
-    SOURCES  test/plugin/ClassIdReserve.test.cpp
-    LIBS     retroplug-backend                          # TjsHostRuntime (+ txiki, quickjs) + ClassIdSpace.hpp
-    INCLUDES ${RP_QUICKJS_INCLUDE})                     # quickjs.h
-
-# Guards the per-channel audio path: the host seam (runUnit stream loop + AudioRouter::streamCount +
-# lane-counted finishBlock, over a fake SystemBase) AND the real SameBoy per-channel tap
-# (ChannelStreams + SameBoyStems), plus the ChannelSplit plugin router + its Engine gating
-# (spec/10 step 4). Links retroplug-backend, which PUBLIC-brings retroplug-core → BlockRunner +
-# routers + the sameboy core, so the Engine gating test can build an Engine.
-#
-# The ROM defines: mGB's boot chime supplies real signal for the SameBoyStems + ChannelSplit fidelity
-# tests, and a ch1 note in the BlipToaster ROM does the same for the NES pin test. smsggdj ships in
-# both cartridge shapes because the SMS and GG builds differ in visible geometry and video config, so
-# both are needed to guard the overscan setup. resources/ never ships (release.yml packages build/bin
-# plus the license bundle), so these are test-only.
-retroplug_add_test_binary(
-    NAME     retroplug-audio-test
-    SOURCES  test/audio/ChannelStreams.test.cpp
-             test/audio/SameBoyStems.test.cpp
-             test/audio/ChannelSplit.test.cpp
-             test/audio/EngineChannelSplit.test.cpp
-             test/audio/EngineSampleRate.test.cpp      # host sample-rate change re-rates live cores
-             test/audio/SameBoySerialTiming.test.cpp   # host MIDI-in keeps its intra-block sample offset over serial
-             test/audio/NesApuLatency.test.cpp         # runtime NES APU flush window (live apuLatencyMs knob)
-             test/audio/NesN8FifoTiming.test.cpp       # host MIDI-in keeps its intra-block offset into the N8 FIFO
-             test/audio/NesEverdriveFifo.test.cpp      # Edio status protocol leaves no stale byte to desync MIDI parsing
-             test/audio/NesStems.test.cpp              # NES stereo-mod pins re-sum to the mix (spec/10 step 5)
-             test/audio/NesSplitRouting.test.cpp       # NES-in-plugin: PinSplit/ChannelSplit arm the tap live + mono-pack
-             test/audio/SmsAudio.test.cpp              # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
-             test/audio/GbaFirmware.test.cpp           # each GBA system loads ITS bios, not whichever landed last
-             test/audio/GbaAudio.test.cpp              # the GBA block triad terminates and fills a block
-             test/audio/MesenBlockOps.test.cpp         # the shared drain tail blanks a short ring
-             test/audio/NesTeardown.test.cpp           # the NES twin of SMS's construct/destruct guard
-             test/audio/SameBoyModels.test.cpp         # every SameBoyModel (incl. SGB variants) boots + renders
-    LIBS     retroplug-backend                         # Engine + retroplug-core (SystemBase + BlockRunner + routers + sameboy)
-    INCLUDES ${RP_QUICKJS_INCLUDE}                     # quickjs.h (via Engine.hpp → DspRuntime.hpp)
-    DEFS     RP_MGB_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/mGB.gb"
-             RP_BLIPTOASTER_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/bliptoaster.nes"
-             RP_SMS_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.sms"
-             RP_GG_ROM_PATH="${CMAKE_SOURCE_DIR}/resources/roms/smsggdj_v0_45.gg")
-
-# Guards the native file watcher (NativeFileWatcher over efsw): config.json + bindings/ recursive
-# detection, registered-ROM parent-dir watches, and the unregistered-file filter.
-retroplug_add_test_binary(
-    NAME     retroplug-watcher-test
-    SOURCES  test/watcher/NativeFileWatcher.test.cpp
-    LIBS     retroplug-backend)                        # NativeFileWatcher + efsw-static
-
-# Guards the MIDI device-selection policy (Settings > MIDI): the pure, RtMidi-free helpers in
-# MidiIo.hpp (hardwarePortIndices / matchPortIndex) that decide which hardware ports to open for a
-# given selection. Header-only helpers → links just Catch2 (no RtMidi, no backend).
-retroplug_add_test_binary(
-    NAME     retroplug-midi-test
-    SOURCES  test/midi/MidiPortSelect.test.cpp
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/input/MidiIo.hpp (pure helpers; RtMidi only forward-declared)
-
-# Guards the control-surface device link (the instance menu's Launchpad submenu): LaunchpadLink's
-# connect/disconnect lifecycle, the two rings (a message received reaching the audio-thread drain; an
-# oversized LED message dropped rather than overrunning its slot), the FAREWELL replayed on both
-# disconnect and destruct — Programmer mode locks the device's front panel, so skipping that strands
-# the user's hardware — and LaunchpadHost's launchpad.cfg round-trip + reserved-port reporting. It
-# also guards LaunchpadScanner, the device-inquiry port scan that decides whether the submenu appears
-# at all: the probe reaching every output, a reply tagged with the PAIR that produced it, and a port
-# that will not open being stepped over rather than failing the scan. Compiles all three against a
-# capturing fake IMidiPort: no rtmidi, no MIDI system, no hardware.
-retroplug_add_test_binary(
-    NAME     retroplug-launchpad-test
-    SOURCES  test/launchpad/LaunchpadLink.test.cpp
-             src/host/launchpad/LaunchpadLink.cpp
-             src/host/launchpad/LaunchpadHost.cpp
-             src/host/launchpad/LaunchpadScanner.cpp
-    LIBS     Threads::Threads                          # LaunchpadScanner's scan thread
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)          # host/launchpad/*.hpp + transport/SpscRing.hpp
-
-# Guards the Everdrive N8 Pro protocol framing (Edio): that fifoWR emits the exact krikzz CMD_MEM_WR
-# byte stream to ADDR_FIFO and the connect handshake accepts / rejects the 0xA5 status word; plus the
-# N8Link forward path (the SDL standalone's realtime serial thread) and the N8SdWorker SD / menu
-# control ops (ROM upload / SRAM dump+restore + the connection manager that pauses streaming).
-# Compiles those against a capturing FakeSerialPort — no `serial` lib, no `rtmidi`, no hardware. The
-# CLI's risa-sync translation lives in TS (packages/retroplug src/n8, `pnpm test n8`); the C++
-# Edio/N8Link/N8Menu twin backs the realtime + UI paths (the native worker can't run the
-# single-threaded TS stack off the UI thread). Run by `pnpm test:n8`.
-retroplug_add_test_binary(
-    NAME     retroplug-n8-test
-    SOURCES  test/n8/Edio.test.cpp
-             test/n8/N8Host.test.cpp
-             test/n8/N8SdWorker.test.cpp
-             src/host/n8/Edio.cpp
-             src/host/n8/N8Link.cpp
-             src/host/n8/N8Host.cpp
-             src/host/n8/N8Menu.cpp
-             src/host/n8/N8SdWorker.cpp
-    LIBS     reflectcpp::reflectcpp                    # rfl::json - parse the shared Edio golden (twins edio.test.ts)
-             Threads::Threads                          # N8Link's serial thread
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src           # host/n8/Edio.hpp
-    # The shared Edio framing golden both this and edio.test.ts assert against (single source, no drift).
-    DEFS     EDIO_GOLDEN_PATH="${CMAKE_SOURCE_DIR}/packages/retroplug/test/n8/edio-golden.json")
-
-# A manual hardware harness (NOT CI) that drives the real N8 SD/menu ops through the same native
-# N8Host + N8SdWorker the Settings > N8 Pro menu uses, over a real /dev/ttyACM0 (adds the real
-# WjwwoodSerialPort + `serial`). Brings its own main(), hence NO_CATCH2.
-# Build by name: cmake --build build --target retroplug-n8-hwtest.
-retroplug_add_test_binary(
-    NAME     retroplug-n8-hwtest
-    NO_CATCH2
-    SOURCES  test/n8/n8-sd-hwtest.cpp
-             src/host/n8/Edio.cpp
-             src/host/n8/N8Link.cpp
-             src/host/n8/N8Host.cpp
-             src/host/n8/N8Menu.cpp
-             src/host/n8/N8SdWorker.cpp
-             src/host/n8/WjwwoodSerialPort.cpp
-    LIBS     serial
-             Threads::Threads
-    INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/src)
-
-# Proves the ThorVG-backed <Lottie> capability: that lv_lottie rasterizes animated vector frames on a
-# headless software display (LV_USE_LOTTIE → ThorVG). Links bare lvgl (which PRIVATE-brings
-# lvgl_thorvg) + Catch2 — no JS engine needed.
-retroplug_add_test_binary(
-    NAME     retroplug-lottie-test
-    SOURCES  test/ui/LottieRender.test.cpp
-    LIBS     lvgl                                      # lv_lottie + lvgl_thorvg (LV_USE_LOTTIE in the active lv_conf.h)
-    # The Lottie animation the test rasterizes (a real ~5 KB LVGL example asset).
-    DEFS     RP_LOTTIE_JSON_PATH="${DPFJS_PATH}/deps/lv_binding_js/deps/lvgl/examples/widgets/lottie/lv_example_lottie_approve.json")
-# --- warning level + warnings-as-errors (MSVC) ------------------------------------------------------
-# Windows is the one platform whose compiler ever sees the `#if defined(_WIN32)` half of a platform
-# guard, so a warning there is often the only signal that that half has rotted while linux/macos
-# stayed green. /W4 + /WX makes the windows job say so. (It already earned its keep: it caught a
-# std::string passed to a printf-style variadic in PluginDSP.cpp.)
-#
-# Scoped to RETROPLUG'S OWN targets -- never global: the vendored subtrees (mesen, sameboy,
-# txiki/lvgl/libuv, portaudio, rtmidi, wjwwood/serial) warn freely and are silenced with per-number
-# /wd#### rather than fixed, so a global /W4 /WX would fail on code we do not own.
-#
-# Note on /wd: MSVC rejects a SECOND /W-family flag with command-line warning D9025, which is not
-# itself /wd-able -- so an unwanted warning must be disabled by NUMBER, never by lowering the level.
-option(RETROPLUG_WERROR "Treat compiler warnings as errors in RetroPlug's own targets (MSVC)" ON)
-if(MSVC)
-    set(_rp_warn_flags
-        /W4
-        # Padding from an explicit alignas() is the POINT of the alignas (SpscRing pads its head and
-        # tail indices onto separate cache lines); warning about it is noise.
-        /wd4324
-        # The rest are warnings raised INSIDE dependency headers our TUs include -- not our code to
-        # change, and each is pinned to exactly one header so a new one still shows up:
-        /wd4201   # nameless struct/union      -- r8brain CDSPSincFilterGen.h
-        /wd4200   # zero-sized array in struct -- libwebsockets lws-dht.h (via txiki)
-        /wd4245   # enum -> uint32_t mismatch  -- DPF DistrhoDetails.hpp
-        /wd4206   # empty translation unit     -- DPF-generated _dpf_empty.c
-        # MSVC version-dependent: 14.44 reports this in rpcpp, 14.51 does not. CI and the dev box
-        # both run 14.51 now (windows-2025-vs2026), so this one is for anyone still on a 14.44
-        # toolchain -- and a reminder that the two versions disagree about what a warning is.
-        /wd4127)  # conditional expression is constant -- rpcpp TypedRpcServer.h
-    if(RETROPLUG_WERROR)
-        list(APPEND _rp_warn_flags /WX)
-    endif()
-    set(_rp_werror_targets
-        retroplug-core retroplug-backend retroplug-host retroplug-cli retroplug-sdl
-        retroplug retroplug-dsp retroplug-ui)
-    foreach(_t IN LISTS _rp_werror_targets)
-        if(TARGET ${_t})
-            target_compile_options(${_t} PRIVATE ${_rp_warn_flags})
-            # The tree deliberately uses the portable CRT (fopen/strncpy/...) rather than the _s
-            # variants, which do not exist off Windows. C4996 on them is advice we are declining.
-            target_compile_definitions(${_t} PRIVATE _CRT_SECURE_NO_WARNINGS)
-        endif()
-    endforeach()
-
-    # Two VENDORED SOURCES are compiled straight into our targets (rather than linked from a dep
-    # library), so the target's /W4 lands on them. They are not ours to fix, but list the numbers
-    # rather than blanket-disabling: a NEW warning class in either still fails the build loudly.
-    # (Per-source options are appended after the target's, so these win over the /W4 above.)
-    set_source_files_properties(
-        ${DPFJS_PATH}/deps/lv_binding_js/src/render/native/core/img/png/lodepng.cpp
-        PROPERTIES COMPILE_OPTIONS "/wd4267;/wd4334;/wd4505")
-    set_source_files_properties(
-        ${DPFJS_PATH}/deps/dpf-widgets/generic/LVGL.cpp
-        PROPERTIES COMPILE_OPTIONS "/wd4100")
-endif()
+# /W4 /WX on our own targets (MSVC), with per-number suppressions for what we do not own.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/warnings.cmake)
