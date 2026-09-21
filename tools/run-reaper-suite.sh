@@ -162,20 +162,11 @@ EDITOR_ENV[params-vrc7]="RP_PARAMS_ROM=resources/roms/bliptoaster-vrc7.nes"
 ALL_SCENARIOS=("${RENDER_SCENARIOS[@]}" "${EDITOR_SCENARIOS[@]}")
 
 # ---- helpers --------------------------------------------------------------------------------
-# mgb-smoke has no timing analyzer; assert its WAV carries real signal instead of silence.
+# mgb-smoke has no timing analyzer; assert its WAV carries real signal instead of silence. Lives in
+# tools/assert-nonsilent.py rather than here so `pnpm reaper:mgb-smoke` can make the same assertion -
+# run on its own, that leg used to judge purely by reaper's exit code.
 _assert_nonsilent() {
-    python3 - "$1" <<'PY'
-import sys, wave
-path = sys.argv[1]
-w = wave.open(path, 'rb'); sw = w.getsampwidth()
-data = w.readframes(min(w.getnframes(), 400000))
-if sw == 3:
-    peak = max((abs(int.from_bytes(data[i:i+3], 'little', signed=True)) for i in range(0, len(data) - 2, 3)), default=0)
-else:
-    import audioop; peak = audioop.max(data, sw)
-print(f"{path}: frames={w.getnframes()} sampwidth={sw} peak={peak}")
-sys.exit(0 if peak > 1000 else 1)
-PY
+    "$SCRIPT_DIR/assert-nonsilent.py" "$1"
 }
 
 # One render pipeline: author the .rpp, render it, analyze — sequential WITHIN the job (author

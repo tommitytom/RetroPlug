@@ -13,7 +13,7 @@ import type { Session } from "./session";
 // erases its literal keys, so name access like `Button.A` needs the index signature.
 export const Button: Record<string, number> = { ...BUTTON_VALUE, L: 8, R: 9 };
 
-interface NoteOpts {
+export interface NoteOpts {
   channel?: number; // 1-based (default 1)
   velocity?: number; // 0..127 (default 100)
 }

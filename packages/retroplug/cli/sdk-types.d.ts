@@ -409,6 +409,14 @@ export interface AudioDriver {
   renderAudio(ms: number): Float32Array;
   /** Advance `ms` and return EACH live system's own interleaved-stereo output, in project-slot order. */
   renderAudioPerSystem(ms: number): Float32Array[];
+  /** Advance the block runner `ms` and return system `id`'s per-channel output — one interleaved-stereo
+   *  buffer per stream in its `channelLayout()` (Game Boy = 4: Pulse 1, Pulse 2, Wave, Noise). Empty
+   *  unless the project holds exactly ONE system (the split router isolates a single core's channels).
+   *
+   *  The rest of this interface is a deliberate subset, but this one is not optional: the shipped
+   *  example sessions call it (cli/sessions/export-{mgb,nes}-channels.ts, export-nes-mono.ts), so a
+   *  consumer copying one got a type error against the very declaration they were handed. */
+  renderAudioPerChannel(id: number, ms: number): Float32Array[];
   /** Stage global host-MIDI bytes for the kernel's next render - any non-empty length: a channel message
    *  (fanned to systems by routing), a whole SysEx, or several messages as one run (broadcast unchanged,
    *  delivered to the N8 FIFO byte-for-byte, in order). False only for an empty array. */

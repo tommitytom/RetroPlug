@@ -192,8 +192,12 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
   };
   console.log("DSP-BENCH " + JSON.stringify(metrics));
 
-  expect(s.blockCount > 0).toBeTruthy();
-  expect(s.allocCalls >= 0).toBeTruthy();
+  expect(s.blockCount, "blocks measured").toBeGreaterThan(0);
+  // `allocCalls >= 0` was here, which a count satisfies by definition. The claim worth making is that
+  // the counters this whole file reports are actually wired: we only reach this line under a profile
+  // host, and a kernel that allocated NOTHING across the measured window means the instrumentation is
+  // dead, not that the kernel is free.
+  expect(s.allocCalls, "kernel allocations over the window").toBeGreaterThan(0);
 
   // --- optional per-role runtime trace (spec/08-profiling.md Tier B) --------------------------------
   // A separate SHORT armed window AFTER the alloc measurement (so those numbers stay pristine). Records

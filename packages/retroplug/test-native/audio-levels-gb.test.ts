@@ -1,14 +1,14 @@
 // What peak level actually comes out of SameBoy, mix and per stem, driven by mGB with every voice at
 // velocity 127. Measurement harness, not a regression guard — see audio-levels-lib.ts.
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-gb
-import { test } from "../testing/harness";
+import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-import { report, peak, sustain, sustainPerChannel } from "./audio-levels-lib";
+import { report, peak, sustain, sustainPerChannel, AUDIBLE } from "./audio-levels-lib";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
@@ -35,8 +35,20 @@ test("audio levels: SameBoy (mGB)", () => {
   });
 
   console.log("[gb] all 4 voices");
-  report("mix", sustain(audio, NOTES, 3000, 12));
+  const mix = report("mix", sustain(audio, NOTES, 3000, 12));
   const all = sustainPerChannel(audio, id, NOTES, 3000, 12);
-  all.forEach((b, k) => report(NAMES[k], b));
+  const peaks = all.map((b, k) => report(NAMES[k], b));
   console.log(`  sum of stem peaks = ${all.map(peak).reduce((a, b) => a + b, 0).toFixed(4)}`);
+
+  // The measured LEVELS are free - that is what this harness is for - but silence is not a measurement,
+  // it is the shape a routing or mixer regression takes, and this file used to report `ok` for it.
+  //
+  // Per-STEM is deliberately not asserted here. sustain() and sustainPerChannel() are separate renders
+  // and each only re-sends NoteOn, so by the second one mGB's pulse envelopes have decayed and those two
+  // stems measure 0 even though the mix in the first render was loud. That is this harness's retrigger
+  // method, not the 4-stem tap: app-play-mgb-channels.test.ts holds the per-stem claim properly (note-offs
+  // between, pulse1 > 0.001, both pulses > 4x noise) and passes. So the claim made here is the one this
+  // method supports - the mix sounds, and the split produced a real stream rather than silence.
+  expect(mix, "the mix").toBeGreaterThan(AUDIBLE);
+  expect(Math.max(...peaks), "the loudest stem").toBeGreaterThan(AUDIBLE);
 });

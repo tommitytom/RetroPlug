@@ -12,7 +12,14 @@ export { bootSession, hostArgs } from "./session";
 export type { Session } from "./session";
 
 export { Timeline, renderTimeline, Button } from "./timeline";
-export type { TimelineEvent } from "./timeline";
+export type { TimelineEvent, TimelineInvariant, NoteOpts } from "./timeline";
+
+// Types the shipped declaration has always described but this barrel did not export, so the file that
+// calls itself the SSOT was not one. All nine are reachable from a consumer's tests through the .d.ts;
+// exporting them here is what lets sdkSurfaceCheck compare the two sides at all.
+export type { CoreTransportStats, BreakHit, BreakHitBatch, PngImageData } from "../src/backend";
+export type { LoadResult, SystemsStore } from "../src/systemsStore";
+export type { AudioDriver } from "../src/audioDriver";
 
 export { encodeWav } from "./wav";
 

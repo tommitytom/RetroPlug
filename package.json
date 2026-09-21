@@ -30,7 +30,7 @@
     "reaper:headless": "tools/run-reaper-headless.sh",
     "reaper:all": "tools/run-reaper-suite.sh",
     "reaper:mgb-smoke-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && tools/run-reaper-author.sh examples/reaper/mgb_smoke.rpp build tools/reaper-mgb-author.lua build/mgb.rplg.zip",
-    "reaper:mgb-smoke": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && tools/run-reaper-render.sh examples/reaper/mgb_smoke.rpp build/mgb.rplg.zip",
+    "reaper:mgb-smoke": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && rm -f build/reaper-mgb-smoke.wav && tools/run-reaper-render.sh examples/reaper/mgb_smoke.rpp build/mgb.rplg.zip && tools/assert-nonsilent.py build/reaper-mgb-smoke.wav",
     "reaper:analyze-smoke": "node scripts/cmake-build.js retroplug-cli retroplug-example-session && RETROPLUG_USER_CONFIG_DIR=/tmp/cli-analyze build/bin/retroplug-cli build/cli/analyze-mgb.js /tmp/cli-smoke.wav && tools/reaper-stage.sh /tmp/cli-smoke.wav",
     "reaper:mgb-midi-timing-author": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && REAPER_JACK_PERIOD=8192 tools/run-reaper-author.sh examples/reaper/mgb_midi_timing.rpp build tools/reaper-mgb-timing-author.lua build/mgb.rplg.zip",
     "reaper:mgb-midi-timing": "node scripts/cmake-build.js retroplug-vst3 && node tools/author-rplg.js && REAPER_JACK_PERIOD=8192 tools/run-reaper-render.sh examples/reaper/mgb_midi_timing.rpp build/mgb.rplg.zip && tools/reaper-timing-analyze.py --midi-timing --from-ms 2000 --gap-ms 136.05 --tol-ms 25 build/reaper-mgb-midi-timing.wav",

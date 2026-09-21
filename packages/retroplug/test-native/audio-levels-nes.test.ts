@@ -2,14 +2,14 @@
 // channels (channelExportMode individualMono), driven by n8-midi with every 2A03 voice at velocity 127.
 // Measurement harness, not a regression guard — see audio-levels-lib.ts.
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-nes
-import { test, skip } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-import { report, sustain, sustainPerChannel } from "./audio-levels-lib";
+import { report, sustain, sustainPerChannel , AUDIBLE } from "./audio-levels-lib";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
@@ -50,6 +50,11 @@ test("audio levels: Mesen NES mix + core channels (n8-midi)", () => {
   });
 
   console.log("[nes] all 5 voices");
-  report("mix", sustain(audio, NOTES, 3000, 12));
-  sustainPerChannel(audio, id, NOTES, 3000, 12).forEach((b, k) => report(NAMES[k], b));
+  const mix = report("mix", sustain(audio, NOTES, 3000, 12));
+  const peaks = sustainPerChannel(audio, id, NOTES, 3000, 12).map((b, k) => report(NAMES[k], b));
+
+  // Levels stay free; silence does not. DMC is reported but NOT asserted - it only sounds with a sample
+  // loaded, so demanding it would make this fail for a reason that has nothing to do with the mixer.
+  expect(mix, "the mix").toBeGreaterThan(AUDIBLE);
+  NAMES.slice(0, 4).forEach((n, k) => expect(peaks[k], `${n} stem`).toBeGreaterThan(AUDIBLE));
 });

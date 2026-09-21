@@ -7,6 +7,18 @@
 # Both are pinned single-binary downloads (devcontainer Dockerfile pulls them
 # during image build). Exits non-zero if any validator failed; runs all of
 # them regardless so a single failure doesn't hide the rest.
+#
+# A MISSING validator or a MISSING bundle is also a failure. It used to warn and
+# leave the return code at 0, which made a run that validated nothing at all
+# indistinguishable from a clean pass - and CI runs this, so the one job meant to
+# prove the plugins load could have been proving nothing for any length of time
+# without a red build. The linux job installs both validators and builds both
+# bundles immediately before, so there is no case where skipping is the correct
+# answer there.
+#
+# RETROPLUG_VALIDATE_OPTIONAL=1 restores warn-and-continue, for a platform that
+# genuinely has no validator: pluginval and clap-validator ship x86_64-only Linux
+# builds, which is why build.yml's linux-arm64 job does not run this at all.
 
 set -u
 
@@ -21,6 +33,17 @@ VST3_PLUGIN="$BIN_DIR/${RETROPLUG_VST3_NAME:-retroplug}.vst3"
 
 clap_rc=0
 vst3_rc=0
+OPTIONAL="${RETROPLUG_VALIDATE_OPTIONAL:-0}"
+
+# A validator or bundle that is not there: fail, unless this platform has opted out.
+missing() {
+    if [ "$OPTIONAL" = "1" ]; then
+        echo "warning: $1 (RETROPLUG_VALIDATE_OPTIONAL=1, continuing)" >&2
+        return 0
+    fi
+    echo "error: $1" >&2
+    return 1
+}
 
 if [ -d "$CLAP_PLUGIN" ] || [ -f "$CLAP_PLUGIN" ]; then
     if command -v clap-validator >/dev/null 2>&1; then
@@ -28,10 +51,10 @@ if [ -d "$CLAP_PLUGIN" ] || [ -f "$CLAP_PLUGIN" ]; then
         clap-validator validate "$CLAP_PLUGIN"
         clap_rc=$?
     else
-        echo "warning: clap-validator not found in PATH; skipping CLAP" >&2
+        missing "clap-validator not found in PATH; CLAP was not validated" || clap_rc=1
     fi
 else
-    echo "warning: $CLAP_PLUGIN not built; skipping CLAP" >&2
+    missing "$CLAP_PLUGIN not built; CLAP was not validated" || clap_rc=1
 fi
 
 if [ -d "$VST3_PLUGIN" ] || [ -f "$VST3_PLUGIN" ]; then
@@ -45,10 +68,10 @@ if [ -d "$VST3_PLUGIN" ] || [ -f "$VST3_PLUGIN" ]; then
         pluginval --strictness-level 5 --validate-in-process --skip-gui-tests --validate "$VST3_PLUGIN"
         vst3_rc=$?
     else
-        echo "warning: pluginval not found in PATH; skipping VST3" >&2
+        missing "pluginval not found in PATH; VST3 was not validated" || vst3_rc=1
     fi
 else
-    echo "warning: $VST3_PLUGIN not built; skipping VST3" >&2
+    missing "$VST3_PLUGIN not built; VST3 was not validated" || vst3_rc=1
 fi
 
 echo

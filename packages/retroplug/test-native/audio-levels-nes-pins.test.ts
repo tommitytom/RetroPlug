@@ -1,14 +1,14 @@
 // The other NES per-channel shape: the two 2A03 "stereo-mod" pins (Pulse | TND) plus the lumped
 // Expansion term (channelExportMode stereoModPins). Measurement harness, not a regression guard.
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-nes-pins
-import { test, skip } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
 import { ProjectStore } from "../src/projectStore";
 import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
-import { report, sustainPerChannel } from "./audio-levels-lib";
+import { report, sustainPerChannel , AUDIBLE } from "./audio-levels-lib";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 declare const __REPO_RESOURCES_DIR__: string;
@@ -44,5 +44,11 @@ test("audio levels: Mesen NES 2A03 pins (n8-midi, stereoModPins)", () => {
   console.log("[nes pins] triangle + noise + DMC");
   sustainPerChannel(audio, id, NOTES.slice(2), 2000, 8).forEach((b, k) => report(PINS[k], b));
   console.log("[nes pins] all 5 voices");
-  sustainPerChannel(audio, id, NOTES, 3000, 12).forEach((b, k) => report(PINS[k], b));
+  const peaks = sustainPerChannel(audio, id, NOTES, 3000, 12).map((b, k) => report(PINS[k], b));
+
+  // Only the two 2A03 pins are asserted. The third term is the lumped Expansion output, which is
+  // genuinely silent on a cart with no expansion chip - asserting it would fail on the fixture rather
+  // than on the router.
+  expect(peaks[0], `${PINS[0]} pin`).toBeGreaterThan(AUDIBLE);
+  expect(peaks[1], `${PINS[1]} pin`).toBeGreaterThan(AUDIBLE);
 });
