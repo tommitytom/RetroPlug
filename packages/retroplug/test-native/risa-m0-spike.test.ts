@@ -7,7 +7,7 @@
 //
 // The risa ROM + demo saves are NOT in this repo; build risa (`make` in the risa source tree) then
 // point the paths below at it. The test SKIPs cleanly when they're absent so CI stays green.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -29,7 +29,7 @@ const rms = (a: Float32Array): number => {
 
 test("M0: risa (NES/MMC5) boots in Mesen, exposes 64KB battery + 2KB RAM, and plays", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-m0: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-m0: no ROM at ${RISA_ROM}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();

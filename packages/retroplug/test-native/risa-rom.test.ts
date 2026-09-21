@@ -7,7 +7,7 @@
 // (2) End-to-end: patch a theme + a font into the base ROM in memory via RisaRom, construct from those
 //     bytes, and confirm the patched image boots (and the on-disk .nes is never touched).
 // SKIPs cleanly when the built risa ROM is absent.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { rom as risaRom } from "../src/risa";
@@ -17,7 +17,7 @@ const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
 test("constructSystem romBytes boots a NES (Mesen) system over a nonexistent romPath", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-rom romBytes: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-rom romBytes: no ROM at ${RISA_ROM}`);
 
   const bytes = be.readFile(RISA_ROM)!;
   // romPath points at nothing; only romBytes can boot this. (Pre-fix Mesen slurps the path -> nullptr.)
@@ -33,7 +33,7 @@ test("constructSystem romBytes boots a NES (Mesen) system over a nonexistent rom
 test("a theme + font patched into the ROM in memory boots (the on-disk .nes is untouched)", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-rom patch-boot: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-rom patch-boot: no ROM at ${RISA_ROM}`);
 
   const base = be.readFile(RISA_ROM)!;
   const rom = risaRom.RisaRom.fromBytes(base);

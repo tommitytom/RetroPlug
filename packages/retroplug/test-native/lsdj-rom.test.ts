@@ -1,7 +1,7 @@
 // The LSDj ROM asset module (src/lsdj/rom) against a REAL ROM: read kits/palettes/fonts out of
 // lsdj9_4_2.gb, patch a kit name, write the .gb back, re-open and confirm — and assert the patch is
 // surgical (only the intended bytes changed) and the patched ROM still boots on a real core.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { lsdjRomTool } from "../cli/sessions/lsdj-rom";
 import type { Session } from "../cli/session";
 import { createRealBackend } from "../src/realBackend";
@@ -30,10 +30,7 @@ function writeTestWav(be: ReturnType<typeof createRealBackend>, path: string, fr
 
 test("LsdjRom reads real kit/palette/font assets and round-trips a surgical kit-name patch", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-rom: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-rom: LSDj ROM not found at ${LSDJ}`);
   const bytes = be.readFile(LSDJ)!;
   expect(bytes.length).toBe(0x100000);
 
@@ -129,10 +126,7 @@ test("compileKit renders an authored WAV into a 16 KB kit bank a KitView can rea
 
 test("import-sample splice: compile one sample + rebuild a kit around the existing raw samples", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-rom import: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-rom import: LSDj ROM not found at ${LSDJ}`);
   const audio = createAudioDriver();
   const wav = "/tmp/rp-kit-short.wav";
   writeTestWav(be, wav, 600); // < 1024 source frames → exercises the convertSamplerate overflow fix
@@ -204,10 +198,7 @@ const TRIP = __RESOURCES_DIR__ + "/roms/tripledipper942.gbc";
 
 test("custom-font ROM: fonts detect via the header anchor + palette/font names resolve", () => {
   const be = createRealBackend();
-  if (!be.fileExists(TRIP)) {
-    console.log(`# SKIP lsdj-rom custom: tripledipper ROM not found at ${TRIP}`);
-    return;
-  }
+  if (!be.fileExists(TRIP)) skip(`lsdj-rom custom: tripledipper ROM not found at ${TRIP}`);
   const rom = LsdjRom.fromBytes(be.readFile(TRIP)!);
   expect(rom.version?.raw).toBe("LSDJ-V9.4.2");
 
@@ -232,10 +223,7 @@ test("custom-font ROM: fonts detect via the header anchor + palette/font names r
 test("import a real .png font (main + extended) via the native codec; ROM boots; export round-trips", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(LSDJ) || !be.fileExists(FONT_MAIN_PNG) || !be.fileExists(FONT_EXT_PNG)) {
-    console.log(`# SKIP lsdj-rom font-file: ROM or font PNGs not found`);
-    return;
-  }
+  if (!be.fileExists(LSDJ) || !be.fileExists(FONT_MAIN_PNG) || !be.fileExists(FONT_EXT_PNG)) skip(`lsdj-rom font-file: ROM or font PNGs not found`);
 
   // Decode a real 64×72 (main-only) PNG through the host codec (lodepng).
   const mainImg = be.pngDecode(be.readFile(FONT_MAIN_PNG)!);
@@ -276,10 +264,7 @@ test("import a real .png font (main + extended) via the native codec; ROM boots;
 test("import a real .lsdpal palette (colours + name) and a real .kit bank; both boot", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(LSDJ) || !be.fileExists(LSDPAL) || !be.fileExists(KIT_FILE)) {
-    console.log(`# SKIP lsdj-rom pal/kit-file: ROM or asset files not found`);
-    return;
-  }
+  if (!be.fileExists(LSDJ) || !be.fileExists(LSDPAL) || !be.fileExists(KIT_FILE)) skip(`lsdj-rom pal/kit-file: ROM or asset files not found`);
   const rom = LsdjRom.fromBytes(be.readFile(LSDJ)!);
 
   // .lsdpal → palette 1: name becomes BLOO and the exported file is byte-identical to the source.
@@ -315,10 +300,7 @@ const jenc = (o: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify
 
 test("CLI build-kit writes a bootable .kit that import-kit places into a ROM", () => {
   const { be, audio, s } = toolSession();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-rom build-kit: ROM not found`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-rom build-kit: ROM not found`);
   const wav = "/tmp/rp-bk-src.wav";
   writeTestWav(be, wav);
   expect(be.writeFile("/tmp/rp-bk-spec.json", jenc({ name: "MYDR", build: [{ file: wav, name: "BD" }] }))).toBeTruthy();
@@ -342,10 +324,7 @@ test("CLI build-kit writes a bootable .kit that import-kit places into a ROM", (
 
 test("CLI patch realizes a mixed manifest (build + .kit + rename + palette + font) and boots", () => {
   const { be, audio, s } = toolSession();
-  if (!be.fileExists(LSDJ) || !be.fileExists(KIT_FILE) || !be.fileExists(LSDPAL) || !be.fileExists(FONT_EXT_PNG)) {
-    console.log(`# SKIP lsdj-rom patch: ROM or asset files not found`);
-    return;
-  }
+  if (!be.fileExists(LSDJ) || !be.fileExists(KIT_FILE) || !be.fileExists(LSDPAL) || !be.fileExists(FONT_EXT_PNG)) skip(`lsdj-rom patch: ROM or asset files not found`);
   const wav = "/tmp/rp-ap-src.wav";
   writeTestWav(be, wav);
   const manifest = {
@@ -384,10 +363,7 @@ test("CLI patch realizes a mixed manifest (build + .kit + rename + palette + fon
 test("constructSystem romBytes loads a patched effective ROM (over the on-disk romPath) and boots", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(LSDJ) || !be.fileExists(KIT_FILE)) {
-    console.log(`# SKIP lsdj-rom romBytes: ROM/kit not found`);
-    return;
-  }
+  if (!be.fileExists(LSDJ) || !be.fileExists(KIT_FILE)) skip(`lsdj-rom romBytes: ROM/kit not found`);
   // Patch the base ROM IN MEMORY (import DONK.kit into slot 20) — the on-disk .gb is never written.
   const patched = LsdjRom.fromBytes(be.readFile(LSDJ)!);
   patched.importKitFile(20, be.readFile(KIT_FILE)!);

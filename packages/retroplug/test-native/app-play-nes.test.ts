@@ -6,7 +6,7 @@
 //
 // NOTE: channel 2 of bliptoaster.nes is broken (ROM fixed later) — drive channel 1 only (ch1 → Pulse1).
 // A fresh NoteOn is staged before each measurement so the proof doesn't depend on the ROM sustaining.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -28,7 +28,7 @@ const rms = (a: Float32Array): number => {
 
 test("host MIDI drives a NES core (ch1 → Pulse1), and live gain silences/restores it", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log(`# SKIP app-play-nes: no ROM at ${NES}`); return; }
+  if (!be.fileExists(NES)) skip(`app-play-nes: no ROM at ${NES}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();

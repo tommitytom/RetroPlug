@@ -3,7 +3,7 @@
 // byte-identically — the exhaustive losslessness proof that can't run in the
 // disk-less pure tier. Runs the pure-TS codec inside retroplug-host; the native
 // backend is used only to list/read files, never to encode.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { decodeSav, encodeSav } from "../src/lsdj/codec/sav";
 
@@ -12,10 +12,7 @@ const DIR = __RESOURCES_DIR__ + "/roms/lsdj";
 
 test("pure-TS sav codec round-trips the full per-version corpus byte-identically", () => {
   const be = createRealBackend();
-  if (!be.fileExists(DIR)) {
-    console.log(`# SKIP lsdj-codec-corpus: corpus not found at ${DIR}`);
-    return;
-  }
+  if (!be.fileExists(DIR)) skip(`lsdj-codec-corpus: corpus not found at ${DIR}`);
   const files = be.listDir(DIR).filter((f) => f.endsWith(".sav"));
   expect(files.length > 100).toBeTruthy();
 

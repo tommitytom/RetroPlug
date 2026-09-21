@@ -2,7 +2,7 @@
 // plugin uses, read from the race-free SnapshotRegistry triple — returns the live core's work RAM, is
 // republished EVERY block (so it tracks playback within one render, unlike the ~2Hz readState/readSram),
 // and feeds the LSDj runtime reader exactly as the plugin overlay will.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
@@ -38,10 +38,7 @@ const eq = (a: Uint8Array, b: Uint8Array): boolean => {
 
 test("readRam publishes live WRAM per block on the emulator facet, and drives the LSDj reader", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-wram-seam: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-wram-seam: LSDj ROM not found at ${LSDJ}`);
   const audio = createAudioDriver();
   const id = 1;
   expect(be.constructSystem({
@@ -82,10 +79,7 @@ test("readRam publishes live WRAM per block on the emulator facet, and drives th
 // resize froze readRam at the pre-switch snapshot forever.) MODEL_VALUES index 1 = "dmgB", 9 = "cgbC".
 test("readRam tracks a live model switch that resizes WRAM (CGB 32K → DMG 8K), never freezing", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-wram-model-switch: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-wram-model-switch: LSDj ROM not found at ${LSDJ}`);
   const audio = createAudioDriver();
   const id = 2; // a distinct id: the host/engine is shared across a file's tests, so test 1's id=1 lingers
   expect(be.constructSystem({

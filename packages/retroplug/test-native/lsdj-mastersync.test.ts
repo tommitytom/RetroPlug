@@ -9,7 +9,7 @@
 // a stock LSDj-master emits a TEMPO-LOCKED byte stream (~50/sec = ~130 BPM at 24 PPQN, tens/sec — NOT
 // thousands). (The Arduinoboy-patched ROM behaves differently in this mode; Master Sync targets stock
 // LSDj, whose SYNC=LSDj is the standard link-cable master clock. Arduinoboy builds use MI.OUT / mode 7.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -44,10 +44,7 @@ const messages = (drained: { data: Uint8Array }[]): number[][] => drained.map((m
 
 test("Master Sync (mode 8): a stock LSDj in SYNC=LSDj clocks the host — byte→clock, tempo-locked", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-mastersync: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-mastersync: LSDj ROM not found at ${LSDJ}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

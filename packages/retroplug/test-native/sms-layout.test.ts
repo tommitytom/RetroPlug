@@ -23,7 +23,7 @@
 // byte for byte. If it ever fails ONLY under the parallel suite, suspect a resource shared between host
 // PROCESSES rather than anything here: it did exactly that until Mesen's scratch folder was given a pid
 // (MesenGlobalInit.cpp), because every concurrent host was staging its ROM over the same /tmp path.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { smsggdjIntegration } from "../src/tracker/trackerIntegration";
@@ -68,10 +68,7 @@ const echoOff = Uint8Array.of(0, 4, 8, 2, 4, 0, 0, 0);
 const echoOn = Uint8Array.of(2, 4, 8, 2, 4, 0, 0, 0); // 2 = T2 + T3
 test("echo_mode is where the symbols say - changing that byte changes the sound", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP sms-layout: missing ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`sms-layout: missing ${ROM}`);
   // The shipped ROM self-identifies, and resolves a layout - which is what isVersionSupported gates on.
   const version = identifySmsggdjVersion(be.readFile(ROM)!);
   expect(version).toBe("0.45");

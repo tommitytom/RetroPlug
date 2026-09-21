@@ -33,11 +33,14 @@ test("dropping a ROM onto a tile in a multi-instance project replaces that tile 
   ui.pump(20);
   const t0 = ui.findByTestId("tile-0");
   const t1 = ui.findByTestId("tile-1");
-  expect(t0 != null && t1 != null).toBeTruthy();
+  // Asserted separately rather than as one `&&`: a combined check reports "expected truthy, got false"
+  // and leaves you re-running to learn WHICH tile was missing.
+  expect(t0, "tile-0 present").toBeTruthy();
+  expect(t1, "tile-1 present").toBeTruthy();
   expect(ui.findByTestId("tile-2")).toBe(null); // exactly two before the drop
 
   // Drop the ROM onto the CENTER of tile-1 → cold-boot replace that tile.
-  ui.fileDrop(MGB(), t1.x + Math.floor(t1.width / 2), t1.y + Math.floor(t1.height / 2));
+  ui.fileDrop(MGB(), t1!.x + Math.floor(t1!.width / 2), t1!.y + Math.floor(t1!.height / 2));
   ui.pump(30);
 
   expect(ui.findByTestId("tile-0") != null).toBeTruthy();

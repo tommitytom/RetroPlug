@@ -3,7 +3,7 @@
 // observes what a MIDI-driven ROM programmed into the mapper sound chip. Proves the end-to-end RPC +
 // per-chip decode: a cart with no sound mapper reports "none"; the VRC6 ROM reports its 3 voices, and a
 // sounding pulse reads back enabled with a non-zero normalized volume.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { type ExpansionAudioState } from "../src/backend";
@@ -45,10 +45,7 @@ test("getExpansionAudioState reports 'none' for a cart without expansion audio",
 // instead of the mapper (src/bliptoaster/romDetect.ts).
 test("the base and S5B builds are indistinguishable by their expansion audio", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES) || !s.backend.fileExists(S5B)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES) || !s.backend.fileExists(S5B)) skip("no NES rom");
   const base = chipOf(NES);
   const s5b = chipOf(S5B);
   expect(base!.chip === "s5b").toBeTruthy();
@@ -58,10 +55,7 @@ test("the base and S5B builds are indistinguishable by their expansion audio", (
 
 test("getExpansionAudioState decodes VRC6: 3 voices, a sounding pulse reads enabled + volume>0", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(VRC6)) {
-    console.log("# SKIP: no VRC6 rom");
-    return;
-  }
+  if (!s.backend.fileExists(VRC6)) skip("no VRC6 rom");
   const id = s.project.systems.addSystem(VRC6);
   if (id == null) throw new Error("addSystem failed");
 
@@ -103,10 +97,7 @@ function cents(measuredHz: number, expectedHz: number): number {
 
 test("getExpansionAudioState decodes VRC6 pitch in Hz: A4 in tune + octave-doubling", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(VRC6)) {
-    console.log("# SKIP: no VRC6 rom");
-    return;
-  }
+  if (!s.backend.fileExists(VRC6)) skip("no VRC6 rom");
 
   // Snapshot VRC6 pulse1 (MIDI ch6) mid-note and read the decoded output pitch.
   const freqOf = (note: number): number => {
@@ -144,10 +135,7 @@ const N163 = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-n163.nes";
 
 test("getExpansionAudioState decodes N163 from the programmed registers: two reads of a held note agree", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(N163)) {
-    console.log("# SKIP: no N163 rom");
-    return;
-  }
+  if (!s.backend.fileExists(N163)) skip("no N163 rom");
   const id = s.project.systems.addSystem(N163);
   if (id == null) throw new Error("addSystem failed");
 
@@ -188,10 +176,7 @@ const MMC5 = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-mmc5.nes";
 
 test("getExpansionAudioState decodes MMC5: pulse1/pulse2/pcm, a sounding pulse reads enabled + volume + pitch", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(MMC5)) {
-    console.log("# SKIP: no MMC5 rom");
-    return;
-  }
+  if (!s.backend.fileExists(MMC5)) skip("no MMC5 rom");
   const id = s.project.systems.addSystem(MMC5);
   if (id == null) throw new Error("addSystem failed");
 

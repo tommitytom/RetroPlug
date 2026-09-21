@@ -5,7 +5,7 @@
 // did nothing. The unit tests (test/sram/auto-save) drive the saver over a mock; this proves the same
 // thing composes with real readSram snapshots and real file IO. What it does NOT cover is the frame-tick
 // registration in useSramAutoSave/App.tsx, which follows the same untested convention as useSongWatch.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -23,7 +23,7 @@ const SRC = __RESOURCES_DIR__ + "/roms/lsdj942telemelt_5songs";
 
 test("Continuous mirrors a live battery to its .sav with no explicit save", () => {
   const be = createRealBackend();
-  if (!be.fileExists(SRC + ".gbc")) { console.log("# SKIP: no LSDj cart"); return; }
+  if (!be.fileExists(SRC + ".gbc")) skip("no LSDj cart");
   const rom = __CONFIG_DIR__ + "/cont.gbc", sav = __CONFIG_DIR__ + "/cont.sav";
   be.writeFileAtomic(rom, be.readFile(SRC + ".gbc")!);
   be.writeFileAtomic(sav, be.readFile(SRC + ".sav")!);

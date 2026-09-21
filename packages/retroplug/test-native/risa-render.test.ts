@@ -6,7 +6,7 @@
 // The two long-song legs live in sibling files (risa-render-hff / risa-render-region) so they render
 // concurrently instead of serializing behind each other; shared fixtures are in risa-render-lib.ts.
 // Everything here is a short render, so this file stays a few seconds.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob, readRisaSongs, decodeWav, type RenderOpts } from "../src/render";
 import { dirname, joinPath } from "../src/pathUtil";
@@ -20,7 +20,7 @@ const opts = (over: Partial<RenderOpts>): RenderOpts => baseOpts({ sav: SAV, ...
 
 test("render --list-songs lists the risa catalog (readRisaSongs)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-render: no ROM at ${RISA_ROM}`);
   expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy(); // current v2 catalog, one song: BLUMARBL
   const { songs } = readRisaSongs(newCtx(be), opts({}));
   expect(songs.length).toBe(1);
@@ -30,7 +30,7 @@ test("render --list-songs lists the risa catalog (readRisaSongs)", () => {
 
 test("render --song-index promotes a risa catalog song to working + renders non-silent audio", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-render: no ROM at ${RISA_ROM}`);
   expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy();
   const out = "/tmp/rp-risa-render.wav";
   runRenderJob(newCtx(be), opts({ songIndex: 0, durationMs: 2000, out }));
@@ -43,7 +43,7 @@ test("render --song-index promotes a risa catalog song to working + renders non-
 
 test("render without --out defaults the output filename to the song's name (not the ROM name)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-render: no ROM at ${RISA_ROM}`);
   expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy();
   // No --out: outBase derives the name from the selected song (BLUMARBL), next to the ROM — not risa-pal.wav.
   const res = runRenderJob(newCtx(be), opts({ songIndex: 0, durationMs: 300 }));
@@ -55,7 +55,7 @@ test("render without --out defaults the output filename to the song's name (not 
 
 test("render onExists 'rename' writes the next free name instead of clobbering", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-render: no ROM at ${RISA_ROM}`);
   expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy();
   const first = joinPath(dirname(RISA_ROM), "BLUMARBL.wav");
   const second = joinPath(dirname(RISA_ROM), "BLUMARBL_2.wav");
@@ -71,7 +71,7 @@ test("render onExists 'rename' writes the next free name instead of clobbering",
 
 test("render auto-detects risa song length via seq_mode (HFF stop) over the real core", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-render: no ROM at ${RISA_ROM}`);
   expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy();
   const out = "/tmp/rp-risa-autodetect.wav";
   // No durationMs → the risa auto-detect path: render to the seq_mode STOPPED edge, capped at maxDurationMs.
@@ -90,7 +90,7 @@ test("a carried gainDb + role knob land on the system the render builds", () => 
   // still holds it when the job returns. What the knobs then DO to the audio is each knob's own test
   // (test-native/expansion-volume.test.ts for the expansion chip, risa-render-region for the clock).
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-render: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-render: no ROM at ${RISA_ROM}`);
   expect(be.writeFile(SAV, savBytes("v2_blumarbl"))).toBeTruthy();
   const ctx = newCtx(be);
   runRenderJob(ctx, opts({

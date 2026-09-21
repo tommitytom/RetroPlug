@@ -8,7 +8,7 @@
 // them either. That leaves the direct ingress as the only way a UI knob can address the cart whose menu it is.
 //
 // Runs on the real Mesen core through the real backend, and SKIPS when the BlipToaster ROM isn't built.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 
@@ -33,10 +33,7 @@ const same = (a: Uint8Array, b: Uint8Array): boolean => {
 test("stageSystemMidi reaches the system it names, and only that one", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP stageSystemMidi: no ROM at ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`stageSystemMidi: no ROM at ${ROM}`);
   const spec = { romPath: ROM, platform: "nes" as const, core: "mesen" as const, embeddedRom: "", savPath: null, statePath: null };
   expect(be.constructSystem(spec, 1)).toBeTruthy();
   expect(be.constructSystem(spec, 2)).toBeTruthy();

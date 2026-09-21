@@ -13,17 +13,14 @@
 // made this the native suite's longest file by a factor of three. Split, the two run concurrently, and the
 // check is no weaker: a carried role that never reached the core leaves NTSC at the PAL length, i.e. a ratio
 // of exactly 1.000, which is nowhere near the tolerance below.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob } from "../src/render";
 import { RISA_ROM, ECOLI_SRM, ECOLI_PAL_MS, newCtx, baseOpts } from "./risa-render-lib";
 
 test("a carried role config configures the render's core (region moves the detected song length)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM) || !be.fileExists(ECOLI_SRM)) {
-    console.log(`# SKIP risa-render-region: missing ${RISA_ROM} or ${ECOLI_SRM}`);
-    return;
-  }
+  if (!be.fileExists(RISA_ROM) || !be.fileExists(ECOLI_SRM)) skip(`risa-render-region: missing ${RISA_ROM} or ${ECOLI_SRM}`);
   const res = runRenderJob(newCtx(be), baseOpts({
     sav: ECOLI_SRM, maxDurationMs: 80000, out: "/tmp/rp-risa-region-ntsc.wav",
     roles: [{ kind: "mesen", config: { region: "ntsc" } }],

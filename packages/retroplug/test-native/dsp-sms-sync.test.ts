@@ -12,7 +12,7 @@
 // `sync_wait`, and shows WAIT until the first host clock (engine.asm:383-388). So the negative case
 // (transport running, role absent) is an ARMED, WILLING ROM sitting silent - which is a much sharper
 // control than an idle one.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -147,10 +147,7 @@ for (const m of MACHINES) {
     // Proves the fixture end to end - SMDJ4 image, OPTIONS block, WRAM layout, instrument defaults and
     // the metronome pattern - with ZERO sync involved. If this fails, nothing below is about sync.
     const be = createRealBackend();
-    if (!be.fileExists(m.rom)) {
-      console.log(`# SKIP dsp-sms-sync ${m.machine}: missing ${m.rom}`);
-      return;
-    }
+    if (!be.fileExists(m.rom)) skip(`dsp-sms-sync ${m.machine}: missing ${m.rom}`);
     const { be: be2, audio, id } = boot(SMS_SYNC_OFF, m);
 
     const idleRows = rowsAdvanced(be2, audio, id, 500, 3);
@@ -169,10 +166,7 @@ for (const m of MACHINES) {
 
   test(`${m.machine.toUpperCase()}: GUARD B: the sms-sync role in the DSP kernel is the sole clock that makes smsggdj play`, () => {
     const be0 = createRealBackend();
-    if (!be0.fileExists(m.rom)) {
-      console.log(`# SKIP dsp-sms-sync ${m.machine}: missing ${m.rom}`);
-      return;
-    }
+    if (!be0.fileExists(m.rom)) skip(`dsp-sms-sync ${m.machine}: missing ${m.rom}`);
     const { be, audio, id } = boot(SMS_SYNC_IN24, m);
     const dsp = createDspRuntime();
     expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();
@@ -221,10 +215,7 @@ for (const m of MACHINES) {
 
   test(`${m.machine.toUpperCase()}: stopping the DAW transport stops the song, and restarting it resumes`, () => {
     const be0 = createRealBackend();
-    if (!be0.fileExists(m.rom)) {
-      console.log(`# SKIP dsp-sms-sync ${m.machine}: missing ${m.rom}`);
-      return;
-    }
+    if (!be0.fileExists(m.rom)) skip(`dsp-sms-sync ${m.machine}: missing ${m.rom}`);
     const { be, audio, id } = boot(SMS_SYNC_IN24, m);
     const dsp = createDspRuntime();
     expect(dsp.loadKernel(dsp.compileScript(__DSP_KERNEL_BUNDLE__)!)).toBeTruthy();

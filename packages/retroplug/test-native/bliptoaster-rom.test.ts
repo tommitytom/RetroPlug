@@ -6,7 +6,7 @@
 // (2) End-to-end: patch a kit + a font into the base ROM in memory via BlipToasterRom, construct from those
 //     bytes, and confirm the patched image boots (and the on-disk .nes is never touched).
 // Points at the sibling bliptoaster build (which carries the "bliptoaster" marker + baked kit); SKIPs cleanly if absent.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { bootSession } from "../cli/session";
@@ -48,7 +48,7 @@ test("the COMMITTED resources/roms ROM is detected, and its role set is attached
 test("constructSystem romBytes boots a BlipToaster (Mesen) system over a nonexistent romPath", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(BLIPTOASTER_ROM)) { console.log(`# SKIP bliptoaster-rom romBytes: no ROM at ${BLIPTOASTER_ROM}`); return; }
+  if (!be.fileExists(BLIPTOASTER_ROM)) skip(`bliptoaster-rom romBytes: no ROM at ${BLIPTOASTER_ROM}`);
 
   const bytes = be.readFile(BLIPTOASTER_ROM)!;
   // romPath points at nothing; only romBytes can boot this. (Pre-fix Mesen slurps the path -> nullptr.)
@@ -64,7 +64,7 @@ test("constructSystem romBytes boots a BlipToaster (Mesen) system over a nonexis
 test("a kit + font patched into the ROM in memory boots (the on-disk .nes is untouched)", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(BLIPTOASTER_ROM)) { console.log(`# SKIP bliptoaster-rom patch-boot: no ROM at ${BLIPTOASTER_ROM}`); return; }
+  if (!be.fileExists(BLIPTOASTER_ROM)) skip(`bliptoaster-rom patch-boot: no ROM at ${BLIPTOASTER_ROM}`);
 
   const base = be.readFile(BLIPTOASTER_ROM)!;
   const rom = BlipToasterRom.fromBytes(base);
@@ -96,7 +96,7 @@ test("a kit + font patched into the ROM in memory boots (the on-disk .nes is unt
 test("the baked theme sets the background palette; a theme override changes it", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(BLIPTOASTER_ROM)) { console.log(`# SKIP bliptoaster-rom theme: no ROM at ${BLIPTOASTER_ROM}`); return; }
+  if (!be.fileExists(BLIPTOASTER_ROM)) skip(`bliptoaster-rom theme: no ROM at ${BLIPTOASTER_ROM}`);
 
   const base = be.readFile(BLIPTOASTER_ROM)!;
 
@@ -136,7 +136,7 @@ test("the baked theme sets the background palette; a theme override changes it",
 // (tr909); slots 1..15 are reserved (fill $FF), so slot 1 is the "empty bank" case.
 test("FME-7 multi-kit: CC 14 switches the $C000 kit bank on a real core (magic byte follows)", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(BLIPTOASTER_FME7)) { console.log(`# SKIP bliptoaster multi-kit: no ROM at ${BLIPTOASTER_FME7}`); return; }
+  if (!s.backend.fileExists(BLIPTOASTER_FME7)) skip(`bliptoaster multi-kit: no ROM at ${BLIPTOASTER_FME7}`);
 
   // The banking header drives the derived capacity to 16 (NROM would be 1).
   expect(BlipToasterRom.fromBytes(s.backend.readFile(BLIPTOASTER_FME7)!).kitBankCapacity()).toBe(16);
@@ -165,7 +165,7 @@ test("FME-7 multi-kit: CC 14 switches the $C000 kit bank on a real core (magic b
 // override-populated bank is now mapped ($DF40 = 0xA5) and a ch5 note plays it.
 test("FME-7 multi-kit: a .rkit override into slot 1 becomes selectable + plays", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(BLIPTOASTER_FME7)) { console.log(`# SKIP bliptoaster multi-kit override: no ROM at ${BLIPTOASTER_FME7}`); return; }
+  if (!s.backend.fileExists(BLIPTOASTER_FME7)) skip(`bliptoaster multi-kit override: no ROM at ${BLIPTOASTER_FME7}`);
 
   const id = s.project.systems.addSystem(BLIPTOASTER_FME7);
   if (id == null) throw new Error("addSystem failed");

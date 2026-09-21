@@ -2,7 +2,7 @@
 // advances the PPU, so after a warmup+render the snapshot reports a non-zero frame count and a dot
 // position within the valid NES scanline/cycle ranges. Also covers the 32-byte palette RAM
 // ($3F00-$3F1F). (The tilemap/sprite viewers are still out of scope.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { type PpuState } from "../src/backend";
@@ -12,10 +12,7 @@ const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("getPpuState reads a real NES PPU: frameCount advances, scanline/cycle in range", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 

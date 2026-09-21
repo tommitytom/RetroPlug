@@ -1,7 +1,7 @@
 // M1 native smoke: prove the risa catalog reader works on bytes that came through RetroPlug's REAL
 // readSram seam (not just a fixture file). Boot risa with a v2 battery that carries a known song, read
 // the live 64 KB WRAM back, and list it. SKIPs cleanly when the built ROM is absent (like risa-m0-spike).
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -18,7 +18,7 @@ const SAV_PATH = "/tmp/rp-risa-v2-blumarbl.sav";
 
 test("risa catalog reader lists songs from a live battery via readSram", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-songs: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-songs: no ROM at ${RISA_ROM}`);
 
   // A v2 battery carrying one known song (BLUMARBL) — the same oracle-verified fixture the golden test uses.
   const battery = savBytes("v2_blumarbl");

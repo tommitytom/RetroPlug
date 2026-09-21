@@ -11,7 +11,7 @@
 // test (lsdj-midimap.test.ts) and its own DAW-level drift renders.
 //
 // Run: pnpm test:native lsdj-playback-differential
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { type SavInput } from "../src/lsdjSav";
 import { SongSchema } from "../src/lsdj/model";
 import { CHANNELS } from "../src/lsdj/runtime";
@@ -84,7 +84,7 @@ function agreement(observed: ProbeSample[], predicted: (number | null)[][], offs
 test("the predicted model tracks a real cart's song rows over a long run", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SAV });
-  if (!p) return console.log("# SKIP lsdj-playback-differential: aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-differential: aboy ROM not found / unsupported version");
 
   p.launchRaw(0);
   const observed = p.runTicks(TICKS);

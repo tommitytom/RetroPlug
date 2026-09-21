@@ -13,7 +13,7 @@
 //      the song is running" — LSDj only polls the keyboard (arms SC=0xfc) once playing. So we author a
 //      one-note song and press START; the sparse song is mostly silent between its notes, and the
 //      keyboard notes fill every window with audio.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -52,10 +52,7 @@ const mean = (a: number[]): number => a.reduce((x, y) => x + y, 0) / a.length;
 
 test("KeyboardMidi: MIDI notes play live on a real LSDj via the PS/2-keyboard serial path", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ABOY)) {
-    console.log(`# SKIP lsdj-keyboardmidi: aboy LSDj ROM not found at ${ABOY}`);
-    return;
-  }
+  if (!be.fileExists(ABOY)) skip(`lsdj-keyboardmidi: aboy LSDj ROM not found at ${ABOY}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

@@ -6,7 +6,7 @@
 //
 // This is the headless twin of the real-Reaper `reaper:risa-sync` leg, which renders the SAME song
 // through an actual DAW transport and pairs each onset to a ReaSynth click. This one runs in test:native.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -54,10 +54,7 @@ function onsetsMs(pcm: Float32Array, sampleRate: number, refractoryMs: number): 
 
 test("host sync puts one risa hit on every DAW beat, at the DAW's tempo", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM_230)) {
-    console.log(`# SKIP dsp-risa-sync-grid: missing ${ROM_230}`);
-    return;
-  }
+  if (!be.fileExists(ROM_230)) skip(`dsp-risa-sync-grid: missing ${ROM_230}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

@@ -10,7 +10,7 @@
 // The second half is what makes this more than a duplicate: it does not stop at "the role is attached",
 // it runs the DSP kernel and the transport and asserts the sequencer MOVES. A union that produced a
 // correctly-named role with a wrong or empty config would pass the pure test and fail here.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -48,10 +48,7 @@ function staleProjectJson(savPath: string): string {
 
 test("a project saved before sms-sync existed loads WITH it, and the DAW can clock it", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP project-role-union: missing ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`project-role-union: missing ${ROM}`);
 
   // The battery the project points at: the metronome song, ROM configured for IN24.
   const savPath = __CONFIG_DIR__ + "/stale.sav";

@@ -3,7 +3,7 @@
 // slave. The contract (dspRoles.ts / LsdjSyncRole.cpp): a `play` note (24) arms the clock, `stop`
 // (25) disarms it; the 0xF8 clock only flows while playing AND transport runs. So LSDj sings only
 // after the play command — the gating the legacy screenshots only implied, asserted here via RMS.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -42,10 +42,7 @@ const rms = (a: Float32Array): number => {
 
 test("the TS lsdj-sync Arduinoboy-slave role plays a real LSDj on note-24, gates it before", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ABOY)) {
-    console.log(`# SKIP lsdj-arduinoboy-slave: aboy LSDj ROM not found at ${ABOY}`);
-    return; // no resources on disk (e.g. resource-less CI) — the devcontainer has it
-  }
+  if (!be.fileExists(ABOY)) skip(`lsdj-arduinoboy-slave: aboy LSDj ROM not found at ${ABOY}`); // no resources on disk (e.g. resource-less CI) — the devcontainer has it
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

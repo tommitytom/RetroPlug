@@ -5,7 +5,7 @@
 // on a feature role re-projects the structure (syncDspFromStore) and pushes it, so flipping the
 // store's role config is what makes an armed LSDj sing. Whole-mix RMS on a single system = that
 // system's audio. (One test per file: whole-mix RMS needs an isolated native Project.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -40,10 +40,7 @@ const rms = (a: Float32Array): number => {
 
 test("the store's lsdj-sync role is the sole clock that makes an armed LSDj sing", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP app-play-lsdj: LSDj ROM not found at ${LSDJ}`);
-    return; // no resources on disk (e.g. resource-less CI) — the devcontainer has it
-  }
+  if (!be.fileExists(LSDJ)) skip(`app-play-lsdj: LSDj ROM not found at ${LSDJ}`); // no resources on disk (e.g. resource-less CI) — the devcontainer has it
 
   const registry = buildAppRegistry();
   const recent = new RecentStore(be);

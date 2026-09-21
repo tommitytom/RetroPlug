@@ -6,14 +6,15 @@
 // the JS kernel (marshal + js-call). One real NES system driven by host MIDI (the nes-n8-midi role).
 //
 // The counters/spans exist only in a RETROPLUG_PROFILE host (built by tools/run-profile.sh); under the
-// default host this no-ops (so the normal test:native sweep stays green). Run it with:
+// default host this SKIPS (so the normal test:native sweep stays fast, and says the case did not run
+// rather than printing a green tick for it). Run it with:
 //   tools/run-profile.sh stats nes-bench      # per-block allocation counters + xRT
 //   tools/run-profile.sh trace nes-bench      # per-stage Chrome trace-event JSON → build-prof/trace.json
 // On-device: bundle via tools/bundle-native-test.mjs nes-bench, set RP_BENCH_ROM to the on-device ROM.
 //
 // Workload knobs (env): RP_BENCH_PROFILE (A|B|C), RP_BENCH_BLOCKS, RP_BENCH_WARMUP, RP_BENCH_SEED,
 // RP_BENCH_ROM (path to a .nes; default the in-tree bliptoaster.nes). One test per file (shared native Engine).
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -105,11 +106,7 @@ function buildSchedule(profile: string, blocks: number, seed: number): Ev[] {
 test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI workload", () => {
   const be = createRealBackend();
   const rom = envStr("RP_BENCH_ROM", __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes");
-  if (!be.fileExists(rom)) {
-    console.warn(`[nes-bench] no ROM at ${rom} — set RP_BENCH_ROM. Skipping.`);
-    expect(true).toBeTruthy();
-    return;
-  }
+  if (!be.fileExists(rom)) skip(`nes-bench: no ROM at ${rom} — set RP_BENCH_ROM`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();
@@ -129,11 +126,8 @@ test("nes-bench: Mesen core per-block cost + JS allocation under a NES + MIDI wo
   expect(project.systems.view()[0].platform).toBe("nes");
 
   // Bail before the render loops when the host has no profiling allocator (normal test:native stays fast).
-  if (!audio.dspAllocStats().enabled) {
-    console.warn("[nes-bench] instrumentation off — run via tools/run-profile.sh for real metrics. Skipping.");
-    expect(true).toBeTruthy();
-    return;
-  }
+  if (!audio.dspAllocStats().enabled)
+    skip("nes-bench: allocation instrumentation off — run via tools/run-profile.sh for real metrics");
 
   audio.setBpm(140);
   audio.setTransport(true);

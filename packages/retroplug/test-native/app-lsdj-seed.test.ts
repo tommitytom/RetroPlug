@@ -5,7 +5,7 @@
 // image stamped with LSDj's `jk` SRAM-init magic; (2) after a store-driven addSystem with no sav, the
 // core's battery (readSram) carries that same `jk` magic — i.e. the seed reached a real SameBoy core.
 // (A cold-booted fresh cart, self-test not yet run, has a zeroed battery — no `jk`.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { buildAppRegistry } from "../src/appHost";
 import { SystemsStore } from "../src/systemsStore";
@@ -25,10 +25,7 @@ const carriesJk = (b: Uint8Array): boolean => {
 
 test("a fresh LSDj ROM with no sav is seeded a valid empty sav — the real core's battery gets it", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP app-lsdj-seed: LSDj ROM not found at ${LSDJ}`);
-    return; // resource-less environment — the devcontainer has it
-  }
+  if (!be.fileExists(LSDJ)) skip(`app-lsdj-seed: LSDj ROM not found at ${LSDJ}`); // resource-less environment — the devcontainer has it
 
   // (1) The Backend's savFromJson encodes a valid empty image with the `jk` magic at 0x813E.
   const emptySav = be.savFromJson("{}");

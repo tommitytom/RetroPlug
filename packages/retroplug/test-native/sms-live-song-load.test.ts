@@ -9,7 +9,7 @@
 // lands on a live core without stopping it, and `liveLoad` carries the NAME across too - the field SMDJ4
 // keeps in the directory entry rather than the block, which is why the load needs a symbol layout and
 // not just an offset-0 poke. (sms-layout.test.ts certifies those addresses against this same ROM.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildSav, readSongBlock, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/sav";
@@ -42,10 +42,7 @@ const rms = (a: Float32Array): number => {
 
 test("a song decoded from a .sav loads into a PLAYING cart in one call", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP sms-live-song-load: missing ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`sms-live-song-load: missing ${ROM}`);
 
   // A real two-song battery, built and read back through the shipping codec - RLE, directory, heap and
   // all. Nothing here hand-rolls a block.

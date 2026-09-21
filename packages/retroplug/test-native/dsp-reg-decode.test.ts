@@ -1,7 +1,7 @@
 // F6 (cli/reg-decode.ts): decodeExpansionWrites reconstructs the ROM's programmed expansion-audio
 // registers from the drainEvents write log, and its freqReg agrees with F1's live decoded state
 // (getExpansionAudioState().period) - the white-box write-path <-> live-state cross-check.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { decodeExpansionWrites } from "../cli/reg-decode";
@@ -12,7 +12,7 @@ const VRC6 = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-vrc6.nes";
 
 test("decodeExpansionWrites(vrc6) reconstructs the note-on registers; freqReg matches the live period", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(VRC6)) { console.log("# SKIP: no VRC6 rom"); return; }
+  if (!s.backend.fileExists(VRC6)) skip("no VRC6 rom");
   const id = s.project.systems.addSystem(VRC6);
   if (id == null) throw new Error("addSystem failed");
 

@@ -3,7 +3,7 @@
 // (auto-attaches the `risa` role, so useRisaRuntime engages + identifies the version from the PRG), then
 // assert: absent by default; backtick reveals the readout (even idle risa decodes a `supported` state);
 // backtick again hides it. SKIPs when no risa ROM was staged (see run-ui-tests.mjs).
-import { test, expect, ui } from "ui-harness";
+import { test, expect, skip, ui } from "ui-harness";
 
 const RISA = () => ui.romDir() + "/risa.nes";
 const BACKTICK = 0x60; // ` — the debug toggle
@@ -14,10 +14,7 @@ test("the risa overlay is hidden by default and toggles on/off with backtick", (
 
   ui.fileDrop(RISA(), 0, 0);
   ui.pump(30);
-  if (ui.findByTestId("tile-0") == null) {
-    console.log("# SKIP risa-overlay: no risa ROM staged in romDir");
-    return;
-  }
+  if (ui.findByTestId("tile-0") == null) skip("risa-overlay: no risa ROM staged in romDir");
 
   // Boot far enough that the core is running and readRam yields live internal RAM.
   ui.advance(1500);

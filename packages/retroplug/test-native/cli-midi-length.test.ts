@@ -7,7 +7,7 @@
 // sits at note 64's period; dropped whole, pulse1 stays silent. (ch1 -> pulse1 is proven by cli-observe.)
 // A second case sends a 5-byte SysEx immediately followed by a note in the same run - the note still plays,
 // so the whole run arrived in order and the ROM's parser carried on past the F7.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { ApuState } from "../src/backend";
@@ -30,10 +30,7 @@ function pulse1After(build: (tl: Timeline) => void): ApuState["pulse1"] {
 
 test("a 6-byte run (two note-ons in one array) is delivered whole: the last note-on wins on pulse1", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   // Reference: note 64 alone, staged as an ordinary 3-byte message.
   const ref = pulse1After((tl) => tl.midi(200, [0x90, 64, 0x7f]));
   expect(ref.period).toBeGreaterThan(0);
@@ -45,10 +42,7 @@ test("a 6-byte run (two note-ons in one array) is delivered whole: the last note
 
 test("a 5-byte SysEx followed by a note in the same run arrives in order: the note plays", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const ref = pulse1After((tl) => tl.midi(200, [0x90, 64, 0x7f]));
   const run = pulse1After((tl) => tl.midi(200, [0xf0, 0x7d, 0x42, 0x02, 0xf7, 0x90, 64, 0x7f]));
   expect(run.period).toBe(ref.period);

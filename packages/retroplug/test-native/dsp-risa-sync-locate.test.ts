@@ -9,7 +9,7 @@
 // The scenario at the front of this is the one a DAW does constantly and the harness couldn't express
 // before `setPpq`: play, stop, rewind to the start, play again. Resuming from where you paused (ppq keeps
 // advancing) was already covered; rewinding was not.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -25,10 +25,7 @@ const withSync = (id: number) => ({ systems: [{ id, pipeline: [{ kind: "risa-syn
 
 test("a stop, a rewind and a mid-song jump each land risa on the row the arm named", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM_230)) {
-    console.log(`# SKIP dsp-risa-sync-locate: missing ${ROM_230}`);
-    return;
-  }
+  if (!be.fileExists(ROM_230)) skip(`dsp-risa-sync-locate: missing ${ROM_230}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();
@@ -100,10 +97,7 @@ test("a stop, a rewind and a mid-song jump each land risa on the row the arm nam
 
 test("the beat grid still holds on a run that follows a stop and rewind", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM_230)) {
-    console.log(`# SKIP dsp-risa-sync-locate: missing ${ROM_230}`);
-    return;
-  }
+  if (!be.fileExists(ROM_230)) skip(`dsp-risa-sync-locate: missing ${ROM_230}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

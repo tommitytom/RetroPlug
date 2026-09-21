@@ -4,7 +4,7 @@
 // cursor offset (0xC377/0xC378) is LIVE-correct: pressing DOWN moves the cursor-row byte there. The
 // cursor needs no playback (unlike the playing flags), so this works on any real sav. active=0xE8 is
 // asserted through the resolved layout (the old tool measured active + cursor together).
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { MemoryRegion } from "../src/backend";
@@ -19,10 +19,7 @@ const SONG_CURSOR_ROW = 888; // 0xC378
 
 test("ported legacy offsets: v6.9.0 resolves the 232-block and its SONG cursor is live-correct", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM) || !be.fileExists(SAV)) {
-    console.log(`# SKIP lsdj-legacy-offsets: v6.9.0 ROM/sav not found`);
-    return;
-  }
+  if (!be.fileExists(ROM) || !be.fileExists(SAV)) skip(`lsdj-legacy-offsets: v6.9.0 ROM/sav not found`);
   const audio = createAudioDriver();
   const id = 1;
   expect(be.constructSystem({ romPath: ROM, platform: "gb", core: "sameboy", embeddedRom: "", savPath: SAV, statePath: null }, id)).toBeTruthy();

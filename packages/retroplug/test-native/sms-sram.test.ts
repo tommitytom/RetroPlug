@@ -19,7 +19,7 @@
 // VERSION with no .sms/.gg distinction, so a GG load writes to addresses taken from an SMS link. (A
 // local `wlalink -S` of both v0.45 links gives an identical $C000-$DFFF label set, so the shared entry
 // is right; this is the behavioural half of that claim, against the ROM users actually run.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import type { Platform } from "../src/platform";
 import { createAudioDriver } from "../src/audioDriver";
@@ -90,10 +90,7 @@ function boot(be: ReturnType<typeof createRealBackend>, id: number, romPath: str
 
 test("the cart's own probe finds 32K of working SRAM, and reads the host's directory out of it", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP sms-sram: missing ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`sms-sram: missing ${ROM}`);
   const id = 40;
   const sav = buildSav(
     [
@@ -160,10 +157,7 @@ test("a save made INSIDE the cart comes back out through readSram, and the TS co
 
 test("a live song load works on the Game Gear flavor, on the SMS-derived layout", () => {
   const be = createRealBackend();
-  if (!be.fileExists(GG_ROM)) {
-    console.log(`# SKIP gg live load: missing ${GG_ROM}`);
-    return;
-  }
+  if (!be.fileExists(GG_ROM)) skip(`gg live load: missing ${GG_ROM}`);
   const id = 42;
   const rom = be.readFile(GG_ROM)!;
   // The .gg build self-identifies as the same version as the .sms one, which is what makes them share a

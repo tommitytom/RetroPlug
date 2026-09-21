@@ -4,7 +4,7 @@
 // snapshot into screen / tempo / per-screen cursor. Boots an authored era-format song, drives it with
 // renderAudio only (never startAudio — the single-threaded direct-render regime that keeps readMemory
 // live), navigates screens, and asserts the reader tracks the real on-screen state.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { decodeSav, savFrom } from "../src/lsdjSav";
@@ -33,7 +33,7 @@ for (const slug of ["lsdj5_0_3", "lsdj6_9_0"]) {
   test(`old-drift reader: ${slug} decodes live screen/tempo/cursor from the full drift layout`, () => {
     const be = createRealBackend();
     const ROM = `${DIR}/${slug}.gb`, SAV = `${DIR}/${slug}.sav`;
-    if (!be.fileExists(ROM) || !be.fileExists(SAV)) { console.log(`# SKIP ${slug}: ROM/sav not found`); return; }
+    if (!be.fileExists(ROM) || !be.fileExists(SAV)) skip(`${slug}: ROM/sav not found`);
 
     const reader = LsdjReader.fromHeader(be.readFilePrefix(ROM, 0x150)!);
     expect(reader.supported).toBeTruthy();

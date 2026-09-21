@@ -6,7 +6,7 @@
 //   - backtick again hides it.
 // SKIPs when no LSDj ROM was staged (a large external asset — see run-ui-tests.mjs).
 
-import { test, expect, ui } from "ui-harness";
+import { test, expect, skip, ui } from "ui-harness";
 
 const LSDJ = () => ui.romDir() + "/lsdj9_4_2.gb";
 const BACKTICK = 0x60; // ` — the debug toggle (raw DPF code on the "key" bus)
@@ -18,10 +18,7 @@ test("the LSDj overlay is hidden by default and toggles on/off with backtick", (
   // Load a real LSDj ROM by dropping it on the start screen. Absent (unstaged) → no tile → SKIP.
   ui.fileDrop(LSDJ(), 0, 0);
   ui.pump(30);
-  if (ui.findByTestId("tile-0") == null) {
-    console.log("# SKIP lsdj-overlay: no LSDj ROM staged in romDir");
-    return;
-  }
+  if (ui.findByTestId("tile-0") == null) skip("lsdj-overlay: no LSDj ROM staged in romDir");
 
   // Boot far enough that the core is running and readRam yields live WRAM.
   ui.advance(1500);

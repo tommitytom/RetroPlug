@@ -3,7 +3,7 @@
 // the reader tracks the stopped→playing transition and reports sensible live tempo/position/screen. This
 // proves the generated symbol addresses match the real ROM (a synthetic-RAM unit test can't). SKIPs when
 // the built ROM is absent, like risa-m0-spike.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -21,10 +21,7 @@ const BTN_START = 7; // GB button order, reused for NES (NesButton::Start = 7). 
 
 test("the risa runtime reader decodes live playback state from the real core", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM) || !be.fileExists(DEMO_SRM)) {
-    console.log(`# SKIP risa-runtime: missing ${RISA_ROM} or ${DEMO_SRM}`);
-    return;
-  }
+  if (!be.fileExists(RISA_ROM) || !be.fileExists(DEMO_SRM)) skip(`risa-runtime: missing ${RISA_ROM} or ${DEMO_SRM}`);
 
   const layout = runtime.resolveRisaLayout("2.2.1");
   expect(layout != null).toBeTruthy();

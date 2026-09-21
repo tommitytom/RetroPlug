@@ -5,7 +5,7 @@
 // (`_s_mode1`, with a `val`) reached through a `csym ... sc=static` record; the C name itself never carries
 // an address, which is why a name-regex over the file could not find it (BlipToaster's HARNESS-NOTES 3.4).
 // Reached via the live core's debugTarget() — NES-only (SameBoy/GBA have none). Mirrors cli-observe.test.ts.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
@@ -19,10 +19,7 @@ const DBG = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.dbg";
 
 test("loadLabels loads a cc65 .dbg into a real NES core (and fails a bogus path gracefully)", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 
@@ -39,10 +36,7 @@ test("loadLabels loads a cc65 .dbg into a real NES core (and fails a bogus path 
   expect(s.backend.symbolAddress(0xdead, "reset")).toBe(null);
 
   // If the real cc65 fixture is committed, loading it into the NES core succeeds.
-  if (!s.backend.fileExists(DBG)) {
-    console.log("# note: no cc65 .dbg fixture — asserted graceful-failure path only");
-    return;
-  }
+  if (!s.backend.fileExists(DBG)) skip("# note: no cc65 .dbg fixture — asserted graceful-failure path only");
   expect(s.backend.loadLabels(id, DBG)).toBe(true);
 
   // Assembler labels resolve as written.

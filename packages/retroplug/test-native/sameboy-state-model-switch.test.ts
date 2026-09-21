@@ -13,7 +13,7 @@
 //
 // The WRAM plane was already fixed this way (lsdj-wram-seam.test.ts); this is its state/SRAM twin.
 // MODEL_VALUES indices: 1 = dmgB, 3 = sgb, 9 = cgbC, 12 = agb.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
@@ -56,15 +56,13 @@ const buildOn = (be: ReturnType<typeof createRealBackend>, id: number, model: nu
     settings: JSON.stringify({ model }),
   }, id);
 
-const missing = (be: ReturnType<typeof createRealBackend>, name: string): boolean => {
-  if (be.fileExists(LSDJ)) return false;
-  console.log(`# SKIP ${name}: LSDj ROM not found at ${LSDJ}`);
-  return true;
+const requireRom = (be: ReturnType<typeof createRealBackend>, name: string): void => {
+  if (!be.fileExists(LSDJ)) skip(`${name}: LSDj ROM not found at ${LSDJ}`);
 };
 
 test("readState tracks a live model switch that GROWS the savestate (dmgB → cgbC), never freezing", () => {
   const be = createRealBackend();
-  if (missing(be, "state-model-grow")) return;
+  requireRom(be, "state-model-grow");
   const audio = createAudioDriver();
   const id = 101;
   expect(buildOn(be, id, DMG_B)).toBeTruthy();
@@ -97,7 +95,7 @@ test("readState tracks a live model switch that GROWS the savestate (dmgB → cg
 
 test("readSram stays correct across a switch that MOVES the SRAM offset (dmgB → sgb)", () => {
   const be = createRealBackend();
-  if (missing(be, "state-model-sgb")) return;
+  requireRom(be, "state-model-sgb");
   const audio = createAudioDriver();
   const id = 102;
   expect(buildOn(be, id, DMG_B)).toBeTruthy();
@@ -130,7 +128,7 @@ test("readSram stays correct across a switch that MOVES the SRAM offset (dmgB �
 // on it, which is what keeps the headroom constant honest if SameBoy's savestate layout ever changes.
 test("a switched-into model publishes the same state size as one constructed on it", () => {
   const be = createRealBackend();
-  if (missing(be, "state-model-sweep")) return;
+  requireRom(be, "state-model-sweep");
   const audio = createAudioDriver();
   const models = [DMG_B, CGB_C, SGB, AGB];
   let id = 110;

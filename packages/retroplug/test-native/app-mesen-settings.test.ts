@@ -5,7 +5,7 @@
 // forces emu_->Reset()) both leave the core alive and rendering. (Honest scope: this proves the
 // round-trip reaches the core and survives both apply modes; the knobs' visible/timing effect isn't
 // asserted headlessly — the TS mock tests carry the semantics.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
@@ -17,7 +17,7 @@ const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("a NES core boots with a non-default region seeded from its role config (construct blob)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log("# SKIP: no NES rom"); return; }
+  if (!be.fileExists(NES)) skip("no NES rom");
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
 
@@ -34,7 +34,7 @@ test("a NES core boots with a non-default region seeded from its role config (co
 
 test("live NES knob edits reach the core: sprite-limit (live) + region (resets) both keep it rendering", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log("# SKIP: no NES rom"); return; }
+  if (!be.fileExists(NES)) skip("no NES rom");
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
 

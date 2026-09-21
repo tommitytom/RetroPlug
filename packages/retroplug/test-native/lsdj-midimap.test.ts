@@ -2,7 +2,7 @@
 // mode (3), running in the real DSP kernel, turns host MIDI NoteOn into LSDj row bytes (ch0 → row,
 // ch1 → row+128, NoteOff → 0xFE — dspRoles.ts) and feeds a real LSDj core in SYNC=MI.MAP. A row byte
 // triggers that song row live, so mapping a row that has a note makes the core sing.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -40,10 +40,7 @@ const rms = (a: Float32Array): number => {
 test("the TS lsdj-sync MidiMap role maps MIDI notes to LSDj row bytes on a real core", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const be = createRealBackend();
-  if (!be.fileExists(ABOY)) {
-    console.log(`# SKIP lsdj-midimap: aboy LSDj ROM not found at ${ABOY}`);
-    return;
-  }
+  if (!be.fileExists(ABOY)) skip(`lsdj-midimap: aboy LSDj ROM not found at ${ABOY}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();
@@ -104,7 +101,7 @@ const ADVANCE_SONG: SavInput = {
 test("the midiMap role clocks the cart, so a mapped row actually plays through", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: ADVANCE_SONG, mode: "midiMap" });
-  if (!p) return console.log("# SKIP lsdj-midimap advance: aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-midimap advance: aboy ROM not found / unsupported version");
 
   // Two stages, so a failure says WHICH half broke. First the launch alone, with the host stopped:
   // that is the pre-existing behaviour and must still trigger the row.

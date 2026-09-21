@@ -3,7 +3,7 @@
 // compileDmc RPC and needs no ROM, so it always runs; the ROM-splice verbs are gated on the built FME-7
 // banking ROM (16 kit banks) and SKIP when absent. The tool only touches s.backend + s.audio, so a minimal
 // Session over the real backend/driver suffices.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { Session } from "../cli/session";
@@ -34,9 +34,8 @@ const copyRom = (be: ReturnType<typeof createRealBackend>, to: string): string =
   if (!be.writeFile(to, be.readFile(BLIPTOASTER_ROM)!)) throw new Error(`copy failed: ${to}`);
   return to;
 };
-const romSkip = (be: ReturnType<typeof createRealBackend>, what: string): boolean => {
-  if (!be.fileExists(BLIPTOASTER_ROM)) { console.log(`# SKIP bliptoaster-rom ${what}: no ROM at ${BLIPTOASTER_ROM}`); return true; }
-  return false;
+const requireRom = (be: ReturnType<typeof createRealBackend>, what: string): void => {
+  if (!be.fileExists(BLIPTOASTER_ROM)) skip(`bliptoaster-rom ${what}: no ROM at ${BLIPTOASTER_ROM}`);
 };
 
 test("bliptoaster-rom build-kit compiles a WAV into a populated 8 KB .rkit (no ROM needed)", () => {
@@ -56,7 +55,7 @@ test("bliptoaster-rom build-kit compiles a WAV into a populated 8 KB .rkit (no R
 
 test("bliptoaster-rom import-kit replaces one bank and leaves the other 15 byte-identical; the ROM boots", () => {
   const { be, audio, s } = toolSession();
-  if (romSkip(be, "import-kit")) return;
+  requireRom(be, "import-kit");
   writeSine(be, "/tmp/rp-em-ik.wav", 300);
   expect(be.writeFile("/tmp/rp-em-ik-spec.json", jenc({ name: "HATS", build: [{ file: "/tmp/rp-em-ik.wav", name: "HH" }] }))).toBeTruthy();
   blipToasterRomTool.run(s, ["build-kit", "/tmp/rp-em-ik-spec.json", "/tmp/rp-em-ik.rkit"]);
@@ -91,7 +90,7 @@ test("bliptoaster-rom import-kit replaces one bank and leaves the other 15 byte-
 
 test("bliptoaster-rom import-sample splices into a kit, remove-sample empties a slot (index preserved)", () => {
   const { be, s } = toolSession();
-  if (romSkip(be, "import-sample")) return;
+  requireRom(be, "import-sample");
   writeSine(be, "/tmp/rp-em-a.wav", 200);
   writeSine(be, "/tmp/rp-em-b.wav", 500);
   expect(be.writeFile("/tmp/rp-em-is-spec.json", jenc({ name: "KT", build: [{ file: "/tmp/rp-em-a.wav", name: "AAA" }] }))).toBeTruthy();
@@ -119,7 +118,7 @@ test("bliptoaster-rom import-sample splices into a kit, remove-sample empties a 
 // between the two repos - the table's stride, its length, or a build that reshuffles it.
 test("the real ROM's baked tables read in full: 16 named themes, 4 fonts, 16 kit banks", () => {
   const { be, s } = toolSession();
-  if (romSkip(be, "tables")) return;
+  requireRom(be, "tables");
   const rom = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
 
   expect(rom.themeCount).toBe(16);
@@ -142,7 +141,7 @@ test("the real ROM's baked tables read in full: 16 named themes, 4 fonts, 16 kit
 
 test("bliptoaster-rom export-theme → import-theme round-trips a .rit; export-font → import-font a .chr", () => {
   const { be, s } = toolSession();
-  if (romSkip(be, "theme/font")) return;
+  requireRom(be, "theme/font");
   const rom0 = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
   // A HIGH theme index on purpose: slot 0 is the one entry risa's split layout happened to read correctly, so
   // a slot-0-only round-trip passes against the broken reader too.
@@ -170,7 +169,7 @@ test("bliptoaster-rom export-theme → import-theme round-trips a .rit; export-f
 
 test("bliptoaster-rom settings prints the real ROM's block, patches named fields, and rejects a bad value", () => {
   const { be, s } = toolSession();
-  if (romSkip(be, "settings")) return;
+  requireRom(be, "settings");
   const base = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
   expect(base.hasSettings).toBe(true);
   // A shipped ROM is at its power-on defaults - that is what "baked settings" means out of the build. Two of
@@ -208,7 +207,7 @@ test("bliptoaster-rom settings prints the real ROM's block, patches named fields
 
 test("a settings-patched ROM boots, and the core comes up in the theme the block names", () => {
   const { be, audio, s } = toolSession();
-  if (romSkip(be, "settings boot")) return;
+  requireRom(be, "settings boot");
   const nes = copyRom(be, "/tmp/rp-em-setboot.nes");
   blipToasterRomTool.run(s, ["settings", nes, "--theme", "11"]); // MTRX: bg $0F, text $2A
 
@@ -231,7 +230,7 @@ const OLD_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("a ROM predating the screen fields is reported as not reading them, and refuses a write", () => {
   const { be, s } = toolSession();
-  if (!be.fileExists(OLD_ROM)) { console.log(`# SKIP capability probe: no ROM at ${OLD_ROM}`); return; }
+  if (!be.fileExists(OLD_ROM)) skip(`capability probe: no ROM at ${OLD_ROM}`);
   // The specimen is the REAL ROM with the two screen bytes put back to the reserved 0xFF an older build leaves
   // there - derived rather than found, because the staged ROM is kept current and so is never itself old. Only
   // those two bytes move, so everything else about it is a genuine cart.
@@ -285,7 +284,7 @@ function frameOf(be: ReturnType<typeof createRealBackend>, audio: ReturnType<typ
 
 test("the baked font byte reaches the screen: two ROMs differing only in it render different pixels", () => {
   const { be, audio, s } = toolSession();
-  if (romSkip(be, "font pixels")) return;
+  requireRom(be, "font pixels");
 
   const a = copyRom(be, "/tmp/rp-em-font0.nes");
   const b = copyRom(be, "/tmp/rp-em-font2.nes");
@@ -308,7 +307,7 @@ test("the baked font byte reaches the screen: two ROMs differing only in it rend
 
 test("bliptoaster-rom patch realizes a mixed manifest (build kit + import theme + font) and boots", () => {
   const { be, audio, s } = toolSession();
-  if (romSkip(be, "patch")) return;
+  requireRom(be, "patch");
   writeSine(be, "/tmp/rp-em-pt.wav", 300);
   blipToasterRomTool.run(s, ["export-theme", BLIPTOASTER_ROM, "0", "/tmp/rp-em-pt.rit"]);
   blipToasterRomTool.run(s, ["export-font", BLIPTOASTER_ROM, "0", "/tmp/rp-em-pt.chr"]);

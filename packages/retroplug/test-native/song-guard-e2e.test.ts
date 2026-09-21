@@ -1,6 +1,6 @@
 // End-to-end on a REAL cart: the guard fires on genuinely dirty work, Save & Load preserves it, and a
 // .bak lands next to the sav. Operates on a temp copy.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -18,7 +18,7 @@ declare const __CONFIG_DIR__: string;
 test("e2e: dirty working song is detected, Save & Load preserves it, .bak is written", () => {
   const be = createRealBackend();
   const src = __RESOURCES_DIR__ + "/roms/lsdj942telemelt_5songs";
-  if (!be.fileExists(src + ".gbc")) { console.log("# SKIP"); return; }
+  if (!be.fileExists(src + ".gbc")) skip("");
   const rom = __CONFIG_DIR__ + "/t.gbc", sav = __CONFIG_DIR__ + "/t.sav";
   be.writeFileAtomic(rom, be.readFile(src + ".gbc")!);
   be.writeFileAtomic(sav, be.readFile(src + ".sav")!);

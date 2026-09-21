@@ -8,7 +8,7 @@
 //
 // Uses `adopt` (mode 3 arms capture at CONSTRUCT) + a manual syncDspFromStore (adopt is quiet). See
 // app-play-nes-channels.test.ts for the same construct-time-capture rationale.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -37,7 +37,7 @@ const CORE = ["Square1", "Square2", "Triangle", "Noise", "DMC"];
 
 test("NES renders its 5 core channels individually (renderAudioPerChannel mode 3)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log(`# SKIP app-play-nes-mono: no ROM at ${NES}`); return; }
+  if (!be.fileExists(NES)) skip(`app-play-nes-mono: no ROM at ${NES}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();

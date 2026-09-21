@@ -2,7 +2,7 @@
 // channels (channelExportMode individualMono), driven by n8-midi with every 2A03 voice at velocity 127.
 // Measurement harness, not a regression guard — see audio-levels-lib.ts.
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-nes
-import { test } from "../testing/harness";
+import { test, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -21,7 +21,7 @@ const NAMES = ["Pulse 1", "Pulse 2", "Triangle", "Noise", "DMC"];
 
 test("audio levels: Mesen NES mix + core channels (n8-midi)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log(`# SKIP: no ROM at ${NES}`); return; }
+  if (!be.fileExists(NES)) skip(`no ROM at ${NES}`);
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

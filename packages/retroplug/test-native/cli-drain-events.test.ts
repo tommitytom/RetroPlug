@@ -5,7 +5,7 @@
 // this, every call returned the whole retained frame pair and a 5 ms poll saw each event ~3 times; the
 // only dedupe key available (scanline:cycle:address) collapsed writes landing on the same dot in
 // consecutive frames, which a deterministic idle loop does (BlipToaster's HARNESS-NOTES 2.1).
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { DebugEvent } from "../src/backend";
@@ -17,10 +17,7 @@ const key = (e: DebugEvent) => `${e.type}:${e.operationType}:${e.frame}:${e.scan
 
 test("drainEvents captures APU register-write events, each stamped with a frame, and never repeats one", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 
@@ -73,10 +70,7 @@ test("drainEvents captures APU register-write events, each stamped with a frame,
 
 test("a second drain with no time elapsed is empty; a slow poll gets at most the two retained frames", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 

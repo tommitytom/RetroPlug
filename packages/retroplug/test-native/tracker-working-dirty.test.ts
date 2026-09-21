@@ -11,7 +11,7 @@
 // Every cart is copied into the test's temp config dir first: the Load path WRITES the .sav, so pointing
 // this at the shared resources tree would destroy the fixture's working song (which is exactly the bug
 // under test, and exactly how it was destroyed once already).
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -39,7 +39,7 @@ const peak = (a: Float32Array): number => {
 
 test("lsdj: a loaded song stays clean across 30s of PLAYBACK on a real core (no false positives)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ_ROM) || !be.fileExists(LSDJ_SAV)) { console.log("# SKIP: no LSDj cart"); return; }
+  if (!be.fileExists(LSDJ_ROM) || !be.fileExists(LSDJ_SAV)) skip("no LSDj cart");
 
   // Copy - the Load below writes the .sav.
   const rom = __CONFIG_DIR__ + "/lsdj.gbc", sav = __CONFIG_DIR__ + "/lsdj.sav";
@@ -83,7 +83,7 @@ test("lsdj: a loaded song stays clean across 30s of PLAYBACK on a real core (no 
 
 test("risa: every song in the real .srm carts loads clean (no false positives)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log("# SKIP: no risa ROM"); return; }
+  if (!be.fileExists(RISA_ROM)) skip("no risa ROM");
 
   let checked = 0;
   for (const name of RISA_SRMS) {

@@ -8,7 +8,7 @@
 // Uses `adopt` (not loadRom): the mesen role's channelExportMode arms capture at CONSTRUCT (onActivate);
 // setRoleConfig is the live path and would not engage it. adopt is quiet, so the store→DSP projection is
 // driven by hand (syncDspFromStore), matching how ProjectStore.load re-projects after its adopt.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -37,7 +37,7 @@ const rightRms = (a: Float32Array): number => {
 
 test("NES renders its stereo-mod pins (renderAudioPerChannel): Pulse rings, TND/Expansion stay quiet", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log(`# SKIP app-play-nes-channels: no ROM at ${NES}`); return; }
+  if (!be.fileExists(NES)) skip(`app-play-nes-channels: no ROM at ${NES}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();

@@ -9,7 +9,7 @@
 // does survive a rebuild is the FIFO ADDRESS: a read watchpoint on $40F1 reports the PC of whatever polls
 // it, and the register read at that break gives the condition its value. So the cart can be rebuilt freely
 // and this still tests the breakpoint surface rather than a snapshot of one build's layout.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
@@ -18,10 +18,7 @@ const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("breakpoints fire on a real NES: execute PC, FIFO read watchpoint, cycle cap, conditions", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 

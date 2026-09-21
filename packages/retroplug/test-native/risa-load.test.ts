@@ -3,7 +3,7 @@
 // read the live 64 KB via readSram, Load song 0 into the working region, then cold-boot from it through
 // the SAME seam the menu uses (writeFileAtomic + loadSram) and confirm the firmware kept the working song
 // (its name at bank-1 0x1E8C) and the catalog. SKIPs when the built ROM is absent.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -24,7 +24,7 @@ const CUR_ENTRY_OFF = 0x2000 + 0x1e94; // bank 1 + SAVE_CURRENT_ENTRY_OFFSET: th
 
 test("Load-to-working: the produced battery cold-boots risa onto the loaded song", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-load: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-load: no ROM at ${RISA_ROM}`);
 
   const battery = savBytes("v2_blumarbl"); // current v2, one song: BLUMARBL
   expect(be.writeFile(SAV_PATH, battery)).toBeTruthy();

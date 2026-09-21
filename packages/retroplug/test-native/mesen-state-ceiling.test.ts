@@ -15,7 +15,7 @@
 // COVERAGE LIMIT: the GBA leg is the one that actually reproduces the bug, and it needs a GBA ROM that is
 // not in this repo, so it SKIPS on a clean checkout and in CI. The NES leg runs everywhere but would have
 // passed before the fix too - it guards against a future regression on the core that is always available.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 
@@ -33,10 +33,7 @@ const eq = (a: Uint8Array, b: Uint8Array): boolean => {
 
 test("GBA: the published savestate tracks the running core, never freezing on the boot snapshot", () => {
   const be = createRealBackend();
-  if (!be.fileExists(GBA)) {
-    console.log(`# SKIP mesen-state-ceiling GBA leg: no GBA ROM at ${GBA}`);
-    return;
-  }
+  if (!be.fileExists(GBA)) skip(`mesen-state-ceiling GBA leg: no GBA ROM at ${GBA}`);
   const audio = createAudioDriver();
   const id = 801;
   expect(be.constructSystem({

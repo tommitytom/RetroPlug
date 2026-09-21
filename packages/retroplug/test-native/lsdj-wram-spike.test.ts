@@ -8,7 +8,7 @@
 //   3. Whether 9.4.2 matches the LSDisJ 9.2.L seed addresses (ARE_CHANNELS_PLAYING=0xC0E0,
 //      PLAYING_PHRASE_ROWS=0xC16C, PLAYING_SONG_ROWS=0xC200) — logged, so we know if the seed table
 //      can be trusted for the newest stock build or if the detector must supply it.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
@@ -44,10 +44,7 @@ const hex = (n: number) => "0x" + n.toString(16);
 
 test("LSDj WRAM spike: readMemory(Ram) on SameBoy + differential offset detection on 9.4.2", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-wram-spike: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-wram-spike: LSDj ROM not found at ${LSDJ}`);
   const audio = createAudioDriver();
   const id = 1;
   expect(be.constructSystem({

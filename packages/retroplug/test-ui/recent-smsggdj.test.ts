@@ -12,7 +12,7 @@
 // The `.sav` is written by the test itself, beside the staged ROM, with the SMDJ4 codec - the test runs
 // in the app's own JS context, so the real backend's file ops are right there.
 
-import { test, expect, ui, navTo, Key } from "ui-harness";
+import { test, expect, skip, ui, navTo, Key } from "ui-harness";
 import { createRealBackend } from "../src/realBackend";
 import { buildSav } from "../src/smsggdj/codec/sav";
 import { buildMetronomeBlock, buildConfigBlock, SMS_SYNC_OFF } from "../test-native/smsSyncSong";
@@ -52,10 +52,7 @@ test("an smsggdj project through Recent: no row until the cart is up, one row pe
   expect(ui.boot()).toBeTruthy();
   ui.pump(30);
   const be = createRealBackend();
-  if (!be.fileExists(ROM())) {
-    console.log("# SKIP recent-smsggdj: no smsggdj ROM staged in romDir");
-    return;
-  }
+  if (!be.fileExists(ROM())) skip("recent-smsggdj: no smsggdj ROM staged in romDir");
   expect(be.writeFile(SAV(), buildSav([{ block: buildMetronomeBlock(), name: "ALPHA" }], 32 * 1024, buildConfigBlock(SMS_SYNC_OFF))!)).toBeTruthy();
 
   const titles: string[] = [];

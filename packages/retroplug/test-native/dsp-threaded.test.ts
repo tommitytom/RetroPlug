@@ -7,7 +7,7 @@
 //
 // Ownership discipline: cores are quiescent while the audio thread runs — the system is constructed
 // and the kernel loaded BEFORE startAudio; nothing reads core state until after stopAudio.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -39,10 +39,7 @@ const SYNC_MIDI_SONG: SavInput = {
 
 test("the lsdj-sync role clocks LSDj on a background audio thread, toggled via the command queue", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP dsp-threaded: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`dsp-threaded: LSDj ROM not found at ${LSDJ}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

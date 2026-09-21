@@ -3,7 +3,7 @@
 // live SRAM to the snapshot registry, and unsavedChanges compares THOSE bytes against the `.sav` on disk.
 // A mock backend hands back whatever a test set, so it can't prove the comparison is reading a real
 // battery at all.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { buildAppRegistry } from "../src/appHost";
 import { RecentStore } from "../src/recentStore";
@@ -21,10 +21,7 @@ const SONG = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [
 
 test("an unsaved battery is listed with the .sav it would write; flushing it clears the list", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP app-unsaved-changes: LSDj ROM not found at ${LSDJ}`);
-    return; // resource-less environment - the devcontainer has it
-  }
+  if (!be.fileExists(LSDJ)) skip(`app-unsaved-changes: LSDj ROM not found at ${LSDJ}`); // resource-less environment - the devcontainer has it
 
   // A private copy of the cart, with no `.sav` beside it yet.
   const rom = __CONFIG_DIR__ + "/unsaved-changes.gb";

@@ -5,9 +5,10 @@
 //
 // The allocation counters exist only in a RETROPLUG_PROFILE host (built by `pnpm profile` /
 // tools/run-profile.sh). Under the default host the counters report enabled:false and this
-// test no-ops (so the normal `pnpm test:native` sweep stays green). One test per file (the
+// test SKIPS (so the normal `pnpm test:native` sweep stays fast, and says the case did not run
+// rather than printing a green tick for it). One test per file (the
 // native Project/Engine is shared per host process).
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { createDspRuntime } from "../src/dspRuntime";
@@ -142,11 +143,8 @@ test("dsp-bench: DSP kernel per-block allocation under an mGB + MIDI workload", 
 
   // Bail early (before the render loops) when the host has no profiling allocator, so the normal
   // test:native sweep stays fast + green.
-  if (!audio.dspAllocStats().enabled) {
-    console.warn("[dsp-bench] instrumentation off — run via `pnpm profile` for real metrics. Skipping.");
-    expect(true).toBeTruthy();
-    return;
-  }
+  if (!audio.dspAllocStats().enabled)
+    skip("dsp-bench: allocation instrumentation off — run via `pnpm profile` for real metrics");
 
   audio.setBpm(140);
   audio.setTransport(true);

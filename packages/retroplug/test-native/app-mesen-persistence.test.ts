@@ -3,7 +3,7 @@
 // that passes the NES magic gate but fails Mesen's LoadRom must fail the construct (no zombie tile),
 // and a battery cart's SRAM must read back through the registry (F2). bliptoaster.nes is committed
 // in-repo; the battery NES fixture is authored inline (no real-core battery ROM ships).
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
@@ -21,7 +21,7 @@ const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
 
 test("F1: a live NES core republishes its savestate — readState isn't frozen at the boot seed", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log("# SKIP: no NES rom"); return; }
+  if (!be.fileExists(NES)) skip("no NES rom");
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
 
@@ -44,7 +44,7 @@ test("F1: a live NES core republishes its savestate — readState isn't frozen a
 
 test("F1: Duplicate clones a live NES core off its published (advanced) state, not the boot seed", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log("# SKIP: no NES rom"); return; }
+  if (!be.fileExists(NES)) skip("no NES rom");
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
 

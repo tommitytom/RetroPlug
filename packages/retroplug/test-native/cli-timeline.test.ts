@@ -2,7 +2,7 @@
 // render (the persistent engine consumes the staged MIDI on the chunk after the event), so the returned
 // PCM is audible. Proves the CLI event-scripting path end-to-end against a real Mesen core. (The pure
 // build() ordering/bytes are covered in the mock test/cli/timeline.test.ts.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
@@ -17,10 +17,7 @@ function rms(pcm: Float32Array): number {
 
 test("a Timeline note plays through renderTimeline → audible PCM", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 

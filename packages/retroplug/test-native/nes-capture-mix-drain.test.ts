@@ -10,7 +10,7 @@
 // Reproduced on n8-midi (adopt without a sav → reliable per-channel path in the test host, unlike a
 // sav/seed adopt): sound a note, drain ~1.5 s through the MIX path (fills the capture streams), then switch
 // to renderAudioPerChannel. Before the fix the pins are dead; after it the note still rings on the Pulse pin.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -32,7 +32,7 @@ const leftRms = (a: Float32Array): number => {
 
 test("NES per-channel capture survives a MIX-path drain (renderAudio) then plays via renderAudioPerChannel", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log(`# SKIP nes-capture-mix-drain: no ROM at ${NES}`); return; }
+  if (!be.fileExists(NES)) skip(`nes-capture-mix-drain: no ROM at ${NES}`);
 
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();

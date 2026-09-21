@@ -8,7 +8,7 @@
 // exists to be held to it.
 //
 // Run: pnpm test:native lsdj-playback-probe
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { type SavInput } from "../src/lsdjSav";
 import { CHANNELS } from "../src/lsdj/runtime";
 import { LsdjProbe, MAP_CLOCK, MAP_NOTEOFF, transitions, changeTicks, gaps, fmtSample, type ProbeSample } from "./lsdjPlaybackProbe";
@@ -95,8 +95,6 @@ const SPARSE_SONG: SavInput = {
 const TICKS_PER_STEP = 6;
 const TICKS_PER_PHRASE = TICKS_PER_STEP * 16;
 
-const skip = (why: string): void => console.log(`# SKIP lsdj-playback-probe: ${why}`);
-
 const dump = (label: string, samples: ProbeSample[], every = 1): void => {
   console.log(`  --- ${label} (${samples.length} samples)`);
   for (let i = 0; i < samples.length; i += every) console.log(`    ${fmtSample(samples[i])}`);
@@ -109,7 +107,7 @@ const dump = (label: string, samples: ProbeSample[], every = 1): void => {
 test("B1: MI.MAP through the shipped midiMap role, with no clock byte", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG, mode: "midiMap" });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   const before = p.sample();
   p.launchNote(0); // ch1 NoteOn note 0 -> row byte 0
@@ -135,7 +133,7 @@ test("B1: MI.MAP through the shipped midiMap role, with no clock byte", () => {
 test("B0: does a raw row byte trigger, and what does one 0xFF do to a playing cart?", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   const afterLaunch = p.launchRaw(0);
   console.log(`[B0] after raw row byte 0x00: ${fmtSample(afterLaunch)}`);
@@ -173,7 +171,7 @@ test("B0: does a raw row byte trigger, and what does one 0xFF do to a playing ca
 test("B2: ticks per step under an explicit 0xFF clock stream", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   p.launchRaw(0); // row 0
   const samples = p.runTicks(240); // 240 ticks = 10 beats at 24 PPQN
@@ -196,7 +194,7 @@ test("B2: ticks per step under an explicit 0xFF clock stream", () => {
 test("B3: does the cart auto-advance past a launched row?", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   p.launchRaw(0);
   // One phrase at the default groove is 16 steps x 6 ticks = 96 ticks. Clock well past several
@@ -227,7 +225,7 @@ test("B3: does the cart auto-advance past a launched row?", () => {
 test("B4: is a launch song-wide, and do channels diverge afterwards?", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   p.launchRaw(0);
   const samples = p.runTicks(600);
@@ -253,7 +251,7 @@ test("B4: is a launch song-wide, and do channels diverge afterwards?", () => {
 test("B5: what does the 0xFE NoteOff handshake do?", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   p.launchRaw(0);
   const running = p.runTicks(150);
@@ -280,7 +278,7 @@ test("B5: what does the 0xFE NoteOff handshake do?", () => {
 test("B6: how does a chain treat empty phrase slots?", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: GAP_SONG });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   p.launchRaw(0); // chain 0 = [phrase 0, EMPTY, phrase 2]
   const samples = p.runTicks(400);
@@ -303,7 +301,7 @@ test("B6: how does a chain treat empty phrase slots?", () => {
 test("B7: do rows 254/255 collide with the 0xFE/0xFF sentinels?", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   console.log(`[B7] MAP_NOTEOFF=0x${MAP_NOTEOFF.toString(16)} MAP_CLOCK=0x${MAP_CLOCK.toString(16)}`);
   console.log("[B7] rows 254/255 are byte-identical to those sentinels, so the addressable launch");
@@ -328,7 +326,7 @@ test("B8: what does launching an EMPTY song row do?", () => {
   // CHAIN sequence (not just songRow) is what separates the three possible outcomes: a stop, a jump to
   // row 5 followed by a wrap, or the byte being ignored outright.
   const p = LsdjProbe.create({ song: SONG });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   p.launchRaw(0);
   const playing = p.runTicks(150);
@@ -351,7 +349,7 @@ test("B8: what does launching an EMPTY song row do?", () => {
   // Part 2 — from a STOPPED cart, where nothing is already in motion to confuse the reading. If an empty
   // row is simply ignored, this cart never starts at all.
   const idle = LsdjProbe.create({ song: SONG });
-  if (!idle) return skip("aboy ROM not found / unsupported version");
+  if (!idle) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   idle.launchRaw(5);
   const fromIdle = idle.runTicks(200);
@@ -373,7 +371,7 @@ test("B8: what does launching an EMPTY song row do?", () => {
 test("B9: where does a launch of an empty row actually land?", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SPARSE_SONG });
-  if (!p) return skip("aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-playback-probe: aboy ROM not found / unsupported version");
 
   p.launchRaw(3); // empty, with populated rows at 0-1 below it and 5-6 above
   const samples = p.runTicks(200);

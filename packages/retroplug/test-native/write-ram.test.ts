@@ -11,7 +11,7 @@
 // confuse it, because the emulated code has invariants over those bytes that nothing here knows about.
 // That is the feature, not a defect. Bounds are refused because a write past the region corrupts the
 // host, which is a crash rather than a confused ROM.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 
@@ -41,10 +41,7 @@ function boot(): { be: ReturnType<typeof createRealBackend>; audio: ReturnType<t
 
 test("a poke lands in the same region readRam serves, at the same offset", () => {
   const be0 = createRealBackend();
-  if (!be0.fileExists(ROM)) {
-    console.log(`# SKIP write-ram: missing ${ROM}`);
-    return;
-  }
+  if (!be0.fileExists(ROM)) skip(`write-ram: missing ${ROM}`);
   const { be, audio, id } = boot();
   const before = be.readRam(id)!;
   expect(before.length).toBe(WRAM_LEN);

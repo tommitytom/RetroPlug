@@ -10,7 +10,7 @@
 // It also checks the claim the LEDs rest on: after a launch, the cart is where the app's model says.
 //
 // Run: pnpm test:native lsdj-launchpad
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { type SavInput } from "../src/lsdjSav";
 import { launchMessage } from "../src/controller";
 import { PredictedLsdjModel } from "../src/lsdj/playback";
@@ -39,7 +39,7 @@ const SONG: SavInput = { workingSong: songJson };
 test("the controller layer's launch bytes move a real cart, on both MIDI channels", () => {
   LsdjProbe.closeAll(); // drop the carts earlier tests left running (renderAudio drives them all)
   const p = LsdjProbe.create({ song: SONG, mode: "midiMap" });
-  if (!p) return console.log("# SKIP lsdj-launchpad: aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-launchpad: aboy ROM not found / unsupported version");
 
   // The app's own model of the same song, driven by the same launches. If the two disagree, the LEDs are
   // describing a cart that is somewhere else.
@@ -96,7 +96,7 @@ test("a project whose cart is in the DEFAULT midiSync still launches rows once a
     song: SONG,
     structure: (id) => projectKernelStructure([lsdjView(id)], "sendToAll", projection()),
   });
-  if (!p) return console.log("# SKIP lsdj-launchpad: aboy ROM not found / unsupported version");
+  if (!p) return skip("lsdj-launchpad: aboy ROM not found / unsupported version");
 
   p.stage(launchMessage(42)!);
   const after = p.render(400);

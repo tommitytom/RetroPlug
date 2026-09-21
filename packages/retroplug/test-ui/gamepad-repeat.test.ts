@@ -7,7 +7,7 @@
 // the Menu repeats at HOLD_REPEAT_DELAY_MS=400 (first repeat on the first frame ≥400ms in ≈ 414ms) then
 // every HOLD_REPEAT_PERIOD_MS=100 (≈ every 115ms), so a hold of ~575ms fires exactly two repeats.
 
-import { test, expect, ui, navToPad } from "ui-harness";
+import { test, expect, ui } from "ui-harness";
 
 const frameMs = 23; // the harness advances the tick this much per pump() frame
 const framesFor = (ms: number) => Math.ceil(ms / frameMs);

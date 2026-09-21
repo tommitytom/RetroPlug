@@ -23,7 +23,7 @@
 // (116.1 / 133.5 ms) either side of the ideal. That alternation is inherent to the protocol - the DAW
 // cannot place a row between frames. What it must NOT do is accumulate, which is what the mean spacing
 // and the grid-anchored residual below actually test.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -109,10 +109,7 @@ function risingEdges(mono: Float32Array, sampleRate: number): number[] {
 for (const m of MACHINES) {
   test(`${m.machine.toUpperCase()}: the DAW transport holds smsggdj on the grid for 30s, with no accumulation`, () => {
     const be = createRealBackend();
-    if (!be.fileExists(m.rom)) {
-      console.log(`# SKIP dsp-sms-sync-drift ${m.machine}: missing ${m.rom}`);
-      return;
-    }
+    if (!be.fileExists(m.rom)) skip(`dsp-sms-sync-drift ${m.machine}: missing ${m.rom}`);
     const audio = createAudioDriver();
     const sr = audio.sampleRate();
 

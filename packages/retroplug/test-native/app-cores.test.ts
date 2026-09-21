@@ -5,7 +5,7 @@
 // no input. (NES is silent until MIDI-driven and the host has no NES-MIDI path yet; Nanoloop GBA
 // doesn't auto-play; an idle smsggdj plays nothing - so audio can't prove liveness here.) Each ROM is
 // guarded with fileExists so a resource-less CI skips.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RecentStore } from "../src/recentStore";
@@ -38,10 +38,7 @@ function bootsAndRenders(
   size?: { width: number; height: number },
 ): void {
   const be = createRealBackend();
-  if (!be.fileExists(rom)) {
-    console.log(`# SKIP app-cores: ROM not found at ${rom}`);
-    return;
-  }
+  if (!be.fileExists(rom)) skip(`app-cores: ROM not found at ${rom}`);
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const audio = createAudioDriver();
 
@@ -92,10 +89,7 @@ test("the Game Gear backend picks the GG machine, not SMS (geometry is the proof
 // omitted because ConstructSpec requires it - the point is precisely a caller that does not send it.
 function buildsWithoutCore(rom: string, platform: string): void {
   const be = createRealBackend();
-  if (!be.fileExists(rom)) {
-    console.log(`# SKIP app-cores default-core: ROM not found at ${rom}`);
-    return;
-  }
+  if (!be.fileExists(rom)) skip(`app-cores default-core: ROM not found at ${rom}`);
   const spec: Record<string, unknown> = {
     romPath: rom,
     platform,

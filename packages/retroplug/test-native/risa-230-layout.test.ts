@@ -8,7 +8,7 @@
 // 2.3.0 shares nothing with 2.2.1 - cc65 moved every variable the reader tracks - so it needs its own
 // snapshot rather than a VERSION_ALIASES entry (contrast risa-220-layout, which proves an alias).
 // SKIPs when the 2.3.0 ROM / LETGO sav aren't present, like the other risa native tests.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -26,10 +26,7 @@ const BTN_START = 7;
 
 test("risa 2.3.0 has its own layout - the released ROM decodes coherently", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM_230) || !be.fileExists(LETGO)) {
-    console.log(`# SKIP risa-230-layout: missing ${ROM_230} or ${LETGO}`);
-    return;
-  }
+  if (!be.fileExists(ROM_230) || !be.fileExists(LETGO)) skip(`risa-230-layout: missing ${ROM_230} or ${LETGO}`);
 
   // The ROM self-identifies as 2.3.0 and resolves its own snapshot (not an alias to an older one).
   const version = runtime.identifyRisaVersion(be.readFile(ROM_230)!);

@@ -2,7 +2,7 @@
 // bundled stock 9.4.2, identify it from its real header, read WRAM via readMemory(Ram), and decode.
 // Also the per-version confirmation that the DRIFTING screen offset (CURRENT_SCREEN 0xC402, seeded from
 // LSDisJ 9.2.L) is correct on 9.4.2 — the reader reports "song" while parked on the SONG screen.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SavInput } from "../src/lsdjSav";
@@ -33,10 +33,7 @@ const SONG: SavInput = {
 
 test("LsdjReader decodes live 9.4.2 WRAM: identify, screen, playing flags, positions", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-runtime: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-runtime: LSDj ROM not found at ${LSDJ}`);
   const audio = createAudioDriver();
   const id = 1;
   expect(be.constructSystem({

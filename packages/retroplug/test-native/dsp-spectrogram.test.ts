@@ -1,7 +1,7 @@
 // F4 (cli/spectrogram.ts): the STFT locates a tone in time+frequency, the rendered image maps frequency to
 // the right rows (a tone row is brighter than an empty row), and the PNG path round-trips through the host's
 // native pngEncode/pngDecode.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { stft, spectrogramImage, writeSpectrogramPng } from "../cli/spectrogram";
@@ -35,7 +35,7 @@ test("spectrogramImage maps frequency to rows; a tone row is far brighter than a
 
 test("stft on an emulator 2A03 A440 shows the fundamental in a mid-note frame", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) { console.log("# SKIP: no NES rom"); return; }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES)!;
   const tl = new Timeline().note(200, 69, { channel: 1, velocity: 100, durationMs: 500 });
   const pcm = renderTimeline(s, tl, { durationMs: 900, warmupMs: 1100 });

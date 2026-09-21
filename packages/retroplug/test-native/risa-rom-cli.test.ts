@@ -1,7 +1,7 @@
 // End-to-end for the `retroplug-cli risa-rom` verbs, driven through the real tool against a real backend +
 // audio driver (mirrors test-native/lsdj-rom.test.ts). Gated on the built risa ROM — SKIPs when absent.
 // The tool only touches s.backend + s.audio, so a minimal Session over the real backend/driver suffices.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import type { Session } from "../cli/session";
@@ -26,14 +26,13 @@ const copyRom = (be: ReturnType<typeof createRealBackend>, to: string): string =
   if (!be.writeFile(to, be.readFile(RISA_ROM)!)) throw new Error(`copy failed: ${to}`);
   return to;
 };
-const skip = (be: ReturnType<typeof createRealBackend>, what: string): boolean => {
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-rom ${what}: no ROM at ${RISA_ROM}`); return true; }
-  return false;
+const requireRom = (be: ReturnType<typeof createRealBackend>, what: string): void => {
+  if (!be.fileExists(RISA_ROM)) skip(`risa-rom ${what}: no ROM at ${RISA_ROM}`);
 };
 
 test("risa-rom build-kit writes a bootable .rkit that import-kit places into a ROM", () => {
   const { be, audio, s } = toolSession();
-  if (skip(be, "build-kit")) return;
+  requireRom(be, "build-kit");
   writeSine(be, "/tmp/rp-rk-src.wav", 220);
   expect(be.writeFile("/tmp/rp-rk-spec.json", jenc({ name: "MYDR", build: [{ file: "/tmp/rp-rk-src.wav", name: "BD" }] }))).toBeTruthy();
 
@@ -56,7 +55,7 @@ test("risa-rom build-kit writes a bootable .rkit that import-kit places into a R
 
 test("risa-rom export-theme → import-theme round-trips a .rit", () => {
   const { be, s } = toolSession();
-  if (skip(be, "theme")) return;
+  requireRom(be, "theme");
   const rom0 = RisaRom.fromBytes(be.readFile(RISA_ROM)!);
   const want = decodeThemeFromRom(rom0.getTheme(0)!.recordBytes, rom0.getTheme(0)!.nameBytes);
 
@@ -72,7 +71,7 @@ test("risa-rom export-theme → import-theme round-trips a .rit", () => {
 
 test("risa-rom export-font → import-font round-trips a .chr", () => {
   const { be, s } = toolSession();
-  if (skip(be, "font")) return;
+  requireRom(be, "font");
   const rom0 = RisaRom.fromBytes(be.readFile(RISA_ROM)!);
   const want = rom0.getChrFontSlot(0)!;
 
@@ -86,7 +85,7 @@ test("risa-rom export-font → import-font round-trips a .chr", () => {
 
 test("risa-rom import-sample splices a sample into a kit, remove-sample empties a slot", () => {
   const { be, s } = toolSession();
-  if (skip(be, "import-sample")) return;
+  requireRom(be, "import-sample");
   // Start from a 1-sample kit in slot 0.
   writeSine(be, "/tmp/rp-is-a.wav", 200);
   writeSine(be, "/tmp/rp-is-b.wav", 500);
@@ -111,7 +110,7 @@ test("risa-rom import-sample splices a sample into a kit, remove-sample empties 
 
 test("risa-rom patch realizes a mixed manifest (build kit + import theme + import font) and boots", () => {
   const { be, audio, s } = toolSession();
-  if (skip(be, "patch")) return;
+  requireRom(be, "patch");
   writeSine(be, "/tmp/rp-pt.wav", 300);
   // Seed a .rit + .chr by exporting from the base ROM.
   risaRomTool.run(s, ["export-theme", RISA_ROM, "0", "/tmp/rp-pt.rit"]);

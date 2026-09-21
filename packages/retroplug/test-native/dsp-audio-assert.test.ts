@@ -1,7 +1,7 @@
 // F7 (cli/audio-assert.ts): the ergonomic assertions - assertInTune / assertPitchInTune throw only when out
 // of tune; spectralFingerprint is stable for identical audio and moves for different timbre; and the F1->F7
 // path (decoded Hz -> assertInTune) proves VRC6 A4 is in tune, the test that was missing when N163 shipped.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { assertInTune, assertPitchInTune, spectralFingerprint, assertFingerprint } from "../cli/audio-assert";
@@ -39,7 +39,7 @@ test("spectralFingerprint is stable for identical audio and drifts for different
 
 test("F1 -> F7: VRC6 A4 decoded Hz is in tune (the test missing when N163 shipped sharp)", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(VRC6)) { console.log("# SKIP: no VRC6 rom"); return; }
+  if (!s.backend.fileExists(VRC6)) skip("no VRC6 rom");
   const id = s.project.systems.addSystem(VRC6)!;
   let st: ExpansionAudioState | null = null;
   const tl = new Timeline()

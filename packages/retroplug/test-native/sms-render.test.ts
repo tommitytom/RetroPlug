@@ -13,7 +13,7 @@
 // block and is wiped 400 ms later, so "write and read it back" is not sufficient on its own. The loader
 // therefore waits for song_new's own footprint (wave_ram's preset waves) before writing, then requires
 // the block to hold. The regression this guards is silence, so every case asserts on audio.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -76,7 +76,7 @@ const baseOpts = (over: Partial<RenderOpts>): RenderOpts => ({
 
 test("--song-index loads the song into the booted cart and renders real audio", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) { console.log(`# SKIP sms-render: no ROM at ${ROM}`); return; }
+  if (!be.fileExists(ROM)) skip(`sms-render: no ROM at ${ROM}`);
   writeSav(be);
   const out = "/tmp/rp-sms-render.wav";
   runRenderJob(ctxFor(be), baseOpts({ songIndex: 0, durationMs: 2500, out }));
@@ -89,7 +89,7 @@ test("--song-index loads the song into the booted cart and renders real audio", 
 
 test("--song selects by name, and the Game Gear build renders too", () => {
   const be = createRealBackend();
-  if (!be.fileExists(GG_ROM)) { console.log(`# SKIP sms-render: no ROM at ${GG_ROM}`); return; }
+  if (!be.fileExists(GG_ROM)) skip(`sms-render: no ROM at ${GG_ROM}`);
   writeSav(be);
   const out = "/tmp/rp-gg-render.wav";
   // Same layout entry as the .sms build (the two v0.45 links have an identical RAM label set), same play
@@ -104,7 +104,7 @@ test("--song selects by name, and the Game Gear build renders too", () => {
 
 test("with no song selected the render is silent, and says so before doing it", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) { console.log(`# SKIP sms-render: no ROM at ${ROM}`); return; }
+  if (!be.fileExists(ROM)) skip(`sms-render: no ROM at ${ROM}`);
   writeSav(be);
   const out = "/tmp/rp-sms-nosong.wav";
   const warnings: string[] = [];
@@ -123,7 +123,7 @@ test("with no song selected the render is silent, and says so before doing it", 
 
 test("a song that cannot be loaded fails loudly instead of rendering silence", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) { console.log(`# SKIP sms-render: no ROM at ${ROM}`); return; }
+  if (!be.fileExists(ROM)) skip(`sms-render: no ROM at ${ROM}`);
   writeSav(be);
   let threw = "";
   try {
@@ -138,7 +138,7 @@ test("a song that cannot be loaded fails loudly instead of rendering silence", (
 
 test("a render restored from a savestate plays what was loaded, without re-toggling the transport", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) { console.log(`# SKIP sms-render: no ROM at ${ROM}`); return; }
+  if (!be.fileExists(ROM)) skip(`sms-render: no ROM at ${ROM}`);
   writeSav(be);
   const ctx = ctxFor(be);
 

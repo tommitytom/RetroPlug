@@ -2,7 +2,7 @@
 // Proves the write counterpart of the spec/09 observe surface: a byte written into zero-page RAM reads
 // back with the same value, and a write to a live id is served (true). (The mock ordering lives in the
 // pure-TS suite; this is the native round-trip.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
@@ -11,10 +11,7 @@ const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("writeCpu pokes NES zero-page RAM and readCpu reads it back", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 

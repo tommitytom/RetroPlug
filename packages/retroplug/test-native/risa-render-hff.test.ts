@@ -4,17 +4,14 @@
 // Its own file because this is a single ~35 s render over the real core — an order of magnitude past the
 // rest of risa-render.test.ts. Sharing a file with the equally long region render (risa-render-region)
 // made one process the native suite's longest pole; as separate files the runner pool overlaps them.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { runRenderJob, decodeWav } from "../src/render";
 import { RISA_ROM, ECOLI_SRM, ECOLI_PAL_MS, rms, newCtx, baseOpts } from "./risa-render-lib";
 
 test("render auto-detects a real risa song's HFF stop (hff true) and trims to it over the real core", () => {
   const be = createRealBackend();
-  if (!be.fileExists(RISA_ROM) || !be.fileExists(ECOLI_SRM)) {
-    console.log(`# SKIP risa-render-hff: missing ${RISA_ROM} or ${ECOLI_SRM}`);
-    return;
-  }
+  if (!be.fileExists(RISA_ROM) || !be.fileExists(ECOLI_SRM)) skip(`risa-render-hff: missing ${RISA_ROM} or ${ECOLI_SRM}`);
   const out = "/tmp/rp-risa-ecoli.wav";
   // ecoli_soul's working song HFFs its last track at the end → seq_mode STOPPED; auto-detect must end there,
   // not at the cap. The cap sits just past the song so a regression (never detecting the stop) is visible.

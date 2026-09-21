@@ -9,7 +9,7 @@
 //   mmc5PhaseReset - the N8's MMC5 does not restart the duty sequencer on a $5003 write. Under BlipToaster's
 //                    MOD hack the real MMC5 holds duty 0.500 and does not change level at ANY reset rate
 //                    (only its pitch moves), where the 2A03 skews to 0.067 duty and drops 7.2 dB.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
@@ -51,7 +51,7 @@ test("s5bNoise: 'chip' rasps where 'n8' mutes the channel", () => {
   const levels: Record<string, number> = {};
   for (const mode of ["chip", "n8"] as const) {
     const s = boot(S5B_ROM, mode, "s5bNoise");
-    if (!s) { console.log(`# SKIP: no ROM at ${S5B_ROM}`); return; }
+    if (!s) skip(`no ROM at ${S5B_ROM}`);
     // CC1 must come AFTER the note-on: BlipToaster's s5b_note_on unconditionally sets the noise-disable bit.
     const tl = new Timeline()
       .midi(20, cc(6, 20, 0))
@@ -71,7 +71,7 @@ test("mmc5PhaseReset: 'n8' keeps a 50% duty where 'chip' skews it", () => {
   const duties: Record<string, number> = {};
   for (const mode of ["chip", "n8"] as const) {
     const s = boot(MMC5_ROM, mode, "mmc5PhaseReset");
-    if (!s) { console.log(`# SKIP: no ROM at ${MMC5_ROM}`); return; }
+    if (!s) skip(`no ROM at ${MMC5_ROM}`);
     const tl = new Timeline()
       .midi(0, cc(6, 7, 127))
       .midi(20, cc(6, 116, 127)) // fastest reset the shipped ROM allows (floored to reload 65)

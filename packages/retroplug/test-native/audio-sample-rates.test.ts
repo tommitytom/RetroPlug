@@ -4,7 +4,7 @@
 // mishandled a rate would still "work" from the host's point of view - it would just play at the wrong
 // speed - so this checks the rendered pitch against the emulator's own decoded frequency, which is
 // rate-independent ground truth.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { detectPitch, centsError } from "../cli/pitch";
@@ -20,7 +20,7 @@ const RATES = [48000, 88200, 96000, 192000];
 
 test("every offered sample rate renders in tune - including the ones above 48k", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) { console.log("# SKIP: no NES rom"); return; }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
 
   for (const rate of RATES) {
     // setSampleRate requires an empty engine (it is the render-rate seam, deliberately off the audio

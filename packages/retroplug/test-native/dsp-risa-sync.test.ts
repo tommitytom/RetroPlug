@@ -6,7 +6,7 @@
 // risa's receive path is a pure slave: with no bytes it never advances, so the negative case (transport
 // running, role absent) is SILENT while the positive case sings. A 4-byte arm would land here as silence
 // too - 2.3.0 rejects it - which is what makes this a real protocol check rather than a smoke test.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -29,10 +29,7 @@ const rms = (a: Float32Array): number => {
 
 test("the risa-sync role in the DSP kernel is the sole clock that makes risa 2.3.0 play", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM_230) || !be.fileExists(LETGO)) {
-    console.log(`# SKIP dsp-risa-sync: missing ${ROM_230} or ${LETGO}`);
-    return;
-  }
+  if (!be.fileExists(ROM_230) || !be.fileExists(LETGO)) skip(`dsp-risa-sync: missing ${ROM_230} or ${LETGO}`);
 
   // The released ROM really does advertise the receive path, so the provider would attach the role.
   const rom = be.readFile(ROM_230)!;
@@ -75,10 +72,7 @@ test("the risa-sync role in the DSP kernel is the sole clock that makes risa 2.3
 
 test("stopping the transport stops risa, and restarting it plays again", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM_230) || !be.fileExists(LETGO)) {
-    console.log(`# SKIP dsp-risa-sync: missing ${ROM_230} or ${LETGO}`);
-    return;
-  }
+  if (!be.fileExists(ROM_230) || !be.fileExists(LETGO)) skip(`dsp-risa-sync: missing ${ROM_230} or ${LETGO}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

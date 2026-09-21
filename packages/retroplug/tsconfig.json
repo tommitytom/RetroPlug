@@ -10,15 +10,20 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "lib": ["ES2020"],
+    // ES2022.Array only, for Array.prototype.at() in the UI tests. NOT the whole of ES2022: the app
+    // runs on QuickJS, and a blanket lib bump would let src reach for APIs the runtime may not have.
+    "lib": ["ES2020", "ES2022.Array"],
     "types": [],
     // Resolve the bare specifier a CONSUMER uses to the shipped declaration file, exactly as their
     // tsconfig does. Nothing in the app imports it; it exists so cli/sdkSurfaceCheck.ts can be
     // type-checked against the .d.ts, which is hand-maintained and has twice shipped out of step
     // with the implementation it describes.
     "paths": {
-      "retroplug-cli": ["./cli/sdk-types.d.ts"]
+      "retroplug-cli": ["./cli/sdk-types.d.ts"],
+      // The alias scripts/run-ui-tests.mjs gives esbuild. Without it the 37 test-ui files cannot be
+      // type-checked at all, which is why they were excluded - and therefore never checked.
+      "ui-harness": ["./test-ui/uiHarness.ts"]
     }
   },
-  "include": ["src", "testing", "test", "test-native", "cli", "tools-src"]
+  "include": ["src", "testing", "test", "test-native", "test-ui", "cli", "tools-src"]
 }

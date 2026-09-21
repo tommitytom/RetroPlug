@@ -4,7 +4,7 @@
 // syncRecent reads the published bytes back and records the row. That read-back is exactly what
 // catches a song the user loads on LSDj's own FILE screen (identical battery bytes - LSDj's load writes
 // the same active-project byte), which nothing else in the app can see.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { buildAppRegistry } from "../src/appHost";
 import { RecentStore } from "../src/recentStore";
@@ -21,10 +21,7 @@ const SONG = { formatVersion: 22, rows: [{ chains: [0] }], chains: [{ phrases: [
 
 test("a song change records its own recents row, read back from the real core's battery", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP app-song-recents: LSDj ROM not found at ${LSDJ}`);
-    return; // resource-less environment - the devcontainer has it
-  }
+  if (!be.fileExists(LSDJ)) skip(`app-song-recents: LSDj ROM not found at ${LSDJ}`); // resource-less environment - the devcontainer has it
 
   // A private copy of the cart with a two-song battery beside it, so the test owns both files.
   const rom = __CONFIG_DIR__ + "/song-recents.gb";

@@ -30,7 +30,7 @@
 // their APU counterparts", which would predict the 2A03's skew - the hardware says otherwise, so either the
 // wiki is imprecise or the Everdrive N8's MMC5 core does not implement the sequencer reset. That cannot be
 // told apart without a real MMC5 cartridge, exactly like the 5B noise question.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
@@ -91,10 +91,7 @@ const shapeStr = () => `duty ${lastShape.duty.toFixed(3)} crest ${lastShape.cres
 
 test("MMC5 MOD hack: Mesen thins the pulse as the reset rate rises (hardware does not)", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(MMC5_ROM)) {
-    console.log(`# SKIP mmc5-mod-hack: no ROM at ${MMC5_ROM} (build it: make -C rom MAPPER=mmc5 all)`);
-    return;
-  }
+  if (!s.backend.fileExists(MMC5_ROM)) skip(`mmc5-mod-hack: no ROM at ${MMC5_ROM} (build it: make -C rom MAPPER=mmc5 all)`);
   const id = s.project.systems.addSystem(MMC5_ROM);
   if (id == null) throw new Error("addSystem failed");
   // PAL, to match the bench NES these numbers are compared against (BlipToaster times a frame to detect the

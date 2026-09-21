@@ -13,7 +13,7 @@
 // an idle interval and 36 for a load that had done nothing at all. So build an ANIMATION MASK from
 // several idle samples with no input, and compare only the pixels outside it. That is reproducible to
 // the pixel across runs.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildSav } from "../src/smsggdj/codec/sav";
@@ -62,10 +62,7 @@ function nudge(audio: ReturnType<typeof createAudioDriver>, id: number, btn: num
 
 test("a live song load repaints the cart's screen, without the user touching anything", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP sms-repaint: missing ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`sms-repaint: missing ${ROM}`);
   const id = 90;
   // A song with a populated SONG grid, against the blank one the cart boots into (song_new), so there
   // is a large and unambiguous visual difference to look for.

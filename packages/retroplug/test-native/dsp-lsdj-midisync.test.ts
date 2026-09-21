@@ -6,7 +6,7 @@
 // advances it. The core constructs bare (no C++ roles) so nothing but the kernel clocks it. The kernel
 // drives every system; we toggle THIS system's lsdj-sync mode: Off (0) leaves the armed LSDj
 // frozen/SILENT, MidiSync (1) makes it sing. Whole-mix RMS on a single system = that system's audio.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -45,10 +45,7 @@ const rms = (a: Float32Array): number => {
 
 test("the TS lsdj-sync role in the DSP kernel is the sole clock that makes an armed LSDj sing", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP dsp-lsdj-midisync: LSDj ROM not found at ${LSDJ}`);
-    return; // no resources on disk (e.g. resource-less CI) — the devcontainer has it
-  }
+  if (!be.fileExists(LSDJ)) skip(`dsp-lsdj-midisync: LSDj ROM not found at ${LSDJ}`); // no resources on disk (e.g. resource-less CI) — the devcontainer has it
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

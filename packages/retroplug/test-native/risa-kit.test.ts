@@ -2,7 +2,7 @@
 // bank → decode the DPCM back to audio (round-trip, the r8brain path is not byte-parity with wav2dmc so we
 // gate on the delta/pack/decode invariants) → splice it into a real risa ROM via setKit (bank + mirror) →
 // the patched ROM boots. SKIPs when the built risa ROM is absent.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { RisaRom, bankToModel, isBankPopulated, dpcmDecode, assembleKitBank } from "../src/risa/rom";
@@ -58,7 +58,7 @@ test("compileDmc renders a WAV into an 8 KB DMC kit bank that decodes back to au
 test("a compiled DMC kit splices into a real risa ROM (bank + mirror) and the ROM boots", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-kit boot: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-kit boot: no ROM at ${RISA_ROM}`);
   writeTestWav(be, WAV);
 
   const bank = audio.compileDmc({ name: "DRUMS", samples: [{ path: WAV, name: "KIK", rate: 12, effects: [] }] });
@@ -117,7 +117,7 @@ test("assembleKitBank re-packs separately-compiled DPCM byte-identically to a wh
 test("the risa-assets kit override links a pre-built .rkit at construct (offline compile) and boots", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(RISA_ROM)) { console.log(`# SKIP risa-kit link: no ROM at ${RISA_ROM}`); return; }
+  if (!be.fileExists(RISA_ROM)) skip(`risa-kit link: no ROM at ${RISA_ROM}`);
   writeTestWav(be, WAV);
 
   // Compile a bank OFFLINE (the plugin can't reach compileDmc) and persist it as a .rkit — exactly what the

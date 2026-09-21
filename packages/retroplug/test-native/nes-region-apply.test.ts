@@ -6,7 +6,7 @@
 //
 // This exists because a hardware comparison had to run PAL (the bench NES is PAL) and it was not obvious
 // whether the region knob was landing.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { ApuState } from "../src/backend";
@@ -33,7 +33,7 @@ function periodFor(region: "ntsc" | "pal" | null): { period: number; frequency: 
 
 test("a live region change reaches the core: the APU timer period moves with it", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) { console.log("# SKIP: no NES rom"); return; }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
 
   const ntsc = periodFor("ntsc");
   const pal = periodFor("pal");

@@ -2,7 +2,7 @@
 // song, but SYNC is left OFF (no link-cable sync). Pressing START on the leader plays only the leader
 // — the follower never starts, so its per-system audio stays silent. If this ever shows the follower
 // producing audio, the positive test isn't measuring real sync.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { savFrom, type SongSettings } from "../src/lsdjSav";
@@ -37,10 +37,7 @@ const rms = (a: Float32Array): number => {
 
 test("LSDj link-cable sync control: the follower stays silent without SYNC=LSDJ", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-sync-negative: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-sync-negative: LSDj ROM not found at ${LSDJ}`);
 
   const audio = createAudioDriver();
 

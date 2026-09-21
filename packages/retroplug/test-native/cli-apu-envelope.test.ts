@@ -4,7 +4,7 @@
 // envelope unit's live decay counter and `envelopeOutput` what the mixer actually uses. This pins the
 // identity between them on a sounding note and after its release, and that the noise channel carries the
 // same three fields.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { ApuState } from "../src/backend";
@@ -18,10 +18,7 @@ const effective = (c: ApuState["pulse1"] | ApuState["noise"]) =>
 
 test("envelopeOutput is the level the mixer uses, on a held pulse note and after its release", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 

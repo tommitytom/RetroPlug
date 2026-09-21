@@ -16,7 +16,7 @@
 //   envelope ON  -> 22-26 dB of swing (the level visibly ramping)
 // The emulator swings further than 22-26 dB simply because it has no analog noise floor to hide the
 // bottom of the ramp in.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
@@ -72,7 +72,7 @@ function boot() {
 
 test("S5B hardware envelope: envelope mode sounds and its level moves, where it used to be silent", () => {
   const s = boot();
-  if (!s) { console.log(`# SKIP s5b: no ROM at ${S5B_ROM}`); return; }
+  if (!s) skip(`s5b: no ROM at ${S5B_ROM}`);
 
   // CC28=126 -> envelope period (255-2*126)<<8 = 768, a ~0.22 s ramp, so a 1.5 s hold shows several.
   // (The brief's CC28=64 is period 32512 = a ~9 s ramp - far too slow to see in one render, which matches
@@ -94,7 +94,7 @@ test("S5B hardware envelope: envelope mode sounds and its level moves, where it 
 
 test("S5B noise: the chip default gates the tone with the LFSR instead of ignoring the CC", () => {
   const s = boot();
-  if (!s) { console.log(`# SKIP s5b: no ROM at ${S5B_ROM}`); return; }
+  if (!s) skip(`s5b: no ROM at ${S5B_ROM}`);
 
   // CC1 must come AFTER the note: BlipToaster's s5b_note_on unconditionally sets the noise-disable bit, so a
   // CC1 sent before a note-on is clobbered by it (a ROM bug, reported separately).

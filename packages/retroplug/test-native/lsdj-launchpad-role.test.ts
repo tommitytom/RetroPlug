@@ -7,7 +7,7 @@
 // between the pad and the sound is genuine except the Launchpad itself.
 //
 // Run: pnpm test:native lsdj-launchpad-role
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -40,11 +40,11 @@ const press = (row: number): number[] => [0x90, padIndex({ x: row < 8 ? 0 : 4, y
 
 test("a pad press on the controller stream launches a row on a real cart", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ABOY)) return console.log(`# SKIP lsdj-launchpad-role: aboy ROM not found at ${ABOY}`);
+  if (!be.fileExists(ABOY)) return skip(`lsdj-launchpad-role: aboy ROM not found at ${ABOY}`);
 
   const header = be.readFilePrefix(ABOY, 0x150);
   const reader = header ? LsdjReader.fromHeader(header) : null;
-  if (!reader || !reader.supported) return console.log("# SKIP lsdj-launchpad-role: unsupported LSDj version");
+  if (!reader || !reader.supported) return skip("lsdj-launchpad-role: unsupported LSDj version");
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();
@@ -91,11 +91,11 @@ test("the same bytes on the MUSICAL stream launch a different row, which is why 
   // musical stream would therefore fire every launch twice, to two different places - this measures that on
   // a real cart rather than asserting it.
   const be = createRealBackend();
-  if (!be.fileExists(ABOY)) return console.log("# SKIP lsdj-launchpad-role: aboy ROM not found");
+  if (!be.fileExists(ABOY)) return skip("lsdj-launchpad-role: aboy ROM not found");
 
   const header = be.readFilePrefix(ABOY, 0x150);
   const reader = header ? LsdjReader.fromHeader(header) : null;
-  if (!reader || !reader.supported) return console.log("# SKIP lsdj-launchpad-role: unsupported LSDj version");
+  if (!reader || !reader.supported) return skip("lsdj-launchpad-role: unsupported LSDj version");
 
   const id = 2;
   const dsp = createDspRuntime();

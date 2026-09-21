@@ -10,7 +10,7 @@
 // black-box assert on the rendered LVGL tree + snapshot. Only the render-tree surface is exposed (no
 // legacy loadRom/loadProject/… — system state is driven through the stores over BackendFacade).
 
-export { test, expect } from "../testing/harness";
+export { test, expect, skip } from "../testing/harness";
 
 /** A located widget's geometry (absolute/screen coords) + content. */
 export interface WidgetInfo {

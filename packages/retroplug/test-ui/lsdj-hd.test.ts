@@ -8,7 +8,7 @@
 //   - Esc closes it and the grid comes back.
 // SKIPs when no LSDj ROM was staged (a large external asset - see run-ui-tests.mjs).
 
-import { test, expect, ui, navTo, Key, type UiSnapshot } from "ui-harness";
+import { test, expect, skip, ui, navTo, Key, type UiSnapshot } from "ui-harness";
 
 const LSDJ = () => ui.romDir() + "/lsdj9_4_2.gb";
 
@@ -54,10 +54,7 @@ test("the LSDj HD player opens from the instance menu and Esc returns to the gri
 
   ui.fileDrop(LSDJ(), 0, 0);
   ui.pump(30);
-  if (ui.findByTestId("tile-0") == null) {
-    console.log("# SKIP lsdj-hd: no LSDj ROM staged in romDir");
-    return;
-  }
+  if (ui.findByTestId("tile-0") == null) skip("lsdj-hd: no LSDj ROM staged in romDir");
 
   // Boot far enough that the core is running, so readRam/readSram yield live memory.
   ui.advance(1500);

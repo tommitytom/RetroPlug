@@ -8,7 +8,7 @@
 // This is the reversal of the old "MI.OUT is unreachable headlessly" folklore (docs/lsdj.md): SYNC=MI.OUT
 // is byte 9 (cold-authored here), and the wire's 1-flag-bit + 7-payload-bit framing — which the raw 8-bit
 // capture had mis-read as garbage — decodes cleanly.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -52,10 +52,7 @@ const messages = (drained: { data: Uint8Array }[]): number[][] => drained.map((m
 
 test("MIDIOUT (mode 7): a real LSDj in SYNC=MI.OUT emits Arduinoboy MIDI the kernel decodes to host MIDI", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ABOY)) {
-    console.log(`# SKIP lsdj-midiout: aboy LSDj ROM not found at ${ABOY}`);
-    return;
-  }
+  if (!be.fileExists(ABOY)) skip(`lsdj-midiout: aboy LSDj ROM not found at ${ABOY}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

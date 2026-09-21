@@ -3,7 +3,7 @@
 // scheduled ch1 MIDI note sounds on pulse1 at ~C4, the CPU exposes a pc register, a side-effect-free peek
 // reads the $40F1 MIDI FIFO, and a whole RAM region reads back. (The pure Timeline.build ordering is in
 // the mock test/cli/timeline.test.ts.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { MemoryRegion, type ApuState } from "../src/backend";
@@ -13,10 +13,7 @@ const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("debug reads observe a real NES: APU pulse1, CPU pc, FIFO peek, RAM region", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 

@@ -3,7 +3,7 @@
 // captures a non-empty stream of rows (each carrying a program-counter + formatted disassembly), and the
 // step trio (stepInto/stepOver/stepOut) advances the core and returns a BreakInfo. Mirrors the legacy
 // nes/observe.test.ts + nes/debug.test.ts assertions. (The mock counterpart is testing/mockBackend.ts.)
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import type { BreakInfo, TraceLine } from "../src/backend";
@@ -13,10 +13,7 @@ const NES = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 test("trace logger captures the instruction stream + the step trio advances a real NES", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) {
-    console.log("# SKIP: no NES rom");
-    return;
-  }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
   const id = s.project.systems.addSystem(NES);
   if (id == null) throw new Error("addSystem failed");
 

@@ -5,7 +5,7 @@
 // decode and advance. If a future risa build DID move these, this fails and the alias must be revisited.
 // (This is what makes song-length auto-detect work for 2.2.0 carts — see render.ts buildPlayingProbe.)
 // SKIPs when the 2.2.0 ROM / LETGO sav aren't present, like the other risa native tests.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -23,10 +23,7 @@ const BTN_START = 7;
 
 test("risa 2.2.0 aliases the 2.2.1 layout — a live 2.2.0 core decodes coherently", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM_220) || !be.fileExists(LETGO)) {
-    console.log(`# SKIP risa-220-layout: missing ${ROM_220} or ${LETGO}`);
-    return;
-  }
+  if (!be.fileExists(ROM_220) || !be.fileExists(LETGO)) skip(`risa-220-layout: missing ${ROM_220} or ${LETGO}`);
 
   // The alias resolves, keeps the ROM's real version label, and borrows 2.2.1's addresses.
   const layout = runtime.resolveRisaLayout("2.2.0");

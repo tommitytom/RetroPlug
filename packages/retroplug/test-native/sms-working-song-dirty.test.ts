@@ -13,7 +13,7 @@
 // `echo_mode`). A wrong address here fails silently in the worst direction: the flag would read 0
 // forever and the guard would never fire again, losing work with no prompt at all. So both edges are
 // driven on the real ROM - boot says clean, a real keypress on the SONG grid says dirty.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildSav, isSongSaved, SMDJ4_BLOCK_LEN } from "../src/smsggdj/codec/sav";
@@ -50,10 +50,7 @@ function chord(audio: ReturnType<typeof createAudioDriver>, id: number, hold: nu
 
 test("a freshly booted cart is clean, and a keypress on the SONG grid makes it dirty", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP sms-working-song-dirty: missing ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`sms-working-song-dirty: missing ${ROM}`);
   const id = 45;
   // Two saved songs, neither of them blank, so the cart's boot song matches NO slot - exactly the state
   // the old content-only compare mis-read. If the blank song happened to be saved there would be nothing

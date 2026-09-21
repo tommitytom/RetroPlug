@@ -2,7 +2,7 @@
 // MidiPassthrough mode (6), running in the real DSP kernel, forwards raw host-MIDI bytes verbatim to
 // LSDj's serial (dspRoles.ts `forwardMidiToSerial`). This exercises the raw-forward path against a real
 // LSDj core — the legacy floor: LSDj keeps running (valid frames) after the byte stream, no crash.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -28,10 +28,7 @@ const rms = (a: Float32Array): number => {
 
 test("the TS lsdj-sync MidiPassthrough role forwards raw MIDI to a real LSDj core without crashing", () => {
   const be = createRealBackend();
-  if (!be.fileExists(LSDJ)) {
-    console.log(`# SKIP lsdj-passthrough: LSDj ROM not found at ${LSDJ}`);
-    return;
-  }
+  if (!be.fileExists(LSDJ)) skip(`lsdj-passthrough: LSDj ROM not found at ${LSDJ}`);
 
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

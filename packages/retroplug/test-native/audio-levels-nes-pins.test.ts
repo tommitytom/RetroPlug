@@ -1,7 +1,7 @@
 // The other NES per-channel shape: the two 2A03 "stereo-mod" pins (Pulse | TND) plus the lumped
 // Expansion term (channelExportMode stereoModPins). Measurement harness, not a regression guard.
 // Run with:  node packages/retroplug/scripts/run-native-tests.mjs audio-levels-nes-pins
-import { test } from "../testing/harness";
+import { test, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createDspRuntime } from "../src/dspRuntime";
 import { createAudioDriver } from "../src/audioDriver";
@@ -19,7 +19,7 @@ const PINS = ["Pulse pin", "TND pin", "Expansion"];
 
 test("audio levels: Mesen NES 2A03 pins (n8-midi, stereoModPins)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(NES)) { console.log(`# SKIP: no ROM at ${NES}`); return; }
+  if (!be.fileExists(NES)) skip(`no ROM at ${NES}`);
   const project = new ProjectStore(be, new RecentStore(be), buildAppRegistry());
   const dsp = createDspRuntime();
   const audio = createAudioDriver();

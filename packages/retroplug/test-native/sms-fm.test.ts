@@ -12,7 +12,7 @@
 // Why this needs a mixed song rather than the FM-only one that first proved the path works: an
 // FM-instrument song is audible under BOTH models (the mux picks FM, the sum includes it), so it
 // cannot tell them apart. Only a song playing PSG and FM AT ONCE distinguishes "both" from "FM won".
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import {
@@ -120,10 +120,7 @@ function play(voices: Voices, enableFm: boolean, cartFm: number): number {
 
 test("FM on does not silence the PSG (the $F2 mux is off)", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP sms-fm: missing ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`sms-fm: missing ${ROM}`);
 
   // The whole claim, and its own negative control: this exact configuration measured 0.00000 before
   // the vendored change, against 0.05089 with the cart's FM switched off. Nothing about the song, the
@@ -139,10 +136,7 @@ test("FM on does not silence the PSG (the $F2 mux is off)", () => {
 
 test("an FM instrument is audible, and only when both FM switches are on", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP sms-fm: missing ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`sms-fm: missing ${ROM}`);
   const on = play("fm", true, 1);
   const cartOff = play("fm", true, 0); // ROM never writes $F2, so MixAudio mutes FM at _audioControl 0
   const hostOff = play("fm", false, 1); // our enableFm gates the $F0/$F1/$F2 writes at source
@@ -156,10 +150,7 @@ test("an FM instrument is audible, and only when both FM switches are on", () =>
 
 test("a song playing PSG and FM at once sounds both", () => {
   const be = createRealBackend();
-  if (!be.fileExists(ROM)) {
-    console.log(`# SKIP sms-fm: missing ${ROM}`);
-    return;
-  }
+  if (!be.fileExists(ROM)) skip(`sms-fm: missing ${ROM}`);
   // The measurement the other two cannot make. Under the mux this collapses to the FM-only level,
   // because the PSG half is memset away; under summing it has to carry both. The PSG voice is ~6x the
   // FM voice's level here, so those two outcomes are far apart and the threshold is not delicate.

@@ -1,7 +1,7 @@
 // F3 (cli/pitch.ts): detectPitch is accurate on synthesized harmonic tones AND on real emulator-rendered
 // 2A03 pulse, cross-checked against the white-box getApuState().pulse1.frequency (the emulator's own decoded
 // Hz). This is the black-box tuning path; where a decoded-Hz readout exists it is the better oracle.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 import { detectPitch, centsError } from "../cli/pitch";
@@ -61,7 +61,7 @@ test("detectPitch does NOT octave-fold a high fundamental above the HPS bin cap"
 
 test("detectPitch on emulator 2A03 pulse matches getApuState decoded Hz within 5 cents", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(NES)) { console.log("# SKIP: no NES rom"); return; }
+  if (!s.backend.fileExists(NES)) skip("no NES rom");
 
   // ch1 -> APU Pulse1 (ch2 is broken in this ROM). Sweep a few octaves.
   for (const note of [45, 57, 69, 81]) {

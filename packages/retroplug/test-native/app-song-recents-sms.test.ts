@@ -6,7 +6,7 @@
 // OWED at save time (nothing recorded), paid by the watcher's tick once the cart is up, and a Recent row's
 // song request waits on the same latch and then lands - the flow that used to write into the boot and
 // lose the song. The stores are the real ones; only the frame tick is driven by hand.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { buildAppRegistry } from "../src/appHost";
@@ -41,10 +41,7 @@ for (const rom of ROMS) {
 
   test(`[${tag}] the project row waits for the boot, a Recent row's song lands after it, and rows stay one per song`, () => {
     const be = createRealBackend();
-    if (!be.fileExists(rom.path)) {
-      console.log(`# SKIP app-song-recents-sms: missing ${rom.path}`);
-      return;
-    }
+    if (!be.fileExists(rom.path)) skip(`app-song-recents-sms: missing ${rom.path}`);
     // A private copy of the cart with its battery beside it, so the project is self-contained and the
     // core boots from the sibling `.sav` exactly as a user's project does.
     const romCopy = `${__CONFIG_DIR__}/sms-recents.${tag}`;

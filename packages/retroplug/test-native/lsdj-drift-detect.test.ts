@@ -8,7 +8,7 @@
 //   * TEMPO and the TABLE cursor equal independently-probed ground truth — they DON'T follow the shift
 //     (e.g. 8.5.1's real tempo is 0xC537, not the shift-predicted 0xC526), which is exactly why the full
 //     per-field layout supersedes the rigid model.
-import { test, expect } from "../testing/harness";
+import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { decodeSav, savFrom } from "../src/lsdjSav";
@@ -60,7 +60,7 @@ function detectionSong(fmt: number, tempo: number): Uint8Array {
 test("detectDriftLayout: full screen/tempo/cursor layout on real cores; cross-checks legacy + driftShifts", () => {
   const be = createRealBackend();
   const present = TARGETS.filter((t) => be.fileExists(`${DIR}/${t}.gb`) && be.fileExists(`${DIR}/${t}.sav`));
-  if (present.length === 0) { console.log(`# SKIP: no target ROM/sav under ${DIR}`); return; }
+  if (present.length === 0) skip(`no target ROM/sav under ${DIR}`);
   const audio = createAudioDriver();
   const driver: DetectDriver = {
     readFilePrefix: (p, n) => be.readFilePrefix(p, n),
