@@ -38,6 +38,7 @@
 #include "Utilities/VirtualFile.h"
 #include "util/Gain.hpp"
 #include "system/mesen/MesenBlockOps.hpp"
+#include "system/mesen/MesenBoot.hpp"
 
 namespace {
 
@@ -134,45 +135,20 @@ void MesenGbaSystem::onActivate(double sampleRate) {
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
     gainSmoother_.clearToTargetValue();
 
-    // Shared with MesenNesSystem (NES). The home folder is per-process; set it once, thread-safely, so
-    // concurrent core construction on background render threads doesn't race (see MesenGlobalInit).
-    mesenGlobalInit();
-
     firmwareDir_ = installGbaBios(config_.biosPath, firmwareSlot_);
-
-    emu_ = std::make_unique<Emulator>();
-    // enableShortcuts=false: the plugin drives input/transport itself and never
-    // uses Mesen's keyboard-shortcut layer. Disabling it avoids a per-instance
-    // background polling thread (ShortcutKeyHandler) that, besides being pure
-    // overhead, races the debugger pointer against LoadRom's ResetDebugger.
-    emu_->Initialize(false);
-    // Before LoadRom, which is what reads the boot ROM - and is re-run by every Reset.
-    if (!firmwareDir_.empty()) emu_->SetFirmwareFolderOverride(firmwareDir_);
-    configureGba(*emu_, config_.skipBootScreen);
 
     VirtualFile romFile(rom_.data(), rom_.size(),
                         config_.romPath.empty() ? std::string("rom.gba") : config_.romPath);
-
-    // stopRom=false: keep Mesen from spawning its internal _emuThread. We
-    // drive cpu->Exec() ourselves from the audio thread.
-    if (!emu_->LoadRom(romFile, VirtualFile(), /*stopRom=*/false)) {
-        std::fprintf(stderr, "[MesenGbaSystem] Mesen failed to load ROM '%s'\n", config_.romPath.c_str());
-        emu_.reset();
-        return;
-    }
-
-    // Tell Mesen to render audio at the host sample rate. The GBA APU emits
-    // ~32 kHz internally; SoundMixer resamples to this target.
-    AudioConfig audioCfg = emu_->GetSettings()->GetAudioConfig();
-    audioCfg.SampleRate = static_cast<uint32_t>(sampleRate);
-    emu_->GetSettings()->SetAudioConfig(audioCfg);
-
-    audioDevice_ = std::make_shared<MesenAudioDevice>();
-    emu_->GetSoundMixer()->RegisterAudioDevice(audioDevice_.get());
-
-    videoDevice_ = std::make_shared<MesenVideoDevice>();
-    videoDevice_->setFramebuffer(&frames_);
-    emu_->GetVideoRenderer()->RegisterRenderingDevice(videoDevice_.get());
+    MesenCore core = bootMesenCore("MesenGbaSystem", romFile, config_.romPath, sampleRate, &frames_,
+                                   [this](Emulator& emu) {
+                                       // Before LoadRom, which is what reads the boot ROM.
+                                       if (!firmwareDir_.empty()) emu.SetFirmwareFolderOverride(firmwareDir_);
+                                       configureGba(emu, config_.skipBootScreen);
+                                   });
+    if (!core) return;
+    emu_         = std::move(core.emu);
+    audioDevice_ = std::move(core.audio);
+    videoDevice_ = std::move(core.video);
 
     // Restore persisted battery RAM / savestate. Write directly into the
     // GbaSaveRam region rather than going through Mesen's BatteryManager.

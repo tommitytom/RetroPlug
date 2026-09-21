@@ -38,6 +38,7 @@
 #include "Utilities/VirtualFile.h"
 #include "util/Gain.hpp"
 #include "system/mesen/MesenBlockOps.hpp"
+#include "system/mesen/MesenBoot.hpp"
 
 namespace {
 
@@ -261,45 +262,18 @@ void MesenSmsSystem::onActivate(double sampleRate) {
     gainSmoother_.setTargetValue(dbToLin(config_.gainDb));
     gainSmoother_.clearToTargetValue();
 
-    // Shared with the other Mesen systems. The home folder is per-process; set
-    // it once, thread-safely, so concurrent core construction on background
-    // render threads doesn't race (see MesenGlobalInit).
-    mesenGlobalInit();
-
+    // File-backed, unlike NES/GBA's memory-backed VirtualFile, and deliberately: Mesen derives the
+    // battery stem and the model from the ROM's NAME, and SmsConsole::Reset re-reads it from that path.
     stagedRomPath_ = stageRom();
     if (stagedRomPath_.empty()) return;
 
-    emu_ = std::make_unique<Emulator>();
-    // enableShortcuts=false: the plugin drives input/transport itself and never
-    // uses Mesen's keyboard-shortcut layer. Disabling it avoids a per-instance
-    // background polling thread (ShortcutKeyHandler) that, besides being pure
-    // overhead, races the debugger pointer against LoadRom's ResetDebugger.
-    emu_->Initialize(false);
-    configureSms(*emu_, config_.gameGear, config_.enableFm);
-
     VirtualFile romFile(stagedRomPath_);
-
-    // stopRom=false: keep Mesen from spawning its internal _emuThread. We drive
-    // cpu->Exec() ourselves from the audio thread.
-    if (!emu_->LoadRom(romFile, VirtualFile(), /*stopRom=*/false)) {
-        std::fprintf(stderr, "[MesenSmsSystem] Mesen failed to load ROM '%s'\n",
-                     stagedRomPath_.c_str());
-        emu_.reset();
-        return;
-    }
-
-    // Tell Mesen to render audio at the host sample rate. The PSG emits at a
-    // fixed 96 kHz internally; SoundMixer resamples to this target.
-    AudioConfig audioCfg = emu_->GetSettings()->GetAudioConfig();
-    audioCfg.SampleRate = static_cast<std::uint32_t>(sampleRate);
-    emu_->GetSettings()->SetAudioConfig(audioCfg);
-
-    audioDevice_ = std::make_shared<MesenAudioDevice>();
-    emu_->GetSoundMixer()->RegisterAudioDevice(audioDevice_.get());
-
-    videoDevice_ = std::make_shared<MesenVideoDevice>();
-    videoDevice_->setFramebuffer(&frames_);
-    emu_->GetVideoRenderer()->RegisterRenderingDevice(videoDevice_.get());
+    MesenCore core = bootMesenCore("MesenSmsSystem", romFile, stagedRomPath_, sampleRate, &frames_,
+                                   [this](Emulator& emu) { configureSms(emu, config_.gameGear, config_.enableFm); });
+    if (!core) return;
+    emu_         = std::move(core.emu);
+    audioDevice_ = std::move(core.audio);
+    videoDevice_ = std::move(core.video);
 
     if (SmsConsole* console = smsConsole()) {
         masterRate_ = console->GetMasterClockRate();

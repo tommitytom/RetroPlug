@@ -38,6 +38,7 @@
 #include "Utilities/VirtualFile.h"
 #include "util/Gain.hpp"
 #include "system/mesen/MesenBlockOps.hpp"
+#include "system/mesen/MesenBoot.hpp"
 
 namespace {
 
@@ -169,41 +170,18 @@ void MesenNesSystem::onActivate(double sampleRate) {
     gainSmoother_.setTargetValue(nesGain(config_.gainDb));
     gainSmoother_.clearToTargetValue();
 
-    // Mesen's home folder + message options are process-global; set them once, thread-safely, so
-    // concurrent core construction on background render threads doesn't race (see MesenGlobalInit).
-    mesenGlobalInit();
-
-    emu_ = std::make_unique<Emulator>();
-    // enableShortcuts=false: the plugin drives input/transport itself and never
-    // uses Mesen's keyboard-shortcut layer. Disabling it avoids a per-instance
-    // background polling thread (ShortcutKeyHandler) that, besides being pure
-    // overhead, races the debugger pointer against LoadRom's ResetDebugger.
-    emu_->Initialize(false);
-    configureNes(*emu_, config_.region, config_.removeSpriteLimit, config_.s5bNoise, config_.mmc5PhaseReset,
-                 config_.expansionVolume);
-
     VirtualFile romFile(rom_.data(), rom_.size(),
                         config_.romPath.empty() ? std::string("rom.nes") : config_.romPath);
-
-    // stopRom=false: keep Mesen from spawning its internal _emuThread. We
-    // drive cpu->Exec() ourselves from the audio thread.
-    if (!emu_->LoadRom(romFile, VirtualFile(), /*stopRom=*/false)) {
-        std::fprintf(stderr, "[MesenNesSystem] Mesen failed to load ROM '%s'\n", config_.romPath.c_str());
-        emu_.reset();
-        return;
-    }
-
-    // Tell Mesen to render audio at the host sample rate.
-    AudioConfig audioCfg = emu_->GetSettings()->GetAudioConfig();
-    audioCfg.SampleRate = static_cast<uint32_t>(sampleRate);
-    emu_->GetSettings()->SetAudioConfig(audioCfg);
-
-    audioDevice_ = std::make_shared<MesenAudioDevice>();
-    emu_->GetSoundMixer()->RegisterAudioDevice(audioDevice_.get());
-
-    videoDevice_ = std::make_shared<MesenVideoDevice>();
-    videoDevice_->setFramebuffer(&frames_);
-    emu_->GetVideoRenderer()->RegisterRenderingDevice(videoDevice_.get());
+    MesenCore core = bootMesenCore("MesenNesSystem", romFile, config_.romPath, sampleRate, &frames_,
+                                   [this](Emulator& emu) {
+                                       configureNes(emu, config_.region, config_.removeSpriteLimit,
+                                                    config_.s5bNoise, config_.mmc5PhaseReset,
+                                                    config_.expansionVolume);
+                                   });
+    if (!core) return;
+    emu_         = std::move(core.emu);
+    audioDevice_ = std::move(core.audio);
+    videoDevice_ = std::move(core.video);
 
     // Always-attach the N8 FIFO role on NES — see NesN8FifoRole.hpp's docs
     // for the rationale (FIFO is benign if the ROM doesn't touch $40F0/$40F1).
