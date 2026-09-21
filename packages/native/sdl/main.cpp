@@ -780,14 +780,28 @@ void installWindowHooks(JSContext* ctx) {
 
 // Push an LVGL key onto the keypad queue AND emit the "key" JS bus (press+release), mirroring
 // RenderCore::tapKey / PluginUI::onKeyboard. dpf is the DPF keycode the TS input layer expects.
-void feedKey(AppState& a, std::uint32_t lvKey, std::uint32_t dpf, bool press) {
+// SDL's modifier state -> DPF's Modifier mask (dgl/Base.hpp), which is what the "key" bus carries.
+// The bus is shared with the plugin host, so the mask has to mean the same thing on both sides.
+std::uint32_t dpfModsFromSdl(std::uint16_t sdlMod) {
+    std::uint32_t mods = 0;
+    if (sdlMod & KMOD_SHIFT) mods |= 1U << 0U; // kModifierShift
+    if (sdlMod & KMOD_CTRL)  mods |= 1U << 1U; // kModifierControl
+    if (sdlMod & KMOD_ALT)   mods |= 1U << 2U; // kModifierAlt
+    if (sdlMod & KMOD_GUI)   mods |= 1U << 3U; // kModifierSuper
+    return mods;
+}
+
+void feedKey(AppState& a, std::uint32_t lvKey, std::uint32_t dpf, bool press, std::uint32_t mods) {
     JSContext* ctx = a.ui.getContext();
     if (press && lvKey != 0) a.input.keyQueue.push_back(lvKey);  // only real LVGL nav keys reach the keypad indev
     if (ctx) {
-        JSValue args[2] = {JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press)};
-        a.ui.emit("key", 2, args);
-        JS_FreeValue(ctx, args[0]);
-        JS_FreeValue(ctx, args[1]);
+        // THREE args, matching PluginUI. DPF gives the unshifted code point ('a' for the A key whether or
+        // not Shift is down), so the modifier mask is the only way the prompt text-input can apply
+        // Shift -> uppercase - Menu.tsx reads `args[2] ?? 0`. This emitted two args for a long time, so
+        // that `?? 0` silently made Shift a no-op in the standalone while it worked in the DAW.
+        JSValue args[3] = {JS_NewUint32(ctx, dpf), JS_NewBool(ctx, press), JS_NewUint32(ctx, mods)};
+        a.ui.emit("key", 3, args);
+        for (JSValue& v : args) JS_FreeValue(ctx, v);
     }
 }
 
@@ -1610,7 +1624,8 @@ void handleEvents(AppState& a) {
             case SDL_KEYDOWN:
             case SDL_KEYUP: {
                 std::uint32_t lv, dpf;
-                if (mapSdlKey(ev.key.keysym.sym, lv, dpf)) feedKey(a, lv, dpf, ev.type == SDL_KEYDOWN);
+                if (mapSdlKey(ev.key.keysym.sym, lv, dpf))
+                    feedKey(a, lv, dpf, ev.type == SDL_KEYDOWN, dpfModsFromSdl(ev.key.keysym.mod));
                 break;
             }
             // The WM/user resized the window (a drag-grip resize, or a tiling compositor tiling us) → adopt the
