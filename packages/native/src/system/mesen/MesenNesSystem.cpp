@@ -255,6 +255,10 @@ void MesenNesSystem::onDeactivate() {
     debugSession_.reset();  // holds emu_ (raw); drop before the emulator
     nesMixer_ = nullptr;    // owned by emu_'s console — drop the borrowed pointer before the emulator
     channelCapture_ = false;
+    // An EPSM cart registers an audio provider that unregisters in its destructor, and Mesen destroys
+    // the mixer first — see MesenBlockOps.hpp. SMS found this; NES has the same hazard on any cart whose
+    // NES 2.0 header sets HasEpsm, which is why it was never observed here.
+    stopMesenEmulator(emu_.get());
     emu_.reset();
     audioDevice_.reset();
     videoDevice_.reset();

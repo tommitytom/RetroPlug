@@ -183,6 +183,9 @@ void MesenGbaSystem::onActivate(double sampleRate) {
 
 void MesenGbaSystem::onDeactivate() {
     if (!activated_) return;
+    // GBA registers no audio provider today, so this is a no-op for it — but "no-op because of a fact
+    // about the vendored core" is a comment, and this is the same three lines the other two need.
+    stopMesenEmulator(emu_.get());
     emu_.reset();
     audioDevice_.reset();
     videoDevice_.reset();

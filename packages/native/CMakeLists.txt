@@ -850,6 +850,7 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/GbaFirmware.test.cpp  # each GBA system loads ITS bios, not whichever landed last
     test/audio/GbaAudio.test.cpp     # the GBA block triad terminates and fills a block
     test/audio/MesenBlockOps.test.cpp # the shared drain tail blanks a short ring
+    test/audio/NesTeardown.test.cpp  # the NES twin of SMS's construct/destruct guard
     test/audio/SameBoyModels.test.cpp)   # every SameBoyModel (incl. SGB variants) boots + renders
 
 target_link_libraries(retroplug-audio-test PRIVATE

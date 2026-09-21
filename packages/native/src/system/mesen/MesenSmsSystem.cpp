@@ -319,26 +319,7 @@ void MesenSmsSystem::onActivate(double sampleRate) {
 void MesenSmsSystem::onDeactivate() {
     if (!activated_) return;
 
-    // NOT a bare emu_.reset() like the NES/GBA systems do. SMS is the first
-    // console RetroPlug hosts that registers an audio provider unconditionally:
-    // SmsFmAudio registers with the SoundMixer in its constructor and
-    // UNregisters in its destructor - but Emulator declares _console before
-    // _soundMixer, members destruct in reverse order, and ~Emulator is empty,
-    // so the mixer is already gone by the time SmsFmAudio reaches for it.
-    // Measured ~3 in 5 runs of 40 construct/destruct cycles segfault without
-    // this; 5 in 5 clean with it.
-    //
-    // preventRecentGameSave=true is load-bearing, not tidiness: Stop() would
-    // otherwise call SaveStateManager::SaveRecentGame, and SmsPsg::Serialize
-    // calls Run() - replaying a long un-flushed gap into blip in one go, which
-    // is the same buffer overrun the step loop's unconditional flush exists to
-    // prevent.
-    //
-    // ASan does NOT catch the underlying bug: both frames live in the
-    // uninstrumented libmesen.a. The construct/destruct loop in
-    // test/audio/SmsAudio.test.cpp is what guards it.
-    if (emu_) emu_->Stop(/*sendNotification=*/false, /*preventRecentGameSave=*/true,
-                         /*saveBattery=*/false);
+    stopMesenEmulator(emu_.get()); // see MesenBlockOps.hpp — the mixer outlives nothing
     syncRole_.onDetach();        // before the manager it points at goes away
     emu_.reset();
     audioDevice_.reset();

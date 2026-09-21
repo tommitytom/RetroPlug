@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "Shared/Emulator.h"
+
 #include "system/mesen/MesenAudioDevice.hpp"
 #include "util/ExpSmoother.hpp"
 
@@ -40,3 +42,28 @@ inline void sumStereoWithGain(MesenAudioDevice& device,
     }
 }
 
+
+/** Shut an Emulator down before destroying it.
+ *
+ *  Mesen declares `_console` BEFORE `_soundMixer` and leaves `~Emulator` empty, so members destruct in
+ *  reverse order and the mixer is gone by the time the console's audio providers reach for it in their
+ *  own destructors. Any provider that registers in its constructor and unregisters in its destructor
+ *  therefore touches a destroyed mixer on a bare `emu_.reset()`.
+ *
+ *  SMS hit this first because SmsFmAudio registers UNCONDITIONALLY: ~3 in 5 runs of 40
+ *  construct/destruct cycles segfaulted without this, 5 in 5 clean with it. NES has exactly the same
+ *  shape, only conditionally - NES/Epsm.cpp registers in its constructor and unregisters in its
+ *  destructor, and BaseMapper constructs it whenever a cart's NES 2.0 header sets HasEpsm. So the NES
+ *  crash is real but needs a particular cart, which is why it was never observed and the fix landed on
+ *  only one of the two consoles that need it. GBA registers no provider at all (verified: no
+ *  RegisterAudioProvider anywhere under Core/GBA) and is clean either way.
+ *
+ *  preventRecentGameSave is load-bearing rather than tidiness: Stop() would otherwise call
+ *  SaveStateManager::SaveRecentGame, and SmsPsg::Serialize calls Run() - replaying a long un-flushed gap
+ *  into blip in one go, the same buffer overrun the SMS step loop's unconditional flush exists to avoid.
+ *
+ *  ASan does not catch the underlying bug: both frames live in the uninstrumented libmesen.a. The
+ *  construct/destruct loops in test/audio/{SmsAudio,GbaAudio,NesTeardown}.test.cpp are the guard. */
+inline void stopMesenEmulator(Emulator* emu) {
+    if (emu) emu->Stop(/*sendNotification=*/false, /*preventRecentGameSave=*/true, /*saveBattery=*/false);
+}
