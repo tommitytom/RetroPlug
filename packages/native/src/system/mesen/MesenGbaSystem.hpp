@@ -54,6 +54,12 @@ public:
     // so the backend can reject the build instead of adopting a dead system.
     bool activated() const { return activated_; }
 
+    // How many sample frames are sitting in the audio ring. The block target is measured against this,
+    // so it is the only way a test can tell "the step loop reached the target" from "the loop gave up
+    // and finishBlock drained a short ring" - which look identical from the output buffer, since
+    // finishBlock sums into a caller-sized array either way. The SMS twin exists for the same reason.
+    std::uint32_t availableFrames() const;
+
     // MemoryType → Mesen MemoryType. Maps to Gba* regions; returns invalid
     // for IORegisters / HRam / NametableRam (GB / NES only). Ram = IWRAM
     // (32KB, fast on-chip); ExtWorkRam = EWRAM (256KB, slower off-chip).

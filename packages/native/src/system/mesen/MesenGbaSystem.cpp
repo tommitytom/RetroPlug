@@ -297,6 +297,10 @@ bool MesenGbaSystem::stepIfBelowTarget(std::uint32_t framesNeeded) {
     return false;
 }
 
+std::uint32_t MesenGbaSystem::availableFrames() const {
+    return audioDevice_ ? static_cast<std::uint32_t>(audioDevice_->availableFrames()) : 0;
+}
+
 void MesenGbaSystem::finishBlock(const AudioBlockInfo& info, float* const* outs, std::size_t laneCount) {
     if (!activated_ || !emu_) return;
 
