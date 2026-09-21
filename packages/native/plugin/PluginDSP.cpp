@@ -36,6 +36,7 @@
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
+#include "host/QuickJsGlobals.hpp"
 
 // The embedded control-plane bundle (bytecode) — build/native/cp-bundle_data.c, rp_ prefix.
 extern "C" {
@@ -430,16 +431,7 @@ private:
         }
     }
 
-    bool readReady() {
-        if (!host_.isInitialized()) return false;
-        JSContext* ctx = host_.context();
-        JSValue global = JS_GetGlobalObject(ctx);
-        JSValue v      = JS_GetPropertyStr(ctx, global, "__rp_ready");
-        const bool r   = JS_ToBool(ctx, v) > 0;
-        JS_FreeValue(ctx, v);
-        JS_FreeValue(ctx, global);
-        return r;
-    }
+    bool readReady() { return host_.isInitialized() && jsReadReady(host_.context()); }
 
     // Call globalThis[name](arg?) on the control-plane context (main thread only). Returns the string
     // result, or "" for a non-string / missing fn / exception — or for a runtime that never came up.
@@ -451,41 +443,11 @@ private:
     // covers the whole surface — and a DAW scanning plugins gets a silent no-op instead of a crash
     // inside our constructor. "" is already the answer every caller handles.
     std::string callGlobal(const char* name, const char* arg) {
-        if (!host_.isInitialized() || !jsReady_) return {};
-        JSContext* ctx = host_.context();
-        JSValue global = JS_GetGlobalObject(ctx);
-        JSValue fn     = JS_GetPropertyStr(ctx, global, name);
-        std::string out;
-        if (JS_IsFunction(ctx, fn)) {
-            JSValue argv[1];
-            int argc = 0;
-            if (arg != nullptr) { argv[0] = JS_NewString(ctx, arg); argc = 1; }
-            JSValue ret = JS_Call(ctx, fn, global, argc, argc ? argv : nullptr);
-            if (argc) JS_FreeValue(ctx, argv[0]);
-            if (JS_IsException(ret)) {
-                JSValue exc  = JS_GetException(ctx);
-                const char* s = JS_ToCString(ctx, exc);
-                JSValue stk  = JS_GetPropertyStr(ctx, exc, "stack");
-                const char* st = JS_IsUndefined(stk) ? nullptr : JS_ToCString(ctx, stk);
-                d_stderr("[retroplug] %s threw: %s%s%s", name, s ? s : "?",
-                         st ? "\n" : "", st ? st : "");
-                if (st) JS_FreeCString(ctx, st);
-                JS_FreeValue(ctx, stk);
-                if (s) JS_FreeCString(ctx, s);
-                JS_FreeValue(ctx, exc);
-            } else if (JS_IsString(ret)) {
-                const char* s = JS_ToCString(ctx, ret);
-                if (s) { out = s; JS_FreeCString(ctx, s); }
-            } else if (JS_IsBool(ret)) {
-                // Stringify booleans so callers that return a bool (e.g. __rp_loadProjectPath) get an
-                // unambiguous "true"/"false" in diagnostics instead of the empty "false/void" default.
-                out = JS_ToBool(ctx, ret) > 0 ? "true" : "false";
-            }
-            JS_FreeValue(ctx, ret);
-        }
-        JS_FreeValue(ctx, fn);
-        JS_FreeValue(ctx, global);
-        return out;
+        // `jsReady_` is the half SDL has no analogue for: a DAW scan must degrade rather than exit, so
+        // the plugin refuses to call into a control plane that never signalled ready. See 48c8a895.
+        JsGlobals g{ host_.isInitialized() ? host_.context() : nullptr, jsReady_,
+                     [](const char* n, const char* detail) { d_stderr("[retroplug] %s threw: %s", n, detail); } };
+        return jsCallGlobal(g, name, arg);
     }
 
     // Report the loaded project's compensable latency to the host (PDC). LSDj in a host-clocked sync mode
