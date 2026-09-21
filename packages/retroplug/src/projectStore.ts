@@ -532,17 +532,7 @@ export class ProjectStore {
    *  every entry; native only compresses. Records it in recents + as the current
    *  project, and marks clean. Returns false on a compression / write failure. */
   export(path: string): boolean {
-    const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
-    const json = serializeConfig(cfg, dirname(path), (p) => this.backend.canonicalize(p));
-    const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
-    // The store's systems() order matches buildConfig's, so index i keys both alike.
-    this.systems.systems().forEach((sys, i) => {
-      const state = this.backend.readState(sys.id);
-      if (state && state.length) entries.push({ name: stateKey(i), bytes: state });
-      const sram = this.backend.readSram(sys.id);
-      if (sram && sram.length) entries.push({ name: sramKey(i), bytes: sram });
-    });
-    const archive = this.backend.zip(entries);
+    const archive = this.buildArchive(dirname(path));
     if (!archive || !this.backend.writeFileAtomic(path, archive)) return false;
     this.recordProjectRow(path);
     this.path = path;
@@ -555,9 +545,18 @@ export class ProjectStore {
    *  writes, but WITHOUT the recents/currentPath/dirty side-effects a host save has. Paths are left
    *  absolute (`baseDir=""`), so `loadBytes` round-trips them with no rebase. */
   exportBytes(): Uint8Array | null {
+    return this.buildArchive("");
+  }
+
+  /** The `.rplg` archive itself: the thin project.json plus each live system's savestate and SRAM, keyed
+   *  `systems/{i}/{state,sram}`. `baseDir` is the ONE thing the two callers differ by - a file export
+   *  rebases asset paths relative to the file's directory, the DPF state chunk leaves them absolute so
+   *  `loadBytes` round-trips with no rebase. Everything else was duplicated between them verbatim. */
+  private buildArchive(baseDir: string): Uint8Array | null {
     const cfg = buildConfig(this.projectSettings, this.systems.systems(), this.projectName);
-    const json = serializeConfig(cfg, "", (p) => this.backend.canonicalize(p));
+    const json = serializeConfig(cfg, baseDir, (p) => this.backend.canonicalize(p));
     const entries: ZipEntry[] = [{ name: PROJECT_JSON, bytes: enc.encode(json) }];
+    // The store's systems() order matches buildConfig's, so index i keys both alike.
     this.systems.systems().forEach((sys, i) => {
       const state = this.backend.readState(sys.id);
       if (state && state.length) entries.push({ name: stateKey(i), bytes: state });
