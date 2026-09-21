@@ -59,11 +59,7 @@ import {
   type BlipToasterSettings,
   type BlipToasterSettingsPatch,
 } from "../../../src/bliptoaster/rom";
-import {
-  readOverrides as readBlipToasterOverrides,
-  readSettings as readBlipToasterSettingsConfig,
-  type BlipToasterAssetOverride,
-} from "../../../src/bliptoasterAssetsRole";
+import { readSettings as readBlipToasterSettingsConfig } from "../../../src/bliptoasterAssetsRole";
 import { readOverrides, applyOverridesToRom, type LsdjAssetOverride } from "../../../src/lsdjAssetsRole";
 import { planLsdprjImport } from "../../../src/lsdjLsdprjImport";
 // Aliased: `replaceSong` and `addSong` are already taken here by the LSDj row helpers.
@@ -1273,8 +1269,6 @@ function replaceAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, sl
 // THEMES are palette indices stored INLINE (readable JSON `.rit`, no file); FONTS LINK a `.chr` bank by path;
 // KITS LINK a pre-built 8 KB `.rkit` DMC bank by path (compilation is offline — the plugin can't reach
 // compileDmc — so a kit override just splices a ready-made bank, as risa's Export produces).
-const risaAssetOverrides = (sys: SystemView): RisaAssetOverride[] =>
-  readRisaOverrides(sys.roles.find((r) => r.kind === "risa-assets")?.config);
 
 const readRisaRomFor = (be: HostBackend, romPath: string): RisaRom | null => {
   const bytes = romPath ? be.readFile(romPath) : null;
@@ -1283,11 +1277,36 @@ const readRisaRomFor = (be: HostBackend, romPath: string): RisaRom | null => {
   return rom.isRisa ? rom : null;
 };
 
+// risa and BlipToaster carry the SAME asset surface - a 7-role theme table, 8 KB CHR font banks and 8 KB
+// DMC kit banks - down to the file formats (.rit / .chr / .rkit), the validation constants and the
+// inline-vs-by-path split. Their two Export/Replace pairs were four functions that differed only in which
+// class parsed the ROM and which role kind the override was written to, so those are the two things a
+// console supplies here. LSDj is deliberately NOT folded in: its formats differ, and it validates by
+// trial-applying to a parsed ROM rather than by length, which is a genuinely different shape.
+interface RitAssetOps {
+  role: string;
+  openRom(be: HostBackend, romPath: string): {
+    getTheme(slot: number): { recordBytes: Uint8Array; nameBytes: Uint8Array } | null;
+    getKitBank(slot: number): Uint8Array | null;
+    getChrFontSlot(slot: number): Uint8Array | null;
+  } | null;
+}
+
+const ritOverrides = (sys: SystemView, role: string): RisaAssetOverride[] =>
+  readRisaOverrides(sys.roles.find((r) => r.kind === role)?.config);
+
 // Export theme/font/kit `slot` to a picked file: the override's data if replaced, else the base ROM's asset.
-function exportRisaAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void {
+function exportRitAsset(
+  ops: RitAssetOps,
+  ctx: MenuContext,
+  sys: SystemView,
+  type: AssetTypeInfo,
+  slot: number,
+  label: string,
+): void {
   const be = ctx.stores.backend;
   const kind = type.kind;
-  const ov = risaAssetOverrides(sys).find((o) => o.type === kind && o.slot === slot);
+  const ov = ritOverrides(sys, ops.role).find((o) => o.type === kind && o.slot === slot);
   const defaultName = `${sanitizeName(label)}${type.ext}`;
   browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: type.patterns, saving: true, defaultName }, (path) => {
     let bytes: Uint8Array | null = null;
@@ -1295,15 +1314,15 @@ function exportRisaAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo,
       // The theme comes from the inline override, or the base ROM decoded; emit a .rit (readable JSON).
       let theme = ov?.theme ?? null;
       if (!theme) {
-        const t = readRisaRomFor(be, sys.romPath)?.getTheme(slot);
+        const t = ops.openRom(be, sys.romPath)?.getTheme(slot);
         if (t) theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
       }
       if (theme) bytes = new TextEncoder().encode(JSON.stringify(serializeRit(theme), null, 2) + "\n");
     } else if (kind === "kit") {
       // The linked bank if overridden, else the base ROM's 8 KB DMC bank — either is a ready-to-link .rkit.
-      bytes = ov?.path ? be.readFile(ov.path) : (readRisaRomFor(be, sys.romPath)?.getKitBank(slot) ?? null);
+      bytes = ov?.path ? be.readFile(ov.path) : (ops.openRom(be, sys.romPath)?.getKitBank(slot) ?? null);
     } else {
-      bytes = ov?.path ? be.readFile(ov.path) : (readRisaRomFor(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
+      bytes = ov?.path ? be.readFile(ov.path) : (ops.openRom(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
     }
     if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
   });
@@ -1311,7 +1330,7 @@ function exportRisaAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo,
 
 // Replace theme/font/kit `slot` from a picked file: validate it, record the override (theme INLINE / font +
 // kit by PATH) in role config, and reload so it takes effect. NON-DESTRUCTIVE — the base .nes is never written.
-function replaceRisaAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
+function replaceRitAsset(ops: RitAssetOps, ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
   const be = ctx.stores.backend;
   const kind = type.kind;
   browseThen(ctx, { title: `Replace ${kind} ${slot}`, patterns: type.patterns }, (path) => {
@@ -1332,18 +1351,24 @@ function replaceRisaAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo
     } catch {
       return; // malformed .rit / unreadable → leave the ROM untouched
     }
-    writeOverrides(ctx, sys, "risa-assets", [...risaAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot)), entry]);
+    writeOverrides(ctx, sys, ops.role, [...ritOverrides(sys, ops.role).filter((o) => !(o.type === kind && o.slot === slot)), entry]);
   });
 }
 
 const lsdjAssetSpec: AssetMenuSpec = { id: "lsdj", catalog: lsdjAssetCatalog, exportAsset, replaceAsset };
-const risaAssetSpec: AssetMenuSpec = { id: "risa", catalog: risaAssetCatalog, exportAsset: exportRisaAsset, replaceAsset: replaceRisaAsset };
+const risaAssetSpec: AssetMenuSpec = {
+  id: "risa",
+  catalog: risaAssetCatalog,
+  exportAsset: (ctx, sys, type, slot, label) => exportRitAsset(risaOps, ctx, sys, type, slot, label),
+  replaceAsset: (ctx, sys, type, slot) => replaceRitAsset(risaOps, ctx, sys, type, slot),
+};
 
 // --- BlipToaster asset file actions (Export/Replace own the .rkit/.chr formats) ---------------------------
-// BlipToaster has no themes (no ROM theme table yet) — just the baked DMC kit + the CHR font, both LINKED by
-// path (a pre-built 8 KB .rkit / .chr bank, read at construct). Mirrors the risa actions minus themes.
-const blipToasterAssetOverrides = (sys: SystemView): BlipToasterAssetOverride[] =>
-  readBlipToasterOverrides(sys.roles.find((r) => r.kind === "bliptoaster-assets")?.config);
+// BlipToaster's overrides: a 16-entry theme table (INLINE), plus the DMC kit and CHR font banks, both LINKED
+// by path (a pre-built 8 KB .rkit / .chr, read at construct). This comment used to say the cart had no themes
+// "yet" and that the actions mirrored risa's "minus themes"; the theme table landed and the comment did not
+// follow it, while the copy underneath grew a theme branch. The actions are now literally risa's - see
+// RitAssetOps - which is the version of "mirrors risa" that cannot drift.
 
 /** The baked-settings fields this PROJECT pins (not the ROM's own bytes) — only what the user has changed. */
 const readBlipToasterSettings = (sys: SystemView): BlipToasterSettingsPatch =>
@@ -1356,61 +1381,8 @@ const readBlipToasterRomFor = (be: HostBackend, romPath: string): BlipToasterRom
   return rom.isBlipToaster ? rom : null;
 };
 
-// Export theme/kit/font `slot` to a picked file: the override's data if replaced, else the base ROM's asset.
-function exportBlipToasterAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number, label: string): void {
-  const be = ctx.stores.backend;
-  const kind = type.kind;
-  const ov = blipToasterAssetOverrides(sys).find((o) => o.type === kind && o.slot === slot);
-  const defaultName = `${sanitizeName(label)}${type.ext}`;
-  browseThen(ctx, { title: `Export ${kind} ${slot}`, patterns: type.patterns, saving: true, defaultName }, (path) => {
-    let bytes: Uint8Array | null = null;
-    if (kind === "theme") {
-      // The theme comes from the inline override, or the base ROM decoded; emit a .rit (readable JSON).
-      let theme = ov?.theme ?? null;
-      if (!theme) {
-        const t = readBlipToasterRomFor(be, sys.romPath)?.getTheme(slot);
-        if (t) theme = decodeThemeFromRom(t.recordBytes, t.nameBytes);
-      }
-      if (theme) bytes = new TextEncoder().encode(JSON.stringify(serializeRit(theme), null, 2) + "\n");
-    } else if (kind === "kit") {
-      // The linked bank if overridden, else the base ROM's 8 KB DMC bank — either is a ready-to-link .rkit.
-      bytes = ov?.path ? be.readFile(ov.path) : (readBlipToasterRomFor(be, sys.romPath)?.getKitBank(slot) ?? null);
-    } else {
-      bytes = ov?.path ? be.readFile(ov.path) : (readBlipToasterRomFor(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
-    }
-    if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
-  });
-}
-
-// Replace theme/kit/font `slot` from a picked file: validate it, record the override (theme INLINE / font +
-// kit by PATH) in role config, and reload so it takes effect. NON-DESTRUCTIVE — the base .nes is never written.
-function replaceBlipToasterAsset(ctx: MenuContext, sys: SystemView, type: AssetTypeInfo, slot: number): void {
-  const be = ctx.stores.backend;
-  const kind = type.kind;
-  browseThen(ctx, { title: `Replace ${kind} ${slot}`, patterns: type.patterns }, (path) => {
-    const data = be.readFile(path);
-    if (!data) return;
-    let entry: BlipToasterAssetOverride;
-    try {
-      if (kind === "theme") {
-        const { theme } = parseRit(JSON.parse(new TextDecoder().decode(data))); // throws on a bad .rit
-        entry = { type: "theme", slot, name: theme.name.trim() || stem(path), theme };
-      } else if (kind === "kit") {
-        if (data.length !== KIT_BANK_SIZE || !isBankPopulated(data)) return; // a .rkit is exactly one populated 8 KB DMC bank
-        entry = { type: "kit", slot, name: bankToModel(data).name.trim() || stem(path), path };
-      } else {
-        if (data.length !== 0x2000) return; // a .chr is exactly one 8 KB CHR bank
-        entry = { type: "font", slot, name: stem(path), path };
-      }
-    } catch {
-      return; // malformed .rit / unreadable → leave the ROM untouched
-    }
-    writeOverrides(ctx, sys, "bliptoaster-assets", [
-      ...blipToasterAssetOverrides(sys).filter((o) => !(o.type === kind && o.slot === slot)),
-      entry,
-    ]);
-  });
-}
+const risaOps: RitAssetOps = { role: "risa-assets", openRom: readRisaRomFor };
+const blipToasterOps: RitAssetOps = { role: "bliptoaster-assets", openRom: readBlipToasterRomFor };
 
 // The cart's settings block names one THEME and one FONT as the live ones, so for those two the asset list is
 // also the picker: the row that IS live wears a `*`, every other row offers `Select`. That replaces a pair of
@@ -1420,8 +1392,8 @@ const BLIPTOASTER_SELECTABLE: Record<string, "theme" | "font" | undefined> = { t
 const blipToasterAssetSpec: AssetMenuSpec = {
   id: "bliptoaster",
   catalog: bliptoasterAssetCatalog,
-  exportAsset: exportBlipToasterAsset,
-  replaceAsset: replaceBlipToasterAsset,
+  exportAsset: (ctx, sys, type, slot, label) => exportRitAsset(blipToasterOps, ctx, sys, type, slot, label),
+  replaceAsset: (ctx, sys, type, slot) => replaceRitAsset(blipToasterOps, ctx, sys, type, slot),
   selectedSlot(ctx, sys, kind) {
     const field = BLIPTOASTER_SELECTABLE[kind];
     if (!field) return null; // kits have no live slot: ch5 CC 14 picks one, and nothing is baked
