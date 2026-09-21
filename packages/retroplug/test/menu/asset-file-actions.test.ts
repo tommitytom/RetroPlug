@@ -155,10 +155,10 @@ for (const c of CONSOLES) {
     expect(out![0], "byte 0 came from the linked file").toBe(0xab);
   });
 
-  // The divergence from LSDj, pinned deliberately. LSDj falls back to the base ROM asset when an
-  // override's linked file has moved; these two return null and write NOTHING, silently. Pinned as-is so
-  // the collapse is provably behaviour-preserving; changing it is a separate, deliberate commit.
-  test(`${c.id}: Export of an override whose linked file is GONE writes nothing (no fallback)`, async () => {
+  // A linked .chr / .rkit is a path, and the user is free to move it afterwards. Export then falls back to
+  // the base ROM's own bank - the asset the cart will boot with once the dead override is removed - which
+  // is what the LSDj copy of these actions has always done. It used to write nothing at all, silently.
+  test(`${c.id}: Export of an override whose linked file is GONE falls back to the base ROM`, async () => {
     const h = boot(c);
     const linked = new Uint8Array(0x2000).fill(0xcd);
     h.be.seed("/link/moved.chr", linked);
@@ -168,7 +168,10 @@ for (const c of CONSOLES) {
 
     h.be.queueBrowse("/out/stale.chr");
     await h.fire("font", 0, "export");
-    expect(h.be.readFile("/out/stale.chr"), "nothing is written, and nothing is said").toBe(null);
+    const out = h.be.readFile("/out/stale.chr");
+    expect(out != null, "the base ROM's bank is written rather than nothing").toBeTruthy();
+    expect(out!.length, "and it is a whole CHR bank").toBe(0x2000);
+    expect(out![0] === 0xcd, "not the dead link's content").toBeFalsy();
   });
 
   // ---- Replace ------------------------------------------------------------------------------------

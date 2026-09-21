@@ -1292,6 +1292,15 @@ interface RitAssetOps {
   } | null;
 }
 
+/** An override's linked bank, or null when the link is broken. A `.rkit` / `.chr` override records a PATH,
+ *  and the user is free to move or delete that file afterwards — at which point Export used to produce
+ *  nothing at all, silently, because a null read fell through the `if (bytes && bytes.length)` guard with no
+ *  message. Returning null here lets the caller fall back to the base ROM's own bank, which is both useful
+ *  (that is the asset the cart will actually boot with once the dead override is removed) and what the LSDj
+ *  copy of these actions has always done. */
+const readLinked = (be: HostBackend, path: string | undefined): Uint8Array | null =>
+  path ? be.readFile(path) : null;
+
 const ritOverrides = (sys: SystemView, role: string): RisaAssetOverride[] =>
   readRisaOverrides(sys.roles.find((r) => r.kind === role)?.config);
 
@@ -1320,9 +1329,9 @@ function exportRitAsset(
       if (theme) bytes = new TextEncoder().encode(JSON.stringify(serializeRit(theme), null, 2) + "\n");
     } else if (kind === "kit") {
       // The linked bank if overridden, else the base ROM's 8 KB DMC bank — either is a ready-to-link .rkit.
-      bytes = ov?.path ? be.readFile(ov.path) : (ops.openRom(be, sys.romPath)?.getKitBank(slot) ?? null);
+      bytes = readLinked(be, ov?.path) ?? ops.openRom(be, sys.romPath)?.getKitBank(slot) ?? null;
     } else {
-      bytes = ov?.path ? be.readFile(ov.path) : (ops.openRom(be, sys.romPath)?.getChrFontSlot(slot) ?? null);
+      bytes = readLinked(be, ov?.path) ?? ops.openRom(be, sys.romPath)?.getChrFontSlot(slot) ?? null;
     }
     if (bytes && bytes.length) be.writeFileAtomic(path, bytes);
   });
