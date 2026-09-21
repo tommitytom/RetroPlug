@@ -14,8 +14,9 @@ import { runtime } from "../src/risa";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
-const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
-const DEMO_SRM = "/workspaces/risa-v2.2.1-source/website/play/demos/hevander.srm"; // carries a working song
+declare const __RISA_SRC__: string;
+const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
+const DEMO_SRM = __RISA_SRC__ + "/website/play/demos/hevander.srm"; // carries a working song
 const BTN_SELECT = 6;
 const BTN_START = 7; // GB button order, reused for NES (NesButton::Start = 7). SELECT+START = play song.
 

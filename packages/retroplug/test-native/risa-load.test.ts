@@ -16,7 +16,8 @@ import { savBytes } from "../test/risa/fixtures";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
-const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
+declare const __RISA_SRC__: string;
+const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
 const SAV_PATH = "/tmp/rp-risa-load-src.sav";
 const LOADED_PATH = "/tmp/rp-risa-load-working.sav";
 const NAME_OFF = 0x2000 + 0x1e8c; // bank 1 (0x2000) + SONG_NAME_OFFSET — the working-song name

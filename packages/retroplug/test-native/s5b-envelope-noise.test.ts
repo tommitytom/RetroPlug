@@ -21,7 +21,8 @@ import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
 
-const S5B_ROM = "/workspaces/bliptoaster/rom/build/bliptoaster-s5b.nes";
+declare const __REPO_RESOURCES_DIR__: string;
+const S5B_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-s5b.nes";
 const CH = 6; // BlipToaster's S5B Square A (BASE01)
 const A4 = 69;
 
@@ -36,11 +37,25 @@ function rms(x: Float32Array, from = 0, to = x.length): number {
 const db = (x: number) => 20 * Math.log10(Math.max(x, 1e-12));
 
 /** Peak-to-trough swing of the short-time level over the sustain - the only thing that separates a
- *  hardware volume envelope from a flat tone, since both have the same average level. */
+ *  hardware volume envelope from a flat tone, since both have the same average level.
+ *
+ *  The window is a TIME, and it is a measurement parameter with a constraint at each end: it must span
+ *  several cycles of the note (below that, the reading picks up waveform phase instead of level) and stay
+ *  short against the envelope ramp (above that, it averages the ramp away). This used to cut the sustain
+ *  into 60 pieces, ~15 ms, which is the wrong side of the second constraint for this chip - the SAME
+ *  render reads 4.5 dB at 15 ms and 23.9 dB at 2.5 ms. 23.9 dB is the real figure and it matches the
+ *  hardware reference in the header; 4.5 dB was the window flattening the ramp.
+ *
+ *  8 ms is ~3.5 cycles of A4 and resolves the ramp to ~11 dB. The flat control is what proves the window
+ *  is not simply reading the waveform: it measures 0.13 dB at this size, and still only 0.44 dB at 2.5 ms.
+ *  PCM is interleaved stereo at 44.1 kHz, so a millisecond is 88.2 samples. */
+const WINDOW_MS = 8;
+const SAMPLES_PER_MS = 88.2; // interleaved stereo @ 44100
+
 function swingDb(pcm: Float32Array): number {
   const from = Math.floor(pcm.length * 0.3);
   const to = Math.floor(pcm.length * 0.9);
-  const win = Math.floor((to - from) / 60);
+  const win = Math.max(1, Math.floor(WINDOW_MS * SAMPLES_PER_MS));
   let lo = Infinity;
   let hi = -Infinity;
   for (let i = from; i + win <= to; i += win) {
@@ -87,9 +102,11 @@ test("S5B hardware envelope: envelope mode sounds and its level moves, where it 
 
   // The regression this guards: envelope mode used to render SILENCE (volume nibble 0).
   expect(envDb > -60).toBeTruthy();
-  // And it must actually move, not just sound. Hardware showed 22-26 dB against 0.87 dB flat.
-  expect(swingDb(env) > 6).toBeTruthy();
-  expect(swingDb(flat) < 3).toBeTruthy();
+  // And it must actually move, not just sound. Hardware showed 22-26 dB against 0.87 dB flat; through an
+  // 8 ms window this core reads ~11 dB against ~0.13 dB (see swingDb on why the window under-reads the
+  // true 23.9 dB). Both operands are named so a drift says which side moved.
+  expect(swingDb(env), "envelope swing").toBeGreaterThan(6);
+  expect(swingDb(flat), "flat-tone swing (the control)").toBeLessThan(3);
 });
 
 test("S5B noise: the chip default gates the tone with the LFSR instead of ignoring the CC", () => {

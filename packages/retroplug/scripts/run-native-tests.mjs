@@ -27,6 +27,10 @@ const RESOURCES_DIR = process.env.RETROPLUG_RESOURCES_DIR || resolve(REPO, "../r
 // The in-repo resources dir — a few small ROMs are committed here (e.g. resources/roms/bliptoaster.nes)
 // rather than in the sibling tree, so a test can reach them without the sibling being populated.
 const REPO_RESOURCES_DIR = join(REPO, "resources");
+// The risa tracker's source checkout. Nothing here vendors a built risa ROM, so tests reaching for one
+// SKIP without it — but the path was hard-coded in ten places, which is how the bliptoaster paths rotted
+// unnoticed. Same env override scripts/gen-risa-symbols.mjs already uses.
+const RISA_SRC = process.env.RISA_SRC || "/workspaces/risa-v2.2.1-source";
 
 const HOST =
   process.env.RETROPLUG_HOST ||
@@ -107,6 +111,7 @@ async function runOne({ file, slug }) {
         __CONFIG_DIR__: JSON.stringify(cfgDir),
         __RESOURCES_DIR__: JSON.stringify(RESOURCES_DIR),
         __REPO_RESOURCES_DIR__: JSON.stringify(REPO_RESOURCES_DIR),
+        __RISA_SRC__: JSON.stringify(RISA_SRC),
         __DSP_KERNEL_BUNDLE__: JSON.stringify(DSP_KERNEL_BUNDLE),
       },
     });

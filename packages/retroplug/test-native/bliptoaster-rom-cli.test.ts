@@ -17,7 +17,7 @@ import { encodeWav } from "../cli/wav";
 // Keep this path current with that repo: it pointed at a pre-rename layout for a while, and since a missing ROM
 // only SKIPS, every ROM-splice leg here silently passed without running — which is how the theme-table bug
 // (§9 of its HARNESS-NOTES) reached a release with a green suite behind it.
-const BLIPTOASTER_ROM = "/workspaces/bliptoaster/build/bliptoaster.nes";
+const BLIPTOASTER_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 
 function toolSession(): { be: ReturnType<typeof createRealBackend>; audio: ReturnType<typeof createAudioDriver>; s: Session } {
   const be = createRealBackend();

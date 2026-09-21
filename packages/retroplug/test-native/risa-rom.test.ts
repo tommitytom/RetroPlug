@@ -12,7 +12,8 @@ import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { rom as risaRom } from "../src/risa";
 
-const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
+declare const __RISA_SRC__: string;
+const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
 
 test("constructSystem romBytes boots a NES (Mesen) system over a nonexistent romPath", () => {
   const be = createRealBackend();

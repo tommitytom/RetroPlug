@@ -9,7 +9,8 @@ import { risaRomTool } from "../cli/sessions/risa-rom";
 import { RisaRom, bankToModel, decodeThemeFromRom } from "../src/risa/rom";
 import { encodeWav } from "../cli/wav";
 
-const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
+declare const __RISA_SRC__: string;
+const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
 
 function toolSession(): { be: ReturnType<typeof createRealBackend>; audio: ReturnType<typeof createAudioDriver>; s: Session } {
   const be = createRealBackend();

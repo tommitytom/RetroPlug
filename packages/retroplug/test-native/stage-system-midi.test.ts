@@ -12,7 +12,8 @@ import { test, expect, skip } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 
-const ROM = "/workspaces/bliptoaster/build/bliptoaster.nes";
+declare const __REPO_RESOURCES_DIR__: string;
+const ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 // The cart's rig message (F0 7D 42 03 …): baseCh, ppu, curve, theme, font. Channel-less BY DESIGN, so no
 // channel trick could have separated two instances - only the per-system inject can.
 const sxSettings = (theme: number): number[] => [0xf0, 0x7d, 0x42, 0x03, 0, 1, 0, theme, 0, 0xf7];

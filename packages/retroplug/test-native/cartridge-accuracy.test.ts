@@ -13,8 +13,9 @@ import { test, expect, skip } from "../testing/harness";
 import { bootSession } from "../cli/session";
 import { Timeline, renderTimeline } from "../cli/timeline";
 
-const S5B_ROM = "/workspaces/bliptoaster/rom/build/bliptoaster-s5b.nes";
-const MMC5_ROM = "/workspaces/bliptoaster/rom/build/bliptoaster-mmc5.nes";
+declare const __REPO_RESOURCES_DIR__: string;
+const S5B_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-s5b.nes";
+const MMC5_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster-mmc5.nes";
 
 const cc = (ch: number, num: number, val: number) => [0xb0 | (ch - 1), num, val];
 const db = (x: number) => 20 * Math.log10(Math.max(x, 1e-12));

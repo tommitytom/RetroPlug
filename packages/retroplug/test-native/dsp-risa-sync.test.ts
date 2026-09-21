@@ -14,8 +14,9 @@ import { isRisaSyncRom, risaMarkerVersion } from "../src/risa";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
-const ROM_230 = "/workspaces/resources/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes";
-const LETGO = "/workspaces/resources/roms/risa/let_go.srm";
+declare const __RESOURCES_DIR__: string;
+const ROM_230 = __RESOURCES_DIR__ + "/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes";
+const LETGO = __RESOURCES_DIR__ + "/roms/risa/let_go.srm";
 
 // This system's pipeline: the sync role, or nothing at all (the negative control).
 const withSync = (id: number) => ({ systems: [{ id, pipeline: [{ kind: "risa-sync", config: {} }] }] });

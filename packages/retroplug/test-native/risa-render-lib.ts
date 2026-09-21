@@ -15,11 +15,13 @@ import type { RenderContext, RenderOpts } from "../src/render";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
-export const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
+declare const __RISA_SRC__: string;
+export const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
 // A real risa song whose last track HFFs at the end (~59 s) — the only demo sav here that
 // stops rather than loops, so it's the fixture that proves seq_mode → STOPPED end-detection
 // over the real core.
-export const ECOLI_SRM = "/workspaces/resources/roms/risa/ecoli_soul.srm";
+declare const __RESOURCES_DIR__: string;
+export const ECOLI_SRM = __RESOURCES_DIR__ + "/roms/risa/ecoli_soul.srm";
 
 // ecoli_soul's detected PAL length over the real core. Pinned from both sides so it cannot
 // rot silently into a stale reference: risa-render-hff MEASURES it (and asserts it lands

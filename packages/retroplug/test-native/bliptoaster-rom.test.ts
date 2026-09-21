@@ -5,8 +5,8 @@
 //     can boot it). This support already shipped for risa; here it's exercised for a BlipToaster ROM.
 // (2) End-to-end: patch a kit + a font into the base ROM in memory via BlipToasterRom, construct from those
 //     bytes, and confirm the patched image boots (and the on-disk .nes is never touched).
-// Points at the sibling bliptoaster build (which carries the "bliptoaster" marker + baked kit); SKIPs cleanly if absent.
-import { test, expect, skip } from "../testing/harness";
+// Driven by the COMMITTED resources/roms/bliptoaster.nes (which carries the "bliptoaster" marker + baked kit).
+import { test, expect } from "../testing/harness";
 import { createRealBackend } from "../src/realBackend";
 import { createAudioDriver } from "../src/audioDriver";
 import { bootSession } from "../cli/session";
@@ -15,13 +15,14 @@ import { BlipToasterRom } from "../src/bliptoaster/rom";
 import { blipToasterInfo, isBlipToasterRomHeader, BLIPTOASTER_MARKER } from "../src/bliptoaster/romDetect";
 
 declare const __REPO_RESOURCES_DIR__: string;
-// The COMMITTED ROM, always present (unlike the sibling build below).
-const VENDORED_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
-
-const BLIPTOASTER_ROM = "/workspaces/bliptoaster/rom/build/bliptoaster.nes";
-// The plain-banking FME-7 build (mapper 69, no expansion audio): 16 switchable DMC kit banks. Skips cleanly
-// if `make -C /workspaces/bliptoaster/rom all-mappers` hasn't been run.
-const BLIPTOASTER_FME7 = "/workspaces/bliptoaster/rom/build/bliptoaster-fme7.nes";
+// The COMMITTED ROM, so every leg below runs everywhere — no fixture guard, no skip.
+//
+// Three constants used to live here: this one, plus two pointing into /workspaces/bliptoaster/rom/build/,
+// a directory that has never existed in any checkout. Every leg that used them skipped silently, forever.
+// They all name the same cart in the end: the base build IS the FME-7 build (mapper 69), because every
+// BlipToaster build banks and the base one takes FME-7 for kit banking alone, with no expansion audio —
+// which is exactly what the multi-kit legs below ask for.
+const BLIPTOASTER_ROM = __REPO_RESOURCES_DIR__ + "/roms/bliptoaster.nes";
 const KIT_MAGIC_ADDR = 0xdf40; // $C000 + $1F40: the risa-kit present marker in the bank mapped at $C000
 const CC_STATUS_CH5 = 0xb4; // Control Change, MIDI channel 5 (the DMC channel)
 const CC_DMC_BANK = 14;
@@ -33,12 +34,12 @@ const CC_DMC_LOOP = 4;
 // detector so re-vendoring a mismatched build fails here instead of silently dropping the asset menu.
 test("the COMMITTED resources/roms ROM is detected, and its role set is attached", () => {
   const be = createRealBackend();
-  expect(be.fileExists(VENDORED_ROM)).toBeTruthy(); // committed, so never a skip
+  expect(be.fileExists(BLIPTOASTER_ROM)).toBeTruthy(); // committed, so never a skip
 
-  const rom = BlipToasterRom.fromBytes(be.readFile(VENDORED_ROM)!);
+  const rom = BlipToasterRom.fromBytes(be.readFile(BLIPTOASTER_ROM)!);
   expect(rom.isBlipToaster).toBe(true);
 
-  const header = be.readFile(VENDORED_ROM)!.subarray(0, 0x150);
+  const header = be.readFile(BLIPTOASTER_ROM)!.subarray(0, 0x150);
   expect(isBlipToasterRomHeader(header)).toBe(true);
   const info = blipToasterInfo(header)!;
   expect(info != null).toBeTruthy();
@@ -48,7 +49,6 @@ test("the COMMITTED resources/roms ROM is detected, and its role set is attached
 test("constructSystem romBytes boots a BlipToaster (Mesen) system over a nonexistent romPath", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(BLIPTOASTER_ROM)) skip(`bliptoaster-rom romBytes: no ROM at ${BLIPTOASTER_ROM}`);
 
   const bytes = be.readFile(BLIPTOASTER_ROM)!;
   // romPath points at nothing; only romBytes can boot this. (Pre-fix Mesen slurps the path -> nullptr.)
@@ -64,7 +64,6 @@ test("constructSystem romBytes boots a BlipToaster (Mesen) system over a nonexis
 test("a kit + font patched into the ROM in memory boots (the on-disk .nes is untouched)", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(BLIPTOASTER_ROM)) skip(`bliptoaster-rom patch-boot: no ROM at ${BLIPTOASTER_ROM}`);
 
   const base = be.readFile(BLIPTOASTER_ROM)!;
   const rom = BlipToasterRom.fromBytes(base);
@@ -96,19 +95,22 @@ test("a kit + font patched into the ROM in memory boots (the on-disk .nes is unt
 test("the baked theme sets the background palette; a theme override changes it", () => {
   const be = createRealBackend();
   const audio = createAudioDriver();
-  if (!be.fileExists(BLIPTOASTER_ROM)) skip(`bliptoaster-rom theme: no ROM at ${BLIPTOASTER_ROM}`);
 
   const base = be.readFile(BLIPTOASTER_ROM)!;
 
-  // The ROM applies theme 0 at boot: $3F00 = bg ($0D), $3F01 = text ($30) — the baked DFLT theme.
+  // The ROM applies theme 0 at boot. Read what this cart actually BAKES rather than pinning a sampled
+  // colour: the theme table is ROM data and a rebuild moves it (theme 0's bg went $0D -> $0F on the
+  // re-stage that first ran this test). The claim is that the PPU palette follows the baked record,
+  // which is what comparing the two asserts — and it stays true of any build.
+  const bakedTheme = BlipToasterRom.fromBytes(base).getTheme(0)!;
   expect(be.constructSystem({
     romPath: BLIPTOASTER_ROM, platform: "nes", core: "mesen", embeddedRom: "",
     savPath: null, statePath: null, romBytes: base,
   }, 13)).toBeTruthy();
   audio.renderAudio(4000); // let the reset + sysInit palette write run
   const pal0 = be.getPpuState(13).paletteRam;
-  expect(pal0[0]).toBe(0x0d); // $3F00 universal background
-  expect(pal0[1]).toBe(0x30); // $3F01 text color
+  expect(pal0[0], "$3F00 universal background = baked theme 0 bg").toBe(bakedTheme.recordBytes[0]);
+  expect(pal0[1], "$3F01 text = baked theme 0 text").toBe(bakedTheme.recordBytes[1]);
 
   // Override the theme's bg + text (in memory) → the ROM reads the patched table and applies it.
   const rom = BlipToasterRom.fromBytes(base);
@@ -132,32 +134,48 @@ test("the baked theme sets the background palette; a theme override changes it",
 
 // The multi-kit runtime path, end-to-end on a REAL Mesen NES core: MIDI CC 14 (CC_DMC_BANK) selects one of
 // the FME-7 build's 16 switchable 8K kit banks by remapping the $C000 window and reloading the kit index.
-// Uses the FME-7 build (plain banking, NO expansion audio — the base APU alone). Only slot 0 is baked
-// (tr909); slots 1..15 are reserved (fill $FF), so slot 1 is the "empty bank" case.
-test("FME-7 multi-kit: CC 14 switches the $C000 kit bank on a real core (magic byte follows)", () => {
+// Uses the FME-7 build (plain banking, NO expansion audio — the base APU alone).
+test("FME-7 multi-kit: CC 14 switches the $C000 kit bank on a real core (the window follows)", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(BLIPTOASTER_FME7)) skip(`bliptoaster multi-kit: no ROM at ${BLIPTOASTER_FME7}`);
+  const rom = BlipToasterRom.fromBytes(s.backend.readFile(BLIPTOASTER_ROM)!);
 
   // The banking header drives the derived capacity to 16 (NROM would be 1).
-  expect(BlipToasterRom.fromBytes(s.backend.readFile(BLIPTOASTER_FME7)!).kitBankCapacity()).toBe(16);
+  expect(rom.kitBankCapacity()).toBe(16);
 
-  const id = s.project.systems.addSystem(BLIPTOASTER_FME7);
+  // Find a bank and a byte that genuinely DISTINGUISH it from bank 0, rather than assuming slot 1 is
+  // reserved $FF fill and probing the kit magic. Slot 1 was fill when this test was written; this build
+  // bakes a kit into every slot, so both assumptions are now false — and the pinned $FF asserted nothing
+  // about the switch, only about which slots happened to be empty. Deriving the probe keeps the claim
+  // ("the $C000 window follows CC 14") true of any build, and it still fails if the window does not move.
+  const bank0 = rom.getKitBank(0)!;
+  let other = -1;
+  let probe = -1;
+  for (let n = 1; n < rom.kitBankCapacity() && probe < 0; n++) {
+    const b = rom.getKitBank(n);
+    if (!b) continue;
+    for (let i = 0; i < b.length && probe < 0; i++) if (b[i] !== bank0[i]) { other = n; probe = i; }
+  }
+  expect(probe, "some kit bank differs from bank 0 somewhere in the $C000 window").toBeGreaterThanOrEqual(0);
+  const probeAddr = 0xc000 + probe;
+  const atBank = (n: number): number => rom.getKitBank(n)![probe];
+
+  const id = s.project.systems.addSystem(BLIPTOASTER_ROM);
   if (id == null) throw new Error("addSystem failed");
 
-  let atBoot = -1, atBank1 = -1, backAt0 = -1;
+  let atBoot = -1, atOther = -1, backAt0 = -1;
   const tl = new Timeline()
-    .at(300, (ss) => (atBoot = ss.backend.readCpu(id, KIT_MAGIC_ADDR) ?? -1)) // boot bank = slot 0 (baked)
-    .midi(360, [CC_STATUS_CH5, CC_DMC_BANK, 1]) // select kit bank 1 (reserved/empty)
-    .at(440, (ss) => (atBank1 = ss.backend.readCpu(id, KIT_MAGIC_ADDR) ?? -1))
+    .at(300, (ss) => (atBoot = ss.backend.readCpu(id, probeAddr) ?? -1)) // boot bank = slot 0
+    .midi(360, [CC_STATUS_CH5, CC_DMC_BANK, other])
+    .at(440, (ss) => (atOther = ss.backend.readCpu(id, probeAddr) ?? -1))
     .midi(500, [CC_STATUS_CH5, CC_DMC_BANK, 0]) // back to kit bank 0
-    .at(580, (ss) => (backAt0 = ss.backend.readCpu(id, KIT_MAGIC_ADDR) ?? -1));
+    .at(580, (ss) => (backAt0 = ss.backend.readCpu(id, probeAddr) ?? -1));
   renderTimeline(s, tl, { durationMs: 800, warmupMs: 1100 });
   s.project.systems.removeSystem(id);
 
-  expect(atBoot).toBe(0xa5); // slot 0 carries the baked tr909 kit
-  expect(atBank1).toBe(0xff); // reserved bank 1 is unpopulated fill — a different bank is now mapped
-  expect(backAt0).toBe(0xa5); // switching back re-maps the baked kit
-  console.log(`[bliptoaster-rom] FME-7 CC 14 bank switch on a real core: $DF40 A5 -> FF -> A5`);
+  expect(atBoot, "boot maps bank 0").toBe(atBank(0));
+  expect(atOther, `CC 14 mapped bank ${other}`).toBe(atBank(other));
+  expect(backAt0, "switching back re-maps bank 0").toBe(atBank(0));
+  console.log(`[bliptoaster-rom] FME-7 CC 14 bank switch on a real core at $${probeAddr.toString(16)}: ${atBank(0)} -> ${atBank(other)} -> ${atBank(0)} (bank 0 <-> ${other})`);
 });
 
 // The RetroPlug override path all the way to sound: fold a .rkit into (reserved) kit slot 1 via the
@@ -165,13 +183,12 @@ test("FME-7 multi-kit: CC 14 switches the $C000 kit bank on a real core (magic b
 // override-populated bank is now mapped ($DF40 = 0xA5) and a ch5 note plays it.
 test("FME-7 multi-kit: a .rkit override into slot 1 becomes selectable + plays", () => {
   const s = bootSession();
-  if (!s.backend.fileExists(BLIPTOASTER_FME7)) skip(`bliptoaster multi-kit override: no ROM at ${BLIPTOASTER_FME7}`);
 
-  const id = s.project.systems.addSystem(BLIPTOASTER_FME7);
+  const id = s.project.systems.addSystem(BLIPTOASTER_ROM);
   if (id == null) throw new Error("addSystem failed");
 
   // A valid populated 8K .rkit bank: reuse the base ROM's baked slot-0 bank, staged on disk.
-  const rkit = BlipToasterRom.fromBytes(s.backend.readFile(BLIPTOASTER_FME7)!).getKitBank(0)!;
+  const rkit = BlipToasterRom.fromBytes(s.backend.readFile(BLIPTOASTER_ROM)!).getKitBank(0)!;
   const rkitPath = "/tmp/bliptoaster-multikit-slot1.rkit";
   s.backend.writeFileAtomic(rkitPath, rkit);
 

@@ -13,7 +13,8 @@ import { savBytes } from "../test/risa/fixtures";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
-const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
+declare const __RISA_SRC__: string;
+const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
 const SAV_PATH = "/tmp/rp-risa-v2-blumarbl.sav";
 
 test("risa catalog reader lists songs from a live battery via readSram", () => {

@@ -19,7 +19,8 @@ import { buildRisaMetronomeSav } from "./risaSyncSong";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
-const ROM_230 = "/workspaces/resources/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes";
+declare const __RESOURCES_DIR__: string;
+const ROM_230 = __RESOURCES_DIR__ + "/roms/risa/risa-v2.3.0/risa-2.3.0-pal.nes";
 const TRACK_NOISE = 3; // the metronome song's only populated track
 const withSync = (id: number) => ({ systems: [{ id, pipeline: [{ kind: "risa-sync", config: {} }] }] });
 

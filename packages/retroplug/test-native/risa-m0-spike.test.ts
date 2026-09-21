@@ -17,8 +17,9 @@ import { buildAppRegistry, syncDspFromStore } from "../src/appHost";
 
 declare const __DSP_KERNEL_BUNDLE__: string;
 
-const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
-const DEMO_SRM = "/workspaces/risa-v2.2.1-source/website/play/demos/hevander.srm";
+declare const __RISA_SRC__: string;
+const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
+const DEMO_SRM = __RISA_SRC__ + "/website/play/demos/hevander.srm";
 const BTN_START = 7; // GB button order (Right=0 … Start=7), reused for NES
 
 const rms = (a: Float32Array): number => {

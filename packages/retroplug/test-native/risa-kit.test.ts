@@ -9,7 +9,8 @@ import { RisaRom, bankToModel, isBankPopulated, dpcmDecode, assembleKitBank } fr
 import { applyOverridesToRom, type RisaAssetOverride } from "../src/risaAssetsRole";
 import { encodeWav } from "../cli/wav";
 
-const RISA_ROM = "/workspaces/risa-v2.2.1-source/build/risa-pal.nes";
+declare const __RISA_SRC__: string;
+const RISA_ROM = __RISA_SRC__ + "/build/risa-pal.nes";
 const WAV = "/tmp/rp-risa-kit-src.wav";
 
 function writeTestWav(be: ReturnType<typeof createRealBackend>, path: string, frames = 8000): void {

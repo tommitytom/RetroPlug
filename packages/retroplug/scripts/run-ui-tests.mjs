@@ -91,7 +91,10 @@ async function runOne({ file, slug }) {
   }
   // Stage a built risa ROM too when present (RISA_ROM env, resources, or the sibling risa source tree) —
   // the risa-overlay test drops it; absent, that test SKIPs.
-  for (const src of [process.env.RISA_ROM, join(REPO, "resources/roms/risa/risa.nes"), "/workspaces/risa-v2.2.1-source/build/risa-pal.nes"]) {
+  // RISA_SRC matches the native runner's override and scripts/gen-risa-symbols.mjs, so the sibling
+  // checkout is named in one place per runner rather than baked into a path literal here.
+  const risaSrc = process.env.RISA_SRC || "/workspaces/risa-v2.2.1-source";
+  for (const src of [process.env.RISA_ROM, join(REPO, "resources/roms/risa/risa.nes"), join(risaSrc, "build/risa-pal.nes")]) {
     if (src && existsSync(src)) { copyFileSync(src, join(romsDir, "risa.nes")); break; }
   }
 
