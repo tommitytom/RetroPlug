@@ -6,8 +6,9 @@ rem
 rem Usage:
 rem   build.bat              # incremental build
 rem   build.bat --clean      # remove build\ first, then full configure + build
-rem   build.bat --tests      # (re)configure with BUILD_TESTING=ON so the
-rem                          # Catch2 unit tests build too (off by default)
+rem   build.bat --tests      # (re)configure with BUILD_TESTING=ON. NOTE: this does NOT
+rem                          # build the Catch2 binaries - they are EXCLUDE_FROM_ALL and
+rem                          # built by name by `pnpm test:plugin`.
 rem   build.bat -D<var>=<v>  # extra cache entries for the configure, e.g.
 rem                          # -DRETROPLUG_MESEN_LTO=ON (what release.yml passes)
 rem
@@ -157,8 +158,8 @@ echo.
 echo Usage:
 echo   build.bat              # incremental build
 echo   build.bat --clean      # remove build\ first, then full configure + build
-echo   build.bat --tests      # (re)configure with BUILD_TESTING=ON so the
-echo                          # Catch2 unit tests build too (off by default)
+echo   build.bat --tests      # (re)configure with BUILD_TESTING=ON (does NOT build the
+echo                          # Catch2 binaries - `pnpm test:plugin` builds those by name)
 echo   build.bat -D^<var^>=^<v^>  # extra cache entries for the configure, e.g.
 echo                          # -DRETROPLUG_MESEN_LTO=ON (what release.yml passes)
 echo.

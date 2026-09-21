@@ -1,5 +1,9 @@
 # NES video streamer (RetroPlug-driven, N8-deployed)
 
+Status (2026-09-21): **moved out.** The streamer lives in its own repo (`nesvj`) now; the runtime-pixels
+milestone is done on mapper 30 and hardware-verified there. Nothing in this document is outstanding work
+for RetroPlug - it is retained for the host-side seam it describes.
+
 A from-scratch NES program that displays **live or streamed video**, developed emulator-first
 inside RetroPlug and deployed to a real EverDrive N8 Pro. The host (a Pi running the RetroPlug
 CLI, or the dev box) processes a video source, converts it to NES tiles, and streams it into the

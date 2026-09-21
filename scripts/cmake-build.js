@@ -5,7 +5,8 @@
 //
 // No targets => a full build (bare `cmake --build`, what AGENTS.md recommends
 // for UI changes). Assumes `build/` is already configured (run `pnpm configure`
-// once; test targets need it configured with -DBUILD_TESTING=ON).
+// once). The Catch2 test binaries are EXCLUDE_FROM_ALL and built by NAME - `pnpm
+// test:plugin` names all eight - so they need no BUILD_TESTING configure.
 
 const os = require("os");
 const path = require("path");

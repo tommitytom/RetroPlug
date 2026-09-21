@@ -6,7 +6,8 @@ scoping document that produced the work, kept because its measurements and negat
 record of why each piece is shaped the way it is.
 
 Read the tier tables in sections 5-7 as the ORIGINAL plan, not as a to-do list - section 12 supersedes
-them. Sections written after the fact are titled "..., as built" and are the ones that describe the tree.
+them. (Two files they name are gone: `RELEASE_TESTING.md` was deleted as a legacy checklist, and
+`sameboy/RomSniffer.cpp` was replaced by TS-side detection in `romProviders.ts`.) Sections written after the fact are titled "..., as built" and are the ones that describe the tree.
 
 Originally a scoping document, third pass. Two decisions from the repo owner are folded in as settled
 (two sibling platforms; sample-accurate stepping is mandatory), and every claim from an earlier pass that

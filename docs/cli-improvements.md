@@ -1,6 +1,9 @@
 # Audio & tuning verification tooling for retroplug-cli
 
-Status: proposal / work spec
+Status (2026-09-21): **F1 built** (decoded-Hz reads on the expansion-audio channels - it found a live
+N163 ROM tuning bug the RMS tests were blind to). **F2-F7 deferred**, not abandoned: nothing since has
+needed spectral analysis in the CLI. Treat the rest of this document as a work spec, not a plan of
+record.
 Audience: an agent implementing these features inside `retroplug-cli`
 Constraint: **everything stays in the CLI (TypeScript/Node). No Python, no external analysis step.**
 

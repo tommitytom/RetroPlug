@@ -5,9 +5,9 @@ emulators, with a focus on music creation. It runs standalone and can be used as
 audio plugin (CLAP / VST3 / VST2 / AU) in your favourite DAW!
 
 ## Features
-- **DAW sync for three music carts**: [LSDj](https://www.littlesounddj.com) (with
-  [Arduinoboy](https://github.com/trash80/Arduinoboy)-style modes), mGB (Game Boy MIDI synth) smsggdj
-  (Master System / Game Gear), and BlipToaster (NES MIDI synth)
+- **DAW sync for five music carts**: [LSDj](https://www.littlesounddj.com) (with
+  [Arduinoboy](https://github.com/trash80/Arduinoboy)-style modes), risa (NES), smsggdj
+  (Master System / Game Gear), mGB (Game Boy MIDI synth), and BlipToaster (NES MIDI synth)
 - **Song management** - browse, load, import, export and reorder the songs inside a
   tracker cart's battery
 - **ROM assets** - swap a cart's sample kits, palettes, themes and fonts, previewed live
@@ -142,7 +142,7 @@ submenu named after it. What that submenu holds depends on the cart:
 | smsggdj | Master System / Game Gear | follows the DAW transport | yes | not yet |
 | BlipToaster | NES | MIDI synth (no sequencer) | - | Kits, Themes, Fonts |
 
-Unlike LSDj, smsggdj needs no sync mode picked: they follow the host transport
+Unlike LSDj, risa and smsggdj need no sync mode picked: they follow the host transport
 directly, so pressing play in your DAW plays the cart in time.
 
 An unrecognised build of a cart is shown greyed out as `(Unsupported Version)`.

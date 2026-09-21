@@ -33,8 +33,8 @@ The rules below are the parts that don't fit those.
   linked into `retroplug-backend`; the watcher is opt-in via `enableWatching`, which
   only the plugin calls). `deps/catch2` is the C++ unit-test framework:
   it's `add_subdirectory`'d at the root (`EXCLUDE_FROM_ALL`) and linked by the
-  `test:plugin` binaries (`retroplug-plugin-test` / `retroplug-classid-test` /
-  `retroplug-audio-test` / `retroplug-watcher-test` / `retroplug-dynparams-test`) as
+  eight `test:plugin` binaries (`retroplug-plugin-test` / `-classid-test` / `-audio-test` /
+  `-watcher-test` / `-dynparams-test` / `-midi-test` / `-launchpad-test` / `-lottie-test`) as
   `Catch2::Catch2WithMain`. `retroplug-dynparams-test` is the odd one out: it compiles DPF's
   format-neutral core (`DistrhoPlugin.cpp`) plus its OWN `DistrhoPluginInfo.h`, building no plugin
   format at all, to drive `PluginExporter::reinitParameters` over a toy plugin.
@@ -89,7 +89,7 @@ The rules below are the parts that don't fit those.
   buys ~10% on the NES core (Cortex-A53: xRT 0.83 -> 0.92), but it turns every mesen
   object into LTO bitcode, so each of the *nine* binaries linking that static lib
   re-runs codegen over ~430 objects. Measured cost of a one-line `.cpp` edit: **1m05s
-  wall / 26m51s CPU with it on, 2.4s / 6.6s with it off** — same single compile, the
+  wall / 26m51s CPU with it on, ~2s / ~9s with it off** — same single compile, the
   rest is eight full LTO links. So it's OFF by default and every `release.yml` job
   passes it ON; shipped builds keep the speedup, the dev loop doesn't pay for it.
   Toggling the option recompiles mesen (~45 s). If a build with it ON seems to stall on
@@ -278,8 +278,8 @@ too — the real-Reaper
 [docs/lsdj.md](docs/lsdj.md). `reaper:risa-sync` is the NES/risa twin of the LSDj drift
 render (same `--drift` analyzer, whose labels are therefore tracker-neutral): risa host sync
 is driven by the DAW **transport** alone, so that project carries no MIDI item at all.
-To run the **whole** Reaper leg (all 7 renders + 3
-editor checks) at once, `pnpm reaper:all` fans them out concurrently
+To run the **whole** Reaper leg (**15 checks: 9 renders + 6 editor/host**) at once,
+`pnpm reaper:all` fans them out concurrently
 ([tools/run-reaper-suite.sh](tools/run-reaper-suite.sh)); each job is isolated by
 `RP_JOB_TAG` via the sourced [tools/reaper-env.sh](tools/reaper-env.sh) (uniquely named
 JACK server + per-tag config dir / display / logs), which is also what makes the

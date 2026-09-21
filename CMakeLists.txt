@@ -73,8 +73,9 @@ endif()
 #
 # Mesen's ~430 objects become LTO bitcode, and EVERY binary that links the static lib re-runs codegen
 # over all of them: retroplug{,-cli,-host,-ui-test,-sdl} + the four plugin variants. Changing a single
-# .cpp measured 1m05s wall / 26m51s CPU with it on, ~15s / ~3m with it off — the compile is one file
-# either way, the rest is eight full LTO links. Off by default so `./build.sh` stays quick; release.yml
+# .cpp measured 1m05s wall / 26m51s CPU with it on, and 2s wall / ~9s CPU with it off (32 threads) —
+# the compile is one file either way, the rest is eight full LTO links. Off by default so `./build.sh`
+# stays quick; release.yml
 # passes -DRETROPLUG_MESEN_LTO=ON so shipped binaries keep the speedup.
 option(RETROPLUG_MESEN_LTO "LTO the Mesen NES core (~10% faster, much slower links; on for releases)" OFF)
 

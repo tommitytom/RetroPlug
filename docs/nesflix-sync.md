@@ -1,5 +1,9 @@
 # NESFlix host-sync plan (Options 2 + 3)
 
+Status (2026-09-21): **not built.** This is a design sketch for a ROM RetroPlug does not ship; the
+RetroPlug-side seam it builds on (the NES EverDrive N8 FIFO + the `risa-sync` role) is real and
+hardware-verified, which is the whole reason the plan is short.
+
 Add host-sync to NESFlix (NO CARRIER, 2011 - the NES "GIF player") by reusing RetroPlug's
 existing NES EverDrive N8 FIFO seam, the same machinery that drives risa host-sync and was
 hardware-verified against a real 2A03. Two layers:

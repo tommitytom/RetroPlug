@@ -1,7 +1,7 @@
 # Local aarch64 cross-build (the handheld, without CI)
 
 Cross-build the handheld binaries **in the dev container at native x86 speed**, instead of round-tripping
-through the `handheld-arm64` / `profile-host-arm64` CI jobs. The result is byte-compatible with the device
+through the `linux-arm64` CI job (`build.yml` / `release.yml`). The result is byte-compatible with the device
 (Anbernic H616, Cortex-A53, muOS glibc 2.38): same distro glibc (Ubuntu 22.04 = 2.35), same compiler
 (gcc-12), same flags (`-mcpu=cortex-a53`, `-DMI_NO_OPT_ARCH=ON`).
 

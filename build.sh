@@ -5,8 +5,10 @@
 # Usage:
 #   ./build.sh              # incremental build
 #   ./build.sh --clean      # remove build/ first, then full configure + build
-#   ./build.sh --tests      # (re)configure with BUILD_TESTING=ON so the
-#                           # Catch2 unit tests build too (off by default)
+#   ./build.sh --tests      # (re)configure with BUILD_TESTING=ON. NOTE: this does NOT
+#                           # build the Catch2 binaries - they are EXCLUDE_FROM_ALL and
+#                           # built by name by `pnpm test:plugin`. Nothing in RetroPlug's
+#                           # CMake reads BUILD_TESTING; the flag is kept for convention.
 #   ./build.sh -D<var>=<v>  # extra cache entries for the configure, e.g.
 #                           # -DRETROPLUG_MESEN_LTO=ON (what release.yml passes)
 #

@@ -1,6 +1,10 @@
 # Engineering Report & Integration Plan: LSDj-level "risa" support in RetroPlug
 
-**Author:** Lead architect · **Date:** 2026-07-19 · **Status:** M0 spike complete — every blocking unknown resolved GREEN
+**Author:** Lead architect · **Date:** 2026-07-19 · **Status (2026-09-21):** **SHIPPED.** The sav/song
+model, asset editing, the DMC kit codec and host sync all landed; `reaper:risa-sync` is the real-DAW
+proof and risa 2.3.0 is supported. This doc is kept as the design rationale, not a work list - a few
+optional items in it were never taken up and are tracked in
+[spec/07-remaining-work.md](../spec/07-remaining-work.md) if they matter.
 **Audience:** RetroPlug engineers (no prior risa knowledge assumed)
 
 ---
