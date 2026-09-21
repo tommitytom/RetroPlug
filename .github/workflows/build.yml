@@ -61,6 +61,13 @@ jobs:
           # workspace), so it needs its own install (see AGENTS.md).
           pnpm install --frozen-lockfile -C deps/dpf.js/deps/lv_binding_js
 
+      # Platform-independent, so the x86 linux job alone carries it, and it runs BEFORE the build for
+      # fast feedback. cli/sdkSurfaceCheck.ts is compile-only and exists to fail exactly this command
+      # when the hand-maintained cli/sdk-types.d.ts drifts from the SDK it describes - until this step
+      # existed it had never run in CI, so the check was only as good as a human remembering it.
+      - name: Typecheck
+        run: pnpm typecheck
+
       - name: Build
         run: ./build.sh
 

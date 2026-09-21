@@ -17,6 +17,7 @@ import {
   hostArgs,
   Timeline,
   renderTimeline,
+  skip,
   type BreakHitBatch,
   type CoreTransportStats,
   type TimelineInvariant,
@@ -47,6 +48,13 @@ export function sdkSurfaceCheck(): void {
     { system: id, address: 0x2007, condition: "scanline >= 0 && scanline < 240", label: "ppu" },
   ];
   renderTimeline(s, new Timeline(), { durationMs: 100, warmupMs: 900, invariants });
+
+  // `skip` must be declared returning `never`, not void: that is what lets `return skip(...)` sit in a
+  // void test body, which is how most call sites are written.
+  const guard = (why: string): void => {
+    if (why) return skip(why);
+  };
+  guard(rom ? "" : "no ROM argument");
 
   // The lossy-transport knob is a role config, so it is only checked for shape.
   s.project.systems.setRoleConfig(id, "mesen", { fifo: "hardware", fifoBytesPerSecond: 20000 });

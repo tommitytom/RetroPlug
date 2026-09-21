@@ -517,6 +517,16 @@ export declare function encodeWav(pcm: Float32Array, sampleRate?: number, channe
  *  TAP output + the process exit code — do NOT wrap the body in a runSession()-style exit. */
 export declare function test(name: string, fn: () => void | Promise<void>): void;
 
+/** Abandon the current case as SKIPPED rather than passed, when a precondition it cannot control is
+ *  absent (a ROM that is not built, a host capability that is not compiled in). Reported as TAP
+ *  `ok N - name # SKIP reason` and counted separately, so a suite that could not run says so instead
+ *  of printing a green tick.
+ *
+ *  It throws, so it works from inside a helper or a loop, and `return skip(...)` type-checks anywhere.
+ *  Call it only from a test body, and note that any `catch` between the call and the harness swallows
+ *  it — `expect().toThrow()` re-throws it for that reason. */
+export declare function skip(reason: string): never;
+
 /** Fluent assertions. Any throw fails the case (reported as TAP `not ok`). Every failure names both
  *  values (`expected > 50, got 12`), and the optional `message` is prefixed so a case with several
  *  checks says which one fired: `expect(hz, "pulse1 pitch").toBeCloseTo(440, 1)`. */
