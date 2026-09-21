@@ -28,6 +28,7 @@ extern "C" {
 #include "system/sameboy/bootroms/mgb_boot_fast.h"
 #include "system/sameboy/bootroms/sgb_boot_fast.h"
 #include "system/sameboy/bootroms/sgb2_boot_fast.h"
+#include "util/Gain.hpp"
 
 namespace {
 
@@ -154,10 +155,6 @@ constexpr float s16ToF32(int16_t v) {
 } // namespace
 
 namespace {
-// dB → linear gain (kill below -90 dB so trim-to-mute is a hard zero).
-inline float dbToLin(float dB) {
-    return dB > -90.0f ? std::pow(10.0f, dB * 0.05f) : 0.0f;
-}
 
 // Extra savestate capacity so a LIVE model switch never outgrows the snapshot slot.
 //

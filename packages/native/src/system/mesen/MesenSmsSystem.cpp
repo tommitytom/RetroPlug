@@ -36,12 +36,11 @@
 #include "Core/Shared/SettingTypes.h"
 #include "Core/Shared/Video/VideoRenderer.h"
 #include "Utilities/VirtualFile.h"
+#include "util/Gain.hpp"
+#include "system/mesen/MesenBlockOps.hpp"
 
 namespace {
 
-float dbToLin(float dB) {
-    return dB > -90.0f ? std::pow(10.0f, dB * 0.05f) : 0.0f;
-}
 
 // Coarse flush budget in Z80 T-states. ~256 output samples at 48 kHz NTSC.
 // Bounded well under two independent limits: SmsPsg's own 20000-T auto-flush
@@ -591,21 +590,7 @@ void MesenSmsSystem::finishBlock(const AudioBlockInfo& info, float* const* outs,
     // Carry any sync level that did not come due this block into the next one, shifting its offset
     // back by the block length so it keeps its relative timing (mirrors SameBoy and the NES FIFO).
     syncRole_.rebase(blockSize);
-    if (stereoAccum_.size() < std::size_t(blockSize) * 2) {
-        stereoAccum_.assign(std::size_t(blockSize) * 2, 0.0f);
-    }
-    audioDevice_->drain(stereoAccum_.data(), blockSize);
-
-    // Sum interleaved stereo into the planar L/R outputs with smoothed gain.
-    // ONE gainSmoother_.next() per sample frame across all lanes (not per
-    // lane), matching the other systems so multi-system mixes are uniform.
-    float* outL = outs[0];
-    float* outR = outs[1];
-    for (std::uint32_t i = 0; i < blockSize; ++i) {
-        const float g = gainSmoother_.next();
-        outL[i] += stereoAccum_[std::size_t(i) * 2 + 0] * g;
-        outR[i] += stereoAccum_[std::size_t(i) * 2 + 1] * g;
-    }
+    sumStereoWithGain(*audioDevice_, stereoAccum_, outs, blockSize, gainSmoother_);
 
     // Tear-free memory snapshots for any UI subscriptions. End-of-block =
     // internally consistent state because the CPU isn't mid-instruction.

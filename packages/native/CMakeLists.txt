@@ -849,6 +849,7 @@ add_executable(retroplug-audio-test EXCLUDE_FROM_ALL
     test/audio/SmsAudio.test.cpp     # SMS/GG boot, visible geometry, non-silent PSG, teardown survival
     test/audio/GbaFirmware.test.cpp  # each GBA system loads ITS bios, not whichever landed last
     test/audio/GbaAudio.test.cpp     # the GBA block triad terminates and fills a block
+    test/audio/MesenBlockOps.test.cpp # the shared drain tail blanks a short ring
     test/audio/SameBoyModels.test.cpp)   # every SameBoyModel (incl. SGB variants) boots + renders
 
 target_link_libraries(retroplug-audio-test PRIVATE
