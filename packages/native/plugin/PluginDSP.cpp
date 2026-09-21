@@ -377,20 +377,14 @@ private:
         server_->addDiscoveryMethod();
 
         // globalThis[Symbol.for("plugin")] = { __rpcSend } — the namespace realBackend.ts targets.
-        JSValue global = JS_GetGlobalObject(ctx);
-        JSValue sym    = JS_NewSymbol(ctx, "plugin", /*is_global*/ 1);
-        JSAtom atom    = JS_ValueToAtom(ctx, sym);
-        JSValue ns     = JS_NewObjectProto(ctx, JS_NULL);
         PluginRpcServer* srv = server_.get();
-        host_.bindRpcSend(ns, [srv](JSContext* sctx, JSValueConst req) -> JSValue {
-            auto out = srv->processMessage(req);
-            if (!out) return JS_NULL;
-            return out->materialize(sctx);
+        installPluginNamespace(ctx, [&](JSValue ns) {
+            host_.bindRpcSend(ns, [srv](JSContext* sctx, JSValueConst req) -> JSValue {
+                auto out = srv->processMessage(req);
+                if (!out) return JS_NULL;
+                return out->materialize(sctx);
+            });
         });
-        JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
-        JS_FreeAtom(ctx, atom);
-        JS_FreeValue(ctx, sym);
-        JS_FreeValue(ctx, global);
 
         // Systems bake the sample rate at construct — set it BEFORE the bundle composes / autoloads.
         svc_.engine.setSampleRate(getSampleRate());

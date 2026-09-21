@@ -40,6 +40,7 @@
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
 #include "host/HostServices.hpp"
+#include "host/QuickJsGlobals.hpp"
 
 using BackendRpcServer = rpcpp::TypedRpcServer<rpcpp::Empty, rpcpp::QuickJSCodec>;
 
@@ -205,10 +206,7 @@ int main(int argc, char** argv) try {
     JSValue global = JS_GetGlobalObject(ctx);
 
     // globalThis[Symbol.for("plugin")] = { __rpcSend }
-    {
-        JSValue sym  = JS_NewSymbol(ctx, "plugin", /*is_global*/ 1);
-        JSAtom atom  = JS_ValueToAtom(ctx, sym);
-        JSValue ns   = JS_NewObjectProto(ctx, JS_NULL);
+    installPluginNamespace(ctx, [&](JSValue ns) {
         host.bindRpcSend(ns, [&server](JSContext* sctx, JSValueConst req) -> JSValue {
             auto out = server.processMessage(req);
             if (!out) return JS_NULL;        // notification / no reply
@@ -221,10 +219,7 @@ int main(int argc, char** argv) try {
         for (int i = argStart, j = 0; i < argc; ++i, ++j)
             JS_SetPropertyUint32(ctx, args, static_cast<uint32_t>(j), JS_NewString(ctx, argv[i]));
         JS_SetPropertyStr(ctx, ns, "args", args);
-        JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
-        JS_FreeAtom(ctx, atom);
-        JS_FreeValue(ctx, sym);
-    }
+    });
 
     // globalThis.tjs.exit — the session sets the process exit code through it. Override any
     // txiki-provided exit so we record the code and return it (rather than terminating mid-pump).

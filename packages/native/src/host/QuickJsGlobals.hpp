@@ -136,3 +136,25 @@ inline void jsDeliverFileBrowserResult(JSContext* ctx, const char* path) {
     JS_FreeValue(ctx, fn);
     JS_FreeValue(ctx, global);
 }
+
+/** Install `globalThis[Symbol.for("plugin")] = { __rpcSend }` — the namespace realBackend.ts targets.
+ *
+ *  Byte-identical in six hosts (plugin, SDL, CLI, test host, render host, UI test harness); only the
+ *  Node addon differs, because its `__rpcSend` is exported as an N-API function and the JS side does the
+ *  install. `bind` is the host's own bindRpcSend, which differs between TjsHostRuntime and the bare
+ *  QuickJS runtime the render host uses - hence a callback rather than a runtime parameter.
+ *
+ *  The null prototype is deliberate: this is a namespace object, not something a consumer should find
+ *  Object.prototype on. */
+template <class BindRpcSend>
+inline void installPluginNamespace(JSContext* ctx, BindRpcSend&& bind) {
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue sym    = JS_NewSymbol(ctx, "plugin", /*is_global*/ 1);
+    JSAtom  atom   = JS_ValueToAtom(ctx, sym);
+    JSValue ns     = JS_NewObjectProto(ctx, JS_NULL);
+    bind(ns);
+    JS_DefinePropertyValue(ctx, global, atom, ns, JS_PROP_C_W_E);
+    JS_FreeAtom(ctx, atom);
+    JS_FreeValue(ctx, sym);
+    JS_FreeValue(ctx, global);
+}

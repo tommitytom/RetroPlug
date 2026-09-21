@@ -14,6 +14,7 @@
 #include "TypedRpcServer.h"
 #include "codecs/QuickJSCodec.h"
 #include "transports/QuickJSTransport.h"
+#include "host/QuickJsGlobals.hpp"
 
 // The render-worker bundle: worker.ts esbuilt to a global-code IIFE, tjsc'd to bytecode + embedded as a C
 // array (packages/native/CMakeLists.txt → retroplug-render-worker-bundle). Loaded via JS_ReadObject +
@@ -241,21 +242,15 @@ RenderHost::Result RenderHost::run(const std::string& jobJson, RenderedFn onRend
     // and driven on the same (worker) thread, but re-anchor before entering JS to be safe (see DspRuntime).
     JS_UpdateStackTop(rt_);
 
-    JSValue global = JS_GetGlobalObject(ctx_);
     // globalThis[Symbol.for("plugin")] = { __rpcSend, args: [jobJson] } — the worker reads args[0].
-    {
-        JSValue sym = JS_NewSymbol(ctx_, "plugin", /*is_global*/ 1);
-        JSAtom atom = JS_ValueToAtom(ctx_, sym);
-        JSValue ns = JS_NewObjectProto(ctx_, JS_NULL);
+    // bindRpcSend here is the bare-runtime one (this host has no TjsHostRuntime), which is why
+    // installPluginNamespace takes a callback rather than a runtime.
+    installPluginNamespace(ctx_, [&](JSValue ns) {
         bindRpcSend(ctx_, ns, &dispatch);
         JSValue args = JS_NewArray(ctx_);
         JS_SetPropertyUint32(ctx_, args, 0, JS_NewStringLen(ctx_, jobJson.data(), jobJson.size()));
         JS_SetPropertyStr(ctx_, ns, "args", args);
-        JS_DefinePropertyValue(ctx_, global, atom, ns, JS_PROP_C_W_E);
-        JS_FreeAtom(ctx_, atom);
-        JS_FreeValue(ctx_, sym);
-    }
-    JS_FreeValue(ctx_, global);
+    });
 
     // Run the worker bundle as global-code bytecode. Its top-level main() reads the spec, renders, and
     // reports back through the result thunk — all synchronously on this thread.
