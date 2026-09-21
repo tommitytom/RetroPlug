@@ -63,6 +63,7 @@ extern "C" {
 #include "host/engine/Engine.hpp"
 #include "host/engine/EngineInvoker.hpp"
 #include "host/input/GamepadManager.hpp"     // SDL controller poll (shared UI-thread input)
+#include "host/input/GamepadPump.hpp"        // the event->bus switch, shared with the plugin editor
 #include "host/input/MidiIo.hpp"             // RtMidi in/out seam (virtual + hardware ports)
 #include "host/n8/N8Link.hpp"                // host serial thread -> physical Everdrive N8 Pro (MIDI forward)
 #include "host/n8/N8Host.hpp"                // shared N8 link + config + n8.cfg (also used by the DAW plugin)
@@ -431,16 +432,7 @@ JSValue jsOpenPath(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
 // Backend registered (empty path = cancel → null). Same shared context / UI thread that pumps the JS loop,
 // so a direct call is safe — the awaiting Promise settles on the next tick. Copy of PluginUI::uiFileBrowserSelected.
 void deliverFileBrowserResult(JSContext* ctx, const std::string& path) {
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_onFileBrowserResult");
-    if (JS_IsFunction(ctx, fn)) {
-        JSValue arg = path.empty() ? JS_NULL : JS_NewString(ctx, path.c_str());
-        JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 1, &arg);
-        JS_FreeValue(ctx, ret);
-        JS_FreeValue(ctx, arg);
-    }
-    JS_FreeValue(ctx, fn);
-    JS_FreeValue(ctx, global);
+    jsDeliverFileBrowserResult(ctx, path.c_str());
 }
 
 // __rp_openFileBrowser(title, patterns, saving, defaultName, startDir, directory): open the OS-native file
@@ -806,40 +798,7 @@ bool mapSdlKey(SDL_Keycode k, std::uint32_t& lv, std::uint32_t& dpf) {
 // reaches the LVGL keypad indev (Menu.tsx). So we must NOT also translate gamepad → keypad here — doing
 // so double-drives the menu (every move counted twice) while leaving in-game input single (the keypad
 // keys hit the idle focus sink). Keyboard still feeds the keypad (mapSdlKey/feedKey) for desktop use.
-void pumpGamepad(AppState& a) {
-    JSContext* ctx = a.ui.getContext();
-    if (!ctx) return;
-    a.gamepad.update([&a, ctx](const retroplug::GamepadEvent& ev) {
-        switch (ev.kind) {
-            case retroplug::GamepadEvent::Kind::Connected: {
-                JSValue args[2] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.name ? ev.name : "")};
-                a.ui.emit("gamepad-connected", 2, args);
-                JS_FreeValue(ctx, args[0]); JS_FreeValue(ctx, args[1]);
-                break;
-            }
-            case retroplug::GamepadEvent::Kind::Disconnected: {
-                JSValue args[1] = {JS_NewInt32(ctx, ev.pad)};
-                a.ui.emit("gamepad-disconnected", 1, args);
-                JS_FreeValue(ctx, args[0]);
-                break;
-            }
-            case retroplug::GamepadEvent::Kind::Button: {
-                JSValue args[3] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.button ? ev.button : ""),
-                                   JS_NewBool(ctx, ev.pressed)};
-                a.ui.emit("gamepad-button", 3, args);
-                JS_FreeValue(ctx, args[0]); JS_FreeValue(ctx, args[1]); JS_FreeValue(ctx, args[2]);
-                break;
-            }
-            case retroplug::GamepadEvent::Kind::Axis: {
-                JSValue args[3] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.axis ? ev.axis : ""),
-                                   JS_NewFloat64(ctx, ev.value)};
-                a.ui.emit("gamepad-axis", 3, args);
-                JS_FreeValue(ctx, args[0]); JS_FreeValue(ctx, args[1]); JS_FreeValue(ctx, args[2]);
-                break;
-            }
-        }
-    });
-}
+void pumpGamepad(AppState& a) { pumpGamepadInto(a.gamepad, a.ui, a.ui.getContext()); }
 
 // ---- audio-thread scheduling (A53 real-time headroom) ----------------------------------------------
 #if defined(__linux__)
@@ -1546,19 +1505,8 @@ void handleEvents(AppState& a) {
             // once the user confirms Save/Discard); false = clean project, quit now. Without this, closing a
             // dirty project by the window button would skip the prompt and lose work.
             case SDL_QUIT: {
-                bool veto = false;
-                if (JSContext* ctx = a.ui.getContext()) {
-                    JSValue global = JS_GetGlobalObject(ctx);
-                    JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_onCloseRequested");
-                    if (JS_IsFunction(ctx, fn)) {
-                        JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 0, nullptr);
-                        veto = JS_ToBool(ctx, ret) == 1;
-                        JS_FreeValue(ctx, ret);
-                    }
-                    JS_FreeValue(ctx, fn);
-                    JS_FreeValue(ctx, global);
-                }
-                if (!veto) a.running = false;
+                // No allowClose_ latch here: jsQuitWindow just clears `running`, so this never re-enters.
+                if (!jsCloseVetoed(a.ui.getContext())) a.running = false;
                 break;
             }
             // Desktop drag-and-drop → the "file-drop" JS bus (mirrors PluginUI::uiFileDropped). SDL2's

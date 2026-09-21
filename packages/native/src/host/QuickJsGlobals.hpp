@@ -94,3 +94,45 @@ inline std::string jsCallGlobal(const JsGlobals& g, const char* name, const char
     JS_FreeValue(ctx, global);
     return out;
 }
+
+/** Ask the control plane whether a close should be VETOED (the unsaved-changes guard).
+ *
+ *  Identical in both hosts; only the wrapper differs, and each wrapper is correct for its host. The
+ *  plugin latches allowClose_ because its own requestQuit() calls getWindow().close(), which re-enters
+ *  onClose; SDL's jsQuitWindow just clears a flag, so it needs no latch. A null context allows the
+ *  close in both (the plugin returns true, SDL leaves veto false) - there is no UI left to ask. */
+inline bool jsCloseVetoed(JSContext* ctx) {
+    if (!ctx) return false;
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_onCloseRequested");
+    bool veto = false;
+    if (JS_IsFunction(ctx, fn)) {
+        JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 0, nullptr);
+        veto = JS_ToBool(ctx, ret) == 1;
+        JS_FreeValue(ctx, ret);
+    }
+    JS_FreeValue(ctx, fn);
+    JS_FreeValue(ctx, global);
+    return veto;
+}
+
+/** Deliver a file dialog's pick into JS by calling the resolver the real Backend registered. An empty
+ *  path is a CANCEL and crosses as null, which is what the awaiting Promise expects.
+ *
+ *  Safe as a direct call because both hosts run it on the same thread that pumps the JS loop - the
+ *  Promise settles on the next tick. The plugin calls lvglMakeCurrent() first, which stays at its call
+ *  site: that is about which editor's LVGL instance is current when several share one process, not
+ *  about delivering the pick. */
+inline void jsDeliverFileBrowserResult(JSContext* ctx, const char* path) {
+    if (!ctx) return;
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_onFileBrowserResult");
+    if (JS_IsFunction(ctx, fn)) {
+        JSValue arg = (path && *path) ? JS_NewString(ctx, path) : JS_NULL;
+        JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 1, &arg);
+        JS_FreeValue(ctx, ret);
+        JS_FreeValue(ctx, arg);
+    }
+    JS_FreeValue(ctx, fn);
+    JS_FreeValue(ctx, global);
+}

@@ -23,6 +23,8 @@
 #include "PluginShared.hpp"
 #include "ContextTargets.hpp"             // per-context routing for the __rp_* window hooks
 #include "host/input/GamepadManager.hpp" // SDL controller poll (shared UI-thread input)
+#include "host/input/GamepadPump.hpp"    // the event->bus switch, shared with the SDL standalone
+#include "host/QuickJsGlobals.hpp"       // close guard + file-browser delivery, shared with SDL
 #include "host/render/RenderJobRegistry.hpp" // background render jobs (the __rp_*Render hooks)
 #include "host/ui/LvglWheelScroll.hpp"    // shared wheel → hit-tested scroll — with the SDL host + UI tests
 #include "host/ui/NativeFileDialog.hpp"   // OS-native file picker (pfd) — shared with the SDL host
@@ -137,43 +139,7 @@ class PluginUI : public UI {
     // Poll SDL controllers once per idle and re-emit each transition onto the JS event bus — the gamepad-*
     // channels useGamepadInput subscribes to. Ported from legacy PluginUI::pumpGamepad; native stays dumb
     // (raw SDL button-name strings), while the GB-button mapping / focus routing / bindings all live in TS.
-    void pumpGamepad(JSContext* ctx) {
-        gamepad_.update([this, ctx](const retroplug::GamepadEvent& ev) {
-            switch (ev.kind) {
-                case retroplug::GamepadEvent::Kind::Connected: {
-                    JSValue args[2] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.name ? ev.name : "")};
-                    jsEngine.emit("gamepad-connected", 2, args);
-                    JS_FreeValue(ctx, args[0]);
-                    JS_FreeValue(ctx, args[1]);
-                    break;
-                }
-                case retroplug::GamepadEvent::Kind::Disconnected: {
-                    JSValue args[1] = {JS_NewInt32(ctx, ev.pad)};
-                    jsEngine.emit("gamepad-disconnected", 1, args);
-                    JS_FreeValue(ctx, args[0]);
-                    break;
-                }
-                case retroplug::GamepadEvent::Kind::Button: {
-                    JSValue args[3] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.button ? ev.button : ""),
-                                       JS_NewBool(ctx, ev.pressed)};
-                    jsEngine.emit("gamepad-button", 3, args);
-                    JS_FreeValue(ctx, args[0]);
-                    JS_FreeValue(ctx, args[1]);
-                    JS_FreeValue(ctx, args[2]);
-                    break;
-                }
-                case retroplug::GamepadEvent::Kind::Axis: {
-                    JSValue args[3] = {JS_NewInt32(ctx, ev.pad), JS_NewString(ctx, ev.axis ? ev.axis : ""),
-                                       JS_NewFloat64(ctx, ev.value)};
-                    jsEngine.emit("gamepad-axis", 3, args);
-                    JS_FreeValue(ctx, args[0]);
-                    JS_FreeValue(ctx, args[1]);
-                    JS_FreeValue(ctx, args[2]);
-                    break;
-                }
-            }
-        });
-    }
+    void pumpGamepad(JSContext* ctx) { pumpGamepadInto(gamepad_, jsEngine, ctx); }
 
 public:
     // Ask the host/WM for a window of w×h. Latches wmControlled_ if the compositor has taken geometry
@@ -368,20 +334,9 @@ protected:
     // false). Once the user confirms, JS calls __rp_quitWindow → requestQuit(), which re-enters here with
     // allowClose_ set. Absent hook (headless / not yet mounted) → allow the close.
     bool onClose() override {
+        // The latch is plugin-only: requestQuit() calls getWindow().close(), which re-enters here.
         if (allowClose_) return true;
-        JSContext* ctx = jsEngine.getContext();
-        if (!ctx) return true;
-        JSValue global = JS_GetGlobalObject(ctx);
-        JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_onCloseRequested");
-        bool veto = false;
-        if (JS_IsFunction(ctx, fn)) {
-            JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 0, nullptr);
-            veto = JS_ToBool(ctx, ret) == 1;
-            JS_FreeValue(ctx, ret);
-        }
-        JS_FreeValue(ctx, fn);
-        JS_FreeValue(ctx, global);
-        return !veto;
+        return !jsCloseVetoed(jsEngine.getContext());
     }
 
     // The OS file dialog's result (null/empty filename = cancel). Deliver it into JS by calling the
@@ -390,19 +345,8 @@ protected:
     // Now driven by the NativeFileDialog (pfd) poll in uiIdle rather than DPF's browser, but kept as the DPF
     // override too (USE_FILE_BROWSER stays on for drag-and-drop) so DPF never routes a stray pick elsewhere.
     void uiFileBrowserSelected(const char* filename) override {
-        lvglMakeCurrent(); // resolving the pick re-renders the UI
-        JSContext* ctx = jsEngine.getContext();
-        if (!ctx) return;
-        JSValue global = JS_GetGlobalObject(ctx);
-        JSValue fn     = JS_GetPropertyStr(ctx, global, "__rp_onFileBrowserResult");
-        if (JS_IsFunction(ctx, fn)) {
-            JSValue arg = (filename && *filename) ? JS_NewString(ctx, filename) : JS_NULL;
-            JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 1, &arg);
-            JS_FreeValue(ctx, ret);
-            JS_FreeValue(ctx, arg);
-        }
-        JS_FreeValue(ctx, fn);
-        JS_FreeValue(ctx, global);
+        lvglMakeCurrent(); // resolving the pick re-renders the UI — which editor's LVGL is current matters
+        jsDeliverFileBrowserResult(jsEngine.getContext(), filename);
     }
 
 #if DISTRHO_UI_FILE_DROP
