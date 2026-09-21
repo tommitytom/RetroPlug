@@ -8,20 +8,22 @@ command ring, snapshot registry, release ring), see [01-architecture.md](01-arch
 ## One configure
 
 The root [CMakeLists.txt](../CMakeLists.txt) declares the project as
-`NAME retroplug` ([CMakeLists.txt:29](../CMakeLists.txt#L29)) and pulls in the native build with a
-single `add_subdirectory(packages/native native)` ([CMakeLists.txt:271](../CMakeLists.txt#L271)),
-after the `deps/dpf.js` submodule and the vendored cores (SameBoy, Mesen, r8brain, enkiTS, catch2).
+`NAME retroplug` and pulls in the native build with a single
+`add_subdirectory(packages/native native)` ([CMakeLists.txt](../CMakeLists.txt)), after the
+`deps/dpf.js` submodule and the vendored cores (SameBoy, Mesen, r8brain, enkiTS, efsw, catch2).
 A full build produces the plugin (all formats) + the standalone.
 
 - `build.sh` (Linux/macOS) and `build.bat` (Windows) are the canonical entry points and have
   **zero build-specific special-casing** — a bare `./build.sh` builds every `ALL` target. See
   [AGENTS.md](../AGENTS.md) for their flags.
-- `pnpm configure` runs `cmake -S . -B build`
-  ([package.json:11](../package.json#L11)); `pnpm build` invokes
+- `pnpm configure` runs `cmake -S . -B build`; `pnpm build` invokes
   [scripts/cmake-build.js](../scripts/cmake-build.js) (no target = a full build).
 - The per-package `.native-build/`, `.ui-build/`, `.test-build/` dirs under
   `packages/retroplug/` are **esbuild output dirs** created by the run scripts, not
-  CMake build dirs. The only CMake build dirs are `build/`, `build-tsan/`, `build-asan/`.
+  CMake build dirs. The CMake build dirs are `build/` (the load-bearing one), `build-tsan/` and
+  `build-asan/` ([run-sanitizer.sh](../tools/run-sanitizer.sh)), `build-prof/`
+  ([run-profile.sh](../tools/run-profile.sh)), and `build-arm/` + `build-arm-prof/`
+  ([arm-build.sh](../tools/arm-build.sh)). All six are gitignored.
 
 ## CMake targets
 
@@ -31,31 +33,36 @@ All defined in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.tx
 |---|---|---|---|
 | `retroplug-core` | static lib | The shared emulator / Project / kit-codec core. | yes (via consumers) |
 | `retroplug-backend` | static lib | `retroplug-core` + the Engine, the RPC services, the DSP runtime, and the shared txiki host. Composed by every host. | yes (via consumers) |
-| `retroplug-host` | executable | `build/bin/retroplug-host` — the real-Backend test host that evals a TS bundle over `__rpcSend`. | no |
-| `retroplug-cli` | executable | `build/bin/retroplug-cli` — the CLI runner + `render` subcommand ([09-cli-debugging.md](09-cli-debugging.md)). | yes |
-| `retroplug-cp-bundle` / `-ui-bundle` | custom | `build/native/*bundle_data.c` — control-plane / React-UI bytecode, embedded in the plugin. | cp: yes; ui: via dependents |
 | `retroplug` | umbrella plugin | `dpf_add_plugin(retroplug TARGETS clap vst3 vst2 au jack)` — the per-format DPF variants (`retroplug-clap`/`-vst3`/`-vst2`/`-au`/`-jack`). AU is macOS-only. | yes |
-| `retroplug-jack` | DPF variant | `build/bin/retroplug` — the **standalone binary** | yes |
-| `retroplug-ui-test` | executable | `build/bin/retroplug-ui-test` — boots the real React UI on a headless software LVGL display via `UiHarness`. | no |
-| `retroplug-plugin-test` / `-classid-test` / `-audio-test` | executable | Catch2 C++ unit checks (window-hook routing / class-id sync / per-channel audio). `EXCLUDE_FROM_ALL`. | no |
+| `retroplug-jack` | DPF variant | `build/bin/retroplug` — the **standalone binary**. | yes |
+| `retroplug-sdl` | executable | `build/bin/retroplug-sdl` — the SDL2 standalone ([sdl-standalone.md](../docs/sdl-standalone.md)). Shipped in the CI artifact, deliberately **not** in releases. | yes |
+| `retroplug-cli` | executable | `build/bin/retroplug-cli` — the CLI runner + `render` and `test` subcommands ([09-cli-debugging.md](09-cli-debugging.md)). | yes |
+| `retroplug-host` | executable | `build/bin/retroplug-host` — the real-Backend test host that evals a TS bundle over `__rpcSend`. | yes |
+| `retroplug-ui-test` | executable | `build/bin/retroplug-ui-test` — boots the real React UI on a headless software LVGL display via `UiHarness`. | yes |
+| `retroplug-node` | shared module | The N-API addon — the same backend behind `require()`. Gated on `RETROPLUG_NODE_ADDON=ON` (needs `node_api.h`). | opt-in |
+| `retroplug-cp-bundle` / `-ui-bundle` / `-cli-bundle` / `-ts-stripper-bundle` / `-render-worker-bundle` / `-cli-sdk-assets` | custom | `build/native/*bundle_data.c` — control-plane / React-UI / CLI / TS-stripper / render-worker bytecode and the CLI SDK assets, embedded in their consumers. | cp: yes; rest: via dependents |
+| `retroplug-example-session` | custom | The CLI example sessions under `build/cli/`. | yes |
+| `retroplug-render-host-test` | executable | Drives the offline `RenderHost` directly ([11-ui-rendering.md](11-ui-rendering.md)). `EXCLUDE_FROM_ALL`. | no |
+| `retroplug-plugin-test` / `-dynparams-test` / `-classid-test` / `-audio-test` / `-watcher-test` / `-midi-test` / `-launchpad-test` / `-lottie-test` | executable | The eight Catch2 binaries `pnpm test:plugin` builds and runs. `EXCLUDE_FROM_ALL`. | no |
+| `retroplug-n8-test` / `-n8-hwtest` | executable | Everdrive N8 protocol checks; `-hwtest` needs the physical console. `EXCLUDE_FROM_ALL`. | no |
 
 The plugin's identity is vendor-owned (not the DPF example namespace):
 `DISTRHO_PLUGIN_NAME "RetroPlug"`, URI `https://retroplug.io`, CLAP id
-`net.tommitytom.retroplug`
-([DistrhoPluginInfo.h:8](../packages/native/plugin/DistrhoPluginInfo.h#L8)). It exposes
-8 outputs — four stereo pairs `out_1..4`
-([DistrhoPluginInfo.h:13](../packages/native/plugin/DistrhoPluginInfo.h#L13)).
+`net.tommitytom.retroplug`, all in
+[DistrhoPluginInfo.h](../packages/native/plugin/DistrhoPluginInfo.h). It exposes 8 outputs — four
+stereo pairs `out_1..4` ([10-multichannel-audio-out.md](10-multichannel-audio-out.md)).
 
 ### Not yet built / deferred
 
-The build declares `clap`, `vst3`, `vst2`, `au`, and `jack`
-([CMakeLists.txt:232](../packages/native/CMakeLists.txt#L232)); AU is gated by DPF to macOS. Only
+The build declares `clap`, `vst3`, `vst2`, `au`, and `jack` (the `dpf_add_plugin` call in
+[packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt)); AU is gated by DPF to macOS. Only
 **LV2** is not built — its out-of-process DSP/UI split doesn't fit RetroPlug
 ([07-remaining-work.md](07-remaining-work.md)).
 
-## The three hosts → three test tiers
+## Hosts → test tiers
 
-The three C++ hosts (see [01-architecture.md](01-architecture.md)) each back a headless test tier.
+Three of the C++ hosts (see [01-architecture.md](01-architecture.md)) each back a headless TS test
+tier; `test:plugin` is a fourth tier with no TS runner at all.
 The TS runners live in `packages/retroplug/scripts/`; every runner discovers
 `*.test.ts` files, bundles each with esbuild (es2020, one process per file), and reports TAP with
 a nonzero exit on failure. Slugs accept slash or dash form and a directory prefix runs everything
@@ -95,14 +102,19 @@ software display), so concurrency is safe and needs no coordination. Concurrency
 the logical threads**; override with `--jobs N` / `-j N` on the runner or the `TEST_JOBS` env, and
 `TEST_JOBS=1` restores serial one-at-a-time output. Output is buffered per child and flushed as a
 labelled `# <slug>` block on completion (rather than live-interleaved). The shared pool/spawn helper
-is [scripts/lib/testPool.mjs](../packages/retroplug/scripts/lib/testPool.mjs). The `reaper:*` tiers
-stay serial — they share a single unnamed jackd server and a per-family Reaper config dir.
+is [scripts/lib/testPool.mjs](../packages/retroplug/scripts/lib/testPool.mjs). Work is dispatched
+LONGEST-FIRST from durations the previous run recorded under `packages/retroplug/.test-timings/`, so
+the wall clock is bounded by the slowest FILE rather than by when the pool happened to reach it.
+
+The `reaper:*` tiers are parallel too, by a different mechanism — see
+[Running the Reaper leg in parallel](#running-the-reaper-leg-in-parallel).
 
 | Tier | Backend under test | Command | Runner | Test dir |
 |---|---|---|---|---|
 | **mock TS** | [`testing/mockBackend.ts`](../packages/retroplug/testing/mockBackend.ts) (in-memory, no native, no emulator) | `pnpm test` | [run-tests.mjs](../packages/retroplug/scripts/run-tests.mjs) on the `tjs` binary | `test/` |
 | **real host** | the real Backend RPC surface (fs/config/codec + a live `SameBoySystem` in a real `Project`, real DSP kernel) | `pnpm test:native` | [run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) on `retroplug-host` | `test-native/` |
 | **LVGL React UI** | the real UI bundle on a software LVGL display driven by `UiHarness` | `pnpm test:ui` | [run-ui-tests.mjs](../packages/retroplug/scripts/run-ui-tests.mjs) on `retroplug-ui-test` | `test-ui/` |
+| **C++ unit** | native classes directly, no TS in the loop | `pnpm test:plugin` | [run-plugin-tests.mjs](../packages/retroplug/scripts/run-plugin-tests.mjs) over eight Catch2 binaries | `packages/native/test/` |
 
 Each pnpm script first builds its runner via `cmake-build.js` (mock → `tjs-cli`; native →
 `retroplug-host`; UI → `retroplug-ui-test`), so a `pnpm test*`
@@ -122,15 +134,18 @@ Root [package.json](../package.json). Each builds its CMake target(s) first, the
 
 | Script | Builds | Does |
 |---|---|---|
-| `test` | `tjs-cli` | Mock-backend TS suite ([:16](../package.json#L16)). |
-| `test:native` | `retroplug-host` | Real-host suite ([:17](../package.json#L17)). |
-| `test:ui` | `retroplug-ui-test` | LVGL React UI suite ([:18](../package.json#L18)). |
-| `test:plugin` | `retroplug-plugin-test` + `-classid-test` + `-audio-test` | Pure-C++ Catch2 unit checks (no TS runner; exit code is pass/fail): the per-context routing behind PluginUI's `__rp_*` window hooks ([ContextTargets.hpp](../packages/native/plugin/ContextTargets.hpp) proven on two live `JSContext`s so concurrent instances never cross-route), the class-id counter sync that keeps the DAW-hosted editor from rendering blank, and the per-channel audio split ([:19](../package.json#L19)). |
-| `screenshot` | `retroplug-jack` | Boots the standalone headlessly → `/tmp/retroplug.png` ([:20](../package.json#L20)). |
-| `validate` | `-clap` + `-vst3` | `clap-validator` + `pluginval` against the built binaries via the shared [validate-plugins.sh](../tools/validate-plugins.sh) ([:22](../package.json#L22)). |
+| `test` | `tjs-cli` | Mock-backend TS suite. |
+| `test:native` | `retroplug-host` | Real-host suite. |
+| `test:ui` | `retroplug-ui-test` | LVGL React UI suite. |
+| `test:plugin` | eight Catch2 binaries (`-plugin-test`, `-dynparams-test`, `-classid-test`, `-audio-test`, `-watcher-test`, `-midi-test`, `-launchpad-test`, `-lottie-test`) | Pure-C++ unit checks (no TS runner; exit code is pass/fail): the per-context routing behind PluginUI's `__rp_*` window hooks ([ContextTargets.hpp](../packages/native/plugin/ContextTargets.hpp), proven on two live `JSContext`s so concurrent instances never cross-route), DPF's dynamic-parameter diff classifier, the class-id counter sync that keeps the DAW-hosted editor from rendering blank, the per-channel audio split, the efsw file watcher, MIDI in/out, the Launchpad scanner, and the Lottie decoder. |
+| `screenshot` | `retroplug-jack` | Boots the standalone headlessly → `/tmp/retroplug.png`. |
+| `sdl:smoke` | `retroplug-sdl` | Headless SDL-standalone boot + shutdown; needs no display server or audio server. In CI. |
+| `sdl:pipewire` | `retroplug-sdl` | Stands up a private PipeWire server and asserts WHICH output device the PortAudio backend opens. Not in CI (the runners have no PipeWire). |
+| `test:cli-ts` | `retroplug-cli` | Runs a directory of `.ts` tests through the CLI's own embedded stripper + harness — the consumer-kit path ([09-cli-debugging.md](09-cli-debugging.md)). In CI. |
+| `validate` | `-clap` + `-vst3` | `clap-validator` + `pluginval` against the built binaries via the shared [validate-plugins.sh](../tools/validate-plugins.sh). Fails if a validator is missing rather than skipping it. |
 | `reaper:mgb-smoke-author` | `-vst3` | Authors + bakes the `.rplg` fixture for the Reaper render. |
 | `reaper:mgb-smoke` | `-vst3` | Renders [mgb_smoke.rpp](../examples/reaper/mgb_smoke.rpp) through real Reaper — end-to-end DAW proof. |
-| `reaper:all` | `-vst3` | Builds + authors once, then runs the **whole** Reaper leg — all 6 audio renders + 3 editor checks — **concurrently**, with a PASS/FAIL summary ([run-reaper-suite.sh](../tools/run-reaper-suite.sh)). |
+| `reaper:all` | `-vst3` | Builds + authors once, then runs the **whole** Reaper leg — **15 checks: 9 audio renders + 6 editor/host checks** — concurrently, with a PASS/FAIL summary ([run-reaper-suite.sh](../tools/run-reaper-suite.sh)). |
 
 `pnpm test` runs the mock-backend TS suite; the native, UI, plugin, and Reaper tiers are invoked
 explicitly by their own scripts.
@@ -139,7 +154,12 @@ explicitly by their own scripts.
 
 Each Reaper check boots its own headless stack (Xvfb + openbox + dummy JACK + isolated Reaper
 config + the built VST3). Individually those are the `reaper:*` scripts; to run the entire leg at
-once, `pnpm reaper:all` fans all nine out concurrently. The shared bring-up/tear-down lives in one
+once, `pnpm reaper:all` fans all fifteen out concurrently — the 9 render scenarios
+(`mgb-smoke`, `mgb-midi-timing`, `n8-midi-timing`, `lsdj-midi-metro`, `lsdj-arduinoboy-metro`,
+`lsdj-midi-drift`, `risa-sync`, `sms-sync`, `gg-sync`) and the 6 editor/host ones (`editor`,
+`editor-reopen`, `editor-autoload`, `params-vst3`, `params-clap`, `params-vrc7`). The two
+multi-instance checks (`reaper:two-instances`, `-load`) are deliberately outside the suite: they
+stand up several plugin instances in one host and are run on their own. The shared bring-up/tear-down lives in one
 sourced helper, [tools/reaper-env.sh](../tools/reaper-env.sh), which keys every otherwise-shared
 resource off `RP_JOB_TAG` — a **uniquely named JACK server** (`jackd -n` + `JACK_DEFAULT_SERVER`,
 the thing that actually lets two Reapers coexist), a per-tag config dir, a `-displayfd`-allocated
@@ -147,7 +167,9 @@ Xvfb display, and per-tag logs (under `build/reaper-cfg-<tag>/logs/`). A bare `r
 defaults the tag to the scenario, so single runs are unchanged. Offline render is sample-accurate
 and wall-clock-independent, so parallel scheduling never changes a rendered sample (the WAV's PCM
 data is byte-identical run-to-run; only Reaper's BWF header timestamp differs). Cap concurrency with
-`RP_SUITE_JOBS` (default 8); skip the rebuild + fixture regen with `RP_SUITE_NO_BUILD=1`. Not in CI
+`RP_SUITE_JOBS`; the default is whatever `/dev/shm` can back (each jackd mmaps ~107 MB), capped at 8,
+because a dev container's common 512 MB fits only four and the fifth jackd dies with a bus error while
+its Reaper waits forever. Skip the rebuild + fixture regen with `RP_SUITE_NO_BUILD=1`. Not in CI
 — it needs a full DAW + X stack.
 
 ## The dpf.js seam
@@ -156,14 +178,14 @@ The generic framework (DPF, lv_binding_js → LVGL/txiki, rpcpp, msgpack-c, dpf-
 nested `deps/dpf.js` submodule, consumed through this seam:
 
 1. **Submodule** — `.gitmodules` registers `deps/dpf.js` (clone with `--recursive`).
-2. **pnpm link** — `"dpf.js": "link:./deps/dpf.js"` ([package.json:43](../package.json#L43)); `pnpm install` wires it before the first configure. lv_binding_js has its own pnpm workspace (react/react-reconciler/lvgljs-ui) that needs its own `pnpm install` — see [AGENTS.md](../AGENTS.md).
+2. **pnpm link** — `"dpf.js": "link:./deps/dpf.js"` in the root [package.json](../package.json) `devDependencies`; `pnpm install` wires it before the first configure. lv_binding_js has its own pnpm workspace (react/react-reconciler/lvgljs-ui) that needs its own `pnpm install` — see [AGENTS.md](../AGENTS.md).
 3. **CMake resolve + add_subdirectory** — the root runs `node -e "require.resolve('dpf.js/package.json')"` → `DPFJS_PATH`, then `add_subdirectory("${DPFJS_PATH}" ...)` defines `dpf_add_plugin`, `dpfjs::core`, `lvgl-js-native`, `tjs`, `tjsc`, `tjs-cli`, `rpcpp`, `miniz`.
-4. **Use of `${DPFJS_PATH}`** — the backend compiles the shared txiki host `TjsHostRuntime.cpp` and includes the txiki/QuickJS headers ([CMakeLists.txt:26](../packages/native/CMakeLists.txt#L26), [:33–35](../packages/native/CMakeLists.txt#L33)); the plugin embeds the generic `dpf-widgets/generic/LVGL.cpp` and links `dpfjs::core` + `lvgl-js-native` + `tjs` ([:114](../packages/native/CMakeLists.txt#L114), [:121–124](../packages/native/CMakeLists.txt#L121)).
+4. **Use of `${DPFJS_PATH}`** — the backend compiles the shared txiki host `TjsHostRuntime.cpp` and includes the txiki/QuickJS headers; the plugin embeds the generic `dpf-widgets/generic/LVGL.cpp` and links `dpfjs::core` + `lvgl-js-native` + `tjs`. All in [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt).
 5. **React resolution** — the UI ([ui/main.tsx](../packages/retroplug/ui/main.tsx)) is bundled by the shared [tools/build-ui.js](../tools/build-ui.js), which resolves `react`/`react-reconciler`/`lvgljs-ui` from dpf.js's own pnpm workspace under `deps/dpf.js/deps/lv_binding_js/node_modules`.
 
 The shared C++ core — `Project`, `SystemBase`, the SameBoy/Mesen systems, the LSDj kit codec, the
 transport primitives — is compiled once into the `retroplug-core` static lib and PUBLIC-linked by
-[the backend](../packages/native/CMakeLists.txt#L77). See [01-architecture.md](01-architecture.md)
+[the backend](../packages/native/CMakeLists.txt). See [01-architecture.md](01-architecture.md)
 for the "shared core" boundary.
 
 ## The headless verification loop — which command proves which change
@@ -196,13 +218,12 @@ the host → nonzero exit.
 
 - **The embedded bundles are derived — never commit them.** `cp-bundle.js`/`cp-bundle_data.c` and
   `ui-bundle.js`/`ui-bundle_data.c` are CMake `BYPRODUCTS` under `build/native/`
-  ([CMakeLists.txt:70–100](../packages/native/CMakeLists.txt#L70)), regenerated from
+  (CMake `BYPRODUCTS` of the `retroplug-cp-bundle` / `-ui-bundle` custom targets), regenerated from
   [tools/build-controlplane.js](../tools/build-controlplane.js) and
   [tools/build-ui.js](../tools/build-ui.js) on each build.
 - **`retroplug-ui-test` rebuilds the UI bundle; `run-ui-tests.mjs` alone does not.**
   The UI app bytecode (`rp_ui_bundle`) is embedded **in the test binary**, and the target
-  `add_dependencies` on `retroplug-ui-bundle`
-  ([CMakeLists.txt:159](../packages/native/CMakeLists.txt#L159)) rebuild it. `pnpm
+  `add_dependencies` on `retroplug-ui-bundle` rebuild it. `pnpm
   test:ui` therefore always tests a fresh bundle. But invoking
   `run-ui-tests.mjs` directly (skipping the `cmake-build.js` step) reuses whatever binary already
   exists — a **stale** UI bundle if you edited `ui/` since. The runner only re-bundles the *test
@@ -218,10 +239,11 @@ the host → nonzero exit.
 
 ## Key files
 
-- [CMakeLists.txt:554–574](../CMakeLists.txt#L554) — the `BUILD_CLI` block that pulls the native build into the one configure.
-- [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt) — every native target (backend, host, bundles, plugin, ui-test).
-- [package.json:16–25](../package.json#L16) — the pnpm scripts.
-- [scripts/run-tests.mjs](../packages/retroplug/scripts/run-tests.mjs) / [run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) / [run-ui-tests.mjs](../packages/retroplug/scripts/run-ui-tests.mjs) — the three test-tier runners.
+- [CMakeLists.txt](../CMakeLists.txt) — the root configure: deps, the vendored cores, and the single `add_subdirectory(packages/native native)`.
+- [packages/native/CMakeLists.txt](../packages/native/CMakeLists.txt) — every native target (backend, hosts, bundles, plugin, ui-test, the Catch2 binaries).
+- [package.json](../package.json) — the pnpm scripts.
+- [scripts/run-tests.mjs](../packages/retroplug/scripts/run-tests.mjs) / [run-native-tests.mjs](../packages/retroplug/scripts/run-native-tests.mjs) / [run-ui-tests.mjs](../packages/retroplug/scripts/run-ui-tests.mjs) / [run-plugin-tests.mjs](../packages/retroplug/scripts/run-plugin-tests.mjs) — the four test-tier runners.
+- [scripts/lib/testPool.mjs](../packages/retroplug/scripts/lib/testPool.mjs) / [skipBaseline.mjs](../packages/retroplug/scripts/lib/skipBaseline.mjs) — the shared pool, the TAP parser, and the skip ratchet.
 - [testing/mockBackend.ts](../packages/retroplug/testing/mockBackend.ts) — the in-memory Backend double for the mock tier.
 - [tools/run-sanitizer.sh](../tools/run-sanitizer.sh) — TSan/ASan over the native host.
 - [tools/run-standalone.sh](../tools/run-standalone.sh) — headless standalone + screenshot.
