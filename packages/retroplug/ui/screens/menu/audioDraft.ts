@@ -9,6 +9,8 @@
 // track the pending value immediately. The seam is absent in a DAW / the headless harness (hasAudioConfig()
 // is false → the submenu is hidden).
 
+import { createSubscribable } from "./subscribable";
+
 export interface AudioCfg {
   sampleRate: number;
   blockSize: number;
@@ -18,12 +20,9 @@ export interface AudioCfg {
 }
 
 let draft: AudioCfg | null = null;
-let version = 0;
-const listeners = new Set<() => void>();
-function emit(): void {
-  version++;
-  for (const l of listeners) l();
-}
+const notify = createSubscribable();
+const emit = notify.emit;
+export const subscribeAudioDraft = notify.subscribe;
 
 // The native config carries the option sets too — the driver list (drivers) and the output devices per driver
 // (devicesByDriver). They're not part of the draft VALUE, so nativeGet folds only the selected driver/device
@@ -136,12 +135,4 @@ export function resetAudioDraft(): void {
   emit();
 }
 
-/** A monotonic version — a stable snapshot for App's forced re-render on draft change. */
-export function audioDraftVersion(): number {
-  return version;
-}
 
-export function subscribeAudioDraft(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => void listeners.delete(fn);
-}

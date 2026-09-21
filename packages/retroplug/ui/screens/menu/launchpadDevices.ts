@@ -30,6 +30,7 @@
 import {
   PRO_MK3, PRO_MK3_PORT_HINT, deviceInquiry, deviceName, exitToLiveMode, parseInquiryReply,
 } from "../../../src/launchpad";
+import { createSubscribable } from "./subscribable";
 
 export interface LaunchpadConfig {
   inputs: string[]; // every hardware MIDI input port, unfiltered
@@ -66,12 +67,9 @@ export interface LaunchpadScanStatus {
  *  scans in about a second. */
 export const SCAN_WINDOW_MS = 300;
 
-let version = 0;
-const listeners = new Set<() => void>();
-function emit(): void {
-  version++;
-  for (const l of listeners) l();
-}
+const notify = createSubscribable();
+const emit = notify.emit;
+export const subscribeLaunchpad = notify.subscribe;
 
 type LaunchpadGlobals = {
   __rp_getLaunchpadConfig?: () => Partial<LaunchpadConfig>;
@@ -241,12 +239,4 @@ export function applyLaunchpadScan(s: LaunchpadScanStatus): { input: string; out
   return hit;
 }
 
-/** A monotonic version - a stable snapshot for App's forced re-render on a pick/toggle. */
-export function launchpadVersion(): number {
-  return version;
-}
 
-export function subscribeLaunchpad(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => void listeners.delete(fn);
-}

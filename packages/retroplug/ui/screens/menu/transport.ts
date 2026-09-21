@@ -10,6 +10,8 @@
 // Absent in a DAW / the headless harness (the host owns the transport there) → hasTransport() false → the row
 // is hidden, exactly like the audio/MIDI device rows.
 
+import { createSubscribable } from "./subscribable";
+
 export interface TransportState {
   playing: boolean; // what the Engine is being told right now
   external: boolean; // a MIDI clock master is driving it — our own settings are recorded but overridden
@@ -24,12 +26,9 @@ export const CLOCK_BPM_MAX = 999;
 export const CLOCK_BPM_STEP = 1;
 export const CLOCK_BPM_COARSE_STEP = 10;
 
-let version = 0;
-const listeners = new Set<() => void>();
-function emit(): void {
-  version++;
-  for (const l of listeners) l();
-}
+const notify = createSubscribable();
+const emit = notify.emit;
+export const subscribeTransport = notify.subscribe;
 
 type TransportGlobals = {
   __rp_getTransport?: () => Partial<TransportState>;
@@ -87,12 +86,4 @@ export function pollTransport(): void {
   emit();
 }
 
-/** A monotonic version — a stable snapshot for App's forced re-render on a transport change. */
-export function transportVersion(): number {
-  return version;
-}
 
-export function subscribeTransport(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => void listeners.delete(fn);
-}

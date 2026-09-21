@@ -71,23 +71,21 @@ export function App() {
   // The LSDj HD player, when open: the id of the system it's showing. It replaces the grid but is NOT an
   // input overlay - the cart keeps playing and keys still reach its joypad, so it doesn't gate `playing`.
   const [hdSystemId, setHdSystemId] = useState<number | null>(null);
-  // Standalone Audio submenu: the draft (staged rate/block) lives outside any store, so subscribe here to
-  // force a rebuild when a cycler stages a value — otherwise the label wouldn't repaint until the next
-  // unrelated render. Inert in a DAW / the harness (nothing ever emits).
-  const [, bumpAudioDraft] = useState(0);
-  useEffect(() => subscribeAudioDraft(() => bumpAudioDraft((n) => n + 1)), []);
-  // Standalone MIDI submenu: same story — the device selection lives in the native host, so a pick emits
-  // here to repaint the "Input/Output Device" labels immediately. Inert in a DAW / the harness.
-  const [, bumpMidi] = useState(0);
-  useEffect(() => subscribeMidi(() => bumpMidi((n) => n + 1)), []);
-  // Standalone Transport row: play/stop lives in the native host (the audio thread publishes it back), so a
-  // toggle emits here to repaint the label at once. Inert in a DAW / the harness.
-  const [, bumpTransport] = useState(0);
-  useEffect(() => subscribeTransport(() => bumpTransport((n) => n + 1)), []);
-  // Standalone N8 submenu (Settings > N8 Pro): the serial-link state lives natively, so a port/connect/
-  // lookahead change emits here to repaint its labels immediately. Inert in a DAW / the harness.
-  const [, bumpN8] = useState(0);
-  useEffect(() => subscribeN8(() => bumpN8((n) => n + 1)), []);
+  // The five standalone-only menu sources. Each owns state that lives in the NATIVE host rather than in
+  // a store, so a change there has no path back into React and must be pushed: the Audio submenu's
+  // staged rate/block draft, a MIDI device pick, the transport toggle (which the audio thread publishes
+  // back), the N8 port/connect/lookahead, and the Launchpad port pair. Without this the label would not
+  // repaint until some unrelated render happened to come along.
+  //
+  // One counter for all five. They were five separate useState/useEffect pairs differing only in the
+  // identifier; a render is a render, so which source fired does not change what happens next.
+  // Inert in a DAW / the harness, where nothing ever emits.
+  const [, bumpNative] = useState(0);
+  useEffect(() => {
+    const bump = () => bumpNative((n) => n + 1);
+    const offs = [subscribeAudioDraft, subscribeMidi, subscribeTransport, subscribeN8, subscribeLaunchpad].map((sub) => sub(bump));
+    return () => offs.forEach((off) => off());
+  }, []);
   // The cartridge sound chip sits at ONE level, whether you are hearing the emulator or a real console: the
   // NES system's "Expansion Volume" knob drives Mesen's expansion channels, and this pushes the same value
   // (rescaled) to a connected N8's `master_vol`. Deriving it from `systems` covers every way it can move -
@@ -95,10 +93,6 @@ export function App() {
   // connect as well, so the order the link and the project come up in doesn't matter.
   const n8ExpVol = projectExpVolForN8(systems);
   useEffect(() => setN8ExpVol(n8ExpVol), [n8ExpVol]);
-  // Standalone Launchpad submenu: likewise, the claimed MIDI pair + connect state live natively, so a port
-  // pick or Connect emits here to repaint immediately. Inert in a DAW / the harness.
-  const [, bumpLaunchpad] = useState(0);
-  useEffect(() => subscribeLaunchpad(() => bumpLaunchpad((n) => n + 1)), []);
 
   const empty = systems.length === 0;
   // "In play": a tile is showing and no menu/overlay owns input. Gates game input AND the cycle actions.

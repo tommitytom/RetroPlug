@@ -8,6 +8,8 @@
 // (subscribeMidi) so a device pick forces a rebuild and the cycler label tracks the new value at once. The seam
 // is absent in a DAW / JACK standalone / the headless harness (hasMidiConfig() is false → the submenu hidden).
 
+import { createSubscribable } from "./subscribable";
+
 /** The input selection meaning "every hardware port at once" - an explicit choice, not the default.
  *  Opening every device turns out to be a surprising thing to do by default: anything plugged in becomes a
  *  MIDI source, so a control surface's free-running clock ends up driving the host tempo and a controller's
@@ -21,12 +23,9 @@ export interface MidiConfig {
   selectedOutput: string; // "" = None (virtual output only); else a device name
 }
 
-let version = 0;
-const listeners = new Set<() => void>();
-function emit(): void {
-  version++;
-  for (const l of listeners) l();
-}
+const notify = createSubscribable();
+const emit = notify.emit;
+export const subscribeMidi = notify.subscribe;
 
 type MidiGlobals = {
   __rp_getMidiConfig?: () => Partial<MidiConfig>;
@@ -64,12 +63,4 @@ export function setMidiOutput(name: string): void {
   emit();
 }
 
-/** A monotonic version — a stable snapshot for App's forced re-render on a device pick. */
-export function midiVersion(): number {
-  return version;
-}
 
-export function subscribeMidi(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => void listeners.delete(fn);
-}

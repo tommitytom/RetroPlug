@@ -12,6 +12,7 @@
 // NES system (its "Expansion Volume" knob, in the project), and App pushes it down here - see
 // projectExpVolForN8 / setN8ExpVol at the bottom.
 import type { SystemView } from "../../../src/systemsStore";
+import { createSubscribable } from "./subscribable";
 
 export interface N8Port {
   port: string; // OS serial port name (/dev/ttyACM0, COM3, ...)
@@ -28,12 +29,9 @@ export interface N8Config {
   error: string; // last error, or "" (status)
 }
 
-let version = 0;
-const listeners = new Set<() => void>();
-function emit(): void {
-  version++;
-  for (const l of listeners) l();
-}
+const notify = createSubscribable();
+const emit = notify.emit;
+export const subscribeN8 = notify.subscribe;
 
 type N8Globals = {
   __rp_getN8Config?: () => Partial<N8Config>;
@@ -115,12 +113,4 @@ export function projectExpVolForN8(systems: SystemView[]): number {
   return expVolToN8(percent);
 }
 
-/** A monotonic version - a stable snapshot for App's forced re-render on a pick/toggle. */
-export function n8Version(): number {
-  return version;
-}
 
-export function subscribeN8(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => void listeners.delete(fn);
-}
